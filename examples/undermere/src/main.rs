@@ -70,6 +70,7 @@ struct Screen {
     target: Rect,
     pack: Rect,
     chest: Rect,
+    shop: Rect,
     here: Rect,
     controls: Rect,
     menu: Rect,
@@ -119,6 +120,11 @@ impl Screen {
             pack: centred(64, 4, 32),
             // What is in a chest, and the keys that take it.
             chest: centred(48, 6, 14),
+            // A keeper's shelf beside the pack, wide enough for a long
+            // name and its price on either side: the frame, the line under
+            // the keeper's name, the headings and their rule, fifteen rows,
+            // as many as the pack shows, and the purses at the foot.
+            shop: centred(80, 4, 22),
             // What can be done here, when here is more than one thing.
             here: centred(40, 10, 6),
             controls: map.inflate(-2),
@@ -180,6 +186,8 @@ fn add_panels(app: &mut App, screen: &Screen) {
         InventoryPanel::new(screen.pack).title("Pack").called("pack").empty("Nothing but lint."),
         // What is in a chest, opened by walking into it.
         ContainerPanel::new(screen.chest).empty("Empty."),
+        // A keeper's shelf and the pack, opened by walking into the keeper.
+        TradePanel::new(screen.shop),
         // What can be done here, when walking into it would be a guess.
         OffersPanel::new(screen.here).title("Here"),
         InteractKey,
@@ -192,6 +200,8 @@ fn add_panels(app: &mut App, screen: &Screen) {
     app.add_systems(Update, undermere::conditions::note_statuses.in_set(ViewSet::Annotate));
     // A captive said shackled on the rail, until it is freed.
     app.add_systems(Update, undermere::captives::note_captives.in_set(ViewSet::Annotate));
+    // A keeper's wares by their true names, in the shop's own colour.
+    app.add_systems(Update, undermere::shops::shelf_names.in_set(ViewSet::Annotate));
     // What is known of a monster's traits on the look panel: every plain
     // one in its own words, and a "?" for every trick not yet seen.
     app.add_systems(Update, undermere::bestiary_lore::annotate_inspect.in_set(ViewSet::Annotate));
@@ -668,5 +678,38 @@ mod tests {
         scripted.persist(undermere::save::SLOT, "a scripted run").unwrap();
         assert_eq!(real.load(undermere::save::SLOT).unwrap(), before, "the player's slot is as it was");
         assert!(scripted.exists(undermere::save::SLOT), "and the scripted run has one of its own");
+    }
+
+    /// Walking into a keeper with the key that walks opens their shop on
+    /// the screen, and the press that opened it does nothing more there:
+    /// nothing is bought or sold, and the cursor stands where the screen
+    /// opens, on the shelf's first row, where the next press of that key
+    /// moves it a row down.
+    #[test]
+    fn walking_into_a_keeper_opens_the_shop_and_the_same_press_does_not_act_on_its_first_frame() {
+        let mut app = on_screen(RunSeed(7));
+        let me = undermere::testing::adventurer(&mut app);
+        let smith = {
+            let world = app.world_mut();
+            world.query_filtered::<(Entity, &Name), With<Trader>>().iter(world).find(|(_, n)| n.as_str() == "the smith").map(|(e, _)| e).expect("the smith")
+        };
+        let at = undermere::testing::at(&app, smith);
+        undermere::testing::stand_on(&mut app, me, at.offset(0, -1));
+        let (mine, theirs) = (undermere::testing::pack(&app, me), undermere::testing::pack(&app, smith));
+        press(&mut app, KeyCode::ArrowDown);
+        undermere::testing::settle(&mut app);
+        let modals = app.world().resource::<Modals>();
+        assert!(modals.is_open(trade_modal(modals)), "the smith's shop is up");
+        assert_eq!(app.world().resource::<Trading>().open().map(|p| (p.customer, p.trader)), Some((me, smith)), "a trade with the smith");
+        assert!(written(&app).iter().any(|r| r.contains("the smith")), "the screen names the smith: {:#?}", written(&app));
+        let menu = app.world().resource::<rl_engine::rl_ui::panel::trade::TradeMenu>();
+        assert_eq!((menu.side, menu.wares, menu.pack), (rl_engine::rl_ui::TradeSide::Wares, 0, 0), "the cursor where the screen opens");
+        assert_eq!(undermere::testing::pack(&app, me), mine, "nothing bought or sold");
+        assert_eq!(undermere::testing::pack(&app, smith), theirs, "and the shelf as it was");
+        assert_eq!(undermere::testing::at(&app, me), at.offset(0, -1), "and nobody stepped");
+        // The same key pressed again, on the screen, moves the cursor: so
+        // the first press would have shown, had it reached the screen.
+        press(&mut app, KeyCode::ArrowDown);
+        assert_eq!(app.world().resource::<rl_engine::rl_ui::panel::trade::TradeMenu>().wares, 1, "the next press moves down a row");
     }
 }

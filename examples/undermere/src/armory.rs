@@ -995,10 +995,15 @@ pub fn spawn_items(commands: &mut Commands, armory: &Armory, def: Id<ItemDef>, c
 /// above nought once the level is known, an `unfamiliar` one counted as
 /// nought, as a shop that tells nothing of a level the adventurer cannot
 /// read either.
-fn worth_of(armory: &Armory, lore: &Lore, def: Id<ItemDef>, level: i32, unfamiliar: bool, cursed: bool) -> Option<u32> {
+///
+/// A thing a keeper carries is `shelved`, and its kind is named whether
+/// the adventurer knows it or not, since keepers name what they sell: so
+/// an unknown potion on a shelf is for sale at its kind's price, where
+/// one in the pack is worth nothing to anybody.
+fn worth_of(armory: &Armory, lore: &Lore, def: Id<ItemDef>, level: i32, unfamiliar: bool, cursed: bool, shelved: bool) -> Option<u32> {
     let d = armory.defs.get(def);
     let price = d.price?;
-    if cursed || !lore.knows(&d.name) {
+    if cursed || !(shelved || lore.knows(&d.name)) {
         return None;
     }
     let level = if unfamiliar { 0 } else { level };
@@ -1021,22 +1026,27 @@ type Priced<'a> = (Entity, &'a ItemKind, Option<&'a Enchant>, Has<Unfamiliar>, H
 /// knows what a level, a kind or a curse's sign is worth, as
 /// [`Bestows`] is kept current rather than saved. A kind just learned
 /// reprices every thing of it at once, so the check runs for everything
-/// whenever `lore` has changed and not only for what else moved.
+/// whenever `lore` has changed and not only for what else moved, and so
+/// does a keeper's bag changing, since what a keeper carries is priced by
+/// its kind's name and what changed hands is priced again on its new side.
 pub fn keep_worth(
     mut commands: Commands,
     lore: Res<Lore>,
     armory: Res<Armory>,
     changed: Query<(), Repriced>,
     mut familiar: RemovedComponents<Unfamiliar>,
+    shelves: Query<Ref<Inventory>, With<Trader>>,
     things: Query<Priced>,
 ) {
     let learned = familiar.read().count() > 0;
-    if !(lore.is_changed() || learned || !changed.is_empty()) {
+    let restocked = shelves.iter().any(|bag| bag.is_changed());
+    if !(lore.is_changed() || learned || restocked || !changed.is_empty()) {
         return;
     }
+    let shelved: Vec<Entity> = shelves.iter().flat_map(|bag| bag.items.clone()).collect();
     for (thing, kind, enchant, unfamiliar, cursed, had) in &things {
         let level = enchant.map_or(0, |e| e.level);
-        let worth = worth_of(&armory, &lore, kind.0, level, unfamiliar, cursed);
+        let worth = worth_of(&armory, &lore, kind.0, level, unfamiliar, cursed, shelved.contains(&thing));
         if worth == had.map(|w| w.0) {
             continue;
         }

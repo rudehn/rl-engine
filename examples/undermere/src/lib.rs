@@ -25,9 +25,10 @@
 //! shares, and [`captives`] is the one of them the adventurer may free to
 //! follow; [`finds`] lays its things, drawn a kind at a time with a
 //! scroll of enchanting besides, and [`light`] lights them and dims the
-//! lantern as the adventurer descends. [`shops`] is what Mereholt's
-//! keepers may stock, and a stocking of their shelves drawn at the depth
-//! reached.
+//! lantern as the adventurer descends. [`shops`] is Mereholt's keepers:
+//! what they may stock, a stocking of their shelves drawn at the depth
+//! reached, and the keepers themselves, standing at their counters on the
+//! first arrival and selling from those shelves.
 //!
 //! The run is [`run`]'s: the adventurer and what they set out with, and a
 //! run carried on from a save, which [`save`] says how to write down.

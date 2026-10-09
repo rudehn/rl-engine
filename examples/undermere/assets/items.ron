@@ -21,8 +21,10 @@
 //               either hand's finger, "left finger" | "right finger"
 //   also:       optional; slots it also claims when worn, for a two-hander
 //   tags:       optional; "weapon" | "armor" | "potion" | "scroll" | "staff" | "wand" | "ring" |
-//               "gold" | "arrow" | "light" | "thrown"; what a chest's row asks for by tag, and
-//               the kinds a floor's things are drawn by: potions, scrolls, weapons, armor,
+//               "gold" | "arrow" | "light" | "thrown" | "artifact"; what a chest's row asks for
+//               by tag, what a keeper buys, the curio every tag a priced thing carries, so an
+//               artifact carries its own for the curio to buy it by, and the kinds a floor's
+//               things are drawn by: potions, scrolls, weapons, armor,
 //               staffs, wands, rings and thrown things, each kind as often as `finds.rs` weighs
 //               it and each thing of a kind as `item_spawns.ron` does. A weapon, armor,
 //               ring, staff or wand that does not stack takes levels: each level adds one to a
@@ -358,18 +360,18 @@
     // engine's own `armor` and `bestows`; the two more its allies in
     // sight deal is `crown_aura`'s, in `src/artifacts.rs`, the one thing
     // here that reaches somebody other than the wearer.
-    (name: "the Crown of Grubnak", glyph: '^', color: (1.0, 0.8, 0.2), price: 1600, slot: "head", armor: 1, bestows: [("quiet", -2)]),
+    (name: "the Crown of Grubnak", glyph: '^', color: (1.0, 0.8, 0.2), price: 1600, tags: ["artifact"], slot: "head", armor: 1, bestows: [("quiet", -2)]),
     // The Widow's Fang: a quick blade, poison and a chance of a web on
     // every hit, and a noise at its wielder's own cell every sixty turns,
     // `Whisper` landed by its own `pulse`.
-    (name: "the Widow's Fang", glyph: ')', color: (0.9, 0.2, 0.25), price: 1600, slot: "main hand", either: true,
+    (name: "the Widow's Fang", glyph: ')', color: (0.9, 0.2, 0.25), price: 1600, tags: ["artifact"], slot: "main hand", either: true,
      melee: (roll: "1d4+2", kind: "pierce", unaware: 500),
      triggers: [(on: "hit", effects: [(kind: "Inflict", args: (status: "poisoned", turns: 4)), (kind: "Inflict", chance: 25, args: (status: "webbed", turns: 1))]),
                 (on: "pulse", every: 6000, effects: [(kind: "Whisper")])]),
     // The Choirmaster's Staff: a two-hander with no blow of its own,
     // `RaiseAlly` aimed at a body within six, two charges and a mending
     // of minus ten while it is held.
-    (name: "the Choirmaster's Staff", glyph: '_', color: (0.85, 0.85, 1.0), price: 1600, slot: "main hand", also: ["off hand"],
+    (name: "the Choirmaster's Staff", glyph: '_', color: (0.85, 0.85, 1.0), price: 1600, tags: ["artifact"], slot: "main hand", also: ["off hand"],
      bestows: [("mending", -10)], consumable: (charges: 2, when_empty: Kept, recharge: 300),
      triggers: [(on: "use", targeting: (mode: Bolt(range: 6), aim: Ground), look: (glyph: '*', color: (r: 220, g: 220, b: 255)),
                  effects: [(kind: "RaiseAlly", args: (turns: 30))])]),
@@ -377,12 +379,12 @@
     // 15 that `src/artifacts.rs`'s own `refill_chalice` tops up on every
     // new floor rather than on `consumable`'s own clock, and `AlertDrowned`
     // on every drink.
-    (name: "the Abbess's Chalice", glyph: '!', color: (0.4, 0.75, 0.7), price: 1600, consumable: (charges: 1, when_empty: Kept),
+    (name: "the Abbess's Chalice", glyph: '!', color: (0.4, 0.75, 0.7), price: 1600, tags: ["artifact"], consumable: (charges: 1, when_empty: Kept),
      triggers: [(on: "use", effects: [(kind: "Mend", args: (roll: "15")), (kind: "AlertDrowned")])]),
     // The Forgemaster's Hammer: a two-handed sweep that ignites what it
     // strikes, strength nineteen, two hundred a blow, and the loudest
     // step there is, louder than plate's own plus three.
-    (name: "the Forgemaster's Hammer", glyph: ')', color: (1.0, 0.5, 0.15), price: 1600, slot: "main hand", also: ["off hand"], strength: 19, cost: 200,
+    (name: "the Forgemaster's Hammer", glyph: ')', color: (1.0, 0.5, 0.15), price: 1600, tags: ["artifact"], slot: "main hand", also: ["off hand"], strength: 19, cost: 200,
      bestows: [("footfall", 6)],
      melee: (roll: "3d6+3", kind: "crush", shape: Sweep, look: (glyph: '*', color: (r: 255, g: 120, b: 40))),
      triggers: [(on: "hit", effects: [(kind: "Ignite", args: (turns: 3))])]),

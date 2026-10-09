@@ -43,7 +43,12 @@
 // the shore of the black lake to the south. A causeway runs out over the water
 // to the island, where a ring of standing stones holds the Drowned Gate.
 //
-// `@` is where a run arrives, a mark on the cobbles south of the well. The gate
+// `@` is where a run arrives, a mark on the cobbles south of the well. `S`, `Y`,
+// `D` and `P` are where the keepers stand, which `src/shops.rs` finds by their
+// glyphs: the smith beside the anvil, the apothecary in the west building and the
+// curio dealer in the south-east one, each on the door's side of their counter,
+// and the priest beside the altar. An offer is taken up from beside its actor, so
+// each stands where the shop floor reaches them, never behind a counter. The gate
 // is a tile, `*`, and the town's one: the chain reports it as the town's way on,
 // and the ways through stand the gate there on the first arrival. Lit windows
 // and lamp posts are what the dusk is lit by, and `light.rs` lights them.
@@ -55,7 +60,7 @@
         r##########"TTT"T""T""T"TT""""TT"""""""T""T,,,"T"TT"""TT"T""""""""""T""T"""T"##########,
         r##########"T"###w#####"""""""###w#####w###,,,"""""""===w===w===""""""""""TT"##########,
         r##########"TT#h_____t#"""""""#bBBB______H#,,,"""""""=FF______s=""###w###"TT"##########,
-        r##########"TT#_______#"""""""#bB____t__t_#,,,"""""""=____a____=""#h____#""T"##########,
+        r##########"TT#_______#"""""""#bB____t__t_#,,,"""""""=____aS___=""#h____#""T"##########,
         r##########"TT#_____b_#"""""""#_______t___#,,,"""""""=________b=""#_____#"TT"##########,
         r##########"T"###+#####"""""""#___________#,,,"""""""====+======""#____b#"TT"##########,
         r##########"T"""",""""""""""""#w####+####w#,,,""""""L"""",""""""""###+###""T"##########,
@@ -63,15 +68,15 @@
         r##########"T"%%%%%%%%"""%%%%%%%","L.......................L"T""""""""""""TT"##########,
         r##########"TT"""""""""""%%%%%%%""..........................."""====w====="T"##########,
         r##########"T"####w#####""""""""""..........................."""=_____c__=TT"##########,
-        r##########"TT#s_____k_#""L""""""".............W............."""=__p_____=TT"##########,
-        r##########"T"#s___BB__+,,,,,,,,,,...........................,,,+______A_="T"##########,
+        r##########"TT#s_____k_#""L""""""".............W............."""=__p___P_=TT"##########,
+        r##########"T"#s___BBY_+,,,,,,,,,,...........................,,,+______A_="T"##########,
         r##########"T"#s_______#"""""""""".............@............."""=__p_____=TT"##########,
         r##########"TT####w#####""""""""""..........................."""=_____c__="T"##########,
         r##########"T""""""""""""""""""""""L.......................L""""====w====="T"##########,
         r##########"TT"""""""""""""""""""""""","""""""",,,,,,,,,""""""""""""""""""TT"##########,
         r##########"T""""""""""""""T""""""####+#w##"""",""""""",#####w#####"""""""TT"##########,
         r##########"T"""""""""""""""""""""#h______#"""",""""""",#________s#"""""T""T"##########,
-        r##########"TT""T"""""""""""""""""#______t#"""L,""""""",+___BB___s#"""""""TT"##########,
+        r##########"TT""T"""""""""""""""""#______t#"""L,""""""",+__DBB___s#"""""""TT"##########,
         r##########"T"""""""""""""""""""""#########"""",""T"""""#________s#""""""""T"##########,
         r##########"T"""""""""T"""""""""""""""""""""""",""""""""#####w#####"""""""TT"##########,
         r##########"TT"""""""""""""""""T""---"""""""""","""""""""""""""""-"""T""""TT"##########,
@@ -104,6 +109,10 @@
         '0': Tile("standing stone"),
         '*': Tile("gate"),
         '@': Mark,
+        'S': Mark,
+        'Y': Mark,
+        'D': Mark,
+        'P': Mark,
         'W': Prop("well"),
         'L': Prop("lamp post"),
         'F': Prop("forge"),

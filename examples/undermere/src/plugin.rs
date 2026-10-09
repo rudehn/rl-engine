@@ -94,6 +94,9 @@ impl Plugin for UndermerePlugin {
         app.insert_resource(Currency(library.registries.tags.expect("gold"))).add_plugins(TradePlugin);
         app.insert_resource(library.registries).insert_resource(library.abilities).insert_resource(library.armory).insert_resource(library.bestiary);
         app.insert_resource(library.faces);
+        // What Mereholt's keepers may stock, read once with the rest: each
+        // stocking is drawn from it, never written back.
+        app.insert_resource(library.wares);
         // What the adventurer knows of the run's things, dealt out afresh
         // by every run's start and given back by a continued run's save;
         // nothing between two runs, so the next one's faces are its own.
@@ -135,7 +138,8 @@ impl Plugin for UndermerePlugin {
         app.add_systems(OnEnter(EngineState::Over), crate::tally::record);
         // A place fills the moment it is first entered: the engine's slots
         // in `PrefabSet::Fill`, then the depth, the ways through and the
-        // place's line in the log, the floor's people, the fixtures' light
+        // place's line in the log, the floor's people, Mereholt's keepers
+        // at their counters, the fixtures' light
         // and the floor's things, before the engine's loot in
         // `LootSet::Scatter`, each reading the same `PlaceEntered` through
         // its own cursor. After the slots, so the people keep off every
@@ -146,7 +150,14 @@ impl Plugin for UndermerePlugin {
         // out in a different order from one run to the next.
         app.add_systems(
             Turn,
-            (crate::tally::remember_depth, crate::stairs::link_places, crate::population::populate, crate::light::light_fixtures, crate::finds::lay)
+            (
+                crate::tally::remember_depth,
+                crate::stairs::link_places,
+                crate::population::populate,
+                crate::shops::open_shops,
+                crate::light::light_fixtures,
+                crate::finds::lay,
+            )
                 .chain()
                 .in_set(TurnSet::React)
                 .after(PrefabSet::Fill)
@@ -267,6 +278,14 @@ impl Plugin for UndermerePlugin {
         app.add_systems(Turn, crate::armory::keep_worth.in_set(TurnSet::Cleanup).before(CleanupSet::Remove));
         app.add_systems(Turn, crate::armory::keep_worth.in_set(TurnSet::Schedule));
         app.add_systems(Update, crate::armory::keep_worth.after(EngineSet::Turns).before(EngineSet::Present));
+        // A thing bought from a keeper is known for what the shelf named
+        // it: the deal is struck before the turns, and the kind learned
+        // before the frame's names and worths are given, so the pack calls
+        // it by its name the frame it lands there.
+        app.add_systems(
+            Update,
+            crate::shops::learn_by_buying.after(EngineSet::Turns).before(EngineSet::Present).before(crate::lore::keep_names).before(crate::armory::keep_worth),
+        );
         // A scroll that asks which thing to read it on is named as it asks:
         // after the keys that turn the pack to choosing, before the names.
         app.add_systems(Update, crate::lore::learn_by_asking.after(EngineSet::Input).before(EngineSet::Turns));

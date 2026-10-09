@@ -17,8 +17,19 @@
 //! there.
 //!
 //! Undermere's own rather than the engine's drop or scatter: a shelf is a
-//! fixed number of draws, some of them capped at one, on top of what is
+//! fixed number of draws, never the same item twice, on top of what is
 //! always there, and neither of those reads a count like that.
+//!
+//! The keepers are the engine's traders: [`open_shops`] stands each at its
+//! [`Post`], a mark in `mereholt.ron`, on Mereholt's first arrival, with
+//! the run's first stocking as the `Inventory` it sells from and its purse
+//! in gold beside it, offering the engine's `trade`. The engine runs the
+//! screen, the prices and the deals; what is Undermere's is what a keeper
+//! knows. Keepers name what they sell, so a thing on a shelf is worth its
+//! kind's price known or not ([`keep_worth`](crate::armory::keep_worth)),
+//! [`shelf_names`] lists every ware by its true name in the shop's own
+//! colour rather than by the face it wears in the pack, and
+//! [`learn_by_buying`] makes a bought thing's kind known.
 
 use std::ops::RangeInclusive;
 
@@ -26,13 +37,19 @@ use bevy::prelude::*;
 use rand::Rng;
 use rand::rngs::StdRng;
 use rl_engine::prelude::*;
+use rl_engine::rl_core::noun::listed;
 use rl_engine::rl_rules::loot::{DropRow, DropTable, LevelRow, LevelTable, LootRow, LootTable};
+use rl_engine::rl_ui::TradeView;
 use ron::extensions::Extensions;
 use ron::options::Options;
 use ron::value::RawValue;
 use serde::Deserialize;
 
-use crate::armory::{Armory, ItemDef, RING_LEVELS, STAFF_LEVEL};
+use crate::armory::{Armory, ItemDef, ItemKind, RING_LEVELS, STAFF_LEVEL, spawn_found, spawn_items};
+use crate::content::TOWNSFOLK;
+use crate::dungeon::TOWN;
+use crate::lore::Lore;
+use crate::run::Adventurer;
 
 const WARES_RON: &str = include_str!("../assets/wares.ron");
 
@@ -267,6 +284,159 @@ fn plain_level(def: Id<ItemDef>, registries: &Registries, armory: &Armory) -> Op
     Some(plain.max(0))
 }
 
+/// What taking up a keeper's `trade` offer costs, in hundredths of a step:
+/// one step, the turn the walk into them would have been. The deals on the
+/// screen it opens take none.
+pub const TRADE_TIME: u32 = 100;
+
+/// The share of a thing's worth every keeper pays for it, in hundredths:
+/// a quarter, rounded down by the engine's own `Trader::pays`.
+pub const PAYS_PCT: u32 = 25;
+
+/// A keeper's health. Nothing in Mereholt is harmed, so it is never spent;
+/// it is there so a keeper reads on the rail as the person it is.
+pub const KEEPER_HEALTH: i32 = 20;
+
+/// Where one keeper stands and how Mereholt shows them.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Post {
+    /// The keeper's name in `wares.ron`, which its shelf is drawn by.
+    pub keeper: &'static str,
+    /// What they are called: the role's words, until the townsfolk's
+    /// drawn names replace them.
+    pub called: &'static str,
+    /// The glyph of their mark in `mereholt.ron`.
+    pub mark: char,
+    /// The shop's own colour, `(r, g, b)` in `0..=1`: the keeper's, and
+    /// every ware's on their trade screen, where a face's colour would
+    /// tell which bottle in the pack is which.
+    pub color: (f32, f32, f32),
+}
+
+/// Mereholt's four keepers, in `wares.ron`'s order.
+pub const POSTS: [Post; 4] = [
+    Post { keeper: "smith", called: "the smith", mark: 'S', color: (0.95, 0.55, 0.25) },
+    Post { keeper: "apothecary", called: "the apothecary", mark: 'Y', color: (0.45, 0.85, 0.5) },
+    Post { keeper: "curio", called: "the curio dealer", mark: 'D', color: (0.75, 0.55, 0.95) },
+    Post { keeper: "temple", called: "the priest", mark: 'P', color: (0.6, 0.8, 1.0) },
+];
+
+/// The tags a keeper's [`Trader`] names: its own, or for one that buys
+/// anything, every tag a priced thing carries, so the engine's rule, a
+/// tag it names, buys exactly what [`Keeper::buys`] says.
+pub fn trader_tags(keeper: &Keeper, armory: &Armory) -> Vec<TagId> {
+    let mut tags: Vec<TagId> = match &keeper.buys {
+        Buys::Tags(tags) => tags.clone(),
+        Buys::Anything => armory.defs.iter().filter(|(_, d)| d.price.is_some()).flat_map(|(_, d)| d.tags.iter().map(|t| t.id())).collect(),
+    };
+    tags.sort();
+    tags.dedup();
+    tags
+}
+
+/// Stands each of Mereholt's keepers at their mark the first time the
+/// adventurer arrives there, with the run's first stocking on their
+/// shelves: stocking nought at the first tier, from the run's seed.
+///
+/// A keeper is an actor of the townsfolk, with no mind, so it keeps to
+/// its counter; it offers `trade` and nothing else, so a walk into it opens
+/// the shop. Its shelf is its `Inventory`, each ware made by the armory at
+/// the level the stocking rolled for it, as a thing found is, and its purse
+/// is gold coins in the same bag, which is what the engine pays out of.
+///
+/// In the arrival chain, after the slots are filled. A mark the town lacks
+/// is a broken `mereholt.ron`, and panics naming it.
+pub fn open_shops(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, shops: Shops) {
+    let arrived = entered.read().filter(|ev| ev.first && ev.map == TOWN).count() > 0;
+    let Some(place) = shops.map.place(TOWN).filter(|_| arrived) else { return };
+    let stocking = shops.wares.stocking(&shops.seed, 0, tier_of(0));
+    for post in POSTS {
+        let at =
+            place.spots.iter().find(|s| s.tag == post.mark as u32).unwrap_or_else(|| panic!("mereholt.ron marks no '{}' for {}", post.mark, post.called)).at;
+        let shelf = stocking.iter().find(|s| s.keeper == post.keeper).unwrap_or_else(|| panic!("wares.ron has no keeper {:?}", post.keeper));
+        shops.stand(&mut commands, post, shelf, at);
+    }
+}
+
+/// What [`open_shops`] reads.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Shops<'w> {
+    map: Res<'w, WorldMap>,
+    wares: Res<'w, Wares>,
+    seed: Res<'w, Seed>,
+    armory: Res<'w, Armory>,
+    registries: Res<'w, Registries>,
+    verbs: Res<'w, Verbs>,
+}
+
+impl Shops<'_> {
+    /// Spawns the keeper of `post` at `at` in Mereholt, carrying `shelf`.
+    fn stand(&self, commands: &mut Commands, post: Post, shelf: &Stocking, at: Point) -> Entity {
+        let (armory, registries) = (&*self.armory, &*self.registries);
+        let mut bag: Vec<Entity> = Vec::new();
+        for ware in &shelf.wares {
+            if armory.takes_levels(ware.def) {
+                bag.extend((0..ware.count).map(|_| spawn_found(commands, armory, ware.def, ware.level, registries)));
+            } else {
+                bag.extend(spawn_items(commands, armory, ware.def, ware.count, registries));
+            }
+        }
+        bag.extend(spawn_items(commands, armory, armory.defs.expect("gold coin"), shelf.purse, registries));
+        let keeper = self.wares.keeper(post.keeper).expect("every post's keeper is in wares.ron");
+        let trade = self.verbs.get(TRADE).expect("TradePlugin declares the trade verb");
+        let (r, g, b) = post.color;
+        commands
+            .spawn((
+                (Actor, Blocks, Position(at), OnMap(TOWN), Name::new(post.called), Glyph::new('@', Color::srgb(r, g, b)).on_layer(5)),
+                (Health::full(KEEPER_HEALTH), Faction(registries.factions.expect(TOWNSFOLK))),
+                (Trader { buys: trader_tags(keeper, armory), pays_pct: PAYS_PCT }, Offers(vec![Offering::new(trade, TRADE_TIME)]), Inventory { items: bag }),
+            ))
+            .id()
+    }
+}
+
+/// Makes known the kind of each thing the adventurer buys: the shelf named
+/// it, and now it is in the pack, so the face it wears there is no longer
+/// a secret worth keeping. Said nothing of in the log, since the trade
+/// screen already called it by its name; browsing teaches nothing, since
+/// only a [`Traded`] for a buy does.
+///
+/// In `Update`, after the turns, where the engine strikes a deal and
+/// writes its `Traded`, and before the frame's names and worths are given.
+pub fn learn_by_buying(
+    mut traded: MessageReader<Traded>,
+    things: Query<&ItemKind>,
+    adventurer: Query<(), With<Adventurer>>,
+    armory: Res<Armory>,
+    mut lore: ResMut<Lore>,
+) {
+    for ev in traded.read().filter(|ev| ev.deal == Deal::Bought && adventurer.contains(ev.customer)) {
+        let Ok(kind) = things.get(ev.item) else { continue };
+        let name = &armory.defs.get(kind.0).name;
+        if !lore.knows(name) {
+            lore.learn(name);
+        }
+    }
+}
+
+/// Lists every ware on a keeper's side of the trade screen by its kind's
+/// true name, drawn in the shop's own colour, the keeper's: never by the
+/// face a thing not yet known wears in the pack, and never in that face's
+/// colour, which would tell the same. So browsing says which kinds a shelf
+/// has and not which bottle in the pack is which. A level is not told
+/// either, `+?` or known, since a shop never tells one; what the adventurer
+/// carries keeps the name the pack gives it.
+///
+/// In `ViewSet::Annotate`, over the engine's rows.
+pub fn shelf_names(mut view: ResMut<TradeView>, things: Query<&ItemKind>, armory: Res<Armory>) {
+    let Some(color) = view.trader.as_ref().map(|t| t.glyph.fg) else { return };
+    for ware in &mut view.wares {
+        let Ok(kind) = things.get(ware.row.entity) else { continue };
+        ware.row.label = listed(&armory.defs.get(kind.0).name, ware.count);
+        ware.row.glyph.fg = color;
+    }
+}
+
 /// The file as written: the level rows, and the keepers left raw so their
 /// names are read with the registries in scope.
 #[derive(Deserialize)]
@@ -386,6 +556,8 @@ mod tests {
 
     use super::*;
     use crate::content::Library;
+    use crate::testing::{adventurer, at, give, headless, make, name_of, pack, settle, stand_on};
+    use rl_engine::rl_ui::TradeViewPlugin;
 
     fn library() -> Library {
         Library::load(&crate::content::effect_kinds(), &Moments::default())
@@ -583,5 +755,242 @@ mod tests {
         ] {
             assert!(joined.contains(said), "{said:?} not in:\n{joined}");
         }
+    }
+
+    /// A run begun in Mereholt with the trade screen's view kept as the
+    /// binary keeps it: the engine's rows, and the shelf's names over them.
+    fn in_mereholt(seed: u64) -> (App, Entity) {
+        let mut app = headless(RunSeed(seed));
+        app.add_plugins(TradeViewPlugin).add_systems(Update, shelf_names.in_set(ViewSet::Annotate));
+        let me = adventurer(&mut app);
+        (app, me)
+    }
+
+    /// The keeper called `called`.
+    fn keeper(app: &mut App, called: &str) -> Entity {
+        let world = app.world_mut();
+        let found = world.query_filtered::<(Entity, &Name), With<Trader>>().iter(world).find(|(_, n)| n.as_str() == called).map(|(e, _)| e);
+        found.unwrap_or_else(|| panic!("no keeper called {called:?}"))
+    }
+
+    /// Every cell beside `keeper` the adventurer could stand on: open
+    /// ground nothing stands in the way on.
+    fn beside(app: &mut App, keeper: Entity) -> Vec<Point> {
+        let at = app.world().get::<Position>(keeper).expect("standing").0;
+        let world = app.world_mut();
+        let taken: Vec<Point> =
+            world.query_filtered::<(&Position, &OnMap), With<Blocks>>().iter(world).filter(|(_, on)| on.0 == TOWN).map(|(p, _)| p.0).collect();
+        let map = app.world().resource::<WorldMap>();
+        (-1..=1).flat_map(|dy| (-1..=1).map(move |dx| at.offset(dx, dy))).filter(|p| map.is_walkable_on(TOWN, *p) && !taken.contains(p)).collect()
+    }
+
+    /// Stands the adventurer beside `keeper` and takes up its trade.
+    fn open_trade(app: &mut App, me: Entity, keeper: Entity) {
+        let cell = beside(app, keeper).first().copied().expect("somewhere to stand beside the keeper");
+        stand_on(app, me, cell);
+        let trade = app.world().resource::<Verbs>().get(TRADE).expect("TradePlugin declares it");
+        app.world_mut().write_message(Intent::new(me, Interact { target: keeper, verb: trade }));
+        settle(app);
+        assert!(app.world().resource::<Trading>().open().is_some(), "the trade opened");
+    }
+
+    /// What `keeper` carries but its gold, each thing with its kind.
+    fn shelf(app: &App, keeper: Entity) -> Vec<(Entity, Id<ItemDef>)> {
+        let world = app.world();
+        let gold = world.resource::<Armory>().defs.expect("gold coin");
+        let bag = &world.get::<Inventory>(keeper).expect("a shelf").items;
+        bag.iter().map(|i| (*i, world.get::<ItemKind>(*i).expect("a thing of a kind").0)).filter(|(_, def)| *def != gold).collect()
+    }
+
+    /// The first thing on the apothecary's shelf that is a potion of a
+    /// kind the adventurer does not know yet, with its kind's name.
+    fn unknown_potion(app: &mut App) -> Option<(Entity, String)> {
+        let apothecary = keeper(app, "the apothecary");
+        let (armory, lore) = (app.world().resource::<Armory>(), app.world().resource::<Lore>());
+        shelf(app, apothecary)
+            .into_iter()
+            .map(|(thing, def)| (thing, armory.defs.get(def).name.clone()))
+            .find(|(_, name)| name.starts_with("potion of") && !lore.knows(name))
+    }
+
+    /// Every keeper stands at its own mark the first time a run is in
+    /// Mereholt: one of the townsfolk, called by its role, offering trade
+    /// and nothing else, at a quarter of a thing's worth; and a cell of
+    /// the shop floor the adventurer can walk to from where the run
+    /// arrives is beside each, since an offer is taken up from beside.
+    #[test]
+    fn every_keeper_stands_at_its_mark_on_the_first_arrival_in_mereholt_on_the_townsfolk_side_offering_trade_over_a_span_of_seeds() {
+        for s in 0..3 {
+            let (mut app, me) = in_mereholt(s);
+            let townsfolk = app.world().resource::<Registries>().factions.expect(TOWNSFOLK);
+            let trade = app.world().resource::<Verbs>().get(TRADE).expect("TradePlugin declares it");
+            let spots = app.world().resource::<WorldMap>().place(TOWN).expect("Mereholt is built").spots.clone();
+            let arrived = at(&app, me);
+            let walked = walkable_from(&mut app, arrived);
+            for post in POSTS {
+                let k = keeper(&mut app, post.called);
+                let mark = spots.iter().find(|spot| spot.tag == post.mark as u32).expect("the mark is in mereholt.ron").at;
+                let world = app.world();
+                assert_eq!(world.get::<Position>(k).map(|p| p.0), Some(mark), "seed {s}: {} at their mark", post.called);
+                assert_eq!(world.get::<OnMap>(k).map(|m| m.0), Some(TOWN), "seed {s}: {} in Mereholt", post.called);
+                assert_eq!(world.get::<Faction>(k).map(|f| f.0), Some(townsfolk), "seed {s}: {} of the townsfolk", post.called);
+                let offers: Vec<VerbId> = world.get::<Offers>(k).expect("offers").0.iter().map(|o| o.verb).collect();
+                assert_eq!(offers, vec![trade], "seed {s}: {} offers trade and nothing else", post.called);
+                assert_eq!(world.get::<Trader>(k).map(|t| t.pays_pct), Some(25), "seed {s}: {} pays a quarter", post.called);
+                assert!(beside(&mut app, k).iter().any(|cell| walked.contains(cell)), "seed {s}: {} can be walked up to", post.called);
+            }
+            let world = app.world_mut();
+            assert_eq!(world.query_filtered::<(), With<Trader>>().iter(world).count(), POSTS.len(), "seed {s}: one keeper a post");
+        }
+    }
+
+    /// Every cell the adventurer could walk to in Mereholt from `from`,
+    /// through its doors, which a step opens, and round whatever stands in
+    /// the way.
+    fn walkable_from(app: &mut App, from: Point) -> Vec<Point> {
+        let world = app.world_mut();
+        let taken: Vec<Point> = world
+            .query_filtered::<(&Position, &OnMap), (With<Blocks>, Without<crate::run::Adventurer>)>()
+            .iter(world)
+            .filter(|(_, on)| on.0 == TOWN)
+            .map(|(p, _)| p.0)
+            .collect();
+        let map = app.world().resource::<WorldMap>();
+        let door = crate::dungeon::registry().expect("door");
+        let town = &map.place(TOWN).expect("Mereholt is built").terrain;
+        let open = |q: Point| map.is_walkable_on(TOWN, q) || town.get(q) == Some(door);
+        let (mut seen, mut next) = (vec![from], vec![from]);
+        while let Some(p) = next.pop() {
+            for q in (-1..=1).flat_map(|dy| (-1..=1).map(move |dx| p.offset(dx, dy))) {
+                if open(q) && !taken.contains(&q) && !seen.contains(&q) {
+                    seen.push(q);
+                    next.push(q);
+                }
+            }
+        }
+        seen
+    }
+
+    /// A keeper's shelf is the run's first stocking at the first tier,
+    /// ware for ware, a thing that takes levels one apiece at the level
+    /// rolled for it, and its purse two hundred gold beside it.
+    #[test]
+    fn a_keepers_shelf_is_stocking_nought_at_tier_one_and_its_purse_two_hundred_gold_over_a_span_of_seeds() {
+        for s in 0..3 {
+            let (mut app, _) = in_mereholt(s);
+            let (wares, armory) = (app.world().resource::<Wares>().clone(), app.world().resource::<Armory>().clone());
+            let gold = armory.defs.expect("gold coin");
+            let stocking = wares.stocking(&Seed(RunSeed(s)), 0, 1);
+            for post in POSTS {
+                let k = keeper(&mut app, post.called);
+                let drawn = stocking.iter().find(|st| st.keeper == post.keeper).expect("every keeper is stocked");
+                let expected: Vec<Ware> = drawn
+                    .wares
+                    .iter()
+                    .flat_map(|w| if armory.takes_levels(w.def) { vec![Ware { count: 1, ..*w }; w.count as usize] } else { vec![*w] })
+                    .collect();
+                let world = app.world();
+                let (mut carried, mut purse) = (Vec::new(), 0);
+                for item in &world.get::<Inventory>(k).expect("a shelf").items {
+                    let def = world.get::<ItemKind>(*item).expect("a kind").0;
+                    let count = world.get::<Stack>(*item).map_or(1, |st| st.count);
+                    if def == gold {
+                        purse += count;
+                    } else {
+                        carried.push(Ware { def, count, level: world.get::<Enchant>(*item).map_or(0, |e| e.level) });
+                    }
+                }
+                assert_eq!(carried, expected, "seed {s}: {}'s shelf", post.called);
+                assert_eq!(purse, PURSE_PER_TIER, "seed {s}: {}'s purse", post.called);
+            }
+        }
+    }
+
+    /// Keepers name what they sell: an unknown potion on the shelf is for
+    /// sale at its kind's price, where one of the same kind in the pack is
+    /// worth nothing to anybody until its kind is known.
+    #[test]
+    fn an_unknown_potion_on_a_shelf_has_its_kinds_worth_and_is_for_sale_over_a_span_of_seeds() {
+        for s in 0..3 {
+            let (mut app, me) = in_mereholt(s);
+            let Some((potion, name)) = unknown_potion(&mut app) else { panic!("seed {s}: the apothecary sells no potion not yet known") };
+            let price = app.world().resource::<Armory>().defs.get(app.world().resource::<Armory>().defs.expect(&name)).price;
+            assert_eq!(app.world().get::<Worth>(potion).map(|w| w.0), price, "seed {s}: {name} on the shelf");
+            let mine = make(&mut app, &name);
+            give(&mut app, me, mine);
+            settle(&mut app);
+            assert_eq!(app.world().get::<Worth>(mine), None, "seed {s}: {name} in the pack");
+            let apothecary = keeper(&mut app, "the apothecary");
+            open_trade(&mut app, me, apothecary);
+            let view = app.world().resource::<TradeView>();
+            let row = view.wares.iter().find(|r| r.row.entity == potion).unwrap_or_else(|| panic!("seed {s}: {name} on the screen"));
+            assert_eq!(row.each, price, "seed {s}: {name} priced");
+        }
+    }
+
+    /// The trade screen lists a ware not yet known by its kind's true name
+    /// in the shop's own colour, never by the face or the face's colour it
+    /// wears in the pack.
+    #[test]
+    fn on_the_trade_screen_a_ware_not_yet_known_reads_by_its_true_name_in_the_shops_colour_not_its_face() {
+        let (mut app, me) = in_mereholt(2);
+        let (potion, name) = unknown_potion(&mut app).expect("the apothecary sells a potion not yet known");
+        let apothecary = keeper(&mut app, "the apothecary");
+        open_trade(&mut app, me, apothecary);
+        let face = name_of(&app, potion);
+        assert_ne!(face, name, "the potion wears its face");
+        let view = app.world().resource::<TradeView>();
+        let row = view.wares.iter().find(|r| r.row.entity == potion).expect("on the screen");
+        assert_eq!(row.row.label, listed(&name, row.count), "by its true name");
+        let (r, g, b) = POSTS.iter().find(|p| p.keeper == "apothecary").expect("a post").color;
+        assert_eq!(row.row.glyph.fg, Color::srgb(r, g, b), "in the apothecary's colour, not its face's");
+    }
+
+    /// Looking over the shelf teaches nothing; buying a potion makes its
+    /// kind known, so the pack calls it by its name.
+    #[test]
+    fn buying_a_potion_makes_its_kind_known_and_browsing_does_not() {
+        let (mut app, me) = in_mereholt(2);
+        let (potion, name) = unknown_potion(&mut app).expect("the apothecary sells a potion not yet known");
+        let apothecary = keeper(&mut app, "the apothecary");
+        let gold = make(&mut app, "gold coin");
+        app.world_mut().get_mut::<Stack>(gold).expect("gold stacks").count = 5000;
+        give(&mut app, me, gold);
+        open_trade(&mut app, me, apothecary);
+        for _ in 0..4 {
+            app.update();
+        }
+        assert!(!app.world().resource::<Lore>().knows(&name), "browsing taught nothing of {name}");
+        app.world_mut().write_message(Buy { customer: me, trader: apothecary, item: potion, count: 1 });
+        app.update();
+        assert!(app.world().resource::<Lore>().knows(&name), "bought, {name} is known");
+        app.update();
+        assert!(pack(&app, me).iter().any(|(called, _)| *called == name), "and called so in the pack: {:?}", pack(&app, me));
+    }
+
+    /// Each keeper's `Trader` buys exactly the kinds `wares.ron` says it
+    /// does, by the engine's own rule; and the smith turns a potion away.
+    #[test]
+    fn each_keeper_buys_only_its_own_kinds_and_the_smith_refuses_a_potion() {
+        let library = library();
+        for keeper in library.wares.keepers() {
+            let trader = Trader { buys: trader_tags(keeper, &library.armory), pays_pct: PAYS_PCT };
+            for (_, def) in library.armory.defs.iter().filter(|(_, d)| d.price.is_some()) {
+                let tags: Vec<TagId> = def.tags.iter().map(|t| t.id()).collect();
+                assert_eq!(trader.buys(&tags), keeper.buys(def), "{} and {}", keeper.name, def.name);
+            }
+        }
+        let (mut app, me) = in_mereholt(0);
+        let healing = make(&mut app, "potion of healing");
+        give(&mut app, me, healing);
+        app.world_mut().resource_mut::<Lore>().learn("potion of healing");
+        let smith = keeper(&mut app, "the smith");
+        open_trade(&mut app, me, smith);
+        let view = app.world().resource::<TradeView>();
+        let row = view.pack.iter().find(|r| r.row.entity == healing).expect("the potion on the pack's side");
+        assert_eq!(row.refused, Some(TradeRefusal::NotBought), "the smith buys no potions");
+        app.world_mut().write_message(Sell { customer: me, trader: smith, item: healing, count: 1 });
+        app.update();
+        assert!(app.world().get::<Inventory>(me).expect("a pack").contains(healing), "and the potion stays in the pack");
     }
 }

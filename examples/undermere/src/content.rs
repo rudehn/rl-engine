@@ -295,7 +295,7 @@ pub fn registries() -> Registries {
         factions: Registry::from_defs(["adventurer", "beasts", "goblins", "undead", "dar", CAPTIVE, DISCORDANT, TOWNSFOLK].map(FactionDef::new).to_vec())
             .unwrap(),
         tags: Registry::from_defs(
-            ["weapon", "armor", "potion", "scroll", "staff", "wand", "ring", "gold", "arrow", "light", "thrown"].map(TagDef::new).to_vec(),
+            ["weapon", "armor", "potion", "scroll", "staff", "wand", "ring", "gold", "arrow", "light", "thrown", "artifact"].map(TagDef::new).to_vec(),
         )
         .unwrap(),
         slots: Registry::from_defs(["main hand", "off hand", "head", "body", "left finger", "right finger", "light"].map(SlotDef::new).to_vec()).unwrap(),
@@ -510,7 +510,7 @@ mod tests {
         for slot in ["main hand", "off hand", "head", "body", "left finger", "right finger", "light"] {
             assert!(r.slots.id(slot).is_some(), "{slot}");
         }
-        for tag in ["weapon", "armor", "potion", "scroll", "staff", "wand", "ring", "gold", "arrow", "light", "thrown"] {
+        for tag in ["weapon", "armor", "potion", "scroll", "staff", "wand", "ring", "gold", "arrow", "light", "thrown", "artifact"] {
             assert!(r.tags.id(tag).is_some(), "{tag}");
         }
         for (one, other) in PAIRS {

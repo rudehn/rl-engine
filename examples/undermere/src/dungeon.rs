@@ -201,7 +201,7 @@ impl Biome {
 /// the cathedral's flooded floor or the black pools before the throne.
 /// Deep water, the lake and lava stop a body and nothing else: they are
 /// seen across and shot over.
-fn registry() -> TileRegistry {
+pub(crate) fn registry() -> TileRegistry {
     let wading = |name: &str| TileProps::floor(name).move_cost(200);
     let mut tiles = TileRegistry::new();
     tiles
