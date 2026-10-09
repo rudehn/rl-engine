@@ -110,6 +110,9 @@ Whatever an actor answers lands as its own doing without a marker, since an acto
 `died` takes the prop's road through a remnant, which carries the actor's name and lands as itself, so it stands in for the actor: a foe its burst kills is its kill rather than its killer's, and the log and a record of the death name the actor.
 The first build credited the dead actor's own entity instead, and was replaced the same day because nothing could say its name: the body is despawned by the time the burst lands, and a record of a player's death is written a frame after that.
 An actor's own triggers spare the actor they belong to, unlike a prop's or a thing's, since a bite, an aura or a cloud it gives off is aimed at whoever is round it.
+What a remnant carries beyond `Name` widened the same week into `RemnantKeeps`, a resource of component ids rather than a fixed pair of fields: a prop's broken look and an actor's dead one both want to be told apart in the log by more than a plain noun, and a glyph is a `rl-ui` type a tier 2 crate cannot name.
+`app.keep_on_remnant::<C>()` is how a plugin above this one adds to the list, and `NarratorPlugin` adds `Glyph` the moment it builds, so the log colours a dead actor's or a broken prop's name as it colours a living one's without this crate learning what a colour is.
+`RemnantKeeps::copy` queues the copy through `clone_with_opt_in`, at the next sync point while the original is still there to read, which is why `report_died` and `report_destroyed` both take the resource and call it rather than building the carrier's extra components by hand: one list, read by both callers, is one place to add a third.
 
 Two timings moved against the old prop triggers, which both landed in `TurnSet::React`:
 

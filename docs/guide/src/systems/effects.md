@@ -17,7 +17,8 @@
             crates/rl-bevy/src/ability.rs
             crates/rl-bevy/src/cue.rs
             crates/rl-grid/src/targeting.rs
-     fingerprint: afa62204 -->
+            crates/rl-ui/src/narrate.rs
+     fingerprint: bb4b4dab -->
 
 # Effects
 
@@ -37,7 +38,7 @@ A game registers an effect of its own with `app.add_effect::<E>()` and a moment 
 
 ## The model
 
-`Effect` is a type with `apply(&self, &Landing, &mut EffectWorld)` and a `describe(&self, &Registries, EffectBonus)` a menu reads with that bonus added, and `FromArgs` builds one from the text arguments a content file gave it.
+`Effect` is a type with `apply(&self, &Landing, &mut EffectWorld)`, a `describe(&self, &Registries, EffectBonus)` a menu reads with that bonus added, `FromArgs` to build one from the text arguments a content file gave it, and a `would_act(&self, &Landing, &World)` that answers true unless an effect says otherwise, read from the world without changing it: the engine's `Mend` says true only with someone hurt among the landing's targets, so a game answering it for an effect of its own says the same of whatever its own effect needs there to act on.
 Every engine effect's arguments refuse a field they do not name, so a typo fails the load naming it rather than leaving a number at its default.
 `EffectKinds` files each under its `KIND`, and `Effects::build` turns a list of `EffectSpec` into built effects or reports every spec that would not build.
 `Landing` is what an effect sees: the user, what landed it as a `Source` of `Ability`, `Trigger { on, moment }` or `Offer`, the origin and aim, every cell covered and every actor under them, `bonus`, the `EffectBonus` of whatever landed it, which `land_triggers` copies off the carrier and which is the default, adding nothing, for an ability, an offer or a plain thing, and `on`, the thing a use was made on when the use asked its user for one.
@@ -56,7 +57,8 @@ It describes itself with ` while worn` after the turns, so the bag says so under
 The built `Trigger` keeps its `every`, and `Triggers::pulse_every` reads a carrier's back, so a game building a worn thing's `Pulse` takes its period from the trigger rather than keeping a second copy, and `Triggers::targeting` and `Triggers::asks` read back how a carrier's use is pointed and what it asks for.
 A spec with no list takes the definition's `shared` one, and a spec with neither fails, since a trigger that does nothing is a typo.
 `Triggers` is the component, and each copy counts its own `fires`, so springing one cable spends nothing of another.
-`Fired { on, moment, by, at }` is how a subsystem reports a moment, and all it does: items report `use` on an accepted use, where its user stands or at the cell an aimed one was pointed at, and `pulse` for each worn `Pulse` whose period came round, throwing reports `land` where a throw comes to rest, combat reports `fire` for each attack made with a worn thing and `hit` at each struck actor's cell, and props report `entered` and `destroyed`.
+`Fired { on, moment, by, at }` is how a subsystem reports a moment, and all it does: items report `use` on an accepted use, where its user stands or at the cell an aimed one was pointed at, and `pulse` for each worn `Pulse` whose period came round, throwing reports `land` where a throw comes to rest, combat reports `fire` for each attack made with a worn thing, `hit` at each struck actor's cell and the attacker's own `hit` beside it, and `struck` for the one struck, before its damage lands, and props and actors alike report `entered`, `destroyed` and `died`.
+An actor that carries `Triggers` answers its own `hit`, `struck` and `died`, credited to it directly rather than to whoever it names `by`, since an actor is the one a thing is used by rather than a thing used: a `struck` aura spares the actor it is on, unlike a prop's or a thing's area, which catches everyone standing in it.
 `land_triggers` reads each `Fired` in the order written, takes the entity's triggers for that moment in list order, skips any spent, cues a blast over the cells for one with a `look`, going out from the cell the moment happened on, lands the list over `area_cells`, the one cell or the burst `rl_grid::burst` works out inside the loaded window, with everyone in the area as a target, the one who set it off included, and counts `fires` down.
 A `use` of a carrier whose `Consumable` has nothing left lands nothing at all, read before that use's charge is spent, since only a thing not yet known is let be used empty.
 The landing's user, who a hit is credited to, is `by`, or the carrier itself when it is `LandsAsItself`, which every armed prop is.
@@ -64,7 +66,9 @@ A use made on one of its user's things is reported beside its `Fired` by a `Fire
 A use with a `targeting` is landed as an ability is, by `Bystanders::land` from wherever its user stands to the cell it was pointed at, on whoever its aim wants under its shape, the landing worked out as the use is made.
 With a look it is seen to fly there and to burst in the same look, and while something watches it waits in `Airborne<UseLanding>` until its flight has been seen, when `land_aimed_uses` lands it ahead of the pass's other triggers; without a look it lands at once.
 A `Remnant` is a carrier that lands its triggers once and is despawned, for something gone by the time they land: it holds its moment, `by` and `at` as data, and `report_remnants` writes its `Fired` in the pass that lands it, so a pass held back while something is shown loses nothing.
-A broken prop leaves one for its `destroyed` moment, and a watched shot from a thing its last charge spent leaves one for its `hit`.
+A broken prop leaves one for its `destroyed` moment, a dead actor one for its `died`, and a watched shot from a thing its last charge spent leaves one for its `hit`; each `LandsAsItself`, so what it lands is credited to the thing or the actor it stands in for rather than to its killer.
+What a remnant carries beyond its triggers is `RemnantKeeps`, a resource of the components it copies across, the `Name` by default so the log and a record of a death can still say whose, and a plugin adds to it with `app.keep_on_remnant::<C>()`, the narrator's own `NarratorPlugin` adding `Glyph` so a dead actor's or a broken prop's name keeps the colour a living one's would have.
+`bury_remnants`, in `Last`, despawns a remnant once every system has read this frame's landings, so whatever names it later in the same pass, the log among them, still finds it.
 
 ## Using it
 
@@ -119,7 +123,8 @@ One list can be delivered several ways, which is the whole of the potion model: 
 A thing's use may be aimed, and it is aimed by an ability's rule rather than one of its own: its `targeting` is the `Targeting` an ability's mode, aim and sight make, landed by the same `Bystanders::land`, so a bolt from the pack and a bolt an actor knows reach the same cells and catch the same people, while the list it lands is still the thing's.
 A use made on a thing carries the thing to its effects and no further, since the engine's effects land on `targets` and never read `Landing::on`: what makes a thing better or known is the game's, written as an effect of its own.
 A burst stops at walls and not at whoever stands in it, and it is the call an ability's `Ball` bursts with, so a grenade and a fireball of one radius reach the same cells and neither reaches round a wall.
-A trap lands in the pass it was stepped on, and a prop's `destroyed` trigger a pass after the blow, since a death is known only after damage.
+A trap lands in the pass it was stepped on, and a prop's or an actor's `destroyed` or `died` trigger a pass after the blow, since a death is known only after damage; an actor's `struck` lands before that, in the same pass as the blow, so a killing blow sets off `struck` and then, the pass after, `died`.
+Whether a self-aimed ability or use would act on anything at all is the engine's own question to ask and the effect's to answer: a game's effect that needs something there to act on says so through `would_act`, and one that needs nothing is kept by every tactic that asks, as it always was.
 A trap's harm is the trap's own and not the doing of whoever stepped on it, so the log never says they hurt themselves; who stepped on it is still on the report.
 Charges are not here: a game with triggers and no costs adds no `ConsumablesPlugin`, and `spend_charges` reads `Fired` after `land_triggers` so what the last charge did lands before the thing is gone.
 The engine carries a bonus on the carrier and never learns what a level is: the game writes the `EffectBonus` with the level applied when it spawns the thing, and an effect adds it without asking where it came from, so an enchant, a blessing and a curse are one number to the engine and three rules to the game.
