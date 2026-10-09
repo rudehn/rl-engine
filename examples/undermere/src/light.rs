@@ -41,8 +41,11 @@ pub const WINDOW: LightDef = LightDef { radius: 3, color: (1.0, 0.76, 0.42), fli
 /// A forge or a hearth: orange, and restless.
 pub const FIRE: LightDef = LightDef { radius: 4, color: (1.0, 0.5, 0.2), flicker: 0.35 };
 /// A camp's fire in the open: wider than a hearth's, so a sleeping band
-/// round it is seen from across the dark before it is reached.
-pub const CAMPFIRE: LightDef = LightDef { radius: 5, color: (1.0, 0.55, 0.22), flicker: 0.4 };
+/// round it is seen from across the dark before it is reached. Yellower
+/// than the forge's own orange: light multiplies a tile's colour channel
+/// by channel, and an orange light on the Fungal Deeps' green moss, which
+/// has almost no red to warm, came out darker than the dark round it.
+pub const CAMPFIRE: LightDef = LightDef { radius: 5, color: (1.0, 0.82, 0.5), flicker: 0.4 };
 /// Candles, on an altar or a candelabra: pale gold, and steadier than fire.
 pub const CANDLES: LightDef = LightDef { radius: 4, color: (1.0, 0.88, 0.58), flicker: 0.2 };
 /// A brazier left burning in the Upper Halls: wide enough to light the room
