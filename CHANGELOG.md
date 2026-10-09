@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- A walk into someone that brings up the offers screen no longer also logs them as in the way: the narrator's `Phrase::YouBumpInto` is said only of a `Bumped` without `offers`, so walking into a keeper whose one offer has a price, or into anything offering several things or one refused, is asked about on the screen alone.
+  A game without `OffersPanel` hears nothing from such a bump, where it heard `The clerk is in the way.`; one that wants a line for it reads `Bumped { offers: true }` and tells its own.
+
 - Walking into someone never spends currency: a lone offer with a price is no longer taken up by a bump, which reports `Bumped { offers: true }` instead so the offers screen asks, as it does for a refused or a second offer; an unpriced lone offer is still taken up by walking into it.
   Both screens name the currency alike, by the `Name` of a piece of it counted with the new `rl_ui::view::sum_of(name, amount)`, so the offers screen reads `needs 50 scrips` where it read `needs 50 scrip` from the tag, and `OffersView::currency` is now a piece's name.
 

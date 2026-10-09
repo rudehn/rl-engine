@@ -722,7 +722,8 @@ mod tests {
     /// Walking into the priest asks rather than pays: the offers screen
     /// opens listing `trade` and the three rites, each rite at its price,
     /// and the press that opened it spends nothing, takes nothing up and
-    /// moves nobody, since the walk key never spends gold.
+    /// moves nobody, since the walk key never spends gold; nor does the log
+    /// call the priest in the way.
     #[test]
     fn walking_into_the_priest_opens_the_offers_screen_with_each_rites_price_and_pays_nothing() {
         let mut app = on_screen(RunSeed(7));
@@ -762,5 +763,7 @@ mod tests {
         assert_eq!(undermere::testing::pack(&app, me), mine, "nothing paid");
         assert_eq!(undermere::testing::pack(&app, priest), theirs, "and nothing taken");
         assert_eq!(undermere::testing::at(&app, me), from, "and nobody stepped");
+        let said = undermere::testing::said(&app);
+        assert!(!said.iter().any(|line| line.contains("in the way")), "the priest is asked about, not in the way: {said:#?}");
     }
 }

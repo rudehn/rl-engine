@@ -174,7 +174,8 @@ pub enum Phrase {
     Leaves,
     /// Someone came through to another map after you.
     FollowsYou,
-    /// You walked into someone you would not strike.
+    /// You walked into someone you would not strike, and who offers you
+    /// nothing; one who offers something is asked about on a screen.
     YouBumpInto,
     /// You changed places with someone.
     YouSwapWith,
@@ -626,7 +627,10 @@ pub fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witn
         }
     }
     for b in heard.bumps.read() {
-        if witness.is_you(b.actor) {
+        // A bump that came to nothing because of what it offers is the
+        // offers screen's to ask or explain, not something in the way:
+        // saying both read as a shopkeeper blocking the door to the shop.
+        if witness.is_you(b.actor) && !b.offers {
             rows.push(say(Phrase::YouBumpInto, Some(b.actor), Some(b.into)));
         }
     }
@@ -1901,5 +1905,36 @@ mod tests {
 
         let said = spoken(&stage, &["Something", "The line droid"]);
         assert_eq!(said, vec!["Something shoots you for 3.".to_string()], "spoken, but not named: {said:#?}");
+    }
+
+    /// Walking into someone whose one offer has a price brings up the
+    /// offers screen, so the log does not also call them in the way; one
+    /// who offers nothing still is. The fault this guards logged a
+    /// keeper as in the way every time the walk key asked to trade.
+    #[test]
+    fn a_walk_into_someone_with_a_priced_offer_is_not_said_to_be_in_the_way_and_one_with_none_is() {
+        let mut stage = Stage::new_with(NarratorPlugin::default(), |app| {
+            app.add_plugins(PropsPlugin);
+            app.insert_resource(Seed(rl_bevy::testing::TEST_SEED));
+            app.add_verb("strip");
+        });
+        let tags = rl_rules::Registry::from_defs(vec![rl_rules::TagDef::new("scrip")]).expect("one tag");
+        stage.app.insert_resource(Currency(tags.expect("scrip")));
+        let (player, at) = (stage.player, stage.at);
+        let strip = stage.app.world().resource::<Verbs>().get("strip").expect("declared");
+        let mut spawn = |name: &'static str, p: Point, offers: Vec<Offering>| {
+            stage.app.world_mut().spawn((Actor, Blocks, Position(p), OnMap(MapId::SURFACE), Health::full(5), Name::new(name), Offers(offers))).id()
+        };
+        spawn("clerk", at.offset(1, 0), vec![Offering::new(strip, 100).priced(20)]);
+        spawn("loiterer", at.offset(-1, 0), Vec::new());
+        stage.tick();
+        stage.app.world_mut().write_message(Intent::new(player, Bump(rl_core::Direction::East)));
+        stage.tick();
+        let said: Vec<String> = lines(&stage).into_iter().map(|(text, _)| text).collect();
+        assert!(!said.iter().any(|t| t.contains("in the way")), "the clerk is asked about, not in the way: {said:?}");
+        stage.app.world_mut().write_message(Intent::new(player, Bump(rl_core::Direction::West)));
+        stage.tick();
+        let said: Vec<String> = lines(&stage).into_iter().map(|(text, _)| text).collect();
+        assert!(said.contains(&"The loiterer is in the way.".to_string()), "{said:?}");
     }
 }

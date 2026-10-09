@@ -67,7 +67,8 @@ pub struct Bumped {
     /// one thing, which a walk key cannot choose between, or one thing
     /// refused, which it cannot explain. A screen asks or explains on
     /// these, and only these: an ally offering something is still bumped
-    /// as an ally, and asks nothing.
+    /// as an ally, and asks nothing. The narrator says nothing of these,
+    /// since what a screen asks about is not something in the way.
     pub offers: bool,
 }
 
