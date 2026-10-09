@@ -31,7 +31,7 @@ pub mod tileset;
 pub use capture::CapturePlugin;
 pub use fullscreen::{FULLSCREEN, FullscreenPlugin};
 pub use layout::{Fit, fit};
-pub use map_view::{Glyph, LightOverlay, MapView, MapViewPlugin, TileAppearance};
+pub use map_view::{Glyph, Landmark, LightOverlay, MapView, MapViewPlugin, TileAppearance};
 pub use particles::{Animation, Beat, Burst, ParticleStyle, Particles, ParticlesPlugin, Spark, Trail};
 pub use pointer::Pointer;
 pub use shade::{Memory, Shading, Vary};
@@ -42,7 +42,7 @@ pub use tileset::Tileset;
 pub mod prelude {
     pub use crate::capture::CapturePlugin;
     pub use crate::fullscreen::FullscreenPlugin;
-    pub use crate::map_view::{Glyph, LightOverlay, MapView, MapViewPlugin, TileAppearance};
+    pub use crate::map_view::{Glyph, Landmark, LightOverlay, MapView, MapViewPlugin, TileAppearance};
     pub use crate::particles::{Animation, Beat, Burst, ParticleStyle, Particles, ParticlesPlugin, Trail};
     pub use crate::pointer::Pointer;
     pub use crate::shade::{Memory, Shading, Vary};

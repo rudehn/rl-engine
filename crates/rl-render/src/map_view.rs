@@ -1,7 +1,9 @@
 //! The map, drawn from the player's point of view.
 //!
 //! Visible tiles are drawn lit, remembered tiles in the colours of
-//! memory, unknown tiles blank. What a tile looks like is the game's
+//! memory, unknown tiles blank. What stands on a tile is drawn only while
+//! it is in sight, but for a [`Landmark`], which memory keeps as it keeps
+//! the tile. What a tile looks like is the game's
 //! business: it fills a [`TileAppearance`] table keyed by [`TileId`], with
 //! a glyph, both colours, and how the tile varies from cell to cell. With
 //! lighting turned on, a visible tile's glyph and background and whatever
@@ -38,6 +40,19 @@ pub struct Glyph {
     /// Draw order among entities on one tile; higher wins.
     pub layer: i32,
 }
+
+/// An entity drawn from memory: out of sight on a cell the player has
+/// seen, its glyph is drawn in the colours of memory, as the tile under it
+/// is, where anything else is drawn only while it is in sight.
+///
+/// For what stands still and is worth finding again, a way through or a
+/// mark a game leaves where it means the player to come back to, never
+/// for what moves: memory is kept a cell at a time, not a thing at a time,
+/// so a landmark is drawn wherever its cell is remembered, even if it was
+/// put there after the cell was last seen. A game puts one on what it
+/// knows the player saw or was there from the place's first sight.
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub struct Landmark;
 
 impl Glyph {
     /// A glyph on the default layer.
@@ -416,6 +431,10 @@ pub struct LightOverlay(pub bool);
 /// enough to read as motion, slow enough that a still frame costs nothing.
 const ANIMATION_RATE: f32 = 12.0;
 
+/// What is drawn of one entity on the map: where, as what, on which map,
+/// and whether memory keeps it.
+type Drawn = (&'static Position, &'static Glyph, Option<&'static OnMap>, Has<Landmark>);
+
 /// What the map is drawn from.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Scene<'w, 's> {
@@ -430,7 +449,7 @@ pub struct Scene<'w, 's> {
     /// What is drawn on the map. A prop nobody has spotted is not: being
     /// unseen is the whole of what `Hidden` means, and it is one filter
     /// here rather than a second drawing path.
-    glyphs: Query<'w, 's, (&'static Position, &'static Glyph, Option<&'static OnMap>), Without<Hidden>>,
+    glyphs: Query<'w, 's, Drawn, Without<Hidden>>,
     fields: Res<'w, FieldAppearance>,
     shown: Res<'w, ShownFields>,
     registries: Option<Res<'w, Registries>>,
@@ -479,8 +498,10 @@ pub fn draw_map(mut terminal: ResMut<Terminal>, scene: Scene) {
         view.set(&mut terminal, p, cell);
     }
     let mut drawn: Vec<(Point, i32)> = Vec::new();
-    for (pos, glyph, on) in glyphs {
-        if on.map(|m| m.0).unwrap_or(MapId::SURFACE) != here || !viewshed.is_some_and(|v| v.can_see(pos.0)) {
+    for (pos, glyph, on, landmark) in glyphs {
+        let seen = sees(pos.0);
+        let recalled = !seen && landmark && knowledge.is_explored(pos.0);
+        if on.map(|m| m.0).unwrap_or(MapId::SURFACE) != here || !(seen || recalled) {
             continue;
         }
         if view.to_screen(pos.0).is_none() {
@@ -495,6 +516,7 @@ pub fn draw_map(mut terminal: ResMut<Terminal>, scene: Scene) {
             drawn.push((pos.0, glyph.layer));
         }
         let fg = match lighting {
+            _ if recalled => look.memory.recall(glyph.fg),
             Some(l) => look.shading.light(glyph.fg, l.at(pos.0), pos.0, t),
             None => glyph.fg,
         };
@@ -532,6 +554,12 @@ mod tests {
     /// two tiles east of it and something standing behind that wall:
     /// the glyphs drawn at the wall, behind it and on the thing.
     fn drawn_for(sight: Viewshed) -> [char; 3] {
+        drawn_with(sight, false).map(|cell| cell.glyph)
+    }
+
+    /// [`drawn_for`], with the thing behind the wall a [`Landmark`] when
+    /// `landmark` is, and seen before the wall goes up: the cells drawn.
+    fn drawn_with(sight: Viewshed, landmark: bool) -> [Cell; 3] {
         use rl_bevy::components::RevealsMap;
         let mut app = rl_bevy::plugin::headless_app();
         app.add_plugins((FovPlugin, rl_bevy::world::StreamingPlugin, MapViewPlugin::new(Rect::new(0, 0, 40, 20))));
@@ -544,7 +572,10 @@ mod tests {
         look.set(floor, Cell::new('.', Color::WHITE));
         app.insert_resource(look);
         app.world_mut().spawn((Player, Position(start), sight, RevealsMap));
-        app.world_mut().spawn((Position(start.offset(4, 0)), Glyph { ch: 'g', fg: Color::WHITE, layer: 1 }));
+        let thing = app.world_mut().spawn((Position(start.offset(4, 0)), Glyph { ch: 'g', fg: Color::WHITE, layer: 1 })).id();
+        if landmark {
+            app.world_mut().entity_mut(thing).insert(Landmark);
+        }
         app.world_mut().resource_mut::<NextState<rl_bevy::state::EngineState>>().set(rl_bevy::state::EngineState::Playing);
         app.update();
         app.update();
@@ -558,7 +589,7 @@ mod tests {
         let terminal = app.world().resource::<Terminal>();
         let at = |dx: i32| {
             let s = view.to_screen(start.offset(dx, 0)).expect("on screen");
-            terminal.get(s.x, s.y).expect("a cell").glyph
+            terminal.get(s.x, s.y).expect("a cell")
         };
         [at(2), at(3), at(4)]
     }
@@ -573,6 +604,38 @@ mod tests {
             "an ordinary sight stops at the wall: the ground behind is remembered, and what stands on it is not drawn"
         );
         assert_eq!(drawn_for(Viewshed::everywhere()), ['#', '.', 'g'], "one that sees everywhere is shown what is behind it");
+    }
+
+    /// A landmark seen and then walled off is still drawn where it stood,
+    /// in the colours of memory rather than its own, where anything else
+    /// behind the wall is not drawn at all.
+    #[test]
+    fn a_landmark_out_of_sight_is_drawn_from_memory_on_a_cell_once_seen() {
+        let [_, _, thing] = drawn_with(Viewshed::new(8), true);
+        assert_eq!(thing.glyph, 'g', "drawn behind the wall");
+        assert_eq!(thing.fg, Memory::default().recall(Color::WHITE), "in memory's colours");
+    }
+
+    /// A landmark on a cell nobody has seen is drawn no more than anything
+    /// else there: memory draws what was seen, and nothing else.
+    #[test]
+    fn a_landmark_on_a_cell_never_seen_is_not_drawn() {
+        let mut app = rl_bevy::plugin::headless_app();
+        app.add_plugins((FovPlugin, rl_bevy::world::StreamingPlugin, MapViewPlugin::new(Rect::new(0, 0, 40, 20))));
+        app.insert_resource(Terminal::new(40, 20, Vec2::ONE));
+        let start = rl_bevy::testing::surface(&mut app);
+        let mut look = TileAppearance::new();
+        let floor = rl_grid::TileRegistry::standard().expect("floor");
+        look.set(floor, Cell::new('.', Color::WHITE));
+        app.insert_resource(look);
+        app.world_mut().spawn((Player, Position(start), Viewshed::new(2)));
+        app.world_mut().spawn((Position(start.offset(6, 0)), Glyph { ch: 'g', fg: Color::WHITE, layer: 1 }, Landmark));
+        app.world_mut().resource_mut::<NextState<rl_bevy::state::EngineState>>().set(rl_bevy::state::EngineState::Playing);
+        app.update();
+        app.update();
+        let view = *app.world().resource::<MapView>();
+        let s = view.to_screen(start.offset(6, 0)).expect("on screen");
+        assert_eq!(app.world().resource::<Terminal>().get(s.x, s.y).map(|c| c.glyph), Some(' '), "beyond sight and never seen");
     }
 
     #[test]
