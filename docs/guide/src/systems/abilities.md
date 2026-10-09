@@ -16,7 +16,7 @@
             crates/rl-bevy/src/noise.rs
             crates/rl-ui/src/view/target.rs
             crates/rl-save/src/engine.rs
-     fingerprint: e55018ec -->
+     fingerprint: 7e010036 -->
 
 # Abilities
 
@@ -54,6 +54,8 @@ A cooldown is an absolute time on the turn queue's clock rather than a countdown
 A refusal costs the player nothing and keeps the turn, and costs anyone else the turn, which is what stops a monster retrying forever what it cannot pay for.
 A `Ball` flies as a bolt and bursts where it lands with `rl_grid::burst`, which stops at walls and not at whoever stands in the way, and bursts on the near side of a wall it flew into.
 `Bystanders::land` is the one answer to where a use goes, handed an `Aimed`: who, a `Source`, a `Targeting`, from where and at what, which `Aimed::ability` builds for an ability and the effects subsystem builds for a thing's aimed use, so nothing past it can tell the two apart.
+A body carrying `Reflects` turns an aimed use or an ability back on whoever aimed it, one time in two by `ReflectRng`, a stream of its own: `Bystanders::reflect(landing, mode, map)`, called by `land` itself once an aim is no longer refused and never by the cursor's preview, spares the reflecting body and lands its share on the user instead, writing a `Reflected { by, onto, source }` for each one turned.
+Only its own share turns: the rest of a burst still lands where it was aimed, on whoever else it caught, and the ground it covers stays there; when the turned-back share leaves nobody standing where it was aimed, as a bolt at one body does, the whole use lands on its user instead, its cells the shape `mode` draws on the user's own cell, a bolt lighting the user's cell and a ball bursting round them, from wherever the projectile stopped.
 `aim_blocked(targeting, cells, sees_aim)` is the other half of the gate: whether an ability may be used at all against whether it may be used *here*.
 The targeting cursor previews through that same call, so the cells it paints are the cells that will be hit, and a projectile stopped short of where it was pointed is `Blocked::OutOfReach` rather than a burst on a spot nobody chose.
 `Landing` is the result: the user, what landed it, the origin, the aim, every cell covered, the flight path, where a projectile stopped, everyone under it the aim wanted there, and a `bonus`, the default `EffectBonus` that adds nothing for an ability, which only a thing's own carries more than, as [Effects](effects.md) says.
@@ -133,6 +135,7 @@ A thing used at somewhere, a staff's bolt, is still the thing's own `use` trigge
 A thing not yet known is landed through them too, but neither previewed nor refused by its targeting, since either would tell what it is, as [Uses](uses.md) says.
 A key aims nothing itself; it writes `AimAt`, or `AimUse` for a thing, and stops, and whether a cursor opens, where it opens and what the use costs are the engine's, which is why a game's input never learns what a broadside does.
 A mind is handed only what the gate already allowed, which is why it cannot loop on something it cannot afford, and it scores by `Aim` alone, so a monster given a new ability needs no new tactic.
+A self-aimed one is weighed once more before that, by `weigh_self_abilities`, which keeps only those `Effect::would_act` says would act on something landed now, a mend kept for an actor that is hurt and a mend with nobody hurt left out, so a mind never spends its turn casting one that does nothing.
 Accuracy does not exist: an ability lands unconditionally, as every melee blow does, and a to-hit roll when it comes is a stage in the damage pipeline rather than a change here.
 Ability trees, schools, levelling, spell failure and casting interrupted by a blow are each a game's rule over this data, and the engine should not guess which of them a game wants.
 Saving is the engine's: `EngineSave` writes each actor's pools and cooldowns, so a game that saves keeps a cooling ability cooling without writing a line for it.
