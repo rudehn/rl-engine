@@ -36,6 +36,24 @@ pub const BASE_GROUPS: u32 = 4;
 /// above, and never a knight, who is the throne's alone.
 pub const THRONE_GROUPS: u32 = 4;
 
+/// The percent chance a plain monster starts a floor asleep, by floor:
+/// about half on floor one, falling to about a sixth by floor nine, the
+/// controller's own span, interpolated by hand between those two and
+/// rounded to the nearest whole percent. Index `0` is floor one.
+const SLEEP_PCT: [u32; 9] = [50, 46, 42, 38, 33, 29, 25, 21, 17];
+
+/// The percent chance a monster of `floor` starts asleep: [`SLEEP_PCT`]'s
+/// own, doubled and capped at a hundred for a `sleepy` kind, and nought,
+/// whatever `floor` says, for a `wakeful` one. Pure, so a test can check
+/// the share it draws without an `App`.
+pub fn sleep_chance(floor: u32, sleepy: bool, wakeful: bool) -> u32 {
+    if wakeful {
+        return 0;
+    }
+    let base = SLEEP_PCT.get(floor as usize - 1).copied().unwrap_or(0);
+    if sleepy { (base * 2).min(100) } else { base }
+}
+
 /// The most draws a floor makes before it gives up finding room, so one
 /// with nowhere left to stand a group stops trying rather than spinning:
 /// three times what the deepest floor that asks most asks for. A draw is
@@ -118,6 +136,11 @@ pub struct Stock<'w, 's> {
     /// by its own distance, but nothing else kept a monster off the down
     /// stairs the adventurer has yet to reach.
     ways: Query<'w, 's, (&'static Position, &'static OnMap), With<Way>>,
+    /// The clock, for a feeding ground's own scripted remains to carry a
+    /// time of death as real as a blow's.
+    turns: Res<'w, Turns>,
+    /// Interned verbs, for the captive's own "free" offer.
+    verbs: Res<'w, Verbs>,
 }
 
 /// A leader and the followers it is drawn with, one band to a floor's own
@@ -145,14 +168,192 @@ const BANDS: &[Band] = &[
     Band { floors: (8, 9), leader: "dar blademaster", followers: &["dar priestess", "dar battlemage"], count: 2 },
 ];
 
+/// A beast that feeds on another kind's remains, one feeding ground to a
+/// floor's own band of floors, never both of the same floor: the content
+/// sheet names no pairing, so each is chosen for a biome it fits, a
+/// scavenger or a grave-eater over something smaller or already dead by
+/// nature's own hand of the lake's floors.
+struct Feeder {
+    /// The first and last floor it comes together on, both included.
+    floors: (u32, u32),
+    /// What feeds.
+    beast: &'static str,
+    /// What it feeds on, laid down as the engine's own remains rather
+    /// than a scenery corpse, so a necromancer could in principle raise
+    /// what a feeding ground leaves exactly as it would raise any other
+    /// body.
+    prey: &'static str,
+}
+
+/// Jackals over a rat on the upper halls, an ogre over a goblin in the
+/// caves, a ghoul, which the sheet already has eating the dead, over a
+/// skeleton in the crypts and the drowned halls, a troll over a fire imp
+/// at the forge: one feeder a floor's band may draw, chosen by hand for
+/// what already stands there.
+const FEEDERS: &[Feeder] = &[
+    Feeder { floors: (1, 2), beast: "jackal", prey: "rat" },
+    Feeder { floors: (3, 4), beast: "ogre", prey: "goblin" },
+    Feeder { floors: (5, 7), beast: "ghoul", prey: "skeleton" },
+    Feeder { floors: (8, 9), beast: "troll", prey: "fire imp" },
+];
+
+/// The percent chance a floor whose band has a [`Feeder`] draws one at
+/// all: not every floor of a band shows the same scene twice, which is
+/// the pillar "no two runs show everything" read down to one flourish.
+const FEEDING_GROUND_PCT: u32 = 50;
+
+/// How the feeding ground's own corpse is dressed, a bone-pale glyph
+/// rather than whatever the live kind looked like: [`lay_down`] keeps a
+/// body's glyph as it was in life, since the engine does not say what
+/// remains look like, and task 10's own scene wants its prey to read as
+/// dead on sight rather than as the animal it was standing beside its
+/// own feeder.
+const REMAINS_GLYPH: char = '%';
+/// Bone-pale, the remains' own colour.
+const REMAINS_COLOR: (f32, f32, f32) = (0.85, 0.82, 0.7);
+
+/// Stands `feeder`'s beast beside its prey's own remains, both free cells
+/// near one another, the prey laid down as the engine's own remains
+/// rather than spawned already dead, so a necromancer's `raising` finds
+/// the same body a real death would have left. The beast keeps its own
+/// cell as a one-waypoint `PatrolRoute`, the universal brain's own
+/// `Patrol`, so it stands over its meal until something worth fighting
+/// for reaches it; not the engine's own `Post`, since `lead_lair_bands`
+/// reads every `Post` on a lair's floor as that lair's own entourage.
+///
+/// `None` for a beast or a prey this build's bestiary does not have by
+/// that name, or for ground with no room for both at once.
+fn place_feeding_ground(
+    commands: &mut Commands,
+    stocked: &Stocked,
+    site: &Site,
+    feeder: &Feeder,
+    now: u32,
+    free: &mut impl FnMut(Point) -> bool,
+    rng: &mut impl Rng,
+) -> Option<Vec<Point>> {
+    let Stocked { bestiary, registries, .. } = stocked;
+    let (beast_id, prey_id) = (bestiary.defs.id(feeder.beast)?, bestiary.defs.id(feeder.prey)?);
+    let open: Vec<Point> = site.bounds.cells().filter(|p| geometry::chebyshev(*p, site.entry) >= MIN_DISTANCE_FROM_ENTRY && free(*p)).collect();
+    let remains_at = *open.get(rng.random_range(0..open.len().max(1)))?;
+    let beast_at = geometry::square(remains_at, 1).find(|p| *p != remains_at && open.contains(p))?;
+    let prey = spawn_monster(commands, bestiary.defs.get(prey_id), remains_at, site.map, registries, false);
+    commands.queue(move |world: &mut World| rl_engine::rl_bevy::remains::lay_down(world, prey, now, None));
+    commands.entity(prey).insert((Glyph::new(REMAINS_GLYPH, Color::srgb(REMAINS_COLOR.0, REMAINS_COLOR.1, REMAINS_COLOR.2)).on_layer(5),));
+    let beast = spawn_monster(commands, bestiary.defs.get(beast_id), beast_at, site.map, registries, false);
+    // Not the engine's own `Post`: `lead_lair_bands` reads every `Post`
+    // on a lair's floor as that lair's own entourage, and a feeding
+    // ground's beast is not a mini-boss's. A route of one waypoint is its
+    // own cell, held by the universal brain's own `Patrol`, which nothing
+    // else ever reads a floor's own placements by.
+    commands.entity(beast).insert(crate::tricks::PatrolRoute { waypoints: vec![beast_at], at: 0 });
+    Some(vec![remains_at, beast_at])
+}
+
+/// The percent chance a floor draws a patrol at all: not every floor
+/// shows one, the same reasoning [`FEEDING_GROUND_PCT`] gives.
+const PATROL_PCT: u32 = 60;
+
+/// How many waypoints a patrol's own loop walks: the engine keeps no
+/// list of a built floor's rooms once it stands, so three points spread
+/// across the open ground stand in for "room to room" well enough for a
+/// watcher to read as a loop rather than a wander.
+const PATROL_WAYPOINTS: usize = 3;
+
+/// How far apart two of a patrol's own waypoints must stand, so three
+/// points drawn at random still spread across the floor rather than
+/// bunching in one corner.
+const PATROL_SPREAD: i32 = 6;
+
+/// Draws a monster of `floor`'s own band to walk a loop of
+/// [`PATROL_WAYPOINTS`] points across its open ground, each at least
+/// [`PATROL_SPREAD`] from every other, with [`crate::tricks::PatrolRoute`]
+/// on it and its own `Patrol` tactic, already in every kind's shared
+/// brain, carrying it from one to the next.
+///
+/// `None` for a floor whose table draws nothing, or one with too little
+/// open ground to spread even two waypoints across.
+fn place_patrol(commands: &mut Commands, stocked: &Stocked, site: &Site, free: &mut impl FnMut(Point) -> bool, rng: &mut impl Rng) -> Option<Vec<Point>> {
+    if !rng.random_ratio(PATROL_PCT, 100) {
+        return None;
+    }
+    let Stocked { bestiary, registries, .. } = stocked;
+    let (id, _) = bestiary.spawns.pick_group(site.floor as i32, rng)?;
+    let open: Vec<Point> = site.bounds.cells().filter(|p| geometry::chebyshev(*p, site.entry) >= MIN_DISTANCE_FROM_ENTRY && free(*p)).collect();
+    if open.is_empty() {
+        return None;
+    }
+    let mut waypoints = vec![open[rng.random_range(0..open.len())]];
+    for _ in 1..PATROL_WAYPOINTS {
+        let candidates: Vec<Point> = open.iter().filter(|p| waypoints.iter().all(|w| geometry::chebyshev(**p, *w) >= PATROL_SPREAD)).copied().collect();
+        if candidates.is_empty() {
+            break;
+        }
+        waypoints.push(candidates[rng.random_range(0..candidates.len())]);
+    }
+    if waypoints.len() < 2 {
+        return None;
+    }
+    let walker = spawn_monster(commands, bestiary.defs.get(*id), waypoints[0], site.map, registries, false);
+    commands.entity(walker).insert(crate::tricks::PatrolRoute { waypoints: waypoints.clone(), at: 0 });
+    Some(waypoints)
+}
+
+/// Stands a monster of `floor`'s own band shackled and neutral, offering
+/// [`crate::captives::FREE_VERB`] through the engine's own actor offers,
+/// with shackles lying at its feet: task 10's own captive, the one a run
+/// draws drawn by [`crate::dungeon::captive_floor`].
+///
+/// Held in place by a one-waypoint `PatrolRoute`, the universal brain's
+/// own `Patrol`, exactly as a feeding ground's beast is rather than the
+/// engine's own `Post`: `lead_lair_bands` reads every `Post` on a lair's
+/// own floor as that lair's entourage, and a captive drawn by the
+/// population is not. Put on [`crate::content::CAPTIVE`], neutral to
+/// every side, rather than left on whatever faction its kind's row
+/// names: a shackled monster answers to nobody until it is freed, when
+/// [`crate::captives::free`] takes the route off and lets it move.
+///
+/// `None` for a floor whose table draws nothing, or ground with no free
+/// cell at all.
+fn place_captive(commands: &mut Commands, stocked: &Stocked, site: &Site, free: &mut impl FnMut(Point) -> bool, rng: &mut impl Rng) -> Option<Vec<Point>> {
+    let Stocked { bestiary, registries, verbs } = stocked;
+    let (id, _) = bestiary.spawns.pick_group(site.floor as i32, rng)?;
+    let open: Vec<Point> = site.bounds.cells().filter(|p| geometry::chebyshev(*p, site.entry) >= MIN_DISTANCE_FROM_ENTRY && free(*p)).collect();
+    let at = *open.get(rng.random_range(0..open.len().max(1)))?;
+    let captive = spawn_monster(commands, bestiary.defs.get(*id), at, site.map, registries, false);
+    let side = registries.factions.expect(crate::content::CAPTIVE);
+    let free_verb = verbs.get(crate::captives::FREE_VERB).expect("UndermerePlugin declares the free verb");
+    commands.entity(captive).insert((
+        Faction(side),
+        crate::tricks::PatrolRoute { waypoints: vec![at], at: 0 },
+        Offers(vec![Offering::new(free_verb, crate::captives::FREE_TIME)]),
+    ));
+    let shackles = registries.props.expect("shackles");
+    spawn_prop(commands, registries, shackles, at, site.map);
+    Some(vec![at])
+}
+
 /// Where a band or a group is placed: the map, the ground it may stand
-/// on and the entry nothing may stand [`MIN_DISTANCE_FROM_ENTRY`] of.
-/// Bundled so [`place_band`] takes seven arguments rather than nine, not
-/// a ninth thing a band is placed on.
+/// on, the entry nothing may stand [`MIN_DISTANCE_FROM_ENTRY`] of, and the
+/// floor's own number. Bundled so a placing function takes the one
+/// argument rather than four, not a fourth or fifth thing a band, a
+/// feeding ground, a patrol or a captive is placed on.
 struct Site {
     map: MapId,
     bounds: Rect,
     entry: Point,
+    floor: u32,
+}
+
+/// What every one of task 10's placing functions reads from the
+/// bestiary's own content, bundled for the same reason [`Site`] is: a
+/// function reads only the field its own scene needs, and clippy's limit
+/// on a function's own arguments is never the reason one of them is
+/// shaped as it is.
+struct Stocked<'a> {
+    bestiary: &'a Bestiary,
+    registries: &'a Registries,
+    verbs: &'a Verbs,
 }
 
 /// Stands one `band` together on free cells near an anchor drawn the same
@@ -165,15 +366,21 @@ struct Site {
 /// by that name, or for a floor with no room for the whole band at once:
 /// a leader with nobody beside it is no band, and `plan`'s own groups
 /// fill in whatever room is left.
+///
+/// Who starts asleep is [`sleep_chance`]'s own roll for `floor`, one draw
+/// each, unless `camp` says this band is dressed as a goblin camp round
+/// its fire: then the leader alone keeps the watch and every follower
+/// sleeps, whatever its own kind's share would have said.
 fn place_band(
     commands: &mut Commands,
-    bestiary: &Bestiary,
-    registries: &Registries,
+    stocked: &Stocked,
     site: &Site,
     band: &Band,
     free: &mut impl FnMut(Point) -> bool,
     rng: &mut impl Rng,
+    camp: bool,
 ) -> Option<Vec<Point>> {
+    let Stocked { bestiary, registries, .. } = stocked;
     let leader_id = bestiary.defs.id(band.leader)?;
     let mut followers: Vec<Id<MonsterDef>> = band.followers.iter().filter_map(|name| bestiary.defs.id(name)).collect();
     if followers.len() != band.followers.len() {
@@ -204,12 +411,25 @@ fn place_band(
     if cells.len() < wanted {
         return None;
     }
-    let leader = spawn_monster(commands, bestiary.defs.get(leader_id), cells[0], site.map, registries);
+    let leader_def = bestiary.defs.get(leader_id);
+    let leader_asleep = !camp && rng.random_ratio(sleep_chance(site.floor, leader_def.tricks.sleepy, leader_def.tricks.wakeful), 100);
+    let leader = spawn_monster(commands, leader_def, cells[0], site.map, registries, leader_asleep);
     for (follower, at) in followers.iter().zip(&cells[1..]) {
-        let made = spawn_monster(commands, bestiary.defs.get(*follower), *at, site.map, registries);
+        let def = bestiary.defs.get(*follower);
+        let asleep = camp || rng.random_ratio(sleep_chance(site.floor, def.tricks.sleepy, def.tricks.wakeful), 100);
+        let made = spawn_monster(commands, def, *at, site.map, registries, asleep);
         commands.entity(made).insert(Leader(leader));
     }
     Some(cells)
+}
+
+/// A free cell close to `cells[0]`, outside every cell `cells` already
+/// holds, for a goblin camp's own fire to stand on beside its band
+/// without sharing a blocking monster's cell. `None` on ground too
+/// cramped to spare one.
+fn camp_fire_cell(cells: &[Point], free: &mut impl FnMut(Point) -> bool) -> Option<Point> {
+    let anchor = cells[0];
+    [1, 2].into_iter().find_map(|radius| geometry::square(anchor, radius).find(|p| !cells.contains(p) && free(*p)))
 }
 
 /// Populates every floor on the arrival that built it: a band of its own,
@@ -225,24 +445,69 @@ fn place_band(
 /// each floor alone, so what stands on floor two never depends on how many
 /// draws floor one happened to make, or on whether it was entered first.
 pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, stock: Stock) {
-    let Stock { bestiary, map, seed, registries, ways } = &stock;
+    let Stock { bestiary, map, seed, registries, ways, turns, verbs } = &stock;
     for ev in entered.read().filter(|ev| ev.first) {
         let (Some(floor), Some(place)) = (floor_of(ev.map), map.place(ev.map)) else { continue };
         let mut rng = seed.stream(b"undermere.population", u64::from(floor));
         let mut marked: Vec<Point> = place.spots.iter().map(|spot| spot.at).collect();
         marked.extend(ways.iter().filter(|(_, on)| on.0 == ev.map).map(|(p, _)| p.0));
         let bounds = place.terrain.bounds();
-        let site = Site { map: ev.map, bounds, entry: ev.entry };
+        let site = Site { map: ev.map, bounds, entry: ev.entry, floor };
+        let stocked = Stocked { bestiary, registries, verbs };
         for band in BANDS.iter().filter(|b| (b.floors.0..=b.floors.1).contains(&floor)) {
+            // Half the time a goblin war band is placed at all, it comes
+            // together as a camp round its own fire instead of standing
+            // in the open: the controller's own share for task 10's camps.
+            let camp = band.leader == "goblin" && rng.random_ratio(1, 2);
             let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p);
-            if let Some(used) = place_band(&mut commands, bestiary, registries, &site, band, &mut free, &mut rng) {
+            if let Some(used) = place_band(&mut commands, &stocked, &site, band, &mut free, &mut rng, camp) {
+                if camp {
+                    let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p);
+                    if let Some(fire_at) = camp_fire_cell(&used, &mut free) {
+                        let fire = registries.props.expect("fire");
+                        spawn_prop(&mut commands, registries, fire, fire_at, ev.map);
+                        marked.push(fire_at);
+                    }
+                }
                 marked.extend(used);
             }
         }
+        if let Some(feeder) = FEEDERS.iter().find(|f| (f.floors.0..=f.floors.1).contains(&floor))
+            && rng.random_ratio(FEEDING_GROUND_PCT, 100)
+        {
+            let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p);
+            if let Some(used) = place_feeding_ground(&mut commands, &stocked, &site, feeder, turns.now(), &mut free, &mut rng) {
+                marked.extend(used);
+            }
+        }
+        {
+            let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p);
+            if let Some(used) = place_patrol(&mut commands, &stocked, &site, &mut free, &mut rng) {
+                marked.extend(used);
+            }
+        }
+        if floor == crate::dungeon::captive_floor(seed.0) {
+            let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p);
+            if let Some(used) = place_captive(&mut commands, &stocked, &site, &mut free, &mut rng) {
+                marked.extend(used);
+            }
+        }
+        // Its own stream, not `rng`'s current position: task 10's own
+        // bands, camps, feeding grounds, patrols and captives all draw
+        // from `rng` ahead of this, floor by floor and run by run, and
+        // `plan` drawing from the same position they left it at would
+        // mean every ordinary group's own kind and place depends on
+        // whether this floor drew a camp or a captive, which is no
+        // business of either. Isolating it here is what keeps a floor's
+        // ordinary people exactly who they were before any of that
+        // existed, for whichever seed happens to land one.
         let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p);
-        let groups = plan(&bestiary.spawns, floor as i32, bounds, ev.entry, groups_on(floor), &mut free, &mut rng);
+        let mut plan_rng = seed.stream(b"undermere.population.plan", u64::from(floor));
+        let groups = plan(&bestiary.spawns, floor as i32, bounds, ev.entry, groups_on(floor), &mut free, &mut plan_rng);
         for (id, at) in groups.into_iter().flatten() {
-            spawn_monster(&mut commands, bestiary.defs.get(id), at, ev.map, registries);
+            let def = bestiary.defs.get(id);
+            let asleep = rng.random_ratio(sleep_chance(floor, def.tricks.sleepy, def.tricks.wakeful), 100);
+            spawn_monster(&mut commands, def, at, ev.map, registries, asleep);
         }
     }
 }
@@ -587,5 +852,123 @@ mod tests {
             }
         }
         assert!(checked > 0, "some lair was drawn and checked over the span");
+    }
+
+    /// [`sleep_chance`]'s own hand-written numbers: half on floor one,
+    /// about a sixth by floor nine, doubled and capped at a hundred for a
+    /// sleepy kind, and nought for a wakeful one whatever the floor.
+    #[test]
+    fn sleep_chance_falls_with_depth_doubles_for_sleepy_and_is_nought_for_wakeful() {
+        assert_eq!(sleep_chance(1, false, false), 50, "about half on floor one");
+        assert_eq!(sleep_chance(9, false, false), 17, "about a sixth by floor nine");
+        assert!(sleep_chance(1, false, false) > sleep_chance(9, false, false), "falls with depth");
+        for floor in 1..=9 {
+            assert_eq!(
+                sleep_chance(floor, true, false),
+                (sleep_chance(floor, false, false) * 2).min(100),
+                "floor {floor}: sleepy doubles its floor's own share"
+            );
+            assert_eq!(sleep_chance(floor, false, true), 0, "floor {floor}: wakeful never sleeps");
+            assert_eq!(sleep_chance(floor, true, true), 0, "floor {floor}: wakeful outranks sleepy");
+        }
+    }
+
+    /// Rolled against [`sleep_chance`]'s own percent over a span of seeds,
+    /// a plain kind's own share of sleepers lands within a few points of
+    /// what the floor's own number says, on three floors spread across the
+    /// span the controller's numbers cover.
+    #[test]
+    fn a_plain_kinds_own_share_of_sleepers_matches_sleep_chance_over_a_span_of_seeds() {
+        for floor in [1u32, 5, 9] {
+            let pct = sleep_chance(floor, false, false);
+            let trials: u32 = 4000;
+            let mut asleep: u32 = 0;
+            let mut rng = rand::rngs::StdRng::seed_from_u64(u64::from(floor));
+            for _ in 0..trials {
+                if rng.random_ratio(pct, 100) {
+                    asleep += 1;
+                }
+            }
+            let share = asleep * 100 / trials;
+            assert!(share.abs_diff(pct) <= 4, "floor {floor}: rolled {share}%, wanted about {pct}%");
+        }
+    }
+
+    /// Task 10's camps: half the floors a goblin war band is placed on
+    /// floors three to six dress it round a fire, every follower asleep
+    /// and the leader alone keeping the watch, found somewhere over a
+    /// span of seeds since the dressing itself is a coin flip.
+    #[test]
+    fn a_goblin_camp_holds_a_fire_its_followers_asleep_and_its_leader_keeping_the_watch_over_a_span_of_seeds() {
+        let mut camps = 0;
+        for s in 0..40u64 {
+            let mut app = headless(RunSeed(s));
+            let me = adventurer(&mut app);
+            sturdy(&mut app, me);
+            let map = map_of(4);
+            arrive(&mut app, map);
+            let fire_id = app.world().resource::<Registries>().props.expect("fire");
+            let world = app.world_mut();
+            let has_fire = world.query::<(&PropKind, &OnMap)>().iter(world).any(|(k, on)| k.0 == fire_id && on.0 == map);
+            if !has_fire {
+                continue;
+            }
+            let (goblin_id, band) = {
+                let bestiary = app.world().resource::<Bestiary>();
+                (
+                    bestiary.defs.expect("goblin"),
+                    [bestiary.defs.expect("goblin archer"), bestiary.defs.expect("goblin conjurer"), bestiary.defs.expect("goblin mystic")],
+                )
+            };
+            // Led by a plain goblin, never Grubnak the goblin king: his
+            // own honor guard can draw the same three kinds, on the same
+            // floor range, and this is the war band's camp alone.
+            let led: Vec<(Entity, Entity)> =
+                led_among(app.world_mut(), map, &band).into_iter().filter(|(_, leader)| app.world().get::<Kind>(*leader).map(|k| k.0) == Some(goblin_id)).collect();
+            assert_eq!(led.len(), 2, "seed {s}: two followers, the camp's own band");
+            let leader = led[0].1;
+            assert!(led.iter().all(|(_, l)| *l == leader), "seed {s}: both led by the same goblin");
+            let world = app.world();
+            let asleep_id = world.resource::<Registries>().statuses.expect(crate::content::ASLEEP);
+            let sleeps = |e: Entity| world.get::<Afflicted>(e).is_some_and(|a| a.has(asleep_id));
+            for (follower, _) in &led {
+                assert!(sleeps(*follower), "seed {s}: a camp's own follower sleeps");
+            }
+            assert!(!sleeps(leader), "seed {s}: the leader keeps the watch, awake");
+            camps += 1;
+        }
+        assert!(camps > 0, "some seed over the span dressed its goblin band as a camp");
+    }
+
+    /// Task 10's feeding grounds: a beast stands over its prey's own
+    /// remains, a real body the engine's own `Remains` carries rather
+    /// than a scenery corpse, found somewhere over a span of seeds since
+    /// a floor draws one only [`FEEDING_GROUND_PCT`] of the time.
+    #[test]
+    fn a_feeding_ground_stands_a_beast_over_its_preys_own_engine_remains_over_a_span_of_seeds() {
+        let mut found = 0;
+        for s in 0..40u64 {
+            let mut app = headless(RunSeed(s));
+            let me = adventurer(&mut app);
+            sturdy(&mut app, me);
+            let map = map_of(1);
+            arrive(&mut app, map);
+            let (jackal, rat) = {
+                let bestiary = app.world().resource::<Bestiary>();
+                (bestiary.defs.expect("jackal"), bestiary.defs.expect("rat"))
+            };
+            let world = app.world_mut();
+            let beasts: Vec<Entity> =
+                world.query::<(Entity, &Kind, &OnMap)>().iter(world).filter(|(_, k, on)| k.0 == jackal && on.0 == map).map(|(e, ..)| e).collect();
+            let Some(&beast) = beasts.iter().find(|e| world.get::<crate::tricks::PatrolRoute>(**e).is_some()) else { continue };
+            let rats: Vec<Entity> =
+                world.query::<(Entity, &Kind, &OnMap)>().iter(world).filter(|(_, k, on)| k.0 == rat && on.0 == map).map(|(e, ..)| e).collect();
+            let remains = rats.into_iter().find(|e| world.get::<Remains>(*e).is_some());
+            let Some(remains) = remains else { continue };
+            assert!(world.get::<Actor>(remains).is_none(), "seed {s}: remains are not an actor any more");
+            assert!(world.get::<crate::tricks::PatrolRoute>(beast).is_some(), "seed {s}: the beast keeps its own cell over its meal");
+            found += 1;
+        }
+        assert!(found > 0, "some seed over the span drew a feeding ground on floor one");
     }
 }

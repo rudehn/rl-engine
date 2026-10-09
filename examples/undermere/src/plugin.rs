@@ -59,6 +59,9 @@ impl Plugin for UndermerePlugin {
         // facts the quest counts, and the record a run ends in.
         app.add_plugins((CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, ThrowingPlugin, ConsumablesPlugin, LightingPlugin, StealthPlugin))
             .add_plugins((AbilitiesPlugin, FirePlugin, GasPlugin, NoisePlugin::new(NOISE), PropsPlugin, AmmoPlugin))
+            // Task 10's captive: the one verb `PropsPlugin` does not already
+            // know, offered by an actor rather than a prop.
+            .add_verb(crate::captives::FREE_VERB)
             .add_plugins((PrefabPlugin::<Bestiary, Armory>::default(), LootPlugin::<Armory>::default()))
             .add_plugins((FactsPlugin, RecordsPlugin))
             // What the dead leave lying where they fell, for `raising` to
@@ -186,6 +189,10 @@ impl Plugin for UndermerePlugin {
         // What a monster throws: only what strikes, and whether it has
         // stolen something and should run with it.
         app.add_systems(Turn, (crate::bestiary::throw_what_strikes, crate::tricks::sense_stole).in_set(DecideSet::Perceive).after(PerceiveSet::Annotate));
+        // Task 10's own lived-in dungeon: a patrolling mind's next
+        // waypoint, sensed beside the engine's own post and leader, and
+        // never for an actor with no route of its own.
+        app.add_systems(Turn, crate::tricks::sense_patrols.in_set(PerceiveSet::Annotate));
         app.add_stream::<crate::conditions::Stumbles>("UndermerePlugin");
         app.add_systems(Turn, crate::conditions::stumble.in_set(DecideSet::Game));
         app.add_systems(Turn, (crate::conditions::keep_fireproof, crate::conditions::keep_discord).in_set(TurnSet::React));
@@ -213,6 +220,8 @@ impl Plugin for UndermerePlugin {
             )
                 .in_set(TurnSet::React),
         );
+        // A shackled captive's own "free": task 10's.
+        app.add_systems(Turn, crate::captives::answer_free.in_set(TurnSet::React));
         // What is known of a kind's tricks, learned off the same messages
         // the tricks above, an ability's own landing and the engine's own
         // actor triggers already answer with: each only once its effect

@@ -246,6 +246,7 @@ mod tests {
                     ways_here(&mut app).into_iter().find(|(_, _, w)| *w == Way::Down).unwrap_or_else(|| panic!("seed {s}: floor {floor} has a way down"));
                 assert_eq!(down.1, Destination::Place { map: map_of(floor + 1), arrive: Arrive::Entry }, "seed {s}, floor {floor}");
                 stand_on(&mut app, me, down.0);
+                assert_eq!(at(&app, me), down.0, "seed {s}, floor {floor}: the way down stood free to land on");
                 go_through(&mut app, me);
                 assert_eq!(here(&app), map_of(floor + 1), "seed {s}: the way down from floor {floor}");
                 let up =

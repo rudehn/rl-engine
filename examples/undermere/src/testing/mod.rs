@@ -266,7 +266,7 @@ pub fn monster(app: &mut App, name: &str, at: Point) -> Entity {
         let world = app.world();
         let bestiary = world.resource::<Bestiary>();
         let mut commands = Commands::new(&mut queue, world);
-        crate::bestiary::spawn_monster(&mut commands, bestiary.defs.get(bestiary.defs.expect(name)), at, here, &registries)
+        crate::bestiary::spawn_monster(&mut commands, bestiary.defs.get(bestiary.defs.expect(name)), at, here, &registries, false)
     };
     queue.apply(app.world_mut());
     e

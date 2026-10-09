@@ -111,6 +111,11 @@ pub struct MonsterDef {
     /// The brain one of its kind decides with once it fights for the
     /// adventurer, built beside the other.
     allied: Arc<Brain<Entity>>,
+    /// The brain one of its kind decides with once it is freed from
+    /// shackles and follows the one who freed it, built beside the other
+    /// two: task 10's captive, who keeps station on the adventurer by
+    /// name through `Leader` rather than on whichever ally is nearest.
+    following: Arc<Brain<Entity>>,
 }
 
 impl Named for MonsterDef {
@@ -147,6 +152,15 @@ impl MonsterDef {
     /// then keeps station on the adventurer's side, then hunts.
     pub fn ally_mind(&self) -> Mind {
         Mind(self.allied.clone())
+    }
+
+    /// The mind one of its kind thinks with once it is freed from
+    /// shackles, built once for the kind: it strikes as its kind does,
+    /// then keeps station on whoever freed it by `Leader` rather than on
+    /// the nearest of the adventurer's side, since a freed captive is one
+    /// follower of one adventurer, not a member of a company.
+    pub fn follow_mind(&self) -> Mind {
+        Mind(self.following.clone())
     }
 }
 
@@ -344,6 +358,7 @@ fn resolve(
         .collect();
     let brain = Arc::new(brain(&folded, ranged.is_some(), tricks));
     let allied = Arc::new(ally_brain(&folded, ranged.is_some()));
+    let following = Arc::new(follow_brain(&folded, ranged.is_some()));
     Ok(MonsterDef {
         name: a.name.clone(),
         glyph: a.glyph,
@@ -365,6 +380,7 @@ fn resolve(
         id,
         brain,
         allied,
+        following,
     })
 }
 
@@ -449,9 +465,12 @@ const SCAVENGE_REACH: i32 = 4;
 /// `Keep::enemies` finds no step to back away by.
 ///
 /// Every kind ends the same way, as Foundry's do: hunt what it sees, search
-/// where it last saw it, walk back to the post a piece stood it at, and
-/// drift. A monster with no post passes straight over `KeepPost`, so one
-/// brain serves a kind whether a piece placed it or a floor's population.
+/// where it last saw it, walk back to the post a piece stood it at, walk
+/// its own loop of waypoints if a floor's population gave it one, and
+/// drift. A monster with no post passes straight over `KeepPost`, and one
+/// with no route straight over [`crate::tricks::Patrol`], so one brain
+/// serves a kind whether a piece placed it, a floor's population put it
+/// on a patrol, or neither.
 ///
 /// `tricks` adds four more, none of them a value the trait model's own
 /// fold reads: a monkey that has stolen flees for the way out before
@@ -494,7 +513,7 @@ fn brain(folded: &Folded, shoots: bool, tricks: Tricks) -> Brain<Entity> {
     if tricks.flits {
         brain = brain.then(crate::tricks::Flit { chance_pct: FLIT_CHANCE_PCT });
     }
-    brain.then(Hunt).then(SearchLastKnown).then(KeepPost).then(Wander { chance_pct: WANDER_CHANCE_PCT })
+    brain.then(Hunt).then(SearchLastKnown).then(KeepPost).then(crate::tricks::Patrol).then(Wander { chance_pct: WANDER_CHANCE_PCT })
 }
 
 /// How far a packing kind, a rat's or a jackal's, lets its own kind get
@@ -544,6 +563,29 @@ fn ally_brain(folded: &Folded, shoots: bool) -> Brain<Entity> {
     brain.then(Keep::allies(ALLY_KEEPS_WITHIN, 1)).then(Hunt)
 }
 
+/// The brain a monster of `folded` decides with once it is freed from
+/// shackles: what it runs from, breathes and strikes as its own kind
+/// does, exactly as [`ally_brain`], and then keeps station on whoever
+/// freed it, by the engine's own `Keep::leader` over the `Leader` task
+/// 10's own freeing puts on it, rather than `Keep::allies`'s "whoever of
+/// my side is nearest": a freed captive follows the one who freed it
+/// specifically, through a crowd of the adventurer's other allies as
+/// readily as alone with them.
+fn follow_brain(folded: &Folded, shoots: bool) -> Brain<Entity> {
+    let mut brain = Brain::new();
+    if let Some(at_pct) = folded.flee_at.filter(|pct| *pct > 0) {
+        brain = brain.then(FleeWhenHurt { at_pct });
+    }
+    if !folded.abilities.is_empty() {
+        brain = brain.then(UseAbility { chance_pct: ABILITY_CHANCE_PCT });
+    }
+    brain = brain.then(MeleeAdjacent);
+    if shoots {
+        brain = brain.then(ShootAtRange::default());
+    }
+    brain.then(Keep::leader(ALLY_KEEPS_WITHIN, 1)).then(Hunt)
+}
+
 /// Leaves the mind holding the turn only what strikes to throw: a dart, a
 /// javelin, an arrow, and not a potion, whose worth to a thrower the mind
 /// cannot weigh, so a kobold that threw what it found would heal the
@@ -576,7 +618,7 @@ impl ActorMaker for Bestiary {
     type Def = MonsterDef;
 
     fn make(&self, commands: &mut Commands, registries: &Registries, def: Id<MonsterDef>, at: Point, map: MapId, _: &mut rand::rngs::StdRng) -> Entity {
-        spawn_monster(commands, self.defs.get(def), at, map, registries)
+        spawn_monster(commands, self.defs.get(def), at, map, registries, false)
     }
 
     fn table(&self) -> &BandedTable<Id<MonsterDef>> {
@@ -600,7 +642,7 @@ pub fn spawn_monster_now(world: &mut World, def: Id<MonsterDef>, at: Point, map:
     let made = {
         let mut commands = Commands::new(&mut queue, world);
         let bestiary = world.resource::<Bestiary>();
-        spawn_monster(&mut commands, bestiary.defs.get(def), at, map, world.resource::<Registries>())
+        spawn_monster(&mut commands, bestiary.defs.get(def), at, map, world.resource::<Registries>(), false)
     };
     queue.apply(world);
     made
@@ -624,7 +666,13 @@ pub fn spawn_monster_now(world: &mut World, def: Id<MonsterDef>, at: Point, map:
 /// [`FOR_LIFE`], rather than asked for, so they are there from the
 /// monster's first turn and never announced: a monster that regenerates
 /// did not just start to.
-pub fn spawn_monster(commands: &mut Commands, def: &MonsterDef, at: Point, map: MapId, registries: &Registries) -> Entity {
+///
+/// `asleep` puts the engine's own `asleep` on it the same way, [`FOR_LIFE`]
+/// so it holds until woken rather than for a counted span: task 10's own
+/// share of a floor's monsters that starts a run already dozing. `false`
+/// for every caller but a floor's own population, which alone decides who
+/// sleeps.
+pub fn spawn_monster(commands: &mut Commands, def: &MonsterDef, at: Point, map: MapId, registries: &Registries, asleep: bool) -> Entity {
     let f = &def.folded;
     let (r, g, b) = def.color;
     let mut e = commands.spawn((
@@ -658,10 +706,13 @@ pub fn spawn_monster(commands: &mut Commands, def: &MonsterDef, at: Point, map: 
     // `keep_shrouded` and `keep_regen_halted` still need `Afflicted` and
     // `StatBlock` on the entity to read and to modify, exactly as a
     // trait's own held statuses do.
-    if !f.statuses.is_empty() || def.tricks.shrouds || def.tricks.burns_badly {
+    if !f.statuses.is_empty() || def.tricks.shrouds || def.tricks.burns_badly || asleep {
         let (mut held, mut stats) = (Statuses::new(), Stats::new());
         for status in &f.statuses {
             held.apply(*status, FOR_LIFE, None, &registries.statuses, &mut stats);
+        }
+        if asleep {
+            held.apply(registries.statuses.expect(crate::content::ASLEEP), FOR_LIFE, None, &registries.statuses, &mut stats);
         }
         e.insert((Afflicted(held), StatBlock(stats)));
     }
@@ -749,7 +800,7 @@ mod tests {
         let mut world = World::new();
         let mut queue = CommandQueue::default();
         let mut commands = Commands::new(&mut queue, &world);
-        let e = spawn_monster(&mut commands, def, Point::ZERO, MapId(1), &library.registries);
+        let e = spawn_monster(&mut commands, def, Point::ZERO, MapId(1), &library.registries, false);
         queue.apply(&mut world);
         (world, e)
     }

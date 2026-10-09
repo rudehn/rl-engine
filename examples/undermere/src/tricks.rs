@@ -72,6 +72,10 @@ pub struct Tricks {
     /// `welling`: a drowned thrall rises from the water within reach
     /// every [`RISE_INTERVAL`]th of its own turns, the Drowned King's own.
     pub wells: bool,
+    /// `sleepy`: twice as likely to start a floor asleep as a plain kind.
+    pub sleepy: bool,
+    /// `wakeful`: never starts a floor asleep.
+    pub wakeful: bool,
 }
 
 impl Tricks {
@@ -93,6 +97,8 @@ impl Tricks {
             sings: has("singing"),
             spawns: has("spawning"),
             wells: has("welling"),
+            sleepy: has("sleepy"),
+            wakeful: has("wakeful"),
         }
     }
 
@@ -755,6 +761,74 @@ pub fn rise_from_the_pool(mut done: MessageReader<ActionDone>, mut wells: Query<
     }
 }
 
+/// A loop of cells a monster walks for task 10's own: not a trait's trick,
+/// since nothing in the bestiary names it, but a floor's population may
+/// put it on anyone it stands, the same way it decides who sleeps.
+///
+/// The engine keeps no list of a built floor's rooms once it is built, so
+/// `population::place_patrol` draws its own waypoints off the floor's open
+/// ground rather than true room centres; the effect for a watcher is the
+/// same, a mind that goes room to room rather than standing or wandering.
+#[derive(Component, Debug, Clone)]
+pub struct PatrolRoute {
+    /// At least two cells, each visited in turn before the loop starts
+    /// over.
+    pub waypoints: Vec<Point>,
+    /// Which of `waypoints` is next.
+    pub at: usize,
+}
+
+/// Where a patrolling mind is walking to next, pushed by [`sense_patrols`]
+/// for [`Patrol`] to read: the same shape as the engine's own `Posted`,
+/// one point rather than a post that never moves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Patrolling(pub Point);
+
+/// Advances the turn holder's own [`PatrolRoute`] past whichever waypoint
+/// it just reached, and senses the one it is walking to now.
+///
+/// In `PerceiveSet::Annotate`, beside the engine's own `sense_posts` and
+/// `sense_leaders`: nothing for an actor with no route, so one brain
+/// serves a floor's own patrol and everybody else alike, the same reason
+/// `KeepPost` passes over a monster with no post.
+pub fn sense_patrols(mut thinking: ResMut<Thinking>, mut routes: Query<(&Position, &mut PatrolRoute)>) {
+    let Some(actor) = thinking.actor() else { return };
+    let Ok((at, mut route)) = routes.get_mut(actor) else { return };
+    if route.waypoints.is_empty() {
+        return;
+    }
+    if at.0 == route.waypoints[route.at] {
+        route.at = (route.at + 1) % route.waypoints.len();
+    }
+    let target = route.waypoints[route.at];
+    if let Some(snapshot) = thinking.snapshot_mut() {
+        snapshot.add_sense(Patrolling(target));
+    }
+}
+
+/// Walks toward whatever [`sense_patrols`] says a patrolling mind is
+/// walking to, waiting the one pass it stands there before the next
+/// waypoint is sensed. Leaves the turn to the next tactic for anyone with
+/// no [`Patrolling`] sense, the same shape as the engine's own `KeepPost`,
+/// so one brain serves a kind whether or not a floor put a route on it.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Patrol;
+
+impl Tactic<Entity> for Patrol {
+    fn name(&self) -> &'static str {
+        "patrol"
+    }
+
+    fn evaluate(&self, ctx: &mut TacticCtx<'_, Entity>) -> Option<Decision<Entity>> {
+        let target = ctx.snapshot.sense::<Patrolling>()?.0;
+        let me = ctx.snapshot.me.pos;
+        if me == target {
+            return Some(Decision::Wait);
+        }
+        Some(ctx.step_toward(&[target]).map_or(Decision::Wait, Decision::Step))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rand::SeedableRng;
@@ -968,5 +1042,32 @@ mod tests {
         kill(&mut app, mother, None);
         settle(&mut app);
         assert!(app.world().get_entity(young).is_err(), "the spawnling is gone with her");
+    }
+
+    /// Task 10's own patrol: a `PatrolRoute` of three waypoints is walked
+    /// in order and the loop starts over, every waypoint visited at least
+    /// twice over enough passes, by the universal brain's own `Patrol`
+    /// slot, with no trait and no marker beyond the route itself.
+    #[test]
+    fn a_monster_given_a_patrol_route_walks_every_waypoint_in_order_and_loops_back_to_the_first() {
+        use crate::testing::{arena, at, monster, pass_turns, stand_on};
+        let (mut app, me, here) = arena(80);
+        // Far across the arena's own open ground, outside the rat's sight,
+        // so nothing but its own route ever has a say in where it walks.
+        stand_on(&mut app, me, here.offset(-5, -5));
+        let waypoints = vec![here.offset(5, 5), here.offset(5, 2), here.offset(2, 5)];
+        let walker = monster(&mut app, "rat", waypoints[0]);
+        app.world_mut().entity_mut(walker).insert(PatrolRoute { waypoints: waypoints.clone(), at: 0 });
+        let mut visits = [0u32; 3];
+        let mut trace = Vec::new();
+        for _ in 0..60 {
+            pass_turns(&mut app, 1);
+            let now = at(&app, walker);
+            trace.push(now);
+            if let Some(i) = waypoints.iter().position(|w| *w == now) {
+                visits[i] += 1;
+            }
+        }
+        assert!(visits.iter().all(|v| *v >= 2), "every waypoint visited at least twice, looping: {visits:?}, waypoints {waypoints:?}, trace {trace:?}");
     }
 }
