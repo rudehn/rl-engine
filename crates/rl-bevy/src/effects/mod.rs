@@ -38,6 +38,7 @@ use rl_rules::ability::RawValue;
 use crate::combat::DamageEvent;
 use crate::components::{Blocks, Position, Viewshed};
 use crate::cue::{Anchor, Cue, Cued, LookOf};
+use crate::places::{MapId, OnMap, Transition};
 use crate::registries::Registries;
 use crate::status::{Afflict, Cure};
 use crate::turn::Occupancy;
@@ -186,6 +187,11 @@ pub struct Landing {
     pub on: Option<Entity>,
 }
 
+/// An actor an effect may move or look at: never a transition, which an
+/// effect never moves anyone onto and reads instead through
+/// [`EffectWorld::is_transition`].
+type Mover = (&'static mut Position, Option<&'static mut Viewshed>, Has<Blocks>);
+
 /// What an effect may do to the world.
 ///
 /// Requests, not changes: an effect asks for damage, a status or a move,
@@ -211,9 +217,10 @@ pub struct EffectWorld<'w, 's> {
     /// of the use itself are cued before any effect runs, so a cue an
     /// effect adds plays after them.
     pub cues: MessageWriter<'w, Cued>,
-    actors: Query<'w, 's, (&'static mut Position, Option<&'static mut Viewshed>, Has<Blocks>)>,
+    actors: Query<'w, 's, Mover, Without<Transition>>,
     occupancy: ResMut<'w, Occupancy>,
     map: Res<'w, WorldMap>,
+    transitions: Query<'w, 's, (&'static Position, Option<&'static OnMap>), With<Transition>>,
 }
 
 impl EffectWorld<'_, '_> {
@@ -246,6 +253,17 @@ impl EffectWorld<'_, '_> {
     pub fn sight_of(&self, who: Entity, p: Point) -> Option<bool> {
         let (_, viewshed, _) = self.actors.get(who).ok()?;
         Some(viewshed?.can_see(p))
+    }
+
+    /// Whether `p` leads somewhere: a way, a gate, a cave mouth. Not read
+    /// by [`is_free`](Self::is_free), which is silent on the question the
+    /// engine leaves to the game, since the engine's own warp is what
+    /// makes a transition's cell special and an ordinary move never asks
+    /// it; an effect that puts someone exactly there, blinking a monster
+    /// onto a floor's own stairs, is the game's own to allow or refuse.
+    pub fn is_transition(&self, p: Point) -> bool {
+        let here = self.map.current();
+        self.transitions.iter().any(|(pos, on)| pos.0 == p && on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here)
     }
 
     /// Whether `p` is somewhere an actor could stand right now.

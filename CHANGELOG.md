@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `EffectWorld` says whether a cell is a transition: the new `EffectWorld::is_transition(p)` reads the engine's own `Transition` component at `p`, read by no effect of the engine's own, since `is_free` is silent on the question and a move onto a floor's own way through is the game's to allow or refuse.
+  A game effect that moves someone through open ground, a blink or a far teleport among them, checks it beside `is_free` to keep a monster's own trick from landing it exactly on a stair.
+
 - A mind can follow one leader: `Keep::leader(keep_within, no_closer_than)`, the new `Station::Leader`, keeps within its distances of the actor named by the follower's new `Leader(Entity)` component rather than of its nearest ally, with the same steps that never undo what they are doing, and keeps station on its allies as `Keep::allies` does while the leader is dead, on another map or gone, so a band whose chief falls keeps together.
   `MindsPlugin`'s new `sense_leaders` tells it where its leader stands through the new `Led { at, in_sight }` sense, seen or not, since a follower told only of a leader in sight would lose it at the first corner.
   The leader lives on the follower and not in its brain, so one shared brain serves a kind led or not; `rl-save` keeps it across a continued run, by the entity map, when the leader was saved too.

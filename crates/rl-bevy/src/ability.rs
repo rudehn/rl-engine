@@ -880,6 +880,7 @@ mod tests {
     use crate::cue::{Anchor, Cue};
     use crate::effects::{AddEffect, AddEngineEffects, Effect, FromArgs};
     use crate::items::Item;
+    use crate::places::{Destination, Transition};
     use rl_core::{Direction, RunSeed};
     use rl_grid::TileId;
     use rl_rules::ability::RawValue;
@@ -964,6 +965,12 @@ mod tests {
         mode: Own,
         effects: [(kind: "Mend", args: (roll: "5"))],
     ),
+    (
+        name: "probe",
+        aim: Ground,
+        mode: Own,
+        effects: [(kind: "Probe", args: ())],
+    ),
 ]"#;
 
     /// A game's own effect, doing something the engine has no word for.
@@ -996,6 +1003,30 @@ mod tests {
         }
     }
 
+    /// Whether `EffectWorld::is_transition` said the aimed cell was one,
+    /// for `is_transition_is_true_only_at_a_transitions_own_cell` to read
+    /// back.
+    #[derive(Component, Debug, Clone, Copy)]
+    struct Probed(bool);
+
+    #[derive(Debug, Clone, Copy)]
+    struct Probe;
+
+    impl Effect for Probe {
+        fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+            let found = world.is_transition(landing.aim);
+            world.commands.entity(landing.user).insert(Probed(found));
+        }
+    }
+
+    impl FromArgs for Probe {
+        const KIND: &'static str = "Probe";
+
+        fn from_args(_args: &RawValue, _names: &Names<'_>) -> Result<Self, String> {
+            Ok(Self)
+        }
+    }
+
     fn app() -> (App, Point) {
         let mut app = crate::plugin::headless_app();
         app.add_plugins((
@@ -1007,7 +1038,7 @@ mod tests {
             crate::items::ItemsPlugin,
             AbilitiesPlugin,
         ));
-        app.add_engine_effects().add_effect::<Mark>();
+        app.add_engine_effects().add_effect::<Mark>().add_effect::<Probe>();
 
         let content = Content::new();
         let abilities = Abilities::load(ABILITIES, app.world().resource::<EffectKinds>(), &content.names()).expect("the abilities load and build");
@@ -1303,6 +1334,28 @@ mod tests {
         app.world_mut().write_message(Intent::new(me, Use { ability: mark, aim: start }));
         app.update();
         assert_eq!(app.world().get::<Marked>(me).map(|m| m.0), Some(7));
+    }
+
+    /// `EffectWorld::is_transition` says a cell carrying a `Transition` is
+    /// one, and nowhere else is, so an effect that must never move anyone
+    /// onto a floor's own way through, a blink among them, can tell the
+    /// one cell it must refuse from the rest of the open ground.
+    #[test]
+    fn is_transition_is_true_only_at_a_transitions_own_cell() {
+        let (mut app, start) = app();
+        let there = start.offset(2, 0);
+        app.world_mut().spawn((Position(there), Transition { to: Destination::Surface(Point::ZERO) }));
+        let probe = ability(&app, "probe");
+        let me = caster(&mut app, start, 20, &[probe]);
+        settle(&mut app);
+
+        app.world_mut().write_message(Intent::new(me, Use { ability: probe, aim: there }));
+        app.update();
+        assert_eq!(app.world().get::<Probed>(me).map(|p| p.0), Some(true), "a transition stands at the aimed cell");
+
+        app.world_mut().write_message(Intent::new(me, Use { ability: probe, aim: start.offset(5, 0) }));
+        app.update();
+        assert_eq!(app.world().get::<Probed>(me).map(|p| p.0), Some(false), "nothing stands at this one");
     }
 
     /// An ability names an effect nobody registered: a failure at load,

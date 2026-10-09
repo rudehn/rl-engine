@@ -21,7 +21,7 @@ use super::FAR;
 /// [`FAR`] steps from `from`; with none that far, one of the furthest
 /// there are. `None` on a place with nowhere free at all.
 pub fn far_cell(world: &mut EffectWorld<'_, '_>, from: Point) -> Option<Point> {
-    let open: Vec<Point> = world.map().window_tiles().cells().filter(|p| *p != from && world.is_free(*p)).collect();
+    let open: Vec<Point> = world.map().window_tiles().cells().filter(|p| *p != from && world.is_free(*p) && !world.is_transition(*p)).collect();
     let furthest = open.iter().map(|p| geometry::chebyshev(*p, from)).max()?;
     let far = FAR.min(furthest);
     let choices: Vec<Point> = open.into_iter().filter(|p| geometry::chebyshev(*p, from) >= far).collect();
@@ -55,7 +55,11 @@ impl Effect for Blink {
         let line = landing.path.iter().copied().filter(|p| *p != landing.origin).take(reach);
         let mut to = None;
         for p in line {
-            if !world.is_free(p) {
+            // Never onto a way: a monster that blinked onto the stairs
+            // would stand where nothing else is ever put, off every
+            // floor's own exclusion of them, and could take the player's
+            // own place on a cell `GoThrough` reads literally.
+            if !world.is_free(p) || world.is_transition(p) {
                 break;
             }
             to = Some(p);
