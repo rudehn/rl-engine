@@ -622,6 +622,37 @@ mod tests {
         }
     }
 
+    /// The rail beside the smith says who is in sight with no count of
+    /// foes, since there are none, and on a floor heads what else is in
+    /// sight `Around you`, not `On the ground`, which it is not.
+    #[test]
+    fn the_rail_counts_no_foes_at_nought_and_heads_its_things_around_you() {
+        use undermere::testing::{arrive, at, clear_monsters, lay, lay_floor, make, settle, stand_on};
+        let mut app = on_screen(RunSeed(7));
+        let me = undermere::testing::adventurer(&mut app);
+        let smith = {
+            let world = app.world_mut();
+            world.query_filtered::<(Entity, &Name), With<Trader>>().iter(world).find(|(_, n)| n.as_str() == "the smith").map(|(e, _)| e).expect("the smith")
+        };
+        let beside = at(&app, smith).offset(0, -1);
+        stand_on(&mut app, me, beside);
+        let rail = |app: &App| (0..ROWS).map(|y| from(app, COLS - RAIL, y)).collect::<Vec<_>>();
+        let lines = rail(&app);
+        let heading = lines.iter().position(|r| r.trim() == "In sight").unwrap_or_else(|| panic!("a bare heading: {lines:#?}"));
+        assert!(lines[heading + 2..].iter().any(|r| r.contains("the smith")), "over the smith: {lines:#?}");
+
+        arrive(&mut app, undermere::dungeon::map_of(1));
+        clear_monsters(&mut app);
+        let here = at(&app, me);
+        lay_floor(&mut app, &[here.offset(1, 0), here.offset(2, 0)]);
+        let potion = make(&mut app, "potion of healing");
+        lay(&mut app, potion, here.offset(2, 0));
+        settle(&mut app);
+        let lines = rail(&app);
+        assert!(lines.iter().any(|r| r.trim() == "Around you"), "{lines:#?}");
+        assert!(!lines.iter().any(|r| r.contains("On the ground")), "{lines:#?}");
+    }
+
     /// Every glyph on the screen as it stands, kept beside the first
     /// screen it was seen on.
     fn see(app: &App, screen: &'static str, seen: &mut std::collections::BTreeMap<char, &'static str>) {
