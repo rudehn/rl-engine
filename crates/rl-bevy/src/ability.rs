@@ -968,7 +968,7 @@ mod tests {
     (
         name: "probe",
         aim: Ground,
-        mode: Own,
+        mode: Bolt(range: 6),
         effects: [(kind: "Probe", args: ())],
     ),
 ]"#;
