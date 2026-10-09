@@ -484,10 +484,6 @@ pub fn resolve_interactions(
         if let (Some(price), Some(&currency)) = (offer.price, currency.as_deref()) {
             let (taker, offerer) = (intent.actor, intent.action.target);
             world.commands.queue(move |w: &mut World| {
-                let Ok(mut paid) = w.get_entity_mut(offerer) else { return };
-                if !paid.contains::<Inventory>() {
-                    paid.insert(Inventory::default());
-                }
                 crate::trade::pay(w, taker, offerer, price, currency);
             });
         }

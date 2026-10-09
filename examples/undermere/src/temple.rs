@@ -200,7 +200,8 @@ pub fn rite_rows(mut view: ResMut<OffersView>, rites: Res<Rites>, verbs: Res<Ver
 ///
 /// A rite with nothing to do for its taker, by [`Rite::finds_work`], lands
 /// nothing and the priest gives the price back, by the engine's own
-/// [`pay`](rl_engine::rl_bevy::pay), saying so in the rite's `idle` words,
+/// [`pay`](rl_engine::rl_bevy::pay), saying so in the rite's `idle` words
+/// and naming only what was handed back,
 /// `The priest finds nothing to mend, and gives back your 30 gold coins.`:
 /// the engine takes the price before the answer runs, and a rite that
 /// sold the adventurer nothing should cost them nothing.
@@ -218,18 +219,27 @@ pub fn answer_rites(world: &mut World, mut cursor: Local<MessageCursor<Interacte
         for ev in taken {
             let Some(rite) = rites.get(world.resource::<Verbs>().name(ev.verb)) else { continue };
             let works = rite.finds_work(world, ev.actor);
-            if !works && let Some(currency) = world.get_resource::<Currency>().copied() {
-                rl_engine::rl_bevy::pay(world, ev.target, ev.actor, rite.price, currency);
-            }
+            let currency = world.get_resource::<Currency>().copied();
+            let back = match currency {
+                Some(currency) if !works => rl_engine::rl_bevy::pay(world, ev.target, ev.actor, rite.price, currency),
+                _ => 0,
+            };
             let mut state = SystemState::<(Purse, EffectWorld)>::new(world);
             let Ok((purse, mut effects)) = state.get_mut(world) else { continue };
-            let paid = sum_of(&purse.coin_name([ev.target, ev.actor]), rite.price);
+            let coin = purse.coin_name([ev.target, ev.actor]);
             if works {
+                let paid = sum_of(&coin, rite.price);
                 effects.commands.write_message(Tell::new(format!("You give {{whom}} {paid}."), Tones::TEXT).to(ev.target));
                 let at = effects.position(ev.actor).unwrap_or_default();
                 rite.effects.land_on(Source::Offer(ev.target), ev.actor, at, vec![ev.actor], &mut effects);
             } else {
-                let line = format!("{{Whom}} {}, and gives back your {paid}.", rite.idle);
+                // Only what was handed back is said to be: the purse the
+                // priest was just paid into holds the price, so it is all
+                // of it unless something else emptied it first.
+                let line = match back {
+                    0 => format!("{{Whom}} {}.", rite.idle),
+                    _ => format!("{{Whom}} {}, and gives back your {}.", rite.idle, sum_of(&coin, back)),
+                };
                 effects.commands.write_message(Tell::new(line, Tones::MUTED).to(ev.target));
             }
             state.apply(world);

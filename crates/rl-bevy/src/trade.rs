@@ -354,8 +354,17 @@ fn hand_over(world: &mut World, from: Entity, to: Entity, item: Entity, count: u
 /// Public so a game that hands currency over, as one giving back the price
 /// of an offer its answer found nothing to do for, moves it by the same
 /// rule rather than making or destroying coins of its own. Pays what the
-/// payer has, up to `amount`, and no more.
-pub fn pay(world: &mut World, payer: Entity, payee: Entity, amount: u32, currency: Currency) {
+/// payer has, up to `amount`, and no more, and returns what it paid, so a
+/// caller says what changed hands rather than what it asked for.
+///
+/// A payee with no pack is given one, so nothing paid is ever left in
+/// nobody's bag and on no cell; a payee that is gone is paid nothing, and
+/// the payer keeps it all.
+pub fn pay(world: &mut World, payer: Entity, payee: Entity, amount: u32, currency: Currency) -> u32 {
+    let Ok(mut paid) = world.get_entity_mut(payee) else { return 0 };
+    if !paid.contains::<Inventory>() {
+        paid.insert(Inventory::default());
+    }
     let pieces: Vec<Entity> =
         world.get::<Inventory>(payer).map(|b| b.items.iter().copied().filter(|i| currency.is(world.get::<Tagged>(*i))).collect()).unwrap_or_default();
     let mut left = amount;
@@ -367,6 +376,7 @@ pub fn pay(world: &mut World, payer: Entity, payee: Entity, amount: u32, currenc
         hand_over(world, payer, payee, piece, take);
         left -= take;
     }
+    amount - left
 }
 
 /// One deal asked for, a [`Buy`] or a [`Sell`] in one shape.
@@ -619,6 +629,25 @@ mod tests {
         fn now(&self) -> u32 {
             self.app.world().resource::<Turns>().now()
         }
+    }
+
+    /// Paying someone who carries no pack gives them one, so every coin
+    /// that leaves the payer lands in it; a short purse pays what it holds
+    /// and says how much; and nobody to pay is paid nothing and the payer
+    /// keeps it all.
+    #[test]
+    fn pay_gives_a_payee_without_a_pack_one_and_returns_what_it_moved_and_never_loses_a_coin() {
+        let mut r = Rig::new();
+        let currency = Currency(r.currency);
+        let bare = r.app.world_mut().spawn(Actor).id();
+        let paid = pay(r.app.world_mut(), r.player, bare, 20, currency);
+        assert_eq!((paid, r.purse(r.player), r.purse(bare)), (20, 30, 20), "twenty left one purse and landed in a new pack");
+        let paid = pay(r.app.world_mut(), r.player, bare, 45, currency);
+        assert_eq!((paid, r.purse(r.player), r.purse(bare)), (30, 0, 50), "a short purse pays what it has, and says so");
+        let gone = r.app.world_mut().spawn_empty().id();
+        r.app.world_mut().despawn(gone);
+        assert_eq!(pay(r.app.world_mut(), bare, gone, 10, currency), 0, "nobody to pay");
+        assert_eq!(r.purse(bare), 50, "the payer keeps it all");
     }
 
     /// Taking up the offer is the turn, and opens a trade with the one who
