@@ -120,6 +120,8 @@ impl Plugin for UndermerePlugin {
         // leaves nothing of.
         app.init_resource::<crate::tally::Tally>().reset_on_new_run::<crate::tally::Tally>();
         app.init_resource::<crate::tally::Departed>().reset_on_new_run::<crate::tally::Departed>();
+        // Which stocking Mereholt's shelves are, begun again with each run.
+        app.init_resource::<crate::shops::Shelves>().reset_on_new_run::<crate::shops::Shelves>();
         app.add_observer(crate::tally::note_departure);
         // What a turn did, counted and answered inside it: the fighting and
         // what was found and drunk into the tally, and a boss's death into
@@ -139,7 +141,7 @@ impl Plugin for UndermerePlugin {
         // A place fills the moment it is first entered: the engine's slots
         // in `PrefabSet::Fill`, then the depth, the ways through and the
         // place's line in the log, the floor's people, Mereholt's keepers
-        // at their counters, the fixtures' light
+        // at their counters or their shelves restocked, the fixtures' light
         // and the floor's things, before the engine's loot in
         // `LootSet::Scatter`, each reading the same `PlaceEntered` through
         // its own cursor. After the slots, so the people keep off every
@@ -154,7 +156,7 @@ impl Plugin for UndermerePlugin {
                 crate::tally::remember_depth,
                 crate::stairs::link_places,
                 crate::population::populate,
-                crate::shops::open_shops,
+                crate::shops::keep_shops,
                 crate::light::light_fixtures,
                 crate::finds::lay,
             )

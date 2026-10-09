@@ -6,11 +6,13 @@
 //! way through leads, every place built, the clock and what the
 //! adventurer has seen. Undermere says only what each kind of thing it
 //! spawns is: the adventurer and the strength they have come to, a
-//! monster by its definition's name, an item by its definition's name,
+//! monster by its definition's name, a keeper of Mereholt by its post,
+//! an item by its definition's name,
 //! its level, whether it is still cursed on, how long it has been worn
 //! towards knowing its level and how much of it the tally has counted, and
 //! a way through by which way it is. What Undermere keeps of a run outside
-//! its entities, the [`Tally`] and the [`Lore`] of what is known, goes
+//! its entities, the [`Tally`], the [`Lore`] of what is known and which
+//! stocking the [`Shelves`] are, goes
 //! through [`SaveableState`], and the engine's `Quests` is saved the same
 //! way. It keeps no `Counters`, since the tally counts what the score is
 //! made of.
@@ -36,6 +38,7 @@ use crate::bestiary::{Bestiary, Kind};
 use crate::bestiary_lore::MonsterLore;
 use crate::lore::{CurseShown, Lore, Unfamiliar};
 use crate::run::Adventurer;
+use crate::shops::{POSTS, Shelves, Shopkeeper};
 use crate::stairs::Way;
 use crate::tally::{Counted, Tally};
 
@@ -47,23 +50,26 @@ use crate::tally::{Counted, Tally};
 // v3: an item's level, curse and familiarity, the adventurer's strength,
 // what is known of the run's things, and a finger slot on either hand.
 // v4: what is known of the run's monsters' tricks.
-pub const VERSION: u32 = 4;
+// v5: Mereholt's keepers, and which stocking their shelves are.
+pub const VERSION: u32 = 5;
 
 /// The slot every run saves to.
 pub const SLOT: &str = "undermere";
 
 // ANCHOR: register
-/// What the save is made of: the engine's plugins, the four kinds, and
-/// the four resources; and the records, in their own slot.
+/// What the save is made of: the engine's plugins, the five kinds, and
+/// the five resources; and the records, in their own slot.
 pub fn register(app: &mut App) {
     app.add_plugins((SavePlugin::new(SLOT).version(VERSION).on_arrival(), UnloadPlugin, RecordsSavePlugin))
         .save_kind::<ItemKind>()
         .save_kind::<Kind>()
         .save_kind::<Adventurer>()
         .save_kind::<Way>()
+        .save_kind::<Shopkeeper>()
         .save_state::<Tally>()
         .save_state::<Lore>()
         .save_state::<MonsterLore>()
+        .save_state::<Shelves>()
         .save_state::<Quests>();
 }
 // ANCHOR_END: register
@@ -321,6 +327,58 @@ impl Saveable for Way {
             e.insert(glyph);
         }
         e.id()
+    }
+}
+
+/// A keeper of Mereholt, as the save writes it: its post, by the keeper's
+/// name in `wares.ron`. The engine gives back where it stands, its health
+/// and its bag, which is its shelf and its purse as they were left; the
+/// rest of it is its post's, made again by [`shops::keeper`], since the
+/// engine saves neither its `Trader` nor its offer of `trade`.
+///
+/// [`shops::keeper`]: crate::shops::keeper
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeeperSave {
+    /// The keeper's name in `wares.ron`.
+    pub keeper: String,
+}
+
+impl Saveable for Shopkeeper {
+    type Saved = KeeperSave;
+
+    fn capture(world: &World, entity: Entity) -> KeeperSave {
+        KeeperSave { keeper: world.get::<Shopkeeper>(entity).expect("a keeper's post").0.keeper.to_string() }
+    }
+
+    fn restore(world: &mut World, saved: &KeeperSave) -> Entity {
+        let Some(post) = POSTS.into_iter().find(|p| p.keeper == saved.keeper) else {
+            warn!("a saved keeper keeps {:?}, which this build has no post for; it comes back as nothing", saved.keeper);
+            return world.spawn_empty().id();
+        };
+        let keeper = crate::shops::keeper(
+            post,
+            world.resource::<crate::shops::Wares>(),
+            world.resource::<Armory>(),
+            world.resource::<Registries>(),
+            world.resource::<Verbs>(),
+        );
+        // Nowhere, on no place, carrying nothing: the engine puts it back
+        // where it was with what it had.
+        world.spawn((keeper, Position(Point::ZERO), OnMap(MapId::SURFACE), Inventory::default())).id()
+    }
+}
+
+/// Which stocking Mereholt's shelves are, as the save writes it: the whole
+/// of [`Shelves`], so a continued run restocks when this one would have.
+impl SaveableState for Shelves {
+    type Saved = Shelves;
+
+    fn capture(&self) -> Shelves {
+        *self
+    }
+
+    fn restore(&mut self, saved: Shelves) {
+        *self = saved;
     }
 }
 

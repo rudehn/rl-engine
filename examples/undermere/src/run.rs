@@ -146,16 +146,20 @@ impl ExtraPack {
     }
 }
 
-/// What a photograph of a deeper floor wants in sight on arriving there:
-/// `main.rs` reads it from `UNDERMERE_NEAR`, beside `UNDERMERE_START`.
-/// `camp` is a goblin camp's fire, `captive` a captive's shackles, `lair`
-/// the floor's mini-boss, `throne` the floor's boss, and anything else a
-/// monster of that name. Absent, nothing, which is every real run.
+/// What a photograph of a deeper floor wants in sight on arriving there,
+/// or of Mereholt the keeper it wants to trade with: `main.rs` reads it
+/// from `UNDERMERE_NEAR`, beside `UNDERMERE_START`. `camp` is a goblin
+/// camp's fire, `captive` a captive's shackles, `lair` the floor's
+/// mini-boss, `throne` the floor's boss, a keeper's [`role`] that keeper
+/// in Mereholt (`smith`, `apothecary`, `curio` or `priest`), and anything
+/// else a monster of that name. Absent, nothing, which is every real run.
 ///
 /// The adventurer is warped along the way from where they arrived to it,
 /// [`NEAR_STEPS`] short of it, so what they see is what a player walking
 /// up to it would see, not a cell picked from above that might look at it
-/// through a wall.
+/// through a wall; beside a keeper, so one step into them opens the shop.
+///
+/// [`role`]: crate::shops::Post::role
 #[derive(Resource, Debug, Clone, PartialEq, Eq)]
 pub struct StartNear(pub String);
 
@@ -165,18 +169,26 @@ pub struct StartNear(pub String);
 pub const NEAR_STEPS: usize = 4;
 
 /// Stands the adventurer [`NEAR_STEPS`] short of what [`StartNear`] names,
-/// once it stands on the floor they arrived on, and forgets the ask; does
-/// nothing in Mereholt, or while the floor holds nothing by that name.
+/// or beside a keeper it names, once it stands on the place they arrived
+/// on, and forgets the ask; does nothing while they are somewhere it
+/// cannot be, a keeper below or anything else in Mereholt, or while the
+/// place holds nothing by that name.
 pub fn stand_near(world: &mut World) {
     let Some(near) = world.get_resource::<StartNear>().map(|n| n.0.clone()) else { return };
     let Some((me, at, here)) = world.query_filtered::<(Entity, &Position, &OnMap), With<Adventurer>>().iter(world).next().map(|(e, p, on)| (e, p.0, on.0))
     else {
         return;
     };
-    if here == TOWN {
+    let keeper = crate::shops::POSTS.into_iter().find(|post| post.role == near);
+    if (here == TOWN) != keeper.is_some() {
         return;
     }
-    let Some(target) = sought(world, &near, here) else { return };
+    let target = match keeper {
+        Some(post) => world.query::<(&Position, &crate::shops::Shopkeeper)>().iter(world).find(|(_, k)| k.0 == post).map(|(p, _)| p.0),
+        None => sought(world, &near, here),
+    };
+    let Some(target) = target else { return };
+    let steps = if keeper.is_some() { 1 } else { NEAR_STEPS };
     world.remove_resource::<StartNear>();
     let taken: Vec<Point> = world.query_filtered::<(&Position, &OnMap), With<Actor>>().iter(world).filter(|(_, on)| on.0 == here).map(|(p, _)| p.0).collect();
     let map = world.resource::<WorldMap>();
@@ -188,7 +200,7 @@ pub fn stand_near(world: &mut World) {
     while let Some(next) = flood.descend(*way.last().expect("never empty")).filter(|n| *n != goal) {
         way.push(next);
     }
-    let stand = way.iter().rev().skip(NEAR_STEPS.saturating_sub(1)).map(|p| map.to_world(*p)).find(|p| !taken.contains(p));
+    let stand = way.iter().rev().skip(steps.saturating_sub(1)).map(|p| map.to_world(*p)).find(|p| !taken.contains(p));
     if let Some(stand) = stand {
         info!("standing the adventurer at {stand:?}, short of the {near} at {target:?}");
         world.write_message(WarpRequest { actor: me, to: Destination::Place { map: here, arrive: Arrive::At(stand) } });

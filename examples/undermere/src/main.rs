@@ -7,7 +7,9 @@
 //! `UNDERMERE_START=5` starts the run on floor five instead of in Mereholt,
 //! `UNDERMERE_NEAR=camp` stands the adventurer a few steps short of what
 //! it names there (`camp`, `captive`, `lair`, `throne` or a monster's
-//! name), and for one of the pack, `UNDERMERE_PACK="ring of light:-2, potion of
+//! name); without `UNDERMERE_START`, `UNDERMERE_NEAR=smith` stands them
+//! beside that keeper in Mereholt instead (`smith`, `apothecary`, `curio`
+//! or `priest`), one step from opening the shop. For one of the pack, `UNDERMERE_PACK="ring of light:-2, potion of
 //! extra healing*2"` puts those in it as if found.
 
 use bevy::prelude::*;

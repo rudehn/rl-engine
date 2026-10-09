@@ -20,10 +20,14 @@
 //! fixed number of draws, never the same item twice, on top of what is
 //! always there, and neither of those reads a count like that.
 //!
-//! The keepers are the engine's traders: [`open_shops`] stands each at its
+//! The keepers are the engine's traders: [`keep_shops`] stands each at its
 //! [`Post`], a mark in `mereholt.ron`, on Mereholt's first arrival, with
 //! the run's first stocking as the `Inventory` it sells from and its purse
-//! in gold beside it, offering the engine's `trade`. The engine runs the
+//! in gold beside it, offering the engine's `trade`; and on a later
+//! arrival from a deeper tier than the shelves were drawn for, it clears
+//! them and draws the next stocking, which [`Shelves`] counts. A keeper is
+//! saved as its [`Shopkeeper`] post, so a continued run finds the same
+//! shelves and purses, less what was bought. The engine runs the
 //! screen, the prices and the deals; what is Undermere's is what a keeper
 //! knows. Keepers name what they sell, so a thing on a shelf is worth its
 //! kind's price known or not ([`keep_worth`](crate::armory::keep_worth)),
@@ -43,13 +47,14 @@ use rl_engine::rl_ui::TradeView;
 use ron::extensions::Extensions;
 use ron::options::Options;
 use ron::value::RawValue;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::armory::{Armory, ItemDef, ItemKind, RING_LEVELS, STAFF_LEVEL, spawn_found, spawn_items};
 use crate::content::TOWNSFOLK;
 use crate::dungeon::TOWN;
 use crate::lore::Lore;
 use crate::run::Adventurer;
+use crate::tally::Tally;
 
 const WARES_RON: &str = include_str!("../assets/wares.ron");
 
@@ -305,6 +310,9 @@ pub struct Post {
     /// What they are called: the role's words, until the townsfolk's
     /// drawn names replace them.
     pub called: &'static str,
+    /// Their role in a word, which a photograph's `UNDERMERE_NEAR` names
+    /// them by.
+    pub role: &'static str,
     /// The glyph of their mark in `mereholt.ron`.
     pub mark: char,
     /// The shop's own colour, `(r, g, b)` in `0..=1`: the keeper's, and
@@ -315,10 +323,10 @@ pub struct Post {
 
 /// Mereholt's four keepers, in `wares.ron`'s order.
 pub const POSTS: [Post; 4] = [
-    Post { keeper: "smith", called: "the smith", mark: 'S', color: (0.95, 0.55, 0.25) },
-    Post { keeper: "apothecary", called: "the apothecary", mark: 'Y', color: (0.45, 0.85, 0.5) },
-    Post { keeper: "curio", called: "the curio dealer", mark: 'D', color: (0.75, 0.55, 0.95) },
-    Post { keeper: "temple", called: "the priest", mark: 'P', color: (0.6, 0.8, 1.0) },
+    Post { keeper: "smith", role: "smith", called: "the smith", mark: 'S', color: (0.95, 0.55, 0.25) },
+    Post { keeper: "apothecary", role: "apothecary", called: "the apothecary", mark: 'Y', color: (0.45, 0.85, 0.5) },
+    Post { keeper: "curio", role: "curio", called: "the curio dealer", mark: 'D', color: (0.75, 0.55, 0.95) },
+    Post { keeper: "temple", role: "priest", called: "the priest", mark: 'P', color: (0.6, 0.8, 1.0) },
 ];
 
 /// The tags a keeper's [`Trader`] names: its own, or for one that buys
@@ -334,9 +342,39 @@ pub fn trader_tags(keeper: &Keeper, armory: &Armory) -> Vec<TagId> {
     tags
 }
 
+/// Which stocking Mereholt's shelves were last drawn from, and the tier it
+/// was drawn for. The run's own: saved with it, and begun again with the
+/// next run, so the same seed meets the same shelves however often the
+/// adventurer goes home.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Shelves {
+    /// The stocking's number, its index in [`WARES_STREAM`]: nought for the
+    /// run's first, one more for each restock.
+    pub stocking: u64,
+    /// The tier it was drawn for, which a restock waits to be passed.
+    pub tier: u32,
+}
+
+impl Default for Shelves {
+    fn default() -> Self {
+        Self { stocking: 0, tier: *TIERS.start() }
+    }
+}
+
+/// One of Mereholt's keepers, by its post: what the save writes it down
+/// as, and what a restock finds each shelf by.
+#[derive(Component, Debug, Clone, Copy, PartialEq)]
+pub struct Shopkeeper(pub Post);
+
 /// Stands each of Mereholt's keepers at their mark the first time the
 /// adventurer arrives there, with the run's first stocking on their
-/// shelves: stocking nought at the first tier, from the run's seed.
+/// shelves: stocking nought, at the tier reached, which is the first for
+/// any run begun in Mereholt. On every later arrival from deeper than the
+/// shelves were drawn for, restocks them: every keeper's old wares, what
+/// it was sold among them, and its purse are taken off and gone, and the
+/// next stocking is made in their place with a purse for the new tier,
+/// set rather than added to. Home again from the same tier, nothing is
+/// drawn, so the shelves are as they were left, less what was bought.
 ///
 /// A keeper is an actor of the townsfolk, with no mind, so it keeps to
 /// its counter; it offers `trade` and nothing else, so a walk into it opens
@@ -344,21 +382,69 @@ pub fn trader_tags(keeper: &Keeper, armory: &Armory) -> Vec<TagId> {
 /// the level the stocking rolled for it, as a thing found is, and its purse
 /// is gold coins in the same bag, which is what the engine pays out of.
 ///
-/// In the arrival chain, after the slots are filled. A mark the town lacks
+/// In the arrival chain, after the slots are filled and the tally has the
+/// floor just left. Keepers and shelves are made in [`POSTS`] order, so
+/// the run's entities come out the same every time. A mark the town lacks
 /// is a broken `mereholt.ron`, and panics naming it.
-pub fn open_shops(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, shops: Shops) {
-    let arrived = entered.read().filter(|ev| ev.first && ev.map == TOWN).count() > 0;
-    let Some(place) = shops.map.place(TOWN).filter(|_| arrived) else { return };
-    let stocking = shops.wares.stocking(&shops.seed, 0, tier_of(0));
-    for post in POSTS {
-        let at =
-            place.spots.iter().find(|s| s.tag == post.mark as u32).unwrap_or_else(|| panic!("mereholt.ron marks no '{}' for {}", post.mark, post.called)).at;
-        let shelf = stocking.iter().find(|s| s.keeper == post.keeper).unwrap_or_else(|| panic!("wares.ron has no keeper {:?}", post.keeper));
-        shops.stand(&mut commands, post, shelf, at);
+pub fn keep_shops(
+    mut commands: Commands,
+    mut entered: MessageReader<PlaceEntered>,
+    shops: Shops,
+    keepers: Query<(Entity, &Shopkeeper, Option<&Inventory>)>,
+    tally: Res<Tally>,
+    mut shelves: ResMut<Shelves>,
+) {
+    let Some(first) = entered.read().filter(|ev| ev.map == TOWN).map(|ev| ev.first).last() else { return };
+    let tier = tier_of(tally.deepest);
+    if first {
+        let place = shops.map.place(TOWN).expect("Mereholt is built when it is entered");
+        shelves.tier = tier;
+        let stocking = shops.wares.stocking(&shops.seed, shelves.stocking, tier);
+        for post in POSTS {
+            let at = place
+                .spots
+                .iter()
+                .find(|s| s.tag == post.mark as u32)
+                .unwrap_or_else(|| panic!("mereholt.ron marks no '{}' for {}", post.mark, post.called))
+                .at;
+            shops.stand(&mut commands, post, shelf_of(&stocking, post), at);
+        }
+    } else if tier > shelves.tier {
+        *shelves = Shelves { stocking: shelves.stocking + 1, tier };
+        let stocking = shops.wares.stocking(&shops.seed, shelves.stocking, tier);
+        for post in POSTS {
+            let Some((keeper, _, bag)) = keepers.iter().find(|(_, k, _)| k.0.keeper == post.keeper) else { continue };
+            for item in bag.into_iter().flat_map(|b| &b.items) {
+                commands.entity(*item).despawn();
+            }
+            let bag = shops.shelve(&mut commands, shelf_of(&stocking, post));
+            commands.entity(keeper).insert(Inventory { items: bag });
+        }
     }
 }
 
-/// What [`open_shops`] reads.
+/// The stocking's shelf for `post`'s keeper.
+fn shelf_of(stocking: &[Stocking], post: Post) -> &Stocking {
+    stocking.iter().find(|s| s.keeper == post.keeper).unwrap_or_else(|| panic!("wares.ron has no keeper {:?}", post.keeper))
+}
+
+/// Everything a keeper is but where it stands and what it carries, so a
+/// keeper stood at its counter and one a continued run puts back are the
+/// same: its [`Post`], its name and glyph in the shop's colour, its health,
+/// the townsfolk's side, the [`Trader`] that buys what `wares.ron` says and
+/// its offer of `trade`, neither of which the engine saves.
+pub fn keeper(post: Post, wares: &Wares, armory: &Armory, registries: &Registries, verbs: &Verbs) -> impl Bundle {
+    let keeper = wares.keeper(post.keeper).expect("every post's keeper is in wares.ron");
+    let trade = verbs.get(TRADE).expect("TradePlugin declares the trade verb");
+    let (r, g, b) = post.color;
+    (
+        (Shopkeeper(post), Actor, Blocks, Name::new(post.called), Glyph::new('@', Color::srgb(r, g, b)).on_layer(5)),
+        (Health::full(KEEPER_HEALTH), Faction(registries.factions.expect(TOWNSFOLK))),
+        (Trader { buys: trader_tags(keeper, armory), pays_pct: PAYS_PCT }, Offers(vec![Offering::new(trade, TRADE_TIME)])),
+    )
+}
+
+/// What [`keep_shops`] reads.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Shops<'w> {
     map: Res<'w, WorldMap>,
@@ -372,6 +458,13 @@ pub struct Shops<'w> {
 impl Shops<'_> {
     /// Spawns the keeper of `post` at `at` in Mereholt, carrying `shelf`.
     fn stand(&self, commands: &mut Commands, post: Post, shelf: &Stocking, at: Point) -> Entity {
+        let bag = self.shelve(commands, shelf);
+        let keeper = keeper(post, &self.wares, &self.armory, &self.registries, &self.verbs);
+        commands.spawn((keeper, Position(at), OnMap(TOWN), Inventory { items: bag })).id()
+    }
+
+    /// Makes `shelf`'s wares and purse, in that order, for a keeper's bag.
+    fn shelve(&self, commands: &mut Commands, shelf: &Stocking) -> Vec<Entity> {
         let (armory, registries) = (&*self.armory, &*self.registries);
         let mut bag: Vec<Entity> = Vec::new();
         for ware in &shelf.wares {
@@ -382,16 +475,7 @@ impl Shops<'_> {
             }
         }
         bag.extend(spawn_items(commands, armory, armory.defs.expect("gold coin"), shelf.purse, registries));
-        let keeper = self.wares.keeper(post.keeper).expect("every post's keeper is in wares.ron");
-        let trade = self.verbs.get(TRADE).expect("TradePlugin declares the trade verb");
-        let (r, g, b) = post.color;
-        commands
-            .spawn((
-                (Actor, Blocks, Position(at), OnMap(TOWN), Name::new(post.called), Glyph::new('@', Color::srgb(r, g, b)).on_layer(5)),
-                (Health::full(KEEPER_HEALTH), Faction(registries.factions.expect(TOWNSFOLK))),
-                (Trader { buys: trader_tags(keeper, armory), pays_pct: PAYS_PCT }, Offers(vec![Offering::new(trade, TRADE_TIME)]), Inventory { items: bag }),
-            ))
-            .id()
+        bag
     }
 }
 
@@ -871,6 +955,56 @@ mod tests {
         seen
     }
 
+    /// `drawn`'s wares as a keeper carries them: a thing that takes levels
+    /// one apiece, at the level rolled for it.
+    fn as_carried(armory: &Armory, drawn: &Stocking) -> Vec<Ware> {
+        drawn.wares.iter().flat_map(|w| if armory.takes_levels(w.def) { vec![Ware { count: 1, ..*w }; w.count as usize] } else { vec![*w] }).collect()
+    }
+
+    /// What `keeper` carries but its gold, as wares, and its gold.
+    fn carried(app: &App, keeper: Entity) -> (Vec<Ware>, u32) {
+        let world = app.world();
+        let gold = world.resource::<Armory>().defs.expect("gold coin");
+        let (mut wares, mut purse) = (Vec::new(), 0);
+        for item in &world.get::<Inventory>(keeper).expect("a shelf").items {
+            let def = world.get::<ItemKind>(*item).expect("a kind").0;
+            let count = world.get::<Stack>(*item).map_or(1, |st| st.count);
+            if def == gold {
+                purse += count;
+            } else {
+                wares.push(Ware { def, count, level: world.get::<Enchant>(*item).map_or(0, |e| e.level) });
+            }
+        }
+        (wares, purse)
+    }
+
+    /// Every keeper's bag, thing by thing, in [`POSTS`] order: which shows
+    /// whether a shelf was drawn again as well as what is on it.
+    fn bags(app: &mut App) -> Vec<Vec<Entity>> {
+        keepers(app).into_iter().map(|k| app.world().get::<Inventory>(k).expect("a shelf").items.clone()).collect()
+    }
+
+    /// Every keeper, in [`POSTS`] order.
+    fn keepers(app: &mut App) -> Vec<Entity> {
+        POSTS.iter().map(|post| keeper(app, post.called)).collect()
+    }
+
+    /// The adventurer, given gold enough, buys the whole of the last ware
+    /// on the shelf of the keeper called `called`; returns the thing bought.
+    fn buy_last(app: &mut App, me: Entity, called: &str) -> Entity {
+        let gold = make(app, "gold coin");
+        app.world_mut().get_mut::<Stack>(gold).expect("gold stacks").count = 5000;
+        give(app, me, gold);
+        let k = keeper(app, called);
+        open_trade(app, me, k);
+        let (item, _) = *shelf(app, k).last().expect("something on the shelf");
+        let count = app.world().get::<Stack>(item).map_or(1, |st| st.count);
+        app.world_mut().write_message(Buy { customer: me, trader: k, item, count });
+        settle(app);
+        assert!(app.world().get::<Inventory>(me).expect("a pack").contains(item), "{called} sold it");
+        item
+    }
+
     /// A keeper's shelf is the run's first stocking at the first tier,
     /// ware for ware, a thing that takes levels one apiece at the level
     /// rolled for it, and its purse two hundred gold beside it.
@@ -879,30 +1013,150 @@ mod tests {
         for s in 0..3 {
             let (mut app, _) = in_mereholt(s);
             let (wares, armory) = (app.world().resource::<Wares>().clone(), app.world().resource::<Armory>().clone());
-            let gold = armory.defs.expect("gold coin");
             let stocking = wares.stocking(&Seed(RunSeed(s)), 0, 1);
+            assert_eq!(*app.world().resource::<Shelves>(), Shelves { stocking: 0, tier: 1 }, "seed {s}");
             for post in POSTS {
                 let k = keeper(&mut app, post.called);
-                let drawn = stocking.iter().find(|st| st.keeper == post.keeper).expect("every keeper is stocked");
-                let expected: Vec<Ware> = drawn
-                    .wares
-                    .iter()
-                    .flat_map(|w| if armory.takes_levels(w.def) { vec![Ware { count: 1, ..*w }; w.count as usize] } else { vec![*w] })
-                    .collect();
-                let world = app.world();
-                let (mut carried, mut purse) = (Vec::new(), 0);
-                for item in &world.get::<Inventory>(k).expect("a shelf").items {
-                    let def = world.get::<ItemKind>(*item).expect("a kind").0;
-                    let count = world.get::<Stack>(*item).map_or(1, |st| st.count);
-                    if def == gold {
-                        purse += count;
-                    } else {
-                        carried.push(Ware { def, count, level: world.get::<Enchant>(*item).map_or(0, |e| e.level) });
-                    }
-                }
-                assert_eq!(carried, expected, "seed {s}: {}'s shelf", post.called);
+                let (wares, purse) = carried(&app, k);
+                assert_eq!(wares, as_carried(&armory, shelf_of(&stocking, post)), "seed {s}: {}'s shelf", post.called);
                 assert_eq!(purse, PURSE_PER_TIER, "seed {s}: {}'s purse", post.called);
             }
+        }
+    }
+
+    /// Home again from no deeper a tier than the shelves were drawn for,
+    /// nothing is drawn: every bag is the same things as when the
+    /// adventurer left, so what they bought is still gone.
+    #[test]
+    fn a_return_from_the_same_tier_finds_the_shelves_as_they_were_left_less_what_was_bought_over_a_span_of_seeds() {
+        for s in 0..3 {
+            let (mut app, me) = in_mereholt(s);
+            let smith = keeper(&mut app, "the smith");
+            let before = shelf(&app, smith);
+            let bought = buy_last(&mut app, me, "the smith");
+            let left = bags(&mut app);
+            assert_eq!(shelf(&app, smith), before[..before.len() - 1], "seed {s}: the smith's shelf less what was bought");
+            crate::testing::arrive(&mut app, crate::dungeon::map_of(2));
+            crate::testing::arrive(&mut app, TOWN);
+            assert_eq!(bags(&mut app), left, "seed {s}: the shelves as they were left");
+            assert!(!shelf(&app, smith).iter().any(|(item, _)| *item == bought), "seed {s}: and what was bought not back on them");
+            assert_eq!(*app.world().resource::<Shelves>(), Shelves { stocking: 0, tier: 1 }, "seed {s}: no new stocking");
+        }
+    }
+
+    /// Home from a deeper tier, every keeper's old wares and purse are gone
+    /// and the next stocking, drawn for that tier, is on the shelves, with
+    /// a purse for the tier however much the last one had taken in; home
+    /// again from the same tier, those shelves are as they were left.
+    #[test]
+    fn a_return_from_a_deeper_tier_draws_the_next_stocking_and_sets_each_purse_for_it_over_a_span_of_seeds() {
+        for s in 0..3 {
+            let (mut app, me) = in_mereholt(s);
+            buy_last(&mut app, me, "the smith");
+            let old: Vec<Entity> = bags(&mut app).concat();
+            crate::testing::arrive(&mut app, crate::dungeon::map_of(3));
+            crate::testing::arrive(&mut app, TOWN);
+            assert_eq!(*app.world().resource::<Shelves>(), Shelves { stocking: 1, tier: 2 }, "seed {s}: the next stocking, for tier two");
+            assert!(old.iter().all(|e| app.world().get_entity(*e).is_err()), "seed {s}: the old wares and purses are gone");
+            let (wares, armory) = (app.world().resource::<Wares>().clone(), app.world().resource::<Armory>().clone());
+            let stocking = wares.stocking(&Seed(RunSeed(s)), 1, 2);
+            for post in POSTS {
+                let k = keeper(&mut app, post.called);
+                let (wares, purse) = carried(&app, k);
+                assert_eq!(wares, as_carried(&armory, shelf_of(&stocking, post)), "seed {s}: {}'s shelf", post.called);
+                assert_eq!(purse, 2 * PURSE_PER_TIER, "seed {s}: {}'s purse set for tier two", post.called);
+            }
+            let restocked = bags(&mut app);
+            crate::testing::arrive(&mut app, crate::dungeon::map_of(4));
+            crate::testing::arrive(&mut app, TOWN);
+            assert_eq!(bags(&mut app), restocked, "seed {s}: home again from tier two, the same shelves");
+            assert_eq!(*app.world().resource::<Shelves>(), Shelves { stocking: 1, tier: 2 }, "seed {s}");
+        }
+    }
+
+    /// Two runs of the same seed that go home from the same depth meet the
+    /// same restocked shelves, even when the depth skips a tier.
+    #[test]
+    fn the_same_seed_restocks_the_same_shelves_over_a_span_of_seeds() {
+        for s in 0..3 {
+            let restocked = |s: u64| {
+                let (mut app, _) = in_mereholt(s);
+                crate::testing::arrive(&mut app, crate::dungeon::map_of(5));
+                crate::testing::arrive(&mut app, TOWN);
+                let shelves: Vec<(Vec<Ware>, u32)> = keepers(&mut app).into_iter().map(|k| carried(&app, k)).collect();
+                (*app.world().resource::<Shelves>(), shelves)
+            };
+            let (first, second) = (restocked(s), restocked(s));
+            assert_eq!(first.0, Shelves { stocking: 1, tier: 3 }, "seed {s}: one stocking more, for the tier reached");
+            assert_eq!(first, second, "seed {s}");
+        }
+    }
+
+    /// Every keeper as a continued run would have to give it back, in
+    /// [`POSTS`] order: its name, where it stands, its side, what it
+    /// offers, what it buys and pays, its shelf by name and its purse.
+    #[allow(clippy::type_complexity)]
+    fn keepers_as_seen(
+        app: &mut App,
+    ) -> Vec<(String, Option<(Point, MapId)>, Option<FactionId>, Vec<VerbId>, Option<(Vec<TagId>, u32)>, Vec<(String, u32, i32)>, u32)> {
+        keepers(app)
+            .into_iter()
+            .map(|k| {
+                let world = app.world();
+                let (wares, purse) = carried(app, k);
+                let armory = world.resource::<Armory>();
+                (
+                    name_of(app, k),
+                    world.get::<Position>(k).zip(world.get::<OnMap>(k)).map(|(p, m)| (p.0, m.0)),
+                    world.get::<Faction>(k).map(|f| f.0),
+                    world.get::<Offers>(k).map(|o| o.0.iter().map(|o| o.verb).collect()).unwrap_or_default(),
+                    world.get::<Trader>(k).map(|t| (t.buys.clone(), t.pays_pct)),
+                    wares.iter().map(|w| (armory.defs.get(w.def).name.clone(), w.count, w.level)).collect(),
+                    purse,
+                )
+            })
+            .collect()
+    }
+
+    /// The run's save as the slot holds it now.
+    fn saved(app: &App) -> String {
+        app.world().resource::<Saves>().load(crate::save::SLOT).expect("the slot reads").expect("the arrival wrote the run down")
+    }
+
+    /// A run saved in Mereholt, after a restock and a purchase from each of
+    /// two stockings, continues with every keeper at its mark with the
+    /// same shelf, purse and offer of trade, and the same stocking; and one
+    /// saved below, before the restock, meets on going home the same
+    /// keepers restocked the same as the run that was not saved.
+    #[test]
+    fn a_run_saved_and_continued_in_mereholt_or_below_keeps_its_keepers_shelves_purses_offers_and_stocking() {
+        for s in 0..2 {
+            let (mut app, me) = in_mereholt(s);
+            buy_last(&mut app, me, "the smith");
+            crate::testing::arrive(&mut app, crate::dungeon::map_of(3));
+            let below = saved(&app);
+            crate::testing::arrive(&mut app, TOWN);
+            let restocked = keepers_as_seen(&mut app);
+            buy_last(&mut app, me, "the apothecary");
+            crate::testing::arrive(&mut app, crate::dungeon::map_of(4));
+            crate::testing::arrive(&mut app, TOWN);
+            let in_town = saved(&app);
+            let seen = keepers_as_seen(&mut app);
+            assert_ne!(seen, restocked, "seed {s}: the apothecary sold something");
+
+            let mut carried_on = crate::testing::continued(&in_town);
+            assert_eq!(crate::testing::here(&carried_on), TOWN, "seed {s}: continued in Mereholt");
+            assert_eq!(keepers_as_seen(&mut carried_on), seen, "seed {s}: the same keepers, shelves and purses");
+            assert_eq!(*carried_on.world().resource::<Shelves>(), Shelves { stocking: 1, tier: 2 }, "seed {s}: and the same stocking");
+            let me = adventurer(&mut carried_on);
+            let smith = keeper(&mut carried_on, "the smith");
+            open_trade(&mut carried_on, me, smith);
+
+            let mut from_below = crate::testing::continued(&below);
+            assert_eq!(*from_below.world().resource::<Shelves>(), Shelves { stocking: 0, tier: 1 }, "seed {s}: saved before the restock");
+            crate::testing::arrive(&mut from_below, TOWN);
+            assert_eq!(keepers_as_seen(&mut from_below), restocked, "seed {s}: home, restocked as the run not saved was");
+            assert_eq!(*from_below.world().resource::<Shelves>(), Shelves { stocking: 1, tier: 2 }, "seed {s}");
         }
     }
 
