@@ -180,13 +180,15 @@ pub enum Phrase {
     YouSwapWith,
     /// Someone noticed you.
     NoticesYou,
-    /// You used an ability on nobody in particular.
+    /// You used an ability on nobody in particular, or aimed it at the
+    /// ground, whoever it caught there.
     YouUse,
     /// You used one on someone.
     YouUseOn,
     /// You used one on several.
     YouUseOnMany,
-    /// Someone else used one on nobody in particular.
+    /// Someone else used one on nobody in particular, or aimed it at the
+    /// ground, whoever it caught there.
     Uses,
     /// Someone else used one on someone.
     UsesOn,
@@ -559,6 +561,13 @@ impl Witness<'_, '_> {
         self.registries.as_deref().is_some_and(|r| r.statuses.get(id).boon)
     }
 
+    /// Whether `id` is aimed at someone rather than at the ground, so a
+    /// line may say whom it was used on. True with no abilities to ask,
+    /// since then the targets are all there is to go on.
+    fn aims_at_someone(&self, id: rl_rules::AbilityId) -> bool {
+        self.abilities.as_deref().is_none_or(|a| a.get(id).aim != rl_rules::ability::Aim::Ground)
+    }
+
     fn ability_name(&self, id: rl_rules::AbilityId) -> String {
         self.abilities.as_deref().map(|a| a.get(id).name.clone()).unwrap_or_default()
     }
@@ -605,7 +614,11 @@ pub fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witn
         match ev {
             AbilityEvent::Used { user, ability, targets, .. } => {
                 let you = witness.is_you(*user);
-                let others: Vec<Entity> = targets.iter().copied().filter(|t| t != user).collect();
+                // Whoever a use aimed at the ground caught is told by the
+                // harm it did them, not as whom it was used on: a step
+                // through the air pointed past the player is not cast on
+                // them, and the cell is all it was aimed at.
+                let others: Vec<Entity> = if witness.aims_at_someone(*ability) { targets.iter().copied().filter(|t| t != user).collect() } else { Vec::new() };
                 let (phrase, whom) = match others.as_slice() {
                     [] => (if you { Phrase::YouUse } else { Phrase::Uses }, None),
                     [one] => (if you { Phrase::YouUseOn } else { Phrase::UsesOn }, Some(*one)),
@@ -1748,6 +1761,33 @@ mod tests {
         stage.tick();
         let said: Vec<String> = lines(&stage).into_iter().map(|(t, _)| t).collect();
         assert!(said.contains(&"The line droid turns it back on the rat.".to_string()), "{said:?}");
+    }
+
+    /// A use aimed at the ground is told without whom it caught, since
+    /// the cell is what it was aimed at, and one aimed at someone names
+    /// them: "The rat uses burst.", not "The rat uses burst on you.", where
+    /// the burst was a step through the air that landed beside the player.
+    #[test]
+    fn a_use_aimed_at_the_ground_names_nobody_and_one_aimed_at_someone_names_them() {
+        use crate::view::target::harness::abilities;
+        use rl_bevy::{AbilitiesPlugin, AbilityEvent, AddEngineEffects};
+        let mut stage = Stage::new_with((AbilitiesPlugin, rl_bevy::EffectsPlugin, NarratorPlugin::default()), |app| {
+            app.add_engine_effects();
+            abilities(app);
+        });
+        let (bolt, burst) = {
+            let a = stage.app.world().resource::<Abilities>();
+            (a.expect("bolt"), a.expect("burst"))
+        };
+        let (player, at) = (stage.player, stage.at);
+        let rat = stage.actor("rat", 'r', 3, 0);
+        stage.tick();
+        for (user, ability, whom) in [(rat, burst, player), (rat, bolt, player), (player, burst, rat)] {
+            stage.app.world_mut().write_message(AbilityEvent::Used { user, ability, aim: at, targets: vec![whom] });
+        }
+        stage.tick();
+        let said = spoken(&stage, &["The rat uses", "You use"]);
+        assert_eq!(said, ["The rat uses burst.", "The rat uses bolt on you.", "You use burst."], "{said:#?}");
     }
 
     /// A bolt from a thing used, or from an ability, is not a blow: the

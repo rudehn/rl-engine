@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The narrator says whom an ability was used on only when it is aimed at someone: one aimed at the ground reads `The necromancer uses blink.` and `You use burst.`, whoever it caught, where a step through the air pointed past the player read `The necromancer uses blink on you.`
+  Whoever a ground-aimed use caught is told by the harm it did them, as before.
+
 - The nearby rail clips a long name and keeps what the thing is doing whole after it, `Grubnak the… (unaware)` where it read `Grubnak the goblin king (unawar…`; a row too narrow to keep four of the name's characters beside the state is clipped from the end as before.
 
 - A mind that opens doors no longer plans a diagonal past a closed door's corner, which the move resolver refuses, so it is no longer held refused at the same step every turn: the new `WorldMap::lets_diagonal_past(p)` is the one corner rule, read by the move resolver and answered by `opening_view`, which prices a closed door at its opening and still lets no diagonal past it.
