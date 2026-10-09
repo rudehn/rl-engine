@@ -12,7 +12,7 @@
             crates/rl-bevy/src/world.rs
             crates/rl-bevy/src/plugin.rs
             crates/rl-bevy/src/cue.rs
-     fingerprint: 48a9516f -->
+     fingerprint: aa6d8824 -->
 
 # Saving and the ending screen
 
@@ -45,7 +45,7 @@ Remains are saved as whatever they were, and a prop kind a game laid on a body a
 `RunSave` is the result: a `format`, the `EngineSave`, a `KindSave` per kind holding each entry's own RON, the `EntityState` of each, and the game's resources by name.
 `RunSave::capture` walks the kinds in registration order and each kind's living entities still in play in spawn order, leaving out the dead and the spent the frame keeps only so the log can name them, so one run writes the same bytes whatever order the archetypes are in; `restore` spawns each kind, binds the ids, puts the engine's state back on them, restores the game's resources and then the engine's own, into a world whose content resources and whose `Seed` the game has already inserted.
 `RunSave::state::<R>` reads one resource out of a save before anything is restored, for the part of a start that runs before the world exists, and `count_of` and `turn` are for a line in the log.
-`EngineSave` is the engine's half: the run's `seed`, the clock, the queue as ids and readings, the map's edits and its built places, what the player has explored and which sites it has found, every chart a mind filled, each saved entity's pools and cooldowns, its charges and what refills them, the progress towards a worn thing's next pulse, and how many more times each of its triggers may fire, and every burning or gassed cell on every map.
+`EngineSave` is the engine's half: the run's `seed`, the clock, the queue as ids and readings, the map's edits and its built places, what the player has explored and the still things it last saw there, which sites it has found, every chart a mind filled, each saved entity's pools and cooldowns, its charges and what refills them, the progress towards a worn thing's next pulse, and how many more times each of its triggers may fire, and every burning or gassed cell on every map.
 `EngineSave::restore` puts every one of those back except the `seed`, which it only carries: a game reads `save.engine.seed` itself and inserts the `Seed` before it builds the world the continued run stands in.
 Whoever held the turn is out of the queue when a save is taken, so it is put back at the front of the present and dealt first on the run that continues.
 What is in the air when a save is taken, a shot, an ability or a thing's aimed use waiting to be seen to land, is not saved: what it cost is spent in the save and what it would have landed is lost, since every `Airborne` is emptied when its run ends.
@@ -130,7 +130,7 @@ fn show_the_take(mut view: ResMut<EndingView>, player: Query<Option<&Inventory>,
 
 ## The line
 
-With the plugin added and nothing else registered, the engine saves the clock and the queue, the run's seed, the surface's edits and every built place, what the player has explored and the sites it has found, the fire and the gas on every map, and what each actor has spent on abilities.
+With the plugin added and nothing else registered, the engine saves the clock and the queue, the run's seed, the surface's edits and every built place, what the player has explored and the still things it last saw there, the sites it has found, the fire and the gas on every map, and what each actor has spent on abilities.
 It saves every prop too, because it spawned them from definitions it can read again.
 Everything else is the game's to register, since the engine cannot know what a monster or a sword is made of: what a kind is written down as, and what spawning one again means, are `Saveable`, and what is not an entity is `SaveableState`.
 The engine then puts its own half back on whatever the game spawned, so giving a kind a bag, a status or a stack later changes nothing about how that game saves it.
