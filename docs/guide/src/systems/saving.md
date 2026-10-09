@@ -12,7 +12,8 @@
             crates/rl-bevy/src/world.rs
             crates/rl-bevy/src/plugin.rs
             crates/rl-bevy/src/cue.rs
-     fingerprint: 48a9516f -->
+            crates/rl-bevy/src/minds.rs
+     fingerprint: ade7c106 -->
 
 # Saving and the ending screen
 
@@ -36,7 +37,8 @@ Nothing here is on by default, and a game that registers no kinds and adds neith
 ## The model
 
 `Saveable` is the one trait a game writes, implemented on the component that marks a kind: `capture` writes an entity down as `Self::Saved`, and `restore` spawns one again from that, nowhere, carrying nothing, at full health.
-Neither says anything about position, health, bags, slots, stacks, statuses, remains, where a transition leads, where an actor is posted, the work it is in the middle of or how long something alight has left to burn, because that is `EntityState`, the engine's half of every saved entity, and every field of it is optional, so a kind that gains a bag later still reads an old save.
+Neither says anything about position, health, bags, slots, stacks, statuses, remains, where a transition leads, where an actor is posted, the work it is in the middle of, how long something alight has left to burn, or whom it follows as a leader, because that is `EntityState`, the engine's half of every saved entity, and every field of it is optional, so a kind that gains a bag later still reads an old save.
+`EntityState::leader` is by `SaveId` rather than by the brain it rides on, since a kind's `Brain` is content made again from its definition and not a thing to save: a follower whose leader was saved too follows it again, by the entity map, and one whose leader was not follows nobody rather than an entity that no longer exists.
 A status a worn thing holds is saved apart from the rest, with the thing's save id, and put back held by the thing; one whose thing did not come back is left out rather than put back loose, since it lasted only while that thing was worn.
 Remains are saved as whatever they were, and a prop kind a game laid on a body afterwards is part of what `EntityState` records of the remains, which is why `PropKind` answers false to `Saveable::TAKES_REMAINS`; a capture that finds one entity claimed by two kinds is refused with both named, since restoring it would spawn the thing twice.
 `SaveableState` is the same bargain for a resource a game keeps of a run, with `capture` and `restore` on the resource itself, which must already exist when the save is restored.
