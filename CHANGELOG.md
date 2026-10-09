@@ -6,6 +6,14 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The map remembers what stands on it, not only the ground: a remembered tile shows the still thing last seen on it, an item, a prop or a way through, faded in the colours of memory as the tile is, so stairs, lifts and things left lying no longer vanish the moment they leave sight.
+  A still thing is anything drawn that is not an `Actor`; a creature is never remembered, and a `Hidden` prop not until it is spotted.
+  Memory is what was seen: a tile in sight takes what stands on it now, or nothing, and a thing that comes or goes out of sight changes nothing until its tile is seen again.
+  It is part of `MapViewPlugin`, whose new `remember_still_things` runs before `draw_map` in `PresentSet::Map`, so every game has it with nothing to add; `TileAppearance::recalled` is how a remembered thing is drawn.
+  `dress_props` and `redress_emptied` now run after `EngineSet::Turns` and before `EngineSet::Present` rather than merely before `draw_map`, so a prop put down in a turn is dressed before that frame draws or remembers it.
+  The memory is `Knowledge`'s, kept per map beside the explored tiles and switched with them: `rl_bevy::Recalled` is a glyph and an `Rgb`, `Knowledge::recalled` reads a tile, and `Knowledge::see_still` is the look the map view takes.
+  `Knowledge::learn` marks a tile known without being seen and has the next look take in what stands on it, for a place known by heart; a game that marks a whole place explored with `mark` and wants its things remembered too calls `learn` instead, as Undermere's Mereholt now does.
+  `KnowledgeSave` gains `recalled`, what stood still where on every map, read as empty from a save written before it, so no save version moves; a `KnowledgeSave` built by hand says `recalled: Vec::new()`.
 - Ammunition is the engine's, lifted out of Foundry: `rl_bevy::Ammo` names the tag one shot spends from its wielder's bag, and the opt-in `AmmoPlugin` runs `spend_ammo` then `sync_ammo`, chained in the new `AmmoSet::Resolve`, to spend it and to dry or reload the weapon from the bag alone, fresh every pass, with no event of its own to fall behind.
   A weapon with nothing left has its attack put by as the engine's own `Stowed` under a `Dry` marker, the same holder a game's own reason to bench a weapon (Foundry's heat among them) now reuses rather than inventing a second one, so `Loadout` falls through to the next worn item with no knowledge of ammunition at all; `Loadout::dry` answers whether an item has gone dry, the same "empty, not gone" standing an empty charged thing has.
   `AmmoChanged` is written for every dry or reload transition, for a game that wants to say so, as Foundry's own `ammo::narrate_ammo` now does in its place.

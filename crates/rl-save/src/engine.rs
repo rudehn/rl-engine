@@ -292,6 +292,29 @@ mod tests {
         assert!(w.get::<MyTurn>(player2).is_some(), "the player, who held the turn when saved, holds it again");
     }
 
+    /// The stairs the player saw are part of what the player knows, so a
+    /// continued run still draws them out of sight; and a save written
+    /// before things were remembered still reads, remembering none.
+    #[test]
+    fn what_stood_where_survives_a_round_trip_and_an_older_save_remembers_nothing() {
+        let (mut app, start) = fresh();
+        let stairs = start.offset(2, 0);
+        let look = rl_bevy::Recalled { glyph: '>', color: rl_grid::Rgb::new(235, 220, 160) };
+        app.world_mut().resource_mut::<Knowledge>().see_still(|_| true, [(stairs, look)]);
+        app.insert_resource(Seed(RunSeed(5)));
+        let save = EngineSave::capture(app.world_mut(), &mut EntityRemap::new());
+        let text = crate::encode(1, &save).unwrap();
+
+        let (mut app2, _) = fresh();
+        let back: EngineSave = crate::decode(1, &text).unwrap();
+        back.restore(app2.world_mut(), &EntityRemap::new());
+        assert_eq!(app2.world().resource::<Knowledge>().recalled(stairs), Some(look));
+
+        let older = text.replace("recalled:", "ignored:");
+        let back: EngineSave = crate::decode(1, &older).expect("a save with no memory of things still reads");
+        assert!(back.knowledge.recalled.is_empty());
+    }
+
     /// A fire and a cloud of gas are the engine's, so a run saved while
     /// something burns is continued with it still burning, on the map it
     /// was burning on.
