@@ -162,8 +162,13 @@ pub fn with_article(name: &str) -> String {
         return name.to_string();
     }
     let lower = name.to_ascii_lowercase();
-    // Spelled with a vowel, said with a consonant, and the reverse.
-    let sounds_like_a_vowel = if ["uni", "use", "usu", "uti", "one", "eu", "ure"].iter().any(|p| lower.starts_with(p)) {
+    // Spelled with a vowel, said with a consonant, and the reverse. A
+    // word that starts "un" and then "i" is "un-" before most of them,
+    // "unidentified", "unimportant", "uninvited", and "uni-" said "you"
+    // before the rest, "uniform", "unicorn", "unique".
+    let sounds_like_a_vowel = if ["unid", "unim", "unin"].iter().any(|p| lower.starts_with(p)) {
+        true
+    } else if ["uni", "use", "usu", "uti", "one", "eu", "ure"].iter().any(|p| lower.starts_with(p)) {
         false
     } else if ["hour", "honest", "honor", "honour", "heir"].iter().any(|p| lower.starts_with(p)) {
         true
@@ -273,6 +278,9 @@ mod tests {
         assert_eq!(with_article("ember"), "an ember");
         assert_eq!(with_article("hour glass"), "an hour glass");
         assert_eq!(with_article("uniform"), "a uniform");
+        assert_eq!(with_article("unicorn"), "a unicorn");
+        assert_eq!(with_article("unidentified sword"), "an unidentified sword", "un- before an i is said with a vowel");
+        assert_eq!(with_article("unimportant thing"), "an unimportant thing");
         assert_eq!(with_article("the stairs"), "the stairs");
         assert_eq!(with_article("Ada"), "Ada", "a proper name takes none");
         assert_eq!(with_article(""), "");

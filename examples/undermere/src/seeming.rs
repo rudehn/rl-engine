@@ -383,33 +383,34 @@ impl Unsettled<'_, '_> {
 
     /// What is known of `thing`'s level, and how long it must still be
     /// worn to tell it, the lines a panel prints in place of `unknown`:
-    /// "level not yet known, shown as +0" over a kind's numbers at nought,
-    /// the bare "level not yet known" for a ring, whose lines are what a
-    /// level gives, and "level below nought, how far not yet known" once a
-    /// curse has shown; then "known in 140 more turns worn" while it is
-    /// `worn`, and "wearing it 200 turns will tell its level" while it is
-    /// not.
+    /// "level below nought, how far not yet known" once a curse has shown;
+    /// "numbers shown at +0" over a kind's numbers at nought, which a ring,
+    /// whose lines are what a level gives, has none of; then "level known in
+    /// 140 more turns worn" while it is `worn`, and "wearing it 200 turns
+    /// will tell its level" while it is not.
     ///
-    /// Below nought only while it still is: a curse shown and then
-    /// enchanted up to nought came unstuck saying so, and is not known to
-    /// be below anything.
+    /// No line says the level is not yet known, since the name says
+    /// `unidentified` already. Below nought only while it still is: a curse
+    /// shown and then enchanted up to nought came unstuck saying so, and is
+    /// not known to be below anything.
     pub fn level_lines(&mut self, thing: Entity, plain: &Plain, worn: bool) -> Vec<Facet> {
         let Ok((_, level, unfamiliar, shown, _)) = self.things.get(thing) else { return Vec::new() };
-        let below = shown && level.is_some_and(|l| l.level < 0);
-        let numbers = !plain.lines().is_empty();
-        let (known, tone) = match (below, numbers) {
-            (true, _) => ("level below nought, how far not yet known", Tones::BAD),
-            (false, true) => ("level not yet known, shown as +0", Tones::MUTED),
-            (false, false) => ("level not yet known", Tones::MUTED),
-        };
+        let mut lines = Vec::new();
+        if shown && level.is_some_and(|l| l.level < 0) {
+            lines.push(self.facets.facet("level", "level below nought, how far not yet known").toned(Tones::BAD));
+        }
+        if !plain.lines().is_empty() {
+            lines.push(self.facets.facet("level", "numbers shown at +0").toned(Tones::MUTED));
+        }
         let left = unfamiliar.left();
         let turns = if left == 1 { "1 more turn".to_string() } else { format!("{left} more turns") };
         let wear = match (worn, unfamiliar.worn) {
-            (true, _) => format!("known in {turns} worn"),
+            (true, _) => format!("level known in {turns} worn"),
             (false, 0) => format!("wearing it {FAMILIAR_AFTER} turns will tell its level"),
             (false, _) => format!("wearing it {turns} will tell its level"),
         };
-        vec![self.facets.facet("level", known).toned(tone), self.facets.facet("level", wear).toned(Tones::MUTED)]
+        lines.push(self.facets.facet("level", wear).toned(Tones::MUTED));
+        lines
     }
 
     /// What each level of it gives, as facets under its numbers.
@@ -580,7 +581,7 @@ mod tests {
         for name in ["chain mail", "sword", "bow", "shield", "ring of regeneration"] {
             assert!(kinds.contains(&name), "{name} is learned by wearing it");
             let plain = pack_row(name, 0);
-            assert!(plain.0.first().is_some_and(|l| l.starts_with("level not yet known")), "{name}: {:?}", plain.0);
+            assert!(plain.0.last().is_some_and(|l| l.starts_with("wearing it")), "{name}: {:?}", plain.0);
             for level in [-3, -1, 2, 3] {
                 assert_eq!(pack_row(name, level), plain, "{name} at {level:+} reads as it does at nought");
             }

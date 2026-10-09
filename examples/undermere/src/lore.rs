@@ -20,10 +20,11 @@
 //! A weapon, armor or ring is known by its kind and not by its level: one
 //! that was found is [`Unfamiliar`] until the adventurer has worn it for
 //! [`FAMILIAR_AFTER`] turns, which [`grow_familiar`] counts, or it is
-//! identified. Its name carries its level only once the level is known,
-//! nought included, `+0 sword` and `+2 chain mail`, so a number in a name
-//! is always one the adventurer knows, and an unfamiliar thing is called by
-//! its kind alone, `chain mail`. [`tell_unfamiliar`] says how long wearing
+//! identified. Until then it is called `unidentified chain mail`; once its
+//! level is known it is `chain mail` at nought and `+2 chain mail` or `-1
+//! ring of stealth` otherwise, so whether a name says `unidentified` is
+//! whether its level is known, and a number in a name is always one the
+//! adventurer knows. [`tell_unfamiliar`] says how long wearing
 //! one takes the first time it goes on, and what the pack and the look
 //! cursor say of it meanwhile is [`seeming`](crate::seeming)'s. One whose
 //! curse clung to them when they put it on is [`CurseShown`] too: a curse
@@ -316,12 +317,14 @@ pub fn kind_called(lore: &Lore, def: &ItemDef) -> String {
 
 /// What a thing of `def` at `level` is called, as the adventurer knows
 /// it: by [`kind_called`], and for a thing whose level is learned by
-/// wearing it, with its level before it once the level is known, nought
-/// included: `+2 sword`, `+0 chain mail`, `-1 ring of stealth`. Until then
-/// it is its kind alone, `chain mail`, so a number in a name is always a
-/// level the adventurer knows, and an unknown one is never written as a
-/// mark that has to be learned to be read. A kind not yet known says
-/// nothing of a level, since a garnet ring could be anything.
+/// wearing it, `unidentified` before it until the level is known, and then
+/// the level before it unless it is nought: `unidentified chain mail`, then
+/// `chain mail`, `+2 sword` or `-1 ring of stealth`. One word for not
+/// known rather than a mark like `+?`, which had to be learned to be read,
+/// and no `+0`, which a playtest found was clutter on the plainest thing
+/// in the pack; a number in a name is always a level the adventurer knows.
+/// A kind not yet known says nothing of a level, since a garnet ring could
+/// be anything.
 ///
 /// A curse that has shown itself is not in the name either: while it holds
 /// the thing on, the pack says it will not come off, and what it showed of
@@ -330,7 +333,14 @@ pub fn kind_called(lore: &Lore, def: &ItemDef) -> String {
 pub fn called(armory: &Armory, lore: &Lore, def: Id<ItemDef>, level: i32, level_known: bool) -> String {
     let d = armory.defs.get(def);
     let kind = kind_called(lore, d);
-    if level_known && armory.learned_by_wear(def) && lore.knows(&d.name) { format!("{level:+} {kind}") } else { kind }
+    if !armory.learned_by_wear(def) || !lore.knows(&d.name) {
+        return kind;
+    }
+    match (level_known, level) {
+        (false, _) => format!("unidentified {kind}"),
+        (true, 0) => kind,
+        (true, level) => format!("{level:+} {kind}"),
+    }
 }
 
 /// Whether a thing of `def` reads as the engine's [`Unknown`], what it does
@@ -873,7 +883,7 @@ mod tests {
     /// the log says one was used under its face and then what it was; and
     /// only then do the bag, the look cursor and the log call it what it
     /// is. A ring put on is named by its stone, and then on the gear rail
-    /// by its kind, its level not yet known.
+    /// as an unidentified ring of its kind, its level not yet known.
     #[test]
     fn an_unknown_things_name_in_the_log_and_on_the_panels_is_its_face_until_the_line_that_makes_it_known() {
         let mut app = headless(RunSeed(5));
@@ -916,7 +926,7 @@ mod tests {
             (lines.iter().position(|l| *l == format!("You put on {}.", with_article(&stone))), lines.iter().position(|l| l == "It is a ring of light."));
         assert!(put_on.is_some() && put_on < is, "{lines:#?}");
         let gear = app.world().resource::<GearView>();
-        assert_eq!(gear.by_name("left finger").and_then(|s| s.item.as_ref()).map(|r| r.label.clone()), Some("ring of light".to_string()));
+        assert_eq!(gear.by_name("left finger").and_then(|s| s.item.as_ref()).map(|r| r.label.clone()), Some("unidentified ring of light".to_string()));
     }
 
     /// A thing made between the passes, as a continued run makes every
@@ -952,24 +962,24 @@ mod tests {
         give(&mut app, me, stronger);
         app.update();
         let pack = crate::testing::pack(&app, me);
-        assert!(pack.iter().any(|(n, _)| n == "+0 sword") && pack.iter().any(|(n, _)| n == "+0 leather armor"), "{pack:?}");
+        assert!(pack.iter().any(|(n, _)| n == "sword") && pack.iter().any(|(n, _)| n == "leather armor"), "{pack:?}");
         assert_eq!(name_of(&app, healing), "potion of healing");
         assert_ne!(name_of(&app, stronger), "potion of extra healing");
         assert!(app.world().get::<Unknown>(healing).is_none() && app.world().get::<Unknown>(stronger).is_some());
     }
 
-    /// A thing found and worn is called by its kind alone, with no level,
-    /// until the adventurer has worn it two hundred turns, and then its
-    /// level is known and in its name, with a line saying what it is.
+    /// A thing found and worn is called unidentified until the adventurer
+    /// has worn it two hundred turns, and then its level is known and in
+    /// its name, with a line saying what it is.
     #[test]
-    fn armor_found_is_called_by_its_kind_alone_until_it_has_been_worn_two_hundred_turns() {
+    fn armor_found_is_called_unidentified_until_it_has_been_worn_two_hundred_turns() {
         let mut app = headless(RunSeed(9));
         let me = adventurer(&mut app);
         let mail = find(&mut app, "chain mail", 2);
         equip(&mut app, me, mail);
-        assert_eq!((name_of(&app, mail), app.world().get::<Unknown>(mail).is_some()), ("chain mail".to_string(), true));
+        assert_eq!((name_of(&app, mail), app.world().get::<Unknown>(mail).is_some()), ("unidentified chain mail".to_string(), true));
         pass_turns(&mut app, FAMILIAR_AFTER - 10);
-        assert_eq!(name_of(&app, mail), "chain mail", "not yet");
+        assert_eq!(name_of(&app, mail), "unidentified chain mail", "not yet");
         pass_turns(&mut app, 20);
         assert_eq!((name_of(&app, mail), app.world().get::<Unknown>(mail).is_some()), ("+2 chain mail".to_string(), false));
         let lines = said(&app);
@@ -977,19 +987,21 @@ mod tests {
     }
 
     /// Over every kind whose level is learned by wearing it and every level
-    /// it is found at, a name carries a level only once the level is known,
-    /// nought included, so a number in a name is always one the adventurer
-    /// knows; until then, and whatever the level, it is the kind alone.
+    /// it is found at, a name says `unidentified` until the level is known,
+    /// whatever the level, and then carries the level unless it is nought,
+    /// so a number in a name is always one the adventurer knows and the
+    /// plainest thing is called by its kind alone.
     #[test]
-    fn a_name_carries_a_level_only_once_it_is_known_nought_included() {
+    fn a_name_says_unidentified_until_its_level_is_known_and_then_its_level_unless_it_is_nought() {
         let library = library();
         let (armory, lore) = (&library.armory, Lore::default());
         let worn: Vec<_> = armory.defs.iter().filter(|(id, _)| armory.learned_by_wear(*id)).collect();
         assert!(worn.len() > 10, "weapons, armor and rings");
         for (id, d) in worn {
             for level in -3..=3 {
-                assert_eq!(called(armory, &lore, id, level, false), d.name, "{} at {level:+}, not yet known", d.name);
-                assert_eq!(called(armory, &lore, id, level, true), format!("{level:+} {}", d.name), "{} at {level:+}, known", d.name);
+                assert_eq!(called(armory, &lore, id, level, false), format!("unidentified {}", d.name), "{} at {level:+}, not yet known", d.name);
+                let known = if level == 0 { d.name.clone() } else { format!("{level:+} {}", d.name) };
+                assert_eq!(called(armory, &lore, id, level, true), known, "{} at {level:+}, known", d.name);
             }
         }
         let lantern = armory.defs.expect(crate::run::LANTERN);

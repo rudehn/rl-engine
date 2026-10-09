@@ -786,15 +786,15 @@ mod tests {
         lines
     }
 
-    /// A found chain mail is called what it is, chain mail, with no level
-    /// in its name until one is known; the pack says what any chain mail
-    /// is at +0, that this one's level is not yet known, and how long it
-    /// must be worn to tell it, counting down while it is worn; the first
-    /// time it goes on, the log says so once; and worn long enough, it is
-    /// +2 chain mail and reads its own numbers. Played on the screen that
-    /// ships, in the pack's own frame.
+    /// A found chain mail is called unidentified chain mail until its level
+    /// is known; the pack says what any chain mail is at +0, that its
+    /// numbers are shown so, and how long it must be worn to tell its
+    /// level, counting down while it is worn; the first time it goes on,
+    /// the log says so once; and worn long enough, it is +2 chain mail and
+    /// reads its own numbers. Played on the screen that ships, in the
+    /// pack's own frame.
     #[test]
-    fn a_found_chain_mail_says_what_its_kind_is_and_how_long_until_its_level_is_known() {
+    fn a_found_chain_mail_is_unidentified_and_says_how_long_until_its_level_is_known() {
         use undermere::testing::{equip, find, give, name_of, pass_turns, said, unequip};
         let mut app = on_screen(RunSeed(3));
         let me = undermere::testing::adventurer(&mut app);
@@ -802,8 +802,8 @@ mod tests {
         give(&mut app, me, mail);
         app.update();
         let (listed, detail) = pack_on(&mut app, mail);
-        assert!(listed.starts_with("[ chain mail"), "called by its kind alone: {listed:?}");
-        let found = ["level not yet known, shown as +0", "wearing it 200 turns will tell its level", "armor +3", "footfall +1", "goes on the body"];
+        assert!(listed.starts_with("[ unidentified chain mail"), "{listed:?}");
+        let found = ["numbers shown at +0", "wearing it 200 turns will tell its level", "armor +3", "footfall +1", "goes on the body"];
         assert_eq!(detail, found, "what any chain mail is, and what wearing it will tell");
 
         let worn_for = |app: &App| said(app).iter().filter(|l| *l == "You will know its level once you have worn it 200 turns.").count();
@@ -812,7 +812,7 @@ mod tests {
         pass_turns(&mut app, 60);
         let (_, detail) = pack_on(&mut app, mail);
         // Sixty turns, and the turn it went on.
-        assert_eq!(detail, ["level not yet known, shown as +0", "known in 139 more turns worn", "armor +3", "footfall +1", "worn on the body"]);
+        assert_eq!(detail, ["numbers shown at +0", "level known in 139 more turns worn", "armor +3", "footfall +1", "worn on the body"]);
         unequip(&mut app, me, mail);
         let (_, detail) = pack_on(&mut app, mail);
         assert_eq!(detail[1], "wearing it 139 more turns will tell its level", "taken off, it keeps what it counted");
@@ -826,8 +826,8 @@ mod tests {
         assert_eq!(detail, ["armor +5", "footfall +1", "worn on the body"], "known, its own numbers and nothing more");
     }
 
-    /// The look cursor over a found sword lying on the floor says what any
-    /// sword strikes for at +0 and that its level is not yet known; over a
+    /// The look cursor over a found sword lying on the floor calls it
+    /// unidentified and says what any sword strikes for at +0; over a
     /// potion of a kind not yet known, only that it is unknown, as before.
     #[test]
     fn the_look_cursor_says_what_a_found_things_kind_is_and_a_potion_not_yet_known_is_unknown() {
@@ -843,8 +843,8 @@ mod tests {
         lay(&mut app, potion, west);
         app.update();
         let lines = looking_at(&mut app, east);
-        assert_eq!(lines[0], ") sword", "called by its kind alone: {lines:#?}");
-        assert_eq!(lines[2..], ["level not yet known, shown as +0", "wearing it 200 turns will tell its level", "1d7+1 slash"], "{lines:#?}");
+        assert_eq!(lines[0], ") unidentified sword", "{lines:#?}");
+        assert_eq!(lines[2..], ["numbers shown at +0", "wearing it 200 turns will tell its level", "1d7+1 slash"], "{lines:#?}");
         let lines = looking_at(&mut app, west);
         assert_eq!(lines[2..], ["unknown"], "a potion of a kind not yet known: {lines:#?}");
     }
@@ -852,8 +852,8 @@ mod tests {
     /// A ring of light found at -2 clings to the adventurer when it goes on,
     /// and the pack then says its level is below nought without saying how
     /// far, what any ring of light does for each level, how long until its
-    /// level is known, and that it will not come off; its name says only
-    /// its kind.
+    /// level is known, and that it will not come off; its name says it is
+    /// unidentified.
     #[test]
     fn a_cursed_ring_that_clung_says_its_level_is_below_nought_and_will_not_come_off() {
         use undermere::testing::{equip, find, said};
@@ -864,9 +864,9 @@ mod tests {
         let lines = said(&app);
         assert!(lines.iter().any(|l| l == "The ring of light clings to you, and will not come off."), "{lines:#?}");
         let (listed, detail) = pack_on(&mut app, ring);
-        assert!(listed.starts_with("= ring of light"), "{listed:?}");
+        assert!(listed.starts_with("= unidentified ring of light"), "{listed:?}");
         let slot = app.world().resource::<InventoryView>().rows.iter().find(|r| r.entity == ring).map(|r| r.slot_name.clone()).expect("worn");
-        let shown = ["level below nought, how far not yet known", "known in 199 more turns worn", "light +1 a level"];
+        let shown = ["level below nought, how far not yet known", "level known in 199 more turns worn", "light +1 a level"];
         assert_eq!(detail[..3], shown, "{detail:#?}");
         assert_eq!(detail[3..], [format!("worn on the {slot}"), "will not come off".to_string()], "{detail:#?}");
     }

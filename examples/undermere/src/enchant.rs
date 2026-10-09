@@ -247,7 +247,7 @@ mod tests {
         let lantern = |app: &App, who: Entity| app.world().get::<LightSource>(in_slot(app, who, "light")).map(|l| l.radius);
         let (blow, armor) = fights(&mut app, me);
         let (aim, reach) = (accuracy(&app, me), lantern(&app, me));
-        assert_eq!((name_of(&app, ring), reach), ("ring of light".to_string(), Some(8)), "a ring worn shows its kind and not its level");
+        assert_eq!((name_of(&app, ring), reach), ("unidentified ring of light".to_string(), Some(8)), "a ring worn shows its kind and not its level");
         for on in [sword, ring] {
             let scroll = find(&mut app, "scroll of enchanting", 0);
             give(&mut app, me, scroll);
@@ -256,13 +256,17 @@ mod tests {
         let plus = |dice: Option<DiceRoll>, n: i32| dice.map(|d| DiceRoll { bonus: d.bonus + n, ..d });
         assert_eq!(fights(&mut app, me), (plus(blow, 1), armor), "the sword strikes one harder at once");
         assert_eq!((accuracy(&app, me), lantern(&app, me)), (aim + 5, reach.map(|r| r + 1)), "and aims five better, and the ring lights a tile further");
-        assert_eq!((name_of(&app, sword), name_of(&app, ring)), ("+1 sword".to_string(), "ring of light".to_string()));
+        assert_eq!((name_of(&app, sword), name_of(&app, ring)), ("+1 sword".to_string(), "unidentified ring of light".to_string()));
 
         let (mut carried, me) = saved_and_continued(&mut app);
         assert_eq!(fights(&mut carried, me), (plus(blow, 1), armor), "carried on, the sword is as it was");
         assert_eq!((accuracy(&carried, me), lantern(&carried, me)), (aim + 5, reach.map(|r| r + 1)), "and so are the aim and the light");
         let (sword, ring) = (in_slot(&carried, me, "main hand"), in_slot(&carried, me, "left finger"));
-        assert_eq!((name_of(&carried, sword), name_of(&carried, ring)), ("+1 sword".to_string(), "ring of light".to_string()), "and what is known of each");
+        assert_eq!(
+            (name_of(&carried, sword), name_of(&carried, ring)),
+            ("+1 sword".to_string(), "unidentified ring of light".to_string()),
+            "and what is known of each"
+        );
         assert_eq!(carried.world().get::<Enchant>(ring).map(|e| e.level), Some(2));
     }
 
@@ -283,8 +287,8 @@ mod tests {
 
     /// A cursed ring put on shows its curse and not its size: it is marked
     /// as one whose curse has shown, beside the line that says it will not
-    /// come off, and called by its kind alone, as a ring that is not cursed
-    /// is, and `-2 ring of light` once it has been worn as long as any level
+    /// come off, and called unidentified, as a ring that is not cursed is,
+    /// and `-2 ring of light` once it has been worn as long as any level
     /// takes to learn; another, less deeply cursed, reads `-1 ring of
     /// stealth` once a scroll of identify is read on it.
     #[test]
@@ -295,8 +299,8 @@ mod tests {
         equip(&mut app, me, cursed);
         equip(&mut app, me, plain);
         let shown = |app: &App, ring: Entity| app.world().get::<CurseShown>(ring).is_some();
-        assert_eq!((name_of(&app, cursed), shown(&app, cursed)), ("ring of light".to_string(), true), "{:#?}", said(&app));
-        assert_eq!((name_of(&app, plain), shown(&app, plain)), ("ring of stealth".to_string(), false));
+        assert_eq!((name_of(&app, cursed), shown(&app, cursed)), ("unidentified ring of light".to_string(), true), "{:#?}", said(&app));
+        assert_eq!((name_of(&app, plain), shown(&app, plain)), ("unidentified ring of stealth".to_string(), false));
         crate::testing::pass_turns(&mut app, crate::lore::FAMILIAR_AFTER);
         assert_eq!(name_of(&app, cursed), "-2 ring of light", "worn long enough, how deep is known too");
         assert_eq!(name_of(&app, plain), "+2 ring of stealth");
@@ -305,7 +309,7 @@ mod tests {
         let me = adventurer(&mut app);
         let cursed = find(&mut app, "ring of stealth", -1);
         equip(&mut app, me, cursed);
-        assert_eq!(name_of(&app, cursed), "ring of stealth");
+        assert_eq!(name_of(&app, cursed), "unidentified ring of stealth");
         let scroll = find(&mut app, "scroll of identify", 0);
         give(&mut app, me, scroll);
         read_on(&mut app, me, scroll, cursed);
