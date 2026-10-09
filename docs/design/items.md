@@ -165,10 +165,15 @@ Confirmed, it is used and spent, and lands by its true targeting where its fligh
 An empty one keeps its use key and comes to nothing for the turn, since a key that went away would say it was empty.
 Refusing with a reason that did not name it, "you cannot aim there", was rejected: the refusal itself is what tells, whatever it says.
 Previewing the true flight without its footprint was rejected as well, since where a line stops is its reach.
-The armor total, the look cursor's duel forecast and the character sheet count an unknown worn thing at its true numbers, because those are what a blow meets, and the vitals mark the total uncertain while one is worn, `armor 5?`, the way a `+?` on a name marks a level.
+The armor total, the look cursor's duel forecast and the character sheet count an unknown worn thing at its true numbers, because those are what a blow meets, and the vitals mark the total uncertain while one is worn, `armor 5?`.
 What a thing not yet known seems to be is the game's, as its level is, so a game whose things are written from a level, where a true total tells the level the moment the thing goes on, writes the total, the forecast and the targeting box's chance to hit again in `ViewSet::Annotate` with each unknown thing counted as it seems, keeping the mark, which under the forecast and the chance is a facet.
 Undermere counts each one at its kind's plain numbers, the level of nought any thing of its kind is, so `+2 leather armor` not yet known reads `armor 1?`, and says under the forecast that it counted unknown gear plain.
 Leaving the thing out of the total was rejected, since a total missing a coat is wrong every turn it is worn, and so was the engine counting it plain, since what plain is, and that a level is what is hidden, are the game's to say.
+The thing itself reads the same way.
+The bag and the look cursor print an unknown thing as `unknown` and nothing it is worth, which is right for a potion whose kind is the secret and says less than the player knows of a coat whose kind is plain and only its level is not.
+So `ItemRow::seems` and `InspectView::seems` are what a game says the thing seems, facets printed where `unknown` would be, and a game may write the numbers it seems to have into the row in `Annotate`, which the bag prints as a known thing's.
+Undermere says what any thing of the kind is at nought, that its level is not yet known, and how long wearing it will take to tell it.
+A second marker for a thing whose kind is known and whose level is not was rejected: what is known of a thing is the game's partition to draw, a level here and a maker or a charge count in another game, and `Unknown` already keeps the true numbers off every panel; what the engine lacked was only a way to stop saying `unknown` where the game had said more.
 The character sheet is the one reading no game corrects yet, since it names every modifier by the thing it came from; a game that draws it with unknown gear worn corrects it the same way, and Undermere draws none.
 
 `Stuck` refuses every way a worn thing comes off as any impossible item action is refused, the player keeping the turn, and says so with `ItemEvent::WouldNotComeOff`, which the narrator turns into `A ring will not come off.`

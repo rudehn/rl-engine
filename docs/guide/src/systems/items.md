@@ -18,7 +18,7 @@
             crates/rl-ui/src/panel/inventory.rs
             crates/rl-ui/src/panel/container.rs
             crates/rl-ui/src/narrate.rs
-     fingerprint: 9ca127e5 -->
+     fingerprint: 883b1825 -->
 
 # Items and equipment
 
@@ -48,6 +48,7 @@ A two-hander is `EquipShape::in_slot(main).and_claims(off)` and a ring is `in_an
 `Tagged` is what an item counts as, by registered tag; `Enchant` is its `+N` and rolled affixes; `Bestows` is what it does to registered stats while worn, as `(StatId, Op)` pairs the game writes when it spawns the item with the enchant already applied, and `EffectBonus` is what its triggers' effects land stronger by, written the same way.
 `GearScore` is what wearing it is worth in the game's own units, and only the comparison matters: a mind weighs an item in sight against everything it would displace and, for a thing whose blow would replace its own, against its `OwnBlowScore` too, and puts on what is worth more than all of them together, never a thing that would push off something that stays on.
 `Unknown` is a thing not yet known: the bag, the look cursor's panel and the targeting box show its name and where it goes and say `unknown` in place of what it does and is worth, the gear rail shows none of its charges, and the vitals mark the armor total uncertain while one is worn.
+A game that knows part of it, its kind and not its level, pushes what it seems as facets on `ItemRow::seems` or `InspectView::seems`, which the bag and the look cursor print in place of `unknown`, and may write the numbers it seems to have into its `ItemRow`.
 Nor is its use refused by anything only its kind, its reach or its charges would explain: `may_use` lets it be used empty, for the turn and to land nothing, and its aim is previewed as a plain line, as [Uses](uses.md) says.
 What it does is untouched, so an unknown draught drunk does what it does and an unknown blade strikes for what it strikes for.
 `Stuck` is a thing that will not come off while it is worn: taking it off, dropping or throwing it, and putting on anything that would push it off are each refused as any impossible item action is, the player keeping the turn, and reported as `ItemEvent::WouldNotComeOff`, which the narrator says as `A ring will not come off.`
@@ -59,7 +60,7 @@ Only being worn holds it, so in the bag a stuck thing is put on, dropped and thr
 `Loadout` reads an item's `Armor`, `Resists`, `MeleeAttack`, `RangedAttack` and `Strikes` straight off it at the moment of a blow, which is the other half of wearing something and needs no fold at all.
 `drop_what_the_dead_carried` lets a dead non-player's bag fall where it died, and `forget_removed_items` drops a despawned item from every bag and every slot.
 `perceive_belongings` tells the mind holding the turn what it carries that it could throw and what lies in sight worth having, and only a mind with the wits to pick up or put on is told the second.
-`InventoryView` is the player's bag as plain data: an `ItemRow` per item with its label, glyph, count, the slot it is worn in, the slots it could go in and the ones it takes as well by name, how far it flies and what it strikes for thrown, its armor, what it resists by the damage kind's name, its blow, its shot, its extra strikes, what it bestows by the stat's name, its tags, what its triggers do and how its use is aimed or what it asks for, its charges, whether it is empty, when its next charge is due and whether it is attuned, whether it is `unknown` or `stuck`, and the facets a game pushed.
+`InventoryView` is the player's bag as plain data: an `ItemRow` per item with its label, glyph, count, the slot it is worn in, the slots it could go in and the ones it takes as well by name, how far it flies and what it strikes for thrown, its armor, what it resists by the damage kind's name, its blow, its shot, its extra strikes, what it bestows by the stat's name, its tags, what its triggers do and how its use is aimed or what it asks for, its charges, whether it is empty, when its next charge is due and whether it is attuned, whether it is `unknown` or `stuck`, what a game says it seems while it is unknown, and the facets a game pushed.
 Every number on a row is the item's own component, the one `Loadout` reads, so an item spawned to fight is described for free and a game says nothing twice; an unknown thing's row keeps its name, its look, its count and where it goes, and what the bag's keys act on, and drops the rest, whether it is empty among them, so its use key stays.
 `used` is what its triggers say of themselves in the registries' names, one line per effect led by its moment, `use: mends 5` or `on landing: 3 kinetic in a burst of 1`, with a `use` and a `land` that say the same lines said once under `use or thrown`, each described with the item's own `EffectBonus` added so a thing its game made stronger says what it does as it is.
 `InventoryPanel` is a modal the engine runs end to end: `InventoryKeys` opens and closes it and wears, drops, uses and throws the row picked out, and the footer offers only the keys that do something to that row, none that would take off a worn thing that is stuck.
