@@ -18,7 +18,7 @@
             crates/rl-bevy/src/cue.rs
             crates/rl-grid/src/targeting.rs
             crates/rl-ui/src/narrate.rs
-     fingerprint: bb4b4dab -->
+     fingerprint: 626bf1d0 -->
 
 # Effects
 

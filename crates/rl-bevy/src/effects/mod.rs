@@ -217,6 +217,9 @@ pub struct EffectWorld<'w, 's> {
     /// of the use itself are cued before any effect runs, so a cue an
     /// effect adds plays after them.
     pub cues: MessageWriter<'w, Cued>,
+    // `Without<Transition>` is load-bearing: it is what keeps this query
+    // disjoint from `transitions` below, since a transition is never a
+    // mover and the two would otherwise alias the same entity.
     actors: Query<'w, 's, Mover, Without<Transition>>,
     occupancy: ResMut<'w, Occupancy>,
     map: Res<'w, WorldMap>,
