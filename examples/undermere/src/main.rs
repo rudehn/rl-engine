@@ -46,9 +46,10 @@ const RAIL: i32 = 34;
 /// is aimed, the range, the target, the chance, and up to four lines of it.
 const TARGET_ROWS: i32 = 10;
 /// Rows the rail gives to vitals: its heading with the rule under it, the
-/// name, health, armor, seen and lit, noise, and a last row for the
-/// badges, blank most turns, which sets what is worn off from the gauges.
-const VITALS_ROWS: i32 = 8;
+/// name, health, armor, seen and lit, noise, and two rows for the badges
+/// and the gold carried, the badges first when there are any and the last
+/// row blank most turns, which sets what is worn off from the gauges.
+const VITALS_ROWS: i32 = 9;
 /// Rows the rail gives to what is worn: the heading and its rule, one
 /// apiece for the seven slots, and a blank row setting the list off from
 /// what is nearby under it, the gap the badges' row leaves above. Nothing
@@ -656,6 +657,49 @@ mod tests {
         let lines = rail(&app);
         assert!(lines.iter().any(|r| r.trim() == "Around you"), "{lines:#?}");
         assert!(!lines.iter().any(|r| r.contains("On the ground")), "{lines:#?}");
+    }
+
+    /// The rail says the gold the adventurer carries among the vitals,
+    /// above what is worn: the fifty they set out with, on the first screen.
+    #[test]
+    fn the_rail_says_the_gold_carried_among_the_vitals() {
+        let app = on_screen(RunSeed(7));
+        let lines: Vec<String> = (0..ROWS).map(|y| from(&app, COLS - RAIL, y)).collect();
+        let gold = lines.iter().position(|r| r == "gold 50").unwrap_or_else(|| panic!("the gold carried, on the rail: {lines:#?}"));
+        let worn = lines.iter().position(|r| r.starts_with("Worn")).expect("what is worn, on the rail");
+        assert!(gold < worn, "among the vitals, above what is worn: {lines:#?}");
+    }
+
+    /// A gate mark seen is drawn from memory once it is out of sight, in
+    /// memory's colours rather than its own glow, so the map shows where
+    /// the gate will bring the adventurer back: one stood three tiles off
+    /// on floor one, then walled in.
+    #[test]
+    fn a_gate_mark_once_seen_is_drawn_from_memory_out_of_sight() {
+        use rl_engine::rl_core::geometry;
+        use undermere::testing::{arrive, at, clear_monsters, lay_floor, settle, wall_off};
+        let mut app = on_screen(RunSeed(7));
+        let floor = undermere::dungeon::map_of(1);
+        let me = arrive(&mut app, floor);
+        clear_monsters(&mut app);
+        let here = at(&app, me);
+        lay_floor(&mut app, &geometry::square(here, 4).collect::<Vec<_>>());
+        let mark = here.offset(3, 0);
+        undermere::waystone::set_mark(app.world_mut(), floor, mark);
+        settle(&mut app);
+        let drawn = |app: &App| {
+            let s = app.world().resource::<MapView>().to_screen(mark).expect("on screen");
+            let cell = app.world().resource::<Terminal>().get(s.x, s.y).expect("a cell");
+            (cell.glyph, cell.fg)
+        };
+        let (glyph, seen) = drawn(&app);
+        assert_eq!(glyph, '\u{25ca}', "the mark, in sight");
+
+        wall_off(&mut app, &geometry::square(mark, 1).filter(|p| *p != mark).collect::<Vec<_>>());
+        settle(&mut app);
+        let (glyph, remembered) = drawn(&app);
+        assert_eq!(glyph, '\u{25ca}', "walled in, still drawn where it stands");
+        assert_ne!(remembered, seen, "from memory, not its own glow");
     }
 
     /// Every glyph on the screen as it stands, kept beside the first

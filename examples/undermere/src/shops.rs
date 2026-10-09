@@ -33,7 +33,8 @@
 //! ([`keep_worth`](crate::armory::keep_worth)), [`shelf_names`] lists
 //! every ware by its true name in the shop's own colour rather than by the
 //! face it wears in the pack, and [`learn_by_buying`] makes a bought
-//! thing's kind known.
+//! thing's kind known. [`count_gold`] says on the rail what the adventurer
+//! has to spend, counted by the trade's own rule.
 
 use std::ops::RangeInclusive;
 
@@ -500,6 +501,33 @@ pub fn trade_rows(mut view: ResMut<OffersView>, verbs: Res<Verbs>, named: Query<
     }
 }
 
+/// The tone the gold carried is said in on the rail, declared in the gold
+/// coin's own colour by [`UndermerePlugin`](crate::plugin::UndermerePlugin).
+pub const GOLD_TONE: &str = "gold";
+
+/// Says on the rail the gold the adventurer carries, `gold 50`, under the
+/// gauges and in the coin's colour, so what a trip home could buy is always
+/// on the screen. Nought is said as well: a purse that vanished when it
+/// emptied would read as a rail that forgot it.
+///
+/// Counted by [`Currency::count`], the rule a trade pays by, so the rail
+/// and the shop never disagree. In `ViewSet::Annotate`, after the engine's
+/// collector; absent vitals, as in a test that draws none, says nothing.
+pub fn count_gold(
+    vitals: Option<ResMut<VitalsView>>,
+    currency: Res<Currency>,
+    bags: Query<&Inventory>,
+    pieces: Query<(Option<&Tagged>, Option<&Stack>)>,
+    tones: Res<Tones>,
+    mut facets: ResMut<Facets>,
+) {
+    let Some(mut vitals) = vitals else { return };
+    let Some(bag) = vitals.entity.and_then(|me| bags.get(me).ok()) else { return };
+    let gold = currency.count(bag, |item| pieces.get(item).unwrap_or((None, None)));
+    let tone = tones.get(GOLD_TONE).unwrap_or(Tones::NOTICE);
+    vitals.facets.push(facets.facet(GOLD_TONE, format!("gold {gold}")).toned(tone));
+}
+
 /// The file as written: the level rows, and the keepers left raw so their
 /// names are read with the registries in scope.
 #[derive(Deserialize)]
@@ -619,7 +647,7 @@ mod tests {
 
     use super::*;
     use crate::content::Library;
-    use crate::testing::{adventurer, at, give, headless, make, name_of, pack, settle, stand_on};
+    use crate::testing::{adventurer, at, give, headless, lay, make, name_of, pack, settle, stand_on, take_up};
     use rl_engine::rl_ui::{OffersViewPlugin, TradeViewPlugin};
 
     use crate::content::TOWNSFOLK;
@@ -1255,5 +1283,42 @@ mod tests {
         app.world_mut().write_message(Sell { customer: me, trader: smith, item: healing, count: 1 });
         app.update();
         assert!(app.world().get::<Inventory>(me).expect("a pack").contains(healing), "and the potion stays in the pack");
+    }
+
+    /// What the vitals say of the gold carried, and the tone it is said in.
+    fn gold_said(app: &App) -> Vec<(String, ToneId)> {
+        let key = app.world().resource::<Facets>().get(GOLD_TONE);
+        let view = app.world().resource::<VitalsView>();
+        view.facets.iter().filter(|f| Some(f.key) == key).map(|f| (f.text.clone(), f.tone)).collect()
+    }
+
+    /// The vitals say the fifty gold the adventurer sets out with, in the
+    /// coin's own tone; a pile taken up is counted at once, and a ware
+    /// bought counts it down by the ware's price.
+    #[test]
+    fn the_vitals_say_the_gold_carried_and_follow_a_pickup_and_a_purchase_over_a_span_of_seeds() {
+        for s in 0..3 {
+            let mut app = headless(RunSeed(s));
+            app.add_plugins(VitalsViewPlugin);
+            let me = adventurer(&mut app);
+            settle(&mut app);
+            let tone = app.world().resource::<Tones>().get(GOLD_TONE).expect("the coin's tone is declared");
+            assert_eq!(gold_said(&app), [("gold 50".to_string(), tone)], "seed {s}: what the adventurer sets out with");
+
+            let pile = make(&mut app, "gold coin");
+            app.world_mut().get_mut::<Stack>(pile).expect("gold stacks").count = 500;
+            let here = at(&app, me);
+            lay(&mut app, pile, here);
+            take_up(&mut app, me);
+            assert_eq!(gold_said(&app), [("gold 550".to_string(), tone)], "seed {s}: a pile taken up");
+
+            let smith = keeper(&mut app, "smith");
+            open_trade(&mut app, me, smith);
+            let (item, _) = shelf(&app, smith)[0];
+            let price = app.world().get::<Worth>(item).expect("a ware has a worth").0;
+            app.world_mut().write_message(Buy { customer: me, trader: smith, item, count: 1 });
+            settle(&mut app);
+            assert_eq!(gold_said(&app), [(format!("gold {}", 550 - price), tone)], "seed {s}: a ware bought for {price}");
+        }
     }
 }

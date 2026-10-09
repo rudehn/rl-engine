@@ -96,6 +96,9 @@ impl Plugin for UndermerePlugin {
         // engine counts a purse and a price without knowing a coin from
         // anything else Undermere calls an item.
         app.insert_resource(Currency(library.registries.tags.expect("gold"))).add_plugins(TradePlugin);
+        // The gold carried, said on the rail in the coin's own colour.
+        let (r, g, b) = library.armory.defs.get(library.armory.defs.expect(crate::finds::GOLD)).color;
+        app.add_tone(crate::shops::GOLD_TONE, Color::srgb(r, g, b));
         app.insert_resource(library.registries).insert_resource(library.abilities).insert_resource(library.armory).insert_resource(library.bestiary);
         app.insert_resource(library.faces);
         // What Mereholt's keepers may stock, read once with the rest: each
@@ -330,6 +333,9 @@ impl Plugin for UndermerePlugin {
         // reads its view when the game draws it and does nothing where it
         // does not.
         app.add_systems(Update, (crate::seeming::seem_armor, crate::seeming::seem_forecast, crate::seeming::seem_aim).in_set(ViewSet::Annotate));
+        // The gold carried, on the vitals under the gauges, wherever the
+        // game draws them.
+        app.add_systems(Update, crate::shops::count_gold.in_set(ViewSet::Annotate));
         // Each place's ambient, set between the turns and the light, so the
         // frame the stairs land on is drawn in the new place's light; and
         // beside it a camp's fire lit, so the frame it is stood is lit.

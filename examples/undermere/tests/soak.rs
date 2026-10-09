@@ -68,11 +68,34 @@ fn kind_of(def: &ItemDef, registries: &Registries) -> Option<&'static str> {
 
 /// What one floor held the first time it was entered: how many finds of
 /// each kind, and how many of each thing by name, a stack by the things in
-/// it, so two potions of strength in one chest are two.
+/// it, so two potions of strength in one chest are two; and the gold its
+/// monsters carry, as the coins each would leave on the mean, since what a
+/// monster leaves is rolled only when it dies.
 #[derive(Debug, Clone, Default)]
 struct Holding {
     kinds: BTreeMap<&'static str, u32>,
     names: BTreeMap<String, u32>,
+    carried_gold: f32,
+}
+
+impl Holding {
+    /// The coins lying about or in a chest.
+    fn lying_gold(&self) -> u32 {
+        self.names.get(undermere::finds::GOLD).copied().unwrap_or(0)
+    }
+}
+
+/// The coins the monsters standing on `floor` would leave on the mean: each
+/// gold row of what they drop at its chance, times its mean count of piles
+/// and a pile's mean roll times the floor, as the armory makes a pile there.
+fn carried_gold(world: &mut World, floor: u32) -> f32 {
+    let map = map_of(floor);
+    let armory = world.resource::<Armory>().clone();
+    let gold = armory.defs.expect(undermere::finds::GOLD);
+    let pile = armory.defs.get(gold).pile.map_or(1.0, |roll| roll.avg()) * floor as f32;
+    let mut query = world.query_filtered::<(&Drops<ItemDef>, &OnMap), Without<Dead>>();
+    let rows = query.iter(world).filter(|(_, on)| on.0 == map).flat_map(|(drops, _)| drops.0.0.iter().filter(|row| row.item == gold));
+    rows.map(|row| row.pct as f32 / 100.0 * (row.count.0 + row.count.1) as f32 / 2.0 * pile).fold(0.0, |all, coins| all + coins)
 }
 
 /// Every thing on `floor` and every thing in a chest on it, each with how
@@ -94,6 +117,7 @@ fn holding(app: &mut App, floor: u32) -> Holding {
         *held.kinds.entry(kind).or_default() += 1;
         *held.names.entry(def.name.clone()).or_default() += world.get::<Stack>(thing).map_or(1, |s| s.count);
     }
+    held.carried_gold = carried_gold(world, floor);
     held
 }
 
@@ -645,6 +669,9 @@ struct Leg {
     turns: u32,
     /// Things taken up on it, by kind, a stack as one.
     taken: BTreeMap<&'static str, u32>,
+    /// Coins taken up on it: every rise in the purse, so a pile counts its
+    /// coins and not as one find.
+    gold: u32,
     /// Health on arriving and on leaving, or dying.
     health: (i32, i32),
 }
@@ -717,6 +744,9 @@ struct Watch {
     artifacts: BTreeSet<String>,
     /// The artifacts the adventurer took up, in the order they did.
     took: Vec<String>,
+    /// The coins the adventurer carried when last read, by the engine's
+    /// count, so what each frame adds to it is what they took up.
+    purse: u32,
 }
 
 impl Watch {
@@ -763,11 +793,20 @@ impl Watch {
                 *leg.taken.entry(kind).or_default() += 1;
             }
         }
+        let purse = purse(world, me);
+        leg.gold += purse.saturating_sub(self.purse);
+        self.purse = purse;
         for dealt in self.harmed.read(world.resource::<Messages<DamageDealt>>()).filter(|d| d.target == me && d.dealt > 0) {
             let by = dealt.hit.attacker.or(dealt.hit.credit).and_then(|who| world.get::<Kind>(who)).map(|k| bestiary.defs.get(k.0).name.clone());
             self.last_harm = by.unwrap_or_else(|| registries.damage_kinds.name(dealt.hit.kind).to_string());
         }
     }
+}
+
+/// The coins `me` carries, counted as a trade counts them.
+fn purse(world: &World, me: Entity) -> u32 {
+    let Some(bag) = world.get::<Inventory>(me) else { return 0 };
+    world.resource::<Currency>().count(bag, |item| (world.get::<Tagged>(item), world.get::<Stack>(item)))
 }
 
 /// Seed `seed` played to its end by the scripted adventurer, spending its
@@ -793,6 +832,7 @@ fn delve(seed: u64, plan: Plan) -> Delve {
         fallen: Vec::new(),
         artifacts,
         took: Vec::new(),
+        purse: purse(world, me),
     };
     let (mut legs, mut floor, mut arrived, mut decided, mut idle) = (BTreeMap::<u32, Leg>::new(), 0, 0, 0, 0);
     let end = loop {
@@ -939,6 +979,7 @@ fn print_census(census: &[Vec<Holding>]) {
         let named = names.map(|name| format!("{:>8.2}", mean(&|h| count(h, name)))).join("");
         println!("{floor:>5} {kinds}{named}");
     }
+    print_census_gold(census);
     println!("A run's whole stock, fewest / mean / most:");
     let whole = |f: &dyn Fn(&Holding) -> u32| census.iter().map(|run| run.iter().map(f).sum::<u32>()).collect::<Vec<u32>>();
     let spread = |all: Vec<u32>| format!("{} / {:.1} / {}", all.iter().min().unwrap(), all.iter().sum::<u32>() as f32 / runs, all.iter().max().unwrap());
@@ -957,6 +998,29 @@ fn print_census(census: &[Vec<Holding>]) {
     println!("Every thing over all {} runs, a run's mean:", census.len());
     for (name, n) in all {
         println!("  {name:<28} {:>6.2}", n as f32 / runs);
+    }
+}
+
+/// The gold the town's prices were set against by each floor, counted
+/// together: thirty a floor times its number, so ninety by floor two, 450
+/// by floor five and 1350 by floor nine.
+fn estimated_gold(floor: u32) -> u32 {
+    15 * floor * (floor + 1)
+}
+
+/// Prints the gold each floor gives on the mean, lying about or in a chest
+/// and carried by the monsters standing on it, and the two together counted
+/// up floor by floor beside the estimate the prices were set against.
+fn print_census_gold(census: &[Vec<Holding>]) {
+    let runs = census.len() as f32;
+    println!("Gold a floor, on the mean: lying about or in a chest, carried by its monsters, and all of it by that floor against the estimate:");
+    println!("floor   lying carried   total by then estimate");
+    let mut by_then = 0.0;
+    for floor in 1..=FLOORS as usize {
+        let mean = |f: &dyn Fn(&Holding) -> f32| census.iter().map(|run| f(&run[floor - 1])).fold(0.0, |all, coins| all + coins) / runs;
+        let (lying, carried) = (mean(&|h| h.lying_gold() as f32), mean(&|h| h.carried_gold));
+        by_then += lying + carried;
+        println!("{floor:>5} {lying:>7.0} {carried:>7.0} {:>7.0} {by_then:>7.0} {:>8}", lying + carried, estimated_gold(floor as u32));
     }
 }
 
@@ -992,6 +1056,18 @@ fn print_delves(delves: &[(u64, Delve)]) {
             let mean = |f: &dyn Fn(&Leg) -> i32| legs.iter().map(|l| f(l)).sum::<i32>() as f32 / n;
             let taken = KINDS.map(|k| format!("{:.1}", mean(&|l| l.taken.get(k).copied().unwrap_or(0) as i32))).join(" ");
             println!("{floor:>5} {:>7} {:>5.0} {:>9.1} {:>10.1}  {taken}", legs.len(), mean(&|l| l.turns as i32), mean(&|l| l.health.0), mean(&|l| l.health.1));
+        }
+        println!("Gold taken up on the mean of the delves reaching a floor: there, and all of it by then against the estimate:");
+        println!("floor reached  there by then estimate");
+        for floor in 1..=FLOORS {
+            let reached: Vec<&&Delve> = mine.iter().filter(|d| d.legs.contains_key(&floor)).collect();
+            if reached.is_empty() {
+                continue;
+            }
+            let n = reached.len() as f32;
+            let there = reached.iter().map(|d| d.legs[&floor].gold).sum::<u32>() as f32 / n;
+            let by_then = reached.iter().map(|d| d.legs.range(..=floor).map(|(_, l)| l.gold).sum::<u32>()).sum::<u32>() as f32 / n;
+            println!("{floor:>5} {:>7} {there:>6.0} {by_then:>7.0} {:>8}", reached.len(), estimated_gold(floor));
         }
         let mut into: BTreeMap<&str, u32> = BTreeMap::new();
         for d in &mine {
