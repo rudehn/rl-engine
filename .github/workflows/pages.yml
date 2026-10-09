@@ -3,9 +3,11 @@ name: pages
 # that is not a raw markdown file. The chapters hold real code either way,
 # which scripts/expand-guide.py keeps true; this is for the sidebar, the
 # search and a link that fits in a release note.
+# Published at a release, when the docs are brought up to the code, rather
+# than on every push to main, where they may lag it.
 on:
   push:
-    branches: [main]
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:

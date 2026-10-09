@@ -3,6 +3,15 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The release runs this same check with the documentation steps on, before
+  # it publishes: between releases the docs wait, so main stays green while
+  # the system pages and the inventory lag the code.
+  workflow_call:
+    inputs:
+      docs:
+        description: Also check that the guide, the inventory and the system pages keep up with the code.
+        type: boolean
+        default: false
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -38,12 +47,16 @@ jobs:
       - name: tier boundaries
         run: scripts/check-tiers.sh
       - name: the guide's links into the code
+        if: inputs.docs
         run: scripts/check-guide.sh
       - name: the inventory keeps up with the code
+        if: inputs.docs
         run: scripts/check-overview.sh
       - name: the system reference keeps up with the code
+        if: inputs.docs
         run: python3 scripts/check-systems.py
       - name: the system pages keep to the template
+        if: inputs.docs
         run: shopt -s nullglob; for page in docs/guide/src/systems/*.md; do scripts/check-systems-style.sh "$page"; done
       - name: clippy
         run: cargo clippy --workspace --all-targets -- -D warnings

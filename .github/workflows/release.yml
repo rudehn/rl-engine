@@ -5,7 +5,15 @@ on:
 permissions:
   contents: write
 jobs:
+  # Everything CI checks, the documentation included: a release is the one
+  # point the docs are brought up to the code, so it is the one point they
+  # are held to it.
+  check:
+    uses: ./.github/workflows/ci.yml
+    with:
+      docs: true
   page:
+    needs: check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
