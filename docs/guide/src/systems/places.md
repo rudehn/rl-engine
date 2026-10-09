@@ -8,7 +8,7 @@
             crates/rl-bevy/src/minds.rs
             crates/rl-world/src/chunk.rs
             crates/rl-world/src/graph.rs
-     fingerprint: 4060a8a9 -->
+     fingerprint: 13141143 -->
 
 # Places and streaming
 

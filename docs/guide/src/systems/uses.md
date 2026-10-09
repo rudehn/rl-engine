@@ -15,7 +15,7 @@
             crates/rl-ui/src/view/target.rs
             crates/rl-ui/src/panel/inventory.rs
             crates/rl-ui/src/narrate.rs
-     fingerprint: ebaabdd5 -->
+     fingerprint: 377fd2df -->
 
 # Uses and charges
 
@@ -39,6 +39,7 @@ A thing with neither is used where its user stands with `UseItem`, and each of t
 `may_use` is the rule every use is refused by before where it is pointed: the thing must be carried, have a charge to spend when it counts them and its user knows it, and be worn when it can be worn, since a worn thing is used by wearing it; a refused use costs the player nothing, as any impossible item action does.
 An accepted use writes `Fired` for the `use` moment where its user stands, or at the cell an aimed one is made at, where it was pointed, and for a use made on a thing a `FiredOn` beside it, which the landing hands its effects as `Landing::on` for a game's own effect to read.
 A use aimed somewhere lands as an ability does, on its footprint from where its user stands to the cell it was pointed at, and with a look it is seen to fly there while the turns wait.
+A use that lands on a body carrying `Reflects` is turned back by the same `Bystanders::reflect` an ability is, one time in two: left standing alone where it was aimed, the whole of it lands on its user instead, as [Abilities](abilities.md) describes.
 A thing not yet known, `Unknown`, is refused for none of what its targeting says: `may_use` takes whether it is unknown and lets it be used empty, `land_triggers` lands no `use` of a thing with nothing left, and `UseItemAt` makes it where it may still be pointed, by `rl_rules::ability::made_at`, the farthest cell its user sees on the line when it wants its cell seen, so it lands by its true targeting where its flight stops.
 Its aim is previewed as a plain line to the cursor and the cursor's cell, `TargetView::unknown`, with no footprint, reach, refusal or target, and cycles as `Aim::Anyone` would.
 `AimUse { user, item }` opens the targeting cursor on a thing whose use is aimed, as on an ability aimed the same way, and confirming writes the `UseItemAt` while putting it away spends nothing and passes no turn; a thing whose use lands on its user is used at once and opens nothing, one that asks opens the bag choosing for it, and one that cannot be used now opens nothing at all.
