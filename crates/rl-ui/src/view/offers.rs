@@ -10,9 +10,9 @@
 //! invents nothing: a game that calls its verb `charge` and its prop
 //! `reactor console` gets "charge reactor console", one whose captive is
 //! `Mirela` gets "free Mirela", and a game that wants other words names
-//! them other things. A price is named the same way, by the tag the game
-//! made its [`Currency`], so a game whose currency is `scrip` is asked for
-//! "50 scrip".
+//! them other things. A price is named by what a piece of the currency is
+//! called, as the trade screen names it, so a game whose piece is `scrip`
+//! is asked for "50 scrips" on both screens.
 
 use bevy::prelude::*;
 use rl_bevy::prelude::*;
@@ -48,8 +48,10 @@ pub struct OffersView {
     pub actor: Option<Entity>,
     /// The offers, in the order the engine worked them out.
     pub rows: Vec<OfferRow>,
-    /// What a price is counted in: the name of the tag the game made its
-    /// [`Currency`], empty when it made none or has no tags to name it by.
+    /// What one piece of the currency is called, as the trade screen calls
+    /// it: the `Name` of a piece the player or someone offering carries,
+    /// else of any piece in play; empty when no piece has a name. Said
+    /// with [`sum_of`](crate::view::sum_of).
     pub currency: String,
 }
 
@@ -79,15 +81,25 @@ impl Plugin for OffersViewPlugin {
     }
 }
 
+/// What a price is paid in and what a piece of it is called, as the
+/// collector looks it up: the currency, every named piece, and the packs
+/// a piece near at hand is carried in.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Purses<'w, 's> {
+    currency: Option<Res<'w, Currency>>,
+    pieces: crate::view::NamedPieces<'w, 's>,
+    bags: Query<'w, 's, &'static Inventory>,
+}
+
 /// Fills [`OffersView`] from what the engine offered the player.
 pub fn collect_offers(
     mut view: ResMut<OffersView>,
     offered: Res<OfferedHere>,
     verbs: Res<Verbs>,
     registries: Option<Res<Registries>>,
-    currency: Option<Res<Currency>>,
     player: Query<Entity, With<Player>>,
     named: Query<&Name>,
+    purses: Purses,
 ) {
     view.rows.clear();
     view.actor = None;
@@ -97,8 +109,12 @@ pub fn collect_offers(
         return;
     }
     view.actor = Some(player);
-    if let (Some(registries), Some(currency)) = (registries.as_deref(), currency.as_deref()) {
-        view.currency = registries.tags.name(currency.0).to_string();
+    // Only worth looking for when something here has a price.
+    if offered.for_actor(player).iter().any(|o| o.price.is_some()) {
+        let Purses { currency, pieces, bags } = &purses;
+        let near = [player].into_iter().chain(offered.for_actor(player).iter().map(|o| o.target));
+        let carried = near.filter_map(|who| bags.get(who).ok()).flat_map(|bag| bag.items.iter().copied()).collect::<Vec<_>>();
+        view.currency = crate::view::currency_name(currency.as_deref(), carried, pieces);
     }
     let currency = view.currency.clone();
     for offer in offered.for_actor(player) {
@@ -109,8 +125,7 @@ pub fn collect_offers(
                 Some(registries) => format!("needs a {}", registries.tags.name(tag)),
                 None => "needs something you do not carry".to_string(),
             },
-            Refused::Short(price) if currency.is_empty() => format!("needs {price}"),
-            Refused::Short(price) => format!("needs {price} {currency}"),
+            Refused::Short(price) => format!("needs {}", crate::view::sum_of(&currency, price)),
         });
         view.rows.push(OfferRow { target: offer.target, verb: offer.verb, label, time: offer.time, price: offer.price, refused });
     }
@@ -189,7 +204,7 @@ mod tests {
         let scrip = stage.app.world().resource::<Registries>().tags.expect("scrip");
         let (at, player) = (stage.at, stage.player);
         let w = stage.app.world_mut();
-        let coins = w.spawn((Item, Tagged(vec![scrip]), Stack { key: 1, count: 30 })).id();
+        let coins = w.spawn((Item, Name::new("scrip"), Tagged(vec![scrip]), Stack { key: 1, count: 30 })).id();
         w.entity_mut(player).insert(Inventory { items: vec![coins] });
         let cheap =
             w.spawn((Actor, Position(at.offset(1, 0)), OnMap(MapId::SURFACE), Name::new("Odda"), Offers(vec![Offering::new(bless, 100).priced(20)]))).id();
@@ -201,8 +216,8 @@ mod tests {
         let view = stage.app.world().resource::<OffersView>();
         let row = |who: Entity| view.rows.iter().find(|r| r.target == who).map(|r| (r.price, r.refused.clone())).expect("listed");
         assert_eq!(row(cheap), (Some(20), None), "within the purse, open with its price");
-        assert_eq!(row(dear), (Some(50), Some("needs 50 scrip".to_string())), "past it, refused saying how much");
-        assert_eq!(view.currency, "scrip");
+        assert_eq!(row(dear), (Some(50), Some("needs 50 scrips".to_string())), "past it, refused saying how much");
+        assert_eq!(view.currency, "scrip", "named by the piece, as the trade screen names it");
     }
 
     /// Someone standing by who offers something is listed by their own

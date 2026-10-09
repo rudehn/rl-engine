@@ -51,6 +51,7 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 24 | Furnishing a room of any size | 1 | medium | medium |
 | 25 | A furnishing pool with bands and a budget | 1 | low | medium |
 | 26 | Furnishing a map that is not rooms | 1 | low | medium |
+| 27 | `offer_abilities` declares `&mut Stack` it only reads | 4 | low | low |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
@@ -69,6 +70,7 @@ Why the order that is left, in four moves:
    Neither is urgent.
 3. **Items 10 to 20 are cleanups** worth taking whenever their file is open for another reason rather than scheduling.
    Item 19 is a measurement, not a change: run the lit bench before deciding there is anything to fix.
+   Item 27, added on 2026-10-09, is one more of these.
 4. **The rest wait on something.**
    Item 21 waits on a game that actually wants the tactics it would add, and item 22 on a second game asking for it.
    Items 23 to 26 were raised on 2026-09-28 when Foundry's rooms were first furnished, and are the next steps of that work rather than debt: 23 is what the furnished rooms most visibly lack, 24 what the larger rooms do, and 25 and 26 wait on Foundry's zones and on a game that furnishes a cave.
@@ -192,6 +194,10 @@ The five items that opened this section were built in the six stages of `docs/de
 - **One allowlist entry in Foundry's ambiguity test is wider than its reason.**
   The entry on `Acting` and the action messages (`examples/foundry/src/plugin/ambiguity.rs`) admits any pair of systems, though its reason only holds for resolvers and sweepers.
   Narrow it to systems in `TurnSet::Resolve` and `TurnSet::Sweep`, so a future system that writes those outside them fails the test.
+- **`offer_abilities` declares `&mut Stack` it only reads.**
+  The ability gate takes the resolver's `UserState` (`crates/rl-bevy/src/ability.rs`), whose `tagged` query is `Option<&mut Stack>` because paying an ability's cost spends from a stack, so the gate in `DecideSet::Offer` claims write access it never uses.
+  Since a price on an offer is counted from the taker's stacks, `offer_here` reads `Stack` beside it, and the pair is declared `ambiguous_with` in `PropsPlugin` to state that neither writes; without it every game's ambiguity test would report them.
+  Give the gate a read-only param of its own, and the `ambiguous_with` goes.
 
 - **The resolvers in `ResolveSet::Act` are unordered, and every game's ambiguity test pays for it.**
   Nine systems resolve in that set and nearly all of them write `DamageEvent`, `Position`, `Stack`, `Occupancy` and the cue queue, with nothing declaring an order between them.

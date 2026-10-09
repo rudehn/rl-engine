@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- Walking into someone never spends currency: a lone offer with a price is no longer taken up by a bump, which reports `Bumped { offers: true }` instead so the offers screen asks, as it does for a refused or a second offer; an unpriced lone offer is still taken up by walking into it.
+  Both screens name the currency alike, by the `Name` of a piece of it counted with the new `rl_ui::view::sum_of(name, amount)`, so the offers screen reads `needs 50 scrips` where it read `needs 50 scrip` from the tag, and `OffersView::currency` is now a piece's name.
+
 - The trade screen shows the trader's purse at the foot of its side, beside the customer's at the foot of theirs, from the new `TradeView::trader_purse`, and words a short purse by whose it is: `TradeWords::short` ("cannot pay") on the wares, the new `TradeWords::trader_short` ("they lack") on the pack, where it is the trader who cannot pay; `TradeWords::refusal(why, deal)` now takes the side's `Deal`.
   The wares list only what is for sale, what the trader prices and does not wear, so a keeper's own gear and what it puts no price on are off the counter; the pack is still listed whole.
   The new `Trader::each(deal, ware)` is the price of one, its worth bought and the trader's share sold, which `Trader::quote` and the screen both ask, so the screen no longer keeps its own copy of the rule.

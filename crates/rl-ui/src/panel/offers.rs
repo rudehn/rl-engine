@@ -116,8 +116,9 @@ pub fn offers_modal(modals: &Modals) -> ModalId {
 ///
 /// Two cases, and the screen answers both: it offers more than one thing,
 /// which is a question the walk key could not ask, or it offers one it
-/// refuses, which is an explanation the walk key could not give. One that
-/// offered one thing and did it is not here at all, because the bump
+/// refuses, which is an explanation the walk key could not give. A lone
+/// offer with a price is asked about too, since the walk key never pays.
+/// One that offered one thing and did it is not here at all, because the bump
 /// became the interaction, and nor is an ally offering something, which
 /// the engine bumps as an ally and reports without `offers`.
 pub fn open_on_crowded_bump(mut bumped: MessageReader<Bumped>, view: Res<OffersView>, mut menu: ResMut<OffersMenu>, mut modals: ResMut<Modals>) {
@@ -127,9 +128,10 @@ pub fn open_on_crowded_bump(mut bumped: MessageReader<Bumped>, view: Res<OffersV
             continue;
         }
         let rows = view.rows.iter().filter(|r| r.target == ev.into).count();
-        let open = view.rows.iter().filter(|r| r.target == ev.into && r.open()).count();
-        // Nothing to say, or the bump already did the one thing on offer.
-        if rows == 0 || (rows == 1 && open == 1) {
+        let free = view.rows.iter().filter(|r| r.target == ev.into && r.open() && r.price.is_none()).count();
+        // Nothing to say, or the bump already did the one free thing on
+        // offer; a priced one it left for this screen.
+        if rows == 0 || (rows == 1 && free == 1) {
             continue;
         }
         menu.selected = 0;
@@ -197,12 +199,6 @@ fn cost(time: u32) -> String {
     }
 }
 
-/// What a price reads as: the amount, then the currency's name when the
-/// game gave it one.
-fn priced(price: u32, currency: &str) -> String {
-    if currency.is_empty() { price.to_string() } else { format!("{price} {currency}") }
-}
-
 /// Draws what is on offer here, the row picked out, and why a row cannot
 /// be taken up.
 pub fn draw_offers(mut terminal: ResMut<Terminal>, mut menu: ResMut<OffersMenu>, screen: HereScreen) {
@@ -231,7 +227,7 @@ pub fn draw_offers(mut terminal: ResMut<Terminal>, mut menu: ResMut<OffersMenu>,
         terminal.fill(Rect::new(inner.x, y, inner.width, 1), Cell::new(' ', fg).on(bg));
         let said = match (&row.refused, row.price) {
             (Some(why), _) => format!("{} - {why}", row.label),
-            (None, Some(price)) => format!("{} ({}, {})", row.label, cost(row.time), priced(price, &view.currency)),
+            (None, Some(price)) => format!("{} ({}, {})", row.label, cost(row.time), crate::view::sum_of(&view.currency, price)),
             (None, None) => format!("{} ({})", row.label, cost(row.time)),
         };
         terminal.print_on(inner.x, y, &clip(&said, inner.width.max(0) as usize), fg, bg);
@@ -377,7 +373,7 @@ mod tests {
             Offering::new(verbs.get("tip").expect("declared"), 200).priced(50),
         ]);
         let (at, player) = (stage.at.offset(1, 0), stage.player);
-        let coins = stage.app.world_mut().spawn((Item, Tagged(vec![scrip]), Stack { key: 1, count: 30 })).id();
+        let coins = stage.app.world_mut().spawn((Item, Name::new("scrip"), Tagged(vec![scrip]), Stack { key: 1, count: 30 })).id();
         stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![coins] });
         stage.app.world_mut().spawn((Actor, Blocks, Position(at), OnMap(MapId::SURFACE), Name::new("Mirela"), offers));
         stage.tick();
@@ -386,8 +382,37 @@ mod tests {
 
         let rows = stage.rows();
         let text = rows.join("\n");
-        assert!(rows[5].contains("strip Mirela (1 turn, 20 scrip)"), "the price beside the time:\n{text}");
-        assert!(rows[6].contains("tip Mirela - needs 50 scrip"), "and how much a row past the purse wants:\n{text}");
+        assert!(rows[5].contains("strip Mirela (1 turn, 20 scrips)"), "the price beside the time:\n{text}");
+        assert!(rows[6].contains("tip Mirela - needs 50 scrips"), "and how much a row past the purse wants:\n{text}");
+    }
+
+    /// Walking into someone whose one offer has a price the player can
+    /// pay asks first, since the walk key never pays.
+    #[test]
+    fn walking_into_someone_whose_one_offer_has_a_price_asks_before_paying() {
+        let (mut stage, bench) = stage();
+        stage.app.world_mut().despawn(bench);
+        let tags = rl_rules::Registry::from_defs(vec![rl_rules::TagDef::new("scrip")]).expect("one tag");
+        let scrip = tags.expect("scrip");
+        stage.app.insert_resource(Currency(scrip));
+        let strip = stage.app.world().resource::<Verbs>().get("strip").expect("declared");
+        let (at, player) = (stage.at.offset(1, 0), stage.player);
+        let coins = stage.app.world_mut().spawn((Item, Name::new("scrip"), Tagged(vec![scrip]), Stack { key: 1, count: 80 })).id();
+        stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![coins] });
+        stage.app.world_mut().spawn((
+            Actor,
+            Blocks,
+            Position(at),
+            OnMap(MapId::SURFACE),
+            Name::new("Mirela"),
+            Offers(vec![Offering::new(strip, 100).priced(20)]),
+        ));
+        stage.tick();
+        stage.app.world_mut().write_message(Intent::new(player, Bump(Direction::East)));
+        stage.tick();
+        let modals = stage.app.world().resource::<Modals>();
+        assert!(modals.is_open(offers_modal(modals)), "the screen asks");
+        assert_eq!(stage.app.world().get::<Stack>(coins).map(|s| s.count), Some(80), "and nothing was paid");
     }
 
     /// Down and Enter take the second of them, and nothing is guessed at.

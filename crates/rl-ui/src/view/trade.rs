@@ -74,8 +74,8 @@ pub struct TradeView {
     /// what the customer sells.
     pub trader_purse: u32,
     /// What one piece of the currency is called, from the `Name` of a
-    /// piece either side carries; empty when neither carries any, or the
-    /// pieces have no name.
+    /// piece either side carries, else of any piece in play; empty when
+    /// no piece has a name. Said with [`sum_of`](crate::view::sum_of).
     pub currency: String,
 }
 
@@ -119,6 +119,7 @@ pub fn collect_trade(
     sides: Query<Side>,
     traders: Query<&Trader>,
     items: Query<Piece>,
+    named: crate::view::NamedPieces,
 ) {
     view.parties = None;
     view.trader = None;
@@ -138,15 +139,7 @@ pub fn collect_trade(
     view.parties = Some(parties);
     view.purse = customer_purse;
     view.trader_purse = trader_purse;
-    view.currency = customer
-        .2
-        .items
-        .iter()
-        .chain(&trader.2.items)
-        .find(|i| is_currency(**i))
-        .and_then(|i| items.get(*i).ok()?.0)
-        .map(|n| n.as_str().to_string())
-        .unwrap_or_default();
+    view.currency = crate::view::currency_name(currency.as_ref(), customer.2.items.iter().chain(&trader.2.items).copied(), &named);
     view.trader = Some(Row::new(
         parties.trader,
         trader.0.map(|n| n.as_str().to_string()).unwrap_or_default(),

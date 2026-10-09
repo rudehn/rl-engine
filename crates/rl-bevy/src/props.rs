@@ -236,7 +236,10 @@ impl Offering {
     /// Costs `price` in the trade slice's [`Currency`](crate::trade::Currency):
     /// refused to anyone carrying less, and paid into the offerer's own
     /// pack, given one if it carries none, when taken up, before the game
-    /// hears of it in [`Interacted`].
+    /// hears of it in [`Interacted`]. Never taken up by walking into whoever
+    /// offers it, even when it is the only offer: a bump asks, so currency
+    /// is only ever spent on a choice made on the offers screen or by the
+    /// interact key.
     ///
     /// A service is a verb with a price rather than a thing pretending to
     /// be carried for an instant, and it is paid the way a deal is, so the
@@ -1043,12 +1046,12 @@ impl Plugin for PropsPlugin {
             // rather than bare `Update`, where it would be unordered against
             // whatever exclusive system a game runs there.
             .add_systems(PostUpdate, report_bare_props)
-            // After the ability gate beside it, since a price counts the
-            // stacks a pack holds and that gate reaches them through the
-            // ability resolver's own mutable query: neither writes them
-            // here, but unordered they would be a conflict every game's
-            // ambiguity check reports.
-            .add_systems(Turn, (check_priced_offers, offer_here).chain().in_set(DecideSet::Offer).after(crate::ability::offer_abilities))
+            // Beside the ability gate, unordered and saying so: a price
+            // counts the stacks a pack holds, and that gate reaches them
+            // through the ability resolver's mutable query though it only
+            // reads them, so neither writes `Stack` here; `docs/TODO.md`
+            // holds giving the gate a read-only param instead.
+            .add_systems(Turn, (check_priced_offers, offer_here).chain().in_set(DecideSet::Offer).ambiguous_with(crate::ability::offer_abilities))
             .add_systems(Turn, (resolve_interactions, resolve_takes).in_set(ResolveSet::Act))
             .add_systems(Turn, close_emptied_containers.in_set(crate::plugin::TurnSet::React))
             // Outside the turn loop: a container is stocked the frame it is

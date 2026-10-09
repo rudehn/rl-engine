@@ -358,7 +358,7 @@ pub fn draw_trade(mut terminal: ResMut<Terminal>, mut menu: ResMut<TradeMenu>, s
 
     // Each purse under its own side, so whose is short reads off the
     // screen as well as off the row.
-    let purse = |amount: u32| if view.currency.is_empty() { amount.to_string() } else { rl_core::noun::listed(&view.currency, amount) };
+    let purse = |amount: u32| crate::view::sum_of(&view.currency, amount);
     for (side, amount) in [(wares, view.trader_purse), (pack, view.purse)] {
         terminal.print_on(side.x, inner.bottom() - 1, &clip(&purse(amount), side.width.max(0) as usize), palette.get(Tones::NOTICE), surface);
     }

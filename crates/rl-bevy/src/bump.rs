@@ -215,8 +215,8 @@ pub fn redirect_bumps(mut intents: MessageReader<Intent<Bump>>, mut resolution: 
 enum Offered {
     /// One thing, which the bump comes to.
     One(crate::props::Offer),
-    /// More than one, or one refused, which is a question or an
-    /// explanation rather than an action.
+    /// More than one, one refused, or one with a price, which is a
+    /// question or an explanation rather than an action.
     Several(Entity),
     /// Nothing, or nothing there offers at all.
     None,
@@ -226,9 +226,11 @@ impl Way<'_, '_> {
     /// What stands in `target` offers `actor`, a prop or an actor alike:
     /// the gate already worked out who offers what.
     ///
-    /// One thing it could do now and nothing else at all is the only case
-    /// a walk key answers. Something that offers several, or that offers
-    /// one it refuses, is a question or an explanation, which is a screen's.
+    /// One thing it could do now, for no price, and nothing else at all is
+    /// the only case a walk key answers. Something that offers several, or
+    /// one it refuses, is a question or an explanation, which is a screen's;
+    /// and so is one with a price, since spending currency is a choice a
+    /// movement key must never make by walking into someone.
     fn offers_at(&self, actor: Entity, target: Point) -> Offered {
         let Some(offered) = self.offered.as_deref() else { return Offered::None };
         let mine = offered.for_actor(actor);
@@ -236,7 +238,7 @@ impl Way<'_, '_> {
         let all: Vec<crate::props::Offer> = mine.iter().filter(|o| o.target == what).copied().collect();
         match all.as_slice() {
             [] => Offered::None,
-            [only] if only.refused.is_none() => Offered::One(*only),
+            [only] if only.refused.is_none() && only.price.is_none() => Offered::One(*only),
             _ => Offered::Several(what),
         }
     }
@@ -548,5 +550,38 @@ mod tests {
         let heard = rig.app.world().resource::<Heard>();
         assert_eq!(heard.0, vec![Bumped { actor: rig.player, into: locked, offers: true }], "an explanation for a screen");
         assert!(heard.2.is_empty());
+    }
+
+    /// Walking into someone whose one offer has a price, one the player
+    /// can pay, asks rather than pays: the purse is untouched and the turn
+    /// kept, and a screen is told there is something to ask about. The same
+    /// offer without a price is still taken up by the walk key.
+    #[test]
+    fn bumping_someone_whose_one_offer_has_a_price_asks_rather_than_paying() {
+        let mut rig = Rig::new();
+        let free = rig.verb("free");
+        let tags = rl_rules::Registry::from_defs(vec![rl_rules::TagDef::new("scrip")]).expect("one tag");
+        let scrip = tags.expect("scrip");
+        rig.app.insert_resource(crate::trade::Currency(scrip));
+        let coins = rig.app.world_mut().spawn((crate::items::Item, crate::items::Tagged(vec![scrip]), crate::items::Stack { key: 1, count: 80 })).id();
+        let player = rig.player;
+        rig.app.world_mut().entity_mut(player).insert(crate::items::Inventory { items: vec![coins] });
+        let ferry = rig.beside(None, vec![crate::props::Offering::new(free, 200).priced(50)]);
+        let (start, before) = (rig.at(), rig.now());
+        rig.bump(Direction::East);
+        let heard = rig.app.world().resource::<Heard>();
+        assert_eq!(heard.0, vec![Bumped { actor: rig.player, into: ferry, offers: true }], "a question for a screen");
+        assert!(heard.2.is_empty(), "and nothing was taken up");
+        assert_eq!((rig.at(), rig.now()), (start, before), "for nothing");
+        assert_eq!(rig.app.world().get::<crate::items::Stack>(coins).map(|s| s.count), Some(80), "the purse is untouched");
+
+        let mut rig = Rig::new();
+        let captive = rig.beside(None, vec![crate::props::Offering::new(free, 200)]);
+        rig.bump(Direction::East);
+        assert_eq!(
+            rig.app.world().resource::<Heard>().2,
+            vec![Interacted { actor: rig.player, target: captive, verb: free }],
+            "unpriced, the walk key takes it up"
+        );
     }
 }
