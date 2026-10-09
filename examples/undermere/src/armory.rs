@@ -400,6 +400,14 @@ impl Armory {
         own + self.lent[def.index()].armor.unwrap_or(0)
     }
 
+    /// Whether a thing of `def`'s level moves its wearer's armor: armor's
+    /// own, a level a point, and a thing whose line gives the stat `armor`
+    /// names for each level. What the vitals' mark asks of a thing whose
+    /// kind is known and whose level is not, and a fact of the kind alone.
+    pub fn level_moves_armor(&self, def: Id<ItemDef>, armor: Option<StatId>) -> bool {
+        self.armor_at(def, 1) != self.armor_at(def, 0) || self.defs.get(def).per_level.iter().any(|(stat, _)| Some(stat.id()) == armor)
+    }
+
     /// What a thing of `def` at `level` gives its wearer's stats: its own,
     /// a level's worth of each stat its line gives per level, and for a
     /// weapon the accuracy a level lends, by the stat `accuracy` names;

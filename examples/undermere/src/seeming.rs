@@ -46,7 +46,7 @@ use rl_engine::rl_ui::panel::sheet::plain_op;
 use rl_engine::rl_ui::view::sheet::{ResistLine, Strike};
 
 use crate::armory::{ACCURACY_PER_LEVEL, Armory, DAMAGE_PER_LEVEL, ItemKind};
-use crate::content::{ACCURACY, STRENGTH};
+use crate::content::{ACCURACY, ARMOR, STRENGTH};
 use crate::lore::{CurseShown, FAMILIAR_AFTER, Lore, Unfamiliar};
 use crate::run::Adventurer;
 use crate::strength::{armor_cost, short_of};
@@ -83,6 +83,7 @@ type Unknowable = (&'static ItemKind, Option<&'static Enchant>, Option<&'static 
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Seeming<'w, 's> {
     armory: Res<'w, Armory>,
+    lore: Res<'w, Lore>,
     registries: Res<'w, Registries>,
     loadout: Loadout<'w, 's>,
     worn: Query<'w, 's, &'static Equipped>,
@@ -136,6 +137,19 @@ impl Seeming<'_, '_> {
         unseen.blow = DAMAGE_PER_LEVEL * level(self.loadout.melee_with(who).and_then(|(from, _)| from));
         unseen.shot = DAMAGE_PER_LEVEL * level(self.loadout.ranged_with(who).and_then(|(from, _)| from));
         unseen
+    }
+
+    /// Whether anything `who` wears and the adventurer does not know yet
+    /// could move their armor: a thing of a kind not yet known, which could
+    /// be any kind of its family, or one of a known kind whose level moves
+    /// armor, as [`Armory::level_moves_armor`] says. Read off the kind and
+    /// never off the thing, so the answer is one the adventurer could give.
+    pub fn armor_unsettled(&self, who: Entity) -> bool {
+        let Ok(worn) = self.worn.get(who) else { return false };
+        let armor = self.registries.stats.id(ARMOR);
+        worn.0.worn().any(|(_, item)| {
+            self.unknown.get(item).is_ok_and(|(kind, ..)| !self.lore.knows(&self.armory.defs.get(kind.0).name) || self.armory.level_moves_armor(kind.0, armor))
+        })
     }
 
     /// The odds `attacker` lands what it would attack `target` with from
@@ -223,14 +237,25 @@ impl Seeming<'_, '_> {
 
 /// Counts each thing the adventurer wears and does not know yet at its
 /// kind's plain armor in the vitals' figure, which keeps the mark the
-/// engine put on it: `+2 leather armor` not yet known reads `armor 1?`,
-/// what any leather gives, and `armor 3` once it is known.
+/// engine put on it while something worn could move it: `+2 leather armor`
+/// not yet known reads `armor 1?`, what any leather gives, and `armor 3`
+/// once it is known.
+///
+/// The engine marks the figure whenever anything worn is not yet known,
+/// since it cannot tell what a thing it knows nothing of might move; this
+/// takes the mark off when nothing worn could, as
+/// [`Seeming::armor_unsettled`] says, so an unidentified ring of light
+/// leaves `armor 1` plain. A rule of the kind, which the adventurer knows,
+/// and never of the thing: marking by whether the thing gives armor would
+/// tell a cursed leather at nought armor from a plain one, or a ring of a
+/// kind that gives armor from one that gives light, the turn it went on.
 ///
 /// In `ViewSet::Annotate`, over the engine's true total. Absent vitals, as
 /// in a test that draws none, is nothing to correct.
 pub fn seem_armor(vitals: Option<ResMut<VitalsView>>, seeming: Seeming) {
     let Some(mut vitals) = vitals else { return };
     let Some(me) = vitals.entity.filter(|_| vitals.armor_uncertain) else { return };
+    vitals.armor_uncertain = seeming.armor_unsettled(me);
     let unseen = seeming.unseen(me).armor;
     if unseen != 0 {
         vitals.armor = Some(vitals.armor.unwrap_or(0) - unseen);
@@ -507,6 +532,23 @@ mod tests {
         pass_turns(&mut app, FAMILIAR_AFTER);
         settle(&mut app);
         assert_eq!(vitals(&app), (Some(3), false), "familiar, its own, unmarked");
+    }
+
+    /// A ring of light not yet known moves no armor at any level, so the
+    /// vitals read the armor plain while it is worn; chain mail not yet
+    /// known beside it keeps the mark.
+    #[test]
+    fn an_unknown_ring_that_moves_no_armor_leaves_the_armor_unmarked() {
+        let (mut app, me, _) = arena_with(21, VitalsViewPlugin);
+        let ring = thing(&mut app, "ring of light", 2, false);
+        equip(&mut app, me, ring);
+        settle(&mut app);
+        let plain = vitals(&app);
+        assert!(!plain.1, "an unknown ring of light, and nothing marked: {plain:?}");
+        let mail = thing(&mut app, "chain mail", 2, false);
+        equip(&mut app, me, mail);
+        settle(&mut app);
+        assert!(vitals(&app).1, "unknown chain mail beside it is marked");
     }
 
     /// A thing made known by being told is read as it is at once, as one
