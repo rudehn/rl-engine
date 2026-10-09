@@ -17,6 +17,13 @@
 //! `2 scrolls titled XOMBA RENTOR`. A name that already carries an article,
 //! `a crust of bread`, or starts with a capital, a proper name, is said as
 //! written.
+//!
+//! Some names take no `a` at all: a stuff, `chain mail` or `leather
+//! armor`, and a thing named in the plural, `gauntlets`. Which ones is a
+//! fact about the name the rules here cannot read off its spelling, since
+//! `mail` is a stuff and `nail` is not, so a game says so, and
+//! [`counted_as`] takes it as a [`Countability`]. What is the speaker's own
+//! is [`owned`]: `your chain mail`, whichever kind of name it is.
 
 /// Words whose plural is not made by a rule.
 const IRREGULAR: [(&str, &str); 12] = [
@@ -196,9 +203,62 @@ pub fn with_the(name: &str) -> String {
     if name.is_empty() || as_written(name) { name.to_string() } else { format!("the {name}") }
 }
 
+/// Whether a name is said with `a`: one of something, `a sword`, or a
+/// stuff or a pair, `chain mail` and `gauntlets`, which is said with none.
+///
+/// Grammar rather than content, so a closed pair: every name is one or the
+/// other, and which one is the game's to say of each.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub enum Countability {
+    /// Counted one at a time: `a sword`, `5 arrows`.
+    #[default]
+    Count,
+    /// A stuff, or a thing named in the plural: `chain mail`, `gauntlets`.
+    /// It has no plural of its own, so several are counted as written.
+    Mass,
+}
+
 /// `count` of `name` as a sentence says it: `a pebble`, or `5 pebbles`.
 pub fn counted(name: &str, count: u32) -> String {
-    if count == 1 { with_article(name) } else { format!("{count} {}", plural(name)) }
+    counted_as(name, count, Countability::Count)
+}
+
+/// `count` of `name` as a sentence says it, counted as `countability`
+/// says: `a pebble` or `5 pebbles`, and `chain mail`, with no `a`, or `2
+/// chain mail`, since a stuff has no plural of its own.
+///
+/// ```
+/// use rl_core::noun::{Countability, counted_as};
+/// assert_eq!(counted_as("chain mail", 1, Countability::Mass), "chain mail");
+/// assert_eq!(counted_as("sword", 1, Countability::Count), "a sword");
+/// ```
+pub fn counted_as(name: &str, count: u32, countability: Countability) -> String {
+    match (countability, count) {
+        (Countability::Count, 1) => with_article(name),
+        (Countability::Count, _) => format!("{count} {}", plural(name)),
+        (Countability::Mass, 1) => name.to_string(),
+        (Countability::Mass, _) => format!("{count} {}", bare(name)),
+    }
+}
+
+/// `count` of `name` as `owner`'s own, `your` or `its`: `your sword`,
+/// `your 5 arrows`, `your chain mail`. An article the name was written
+/// with gives way to the owner, so a crust of bread is `your crust of
+/// bread`; a stuff is counted as [`counted_as`] counts it.
+///
+/// ```
+/// use rl_core::noun::{Countability, owned};
+/// assert_eq!(owned("your", "sword", 1, Countability::Count), "your sword");
+/// assert_eq!(owned("your", "arrow", 5, Countability::Count), "your 5 arrows");
+/// assert_eq!(owned("your", "chain mail", 1, Countability::Mass), "your chain mail");
+/// ```
+pub fn owned(owner: &str, name: &str, count: u32, countability: Countability) -> String {
+    let name = bare(name);
+    match (countability, count) {
+        (_, 1) => format!("{owner} {name}"),
+        (Countability::Count, _) => format!("{owner} {count} {}", plural(name)),
+        (Countability::Mass, _) => format!("{owner} {count} {name}"),
+    }
 }
 
 /// `count` of `name` as a list shows it: `pebble`, or `5 pebbles`.
@@ -293,6 +353,25 @@ mod tests {
         assert_eq!(with_the("a crust of bread"), "a crust of bread");
         assert_eq!(with_the("Grubnak"), "Grubnak");
         assert_eq!(with_the(""), "");
+    }
+
+    #[test]
+    fn a_mass_name_is_said_with_no_article_and_no_plural() {
+        for name in ["chain mail", "leather armor", "gauntlets"] {
+            assert_eq!(counted_as(name, 1, Countability::Mass), name);
+        }
+        assert_eq!(counted_as("chain mail", 2, Countability::Mass), "2 chain mail", "a stuff has no plural of its own");
+        assert_eq!(counted_as("ember", 1, Countability::Count), "an ember", "a count name is said as counted says it");
+        assert_eq!(counted_as("pebble", 3, Countability::Count), counted("pebble", 3));
+    }
+
+    #[test]
+    fn what_is_owned_is_said_with_its_owner_in_place_of_any_article() {
+        assert_eq!(owned("your", "sword", 1, Countability::Count), "your sword");
+        assert_eq!(owned("your", "arrow", 5, Countability::Count), "your 5 arrows");
+        assert_eq!(owned("your", "chain mail", 1, Countability::Mass), "your chain mail");
+        assert_eq!(owned("your", "gauntlets", 2, Countability::Mass), "your 2 gauntlets");
+        assert_eq!(owned("its", "a crust of bread", 1, Countability::Count), "its crust of bread", "the owner takes the article's place");
     }
 
     #[test]

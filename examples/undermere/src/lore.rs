@@ -922,8 +922,7 @@ mod tests {
         let stone = name_of(&app, ring);
         equip(&mut app, me, ring);
         let lines = said(&app);
-        let (put_on, is) =
-            (lines.iter().position(|l| *l == format!("You put on {}.", with_article(&stone))), lines.iter().position(|l| l == "It is a ring of light."));
+        let (put_on, is) = (lines.iter().position(|l| *l == format!("You put on your {stone}.")), lines.iter().position(|l| l == "It is a ring of light."));
         assert!(put_on.is_some() && put_on < is, "{lines:#?}");
         let gear = app.world().resource::<GearView>();
         assert_eq!(gear.by_name("left finger").and_then(|s| s.item.as_ref()).map(|r| r.label.clone()), Some("unidentified ring of light".to_string()));

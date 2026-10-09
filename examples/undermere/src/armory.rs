@@ -179,6 +179,10 @@ pub struct ItemDef {
     /// Unique; spawn tables and drops refer to it. One of it, singular,
     /// since the engine says a stack as "12 arrows".
     pub name: String,
+    /// Whether the name is said with no `a`, a stuff: `chain mail`. The
+    /// engine's narrator reads it as [`MassNoun`] on the thing.
+    #[serde(default)]
+    pub mass: bool,
     /// One character.
     pub glyph: char,
     /// `(r, g, b)` in `0..=1`.
@@ -783,6 +787,9 @@ pub fn spawn_item_at(commands: &mut Commands, armory: &Armory, def: Id<ItemDef>,
     if !d.tags.is_empty() {
         e.insert(Tagged(d.tags.iter().map(|t| t.id()).collect()));
     }
+    if d.mass {
+        e.insert(MassNoun);
+    }
     // What it does at its moments, a potion drunk and one broken where it lands,
     // built once by the armory and shared by every copy; the engine lands
     // them, and spends what doing it costs.
@@ -1084,6 +1091,23 @@ mod tests {
         let made = names.iter().map(|n| spawn_item(&mut commands, armory, armory.defs.expect(n), &library.registries)).collect();
         queue.apply(&mut world);
         (world, made)
+    }
+
+    /// Every coat of body armor is a stuff, said with no `a`, `chain mail`
+    /// and `leather armor`, and the shield, the helm and every weapon are
+    /// counted one at a time.
+    #[test]
+    fn body_armor_is_said_with_no_article_and_a_shield_or_a_sword_with_one() {
+        let library = library();
+        let body = library.registries.slots.expect("body");
+        let coats: Vec<&str> =
+            library.armory.defs.iter().filter(|(_, d)| d.slot.as_ref().is_some_and(|s| s.id() == body)).map(|(_, d)| d.name.as_str()).collect();
+        assert_eq!(coats.len(), 6, "{coats:?}");
+        let counted = ["shield", "helm", "sword", "bow", "ring of light"];
+        let (world, made) = spawned(&library, &[coats.as_slice(), &counted].concat());
+        let (stuffs, ones) = made.split_at(coats.len());
+        assert!(stuffs.iter().all(|e| world.get::<MassNoun>(*e).is_some()), "{coats:?} are each a stuff");
+        assert!(ones.iter().all(|e| world.get::<MassNoun>(*e).is_none()), "{counted:?} are each counted");
     }
 
     /// A tripwire over the armory, by name, so a thing is added or dropped
