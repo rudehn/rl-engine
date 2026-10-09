@@ -426,6 +426,10 @@ pub fn keep_shrouded(
             afflict.write(Afflict { target: e, status, turns: crate::bestiary::FOR_LIFE, by: None, held_by: None });
         } else if !dark && has {
             cure.write(Cure { target: e, status });
+/// A [`BurnsBadly`] body as [`keep_regen_halted`] reads it: what it
+/// suffers, its stats, and whether its mending is halted now.
+type Burning = (Entity, &'static Afflicted, &'static mut StatBlock, Has<RegenHalted>);
+
         }
     }
 }
@@ -457,11 +461,7 @@ const REGEN_HALT_TAG: u64 = u64::from_be_bytes(*b"burnbad1");
 /// mended by another's ability, so nothing today tells the two apart.
 ///
 /// In `TurnSet::React`.
-pub fn keep_regen_halted(
-    registries: Res<Registries>,
-    mut bodies: Query<(Entity, &Afflicted, &mut StatBlock, Has<RegenHalted>), With<BurnsBadly>>,
-    mut commands: Commands,
-) {
+pub fn keep_regen_halted(registries: Res<Registries>, mut bodies: Query<Burning, (With<BurnsBadly>, With<Actor>)>, mut commands: Commands) {
     let Some(scorched) = registries.statuses.id("scorched") else { return };
     let Some(mending) = registries.stats.id(crate::content::MENDING) else { return };
     for (e, held, mut stats, halted) in &mut bodies {
@@ -523,6 +523,11 @@ pub const WEAKENED_MAX_STACKS: usize = 3;
 /// Inflicts `weakened` on `target` for `turns`, credited to `by`, unless
 /// it already holds [`WEAKENED_MAX_STACKS`] instances: a fourth touch
 /// before the first's clock runs out is refused rather than let the stat
+/// A choir that is singing: a living one, an `Actor`, since a
+/// Choirmaster's body keeps `Choir`, its cell and its side, and a choir
+/// read off remains sang over its own corpse for good.
+type Singing = (With<Choir>, With<Actor>);
+
 /// climb without bound.
 pub fn wither(world: &mut World, target: Entity, by: Option<Entity>, turns: u32) {
     let Some(weakened) = world.resource::<Registries>().statuses.id(crate::content::WEAKENED) else { return };
@@ -569,7 +574,7 @@ type SingingTo = (Entity, &'static Position, &'static Faction, &'static mut Affl
 pub fn sing_choir(
     mut commands: Commands,
     registries: Res<Registries>,
-    choir: Query<(&Position, &Faction), With<Choir>>,
+    choir: Query<(&Position, &Faction), Singing>,
     mut bodies: Query<SingingTo, With<Actor>>,
 ) {
     let Some(status) = registries.statuses.id("regenerating") else { return };
@@ -911,7 +916,7 @@ mod tests {
         let undead = registries.factions.expect("undead");
         app.insert_resource(registries);
         app.add_systems(Update, (sing_choir, resolve_afflictions).chain());
-        app.world_mut().spawn((Position(Point::ZERO), Faction(undead), Choir));
+        app.world_mut().spawn((Actor, Position(Point::ZERO), Faction(undead), Choir));
         let near = app.world_mut().spawn((Actor, Position(Point::new(3, 0)), Faction(undead), Afflicted(Statuses::new()), StatBlock(Stats::new()))).id();
         let far = app.world_mut().spawn((Actor, Position(Point::new(10, 0)), Faction(undead), Afflicted(Statuses::new()), StatBlock(Stats::new()))).id();
         app.update();
@@ -971,6 +976,26 @@ mod tests {
     /// A `BurnsBadly` body's mending is zeroed while `resolve_afflictions`
     /// holds `scorched` on it, and lifted the moment it is cured.
     #[test]
+    /// The song ends with the singer: a skeleton beside the Choirmaster
+    /// regenerates while he lives, and the pass he dies it no longer does,
+    /// though his body keeps lying within range of it.
+    #[test]
+    fn a_choirs_song_stops_the_moment_its_singer_dies() {
+        use crate::testing::{arena, kill, monster, pass_turns, settle};
+        let (mut app, _, here) = arena(33);
+        let singer = monster(&mut app, "the Choirmaster", here.offset(4, 0));
+        let skeleton = monster(&mut app, "skeleton", here.offset(4, 2));
+        app.world_mut().entity_mut(skeleton).remove::<Mind>();
+        settle(&mut app);
+        let regenerating = app.world().resource::<Registries>().statuses.expect("regenerating");
+        let sung = |app: &App| app.world().get::<Afflicted>(skeleton).is_some_and(|a| a.0.has(regenerating));
+        assert!(sung(&app), "sung to while the Choirmaster lives");
+        kill(&mut app, singer, None);
+        pass_turns(&mut app, 1);
+        assert!(app.world().get::<Remains>(singer).is_some(), "his body lies where he fell, within range");
+        assert!(!sung(&app), "the song stopped when he died");
+    }
+
     fn a_burns_badly_kinds_mending_is_halted_while_it_burns_and_lifted_once_it_is_not() {
         let mut app = App::new();
         app.add_message::<Afflict>().add_message::<Cure>().add_message::<rl_engine::rl_bevy::status::StatusEvent>();
@@ -978,7 +1003,7 @@ mod tests {
         let (scorched, mending) = (registries.statuses.expect("scorched"), registries.stats.expect(crate::content::MENDING));
         app.insert_resource(registries);
         app.add_systems(Update, (resolve_afflictions, keep_regen_halted).chain());
-        let e = app.world_mut().spawn((BurnsBadly, Afflicted(Statuses::new()), StatBlock(Stats::new()))).id();
+        let e = app.world_mut().spawn((Actor, BurnsBadly, Afflicted(Statuses::new()), StatBlock(Stats::new()))).id();
         // The same formula `Loadout::mending` reads the stat by: a
         // hundred and the stat, never below nothing.
         let mending_of = |app: &App| (100 + app.world().get::<StatBlock>(e).unwrap().0.value(mending, &app.world().resource::<Registries>().stats)).max(0);

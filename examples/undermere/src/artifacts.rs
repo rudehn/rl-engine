@@ -52,7 +52,7 @@ pub fn crown_aura(
     registries: Res<Registries>,
     rules: Option<Res<CombatRules>>,
     items: Query<(Entity, &ItemKind), With<Item>>,
-    wearers: Query<(Entity, &Equipped, &OnMap, &Faction, &Viewshed)>,
+    wearers: Query<(Entity, &Equipped, &OnMap, &Faction, &Viewshed), With<Actor>>,
     mut bodies: Query<(Entity, &Position, &OnMap, &Faction, &mut StatBlock), With<Actor>>,
 ) {
     let (Some(rules), Some(attack), Some(crown)) = (rules, registries.stats.id(crate::content::ATTACK), armory.defs.id(CROWN_OF_GRUBNAK)) else { return };
