@@ -453,6 +453,8 @@ pub struct Library {
     pub bestiary: Bestiary,
     /// The faces the things of a kind wear until the kind is known.
     pub faces: crate::lore::Faces,
+    /// What Mereholt's keepers may stock.
+    pub wares: crate::shops::Wares,
 }
 
 impl Library {
@@ -466,7 +468,8 @@ impl Library {
         let armory = Armory::load(&registries, &traits, kinds, moments);
         let bestiary = Bestiary::load(&registries, &traits, &armory.defs, kinds, moments);
         let faces = crate::lore::Faces::load(&registries, &armory.defs);
-        Self { registries, abilities, traits, armory, bestiary, faces }
+        let wares = crate::shops::Wares::load(&registries, &armory);
+        Self { registries, abilities, traits, armory, bestiary, faces, wares }
     }
 }
 

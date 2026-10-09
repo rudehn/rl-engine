@@ -25,7 +25,9 @@
 //! shares, and [`captives`] is the one of them the adventurer may free to
 //! follow; [`finds`] lays its things, drawn a kind at a time with a
 //! scroll of enchanting besides, and [`light`] lights them and dims the
-//! lantern as the adventurer descends.
+//! lantern as the adventurer descends. [`shops`] is what Mereholt's
+//! keepers may stock, and a stocking of their shelves drawn at the depth
+//! reached.
 //!
 //! The run is [`run`]'s: the adventurer and what they set out with, and a
 //! run carried on from a save, which [`save`] says how to write down.
@@ -80,6 +82,7 @@ pub mod quest;
 pub mod run;
 pub mod save;
 pub mod seeming;
+pub mod shops;
 pub mod staffs;
 pub mod stairs;
 pub mod stats;
