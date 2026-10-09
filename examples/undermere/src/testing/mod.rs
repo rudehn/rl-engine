@@ -302,10 +302,27 @@ pub const REACH: i32 = 5;
 /// their hands is what strikes, and a miss for want of strength or a lamp
 /// post in the way is never what it reads.
 ///
+/// On floor one rather than in Mereholt: part 5's peace there drops every
+/// blow and every zap to nothing before it reaches `Health`, which an
+/// arena staged in the town would make true of nothing a test put in the
+/// adventurer's hands. [`arena_on`] is this with the floor named, for a
+/// test about the floor itself; this is that with the one every other
+/// test about combat, which cares only that a floor is under its feet,
+/// never names.
+///
 /// Empty-handed, since a blow is struck with the first weapon worn in slot
 /// order: a dagger put on beside the sword they set out with goes to the
 /// free hand, and the sword would strike.
 pub fn arena(seed: u64) -> (App, Entity, Point) {
+    arena_on(seed, 1)
+}
+
+/// An [`arena`] staged in Mereholt rather than on a floor: for a test
+/// that asks something of the town itself rather than of open ground
+/// under the adventurer's feet, a scroll of summon monsters finding no
+/// spawn table to draw from, since nothing stands there that the town
+/// did not put.
+pub fn arena_in_mereholt(seed: u64) -> (App, Entity, Point) {
     let mut app = headless(RunSeed(seed));
     let me = adventurer(&mut app);
     let here = stage(&mut app, me);
@@ -318,12 +335,12 @@ pub fn arena(seed: u64) -> (App, Entity, Point) {
 pub fn arena_with<M>(seed: u64, views: impl bevy::app::Plugins<M>) -> (App, Entity, Point) {
     let mut app = headless(RunSeed(seed));
     app.add_plugins(views);
-    let me = adventurer(&mut app);
+    let me = arrive(&mut app, crate::dungeon::map_of(1));
     let here = stage(&mut app, me);
     (app, me, here)
 }
 
-/// An [`arena`] on floor `floor` rather than in Mereholt, where the floor's
+/// An [`arena`] on floor `floor` rather than floor one, where that floor's
 /// own monsters are found, for what is about the floor: a summoning, a
 /// shriek heard over it, its map.
 pub fn arena_on(seed: u64, floor: u32) -> (App, Entity, Point) {

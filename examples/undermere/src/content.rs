@@ -137,6 +137,14 @@ pub const DISCORDANT: &str = "discordant";
 /// shackled, neutral to every side, the adventurer's captors among them,
 /// until it is freed and put on the adventurer's own.
 pub const CAPTIVE: &str = "captive";
+/// Part 5's keepers and the Mereholt crowd around them: at peace with
+/// everyone, the adventurer included, and excluded from the discord loop
+/// in [`combat_rules`] rather than merely unnamed in it, so nobody is ever
+/// hostile to it, not even a victim of the scroll. Doing without the harm
+/// [`damage::StopsHarmInMereholt`](crate::damage::StopsHarmInMereholt)
+/// already drops would still leave a discordant townsperson swinging at
+/// a neighbour, which the design rules out by the faction alone.
+pub const TOWNSFOLK: &str = "townsfolk";
 /// The cloud a potion of paralysis bursts into.
 pub const PARALYTIC: &str = "paralytic";
 /// The cloud a potion of confusion bursts into.
@@ -284,7 +292,8 @@ pub fn registries() -> Registries {
         stats,
         statuses,
         gases,
-        factions: Registry::from_defs(["adventurer", "beasts", "goblins", "undead", "dar", CAPTIVE, DISCORDANT].map(FactionDef::new).to_vec()).unwrap(),
+        factions: Registry::from_defs(["adventurer", "beasts", "goblins", "undead", "dar", CAPTIVE, DISCORDANT, TOWNSFOLK].map(FactionDef::new).to_vec())
+            .unwrap(),
         tags: Registry::from_defs(
             ["weapon", "armor", "potion", "scroll", "staff", "wand", "ring", "gold", "arrow", "light", "thrown"].map(TagDef::new).to_vec(),
         )
@@ -302,7 +311,9 @@ pub fn registries() -> Registries {
 /// dar fight only the adventurer, a deep culture of their own that neither
 /// raids the goblins nor hunts the beasts. The discordant fight everyone,
 /// each other among them, which is what a scroll of discord turns a foe
-/// into for a while.
+/// into for a while, Mereholt's [`TOWNSFOLK`] the one side left out of
+/// that: nobody is ever hostile to it, so a townsperson never has to be
+/// asked whether it fights, a scroll's victim included.
 ///
 /// And which stats a blow and a heal read: accuracy against evasion for
 /// whether it lands, the armor stat beside whatever armor is worn, mending
@@ -318,6 +329,7 @@ pub fn registries() -> Registries {
 pub fn combat_rules(registries: &Registries) -> CombatRules {
     let [adventurer, beasts, goblins, undead, dar] = ["adventurer", "beasts", "goblins", "undead", "dar"].map(|name| registries.factions.expect(name));
     let discord = registries.factions.expect(DISCORDANT);
+    let townsfolk = registries.factions.expect(TOWNSFOLK);
     let stat = |name: &str| registries.stats.expect(name);
     let mut rules = CombatRules::new(&registries.factions)
         .hostile(adventurer, beasts)
@@ -328,7 +340,9 @@ pub fn combat_rules(registries: &Registries) -> CombatRules {
         .hostile(undead, beasts)
         .hostile(undead, goblins);
     for (side, _) in registries.factions.iter() {
-        rules = rules.hostile(discord, side);
+        if side != townsfolk {
+            rules = rules.hostile(discord, side);
+        }
     }
     rules
         .accuracy_stat(stat(ACCURACY))
@@ -481,7 +495,7 @@ mod tests {
     #[test]
     fn the_registries_hold_every_side_kind_status_slot_and_tag_the_content_names() {
         let r = registries();
-        for side in ["adventurer", "beasts", "goblins", "undead", "dar", CAPTIVE] {
+        for side in ["adventurer", "beasts", "goblins", "undead", "dar", CAPTIVE, TOWNSFOLK] {
             assert!(r.factions.id(side).is_some(), "{side}");
         }
         for kind in ["slash", "pierce", "crush", "fire", "cold", "poison"] {
@@ -673,6 +687,43 @@ mod tests {
             assert_eq!(at(CAPTIVE, other), Relation::Neutral, "a shackled captive and {other}");
             assert_eq!(at(other, CAPTIVE), Relation::Neutral, "{other} and a shackled captive");
         }
+        for other in ["adventurer", "beasts", "goblins", "undead", "dar", CAPTIVE, DISCORDANT] {
+            assert_eq!(at(TOWNSFOLK, other), Relation::Neutral, "Mereholt's own and {other}: nobody is hostile to it");
+            assert_eq!(at(other, TOWNSFOLK), Relation::Neutral, "{other} and Mereholt's own: nobody is hostile to it");
+        }
+        assert_eq!(at(TOWNSFOLK, TOWNSFOLK), Relation::Allied, "the keepers and the crowd stand together");
+    }
+
+    /// What the neutral faction buys, in the one place it is read: a bump
+    /// into a townsperson is neither a blow nor a free refusal, the same
+    /// as the engine's own bump reads any neutral offering one thing, so
+    /// it comes to an `Interact` instead. Task 9 gives Mereholt's people
+    /// their own actor; this stands in for one with nothing but the side
+    /// and the offer the design asks of it.
+    #[test]
+    fn a_townsperson_bumped_is_talked_to_not_struck() {
+        use crate::testing::{adventurer, at, headless, settle};
+
+        #[derive(Resource, Default)]
+        struct Heard(Vec<Interacted>);
+        fn hear(mut done: MessageReader<Interacted>, mut heard: ResMut<Heard>) {
+            heard.0.extend(done.read().copied());
+        }
+
+        let mut app = headless(RunSeed(0));
+        app.add_verb("talk");
+        let talk = app.world().resource::<Verbs>().get("talk").expect("just declared");
+        app.init_resource::<Heard>().add_systems(Update, hear);
+        let me = adventurer(&mut app);
+        let townsfolk = app.world().resource::<Registries>().factions.expect(TOWNSFOLK);
+        let beside = at(&app, me).offset(1, 0);
+        let keeper =
+            app.world_mut().spawn((Actor, Blocks, Position(beside), Health::full(20), Faction(townsfolk), Offers(vec![Offering::new(talk, 100)]))).id();
+        app.update();
+        app.world_mut().write_message(Intent::new(me, Bump(Direction::East)));
+        settle(&mut app);
+        assert_eq!(app.world().get::<Health>(keeper).map(|h| h.current), Some(20), "talked to, not struck");
+        assert_eq!(app.world().resource::<Heard>().0, vec![Interacted { actor: me, target: keeper, verb: talk }], "the walk key talked to them");
     }
 
     /// A file's colour and flicker in `0..=1` become the engine's bytes,

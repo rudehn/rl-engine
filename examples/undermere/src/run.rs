@@ -66,10 +66,20 @@ pub fn prepare(commands: &mut Commands, seed: &Seed, registries: &Registries) {
     // Resistance first, then armor: the traits' resistances are what make
     // fire nothing to a salamander and poison nothing to the dead, and the
     // engine's default list is armor alone, which would leave them written
-    // down and never played. Last, Undermere's own floor on what armor
+    // down and never played. Then Undermere's own floor on what armor
     // took: never more than half of the blow's own roll, so plate and
     // scrolls still matter on every floor and nothing is ever immune.
-    commands.insert_resource(DamageStages(vec![Box::new(ApplyResistance), Box::new(SubtractArmor), Box::new(crate::damage::HalveArmor)]));
+    // Last of all, Mereholt's own peace: a flag kept outside the pipeline,
+    // since no stage before it can ask where a blow landed, dropping
+    // whatever reaches it to nothing while the town is the place loaded.
+    let peace = crate::damage::MereholtPeace::new();
+    commands.insert_resource(peace.clone());
+    commands.insert_resource(DamageStages(vec![
+        Box::new(ApplyResistance),
+        Box::new(SubtractArmor),
+        Box::new(crate::damage::HalveArmor),
+        Box::new(crate::damage::StopsHarmInMereholt(peace)),
+    ]));
     commands.insert_resource(Lighting::dark());
     // Standing in fire scorches, a point a turn for three turns.
     commands.insert_resource(FireRules::new().inflicts(registries.statuses.expect("scorched"), 3));

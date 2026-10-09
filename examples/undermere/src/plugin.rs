@@ -168,6 +168,11 @@ impl Plugin for UndermerePlugin {
         // of every pass, before anyone steps in it: what is worn is folded
         // onto the stat in the reactions, unordered against these.
         app.add_systems(Turn, crate::stats::keep_footfall.in_set(TurnSet::Schedule));
+        // Mereholt's peace, read the same way: whether the town is the
+        // place loaded, kept where a damage stage can ask it, since a
+        // stage cannot ask `WorldMap` itself. Before `TurnSet::Resolve`,
+        // where every blow, shot and tick of fire or poison is answered.
+        app.add_systems(Turn, crate::damage::sync_mereholt_peace.in_set(TurnSet::Schedule));
         // What the adventurer's hands showed of their things, then a curse
         // closing on them, then the turns they have worn what they do not
         // know yet: chained, since each says so in the log, and the lines
