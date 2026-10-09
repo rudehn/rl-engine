@@ -7,7 +7,7 @@ Pushing a tag publishes its release page from its section here, through `scripts
 ## Unreleased
 
 - Names drawn from syllables, `rl_rules::namegen`: `namegen::load` reads a `NameBook`, a RON map of named `NameSet`s, each pools of syllables, weighted patterns of `Pool(p)`, `Maybe(pct, p)` and `Text(t)` parts, a `NameCase`, a length and forbidden substrings, and refuses a file with every mistake named by its set.
-  `NameSet::draw(&mut rng)` puts a name together and draws again while it reads badly, by libtcod's rules, up to `namegen::ATTEMPTS` times and then `None`; `draw_distinct(&mut rng, taken)` also refuses a name the caller already has.
+  `NameSet::draw(&mut rng)` puts a name together and draws again while it reads badly, by libtcod's rules and a word given twice, up to `namegen::ATTEMPTS` times and then `None`; `draw_distinct(&mut rng, taken)` also refuses a name the caller already has.
   Nothing changes for a game that does not use it; `NameBook`, `NameSet` and `NameCase` join the prelude.
 - The map remembers what stands on it, not only the ground: a remembered tile shows the still thing last seen on it, an item, a prop or a way through, faded in the colours of memory as the tile is, so stairs, lifts and things left lying no longer vanish the moment they leave sight.
   A still thing is anything drawn that is not an `Actor`; a creature is never remembered, and a `Hidden` prop not until it is spotted.
