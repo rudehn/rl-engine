@@ -5,7 +5,7 @@
 //! what a blow meets, and mark a figure the adventurer cannot settle: left
 //! alone, the vitals would read `armor 3?` for leather found at `+2`,
 //! leather being armor 1, which tells the `+2` on the first turn and makes
-//! the [`FAMILIAR_AFTER`](crate::lore::FAMILIAR_AFTER) turns of wear that
+//! the [`FAMILIAR_AFTER`] turns of wear that
 //! would teach it mean nothing. What a thing not yet known seems to be is
 //! Undermere's to say, so in `ViewSet::Annotate` it counts every worn or
 //! wielded thing not yet known at its kind's plain numbers, the level of
