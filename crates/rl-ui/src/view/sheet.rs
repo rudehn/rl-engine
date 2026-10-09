@@ -81,7 +81,8 @@ pub struct StatusLine {
     pub status: StatusId,
     /// Its registered name.
     pub name: String,
-    /// Whole turns left.
+    /// Whole turns left, or [`UNTIL_CURED`](rl_rules::UNTIL_CURED) for one
+    /// that never runs out, which the sheet shows with no count.
     pub turns: u32,
     /// What it does to which stat, by the stat's name.
     pub modifies: Vec<(String, Op)>,
@@ -115,7 +116,9 @@ pub struct SheetView {
     pub health: Option<(i32, i32)>,
     /// Flat armor.
     pub armor: Option<i32>,
-    /// Speed as a percentage of normal.
+    /// Speed as a percentage of normal, the one the turns are dealt by:
+    /// the player's own and the stat [`TurnRules`] names, as [`Speeds`]
+    /// reads them.
     pub speed: Option<u32>,
     /// Every registered stat, in registration order.
     pub stats: Vec<StatLine>,
@@ -184,11 +187,13 @@ type Armed = (Option<&'static Afflicted>, Option<&'static Equipped>);
 ///
 /// Armor, resistances and the strikes come from the player's [`Loadout`],
 /// so the sheet shows what a worn blade adds without the game copying it
-/// anywhere.
+/// anywhere, and the speed from [`Speeds`], so it is the speed the turns
+/// are dealt by, haste and all.
 pub fn collect_sheet(
     mut view: ResMut<SheetView>,
     registries: Res<Registries>,
     loadout: Loadout,
+    speeds: Speeds,
     player: Query<(Made, Armed), With<Player>>,
     names: Query<&Name>,
 ) {
@@ -200,7 +205,7 @@ pub fn collect_sheet(
     view.health = health.map(|h| (h.current, h.max));
     let total_armor = loadout.armor(entity);
     view.armor = (armor.is_some() || total_armor != 0).then_some(total_armor);
-    view.speed = speed.map(|s| s.0);
+    view.speed = speed.map(|_| speeds.of(entity));
 
     if let Some(stats) = stats {
         for (stat, def) in registries.stats.iter() {
@@ -317,6 +322,17 @@ mod tests {
         assert_eq!(view.strikes[0].range, None);
         assert_eq!(view.strikes[2].range, Some(6));
         assert_eq!(view.worn.iter().map(|w| w.name.as_str()).collect::<Vec<_>>(), Vec::<&str>::new(), "no Equipped, no slots");
+    }
+
+    /// The speed the sheet shows is the one the turns are dealt by: the
+    /// player's own, and the stat the turn rules name added as a
+    /// percentage of it. `might` stands in for that stat here, at twelve.
+    #[test]
+    fn the_sheet_shows_the_speed_the_turns_are_dealt_by_with_the_stat_the_rules_name() {
+        let (mut stage, might) = stage();
+        stage.app.insert_resource(TurnRules::new().speed_stat(might));
+        stage.tick();
+        assert_eq!(stage.app.world().resource::<SheetView>().speed, Some(134), "a hundred and twenty, and twelve in a hundred of it");
     }
 
     #[test]

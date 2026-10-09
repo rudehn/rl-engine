@@ -44,6 +44,15 @@ pub fn cast(map: &WorldMap, lighting: Option<&Lighting>, at: Point, dark_sight: 
         viewshed.range = range;
     }
     viewshed.origin = map.window_tiles().origin();
+    if viewshed.sees_everywhere() {
+        // Neither the shadowcast nor the light is asked: both bits of every
+        // tile are set, so nothing that reads either can be told no.
+        viewshed.line.fill();
+        viewshed.visible.fill();
+        viewshed.dirty = false;
+        viewshed.epoch = map.opacity_epoch();
+        return;
+    }
     let local = at - viewshed.origin;
     let range = viewshed.range;
     fov::compute(&view, local, range, &mut viewshed.line);
@@ -101,5 +110,41 @@ impl Plugin for FovPlugin {
 
     fn finish(&self, app: &mut App) {
         crate::plugin::depends_on::<crate::plugin::CorePlugin>(app, "FovPlugin");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::components::Player;
+    use crate::plugin::headless_app;
+    use crate::state::EngineState;
+
+    /// An onlooker's viewshed is every tile of the window, the walls and
+    /// what is behind them included, and what it sees is remembered.
+    #[test]
+    fn a_viewshed_that_sees_everywhere_sees_the_whole_window_through_every_wall() {
+        let mut app = headless_app();
+        app.add_plugins((FovPlugin, crate::world::StreamingPlugin));
+        let start = crate::testing::surface(&mut app);
+        let wall = rl_grid::TileRegistry::standard().expect("wall");
+        let onlooker = app.world_mut().spawn((Player, Position(start), Viewshed::everywhere(), RevealsMap)).id();
+        let walker = app.world_mut().spawn((Position(start), Viewshed::new(6))).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        // A wall right beside both of them, with open ground behind it.
+        app.world_mut().resource_mut::<WorldMap>().set_tile(start.offset(1, 0), wall);
+        app.update();
+
+        let world = app.world();
+        let window = world.resource::<WorldMap>().window_tiles();
+        let all = world.get::<Viewshed>(onlooker).expect("the onlooker");
+        assert_eq!(all.visible.count(), (window.width * window.height) as usize, "every tile of the window");
+        assert_eq!(all.line.count(), all.visible.count(), "in line as well as seen");
+        let behind = start.offset(3, 0);
+        assert!(all.can_see(behind), "what is behind the wall");
+        assert!(!world.get::<Viewshed>(walker).expect("the walker").can_see(behind), "which an ordinary viewshed from the same cell does not see");
+        assert!(world.resource::<Knowledge>().is_explored(Point::new(window.x, window.y)), "and the far corner is remembered");
     }
 }

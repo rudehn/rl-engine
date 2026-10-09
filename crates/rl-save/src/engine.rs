@@ -45,6 +45,10 @@ pub struct EngineSave {
     /// Empty in a game with neither, and in a save written before either.
     #[serde(default)]
     pub fields: FieldsSave,
+    /// What everyone but the player has seen: every chart of every map.
+    /// Empty in a game with no minds, and in a save written before charts.
+    #[serde(default)]
+    pub charts: rl_bevy::ChartsSave,
 }
 
 /// Fire and gas, as a save holds them.
@@ -173,7 +177,18 @@ impl EngineSave {
             fire: world.get_resource::<Fire>().map(Fire::export).unwrap_or_default(),
             gases: world.get_resource::<Gases>().map(Gases::export).unwrap_or_default(),
         };
-        Self { seed, now, queue, map: world.resource::<WorldMap>().export(), knowledge: world.resource::<Knowledge>().export(), abilities, effects, fields }
+        let charts = world.get_resource::<rl_bevy::Charts>().map(rl_bevy::Charts::export).unwrap_or_default();
+        Self {
+            seed,
+            now,
+            queue,
+            map: world.resource::<WorldMap>().export(),
+            knowledge: world.resource::<Knowledge>().export(),
+            abilities,
+            effects,
+            fields,
+            charts,
+        }
     }
 
     /// Restores the engine's state into `world`. The game's entities must
@@ -183,6 +198,9 @@ impl EngineSave {
     pub fn restore(&self, world: &mut World, remap: &EntityRemap) {
         world.resource_mut::<WorldMap>().import(self.map.clone());
         world.resource_mut::<Knowledge>().import(self.knowledge.clone());
+        if let Some(mut charts) = world.get_resource_mut::<rl_bevy::Charts>() {
+            charts.import(self.charts.clone());
+        }
         if let Some(mut fire) = world.get_resource_mut::<Fire>() {
             fire.import(self.fields.fire.clone());
         }
@@ -274,6 +292,29 @@ mod tests {
         assert!(w.get::<MyTurn>(player2).is_some(), "the player, who held the turn when saved, holds it again");
     }
 
+    /// The stairs the player saw are part of what the player knows, so a
+    /// continued run still draws them out of sight; and a save written
+    /// before things were remembered still reads, remembering none.
+    #[test]
+    fn what_stood_where_survives_a_round_trip_and_an_older_save_remembers_nothing() {
+        let (mut app, start) = fresh();
+        let stairs = start.offset(2, 0);
+        let look = rl_bevy::Recalled { glyph: '>', color: rl_grid::Rgb::new(235, 220, 160) };
+        app.world_mut().resource_mut::<Knowledge>().see_still(|_| true, [(stairs, look)]);
+        app.insert_resource(Seed(RunSeed(5)));
+        let save = EngineSave::capture(app.world_mut(), &mut EntityRemap::new());
+        let text = crate::encode(1, &save).unwrap();
+
+        let (mut app2, _) = fresh();
+        let back: EngineSave = crate::decode(1, &text).unwrap();
+        back.restore(app2.world_mut(), &EntityRemap::new());
+        assert_eq!(app2.world().resource::<Knowledge>().recalled(stairs), Some(look));
+
+        let older = text.replace("recalled:", "ignored:");
+        let back: EngineSave = crate::decode(1, &older).expect("a save with no memory of things still reads");
+        assert!(back.knowledge.recalled.is_empty());
+    }
+
     /// A fire and a cloud of gas are the engine's, so a run saved while
     /// something burns is continued with it still burning, on the map it
     /// was burning on.
@@ -359,7 +400,16 @@ mod tests {
     /// none, landing nothing: the shape a save has to carry, whatever they do.
     fn two_triggers() -> Triggers {
         let nothing = std::sync::Arc::new(rl_bevy::Effects::default());
-        let one = |fires| rl_bevy::Trigger { on: Moments::USE, area: rl_rules::Area::Here, fires, effects: nothing.clone(), look: None, every: None };
+        let one = |fires| rl_bevy::Trigger {
+            on: Moments::USE,
+            area: rl_rules::Area::Here,
+            fires,
+            effects: nothing.clone(),
+            look: None,
+            every: None,
+            targeting: None,
+            asks: None,
+        };
         Triggers(vec![one(Some(3)), one(None)])
     }
 

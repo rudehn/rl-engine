@@ -9,10 +9,18 @@
 //! [`Restart`], or `AppExit`. Nothing here knows how a game starts; the
 //! game's start runs again in [`NewRun`] the way it ran the first time.
 //!
+//! A game with a title, a [`TitlePanel`](crate::TitlePanel), is offered
+//! the way back to it as well, one more message, [`LeaveRun`]: the run is
+//! torn down as a restart tears it down, and the title raised in place of
+//! another run. A game that saves writes a run still in play down first,
+//! so Continue picks it up where it was left; a run that is over is only
+//! left.
+//!
 //! The ending screen shows the game's own words as well as the engine's:
-//! whatever sections a game pushed onto [`EndingView`] in
-//! `ViewSet::Annotate`, each under its heading, clipped to the rectangle
-//! the game gave the menu.
+//! the run's own line, the summary of the record filed for it, under the
+//! title, and whatever sections are on [`EndingView`], the record's and
+//! any a game pushed in `ViewSet::Annotate`, each under its heading,
+//! clipped to the rectangle the game gave the menu.
 //!
 //! It used to write them to a file instead, through a `Morgue` in
 //! `rl-save`, composed and filed by this presenter. Nothing read the file
@@ -28,6 +36,7 @@ use rl_render::{Cell, Terminal};
 
 use crate::controls::{AddControls, ControlInput, EngineKey, key_name};
 use crate::modal::{ModalId, Modals};
+use crate::panel::title::TitleMenu;
 use crate::panel::{clear, clip, frame, wrap};
 use crate::tone::{Palette, ToneId, Tones};
 use crate::view::{EndingView, SheetView};
@@ -82,14 +91,19 @@ pub enum MenuItem {
     SameSeed,
     /// The settings screen, when a game has one with something on it.
     Settings,
+    /// Back to the title, in a game with one: the run is left with
+    /// [`LeaveRun`], written down first by a game that saves while it is
+    /// still in play, and the title raised in its place.
+    MainMenu,
     /// Leave.
     Quit,
 }
 
 impl MenuItem {
     /// What is offered while `playing`, or once the run is over, with the
-    /// settings screen when there is one with a row on it.
-    pub fn offered(playing: bool, settings: bool) -> Vec<MenuItem> {
+    /// settings screen when there is one with a row on it, and the way back
+    /// to the `title` when the game has one.
+    pub fn offered(playing: bool, settings: bool, title: bool) -> Vec<MenuItem> {
         let mut items = Vec::new();
         if playing {
             items.push(MenuItem::Resume);
@@ -97,6 +111,9 @@ impl MenuItem {
         items.extend([MenuItem::NewRun, MenuItem::SameSeed]);
         if settings {
             items.push(MenuItem::Settings);
+        }
+        if title {
+            items.push(MenuItem::MainMenu);
         }
         items.push(MenuItem::Quit);
         items
@@ -108,6 +125,7 @@ impl MenuItem {
             MenuItem::NewRun => "A new run",
             MenuItem::SameSeed => "This seed again",
             MenuItem::Settings => "Settings",
+            MenuItem::MainMenu => "Main menu",
             MenuItem::Quit => "Quit",
         }
     }
@@ -149,7 +167,7 @@ impl GameMenuPanel {
 impl Plugin for GameMenuPanel {
     fn build(&self, app: &mut App) {
         app.add_modal(GAME_MENU_MODAL);
-        app.add_message::<Restart>().add_message::<AppExit>();
+        app.add_message::<Restart>().add_message::<LeaveRun>().add_message::<AppExit>();
         app.insert_resource(self.0.clone()).init_resource::<GameMenu>().init_resource::<MenuKeys>();
         // Before the game's input and outside the engine's sets, since the
         // sets do not run once the run is over and the menu must.
@@ -173,10 +191,11 @@ pub fn game_menu_modal(modals: &Modals) -> ModalId {
     modals.get(GAME_MENU_MODAL).expect("GameMenuPanel declares the menu modal")
 }
 
-/// The settings screen's modal, when the menu should offer it: the panel
-/// was added, and something is declared for it to list. A screen with no
-/// rows is not offered, which is what a build on the web gets.
-fn settings_offered(modals: &Modals, settings: Option<&Settings>) -> Option<ModalId> {
+/// The settings screen's modal, when a menu should offer it: the panel was
+/// added, and something is declared for it to list. A screen with no rows
+/// is not offered, which is what a build on the web gets. The title's
+/// Settings row asks the same.
+pub(crate) fn settings_offered(modals: &Modals, settings: Option<&Settings>) -> Option<ModalId> {
     crate::panel::settings::settings_modal(modals).filter(|_| settings.is_some_and(|s| !s.is_empty()))
 }
 
@@ -184,18 +203,21 @@ fn settings_offered(modals: &Modals, settings: Option<&Settings>) -> Option<Moda
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Choices<'w> {
     restarts: MessageWriter<'w, Restart>,
+    leaves: MessageWriter<'w, LeaveRun>,
     exits: MessageWriter<'w, AppExit>,
 }
 
 /// What decides whether the menu opens: its key, and what is picked out in
 /// the nearby list when a game has one, which the close key lets go of
-/// before it opens the menu.
+/// before it opens the menu. And what decides the rows it offers once it
+/// is open: a settings screen with a row on it, and a title to go back to.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Opening<'w> {
     binds: Res<'w, MenuKeys>,
     focus: Option<Res<'w, crate::focus::Focus>>,
     sighted: Option<Res<'w, crate::focus::Sighted>>,
     settings: Option<Res<'w, Settings>>,
+    title_menu: Option<Res<'w, TitleMenu>>,
 }
 
 impl Opening<'_> {
@@ -238,7 +260,7 @@ pub fn menu_keys(
         return;
     }
     let settings = settings_offered(&modals, opening.settings.as_deref());
-    let items = MenuItem::offered(playing, settings.is_some());
+    let items = MenuItem::offered(playing, settings.is_some(), opening.title_menu.is_some());
     let bindings = keys.bindings();
     match bindings.directions.just_pressed(input) {
         Some(Direction::North) => menu.selected = (menu.selected + items.len() - 1) % items.len(),
@@ -260,6 +282,9 @@ pub fn menu_keys(
             if let Some(settings) = settings {
                 modals.open(settings);
             }
+        }
+        MenuItem::MainMenu => {
+            choices.leaves.write(LeaveRun);
         }
         MenuItem::Quit => {
             choices.exits.write(AppExit::Success);
@@ -322,6 +347,25 @@ pub fn describe_sheet(sheet: &SheetView) -> String {
     lines.join("\n")
 }
 
+/// Lines for `sections`, each under its own heading: a blank line, the
+/// heading in the title tone, then its body wrapped to `width`.
+///
+/// Shared by this screen and the records screen's detail view
+/// (`crate::panel::records`), so a game's own account of a run reads the
+/// same wherever it is shown, and `pub(crate)` rather than private because
+/// that is the one caller outside this file.
+pub(crate) fn section_lines<'a>(sections: impl Iterator<Item = (&'a str, &'a str)>, width: usize) -> Vec<(String, ToneId)> {
+    let mut lines = Vec::new();
+    for (heading, body) in sections {
+        lines.push((String::new(), Tones::MUTED));
+        lines.push((clip(heading, width), Tones::TITLE));
+        for line in body.lines() {
+            lines.extend(wrap(line, width).into_iter().map(|line| (line, Tones::TEXT)));
+        }
+    }
+    lines
+}
+
 /// What the screen is drawn from.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct MenuScreen<'w> {
@@ -332,6 +376,7 @@ pub struct MenuScreen<'w> {
     ending: Option<Res<'w, Ending>>,
     view: Res<'w, EndingView>,
     settings: Option<Res<'w, Settings>>,
+    title_menu: Option<Res<'w, TitleMenu>>,
     keys: ControlInput<'w>,
     palette: Res<'w, Palette>,
 }
@@ -339,7 +384,7 @@ pub struct MenuScreen<'w> {
 /// Paints the menu while it is open: the ending, if there is one, and the
 /// choices under it.
 pub fn draw_game_menu(mut terminal: ResMut<Terminal>, screen: MenuScreen) {
-    let MenuScreen { layout, menu, modals, state, ending, view, settings, keys, palette } = &screen;
+    let MenuScreen { layout, menu, modals, state, ending, view, settings, title_menu, keys, palette } = &screen;
     if !modals.is_open(game_menu_modal(modals)) {
         return;
     }
@@ -372,21 +417,24 @@ pub fn draw_game_menu(mut terminal: ResMut<Terminal>, screen: MenuScreen) {
         if !ending.epitaph.is_empty() {
             words.extend(wrap(&ending.epitaph, width).into_iter().map(|line| (line, Tones::TEXT)));
         }
+        // The run's own line, which the records list will show it by, said
+        // here first: the title is what any ending in this outcome says,
+        // and this is what this one came to. Only when there is one, as
+        // with the epitaph: a game that files no record has no line, and
+        // an empty one would wrap to a blank row.
+        if !view.summary.is_empty() {
+            words.extend(wrap(&view.summary, width).into_iter().map(|line| (line, Tones::TEXT)));
+        }
         words.push((clip(&format!("Seed {}, turn {}.", ending.seed.0, ending.turn), width), Tones::MUTED));
         // Then whatever the game had to say, each section under its own
-        // heading. Clipped by the rectangle like everything else here: the
-        // menu is drawn only as far down as its rows reach, and a game that
-        // wants more room gives it a taller one.
-        for section in &view.sections {
-            words.push((String::new(), Tones::MUTED));
-            words.push((clip(&section.heading, width), Tones::TITLE));
-            for line in section.body.lines() {
-                words.extend(wrap(line, width).into_iter().map(|line| (line, Tones::TEXT)));
-            }
-        }
+        // heading, the way the records screen draws one too: clipped by
+        // the rectangle like everything else here, since the menu is
+        // drawn only as far down as its rows reach and a game that wants
+        // more room gives it a taller one.
+        words.extend(section_lines(view.sections.iter().map(|section| (section.heading.as_str(), section.body.as_str())), width));
         words.push((String::new(), Tones::MUTED));
     }
-    let items = MenuItem::offered(playing, settings_offered(modals, settings.as_deref()).is_some());
+    let items = MenuItem::offered(playing, settings_offered(modals, settings.as_deref()).is_some(), title_menu.is_some());
     let height = ((words.len() + items.len()) as i32 + 2).min(rect.height);
     let rect = Rect::new(rect.x, rect.y, rect.width, height);
     clear(&mut terminal, rect, palette);
@@ -518,12 +566,19 @@ mod tests {
         view.section("The haul", "nine bones");
     }
 
-    /// The player's death ends the run: the menu opens by itself under the
-    /// game's words with no way back, and the game's sections are on it.
-    #[test]
-    fn the_players_death_opens_the_ending_and_shows_what_the_game_had_to_say() {
-        let mut stage = Stage::new((GameMenuPanel::new(Rect::new(0, 0, 44, 20)).died("You are dead."), crate::SheetViewPlugin)).screen(44, 20);
-        stage.app.add_systems(Update, note_the_haul.in_set(crate::ViewSet::Annotate));
+    /// Ends the run in the player's death: a blow the player cannot
+    /// survive, from something beside them, and the frames for it to land.
+    fn die(stage: &mut Stage) {
+        strike_the_last_blow(stage);
+        for _ in 0..4 {
+            stage.tick();
+        }
+        assert_eq!(*stage.app.world().resource::<State<EngineState>>().get(), EngineState::Over);
+    }
+
+    /// Writes a blow the player cannot survive, from something beside
+    /// them, leaving the frames it lands in to the test.
+    fn strike_the_last_blow(stage: &mut Stage) {
         let (player, kind, theirs) = (stage.player, stage.kind, stage.theirs);
         stage.app.world_mut().get_mut::<Health>(player).unwrap().current = 1;
         let ogre = stage
@@ -544,18 +599,127 @@ mod tests {
         // The harness has no minds, so the ogre's blow is written for it.
         stage.app.world_mut().write_message(DamageEvent::new(player, rl_rules::Hit::by(ogre, kind, 30)));
         stage.app.world_mut().write_message(Intent::new(player, Wait));
-        for _ in 0..4 {
-            stage.tick();
-        }
-        assert_eq!(*stage.app.world().resource::<State<EngineState>>().get(), EngineState::Over);
+    }
+
+    /// The player's death ends the run: the menu opens by itself under the
+    /// game's words with no way back, and the game's sections are on it.
+    /// A game that files no record has no line of its own to say, so the
+    /// seed stands first under the title, with no blank row above it.
+    #[test]
+    fn the_players_death_opens_the_ending_and_shows_what_the_game_had_to_say() {
+        let mut stage = Stage::new((GameMenuPanel::new(Rect::new(0, 0, 44, 20)).died("You are dead."), crate::SheetViewPlugin)).screen(44, 20);
+        stage.app.add_systems(Update, note_the_haul.in_set(crate::ViewSet::Annotate));
+        die(&mut stage);
         assert!(stage.row(0).contains(" You are dead. "), "{:?}", stage.row(0));
+        assert!(inside(&stage, 1).starts_with("Seed 5, turn "), "the seed first under the title: {:?}", inside(&stage, 1));
         let body: Vec<String> = (1..19).map(|y| inside(&stage, y)).collect();
-        assert!(body.iter().any(|l| l.starts_with("Seed 5, turn ")), "{body:?}");
         assert!(body.contains(&"The haul".to_string()), "the game's heading is on the screen: {body:?}");
         assert!(body.contains(&"nine bones".to_string()), "and its words under it: {body:?}");
         assert!(body.contains(&"A new run".to_string()) && !body.contains(&"Back to the run".to_string()), "no way back: {body:?}");
         assert!(body.iter().all(|l| !l.contains("morgue")), "nothing is written anywhere: {body:?}");
         stage.press(KeyCode::Escape);
         assert!(stage.app.world().resource::<Modals>().any_open(), "escape does not leave an ending");
+    }
+
+    /// The run's own line, the summary of the record filed for it, stands
+    /// under the frame's title and the epitaph, above the seed: what the
+    /// records list will say of the run, said here first.
+    #[test]
+    fn the_ending_says_the_runs_own_line_under_its_title() {
+        let mut stage = Stage::new((GameMenuPanel::new(Rect::new(0, 0, 44, 20)).died("You are dead."), crate::SheetViewPlugin)).screen(44, 20);
+        stage.app.add_systems(Update, (|mut view: ResMut<EndingView>| view.summary = "Eaten on the second floor".into()).in_set(crate::ViewSet::Annotate));
+        die(&mut stage);
+        assert!(stage.row(0).contains(" You are dead. "), "{:?}", stage.row(0));
+        assert_eq!(inside(&stage, 1), "Eaten on the second floor", "first under the title");
+        assert!(inside(&stage, 2).starts_with("Seed 5, turn "), "then the seed: {:?}", inside(&stage, 2));
+    }
+
+    /// A record a game writes as its run ends, the frame the state turns
+    /// over, is on the first frame of the screen the run ends on: filed
+    /// before anything draws, not on a later frame or an earlier one by
+    /// whichever order the executor happens to run the two in.
+    #[test]
+    fn the_first_frame_of_the_ending_shows_the_runs_record() {
+        let mut stage = Stage::new((GameMenuPanel::new(Rect::new(0, 0, 44, 20)).died("You are dead."), RecordsPlugin)).screen(44, 20);
+        let summary = || "Eaten on the second floor".to_string();
+        stage.app.add_systems(OnEnter(EngineState::Over), move |mut records: MessageWriter<RecordRun>| {
+            records.write(RecordRun { score: 12, summary: summary(), sections: vec![RecordSection { heading: "Score".into(), body: "12".into() }] });
+        });
+        strike_the_last_blow(&mut stage);
+        for _ in 0..8 {
+            if *stage.app.world().resource::<State<EngineState>>().get() == EngineState::Over {
+                break;
+            }
+            stage.tick();
+        }
+        assert!(stage.row(0).contains(" You are dead. "), "the ending is drawn: {:?}", stage.row(0));
+        let body: Vec<String> = (1..19).map(|y| inside(&stage, y)).collect();
+        assert_eq!(body[0], summary(), "the record's line on the first frame: {body:?}");
+        assert!(body.contains(&"Score".to_string()) && body.contains(&"12".to_string()), "and its sections: {body:?}");
+    }
+
+    /// How many runs the game's start began.
+    #[derive(Resource, Default)]
+    struct Begun(u32);
+
+    /// The menu over a run in a game with a title, both in `rect`, and the
+    /// game's start counted.
+    fn titled(rect: Rect) -> Stage {
+        let mut stage = Stage::new((GameMenuPanel::new(rect), crate::TitlePanel::new(rect))).screen(rect.width, rect.height);
+        // The stage plays its run without the title's door, which would
+        // have lowered the hold the panel raised; lowered here, so only
+        // the leaving can raise it again.
+        stage.app.world_mut().remove_resource::<HoldStart>();
+        stage.app.init_resource::<Begun>().add_systems(NewRun, |mut begun: ResMut<Begun>| begun.0 += 1);
+        stage
+    }
+
+    /// The run left for the title: torn down, the start held for the
+    /// title, and no other run begun in its place.
+    fn assert_left_for_the_title(stage: &Stage) {
+        let world = stage.app.world();
+        assert_eq!(*world.resource::<State<EngineState>>().get(), EngineState::Idle);
+        assert!(world.contains_resource::<HoldStart>(), "the start is held for the title");
+        assert!(!world.contains_resource::<WorldMap>(), "the run was torn down");
+        assert!(world.get::<Position>(stage.player).is_none(), "the player with it");
+        assert_eq!(world.resource::<Begun>().0, 0, "and no other run was begun");
+    }
+
+    #[test]
+    fn with_a_title_the_pause_menu_offers_main_menu_and_taking_it_leaves_the_run() {
+        let mut stage = titled(Rect::new(0, 0, 40, 12));
+        stage.press(KeyCode::Escape);
+        let rows: Vec<String> = (1..6).map(|y| inside(&stage, y)).collect();
+        assert_eq!(rows, ["Back to the run", "A new run", "This seed again", "Main menu", "Quit"], "the way back to the title, above Quit");
+        stage.press(KeyCode::ArrowUp);
+        stage.press(KeyCode::ArrowUp);
+        stage.press(KeyCode::Enter);
+        assert_left_for_the_title(&stage);
+        assert!(stage.rows().iter().any(|row| row.contains("New Game")), "and the title is up in its place: {:#?}", stage.rows());
+    }
+
+    #[test]
+    fn without_a_title_no_main_menu_row_is_offered() {
+        let mut stage = staged();
+        stage.press(KeyCode::Escape);
+        let rows: Vec<String> = (1..5).map(|y| inside(&stage, y)).collect();
+        assert_eq!(rows, ["Back to the run", "A new run", "This seed again", "Quit"]);
+        assert!(!MenuItem::offered(false, true, false).contains(&MenuItem::MainMenu), "nor on the screen a run ends on");
+    }
+
+    /// A run that is over has nothing to write down, so the end screen's
+    /// way back only leaves it, and the title is up in its place.
+    #[test]
+    fn taking_main_menu_on_the_end_screen_leaves_the_run_and_begins_no_other() {
+        let mut stage = titled(Rect::new(0, 0, 44, 20));
+        die(&mut stage);
+        let body: Vec<String> = (1..19).map(|y| inside(&stage, y)).collect();
+        let rows: Vec<&str> = body.iter().map(String::as_str).filter(|row| ["A new run", "This seed again", "Main menu", "Quit"].contains(row)).collect();
+        assert_eq!(rows, ["A new run", "This seed again", "Main menu", "Quit"], "{body:?}");
+        stage.press(KeyCode::ArrowUp);
+        stage.press(KeyCode::ArrowUp);
+        stage.press(KeyCode::Enter);
+        assert_left_for_the_title(&stage);
+        assert!(stage.rows().iter().any(|row| row.contains("New Game")), "and the title is up in its place: {:#?}", stage.rows());
     }
 }

@@ -26,6 +26,16 @@ impl BitGrid {
         self.words.iter_mut().for_each(|w| *w = 0);
     }
 
+    /// Sets every bit of the grid, and none past its last cell, so
+    /// [`count`](Self::count) is the number of cells.
+    pub fn fill(&mut self) {
+        let cells = (self.width.max(0) as usize) * (self.height.max(0) as usize);
+        self.words.iter_mut().for_each(|w| *w = u64::MAX);
+        if let (Some(last), tail @ 1..) = (self.words.last_mut(), cells % 64) {
+            *last = (1u64 << tail) - 1;
+        }
+    }
+
     /// Whether the bit at a flat index is set.
     pub fn get_idx(&self, idx: usize) -> bool {
         self.words[idx / 64] & (1u64 << (idx % 64)) != 0
@@ -143,6 +153,16 @@ mod tests {
         assert_eq!(g.count(), 1);
         g.clear();
         assert!(g.is_clear());
+    }
+
+    #[test]
+    fn filling_sets_every_cell_and_nothing_past_the_last() {
+        for (w, h) in [(10, 7), (8, 8), (64, 2), (1, 1), (0, 5)] {
+            let mut g = BitGrid::new(w, h);
+            g.fill();
+            assert_eq!(g.count(), (w * h) as usize, "{w} by {h}");
+            assert_eq!(g.iter().count(), (w * h) as usize, "no cell past the end is iterated");
+        }
     }
 
     #[test]

@@ -208,7 +208,7 @@ pub fn track_fields(
     if fire.is_none() && gases.is_none() {
         return;
     }
-    let now = view.viewport.cells().filter_map(|s| view.to_world(s)).map(|p| {
+    let now = view.tiles().map(|p| {
         let gas = gases.as_deref().and_then(|g| g.densest(p));
         (p, FieldLook { gas, burning: fire.as_deref().is_some_and(|f| f.is_burning(p)) })
     });

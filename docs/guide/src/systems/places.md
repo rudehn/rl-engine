@@ -8,7 +8,7 @@
             crates/rl-bevy/src/minds.rs
             crates/rl-world/src/chunk.rs
             crates/rl-world/src/graph.rs
-     fingerprint: 29a6427d -->
+     fingerprint: b71ec517 -->
 
 # Places and streaming
 
@@ -45,7 +45,7 @@ A mind that travels, stood beside an actor as it went through, and was after it 
 An arrival on a taken cell lands on the nearest free one that can be walked to from it, so a follower stands beside whom it followed.
 A warp that lands on a map nobody has built calls the rules and installs the result with `install_place`, whoever arrived; `PlaceEntered` is written for the player alone, with `first` true on the player's first arrival, which is the one arrival on which a game populates a floor.
 `MapChanged` is written when the player changes map and `Travelled` when anyone does, naming the cell it left and whom it went after.
-The player's warp also switches the per-map indexes with the map: `Occupancy` swaps its `SpatialGrid` for the arriving map's and stashes the one it had, `Knowledge` does the same with explored tiles, and `FlowFields` is invalidated so the next mind rebuilds.
+The player's warp also switches the per-map indexes with the map: `Occupancy` swaps its `SpatialGrid` for the arriving map's and stashes the one it had, `Knowledge` does the same with explored tiles and the still things last seen on them, and `FlowFields` is invalidated so the next mind rebuilds.
 On the streaming side, `stream_chunks` asks `desired_window` for the square of radius `window_radius` around the player's region clipped to the world, and does nothing if that is the window already or if the player is in a place.
 Loading generates each new region through `WorldGraph::build_chunk` and the game's `ChunkRules`, replays that region's stored delta onto it, keeps every chunk still in the window, and files the edits of the ones that left.
 `ChunkLoaded` is written once per region generated, and every viewshed is marked stale when the window moves.

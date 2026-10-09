@@ -1,0 +1,127 @@
+//! Undermere's own effects: what its staffs, wands, potions and scrolls do
+//! that the engine's `Harm`, `Mend`, `Inflict` and the rest do not.
+//!
+//! Each is a type registered with `add_effect`, by
+//! [`add_game_effects`](crate::content::add_game_effects), that reads its
+//! own arguments and refuses any it does not name, and says what it does
+//! in its own words, which is what the bag shows under a thing once it is
+//! known. They sit beside the engine's, and nothing that lands them can
+//! tell the difference.
+//!
+//! [`moving`] is where someone stands: a blink, a scroll that sends its
+//! reader far off, a bolt that sends its target far off or pulls it close,
+//! a draught that sinks its drinker to the floor below. [`bodies`] is who
+//! someone is: a foe made into another, made into two, blades called up
+//! out of nothing, monsters summoned to its reader, and a drinker given
+//! more life. [`minds`] is whose side someone is on and what they know of
+//! the adventurer: a foe bound, foes turned on each other, a floor woken.
+//! [`senses`] is what is seen: a dark to hide in, a floor's whole layout.
+//! [`charges`] is what a reader's things hold.
+//!
+//! An effect that needs more of the world than [`EffectWorld`] holds, a
+//! monster's kind or its health, queues a closure on its commands and does
+//! its work there, as the scrolls of enchanting and identify do. One that
+//! did nothing anybody could see says so with [`showed_nothing`], so the
+//! log says nothing seemed to happen and what was used is not learned by
+//! it: [`lore`](crate::lore) reads that before it makes a kind known.
+
+pub mod bodies;
+pub mod charges;
+pub mod minds;
+pub mod moving;
+pub mod senses;
+
+use bevy::prelude::*;
+use rl_engine::prelude::*;
+
+/// The things whose use, this pass, showed nothing anybody could see: a
+/// potion of descent drunk on the deepest floor, a wand zapped at nobody.
+///
+/// Filled by the effects as they land and by the zaps weighed before they
+/// do, and emptied by [`learn_by_use`](crate::lore::learn_by_use), which
+/// says so in the log rather than making the thing's kind known.
+#[derive(Resource, Debug, Default, Clone, PartialEq, Eq)]
+pub struct ShowedNothing(pub Vec<Entity>);
+
+/// The thing a landing came from, when a thing's trigger landed it.
+pub fn carrier(landing: &Landing) -> Option<Entity> {
+    match landing.source {
+        rl_engine::rl_bevy::Source::Trigger { on, .. } => Some(on),
+        _ => None,
+    }
+}
+
+/// Marks the thing `landing` came from as having shown nothing this pass.
+/// Nothing for a landing no thing made.
+pub fn showed_nothing(world: &mut World, landing: &Landing) {
+    let Some(thing) = carrier(landing) else { return };
+    let mut shown = world.get_resource_or_insert_with(ShowedNothing::default);
+    if !shown.0.contains(&thing) {
+        shown.0.push(thing);
+    }
+}
+
+/// Marks the thing `landing` came from as having shown nothing this pass,
+/// from inside an effect, where the world is not to hand: queued, and done
+/// before the pass's reactions read it.
+pub fn shows_nothing(world: &mut EffectWorld<'_, '_>, landing: &Landing) {
+    let landing = landing.clone();
+    world.commands.queue(move |world: &mut World| showed_nothing(world, &landing));
+}
+
+/// `name` as the subject of a line: `The goblin`, and a name that is said
+/// as written, `the Drowned King`, with its first letter raised.
+pub fn the(name: &str) -> String {
+    capital(&rl_engine::rl_core::noun::with_the(name))
+}
+
+/// `words` with the first letter raised, to begin a line.
+pub fn capital(words: &str) -> String {
+    let mut letters = words.chars();
+    letters.next().map(|first| first.to_uppercase().chain(letters).collect()).unwrap_or_default()
+}
+
+/// Up to `count` cells nearest `at`, no further than `within` steps, that
+/// someone could step onto now, in a fixed order: by distance, then row,
+/// then column, so where a conjured blade appears never depends on how a
+/// query happened to run.
+pub fn free_cells_near(map: &WorldMap, occupancy: &Occupancy, at: Point, count: usize, within: i32) -> Vec<Point> {
+    let mut found = Vec::new();
+    for ring in 1..=within {
+        let mut cells: Vec<Point> = geometry::square(at, ring).filter(|p| geometry::chebyshev(*p, at) == ring).collect();
+        cells.sort_by_key(|p| (p.y, p.x));
+        found.extend(cells.into_iter().filter(|p| map.is_walkable(*p) && !occupancy.is_occupied(*p)));
+        if found.len() >= count {
+            break;
+        }
+    }
+    found.truncate(count);
+    found
+}
+
+/// How far, in steps, a place counts as far off: what a scroll of
+/// teleportation sends its reader at least.
+pub const FAR: i32 = 20;
+
+/// How far from whoever calls them conjured blades and summoned monsters
+/// are put: beside them, and one step further when every cell beside is
+/// taken.
+pub const NEAR: i32 = 2;
+
+#[cfg(test)]
+mod tests {
+    use super::the;
+
+    /// A name takes `the` as the subject of a line unless it already
+    /// carries an article or is a proper name, and its first letter is
+    /// always raised: the fault this guards against read `the a masked
+    /// stranger`, since the old check only caught a name that already
+    /// began with `the `.
+    #[test]
+    fn the_names_a_subject_without_doubling_whatever_article_it_already_carries() {
+        assert_eq!(the("goblin"), "The goblin");
+        assert_eq!(the("the Drowned King"), "The Drowned King");
+        assert_eq!(the("a masked stranger"), "A masked stranger");
+        assert_eq!(the("Grubnak"), "Grubnak");
+    }
+}

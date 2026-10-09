@@ -1,9 +1,11 @@
 //! Statuses as data: a registered definition, and the instances an actor
-//! carries with their remaining duration.
+//! carries with their remaining duration, which for one put on
+//! [`UNTIL_CURED`] never runs down.
 //!
 //! What a status *does* is expressed as stat modifiers the engine can
 //! apply and remove, plus an optional damage-over-time the game's damage
-//! pipeline resolves. Anything richer is the game's, keyed by the id.
+//! pipeline resolves, and whether it holds its holder's turns. Anything
+//! richer is the game's, keyed by the id.
 //!
 //! [`load`] reads definitions from RON by name, resolving every stat and
 //! damage kind through [`Names`], so a game authors statuses in the words
@@ -70,6 +72,14 @@ pub struct StatusDef {
     /// good news from bad by, so a game's log does not announce a gift in
     /// the tone of a wound.
     pub boon: bool,
+    /// Whether whoever carries it loses its turns while it lasts: each is
+    /// spent as a wait before its mind or its player is asked, so
+    /// paralysis, a snare and sleep are each one of these. It ends as any
+    /// status does, when its time runs out or it is cured; a sleep a blow
+    /// breaks is the game's cure on the blow. Not
+    /// [`ActiveStatus::held_by`], the worn thing an instance lasts only
+    /// while.
+    pub holds: bool,
 }
 
 fn refresh() -> Stacking {
@@ -88,6 +98,7 @@ impl StatusDef {
             badge: None,
             unseen: false,
             boon: false,
+            holds: false,
         }
     }
 
@@ -127,6 +138,12 @@ impl StatusDef {
         self.boon = true;
         self
     }
+
+    /// Makes whoever carries it lose its turns while it lasts.
+    pub fn holds(mut self) -> Self {
+        self.holds = true;
+        self
+    }
 }
 
 impl Named for StatusDef {
@@ -156,6 +173,8 @@ struct Authored {
     unseen: bool,
     #[serde(default)]
     boon: bool,
+    #[serde(default)]
+    holds: bool,
 }
 
 impl Named for Authored {
@@ -183,6 +202,8 @@ impl Named for Authored {
 ///   lasts; `false`, the default, otherwise.
 /// - `boon`: `true` for a status that is good for its holder, which a
 ///   narrator tells as good news; `false`, the default, otherwise.
+/// - `holds`: `true` for a status whose holder loses its turns while it
+///   lasts, each spent as a wait; `false`, the default, otherwise.
 ///
 /// Reports every unknown name in the file at once.
 pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<StatusDef>, ContentError> {
@@ -223,6 +244,7 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<StatusDef>, Conten
             badge: a.badge,
             unseen: a.unseen,
             boon: a.boon,
+            holds: a.holds,
         });
     }
     if !errors.is_empty() {
@@ -231,12 +253,25 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<StatusDef>, Conten
     Registry::from_defs(defs)
 }
 
+/// How long a status lasts that never runs out: one put on for this many
+/// turns is ticked every turn, its damage and its mending land, and it is
+/// never counted down, so it ends only when it is cured.
+///
+/// For what a body is rather than what happened to it: a body that mends
+/// by its nature, or what a worn thing gives for as long as it is worn,
+/// which the thing's own hold ends. The largest count there is rather
+/// than a flag beside the count, so a save keeps it as it keeps any count,
+/// and the stacking rules leave it as it is: a refresh keeps the longer,
+/// and an extension saturates. A panel that counts a status's turns shows
+/// none for it.
+pub const UNTIL_CURED: u32 = u32::MAX;
+
 /// One status on one actor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActiveStatus {
     /// Which status.
     pub id: StatusId,
-    /// Whole turns left.
+    /// Whole turns left, or [`UNTIL_CURED`] for one that never runs out.
     pub turns: u32,
     /// Who applied it, for credit on a tick. Opaque.
     pub source: Option<u64>,
@@ -319,8 +354,8 @@ impl Statuses {
     /// An instance it refreshes or extends is taken over by `holder`,
     /// whether or not its time changed, so what holds a status is always
     /// the thing that last put it on. The return value still says only
-    /// whether the time or the instances changed, which is what a narrator
-    /// tells.
+    /// whether the time or the instances changed, which is what is
+    /// reported.
     pub fn apply_held(&mut self, id: StatusId, turns: u32, source: Option<u64>, holder: u64, defs: &Registry<StatusDef>, stats: &mut Stats) -> bool {
         self.put(id, turns, source, Some(holder), defs, stats)
     }
@@ -363,8 +398,16 @@ impl Statuses {
         self.active.iter()
     }
 
+    /// The first active status that [`holds`](StatusDef::holds) its
+    /// holder, if any: what takes the actor's turns while it is on.
+    pub fn holding(&self, defs: &Registry<StatusDef>) -> Option<StatusId> {
+        self.active.iter().map(|s| s.id).find(|id| defs.get(*id).holds)
+    }
+
     /// Advances one turn: collects the damage each status deals, then
-    /// expires what ran out and removes its modifiers.
+    /// expires what ran out and removes its modifiers. A status put on
+    /// [`UNTIL_CURED`] bites and mends like any other and is never
+    /// counted down.
     pub fn tick(&mut self, defs: &Registry<StatusDef>, stats: &mut Stats) -> TickReport {
         let (mut ticks, mut mends) = (Vec::new(), Vec::new());
         for s in &self.active {
@@ -382,7 +425,9 @@ impl Statuses {
         for s in self.active.drain(..) {
             let instance = instance_of.iter().filter(|(id, _)| *id == s.id).count();
             instance_of.push((s.id, instance));
-            if s.turns <= 1 {
+            if s.turns == UNTIL_CURED {
+                kept.push(s);
+            } else if s.turns <= 1 {
                 stats.remove_source(source_tag(s.id, instance));
                 expired.push(s.id);
             } else {
@@ -469,6 +514,33 @@ mod tests {
         assert!(st.cure(poisoned, &mut stats));
         assert!(!st.has(poisoned));
         assert!(!st.cure(poisoned, &mut stats));
+    }
+
+    /// A status put on until it is cured bites and mends every turn like
+    /// any other, and is never counted down: a thousand turns later it has
+    /// as long left as it had, neither stacking rule shortens it, and only
+    /// a cure takes it off.
+    #[test]
+    fn a_status_put_on_until_cured_is_never_counted_down_and_ends_only_by_a_cure() {
+        let (stat_defs, defs) = world();
+        let speed = stat_defs.expect("speed");
+        let (slowed, burning) = (defs.expect("slowed"), defs.expect("burning"));
+        let mut stats = Stats::new();
+        let mut st = Statuses::new();
+        st.apply(slowed, UNTIL_CURED, None, &defs, &mut stats);
+        st.apply(burning, UNTIL_CURED, Some(9), &defs, &mut stats);
+        for turn in 0..1000 {
+            let report = st.tick(&defs, &mut stats);
+            assert!(report.expired.is_empty(), "turn {turn}: nothing ran out");
+            assert_eq!(report.ticks.len(), 1, "turn {turn}: the burn bit");
+        }
+        assert!(st.iter().all(|s| s.turns == UNTIL_CURED), "{:?}", st.iter().collect::<Vec<_>>());
+        st.apply(slowed, 3, None, &defs, &mut stats);
+        st.apply(burning, 3, None, &defs, &mut stats);
+        assert!(st.iter().all(|s| s.turns == UNTIL_CURED), "a refresh keeps the longer and an extension saturates");
+        assert_eq!(stats.value(speed, &stat_defs), 50, "still slowed");
+        assert!(st.cure(slowed, &mut stats));
+        assert_eq!(stats.value(speed, &stat_defs), 100, "and cured");
     }
 
     fn vocabulary() -> (Registry<StatDef>, Registry<crate::damage::DamageKind>) {
@@ -590,6 +662,37 @@ mod tests {
         assert!(loaded.get(loaded.expect("hearty")).boon);
         assert!(!loaded.get(loaded.expect("dazed")).boon);
         assert!(StatusDef::new("hearty").boon().boon);
+    }
+
+    #[test]
+    fn a_status_can_be_written_to_hold_its_holder_and_holds_nobody_unless_it_says_so() {
+        let names = Names::new();
+        let loaded = load(r#"[(name: "snared", holds: true), (name: "dazed")]"#, &names).expect("it loads");
+        assert!(loaded.get(loaded.expect("snared")).holds);
+        assert!(!loaded.get(loaded.expect("dazed")).holds);
+        assert!(StatusDef::new("snared").holds().holds);
+    }
+
+    /// Held is asked of what is on the actor now, so it ends the turn the
+    /// status does, by its time running out or by a cure, and a status
+    /// that does not hold never holds anyone however long it lasts.
+    #[test]
+    fn an_actor_is_held_while_a_status_that_holds_is_on_it_and_free_once_it_runs_out_or_is_cured() {
+        let defs = Registry::from_defs(vec![StatusDef::new("snared").holds(), StatusDef::new("dazed")]).unwrap();
+        let (snared, dazed) = (defs.expect("snared"), defs.expect("dazed"));
+        let (mut statuses, mut stats) = (Statuses::new(), Stats::new());
+        statuses.apply(dazed, UNTIL_CURED, None, &defs, &mut stats);
+        assert_eq!(statuses.holding(&defs), None, "a status that does not hold leaves its holder free");
+        statuses.apply(snared, 2, None, &defs, &mut stats);
+        assert_eq!(statuses.holding(&defs), Some(snared));
+        statuses.tick(&defs, &mut stats);
+        assert_eq!(statuses.holding(&defs), Some(snared), "a turn left");
+        statuses.tick(&defs, &mut stats);
+        assert_eq!(statuses.holding(&defs), None, "run out");
+        statuses.apply(snared, UNTIL_CURED, None, &defs, &mut stats);
+        assert_eq!(statuses.holding(&defs), Some(snared), "put on until cured");
+        assert!(statuses.cure(snared, &mut stats));
+        assert_eq!(statuses.holding(&defs), None, "and cured");
     }
 
     #[test]

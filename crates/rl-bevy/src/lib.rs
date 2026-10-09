@@ -15,7 +15,9 @@
 
 pub mod ability;
 pub mod accuracy;
+pub mod ammo;
 pub mod bump;
+pub mod charts;
 pub mod combat;
 pub mod components;
 pub mod consumable;
@@ -38,6 +40,7 @@ pub mod places;
 pub mod plugin;
 pub mod prefabs;
 pub mod props;
+pub mod records;
 pub mod registries;
 pub mod remains;
 pub mod replay;
@@ -48,24 +51,27 @@ pub mod status;
 pub mod stealth;
 pub mod testing;
 pub mod throwing;
+pub mod title;
 pub mod turn;
 pub mod work;
 pub mod world;
 
 pub use ability::{Abilities, AbilitiesPlugin, AbilityEvent, Aimed, Bystanders, Cooldowns, Grants, Known, Landed, Offered, Pools, Use};
 pub use accuracy::{Attempt, HitRules, Marksmanship, Missed};
+pub use ammo::{Ammo, AmmoChanged, AmmoPlugin, AmmoSet, Dry};
 pub use bump::{Bump, BumpRules, Bumped, OnAlly, Swap, Swapped};
+pub use charts::{ChartId, ChartSave, Charting, Charts, ChartsSave};
 pub use combat::{
-    Armor, Attack, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Heal, Healed, Health, Invulnerable,
-    Loadout, MeleeAttack, RangedAttack, Reach, Resists, Strikes, Struck, line_of_fire, shot,
+    Armor, Attack, AttackShape, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Heal, Healed, Health,
+    Invulnerable, Loadout, MeleeAttack, RangedAttack, Reach, Resists, Stowed, Strikes, Struck, line_of_fire, shot,
 };
 pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
 pub use consumable::{AddSpending, Attuned, Consumable, ConsumablesPlugin, Recharge, SpendingMoments, Spent, WhenEmpty, bury_spent, remove_spent};
 pub use cue::{AddAirborne, Airborne, Anchor, Cue, Cued, Lands, LookOf, TurnHold};
 pub use doors::{Close, DoorEvent, Open};
 pub use effects::{
-    AddEffect, AddEngineEffects, AddMoment, Cleanse, Effect, EffectBonus, EffectKinds, EffectRng, EffectWorld, Effects, EffectsPlugin, Emit, Fired, FromArgs,
-    Harm, Ignite, Inflict, Landing, LandsAsItself, Mend, Moment, MomentId, Moments, Noise, Pull, Remnant, Shove, Source, Teleport, Trigger, Triggers,
+    AddEffect, AddEngineEffects, AddMoment, Cleanse, Effect, EffectBonus, EffectKinds, EffectRng, EffectWorld, Effects, EffectsPlugin, Emit, Fired, FiredOn,
+    FromArgs, Harm, Ignite, Inflict, Landing, LandsAsItself, Mend, Moment, MomentId, Moments, Noise, Pull, Remnant, Shove, Source, Teleport, Trigger, Triggers,
     area_cells, land_triggers, report_remnants,
 };
 pub use events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
@@ -74,10 +80,10 @@ pub use fire::{Burning, FIRE_GLOW, Fire, FireEvent, FirePlugin, FireRules, Flamm
 pub use fov::FovPlugin;
 pub use gas::{Breathed, GasPlugin, Gases, Release, Vents};
 pub use items::{
-    Bestows, DropItem, EQUIP_FROM_GROUND_COST, Enchant, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemsPlugin, PickUp, Pulse,
-    Stack, Tagged, Unequip, UseItem, Wearable,
+    Bestows, DropItem, EQUIP_FROM_GROUND_COST, Enchant, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemsPlugin, OwnBlowScore,
+    PickUp, Pulse, Stack, Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable, may_use, may_use_on,
 };
-pub use knowledge::{Knowledge, KnowledgeSave};
+pub use knowledge::{Knowledge, KnowledgeSave, Recalled, TileSet};
 pub use lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, band_at};
 pub use loot::{ContainersAnswered, Drops, Found, ItemMaker, LootArea, LootPlugin, LootRng, LootSet, Provenance, Scattered};
 pub use minds::{
@@ -99,6 +105,7 @@ pub use props::{
     AddVerb, Container, Emptied, FillContainer, Hidden, Interact, Interacted, Offer, OfferedHere, PendingFires, Prop, PropEffects, PropKind, PropRng, PropSet,
     PropsPlugin, Refused, Scenery, Spotted, Stocked, Take, Verb, VerbId, Verbs, spawn_prop,
 };
+pub use records::{MAX_RECORDS, RecordOutcome, RecordRun, RecordSection, RecordsPlugin, RunRecord, RunRecords};
 pub use registries::Registries;
 pub use remains::{LeavesRemains, Life, Remains, RemainsLeft, RemainsNaming, RemainsPlugin, ReviveCommands, Revived, WasLiving, revive};
 pub use replay::{Pressed, Recording};
@@ -109,7 +116,10 @@ pub use state::{Ending, EngineState, Outcome, Restart, RunOver, world_is_shown};
 pub use status::{Afflict, Afflicted, Cure, StatBlock, StatusEvent, StatusPlugin};
 pub use stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, StealthRng, StealthRunning, Unseen, Watchers};
 pub use throwing::{Flight, Throw, Throwable, ThrowingPlugin, flight};
-pub use turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Resolution, Step, Stepped, TurnEnd, Turns, Wait};
+pub use title::{AbandonRun, ContinueRun, HoldStart, LeaveRun, SavedRun, begin_run};
+pub use turn::{
+    Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Pace, Resolution, Speeds, Step, Stepped, TurnEnd, TurnRules, Turns, Wait,
+};
 pub use work::{AddWork, BeginWork, BreakReason, Toil, WorkBegan, WorkBroken, WorkDone, WorkKinds, WorkPlugin, Working, Works};
 pub use world::{ChunkLoaded, ChunkRulesRes, PlaceMap, PlaceSave, StreamingPlugin, WindowView, WorldMap, WorldMapSave, WorldRes, WorldSettings};
 
@@ -123,10 +133,12 @@ pub use world::{ChunkLoaded, ChunkRulesRes, PlaceMap, PlaceSave, StreamingPlugin
 pub mod prelude {
     pub use crate::ability::{Abilities, AbilitiesPlugin, AbilityEvent, Cooldowns, Grants, Known, Pools, Use};
     pub use crate::accuracy::{Attempt, HitRules, Marksmanship, Missed};
+    pub use crate::ammo::{Ammo, AmmoChanged, AmmoPlugin, AmmoSet, Dry};
     pub use crate::bump::{Bump, BumpRules, Bumped, OnAlly, Swap, Swapped};
+    pub use crate::charts::{ChartId, Charting, Charts};
     pub use crate::combat::{
-        Armor, Attack, CombatPlugin, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Heal, Healed, Health, Invulnerable,
-        Loadout, MeleeAttack, RangedAttack, Reach, Resists, Strikes, Struck, line_of_fire, shot,
+        Armor, Attack, AttackShape, CombatPlugin, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Heal, Healed, Health,
+        Invulnerable, Loadout, MeleeAttack, RangedAttack, Reach, Resists, Stowed, Strikes, Struck, line_of_fire, shot,
     };
     pub use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
     pub use crate::consumable::{AddSpending, Attuned, Consumable, ConsumablesPlugin, WhenEmpty};
@@ -141,8 +153,8 @@ pub mod prelude {
     pub use crate::fov::FovPlugin;
     pub use crate::gas::{Breathed, GasPlugin, Gases, Release, Vents};
     pub use crate::items::{
-        Bestows, DropItem, Enchant, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemsPlugin, PickUp, Pulse, Stack, Tagged,
-        Unequip, UseItem, Wearable,
+        Bestows, DropItem, Enchant, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemsPlugin, OwnBlowScore, PickUp, Pulse, Stack,
+        Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable,
     };
     pub use crate::knowledge::Knowledge;
     pub use crate::lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, band_at};
@@ -161,6 +173,7 @@ pub mod prelude {
         AddVerb, Container, Emptied, FillContainer, Hidden, Interact, Interacted, Offer, OfferedHere, Prop, PropKind, PropSet, PropsPlugin, Refused, Scenery,
         Spotted, Take, VerbId, Verbs, spawn_prop,
     };
+    pub use crate::records::{MAX_RECORDS, RecordOutcome, RecordRun, RecordSection, RecordsPlugin, RunRecord, RunRecords};
     pub use crate::registries::Registries;
     pub use crate::remains::{LeavesRemains, Remains, RemainsLeft, RemainsNaming, RemainsPlugin, ReviveCommands, Revived};
     pub use crate::seed::{AddStream, Seed};
@@ -169,7 +182,10 @@ pub mod prelude {
     pub use crate::status::{Afflict, Afflicted, Cure, StatBlock, StatusEvent, StatusPlugin};
     pub use crate::stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, Unseen, Watchers};
     pub use crate::throwing::{Throw, Throwable, ThrowingPlugin};
-    pub use crate::turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Resolution, Step, Stepped, TurnEnd, Turns, Wait};
+    pub use crate::title::{AbandonRun, ContinueRun, HoldStart, LeaveRun, SavedRun, begin_run};
+    pub use crate::turn::{
+        Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Pace, Resolution, Speeds, Step, Stepped, TurnEnd, TurnRules, Turns, Wait,
+    };
     pub use crate::work::{AddWork, WorkDone, WorkKinds, WorkPlugin, Working};
     pub use crate::world::{ChunkLoaded, ChunkRulesRes, StreamingPlugin, WorldMap, WorldRes, WorldSettings};
     pub use rl_grid::LightBand;

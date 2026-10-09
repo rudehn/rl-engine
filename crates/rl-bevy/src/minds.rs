@@ -804,7 +804,7 @@ pub struct MindsPlugin;
 
 impl Plugin for MindsPlugin {
     fn build(&self, app: &mut App) {
-        use crate::plugin::{DecideSet, PerceiveSet, Turn};
+        use crate::plugin::{DecideSet, PerceiveSet, ResetsOnNewRun, Turn};
         // The minds may choose an ability, a pickup or a throw, so the
         // messages they would write them into exist whether or not the game
         // added abilities, items or throwing. Registering one twice is what
@@ -823,10 +823,12 @@ impl Plugin for MindsPlugin {
             // not left to hang, for the same reason as a blow.
             .add_action::<crate::work::BeginWork>()
             .add_stream::<MindRng>("MindsPlugin")
-            .add_systems(Turn, sense.in_set(DecideSet::Sense))
+            .init_resource::<crate::charts::Charts>()
+            .reset_on_new_run::<crate::charts::Charts>()
+            .add_systems(Turn, (sense, crate::charts::chart_sight).chain().in_set(DecideSet::Sense))
             .add_systems(Turn, begin_thinking.in_set(PerceiveSet::Begin))
             .add_systems(Turn, perceive_roster.in_set(PerceiveSet::Roster))
-            .add_systems(Turn, (sense_posts, sense_ways).chain().in_set(PerceiveSet::Annotate))
+            .add_systems(Turn, (sense_posts, sense_ways, crate::charts::sense_uncharted).chain().in_set(PerceiveSet::Annotate))
             .add_systems(Turn, decide_minds.in_set(DecideSet::Minds));
     }
 
@@ -938,6 +940,64 @@ mod tests {
         }
         assert_eq!(app.world().get::<Doing>(shover), Some(&Doing(Some("shove"))), "the tactic that decided");
         assert_eq!(app.world().get::<Doing>(idle), Some(&Doing(None)), "and nothing for a turn no tactic decided");
+    }
+
+    /// Two sides of minds and an onlooker: what a watched fight is. Returns
+    /// the app, the two fighters, and the clock reading each frame ended on.
+    fn watched_fight(pace: crate::turn::Pace, frames: usize) -> (App, [Entity; 2], Vec<u32>) {
+        let (mut app, start, blunt) = arena();
+        app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(std::time::Duration::from_millis(50))).insert_resource(pace);
+        let (us, them) = (rl_rules::FactionId::from_raw(0), rl_rules::FactionId::from_raw(1));
+        app.world_mut().spawn((Player, Position(start), Viewshed::everywhere(), crate::components::RevealsMap));
+        let brain = Arc::new(Brain::new().then(MeleeAdjacent).then(Hunt));
+        let strong = app
+            .world_mut()
+            .spawn((Actor, Blocks, Position(start.offset(-3, 0)), Health::full(40), Faction(us), Perception(8), MeleeAttack::new(blunt, DiceRoll::flat(4))))
+            .insert(Mind(brain.clone()))
+            .id();
+        let weak = app
+            .world_mut()
+            .spawn((Actor, Blocks, Position(start.offset(3, 0)), Health::full(12), Faction(them), Perception(8), MeleeAttack::new(blunt, DiceRoll::flat(2))))
+            .insert(Mind(brain))
+            .id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        let mut clock = Vec::new();
+        for _ in 0..frames {
+            app.update();
+            clock.push(app.world().resource::<Turns>().now());
+        }
+        (app, [strong, weak], clock)
+    }
+
+    /// Nobody plays: an onlooker is no actor, so the loop waits on no one
+    /// and the two sides close and fight until one of them is dead.
+    #[test]
+    fn two_sides_of_minds_fight_to_the_end_with_nobody_playing() {
+        let (app, [strong, weak], _) = watched_fight(crate::turn::Pace::unpaced(), 6);
+        assert!(app.world().get_entity(weak).is_err() || app.world().get::<Dead>(weak).is_some(), "the weaker side fell");
+        let left = app.world().get::<Health>(strong).expect("the stronger still stands");
+        assert!(left.current < 40 && left.current > 0, "having been struck on the way: {}", left.current);
+    }
+
+    /// The pace decides how many passes a frame runs and nothing a pass
+    /// does: the fight watched at four steps a second ends as the fight
+    /// run flat out does, only later.
+    #[test]
+    fn a_watched_fight_ends_the_same_at_any_pace_only_later() {
+        let (flat_out, [strong, _], fast) = watched_fight(crate::turn::Pace::unpaced(), 6);
+        let (paced, [strong_paced, weak_paced], slow) = watched_fight(crate::turn::Pace::per_second(400), 400);
+        assert!(paced.world().get_entity(weak_paced).is_err() || paced.world().get::<Dead>(weak_paced).is_some(), "the paced fight ended too");
+        assert_eq!(
+            paced.world().get::<Health>(strong_paced).map(|h| h.current),
+            flat_out.world().get::<Health>(strong).map(|h| h.current),
+            "with the same wounds on the winner"
+        );
+        assert_eq!(paced.world().get::<Position>(strong_paced), flat_out.world().get::<Position>(strong), "standing on the same cell");
+        // Twenty frames a second at four steps a second is twenty hundredths
+        // a frame: after the first second the clock is near four steps, where
+        // the unpaced run had long finished.
+        assert!((300..=500).contains(&slow[19]), "about four steps in the first second, not {}", slow[19]);
+        assert!(fast[0] > slow[19], "which the unpaced run passed in its first frame: {} against {}", fast[0], slow[19]);
     }
 
     #[test]
@@ -1249,6 +1309,86 @@ mod tests {
         assert_eq!(w.get::<Equipped>(marine).unwrap().in_slot(SlotId::from_raw(0)), Some(better), "it put on the better one");
         assert!(w.get::<Inventory>(marine).unwrap().contains(old), "and kept the old one in its bag");
         assert_eq!(w.get::<Position>(worse).map(|p| p.0), Some(start.offset(2, 0)), "and left the worse one lying");
+    }
+
+    /// Better gear is worth nothing to a mind whose slot holds a thing that
+    /// will not come off, by the rule the resolver equips by, so it leaves
+    /// the gear lying rather than spending its turns being refused.
+    #[test]
+    fn a_mind_wants_nothing_that_would_push_off_a_stuck_thing() {
+        use rl_rules::ai::tactics::Scavenge;
+        use rl_rules::{EquipShape, Equipment, SlotId};
+        let (mut app, start, _) = arena();
+        app.add_plugins(crate::items::ItemsPlugin);
+        let sides = crate::testing::two_sides(&mut app);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(sides.ours))).id();
+        let hand = EquipShape::in_slot(SlotId::from_raw(0));
+        let old = app.world_mut().spawn((Item, Wearable(hand.clone()), GearScore(1), crate::items::Stuck)).id();
+        let better = app.world_mut().spawn((Item, Position(start.offset(4, 0)), Wearable(hand.clone()), GearScore(3))).id();
+        let mut worn = Equipment::with_slot_count(1);
+        worn.equip(old, &hand).unwrap();
+        let marine = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Blocks,
+                Position(start.offset(3, 0)),
+                Health::full(10),
+                Faction(sides.theirs),
+                Perception(8),
+                Inventory { items: vec![old] },
+                Equipped(worn),
+                Mind(Arc::new(Brain::new().then(Scavenge { reach: 3 }))),
+                Intelligence(Wits::SAPIENT),
+            ))
+            .id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        for _ in 0..8 {
+            if app.world().get::<MyTurn>(player).is_some() {
+                app.world_mut().write_message(Intent::new(player, Wait));
+            }
+            app.update();
+        }
+        let w = app.world();
+        assert_eq!(w.get::<Equipped>(marine).unwrap().in_slot(SlotId::from_raw(0)), Some(old), "the stuck one stayed on");
+        assert_eq!(w.get::<Position>(better).map(|p| p.0), Some(start.offset(4, 0)), "and the better one was left lying");
+        assert_eq!(w.get::<Position>(marine).map(|p| p.0), Some(start.offset(3, 0)), "where it never went to try");
+    }
+
+    /// A mind whose own blow is worth five does not trade it for a worn
+    /// blow worth three, which it would strike with in its place, and does
+    /// put on one worth eight: a thing with a blow is weighed against the
+    /// blow it replaces as well as against what it displaces.
+    #[test]
+    fn a_mind_puts_on_a_blow_only_when_it_beats_the_blow_of_its_own() {
+        use rl_rules::ai::tactics::Scavenge;
+        use rl_rules::{EquipShape, Equipment, SlotId};
+        let (mut app, start, kind) = arena();
+        app.add_plugins(crate::items::ItemsPlugin);
+        let sides = crate::testing::two_sides(&mut app);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(sides.ours))).id();
+        let hand = EquipShape::in_slot(SlotId::from_raw(0));
+        let striking = |worth: i32| (Item, Wearable(hand.clone()), GearScore(worth), MeleeAttack::new(kind, rl_core::DiceRoll::new(1, 4)));
+        let lighter = app.world_mut().spawn((striking(3), Position(start.offset(2, 0)))).id();
+        let heavier = app.world_mut().spawn((striking(8), Position(start.offset(4, 0)))).id();
+        let wearer = app
+            .world_mut()
+            .spawn((
+                (Actor, Blocks, Position(start.offset(3, 0)), Health::full(10), Faction(sides.theirs), Perception(8)),
+                (Inventory::default(), Equipped(Equipment::with_slot_count(1)), crate::items::OwnBlowScore(5)),
+                (Mind(Arc::new(Brain::new().then(Scavenge { reach: 3 }))), Intelligence(Wits::SAPIENT)),
+            ))
+            .id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        for _ in 0..8 {
+            if app.world().get::<MyTurn>(player).is_some() {
+                app.world_mut().write_message(Intent::new(player, Wait));
+            }
+            app.update();
+        }
+        let w = app.world();
+        assert_eq!(w.get::<Equipped>(wearer).unwrap().in_slot(SlotId::from_raw(0)), Some(heavier), "it put on the heavier blow");
+        assert_eq!(w.get::<Position>(lighter).map(|p| p.0), Some(start.offset(2, 0)), "and left the lighter one, worse than its own, lying");
     }
 
     #[test]

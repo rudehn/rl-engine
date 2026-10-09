@@ -22,9 +22,10 @@
 //! by the engine's own combat and equip machinery; nothing is copied onto
 //! whoever carries it.
 //!
-//! [`Heat`] and [`Ammo`] are declared in their own modules with no
-//! behaviour yet; this module only attaches them to the weapons whose
-//! entry names one, so later work on either does not touch the loader.
+//! [`Heat`] is Foundry's own; `Ammo` is the engine's, lifted out of this
+//! game into `rl_bevy::ammo` once a second game needed the same loop. This
+//! module only attaches whichever one a weapon's entry names to it, so
+//! neither module's own behaviour touches the loader.
 
 use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
@@ -39,7 +40,6 @@ use rl_engine::rl_ui::view::Strike;
 use rl_engine::rl_ui::{Facets, InventoryView, Tones};
 use serde::Deserialize;
 
-use crate::ammo::Ammo;
 use crate::content::{MeleeDef, RangedDef};
 use crate::heat::Heat;
 
@@ -264,12 +264,16 @@ pub struct WornDarkSight(pub i32);
 /// its heat.
 ///
 /// The engine reads a row's blow and shot off `MeleeAttack` and
-/// `RangedAttack`, which a weapon that cannot fire has moved into
-/// [`Stowed`](crate::heat::Stowed) so the loadout finds nothing, and
-/// without this a slug rifle carried with no slugs, `+2` or not, reads as
-/// nothing but where it goes. Its numbers go back in the row's own `blow`
-/// or `shot`, so the pack says them in its own words, and the reason in
-/// a facet under them.
+/// `RangedAttack`, which a weapon that cannot fire has moved into the
+/// engine's own `Stowed` so the loadout finds nothing, and without this a
+/// slug rifle carried with no slugs, `+2` or not, reads as nothing but
+/// where it goes. Its numbers go back in the row's own `blow` or `shot`,
+/// so the pack says them in its own words, and the reason in a facet
+/// under them.
+///
+/// Why it is put by is asked of the engine's `Loadout::dry`, the one
+/// place that says whether ammunition benched a weapon, rather than read
+/// off the marker here.
 ///
 /// `InventoryView` is `None` until a game adds a pack panel: absence means
 /// no pack to annotate, not that anything is wrong.
@@ -277,13 +281,14 @@ pub fn note_the_pack(
     view: Option<ResMut<InventoryView>>,
     mut facets: ResMut<Facets>,
     registries: Res<Registries>,
-    things: Query<(Option<&WornDarkSight>, Option<&crate::heat::Stowed>, Has<crate::ammo::Dry>)>,
+    loadout: Loadout,
+    things: Query<(Option<&WornDarkSight>, Option<&Stowed>)>,
 ) {
-    use crate::heat::Stowed;
     let Some(mut view) = view else { return };
     let kind = |kind| registries.damage_kinds.name(kind).to_string();
     for row in view.rows.iter_mut() {
-        let Ok((sight, stowed, dry)) = things.get(row.entity) else { continue };
+        let Ok((sight, stowed)) = things.get(row.entity) else { continue };
+        let dry = loadout.dry(row.entity);
         if let Some(stowed) = stowed {
             match *stowed {
                 Stowed::Melee(a) => row.blow = Some(Strike { kind: kind(a.kind), dice: a.dice, range: None }),

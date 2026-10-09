@@ -42,7 +42,8 @@ pub use rl_world;
 ///
 /// Bevy's defaults, with a window sized to the terminal and nearest-pixel
 /// sampling so glyphs stay sharp; the [`TerminalPlugin`](rl_render::TerminalPlugin)
-/// grid, and the [`FullscreenPlugin`](rl_render::FullscreenPlugin) that
+/// grid, drawn in the game's own [`typeface`](Self::typeface) when it
+/// ships one, and the [`FullscreenPlugin`](rl_render::FullscreenPlugin) that
 /// declares filling the screen as a setting; the engine's [`CorePlugin`](rl_bevy::CorePlugin) and
 /// [`FovPlugin`](rl_bevy::FovPlugin); the map, drawn in [`map`](Self::map)'s
 /// rectangle, and the [`ParticlesPlugin`](rl_render::ParticlesPlugin) that
@@ -74,13 +75,37 @@ pub struct RoguelikePlugins {
     cell: Vec2,
     font: f32,
     map: Option<rl_core::Rect>,
+    across: i32,
+    typeface: Option<Typeface>,
+}
+
+/// A typeface's bytes, which a derived `Debug` would print every one of:
+/// shown by how many there are instead.
+#[derive(Clone)]
+struct Typeface(std::borrow::Cow<'static, [u8]>);
+
+impl std::fmt::Debug for Typeface {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Typeface({} bytes)", self.0.len())
+    }
 }
 
 impl RoguelikePlugins {
     /// A window titled `title`, `cols` by `rows` cells of ten by sixteen
     /// pixels, with the map filling it.
     pub fn new(title: impl Into<String>, cols: i32, rows: i32) -> Self {
-        Self { title: title.into(), cols, rows, cell: Vec2::new(10.0, 16.0), font: 14.0, map: None }
+        Self { title: title.into(), cols, rows, cell: Vec2::new(10.0, 16.0), font: 14.0, map: None, across: 1, typeface: None }
+    }
+
+    /// Draws every glyph in `face`, the bytes of a TrueType or OpenType
+    /// file the game ships, rather than in the system's monospace family,
+    /// which is another face on every platform and only ASCII in a
+    /// browser: a `&'static` slice compiled in, or bytes read at run time,
+    /// as [`TerminalPlugin::typeface`](rl_render::TerminalPlugin::typeface)
+    /// takes them.
+    pub fn typeface(mut self, face: impl Into<std::borrow::Cow<'static, [u8]>>) -> Self {
+        self.typeface = Some(Typeface(face.into()));
+        self
     }
 
     /// Each cell's size in pixels.
@@ -100,6 +125,14 @@ impl RoguelikePlugins {
         self.map = Some(viewport);
         self
     }
+
+    /// Draws each map tile `cells` cells across: two, for square tiles on
+    /// cells half as wide as they are tall, so text keeps a terminal's
+    /// proportions and the map keeps a board's.
+    pub fn across(mut self, cells: i32) -> Self {
+        self.across = cells.max(1);
+        self
+    }
 }
 
 impl PluginGroup for RoguelikePlugins {
@@ -110,16 +143,20 @@ impl PluginGroup for RoguelikePlugins {
         // The field does nothing off the web.
         let window = Window { title: self.title, resolution: WindowResolution::new(width, height), fit_canvas_to_parent: true, ..default() };
         let map = self.map.unwrap_or(rl_core::Rect::new(0, 0, self.cols, self.rows));
+        let mut terminal = rl_render::TerminalPlugin::new(self.cols, self.rows, self.cell, self.font);
+        if let Some(Typeface(face)) = self.typeface {
+            terminal = terminal.typeface(face);
+        }
         PluginGroupBuilder::start::<Self>()
             .add_group(
                 DefaultPlugins.set(WindowPlugin { primary_window: Some(rl_render::capture::prepare(window)), ..default() }).set(ImagePlugin::default_nearest()),
             )
-            .add(rl_render::TerminalPlugin { width: self.cols, height: self.rows, cell_size: self.cell, font_size: self.font })
+            .add(terminal)
             // Filling the screen, as a setting the renderer declares.
             .add(rl_render::FullscreenPlugin)
             .add(rl_bevy::CorePlugin)
             .add(rl_bevy::FovPlugin)
-            .add(rl_render::MapViewPlugin::new(map))
+            .add(rl_render::MapViewPlugin::new(map).across(self.across))
             // What flies and bursts over the map for a moment after a
             // turn: presentation of the map, not a subsystem, so it comes
             // with the map view.
@@ -155,11 +192,16 @@ impl PluginGroup for RoguelikePlugins {
 /// fn takes(_: Point, _: Direction, _: TileId, _: Terrain, _: Chain<BaseContext>, _: WorldGraph) {}
 /// fn rules(_: Registry<StatDef>, _: NameRef<StatDef>, _: Names, _: Brain<Entity>, _: Ledger, _: MovementProfile) {}
 /// fn bevy_side(_: Position, _: Player, _: Health, _: Intent<Step>, _: MapId, _: EngineSet, _: PresentSet) {}
+/// fn title(_: HoldStart, _: SavedRun, _: ContinueRun, _: AbandonRun, _: LeaveRun) {}
+/// let _begin: fn(&mut World) = begin_run;
+/// fn records(_: RunRecord, _: RunRecords, _: RecordOutcome, _: RecordSection, _: RecordRun, _: RecordsPlugin, _: RecordsPanel) {}
 /// fn drawn(_: Glyph, _: Cell, _: Terminal, _: MapView, _: Palette, _: MessageLog, _: OverworldPlugin, _: Saves) {}
 /// // Bevy's own names a game uses beside the engine's: the shape a mesh
 /// // is made from, which a grown place's shapes must not shadow.
 /// fn bevy_own(_: Rectangle, _: Circle) {}
 /// fn panels(_: NearbyView, _: VitalsView, _: GearView, _: InspectView, _: Row, _: Facet, _: ModalId, _: ViewSet) {}
+/// fn title_screen(_: TitlePanel, _: TitleWords, _: TitleMenu, _: TitleRow, _: TitleSet) {}
+/// let _up = title_is_up;
 /// ```
 pub mod prelude {
     pub use crate::RoguelikePlugins;

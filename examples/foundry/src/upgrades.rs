@@ -24,7 +24,7 @@
 //! the file currently keeps (`RangedAttack::range` is both the label and
 //! the value in one field), and the only place to add it is
 //! `gear::spawn_item`, which this pick does not touch. `heat::vent_heat`
-//! and `ammo::sync_ammo` only ever relocate a weapon's whole
+//! and the engine's own `sync_ammo` only ever relocate a weapon's whole
 //! `RangedAttack` between it and
 //! [`Stowed::Ranged`] wholesale; neither
 //! reads or rewrites the number inside, so the bonus rides along through a
@@ -33,8 +33,6 @@
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_core::Rect;
-
-use crate::heat::Stowed;
 
 /// What finishing the first objective may give, one of three, kept for the
 /// run.

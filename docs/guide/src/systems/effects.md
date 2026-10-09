@@ -14,8 +14,10 @@
             crates/rl-bevy/src/noise.rs
             crates/rl-bevy/src/registries.rs
             crates/rl-rules/src/ability.rs
+            crates/rl-bevy/src/ability.rs
+            crates/rl-bevy/src/cue.rs
             crates/rl-grid/src/targeting.rs
-     fingerprint: 5b9c7e10 -->
+     fingerprint: afa62204 -->
 
 # Effects
 
@@ -27,7 +29,7 @@ What an effect costs the thing that carried it is not here; that is `Consumables
 ## Turning it on
 
 `EffectsPlugin` is added by any plugin that lands effects, `AbilitiesPlugin`, `PropsPlugin` and `ConsumablesPlugin`, when the game has not added it, so a game rarely names it and the order a game lists its plugins in never matters.
-It initializes `EffectKinds` and `Moments`, takes the `EffectRng` stream, registers `Fired` and the `DamageEvent`, `Afflict` and `Cure` every landing may write, reads `Cued`, and runs `report_remnants` then `land_triggers` in `ResolveSet::Triggers`.
+It initializes `EffectKinds` and `Moments`, takes the `EffectRng` stream, registers `Fired`, `FiredOn` and the `DamageEvent`, `Afflict` and `Cure` every landing may write, reads `Cued`, adds `Airborne<UseLanding>` for a use in the air, and runs `report_remnants`, `land_aimed_uses` and `land_triggers`, chained, in `ResolveSet::Triggers`.
 It is not unique and builds once, so a game that adds it by hand as well gets one copy and no error.
 That stage sits between `ResolveSet::Act` and `ResolveSet::Fields`: after every action that reports a moment, and before fire, gas, statuses and damage, so a grenade's fire spreads and a stim's mend is applied in the pass that set them off.
 `add_engine_effects()` registers the seven effects that need no subsystem, and `FirePlugin`, `GasPlugin` and `NoisePlugin` register `Ignite`, `Emit` and `Noise`, so a content file naming one loads exactly when the game has fire, gas or hearing.
@@ -38,7 +40,8 @@ A game registers an effect of its own with `app.add_effect::<E>()` and a moment 
 `Effect` is a type with `apply(&self, &Landing, &mut EffectWorld)` and a `describe(&self, &Registries, EffectBonus)` a menu reads with that bonus added, and `FromArgs` builds one from the text arguments a content file gave it.
 Every engine effect's arguments refuse a field they do not name, so a typo fails the load naming it rather than leaving a number at its default.
 `EffectKinds` files each under its `KIND`, and `Effects::build` turns a list of `EffectSpec` into built effects or reports every spec that would not build.
-`Landing` is what an effect sees: the user, what landed it as a `Source` of `Ability`, `Trigger { on, moment }` or `Offer`, the origin and aim, every cell covered and every actor under them, and `bonus`, the `EffectBonus` of whatever landed it, which `land_triggers` copies off the carrier and which is the default, adding nothing, for an ability, an offer or a plain thing.
+`Landing` is what an effect sees: the user, what landed it as a `Source` of `Ability`, `Trigger { on, moment }` or `Offer`, the origin and aim, every cell covered and every actor under them, `bonus`, the `EffectBonus` of whatever landed it, which `land_triggers` copies off the carrier and which is the default, adding nothing, for an ability, an offer or a plain thing, and `on`, the thing a use was made on when the use asked its user for one.
+`Landing::reach` is how its harm arrives, `Reach::Ability` for an ability, `Reach::Thing` for the trigger of a thing other than its own user, a rod zapped or a flask broken, and `Effect` for anything else, a prop springing its own trap among them, and `Harm` stamps it on every `DamageEvent` it writes so the narrator names what did it.
 `EffectBonus { turns, amount }` is a component the game writes on a thing when it spawns it, whatever made it stronger already applied, as it writes `Armor` and `Bestows`: `Harm` and `Mend` add its `amount` to the roll's bonus through `roll_with` and `Inflict` adds its `turns` through `turns_with`, and every other engine effect ignores it, so the engine never learns what a level is.
 `Noise { sound, loudness }` makes one `MakeNoise` by the landing's user where a projectile stopped, else where it was aimed, however many cells the footprint covers, and describes itself as nothing, since a bag line saying a grenade makes a noise would crowd out what it does.
 Its sound is resolved at load against the names it is built with, and those carry the sounds only when a loader chains `SoundNames::sounds` onto them, since sounds are interned while the app is built and `Registries::names` has none; a sound nobody declared, or a `loudness` below one, is a load error naming it.
@@ -48,14 +51,18 @@ It describes itself with ` while worn` after the turns, so the bag says so under
 `EffectWorld` asks the subsystem that owns a thing to do it, damage, a heal, a status on or off, a cue, and moves an actor itself, since nothing else owns that.
 `Effects::land` rolls each entry against its own chance from `EffectRng`, which keeps the derivation domain `b"ability"` it had as `AbilityRng`, so a trap, a stim and a spell are dealt from one deck and every seed rolls what it rolled before.
 `Moments` interns the names of moments, the engine's `use`, `land`, `fire`, `hit`, `entered`, `destroyed` and `pulse` first so their ids are constants on the type.
-`TriggerSpec`, in `rl-rules` beside `EffectSpec`, is the authored form: `on`, a moment by name; `area`, `Here` or `Burst { radius }`; `fires`, how many times before it stops; `effects`, a list of its own; `look`, what shows over the cells it lands on; and `every`, the hundredths between pulses, which a `pulse` trigger must carry and no other may.
-`Triggers::build(specs, shared, moments, kinds, names)` builds a definition's triggers once, sharing each list through an `Arc`, and fails on a moment nobody registered, a pulse with no `every` or an `every` of nought, and an `every` on any other moment, naming each.
-The built `Trigger` keeps its `every`, and `Triggers::pulse_every` reads a carrier's back, so a game building a worn thing's `Pulse` takes its period from the trigger rather than keeping a second copy.
+`TriggerSpec`, in `rl-rules` beside `EffectSpec`, is the authored form: `on`, a moment by name; `area`, `Here` or `Burst { radius }`; `fires`, how many times before it stops; `effects`, a list of its own; `look`, what shows over the cells it lands on and, for an aimed use, what flies there; `every`, the hundredths between pulses, which a `pulse` trigger must carry and no other may; `targeting`, a `Targeting` for a `use` pointed at somewhere, written in an ability's words; and `asks`, an `Asks` of a prompt and an optional tag, for a `use` made on another of its user's things.
+`Triggers::build(specs, shared, moments, kinds, names)` builds a definition's triggers once, sharing each list through an `Arc`, and fails on a moment nobody registered, a pulse with no `every` or an `every` of nought, an `every` on any other moment, a `targeting` or an `asks` on anything but a `use`, the two together, a targeting aimed at nobody but its user, and a second `use` trigger beside one that aims or asks, naming each.
+The built `Trigger` keeps its `every`, and `Triggers::pulse_every` reads a carrier's back, so a game building a worn thing's `Pulse` takes its period from the trigger rather than keeping a second copy, and `Triggers::targeting` and `Triggers::asks` read back how a carrier's use is pointed and what it asks for.
 A spec with no list takes the definition's `shared` one, and a spec with neither fails, since a trigger that does nothing is a typo.
 `Triggers` is the component, and each copy counts its own `fires`, so springing one cable spends nothing of another.
-`Fired { on, moment, by, at }` is how a subsystem reports a moment, and all it does: items report `use` on an accepted use and `pulse` for each worn `Pulse` whose period came round, throwing reports `land` where a throw comes to rest, combat reports `fire` for each attack made with a worn thing and `hit` at the struck actor's cell, and props report `entered` and `destroyed`.
+`Fired { on, moment, by, at }` is how a subsystem reports a moment, and all it does: items report `use` on an accepted use, where its user stands or at the cell an aimed one was pointed at, and `pulse` for each worn `Pulse` whose period came round, throwing reports `land` where a throw comes to rest, combat reports `fire` for each attack made with a worn thing and `hit` at each struck actor's cell, and props report `entered` and `destroyed`.
 `land_triggers` reads each `Fired` in the order written, takes the entity's triggers for that moment in list order, skips any spent, cues a blast over the cells for one with a `look`, going out from the cell the moment happened on, lands the list over `area_cells`, the one cell or the burst `rl_grid::burst` works out inside the loaded window, with everyone in the area as a target, the one who set it off included, and counts `fires` down.
+A `use` of a carrier whose `Consumable` has nothing left lands nothing at all, read before that use's charge is spent, since only a thing not yet known is let be used empty.
 The landing's user, who a hit is credited to, is `by`, or the carrier itself when it is `LandsAsItself`, which every armed prop is.
+A use made on one of its user's things is reported beside its `Fired` by a `FiredOn { carrier, moment, on }`, its own message so no other moment carries a field it never fills, and `land_triggers` pairs the two and lands the use where its user stands with the thing as `Landing::on`, for the game's own effect that reads it.
+A use with a `targeting` is landed as an ability is, by `Bystanders::land` from wherever its user stands to the cell it was pointed at, on whoever its aim wants under its shape, the landing worked out as the use is made.
+With a look it is seen to fly there and to burst in the same look, and while something watches it waits in `Airborne<UseLanding>` until its flight has been seen, when `land_aimed_uses` lands it ahead of the pass's other triggers; without a look it lands at once.
 A `Remnant` is a carrier that lands its triggers once and is despawned, for something gone by the time they land: it holds its moment, `by` and `at` as data, and `report_remnants` writes its `Fired` in the pass that lands it, so a pass held back while something is shown loses nothing.
 A broken prop leaves one for its `destroyed` moment, and a watched shot from a thing its last charge spent leaves one for its `hit`.
 
@@ -109,7 +116,8 @@ The engine decides what an effect does to the world, when a moment's triggers la
 A subsystem that owns a moment reports it and does nothing else, so "find the list, build the area, land it" is written once and a game's own moment lands exactly as an engine one does.
 Moments are an open registry and not an enum, for the reason every other name in the engine is: a blaster that does something when it overheats is a line of the game's, not a fork.
 One list can be delivered several ways, which is the whole of the potion model: what a bottle holds is written once as the item's `effects`, and a `use` trigger and a `land` trigger each deliver it to different people.
-An item is aimed only by being thrown or fired, so there is no cursor here; that is throwing's and combat's, and an aimed use with a cursor of its own would be an ability by another name.
+A thing's use may be aimed, and it is aimed by an ability's rule rather than one of its own: its `targeting` is the `Targeting` an ability's mode, aim and sight make, landed by the same `Bystanders::land`, so a bolt from the pack and a bolt an actor knows reach the same cells and catch the same people, while the list it lands is still the thing's.
+A use made on a thing carries the thing to its effects and no further, since the engine's effects land on `targets` and never read `Landing::on`: what makes a thing better or known is the game's, written as an effect of its own.
 A burst stops at walls and not at whoever stands in it, and it is the call an ability's `Ball` bursts with, so a grenade and a fireball of one radius reach the same cells and neither reaches round a wall.
 A trap lands in the pass it was stepped on, and a prop's `destroyed` trigger a pass after the blow, since a death is known only after damage.
 A trap's harm is the trap's own and not the doing of whoever stepped on it, so the log never says they hurt themselves; who stepped on it is still on the report.

@@ -1,0 +1,27 @@
+// Undermere's quests: what a run is for. The run is won the moment the one
+// marked `victory` is done.
+//
+// Every field (the ones marked "optional" may be left out):
+//   name:       unique; another quest's `after` names it by this
+//   title:      what the quest is called
+//   text:       what it asks, in a line or two
+//   after:      optional; names of quests that must be done before this one opens; none
+//               when left out, and the quest is open from the start
+//   objectives: a list of (text, on, need)
+//     text:     what the objective asks
+//     on:       what it counts: BossSlain, the death of a monster marked `boss` in
+//               `monsters.ron`, by whatever hand
+//     need:     Total(n), matching facts adding up to n | Latest(n), the latest matching
+//               fact at least n; a death is a fact of one
+//   victory:    optional; true for the quest whose finishing wins the run, false when left
+//               out
+#![enable(implicit_some)]
+[
+    (
+        name: "the drowned king",
+        title: "The Drowned King",
+        text: "Ten floors under the lake, the thing that drowned the kingdom keeps its throne. End it.",
+        objectives: [(text: "Slay the Drowned King", on: BossSlain, need: Total(1))],
+        victory: true,
+    ),
+]

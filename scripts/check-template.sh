@@ -33,6 +33,20 @@ if ! grep -q "tag = \"v$version\"" templates/starter/Cargo.toml.liquid; then
   exit 1
 fi
 
+# The template builds its dependencies as the workspace does. The workspace
+# dropped their debug info on 2026-09-28 and the template went on keeping
+# it for a week, so every generated game built Bevy with debug info, the
+# bulk of a build on disk, and this check, which builds into the
+# workspace's own target directory, built that heavier Bevy beside the
+# workspace's.
+dependency_profile() {
+  sed -n '/^\[profile\.dev\.package\."\*"\]/,/^\[/p' "$1" | grep -E '^(opt-level|debug) ='
+}
+if [[ "$(dependency_profile Cargo.toml)" != "$(dependency_profile templates/starter/Cargo.toml.liquid)" ]]; then
+  echo "error: templates/starter builds its dependencies under another [profile.dev.package.\"*\"] than the workspace's" >&2
+  exit 1
+fi
+
 # Every instruction to generate a game names that release too. Without
 # --tag, cargo-generate takes the template from main, which may already use
 # what the release the template pins does not have.
@@ -63,11 +77,13 @@ if grep -rn '{{' --include='*.rs' --include='*.toml' --include='*.md' .; then
   exit 1
 fi
 
-# The workspace's own target directory: the lockfile and the profile match,
-# so the game reuses every dependency the workspace already built rather
-# than compiling a second Bevy beside it, which was fifteen gigabytes. The
-# engine's own crates build at the game's optimisation level, so the next
-# workspace build recompiles those few, and nothing else.
+# The workspace's own target directory, so a run after the first reuses what
+# the first built, where the game's own, inside the scratch copy deleted
+# above, would build everything again every run. It shares less with the
+# workspace's own build than the lockfile suggests: the template keeps
+# Bevy's default features, which the workspace turns off, so the game
+# builds a Bevy of its own beside the workspace's, and the profile check
+# above keeps that one at least without debug info.
 export CARGO_TARGET_DIR="$root/target"
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings

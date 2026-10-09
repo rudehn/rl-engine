@@ -135,10 +135,16 @@ pub struct Alternates<'w> {
 ///
 /// Nothing is claimed here except a bump that comes to nothing, so the
 /// resolver of whatever was written spends the turn, and the sweep finds it
-/// spent.
+/// spent. A bump whose turn is already spent, as a status that holds
+/// spends one before anything resolves, comes to nothing at all: no
+/// resolver would take what it wrote, and the question a prop offering
+/// several things raises would open a screen for a turn that is gone.
 pub fn redirect_bumps(mut intents: MessageReader<Intent<Bump>>, mut resolution: Resolution, way: Way, mut out: Alternates) {
     for intent in intents.read() {
         let actor = intent.actor;
+        if resolution.spent(actor) {
+            continue;
+        }
         let Ok((pos, side)) = way.bumpers.get(actor) else { continue };
         let dir = intent.action.0;
         let target = pos.0 + dir.offset();

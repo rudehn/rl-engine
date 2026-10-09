@@ -209,14 +209,18 @@ pub fn answer_charge(
 /// than anything in `TurnSet`: nothing here is itself a reaction to a
 /// turn, only to what the tracker made of one after the fact. Runs before
 /// `EngineSet::Input`, so the key handlers find the pick open.
+///
+/// The mission is loaded as a run begins, so on the title before the
+/// first run there is none, and nothing to answer.
 pub fn offer_the_pick(
     mut changes: MessageReader<QuestChange>,
-    quests: Res<Quests>,
+    quests: Option<Res<Quests>>,
     mut modals: ResMut<Modals>,
     mut screen: ResMut<crate::upgrades::ChoiceScreen>,
     mut choosing: ResMut<crate::upgrades::Choosing>,
     taken: Res<crate::upgrades::Taken>,
 ) {
+    let Some(quests) = quests else { return };
     let charges = CHARGE_QUESTS.map(|name| quests.defs.expect(name));
     for change in changes.read() {
         if let Change::QuestDone { quest, .. } = change.0

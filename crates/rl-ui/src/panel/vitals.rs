@@ -138,7 +138,7 @@ pub fn draw_vitals(mut terminal: ResMut<Terminal>, layout: Res<VitalsLayout>, vi
     if let Some(armor) = view.armor
         && y < bottom
     {
-        terminal.print_on(rect.x, y, &format!("armor {armor}"), text, bg);
+        terminal.print_on(rect.x, y, &armor_reading(armor, view.armor_uncertain), text, bg);
         y += 1;
     }
     // Seen or hidden, then the band of light, on one line: two answers to
@@ -252,7 +252,7 @@ fn draw_line(terminal: &mut Terminal, rect: Rect, view: &VitalsView, layout: &Vi
         parts.push(Part::Gauge(format!("{} {}/{}", gauge.label, gauge.value, gauge.max), gauge.fraction(), gauge.tone));
     }
     if let Some(armor) = view.armor {
-        parts.push(Part::Text(format!("armor {armor}"), palette.get(Tones::TEXT)));
+        parts.push(Part::Text(armor_reading(armor, view.armor_uncertain), palette.get(Tones::TEXT)));
     }
     if let Some(seen) = view.seen {
         let (word, tone) = seen_word(seen);
@@ -306,6 +306,12 @@ fn draw_line(terminal: &mut Terminal, rect: Rect, view: &VitalsView, layout: &Vi
     }
 }
 
+/// The armor reading, with a question mark after it while it counts a
+/// worn thing not yet known, the way a `+?` on a name marks a level.
+fn armor_reading(armor: i32, uncertain: bool) -> String {
+    format!("armor {armor}{}", if uncertain { "?" } else { "" })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -330,6 +336,24 @@ mod tests {
         assert!(rows[1].starts_with("health 30/30"), "{:?}", rows[1]);
         assert_eq!(rows[2], "armor 0");
         assert!(rows[3].starts_with("turn 0"), "{:?}", rows[3]);
+    }
+
+    /// A worn thing not yet known counts in the armor, which is written
+    /// with a question mark after it, on a strip and a taller panel alike.
+    #[test]
+    fn armor_that_counts_an_unknown_worn_thing_is_written_with_a_question_mark() {
+        for rect in [Rect::new(0, 0, 60, 1), Rect::new(0, 0, 24, 6)] {
+            let mut stage = Stage::new(VitalsPanel::new(rect).bars(6)).screen(60, 6);
+            let body = rl_rules::Registry::from_defs(vec![rl_rules::SlotDef::new("body")]).unwrap().expect("body");
+            let mail = stage.app.world_mut().spawn((rl_bevy::Item, Name::new("+? chain mail"), rl_bevy::Armor(5), rl_bevy::Unknown)).id();
+            let mut worn = rl_bevy::Equipped(rl_rules::Equipment::with_slot_count(1));
+            worn.equip(mail, &rl_rules::EquipShape::in_slot(body)).expect("the slot exists");
+            let player = stage.player;
+            stage.app.world_mut().entity_mut(player).insert(worn);
+            stage.tick();
+            let rows = stage.rows().join("\n");
+            assert!(rows.contains("armor 5?"), "{rect:?}: {rows}");
+        }
     }
 
     /// The reading is on a tall panel as well as a one-row strip: Foundry

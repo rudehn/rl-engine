@@ -4,9 +4,10 @@
             crates/rl-render/src/fullscreen.rs
             crates/rl-ui/src/panel/settings.rs
             crates/rl-ui/src/game_menu.rs
+            crates/rl-ui/src/panel/title.rs
             crates/rl-save/src/settings.rs
             crates/rl-engine/src/lib.rs
-     fingerprint: 9d9ce787 -->
+     fingerprint: 6881785e -->
 
 # Settings
 
@@ -35,7 +36,7 @@ Words and not places in the list, so a choice added in the middle of a setting d
 `FullscreenPlugin` puts the primary window in borderless fullscreen or back in a window when the setting and the window disagree, and once more in its `cleanup`, after every plugin's `finish`, so a choice already recalled is on the window before the first frame.
 `SettingsPanel` lists the settings under their groups, a group standing where its first setting was declared: up and down pick a row, left and right change it, confirm changes it forward and the close key goes back to whatever was under the screen.
 A setting's own key changes it when no screen is open or this one is on top, in any engine state.
-The game menu offers a `Settings` row above `Quit` when the panel was added and at least one setting is declared, and is not drawn while the screen it opened is up.
+The game menu offers a `Settings` row above `Quit` when the panel was added and at least one setting is declared, and is not drawn while the screen it opened is up; the title offers one on the same terms, and leaves it out rather than drawing it dim when there is nothing to set.
 `SettingsSavePlugin` keeps one slot, `settings`, a RON map of names to words; text that does not parse is a warning and the defaults stand, and loading never writes.
 
 ## Using it
@@ -65,8 +66,9 @@ The engine decides how a setting is listed, changed and remembered, and it owns 
 The game decides what else is the player's to choose: it declares the setting, keeps the id, and acts on the choice in a system of its own.
 So there is no enum of settings and no typed value per setting; a registry is the extension point, as it is for controls, and a game's settings sit beside the engine's on one screen with nothing to tell them apart.
 A setting is a choice among a few named things and nothing finer: a slider, a key to rebind and a line of text are not settings in this sense, and a game that wants one writes its own screen.
-The settings screen is the one screen read and drawn outside the engine's sets, after the whole of `EngineSet::Present` and in any engine state, because it is the one a game opens before there is a world, from a title screen of its own where no presenter runs.
-A game's own screen under it is the game's to put away: the engine's menu steps aside by itself, and a title screen stops reading keys while any modal is open and stops drawing its menu under it.
+The settings screen is read and drawn outside the engine's sets, after the whole of `EngineSet::Present` and in any engine state, as the records screen is, because a title opens both before there is a world, where no presenter runs.
+The engine's own screens under it step aside by themselves: the menu is not drawn under it, and the title reads no keys and draws no rows while it is up and stands it over its own rows rather than where the game put it for a run, risen only as far as the screen's rows need to end on the terminal, since it does not scroll, putting it back when a run begins.
+A screen of the game's own under it is the game's to put away.
 What is remembered is apart from the run and outlives it: a new run, a restart and an ending never touch the slot, and it is not the versioned envelope a run is saved in, which refuses a save whole when the version differs.
 A preference should survive an upgrade, so the file is read for what it still means.
 The engine does not read the window back into the setting: a window sent fullscreen by the operating system's own button is fullscreen with the setting still `Off`.

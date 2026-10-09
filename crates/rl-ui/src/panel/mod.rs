@@ -26,10 +26,12 @@ pub mod inventory;
 pub mod log;
 pub mod nearby;
 pub mod offers;
+pub mod records;
 pub mod scrollback;
 pub mod settings;
 pub mod sheet;
 pub mod target;
+pub mod title;
 pub mod vitals;
 
 pub use ability::{AbilityKeys, AbilityLayout, AbilityMenu, AbilityPanel, ability_modal, reach};
@@ -37,14 +39,16 @@ pub use container::{CONTAINER_MODAL, ContainerKeys, ContainerLayout, ContainerMe
 pub use controls::{CONTROLS_MODAL, ControlsLayout, ControlsPanel, ControlsScreen, controls_modal};
 pub use gear::GearPanel;
 pub use inspect::InspectPanel;
-pub use inventory::{INVENTORY_MODAL, InventoryKeys, InventoryLayout, InventoryMenu, InventoryPanel, inventory_modal};
+pub use inventory::{ChoosingFor, INVENTORY_MODAL, InventoryKeys, InventoryLayout, InventoryMenu, InventoryPanel, inventory_modal};
 pub use log::LogPanel;
 pub use nearby::{ActivityWords, AlertWords, NearbyPanel};
 pub use offers::{OFFERS_MODAL, OffersLayout, OffersMenu, OffersPanel, offers_modal};
+pub use records::{RECORDS_MODAL, RecordsLayout, RecordsPanel, RecordsScreen, records_modal};
 pub use scrollback::{SCROLLBACK_MODAL, Scrollback, ScrollbackKeys, ScrollbackPanel, scrollback_modal};
 pub use settings::{SETTINGS_MODAL, SettingsLayout, SettingsPanel, SettingsScreen, settings_modal};
 pub use sheet::{SHEET_MODAL, SheetKeys, SheetLayout, SheetPanel, plain_op, sheet_modal};
 pub use target::{TargetLayout, TargetPanel};
+pub use title::{TitleMenu, TitlePanel, TitleRow, TitleSet, TitleWords, title_is_up};
 pub use vitals::VitalsPanel;
 
 use bevy::prelude::Color;
@@ -141,10 +145,7 @@ pub fn bar(terminal: &mut Terminal, x: i32, y: i32, width: i32, fraction: f32, t
 /// monster without hiding it. Nothing happens for a cell the map view is
 /// not showing.
 pub fn tint(terminal: &mut Terminal, map: &MapView, cell: Point, tone: ToneId, palette: &Palette) {
-    let Some(screen) = map.to_screen(cell) else { return };
-    let Some(mut drawn) = terminal.get(screen.x, screen.y) else { return };
-    drawn.bg = palette.get(tone);
-    terminal.set(screen.x, screen.y, drawn);
+    map.wash(terminal, cell, palette.get(tone));
 }
 
 /// Cuts `text` to `width` characters, with an ellipsis when it did not

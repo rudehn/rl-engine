@@ -43,7 +43,7 @@ The Systems pages are the reference for the rest, one per system, and each tease
 - **You get** afflictions ticked by the turn through the damage pipeline, with stacking rules and cures; a stat block with a modifier accumulator; an equipment slot graph with displacement; and an affix model of prefixes and suffixes with level-scaled grants, weighted rolling and per-instance state.
   `Loadout` sums the gear at the blow and `fold_gear` keeps the stats current, so nothing is ever copied onto the wearer.
 - **Worked example** `corsair` uses all of it.
-- **Reference** [Statuses](systems/statuses.md) for the afflictions and the stat block, and [Items and equipment](systems/items.md) for the slots, the affixes and the `Loadout`.
+- **Reference** [Statuses](systems/statuses.md) for the afflictions and the stat block, [Items and equipment](systems/items.md) for the slots, the affixes and the `Loadout`, [Uses and charges](systems/uses.md) for what a thing does when it is used and what that costs it, and [Ammunition](systems/ammunition.md) for what a shot spends.
 
 ## Quests
 
@@ -72,6 +72,24 @@ The Systems pages are the reference for the rest, one per system, and each tease
   `RunOver` ends a run, from the player's death unless `CombatRules` say otherwise, or from any condition of your own.
   `GameMenuPanel` opens over the ending and offers the next run, under whatever your game pushed onto `EndingView` about what the run came to.
 - **Reference** [The turn loop](systems/turn-loop.md) for the schedules, and [Saving and the ending screen](systems/saving.md) for what is kept and what is shown at the end.
+
+## A title screen
+
+- **Add** `TitlePanel::new(rect)`, with the rectangle its rows stand in.
+- **You supply** your picture, painted in `TitleSet::Backdrop`, and a start in `NewRun` that stands aside while `ContinueRun` is present, for the system of yours that restores the saved run.
+- **You get** the first run held back until the player picks: Continue, in a game with `SavePlugin`, over a save this build can read, New Game, which asks before it gives a saved run up, Records and Settings when there is something behind them, and Exit.
+  The pause and end menus offer Main menu, and with `SavePlugin` a run left that way is written down for Continue.
+- **Worked examples** `undermere`, a night over a black lake, and `foundry`, a foundry's works.
+- **Reference** [The title screen](systems/title.md).
+
+## Records of every run
+
+- **Add** `RecordsPlugin`, `RecordsSavePlugin` beside your save, and `RecordsPanel::new(rect)` for the screen.
+- **You supply** one `RecordRun` when your run is over: its score, a line saying what it came to, and the sections you want shown.
+- **You get** every run filed best first and kept between launches in a slot of its own, the run's own record on the screen it ends on, and a screen listing them all, which the title opens.
+- **Worked example** `undermere`, whose score is five lines and a total.
+- **Reference** [Run records](systems/records.md).
+- **Design** [`docs/design/records.md`](https://github.com/rudehn/rl-engine/blob/main/docs/design/records.md).
 
 ## A narrator
 
@@ -161,14 +179,15 @@ A tool that needs only one of them can depend on that crate alone and never comp
 | `delve` | Five floors of a beached whale, no surface at all; lighting, stealth and five knacks; `floors.rs` is the whole map builder |
 | `corsair` | An open-world pirate roguelike with a pirate's abilities, built only on the public API |
 | `heist` | Three floors of a counting house in the dark; stealth and light end to end, with a score to carry out |
-| `foundry` | Three decks of a droid foundry; combat depth, with guns that run hot or dry, droids that shoot back, and a probe that shouts for them |
+| `foundry` | Ten decks of a droid foundry; combat depth, with guns that run hot or dry, droids that shoot back, and a probe that shouts for them |
+| `undermere` | A delve from a lakeside town down ten floors to a drowned king, written as a whole game; the engine's title and records, monsters written as traits, and square tiles |
 
 ## Reading further
 
 - [`docs/OVERVIEW.md`](https://github.com/rudehn/rl-engine/blob/main/docs/OVERVIEW.md), the inventory of what exists and what does not.
 - [`docs/PLAN.md`](https://github.com/rudehn/rl-engine/blob/main/docs/PLAN.md), why, decision by decision.
 - [`docs/design/`](https://github.com/rudehn/rl-engine/tree/main/docs/design), one file per subsystem: how it works and why it is shaped that way.
-  Nine of them, and the five this chapter has not sent you to already are
+  Twenty of them, and among those this chapter has not sent you to already are
   [fields](https://github.com/rudehn/rl-engine/blob/main/docs/design/fields.md) (fire and gas),
   [minds](https://github.com/rudehn/rl-engine/blob/main/docs/design/minds.md) (how a non-player decides),
   [noise](https://github.com/rudehn/rl-engine/blob/main/docs/design/noise.md) (what a sound is and who hears it),

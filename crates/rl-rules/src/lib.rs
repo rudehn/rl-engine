@@ -19,6 +19,9 @@
 //!   the layer above resolves. [`EffectSpec`] is one effect as any content
 //!   file writes it, and [`TriggerSpec`] with its [`Area`] one trigger, the
 //!   moment a prop or a thing answers and where its effects land.
+//!   [`Targeting`] is how a use is pointed, an ability's or a thing's own
+//!   aimed use, so both are refused by the one rule, and [`Asks`] what a
+//!   thing's use asks for when it is used on another of its user's things.
 //! - [`loot`]: where items turn up and how often, keyed by a game's own
 //!   item ids: a banded table drawn by weight, by group and by tag, what
 //!   the dead leave, a place's scatter, and how good a found thing is by
@@ -80,7 +83,7 @@ pub mod stats;
 pub mod status;
 pub mod work;
 
-pub use ability::{AbilityDef, AbilityId, Aim, Area, Blocked, Cost, EffectSpec, Gates, Purse, Requirement, TriggerSpec, blocked, read_args};
+pub use ability::{AbilityDef, AbilityId, Aim, Area, Asks, Blocked, Cost, EffectSpec, Gates, Purse, Requirement, Targeting, TriggerSpec, blocked, read_args};
 pub use accuracy::{Certain, Delivery, HitModel, Line, Odds, Percent, PercentLabels, Shot, range_penalty};
 pub use affix::{AffixDef, AffixId, AffixKind, Enchanted, EnhanceRule, Scaled, ScaledStrike, TagDef, TagId, roll_affixes};
 pub use ai::{
@@ -103,12 +106,14 @@ pub use prefab::{Coverage, CoverageRow, Pick, PrefabDef, Reach, Slot};
 pub use prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, Stock};
 pub use role::{RoleDef, RoleId};
 pub use stats::{Modifier, Op, Source, StatDef, StatId, Stats};
-pub use status::{ActiveStatus, Mended, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport};
+pub use status::{ActiveStatus, Mended, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport, UNTIL_CURED};
 pub use work::{Work, WorkKind, WorkKindId};
 
 /// The names most callers want in scope.
 pub mod prelude {
-    pub use crate::ability::{AbilityDef, AbilityId, Aim, Area, Blocked, Cost, EffectSpec, Gates, Purse, Requirement, TriggerSpec, blocked, read_args};
+    pub use crate::ability::{
+        AbilityDef, AbilityId, Aim, Area, Asks, Blocked, Cost, EffectSpec, Gates, Purse, Requirement, Targeting, TriggerSpec, blocked, read_args,
+    };
     pub use crate::affix::{AffixDef, AffixId, AffixKind, Enchanted, EnhanceRule, Scaled, ScaledStrike, TagDef, TagId, roll_affixes};
     pub use crate::ai::tactics;
     pub use crate::ai::{
@@ -130,5 +135,5 @@ pub mod prelude {
     pub use crate::names::{NameRef, Names};
     pub use crate::prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, Stock};
     pub use crate::stats::{Modifier, Op, Source, StatDef, StatId, Stats};
-    pub use crate::status::{ActiveStatus, Mended, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport};
+    pub use crate::status::{ActiveStatus, Mended, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport, UNTIL_CURED};
 }

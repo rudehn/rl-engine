@@ -12,7 +12,7 @@
             crates/rl-bevy/src/replay.rs
             crates/rl-bevy/src/seed.rs
             crates/rl-bevy/src/testing.rs
-     fingerprint: c8b740d0 -->
+     fingerprint: b42204e7 -->
 
 # Controls, modals and cursors
 
@@ -57,8 +57,10 @@ A repeat also asks the turns' hold for a skip, since the skipper reads a fresh p
 It takes the candidates as a closure and asks for them only when the cursor moves, since working out what is in sight is the expensive part and most frames press nothing.
 Stepping stops at the edge of the window rather than sliding along it, which would read as the cursor moving on its own, and every step or cycle drags the shared focus with it so the row a panel highlights is what the cursor is on.
 `CursorStyle` is `Glow` or `Ticks`, each taking a `ToneId` and an optional second tone to breathe toward, and `mark` is the one drawing of them, so the two cannot drift apart.
+A glow washes every cell of the tile it marks; the ticks stand on the four tiles round it, each put down as the tile's own glyph is, so on a map of tiles wider than a cell they are centred on their tiles and stand as far off on every side.
 `ControlsScreen` is which page is showing and `ControlsLayout` is where the screen and its one hand-typed hint are drawn.
-`MenuItem` is `Resume`, `NewRun`, `SameSeed`, `Settings` or `Quit`: the first is offered only while playing and `Settings` only when a `SettingsPanel` has a setting to list, which it opens over the menu; each of the rest is one message, a `Restart` or an `AppExit`, and nothing in the menu knows how a game starts.
+`MenuItem` is `Resume`, `NewRun`, `SameSeed`, `Settings`, `MainMenu` or `Quit`, and `MenuItem::offered` says which rows a menu shows from whether the run is in play, whether there is a settings screen and whether there is a title.
+The first is offered only while playing, `Settings` only when a `SettingsPanel` has a setting to list, which it opens over the menu, and `MainMenu` only when a `TitlePanel` was added; each of the rest is one message, a `Restart`, a `LeaveRun` or an `AppExit`, and nothing in the menu knows how a game starts.
 With nothing open and something in sight picked out, the close key lets go of it rather than opening the menu, so backing out of the nearby list takes the same key as backing out of a cursor, and the next press opens the menu.
 `Recording` is a run written down: the seed, the command line it was run with, and every frame that pressed something as a `Pressed` of a turn clock, the keys and whether Shift was with them.
 `KeyScript` is the test keyboard: `press` for one frame, `hold` until `release`, which is what a finger resting on a key does.
@@ -130,7 +132,7 @@ A recording whose clock the game has already passed is a run that drifted, and t
 The half the plugin does not do is the seed: it presses keys and nothing else, so a game that sets `RL_REPLAY` and leaves its own seed alone replays a recorded run against a fresh world and drifts on the first key.
 Restoring it is the game's, because the seed is inserted before play begins and the plugin has no say in when that happens: `rl_bevy::replay::seed` answers with the recording's seed while one is being played, which is what Corsair and Foundry insert, and Delve takes the one line that wraps it, `Seed::from_args`, which asks the replay first and falls back to a `--seed` argument or a fresh seed.
 `KeyScriptPlugin` is the same idea at the other end: a key pressed on `ButtonInput` from outside the schedule is wiped before any system sees it, so a test that wants to press one needs a plugin, and a test's keys then run the same path a player's do.
-What the engine does not get is a rebinding screen, a mouse, text entry or a menu of settings, because those belong to an application rather than to a roguelike.
+What the engine does not get is a rebinding screen or text entry, because those belong to an application rather than to a roguelike, and nothing here reads a click: what one means is the game's.
 
 ## Where it lives
 

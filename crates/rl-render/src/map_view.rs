@@ -1,7 +1,10 @@
 //! The map, drawn from the player's point of view.
 //!
 //! Visible tiles are drawn lit, remembered tiles in the colours of
-//! memory, unknown tiles blank. What a tile looks like is the game's
+//! memory, unknown tiles blank. A remembered tile shows the still thing
+//! last seen on it, an item, a prop or a way through, faded with it; a
+//! creature is never remembered, since where one stood says nothing of
+//! where it is. What a tile looks like is the game's
 //! business: it fills a [`TileAppearance`] table keyed by [`TileId`], with
 //! a glyph, both colours, and how the tile varies from cell to cell. With
 //! lighting turned on, a visible tile's glyph and background and whatever
@@ -16,12 +19,16 @@
 //! blended in and stirred, rather than the fields as they stand. Only on
 //! tiles in sight; memory holds no smoke.
 
+use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
+
 use bevy::color::Mix;
 use bevy::prelude::*;
+use rl_bevy::Recalled;
 use rl_bevy::prelude::*;
 use rl_core::Grid2D;
 use rl_core::{Point, Rect};
-use rl_grid::{Light, TileId};
+use rl_grid::{Light, Rgb, TileId};
 use rl_rules::GasId;
 
 use crate::fields::{ShownFields, Wavefronts, churn, track_fields};
@@ -110,6 +117,13 @@ impl TileAppearance {
         Cell { glyph: cell.glyph, fg: fade(cell.fg), bg: fade(cell.bg) }
     }
 
+    /// `ground`, a remembered tile, with `thing` drawn on it in the colours
+    /// of memory, the way the tile's own glyph is.
+    pub fn recalled(&self, ground: Cell, thing: Recalled) -> Cell {
+        let Rgb { r, g, b } = thing.color;
+        Cell { glyph: thing.glyph, fg: self.memory.recall(Color::srgb_u8(r, g, b)), bg: ground.bg }
+    }
+
     /// `cell` under `light` at `p` at time `t`: both colours coloured by it.
     pub fn under(&self, cell: Cell, light: Light, p: Point, t: f32) -> Cell {
         Cell { glyph: cell.glyph, fg: self.shading.light(cell.fg, light, p, t), bg: self.shading.light(cell.bg, light, p, t) }
@@ -195,25 +209,51 @@ impl FieldAppearance {
     }
 }
 
-/// Where on the terminal the map is drawn, and which world tile sits at
-/// its top-left.
+/// Where on the terminal the map is drawn, which world tile sits at its
+/// top-left, and how many cells across a tile is.
+///
+/// A tile is one cell unless the view is [`across`](Self::across) more:
+/// a terminal's cells are narrow so that text reads well, and a map of
+/// square tiles on it wants each tile two cells wide. Everything that
+/// draws on the map asks the view where a tile is, so a wide tile is the
+/// view's business and nobody else's.
 #[derive(Resource, Debug, Clone, Copy)]
 pub struct MapView {
     /// The terminal cells the map occupies.
     pub viewport: Rect,
     /// The world tile drawn at the viewport's top-left.
     pub origin: Point,
+    /// How many cells across one tile is drawn. At least one.
+    across: i32,
 }
 
 impl MapView {
-    /// A view filling `viewport`.
+    /// A view filling `viewport`, a cell to a tile.
     pub fn new(viewport: Rect) -> Self {
-        Self { viewport, origin: Point::ZERO }
+        Self { viewport, origin: Point::ZERO, across: 1 }
+    }
+
+    /// Draws each tile `cells` cells across: two, for square tiles on
+    /// cells half as wide as they are tall.
+    pub fn across(mut self, cells: i32) -> Self {
+        self.across = cells.max(1);
+        self
+    }
+
+    /// How many cells across one tile is drawn.
+    pub fn tile_width(&self) -> i32 {
+        self.across
+    }
+
+    /// How many tiles the viewport is wide. Cells left over at its right
+    /// edge, too few for a whole tile, show nothing.
+    pub fn tiles_wide(&self) -> i32 {
+        self.viewport.width / self.across
     }
 
     /// Centres the view on `p`.
     pub fn center_on(&mut self, p: Point) {
-        self.origin = Point::new(p.x - self.viewport.width / 2, p.y - self.viewport.height / 2);
+        self.origin = Point::new(p.x - self.tiles_wide() / 2, p.y - self.viewport.height / 2);
     }
 
     /// Pulls the view back inside `bounds`, so it never shows void past
@@ -224,20 +264,69 @@ impl MapView {
     /// spends the rest on nothing. A map smaller than the viewport is
     /// centred in it instead, since there is nothing to scroll.
     pub fn clamp_to(&mut self, bounds: Rect) {
-        let slack = Point::new(bounds.width - self.viewport.width, bounds.height - self.viewport.height);
+        let slack = Point::new(bounds.width - self.tiles_wide(), bounds.height - self.viewport.height);
         self.origin.x = if slack.x <= 0 { bounds.x + slack.x / 2 } else { self.origin.x.clamp(bounds.x, bounds.x + slack.x) };
         self.origin.y = if slack.y <= 0 { bounds.y + slack.y / 2 } else { self.origin.y.clamp(bounds.y, bounds.y + slack.y) };
     }
 
-    /// The terminal cell a world tile is drawn at, if inside the viewport.
+    /// The terminal cell a world tile is drawn at, its first when it is
+    /// more than one across, if inside the viewport.
     pub fn to_screen(&self, p: Point) -> Option<Point> {
-        let s = p - self.origin + self.viewport.origin();
-        self.viewport.contains(s).then_some(s)
+        let tile = p - self.origin;
+        let inside = (0..self.tiles_wide()).contains(&tile.x) && (0..self.viewport.height).contains(&tile.y);
+        inside.then(|| Point::new(self.viewport.x + tile.x * self.across, self.viewport.y + tile.y))
     }
 
     /// The world tile drawn at a terminal cell, if inside the viewport.
     pub fn to_world(&self, s: Point) -> Option<Point> {
-        self.viewport.contains(s).then(|| s - self.viewport.origin() + self.origin)
+        let local = s - self.viewport.origin();
+        let tile = Point::new(local.x.div_euclid(self.across), local.y);
+        (self.viewport.contains(s) && tile.x < self.tiles_wide()).then(|| tile + self.origin)
+    }
+
+    /// Every terminal cell a world tile is drawn in, left to right; none
+    /// when it is outside the viewport.
+    pub fn cells(&self, p: Point) -> impl Iterator<Item = Point> + use<> {
+        let across = self.across;
+        self.to_screen(p).into_iter().flat_map(move |first| (0..across).map(move |i| Point::new(first.x + i, first.y)))
+    }
+
+    /// Every world tile in the viewport, row by row.
+    pub fn tiles(&self) -> impl Iterator<Item = Point> + use<> {
+        let (origin, wide, high) = (self.origin, self.tiles_wide(), self.viewport.height);
+        (0..high).flat_map(move |y| (0..wide).map(move |x| origin + Point::new(x, y)))
+    }
+
+    /// Writes `cell` over the whole of a world tile, as one wide cell of
+    /// the terminal: the glyph drawn centred across the tile's cells, and
+    /// the same colours in every one.
+    pub fn set(&self, terminal: &mut Terminal, p: Point, cell: Cell) {
+        if let Some(at) = self.to_screen(p) {
+            terminal.set_wide(at.x, at.y, self.across, cell);
+        }
+    }
+
+    /// Repaints the background of a world tile, every cell of it, leaving
+    /// whatever glyph is drawn there: a highlight that marks without
+    /// hiding.
+    pub fn wash(&self, terminal: &mut Terminal, p: Point, bg: Color) {
+        for at in self.cells(p) {
+            terminal.set_bg(at.x, at.y, bg);
+        }
+    }
+
+    /// Writes a glyph and its colour over a world tile, keeping its
+    /// colours: what stands on the tile, drawn on it as the tile's own
+    /// glyph is, centred across it.
+    pub fn put(&self, terminal: &mut Terminal, p: Point, glyph: char, fg: Color) {
+        if let Some(at) = self.to_screen(p) {
+            terminal.put(at.x, at.y, glyph, fg);
+        }
+    }
+
+    /// What is drawn for a world tile: its first cell.
+    pub fn get(&self, terminal: &Terminal, p: Point) -> Option<Cell> {
+        self.to_screen(p).and_then(|at| terminal.get(at.x, at.y))
     }
 }
 
@@ -247,12 +336,24 @@ impl MapView {
 /// has no [`MapView`] of its own to insert and cannot forget one. Needs
 /// field of view: without it no tile is ever seen or remembered, so the
 /// map would draw as nothing at all.
-pub struct MapViewPlugin(Rect);
+pub struct MapViewPlugin {
+    viewport: Rect,
+    across: i32,
+}
 
 impl MapViewPlugin {
-    /// The map, drawn in the terminal cells of `viewport`.
+    /// The map, drawn in the terminal cells of `viewport`, a cell to a
+    /// tile.
     pub fn new(viewport: Rect) -> Self {
-        Self(viewport)
+        Self { viewport, across: 1 }
+    }
+
+    /// Draws each tile `cells` cells across, and has the terminal draw a
+    /// glyph or a picture centred across them: two, for square tiles on
+    /// cells half as wide as they are tall.
+    pub fn across(mut self, cells: i32) -> Self {
+        self.across = cells.max(1);
+        self
     }
 }
 
@@ -262,12 +363,15 @@ impl Plugin for MapViewPlugin {
             .init_resource::<FieldAppearance>()
             .init_resource::<ShownFields>()
             .init_resource::<Wavefronts>()
-            .insert_resource(MapView::new(self.0))
-            .add_systems(Update, (follow_player, track_fields, draw_map).chain().in_set(PresentSet::Map))
-            // Before the map is drawn, and in `Update` rather than in a
-            // play-only set, because props are put down while a place is
-            // built and `Added` matches for one frame only.
-            .add_systems(Update, (dress_props, redress_emptied).before(draw_map));
+            .insert_resource(MapView::new(self.viewport).across(self.across))
+            .add_systems(Update, (follow_player, track_fields, remember_still_things, draw_map).chain().in_set(PresentSet::Map))
+            // In `Update` rather than in a play-only set, because props are
+            // put down while a place is built and `Added` matches for one
+            // frame only. After the turns, which put a place's props down
+            // the frame it is first entered, and before anything is drawn
+            // or remembered, so a prop is never drawn bare for a frame and
+            // a place known by heart remembers every prop in it.
+            .add_systems(Update, (dress_props, redress_emptied).after(EngineSet::Turns).before(EngineSet::Present));
     }
 
     fn finish(&self, app: &mut App) {
@@ -310,6 +414,52 @@ pub fn dress_props(mut commands: Commands, registries: Option<Res<Registries>>, 
         let look = registries.props.get(kind.0).look;
         commands.entity(entity).insert(Glyph { ch: look.glyph, fg: Color::srgb_u8(look.color.r, look.color.g, look.color.b), layer: look.layer });
     }
+}
+
+/// What the map draws that stands still: anything but a creature, and
+/// nothing nobody has spotted, since a hidden prop is not seen and so
+/// cannot be remembered either.
+type StillThings<'w, 's> = Query<'w, 's, (&'static Position, &'static Glyph, Option<&'static OnMap>), (Without<Actor>, Without<Hidden>)>;
+
+/// `c` at eight bits a channel, the way [`Knowledge`] keeps a colour.
+fn rgb(c: Color) -> Rgb {
+    let c = c.to_srgba();
+    let channel = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    Rgb::new(channel(c.red), channel(c.green), channel(c.blue))
+}
+
+/// Remembers the still things the player sees, so that the map draws each
+/// where it was seen once its tile is out of sight.
+///
+/// Part of the map view rather than a plugin of its own: a map that
+/// forgets the stairs behind the player is a broken map, not a simpler
+/// one. The memory itself is [`Knowledge`]'s, so it is kept per map and
+/// saved with the rest of what the player knows.
+///
+/// Once a frame, just before the map is drawn, rather than once a turn:
+/// memory is what the player was shown, and this is the frame shown. Of
+/// several things on one tile the one remembered is the one drawn, the
+/// highest layer.
+pub fn remember_still_things(map: Res<WorldMap>, mut knowledge: ResMut<Knowledge>, player: Query<&Viewshed, With<Player>>, still: StillThings) {
+    let Ok(sight) = player.single() else { return };
+    let here = map.current();
+    let mut top: BTreeMap<Point, (i32, Recalled)> = BTreeMap::new();
+    for (pos, glyph, on) in &still {
+        if on.map_or(MapId::SURFACE, |m| m.0) != here {
+            continue;
+        }
+        let look = (glyph.layer, Recalled { glyph: glyph.ch, color: rgb(glyph.fg) });
+        match top.entry(pos.0) {
+            Entry::Vacant(v) => {
+                v.insert(look);
+            }
+            Entry::Occupied(mut o) if o.get().0 < glyph.layer => {
+                o.insert(look);
+            }
+            Entry::Occupied(_) => {}
+        }
+    }
+    knowledge.see_still(|p| sight.can_see(p), top.into_iter().map(|(p, (_, look))| (p, look)));
 }
 
 /// Keeps the view centred on the player, and inside the map.
@@ -359,15 +509,17 @@ pub fn draw_map(mut terminal: ResMut<Terminal>, scene: Scene) {
     let lighting = lighting.as_deref();
     let overlay = overlay.as_deref().is_some_and(|o| o.0) && lighting.is_some();
     let sees = |p: Point| viewshed.is_some_and(|v| v.can_see(p));
-    let cloud = shown.clouds_in_sight(view.viewport.cells().filter_map(|s| view.to_world(s)), now, sees, |p| knowledge.is_explored(p));
-    for s in view.viewport.cells() {
-        let Some(p) = view.to_world(s) else { continue };
+    let cloud = shown.clouds_in_sight(view.tiles(), now, sees, |p| knowledge.is_explored(p));
+    for p in view.tiles() {
         let mut cell = match (map.tile(p), viewshed.is_some_and(|v| v.can_see(p))) {
             (Some(id), true) => match lighting {
                 Some(l) => look.under(look.seen(id, p, t), l.at(p), p, t),
                 None => look.seen(id, p, t),
             },
-            (Some(id), false) if knowledge.is_explored(p) => look.remembered(id, p),
+            (Some(id), false) if knowledge.is_explored(p) => match knowledge.recalled(p) {
+                Some(thing) => look.recalled(look.remembered(id, p), thing),
+                None => look.remembered(id, p),
+            },
             _ => Cell::default(),
         };
         let here = shown.at(p, now);
@@ -390,14 +542,16 @@ pub fn draw_map(mut terminal: ResMut<Terminal>, scene: Scene) {
             cell.glyph = (b'0' + level) as char;
             cell.fg = Color::WHITE;
         }
-        terminal.set(s.x, s.y, cell);
+        view.set(&mut terminal, p, cell);
     }
     let mut drawn: Vec<(Point, i32)> = Vec::new();
     for (pos, glyph, on) in glyphs {
         if on.map(|m| m.0).unwrap_or(MapId::SURFACE) != here || !viewshed.is_some_and(|v| v.can_see(pos.0)) {
             continue;
         }
-        let Some(s) = view.to_screen(pos.0) else { continue };
+        if view.to_screen(pos.0).is_none() {
+            continue;
+        }
         if let Some(existing) = drawn.iter_mut().find(|(q, _)| *q == pos.0) {
             if existing.1 >= glyph.layer {
                 continue;
@@ -410,7 +564,7 @@ pub fn draw_map(mut terminal: ResMut<Terminal>, scene: Scene) {
             Some(l) => look.shading.light(glyph.fg, l.at(pos.0), pos.0, t),
             None => glyph.fg,
         };
-        terminal.put(s.x, s.y, glyph.ch, fg);
+        view.put(&mut terminal, pos.0, glyph.ch, fg);
     }
 }
 
@@ -440,6 +594,197 @@ mod tests {
         assert_eq!(app.world().get::<Glyph>(dressed).map(|g| g.ch), Some('#'), "a game that dressed its own is not overruled");
     }
 
+    /// The map as drawn for whoever is the player at `start`, with a wall
+    /// two tiles east of it and something standing behind that wall:
+    /// the glyphs drawn at the wall, behind it and on the thing.
+    fn drawn_for(sight: Viewshed) -> [char; 3] {
+        use rl_bevy::components::RevealsMap;
+        let mut app = rl_bevy::plugin::headless_app();
+        app.add_plugins((FovPlugin, rl_bevy::world::StreamingPlugin, MapViewPlugin::new(Rect::new(0, 0, 40, 20))));
+        app.insert_resource(Terminal::new(40, 20, Vec2::ONE));
+        let start = rl_bevy::testing::surface(&mut app);
+        let tiles = rl_grid::TileRegistry::standard();
+        let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
+        let mut look = TileAppearance::new();
+        look.set(wall, Cell::new('#', Color::WHITE));
+        look.set(floor, Cell::new('.', Color::WHITE));
+        app.insert_resource(look);
+        app.world_mut().spawn((Player, Position(start), sight, RevealsMap));
+        app.world_mut().spawn((Actor, Position(start.offset(4, 0)), Glyph { ch: 'g', fg: Color::WHITE, layer: 1 }));
+        app.world_mut().resource_mut::<NextState<rl_bevy::state::EngineState>>().set(rl_bevy::state::EngineState::Playing);
+        app.update();
+        app.update();
+        // A wall the height of the sight, so nothing sees round its ends.
+        for dy in -9..=9 {
+            app.world_mut().resource_mut::<WorldMap>().set_tile(start.offset(2, dy), wall);
+        }
+        app.update();
+        app.update();
+        let view = *app.world().resource::<MapView>();
+        let terminal = app.world().resource::<Terminal>();
+        let at = |dx: i32| {
+            let s = view.to_screen(start.offset(dx, 0)).expect("on screen");
+            terminal.get(s.x, s.y).expect("a cell").glyph
+        };
+        [at(2), at(3), at(4)]
+    }
+
+    /// An onlooker, a player that sees everywhere, is drawn the whole map:
+    /// the same view code, asked by a viewshed no wall stops.
+    #[test]
+    fn the_map_is_drawn_whole_for_a_player_that_sees_everywhere() {
+        assert_eq!(
+            drawn_for(Viewshed::new(8)),
+            ['#', '.', '.'],
+            "an ordinary sight stops at the wall: the ground behind is remembered, and the creature seen standing on it is not"
+        );
+        assert_eq!(drawn_for(Viewshed::everywhere()), ['#', '.', 'g'], "one that sees everywhere is shown what is behind it");
+    }
+
+    /// A player with ordinary sight on open ground, drawn on a terminal,
+    /// the way `drawn_for` draws one: the app, where the player started,
+    /// and the player.
+    fn open_ground() -> (App, Point, Entity) {
+        use rl_bevy::components::RevealsMap;
+        let mut app = rl_bevy::plugin::headless_app();
+        app.add_plugins((FovPlugin, rl_bevy::world::StreamingPlugin, MapViewPlugin::new(Rect::new(0, 0, 60, 30))));
+        app.insert_resource(Terminal::new(60, 30, Vec2::ONE));
+        let start = rl_bevy::testing::surface(&mut app);
+        let tiles = rl_grid::TileRegistry::standard();
+        let mut look = TileAppearance::new();
+        look.set(tiles.expect("wall"), Cell::new('#', Color::WHITE));
+        look.set(tiles.expect("floor"), Cell::new('.', Color::srgb(0.5, 0.5, 0.5)));
+        app.insert_resource(look);
+        let player = app.world_mut().spawn((Actor, Player, Position(start), Viewshed::new(6), RevealsMap)).id();
+        app.world_mut().resource_mut::<NextState<rl_bevy::state::EngineState>>().set(rl_bevy::state::EngineState::Playing);
+        app.update();
+        app.update();
+        (app, start, player)
+    }
+
+    /// Stands the player at `at` and lets sight and the map catch up.
+    fn stand_at(app: &mut App, player: Entity, at: Point) {
+        app.world_mut().get_mut::<Position>(player).expect("a player").0 = at;
+        app.world_mut().get_mut::<Viewshed>(player).expect("eyes").dirty = true;
+        app.update();
+        app.update();
+    }
+
+    /// What the map draws at the world tile `p`.
+    fn drawn_at(app: &App, p: Point) -> Cell {
+        let view = *app.world().resource::<MapView>();
+        view.get(app.world().resource::<Terminal>(), p).expect("on screen")
+    }
+
+    /// Whether the player sees `p` now.
+    fn sees(app: &mut App, p: Point) -> bool {
+        app.world_mut().query_filtered::<&Viewshed, With<Player>>().single(app.world()).expect("a player").can_see(p)
+    }
+
+    /// The bug a playtest found: the stairs vanished from the map the
+    /// moment they left sight, since only tiles were remembered. A thing
+    /// seen lying somewhere is drawn there out of sight, in the colours of
+    /// memory, so it reads as remembered rather than seen.
+    #[test]
+    fn a_still_thing_once_seen_is_drawn_where_it_lay_after_it_leaves_sight() {
+        let (mut app, start, player) = open_ground();
+        let bright = Color::srgb_u8(242, 217, 77);
+        let stairs = start.offset(3, 0);
+        app.world_mut().spawn((Position(stairs), Glyph::new('>', bright).on_layer(1)));
+        app.update();
+        assert_eq!(drawn_at(&app, stairs).glyph, '>', "in sight it is drawn");
+        stand_at(&mut app, player, start.offset(-12, 0));
+        assert!(!sees(&mut app, stairs), "the player has walked out of sight of it");
+        let drawn = drawn_at(&app, stairs);
+        assert_eq!(drawn.glyph, '>', "and it is still drawn where it was seen");
+        let memory = app.world().resource::<TileAppearance>().memory;
+        assert_eq!(drawn.fg, memory.recall(bright), "in the colours of memory");
+    }
+
+    /// Where a creature stood says nothing of where it is, so one seen and
+    /// walked away from leaves the ground it stood on drawn bare.
+    #[test]
+    fn a_creature_seen_is_never_remembered() {
+        let (mut app, start, player) = open_ground();
+        let rat = start.offset(3, 0);
+        app.world_mut().spawn((Actor, Position(rat), Glyph::new('r', Color::WHITE).on_layer(5)));
+        app.update();
+        assert_eq!(drawn_at(&app, rat).glyph, 'r');
+        stand_at(&mut app, player, start.offset(-12, 0));
+        assert_eq!(drawn_at(&app, rat).glyph, '.', "the ground, and nothing on it");
+    }
+
+    /// Memory is what was seen, not what is true: a thing taken away
+    /// behind the player's back is drawn until its tile is seen again, and
+    /// forgotten from then on; a thing put down out of sight on ground the
+    /// player knows is not drawn until it is seen.
+    #[test]
+    fn what_comes_or_goes_out_of_sight_changes_nothing_until_its_tile_is_seen_again() {
+        let (mut app, start, player) = open_ground();
+        let (lying, dropped) = (start.offset(3, 0), start.offset(3, 1));
+        let thing = app.world_mut().spawn((Position(lying), Glyph::new('!', Color::WHITE).on_layer(2))).id();
+        app.update();
+        stand_at(&mut app, player, start.offset(-12, 0));
+        app.world_mut().despawn(thing);
+        app.world_mut().spawn((Position(dropped), Glyph::new('?', Color::WHITE).on_layer(2)));
+        app.update();
+        assert!(!sees(&mut app, lying) && !sees(&mut app, dropped));
+        assert_eq!(drawn_at(&app, lying).glyph, '!', "gone, but not seen to go");
+        assert_eq!(drawn_at(&app, dropped).glyph, '.', "put down, but not seen put down");
+
+        stand_at(&mut app, player, start);
+        assert_eq!((drawn_at(&app, lying).glyph, drawn_at(&app, dropped).glyph), ('.', '?'), "in sight, what is there");
+        stand_at(&mut app, player, start.offset(-12, 0));
+        assert_eq!(drawn_at(&app, lying).glyph, '.', "and what went is forgotten once seen gone");
+        assert_eq!(drawn_at(&app, dropped).glyph, '?', "and what came is remembered once seen");
+    }
+
+    /// Of a prop and a thing lying on it, the one remembered is the one
+    /// drawn: the higher layer.
+    #[test]
+    fn of_two_things_on_a_tile_the_one_drawn_on_top_is_the_one_remembered() {
+        let (mut app, start, player) = open_ground();
+        let p = start.offset(3, 0);
+        app.world_mut().spawn((Position(p), Glyph::new('&', Color::WHITE).on_layer(1)));
+        app.world_mut().spawn((Position(p), Glyph::new('/', Color::WHITE).on_layer(2)));
+        app.update();
+        stand_at(&mut app, player, start.offset(-12, 0));
+        assert_eq!(drawn_at(&app, p).glyph, '/');
+    }
+
+    /// A hidden prop is not seen, so it is not remembered either; once
+    /// spotted it is a prop like any other.
+    #[test]
+    fn a_hidden_prop_is_remembered_only_once_it_is_spotted() {
+        let (mut app, start, player) = open_ground();
+        let p = start.offset(3, 0);
+        let trap = app.world_mut().spawn((Position(p), Glyph::new('^', Color::WHITE).on_layer(1), Hidden { spot: 0 })).id();
+        app.update();
+        stand_at(&mut app, player, start.offset(-12, 0));
+        assert_eq!(drawn_at(&app, p).glyph, '.', "never seen, so never remembered");
+
+        app.world_mut().entity_mut(trap).remove::<Hidden>();
+        stand_at(&mut app, player, start);
+        stand_at(&mut app, player, start.offset(-12, 0));
+        assert_eq!(drawn_at(&app, p).glyph, '^', "spotted, and remembered");
+    }
+
+    /// A tile learned rather than seen, as a game writes in a place the
+    /// player knows by heart, remembers what stands on it as it stands,
+    /// though the player has never been in sight of it.
+    #[test]
+    fn a_tile_learned_unseen_remembers_what_stands_on_it() {
+        let (mut app, start, _) = open_ground();
+        let (far, beside) = (start.offset(15, 0), start.offset(15, 1));
+        app.world_mut().spawn((Position(far), Glyph::new('>', Color::WHITE).on_layer(1)));
+        app.world_mut().spawn((Position(beside), Glyph::new('&', Color::WHITE).on_layer(1)));
+        app.world_mut().resource_mut::<Knowledge>().learn(far);
+        app.update();
+        assert!(!sees(&mut app, far));
+        assert_eq!(drawn_at(&app, far).glyph, '>', "known by heart, and drawn from memory");
+        assert!(!app.world().resource::<Knowledge>().is_explored(beside), "and nothing more than was learned");
+    }
+
     #[test]
     fn view_maps_between_world_and_screen() {
         let mut v = MapView::new(Rect::new(10, 2, 40, 20));
@@ -449,6 +794,42 @@ mod tests {
         assert_eq!(v.to_world(Point::new(10, 2)), Some(Point::new(80, 90)));
         assert_eq!(v.to_screen(Point::new(0, 0)), None);
         assert_eq!(v.to_world(Point::new(0, 0)), None);
+    }
+
+    /// A view two cells to a tile: a tile is found at its first cell, any
+    /// of its cells is that tile, and a write covers both.
+    #[test]
+    fn a_wide_view_maps_a_tile_to_its_cells_and_any_of_them_back() {
+        let mut v = MapView::new(Rect::new(10, 2, 41, 20)).across(2);
+        v.origin = Point::new(100, 50);
+        assert_eq!((v.tile_width(), v.tiles_wide()), (2, 20), "forty-one cells hold twenty tiles and one cell over");
+        assert_eq!(v.to_screen(Point::new(100, 50)), Some(Point::new(10, 2)));
+        assert_eq!(v.to_screen(Point::new(103, 51)), Some(Point::new(16, 3)), "three tiles along is six cells along");
+        assert_eq!(v.to_screen(Point::new(120, 50)), None, "the twenty-first tile is off the view");
+        assert_eq!(v.to_world(Point::new(16, 3)), Some(Point::new(103, 51)));
+        assert_eq!(v.to_world(Point::new(17, 3)), Some(Point::new(103, 51)), "its second cell is the same tile");
+        assert_eq!(v.to_world(Point::new(50, 3)), None, "the cell left over is no tile");
+        assert_eq!(v.cells(Point::new(103, 51)).collect::<Vec<_>>(), vec![Point::new(16, 3), Point::new(17, 3)]);
+        assert_eq!(v.tiles().count(), 20 * 20);
+        v.center_on(Point::new(200, 200));
+        assert_eq!(v.origin, Point::new(190, 190), "centred by tiles, not by cells");
+        v.clamp_to(Rect::new(0, 0, 10, 10));
+        assert_eq!(v.origin, Point::new(-5, -5), "a map of ten tiles is centred in a view of twenty");
+
+        let mut terminal = Terminal::new(60, 30, Vec2::ONE);
+        v.origin = Point::new(100, 50);
+        v.set(&mut terminal, Point::new(103, 51), Cell::new('@', Color::WHITE).on(Color::srgb(0.2, 0.2, 0.2)));
+        assert_eq!(terminal.get(16, 3).map(|c| c.glyph), Some('@'));
+        assert_eq!(terminal.get(17, 3).map(|c| (c.glyph, c.bg)), Some((' ', Color::srgb(0.2, 0.2, 0.2))), "the glyph once, the colours across");
+        assert_eq!((terminal.span(16, 3), terminal.span(17, 3)), (Some(2), Some(0)), "one glyph drawn across the tile's two cells");
+        v.wash(&mut terminal, Point::new(103, 51), Color::srgb(1.0, 0.0, 0.0));
+        assert_eq!(terminal.get(16, 3).map(|c| (c.glyph, c.bg)), Some(('@', Color::srgb(1.0, 0.0, 0.0))), "a wash keeps the glyph");
+        assert_eq!(terminal.get(17, 3).map(|c| c.bg), Some(Color::srgb(1.0, 0.0, 0.0)), "and covers the whole tile");
+        assert_eq!(terminal.span(16, 3), Some(2), "and keeps it one tile");
+        v.put(&mut terminal, Point::new(103, 51), 'g', Color::WHITE);
+        assert_eq!((v.get(&terminal, Point::new(103, 51)).map(|c| c.glyph), terminal.span(16, 3)), (Some('g'), Some(2)), "what stands on it, across it");
+        v.put(&mut terminal, Point::new(103, 51), '@', Color::WHITE);
+        assert_eq!(v.get(&terminal, Point::new(103, 51)).map(|c| c.glyph), Some('@'));
     }
 
     #[test]

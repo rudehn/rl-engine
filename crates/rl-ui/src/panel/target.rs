@@ -9,7 +9,8 @@
 //!
 //! The box is where the words go: what is aimed, the range against how far
 //! it reaches, the target, and the chance to hit with every line the game's
-//! hit model gave for it, or the reason the aim is refused in its place. It
+//! hit model gave for it, or the reason the aim is refused in its place,
+//! then whatever the game added about the aim in its own tone. It
 //! is drawn only while the cursor is up, so a game sets it over the bottom
 //! of its rail, where the eye already is when choosing what to aim at, and
 //! the rows above it stay readable.
@@ -162,6 +163,10 @@ pub fn draw_target(
         (None, false, _) => view.what.clone(),
     };
     line(&mut terminal, &name, Tones::TITLE);
+    // A thing not yet known is said to be, where its reach would be.
+    if view.unknown {
+        line(&mut terminal, "unknown", Tones::MUTED);
+    }
     if let Some(span) = view.span {
         line(&mut terminal, &format!("Range: {} / {}", span.distance, span.max), Tones::TEXT);
     }
@@ -173,7 +178,10 @@ pub fn draw_target(
         [_] => ("one of them".to_string(), Tones::TEXT),
         many => (format!("{} of them", many.len()), Tones::TEXT),
     };
-    if y < inner.bottom() {
+    // A thing not yet known used at somewhere names no target, not even
+    // nothing, since who it catches is its own to tell.
+    let names_target = !(view.unknown && view.using.is_some());
+    if names_target && y < inner.bottom() {
         // Both halves clipped to the box, so a narrow one keeps its border.
         let prefix = clip("Target: ", width);
         terminal.print_on(inner.x, y, &prefix, palette.get(Tones::TEXT), bg);
@@ -203,14 +211,15 @@ pub fn draw_target(
         }
         (None, None) => {}
     }
+    // What the game added about the aim, under all of it, in its own tone.
+    for facet in &view.facets {
+        line(&mut terminal, &facet.text, facet.tone);
+    }
 }
 
 /// Repaints one cell's background, leaving whatever glyph is on it.
 fn tint(terminal: &mut Terminal, map: &MapView, cell: Point, bg: Color) {
-    let Some(screen) = map.to_screen(cell) else { return };
-    let Some(mut drawn) = terminal.get(screen.x, screen.y) else { return };
-    drawn.bg = bg;
-    terminal.set(screen.x, screen.y, drawn);
+    map.wash(terminal, cell, bg);
 }
 
 #[cfg(test)]
@@ -288,6 +297,41 @@ mod tests {
         assert!(stage.row(9).contains("[tab] next"), "the hints are in the bottom border: {:?}", stage.row(9));
     }
 
+    /// A thing used at somewhere is boxed as an ability is: by its own name,
+    /// how far the cursor is against how far its aim reaches, and who it
+    /// would land on, with no chance, since a use is never rolled; one not
+    /// yet known by its name and that it is unknown, and nothing more.
+    #[test]
+    fn the_box_names_a_thing_used_at_somewhere_how_far_it_reaches_and_who_it_lands_on() {
+        let mut stage = staged();
+        let specs: Vec<rl_rules::TriggerSpec> = rl_rules::Names::new()
+            .load_list(r#"[(on: "use", targeting: (mode: Bolt(range: 6)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "3"))])]"#)
+            .expect("the trigger parses");
+        let triggers = {
+            let world = stage.app.world();
+            let names = world.resource::<rl_bevy::Registries>().names();
+            rl_bevy::Triggers::build(&specs, &[], world.resource::<rl_bevy::Moments>(), world.resource::<rl_bevy::EffectKinds>(), &names).expect("it builds")
+        };
+        let user = stage.player;
+        let rod = stage.app.world_mut().spawn((rl_bevy::Item, Name::new("rod"), triggers)).id();
+        stage.app.world_mut().get_mut::<rl_bevy::Inventory>(user).expect("a bag").items.push(rod);
+        stage.actor("them", 't', 2, 0);
+        stage.tick();
+
+        stage.app.world_mut().write_message(crate::view::target::AimUse { user, item: rod });
+        stage.tick();
+        assert_eq!(boxed(&stage, 10)[..4], ["rod", "Range: 2 / 6", "Target: them", ""]);
+
+        // The same rod not yet known: named, said to be unknown where its
+        // reach was, and naming nobody it would land on, since who it
+        // catches tells what it is.
+        stage.press(KeyCode::Escape);
+        stage.app.world_mut().entity_mut(rod).insert(rl_bevy::Unknown);
+        stage.app.world_mut().write_message(crate::view::target::AimUse { user, item: rod });
+        stage.tick();
+        assert_eq!(boxed(&stage, 10)[..3], ["rod", "unknown", ""]);
+    }
+
     /// An aim past where the bolt reaches is refused, and the part of the
     /// line the bolt does not reach is painted as out of reach.
     #[test]
@@ -327,6 +371,25 @@ mod tests {
         let palette = stage.app.world().resource::<Palette>().clone();
         assert_eq!(stage.app.world().resource::<Terminal>().get(1, 4).map(|c| c.fg), Some(palette.get(Tones::GOOD)), "ninety is a good bet");
         assert_eq!(stage.app.world().resource::<Terminal>().get(9, 3).map(|c| c.fg), Some(palette.get(Tones::BAD)), "a foe's name in the hostile tone");
+    }
+
+    /// What a game adds about an aim in `Annotate` is printed under the
+    /// chance and its lines, in its own tone, and is gone with the aim.
+    #[test]
+    fn what_a_game_adds_about_an_aim_is_printed_under_the_chance() {
+        let mut stage = shooter(10);
+        let annotate = |mut view: ResMut<TargetView>, mut facets: ResMut<crate::Facets>| {
+            if view.aiming() {
+                view.facets.push(facets.facet("aim", "a word of the game's").toned(Tones::NOTICE));
+            }
+        };
+        stage.app.add_systems(Update, annotate.in_set(crate::ViewSet::Annotate));
+        let user = stage.player;
+        stage.app.world_mut().write_message(AimFire { user });
+        stage.tick();
+        assert_eq!(boxed(&stage, 10)[..6], ["fire", "Range: 5 / 12", "Target: droid", "Chance to hit: 90%", "  -10 for range", "a word of the game's"]);
+        let palette = stage.app.world().resource::<Palette>().clone();
+        assert_eq!(stage.app.world().resource::<Terminal>().get(1, 6).map(|c| c.fg), Some(palette.get(Tones::NOTICE)), "in its own tone");
     }
 
     #[test]

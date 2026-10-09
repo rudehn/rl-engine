@@ -29,7 +29,7 @@
 use bevy::color::Mix;
 use bevy::prelude::*;
 use rl_core::{Direction, Point, Rect};
-use rl_render::{Cell, Terminal};
+use rl_render::Terminal;
 
 use crate::controls::Repeats;
 use crate::focus::{Focus, Sighting, cycle};
@@ -129,20 +129,15 @@ impl CursorStyle {
 pub fn mark(terminal: &mut Terminal, view: &rl_render::MapView, cell: Point, style: CursorStyle, palette: &Palette, t: f32) {
     let color = style.color(palette, t);
     match style {
-        CursorStyle::Glow { .. } => {
-            let Some(screen) = view.to_screen(cell) else { return };
-            let Some(mut drawn) = terminal.get(screen.x, screen.y) else { return };
-            drawn.bg = color;
-            terminal.set(screen.x, screen.y, drawn);
-        }
+        CursorStyle::Glow { .. } => view.wash(terminal, cell, color),
         CursorStyle::Ticks { marks, .. } => {
             // The cell itself is left alone: a cursor that covered it would
-            // hide what it points at.
+            // hide what it points at. Each tick stands on its tile as the
+            // tile's own glyph would, so on a map of wide tiles it is
+            // centred on it and the four stand as far off on every side.
             let around = [(-1, 0), (1, 0), (0, -1), (0, 1)];
             for ((dx, dy), glyph) in around.into_iter().zip(marks) {
-                let Some(screen) = view.to_screen(cell.offset(dx, dy)) else { continue };
-                let under = terminal.get(screen.x, screen.y).unwrap_or_default();
-                terminal.set(screen.x, screen.y, Cell::new(glyph, color).on(under.bg));
+                view.put(terminal, cell.offset(dx, dy), glyph, color);
             }
         }
     }

@@ -24,6 +24,12 @@
 //! way a throw does; a [`MeleeAttack`] with one bursts on its target. One
 //! with none is instant and unseen, which is every attack a game has not
 //! given a look.
+//!
+//! An attack with an [`AttackShape`] strikes the foes it reaches beyond
+//! its target as well, each with a roll of its own, as one swing. A blow
+//! on a target that has not noticed its attacker lands harder, by the
+//! percent [`CombatRules::unaware`] or the blow names, and only where
+//! [`stealth`](crate::stealth) runs to say who has noticed whom.
 
 use bevy::prelude::*;
 use rand::rngs::StdRng;
@@ -107,16 +113,25 @@ pub struct MeleeAttack {
     /// glyph is not drawn. `None` shows nothing, which is how a plain blow
     /// reads: the log says it, and the target's health bar moves.
     pub look: Option<Look>,
+    /// Who else a blow strikes besides its target. `None` strikes the
+    /// target alone, which is every blow a game has not given a shape.
+    pub shape: Option<AttackShape>,
+    /// What a blow on a target that has not noticed its wielder is worth,
+    /// in percent of its roll, in place of [`CombatRules::unaware`]: a
+    /// quick blade's five times over the house's three. `None` is the
+    /// house's.
+    pub unaware: Option<u32>,
 }
 
 impl MeleeAttack {
-    /// A blow of `kind` rolling `dice`, costing an ordinary turn and
-    /// showing nothing.
+    /// A blow of `kind` rolling `dice`, costing an ordinary turn, showing
+    /// nothing, striking its target alone and the unaware as the house
+    /// says.
     ///
     /// A constructor rather than a literal, so a field that is only ever
     /// wanted by some games is added without touching every call site.
     pub const fn new(kind: DamageKindId, dice: DiceRoll) -> Self {
-        Self { kind, dice, cost: None, look: None }
+        Self { kind, dice, cost: None, look: None, shape: None, unaware: None }
     }
 
     /// One blow costs `cost` hundredths of a step.
@@ -128,6 +143,20 @@ impl MeleeAttack {
     /// A blow bursts on its target in `look`'s colour.
     pub const fn looking(mut self, look: Look) -> Self {
         self.look = Some(look);
+        self
+    }
+
+    /// A blow strikes whoever else `shape` reaches as well as its target.
+    pub const fn shaped(mut self, shape: AttackShape) -> Self {
+        self.shape = Some(shape);
+        self
+    }
+
+    /// A blow on a target that has not noticed its wielder lands at
+    /// `percent` of its roll, whatever the house's percent: under a
+    /// hundred too, for a blow that gains nothing by surprise.
+    pub const fn unaware(mut self, percent: u32) -> Self {
+        self.unaware = Some(percent);
         self
     }
 }
@@ -156,13 +185,20 @@ pub struct RangedAttack {
     /// to fly and, while something watches, lands when it arrives rather
     /// than when it is fired. `None` flies nothing and lands at once.
     pub look: Option<Look>,
+    /// Who else a shot strikes besides its target. `None` strikes the
+    /// target alone.
+    ///
+    /// No percent for the unaware, as [`MeleeAttack`] has: a shot is never
+    /// multiplied for surprise, for the reason [`CombatRules::unaware`]
+    /// gives.
+    pub shape: Option<AttackShape>,
 }
 
 impl RangedAttack {
     /// A shot of `kind` rolling `dice` out to `range`, costing an ordinary
-    /// turn and flying nothing.
+    /// turn, flying nothing and striking its target alone.
     pub const fn new(kind: DamageKindId, dice: DiceRoll, range: i32) -> Self {
-        Self { kind, dice, range, effective: None, cost: None, look: None }
+        Self { kind, dice, range, effective: None, cost: None, look: None, shape: None }
     }
 
     /// One shot costs `cost` hundredths of a step.
@@ -183,6 +219,12 @@ impl RangedAttack {
         self
     }
 
+    /// A shot strikes whoever else `shape` reaches as well as its target.
+    pub const fn shaped(mut self, shape: AttackShape) -> Self {
+        self.shape = Some(shape);
+        self
+    }
+
     /// The furthest cell with no range penalty: the one set, or a third of
     /// the range.
     pub const fn effective_range(&self) -> i32 {
@@ -191,6 +233,34 @@ impl RangedAttack {
             None => self.range / 3,
         }
     }
+}
+
+/// Who else an attack strikes besides the one it was made at.
+///
+/// Every one it reaches is rolled for on its own, to land and for damage,
+/// and the whole is one swing: [`Struck`] is written once and the weapon
+/// fires once, so whatever counts swings, heat or ammunition, counts one,
+/// while the weapon's `hit` triggers land on each one struck, where it
+/// stands. It reaches foes only, those the attacker is hostile to by the
+/// faction matrix, so a swing beside an ally or a bystander passes over
+/// them; the target is struck whoever it is, as an attack with no shape
+/// strikes it.
+///
+/// Read from RON as `Sweep` or `Pierce(1)`, so a game's content can name
+/// one in a weapon's row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+pub enum AttackShape {
+    /// Every foe beside the attacker, in all eight directions: a swing
+    /// round the wielder. On a shot it is the same ring, round the shooter
+    /// and not where the shot lands, which is a blow's shape lent to a
+    /// shot; a burst where a shot lands is a `hit` trigger with an area.
+    Sweep,
+    /// The target and every foe in the next `n` cells beyond it, on the
+    /// line from the attacker through the target: a thrust that runs on
+    /// through. A wall or a shut door stops it, as either stops a shot, and
+    /// a shot's never runs past the shot's range; nobody standing in it
+    /// does, foe or not, since running on through is the point.
+    Pierce(u32),
 }
 
 /// Extra rolls every hit carries, each its own [`DamageEvent`]: a flaming
@@ -244,6 +314,11 @@ pub struct CombatRules {
     /// The stat whose value is added, in percent, to the hundred of every
     /// [`Heal`] an actor is given, if any.
     pub mending: Option<StatId>,
+    /// What a blow on a target that has not noticed its attacker is worth,
+    /// in percent of its roll, unless the blow names its own
+    /// ([`MeleeAttack::unaware`]). `None` strikes the unaware as hard as
+    /// anyone. See [`unaware`](Self::unaware) for who is unaware.
+    pub unaware: Option<u32>,
     /// Whether the player's death ends the run, which it does unless the
     /// game says otherwise: one that revives, or plays on as a ghost, keeps
     /// the ending for itself.
@@ -252,10 +327,10 @@ pub struct CombatRules {
 
 impl CombatRules {
     /// Every side in `sides` allied with itself and neutral to every other,
-    /// until a pair is named, no stat read by a blow, and the player's death
-    /// the end of the run.
+    /// until a pair is named, no stat read by a blow, no blow harder for
+    /// surprise, and the player's death the end of the run.
     pub fn new(sides: &Registry<FactionDef>) -> Self {
-        Self { factions: Factions::new(sides), armor: None, attack: None, accuracy: None, evasion: None, mending: None, death_ends_run: true }
+        Self { factions: Factions::new(sides), armor: None, attack: None, accuracy: None, evasion: None, mending: None, unaware: None, death_ends_run: true }
     }
 
     /// The player's death does not end the run; the game says when it ends.
@@ -298,6 +373,27 @@ impl CombatRules {
     /// either.
     pub fn mending_stat(mut self, stat: StatId) -> Self {
         self.mending = Some(stat);
+        self
+    }
+
+    /// A blow on a target that has not noticed its attacker lands at
+    /// `percent` of its roll, every roll it carries: 300 is three times.
+    /// A blow that names its own percent lands at that instead.
+    ///
+    /// Who is unaware is stealth's to say, through
+    /// [`Watchers::unaware`](crate::stealth::Watchers::unaware): while the
+    /// [`StealthPlugin`](crate::stealth::StealthPlugin) runs, a target
+    /// keeping an [`Aware`](crate::stealth::Aware) that holds nothing of an
+    /// attacker it is at odds with and that carries
+    /// [`Stealth`](crate::stealth::Stealth). Without the plugin nobody is,
+    /// and this does nothing. What a `hit` trigger does is an effect, and
+    /// lands as it would on anyone.
+    ///
+    /// Blows only. A shot on the unaware lands as it would on anyone,
+    /// because what the surprise pays for is the walk up to the target
+    /// unnoticed, and a shot from across the room never takes it.
+    pub fn unaware(mut self, percent: u32) -> Self {
+        self.unaware = Some(percent);
         self
     }
 
@@ -378,7 +474,8 @@ impl DamageEvent {
 }
 
 /// That an attack found something to strike with, and what: written once
-/// per attack that lands a blow or fires a shot, before its damage.
+/// per attack that lands a blow or fires a shot, before its damage, and
+/// once however many a shaped one strikes, since it is one swing.
 ///
 /// A game hangs what a weapon does to itself on this: heat, ammunition,
 /// wear. It names the worn item rather than leaving the game to work out
@@ -401,7 +498,7 @@ pub struct Struck {
 ///
 /// Closed, like the narrator's own `Phrase` and for the same reason: it
 /// enumerates the ways the engine itself delivers damage, and a game that
-/// invents a fifth is writing its own words for it anyway. What reads it is
+/// invents another is writing its own words for it anyway. What reads it is
 /// narration; nothing in the damage pipeline branches on it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Reach {
@@ -411,9 +508,17 @@ pub enum Reach {
     Shot,
     /// Something thrown.
     Thrown,
-    /// Anything that did not travel as a weapon: an ability, a status
-    /// ticking, a fire. The default, because most damage is not a weapon
-    /// and a subsystem that says nothing means this.
+    /// An ability's effect: a bolt, a burst. Which one, so a narrator says
+    /// what did it rather than call it a blow, since it was none.
+    Ability(rl_rules::AbilityId),
+    /// A thing's trigger, the thing being other than whoever set it off: a
+    /// rod zapped, a flask broken where it was thrown, an edge's bite. The
+    /// thing, for the same reason. A prop's own trap is its own user, and
+    /// is [`Effect`](Self::Effect).
+    Thing(Entity),
+    /// Anything else that did not travel as a weapon: a status ticking, a
+    /// fire, a trap. The default, because most damage is not a weapon and a
+    /// subsystem that says nothing means this.
     #[default]
     Effect,
 }
@@ -524,6 +629,27 @@ type Gear = (Option<&'static Armor>, Option<&'static MeleeAttack>, Option<&'stat
 /// yields them.
 type WornRef<'a> = (Entity, Option<&'a Armor>, Option<&'a MeleeAttack>, Option<&'a RangedAttack>, Option<&'a Strikes>);
 
+/// An attack a worn item cannot make right now, put by until whatever
+/// benched it lifts the ban.
+///
+/// Taking the attack off the item entirely, rather than leaving it in
+/// place behind some other flag, is what makes [`Loadout`] fall through to
+/// the next worn item with no knowledge of why one went quiet: a
+/// dual-wielded pair alternates because the benched one simply has
+/// nothing to strike or shoot with. [`crate::ammo`] is the one reason the
+/// engine itself knows (a shot with nothing left to spend); a game may
+/// have reasons of its own, a weapon that runs hot among them, and reuses
+/// this same holder rather than inventing a second one, since both answer
+/// the same question a worn item's missing attack always asks: put by, or
+/// simply never had one.
+#[derive(Component, Debug, Clone, Copy)]
+pub enum Stowed {
+    /// A blow, put by.
+    Melee(MeleeAttack),
+    /// A shot, put by.
+    Ranged(RangedAttack),
+}
+
 /// What an actor fights with, summed at the moment it matters.
 ///
 /// Three layers, added together: the actor's own [`Armor`], [`Resists`],
@@ -550,6 +676,7 @@ pub struct Loadout<'w, 's> {
     equipped: Query<'w, 's, &'static Equipped>,
     resists: Query<'w, 's, &'static Resists>,
     spent: Query<'w, 's, &'static crate::consumable::Consumable>,
+    dry: Query<'w, 's, (), With<crate::ammo::Dry>>,
     stats: Query<'w, 's, &'static StatBlock>,
     rules: Option<Res<'w, CombatRules>>,
     registries: Option<Res<'w, Registries>>,
@@ -571,6 +698,19 @@ impl Loadout<'_, '_> {
     /// resists still count: it is empty, not gone.
     fn charged(&self, item: Entity) -> bool {
         !self.spent.get(item).is_ok_and(|c| c.is_empty())
+    }
+
+    /// Whether `item` has gone dry: an ammunition-fed weapon
+    /// [`ammo::sync_ammo`](crate::ammo::sync_ammo) most recently found
+    /// nothing in its wielder's bag to feed it, the same "empty, not gone"
+    /// standing as `charged`, above. [`melee_with`](Self::melee_with)
+    /// and [`ranged_with`](Self::ranged_with) already skip it, because its
+    /// attack came off with the ammunition and was put by as [`Stowed`];
+    /// this is the one place the engine answers "can this worn item act at
+    /// all right now" by name, rather than leaving every reader to
+    /// rediscover it from what is merely absent.
+    pub fn dry(&self, item: Entity) -> bool {
+        self.dry.get(item).is_ok()
     }
 
     /// The value of the stat `pick` names on `who`, or zero when the game
@@ -714,6 +854,15 @@ pub struct Arena<'w, 's> {
     marks: crate::accuracy::Marksmanship<'w, 's>,
     /// Where a rolled attack that missed is reported.
     missed: MessageWriter<'w, crate::accuracy::Missed>,
+    /// Whoever a shape could reach: alive, with health to lose.
+    alive: Query<'w, 's, (), (With<Health>, Without<Dead>)>,
+    /// How each stands to the attacker, by the rule an ability's footprint
+    /// asks, so a shape and a footprint never disagree about who is a foe.
+    sides: crate::ability::Bystanders<'w, 's>,
+    /// What a blow on the unaware is worth, unless the blow says.
+    rules: Option<Res<'w, CombatRules>>,
+    /// Who has noticed whom, for a blow on the unaware.
+    watchers: crate::stealth::Watchers<'w, 's>,
 }
 
 /// What an attack is seen as, and the shots in the air while it is.
@@ -725,7 +874,8 @@ pub struct Shown<'w> {
 }
 
 /// A shot fired and not yet arrived: whom it is at, and every hit it
-/// carries, the main one first, rolled when it was fired.
+/// carries, the main one first, rolled when it was fired. A shot with a
+/// shape is one of these for each it strikes.
 ///
 /// Rolled at the trigger rather than on arrival, so the combat stream
 /// draws in the same order whether or not anything watches, and a run
@@ -760,6 +910,10 @@ struct Weapon {
     dice: DiceRoll,
     cost: Option<u32>,
     look: Option<Look>,
+    shape: Option<AttackShape>,
+    /// What a blow on the unaware is worth, in percent: the blow's own or
+    /// the house's, and never anything for a shot.
+    unaware: Option<u32>,
 }
 
 /// Turns attack intents into damage events: a melee strike on an
@@ -779,6 +933,14 @@ struct Weapon {
 /// way, since what a weapon does to itself happens at the trigger, not
 /// at the target.
 ///
+/// An attack with an [`AttackShape`] strikes its target and every foe the
+/// shape reaches, the target rolled for first and the rest in the shape's
+/// order, so an attack with none draws from the combat stream exactly what
+/// it always did. It is still one swing: one [`Struck`], one `fire`
+/// moment, one flight. A blow on a target that has not noticed its
+/// attacker lands at the percent [`CombatRules::unaware`] or the blow
+/// names, decided as it is rolled, before the blow wakes it.
+///
 /// One turn, one strike: an attack by an actor that already acted this
 /// pass finds the turn spent, whatever spent it.
 pub fn resolve_attacks(
@@ -789,8 +951,9 @@ pub fn resolve_attacks(
     mut arena: Arena,
     shown: Shown,
 ) {
-    let Arena { map, occupancy, attackers, targets, loadout, struck, fired, carried, marks, missed } = &mut arena;
+    let Arena { map, occupancy, attackers, targets, loadout, struck, fired, carried, marks, missed, alive, sides, rules, watchers } = &mut arena;
     let Shown { mut cues, mut hold, mut airborne } = shown;
+    let house = rules.as_deref().and_then(|r| r.unaware);
     for intent in intents.read() {
         let (actor, target) = (intent.actor, intent.action.0);
         let Ok(pos) = attackers.get(actor) else { continue };
@@ -809,11 +972,20 @@ pub fn resolve_attacks(
             loadout.ranged_with(actor).filter(|(_, r)| line_of_fire(map, occupancy, pos.0, target_pos.0, r.range))
         };
         let weapon = if geometry::is_adjacent(pos.0, target_pos.0) {
-            loadout.melee_with(actor).map(|(from, m)| Weapon { from, ranged: false, kind: m.kind, dice: m.dice, cost: m.cost, look: m.look })
+            loadout.melee_with(actor).map(|(from, m)| Weapon {
+                from,
+                ranged: false,
+                kind: m.kind,
+                dice: m.dice,
+                cost: m.cost,
+                look: m.look,
+                shape: m.shape,
+                unaware: m.unaware.or(house),
+            })
         } else {
-            gun.map(|(from, r)| Weapon { from, ranged: true, kind: r.kind, dice: r.dice, cost: r.cost, look: r.look })
+            gun.map(|(from, r)| Weapon { from, ranged: true, kind: r.kind, dice: r.dice, cost: r.cost, look: r.look, shape: r.shape, unaware: None })
         };
-        let Some(Weapon { from, ranged, kind, dice, cost, look }) = weapon else {
+        let Some(Weapon { from, ranged, kind, dice, cost, look, shape, unaware }) = weapon else {
             resolution.done(actor, rl_core::turn::BASE_ACTION_COST);
             continue;
         };
@@ -831,34 +1003,102 @@ pub fn resolve_attacks(
             Some((_, gun)) => crate::accuracy::Attempt::Shot(gun),
             None => crate::accuracy::Attempt::Blow,
         };
-        let wide = marks.odds(actor, target, attempt).is_some_and(|odds| !odds.roll(&mut **rng));
-        let hits = if wide {
-            Vec::new()
-        } else {
-            // Floored where it is rolled: a blow that rolls below zero has
-            // missed, and the pipeline would read a negative one as a heal.
-            let mut hits = vec![Hit::by(actor, kind, dice.roll_at_least(&mut **rng, 0))];
-            hits.extend(loadout.strikes(actor).into_iter().map(|(kind, dice)| Hit::by(actor, kind, dice.roll_at_least(&mut **rng, 0))));
-            hits
-        };
+        let mut struck_at = vec![(target, target_pos.0)];
+        if let Some(shape) = shape {
+            let foe = |other: Entity| other != actor && alive.contains(other) && sides.relation(actor, other) == Some(Relation::Hostile);
+            struck_at.extend(reached(shape, pos.0, (target, target_pos.0), gun.map(|(_, r)| r.range), map, occupancy, foe));
+        }
+        let strikes = loadout.strikes(actor);
         let carried = from.and_then(|item| carried.get(item).ok()).filter(|t| t.on(crate::effects::Moments::HIT).next().is_some()).cloned();
         let reach = if ranged { Reach::Shot } else { Reach::Melee };
-        let shot = ShotLanding { target, attacker: actor, with: from, carried, reach, hits, missed: wide };
+        let mut landings = Vec::with_capacity(struck_at.len());
+        for &(foe, at) in &struck_at {
+            let wide = marks.odds(actor, foe, attempt).is_some_and(|odds| !odds.roll(&mut **rng));
+            // Read as the blow is rolled. The blow is what wakes the one it
+            // lands on, and only once the turn's consequences are read, in
+            // `TurnSet::React`, so every foe a sweep catches unaware is
+            // struck as one.
+            let worth = unaware.filter(|_| watchers.unaware(foe, actor)).unwrap_or(100);
+            let mut hits = Vec::new();
+            if !wide {
+                // Floored where it is rolled: a blow that rolls below zero
+                // has missed, and the pipeline would read a negative one as
+                // a heal.
+                hits.push(Hit::by(actor, kind, dice.roll_at_least(&mut **rng, 0)));
+                hits.extend(strikes.iter().map(|(kind, dice)| Hit::by(actor, *kind, dice.roll_at_least(&mut **rng, 0))));
+                for hit in &mut hits {
+                    hit.amount = (i64::from(hit.amount) * i64::from(worth) / 100).try_into().unwrap_or(i32::MAX);
+                }
+            }
+            landings.push((ShotLanding { target: foe, attacker: actor, with: from, carried: carried.clone(), reach, hits, missed: wide }, at));
+        }
         match (look, ranged) {
             (Some(look), true) => {
-                let to = Anchor::on(target, target_pos.0);
-                cues.write(Cued { actor, cue: Cue::Flight { from: Anchor::on(actor, pos.0), to, look: LookOf::Given(look) } });
-                let Some(shot) = airborne.launched(&mut hold, shot) else { continue };
-                land(shot, target_pos.0, &mut damage, fired, missed);
+                // One flight, to the farthest a pierce runs on to; a sweep's
+                // others stand round the shooter, and it flies to the target.
+                let (to, to_at) = match shape {
+                    Some(AttackShape::Pierce(_)) => struck_at.last().copied().unwrap_or((target, target_pos.0)),
+                    _ => (target, target_pos.0),
+                };
+                cues.write(Cued { actor, cue: Cue::Flight { from: Anchor::on(actor, pos.0), to: Anchor::on(to, to_at), look: LookOf::Given(look) } });
+                for (shot, at) in landings {
+                    if let Some(shot) = airborne.launched(&mut hold, shot) {
+                        land(shot, at, &mut damage, fired, missed);
+                    }
+                }
                 continue;
             }
             (Some(look), false) => {
-                cues.write(Cued { actor, cue: Cue::Burst { on: vec![Anchor::on(target, target_pos.0)], look: LookOf::Given(look), from: None } });
+                let on = struck_at.iter().map(|&(who, at)| Anchor::on(who, at)).collect();
+                cues.write(Cued { actor, cue: Cue::Burst { on, look: LookOf::Given(look), from: None } });
             }
             (None, _) => {}
         }
-        land(shot, target_pos.0, &mut damage, fired, missed);
+        for (shot, at) in landings {
+            land(shot, at, &mut damage, fired, missed);
+        }
     }
+}
+
+/// Everyone besides the target that `shape` reaches from `from`, with
+/// where each stands, in the order they are rolled for: clockwise from
+/// north round the attacker for a sweep, outward along the line for a
+/// pierce. Whoever `foe` refuses is passed over, and does not stop a
+/// pierce either.
+fn reached(
+    shape: AttackShape,
+    from: Point,
+    (target, to): (Entity, Point),
+    range: Option<i32>,
+    map: &WorldMap,
+    occupancy: &Occupancy,
+    foe: impl Fn(Entity) -> bool,
+) -> Vec<(Entity, Point)> {
+    let cells: Vec<Point> = match shape {
+        AttackShape::Sweep => rl_core::Direction::ALL.iter().map(|d| from + d.offset()).collect(),
+        AttackShape::Pierce(n) => beyond(from, to, n, range, map),
+    };
+    cells.into_iter().flat_map(|cell| occupancy.at(cell).iter().map(move |who| (*who, cell))).filter(|&(who, _)| who != target && foe(who)).collect()
+}
+
+/// The cells up to `n` past `to` on the line from `from` through it, short
+/// of the first that stops a shot and, for a shot, of its `range`.
+///
+/// The line is the one a beam through `to` draws, so it passes through the
+/// target exactly and runs on as a shot aimed there would. Never past the
+/// edge of what is loaded, which also keeps an enormous `n` from
+/// overflowing the line's far end.
+fn beyond(from: Point, to: Point, n: u32, range: Option<i32>, map: &WorldMap) -> Vec<Point> {
+    let bounds = map.window_tiles();
+    let near = geometry::chebyshev(from, to);
+    let far = near + i32::try_from(n).unwrap_or(i32::MAX).min(bounds.width.max(bounds.height));
+    let far = range.map_or(far, |range| far.min(range));
+    if far <= near {
+        return Vec::new();
+    }
+    let walls = |p: Point| map.blocks_projectiles(p);
+    let line = rl_grid::footprint(rl_grid::TargetMode::Beam { range: far }, from, to, bounds, walls, |_| false);
+    line.path.into_iter().skip_while(|p| *p != to).skip(1).take_while(|p| !walls(*p)).collect()
 }
 
 /// What a shot landing writes: its hits, the moment it struck, and a
@@ -1260,14 +1500,14 @@ mod tests {
         let kind = DamageKindId::from_raw(0);
         let look = rl_rules::ability::Look { glyph: '*', color: rl_grid::Rgb::new(255, 80, 40) };
         let blow = MeleeAttack::new(kind, DiceRoll::flat(2));
-        assert_eq!((blow.kind, blow.dice, blow.cost, blow.look), (kind, DiceRoll::flat(2), None, None));
-        let blow = blow.costing(70).looking(look);
-        assert_eq!((blow.cost, blow.look), (Some(70), Some(look)));
+        assert_eq!((blow.kind, blow.dice, blow.cost, blow.look, blow.shape, blow.unaware), (kind, DiceRoll::flat(2), None, None, None, None));
+        let blow = blow.costing(70).looking(look).shaped(AttackShape::Sweep).unaware(500);
+        assert_eq!((blow.cost, blow.look, blow.shape, blow.unaware), (Some(70), Some(look), Some(AttackShape::Sweep), Some(500)));
 
         let shot = RangedAttack::new(kind, DiceRoll::flat(3), 6);
-        assert_eq!((shot.kind, shot.dice, shot.range, shot.cost, shot.look), (kind, DiceRoll::flat(3), 6, None, None));
-        let shot = shot.costing(140).looking(look);
-        assert_eq!((shot.cost, shot.look), (Some(140), Some(look)));
+        assert_eq!((shot.kind, shot.dice, shot.range, shot.cost, shot.look, shot.shape), (kind, DiceRoll::flat(3), 6, None, None, None));
+        let shot = shot.costing(140).looking(look).shaped(AttackShape::Pierce(2));
+        assert_eq!((shot.cost, shot.look, shot.shape), (Some(140), Some(look), Some(AttackShape::Pierce(2))));
     }
 
     #[derive(Resource, Default)]
@@ -1520,6 +1760,19 @@ mod tests {
         let mut state: bevy::ecs::system::SystemState<Loadout> = bevy::ecs::system::SystemState::new(app.world_mut());
         let loadout = state.get(app.world()).expect("every input is optional");
         (loadout.armor(who), loadout.melee(who).map(|m| m.dice), loadout.strikes(who))
+    }
+
+    /// `Loadout::dry` answers by the item's own `Dry` marker, nothing else,
+    /// so it reads the same whether or not the item is also worn.
+    #[test]
+    fn loadout_answers_dry_from_an_items_own_marker() {
+        let mut app = headless_app();
+        let marked = app.world_mut().spawn(crate::ammo::Dry).id();
+        let plain = app.world_mut().spawn_empty().id();
+        let mut state: bevy::ecs::system::SystemState<Loadout> = bevy::ecs::system::SystemState::new(app.world_mut());
+        let loadout = state.get(app.world()).expect("every input is optional");
+        assert!(loadout.dry(marked));
+        assert!(!loadout.dry(plain));
     }
 
     /// Armor is three layers summed at the blow: the defender's own hide,
@@ -2067,5 +2320,258 @@ mod tests {
         own.insert_resource(DamageStages(Vec::new()));
         own.add_plugins(CombatPlugin);
         assert!(own.world().resource::<DamageStages>().0.is_empty(), "a game that asked for raw damage still gets it");
+    }
+
+    /// The player's side.
+    const OURS: FactionId = FactionId::from_raw(0);
+    /// Its foes.
+    const THEIRS: FactionId = FactionId::from_raw(1);
+    /// Neutral to both.
+    const BYSTANDERS: FactionId = FactionId::from_raw(2);
+
+    /// A player armed with what `arm` makes of the one damage kind and,
+    /// round it, whoever `around` places: each an offset from the player
+    /// and a side, with a thousand health and no mind, so nothing struck
+    /// dies of it. Three sides, the player's hostile to the second and
+    /// neutral to the third; `plugins` adds what a test needs beside
+    /// combat and the items a hand can hold, the run's seed is `seed`, and
+    /// play has begun with everything [`see`] records recorded.
+    fn crowd_with<B: Bundle>(
+        plugins: impl FnOnce(&mut App),
+        seed: u64,
+        arm: impl FnOnce(DamageKindId) -> B,
+        around: &[((i32, i32), FactionId)],
+    ) -> (App, Point, Entity, Vec<Entity>) {
+        let (mut app, start, kind) = arena();
+        app.add_plugins((crate::items::ItemsPlugin, crate::consumable::ConsumablesPlugin));
+        crate::effects::AddEngineEffects::add_engine_effects(&mut app);
+        plugins(&mut app);
+        let sides = Registry::from_defs(["ours", "theirs", "bystanders"].map(FactionDef::new).to_vec()).unwrap();
+        app.insert_resource(CombatRules::new(&sides).hostile(OURS, THEIRS)).insert_resource(crate::seed::Seed(RunSeed(seed)));
+        app.world_mut().resource_mut::<Registries>().factions = sides;
+        app.init_resource::<Seen>().add_systems(PostUpdate, see);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(OURS), arm(kind))).id();
+        let mut others = Vec::new();
+        for &((dx, dy), side) in around {
+            others.push(app.world_mut().spawn((Actor, Blocks, Position(start.offset(dx, dy)), Health::full(1000), Faction(side))).id());
+        }
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        (app, start, player, others)
+    }
+
+    /// [`crowd_with`] and nothing more.
+    fn crowd<B: Bundle>(seed: u64, arm: impl FnOnce(DamageKindId) -> B, around: &[((i32, i32), FactionId)]) -> (App, Point, Entity, Vec<Entity>) {
+        crowd_with(|_| {}, seed, arm, around)
+    }
+
+    /// What each of `who` has lost of its thousand.
+    fn taken(app: &App, who: &[Entity]) -> Vec<i32> {
+        who.iter().map(|w| 1000 - hp(app, *w)).collect()
+    }
+
+    /// `player` attacks `target` and the turns run until it may act again.
+    fn attack(app: &mut App, player: Entity, target: Entity) {
+        app.world_mut().write_message(Intent::new(player, Attack(target)));
+        app.update();
+    }
+
+    /// A sweep strikes every foe beside the attacker, each with a roll of
+    /// its own, and passes over an ally and a bystander standing as close
+    /// and a foe one step farther off.
+    #[test]
+    fn a_sweep_strikes_every_adjacent_foe_with_its_own_roll_and_no_ally() {
+        let around = [((1, 0), THEIRS), ((-1, 1), THEIRS), ((0, -1), THEIRS), ((1, 1), OURS), ((-1, 0), BYSTANDERS), ((2, 0), THEIRS)];
+        let mut apart = false;
+        for seed in 0..6 {
+            let (mut app, _, player, others) = crowd(seed, |kind| MeleeAttack::new(kind, DiceRoll::new(1, 100)).shaped(AttackShape::Sweep), &around);
+            attack(&mut app, player, others[0]);
+            let taken = taken(&app, &others);
+            assert!(taken[..3].iter().all(|t| (1..=100).contains(t)), "seed {seed}: every foe beside the player was struck: {taken:?}");
+            assert_eq!(taken[3..], [0, 0, 0], "seed {seed}: the ally, the bystander and the foe a step off were not");
+            apart |= taken[0] != taken[1] || taken[1] != taken[2];
+        }
+        assert!(apart, "each foe is rolled for on its own, so the three do not take the same blow on every seed");
+    }
+
+    /// A pierce strikes its target and the foes in the next cells in line
+    /// beyond it, as many cells as it names: it runs on past an ally
+    /// without striking it, keeps to its line, diagonal or not, and stops
+    /// at a wall.
+    #[test]
+    fn a_pierce_strikes_the_target_and_the_foes_in_the_next_cells_in_line() {
+        let thrust = |kind| MeleeAttack::new(kind, DiceRoll::flat(5)).shaped(AttackShape::Pierce(2));
+        let (mut app, _, player, others) = crowd(0, thrust, &[((1, 0), THEIRS), ((2, 0), OURS), ((3, 0), THEIRS), ((4, 0), THEIRS), ((2, 1), THEIRS)]);
+        attack(&mut app, player, others[0]);
+        assert_eq!(taken(&app, &others), [5, 0, 5, 0, 0], "the target and the foe two beyond; not the ally between, the foe three beyond, or one off the line");
+
+        let (mut app, _, player, others) = crowd(0, thrust, &[((1, 1), THEIRS), ((2, 2), THEIRS), ((3, 3), THEIRS)]);
+        attack(&mut app, player, others[0]);
+        assert_eq!(taken(&app, &others), [5, 5, 5], "a diagonal is a line too");
+
+        let (mut app, start, player, others) = crowd(0, thrust, &[((1, 0), THEIRS), ((3, 0), THEIRS)]);
+        app.world_mut().resource_mut::<WorldMap>().set_tile(start.offset(2, 0), TileId(1));
+        app.update();
+        attack(&mut app, player, others[0]);
+        assert_eq!(taken(&app, &others), [5, 0], "a wall between stops it");
+    }
+
+    /// A shot that pierces runs on through its target to the foes in line
+    /// behind it, and never past its range.
+    #[test]
+    fn a_piercing_shot_strikes_the_foes_behind_its_target_and_none_past_its_range() {
+        let gun = |kind| RangedAttack::new(kind, DiceRoll::flat(4), 4).shaped(AttackShape::Pierce(2));
+        let (mut app, _, player, others) = crowd(0, gun, &[((3, 0), THEIRS), ((4, 0), THEIRS), ((5, 0), THEIRS)]);
+        attack(&mut app, player, others[0]);
+        assert_eq!(taken(&app, &others), [4, 4, 0], "the target and the foe behind it; the next is in the shape but past the range");
+    }
+
+    /// A watched shot that pierces flies once, from the shooter to the
+    /// farthest foe it strikes, and lands on each when the flight has
+    /// been seen.
+    #[test]
+    fn a_watched_piercing_shot_flies_to_the_farthest_foe_it_strikes_and_lands_on_each_once_seen() {
+        let gun = |kind| RangedAttack::new(kind, DiceRoll::flat(4), 8).shaped(AttackShape::Pierce(1)).looking(LOOK);
+        let (mut app, start, player, others) = crowd(0, gun, &[((3, 0), THEIRS), ((4, 0), THEIRS)]);
+        app.world_mut().resource_mut::<TurnHold>().watch();
+        attack(&mut app, player, others[0]);
+        assert_eq!(taken(&app, &others), [0, 0], "in the air");
+        let flight = Cue::Flight { from: Anchor::on(player, start), to: Anchor::on(others[1], start.offset(4, 0)), look: LookOf::Given(LOOK) };
+        assert_eq!(app.world().resource::<Seen>().cues, vec![Cued { actor: player, cue: flight }]);
+        app.world_mut().resource_mut::<TurnHold>().release();
+        app.update();
+        assert_eq!(taken(&app, &others), [4, 4], "both, once the flight was seen");
+        assert!(!app.world().resource::<TurnHold>().in_flight());
+    }
+
+    /// How often a worn weapon's `fire` moment went off, and where each of
+    /// its `hit` moments did.
+    #[derive(Resource, Default)]
+    struct Tally {
+        fire: usize,
+        hit: Vec<Point>,
+    }
+
+    fn tally(mut tally: ResMut<Tally>, mut fired: MessageReader<crate::effects::Fired>) {
+        for f in fired.read() {
+            if f.moment == crate::effects::Moments::FIRE {
+                tally.fire += 1;
+            } else if f.moment == crate::effects::Moments::HIT {
+                tally.hit.push(f.at);
+            }
+        }
+    }
+
+    /// Puts a thing striking with `attack` and carrying the triggers
+    /// `triggers` writes in `who`'s one hand.
+    fn wield(app: &mut App, who: Entity, attack: impl Bundle, triggers: &str) {
+        use rl_rules::{EquipShape, Equipment, SlotId};
+        let specs: Vec<rl_rules::TriggerSpec> = rl_rules::Names::new().load_list(triggers).expect("the triggers parse");
+        let world = app.world();
+        let names = world.resource::<Registries>().names();
+        let built =
+            crate::effects::Triggers::build(&specs, &[], world.resource::<crate::effects::Moments>(), world.resource::<crate::effects::EffectKinds>(), &names)
+                .expect("the triggers build");
+        let hand = SlotId::from_raw(0);
+        let item = app.world_mut().spawn((crate::items::Item, attack, built, crate::items::Wearable(EquipShape::in_slot(hand)))).id();
+        let mut equipment = Equipment::with_slot_count(1);
+        equipment.equip(item, &EquipShape::in_slot(hand)).unwrap();
+        app.world_mut().entity_mut(who).insert((crate::items::Inventory { items: vec![item] }, Equipped(equipment)));
+    }
+
+    /// However many a shaped blow strikes, it is one swing: [`Struck`] is
+    /// written once and the weapon's `fire` moment goes off once, while
+    /// its `hit` triggers land on each foe struck, where it stands.
+    #[test]
+    fn a_shaped_blow_is_one_swing_and_its_hit_trigger_lands_on_each_foe_struck() {
+        let ring = [((1, 0), THEIRS), ((0, 1), THEIRS), ((-1, -1), THEIRS)];
+        let (mut app, start, player, foes) = crowd(0, |_| (), &ring);
+        let kind = app.world().resource::<Registries>().damage_kinds.expect("kinetic");
+        let harm = r#"[(on: "hit", effects: [(kind: "Harm", args: (kind: "kinetic", roll: "3"))])]"#;
+        wield(&mut app, player, MeleeAttack::new(kind, DiceRoll::flat(0)).shaped(AttackShape::Sweep), harm);
+        app.init_resource::<Tally>().add_systems(PostUpdate, tally);
+        attack(&mut app, player, foes[0]);
+        assert_eq!(app.world().resource::<Seen>().struck.len(), 1, "one swing, one Struck");
+        let tally = app.world().resource::<Tally>();
+        assert_eq!(tally.fire, 1, "and the weapon fired once");
+        let mut hit = tally.hit.clone();
+        hit.sort();
+        let mut stood: Vec<Point> = ring.iter().map(|((dx, dy), _)| start.offset(*dx, *dy)).collect();
+        stood.sort();
+        assert_eq!(hit, stood, "its hit moment went off where each foe stood");
+        assert_eq!(taken(&app, &foes), [3, 3, 3], "and what it carries landed on each");
+    }
+
+    /// A shaped blow with a look is seen on everyone it struck: one burst,
+    /// anchored once on each foe, the target first and the rest in the
+    /// order the sweep went round, and on nobody it passed over.
+    #[test]
+    fn a_shaped_blow_with_a_look_bursts_once_on_each_foe_it_struck_and_on_nobody_else() {
+        let around = [((1, 0), THEIRS), ((0, 1), THEIRS), ((-1, -1), THEIRS), ((1, 1), OURS), ((-1, 0), BYSTANDERS)];
+        let (mut app, start, player, others) = crowd(0, |kind| MeleeAttack::new(kind, DiceRoll::flat(1)).shaped(AttackShape::Sweep).looking(LOOK), &around);
+        attack(&mut app, player, others[0]);
+        let on = [(0, (1, 0)), (1, (0, 1)), (2, (-1, -1))].map(|(i, (dx, dy))| Anchor::on(others[i], start.offset(dx, dy))).to_vec();
+        let burst = Cue::Burst { on, look: LookOf::Given(LOOK), from: None };
+        assert_eq!(app.world().resource::<Seen>().cues, vec![Cued { actor: player, cue: burst }]);
+    }
+
+    /// Strikes `target` once, with it made to know of `player` first or of
+    /// nobody, and answers what it took.
+    fn strike(app: &mut App, player: Entity, target: Entity, knows: bool) -> i32 {
+        use rl_rules::ai::awareness::Awareness;
+        let at = app.world().get::<Position>(player).unwrap().0;
+        let mut aware = app.world_mut().get_mut::<crate::stealth::Aware>(target).unwrap();
+        aware.0.clear();
+        if knows {
+            aware.0.insert(player, Awareness::Alert { at, stale_turns: 0 });
+        }
+        let before = hp(app, target);
+        attack(app, player, target);
+        before - hp(app, target)
+    }
+
+    /// A quiet player, armed to strike and to shoot for two, beside one
+    /// foe that notices and three cells from another, in a game whose blows
+    /// on the unaware land at three times; `plugins` says whether stealth
+    /// runs.
+    fn ambush(plugins: impl FnOnce(&mut App)) -> (App, Entity, Entity, Entity) {
+        let arm = |kind| (MeleeAttack::new(kind, DiceRoll::flat(2)), RangedAttack::new(kind, DiceRoll::flat(2), 6), crate::stealth::Stealth::default());
+        let (mut app, _, player, others) = crowd_with(plugins, 0, arm, &[((1, 0), THEIRS), ((0, 3), THEIRS)]);
+        for watcher in &others {
+            app.world_mut().entity_mut(*watcher).insert(crate::stealth::Notice::default());
+        }
+        app.world_mut().resource_mut::<CombatRules>().unaware = Some(300);
+        (app, player, others[0], others[1])
+    }
+
+    /// A blow on a target that has not noticed its attacker lands
+    /// multiplied, by the house's percent or by the blow's own where it
+    /// names one, and not on a target that has, from an attacker that does
+    /// not hide, or as a shot.
+    #[test]
+    fn an_unaware_target_takes_the_multiplied_blow_and_an_aware_one_does_not() {
+        let (mut app, player, beside, across) = ambush(|app| {
+            app.add_plugins((crate::minds::MindsPlugin, crate::stealth::StealthPlugin));
+        });
+        assert_eq!(strike(&mut app, player, beside, false), 6, "the house's three times on a target that never noticed");
+        assert_eq!(strike(&mut app, player, beside, true), 2, "and nothing more on one that had");
+        app.world_mut().get_mut::<MeleeAttack>(player).unwrap().unaware = Some(500);
+        assert_eq!(strike(&mut app, player, beside, false), 10, "a blow's own five times over the house's three");
+        app.world_mut().get_mut::<MeleeAttack>(player).unwrap().unaware = Some(100);
+        assert_eq!(strike(&mut app, player, beside, false), 2, "and its own even when that is no more than a blow");
+        assert_eq!(strike(&mut app, player, across, false), 2, "a shot on the unaware lands as it would on anyone");
+        app.world_mut().get_mut::<MeleeAttack>(player).unwrap().unaware = None;
+        app.world_mut().entity_mut(player).remove::<crate::stealth::Stealth>();
+        assert_eq!(strike(&mut app, player, beside, false), 2, "and an attacker that does not hide is never unnoticed");
+    }
+
+    /// Without the stealth plugin nobody is unaware: nothing keeps an
+    /// observer's memory, so one that holds nothing has not been caught
+    /// off guard.
+    #[test]
+    fn without_the_stealth_plugin_no_one_is_unaware() {
+        let (mut app, player, beside, _) = ambush(|_| {});
+        assert_eq!(strike(&mut app, player, beside, false), 2);
     }
 }

@@ -39,25 +39,23 @@ use rl_engine::rl_ui::UiPlugin;
 /// needs `Abilities`, loaded here from `assets/abilities.ron` the way
 /// `main.rs` loads it, since it names no seed and is the same for every
 /// run.
+///
+/// No title: it is added with the panels, so the run begins at startup,
+/// as it does for a player who picked New Game.
 pub fn headless(seed: RunSeed) -> App {
     let mut app = headless_without_foundry(seed);
     app.add_plugins(crate::plugin::FoundryPlugin);
-    // A test plays a run, not the title screen: the screen is put down
-    // before the first update, so `run::start` builds the deck exactly as
-    // it does for a player who has already picked. A test of the screen
-    // itself puts it back up.
-    app.insert_resource(crate::title::Title { up: false, ..Default::default() });
     app
 }
 
-/// A run continued from `text`, a save the way the slot holds it: the
-/// title down, the save in the memory backend, [`Resume`](crate::run::Resume)
-/// asked for, and the first frames run so the continued run stands.
+/// A run continued from `text`, a save the way the slot holds it: the save
+/// in the memory backend, `ContinueRun` asked for as the title's Continue
+/// asks for it, and the first frames run so the continued run stands.
 pub fn continued(text: &str) -> App {
     use rl_engine::rl_save::SaveBackend as _;
     let mut app = headless(RunSeed(0));
     app.world().resource::<rl_engine::rl_save::Saves>().persist(crate::save::SLOT, text).expect("the memory backend takes it");
-    app.insert_resource(crate::run::Resume);
+    app.insert_resource(ContinueRun);
     settle(&mut app);
     settle(&mut app);
     app

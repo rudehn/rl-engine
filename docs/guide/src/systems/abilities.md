@@ -16,7 +16,7 @@
             crates/rl-bevy/src/noise.rs
             crates/rl-ui/src/view/target.rs
             crates/rl-save/src/engine.rs
-     fingerprint: 07b594b9 -->
+     fingerprint: 8d795e51 -->
 
 # Abilities
 
@@ -39,6 +39,7 @@ The engine's own effects are registered separately, by `add_engine_effects()` fo
 ## The model
 
 `AbilityDef` is what an ability file says: a `name`, a `description` for a menu, an optional `Look` of glyph and colour, an `Aim`, a `TargetMode` with its range inside it, `sight`, `requires`, `costs`, `time`, `cooldown` and `effects`.
+`AbilityDef::targeting` gathers the mode, the aim and `sight` into a `Targeting`, the form a thing's aimed use is written in, `(mode: Bolt(range: 7), aim: Ground, sight: false)`, under the same three words, so a bolt an actor knows and a bolt sent from the pack are pointed by one rule.
 Every id in it is a name resolved through `Names` at load, so an ability calls a stat, a status, a tag, a slot or a damage kind by the name the rest of the content does, and a typo is a startup failure listing every one it found.
 `Aim` is `SelfOnly`, `Foe`, `Ally`, `Ground` or `Anyone`, closed because it enumerates the questions the faction matrix can answer about a cell rather than a taxonomy of content.
 It is what lets a mind fire an ability it cannot understand, through five predicates: `Aim::wants` says whether a cell holds the kind of thing it is after and the rest are built on it, `hits` says who a footprint catches, `worth_aiming_at` who is worth pointing it at, `cycles_to` who a player's cursor stops on, and `needs_cursor` whether there is anywhere to point at all.
@@ -52,11 +53,12 @@ A cooldown is an absolute time on the turn queue's clock rather than a countdown
 `resolve_abilities` lands the aim first and then gates on the union of what the user cannot do and what the aim refuses, so one refusal carries both; then it pays, sets the cooldown and hands the ability's `Effects` the `Landing` to run over, and reports `AbilityEvent::Used` or `Refused`.
 A refusal costs the player nothing and keeps the turn, and costs anyone else the turn, which is what stops a monster retrying forever what it cannot pay for.
 A `Ball` flies as a bolt and bursts where it lands with `rl_grid::burst`, which stops at walls and not at whoever stands in the way, and bursts on the near side of a wall it flew into.
-`Bystanders::land` is the one answer to where a use goes, and `aim_blocked` the other half of the gate: whether an ability may be used at all against whether it may be used *here*.
+`Bystanders::land` is the one answer to where a use goes, handed an `Aimed`: who, a `Source`, a `Targeting`, from where and at what, which `Aimed::ability` builds for an ability and the effects subsystem builds for a thing's aimed use, so nothing past it can tell the two apart.
+`aim_blocked(targeting, cells, sees_aim)` is the other half of the gate: whether an ability may be used at all against whether it may be used *here*.
 The targeting cursor previews through that same call, so the cells it paints are the cells that will be hit, and a projectile stopped short of where it was pointed is `Blocked::OutOfReach` rather than a burst on a spot nobody chose.
-`Landing` is the result: the user, the ability, the origin, the aim, every cell covered, the flight path, where a projectile stopped, everyone under it the aim wanted there, and a `bonus`, the default `EffectBonus` that adds nothing for an ability, which only a thing's own carries more than, as [Effects](effects.md) says.
-Its `source` says what landed it, `Source::Ability`, `Trigger` or `Offer`, so an effect can tell a spell from a trap without assuming either, and only an ability has a look to fly.
-An ability with a look bursts over its footprint as a blast going out from where its projectile stopped, or from its user when it had none, so a ball goes off where it lands and a nova, a cone or a line goes out from whoever cast it.
+`Landing` is the result: the user, what landed it, the origin, the aim, every cell covered, the flight path, where a projectile stopped, everyone under it the aim wanted there, and a `bonus`, the default `EffectBonus` that adds nothing for an ability, which only a thing's own carries more than, as [Effects](effects.md) says.
+Its `source` says what landed it, `Source::Ability`, `Trigger` or `Offer`, so an effect can tell a spell from a trap without assuming either, and `Landing::reach` names it to the damage it lands, so a narrator says whose bolt it was.
+An ability with a look, and a thing's aimed use with one, is seen to fly to where its projectile stopped and bursts over its footprint as a blast going out from there, or from its user when it had none, so a ball goes off where it lands and a nova, a cone or a line goes out from whoever cast it.
 An `Effect` is a type with `apply(&self, &Landing, &mut EffectWorld)` and a `describe(&self, &Registries, EffectBonus)` a menu reads with that bonus added, and `FromArgs` is its constructor, kept separate so the trait a game writes stays object-safe.
 `EffectWorld` asks for what another subsystem owns rather than doing it: damage, a status on, a status off, along with the effect stream, cues, and `Commands` for whatever the engine never thought of.
 Asking is what keeps a fireball mitigated by the same armor a sword is, and moving an actor is the one exception, since no other subsystem owns it: `position`, `sight_of`, `is_free`, `place` and `slide` are methods on it, and `slide` is what keeps a shove out of a wall.
@@ -127,8 +129,9 @@ The boundary is drawn at the verb and nowhere further in: making a damage roll i
 An ability is content and its vocabulary is code, so a fireball, a smoke bomb or a rally is a RON edit, and `Bribe` or `Hack` is one file a game writes once and then never again.
 Untyped arguments are what that buys, and validating them at load is what pays for them: a bad argument fails at startup naming the ability, not the first time somebody presses the key.
 An ability is something an actor knows, so an item never lends one: a medkit or a grenade costs no ability id, takes no row on the screen beside what its carrier actually knows, and says that it is used up as a fact about the item rather than as a cost of an ability.
-An item is aimed only by being thrown or fired, which throwing and combat already own, and there is no third kind of aimed use for abilities to take over.
-A key aims nothing itself; it writes `AimAt` and stops, and whether a cursor opens, where it opens and what the use costs are the engine's, which is why a game's input never learns what a broadside does.
+A thing used at somewhere, a staff's bolt, is still the thing's own `use` trigger and not an ability it lends: it is written in an ability's words and landed, previewed and refused through the same `Bystanders::land` and `aim_blocked`, so the two cannot drift, while what it lands and what it spends stay the thing's.
+A thing not yet known is landed through them too, but neither previewed nor refused by its targeting, since either would tell what it is, as [Uses](uses.md) says.
+A key aims nothing itself; it writes `AimAt`, or `AimUse` for a thing, and stops, and whether a cursor opens, where it opens and what the use costs are the engine's, which is why a game's input never learns what a broadside does.
 A mind is handed only what the gate already allowed, which is why it cannot loop on something it cannot afford, and it scores by `Aim` alone, so a monster given a new ability needs no new tactic.
 Accuracy does not exist: an ability lands unconditionally, as every melee blow does, and a to-hit roll when it comes is a stage in the damage pipeline rather than a change here.
 Ability trees, schools, levelling, spell failure and casting interrupted by a blow are each a game's rule over this data, and the engine should not guess which of them a game wants.

@@ -1,0 +1,67 @@
+// Undermere's bestiary: what lives under the lake. A monster is its core, the
+// things every monster has, and the traits it lists from `traits.ron`, read as
+// the two together with nothing hidden in between. Where each kind turns up, how
+// often and in what numbers, is `monster_spawns.ron`.
+//
+// Every field (the ones marked "optional" may be left out):
+//   name:    unique; the spawn table and the pieces name it by this, and a name that
+//            starts with a capital or an article, "the Drowned King", is said as written
+//   glyph:   one character, and one the typeface in `assets/fonts/` has
+//   color:   (r, g, b) in 0..=1
+//   hp:      maximum health
+//   attack:  its blow, written "NdS+B kind", as "1d4 slash"; the kinds are "slash" |
+//            "pierce" | "crush" | "fire" | "cold" | "poison"
+//   ranged:  optional; its shot, written "NdS+B kind @range", as "1d6 pierce @6", range in
+//            tiles; with one it shoots whatever it sees in reach and strikes what is beside it
+//   armor:   optional; flat armor of its own, 0 when left out, added to what a trait gives
+//   faction: "beasts" | "goblins" | "undead", or "adventurer" for what fights on the
+//            adventurer's side from the moment it is made
+//   traits:  names from `traits.ron`, each at most once, in the order the examine panel
+//            lists them; two that set the same single value are refused, naming both
+//   boss:    optional; true for the one whose death wins the run, false when left out
+//   miniboss: optional; true for a mini-boss, worth 500 to the score when the adventurer
+//            kills it, false when left out; none yet
+//   drops:   optional; [(item name, percent chance)], each rolled on its own death; a pile
+//            of gold dropped is a floor's pile
+#![enable(implicit_some)]
+[
+    // The upper floors: vermin, and the smallest of the goblins.
+    (name: "rat", glyph: 'r', color: (0.62, 0.52, 0.42), hp: 4, attack: "1d3 pierce", faction: "beasts", traits: ["animal", "cowardly"]),
+    (name: "jackal", glyph: 'j', color: (0.8, 0.62, 0.36), hp: 6, attack: "1d3 pierce", faction: "beasts", traits: ["animal", "swift"]),
+    (name: "kobold", glyph: 'k', color: (0.62, 0.72, 0.32), hp: 6, attack: "1d4 slash", faction: "goblins", traits: ["sapient", "cowardly"],
+     drops: [("gold coin", 40), ("dagger", 8)]),
+    (name: "goblin", glyph: 'g', color: (0.42, 0.75, 0.3), hp: 10, attack: "1d5 slash", faction: "goblins", traits: ["sapient"],
+     drops: [("gold coin", 40), ("sword", 8)]),
+    // The caves and the crypts under them. From the ogre down, a blow that
+    // armor turns is two dice: armor turns a point of every blow, and
+    // enchanted armor turned every blow of one die down here to nothing,
+    // so only fire and the king could hurt an adventurer who put their
+    // scrolls into it.
+    (name: "cave spider", glyph: 's', color: (0.68, 0.58, 0.75), hp: 9, attack: "1d4 pierce", faction: "beasts", traits: ["animal", "sees in the dark"]),
+    (name: "goblin archer", glyph: 'a', color: (0.6, 0.8, 0.38), hp: 8, attack: "1d3 slash", ranged: "1d6 pierce @6", faction: "goblins", traits: ["sapient", "cowardly"],
+     drops: [("gold coin", 40), ("bow", 8)]),
+    (name: "myconid", glyph: 'm', color: (0.45, 0.9, 0.78), hp: 12, attack: "1d4 crush", faction: "beasts", traits: ["mindless", "slow", "fungal glow"]),
+    (name: "ogre", glyph: 'O', color: (0.72, 0.6, 0.42), hp: 30, attack: "2d8 crush", faction: "goblins", traits: ["sapient", "slow", "thick-hided"],
+     drops: [("gold coin", 80), ("war hammer", 15)]),
+    (name: "skeleton", glyph: 'z', color: (0.88, 0.86, 0.76), hp: 14, attack: "2d4 slash", faction: "undead", traits: ["mindless", "deathless"]),
+    (name: "ghoul", glyph: 'G', color: (0.58, 0.68, 0.52), hp: 18, attack: "2d5 slash", faction: "undead", traits: ["sapient", "deathless", "keen-nosed"]),
+    // Floors seven to nine: the drowned dead, and the forge's fire. A
+    // wight's touch is the cold of the deep water, which armor does not
+    // turn, as it does not turn the forge's fire.
+    (name: "drowned thrall", glyph: 'Z', color: (0.45, 0.65, 0.72), hp: 22, attack: "2d6 crush", faction: "undead", traits: ["mindless", "deathless", "slow"]),
+    (name: "wight", glyph: 'W', color: (0.7, 0.8, 0.95), hp: 20, attack: "1d8 cold", armor: 1, faction: "undead", traits: ["sapient", "deathless", "grave light"]),
+    (name: "fire imp", glyph: 'i', color: (1.0, 0.5, 0.25), hp: 10, attack: "1d4 fire", ranged: "1d6 fire @5", faction: "beasts", traits: ["sapient", "swift", "fire-blooded"]),
+    (name: "salamander", glyph: 'S', color: (1.0, 0.42, 0.18), hp: 26, attack: "1d8 fire", armor: 1, faction: "beasts",
+     traits: ["animal", "fire-blooded", "ember glow", "fire breath"]),
+    // Floor ten: the throne, its court, and the thing that drowned the
+    // kingdom. The throne's piece stands each of them at its own slot, and
+    // neither the knights nor the king stand anywhere else.
+    (name: "skeleton knight", glyph: 'z', color: (0.95, 0.92, 0.75), hp: 22, attack: "2d6+1 slash", armor: 3, faction: "undead", traits: ["mindless", "deathless"]),
+    (name: "the Drowned King", glyph: 'K', color: (0.55, 0.9, 0.95), hp: 120, attack: "2d8 slash", armor: 4, faction: "undead",
+     traits: ["sapient", "deathless", "grave light", "regenerates", "drowning grasp", "keen-eared"], boss: true),
+    // What a staff of conjuration calls up beside the adventurer, on their
+    // side, for a few turns: quick, and gone at the first blow. Nowhere in
+    // the spawn table, so it is never found, only made.
+    (name: "spectral blade", glyph: '†', color: (0.72, 0.86, 1.0), hp: 1, attack: "1d3 slash", faction: "adventurer",
+     traits: ["mindless", "swift", "deathless"]),
+]

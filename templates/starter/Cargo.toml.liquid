@@ -16,8 +16,12 @@ rand = { version = "0.9", features = ["std", "std_rng"] }
 # Map generation and pathfinding are arithmetic-heavy, and an unoptimised
 # debug build takes seconds per floor. Dependencies get full optimisation,
 # your own code a light pass, so builds stay quick and play stays smooth.
+# Dependencies carry no debug info: nobody steps through Bevy in a
+# debugger, and it is most of a build's size on disk. Your own crate keeps
+# it, so a backtrace still names your code.
 [profile.dev.package."*"]
 opt-level = 3
+debug = false
 
 [profile.dev]
 opt-level = 1

@@ -12,7 +12,6 @@
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 
-use crate::ammo::Dry;
 use crate::heat::Heat;
 
 /// Every key Foundry answers to, by name.
@@ -91,7 +90,7 @@ pub struct Pack<'w> {
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Reach<'w, 's> {
     loadout: Loadout<'w, 's>,
-    idle: Query<'w, 's, (&'static Name, Option<&'static Heat>, Has<Dry>)>,
+    idle: Query<'w, 's, (&'static Name, Option<&'static Heat>)>,
     worn: Query<'w, 's, &'static Equipped>,
 }
 
@@ -148,11 +147,12 @@ pub fn player_input(mut kb: Keyboard, reach: Reach, mut pack: Pack, mut intents:
 /// name, so the player knows whether to wait or to find slugs, or plainly
 /// that there is no gun in hand at all.
 fn why_not(worn: &[Entity], reach: &Reach) -> String {
-    for (name, heat, dry) in worn.iter().filter_map(|item| reach.idle.get(*item).ok()) {
+    for &item in worn {
+        let Ok((name, heat)) = reach.idle.get(item) else { continue };
         if heat.is_some_and(|h| h.locked) {
             return format!("Your {name} is locked until it cools.");
         }
-        if dry {
+        if reach.loadout.dry(item) {
             return format!("Your {name} is out of ammunition.");
         }
     }

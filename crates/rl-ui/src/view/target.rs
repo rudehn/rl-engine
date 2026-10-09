@@ -1,23 +1,34 @@
-//! The targeting cursor: where an ability would land, a thrown item fly, or
-//! a shot go, before it does.
+//! The targeting cursor: where an ability or a thing used at somewhere
+//! would land, a thrown item fly, or a shot go, before it does.
 //!
 //! Two pieces that only look like one, the way the look cursor is. The
 //! cursor is behaviour the engine owns: it opens onto the nearest thing
 //! worth aiming at, steps with the direction keys, cycles through what the
 //! aim can take, refuses to leave the loaded window, and on confirm writes
-//! the [`Use`], the [`Throw`] or the [`Attack`] itself. The picture is a
-//! view: the cells it would cover from here and who it would hit, resolved
-//! by [`Bystanders::land`] for an ability, [`flight`] for a throw and
-//! [`shot`] for a shot, the calls the resolvers act on, so what is shown is
-//! what will happen.
+//! the [`Use`], the [`UseItemAt`], the [`Throw`] or the [`Attack`] itself.
+//! The picture is a view: the cells it would cover from here and who it
+//! would hit, resolved by [`Bystanders::land`] for an ability and for a
+//! thing's aimed use alike, [`flight`] for a throw and [`shot`] for a shot,
+//! the calls the resolvers act on, so what is shown is what will happen.
+//!
+//! A thing not yet known, [`Unknown`], is the exception, since its shape,
+//! its reach, what it wants and whether it wants its cell seen are each
+//! part of what it is, and a preview that showed any of them, or refused an
+//! aim for one, would tell the player its kind in a few keys and for
+//! nothing. Its preview is a plain line from its user to the cursor and the
+//! cursor's cell: no footprint, no reach, nothing painted out of reach, no
+//! reason it would be refused but its not being carried, and nobody named
+//! as caught, since who it catches tells its shape. It cycles to anyone.
+//! Confirmed, it is used and spent, and lands by its true targeting where
+//! its true flight stops, which the items resolver works out.
 //!
 //! Cycling steps through what is in sight in the nearby list's order, held
-//! to what the aim can take by [`Aim::cycles_to`]: foes for an ability aimed
-//! at foes, allies and the user for one aimed at allies, and anything in
-//! sight, things included, for one aimed at the ground, which would
-//! otherwise have nothing to stop on but cells. A throw or a shot stops on
-//! any actor but whoever sends it. The direction keys still reach every
-//! cell, and wherever the cursor goes the [`Focus`] follows.
+//! to what the aim can take by [`Aim::cycles_to`]: foes for an ability or a
+//! use aimed at foes, allies and the user for one aimed at allies, and
+//! anything in sight, things included, for one aimed at the ground, which
+//! would otherwise have nothing to stop on but cells. A throw or a shot
+//! stops on any actor but whoever sends it. The direction keys still reach
+//! every cell, and wherever the cursor goes the [`Focus`] follows.
 //!
 //! What an aim was confirmed at is remembered apart from the focus, as
 //! [`LastAimed`], and the next aim opens on it when nothing is picked out.
@@ -31,21 +42,21 @@
 //! gates its movement keys on [`no_modal`](crate::no_modal) and gets the
 //! exclusion from the bag and the look cursor for free.
 //!
-//! A game opens it by writing [`AimAt`] for an ability, [`AimThrow`] for
-//! something carried, or [`AimFire`] for a shot, which is all the code the
-//! key needs: the engine picks the first target, runs the cursor, and
-//! spends the turn. Nothing about which key does it is the engine's
-//! business.
+//! A game opens it by writing [`AimAt`] for an ability, [`AimUse`] for a
+//! thing used at somewhere, [`AimThrow`] for something carried, or
+//! [`AimFire`] for a shot, which is all the code the key needs: the engine
+//! picks the first target, runs the cursor, and spends the turn. Nothing
+//! about which key does it is the engine's business.
 
 use crate::controls::AddControls;
 use crate::modal::AddModal;
 use bevy::prelude::*;
 use rl_bevy::prelude::*;
-use rl_bevy::{Aimed, Bystanders, Landed, Offered, flight, shot};
+use rl_bevy::{Aimed, Bystanders, Landed, Offered, Source, flight, shot};
 use rl_core::Point;
 use rl_grid::TargetMode;
 use rl_render::Glyph;
-use rl_rules::ability::{AbilityId, Aim, Blocked};
+use rl_rules::ability::{AbilityId, Aim, Blocked, Targeting};
 
 use crate::cursor::{CursorInput, CursorKeys, Steer};
 use crate::focus::{Focus, Sighting};
@@ -68,6 +79,29 @@ pub struct AimAt {
     pub user: Entity,
     /// What they are aiming.
     pub ability: AbilityId,
+}
+
+/// Open the targeting cursor on something carried whose use is aimed, to
+/// use it at somewhere: a bolt sent from the pack at a foe.
+///
+/// What the bag writes when its use key is pressed on such a thing, and
+/// what a game's own use key may write for any thing at all. The cursor
+/// opens as it does for an ability aimed the same way, previews through
+/// [`Bystanders::land`] the footprint and who stands in it, and writes the
+/// [`UseItemAt`] when the player confirms. A thing whose use lands on its
+/// user is used at once and no screen opens, and one whose use asks for
+/// another of its user's things opens the bag choosing for it, when the
+/// game has the bag, so a game binds every use the same way and never asks
+/// which kind it is; one that cannot be used now, by
+/// [`may_use`](rl_bevy::may_use), an empty one its user knows or one worn to
+/// be used and not worn, opens nothing. Put away, it spends nothing and
+/// passes no turn.
+#[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AimUse {
+    /// Who is using it.
+    pub user: Entity,
+    /// What they are using.
+    pub item: Entity,
 }
 
 /// Open the targeting cursor on something carried, to throw it.
@@ -115,13 +149,26 @@ pub struct AimRange {
 pub struct TargetView {
     /// The ability being aimed, while the cursor is open on one.
     pub ability: Option<AbilityId>,
+    /// The thing whose use is being aimed, while the cursor is open on one.
+    pub using: Option<Entity>,
     /// The item being thrown, while the cursor is open on a throw.
     pub throwing: Option<Entity>,
     /// Whether the cursor is open on a shot.
     pub firing: bool,
     /// What is being aimed, by the name the game gave it: the ability's, or
-    /// the thrown item's. Empty for a shot, which has no name of its own.
+    /// the used or thrown item's. Empty for a shot, which has no name of its
+    /// own.
     pub what: String,
+    /// Whether what is named is a thing not yet known, [`Unknown`]: the box
+    /// says so, and `span` is left out, since how far a thing reaches is
+    /// part of what it is. A thing used at somewhere withholds the rest of
+    /// what its targeting would tell as well: `path` is a plain line to the
+    /// cursor, `cells` the cursor's cell alone, and `beyond`, `why` and
+    /// `targets` are empty, with `legal` only while it is carried. A thrown
+    /// one is previewed as it flies and where it comes down, which is all
+    /// a throw of anything paints, but gives no `odds`, since whether it is
+    /// rolled at all, only a thing that strikes being rolled, is its own.
+    pub unknown: bool,
     /// Who is aiming it.
     pub user: Option<Entity>,
     /// The world tile the cursor is on.
@@ -151,19 +198,26 @@ pub struct TargetView {
     /// nobody would be struck, the game's model does not roll, or the aim
     /// is an ability, which is never rolled.
     pub odds: Option<rl_rules::Odds>,
+    /// What the game added about the aim, in
+    /// [`ViewSet::Annotate`](crate::ViewSet), which the box prints under
+    /// the chance to hit: a game that writes `odds` again with an unknown
+    /// thing counted as it seems says so here, as it does under the look
+    /// cursor's forecast.
+    pub facets: Vec<crate::facet::Facet>,
 }
 
 impl TargetView {
     /// Whether the cursor is up.
     pub fn aiming(&self) -> bool {
-        self.ability.is_some() || self.throwing.is_some() || self.firing
+        self.ability.is_some() || self.using.is_some() || self.throwing.is_some() || self.firing
     }
 }
 
 /// Adds the targeting cursor and keeps [`TargetView`] current.
 ///
 /// Needs [`WorldMap`]; an ability needs the abilities the game loaded, a
-/// throw needs [`ThrowingPlugin`] to be resolved, and a shot
+/// use needs [`ItemsPlugin`] to be resolved and the effects plugin to land,
+/// a throw needs [`ThrowingPlugin`] to be resolved, and a shot
 /// [`CombatPlugin`]. Its keys are [`CursorKeys`], the ones the look cursor
 /// answers to.
 pub struct TargetViewPlugin;
@@ -175,12 +229,17 @@ impl Plugin for TargetViewPlugin {
             .init_resource::<Focus>()
             .init_resource::<LastAimed>()
             .add_message::<AimAt>()
+            .add_message::<AimUse>()
             .add_message::<AimThrow>()
             .add_message::<AimFire>();
         // The intents the cursor writes on confirm, registered whether or
         // not the game added the plugin that resolves each: a game that
         // throws and has no abilities still runs this cursor.
-        app.add_message::<Intent<Use>>().add_message::<Intent<Throw>>().add_message::<Intent<Attack>>();
+        app.add_message::<Intent<Use>>()
+            .add_message::<Intent<UseItem>>()
+            .add_message::<Intent<UseItemAt>>()
+            .add_message::<Intent<Throw>>()
+            .add_message::<Intent<Attack>>();
         // `Modals` is plain data, so this plugin makes sure it exists rather
         // than panicking when added before `UiPlugin`.
         app.add_modal(TARGET_MODAL);
@@ -207,6 +266,7 @@ pub fn target_modal(modals: &Modals) -> ModalId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Pointing {
     Ability(AbilityId),
+    Use(Entity),
     Throw(Entity),
     Fire,
 }
@@ -214,11 +274,12 @@ enum Pointing {
 impl Pointing {
     /// What the view says is being aimed, if anything is.
     fn of(view: &TargetView) -> Option<Pointing> {
-        match (view.ability, view.throwing, view.firing) {
-            (Some(ability), _, _) => Some(Pointing::Ability(ability)),
-            (None, Some(item), _) => Some(Pointing::Throw(item)),
-            (None, None, true) => Some(Pointing::Fire),
-            (None, None, false) => None,
+        match (view.ability, view.using, view.throwing, view.firing) {
+            (Some(ability), _, _, _) => Some(Pointing::Ability(ability)),
+            (None, Some(item), _, _) => Some(Pointing::Use(item)),
+            (None, None, Some(item), _) => Some(Pointing::Throw(item)),
+            (None, None, None, true) => Some(Pointing::Fire),
+            (None, None, None, false) => None,
         }
     }
 
@@ -226,6 +287,10 @@ impl Pointing {
     fn into_view(self, view: &mut TargetView, user: Entity) {
         view.ability = match self {
             Pointing::Ability(ability) => Some(ability),
+            _ => None,
+        };
+        view.using = match self {
+            Pointing::Use(item) => Some(item),
             _ => None,
         };
         view.throwing = match self {
@@ -264,14 +329,35 @@ pub struct Aiming<'w, 's> {
     /// Whether a user has a shot at all: its own, or a worn gun's, read
     /// the way the resolver fires it, so a gun in hand opens the cursor.
     loadout: Loadout<'w, 's>,
+    /// What a thing does, for how its use is pointed.
+    triggers: Query<'w, 's, &'static Triggers>,
+    /// What a user carries and wears, and what a thing used out of it
+    /// spends and is worn in, for whether it may be used at all.
+    bags: Query<'w, 's, (&'static Inventory, Option<&'static Equipped>)>,
+    things: Query<'w, 's, (Option<&'static Consumable>, Has<Wearable>, Has<Unknown>)>,
 }
 
 impl Aiming<'_, '_> {
+    /// How `item`'s use is pointed, when it is pointed somewhere.
+    fn use_targeting(&self, item: Entity) -> Option<Targeting> {
+        self.triggers.get(item).ok().and_then(Triggers::targeting)
+    }
+
+    /// Whether `user` may use `item` now, wherever it is pointed, by the
+    /// rule the items resolver refuses a use by.
+    fn may_use(&self, user: Entity, item: Entity) -> bool {
+        let (Ok((bag, worn)), Ok((consumable, wearable, unknown))) = (self.bags.get(user), self.things.get(item)) else { return false };
+        rl_bevy::may_use(item, bag, worn, consumable, wearable, unknown)
+    }
+
     /// The aim a pointing is judged by. A throw and a shot are for foes,
-    /// which is where they open.
+    /// which is where they open. A thing not yet known is aimed at anyone,
+    /// since cycling only to what its own aim wants would tell it.
     fn aim(&self, pointing: Pointing) -> Aim {
         match pointing {
             Pointing::Ability(ability) => self.abilities.as_deref().map_or(Aim::Foe, |a| a.get(ability).aim),
+            Pointing::Use(item) if self.things.get(item).is_ok_and(|(_, _, unknown)| unknown) => Aim::Anyone,
+            Pointing::Use(item) => self.use_targeting(item).map_or(Aim::Foe, |t| t.aim),
             Pointing::Throw(_) | Pointing::Fire => Aim::Foe,
         }
     }
@@ -292,7 +378,7 @@ impl Aiming<'_, '_> {
                 let seen = is_user || sight.is_none_or(|v| v.can_see(s.at));
                 let relation = self.bystanders.relation(user, s.entity);
                 seen && match pointing {
-                    Pointing::Ability(_) => aim.cycles_to(relation, is_user, s.actor),
+                    Pointing::Ability(_) | Pointing::Use(_) => aim.cycles_to(relation, is_user, s.actor),
                     // Something thrown or shot can be sent at anyone but
                     // whoever sends it.
                     Pointing::Throw(_) | Pointing::Fire => s.actor && !is_user,
@@ -330,14 +416,18 @@ impl Aiming<'_, '_> {
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct AimRequests<'w, 's> {
     abilities: MessageReader<'w, 's, AimAt>,
+    uses: MessageReader<'w, 's, AimUse>,
     throws: MessageReader<'w, 's, AimThrow>,
     fires: MessageReader<'w, 's, AimFire>,
 }
 
-/// What the cursor writes when the player confirms.
+/// What the cursor writes when the player confirms, or at once for a use
+/// that needs no aiming.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct AimIntents<'w> {
     uses: MessageWriter<'w, Intent<Use>>,
+    item_uses: MessageWriter<'w, Intent<UseItem>>,
+    aimed_uses: MessageWriter<'w, Intent<UseItemAt>>,
     throws: MessageWriter<'w, Intent<Throw>>,
     attacks: MessageWriter<'w, Intent<Attack>>,
 }
@@ -358,6 +448,26 @@ pub fn aim_cursor(mut view: ResMut<TargetView>, mut modals: ResMut<Modals>, mut 
             continue;
         }
         asked = Some((request.user, Pointing::Ability(request.ability)));
+    }
+    for request in requests.uses.read() {
+        // A thing whose use asks for another of its user's things is chosen
+        // for in the bag, which reads the same request, and not aimed.
+        if aiming.triggers.get(request.item).is_ok_and(|t| t.asks().is_some()) {
+            continue;
+        }
+        // A thing whose use lands on its user is used where it stands, as
+        // an ability that wants no cursor is, and refused there when it
+        // cannot be.
+        if aiming.use_targeting(request.item).is_none() {
+            intents.item_uses.write(Intent::new(request.user, UseItem(request.item)));
+            continue;
+        }
+        // One that cannot be used now, wherever it is pointed, opens no
+        // aim, as a thing that cannot be thrown opens none for a throw: a
+        // cursor that showed it as legal would be refused on confirm.
+        if aiming.may_use(request.user, request.item) {
+            asked = Some((request.user, Pointing::Use(request.item)));
+        }
     }
     for request in requests.throws.read() {
         if aiming.missiles.contains(request.item) {
@@ -422,6 +532,9 @@ pub fn aim_cursor(mut view: ResMut<TargetView>, mut modals: ResMut<Modals>, mut 
                 Pointing::Ability(ability) => {
                     intents.uses.write(Intent::new(user, Use { ability, aim: view.cursor }));
                 }
+                Pointing::Use(item) => {
+                    intents.aimed_uses.write(Intent::new(user, UseItemAt { item, at: view.cursor }));
+                }
                 Pointing::Throw(item) => {
                     intents.throws.write(Intent::new(user, Throw { item, at: view.cursor }));
                 }
@@ -460,9 +573,11 @@ fn close(view: &mut TargetView, modals: &mut Modals, modal: ModalId) {
 /// Forgets what the cursor was aiming.
 fn forget(view: &mut TargetView) {
     view.ability = None;
+    view.using = None;
     view.throwing = None;
     view.firing = false;
     view.what.clear();
+    view.unknown = false;
     view.user = None;
     view.cells.clear();
     view.path.clear();
@@ -471,6 +586,7 @@ fn forget(view: &mut TargetView) {
     view.why.clear();
     view.span = None;
     view.odds = None;
+    view.facets.clear();
 }
 
 /// Anything the cursor might land on, as a row is built from it.
@@ -501,8 +617,13 @@ pub struct Reach<'w, 's> {
     living: Query<'w, 's, (), (With<Health>, Without<Dead>)>,
     /// The odds a shot or throw lands, by the call the resolver rolls with.
     marks: Marksmanship<'w, 's>,
-    /// What a worn gun is called, for the first line of the box.
+    /// What a worn gun or a thing used is called, for the first line of
+    /// the box.
     names: Query<'w, 's, &'static Name>,
+    /// What a thing does, for how its use is pointed.
+    triggers: Query<'w, 's, &'static Triggers>,
+    /// What is not yet known, whose reach the box leaves out.
+    unknown: Query<'w, 's, (), With<Unknown>>,
 }
 
 impl Reach<'_, '_> {
@@ -523,11 +644,11 @@ impl Reach<'_, '_> {
 
 /// Fills [`TargetView`] from wherever the cursor is.
 ///
-/// Through [`Bystanders::land`] for an ability, [`flight`] for a throw and
-/// [`shot`] for a shot, the calls the resolvers act on, so the cells lit on
-/// the map, the names in the box and whether it reads as refused are
-/// what will happen when the player confirms. A preview computed any other
-/// way is a preview that drifts.
+/// Through [`Bystanders::land`] for an ability and a thing's aimed use,
+/// [`flight`] for a throw and [`shot`] for a shot, the calls the resolvers
+/// act on, so the cells lit on the map, the names in the box and whether it
+/// reads as refused are what will happen when the player confirms. A
+/// preview computed any other way is a preview that drifts.
 pub fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, reach: Reach) {
     // The screen is the one truth about whether the cursor is up. Closed
     // by anything but its own key, a game's action that closes every
@@ -545,6 +666,8 @@ pub fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, reach: 
     view.legal = false;
     view.span = None;
     view.odds = None;
+    view.facets.clear();
+    view.unknown = false;
     let Some(user) = view.user else { return };
     let Ok((from, sight, bag)) = reach.users.get(user) else { return };
     let from = from.0;
@@ -554,7 +677,9 @@ pub fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, reach: 
         let has_melee = reach.loadout.melee(user).is_some();
         // The worn gun's name, empty for a shot that is the user's own.
         view.what = from_item.and_then(|item| reach.names.get(item).ok()).map(|n| n.as_str().to_string()).unwrap_or_default();
-        view.span = Some(AimRange { distance: rl_core::geometry::chebyshev(from, view.cursor), effective: gun.effective_range(), max: gun.range });
+        view.unknown = from_item.is_some_and(|item| reach.unknown.contains(item));
+        let span = AimRange { distance: rl_core::geometry::chebyshev(from, view.cursor), effective: gun.effective_range(), max: gun.range };
+        view.span = (!view.unknown).then_some(span);
         let flies = shot(&reach.map, &reach.occupancy, from, view.cursor, gun.range);
         let target = mark(&reach.occupancy, user, view.cursor, |who| reach.living.contains(who));
         // Point blank is a blow, struck with whatever the user fights with
@@ -594,8 +719,13 @@ pub fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, reach: 
             (Some(_), Some(end)) => *end,
             _ => view.cursor,
         };
-        view.span = Some(AimRange { distance: rl_core::geometry::chebyshev(from, reaches), effective: throwable.effective_range(), max: throwable.range });
-        view.odds = struck.and_then(|who| reach.marks.odds(user, who, Attempt::Throw(throwable)));
+        view.unknown = reach.unknown.contains(item);
+        let span = AimRange { distance: rl_core::geometry::chebyshev(from, reaches), effective: throwable.effective_range(), max: throwable.range };
+        view.span = (!view.unknown).then_some(span);
+        // Whether a throw is rolled at all, only a thing that strikes being
+        // rolled, and how far it flies without penalty are the thing's, so
+        // one not yet known gives no chance, as its bag row gives no strike.
+        view.odds = struck.filter(|_| !view.unknown).and_then(|who| reach.marks.odds(user, who, Attempt::Throw(throwable)));
         // It lands on whoever it strikes, or wherever it comes to rest.
         let lands = match (thrown.struck, thrown.path.last()) {
             (Some(_), Some(end)) => *end,
@@ -616,25 +746,55 @@ pub fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, reach: 
         return;
     }
 
+    let cursor = view.cursor;
+    let sees_aim = sight.map(|s| s.can_see(cursor));
+    if let Some(item) = view.using {
+        let Some(targeting) = reach.triggers.get(item).ok().and_then(Triggers::targeting) else { return };
+        view.what = reach.names.get(item).map(|n| n.as_str().to_string()).unwrap_or_default();
+        // A thing no longer carried is refused, as the resolver refuses it.
+        let carried = bag.is_some_and(|b| b.contains(item));
+        view.unknown = reach.unknown.contains(item);
+        if view.unknown {
+            // Nothing its targeting would tell: a plain line to the cursor
+            // and its cell, with no footprint, reach, refusal or target,
+            // since who it would catch tells its shape. Taken anywhere it
+            // is carried, as the resolver takes it.
+            view.path = rl_core::geometry::line(from, cursor).skip(1).collect();
+            view.cells = vec![cursor];
+            view.legal = carried;
+            return;
+        }
+        let source = Source::Trigger { on: item, moment: Moments::USE };
+        preview(&mut view, &reach, Aimed { user, source, targeting, origin: from, aim: cursor, sees_aim }, &[]);
+        view.legal = view.legal && carried;
+        return;
+    }
+
     let (Some(ability), Some(abilities)) = (view.ability, reach.abilities.as_deref()) else { return };
     let def = abilities.get(ability);
     view.what = def.name.clone();
-    let max = match def.mode {
+    // What the gate said about the ability, before what this particular aim
+    // adds.
+    let gate = reach.offered.as_deref().map_or(&[][..], |offered| offered.why_for(user, ability));
+    preview(&mut view, &reach, Aimed::ability(user, ability, def, from, cursor, sees_aim), gate);
+}
+
+/// Fills `view` from an aim the resolvers land through
+/// [`Bystanders::land`], an ability's or a thing's aimed use alike: how far
+/// it reaches, the footprint, who stands in it, and every reason it would
+/// be refused, the gate's first and then what this particular aim adds,
+/// before the turn is spent rather than after.
+fn preview(view: &mut TargetView, reach: &Reach, aimed: Aimed, gate: &[Blocked]) {
+    let Aimed { user, targeting, origin: from, .. } = aimed;
+    let max = match targeting.mode {
         TargetMode::Own => 0,
         TargetMode::Adjacent => 1,
         TargetMode::Bolt { range } | TargetMode::Ball { range, .. } | TargetMode::Beam { range } => range,
         TargetMode::Cone { length } => length,
     };
     view.span = Some(AimRange { distance: rl_core::geometry::chebyshev(from, view.cursor), effective: max, max });
-    let aimed = Aimed { user, ability, def, origin: from, aim: view.cursor, sees_aim: sight.map(|s| s.can_see(view.cursor)) };
     let Landed { landing, refused } = reach.bystanders.land(aimed, &reach.map, &reach.occupancy);
-
-    // Every reason the resolver would refuse, before the turn is spent
-    // rather than after: what the gate said about the ability, then what
-    // this particular aim adds.
-    if let Some(offered) = reach.offered.as_deref() {
-        view.why.extend(offered.why_for(user, ability).iter().copied());
-    }
+    view.why.extend(gate.iter().copied());
     view.why.extend(refused);
     view.legal = view.why.is_empty();
 
@@ -647,10 +807,10 @@ pub fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, reach: 
     // footprint is then drawn where it was pointed rather than where it
     // stopped, since nothing lands at the stop: a refused aim shows the
     // shape the player asked for, in the tone that says no.
-    let out_of_reach = view.why.contains(&Blocked::OutOfReach) || (landing.cells.is_empty() && landing.path.is_empty() && def.aim.needs_cursor());
+    let out_of_reach = view.why.contains(&Blocked::OutOfReach) || (landing.cells.is_empty() && landing.path.is_empty() && targeting.aim.needs_cursor());
     if out_of_reach {
         view.beyond = beyond(landing.landed_at.unwrap_or(from), view.cursor);
-        view.cells = shape_at(def.mode, view.cursor);
+        view.cells = shape_at(targeting.mode, view.cursor);
     } else {
         view.cells = landing.cells;
     }
@@ -1201,6 +1361,38 @@ mod tests {
         assert_eq!(view.odds, None);
     }
 
+    /// A thrown thing not yet known is previewed as a known one is where it
+    /// shows only what its thrower knows, the flight and the cell it comes
+    /// down on, and never the area its landing covers; but it gives no
+    /// chance to hit, since only a thing that strikes is rolled, and what it
+    /// strikes for is as hidden as on its bag row.
+    #[test]
+    fn an_unknown_thrown_thing_paints_its_flight_and_landing_cell_and_gives_no_chance_to_hit() {
+        let mut stage = Stage::new_with(TargetViewPlugin, percent);
+        let (user, kind) = (stage.player, stage.kind);
+        let knife = || (Item, Name::new("knife"), Throwable::new(6, Some((kind, rl_core::DiceRoll::flat(2)))));
+        let (known, unknown) = (stage.app.world_mut().spawn(knife()).id(), stage.app.world_mut().spawn((knife(), rl_bevy::Unknown)).id());
+        stage.app.world_mut().get_mut::<Inventory>(user).expect("a bag").items.extend([known, unknown]);
+        stage.actor("droid", 'd', 3, 0);
+        stage.tick();
+        let at = stage.at;
+        let mut preview = |item: Entity| {
+            stage.app.world_mut().write_message(AimThrow { user, item });
+            stage.tick();
+            stage.app.world_mut().resource_mut::<TargetView>().cursor = at.offset(3, 0);
+            stage.tick();
+            let view = stage.app.world().resource::<TargetView>();
+            let seen = (view.path.clone(), view.cells.clone(), view.beyond.clone(), view.odds.is_some(), view.unknown);
+            stage.press(KeyCode::Escape);
+            seen
+        };
+        let (shown, hidden) = (preview(known), preview(unknown));
+        assert_eq!((&hidden.0, &hidden.1, &hidden.2), (&shown.0, &shown.1, &shown.2), "the same flight, landing cell and warning");
+        assert_eq!(hidden.1, vec![at.offset(3, 0)], "the cell it comes down on, and no area");
+        assert!(shown.3 && !hidden.3, "a chance to hit for the known knife, none for the unknown one");
+        assert!(hidden.4, "which is said to be unknown");
+    }
+
     /// A shot is aimed like a throw, and the preview is the resolver's own
     /// line of fire: a foe behind another reads as out of reach, and
     /// confirming writes the attack on whoever is under the cursor.
@@ -1349,5 +1541,309 @@ mod tests {
         let dear = view.rows.iter().find(|r| r.label == "dear").expect("the dear one");
         assert!(!dear.ready());
         assert!(matches!(dear.blocked.first(), Some(Blocked::Cannot(_))), "{:?}", dear.blocked);
+    }
+}
+
+/// A thing used at somewhere, aimed through the same cursor an ability is.
+#[cfg(test)]
+mod uses {
+    use super::*;
+    use crate::harness::Stage;
+    use rl_bevy::{AddEffect, AddEngineEffects, EffectWorld, EffectsPlugin, FromArgs, Landing, Moments, Triggers};
+    use rl_rules::Names;
+    use rl_rules::ability::RawValue;
+
+    /// A rod whose use bursts on the ground around where it is pointed.
+    const BURST: &str = r#"[(on: "use", targeting: (mode: Ball(range: 6, radius: 1), aim: Ground), effects: [(kind: "Struck")])]"#;
+
+    /// Whoever a use landed on, marked by the effect itself, so what is
+    /// read is the landing rather than something it went on to cause.
+    #[derive(Component)]
+    struct Hit;
+
+    /// The effect that marks them.
+    struct Struck;
+
+    impl Effect for Struck {
+        fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+            for who in &landing.targets {
+                world.commands.entity(*who).insert(Hit);
+            }
+        }
+    }
+
+    impl FromArgs for Struck {
+        const KIND: &'static str = "Struck";
+
+        fn from_args(_: &RawValue, _: &Names<'_>) -> Result<Self, String> {
+            Ok(Self)
+        }
+    }
+
+    fn staged() -> Stage {
+        let mut stage = Stage::new_with((EffectsPlugin, TargetViewPlugin), |app| {
+            app.add_engine_effects().add_effect::<Struck>();
+        });
+        stage.tick();
+        stage
+    }
+
+    /// A thing called `name` in the player's bag, doing `triggers`.
+    fn carry(stage: &mut Stage, name: &str, triggers: &str) -> Entity {
+        let specs: Vec<rl_rules::TriggerSpec> = Names::new().load_list(triggers).expect("the triggers parse");
+        let built = {
+            let world = stage.app.world();
+            let names = world.resource::<Registries>().names();
+            Triggers::build(&specs, &[], world.resource::<Moments>(), world.resource::<EffectKinds>(), &names).expect("the triggers build")
+        };
+        let thing = stage.app.world_mut().spawn((Item, Name::new(name.to_string()), built)).id();
+        let player = stage.player;
+        stage.app.world_mut().get_mut::<Inventory>(player).expect("a bag").items.push(thing);
+        thing
+    }
+
+    fn aimed_uses(stage: &mut Stage) -> Vec<UseItemAt> {
+        stage.app.world_mut().resource_mut::<Messages<Intent<UseItemAt>>>().drain().map(|i| i.action).collect()
+    }
+
+    /// A use aimed somewhere is aimed as an ability is: the cursor opens on
+    /// the nearest foe, shows the burst it would land and who stands in
+    /// it, and confirming writes the use at the cell.
+    #[test]
+    fn an_aimed_use_opens_on_the_nearest_foe_previews_its_footprint_and_confirm_uses_it_there() {
+        let mut stage = staged();
+        let rod = carry(&mut stage, "rod", BURST);
+        stage.actor("near", 'n', 2, 0);
+        stage.actor("far", 'f', 4, 0);
+        stage.tick();
+        let (user, at) = (stage.player, stage.at);
+
+        stage.app.world_mut().write_message(AimUse { user, item: rod });
+        stage.tick();
+        let view = stage.app.world().resource::<TargetView>();
+        assert!(view.aiming() && view.using == Some(rod), "the cursor is up on the rod");
+        assert_eq!((view.cursor, view.what.as_str()), (at.offset(2, 0), "rod"), "on the nearest foe, by the thing's name");
+        assert_eq!(view.span.map(|s| s.max), Some(6), "reaching as far as its aim does");
+        let mut cells = view.cells.clone();
+        let mut disc: Vec<Point> = rl_core::geometry::disc(at.offset(2, 0), 1).collect();
+        cells.sort_by_key(|p| (p.y, p.x));
+        disc.sort_by_key(|p| (p.y, p.x));
+        assert_eq!(cells, disc, "the burst it will land");
+        assert_eq!(view.targets.iter().map(|r| r.label.as_str()).collect::<Vec<_>>(), vec!["near"]);
+        assert!(view.legal);
+
+        let _ = aimed_uses(&mut stage);
+        stage.press(KeyCode::Enter);
+        assert_eq!(aimed_uses(&mut stage), vec![UseItemAt { item: rod, at: at.offset(2, 0) }], "used where it was aimed");
+        assert!(!stage.app.world().resource::<TargetView>().aiming(), "and the cursor went away");
+    }
+
+    /// A thing whose use lands on its user is used at once and no screen
+    /// opens, so a game binds every use the same way and never asks which
+    /// kind it is, as it binds abilities.
+    #[test]
+    fn asked_to_aim_a_use_that_lands_on_its_user_the_cursor_uses_it_at_once() {
+        let mut stage = staged();
+        let draught = carry(&mut stage, "draught", r#"[(on: "use", effects: [(kind: "Struck")])]"#);
+        let user = stage.player;
+        stage.app.world_mut().write_message(AimUse { user, item: draught });
+        stage.tick();
+        let used: Vec<Entity> = stage.app.world_mut().resource_mut::<Messages<Intent<UseItem>>>().drain().map(|i| i.action.0).collect();
+        assert_eq!(used, vec![draught], "used where it stands");
+        assert!(!stage.app.world().resource::<Modals>().any_open(), "and nothing opened");
+    }
+
+    /// A thing that cannot be used now opens no cursor, as something that
+    /// cannot be thrown opens none for a throw: an empty one, and one that
+    /// is worn to be used and is not, by the rule the resolver refuses a
+    /// use by, asked before the aim rather than after it.
+    #[test]
+    fn asked_to_aim_a_thing_that_cannot_be_used_now_the_cursor_opens_nothing() {
+        let mut stage = staged();
+        let empty = carry(&mut stage, "empty rod", BURST);
+        stage.app.world_mut().entity_mut(empty).insert(Consumable { left: 0, ..Consumable::new(3, WhenEmpty::Kept) });
+        let unworn = carry(&mut stage, "unworn rod", BURST);
+        stage.app.world_mut().entity_mut(unworn).insert(Wearable(rl_rules::EquipShape::in_slot(rl_rules::SlotId::from_raw(0))));
+        let user = stage.player;
+        for item in [empty, unworn] {
+            stage.app.world_mut().write_message(AimUse { user, item });
+            stage.tick();
+            assert!(!stage.app.world().resource::<TargetView>().aiming(), "no aim for {item:?}");
+            assert!(!stage.app.world().resource::<Modals>().any_open(), "and no screen");
+        }
+    }
+
+    /// An empty thing not yet known is aimed as any other, since a cursor
+    /// that would not open would say it was empty.
+    #[test]
+    fn asked_to_aim_an_empty_thing_not_yet_known_the_cursor_opens() {
+        let mut stage = staged();
+        let rod = carry(&mut stage, "teak rod", BURST);
+        stage.app.world_mut().entity_mut(rod).insert((Consumable { left: 0, ..Consumable::new(3, WhenEmpty::Kept) }, rl_bevy::Unknown));
+        let user = stage.player;
+        stage.app.world_mut().write_message(AimUse { user, item: rod });
+        stage.tick();
+        let view = stage.app.world().resource::<TargetView>();
+        assert!(view.aiming() && view.using == Some(rod) && view.legal, "aimed, and taken");
+    }
+
+    /// A thing whose use asks for another of its user's things is chosen
+    /// for in the bag rather than aimed: the cursor opens no aim for it and
+    /// does not use it on nothing.
+    #[test]
+    fn asked_to_aim_a_use_that_asks_for_a_thing_the_cursor_leaves_it_to_the_bag() {
+        let mut stage = staged();
+        let polish = carry(&mut stage, "polish", r#"[(on: "use", asks: (prompt: "Polish which?"), effects: [(kind: "Struck")])]"#);
+        let user = stage.player;
+        stage.app.world_mut().write_message(AimUse { user, item: polish });
+        stage.tick();
+        assert!(!stage.app.world().resource::<TargetView>().aiming(), "no aim");
+        assert!(stage.app.world_mut().resource_mut::<Messages<Intent<UseItem>>>().drain().next().is_none(), "and no use on nothing");
+    }
+
+    /// A thing not yet known is aimed with nothing its targeting would
+    /// tell: named, with a plain line to the cursor and the cursor's cell,
+    /// and no footprint, reach, reason to refuse or anyone named as caught,
+    /// even pointed far past where a burst of its reach could go.
+    #[test]
+    fn an_unknown_things_aim_shows_a_plain_line_and_nothing_its_targeting_would_tell() {
+        let mut stage = staged();
+        let rod = carry(&mut stage, "teak rod", BURST);
+        stage.app.world_mut().entity_mut(rod).insert(rl_bevy::Unknown);
+        stage.actor("near", 'n', 2, 0);
+        stage.tick();
+        let (user, at) = (stage.player, stage.at);
+        stage.app.world_mut().write_message(AimUse { user, item: rod });
+        stage.tick();
+        for cursor in [at.offset(2, 0), at.offset(9, 3)] {
+            stage.app.world_mut().resource_mut::<TargetView>().cursor = cursor;
+            stage.tick();
+            let view = stage.app.world().resource::<TargetView>();
+            assert!(view.aiming() && view.unknown, "aimed, and said to be unknown");
+            assert_eq!((view.what.as_str(), view.span), ("teak rod", None), "by its name, and no reach");
+            let line: Vec<Point> = rl_core::geometry::line(at, cursor).skip(1).collect();
+            assert_eq!((&view.path, &view.cells), (&line, &vec![cursor]), "a plain line and the cursor's cell, at {cursor:?}");
+            assert!(view.beyond.is_empty() && view.why.is_empty() && view.targets.is_empty(), "nothing out of reach, refused or caught");
+            assert!(view.legal, "and taken, as the resolver takes it");
+        }
+    }
+
+    /// A thing not yet known cycles as one aimed at anyone would, so a
+    /// use that wants foes still stops on a friend, rather than telling
+    /// what it wants by passing friends by; known, it passes them by.
+    #[test]
+    fn an_unknown_foe_only_things_cursor_cycles_to_a_friend() {
+        let mut stage = staged();
+        let (known, unknown) = (
+            carry(&mut stage, "rod", r#"[(on: "use", targeting: (mode: Bolt(range: 6)), effects: [(kind: "Struck")])]"#),
+            carry(&mut stage, "teak rod", r#"[(on: "use", targeting: (mode: Bolt(range: 6)), effects: [(kind: "Struck")])]"#),
+        );
+        stage.app.world_mut().entity_mut(unknown).insert(rl_bevy::Unknown);
+        let friend = stage.actor("friend", 'f', 2, 0);
+        let player = stage.player;
+        let ours = stage.app.world().get::<Faction>(player).copied().expect("the player's side");
+        stage.app.world_mut().entity_mut(friend).insert(ours);
+        stage.tick();
+        let beside = stage.at.offset(2, 0);
+        // Every cell a few presses of the cycle key visit.
+        let mut stops = |item: Entity| {
+            stage.app.world_mut().write_message(AimUse { user: player, item });
+            stage.tick();
+            let mut visited = Vec::new();
+            for _ in 0..3 {
+                stage.press(KeyCode::Tab);
+                visited.push(stage.app.world().resource::<TargetView>().cursor);
+            }
+            stage.press(KeyCode::Escape);
+            visited
+        };
+        assert!(!stops(known).contains(&beside), "known, a foe-only rod passes a friend by");
+        assert!(stops(unknown).contains(&beside), "not yet known, it stops on one");
+    }
+
+    /// The property the preview exists for, held for a thing's aimed use as
+    /// it is for an ability, over many layouts: whether the box reads as
+    /// refused, and who it lists, are exactly whether the resolver takes
+    /// the use and who it lands on once the player confirms.
+    #[test]
+    fn the_preview_of_an_aimed_use_names_exactly_who_it_lands_on() {
+        use rl_core::seed::position_hash;
+        // How many aims of each kind the span met, so a property that held
+        // only because every aim was refused, or landed on nobody, fails.
+        let (mut took, mut refused, mut struck_someone) = (0, 0, 0);
+        for seed in 0..12u64 {
+            // A small deterministic stream: one hash per draw.
+            let mut draw = 0;
+            let mut roll = |n: i32| {
+                draw += 1;
+                (position_hash(seed, draw, n) % n as u64) as i32
+            };
+            let mut stage = staged();
+            let rods = [
+                carry(&mut stage, "bolt", r#"[(on: "use", targeting: (mode: Bolt(range: 6)), effects: [(kind: "Struck")])]"#),
+                carry(&mut stage, "burst", BURST),
+                carry(&mut stage, "salve", r#"[(on: "use", targeting: (mode: Ball(range: 6, radius: 1), aim: Ally), effects: [(kind: "Struck")])]"#),
+            ];
+            let player = stage.player;
+            if roll(2) == 0 {
+                stage.app.world_mut().get_mut::<Health>(player).expect("health").current = 12;
+            }
+            let mut taken = vec![(0, 0)];
+            for i in 0..6 {
+                let (dx, dy) = loop {
+                    let at = (roll(9) - 4, roll(9) - 4);
+                    if !taken.contains(&at) {
+                        break at;
+                    }
+                };
+                taken.push((dx, dy));
+                let who = stage.actor(&format!("them {i}"), 't', dx, dy);
+                if roll(2) == 0 {
+                    stage.app.world_mut().entity_mut(who).insert(Faction(rl_rules::FactionId::from_raw(0)));
+                }
+                if roll(2) == 0 {
+                    stage.app.world_mut().get_mut::<Health>(who).expect("health").current = 4;
+                }
+            }
+            stage.tick();
+            stage.tick();
+
+            for _ in 0..6 {
+                let item = rods[roll(3) as usize];
+                let aim = stage.at.offset(roll(13) - 6, roll(13) - 6);
+                stage.app.world_mut().write_message(AimUse { user: player, item });
+                stage.tick();
+                stage.app.world_mut().resource_mut::<TargetView>().cursor = aim;
+                stage.tick();
+                let view = stage.app.world().resource::<TargetView>();
+                assert!(view.aiming(), "seed {seed}: the cursor is up");
+                let (legal, why) = (view.legal, view.why.clone());
+                let mut shown: Vec<Entity> = view.targets.iter().map(|r| r.entity).collect();
+                shown.sort();
+
+                let world = stage.app.world_mut();
+                let marked: Vec<Entity> = world.query_filtered::<Entity, With<Hit>>().iter(world).collect();
+                for e in marked {
+                    world.entity_mut(e).remove::<Hit>();
+                }
+                let _ = world.resource_mut::<Messages<ItemEvent>>().drain().count();
+                stage.press(KeyCode::Enter);
+                let world = stage.app.world_mut();
+                let used = world.resource_mut::<Messages<ItemEvent>>().drain().any(|e| matches!(e, ItemEvent::Used { item: used, .. } if used == item));
+                let mut hit: Vec<Entity> = world.query_filtered::<Entity, With<Hit>>().iter(world).collect();
+                hit.sort();
+                if legal {
+                    assert!(used, "seed {seed}: the preview called legal an aim the resolver refused");
+                    assert_eq!(hit, shown, "seed {seed}: the box listed other than who it landed on");
+                    took += 1;
+                    struck_someone += usize::from(!hit.is_empty());
+                } else {
+                    assert!(!used, "seed {seed}: the resolver took an aim the preview refused ({why:?})");
+                    assert!(hit.is_empty(), "seed {seed}: a refused use landed on {hit:?}");
+                    refused += 1;
+                }
+            }
+        }
+        assert!(took > 0 && refused > 0 && struck_someone > 0, "the span met {took} taken, {refused} refused, {struck_someone} landing on someone");
     }
 }

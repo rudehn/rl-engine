@@ -253,6 +253,11 @@ pub fn draw_inspect(
         terminal.print_on(inner.x, y, &clip(&whereabouts(subject.distance, &ground), width), palette.get(Tones::MUTED), bg);
         y += 1;
     }
+    // A thing not yet known is no more than its name here, as in the bag.
+    if view.unknown && y < inner.bottom() {
+        terminal.print_on(inner.x, y, &clip("unknown", width), palette.get(Tones::MUTED), bg);
+        y += 1;
+    }
     if let Some(work) = &subject.work
         && y < inner.bottom()
     {
@@ -305,12 +310,13 @@ fn mirrored(rect: Rect, map: Rect) -> Rect {
     Rect::new(rect.x, map.y + map.bottom() - rect.bottom(), rect.width, rect.height)
 }
 
-/// The terminal cells the cursor must keep in sight: its own and the four
-/// beside it, where ticks go. A glowing cursor marks only its own, but the
-/// cells round it are what a player reads it against, so it keeps them
-/// too.
+/// The terminal cells the cursor must keep in sight: every cell of its own
+/// tile and of the four beside it, where ticks go, which on a map of wide
+/// tiles is more than each tile's first. A glowing cursor marks only its
+/// own, but the tiles round it are what a player reads it against, so it
+/// keeps them too.
 fn marked(map: &MapView, cursor: Point) -> Vec<Point> {
-    [(0, 0), (-1, 0), (1, 0), (0, -1), (0, 1)].into_iter().filter_map(|(dx, dy)| map.to_screen(cursor.offset(dx, dy))).collect()
+    [(0, 0), (-1, 0), (1, 0), (0, -1), (0, 1)].into_iter().flat_map(|(dx, dy)| map.cells(cursor.offset(dx, dy))).collect()
 }
 
 fn hides(rect: Rect, cells: &[Point]) -> bool {
@@ -318,9 +324,14 @@ fn hides(rect: Rect, cells: &[Point]) -> bool {
 }
 
 /// How far off the thing under the cursor is, and what it stands on when
-/// the ground has a name: `1 tile away`, `3 tiles away, on floor`.
+/// the ground has a name: `1 tile away`, `3 tiles away, on floor`, and
+/// `here, on floor` for what lies where the player stands.
 fn whereabouts(distance: i32, ground: &str) -> String {
-    let away = if distance == 1 { "1 tile away".to_string() } else { format!("{distance} tiles away") };
+    let away = match distance {
+        0 => "here".to_string(),
+        1 => "1 tile away".to_string(),
+        _ => format!("{distance} tiles away"),
+    };
     if ground.is_empty() { away } else { format!("{away}, on {ground}") }
 }
 
@@ -366,6 +377,42 @@ mod tests {
         let screen = map.to_screen(at.offset(-1, 0)).unwrap();
         assert_eq!(stage.app.world().resource::<Terminal>().get(screen.x, screen.y).map(|c| c.fg), Some(expected), "on the pulse");
         assert!((0.0..=1.0).contains(&crate::cursor::pulse(0.37)));
+    }
+
+    /// On a map of tiles two cells wide the ticks stand on the four tiles
+    /// round the cursor, each drawn across its tile as a tile's own glyph
+    /// is, so they stand as far from the cell looked at on either side.
+    #[test]
+    fn on_a_map_of_wide_tiles_the_ticks_stand_centred_on_the_four_tiles_round_the_cursor() {
+        let mut stage = Stage::new_with(InspectPanel::new(Rect::new(0, 21, 40, 8)), |app| {
+            app.add_plugins(rl_render::MapViewPlugin::new(Rect::new(0, 0, 40, 20)).across(2));
+        })
+        .screen(40, 30);
+        stage.actor("crab", 'c', 2, 0);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let at = stage.at.offset(2, 0);
+        let (view, terminal) = (stage.app.world().resource::<MapView>(), stage.app.world().resource::<Terminal>());
+        for (dx, dy, glyph) in [(0, 0, 'c'), (-1, 0, '-'), (1, 0, '-'), (0, -1, '|'), (0, 1, '|')] {
+            let first = view.to_screen(at.offset(dx, dy)).expect("on the map");
+            let drawn = (terminal.get(first.x, first.y).map(|c| c.glyph), terminal.span(first.x, first.y));
+            assert_eq!(drawn, (Some(glyph), Some(2)), "the tile ({dx}, {dy}) from the crab: {glyph:?} across both its cells");
+        }
+    }
+
+    /// On a map of tiles two cells wide every cell of the tiles round the
+    /// cursor is kept in sight: a panel covering only the second cell of
+    /// the tile beside it moves off it, as one over the first would.
+    #[test]
+    fn on_a_map_of_wide_tiles_a_panel_over_half_of_a_tile_round_the_cursor_moves_off_it() {
+        let mut stage = Stage::new_with(InspectPanel::new(Rect::new(23, 5, 14, 10)).else_at(Rect::new(23, 12, 14, 8)), |app| {
+            app.add_plugins(rl_render::MapViewPlugin::new(Rect::new(0, 0, 40, 20)).across(2));
+        })
+        .screen(40, 20);
+        let east = stage.app.world().resource::<MapView>().cells(stage.at.offset(1, 0)).collect::<Vec<_>>();
+        assert_eq!(east, [Point::new(22, 10), Point::new(23, 10)], "the tile east of the player, the second of its cells under the panel");
+        stage.press(CursorKeys::default().look);
+        assert_eq!(title_row(&stage), Some(12), "the panel is drawn in its other place");
     }
 
     /// The panel over the bottom of the map, where every game puts it.
@@ -467,10 +514,31 @@ mod tests {
         assert!(rows.iter().any(|r| r.contains("2 tiles away, on floor")), "{rows:#?}");
     }
 
+    /// A thing not yet known under the cursor is named, placed and said
+    /// to be unknown, and nothing more.
+    #[test]
+    fn a_thing_not_yet_known_is_said_to_be_unknown_under_where_it_lies() {
+        let mut stage = staged();
+        let vial = stage.thing("murky vial", '!', 2, 0);
+        stage.app.world_mut().entity_mut(vial).insert(rl_bevy::Unknown);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let inner = |y: i32| stage.row(y).trim_start_matches("\u{2502} ").trim_end_matches('\u{2502}').trim_end().to_string();
+        assert_eq!([inner(22), inner(23), inner(24), inner(25)], ["! murky vial", "2 tiles away, on floor", "unknown", ""]);
+    }
+
     #[test]
     fn one_tile_off_is_one_tile_and_any_other_distance_is_tiles() {
         assert_eq!(whereabouts(1, "deck"), "1 tile away, on deck");
         assert_eq!(whereabouts(2, ""), "2 tiles away");
+    }
+
+    /// What lies where the player stands, the stairs they arrived by or
+    /// what they dropped, is here, not nought tiles away.
+    #[test]
+    fn something_underfoot_is_here() {
+        assert_eq!(whereabouts(0, "ash"), "here, on ash");
+        assert_eq!(whereabouts(0, ""), "here");
     }
 
     #[test]

@@ -8,7 +8,8 @@ use crate::components::{Actor, MyTurn, Player, Position};
 use crate::cue::TurnHold;
 use crate::knowledge::Knowledge;
 use crate::state::{EngineState, Restart, RunOver};
-use crate::turn::{Acting, ActionDone, ActionRefused, AddAction, Occupancy, TurnEnd, Turns};
+use crate::title::{HoldStart, LeaveRun, begin_run};
+use crate::turn::{Acting, ActionDone, ActionRefused, AddAction, Occupancy, Pace, TurnEnd, Turns};
 use crate::world::{WorldMap, WorldSettings};
 use crate::{places, turn};
 
@@ -38,7 +39,7 @@ pub enum EngineSet {
 }
 
 /// The stages of `Last`, in order: what the run is written down as, then
-/// what the frame is done with, then a restart.
+/// what the frame is done with, then a restart or a leaving.
 ///
 /// A save written after a restart tore the run down would write a world
 /// with no map in it, and a burial after the restart would despawn what
@@ -51,7 +52,7 @@ pub enum EndOfFrame {
     Save,
     /// The dead and the spent despawned.
     Bury,
-    /// A restart asked for this frame.
+    /// A restart, or a leaving for the title, asked for this frame.
     Restart,
 }
 
@@ -85,17 +86,20 @@ pub struct Turn;
 
 /// Where a game begins a run: the schedule its start system goes in.
 ///
-/// Run once at startup and again after every [`Restart`], with the
-/// previous run torn down and the [`Seed`](crate::seed::Seed) set for the
-/// next. A game puts here what it used to put in `Startup`: the rules, the
-/// map, the player, the warp in and the flip to [`EngineState::Playing`].
-/// Nothing of the old run is left when it runs, so the same system starts
-/// the first run and the tenth.
+/// Run once at startup, unless a title holds the start with [`HoldStart`]
+/// and runs it through [`begin_run`] when the player picks, and again
+/// after every [`Restart`], with the previous run torn down and the
+/// [`Seed`](crate::seed::Seed) set for the next, as it is set for the run
+/// a title begins after one was left. A game puts here what it
+/// used to put in `Startup`: the rules, the map, the player, the warp in
+/// and the flip to [`EngineState::Playing`]. Nothing of the old run is
+/// left when it runs, so the same system starts the first run and the
+/// tenth.
 #[derive(ScheduleLabel, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NewRun;
 
 /// Where a game forgets a run: the schedule run before the engine tears one
-/// down for a [`Restart`].
+/// down for a [`Restart`] or a [`LeaveRun`].
 ///
 /// The engine despawns everything that stands, lies or acts on a map and
 /// resets what it keeps about the run; a game puts here whatever it keeps
@@ -159,8 +163,16 @@ pub enum TurnSet {
 /// stalling the window.
 const MAX_PASSES: usize = 512;
 
+/// Earns the frame's share of the [`Pace`], once a frame and ahead of the
+/// loop, so a loop run again inside the frame, as skipping a cue does, is
+/// not paid twice for one stretch of the wall clock.
+pub fn earn_pace(time: Res<Time>, mut pace: ResMut<Pace>) {
+    pace.earn(time.delta());
+}
+
 /// Runs [`Turn`] passes until the player holds a turn, a pass changes
-/// nothing, or a pass cued something worth waiting for.
+/// nothing, a pass cued something worth waiting for, or the
+/// [`Pace`] has no more game time to give this frame.
 ///
 /// The player holding a turn means the game's input system gets the next
 /// frame; a pass that neither dealt, advanced nor requeued means the queue
@@ -170,13 +182,23 @@ const MAX_PASSES: usize = 512;
 /// pass at all until it is let go: nobody holds a turn while it is up,
 /// since the act that raised it was the last one dealt, so nothing a
 /// player presses meanwhile could have been resolved anyway.
+///
+/// A spent [`Pace`] stops turns being dealt, not passes being run: the
+/// scheduler deals nobody a turn while it is spent, so the pass that finds
+/// it spent changes nothing and ends the loop as an idle one does. A turn
+/// already dealt is therefore always resolved, a player's intent is
+/// answered in its own frame at any pace, and a warp or a reaction asked
+/// for while the turns are stopped is still answered.
 pub fn run_turns(world: &mut World) {
     if world.resource::<TurnHold>().is_held() {
         return;
     }
     for pass in 0..MAX_PASSES {
+        let before = world.resource::<Turns>().now();
         world.resource_mut::<Turns>().progress = false;
         world.run_schedule(Turn);
+        let advanced = world.resource::<Turns>().now().saturating_sub(before);
+        world.resource_mut::<Pace>().spend(advanced);
         let player_holds = world.query_filtered::<(), (With<Player>, With<MyTurn>)>().iter(world).next().is_some();
         if player_holds || !world.resource::<Turns>().progress || world.resource::<TurnHold>().is_held() {
             return;
@@ -207,6 +229,7 @@ impl Plugin for CorePlugin {
             .init_resource::<Turns>()
             .init_resource::<Occupancy>()
             .init_resource::<Acting>()
+            .init_resource::<Pace>()
             .init_resource::<WorldSettings>()
             .init_resource::<Knowledge>()
             .init_resource::<crate::minds::FlowFields>()
@@ -219,6 +242,7 @@ impl Plugin for CorePlugin {
             .add_message::<turn::Stepped>()
             .add_message::<RunOver>()
             .add_message::<Restart>()
+            .add_message::<LeaveRun>()
             .add_message::<places::WarpRequest>()
             .add_message::<places::MapChanged>()
             .add_message::<places::Travelled>()
@@ -282,7 +306,7 @@ impl Plugin for CorePlugin {
             .add_action::<places::GoThrough>()
             .add_action::<crate::doors::Open>()
             .add_action::<crate::doors::Close>()
-            .add_systems(Update, run_turns.in_set(EngineSet::Turns))
+            .add_systems(Update, (earn_pace, run_turns).chain().in_set(EngineSet::Turns))
             .add_systems(Turn, (turn::start_pass, places::tag_new_positions, turn::admit_new_actors, turn::schedule).chain().in_set(TurnSet::Schedule))
             .add_systems(Turn, crate::bump::redirect_bumps.in_set(ResolveSet::Redirect))
             .add_systems(
@@ -306,8 +330,9 @@ impl Plugin for CorePlugin {
             // whether a map exists, and warns, so no order changes it, and a
             // game's exclusive system in `Update` should not have to say so.
             .add_systems(Update, warn_if_play_never_began.ambiguous_with_all())
-            // The run's life: begun at startup, ended by the first `RunOver`,
-            // torn down and begun again by a `Restart`.
+            // The run's life: begun at startup unless a title holds it, ended
+            // by the first `RunOver`, torn down and begun again by a
+            // `Restart`, or torn down and held for the title by a `LeaveRun`.
             .add_systems(Startup, begin_first_run)
             .add_systems(PostUpdate, crate::state::end_runs)
             .configure_sets(Last, (EndOfFrame::Save, EndOfFrame::Bury, EndOfFrame::Restart).chain())
@@ -335,9 +360,11 @@ impl Plugin for CorePlugin {
     }
 }
 
-/// Runs the game's start for the first time.
+/// Begins the first run, unless a title screen is holding it back.
 fn begin_first_run(world: &mut World) {
-    world.run_schedule(NewRun);
+    if !world.contains_resource::<HoldStart>() {
+        begin_run(world);
+    }
 }
 
 /// The run a [`Restart`] asked for, waiting for the state to have left the
@@ -347,16 +374,35 @@ struct PendingRun {
     seed: Option<RunSeed>,
 }
 
-/// Answers the frame's [`Restart`], if there was one: the game forgets the
-/// run, the engine tears it down, and the state goes back to
-/// [`EngineState::Idle`] so the next run is begun through the same door
-/// the first was.
+/// Answers the frame's [`Restart`] or [`LeaveRun`], if there was one: the
+/// game forgets the run, the engine tears it down, and the state goes back
+/// to [`EngineState::Idle`]. After a restart the next run is begun there,
+/// through the same door the first was; after leaving, [`HoldStart`] holds
+/// it back for the title to begin, on a fresh seed set here.
 pub fn restart_runs(world: &mut World) {
-    let asked: Option<Restart> = world.resource_mut::<Messages<Restart>>().drain().last();
-    let Some(restart) = asked else { return };
+    let restart: Option<Restart> = world.resource_mut::<Messages<Restart>>().drain().last();
+    // Leaving needs a run to leave. At a title already up there is none,
+    // and a teardown would run a game's forgetting over the save the title
+    // is offering to continue.
+    let left = world.resource_mut::<Messages<LeaveRun>>().drain().count() > 0;
+    let leave = left && world.resource::<State<EngineState>>().get().shows_world();
+    if restart.is_none() && !leave {
+        return;
+    }
     world.run_schedule(EndRun);
     clear_run(world);
-    world.insert_resource(PendingRun { seed: restart.seed });
+    // Leaving wins over a restart asked in the same frame: the run left was
+    // written down to be continued, and a new one would bury it. Its seed
+    // is spent all the same: a title begins every run through `begin_run`,
+    // which keeps whatever seed stands, so New Game would otherwise play
+    // the run just left again. A game continuing it restores the seed its
+    // save holds.
+    if leave {
+        seed_next_run(world, None);
+        world.insert_resource(HoldStart);
+    } else if let Some(restart) = restart {
+        world.insert_resource(PendingRun { seed: restart.seed });
+    }
     world.resource_mut::<NextState<EngineState>>().set(EngineState::Idle);
 }
 
@@ -364,10 +410,15 @@ pub fn restart_runs(world: &mut World) {
 /// idle: sets the seed and runs the game's start.
 fn begin_pending_run(world: &mut World) {
     let Some(PendingRun { seed }) = world.remove_resource::<PendingRun>() else { return };
+    seed_next_run(world, seed);
+    begin_run(world);
+}
+
+/// Sets the [`Seed`](crate::seed::Seed) the next run begins on: the one a
+/// [`Restart`] named, or else one of its own, never the last run's again.
+fn seed_next_run(world: &mut World, named: Option<RunSeed>) {
     let previous = world.get_resource::<crate::seed::Seed>().map(|s| s.0).unwrap_or(RunSeed(0));
-    let seed = seed.unwrap_or_else(|| next_run_seed(previous));
-    world.insert_resource(crate::seed::Seed(seed));
-    world.run_schedule(NewRun);
+    world.insert_resource(crate::seed::Seed(named.unwrap_or_else(|| next_run_seed(previous))));
 }
 
 /// The seed for a run no [`Restart`] named, given the one the last run used.
@@ -840,6 +891,100 @@ mod tests {
         app.update();
         assert_eq!(app.world().resource::<Turns>().now(), 100);
         assert!(app.world().get::<MyTurn>(player).is_some());
+    }
+
+    /// An app whose every frame is a tenth of a second of wall clock, with
+    /// an onlooker and one actor nobody decides for, which the recovery
+    /// net charges a wait each time it is dealt a turn: one step a turn.
+    fn watched(pace: Pace) -> (App, Entity) {
+        let (mut app, start) = app_with_world();
+        app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(std::time::Duration::from_millis(100))).insert_resource(pace);
+        let onlooker = app.world_mut().spawn((Player, Position(start), Viewshed::everywhere(), RevealsMap)).id();
+        app.world_mut().spawn((Actor, Blocks, Position(start.offset(2, 0))));
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        (app, onlooker)
+    }
+
+    #[test]
+    fn a_run_nobody_plays_runs_to_the_ceiling_of_passes_each_frame_when_unpaced() {
+        let (mut app, onlooker) = watched(Pace::unpaced());
+        for _ in 0..4 {
+            app.update();
+        }
+        assert!(app.world().resource::<Turns>().turn_number() > 200, "hundreds of turns in a few frames: {}", app.world().resource::<Turns>().turn_number());
+        assert!(app.world().get::<MyTurn>(onlooker).is_none(), "an onlooker is no actor and is never dealt a turn");
+    }
+
+    #[test]
+    fn a_paced_run_is_dealt_the_game_time_its_pace_allows_whatever_the_frame_rate() {
+        // One step a second, watched for twenty seconds of tenth-second frames.
+        let (mut app, _) = watched(Pace::per_second(100));
+        for _ in 0..200 {
+            app.update();
+        }
+        let slow = app.world().resource::<Turns>().turn_number();
+        assert!((18..=21).contains(&slow), "about twenty turns in twenty seconds, not {slow}");
+
+        // Eight steps a second for the same twenty seconds.
+        let (mut app, _) = watched(Pace::per_second(800));
+        for _ in 0..200 {
+            app.update();
+        }
+        let fast = app.world().resource::<Turns>().turn_number();
+        assert!((155..=165).contains(&fast), "about a hundred and sixty turns, not {fast}");
+    }
+
+    /// Stopping the turns stops nobody being moved by the game: a warp
+    /// asked for under a stopped pace is answered, and the actor it put in
+    /// the place is admitted, with no turn dealt to anyone.
+    #[test]
+    fn a_request_made_while_the_pace_is_stopped_is_still_answered() {
+        let (mut app, start) = app_with_world();
+        app.insert_resource(Pace::stopped());
+        let walker = app.world_mut().spawn((Actor, Blocks, Position(start))).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        let to = start.offset(3, 0);
+        app.world_mut().write_message(crate::places::WarpRequest { actor: walker, to: crate::places::Destination::Surface(to) });
+        app.update();
+        assert_eq!(app.world().get::<Position>(walker).unwrap().0, to, "the warp was resolved");
+        assert!(app.world().resource::<Occupancy>().is_occupied(to), "and the index moved with it");
+        assert_eq!(app.world().resource::<Turns>().now(), 0, "with no time passing");
+        assert!(app.world().get::<MyTurn>(walker).is_none(), "and no turn dealt");
+    }
+
+    #[test]
+    fn a_stopped_pace_deals_nothing_until_it_is_changed() {
+        let (mut app, _) = watched(Pace::stopped());
+        for _ in 0..50 {
+            app.update();
+        }
+        assert_eq!(app.world().resource::<Turns>().now(), 0, "nothing was dealt");
+        app.insert_resource(Pace::per_second(100));
+        for _ in 0..50 {
+            app.update();
+        }
+        assert!(app.world().resource::<Turns>().turn_number() >= 4, "and it runs again once it is");
+    }
+
+    /// The pace decides how many passes a frame runs and nothing else, so
+    /// a player's own intent is still resolved in the frame it was written.
+    #[test]
+    fn a_player_holding_a_turn_is_answered_in_its_frame_at_any_pace() {
+        let (mut app, start) = app_with_world();
+        app.insert_resource(Pace::stopped());
+        let player = spawn_player(&mut app, start);
+        app.update();
+        app.update();
+        assert!(app.world().get::<MyTurn>(player).is_none(), "a stopped pace deals nobody a turn, the player included");
+        app.insert_resource(Pace::per_second(1));
+        app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(std::time::Duration::from_millis(100)));
+        app.update();
+        assert!(app.world().get::<MyTurn>(player).is_some(), "dealt once the pace allows any time at all");
+        intend(&mut app, player, Step(Direction::East));
+        app.update();
+        assert_eq!(app.world().get::<Position>(player).unwrap().0, start.offset(1, 0), "the step is resolved though the pace is all but nothing");
     }
 
     /// Every missing piece is reported together, each with how to make it,

@@ -13,7 +13,7 @@
             crates/rl-bevy/src/loot.rs
             crates/rl-bevy/src/remains.rs
             crates/rl-save/src/run.rs
-     fingerprint: 34aa7951 -->
+     fingerprint: f918c400 -->
 
 # Prefabs
 

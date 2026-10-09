@@ -247,6 +247,52 @@ pub enum Area {
     },
 }
 
+/// How a use is pointed: the shape it covers with its range inside it, what
+/// it wants under that shape, and whether the cell it is pointed at must be
+/// in sight.
+///
+/// The three answers an ability's own `mode`, `aim` and `sight` give,
+/// gathered under the same three words so a thing's `use` trigger can give
+/// them too: a thing used at somewhere is pointed, previewed and landed by
+/// the rules a bolt an actor knows is, and not by a second set that could
+/// drift from them. Written `(mode: Bolt(range: 7), aim: Ground, sight:
+/// false)`, a foe and in sight unless it says otherwise, as an ability is.
+/// A word nobody reads is an error rather than a default, since a misspelt
+/// `aim` would otherwise aim at foes without a word said.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Targeting {
+    /// The shape, its range inside it.
+    pub mode: TargetMode,
+    /// What it wants under the shape.
+    #[serde(default)]
+    pub aim: Aim,
+    /// Whether the cell it is pointed at must be one its user can see.
+    #[serde(default = "yes")]
+    pub sight: bool,
+}
+
+/// What a use asks its user for, for a thing used on another of the
+/// user's own things rather than where they stand or at somewhere: a polish
+/// worked into a coat, a key cut to fit a lock.
+///
+/// The sibling of [`Targeting`], since a use is made at one thing, a cell
+/// or one of its user's things, and never both. Written `(prompt: "Hone
+/// which?", tag: "edge")`: the prompt is what the choice is asked under, in
+/// the game's words, and the tag, when there is one, is what the thing
+/// chosen must count as, resolved at load as every name in a content file
+/// is. Absent, any thing its user carries but the one used will do. A word
+/// nobody reads is an error, as it is in an aim.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Asks {
+    /// What the choice is asked under.
+    pub prompt: String,
+    /// What the thing chosen must count as; absent, anything.
+    #[serde(default)]
+    pub tag: Option<crate::names::NameRef<crate::affix::TagDef>>,
+}
+
 /// A trigger as a content file writes it: `(on: "land", area: Burst(radius: 1))`,
 /// with `look: (glyph: '*', color: (r: 255, g: 128, b: 0))` to be seen.
 ///
@@ -255,8 +301,12 @@ pub enum Area {
 /// the Bevy layer resolves it against the moments registered for the run,
 /// the way an offer's verb does. `effects` is optional because a thing may
 /// say what it contains once and let each trigger deliver it: a trigger
-/// with no list of its own lands its carrier's shared list.
+/// with no list of its own lands its carrier's shared list. A word nobody
+/// reads is an error, as it is in a targeting, since every field here is
+/// optional and a misspelt one would otherwise leave a staff landing on
+/// whoever zapped it.
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TriggerSpec {
     /// The moment that sets it off: `use`, `land`, `fire`, `hit`,
     /// `entered`, `destroyed`, or one a game registered.
@@ -270,9 +320,10 @@ pub struct TriggerSpec {
     /// What it lands; absent, its carrier's shared list.
     #[serde(default)]
     pub effects: Option<Vec<EffectSpec>>,
-    /// What shows over the cells it lands on; absent, nothing does, which
-    /// is right for a trap nobody should see go off and wrong for a
-    /// grenade, where the burst is the point.
+    /// What shows over the cells it lands on, and what flies there for a
+    /// use that is aimed; absent, nothing does, which is right for a trap
+    /// nobody should see go off and wrong for a grenade, where the burst is
+    /// the point.
     #[serde(default)]
     pub look: Option<Look>,
     /// Hundredths of a step between pulses, for a `pulse` trigger only: a
@@ -281,6 +332,22 @@ pub struct TriggerSpec {
     /// its own.
     #[serde(default)]
     pub every: Option<u32>,
+    /// How a `use` is pointed, for a thing used at somewhere rather than
+    /// on its user where they stand: a bolt sent from the pack. Absent, a
+    /// use lands on its user. Refused on any other moment, since only a
+    /// use is pointed by whoever makes it: a landing is where the throw
+    /// came down and a hit is whoever the shot struck. Still the thing's
+    /// own trigger and not an ability it lends, so what it lands and what
+    /// it spends stay the thing's.
+    #[serde(default)]
+    pub targeting: Option<Targeting>,
+    /// What a `use` asks its user for, for a thing used on another of the
+    /// user's own things: it still lands where its user stands, and what it
+    /// was used on goes with it to its effects. Absent, a use asks for
+    /// nothing. Refused on any other moment, as a targeting is, and beside
+    /// one, since a use is made at a cell or at a thing and not both.
+    #[serde(default)]
+    pub asks: Option<Asks>,
 }
 
 /// An ability, as the engine reads it.
@@ -314,6 +381,15 @@ pub struct AbilityDef {
     pub cooldown: u32,
     /// What lands, in order.
     pub effects: Vec<EffectSpec>,
+}
+
+impl AbilityDef {
+    /// How it is pointed: its shape, what it wants under it and whether
+    /// its cell must be seen, in the form a thing's aimed use is written
+    /// in, so the two are landed and refused by the one rule.
+    pub fn targeting(&self) -> Targeting {
+        Targeting { mode: self.mode, aim: self.aim, sight: self.sight }
+    }
 }
 
 impl Named for AbilityDef {
@@ -428,18 +504,37 @@ pub fn blocked(def: &AbilityDef, gates: &Gates<'_>, purse: &Purse<'_>, now: u32,
 /// ability: [`blocked`] answers whether it may be used at all, this whether
 /// it may be used *here*.
 ///
-/// `cells` is the footprint the aim resolved to and `sees_aim` whether the
-/// user can see the cell it is pointed at, `None` for a user with no sight
-/// to ask, which is a mind trusted with its tactic's choice. A shape with
-/// nowhere to go, such as a bolt pointed at the caster's own feet, is
-/// refused rather than paid for, so the player keeps the turn and a
-/// preview can say so before it is spent. An ability aimed at its user
-/// needs no footprint and no sight.
-pub fn aim_blocked(def: &AbilityDef, cells: &[Point], sees_aim: Option<bool>) -> Vec<Blocked> {
-    let pointed = def.aim.needs_cursor();
+/// `targeting` is how the use is pointed, an ability's own or a thing's
+/// aimed use, `cells` the footprint the aim resolved to and `sees_aim`
+/// whether the user can see the cell it is pointed at, `None` for a user
+/// with no sight to ask, which is a mind trusted with its tactic's choice.
+/// A shape with nowhere to go, such as a bolt pointed at the caster's own
+/// feet, is refused rather than paid for, so the player keeps the turn and
+/// a preview can say so before it is spent. A use aimed at its user needs
+/// no footprint and no sight.
+pub fn aim_blocked(targeting: Targeting, cells: &[Point], sees_aim: Option<bool>) -> Vec<Blocked> {
+    let pointed = targeting.aim.needs_cursor();
     let nowhere = pointed && cells.is_empty();
-    let unseen = pointed && def.sight && sees_aim == Some(false);
+    let unseen = pointed && targeting.sight && sees_aim == Some(false);
     if nowhere || unseen { vec![Blocked::NoTarget] } else { Vec::new() }
+}
+
+/// Where a use that nothing in its targeting may refuse is made, pointed at
+/// `aim` from `origin`: `aim` itself, unless its targeting wants the cell
+/// seen and `sees` says it is not, and then the farthest cell along the
+/// line there that is seen, `origin` when none is, as far as it may still
+/// be pointed that way.
+///
+/// For a use whose user cannot know its targeting, a thing not yet known:
+/// refusing it for a cell out of sight would tell the player it wants its
+/// cell seen, as refusing it out of reach would tell its range. How far it
+/// reaches needs no stop here, since the footprint already stops a flight
+/// at its range along the line it was pointed down, and lands it there.
+pub fn made_at(targeting: Targeting, origin: Point, aim: Point, sees: impl Fn(Point) -> bool) -> Point {
+    if !targeting.sight || sees(aim) {
+        return aim;
+    }
+    rl_core::geometry::line(origin, aim).skip(1).filter(|p| sees(*p)).last().unwrap_or(origin)
 }
 
 /// An ability an actor could use this turn, as a mind reads it.
@@ -641,6 +736,40 @@ mod tests {
             .unwrap();
         assert_eq!((full.area, full.fires, full.every), (Area::Burst { radius: 2 }, Some(3), Some(1000)));
         assert_eq!(full.effects.as_ref().map(|e| e[0].kind.as_str()), Some("Harm"));
+        assert!(bare.targeting.is_none() && full.targeting.is_none(), "a trigger with no targeting lands where its moment happened");
+    }
+
+    /// A use is pointed in the words an ability is: a shape with its range,
+    /// what it wants under it, and whether its cell must be seen, the last
+    /// two a foe and yes unless the trigger says otherwise.
+    #[test]
+    fn a_use_trigger_is_aimed_in_the_abilities_own_words() {
+        let parse = |text: &str| -> Result<TriggerSpec, _> { Options::default().with_default_extension(Extensions::IMPLICIT_SOME).from_str(text) };
+        let read = |text: &str| -> TriggerSpec { parse(text).unwrap() };
+        let bolt = read(r#"(on: "use", targeting: (mode: Bolt(range: 7)))"#);
+        assert_eq!(bolt.targeting, Some(Targeting { mode: TargetMode::Bolt { range: 7 }, aim: Aim::Foe, sight: true }));
+        let lob = read(r#"(on: "use", targeting: (mode: Ball(range: 5, radius: 1), aim: Ground, sight: false))"#);
+        assert_eq!(lob.targeting, Some(Targeting { mode: TargetMode::Ball { range: 5, radius: 1 }, aim: Aim::Ground, sight: false }));
+        assert!(parse(r#"(on: "use", targeting: (mode: Bolt(range: 7), aimm: Ally))"#).is_err(), "a misspelt word in a targeting is an error, not a foe");
+        assert!(parse(r#"(on: "use", aim: (mode: Bolt(range: 7)))"#).is_err(), "and a misspelt word on the trigger, not a use that lands on its user");
+    }
+
+    /// A use asks for one of its user's things under the words the game
+    /// writes the choice in, and by a tag the thing must carry, resolved at
+    /// load as every name in a content file is: a tag nobody registered and
+    /// a misspelt word each fail the load rather than offer anything at all.
+    #[test]
+    fn a_use_trigger_asks_for_a_thing_under_its_prompt_and_by_a_tag_resolved_at_load() {
+        let tags = Registry::from_defs(vec![TagDef::new("kit"), TagDef::new("edge")]).unwrap();
+        let names = Names::new().tags(&tags);
+        let specs: Vec<TriggerSpec> =
+            names.load_list(r#"[(on: "use", asks: (prompt: "Hone which?", tag: "edge")), (on: "use", asks: (prompt: "Patch which?"))]"#).unwrap();
+        assert_eq!(specs[0].asks, Some(Asks { prompt: "Hone which?".to_string(), tag: Some(crate::NameRef::from(tags.expect("edge"))) }));
+        assert_eq!(specs[1].asks.as_ref().map(|a| a.tag), Some(None), "any thing, when no tag is given");
+        assert!(names.load_list::<TriggerSpec>(r#"[(on: "use", asks: (prompt: "Hone which?", tag: "edgy"))]"#).is_err(), "an unknown tag");
+        assert!(names.load_list::<TriggerSpec>(r#"[(on: "use", asks: (prompt: "Hone which?", tagg: "edge"))]"#).is_err(), "a misspelt word");
+        let bare: TriggerSpec = ron::from_str(r#"(on: "use")"#).unwrap();
+        assert!(bare.asks.is_none(), "a use that asks for nothing lands on its user");
     }
     use crate::damage::DamageKind;
     use crate::equip::SlotDef;
@@ -716,6 +845,11 @@ mod tests {
         assert!(fireball.sight, "the default");
         assert_eq!(fireball.time, rl_core::turn::BASE_ACTION_COST, "the default");
         assert_eq!(fireball.effects[0].chance, 100, "the default");
+        assert_eq!(
+            fireball.targeting(),
+            Targeting { mode: TargetMode::Ball { range: 8, radius: 2 }, aim: Aim::Foe, sight: true },
+            "how it is pointed, gathered as a thing's aimed use writes it"
+        );
         let bash = r.get(r.expect("shield bash"));
         assert_eq!(bash.requires, vec![Requirement::InSlot(w.slots.expect("off hand"), w.tags.expect("shield"))]);
         assert_eq!(bash.effects[0].chance, 60);
@@ -885,7 +1019,8 @@ mod tests {
             &world.names(),
         )
         .unwrap();
-        let (bolt, lob, steel) = (defs.get(defs.expect("bolt")), defs.get(defs.expect("lob")), defs.get(defs.expect("steel")));
+        let get = |name: &str| defs.get(defs.expect(name)).targeting();
+        let (bolt, lob, steel) = (get("bolt"), get("lob"), get("steel"));
         let some = [Point::new(3, 0)];
         assert_eq!(aim_blocked(bolt, &[], Some(true)), vec![Blocked::NoTarget], "nowhere to fly");
         assert_eq!(aim_blocked(bolt, &some, Some(false)), vec![Blocked::NoTarget], "out of sight");
@@ -893,5 +1028,33 @@ mod tests {
         assert!(aim_blocked(bolt, &some, None).is_empty(), "a user with no sight to ask is trusted");
         assert!(aim_blocked(lob, &some, Some(false)).is_empty(), "an ability that needs no sight");
         assert!(aim_blocked(steel, &[], Some(false)).is_empty(), "and one aimed at its user needs neither");
+    }
+
+    /// A use nothing in its targeting may refuse is made where it was
+    /// pointed whenever it could have been pointed there, and pointed at a
+    /// cell it wants seen and is not, at the farthest seen cell on the line
+    /// there, over every aim and every patch of dark round its user.
+    #[test]
+    fn a_use_made_blind_stops_at_the_farthest_cell_it_may_still_be_pointed_at() {
+        let bolt = Targeting { mode: TargetMode::Bolt { range: 6 }, aim: Aim::Foe, sight: true };
+        let lob = Targeting { sight: false, ..bolt };
+        let origin = Point::new(0, 0);
+        for dark in 0..64u64 {
+            // Cells past the user are seen or not by a pattern of the span.
+            let sees = |p: Point| p == origin || !((p.x * 7 + p.y * 3).rem_euclid(64) as u64).is_multiple_of(dark % 7 + 2);
+            for (x, y) in [(5, 0), (9, 2), (-3, 4), (0, -8), (1, 1)] {
+                let aim = Point::new(x, y);
+                assert_eq!(made_at(lob, origin, aim, sees), aim, "a use that needs no sight is made where it was pointed");
+                let made = made_at(bolt, origin, aim, sees);
+                if sees(aim) {
+                    assert_eq!(made, aim, "a cell it may be pointed at is where it is made");
+                    continue;
+                }
+                let line: Vec<Point> = rl_core::geometry::line(origin, aim).collect();
+                assert!(sees(made) && line.contains(&made), "made at a seen cell on the line, {made:?} for {aim:?}");
+                let past = line.iter().position(|p| *p == made).expect("on the line");
+                assert!(line[past + 1..].iter().all(|p| !sees(*p)), "and at the farthest of them, {made:?} for {aim:?}");
+            }
+        }
     }
 }

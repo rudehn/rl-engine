@@ -16,7 +16,7 @@
 //! naming the item an attack came from, and a whole [`TurnEnd`].
 
 use bevy::prelude::*;
-use rl_engine::rl_bevy::{Equipped, MeleeAttack, Player, RangedAttack, Struck, TurnEnd};
+use rl_engine::rl_bevy::{Equipped, MeleeAttack, Player, RangedAttack, Stowed, Struck, TurnEnd};
 use rl_engine::rl_ui::{Facets, GearView, Tell, Tones};
 
 /// How hot a weapon may run before it locks.
@@ -81,20 +81,6 @@ impl Heat {
         }
         unlocks
     }
-}
-
-/// An attack a locked weapon had, put by until it cools.
-///
-/// Taking the attack off the item entirely, rather than leaving it in
-/// place behind some other flag, is what makes the engine's own loadout
-/// pass over a locked weapon for the next one worn: nothing about combat
-/// has to learn what heat is.
-#[derive(Component, Debug, Clone, Copy)]
-pub enum Stowed {
-    /// A blow, put by.
-    Melee(MeleeAttack),
-    /// A shot, put by.
-    Ranged(RangedAttack),
 }
 
 /// Reacts to every [`Struck`] whose weapon runs hot: records the shot on
@@ -363,5 +349,25 @@ mod tests {
         crate::testing::fire_at_a_target(&mut app, player, 7);
         app.update();
         assert_eq!(pct_at(&app, first).as_deref(), Some("locked"), "the burst that reaches 100 locks it");
+    }
+
+    /// `vent_heat` only ever queries entities with `Heat`, and no item in
+    /// the file carries both `Heat` and `Ammo` (`gear::Armory::load`
+    /// refuses to load one that does), so a weapon the engine's own ammo
+    /// put by for want of its tag should never be in `vent_heat`'s path at
+    /// all. Spelled out anyway, on a bare entity with no `Heat`
+    /// whatsoever, so a future change to either system that widened that
+    /// query would be caught here rather than in play.
+    #[test]
+    fn vent_heat_never_touches_a_weapon_stowed_dry_for_want_of_ammunition() {
+        use bevy::ecs::system::RunSystemOnce;
+        use rl_engine::rl_bevy::Dry;
+
+        let mut app = crate::testing::headless(RunSeed(1));
+        let item = app.world_mut().spawn((Dry, Stowed::Ranged(RangedAttack::new(rl_engine::rl_core::Id::from_raw(0), Default::default(), 6)))).id();
+        app.world_mut().write_message(TurnEnd { turn: 1 });
+        app.world_mut().run_system_once(vent_heat).unwrap();
+        assert!(app.world().get::<RangedAttack>(item).is_none(), "still dry: vent_heat has nothing here to vent");
+        assert!(app.world().get::<Stowed>(item).is_some(), "still stowed");
     }
 }

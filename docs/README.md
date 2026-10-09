@@ -25,9 +25,10 @@ These are the reasoning; the overview is the list.
 
 - [abilities.md](design/abilities.md), what an actor can spend a turn on, as data.
 - [accuracy.md](design/accuracy.md), whether an attack lands, and the three bands of light the odds read.
+- [charts.md](design/charts.md), what someone other than the player has seen: a chart per party, and a mind that walks to what its chart lacks.
 - [effects.md](design/effects.md), what lands and what sets it off: the effects subsystem, its moments and triggers, and what a use costs a thing.
 - [fields.md](design/fields.md), a value per tile stepped a turn at a time, and the fire and gas built on it.
-- [items.md](design/items.md), what a thing does: the three carriers of an effect list, and why an item never lends an ability.
+- [items.md](design/items.md), what a thing does: the three carriers of an effect list, why an item never lends an ability even when its use is aimed, and why the unknown, the stuck and ammunition are the engine's.
 - [layout.md](design/layout.md), a place grown piece by piece, surveyed, and built again when it falls short; [research/gridsage-mapgen.md](research/gridsage-mapgen.md) is what it was drawn from.
 - [lighting.md](design/lighting.md), light cast through the same shadows as sight.
 - [loot.md](design/loot.md), where items turn up and how many, with what an item is left to the game.
@@ -35,10 +36,13 @@ These are the reasoning; the overview is the list.
 - [noise.md](design/noise.md), what a sound is and who hears it.
 - [prefabs.md](design/prefabs.md), a piece of a place as data: slots for props, items and monsters drawn at the place's depth, roles, and guards that hold their post.
 - [props.md](design/props.md), what stands on a map that is neither an actor nor an item.
+- [records.md](design/records.md), what a run came to: a record in the game's own words, kept in a slot apart from the run, and read by the screen the run ends on.
 - [remains.md](design/remains.md), what is left where something died.
 - [settings.md](design/settings.md), what a player chooses once: a registry three crates read, and a terminal laid out for its window.
 - [stealth.md](design/stealth.md), being noticed, and being looked for.
+- [tilesets.md](design/tilesets.md), pictures in place of glyphs: a tileset as a font, so nothing that draws the map has to change.
 - [ui.md](design/ui.md), why a panel is a view, a collector and a presenter.
+- [watching.md](design/watching.md), a run somebody watches and nobody plays: an onlooker, a sight that sees everywhere, and a pace.
 - [work.md](design/work.md), an actor doing one thing across many turns.
 
 The subsystems with no page yet are listed at the end of the layout section in [AGENTS.md](../AGENTS.md).

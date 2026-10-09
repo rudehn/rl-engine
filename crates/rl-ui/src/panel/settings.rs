@@ -99,6 +99,17 @@ fn ordered(settings: &Settings) -> Vec<SettingId> {
     groups.into_iter().flat_map(|group| settings.iter().filter(move |(_, s, _)| s.group == group).map(|(id, ..)| id)).collect()
 }
 
+/// How many rows the screen draws for `settings` when its rectangle is
+/// tall enough: a heading for each group, a row for each setting, and the
+/// frame's two. One count for the drawing and for the title, which stands
+/// the screen over its menu and must leave it room for every row, since
+/// the screen does not scroll.
+pub(crate) fn rows_drawn(settings: &Settings) -> i32 {
+    let ids = ordered(settings);
+    let headings = ids.iter().enumerate().filter(|&(i, id)| i == 0 || settings.get(ids[i - 1]).group != settings.get(*id).group).count();
+    (ids.len() + headings) as i32 + 2
+}
+
 /// Reads a setting's own key, and the screen's keys while it is on top.
 ///
 /// A frame that opened the screen reads nothing more: the key that opened
@@ -171,14 +182,7 @@ fn draw_settings(terminal: Option<ResMut<Terminal>>, screen: Screen) {
         return;
     }
     let ids = ordered(settings);
-    let mut headings = 0;
-    for (i, id) in ids.iter().enumerate() {
-        if i == 0 || settings.get(ids[i - 1]).group != settings.get(*id).group {
-            headings += 1;
-        }
-    }
-    let height = ((ids.len() + headings) as i32 + 2).min(rect.height);
-    let rect = Rect::new(rect.x, rect.y, rect.width, height);
+    let rect = Rect::new(rect.x, rect.y, rect.width, rows_drawn(settings).min(rect.height));
     let hints = format!("\u{2191}\u{2193} pick \u{2022} \u{2190}\u{2192} change \u{2022} {} back", key_name(keys.bindings().cursor.close));
     clear(&mut terminal, rect, palette);
     frame(&mut terminal, rect, "Settings", &hints, palette);

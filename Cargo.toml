@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "examples/corsair", "examples/delve", "examples/heist", "examples/foundry", "examples/tutorial"]
+members = ["crates/*", "examples/corsair", "examples/delve", "examples/heist", "examples/foundry", "examples/tutorial", "examples/undermere"]
 # A template renders into a game of its own; scripts/check-template.sh builds it.
 exclude = ["templates"]
 
@@ -33,7 +33,8 @@ serde = { version = "1", features = ["derive"] }
 ron = "0.10"
 noise = "0.9"
 # `system_font_discovery` lets the terminal ask for a generic monospace family
-# instead of shipping a font asset; Bevy's built-in font lacks box-drawing glyphs.
+# when a game ships no typeface of its own; Bevy's built-in font lacks
+# box-drawing glyphs.
 # Named rather than defaulted: the defaults carry 3D, glTF, audio, animation,
 # gizmos, scenes, picking and Bevy's own UI, none of which a glyph terminal
 # draws with, and all of which a browser would download. `default_font` is
@@ -63,6 +64,11 @@ bevy = { version = "0.19", default-features = false, features = [
     "async_executor",
 ] }
 criterion = { version = "0.5", features = ["html_reports"] }
+# Reads a typeface's character map, for a test that holds every glyph a game
+# draws to the face it ships. Only `std`, which it cannot build without: the
+# map needs none of the defaults, and on Linux the windowing's own copy,
+# through `ab_glyph`, turns on what it wants.
+ttf-parser = { version = "0.25", default-features = false, features = ["std"] }
 
 # Worldgen and pathfinding are math-heavy; an unoptimised debug run takes
 # seconds per map. Dependencies get full optimisation, workspace crates a

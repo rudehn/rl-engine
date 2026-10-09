@@ -13,21 +13,24 @@
 //! engine's to save.
 //!
 //! The run is written on the way out, by the engine's stash when the
-//! window closes or the menu quits, and on every deck arrival, so a crash
+//! window closes or the menu quits, by the engine again when the menu
+//! leaves the run for the title, and on every deck arrival, so a crash
 //! loses at most the deck in hand. There is no save key. Death and a win
-//! delete it. The title screen's Continue reads it back through
-//! [`run::resume`](crate::run::resume).
+//! delete it. The title's Continue reads it back through
+//! [`run::resume`](crate::run::resume), and its New Game over a save gives
+//! the save up through the engine's `AbandonRun`, which `SavePlugin`
+//! answers by deleting the slot.
 
 use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
 use rl_engine::prelude::*;
-use rl_engine::rl_save::{AddSaveable, SavePlugin, Saveable, SaveableState, Saves, Stash, UnloadPlugin};
+use rl_engine::rl_save::{AddSaveable, SavePlugin, Saveable, SaveableState, UnloadPlugin};
 use serde::{Deserialize, Serialize};
 
 use crate::climb::Deepest;
 use crate::droids::{Kind, Roster};
 use crate::gear::ItemKind;
-use crate::heat::{Heat, Stowed};
+use crate::heat::Heat;
 use crate::lifts::{Lift, LiftOut};
 use crate::run::Commando;
 use crate::upgrades::{Taken, Upgrade};
@@ -52,14 +55,6 @@ pub fn register(app: &mut App) {
         .save_state::<Deepest>()
         .save_state::<Quests>()
         .save_state::<Counters>();
-}
-
-/// Deletes the saved run, for a New Game that abandons it.
-pub fn abandon(world: &mut World) {
-    world.resource::<Stash>().clear();
-    if let Err(e) = world.resource::<Saves>().delete(SLOT) {
-        error!("could not delete the save: {e}");
-    }
 }
 
 /// Runs `spawn` against the world through a command queue, the way a
@@ -256,8 +251,6 @@ impl SaveableState for Deepest {
 
 #[cfg(test)]
 mod tests {
-    use bevy::prelude::*;
-    use rl_engine::prelude::*;
     use rl_engine::rl_bevy::testing::{KeyScriptPlugin, press};
     use rl_engine::rl_core::RunSeed;
     use rl_engine::rl_save::{Saves, save_run};
@@ -473,6 +466,33 @@ mod tests {
         assert!(continued.world().get::<Unseen>(me).is_some(), "and still cloaked after the continue");
         crate::testing::unequip(&mut continued, me, plate);
         assert!(continued.world().get::<Unseen>(me).is_none(), "the plate came off, and so did the cloak");
+    }
+
+    /// A slug pistol run dry before the save is still dry after the run is
+    /// continued: ammunition has no save field of its own (unlike
+    /// `Heat`'s `now` and `locked`, which the save does carry), because
+    /// `sync_ammo` derives `Dry` fresh from the bag on the very next pass,
+    /// and the bag itself is saved and restored the way any other
+    /// inventory is. Giving the continued run slugs loads the pistol
+    /// again, the same as it would any other turn.
+    #[test]
+    fn a_slug_pistol_run_dry_before_the_save_is_still_dry_after_the_continue_and_loads_again_once_given_slugs() {
+        let mut app = crate::testing::headless(RunSeed(4));
+        let (me, pistol) = crate::testing::slug_pistol_with(&mut app, 1);
+        crate::testing::fire_at_a_target(&mut app, me, 1);
+        assert!(app.world().get::<RangedAttack>(pistol).is_none(), "dry before the save");
+
+        save_run(app.world_mut()).expect("the run saves");
+        let text = app.world().resource::<Saves>().load(SLOT).unwrap().expect("a save");
+        let mut continued = crate::testing::continued(&text);
+        let me = player(&mut continued);
+        let pistol = in_pack(&continued, me, "slug pistol");
+        assert!(continued.world().get::<RangedAttack>(pistol).is_none(), "still dry after the continue");
+        assert!(crate::testing::fire_at_a_target(&mut continued, me, 1).is_empty(), "nothing to fire with");
+
+        crate::testing::give_slugs(&mut continued, me, 2);
+        continued.update();
+        assert!(continued.world().get::<RangedAttack>(pistol).is_some(), "loaded again");
     }
 
     /// Spawns `name` at `level` into `me`'s pack.

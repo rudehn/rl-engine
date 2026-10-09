@@ -11,7 +11,10 @@
 //! rolls from, so a trap cannot shift a spell's dice.
 //!
 //! `engine` holds the effects the engine ships, and `triggers` the moments,
-//! [`Triggers`] and the one system that lands them. [`EffectsPlugin`] is the
+//! [`Triggers`] and the one system that lands them, with the uses aimed
+//! somewhere that wait in the air to be seen. [`Landing`] says how a
+//! landing is seen, its flight and its burst, so an ability and a thing's
+//! aimed use are seen the same way. [`EffectsPlugin`] is the
 //! whole of it, added by whichever of abilities, props or consumables a game
 //! adds first. A game's own effects sit beside the engine's through
 //! [`AddEffect::add_effect`], and nothing that lands them can tell the
@@ -34,7 +37,7 @@ use rl_rules::ability::RawValue;
 
 use crate::combat::DamageEvent;
 use crate::components::{Blocks, Position, Viewshed};
-use crate::cue::Cued;
+use crate::cue::{Anchor, Cue, Cued, LookOf};
 use crate::registries::Registries;
 use crate::status::{Afflict, Cure};
 use crate::turn::Occupancy;
@@ -87,6 +90,45 @@ impl Landing {
             _ => None,
         }
     }
+
+    /// How harm this lands reaches its targets, for the narrator to name
+    /// what did it: by the ability, or by the thing whose trigger it was
+    /// when that thing is not its own user, as a prop's trap is.
+    pub fn reach(&self) -> crate::combat::Reach {
+        match self.source {
+            Source::Ability(id) => crate::combat::Reach::Ability(id),
+            Source::Trigger { on, .. } if on != self.user => crate::combat::Reach::Thing(on),
+            _ => crate::combat::Reach::Effect,
+        }
+    }
+
+    /// Where a cue plays on `cell`: on the target standing there, so a
+    /// burst on someone knocked back goes with them and a bolt at someone
+    /// walking away still lands on them, or on the cell when nobody does.
+    fn anchor(&self, world: &EffectWorld<'_, '_>, cell: Point) -> Anchor {
+        self.targets.iter().find(|t| world.position(**t) == Some(cell)).map(|t| Anchor::on(*t, cell)).unwrap_or(Anchor::cell(cell))
+    }
+
+    /// The flight to where a projectile stopped, drawn as `look`, for a
+    /// shape that has one: a bolt or a ball flies, a cone or a nova does
+    /// not. One answer for an ability and a thing's aimed use, so the two
+    /// are seen to fly the same way.
+    pub(crate) fn flight(&self, world: &EffectWorld<'_, '_>, look: LookOf) -> Option<Cue> {
+        let stop = self.landed_at.filter(|stop| *stop != self.origin)?;
+        Some(Cue::Flight { from: Anchor::on(self.user, self.origin), to: self.anchor(world, stop), look })
+    }
+
+    /// The burst over the footprint, drawn as `look`, for a shape that
+    /// covers anything, spreading out from where a projectile stopped, or
+    /// else from the user: a ball goes off where it lands, and a nova, a
+    /// cone or a line goes out from whoever sent it.
+    pub(crate) fn burst(&self, world: &EffectWorld<'_, '_>, look: LookOf) -> Option<Cue> {
+        if self.cells.is_empty() {
+            return None;
+        }
+        let from = self.landed_at.map(|stop| self.anchor(world, stop)).unwrap_or(Anchor::on(self.user, self.origin));
+        Some(Cue::Burst { on: self.cells.iter().map(|c| self.anchor(world, *c)).collect(), look, from: Some(from) })
+    }
 }
 
 /// What a carrier's effects land stronger by: turns added to every status
@@ -125,16 +167,23 @@ pub struct Landing {
     pub path: Vec<Point>,
     /// Where a projectile stopped, if the shape had one.
     pub landed_at: Option<Point>,
-    /// Everyone under the footprint the ability's
-    /// [`Aim`](rl_rules::ability::Aim) wanted there.
-    /// An effect that means to hit whoever is standing in the fire reads
-    /// this; one that means to change the ground reads `cells`.
+    /// Everyone under the footprint the [`Aim`](rl_rules::ability::Aim)
+    /// of an ability or an aimed use wanted there, and every living actor
+    /// under any other trigger's. An effect that means to hit whoever is
+    /// standing in the fire reads this; one that means to change the ground
+    /// reads `cells`.
     pub targets: Vec<Entity>,
     /// What landed it grows its effects by: a worn or thrown thing's own
     /// [`EffectBonus`], copied here, and the default, which adds nothing,
     /// for an ability, an offer, or anything plain. An effect that grows
     /// with it reads it here.
     pub bonus: EffectBonus,
+    /// The thing a use was made on, for a use that asks its user for one of
+    /// their own things: what a polish was worked into. `None` for every
+    /// other landing. A game's own effect for such a use reads it here; the
+    /// engine's effects land on `targets` and never read it, since what a
+    /// thing is made better or known by is the game's.
+    pub on: Option<Entity>,
 }
 
 /// What an effect may do to the world.
@@ -431,15 +480,17 @@ impl Effects {
     /// one cell, so a footprint is not invented for something that never
     /// flew.
     pub fn land_on(&self, source: Source, user: Entity, at: Point, targets: Vec<Entity>, world: &mut EffectWorld<'_, '_>) {
-        let landing = Landing { user, source, origin: at, aim: at, cells: vec![at], path: Vec::new(), landed_at: None, targets, bonus: EffectBonus::default() };
+        let landing =
+            Landing { user, source, origin: at, aim: at, cells: vec![at], path: Vec::new(), landed_at: None, targets, bonus: EffectBonus::default(), on: None };
         self.land(&landing, world);
     }
 }
 
 /// Effects: what every carrier of an effect list shares.
 ///
-/// The registry of effect kinds, the stream every effect rolls from, and
-/// the messages an effect writes. Added by whatever lands effects,
+/// The registry of effect kinds, the stream every effect rolls from, the
+/// messages an effect writes, and the uses aimed somewhere that are in the
+/// air, put back when a run ends. Added by whatever lands effects,
 /// abilities, props or consumables, when a game has not already added it,
 /// so a game names the subsystems it wants and this comes with them.
 pub struct EffectsPlugin;
@@ -450,6 +501,7 @@ struct EffectsBuilt;
 
 impl Plugin for EffectsPlugin {
     fn build(&self, app: &mut App) {
+        use crate::cue::AddAirborne;
         use crate::plugin::Reads;
         use crate::plugin::{ResolveSet, Turn};
         use crate::seed::AddStream;
@@ -464,6 +516,7 @@ impl Plugin for EffectsPlugin {
         app.init_resource::<EffectKinds>()
             .init_resource::<Moments>()
             .add_message::<Fired>()
+            .add_message::<FiredOn>()
             .add_stream::<EffectRng>("EffectsPlugin")
             // `EffectWorld` writes these, so they are this plugin's to
             // register: a writer for a message nobody registered fails the
@@ -475,7 +528,9 @@ impl Plugin for EffectsPlugin {
             .add_message::<DamageEvent>()
             .add_message::<crate::combat::Heal>()
             .reads::<Cued>()
-            .add_systems(Turn, (report_remnants, land_triggers).chain().in_set(ResolveSet::Triggers));
+            .add_airborne::<UseLanding>()
+            // What came down this pass, then what was set off in it.
+            .add_systems(Turn, (report_remnants, land_aimed_uses, land_triggers).chain().in_set(ResolveSet::Triggers));
     }
 
     /// Not unique, so adding it after a plugin that already added it is
@@ -511,5 +566,32 @@ mod tests {
         use rand::RngCore;
         let mut rng = EffectRng::for_run(rl_core::RunSeed(7));
         assert_eq!(rng.next_u64(), FIRST_DRAW_FOR_SEED_SEVEN);
+    }
+
+    /// Harm arrives by what landed it, for the narrator to name: the
+    /// ability, or the thing whose trigger it was; a prop springing its own
+    /// trap is its own user, and its line names it as the doer already.
+    #[test]
+    fn a_landing_reaches_by_its_ability_or_by_a_thing_that_is_not_its_own_user() {
+        use crate::combat::Reach;
+        let mut world = World::new();
+        let (user, rod) = (world.spawn_empty().id(), world.spawn_empty().id());
+        let landing = |user: Entity, source: Source| Landing {
+            user,
+            source,
+            origin: Point::new(0, 0),
+            aim: Point::new(0, 0),
+            cells: Vec::new(),
+            path: Vec::new(),
+            landed_at: None,
+            targets: Vec::new(),
+            bonus: EffectBonus::default(),
+            on: None,
+        };
+        let bolt = AbilityId::from_raw(0);
+        assert_eq!(landing(user, Source::Ability(bolt)).reach(), Reach::Ability(bolt));
+        assert_eq!(landing(user, Source::Trigger { on: rod, moment: Moments::USE }).reach(), Reach::Thing(rod));
+        assert_eq!(landing(rod, Source::Trigger { on: rod, moment: Moments::USE }).reach(), Reach::Effect, "a trap is its own user");
+        assert_eq!(landing(user, Source::Offer(rod)).reach(), Reach::Effect);
     }
 }

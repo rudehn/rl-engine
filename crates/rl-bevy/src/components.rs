@@ -27,7 +27,14 @@ impl Position {
 #[require(Speed)]
 pub struct Actor;
 
-/// The one actor the game waits on for input.
+/// The one the game is shown to: the map being read follows it, the view
+/// centres on it, and what it sees is what is drawn and told.
+///
+/// Almost always an [`Actor`] too, and then the one actor the game waits on
+/// for input. One that is not an actor is an onlooker: it is never dealt a
+/// turn, so the loop waits on nobody and runs at its
+/// [`Pace`](crate::turn::Pace), while everything that asks what the player
+/// sees asks the onlooker. A run somebody watches and nobody plays is that.
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct Player;
 
@@ -36,6 +43,12 @@ pub struct Player;
 pub struct Blocks;
 
 /// Speed as a percentage of normal: 100 is normal, 200 twice as fast.
+///
+/// What the actor is, not what has happened to it: the turn loop reads it
+/// through [`Speeds`](crate::turn::Speeds), with the stat
+/// [`TurnRules`](crate::turn::TurnRules) names added as a percentage of
+/// it, so haste and slowness are statuses that come and go and this stays
+/// as the actor was spawned.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Speed(pub u32);
 
@@ -78,12 +91,32 @@ pub struct Viewshed {
     pub visible: BitGrid,
     /// One bit per window tile: in line of sight, lit or not.
     pub line: BitGrid,
+    /// Whether this sees the whole loaded window whatever stands in the
+    /// way and however dark it is. Set by [`Viewshed::everywhere`].
+    everywhere: bool,
 }
 
 impl Viewshed {
     /// A viewshed of `range` that has never been computed.
     pub fn new(range: i32) -> Self {
-        Self { range, dirty: true, epoch: 0, origin: Point::ZERO, visible: BitGrid::new(0, 0), line: BitGrid::new(0, 0) }
+        Self { range, dirty: true, epoch: 0, origin: Point::ZERO, visible: BitGrid::new(0, 0), line: BitGrid::new(0, 0), everywhere: false }
+    }
+
+    /// A viewshed that sees every tile of the loaded window: no wall stops
+    /// it and no dark hides anything from it.
+    ///
+    /// What an onlooker carries, a [`Player`] that is no [`Actor`]: the
+    /// map view, the lists of what is in sight and the narrator all read
+    /// the player's viewshed, so one that sees everywhere shows and tells
+    /// everything, with no second drawing path. Cast like any other, so it
+    /// follows the window and the map as they change.
+    pub fn everywhere() -> Self {
+        Self { everywhere: true, ..Self::new(0) }
+    }
+
+    /// Whether this is one that [sees everywhere](Self::everywhere).
+    pub fn sees_everywhere(&self) -> bool {
+        self.everywhere
     }
 
     /// Whether the world tile `p` is currently seen.

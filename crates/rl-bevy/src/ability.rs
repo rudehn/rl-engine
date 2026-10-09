@@ -24,12 +24,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use bevy::prelude::*;
 use rl_core::Point;
 use rl_grid::{Footprint, footprint};
-use rl_rules::ability::{AbilityDef, AbilityId, Aim, Blocked, Cost, Gates, Purse, Usable, aim_blocked, blocked};
+use rl_rules::ability::{AbilityDef, AbilityId, Aim, Blocked, Cost, Gates, Purse, Targeting, Usable, aim_blocked, blocked};
 use rl_rules::{Names, Registry, Relation, StatId, Statuses, TagId};
 
 use crate::combat::{CombatRules, Dead, Faction, Health};
 use crate::components::MyTurn;
-use crate::cue::{AddAirborne, Airborne, Anchor, Cue, Cued, LookOf, TurnHold};
+use crate::cue::{AddAirborne, Airborne, Cued, LookOf, TurnHold};
 use crate::effects::{EffectBonus, EffectKinds, EffectWorld, Landing, Source};
 use crate::items::{Equipped, Inventory, Stack, Tagged};
 use crate::plugin::{ResolveSet, Turn, TurnSet};
@@ -289,15 +289,22 @@ pub struct UserState<'w, 's> {
     commands: Commands<'w, 's>,
 }
 
-/// A use being worked out: who, which, from where, and at what.
+/// A use being worked out: who, what, pointed how, from where, and at what.
+///
+/// What is pointed is an ability or a thing's own aimed `use` trigger, and
+/// nothing past [`Bystanders::land`] can tell which: both are a
+/// [`Targeting`], so a bolt sent from the pack and a bolt an actor knows
+/// are landed, previewed and refused by one rule.
 #[derive(Debug, Clone, Copy)]
-pub struct Aimed<'a> {
+pub struct Aimed {
     /// Who is using it.
     pub user: Entity,
-    /// Which ability.
-    pub ability: AbilityId,
-    /// Its definition.
-    pub def: &'a AbilityDef,
+    /// What it is, for the landing to say: an ability, or the trigger of
+    /// the thing used.
+    pub source: Source,
+    /// How it is pointed: its shape and reach, what it wants under it, and
+    /// whether its cell must be seen.
+    pub targeting: Targeting,
     /// Where the user stands.
     pub origin: Point,
     /// Where it is pointed: the user's own cell for an ability that needs
@@ -306,6 +313,14 @@ pub struct Aimed<'a> {
     /// Whether the user can see `aim`, `None` when it carries no sight to
     /// ask. Most minds carry none and are trusted with their tactic's pick.
     pub sees_aim: Option<bool>,
+}
+
+impl Aimed {
+    /// The ability `ability`, defined by `def`, pointed by `user` from
+    /// `origin` at `aim`.
+    pub fn ability(user: Entity, ability: AbilityId, def: &AbilityDef, origin: Point, aim: Point, sees_aim: Option<bool>) -> Self {
+        Self { user, source: Source::Ability(ability), targeting: def.targeting(), origin, aim, sees_aim }
+    }
 }
 
 /// Where a use lands, and whether the aim holds.
@@ -351,41 +366,40 @@ impl Bystanders<'_, '_> {
 
     /// Where `aimed` lands, who it hits, and why the aim would be refused.
     ///
-    /// The one answer to the question. The resolver lands a use with it
-    /// and the targeting cursor previews one with it, so the two cannot
-    /// disagree. Who counts as hit is [`Aim::hits`] over every living
-    /// actor under the footprint, the user included; what refuses an aim
-    /// is [`aim_blocked`].
-    pub fn land(&self, aimed: Aimed<'_>, map: &WorldMap, occupancy: &Occupancy) -> Landed {
-        let Aimed { user, ability, def, origin, aim, sees_aim } = aimed;
+    /// The one answer to the question, for an ability and for a thing's
+    /// aimed use alike. The resolvers land a use with it and the targeting
+    /// cursor previews one with it, so the two cannot disagree. Who counts
+    /// as hit is [`Aim::hits`] over every living actor under the footprint,
+    /// the user included; what refuses an aim is [`aim_blocked`]. The
+    /// landing adds nothing to what it lands, and a thing that lands its
+    /// effects stronger sets its own bonus on it.
+    pub fn land(&self, aimed: Aimed, map: &WorldMap, occupancy: &Occupancy) -> Landed {
+        let Aimed { user, source, targeting, origin, aim, sees_aim } = aimed;
         let stops = |p: Point| p != origin && (map.blocks_projectiles(p) || occupancy.is_occupied(p));
-        let Footprint { cells, path, landing } = footprint(def.mode, origin, aim, map.window_tiles(), stops, |p| map.blocks_projectiles(p));
-        let mut refused = aim_blocked(def, &cells, sees_aim);
+        let Footprint { cells, path, landing } = footprint(targeting.mode, origin, aim, map.window_tiles(), stops, |p| map.blocks_projectiles(p));
+        let mut refused = aim_blocked(targeting, &cells, sees_aim);
         // A projectile that stopped short of where it was pointed, at its
         // range or on whatever stood in the way, is refused rather than
         // landed where it stopped: nobody chose that spot.
-        if def.aim.needs_cursor() && landing.is_some_and(|landed| landed != aim) {
+        if targeting.aim.needs_cursor() && landing.is_some_and(|landed| landed != aim) {
             // First among the reasons: an aim that stops short has no
             // target under it either, and out of reach is the one to act on.
             refused.insert(0, Blocked::OutOfReach);
         }
         let mut targets = Vec::new();
-        if def.aim == Aim::SelfOnly {
+        if targeting.aim == Aim::SelfOnly {
             // Whatever the shape, the only one it wants is the one using it.
             targets.push(user);
         } else {
             for cell in &cells {
                 for who in occupancy.at(*cell) {
-                    if !targets.contains(who) && self.alive.contains(*who) && def.aim.hits(self.relation(user, *who), *who == user) {
+                    if !targets.contains(who) && self.alive.contains(*who) && targeting.aim.hits(self.relation(user, *who), *who == user) {
                         targets.push(*who);
                     }
                 }
             }
         }
-        Landed {
-            landing: Landing { user, source: Source::Ability(ability), origin, aim, cells, path, landed_at: landing, targets, bonus: EffectBonus::default() },
-            refused,
-        }
+        Landed { landing: Landing { user, source, origin, aim, cells, path, landed_at: landing, targets, bonus: EffectBonus::default(), on: None }, refused }
     }
 }
 
@@ -434,7 +448,7 @@ pub fn resolve_abilities(
             continue;
         };
         let aim = if def.aim.needs_cursor() { intent.action.aim } else { origin };
-        let aimed = Aimed { user, ability: id, def, origin, aim, sees_aim: world.sight_of(user, aim) };
+        let aimed = Aimed::ability(user, id, def, origin, aim, world.sight_of(user, aim));
         let Landed { landing, refused } = bystanders.land(aimed, world.map(), world.occupancy());
 
         let mut why = gate(user, id, def, &state, now);
@@ -455,7 +469,7 @@ pub fn resolve_abilities(
         // The turn is spent on the cast. With something watching, a
         // projectile is seen to fly before it lands: what it does waits in
         // the air for the first pass after the flight has been seen.
-        let landing = match flight_of(&landing, &world) {
+        let landing = match landing.flight(&world, LookOf::Ability(id)) {
             Some(flight) => {
                 world.cues.write(Cued { actor: user, cue: flight });
                 match airborne.launched(&mut hold, landing) {
@@ -494,36 +508,11 @@ pub fn land_abilities(
 fn land(landing: Landing, abilities: &Abilities, world: &mut EffectWorld<'_, '_>, events: &mut MessageWriter<AbilityEvent>) {
     let user = landing.user;
     let Some(id) = landing.ability() else { return };
-    if let Some(burst) = burst_of(&landing, world) {
+    if let Some(burst) = landing.burst(world, LookOf::Ability(id)) {
         world.cues.write(Cued { actor: user, cue: burst });
     }
     abilities.built[id.index()].land(&landing, world);
     events.write(AbilityEvent::Used { user, ability: id, aim: landing.aim, targets: landing.targets });
-}
-
-/// `cell` as a cue anchors it: the target standing on it, so a burst on
-/// someone knocked back goes with them and a bolt at someone walking away
-/// still lands on them, or the cell itself when nobody does.
-fn anchor_of(landing: &Landing, world: &EffectWorld<'_, '_>, cell: Point) -> Anchor {
-    landing.targets.iter().find(|t| world.position(**t) == Some(cell)).map(|t| Anchor::on(*t, cell)).unwrap_or(Anchor::cell(cell))
-}
-
-/// The flight to where a projectile stopped, for a shape that has one.
-fn flight_of(landing: &Landing, world: &EffectWorld<'_, '_>) -> Option<Cue> {
-    let stop = landing.landed_at.filter(|stop| *stop != landing.origin)?;
-    Some(Cue::Flight { from: Anchor::on(landing.user, landing.origin), to: anchor_of(landing, world, stop), look: LookOf::Ability(landing.ability()?) })
-}
-
-/// The burst over the footprint, for a shape that covers anything, spreading
-/// out from where a projectile stopped, or else from the user: a ball goes
-/// off where it lands, and a nova, a cone or a line goes out from whoever
-/// cast it.
-fn burst_of(landing: &Landing, world: &EffectWorld<'_, '_>) -> Option<Cue> {
-    if landing.cells.is_empty() {
-        return None;
-    }
-    let from = landing.landed_at.map(|stop| anchor_of(landing, world, stop)).unwrap_or(Anchor::on(landing.user, landing.origin));
-    Some(Cue::Burst { on: landing.cells.iter().map(|c| anchor_of(landing, world, *c)).collect(), look: LookOf::Ability(landing.ability()?), from: Some(from) })
 }
 
 /// Every reason `def` may not be used by `user` right now.
@@ -787,6 +776,7 @@ mod tests {
     use crate::combat::{CombatRules, DamageDealt, Faction};
     use crate::components::{Actor, Player, RevealsMap};
     use crate::components::{Blocks, Position, Viewshed};
+    use crate::cue::{Anchor, Cue};
     use crate::effects::{AddEffect, AddEngineEffects, Effect, FromArgs};
     use crate::items::Item;
     use rl_core::{Direction, RunSeed};

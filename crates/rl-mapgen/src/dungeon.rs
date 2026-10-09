@@ -8,7 +8,7 @@
 
 use rand::Rng;
 use rl_core::{Direction, Grid2D, Point, Rect};
-use rl_grid::{DijkstraMap, PathRules, TileId};
+use rl_grid::{CostSource, DijkstraMap, PathRules, Terrain, TileId, TileTables};
 
 use crate::chain::{BuildError, Pass, Phase};
 use crate::context::BuildContext;
@@ -326,8 +326,43 @@ impl<C: BuildContext> Pass<C> for ClearStart {
     }
 }
 
-/// Emits the open cell farthest by walking from the [`StartPoint`] as the
-/// [`ExitPoint`]. Fails without a start or with nowhere to walk to.
+/// Floods as a walker who opens doors does: a cell counts as open when the
+/// registry marks it passable, even where it is not walkable this moment,
+/// because a corridor through a shut door still joins the rooms either
+/// side of it. [`FarthestExit`] is the only pass that reads terrain this
+/// way; everything that moves a body during play still asks a
+/// [`TerrainView`](rl_grid::TerrainView), which stops at a shut door as it
+/// should.
+struct ThroughDoors<'a> {
+    terrain: &'a Terrain,
+    tables: &'a TileTables,
+}
+
+impl Grid2D for ThroughDoors<'_> {
+    fn width(&self) -> i32 {
+        self.terrain.width()
+    }
+    fn height(&self) -> i32 {
+        self.terrain.height()
+    }
+}
+
+impl CostSource for ThroughDoors<'_> {
+    fn cost_idx(&self, idx: usize) -> Option<u32> {
+        let id = self.terrain.get_idx(idx).index();
+        self.tables.passable[id].then(|| self.tables.move_cost[id])
+    }
+}
+
+/// Emits the cell farthest by walking from the [`StartPoint`] as the
+/// [`ExitPoint`], doors opened on the way: a shut door is passable even
+/// where it is not walkable, and a map of rooms joined only through doors
+/// otherwise measures no farther than the doors round the room the start
+/// stands in. Never a door itself, since the exit is somewhere to stand
+/// and not a cell nothing has opened yet. Ties break toward the cell first
+/// in row order, the lower point by [`Point`]'s own ordering, so a seed
+/// always picks the same one. Fails without a start or with nowhere to
+/// stand that is farther than it.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct FarthestExit;
 
@@ -340,11 +375,13 @@ impl<C: BuildContext> Pass<C> for FarthestExit {
     }
     fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
         let start = ctx.outputs().first::<StartPoint>().ok_or_else(|| BuildError::new("farthest_exit", "no start point emitted before it"))?.0;
-        let view = ctx.terrain().view(ctx.tiles());
-        let mut map = DijkstraMap::covering(&view);
-        map.build(&view, [start], PathRules::default());
-        let far = map.iter().filter(|(p, _)| *p != start).max_by_key(|(_, v)| *v).map(|(p, _)| p);
-        let far = far.ok_or_else(|| BuildError::new("farthest_exit", "nowhere to walk to from the start"))?;
+        let tables = ctx.tiles().tables();
+        let through_doors = ThroughDoors { terrain: ctx.terrain(), tables: &tables };
+        let mut map = DijkstraMap::covering(&through_doors);
+        map.build(&through_doors, [start], PathRules::default());
+        let walkable = |p: Point| ctx.terrain().get(p).is_some_and(|t| tables.walkable[t.index()]);
+        let far = map.iter().filter(|(p, _)| *p != start && walkable(*p)).max_by_key(|(p, v)| (*v, std::cmp::Reverse(*p))).map(|(p, _)| p);
+        let far = far.ok_or_else(|| BuildError::new("farthest_exit", "nowhere to stand farther than the start"))?;
         ctx.emit(ExitPoint(far));
         Ok(())
     }
@@ -480,5 +517,49 @@ mod tests {
         Chain::new().then(Doors { door }).run(&mut c, RunSeed(1)).unwrap();
         assert_eq!(c.terrain().get(Point::new(12, 9)), Some(door));
         assert_eq!(c.terrain().count(door), 1, "the wide opening got no door");
+    }
+
+    /// Two rooms joined only by a shut door: the door is passable but not
+    /// walkable, so a flood that stopped at `walkable` would end in the
+    /// near room, where the start stands. The farthest exit crosses the
+    /// door into the room beyond it, and never stands on the door itself.
+    #[test]
+    fn the_farthest_exit_crosses_a_shut_door_to_reach_the_room_beyond_it() {
+        let tiles = TileRegistry::standard();
+        let (wall, floor, door) = (tiles.expect("wall"), tiles.expect("floor"), tiles.expect("door_closed"));
+        let mut c = BaseContext::blank(20, 7, tiles, wall);
+        let near = Rect::new(1, 1, 4, 4);
+        let far_room = Rect::new(10, 1, 4, 4);
+        for p in near.cells().chain(far_room.cells()) {
+            c.terrain_mut().set(p, floor);
+        }
+        for x in 5..10 {
+            c.terrain_mut().set(Point::new(x, 2), floor);
+        }
+        c.terrain_mut().set(Point::new(6, 2), door);
+        c.emit(StartPoint(Point::new(2, 2)));
+        Chain::new().then(FarthestExit).run(&mut c, RunSeed(1)).unwrap();
+        let exit = c.outputs().first::<ExitPoint>().unwrap().0;
+        assert!(far_room.contains(exit), "exit {exit:?} should cross the shut door into the far room {far_room:?}");
+        assert_ne!(c.terrain().get(exit), Some(door), "the exit should be somewhere to stand, not the door itself");
+    }
+
+    /// A straight corridor with the start in its middle: both ends are
+    /// equally far, and the tie breaks toward the cell first in row
+    /// order, the lower point by `Point`'s own ordering, so a seed always
+    /// picks the same one of a tie rather than whichever an iterator
+    /// happens to visit last.
+    #[test]
+    fn a_tied_farthest_exit_breaks_toward_the_cell_first_in_row_order() {
+        let tiles = TileRegistry::standard();
+        let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
+        let mut c = BaseContext::blank(11, 3, tiles, wall);
+        for x in 0..11 {
+            c.terrain_mut().set(Point::new(x, 1), floor);
+        }
+        c.emit(StartPoint(Point::new(5, 1)));
+        Chain::new().then(FarthestExit).run(&mut c, RunSeed(1)).unwrap();
+        let exit = c.outputs().first::<ExitPoint>().unwrap().0;
+        assert_eq!(exit, Point::new(0, 1), "a tie should break toward the lower point, not the higher");
     }
 }

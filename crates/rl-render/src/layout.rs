@@ -61,6 +61,20 @@ impl Fit {
         px / scale_factor
     }
 
+    /// The cell a point of the window falls in, of a grid `cols` by `rows`:
+    /// [`center`](Self::center) run backwards. `at` is in physical pixels
+    /// from the window's top-left, the way a cursor is reported. `None` in
+    /// the margin round the grid and anywhere outside the window.
+    pub fn cell_at(&self, at: Vec2, cols: i32, rows: i32) -> Option<(i32, i32)> {
+        let inside = at - self.margin.as_vec2();
+        if inside.x < 0.0 || inside.y < 0.0 {
+            return None;
+        }
+        let cell = (inside / self.cell.as_vec2()).floor();
+        let (x, y) = (cell.x as i32, cell.y as i32);
+        (x < cols && y < rows).then_some((x, y))
+    }
+
     /// The font size for these cells, in logical pixels: the declared one
     /// scaled as the cell's height was.
     pub fn font(&self, base_font: f32, base_cell: Vec2, scale_factor: f32) -> f32 {
@@ -104,6 +118,39 @@ mod tests {
                 assert!((window.x - used_x) - 2 * f.margin.x <= 1, "{window} {sf}: {f:?}");
                 assert!((window.y - used_y) - 2 * f.margin.y <= 1, "{window} {sf}: {f:?}");
             }
+        }
+    }
+
+    /// Every pixel of every cell reads back as that cell, at every window
+    /// and scale: its four corners and its centre. And the pixel just
+    /// outside the grid on each side reads as no cell.
+    #[test]
+    fn a_point_reads_back_as_the_cell_it_was_laid_out_in() {
+        for (cols, rows, window, sf) in cases() {
+            let f = fit(cols, rows, BASE, window, sf);
+            if f.cell.x * cols as u32 > window.x || f.cell.y * rows as u32 > window.y {
+                continue;
+            }
+            for (x, y) in [(0, 0), (cols - 1, 0), (0, rows - 1), (cols - 1, rows - 1), (cols / 2, rows / 3)] {
+                let left = (f.margin.x + f.cell.x * x as u32) as f32;
+                let top = (f.margin.y + f.cell.y * y as u32) as f32;
+                let (right, bottom) = (left + f.cell.x as f32 - 0.5, top + f.cell.y as f32 - 0.5);
+                for at in [
+                    Vec2::new(left, top),
+                    Vec2::new(right, top),
+                    Vec2::new(left, bottom),
+                    Vec2::new(right, bottom),
+                    Vec2::new((left + right) / 2.0, (top + bottom) / 2.0),
+                ] {
+                    assert_eq!(f.cell_at(at, cols, rows), Some((x, y)), "{cols}x{rows} {window} {sf}: {at} of {f:?}");
+                }
+            }
+            let (past_x, past_y) = ((f.margin.x + f.cell.x * cols as u32) as f32, (f.margin.y + f.cell.y * rows as u32) as f32);
+            let inside = Vec2::new(f.margin.x as f32, f.margin.y as f32);
+            assert_eq!(f.cell_at(Vec2::new(past_x, inside.y), cols, rows), None, "past the right edge: {f:?}");
+            assert_eq!(f.cell_at(Vec2::new(inside.x, past_y), cols, rows), None, "past the bottom edge: {f:?}");
+            assert_eq!(f.cell_at(Vec2::new(inside.x - 0.5, inside.y), cols, rows), None, "in the left margin: {f:?}");
+            assert_eq!(f.cell_at(Vec2::new(inside.x, inside.y - 0.5), cols, rows), None, "in the top margin: {f:?}");
         }
     }
 

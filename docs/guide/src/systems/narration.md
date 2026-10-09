@@ -1,6 +1,9 @@
 <!-- documents:
      plugins: NarratorPlugin, NarrationViewPlugin
      files: crates/rl-ui/src/narrate.rs
+            crates/rl-core/src/noun.rs
+            crates/rl-bevy/src/items.rs
+            crates/rl-bevy/src/status.rs
             crates/rl-ui/src/log.rs
             crates/rl-ui/src/tone.rs
             crates/rl-ui/src/lib.rs
@@ -8,7 +11,7 @@
             crates/rl-bevy/src/accuracy.rs
             crates/rl-bevy/src/plugin.rs
             crates/rl-rules/src/status.rs
-     fingerprint: 9a14d3fd -->
+     fingerprint: bf9e1f74 -->
 
 # Narration
 
@@ -31,13 +34,14 @@ A game changes a phrase, silences one or asks for the unseen to be spoken by bui
 A `Said` is one thing that happened as the narrator reads it: its `words`, a `who`, a `whom` and a `what`, a `named` for a registry's word, a `detail`, an `amount`, an `at`, whether it was `seen`, whether the doer was `who_seen`, and the `turn`.
 `Words` is either a `Phrase`, one of the engine's own events, or `Own { text, tone }`, a game's line already worded.
 Two kinds rather than a phrase a game may add to, because `Phrase` enumerates what the engine raises and nothing else, and a game's line needs no entry in a table, only a place in the order.
-`Phrase` is closed for the same reason, and it is split by perspective and by how the damage arrived: `YouHit`, `HitsYou` and `OthersFight` for a blow, `YouShoot`, `ShootsYou` and `OthersShoot` for a shot, each of the six with a twin for the one that got through nothing, so no grammar and no branch on who did it lives in the engine.
-What tells a shot from a blow is `Reach`, which rides `DamageEvent` down the pipeline to `DamageDealt` untouched: only `Shot` is worded as one, and `Melee`, `Thrown` and `Effect` keep the blow's words, since a bolt or a poison is already narrated by whatever cast or inflicted it.
+`Phrase` is closed for the same reason, and it is split by perspective and by how the damage arrived: `YouHit`, `HitsYou` and `OthersFight` for a blow, `YouShoot`, `ShootsYou` and `OthersShoot` for a shot, and `YourUseHits`, `UseHitsYou` and `OthersUseHits` for harm an ability or a thing landed, each of the nine with a twin for the one that got through nothing, so no grammar and no branch on who did it lives in the engine.
+What tells them apart is `Reach`, which rides `DamageEvent` down the pipeline to `DamageDealt` untouched: `Shot` is worded as a shot, `Ability` and `Thing` as harm named by what landed it, `Your ash rod hits the rat for 4.` and `The goblin's firebolt hits you for 3.`, and `Melee`, `Thrown` and `Effect` keep the blow's words, since a poison is already narrated by whatever inflicted it.
 A rolled attack that missed is `YouMiss`, `MissesYou` or `OthersMiss`, read from `Missed` and said in the muted tone of a blow that did nothing, whatever way it travelled.
 A status landing on the player is `YouAreAfflicted`, or `YouGainABoon` for a `StatusDef` marked `boon`, the same words told as good news; one running out is `YouAreNoLonger`, and a cure is `YourAfflictionPasses`, except that a boon broken off, a cloak ended by a blow or by its plate coming off, is lost rather than cured and says `YouAreNoLonger`.
-Every one of them says "you are", because a status is named as what its holder is, `warded` or `scorched`.
+Every one of them says "you are", because a status is named as what its holder is, `warded` or `scorched`, and each is told when a status begins and never when a `StatusEvent::Renewed` keeps it up, so a cloud is told once and not every turn it is breathed.
 `called` is what `who`, `whom` and `what` were called when the row was made, filled in by the collector, because a row is made inside the pass and spoken after it and things change in between: what dies becomes remains and is renamed, what is thrown merges into a stack.
 A use is named as one of the thing, `You use a stim.`, since the stack already counts one fewer, and only a use of a thing with a `use` trigger is said at all: what using anything else means is the game's to say, the way a crust of bread is.
+A worn thing that would not come off when the player tried is `WillNotComeOff`, `A ring will not come off.`, told as bad news.
 `seen` is whether the player saw it, which is either that it happened to the player or that it happened where the player can see, and `Phrasebook::speak_unseen` decides whether an unseen row is spoken at all.
 `who_seen` is the narrower fact beside it, whether the doer's own cell was in the player's sight, and `render` takes as an argument whether to honour it, since what to do about an unseen doer is the presenter's setting rather than the row's business.
 A doer that may not be named is `UNSEEN`, the one word `something`, and `speak` names it anyway while `speak_unseen` is on, because a game that asked for the unseen to be narrated asked for it named.
@@ -46,7 +50,7 @@ The two were one field until a shot out of an unlit room named the shooter, a th
 It is written from inside a pass, usually in `TurnSet::React`, and the collector reads it with that pass's events and after them, so it lands in the log below what it answers and above whatever the next actor does.
 A line written outside the turns, the one a run opens with or a key refused before any turn is spent, has no pass to wait for and goes to the `MessageLog` directly.
 `Phrasebook` is the words for every phrase, one entry per phrase with a tone of its own, and `set`, `silence` and `get` are all of it.
-The placeholders are `{who}` and `{whom}`, which are `you` or `the <Name>`, `{what}`, which is a thing's name said with its stack's count, `{n}` for the amount, `{named}` for a registry's word and `{detail}` for whatever more there is to say, each capitalised by writing the key capitalised.
+The placeholders are `{who}` and `{whom}`, which are `you` or the name through `noun::with_the`, `the goblin`, or as written for one that carries its own article or starts with a capital, `the Drowned King` or `Grubnak`, `{what}`, which is a thing's name said with its stack's count, `{n}` for the amount, `{named}` for a registry's word and `{detail}` for whatever more there is to say, each capitalised by writing the key capitalised.
 `render` fills a template and answers with the text and a `Span` per name that has a colour, and an unknown key is left in the text as it was written rather than dropped.
 `speak` walks the view, skips what was not seen unless the book says otherwise, looks each phrase up, renders it, and pushes it to the log with its tone and its turn.
 The log is a bounded ring of `LogEntry`, each a text, a tone, a turn, a count and its spans, and a line repeated folds into the one above it with a count rather than filling the panel, because a four-line log filled by one event is a log that has stopped reporting.
@@ -105,7 +109,7 @@ The one exception is a notice by whoever holds the turn, which is read first, be
 What the engine decides about a row is what it can know: who, to whom, with what, how much, where, whether the player was in a position to see it, and whether whoever did it was in sight to be named.
 What it cannot know is a game's line, so `Tell` carries no tone the engine picked and is always spoken: the game chose to say it, so whether the player saw who it names is the game's to have weighed.
 Between the two sits `ViewSet::Annotate`, where a game may edit or remove rows before they are spoken, and behind both sits the view itself, which a game may read and speak in its own words with no presenter at all.
-What the engine does not get is grammar: no pluralisation of a verb, no agreement, no articles worked out from a name, and no second language.
+What the engine does not get is grammar beyond a noun's: `rl_core::noun` counts a name, pluralises its head and decides whether it takes `the`, and there is no agreement of a verb and no second language.
 A template with a placeholder in it is the whole mechanism, because the alternative is a grammar engine that every game would fight.
 
 ## Where it lives

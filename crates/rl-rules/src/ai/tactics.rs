@@ -417,6 +417,44 @@ impl<A: Copy> Tactic<A> for KeepPost {
     }
 }
 
+/// The ground a mind's chart does not hold yet and could walk onto: every
+/// unseen cell that can be stood on beside a seen one that can, as a
+/// [`Sense`](crate::ai::Sense).
+///
+/// The engine's `sense_uncharted` pushes it for an actor that keeps a
+/// chart; a game running minds without `rl-bevy` pushes it itself. Empty,
+/// or never pushed, when there is nothing left to find.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Uncharted(pub Vec<Point>);
+
+/// Explore: with nothing better to do, walk to the nearest ground the
+/// mind's chart does not hold.
+///
+/// Low in a brain, beneath fighting and fleeing and above its idle tactic,
+/// so a mind fights what it meets on the way and goes back to looking when
+/// the fight is done. Nearest by the way there, not by the crow: the goals
+/// are one field, so a door two steps off beats a gap in a wall it would
+/// have to walk round a room to reach. Leaves the turn to the next tactic
+/// for a mind with no [`Uncharted`] sense, and for one whose chart is
+/// whole or whose every unseen cell is cut off, so one brain serves a kind
+/// whether or not this one explores, and an explorer with nothing left to
+/// find goes on to whatever its brain does next.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Explore;
+
+impl<A: Copy> Tactic<A> for Explore {
+    fn name(&self) -> &'static str {
+        "explore"
+    }
+    fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
+        let unseen = &ctx.snapshot.sense::<Uncharted>()?.0;
+        if unseen.is_empty() {
+            return None;
+        }
+        ctx.step_toward(unseen).map(Decision::Step)
+    }
+}
+
 /// Drift: some chance of a random step, otherwise wait.
 ///
 /// Never straight back where it came from while any other cell is open,
@@ -894,6 +932,51 @@ mod tests {
         t.set(Point::new(6, 5), wall);
         t.set(Point::new(5, 6), wall);
         (t, r)
+    }
+
+    /// An explorer walks toward the nearest unseen ground by the way there,
+    /// and gives the turn up when there is none or none it can reach.
+    #[test]
+    fn an_explorer_steps_toward_the_nearest_uncharted_ground_and_passes_when_there_is_none() {
+        let r = TileRegistry::standard();
+        let mut t = Terrain::filled(12, 12, r.expect("floor"));
+        // A wall down column 6 with one gap at the bottom, so the cell just
+        // across it is a long walk and a cell four steps west is nearer.
+        for y in 0..11 {
+            t.set(Point::new(6, y), r.expect("wall"));
+        }
+        let view_t = t.view(&r);
+        let can_step = |p: Point| view_t.is_walkable(p);
+        let decide = |snapshot: &Snapshot<u32>| {
+            let mut rng = StdRng::seed_from_u64(1);
+            Brain::new()
+                .then(Explore)
+                .decide(&mut TacticCtx {
+                    snapshot,
+                    fields: &mut Given::over(&view_t),
+                    can_step: &can_step,
+                    blocks_shot: &nothing_blocks,
+                    blocks_burst: &nothing_blocks,
+                    bounds: arena(),
+                    rng: &mut rng,
+                })
+                .0
+        };
+        let at = |unseen: Option<Vec<Point>>| {
+            let mut s = Snapshot::alone(view(1, 5, 5, 10));
+            if let Some(unseen) = unseen {
+                s.add_sense(Uncharted(unseen));
+            }
+            s
+        };
+        assert_eq!(
+            decide(&at(Some(vec![Point::new(7, 5), Point::new(1, 5)]))),
+            Decision::Step(Point::new(4, 5)),
+            "west, though the other is two cells off through the wall"
+        );
+        assert_eq!(decide(&at(Some(vec![Point::new(7, 5)]))), Decision::Step(Point::new(5, 6)), "and round by the gap when that is all there is");
+        assert_eq!(decide(&at(Some(Vec::new()))), Decision::Wait, "a whole chart leaves the turn to the next tactic, here none");
+        assert_eq!(decide(&at(None)), Decision::Wait, "as does a mind that keeps no chart");
     }
 
     /// A hurt mind that sees a way to another map makes for it when it

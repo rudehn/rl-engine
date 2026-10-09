@@ -79,6 +79,11 @@ pub enum EquipError {
     NoSlot,
     /// The shape names a slot this equipment does not have.
     UnknownSlot(SlotId),
+    /// Every slot it may take, or one it must also claim, holds something
+    /// that stays on: see [`Equipment::equip_keeping`]. The slot is named
+    /// rather than its occupant so the error stays one type whatever the
+    /// item handle is; [`Equipment::in_slot`] says what holds it.
+    Kept(SlotId),
 }
 
 impl std::fmt::Display for EquipError {
@@ -86,6 +91,7 @@ impl std::fmt::Display for EquipError {
         match self {
             EquipError::NoSlot => write!(f, "the item names no slot to go in"),
             EquipError::UnknownSlot(s) => write!(f, "slot {} does not exist here", s.raw()),
+            EquipError::Kept(s) => write!(f, "slot {} holds something that stays on", s.raw()),
         }
     }
 }
@@ -126,14 +132,37 @@ impl<I: Copy + Eq> Equipment<I> {
     /// order. An item already worn is taken off first, so equipping it
     /// again moves it rather than doubling it.
     pub fn equip(&mut self, item: I, shape: &EquipShape) -> Result<Vec<I>, EquipError> {
-        let primary = *shape.any_of.first().ok_or(EquipError::NoSlot)?;
+        self.equip_keeping(item, shape, |_| false)
+    }
+
+    /// Puts `item` on as [`equip`](Self::equip) does, displacing nothing
+    /// `stays` holds on: of the slots it may take, a free one, else the
+    /// first whose occupant may come off, and each slot it also claims must
+    /// be free or hold something that may.
+    ///
+    /// What a thing that will not come off needs, here rather than in each
+    /// caller, because which slot a ring goes on is this type's to choose:
+    /// a caller that only refused what [`equip`](Self::equip) displaced
+    /// would refuse a ring for the finger it picked while the other finger's
+    /// ring could have come off. Refused as [`EquipError::Kept`] with
+    /// nothing changed when no slot will do.
+    pub fn equip_keeping(&mut self, item: I, shape: &EquipShape, stays: impl Fn(I) -> bool) -> Result<Vec<I>, EquipError> {
+        let first = *shape.any_of.first().ok_or(EquipError::NoSlot)?;
         for slot in shape.slots() {
             if slot.index() >= self.slots.len() {
                 return Err(EquipError::UnknownSlot(slot));
             }
         }
+        // What holds a slot once `item` itself is off, since equipping a
+        // worn thing again moves it, and whether that stays on.
+        let held = |slot: SlotId| self.in_slot(slot).filter(|o| *o != item);
+        let kept = |slot: SlotId| held(slot).is_some_and(&stays);
+        let primary = shape.any_of.iter().copied().find(|s| held(*s).is_none()).or_else(|| shape.any_of.iter().copied().find(|s| !kept(*s)));
+        let primary = primary.ok_or(EquipError::Kept(first))?;
+        if let Some(slot) = shape.also.iter().copied().find(|s| kept(*s)) {
+            return Err(EquipError::Kept(slot));
+        }
         self.unequip(item);
-        let primary = shape.any_of.iter().copied().find(|s| self.slots[s.index()].is_none()).unwrap_or(primary);
         let mut displaced = Vec::new();
         for slot in std::iter::once(primary).chain(shape.also.iter().copied()) {
             if let Some(claim) = self.slots[slot.index()]
@@ -245,6 +274,32 @@ mod tests {
         assert_eq!(eq.equip(1, &EquipShape::in_slot(off)), Ok(vec![]), "moving an item displaces nothing, least of all itself");
         assert!(eq.is_free(main));
         assert_eq!(eq.in_slot(off), Some(1));
+    }
+
+    /// What stays on is never pushed off: a ring goes on the finger whose
+    /// ring may come off, a two-hander is refused the hand a shield that
+    /// stays on holds, and with nowhere left to go an equip is refused
+    /// naming the slot, with nothing moved. A plain equip keeps nothing.
+    #[test]
+    fn equipping_around_what_stays_on_takes_another_slot_or_is_refused_naming_it() {
+        let (r, main, off, left, right) = hands_and_fingers();
+        let mut eq: Equipment<u32> = Equipment::for_slots(&r);
+        let ring = EquipShape::in_any([left, right]);
+        let stays = |item: u32| item == 1 || item == 5;
+        eq.equip(1, &ring).unwrap();
+        eq.equip(2, &ring).unwrap();
+        assert_eq!(eq.equip_keeping(3, &ring, stays), Ok(vec![2]), "the second finger's ring comes off, not the first's");
+        assert_eq!((eq.in_slot(left), eq.in_slot(right)), (Some(1), Some(3)));
+        assert_eq!(eq.equip_keeping(4, &ring, |i| i == 1 || i == 3), Err(EquipError::Kept(left)), "both fingers held");
+        assert_eq!((eq.in_slot(left), eq.in_slot(right)), (Some(1), Some(3)), "and nothing moved");
+
+        eq.equip(4, &EquipShape::in_slot(main)).unwrap();
+        eq.equip(5, &EquipShape::in_slot(off)).unwrap();
+        let two_hander = EquipShape::in_slot(main).and_claims(off);
+        assert_eq!(eq.equip_keeping(6, &two_hander, stays), Err(EquipError::Kept(off)), "the shield keeps its hand");
+        assert_eq!((eq.in_slot(main), eq.in_slot(off)), (Some(4), Some(5)), "and the sword is still in the other");
+        assert_eq!(eq.equip_keeping(5, &EquipShape::in_slot(off), stays), Ok(vec![]), "putting on what is already on moves nothing off");
+        assert_eq!(eq.equip(6, &two_hander), Ok(vec![4, 5]), "a plain equip keeps nothing on");
     }
 
     #[test]

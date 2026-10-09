@@ -3,6 +3,8 @@
      files: crates/rl-render/src/lib.rs
             crates/rl-render/src/terminal.rs
             crates/rl-render/src/layout.rs
+            crates/rl-render/src/pointer.rs
+            crates/rl-render/src/tileset.rs
             crates/rl-render/src/map_view.rs
             crates/rl-render/src/fields.rs
             crates/rl-render/src/shade.rs
@@ -12,7 +14,7 @@
             crates/rl-bevy/src/cue.rs
             crates/rl-ui/src/tone.rs
             crates/rl-engine/src/lib.rs
-     fingerprint: 796a80b2 -->
+     fingerprint: 1a39f1cd -->
 
 # Rendering
 
@@ -23,11 +25,13 @@ What a tile looks like is the game's to say; what light, memory, fire and gas do
 ## Turning it on
 
 `RoguelikePlugins` adds all four, and `FullscreenPlugin` beside them, which the settings page covers, because a game with no terminal has nothing to draw into and a map with no viewport is a map nobody sees.
-`TerminalPlugin` takes the grid in cells, the pixel size of one cell and the font height, spawns the camera and the cell entities in `Startup`, lays the grid out again in `PreUpdate` when the window has changed, early enough that it is drawn where it was put in the same frame, and flushes the buffer in `PostUpdate`.
-Glyphs come from the system's monospace family, which needs Bevy's `system_font_discovery` feature; a browser has no font database to search, so on wasm they come from the font Bevy embeds, which covers printable ASCII and nothing else.
+`TerminalPlugin::new` takes the grid in cells, the pixel size of one cell and the font height, spawns the camera and the cell entities in `Startup`, lays the grid out again in `PreUpdate` when the window has changed, early enough that it is drawn where it was put in the same frame, and flushes the buffer in `PostUpdate`.
+`TerminalPlugin::typeface`, and `RoguelikePlugins::typeface` for a game on the group, takes the bytes of a TrueType or OpenType file the game ships, a `&'static` slice or a `Vec<u8>` read at run time, and every glyph is drawn in it.
+Bytes rather than an asset path, because an asset arrives after the first frames are drawn, and on the web only from a page that serves the game's assets beside it.
+Without one, glyphs come from the system's monospace family, which needs Bevy's `system_font_discovery` feature and is another face on every platform, a glyph it lacks drawn as an empty box; a browser has no font database to search, so on wasm they come from the font Bevy embeds, which covers printable ASCII and nothing else.
 `MapViewPlugin` takes the `Rect` it draws in, the way every panel does, so a game has no `MapView` of its own to insert and cannot forget one.
 Its `finish` declares `depends_on::<CorePlugin>` and `depends_on::<FovPlugin>`: without field of view no tile is ever seen or remembered, and the map would draw as nothing at all.
-It chains `follow_player`, `track_fields` and `draw_map` in `PresentSet::Map`, and puts `dress_props` before `draw_map` in plain `Update` rather than in a play-only set, because a prop is put down while a place is built and `Added` matches for one frame only.
+It chains `follow_player`, `track_fields`, `remember_still_things` and `draw_map` in `PresentSet::Map`, and puts `dress_props` in plain `Update` rather than in a play-only set, because a prop is put down while a place is built and `Added` matches for one frame only, and between `EngineSet::Turns` and `EngineSet::Present`, so a prop put down in a turn is never drawn or remembered bare.
 `ParticlesPlugin` declares `depends_on::<MapViewPlugin>` and draws after `draw_map`, so a burst shows through a targeting cursor and under a menu.
 It reads cues in `PresentSet::Narrate` and takes the turns' hold on entering `Playing`, but only if the style takes time, so a headless test with an instant style is never made to wait a frame for a fade.
 `CapturePlugin` does nothing unless `RL_CAPTURE` names a file, which is why it can sit in the group a game adds without asking.
@@ -35,12 +39,16 @@ It reads cues in `PresentSet::Narrate` and takes the turns' hold on entering `Pl
 ## The model
 
 `Cell` is one character position: a `glyph`, a foreground `fg` and a fill `bg`, with `new`, `on` and `dimmed` to build one.
-`Terminal` is the back buffer, a resource, so any crate's presenter writes into it: `set`, `put`, `print`, `print_on`, `fill` and `clear` write, `get` reads back, and every write outside the grid is dropped rather than wrapping or panicking.
+`Terminal` is the back buffer, a resource, so any crate's presenter writes into it: `set`, `set_wide`, `set_bg`, `put`, `print`, `print_on`, `fill` and `clear` write, `get` and `span` read back, and every write outside the grid is dropped rather than wrapping or panicking.
 `Fit` is how the grid sits in a window, a cell and a margin in physical pixels, and `layout::fit` works it out: the largest zoom that fits, each cell floored to whole pixels so no seam shows between two backgrounds, and the grid centred.
+`Pointer` is the terminal cell the mouse is over, kept by `TerminalPlugin` once a frame after the grid is laid out, by `Fit::cell_at`, the same arithmetic run backwards: `cell` is that cell, `within(rect)` the cell when it is inside a panel's rectangle, and `tile(&view)` the map tile a `MapView` draws there; it is `None` in the margin and outside the window, and with no window it is left where a test put it with `Pointer::at`.
+`Tileset` is pictures in place of glyphs: a sheet, how it is cut up, a picture per character with `with(glyph, index)`, and with `within(rect)` the part of the terminal it covers; `flush_terminal` shows a cell whose glyph it names as that picture, tinted by the cell's colour, and no glyph, on a sprite spawned per cell the first time there is a tileset, and `turned(false)`, or removing the resource, draws every cell as its glyph again.
+`MapViewPlugin::new(rect).across(2)` draws each tile two cells across, for square tiles on narrow cells: `MapView::to_screen` answers a tile's first cell, `to_world` takes any of its cells back, `tiles` walks the view, and `set`, `wash` and `put` write a whole tile, `set` as one wide cell of the terminal, whose glyph or picture is drawn centred across its run until something else is written into it, so a screen drawn over the map is drawn a letter to a cell.
 The camera never scales; the glyphs take a font size scaled with the cell and are drawn at the size they are shown, and a window of exactly the size the game opened in gets exactly the declared cell, wherever that cell is a whole number of physical pixels; at a display scaling of 125% a ten-pixel cell is not, and is floored.
 `Glyph` is how an entity is drawn, a `ch`, an `fg` and a `layer`, and on a tile with two things on it the higher layer wins.
 `TileAppearance` is what each tile looks like in full light, indexed by `TileId`: `set` and `set_varied` fill it, `lit` reads it back, and an id the game never described draws as a magenta question mark so the gap is visible rather than blank.
 `seen` is that look jittered for the cell and the moment, `remembered` is it jittered as it was seen and then faded, and `under` colours both of a cell's colours by the light landing there.
+`remember_still_things` fills `Knowledge` once a frame with the topmost glyph on every tile in sight of anything that is not an `Actor` and not `Hidden`, or nothing, and `recalled` draws it over the tile once it is out of sight, in its own colour faded by the same `Memory`, so the stairs behind the player read as remembered and stay legible.
 `TileAppearance::load` reads the same table from RON against a `TileRegistry`, refusing the file and naming at once every entry for a tile that is not registered, every tile described twice, and every registered tile the file leaves out, so a gap is reported at startup by name rather than found on the map.
 `Vary` is how a tile strays from cell to cell and over time, a `brightness` spread, a `hue` spread per channel and a `shimmer` that drifts; `Memory` is the brightness, saturation and cool `tint` a remembered tile keeps; `Shading` is how light becomes colour, with the level a tile shows its authored colour at, what an unlit but seen tile keeps, and the speeds a flicker and a shimmer move at.
 All of it is cosmetic, and the only clock is the frame's, so a replayed seed plays identically however it is coloured.
@@ -83,6 +91,16 @@ fn main() -> AppExit {
 }
 ```
 
+A game drawn in its own face hands the group the bytes of its font file, compiled in with `include_bytes!`, and Undermere's is DejaVu Sans Mono, shipped beside its licence.
+
+<!-- include: ../../../../examples/undermere/src/main.rs:typeface -->
+```rust,no_run
+    // The window, the terminal in the game's own face, the map and the
+    // engine's base; the game's subsystems are `UndermerePlugin`'s, added
+    // once there, since a second `CombatPlugin` would panic.
+    app.add_plugins(RoguelikePlugins::new("Undermere", COLS, ROWS).cell(CELL).font(FONT).typeface(DEJAVU_SANS_MONO).map(screen.map).across(ACROSS))
+```
+
 What the engine cannot supply is the look of a tile, which is a table the game fills or a file it loads.
 
 <!-- include: ../../../../examples/tutorial/src/bin/step08_content.rs:looks -->
@@ -104,12 +122,16 @@ A `ToneId` is the other half of the same rule, one layer up: a widget takes a ro
 So the boundary falls between a thing and a word about a thing: the map and the entities on it are drawn in their own colours, and everything a panel says about them is drawn in a tone.
 A prop is described twice for the same reason, and the second half is here: the engine spawns it with its kind and no glyph, and `dress_props` gives it the one its definition asks for, so nothing below this crate names a `Color`.
 A prop a game dressed itself keeps what it was given, since the query asks only for those with no glyph.
+Memory is what was seen, not what is true, and which things it keeps is the engine's: an item, a prop or a way through is remembered where it was last seen until its tile is seen again, and a creature never is, since where one stood says nothing of where it is; a game decides only which places are known by heart, by `Knowledge::learn`.
 Fire and gas are drawn on tiles in sight and on the rest of a cloud in sight over known ground, and nowhere else, because memory holds no smoke and a cloud must not show the shape of a room nobody has seen; what hides behind a haze is decided by the map's opacity rather than by the renderer's taste.
 The blending and the waiting are the drawing's alone: what the fields hold, what hides whom and what a turn does never wait for a blast to reach a cell, so a headless game plays the same turns.
 The engine will not animate a game's own action: a resolver says what is worth seeing by writing a `Cued`, and what plays it is a plugin that may not be there.
 Without a watcher the cues are written and forgotten and the loop runs as if there were none, which is what a headless game gets and why the same rules run with and without a window.
 The pace is the engine's and the look is the game's: `ParticleStyle` is one resource, and a game with a look of its own writes `Animation`s to `Particles` directly.
 The terminal is not a widget toolkit and the map view is not a camera: there is no scene graph, no z-ordering beyond a glyph's layer, and nothing between turns is interpolated but how thick fire and gas look.
+A run of cells drawn as one is the buffer's, written with the tile, rather than a region of the screen declared wide once: the same cell is half of a tile one frame and a letter of a screen over the map the next, and only what was written there knows which.
+A tileset is a font and not a second renderer: everything that writes cells, the light, memory, fire, particles, cursors and a game's own overlays, is drawn in pictures without changing, and a picture is chosen by the character in the cell, so the terminal still knows nothing of content.
+The engine says which cell and which tile the mouse is over and nothing more: what a click there means, and which button, is the game's, read from Bevy's own `ButtonInput<MouseButton>`.
 One sprite and one text entity per cell is fine at a hundred columns and would be replaced by an instanced grid for a bigger one, and nothing above this crate would notice.
 
 ## Where it lives

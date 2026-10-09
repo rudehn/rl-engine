@@ -18,11 +18,13 @@ The core algorithms have no Bevy dependency, so map generation, pathfinding and 
 - **Procedural world generation**: FBM noise, elevation, priority-flood hydrology with rivers and lakes, climate, site placement, road routing and seamless infinite chunk streaming.
 - **Field of view**: symmetric shadowcasting over any `OpacitySource`, plus line of fire and targeting shapes for bolts, balls, beams and cones.
 - **Pathfinding**: A* with reusable scratch buffers, region-bounded Dijkstra maps, flee maps and flow fields per movement profile.
-- **Monster AI**: tactic-priority brains with hunt, melee, flee-when-hurt and wander, reading snapshots of what each actor can see.
+- **Monster AI**: tactic-priority brains with hunt, melee, flee-when-hurt, wander, and exploring by a chart of what has been seen that a party shares and can hand on, reading snapshots of what each actor can see.
 - **Work across many turns**: an actor rebuilding, charging or digging over turns it spends one at a time, broken off when it is hurt, dies or loses its reach, with its row saying what it is doing and how long it has left, so a busy actor never reads as a stuck one.
 - **A turn loop the engine owns**: an integer-clock energy scheduler, speed-scaled action costs and every due turn resolved inside one frame.
-- **RPG rules**: stats and modifiers, a staged damage pipeline with resistances, status effects that tick by the turn, factions, equipment slots, affixes and enchantments, and a to-hit roll shaped by range and light whose model is the game's to choose.
-- **Items that do things**: the ground, bags and slots with stacks and tags, one `Loadout` summed from what an actor is and wears so nothing is copied onto a wearer, gear that grants stats, triggers that say in RON what a thing does when it is used, lands, fires or hits, charges that are spent and can refill, and throwing with the flight the resolver and the preview both read.
+- **A run nobody plays**: an onlooker in place of a player, a sight that sees the whole map, and a pace that deals so much game time a second, so two sides of minds fight while someone watches, or a thousand fights run headless.
+- **RPG rules**: stats and modifiers, a staged damage pipeline with resistances, status effects that tick by the turn, hold an actor's turns or change its speed, factions, equipment slots, affixes and enchantments, blows that sweep round the wielder or pierce through the target, sneak attacks on whoever has not noticed the attacker, and a to-hit roll shaped by range and light whose model is the game's to choose.
+- **Items that do things**: the ground, bags and slots with stacks and tags, one `Loadout` summed from what an actor is and wears so nothing is copied onto a wearer, gear that grants stats, triggers that say in RON what a thing does when it is used, lands, fires or hits, a use aimed by the abilities' own cursor and rule or made on another thing chosen from the bag, charges that are spent and can refill, ammunition a shot spends from the bag, and throwing with the flight the resolver and the preview both read.
+- **Identification and curses**: a thing not yet known shows its name and nothing it is worth on every screen while it does what it does, and a cursed thing refuses every way of coming off, each a marker the game puts on and takes off by its own rules.
 - **Loot the engine places**: a floor scattered when a place is first built or a region first streams in, drops rolled where the dead fall, and containers that ask for a kind of thing by tag and draw it at the band they stand on, so one locker holds better gear deeper; every draw from a stream of its own, and every item made by the game through one trait, since what an item is stays the game's.
 - **Prefabs as data**: a piece of a place written in RON as rows of glyphs and a legend, one thing to a cell, with slots for props, for items named or drawn by tag and for monsters named or drawn by role from the game's own spawn table, each drawn at the depth of the place it was stamped in from a stream of its own cell, and a monster put at a slot holding it as its post, walking back when it has nothing better to do; a coverage report says, for every drawn slot at every depth, whether it finds something.
 - **Abilities and targeting**: what an actor can spend a turn on as data in RON, with costs against a pool, health or a tagged item, requirements over statuses, slots and stats, cooldowns on the turn clock, effects as types a game extends, and one cursor that previews through the call the resolver lands with.
@@ -34,9 +36,11 @@ The core algorithms have no Bevy dependency, so map generation, pathfinding and 
 - **Quests and events**: facts about what happened, named counters, and quests as objectives over those facts with prerequisites and a victory condition.
 - **Save and load**: file, memory and browser storage backends, a versioned save schema and entity remapping.
 - **Lighting**: point sources cast through the same shadows as sight, one component for props, actors and items, fuel that burns down, dark sight, a viewshed cut to what is lit, and three bands, dark, dim and lit, that stealth and the to-hit roll read; opt-in per game, with ambient a value the game writes.
-- **ASCII rendering**: a diffed glyph grid renderer; a map view where every cell is its own shade of its tile, light colours the background as well as the glyph, flames flicker and water shimmers, and memory fades to a cold blue; animations played from what the turns cued, with the turns held so a bolt is seen to arrive before it hurts; and a capture tool that plays keys and photographs the window.
-- **UI you can take apart**: thirteen panels, each a view of plain data, a collector that refills it and a presenter you may replace or drop, with colours named as roles in a palette rather than written into a widget, a narrator that says what a turn did through a phrasebook a game rewords, a controls screen built from the registry every key is declared in, and an overworld map screen.
+- **Glyphs or pictures**: a diffed glyph grid renderer, drawn in a font the game ships so it looks the same on every platform and in a browser, and a tileset that draws a picture in place of any glyph it names with nothing else changing, so one game is letters or sprites at the flick of a setting; a map view where every cell is its own shade of its tile, light colours the background as well as the glyph, flames flicker and water shimmers, and memory, the stairs and things last seen as well as the ground, fades to a cold blue; animations played from what the turns cued, with the turns held so a bolt is seen to arrive before it hurts; which cell and which map tile the mouse is over, in a window of any size; and a capture tool that plays keys and photographs the window.
+- **UI you can take apart**: seventeen panels, each a view of plain data, a collector that refills it and a presenter you may replace or drop, with colours named as roles in a palette rather than written into a widget, a narrator that says what a turn did through a phrasebook a game rewords, a controls screen built from the registry every key is declared in, and an overworld map screen.
 - **Settings a player keeps**: a registry a game adds its own choices to, a screen that lists them, and a file that remembers them between launches, with fullscreen declared by the engine and a glyph grid that is laid out for its window, so text is sharp windowed, maximized or filling the screen.
+- **A title screen**: the engine's menu over a game's own picture, holding the first run back until the player picks Continue, New Game, Records, Settings or Exit, asking before a saved run is given up, and offered again from the pause and end menus, with a run left there written down to be continued.
+- **Records of every run**: a run ends in a record in the game's own words, a score, a line and its sections, filed best first and a hundred deep, kept between launches, and shown on the screen the run ends on and on a records screen the title opens.
 - **Telling a run afterwards**: keys written down as they are played and pressed again against the clock they were read at, and a screen the run ends on with the outcome, the seed, the turn and whatever the game has to say about it.
 - **Deterministic seeds**: one run seed, named random streams per domain and per pass, and no hash containers in gameplay code, so a seed replays the same map.
 - **Balance tooling**: threat scoring and a spawn-band report you can run from the command line.
@@ -52,7 +56,7 @@ cd my-game
 cargo run
 ```
 
-It plays from the first build. The one file holds a floor of rooms, a torch and braziers in the dark, goblins that notice you by sight and hunt where they last saw you, walking into one to strike it, a status row, a log, a look cursor, and three tests that play it without a window.
+It plays from the first build. The one file holds a floor of rooms, a torch and braziers in the dark, goblins that notice you by sight and hunt where they last saw you, walking into one to strike it, a status row, a log, a look cursor, and four tests that play it without a window.
 The guide below builds the same thing a step at a time.
 
 The template pins the engine to the release named by `--tag`, and takes the template from that release too.
@@ -138,7 +142,7 @@ let path = AStar::new().find(&view, start, exit, PathRules::default()).expect("r
 println!("{} cells in sight, the exit is {} steps away", seen.count(), path.steps.len());
 ```
 
-The three example games below are what to read once you know which subsystem you are looking for, and every mechanic the engine has is in one of them.
+The five example games below are what to read once you know which subsystem you are looking for, and every mechanic the engine has is in one of them.
 `examples/delve/src/floors.rs` is a complete multi-floor map builder in one file.
 
 ## If the build fails
@@ -246,6 +250,22 @@ FOUNDRY_START=3 cargo run -p foundry -- --seed 7   # start on the reactor deck, 
 
 Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `>` `<` or Enter for the lifts, `f` to fire, `t` to throw a blade, `g` to pick up, `e` to set a charge beside the console, `L` to switch the shoulder lamp off or on, `i` for the pack, `a` for abilities, `x` to look, `tab` to pick out what is in sight, Escape for the menu, and `?` for all of them on one screen.
 
+### Undermere, a delve under a lake
+
+`examples/undermere` is a fantasy roguelike written to be a whole game rather than the worked example of one system, two parts in: the whole loop, thin, and the items that make a run's builds.
+A lakeside town, Mereholt, stands over the Drowned Gate, and under it ten floors of a sunken kingdom in five biomes go down to the Drowned King, whose death wins the run.
+A monster is a core and a list of named traits in RON, an item lends traits to whoever wears it, and every floor is lit by its own ambient, its fixtures and the adventurer's lantern, which dims as they descend.
+Things are its only progression: most are not known until used, scrolls of enchanting raise whatever the player reads them onto, heavy gear wants strength, a cursed thing clings once worn, and the armory runs from a dagger five times as hard on the unaware to staffs and wands zapped from the pack.
+It opens on the engine's title over a painted night on the black lake, and every run ends in an itemized score, line by line, kept in the records the title opens.
+Its map tiles are square, each two narrow cells wide, and it draws in a font it ships, DejaVu Sans Mono.
+
+```sh
+cargo run -p undermere -- --seed 7
+UNDERMERE_START=5 cargo run -p undermere -- --seed 7   # start on floor five, for a screenshot
+```
+
+Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `g` or `,` to pick up, `>` `<` or Enter for the stairs and the gate, `f` to shoot, `t` to throw from the pack, `i` for the pack, `x` to look, `tab` to pick out what is in sight, Escape for the menu, and `?` for all of them on one screen.
+
 ### Abilities in any genre
 
 Abilities being data that serves any genre is proved by a test, not a game: `crates/rl-bevy/tests/genres.rs` loads a fantasy caster, a pirate, a marine, a man-at-arms and a thief into one registry from five RON files that differ in nothing but their words, and builds all eighteen against one set of effects.
@@ -279,7 +299,7 @@ The window opens above the others without taking focus, and the screen must be u
 - **[The guide](docs/guide/src/introduction.md)** builds a small roguelike in nine runnable chapters, from a map on screen to an action of your own. Start here, at [rudehn.github.io/rl-engine](https://rudehn.github.io/rl-engine/) for the sidebar and the search. Every chapter is a binary in `examples/tutorial`, so the code in the guide is code that compiles.
 - **[The systems reference](docs/guide/src/systems/)** is the same book's page per subsystem, checked against the code it documents: what it is, its plugins, and where to read the source.
 - [**docs/OVERVIEW.md**](docs/OVERVIEW.md) is the inventory of what exists and what is not built yet, kept current, with a table of every plugin and every panel.
-- [**docs/design/**](docs/design/) is how one subsystem works and why, a page each for abilities, fire and gas, lighting, minds, noise, props, remains, stealth and the UI.
+- [**docs/design/**](docs/design/) is how one subsystem works and why, a page each for twenty of them, from abilities, fire and gas, lighting and minds to run records, stealth and the UI, listed in [the docs index](docs/README.md).
 - [**docs/PLAN.md**](docs/PLAN.md) is the design: what was decided, why, and which milestone each piece lands in.
 - [**docs/TODO.md**](docs/TODO.md) is the work that has been found and not started.
 - [**docs/reviews/**](docs/reviews/) holds the code reviews of the three repos the engine was extracted from, with `path:line` citations for every claim in the plan.
