@@ -96,11 +96,11 @@ pub fn answer_charge(
         if ev.verb != charge {
             continue;
         }
-        let Ok((_, on)) = consoles.get(ev.prop) else { continue };
+        let Ok((_, on)) = consoles.get(ev.target) else { continue };
         let deck = crate::decks::deck_of(on.map(|m| m.0).unwrap_or(MapId::SURFACE));
         // The glyph comes off with the kind, so the renderer dresses it
         // again from the definition of a console already used.
-        commands.entity(ev.prop).remove::<Glyph>().insert(PropKind(spent));
+        commands.entity(ev.target).remove::<Glyph>().insert(PropKind(spent));
         report.happened.write(Happened(Fact::new(report.facts.charge_set).about(u64::from(deck))));
         report.tell.write(Tell::new("You set the charge. The reactor stirs.", Tones::GOOD));
     }

@@ -251,7 +251,7 @@ Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `>` `<` or Enter fo
 
 ### Undermere, a delve under a lake
 
-`examples/undermere` is a fantasy roguelike written to be a whole game rather than the worked example of one system, two parts in: the whole loop, thin, and the items that make a run's builds.
+`examples/undermere` is a fantasy roguelike written to be a whole game rather than the worked example of one system, three parts in: the whole loop, thin, the items that make a run's builds, and the monsters that live on its floors.
 A lakeside town, Mereholt, stands over the Drowned Gate, and under it ten floors of a sunken kingdom in five biomes go down to the Drowned King, whose death wins the run.
 A monster is a core and a list of named traits in RON, an item lends traits to whoever wears it, and every floor is lit by its own ambient, its fixtures and the adventurer's lantern, which dims as they descend.
 Things are its only progression: most are not known until used, scrolls of enchanting raise whatever the player reads them onto, heavy gear wants strength, a cursed thing clings once worn, and the armory runs from a dagger five times as hard on the unaware to staffs and wands zapped from the pack.
@@ -261,6 +261,7 @@ Its map tiles are square, each two narrow cells wide, and it draws in a font it 
 ```sh
 cargo run -p undermere -- --seed 7
 UNDERMERE_START=5 cargo run -p undermere -- --seed 7   # start on floor five, for a screenshot
+UNDERMERE_NEAR=camp cargo run -p undermere -- --seed 7 # walked up to a camp along the way, for a screenshot
 ```
 
 Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `g` or `,` to pick up, `>` `<` or Enter for the stairs and the gate, `f` to shoot, `t` to throw from the pack, `i` for the pack, `x` to look, `tab` to pick out what is in sight, Escape for the menu, and `?` for all of them on one screen.
