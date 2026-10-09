@@ -143,6 +143,12 @@ pub struct MonsterSave {
     /// save keeps with the clock; `None` for anything else.
     #[serde(default)]
     pub fades: Option<u32>,
+    /// Where a captive not yet freed is held, which puts its side, its
+    /// anchor and its offer to be freed back on it; `None` for anything
+    /// else, and in a save written before a continued run kept them, whose
+    /// captive came back an ordinary monster of its kind.
+    #[serde(default)]
+    pub shackled: Option<Point>,
 }
 
 impl Saveable for Kind {
@@ -160,6 +166,7 @@ impl Saveable for Kind {
             ally: world.get::<crate::allies::Ally>(entity).is_some(),
             following: world.get::<crate::allies::Ally>(entity).is_some() && world.get::<Leader>(entity).is_some(),
             fades: world.get::<crate::allies::Fades>(entity).map(|f| f.at),
+            shackled: crate::captives::held_at(world, entity),
         }
     }
 
@@ -187,6 +194,10 @@ impl Saveable for Kind {
         }
         if let Some(at) = saved.fades {
             world.entity_mut(monster).insert(crate::allies::Fades { at });
+        }
+        if let Some(at) = saved.shackled {
+            let shackles = crate::captives::shackled(&registries, world.resource::<Verbs>(), at);
+            world.entity_mut(monster).insert(shackles);
         }
         monster
     }

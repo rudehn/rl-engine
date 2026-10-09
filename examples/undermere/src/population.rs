@@ -141,7 +141,22 @@ pub struct Stock<'w, 's> {
     turns: Res<'w, Turns>,
     /// Interned verbs, for the captive's own "free" offer.
     verbs: Res<'w, Verbs>,
+    /// Everyone a piece stood at its post, for the boss or the mini-boss
+    /// among them whose hall nobody else is put in.
+    posted: Query<'w, 's, (&'static Position, &'static OnMap, &'static Kind), With<Post>>,
 }
+
+/// How far round the floor ten boss's own post nobody of the floor's own
+/// population stands: the throne's piece and the ring of floor round it,
+/// nineteen across and thirteen down with the boss near its top, so the
+/// boss holds its hall alone but for whatever its own piece stood there.
+const THRONE_CLEARANCE: i32 = 11;
+
+/// How far round a mini-boss's own post nobody of the floor's own
+/// population stands: its lair, whose entourage is its piece's own, and
+/// a goblin camp or a wandering group inside it would be a second fight in
+/// a room drawn for one.
+const LAIR_CLEARANCE: i32 = 8;
 
 /// A leader and the followers it is drawn with, one band to a floor's own
 /// band of floors: the dar trio, always all three, and a goblin war band,
@@ -321,13 +336,7 @@ fn place_captive(commands: &mut Commands, stocked: &Stocked, site: &Site, free: 
     let open: Vec<Point> = site.bounds.cells().filter(|p| geometry::chebyshev(*p, site.entry) >= MIN_DISTANCE_FROM_ENTRY && free(*p)).collect();
     let at = *open.get(rng.random_range(0..open.len().max(1)))?;
     let captive = spawn_monster(commands, bestiary.defs.get(*id), at, site.map, registries, false);
-    let side = registries.factions.expect(crate::content::CAPTIVE);
-    let free_verb = verbs.get(crate::captives::FREE_VERB).expect("UndermerePlugin declares the free verb");
-    commands.entity(captive).insert((
-        Faction(side),
-        crate::tricks::PatrolRoute { waypoints: vec![at], at: 0 },
-        Offers(vec![Offering::new(free_verb, crate::captives::FREE_TIME)]),
-    ));
+    commands.entity(captive).insert(crate::captives::shackled(registries, verbs, at));
     let shackles = registries.props.expect("shackles");
     spawn_prop(commands, registries, shackles, at, site.map);
     Some(vec![at])
@@ -425,11 +434,15 @@ fn place_band(
 
 /// A free cell close to `cells[0]`, outside every cell `cells` already
 /// holds, for a goblin camp's own fire to stand on beside its band
-/// without sharing a blocking monster's cell. `None` on ground too
-/// cramped to spare one.
-fn camp_fire_cell(cells: &[Point], free: &mut impl FnMut(Point) -> bool) -> Option<Point> {
+/// without sharing a blocking monster's cell, and in the open, every cell
+/// round it ground that can be walked: a fire stands in the way, and one
+/// lit in a corridor or a doorway cut the floor in two, the stairs down
+/// on the far side of it for good. `None` on ground too cramped to spare
+/// one.
+fn camp_fire_cell(cells: &[Point], free: &mut impl FnMut(Point) -> bool, open: impl Fn(Point) -> bool) -> Option<Point> {
     let anchor = cells[0];
-    [1, 2].into_iter().find_map(|radius| geometry::square(anchor, radius).find(|p| !cells.contains(p) && free(*p)))
+    let in_the_open = |p: Point| geometry::square(p, 1).all(&open);
+    [1, 2].into_iter().find_map(|radius| geometry::square(anchor, radius).find(|p| !cells.contains(p) && in_the_open(*p) && free(*p)))
 }
 
 /// Populates every floor on the arrival that built it: a band of its own,
@@ -448,11 +461,26 @@ fn camp_fire_cell(cells: &[Point], free: &mut impl FnMut(Point) -> bool) -> Opti
 /// from `undermere.population.plan`, each of the floor alone too, so a
 /// roll added to one of the three never moves what the other two stand.
 pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, stock: Stock) {
-    let Stock { bestiary, map, seed, registries, ways, turns, verbs } = &stock;
+    let Stock { bestiary, map, seed, registries, ways, turns, verbs, posted } = &stock;
     for ev in entered.read().filter(|ev| ev.first) {
         let (Some(floor), Some(place)) = (floor_of(ev.map), map.place(ev.map)) else { continue };
         let mut rng = seed.stream(b"undermere.population", u64::from(floor));
         let mut marked: Vec<Point> = place.spots.iter().map(|spot| spot.at).collect();
+        let halls: Vec<(Point, i32)> = posted
+            .iter()
+            .filter(|(_, on, _)| on.0 == ev.map)
+            .filter_map(|(at, _, kind)| {
+                let def = bestiary.defs.get(kind.0);
+                if def.boss {
+                    Some((at.0, THRONE_CLEARANCE))
+                } else if def.miniboss {
+                    Some((at.0, LAIR_CLEARANCE))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let outside = |p: Point| halls.iter().all(|(post, reach)| geometry::chebyshev(p, *post) > *reach);
         marked.extend(ways.iter().filter(|(_, on)| on.0 == ev.map).map(|(p, _)| p.0));
         let bounds = place.terrain.bounds();
         let site = Site { map: ev.map, bounds, entry: ev.entry, floor };
@@ -468,11 +496,11 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
             // together as a camp round its own fire instead of standing
             // in the open: the controller's own share for task 10's camps.
             let camp = band.leader == "goblin" && rng.random_ratio(1, 2);
-            let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p);
+            let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p) && outside(p);
             if let Some(used) = place_band(&mut commands, &stocked, &site, band, &mut free, &mut band_rng, camp) {
                 if camp {
-                    let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p);
-                    if let Some(fire_at) = camp_fire_cell(&used, &mut free) {
+                    let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p) && outside(p);
+                    if let Some(fire_at) = camp_fire_cell(&used, &mut free, |p| map.is_walkable_on(ev.map, p)) {
                         let fire = registries.props.expect("fire");
                         spawn_prop(&mut commands, registries, fire, fire_at, ev.map);
                         marked.push(fire_at);
@@ -484,19 +512,19 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
         if let Some(feeder) = FEEDERS.iter().find(|f| (f.floors.0..=f.floors.1).contains(&floor))
             && rng.random_ratio(FEEDING_GROUND_PCT, 100)
         {
-            let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p);
+            let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p) && outside(p);
             if let Some(used) = place_feeding_ground(&mut commands, &stocked, &site, feeder, turns.now(), &mut free, &mut rng) {
                 marked.extend(used);
             }
         }
         {
-            let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p);
+            let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p) && outside(p);
             if let Some(used) = place_patrol(&mut commands, &stocked, &site, &mut free, &mut rng) {
                 marked.extend(used);
             }
         }
         if floor == crate::dungeon::captive_floor(seed.0) {
-            let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p);
+            let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p) && outside(p);
             if let Some(used) = place_captive(&mut commands, &stocked, &site, &mut free, &mut rng) {
                 marked.extend(used);
             }
@@ -510,7 +538,7 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
         // business of either. Isolating it here is what keeps a floor's
         // ordinary people exactly who they were before any of that
         // existed, for whichever seed happens to land one.
-        let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p);
+        let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p) && outside(p);
         let mut plan_rng = seed.stream(b"undermere.population.plan", u64::from(floor));
         let groups = plan(&bestiary.spawns, floor as i32, bounds, ev.entry, groups_on(floor), &mut free, &mut plan_rng);
         // Who of them sleeps draws from the same stream, after `plan` has
@@ -569,6 +597,48 @@ mod tests {
     use super::*;
     use crate::dungeon::{TOWN, map_of};
     use crate::testing::{adventurer, arrive, headless, sturdy};
+
+    /// Whatever a floor's population stands that blocks, a camp's fire
+    /// first among them, never stands between the way in and the way
+    /// down: on every floor a goblin camp may be lit, over a span of seeds,
+    /// the stairs down are reached from where the floor is entered round
+    /// every prop in the way, doors opened. Seed 49's fire, lit in a
+    /// corridor on floor five, held every delve of it there for good.
+    #[test]
+    fn nothing_the_population_stands_cuts_the_way_in_off_from_the_way_down_over_a_span_of_seeds() {
+        for s in 0..50u64 {
+            let mut app = headless(RunSeed(s));
+            let me = adventurer(&mut app);
+            sturdy(&mut app, me);
+            for floor in 3..=6 {
+                let map = map_of(floor);
+                arrive(&mut app, map);
+                let world = app.world_mut();
+                let blocked: Vec<Point> = world
+                    .query_filtered::<(&Position, &OnMap), (With<Prop>, With<Blocks>)>()
+                    .iter(world)
+                    .filter(|(_, on)| on.0 == map)
+                    .map(|(p, _)| p.0)
+                    .collect();
+                let down = world.query::<(&Position, &OnMap, &Way)>().iter(world).find(|(_, on, way)| on.0 == map && **way == Way::Down).map(|(p, ..)| p.0);
+                let down = down.expect("a way down");
+                let world_map = app.world().resource::<WorldMap>();
+                let entry = world_map.place(map).expect("built").entry;
+                let mut reached = vec![entry];
+                let mut seen: std::collections::BTreeSet<Point> = reached.iter().copied().collect();
+                while let Some(at) = reached.pop() {
+                    for next in geometry::square(at, 1) {
+                        let door = world_map.tile(next).is_some_and(|t| world_map.tables().names[t.index()] == "door");
+                        let open = world_map.is_walkable_on(map, next) || door;
+                        if open && !blocked.contains(&next) && seen.insert(next) {
+                            reached.push(next);
+                        }
+                    }
+                }
+                assert!(seen.contains(&down), "seed {s}, floor {floor}: the way down at {down:?} is cut off from the way in at {entry:?}");
+            }
+        }
+    }
 
     /// A floor's worth of open ground, larger than any floor, with nothing
     /// in the way: what `plan` does with no map to fall short on.

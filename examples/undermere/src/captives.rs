@@ -28,8 +28,35 @@ pub const FREE_VERB: &str = "free";
 /// it, since nothing shorter is on offer.
 pub const FREE_TIME: u32 = 300;
 
+/// What makes a monster standing at `at` a captive: the captive side,
+/// neutral to everyone, a one-waypoint `PatrolRoute` on its own cell, the
+/// universal brain's own `Patrol` keeping it there, and the [`FREE_VERB`]
+/// it offers. The one account of it, put on by
+/// [`population::place_captive`](crate::population::place_captive) when a
+/// floor is first stood and again by the save when a run that left one
+/// shackled is continued, since neither the side nor the offer is the
+/// engine's to keep.
+pub fn shackled(registries: &Registries, verbs: &Verbs, at: Point) -> impl Bundle + use<> {
+    let side = registries.factions.expect(crate::content::CAPTIVE);
+    let free_verb = verbs.get(FREE_VERB).expect("UndermerePlugin declares the free verb");
+    (Faction(side), crate::tricks::PatrolRoute { waypoints: vec![at], at: 0 }, Offers(vec![Offering::new(free_verb, FREE_TIME)]))
+}
+
+/// Where a shackled captive is held, the one waypoint [`shackled`] gave
+/// it, or `None` for anything not shackled: what the save keeps of a
+/// captive, since the rest of [`shackled`] follows from it.
+pub fn held_at(world: &World, captive: Entity) -> Option<Point> {
+    let free_verb = world.resource::<Verbs>().get(FREE_VERB)?;
+    let offers = world.get::<Offers>(captive)?;
+    if !offers.0.iter().any(|o| o.verb == free_verb) {
+        return None;
+    }
+    world.get::<crate::tricks::PatrolRoute>(captive).and_then(|route| route.waypoints.first().copied())
+}
+
 /// Puts `captive` on the adventurer's own side for good, as
-/// [`fight_for`] says, then overrides what it decides with to follow
+/// [`fight_for`] says, takes the offer to be freed off it, then overrides
+/// what it decides with to follow
 /// `adventurer` by name: `Leader(adventurer)` and the kind's own
 /// [`crate::bestiary::MonsterDef::follow_mind`], over the ordinary ally
 /// mind's "whoever of my side is nearest". Also gives it
@@ -44,7 +71,7 @@ pub fn free(world: &mut World, captive: Entity, adventurer: Entity) {
     fight_for(world, captive, side);
     let mind = world.resource::<Bestiary>().defs.get(kind).follow_mind();
     let mut e = world.entity_mut(captive);
-    e.remove::<crate::tricks::PatrolRoute>().insert((mind, Leader(adventurer)));
+    e.remove::<(crate::tricks::PatrolRoute, Offers)>().insert((mind, Leader(adventurer)));
     if let Some(mut wits) = e.get_mut::<Intelligence>() {
         wits.0 = wits.0.with(Wits::TRAVELS);
     }
@@ -61,6 +88,27 @@ pub fn answer_free(mut commands: Commands, mut done: MessageReader<Interacted>, 
     for ev in done.read().filter(|ev| ev.verb == free_verb) {
         let captive = ev.target;
         commands.queue(move |world: &mut World| free(world, captive, adventurer));
+    }
+}
+
+/// What a captive is doing, as the rail's activity words name it: not one
+/// of the engine's tactics, so `main.rs` gives it a word of its own.
+pub const SHACKLED: &str = "shackled";
+
+/// Says a captive is shackled where the rail says what a monster is doing,
+/// `vampire bat (shackled)`, in the plain text of something neither friend
+/// nor foe rather than muted as one unaware of the adventurer: read off the
+/// [`FREE_VERB`] it offers, so it says so until the moment it is freed.
+/// Without it a captive read as one more monster of the floor, and nothing
+/// on the screen said it was the one to walk up to.
+///
+/// In `ViewSet::Annotate`.
+pub fn note_captives(mut nearby: ResMut<NearbyView>, verbs: Res<Verbs>, offers: Query<&Offers>) {
+    let Some(free_verb) = verbs.get(FREE_VERB) else { return };
+    for row in &mut nearby.actors {
+        if offers.get(row.entity).is_ok_and(|offers| offers.0.iter().any(|o| o.verb == free_verb)) {
+            (row.doing, row.alert) = (Some(SHACKLED), None);
+        }
     }
 }
 
@@ -101,6 +149,60 @@ mod tests {
             }
             assert_eq!(seen, 1, "seed {s}: the one floor the run drew");
         }
+    }
+
+    /// A run continued on the floor whose captive is still shackled finds
+    /// it still shackled where it was held: neutral, anchored, and offering
+    /// to be freed, rather than an ordinary monster of its kind.
+    #[test]
+    fn a_captive_left_shackled_is_still_shackled_once_the_run_is_continued() {
+        let s = 0u64;
+        let mut app = headless(RunSeed(s));
+        let me = adventurer(&mut app);
+        sturdy(&mut app, me);
+        let floor = captive_floor(RunSeed(s));
+        arrive(&mut app, map_of(floor));
+        let text = app.world().resource::<Saves>().load(crate::save::SLOT).expect("the slot reads").expect("the arrival wrote the run down");
+        let mut again = crate::testing::continued(&text);
+        let captive_side = again.world().resource::<Registries>().factions.expect(crate::content::CAPTIVE);
+        let world = again.world_mut();
+        let held: Vec<(Entity, Point)> = world.query::<(Entity, &Position)>().iter(world).map(|(e, p)| (e, p.0)).collect();
+        let shackled: Vec<(Point, Option<Point>, Option<FactionId>)> = held
+            .iter()
+            .filter_map(|(e, at)| held_at(again.world(), *e).map(|anchor| (*at, Some(anchor), again.world().get::<Faction>(*e).map(|f| f.0))))
+            .collect();
+        assert_eq!(shackled.len(), 1, "the one captive, still offering to be freed: {shackled:?}");
+        let (at, anchor, side) = shackled[0];
+        assert_eq!((Some(at), side), (anchor, Some(captive_side)), "held where it stood, and neither friend nor foe");
+    }
+
+    /// The rail says the captive is shackled, in plain text, until it is
+    /// freed, and says nothing of the kind once it is.
+    #[test]
+    fn the_rail_says_a_captive_is_shackled_until_it_is_freed() {
+        use crate::testing::{settle, stand_on};
+        let s = 0u64;
+        let mut app = headless(RunSeed(s));
+        app.add_plugins(NearbyViewPlugin).add_systems(Update, note_captives.in_set(ViewSet::Annotate));
+        let me = adventurer(&mut app);
+        sturdy(&mut app, me);
+        let floor = captive_floor(RunSeed(s));
+        arrive(&mut app, map_of(floor));
+        let free_verb = app.world().resource::<Verbs>().get(FREE_VERB).expect("declared");
+        let world = app.world_mut();
+        let (captive, at) = world
+            .query::<(Entity, &Position, &Offers)>()
+            .iter(world)
+            .find(|(_, _, offers)| offers.0.iter().any(|o| o.verb == free_verb))
+            .map(|(e, p, _)| (e, p.0))
+            .expect("the run's own captive");
+        stand_on(&mut app, me, at.offset(1, 0));
+        settle(&mut app);
+        let doing = |app: &App| app.world().resource::<NearbyView>().actors.iter().find(|r| r.entity == captive).map(|r| (r.doing, r.alert));
+        assert_eq!(doing(&app), Some((Some(SHACKLED), None)), "shackled, and neither unaware nor hunting");
+        free(app.world_mut(), captive, me);
+        settle(&mut app);
+        assert_ne!(doing(&app).and_then(|(d, _)| d), Some(SHACKLED), "freed, it is shackled no longer");
     }
 
     /// Freed, a captive follows the adventurer who freed it, fights for
