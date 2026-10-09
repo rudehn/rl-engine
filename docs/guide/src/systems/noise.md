@@ -13,9 +13,10 @@
             crates/rl-bevy/src/items.rs
             crates/rl-bevy/src/effects/engine.rs
             crates/rl-bevy/src/props.rs
+            crates/rl-bevy/src/status.rs
             crates/rl-ui/src/view/nearby.rs
             crates/rl-ui/src/panel/nearby.rs
-     fingerprint: 0580fe15 -->
+     fingerprint: 66ec16fc -->
 
 # Noise
 
@@ -33,7 +34,8 @@ It chains `make_engine_noise` and `resolve_noise` in `TurnSet::Listen`, which si
 It declares `depends_on::<CorePlugin>` and nothing else: the `Thinking` it annotates, the `Stepped` the move resolver writes and the `DoorEvent` a door writes are all `CorePlugin`'s.
 It registers `DamageEvent` and `ItemEvent` itself, because a game may have added neither combat nor items, and then those queues stay empty rather than panicking a reader.
 It registers the `Noise` effect as well, so content that makes a sound loads exactly when the game can hear one.
-Without the plugin nothing is heard however close it is made, and a `Hearing` on an actor sits there doing nothing.
+It also adds `wake_on_noise`, in `TurnSet::Listen`, which cures a sleeping status on whoever heard a noise with its `Hearing` threshold left on it; the system lives beside the other two that wake a sleeper, in `status.rs`, since only this plugin knows when a noise reached someone.
+Without the plugin nothing is heard however close it is made, a `Hearing` on an actor sits there doing nothing, and a sleeper wakes to harm and sight alone.
 
 ## The model
 
