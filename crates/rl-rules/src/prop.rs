@@ -90,6 +90,13 @@ pub struct Look {
     /// them.
     #[serde(default = "one")]
     pub layer: i32,
+    /// Whether the map keeps it in memory once seen, drawn where it stood
+    /// out of sight as the floor under it is, rather than only while in
+    /// sight. For what stands still and is worth finding again; false by
+    /// default, since memory is kept a cell at a time and a prop that
+    /// moves or comes and goes would be drawn where it no longer is.
+    #[serde(default)]
+    pub remembered: bool,
 }
 
 /// One thing a prop offers to do for whoever reaches it.
@@ -239,7 +246,7 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<PropDef>, ContentE
         }
         defs.push(PropDef {
             name: a.name.clone(),
-            look: Look { glyph: a.glyph, color: a.color, layer: a.layer },
+            look: Look { glyph: a.glyph, color: a.color, layer: a.layer, remembered: a.remembered },
             blocks: a.blocks,
             health: a.health,
             offers,
@@ -291,6 +298,8 @@ struct Authored {
     color: Rgb,
     #[serde(default = "one")]
     layer: i32,
+    #[serde(default)]
+    remembered: bool,
     #[serde(default)]
     blocks: bool,
     #[serde(default)]
@@ -445,7 +454,7 @@ mod tests {
                 (name: "fuel-line plate", glyph: '^', color: (r: 230, g: 140, b: 51),
                  hidden: (spot: 40),
                  triggers: [(on: "entered", fires: 1, effects: [(kind: "Emit", args: (gas: "fuel vapour", amount: 90))])]),
-                (name: "reactor console", glyph: '%', color: (r: 89, g: 217, b: 230), blocks: true,
+                (name: "reactor console", glyph: '%', color: (r: 89, g: 217, b: 230), blocks: true, remembered: true,
                  offers: [(verb: "charge", time: 300)]),
             ]"#,
             &names,
@@ -454,6 +463,8 @@ mod tests {
 
         let crate_def = props.get(props.expect("supply crate"));
         assert_eq!(crate_def.look.layer, 1, "a layer nobody wrote is one");
+        assert!(!crate_def.look.remembered, "nor is it kept in memory unless it says so");
+        assert!(props.get(props.expect("reactor console")).look.remembered, "and one that says so is");
         assert_eq!(crate_def.health, Some(6));
         assert_eq!(crate_def.offers[0].time, 200);
         assert_eq!(

@@ -21,8 +21,9 @@
 //! way through does for whoever takes it, so whatever follows a traveller
 //! by that message follows this too. The mark and where the gate leads are
 //! the engine's to save, a prop and a way through's `Transition`; the
-//! mark's light and its place in memory are put back on it as it appears,
-//! by [`light`](crate::light) and [`keep_in_memory`].
+//! mark's light is put back on it as it appears, by
+//! [`light`](crate::light), and its place in memory is its definition's,
+//! `remembered` in `props.ron`, which the engine dresses it by.
 //!
 //! In Mereholt, on its streets and on the island alike, a waystone is
 //! refused before the use is spent, by [`refuse_at_home`]: the gate is a
@@ -34,7 +35,6 @@ use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_bevy::{BreakReason, Spent, WorkBroken, Works};
 use rl_engine::rl_core::turn::BASE_ACTION_COST;
-use rl_engine::rl_render::Landmark;
 use rl_engine::rl_rules::ability::RawValue;
 use rl_engine::rl_rules::work::{Progress, Work};
 
@@ -275,18 +275,6 @@ impl GateMarks<'_, '_> {
     }
 }
 
-/// Puts a gate mark into what the map draws from memory, the frame it
-/// appears, a call's or a continued run's alike: the adventurer knelt on
-/// it, so it is a mark they have seen.
-pub fn keep_in_memory(mut commands: Commands, registries: Res<Registries>, props: Query<(Entity, &PropKind), Added<PropKind>>) {
-    let Some(mark) = registries.props.id(GATE_MARK) else { return };
-    for (prop, kind) in &props {
-        if kind.0 == mark {
-            commands.entity(prop).insert(Landmark);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use rl_engine::rl_core::RunSeed;
@@ -457,8 +445,8 @@ mod tests {
             let me = adventurer(&mut carried_on);
             assert_eq!(gate(&mut carried_on), (gate_cell, leads), "seed {s}: the gate still leads to the mark");
             assert_eq!(marks(&mut carried_on), [(map_of(3), knelt)], "seed {s}: the mark kept");
-            let mark = carried_on.world_mut().query_filtered::<Entity, (With<Landmark>, With<PropKind>)>().iter(carried_on.world()).count();
-            assert_eq!(mark, 1, "seed {s}: and remembered on the map");
+            let registries = carried_on.world().resource::<Registries>();
+            assert!(registries.props.get(registries.props.expect(GATE_MARK)).look.remembered, "seed {s}: and kept on the map from memory");
             go_through(&mut carried_on, me);
             assert_eq!((here(&carried_on), crate::testing::at(&carried_on, me)), (map_of(3), knelt), "seed {s}: back down onto the mark");
         }

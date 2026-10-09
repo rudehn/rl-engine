@@ -7,7 +7,8 @@ Pushing a tag publishes its release page from its section here, through `scripts
 ## Unreleased
 
 - The map draws a `Landmark` from memory: an entity carrying the new `rl_render::Landmark` marker is drawn out of sight on a cell the player has seen, in the colours of memory as the tile under it is, where anything else is drawn only while in sight.
-  Memory is kept a cell at a time, so it suits what stands still and was there when its cell was seen, a way through or a mark the game leaves where the player stands, and nothing that moves; a game that wants its stairs found again puts it on them.
+  Memory is kept a cell at a time, so it suits what stands still and was there when its cell was seen, a way through or a mark the game leaves where the player stands, and nothing that moves.
+  A prop is one by its definition: `props.ron`'s new optional `remembered: true`, read as `rl_rules::prop::Look::remembered`, makes `dress_props` put the marker on it whenever it appears, a continued run's included, with no game code; a game inserts `Landmark` itself only on a glyph entity of its own that is no prop, such as stairs drawn by a `Glyph` it gave them. A game constructing a prop `Look` by hand adds `remembered: false`.
 
 - The trade slice's one way to move currency is public, as `rl_bevy::pay(world, payer, payee, amount, currency)`: real stacks split off and merged into the payee's pack, as a deal and an offer's price are paid, so a game that gives a price back, for an offer its answer found nothing to do for, moves the coins by the same rule the engine took them by rather than making or destroying any.
   It returns what it paid, all of `amount` or what a short purse held, and gives a payee carrying no pack one first, so no coin paid is ever left in nobody's bag; a priced offer's offerer is given its pack the same way, by `pay`.

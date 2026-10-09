@@ -319,7 +319,7 @@ impl Plugin for UndermerePlugin {
         // beside it a camp's fire lit, so the frame it is stood is lit.
         app.add_systems(
             Update,
-            (crate::light::set_ambient, crate::light::light_loose_props, crate::waystone::keep_in_memory)
+            (crate::light::set_ambient, crate::light::light_loose_props)
                 .after(EngineSet::Turns)
                 .before(EngineSet::Light)
                 .run_if(in_state(EngineState::Playing)),

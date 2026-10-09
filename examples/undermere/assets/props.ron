@@ -10,6 +10,9 @@
 //   glyph:     one character, and one the typeface in `assets/fonts/` has
 //   color:     (r: 0..=255, g:, b:), the glyph's colour, as abilities.ron writes a look
 //   layer:     optional; draw order among entities on one cell, default 1
+//   remembered: optional; whether the map keeps it in memory once seen, drawn where it
+//              stands out of sight as the floor under it is, default false; for what
+//              stands still and is worth finding again
 //   blocks:    optional; whether it stands in the way, default false; nothing here
 //              blocks sight, which the engine's props never do yet
 //   health:    optional; what it takes to break it; absent, nothing can
@@ -92,5 +95,5 @@
     // `src/waystone.rs` rather than a piece, lit the gate's violet by
     // `light.rs` and drawn from memory once seen, so the map shows where the
     // gate will bring the adventurer back.
-    (name: "gate mark", glyph: '◊', color: (r: 205, g: 150, b: 255)),
+    (name: "gate mark", glyph: '◊', color: (r: 205, g: 150, b: 255), remembered: true),
 ]

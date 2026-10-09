@@ -3,11 +3,11 @@
 //! Visible tiles are drawn lit, remembered tiles in the colours of
 //! memory, unknown tiles blank. What stands on a tile is drawn only while
 //! it is in sight, but for a [`Landmark`], which memory keeps as it keeps
-//! the tile. What a tile looks like is the game's
-//! business: it fills a [`TileAppearance`] table keyed by [`TileId`], with
-//! a glyph, both colours, and how the tile varies from cell to cell. With
-//! lighting turned on, a visible tile's glyph and background and whatever
-//! stands on it are coloured by the light that lands there; see
+//! the tile. What a tile looks like is the game's business: it fills a
+//! [`TileAppearance`] table keyed by [`TileId`], with a glyph, both
+//! colours, and how the tile varies from cell to cell. With lighting
+//! turned on, a visible tile's glyph and background and whatever stands on
+//! it are coloured by the light that lands there; see
 //! [`shade`](crate::shade) for how.
 //!
 //! Fire and gas are drawn over the tiles they are on, from
@@ -51,6 +51,13 @@ pub struct Glyph {
 /// so a landmark is drawn wherever its cell is remembered, even if it was
 /// put there after the cell was last seen. A game puts one on what it
 /// knows the player saw or was there from the place's first sight.
+///
+/// A prop is a landmark by its definition, `remembered` on its
+/// [`Look`](rl_rules::prop::Look), and [`dress_props`] puts this on it
+/// whenever the prop appears, a continued run's included, so a game writes
+/// nothing for it. A game inserts this itself only on a glyph entity of its
+/// own that is no prop, such as stairs it draws by a `Glyph` it gave them,
+/// and puts it back wherever it spawns one again.
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct Landmark;
 
@@ -405,12 +412,18 @@ pub fn redress_emptied(mut commands: Commands, registries: Option<Res<Registries
 ///
 /// A prop a game dressed itself keeps what it was given: the query asks
 /// for those with no glyph, so a game that wants one crate to look
-/// different says so and is not overruled.
+/// different says so and is not overruled. One whose look is `remembered`
+/// is made a [`Landmark`] here too, so memory keeps it through a save and
+/// a reload with nothing for the game to put back.
 pub fn dress_props(mut commands: Commands, registries: Option<Res<Registries>>, bare: Undressed) {
     let Some(registries) = registries else { return };
     for (entity, kind) in &bare {
         let look = registries.props.get(kind.0).look;
-        commands.entity(entity).insert(Glyph { ch: look.glyph, fg: Color::srgb_u8(look.color.r, look.color.g, look.color.b), layer: look.layer });
+        let mut dressed = commands.entity(entity);
+        dressed.insert(Glyph { ch: look.glyph, fg: Color::srgb_u8(look.color.r, look.color.g, look.color.b), layer: look.layer });
+        if look.remembered {
+            dressed.insert(Landmark);
+        }
     }
 }
 
@@ -531,18 +544,25 @@ mod tests {
     /// A prop is described twice, and this is the second half: the engine
     /// spawns it knowing nothing of colours, and the renderer dresses it.
     #[test]
-    fn a_prop_is_dressed_from_its_definition_and_one_already_dressed_is_left_alone() {
+    fn a_prop_is_dressed_from_its_definition_a_remembered_one_kept_in_memory_and_one_already_dressed_is_left_alone() {
         let mut app = App::new();
         app.add_systems(Update, dress_props);
-        let props = rl_rules::prop::load(r#"[(name: "supply crate", glyph: '&', color: (r: 190, g: 165, b: 115), layer: 2)]"#, &rl_rules::Names::new())
-            .expect("the props load");
+        let props = rl_rules::prop::load(
+            r#"[(name: "supply crate", glyph: '&', color: (r: 190, g: 165, b: 115), layer: 2), (name: "beacon", glyph: '!', color: (r: 1, g: 2, b: 3), remembered: true)]"#,
+            &rl_rules::Names::new(),
+        )
+        .expect("the props load");
         let id = props.expect("supply crate");
+        let beacon_id = props.expect("beacon");
         let registries = Registries { props, ..Default::default() };
         app.insert_resource(registries);
 
         let bare = app.world_mut().spawn((Prop, PropKind(id))).id();
         let dressed = app.world_mut().spawn((Prop, PropKind(id), Glyph { ch: '#', fg: Color::WHITE, layer: 9 })).id();
+        let beacon = app.world_mut().spawn((Prop, PropKind(beacon_id))).id();
         app.update();
+        assert!(app.world().get::<Landmark>(beacon).is_some(), "a prop whose look is remembered is a landmark");
+        assert!(app.world().get::<Landmark>(bare).is_none(), "and one whose look does not say so is not");
 
         let glyph = app.world().get::<Glyph>(bare).expect("it was dressed");
         assert_eq!((glyph.ch, glyph.layer), ('&', 2), "the definition's glyph and layer");
