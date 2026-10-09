@@ -20,9 +20,10 @@
 //! one `RemoveCurse` and cannot drift apart.
 //!
 //! The rites are the priest's offers, which the engine does not save, so
-//! [`shops::keeper`](crate::shops::keeper) puts them on whenever a priest
-//! is made: when Mereholt is first entered and when a continued run puts
-//! the keepers back.
+//! [`townsfolk::spawn_person`](crate::townsfolk::spawn_person) puts them on
+//! whenever a priest is made, since the priest's row in `townsfolk.ron`
+//! offers `Rites`: when Mereholt is first entered and when a continued run
+//! puts the people back.
 
 use bevy::ecs::message::MessageCursor;
 use bevy::ecs::system::SystemState;
@@ -193,16 +194,17 @@ pub fn rite_rows(mut view: ResMut<OffersView>, rites: Res<Rites>, verbs: Res<Ver
 /// both reach them. Credited to the priest as the offer it came from.
 ///
 /// The price is already paid, into the priest's purse, before this runs,
-/// and silently, so this says it first, `You give the priest 30 gold
-/// coins.`, in the plain tone the narrator gives the adventurer's own
-/// doings, before whatever the rite's effects say. The coins are named as
-/// the trade screen names them, by a piece's own name.
+/// and silently, so this says it first, `You give Hesk 30 gold coins.`,
+/// by the priest's name this run, in the plain tone the narrator gives
+/// the adventurer's own doings, before whatever the rite's effects say.
+/// The coins are named as the trade screen names them, by a piece's own
+/// name.
 ///
 /// A rite with nothing to do for its taker, by [`Rite::finds_work`], lands
 /// nothing and the priest gives the price back, by the engine's own
 /// [`pay`](rl_engine::rl_bevy::pay), saying so in the rite's `idle` words
 /// and naming only what was handed back,
-/// `The priest finds nothing to mend, and gives back your 30 gold coins.`:
+/// `Hesk finds nothing to mend, and gives back your 30 gold coins.`:
 /// the engine takes the price before the answer runs, and a rite that
 /// sold the adventurer nothing should cost them nothing.
 ///
@@ -400,7 +402,7 @@ mod tests {
             needing_every_rite(&mut app, me);
             take_rite(&mut app, me, priest, rite);
             let lines: Vec<(String, ToneId)> = app.world().resource::<MessageLog>().iter().map(|l| (l.text.clone(), l.tone)).collect();
-            let given = format!("You give the priest {price} gold coins.");
+            let given = format!("You give {} {price} gold coins.", name_of(&app, priest));
             let at = lines.iter().position(|(t, _)| *t == given).unwrap_or_else(|| panic!("{rite}: {given:?} not in {lines:#?}"));
             assert_eq!(lines[at].1, Tones::TEXT, "{rite}: in the plain tone");
             assert_eq!(lines.iter().filter(|(t, _)| t.starts_with("You give")).count(), 1, "{rite}: said once: {lines:#?}");
@@ -430,7 +432,7 @@ mod tests {
             take_rite(&mut app, me, priest, rite);
             assert_eq!((gold(&app, me), gold(&app, priest)), (100, theirs), "{rite}: both purses as they were");
             let lines: Vec<(String, ToneId)> = app.world().resource::<MessageLog>().iter().map(|l| (l.text.clone(), l.tone)).collect();
-            let back = format!("The priest {words}, and gives back your {price} gold coins.");
+            let back = format!("{} {words}, and gives back your {price} gold coins.", name_of(&app, priest));
             assert!(lines.contains(&(back.clone(), Tones::MUTED)), "{rite}: {back:?} not in {lines:#?}");
             let silent = ["You give", "You were whole already.", "A cleansing light", "You know everything"];
             assert!(!lines.iter().any(|(t, _)| silent.iter().any(|s| t.starts_with(s))), "{rite}: nothing landed: {lines:#?}");

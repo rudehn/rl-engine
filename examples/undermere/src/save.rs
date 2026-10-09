@@ -6,15 +6,15 @@
 //! way through leads, every place built, the clock and what the
 //! adventurer has seen. Undermere says only what each kind of thing it
 //! spawns is: the adventurer and the strength they have come to, a
-//! monster by its definition's name, a keeper of Mereholt by its post,
-//! an item by its definition's name,
-//! its level, whether it is still cursed on, how long it has been worn
-//! towards knowing its level and how much of it the tally has counted, and
-//! a way through by which way it is. What Undermere keeps of a run outside
-//! its entities, the [`Tally`], the [`Lore`] of what is known and which
-//! stocking the [`Shelves`] are, goes
-//! through [`SaveableState`], and the engine's `Quests` is saved the same
-//! way. It keeps no `Counters`, since the tally counts what the score is
+//! monster by its definition's name, one of Mereholt's people by role and
+//! name, an item by its definition's name, its level, whether it is still
+//! cursed on, how long it has been worn towards knowing its level and how
+//! much of it the tally has counted, and a way through by which way it
+//! is. What Undermere keeps of a run outside its entities, the [`Tally`],
+//! the [`Lore`] of what is known, which stocking the [`Shelves`] are, the
+//! [`Folk`] of Mereholt with what each has said, and every name the run
+//! has given, goes through [`SaveableState`], and the engine's `Quests`
+//! is saved the same way. It keeps no `Counters`, since the tally counts what the score is
 //! made of.
 //!
 //! The run is written on the way out, by the engine's stash when the
@@ -38,9 +38,10 @@ use crate::bestiary::{Bestiary, Kind};
 use crate::bestiary_lore::MonsterLore;
 use crate::lore::{CurseShown, Lore, Unfamiliar};
 use crate::run::Adventurer;
-use crate::shops::{POSTS, Shelves, Shopkeeper};
+use crate::shops::Shelves;
 use crate::stairs::Way;
 use crate::tally::{Counted, Tally};
+use crate::townsfolk::{Folk, GivenNames, Kit, Townsfolk, Townsperson};
 
 /// Bump when a kind's shape below changes so an old save would parse
 /// wrongly.
@@ -51,25 +52,29 @@ use crate::tally::{Counted, Tally};
 // what is known of the run's things, and a finger slot on either hand.
 // v4: what is known of the run's monsters' tricks.
 // v5: Mereholt's keepers, and which stocking their shelves are.
-pub const VERSION: u32 = 5;
+// v6: Mereholt's people, keepers among them, by role and name, the run's
+// names, and what each has said.
+pub const VERSION: u32 = 6;
 
 /// The slot every run saves to.
 pub const SLOT: &str = "undermere";
 
 // ANCHOR: register
 /// What the save is made of: the engine's plugins, the five kinds, and
-/// the five resources; and the records, in their own slot.
+/// the seven resources; and the records, in their own slot.
 pub fn register(app: &mut App) {
     app.add_plugins((SavePlugin::new(SLOT).version(VERSION).on_arrival(), UnloadPlugin, RecordsSavePlugin))
         .save_kind::<ItemKind>()
         .save_kind::<Kind>()
         .save_kind::<Adventurer>()
         .save_kind::<Way>()
-        .save_kind::<Shopkeeper>()
+        .save_kind::<Townsperson>()
         .save_state::<Tally>()
         .save_state::<Lore>()
         .save_state::<MonsterLore>()
         .save_state::<Shelves>()
+        .save_state::<Folk>()
+        .save_state::<GivenNames>()
         .save_state::<Quests>();
 }
 // ANCHOR_END: register
@@ -330,42 +335,73 @@ impl Saveable for Way {
     }
 }
 
-/// A keeper of Mereholt, as the save writes it: its post, by the keeper's
-/// name in `wares.ron`. The engine gives back where it stands, its health
-/// and its bag, which is its shelf and its purse as they were left; the
-/// rest of it is its post's, made again by [`shops::keeper`], since the
-/// engine saves neither its `Trader` nor its offer of `trade`.
+/// One of Mereholt's people, as the save writes them: their role and the
+/// name this run gave them. The engine gives back where they stand, their
+/// health and a keeper's bag, which is its shelf and its purse as they
+/// were left; the rest of them is their role's, made again by
+/// [`townsfolk::spawn_person`], since the engine saves neither a keeper's
+/// `Trader` nor anybody's offers, and a lamplighter's round is laid again
+/// from where they stand.
 ///
-/// [`shops::keeper`]: crate::shops::keeper
+/// [`townsfolk::spawn_person`]: crate::townsfolk::spawn_person
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KeeperSave {
-    /// The keeper's name in `wares.ron`.
-    pub keeper: String,
+pub struct PersonSave {
+    /// The role, in `townsfolk.ron`.
+    pub role: String,
+    /// What this run calls them.
+    pub name: String,
 }
 
-impl Saveable for Shopkeeper {
-    type Saved = KeeperSave;
+impl Saveable for Townsperson {
+    type Saved = PersonSave;
 
-    fn capture(world: &World, entity: Entity) -> KeeperSave {
-        KeeperSave { keeper: world.get::<Shopkeeper>(entity).expect("a keeper's post").0.keeper.to_string() }
+    fn capture(world: &World, entity: Entity) -> PersonSave {
+        let role = world.get::<Townsperson>(entity).expect("a person's role").0.clone();
+        let name = world.get::<Name>(entity).map_or_else(|| role.clone(), |n| n.as_str().to_string());
+        PersonSave { role, name }
     }
 
-    fn restore(world: &mut World, saved: &KeeperSave) -> Entity {
-        let Some(post) = POSTS.into_iter().find(|p| p.keeper == saved.keeper) else {
-            warn!("a saved keeper keeps {:?}, which this build has no post for; it comes back as nothing", saved.keeper);
+    fn restore(world: &mut World, saved: &PersonSave) -> Entity {
+        let Some(role) = world.resource::<Townsfolk>().role(&saved.role).cloned() else {
+            warn!("a saved person is the {:?}, which this build has no role for; they come back as nothing", saved.role);
             return world.spawn_empty().id();
         };
-        let keeper = crate::shops::keeper(
-            post,
-            world.resource::<crate::shops::Wares>(),
-            world.resource::<Armory>(),
-            world.resource::<Registries>(),
-            world.resource::<Verbs>(),
-            world.resource::<crate::temple::Rites>(),
-        );
-        // Nowhere, on no place, carrying nothing: the engine puts it back
-        // where it was with what it had.
-        world.spawn((keeper, Position(Point::ZERO), OnMap(MapId::SURFACE), Inventory::default())).id()
+        // Nowhere, on no place, carrying nothing: the engine puts them
+        // back where they were with what they had.
+        spawned(world, |commands, world| {
+            let person = crate::townsfolk::spawn_person(commands, &Kit::of(world), &role, &saved.name);
+            commands.entity(person).insert((Position(Point::ZERO), OnMap(MapId::SURFACE)));
+            person
+        })
+    }
+}
+
+/// Mereholt's people as the run has them, as the save writes it: the whole
+/// of [`Folk`], each role's name and which of its lines it has said, so a
+/// continued run names the same people and talks on where it left off.
+impl SaveableState for Folk {
+    type Saved = Folk;
+
+    fn capture(&self) -> Folk {
+        self.clone()
+    }
+
+    fn restore(&mut self, saved: Folk) {
+        *self = saved;
+    }
+}
+
+/// Every name the run has given, as the save writes it, so what the
+/// continued run names later still draws against them.
+impl SaveableState for GivenNames {
+    type Saved = GivenNames;
+
+    fn capture(&self) -> GivenNames {
+        self.clone()
+    }
+
+    fn restore(&mut self, saved: GivenNames) {
+        *self = saved;
     }
 }
 

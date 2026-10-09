@@ -107,6 +107,15 @@ impl Plugin for UndermerePlugin {
             app.add_verb(&rite.verb);
         }
         app.insert_resource(library.rites);
+        // Mereholt's people and the names they are given, read with the
+        // rest: who the people are never changes, and who fills each role
+        // is drawn by every run's start. Talking is a verb a person
+        // offers, and each role's lines are said in a tone of its own.
+        app.add_verb(crate::townsfolk::TALK);
+        crate::townsfolk::declare_tones(app, &library.townsfolk);
+        app.insert_resource(library.townsfolk).insert_resource(library.names);
+        app.init_resource::<crate::townsfolk::Folk>().reset_on_new_run::<crate::townsfolk::Folk>();
+        app.init_resource::<crate::townsfolk::GivenNames>().reset_on_new_run::<crate::townsfolk::GivenNames>();
         // What the adventurer knows of the run's things, dealt out afresh
         // by every run's start and given back by a continued run's save;
         // nothing between two runs, so the next one's faces are its own.
@@ -150,8 +159,8 @@ impl Plugin for UndermerePlugin {
         app.add_systems(OnEnter(EngineState::Over), crate::tally::record);
         // A place fills the moment it is first entered: the engine's slots
         // in `PrefabSet::Fill`, then the depth, the ways through and the
-        // place's line in the log, the floor's people, Mereholt's keepers
-        // at their counters or their shelves restocked, the fixtures' light
+        // place's line in the log, the floor's people, Mereholt's people at
+        // their marks, the keepers' shelves filled or restocked, the fixtures' light
         // and the floor's things, before the engine's loot in
         // `LootSet::Scatter`, each reading the same `PlaceEntered` through
         // its own cursor. After the slots, so the people keep off every
@@ -166,6 +175,7 @@ impl Plugin for UndermerePlugin {
                 crate::tally::remember_depth,
                 crate::stairs::link_places,
                 crate::population::populate,
+                crate::townsfolk::gather,
                 crate::shops::keep_shops,
                 crate::light::light_fixtures,
                 crate::finds::lay,
@@ -255,6 +265,12 @@ impl Plugin for UndermerePlugin {
         // A shackled captive's own "free": task 10's.
         app.add_systems(Turn, crate::captives::answer_free.in_set(TurnSet::React));
         app.add_systems(Turn, crate::temple::answer_rites.in_set(TurnSet::React));
+        // Mereholt's people: what talking to one says, a wanderer kept to
+        // its beat beside the engine's own senses, and a lamplighter's
+        // round laid at the start of a pass once the lamps stand.
+        app.add_systems(Turn, crate::townsfolk::answer_talk.in_set(TurnSet::React));
+        app.add_systems(Turn, crate::townsfolk::sense_beats.in_set(PerceiveSet::Annotate));
+        app.add_systems(Turn, crate::townsfolk::walk_rounds.in_set(TurnSet::Schedule));
         // A waystone: refused in Mereholt before its use is spent, the
         // adventurer's every turn spent kneeling once it is used, and the
         // call answered, or broken off by harm.

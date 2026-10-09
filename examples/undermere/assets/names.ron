@@ -1,0 +1,44 @@
+// The names Undermere gives, drawn from syllables by the engine's `namegen`.
+// A run draws every name it gives through one set or another and never the
+// same name twice, so nobody in a run shares a name with anybody else in it.
+//
+// Every field a set may carry:
+//   pools:    syllables, by a name the patterns use; none empty
+//   patterns: one drawn per name, by weight, each (weight: n, parts: [...]),
+//             a part one of
+//               Pool("p")       one syllable of pool p
+//               Maybe(pct, "p") one syllable of p, pct times in a hundred
+//               Text("t")       t as written: a space or a byname
+//   case:     optional: Title (the default), Upper, Lower or AsWritten
+//   length:   optional: (fewest, most) characters, (1, 32) if left out
+//   forbid:   optional: substrings no name may hold, in any case
+//
+// A name that reads badly, three of a letter running, a pair said twice
+// back to back, three letters seen again later in it, is thrown away and
+// drawn again.
+//
+//   townsfolk: Mereholt's people, given names of a lakeside town, plain and
+//              short: two syllables, three one time in three. Drawn afresh
+//              every run, so the smith is somebody else next time.
+{
+    "townsfolk": (
+        pools: {
+            "start": [
+                "ad", "ash", "bel", "bram", "cor", "dun", "ed", "el", "fen", "gil",
+                "hes", "ib", "jor", "kel", "lor", "mer", "nan", "od", "pell", "ros",
+                "sel", "tam", "wen", "wil", "yor", "bri", "cal", "mag",
+            ],
+            "middle": ["a", "e", "i", "o", "an", "el", "ri", "wy"],
+            "end": [
+                "a", "an", "ard", "da", "en", "et", "ic", "in", "is", "ith",
+                "k", "ka", "le", "lin", "ma", "na", "ny", "ra", "ric", "sa",
+                "ton", "wen", "wyn", "ys", "ock", "ett", "mund", "rey",
+            ],
+        },
+        patterns: [
+            (weight: 1, parts: [Pool("start"), Maybe(33, "middle"), Pool("end")]),
+        ],
+        case: Title,
+        length: (3, 10),
+    ),
+}

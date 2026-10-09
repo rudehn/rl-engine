@@ -95,6 +95,14 @@ pub fn stand_on(app: &mut App, me: Entity, at: Point) {
     settle(app);
 }
 
+/// The one of Mereholt's people whose role in `townsfolk.ron` is `role`,
+/// whatever this run named them.
+pub fn townsperson(app: &mut App, role: &str) -> Entity {
+    let world = app.world_mut();
+    let found = world.query::<(Entity, &crate::townsfolk::Townsperson)>().iter(world).find(|(_, p)| p.0 == role).map(|(e, _)| e);
+    found.unwrap_or_else(|| panic!("nobody in Mereholt is the {role}"))
+}
+
 /// Takes the way through `me` stands on.
 pub fn go_through(app: &mut App, me: Entity) {
     app.world_mut().write_message(Intent::new(me, GoThrough));

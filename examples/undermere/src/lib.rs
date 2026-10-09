@@ -25,10 +25,11 @@
 //! shares, and [`captives`] is the one of them the adventurer may free to
 //! follow; [`finds`] lays its things, drawn a kind at a time with a
 //! scroll of enchanting besides, and [`light`] lights them and dims the
-//! lantern as the adventurer descends. [`shops`] is Mereholt's keepers:
+//! lantern as the adventurer descends. [`townsfolk`] is Mereholt's
+//! people, named afresh each run, standing at their posts or walking the
+//! town, each with something to say; [`shops`] is the keepers among them:
 //! what they may stock, a stocking of their shelves drawn at the depth
-//! reached, and the keepers themselves, standing at their counters on the
-//! first arrival and selling from those shelves; [`temple`] is the rites
+//! reached, and the shelves they sell from; [`temple`] is the rites
 //! the priest among them mends, unbinds and names by, for a price; and
 //! [`waystone`] is the way home from below, ten quiet turns of kneeling,
 //! and the mark the gate leads back down to.
@@ -95,6 +96,7 @@ pub mod tally;
 pub mod temple;
 pub mod testing;
 pub mod title;
+pub mod townsfolk;
 pub mod traits;
 pub mod tricks;
 pub mod typeface;

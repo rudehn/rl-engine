@@ -69,6 +69,10 @@ pub struct Tally {
     /// whoever's hand it fell to: what the record of a run won says it
     /// slew.
     pub boss_slain: Option<String>,
+    /// Every mini-boss and boss that has died this run, by name, in the
+    /// order they fell, whoever's hand they fell to: what a townsperson's
+    /// line waiting on one being slain asks.
+    pub fallen: Vec<String>,
     /// What killed the adventurer, as the record says it, noted at the
     /// death: what did may be gone by the time the record is written, a
     /// monster's last burst or a shooter that died behind its shot.
@@ -175,6 +179,9 @@ pub fn count_the_fighting(
         let def = bestiary.defs.get(kind.0);
         if def.boss {
             tally.boss_slain = Some(def.name.clone());
+        }
+        if (def.boss || def.miniboss) && !tally.fallen.contains(&def.name) {
+            tally.fallen.push(def.name.clone());
         }
         if death.credit.is_some() && death.credit == me {
             tally.slay(&def.name, threat(def));

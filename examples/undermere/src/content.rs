@@ -464,6 +464,10 @@ pub struct Library {
     pub wares: crate::shops::Wares,
     /// The rites the temple's priest offers, their effects built.
     pub rites: crate::temple::Rites,
+    /// Mereholt's people, a row a role.
+    pub townsfolk: crate::townsfolk::Townsfolk,
+    /// The sets every name the run gives is drawn from.
+    pub names: crate::townsfolk::NameSets,
 }
 
 impl Library {
@@ -479,7 +483,10 @@ impl Library {
         let faces = crate::lore::Faces::load(&registries, &armory.defs);
         let wares = crate::shops::Wares::load(&registries, &armory);
         let rites = crate::temple::Rites::load(&registries, kinds);
-        Self { registries, abilities, traits, armory, bestiary, faces, wares, rites }
+        // After the monsters, which a line waiting on one slain names.
+        let townsfolk = crate::townsfolk::Townsfolk::load(&bestiary);
+        let names = crate::townsfolk::NameSets::load();
+        Self { registries, abilities, traits, armory, bestiary, faces, wares, rites, townsfolk, names }
     }
 }
 

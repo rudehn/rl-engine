@@ -18,6 +18,7 @@ use crate::dungeon::{FLOORS, TOWN, Undermere, floor_of, map_of};
 use crate::light::Fixtures;
 use crate::lore::{Faces, Lore};
 use crate::tally::Counted;
+use crate::townsfolk::{GivenNames, NameSets, Townsfolk, Townsperson, name_everyone};
 
 /// The adventurer's health at the start of a run, and the most they ever
 /// have: Brogue's forty, a first cut, since no experience and no levels
@@ -149,19 +150,20 @@ impl ExtraPack {
 }
 
 /// What a photograph of a deeper floor wants in sight on arriving there,
-/// or of Mereholt the keeper it wants to trade with: `main.rs` reads it
+/// or of Mereholt the person it wants to stand beside: `main.rs` reads it
 /// from `UNDERMERE_NEAR`, beside `UNDERMERE_START`. `camp` is a goblin
 /// camp's fire, `captive` a captive's shackles, `lair` the floor's
-/// mini-boss, `throne` the floor's boss, a keeper's [`role`] that keeper
-/// in Mereholt (`smith`, `apothecary`, `curio` or `priest`), and anything
+/// mini-boss, `throne` the floor's boss, a [`role`] of `townsfolk.ron`
+/// that person in Mereholt (`smith`, `priest`, `child`, ...), and anything
 /// else a monster of that name. Absent, nothing, which is every real run.
 ///
 /// The adventurer is warped along the way from where they arrived to it,
 /// [`NEAR_STEPS`] short of it, so what they see is what a player walking
 /// up to it would see, not a cell picked from above that might look at it
-/// through a wall; beside a keeper, so one step into them opens the shop.
+/// through a wall; beside a person, so one step into them opens the shop
+/// or talks.
 ///
-/// [`role`]: crate::shops::Post::role
+/// [`role`]: crate::townsfolk::Role::role
 #[derive(Resource, Debug, Clone, PartialEq, Eq)]
 pub struct StartNear(pub String);
 
@@ -171,26 +173,24 @@ pub struct StartNear(pub String);
 pub const NEAR_STEPS: usize = 4;
 
 /// Stands the adventurer [`NEAR_STEPS`] short of what [`StartNear`] names,
-/// or beside a keeper it names, once it stands on the place they arrived
-/// on, and forgets the ask; does nothing while they are somewhere it
-/// cannot be, a keeper below or anything else in Mereholt, or while the
-/// place holds nothing by that name.
+/// or beside a person of Mereholt it names, once it stands on the place
+/// they arrived on, and forgets the ask; does nothing while they are
+/// somewhere it cannot be, a person below or anything else in Mereholt, or
+/// while the place holds nothing by that name.
 pub fn stand_near(world: &mut World) {
     let Some(near) = world.get_resource::<StartNear>().map(|n| n.0.clone()) else { return };
     let Some((me, at, here)) = world.query_filtered::<(Entity, &Position, &OnMap), With<Adventurer>>().iter(world).next().map(|(e, p, on)| (e, p.0, on.0))
     else {
         return;
     };
-    let keeper = crate::shops::POSTS.into_iter().find(|post| post.role == near);
-    if (here == TOWN) != keeper.is_some() {
+    let person = world.resource::<Townsfolk>().role(&near).is_some();
+    if (here == TOWN) != person {
         return;
     }
-    let target = match keeper {
-        Some(post) => world.query::<(&Position, &crate::shops::Shopkeeper)>().iter(world).find(|(_, k)| k.0 == post).map(|(p, _)| p.0),
-        None => sought(world, &near, here),
-    };
+    let target =
+        if person { world.query::<(&Position, &Townsperson)>().iter(world).find(|(_, p)| p.0 == near).map(|(p, _)| p.0) } else { sought(world, &near, here) };
     let Some(target) = target else { return };
-    let steps = if keeper.is_some() { 1 } else { NEAR_STEPS };
+    let steps = if person { 1 } else { NEAR_STEPS };
     world.remove_resource::<StartNear>();
     let taken: Vec<Point> = world.query_filtered::<(&Position, &OnMap), With<Actor>>().iter(world).filter(|(_, on)| on.0 == here).map(|(p, _)| p.0).collect();
     let map = world.resource::<WorldMap>();
@@ -307,6 +307,11 @@ pub fn start(
         lore.learn(name);
     }
     commands.insert_resource(lore);
+    // Who Mereholt's people are this run, each named apart from everybody
+    // else the run names.
+    let mut given = GivenNames::default();
+    commands.insert_resource(name_everyone(&content.townsfolk, &content.names, &seed, &mut given));
+    commands.insert_resource(given);
     let adventurer = spawn_adventurer(&mut commands, &content.registries);
     let extra = content.extra.as_deref().cloned().unwrap_or_default();
     equip_kit(&mut commands, adventurer, &content.armory, &content.registries, &extra);
@@ -392,6 +397,8 @@ pub struct Content<'w> {
     registries: Res<'w, Registries>,
     armory: Res<'w, Armory>,
     faces: Res<'w, Faces>,
+    townsfolk: Res<'w, Townsfolk>,
+    names: Res<'w, NameSets>,
     extra: Option<Res<'w, ExtraPack>>,
 }
 
@@ -522,24 +529,26 @@ mod tests {
         }
     }
 
-    /// A photograph's ask to start by a keeper stands the adventurer in
-    /// Mereholt beside that keeper, one step from its shop, for each of
-    /// the four and every seed tried.
+    /// A photograph's ask to start by one of Mereholt's people who keeps
+    /// a post stands the adventurer beside them, one step from their shop
+    /// or their talk, for every one of them and every seed tried.
     #[test]
-    fn a_run_started_by_a_keeper_stands_beside_it_in_mereholt() {
+    fn a_run_started_by_a_person_who_keeps_a_post_stands_beside_them_in_mereholt() {
         use crate::testing::settle;
+        use crate::townsfolk::Moves;
+        let townsfolk = crate::content::Library::load(&crate::content::effect_kinds(), &Moments::default()).townsfolk;
         for s in [0, 1, 7] {
-            for post in crate::shops::POSTS {
+            for role in townsfolk.roles().filter(|r| r.moves == Moves::Keeps) {
                 let mut app = headless(RunSeed(s));
-                app.insert_resource(StartNear(post.role.to_string()));
+                app.insert_resource(StartNear(role.role.clone()));
                 let me = adventurer(&mut app);
                 settle(&mut app);
-                let keeper = {
+                let person = {
                     let world = app.world_mut();
-                    let mut q = world.query::<(&Position, &crate::shops::Shopkeeper)>();
-                    q.iter(world).find(|(_, k)| k.0 == post).map(|(p, _)| p.0).expect("the keeper stands")
+                    let mut q = world.query::<(&Position, &Townsperson)>();
+                    q.iter(world).find(|(_, p)| p.0 == role.role).map(|(p, _)| p.0).expect("the person stands")
                 };
-                assert_eq!(geometry::chebyshev(at(&app, me), keeper), 1, "seed {s}: beside the {} at {keeper:?}, stood at {:?}", post.role, at(&app, me));
+                assert_eq!(geometry::chebyshev(at(&app, me), person), 1, "seed {s}: beside the {} at {person:?}, stood at {:?}", role.role, at(&app, me));
                 assert!(app.world().get_resource::<StartNear>().is_none(), "seed {s}: the ask is forgotten once answered");
             }
         }

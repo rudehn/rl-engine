@@ -20,21 +20,20 @@
 //! fixed number of draws, never the same item twice, on top of what is
 //! always there, and neither of those reads a count like that.
 //!
-//! The keepers are the engine's traders: [`keep_shops`] stands each at its
-//! [`Post`], a mark in `mereholt.ron`, on Mereholt's first arrival, with
-//! the run's first stocking as the `Inventory` it sells from and its purse
-//! in gold beside it, offering the engine's `trade`, and the priest the
-//! [`temple`](crate::temple)'s rites besides; and on a later
-//! arrival from a deeper tier than the shelves were drawn for, it clears
-//! them and draws the next stocking, which [`Shelves`] counts. A keeper is
-//! saved as its [`Shopkeeper`] post, so a continued run finds the same
-//! shelves and purses, less what was bought. The engine runs the
-//! screen, the prices and the deals; what is Undermere's is what a keeper
-//! knows. Keepers name what they sell, so a thing on a shelf is worth its
-//! kind's price known or not ([`keep_worth`](crate::armory::keep_worth)),
-//! [`shelf_names`] lists every ware by its true name in the shop's own
-//! colour rather than by the face it wears in the pack, and
-//! [`learn_by_buying`] makes a bought thing's kind known.
+//! The keepers are the engine's traders, and four of Mereholt's
+//! [`townsfolk`](crate::townsfolk), who stand them at their marks; a
+//! [`Post`] is which shelf of `wares.ron` a role keeps. [`keep_shops`]
+//! fills their shelves on Mereholt's first arrival, with the run's first
+//! stocking as the `Inventory` each sells from and its purse in gold
+//! beside it, and on a later arrival from a deeper tier than the shelves
+//! were drawn for, it clears them and draws the next stocking, which
+//! [`Shelves`] counts. The engine runs the screen, the prices and the
+//! deals; what is Undermere's is what a keeper knows. Keepers name what
+//! they sell, so a thing on a shelf is worth its kind's price known or not
+//! ([`keep_worth`](crate::armory::keep_worth)), [`shelf_names`] lists
+//! every ware by its true name in the shop's own colour rather than by the
+//! face it wears in the pack, and [`learn_by_buying`] makes a bought
+//! thing's kind known.
 
 use std::ops::RangeInclusive;
 
@@ -52,12 +51,10 @@ use ron::value::RawValue;
 use serde::{Deserialize, Serialize};
 
 use crate::armory::{Armory, ItemDef, ItemKind, RING_LEVELS, STAFF_LEVEL, spawn_found, spawn_items};
-use crate::content::TOWNSFOLK;
 use crate::dungeon::TOWN;
 use crate::lore::Lore;
 use crate::run::Adventurer;
 use crate::tally::Tally;
-use crate::temple::{Rites, TEMPLE};
 
 const WARES_RON: &str = include_str!("../assets/wares.ron");
 
@@ -301,35 +298,25 @@ pub const TRADE_TIME: u32 = 100;
 /// a quarter, rounded down by the engine's own `Trader::pays`.
 pub const PAYS_PCT: u32 = 25;
 
-/// A keeper's health. Nothing in Mereholt is harmed, so it is never spent;
-/// it is there so a keeper reads on the rail as the person it is.
-pub const KEEPER_HEALTH: i32 = 20;
-
-/// Where one keeper stands and how Mereholt shows them.
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// Which keeper of `wares.ron` a role of `townsfolk.ron` keeps shop as.
+///
+/// Everything else a keeper is, their name, glyph and colour and the mark
+/// they stand at, is their role's, so a keeper is one of Mereholt's people
+/// first and a shop besides.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Post {
     /// The keeper's name in `wares.ron`, which its shelf is drawn by.
     pub keeper: &'static str,
-    /// What they are called: the role's words, until the townsfolk's
-    /// drawn names replace them.
-    pub called: &'static str,
-    /// Their role in a word, which a photograph's `UNDERMERE_NEAR` names
-    /// them by.
+    /// The role in `townsfolk.ron` that keeps it.
     pub role: &'static str,
-    /// The glyph of their mark in `mereholt.ron`.
-    pub mark: char,
-    /// The shop's own colour, `(r, g, b)` in `0..=1`: the keeper's, and
-    /// every ware's on their trade screen, where a face's colour would
-    /// tell which bottle in the pack is which.
-    pub color: (f32, f32, f32),
 }
 
-/// Mereholt's four keepers, in `wares.ron`'s order.
+/// Mereholt's four shops, in `wares.ron`'s order.
 pub const POSTS: [Post; 4] = [
-    Post { keeper: "smith", role: "smith", called: "the smith", mark: 'S', color: (0.95, 0.55, 0.25) },
-    Post { keeper: "apothecary", role: "apothecary", called: "the apothecary", mark: 'Y', color: (0.45, 0.85, 0.5) },
-    Post { keeper: "curio", role: "curio", called: "the curio dealer", mark: 'D', color: (0.75, 0.55, 0.95) },
-    Post { keeper: "temple", role: "priest", called: "the priest", mark: 'P', color: (0.6, 0.8, 1.0) },
+    Post { keeper: "smith", role: "smith" },
+    Post { keeper: "apothecary", role: "apothecary" },
+    Post { keeper: "curio", role: "curio" },
+    Post { keeper: "temple", role: "priest" },
 ];
 
 /// The tags a keeper's [`Trader`] names: its own, or for one that buys
@@ -364,32 +351,30 @@ impl Default for Shelves {
     }
 }
 
-/// One of Mereholt's keepers, by its post: what the save writes it down
-/// as, and what a restock finds each shelf by.
+/// One of Mereholt's keepers, by its post: what a restock finds each
+/// shelf by.
 #[derive(Component, Debug, Clone, Copy, PartialEq)]
 pub struct Shopkeeper(pub Post);
 
-/// Stands each of Mereholt's keepers at their mark the first time the
-/// adventurer arrives there, with the run's first stocking on their
-/// shelves: stocking nought, at the tier reached, which is the first for
-/// any run begun in Mereholt. On every later arrival from deeper than the
-/// shelves were drawn for, restocks them: every keeper's old wares, what
-/// it was sold among them, and its purse are taken off and gone, and the
-/// next stocking is made in their place with a purse for the new tier,
-/// set rather than added to. Home again from the same tier, nothing is
-/// drawn, so the shelves are as they were left, less what was bought.
+/// Fills each of Mereholt's keepers' shelves the first time the adventurer
+/// arrives there, with the run's first stocking: stocking nought, at the
+/// tier reached, which is the first for any run begun in Mereholt. On
+/// every later arrival from deeper than the shelves were drawn for,
+/// restocks them: every keeper's old wares, what it was sold among them,
+/// and its purse are taken off and gone, and the next stocking is made in
+/// their place with a purse for the new tier, set rather than added to.
+/// Home again from the same tier, nothing is drawn, so the shelves are as
+/// they were left, less what was bought.
 ///
-/// A keeper is an actor of the townsfolk, with no mind, so it keeps to
-/// its counter; it offers `trade` and nothing else, so a walk into it opens
-/// the shop, but for the priest, who offers the temple's rites beside it,
-/// so a walk into them opens the offers screen. Its shelf is its `Inventory`, each ware made by the armory at
-/// the level the stocking rolled for it, as a thing found is, and its purse
-/// is gold coins in the same bag, which is what the engine pays out of.
+/// A keeper is one of the [`townsfolk`](crate::townsfolk), stood at its
+/// mark by them; its shelf is its `Inventory`, each ware made by the
+/// armory at the level the stocking rolled for it, as a thing found is,
+/// and its purse is gold coins in the same bag, which is what the engine
+/// pays out of.
 ///
-/// In the arrival chain, after the slots are filled and the tally has the
-/// floor just left. Keepers and shelves are made in [`POSTS`] order, so
-/// the run's entities come out the same every time. A mark the town lacks
-/// is a broken `mereholt.ron`, and panics naming it.
+/// In the arrival chain, after the people are stood and the tally has the
+/// floor just left. Shelves are made in [`POSTS`] order, so the run's
+/// entities come out the same every time.
 pub fn keep_shops(
     mut commands: Commands,
     mut entered: MessageReader<PlaceEntered>,
@@ -401,29 +386,20 @@ pub fn keep_shops(
     let Some(first) = entered.read().filter(|ev| ev.map == TOWN).map(|ev| ev.first).last() else { return };
     let tier = tier_of(tally.deepest);
     if first {
-        let place = shops.map.place(TOWN).expect("Mereholt is built when it is entered");
         shelves.tier = tier;
-        let stocking = shops.wares.stocking(&shops.seed, shelves.stocking, tier);
-        for post in POSTS {
-            let at = place
-                .spots
-                .iter()
-                .find(|s| s.tag == post.mark as u32)
-                .unwrap_or_else(|| panic!("mereholt.ron marks no '{}' for {}", post.mark, post.called))
-                .at;
-            shops.stand(&mut commands, post, shelf_of(&stocking, post), at);
-        }
     } else if tier > shelves.tier {
         *shelves = Shelves { stocking: shelves.stocking + 1, tier };
-        let stocking = shops.wares.stocking(&shops.seed, shelves.stocking, tier);
-        for post in POSTS {
-            let Some((keeper, _, bag)) = keepers.iter().find(|(_, k, _)| k.0.keeper == post.keeper) else { continue };
-            for item in bag.into_iter().flat_map(|b| &b.items) {
-                commands.entity(*item).despawn();
-            }
-            let bag = shops.shelve(&mut commands, shelf_of(&stocking, post));
-            commands.entity(keeper).insert(Inventory { items: bag });
+    } else {
+        return;
+    }
+    let stocking = shops.wares.stocking(&shops.seed, shelves.stocking, tier);
+    for post in POSTS {
+        let Some((keeper, _, bag)) = keepers.iter().find(|(_, k, _)| k.0 == post) else { continue };
+        for item in bag.into_iter().flat_map(|b| &b.items) {
+            commands.entity(*item).despawn();
         }
+        let bag = shops.shelve(&mut commands, shelf_of(&stocking, post));
+        commands.entity(keeper).insert(Inventory { items: bag });
     }
 }
 
@@ -432,47 +408,25 @@ fn shelf_of(stocking: &[Stocking], post: Post) -> &Stocking {
     stocking.iter().find(|s| s.keeper == post.keeper).unwrap_or_else(|| panic!("wares.ron has no keeper {:?}", post.keeper))
 }
 
-/// Everything a keeper is but where it stands and what it carries, so a
-/// keeper stood at its counter and one a continued run puts back are the
-/// same: its [`Post`], its name and glyph in the shop's colour, its health,
-/// the townsfolk's side, the [`Trader`] that buys what `wares.ron` says and
-/// its offer of `trade`, and the priest's of the [`Rites`] too, neither of
-/// which the engine saves.
-pub fn keeper(post: Post, wares: &Wares, armory: &Armory, registries: &Registries, verbs: &Verbs, rites: &Rites) -> impl Bundle {
+/// What a keeper is besides one of Mereholt's people: its [`Post`] and the
+/// [`Trader`] that buys what `wares.ron` says, which the engine does not
+/// save, so a keeper stood on the first arrival and one a continued run
+/// puts back are the same.
+pub fn keeper(post: Post, wares: &Wares, armory: &Armory) -> impl Bundle {
     let keeper = wares.keeper(post.keeper).expect("every post's keeper is in wares.ron");
-    let trade = verbs.get(TRADE).expect("TradePlugin declares the trade verb");
-    let mut offers = vec![Offering::new(trade, TRADE_TIME)];
-    if post.keeper == TEMPLE {
-        offers.extend(rites.offerings(verbs));
-    }
-    let (r, g, b) = post.color;
-    (
-        (Shopkeeper(post), Actor, Blocks, Name::new(post.called), Glyph::new('@', Color::srgb(r, g, b)).on_layer(5)),
-        (Health::full(KEEPER_HEALTH), Faction(registries.factions.expect(TOWNSFOLK))),
-        (Trader { buys: trader_tags(keeper, armory), pays_pct: PAYS_PCT }, Offers(offers)),
-    )
+    (Shopkeeper(post), Trader { buys: trader_tags(keeper, armory), pays_pct: PAYS_PCT })
 }
 
 /// What [`keep_shops`] reads.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Shops<'w> {
-    map: Res<'w, WorldMap>,
     wares: Res<'w, Wares>,
     seed: Res<'w, Seed>,
     armory: Res<'w, Armory>,
     registries: Res<'w, Registries>,
-    verbs: Res<'w, Verbs>,
-    rites: Res<'w, Rites>,
 }
 
 impl Shops<'_> {
-    /// Spawns the keeper of `post` at `at` in Mereholt, carrying `shelf`.
-    fn stand(&self, commands: &mut Commands, post: Post, shelf: &Stocking, at: Point) -> Entity {
-        let bag = self.shelve(commands, shelf);
-        let keeper = keeper(post, &self.wares, &self.armory, &self.registries, &self.verbs, &self.rites);
-        commands.spawn((keeper, Position(at), OnMap(TOWN), Inventory { items: bag })).id()
-    }
-
     /// Makes `shelf`'s wares and purse, in that order, for a keeper's bag.
     fn shelve(&self, commands: &mut Commands, shelf: &Stocking) -> Vec<Entity> {
         let (armory, registries) = (&*self.armory, &*self.registries);
@@ -667,6 +621,10 @@ mod tests {
     use crate::content::Library;
     use crate::testing::{adventurer, at, give, headless, make, name_of, pack, settle, stand_on};
     use rl_engine::rl_ui::{OffersViewPlugin, TradeViewPlugin};
+
+    use crate::content::TOWNSFOLK;
+    use crate::temple::{Rites, TEMPLE};
+    use crate::townsfolk::{Townsfolk, Townsperson};
 
     fn library() -> Library {
         Library::load(&crate::content::effect_kinds(), &Moments::default())
@@ -886,21 +844,21 @@ mod tests {
         let me = adventurer(&mut app);
         let trade = app.world().resource::<Verbs>().get(TRADE).expect("TradePlugin declares it");
         for post in POSTS {
-            let keeper = keeper(&mut app, post.called);
+            let keeper = keeper(&mut app, post.role);
             let cell = beside(&mut app, keeper).first().copied().expect("somewhere to stand beside the keeper");
             stand_on(&mut app, me, cell);
             settle(&mut app);
             let view = app.world().resource::<OffersView>();
             let row = view.rows.iter().find(|r| r.target == keeper && r.verb == trade).expect("the keeper offers trade");
-            assert_eq!(row.label, format!("trade with {}", post.called));
+            assert_eq!(row.label, format!("trade with {}", name_of(&app, keeper)), "by the name the run gave the {}", post.role);
         }
     }
 
-    /// The keeper called `called`.
-    fn keeper(app: &mut App, called: &str) -> Entity {
+    /// The keeper of `role`.
+    fn keeper(app: &mut App, role: &str) -> Entity {
         let world = app.world_mut();
-        let found = world.query_filtered::<(Entity, &Name), With<Trader>>().iter(world).find(|(_, n)| n.as_str() == called).map(|(e, _)| e);
-        found.unwrap_or_else(|| panic!("no keeper called {called:?}"))
+        let found = world.query_filtered::<(Entity, &Townsperson), With<Trader>>().iter(world).find(|(_, p)| p.0 == role).map(|(e, _)| e);
+        found.unwrap_or_else(|| panic!("no keeper is the {role}"))
     }
 
     /// Every cell beside `keeper` the adventurer could stand on: open
@@ -935,7 +893,7 @@ mod tests {
     /// The first thing on the apothecary's shelf that is a potion of a
     /// kind the adventurer does not know yet, with its kind's name.
     fn unknown_potion(app: &mut App) -> Option<(Entity, String)> {
-        let apothecary = keeper(app, "the apothecary");
+        let apothecary = keeper(app, "apothecary");
         let (armory, lore) = (app.world().resource::<Armory>(), app.world().resource::<Lore>());
         shelf(app, apothecary)
             .into_iter()
@@ -958,20 +916,21 @@ mod tests {
             let arrived = at(&app, me);
             let walked = walkable_from(&mut app, arrived);
             for post in POSTS {
-                let k = keeper(&mut app, post.called);
-                let mark = spots.iter().find(|spot| spot.tag == post.mark as u32).expect("the mark is in mereholt.ron").at;
+                let k = keeper(&mut app, post.role);
+                let mark = app.world().resource::<Townsfolk>().role(post.role).expect("every keeper has a row").post;
+                let mark = spots.iter().find(|spot| spot.tag == mark as u32).expect("the mark is in mereholt.ron").at;
                 let world = app.world();
-                assert_eq!(world.get::<Position>(k).map(|p| p.0), Some(mark), "seed {s}: {} at their mark", post.called);
-                assert_eq!(world.get::<OnMap>(k).map(|m| m.0), Some(TOWN), "seed {s}: {} in Mereholt", post.called);
-                assert_eq!(world.get::<Faction>(k).map(|f| f.0), Some(townsfolk), "seed {s}: {} of the townsfolk", post.called);
+                assert_eq!(world.get::<Position>(k).map(|p| p.0), Some(mark), "seed {s}: {} at their mark", post.role);
+                assert_eq!(world.get::<OnMap>(k).map(|m| m.0), Some(TOWN), "seed {s}: {} in Mereholt", post.role);
+                assert_eq!(world.get::<Faction>(k).map(|f| f.0), Some(townsfolk), "seed {s}: {} of the townsfolk", post.role);
                 let offers: Vec<VerbId> = world.get::<Offers>(k).expect("offers").0.iter().map(|o| o.verb).collect();
                 let mut offered = vec![trade];
                 if post.keeper == TEMPLE {
                     offered.extend(world.resource::<Rites>().offerings(world.resource::<Verbs>()).iter().map(|o| o.verb));
                 }
-                assert_eq!(offers, offered, "seed {s}: {} offers trade, and the priest the rites besides", post.called);
-                assert_eq!(world.get::<Trader>(k).map(|t| t.pays_pct), Some(25), "seed {s}: {} pays a quarter", post.called);
-                assert!(beside(&mut app, k).iter().any(|cell| walked.contains(cell)), "seed {s}: {} can be walked up to", post.called);
+                assert_eq!(offers, offered, "seed {s}: {} offers trade, and the priest the rites besides", post.role);
+                assert_eq!(world.get::<Trader>(k).map(|t| t.pays_pct), Some(25), "seed {s}: {} pays a quarter", post.role);
+                assert!(beside(&mut app, k).iter().any(|cell| walked.contains(cell)), "seed {s}: {} can be walked up to", post.role);
             }
             let world = app.world_mut();
             assert_eq!(world.query_filtered::<(), With<Trader>>().iter(world).count(), POSTS.len(), "seed {s}: one keeper a post");
@@ -1036,7 +995,7 @@ mod tests {
 
     /// Every keeper, in [`POSTS`] order.
     fn keepers(app: &mut App) -> Vec<Entity> {
-        POSTS.iter().map(|post| keeper(app, post.called)).collect()
+        POSTS.iter().map(|post| keeper(app, post.role)).collect()
     }
 
     /// The adventurer, given gold enough, buys the whole of the last ware
@@ -1066,10 +1025,10 @@ mod tests {
             let stocking = wares.stocking(&Seed(RunSeed(s)), 0, 1);
             assert_eq!(*app.world().resource::<Shelves>(), Shelves { stocking: 0, tier: 1 }, "seed {s}");
             for post in POSTS {
-                let k = keeper(&mut app, post.called);
+                let k = keeper(&mut app, post.role);
                 let (wares, purse) = carried(&app, k);
-                assert_eq!(wares, as_carried(&armory, shelf_of(&stocking, post)), "seed {s}: {}'s shelf", post.called);
-                assert_eq!(purse, PURSE_PER_TIER, "seed {s}: {}'s purse", post.called);
+                assert_eq!(wares, as_carried(&armory, shelf_of(&stocking, post)), "seed {s}: {}'s shelf", post.role);
+                assert_eq!(purse, PURSE_PER_TIER, "seed {s}: {}'s purse", post.role);
             }
         }
     }
@@ -1081,9 +1040,9 @@ mod tests {
     fn a_return_from_the_same_tier_finds_the_shelves_as_they_were_left_less_what_was_bought_over_a_span_of_seeds() {
         for s in 0..3 {
             let (mut app, me) = in_mereholt(s);
-            let smith = keeper(&mut app, "the smith");
+            let smith = keeper(&mut app, "smith");
             let before = shelf(&app, smith);
-            let bought = buy_last(&mut app, me, "the smith");
+            let bought = buy_last(&mut app, me, "smith");
             let left = bags(&mut app);
             assert_eq!(shelf(&app, smith), before[..before.len() - 1], "seed {s}: the smith's shelf less what was bought");
             crate::testing::arrive(&mut app, crate::dungeon::map_of(2));
@@ -1102,7 +1061,7 @@ mod tests {
     fn a_return_from_a_deeper_tier_draws_the_next_stocking_and_sets_each_purse_for_it_over_a_span_of_seeds() {
         for s in 0..3 {
             let (mut app, me) = in_mereholt(s);
-            buy_last(&mut app, me, "the smith");
+            buy_last(&mut app, me, "smith");
             let old: Vec<Entity> = bags(&mut app).concat();
             crate::testing::arrive(&mut app, crate::dungeon::map_of(3));
             crate::testing::arrive(&mut app, TOWN);
@@ -1111,10 +1070,10 @@ mod tests {
             let (wares, armory) = (app.world().resource::<Wares>().clone(), app.world().resource::<Armory>().clone());
             let stocking = wares.stocking(&Seed(RunSeed(s)), 1, 2);
             for post in POSTS {
-                let k = keeper(&mut app, post.called);
+                let k = keeper(&mut app, post.role);
                 let (wares, purse) = carried(&app, k);
-                assert_eq!(wares, as_carried(&armory, shelf_of(&stocking, post)), "seed {s}: {}'s shelf", post.called);
-                assert_eq!(purse, 2 * PURSE_PER_TIER, "seed {s}: {}'s purse set for tier two", post.called);
+                assert_eq!(wares, as_carried(&armory, shelf_of(&stocking, post)), "seed {s}: {}'s shelf", post.role);
+                assert_eq!(purse, 2 * PURSE_PER_TIER, "seed {s}: {}'s purse set for tier two", post.role);
             }
             let restocked = bags(&mut app);
             crate::testing::arrive(&mut app, crate::dungeon::map_of(4));
@@ -1182,12 +1141,12 @@ mod tests {
     fn a_run_saved_and_continued_in_mereholt_or_below_keeps_its_keepers_shelves_purses_offers_and_stocking() {
         for s in 0..2 {
             let (mut app, me) = in_mereholt(s);
-            buy_last(&mut app, me, "the smith");
+            buy_last(&mut app, me, "smith");
             crate::testing::arrive(&mut app, crate::dungeon::map_of(3));
             let below = saved(&app);
             crate::testing::arrive(&mut app, TOWN);
             let restocked = keepers_as_seen(&mut app);
-            buy_last(&mut app, me, "the apothecary");
+            buy_last(&mut app, me, "apothecary");
             crate::testing::arrive(&mut app, crate::dungeon::map_of(4));
             crate::testing::arrive(&mut app, TOWN);
             let in_town = saved(&app);
@@ -1199,7 +1158,7 @@ mod tests {
             assert_eq!(keepers_as_seen(&mut carried_on), seen, "seed {s}: the same keepers, shelves and purses");
             assert_eq!(*carried_on.world().resource::<Shelves>(), Shelves { stocking: 1, tier: 2 }, "seed {s}: and the same stocking");
             let me = adventurer(&mut carried_on);
-            let smith = keeper(&mut carried_on, "the smith");
+            let smith = keeper(&mut carried_on, "smith");
             open_trade(&mut carried_on, me, smith);
 
             let mut from_below = crate::testing::continued(&below);
@@ -1224,7 +1183,7 @@ mod tests {
             give(&mut app, me, mine);
             settle(&mut app);
             assert_eq!(app.world().get::<Worth>(mine), None, "seed {s}: {name} in the pack");
-            let apothecary = keeper(&mut app, "the apothecary");
+            let apothecary = keeper(&mut app, "apothecary");
             open_trade(&mut app, me, apothecary);
             let view = app.world().resource::<TradeView>();
             let row = view.wares.iter().find(|r| r.row.entity == potion).unwrap_or_else(|| panic!("seed {s}: {name} on the screen"));
@@ -1239,15 +1198,15 @@ mod tests {
     fn on_the_trade_screen_a_ware_not_yet_known_reads_by_its_true_name_in_the_shops_colour_not_its_face() {
         let (mut app, me) = in_mereholt(2);
         let (potion, name) = unknown_potion(&mut app).expect("the apothecary sells a potion not yet known");
-        let apothecary = keeper(&mut app, "the apothecary");
+        let apothecary = keeper(&mut app, "apothecary");
         open_trade(&mut app, me, apothecary);
         let face = name_of(&app, potion);
         assert_ne!(face, name, "the potion wears its face");
         let view = app.world().resource::<TradeView>();
         let row = view.wares.iter().find(|r| r.row.entity == potion).expect("on the screen");
         assert_eq!(row.row.label, listed(&name, row.count), "by its true name");
-        let (r, g, b) = POSTS.iter().find(|p| p.keeper == "apothecary").expect("a post").color;
-        assert_eq!(row.row.glyph.fg, Color::srgb(r, g, b), "in the apothecary's colour, not its face's");
+        let color = app.world().resource::<Townsfolk>().role("apothecary").expect("a row").color();
+        assert_eq!(row.row.glyph.fg, color, "in the apothecary's colour, not its face's");
     }
 
     /// Looking over the shelf teaches nothing; buying a potion makes its
@@ -1256,7 +1215,7 @@ mod tests {
     fn buying_a_potion_makes_its_kind_known_and_browsing_does_not() {
         let (mut app, me) = in_mereholt(2);
         let (potion, name) = unknown_potion(&mut app).expect("the apothecary sells a potion not yet known");
-        let apothecary = keeper(&mut app, "the apothecary");
+        let apothecary = keeper(&mut app, "apothecary");
         let gold = make(&mut app, "gold coin");
         app.world_mut().get_mut::<Stack>(gold).expect("gold stacks").count = 5000;
         give(&mut app, me, gold);
@@ -1288,7 +1247,7 @@ mod tests {
         let healing = make(&mut app, "potion of healing");
         give(&mut app, me, healing);
         app.world_mut().resource_mut::<Lore>().learn("potion of healing");
-        let smith = keeper(&mut app, "the smith");
+        let smith = keeper(&mut app, "smith");
         open_trade(&mut app, me, smith);
         let view = app.world().resource::<TradeView>();
         let row = view.pack.iter().find(|r| r.row.entity == healing).expect("the potion on the pack's side");

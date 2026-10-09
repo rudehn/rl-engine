@@ -8,9 +8,10 @@
 //! `UNDERMERE_NEAR=camp` stands the adventurer a few steps short of what
 //! it names there (`camp`, `captive`, `lair`, `throne` or a monster's
 //! name); without `UNDERMERE_START`, `UNDERMERE_NEAR=smith` stands them
-//! beside that keeper in Mereholt instead (`smith`, `apothecary`, `curio`
-//! or `priest`), one step from opening the shop. For one of the pack, `UNDERMERE_PACK="ring of light:-2, potion of
-//! extra healing*2"` puts those in it as if found.
+//! beside that person in Mereholt instead (any role of `townsfolk.ron`,
+//! `smith`, `priest`, `gatewarden`, `child`...), one step from their shop
+//! or their talk. For one of the pack, `UNDERMERE_PACK="ring of light:-2,
+//! potion of extra healing*2"` puts those in it as if found.
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
@@ -123,10 +124,11 @@ impl Screen {
             // What is in a chest, and the keys that take it.
             chest: centred(48, 6, 14),
             // A keeper's shelf beside the pack, wide enough for a long
-            // name and its price on either side: the frame, the line under
-            // the keeper's name, the headings and their rule, fifteen rows,
+            // name and its price on either side and for the longest
+            // greeting under the keeper's name, the apothecary's: the
+            // frame, that line, the headings and their rule, fifteen rows,
             // as many as the pack shows, and the purses at the foot.
-            shop: centred(80, 4, 22),
+            shop: centred(108, 4, 22),
             // What can be done here, when here is more than one thing:
             // wide enough for the temple's longest rite with its turn and
             // its price, `unbind what you wear (1 turn, 60 gold coins)`.
@@ -211,8 +213,11 @@ fn add_panels(app: &mut App, screen: &Screen) {
     app.add_systems(Update, undermere::conditions::note_statuses.in_set(ViewSet::Annotate));
     // A captive said shackled on the rail, until it is freed.
     app.add_systems(Update, undermere::captives::note_captives.in_set(ViewSet::Annotate));
-    // A keeper's wares by their true names, in the shop's own colour.
-    app.add_systems(Update, undermere::shops::shelf_names.in_set(ViewSet::Annotate));
+    // A keeper's wares by their true names, in the shop's own colour, and
+    // the keeper's greeting under their name.
+    app.add_systems(Update, (undermere::shops::shelf_names, undermere::townsfolk::greet).in_set(ViewSet::Annotate));
+    // A person of Mereholt's role under their name on the look panel.
+    app.add_systems(Update, undermere::townsfolk::name_roles.in_set(ViewSet::Annotate));
     // The temple's rites by what they do, not "name the priest", and every
     // keeper's trade as "trade with" them, not "trade the priest".
     app.add_systems(Update, (undermere::temple::rite_rows, undermere::shops::trade_rows).in_set(ViewSet::Annotate));
@@ -630,16 +635,14 @@ mod tests {
         use undermere::testing::{arrive, at, clear_monsters, lay, lay_floor, make, settle, stand_on};
         let mut app = on_screen(RunSeed(7));
         let me = undermere::testing::adventurer(&mut app);
-        let smith = {
-            let world = app.world_mut();
-            world.query_filtered::<(Entity, &Name), With<Trader>>().iter(world).find(|(_, n)| n.as_str() == "the smith").map(|(e, _)| e).expect("the smith")
-        };
+        let smith = undermere::testing::townsperson(&mut app, "smith");
         let beside = at(&app, smith).offset(0, -1);
         stand_on(&mut app, me, beside);
         let rail = |app: &App| (0..ROWS).map(|y| from(app, COLS - RAIL, y)).collect::<Vec<_>>();
         let lines = rail(&app);
         let heading = lines.iter().position(|r| r.trim() == "In sight").unwrap_or_else(|| panic!("a bare heading: {lines:#?}"));
-        assert!(lines[heading + 2..].iter().any(|r| r.contains("the smith")), "over the smith: {lines:#?}");
+        let name = undermere::testing::name_of(&app, smith);
+        assert!(lines[heading + 2..].iter().any(|r| r.contains(&name)), "over the smith, {name}: {lines:#?}");
 
         arrive(&mut app, undermere::dungeon::map_of(1));
         clear_monsters(&mut app);
@@ -725,6 +728,19 @@ mod tests {
         assert!(scripted.exists(undermere::save::SLOT), "and the scripted run has one of its own");
     }
 
+    /// Every keeper's greeting, quoted as the trade screen says it, fits
+    /// the line under their name whole: the frame and its margins take
+    /// two cells a side.
+    #[test]
+    fn every_keepers_greeting_fits_the_trade_screens_line() {
+        let line = (Screen::new().shop.width - 4) as usize;
+        let app = on_screen(RunSeed(0));
+        for role in app.world().resource::<undermere::townsfolk::Townsfolk>().roles() {
+            let Some(greeting) = &role.greeting else { continue };
+            assert!(greeting.chars().count() + 2 <= line, "the {}'s greeting is {} long, the line {line}", role.role, greeting.chars().count() + 2);
+        }
+    }
+
     /// Walking into a keeper with the key that walks opens their shop on
     /// the screen, and the press that opened it does nothing more there:
     /// nothing is bought or sold, and the cursor stands where the screen
@@ -734,10 +750,7 @@ mod tests {
     fn walking_into_a_keeper_opens_the_shop_and_the_same_press_does_not_act_on_its_first_frame() {
         let mut app = on_screen(RunSeed(7));
         let me = undermere::testing::adventurer(&mut app);
-        let smith = {
-            let world = app.world_mut();
-            world.query_filtered::<(Entity, &Name), With<Trader>>().iter(world).find(|(_, n)| n.as_str() == "the smith").map(|(e, _)| e).expect("the smith")
-        };
+        let smith = undermere::testing::townsperson(&mut app, "smith");
         let at = undermere::testing::at(&app, smith);
         undermere::testing::stand_on(&mut app, me, at.offset(0, -1));
         let (mine, theirs) = (undermere::testing::pack(&app, me), undermere::testing::pack(&app, smith));
@@ -746,7 +759,10 @@ mod tests {
         let modals = app.world().resource::<Modals>();
         assert!(modals.is_open(trade_modal(modals)), "the smith's shop is up");
         assert_eq!(app.world().resource::<Trading>().open().map(|p| (p.customer, p.trader)), Some((me, smith)), "a trade with the smith");
-        assert!(written(&app).iter().any(|r| r.contains("the smith")), "the screen names the smith: {:#?}", written(&app));
+        let name = undermere::testing::name_of(&app, smith);
+        assert!(written(&app).iter().any(|r| r.contains(&name)), "the screen names the smith, {name}: {:#?}", written(&app));
+        let greeting = "\"Steel, leather, and arrows by the bundle. I buy what's straight and sell what's sharp.\"";
+        assert!(written(&app).iter().any(|r| r.contains(greeting)), "and their greeting reads whole under it: {:#?}", written(&app));
         let menu = app.world().resource::<rl_engine::rl_ui::panel::trade::TradeMenu>();
         assert_eq!((menu.side, menu.wares, menu.pack), (rl_engine::rl_ui::TradeSide::Wares, 0, 0), "the cursor where the screen opens");
         assert_eq!(undermere::testing::pack(&app, me), mine, "nothing bought or sold");
@@ -767,10 +783,7 @@ mod tests {
     fn walking_into_the_priest_opens_the_offers_screen_with_each_rites_price_and_pays_nothing() {
         let mut app = on_screen(RunSeed(7));
         let me = undermere::testing::adventurer(&mut app);
-        let priest = {
-            let world = app.world_mut();
-            world.query_filtered::<(Entity, &Name), With<Trader>>().iter(world).find(|(_, n)| n.as_str() == "the priest").map(|(e, _)| e).expect("the priest")
-        };
+        let priest = undermere::testing::townsperson(&mut app, "priest");
         let at = undermere::testing::at(&app, priest);
         let town = undermere::dungeon::TOWN;
         let taken: Vec<Point> = {
@@ -793,7 +806,8 @@ mod tests {
         assert!(!modals.is_open(trade_modal(modals)), "and not the shop");
         let view = app.world().resource::<rl_engine::rl_ui::view::offers::OffersView>();
         let rows: Vec<(String, Option<u32>)> = view.rows.iter().map(|r| (r.label.clone(), r.price)).collect();
-        let offered = [("trade with the priest", None), ("mend your wounds", Some(30)), ("unbind what you wear", Some(60)), ("name what you wear", Some(60))]
+        let trade = format!("trade with {}", undermere::testing::name_of(&app, priest));
+        let offered = [(trade.as_str(), None), ("mend your wounds", Some(30)), ("unbind what you wear", Some(60)), ("name what you wear", Some(60))]
             .map(|(v, p)| (v.to_string(), p));
         assert_eq!(rows, offered.to_vec(), "trade and the rites at their prices");
         for rite in ["mend your wounds (1 turn, 30 gold coins)", "unbind what you wear - needs 60 gold coins", "name what you wear - needs 60 gold coins"] {
