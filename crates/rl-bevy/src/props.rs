@@ -27,8 +27,8 @@
 //! Offers and the interactions that answer them, containers that stock and
 //! empty, triggers that land an effect list, and hiding that a turn in
 //! sight rolls away, for a prop and for a place's
-//! [`Secret`](crate::secrets::Secret) alike, are all here. `docs/design/props.md` is the whole
-//! design.
+//! [`Secret`](crate::secrets::Secret) alike, are all here.
+//! `docs/design/props.md` is the whole design.
 
 use bevy::prelude::*;
 use rl_core::{Id, Interner, Point, geometry};
@@ -902,15 +902,40 @@ impl SpotRules {
     }
 }
 
-/// A hidden prop was spotted.
+/// Something hidden was spotted: a prop, or a place's secret.
+///
+/// One message for both, because what a game does with either is the
+/// same, a line in the log and perhaps a sound, and a log that read two
+/// would say the same thing twice over. A secret is one message for its
+/// whole group, as it is one roll.
 #[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Spotted {
-    /// Which prop.
-    pub prop: Entity,
+    /// What.
+    pub what: Finding,
     /// Who spotted it.
     pub by: Entity,
-    /// Where it is.
+    /// Where: the prop's cell, or the cell of the secret nearest whoever
+    /// spotted it.
     pub at: Point,
+}
+
+/// What was [`Spotted`].
+///
+/// The two kinds of hidden thing the engine has, not a list of contents:
+/// what a prop or a tile is stays its registry's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Finding {
+    /// A hidden prop, an ordinary one from now on.
+    Prop(Entity),
+    /// A [`Secret`](crate::secrets::Secret)'s group, every cell of it now
+    /// the tile it is. `is` is the tile on [`Spotted::at`], which for a
+    /// door is the door.
+    Secret {
+        /// The group, as the place's secrets number it.
+        group: u32,
+        /// The tile it turned out to be.
+        is: rl_grid::TileId,
+    },
 }
 
 /// A hidden prop, and where it is.
@@ -947,6 +972,7 @@ type Finder<'w, 's> = Query<
 /// rolled for once for its whole group, while any cell of it is in sight,
 /// at the distance to its nearest cell, so a wide mouth is found no faster
 /// than a one-cell door; found, every cell of it is laid as what it is.
+/// Either way one [`Spotted`] says what was found, by whom and where.
 ///
 /// Every roll comes from [`PropRng`], props first and then secrets by
 /// group, so neither nudges a later blow. A secret is found through
@@ -984,15 +1010,16 @@ pub fn spot_hidden_props(
             continue;
         }
         commands.entity(prop).remove::<Hidden>();
-        spotted.write(Spotted { prop, by: who, at: at.0 });
+        spotted.write(Spotted { what: Finding::Prop(prop), by: who, at: at.0 });
     }
-    for (nearest, spot) in groups_in_sight(map.secrets(here), sight, from) {
-        if !dice.roll(spot, keen, geometry::chebyshev(from, nearest), still) {
+    for nearest in groups_in_sight(map.secrets(here), sight, from) {
+        if !dice.roll(nearest.spot, keen, geometry::chebyshev(from, nearest.at), still) {
             continue;
         }
         commands.queue(move |world: &mut World| {
-            world.resource_mut::<WorldMap>().find_secret(here, nearest);
+            world.resource_mut::<WorldMap>().find_secret(here, nearest.at);
         });
+        spotted.write(Spotted { what: Finding::Secret { group: nearest.group, is: nearest.is }, by: who, at: nearest.at });
     }
 }
 
@@ -1043,21 +1070,30 @@ impl Stillness<'_, '_> {
 }
 
 /// Every group of `secrets` with a cell in `sight`, as its cell nearest
-/// `from` and its chance, in group order.
+/// `from`, in group order.
 ///
 /// A `BTreeMap` by group, so the groups are rolled for in the same order
 /// on every run of a seed, whatever order their cells were listed in.
-fn groups_in_sight(secrets: &[crate::secrets::Secret], sight: &crate::components::Viewshed, from: Point) -> Vec<(Point, u8)> {
-    let mut groups: std::collections::BTreeMap<u32, (Point, u8, bool)> = std::collections::BTreeMap::new();
+/// Nearest by Chebyshev distance, the one the roll weighs, and among
+/// cells at the same distance by the straight line, so the cell named is
+/// the one square ahead rather than whichever was listed first.
+fn groups_in_sight(secrets: &[crate::secrets::Secret], sight: &crate::components::Viewshed, from: Point) -> Vec<crate::secrets::Secret> {
+    let mut groups: std::collections::BTreeMap<u32, (crate::secrets::Secret, bool)> = std::collections::BTreeMap::new();
     for s in secrets {
         let seen = sight.can_see(s.at);
-        let group = groups.entry(s.group).or_insert((s.at, s.spot, seen));
-        if geometry::chebyshev(from, s.at) < geometry::chebyshev(from, group.0) {
-            group.0 = s.at;
+        let group = groups.entry(s.group).or_insert((*s, seen));
+        if nearness(from, s.at) < nearness(from, group.0.at) {
+            group.0 = *s;
         }
-        group.2 |= seen;
+        group.1 |= seen;
     }
-    groups.into_values().filter(|(_, _, seen)| *seen).map(|(at, spot, _)| (at, spot)).collect()
+    groups.into_values().filter(|(_, seen)| *seen).map(|(nearest, _)| nearest).collect()
+}
+
+/// How near `at` is to `from`: Chebyshev first, then the straight line.
+fn nearness(from: Point, at: Point) -> (i32, i32) {
+    let (dx, dy) = (at.x - from.x, at.y - from.y);
+    (geometry::chebyshev(from, at), dx * dx + dy * dy)
 }
 
 /// Set once a prop with nothing to show has been reported, so the report
@@ -2441,6 +2477,22 @@ mod spotting {
             assert_eq!(one, three, "seed {seed}: one roll for the group, at its nearest cell");
             assert!(mouth.iter().all(|&at| wide.found(at)), "seed {seed}: and every cell of it found together");
         }
+    }
+
+    #[derive(Resource, Default)]
+    struct Heard(Vec<Spotted>);
+
+    #[test]
+    fn a_secret_s_group_is_spotted_in_one_message_naming_its_nearest_cell_and_what_it_is() {
+        let mouth = [Point::new(5, 2), Point::new(5, 3), Point::new(5, 4)];
+        let mut rig = rig(0, SpotRules::default(), &mouth.map(|at| (at, 100, 4)));
+        rig.app.init_resource::<Heard>().add_systems(PostUpdate, |mut heard: ResMut<Heard>, mut spotted: MessageReader<Spotted>| {
+            heard.0.extend(spotted.read().copied());
+        });
+        rig.wait();
+        let floor = rig.floor;
+        let heard = &rig.app.world().resource::<Heard>().0;
+        assert_eq!(heard, &[Spotted { what: Finding::Secret { group: 4, is: floor }, by: rig.player, at: mouth[1] }]);
     }
 
     #[test]
