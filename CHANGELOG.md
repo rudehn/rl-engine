@@ -8,6 +8,7 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 - The offers screen asks a game's own yes-or-no question: a game writes the new `rl_ui::AskToConfirm { user, asker, verb, prompt }`, most often when an offer of its own is taken up, and the screen opens on `prompt` with two answers, No picked out; Yes writes the new `Confirmed { user, asker, verb }` for the game to act on, and No or the close key answer nothing.
   The engine does nothing on a yes and spends no time on one, since the offer that asked has spent its own, so an offer a player should be able to back out of for nothing is offered at no time.
+  The screen now opens on its first row however it is opened, where the interact key opened it on whichever row was taken last, so a second visit read as a choice already made.
   The answers read `Yes` and `No`, and `OffersPanel::answers(yes, no)` words them otherwise; `OffersLayout` has the two new fields and `OffersMenu` a new `confirming`, so a game that built either with a struct literal adds them.
 
 - A `GoThrough` asked where no way through stands is refused before the turn is claimed, so it costs nothing and the same press can still take up what is offered here: a game binding its way and the interact key to one key, as Enter, now talks to the one person in reach off a way, where the refusal used to spend the press.

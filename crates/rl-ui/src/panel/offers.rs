@@ -237,9 +237,12 @@ pub fn offers_keys(
 ) {
     let modal = offers_modal(&modals);
     // A question lasts only while the screen is up, however it was put
-    // away.
+    // away, and the cursor starts on the first row however it is opened
+    // again: the interact key opens it with no word to this screen, and a
+    // cursor left on the row taken last time reads as a choice made.
     if !modals.is_open(modal) {
         menu.confirming = None;
+        menu.selected = 0;
     }
     if !modals.is_top(modal) {
         return;
@@ -579,6 +582,25 @@ mod tests {
         assert_eq!(stage.app.world().resource::<Seen>().0, vec![Interacted { actor: player, target: bench, verb: tip }], "the second row, not the first");
         let modals = stage.app.world().resource::<Modals>();
         assert!(!modals.is_open(offers_modal(modals)), "and the question is answered, so the screen is gone");
+    }
+
+    /// Opened again, by a key that tells the screen nothing, the cursor
+    /// starts on the first row, not on the row last taken.
+    #[test]
+    fn the_screen_opens_again_on_its_first_row() {
+        let (mut stage, _bench) = stage();
+        let player = stage.player;
+        stage.app.world_mut().write_message(Intent::new(player, Bump(Direction::East)));
+        stage.tick();
+        stage.press(KeyCode::ArrowDown);
+        stage.tick();
+        assert_eq!(stage.app.world().resource::<OffersMenu>().selected, 1);
+        stage.press(KeyCode::Escape);
+        stage.tick();
+        let offers = offers_modal(stage.app.world().resource::<Modals>());
+        stage.app.world_mut().resource_mut::<Modals>().open(offers);
+        stage.tick();
+        assert_eq!(stage.app.world().resource::<OffersMenu>().selected, 0, "on the first row");
     }
 
     /// Whatever took the player away from it takes the question with it.
