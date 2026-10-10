@@ -152,7 +152,22 @@ fn bare(name: &str) -> &str {
 /// Whether `name` is said as written: it carries an article, or it is a
 /// proper name.
 fn as_written(name: &str) -> bool {
-    ARTICLES.iter().any(|a| name.starts_with(a)) || name.chars().next().is_some_and(char::is_uppercase)
+    ARTICLES.iter().any(|a| name.starts_with(a)) || is_proper(name)
+}
+
+/// Whether `name` is a proper name, by the one test every function here
+/// uses: it starts with a capital. A kind is written lower case, `goblin`,
+/// and someone with a name of their own is not, `Brenna`, so a sentence
+/// that reads for one can be told from one that does not without a list
+/// of who is who.
+///
+/// ```
+/// use rl_core::noun::is_proper;
+/// assert!(is_proper("Brenna"));
+/// assert!(!is_proper("goblin"));
+/// ```
+pub fn is_proper(name: &str) -> bool {
+    name.chars().next().is_some_and(char::is_uppercase)
 }
 
 /// `name` with `a` or `an` before it, unless it already carries an article

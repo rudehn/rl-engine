@@ -121,19 +121,28 @@ fn set_down_what_was_given(world: &mut World, who: Entity) -> Vec<Entity> {
 #[derive(Resource, Debug, Default)]
 pub struct Fell(Vec<Entity>);
 
+/// The body of a hired mercenary, by the name it was hired under: what a
+/// save keeps of it, since the body is otherwise written as a plain one of
+/// its kind and a continue would lay it back down as "mercenary corpse".
+/// The engine names it as remains from the name put back, "the corpse of
+/// Brenna", as it did when it fell.
+#[derive(Component, Debug, Clone, PartialEq, Eq)]
+pub struct Fallen(pub String);
+
 /// Takes off a hired mercenary's body what it was in the party for, the
 /// moment it dies: its [`Mercenary`], its leader, its post and its offers,
-/// so the party, the order key and the offers screen pass it by. Notes it
-/// in [`Fell`] for the log.
+/// so the party, the order key and the offers screen pass it by, and marks
+/// it [`Fallen`] by its name. Notes it in [`Fell`] for the log.
 ///
 /// In `TurnSet::React`, after the tally has read it as the mercenary it
 /// was. A body raised later is stood up as the twin the engine kept, which
 /// [`forget_its_life`](crate::effects::bodies::forget_its_life) takes the
 /// same things off.
-pub fn strip_the_fallen(mut commands: Commands, mut deaths: MessageReader<DeathEvent>, hired: Query<(), With<Mercenary>>, mut fell: ResMut<Fell>) {
-    for death in deaths.read().filter(|d| hired.contains(d.entity)) {
+pub fn strip_the_fallen(mut commands: Commands, mut deaths: MessageReader<DeathEvent>, hired: Query<&Mercenary>, mut fell: ResMut<Fell>) {
+    for death in deaths.read() {
+        let Ok(hired) = hired.get(death.entity) else { continue };
         fell.0.push(death.entity);
-        commands.entity(death.entity).try_remove::<(Mercenary, Leader, Post, Offers)>();
+        commands.entity(death.entity).try_remove::<(Mercenary, Leader, Post, Offers)>().try_insert(Fallen(hired.name.clone()));
     }
 }
 

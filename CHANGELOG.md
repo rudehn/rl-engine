@@ -6,6 +6,12 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- A body can be named one way for a kind and another for someone with a proper name: `RemainsNaming` is two templates, `kind` and `proper`, made by `RemainsNaming::new(template)` for both and `.proper(template)` for the second, chosen by the new `rl_core::noun::is_proper`, so a game's "{what} corpse" need not make "Brenna corpse" of a named one.
+  `RemainsPlugin::naming` takes either a template, as before, or a `RemainsNaming`; a game that built `RemainsNaming("...".into())` writes `RemainsNaming::new("...")`, and one that read its `.0` reads `.kind`.
+
+- A body on the nearby rail is on nobody's side: it keeps the faction it fought for, which a mind still reads, but its row no longer carries a relation, so a slain foe is not listed in the foe's tone and a fallen friend not in the friend's.
+  Nothing to change in a game.
+
 - The offers screen moves off what it is about, as the look panel moves off its cursor: while the one choosing, or anyone or anything offering a row, stands under its rectangle, it is drawn in its other place, the rectangle mirrored top for bottom in the map, or where the new `OffersPanel::else_at(rect)` says.
   A game's rectangle becomes its preferred place, so nothing to change unless it wants the other place named; `OffersLayout` has the new `elsewhere`, so a game that built it with a struct literal adds `elsewhere: None`.
   An asking offer's answers follow its question after one empty row, where they used to sit at the screen's foot under a gap.

@@ -58,7 +58,8 @@
 //! a [`Candidate`] on the townsfolk's side asking the fee of the kit it
 //! keeps. One
 //! that dies is gone for good: the tally lists it among the fallen,
-//! [`strip_the_fallen`] takes what made it the party's off its body, and
+//! [`strip_the_fallen`] takes what made it the party's off its body and
+//! marks it [`Fallen`] by name, which the save keeps, and
 //! [`say_who_fell`] has the log say it as the adventurer's own loss.
 //!
 //! The party goes where the adventurer goes, from beside them: on their

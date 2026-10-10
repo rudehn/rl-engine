@@ -130,6 +130,7 @@ pub struct Around<'w, 's> {
     stacks: Query<'w, 's, &'static Stack>,
     work: crate::view::Workings<'w, 's>,
     doing: Query<'w, 's, &'static rl_bevy::Doing>,
+    bodies: Query<'w, 's, (), With<rl_bevy::Remains>>,
 }
 
 /// Fills [`NearbyView`] from the player's viewshed, in [`InSight`]'s order.
@@ -146,8 +147,12 @@ pub fn collect_nearby(mut view: ResMut<NearbyView>, around: Around) {
         let count = around.stacks.get(sighting.entity).map_or(1, |s| s.count);
         let mut row = Row::new(sighting.entity, rl_core::noun::listed(name.as_str(), count), *glyph).at(sighting.distance);
         row.health = health.map(|h| (h.current, h.max));
+        // A body keeps the side it fought for, which is what a mind is
+        // told of it, but on the rail it is nobody's: a fallen friend in
+        // the friend's tone, or a slain foe in the foe's, reads as still
+        // standing.
         row.relation = match (mine, faction) {
-            (Some(mine), Some(theirs)) => Some(around.rules.factions.relation(mine.0, theirs.0)),
+            (Some(mine), Some(theirs)) if !around.bodies.contains(sighting.entity) => Some(around.rules.factions.relation(mine.0, theirs.0)),
             _ => None,
         };
         // Hunting outranks searching: something that has seen you is not
@@ -409,6 +414,19 @@ mod tests {
         stage.tick();
         stage.tick();
         assert_eq!(stage.app.world().resource::<NearbyView>().focused, None, "out of sight, so nothing is highlighted");
+    }
+
+    #[test]
+    fn a_body_on_the_rail_is_on_nobodys_side_whoever_it_fought_for() {
+        let mut stage = Stage::new(NearbyViewPlugin);
+        let body = stage.thing("goblin remains", '%', 2, 0);
+        let foe = stage.actor("foe", 'f', 3, 0);
+        let side = *stage.app.world().get::<Faction>(foe).expect("a side");
+        stage.app.world_mut().entity_mut(body).insert((side, rl_bevy::Remains { since: 0, credit: None }));
+        stage.tick();
+        let view = stage.app.world().resource::<NearbyView>();
+        assert_eq!(view.things.iter().find(|r| r.entity == body).map(|r| r.relation), Some(None), "no side: {:?}", view.things);
+        assert_eq!(view.actors[0].relation, Some(Relation::Hostile), "while the foe beside it keeps its own");
     }
 
     #[test]

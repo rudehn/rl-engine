@@ -320,28 +320,62 @@ pub struct RemainsLeft {
 
 /// How a body is named, once it is one.
 ///
-/// A template with `{what}` standing for whatever the actor was called:
+/// Two templates with `{what}` standing for whatever the actor was called:
 /// `"{what} remains"` makes a line droid's wreck a "line droid remains",
-/// and a dungeon passes `"{what} corpse"`. The engine cannot invent the
-/// wording and will not try; this is the one place a game says it, and
-/// every panel and the log read the name that comes out of it.
+/// and a dungeon passes `"{what} corpse"`. The second is for a proper
+/// name, [`noun::is_proper`](rl_core::noun::is_proper), since a wording
+/// that reads for a kind rarely reads for someone: "Brenna corpse" wants
+/// "the corpse of Brenna". Both are the one template unless a game sets
+/// [`RemainsNaming::proper`]. The engine cannot invent the wording and
+/// will not try; this is the one place a game says it, and every panel and
+/// the log read the name that comes out of it.
 ///
 /// A game that wants a name of its own per kind sets `Name` itself,
 /// reacting to [`RemainsLeft`], and then owns setting it again when a save
 /// is continued.
-#[derive(Resource, Debug, Clone)]
-pub struct RemainsNaming(pub String);
+#[derive(Resource, Debug, Clone, PartialEq, Eq)]
+pub struct RemainsNaming {
+    /// The template for anything called by its kind.
+    pub kind: String,
+    /// The template for someone with a name of their own.
+    pub proper: String,
+}
 
 impl Default for RemainsNaming {
     fn default() -> Self {
-        Self("{what} remains".into())
+        Self::new("{what} remains")
+    }
+}
+
+impl From<&str> for RemainsNaming {
+    fn from(template: &str) -> Self {
+        Self::new(template)
+    }
+}
+
+impl From<String> for RemainsNaming {
+    fn from(template: String) -> Self {
+        Self::new(template)
     }
 }
 
 impl RemainsNaming {
+    /// One template for every body, kind or proper name alike.
+    pub fn new(template: impl Into<String>) -> Self {
+        let kind = template.into();
+        Self { proper: kind.clone(), kind }
+    }
+
+    /// Sets the template for the body of someone with a proper name.
+    pub fn proper(mut self, template: impl Into<String>) -> Self {
+        self.proper = template.into();
+        self
+    }
+
     /// What a body called `what` is called.
     pub fn name_for(&self, what: &str) -> String {
-        self.0.replace("{what}", what)
+        let template = if rl_core::noun::is_proper(what) { &self.proper } else { &self.kind };
+        template.replace("{what}", what)
     }
 }
 
@@ -458,13 +492,14 @@ pub struct RemainsPlugin;
 
 impl RemainsPlugin {
     /// Sets how a body is named: a template with `{what}` for whatever the
-    /// actor was called. The default is `"{what} remains"`.
+    /// actor was called, or a [`RemainsNaming`] with one for a proper name
+    /// too. The default is `"{what} remains"`.
     ///
     /// Inserted as [`RemainsNaming`], so a game may also replace it later.
-    pub fn naming(template: impl Into<String>) -> impl Plugin {
-        let template = template.into();
+    pub fn naming(naming: impl Into<RemainsNaming>) -> impl Plugin {
+        let naming = naming.into();
         move |app: &mut App| {
-            app.insert_resource(RemainsNaming(template.clone()));
+            app.insert_resource(naming.clone());
             app.add_plugins(RemainsPlugin);
         }
     }
@@ -715,11 +750,28 @@ mod tests {
 
         // A game says it its own way, and the engine says nothing of its own.
         let (mut app, start, sides) = arena();
-        app.insert_resource(RemainsNaming("the corpse of a {what}".into()));
+        app.insert_resource(RemainsNaming::new("the corpse of a {what}"));
         let rat = victim(&mut app, start.offset(2, 0), sides, true);
         app.world_mut().entity_mut(rat).insert(Name::new("rat"));
         kill(&mut app, rat, sides);
         assert_eq!(app.world().get::<Name>(rat).map(|n| n.as_str().to_string()), Some("the corpse of a rat".into()));
+    }
+
+    /// A proper name takes the game's template for one, and a kind its
+    /// own, so "Brenna" is not left as "Brenna corpse".
+    #[test]
+    fn a_body_with_a_proper_name_is_named_by_the_proper_template() {
+        let naming = RemainsNaming::new("{what} corpse").proper("the corpse of {what}");
+        assert_eq!(naming.name_for("goblin"), "goblin corpse");
+        assert_eq!(naming.name_for("Brenna"), "the corpse of Brenna");
+        assert_eq!(RemainsNaming::new("{what} remains").name_for("Brenna"), "Brenna remains", "one template for both unless a game says");
+
+        let (mut app, start, sides) = arena();
+        app.insert_resource(naming);
+        let named = victim(&mut app, start.offset(2, 0), sides, true);
+        app.world_mut().entity_mut(named).insert(Name::new("Brenna"));
+        kill(&mut app, named, sides);
+        assert_eq!(app.world().get::<Name>(named).map(|n| n.as_str().to_string()), Some("the corpse of Brenna".into()));
     }
 
     /// The player is the game's to bury: a run ends on a death, and a

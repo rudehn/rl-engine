@@ -194,6 +194,12 @@ pub struct MonsterSave {
     /// anything else, and in a save written before anyone waited.
     #[serde(default)]
     pub candidate: Option<CandidateSave>,
+    /// The name of the mercenary whose body this is, put back before the
+    /// engine names it as remains; `None` for anything else, and in a save
+    /// written before a body kept it, whose mercenary lay back down as one
+    /// of its kind.
+    #[serde(default)]
+    pub fallen: Option<String>,
 }
 
 /// A candidate waiting at the tavern's tables, as the save writes it: its
@@ -247,6 +253,7 @@ impl Saveable for Kind {
             candidate: world
                 .get::<Candidate>(entity)
                 .map(|c| CandidateSave { name: world.get::<Name>(entity).map_or_else(String::new, |n| n.as_str().to_string()), fee: c.fee }),
+            fallen: world.get::<crate::mercenaries::Fallen>(entity).map(|f| f.0.clone()),
         }
     }
 
@@ -293,6 +300,9 @@ impl Saveable for Kind {
         }
         if let Some(waiting) = &saved.candidate {
             crate::mercenaries::wait_again(world, monster, &waiting.name, waiting.fee);
+        }
+        if let Some(name) = &saved.fallen {
+            world.entity_mut(monster).insert((Name::new(name.clone()), crate::mercenaries::Fallen(name.clone())));
         }
         monster
     }

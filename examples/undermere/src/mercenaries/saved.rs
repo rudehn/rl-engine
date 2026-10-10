@@ -268,3 +268,28 @@ fn a_mercenary_left_behind_on_another_floor_is_found_there_still_in_the_party_an
         assert_eq!(again.world().get::<OnMap>(brenna).map(|m| m.0), Some(map_of(1)), "seed {seed}: it came along");
     }
 }
+
+/// A hired mercenary cut down lies as the corpse of its name, not as its
+/// kind's, and a continue lays it back down by that name, not as
+/// "mercenary corpse".
+#[test]
+fn a_fallen_mercenarys_body_is_the_corpse_of_its_name_and_still_is_after_a_continue() {
+    let (mut app, me, here) = crate::testing::arena_on(5, 1);
+    let brenna = super::fixtures::hired(&mut app, me, here.offset(2, 0), "Brenna");
+    let name = "Brenna".to_string();
+    let goblin = crate::testing::monster(&mut app, "goblin", here.offset(-2, 0));
+    crate::testing::kill(&mut app, brenna, Some(goblin));
+    let body = format!("the corpse of {name}");
+    assert_eq!(name_of(&app, brenna), body, "named as its own on the floor");
+
+    let mut again = continued(&saved(&mut app));
+    let world = again.world_mut();
+    let bodies: Vec<String> = world
+        .query_filtered::<&Name, With<rl_engine::rl_bevy::Remains>>()
+        .iter(world)
+        .map(|n| n.as_str().to_string())
+        .filter(|n| n.contains("corpse"))
+        .collect();
+    assert!(bodies.contains(&body), "laid back down by its name: {bodies:?}");
+    assert!(!bodies.iter().any(|n| n.contains("mercenary")), "and never by its kind: {bodies:?}");
+}

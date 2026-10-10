@@ -66,8 +66,10 @@ impl Plugin for UndermerePlugin {
             .add_plugins((FactsPlugin, RecordsPlugin))
             // What the dead leave lying where they fell, for `raising` to
             // find within sight and reach: every monster but the king, who
-            // never dies in a way anything could be left to raise.
-            .add_plugins(RemainsPlugin::naming("{what} corpse"))
+            // never dies in a way anything could be left to raise. A kind's
+            // body is a "goblin corpse", and one with a name of its own,
+            // a mercenary or Grubnak, "the corpse of Brenna".
+            .add_plugins(RemainsPlugin::naming(RemainsNaming::new("{what} corpse").proper("the corpse of {what}")))
             // The engine's multi-turn work, for the waystone's kneeling:
             // broken off by harm, and answered by `waystone`.
             .add_plugins(WorkPlugin)
