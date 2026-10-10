@@ -222,7 +222,9 @@ mod lift_out {
         crate::testing::settle(&mut app);
         let before = crate::testing::clock(&app);
         go_through(&mut app);
-        assert!(said(&app, "The lift will not move until the core is charged."));
+        let line = "The lift will not move until the core is charged.";
+        let times: u32 = app.world().resource::<MessageLog>().iter().filter(|e| e.text == line).map(|e| e.count).sum();
+        assert_eq!(times, 1, "said once for one press");
         assert_eq!(crate::testing::clock(&app), before, "no turn spent");
         assert_eq!(*app.world().resource::<State<EngineState>>().get(), EngineState::Playing, "and the run goes on");
     }
@@ -232,8 +234,16 @@ mod lift_out {
         let mut app = crate::testing::headless(RunSeed(4));
         crate::testing::settle(&mut app);
         charge_everything(&mut app);
+        /// How often the lift out was reported, from now on.
+        #[derive(Resource, Default)]
+        struct Rode(usize);
+        let out = app.world().resource::<Facts>().lift_out;
+        app.init_resource::<Rode>().add_systems(Last, move |mut rode: ResMut<Rode>, mut read: MessageReader<Happened>| {
+            rode.0 += read.read().filter(|h| h.0.kind == out).count();
+        });
         go_through(&mut app);
         crate::testing::settle(&mut app);
+        assert_eq!(app.world().resource::<Rode>().0, 1, "the ride out reported once for one press");
         assert_eq!(*app.world().resource::<State<EngineState>>().get(), EngineState::Over, "the run is over");
         assert!(app.world().get_resource::<Ending>().is_some_and(|e| matches!(e.outcome, Outcome::Won)), "and won");
     }

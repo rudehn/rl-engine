@@ -308,22 +308,22 @@ pub fn resolve_warps(
     let Travel { mut travellers, transitions } = travel;
     let mut trips: Vec<Trip> = Vec::new();
     for intent in intents.read() {
-        let found = travellers.get(intent.actor).ok().and_then(|(_, (pos, _, on, ..))| {
+        let found = travellers.get(intent.actor).ok().and_then(|(_, (pos, _, on, _, player, wits, ..))| {
             let (at, here) = (pos.0, on.map(|m| m.0).unwrap_or(MapId::SURFACE));
-            transitions.iter().find(|(p, m, _)| p.0 == at && m.map(|m| m.0).unwrap_or(MapId::SURFACE) == here).map(|(_, _, t)| (at, here, t.to))
+            let travels = player || wits.is_some_and(|w| w.has(Wits::TRAVELS));
+            transitions.iter().find(|(p, m, _)| p.0 == at && m.map(|m| m.0).unwrap_or(MapId::SURFACE) == here).map(|(_, _, t)| (at, here, t.to, travels))
         });
         // Nothing to go through is refused before the turn is claimed: a
         // game may bind its way to a key that means something else off
         // one, and the press then still does that.
-        let Some((at, here, to)) = found else {
+        let Some((at, here, to, travels)) = found else {
             resolution.refuse(intent.actor, BASE_ACTION_COST);
             continue;
         };
         if !resolution.claim(intent.actor) {
             continue;
         }
-        let Ok((_, (_, _, _, _, player, wits, ..))) = travellers.get(intent.actor) else { continue };
-        if !player && !wits.is_some_and(|w| w.has(Wits::TRAVELS)) {
+        if !travels {
             resolution.failed(intent.actor, BASE_ACTION_COST);
             continue;
         }
@@ -504,8 +504,8 @@ mod tests {
     use crate::items::{DropItem, Inventory, Item, ItemEvent, PickUp};
     use crate::plugin::headless_app;
     use crate::state::EngineState;
-    use crate::turn::Turns;
     use crate::turn::Wait;
+    use crate::turn::{ActionRefused, Turns};
     use rl_core::{Rect, RunSeed};
     use rl_grid::TileRegistry;
     use rl_mapgen::dungeon::{FarthestExit, RandomStart, Rooms};
@@ -917,9 +917,16 @@ mod tests {
     #[test]
     fn entering_off_a_transition_is_refused_for_free_and_goes_nowhere() {
         let mut r = rig();
+        /// Trips taken, and refusals given, from now on.
         #[derive(Resource, Default)]
-        struct Went(usize);
-        r.app.init_resource::<Went>().add_systems(PostUpdate, |mut went: ResMut<Went>, mut read: MessageReader<Travelled>| went.0 += read.read().count());
+        struct Went(usize, usize);
+        r.app.init_resource::<Went>().add_systems(
+            PostUpdate,
+            |mut went: ResMut<Went>, mut trips: MessageReader<Travelled>, mut no: MessageReader<ActionRefused>| {
+                went.0 += trips.read().count();
+                went.1 += no.read().count();
+            },
+        );
         let before = r.app.world().resource::<Turns>().now();
         intend(&mut r, GoThrough);
         assert_eq!(r.app.world().resource::<Turns>().now(), before);
@@ -927,6 +934,7 @@ mod tests {
         assert_eq!(r.app.world().resource::<WorldMap>().current(), MapId::SURFACE);
         assert_eq!(r.app.world().get::<Position>(r.player).map(|p| p.0), Some(r.start));
         assert_eq!(r.app.world().resource::<Went>().0, 0, "and nobody travelled");
+        assert_eq!(r.app.world().resource::<Went>().1, 1, "refused once, not again by the sweep for an ask nothing claimed");
     }
 
     /// A game may read one key as two asks, its way through and what is

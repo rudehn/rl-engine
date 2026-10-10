@@ -13,7 +13,7 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 - A `GoThrough` asked where no way through stands is refused before the turn is claimed, so it costs nothing and the same press can still take up what is offered here: a game binding its way and the interact key to one key, as Enter, now talks to the one person in reach off a way, where the refusal used to spend the press.
   The player's refusal is still an `ActionRefused`, so a game answering one, as Foundry's lift out does, is unchanged; anyone else is still charged for asking, as before.
-  The rule is the new `Resolution::refuse(actor, cost)`, for a game's own resolver whose intent can find nothing to act on.
+  The rule is the new `Resolution::refuse(actor, cost)`, for a game's own resolver whose intent can find nothing to act on; it refuses the player once a pass, and the sweep for an unresolved action leaves a refused player alone, so the refusal is answered once, with no warning.
 
 - One press is one action: a game that binds its way through to the interact key, as Enter is the obvious key for both, no longer has the press that takes the stairs also reach for what is beside them, opening the offers screen over the far side or asking to take up the one thing on offer as well.
   `InteractKey`'s `interact_key` now runs after `EngineSet::Input` and before `EngineSet::Turns`, where it sees the player's `Intent<GoThrough>` the game's input wrote for the same press, and stands aside when the player stands on a `Transition`; off any way, where the game's ask is refused, the key reaches as it did.

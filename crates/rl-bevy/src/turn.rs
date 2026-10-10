@@ -270,6 +270,10 @@ impl Action for Wait {}
 pub struct Acting {
     decided: Vec<Entity>,
     acted: Vec<Entity>,
+    /// Players refused by [`Resolution::refuse`] this pass: answered, so
+    /// the sweep does not refuse them again, but not claimed, so another
+    /// intent from the same press may still spend the turn.
+    refused: Vec<Entity>,
 }
 
 impl Acting {
@@ -333,15 +337,19 @@ impl Resolution<'_, '_> {
     /// Refuses an intent that found nothing to act on, without claiming
     /// the player's turn: a game may read one key as two asks, a way
     /// through and what is here, and the press should still do the one
-    /// that found something. Anyone else is claimed and charged as by
-    /// [`failed`](Self::failed), so a monster's refusal is never a second
-    /// action beside another of the same pass.
+    /// that found something. The player is noted as refused for the pass,
+    /// once, so [`sweep_unclaimed`] does not refuse the same ask again.
+    /// Anyone else is claimed and charged as by [`failed`](Self::failed),
+    /// so a monster's refusal is never a second action beside another of
+    /// the same pass.
     pub fn refuse(&mut self, actor: Entity, cost: u32) {
         if !self.holding.contains(actor) || self.acting.has_acted(actor) {
             return;
         }
         if self.players.contains(actor) {
-            self.refusals.write(ActionRefused { actor });
+            if Acting::mark(&mut self.acting.refused, actor) {
+                self.refusals.write(ActionRefused { actor });
+            }
         } else if self.acting.claim_action(actor) {
             self.finished.write(ActionDone { actor, cost });
         }
@@ -350,6 +358,12 @@ impl Resolution<'_, '_> {
     /// Whether something already spent `actor`'s turn this pass.
     pub fn spent(&self, actor: Entity) -> bool {
         self.acting.has_acted(actor)
+    }
+
+    /// Whether `actor` was answered this pass, its turn spent or refused
+    /// by [`refuse`](Self::refuse), so a sweep owes it nothing.
+    fn answered(&self, actor: Entity) -> bool {
+        self.acting.has_acted(actor) || self.acting.refused.contains(&actor)
     }
 
     /// The action happened and owes `cost` hundredths of a step, before
@@ -374,6 +388,7 @@ impl Resolution<'_, '_> {
 pub fn start_pass(mut acting: ResMut<Acting>) {
     acting.decided.clear();
     acting.acted.clear();
+    acting.refused.clear();
 }
 
 /// An actor finished an action and owes `cost` of game time.
@@ -631,7 +646,7 @@ pub fn resolve_waits(mut intents: MessageReader<Intent<Wait>>, mut resolution: R
 /// game rather than a mistake.
 pub fn sweep_unclaimed<A: Action>(mut intents: MessageReader<Intent<A>>, mut resolution: Resolution) {
     for intent in intents.read() {
-        if resolution.spent(intent.actor) {
+        if resolution.answered(intent.actor) {
             continue;
         }
         warn!("nothing resolved {} for actor {:?}", std::any::type_name::<A>(), intent.actor);

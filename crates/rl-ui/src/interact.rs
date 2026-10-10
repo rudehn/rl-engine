@@ -15,7 +15,7 @@
 //! One press is one action. A game may bind the same key to its way
 //! through, as Enter is the obvious key for both; the press that takes the
 //! stairs then is not also a reach for what is beside them, so the key
-//! stands aside, as [`interact_key`] says.
+//! stands aside, as [`interact_key`] says, reading [`WayAsked`].
 
 use bevy::prelude::*;
 use rl_bevy::EngineSet;
@@ -108,7 +108,8 @@ impl WayAsked<'_, '_> {
 /// the offers beside the way being left: two of them opened a screen that
 /// stood over the new floor, and one was a second ask from one key.
 /// So this runs after the input phase, where whatever the game asked for
-/// has been written, and stands aside for the way.
+/// has been written, and stands aside for the way. For a way only: a game
+/// binding another action of its own to this key still writes two asks.
 pub fn interact_key(
     keys: ControlInput,
     binds: Res<InteractKeys>,
