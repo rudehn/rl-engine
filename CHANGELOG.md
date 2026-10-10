@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- A prefab's legend may mark entries: `Entry` names a cell of the piece's outer wall where it may be joined when it is grown as an area of its own, and paints nothing, leaving the map as it was until it is joined; the new `PrefabDef::entry(glyph)` says whether a glyph is one.
+  `load` refuses an entry with no side on the outside of the piece, or with no inside of the piece straight across from the outside, by the piece, the glyph and the cell; an entry is not a slot, so a legend of tiles and entries needs no `ground`.
+
 - A recipe may lay barriers, rock that growth goes round: the new `Barrier` in `rl-mapgen` is a segment given in shares of the map, laid at `chance_pct` and shifted as a whole by up to `jitter_pct` of each side, and `Accrete`'s new `barriers` field keeps every piece's body and the ring round it off its cells, so what lies across one is reached only round its ends; each one laid is published as a `LaidBarrier`.
   A layout file names them on a recipe as `barriers: [(from: (x_pct, y_pct), to: (x_pct, y_pct), chance_pct:, jitter_pct:)]`, optional and empty when left out, so a layout written before loads unchanged; `load` refuses a share past a hundred, and a barrier some shift could lay from one edge of the recipe's map to the opposite, by recipe and barrier, and `layout::passes` builds them.
   To change: a game that builds an `Accrete` itself adds `barriers: Vec::new()`, and one that builds a `RecipeDef` adds `barriers`.

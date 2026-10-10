@@ -13,6 +13,14 @@
 //! where nothing can stand, and the place would only find out when it
 //! tried to draw it.
 //!
+//! An [`entry`](PrefabDef::entry) is neither: a cell of the piece's outer
+//! wall where it may be joined when it is grown as an area of its own, and
+//! the map as it was until it is. One that is not on the outer wall, or
+//! does not have the inside of the piece straight across from the outside,
+//! is refused, since a way in that opens onto the piece's own wall or onto
+//! nothing is no way in. Whether a piece has any is asked where it is
+//! grown, since a piece only ever stamped needs none.
+//!
 //! A slot is one of four things: a prop, an item row (the same
 //! [`ContentRoll`] a container's contents are, so the two can never
 //! disagree about what one means), a monster, fixed or drawn for a role at
@@ -56,6 +64,12 @@
 //! //                                           the place's band plus band
 //! //     Mark                                  a position the game finds by
 //! //                                           this glyph and fills itself
+//! //     Entry                                 a cell of the piece's outer wall
+//! //                                           where a piece grown as its own
+//! //                                           area may be joined; left as the
+//! //                                           map had it until it is, and on
+//! //                                           the outer wall, with the inside
+//! //                                           of the piece straight across
 //! //   A monster at a slot holds that cell as its post.
 //! (
 //!     name: "guarded locker",
@@ -149,6 +163,7 @@ pub struct PrefabDef<M> {
     rows: Vec<String>,
     tiles: BTreeMap<char, TileId>,
     slots: BTreeMap<char, Slot<M>>,
+    entries: BTreeSet<char>,
 }
 
 impl<M> std::fmt::Debug for PrefabDef<M> {
@@ -159,6 +174,7 @@ impl<M> std::fmt::Debug for PrefabDef<M> {
             .field("rows", &self.rows)
             .field("tiles", &self.tiles)
             .field("slots", &self.slots)
+            .field("entries", &self.entries)
             .finish()
     }
 }
@@ -188,6 +204,12 @@ impl<M> PrefabDef<M> {
     /// Every slot, by glyph.
     pub fn slots(&self) -> impl Iterator<Item = (char, &Slot<M>)> {
         self.slots.iter().map(|(&c, s)| (c, s))
+    }
+
+    /// Whether `glyph` marks an entry: a cell of the outer wall where the
+    /// piece may be joined when it is grown as an area of its own.
+    pub fn entry(&self, glyph: char) -> bool {
+        self.entries.contains(&glyph)
     }
 }
 
@@ -227,6 +249,7 @@ enum LegendRon {
         band: i32,
     },
     Mark,
+    Entry,
 }
 
 /// Loads one prefab from RON, resolving every name in its legend through
@@ -239,7 +262,8 @@ enum LegendRon {
 /// Reports every problem in the file at once rather than the first: a
 /// mistyped tile, prop, tag, monster or role name, a row of the wrong
 /// width, a glyph in a row that names nothing, a legend entry that names
-/// nothing in any row, and a ground missing or unfit to stand on.
+/// nothing in any row, a ground missing or unfit to stand on, and an entry
+/// off the outer wall or with no inside straight across from it.
 pub fn load<M: 'static>(text: &str, tiles: &TileRegistry, names: &Names<'_>) -> Result<PrefabDef<M>, ContentError> {
     let options = ron::options::Options::default().with_default_extension(ron::extensions::Extensions::IMPLICIT_SOME);
     let a: PrefabRon = options.from_str(text).map_err(|e| ContentError::Parse(e.to_string()))?;
@@ -276,6 +300,7 @@ pub fn load<M: 'static>(text: &str, tiles: &TileRegistry, names: &Names<'_>) -> 
 
     let mut tile_map = BTreeMap::new();
     let mut slots = BTreeMap::new();
+    let mut entries = BTreeSet::new();
     for (&c, entry) in &a.legend {
         match entry {
             LegendRon::Tile(name) => match tiles.id(name) {
@@ -337,7 +362,14 @@ pub fn load<M: 'static>(text: &str, tiles: &TileRegistry, names: &Names<'_>) -> 
             LegendRon::Mark => {
                 slots.insert(c, Slot::Mark);
             }
+            LegendRon::Entry => {
+                entries.insert(c);
+            }
         }
+    }
+    // Where the outside is can only be worked out on rows of one width.
+    if width > 0 && a.rows.iter().all(|r| r.chars().count() == width) {
+        entries_on_the_wall(&a.name, &a.rows, &entries, &mut errors);
     }
 
     let ground = match &a.ground {
@@ -355,7 +387,7 @@ pub fn load<M: 'static>(text: &str, tiles: &TileRegistry, names: &Names<'_>) -> 
     // a typo still needs a ground to stand it on, and saying so beside
     // the typo is how both get fixed in one pass instead of one at a
     // time.
-    let has_slots = a.legend.values().any(|entry| !matches!(entry, LegendRon::Tile(_)));
+    let has_slots = a.legend.values().any(|entry| !matches!(entry, LegendRon::Tile(_) | LegendRon::Entry));
     if has_slots && a.ground.is_none() {
         errors.push(format!("{}: has slots and no `ground` to stand them on", a.name));
     }
@@ -368,7 +400,46 @@ pub fn load<M: 'static>(text: &str, tiles: &TileRegistry, names: &Names<'_>) -> 
     if !errors.is_empty() {
         return Err(ContentError::Invalid(errors));
     }
-    Ok(PrefabDef { name: a.name, ground, rows: a.rows, tiles: tile_map, slots })
+    Ok(PrefabDef { name: a.name, ground, rows: a.rows, tiles: tile_map, slots, entries })
+}
+
+/// Reports each cell of an entry glyph that is not a way in: one with no
+/// side on the outside of the piece, or none with the inside straight
+/// across from it.
+///
+/// The outside is every space reachable from beyond the rows through
+/// spaces, and the inside every other cell not touching it, corners
+/// included: the cells a piece grown on its own encloses within its wall.
+/// `rl-mapgen`'s grown piece works out its body by the same rule.
+fn entries_on_the_wall(name: &str, rows: &[String], entries: &BTreeSet<char>, errors: &mut Vec<String>) {
+    let grid: Vec<Vec<char>> = rows.iter().map(|r| r.chars().collect()).collect();
+    let (h, w) = (grid.len() as i32, grid[0].len() as i32);
+    let at = |x: i32, y: i32| (0..w).contains(&x) && (0..h).contains(&y);
+    let mut outside = vec![vec![false; w as usize]; h as usize];
+    let mut stack: Vec<(i32, i32)> = (0..w).flat_map(|x| [(x, 0), (x, h - 1)]).chain((0..h).flat_map(|y| [(0, y), (w - 1, y)])).collect();
+    while let Some((x, y)) = stack.pop() {
+        if !at(x, y) || outside[y as usize][x as usize] || grid[y as usize][x as usize] != ' ' {
+            continue;
+        }
+        outside[y as usize][x as usize] = true;
+        stack.extend([(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]);
+    }
+    let out = |x: i32, y: i32| !at(x, y) || outside[y as usize][x as usize];
+    let inside = |x: i32, y: i32| at(x, y) && !out(x, y) && (-1..=1).all(|dy| (-1..=1).all(|dx| !out(x + dx, y + dy)));
+    for (y, row) in grid.iter().enumerate() {
+        for (x, c) in row.iter().enumerate() {
+            if !entries.contains(c) {
+                continue;
+            }
+            let (x, y) = (x as i32, y as i32);
+            let sides = [(1, 0), (-1, 0), (0, 1), (0, -1)];
+            if !sides.iter().any(|(dx, dy)| out(x + dx, y + dy)) {
+                errors.push(format!("{name}: '{c}' at ({x}, {y}) is not on the piece's outer wall, so nothing outside could be joined to it"));
+            } else if !sides.iter().any(|(dx, dy)| out(x + dx, y + dy) && inside(x - dx, y - dy)) {
+                errors.push(format!("{name}: '{c}' at ({x}, {y}) has no inside of the piece straight across from the outside, so it opens onto nothing"));
+            }
+        }
+    }
 }
 
 /// The registries and tables a coverage report draws through: the same
@@ -647,6 +718,32 @@ mod tests {
         ] {
             assert!(err.contains(said), "{said:?} missing from: {err}");
         }
+    }
+
+    /// A piece with a notch cut in its corner: the wall along the notch is
+    /// outer wall as much as the wall along the edge.
+    fn entered(rows: &[&str]) -> Result<PrefabDef<Beast>, ContentError> {
+        let rows = rows.iter().map(|r| format!("{r:?}")).collect::<Vec<_>>().join(", ");
+        read(&world(), &format!("(name: \"hall\", rows: [{rows}], legend: {{ '#': Tile(\"wall\"), '.': Tile(\"floor\"), 'E': Entry }})"))
+    }
+
+    #[test]
+    fn an_entry_on_the_outer_wall_with_the_inside_across_loads_and_needs_no_ground() {
+        let def = entered(&["  #####", "  #...#", "###...E", "E.....#", "#######"]).unwrap();
+        assert!(def.entry('E') && !def.entry('#'));
+        assert!(def.slot('E').is_none() && def.tile('E').is_none(), "an entry paints nothing and fills nothing");
+        assert!(entered(&["##E##", "#...#", "#####"]).is_ok(), "on the top edge");
+    }
+
+    #[test]
+    fn an_entry_off_the_outer_wall_or_with_no_inside_across_is_refused() {
+        let inner = entered(&["#####", "#.E.#", "#...#", "#####"]).unwrap_err().to_string();
+        assert!(inner.contains("'E' at (2, 1) is not on the piece's outer wall"), "{inner}");
+        let corner = entered(&["E####", "#...#", "#####"]).unwrap_err().to_string();
+        assert!(corner.contains("'E' at (0, 0) has no inside"), "{corner}");
+        // Beside the notch, with wall and not floor straight across.
+        let thick = entered(&["  E##", "  #.#", "###.#", "#...#", "#####"]).unwrap_err().to_string();
+        assert!(thick.contains("'E' at (2, 0) has no inside"), "{thick}");
     }
 
     #[test]
