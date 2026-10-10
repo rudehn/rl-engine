@@ -234,25 +234,25 @@
     (
         name: "Armory",
         legend: { 'w': Item(tag: "weapon", count: 1, band: 1), 'a': Item(tag: "armor", count: 1, band: 1) },
-        place: [(glyph: 'w', at: Walls, density_pct: 15), (glyph: 'a', at: Walls, density_pct: 15)],
+        place: [(glyph: 'w', at: Walls, density_pct: 5), (glyph: 'a', at: Walls, density_pct: 5)],
     ),
     (
         name: "Apothecary's Shelves",
         legend: { 's': Prop("shelf"), 'p': Item(tag: "potion", count: 1) },
-        place: [(glyph: 's', at: Walls, density_pct: 50), (glyph: 'p', at: Walls, density_pct: 20)],
+        place: [(glyph: 's', at: Walls, density_pct: 50), (glyph: 'p', at: Walls, density_pct: 6)],
     ),
     (
         name: "Scriptorium",
         legend: { 'l': Prop("lectern"), 's': Item(tag: "scroll", count: 1) },
-        place: [(glyph: 'l', at: Rows(aisle: 1), density_pct: 50), (glyph: 's', at: Rows(aisle: 1), density_pct: 20)],
+        place: [(glyph: 'l', at: Rows(aisle: 1), density_pct: 50), (glyph: 's', at: Rows(aisle: 1), density_pct: 6)],
     ),
     (
         name: "Quartermaster's Store",
         legend: { 'a': Item(tag: "arrow", count: (2, 4)), 't': Item(tag: "thrown", count: (2, 4)), 'b': Item(item: "bow", count: 1) },
         place: [
-            (glyph: 'a', at: Walls, density_pct: 20),
-            (glyph: 't', at: Walls, density_pct: 20),
-            (glyph: 'b', at: Scatter, density_pct: 10),
+            (glyph: 'a', at: Walls, density_pct: 6),
+            (glyph: 't', at: Walls, density_pct: 6),
+            (glyph: 'b', at: Scatter, density_pct: 4),
         ],
     ),
 ]

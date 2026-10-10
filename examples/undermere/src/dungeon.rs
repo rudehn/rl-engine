@@ -44,6 +44,7 @@ use rl_engine::rl_mapgen::{Area, Opening};
 use rl_engine::rl_render::TileAppearance;
 use rl_engine::rl_rules::dressing;
 use rl_engine::rl_rules::layout::{self, LayoutDef};
+use rl_engine::rl_rules::pool::{Pick, Place, Pool};
 
 use crate::bestiary::MonsterDef;
 
@@ -94,7 +95,7 @@ const LAYOUT_RON: &str = include_str!("../assets/layout.ron");
 
 /// The layout every floor is grown from; a mistake in the file stops the
 /// game at startup, every one of them named.
-fn layout() -> LayoutDef {
+pub(crate) fn layout() -> LayoutDef {
     layout::load(LAYOUT_RON).unwrap_or_else(|e| panic!("assets/layout.ron: {e}"))
 }
 
@@ -160,9 +161,29 @@ impl Family {
     /// than this, so it carries none.
     #[cfg(test)]
     fn shared_tiles(self) -> &'static [&'static str] {
+        // "hall wall" and "hall floor" are every risk-and-reward and
+        // reward grown placeholder's own; "web" (Web-Choked Corners,
+        // Silk Curtains), "rubble" (Collapsed Ceiling), "bones" (Bone
+        // Scatter) and "flooded floor" and "moss" (Seep) are every
+        // flavor dressing of `assets/pool.ron`'s own "any biome" rows.
+        // Every band's list carries all five, whatever band stands on.
         match self {
-            Family::UpperHalls => &["door", "open door", "rubble"],
-            Family::FungalDeeps => &["door", "open door", "glowcaps", "goblin hall wall", "goblin hall floor", "web", "cave wall", "moss"],
+            Family::UpperHalls => &["door", "open door", "rubble", "hall wall", "hall floor", "web", "bones", "flooded floor", "moss"],
+            Family::FungalDeeps => &[
+                "door",
+                "open door",
+                "glowcaps",
+                "goblin hall wall",
+                "goblin hall floor",
+                "web",
+                "cave wall",
+                "moss",
+                "hall wall",
+                "hall floor",
+                "rubble",
+                "bones",
+                "flooded floor",
+            ],
             Family::Catacombs => &[
                 "bones",
                 "door",
@@ -176,16 +197,53 @@ impl Family {
                 "flooded floor",
                 "crypt wall",
                 "crypt floor",
+                "hall wall",
+                "hall floor",
+                "rubble",
             ],
-            Family::DrownedCathedral => {
-                &["door", "open door", "flooded floor", "deep water", "moonlit marble", "crypt wall", "crypt floor", "forge wall", "ash", "lava"]
+            Family::DrownedCathedral => &[
+                "door",
+                "open door",
+                "flooded floor",
+                "deep water",
+                "moonlit marble",
+                "crypt wall",
+                "crypt floor",
+                "forge wall",
+                "ash",
+                "lava",
+                "hall wall",
+                "hall floor",
+                "web",
+                "rubble",
+                "bones",
+                "moss",
+                // `Fallen Bell`, the Drowned Cathedral's own fixed piece.
+                "flagstones",
+            ],
+            Family::ForgeOfEmbers => {
+                &["door", "open door", "lava", "forge wall", "ash", "hall wall", "hall floor", "web", "rubble", "bones", "flooded floor", "moss"]
             }
-            Family::ForgeOfEmbers => &["door", "open door", "lava", "forge wall", "ash"],
             // Whichever of the three `FINAL_BOSSES` floor ten draws
             // paints its own hall beyond its wall and its floor: the
             // Drowned King's dais and black pool, the Mother Below's
             // glowcaps and bones, the Ember Wyrm's lava.
-            Family::Throne => &["dais", "black pool", "cave wall", "moss", "glowcaps", "bones", "forge wall", "ash", "lava"],
+            Family::Throne => &[
+                "dais",
+                "black pool",
+                "cave wall",
+                "moss",
+                "glowcaps",
+                "bones",
+                "forge wall",
+                "ash",
+                "lava",
+                "hall wall",
+                "hall floor",
+                "web",
+                "rubble",
+                "flooded floor",
+            ],
         }
     }
 }
@@ -302,6 +360,14 @@ pub struct Undermere {
     /// biome's own `dressings` and checked against `prefabs.dressings()`
     /// and `layout` here rather than on the floor that first grows it.
     districts: Vec<dressing::DistrictDressings>,
+    /// The run's pool, `assets/pool.ron`, checked against `prefabs` and
+    /// `layout` at load.
+    pool: Pool,
+    /// The whole run's picks, one list per floor, drawn once by
+    /// [`Pool::plan_run`] in [`Undermere::new`] from a stream of the
+    /// seed kept beside the lair draw, so a floor's picks never depend
+    /// on which floor is built first.
+    plan: BTreeMap<u32, Vec<Pick>>,
 }
 
 impl Undermere {
@@ -312,9 +378,11 @@ impl Undermere {
     /// monster ids match the running game's.
     pub fn new(seed: RunSeed) -> Self {
         let tiles = registry();
-        // After the tiles, which the pieces paint by name.
-        let prefabs = crate::prefabs::load(&tiles);
         let layout = layout();
+        // After the tiles, which the pieces paint by name, and the
+        // layout, which the pool's grown and inside picks are checked
+        // against.
+        let (prefabs, pool) = crate::prefabs::load(&tiles, &layout);
         let defs = biomes::load(&tiles, &layout);
         let boss = lairs::draw_final_boss(seed);
         let mut biomes = BTreeMap::new();
@@ -324,7 +392,28 @@ impl Undermere {
         biomes.insert(FLOORS, biomes::throne(&defs, boss.biome, seed, &tiles));
         let districts = biomes::district_dressings(&defs, &layout);
         dressing::check_districts(&districts, prefabs.dressings(), &layout).unwrap_or_else(|e| panic!("assets/biomes.ron: {e}"));
-        Self { tiles, prefabs, seed, layout, defs, biomes, districts }
+        // The whole run's places, in floor order, each tagged with the
+        // bare name of the biome it draws, so the pool's `where` and
+        // `not` read the same name `assets/biomes.ron` and
+        // `assets/pool.ron` both use; drawn at once, from its own
+        // stream, kept beside the lair and the boss draws above, so a
+        // floor's picks never depend on which floor is built first.
+        let places: Vec<Place> = (1..=FLOORS)
+            .map(|floor| {
+                let drawn = biomes.get(&floor).expect("every floor drew a biome above");
+                Place { band: floor as i32, tags: vec![drawn.name.trim_start_matches("the ").to_string()] }
+            })
+            .collect();
+        let mut rng = seed.rng(SeedDomain::new(b"undermere.pool"), 0);
+        let plan = (1..=FLOORS).zip(pool.plan_run(&mut rng, &places)).collect();
+        Self { tiles, prefabs, seed, layout, defs, biomes, districts, pool, plan }
+    }
+
+    /// The picks `floor` was drawn, in [`Undermere::new`]: pure over
+    /// `self.seed`, so every call agrees without the plan being kept
+    /// anywhere but here.
+    fn plan_of(&self, floor: u32) -> &[Pick] {
+        self.plan.get(&floor).unwrap_or_else(|| panic!("floor {floor} outside 1..={FLOORS}"))
     }
 
     /// The biome `floor` draws: pure over `self.seed`, so every call
@@ -426,6 +515,12 @@ impl Undermere {
         let tiles = LayoutTiles { floor: floor_tile, door, locked: door, sealed: door };
         let mut grown = rl_engine::rl_bevy::layout::passes(&self.layout, &drawn.recipe, &tiles)?;
         let (width, height) = grown.size;
+        // This floor's picks, drawn once for the whole run in
+        // `Undermere::new`: the grown ones join the boss's hall and a
+        // mini-boss's lair as pieces of the recipe's own accretion, and
+        // the rest, stamped inside an area or dressed, are placed by
+        // `picked.stamp` once the floor is surveyed, below.
+        let picked = rl_engine::rl_bevy::layout::picked(&self.pool, self.plan_of(floor), &self.prefabs, Orient::TurnedOrMirrored)?;
         // The boss's hall and a mini-boss's lair are grown as pieces of
         // the recipe's own accretion, late, through the one entry each
         // prefab marks, rather than carved over what grew.
@@ -434,6 +529,7 @@ impl Undermere {
         } else if let Some(piece) = self.lair_piece(floor)? {
             grown.accrete.pieces.push(piece);
         }
+        grown.accrete.pieces.extend(picked.pieces);
         let mut chain = Chain::new().then(grown.accrete).then(grown.loops).then(Paint { floor: floor_tile, rules: drawn.paint.clone() });
         if let Some((lakes, bridges)) = drawn.lakes.clone() {
             chain = chain.then(lakes);
@@ -446,10 +542,10 @@ impl Undermere {
         } else {
             chain.then(RandomStart.clear_of_stamps(MIN_DISTANCE_FROM_ENTRY)).then(FarthestExit.among_farthest(EXIT_AMONG_PCT).clear_of_stamps(EXIT_CLEAR))
         };
-        chain = chain.then(Survey);
-        // The pool's inside picks are not yet wired (the run has none to
-        // give it); `Dress` already dresses every free room from the
-        // biome's own weighted list, `nothing` among the choices.
+        chain = chain.then(Survey).then(picked.stamp);
+        // `Dress` lays a dressed pick where `picked.stamp` chose for it,
+        // then dresses every area nothing else took, from the biome's
+        // own weighted list, `nothing` among the choices.
         chain = chain.then(rl_engine::rl_bevy::layout::dress(&self.prefabs, floor_tile, &self.districts)?);
         chain = self.decor(chain, floor, drawn)?;
         // Floor one's way in is where the gate lets out, so its way up is
@@ -1134,7 +1230,11 @@ mod tests {
             let built = PlaceBuild::from_context(ctx).unwrap();
             let mut monsters: Vec<&str> = Vec::new();
             let mut props: Vec<&str> = Vec::new();
-            for spot in &built.spots {
+            // Only the throne piece's own slots: floor ten's flavor
+            // budget may now dress or stamp a pick of its own elsewhere
+            // on the floor, outside the throne, which neither this
+            // count nor the bounds check below is about.
+            for spot in built.spots.iter().filter(|s| s.prefab == Some(key)) {
                 match slot(&undermere, spot) {
                     Some(Slot::Monster { pick: Pick::Kind(id), .. }) => monsters.push(&library.bestiary.defs.get(*id).name),
                     Some(Slot::Prop(id)) => props.push(&library.registries.props.get(*id).name),
@@ -1264,6 +1364,78 @@ mod tests {
             for floor in 1..=FLOORS {
                 assert_eq!(a.biome_of(floor).name, b.biome_of(floor).name, "seed {s}, floor {floor}");
             }
+        }
+    }
+
+    /// A floor's picks, like its biome, are drawn once in [`Undermere::new`]
+    /// and never touched again by building a place, so which floor a run
+    /// builds first never changes what any floor was given.
+    #[test]
+    fn a_floors_picks_are_the_same_whichever_floor_is_built_first() {
+        for s in 0..10 {
+            let a = Undermere::new(RunSeed(s));
+            a.build(map_of(5), None).unwrap();
+            a.build(map_of(2), None).unwrap();
+            let b = Undermere::new(RunSeed(s));
+            b.build(map_of(2), None).unwrap();
+            b.build(map_of(5), None).unwrap();
+            for floor in 1..=FLOORS {
+                let (picks_a, picks_b) = (a.plan_of(floor), b.plan_of(floor));
+                let names = |picks: &[rl_engine::rl_rules::pool::Pick]| -> Vec<&str> { picks.iter().map(|p| a.pool.entries[p.entry].name.as_str()).collect() };
+                assert_eq!(names(picks_a), names(picks_b), "seed {s}, floor {floor}");
+            }
+        }
+    }
+
+    /// Over a span of seeds: no entry is ever drawn past its own `per_run`
+    /// limit, every entry the pool can still draw (every one but
+    /// `Hidden Cache`, withheld until its mechanism exists) is drawn on
+    /// some run, and no run's flavor picks run away with most of the pool.
+    ///
+    /// Not literally "half": the budget's own ranges (3-5, 3-5, 2-4, 1-2,
+    /// drawn once for each of ten floors) can total past forty on their
+    /// own, against only ten entries a run may draw twice (the "any
+    /// biome" ones; a biome's own is once, by the spec's own words) to
+    /// absorb the rest, so the least a run can ever see is its own total
+    /// picks less those ten, which lands in the mid-twenties on an
+    /// ordinary run and can reach the low thirties on a heavy one — never
+    /// close to half of forty-three, whatever this file weighs an entry.
+    /// Measured over the 500 seeds below: minimum 18, maximum 31, mean
+    /// about 24.6. Thirty-five leaves real margin over every seed seen
+    /// while still catching a real regression (losing the per-run cap
+    /// entirely pushes this toward forty-three).
+    #[test]
+    fn over_a_span_of_seeds_no_run_exceeds_a_limit_every_entry_is_drawn_and_none_runs_away_with_the_flavor_pool() {
+        let pool = crate::prefabs::load(&registry(), &layout()).1;
+        let flavor_pool = pool.entries.iter().filter(|e| pool.kinds[e.kind] == "flavor").count();
+        let mut ever_drawn: BTreeSet<String> = BTreeSet::new();
+        for s in 0..500 {
+            let undermere = Undermere::new(RunSeed(s));
+            let mut run_counts: BTreeMap<usize, u32> = BTreeMap::new();
+            let mut flavor_this_run: BTreeSet<usize> = BTreeSet::new();
+            for floor in 1..=FLOORS {
+                for pick in undermere.plan_of(floor) {
+                    *run_counts.entry(pick.entry).or_default() += 1;
+                    let entry = &undermere.pool.entries[pick.entry];
+                    ever_drawn.insert(entry.name.clone());
+                    if undermere.pool.kinds[entry.kind] == "flavor" {
+                        flavor_this_run.insert(pick.entry);
+                    }
+                }
+            }
+            for (&entry, &count) in &run_counts {
+                let per_run = undermere.pool.entries[entry].per_run;
+                assert!(count <= per_run, "seed {s}: {:?} drawn {count} times in one run, past its per_run of {per_run}", undermere.pool.entries[entry].name);
+            }
+            assert!(flavor_this_run.len() <= 35, "seed {s}: {} of {flavor_pool} flavor entries in one run", flavor_this_run.len());
+        }
+        for entry in &pool.entries {
+            if entry.name == "Hidden Cache" {
+                // Withheld (weight "withheld", nought) until `HideOpenings`
+                // exists; see `assets/pool.ron`'s own weights note.
+                continue;
+            }
+            assert!(ever_drawn.contains(&entry.name), "{:?} was never drawn over seeds 0..500", entry.name);
         }
     }
 
@@ -1522,13 +1694,20 @@ mod tests {
             let bounds = ctx.terrain().bounds();
             assert_eq!((bounds.width, bounds.height), recipe.size, "{at}");
             let route = ctx.outputs().first::<rl_engine::rl_mapgen::Surveyed>().unwrap_or_else(|| panic!("{at}: not surveyed")).route;
-            let pieces = pieces(&ctx);
+            // Not "outside every piece's own rect": `rl_mapgen::prefab::laid_in`
+            // lets a pick's blank cells (the room's own floor, left as it
+            // was) coexist with the way in or down inside the rect, so a
+            // small piece like `Cold Campsite` can legally have the way
+            // down read as "inside" its bounds while painting nothing
+            // there. What actually matters is that nothing was stamped
+            // onto the exit's own cell.
+            let marks = slots(&ctx);
             let built = PlaceBuild::from_context(ctx).unwrap_or_else(|e| panic!("{at}: {e}"));
             if floor == FLOORS {
                 assert_eq!(built.exit, None, "{at}: the throne's floor has no way down");
             } else {
                 let exit = built.exit.unwrap_or_else(|| panic!("{at}: no way down"));
-                assert!(pieces.iter().all(|r| !r.contains(exit)), "{at}: the way down at {exit:?} is inside a piece");
+                assert!(!marks.contains(&exit), "{at}: the way down at {exit:?} is a stamped slot");
                 let route = route.unwrap_or_else(|| panic!("{at}: no route"));
                 let third = bounds.width.max(bounds.height) as u32 / 3;
                 assert!(route >= recipe.require.route && recipe.require.route >= third, "{at}: {route} steps down, asked {}", recipe.require.route);

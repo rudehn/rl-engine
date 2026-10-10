@@ -19,6 +19,8 @@
 
 use rl_engine::prelude::*;
 use rl_engine::rl_rules::dressing;
+use rl_engine::rl_rules::layout::LayoutDef;
+use rl_engine::rl_rules::pool::{self, Pool};
 use rl_engine::rl_rules::prefab;
 use rl_engine::rl_rules::role;
 
@@ -26,7 +28,7 @@ use crate::bestiary::MonsterDef;
 use crate::content::Library;
 
 /// Every piece, compiled in so the binary runs from anywhere.
-const PIECES: [&str; 25] = [
+const PIECES: [&str; 59] = [
     include_str!("../assets/prefabs/mereholt.ron"),
     include_str!("../assets/prefabs/throne.ron"),
     include_str!("../assets/prefabs/chest.ron"),
@@ -55,6 +57,45 @@ const PIECES: [&str; 25] = [
     include_str!("../assets/prefabs/flavor/baptistery.ron"),
     include_str!("../assets/prefabs/flavor/fallen_bell.ron"),
     include_str!("../assets/prefabs/flavor/stilt_hut.ron"),
+    // The risk-and-reward pool's twenty-two placeholder pieces: task 13
+    // fills each in, in place, once its mechanism exists.
+    include_str!("../assets/prefabs/risk/caged_altars.ron"),
+    include_str!("../assets/prefabs/risk/the_locked_vault.ron"),
+    include_str!("../assets/prefabs/risk/the_trapped_corridor.ron"),
+    include_str!("../assets/prefabs/risk/the_rat_trap.ron"),
+    include_str!("../assets/prefabs/risk/the_flooding_vault.ron"),
+    include_str!("../assets/prefabs/risk/the_rotten_floor.ron"),
+    include_str!("../assets/prefabs/risk/the_gas_chamber.ron"),
+    include_str!("../assets/prefabs/risk/gallery_of_darts.ron"),
+    include_str!("../assets/prefabs/risk/the_drowned_reliquary.ron"),
+    include_str!("../assets/prefabs/risk/the_sealed_vault.ron"),
+    include_str!("../assets/prefabs/risk/the_warded_hall.ron"),
+    include_str!("../assets/prefabs/risk/the_sleeping_giant.ron"),
+    include_str!("../assets/prefabs/risk/the_paralysis_vestibule.ron"),
+    include_str!("../assets/prefabs/risk/the_collapsing_gallery.ron"),
+    include_str!("../assets/prefabs/risk/the_guarded_hoard.ron"),
+    include_str!("../assets/prefabs/risk/captives_in_chains.ron"),
+    include_str!("../assets/prefabs/risk/the_tinder_room.ron"),
+    include_str!("../assets/prefabs/risk/the_spiders_larder.ron"),
+    include_str!("../assets/prefabs/risk/the_goblin_stockade.ron"),
+    include_str!("../assets/prefabs/risk/the_bone_circle.ron"),
+    include_str!("../assets/prefabs/risk/the_brood_chamber.ron"),
+    include_str!("../assets/prefabs/risk/the_last_stand.ron"),
+    // The reward pool's twelve placeholder pieces (the other four are
+    // dressed, in `assets/dressings.ron`); `Hidden Cache` is withheld in
+    // `assets/pool.ron` until `HideOpenings` exists, but still loads.
+    include_str!("../assets/prefabs/reward/jewellers_niche.ron"),
+    include_str!("../assets/prefabs/reward/quiet_reliquary.ron"),
+    include_str!("../assets/prefabs/reward/treasure_room.ron"),
+    include_str!("../assets/prefabs/reward/hidden_cache.ron"),
+    include_str!("../assets/prefabs/reward/a_fallen_adventurer.ron"),
+    include_str!("../assets/prefabs/reward/wizards_study.ron"),
+    include_str!("../assets/prefabs/reward/healing_spring.ron"),
+    include_str!("../assets/prefabs/reward/enchanters_altar.ron"),
+    include_str!("../assets/prefabs/reward/the_cold_forge.ron"),
+    include_str!("../assets/prefabs/reward/overturned_wagon.ron"),
+    include_str!("../assets/prefabs/reward/library_nook.ron"),
+    include_str!("../assets/prefabs/reward/moonwell.ron"),
 ];
 
 /// Every role a prefab's slot may draw for, compiled in the same way.
@@ -65,11 +106,15 @@ const ROLES: &str = include_str!("../assets/roles.ron");
 /// `assets/biomes.ron`'s own `dressings`, and four of the reward pool's.
 const DRESSINGS_RON: &str = include_str!("../assets/dressings.ron");
 
-/// Every piece and dressing, resolved against `tiles`, the props and the
-/// bestiary the run loads, so a piece's ids are the running game's. Panics
-/// with every problem in every file, since a broken piece is a place that
-/// cannot be built.
-pub fn load(tiles: &TileRegistry) -> Prefabs<MonsterDef> {
+/// The run's pool, compiled in beside the pieces and the dressings it
+/// draws from both.
+const POOL_RON: &str = include_str!("../assets/pool.ron");
+
+/// Every piece, dressing and pool entry, resolved against `tiles`, `layout`,
+/// the props and the bestiary the run loads, so a piece's ids are the
+/// running game's. Panics with every problem in every file, since a
+/// broken piece, dressing or pool entry is a place that cannot be built.
+pub fn load(tiles: &TileRegistry, layout: &LayoutDef) -> (Prefabs<MonsterDef>, Pool) {
     // The whole library, in its one order, since the monsters a piece
     // stands are read against the traits and the items they name.
     let library = Library::load(&crate::content::effect_kinds(), &Moments::default());
@@ -78,9 +123,13 @@ pub fn load(tiles: &TileRegistry) -> Prefabs<MonsterDef> {
     // slot and need it in `names` to resolve against.
     let roles = role::load::<MonsterDef>(ROLES, &names).unwrap_or_else(|e| panic!("assets/roles.ron: {e}"));
     let names = names.with("role", &roles);
-    let defs = PIECES.iter().map(|text| prefab::load(text, tiles, &names).unwrap_or_else(|e| panic!("assets/prefabs: {e}"))).collect();
+    let defs = Registry::from_defs(PIECES.iter().map(|text| prefab::load(text, tiles, &names).unwrap_or_else(|e| panic!("assets/prefabs: {e}"))).collect())
+        .expect("every piece has a name of its own");
     let dressings = dressing::load::<MonsterDef>(DRESSINGS_RON, tiles, &names).unwrap_or_else(|e| panic!("assets/dressings.ron: {e}"));
-    Prefabs::with_dressings(Registry::from_defs(defs).expect("every piece has a name of its own"), roles, dressings)
+    let pool = pool::load(POOL_RON, layout, &defs, &names).unwrap_or_else(|e| panic!("assets/pool.ron: {e}"));
+    dressing::check_pool(&pool, &dressings).unwrap_or_else(|e| panic!("assets/pool.ron: {e}"));
+    let prefabs = Prefabs::with_dressings(defs, roles, dressings);
+    (prefabs, pool)
 }
 
 #[cfg(test)]
@@ -95,7 +144,7 @@ mod tests {
     #[test]
     fn every_piece_loads_against_the_tiles_the_props_and_the_bestiary() {
         let undermere = Undermere::new(RunSeed(0));
-        let prefabs = load(undermere.tiles());
+        let (prefabs, _pool) = load(undermere.tiles(), &crate::dungeon::layout());
         assert_eq!(prefabs.defs().len(), PIECES.len());
         for name in [
             "Mereholt",
@@ -117,5 +166,26 @@ mod tests {
         let town = prefabs.defs().get(prefabs.defs().expect("Mereholt"));
         assert_eq!(town.rows().len(), 36, "thirty-six rows");
         assert!(town.rows().iter().all(|row| row.chars().count() == 64), "each sixty-four across");
+    }
+
+    /// The pool's own report: every slot a piece or a dressing it lays
+    /// draws finds something, item by tag and monster by role, at every
+    /// band it may stand on, so a run never stands at a band with nothing
+    /// to draw.
+    #[test]
+    fn the_coverage_report_finds_every_slot_at_every_band_it_may_stand_at() {
+        let undermere = Undermere::new(RunSeed(0));
+        let (prefabs, pool) = load(undermere.tiles(), &crate::dungeon::layout());
+        let library = Library::load(&crate::content::effect_kinds(), &Moments::default());
+        let sources = rl_engine::rl_rules::prefab::Sources {
+            roles: prefabs.roles(),
+            monsters: &library.bestiary.spawns,
+            items: &library.armory.table,
+            tags: &library.registries.tags,
+        };
+        let pieces = rl_engine::rl_rules::pool::coverage(&pool, prefabs.defs(), &sources);
+        assert_eq!(pieces.empties(), Vec::new(), "a pool piece's slot finds nothing at some band it stands on");
+        let dressed = rl_engine::rl_rules::pool::dressing_coverage(&pool, prefabs.dressings(), &sources);
+        assert_eq!(dressed.empties(), Vec::new(), "a dressing's slot finds nothing at some band it stands on");
     }
 }

@@ -1,0 +1,14 @@
+// A placeholder prefab for task 13's "The Spider's Larder": a one-cell shell with
+// nothing in it, so the pool entry loads and the draw is exercised end
+// to end now. Task 13 fills this file in, in place, once its mechanism
+// (traps, props, items) exists; it does not replace this file
+// wholesale, so the pool entry above never changes.
+(
+    name: "The Spider's Larder",
+    rows: [
+        ".",
+    ],
+    legend: {
+        '.': Tile("hall floor"),
+    },
+)

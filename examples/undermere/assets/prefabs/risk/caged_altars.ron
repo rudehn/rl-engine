@@ -1,0 +1,21 @@
+// A placeholder prefab for task 13's "Caged Altars": a walled shell with
+// nothing but its own wall and the one entry it joins by, so the pool
+// entry loads and the draw is exercised end to end now. Task 13 fills
+// this file in, in place, once its mechanism (traps, a lock's key, a
+// lever) exists; it does not replace this file wholesale, so the pool
+// entry above never changes.
+(
+    name: "Caged Altars",
+    rows: [
+        "#######",
+        "#.....#",
+        "#.....#",
+        "#.....#",
+        "###E###",
+    ],
+    legend: {
+        '#': Tile("hall wall"),
+        '.': Tile("hall floor"),
+        'E': Entry,
+    },
+)

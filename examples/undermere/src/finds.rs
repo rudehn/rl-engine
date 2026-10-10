@@ -258,9 +258,13 @@ mod tests {
         things.iter().filter_map(|e| def(*e)).filter(|d| d.tags.iter().any(|t| t.id() == gold_tag) == gold).map(|d| d.name.clone()).collect()
     }
 
-    /// Every floor holds its things and a scroll of enchanting besides,
-    /// and none, one or two piles of gold, the first time it is entered,
-    /// over a span of seeds.
+    /// Every floor holds at least its things and a scroll of enchanting
+    /// besides, and none, one or two piles of gold, the first time it is
+    /// entered, over a span of seeds. At least rather than exactly: the
+    /// reward pool may dress a floor with items of its own (Armory,
+    /// Apothecary's Shelves, Scriptorium, Quartermaster's Store) besides
+    /// this budget, a source this test does not try to predict the count
+    /// of.
     #[test]
     fn every_floor_holds_a_scroll_of_enchanting_and_its_things_besides_gold_over_a_span_of_seeds() {
         for seed in 0..3 {
@@ -271,7 +275,7 @@ mod tests {
             for floor in 1..=FLOORS {
                 arrive(&mut app, map_of(floor));
                 let things = on_floor(&mut app, floor, false);
-                assert_eq!(things.len() as u32, things_on(floor) + 1, "seed {seed}, floor {floor}: {things:?}");
+                assert!(things.len() as u32 > things_on(floor), "seed {seed}, floor {floor}: {things:?}");
                 assert!(things.iter().any(|t| t == LAID), "seed {seed}, floor {floor}: no scroll of enchanting in {things:?}");
                 let gold = on_floor(&mut app, floor, true);
                 assert!(GOLD_PILES.contains(&(gold.len() as u32)), "seed {seed}, floor {floor}: {} piles of gold", gold.len());
