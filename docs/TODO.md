@@ -281,6 +281,9 @@ The run's teardown was a third, and stopped being one on 2026-09-22, when `Reset
   `Heard` in `crates/rl-ui/src/narrate.rs` is a `SystemParam` holding twelve `MessageReader`s, one per engine subsystem, feeding a closed `Phrase` enum and a `Phrasebook` of defaults.
   Adding a subsystem to `rl-bevy` therefore means editing `rl-ui`: a reader, a variant, a template.
   The enum being closed is defensible, since it enumerates the events the engine itself raises, but the *reading* need not be: a `app.narrates::<LightEvent>(..)` that turns one message kind into rows would let each subsystem carry its own phrases and its own defaults.
+- **A game cannot refuse an offer at the gate.**
+  `Refused` in `crates/rl-bevy/src/props.rs` says only `Needs` and `Short`, so an offer the game would judge pointless, such as Undermere's `mend` for an adventurer already whole, is taken up, spends its turn and its price, and is answered with the price handed back by `pay`.
+  The seam is a game-supplied refusal read at the offer gate in `DecideSet::Offer`, greyed on the offers screen like a short purse, costing neither the turn nor the coins; `Interacted` carrying the price the engine took would let a refunding game read what was paid rather than repeat its own table.
 
 ## 8. Make the loops cheap, and know that they are
 

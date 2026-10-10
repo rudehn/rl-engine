@@ -18,8 +18,10 @@
 //! ever one, turns the gate in Mereholt to lead to it, and warps the
 //! adventurer onto the gate's town side. The warp is the engine's
 //! `WarpRequest`, which writes `Travelled` from the cell they knelt on as a
-//! way through does for whoever takes it, so whatever follows a traveller
-//! by that message follows this too. The mark and where the gate leads are
+//! way through does for whoever takes it, so a reader of that message
+//! hears of this too; the engine's own followers do not follow a warp,
+//! so a freed captive is left at the mark, where the gate brings the
+//! adventurer back to it. The mark and where the gate leads are
 //! the engine's to save, a prop and a way through's `Transition`; the
 //! mark's light is put back on it as it appears, by
 //! [`light`](crate::light), and its place in memory is its definition's,
