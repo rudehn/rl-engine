@@ -27,6 +27,9 @@ pub struct Binds {
     pub fire: ControlId,
     /// Open the pack on the first thing in it that can be thrown.
     pub throw: ControlId,
+    /// Cycle every hired mercenary's order, by
+    /// [`order_party`](crate::mercenaries::order_party).
+    pub order: ControlId,
 }
 
 /// Declares the keys, under the headings the `?` screen groups them by.
@@ -46,6 +49,7 @@ pub fn declare_controls(app: &mut App) {
         pick_up: app.add_control("Act", "pick up what is here", [KeyCode::KeyG, KeyCode::Comma]),
         fire: app.add_control("Act", "shoot at the nearest foe", KeyCode::KeyF),
         throw: app.add_control("Act", "throw something from the pack", KeyCode::KeyT),
+        order: app.add_control("Act", "order the party: follow, hold, fight freely", KeyCode::KeyO),
     };
     app.insert_resource(binds);
 }

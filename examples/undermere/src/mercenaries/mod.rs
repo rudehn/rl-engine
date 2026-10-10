@@ -1,5 +1,5 @@
-//! The swords for hire at the Sunken Lantern: one kind, its names, and
-//! what each carries and asks.
+//! The swords for hire at the Sunken Lantern: one kind, its names, what
+//! each carries and asks, and what one hired is told to do.
 //!
 //! There is one kind, [`MERCENARY`] in `monsters.ron` with the trait of
 //! the same name, and what makes one unlike the next is its kit and its
@@ -24,12 +24,21 @@
 //! wearing its kit and offering [`HIRE`] at its fee beside talk. `hire` is
 //! the engine's priced offer, so a walk into a candidate opens the offers
 //! screen, an adventurer short of the fee is refused there, and one who
-//! takes it up has paid before the game hears of it: whatever hiring then
-//! does answers the `Interacted` it sends, in `TurnSet::React`.
-//! [`keep_hire_offered`] takes `hire` off every candidate while the party
-//! is full. What a candidate holds is said as the adventurer knows it, by
-//! the name each thing carries, when talked to by [`answer_candidates`]
-//! and on the look panel by [`show_candidates`].
+//! takes it up has paid before the game hears of it, in the `Interacted`
+//! that [`answer_hire`] answers. [`keep_hire_offered`] takes `hire` off
+//! every candidate while the party is full. What a candidate holds is said
+//! as the adventurer knows it, by the name each thing carries, when talked
+//! to by [`answer_candidates`] and on the look panel by
+//! [`show_candidates`].
+//!
+//! [`hire`] makes a candidate a [`Mercenary`]: on the adventurer's side by
+//! [`befriend`](crate::allies::befriend), following them by `Leader`, and
+//! offering [`GIVE`] and [`DISMISS`]. It thinks with one of the three
+//! brains of [`MercenaryBrains`], built once at load, one for each
+//! [`Order`]: follow, hold, fight freely. [`order_party`] cycles every
+//! mercenary's order at once on the order key, without spending a turn,
+//! and [`show_orders`] says the order on the look panel and the party
+//! panel.
 //!
 //! Undermere's own rather than a keeper's [`Wares`](crate::shops::Wares):
 //! a kit is a part at a time, each on its own chance, where a shelf is a
@@ -39,10 +48,16 @@
 //! file, read by the reader `item_spawns.ron` is, so a row is written and
 //! checked the one way.
 
+#[cfg(test)]
+mod fixtures;
+mod hired;
 mod kit;
+mod orders;
 mod tavern;
 
+pub use hired::*;
 pub use kit::*;
+pub use orders::*;
 pub use tavern::*;
 
 #[cfg(doc)]

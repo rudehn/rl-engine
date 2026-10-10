@@ -243,6 +243,9 @@ fn add_panels(app: &mut App, screen: &Screen) {
             .in_set(ViewSet::Annotate),
     );
     app.add_systems(Update, undermere::mercenaries::talk_rows.in_set(ViewSet::Annotate));
+    // A hired mercenary's order, under its kind's own words on the look
+    // panel and on its row of the party panel.
+    app.add_systems(Update, undermere::mercenaries::show_orders.after(undermere::bestiary_lore::annotate_inspect).in_set(ViewSet::Annotate));
     // What the player may set, opened from the menu and from the title:
     // fullscreen is the engine's, declared by `RoguelikePlugins`. And
     // every run that has ended, best first, which the title opens.

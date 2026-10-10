@@ -175,11 +175,17 @@ pub fn seat_candidates(
 /// Whether the party has room is the game's to say, so it is said before
 /// the engine could take a price: a full party is never asked to pay.
 ///
-/// A follower is anything whose `Leader` is the adventurer.
+/// A follower is a [`Mercenary`] whose `Leader` is the adventurer: a
+/// freed captive follows them too, and is no hired hand to count.
 ///
 /// In `TurnSet::Schedule`, at the start of every pass, so whatever joined
 /// or left in the last pass's reactions is counted before anyone decides.
-pub fn keep_hire_offered(mut candidates: Query<(&Candidate, &mut Offers)>, followers: Query<&Leader>, players: Query<Entity, With<Player>>, verbs: Res<Verbs>) {
+pub fn keep_hire_offered(
+    mut candidates: Query<(&Candidate, &mut Offers)>,
+    followers: Query<&Leader, With<Mercenary>>,
+    players: Query<Entity, With<Player>>,
+    verbs: Res<Verbs>,
+) {
     let Some(hire) = verbs.get(HIRE) else { return };
     let following = players.single().map_or(0, |me| followers.iter().filter(|l| l.0 == me).count());
     let full = following >= PARTY;
@@ -346,28 +352,13 @@ pub fn talk_rows(mut view: ResMut<OffersView>, verbs: Res<Verbs>, named: Query<&
 mod tests {
     use std::collections::BTreeSet;
 
-    use rl_engine::rl_core::RunSeed;
     use rl_engine::rl_core::noun::with_article;
 
     use super::*;
     use crate::dungeon::map_of;
     use crate::lore::Lore;
-    use crate::testing::{adventurer, arrive, at, gold, headless, make, name_of, pack, pass_turns, said, set_gold, settle, stand_on, still};
-
-    /// A run begun in Mereholt, its first visit's candidates seated.
-    fn in_mereholt(seed: u64) -> (App, Entity) {
-        let mut app = headless(RunSeed(seed));
-        let me = adventurer(&mut app);
-        (app, me)
-    }
-
-    /// The candidates waiting, by where they stand.
-    fn waiting(app: &mut App) -> Vec<Entity> {
-        let world = app.world_mut();
-        let mut found: Vec<(Point, Entity)> = world.query_filtered::<(&Position, Entity), With<Candidate>>().iter(world).map(|(p, e)| (p.0, e)).collect();
-        found.sort();
-        found.into_iter().map(|(_, e)| e).collect()
-    }
+    use crate::mercenaries::fixtures::{beside, in_mereholt, offered, take, waiting};
+    use crate::testing::{arrive, at, gold, make, name_of, pack, pass_turns, said, set_gold, stand_on, still};
 
     /// A candidate as a test compares them: where it stands, its name, its
     /// fee and what it carries.
@@ -389,32 +380,6 @@ mod tests {
     fn tables(app: &App) -> Vec<Point> {
         let place = app.world().resource::<WorldMap>().place(TOWN).expect("Mereholt is built");
         place.spots.iter().filter(|s| s.tag == TABLE as u32).map(|s| s.at).collect()
-    }
-
-    /// A free cell beside `who` the adventurer could stand on.
-    fn beside(app: &mut App, who: Entity) -> Point {
-        let there = at(app, who);
-        let world = app.world_mut();
-        let taken: Vec<Point> = world.query_filtered::<&Position, With<Blocks>>().iter(world).map(|p| p.0).collect();
-        let map = app.world().resource::<WorldMap>();
-        (0..8).map(|i| there + Direction::from_index(i).offset()).find(|p| map.is_walkable_on(TOWN, *p) && !taken.contains(p)).expect("ground beside them")
-    }
-
-    /// Stands the adventurer beside `who` and takes up `verb` on it, as the
-    /// offers screen's choice does.
-    fn take(app: &mut App, me: Entity, who: Entity, verb: &str) {
-        let cell = beside(app, who);
-        stand_on(app, me, cell);
-        let verb = app.world().resource::<Verbs>().get(verb).expect("a verb");
-        app.world_mut().write_message(Intent::new(me, Interact { target: who, verb }));
-        settle(app);
-    }
-
-    /// The verbs `who` offers, each with its price.
-    fn offered(app: &App, who: Entity) -> Vec<(String, Option<u32>)> {
-        let verbs = app.world().resource::<Verbs>();
-        let offers = app.world().get::<Offers>(who).expect("offers");
-        offers.0.iter().map(|o| (verbs.name(o.verb).to_string(), o.price)).collect()
     }
 
     /// The first visit seats one candidate at each of the tavern's three
@@ -491,8 +456,9 @@ mod tests {
     }
 
     /// Taking up `hire` with gold enough spends exactly the fee, out of the
-    /// adventurer's purse and into the candidate's pack; with a coin too
-    /// few it is refused as wanting the fee, and neither purse moves.
+    /// adventurer's purse and out of play, since the one hired keeps none
+    /// of it to drop; with a coin too few it is refused as wanting the
+    /// fee, and neither purse moves.
     #[test]
     fn taking_up_hire_spends_exactly_the_fee_and_is_refused_when_the_gold_is_short() {
         for seed in 0..3 {
@@ -501,7 +467,7 @@ mod tests {
             let fee = app.world().get::<Candidate>(candidate).expect("a candidate").fee;
             set_gold(&mut app, me, fee + 7);
             take(&mut app, me, candidate, HIRE);
-            assert_eq!((gold(&app, me), gold(&app, candidate)), (7, fee), "seed {seed}: the fee, and no more");
+            assert_eq!((gold(&app, me), gold(&app, candidate)), (7, 0), "seed {seed}: the fee, and no more");
 
             let (mut app, me) = in_mereholt(seed);
             let candidate = waiting(&mut app)[0];
@@ -515,9 +481,9 @@ mod tests {
         }
     }
 
-    /// While two follow the adventurer no candidate offers `hire`, and
-    /// talking is all that is left; once one stops following, every
-    /// candidate offers it again, first and at its own fee.
+    /// While two mercenaries follow the adventurer no candidate offers
+    /// `hire`, and talking is all that is left; once one stops following,
+    /// every candidate offers it again, first and at its own fee.
     #[test]
     fn hire_is_gone_from_every_candidate_while_two_follow_and_back_when_one_stops() {
         let (mut app, me) = in_mereholt(3);
@@ -525,6 +491,9 @@ mod tests {
         let fees: Vec<u32> = candidates.iter().map(|c| app.world().get::<Candidate>(*c).expect("a candidate").fee).collect();
         let from = at(&app, me);
         let followers = [still(&mut app, MERCENARY, from.offset(-2, 0)), still(&mut app, MERCENARY, from.offset(2, 0))];
+        for (follower, name) in followers.iter().zip(["Brenna", "Tolvar"]) {
+            app.world_mut().entity_mut(*follower).insert(Mercenary { name: name.to_string(), fee: 0, order: Order::Follow });
+        }
         app.world_mut().entity_mut(followers[0]).insert(Leader(me));
         pass_turns(&mut app, 1);
         assert!(candidates.iter().all(|c| offered(&app, *c).iter().any(|(v, _)| v == HIRE)), "one following leaves room");
