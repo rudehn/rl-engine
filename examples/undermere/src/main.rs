@@ -12,13 +12,18 @@
 //! `smith`, `priest`, `gatewarden`, `child`...), one step from their shop
 //! or their talk; `UNDERMERE_NEAR=candidates` stands them in the tavern
 //! beside the swords for hire. For one of the pack, `UNDERMERE_PACK="ring of light:-2,
-//! potion of extra healing*2"` puts those in it as if found.
+//! potion of extra healing*2"` puts those in it as if found. For a party,
+//! `UNDERMERE_PARTY=2` hires that many beside the adventurer wherever the
+//! run starts, after `UNDERMERE_NEAR` has stood them; with
+//! `UNDERMERE_START=10 UNDERMERE_NEAR=throne` a few steps into the throne
+//! room is a fight the party can fall in, and the end screen that names
+//! the fallen is that fight lost.
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_core::{Rect, RunSeed};
 use undermere::plugin::UndermerePlugin;
-use undermere::run::{ExtraPack, StartFloor, StartNear};
+use undermere::run::{ExtraPack, StartFloor, StartNear, StartParty};
 use undermere::typeface::DEJAVU_SANS_MONO;
 
 /// Terminal size in cells.
@@ -358,6 +363,9 @@ fn main() -> AppExit {
     }
     if let Ok(near) = std::env::var("UNDERMERE_NEAR") {
         app.insert_resource(StartNear(near));
+    }
+    if let Some(party) = std::env::var("UNDERMERE_PARTY").ok().and_then(|n| n.parse().ok()) {
+        app.insert_resource(StartParty(party));
     }
     if let Ok(pack) = std::env::var("UNDERMERE_PACK") {
         app.insert_resource(ExtraPack::parse(&pack));

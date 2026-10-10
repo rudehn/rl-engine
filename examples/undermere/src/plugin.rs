@@ -416,6 +416,18 @@ impl Plugin for UndermerePlugin {
             Update,
             crate::run::stand_near.after(EngineSet::Turns).run_if(resource_exists::<crate::run::StartNear>).run_if(in_state(EngineState::Playing)),
         );
+        // And its ask for a party, once that stand has been taken: before
+        // `stand_near` in the frame, so the frame that asks the warp does
+        // not hire beside the cell the adventurer is about to leave.
+        app.add_systems(
+            Update,
+            crate::run::hire_party
+                .after(EngineSet::Turns)
+                .before(crate::run::stand_near)
+                .run_if(resource_exists::<crate::run::StartParty>)
+                .run_if(not(resource_exists::<crate::run::StartNear>))
+                .run_if(in_state(EngineState::Playing)),
+        );
         // The keys, declared once so the controls screen lists what the
         // input reads. `f` and `t` hand the engine's targeting cursor an
         // `AimFire` or an `AimThrow`; registering both here is a no-op

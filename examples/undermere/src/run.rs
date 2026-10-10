@@ -219,6 +219,65 @@ pub fn stand_near(world: &mut World) {
     }
 }
 
+/// How many hired hands a photograph wants following the adventurer from
+/// the first frame they stand anywhere, at most
+/// [`PARTY`](crate::mercenaries::PARTY): `main.rs` reads it from
+/// `UNDERMERE_PARTY`, beside `UNDERMERE_START` and `UNDERMERE_NEAR`, so a
+/// picture of a party on a deep floor, in a fight or at the end of a run
+/// needs no walk to the tavern and back. Absent, nothing, which is every
+/// real run.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StartParty(pub usize);
+
+/// The run's stream a photograph's party is drawn from: its own, so asking
+/// for one moves no draw the run would make without it.
+pub const PARTY_STREAM: &[u8] = b"undermere.start-party";
+
+/// Hires [`StartParty`]'s hands on the cells beside the adventurer, once
+/// they stand somewhere and [`StartNear`] has stood them where it asked,
+/// and forgets the ask. Each is drawn as the tavern draws a candidate, a
+/// kit at the deepest floor reached and a name the run has not given,
+/// made a candidate and hired the one way a player's hire is, so what the
+/// photograph shows is what playing would.
+pub fn hire_party(world: &mut World) {
+    use crate::mercenaries::{Makers, Mercenaries, PARTY, hire, spawn_candidate};
+    let Some(StartParty(wanted)) = world.get_resource::<StartParty>().copied() else { return };
+    let Some((me, at, here)) = world.query_filtered::<(Entity, &Position, &OnMap), With<Adventurer>>().iter(world).next().map(|(e, p, on)| (e, p.0, on.0))
+    else {
+        return;
+    };
+    world.remove_resource::<StartParty>();
+    let taken: Vec<Point> = world.query_filtered::<(&Position, &OnMap), With<Blocks>>().iter(world).filter(|(_, on)| on.0 == here).map(|(p, _)| p.0).collect();
+    let map = world.resource::<WorldMap>();
+    let cells: Vec<Point> =
+        (0..8).map(|i| at + Direction::from_index(i).offset()).filter(|p| map.is_walkable_on(here, *p) && !taken.contains(p)).take(wanted.min(PARTY)).collect();
+    let mut given = world.resource::<GivenNames>().clone();
+    let mut rng = world.resource::<Seed>().stream(PARTY_STREAM, 0);
+    let mut queue = CommandQueue::default();
+    let made: Vec<Entity> = {
+        let mut commands = Commands::new(&mut queue, world);
+        let (mercenaries, armory, names) = (world.resource::<Mercenaries>(), world.resource::<Armory>(), world.resource::<NameSets>());
+        let deepest = world.resource::<crate::tally::Tally>().deepest;
+        let makers = Makers::of(world);
+        cells
+            .into_iter()
+            .map(|cell| {
+                let kit = mercenaries.kit(deepest, armory, &mut rng);
+                let name = names.mercenary().draw_distinct(&mut rng, |n| given.has(n)).expect("the mercenaries' names never run dry");
+                given.give(&name);
+                let candidate = spawn_candidate(&mut commands, &makers, &name, &kit, mercenaries.fee(&kit, armory), cell);
+                commands.entity(candidate).insert(OnMap(here));
+                candidate
+            })
+            .collect()
+    };
+    queue.apply(world);
+    world.insert_resource(given);
+    for candidate in made {
+        hire(world, candidate, me);
+    }
+}
+
 /// Where on `here` what [`StartNear`] names as `near` stands, if it does.
 fn sought(world: &mut World, near: &str, here: MapId) -> Option<Point> {
     let registries = world.resource::<Registries>().clone();
@@ -536,6 +595,54 @@ mod tests {
             let far = geometry::chebyshev(at(&app, me), boss);
             assert!((1..=NEAR_STEPS as i32 + 1).contains(&far), "seed {s}: stood {far} from the boss");
             assert!(app.world().get_resource::<StartNear>().is_none(), "seed {s}: the ask is forgotten once answered");
+        }
+    }
+
+    /// A photograph's ask for a party hires that many, never more than the
+    /// party holds, beside the adventurer where the run starts and after
+    /// any stand it asked for: each a mercenary of its own name, following
+    /// them, on the floor they stand on. The run's own draws are not
+    /// moved: the floor's monsters stand where they would without it.
+    #[test]
+    fn a_run_started_with_a_party_has_it_hired_and_following_beside_the_adventurer() {
+        use crate::mercenaries::{Mercenary, Order, PARTY};
+        use crate::testing::settle;
+        let monsters = |app: &mut App| {
+            let world = app.world_mut();
+            let mut all: Vec<Point> = world.query_filtered::<&Position, (With<crate::bestiary::Kind>, Without<Mercenary>)>().iter(world).map(|p| p.0).collect();
+            all.sort();
+            all
+        };
+        for (s, (floor, near)) in [(1, None), (FLOORS, Some("throne"))].into_iter().enumerate() {
+            let begin = |party: Option<usize>| {
+                let mut app = headless(RunSeed(s as u64));
+                app.insert_resource(StartFloor(floor));
+                if let Some(near) = near {
+                    app.insert_resource(StartNear(near.to_string()));
+                }
+                if let Some(n) = party {
+                    app.insert_resource(StartParty(n));
+                }
+                let me = adventurer(&mut app);
+                settle(&mut app);
+                (app, me)
+            };
+            let (mut plain, _) = begin(None);
+            let (mut app, me) = begin(Some(PARTY + 1));
+            let hired: Vec<(Entity, Mercenary)> = {
+                let world = app.world_mut();
+                world.query::<(Entity, &Mercenary)>().iter(world).map(|(e, m)| (e, m.clone())).collect()
+            };
+            assert_eq!(hired.len(), PARTY, "floor {floor}: the most the party holds");
+            assert_ne!(hired[0].1.name, hired[1].1.name, "floor {floor}: each its own name");
+            for (who, mercenary) in &hired {
+                assert_eq!(mercenary.order, Order::Follow, "floor {floor}");
+                assert_eq!(app.world().get::<Leader>(*who).map(|l| l.0), Some(me), "floor {floor}: following the adventurer");
+                assert_eq!(app.world().get::<OnMap>(*who).map(|m| m.0), Some(map_of(floor)), "floor {floor}: on their floor");
+                assert!(geometry::chebyshev(at(&app, *who), at(&app, me)) <= 2, "floor {floor}: beside them");
+            }
+            assert!(app.world().get_resource::<StartParty>().is_none(), "floor {floor}: the ask is forgotten once answered");
+            assert_eq!(monsters(&mut app), monsters(&mut plain), "floor {floor}: the run's own draws unmoved");
         }
     }
 
