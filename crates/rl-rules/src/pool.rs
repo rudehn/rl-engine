@@ -10,6 +10,11 @@
 //! a floor gets, and whether a pick of it the place cannot fit fails the
 //! place or is dropped.
 //!
+//! [`Pool::plan_run`] draws a whole run's [`Pick`]s at once, one list for
+//! each [`Place`] the run will build, from a stream the game derives from
+//! the run's seed, so every limit and group is held in one place and a
+//! place's picks never depend on which place is built first.
+//!
 //! A kind is a string the file names in its budgets and nothing else: no
 //! kind means anything to the engine, which only counts them, and the
 //! piece itself says nothing about what kind of room it is
@@ -90,6 +95,8 @@
 
 use std::ops::RangeInclusive;
 
+use rand::Rng;
+use rand::seq::SliceRandom;
 use serde::Deserialize;
 
 use crate::affix::TagId;
@@ -512,6 +519,278 @@ pub fn coverage<M, I: Copy>(pool: &Pool, pieces: &Registry<PrefabDef<M>>, source
     Coverage { bands: RangeInclusive::new(first, last), rows }
 }
 
+/// One place a run will build, as the plan reads it: its floor and the
+/// tags an entry's `where` and `not` are read against.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Place {
+    /// Its floor, in the numbering the pool's floors are written in.
+    pub band: i32,
+    /// Its tags, such as the region it stands in.
+    pub tags: Vec<String>,
+}
+
+/// One entry drawn for one place.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Pick {
+    /// An index into [`Pool::entries`].
+    pub entry: usize,
+    /// Whether the budget it was drawn for is required, so a place that
+    /// cannot fit it fails rather than dropping it.
+    pub required: bool,
+}
+
+impl Pool {
+    /// Every place's picks for a whole run, drawn at once: one list per
+    /// place, in the order `places` gives them.
+    ///
+    /// Drawn at once so that every per-run limit and group is checked in
+    /// one place and no place's picks depend on which is built first, and
+    /// a place's attempts then vary its layout and never its picks. Pure:
+    /// the same `rng` state and places plan the same picks. The game passes
+    /// a stream derived from the run's seed.
+    ///
+    /// Each place draws a count for each kind a budget covers it for,
+    /// evenly from the budget's range. Then every pick of a required kind
+    /// is drawn, in an order drawn from `rng`, and after them every other,
+    /// each an entry that fits the place, by weight, under every limit and
+    /// group. A draw is kept only when the picks still to make can all be
+    /// made as fully as before it, worked out exactly as a flow from the
+    /// picks owed through the entries that fit to each entry's per-run
+    /// limit; one that cannot is drawn again without that entry. So a
+    /// budget is met whenever the pool can meet it, a scarce entry is not
+    /// spent on a floor others could have filled, and a pick no entry can
+    /// fill is left out, a required one before any other. Within a place,
+    /// required picks come first.
+    pub fn plan_run(&self, rng: &mut impl Rng, places: &[Place]) -> Vec<Vec<Pick>> {
+        let mut plan = Plan::new(self, places);
+        // Each place's count of each kind, in place order and then kind
+        // order, so a count never moves for a draw made after it.
+        let mut owed: [Vec<(usize, usize)>; 2] = [Vec::new(), Vec::new()];
+        for (p, place) in places.iter().enumerate() {
+            for k in 0..self.kinds.len() {
+                if let Some(b) = self.budget(k, place.band) {
+                    let count = rng.random_range(b.count.0..=b.count.1);
+                    plan.owed[p][k] = count;
+                    owed[usize::from(!b.required)].extend(std::iter::repeat_n((p, k), count as usize));
+                }
+            }
+        }
+        let mut picks = vec![Vec::new(); places.len()];
+        for (tier, slots) in owed.iter_mut().enumerate() {
+            let required = tier == 0;
+            slots.shuffle(rng);
+            let mut most = plan.most(required);
+            for &(p, k) in slots.iter() {
+                let mut candidates: Vec<usize> = plan.fitting[p].iter().copied().filter(|&e| self.entries[e].kind == k && plan.open(p, e)).collect();
+                plan.owed[p][k] -= 1;
+                while !candidates.is_empty() {
+                    let total: u64 = candidates.iter().map(|&e| u64::from(self.entries[e].weight)).sum();
+                    let mut roll = rng.random_range(0..total);
+                    let at = candidates
+                        .iter()
+                        .position(|&e| {
+                            let w = u64::from(self.entries[e].weight);
+                            roll < w || {
+                                roll -= w;
+                                false
+                            }
+                        })
+                        .expect("the roll is below the total");
+                    let e = candidates.swap_remove(at);
+                    plan.take(p, e, true);
+                    if plan.most(required) + 1 == most {
+                        most -= 1;
+                        picks[p].push(Pick { entry: e, required });
+                        break;
+                    }
+                    plan.take(p, e, false);
+                }
+                // A pick with no entry left that keeps the rest whole is
+                // one no plan could make, and is left out.
+            }
+        }
+        picks
+    }
+}
+
+/// What a run's plan has drawn so far, and the flow that says whether a
+/// draw leaves the rest as fully made as before.
+struct Plan<'a> {
+    pool: &'a Pool,
+    /// Each place's entries that fit it and carry weight.
+    fitting: Vec<Vec<usize>>,
+    /// Each place's picks of each kind still owed.
+    owed: Vec<Vec<u32>>,
+    /// Whether each place's budget of each kind is required.
+    required: Vec<Vec<bool>>,
+    /// Each place's picks of each entry.
+    here: Vec<Vec<u32>>,
+    /// Each entry's picks in the run.
+    run: Vec<u32>,
+    /// Every group, by name.
+    groups: Vec<&'a str>,
+    /// Each entry's group, as an index into `groups`.
+    group: Vec<Option<usize>>,
+    /// Each place's groups already drawn from.
+    shut: Vec<Vec<bool>>,
+}
+
+impl<'a> Plan<'a> {
+    fn new(pool: &'a Pool, places: &[Place]) -> Self {
+        let mut groups: Vec<&str> = Vec::new();
+        let group = pool
+            .entries
+            .iter()
+            .map(|e| {
+                e.group.as_deref().map(|g| {
+                    groups.iter().position(|n| *n == g).unwrap_or_else(|| {
+                        groups.push(g);
+                        groups.len() - 1
+                    })
+                })
+            })
+            .collect();
+        let fitting = places
+            .iter()
+            .map(|pl| (0..pool.entries.len()).filter(|&e| pool.entries[e].weight > 0 && pool.entries[e].fits(pl.band, &pl.tags)).collect())
+            .collect();
+        let required = places.iter().map(|pl| (0..pool.kinds.len()).map(|k| pool.budget(k, pl.band).is_some_and(|b| b.required)).collect()).collect();
+        Self {
+            pool,
+            fitting,
+            owed: vec![vec![0; pool.kinds.len()]; places.len()],
+            required,
+            here: vec![vec![0; pool.entries.len()]; places.len()],
+            run: vec![0; pool.entries.len()],
+            shut: vec![vec![false; groups.len()]; places.len()],
+            groups,
+            group,
+        }
+    }
+
+    /// Whether place `p` may take one more of entry `e`.
+    fn open(&self, p: usize, e: usize) -> bool {
+        let entry = &self.pool.entries[e];
+        self.here[p][e] < entry.per_place && self.run[e] < entry.per_run && self.group[e].is_none_or(|g| !self.shut[p][g])
+    }
+
+    /// Gives place `p` one of entry `e`, or takes it back.
+    fn take(&mut self, p: usize, e: usize, give: bool) {
+        let step = |n: &mut u32| if give { *n += 1 } else { *n -= 1 };
+        step(&mut self.here[p][e]);
+        step(&mut self.run[e]);
+        if let Some(g) = self.group[e] {
+            self.shut[p][g] = give;
+        }
+    }
+
+    /// The most of the picks still owed to budgets that are `required`, or
+    /// that are not, that can all be made together: a maximum flow from
+    /// each place's owed picks of a kind, through a gate of one for each
+    /// group at that place, to each entry that fits and is open, each
+    /// carrying at most its per-place limit less what the place holds,
+    /// and on to the end through each entry's per-run limit less what the
+    /// run holds. A group is of one kind, so a gate never carries one kind
+    /// into another's entries.
+    fn most(&self, required: bool) -> u32 {
+        let mut net = Net::default();
+        let (source, sink) = (net.node(), net.node());
+        let entries: Vec<usize> = (0..self.pool.entries.len()).map(|_| net.node()).collect();
+        for (e, &node) in entries.iter().enumerate() {
+            net.edge(node, sink, self.pool.entries[e].per_run - self.run[e]);
+        }
+        for (p, fitting) in self.fitting.iter().enumerate() {
+            let mut gates: Vec<Option<usize>> = vec![None; self.groups.len()];
+            for (k, &owed) in self.owed[p].iter().enumerate() {
+                if owed == 0 || self.required[p][k] != required {
+                    continue;
+                }
+                let slot = net.node();
+                net.edge(source, slot, owed);
+                for &e in fitting.iter().filter(|&&e| self.pool.entries[e].kind == k && self.open(p, e)) {
+                    let room = self.pool.entries[e].per_place - self.here[p][e];
+                    match self.group[e] {
+                        None => net.edge(slot, entries[e], room),
+                        Some(g) => {
+                            let gate = *gates[g].get_or_insert_with(|| {
+                                let (inn, out) = (net.node(), net.node());
+                                net.edge(slot, inn, u32::MAX);
+                                net.edge(inn, out, 1);
+                                out
+                            });
+                            net.edge(gate, entries[e], room);
+                        }
+                    }
+                }
+            }
+        }
+        net.flow(source, sink)
+    }
+}
+
+/// A flow network: each edge stored beside its reverse, at an index one
+/// apart, so pushing along one gives the other back.
+#[derive(Default)]
+struct Net {
+    out: Vec<Vec<usize>>,
+    to: Vec<usize>,
+    cap: Vec<u32>,
+}
+
+impl Net {
+    fn node(&mut self) -> usize {
+        self.out.push(Vec::new());
+        self.out.len() - 1
+    }
+
+    fn edge(&mut self, from: usize, to: usize, cap: u32) {
+        for (a, b, c) in [(from, to, cap), (to, from, 0)] {
+            self.out[a].push(self.to.len());
+            self.to.push(b);
+            self.cap.push(c);
+        }
+    }
+
+    /// The most that flows from `source` to `sink`, by shortest paths
+    /// with room left, each found by a walk out from the source. Flows
+    /// here are a run's picks, a few dozen at most.
+    fn flow(&mut self, source: usize, sink: usize) -> u32 {
+        let mut total = 0;
+        loop {
+            let mut via: Vec<Option<usize>> = vec![None; self.out.len()];
+            let mut queue = std::collections::VecDeque::from([source]);
+            while let Some(n) = queue.pop_front() {
+                if n == sink {
+                    break;
+                }
+                for &i in &self.out[n] {
+                    let m = self.to[i];
+                    if self.cap[i] > 0 && m != source && via[m].is_none() {
+                        via[m] = Some(i);
+                        queue.push_back(m);
+                    }
+                }
+            }
+            if via[sink].is_none() {
+                return total;
+            }
+            let mut push = u32::MAX;
+            let mut n = sink;
+            while let Some(i) = via[n] {
+                push = push.min(self.cap[i]);
+                n = self.to[i ^ 1];
+            }
+            let mut n = sink;
+            while let Some(i) = via[n] {
+                self.cap[i] -= push;
+                self.cap[i ^ 1] += push;
+                n = self.to[i ^ 1];
+            }
+            total += push;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -666,5 +945,185 @@ mod tests {
         let items = crate::loot::LootTable::new(Vec::new(), |n: &u32| n.to_string());
         let report = coverage(&pool, &w.pieces, &Sources { roles: &roles, monsters: &monsters, items: &items, tags: &w.tags });
         assert_eq!(report.empties(), vec![("rack", 'w', 2), ("rack", 'w', 3), ("rack", 'w', 5)]);
+    }
+
+    /// A pool of dressings alone, since what is laid is no business of
+    /// the plan: three kinds, floors and tags that leave some places few
+    /// entries, two groups, and for each kind a plain entry that fits
+    /// everywhere and may fill a whole budget, so every budget can always
+    /// be met.
+    const RUN: &str = r#"(
+        weights: [("rare", 5), ("uncommon", 20), ("common", 50), ("frequent", 100)],
+        tags: ["wet", "dry", "deep"],
+        budgets: [
+            (floors: (1, 6), kind: "flavor", count: (2, 4)),
+            (floors: (7, 10), kind: "flavor", count: (1, 2)),
+            (floors: (1, 9), kind: "risk", count: (1, 2), required: true),
+            (floors: (1, 10), kind: "reward", count: (0, 2), required: true),
+        ],
+        entries: [
+            (name: "f any", kind: "flavor", dressing: "x", floors: (1, 10), weight: "rare", per_place: 4, per_run: 40, placed: Dressed),
+            (name: "f wet", kind: "flavor", dressing: "x", floors: (1, 10), where: ["wet"], weight: "frequent", per_place: 2, per_run: 3, placed: Dressed),
+            (name: "f dry", kind: "flavor", dressing: "x", floors: (2, 8), where: ["dry"], weight: "common", per_run: 2, placed: Dressed),
+            (name: "f shallow", kind: "flavor", dressing: "x", floors: (1, 4), not: ["wet"], weight: "uncommon", per_run: 2, placed: Dressed),
+            (name: "f deep", kind: "flavor", dressing: "x", floors: (5, 10), where: ["deep"], weight: "common", per_run: 2, placed: Dressed),
+            (name: "f odd", kind: "flavor", dressing: "x", floors: (3, 3), weight: "rare", placed: Dressed),
+            (name: "r any", kind: "risk", dressing: "x", floors: (1, 9), weight: "rare", per_place: 2, per_run: 40, placed: Dressed),
+            (name: "r one", kind: "risk", dressing: "x", floors: (1, 9), weight: "common", group: "pair", placed: Dressed),
+            (name: "r two", kind: "risk", dressing: "x", floors: (2, 9), weight: "common", group: "pair", per_run: 2, placed: Dressed),
+            (name: "r wet", kind: "risk", dressing: "x", floors: (3, 6), where: ["wet"], weight: "uncommon", per_run: 2, placed: Dressed),
+            (name: "r deep", kind: "risk", dressing: "x", floors: (6, 9), weight: "uncommon", placed: Dressed),
+            (name: "w any", kind: "reward", dressing: "x", floors: (1, 10), weight: "rare", per_place: 2, per_run: 40, placed: Dressed),
+            (name: "w a", kind: "reward", dressing: "x", floors: (1, 5), weight: "frequent", group: "shelf", per_run: 2, placed: Dressed),
+            (name: "w b", kind: "reward", dressing: "x", floors: (1, 10), weight: "common", group: "shelf", per_run: 2, placed: Dressed),
+            (name: "w dry", kind: "reward", dressing: "x", floors: (4, 10), where: ["dry"], weight: "uncommon", placed: Dressed),
+        ],
+    )"#;
+
+    /// Ten floors, wet and dry by turns, the last four deep.
+    fn floors() -> Vec<Place> {
+        (1..=10)
+            .map(|band| {
+                let mut tags = vec![if band % 2 == 0 { "wet" } else { "dry" }.to_string()];
+                if band >= 7 {
+                    tags.push("deep".to_string());
+                }
+                Place { band, tags }
+            })
+            .collect()
+    }
+
+    fn plan(pool: &Pool, places: &[Place], seed: u64) -> Vec<Vec<Pick>> {
+        use rand::SeedableRng;
+        pool.plan_run(&mut rand::rngs::StdRng::seed_from_u64(seed), places)
+    }
+
+    const SEEDS: std::ops::Range<u64> = 0..500;
+
+    #[test]
+    fn no_limit_is_exceeded_and_no_group_shares_a_floor() {
+        let pool = read(&world(), RUN).unwrap();
+        let places = floors();
+        for seed in SEEDS {
+            let picks = plan(&pool, &places, seed);
+            let mut run = vec![0; pool.entries.len()];
+            for (p, here) in picks.iter().enumerate() {
+                let mut groups: Vec<&str> = Vec::new();
+                for (i, pick) in here.iter().enumerate() {
+                    let e = &pool.entries[pick.entry];
+                    run[pick.entry] += 1;
+                    assert!(
+                        here.iter().filter(|o| o.entry == pick.entry).count() as u32 <= e.per_place,
+                        "seed {seed}: {} past its per-place limit on floor {}",
+                        e.name,
+                        p + 1
+                    );
+                    if let Some(g) = &e.group {
+                        assert!(!groups.contains(&g.as_str()), "seed {seed}: group {g} twice on floor {}", p + 1);
+                        groups.push(g);
+                    }
+                    assert!(here[..i].iter().all(|o| o.required) || !pick.required, "seed {seed}: a required pick comes before any other");
+                }
+            }
+            for (e, n) in run.iter().enumerate() {
+                assert!(*n <= pool.entries[e].per_run, "seed {seed}: {} drawn {n} times", pool.entries[e].name);
+            }
+        }
+    }
+
+    #[test]
+    fn an_entry_is_never_drawn_outside_its_floors_or_its_tags() {
+        let pool = read(&world(), RUN).unwrap();
+        let places = floors();
+        for seed in SEEDS {
+            for (place, here) in places.iter().zip(plan(&pool, &places, seed)) {
+                for pick in here {
+                    let e = &pool.entries[pick.entry];
+                    assert!((e.floors.0..=e.floors.1).contains(&place.band), "seed {seed}: {} on floor {}", e.name, place.band);
+                    assert!(e.within.is_empty() || e.within.iter().any(|t| place.tags.contains(t)), "seed {seed}: {} in {:?}", e.name, place.tags);
+                    assert!(!e.not.iter().any(|t| place.tags.contains(t)), "seed {seed}: {} in {:?}", e.name, place.tags);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn every_budget_is_met_whenever_the_pool_can_meet_it() {
+        let pool = read(&world(), RUN).unwrap();
+        let places = floors();
+        for seed in SEEDS {
+            for (place, here) in places.iter().zip(plan(&pool, &places, seed)) {
+                for (k, kind) in pool.kinds.iter().enumerate() {
+                    let n = here.iter().filter(|p| pool.entries[p.entry].kind == k).count() as u32;
+                    let (lo, hi) = pool.budget(k, place.band).map_or((0, 0), |b| b.count);
+                    assert!((lo..=hi).contains(&n), "seed {seed}: floor {} holds {n} {kind}, its budget {lo} to {hi}", place.band);
+                    assert!(here.iter().filter(|p| pool.entries[p.entry].kind == k).all(|p| p.required == pool.budget(k, place.band).unwrap().required));
+                }
+            }
+        }
+    }
+
+    /// A draw that would spend the only entry a later floor can take on a
+    /// floor another entry could fill is drawn again, so the plan meets
+    /// what a draw floor by floor would miss; and where the pool cannot
+    /// meet every budget, it meets as many as can be met.
+    #[test]
+    fn a_scarce_entry_is_kept_for_the_floor_only_it_fits_and_a_short_pool_gives_all_it_has() {
+        let w = world();
+        let pool = read(
+            &w,
+            r#"(
+                weights: [("rare", 1), ("frequent", 1000)],
+                tags: [],
+                budgets: [(floors: (1, 3), kind: "reward", count: (1, 1), required: true)],
+                entries: [
+                    (name: "wide", kind: "reward", dressing: "x", floors: (1, 2), weight: "frequent", placed: Dressed),
+                    (name: "narrow", kind: "reward", dressing: "x", floors: (1, 1), weight: "rare", placed: Dressed),
+                    (name: "deep", kind: "reward", dressing: "x", floors: (3, 3), weight: "rare", per_place: 1, per_run: 1, placed: Dressed),
+                ],
+            )"#,
+        )
+        .unwrap();
+        let places: Vec<Place> = (1..=3).map(|band| Place { band, tags: Vec::new() }).collect();
+        for seed in 0..100 {
+            let names: Vec<Vec<&str>> = plan(&pool, &places, seed).iter().map(|h| h.iter().map(|p| pool.entries[p.entry].name.as_str()).collect()).collect();
+            assert_eq!(names, vec![vec!["narrow"], vec!["wide"], vec!["deep"]], "seed {seed}");
+        }
+
+        let mut short = pool.clone();
+        short.budgets[0].floors = (1, 4);
+        let places: Vec<Place> = (1..=4).map(|band| Place { band, tags: Vec::new() }).collect();
+        for seed in 0..100 {
+            let picks = plan(&short, &places, seed);
+            assert_eq!(picks.iter().map(Vec::len).sum::<usize>(), 3, "seed {seed}: three entries of one each fill three of four floors");
+            assert!(picks[3].is_empty(), "seed {seed}: nothing fits the fourth");
+        }
+    }
+
+    #[test]
+    fn every_entry_is_drawn_somewhere_over_the_seeds() {
+        let pool = read(&world(), RUN).unwrap();
+        let places = floors();
+        let mut drawn = vec![0; pool.entries.len()];
+        for seed in SEEDS {
+            for pick in plan(&pool, &places, seed).into_iter().flatten() {
+                drawn[pick.entry] += 1;
+            }
+        }
+        for (e, n) in drawn.iter().enumerate() {
+            assert!(*n > 0, "{} never drawn", pool.entries[e].name);
+        }
+    }
+
+    #[test]
+    fn the_same_seed_and_places_plan_the_same_picks() {
+        let pool = read(&world(), RUN).unwrap();
+        let places = floors();
+        let mut differ = 0;
+        for seed in 0..50 {
+            assert_eq!(plan(&pool, &places, seed), plan(&pool, &places, seed), "seed {seed}");
+            differ += usize::from(plan(&pool, &places, seed) != plan(&pool, &places, seed + 1));
+        }
+        assert!(differ > 45, "another seed plans other picks: {differ} of 50");
     }
 }
