@@ -230,10 +230,9 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [16_253_088_467_894_646_873, 7_484_810_904_469_358_100, 17_619_422_277_315_636_038],
-        "fingerprint tripwire: re-baselined for part 4's task 11, lairs and the throne as grown pieces (the \
-         boss's hall and a mini-boss's lair are now grown as areas of their own through the one entry each \
-         prefab marks, rather than carved over the floor after it grows, so the floors a seed's script walks \
-         differ from before)"
+        [1_428_479_905_794_989_082, 11_850_831_805_131_089_367, 17_813_382_532_949_749_808],
+        "fingerprint tripwire: re-baselined for part 4's task 12, the pool file and the flavor pieces (every \
+         floor now dresses every room the pool's picks did not take, from the biome's own weighted list of \
+         `assets/dressings.ron`, so the furniture and the floors a seed's script walks differ from before)"
     );
 }

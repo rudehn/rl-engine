@@ -600,15 +600,24 @@ mod tests {
             ("lamp post", true),
             ("well", true),
             ("forge", true),
-            ("anvil", true),
-            ("shelf", true),
-            ("barrel", true),
-            ("table", true),
+            // `anvil`, `shelf`, `barrel`, `table`, `hearth`, `bed`, `pew`
+            // and `rack` do not block: `assets/dressings.ron` places them
+            // at a density `rl_mapgen::Dress` only checks one slot at a
+            // time, conservatively, never reconsidering an earlier slot
+            // once a later one closes round it; two of them diagonal to a
+            // third can trap it for a mover that never cuts a corner, as
+            // the fingerprint's own scripted delve did on floor two of
+            // seed two before this was found. `altar` and `counter`,
+            // placed once by hand in Mereholt, still do.
+            ("anvil", false),
+            ("shelf", false),
+            ("barrel", false),
+            ("table", false),
             ("counter", true),
-            ("hearth", true),
-            ("bed", true),
+            ("hearth", false),
+            ("bed", false),
             ("altar", true),
-            ("pew", true),
+            ("pew", false),
             ("candelabra", false),
             ("brazier", true),
             ("throne", true),
@@ -616,11 +625,13 @@ mod tests {
             ("banner", false),
             ("bone organ", true),
             ("font", true),
-            ("rack", true),
+            ("rack", false),
             ("egg sac", true),
             ("fire", true),
             ("shackles", false),
-            // The flavor pool's thirteen fixed pieces.
+            // The flavor pool's thirteen fixed pieces: each a small, hand
+            // laid piece with open margin round every blocking prop, so
+            // none of the risk above applies to them.
             ("cold firepit", false),
             ("bedroll", false),
             ("broken pot", false),
@@ -638,32 +649,34 @@ mod tests {
             ("cracked bell", true),
             ("fishing net", false),
             ("creel", false),
-            // The flavor dressings' own scenery.
+            // The flavor and reward dressings' own scenery: none of these
+            // block, for the same reason as `anvil` above.
             ("chalk mark", false),
-            ("bench", true),
+            ("bench", false),
             ("dice", false),
             ("roots", false),
             ("sack", false),
-            ("footlocker", true),
+            ("footlocker", false),
             ("straw dummy", false),
             ("practice post", false),
             ("fungus stalk", false),
             ("cocooned husk", false),
             ("empty egg case", false),
             ("timber brace", false),
-            ("fallen beam", true),
+            ("fallen beam", false),
             ("ore vein", false),
             ("skull", false),
-            ("sarcophagus", true),
-            ("desk", true),
+            ("sarcophagus", false),
+            ("desk", false),
             ("reading lamp", false),
             ("page drift", false),
-            ("ruined screen", true),
+            ("ruined screen", false),
             ("shell heap", false),
-            ("quench trough", true),
+            ("quench trough", false),
             ("slag heap", false),
-            ("obsidian spire", true),
+            ("obsidian spire", false),
             ("midden", false),
+            ("lectern", false),
         ];
         assert_eq!(r.props.len(), props.len(), "a prop this list does not name");
         for (name, blocks) in props {

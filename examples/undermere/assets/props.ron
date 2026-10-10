@@ -40,15 +40,22 @@
     (name: "lamp post",  glyph: '|', color: (r: 240, g: 205, b: 130), blocks: true),
     (name: "well",       glyph: 'o', color: (r: 150, g: 155, b: 165), blocks: true),
     (name: "forge",      glyph: '&', color: (r: 255, g: 130, b: 50),  blocks: true),
-    (name: "anvil",      glyph: 'n', color: (r: 125, g: 125, b: 135), blocks: true),
-    (name: "shelf",      glyph: '=', color: (r: 150, g: 110, b: 70),  blocks: true),
-    (name: "barrel",     glyph: '0', color: (r: 165, g: 115, b: 60),  blocks: true),
-    (name: "table",      glyph: '-', color: (r: 170, g: 125, b: 80),  blocks: true),
+    // `anvil`, `shelf`, `barrel`, `table`, `hearth`, `bed`, `pew` and
+    // `rack` do not block: `assets/dressings.ron` scatters them at a
+    // density, and `rl_mapgen::Dress`'s own connectivity guard walks
+    // cardinally only, so two blocking props diagonal to a third can trap
+    // it for a mover that never cuts a corner, which the guard never
+    // sees. Blocking furniture stays only where it is placed once, by
+    // hand, in a piece: `altar` and `counter`, Mereholt's own.
+    (name: "anvil",      glyph: 'n', color: (r: 125, g: 125, b: 135)),
+    (name: "shelf",      glyph: '=', color: (r: 150, g: 110, b: 70)),
+    (name: "barrel",     glyph: '0', color: (r: 165, g: 115, b: 60)),
+    (name: "table",      glyph: '-', color: (r: 170, g: 125, b: 80)),
     (name: "counter",    glyph: '=', color: (r: 135, g: 95, b: 55),   blocks: true),
-    (name: "hearth",     glyph: '&', color: (r: 255, g: 145, b: 60),  blocks: true),
-    (name: "bed",        glyph: '-', color: (r: 190, g: 170, b: 140), blocks: true),
+    (name: "hearth",     glyph: '&', color: (r: 255, g: 145, b: 60)),
+    (name: "bed",        glyph: '-', color: (r: 190, g: 170, b: 140)),
     (name: "altar",      glyph: '_', color: (r: 235, g: 225, b: 190), blocks: true),
-    (name: "pew",        glyph: '=', color: (r: 140, g: 100, b: 65),  blocks: true),
+    (name: "pew",        glyph: '=', color: (r: 140, g: 100, b: 65)),
     // Candles stand in the temple and in the crypts, and nothing trips on them.
     (name: "candelabra", glyph: 'i', color: (r: 255, g: 230, b: 160)),
 
@@ -76,7 +83,9 @@
     (name: "banner",     glyph: '|', color: (r: 210, g: 60, b: 50)),
     (name: "bone organ", glyph: 'n', color: (r: 220, g: 215, b: 195), blocks: true),
     (name: "font",       glyph: 'u', color: (r: 150, g: 195, b: 205), blocks: true),
-    (name: "rack",       glyph: '=', color: (r: 110, g: 90, b: 70), blocks: true),
+    // Non-blocking too: `assets/dressings.ron` places it beside other
+    // furniture a dressing's own density chooses, the same reason above.
+    (name: "rack",       glyph: '=', color: (r: 110, g: 90, b: 70)),
     (name: "egg sac", glyph: 'o', color: (r: 230, g: 230, b: 200), blocks: true, health: 1,
      triggers: [(on: "destroyed", effects: [(kind: "Hatch", args: (monster: "cave spider", count: 2))])]),
 
@@ -110,30 +119,34 @@
     (name: "creel",         glyph: 'o', color: (r: 150, g: 125, b: 85)),
 
     // The flavor dressings' own scenery, laid by `rl_mapgen::Dress` rather
-    // than a fixed piece.
+    // than a fixed piece: none of these block, for the reason above
+    // `anvil` does not.
     (name: "chalk mark",    glyph: ':', color: (r: 220, g: 210, b: 180)),
-    (name: "bench",         glyph: '-', color: (r: 150, g: 110, b: 70), blocks: true),
+    (name: "bench",         glyph: '-', color: (r: 150, g: 110, b: 70)),
     (name: "dice",          glyph: '.', color: (r: 220, g: 210, b: 190)),
     (name: "roots",         glyph: '"', color: (r: 110, g: 85, b: 55)),
     (name: "sack",          glyph: 'o', color: (r: 165, g: 140, b: 95)),
-    (name: "footlocker",    glyph: '=', color: (r: 110, g: 90, b: 65), blocks: true),
+    (name: "footlocker",    glyph: '=', color: (r: 110, g: 90, b: 65)),
     (name: "straw dummy",   glyph: '&', color: (r: 190, g: 170, b: 110)),
     (name: "practice post", glyph: '|', color: (r: 140, g: 115, b: 80)),
     (name: "fungus stalk",  glyph: '!', color: (r: 90, g: 190, b: 160)),
     (name: "cocooned husk", glyph: '&', color: (r: 200, g: 195, b: 180)),
     (name: "empty egg case", glyph: 'o', color: (r: 210, g: 205, b: 180)),
     (name: "timber brace",  glyph: '|', color: (r: 140, g: 110, b: 75)),
-    (name: "fallen beam",   glyph: '/', color: (r: 110, g: 85, b: 55), blocks: true),
+    (name: "fallen beam",   glyph: '/', color: (r: 110, g: 85, b: 55)),
     (name: "ore vein",      glyph: '*', color: (r: 210, g: 180, b: 90)),
     (name: "skull",         glyph: 'o', color: (r: 215, g: 210, b: 195)),
-    (name: "sarcophagus",   glyph: '=', color: (r: 170, g: 168, b: 175), blocks: true),
-    (name: "desk",          glyph: '-', color: (r: 120, g: 95, b: 70), blocks: true),
+    (name: "sarcophagus",   glyph: '=', color: (r: 170, g: 168, b: 175)),
+    (name: "desk",          glyph: '-', color: (r: 120, g: 95, b: 70)),
     (name: "reading lamp",  glyph: 'i', color: (r: 180, g: 170, b: 140)),
     (name: "page drift",    glyph: '"', color: (r: 200, g: 195, b: 175)),
-    (name: "ruined screen", glyph: '|', color: (r: 140, g: 150, b: 155), blocks: true),
+    (name: "ruined screen", glyph: '|', color: (r: 140, g: 150, b: 155)),
     (name: "shell heap",    glyph: 'o', color: (r: 200, g: 190, b: 170)),
-    (name: "quench trough", glyph: '=', color: (r: 90, g: 90, b: 95), blocks: true),
+    (name: "quench trough", glyph: '=', color: (r: 90, g: 90, b: 95)),
     (name: "slag heap",     glyph: '^', color: (r: 90, g: 60, b: 45)),
-    (name: "obsidian spire", glyph: '^', color: (r: 60, g: 50, b: 70), blocks: true),
+    (name: "obsidian spire", glyph: '^', color: (r: 60, g: 50, b: 70)),
     (name: "midden",        glyph: '%', color: (r: 140, g: 125, b: 90)),
+
+    // The reward pool's own dressed entries, `assets/dressings.ron`.
+    (name: "lectern",       glyph: 'n', color: (r: 120, g: 95, b: 70)),
 ]

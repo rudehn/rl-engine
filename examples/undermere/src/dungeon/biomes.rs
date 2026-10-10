@@ -14,11 +14,24 @@
 //!
 //! A recipe names one in `assets/layout.ron`, checked at load both ways:
 //! every recipe a biome names is in the layout, and every recipe in the
-//! layout is named by some biome, so none is grown for nothing. `decor`
-//! and `dressings` are carried and left for the pool and dressing files of
-//! a later task to check against.
+//! layout is named by some biome, so none is grown for nothing. `decor` is
+//! carried and left for a pool-consistency check of a later task;
+//! [`district_dressings`] turns `dressings` into the weighted list
+//! `rl_mapgen::Dress` gives every area the pool's picks left bare.
+
+use rl_engine::rl_rules::dressing::DistrictDressings;
 
 use super::*;
+
+/// The weight a biome's own named dressing is given in every district it
+/// grows, in [`district_dressings`].
+const DRESSING_WEIGHT: u32 = 1;
+
+/// The weight of leaving an area bare in every district, well past any
+/// one dressing's own so most rooms the pool did not take stay plain
+/// (research 7.1, 7.2: leave floor empty for tactics; one composition of
+/// six is empty).
+const NOTHING_WEIGHT: u32 = 4;
 
 /// One recipe of `assets/layout.ron` a biome may grow a floor by, at a
 /// weight, and the lakes a floor grown by it lays, if any: lakes belong to
@@ -78,7 +91,9 @@ pub(crate) struct BiomeDef {
     pub(crate) paint: Vec<PaintDef>,
     #[allow(dead_code)] // Read once a pool file exists to check it against.
     pub(crate) decor: Vec<String>,
-    #[allow(dead_code)] // Read once a dressing file exists to check it against.
+    /// Named dressings of `assets/dressings.ron`, this biome's own rather
+    /// than any floor's; [`district_dressings`] weighs each at
+    /// [`DRESSING_WEIGHT`] in every district this biome grows.
     pub(crate) dressings: Vec<String>,
     pub(crate) favored: Vec<String>,
 }
@@ -222,6 +237,36 @@ pub(crate) fn load(tiles: &TileRegistry, layout: &LayoutDef) -> Registry<BiomeDe
         layout.recipes.iter().map(|r| r.name.as_str()).filter(|r| !defs.iter().any(|(_, d)| d.recipes.iter().any(|w| w.name == *r))).collect();
     assert!(unnamed.is_empty(), "assets/layout.ron: no biome grows {unnamed:?}");
     defs
+}
+
+/// Every district of `layout` that some biome of `defs` grows, each
+/// weighted with that biome's own `dressings` at [`DRESSING_WEIGHT`] and
+/// leaving the area bare at [`NOTHING_WEIGHT`], for the pass that dresses
+/// every area the pool's picks left untaken. A district two of a biome's
+/// recipes both grow is named once; `Undermere::new` checks the result
+/// against the dressing file and the layout once, at load, rather than on
+/// the floor that first grows it.
+pub(crate) fn district_dressings(defs: &Registry<BiomeDef>, layout: &LayoutDef) -> Vec<DistrictDressings> {
+    let mut out = Vec::new();
+    for (_, def) in defs.iter() {
+        let mut named: Vec<&str> = Vec::new();
+        for r in def.recipes.iter().filter_map(|r| layout.recipe(&r.name)) {
+            for &(i, _) in &r.districts {
+                let name = layout.districts[i].name.as_str();
+                if !named.contains(&name) {
+                    named.push(name);
+                }
+            }
+        }
+        for district in named {
+            out.push(DistrictDressings {
+                district: district.to_string(),
+                nothing: NOTHING_WEIGHT,
+                dressings: def.dressings.iter().map(|d| (d.clone(), DRESSING_WEIGHT)).collect(),
+            });
+        }
+    }
+    out
 }
 
 /// One of `weights` drawn by weight from `rng`, as its index.

@@ -18,6 +18,7 @@
 //! Ember Wyrm's hall, stand beside the Drowned King's own.
 
 use rl_engine::prelude::*;
+use rl_engine::rl_rules::dressing;
 use rl_engine::rl_rules::prefab;
 use rl_engine::rl_rules::role;
 
@@ -59,10 +60,15 @@ const PIECES: [&str; 25] = [
 /// Every role a prefab's slot may draw for, compiled in the same way.
 const ROLES: &str = include_str!("../assets/roles.ron");
 
-/// Every piece, resolved against `tiles`, the props and the bestiary the
-/// run loads, so a piece's ids are the running game's. Panics with every
-/// problem in every file, since a broken piece is a place that cannot be
-/// built.
+/// Every dressing, compiled in beside the pieces: thirty of the flavor
+/// pool's own, laid by the biome lists `dungeon/biomes.rs` builds from
+/// `assets/biomes.ron`'s own `dressings`, and four of the reward pool's.
+const DRESSINGS_RON: &str = include_str!("../assets/dressings.ron");
+
+/// Every piece and dressing, resolved against `tiles`, the props and the
+/// bestiary the run loads, so a piece's ids are the running game's. Panics
+/// with every problem in every file, since a broken piece is a place that
+/// cannot be built.
 pub fn load(tiles: &TileRegistry) -> Prefabs<MonsterDef> {
     // The whole library, in its one order, since the monsters a piece
     // stands are read against the traits and the items they name.
@@ -73,7 +79,8 @@ pub fn load(tiles: &TileRegistry) -> Prefabs<MonsterDef> {
     let roles = role::load::<MonsterDef>(ROLES, &names).unwrap_or_else(|e| panic!("assets/roles.ron: {e}"));
     let names = names.with("role", &roles);
     let defs = PIECES.iter().map(|text| prefab::load(text, tiles, &names).unwrap_or_else(|e| panic!("assets/prefabs: {e}"))).collect();
-    Prefabs::new(Registry::from_defs(defs).expect("every piece has a name of its own"), roles)
+    let dressings = dressing::load::<MonsterDef>(DRESSINGS_RON, tiles, &names).unwrap_or_else(|e| panic!("assets/dressings.ron: {e}"));
+    Prefabs::with_dressings(Registry::from_defs(defs).expect("every piece has a name of its own"), roles, dressings)
 }
 
 #[cfg(test)]

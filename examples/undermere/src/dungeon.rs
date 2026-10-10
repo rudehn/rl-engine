@@ -34,6 +34,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use rand::Rng;
+use rand::seq::SliceRandom;
 use rl_engine::prelude::*;
 use rl_engine::rl_bevy::layout::LayoutTiles;
 use rl_engine::rl_core::Rect;
@@ -41,6 +42,7 @@ use rl_engine::rl_mapgen::dungeon::{ExitPoint, FarthestExit, RandomStart};
 use rl_engine::rl_mapgen::passes::StartPoint;
 use rl_engine::rl_mapgen::{Area, Opening};
 use rl_engine::rl_render::TileAppearance;
+use rl_engine::rl_rules::dressing;
 use rl_engine::rl_rules::layout::{self, LayoutDef};
 
 use crate::bestiary::MonsterDef;
@@ -296,6 +298,10 @@ pub struct Undermere {
     layout: LayoutDef,
     defs: Registry<biomes::BiomeDef>,
     biomes: BTreeMap<u32, BiomeDraw>,
+    /// Every district's weighted list of dressings, built once from each
+    /// biome's own `dressings` and checked against `prefabs.dressings()`
+    /// and `layout` here rather than on the floor that first grows it.
+    districts: Vec<dressing::DistrictDressings>,
 }
 
 impl Undermere {
@@ -316,7 +322,9 @@ impl Undermere {
             biomes.insert(floor, biomes::draw(&defs, floor, seed, &tiles));
         }
         biomes.insert(FLOORS, biomes::throne(&defs, boss.biome, seed, &tiles));
-        Self { tiles, prefabs, seed, layout, defs, biomes }
+        let districts = biomes::district_dressings(&defs, &layout);
+        dressing::check_districts(&districts, prefabs.dressings(), &layout).unwrap_or_else(|e| panic!("assets/biomes.ron: {e}"));
+        Self { tiles, prefabs, seed, layout, defs, biomes, districts }
     }
 
     /// The biome `floor` draws: pure over `self.seed`, so every call
@@ -438,7 +446,12 @@ impl Undermere {
         } else {
             chain.then(RandomStart.clear_of_stamps(MIN_DISTANCE_FROM_ENTRY)).then(FarthestExit.among_farthest(EXIT_AMONG_PCT).clear_of_stamps(EXIT_CLEAR))
         };
-        chain = self.decor(chain.then(Survey), floor, drawn)?;
+        chain = chain.then(Survey);
+        // The pool's inside picks are not yet wired (the run has none to
+        // give it); `Dress` already dresses every free room from the
+        // biome's own weighted list, `nothing` among the choices.
+        chain = chain.then(rl_engine::rl_bevy::layout::dress(&self.prefabs, floor_tile, &self.districts)?);
+        chain = self.decor(chain, floor, drawn)?;
         // Floor one's way in is where the gate lets out, so its way up is
         // the gate's other side.
         if floor == 1 {
@@ -532,9 +545,51 @@ fn pieces(ctx: &BaseContext) -> Vec<Rect> {
     ctx.outputs().iter::<Stamped>().map(|st| st.bounds).collect()
 }
 
+/// Every cell a stamp has marked for a monster or a prop, which may yet
+/// block: the same cells `rl_mapgen::Dress` itself treats as blocking,
+/// whatever is put there, since neither pass knows that until the place's
+/// own arrival fills it.
+fn slots(ctx: &BaseContext) -> BTreeSet<Point> {
+    ctx.outputs().iter::<Stamped>().flat_map(|st| st.marks.iter().map(|(_, p)| *p)).collect()
+}
+
 /// Whether a body can stand on `p` of `ctx`'s terrain.
 fn walkable(ctx: &BaseContext, tables: &TileTables, p: Point) -> bool {
     ctx.terrain().get(p).is_some_and(|t| tables.walkable[t.index()])
+}
+
+/// Every cell reachable from `from`, one orthogonal step at a time,
+/// through terrain a body can stand on and no cell of `blocked`.
+fn flood(ctx: &BaseContext, tables: &TileTables, blocked: &BTreeSet<Point>, from: Point) -> BTreeSet<Point> {
+    let mut seen = BTreeSet::from([from]);
+    let mut stack = vec![from];
+    while let Some(p) = stack.pop() {
+        for d in Direction::CARDINALS {
+            let n = p + d.offset();
+            if walkable(ctx, tables, n) && !blocked.contains(&n) && seen.insert(n) {
+                stack.push(n);
+            }
+        }
+    }
+    seen
+}
+
+/// Whether making `at` impassable, on top of every cell already in
+/// `blocked`, would leave two of its own open neighbours with no other
+/// way to reach each other: the floor-wide reading of the guard
+/// `rl_mapgen::Dress` already gives one area, since [`Furnish`] scatters
+/// a piece over the whole of it rather than one area at a time. If
+/// blocking `at` disconnects anything at all, it disconnects two of its
+/// own neighbours from one another, since every path between the two
+/// sides of such a cut must have crossed the one cell that made it.
+fn disconnects(ctx: &BaseContext, tables: &TileTables, blocked: &BTreeSet<Point>, at: Point) -> bool {
+    let mut around = blocked.clone();
+    around.insert(at);
+    let open = |p: Point| walkable(ctx, tables, p) && !around.contains(&p);
+    let neighbors: Vec<Point> = Direction::CARDINALS.iter().map(|d| at + d.offset()).filter(|p| open(*p)).collect();
+    let Some((first, rest)) = neighbors.split_first() else { return false };
+    let seen = flood(ctx, tables, &around, *first);
+    rest.iter().any(|n| !seen.contains(n))
 }
 
 /// The terrain as a walker crosses it with every door opened on the way:
@@ -829,18 +884,21 @@ impl Pass<BaseContext> for Furnish {
         let tables = ctx.tiles().tables();
         let count = ctx.rng().random_range(self.count.0..=self.count.1);
         for _ in 0..count {
-            let (kept, pieces) = (ways(ctx), pieces(ctx));
+            let (kept, pieces, blocked) = (ways(ctx), pieces(ctx), slots(ctx));
             let clear = |p: Point| {
                 kept.iter().all(|w| geometry::chebyshev(p, *w) > 1)
                     && open_all_round(ctx, &tables, p)
                     && walkable(ctx, &tables, p)
                     && geometry::square(p, 1).all(|q| pieces.iter().all(|r| !r.contains(q)))
             };
-            let spots: Vec<Point> = ctx.terrain().bounds().cells().filter(|p| clear(*p)).collect();
-            if spots.is_empty() {
+            let mut spots: Vec<Point> = ctx.terrain().bounds().cells().filter(|p| clear(*p)).collect();
+            spots.shuffle(ctx.rng());
+            // The first spot, by this shuffle, that does not cut the
+            // floor in two once something fills it: a scatter, like
+            // `rl_mapgen::Dress`, never cuts off a cell it leaves clear.
+            let Some(at) = spots.into_iter().find(|p| !disconnects(ctx, &tables, &blocked, *p)) else {
                 break;
-            }
-            let at = spots[ctx.rng().random_range(0..spots.len())];
+            };
             StampPrefab { name: self.name, prefab: self.piece.clone(), at: Placement::At(at), orient: Orient::Fixed }.apply(ctx)?;
         }
         Ok(())
@@ -906,8 +964,8 @@ impl Pass<BaseContext> for Underfoot {
 
     fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let tables = ctx.tiles().tables();
-        let slots: BTreeSet<Point> = ctx.outputs().iter::<Stamped>().flat_map(|st| st.marks.iter().map(|(_, p)| *p)).collect();
-        let repaint: Vec<(Point, TileId)> = slots.iter().filter_map(|p| Self::floor_round(ctx, &tables, &slots, *p).map(|t| (*p, t))).collect();
+        let marked = slots(ctx);
+        let repaint: Vec<(Point, TileId)> = marked.iter().filter_map(|p| Self::floor_round(ctx, &tables, &marked, *p).map(|t| (*p, t))).collect();
         for (p, t) in repaint {
             ctx.terrain_mut().set(p, t);
         }
