@@ -3,7 +3,9 @@
 //! binary opens the window, cuts the screen and adds the panels; the game
 //! itself, and its docs, live in `lib.rs`.
 //!
-//! `cargo run -p undermere -- --seed 7`. For a picture of a deeper floor,
+//! `cargo run -p undermere -- --seed 7`. `--floor 3 --seed 7` prints floor
+//! three of that run as glyphs and quits, and `--recipe knot` after them
+//! grows it by that recipe instead. For a picture of a deeper floor,
 //! `UNDERMERE_START=5` starts the run on floor five instead of in Mereholt,
 //! `UNDERMERE_NEAR=camp` stands the adventurer a few steps short of what
 //! it names there (`camp`, `captive`, `lair`, `throne` or a monster's
@@ -246,14 +248,34 @@ fn tint_clouds(app: &mut App) {
     }
 }
 
+/// Prints floor `floor` of the run of `seed` as glyphs, grown by `recipe`
+/// in place of the one the seed draws when it names one, for reading a
+/// recipe by eye before calling it done.
+fn print_floor(floor: &str, seed: &str, recipe: Option<&str>) -> AppExit {
+    let floor = floor.parse().expect("--floor takes a number");
+    let undermere = undermere::dungeon::Undermere::new(RunSeed(seed.parse().expect("--seed takes a number")));
+    match undermere.render(floor, recipe) {
+        Ok(rows) => {
+            print!("{rows}");
+            AppExit::Success
+        }
+        Err(e) => {
+            eprintln!("floor {floor}: {e}");
+            AppExit::error()
+        }
+    }
+}
+
 fn main() -> AppExit {
     let mut seed = rl_engine::rl_bevy::replay::seed().unwrap_or_else(RunSeed::fresh);
     let args = rl_engine::rl_bevy::replay::args();
     match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
         [] => {}
         ["--seed", n] => seed = RunSeed(n.parse().expect("--seed takes a number")),
+        ["--floor", n, "--seed", s] | ["--seed", s, "--floor", n] => return print_floor(n, s, None),
+        ["--floor", n, "--seed", s, "--recipe", r] => return print_floor(n, s, Some(r)),
         _ => {
-            eprintln!("usage: undermere [--seed N]");
+            eprintln!("usage: undermere [--seed N | --floor N --seed N [--recipe NAME]]");
             return AppExit::error();
         }
     }
