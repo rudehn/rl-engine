@@ -20,7 +20,7 @@
 //! by [`name_roles`]. One who keeps its post has no mind and so stands
 //! still; one who wanders has a [`Roam`] mind kept to the tiles its row
 //! names, and one who walks rounds the universal
-//! [`Patrol`](crate::tricks::Patrol) over a route [`walk_rounds`] lays from
+//! [`Patrol`] over a route [`walk_rounds`] lays from
 //! one of its props to the next, so nobody walks out of Mereholt.
 //!
 //! Talking is the engine's offer of [`TALK`]: [`answer_talk`] says the
@@ -505,7 +505,7 @@ pub fn gather(
 }
 
 /// The cells beside a wanderer it may step onto by its row, as a
-/// [`Sense`](rl_engine::rl_rules::ai::Sense): open or not, since whether
+/// [`Sense`]: open or not, since whether
 /// one is free is the mind's own to ask.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OnBeat(pub Vec<Point>);

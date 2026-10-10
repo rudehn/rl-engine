@@ -1,7 +1,7 @@
 //! What the adventurer knows of a kind's traits.
 //!
 //! A monster's plain traits, its look, its speed, whether it flies, are
-//! known the moment its kind is seen at all: [`TraitDef::trick`], written
+//! known the moment its kind is seen at all: [`TraitDef::trick`](crate::traits::TraitDef::trick), written
 //! once in `traits.ron`, says which of a trait are not. [`MonsterLore`],
 //! saved with the run as [`crate::lore::Lore`] is, holds for each kind the
 //! tricks the adventurer has seen land: a bite that poisons someone, a

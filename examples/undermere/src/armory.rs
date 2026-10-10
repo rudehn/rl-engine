@@ -1011,7 +1011,7 @@ pub fn level_up(world: &mut World, item: Entity, by: i32) -> Option<i32> {
 
 /// Spawns `def` at `level` as [`spawn_item_at`] does, as a thing found
 /// rather than set out with: one whose level its wearer learns by wearing
-/// it is [`Unfamiliar`](crate::lore::Unfamiliar), so it reads `+?` until
+/// it is [`Unfamiliar`], so it reads `+?` until
 /// it has been worn long enough or is identified.
 pub fn spawn_found(commands: &mut Commands, armory: &Armory, def: Id<ItemDef>, level: i32, registries: &Registries) -> Entity {
     let thing = spawn_item_at(commands, armory, def, level, registries);
@@ -1121,7 +1121,7 @@ impl ItemMaker for Armory {
     /// What is found is not yet known for what it is: each thing that takes
     /// levels at the level [`found_level`](Self::found_level) rolls, and a
     /// thing whose level its wearer learns by wearing it marked
-    /// [`Unfamiliar`](crate::lore::Unfamiliar), so it reads `+?` until it
+    /// [`Unfamiliar`], so it reads `+?` until it
     /// has been worn long enough or is identified.
     fn make(
         &self,

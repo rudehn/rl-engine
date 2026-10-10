@@ -40,7 +40,7 @@ pub const THRONE_GROUPS: u32 = 4;
 /// about half on floor one, falling to about a sixth by floor nine, the
 /// controller's own span, interpolated by hand between those two and
 /// rounded to the nearest whole percent. Index `0` is floor one.
-const SLEEP_PCT: [u32; 9] = [50, 46, 42, 38, 33, 29, 25, 21, 17];
+pub const SLEEP_PCT: [u32; 9] = [50, 46, 42, 38, 33, 29, 25, 21, 17];
 
 /// The percent chance a monster of `floor` starts asleep: [`SLEEP_PCT`]'s
 /// own, doubled and capped at a hundred for a `sleepy` kind, and nought,
@@ -160,7 +160,7 @@ const LAIR_CLEARANCE: i32 = 8;
 
 /// A leader and the followers it is drawn with, one band to a floor's own
 /// band of floors: the dar trio, always all three, and a goblin war band,
-/// a goblin leading two of its own kinds. Placed by [`place_band`] before
+/// a goblin leading two of its own kinds. Placed by `place_band` before
 /// [`plan`]'s own random groups, so neither ever lands on the band's
 /// cells, and never the camp, the fire or the watch round a goblin band,
 /// which is a lived-in dungeon's and not this.
@@ -178,7 +178,7 @@ struct Band {
 /// The dar trio, floors eight and nine, the blademaster leading; a goblin
 /// war band, floors three to six, a goblin leading two of archer,
 /// conjurer or mystic, so a war band never doubles one kind.
-const BANDS: &[Band] = &[
+pub const BANDS: &[Band] = &[
     Band { floors: (3, 6), leader: "goblin", followers: &["goblin archer", "goblin conjurer", "goblin mystic"], count: 2 },
     Band { floors: (8, 9), leader: "dar blademaster", followers: &["dar priestess", "dar battlemage"], count: 2 },
 ];
@@ -554,7 +554,7 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
 /// Wires every entourage member a lair's own prefab just stood up to the
 /// one mini-boss among them with the engine's own `Leader`, the moment a
 /// floor's arrival fills its slots: task 8a's own band, brought together
-/// the same way [`place_band`]'s already are, but by the engine's prefab
+/// the same way `place_band`'s already are, but by the engine's prefab
 /// slots rather than by this module's own placement. Read by
 /// [`MonsterDef::miniboss`] rather than a name, since nothing else `Post`
 /// marks is ever a monster but a slot's own, and the throne's court

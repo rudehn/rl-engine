@@ -1,6 +1,6 @@
 //! A shackled monster of the floor, freed to follow.
 //!
-//! [`population::place_captive`](crate::population::place_captive) stands
+//! `population::place_captive` stands
 //! one a run, neutral and anchored by a one-waypoint `PatrolRoute`, the
 //! universal brain's own `Patrol`, offering [`FREE_VERB`]
 //! through the engine's own actor offers (task 4): a long action of
@@ -32,7 +32,7 @@ pub const FREE_TIME: u32 = 300;
 /// neutral to everyone, a one-waypoint `PatrolRoute` on its own cell, the
 /// universal brain's own `Patrol` keeping it there, and the [`FREE_VERB`]
 /// it offers. The one account of it, put on by
-/// [`population::place_captive`](crate::population::place_captive) when a
+/// `population::place_captive` when a
 /// floor is first stood and again by the save when a run that left one
 /// shackled is continued, since neither the side nor the offer is the
 /// engine's to keep.

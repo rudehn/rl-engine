@@ -121,7 +121,7 @@ pub struct Splits;
 
 /// The least health a split leaves either half with, the trait's own
 /// words: "none below 2".
-const SPLIT_MIN_HEALTH: i32 = 2;
+pub const SPLIT_MIN_HEALTH: i32 = 2;
 
 /// Splits whoever a blow of this pass left alive and marked [`Splits`]:
 /// half its current health each, rounded down and never below
@@ -539,7 +539,7 @@ pub fn wither(world: &mut World, target: Entity, by: Option<Entity>, turns: u32)
 pub struct Choir;
 
 /// How far a [`Choir`]'s own song reaches: the content sheet's own four.
-const SING_RANGE: i32 = 4;
+pub const SING_RANGE: i32 = 4;
 
 /// A body a choir might sing to: where it stands, its side, what it
 /// suffers, and whether the song already gave it its regeneration.
@@ -590,10 +590,10 @@ const EGG_SAC: &str = "egg sac";
 /// What an egg sac hatches into, and how many: the content sheet's own
 /// two cave spiders, shared by both ways a sac hatches so one number says
 /// it once.
-const EGG_SAC_HATCH: &str = "cave spider";
+pub const EGG_SAC_HATCH: &str = "cave spider";
 
 /// How many hatch at once.
-const EGG_SAC_HATCH_COUNT: u32 = 2;
+pub const EGG_SAC_HATCH_COUNT: u32 = 2;
 
 /// Hatches an egg sac into [`EGG_SAC_HATCH_COUNT`] of [`EGG_SAC_HATCH`]
 /// the moment something steps beside it, despawning the sac so the same
@@ -629,10 +629,10 @@ pub fn hatch_beside(
 
 /// How many of a [`Spawns`] kind's own turns pass between each spawnling:
 /// the content sheet's own three.
-const SPAWN_INTERVAL: u32 = 3;
+pub const SPAWN_INTERVAL: u32 = 3;
 
 /// What a [`Spawns`] kind spawns: the content sheet's own spawnling.
-const SPAWNLING: &str = "spawnling";
+pub const SPAWNLING: &str = "spawnling";
 
 /// Marks a kind that spawns young from the walls near it, a counter
 /// toward [`SPAWN_INTERVAL`] of its own turns: the Mother Below's
@@ -723,7 +723,7 @@ pub fn die_with_mother(mut deaths: MessageReader<DeathEvent>, spawned: Query<(En
 
 /// How many of a [`Wells`] kind's own turns pass between each thrall: the
 /// content sheet's own eight.
-const RISE_INTERVAL: u32 = 8;
+pub const RISE_INTERVAL: u32 = 8;
 
 /// How far from a [`Wells`] kind a cell of water may lie and still rise a
 /// thrall: wide enough to cover the one hall a `welling` kind's own
