@@ -1,7 +1,7 @@
 // What a mercenary waiting at the Sunken Lantern may carry, and what it asks
 // to be hired. Every candidate is the one kind, `mercenary` in `monsters.ron`;
 // what makes one unlike the next is its kit, drawn here, and its name, drawn
-// from the `mercenary` set in `names.ron`. `src/mercenaries.rs` reads it.
+// from the `mercenary` set in `names.ron`. `src/mercenaries/` reads it.
 //
 // A band is the deepest floor the run has reached: nought on the first
 // evening, before any floor, and ten once the throne's has been seen.

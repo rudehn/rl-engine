@@ -162,7 +162,7 @@ impl MercenaryBrains {
             if kind.flee_at() > 0 {
                 brain = brain.then(FleeWhenHurt { at_pct: kind.flee_at() });
             }
-            brain.then(UseCarried::default()).then(PutOnBetter).then(MeleeAdjacent).then(ThrowAtRange::default())
+            brain.then(UseCarried::default()).then(MeleeAdjacent).then(ThrowAtRange::default()).then(PutOnBetter)
         };
         let keep = Keep::leader(LEASH, 1);
         let unseen = Unseen(Keep::leader(1, 1));

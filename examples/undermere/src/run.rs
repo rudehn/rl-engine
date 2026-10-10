@@ -123,9 +123,9 @@ pub fn spawn_adventurer(commands: &mut Commands, registries: &Registries) -> Ent
 
 /// Things put in the adventurer's pack as if they had been found, beside
 /// the kit, for a photograph of the pack: `main.rs` reads them from
-/// `UNDERMERE_PACK`, written `potion of extra healing*2, ring of light:-2`, each
-/// a name from `items.ron` with a count after `*` and a level after `:`.
-/// Absent, nothing, which is every real run.
+/// `UNDERMERE_PACK`, written `potion of extra healing*2, ring of light:-2`,
+/// each a name from `items.ron` with a count after `*` and a level after
+/// `:`. Absent, nothing, which is every real run.
 #[derive(Resource, Debug, Clone, Default, PartialEq, Eq)]
 pub struct ExtraPack(pub Vec<(String, i32, u32)>);
 
@@ -152,14 +152,15 @@ impl ExtraPack {
     }
 }
 
-/// What a photograph of a deeper floor wants in sight on arriving there,
-/// or of Mereholt the person it wants to stand beside: `main.rs` reads it
-/// from `UNDERMERE_NEAR`, beside `UNDERMERE_START`. `camp` is a goblin
-/// camp's fire, `captive` a captive's shackles, `lair` the floor's
-/// mini-boss, `throne` the floor's boss, a [`role`] of `townsfolk.ron`
-/// that person in Mereholt (`smith`, `priest`, `child`, ...),
+/// What a photograph of a deeper floor wants in sight on arriving there, or
+/// of Mereholt the person it wants to stand beside: `main.rs` reads it from
+/// `UNDERMERE_NEAR`, beside `UNDERMERE_START`. `camp` is a goblin camp's
+/// fire, `captive` a captive's shackles, `lair` the floor's mini-boss,
+/// `throne` the floor's boss, a [`role`] of `townsfolk.ron` that person in
+/// Mereholt (`smith`, `priest`, `child`, ...),
 /// [`candidates`](crate::mercenaries::NEAR_CANDIDATES) the swords for hire
-/// in its tavern, and anything else a monster of that name. Absent, nothing, which is every real run.
+/// in its tavern, and anything else a monster of that name. Absent,
+/// nothing, which is every real run.
 ///
 /// The adventurer is warped along the way from where they arrived to it,
 /// [`NEAR_STEPS`] short of it, so what they see is what a player walking

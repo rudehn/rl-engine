@@ -165,7 +165,9 @@ pub fn know_as_the_adventurer_does(
 
 /// Putting on the thing in its pack it is best off wearing, when
 /// [`know_as_the_adventurer_does`] found one: a sword handed to it is worn
-/// on its next turn with nothing more pressing to do.
+/// on its next turn with nothing more pressing to do. Every brain asks it
+/// after striking and throwing, so one handed a sword mid-fight strikes
+/// with what it holds and arms once the fight lets it.
 #[derive(Debug, Clone, Copy)]
 pub struct PutOnBetter;
 
@@ -206,28 +208,45 @@ pub fn put_on(mut chosen: MessageReader<Intent<PutOn>>, mut equips: MessageWrite
     }
 }
 
-/// What someone has to give: everything in their pack they do not wear
-/// and that is not their purse.
+/// What deciding whether a thing may be given reads of it: what it is
+/// tagged, whether it is worn, thrown or used, and its kind.
+type Offered = (Option<&'static Tagged>, Has<Wearable>, Has<Throwable>, Option<&'static Triggers>, Option<&'static ItemKind>);
+
+/// What someone has to give a mercenary: everything in their pack they do
+/// not wear, that is not their purse, and that a mercenary can put on,
+/// throw or use, by the engine's own rule for a thing a mind is told it
+/// carries: a use of its own that asks for no other thing.
+///
+/// Never a waystone, though it is used from the pack: what it calls is
+/// the gate home for the adventurer, and in a hireling's hands it would
+/// be the adventurer's way back given to someone who can do nothing with
+/// it.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Givable<'w, 's> {
     bags: Query<'w, 's, (&'static Inventory, Option<&'static Equipped>)>,
-    tagged: Query<'w, 's, Option<&'static Tagged>>,
+    things: Query<'w, 's, Offered>,
     currency: Option<Res<'w, Currency>>,
+    armory: Res<'w, Armory>,
 }
 
 impl Givable<'_, '_> {
     /// What `who` has to give, in their pack's order.
     pub fn of(&self, who: Entity) -> Vec<Entity> {
         let Ok((bag, worn)) = self.bags.get(who) else { return Vec::new() };
-        let purse = |thing: Entity| self.currency.as_deref().is_some_and(|c| c.is(self.tagged.get(thing).ok().flatten()));
-        bag.items.iter().copied().filter(|t| worn.is_none_or(|w| !w.contains(*t)) && !purse(*t)).collect()
+        let waystone = self.armory.defs.id(crate::waystone::WAYSTONE);
+        let fit = |thing: Entity| {
+            let Ok((tagged, wearable, throwable, does, kind)) = self.things.get(thing) else { return false };
+            let purse = self.currency.as_deref().is_some_and(|c| c.is(tagged));
+            let usable = does.is_some_and(|d| d.on(Moments::USE).next().is_some() && d.asks().is_none());
+            !purse && kind.is_none_or(|k| Some(k.0) != waystone) && (wearable || throwable || usable)
+        };
+        bag.items.iter().copied().filter(|t| worn.is_none_or(|w| !w.contains(*t)) && fit(*t)).collect()
     }
 }
 
 /// Answers a hired mercenary's [`GIVE`], its step already spent: asks the
-/// bag which of the adventurer's things to hand over, among everything in
-/// their pack they do not wear and that is not their purse. With nothing
-/// to give, says so.
+/// bag which of the adventurer's things to hand over, among what
+/// [`Givable`] offers. With nothing to give, says so.
 ///
 /// In `TurnSet::React`, beside hiring's own answer.
 pub fn answer_give(
@@ -250,30 +269,51 @@ pub fn answer_give(
     }
 }
 
-/// What handing a thing over reads of it: its name and how many.
-type Handed = (&'static Name, Option<&'static Stack>, Has<MassNoun>);
+/// What handing a thing over reads of it: its name, how many, and what it
+/// does when used, which says whether it goes over whole.
+type Handed = (&'static Name, Option<&'static mut Stack>, Has<MassNoun>, Option<&'static Triggers>);
 
 /// The packs a thing is handed between, and what it is called.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Handing<'w, 's> {
+    commands: Commands<'w, 's>,
     bags: Query<'w, 's, &'static mut Inventory>,
     things: Query<'w, 's, Handed>,
 }
 
 impl Handing<'_, '_> {
-    /// Moves `thing` from `from`'s pack to `to`'s, and says what it is,
-    /// `2 potions of healing`; `None`, and nothing moved, when `from` does
+    /// Moves `thing` from `from`'s pack to `to`'s, and says what went,
+    /// `a potion of healing`; `None`, and nothing moved, when `from` does
     /// not carry it or either has no pack.
+    ///
+    /// One off the top of a stack of anything with a use, drunk or read, a
+    /// copy of its own, since nothing handed over comes back and a whole
+    /// stack given for one drink is a stack lost; a stack of anything else,
+    /// darts and javelins, goes whole, since a thrower with one dart
+    /// throws once. A potion can be thrown too, so whether it is thrown is
+    /// not the question.
     pub fn hand(&mut self, from: Entity, to: Entity, thing: Entity) -> Option<String> {
         let [mut giver, mut taker] = self.bags.get_many_mut([from, to]).ok()?;
         let at = giver.items.iter().position(|t| *t == thing)?;
-        giver.items.remove(at);
-        taker.items.push(thing);
-        let said = self.things.get(thing).map_or_else(
-            |_| "something".to_string(),
-            |(name, stack, mass)| counted_as(name.as_str(), stack.map_or(1, |s| s.count), if mass { Countability::Mass } else { Countability::Count }),
-        );
-        Some(said)
+        let Ok((name, stack, mass, does)) = self.things.get_mut(thing) else {
+            giver.items.remove(at);
+            taker.items.push(thing);
+            return Some("something".to_string());
+        };
+        let countable = if mass { Countability::Mass } else { Countability::Count };
+        let (handed, count) = match stack {
+            Some(mut stack) if stack.count > 1 && does.is_some_and(|d| d.on(Moments::USE).next().is_some()) => {
+                stack.count -= 1;
+                let key = stack.key;
+                (self.commands.entity(thing).clone_and_spawn().insert(Stack { key, count: 1 }).id(), 1)
+            }
+            stack => {
+                giver.items.remove(at);
+                (thing, stack.map_or(1, |s| s.count))
+            }
+        };
+        taker.items.push(handed);
+        Some(counted_as(name.as_str(), count, countable))
     }
 }
 
@@ -451,6 +491,66 @@ mod tests {
         assert!(!wears(&app, brenna, sword), "not worn before its turn");
         pass_turns(&mut app, 1);
         assert!(wears(&app, brenna, sword), "worn on its next turn");
+    }
+
+    /// A sword handed over with a foe beside it is not put on while the
+    /// fight lasts: the mercenary strikes with what it holds, and arms
+    /// once nothing is beside it to strike.
+    #[test]
+    fn a_sword_handed_over_mid_fight_waits_until_the_fight_lets_it() {
+        let (mut app, me, here) = arena(3);
+        let brenna = hired(&mut app, me, here.offset(2, 0), "Brenna");
+        let foe = crate::testing::still(&mut app, "goblin", here.offset(3, 0));
+        let sword = told(&mut app, "sword", 0);
+        give(&mut app, brenna, sword);
+        pass_turns(&mut app, 1);
+        assert!(!wears(&app, brenna, sword), "not armed while a foe is beside it");
+        assert_eq!(app.world().get::<rl_engine::rl_bevy::Doing>(brenna).and_then(|d| d.0), Some("melee_adjacent"), "it struck instead");
+        app.world_mut().despawn(foe);
+        pass_turns(&mut app, 1);
+        assert!(wears(&app, brenna, sword), "armed once the fight is over");
+    }
+
+    /// `give` never offers the waystone, the adventurer's way home; a
+    /// potion off a stack goes over one at a time, a copy of its own, and
+    /// a stack of darts goes whole.
+    #[test]
+    fn give_offers_no_waystone_and_hands_one_potion_off_a_stack_and_darts_whole() {
+        let (mut app, me, here) = arena(3);
+        let brenna = hired(&mut app, me, here.offset(2, 0), "Brenna");
+        let stacked = |app: &mut App, name: &str, count: u32| {
+            let thing = make(app, name);
+            app.world_mut().get_mut::<Stack>(thing).expect("a stack").count = count;
+            give(app, me, thing);
+            thing
+        };
+        let potions = stacked(&mut app, "potion of healing", 3);
+        let darts = stacked(&mut app, "dart", 5);
+        let stone = {
+            let world = app.world();
+            let id = world.resource::<Armory>().defs.expect(crate::waystone::WAYSTONE);
+            let bag = &world.get::<Inventory>(me).expect("a pack").items;
+            *bag.iter().find(|i| world.get::<ItemKind>(**i).is_some_and(|k| k.0 == id)).expect("a waystone in the pack")
+        };
+        take(&mut app, me, brenna, GIVE);
+        let asked: Vec<AskForThing> = app.world_mut().resource_mut::<Messages<AskForThing>>().drain().collect();
+        let [ask] = asked.as_slice() else { panic!("one question: {asked:?}") };
+        assert!(ask.choices.contains(&potions) && ask.choices.contains(&darts), "what it can drink and throw: {ask:?}");
+        assert!(!ask.choices.contains(&stone), "but never the way home: {ask:?}");
+
+        let verb = ask.verb;
+        app.world_mut().write_message(ThingChosen { user: me, asker: brenna, verb, thing: potions });
+        app.update();
+        let count = |app: &App, thing: Entity| app.world().get::<Stack>(thing).map(|s| s.count);
+        assert!(carries(&app, me, potions) && count(&app, potions) == Some(2), "two kept");
+        let theirs = app.world().get::<Inventory>(brenna).expect("a pack").items.iter().copied().find(|t| name_of(&app, *t) == name_of(&app, potions));
+        assert_eq!(theirs.map(|t| count(&app, t)), Some(Some(1)), "and one of its own handed over");
+        assert!(said(&app).iter().any(|l| l.starts_with("You give Brenna a potion")), "{:?}", said(&app));
+
+        app.world_mut().write_message(ThingChosen { user: me, asker: brenna, verb, thing: darts });
+        app.update();
+        assert!(carries(&app, brenna, darts) && !carries(&app, me, darts) && count(&app, darts) == Some(5), "the darts whole");
+        assert!(said(&app).contains(&"You give Brenna 5 darts.".to_string()), "{:?}", said(&app));
     }
 
     /// A cursed thing a mercenary puts on stays on, as the adventurer's

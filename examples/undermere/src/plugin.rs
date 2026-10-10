@@ -131,9 +131,10 @@ impl Plugin for UndermerePlugin {
         app.init_resource::<crate::townsfolk::GivenNames>().reset_on_new_run::<crate::townsfolk::GivenNames>();
         // The swords for hire at the Sunken Lantern: what they may carry
         // and ask, read with the rest; `hire`, the verb a candidate offers
-        // beside talk, and `give` and `dismiss`, a hired one's; and how many visits the run has made, which says
-        // which three wait there. The tone they speak in is their kind's,
-        // declared above while the bestiary is still to hand.
+        // beside talk, and `give` and `dismiss`, a hired one's; and how
+        // many visits the run has made, which says which three wait there.
+        // The tone they speak in is their kind's, declared above while the
+        // bestiary is still to hand.
         app.add_verb(crate::mercenaries::HIRE).add_verb(crate::mercenaries::GIVE).add_verb(crate::mercenaries::DISMISS);
         app.insert_resource(library.mercenaries);
         app.init_resource::<crate::mercenaries::Tavern>().reset_on_new_run::<crate::mercenaries::Tavern>();

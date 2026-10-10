@@ -154,9 +154,9 @@ pub fn remove_curse(world: &mut World, wearer: Entity) {
 /// cursed thing: it clings to them, and will not come off. And that it is
 /// below nought is plain from then on, so it is marked [`CurseShown`], and
 /// the pack says its level is below nought, rather than not known at all
-/// beside the line that has just said it is cursed. How far below nought stays unknown, as any
-/// level does, until they have worn it long enough or identified it: a
-/// curse shows its sign, not its size.
+/// beside the line that has just said it is cursed. How far below nought
+/// stays unknown, as any level does, until they have worn it long enough or
+/// identified it: a curse shows its sign, not its size.
 ///
 /// In `TurnSet::React`, after [`learn_by_use`](crate::lore::learn_by_use),
 /// so a ring whose kind putting it on made known is called by its kind.

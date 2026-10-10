@@ -5,19 +5,19 @@
 //!
 //! `cargo run -p undermere -- --seed 7`. For a picture of a deeper floor,
 //! `UNDERMERE_START=5` starts the run on floor five instead of in Mereholt,
-//! `UNDERMERE_NEAR=camp` stands the adventurer a few steps short of what
-//! it names there (`camp`, `captive`, `lair`, `throne` or a monster's
-//! name); without `UNDERMERE_START`, `UNDERMERE_NEAR=smith` stands them
-//! beside that person in Mereholt instead (any role of `townsfolk.ron`,
-//! `smith`, `priest`, `gatewarden`, `child`...), one step from their shop
-//! or their talk; `UNDERMERE_NEAR=candidates` stands them in the tavern
-//! beside the swords for hire. For one of the pack, `UNDERMERE_PACK="ring of light:-2,
+//! `UNDERMERE_NEAR=camp` stands the adventurer a few steps short of what it
+//! names there (`camp`, `captive`, `lair`, `throne` or a monster's name);
+//! without `UNDERMERE_START`, `UNDERMERE_NEAR=smith` stands them beside
+//! that person in Mereholt instead (any role of `townsfolk.ron`, `smith`,
+//! `priest`, `gatewarden`, `child`...), one step from their shop or their
+//! talk; `UNDERMERE_NEAR=candidates` stands them in the tavern beside the
+//! swords for hire. For one of the pack, `UNDERMERE_PACK="ring of light:-2,
 //! potion of extra healing*2"` puts those in it as if found. For a party,
 //! `UNDERMERE_PARTY=2` hires that many beside the adventurer wherever the
 //! run starts, after `UNDERMERE_NEAR` has stood them; with
 //! `UNDERMERE_START=10 UNDERMERE_NEAR=throne` a few steps into the throne
-//! room is a fight the party can fall in, and the end screen that names
-//! the fallen is that fight lost.
+//! room is a fight the party can fall in, and the end screen that names the
+//! fallen is that fight lost.
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
@@ -1448,10 +1448,11 @@ mod tests {
 
     /// The rail's foot is blank until someone follows; then it heads them
     /// "Company", over a rule, each in the order it joined with its order,
-    /// the longest of them whole, and a full health bar. Taking the gate with one of them beside the
-    /// adventurer and the other still in the tavern, the one that came is
-    /// still following on floor one, and the one that stayed is muted,
-    /// marked left behind in place of its order, and keeps its bar.
+    /// the longest of them whole, and a full health bar. Taking the gate
+    /// with one of them beside the adventurer and the other still in the
+    /// tavern, the one that came is still following on floor one, and the
+    /// one that stayed is muted, marked left behind in place of its order,
+    /// and keeps its bar.
     #[test]
     fn the_company_at_the_rails_foot_shows_each_follower_with_its_order_and_one_left_on_another_floor_marked_left_behind() {
         let mut app = on_screen(RunSeed(7));
