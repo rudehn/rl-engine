@@ -257,8 +257,9 @@ pub struct Counter<'w> {
 /// Walks the rows, crosses the sides, deals, and closes.
 ///
 /// A deal is written whether or not the row says it would be refused, so
-/// the engine's [`TradeRefused`] reaches the game's log the way a refused
-/// offer's answer does.
+/// the engine's resolver stays the one judge of it: a refused one is
+/// answered with [`TradeRefused`], for a game that wants a line saying
+/// why, over the row the screen already greys.
 pub fn trade_keys(keys: ControlInput, mut screen: Counter, mut buys: MessageWriter<Buy>, mut sells: MessageWriter<Sell>) {
     let Counter { binds, view, menu, modals, trading } = &mut screen;
     let modal = trade_modal(modals);

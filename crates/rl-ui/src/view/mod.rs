@@ -47,8 +47,8 @@ use rl_rules::Relation;
 use crate::facet::{Facet, FacetId};
 
 /// Every named thing that carries tags, for finding what a piece of the
-/// currency is called.
-pub(crate) type NamedPieces<'w, 's> = Query<'w, 's, (Entity, &'static Name, &'static rl_bevy::Tagged)>;
+/// currency is called by [`currency_name`].
+pub type NamedPieces<'w, 's> = Query<'w, 's, (Entity, &'static Name, &'static rl_bevy::Tagged)>;
 
 /// What one piece of the trade slice's currency is called: the `Name` of
 /// the first piece among `near`, else of any named piece in play, the
@@ -57,8 +57,9 @@ pub(crate) type NamedPieces<'w, 's> = Query<'w, 's, (Entity, &'static Name, &'st
 ///
 /// One place for the word, so the trade screen and the offers screen
 /// name the same currency the same way, and in the game's own word for a
-/// piece rather than its tag's.
-pub(crate) fn currency_name(currency: Option<&rl_bevy::Currency>, near: impl IntoIterator<Item = Entity>, pieces: &NamedPieces) -> String {
+/// piece rather than its tag's. Public so a game's own line about a
+/// payment, as one an offer's answer writes, names it by the same rule.
+pub fn currency_name(currency: Option<&rl_bevy::Currency>, near: impl IntoIterator<Item = Entity>, pieces: &NamedPieces) -> String {
     let Some(currency) = currency else { return String::new() };
     let is = |(_, _, tags): &(Entity, &Name, &rl_bevy::Tagged)| currency.is(Some(*tags));
     let nearby = near.into_iter().filter_map(|e| pieces.get(e).ok()).find(is);

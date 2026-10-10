@@ -306,7 +306,10 @@ fn purse(world: &World, who: Entity, currency: Currency) -> u32 {
 /// Part of a stack is split off as a thing of its own, as a throw splits
 /// one off; a stack lands in a carried stack of the same key, as a pickup
 /// merges one. Done on the world at once, so the next deal in the same
-/// frame counts what this one left.
+/// frame counts what this one left. A stack merged into one already
+/// carried takes that one's [`Worth`], and a part split off keeps the
+/// worth it had; a game whose prices depend on who holds a thing prices
+/// it again on arrival.
 fn hand_over(world: &mut World, from: Entity, to: Entity, item: Entity, count: u32) -> Entity {
     let stack = world.get::<Stack>(item).copied();
     let moving = match stack {
@@ -537,7 +540,7 @@ mod tests {
     use rl_core::{Direction, Point};
     use rl_rules::{Registry, TagDef};
 
-    /// The stack keys of the three kinds of thing in play.
+    /// The stack keys of the two kinds of thing in play that stack.
     const SCRIP: u64 = 1;
     const TOOL: u64 = 2;
 

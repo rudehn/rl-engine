@@ -19,19 +19,18 @@ Pushing a tag publishes its release page from its section here, through `scripts
 - A walk into someone that brings up the offers screen no longer also logs them as in the way: the narrator's `Phrase::YouBumpInto` is said only of a `Bumped` without `offers`, so walking into a keeper whose one offer has a price, or into anything offering several things or one refused, is asked about on the screen alone.
   A game without `OffersPanel` hears nothing from such a bump, where it heard `The clerk is in the way.`; one that wants a line for it reads `Bumped { offers: true }` and tells its own.
 
-- Walking into someone never spends currency: a lone offer with a price is no longer taken up by a bump, which reports `Bumped { offers: true }` instead so the offers screen asks, as it does for a refused or a second offer; an unpriced lone offer is still taken up by walking into it.
-  Both screens name the currency alike, by the `Name` of a piece of it counted with the new `rl_ui::view::sum_of(name, amount)`, so the offers screen reads `needs 50 scrips` where it read `needs 50 scrip` from the tag, and `OffersView::currency` is now a piece's name.
-
 - The trade screen shows the trader's purse at the foot of its side, beside the customer's at the foot of theirs, from the new `TradeView::trader_purse`, and words a short purse by whose it is: `TradeWords::short` ("cannot pay") on the wares, the new `TradeWords::trader_short` ("they lack") on the pack, where it is the trader who cannot pay; `TradeWords::refusal(why, deal)` now takes the side's `Deal`.
   The wares list only what is for sale, what the trader prices and does not wear, so a keeper's own gear and what it puts no price on are off the counter; the pack is still listed whole.
   A row of more than one says its price is for one, `10 arrows  2 each`, in the new `TradeWords::each`, where `2` alone read as the ten for two; a game that builds `TradeWords` field by field names it.
   The new `Trader::each(deal, ware)` is the price of one, its worth bought and the trader's share sold, which `Trader::quote` and the screen both ask, so the screen no longer keeps its own copy of the rule.
 
 - An actor's offer may have a price: the new `Offering::priced(price)` costs that much in the trade slice's `Currency`, and the gate refuses it to a taker carrying less with the new `Refused::Short(price)`, as it refuses one needing a tag the taker lacks; `Offer` carries the new `price` field beside its time.
+  Walking into someone never spends currency: a lone offer with a price is not taken up by a bump, which reports `Bumped { offers: true }` so the offers screen asks, as it does for a refused or a second offer; an unpriced lone offer is still taken up by walking into it.
   Taken up, the price is paid as a deal is, from the taker's stacks into the offerer's own pack, given one if it carries none, before the game's `Interacted` answer runs in `TurnSet::React`, so a service is a verb with a price and the currency stays conserved.
   A priced offer in a game with no `Currency` stops play, saying what is missing, rather than being refused for ever; a game that prices an offer adds `TradePlugin`.
   `Currency::count(bag, piece)` and `Currency::is(tags)` are the trade slice's own way to count a purse, public so a screen counts by the same rule.
-  The offers screen shows a price beside the time, and a row the purse cannot meet reads `needs 50 scrip`, named by the currency's tag; `OfferRow` has the new `price` and `OffersView` the new `currency`.
+  The offers screen shows a price beside the time, and a row the purse cannot meet reads `needs 50 scrips`; `OfferRow` has the new `price` and `OffersView` the new `currency`.
+  Both screens name the currency alike, by the `Name` of a piece of it, counted with the new `rl_ui::view::sum_of(name, amount)`; the rule that finds the name is public as the new `rl_ui::view::currency_name(currency, near, pieces)` over a `rl_ui::view::NamedPieces` query, so a game's own line about a payment names the coin as the screens do.
   A game constructing an `Offer` by hand adds `price: None`, and one that matches on `Refused` exhaustively gains an arm.
 
 - A trade has a screen: the new `TradePanel::new(rect)` goes up when the engine opens a trade and comes down when it ends, listing the trader's wares on the left with what one costs and the customer's pack on the right with what the trader would pay for one, the customer's currency at the foot, named by the currency's own `Name`.

@@ -31,7 +31,7 @@ use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_bevy::Source;
 use rl_engine::rl_ui::view::offers::OffersView;
-use rl_engine::rl_ui::view::sum_of;
+use rl_engine::rl_ui::view::{NamedPieces, currency_name, sum_of};
 use ron::options::Options;
 use serde::Deserialize;
 
@@ -261,20 +261,18 @@ pub fn answer_rites(world: &mut World, mut cursor: Local<MessageCursor<Interacte
 pub struct Purse<'w, 's> {
     currency: Option<Res<'w, Currency>>,
     bags: Query<'w, 's, &'static Inventory>,
-    pieces: Query<'w, 's, (Entity, &'static Name, &'static Tagged)>,
+    pieces: NamedPieces<'w, 's>,
 }
 
 impl Purse<'_, '_> {
     /// What one piece of the currency is called: a piece in the first of
-    /// `near`'s bags that holds one, else any piece in play, the lowest
-    /// entity first, as the trade screen finds it. Empty with none, which
-    /// `sum_of` says as the bare number.
+    /// `near`'s bags that holds one, else any piece in play, by the
+    /// engine's own [`currency_name`], so the rite's line and the screens
+    /// name the coin by one rule. Empty with none, which `sum_of` says as
+    /// the bare number.
     fn coin_name(&self, near: [Entity; 2]) -> String {
-        let Some(currency) = self.currency.as_deref() else { return String::new() };
-        let is = |(_, _, tags): &(Entity, &Name, &Tagged)| currency.is(Some(*tags));
         let carried = near.iter().filter_map(|who| self.bags.get(*who).ok()).flat_map(|bag| bag.items.iter().copied());
-        let nearby = carried.filter_map(|e| self.pieces.get(e).ok()).find(is);
-        nearby.or_else(|| self.pieces.iter().filter(is).min_by_key(|(e, _, _)| *e)).map(|(_, name, _)| name.as_str().to_string()).unwrap_or_default()
+        currency_name(self.currency.as_deref(), carried, &self.pieces)
     }
 }
 

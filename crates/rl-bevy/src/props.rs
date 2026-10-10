@@ -180,7 +180,7 @@ pub struct Offer {
     /// What the turn would cost.
     pub time: u32,
     /// What taking it up costs in the trade slice's
-    /// [`Currency`](crate::trade::Currency), when it has a price.
+    /// [`Currency`], when it has a price.
     pub price: Option<u32>,
     /// Why it cannot be taken up, when it cannot. An offer is listed
     /// either way, so a screen can grey a row and say why, as the ability
@@ -223,7 +223,7 @@ pub struct Offering {
     /// A tag the one taking it up must carry, or it is refused and says so.
     pub needs: Option<TagId>,
     /// What taking it up costs, in the trade slice's
-    /// [`Currency`](crate::trade::Currency), or nothing.
+    /// [`Currency`], or nothing.
     pub price: Option<u32>,
 }
 
@@ -233,7 +233,7 @@ impl Offering {
         Self { verb, time, needs: None, price: None }
     }
 
-    /// Costs `price` in the trade slice's [`Currency`](crate::trade::Currency):
+    /// Costs `price` in the trade slice's [`Currency`]:
     /// refused to anyone carrying less, and paid into the offerer's own
     /// pack, given one if it carries none, when taken up, before the game
     /// hears of it in [`Interacted`]. Never taken up by walking into whoever
@@ -1561,7 +1561,7 @@ mod actor_offers {
     fn taken_up_the_price_leaves_the_takers_currency_for_the_offerers_pack_before_the_answer_runs() {
         let (mut app, start, free, _) = arena();
         let coins = scrip(&mut app, 80);
-        let priest = someone(&mut app, start.offset(1, 0), Offers(vec![Offering::new(free, 200).priced(50)]));
+        let offerer = someone(&mut app, start.offset(1, 0), Offers(vec![Offering::new(free, 200).priced(50)]));
         let player = player_at(&mut app, start, Offers::default());
         app.world_mut().entity_mut(player).insert(Inventory { items: vec![coins] });
         app.update();
@@ -1574,20 +1574,20 @@ mod actor_offers {
                    mut paid: ResMut<Paid>| {
                 let count = |who: Entity| bags.get(who).map_or(0, |bag| currency.count(bag, |i| pieces.get(i).unwrap_or((None, None))));
                 for _ in done.read() {
-                    paid.0.push((count(player), count(priest)));
+                    paid.0.push((count(player), count(offerer)));
                 }
             })
             .in_set(crate::plugin::TurnSet::React),
         );
-        assert!(app.world().get::<Inventory>(priest).is_none(), "the offerer carries nothing yet");
+        assert!(app.world().get::<Inventory>(offerer).is_none(), "the offerer carries nothing yet");
 
         let before = app.world().resource::<Turns>().now();
-        app.world_mut().write_message(Intent::new(player, Interact { target: priest, verb: free }));
+        app.world_mut().write_message(Intent::new(player, Interact { target: offerer, verb: free }));
         app.update();
         assert_eq!(app.world().resource::<Turns>().now(), before + 200, "it costs its time");
         assert_eq!(app.world().resource::<Paid>().0, vec![(30, 50)], "the answer ran with the 50 already moved");
-        assert_eq!((purse(app.world(), player), purse(app.world(), priest)), (30, 50), "and nothing was made or lost");
-        let refused = app.world().resource::<OfferedHere>().find(player, priest, free).and_then(|o| o.refused);
+        assert_eq!((purse(app.world(), player), purse(app.world(), offerer)), (30, 50), "and nothing was made or lost");
+        let refused = app.world().resource::<OfferedHere>().find(player, offerer, free).and_then(|o| o.refused);
         assert_eq!(refused, Some(Refused::Short(50)), "30 left does not meet it a second time");
     }
 
