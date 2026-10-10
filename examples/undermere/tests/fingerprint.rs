@@ -230,8 +230,8 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [3_980_971_438_599_573_768, 13_862_721_143_101_052_644, 4_494_584_218_363_696_789],
-        "fingerprint tripwire: re-baselined for the monsters part's final review (a jelly splits only on a blow and \
-         only with four health left, and the ogre, the troll and the vampire bat sleep deeply)"
+        [8_347_163_467_729_755_853, 8_094_123_632_719_960_732, 5_755_972_555_783_606_584],
+        "fingerprint tripwire: re-baselined for the town part (Mereholt's people stand and walk from the first \
+         arrival, and a waystone is found as a kind of its own from floor five)"
     );
 }
