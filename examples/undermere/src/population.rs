@@ -1111,8 +1111,12 @@ mod tests {
             let map = map_of(4);
             arrive(&mut app, map);
             let fire_id = app.world().resource::<Registries>().props.expect("fire");
+            // A camp's own fire, which the population stands where no piece
+            // laid anything: a goblin stockade's fire is its piece's.
+            let laid: Vec<Point> = app.world().resource::<WorldMap>().place(map).expect("built").spots.iter().map(|s| s.at).collect();
             let world = app.world_mut();
-            let has_fire = world.query::<(&PropKind, &OnMap)>().iter(world).any(|(k, on)| k.0 == fire_id && on.0 == map);
+            let has_fire =
+                world.query::<(&PropKind, &OnMap, &Position)>().iter(world).any(|(k, on, at)| k.0 == fire_id && on.0 == map && !laid.contains(&at.0));
             if !has_fire {
                 continue;
             }

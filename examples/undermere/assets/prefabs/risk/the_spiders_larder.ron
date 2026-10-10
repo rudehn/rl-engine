@@ -1,18 +1,20 @@
 // A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
 // stands for; see `treasure_room.ron` for the full field list.
 //
-// Cocooned bodies to cut open for what they carried, spiders overhead.
+// The spiders' dead, cocooned in a corner of the cave and strung with web,
+// with what they carried still inside, and the spiders that wrapped them
+// waiting over them.
 (
     name: "The Spider's Larder",
     ground: "hall floor",
     rows: [
-        "h.h",
-        "cic",
+        "&w&",
+        "wsw",
+        "&ws",
     ],
     legend: {
-        '.': Tile("hall floor"),
-        'h': Monster(monster: "cave spider"),
-        'c': Prop("cocooned husk"),
-        'i': Item(tag: "potion", count: (1, 2)),
+        '&': Prop("cocooned body"),
+        'w': Tile("web"),
+        's': Monster(monster: "cave spider"),
     },
 )

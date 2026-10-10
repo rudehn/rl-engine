@@ -1,15 +1,18 @@
 // A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
 // stands for; see `treasure_room.ron` for the full field list.
 //
-// A spring that heals fully, once: taken as a single flask whose drinking
-// is the engine's own `Mend`, so the spring itself never answers twice.
+// A spring welling up through moss: one flask of its water heals whoever
+// drinks it whole, and it does not fill again.
 (
     name: "Healing Spring",
     ground: "hall floor",
     rows: [
-        "S",
+        " m ",
+        "mSm",
+        " m ",
     ],
     legend: {
+        'm': Tile("moss"),
         'S': Prop("spring"),
     },
 )

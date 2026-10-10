@@ -1,23 +1,19 @@
 // A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
 // stands for; see `treasure_room.ron` for the full field list.
 //
-// Part 3's captives, shackled under guard; freed, they follow: 'C' is a
-// `Mark`, read by `src/vaults.rs`'s own `spawn_chained_captive`, which
-// shackles the monster it stands there exactly as `population.rs`'s own
-// captive is shackled. One cell: the guard over it is a flavor that
-// risks a monster slot's own distance-from-entry and lair-band checks
-// for no mechanism of its own, so it stays scenery, the shackles beside
-// an empty post.
+// Two of the floor's own shackled to the wall, and their gaoler dozing
+// between them: each `C` a captive drawn and shackled by `src/vaults.rs` as
+// part 3's run captive is, freed the same way to follow, and `z` a sleeper
+// of the floor's own.
 (
     name: "Captives in Chains",
     ground: "hall floor",
     rows: [
-        "s.s",
-        ".C.",
+        "C C",
+        " z ",
     ],
     legend: {
-        '.': Tile("hall floor"),
-        's': Prop("shackles"),
         'C': Mark,
+        'z': Mark,
     },
 )

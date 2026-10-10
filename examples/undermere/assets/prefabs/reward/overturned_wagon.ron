@@ -1,19 +1,18 @@
 // A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
 // stands for; see `treasure_room.ron` for the full field list.
 //
-// A spilled cart, its gold scattered where it fell and a thing a floor
-// deeper tangled in the wreck.
+// A cart on its side where it was dragged down and left, its crates burst
+// and some of its coin still lying in the dirt.
 (
     name: "Overturned Wagon",
     ground: "hall floor",
     rows: [
-        "w.g",
-        ".i.",
+        "cW",
+        " g",
     ],
     legend: {
-        '.': Tile("hall floor"),
-        'w': Prop("overturned wagon"),
-        'g': Item(item: "gold coin", count: (2, 3)),
-        'i': Item(tag: "weapon", count: 1, band: 1),
+        'c': Prop("spilled crate"),
+        'W': Prop("overturned wagon"),
+        'g': Item(item: "gold coin", count: 1),
     },
 )

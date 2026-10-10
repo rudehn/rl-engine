@@ -1,23 +1,24 @@
 // A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
 // stands for; see `treasure_room.ron` for the full field list.
 //
-// A camp round a fire, bedrolls where sleepers lay, their loot pile and
-// a watch standing over it: one monster slot, since a floor's own lair
-// or another risk-and-reward piece beside it already counts toward the
-// floor's own court and the population tests' own bound on it.
+// A palisaded camp open at its front, three goblins asleep round the fire
+// inside it, each `G` laid asleep by `src/vaults.rs`, their plunder heaped
+// by the fire, and one awake on watch at the mouth of the stakes.
 (
     name: "The Goblin Stockade",
     ground: "hall floor",
     rows: [
-        "b.b",
-        "oFo",
-        "b.a",
+        "ppppp",
+        "pGFGp",
+        "p * p",
+        "pG  p",
+        " w   ",
     ],
     legend: {
-        '.': Tile("hall floor"),
-        'b': Prop("bedroll"),
-        'a': Monster(monster: "goblin archer"),
-        'F': Prop("brazier"),
-        'o': Item(item: "gold coin", count: (1, 2)),
+        'p': Prop("palisade"),
+        'G': Mark,
+        '*': Prop("loot pile"),
+        'F': Prop("fire"),
+        'w': Monster(monster: "goblin"),
     },
 )

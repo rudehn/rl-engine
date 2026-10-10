@@ -1,16 +1,16 @@
 // A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
 // stands for; see `treasure_room.ron` for the full field list.
 //
-// An altar at the end of its own dead end, a scroll of enchanting left
-// waiting on it.
+// An altar between two candles at the end of the way, a scroll of enchanting
+// laid on it.
 (
     name: "Enchanter's Altar",
     ground: "hall floor",
     rows: [
-        "as",
+        "iAi",
     ],
     legend: {
-        'a': Prop("altar"),
-        's': Item(item: "scroll of enchanting", count: 1),
+        'i': Prop("candelabra"),
+        'A': Prop("enchanter's altar"),
     },
 )

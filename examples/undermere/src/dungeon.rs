@@ -56,7 +56,7 @@ pub(crate) use biomes::BiomeDraw;
 use lairs::ClearOfTheThrone;
 #[cfg(test)]
 pub(crate) use lairs::{FINAL_BOSSES, MINI_BOSSES};
-use pieces::QuietWayIn;
+use pieces::{PieceLook, QuietWayIn};
 
 /// How many floors the Undermere goes down. The tenth is the throne's, and
 /// has no way down.
@@ -163,8 +163,9 @@ impl Family {
     /// than this, so it carries none.
     #[cfg(test)]
     fn shared_tiles(self) -> &'static [&'static str] {
-        // "hall wall" and "hall floor" are every risk-and-reward and
-        // reward grown placeholder's own; "web" (Web-Choked Corners,
+        // "hall wall" and "hall floor" are what every piece is drawn in
+        // before `PieceLook` and `Underfoot` lay the floor's own over it;
+        // "web" (Web-Choked Corners,
         // Silk Curtains), "rubble" (Collapsed Ceiling), "bones" (Bone
         // Scatter) and "flooded floor" and "moss" (Seep) are every
         // flavor dressing of `assets/pool.ron`'s own "any biome" rows.
@@ -249,6 +250,28 @@ impl Family {
         }
     }
 }
+
+/// What a risk-and-reward or reward piece draws in a tile of its own, on
+/// any floor it may stand on: a vault's door and gate, open and shut, the
+/// straw, the planks and the hole they leave, a causeway and the deep water
+/// round it, fallen rock, and the strewn floors a piece is dressed with.
+#[cfg(test)]
+const PIECE_TILES: [&str; 14] = [
+    "vault door",
+    "open vault door",
+    "stone gate",
+    "raised gate",
+    "straw",
+    "rotten planks",
+    "hole",
+    "sunken causeway",
+    "deep water",
+    "fallen rock",
+    "flooded floor",
+    "web",
+    "rubble",
+    "bones",
+];
 
 /// Every tile a place is built of, the town's first, then the doors, then
 /// each band's in order. What a tile looks like is `assets/tiles.ron`'s;
@@ -343,6 +366,26 @@ fn registry() -> TileRegistry {
             TileProps::wall("goblin hall wall"),
             TileProps::floor("goblin hall floor"),
             TileProps::floor("web").move_cost(300).burns(100, 3, "moss"),
+            // The risk-and-reward pieces' own, on any floor they stand on.
+            // A vault's door opens only for its own key and a sealed
+            // vault's gate for nobody until its lever is pulled; both are
+            // passable, so the engine's own walk with every lock opened
+            // goes through them, and a lock is what refuses a body.
+            TileProps::named("vault door").passable(true).opaque(true).blocks_projectiles(true).opens_to("open vault door"),
+            TileProps::floor("open vault door").closes_to("vault door"),
+            TileProps::named("stone gate").passable(true).opaque(true).blocks_projectiles(true),
+            TileProps::floor("raised gate"),
+            // Dry straw catches from anything burning and burns to rubble.
+            TileProps::floor("straw").burns(100, 4, "rubble"),
+            // Planks over a drop, and the drop once they give way: seen
+            // across, crossed by nobody.
+            TileProps::floor("rotten planks"),
+            TileProps::named("hole"),
+            // A drowned reliquary's causeway, hidden as deep water until
+            // it is spotted, and waded once it is.
+            wading("sunken causeway"),
+            // A collapsing gallery's way back, fallen in.
+            TileProps::wall("fallen rock"),
         ])
         .expect("every tile has a name of its own");
     tiles
@@ -512,9 +555,9 @@ impl Undermere {
             (drawn.wall, drawn.floor)
         };
         let door = if throne { floor_tile } else { self.tile("door") };
-        // Undermere grows no locked or sealed piece yet, so its door
-        // stands for both.
-        let tiles = LayoutTiles { floor: floor_tile, door, locked: door, sealed: door };
+        // A vault's own door and gate, which the pool's locked and sealed
+        // pieces are joined by.
+        let tiles = LayoutTiles { floor: floor_tile, door, locked: self.tile("vault door"), sealed: self.tile("stone gate") };
         let mut grown = rl_engine::rl_bevy::layout::passes(&self.layout, &drawn.recipe, &tiles)?;
         let (width, height) = grown.size;
         // This floor's picks, drawn once for the whole run in
@@ -539,6 +582,8 @@ impl Undermere {
                 chain = chain.then(bridges);
             }
         }
+        let look = PieceLook { wall: fill, floor: floor_tile, piece_wall: self.tile("hall wall"), piece_floor: self.tile("hall floor") };
+        chain = chain.then(look);
         chain = if throne {
             chain.then(RandomStart.clear_of_stamps(MIN_DISTANCE_FROM_ENTRY)).then(ClearOfTheThrone)
         } else {
@@ -588,7 +633,9 @@ impl Undermere {
     /// and for reading a recipe before calling it done: `#` what cannot be
     /// walked on, `.` what can, `+` a door, `~` what a body wades through,
     /// `≈` what stops it, `=` a bridge, `<` the way in and `>` the way
-    /// down, and a piece's or a dressing's slot by its own legend glyph.
+    /// down, `*` a locked or sealed door, `?` a cell hiding what it is,
+    /// `K` and `L` a vault's key and lever, and a piece's or a dressing's
+    /// slot by its own legend glyph.
     /// `recipe` grows the floor by that recipe of a biome of its band
     /// in place of the one the seed draws; an error names a recipe no
     /// biome of the floor grows, and a floor that cannot be grown is
@@ -604,7 +651,8 @@ impl Undermere {
         };
         let seed = RunSeed(self.seed.derive(SeedDomain::new(b"undermere.place"), u64::from(floor)));
         let grown = self.grow(floor, &drawn, seed, ATTEMPTS).map_err(|e| BuildError::new(e.pass, format!("{}, {}: {}", drawn.name, drawn.recipe, e.reason)))?;
-        let built = PlaceBuild::from_context(grown)?;
+        let mut built = PlaceBuild::from_context(grown)?;
+        crate::vaults::place_vault_fixtures(&mut built, &self.tiles, &self.prefabs, self.seed, map_of(floor));
         let tables = self.tiles.tables();
         let (door, bridges) = (self.tile("door"), [self.tile("bridge"), self.tile("iron bridge")]);
         let bounds = built.terrain.bounds();
@@ -615,10 +663,16 @@ impl Undermere {
                 let tile = built.terrain.get(p).expect("in bounds");
                 // What a piece or a dressing laid at a cell is shown by
                 // its own glyph, so a printed floor reads as its rooms.
-                let laid = built.spots.iter().find(|s| s.at == p).and_then(|s| char::from_u32(s.tag));
+                let laid = built.spots.iter().find(|s| s.at == p).and_then(|s| match s.tag {
+                    crate::vaults::KEY_TAG => Some('K'),
+                    crate::vaults::LEVER_TAG => Some('L'),
+                    tag => char::from_u32(tag),
+                });
                 out.push(match () {
                     _ if p == built.entry => '<',
                     _ if Some(p) == built.exit => '>',
+                    _ if built.locks.iter().any(|l| l.at == p) => '*',
+                    _ if built.secrets.iter().any(|s| s.at == p) => '?',
                     _ if tile == door => '+',
                     _ if laid.is_some() => laid.expect("just checked"),
                     _ if bridges.contains(&tile) => '=',
@@ -637,7 +691,7 @@ impl Undermere {
 impl PlaceRules for Undermere {
     fn build(&self, map: MapId, _: Option<&WorldGraph>) -> Result<PlaceBuild, BuildError> {
         let mut built = PlaceBuild::from_context(self.generate(map)?)?;
-        crate::vaults::place_vault_fixtures(&mut built, &self.tiles, self.seed, map);
+        crate::vaults::place_vault_fixtures(&mut built, &self.tiles, &self.prefabs, self.seed, map);
         Ok(built)
     }
 }
@@ -1170,7 +1224,9 @@ mod tests {
 
     /// With every prop that stands in the way and every monster a piece
     /// stands at its post, every cell a body may cross on every floor can
-    /// still be walked to from the floor's way in, doors opened: a floor
+    /// still be walked to from the floor's way in, doors opened, every
+    /// secret found and every lock and seal opened, and the way down with
+    /// none of them: a floor
     /// with a cell nobody reaches is a floor with a chest, a stair or a
     /// king nobody can get to, and water, lava and the furniture are each
     /// laid so they never cut one off.
@@ -1183,13 +1239,24 @@ mod tests {
             for floor in 1..=FLOORS {
                 let built = undermere.build(map_of(floor), None).unwrap();
                 let standing = standing(&undermere, &registries, &built);
-                let open = |p: Point| built.terrain.get(p).is_some_and(|t| tables.passable[t.index()]) && !standing.contains(&p);
+                // Every secret found, laid as what it really is; every lock
+                // and seal opened, which their tiles already let a walk
+                // through.
+                let mut found = built.terrain.clone();
+                for secret in &built.secrets {
+                    found.set(secret.at, secret.is);
+                }
+                let open = |p: Point| found.get(p).is_some_and(|t| tables.passable[t.index()]) && !standing.contains(&p);
                 let seen = walked(built.entry, open);
-                for p in built.terrain.bounds().cells().filter(|p| open(*p)) {
+                for p in found.bounds().cells().filter(|p| open(*p)) {
                     assert!(seen.contains(&p), "floor {floor}, seed {s}: {p:?} cannot be walked to with everything standing");
                 }
+                // The way down with none of them: every secret still hidden
+                // and every lock and seal shut.
+                let shut: BTreeSet<Point> = built.locks.iter().map(|l| l.at).collect();
+                let plain = |p: Point| built.terrain.get(p).is_some_and(|t| tables.passable[t.index()]) && !standing.contains(&p) && !shut.contains(&p);
                 if let Some(exit) = built.exit {
-                    assert!(seen.contains(&exit), "floor {floor}, seed {s}: something stands on the way down at {exit:?}");
+                    assert!(walked(built.entry, plain).contains(&exit), "floor {floor}, seed {s}: the way down at {exit:?} is shut off");
                 }
             }
         }
@@ -1336,8 +1403,11 @@ mod tests {
                 let name = |t: TileId| undermere.tiles().get(t).name.as_str();
                 let painted = drawn.paint.iter().map(|(_, t)| name(*t));
                 let lakes = drawn.lakes.iter().flat_map(|(l, b)| [Some(l.tile), l.wreath.map(|(t, _)| t), b.map(|b| b.tile)]).flatten().map(name);
+                // A risk-and-reward or reward piece's own tiles, on any
+                // floor it may stand on.
+                let pieces = (floor < FLOORS).then_some(PIECE_TILES).into_iter().flatten();
                 let allowed: BTreeSet<&str> =
-                    shared.iter().copied().chain([wall, floor_tile]).chain(painted).chain(lakes).chain((floor == 1).then_some("gate")).collect();
+                    shared.iter().copied().chain([wall, floor_tile]).chain(painted).chain(lakes).chain(pieces).chain((floor == 1).then_some("gate")).collect();
                 let strays: Vec<&&str> = shown.difference(&allowed).collect();
                 assert!(strays.is_empty(), "floor {floor}, seed {s}: {strays:?} on a floor of {}", drawn.name);
             }
@@ -1805,5 +1875,62 @@ mod tests {
                 eprintln!("    {n:>4}  {reason}");
             }
         }
+    }
+
+    /// Every way a risk-and-reward or reward piece may be drawn for a
+    /// floor: the entry, by its index in the pool, each biome it may stand
+    /// in and each of that biome's recipes, and the floors where its own
+    /// range and the biome's meet.
+    fn pieces_in_biomes(undermere: &Undermere) -> Vec<(usize, BiomeDraw, Vec<u32>)> {
+        let kinds: Vec<usize> = ["risk_reward", "reward"].iter().filter_map(|k| undermere.pool.kinds.iter().position(|n| n == k)).collect();
+        let mut ways = Vec::new();
+        for (e, entry) in undermere.pool.entries.iter().enumerate().filter(|(_, e)| kinds.contains(&e.kind) && e.weight > 0) {
+            for (_, def) in undermere.defs.iter() {
+                let tags = [def.name.trim_start_matches("the ").to_string()];
+                let floors: Vec<u32> = (def.floors.0..=def.floors.1.min(FLOORS - 1)).filter(|f| entry.fits(*f as i32, &tags)).collect();
+                if floors.is_empty() {
+                    continue;
+                }
+                for r in 0..def.recipes.len() {
+                    ways.push((e, biomes::to_draw(def, r, undermere.tiles()), floors.clone()));
+                }
+            }
+        }
+        ways
+    }
+
+    /// Grows each piece alone among a floor's picks, in every biome and
+    /// recipe it may stand in, on each floor they share, over `seeds`, and
+    /// names every one that does not grow within a floor's attempts.
+    fn every_piece_grows_where_it_may_stand(seeds: std::ops::Range<u64>) {
+        let mut undermere = Undermere::new(RunSeed(0));
+        let mut failed = Vec::new();
+        for (e, drawn, floors) in pieces_in_biomes(&undermere) {
+            for s in seeds.clone() {
+                let floor = floors[s as usize % floors.len()];
+                undermere.plan.insert(floor, vec![rl_engine::rl_rules::pool::Pick { entry: e, required: true }]);
+                if let Err(err) = undermere.grow(floor, &drawn, RunSeed(s), ATTEMPTS) {
+                    failed.push(format!("{} on floor {floor}, {}, {}, seed {s}: {err}", undermere.pool.entries[e].name, drawn.name, drawn.recipe));
+                }
+            }
+        }
+        assert!(failed.is_empty(), "{} failed:\n{}", failed.len(), failed.join("\n"));
+    }
+
+    /// Each risk-and-reward and reward piece grows in every biome and
+    /// recipe it may stand in, alone among a floor's picks, within the
+    /// attempts a floor is given, over a few seeds: a required pick that
+    /// fits nowhere fails every attempt of its floor, and the floor with it.
+    #[test]
+    fn each_piece_grows_in_every_biome_and_recipe_it_may_stand_in_over_a_few_seeds() {
+        every_piece_grows_where_it_may_stand(0..2);
+    }
+
+    /// As [`each_piece_grows_in_every_biome_and_recipe_it_may_stand_in_over_a_few_seeds`],
+    /// over seeds 0 to 200: run by hand when a piece or the layout changes.
+    #[test]
+    #[ignore = "every piece in every biome over seeds 0 to 200 takes minutes; run by hand when a piece or the layout changes"]
+    fn each_piece_grows_in_every_biome_and_recipe_it_may_stand_in_over_seeds_0_to_200() {
+        every_piece_grows_where_it_may_stand(0..200);
     }
 }

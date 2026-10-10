@@ -1,24 +1,27 @@
 // A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
 // stands for; see `treasure_room.ron` for the full field list.
 //
-// An ogre asleep across a narrow way, the prize behind him: stands awake
-// rather than dozing, since a piece's own monster slots always do (see
-// the task's report).
+// An ogre asleep across the one narrow way into a room, `Z`, laid asleep by
+// `src/vaults.rs`, and the room's chest and gold behind him.
 (
     name: "The Sleeping Giant",
     ground: "hall floor",
     rows: [
         "#######",
         "#.....#",
-        "#..O..#",
-        "#..P..#",
+        "#.h.g.#",
+        "#.....#",
+        "###.###",
+        "###Z###",
+        "###.###",
         "###E###",
     ],
     legend: {
         '#': Tile("hall wall"),
         '.': Tile("hall floor"),
-        'O': Monster(monster: "ogre"),
-        'P': Item(tag: "armor", count: 1),
+        'h': Prop("chest"),
+        'g': Item(item: "gold coin", count: 1),
+        'Z': Mark,
         'E': Entry,
     },
 )

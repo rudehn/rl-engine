@@ -152,7 +152,7 @@ fn to_lakes(def: &LakesDef, tiles: &TileRegistry) -> (Lakes, Option<Bridges>) {
 }
 
 /// `def` drawn with its recipe at `recipe`, an index into its list.
-fn to_draw(def: &BiomeDef, recipe: usize, tiles: &TileRegistry) -> BiomeDraw {
+pub(super) fn to_draw(def: &BiomeDef, recipe: usize, tiles: &TileRegistry) -> BiomeDraw {
     let (intensity, (r, g, b)) = def.ambient;
     let r_def = &def.recipes[recipe];
     BiomeDraw {

@@ -55,13 +55,12 @@
 //                grown piece: Secluded | DeadEnd | Hidden | Junction |
 //                Anywhere
 //
-// Risk-and-reward and reward pieces whose mechanism (a trap, a lock's
-// key, a lever, a causeway) is a later task's own stand here as minimal
-// placeholder prefabs under `assets/prefabs/risk/` and
-// `assets/prefabs/reward/`: a small room or a grown shell with nothing
-// but its entry, so the pool loads, the draw is exercised end to end
-// now, and the placeholder is filled in, not replaced, once its
-// mechanism exists.
+// The risk-and-reward and reward pieces are prefabs under
+// `assets/prefabs/risk/` and `assets/prefabs/reward/`; what they do that no
+// prop or effect says, a vault's key, a lever, a causeway, the cages, the
+// flood, the fall and the collapse, is `src/vaults.rs`'s. An inside piece
+// is small enough for the smallest room of every biome it may stand in,
+// which `dungeon.rs`'s own test grows it in.
 #![enable(implicit_some)]
 (
     weights: [("rare", 5), ("uncommon", 20), ("common", 50), ("frequent", 100), ("withheld", 0)],
@@ -298,8 +297,7 @@
         dressing: "Cinder Drifts", placed: Dressed,
     ),
 
-    // Risk and reward: 22. See the note above the entries list for the
-    // placeholder prefabs under assets/prefabs/risk/.
+    // Risk and reward: 22.
     (
         name: "Caged Altars", kind: "risk_reward", floors: (2, 9), weight: "uncommon",
         piece: "Caged Altars", placed: Grown(Door),
@@ -358,6 +356,9 @@
     (
         name: "The Goblin Stockade", kind: "risk_reward", floors: (2, 6), weight: "common",
         per_run: 2,
+        // The crypt grid and the library's stacks have no room a palisade
+        // stands in, and no goblin keeps a camp among the dead.
+        not: ["Catacombs", "Sunken Library"],
         piece: "The Goblin Stockade", placed: Inside([]),
     ),
     (
@@ -402,8 +403,8 @@
     ),
 
     // Reward: 16. Four are dressed (assets/dressings.ron); the rest are
-    // placeholder prefabs under assets/prefabs/reward/. Hidden Cache is
-    // withheld until HideOpenings exists (see the weights note above).
+    // prefabs under assets/prefabs/reward/. Hidden Cache is withheld until
+    // HideOpenings exists (see the weights note above).
     (
         name: "Treasure Room", kind: "reward", floors: (1, 9), weight: "common",
         per_run: 3,

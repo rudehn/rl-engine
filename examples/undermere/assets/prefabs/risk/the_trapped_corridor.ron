@@ -1,24 +1,31 @@
 // A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
 // stands for; see `treasure_room.ron` for the full field list.
 //
-// A corridor of hidden plates to a room that holds the prize: every plate
-// its own `props.ron` "hidden dart plate", spotted or sprung.
+// A narrow way of hidden plates to a room that holds the prize, someone's
+// remains just inside as the tell: plates staggered across both lanes, so a
+// walk straight up either is struck twice, and plates once spotted can be
+// wound between.
 (
     name: "The Trapped Corridor",
     ground: "hall floor",
     rows: [
-        "#########",
-        "#.......#",
-        "#.d.d.d.#",
-        "#.......#",
-        "#...P...#",
-        "####E####",
+        "######",
+        "#....#",
+        "#.P..#",
+        "#....#",
+        "##d.##",
+        "##.d##",
+        "##d.##",
+        "##.d##",
+        "##.r##",
+        "##E###",
     ],
     legend: {
         '#': Tile("hall wall"),
         '.': Tile("hall floor"),
-        'd': Prop("hidden dart plate"),
         'P': Item(tag: "weapon", count: 1, band: 1),
+        'd': Prop("dart plate"),
+        'r': Prop("remains"),
         'E': Entry,
     },
 )

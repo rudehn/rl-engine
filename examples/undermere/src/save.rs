@@ -38,6 +38,7 @@ use crate::lore::{CurseShown, Lore, Unfamiliar};
 use crate::run::Adventurer;
 use crate::stairs::Way;
 use crate::tally::{Counted, Tally};
+use crate::vaults::VaultKey;
 
 /// Bump when a kind's shape below changes so an old save would parse
 /// wrongly.
@@ -64,6 +65,7 @@ pub fn register(app: &mut App) {
         .save_state::<Tally>()
         .save_state::<Lore>()
         .save_state::<MonsterLore>()
+        .save_state::<crate::vaults::lifts::RisingFloods>()
         .save_state::<Quests>();
 }
 // ANCHOR_END: register
@@ -276,6 +278,11 @@ pub struct ItemSave {
     /// they know its level is below nought before they know by how much.
     #[serde(default)]
     pub curse_shown: bool,
+    /// For a vault's key, the floor whose vault it opens, which the tag its
+    /// lock asks for is put back on from; `None` for anything else, and
+    /// in a save written before a vault had a key.
+    #[serde(default)]
+    pub opens: Option<u32>,
 }
 
 impl Saveable for ItemKind {
@@ -290,6 +297,7 @@ impl Saveable for ItemKind {
             stuck: world.get::<Stuck>(entity).is_some(),
             unfamiliar: world.get::<Unfamiliar>(entity).map(|u| u.worn),
             curse_shown: world.get::<CurseShown>(entity).is_some(),
+            opens: world.get::<VaultKey>(entity).map(|k| k.floor),
         }
     }
 
@@ -316,6 +324,9 @@ impl Saveable for ItemKind {
         }
         if saved.curse_shown {
             e.insert(CurseShown);
+        }
+        if let Some(floor) = saved.opens {
+            e.insert((VaultKey { floor }, crate::vaults::key_tags(&registries, floor)));
         }
         item
     }

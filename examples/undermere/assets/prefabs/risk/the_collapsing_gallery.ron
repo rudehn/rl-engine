@@ -1,26 +1,30 @@
 // A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
 // stands for; see `treasure_room.ron` for the full field list.
 //
-// Lift the prize and the way you came falls in: two `Entry` cells, one at
-// each end of the gallery, so growth may join it between two different
-// areas. 'W' and 'X' are `Mark`s just inside each entry, and 'P' the
-// prize's own; `src/vaults.rs`'s own `spawn_collapsing_gallery_trigger`
-// and `collapse_gallery_behind` wall over whichever of 'W'/'X' is farther
-// from whoever took the prize, the one they came in by.
+// A gallery of cracked lintels and fallen stone running round a block of
+// rock, its two ways meeting again at a plinth in an alcove, the short way
+// and the long: lift what the plinth holds and the lintel over the short way
+// falls, the way most come, so the way out is the long one
+// (`src/vaults/lifts.rs`).
 (
     name: "The Collapsing Gallery",
     ground: "hall floor",
     rows: [
-        "#########",
-        "EW..P..XE",
-        "#########",
+        "#############",
+        "###|#########",
+        "#...,.......#",
+        "#.#########.#",
+        "#.#########,#",
+        "#.#########.#",
+        "#..,.n.n....#",
+        "######E######",
     ],
     legend: {
         '#': Tile("hall wall"),
         '.': Tile("hall floor"),
-        'W': Mark,
-        'X': Mark,
-        'P': Mark,
+        '|': Prop("keystone plinth"),
+        'n': Prop("cracked lintel"),
+        ',': Tile("rubble"),
         'E': Entry,
     },
 )

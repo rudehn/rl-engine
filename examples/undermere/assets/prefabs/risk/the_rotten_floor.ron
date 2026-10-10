@@ -1,24 +1,25 @@
 // A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
 // stands for; see `treasure_room.ron` for the full field list.
 //
-// Planks over a drop; lift the prize and the floor gives way to the floor
-// below: 'P' is a `Mark`, read by `src/vaults.rs`'s own
-// `spawn_rotten_floor_trigger`, which spawns the prize there and drops
-// its taker through `vaults::fall_through_floor`.
+// A chamber floored with rotten planks over a drop, a plinth teetering at
+// its middle: lift what it holds and the planks give way under everyone on
+// them, who fall through to the floor below, off its stairs
+// (`src/vaults/lifts.rs`).
 (
     name: "The Rotten Floor",
-    ground: "hall floor",
+    ground: "rotten planks",
     rows: [
-        "#######",
-        "#.....#",
-        "#..P..#",
-        "#.....#",
-        "###E###",
+        "#########",
+        "#=======#",
+        "#===|===#",
+        "#=======#",
+        "#=======#",
+        "####E####",
     ],
     legend: {
         '#': Tile("hall wall"),
-        '.': Tile("hall floor"),
-        'P': Mark,
+        '=': Tile("rotten planks"),
+        '|': Prop("teetering plinth"),
         'E': Entry,
     },
 )

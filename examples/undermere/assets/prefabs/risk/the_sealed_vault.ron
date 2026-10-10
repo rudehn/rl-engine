@@ -1,25 +1,26 @@
 // A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
 // stands for; see `treasure_room.ron` for the full field list.
 //
-// A stone gate; a concealed lever elsewhere on the floor raises it:
-// `src/vaults.rs`'s own `place_vault_fixtures` drops the lever there, and
-// `answer_pull_lever` lifts this very seal, the one `WorldMap::lock` with
-// no key.
+// A candlelit strongroom behind a slab of stone: no hand opens it, and a
+// concealed lever somewhere else on the floor, set in a wall by
+// `src/vaults.rs` and hidden until it is spotted, raises it.
 (
     name: "The Sealed Vault",
     ground: "hall floor",
     rows: [
-        "#######",
-        "#.....#",
-        "#..A..#",
-        "#..s..#",
-        "###E###",
+        "#########",
+        "#.g...g.#",
+        "#..i.i..#",
+        "#...P...#",
+        "#.......#",
+        "####E####",
     ],
     legend: {
         '#': Tile("hall wall"),
         '.': Tile("hall floor"),
-        'A': Item(tag: "ring", count: 1, band: 1),
-        's': Prop("stone pedestal"),
+        'g': Item(item: "gold coin", count: 1),
+        'i': Prop("candelabra"),
+        'P': Item(tag: "staff", count: 1, band: 2),
         'E': Entry,
     },
 )

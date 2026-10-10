@@ -46,13 +46,6 @@ pub fn shackled(registries: &Registries, verbs: &Verbs, at: Point) -> impl Bundl
 /// it, or `None` for anything not shackled: what the save keeps of a
 /// captive, since the rest of [`shackled`] follows from it.
 pub fn held_at(world: &World, captive: Entity) -> Option<Point> {
-    // Never the risk-and-reward pool's own "Captives in Chains", shackled
-    // exactly the same way for the same reason, but a second, independent
-    // source: the run's own captive, which this answers for, is part 3's
-    // alone and the one `dungeon::captive_floor` draws.
-    if world.get::<crate::vaults::PoolCaptive>(captive).is_some() {
-        return None;
-    }
     let free_verb = world.resource::<Verbs>().get(FREE_VERB)?;
     let offers = world.get::<Offers>(captive)?;
     if !offers.0.iter().any(|o| o.verb == free_verb) {
@@ -157,14 +150,16 @@ mod tests {
             for f in 1..crate::dungeon::FLOORS {
                 arrive(&mut app, map_of(f));
                 let free_verb = app.world().resource::<Verbs>().get(FREE_VERB).expect("declared");
+                // Never a piece's own captive, Captives in Chains', shackled
+                // the same way on a mark of its piece: the run's own is the
+                // population's, apart from any piece.
+                let marked: Vec<Point> =
+                    app.world().resource::<WorldMap>().place(map_of(f)).expect("built").spots.iter().filter(|s| s.prefab.is_some()).map(|s| s.at).collect();
                 let world = app.world_mut();
-                // Never the risk-and-reward pool's own "Captives in
-                // Chains", shackled the identical way but a second,
-                // independent source now: see `held_at`'s own doc.
                 let count = world
-                    .query_filtered::<(&OnMap, &Offers), Without<crate::vaults::PoolCaptive>>()
+                    .query::<(&OnMap, &Position, &Offers)>()
                     .iter(world)
-                    .filter(|(on, offers)| on.0 == map_of(f) && offers.0.iter().any(|o| o.verb == free_verb))
+                    .filter(|(on, at, offers)| on.0 == map_of(f) && !marked.contains(&at.0) && offers.0.iter().any(|o| o.verb == free_verb))
                     .count();
                 if f == floor {
                     assert_eq!(count, 1, "seed {s}, floor {f}: the run's own captive");

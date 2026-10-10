@@ -1,18 +1,17 @@
 // A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
 // stands for; see `treasure_room.ron` for the full field list.
 //
-// Remains with a full pack still on them: whoever they were did not leave.
+// Someone who came down before, slumped where they fell with their pack
+// still full, and their last line scratched on the floor beside them for
+// whoever reads it.
 (
     name: "A Fallen Adventurer",
     ground: "hall floor",
     rows: [
-        "rw",
-        "ia",
+        "w%",
     ],
     legend: {
-        'r': Prop("remains"),
-        'w': Item(tag: "weapon", count: 1),
-        'i': Item(tag: "potion", count: (1, 2)),
-        'a': Item(tag: "armor", count: 1),
+        'w': Prop("scratched words"),
+        '%': Prop("adventurer's remains"),
     },
 )

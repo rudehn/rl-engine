@@ -117,4 +117,17 @@
     (tile: "goblin hall wall",  glyph: '#', fg: (0.7, 0.55, 0.3),   bg: (0.35, 0.25, 0.12), vary: (0.08, 0.03)),
     (tile: "goblin hall floor", glyph: '.', fg: (0.55, 0.45, 0.25), bg: (0.22, 0.16, 0.08), vary: (0.1, 0.03)),
     (tile: "web",               glyph: '"', fg: (0.85, 0.85, 0.88), bg: (0.12, 0.14, 0.13),  vary: (0.06, 0.02)),
+    // The risk-and-reward pieces', on any floor they stand on. A vault's door
+    // is iron-bound and gilt where a plain door is bare wood, and a sealed
+    // vault's gate is a slab of the stone round it, so each is seen as
+    // something other than the floor's other doors before it is understood.
+    (tile: "vault door",        glyph: '+', fg: (0.95, 0.78, 0.36), bg: (0.3, 0.24, 0.18),   vary: (0.06, 0.02)),
+    (tile: "open vault door",   glyph: '\'', fg: (0.95, 0.78, 0.36), bg: (0.2, 0.16, 0.12), vary: (0.06, 0.02)),
+    (tile: "stone gate",        glyph: '+', fg: (0.78, 0.78, 0.82), bg: (0.4, 0.4, 0.44),    vary: (0.06, 0.02)),
+    (tile: "raised gate",       glyph: '\'', fg: (0.7, 0.7, 0.74),  bg: (0.18, 0.18, 0.2),  vary: (0.06, 0.02)),
+    (tile: "straw",             glyph: '"', fg: (0.86, 0.74, 0.4),  bg: (0.24, 0.19, 0.1),   vary: (0.14, 0.04)),
+    (tile: "rotten planks",     glyph: '=', fg: (0.58, 0.44, 0.3),  bg: (0.2, 0.14, 0.09),   vary: (0.16, 0.04)),
+    (tile: "hole",              glyph: ':', fg: (0.22, 0.2, 0.22),  bg: (0.0, 0.0, 0.0),     vary: (0.1, 0.02)),
+    (tile: "sunken causeway",   glyph: '~', fg: (0.5, 0.66, 0.74),  bg: (0.12, 0.2, 0.26),   vary: (0.1, 0.03),  shimmer: 0.2),
+    (tile: "fallen rock",       glyph: '%', fg: (0.72, 0.68, 0.62), bg: (0.4, 0.37, 0.33),   vary: (0.14, 0.03)),
 ]

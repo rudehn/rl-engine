@@ -1,21 +1,20 @@
 // A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
 // stands for; see `treasure_room.ron` for the full field list.
 //
-// Gold and a chest with one of the floor's own standing guard: one
-// monster slot, since a floor's own lair or another risk-and-reward
-// piece beside it already counts toward the floor's own court and the
-// population tests' own bound on it.
+// Gold and a chest with a band of the floor's own asleep round it: each `z`
+// a sleeper of the floor's own, drawn from its table and laid asleep by
+// `src/vaults.rs`.
 (
     name: "The Guarded Hoard",
     ground: "hall floor",
     rows: [
-        ".h.",
-        "gcg",
+        "zg ",
+        " h ",
+        " gz",
     ],
     legend: {
-        '.': Tile("hall floor"),
-        'h': Monster(monster: "goblin"),
-        'g': Item(item: "gold coin", count: (1, 2)),
-        'c': Prop("chest"),
+        'z': Mark,
+        'g': Item(item: "gold coin", count: 1),
+        'h': Prop("chest"),
     },
 )

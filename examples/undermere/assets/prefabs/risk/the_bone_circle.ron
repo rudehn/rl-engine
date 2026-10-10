@@ -1,20 +1,19 @@
 // A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
 // stands for; see `treasure_room.ron` for the full field list.
 //
-// A ring of bodies that rise when it is crossed, a staff at its heart:
-// the "grave sigil" at the center is what is crossed, and `Hatch` is what
-// rises, beside the skulls that ring it.
+// A ring of the dead laid round a staff, grave sigils between them: step on
+// any cell of the ring and every body of it stands up at once, by `Rise`.
 (
     name: "The Bone Circle",
     ground: "hall floor",
     rows: [
-        "kgk",
-        "gSg",
-        "kgk",
+        "%:%",
+        ":S:",
+        "%:%",
     ],
     legend: {
-        'k': Prop("skull"),
-        'g': Prop("grave sigil"),
-        'S': Item(tag: "staff", count: 1),
+        '%': Prop("circle bones"),
+        ':': Prop("grave sigil"),
+        'S': Item(tag: "staff", count: 1, band: 1),
     },
 )

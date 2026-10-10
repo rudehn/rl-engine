@@ -1,27 +1,30 @@
 // A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
 // stands for; see `treasure_room.ron` for the full field list.
 //
-// A hidden vent in the vestibule holds the entrant fast while what waits
-// within wakes: the `props.ron` "paralysis vent" in the doorway, one of
-// the floor's own beyond it (one monster slot, since a floor's own lair
-// or another risk-and-reward piece beside it already counts toward the
-// floor's own court and the population tests' own bound on it).
+// A narrow vestibule before a chamber where the dead wait asleep round a
+// chest: a vent hidden in the vestibule breathes a paralysing gas over
+// whoever passes and rouses what waits beyond, by `Rouse`, so they wake
+// while the entrant is held fast.
 (
     name: "The Paralysis Vestibule",
     ground: "hall floor",
     rows: [
-        "#######",
-        "#..g..#",
-        "#..P..#",
-        "#..V..#",
-        "###E###",
+        "#########",
+        "#z.....z#",
+        "#...h...#",
+        "#..z.P..#",
+        "####.####",
+        "####v####",
+        "####.####",
+        "####E####",
     ],
     legend: {
         '#': Tile("hall wall"),
         '.': Tile("hall floor"),
-        'g': Monster(monster: "ghoul"),
-        'V': Prop("paralysis vent"),
-        'P': Item(tag: "ring", count: 1),
+        'z': Mark,
+        'h': Prop("chest"),
+        'P': Item(tag: "armor", count: 1, band: 2),
+        'v': Prop("paralysis vent"),
         'E': Entry,
     },
 )

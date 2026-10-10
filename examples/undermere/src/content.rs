@@ -288,10 +288,7 @@ pub fn registries() -> Registries {
         statuses,
         gases,
         factions: Registry::from_defs(["adventurer", "beasts", "goblins", "undead", "dar", CAPTIVE, DISCORDANT].map(FactionDef::new).to_vec()).unwrap(),
-        tags: Registry::from_defs(
-            ["weapon", "armor", "potion", "scroll", "staff", "wand", "ring", "gold", "arrow", "light", "thrown", "vault key"].map(TagDef::new).to_vec(),
-        )
-        .unwrap(),
+        tags: tags(),
         slots: Registry::from_defs(["main hand", "off hand", "head", "body", "left finger", "right finger", "light"].map(SlotDef::new).to_vec()).unwrap(),
         ..Registries::default()
     };
@@ -368,6 +365,28 @@ pub fn hit_rules() -> HitRules {
     HitRules(Box::new(rl_engine::rl_rules::accuracy::Percent::new(10, 0, 30)))
 }
 
+/// The tag a vault's lock asks for in `assets/pool.ron`, written
+/// `Locked("vault key")`: every locked vault's, until its floor is built
+/// and [`crate::vaults::place_vault_fixtures`] gives the lock its own
+/// floor's [`vault_key`] in its place.
+pub const VAULT_KEY: &str = "vault key";
+
+/// The tag the key to `floor`'s vault carries and that vault's lock asks
+/// for, so a key opens its own vault and no other: one a floor, since a
+/// floor has one locked vault at most, and the pool draws one on any
+/// floor from the first to the ninth.
+pub fn vault_key(floor: u32) -> String {
+    format!("{VAULT_KEY} {floor}")
+}
+
+/// Every tag: the kinds of thing a chest's row and a floor's finds are
+/// drawn by, and the lock and the key of each floor's vault.
+pub fn tags() -> Registry<TagDef> {
+    let kinds = ["weapon", "armor", "potion", "scroll", "staff", "wand", "ring", "gold", "arrow", "light", "thrown"].map(String::from);
+    let keys = std::iter::once(VAULT_KEY.to_string()).chain((1..crate::dungeon::FLOORS).map(vault_key));
+    Registry::from_defs(kinds.into_iter().chain(keys).map(TagDef::new).collect()).expect("every tag has a name of its own")
+}
+
 /// The effect kinds an Undermere app has, for reading the content where no
 /// app is running, as a test does: [`add_game_effects`]' list, the `Ignite`
 /// that `FirePlugin` declares for the fire breath, a staff of firebolt and
@@ -404,15 +423,23 @@ pub fn add_game_effects(app: &mut App) {
         .add_effect::<crate::enchant::RemoveCurse>()
         .add_effect::<crate::lore::Identify>()
         .add_effect::<crate::strength::Strengthen>();
-    app.add_effect::<moving::Blink>().add_effect::<moving::TeleportOther>().add_effect::<moving::Beckon>().add_effect::<moving::Descend>();
+    app.add_effect::<moving::Blink>()
+        .add_effect::<moving::TeleportOther>()
+        .add_effect::<moving::Beckon>()
+        .add_effect::<moving::Descend>()
+        .add_effect::<moving::Fall>();
     app.add_effect::<moving::Teleport>();
     app.add_effect::<bodies::Polymorph>().add_effect::<bodies::Plenty>().add_effect::<bodies::Conjure>().add_effect::<bodies::Life>();
     app.add_effect::<bodies::Summon>().add_effect::<bodies::RaiseDead>();
-    app.add_effect::<minds::Dominate>().add_effect::<minds::Discord>().add_effect::<minds::Aggravate>().add_effect::<minds::WakeFloor>();
+    app.add_effect::<minds::Dominate>()
+        .add_effect::<minds::Discord>()
+        .add_effect::<minds::Aggravate>()
+        .add_effect::<minds::WakeFloor>()
+        .add_effect::<minds::Rouse>();
     app.add_effect::<senses::Darkness>().add_effect::<senses::MagicMapping>();
     app.add_effect::<charges::Recharge>();
     app.add_effect::<crate::tricks::Steal>().add_effect::<crate::tricks::Wither>();
-    app.add_effect::<bodies::Rally>().add_effect::<bodies::CallDrowned>().add_effect::<bodies::Hatch>();
+    app.add_effect::<bodies::Rally>().add_effect::<bodies::CallDrowned>().add_effect::<bodies::Hatch>().add_effect::<bodies::Rise>();
     app.add_effect::<bodies::RaiseAlly>().add_effect::<bodies::Whisper>().add_effect::<minds::AlertDrowned>();
 }
 
@@ -593,11 +620,11 @@ mod tests {
     }
 
     /// A tripwire over what stands in the places, by name, so a prop is
-    /// added or dropped on purpose. Everything but the chest is scenery,
-    /// which the nearby rail leaves out; the chest holds something and is
-    /// opened, and what blocks the way is what the places are laid round.
+    /// added or dropped on purpose. Furniture is scenery, which the nearby
+    /// rail leaves out; what holds, sets off, hides or offers something is
+    /// not, and what blocks the way is what the places are laid round.
     #[test]
-    fn every_prop_of_the_town_and_the_floors_is_in_the_file_and_only_the_chest_is_more_than_scenery() {
+    fn every_prop_of_the_town_and_the_floors_is_in_the_file_and_only_what_answers_for_itself_is_more_than_scenery() {
         let r = registries();
         let props = [
             ("lamp post", true),
@@ -674,47 +701,83 @@ mod tests {
             ("obsidian spire", false),
             ("midden", false),
             ("lectern", false),
-            // The reward pool's own fixed pieces.
+            // The reward pieces'.
             ("coin chest", true),
-            ("ancient tome", true),
             ("overturned wagon", true),
+            ("spilled crate", false),
             ("spring", true),
             ("frost-rimed anvil", true),
             ("moonwell", true),
-            // The risk-and-reward pool's own fixed pieces, and
-            // `src/vaults.rs`'s own mechanisms behind them.
-            ("cage gate", false),
-            ("stone pedestal", false),
-            ("guardian statue", true),
+            ("reliquary", true),
+            ("enchanter's altar", true),
+            ("chronicle", true),
+            ("scratched words", false),
+            ("adventurer's remains", false),
+            // The risk-and-reward pieces', and what `src/vaults.rs` stands
+            // down a spent one as.
+            ("caged blade", true),
+            ("caged staff", true),
+            ("caged ring", true),
+            ("shut cage", true),
+            ("empty cage", true),
+            ("gnawed plinth", true),
+            ("rat hole", false),
+            ("drowned altar", true),
             ("iron grate", false),
-            ("dry straw", false),
-            ("warding glyph", false),
+            ("teetering plinth", true),
+            ("keystone plinth", true),
+            ("cracked lintel", false),
+            ("bare plinth", true),
+            ("bare altar", true),
+            ("palisade", true),
+            ("loot pile", true),
+            ("cocooned body", true),
+            ("circle bones", false),
             ("grave sigil", false),
-            ("hidden dart plate", false),
+            ("warding glyph", false),
+            ("dart plate", false),
             ("caustic vent", false),
             ("paralysis vent", false),
-            ("ember trap", false),
+            ("ember plate", false),
             ("concealed lever", false),
-            ("cracked tile", false),
+            ("pulled lever", false),
+            ("offering altar", true),
+            ("guardian statue", true),
         ];
-        // Every prop with a container, a trigger or an offer answers for
-        // itself, so a room of them is something to act on and not just
-        // furniture to walk round.
+        // Every prop that holds something, sets something off, hides or
+        // offers to be worked answers for itself, so a room of them is
+        // something to act on and not just furniture to walk round.
         const NOT_SCENERY: &[&str] = &[
             "chest",
             "egg sac",
             "coin chest",
+            "overturned wagon",
             "spring",
             "frost-rimed anvil",
             "moonwell",
-            "warding glyph",
+            "reliquary",
+            "enchanter's altar",
+            "chronicle",
+            "scratched words",
+            "adventurer's remains",
+            "caged blade",
+            "caged staff",
+            "caged ring",
+            "gnawed plinth",
+            "drowned altar",
+            "teetering plinth",
+            "keystone plinth",
+            "loot pile",
+            "cocooned body",
+            "circle bones",
             "grave sigil",
-            "hidden dart plate",
+            "warding glyph",
+            "dart plate",
             "caustic vent",
             "paralysis vent",
-            "ember trap",
+            "ember plate",
             "concealed lever",
-            "cracked tile",
+            "offering altar",
         ];
         assert_eq!(r.props.len(), props.len(), "a prop this list does not name");
         for (name, blocks) in props {

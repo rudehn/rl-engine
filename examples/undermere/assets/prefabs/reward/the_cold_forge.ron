@@ -1,16 +1,17 @@
 // A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
 // stands for; see `treasure_room.ron` for the full field list.
 //
-// An anvil cold to the touch that tempers a worn weapon or armor one
-// level, once: taken as a single phial of oil whose use is `Enchant`,
-// asked exactly as a scroll of enchanting asks it.
+// A forge long gone cold, its anvil rimed with frost beside a dry quenching
+// trough: the anvil holds one phial of quenching oil, which tempers a thing
+// one level, once.
 (
     name: "The Cold Forge",
     ground: "hall floor",
     rows: [
-        "N",
+        "qN",
     ],
     legend: {
+        'q': Prop("quench trough"),
         'N': Prop("frost-rimed anvil"),
     },
 )

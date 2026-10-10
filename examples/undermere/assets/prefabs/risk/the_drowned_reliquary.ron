@@ -1,22 +1,29 @@
 // A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
 // stands for; see `treasure_room.ron` for the full field list.
 //
-// A reliquary on an island, reached over flooded floor: a causeway seen
-// rather than one that must be spotted (`HideOpenings` is a later task's).
+// A reliquary on an island in black water, reached by a causeway just under
+// the surface: each `c` hidden by `src/vaults.rs` as the deep water round
+// it, until it is spotted.
 (
     name: "The Drowned Reliquary",
     ground: "hall floor",
     rows: [
-        "#######",
-        "#~~~~~#",
-        "#~~A~~#",
-        "#~~~~~#",
-        "###E###",
+        "#########",
+        "#WWWWWWW#",
+        "#WW...WW#",
+        "#WW.R.WW#",
+        "#WW...WW#",
+        "#WWWcWWW#",
+        "#WWWcWWW#",
+        "#.......#",
+        "####E####",
     ],
     legend: {
         '#': Tile("hall wall"),
-        '~': Tile("flooded floor"),
-        'A': Item(tag: "wand", count: 1),
+        '.': Tile("hall floor"),
+        'W': Tile("deep water"),
+        'R': Prop("reliquary"),
+        'c': Mark,
         'E': Entry,
     },
 )

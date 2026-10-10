@@ -17,8 +17,7 @@
 //               either hand's finger, "left finger" | "right finger"
 //   also:       optional; slots it also claims when worn, for a two-hander
 //   tags:       optional; "weapon" | "armor" | "potion" | "scroll" | "staff" | "wand" | "ring" |
-//               "gold" | "arrow" | "light" | "thrown" | "vault key"; what a chest's row asks for
-//               by tag, and
+//               "gold" | "arrow" | "light" | "thrown"; what a chest's row asks for by tag, and
 //               the kinds a floor's things are drawn by: potions, scrolls, weapons, armor,
 //               staffs, wands, rings and thrown things, each kind as often as `finds.rs` weighs
 //               it and each thing of a kind as `item_spawns.ron` does. A weapon, armor,
@@ -30,7 +29,8 @@
 //   effects:    optional; [(kind:, chance:, args:)] what the thing holds, written as an
 //               ability's effects are in abilities.ron: the engine's Harm(kind:, roll:),
 //               Mend(roll:), Inflict(status:, turns:), Cleanse(status:), Ignite(turns:) and
-//               Emit(gas:, amount:), a cloud of "paralytic" | "confusing" | "darkness" a full
+//               Emit(gas:, amount:), a cloud of "paralytic" | "confusing" | "darkness" |
+//               "caustic" a full
 //               cell being 255, the statuses being "poisoned" | "scorched" | "mending" |
 //               "regenerating" | "chilled" | "slowed" | "hasted" | "fireproof" | "shrouded" |
 //               "paralysed" | "confused"; and Undermere's own besides: Enchant,
@@ -55,8 +55,12 @@
 //               known; Discord(turns:), every foe in sight at odds with everyone for that many
 //               turns; Aggravate, a shriek and every monster on the floor aware of the user;
 //               Summon(fewest:, most:), that many of the floor's monsters beside the user, aware
-//               of them; WakeFloor, every sleeper on the floor woken and aware of the user, a
-//               warding glyph's own. Each of Undermere's own takes
+//               of them; WakeFloor, every sleeper on the floor woken and aware of whoever set it
+//               off, a warding glyph's own; Rouse(radius:), the same for every sleeper within
+//               radius, a vestibule vent's; Rise(prop:, monster:, radius:), every such prop
+//               within radius stood up as such a monster, a bone circle's; Fall, whoever set it
+//               off dropped through to a free cell of the floor below, off its stairs, and
+//               nothing on the deepest. Each of Undermere's own takes
 //               only the arguments it names, and none where it names none. Landed by any trigger
 //               with no list of its own
 //   triggers:   optional; [(on:, area:, fires:, effects:, look:, every:, targeting:, asks:)] what it
@@ -398,10 +402,10 @@
     // what the dead leave is their own.
     (name: "gold coin", glyph: '$', color: (1.0, 0.85, 0.3), tags: ["gold"], stack: true, pile: "3d8"),
 
-    // The risk-and-reward pool's own key, `assets/prefabs/risk/the_locked_vault.ron`:
-    // carried or worn by nobody until `src/vaults.rs` drops one elsewhere on a
-    // floor that drew the vault, the `Join::Locked("vault key")` tag itself.
-    (name: "vault key", glyph: '~', color: (0.85, 0.75, 0.3), tags: ["vault key"]),
+    // A locked vault's key, which `src/vaults.rs` drops somewhere else on a floor
+    // that drew the vault and tags with that floor's own lock, so it opens its
+    // own vault and no other, and stays in the lock once it has.
+    (name: "vault key", glyph: '-', color: (0.95, 0.8, 0.35)),
 
     // The reward pool's own one-shot waters, each spent by its use, drawn from
     // a spring, a frost-rimed anvil and a moonwell `assets/prefabs/reward/`

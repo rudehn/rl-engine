@@ -1,22 +1,19 @@
 // A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
 // stands for; see `treasure_room.ron` for the full field list.
 //
-// An adventurer's remains among hidden traps, pack still full, killers
-// standing near rather than dozing (see the task's report).
+// An adventurer's remains, pack still full, among the hidden plates that
+// brought them down, and their killers asleep beside them.
 (
     name: "The Last Stand",
     ground: "hall floor",
     rows: [
-        "g.g",
-        "drd",
-        "iPi",
+        "zd ",
+        "d%d",
+        " dz",
     ],
     legend: {
-        '.': Tile("hall floor"),
-        'g': Monster(monster: "ghoul"),
-        'd': Prop("hidden dart plate"),
-        'r': Prop("remains"),
-        'i': Item(tag: "potion", count: (1, 2)),
-        'P': Item(tag: "weapon", count: 1),
+        'z': Mark,
+        'd': Prop("dart plate"),
+        '%': Prop("adventurer's remains"),
     },
 )

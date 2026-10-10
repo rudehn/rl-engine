@@ -1,16 +1,19 @@
 // A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
 // stands for; see `treasure_room.ron` for the full field list.
 //
-// An ancient tome of the kingdom's own history, a scroll of identify kept
-// beside it.
+// A shelf of books round a chronicle of the kingdom before the flood, a page
+// of its history to whoever reads it, and a scroll of identify tucked among
+// them.
 (
     name: "Library Nook",
     ground: "hall floor",
     rows: [
-        "ts",
+        "=b=",
+        " ? ",
     ],
     legend: {
-        't': Prop("ancient tome"),
-        's': Item(item: "scroll of identify", count: 1),
+        '=': Prop("shelf"),
+        'b': Prop("chronicle"),
+        '?': Item(item: "scroll of identify", count: 1),
     },
 )

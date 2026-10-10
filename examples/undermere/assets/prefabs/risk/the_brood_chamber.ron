@@ -1,20 +1,18 @@
 // A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
 // stands for; see `treasure_room.ron` for the full field list.
 //
-// Part 3's egg sacs, hatching when disturbed, the prize among them: reuses
-// `props.ron`'s own "egg sac" (health 1, `Hatch` on being destroyed) rather
-// than a second kind.
+// Part 3's egg sacs clustered round something a brood was laid on, which
+// hatch when they are struck or stepped beside.
 (
     name: "The Brood Chamber",
     ground: "hall floor",
     rows: [
-        "e.e",
-        ".P.",
-        "e.e",
+        "e e",
+        " P ",
+        "e e",
     ],
     legend: {
-        '.': Tile("hall floor"),
         'e': Prop("egg sac"),
-        'P': Item(tag: "staff", count: 1),
+        'P': Item(tag: "ring", count: 1, band: 1),
     },
 )

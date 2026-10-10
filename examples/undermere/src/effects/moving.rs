@@ -1,8 +1,9 @@
 //! Where someone stands: a staff of blinking's step of several cells, a
 //! scroll of teleportation's, which sends its reader far off, a wand of
 //! teleport other's, which sends what it strikes far off, a wand of
-//! beckoning's, which pulls it close, and a potion of descent's, which
-//! sinks its drinker to the floor below.
+//! beckoning's, which pulls it close, a potion of descent's, which
+//! sinks its drinker to the floor below, and a floor that gives way,
+//! which drops whoever stands on it there too.
 //!
 //! Each on the same floor moves through [`EffectWorld::place`] or
 //! [`EffectWorld::slide`], so nobody lands in a wall or on someone else,
@@ -251,10 +252,62 @@ pub fn descend(world: &mut World, landing: &Landing, roll: u64) {
     }
 }
 
-/// Puts whoever a potion of descent sank on a free cell of the floor they
-/// sank to, picked by the roll they sank with, once they have arrived: a
-/// floor first entered is built, and its people placed, by the arrival,
-/// so the cell is picked among what is free once it stands.
+/// Whoever stands where it lands falls through the floor to the one
+/// below, as a rotten floor drops its taker when it gives way and a
+/// trapdoor whoever steps on it: [`fall_through`] for each. Nothing on the
+/// deepest floor, or in Mereholt, which has no floor below it to fall
+/// to. Takes no arguments.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Fall;
+
+impl Effect for Fall {
+    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+        for who in landing.targets.clone() {
+            let roll = world.rng.random::<u64>();
+            world.commands.queue(move |world: &mut World| {
+                fall_through(world, who, roll);
+            });
+        }
+    }
+
+    fn describe(&self, _: &Registries, _: EffectBonus) -> String {
+        "drops whoever stands there through the floor to the one below".to_string()
+    }
+}
+
+impl FromArgs for Fall {
+    const KIND: &'static str = "Fall";
+
+    fn from_args(args: &RawValue, _: &Names<'_>) -> Result<Self, String> {
+        no_args(args, Self::KIND).map(|_| Self)
+    }
+}
+
+/// Drops `who` through the floor of the place they stand on to the floor
+/// below, landing where `roll` picks among its free cells off the stairs,
+/// as [`land_sinking`] lands a potion of descent's drinker; false, and
+/// nothing done, on the deepest floor or anywhere that is no floor. The
+/// one fall, which [`Fall`] lands and a rotten floor's own collapse calls.
+pub fn fall_through(world: &mut World, who: Entity, roll: u64) -> bool {
+    use crate::dungeon::{FLOORS, floor_of, map_of};
+    let here = world.get::<OnMap>(who).map_or(MapId::SURFACE, |m| m.0);
+    let Some(floor) = floor_of(here).filter(|f| *f < FLOORS) else { return false };
+    let below = map_of(floor + 1);
+    world.entity_mut(who).insert(Sinking { to: below, roll });
+    world.write_message(WarpRequest::into_place(who, below));
+    if world.get::<Player>(who).is_some() {
+        world.write_message(Tell::new("The floor gives way beneath you!", Tones::BAD));
+    }
+    true
+}
+
+/// Puts whoever a potion of descent sank, or a floor dropped, on a free
+/// cell of the floor they went to, picked by the roll they went with, once
+/// they have arrived: a floor first entered is built, and its people
+/// placed, by the arrival, so the cell is picked among what is free once
+/// it stands. Never on the stairs, up or down, which nobody comes through
+/// a ceiling to land on, and which a fall onto the way down would take
+/// straight on to the next floor's.
 ///
 /// In `TurnSet::React`, after the arrival's own reactions, by the engine's
 /// warp, so who stands where and what can be seen are kept right as any
@@ -264,6 +317,7 @@ pub fn land_sinking(
     sinking: Query<(Entity, &Sinking, &OnMap)>,
     map: Res<WorldMap>,
     occupancy: Res<Occupancy>,
+    stairs: Query<(&Position, &OnMap), With<crate::stairs::Way>>,
     mut warps: MessageWriter<WarpRequest>,
 ) {
     for (who, sink, on) in &sinking {
@@ -272,7 +326,11 @@ pub fn land_sinking(
         }
         commands.entity(who).remove::<Sinking>();
         let Some(place) = map.place(sink.to) else { continue };
-        let open: Vec<Point> = place.terrain.bounds().cells().filter(|p| map.is_walkable_on(sink.to, *p) && !occupancy.is_occupied(*p)).collect();
+        // The place's own way in and way down, which its stairs stand on,
+        // whether or not they have been stood up yet this frame.
+        let on_stairs = |p: Point| p == place.entry || Some(p) == place.exit || stairs.iter().any(|(at, m)| m.0 == sink.to && at.0 == p);
+        let open: Vec<Point> =
+            place.terrain.bounds().cells().filter(|p| map.is_walkable_on(sink.to, *p) && !occupancy.is_occupied(*p) && !on_stairs(*p)).collect();
         if open.is_empty() {
             continue;
         }

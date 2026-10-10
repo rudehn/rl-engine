@@ -14,7 +14,8 @@
 //              blocks sight, which the engine's props never do yet
 //   health:    optional; what it takes to break it; absent, nothing can
 //   offers:    optional; [(verb:, time:, needs:, effects: [...])]: verb is "open" or
-//              "search", the engine's own; time is hundredths of a step; needs is a
+//              "search", the engine's own, or "pull" or "read", Undermere's, which
+//              `src/vaults.rs` answers; time is hundredths of a step; needs is a
 //              tag the opener must carry
 //   container: optional; (contents: [...], locked:, opened: (glyph:, color:)) where
 //              contents is a list of rows, each either (item: "name", count:) for that
@@ -31,9 +32,10 @@
 //              registers, written as in abilities.ron
 //   hidden:    optional; (spot:) percent a turn to spot it while in sight
 //
-// Everything here but the chest and the egg sac is scenery: it offers, holds
-// and does nothing, so the engine leaves it off the list of what is nearby
-// and the look cursor still names it.
+// Everything here but the containers, the egg sac, the triggered and hidden
+// things and what offers to be pulled or read is scenery: it offers, holds and
+// does nothing, so the engine leaves it off the list of what is nearby and the
+// look cursor still names it.
 #![enable(implicit_some)]
 [
     // The town. A lamp post's lantern and a forge's fire are lit by `light.rs`.
@@ -150,52 +152,114 @@
     // The reward pool's own dressed entries, `assets/dressings.ron`.
     (name: "lectern",       glyph: 'n', color: (r: 120, g: 95, b: 70)),
 
-    // The reward pool's own fixed pieces, `assets/prefabs/reward/`: a
-    // chest of coin, a scholar's desk and shelves (reusing "desk" and
-    // "shelf" above), a spilled cart, and the three one-shot waters a
-    // spring, an anvil and a well hold.
-    (name: "coin chest", glyph: '=', color: (r: 195, g: 170, b: 80), blocks: true,
-     container: (contents: [(item: "gold coin", count: (6, 10))],
-                 opened: (glyph: '=', color: (r: 110, g: 95, b: 50))),
+    // The reward pieces', `assets/prefabs/reward/`. A coin chest and a
+    // spilled wagon hold what they say; a spring, a frost-rimed anvil and a
+    // moonwell each hold one draught or one phial, once; a reliquary and an
+    // enchanter's altar hold their one thing; a chronicle and a dead
+    // adventurer's scratched words are read, by `src/vaults.rs`.
+    (name: "coin chest", glyph: '=', color: (r: 205, g: 175, b: 80), blocks: true,
+     container: (contents: [(item: "gold coin", count: (3, 5))], opened: (glyph: '=', color: (r: 110, g: 95, b: 50))),
      offers: [(verb: "open", time: 100)]),
-    (name: "ancient tome", glyph: 'b', color: (r: 150, g: 115, b: 75), blocks: true),
-    (name: "overturned wagon", glyph: 'w', color: (r: 130, g: 95, b: 55), blocks: true),
-    (name: "spring", glyph: 'o', color: (r: 130, g: 200, b: 220), blocks: true,
-     container: (contents: [(item: "flask of spring water", count: 1)]),
+    (name: "overturned wagon", glyph: '&', color: (r: 140, g: 100, b: 60), blocks: true,
+     container: (contents: [(tag: "weapon", count: 1, band: 1), (item: "gold coin", count: (1, 2))],
+                 opened: (glyph: '&', color: (r: 90, g: 66, b: 42))),
+     offers: [(verb: "open", time: 150)]),
+    (name: "spilled crate", glyph: '=', color: (r: 150, g: 115, b: 70)),
+    (name: "spring", glyph: '~', color: (r: 140, g: 215, b: 235), blocks: true,
+     container: (contents: [(item: "flask of spring water", count: 1)], opened: (glyph: '~', color: (r: 70, g: 100, b: 110))),
      offers: [(verb: "open", time: 100)]),
-    (name: "frost-rimed anvil", glyph: 'n', color: (r: 170, g: 200, b: 215), blocks: true,
-     container: (contents: [(item: "phial of quenching oil", count: 1)]),
+    (name: "frost-rimed anvil", glyph: 'n', color: (r: 175, g: 210, b: 230), blocks: true,
+     container: (contents: [(item: "phial of quenching oil", count: 1)], opened: (glyph: 'n', color: (r: 110, g: 115, b: 125))),
      offers: [(verb: "open", time: 100)]),
-    (name: "moonwell", glyph: 'o', color: (r: 170, g: 170, b: 230), blocks: true,
-     container: (contents: [(item: "phial of moonwell water", count: 1)]),
+    (name: "moonwell", glyph: 'o', color: (r: 185, g: 185, b: 245), blocks: true,
+     container: (contents: [(item: "phial of moonwell water", count: 1)], opened: (glyph: 'o', color: (r: 90, g: 90, b: 120))),
      offers: [(verb: "open", time: 100)]),
+    (name: "reliquary", glyph: '|', color: (r: 235, g: 205, b: 120), blocks: true,
+     container: (contents: [(tag: "weapon", count: 1, band: 3)], opened: (glyph: '|', color: (r: 130, g: 115, b: 80))),
+     offers: [(verb: "open", time: 100)]),
+    (name: "enchanter's altar", glyph: '_', color: (r: 200, g: 160, b: 255), blocks: true,
+     container: (contents: [(item: "scroll of enchanting", count: 1)], opened: (glyph: '_', color: (r: 110, g: 95, b: 135))),
+     offers: [(verb: "open", time: 100)]),
+    (name: "chronicle", glyph: 'b', color: (r: 190, g: 150, b: 95), blocks: true, offers: [(verb: "read", time: 100)]),
+    (name: "scratched words", glyph: ':', color: (r: 200, g: 195, b: 180), offers: [(verb: "read", time: 100)]),
+    (name: "adventurer's remains", glyph: '%', color: (r: 225, g: 215, b: 190),
+     container: (contents: [(tag: "potion", count: (1, 2)), (tag: "scroll", count: 1), (item: "gold coin", count: 1)],
+                 opened: (glyph: '%', color: (r: 140, g: 132, b: 118))),
+     offers: [(verb: "open", time: 150)]),
 
-    // The risk-and-reward pool's own fixed pieces, `assets/prefabs/risk/`.
-    // `src/vaults.rs` owns the cage gate, the key and the lever it is
-    // never drawn with and the flood, the fall and the collapse; the
-    // warding glyph, the grave sigil and the cracked tile below answer for
-    // themselves through `effects/minds.rs`'s own `WakeFloor` and
-    // `effects/bodies.rs`'s own `Hatch`, and the traps through the
-    // engine's own `Harm`, `Emit` and `Ignite`.
-    (name: "cage gate", glyph: '+', color: (r: 150, g: 145, b: 140)),
-    (name: "stone pedestal", glyph: '_', color: (r: 170, g: 165, b: 150)),
-    (name: "cracked tile", glyph: '^', color: (r: 150, g: 130, b: 100),
-     triggers: [(on: "entered", fires: 1, effects: [(kind: "Hatch", args: (monster: "rat", count: 4))])]),
-    (name: "guardian statue", glyph: '&', color: (r: 140, g: 140, b: 150), blocks: true),
-    (name: "iron grate", glyph: '"', color: (r: 110, g: 115, b: 125)),
-    (name: "dry straw", glyph: '"', color: (r: 190, g: 170, b: 90)),
-    (name: "warding glyph", glyph: ':', color: (r: 220, g: 150, b: 60),
+    // The risk-and-reward pieces', `assets/prefabs/risk/`. What a prize is
+    // held in says what lifting it sets off, and `src/vaults/lifts.rs`
+    // answers each by its name: the other cages shut, the rats pour from
+    // their holes, the water rises through the grates, the planks give
+    // way, the lintel nearer the way in falls. Each is stood down as a
+    // shut or empty cage or a bare plinth once it has been answered.
+    (name: "caged blade", glyph: '#', color: (r: 205, g: 210, b: 225), blocks: true,
+     container: (contents: [(tag: "weapon", count: 1, band: 2)], opened: (glyph: '_', color: (r: 120, g: 120, b: 130))),
+     offers: [(verb: "open", time: 100)]),
+    (name: "caged staff", glyph: '#', color: (r: 205, g: 210, b: 225), blocks: true,
+     container: (contents: [(tag: "staff", count: 1, band: 1)], opened: (glyph: '_', color: (r: 120, g: 120, b: 130))),
+     offers: [(verb: "open", time: 100)]),
+    (name: "caged ring", glyph: '#', color: (r: 205, g: 210, b: 225), blocks: true,
+     container: (contents: [(tag: "ring", count: 1, band: 1)], opened: (glyph: '_', color: (r: 120, g: 120, b: 130))),
+     offers: [(verb: "open", time: 100)]),
+    (name: "shut cage", glyph: '#', color: (r: 105, g: 100, b: 110), blocks: true),
+    (name: "empty cage", glyph: '_', color: (r: 120, g: 120, b: 130), blocks: true),
+    (name: "gnawed plinth", glyph: '|', color: (r: 200, g: 175, b: 130), blocks: true,
+     container: (contents: [(tag: "wand", count: 1, band: 1)], opened: (glyph: '|', color: (r: 110, g: 100, b: 85))),
+     offers: [(verb: "open", time: 100)]),
+    (name: "rat hole", glyph: 'o', color: (r: 95, g: 80, b: 70)),
+    (name: "drowned altar", glyph: '_', color: (r: 120, g: 190, b: 200), blocks: true,
+     container: (contents: [(tag: "armor", count: 1, band: 2)], opened: (glyph: '_', color: (r: 70, g: 100, b: 110))),
+     offers: [(verb: "open", time: 100)]),
+    (name: "iron grate", glyph: '≡', color: (r: 120, g: 125, b: 135)),
+    (name: "teetering plinth", glyph: '|', color: (r: 175, g: 130, b: 90), blocks: true,
+     container: (contents: [(tag: "staff", count: 1, band: 2)], opened: (glyph: '|', color: (r: 100, g: 80, b: 60))),
+     offers: [(verb: "open", time: 100)]),
+    (name: "keystone plinth", glyph: '|', color: (r: 215, g: 205, b: 180), blocks: true,
+     container: (contents: [(tag: "ring", count: 1, band: 2)], opened: (glyph: '|', color: (r: 120, g: 115, b: 100))),
+     offers: [(verb: "open", time: 100)]),
+    (name: "cracked lintel", glyph: '∩', color: (r: 165, g: 150, b: 130)),
+    (name: "bare plinth", glyph: '|', color: (r: 110, g: 105, b: 95), blocks: true),
+    (name: "bare altar", glyph: '_', color: (r: 85, g: 105, b: 110), blocks: true),
+    // A goblin stockade's palisade and the plunder heaped inside it.
+    (name: "palisade", glyph: '#', color: (r: 140, g: 100, b: 55), blocks: true),
+    (name: "loot pile", glyph: '*', color: (r: 225, g: 190, b: 90), blocks: true,
+     container: (contents: [(item: "gold coin", count: (2, 3)), (tag: "weapon", count: 1), (tag: "potion", count: 1)],
+                 opened: (glyph: '*', color: (r: 120, g: 100, b: 60))),
+     offers: [(verb: "open", time: 150)]),
+    // A spider's larder: the dead it wrapped, and what they carried.
+    (name: "cocooned body", glyph: '&', color: (r: 225, g: 225, b: 210), blocks: true,
+     container: (contents: [(tag: "potion", count: 1), (item: "gold coin", count: 1)], opened: (glyph: '%', color: (r: 150, g: 145, b: 130))),
+     offers: [(verb: "open", time: 200)]),
+    // A bone circle's ring: the dead who rise once any cell of it is
+    // stepped on, every one of them at once, and the sigils between them.
+    (name: "circle bones", glyph: '%', color: (r: 230, g: 225, b: 205),
+     triggers: [(on: "entered", fires: 1, effects: [(kind: "Rise", args: (prop: "circle bones", monster: "skeleton", radius: 2))])]),
+    (name: "grave sigil", glyph: ':', color: (r: 165, g: 100, b: 175),
+     triggers: [(on: "entered", fires: 1, effects: [(kind: "Rise", args: (prop: "circle bones", monster: "skeleton", radius: 2))])]),
+    // A warded hall's glyphs, in plain sight: crossed, they cry out and the
+    // whole floor wakes and knows where the crosser stands.
+    (name: "warding glyph", glyph: ':', color: (r: 235, g: 160, b: 60),
      triggers: [(on: "entered", fires: 1, effects: [(kind: "WakeFloor")])]),
-    (name: "grave sigil", glyph: ':', color: (r: 150, g: 90, b: 160),
-     triggers: [(on: "entered", fires: 1, effects: [(kind: "Hatch", args: (monster: "skeleton", count: 4))])]),
-    (name: "hidden dart plate", glyph: '^', color: (r: 140, g: 130, b: 120), hidden: (spot: 20),
-     triggers: [(on: "entered", fires: 1, effects: [(kind: "Harm", args: (kind: "pierce", roll: "1d6"))])]),
-    (name: "caustic vent", glyph: '^', color: (r: 120, g: 170, b: 90), hidden: (spot: 15),
-     triggers: [(on: "entered", fires: 1, area: Burst(radius: 1), effects: [(kind: "Emit", args: (gas: "caustic", amount: 150))])]),
-    (name: "paralysis vent", glyph: '^', color: (r: 190, g: 140, b: 190), hidden: (spot: 8),
-     triggers: [(on: "entered", fires: 1, area: Burst(radius: 1), effects: [(kind: "Emit", args: (gas: "paralytic", amount: 200))])]),
-    (name: "ember trap", glyph: '^', color: (r: 220, g: 120, b: 50), hidden: (spot: 20),
-     triggers: [(on: "entered", fires: 1, effects: [(kind: "Ignite", args: (turns: 3))])]),
-    (name: "concealed lever", glyph: '/', color: (r: 160, g: 150, b: 120), hidden: (spot: 20),
-     offers: [(verb: "pull", time: 100)]),
+    // Hidden plates: darts from the statues of a gallery, a vent of caustic
+    // gas in a chamber's doorway, a vent of paralysing gas in a vestibule
+    // that rouses what waits beyond, and embers under a tinder room's straw.
+    (name: "dart plate", glyph: '^', color: (r: 160, g: 150, b: 140), hidden: (spot: 15),
+     triggers: [(on: "entered", fires: 2, effects: [(kind: "Harm", args: (kind: "pierce", roll: "2d4"))])]),
+    (name: "caustic vent", glyph: '^', color: (r: 130, g: 185, b: 95), hidden: (spot: 12),
+     triggers: [(on: "entered", fires: 1, area: Burst(radius: 1), effects: [(kind: "Emit", args: (gas: "caustic", amount: 300))])]),
+    (name: "paralysis vent", glyph: '^', color: (r: 200, g: 150, b: 200), hidden: (spot: 8),
+     triggers: [(on: "entered", fires: 1, effects: [(kind: "Emit", args: (gas: "paralytic", amount: 200)), (kind: "Rouse", args: (radius: 10))])]),
+    (name: "ember plate", glyph: '^', color: (r: 230, g: 130, b: 55), hidden: (spot: 15),
+     triggers: [(on: "entered", fires: 1, area: Burst(radius: 1), effects: [(kind: "Ignite", args: (turns: 4))])]),
+    // A sealed vault's lever, set in a wall somewhere else on its floor and
+    // hidden until it is spotted; pulled, it raises the vault's gate.
+    (name: "concealed lever", glyph: '/', color: (r: 175, g: 160, b: 125), hidden: (spot: 20), offers: [(verb: "pull", time: 100)]),
+    (name: "pulled lever", glyph: '\\', color: (r: 140, g: 130, b: 105)),
+    // A warded hall's altar, and what it holds.
+    (name: "offering altar", glyph: '_', color: (r: 240, g: 215, b: 150), blocks: true,
+     container: (contents: [(tag: "staff", count: 1, band: 1), (item: "gold coin", count: 1)], opened: (glyph: '_', color: (r: 130, g: 115, b: 85))),
+     offers: [(verb: "open", time: 100)]),
+    // A gallery's statues, flanking the hall its plates fire from.
+    (name: "guardian statue", glyph: '&', color: (r: 150, g: 150, b: 165), blocks: true),
 ]

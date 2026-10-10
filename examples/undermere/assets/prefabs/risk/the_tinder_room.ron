@@ -1,21 +1,21 @@
 // A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
 // stands for; see `treasure_room.ron` for the full field list.
 //
-// Dry straw over the floor, a lit brazier by the door, the prize at the
-// back: an ember caught underfoot is `props.ron`'s own "ember trap".
+// Dry straw strewn over the floor of a dead end, a lit brazier at its edge
+// and something left in the middle of it all: an ember plate hidden in the
+// straw, and whatever catches burns the room and what lies in it.
 (
     name: "The Tinder Room",
-    ground: "hall floor",
+    ground: "straw",
     rows: [
-        "F.",
-        "ex",
-        "xP",
+        "s&s",
+        "sPs",
+        "s^s",
     ],
     legend: {
-        '.': Tile("hall floor"),
-        'F': Prop("brazier"),
-        'x': Prop("dry straw"),
-        'e': Prop("ember trap"),
-        'P': Item(tag: "scroll", count: 1),
+        's': Tile("straw"),
+        'P': Item(tag: "scroll", count: 1, band: 1),
+        '^': Prop("ember plate"),
+        '&': Prop("brazier"),
     },
 )

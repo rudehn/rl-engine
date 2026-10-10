@@ -1,29 +1,27 @@
 // A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
 // stands for; see `treasure_room.ron` for the full field list.
 //
-// Three caged things on altars; take one and the other cages slam shut:
-// '1'-'3' and '4'-'6' are `Mark`s, read by `src/vaults.rs`'s own
-// `spawn_caged_altars`, which pairs them by position in the alphabet
-// rather than by where they stand, since the room is symmetric.
+// A candlelit shrine of three altars, each caged, each holding a thing seen
+// through its bars: a blade, a staff, a ring. Open one and the other two
+// slam shut on what they hold, so the choice of three is a choice of one
+// (`src/vaults/lifts.rs`).
 (
     name: "Caged Altars",
     ground: "hall floor",
     rows: [
-        "#######",
-        "#1#2#3#",
-        "#4.5.6#",
-        "#.....#",
-        "###E###",
+        "###########",
+        "#i.1.2.3.i#",
+        "#.........#",
+        "#.........#",
+        "#####E#####",
     ],
     legend: {
         '#': Tile("hall wall"),
         '.': Tile("hall floor"),
-        '1': Mark,
-        '2': Mark,
-        '3': Mark,
-        '4': Mark,
-        '5': Mark,
-        '6': Mark,
+        'i': Prop("candelabra"),
+        '1': Prop("caged blade"),
+        '2': Prop("caged staff"),
+        '3': Prop("caged ring"),
         'E': Entry,
     },
 )

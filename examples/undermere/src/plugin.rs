@@ -62,8 +62,10 @@ impl Plugin for UndermerePlugin {
             // The run's captive: the one verb `PropsPlugin` does not already
             // know, offered by an actor rather than a prop.
             .add_verb(crate::captives::FREE_VERB)
-            // The sealed vault's own concealed lever.
-            .add_verb("pull")
+            // A sealed vault's concealed lever, and what a reward piece
+            // offers to be read.
+            .add_verb(crate::vaults::PULL_VERB)
+            .add_verb(crate::vaults::READ_VERB)
             .add_plugins((PrefabPlugin::<Bestiary, Armory>::default(), LootPlugin::<Armory>::default()))
             .add_plugins((FactsPlugin, RecordsPlugin))
             // What the dead leave lying where they fell, for `raising` to
@@ -103,6 +105,9 @@ impl Plugin for UndermerePlugin {
         // tricks they have seen land, the same kind of thing and the same
         // run-to-run life as `Lore`.
         app.init_resource::<crate::bestiary_lore::MonsterLore>().reset_on_new_run::<crate::bestiary_lore::MonsterLore>();
+        // Every flooding vault still filling: none at a run's start, and
+        // what a continued run's save says.
+        app.init_resource::<crate::vaults::lifts::RisingFloods>().reset_on_new_run::<crate::vaults::lifts::RisingFloods>();
 
         // The run's start, and a continued run after the fresh start has
         // stood aside.
@@ -229,26 +234,19 @@ impl Plugin for UndermerePlugin {
         );
         // A shackled captive's own "free".
         app.add_systems(Turn, crate::captives::answer_free.in_set(TurnSet::React));
-        // The risk-and-reward pool's own mechanisms: a vault's key or a
-        // seal's lever, a caged altar's cages, a chained captive, a
-        // flooding vault's and a rotten floor's own prize, and a
-        // collapsing gallery's. `spawn_vault_marks` fills every `Mark`
-        // these pieces carry, after the engine's own `PrefabSet::Fill`
-        // has filled every ordinary slot beside them.
+        // The risk-and-reward pieces' own: the marks a piece leaves for the
+        // game to fill, after the engine's own `PrefabSet::Fill` has filled
+        // every slot beside them, a lever and a vault's key, and what
+        // lifting a prize sets off.
         app.add_systems(Turn, crate::vaults::spawn_vault_marks.in_set(TurnSet::React).after(PrefabSet::Fill));
-        app.add_systems(
-            Turn,
-            (
-                crate::vaults::answer_pull_lever,
-                crate::vaults::shut_other_cages,
-                crate::vaults::start_flood,
-                crate::vaults::rise_floods,
-                crate::vaults::trigger_rotten_floor,
-                crate::vaults::land_falling,
-                crate::vaults::collapse_gallery_behind,
-            )
-                .in_set(TurnSet::React),
-        );
+        app.add_systems(Turn, (crate::vaults::answer_pull_lever, crate::vaults::spend_vault_key, crate::vaults::answer_read).in_set(TurnSet::React));
+        {
+            use crate::vaults::lifts::*;
+            app.add_systems(
+                Turn,
+                (shut_other_cages, loose_the_vermin, give_way, collapse_behind, start_flood, rise_floods.after(start_flood)).in_set(TurnSet::React),
+            );
+        }
         // What is known of a kind's tricks, learned off the same messages
         // the tricks above, an ability's own landing and the engine's own
         // actor triggers already answer with: each only once its effect

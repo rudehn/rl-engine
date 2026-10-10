@@ -1,23 +1,26 @@
 // A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
 // stands for; see `treasure_room.ron` for the full field list.
 //
-// A hidden plate in the doorway vents caustic gas into the room: the
-// `props.ron` "caustic vent", a cell past the door.
+// A chest at the back of a bare room and the one who came for it slumped by
+// the door: a hidden vent in the doorway breathes caustic gas into the room
+// on whoever steps through.
 (
     name: "The Gas Chamber",
     ground: "hall floor",
     rows: [
         "#######",
-        "#..V..#",
+        "#..h..#",
         "#.....#",
-        "#..P..#",
+        "#r....#",
+        "#..v..#",
         "###E###",
     ],
     legend: {
         '#': Tile("hall wall"),
         '.': Tile("hall floor"),
-        'V': Prop("caustic vent"),
-        'P': Item(tag: "armor", count: 1),
+        'h': Prop("chest"),
+        'r': Prop("remains"),
+        'v': Prop("caustic vent"),
         'E': Entry,
     },
 )

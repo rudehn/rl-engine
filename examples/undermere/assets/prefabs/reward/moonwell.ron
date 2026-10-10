@@ -1,15 +1,17 @@
 // A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
 // stands for; see `treasure_room.ron` for the full field list.
 //
-// A well whose water tells what one carried thing is, taken as a single
-// phial: `src/lore.rs`'s `Identify`, asked exactly as the scroll asks it.
+// A well whose water holds the pale light from the lake above: a phial of it
+// tells what one carried thing is, once.
 (
     name: "Moonwell",
     ground: "hall floor",
     rows: [
-        "W",
+        " i ",
+        "iWi",
     ],
     legend: {
+        'i': Prop("candelabra"),
         'W': Prop("moonwell"),
     },
 )

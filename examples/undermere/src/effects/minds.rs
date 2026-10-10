@@ -226,16 +226,19 @@ impl FromArgs for AlertDrowned {
     }
 }
 
-/// Every sleeper on the user's own floor woken, and the whole floor made
-/// aware of where they stand: a warding glyph's own, crossed and crying
-/// out through the halls. Takes no arguments.
+/// Every sleeper on the floor woken and the whole floor told where
+/// whoever crossed it stands: a warding glyph's own, crossed and crying
+/// out through the halls. Lands on whoever stepped on it, never on the
+/// glyph, which is the trigger's user and stands nowhere anyone could
+/// go looking. Takes no arguments.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct WakeFloor;
 
 impl Effect for WakeFloor {
     fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
-        let user = landing.user;
-        world.commands.queue(move |world: &mut World| wake_floor(world, user));
+        for who in landing.targets.clone() {
+            world.commands.queue(move |world: &mut World| wake(world, who, None));
+        }
     }
 
     fn describe(&self, _: &Registries, _: EffectBonus) -> String {
@@ -251,21 +254,65 @@ impl FromArgs for WakeFloor {
     }
 }
 
-/// Wakes every sleeper on `reader`'s own floor, cured of whatever holds it
-/// asleep, and makes the whole floor aware of `reader` where they stand,
-/// as [`aggravate`] does: a warding glyph cried out, so the floor is told
-/// at once rather than only whoever is close enough to hear a shriek.
-pub fn wake_floor(world: &mut World, reader: Entity) {
-    aggravate(world, reader);
-    let here = world.get::<OnMap>(reader).map_or(MapId::SURFACE, |m| m.0);
-    let floor: Vec<Entity> = {
-        let mut q = world.query_filtered::<(Entity, &OnMap), With<Kind>>();
-        q.iter(world).filter(|(_, on)| on.0 == here).map(|(e, _)| e).collect()
+/// Every sleeper within `radius` of whoever set it off woken and told
+/// where they stand, and nothing farther: a vestibule's vent, waking what
+/// waits in the room beyond rather than the whole floor as a glyph does.
+/// Written `(kind: "Rouse", args: (radius: 8))`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Rouse {
+    /// How far, in cells.
+    pub radius: i32,
+}
+
+impl Effect for Rouse {
+    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+        let radius = self.radius;
+        for who in landing.targets.clone() {
+            world.commands.queue(move |world: &mut World| wake(world, who, Some(radius)));
+        }
+    }
+
+    fn describe(&self, _: &Registries, _: EffectBonus) -> String {
+        format!("every sleeper within {} wakes, and knows where you are", self.radius)
+    }
+}
+
+impl FromArgs for Rouse {
+    const KIND: &'static str = "Rouse";
+
+    fn from_args(args: &RawValue, _: &Names<'_>) -> Result<Self, String> {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Args {
+            radius: i32,
+        }
+        let a: Args = rl_engine::rl_rules::ability::read_args(args)?;
+        Ok(Self { radius: a.radius })
+    }
+}
+
+/// Wakes every monster on `who`'s floor within `radius` of them, or the
+/// whole floor for `None`, cured of whatever holds it asleep, and tells
+/// each where `who` stands: [`WakeFloor`]'s and [`Rouse`]'s one rule. A
+/// floor woken whole hears it, as [`aggravate`]'s shriek is heard; a room
+/// roused is told by nothing but its sleepers stirring.
+pub fn wake(world: &mut World, who: Entity, radius: Option<i32>) {
+    let Some(at) = world.get::<Position>(who).map(|p| p.0) else { return };
+    let here = world.get::<OnMap>(who).map_or(MapId::SURFACE, |m| m.0);
+    let near = |p: Point| radius.is_none_or(|r| rl_engine::rl_core::geometry::chebyshev(p, at) <= r);
+    let woken: Vec<Entity> = {
+        let mut q = world.query_filtered::<(Entity, &OnMap, &Position), With<Kind>>();
+        q.iter(world).filter(|(_, on, p)| on.0 == here && near(p.0)).map(|(e, ..)| e).collect()
     };
     let mut cured = Vec::new();
     world.resource_scope::<Registries, _>(|world, registries| {
-        let mut q = world.query::<(&mut Afflicted, &mut StatBlock)>();
-        for e in &floor {
+        for e in &woken {
+            if let Some(mut aware) = world.get_mut::<Aware>(*e) {
+                let mut knows = aware.of(who);
+                knows.alerted_to(at);
+                aware.0.insert(who, knows);
+            }
+            let mut q = world.query::<(&mut Afflicted, &mut StatBlock)>();
             let Ok((mut afflicted, mut stats)) = q.get_mut(world, *e) else { continue };
             for status in afflicted.0.wake(&registries.statuses, &mut stats.0) {
                 cured.push((*e, status));
@@ -274,6 +321,17 @@ pub fn wake_floor(world: &mut World, reader: Entity) {
     });
     for (target, status) in cured {
         world.write_message(StatusEvent::Cured { target, status });
+    }
+    let line = if radius.is_none() {
+        if let Some(sound) = world.resource::<Sounds>().get(SHRIEK_SOUND) {
+            world.write_message(MakeNoise { at, loudness: SHRIEK, sound, maker: Some(who) });
+        }
+        "The glyph cries out, and the whole floor hears it!"
+    } else {
+        "Something stirs in the dark beyond."
+    };
+    if world.get::<Player>(who).is_some() {
+        world.write_message(Tell::new(line, Tones::BAD));
     }
 }
 

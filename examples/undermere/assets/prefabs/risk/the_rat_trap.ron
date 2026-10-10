@@ -1,24 +1,27 @@
 // A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
 // stands for; see `treasure_room.ron` for the full field list.
 //
-// A thing on a pedestal; lift it and the walls crack open on niches full
-// of vermin: the step onto the "cracked tile" before it is the lifting,
-// and `Hatch` is the vermin.
+// A thing left on a gnawed plinth in a room of gnawed bones, and holes at
+// the foot of its walls: lift it and the vermin behind the walls pour out of
+// every hole (`src/vaults/lifts.rs`).
 (
     name: "The Rat Trap",
     ground: "hall floor",
     rows: [
         "#######",
+        "#o.,.o#",
         "#.....#",
-        "#..T..#",
-        "#..P..#",
+        "#..|..#",
+        "#.,...#",
+        "#o...,#",
         "###E###",
     ],
     legend: {
         '#': Tile("hall wall"),
         '.': Tile("hall floor"),
-        'T': Prop("cracked tile"),
-        'P': Item(tag: "weapon", count: 1),
+        'o': Prop("rat hole"),
+        ',': Tile("bones"),
+        '|': Prop("gnawed plinth"),
         'E': Entry,
     },
 )

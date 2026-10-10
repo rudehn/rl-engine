@@ -1,24 +1,26 @@
 // A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
 // stands for; see `treasure_room.ron` for the full field list.
 //
-// Statues flank a hall and hidden plates fire darts from them: the tell
-// is the statues themselves, carved where the floor's others never are.
+// A long hall between two rows of statues, its prize at the far end, and
+// hidden plates down its middle that loose darts from the statues on whoever
+// treads on them.
 (
     name: "Gallery of Darts",
     ground: "hall floor",
     rows: [
-        "#########",
-        "E..s...s#",
-        "E.d..d..#",
-        "#..sP..s#",
-        "#########",
+        "###########",
+        "#&.&.&.&..#",
+        "E.d..d..dP#",
+        "E..d..d...#",
+        "#&.&.&.&..#",
+        "###########",
     ],
     legend: {
         '#': Tile("hall wall"),
         '.': Tile("hall floor"),
-        's': Prop("guardian statue"),
-        'd': Prop("hidden dart plate"),
-        'P': Item(tag: "weapon", count: 1),
+        '&': Prop("guardian statue"),
+        'd': Prop("dart plate"),
+        'P': Item(tag: "armor", count: 1, band: 1),
         'E': Entry,
     },
 )

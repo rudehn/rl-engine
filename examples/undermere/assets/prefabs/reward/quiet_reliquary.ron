@@ -1,24 +1,26 @@
 // A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
 // stands for; see `treasure_room.ron` for the full field list.
 //
-// A candlelit chapel, one thing three floors deeper waiting on a pedestal
-// at its heart.
+// A small chapel lit by candles, its pews facing a reliquary that holds one
+// thing from three floors deeper, and nobody keeping it.
 (
     name: "Quiet Reliquary",
     ground: "hall floor",
     rows: [
         "#######",
         "#i...i#",
+        "#..R..#",
+        "#i...i#",
         "#.....#",
-        "#..A..#",
-        "#.....#",
+        "#.p.p.#",
         "###E###",
     ],
     legend: {
         '#': Tile("hall wall"),
         '.': Tile("hall floor"),
         'i': Prop("candelabra"),
-        'A': Item(tag: "ring", count: 1, band: 3),
+        'R': Prop("reliquary"),
+        'p': Prop("pew"),
         'E': Entry,
     },
 )

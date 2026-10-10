@@ -1,25 +1,28 @@
 // A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
 // stands for; see `treasure_room.ron` for the full field list.
 //
-// Lift the prize and water pours in through grates, rising to deep:
-// 'P' is a `Mark`, read by `src/vaults.rs`'s own `spawn_flood_trigger`,
-// which spawns the prize there and starts the flood on its taking; the
-// grates themselves are the decorative "iron grate" either side of it.
+// An altar in a room floored with grates, water already seeping round them:
+// lift what the altar holds and the mere pours up through the grates,
+// wading-deep at once and too deep to cross at the far wall within a few
+// turns (`src/vaults/lifts.rs`).
 (
     name: "The Flooding Vault",
     ground: "hall floor",
     rows: [
-        "#######",
-        "#g...g#",
-        "#.....#",
-        "#..P..#",
-        "###E###",
+        "#########",
+        "#x~...~x#",
+        "#.......#",
+        "#...A...#",
+        "#.......#",
+        "#x.....x#",
+        "####E####",
     ],
     legend: {
         '#': Tile("hall wall"),
         '.': Tile("hall floor"),
-        'g': Prop("iron grate"),
-        'P': Mark,
+        'x': Prop("iron grate"),
+        '~': Tile("flooded floor"),
+        'A': Prop("drowned altar"),
         'E': Entry,
     },
 )

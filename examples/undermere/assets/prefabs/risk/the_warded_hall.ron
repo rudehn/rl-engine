@@ -1,24 +1,27 @@
 // A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
 // stands for; see `treasure_room.ron` for the full field list.
 //
-// Warding glyphs that cry out when crossed, waking the floor; an altar
-// beyond: `effects/minds.rs`'s own `WakeFloor`, carved where it is seen
-// and understood rather than hidden.
+// An altar at the head of a candlelit hall, and a line of warding glyphs
+// across it in plain sight: cross them and they cry out, and every sleeper
+// on the floor wakes knowing where the crosser stands, by `WakeFloor`.
 (
     name: "The Warded Hall",
     ground: "hall floor",
     rows: [
-        "#######",
-        "#.....#",
-        "#..g..#",
-        "#..A..#",
-        "###E###",
+        "#########",
+        "#...A...#",
+        "#i.....i#",
+        "#:::::::#",
+        "#.......#",
+        "#.......#",
+        "####E####",
     ],
     legend: {
         '#': Tile("hall wall"),
         '.': Tile("hall floor"),
-        'g': Prop("warding glyph"),
-        'A': Item(tag: "staff", count: 1, band: 1),
+        'A': Prop("offering altar"),
+        'i': Prop("candelabra"),
+        ':': Prop("warding glyph"),
         'E': Entry,
     },
 )

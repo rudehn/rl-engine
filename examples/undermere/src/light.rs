@@ -525,7 +525,7 @@ mod tests {
             }
             let text = app.world().resource::<Saves>().load(crate::save::SLOT).expect("the slot reads").expect("the arrival wrote the run down");
             let mut again = crate::testing::continued(&text);
-            assert_eq!(lit_fires(&mut again, map), vec![(at, Some(CAMPFIRE.source()))], "seed {s}: the fire is lit again once the run is continued");
+            assert_eq!(lit_fires(&mut again, map), fires, "seed {s}: every fire is lit again once the run is continued");
             camps += 1;
         }
         assert!(camps > 0, "some seed over the span stood a camp's fire on floor four");

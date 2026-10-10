@@ -1,510 +1,422 @@
-//! The risk-and-reward pool's own mechanisms: whatever no effect already
-//! says.
+//! What the risk-and-reward pieces do that no effect says.
 //!
-//! A vault's key and a seal's lever never stand inside the piece they
-//! open, so [`place_vault_fixtures`] drops each on a cell walkable from
-//! the way in without passing any lock, once a floor is built, and
-//! [`spawn_vault_marks`] fills it in on the arrival that finds it, the way
-//! [`rl_engine::rl_bevy::prefabs::fill_prefabs`] fills an ordinary slot.
-//! [`answer_pull_lever`] is what a pull does: the one seal on the floor
-//! with no key is the one it lifts.
+//! A piece is a prefab in `assets/prefabs/risk/` or `assets/prefabs/reward/`
+//! whose props, items and monsters the engine lays as it lays any piece's.
+//! What is left is this module's, in three parts.
 //!
-//! The rest are a piece's own `Mark`s, read by [`spawn_vault_marks`] the
-//! same way, each kept to its own piece by the prefab key a `Spot`
-//! carries, since more than one of these pieces can stand on a floor and
-//! their marks are not all spelled differently: caged altars whose
-//! cages [`shut_other_cages`] slams once one is taken, a chained
-//! captive [`spawn_vault_marks`] shackles in place, a flooding vault
-//! [`start_flood`] and [`rise_floods`] fill, a rotten floor
-//! [`trigger_rotten_floor`] drops its taker through, by the reusable
-//! [`fall_through_floor`] and [`land_falling`] a later trap reuses, and a
-//! collapsing gallery [`collapse_gallery_behind`] walls over.
+//! When a floor is built, [`place_vault_fixtures`] gives a locked vault's
+//! lock its own floor's key, drops that key and a sealed vault's lever on
+//! cells walked to from the way in without passing a lock, and hides a
+//! drowned reliquary's causeway as the deep water round it, an engine
+//! [`Secret`](rl_engine::rl_mapgen::Secret) spotted as any hidden door is.
+//!
+//! When a floor is first entered, [`spawn_vault_marks`] fills each piece's
+//! `Mark`s by one vocabulary, whichever piece drew them: [`SLEEPER`] a
+//! sleeper of the floor's own, [`GIANT`] an ogre asleep, [`GOBLIN`] a goblin
+//! asleep, [`CAPTIVE`] a captive of the floor's own shackled, and
+//! [`CAUSEWAY`] the causeway already hidden at build. A sleeper keeps the
+//! cell it was laid on as its post, as a piece's guard does.
+//!
+//! In play, [`lifts`] answers a prize taken: the other cages shut, the
+//! vermin pour out, the water rises, the floor gives way, the gallery
+//! falls in behind. [`answer_pull_lever`] lifts a floor's seal, and
+//! [`spend_vault_key`] leaves a key in the lock it opened. What the
+//! glyphs, the bone circle and the vents do is an effect's, in
+//! [`crate::effects`]: `WakeFloor`, `Rise` and `Rouse`.
+//!
+//! Everything here is told apart by what a prop is and where it stands,
+//! which the save already keeps, never by a component of the game's own,
+//! so a run continued mid-vault does what the run left would have done.
 
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use bevy::prelude::*;
 use rand::Rng;
 use rl_engine::prelude::*;
-use rl_engine::rl_bevy::EffectRng;
-use rl_engine::rl_bevy::places::PlaceEntered;
+use rl_engine::rl_bevy::doors::DoorEvent;
+use rl_engine::rl_bevy::places::{PlaceBuild, PlaceEntered, Spot};
 use rl_engine::rl_bevy::prefabs::Prefabs;
 use rl_engine::rl_bevy::props::spawn_prop;
-use rl_engine::rl_core::geometry;
-use rl_engine::rl_grid::{Terrain, TileRegistry, TileTables};
+use rl_engine::rl_grid::TileRegistry;
+use rl_engine::rl_rules::prefab::Slot;
 
 use crate::armory::{Armory, spawn_item};
-use crate::bestiary::{Bestiary, MonsterDef, spawn_monster_now};
+use crate::bestiary::{Bestiary, MonsterDef, spawn_monster};
+use crate::dungeon::{MIN_DISTANCE_FROM_ENTRY, floor_of};
 
-/// The tile ids these mechanisms paint with at runtime, read once from
+pub mod lifts;
+
+/// A piece's mark for a sleeper of the floor's own, drawn from the floor's
+/// table as the population draws one: a hoard's band, a last stand's
+/// killers, a vestibule's waiting dead.
+pub const SLEEPER: char = 'z';
+/// A piece's mark for an ogre asleep: the sleeping giant across his narrow
+/// way, an ogre whatever the floor's table holds.
+pub const GIANT: char = 'Z';
+/// A piece's mark for a goblin asleep: a stockade's sleepers, goblins
+/// whatever the floor's table holds.
+pub const GOBLIN: char = 'G';
+/// A piece's mark for a captive of the floor's own, shackled as part 3's
+/// run captive is and freed the same way.
+pub const CAPTIVE: char = 'C';
+/// A piece's mark for a cell of a sunken causeway: hidden at build as the
+/// deep water round it and found as any secret is.
+pub const CAUSEWAY: char = 'c';
+
+/// The ogre a [`GIANT`] mark stands.
+const GIANT_KIND: &str = "ogre";
+/// The goblin a [`GOBLIN`] mark stands.
+const GOBLIN_KIND: &str = "goblin";
+
+/// How likely a turn in sight finds a sunken causeway, in percent: the
+/// unit a hidden prop's chance is given in, and as hard to see as the
+/// floor's hidden plates.
+pub const CAUSEWAY_SPOT: u8 = 10;
+
+/// The spot a locked vault's key is dropped at: past every glyph a
+/// legend could carry, so no piece's mark is ever read as it.
+pub(crate) const KEY_TAG: u32 = u32::MAX - 1;
+/// As [`KEY_TAG`], for a sealed vault's lever.
+pub(crate) const LEVER_TAG: u32 = u32::MAX - 2;
+
+/// The item a locked vault's key is, `assets/items.ron`'s.
+pub const KEY_ITEM: &str = "vault key";
+/// The prop a sealed vault's lever is, hidden, offering [`PULL_VERB`].
+pub const LEVER: &str = "concealed lever";
+/// What a lever is once pulled: the same lever, spent.
+pub const PULLED_LEVER: &str = "pulled lever";
+/// What a lever offers, declared by [`crate::plugin::UndermerePlugin`].
+pub const PULL_VERB: &str = "pull";
+
+/// The tile ids the pieces' mechanisms paint with in play, read once from
 /// `Undermere::tiles` in `run::prepare`, since nothing after that call
-/// may ask a tile by name directly.
+/// may ask a tile by name.
 #[derive(Resource, Debug, Clone, Copy)]
 pub struct VaultTiles {
-    /// Water risen just far enough to wade: a flooding vault's first
-    /// stage.
+    /// Water a body wades through, a flooding vault's first.
     pub flooded: TileId,
-    /// Water too deep to wade, at a flooding vault's far wall.
+    /// Water nobody crosses, a flooding vault's far end once it has risen.
     pub deep: TileId,
-    /// A hall's own wall, painted back in behind whoever lets a gallery
-    /// fall in.
-    pub wall: TileId,
+    /// A collapsing gallery's way back, fallen in.
+    pub fallen_rock: TileId,
+    /// What a rotten floor leaves when it gives way.
+    pub hole: TileId,
+    /// The planks a rotten floor is laid of.
+    pub rotten_planks: TileId,
+    /// A sealed vault's gate once its lever is pulled.
+    pub raised_gate: TileId,
+    /// A locked vault's door once its key has opened it.
+    pub open_vault_door: TileId,
 }
 
 impl VaultTiles {
-    /// Reads the three tiles by name, panicking if `tiles` lacks one:
-    /// every biome's own recipe shares `hall wall`, `flooded floor` and
-    /// `deep water` (`dungeon.rs`'s own per-band tile lists), so this
-    /// never fails once the game's own tiles load.
+    /// Reads each by name; every one is registered in `dungeon.rs`, so a
+    /// missing one is a typo there, which every test that starts a run
+    /// finds.
     pub fn new(tiles: &TileRegistry) -> Self {
-        Self { flooded: tiles.expect("flooded floor"), deep: tiles.expect("deep water"), wall: tiles.expect("hall wall") }
+        Self {
+            flooded: tiles.expect("flooded floor"),
+            deep: tiles.expect("deep water"),
+            fallen_rock: tiles.expect("fallen rock"),
+            hole: tiles.expect("hole"),
+            rotten_planks: tiles.expect("rotten planks"),
+            raised_gate: tiles.expect("raised gate"),
+            open_vault_door: tiles.expect("open vault door"),
+        }
     }
 }
 
-/// A sentinel tag `place_vault_fixtures` gives the locked vault's own
-/// key: higher than any glyph a prefab's legend could carry, so it never
-/// collides with one, and `Spot::prefab` is `None` for it, since no
-/// piece's own legend names it.
-const KEY_TAG: u32 = u32::MAX - 1;
-/// As [`KEY_TAG`], for the sealed vault's own lever.
-const LEVER_TAG: u32 = u32::MAX - 2;
-
-/// After a floor builds, drops the locked vault's key or the sealed
-/// vault's lever on a cell walkable from the way in without crossing any
-/// lock: "elsewhere on the floor", read literally, since a piece behind a
-/// lock or a seal grows nothing past it and so could never hold its own
-/// way out. Nothing for a floor that drew neither.
-///
-/// One of each at most: the pool draws at most one sealed vault a run and
-/// the lock the locked vault's every instance shares one key's tag, so
-/// one key reachable on a floor that has one is enough, and a second
-/// would only ever be a second copy of the one the first already is.
-pub fn place_vault_fixtures(built: &mut rl_engine::rl_bevy::places::PlaceBuild, tiles: &TileRegistry, seed: RunSeed, map: MapId) {
+/// Finishes a floor's vaults once it is built: a locked vault's lock asks
+/// for its own floor's [`vault_key`](crate::content::vault_key), so a key
+/// opens its own vault and no other; the key and a sealed vault's lever
+/// are dropped where [`fixture_cell`] says; and every [`CAUSEWAY`] mark is
+/// hidden as the deep water round it, found as any secret is. Nothing on a
+/// place that is no floor or drew none of them.
+pub fn place_vault_fixtures(built: &mut PlaceBuild, tiles: &TileRegistry, prefabs: &Prefabs<MonsterDef>, seed: RunSeed, map: MapId) {
+    let Some(floor) = floor_of(map) else { return };
+    hide_causeways(built, tiles, prefabs);
     if built.locks.is_empty() {
         return;
     }
-    let mut rng = seed.rng(SeedDomain::new(b"undermere.vaults"), u64::from(map.0));
-    let locked: BTreeSet<Point> = built.locks.iter().map(|l| l.at).collect();
-    let mut free: Vec<Point> =
-        reachable_cells(built, tiles, &locked).into_iter().filter(|p| *p != built.entry && !built.spots.iter().any(|s| s.at == *p)).collect();
-    free.sort_by_key(|p| (p.y, p.x));
-    let mut want_key = built.locks.iter().any(|l| l.key.is_some());
-    let mut want_lever = built.locks.iter().any(|l| l.key.is_none());
-    while (want_key || want_lever) && !free.is_empty() {
-        let at = free.remove(rng.random_range(0..free.len()));
-        let tag = if want_key {
-            want_key = false;
-            KEY_TAG
-        } else {
-            want_lever = false;
-            LEVER_TAG
-        };
-        built.spots.push(rl_engine::rl_bevy::places::Spot { tag, at, prefab: None });
+    let key = crate::content::tags().id(&crate::content::vault_key(floor));
+    for lock in built.locks.iter_mut().filter(|l| l.key.is_some()) {
+        lock.key = key;
+    }
+    let mut rng = seed.rng(SeedDomain::new(b"undermere.vaults.fixtures"), u64::from(map.0));
+    let locked: Vec<Point> = built.locks.iter().filter(|l| l.key.is_some()).map(|l| l.at).collect();
+    let sealed: Vec<Point> = built.locks.iter().filter(|l| l.key.is_none()).map(|l| l.at).collect();
+    for (shut, tag, by_wall) in [(locked, KEY_TAG, false), (sealed, LEVER_TAG, true)] {
+        let Some(&door) = shut.first() else { continue };
+        if let Some(at) = fixture_cell(built, tiles, door, by_wall, &mut rng) {
+            built.spots.push(Spot { tag, at, prefab: None });
+        }
     }
 }
 
-/// Every cell walked to from `built.entry`, through every passable cell
-/// but a locked or sealed one: the same rule `Survey` draws a route by
-/// (`passable`, with every `Lock`'s own cell taken out by hand, since a
-/// locked door shares its tile with a plain one and carries nothing in
-/// the tables that tells the two apart).
-fn reachable_cells(built: &rl_engine::rl_bevy::places::PlaceBuild, tiles: &TileRegistry, locked: &BTreeSet<Point>) -> BTreeSet<Point> {
+/// Where a vault's key or lever lies: on a cell walked to from the way in
+/// without passing any lock or seal, since a piece behind one grows
+/// nothing past it and could never hold its own way out; at least
+/// [`MIN_DISTANCE_FROM_ENTRY`] from the way in and off the way down; on
+/// plain ground nothing else was laid on; and drawn among the third of
+/// such cells walked farthest from the vault's own door, so finding it is
+/// a search of the floor rather than a step beside the door. A lever
+/// stands against a wall, as a lever is set in one. `None` on a floor
+/// with no such cell, which leaves the vault shut for good rather than
+/// its fixture somewhere it cannot be reached.
+fn fixture_cell(built: &PlaceBuild, tiles: &TileRegistry, door: Point, by_wall: bool, rng: &mut impl Rng) -> Option<Point> {
     let tables = tiles.tables();
-    let mut seen = BTreeSet::new();
-    let mut queue = VecDeque::new();
-    seen.insert(built.entry);
-    queue.push_back(built.entry);
+    let shut: BTreeSet<Point> = built.locks.iter().map(|l| l.at).collect();
+    let passable = |p: Point| !shut.contains(&p) && built.terrain.get(p).is_some_and(|t| tables.passable[t.index()]);
+    let reached = walk_from(built.entry, passable);
+    let from_door = walk_from(door, |p| p == door || passable(p));
+    // Ground a body crosses at a step's cost, no doorway and nothing that
+    // burns or gives way: what a key lies on and a lever stands beside.
+    let plain = |p: Point| {
+        built.terrain.get(p).map(|t| t.index()).is_some_and(|i| {
+            tables.walkable[i]
+                && tables.move_cost[i] <= 100
+                && tables.opens[i].is_none()
+                && tables.closes[i].is_none()
+                && tables.burns[i].is_none()
+                && tables.names[i] != "rotten planks"
+        })
+    };
+    let mut cells: Vec<(u32, Point)> = reached
+        .keys()
+        .copied()
+        .filter(|p| geometry::chebyshev(*p, built.entry) >= MIN_DISTANCE_FROM_ENTRY && Some(*p) != built.exit && plain(*p))
+        .filter(|p| !built.spots.iter().any(|s| s.at == *p))
+        .filter(|p| !by_wall || Direction::CARDINALS.iter().any(|d| built.terrain.get(*p + d.offset()).is_some_and(|t| !tables.passable[t.index()])))
+        .filter_map(|p| from_door.get(&p).map(|d| (*d, p)))
+        .collect();
+    cells.sort();
+    let far = cells.split_off(cells.len() * 2 / 3);
+    (!far.is_empty()).then(|| far[rng.random_range(0..far.len())].1)
+}
+
+/// How many steps each cell `open` admits is from `from`, one orthogonal
+/// step at a time: the strictest reading of the movers' rule, so a cell
+/// it reaches is one every mover reaches too. A `BTreeMap` for the same
+/// cells in the same order on every run.
+fn walk_from(from: Point, open: impl Fn(Point) -> bool) -> BTreeMap<Point, u32> {
+    let mut seen = BTreeMap::from([(from, 0)]);
+    let mut queue = VecDeque::from([from]);
     while let Some(p) = queue.pop_front() {
-        for n in [p.offset(1, 0), p.offset(-1, 0), p.offset(0, 1), p.offset(0, -1)] {
-            if seen.contains(&n) || locked.contains(&n) {
-                continue;
+        let d = seen[&p];
+        for dir in Direction::CARDINALS {
+            let n = p + dir.offset();
+            if open(n) && !seen.contains_key(&n) {
+                seen.insert(n, d + 1);
+                queue.push_back(n);
             }
-            let Some(tile) = built.terrain.get(n) else { continue };
-            if !tables.passable[tile.index()] {
-                continue;
-            }
-            seen.insert(n);
-            queue.push_back(n);
         }
     }
     seen
 }
 
-/// Every cell walked to from `from` through nothing but walkable floor:
-/// a flooding vault's own room, bounded by its walls, which `walkable`
-/// (never `passable`) stops at exactly as the room's own door does.
-fn flood_fill_room(terrain: &Terrain, tables: &TileTables, from: Point) -> Vec<Point> {
-    let mut seen = BTreeSet::new();
-    let mut queue = VecDeque::new();
-    seen.insert(from);
-    queue.push_back(from);
-    while let Some(p) = queue.pop_front() {
-        for n in [p.offset(1, 0), p.offset(-1, 0), p.offset(0, 1), p.offset(0, -1)] {
-            if seen.contains(&n) {
-                continue;
-            }
-            let Some(tile) = terrain.get(n) else { continue };
-            if !tables.walkable[tile.index()] {
-                continue;
-            }
-            seen.insert(n);
-            queue.push_back(n);
-        }
+/// Hides every [`CAUSEWAY`] mark a piece laid as the deep water round it,
+/// an engine secret whose real tile is the sunken causeway, so the island
+/// it leads to is reached once it is spotted and the mark itself is never
+/// filled. One group for the whole causeway, numbered past every group the
+/// floor already hid, so one sighting finds all of it.
+fn hide_causeways(built: &mut PlaceBuild, tiles: &TileRegistry, prefabs: &Prefabs<MonsterDef>) {
+    let is_causeway = |s: &Spot| s.tag == CAUSEWAY as u32 && s.prefab.is_some_and(|key| matches!(prefabs.slot(key, CAUSEWAY), Some(Slot::Mark)));
+    let cells: Vec<Point> = built.spots.iter().filter(|s| is_causeway(s)).map(|s| s.at).collect();
+    if cells.is_empty() {
+        return;
     }
-    seen.into_iter().collect()
+    built.spots.retain(|s| !is_causeway(s));
+    let (deep, causeway) = (tiles.expect("deep water"), tiles.expect("sunken causeway"));
+    let group = built.secrets.iter().map(|s| s.group + 1).max().unwrap_or(0);
+    for at in cells {
+        built.terrain.set(at, deep);
+        built.secrets.push(rl_engine::rl_mapgen::Secret { at, is: causeway, spot: CAUSEWAY_SPOT, group, joins: (0, 0) });
+    }
 }
 
-/// A caged altar's own prize, one of three: taking any of them is what
-/// [`shut_other_cages`] watches for.
-#[derive(Component, Debug, Clone, Copy)]
-pub struct CagedPrize(u8);
+/// A locked vault's key, and which floor's vault it opens: what the save
+/// keeps of it beside its name, since the tag the lock asks for is put on
+/// by [`key_tags`] from this rather than written in `assets/items.ron`.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VaultKey {
+    /// The floor whose vault it opens.
+    pub floor: u32,
+}
 
-/// A caged altar's own gate, one of three, open until another of
-/// [`CagedPrize`]'s three is taken.
-#[derive(Component, Debug, Clone, Copy)]
-pub struct CageGate(u8);
+/// The tag `floor`'s key carries, [`crate::content::vault_key`] looked up.
+pub fn key_tags(registries: &Registries, floor: u32) -> Tagged {
+    Tagged(registries.tags.id(&crate::content::vault_key(floor)).into_iter().collect())
+}
 
-/// A flooding vault's own prize: taking it is what [`start_flood`]
-/// watches for, and the point it stood at is where the flood begins.
-#[derive(Component, Debug, Clone, Copy)]
-pub struct FloodTrigger(Point);
+/// What filling a floor's marks reads.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Filling<'w> {
+    map: Res<'w, WorldMap>,
+    registries: Res<'w, Registries>,
+    armory: Res<'w, Armory>,
+    bestiary: Res<'w, Bestiary>,
+    prefabs: Res<'w, Prefabs<MonsterDef>>,
+    verbs: Res<'w, Verbs>,
+    seed: Res<'w, Seed>,
+}
 
-/// A rotten floor's own prize: taking it is what [`trigger_rotten_floor`]
-/// watches for, and the floor it stood on is the one its taker falls
-/// from.
-#[derive(Component, Debug, Clone, Copy)]
-pub struct RottenFloorTrigger(MapId);
-
-/// A collapsing gallery's own prize: taking it is what
-/// [`collapse_gallery_behind`] watches for, and the two points are the
-/// cells just inside each of the piece's two entries.
-#[derive(Component, Debug, Clone, Copy)]
-pub struct GalleryThresholds(Point, Point);
-
-/// Marks a "Captives in Chains" captive as the pool's own, never part 3's
-/// run-wide one, which `captives::held_at` reads this to tell apart: both
-/// are shackled the identical way, but a run's own captive is drawn once,
-/// by `dungeon::captive_floor`, and counting this one against it would
-/// make a run look as if it drew two.
-#[derive(Component, Debug, Clone, Copy)]
-pub struct PoolCaptive;
-
-/// The three things a caged altar holds, named rather than drawn, since
-/// which of the three is taken is the choice the risk is about and not a
-/// roll.
-const CAGE_PRIZES: [&str; 3] = ["war axe", "wand of polymorph", "ring of reaping"];
-
-/// Fills every `Mark` this module owns, on the arrival that finds it: the
-/// locked vault's key or the sealed vault's lever on the sentinel spot
-/// [`place_vault_fixtures`] left, caged altars' three prizes and three
-/// gates, a chained captive shackled in place, a flooding vault's and a
-/// rotten floor's own prize, and a collapsing gallery's prize and its two
-/// thresholds. Kept to its own piece by the prefab key its spots carry,
-/// since more than one of these may stand on a floor and share a glyph.
+/// Fills every mark of this module's own on the arrival that first finds
+/// a floor: the key and the lever [`place_vault_fixtures`] dropped, and
+/// each piece's [`SLEEPER`], [`GIANT`], [`GOBLIN`] and [`CAPTIVE`]. A
+/// sleeper is drawn from the floor's own table, on its own stream, so a
+/// floor's ordinary people are the same whatever its pieces hold.
 ///
-/// In [`TurnSet::React`](rl_engine::rl_bevy::plugin::TurnSet::React),
-/// after `PrefabSet::Fill`, which this piece's ordinary slots already
-/// filled; a `Mark` is the one slot it always skips.
-#[allow(clippy::too_many_arguments)]
-pub fn spawn_vault_marks(
-    mut commands: Commands,
-    mut entered: MessageReader<PlaceEntered>,
-    map: Res<WorldMap>,
-    registries: Res<Registries>,
-    armory: Res<Armory>,
-    bestiary: Res<Bestiary>,
-    prefabs: Res<Prefabs<MonsterDef>>,
-) {
-    let key_of = |name: &str| prefabs.defs().id(name).map(|id| id.raw());
-    let (caged, captives, flooding, rotten, gallery) =
-        (key_of("Caged Altars"), key_of("Captives in Chains"), key_of("The Flooding Vault"), key_of("The Rotten Floor"), key_of("The Collapsing Gallery"));
+/// In `TurnSet::React`, after `PrefabSet::Fill`, which has filled every
+/// slot a piece's legend names; a `Mark` is the one it leaves.
+pub fn spawn_vault_marks(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, fill: Filling) {
     for ev in entered.read().filter(|ev| ev.first) {
-        let Some(place) = map.place(ev.map) else { continue };
-        let mut gallery_points: Vec<Point> = Vec::new();
-        let mut gallery_prize: Option<Entity> = None;
+        let (Some(place), Some(floor)) = (fill.map.place(ev.map), floor_of(ev.map)) else { continue };
+        let mut rng = fill.seed.stream(b"undermere.vaults.marks", u64::from(ev.map.0));
         for spot in &place.spots {
-            match spot.tag {
-                KEY_TAG => {
-                    if let Some(def) = armory.defs.id("vault key") {
-                        let key = spawn_item(&mut commands, &armory, def, &registries);
-                        commands.entity(key).insert((Position(spot.at), OnMap(ev.map)));
-                    }
+            let mark = spot.prefab.zip(char::from_u32(spot.tag)).filter(|(key, glyph)| matches!(fill.prefabs.slot(*key, *glyph), Some(Slot::Mark)));
+            match (spot.tag, mark.map(|(_, glyph)| glyph)) {
+                (KEY_TAG, _) => {
+                    let Some(def) = fill.armory.defs.id(KEY_ITEM) else { continue };
+                    let key = spawn_item(&mut commands, &fill.armory, def, &fill.registries);
+                    commands.entity(key).insert((Position(spot.at), OnMap(ev.map), VaultKey { floor }, key_tags(&fill.registries, floor)));
                 }
-                LEVER_TAG => {
-                    if let Some(prop) = registries.props.id("concealed lever") {
-                        spawn_prop(&mut commands, &registries, prop, spot.at, ev.map);
-                    }
+                (LEVER_TAG, _) => {
+                    spawn_prop(&mut commands, &fill.registries, fill.registries.props.expect(LEVER), spot.at, ev.map);
                 }
-                _ if spot.prefab == caged => {
-                    let Some(ch) = char::from_u32(spot.tag) else { continue };
-                    if ('1'..='3').contains(&ch) {
-                        let idx = ch as u8 - b'1';
-                        if let Some(def) = armory.defs.id(CAGE_PRIZES[idx as usize]) {
-                            let item = spawn_item(&mut commands, &armory, def, &registries);
-                            commands.entity(item).insert((Position(spot.at), OnMap(ev.map), CagedPrize(idx)));
-                        }
-                    } else if ('4'..='6').contains(&ch) {
-                        let idx = ch as u8 - b'4';
-                        if let Some(prop) = registries.props.id("cage gate") {
-                            let gate = spawn_prop(&mut commands, &registries, prop, spot.at, ev.map);
-                            commands.entity(gate).insert(CageGate(idx));
-                        }
-                    }
+                (_, Some(SLEEPER)) => {
+                    let Some((id, _)) = fill.bestiary.spawns.pick_group(floor as i32, &mut rng) else { continue };
+                    let made = spawn_monster(&mut commands, fill.bestiary.defs.get(*id), spot.at, ev.map, &fill.registries, true);
+                    commands.entity(made).insert(Post(spot.at));
                 }
-                _ if spot.prefab == captives => {
-                    if char::from_u32(spot.tag) != Some('C') {
-                        continue;
-                    }
-                    let Some(kind) = bestiary.defs.id("goblin") else { continue };
-                    let (at, map_id) = (spot.at, ev.map);
-                    commands.queue(move |world: &mut World| {
-                        let captive = spawn_monster_now(world, kind, at, map_id);
-                        let bundle = {
-                            let registries = world.resource::<Registries>();
-                            let verbs = world.resource::<Verbs>();
-                            crate::captives::shackled(registries, verbs, at)
-                        };
-                        world.entity_mut(captive).insert((bundle, PoolCaptive));
-                    });
+                (_, Some(glyph @ (GIANT | GOBLIN))) => {
+                    let Some(id) = fill.bestiary.defs.id(if glyph == GIANT { GIANT_KIND } else { GOBLIN_KIND }) else { continue };
+                    let made = spawn_monster(&mut commands, fill.bestiary.defs.get(id), spot.at, ev.map, &fill.registries, true);
+                    commands.entity(made).insert(Post(spot.at));
                 }
-                _ if spot.prefab == flooding => {
-                    if char::from_u32(spot.tag) != Some('P') {
-                        continue;
-                    }
-                    if let Some(def) = armory.defs.id("potion of life") {
-                        let item = spawn_item(&mut commands, &armory, def, &registries);
-                        commands.entity(item).insert((Position(spot.at), OnMap(ev.map), FloodTrigger(spot.at)));
-                    }
+                (_, Some(CAPTIVE)) => {
+                    let Some((id, _)) = fill.bestiary.spawns.pick_group(floor as i32, &mut rng) else { continue };
+                    let made = spawn_monster(&mut commands, fill.bestiary.defs.get(*id), spot.at, ev.map, &fill.registries, false);
+                    commands.entity(made).insert(crate::captives::shackled(&fill.registries, &fill.verbs, spot.at));
+                    spawn_prop(&mut commands, &fill.registries, fill.registries.props.expect("shackles"), spot.at, ev.map);
                 }
-                _ if spot.prefab == rotten => {
-                    if char::from_u32(spot.tag) != Some('P') {
-                        continue;
-                    }
-                    if let Some(def) = armory.defs.id("staff of firebolt") {
-                        let item = spawn_item(&mut commands, &armory, def, &registries);
-                        commands.entity(item).insert((Position(spot.at), OnMap(ev.map), RottenFloorTrigger(ev.map)));
-                    }
-                }
-                _ if spot.prefab == gallery => match char::from_u32(spot.tag) {
-                    Some('W') | Some('X') => gallery_points.push(spot.at),
-                    Some('P') => {
-                        if let Some(def) = armory.defs.id("wand of beckoning") {
-                            let item = spawn_item(&mut commands, &armory, def, &registries);
-                            commands.entity(item).insert((Position(spot.at), OnMap(ev.map)));
-                            gallery_prize = Some(item);
-                        }
-                    }
-                    _ => {}
-                },
                 _ => {}
             }
         }
-        // The prize and its two thresholds may be read in any order, by
-        // the rows they stand in, so the marker that needs both is
-        // finished once the whole piece has been seen rather than as
-        // each spot is.
-        if let (Some(item), [a, b]) = (gallery_prize, gallery_points.as_slice()) {
-            commands.entity(item).insert(GalleryThresholds(*a, *b));
-        }
     }
 }
 
-/// Pulling the concealed lever lifts the one seal on the floor with no
-/// key: the pool draws at most one sealed vault a run, so there is never
-/// a second to tell it from. Nothing for a floor with none left to lift.
+/// Pulling a floor's concealed lever lifts every seal on it, the gate
+/// raised where it stood, and leaves the lever pulled: a floor draws one
+/// sealed vault at most, so there is never a second seal its lever could
+/// be meant for. Pulling one already pulled is pulling nothing, since a
+/// pulled lever offers nothing.
 ///
-/// In `TurnSet::React`, where every game system answering `Interacted`
-/// already reads from.
-pub fn answer_pull_lever(mut done: MessageReader<Interacted>, verbs: Res<Verbs>, mut map: ResMut<WorldMap>) {
-    let Some(pull) = verbs.get("pull") else { return };
-    if !done.read().any(|ev| ev.verb == pull) {
-        return;
-    }
-    let here = map.current();
-    let Some(seal) = map.place(here).and_then(|p| p.locks.iter().find(|l| l.key.is_none())).map(|l| l.at) else { return };
-    map.unlock(here, seal);
-}
-
-/// Taking any of the three caged altars' prizes shuts the other two's
-/// gates for good: a [`Blocks`] they never had added, never taken off.
-/// Which was taken is answered for; the gate beside it is left open,
-/// since the one cage already reached is never the one that slams.
-///
-/// In `TurnSet::React`.
-pub fn shut_other_cages(mut commands: Commands, mut picked: MessageReader<ItemEvent>, prizes: Query<&CagedPrize>, gates: Query<(Entity, &CageGate)>) {
-    for ev in picked.read() {
-        let ItemEvent::PickedUp { item, .. } = ev else { continue };
-        let Ok(taken) = prizes.get(*item) else { continue };
-        for (gate, guards) in &gates {
-            if guards.0 != taken.0 {
-                commands.entity(gate).insert(Blocks);
-            }
-        }
-    }
-}
-
-/// How many turns a flooding vault takes to climb from its prize taken
-/// to deep water at its own far wall.
-pub const FLOOD_TURNS: u32 = 6;
-
-/// A flooding vault mid-pour: the far third of its room, which
-/// [`rise_floods`] drowns once `at_turn` comes round.
-#[derive(Debug)]
-struct RisingFlood {
-    at_turn: u32,
-    far: Vec<Point>,
-}
-
-/// Every flooding vault mid-pour, one entry per prize taken.
-#[derive(Resource, Debug, Default)]
-pub struct RisingFloods(Vec<RisingFlood>);
-
-/// Taking a flooding vault's prize floods its own room: every cell
-/// walkable from where the prize stood, bounded by the room's own walls,
-/// turns to shallow water at once, and the far third of them, ordered by
-/// the walk from the way in so the last is truest to "the far wall", turn
-/// to deep water once [`FLOOD_TURNS`] have passed.
-///
-/// In `TurnSet::React`.
-pub fn start_flood(
-    mut picked: MessageReader<ItemEvent>,
-    triggers: Query<&FloodTrigger>,
-    mut map: ResMut<WorldMap>,
-    tiles: Res<VaultTiles>,
-    turns: Res<rl_engine::rl_bevy::turn::Turns>,
-    mut rising: ResMut<RisingFloods>,
-) {
-    for ev in picked.read() {
-        let ItemEvent::PickedUp { item, .. } = ev else { continue };
-        let Ok(trigger) = triggers.get(*item) else { continue };
-        let here = map.current();
-        let Some(place) = map.place(here) else { continue };
-        let tables = map.tables().clone();
-        let mut cells = flood_fill_room(&place.terrain, &tables, trigger.0);
-        let entry = place.entry;
-        cells.sort_by_key(|p| geometry::chebyshev(*p, entry));
-        let split = cells.len() * 2 / 3;
-        let far = cells.split_off(split);
-        for c in cells.iter().chain(far.iter()) {
-            map.set_tile(*c, tiles.flooded);
-        }
-        rising.0.push(RisingFlood { at_turn: turns.turn_number() + FLOOD_TURNS, far });
-    }
-}
-
-/// Carries every mid-pour flooding vault's far third to deep water once
-/// its own `at_turn` has come round.
-///
-/// In `TurnSet::React`.
-pub fn rise_floods(mut rising: ResMut<RisingFloods>, mut map: ResMut<WorldMap>, tiles: Res<VaultTiles>, turns: Res<rl_engine::rl_bevy::turn::Turns>) {
-    let now = turns.turn_number();
-    rising.0.retain_mut(|flood| {
-        if now < flood.at_turn {
-            return true;
-        }
-        for c in &flood.far {
-            map.set_tile(*c, tiles.deep);
-        }
-        false
-    });
-}
-
-/// Someone falling through the floor to the one below, as a trapdoor or
-/// a rotten floor's own collapse sends them. Parallel to a potion of
-/// descent's own `Sinking`, but never the way up or the way down's own
-/// cell, which a fall should never land its taker on by chance.
-#[derive(Component, Debug, Clone, Copy)]
-pub struct FallingThrough {
-    /// The place they fall to.
-    pub to: MapId,
-    /// What picks the cell they land on, among its free ones once they
-    /// are there.
-    pub roll: u64,
-}
-
-/// Drops `actor`, standing on `from`, through the floor to the one below
-/// it: the rotten floor's own collapse, and the reusable half a later
-/// trapdoor trap answers the same way down with, so it is written once.
-/// Nothing on the deepest floor, since there is nowhere lower to fall to.
-pub fn fall_through_floor(world: &mut World, actor: Entity, from: MapId, roll: u64) {
-    use crate::dungeon::{FLOORS, floor_of, map_of};
-    let Some(floor) = floor_of(from) else { return };
-    if floor >= FLOORS {
-        return;
-    }
-    let below = map_of(floor + 1);
-    world.entity_mut(actor).insert(FallingThrough { to: below, roll });
-    world.write_message(WarpRequest::into_place(actor, below));
-}
-
-/// Taking a rotten floor's prize drops its taker through, by
-/// [`fall_through_floor`], the roll drawn from the effect stream as
-/// anything else chancy in a landing's wake is.
-///
-/// In `TurnSet::React`.
-pub fn trigger_rotten_floor(mut commands: Commands, mut picked: MessageReader<ItemEvent>, triggers: Query<&RottenFloorTrigger>) {
-    for ev in picked.read() {
-        let ItemEvent::PickedUp { actor, item, .. } = ev else { continue };
-        let Ok(trigger) = triggers.get(*item) else { continue };
-        let (actor, from) = (*actor, trigger.0);
-        commands.queue(move |world: &mut World| {
-            let roll = world.resource_mut::<EffectRng>().random::<u64>();
-            fall_through_floor(world, actor, from, roll);
-        });
-    }
-}
-
-/// Puts whoever fell through a floor on a free cell of the one they fell
-/// to, picked by the roll they fell with, once they have arrived, never
-/// the way up or the way down's own cell: `effects/moving.rs`'s own
-/// `land_sinking` shape, with the stairs taken out of what is free, for a
-/// fall rather than a sinking.
-///
-/// In `TurnSet::React`, after the arrival's own reactions, by the
-/// engine's warp.
-pub fn land_falling(
+/// In `TurnSet::React`, where every answer to an `Interacted` is.
+pub fn answer_pull_lever(
     mut commands: Commands,
-    falling: Query<(Entity, &FallingThrough, &OnMap)>,
-    map: Res<WorldMap>,
-    occupancy: Res<Occupancy>,
-    stairs: Query<(&Position, &OnMap), With<crate::stairs::Way>>,
-    mut warps: MessageWriter<WarpRequest>,
-) {
-    for (who, fall, on) in &falling {
-        if on.0 != fall.to {
-            continue;
-        }
-        commands.entity(who).remove::<FallingThrough>();
-        let Some(place) = map.place(fall.to) else { continue };
-        let on_stairs = |p: Point| stairs.iter().any(|(sp, sm)| sm.0 == fall.to && sp.0 == p);
-        let open: Vec<Point> =
-            place.terrain.bounds().cells().filter(|p| map.is_walkable_on(fall.to, *p) && !occupancy.is_occupied(*p) && !on_stairs(*p)).collect();
-        if open.is_empty() {
-            continue;
-        }
-        let at = open[(fall.roll % open.len() as u64) as usize];
-        warps.write(WarpRequest { actor: who, to: Destination::Place { map: fall.to, arrive: Arrive::At(at) } });
-    }
-}
-
-/// Taking a collapsing gallery's prize walls over whichever of its two
-/// entries is farther from wherever its taker now stands: the way they
-/// came, by the simplifying rule that a piece walked the length of
-/// leaves its taker nearer the end they walked to than the one they
-/// walked from.
-///
-/// In `TurnSet::React`.
-pub fn collapse_gallery_behind(
-    mut picked: MessageReader<ItemEvent>,
-    triggers: Query<&GalleryThresholds>,
-    positions: Query<&Position>,
+    mut done: MessageReader<Interacted>,
+    verbs: Res<Verbs>,
+    registries: Res<Registries>,
+    props: Query<(&PropKind, &Position, &OnMap)>,
     tiles: Res<VaultTiles>,
     mut map: ResMut<WorldMap>,
 ) {
-    for ev in picked.read() {
-        let ItemEvent::PickedUp { actor, item, .. } = ev else { continue };
-        let (Ok(thresholds), Ok(at)) = (triggers.get(*item), positions.get(*actor)) else { continue };
-        let (a, b) = (thresholds.0, thresholds.1);
-        let far = if geometry::chebyshev(at.0, a) >= geometry::chebyshev(at.0, b) { a } else { b };
-        map.set_tile(far, tiles.wall);
+    let (Some(pull), Some(lever)) = (verbs.get(PULL_VERB), registries.props.id(LEVER)) else { return };
+    for ev in done.read().filter(|ev| ev.verb == pull) {
+        let Ok((kind, at, on)) = props.get(ev.target) else { continue };
+        if kind.0 != lever {
+            continue;
+        }
+        let here = map.current();
+        let seals: Vec<Point> = map.place(here).map(|p| p.locks.iter().filter(|l| l.key.is_none()).map(|l| l.at).collect()).unwrap_or_default();
+        for seal in &seals {
+            map.unlock(here, *seal);
+            map.set_tile(*seal, tiles.raised_gate);
+        }
+        commands.entity(ev.target).despawn();
+        spawn_prop(&mut commands, &registries, registries.props.expect(PULLED_LEVER), at.0, on.0);
+        let line = if seals.is_empty() { "The lever moves, and nothing answers." } else { "Somewhere, stone grinds against stone." };
+        commands.write_message(Tell::new(line, Tones::NOTICE));
+    }
+}
+
+/// A vault's door opened by its key keeps the key: the opener's key to
+/// this floor's vault is taken from their bag as the door swings, so a key
+/// is spent on the one lock it was cut for. A door opened again after,
+/// with no lock left on it, takes nothing.
+///
+/// In `TurnSet::React`.
+pub fn spend_vault_key(
+    mut commands: Commands,
+    mut doors: MessageReader<DoorEvent>,
+    map: Res<WorldMap>,
+    tiles: Res<VaultTiles>,
+    keys: Query<&VaultKey>,
+    mut bags: Query<&mut Inventory>,
+) {
+    let Some(floor) = floor_of(map.current()) else { return };
+    for ev in doors.read() {
+        let DoorEvent::Opened { actor, at } = ev else { continue };
+        if map.tile(*at) != Some(tiles.open_vault_door) {
+            continue;
+        }
+        let Ok(mut bag) = bags.get_mut(*actor) else { continue };
+        let Some(key) = bag.items.iter().copied().find(|i| keys.get(*i).is_ok_and(|k| k.floor == floor)) else { continue };
+        bag.items.retain(|i| *i != key);
+        commands.entity(key).despawn();
+        commands.write_message(Tell::new("The key turns, and stays in the lock.", Tones::NOTICE));
+    }
+}
+
+/// What a reward piece offers to be read, declared by
+/// [`crate::plugin::UndermerePlugin`].
+pub const READ_VERB: &str = "read";
+
+/// The chronicle a library nook keeps, a page of the drowned kingdom's
+/// history to each copy, picked by where the book lies.
+pub const CHRONICLE: (&str, &[&str]) = (
+    "chronicle",
+    &[
+        "In the reign of the last King the mere rose a hand's breadth every spring, and no prayer turned it back.",
+        "The Abbess held that the cathedral's bells would keep the water out. They rang until the ropes rotted.",
+        "The forges under the city were never let go cold, lest the stone remember it lay beneath a lake.",
+        "The standing stones on the shore were raised to keep something in, the chronicle says, and not out.",
+        "The King did not drown. He waited on his throne, and the water came to him.",
+        "Within a generation of the flood the goblins held the upper halls, and called them a kingdom of their own.",
+    ],
+);
+
+/// What a dead adventurer scratched beside where they fell, a line to
+/// each, picked by where they lie.
+pub const LAST_WORDS: (&str, &[&str]) = (
+    "scratched words",
+    &[
+        "\"the water was rising. tell Mira I went down for the ring\"",
+        "\"do not lift it\"",
+        "\"three of us came down. I am the one left to write it\"",
+        "\"they sleep in the dark beyond. walk soft\"",
+        "\"the key was never on this floor. it was never on this floor\"",
+        "\"Mereholt, I am sorry\"",
+    ],
+);
+
+/// Reading a chronicle or a dead adventurer's last words says its line in
+/// the log: the same line for the same book or wall every time it is read,
+/// since where it lies picks it, and nothing spent.
+///
+/// In `TurnSet::React`, where every answer to an `Interacted` is.
+pub fn answer_read(
+    mut done: MessageReader<Interacted>,
+    verbs: Res<Verbs>,
+    registries: Res<Registries>,
+    props: Query<(&PropKind, &Position)>,
+    mut tell: MessageWriter<Tell>,
+) {
+    let Some(read) = verbs.get(READ_VERB) else { return };
+    for ev in done.read().filter(|ev| ev.verb == read) {
+        let Ok((kind, at)) = props.get(ev.target) else { continue };
+        let Some((_, lines)) = [CHRONICLE, LAST_WORDS].into_iter().find(|(name, _)| registries.props.id(name) == Some(kind.0)) else { continue };
+        let pick = (at.0.x.unsigned_abs() as usize * 31 + at.0.y.unsigned_abs() as usize) % lines.len();
+        tell.write(Tell::new(lines[pick], Tones::NOTICE));
     }
 }

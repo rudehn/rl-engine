@@ -822,3 +822,78 @@ pub fn hatch(world: &mut World, monster: &str, count: u32, at: Point, map: MapId
         spawn_monster_now(world, kind, cell, map);
     }
 }
+
+/// Every prop called `prop` within `radius` of where it lands stands up
+/// as a `monster`, knowing where whoever set it off stands: a bone
+/// circle's dead rising when it is crossed, every body of the ring at
+/// once, whichever of its cells was stepped on. Written `(kind: "Rise",
+/// args: (prop: "circle bones", monster: "skeleton", radius: 2))`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Rise {
+    /// The props that rise.
+    pub prop: String,
+    /// What each rises as.
+    pub monster: String,
+    /// How far from where it lands, in cells.
+    pub radius: i32,
+}
+
+impl Effect for Rise {
+    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+        let (at, map, rise, by) = (landing.origin, world.map().current(), self.clone(), landing.targets.clone());
+        world.commands.queue(move |world: &mut World| rise.raise(world, at, map, &by));
+    }
+
+    fn describe(&self, _: &Registries, _: EffectBonus) -> String {
+        format!("every {} near it rises as a {}", self.prop, self.monster)
+    }
+}
+
+impl Rise {
+    /// Takes every one of [`Rise::prop`] within [`Rise::radius`] of `at`
+    /// on `map` off the map and stands a [`Rise::monster`] where it lay,
+    /// aware of each of `by`. Nothing with no monster of that name, read
+    /// against the bestiary now, as [`hatch`] reads its own.
+    pub fn raise(&self, world: &mut World, at: Point, map: MapId, by: &[Entity]) {
+        let Some(kind) = world.resource::<Bestiary>().defs.id(&self.monster) else { return };
+        let Some(prop) = world.resource::<Registries>().props.id(&self.prop) else { return };
+        let bodies: Vec<(Entity, Point)> = {
+            let mut q = world.query::<(Entity, &PropKind, &Position, &OnMap)>();
+            q.iter(world)
+                .filter(|(_, k, p, on)| k.0 == prop && on.0 == map && rl_engine::rl_core::geometry::chebyshev(p.0, at) <= self.radius)
+                .map(|(e, _, p, _)| (e, p.0))
+                .collect()
+        };
+        let seen: Vec<(Entity, Point)> = by.iter().filter_map(|e| world.get::<Position>(*e).map(|p| (*e, p.0))).collect();
+        for (body, cell) in &bodies {
+            world.despawn(*body);
+            let risen = spawn_monster_now(world, kind, *cell, map);
+            if let Some(mut aware) = world.get_mut::<Aware>(risen) {
+                for (who, there) in &seen {
+                    let mut knows = aware.of(*who);
+                    knows.alerted_to(*there);
+                    aware.0.insert(*who, knows);
+                }
+            }
+        }
+        if !bodies.is_empty() && by.iter().any(|e| world.get::<Player>(*e).is_some()) {
+            world.write_message(Tell::new("The bones of the circle stir, and stand.", Tones::BAD));
+        }
+    }
+}
+
+impl FromArgs for Rise {
+    const KIND: &'static str = "Rise";
+
+    fn from_args(args: &RawValue, _: &Names<'_>) -> Result<Self, String> {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Args {
+            prop: String,
+            monster: String,
+            radius: i32,
+        }
+        let a: Args = read_args(args)?;
+        Ok(Self { prop: a.prop, monster: a.monster, radius: a.radius })
+    }
+}

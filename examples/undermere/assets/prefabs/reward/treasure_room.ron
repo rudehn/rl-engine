@@ -18,20 +18,29 @@
 //     Monster(monster: "monster")           that monster
 //     Monster(role: "role", band: 0)        drawn for a role
 //     Mark                                  a position the game finds by this
-//                                           glyph and fills itself
+//                                           glyph and fills itself: in a risk-and-
+//                                           reward or reward piece, 'z' a sleeper
+//                                           of the floor's own, 'Z' an ogre asleep,
+//                                           'G' a goblin asleep, 'C' a captive of
+//                                           the floor's own, shackled, and 'c' a
+//                                           cell of a sunken causeway, hidden as
+//                                           the deep water round it until it is
+//                                           spotted (`src/vaults.rs`)
+//     Entry                                 a cell of a grown piece's outer wall
+//                                           where it may be joined; a piece grown
+//                                           in `hall wall` and `hall floor` is
+//                                           walled and floored as its floor is
 //
 // Heaps of gold round a chest of coin, with nothing guarding either.
 (
     name: "Treasure Room",
     ground: "hall floor",
     rows: [
-        "g.g",
-        ".c.",
-        "g.g",
+        "g g",
+        " h ",
     ],
     legend: {
-        '.': Tile("hall floor"),
-        'g': Item(item: "gold coin", count: (2, 4)),
-        'c': Prop("coin chest"),
+        'g': Item(item: "gold coin", count: 1),
+        'h': Prop("coin chest"),
     },
 )
