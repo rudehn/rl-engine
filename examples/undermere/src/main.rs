@@ -343,7 +343,7 @@ fn main() -> AppExit {
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_bevy::testing::{KeyScript, KeyScriptPlugin, press};
+    use rl_engine::rl_bevy::testing::{KeyScriptPlugin, press};
     use rl_engine::rl_render::{MapView, MapViewPlugin, Terminal};
     use undermere::run::Adventurer;
 
@@ -1319,11 +1319,7 @@ mod tests {
         };
         undermere::testing::stand_on(&mut app, first, free[0]);
         undermere::testing::stand_on(&mut app, second, free[1]);
-        // `>`, the way's own key: Enter is also the engine's key for what
-        // is in reach, which a party beside the adventurer always offers.
-        app.world_mut().resource_mut::<KeyScript>().hold(KeyCode::ShiftLeft);
-        press(&mut app, KeyCode::Period);
-        app.world_mut().resource_mut::<KeyScript>().release(KeyCode::ShiftLeft);
+        press(&mut app, KeyCode::Enter);
         undermere::testing::settle(&mut app);
         let screen = written(&app);
         assert_eq!(undermere::testing::here(&app), undermere::dungeon::map_of(1), "through the gate: {screen:#?}");
