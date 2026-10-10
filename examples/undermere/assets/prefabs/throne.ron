@@ -30,10 +30,10 @@
 //
 // The throne, on floor ten only: the Drowned King on his dais with the throne at
 // his back, five knights of his court standing in the hall, pillars, black pools
-// in the corners, and four braziers burning blue-green. Laid first, at one end
-// of the floor, facing the rest of it, and the way in is as far from it as the
-// floor allows. Its mouth is the five cells of floor at the foot of the drawing,
-// so a knight that went out after the adventurer walks home past the others.
+// in the corners, and four braziers burning blue-green. Grown as an area of its
+// own, through the one entry at the foot of the drawing, so a knight that went
+// out after the adventurer walks home past the others, and the way in is drawn
+// well clear of it.
 (
     name: "the throne",
     ground: "throne floor",
@@ -50,7 +50,7 @@
         "=..O...........O..=",
         "=~...............~=",
         "=~~~...........~~~=",
-        "=======.....=======",
+        "=========E=========",
     ],
     legend: {
         '=': Tile("throne wall"),
@@ -62,5 +62,6 @@
         'b': Prop("brazier"),
         'K': Monster(monster: "the Drowned King"),
         'z': Monster(monster: "skeleton knight"),
+        'E': Entry,
     },
 )

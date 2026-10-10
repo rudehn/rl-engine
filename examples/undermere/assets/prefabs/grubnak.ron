@@ -2,7 +2,8 @@
 // own 3-5 between floors three and nine when this run's draw names him. A
 // crude throne at its back, banners either side of the door, a fire before
 // it, and his honor guard of four, drawn from `assets/roles.ron`'s
-// `grubnak-honor-guard`, `led` over him as his band comes together.
+// `grubnak-honor-guard`, `led` over him as his band comes together. Grown as
+// an area of its own, through the one entry at the foot of the hall.
 (
     name: "Grubnak the goblin king",
     ground: "goblin hall floor",
@@ -19,7 +20,7 @@
         "#...............#",
         "#..h.........h..#",
         "#...b.......b...#",
-        "#######.....#####",
+        "#########E#######",
     ],
     legend: {
         '#': Tile("goblin hall wall"),
@@ -29,5 +30,6 @@
         'T': Prop("throne"),
         'K': Monster(monster: "Grubnak the goblin king"),
         'h': Monster(role: "grubnak-honor-guard", band: 0),
+        'E': Entry,
     },
 )

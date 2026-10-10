@@ -2,7 +2,8 @@
 // cave choked with web (slow to cross, burns away to the moss under it),
 // and her egg sacs either side of her, which hatch two cave spiders when
 // struck or stepped beside (`src/tricks.rs`'s `hatch_beside`, and
-// `effects/bodies.rs`'s `Hatch` for a sac a blow instead breaks).
+// `effects/bodies.rs`'s `Hatch` for a sac a blow instead breaks). Grown as
+// an area of its own, through the one entry at the foot of the den.
 (
     name: "the Widow",
     ground: "moss",
@@ -17,7 +18,7 @@
         "#.............#",
         "#..\"...\"...\"..#",
         "#.............#",
-        "#####.....#####",
+        "#######E#######",
     ],
     legend: {
         '#': Tile("cave wall"),
@@ -25,5 +26,6 @@
         '"': Tile("web"),
         'e': Prop("egg sac"),
         'W': Monster(monster: "the Widow"),
+        'E': Entry,
     },
 )

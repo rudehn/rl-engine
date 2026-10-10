@@ -3,7 +3,8 @@
 // head, and her two drowned thralls, `led` over her as her band comes
 // together; two more rise at her own call, from any standing water
 // within reach (`effects/bodies.rs`'s `CallDrowned`), this chapel's own
-// included.
+// included. Grown as an area of its own, through the one entry at the
+// foot of the chapel.
 (
     name: "the Drowned Abbess",
     ground: "flooded floor",
@@ -18,7 +19,7 @@
         "#.............#",
         "#.............#",
         "#.............#",
-        "#####.....#####",
+        "#######E#######",
     ],
     legend: {
         '#': Tile("cathedral wall"),
@@ -26,5 +27,6 @@
         'u': Prop("font"),
         'A': Monster(monster: "the Drowned Abbess"),
         'Z': Monster(monster: "drowned thrall"),
+        'E': Entry,
     },
 )

@@ -1,6 +1,8 @@
 // A mini-boss's lair: the Forgemaster's forge, drawn on one floor of his own
 // 7-9. An anvil at its heart, racks either side, lava channels crossing
 // it, and his three fire imps, `led` over him as his band comes together.
+// Grown as an area of its own, through the one entry at the foot of the
+// forge.
 (
     name: "the Forgemaster",
     ground: "ash",
@@ -15,7 +17,7 @@
         "#...............#",
         "#..i.........i..#",
         "#...............#",
-        "#######.....#####",
+        "#########E#######",
     ],
     legend: {
         '#': Tile("forge wall"),
@@ -25,5 +27,6 @@
         'a': Prop("anvil"),
         'F': Monster(monster: "the Forgemaster"),
         'i': Monster(monster: "fire imp"),
+        'E': Entry,
     },
 )

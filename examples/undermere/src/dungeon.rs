@@ -14,14 +14,17 @@
 //! and held to what its recipe requires, and grown again, up to forty
 //! attempts, when it falls short.
 //!
-//! A few passes are Undermere's own, each small and each here because the
-//! engine's leave something a floor needs: an area floored again by its
-//! shape and district, furniture that never shuts a way, a slot that
-//! stands on the floor drawn round it, and the bosses' halls, the
-//! throne's with the way in as far from it as the floor allows.
-//! Everything that decides what a place is made of is in this module and
-//! nowhere else, so a later part's generation changes this file and
-//! nothing that reads a built place.
+//! The boss's hall and a mini-boss's lair are prefabs grown as areas of
+//! their own, exactly as the recipe's own shapes are, through the one
+//! entry each prefab marks; the throne's floor holds its way in at least
+//! half the floor's longer side from it, since nothing else draws it that
+//! far. A few further passes are Undermere's own, each small and each
+//! here because the engine's leave something a floor needs: an area
+//! floored again by its shape and district, furniture that never shuts a
+//! way, and a slot that stands on the floor drawn round it. Everything
+//! that decides what a place is made of is in this module and nowhere
+//! else, so a later part's generation changes this file and nothing that
+//! reads a built place.
 //!
 //! [`PlaceBuild::from_context`] reads the way in, the way on and the
 //! pieces' slots back out, the way Foundry's decks are read. What stands
@@ -46,9 +49,9 @@ mod biomes;
 mod lairs;
 
 pub(crate) use biomes::BiomeDraw;
+use lairs::ClearOfTheThrone;
 #[cfg(test)]
 pub(crate) use lairs::{FINAL_BOSSES, MINI_BOSSES};
-use lairs::{FarthestFromTheThrone, ThroneHall};
 
 /// How many floors the Undermere goes down. The tenth is the throne's, and
 /// has no way down.
@@ -383,37 +386,47 @@ impl Undermere {
 
     // ANCHOR: grow
     /// Floor `floor`, grown as `drawn` says: its recipe of
-    /// `assets/layout.ron` accreted, loops cut through it, each area
-    /// floored by its shape and district, the lakes and the bridges of its
-    /// biome, the way in and the way down, the survey, the band's decor,
-    /// and the recipe's requirements last, the whole grown again from the
-    /// next attempt, up to `attempts`, whenever a pass refuses it.
+    /// `assets/layout.ron` accreted, the boss's hall or a mini-boss's lair
+    /// grown with it as a piece of its own, loops cut through it, each
+    /// area floored by its shape and district, the lakes and the bridges
+    /// of its biome, the way in and the way down, the survey, the band's
+    /// decor, and the recipe's requirements last, the whole grown again
+    /// from the next attempt, up to `attempts`, whenever a pass refuses it.
     ///
     /// The way in is drawn clear of whatever was stamped before it and the
     /// way down among the farthest third of the floor from it, clear of
     /// every piece. Floor ten is the throne's: no doors, since the walk
-    /// there is through halls, its way in as far from the throne as the
-    /// floor allows, and no way down.
+    /// there is through halls, its way in held at least half the floor's
+    /// longer side from the throne by [`ClearOfTheThrone`], and no way
+    /// down.
     fn grow(&self, floor: u32, drawn: &BiomeDraw, seed: RunSeed, attempts: u32) -> Result<BaseContext, BuildError> {
         let throne = floor == FLOORS;
-        // Floor ten's own wall is whichever of the three [`FINAL_BOSSES`]
-        // this run draws, which is the drawn throne biome's own.
-        let fill = if throne { self.tile(self.final_boss().wall) } else { drawn.wall };
-        let door = if throne { drawn.floor } else { self.tile("door") };
+        // Floor ten's own wall and floor are whichever of the three
+        // [`FINAL_BOSSES`] this run draws, so its ordinary rooms read as
+        // the one place the throne stands in rather than the drawn throne
+        // biome's own, which stands beside the Drowned King's own as a
+        // schema the other two share.
+        let (fill, floor_tile) = if throne {
+            let boss = self.final_boss();
+            (self.tile(boss.wall), self.tile(boss.floor))
+        } else {
+            (drawn.wall, drawn.floor)
+        };
+        let door = if throne { floor_tile } else { self.tile("door") };
         // Undermere grows no locked or sealed piece yet, so its door
         // stands for both.
-        let tiles = LayoutTiles { floor: drawn.floor, door, locked: door, sealed: door };
-        let grown = rl_engine::rl_bevy::layout::passes(&self.layout, &drawn.recipe, &tiles)?;
+        let tiles = LayoutTiles { floor: floor_tile, door, locked: door, sealed: door };
+        let mut grown = rl_engine::rl_bevy::layout::passes(&self.layout, &drawn.recipe, &tiles)?;
         let (width, height) = grown.size;
-        let mut chain = Chain::new().then(grown.accrete).then(grown.loops).then(Paint { floor: drawn.floor, rules: drawn.paint.clone() });
-        // The bosses' halls are stamped and carved over what grew, before
-        // the lakes, which keep off a stamp and the ring round it.
+        // The boss's hall and a mini-boss's lair are grown as pieces of
+        // the recipe's own accretion, late, through the one entry each
+        // prefab marks, rather than carved over what grew.
         if throne {
-            let boss = self.final_boss();
-            chain = chain.then(ThroneHall { piece: self.prefabs.piece(boss.piece)?, floor: self.tile(boss.floor) });
-        } else if let Some(lair) = self.lair_pass(floor)? {
-            chain = chain.then(lair);
+            grown.accrete.pieces.push(self.throne_piece()?);
+        } else if let Some(piece) = self.lair_piece(floor)? {
+            grown.accrete.pieces.push(piece);
         }
+        let mut chain = Chain::new().then(grown.accrete).then(grown.loops).then(Paint { floor: floor_tile, rules: drawn.paint.clone() });
         if let Some((lakes, bridges)) = drawn.lakes.clone() {
             chain = chain.then(lakes);
             if let Some(bridges) = bridges {
@@ -421,7 +434,7 @@ impl Undermere {
             }
         }
         chain = if throne {
-            chain.then(FarthestFromTheThrone)
+            chain.then(RandomStart.clear_of_stamps(MIN_DISTANCE_FROM_ENTRY)).then(ClearOfTheThrone)
         } else {
             chain.then(RandomStart.clear_of_stamps(MIN_DISTANCE_FROM_ENTRY)).then(FarthestExit.among_farthest(EXIT_AMONG_PCT).clear_of_stamps(EXIT_CLEAR))
         };
@@ -547,17 +560,6 @@ impl CostSource for Opened<'_> {
         let id = self.terrain.get_idx(idx).index();
         self.tables.passable[id].then(|| self.tables.move_cost[id])
     }
-}
-
-/// The cell a body can stand on farthest from `from` by walking, doors
-/// opened, leaving out `from` and whatever `skip` says; the first in row
-/// order of those equally far, so a seed always picks the same one.
-fn farthest(ctx: &BaseContext, from: Point, skip: impl Fn(Point) -> bool) -> Option<Point> {
-    let tables = ctx.tiles().tables();
-    let opened = Opened { terrain: ctx.terrain(), tables: &tables };
-    let mut walk = DijkstraMap::covering(&opened);
-    walk.build(&opened, [from], PathRules::default());
-    walk.iter().filter(|(p, _)| *p != from && walkable(ctx, &tables, *p) && !skip(*p)).max_by_key(|(p, v)| (*v, std::cmp::Reverse(*p))).map(|(p, _)| p)
 }
 
 /// Emits the cell a piece marked `mark` as the way in: the town's `@`.
@@ -929,6 +931,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use rl_engine::rl_core::Rect;
+    use rl_engine::rl_mapgen::Join;
     use rl_engine::rl_mapgen::prefab::Stamped;
     use rl_engine::rl_rules::prefab::{Pick, Slot};
 
@@ -1056,8 +1059,8 @@ mod tests {
 
     /// Floor ten holds whichever of the three `FINAL_BOSSES` this seed
     /// draws, alone at its own throne but for the Drowned King's own
-    /// five knights, and the way in is as far from its mouth, walking, as
-    /// any cell of the floor outside it, for every one of the three floor
+    /// five knights, and the way in is held at least half the floor's
+    /// longer side from it, walking, for every one of the three floor
     /// ten bosses.
     #[test]
     fn floor_ten_holds_whichever_boss_this_seed_draws_alone_at_its_own_throne() {
@@ -1093,16 +1096,16 @@ mod tests {
             };
             assert_eq!(monsters, expected_monsters, "seed {s}: {}", boss.piece);
             assert_eq!(props, expected_props, "seed {s}: {}", boss.piece);
-            // The way in is as far from the throne's mouth, walking, as any
-            // cell of the floor outside the throne.
+            // The way in is held at least half the floor's longer side
+            // from the throne, walking, as `ClearOfTheThrone` asks: the
+            // throne is grown now, so its mouth may face any way.
             let view = built.terrain.view(undermere.tiles());
             let mut walk = DijkstraMap::covering(&view);
-            let mouth = Point::new(throne.x + throne.width / 2, throne.bottom());
-            walk.build(&view, [mouth], PathRules::default());
-            let farthest = walk.iter().filter(|(p, _)| !throne.contains(*p)).map(|(_, v)| v).max().unwrap();
-            assert_eq!(walk.value(built.entry), Some(farthest), "seed {s}: the way in at {:?} is not the farthest from the throne", built.entry);
-            let clear = geometry::chebyshev(built.entry, geometry::clamp_to(built.entry, throne));
-            assert!(clear >= MIN_DISTANCE_FROM_ENTRY, "seed {s}: the way in is {clear} from the throne");
+            walk.build(&view, [built.entry], PathRules::default());
+            let clear = throne.cells().filter_map(|p| walk.value(p)).min().expect("seed {s}: the throne can be walked to");
+            let bounds = built.terrain.bounds();
+            let need = bounds.width.max(bounds.height) / 2;
+            assert!(clear >= need, "seed {s}: the way in is {clear} steps from the throne, nearer than half the {} side", bounds.width.max(bounds.height));
         }
     }
 
@@ -1350,17 +1353,38 @@ mod tests {
         assert!(measured > 0, "some monster's post was measured");
     }
 
-    /// A throne hall laid where no room is clear of it to join its mouth
-    /// to is refused, naming the pass, rather than laid shut away from the
-    /// rest of the floor for the walk test to find later, or never.
+    /// A throne or a lair too large for the floor it is asked to grow on
+    /// is refused by name, for `run_retrying` to try again rather than
+    /// lay it shut away from the rest of the floor for the walk test to
+    /// find later, or never: `PrefabShape` and `Accrete` are the engine's
+    /// own, covered end to end in `rl_mapgen::accrete`'s own suite, so
+    /// this only pins that Undermere's own pieces are among them.
     #[test]
-    fn a_throne_with_no_room_to_join_its_mouth_to_is_refused() {
+    fn a_throne_too_large_for_the_floor_is_refused_by_name() {
         let undermere = Undermere::new(RunSeed(0));
-        let floor = undermere.tile("throne floor");
-        let mut ctx = BaseContext::blank(70, 40, undermere.tiles().clone(), undermere.tile("throne wall"));
-        let hall = ThroneHall { piece: undermere.prefabs().piece("the throne").unwrap(), floor };
-        let refused = Chain::new().then(hall).run(&mut ctx, RunSeed(0)).expect_err("no rooms, so nothing to join the hall to");
-        assert_eq!(refused.pass, "throne_hall", "{refused}");
+        let piece = undermere.throne_piece().unwrap();
+        let name = piece.name().to_string();
+        let mut pass = rl_engine::rl_mapgen::accrete::Accrete {
+            floor: undermere.tile("throne floor"),
+            door: undermere.tile("throne floor"),
+            shapes: Vec::new(),
+            districts: vec![rl_engine::rl_mapgen::accrete::District { name: "only".into(), shapes: Vec::new() }],
+            mix: Vec::new(),
+            districts_per_10k: 1,
+            open_pct: 10,
+            patience: 10,
+            barriers: Vec::new(),
+            locked: undermere.tile("throne floor"),
+            sealed: undermere.tile("throne floor"),
+            pieces: vec![piece],
+            late_pct: 0,
+        };
+        pass.shapes.push(Box::new(rl_engine::rl_mapgen::accrete::Rectangle { name: "seed".into(), w: (4, 4), h: (4, 4), join: Join::Door }));
+        pass.districts[0].shapes.push((0, 1));
+        pass.mix.push((0, 1));
+        let mut ctx = BaseContext::blank(10, 10, undermere.tiles().clone(), undermere.tile("throne wall"));
+        let refused = Chain::new().then(pass).run(&mut ctx, RunSeed(0)).expect_err("a 10x10 floor cannot hold it");
+        assert!(refused.pass == "accrete" && refused.reason.contains(&name), "{refused}");
     }
 
     /// The mini-bosses' draw: two a run, never the same one
@@ -1381,6 +1405,35 @@ mod tests {
             assert_ne!(lairs[0].1, lairs[1].1, "seed {s}: both lairs on floor {}", lairs[0].1);
         }
         assert_eq!(seen.len(), MINI_BOSSES.len(), "every mini-boss drawn somewhere over the span: {seen:?}");
+    }
+
+    /// Every lair and the throne, grown as `Accrete`'s pieces are, is
+    /// entered only through the one entry its own prefab file marks: no
+    /// other cell of its own wall ever opens onto something a body can
+    /// walk through.
+    #[test]
+    fn every_lair_and_the_throne_is_entered_only_through_its_entries() {
+        let mut measured = 0;
+        for s in 0..40 {
+            let undermere = Undermere::new(RunSeed(s));
+            let tables = undermere.tiles().tables();
+            for floor in 1..=FLOORS {
+                let ctx = undermere.generate(map_of(floor)).unwrap();
+                for area in ctx.outputs().iter::<Area>().filter(|a| a.entries.is_some()) {
+                    let entries = area.entries.as_ref().expect("filtered on it");
+                    for c in &area.cells {
+                        for d in Direction::CARDINALS {
+                            let n = *c + d.offset();
+                            if !area.cells.contains(&n) && walkable(&ctx, &tables, n) {
+                                assert!(entries.contains(&n), "seed {s} floor {floor}: {n:?} opens into {} and is no entry", area.shape);
+                            }
+                        }
+                    }
+                    measured += 1;
+                }
+            }
+        }
+        assert!(measured > 0, "some lair or the throne was measured");
     }
 
     /// A floor of a biome that grows `recipe`, the `pick`th of those it

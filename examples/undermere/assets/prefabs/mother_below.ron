@@ -10,9 +10,8 @@
 // bones of what she fed on underfoot, and glowcaps, the Fungal Deeps' own
 // light, growing in clumps in the dark where nothing has trodden them. Her
 // own `spawning` tears fresh burrows while she lives. No court, no
-// furniture: what she carries is herself. Laid exactly as the throne is,
-// at one end of the floor, facing south, its mouth the five cells of floor
-// at the foot of the drawing.
+// furniture: what she carries is herself. Grown exactly as the throne is,
+// an area of its own through the one entry at the foot of the drawing.
 (
     name: "the Mother Below",
     ground: "moss",
@@ -29,7 +28,7 @@
         "=\"\"...............=",
         "==.\"......,.....===",
         "===..............==",
-        "=======.....=======",
+        "=========E=========",
     ],
     legend: {
         '=': Tile("cave wall"),
@@ -37,5 +36,6 @@
         '"': Tile("glowcaps"),
         ',': Tile("bones"),
         'M': Monster(monster: "the Mother Below"),
+        'E': Entry,
     },
 )
