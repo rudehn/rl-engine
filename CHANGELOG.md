@@ -58,7 +58,7 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 - The bag answers a game's own question: a game writes the new `rl_ui::AskForThing { user, asker, verb, prompt, choices }`, most often when an offer of its own is taken up, and the bag opens choosing under `prompt` among what `choices` names that it holds, as it chooses for a use that asks for a thing; confirm writes the new `ThingChosen { user, asker, verb, thing }` and puts every screen away, and putting the bag away answers nothing.
   The engine moves nothing and spends no time on the answer, since the offer that asked has spent its own; what the thing chosen does is the game's.
-  `InventoryMenu` has a new field, `asked`, holding the question while the bag chooses for it, so a game that built an `InventoryMenu` with a struct literal adds `asked: None`.
+  `InventoryMenu::choosing` is now an `Option<Choosing>`, the new enum of what the bag chooses for, `Choosing::Use(ChoosingFor)` or `Choosing::Asked(Asked)`, since it chooses for one at a time: a game that set `choosing: Some(ChoosingFor { .. })` wraps it in `Choosing::Use`, one that read `choosing.item` reads the new `InventoryMenu::using()`, and one that built an `InventoryMenu` with a struct literal is unchanged.
 
 - The nearby rail's default heading over its things is `Things in sight`, where it was `On the ground`: the list is every item and prop in sight, nearest first, not what lies underfoot. A game that set its own with `NearbyPanel::headings` is unchanged.
   The count of hostiles beside the actors' heading is left unsaid at nought, so a `0` no longer stands over a list of people as though it counted them.

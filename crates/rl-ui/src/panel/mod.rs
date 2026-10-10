@@ -42,7 +42,7 @@ pub use controls::{CONTROLS_MODAL, ControlsLayout, ControlsPanel, ControlsScreen
 pub use gear::GearPanel;
 pub use inspect::InspectPanel;
 pub use inventory::{
-    AskForThing, Asked, ChoosingFor, INVENTORY_MODAL, InventoryKeys, InventoryLayout, InventoryMenu, InventoryPanel, ThingChosen, inventory_modal,
+    AskForThing, Asked, Choosing, ChoosingFor, INVENTORY_MODAL, InventoryKeys, InventoryLayout, InventoryMenu, InventoryPanel, ThingChosen, inventory_modal,
 };
 pub use log::LogPanel;
 pub use nearby::{ActivityWords, AlertWords, NearbyPanel};

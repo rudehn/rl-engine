@@ -513,8 +513,8 @@ pub fn learn_by_asking(
     mut log: ResMut<MessageLog>,
     turns: Res<Turns>,
 ) {
-    let Some(choosing) = menu.and_then(|m| m.choosing) else { return };
-    let Ok(kind) = things.get(choosing.item) else { return };
+    let Some(item) = menu.and_then(|m| m.using()) else { return };
+    let Ok(kind) = things.get(item) else { return };
     let name = &armory.defs.get(kind.0).name;
     if lore.knows(name) || !lore.learn(name) {
         return;

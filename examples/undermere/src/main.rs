@@ -654,7 +654,7 @@ mod tests {
         let row = app.world().resource::<InventoryView>().rows.iter().position(|r| r.entity == scroll).expect("in the pack");
         app.world_mut().resource_mut::<InventoryMenu>().selected = row;
         press(&mut app, KeyCode::KeyU);
-        let choosing = app.world().resource::<InventoryMenu>().choosing.map(|c| c.item);
+        let choosing = app.world().resource::<InventoryMenu>().using();
         assert_eq!(choosing, Some(scroll), "the pack asks what to read it on");
         assert!(knows(&app), "and it is known");
         assert_eq!(app.world().get::<Name>(scroll).map(|n| n.as_str().to_string()).as_deref(), Some("scroll of enchanting"), "called what it is");
@@ -1583,7 +1583,10 @@ mod tests {
         undermere::testing::settle(&mut app);
         let screen = written(&app);
         assert!(screen.iter().any(|r| r.contains(&format!("Give {name} which?"))), "the pack, choosing: {screen:#?}");
-        let choices = app.world().resource::<InventoryMenu>().asked.as_ref().expect("asked").ask.choices.clone();
+        let choices = match &app.world().resource::<InventoryMenu>().choosing {
+            Some(rl_engine::rl_ui::Choosing::Asked(asked)) => asked.ask.choices.clone(),
+            other => panic!("asked: {other:?}"),
+        };
         let rows: Vec<Entity> = {
             let view = app.world().resource::<rl_engine::rl_ui::view::inventory::InventoryView>();
             choices.into_iter().filter(|t| view.rows.iter().any(|r| r.entity == *t)).collect()

@@ -110,14 +110,21 @@ pub struct InventoryLayout {
 pub struct InventoryMenu {
     /// The row picked out, clamped to the rows there are when drawn.
     pub selected: usize,
-    /// While the bag is choosing what a use is made on: the thing used, and
-    /// which of its choices the cursor is on. Put away whenever the bag is,
-    /// so it never opens choosing for a use nobody asked for again.
-    pub choosing: Option<ChoosingFor>,
-    /// While the bag is choosing for a game's own question: the question,
-    /// and which of its choices the cursor is on. Put away whenever the
-    /// bag is, as a use's choosing is.
-    pub asked: Option<Asked>,
+    /// While the bag is choosing, what for: a use, or a game's own
+    /// question, one at a time. Put away whenever the bag is, so it never
+    /// opens choosing for something nobody asked for again.
+    pub choosing: Option<Choosing>,
+}
+
+/// What the bag is choosing for: one thing at a time, so one field rather
+/// than two that could both be set.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Choosing {
+    /// What a use is made on: the thing used, and which of its choices
+    /// the cursor is on.
+    Use(ChoosingFor),
+    /// A game's own question, and which of its choices the cursor is on.
+    Asked(Asked),
 }
 
 impl InventoryMenu {
@@ -125,6 +132,15 @@ impl InventoryMenu {
     /// end.
     pub fn move_by(&mut self, by: i32, rows: usize) {
         self.selected = stepped(self.selected, by, rows);
+    }
+
+    /// The thing whose use the bag is choosing for, while it chooses for
+    /// one, and not for a game's question.
+    pub fn using(&self) -> Option<Entity> {
+        match &self.choosing {
+            Some(Choosing::Use(choosing)) => Some(choosing.item),
+            _ => None,
+        }
     }
 }
 
@@ -198,27 +214,27 @@ pub struct Asked {
 /// choices or a game's question's, each only while the bag holds it.
 fn choices_of(menu: &InventoryMenu, view: &InventoryView) -> Option<(String, Vec<Entity>, usize)> {
     let held = |things: &[Entity]| -> Vec<Entity> { things.iter().copied().filter(|t| view.rows.iter().any(|r| r.entity == *t)).collect() };
-    if let Some(asked) = &menu.asked {
-        return Some((asked.ask.prompt.clone(), held(&asked.ask.choices), asked.selected));
+    match menu.choosing.as_ref()? {
+        Choosing::Asked(asked) => Some((asked.ask.prompt.clone(), held(&asked.ask.choices), asked.selected)),
+        Choosing::Use(choosing) => {
+            let asks = view.rows.iter().find(|r| r.entity == choosing.item)?.asks.as_ref()?;
+            Some((asks.prompt.clone(), held(&asks.choices), choosing.selected))
+        }
     }
-    let choosing = menu.choosing?;
-    let asks = view.rows.iter().find(|r| r.entity == choosing.item)?.asks.as_ref()?;
-    Some((asks.prompt.clone(), held(&asks.choices), choosing.selected))
 }
 
 /// Moves the cursor of whichever choosing the bag holds to `at`.
 fn choose_at(menu: &mut InventoryMenu, at: usize) {
-    if let Some(asked) = menu.asked.as_mut() {
-        asked.selected = at;
-    } else if let Some(choosing) = menu.choosing.as_mut() {
-        choosing.selected = at;
+    match menu.choosing.as_mut() {
+        Some(Choosing::Asked(asked)) => asked.selected = at,
+        Some(Choosing::Use(choosing)) => choosing.selected = at,
+        None => {}
     }
 }
 
 /// Puts away whatever the bag was choosing for.
 fn stop_choosing(menu: &mut InventoryMenu) {
     menu.choosing = None;
-    menu.asked = None;
 }
 
 /// `at` moved `by` rows over `rows` of them, wrapping at either end.
@@ -344,8 +360,7 @@ pub fn choose_when_asked(mut asked: MessageReader<AimUse>, view: Res<InventoryVi
     for asked in asked.read() {
         let wants_a_thing = view.rows.iter().any(|r| r.entity == asked.item && r.asks.is_some() && r.usable());
         if view.entity == Some(asked.user) && wants_a_thing && !modals.any_open() {
-            menu.asked = None;
-            menu.choosing = Some(ChoosingFor { item: asked.item, selected: 0 });
+            menu.choosing = Some(Choosing::Use(ChoosingFor { item: asked.item, selected: 0 }));
             modals.open(modal);
         }
     }
@@ -357,8 +372,7 @@ pub fn choose_for_the_game(mut asked: MessageReader<AskForThing>, view: Res<Inve
     let modal = inventory_modal(&modals);
     for ask in asked.read() {
         if view.entity == Some(ask.user) && !modals.any_open() {
-            menu.choosing = None;
-            menu.asked = Some(Asked { ask: ask.clone(), selected: 0 });
+            menu.choosing = Some(Choosing::Asked(Asked { ask: ask.clone(), selected: 0 }));
             modals.open(modal);
         }
     }
@@ -415,19 +429,18 @@ pub fn inventory_keys(
         choose_at(&mut menu, selected);
         let (Some(user), Some(&on)) = (view.entity, choices.get(selected)) else { return };
         if confirmed && holding.contains(user) {
-            match (&menu.asked, menu.choosing) {
+            match &menu.choosing {
                 // Only while whoever asked still offers what asked to the
                 // user: one that died, or went out of reach while the bag
                 // was up, is answered nothing, as the offers screen's
                 // rows go with what offered them.
-                (Some(asked), _) if intents.still_asked(user, &asked.ask) => {
+                Some(Choosing::Asked(asked)) if intents.still_asked(user, &asked.ask) => {
                     intents.chosen.write(ThingChosen { user, asker: asked.ask.asker, verb: asked.ask.verb, thing: on });
                 }
-                (Some(_), _) => {}
-                (None, Some(choosing)) => {
+                Some(Choosing::Use(choosing)) => {
                     intents.uses_on.write(Intent::new(user, UseOn { item: choosing.item, on }));
                 }
-                (None, None) => {}
+                Some(Choosing::Asked(_)) | None => {}
             }
             stop_choosing(&mut menu);
             modals.close_all();
@@ -467,7 +480,7 @@ pub fn inventory_keys(
         // and one made on a thing keeps the bag up, choosing for it.
         match (row.usable(), row.targeting, row.asks.is_some()) {
             (true, _, true) => {
-                menu.choosing = Some(ChoosingFor { item, selected: 0 });
+                menu.choosing = Some(Choosing::Use(ChoosingFor { item, selected: 0 }));
                 false
             }
             (true, Some(_), false) => {
