@@ -244,8 +244,15 @@ fn add_panels(app: &mut App, screen: &Screen) {
     );
     app.add_systems(Update, undermere::mercenaries::talk_rows.in_set(ViewSet::Annotate));
     // A hired mercenary's order, under its kind's own words on the look
-    // panel and on its row of the party panel.
-    app.add_systems(Update, undermere::mercenaries::show_orders.after(undermere::bestiary_lore::annotate_inspect).in_set(ViewSet::Annotate));
+    // panel in place of a fight's forecast, and on the rail and its row of
+    // the party panel.
+    app.add_systems(
+        Update,
+        undermere::mercenaries::show_orders
+            .after(undermere::bestiary_lore::annotate_inspect)
+            .after(undermere::seeming::seem_forecast)
+            .in_set(ViewSet::Annotate),
+    );
     // What the player may set, opened from the menu and from the title:
     // fullscreen is the engine's, declared by `RoguelikePlugins`. And
     // every run that has ended, best first, which the title opens.
@@ -1222,5 +1229,56 @@ mod tests {
         assert_eq!(undermere::testing::pack(&app, me), mine, "nothing paid");
         assert_eq!(undermere::testing::pack(&app, candidate), theirs, "and nothing taken");
         assert_eq!(undermere::testing::at(&app, me), from, "and nobody stepped");
+    }
+
+    /// Hired from the offers screen on the real screen, a candidate joins
+    /// the party and says so; `o` orders the party to hold in one line of
+    /// the log and no turn; and the look panel on the mercenary says what
+    /// it is doing, under its name.
+    #[test]
+    fn a_candidate_hired_from_the_offers_screen_and_ordered_with_o_shows_its_order_on_the_look_panel() {
+        let mut app = on_screen(RunSeed(7));
+        let me = undermere::testing::adventurer(&mut app);
+        let candidate = {
+            let world = app.world_mut();
+            world.query_filtered::<Entity, With<undermere::mercenaries::Candidate>>().iter(world).next().expect("a candidate waits")
+        };
+        let (at, town) = (undermere::testing::at(&app, candidate), undermere::dungeon::TOWN);
+        let taken: Vec<Point> = {
+            let world = app.world_mut();
+            world.query_filtered::<&Position, With<Blocks>>().iter(world).map(|p| p.0).collect()
+        };
+        let sides = [((0, -1), KeyCode::ArrowDown), ((0, 1), KeyCode::ArrowUp), ((-1, 0), KeyCode::ArrowRight), ((1, 0), KeyCode::ArrowLeft)];
+        let map = app.world().resource::<WorldMap>();
+        let (from, key) = sides
+            .into_iter()
+            .map(|((dx, dy), key)| (at.offset(dx, dy), key))
+            .find(|(cell, _)| map.is_walkable_on(town, *cell) && !taken.contains(cell))
+            .expect("a side of the candidate to walk in from");
+        undermere::testing::stand_on(&mut app, me, from);
+        undermere::testing::set_gold(&mut app, me, 1000);
+        let name = undermere::testing::name_of(&app, candidate);
+        press(&mut app, key);
+        press(&mut app, KeyCode::Enter);
+        undermere::testing::settle(&mut app);
+        assert!(app.world().get::<undermere::mercenaries::Mercenary>(candidate).is_some(), "hired: {:#?}", written(&app));
+        assert!(written(&app).iter().any(|r| r.contains(&format!("{name} joins you."))), "{:#?}", written(&app));
+
+        let before = app.world().resource::<Turns>().now();
+        press(&mut app, KeyCode::KeyO);
+        assert_eq!(app.world().resource::<Turns>().now(), before, "no turn spent");
+        assert!(written(&app).iter().any(|r| r.contains("You order the party to hold.")), "{:#?}", written(&app));
+
+        press(&mut app, KeyCode::KeyX);
+        let modal = rl_engine::rl_ui::view::inspect::inspect_modal(app.world().resource::<Modals>());
+        app.world_mut().resource_mut::<rl_engine::rl_ui::InspectView>().cursor = at;
+        app.update();
+        app.update();
+        let screen = written(&app);
+        assert!(app.world().resource::<Modals>().is_open(modal), "looking: {screen:#?}");
+        assert!(screen.iter().any(|r| r.contains("holding")), "the order on the look panel: {screen:#?}");
+        assert!(screen.iter().any(|r| r.contains(&name)), "under its name: {screen:#?}");
+        assert!(!screen.iter().any(|r| r.contains("outlook") || r.contains("Chance to hit")), "and no forecast: {screen:#?}");
+        assert!(screen.iter().any(|r| r.contains(&format!("{name} · holding"))), "the rail says it too: {screen:#?}");
     }
 }

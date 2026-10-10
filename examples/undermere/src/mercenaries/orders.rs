@@ -245,16 +245,40 @@ pub fn order_party(mut key: OrderKey, mut commands: Commands, party: Query<(Enti
     key.log.info(format!("You order the party to {}.", order.word()), now);
 }
 
-/// Says each mercenary's order, `holding`, on the look panel when the
-/// look is on one and on its row of the party panel.
+/// Says each mercenary's order, `holding`, on the look panel, on the
+/// rail and on its row of the party panel.
 ///
-/// In `ViewSet::Annotate`, after the kind's own words, so the order is
-/// read under `a sword for hire`.
-pub fn show_orders(look: Option<ResMut<InspectView>>, party: Option<ResMut<PartyView>>, hired: Query<&Mercenary>, mut facets: ResMut<Facets>) {
+/// On the look panel it takes the place of the fight's forecast, since
+/// the odds of a fight with somebody the adventurer is paying are nothing
+/// a player is asking; on the rail it takes the place of what the
+/// mercenary knows of the adventurer and what it is doing this turn,
+/// `unaware` and `follow`, which say less of a hired hand than its order.
+///
+/// In `ViewSet::Annotate`, after the kind's own words and the game's own
+/// forecast, so the order is read under `a sword for hire` and nothing
+/// puts a forecast back after it.
+pub fn show_orders(
+    look: Option<ResMut<InspectView>>,
+    rail: Option<ResMut<NearbyView>>,
+    party: Option<ResMut<PartyView>>,
+    hired: Query<&Mercenary>,
+    mut facets: ResMut<Facets>,
+) {
     if let Some(mut view) = look
         && let Some(order) = view.subject.as_ref().and_then(|s| hired.get(s.entity).ok()).map(|m| m.order)
     {
+        let forecast = facets.declare("forecast");
+        view.facets.retain(|f| f.key != forecast);
+        (view.duel, view.odds) = (None, None);
         view.facets.push(facets.facet("order", order.doing()));
+    }
+    if let Some(mut view) = rail {
+        for row in view.actors.iter_mut() {
+            if let Ok(hired) = hired.get(row.entity) {
+                (row.doing, row.alert) = (None, None);
+                row.facets.push(facets.facet("order", hired.order.doing()));
+            }
+        }
     }
     if let Some(mut view) = party {
         for row in view.rows_mut() {
