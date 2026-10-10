@@ -5,8 +5,9 @@
 //! a monster ([`rl_rules::prefab`]). The terrain half is stamped by the
 //! game's mapgen chain from [`Prefabs::piece`], keyed so each mark of the
 //! stamp remembers which prefab it came from, and arrives here as a
-//! place's [`Spot`](crate::places::Spot)s. What is here is the other half,
-//! the loop every game wrote by hand at its marks:
+//! place's [`Spot`](crate::places::Spot)s, or grown as an area of its own
+//! from [`Prefabs::grown`], whose stamp arrives the same way. What is here
+//! is the other half, the loop every game wrote by hand at its marks:
 //!
 //! - **When**: on the arrival that built the place, and never again, so a
 //!   revisit finds what it left.
@@ -35,7 +36,8 @@ use rand::rngs::StdRng;
 use rl_core::seed::position_hash;
 use rl_core::{Id, Point};
 use rl_mapgen::BuildError;
-use rl_mapgen::prefab::{Cell, Prefab};
+use rl_mapgen::accrete::Join;
+use rl_mapgen::prefab::{Cell, Prefab, PrefabShape};
 use rl_rules::content::{BandedTable, Registry};
 use rl_rules::prefab::{Pick, PrefabDef, Slot};
 use rl_rules::prop::Stock;
@@ -123,9 +125,19 @@ impl<M: Send + Sync + 'static> Prefabs<M> {
         let cell = |c: char| match (def.tile(c), def.slot(c)) {
             (Some(t), _) => Cell::Tile(t),
             (None, Some(_)) => Cell::Mark(def.ground),
+            (None, None) if def.entry(c) => Cell::Entry,
             (None, None) => Cell::Clear,
         };
         Prefab::parse_cells(&def.rows(), cell).map(|p| p.keyed(id.raw())).map_err(|e| BuildError::new("prefab", format!("{name}: {e}")))
+    }
+
+    /// The piece called `name` as a shape [`Accrete`](rl_mapgen::accrete::Accrete)
+    /// grows as an area of its own, joined by `join` through the entries its
+    /// file draws, and keyed as [`piece`](Self::piece) keys it, so its
+    /// slots fill as a stamped piece's do. An error naming the piece when
+    /// there is none or it has no entry.
+    pub fn grown(&self, name: &str, join: Join) -> Result<PrefabShape, BuildError> {
+        PrefabShape::new(name, &self.piece(name)?, join)
     }
 
     /// What `glyph` stands for in the prefab keyed `key`, if the key names

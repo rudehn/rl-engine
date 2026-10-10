@@ -46,6 +46,13 @@ pub struct Piece {
     /// would open onto the piece's own wall. A shape may offer fewer: a
     /// [`Cave`](crate::cave::Cave) offers none on rock it encloses.
     pub sites: Vec<(Point, Direction)>,
+    /// The hand-drawn piece it was cut from, turned as it is to be laid,
+    /// whose tiles are painted over the body and its wall in place of
+    /// carving the body as floor; `None` for a piece drawn cell by cell.
+    /// Its corner is the piece's own nought, so it lies where the body
+    /// does. A piece with one is entered only at its sites, by its own
+    /// join; see [`PrefabShape`](crate::prefab::PrefabShape).
+    pub drawn: Option<crate::prefab::Prefab>,
 }
 
 impl Piece {
@@ -63,7 +70,7 @@ impl Piece {
                 }
             }
         }
-        Self { cells, sites }
+        Self { cells, sites, drawn: None }
     }
 }
 

@@ -17,7 +17,9 @@
 //! an [`Opening`] per [`Join`];
 //! [`OpenLoops`] then cuts the longest detours through, so there is more
 //! than one way round. A [`Cave`] is a shape not built of rectangles,
-//! drawn by the cellular automaton, grown and joined like any other.
+//! drawn by the cellular automaton, grown and joined like any other, and
+//! a [`PrefabShape`](prefab::PrefabShape) is a hand-drawn piece grown as an
+//! area of its own, entered only through the entries its file draws.
 //! [`Survey`] measures what was built, as a
 //! [`Surveyed`] with an [`AreaFacts`] per area, and [`Require`] fails a
 //! place that falls short, for [`Chain::run_retrying`] to build again.
@@ -57,6 +59,6 @@ pub mod prelude {
     pub use crate::dungeon;
     pub use crate::loops::OpenLoops;
     pub use crate::passes;
-    pub use crate::prefab::{Orient, Placement, Prefab, StampEachRoom, StampOneOf, StampPrefab, Stamped};
+    pub use crate::prefab::{Orient, Placement, Prefab, PrefabShape, StampEachRoom, StampOneOf, StampPrefab, Stamped};
     pub use crate::survey::{AreaFacts, Require, Survey, Surveyed};
 }

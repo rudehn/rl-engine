@@ -26,11 +26,17 @@
 //!
 //! Either pass emits where it landed as a [`Stamped`], in map coordinates,
 //! so later passes can keep out of it or spawn into it.
+//!
+//! A piece may also be grown rather than stamped: [`PrefabShape`] is a
+//! prefab as an accretion [`Shape`], an area of its own joined to the
+//! place through the cells its legend draws as [`Cell::Entry`], and it
+//! emits its [`Stamped`] like any stamp, so its marks are filled the same.
 
-use rand::Rng;
-use rl_core::{Grid, Grid2D, Point, Rect};
+use rand::{Rng, RngCore};
+use rl_core::{Direction, Grid, Grid2D, Point, Rect};
 use rl_grid::TileId;
 
+use crate::accrete::{Join, Piece, Shape};
 use crate::chain::{BuildError, Pass, Phase};
 use crate::context::BuildContext;
 use crate::dungeon::Room;
@@ -49,6 +55,10 @@ pub enum Cell {
     Mark(Option<TileId>),
     /// Leaves the map as it was.
     Clear,
+    /// An entry: a cell of the piece's outer wall where a piece grown as
+    /// an area of its own may be joined, leaving the map as it was until
+    /// it is. See [`PrefabShape`].
+    Entry,
 }
 
 /// A piece of map drawn by hand.
@@ -58,6 +68,8 @@ pub struct Prefab {
     /// Marks the legend gave a meaning to besides a tile, by character,
     /// in prefab-local coordinates: an entrance, a spawn, a chest.
     marks: Vec<(char, Point)>,
+    /// The cells drawn as entries, in prefab-local coordinates.
+    entries: Vec<Point>,
     /// An opaque number its owner set, carried to [`Stamped::prefab`], so
     /// the stamp's marks can be traced back to the definition that gave
     /// them meaning. `None` for a piece nobody keyed.
@@ -87,6 +99,7 @@ impl Prefab {
         }
         let mut cells: Grid<Option<TileId>> = Grid::new(width, height);
         let mut marks = Vec::new();
+        let mut entries = Vec::new();
         for (y, row) in rows.iter().enumerate() {
             if row.chars().count() as i32 != width {
                 return Err(format!("row {y} is {} wide, the first row is {width}", row.chars().count()));
@@ -101,11 +114,12 @@ impl Prefab {
                         cells.set(p, under);
                         marks.push((ch, p));
                     }
+                    Cell::Entry => entries.push(p),
                     Cell::Clear => {}
                 }
             }
         }
-        Ok(Self { cells, marks, key: None })
+        Ok(Self { cells, marks, entries, key: None })
     }
 
     /// This piece, keyed: its stamp reports `key` as [`Stamped::prefab`].
@@ -139,6 +153,12 @@ impl Prefab {
         &self.marks
     }
 
+    /// Every cell drawn as an entry, prefab-local. They turn and mirror
+    /// with the piece, as its marks do.
+    pub fn entries(&self) -> &[Point] {
+        &self.entries
+    }
+
     /// A copy turned a quarter-turn clockwise `quarters` times, marks and
     /// all. Four is the piece as it was, so a caller may pass any number.
     ///
@@ -167,7 +187,8 @@ impl Prefab {
             }
         }
         let marks = self.marks.iter().map(|(c, p)| (*c, Point::new(w - 1 - p.x, p.y))).collect();
-        Self { cells, marks, key: self.key }
+        let entries = self.entries.iter().map(|p| Point::new(w - 1 - p.x, p.y)).collect();
+        Self { cells, marks, entries, key: self.key }
     }
 
     /// One quarter-turn clockwise.
@@ -180,7 +201,8 @@ impl Prefab {
             }
         }
         let marks = self.marks.iter().map(|(c, p)| (*c, Point::new(h - 1 - p.y, p.x))).collect();
-        Self { cells, marks, key: self.key }
+        let entries = self.entries.iter().map(|p| Point::new(h - 1 - p.y, p.x)).collect();
+        Self { cells, marks, entries, key: self.key }
     }
 
     /// Writes the prefab with its top-left at `origin`.
@@ -460,6 +482,100 @@ impl<C: BuildContext> Pass<C> for StampEachRoom {
     }
 }
 
+/// A prefab as a [`Shape`]: a piece [`Accrete`](crate::accrete::Accrete)
+/// grows as an area of its own, entered only through the cells its file
+/// draws as entries.
+///
+/// Its body is every cell inside its own wall: not outside the piece, and
+/// not touching the outside, corners included, where the outside is
+/// every cell beyond the rows and every one left as the map had it that
+/// joins them, entries and marks aside. A site is an entry with the
+/// outside on one side and the body straight across, so the cell a join
+/// opens always has the piece's floor behind it. Each draw lays one of
+/// its eight facings, every quarter-turn and its mirror, each worked out
+/// once when the shape is made.
+///
+/// What the piece paints it paints over its body and its wall, rather
+/// than carving its body as floor, and the piece it draws says so in
+/// [`Piece::drawn`]. It is not a room, since it is a prefab already and
+/// nothing is stamped inside it, and nothing trims it for having one way
+/// in, since a piece drawn with one entry is meant to be a dead end.
+#[derive(Debug, Clone)]
+pub struct PrefabShape {
+    name: String,
+    join: Join,
+    /// Each facing and the piece it draws.
+    facings: Vec<Piece>,
+}
+
+impl PrefabShape {
+    /// `prefab` as a shape called `name`, joined by `join`. An error
+    /// naming it when it has no entry, since nothing could ever be joined
+    /// to it, when an entry has no body straight across from the outside,
+    /// or when there is nothing inside its wall at all.
+    pub fn new(name: impl Into<String>, prefab: &Prefab, join: Join) -> Result<Self, BuildError> {
+        let name = name.into();
+        let err = |reason: String| BuildError::new("prefab", format!("{name}: {reason}"));
+        if prefab.entries().is_empty() {
+            return Err(err("has no entry, so a piece grown from it could never be joined".into()));
+        }
+        let mut facings = Vec::new();
+        for facing in Orient::TurnedOrMirrored.facings(prefab) {
+            let (cells, sites) = body_and_sites(&facing);
+            if cells.is_empty() {
+                return Err(err("has nothing inside its wall".into()));
+            }
+            if let Some(e) = facing.entries().iter().find(|e| !sites.iter().any(|(p, _)| p == *e)) {
+                return Err(err(format!("the entry at {e:?} has no inside of the piece straight across from the outside")));
+            }
+            facings.push(Piece { cells, sites, drawn: Some(facing) });
+        }
+        Ok(Self { name, join, facings })
+    }
+}
+
+/// The body of `prefab` and the sites at its entries, as [`PrefabShape`]
+/// says them.
+fn body_and_sites(prefab: &Prefab) -> (Vec<Point>, Vec<(Point, Direction)>) {
+    let (w, h) = (prefab.width(), prefab.height());
+    let bounds = Rect::new(0, 0, w, h);
+    let marked = |p: Point| prefab.entries().contains(&p) || prefab.marks().iter().any(|(_, m)| *m == p);
+    let mut outside = Grid::filled(w, h, false);
+    let mut stack: Vec<Point> = bounds.border().collect();
+    while let Some(p) = stack.pop() {
+        if !bounds.contains(p) || outside.get(p).copied().unwrap_or(true) || prefab.tile(p).is_some() || marked(p) {
+            continue;
+        }
+        outside.set(p, true);
+        stack.extend(Direction::CARDINALS.iter().map(|d| p + d.offset()));
+    }
+    let out = |p: Point| outside.get(p).copied().unwrap_or(true);
+    let inside = |p: Point| bounds.contains(p) && (-1..=1).all(|dy| (-1..=1).all(|dx| !out(p.offset(dx, dy))));
+    // Row by row, as `Piece::cells` are kept.
+    let cells: Vec<Point> = (0..h).flat_map(|y| (0..w).map(move |x| Point::new(x, y))).filter(|p| inside(*p)).collect();
+    let sites = prefab
+        .entries()
+        .iter()
+        .flat_map(|e| Direction::CARDINALS.into_iter().filter(|d| out(*e + d.offset()) && inside(*e - d.offset())).map(|d| (*e, d)))
+        .collect();
+    (cells, sites)
+}
+
+impl Shape for PrefabShape {
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn join(&self) -> Join {
+        self.join
+    }
+    fn is_room(&self) -> bool {
+        false
+    }
+    fn draw(&self, rng: &mut dyn RngCore) -> Piece {
+        self.facings[rng.random_range(0..self.facings.len())].clone()
+    }
+}
+
 /// Where `piece` is laid in `room`: centred, or else the position nearest
 /// the centre that paints and marks none of `keep`, always with a cell of
 /// the room all round it. `None` when the room is too small or every
@@ -511,7 +627,7 @@ pub(crate) fn pick_weighted(weights: &[u32], roll: u32) -> usize {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::chain::Chain;
     use crate::context::BaseContext;
@@ -1032,5 +1148,90 @@ mod tests {
         for roll in 0..4 {
             assert_ne!(pick_weighted(&weights, roll), 2, "a zero weight is never the candidate a roll lands on");
         }
+    }
+
+    /// A hall with a notch in one corner and two entries, one on the long
+    /// side and one at the end: no two of its eight facings are alike.
+    pub(crate) fn tiles() -> (TileRegistry, TileId, TileId) {
+        let r = TileRegistry::standard();
+        let (wall, floor) = (r.expect("wall"), r.expect("floor"));
+        (r, wall, floor)
+    }
+
+    pub(crate) fn hall(wall: TileId, floor: TileId) -> Prefab {
+        Prefab::parse_cells(
+            &[
+                "  #####", //
+                "  #..$#", //
+                "###...E", //
+                "#.....#", //
+                "##E####", //
+            ],
+            |c| match c {
+                '#' => Cell::Tile(wall),
+                '.' => Cell::Tile(floor),
+                '$' => Cell::Mark(Some(floor)),
+                'E' => Cell::Entry,
+                _ => Cell::Clear,
+            },
+        )
+        .unwrap()
+        .keyed(7)
+    }
+
+    #[test]
+    fn entries_turn_and_mirror_with_the_piece_as_its_marks_do() {
+        let (_, wall, floor) = tiles();
+        let p = hall(wall, floor);
+        assert_eq!(p.entries(), &[Point::new(6, 2), Point::new(2, 4)]);
+        let turned = p.rotated(1);
+        // A quarter-turn clockwise sends (x, y) to (h - 1 - y, x).
+        assert_eq!(turned.entries(), &[Point::new(2, 6), Point::new(0, 2)]);
+        assert_eq!(p.flipped().entries(), &[Point::new(0, 2), Point::new(4, 4)]);
+        assert_eq!(turned.tile(Point::new(2, 6)), None, "an entry paints nothing");
+    }
+
+    #[test]
+    fn a_grown_piece_s_body_is_inside_its_wall_and_its_sites_are_its_entries_in_every_facing() {
+        let (_, wall, floor) = tiles();
+        let shape = PrefabShape::new("hall", &hall(wall, floor), Join::Door).unwrap();
+        assert!(!shape.is_room());
+        let mut seen = Vec::new();
+        for s in 0..200 {
+            let mut rng = rl_core::RunSeed(s).rng(rl_core::SeedDomain::new(b"test"), 0);
+            let piece = shape.draw(&mut rng);
+            let drawn = piece.drawn.clone().expect("a grown piece is painted");
+            // Ten floor cells and the mark, nothing of the wall.
+            assert_eq!(piece.cells.len(), 11, "seed {s}");
+            assert!(piece.cells.iter().all(|c| drawn.tile(*c) == Some(floor)), "seed {s}: the body is the floor inside the wall");
+            assert_eq!(piece.sites.len(), 2, "seed {s}");
+            for (at, out) in &piece.sites {
+                assert!(drawn.entries().contains(at), "seed {s}: a site is an entry");
+                assert!(piece.cells.contains(&(*at - out.offset())), "seed {s}: the body lies straight across");
+                let beyond = *at + out.offset();
+                assert!(drawn.tile(beyond).is_none(), "seed {s}: the outside lies beyond");
+            }
+            if !seen.contains(&drawn) {
+                seen.push(drawn);
+            }
+        }
+        assert_eq!(seen.len(), 8, "every facing is drawn");
+    }
+
+    #[test]
+    fn a_piece_with_no_entry_or_an_entry_that_opens_onto_wall_is_refused_by_name() {
+        let (_, wall, floor) = tiles();
+        let legend = |c| match c {
+            '#' => Cell::Tile(wall),
+            '.' => Cell::Tile(floor),
+            'E' => Cell::Entry,
+            _ => Cell::Clear,
+        };
+        let shut = Prefab::parse_cells(&["###", "#.#", "###"], legend).unwrap();
+        let e = PrefabShape::new("shut", &shut, Join::Door).unwrap_err();
+        assert!(e.reason.contains("shut") && e.reason.contains("no entry"), "{e}");
+        let corner = Prefab::parse_cells(&["E##", "#.#", "###"], legend).unwrap();
+        let e = PrefabShape::new("corner", &corner, Join::Door).unwrap_err();
+        assert!(e.reason.contains("corner") && e.reason.contains("straight across"), "{e}");
     }
 }
