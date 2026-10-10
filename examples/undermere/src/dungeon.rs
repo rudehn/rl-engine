@@ -37,8 +37,10 @@ use rl_engine::rl_render::TileAppearance;
 
 use crate::bestiary::MonsterDef;
 
+mod biomes;
 mod lairs;
 
+pub(crate) use biomes::BiomeDraw;
 #[cfg(test)]
 pub(crate) use lairs::{FINAL_BOSSES, MINI_BOSSES};
 use lairs::{FarthestFromTheThrone, ThroneHall};
@@ -85,100 +87,66 @@ pub fn floor_of(map: MapId) -> Option<u32> {
     (1..=FLOORS).contains(&map.0).then_some(map.0)
 }
 
-/// The band a floor belongs to, which decides how it is built, what it is
-/// built of and what lights it.
+/// Which of today's six chains grows a floor: fixed by the floor number,
+/// same as the design's own bands, and unchanged by [`biomes`] drawing a
+/// floor's look from more than one biome within it. Every biome of a band
+/// maps to the same family, so which chain runs never depends on which
+/// biome a seed drew, only on the floor.
 ///
-/// A closed list, since the bands are the game's own and nothing outside
-/// it adds one. Each band draws one biome in this part; the others the
-/// design names for it are a later part's.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Biome {
-    /// Floors one and two: ruined masonry, rooms behind doors, rubble, and
-    /// braziers left burning in a few of the rooms.
+/// This is the interim the dungeon task's controller asked for: task 10
+/// replaces every arm with the drawn biome's own recipe, grown by
+/// `Accrete`; until then, the closest of today's six chains runs, carrying
+/// the drawn biome's wall and floor rather than a family's own fixed
+/// ones.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Family {
+    /// Floors one and two: rooms behind doors.
     UpperHalls,
-    /// Floors three and four: caves of moss, lit by clumps of glowcaps.
+    /// Floors three and four: caves grown by cellular automata.
     FungalDeeps,
-    /// Floors five and six: crypts and ossuaries, bones, and the candles
-    /// kept for the dead.
+    /// Floors five and six: a partition of crypts.
     Catacombs,
-    /// Floors seven and eight: marble halls with the lake standing in them,
-    /// deep in the middle and shallow at the edge, and shafts of pale
-    /// light coming down through the water.
+    /// Floors seven and eight: halls with a lake standing in them.
     DrownedCathedral,
-    /// Floor nine: caves of ash round pools of lava, lit by nothing else.
+    /// Floor nine: caves with pools of lava.
     ForgeOfEmbers,
     /// Floor ten: rooms, and the throne's hall at one end of them.
     Throne,
 }
 
-impl Biome {
-    /// Every biome, shallowest first.
-    pub const ALL: [Biome; 6] = [Biome::UpperHalls, Biome::FungalDeeps, Biome::Catacombs, Biome::DrownedCathedral, Biome::ForgeOfEmbers, Biome::Throne];
-
-    /// The biome of floor `floor`: one and two the halls, three and four the
-    /// deeps, five and six the catacombs, seven and eight the cathedral,
-    /// nine the forge and ten the throne. A number past either end reads as
-    /// the nearer end, which no map id reaches.
-    pub fn of(floor: u32) -> Biome {
+impl Family {
+    /// The family that grows floor `floor`.
+    fn of(floor: u32) -> Family {
         match floor {
-            ..=2 => Biome::UpperHalls,
-            3 | 4 => Biome::FungalDeeps,
-            5 | 6 => Biome::Catacombs,
-            7 | 8 => Biome::DrownedCathedral,
-            9 => Biome::ForgeOfEmbers,
-            _ => Biome::Throne,
+            ..=2 => Family::UpperHalls,
+            3 | 4 => Family::FungalDeeps,
+            5 | 6 => Family::Catacombs,
+            7 | 8 => Family::DrownedCathedral,
+            9 => Family::ForgeOfEmbers,
+            _ => Family::Throne,
         }
     }
 
-    /// What the log calls it on arrival.
-    pub fn name(self) -> &'static str {
+    /// Every tile a floor of this family may show beyond the drawn
+    /// biome's own wall and floor: a family's shared patches and
+    /// furnishings, and a mini-boss's lair tiles wherever its own range
+    /// reaches this family's floors, exactly as the fixed six biomes
+    /// listed before this task. A lair's own tiles are listed on every
+    /// family its boss's range reaches, including the family whose own
+    /// biome the lair's tiles used to double as, before a family could
+    /// draw more than one biome: the Widow's cave and moss stand on
+    /// floors 4 to 6, so `FungalDeeps` lists them too; the Choirmaster's
+    /// crypt nave stands on floors 5 to 7, so `Catacombs` lists it beside
+    /// `DrownedCathedral`; the Forgemaster's forge stands on floors 7 to
+    /// 9, so `ForgeOfEmbers` lists it beside `DrownedCathedral`. The
+    /// throne's own floor is read off [`Undermere::final_boss`] rather
+    /// than this, so it carries none.
+    #[cfg(test)]
+    fn shared_tiles(self) -> &'static [&'static str] {
         match self {
-            Biome::UpperHalls => "the Upper Halls",
-            Biome::FungalDeeps => "the Fungal Deeps",
-            Biome::Catacombs => "the Catacombs",
-            Biome::DrownedCathedral => "the Drowned Cathedral",
-            Biome::ForgeOfEmbers => "the Forge of Embers",
-            Biome::Throne => "the Throne",
-        }
-    }
-
-    /// Its wall tile, which a floor of it is filled with before anything
-    /// is carved.
-    pub fn wall(self) -> &'static str {
-        self.tiles()[0]
-    }
-
-    /// Its floor tile, what its rooms and caves are carved as.
-    pub fn floor(self) -> &'static str {
-        self.tiles()[1]
-    }
-
-    /// Every tile a floor of it is built of, its wall first and its floor
-    /// second, so a band is told apart at a glance and none borrows
-    /// another's. The doors the halls and the crypts hang are the one
-    /// thing two bands share.
-    ///
-    /// A mini-boss's lair carries its own tiles wherever its boss's
-    /// range takes them, never the host band's, so a band whose floors a
-    /// boss's own range reaches past its first lists that boss's lair
-    /// tiles too, beside its own: Grubnak's hall over the Fungal Deeps
-    /// and the Catacombs, the Widow's web over the same two, the
-    /// Choirmaster's nave over the Catacombs and the Drowned Cathedral,
-    /// the Abbess's chapel over the same two, and the Forgemaster's forge
-    /// over the Drowned Cathedral and the Forge of Embers.
-    ///
-    /// The floor ten boss, drawn from three, reads the same way:
-    /// the Throne lists its own tiles first, the Mother Below's cave
-    /// tiles next (the Fungal Deeps' own, and the Catacombs' bones) and
-    /// the Ember Wyrm's hall tiles last (the Forge of Embers' own), since
-    /// every one of the three may stand on this one floor.
-    pub fn tiles(self) -> &'static [&'static str] {
-        match self {
-            Biome::UpperHalls => &["hall wall", "hall floor", "rubble", "door", "open door"],
-            Biome::FungalDeeps => &["cave wall", "moss", "glowcaps", "goblin hall wall", "goblin hall floor", "web"],
-            Biome::Catacombs => &[
-                "crypt wall",
-                "crypt floor",
+            Family::UpperHalls => &["door", "open door", "rubble"],
+            Family::FungalDeeps => &["glowcaps", "goblin hall wall", "goblin hall floor", "web", "cave wall", "moss"],
+            Family::Catacombs => &[
                 "bones",
                 "door",
                 "open door",
@@ -189,12 +157,16 @@ impl Biome {
                 "web",
                 "cathedral wall",
                 "flooded floor",
+                "crypt wall",
+                "crypt floor",
             ],
-            Biome::DrownedCathedral => {
-                &["cathedral wall", "marble", "flooded floor", "deep water", "moonlit marble", "crypt wall", "crypt floor", "forge wall", "ash", "lava"]
-            }
-            Biome::ForgeOfEmbers => &["forge wall", "ash", "lava"],
-            Biome::Throne => &["throne wall", "throne floor", "dais", "black pool", "cave wall", "moss", "glowcaps", "bones", "forge wall", "ash", "lava"],
+            Family::DrownedCathedral => &["flooded floor", "deep water", "moonlit marble", "crypt wall", "crypt floor", "forge wall", "ash", "lava"],
+            Family::ForgeOfEmbers => &["lava", "forge wall", "ash"],
+            // Whichever of the three `FINAL_BOSSES` floor ten draws
+            // paints its own hall beyond its wall and its floor: the
+            // Drowned King's dais and black pool, the Mother Below's
+            // glowcaps and bones, the Ember Wyrm's lava.
+            Family::Throne => &["dais", "black pool", "cave wall", "moss", "glowcaps", "bones", "forge wall", "ash", "lava"],
         }
     }
 }
@@ -234,24 +206,45 @@ fn registry() -> TileRegistry {
             TileProps::wall("hall wall"),
             TileProps::floor("hall floor"),
             TileProps::floor("rubble"),
+            // The Cellars, floors one and two's other biome.
+            TileProps::wall("cellar wall"),
+            TileProps::floor("cellar floor"),
+            // The Watch Barracks, floors one and two's third biome.
+            TileProps::wall("barracks wall"),
+            TileProps::floor("barracks floor"),
             // The Fungal Deeps.
             TileProps::wall("cave wall"),
             TileProps::floor("moss"),
             TileProps::floor("glowcaps"),
+            // The Spider Warrens, floors three and four's other biome.
+            TileProps::wall("warren wall"),
+            TileProps::floor("warren floor"),
+            // The Old Mines, floors three and four's third biome.
+            TileProps::wall("mine wall"),
+            TileProps::floor("mine floor"),
             // The Catacombs.
             TileProps::wall("crypt wall"),
             TileProps::floor("crypt floor"),
             TileProps::floor("bones"),
+            // The Sunken Library, floors five and six's other biome.
+            TileProps::wall("library wall"),
+            TileProps::floor("library floor"),
             // The Drowned Cathedral.
             TileProps::wall("cathedral wall"),
             TileProps::floor("marble"),
             wading("flooded floor"),
             TileProps::named("deep water"),
             TileProps::floor("moonlit marble"),
+            // The Underlake, floors seven and eight's other biome.
+            TileProps::wall("underlake wall"),
+            TileProps::floor("underlake floor"),
             // The Forge of Embers.
             TileProps::wall("forge wall"),
             TileProps::floor("ash"),
             TileProps::named("lava"),
+            // The Ashen Galleries, floor nine's other biome.
+            TileProps::wall("cinder wall"),
+            TileProps::floor("cinder floor"),
             // The Throne.
             TileProps::wall("throne wall"),
             TileProps::floor("throne floor"),
@@ -269,23 +262,42 @@ fn registry() -> TileRegistry {
     tiles
 }
 
-/// Undermere's tiles, its pieces, and how each of its places is built.
+/// Undermere's tiles, its pieces, how each of its places is built, and
+/// every floor's own biome, drawn once here and handed out by
+/// [`biome_of`](Self::biome_of).
 pub struct Undermere {
     tiles: TileRegistry,
     prefabs: Prefabs<MonsterDef>,
     seed: RunSeed,
+    biomes: BTreeMap<u32, BiomeDraw>,
 }
 
 impl Undermere {
-    /// Registers every tile a place is built of and loads every piece
-    /// against them. The load reads the content registries and the bestiary
-    /// itself, the same ones the run inserts, which is what makes a piece's
-    /// prop and monster ids match the running game's.
+    /// Registers every tile a place is built of, loads every piece against
+    /// them, and draws every floor's biome. The load reads the content
+    /// registries and the bestiary itself, the same ones the run inserts,
+    /// which is what makes a piece's prop and monster ids match the
+    /// running game's.
     pub fn new(seed: RunSeed) -> Self {
         let tiles = registry();
         // After the tiles, which the pieces paint by name.
         let prefabs = crate::prefabs::load(&tiles);
-        Self { tiles, prefabs, seed }
+        let defs = biomes::load(&tiles);
+        let boss = lairs::draw_final_boss(seed);
+        let mut biomes = BTreeMap::new();
+        for floor in 1..FLOORS {
+            biomes.insert(floor, biomes::draw(&defs, floor, seed, &tiles));
+        }
+        biomes.insert(FLOORS, biomes::throne(&defs, boss.biome, &tiles));
+        Self { tiles, prefabs, seed, biomes }
+    }
+
+    /// The biome `floor` draws: pure over `self.seed`, so every call
+    /// agrees without the draw being kept anywhere but here, and the same
+    /// whichever floor is asked for first, since every floor's draw is
+    /// made once, in [`Undermere::new`], from the floor's own stream.
+    pub(crate) fn biome_of(&self, floor: u32) -> &BiomeDraw {
+        self.biomes.get(&floor).unwrap_or_else(|| panic!("floor {floor} outside 1..={FLOORS}"))
     }
 
     /// The registered tiles, for `WorldMap::new`.
@@ -351,21 +363,22 @@ impl Undermere {
     /// throne as the floor allows, and it has no way on. Everything in
     /// between is the biome's.
     fn floor(&self, floor: u32) -> Result<(BaseContext, Chain<BaseContext>), BuildError> {
-        let biome = Biome::of(floor);
+        let family = Family::of(floor);
+        let drawn = self.biome_of(floor);
         let t = |name: &str| self.tile(name);
         let (width, height) = FLOOR_SIZE;
         // Floor ten's own wall is whichever of the three [`FINAL_BOSSES`]
-        // this run draws, never `Biome::Throne`'s fixed one, so the whole
-        // floor is built of the drawn boss's own look and not only its
-        // piece.
-        let fill = if floor == FLOORS { t(self.final_boss().wall) } else { t(biome.wall()) };
+        // this run draws, never the drawn throne biome's own, so the
+        // whole floor is built of the drawn boss's own look and not only
+        // its piece.
+        let fill = if floor == FLOORS { t(self.final_boss().wall) } else { drawn.wall };
         let ctx = BaseContext::blank(width, height, self.tiles.clone(), fill);
         let start = RandomStart.clear_of_stamps(MIN_DISTANCE_FROM_ENTRY);
         // A chest or two on every floor but the throne's, where the run ends.
         let chests = Furnish { name: "chests", piece: self.prefabs.piece("chest")?, count: (1, 2) };
-        let chain = match biome {
-            Biome::UpperHalls => {
-                let hall = t("hall floor");
+        let chain = match family {
+            Family::UpperHalls => {
+                let hall = drawn.floor;
                 let chain = Chain::new()
                     .then(Rooms { floor: hall, attempts: 40, min_size: 5, max_size: 11, min_rooms: 5 })
                     .then(Doors { door: t("door") })
@@ -379,8 +392,8 @@ impl Undermere {
                 let chain = if floor == 1 { chain.then(GateBack { gate: t("gate") }) } else { chain };
                 chain.then(Underfoot)
             }
-            Biome::FungalDeeps => {
-                let (wall, moss) = (t("cave wall"), t("moss"));
+            Family::FungalDeeps => {
+                let (wall, moss) = (drawn.wall, drawn.floor);
                 let chain = Chain::new().then(CellularCave { wall, floor: moss, fill_pct: CAVE_FILL_PCT, ..Default::default() });
                 // Before `JoinCaves`, so the lair's own hall is just one
                 // more pocket for it to join to the rest of the cave; a
@@ -397,8 +410,8 @@ impl Undermere {
                     .then(chests)
                     .then(Underfoot)
             }
-            Biome::Catacombs => {
-                let crypt = t("crypt floor");
+            Family::Catacombs => {
+                let crypt = drawn.floor;
                 let chain = Chain::new().then(Bsp { floor: crypt, min_leaf: 9, padding: 1 }).then(Doors { door: t("door") });
                 // After the rooms and their doors, so the lair's own
                 // corridor can find one clear of its hall to join.
@@ -414,8 +427,8 @@ impl Undermere {
                     .then(chests)
                     .then(Underfoot)
             }
-            Biome::DrownedCathedral => {
-                let (marble, deep, flooded) = (t("marble"), t("deep water"), t("flooded floor"));
+            Family::DrownedCathedral => {
+                let (marble, deep, flooded) = (drawn.floor, t("deep water"), t("flooded floor"));
                 let chain = Chain::new().then(Rooms { floor: marble, attempts: 40, min_size: 6, max_size: 12, min_rooms: 4 }).then(Patches {
                     name: "pools",
                     tile: deep,
@@ -437,8 +450,8 @@ impl Undermere {
                     .then(chests)
                     .then(Underfoot)
             }
-            Biome::ForgeOfEmbers => {
-                let (wall, ash) = (t("forge wall"), t("ash"));
+            Family::ForgeOfEmbers => {
+                let (wall, ash) = (drawn.wall, drawn.floor);
                 let chain = Chain::new().then(CellularCave { wall, floor: ash, fill_pct: CAVE_FILL_PCT, ..Default::default() });
                 let chain = match self.lair_pass(floor, false)? {
                     Some(lair) => chain.then(lair),
@@ -456,7 +469,7 @@ impl Undermere {
             // piece and the floor tile are whichever of the three
             // `FINAL_BOSSES` this run draws; `ThroneHall` itself asks for
             // neither by name; see `FinalBoss`.
-            Biome::Throne => {
+            Family::Throne => {
                 let boss = self.final_boss();
                 let floor = t(boss.floor);
                 Chain::new()
@@ -1175,34 +1188,63 @@ mod tests {
     }
 
     #[test]
-    fn each_biome_draws_its_own_walls_and_floors() {
-        for (i, a) in Biome::ALL.iter().enumerate() {
-            for b in &Biome::ALL[i + 1..] {
-                let (theirs, ours) = ([a.wall(), a.floor()], [b.wall(), b.floor()]);
-                assert!(theirs.iter().all(|t| !ours.contains(t)), "{} and {} share a wall or a floor", a.name(), b.name());
-            }
-        }
+    fn each_floor_draws_its_own_wall_and_floor_and_shows_nothing_outside_its_family() {
         for s in 0..20 {
             let undermere = Undermere::new(RunSeed(s));
             for floor in 1..=FLOORS {
-                let biome = Biome::of(floor);
+                let drawn = undermere.biome_of(floor);
                 let built = undermere.build(map_of(floor), None).unwrap();
-                let drawn: BTreeSet<&str> = built.terrain.iter().map(|(_, t)| undermere.tiles().get(t).name.as_str()).collect();
+                let shown: BTreeSet<&str> = built.terrain.iter().map(|(_, t)| undermere.tiles().get(t).name.as_str()).collect();
                 // Floor ten's own wall and floor are whichever of the
-                // three `FINAL_BOSSES` this seed draws, never
-                // `Biome::Throne`'s fixed one, which is the Drowned King's
-                // own.
+                // three `FINAL_BOSSES` this seed draws, never the drawn
+                // throne biome's own, which stands beside the Drowned
+                // King's own as a schema the other two bosses share.
                 let (wall, floor_tile) = if floor == FLOORS {
                     let boss = undermere.final_boss();
                     (boss.wall, boss.floor)
                 } else {
-                    (biome.wall(), biome.floor())
+                    (undermere.tiles().get(drawn.wall).name.as_str(), undermere.tiles().get(drawn.floor).name.as_str())
                 };
-                assert!(drawn.contains(wall) && drawn.contains(floor_tile), "floor {floor}, seed {s}: {drawn:?}");
+                assert!(shown.contains(wall) && shown.contains(floor_tile), "floor {floor}, seed {s}: {shown:?}");
                 // The gate lets out on floor one: its other side.
-                let allowed: BTreeSet<&str> = biome.tiles().iter().copied().chain((floor == 1).then_some("gate")).collect();
-                let strays: Vec<&&str> = drawn.difference(&allowed).collect();
-                assert!(strays.is_empty(), "floor {floor}, seed {s}: {strays:?} on a floor of {}", biome.name());
+                let shared = Family::of(floor).shared_tiles();
+                let allowed: BTreeSet<&str> = shared.iter().copied().chain([wall, floor_tile]).chain((floor == 1).then_some("gate")).collect();
+                let strays: Vec<&&str> = shown.difference(&allowed).collect();
+                assert!(strays.is_empty(), "floor {floor}, seed {s}: {strays:?} on a floor of {}", drawn.name);
+            }
+        }
+    }
+
+    /// Every floor's drawn biome stands on a band that includes it: the
+    /// draw never hands a floor a biome from another band.
+    #[test]
+    fn each_floor_draws_a_biome_whose_band_includes_it() {
+        for s in 0..40 {
+            let undermere = Undermere::new(RunSeed(s));
+            let defs = biomes::load(undermere.tiles());
+            for floor in 1..=FLOORS {
+                let drawn = undermere.biome_of(floor);
+                let bare = drawn.name.trim_start_matches("the ");
+                let def = defs.get(defs.expect(bare));
+                assert!((def.floors.0..=def.floors.1).contains(&floor), "seed {s}, floor {floor}: {bare} stands on {:?}, not it", def.floors);
+            }
+        }
+    }
+
+    /// A run's biomes are a pure function of its seed: building floor five
+    /// before floor two, or the other way round, never changes what either
+    /// floor draws.
+    #[test]
+    fn the_biome_draw_is_the_same_whichever_floor_is_built_first() {
+        for s in 0..10 {
+            let a = Undermere::new(RunSeed(s));
+            a.build(map_of(5), None).unwrap();
+            a.build(map_of(2), None).unwrap();
+            let b = Undermere::new(RunSeed(s));
+            b.build(map_of(2), None).unwrap();
+            b.build(map_of(5), None).unwrap();
+            for floor in 1..=FLOORS {
+                assert_eq!(a.biome_of(floor).name, b.biome_of(floor).name, "seed {s}, floor {floor}");
             }
         }
     }
@@ -1258,18 +1300,9 @@ mod tests {
     fn every_biomes_walls_are_lighter_than_its_floors() {
         let undermere = Undermere::new(RunSeed(0));
         let look = undermere.appearance();
-        let glows = |name: &str| crate::light::GLOWING.iter().any(|(glowing, _)| *glowing == name);
-        // A tile that is itself some band's own wall, the mini-bosses' lairs
-        // listing a foreign one beside their floors, reads against that
-        // band's own floor elsewhere in this very loop and is never asked
-        // to read as a floor here, which two walls' colours were never
-        // chosen against each other to do. Every wall in this file is
-        // named for it, `"... wall"`, which is what this reads rather
-        // than a second list of them to keep in step with `tiles.ron`.
-        for biome in Biome::ALL {
-            for floor in biome.tiles().iter().filter(|t| **t != biome.wall() && !["door", "open door"].contains(*t) && !glows(t) && !t.ends_with("wall")) {
-                reads_against(&undermere, &look, biome.name(), biome.wall(), floor);
-            }
+        let defs = biomes::load(undermere.tiles());
+        for (_, def) in defs.iter() {
+            reads_against(&undermere, &look, &def.name, &def.wall, &def.floor);
         }
     }
 

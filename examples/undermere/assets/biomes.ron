@@ -1,0 +1,220 @@
+// Undermere's biomes: twelve drawn two or three to a band, and the three
+// throne floors drawn one to a boss. `dungeon::biomes` loads this against
+// the registered tiles; the bestiary resolves `favored` at population time,
+// the way `population::BANDS` resolves its own names, so a kind this file
+// misspells is a kind that is never favored rather than a load that fails.
+//
+// Every field:
+//   name:     unique; the draw, the log and task 10's recipes and pools
+//             name it by this, bare, "the " added only for the log
+//   floors:   (first, last), the floors it may be drawn on, both included;
+//             the three throne biomes are drawn one to a boss, never by
+//             weight, and still carry (10, 10) for the schema
+//   weight:   how often it is drawn against every other row of its band;
+//             only the ratio matters, and every row here is 1: the design
+//             draws a band's biomes equally
+//   wall:     a tile from `dungeon::registry`, what the floor is filled
+//             with before anything is carved
+//   floor:    a tile from `dungeon::registry`, what its rooms or caves are
+//             carved as
+//   ambient:  (intensity, (r, g, b)), `rl_grid::Light::new`'s own two
+//             arguments: how this floor reads before anything lights it
+//   recipes:  named layout plans task 10 draws between, each a name and a
+//             weight; not yet resolved against a layout file, since task
+//             10 writes it
+//   lakes:    optional; `rl_mapgen::lakes::Lakes`'s own fields, `tile` a
+//             name from `dungeon::registry` rather than a `TileId`; not yet
+//             run, since task 10 wires the pass in
+//   decor:    names from the design's flavor pool table that are this
+//             biome's own rather than any floor's; not yet resolved, since
+//             task 10 writes the pool file
+//   dressings: the subset of `decor` that fits any area rather than one
+//             fixed piece; not yet resolved, for the same reason
+//   favored:  names from `monsters.ron`; a name the bestiary does not
+//             carry is dropped rather than refused, as `population::BANDS`
+//             already tolerates for the same kind of name
+[
+    // Floors one and two.
+    (
+        name: "Upper Halls", floors: (1, 2), weight: 1,
+        wall: "hall wall", floor: "hall floor",
+        ambient: (26, (205, 190, 170)),
+        recipes: [(name: "great halls", weight: 1), (name: "wings", weight: 1), (name: "galleries", weight: 1)],
+        lakes: None,
+        decor: ["Feasting Hall", "Guard Room", "Steward's Audience"],
+        dressings: ["Feasting Hall", "Guard Room"],
+        favored: ["jackal"],
+    ),
+    (
+        name: "Cellars", floors: (1, 2), weight: 1,
+        wall: "cellar wall", floor: "cellar floor",
+        ambient: (24, (150, 130, 110)),
+        recipes: [(name: "storerooms", weight: 1), (name: "burrowed", weight: 1)],
+        lakes: None,
+        decor: ["Wine Cellar", "Root Cellar", "Coal Store"],
+        dressings: ["Wine Cellar", "Root Cellar"],
+        favored: ["rat"],
+    ),
+    (
+        name: "Watch Barracks", floors: (1, 2), weight: 1,
+        wall: "barracks wall", floor: "barracks floor",
+        ambient: (27, (190, 150, 90)),
+        recipes: [(name: "blocks", weight: 1), (name: "parade", weight: 1)],
+        lakes: None,
+        decor: ["Bunk Room", "Mess Hall", "Drill Yard"],
+        dressings: ["Bunk Room", "Mess Hall", "Drill Yard"],
+        favored: ["kobold"],
+    ),
+
+    // Floors three and four.
+    (
+        name: "Fungal Deeps", floors: (3, 4), weight: 1,
+        wall: "cave wall", floor: "moss",
+        ambient: (22, (90, 170, 150)),
+        recipes: [(name: "grottoes", weight: 1), (name: "band", weight: 1), (name: "knot", weight: 1)],
+        lakes: None,
+        decor: ["Glowcap Ring", "Puffball Grove", "Moss Garden"],
+        dressings: ["Puffball Grove", "Moss Garden"],
+        favored: ["myconid"],
+    ),
+    (
+        name: "Spider Warrens", floors: (3, 4), weight: 1,
+        wall: "warren wall", floor: "warren floor",
+        // Truly dark: the lantern is the only light, so nought rather
+        // than a dim colour of its own.
+        ambient: (0, (0, 0, 0)),
+        recipes: [(name: "warren", weight: 1), (name: "nest", weight: 1)],
+        lakes: None,
+        decor: ["Husk Gallery", "Silk Curtains", "Old Egg Cases"],
+        dressings: ["Husk Gallery", "Silk Curtains", "Old Egg Cases"],
+        favored: ["cave spider"],
+    ),
+    (
+        name: "Old Mines", floors: (3, 4), weight: 1,
+        wall: "mine wall", floor: "mine floor",
+        ambient: (20, (160, 140, 90)),
+        recipes: [(name: "workings", weight: 1), (name: "deep seam", weight: 1)],
+        lakes: None,
+        decor: ["Cart Track", "Shored Gallery", "Ore Seam"],
+        dressings: ["Shored Gallery", "Ore Seam"],
+        favored: ["goblin", "kobold"],
+    ),
+
+    // Floors five and six.
+    (
+        name: "Catacombs", floors: (5, 6), weight: 1,
+        wall: "crypt wall", floor: "crypt floor",
+        ambient: (19, (150, 160, 205)),
+        recipes: [(name: "grid", weight: 1), (name: "ossuaries", weight: 1)],
+        lakes: None,
+        decor: ["Ossuary Wall", "Tomb Row", "Embalmers' Room"],
+        dressings: ["Ossuary Wall", "Tomb Row"],
+        favored: ["skeleton"],
+    ),
+    (
+        name: "Sunken Library", floors: (5, 6), weight: 1,
+        wall: "library wall", floor: "library floor",
+        ambient: (18, (140, 110, 200)),
+        recipes: [(name: "stacks", weight: 1), (name: "atrium", weight: 1)],
+        lakes: Some((
+            name: "seeping pools", tile: "flooded floor",
+            count: (2, 3), size: (6, 16), wreath: None, cut: false,
+        )),
+        decor: ["Reading Room", "Fallen Stacks", "Orrery"],
+        dressings: ["Reading Room", "Fallen Stacks"],
+        favored: ["wraith", "will-o'-wisp"],
+    ),
+
+    // Floors seven and eight.
+    (
+        name: "Drowned Cathedral", floors: (7, 8), weight: 1,
+        wall: "cathedral wall", floor: "marble",
+        ambient: (17, (80, 115, 210)),
+        recipes: [(name: "nave", weight: 1), (name: "cloister", weight: 1)],
+        lakes: Some((
+            name: "nave lakes", tile: "deep water",
+            count: (2, 4), size: (20, 60), wreath: Some(("flooded floor", 70)), cut: false,
+        )),
+        decor: ["Choir Stalls", "Baptistery", "Fallen Bell"],
+        dressings: ["Choir Stalls"],
+        favored: ["ghoul"],
+    ),
+    (
+        name: "Underlake", floors: (7, 8), weight: 1,
+        wall: "underlake wall", floor: "underlake floor",
+        ambient: (16, (60, 150, 180)),
+        // Matches `Forge of Embers`' own floor: the engine's dim band
+        // starts at 16, so a deeper band than this would have nowhere
+        // left to sit but the special nought `Spider Warrens` keeps.
+        recipes: [(name: "shore", weight: 1), (name: "archipelago", weight: 1)],
+        lakes: Some((
+            name: "the underlake", tile: "deep water",
+            count: (1, 2), size: (80, 200), wreath: Some(("flooded floor", 60)), cut: true,
+        )),
+        decor: ["Stilt Hut", "Shell Midden"],
+        dressings: ["Shell Midden"],
+        favored: ["drowned thrall", "wight"],
+    ),
+
+    // Floor nine.
+    (
+        name: "Forge of Embers", floors: (9, 9), weight: 1,
+        wall: "forge wall", floor: "ash",
+        ambient: (16, (210, 80, 50)),
+        recipes: [(name: "smithies", weight: 1), (name: "smelter", weight: 1)],
+        lakes: Some((
+            name: "lava lakes", tile: "lava",
+            count: (3, 5), size: (10, 30), wreath: None, cut: false,
+        )),
+        decor: ["Smithy", "Slag Heaps"],
+        dressings: ["Smithy", "Slag Heaps"],
+        favored: ["salamander"],
+    ),
+    (
+        name: "Ashen Galleries", floors: (9, 9), weight: 1,
+        wall: "cinder wall", floor: "cinder floor",
+        ambient: (16, (200, 90, 40)),
+        recipes: [(name: "flows", weight: 1), (name: "vents", weight: 1)],
+        lakes: Some((
+            name: "lava pools", tile: "lava",
+            count: (5, 9), size: (4, 10), wreath: None, cut: false,
+        )),
+        decor: ["Obsidian Spires", "Cinder Drifts"],
+        dressings: ["Obsidian Spires", "Cinder Drifts"],
+        favored: ["fire imp"],
+    ),
+
+    // Floor ten: one throne biome per final boss, drawn with it rather
+    // than by weight, which stays 1 here only so the schema needs no
+    // second shape for these three.
+    (
+        name: "Drowned Throne", floors: (10, 10), weight: 1,
+        wall: "throne wall", floor: "throne floor",
+        ambient: (16, (90, 140, 160)),
+        recipes: [(name: "drowned throne", weight: 1)],
+        lakes: None,
+        decor: [],
+        dressings: [],
+        favored: [],
+    ),
+    (
+        name: "Brood Hollow", floors: (10, 10), weight: 1,
+        wall: "cave wall", floor: "moss",
+        ambient: (16, (120, 80, 90)),
+        recipes: [(name: "brood hollow", weight: 1)],
+        lakes: None,
+        decor: [],
+        dressings: [],
+        favored: [],
+    ),
+    (
+        name: "Wyrm's Hall", floors: (10, 10), weight: 1,
+        wall: "forge wall", floor: "ash",
+        ambient: (16, (200, 70, 30)),
+        recipes: [(name: "wyrm's hall", weight: 1)],
+        lakes: None,
+        decor: [],
+        dressings: [],
+        favored: [],
+    ),
+]

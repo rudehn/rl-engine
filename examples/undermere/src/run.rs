@@ -77,6 +77,10 @@ pub fn prepare(commands: &mut Commands, seed: &Seed, registries: &Registries) {
     // Standing in fire scorches, a point a turn for three turns.
     commands.insert_resource(FireRules::new().inflicts(registries.statuses.expect("scorched"), 3));
     commands.insert_resource(Fixtures::new(&undermere, registries));
+    // Every floor's drawn biome, read off `undermere` once: the engine
+    // boxes it behind `PlaceRules` below, so nothing after this can ask
+    // it directly.
+    commands.insert_resource(crate::light::BiomeDraws::new(&undermere));
     // The pieces the places are stamped from, shared with the engine that
     // fills their slots, so a stamp's key names the same piece in both.
     commands.insert_resource(undermere.prefabs().clone());

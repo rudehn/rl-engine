@@ -23,7 +23,8 @@
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 
-use crate::dungeon::{Biome, FLOORS, TOWN, floor_of, map_of};
+use crate::dungeon::{FLOORS, TOWN, floor_of, map_of};
+use crate::light::BiomeDraws;
 
 /// What stairs are drawn in: a pale stone, so a way on reads against every
 /// band's floor.
@@ -73,8 +74,10 @@ fn lay(commands: &mut Commands, way: Way, at: Point, map: MapId, to: Destination
 }
 
 /// What the log says on entering `map`, the town or a floor: where the
-/// adventurer is, and what the place is like.
-pub fn place_line(map: MapId) -> String {
+/// adventurer is, and what the place is like. `biome` is the drawn
+/// biome's own log name, [`BiomeDraws::of`]'s `name`, ignored for the
+/// town and required for a floor.
+pub fn place_line(map: MapId, biome: Option<&str>) -> String {
     let Some(floor) = floor_of(map) else {
         return "Mereholt, at dusk, on the shore of the black lake.".to_string();
     };
@@ -90,7 +93,8 @@ pub fn place_line(map: MapId) -> String {
         9 => "The air shimmers over pools of fire.",
         _ => "Something waits on the throne.",
     };
-    format!("Floor {floor}: {}. {mood}", Biome::of(floor).name())
+    let biome = biome.unwrap_or_else(|| panic!("floor {floor} names no drawn biome"));
+    format!("Floor {floor}: {biome}. {mood}")
 }
 
 /// Writes every cell of Mereholt into what the adventurer remembers, and
@@ -127,10 +131,12 @@ pub fn link_places(
     help: Res<ControlsKeys>,
     mut tell: MessageWriter<Tell>,
     map: Res<WorldMap>,
+    draws: Res<BiomeDraws>,
     mut knowledge: ResMut<Knowledge>,
 ) {
     for ev in entered.read() {
-        tell.write(Tell::new(place_line(ev.map), Tones::NOTICE));
+        let biome = floor_of(ev.map).map(|floor| draws.of(floor).name.as_str());
+        tell.write(Tell::new(place_line(ev.map, biome), Tones::NOTICE));
         if !ev.first {
             continue;
         }
@@ -310,7 +316,7 @@ mod tests {
         crate::testing::settle(&mut app);
         let lines: Vec<String> = app.world().resource::<MessageLog>().iter().map(|e| e.text.clone()).collect();
         let line = |text: &str| lines.iter().position(|l| l == text).unwrap_or_else(|| panic!("{text:?} not in {lines:#?}"));
-        assert!(line(&place_line(TOWN)) < line("Press ? for the controls."), "{lines:#?}");
+        assert!(line(&place_line(TOWN, None)) < line("Press ? for the controls."), "{lines:#?}");
     }
 
     /// The adventurer lives in Mereholt, so the first arrival there knows
@@ -352,9 +358,10 @@ mod tests {
         go_through(&mut app, me);
         go_through(&mut app, me);
         let lines: Vec<String> = app.world().resource::<MessageLog>().iter().map(|e| e.text.clone()).collect();
-        let (town, one) = (place_line(TOWN), place_line(map_of(1)));
+        let draws = app.world().resource::<BiomeDraws>().clone();
+        let (town, one) = (place_line(TOWN, None), place_line(map_of(1), Some(&draws.of(1).name)));
         let said: Vec<&String> = lines.iter().filter(|l| **l == town || **l == one).collect();
         assert_eq!(said, [&town, &one, &town], "{lines:#?}");
-        assert_eq!(place_line(map_of(3)), "Floor 3: the Fungal Deeps. Something glows in the dark.");
+        assert_eq!(place_line(map_of(3), Some("the Fungal Deeps")), "Floor 3: the Fungal Deeps. Something glows in the dark.");
     }
 }

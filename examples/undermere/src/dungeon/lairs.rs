@@ -120,6 +120,10 @@ pub(crate) struct FinalBoss {
     /// What floor ten's rooms and its own hall are carved as, when this
     /// one is drawn.
     pub(super) floor: &'static str,
+    /// The `assets/biomes.ron` entry that stands with this boss: `biomes`
+    /// reads this to draw floor ten's biome, rather than by weight, so
+    /// the two draws can never disagree.
+    pub(super) biome: &'static str,
 }
 
 /// The three, the content sheet's own order: the Drowned King's own
@@ -128,10 +132,20 @@ pub(crate) struct FinalBoss {
 /// reusing the Forge of Embers' own, so no new tile is spent on a look the
 /// floors above already have.
 pub(crate) const FINAL_BOSSES: [FinalBoss; 3] = [
-    FinalBoss { piece: "the throne", wall: "throne wall", floor: "throne floor" },
-    FinalBoss { piece: "the Mother Below", wall: "cave wall", floor: "moss" },
-    FinalBoss { piece: "the Ember Wyrm", wall: "forge wall", floor: "ash" },
+    FinalBoss { piece: "the throne", wall: "throne wall", floor: "throne floor", biome: "Drowned Throne" },
+    FinalBoss { piece: "the Mother Below", wall: "cave wall", floor: "moss", biome: "Brood Hollow" },
+    FinalBoss { piece: "the Ember Wyrm", wall: "forge wall", floor: "ash", biome: "Wyrm's Hall" },
 ];
+
+/// The one of [`FINAL_BOSSES`] a run of `seed` holds on floor ten: pure
+/// over `seed`, so every call agrees without the draw being kept
+/// anywhere. A free function, rather than only a method, so
+/// [`Undermere::new`] can draw it before `Undermere` itself exists, to
+/// draw floor ten's biome by the same roll.
+pub(super) fn draw_final_boss(seed: RunSeed) -> &'static FinalBoss {
+    let mut rng = seed.rng(SeedDomain::new(b"undermere.final_boss"), 0);
+    &FINAL_BOSSES[rng.random_range(0..FINAL_BOSSES.len())]
+}
 
 impl Undermere {
     /// The one of [`FINAL_BOSSES`] this run's floor ten holds: pure over
@@ -141,8 +155,7 @@ impl Undermere {
     /// keeps the boss it started with, since nothing but the seed ever
     /// decides it.
     pub(crate) fn final_boss(&self) -> &'static FinalBoss {
-        let mut rng = self.seed.rng(SeedDomain::new(b"undermere.final_boss"), 0);
-        &FINAL_BOSSES[rng.random_range(0..FINAL_BOSSES.len())]
+        draw_final_boss(self.seed)
     }
 }
 
@@ -150,8 +163,10 @@ impl Undermere {
 /// Its name is `monsters.ron`'s and its lair's own `assets/prefabs/`
 /// file's, its floors the span it may stand on, and its margin the tile
 /// its lair's hall is floored with outside the piece's own footprint,
-/// chosen to match the band most of its own floors fall in; only
-/// Grubnak's is new, since no band his own floors fall in is a hall.
+/// matching its own piece's look rather than whatever biome its floor
+/// draws: a lair is the one place in a family that always looks like
+/// itself, cave moss or crypt bone, however the floor round it reads;
+/// only Grubnak's is new, since no band his own floors fall in is a hall.
 pub(crate) struct MiniBoss {
     /// The name both `monsters.ron` and the prefab's `name:` field use.
     pub(crate) name: &'static str,

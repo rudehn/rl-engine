@@ -26,10 +26,12 @@ use rl_engine::rl_bevy::Spot;
 use rl_engine::rl_rules::prefab::Slot;
 use rl_engine::rl_rules::prop::PropId;
 
+use std::collections::BTreeMap;
+
 use crate::armory::{Armory, ItemKind};
 use crate::bestiary::MonsterDef;
 use crate::content::LightDef;
-use crate::dungeon::{Biome, TOWN, Undermere, floor_of};
+use crate::dungeon::{FLOORS, TOWN, Undermere, floor_of};
 use crate::run::Adventurer;
 
 /// A lamp post's lantern: warm, and far enough to light the street round
@@ -81,31 +83,47 @@ pub fn lantern_radius(floor: Option<u32>) -> i32 {
     7 - dimmed as i32
 }
 
+/// This run's biome for every floor, kept in a shape every system can
+/// hold: the engine boxes `Undermere` behind `PlaceRules` the moment a run
+/// begins, so nothing after that can ask it directly, and a system that
+/// reads this every pass, [`set_ambient`], must not rebuild it to ask
+/// either. Built once, by [`BiomeDraws::new`], off [`Undermere::biome_of`],
+/// which is pure over the seed, so this is too.
+#[derive(Resource, Clone, Debug)]
+pub struct BiomeDraws(BTreeMap<u32, crate::dungeon::BiomeDraw>);
+
+impl BiomeDraws {
+    /// Every floor's draw, read off `undermere` once.
+    pub fn new(undermere: &Undermere) -> Self {
+        Self((1..=FLOORS).map(|f| (f, undermere.biome_of(f).clone())).collect())
+    }
+
+    /// Floor `floor`'s draw: `pub(crate)`, since what it hands back,
+    /// [`BiomeDraw`](crate::dungeon::BiomeDraw), is itself `pub(crate)` and
+    /// every caller is in this crate.
+    pub(crate) fn of(&self, floor: u32) -> &crate::dungeon::BiomeDraw {
+        self.0.get(&floor).unwrap_or_else(|| panic!("floor {floor} outside 1..={FLOORS}"))
+    }
+}
+
 /// The light everywhere in `map` before anything in it is lit: in every
 /// place, the engine's dim band, above the least a cell needs to be seen
 /// and below the bright band.
 ///
-/// Mereholt is at dusk, blue and low; the Upper Halls keep a warm grey;
-/// and each band below is a little darker than the one above, in a colour
-/// of its own, down to the throne's, the darkest. Seen at all, so a
-/// floor's shape reads beyond the lantern in deep, dark colour and is
-/// remembered where it was seen, as Brogue keeps it; and no brighter than
-/// dim, so a body out there with no light of its own is harder to pick
-/// out than one in a lamp's light, and the lantern's pool stands out warm
-/// and bright. Any other map is dark.
-pub fn ambient_of(map: MapId) -> Light {
+/// Mereholt is at dusk, blue and low; every floor below is its own drawn
+/// biome's own ambient, from `assets/biomes.ron`, darker the deeper a
+/// band stands, down to the throne's, among the darkest; the Spider
+/// Warrens' alone is nought, truly dark, so the lantern is the only
+/// light. Seen at all otherwise, so a floor's shape reads beyond the
+/// lantern in deep, dark colour and is remembered where it was seen, as
+/// Brogue keeps it; and no brighter than dim, so a body out there with no
+/// light of its own is harder to pick out than one in a lamp's light, and
+/// the lantern's pool stands out warm and bright. Any other map is dark.
+pub fn ambient_of(draws: &BiomeDraws, map: MapId) -> Light {
     if map == TOWN {
         return Light::new(30, Rgb::new(120, 140, 215));
     }
-    match floor_of(map).map(Biome::of) {
-        Some(Biome::UpperHalls) => Light::new(26, Rgb::new(205, 190, 170)),
-        Some(Biome::FungalDeeps) => Light::new(23, Rgb::new(90, 170, 150)),
-        Some(Biome::Catacombs) => Light::new(21, Rgb::new(150, 160, 205)),
-        Some(Biome::DrownedCathedral) => Light::new(20, Rgb::new(80, 115, 210)),
-        Some(Biome::ForgeOfEmbers) => Light::new(18, Rgb::new(210, 80, 50)),
-        Some(Biome::Throne) => Light::new(17, Rgb::new(90, 140, 160)),
-        None => Light::DARK,
-    }
+    floor_of(map).map_or(Light::DARK, |floor| draws.of(floor).ambient)
 }
 
 /// The adventurer as the lantern reads them: what they carry, where, the
@@ -158,8 +176,8 @@ pub fn dim_the_lantern(
 /// Sets the current place's ambient, between the turns and the light, so
 /// the frame the stairs land on is drawn in the new place's light rather
 /// than the old one's.
-pub fn set_ambient(map: Res<WorldMap>, mut lighting: ResMut<Lighting>) {
-    let ambient = ambient_of(map.current());
+pub fn set_ambient(map: Res<WorldMap>, draws: Res<BiomeDraws>, mut lighting: ResMut<Lighting>) {
+    let ambient = ambient_of(&draws, map.current());
     if lighting.ambient != ambient {
         lighting.ambient = ambient;
     }
@@ -208,7 +226,7 @@ impl Fixtures {
     /// spots were stamped, so the fixtures of a place are spawned in one
     /// order every run.
     pub fn of(&self, terrain: &Terrain, spots: &[Spot], map: MapId) -> Vec<(Point, LightSource)> {
-        let brazier = if floor_of(map).map(Biome::of) == Some(Biome::Throne) { COLD_BRAZIER } else { BRAZIER };
+        let brazier = if floor_of(map) == Some(FLOORS) { COLD_BRAZIER } else { BRAZIER };
         let glowing = terrain.iter().filter_map(|(p, t)| self.tiles.iter().find(|(tile, _)| *tile == t).map(|(_, light)| (p, light.source())));
         let lit = spots.iter().filter_map(|spot| {
             let slot = spot.prefab.zip(char::from_u32(spot.tag)).and_then(|(key, glyph)| self.prefabs.slot(key, glyph));
@@ -267,7 +285,7 @@ mod tests {
     use rl_engine::rl_rules::prefab::Slot;
 
     use super::*;
-    use crate::dungeon::{Biome, FLOORS, TOWN, map_of};
+    use crate::dungeon::{FLOORS, TOWN, map_of};
 
     #[test]
     fn the_lantern_dims_by_a_tile_every_third_floor() {
@@ -280,36 +298,79 @@ mod tests {
     /// lines the game plays by: above the least a cell needs to be seen,
     /// so a floor's shape reads beyond the lantern and is remembered where
     /// it was seen, and below the bright band, so a body outside every
-    /// light is dim to whoever watches, never lit. The dark deepens band by
-    /// band down to the throne's, and each band and the town have an
-    /// ambient of their own.
+    /// light is dim to whoever watches, never lit; the Spider Warrens'
+    /// alone is truly dark, by the design's own exception. No band ever
+    /// reads brighter than the one above it, and each band and the town
+    /// have an ambient of their own.
     #[test]
-    fn every_biomes_ambient_falls_in_the_dim_band_and_deepens_with_depth() {
-        let mut app = crate::testing::headless(RunSeed(0));
-        crate::testing::settle(&mut app);
-        let lighting = app.world().resource::<Lighting>();
-        let band = |light: Light| LightBand::of(light.intensity, lighting.threshold, lighting.bright);
-        assert_eq!(band(ambient_of(TOWN)), LightBand::Dim, "Mereholt at dusk");
-        let mut bands: Vec<Light> = Vec::new();
-        for biome in Biome::ALL {
-            let ambient = ambient_of(map_of((1..=FLOORS).find(|f| Biome::of(*f) == biome).expect("a floor of every band")));
-            assert_eq!(band(ambient), LightBand::Dim, "{}: {ambient:?}", biome.name());
-            bands.push(ambient);
+    fn every_biomes_ambient_falls_in_the_dim_band_but_the_spider_warrens_own_truly_dark_and_no_band_reads_brighter_than_the_one_above_it() {
+        let (threshold, bright, town_ambient) = {
+            let mut app = crate::testing::headless(RunSeed(0));
+            crate::testing::settle(&mut app);
+            let lighting = app.world().resource::<Lighting>();
+            (lighting.threshold, lighting.bright, lighting.ambient)
+        };
+        let band = |light: Light| LightBand::of(light.intensity, threshold, bright);
+        let draws = BiomeDraws::new(&Undermere::new(RunSeed(0)));
+        assert_eq!(band(ambient_of(&draws, TOWN)), LightBand::Dim, "Mereholt at dusk");
+
+        // Every one of the nine floors' biomes, over a span of seeds, by
+        // the band its own floors fall in: (1, 2), (3, 4), (5, 6), (7, 8)
+        // or (9, 9), so a band's biomes never read brighter than the
+        // band above it, whichever of them a seed draws.
+        let mut by_band: std::collections::BTreeMap<(u32, u32), Vec<Light>> = std::collections::BTreeMap::new();
+        for s in 0..60u64 {
+            let undermere = Undermere::new(RunSeed(s));
+            for floor in 1..FLOORS {
+                let drawn = undermere.biome_of(floor);
+                let key = match floor {
+                    1 | 2 => (1, 2),
+                    3 | 4 => (3, 4),
+                    5 | 6 => (5, 6),
+                    7 | 8 => (7, 8),
+                    _ => (9, 9),
+                };
+                let seen = by_band.entry(key).or_default();
+                if !seen.contains(&drawn.ambient) {
+                    seen.push(drawn.ambient);
+                }
+            }
         }
-        assert!(bands.windows(2).all(|pair| pair[0].intensity > pair[1].intensity), "the dark deepens band by band: {bands:?}");
-        bands.push(ambient_of(TOWN));
-        let distinct: BTreeSet<(u8, u8, u8, u8)> = bands.iter().map(|l| (l.intensity, l.color.r, l.color.g, l.color.b)).collect();
-        assert_eq!(distinct.len(), bands.len(), "each band and the town have their own ambient");
+        let bands: Vec<((u32, u32), Vec<Light>)> = by_band.into_iter().collect();
+        let mut distinct: BTreeSet<(u8, u8, u8, u8)> = BTreeSet::new();
+        let mut darkest_above: Option<u8> = None;
+        for (key, lights) in &bands {
+            for light in lights {
+                // The Spider Warrens read true dark; every other biome
+                // reads dim, by design.
+                let expected = if key == &(3, 4) && *light == Light::DARK { LightBand::Dark } else { LightBand::Dim };
+                assert_eq!(band(*light), expected, "{key:?}: {light:?}");
+                distinct.insert((light.intensity, light.color.r, light.color.g, light.color.b));
+            }
+            if let Some(darkest) = darkest_above {
+                let brightest = lights.iter().map(|l| l.intensity).max().expect("a band with no biome");
+                assert!(brightest <= darkest, "{key:?} reads brighter than the band above it: {lights:?}");
+            }
+            // The Spider Warrens' own nought is excluded: it reads truly
+            // dark by its own rule, not by standing deeper than every
+            // other biome, so it sets no bound on the band below it.
+            darkest_above = Some(lights.iter().filter(|l| **l != Light::DARK).map(|l| l.intensity).min().unwrap_or(u8::MAX));
+        }
+        distinct.insert((town_ambient.intensity, town_ambient.color.r, town_ambient.color.g, town_ambient.color.b));
+        let total: usize = bands.iter().map(|(_, l)| l.len()).sum::<usize>() + 1;
+        assert_eq!(distinct.len(), total, "each biome and the town have their own ambient: {bands:?}");
     }
 
     /// On every floor, whatever the adventurer has a line to beyond every
     /// light is seen, and seen dimly: the floor's shape reads past the
     /// lantern's pool, and a body standing out there with no light of its
     /// own is in the dim band, which stealth reads as harder to pick out
-    /// than the lit one. Over two seeds, every band has such cells in sight
-    /// on one of its floors' arrivals.
+    /// than the lit one. The Spider Warrens are the one exception: truly
+    /// dark, so nothing beyond the lantern there is seen at all. Over two
+    /// seeds, every band has such cells in sight on one of its floors'
+    /// arrivals.
     #[test]
-    fn beyond_every_light_a_floor_is_seen_dimly() {
+    fn beyond_every_light_a_floor_is_seen_dimly_but_the_spider_warrens_truly_dark() {
         let mut checked = BTreeSet::new();
         for s in 0..2 {
             let mut app = crate::testing::headless(RunSeed(s));
@@ -317,6 +378,7 @@ mod tests {
             crate::testing::sturdy(&mut app, me);
             for floor in 1..=FLOORS {
                 crate::testing::arrive(&mut app, map_of(floor));
+                let truly_dark = floor_of(map_of(floor)).is_some_and(|f| app.world().resource::<BiomeDraws>().of(f).name == "the Spider Warrens");
                 let world = app.world_mut();
                 // Every light on the floor: what stands or lies with one, and
                 // what anyone carries, the adventurer's lantern among them,
@@ -331,16 +393,27 @@ mod tests {
                 let (sight, lighting) = (world.get::<Viewshed>(me).expect("eyes"), world.resource::<Lighting>());
                 let unlit = |p: &Point| lights.iter().all(|(light, radius)| geometry::chebyshev(*p, *light) > *radius);
                 let beyond: Vec<Point> = sight.line.iter().map(|p| p + sight.origin).filter(unlit).collect();
-                let unseen: Vec<&Point> = beyond.iter().filter(|p| !sight.can_see(**p)).collect();
-                assert!(unseen.is_empty(), "seed {s}, floor {floor}: in sight beyond every light, yet unseen: {unseen:?}");
-                let bright: Vec<(Point, LightBand)> = beyond.iter().map(|p| (*p, lighting.band(*p))).filter(|(_, band)| *band != LightBand::Dim).collect();
-                assert!(bright.is_empty(), "seed {s}, floor {floor}: beyond every light is dim, not {bright:?}");
+                if truly_dark {
+                    let seen: Vec<&Point> = beyond.iter().filter(|p| sight.can_see(**p)).collect();
+                    assert!(seen.is_empty(), "seed {s}, floor {floor}: the Spider Warrens show something beyond every light: {seen:?}");
+                } else {
+                    let unseen: Vec<&Point> = beyond.iter().filter(|p| !sight.can_see(**p)).collect();
+                    assert!(unseen.is_empty(), "seed {s}, floor {floor}: in sight beyond every light, yet unseen: {unseen:?}");
+                    let bright: Vec<(Point, LightBand)> = beyond.iter().map(|p| (*p, lighting.band(*p))).filter(|(_, band)| *band != LightBand::Dim).collect();
+                    assert!(bright.is_empty(), "seed {s}, floor {floor}: beyond every light is dim, not {bright:?}");
+                }
                 if !beyond.is_empty() {
-                    checked.insert(Biome::of(floor));
+                    checked.insert(match floor {
+                        1 | 2 => (1, 2),
+                        3 | 4 => (3, 4),
+                        5 | 6 => (5, 6),
+                        7 | 8 => (7, 8),
+                        _ => (9, FLOORS),
+                    });
                 }
             }
         }
-        assert_eq!(checked.len(), Biome::ALL.len(), "every band had something in sight beyond its lights: {checked:?}");
+        assert_eq!(checked.len(), 5, "every band had something in sight beyond its lights: {checked:?}");
     }
 
     /// Everything that glows in a place has its light and nothing else
@@ -484,8 +557,9 @@ mod tests {
     fn each_place_is_drawn_in_its_own_ambient() {
         let mut app = crate::testing::headless(RunSeed(3));
         crate::testing::arrive(&mut app, TOWN);
-        assert_eq!(app.world().resource::<Lighting>().ambient, ambient_of(TOWN));
+        let draws = app.world().resource::<BiomeDraws>().clone();
+        assert_eq!(app.world().resource::<Lighting>().ambient, ambient_of(&draws, TOWN));
         crate::testing::arrive(&mut app, map_of(5));
-        assert_eq!(app.world().resource::<Lighting>().ambient, ambient_of(map_of(5)));
+        assert_eq!(app.world().resource::<Lighting>().ambient, ambient_of(&draws, map_of(5)));
     }
 }

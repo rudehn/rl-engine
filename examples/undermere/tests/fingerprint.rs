@@ -230,8 +230,9 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [3_980_971_438_599_573_768, 13_862_721_143_101_052_644, 4_494_584_218_363_696_789],
-        "fingerprint tripwire: re-baselined for the monsters part's final review (a jelly splits only on a blow and \
-         only with four health left, and the ogre, the troll and the vampire bat sleep deeply)"
+        [2_860_039_877_341_420_817, 4_757_673_516_979_391_303, 11_713_115_826_838_814_096],
+        "fingerprint tripwire: re-baselined for task 9, biomes as data (a floor one to nine now draws one of two or \
+         three biomes by seed, each its own wall, floor and ambient, in place of one fixed biome a band, so the \
+         script's own floors read and light differently)"
     );
 }

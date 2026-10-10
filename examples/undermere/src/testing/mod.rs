@@ -18,7 +18,7 @@ use rl_engine::rl_core::RunSeed;
 
 use crate::armory::Armory;
 use crate::bestiary::Bestiary;
-use crate::dungeon::{Biome, floor_of};
+use crate::dungeon::floor_of;
 use crate::run::Adventurer;
 
 /// A run with no window, seeded, begun on the first update.
@@ -155,9 +155,14 @@ pub fn clear_floor(app: &mut App) {
 /// Paints `cells` of the place being read with its own floor, so a test
 /// has open ground there whatever the place built.
 pub fn lay_floor(app: &mut App, cells: &[Point]) {
-    let name = floor_of(here(app)).map_or("cobbles", |floor| Biome::of(floor).floor());
+    let floor = match floor_of(here(app)) {
+        Some(f) => app.world().resource::<crate::light::BiomeDraws>().of(f).floor,
+        None => {
+            let names = &app.world().resource::<WorldMap>().tables().names;
+            TileId(names.iter().position(|n| n == "cobbles").expect("cobbles is a tile") as u16)
+        }
+    };
     let mut map = app.world_mut().resource_mut::<WorldMap>();
-    let floor = TileId(map.tables().names.iter().position(|n| n == name).expect("the place's floor is a tile") as u16);
     for p in cells {
         map.set_tile(*p, floor);
     }

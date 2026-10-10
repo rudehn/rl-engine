@@ -22,7 +22,60 @@ use rl_engine::rl_core::Rect;
 
 use crate::bestiary::{Bestiary, Kind, MonsterDef, spawn_monster};
 use crate::dungeon::{FLOORS, MIN_DISTANCE_FROM_ENTRY, floor_of};
+use crate::light::BiomeDraws;
 use crate::stairs::Way;
+
+/// How much more often a floor's own biome favors one of its kinds: three
+/// times its plain weight in [`Bestiary::spawns`], the design's own
+/// multiplier (`docs/superpowers/specs/2026-10-08-undermere-dungeon-design.md`,
+/// "The floors"). [`plan`]'s `favor` boosts a row by exactly this and
+/// changes nothing else, so a row's base weight against the rest of its
+/// band still decides everything `favor` leaves alone.
+pub const FAVORED_WEIGHT: u32 = 3;
+
+/// What [`plan`] draws a group's kind from: `table` at `band`, with
+/// `favor`'s kinds drawn [`FAVORED_WEIGHT`] times as often. Bundled so
+/// `plan` keeps one argument fewer than clippy's plain-function limit,
+/// rather than carrying `table`, `band` and `favor` as three of its own;
+/// the agent guide's "a system with sixteen parameters is a system to
+/// split" is about an ECS system, which this is not.
+pub struct Spawns<'a> {
+    /// The table a group's kind is drawn from.
+    pub table: &'a BandedTable<Id<MonsterDef>>,
+    /// The band drawn at.
+    pub band: i32,
+    /// The floor's own drawn biome's kinds, [`FAVORED_WEIGHT`] times as
+    /// likely to be the one a draw returns; empty for a caller with no
+    /// biome of its own to favor by. A name that cannot resolve to an id
+    /// is never in it, the same tolerance `population::BANDS`'s own names
+    /// already have, so a typo in `assets/biomes.ron` loses a biome's own
+    /// flavor rather than the run.
+    pub favor: &'a [Id<MonsterDef>],
+}
+
+/// [`BandedTable::pick_group`], but every row whose item `spawns.favor`
+/// lists draws at [`FAVORED_WEIGHT`] times its plain weight.
+fn pick_group_favoring(spawns: &Spawns, rng: &mut impl Rng) -> Option<(Id<MonsterDef>, u32)> {
+    let weight_of = |e: &BandedEntry<Id<MonsterDef>>| {
+        let w = u64::from(e.weight);
+        if spawns.favor.contains(&e.item) { w * u64::from(FAVORED_WEIGHT) } else { w }
+    };
+    let rows: Vec<&BandedEntry<Id<MonsterDef>>> = spawns.table.at(spawns.band).collect();
+    let total: u64 = rows.iter().copied().map(weight_of).sum();
+    if total == 0 {
+        return None;
+    }
+    let mut roll = rng.random_range(0..total);
+    for e in rows {
+        let w = weight_of(e);
+        if w > roll {
+            let n = if e.max_group > e.min_group { rng.random_range(e.min_group..=e.max_group) } else { e.min_group };
+            return Some((e.item, n));
+        }
+        roll -= w;
+    }
+    None
+}
 
 /// Groups every floor draws before its depth adds any: three, and one more
 /// for each floor down, so floor one holds four groups and floor nine
@@ -76,9 +129,9 @@ pub fn groups_on(floor: u32) -> u32 {
     if floor == FLOORS { THRONE_GROUPS } else { BASE_GROUPS + floor }
 }
 
-/// Plans a floor's population: up to `target` groups drawn from `table` at
-/// `band`, each as many of its kind as the table's group rolls, stood
-/// round an anchor drawn from the cells one could stand on.
+/// Plans a floor's population: up to `target` groups drawn from `spawns`,
+/// each as many of its kind as the table's group rolls, stood round an
+/// anchor drawn from the cells one could stand on.
 ///
 /// A monster stands only inside `bounds`, where `free` allows, at least
 /// [`MIN_DISTANCE_FROM_ENTRY`] from `entry`, and never where another of
@@ -88,15 +141,7 @@ pub fn groups_on(floor: u32) -> u32 {
 /// so on ground that is nearly all taken this comes in under `target`,
 /// never over it. Each group comes back as its own list, so a caller can
 /// tell how many groups landed and not only how many monsters.
-pub fn plan(
-    table: &BandedTable<Id<MonsterDef>>,
-    band: i32,
-    bounds: Rect,
-    entry: Point,
-    target: u32,
-    free: &mut impl FnMut(Point) -> bool,
-    rng: &mut impl Rng,
-) -> Groups {
+pub fn plan(spawns: Spawns, bounds: Rect, entry: Point, target: u32, free: &mut impl FnMut(Point) -> bool, rng: &mut impl Rng) -> Groups {
     // Every cell one could stand on, kept sorted, so whether a cell is still
     // open is a search, and a cell taken is gone for every later group.
     let mut open: Vec<Point> = bounds.cells().filter(|p| geometry::chebyshev(*p, entry) >= MIN_DISTANCE_FROM_ENTRY && free(*p)).collect();
@@ -106,8 +151,7 @@ pub fn plan(
         if groups.len() as u32 >= target || open.is_empty() {
             break;
         }
-        let Some((id, count)) = table.pick_group(band, rng) else { break };
-        let id = *id;
+        let Some((id, count)) = pick_group_favoring(&spawns, rng) else { break };
         let anchor = open[rng.random_range(0..open.len())];
         let mut group = Vec::new();
         for p in geometry::square(anchor, GROUP_SPREAD) {
@@ -133,6 +177,9 @@ pub struct Stock<'w, 's> {
     map: Res<'w, WorldMap>,
     seed: Res<'w, Seed>,
     registries: Res<'w, Registries>,
+    /// Every floor's drawn biome, for the favored kinds its own floors
+    /// draw three times as often.
+    draws: Res<'w, BiomeDraws>,
     /// Every way on every map, read once a floor so a group never stands
     /// on the stairs it leads to or from: the entry is already kept clear
     /// by its own distance, but nothing else kept a monster off the down
@@ -464,7 +511,7 @@ fn camp_fire_cell(cells: &[Point], free: &mut impl FnMut(Point) -> bool, open: i
 /// from `undermere.population.plan`, each of the floor alone too, so a
 /// roll added to one of the three never moves what the other two stand.
 pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, stock: Stock) {
-    let Stock { bestiary, map, seed, registries, ways, turns, verbs, posted } = &stock;
+    let Stock { bestiary, map, seed, registries, draws, ways, turns, verbs, posted } = &stock;
     for ev in entered.read().filter(|ev| ev.first) {
         let (Some(floor), Some(place)) = (floor_of(ev.map), map.place(ev.map)) else { continue };
         let mut rng = seed.stream(b"undermere.population", u64::from(floor));
@@ -553,7 +600,15 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
         // floor with its scenes and every group as well was a floor more
         // crowded than its depth, the soak's first read of part 3 dying
         // on floors three to five three runs in five.
-        let groups = plan(&bestiary.spawns, floor as i32, bounds, ev.entry, groups_on(floor).saturating_sub(scenes), &mut free, &mut plan_rng);
+        let favored: Vec<Id<MonsterDef>> = draws.of(floor).favored.iter().filter_map(|name| bestiary.defs.id(name)).collect();
+        let groups = plan(
+            Spawns { table: &bestiary.spawns, band: floor as i32, favor: &favored },
+            bounds,
+            ev.entry,
+            groups_on(floor).saturating_sub(scenes),
+            &mut free,
+            &mut plan_rng,
+        );
         // Who of them sleeps draws from the same stream, after `plan` has
         // drawn all it will, so it moves with nothing but the groups.
         for (id, at) in groups.into_iter().flatten() {
@@ -674,7 +729,7 @@ mod tests {
         for floor in 1..=FLOORS {
             for s in 0..20 {
                 let mut rng = rand::rngs::StdRng::seed_from_u64(s);
-                let groups = plan(&bestiary.spawns, floor as i32, bounds, entry, groups_on(floor), &mut |_| true, &mut rng);
+                let groups = plan(Spawns { table: &bestiary.spawns, band: floor as i32, favor: &[] }, bounds, entry, groups_on(floor), &mut |_| true, &mut rng);
                 assert_eq!(groups.len() as u32, groups_on(floor), "floor {floor}, seed {s}");
                 assert!(groups.iter().all(|g| !g.is_empty()), "floor {floor}, seed {s}: an empty group");
             }
@@ -694,7 +749,7 @@ mod tests {
         let mut kinds: Vec<Id<MonsterDef>> = Vec::new();
         for s in 0..40 {
             let mut rng = rand::rngs::StdRng::seed_from_u64(s);
-            let groups = plan(&bestiary.spawns, FLOORS as i32, bounds, entry, groups_on(FLOORS), &mut |_| true, &mut rng);
+            let groups = plan(Spawns { table: &bestiary.spawns, band: FLOORS as i32, favor: &[] }, bounds, entry, groups_on(FLOORS), &mut |_| true, &mut rng);
             assert!(!groups.is_empty() && groups.len() <= 3, "seed {s}: {} groups", groups.len());
             for (id, _) in groups.iter().flatten() {
                 assert!(*id != court, "seed {s}: a knight of the court out on the floor");
@@ -715,7 +770,7 @@ mod tests {
             let mut rng = rand::rngs::StdRng::seed_from_u64(s);
             // A checkerboard, so a cell the caller refused is easy to tell
             // from one it allowed.
-            let groups = plan(&bestiary.spawns, 9, bounds, entry, 13, &mut |p| (p.x + p.y) % 2 == 0, &mut rng);
+            let groups = plan(Spawns { table: &bestiary.spawns, band: 9, favor: &[] }, bounds, entry, 13, &mut |p| (p.x + p.y) % 2 == 0, &mut rng);
             let mut seen: Vec<Point> = Vec::new();
             for (_, p) in groups.iter().flatten() {
                 assert_eq!((p.x + p.y) % 2, 0, "seed {s}: {p:?} on a cell the caller refused");
@@ -732,9 +787,42 @@ mod tests {
         let bestiary = bestiary();
         let (bounds, entry) = open_ground();
         for s in 0..20 {
-            let plan_it = || plan(&bestiary.spawns, 5, bounds, entry, 9, &mut |_| true, &mut rand::rngs::StdRng::seed_from_u64(s));
+            let plan_it =
+                || plan(Spawns { table: &bestiary.spawns, band: 5, favor: &[] }, bounds, entry, 9, &mut |_| true, &mut rand::rngs::StdRng::seed_from_u64(s));
             assert_eq!(plan_it(), plan_it(), "seed {s}");
         }
+    }
+
+    /// [`pick_group_favoring`]'s own mechanism, isolated from `plan`'s
+    /// geometry: a favored row is drawn about [`FAVORED_WEIGHT`] times as
+    /// often as an unfavored row that starts at the same plain weight, over
+    /// a span of seeds. Band 3 carries three rows of weight 20 each, the
+    /// goblin archer, conjurer and mystic (`assets/monster_spawns.ron`), so
+    /// favoring one against another of the same weight needs no table of
+    /// its own.
+    #[test]
+    fn a_favored_kind_is_drawn_about_favored_weight_times_as_often_as_an_equal_weight_row_over_a_span_of_seeds() {
+        let bestiary = bestiary();
+        let band = 3;
+        let archer = bestiary.defs.expect("goblin archer");
+        let conjurer = bestiary.defs.expect("goblin conjurer");
+        let rows: Vec<&BandedEntry<Id<MonsterDef>>> = bestiary.spawns.at(band).collect();
+        let weight_of = |id| rows.iter().find(|e| e.item == id).map(|e| e.weight);
+        assert_eq!(weight_of(archer), weight_of(conjurer), "the two rows this test favors by must start equal");
+        let favor = [archer];
+        let (mut favored_count, mut plain_count) = (0u32, 0u32);
+        for s in 0..4000u64 {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(s);
+            let Some((id, _)) = pick_group_favoring(&Spawns { table: &bestiary.spawns, band, favor: &favor }, &mut rng) else { continue };
+            if id == archer {
+                favored_count += 1;
+            } else if id == conjurer {
+                plain_count += 1;
+            }
+        }
+        assert!(plain_count > 0, "the unfavored row was never drawn");
+        let ratio = f64::from(favored_count) / f64::from(plain_count);
+        assert!((2.0..4.0).contains(&ratio), "favored {favored_count}, plain {plain_count}, ratio {ratio}");
     }
 
     /// Where every monster stood the moment it was made, by place, and
