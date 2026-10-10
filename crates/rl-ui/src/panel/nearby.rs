@@ -200,7 +200,7 @@ pub fn draw_nearby(
     map: CursorMap,
     time: Res<Time>,
 ) {
-    if let Some(focused) = view.focused
+    if let Some(focused) = view.picked()
         && !modals.any_open()
     {
         // The same mark the look cursor and the targeting cursor use, so
@@ -263,11 +263,7 @@ fn draw_row(terminal: &mut Terminal, inner: Rect, y: i32, row: &Row, focused: bo
         Some(_) => ((inner.width as f32 * row.health_fraction()).round() as i32).clamp(0, inner.width),
         None => 0,
     };
-    let hurt = palette.get(match row.health_fraction() {
-        f if f <= 0.25 => Tones::BAD,
-        f if f <= 0.5 => Tones::NOTICE,
-        _ => Tones::GOOD,
-    });
+    let hurt = palette.get(row.health.map_or(Tones::GOOD, |(current, max)| crate::view::health_tone(current, max)));
     let wash = base.mix(&hurt, WASH);
     if filled > 0 {
         terminal.fill(Rect::new(inner.x, y, filled, 1), Cell::new(' ', base).on(wash));

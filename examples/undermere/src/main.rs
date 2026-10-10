@@ -1418,6 +1418,32 @@ mod tests {
         assert!(!app.world().resource::<Modals>().any_open(), "and no screen is up over the floor: {screen:#?}");
     }
 
+    /// Two hired and standing beside the adventurer in the tavern are in
+    /// sight, and each is listed once on the rail, under Company, with
+    /// nothing of either under In sight; Tab steps past them to what the
+    /// rail still lists.
+    #[test]
+    fn a_party_of_two_in_sight_is_listed_once_each_under_company_and_tab_steps_past_them() {
+        let mut app = on_screen(RunSeed(7));
+        let (_, first, _, first_name) = hire_on_screen(&mut app);
+        let (_, second, _, second_name) = hire_on_screen(&mut app);
+        app.update();
+        let screen = Screen::new();
+        let rail = COLS - RAIL;
+        let lines: Vec<String> = (0..ROWS).map(|y| from(&app, rail, y)).collect();
+        for name in [&first_name, &second_name] {
+            let at: Vec<usize> = lines.iter().enumerate().filter(|(_, l)| l.contains(name.as_str())).map(|(y, _)| y).collect();
+            assert_eq!(at.len(), 1, "{name} listed once: {lines:#?}");
+            assert!(at[0] as i32 >= screen.party.y, "under Company: {lines:#?}");
+        }
+        let focus = |app: &App| app.world().resource::<rl_engine::rl_ui::Focus>().get();
+        for _ in 0..6 {
+            press(&mut app, KeyCode::Tab);
+            let picked = focus(&app);
+            assert!(picked != Some(first) && picked != Some(second), "Tab never lands on the party: {:#?}", written(&app));
+        }
+    }
+
     /// The rail's foot is blank until someone follows; then it heads them
     /// "Company", over a rule, each in the order it joined with its order,
     /// the longest of them whole, and a full health bar. Taking the gate with one of them beside the

@@ -61,6 +61,21 @@ impl NearbyView {
         self.focused.is_some_and(|s| s.entity == row.entity)
     }
 
+    /// Whether `entity` has a row in either list, as the game left them:
+    /// an annotate system may take a row out, as one listed on a panel of
+    /// its own is, and Tab steps only through what is still here.
+    pub fn lists(&self, entity: Entity) -> bool {
+        self.actors.iter().chain(&self.things).any(|r| r.entity == entity)
+    }
+
+    /// The row picked out, when it is still listed: [`focused`](Self::focused)
+    /// less one the game took out of the lists, which the panel neither
+    /// highlights nor marks on the map, since a mark with no row beside it
+    /// reads as a cursor left behind.
+    pub fn picked(&self) -> Option<Sighting> {
+        self.focused.filter(|s| self.lists(s.entity))
+    }
+
     /// How many actors are hostile to the player.
     pub fn threats(&self) -> usize {
         self.actors.iter().filter(|r| r.relation == Some(Relation::Hostile)).count()
@@ -349,6 +364,37 @@ mod tests {
         assert_eq!(at, Some(stage.at.offset(2, 0)), "and the view says where it stands, for the map");
         stage.press(keys.close);
         assert_eq!(focused(&stage), None, "let go");
+    }
+
+    /// A game's annotate system that lists the one it was told about on a
+    /// panel of its own, so takes its row off the rail.
+    fn list_elsewhere(mut view: ResMut<NearbyView>, noted: Res<Noted>) {
+        view.actors.retain(|r| r.entity != noted.0);
+    }
+
+    #[test]
+    fn tab_steps_only_through_the_rows_a_game_left_on_the_rail_and_a_cursor_left_on_one_taken_off_marks_nothing() {
+        let mut stage = Stage::new(NearbyViewPlugin);
+        let near = stage.actor("near one", 'n', 1, 0);
+        let follower = stage.actor("follower", 'f', 2, 0);
+        let far = stage.actor("far one", 'r', 3, 0);
+        stage.app.insert_resource(Noted(follower));
+        stage.app.add_systems(Update, list_elsewhere.in_set(crate::ViewSet::Annotate));
+        stage.tick();
+        let focused = |stage: &Stage| stage.app.world().resource::<NearbyView>().focused.map(|s| s.entity);
+        let keys = CursorKeys::default();
+        for (want, why) in [(near, "the top row"), (far, "past the one listed elsewhere"), (near, "and round again")] {
+            stage.press(keys.next);
+            assert_eq!(focused(&stage), Some(want), "{why}");
+        }
+
+        // Picked out some other way, as by the look cursor: still the
+        // focus, but nothing on the rail to highlight or mark.
+        stage.app.world_mut().resource_mut::<Focus>().set(Some(follower));
+        stage.tick();
+        let view = stage.app.world().resource::<NearbyView>();
+        assert_eq!(view.focused.map(|s| s.entity), Some(follower), "the focus is the cursor's to keep");
+        assert_eq!(view.picked(), None, "but the rail picks out nothing it does not list");
     }
 
     #[test]

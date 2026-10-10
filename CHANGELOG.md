@@ -6,6 +6,10 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- Tab with nothing open steps only through the rows the nearby rail lists, as a game left them in `ViewSet::Annotate`: a game that takes a row out, as one listing its followers on the party rail does, no longer has Tab land on a row nobody can see.
+  The rail neither highlights nor marks on the map a focus it does not list, which the look cursor may still leave there; the new `NearbyView::lists(entity)` and `NearbyView::picked()` say which.
+  The rail's health wash reads its tone from `health_tone`, the vitals' own rule, where it kept a copy of the thresholds; the tones are the same.
+
 - An ending with more to say than the menu's rectangle holds keeps every choice in it and cuts its own words from the end instead: a long enough list of sections used to push Quit under the frame, where the cursor could still reach it and nobody could see it.
   Nothing to change in a game; one that wants all its words on the screen gives the menu a taller rectangle, as before.
 

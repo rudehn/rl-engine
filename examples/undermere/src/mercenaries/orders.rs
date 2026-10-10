@@ -260,9 +260,10 @@ pub fn order_party(mut key: OrderKey, mut commands: Commands, party: Query<(Enti
     key.log.info(format!("You order the party to {}.", order.word()), now);
 }
 
-/// Says each mercenary's order, `holding`, on the look panel, on the
-/// rail and on its row of the party panel; and on the look panel that it
-/// is in the adventurer's pay, and what it holds as they know it.
+/// Says each mercenary's order, `holding`, on the look panel and on its
+/// row of the party panel; on the look panel that it is in the
+/// adventurer's pay, and what it holds as they know it; and takes every
+/// follower with a row of the party panel off the nearby rail.
 ///
 /// On the look panel the pay takes the place of its kind's own words, `a
 /// sword for hire`, which it no longer is, and the order the place of the
@@ -270,12 +271,13 @@ pub fn order_party(mut key: OrderKey, mut commands: Commands, party: Query<(Enti
 /// adventurer is paying are nothing a player is asking. What it holds is
 /// said as a candidate's kit is, by [`KitSeen`]: its own kit at the level
 /// it told when it was hired, anything handed to it by what is known of
-/// it, and a potion of a kind not yet known by its face. On the rail the
-/// order takes the place of what the mercenary knows of the adventurer
-/// and what it is doing this turn, `unaware` and `follow`, which say less
-/// of a hired hand than its order. On the party panel it stands on every
-/// mercenary's row but one left on another floor, which the panel marks
-/// as left behind instead.
+/// it, and a potion of a kind not yet known by its face. On the party
+/// panel it stands on every mercenary's row but one left on another
+/// floor, which the panel marks as left behind instead. The party panel
+/// is where a follower is read, a freed captive as much as a hired one,
+/// so listing it again under what is in sight spent a second row on it
+/// and clipped the copy; the engine's Tab steps only through what the
+/// rail still lists.
 ///
 /// In `ViewSet::Annotate`, after the kind's own words and the game's own
 /// forecast, so both are there to take off and nothing puts a forecast
@@ -303,13 +305,9 @@ pub fn show_orders(
             view.facets.push(facets.facet("kit", format!("{} {said}", how.verb())));
         }
     }
-    if let Some(mut view) = rail {
-        for row in view.actors.iter_mut() {
-            if let Ok(hired) = hired.get(row.entity) {
-                (row.doing, row.alert) = (None, None);
-                row.facets.push(facets.facet("order", hired.order.doing()));
-            }
-        }
+    if let (Some(mut view), Some(party)) = (rail, party.as_deref()) {
+        let followers: Vec<Entity> = party.rows.iter().map(|r| r.entity).collect();
+        view.actors.retain(|r| !followers.contains(&r.entity));
     }
     if let Some(mut view) = party {
         // One left on another floor waits where it was left whatever its
