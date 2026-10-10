@@ -454,7 +454,7 @@ mod tests {
             let theirs = gold(&app, priest);
             take_rite(&mut app, me, priest, rite);
             let verb = app.world().resource::<Verbs>().get(rite).expect("a verb");
-            let offer = app.world().resource::<OfferedHere>().find(me, priest, verb).copied();
+            let offer = app.world().resource::<OfferedHere>().find(me, priest, verb).cloned();
             assert_eq!(offer.and_then(|o| o.refused), Some(Refused::Short(price)), "{rite}: wants its price");
             assert_eq!((gold(&app, me), gold(&app, priest)), (price - 1, theirs), "{rite}: neither purse moved");
             assert_eq!(app.world().get::<Health>(me).map(|h| h.current), Some(3), "{rite}: no wound closed");

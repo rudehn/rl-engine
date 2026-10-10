@@ -46,7 +46,7 @@ pub use inventory::{
 };
 pub use log::LogPanel;
 pub use nearby::{ActivityWords, AlertWords, NearbyPanel};
-pub use offers::{AskToConfirm, Confirmed, Confirming, OFFERS_MODAL, OffersLayout, OffersMenu, OffersPanel, offers_modal};
+pub use offers::{Confirming, OFFERS_MODAL, OffersLayout, OffersMenu, OffersPanel, offers_modal};
 pub use party::{PartyLayout, PartyPanel};
 pub use records::{RECORDS_MODAL, RecordsLayout, RecordsPanel, RecordsScreen, records_modal};
 pub use scrollback::{SCROLLBACK_MODAL, Scrollback, ScrollbackKeys, ScrollbackPanel, scrollback_modal};

@@ -231,15 +231,16 @@ impl Way<'_, '_> {
     /// the only case a walk key answers. Something that offers several, or
     /// one it refuses, is a question or an explanation, which is a screen's;
     /// and so is one with a price, since spending currency is a choice a
-    /// movement key must never make by walking into someone.
+    /// movement key must never make by walking into someone, and one that
+    /// asks first, since a movement key cannot answer.
     fn offers_at(&self, actor: Entity, target: Point) -> Offered {
         let Some(offered) = self.offered.as_deref() else { return Offered::None };
         let mine = offered.for_actor(actor);
         let Some(what) = self.occupancy.at(target).iter().copied().find(|e| mine.iter().any(|o| o.target == *e)) else { return Offered::None };
-        let all: Vec<crate::props::Offer> = mine.iter().filter(|o| o.target == what).copied().collect();
+        let all: Vec<&crate::props::Offer> = mine.iter().filter(|o| o.target == what).collect();
         match all.as_slice() {
             [] => Offered::None,
-            [only] if only.refused.is_none() && only.price.is_none() => Offered::One(*only),
+            [only] if only.refused.is_none() && only.price.is_none() && only.asks.is_none() => Offered::One((*only).clone()),
             _ => Offered::Several(what),
         }
     }
@@ -584,5 +585,21 @@ mod tests {
             vec![Interacted { actor: rig.player, target: captive, verb: free }],
             "unpriced, the walk key takes it up"
         );
+    }
+
+    /// Walking into someone whose one offer asks first comes to a question
+    /// for a screen, never to the offer: nothing is taken up, and the step
+    /// and the turn are kept.
+    #[test]
+    fn bumping_someone_whose_one_offer_asks_first_asks_rather_than_acts() {
+        let mut rig = Rig::new();
+        let free = rig.verb("free");
+        let captive = rig.beside(None, vec![crate::props::Offering::new(free, 200).asking("Free them?")]);
+        let (start, before) = (rig.at(), rig.now());
+        rig.bump(Direction::East);
+        let heard = rig.app.world().resource::<Heard>();
+        assert_eq!(heard.0, vec![Bumped { actor: rig.player, into: captive, offers: true }], "a question for a screen");
+        assert!(heard.2.is_empty(), "and nothing was taken up");
+        assert_eq!((rig.at(), rig.now()), (start, before), "for nothing");
     }
 }

@@ -30,6 +30,9 @@ pub struct OfferRow {
     pub time: u32,
     /// What it would cost in the currency, when it has a price.
     pub price: Option<u32>,
+    /// The question asked before it is taken up, in the game's words, when
+    /// it asks one.
+    pub asks: Option<String>,
     /// Why it cannot be taken up, in words, when it cannot.
     pub refused: Option<String>,
 }
@@ -127,7 +130,7 @@ pub fn collect_offers(
             },
             Refused::Short(price) => format!("needs {}", crate::view::sum_of(&currency, price)),
         });
-        view.rows.push(OfferRow { target: offer.target, verb: offer.verb, label, time: offer.time, price: offer.price, refused });
+        view.rows.push(OfferRow { target: offer.target, verb: offer.verb, label, time: offer.time, price: offer.price, asks: offer.asks.clone(), refused });
     }
 }
 

@@ -1,55 +1,39 @@
 //! A mercenary out of the party: let go, back to waiting to be hired, or
 //! fallen, for good.
 
-use bevy::ecs::message::MessageCursor;
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_core::noun::{Countability, counted_as};
 
 use super::*;
 use crate::allies::Ally;
-use crate::armory::Armory;
+use crate::armory::{Armory, ItemKind};
 use crate::content::TOWNSFOLK;
+use crate::shops::Ware;
 
-/// Answers a hired mercenary's [`DISMISS`], which cost nothing: asks
-/// whether the adventurer means it, naming it, on the offers screen.
+/// Answers a hired mercenary's [`DISMISS`], already asked and answered
+/// yes on the offers screen and its step spent: lets it go by [`dismiss`],
+/// and says so in the mercenaries' tone, naming what it set down: `Brenna
+/// leaves your service and sets down a sword.`
 ///
-/// In `TurnSet::React`, beside hiring's own answer. Nothing is done until
-/// the yes, so backing out of the question leaves the party as it was and
-/// the turn unspent.
-pub fn answer_dismiss(mut done: MessageReader<Interacted>, verbs: Res<Verbs>, hired: Query<&Mercenary>, mut asks: MessageWriter<AskToConfirm>) {
-    let Some(dismiss) = verbs.get(DISMISS) else { return };
-    for ev in done.read().filter(|ev| ev.verb == dismiss) {
-        let Ok(hired) = hired.get(ev.target) else { continue };
-        let name = &hired.name;
-        let prompt = format!("Dismiss {name}? The fee is not given back, and {name} sets down everything {name} carries here.");
-        asks.write(AskToConfirm { user: ev.actor, asker: ev.target, verb: dismiss, prompt });
+/// In `TurnSet::React`, beside hiring's own answer. A no never reaches
+/// here: the engine takes nothing up on one.
+pub fn answer_dismiss(mut commands: Commands, mut done: MessageReader<Interacted>, verbs: Res<Verbs>, hired: Query<(), With<Mercenary>>) {
+    let Some(dismissing) = verbs.get(DISMISS) else { return };
+    for ev in done.read().filter(|ev| ev.verb == dismissing && hired.contains(ev.target)) {
+        let mercenary = ev.target;
+        commands.queue(move |world: &mut World| let_go(world, mercenary));
     }
 }
 
-/// Lets go every mercenary the adventurer said yes to dismissing, by
-/// [`dismiss`], and says so in the mercenaries' tone, naming what it set
-/// down: `Brenna leaves your service and sets down a sword and leather
-/// armor.`
-///
-/// Every frame, after the offers screen's keys and before the turns: the
-/// yes spends no time, as the offer that asked spent none, so it is
-/// written to the log here rather than told inside a pass.
-pub fn let_go(world: &mut World, mut cursor: Local<MessageCursor<Confirmed>>) {
-    let (Some(dismissing), Some(messages)) = (world.resource::<Verbs>().get(DISMISS), world.get_resource::<Messages<Confirmed>>()) else { return };
-    let yeses: Vec<Entity> = cursor.read(messages).filter(|yes| yes.verb == dismissing).map(|yes| yes.asker).collect();
-    for mercenary in yeses {
-        let Some(name) = world.get::<Mercenary>(mercenary).map(|m| m.name.clone()) else { continue };
-        let set_down: Vec<String> = dismiss(world, mercenary).into_iter().map(|thing| said_of(world, thing)).collect();
-        let line = if set_down.is_empty() {
-            format!("{name} leaves your service.")
-        } else {
-            format!("{name} leaves your service and sets down {}.", and_list(&set_down))
-        };
-        let tone = world.resource::<Tones>().get(TONE).unwrap_or(Tones::TEXT);
-        let turn = world.resource::<Turns>().turn_number();
-        world.resource_mut::<MessageLog>().push(line, tone, turn);
-    }
+/// Lets `mercenary` go by [`dismiss`] and tells the log what it set down.
+fn let_go(world: &mut World, mercenary: Entity) {
+    let Some(name) = world.get::<Mercenary>(mercenary).map(|m| m.name.clone()) else { return };
+    let set_down: Vec<String> = dismiss(world, mercenary).into_iter().map(|thing| said_of(world, thing)).collect();
+    let line =
+        if set_down.is_empty() { format!("{name} leaves your service.") } else { format!("{name} leaves your service and sets down {}.", and_list(&set_down)) };
+    let tone = world.resource::<Tones>().get(TONE).unwrap_or(Tones::TEXT);
+    world.write_message(Tell::new(line, tone));
 }
 
 /// `thing` as a list names it, by the name it carries and how many:
@@ -65,12 +49,14 @@ fn said_of(world: &World, thing: Entity) -> String {
 /// again, where it stands, and returns what it set down.
 ///
 /// Back on the townsfolk's side, no [`Ally`], following nobody, with no
-/// order, post or mind, as a candidate waits; everything it carried and
-/// wore set down on its cell, own kit and given things alike, since
-/// nothing a mercenary is handed is taken back but this way; and a
-/// [`Candidate`] offering [`HIRE`] at the fee of what it now carries, which
-/// is nothing, and talk. What it was hired for is spent, as it was when it
-/// was paid. Nothing for one that is no mercenary.
+/// order, post or mind, as a candidate waits. It keeps its own kit, worn
+/// and carried, its [`OwnKit`], and sets down on its cell everything else,
+/// whatever it was given or picked up, since nothing a mercenary is handed
+/// is taken back but this way. It is a [`Candidate`] again, offering
+/// [`HIRE`] at the fee of the kit it keeps, as a candidate seated with
+/// that kit would ask, and talk: a hire and a dismissal never buy a kit
+/// for less than its fee. What it was hired for is spent, as it was when
+/// it was paid. Nothing for one that is no mercenary.
 ///
 /// It waits wherever it was let go: in Mereholt it is one more at the
 /// Sunken Lantern until the next visit seats three others, and below it
@@ -79,9 +65,10 @@ pub fn dismiss(world: &mut World, mercenary: Entity) -> Vec<Entity> {
     if world.get::<Mercenary>(mercenary).is_none() {
         return Vec::new();
     }
-    let set_down = set_down_everything(world, mercenary);
+    let set_down = set_down_what_was_given(world, mercenary);
     let townsfolk = world.resource::<Registries>().factions.expect(TOWNSFOLK);
-    let fee = world.resource::<Mercenaries>().fee(&[], world.resource::<Armory>());
+    let kit = kit_of(world, mercenary);
+    let fee = world.resource::<Mercenaries>().fee(&kit, world.resource::<Armory>());
     let offers = candidate_offers(world.resource::<Verbs>(), fee);
     let mut e = world.entity_mut(mercenary);
     e.remove::<(Mercenary, Ally, Leader, Post, Mind)>().insert((Faction(townsfolk), Candidate { fee }, offers));
@@ -91,20 +78,41 @@ pub fn dismiss(world: &mut World, mercenary: Entity) -> Vec<Entity> {
     set_down
 }
 
-/// Takes everything `who` carries and wears off it and lays it on its
-/// cell, as the engine lets the dead's fall, and returns what it laid.
-fn set_down_everything(world: &mut World, who: Entity) -> Vec<Entity> {
+/// What `who` carries of its own kit, as a kit is priced: each thing's
+/// kind, its level and how many.
+fn kit_of(world: &World, who: Entity) -> Vec<Ware> {
+    let carried = world.get::<Inventory>(who).map(|bag| bag.items.clone()).unwrap_or_default();
+    carried
+        .into_iter()
+        .filter(|thing| world.get::<OwnKit>(*thing).is_some())
+        .filter_map(|thing| {
+            let def = world.get::<ItemKind>(thing)?.0;
+            let level = world.get::<Enchant>(thing).map_or(0, |e| e.level);
+            let count = world.get::<Stack>(thing).map_or(1, |s| s.count);
+            Some(Ware { def, count, level })
+        })
+        .collect()
+}
+
+/// Takes everything `who` carries and wears that is not its own kit off
+/// it and lays it on its cell, as the engine lets the dead's fall, and
+/// returns what it laid.
+fn set_down_what_was_given(world: &mut World, who: Entity) -> Vec<Entity> {
     let (Some(at), Some(map)) = (world.get::<Position>(who).copied(), world.get::<OnMap>(who).copied()) else { return Vec::new() };
-    let carried: Vec<Entity> = world.get_mut::<Inventory>(who).map(|mut bag| std::mem::take(&mut bag.items)).unwrap_or_default();
+    let carried: Vec<Entity> = world.get::<Inventory>(who).map(|bag| bag.items.clone()).unwrap_or_default();
+    let given: Vec<Entity> = carried.into_iter().filter(|thing| world.get::<OwnKit>(*thing).is_none()).collect();
+    if let Some(mut bag) = world.get_mut::<Inventory>(who) {
+        bag.items.retain(|thing| !given.contains(thing));
+    }
     if let Some(mut worn) = world.get_mut::<Equipped>(who) {
-        for thing in &carried {
+        for thing in &given {
             worn.unequip(*thing);
         }
     }
-    for thing in &carried {
+    for thing in &given {
         world.entity_mut(*thing).insert((at, map));
     }
-    carried
+    given
 }
 
 /// The hired mercenaries who died this frame, by the body each left, which
@@ -178,80 +186,58 @@ mod tests {
         (candidate, name)
     }
 
-    /// Every question put to the player since the last look.
-    fn asked(app: &mut App) -> Vec<AskToConfirm> {
-        app.world_mut().resource_mut::<Messages<AskToConfirm>>().drain().collect()
-    }
-
-    /// Says yes to letting `mercenary` go, as the offers screen's Yes does.
-    fn say_yes(app: &mut App, me: Entity, mercenary: Entity) {
-        let verb = app.world().resource::<Verbs>().get(DISMISS).expect("dismiss");
-        app.world_mut().write_message(Confirmed { user: me, asker: mercenary, verb });
-        app.update();
-    }
-
-    /// Taking up `dismiss` puts one question, naming the mercenary, and
-    /// does nothing else: the turn clock stands where it stood, and with
-    /// no yes the mercenary stays as it was hired, following, on the
-    /// adventurer's side, carrying its kit and offering `give` and
-    /// `dismiss`. Over a span of seeds.
+    /// `dismiss` is offered asking first, in the mercenary's name; taken
+    /// up, as a yes on the offers screen takes it up, it spends a step and
+    /// lets the mercenary go: on the townsfolk's side again, following
+    /// nobody with no mind, a candidate offering `hire` and talk, and the
+    /// log says it left. Over a span of seeds.
     #[test]
-    fn dismissing_asks_once_naming_the_mercenary_and_backing_out_changes_nothing_and_costs_nothing_over_a_span_of_seeds() {
+    fn dismissing_asks_first_in_its_name_and_a_yes_lets_it_go_for_a_step_over_a_span_of_seeds() {
         for seed in 0..4 {
             let (mut app, me) = in_mereholt(seed);
             let (merc, name) = hire_one(&mut app, me);
-            let _ = asked(&mut app);
-            let (clock, kit, hired_as) = (app.world().resource::<Turns>().now(), pack(&app, merc), app.world().get::<Mercenary>(merc).cloned());
+            let dismissing = app.world().resource::<Verbs>().get(DISMISS).expect("dismiss");
+            let offer = app.world().get::<Offers>(merc).and_then(|o| o.0.iter().find(|o| o.verb == dismissing).cloned()).expect("dismiss offered");
+            assert!(offer.asks.as_deref().is_some_and(|q| q.starts_with(&format!("Dismiss {name}?"))), "seed {seed}: asks in its name: {offer:?}");
+            let clock = app.world().resource::<Turns>().now();
             take(&mut app, me, merc, DISMISS);
-            let questions = asked(&mut app);
-            assert_eq!(questions.len(), 1, "seed {seed}: asked once: {questions:?}");
-            let question = &questions[0];
-            assert_eq!((question.user, question.asker), (me, merc), "seed {seed}");
-            assert!(question.prompt.starts_with(&format!("Dismiss {name}?")), "seed {seed}: in its name: {}", question.prompt);
-            app.update();
             let world = app.world();
-            assert_eq!(world.resource::<Turns>().now(), clock, "seed {seed}: no time spent");
-            assert_eq!(world.get::<Mercenary>(merc).cloned(), hired_as, "seed {seed}: still hired, on its order");
-            assert_eq!(world.get::<Leader>(merc), Some(&Leader(me)), "seed {seed}");
-            assert!(world.get::<Ally>(merc).is_some() && world.get::<Candidate>(merc).is_none(), "seed {seed}");
-            assert_eq!(pack(&app, merc), kit, "seed {seed}: carrying its kit");
-            assert_eq!(offered(&app, merc), [(GIVE.to_string(), None), (DISMISS.to_string(), None)], "seed {seed}");
-        }
-    }
-
-    /// A yes lets the mercenary go where it stands: everything it carried
-    /// and wore lies on its cell, it is on the townsfolk's side again,
-    /// following nobody with no mind, and it waits as a candidate asking
-    /// the fee of nothing, the base, with talk beside `hire`; the log says
-    /// it left and what it set down. Hired again, it costs the base and
-    /// follows. Over a span of seeds.
-    #[test]
-    fn dismissing_sets_down_the_kit_and_offers_hire_again_at_the_base_fee_over_a_span_of_seeds() {
-        for seed in 0..4 {
-            let (mut app, me) = in_mereholt(seed);
-            let (merc, name) = hire_one(&mut app, me);
-            let carried: Vec<Entity> = app.world().get::<Inventory>(merc).expect("a pack").items.clone();
-            assert!(!carried.is_empty(), "seed {seed}: hired with a kit");
-            let cell = at(&app, merc);
-            say_yes(&mut app, me, merc);
-            let world = app.world();
-            let base = world.resource::<Mercenaries>().fee(&[], world.resource::<Armory>());
-            for thing in &carried {
-                assert_eq!(world.get::<Position>(*thing).map(|p| p.0), Some(cell), "seed {seed}: set down where it stood");
-            }
-            assert!(pack(&app, merc).is_empty() && worn(&app, merc).iter().all(Option::is_none), "seed {seed}: carrying and wearing nothing");
+            assert_eq!(world.resource::<Turns>().now() - clock, DISMISS_TIME, "seed {seed}: a step");
             let townsfolk = world.resource::<Registries>().factions.expect(TOWNSFOLK);
             assert_eq!(world.get::<Faction>(merc).map(|f| f.0), Some(townsfolk), "seed {seed}: the townsfolk's side");
             assert!(world.get::<Mercenary>(merc).is_none() && world.get::<Ally>(merc).is_none(), "seed {seed}: out of the party");
             assert!(world.get::<Leader>(merc).is_none() && world.get::<Mind>(merc).is_none() && world.get::<Post>(merc).is_none(), "seed {seed}");
-            assert_eq!(world.get::<Candidate>(merc), Some(&Candidate { fee: base }), "seed {seed}");
-            assert_eq!(offered(&app, merc), [(HIRE.to_string(), Some(base)), ("talk".to_string(), None)], "seed {seed}");
-            let line = said(&app).into_iter().find(|l| l.starts_with(&format!("{name} leaves your service and sets down "))).unwrap_or_default();
-            assert!(!line.is_empty(), "seed {seed}: {:?}", said(&app));
+            assert_eq!(offered(&app, merc).iter().map(|(v, _)| v.as_str()).collect::<Vec<_>>(), [HIRE, "talk"], "seed {seed}");
+            assert!(said(&app).iter().any(|l| l.starts_with(&format!("{name} leaves your service"))), "seed {seed}: {:?}", said(&app));
+        }
+    }
 
-            set_gold(&mut app, me, base + 7);
+    /// Let go, a mercenary keeps the kit it was hired with, worn and
+    /// carried, and sets down on its cell a dagger it was given; it asks
+    /// the fee of the kit it keeps, the fee it was hired for, so hiring and
+    /// letting it go never buys its kit cheap; hired again, it costs that
+    /// and follows. Over a span of seeds.
+    #[test]
+    fn a_dismissed_mercenary_keeps_its_own_kit_sets_down_what_it_was_given_and_asks_its_kits_fee_over_a_span_of_seeds() {
+        for seed in 0..4 {
+            let (mut app, me) = in_mereholt(seed);
+            let (merc, name) = hire_one(&mut app, me);
+            let fee = app.world().get::<Mercenary>(merc).expect("hired").fee;
+            let (kit, wearing) = (pack(&app, merc), worn(&app, merc));
+            let dagger = make(&mut app, "dagger");
+            app.world_mut().get_mut::<Inventory>(merc).expect("a pack").items.push(dagger);
+            let cell = at(&app, merc);
+            take(&mut app, me, merc, DISMISS);
+            let world = app.world();
+            assert_eq!(world.get::<Position>(dagger).map(|p| p.0), Some(cell), "seed {seed}: the dagger set down where it stood");
+            assert_eq!((pack(&app, merc), worn(&app, merc)), (kit, wearing), "seed {seed}: its own kit kept, worn as it was");
+            assert_eq!(world.get::<Candidate>(merc), Some(&Candidate { fee }), "seed {seed}: the fee of its kit");
+            assert_eq!(offered(&app, merc)[0], (HIRE.to_string(), Some(fee)), "seed {seed}");
+            assert!(said(&app).iter().any(|l| l == &format!("{name} leaves your service and sets down a dagger.")), "seed {seed}: {:?}", said(&app));
+
+            set_gold(&mut app, me, fee + 7);
             take(&mut app, me, merc, HIRE);
-            assert_eq!(gold(&app, me), 7, "seed {seed}: hired again for the base");
+            assert_eq!(gold(&app, me), 7, "seed {seed}: hired again for its kit's fee");
             assert_eq!(app.world().get::<Leader>(merc), Some(&Leader(me)), "seed {seed}: following again");
         }
     }

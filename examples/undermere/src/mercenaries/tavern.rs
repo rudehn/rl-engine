@@ -481,7 +481,7 @@ mod tests {
             set_gold(&mut app, me, fee - 1);
             take(&mut app, me, candidate, HIRE);
             let hire = app.world().resource::<Verbs>().get(HIRE).expect("a verb");
-            let offer = app.world().resource::<OfferedHere>().find(me, candidate, hire).copied();
+            let offer = app.world().resource::<OfferedHere>().find(me, candidate, hire).cloned();
             assert_eq!(offer.and_then(|o| o.refused), Some(Refused::Short(fee)), "seed {seed}: wants the fee");
             assert_eq!((gold(&app, me), gold(&app, candidate)), (fee - 1, 0), "seed {seed}: neither purse moved");
         }

@@ -6,10 +6,15 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
-- The offers screen asks a game's own yes-or-no question: a game writes the new `rl_ui::AskToConfirm { user, asker, verb, prompt }`, most often when an offer of its own is taken up, and the screen opens on `prompt` with two answers, No picked out; Yes writes the new `Confirmed { user, asker, verb }` for the game to act on, and No or the close key answer nothing.
-  The engine does nothing on a yes and spends no time on one, since the offer that asked has spent its own, so an offer a player should be able to back out of for nothing is offered at no time.
-  The screen now opens on its first row however it is opened, where the interact key opened it on whichever row was taken last, so a second visit read as a choice already made.
+- An offer may ask first: `Offering::asking(question)` carries a yes-or-no question in the game's words, and the offers screen, taking such an offer up, shows it with two answers, No picked out above Yes.
+  Yes writes the ordinary `Intent<Interact>`, so the engine checks the offer's reach and charges its own time as for any offer, and an offerer gone out of reach by the yes is refused like any other; No, or the close key, writes nothing and costs nothing, and the question goes unanswered with its offer if whatever offered it leaves reach while it is up.
+  A walk into whoever offers it never takes it up, as with a priced offer, and comes to the offers screen instead; the interact key on a lone asking offer opens the screen on its question at once.
+  `Offering` and `Offer` carry the new `asks: Option<String>`, and `OfferRow` the same, so they are `Clone` and no longer `Copy`: a game that copied one out of `OfferedHere` with `.copied()` uses `.cloned()`, and one that built either with a struct literal adds `asks: None`.
   The answers read `Yes` and `No`, and `OffersPanel::answers(yes, no)` words them otherwise; `OffersLayout` has the two new fields and `OffersMenu` a new `confirming`, so a game that built either with a struct literal adds them.
+
+- The offers screen opens on its first row however it is opened, where the interact key opened it on whichever row was taken last, so a second visit read as a choice already made.
+
+- The bag answers a game's `AskForThing` only while whoever asked still offers its verb to the user, alive and in reach: one that died or walked away while the bag was up is answered nothing, and the bag is put away, as the offers screen's rows go with what offered them.
 
 - A `GoThrough` asked where no way through stands is refused before the turn is claimed, so it costs nothing and the same press can still take up what is offered here: a game binding its way and the interact key to one key, as Enter, now talks to the one person in reach off a way, where the refusal used to spend the press.
   The player's refusal is still an `ActionRefused`, so a game answering one, as Foundry's lift out does, is unchanged; anyone else is still charged for asking, as before.

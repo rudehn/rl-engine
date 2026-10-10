@@ -251,7 +251,7 @@ mod tests {
     /// Whatever the console offers the player, and to whom.
     fn charge_offered(app: &App, player: Entity) -> Option<Offer> {
         let verb = app.world().resource::<Verbs>().get(CHARGE)?;
-        app.world().resource::<OfferedHere>().for_actor(player).iter().find(|o| o.verb == verb).copied()
+        app.world().resource::<OfferedHere>().for_actor(player).iter().find(|o| o.verb == verb).cloned()
     }
 
     #[test]

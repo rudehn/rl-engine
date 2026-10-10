@@ -1443,8 +1443,9 @@ mod tests {
     /// On the real screen, `dismiss` on a mercenary asks in its name with
     /// No picked out, and the close key backs out with the mercenary still
     /// following, carrying what it was hired with, and no turn spent. Asked
-    /// again, Yes lets it go: it sets its kit down where it stands and is
-    /// for hire again at the base fee, and the log says so.
+    /// again, Yes lets it go for a turn: it keeps the kit it was hired with
+    /// and is for hire again at the fee it was hired for, and the log says
+    /// so.
     #[test]
     fn dismissing_a_mercenary_on_the_real_screen_asks_first_and_only_a_yes_lets_it_go() {
         let mut app = on_screen(RunSeed(7));
@@ -1463,18 +1464,18 @@ mod tests {
         assert_eq!(app.world().get::<Inventory>(merc).map(|b| b.items.clone()), Some(kit.clone()), "still carrying its kit");
         assert_eq!(app.world().resource::<Turns>().now(), before, "and no turn spent");
 
+        let fee = app.world().get::<undermere::mercenaries::Mercenary>(merc).expect("hired").fee;
         dismiss_on_screen(&mut app, &name);
         press(&mut app, KeyCode::ArrowDown);
         press(&mut app, KeyCode::Enter);
         undermere::testing::settle(&mut app);
         let screen = written(&app);
         assert!(app.world().get::<undermere::mercenaries::Mercenary>(merc).is_none(), "let go: {screen:#?}");
-        assert!(screen.iter().any(|r| r.contains(&format!("{name} leaves your service"))), "said: {screen:#?}");
-        let cell = undermere::testing::at(&app, merc);
-        assert!(kit.iter().all(|t| app.world().get::<Position>(*t).map(|p| p.0) == Some(cell)), "its kit set down where it stands");
-        let base = app.world().resource::<undermere::mercenaries::Mercenaries>().fee(&[], app.world().resource::<undermere::armory::Armory>());
+        assert!(app.world().resource::<Turns>().now() > before, "for a turn");
+        assert!(screen.iter().any(|r| r.contains(&format!("{name} leaves your service."))), "said: {screen:#?}");
+        assert_eq!(app.world().get::<Inventory>(merc).map(|b| b.items.clone()), Some(kit), "its own kit kept");
         let offers = app.world().get::<Offers>(merc).expect("offers");
-        assert!(offers.0.first().is_some_and(|o| o.price == Some(base)), "for hire again at the base fee: {offers:?}");
+        assert!(offers.0.first().is_some_and(|o| o.price == Some(fee)), "for hire again at its kit's fee: {offers:?}");
     }
 
     /// A mercenary killed by a goblin on floor two, and then the

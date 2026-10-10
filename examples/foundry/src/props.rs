@@ -416,7 +416,7 @@ mod tests {
         let offer = {
             let verbs = app.world().resource::<Verbs>();
             let _ = verbs;
-            app.world().resource::<OfferedHere>().find(player, locker, Verbs::OPEN).copied()
+            app.world().resource::<OfferedHere>().find(player, locker, Verbs::OPEN).cloned()
         };
         let offer = offer.expect("standing beside it, the locker offers to open");
         assert!(offer.refused.is_none(), "with a card in the bag, nothing refuses it");

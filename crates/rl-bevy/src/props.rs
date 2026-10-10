@@ -171,7 +171,7 @@ impl AddVerb for App {
 
 /// One thing the actor holding the turn could do with what it can reach,
 /// as the gate works it out.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Offer {
     /// What offers it: a prop, or an actor carrying [`Offers`].
     pub target: Entity,
@@ -182,6 +182,9 @@ pub struct Offer {
     /// What taking it up costs in the trade slice's
     /// [`Currency`], when it has a price.
     pub price: Option<u32>,
+    /// The question asked before it is taken up, when it asks one; see
+    /// [`Offering::asking`].
+    pub asks: Option<String>,
     /// Why it cannot be taken up, when it cannot. An offer is listed
     /// either way, so a screen can grey a row and say why, as the ability
     /// menu does.
@@ -214,7 +217,7 @@ pub enum Refused {
 pub struct Offers(pub Vec<Offering>);
 
 /// One thing an [`Offers`] names.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Offering {
     /// What it is called.
     pub verb: VerbId,
@@ -225,12 +228,31 @@ pub struct Offering {
     /// What taking it up costs, in the trade slice's
     /// [`Currency`], or nothing.
     pub price: Option<u32>,
+    /// The yes-or-no question asked before it is taken up, in the game's
+    /// words, or nothing.
+    pub asks: Option<String>,
 }
 
 impl Offering {
     /// `verb`, taking `time`, open to anyone.
     pub fn new(verb: VerbId, time: u32) -> Self {
-        Self { verb, time, needs: None, price: None }
+        Self { verb, time, needs: None, price: None, asks: None }
+    }
+
+    /// Asks `question` before it is taken up: whoever shows the offers
+    /// asks it, yes or no, and only a yes is the [`Interact`], resolved,
+    /// checked for reach and charged its time as any offer is; no is
+    /// nothing and costs nothing. Never taken up by walking into whoever
+    /// offers it, even when it is the only offer, as a priced one never
+    /// is: a walk key cannot answer a question.
+    ///
+    /// Asked before the act rather than by the game after it, so the act
+    /// a yes stands for is the engine's to check and to charge: an asker
+    /// gone out of reach by the time of the yes is refused like any other
+    /// offer out of reach, and the time it costs is its own.
+    pub fn asking(mut self, question: impl Into<String>) -> Self {
+        self.asks = Some(question.into());
+        self
     }
 
     /// Costs `price` in the trade slice's [`Currency`]:
@@ -365,7 +387,7 @@ pub fn offer_here(
                 continue;
             }
             let refused = refused(offer.needs.or(lock.filter(|_| verb == Verbs::OPEN)), None);
-            offered.offers.push(Offer { target: prop, verb, time: offer.time, price: None, refused });
+            offered.offers.push(Offer { target: prop, verb, time: offer.time, price: None, asks: None, refused });
         }
     }
     // Never the turn holder's own: what a person offers is offered to
@@ -383,7 +405,7 @@ pub fn offer_here(
         }
         for offer in &offers.0 {
             let refused = refused(offer.needs, offer.price);
-            offered.offers.push(Offer { target: other, verb: offer.verb, time: offer.time, price: offer.price, refused });
+            offered.offers.push(Offer { target: other, verb: offer.verb, time: offer.time, price: offer.price, asks: offer.asks.clone(), refused });
         }
     }
 }
@@ -1456,7 +1478,7 @@ mod actor_offers {
         let beside = someone(&mut app, start.offset(1, 1), Offers(vec![Offering::new(free, 200)]));
         someone(&mut app, start.offset(2, 0), Offers(vec![Offering::new(free, 200)]));
         let player = player_at(&mut app, start, Offers(vec![Offering::new(free, 100)]));
-        assert_eq!(offered(&app, player), vec![Offer { target: beside, verb: free, time: 200, price: None, refused: None }]);
+        assert_eq!(offered(&app, player), vec![Offer { target: beside, verb: free, time: 200, price: None, asks: None, refused: None }]);
     }
 
     /// The offer is asked of where the actor stands when the gate runs,
@@ -1539,7 +1561,7 @@ mod actor_offers {
         app.update();
         watch(&mut app);
         let here = app.world().resource::<OfferedHere>();
-        let dear_offer = *here.find(player, dear, free).expect("listed");
+        let dear_offer = here.find(player, dear, free).expect("listed").clone();
         assert_eq!((dear_offer.price, dear_offer.refused), (Some(50), Some(Refused::Short(50))), "listed with its price, and refused saying how much");
         assert_eq!(here.find(player, fair, free).map(|o| o.refused), Some(None), "30 carried meets a price of 30");
 
@@ -1603,7 +1625,7 @@ mod actor_offers {
         app.world_mut().entity_mut(player).insert(Inventory { items: vec![coins] });
         app.update();
         watch(&mut app);
-        assert_eq!(offered(&app, player), vec![Offer { target: captive, verb: free, time: 200, price: None, refused: None }]);
+        assert_eq!(offered(&app, player), vec![Offer { target: captive, verb: free, time: 200, price: None, asks: None, refused: None }]);
         app.world_mut().write_message(Intent::new(player, Interact { target: captive, verb: free }));
         app.update();
         assert_eq!(app.world().resource::<Seen>().0.len(), 1, "taken up");

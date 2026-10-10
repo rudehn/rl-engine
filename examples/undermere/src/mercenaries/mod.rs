@@ -52,10 +52,11 @@
 //! [`AskForThing`], and [`hand_over`] moves the one chosen; [`PutOnBetter`]
 //! puts on whatever in its pack it is better off wearing.
 //!
-//! [`DISMISS`] asks first, by the engine's [`AskToConfirm`], and costs
-//! nothing until the yes, which [`let_go`] answers by [`dismiss`]: the
-//! mercenary sets down everything it carries and waits to be hired again,
-//! a [`Candidate`] on the townsfolk's side asking the fee of nothing. One
+//! [`DISMISS`] asks first, as the engine's asking offer, and costs nothing
+//! until the yes, which [`answer_dismiss`] answers by [`dismiss`]: the
+//! mercenary sets down whatever it was given and waits to be hired again,
+//! a [`Candidate`] on the townsfolk's side asking the fee of the kit it
+//! keeps. One
 //! that dies is gone for good: the tally lists it among the fallen,
 //! [`strip_the_fallen`] takes what made it the party's off its body, and
 //! [`say_who_fell`] has the log say it as the adventurer's own loss.

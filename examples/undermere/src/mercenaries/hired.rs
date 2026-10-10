@@ -18,13 +18,9 @@ pub const GIVE_TIME: u32 = 100;
 /// The verb a hired mercenary offers to be let go.
 pub const DISMISS: &str = "dismiss";
 
-/// What letting a mercenary go takes, in hundredths of a step: nothing.
-///
-/// Taking up `dismiss` only asks whether the adventurer means it, and the
-/// engine spends an offer's time before the question is put, so backing
-/// out costs nothing only if the offer does; the yes is a word, as an
-/// order is, and costs nothing either.
-pub const DISMISS_TIME: u32 = 0;
+/// What letting a mercenary go takes, in hundredths of a step: one step,
+/// as hiring it did. The offer asks first, so only a yes spends it.
+pub const DISMISS_TIME: u32 = 100;
 
 /// A sword the adventurer hired: who it is, what it cost, and what it has
 /// been told to do.
@@ -43,12 +39,15 @@ pub struct Mercenary {
     pub order: Order,
 }
 
-/// What a hired mercenary offers the adventurer: [`GIVE`], answered by
-/// [`answer_give`], then [`DISMISS`], answered by [`answer_dismiss`].
-pub fn hired_offers(verbs: &Verbs) -> Offers {
+/// What a hired mercenary called `name` offers the adventurer: [`GIVE`],
+/// answered by [`answer_give`], then [`DISMISS`], answered by
+/// [`answer_dismiss`]. Dismissing asks first, in its name, since it cannot
+/// be taken back.
+pub fn hired_offers(verbs: &Verbs, name: &str) -> Offers {
+    let question = format!("Dismiss {name}? The fee is not given back, and {name} sets down everything you gave.");
     Offers(vec![
         Offering::new(verbs.get(GIVE).expect("UndermerePlugin declares give"), GIVE_TIME),
-        Offering::new(verbs.get(DISMISS).expect("UndermerePlugin declares dismiss"), DISMISS_TIME),
+        Offering::new(verbs.get(DISMISS).expect("UndermerePlugin declares dismiss"), DISMISS_TIME).asking(question),
     ])
 }
 
@@ -66,7 +65,7 @@ pub fn hire(world: &mut World, candidate: Entity, adventurer: Entity) {
     let name = world.get::<Name>(candidate).map_or_else(String::new, |n| n.as_str().to_string());
     spend_fee(world, candidate);
     befriend(world, candidate);
-    let offers = hired_offers(world.resource::<Verbs>());
+    let offers = hired_offers(world.resource::<Verbs>(), &name);
     let hired = Mercenary { name, fee, order: Order::Follow };
     world.entity_mut(candidate).remove::<Candidate>().insert((Leader(adventurer), hired, offers));
     obey(world, candidate, Order::Follow);

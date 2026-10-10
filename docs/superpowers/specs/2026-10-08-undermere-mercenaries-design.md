@@ -159,7 +159,7 @@ Without this a mercenary drinking a found potion when hurt would say it mends, a
 A mercenary that puts on something cursed cannot take it off, as the adventurer cannot.
 
 `give`, on a hired mercenary, opens the pack's own chooser; the chosen thing moves to the mercenary's pack for a turn, and it puts it on on its own turn when it is gear worth more than what it wears.
-Nothing is taken back: what a mercenary carries comes back only when it dies or is dismissed and drops it.
+Nothing is taken back: what a mercenary was given comes back only when it dies or is dismissed and drops it.
 The cost of leading one is the loot it takes up first, which the hold order prevents.
 
 ### Travelling
@@ -173,7 +173,10 @@ This is the same for the stairs and for the Drowned Gate.
 
 ### Leaving
 
-`dismiss` asks once, then takes the mercenary out of the party: back on the townsfolk faction, `Ally`, `Leader` and its order taken off, its kit dropped where it stands, and `hire` offered again at the fee of what it now carries, which is nothing.
+`dismiss` is an offer that asks first, the engine's `Offering::asking`: the offers screen asks it, No picked out, and No costs nothing.
+A yes takes it up for a turn and takes the mercenary out of the party: back on the townsfolk faction, with `Ally`, `Leader` and its order taken off.
+It keeps its own kit, worn and carried, and sets down where it stands whatever it was given or picked up.
+`hire` is offered again at the fee of the kit it keeps, so hiring one and letting it go never buys its kit for less than a candidate would ask for it.
 
 ### Death
 

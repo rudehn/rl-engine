@@ -149,7 +149,9 @@ pub struct ChoosingFor {
 /// bag away answers nothing. What the choice does is the game's: the
 /// engine moves nothing and spends no time, since the offer that asked
 /// has spent its own. Opened only for the player the bag shows and only
-/// with no screen up, as a game's use key opens nothing over another.
+/// with no screen up, as a game's use key opens nothing over another. A
+/// choice is answered only while the asker still offers `verb` to the
+/// user, alive and in reach: one gone by then is answered nothing.
 #[derive(Message, Debug, Clone, PartialEq, Eq)]
 pub struct AskForThing {
     /// Who chooses: the player the bag shows.
@@ -305,7 +307,8 @@ pub fn inventory_modal(modals: &Modals) -> ModalId {
     modals.get(INVENTORY_MODAL).expect("InventoryPanel declares the inventory modal")
 }
 
-/// What the bag can ask for.
+/// What the bag can ask for, and what an answer to a game's question is
+/// checked against.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct BagIntents<'w> {
     equips: MessageWriter<'w, Intent<Equip>>,
@@ -316,6 +319,16 @@ pub struct BagIntents<'w> {
     aimed_uses: MessageWriter<'w, AimUse>,
     throws: MessageWriter<'w, AimThrow>,
     chosen: MessageWriter<'w, ThingChosen>,
+    offered: Option<Res<'w, OfferedHere>>,
+}
+
+impl BagIntents<'_> {
+    /// Whether `ask`'s asker still offers its verb to `user`, alive and in
+    /// reach. A game with no offers at all asked from somewhere else, and
+    /// is answered: there is nothing here to check it against.
+    fn still_asked(&self, user: Entity, ask: &AskForThing) -> bool {
+        self.offered.as_deref().is_none_or(|offered| offered.find(user, ask.asker, ask.verb).is_some())
+    }
 }
 
 /// Opens the bag choosing for a thing a game's own use key asked to use,
@@ -403,9 +416,14 @@ pub fn inventory_keys(
         let (Some(user), Some(&on)) = (view.entity, choices.get(selected)) else { return };
         if confirmed && holding.contains(user) {
             match (&menu.asked, menu.choosing) {
-                (Some(asked), _) => {
+                // Only while whoever asked still offers what asked to the
+                // user: one that died, or went out of reach while the bag
+                // was up, is answered nothing, as the offers screen's
+                // rows go with what offered them.
+                (Some(asked), _) if intents.still_asked(user, &asked.ask) => {
                     intents.chosen.write(ThingChosen { user, asker: asked.ask.asker, verb: asked.ask.verb, thing: on });
                 }
+                (Some(_), _) => {}
                 (None, Some(choosing)) => {
                     intents.uses_on.write(Intent::new(user, UseOn { item: choosing.item, on }));
                 }
@@ -1303,6 +1321,41 @@ mod tests {
         assert_eq!(stage.app.world().resource::<Turns>().now(), before, "no time spent");
         assert_eq!(stage.app.world().get::<Consumable>(polish).expect("charges").left, 3, "and nothing of the thing");
         assert!(stage.app.world().get::<Inventory>(user).expect("a bag").items.contains(&boots), "the bag as it was");
+    }
+
+    /// A game's question asked by someone beside the player is answered
+    /// while they still stand there offering what asked; once they are
+    /// gone out of reach, choosing answers nothing and puts the bag away.
+    #[test]
+    fn a_games_question_whose_asker_went_out_of_reach_is_answered_nothing() {
+        let plugins = (rl_bevy::PropsPlugin, InventoryPanel::new(Rect::new(0, 0, 52, 14)).title("Bag"));
+        let mut stage = Stage::new_with(plugins, |app| {
+            app.add_verb("give");
+        })
+        .screen(52, 14);
+        let user = stage.player;
+        let verb = stage.app.world().resource::<Verbs>().get("give").expect("declared");
+        let stone = stage.app.world_mut().spawn((Item, Name::new("stone"))).id();
+        stage.app.world_mut().entity_mut(user).insert(Inventory { items: vec![stone] });
+        let beside = stage.at.offset(1, 0);
+        let asker =
+            stage.app.world_mut().spawn((Actor, Position(beside), OnMap(MapId::SURFACE), Name::new("Mirela"), Offers(vec![Offering::new(verb, 100)]))).id();
+        stage.tick();
+        let answers = |stage: &mut Stage| stage.app.world_mut().resource_mut::<Messages<ThingChosen>>().drain().collect::<Vec<_>>();
+        let ask = AskForThing { user, asker, verb, prompt: "Hand over which?".into(), choices: vec![stone] };
+
+        stage.app.world_mut().write_message(ask.clone());
+        stage.tick();
+        stage.press(KeyCode::Enter);
+        assert_eq!(answers(&mut stage), vec![ThingChosen { user, asker, verb, thing: stone }], "answered while beside");
+
+        stage.app.world_mut().write_message(ask);
+        stage.tick();
+        stage.app.world_mut().entity_mut(asker).insert(Position(stage.at.offset(6, 0)));
+        stage.tick();
+        stage.press(KeyCode::Enter);
+        assert!(answers(&mut stage).is_empty(), "gone out of reach, answered nothing");
+        assert!(!stage.app.world().resource::<Modals>().any_open(), "and the bag put away");
     }
 
     /// A worn thing that will not come off is offered no key that would
