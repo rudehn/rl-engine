@@ -178,7 +178,7 @@ struct Band {
 /// The dar trio, floors eight and nine, the blademaster leading; a goblin
 /// war band, floors three to six, a goblin leading two of archer,
 /// conjurer or mystic, so a war band never doubles one kind.
-pub const BANDS: &[Band] = &[
+const BANDS: &[Band] = &[
     Band { floors: (3, 6), leader: "goblin", followers: &["goblin archer", "goblin conjurer", "goblin mystic"], count: 2 },
     Band { floors: (8, 9), leader: "dar blademaster", followers: &["dar priestess", "dar battlemage"], count: 2 },
 ];
@@ -446,7 +446,7 @@ fn camp_fire_cell(cells: &[Point], free: &mut impl FnMut(Point) -> bool, open: i
 }
 
 /// Populates every floor on the arrival that built it: a band of its own,
-/// the dar trio or a goblin war band wherever [`BANDS`] names its floor,
+/// the dar trio or a goblin war band wherever `BANDS` names its floor,
 /// then [`groups_on`]'s number of ordinary groups, drawn at its own band,
 /// planned against the floor as built and off every cell a piece marked,
 /// where a chest, a brazier or the king's court stands or will stand even
