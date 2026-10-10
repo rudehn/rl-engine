@@ -6,6 +6,8 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The party rail keeps a follower's facets whole and clips its name to make room, as the nearby rail keeps a state: a long name used to push the game's facet, a follower's order, off the row's end.
+
 - Tab with nothing open steps only through the rows the nearby rail lists, as a game left them in `ViewSet::Annotate`: a game that takes a row out, as one listing its followers on the party rail does, no longer has Tab land on a row nobody can see.
   The rail neither highlights nor marks on the map a focus it does not list, which the look cursor may still leave there; the new `NearbyView::lists(entity)` and `NearbyView::picked()` say which.
   The rail's health wash reads its tone from `health_tone`, the vitals' own rule, where it kept a copy of the thresholds; the tones are the same.

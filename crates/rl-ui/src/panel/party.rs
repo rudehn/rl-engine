@@ -109,13 +109,20 @@ fn draw_row(terminal: &mut Terminal, rect: Rect, y: i32, row: &Row, elsewhere: b
     // has room for both it and a few letters of the name.
     let shows_bar = row.health.is_some() && layout.bar_width > 0 && rect.width >= layout.bar_width + 6;
     let text_end = if shows_bar { rect.right() - layout.bar_width - 1 } else { rect.right() };
-    let mut name = row.label.clone();
+    // What the game says of a follower, its order, is the row's point, so
+    // the facets and the elsewhere mark are kept whole and the name gives
+    // way: a long name read as `Dagdis Longsh… · fighting freely` still
+    // says who, where `Dagdis Longshanks · fighti…` said neither what it
+    // was doing nor that it was cut there.
+    let mut tail = String::new();
     for facet in &row.facets {
-        name.push_str(" \u{00b7} ");
-        name.push_str(&facet.text);
+        tail.push_str(" \u{00b7} ");
+        tail.push_str(&facet.text);
     }
-    let tail = if elsewhere && !layout.elsewhere.is_empty() { format!(" ({})", layout.elsewhere) } else { String::new() };
-    let text = clip_keeping(&name, &tail, (text_end - rect.x - 2).max(0) as usize);
+    if elsewhere && !layout.elsewhere.is_empty() {
+        tail.push_str(&format!(" ({})", layout.elsewhere));
+    }
+    let text = clip_keeping(&row.label, &tail, (text_end - rect.x - 2).max(0) as usize);
     let tone = if elsewhere { Tones::MUTED } else { Tones::TEXT };
     terminal.print_on(rect.x + 2, y, &text, palette.get(tone), bg);
     if let (true, Some((hp, max))) = (shows_bar, row.health) {
@@ -199,6 +206,24 @@ mod tests {
         party(&mut stage, "kit", 'k', 2);
         stage.tick();
         assert!(stage.rows()[2].starts_with("k kit \u{00b7} hold "), "{:?}", stage.rows()[2]);
+    }
+
+    /// A name of twenty-four letters beside the longest order gives way to
+    /// the order, which is kept whole; the name keeps its start.
+    #[test]
+    fn a_long_name_is_clipped_and_the_games_facet_after_it_kept_whole() {
+        fn order(mut view: ResMut<PartyView>, mut facets: ResMut<crate::Facets>) {
+            for row in view.rows_mut() {
+                row.facets.push(facets.facet("order", "fighting freely"));
+            }
+        }
+        let mut stage = Stage::new(PartyPanel::new(Rect::new(0, 0, 36, 4))).screen(36, 4);
+        stage.app.add_systems(Update, order.in_set(crate::ViewSet::Annotate));
+        party(&mut stage, "Dagdisorvan Longshankson", 'h', 2);
+        stage.tick();
+        let row = &stage.rows()[2];
+        assert!(row.starts_with("h Dagdis"), "the name's start: {row:?}");
+        assert!(row.contains("\u{2026} \u{00b7} fighting freely "), "the name cut, the order whole: {row:?}");
     }
 
     /// The rail clears what it drew once the last follower is gone, rather
