@@ -2,16 +2,17 @@
 //!
 //! [`Tally`] is kept as the run goes, each count by a system reading what
 //! a turn did in `TurnSet::React`: [`count_the_fighting`] the kills, their
-//! threat and the damage, [`count_what_is_found`] the gold and the things
-//! taken up and the potions drunk, and [`remember_depth`] the deepest
-//! floor. It is saved with the run and put back to nought when the run
-//! ends.
+//! threat, the damage and the mercenaries who fell, [`count_what_is_found`]
+//! the gold and the things taken up and the potions drunk, and
+//! [`remember_depth`] the deepest floor. It is saved with the run and put
+//! back to nought when the run ends.
 //!
 //! [`score`] is the design's five lines and [`total`] what they come to;
 //! [`record`] writes the run down once it is over, as one [`RecordRun`]
-//! carrying the line the records list shows and two sections, the score
-//! line by line and the run's numbers. The end screen and the records
-//! screen both draw that one record, so the two never disagree.
+//! carrying the line the records list shows and its sections, the score
+//! line by line, the run's numbers, and, when any fell, the mercenaries
+//! lost, each a [`FallenMercenary`]. The end screen and the records screen
+//! both draw that one record, so the two never disagree.
 
 use std::collections::BTreeMap;
 
@@ -23,6 +24,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::bestiary::{Bestiary, Kind};
 use crate::dungeon::floor_of;
+use crate::mercenaries::Mercenary;
 use crate::run::Adventurer;
 
 /// Points for each floor reached, counted by the deepest.
@@ -45,8 +47,10 @@ pub const VICTORY_POINTS: i64 = 5000;
 pub struct Tally {
     /// Monsters the adventurer killed.
     pub kills: u32,
-    /// The engine's `balance::threat` of everything the adventurer killed,
-    /// summed, and rounded only when it is scored.
+    /// The engine's `balance::threat` of everything the adventurer and the
+    /// mercenaries they hired killed, summed, and rounded only when it is
+    /// scored: the gold spent on the party is the adventurer's choice, and
+    /// a party that kills is the return on it.
     pub threat_slain: f32,
     /// The deadliest thing the adventurer killed, by name, and its threat.
     pub deadliest: Option<(String, f32)>,
@@ -78,6 +82,27 @@ pub struct Tally {
     /// death: what did may be gone by the time the record is written, a
     /// monster's last burst or a shooter that died behind its shot.
     pub slain_by: Option<String>,
+    /// Every hired mercenary who died, in the order they fell: how many
+    /// the run lost, and who, where and to what.
+    pub mercenaries_fallen: Vec<FallenMercenary>,
+}
+
+/// A hired mercenary who died, as the end screen and the records name it.
+///
+/// Its name kept as a word rather than the body it left, which is gone or
+/// renamed long before the run is written down; and what killed it as the
+/// record says it, read at the death, for the same reason as
+/// [`Tally::slain_by`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FallenMercenary {
+    /// What it was called.
+    pub name: String,
+    /// The floor it fell on, nought for Mereholt.
+    pub floor: u32,
+    /// What killed it, `a goblin` or `your own hand`; `None` when nothing
+    /// got the credit or what did was gone.
+    pub by: Option<String>,
 }
 
 impl Tally {
@@ -90,6 +115,13 @@ impl Tally {
         if self.deadliest.as_ref().is_none_or(|(_, worst)| threat > *worst) {
             self.deadliest = Some((name.to_string(), threat));
         }
+    }
+
+    /// How many hired mercenaries the run has lost: the stats line
+    /// `DESIGN.md` plans, counted off the fallen rather than kept beside
+    /// them, so the two cannot disagree.
+    pub fn mercenaries_lost(&self) -> u32 {
+        u32::try_from(self.mercenaries_fallen.len()).unwrap_or(u32::MAX)
     }
 }
 
@@ -131,6 +163,14 @@ pub fn remember_depth(mut entered: MessageReader<PlaceEntered>, mut tally: ResMu
 /// boss's death is noted by name whoever's hand it fell to, since the
 /// record of the run it won names it, and so is whatever killed the
 /// adventurer, since the record of the run it ended names that.
+///
+/// A death a hired mercenary gets the credit for adds its threat too, and
+/// nothing else: the kills, the deadliest and the mini-bosses stay the
+/// adventurer's own. A hired mercenary's own death is a loss, noted with
+/// where it fell and what killed it, and never a kill, even at the
+/// adventurer's hand, so hiring one to cut it down scores nothing. What a
+/// freed captive or a dominated foe kills counts nowhere: the party the
+/// score pays for is the one bought.
 pub fn count_the_fighting(
     mut dealt: MessageReader<DamageDealt>,
     mut deaths: MessageReader<DeathEvent>,
@@ -176,6 +216,10 @@ pub fn count_the_fighting(
         if Some(death.entity) == me {
             tally.slain_by = credit.of(death.credit);
         }
+        if let Some(fallen) = credit.fallen(death.entity, death.credit) {
+            tally.mercenaries_fallen.push(fallen);
+            continue;
+        }
         // A raised body's second death is counted nowhere: its first
         // already paid its kill, its mini-boss and its threat.
         let Ok((kind, false)) = kinds.get(death.entity) else { continue };
@@ -191,6 +235,8 @@ pub fn count_the_fighting(
             if def.miniboss {
                 tally.minibosses += 1;
             }
+        } else if credit.hired(death.credit) {
+            tally.threat_slain += threat(def);
         }
     }
 }
@@ -402,18 +448,55 @@ pub fn sections(lines: &[(String, i64)], tally: &Tally, turns: u32) -> Vec<Recor
         ("Potions drunk", tally.potions_drunk.to_string()),
         ("Items found", tally.items_found.to_string()),
         ("Gold found", tally.gold_found.to_string()),
+        ("Mercenaries lost", tally.mercenaries_lost().to_string()),
     ];
-    vec![RecordSection { heading: "Score".to_string(), body: score }, RecordSection { heading: "The run".to_string(), body: ledger(&run) }]
+    let mut sections = vec![RecordSection { heading: "Score".to_string(), body: score }, RecordSection { heading: "The run".to_string(), body: ledger(&run) }];
+    if !tally.mercenaries_fallen.is_empty() {
+        let fallen: Vec<String> = tally.mercenaries_fallen.iter().map(fallen_line).collect();
+        sections.push(RecordSection { heading: FALLEN.to_string(), body: fallen.join("\n") });
+    }
+    sections
 }
 
-/// What a record says gets the credit for the adventurer's death.
+/// The heading the mercenaries a run lost are listed under, below its
+/// numbers, and only when it lost any.
+pub const FALLEN: &str = "The fallen";
+
+/// One fallen mercenary as the record lists it, in the words the run's own
+/// summary uses: `Brenna, slain by a goblin on floor 3`.
+fn fallen_line(fallen: &FallenMercenary) -> String {
+    let place = if fallen.floor == 0 { "in Mereholt".to_string() } else { format!("on floor {}", fallen.floor) };
+    match &fallen.by {
+        Some(by) => format!("{}, slain by {by} {place}", fallen.name),
+        None => format!("{}, died {place}", fallen.name),
+    }
+}
+
+/// Who gets the credit for a death: what a record says killed the
+/// adventurer or one of their mercenaries, and whether a kill is the
+/// party's.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Credit<'w, 's> {
     adventurer: Query<'w, 's, Entity, With<Adventurer>>,
     names: Query<'w, 's, &'static Name>,
+    party: Query<'w, 's, (&'static Mercenary, Option<&'static OnMap>)>,
 }
 
 impl Credit<'_, '_> {
+    /// Whether `by` is a mercenary the adventurer hired, whose kills count
+    /// on the Slain line.
+    fn hired(&self, by: Option<Entity>) -> bool {
+        by.is_some_and(|by| self.party.contains(by))
+    }
+
+    /// `dead` as a fallen mercenary, killed by `by`, when it was one the
+    /// adventurer hired; read in the pass it died in, while it still is.
+    fn fallen(&self, dead: Entity, by: Option<Entity>) -> Option<FallenMercenary> {
+        let (hired, on) = self.party.get(dead).ok()?;
+        let floor = on.and_then(|on| floor_of(on.0)).unwrap_or(0);
+        Some(FallenMercenary { name: hired.name.clone(), floor, by: self.of(by) })
+    }
+
     /// Whoever `by` is, as the summary says it: a goblin, the Drowned
     /// King, or the adventurer's own hand; `None` when nothing gets the
     /// credit or what did is gone.
@@ -758,7 +841,7 @@ mod tests {
         let labels: Vec<&str> = run.iter().map(|r| r.split(" .").next().unwrap_or_default()).collect();
         assert_eq!(
             labels,
-            ["Turns", "Deepest floor", "Kills", "Deadliest", "Damage dealt", "Damage taken", "Potions drunk", "Items found", "Gold found"],
+            ["Turns", "Deepest floor", "Kills", "Deadliest", "Damage dealt", "Damage taken", "Potions drunk", "Items found", "Gold found", "Mercenaries lost"],
             "{run:?}"
         );
         assert!(run[1].ends_with(" 3"), "floor three: {run:?}");

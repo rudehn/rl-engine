@@ -295,7 +295,19 @@ impl Plugin for UndermerePlugin {
         // A candidate's own talk, its kit and its fee; `hire` answered by
         // taking it into the party; and `hire` kept off while the party is
         // full, counted at the start of every pass.
-        app.add_systems(Turn, (crate::mercenaries::answer_candidates, crate::mercenaries::answer_hire, crate::mercenaries::answer_give).in_set(TurnSet::React));
+        app.add_systems(
+            Turn,
+            (crate::mercenaries::answer_candidates, crate::mercenaries::answer_hire, crate::mercenaries::answer_give, crate::mercenaries::answer_dismiss)
+                .in_set(TurnSet::React),
+        );
+        // A yes to letting one go, answered before the turns as the yes
+        // spends none; and one that falls taken out of the party once the
+        // tally has counted it, and its death said as the adventurer's own
+        // loss.
+        app.add_message::<AskToConfirm>().add_message::<Confirmed>().init_resource::<crate::mercenaries::Fell>();
+        app.add_systems(Update, crate::mercenaries::let_go.after(EngineSet::Input).before(EngineSet::Turns));
+        app.add_systems(Turn, crate::mercenaries::strip_the_fallen.in_set(TurnSet::React).after(crate::tally::count_the_fighting));
+        app.add_systems(Update, crate::mercenaries::say_who_fell.in_set(ViewSet::Annotate));
         // The party after the adventurer through every way and warp they take.
         app.add_systems(Turn, crate::mercenaries::follow_through.in_set(TurnSet::React));
         // What a hired mercenary knows of what it carries and sees: its own

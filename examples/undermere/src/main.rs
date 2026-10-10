@@ -1424,4 +1424,87 @@ mod tests {
         assert!(screen.iter().any(|r| r.contains("carries 2 potions of healing")), "and the thing given: {screen:#?}");
         assert!(!screen.iter().any(|r| r.contains("a sword for hire")), "and no longer for hire: {screen:#?}");
     }
+
+    /// Opens the offers screen on the mercenary beside the adventurer and
+    /// takes up `dismiss` on it, as a player walks the rows to it.
+    fn dismiss_on_screen(app: &mut App, name: &str) {
+        press(app, KeyCode::Enter);
+        let row = {
+            let view = app.world().resource::<rl_engine::rl_ui::view::offers::OffersView>();
+            view.rows.iter().position(|r| r.label == format!("dismiss {name}")).unwrap_or_else(|| panic!("dismiss {name} is offered: {:#?}", written(app)))
+        };
+        for _ in 0..row {
+            press(app, KeyCode::ArrowDown);
+        }
+        press(app, KeyCode::Enter);
+        undermere::testing::settle(app);
+    }
+
+    /// On the real screen, `dismiss` on a mercenary asks in its name with
+    /// No picked out, and the close key backs out with the mercenary still
+    /// following, carrying what it was hired with, and no turn spent. Asked
+    /// again, Yes lets it go: it sets its kit down where it stands and is
+    /// for hire again at the base fee, and the log says so.
+    #[test]
+    fn dismissing_a_mercenary_on_the_real_screen_asks_first_and_only_a_yes_lets_it_go() {
+        let mut app = on_screen(RunSeed(7));
+        let (me, merc, _, name) = hire_on_screen(&mut app);
+        let (before, kit) = (app.world().resource::<Turns>().now(), app.world().get::<Inventory>(merc).expect("a pack").items.clone());
+        dismiss_on_screen(&mut app, &name);
+        let screen = written(&app);
+        assert!(screen.iter().any(|r| r.contains(&format!("Dismiss {name}?"))), "asked in its name: {screen:#?}");
+        let (no, yes) = (screen.iter().position(|r| r.contains("No")), screen.iter().position(|r| r.contains("Yes")));
+        assert!(matches!((no, yes), (Some(no), Some(yes)) if no < yes), "No over Yes: {screen:#?}");
+        press(&mut app, KeyCode::Escape);
+        undermere::testing::settle(&mut app);
+        let screen = written(&app);
+        assert!(!screen.iter().any(|r| r.contains(&format!("Dismiss {name}?"))), "backed out: {screen:#?}");
+        assert_eq!(app.world().get::<Leader>(merc), Some(&Leader(me)), "still following");
+        assert_eq!(app.world().get::<Inventory>(merc).map(|b| b.items.clone()), Some(kit.clone()), "still carrying its kit");
+        assert_eq!(app.world().resource::<Turns>().now(), before, "and no turn spent");
+
+        dismiss_on_screen(&mut app, &name);
+        press(&mut app, KeyCode::ArrowDown);
+        press(&mut app, KeyCode::Enter);
+        undermere::testing::settle(&mut app);
+        let screen = written(&app);
+        assert!(app.world().get::<undermere::mercenaries::Mercenary>(merc).is_none(), "let go: {screen:#?}");
+        assert!(screen.iter().any(|r| r.contains(&format!("{name} leaves your service"))), "said: {screen:#?}");
+        let cell = undermere::testing::at(&app, merc);
+        assert!(kit.iter().all(|t| app.world().get::<Position>(*t).map(|p| p.0) == Some(cell)), "its kit set down where it stands");
+        let base = app.world().resource::<undermere::mercenaries::Mercenaries>().fee(&[], app.world().resource::<undermere::armory::Armory>());
+        let offers = app.world().get::<Offers>(merc).expect("offers");
+        assert!(offers.0.first().is_some_and(|o| o.price == Some(base)), "for hire again at the base fee: {offers:?}");
+    }
+
+    /// A mercenary killed by a goblin on floor two, and then the
+    /// adventurer: the end screen lists the run's numbers with one
+    /// mercenary lost, and under them the fallen, by name, killer and
+    /// floor.
+    #[test]
+    fn the_end_screen_names_a_fallen_mercenary_under_the_runs_numbers() {
+        let mut app = on_screen(RunSeed(7));
+        let me = undermere::testing::arrive(&mut app, undermere::dungeon::map_of(2));
+        undermere::testing::clear_monsters(&mut app);
+        let here = undermere::testing::at(&app, me);
+        let around = [here.offset(1, 0), here.offset(-1, 0)];
+        undermere::testing::lay_floor(&mut app, &around);
+        let merc = undermere::testing::monster(&mut app, undermere::mercenaries::MERCENARY, around[0]);
+        app.world_mut().entity_mut(merc).insert((Name::new("Brenna"), undermere::mercenaries::Candidate { fee: 0 }));
+        undermere::mercenaries::hire(app.world_mut(), merc, me);
+        let goblin = undermere::testing::monster(&mut app, "goblin", around[1]);
+        undermere::testing::kill(&mut app, merc, Some(goblin));
+        undermere::testing::kill(&mut app, me, Some(goblin));
+        for _ in 0..4 {
+            app.update();
+        }
+        let screen = written(&app);
+        // The end screen's own column of a row, between its borders, since
+        // the rail beside it shares the row.
+        let inside = |r: &String| r.split('│').nth(1).unwrap_or_default().trim().to_string();
+        let lost = screen.iter().position(|r| inside(r).starts_with("Mercenaries lost ...") && inside(r).ends_with(" 1"));
+        let heading = screen.iter().position(|r| inside(r) == "The fallen");
+        let named = screen.iter().position(|r| inside(r) == "Brenna, slain by a goblin on floor 2");
+        assert!(matches!((lost, heading, named), (Some(l), Some(h), Some(n)) if l < h && h + 1 == n), "the fallen under the numbers: {screen:#?}");
+    }
 }

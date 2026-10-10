@@ -18,9 +18,13 @@ pub const GIVE_TIME: u32 = 100;
 /// The verb a hired mercenary offers to be let go.
 pub const DISMISS: &str = "dismiss";
 
-/// What letting a mercenary go takes, in hundredths of a step: one step,
-/// as hiring it did.
-pub const DISMISS_TIME: u32 = 100;
+/// What letting a mercenary go takes, in hundredths of a step: nothing.
+///
+/// Taking up `dismiss` only asks whether the adventurer means it, and the
+/// engine spends an offer's time before the question is put, so backing
+/// out costs nothing only if the offer does; the yes is a word, as an
+/// order is, and costs nothing either.
+pub const DISMISS_TIME: u32 = 0;
 
 /// A sword the adventurer hired: who it is, what it cost, and what it has
 /// been told to do.
@@ -39,9 +43,8 @@ pub struct Mercenary {
     pub order: Order,
 }
 
-/// What a hired mercenary offers the adventurer: [`GIVE`], then
-/// [`DISMISS`]. What each does is answered where it is built; until then
-/// taking one up spends its turn and nothing else.
+/// What a hired mercenary offers the adventurer: [`GIVE`], answered by
+/// [`answer_give`], then [`DISMISS`], answered by [`answer_dismiss`].
 pub fn hired_offers(verbs: &Verbs) -> Offers {
     Offers(vec![
         Offering::new(verbs.get(GIVE).expect("UndermerePlugin declares give"), GIVE_TIME),

@@ -88,18 +88,24 @@ pub fn spawn_candidate(commands: &mut Commands, makers: &Makers, name: &str, kit
     }
     let def = bestiary.defs.get(bestiary.defs.expect(MERCENARY));
     let candidate = spawn_monster(commands, def, at, TOWN, registries, false);
-    let offers = vec![
-        Offering::new(verbs.get(HIRE).expect("UndermerePlugin declares hire"), HIRE_TIME).priced(fee),
-        Offering::new(verbs.get(TALK).expect("UndermerePlugin declares talk"), TALK_TIME),
-    ];
     commands.entity(candidate).remove::<Mind>().insert((
         Name::new(name.to_string()),
         Candidate { fee },
         Inventory { items: pack },
         Equipped(worn),
-        Offers(offers),
+        candidate_offers(verbs, fee),
     ));
     candidate
+}
+
+/// What a candidate offers: [`HIRE`] at `fee`, first, so the offers screen
+/// opens on it, then [`TALK`]. One list for a candidate seated and for a
+/// mercenary let go, which waits to be hired again.
+pub fn candidate_offers(verbs: &Verbs, fee: u32) -> Offers {
+    Offers(vec![
+        Offering::new(verbs.get(HIRE).expect("UndermerePlugin declares hire"), HIRE_TIME).priced(fee),
+        Offering::new(verbs.get(TALK).expect("UndermerePlugin declares talk"), TALK_TIME),
+    ])
 }
 
 /// Declares the tone a mercenary's words are said in, the colour of its
@@ -263,7 +269,7 @@ impl KitSeen<'_, '_> {
 }
 
 /// `items` as a sentence lists them: `a`, `a and b`, `a, b and c`.
-fn and_list(items: &[String]) -> String {
+pub(super) fn and_list(items: &[String]) -> String {
     match items {
         [] => String::new(),
         [one] => one.clone(),

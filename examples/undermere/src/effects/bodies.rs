@@ -438,15 +438,23 @@ pub struct Raised;
 /// that does not outlast a death, and marks it [`Raised`]: what it drops,
 /// which its first death already dropped; sleep, which a blow on a
 /// sleeper did not end since the blow killed it; what it stole, which it
-/// let fall where it died; an offer to be freed, a patrol, a post and a
-/// leader of its old life; and a link to whoever spawned it. `revive`
+/// let fall where it died; an offer to be freed, a patrol, a post, a
+/// leader and a hireling's place in the party of its old life; and a link
+/// to whoever spawned it. `revive`
 /// gives back everything the actor died with, which is right for what it
 /// is and wrong for what it was doing.
 pub fn forget_its_life(world: &mut World, body: Entity) {
     use rl_engine::rl_bevy::Drops;
-    world
-        .entity_mut(body)
-        .remove::<(Drops<crate::armory::ItemDef>, crate::tricks::Stole, Offers, crate::tricks::PatrolRoute, crate::tricks::Spawned, Post, Leader)>();
+    world.entity_mut(body).remove::<(
+        Drops<crate::armory::ItemDef>,
+        crate::tricks::Stole,
+        Offers,
+        crate::tricks::PatrolRoute,
+        crate::tricks::Spawned,
+        Post,
+        Leader,
+        crate::mercenaries::Mercenary,
+    )>();
     world.entity_mut(body).insert(Raised);
     // Quietly, as the twin put it back: a body that rises is not news of
     // a sleeper waking.

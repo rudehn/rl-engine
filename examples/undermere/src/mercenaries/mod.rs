@@ -52,6 +52,14 @@
 //! [`AskForThing`], and [`hand_over`] moves the one chosen; [`PutOnBetter`]
 //! puts on whatever in its pack it is better off wearing.
 //!
+//! [`DISMISS`] asks first, by the engine's [`AskToConfirm`], and costs
+//! nothing until the yes, which [`let_go`] answers by [`dismiss`]: the
+//! mercenary sets down everything it carries and waits to be hired again,
+//! a [`Candidate`] on the townsfolk's side asking the fee of nothing. One
+//! that dies is gone for good: the tally lists it among the fallen,
+//! [`strip_the_fallen`] takes what made it the party's off its body, and
+//! [`say_who_fell`] has the log say it as the adventurer's own loss.
+//!
 //! The party goes where the adventurer goes, from beside them: on their
 //! own `Travelled`, through a stair, the gate or a waystone's call alike,
 //! [`follow_through`] sends after them each mercenary near the cell they
@@ -75,6 +83,7 @@ mod fixtures;
 mod hired;
 mod kit;
 mod knowing;
+mod leaving;
 mod orders;
 mod tavern;
 mod travel;
@@ -82,6 +91,7 @@ mod travel;
 pub use hired::*;
 pub use kit::*;
 pub use knowing::*;
+pub use leaving::*;
 pub use orders::*;
 pub use tavern::*;
 pub use travel::*;

@@ -132,7 +132,7 @@ Itemized, every line shown on the end screen and in the records:
 | Line | Points |
 | --- | --- |
 | Depth | 100 for each floor reached, counted by the deepest |
-| Slain | each kill's threat, the engine's `balance::threat` of what was killed, summed and rounded |
+| Slain | each kill's threat, the adventurer's and their hired mercenaries', the engine's `balance::threat` of what was killed, summed and rounded |
 | Treasure | the gold found |
 | Mini-bosses | 500 each |
 | Victory | 5000 |
