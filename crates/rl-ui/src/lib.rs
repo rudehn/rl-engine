@@ -126,7 +126,7 @@ pub mod tone;
 pub mod view;
 
 pub use controls::{AddControls, Bindings, Chord, Control, ControlId, ControlInput, Controls, ControlsKeys, EngineKey, Keys, RepeatPace, Repeats, key_name};
-pub use cursor::{CursorKeys, CursorStyle, Steer, mark};
+pub use cursor::{CursorKeys, CursorMap, CursorStyle, Steer, mark};
 pub use facet::{Facet, FacetId, FacetKey, Facets};
 pub use focus::{Focus, InSight, Sighted, Sighting};
 pub use game_menu::{GAME_MENU_MODAL, GameMenu, GameMenuPanel, MenuItem, MenuKeys, describe_sheet, game_menu_modal};

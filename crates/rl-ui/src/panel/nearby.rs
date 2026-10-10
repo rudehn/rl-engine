@@ -10,10 +10,10 @@ use std::collections::BTreeMap;
 use bevy::prelude::*;
 use rl_bevy::PresentSet;
 use rl_core::Rect;
-use rl_render::{Cell, MapView, Terminal};
+use rl_render::{Cell, Terminal};
 use rl_rules::Relation;
 
-use crate::cursor::CursorStyle;
+use crate::cursor::{CursorMap, CursorStyle};
 use crate::modal::Modals;
 use crate::panel::{clear, clip, frame, section};
 use crate::tone::{Palette, ToneId, Tones};
@@ -197,15 +197,15 @@ pub fn draw_nearby(
     view: Res<NearbyView>,
     palette: Res<Palette>,
     modals: Res<Modals>,
-    map: Option<Res<MapView>>,
+    map: CursorMap,
     time: Res<Time>,
 ) {
-    if let (Some(focused), Some(map)) = (view.focused, map.as_deref())
+    if let Some(focused) = view.focused
         && !modals.any_open()
     {
         // The same mark the look cursor and the targeting cursor use, so
         // the row picked out and the cell it stands on read as one thing.
-        crate::cursor::mark(&mut terminal, map, focused.at, layout.cursor, &palette, time.elapsed_secs());
+        map.mark(&mut terminal, focused.at, layout.cursor, &palette, time.elapsed_secs());
     }
     let rect = layout.rect;
     if rect.width < 6 || rect.height < 4 {
@@ -320,6 +320,7 @@ mod tests {
     use super::*;
     use crate::cursor::CursorKeys;
     use crate::harness::Stage;
+    use rl_render::MapView;
 
     #[test]
     fn the_rail_prints_a_heading_a_glyph_a_name_and_the_row_itself_is_the_health_bar() {

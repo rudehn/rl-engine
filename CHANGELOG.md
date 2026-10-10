@@ -6,6 +6,10 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- A cursor's ticks never stand on someone the map drew beside the cell it points at: the look cursor on a monster next to the player used to put the player's own glyph out under its tick.
+  The map keeps who it drew each frame in the new `DrawnActors`, which `MapViewPlugin` adds, and the side a tick would cover goes unmarked; anything else, a wall or a thing lying about, still takes its tick.
+  `cursor::mark` takes `drawn: Option<&DrawnActors>` after the view, so a game that drew a cursor with it passes its `Option<Res<DrawnActors>>` through, or `None` for the old drawing; the new `CursorMap` system parameter borrows the map view and the account together and marks with both, as the look, targeting and nearby presenters now do.
+
 - An offer may ask first: `Offering::asking(question)` carries a yes-or-no question in the game's words, and the offers screen, taking such an offer up, shows it with two answers, No picked out above Yes.
   Yes writes the ordinary `Intent<Interact>`, so the engine checks the offer's reach and charges its own time as for any offer, and an offerer gone out of reach by the yes is refused like any other; No, or the close key, writes nothing and costs nothing, and the question goes unanswered with its offer if whatever offered it leaves reach while it is up.
   A walk into whoever offers it never takes it up, as with a priced offer, and comes to the offers screen instead; the interact key on a lone asking offer opens the screen on its question at once.

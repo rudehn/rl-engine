@@ -24,12 +24,13 @@
 //! How a cell is marked is here too, as [`CursorStyle`]: every screen that
 //! points at a cell points at it the same two ways, so a game picks one
 //! and picks it everywhere. [`mark`] is the drawing, one place, so the two
-//! styles cannot drift apart.
+//! styles cannot drift apart, and [`CursorMap`] what a presenter borrows
+//! to draw it: the map, and who the map drew, whom a tick leaves showing.
 
 use bevy::color::Mix;
 use bevy::prelude::*;
 use rl_core::{Direction, Point, Rect};
-use rl_render::Terminal;
+use rl_render::{DrawnActors, Terminal};
 
 use crate::controls::Repeats;
 use crate::focus::{Focus, Sighting, cycle};
@@ -67,7 +68,8 @@ pub enum CursorStyle {
         pulse: Option<ToneId>,
     },
     /// Four marks on the cells around it, framing the cell and leaving
-    /// the cell itself exactly as the map drew it.
+    /// the cell itself exactly as the map drew it, and never one on
+    /// someone standing beside it.
     Ticks {
         /// Left, right, above, below.
         marks: [char; 4],
@@ -122,11 +124,13 @@ impl CursorStyle {
 }
 
 /// Marks `cell` on the map in `style`, at `t` seconds for whatever is
-/// pulsing.
+/// pulsing, leaving whoever `drawn` says the map drew beside it showing.
 ///
 /// The one drawing of a cursor, so a screen that points at a cell points
-/// at it the way every other screen does.
-pub fn mark(terminal: &mut Terminal, view: &rl_render::MapView, cell: Point, style: CursorStyle, palette: &Palette, t: f32) {
+/// at it the way every other screen does. `drawn` is `None` where the
+/// map keeps no account of who it drew, and then a tick stands wherever
+/// it falls.
+pub fn mark(terminal: &mut Terminal, view: &rl_render::MapView, drawn: Option<&DrawnActors>, cell: Point, style: CursorStyle, palette: &Palette, t: f32) {
     let color = style.color(palette, t);
     match style {
         CursorStyle::Glow { .. } => view.wash(terminal, cell, color),
@@ -134,11 +138,45 @@ pub fn mark(terminal: &mut Terminal, view: &rl_render::MapView, cell: Point, sty
             // The cell itself is left alone: a cursor that covered it would
             // hide what it points at. Each tick stands on its tile as the
             // tile's own glyph would, so on a map of wide tiles it is
-            // centred on it and the four stand as far off on every side.
+            // centred on it and the four stand as far off on every side;
+            // and so a tick on someone's tile would put them out, most
+            // often the player looking at what stands next to them. That
+            // side goes unmarked: three ticks still frame the cell, and
+            // the one left off is where someone visibly is.
             let around = [(-1, 0), (1, 0), (0, -1), (0, 1)];
             for ((dx, dy), glyph) in around.into_iter().zip(marks) {
-                view.put(terminal, cell.offset(dx, dy), glyph, color);
+                let at = cell.offset(dx, dy);
+                if !drawn.is_some_and(|d| d.at(at)) {
+                    view.put(terminal, at, glyph, color);
+                }
             }
+        }
+    }
+}
+
+/// The map a presenter marks a cell on, and who the map drew there,
+/// borrowed together as one system parameter by every presenter that
+/// points at a cell, so none can mark without leaving the drawn showing.
+///
+/// Both optional: with no [`MapView`](rl_render::MapView) there is no map
+/// to mark and [`CursorMap::mark`] does nothing, and with no
+/// [`DrawnActors`] a tick stands wherever it falls.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct CursorMap<'w> {
+    view: Option<Res<'w, rl_render::MapView>>,
+    drawn: Option<Res<'w, DrawnActors>>,
+}
+
+impl CursorMap<'_> {
+    /// The map view, when the game draws a map.
+    pub fn view(&self) -> Option<&rl_render::MapView> {
+        self.view.as_deref()
+    }
+
+    /// Marks `cell` as [`mark`] does, when there is a map to mark it on.
+    pub fn mark(&self, terminal: &mut Terminal, cell: Point, style: CursorStyle, palette: &Palette, t: f32) {
+        if let Some(view) = self.view() {
+            mark(terminal, view, self.drawn.as_deref(), cell, style, palette, t);
         }
     }
 }
@@ -419,14 +457,38 @@ mod style_tests {
 
         let mut terminal = stage.app.world_mut().resource_mut::<Terminal>();
         let before = terminal.get(screen.x, screen.y).expect("a cell");
-        mark(&mut terminal, &view, at, glow, &palette, 0.0);
+        mark(&mut terminal, &view, None, at, glow, &palette, 0.0);
         let after = terminal.get(screen.x, screen.y).expect("a cell");
         assert_eq!(after.glyph, before.glyph, "a glow leaves what stands there showing");
         assert_eq!(after.bg, palette.get(Tones::SELECT), "and washes the cell behind it");
 
-        mark(&mut terminal, &view, at, ticks, &palette, 0.0);
+        mark(&mut terminal, &view, None, at, ticks, &palette, 0.0);
         assert_eq!(terminal.get(screen.x, screen.y).map(|c| c.glyph), Some(before.glyph), "ticks never cover the cell");
         assert_eq!(terminal.get(left.x, left.y).map(|c| c.glyph), Some('-'), "they mark around it");
+    }
+
+    /// Ticks round a crab with a gull beside it leave the gull drawn and
+    /// mark the other three sides: a cursor never puts out someone the
+    /// map shows next to what it points at.
+    #[test]
+    fn ticks_leave_someone_standing_beside_the_cell_drawn_and_frame_the_other_sides() {
+        let mut stage = Stage::new_with(NearbyPanel::new(Rect::new(40, 0, 20, 20)), |app| {
+            app.add_plugins(rl_render::MapViewPlugin::new(Rect::new(0, 0, 40, 20)));
+        })
+        .screen(60, 24);
+        stage.actor("crab", 'c', 2, 0);
+        stage.actor("gull", 'g', 3, 0);
+        stage.tick();
+        let at = stage.at.offset(2, 0);
+        let world = stage.app.world();
+        let (palette, view) = (world.resource::<Palette>().clone(), *world.resource::<rl_render::MapView>());
+        let drawn = world.resource::<DrawnActors>();
+        assert!(drawn.at(at.offset(1, 0)), "the map drew the gull");
+        let mut terminal = world.resource::<Terminal>().clone();
+        mark(&mut terminal, &view, Some(drawn), at, CursorStyle::ticks(), &palette, 0.0);
+        let glyph = |p: Point| view.get(&terminal, p).map(|c| c.glyph);
+        assert_eq!(glyph(at.offset(1, 0)), Some('g'), "the gull is still drawn");
+        assert_eq!([glyph(at.offset(-1, 0)), glyph(at.offset(0, -1)), glyph(at.offset(0, 1))], [Some('-'), Some('|'), Some('|')], "the rest are marked");
     }
 
     /// Pulsing is a second tone to breathe toward, and no pulse is the

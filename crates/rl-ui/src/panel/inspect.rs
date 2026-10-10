@@ -23,7 +23,7 @@ use rl_core::{Point, Rect};
 use rl_render::{MapView, Terminal};
 use rl_rules::forecast::Outlook;
 
-use crate::cursor::CursorStyle;
+use crate::cursor::{CursorMap, CursorStyle};
 use crate::modal::Modals;
 use crate::panel::nearby::relation_tone;
 use crate::panel::{bar, clear, clip, frame, wrap};
@@ -210,16 +210,14 @@ pub fn draw_inspect(
     placed: Res<InspectPlacement>,
     view: Res<InspectView>,
     palette: Res<Palette>,
-    map_view: Option<Res<MapView>>,
+    map: CursorMap,
     time: Res<Time>,
 ) {
     let Some(rect) = placed.0 else { return };
     // However the game marks a cell it is pointing at, drawn where the
     // cursor is: one style, shared with the nearby rail's highlight and
     // the targeting cursor, so a player learns one mark.
-    if let Some(map_view) = map_view {
-        crate::cursor::mark(&mut terminal, &map_view, view.cursor, layout.cursor, &palette, time.elapsed_secs());
-    }
+    map.mark(&mut terminal, view.cursor, layout.cursor, &palette, time.elapsed_secs());
 
     if rect.width < 12 || rect.height < 4 {
         return;

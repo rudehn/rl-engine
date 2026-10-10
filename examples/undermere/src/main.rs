@@ -1263,6 +1263,44 @@ mod tests {
         assert_eq!(undermere::testing::at(&app, me), from, "and nobody stepped");
     }
 
+    /// The look cursor on a candidate frames it without hiding the
+    /// adventurer beside it, from whichever side they stand: the tick that
+    /// would stand on their cell is left off, and the one across from them
+    /// is drawn.
+    #[test]
+    fn the_look_cursor_beside_the_adventurer_never_hides_them() {
+        let mut app = on_screen(RunSeed(7));
+        let me = undermere::testing::adventurer(&mut app);
+        let candidate = {
+            let world = app.world_mut();
+            world.query_filtered::<Entity, With<undermere::mercenaries::Candidate>>().iter(world).next().expect("a candidate waits")
+        };
+        let at = undermere::testing::at(&app, candidate);
+        let taken: Vec<Point> = {
+            let world = app.world_mut();
+            world.query_filtered::<&Position, With<Blocks>>().iter(world).map(|p| p.0).collect()
+        };
+        let town = undermere::dungeon::TOWN;
+        let sides: Vec<(i32, i32)> = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+            .into_iter()
+            .filter(|(dx, dy)| app.world().resource::<WorldMap>().is_walkable_on(town, at.offset(*dx, *dy)) && !taken.contains(&at.offset(*dx, *dy)))
+            .collect();
+        assert!(!sides.is_empty(), "a side of the candidate to stand on");
+        for (dx, dy) in sides {
+            undermere::testing::stand_on(&mut app, me, at.offset(dx, dy));
+            press(&mut app, KeyCode::KeyX);
+            app.world_mut().resource_mut::<InspectView>().cursor = at;
+            app.update();
+            app.update();
+            let view = *app.world().resource::<MapView>();
+            let glyph = |p: Point| view.get(app.world().resource::<Terminal>(), p).map(|c| c.glyph);
+            assert_eq!(glyph(at.offset(dx, dy)), Some('@'), "the adventurer, standing at ({dx}, {dy}) from it, is still drawn");
+            let across = glyph(at.offset(-dx, -dy));
+            assert!(matches!(across, Some('-' | '|')), "the tick across from them is drawn: {across:?}");
+            press(&mut app, KeyCode::Escape);
+        }
+    }
+
     /// Walks the adventurer of a run begun on the real screen into a
     /// candidate and hires it from the offers screen, as a player does:
     /// the adventurer, the mercenary, where it stands and its name.
