@@ -12,14 +12,25 @@ use super::{LEASH, Mercenary, Order, TONE};
 /// stands, on which map, under what order, and whom it follows.
 type Party<'w, 's> = Query<'w, 's, (Entity, &'static Mercenary, &'static Leader, &'static Position, &'static OnMap), Without<Dead>>;
 
+/// How far from the cell the adventurer left a mercenary may stand and
+/// still come through with them: one past the [`LEASH`], since a follower
+/// reads four cells off mid-walk round a diagonal, a step of 141 against
+/// the adventurer's 100, and the commonest way to take a stair is to walk
+/// onto it and take it at once. Holding the travel to the leash itself
+/// would leave a follower behind for a reason the player never chose.
+pub const FOLLOW_REACH: i32 = LEASH + 1;
+
 /// Sends after the adventurer, on their own [`Travelled`], every hired
 /// mercenary on the map they left that is not holding, stood within
-/// [`LEASH`] of the cell they left, and had a clear line to it: each by a
-/// [`WarpRequest`] to a free cell beside where they landed, answered in
-/// the next pass, the nearest of them first and then by entity, so who
-/// gets the cell beside them never depends on the order a query ran in.
-/// One with no free cell left beside the landing stays, and the log says
-/// so in the mercenaries' tone.
+/// [`FOLLOW_REACH`] of the cell they left, and had a clear line to it:
+/// each by a [`WarpRequest`] to a free cell beside where they landed,
+/// answered in the next pass, the nearest of them first and then by
+/// entity, so who gets the cell beside them never depends on the order a
+/// query ran in. Every one of the party left on that map gets a line in
+/// the mercenaries' tone saying why: no free cell beside the landing, too
+/// far behind, no line to where the adventurer went, or holding; a player
+/// who learned it only from the rail on the next floor would have lost
+/// one without being told.
 ///
 /// The game's rather than the engine's [`Wits::TRAVELS`], which a
 /// mercenary never carries, since [`obey`](super::obey) takes it off: the
@@ -50,17 +61,26 @@ pub fn follow_through(
     for went in travelled.read() {
         let Ok((landed, on)) = places.get(went.actor) else { continue };
         let (landed, to) = (landed.0, on.0);
-        let mut near: Vec<(i32, Entity, Point, &Mercenary)> = party
-            .iter()
-            .filter(|(_, hired, leader, pos, on)| {
-                leader.0 == went.actor
-                    && on.0 == went.from
-                    && hired.order != Order::Hold
-                    && geometry::chebyshev(pos.0, went.left) <= LEASH
-                    && ground.in_line(went.from, went.left, pos.0)
-            })
-            .map(|(e, hired, _, pos, _)| (geometry::chebyshev(pos.0, went.left), e, pos.0, hired))
-            .collect();
+        let tone = tones.get(TONE).unwrap_or(Tones::TEXT);
+        let mut near: Vec<(i32, Entity, Point, &Mercenary)> = Vec::new();
+        let mut left: Vec<(Entity, String)> = Vec::new();
+        for (e, hired, leader, pos, on) in &party {
+            if leader.0 != went.actor || on.0 != went.from {
+                continue;
+            }
+            let d = geometry::chebyshev(pos.0, went.left);
+            let why = if hired.order == Order::Hold {
+                "holds where you left them"
+            } else if d > FOLLOW_REACH {
+                "is too far behind to follow you"
+            } else if !ground.in_line(went.from, went.left, pos.0) {
+                "did not see where you went, and stays behind"
+            } else {
+                near.push((d, e, pos.0, hired));
+                continue;
+            };
+            left.push((e, format!("{} {why}.", hired.name)));
+        }
         near.sort_by_key(|(d, e, ..)| (*d, *e));
         let mut taken: Vec<Point> = Vec::new();
         for (_, mercenary, stood, hired) in near {
@@ -69,11 +89,12 @@ pub fn follow_through(
                     taken.push(cell);
                     warps.write(WarpRequest { actor: mercenary, to: Destination::Place { map: to, arrive: Arrive::At(cell) } });
                 }
-                None => {
-                    let line = format!("{} stays behind: there is no room beside you.", hired.name);
-                    tell.write(Tell::new(line, tones.get(TONE).unwrap_or(Tones::TEXT)));
-                }
+                None => left.push((mercenary, format!("{} stays behind: there is no room beside you.", hired.name))),
             }
+        }
+        left.sort_by_key(|(e, _)| *e);
+        for (_, line) in left {
+            tell.write(Tell::new(line, tone));
         }
     }
 }
@@ -147,10 +168,10 @@ impl Ground<'_> {
     fn in_line(&self, on: MapId, from: Point, there: Point) -> bool {
         let Some(place) = self.map.place(on) else { return true };
         let lines = Lines { terrain: &place.terrain, opaque: &self.map.tables().opaque };
-        // Sight reaches a disc, and a corner of the leash's square lies
-        // past a disc of the leash's radius: twice it holds the whole
+        // Sight reaches a disc, and a corner of the reach's square lies
+        // past a disc of the reach's radius: twice it holds the whole
         // square.
-        fov::can_see(&lines, from, there, 2 * LEASH)
+        fov::can_see(&lines, from, there, 2 * FOLLOW_REACH)
     }
 }
 
@@ -191,9 +212,9 @@ mod tests {
     };
 
     /// How far round the cell the adventurer leaves from the staging lays
-    /// open floor: one past the leash, so a mercenary can stand both just
+    /// open floor: one past the reach, so a mercenary can stand both just
     /// inside it and just outside it.
-    const OPEN: i32 = LEASH + 1;
+    const OPEN: i32 = FOLLOW_REACH + 1;
 
     /// Every travel of the run, with where the traveller stood the moment
     /// it landed, before it could take a step on the far side.
@@ -309,27 +330,29 @@ mod tests {
     }
 
     #[test]
-    fn it_comes_down_the_stair_beside_the_adventurer_from_three_cells_away_and_is_left_from_four_or_on_hold_over_a_span_of_seeds() {
+    fn it_comes_down_the_stair_beside_the_adventurer_from_four_cells_away_and_is_left_from_five_or_on_hold_and_the_log_says_so_over_a_span_of_seeds() {
         for s in 0..4 {
             let (mut app, me, stair) = on_the_way(s, 1, Way::Down);
-            let (three, four, two) = (ring(&app, stair, 3)[0], ring(&app, stair, 4)[0], ring(&app, stair, 2)[0]);
-            let near = hired(&mut app, me, three, "Brenna");
-            let far = hired(&mut app, me, four, "Corwin");
+            let (four, five, two) = (ring(&app, stair, 4)[0], ring(&app, stair, 5)[0], ring(&app, stair, 2)[0]);
+            let near = hired(&mut app, me, four, "Brenna");
+            let far = hired(&mut app, me, five, "Corwin");
             let holding = hired(&mut app, me, two, "Dagny");
             order(&mut app, holding, Order::Hold);
             go_through(&mut app, me);
             assert_eq!(here(&app), map_of(2), "seed {s}: the adventurer went down");
-            assert!(came_beside(&app, near, me), "seed {s}: from three cells away it came down beside them");
-            assert!(stayed(&app, far, map_of(1), four, me), "seed {s}: from four it was left where it stood, still theirs");
+            assert!(came_beside(&app, near, me), "seed {s}: from four cells away, a step behind mid-walk, it came down beside them");
+            assert!(stayed(&app, far, map_of(1), five, me), "seed {s}: from five it was left where it stood, still theirs");
             assert!(stayed(&app, holding, map_of(1), two, me), "seed {s}: on hold it kept its post, still theirs");
-            assert!(!said(&app).iter().any(|l| l.contains("stays behind")), "seed {s}: nothing said of those left by choice");
+            assert!(said(&app).iter().any(|l| l == "Corwin is too far behind to follow you."), "seed {s}: {:?}", said(&app));
+            assert!(said(&app).iter().any(|l| l == "Dagny holds where you left them."), "seed {s}: {:?}", said(&app));
+            assert!(!said(&app).iter().any(|l| l.starts_with("Brenna") && l != "Brenna follows you."), "seed {s}: {:?}", said(&app));
             assert!(said(&app).iter().any(|l| l == "Brenna follows you."), "seed {s}: the one that came is told of as following: {:?}", said(&app));
             assert!(!said(&app).iter().any(|l| l.ends_with("leaves.")), "seed {s}: and nobody as leaving: {:?}", said(&app));
         }
     }
 
     #[test]
-    fn one_within_three_with_no_line_to_where_the_adventurer_stood_is_left_where_it_stood_over_a_span_of_seeds() {
+    fn one_within_reach_with_no_line_to_where_the_adventurer_stood_is_left_where_it_stood_and_the_log_says_so_over_a_span_of_seeds() {
         for s in 0..3 {
             let (mut app, me, stair) = on_the_way(s, 1, Way::Down);
             let two = ring(&app, stair, 2)[0];
@@ -339,6 +362,7 @@ mod tests {
             go_through(&mut app, me);
             assert_eq!(here(&app), map_of(2), "seed {s}: the adventurer went down");
             assert!(stayed(&app, brenna, map_of(1), two, me), "seed {s}: walled off from them, it was left where it stood");
+            assert!(said(&app).iter().any(|l| l == "Brenna did not see where you went, and stays behind."), "seed {s}: {:?}", said(&app));
         }
     }
 
@@ -385,12 +409,12 @@ mod tests {
     fn one_left_behind_waits_where_it_stood_and_follows_when_the_adventurer_comes_back_for_it_and_leaves_again_over_a_span_of_seeds() {
         for s in 0..3 {
             let (mut app, me, down) = on_the_way(s, 1, Way::Down);
-            let four = ring(&app, down, 4)[0];
-            let brenna = hired(&mut app, me, four, "Brenna");
+            let five = ring(&app, down, 5)[0];
+            let brenna = hired(&mut app, me, five, "Brenna");
             go_through(&mut app, me);
-            assert!(stayed(&app, brenna, map_of(1), four, me), "seed {s}: left where it stood, still theirs");
+            assert!(stayed(&app, brenna, map_of(1), five, me), "seed {s}: left where it stood, still theirs");
             pass_turns(&mut app, 5);
-            assert!(stayed(&app, brenna, map_of(1), four, me), "seed {s}: and frozen there while the adventurer is below");
+            assert!(stayed(&app, brenna, map_of(1), five, me), "seed {s}: and frozen there while the adventurer is below");
 
             // Back up the stair, which lands them on the way down again.
             go_through(&mut app, me);

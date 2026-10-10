@@ -166,8 +166,10 @@ The cost of leading one is the loot it takes up first, which the hold order prev
 
 A mercenary does not carry `Wits::TRAVELS`.
 The engine's travel takes a travelling mind through any way it runs to, and a hurt mercenary fleeing alone down a stair would be lost to the run for a reason the player never chose.
-Instead, on the adventurer's own `Travelled`, every hired mercenary on the map they left that is alive, not holding, and within three cells with the adventurer in sight is sent after them by a `WarpRequest` to a free cell beside where they landed, nearest first, then by entity.
+Instead, on the adventurer's own `Travelled`, every hired mercenary on the map they left that is alive, not holding, and within four cells with the adventurer in sight is sent after them by a `WarpRequest` to a free cell beside where they landed, nearest first, then by entity.
+Four, one past the leash of three, because a follower reads four cells off mid-walk round a diagonal (Ruling 5), and the commonest way to take a stair is to walk onto it and take it at once (Ruling 12).
 One that cannot be placed, with every cell beside the landing taken, stays and says so in the log.
+Every other one left behind gets a line too, saying why: too far behind, out of sight of where the adventurer went, or holding.
 One left behind keeps its `Leader`, waits frozen on its floor as everything on a map nobody reads does, and follows again when the adventurer comes back for it.
 This is the same for the stairs and for the Drowned Gate.
 
@@ -221,7 +223,7 @@ a follower keeps within three of the adventurer across a floor with nothing to f
 on hold it stays at its post while a foe is in sight beyond reach;
 it drinks its own potion when hurt, unknown or not, and the adventurer learns it when in sight, and never drinks a found potion the adventurer has not identified;
 it puts on a better sword lying in sight, and passes over an unknown one counted at plain numbers;
-it comes down the stair beside the adventurer from three cells away, and is left behind from four, or on hold;
+it comes down the stair beside the adventurer from four cells away, and is left behind from five, or on hold, and the log says so;
 its death is counted, named on the end screen, and survives a save and load;
 a hired party survives a save and load with its leader, orders, offers and own kit.
 
