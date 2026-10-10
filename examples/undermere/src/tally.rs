@@ -310,12 +310,8 @@ pub fn count_what_is_found(
 pub fn count_as_owned(world: &mut World, who: Entity) {
     let Some(currency) = world.get_resource::<Currency>().copied() else { return };
     let Some(bag) = world.get::<Inventory>(who) else { return };
-    let pieces: Vec<(Entity, u32)> = bag
-        .items
-        .iter()
-        .filter(|i| currency.is(world.get::<Tagged>(**i)))
-        .map(|i| (*i, world.get::<Stack>(*i).map_or(1, |s| s.count)))
-        .collect();
+    let pieces: Vec<(Entity, u32)> =
+        bag.items.iter().filter(|i| currency.is(world.get::<Tagged>(**i))).map(|i| (*i, world.get::<Stack>(*i).map_or(1, |s| s.count))).collect();
     for (piece, count) in pieces {
         world.entity_mut(piece).insert(Counted(count));
     }
@@ -668,7 +664,8 @@ mod tests {
 
         app.world_mut().write_message(Buy { customer: me, trader, item: wares, count: 1 });
         app.update();
-        let bought = app.world().get::<Inventory>(me).expect("a pack").items.iter().copied().find(|i| name_of(&app, *i) == "dagger").expect("the dagger bought");
+        let bought =
+            app.world().get::<Inventory>(me).expect("a pack").items.iter().copied().find(|i| name_of(&app, *i) == "dagger").expect("the dagger bought");
         app.world_mut().resource_mut::<Trading>().close();
         app.update();
         put_down(&mut app, me, bought);
