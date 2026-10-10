@@ -153,44 +153,22 @@ impl<M> std::fmt::Debug for Slot<M> {
     }
 }
 
-/// A prefab, as its file says it.
-pub struct PrefabDef<M> {
-    /// The name a mapgen chain asks for.
-    pub name: String,
-    /// The tile painted under every slot. Always present when the legend
-    /// has a slot, and always a tile a monster can stand on.
-    pub ground: Option<TileId>,
-    rows: Vec<String>,
+/// What each glyph of a file stands for, resolved: a tile, a slot or an
+/// entry. A prefab's rows and a dressing's rules both read one, so a
+/// glyph means the same in either and both fill through the same slots.
+pub struct Legend<M> {
     tiles: BTreeMap<char, TileId>,
     slots: BTreeMap<char, Slot<M>>,
     entries: BTreeSet<char>,
 }
 
-impl<M> std::fmt::Debug for PrefabDef<M> {
+impl<M> std::fmt::Debug for Legend<M> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PrefabDef")
-            .field("name", &self.name)
-            .field("ground", &self.ground)
-            .field("rows", &self.rows)
-            .field("tiles", &self.tiles)
-            .field("slots", &self.slots)
-            .field("entries", &self.entries)
-            .finish()
+        f.debug_struct("Legend").field("tiles", &self.tiles).field("slots", &self.slots).field("entries", &self.entries).finish()
     }
 }
 
-impl<M> Named for PrefabDef<M> {
-    fn name(&self) -> &str {
-        &self.name
-    }
-}
-
-impl<M> PrefabDef<M> {
-    /// The piece, one string per row, all the same width.
-    pub fn rows(&self) -> Vec<&str> {
-        self.rows.iter().map(String::as_str).collect()
-    }
-
+impl<M> Legend<M> {
     /// The tile `glyph` paints, if it names one.
     pub fn tile(&self, glyph: char) -> Option<TileId> {
         self.tiles.get(&glyph).copied()
@@ -213,6 +191,71 @@ impl<M> PrefabDef<M> {
     }
 }
 
+/// A file whose glyphs a [`Legend`] gives a meaning: a prefab, or a
+/// dressing. What reads only the legend, a [`coverage`] report or a check
+/// of what a slot names, takes either.
+pub trait Legended<M>: Named {
+    /// What each glyph stands for.
+    fn legend(&self) -> &Legend<M>;
+}
+
+/// A prefab, as its file says it.
+pub struct PrefabDef<M> {
+    /// The name a mapgen chain asks for.
+    pub name: String,
+    /// The tile painted under every slot. Always present when the legend
+    /// has a slot, and always a tile a monster can stand on.
+    pub ground: Option<TileId>,
+    rows: Vec<String>,
+    legend: Legend<M>,
+}
+
+impl<M> std::fmt::Debug for PrefabDef<M> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PrefabDef").field("name", &self.name).field("ground", &self.ground).field("rows", &self.rows).field("legend", &self.legend).finish()
+    }
+}
+
+impl<M> Named for PrefabDef<M> {
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl<M> Legended<M> for PrefabDef<M> {
+    fn legend(&self) -> &Legend<M> {
+        &self.legend
+    }
+}
+
+impl<M> PrefabDef<M> {
+    /// The piece, one string per row, all the same width.
+    pub fn rows(&self) -> Vec<&str> {
+        self.rows.iter().map(String::as_str).collect()
+    }
+
+    /// The tile `glyph` paints, if it names one.
+    pub fn tile(&self, glyph: char) -> Option<TileId> {
+        self.legend.tile(glyph)
+    }
+
+    /// The slot `glyph` names, if it names one.
+    pub fn slot(&self, glyph: char) -> Option<&Slot<M>> {
+        self.legend.slot(glyph)
+    }
+
+    /// Every slot, by glyph.
+    pub fn slots(&self) -> impl Iterator<Item = (char, &Slot<M>)> {
+        self.legend.slots()
+    }
+
+    /// Whether `glyph` marks an entry: a cell of the outer wall where the
+    /// piece may be joined when it is grown as an area of its own.
+    pub fn entry(&self, glyph: char) -> bool {
+        self.legend.entry(glyph)
+    }
+}
+
 /// A prefab as authored, before its names are resolved.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -227,7 +270,7 @@ struct PrefabRon {
 /// One legend entry as authored: what a glyph paints or stands for.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-enum LegendRon {
+pub(crate) enum LegendRon {
     Tile(String),
     Prop(String),
     Item {
@@ -298,78 +341,10 @@ pub fn load<M: 'static>(text: &str, tiles: &TileRegistry, names: &Names<'_>) -> 
         }
     }
 
-    let mut tile_map = BTreeMap::new();
-    let mut slots = BTreeMap::new();
-    let mut entries = BTreeSet::new();
-    for (&c, entry) in &a.legend {
-        match entry {
-            LegendRon::Tile(name) => match tiles.id(name) {
-                Some(id) => {
-                    tile_map.insert(c, id);
-                }
-                None => errors.push(format!("{}: '{c}' paints unknown tile {name:?}", a.name)),
-            },
-            LegendRon::Prop(name) => match names.id::<PropDef>(name) {
-                Ok(id) => {
-                    slots.insert(c, Slot::Prop(id));
-                }
-                Err(e) => errors.push(format!("{}: '{c}': {e}", a.name)),
-            },
-            LegendRon::Item { item, tag, count, band } => {
-                // Checked whether or not the stock resolves, so a slot with
-                // two mistakes names both in one load.
-                let (min, max) = count.map(CountRon::range).unwrap_or((1, 1));
-                if min > max {
-                    errors.push(format!("{}: '{c}' is written as {min} to {max}, which is no range at all", a.name));
-                }
-                match read_stock(item.as_deref(), tag.as_deref(), *band, names) {
-                    Ok(what) => {
-                        slots.insert(c, Slot::Item(ContentRoll { what, min, max, band: *band }));
-                    }
-                    Err(e) => errors.push(format!("{}: '{c}': {e}", a.name)),
-                }
-            }
-            LegendRon::Monster { monster, role, band } => {
-                let pick = match (monster.as_deref(), role.as_deref()) {
-                    (Some(name), None) => {
-                        if *band != 0 {
-                            errors.push(format!("{}: '{c}': {name:?} is a fixed monster, drawn from no band, so a band offset means nothing on it", a.name));
-                        }
-                        match names.id::<M>(name) {
-                            Ok(id) => Some(Pick::Kind(id)),
-                            Err(e) => {
-                                errors.push(format!("{}: '{c}': {e}", a.name));
-                                None
-                            }
-                        }
-                    }
-                    (None, Some(role)) => match names.id::<RoleDef<M>>(role) {
-                        Ok(id) => Some(Pick::Role(id)),
-                        Err(e) => {
-                            errors.push(format!("{}: '{c}': {e}", a.name));
-                            None
-                        }
-                    },
-                    _ => {
-                        errors.push(format!("{}: '{c}' names a `monster` or a `role`, and exactly one of them", a.name));
-                        None
-                    }
-                };
-                if let Some(pick) = pick {
-                    slots.insert(c, Slot::Monster { pick, band: *band });
-                }
-            }
-            LegendRon::Mark => {
-                slots.insert(c, Slot::Mark);
-            }
-            LegendRon::Entry => {
-                entries.insert(c);
-            }
-        }
-    }
+    let legend = read_legend(&a.name, &a.legend, tiles, names, &mut errors);
     // Where the outside is can only be worked out on rows of one width.
     if width > 0 && a.rows.iter().all(|r| r.chars().count() == width) {
-        entries_on_the_wall(&a.name, &a.rows, &entries, &mut errors);
+        entries_on_the_wall(&a.name, &a.rows, &legend.entries, &mut errors);
     }
 
     let ground = match &a.ground {
@@ -400,7 +375,90 @@ pub fn load<M: 'static>(text: &str, tiles: &TileRegistry, names: &Names<'_>) -> 
     if !errors.is_empty() {
         return Err(ContentError::Invalid(errors));
     }
-    Ok(PrefabDef { name: a.name, ground, rows: a.rows, tiles: tile_map, slots, entries })
+    Ok(PrefabDef { name: a.name, ground, rows: a.rows, legend })
+}
+
+/// Resolves every entry of a legend as authored, reporting each name that
+/// does not resolve and each slot written wrong into `errors` against the
+/// file called `file`; what resolves is kept, so a file with two mistakes
+/// names both in one load.
+pub(crate) fn read_legend<M: 'static>(
+    file: &str,
+    legend: &BTreeMap<char, LegendRon>,
+    tiles: &TileRegistry,
+    names: &Names<'_>,
+    errors: &mut Vec<String>,
+) -> Legend<M> {
+    let mut tile_map = BTreeMap::new();
+    let mut slots = BTreeMap::new();
+    let mut entries = BTreeSet::new();
+    for (&c, entry) in legend {
+        match entry {
+            LegendRon::Tile(name) => match tiles.id(name) {
+                Some(id) => {
+                    tile_map.insert(c, id);
+                }
+                None => errors.push(format!("{file}: '{c}' paints unknown tile {name:?}")),
+            },
+            LegendRon::Prop(name) => match names.id::<PropDef>(name) {
+                Ok(id) => {
+                    slots.insert(c, Slot::Prop(id));
+                }
+                Err(e) => errors.push(format!("{file}: '{c}': {e}")),
+            },
+            LegendRon::Item { item, tag, count, band } => {
+                // Checked whether or not the stock resolves, so a slot with
+                // two mistakes names both in one load.
+                let (min, max) = count.map(CountRon::range).unwrap_or((1, 1));
+                if min > max {
+                    errors.push(format!("{file}: '{c}' is written as {min} to {max}, which is no range at all"));
+                }
+                match read_stock(item.as_deref(), tag.as_deref(), *band, names) {
+                    Ok(what) => {
+                        slots.insert(c, Slot::Item(ContentRoll { what, min, max, band: *band }));
+                    }
+                    Err(e) => errors.push(format!("{file}: '{c}': {e}")),
+                }
+            }
+            LegendRon::Monster { monster, role, band } => {
+                let pick = match (monster.as_deref(), role.as_deref()) {
+                    (Some(name), None) => {
+                        if *band != 0 {
+                            errors.push(format!("{file}: '{c}': {name:?} is a fixed monster, drawn from no band, so a band offset means nothing on it"));
+                        }
+                        match names.id::<M>(name) {
+                            Ok(id) => Some(Pick::Kind(id)),
+                            Err(e) => {
+                                errors.push(format!("{file}: '{c}': {e}"));
+                                None
+                            }
+                        }
+                    }
+                    (None, Some(role)) => match names.id::<RoleDef<M>>(role) {
+                        Ok(id) => Some(Pick::Role(id)),
+                        Err(e) => {
+                            errors.push(format!("{file}: '{c}': {e}"));
+                            None
+                        }
+                    },
+                    _ => {
+                        errors.push(format!("{file}: '{c}' names a `monster` or a `role`, and exactly one of them"));
+                        None
+                    }
+                };
+                if let Some(pick) = pick {
+                    slots.insert(c, Slot::Monster { pick, band: *band });
+                }
+            }
+            LegendRon::Mark => {
+                slots.insert(c, Slot::Mark);
+            }
+            LegendRon::Entry => {
+                entries.insert(c);
+            }
+        }
+    }
+    Legend { tiles: tile_map, slots, entries }
 }
 
 /// Reports each cell of an entry glyph that is not a way in: one with no
@@ -575,17 +633,22 @@ fn slot_name(name: &str, offset: i32) -> String {
 /// Runs every drawn slot in `prefabs`, an item slot naming a tag and a
 /// monster slot naming a role, against `sources` at every band in `bands`:
 /// the same fallback a real draw takes, in the order the prefabs are given
-/// and then glyph order. A slot with a fixed item or a fixed monster draws
+/// and then glyph order. A dressing's slots are a prefab's, so a report
+/// takes the [`DressingDef`](crate::dressing::DressingDef)s as well. A slot with a fixed item or a fixed monster draws
 /// nothing to report; only what a game's tables might not cover is worth
 /// checking.
 ///
 /// One band per column serves item and monster slots alike, which assumes
 /// the game's item bands and monster bands agree, as Foundry's do; see
 /// [`Sources`].
-pub fn coverage<'p, M: 'p, I: Copy>(prefabs: impl IntoIterator<Item = &'p PrefabDef<M>>, sources: &Sources<'_, M, I>, bands: RangeInclusive<i32>) -> Coverage {
+pub fn coverage<'p, M: 'p, I: Copy, D: Legended<M> + 'p>(
+    prefabs: impl IntoIterator<Item = &'p D>,
+    sources: &Sources<'_, M, I>,
+    bands: RangeInclusive<i32>,
+) -> Coverage {
     let mut rows = Vec::new();
     for def in prefabs {
-        for (glyph, slot) in def.slots() {
+        for (glyph, slot) in def.legend().slots() {
             let (what, slot_reach): (String, Vec<(i32, Reach)>) = match slot {
                 Slot::Item(ContentRoll { what: Stock::Tag(tag), band: offset, .. }) => {
                     let what = slot_name(sources.tags.name(*tag), *offset);
@@ -612,7 +675,7 @@ pub fn coverage<'p, M: 'p, I: Copy>(prefabs: impl IntoIterator<Item = &'p Prefab
                 }
                 _ => continue,
             };
-            rows.push(CoverageRow { prefab: def.name.clone(), glyph, what, reach: slot_reach });
+            rows.push(CoverageRow { prefab: def.name().to_string(), glyph, what, reach: slot_reach });
         }
     }
     Coverage { bands, rows }

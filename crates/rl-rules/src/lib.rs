@@ -38,6 +38,10 @@
 //!   tile or a slot, a prop, an item row, a monster or a mark, every name
 //!   but a fixed item's resolved at load; the terrain and the stamp are
 //!   `rl-mapgen`'s.
+//! - [`dressing`]: what fills an area of any size, as a prefab's legend
+//!   and rules for where each glyph goes, along walls, in corners, in the
+//!   center, in rows or scattered, at a density, every name resolved at
+//!   load; the dressing is `rl-mapgen`'s.
 //! - [`layout`]: the shapes a place is grown from, the districts that
 //!   favor some of them and the recipes a place names, as one file with
 //!   every name resolved at load; the growing is `rl-mapgen`'s.
@@ -74,6 +78,7 @@ pub mod ai;
 pub mod balance;
 pub mod content;
 pub mod damage;
+pub mod dressing;
 pub mod equip;
 pub mod events;
 pub mod faction;
@@ -102,6 +107,7 @@ pub use ai::{
 pub use balance::{BandRow, Report, ThreatSubject, threat};
 pub use content::{BandedEntry, BandedTable, ContentError, Named, Registry};
 pub use damage::{DamageKind, DamageStage, Hit, Resistances, resolve};
+pub use dressing::{DistrictDressings, DressingDef};
 pub use equip::{EquipError, EquipShape, Equipment, SlotDef, SlotId};
 pub use events::{Change, CounterDef, CounterId, Fact, FactDef, FactKind, Ledger, Matcher, Need, Objective, QuestDef, QuestId, QuestState, Tally, Tracker};
 pub use faction::{FactionId, Factions, Relation};
@@ -112,7 +118,7 @@ pub use layout::LayoutDef;
 pub use loot::{DropRow, DropTable, Layout, LevelRow, LevelTable, LootRow, LootTable, Placed, ScatterRules, plan_scatter};
 pub use namegen::{NameBook, NameCase, NameSet};
 pub use names::{NameRef, Names};
-pub use prefab::{Coverage, CoverageRow, Pick, PrefabDef, Reach, Slot};
+pub use prefab::{Coverage, CoverageRow, Legend, Legended, Pick, PrefabDef, Reach, Slot};
 pub use prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, Stock};
 pub use role::{RoleDef, RoleId};
 pub use stats::{Modifier, Op, Source, StatDef, StatId, Stats};

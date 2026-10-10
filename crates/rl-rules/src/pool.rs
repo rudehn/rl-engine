@@ -106,9 +106,10 @@ use serde::Deserialize;
 
 use crate::affix::TagId;
 use crate::content::{ContentError, Registry};
+use crate::dressing::DressingDef;
 use crate::layout::LayoutDef;
 use crate::names::Names;
-use crate::prefab::{Coverage, PrefabDef, Sources};
+use crate::prefab::{Coverage, Legended, PrefabDef, Sources};
 
 /// How a grown piece is joined to what it is attached to: a layout
 /// shape's joins, and the two only a piece the pool places may carry.
@@ -511,25 +512,47 @@ pub fn load<M>(text: &str, layout: &LayoutDef, pieces: &Registry<PrefabDef<M>>, 
 /// report's bands run from the first floor any piece stands on to the
 /// last, and a row leaves blank each band its piece is not laid at.
 pub fn coverage<M, I: Copy>(pool: &Pool, pieces: &Registry<PrefabDef<M>>, sources: &Sources<'_, M, I>) -> Coverage {
-    // Each piece in the order first named, and every floor it stands on.
-    let mut laid: Vec<(&str, Vec<i32>)> = Vec::new();
-    for e in &pool.entries {
-        let Some(piece) = e.piece() else { continue };
-        let at = match laid.iter().position(|(p, _)| *p == piece) {
+    laid_coverage(pool.entries.iter().filter_map(|e| e.piece().map(|p| (p, e.floors))), pieces, sources)
+}
+
+/// [`coverage`] over every dressing the pool's dressed entries lay, from
+/// the dressing file, at the floors those entries stand on, read the same
+/// way. A dressing a district's list lays on every floor is reported by
+/// [`prefab::coverage`](crate::prefab::coverage) over the bands it may be
+/// laid at.
+pub fn dressing_coverage<M, I: Copy>(pool: &Pool, dressings: &Registry<DressingDef<M>>, sources: &Sources<'_, M, I>) -> Coverage {
+    let dressed = pool.entries.iter().filter_map(|e| match &e.placed {
+        Placed::Dressed { dressing } => Some((dressing.as_str(), e.floors)),
+        _ => None,
+    });
+    laid_coverage(dressed, dressings, sources)
+}
+
+/// The coverage of each file `laid` names, by name and the floors an entry
+/// lays it at, reported once at the floors of every entry naming it.
+fn laid_coverage<'a, M, I: Copy, D: Legended<M>>(
+    laid: impl Iterator<Item = (&'a str, (i32, i32))>,
+    defs: &Registry<D>,
+    sources: &Sources<'_, M, I>,
+) -> Coverage {
+    // Each file in the order first named, and every floor it stands on.
+    let mut at_floors: Vec<(&str, Vec<i32>)> = Vec::new();
+    for (name, floors) in laid {
+        let at = match at_floors.iter().position(|(p, _)| *p == name) {
             Some(at) => at,
             None => {
-                laid.push((piece, Vec::new()));
-                laid.len() - 1
+                at_floors.push((name, Vec::new()));
+                at_floors.len() - 1
             }
         };
-        laid[at].1.extend(e.floors.0..=e.floors.1);
+        at_floors[at].1.extend(floors.0..=floors.1);
     }
-    let first = laid.iter().flat_map(|(_, f)| f.iter().copied()).min().unwrap_or(1);
-    let last = laid.iter().flat_map(|(_, f)| f.iter().copied()).max().unwrap_or(0);
+    let first = at_floors.iter().flat_map(|(_, f)| f.iter().copied()).min().unwrap_or(1);
+    let last = at_floors.iter().flat_map(|(_, f)| f.iter().copied()).max().unwrap_or(0);
     let mut rows = Vec::new();
-    for (piece, floors) in laid {
-        let Some(id) = pieces.id(piece) else { continue };
-        let report = crate::prefab::coverage([pieces.get(id)], sources, first..=last);
+    for (name, floors) in at_floors {
+        let Some(id) = defs.id(name) else { continue };
+        let report = crate::prefab::coverage([defs.get(id)], sources, first..=last);
         rows.extend(report.rows.into_iter().map(|mut row| {
             row.reach.retain(|(band, _)| floors.contains(band));
             row
