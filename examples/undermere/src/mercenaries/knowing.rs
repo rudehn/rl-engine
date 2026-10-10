@@ -232,17 +232,35 @@ pub struct Givable<'w, 's> {
 impl Givable<'_, '_> {
     /// What `who` has to give, in their pack's order.
     pub fn of(&self, who: Entity) -> Vec<Entity> {
-        let Ok((bag, worn)) = self.bags.get(who) else { return Vec::new() };
+        let Ok((bag, _)) = self.bags.get(who) else { return Vec::new() };
+        bag.items.iter().copied().filter(|t| self.why_not(who, *t).is_none()).collect()
+    }
+
+    /// Why `who` may not give `thing`, in the adventurer's words, or
+    /// `None` when it is among what [`of`](Self::of) offers: the one rule,
+    /// asked of the pack's choices and again of whatever the offer was
+    /// taken up with, since an interaction need not have come from the
+    /// pack.
+    pub fn why_not(&self, who: Entity, thing: Entity) -> Option<&'static str> {
+        let Ok((bag, worn)) = self.bags.get(who) else { return Some("You carry nothing.") };
+        if !bag.contains(thing) {
+            return Some("You do not carry that.");
+        }
+        if worn.is_some_and(|w| w.contains(thing)) {
+            return Some("You are wearing that.");
+        }
         let waystone = self.armory.defs.id(crate::waystone::WAYSTONE);
-        let fit = |thing: Entity| {
-            let Ok((tagged, wearable, throwable, does, kind)) = self.things.get(thing) else { return false };
-            let purse = self.currency.as_deref().is_some_and(|c| c.is(tagged));
-            let usable = does.is_some_and(|d| d.on(Moments::USE).next().is_some() && d.asks().is_none());
-            !purse && kind.is_none_or(|k| Some(k.0) != waystone) && (wearable || throwable || usable)
-        };
-        bag.items.iter().copied().filter(|t| worn.is_none_or(|w| !w.contains(*t)) && fit(*t)).collect()
+        let Ok((tagged, wearable, throwable, does, kind)) = self.things.get(thing) else { return Some(NO_USE) };
+        let purse = self.currency.as_deref().is_some_and(|c| c.is(tagged));
+        let usable = does.is_some_and(|d| d.on(Moments::USE).next().is_some() && d.asks().is_none());
+        let fit = !purse && kind.is_none_or(|k| Some(k.0) != waystone) && (wearable || throwable || usable);
+        (!fit).then_some(NO_USE)
     }
 }
+
+/// Why a thing a mercenary can neither wear, throw nor use, the purse or
+/// the waystone, is not given.
+const NO_USE: &str = "That is of no use to a hireling.";
 
 /// The system naming what the adventurer may give a hired mercenary, by
 /// [`Givable`], registered once by the plugin: what [`GIVE`] chooses
@@ -320,13 +338,18 @@ impl Handing<'_, '_> {
 /// is taken back: what a mercenary carries comes back only when it drops
 /// it.
 ///
+/// The thing is asked again by [`Givable`]'s rule, since the engine checks
+/// only that it is still carried and an interaction may come from
+/// anywhere: worn gear, the purse or the waystone is never handed over,
+/// and the log says why.
+///
 /// In `TurnSet::React`, beside hiring's own answer, so the mercenary
 /// finds the thing in its pack on its next turn.
 pub fn answer_give(
     mut done: MessageReader<Interacted>,
     verbs: Res<Verbs>,
     hired: Query<&Mercenary>,
-    mut handing: Handing,
+    mut packs: ParamSet<(Givable, Handing)>,
     tones: Res<Tones>,
     turns: Res<Turns>,
     mut log: ResMut<MessageLog>,
@@ -334,7 +357,11 @@ pub fn answer_give(
     let Some(give) = verbs.get(GIVE) else { return };
     for ev in done.read().filter(|ev| ev.verb == give) {
         let (Ok(hired), Some(thing)) = (hired.get(ev.target), ev.thing) else { continue };
-        let Some(said) = handing.hand(ev.actor, ev.target, thing) else { continue };
+        if let Some(why) = packs.p0().why_not(ev.actor, thing) {
+            log.push(why.to_string(), Tones::MUTED, turns.turn_number());
+            continue;
+        }
+        let Some(said) = packs.p1().hand(ev.actor, ev.target, thing) else { continue };
         log.push(format!("You give {} {said}.", hired.name), tones.get(TONE).unwrap_or(Tones::TEXT), turns.turn_number());
     }
 }
@@ -475,10 +502,19 @@ mod tests {
         }
     }
 
+    /// Each pass's actor, and whether Brenna carries and wears the sword
+    /// once the pass has answered what it caused.
+    #[derive(Resource, Default)]
+    struct Passes {
+        sword: Option<(Entity, Entity)>,
+        seen: Vec<(Entity, bool, bool)>,
+    }
+
     /// `give` chooses among what the adventurer carries and does not
-    /// wear; taken up with a sword, it spends the adventurer's turn, moves
-    /// the sword to the mercenary's pack with a line saying so, and the
-    /// sword, better than its fists, is worn on its next turn.
+    /// wear; taken up with a sword, it spends the adventurer's turn and
+    /// moves the sword to the mercenary's pack with a line saying so, not
+    /// worn at the hand-over, and the sword, better than its fists, is worn
+    /// on the mercenary's next turn.
     #[test]
     fn a_sword_given_takes_a_turn_and_is_worn_on_the_mercenarys_next_turn() {
         let (mut app, me, here) = arena(3);
@@ -488,13 +524,30 @@ mod tests {
         let offered = choices(&mut app, me, brenna);
         let worn = app.world().get::<Equipped>(me).expect("slots").clone();
         assert!(offered.contains(&sword) && offered.iter().all(|t| !worn.contains(*t)), "what is carried and not worn: {offered:?}");
+        app.insert_resource(Passes { sword: Some((brenna, sword)), seen: Vec::new() });
+        app.add_systems(
+            Turn,
+            (|mut passes: ResMut<Passes>, acting: Query<Entity, With<MyTurn>>, bags: Query<&Inventory>, worn: Query<&Equipped>| {
+                let Some((brenna, sword)) = passes.sword else { return };
+                let carried = bags.get(brenna).is_ok_and(|b| b.contains(sword));
+                let on = worn.get(brenna).is_ok_and(|w| w.contains(sword));
+                for actor in &acting {
+                    passes.seen.push((actor, carried, on));
+                }
+            })
+            .in_set(TurnSet::React)
+            .after(answer_give),
+        );
         let before = app.world().resource::<Turns>().now();
         take_with(&mut app, me, brenna, GIVE, Some(sword));
         assert!(app.world().resource::<Turns>().now() > before, "for a turn");
-        assert!((carries(&app, brenna, sword) || wears(&app, brenna, sword)) && !carries(&app, me, sword), "handed over");
+        assert!(!carries(&app, me, sword), "handed over");
         assert!(said(&app).contains(&"You give Brenna a sword.".to_string()), "{:?}", said(&app));
-        pass_turns(&mut app, 1);
-        assert!(wears(&app, brenna, sword), "worn on its next turn");
+        let seen = app.world().resource::<Passes>().seen.clone();
+        let given = seen.iter().position(|(who, carried, _)| *who == me && *carried).expect("handed over on the adventurer's pass");
+        assert!(!seen[given].2, "not worn at the hand-over: {seen:?}");
+        let next = seen[given + 1..].iter().find(|(who, ..)| *who == brenna).expect("the mercenary's next turn");
+        assert!(next.2, "worn on its next turn: {seen:?}");
     }
 
     /// A sword handed over with a foe beside it is not put on while the
@@ -550,6 +603,31 @@ mod tests {
         take_with(&mut app, me, brenna, GIVE, Some(darts));
         assert!(carries(&app, brenna, darts) && !carries(&app, me, darts) && count(&app, darts) == Some(5), "the darts whole");
         assert!(said(&app).contains(&"You give Brenna 5 darts.".to_string()), "{:?}", said(&app));
+    }
+
+    /// An interaction for `give` written by anything but the pack, with
+    /// worn gear or the waystone, hands nothing over and says why: the
+    /// mercenary's answer asks the pack's own rule again.
+    #[test]
+    fn give_taken_up_with_worn_gear_or_the_waystone_hands_nothing_over_and_says_why() {
+        let (mut app, me, here) = arena(3);
+        let brenna = hired(&mut app, me, here.offset(2, 0), "Brenna");
+        let (worn, stone) = {
+            let world = app.world();
+            let id = world.resource::<Armory>().defs.expect(crate::waystone::WAYSTONE);
+            let bag = &world.get::<Inventory>(me).expect("a pack").items;
+            let slots = world.get::<Equipped>(me).expect("slots");
+            let worn = *bag.iter().find(|i| slots.contains(**i)).expect("something worn");
+            let stone = *bag.iter().find(|i| world.get::<ItemKind>(**i).is_some_and(|k| k.0 == id)).expect("a waystone in the pack");
+            (worn, stone)
+        };
+        for (thing, why) in [(worn, "You are wearing that."), (stone, NO_USE)] {
+            take_with(&mut app, me, brenna, GIVE, Some(thing));
+            assert!(carries(&app, me, thing) && !carries(&app, brenna, thing), "{why}: kept");
+            assert!(said(&app).contains(&why.to_string()), "{why}: said {:?}", said(&app));
+        }
+        assert!(wears(&app, me, worn), "and still worn");
+        assert!(!said(&app).iter().any(|l| l.starts_with("You give Brenna")), "nothing given: {:?}", said(&app));
     }
 
     /// With nothing in the pack to give, `give` chooses among nothing, so
