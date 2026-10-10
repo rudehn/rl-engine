@@ -27,6 +27,10 @@
 //! place that falls short, for [`Chain::run_retrying`] to build again.
 //! [`HideOpenings`] walls over a loop's shortcut or a dead end's one door
 //! and publishes each cell as a [`Secret`], never one the way down needs.
+//! [`StampPicks`] stamps the picks a run's pool drew for a place inside
+//! the areas each [`Prefer`]s, the most secluded, a dead end, a junction
+//! or a room behind a secret, and fails the place on a required one that
+//! fits nowhere.
 //!
 //! Engine passes are generic over the context, so a game extends the
 //! context with its own state and engine passes still run on it.
@@ -42,6 +46,7 @@ pub mod dungeon;
 pub mod lakes;
 pub mod loops;
 pub mod passes;
+pub mod pool;
 pub mod prefab;
 pub mod secrets;
 pub mod survey;
@@ -53,6 +58,7 @@ pub use chain::{BuildError, Chain, Pass, Phase};
 pub use context::{BaseContext, BuildContext, Outputs};
 pub use lakes::{Bridge, Bridges, Lake, Lakes};
 pub use loops::OpenLoops;
+pub use pool::{InsidePick, Prefer, StampPicks};
 pub use secrets::{HideOpenings, Secret};
 pub use survey::{AreaFacts, Require, Survey, Surveyed};
 
@@ -68,6 +74,7 @@ pub mod prelude {
     pub use crate::lakes::{Bridges, Lakes};
     pub use crate::loops::OpenLoops;
     pub use crate::passes;
+    pub use crate::pool::{InsidePick, Prefer, StampPicks};
     pub use crate::prefab::{Orient, Placement, Prefab, PrefabShape, StampEachRoom, StampOneOf, StampPrefab, Stamped};
     pub use crate::secrets::{HideOpenings, Secret};
     pub use crate::survey::{AreaFacts, Require, Survey, Surveyed};

@@ -580,7 +580,7 @@ impl Shape for PrefabShape {
 /// the centre that paints and marks none of `keep`, always with a cell of
 /// the room all round it. `None` when the room is too small or every
 /// position paints or marks something kept.
-fn laid_in(room: Rect, piece: &Prefab, keep: &[Point]) -> Option<Point> {
+pub(crate) fn laid_in(room: Rect, piece: &Prefab, keep: &[Point]) -> Option<Point> {
     let (w, h) = (piece.width(), piece.height());
     if room.width < w + 2 || room.height < h + 2 {
         return None;
