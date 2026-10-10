@@ -45,19 +45,25 @@ pub const VICTORY_POINTS: i64 = 5000;
 #[derive(Resource, Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Tally {
-    /// Monsters the adventurer killed.
+    /// Monsters the adventurer and the mercenaries they hired killed: the
+    /// run's number beside the Slain line, which counts the same deaths,
+    /// so the two never read as two different fights.
     pub kills: u32,
     /// The engine's `balance::threat` of everything the adventurer and the
     /// mercenaries they hired killed, summed, and rounded only when it is
     /// scored: the gold spent on the party is the adventurer's choice, and
     /// a party that kills is the return on it.
     pub threat_slain: f32,
-    /// The deadliest thing the adventurer killed, by name, and its threat.
+    /// The deadliest thing the adventurer or a mercenary they hired
+    /// killed, by name, and its threat.
     pub deadliest: Option<(String, f32)>,
     /// Coins of gold found, each counted the first time the adventurer
     /// took it up.
     pub gold_found: u32,
-    /// Health the adventurer's blows, shots and fires took from others.
+    /// Health the blows, shots and fires of the adventurer and the
+    /// mercenaries they hired took from others: the company's, as the
+    /// kills beside it are, so a run whose sellswords did the killing does
+    /// not read as many kills and no damage.
     pub damage_dealt: u32,
     /// Health the adventurer lost, to anything, their own fire included.
     pub damage_taken: u32,
@@ -66,7 +72,9 @@ pub struct Tally {
     /// Things other than gold the adventurer took up, each the first time
     /// it came into their hands, a pile of arrows one thing.
     pub items_found: u32,
-    /// Mini-bosses the adventurer killed.
+    /// Mini-bosses the adventurer killed, by their own hand: a line of the
+    /// score worth [`MINIBOSS_POINTS`] each, which a hireling's blow does
+    /// not buy.
     pub minibosses: u32,
     /// The deepest floor reached, nought while the run has reached none.
     pub deepest: u32,
@@ -158,15 +166,18 @@ pub fn remember_depth(mut entered: MessageReader<PlaceEntered>, mut tally: ResMu
 }
 
 /// Counts the fighting the adventurer did and took: every blow, shot and
-/// burn that landed on them, every one of theirs that landed on anything
-/// else, and every death they get the credit for, at its kind's threat. A
+/// burn that landed on them, every one of theirs or a hired mercenary's
+/// that landed on anything else, and every death either gets the credit
+/// for, at its kind's threat. A
 /// boss's death is noted by name whoever's hand it fell to, since the
 /// record of the run it won names it, and so is whatever killed the
 /// adventurer, since the record of the run it ended names that.
 ///
-/// A death a hired mercenary gets the credit for adds its threat too, and
-/// nothing else: the kills, the deadliest and the mini-bosses stay the
-/// adventurer's own. A hired mercenary's own death is a loss, noted with
+/// A death a hired mercenary gets the credit for is a kill of the run's as
+/// the adventurer's is, on the kills, the deadliest and the Slain line
+/// alike, so the numbers beside the score count the deaths the score
+/// does; only the mini-bosses stay the adventurer's own, since that line
+/// pays for the blow. A hired mercenary's own death is a loss, noted with
 /// where it fell and what killed it, and never a kill, even at the
 /// adventurer's hand, so hiring one to cut it down scores nothing. What a
 /// freed captive or a dominated foe kills counts nowhere: the party the
@@ -187,7 +198,7 @@ pub fn count_the_fighting(
     // to the same target in the one pass.
     let mut landed: BTreeMap<Entity, Vec<i32>> = BTreeMap::new();
     for d in dealt.read().filter(|d| d.dealt > 0) {
-        if Some(d.target) == me || (d.hit.credit.is_some() && d.hit.credit == me) {
+        if Some(d.target) == me || (d.hit.credit.is_some() && d.hit.credit == me) || credit.hired(d.hit.credit) {
             landed.entry(d.target).or_default().push(d.dealt);
         }
     }
@@ -236,7 +247,7 @@ pub fn count_the_fighting(
                 tally.minibosses += 1;
             }
         } else if credit.hired(death.credit) {
-            tally.threat_slain += threat(def);
+            tally.slay(&def.name, threat(def));
         }
     }
 }
@@ -483,8 +494,8 @@ pub struct Credit<'w, 's> {
 }
 
 impl Credit<'_, '_> {
-    /// Whether `by` is a mercenary the adventurer hired, whose kills count
-    /// on the Slain line.
+    /// Whether `by` is a mercenary the adventurer hired, whose kills and
+    /// blows count as the adventurer's do, but on the Mini-bosses line.
     fn hired(&self, by: Option<Entity>) -> bool {
         by.is_some_and(|by| self.party.contains(by))
     }

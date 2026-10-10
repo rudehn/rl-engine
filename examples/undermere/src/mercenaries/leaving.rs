@@ -302,22 +302,28 @@ mod tests {
         assert!(kept.contains("Brenna, slain by a goblin on floor 3"), "kept beyond the run: {kept}");
     }
 
-    /// A rat killed by a hired mercenary adds its threat to the Slain line
-    /// and moves nothing else: no kill, no deadliest, no mini-boss, and
-    /// every other line of the score as it was. One killed by a freed
-    /// captive counts nowhere, as before the party was paid for.
+    /// A rat killed by a hired mercenary is a kill of the run's: its
+    /// threat on the Slain line, a kill, the deadliest and the damage it
+    /// took among the run's numbers, and every other line of the score as
+    /// it was; a mini-boss it kills is no mini-boss of the adventurer's.
+    /// One killed by a freed captive counts nowhere, as before the party
+    /// was paid for.
     #[test]
-    fn a_hired_mercenarys_kill_counts_on_slain_and_nothing_else_in_the_score_moves() {
+    fn a_hired_mercenarys_kill_counts_on_slain_kills_deadliest_and_damage_and_nothing_else_in_the_score_moves() {
         let (mut app, me, here) = arena_on(5, 1);
         let brenna = hired(&mut app, me, here.offset(2, 0), "Brenna");
         let before = app.world().resource::<Tally>().clone();
         let rat = monster(&mut app, "rat", here.offset(3, 0));
+        let rat_health = app.world().get::<Health>(rat).expect("health").current as u32;
         kill(&mut app, rat, Some(brenna));
         let bestiary = app.world().resource::<Bestiary>();
         let rat_threat = threat(bestiary.defs.get(bestiary.defs.expect("rat")));
         let after = app.world().resource::<Tally>().clone();
         assert!((after.threat_slain - before.threat_slain - rat_threat).abs() < 1e-3, "the rat's threat: {after:?}");
-        assert_eq!((after.kills, after.deadliest.clone(), after.minibosses), (before.kills, before.deadliest.clone(), before.minibosses));
+        assert_eq!(after.kills, before.kills + 1, "a kill: {after:?}");
+        assert_eq!(after.deadliest.as_ref().map(|(n, _)| n.as_str()), Some("rat"), "the deadliest: {after:?}");
+        assert_eq!(after.damage_dealt, before.damage_dealt + rat_health, "what it took: {after:?}");
+        assert_eq!(after.minibosses, before.minibosses);
         let (was, is) = (score(&before, false), score(&after, false));
         for (line, (old, new)) in was.iter().zip(&is).enumerate() {
             if old.0 != "Slain" {
@@ -325,6 +331,11 @@ mod tests {
             }
         }
         assert_ne!(was[1], is[1], "the Slain line moved");
+
+        let king = monster(&mut app, "Grubnak the goblin king", here.offset(4, 0));
+        kill(&mut app, king, Some(brenna));
+        let after = app.world().resource::<Tally>().clone();
+        assert_eq!((after.kills, after.minibosses), (before.kills + 2, before.minibosses), "a kill, but no mini-boss of theirs: {after:?}");
 
         let captive = monster(&mut app, "goblin", here.offset(-2, 0));
         crate::captives::free(app.world_mut(), captive, me);
