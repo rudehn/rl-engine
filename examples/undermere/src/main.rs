@@ -1565,9 +1565,9 @@ mod tests {
 
     /// Given a thing on the real screen, as a player gives one: the
     /// interact key beside a hired mercenary asks give or dismiss, `give`
-    /// opens the pack choosing under "Give Name which?", the thing picked
-    /// out moves to the mercenary with a line saying so, and the look panel
-    /// on it says it is in the adventurer's pay and carries it.
+    /// opens the pack choosing under "Give Name which?", one of the stack
+    /// picked out moves to the mercenary with a line saying so, and the
+    /// look panel on it says it is in the adventurer's pay and carries it.
     #[test]
     fn a_thing_given_from_the_pack_on_the_real_screen_moves_to_the_mercenary_and_its_look_lists_it() {
         let mut app = on_screen(RunSeed(7));
@@ -1597,8 +1597,11 @@ mod tests {
         press(&mut app, KeyCode::Enter);
         undermere::testing::settle(&mut app);
         let carried = &app.world().get::<Inventory>(merc).expect("its pack").items;
-        assert!(carried.contains(&healing), "handed over");
-        assert!(written(&app).iter().any(|r| r.contains(&format!("You give {name} 2 potions of healing."))), "{:#?}", written(&app));
+        let theirs = carried.iter().find(|t| undermere::testing::name_of(&app, **t).contains("healing")).copied();
+        let count = |thing: Entity| app.world().get::<Stack>(thing).map_or(1, |s| s.count);
+        assert_eq!(theirs.map(count), Some(1), "one handed over, a potion of its own");
+        assert_eq!(count(healing), 1, "and the other kept");
+        assert!(written(&app).iter().any(|r| r.contains(&format!("You give {name} a potion of healing."))), "{:#?}", written(&app));
 
         press(&mut app, KeyCode::KeyX);
         app.world_mut().resource_mut::<rl_engine::rl_ui::InspectView>().cursor = undermere::testing::at(&app, merc);
@@ -1606,7 +1609,7 @@ mod tests {
         app.update();
         let screen = written(&app);
         assert!(screen.iter().any(|r| r.contains("in your pay")), "the pay on the look panel: {screen:#?}");
-        assert!(screen.iter().any(|r| r.contains("carries 2 potions of healing")), "and the thing given: {screen:#?}");
+        assert!(screen.iter().any(|r| r.contains("carries a potion of healing")), "and the thing given: {screen:#?}");
         assert!(!screen.iter().any(|r| r.contains("a sword for hire")), "and no longer for hire: {screen:#?}");
     }
 
