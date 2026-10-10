@@ -101,6 +101,25 @@ pub struct Spot {
     pub prefab: Option<u32>,
 }
 
+/// A cell of a place only some may open: a door locked to a tag, or a
+/// gate nothing opens until the game lifts it.
+///
+/// Kept by the place rather than the tile, so one locked-door tile serves
+/// every lock and each opens to its own key. An opener carries the tag
+/// when it is itself [`Tagged`](crate::items::Tagged) with it or holds an
+/// item tagged with it in its [`Inventory`](crate::items::Inventory), so
+/// a game says who carries a key by giving it to someone, a guard or the
+/// player, or by tagging whoever should open it. Opening a lock spends
+/// it: the door opens into its open tile, which closes as an ordinary door.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Lock {
+    /// Where.
+    pub at: Point,
+    /// The tag an opener must carry; `None` for a seal, which nothing
+    /// opens until the game takes it off with [`WorldMap::unlock`].
+    pub key: Option<rl_rules::TagId>,
+}
+
 /// What building a place produced.
 #[derive(Debug)]
 pub struct PlaceBuild {
@@ -112,6 +131,8 @@ pub struct PlaceBuild {
     pub exit: Option<Point>,
     /// Points of interest for the game's spawns.
     pub spots: Vec<Spot>,
+    /// Every door locked to a tag and every seal.
+    pub locks: Vec<Lock>,
 }
 
 impl PlaceBuild {
@@ -124,7 +145,10 @@ impl PlaceBuild {
     /// A mark inside the bounds of a stamp emitted after its own is
     /// dropped, keyed or not: the piece drawn on top owns its cells, so a
     /// slot or a mark it painted over never fills a cell that now belongs
-    /// to another piece.
+    /// to another piece. Every cell of an [`Opening`](rl_mapgen::Opening)
+    /// joined [`Locked`](rl_mapgen::Join::Locked) becomes a [`Lock`] to
+    /// that tag, and every one joined [`Sealed`](rl_mapgen::Join::Sealed)
+    /// a seal.
     pub fn from_context(ctx: rl_mapgen::BaseContext) -> Result<Self, BuildError> {
         use rl_mapgen::BuildContext;
         let entry = ctx.outputs().first::<rl_mapgen::passes::StartPoint>().ok_or_else(|| BuildError::new("place", "the chain emitted no start point"))?.0;
@@ -136,8 +160,18 @@ impl PlaceBuild {
             .enumerate()
             .flat_map(|(i, s)| s.marks.iter().filter(move |(_, p)| !covered(i, *p)).map(|(c, p)| Spot { tag: *c as u32, at: *p, prefab: s.prefab }))
             .collect();
+        let locks = ctx
+            .outputs()
+            .iter::<rl_mapgen::Opening>()
+            .filter_map(|o| match o.join {
+                rl_mapgen::Join::Locked(tag) => Some((o, Some(rl_rules::TagId::from_raw(tag)))),
+                rl_mapgen::Join::Sealed => Some((o, None)),
+                _ => None,
+            })
+            .flat_map(|(o, key)| o.cells.iter().map(move |at| Lock { at: *at, key }))
+            .collect();
         let (terrain, _) = ctx.finish();
-        Ok(Self { terrain, entry, exit, spots })
+        Ok(Self { terrain, entry, exit, spots, locks })
     }
 }
 
@@ -524,7 +558,7 @@ mod tests {
             let entry = ctx.outputs().first::<StartPoint>().unwrap().0;
             let exit = ctx.outputs().first::<rl_mapgen::dungeon::ExitPoint>().map(|e| e.0);
             let (terrain, _) = ctx.finish();
-            Ok(PlaceBuild { terrain, entry, exit, spots: vec![Spot { tag: 7, at: entry, prefab: None }] })
+            Ok(PlaceBuild { terrain, entry, exit, spots: vec![Spot { tag: 7, at: entry, prefab: None }], locks: Vec::new() })
         }
     }
 

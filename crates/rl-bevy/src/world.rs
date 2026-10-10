@@ -25,7 +25,7 @@ use rl_mapgen::Outputs;
 use rl_world::{ChunkRules, WorldGraph};
 
 use crate::components::{Player, Position, Viewshed};
-use crate::places::{MapId, PlaceBuild, Spot};
+use crate::places::{Lock, MapId, PlaceBuild, Spot};
 
 /// The coarse world.
 #[derive(Resource, Deref)]
@@ -196,6 +196,8 @@ pub struct PlaceMap {
     pub exit: Option<Point>,
     /// The builder's points of interest.
     pub spots: Vec<Spot>,
+    /// Every lock and seal not yet opened or lifted.
+    pub locks: Vec<Lock>,
     /// Whether the player has arrived here yet. A place is built for
     /// whoever gets there first, and a monster that ran down the stairs
     /// ahead of the player builds the floor it lands on; the game still
@@ -294,10 +296,27 @@ impl WorldMap {
         self.places.get(&map)
     }
 
+    /// The lock on `at` in the map being read, if one is still shut there.
+    /// The surface has none.
+    pub fn lock(&self, at: Point) -> Option<Lock> {
+        self.places.get(&self.current)?.locks.iter().find(|l| l.at == at).copied()
+    }
+
+    /// Takes the lock on `at` in `map` off, and hands it back: how a game
+    /// lifts a seal, and how an opener carrying the key spends a lock.
+    /// What the cell then is stays its tile's business, so a game lifting
+    /// a seal that does not open sets the tile it becomes itself.
+    pub fn unlock(&mut self, map: MapId, at: Point) -> Option<Lock> {
+        let locks = &mut self.places.get_mut(&map)?.locks;
+        let i = locks.iter().position(|l| l.at == at)?;
+        Some(locks.remove(i))
+    }
+
     /// Keeps a freshly built place. Does not switch to it.
     pub fn install_place(&mut self, map: MapId, build: PlaceBuild) {
         assert!(!map.is_surface(), "the surface is not a place");
-        self.places.insert(map, PlaceMap { terrain: build.terrain, entry: build.entry, exit: build.exit, spots: build.spots, visited: false });
+        self.places
+            .insert(map, PlaceMap { terrain: build.terrain, entry: build.entry, exit: build.exit, spots: build.spots, locks: build.locks, visited: false });
     }
 
     /// Marks `map` as somewhere the player has arrived, and answers
@@ -494,7 +513,12 @@ impl WorldMap {
         let places = self
             .places
             .iter()
-            .map(|(id, p)| (*id, PlaceSave { terrain: p.terrain.clone(), entry: p.entry, exit: p.exit, spots: p.spots.clone(), visited: p.visited }))
+            .map(|(id, p)| {
+                (
+                    *id,
+                    PlaceSave { terrain: p.terrain.clone(), entry: p.entry, exit: p.exit, spots: p.spots.clone(), locks: p.locks.clone(), visited: p.visited },
+                )
+            })
             .collect();
         WorldMapSave { current: self.current, deltas: self.surface.edits(), places }
     }
@@ -507,7 +531,7 @@ impl WorldMap {
         self.places = save
             .places
             .into_iter()
-            .map(|(id, p)| (id, PlaceMap { terrain: p.terrain, entry: p.entry, exit: p.exit, spots: p.spots, visited: p.visited }))
+            .map(|(id, p)| (id, PlaceMap { terrain: p.terrain, entry: p.entry, exit: p.exit, spots: p.spots, locks: p.locks, visited: p.visited }))
             .collect();
         self.current = MapId::SURFACE;
         self.switch_to(save.current);
@@ -536,6 +560,10 @@ pub struct PlaceSave {
     pub exit: Option<Point>,
     /// The builder's spots.
     pub spots: Vec<Spot>,
+    /// Every lock and seal still shut; none in a save written before
+    /// places had locks.
+    #[serde(default)]
+    pub locks: Vec<Lock>,
     /// Whether the player had arrived there. A save written before anyone
     /// but the player travelled holds only places the player built by
     /// arriving, so one with no word on it reads as visited.

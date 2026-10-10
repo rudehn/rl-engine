@@ -218,7 +218,21 @@ mod tests {
             districts.push(District { name: "rooms".into(), shapes: vec![(2, 3), (3, 2), (0, 1)] });
         }
         let mix = (0..districts.len()).map(|i| (i, 1)).collect();
-        Accrete { floor: rig.floor, door: rig.door, shapes, districts, mix, districts_per_10k: 7, open_pct: 35, patience: 300, barriers: Vec::new() }
+        Accrete {
+            floor: rig.floor,
+            door: rig.door,
+            shapes,
+            districts,
+            mix,
+            districts_per_10k: 7,
+            open_pct: 35,
+            patience: 300,
+            barriers: Vec::new(),
+            locked: rig.door,
+            sealed: rig.door,
+            pieces: Vec::new(),
+            late_pct: 0,
+        }
     }
 
     fn is_cave(a: &Area) -> bool {

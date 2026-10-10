@@ -49,6 +49,9 @@
 //! //     name:              the recipe's name
 //! //     size:              (width, height) in cells, each 3 to 4096
 //! //     open_pct:          the share of the map to open, 1 to 100
+//! //     late_pct:          optional, the share open before the pieces a
+//! //                        place must hold are laid, 0 to open_pct; two
+//! //                        thirds of open_pct, rounded down, if left out
 //! //     patience:          attempts in a row that may fail before growth
 //! //                        gives up, more than nought
 //! //     districts_per_10k: district seeds per ten thousand cells, rounded,
@@ -289,6 +292,9 @@ pub struct RecipeDef {
     pub size: (i32, i32),
     /// The share of the map to open.
     pub open_pct: u32,
+    /// The share open before the pieces a place must hold are laid, so
+    /// they attach out along the frontier rather than to the first room.
+    pub late_pct: u32,
     /// Attempts in a row that may fail before growth gives up.
     pub patience: u32,
     /// District seeds per ten thousand cells.
@@ -343,6 +349,9 @@ struct RecipeRon {
     name: String,
     size: (i32, i32),
     open_pct: u32,
+    // Optional, so a layout written before pieces were grown loads unchanged.
+    #[serde(default)]
+    late_pct: Option<u32>,
     patience: u32,
     districts_per_10k: u32,
     districts: Vec<(String, u32)>,
@@ -379,9 +388,9 @@ fn adds_up(rows: &[(String, u32)]) -> bool {
 /// a share outside a hundred, no patience, weights that overflow, a size
 /// or a range or a density past any map, more loops required than may be
 /// opened, a requirement for a shape the recipe never draws, a map too
-/// small for any shape its recipe draws or for one it requires, and a
-/// barrier with a share past a hundred or that may reach from one edge
-/// of its recipe's map to the opposite.
+/// small for any shape its recipe draws or for one it requires, a late
+/// share past the open share, and a barrier with a share past a hundred
+/// or that may reach from one edge of its recipe's map to the opposite.
 pub fn load(text: &str) -> Result<LayoutDef, ContentError> {
     let options = ron::options::Options::default().with_default_extension(ron::extensions::Extensions::IMPLICIT_SOME);
     let a: LayoutRon = options.from_str(text).map_err(|e| ContentError::Parse(e.to_string()))?;
@@ -475,6 +484,10 @@ pub fn load(text: &str) -> Result<LayoutDef, ContentError> {
         if !(1..=100).contains(&r.open_pct) {
             errors.push(format!("{}: open_pct is {}, outside 1 to 100", r.name, r.open_pct));
         }
+        let late_pct = r.late_pct.unwrap_or(r.open_pct * 2 / 3);
+        if late_pct > r.open_pct {
+            errors.push(format!("{}: late_pct is {late_pct}, past the open_pct of {} growth stops at", r.name, r.open_pct));
+        }
         if r.patience == 0 {
             errors.push(format!("{}: patience is nought, so growth gives up before it starts", r.name));
         }
@@ -519,6 +532,7 @@ pub fn load(text: &str) -> Result<LayoutDef, ContentError> {
             name: r.name.clone(),
             size: r.size,
             open_pct: r.open_pct,
+            late_pct,
             patience: r.patience,
             districts_per_10k: r.districts_per_10k,
             districts: mix,
@@ -613,6 +627,7 @@ mod tests {
             // A rectangle is never turned, so one wider than the map does not fit it.
             (swap("w: (12, 18), h: (9, 12)", "w: (60, 60), h: (5, 5)").replacen("size: (84, 48)", "size: (48, 84)", 1), "big"),
             (swap("loops: 1, dead_end_pct", "loops: 7, dead_end_pct"), "loops"),
+            (swap("open_pct: 38,", "open_pct: 38, late_pct: 39,"), "late_pct"),
         ] {
             let found = problems(&text);
             assert!(found.iter().any(|p| p.contains(says)), "wanted a problem naming {says:?}, got {found:?}");
@@ -650,6 +665,7 @@ mod tests {
     #[test]
     fn a_recipe_with_no_barriers_has_none_and_one_with_barriers_keeps_them_in_order() {
         assert!(load(GOOD).unwrap().recipe("upper").unwrap().barriers.is_empty(), "left out, a recipe has none");
+        assert_eq!(load(GOOD).unwrap().recipe("upper").unwrap().late_pct, 25, "left out, two thirds of 38");
         let barred = GOOD.replacen(
             "loops: (min_detour",
             "barriers: [(from: (50, 0), to: (50, 70), chance_pct: 100, jitter_pct: 5), (from: (0, 40), to: (30, 0), chance_pct: 0, jitter_pct: 0)],

@@ -142,7 +142,7 @@ impl PlaceRules for Caves {
             .flat_map(|s| s.marks.iter().filter(|(c, _)| *c == '$').map(|(_, p)| Spot { tag: TREASURE, at: *p, prefab: None }))
             .collect();
         let (terrain, _) = ctx.finish();
-        Ok(PlaceBuild { terrain, entry, exit, spots })
+        Ok(PlaceBuild { terrain, entry, exit, spots, locks: Vec::new() })
     }
 }
 

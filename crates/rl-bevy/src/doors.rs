@@ -16,13 +16,18 @@
 //! everyone. A mind that opens doors paths through the map as
 //! [`WorldMap::opening_view`] reads it, so its flow fields go through a
 //! door when that is shorter; one that cannot treats a closed door as wall.
+//!
+//! A place may lock a door to a tag, or seal it, with a
+//! [`Lock`](crate::places::Lock): it opens only for an opener carrying the
+//! tag, and a seal for nobody until the game lifts it.
 
 use bevy::prelude::*;
 use rl_core::turn::BASE_ACTION_COST;
 use rl_core::{Direction, Point};
-use rl_rules::Wits;
+use rl_rules::{TagId, Wits};
 
 use crate::components::{MyTurn, Position};
+use crate::items::{Inventory, Tagged};
 use crate::minds::Intelligence;
 use crate::places::{MapId, OnMap};
 use crate::turn::{Action, Intent, Occupancy, Resolution};
@@ -73,12 +78,28 @@ pub fn works_doors(intelligence: Option<&Intelligence>) -> bool {
 /// Anything with a position, for asking whether a doorway is clear.
 type Lying<'w, 's> = Query<'w, 's, (&'static Position, Option<&'static OnMap>)>;
 
+/// Whether `tag` is carried by an opener: tagged with it itself, or
+/// holding an item tagged with it. The rule a [`Lock`](crate::places::Lock)
+/// is opened by.
+fn carries(tag: TagId, own: Option<&Tagged>, bag: Option<&Inventory>, tagged: &Query<&Tagged>) -> bool {
+    own.is_some_and(|t| t.0.contains(&tag)) || bag.is_some_and(|bag| bag.items.iter().any(|item| tagged.get(*item).is_ok_and(|t| t.0.contains(&tag))))
+}
+
+/// Who may be opening a door, and what they carry.
+type Openers<'w, 's> = Query<'w, 's, (&'static Position, Option<&'static Intelligence>, Option<&'static Tagged>, Option<&'static Inventory>), With<MyTurn>>;
+
 /// Resolves [`Open`] for the actor holding the turn.
+///
+/// A door under a [`Lock`](crate::places::Lock) opens only for an opener
+/// carrying its tag, and spends the lock when it does; a seal opens for
+/// nobody. Refused, either is the free refusal any door that will not
+/// open is, so the player is not charged for trying a key it lacks.
 pub fn resolve_opens(
     mut intents: MessageReader<Intent<Open>>,
     mut resolution: Resolution,
     mut map: ResMut<WorldMap>,
-    openers: Query<(&Position, Option<&Intelligence>), With<MyTurn>>,
+    openers: Openers,
+    tagged: Query<&Tagged>,
     mut doors: MessageWriter<DoorEvent>,
 ) {
     for intent in intents.read() {
@@ -86,13 +107,19 @@ pub fn resolve_opens(
         if !resolution.claim(actor) {
             continue;
         }
-        let Ok((pos, intelligence)) = openers.get(actor) else {
+        let Ok((pos, intelligence, own, bag)) = openers.get(actor) else {
             resolution.failed(actor, BASE_ACTION_COST);
             continue;
         };
         let at = pos.0 + intent.action.0.offset();
+        let lock = map.lock(at);
+        let unlocked = lock.is_none_or(|l| l.key.is_some_and(|key| carries(key, own, bag, &tagged)));
         match map.opens(at) {
-            Some(open) if works_doors(intelligence) => {
+            Some(open) if works_doors(intelligence) && unlocked => {
+                if lock.is_some() {
+                    let here = map.current();
+                    map.unlock(here, at);
+                }
                 map.set_tile(at, open);
                 doors.write(DoorEvent::Opened { actor, at });
                 resolution.done(actor, BASE_ACTION_COST);
@@ -284,5 +311,92 @@ mod tests {
         rig.set(rig.door(), "door_open");
         rig.act(Close(Direction::East));
         assert!(rig.is(rig.door(), "door_open"), "nor close one");
+    }
+
+    /// A place with one door, joined `join` as growth joins a piece, and a
+    /// player beside it carrying a key tagged `carried`, if anything.
+    struct Vault {
+        app: App,
+        player: Entity,
+        door: Point,
+        tiles: TileRegistry,
+    }
+
+    const KEY: u32 = 3;
+    const PLACE: MapId = MapId(1);
+
+    impl Vault {
+        fn new(join: rl_mapgen::Join, carried: Option<u32>) -> Self {
+            use rl_mapgen::{BaseContext, BuildContext, Opening};
+            let mut app = headless_app();
+            let mut tiles = TileRegistry::standard();
+            tiles.register(rl_grid::TileProps::wall("vault door").opens_to("door_open")).unwrap();
+            let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
+            let mut ctx = BaseContext::blank(9, 3, tiles.clone(), wall);
+            for x in 1..8 {
+                ctx.terrain_mut().set(Point::new(x, 1), floor);
+            }
+            let (start, door) = (Point::new(2, 1), Point::new(3, 1));
+            ctx.terrain_mut().set(door, tiles.expect("vault door"));
+            ctx.emit(Opening { cells: vec![door], facing: Direction::East, areas: (0, 1), join });
+            ctx.emit(rl_mapgen::passes::StartPoint(start));
+            let build = crate::places::PlaceBuild::from_context(ctx).unwrap();
+            let mut world = WorldMap::new(tiles.tables());
+            world.install_place(PLACE, build);
+            world.switch_to(PLACE);
+            app.insert_resource(world);
+            let bag = Inventory { items: carried.map(|tag| app.world_mut().spawn(Tagged(vec![TagId::from_raw(tag)])).id()).into_iter().collect() };
+            let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), OnMap(PLACE), Viewshed::new(8), bag)).id();
+            app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+            app.update();
+            app.update();
+            Self { app, player, door, tiles }
+        }
+
+        fn open(&mut self) {
+            self.app.world_mut().write_message(Intent::new(self.player, Open(Direction::East)));
+            self.app.update();
+        }
+
+        fn is(&self, tile: &str) -> bool {
+            self.app.world().resource::<WorldMap>().tile(self.door) == Some(self.tiles.expect(tile))
+        }
+
+        fn now(&self) -> u32 {
+            self.app.world().resource::<Turns>().now()
+        }
+    }
+
+    #[test]
+    fn a_locked_join_opens_only_for_an_opener_carrying_its_tag_and_opened_stays_open() {
+        for carried in [None, Some(KEY + 1)] {
+            let mut vault = Vault::new(rl_mapgen::Join::Locked(KEY), carried);
+            vault.open();
+            assert!(vault.is("vault door"), "carrying {carried:?}: it stays shut");
+            assert_eq!(vault.now(), 0, "carrying {carried:?}: and trying cost nothing");
+        }
+        let mut vault = Vault::new(rl_mapgen::Join::Locked(KEY), Some(KEY));
+        vault.open();
+        assert!(vault.is("door_open"), "the key's carrier opens it");
+        assert_eq!(vault.now(), 100);
+        assert_eq!(vault.app.world().resource::<WorldMap>().lock(vault.door), None, "and the lock is spent");
+
+        // Tagged itself, with no key in its bag: a game's say-so is as good as a key.
+        let mut warden = Vault::new(rl_mapgen::Join::Locked(KEY), None);
+        warden.app.world_mut().entity_mut(warden.player).insert(Tagged(vec![TagId::from_raw(KEY)]));
+        warden.open();
+        assert!(warden.is("door_open"), "an opener tagged with it opens it");
+    }
+
+    #[test]
+    fn a_sealed_join_opens_for_nobody_until_the_game_lifts_it() {
+        let mut vault = Vault::new(rl_mapgen::Join::Sealed, Some(KEY));
+        vault.open();
+        assert!(vault.is("vault door"), "no key opens a seal");
+        let door = vault.door;
+        let lifted = vault.app.world_mut().resource_mut::<WorldMap>().unlock(PLACE, door);
+        assert_eq!(lifted, Some(crate::places::Lock { at: door, key: None }));
+        vault.open();
+        assert!(vault.is("door_open"), "lifted, it opens like any door");
     }
 }

@@ -513,6 +513,76 @@ mod tests {
         everything(app, map).into_iter().filter(|(p, _)| *p == cell).map(|(_, what)| what).collect()
     }
 
+    /// `GUARDED` with an entry in its top wall, to be grown.
+    const GROWN: &str = r######"(
+        name: "grown locker",
+        ground: "floor",
+        rows: [
+            "##E##",
+            "#A.w#",
+            "#.k.#",
+            "#s.m#",
+            "#####",
+        ],
+        legend: {
+            '#': Tile("wall"),
+            '.': Tile("floor"),
+            'A': Prop("locker"),
+            'w': Item(tag: "weapon", band: 2),
+            'k': Monster(monster: "heavy"),
+            's': Monster(role: "pair", band: 2),
+            'm': Mark,
+            'E': Entry,
+        },
+    )"######;
+
+    /// The grown locker laid by growth among plain rooms, and the place
+    /// built the way a game's builder does.
+    fn grown(app: &App, seed: RunSeed) -> PlaceBuild {
+        use rl_mapgen::accrete::{Accrete, District, Join, Rectangle};
+        let tiles = TileRegistry::standard();
+        let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
+        let piece = app.world().resource::<Prefabs<Beast>>().grown("grown locker", Join::Door).unwrap();
+        let grow = Accrete {
+            floor,
+            door: floor,
+            shapes: vec![Box::new(Rectangle { name: "room".into(), w: (5, 8), h: (5, 8), join: Join::Door })],
+            districts: vec![District { name: "all".into(), shapes: vec![(0, 1)] }],
+            mix: vec![(0, 1)],
+            districts_per_10k: 5,
+            open_pct: 30,
+            patience: 300,
+            barriers: Vec::new(),
+            locked: floor,
+            sealed: floor,
+            pieces: vec![Box::new(piece)],
+            late_pct: 10,
+        };
+        let chain = Chain::new().then(grow).then(rl_mapgen::dungeon::RandomStart);
+        PlaceBuild::from_context(chain.run_retrying(|| BaseContext::blank(40, 30, tiles.clone(), wall), seed, 20).unwrap()).unwrap()
+    }
+
+    /// A piece grown as an area of its own fills each slot where its stamp
+    /// put the mark, as a stamped piece does.
+    #[test]
+    fn a_grown_piece_s_slots_fill_as_a_stamped_piece_s() {
+        let deck = MapId(2);
+        for s in 0..6 {
+            let mut app = app(&[GROWN], crate::testing::TEST_SEED);
+            let build = grown(&app, RunSeed(s));
+            let slot =
+                |glyph: char| build.spots.iter().find(|spot| spot.tag == glyph as u32 && spot.prefab.is_some()).expect("its stamp's marks are keyed spots").at;
+            let (locker, weapon, heavy) = (slot('A'), slot('w'), slot('k'));
+            let entry = build.entry;
+            install(&mut app, deck, build);
+            arrive(&mut app, deck, entry, true);
+            assert_eq!(at(&mut app, deck, locker), vec!["prop locker"], "seed {s}");
+            assert_eq!(at(&mut app, deck, weapon), vec!["item saber (Placed)"], "seed {s}");
+            assert_eq!(at(&mut app, deck, heavy), vec!["beast heavy"], "seed {s}");
+            assert_eq!(everything(&mut app, deck).len(), 4, "seed {s}: one thing a slot and nothing more");
+        }
+    }
+
     /// The first arrival puts the locker, a weapon drawn at the place's
     /// band plus two, and the fixed heavy each on its own cell; at band two
     /// plus two the only weapon is a saber, where band two alone would give

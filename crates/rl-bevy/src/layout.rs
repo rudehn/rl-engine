@@ -26,10 +26,29 @@ pub struct LayoutPasses {
     pub require: Require,
 }
 
-/// The passes for the recipe called `recipe`, carving `floor` and opening
-/// doors as `door`. An error naming the recipe when there is none, so a
-/// chain can `?` it.
-pub fn passes(def: &LayoutDef, recipe: &str, floor: TileId, door: TileId) -> Result<LayoutPasses, BuildError> {
+/// The tiles a recipe's passes lay, which only the game can name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LayoutTiles {
+    /// What a piece is carved from, and an arch or a mouth opens as.
+    pub floor: TileId,
+    /// What a door, and a loop cut through, opens as.
+    pub door: TileId,
+    /// What a [`Join::Locked`] is laid as: a tile that opens and that no
+    /// mind paths through, since only a carrier of the lock's tag gets it
+    /// open. A game that grows no locked piece may name its door.
+    pub locked: TileId,
+    /// What a [`Join::Sealed`] is laid as: a gate the game lifts. A game
+    /// that grows no sealed piece may name its door.
+    pub sealed: TileId,
+}
+
+/// The passes for the recipe called `recipe`, laying `tiles`. They grow no
+/// piece a place must hold until the game puts one in `accrete.pieces`,
+/// as [`Prefabs::grown`](crate::prefabs::Prefabs::grown) makes them, laid
+/// once the recipe's `late_pct` is open. An error naming the recipe when
+/// there is none, so a chain can `?` it.
+pub fn passes(def: &LayoutDef, recipe: &str, tiles: &LayoutTiles) -> Result<LayoutPasses, BuildError> {
+    let LayoutTiles { floor, door, locked, sealed } = *tiles;
     let r = def.recipe(recipe).ok_or_else(|| BuildError::new("layout", format!("no recipe is called {recipe:?}")))?;
     let join = |j: JoinDef| match j {
         JoinDef::Door => Join::Door,
@@ -62,6 +81,10 @@ pub fn passes(def: &LayoutDef, recipe: &str, floor: TileId, door: TileId) -> Res
             open_pct: r.open_pct,
             patience: r.patience,
             barriers: r.barriers.iter().map(|b| Barrier { from: b.from, to: b.to, chance_pct: b.chance_pct, jitter_pct: b.jitter_pct }).collect(),
+            locked,
+            sealed,
+            pieces: Vec::new(),
+            late_pct: r.late_pct,
         },
         loops: OpenLoops { door, min_detour: r.loops.min_detour, max: r.loops.max },
         require: Require {
@@ -110,7 +133,7 @@ mod tests {
         let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
         let door = tiles.register(TileProps::floor("way through")).unwrap();
         for s in 0..30 {
-            let p = passes(&def, "test", floor, door).unwrap();
+            let p = passes(&def, "test", &LayoutTiles { floor, door, locked: door, sealed: door }).unwrap();
             let (w, h) = p.size;
             let chain = Chain::new().then(p.accrete).then(p.loops).then(RandomStart).then(FarthestExit).then(Survey).then(p.require);
             let ctx = chain.run_retrying(|| BaseContext::blank(w, h, tiles.clone(), wall), RunSeed(s), 40).unwrap_or_else(|e| panic!("seed {s}: {e}"));
@@ -137,7 +160,7 @@ mod tests {
         let door = tiles.register(TileProps::floor("way through")).unwrap();
         let (mut caves, mut shaped) = (0, 0);
         for s in 0..30 {
-            let p = passes(&def, "test", floor, door).unwrap();
+            let p = passes(&def, "test", &LayoutTiles { floor, door, locked: door, sealed: door }).unwrap();
             let (w, h) = p.size;
             let chain = Chain::new().then(p.accrete).then(p.loops).then(RandomStart).then(FarthestExit).then(Survey).then(p.require);
             let ctx = chain.run_retrying(|| BaseContext::blank(w, h, tiles.clone(), wall), RunSeed(s), 40).unwrap_or_else(|e| panic!("seed {s}: {e}"));
@@ -165,7 +188,7 @@ mod tests {
         let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
         let door = tiles.register(TileProps::floor("way through")).unwrap();
         for s in 0..20 {
-            let p = passes(&def, "test", floor, door).unwrap();
+            let p = passes(&def, "test", &LayoutTiles { floor, door, locked: door, sealed: door }).unwrap();
             let (w, h) = p.size;
             let chain = Chain::new().then(p.accrete).then(p.loops).then(RandomStart).then(FarthestExit).then(Survey).then(p.require);
             let ctx = chain.run_retrying(|| BaseContext::blank(w, h, tiles.clone(), wall), RunSeed(s), 40).unwrap_or_else(|e| panic!("seed {s}: {e}"));
@@ -203,7 +226,8 @@ mod tests {
     #[test]
     fn a_recipe_no_file_names_is_an_error_naming_it() {
         let def = rl_rules::layout::load(FILE).unwrap();
-        let e = passes(&def, "missing", rl_grid::TileId(1), rl_grid::TileId(1)).err().expect("no such recipe");
+        let one = rl_grid::TileId(1);
+        let e = passes(&def, "missing", &LayoutTiles { floor: one, door: one, locked: one, sealed: one }).err().expect("no such recipe");
         assert!(e.pass == "layout" && e.reason.contains("missing"));
     }
 }

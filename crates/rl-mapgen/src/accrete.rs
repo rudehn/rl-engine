@@ -18,7 +18,7 @@ use rl_grid::{BitGrid, Terrain, TileId};
 use crate::chain::{BuildError, Pass, Phase};
 use crate::context::BuildContext;
 use crate::dungeon::Room;
-use crate::prefab::pick_weighted;
+use crate::prefab::{Prefab, Stamped, pick_weighted};
 
 /// How a piece is joined to the one it is attached to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,6 +31,14 @@ pub enum Join {
     /// large piece opens onto its neighbour rather than hiding behind a
     /// doorway.
     Mouth(u8),
+    /// One cell of [`Accrete::locked`]: a door only an opener carrying the
+    /// tag opens. The tag is an opaque number the game gives a meaning to,
+    /// the raw id of a tag in its registry as a prefab's key is, so two
+    /// pieces locked by two tags each open to their own.
+    Locked(u32),
+    /// One cell of [`Accrete::sealed`]: a gate nothing opens until the game
+    /// lifts it.
+    Sealed,
 }
 
 /// The floor of one area, relative to its own corner, and where it may be
@@ -278,6 +286,11 @@ pub struct Area {
     pub bounds: Rect,
     /// The largest rectangle made only of them: where a stamp is centred.
     pub inner: Rect,
+    /// For a piece painted from a prefab, the cells of its wall drawn as
+    /// entries, in map coordinates: the only cells growth ever opens into
+    /// it, each by its own join, and a loop never does. `None` for a piece
+    /// drawn cell by cell, whose wall may be opened anywhere.
+    pub entries: Option<Vec<Point>>,
 }
 
 /// A way between two areas.
@@ -380,6 +393,19 @@ pub struct LaidBarrier {
 /// if the open share is not reached before `patience` attempts in a row
 /// are spent.
 ///
+/// The [`pieces`](Self::pieces) a place must hold are laid once the open
+/// share passes [`late_pct`](Self::late_pct), each attached to a site of
+/// what stands then rather than to the first piece, so a piece meant to
+/// be found lies out along the frontier; growth goes on past the open
+/// share until each is down, and a place that ends growth with one not
+/// laid fails, for [`Chain::run_retrying`](crate::Chain::run_retrying) to
+/// grow it again. A piece painted from a prefab, as a [`PrefabShape`
+/// ](crate::prefab::PrefabShape) draws, is entered only at its entries and
+/// by its own join, whichever piece is attached to which, is never taken
+/// back for having one way in, and is published as a
+/// [`Stamped`](crate::prefab::Stamped) besides its area, so its marks are
+/// filled as a stamp's are.
+///
 /// A [`Barrier`] present on this build is drawn before anything else and
 /// kept clear as the border is, and further: a ring may stand on the
 /// border, but no body or ring may take a barrier's cells, so no join or
@@ -405,6 +431,17 @@ pub struct Accrete {
     /// Rock growth goes round, each laid at its own chance; none for a
     /// place grown wherever it can.
     pub barriers: Vec<Barrier>,
+    /// The tile a [`Join::Locked`] is laid as. A game names one no mind
+    /// paths through, since only a carrier of its tag gets it open.
+    pub locked: TileId,
+    /// The tile a [`Join::Sealed`] is laid as.
+    pub sealed: TileId,
+    /// The pieces the place must hold, each laid once and joined by its
+    /// own [`Shape::join`]; none for a place of the districts alone.
+    pub pieces: Vec<Box<dyn Shape>>,
+    /// The share of the map, in a hundred, open before the pieces are laid;
+    /// no more than `open_pct`.
+    pub late_pct: u32,
 }
 
 fn solid(terrain: &Terrain, walkable: &[bool], p: Point) -> bool {
@@ -412,26 +449,37 @@ fn solid(terrain: &Terrain, walkable: &[bool], p: Point) -> bool {
 }
 
 /// Where growth may stand: the map inside its border, less every cell a
-/// body may not take because its ring would touch a barrier.
-struct Ground<'a> {
+/// body may not take: one its ring would put beside a barrier, and every
+/// cell a painted piece laid, so nothing grows into its wall.
+struct Ground {
     inner: Rect,
-    /// Each barrier cell and the cells round it.
-    kept: &'a BitGrid,
+    kept: BitGrid,
 }
 
-impl Ground<'_> {
+impl Ground {
     fn holds(&self, p: Point) -> bool {
         self.inner.contains(p) && !self.kept.contains(p)
     }
 }
 
-/// Whether a piece moved by `by` lies where growth may stand with its body
-/// and the ring round it all solid.
-fn fits(terrain: &Terrain, walkable: &[bool], ground: &Ground, cells: &[Point], by: Point) -> bool {
-    cells.iter().all(|c| {
-        let p = *c + by;
-        ground.holds(p) && (-1..=1).all(|dy| (-1..=1).all(|dx| solid(terrain, walkable, p.offset(dx, dy))))
-    })
+/// Every cell `prefab` paints or draws as an entry, prefab-local.
+fn painted(prefab: &Prefab) -> impl Iterator<Item = Point> + '_ {
+    Rect::new(0, 0, prefab.width(), prefab.height()).cells().filter(|q| prefab.tile(*q).is_some() || prefab.entries().contains(q))
+}
+
+/// Whether `piece` moved by `by` lies where growth may stand with its body
+/// and the ring round it all solid. A painted piece's wall may run past
+/// the ring, and every cell of it there must be solid ground as well, so
+/// it never paints over what stands.
+fn fits(terrain: &Terrain, walkable: &[bool], ground: &Ground, piece: &Piece, by: Point) -> bool {
+    let clear = |p: Point| (-1..=1).all(|dy| (-1..=1).all(|dx| solid(terrain, walkable, p.offset(dx, dy))));
+    if !piece.cells.iter().all(|c| ground.holds(*c + by) && clear(*c + by)) {
+        return false;
+    }
+    let Some(drawn) = &piece.drawn else { return true };
+    let body = |q: Point| piece.cells.binary_search_by_key(&(q.y, q.x), |c| (c.y, c.x)).is_ok();
+    let ringed = |q: Point| (-1..=1).any(|dy| (-1..=1).any(|dx| body(q.offset(dx, dy))));
+    painted(drawn).filter(|q| !ringed(*q)).all(|q| ground.holds(q + by) && solid(terrain, walkable, q + by))
 }
 
 /// One of `rows` by weight; `None` when nothing carries weight.
@@ -444,15 +492,25 @@ fn draw_weighted(rows: &[(usize, u32)], rng: &mut dyn RngCore) -> Option<usize> 
 /// What growth has laid so far.
 struct Grown {
     owner: Grid<u32>,
+    ground: Ground,
+    /// Which tiles can be walked on, by tile.
+    walkable: Vec<bool>,
     areas: Vec<Area>,
     /// Whether each area's shape draws rooms.
     rooms: Vec<bool>,
+    /// Whether each area stays however many ways it has: a piece the place
+    /// must hold, or one painted from a prefab.
+    kept: Vec<bool>,
+    /// For a painted piece, its own join, which every way into it is.
+    joins: Vec<Option<Join>>,
     /// The tiles each area's cells were carved from, cell for cell.
     under: Vec<Vec<TileId>>,
     /// Each opening, and the tiles its cells were opened from.
     openings: Vec<(Opening, Vec<TileId>)>,
     frontier: Vec<(Point, Direction, usize)>,
     open: u32,
+    /// Each painted piece as it was laid.
+    stamps: Vec<Stamped>,
 }
 
 impl Accrete {
@@ -487,11 +545,25 @@ impl Accrete {
                 return Err(Self::err(format!("barrier {i} may reach from one edge of a {w}x{h} map to the opposite, and growth could never cross it")));
             }
         }
+        if self.late_pct > self.open_pct {
+            return Err(Self::err(format!("its pieces wait for {}% open, past the {}% growth stops at", self.late_pct, self.open_pct)));
+        }
         Ok(())
     }
 
-    /// Carves `piece` moved by `by` and records it as drawn by that shape
-    /// in that district, with every site but the one it was joined at
+    /// The tile a join opens its cell as.
+    fn tile_of(&self, join: Join) -> TileId {
+        match join {
+            Join::Door => self.door,
+            Join::Arch | Join::Mouth(_) => self.floor,
+            Join::Locked(_) => self.locked,
+            Join::Sealed => self.sealed,
+        }
+    }
+
+    /// Carves `piece` moved by `by`, or paints it when it was drawn, and
+    /// records it as drawn by `shape` in `district`, kept whatever ways it
+    /// has when `required`, with every site but the one it was joined at
     /// added to the frontier. Returns its index.
     fn lay<C: BuildContext>(
         &self,
@@ -499,28 +571,54 @@ impl Accrete {
         grown: &mut Grown,
         piece: &Piece,
         by: Point,
-        (shape, district): (usize, usize),
+        (shape, district, required): (&dyn Shape, usize, bool),
         joined: Option<Point>,
     ) -> usize {
         let index = grown.areas.len();
-        let cells: Vec<Point> = piece.cells.iter().map(|c| *c + by).collect();
-        let under = cells.iter().map(|c| ctx.terrain().get(*c).expect("a piece that fits is on the map")).collect();
+        let body: Vec<Point> = piece.cells.iter().map(|c| *c + by).collect();
+        let before: Vec<TileId> = body.iter().map(|c| ctx.terrain().get(*c).expect("a piece that fits is on the map")).collect();
+        let (cells, under, entries) = match &piece.drawn {
+            None => {
+                for c in &body {
+                    ctx.terrain_mut().set(*c, self.floor);
+                }
+                (body, before, None)
+            }
+            Some(drawn) => {
+                drawn.stamp(ctx.terrain_mut(), by);
+                for q in painted(drawn) {
+                    grown.ground.kept.insert(q + by);
+                }
+                for c in &body {
+                    grown.ground.kept.insert(*c);
+                }
+                // Its floor is what it painted to be walked on; a pillar
+                // inside its wall is no more floor than the wall is.
+                let walkable = |c: &Point| ctx.terrain().get(*c).is_some_and(|t| grown.walkable[t.index()]);
+                let (cells, under): (Vec<Point>, Vec<TileId>) = body.iter().zip(before).filter(|(c, _)| walkable(c)).map(|(c, t)| (*c, t)).unzip();
+                let marks = drawn.marks().iter().map(|(ch, q)| (*ch, *q + by)).collect();
+                grown.stamps.push(Stamped { bounds: Rect::new(by.x, by.y, drawn.width(), drawn.height()), marks, prefab: drawn.key() });
+                (cells, under, Some(drawn.entries().iter().map(|q| *q + by).collect()))
+            }
+        };
         for c in &cells {
-            ctx.terrain_mut().set(*c, self.floor);
             grown.owner.set(*c, index as u32 + 1);
         }
         grown.under.push(under);
-        grown.rooms.push(self.shapes[shape].is_room());
+        grown.rooms.push(shape.is_room());
+        grown.kept.push(required || piece.drawn.is_some());
+        grown.joins.push(piece.drawn.is_some().then(|| shape.join()));
         grown.open += cells.len() as u32;
         grown.frontier.extend(piece.sites.iter().map(|(q, d)| (*q + by, *d, index)).filter(|(q, _, _)| Some(*q) != joined));
         let bounds = bounds_of(&cells);
         grown.areas.push(Area {
             index,
-            shape: self.shapes[shape].name().to_string(),
+            shape: shape.name().to_string(),
             district: self.districts[district].name.clone(),
             inner: largest_rect(&cells, bounds),
             bounds,
             cells,
+            entries,
         });
         index
     }
@@ -537,7 +635,7 @@ impl Accrete {
         let mut left = gone.len();
         loop {
             let ways = |i: usize| grown.openings.iter().filter(|(o, _)| o.areas.0 == i || o.areas.1 == i).count();
-            let Some(i) = (0..gone.len()).find(|i| !gone[*i] && !grown.rooms[*i] && ways(*i) <= 1) else { break };
+            let Some(i) = (0..gone.len()).find(|i| !gone[*i] && !grown.rooms[*i] && !grown.kept[*i] && ways(*i) <= 1) else { break };
             if left == 1 {
                 break;
             }
@@ -580,6 +678,10 @@ impl Accrete {
         grown.rooms.retain(|_| kept.next().expect("one flag per area"));
         let mut kept = gone.iter().map(|g| !g);
         grown.under.retain(|_| kept.next().expect("one flag per area"));
+        let mut kept = gone.iter().map(|g| !g);
+        grown.kept.retain(|_| kept.next().expect("one flag per area"));
+        let mut kept = gone.iter().map(|g| !g);
+        grown.joins.retain(|_| kept.next().expect("one flag per area"));
         for (i, area) in grown.areas.iter_mut().enumerate() {
             area.index = i;
             for c in &area.cells {
@@ -630,7 +732,6 @@ impl<C: BuildContext> Pass<C> for Accrete {
             }
             laid.push(LaidBarrier { index, cells });
         }
-        let ground = Ground { inner, kept: &kept };
         let total = (bounds.width * bounds.height) as u32;
         let point_inside = |rng: &mut dyn RngCore| Point::new(rng.random_range(inner.x..inner.right()), rng.random_range(inner.y..inner.bottom()));
 
@@ -648,12 +749,17 @@ impl<C: BuildContext> Pass<C> for Accrete {
 
         let mut grown = Grown {
             owner: Grid::filled(bounds.width, bounds.height, 0),
+            ground: Ground { inner, kept },
+            walkable,
             areas: Vec::new(),
             rooms: Vec::new(),
+            kept: Vec::new(),
+            joins: Vec::new(),
             under: Vec::new(),
             openings: Vec::new(),
             frontier: Vec::new(),
             open: 0,
+            stamps: Vec::new(),
         };
 
         // The first piece, anywhere it fits.
@@ -662,8 +768,8 @@ impl<C: BuildContext> Pass<C> for Accrete {
             let district = district_at(at);
             let shape = draw_weighted(&self.districts[district].shapes, ctx.rng()).expect("checked");
             let piece = self.shapes[shape].draw(ctx.rng());
-            if fits(ctx.terrain(), &walkable, &ground, &piece.cells, at) {
-                self.lay(ctx, &mut grown, &piece, at, (shape, district), None);
+            if fits(ctx.terrain(), &grown.walkable, &grown.ground, &piece, at) {
+                self.lay(ctx, &mut grown, &piece, at, (self.shapes[shape].as_ref(), district, false), None);
                 break;
             }
         }
@@ -671,34 +777,49 @@ impl<C: BuildContext> Pass<C> for Accrete {
             return Err(Self::err(format!("no first piece fit a {}x{} map in {} attempts", bounds.width, bounds.height, self.patience)));
         }
 
+        // The pieces not laid yet, by their place in `pieces`.
+        let mut pending: Vec<usize> = (0..self.pieces.len()).collect();
         for round in 1..=ROUNDS {
             let mut spent = 0;
-            while grown.open * 100 < self.open_pct * total && spent < self.patience && !grown.frontier.is_empty() {
+            while (grown.open * 100 < self.open_pct * total || !pending.is_empty()) && spent < self.patience && !grown.frontier.is_empty() {
                 let i = ctx.rng().random_range(0..grown.frontier.len());
                 let (site, facing, from) = grown.frontier[i];
                 let beyond = site + facing.offset();
                 // A site another piece has since grown over or against leads nowhere.
-                if !solid(ctx.terrain(), &walkable, site) || !ground.holds(beyond) || !solid(ctx.terrain(), &walkable, beyond) {
+                if !solid(ctx.terrain(), &grown.walkable, site) || !grown.ground.holds(beyond) || !solid(ctx.terrain(), &grown.walkable, beyond) {
                     grown.frontier.swap_remove(i);
                     continue;
                 }
                 let district = district_at(site);
-                let shape = draw_weighted(&self.districts[district].shapes, ctx.rng()).expect("checked");
-                let piece = self.shapes[shape].draw(ctx.rng());
+                // Past the late share every attempt is one of the pieces
+                // still owed, so none waits on the districts' luck.
+                let owed = (!pending.is_empty() && grown.open * 100 >= self.late_pct * total).then(|| ctx.rng().random_range(0..pending.len()));
+                let shape: &dyn Shape = match owed {
+                    Some(k) => self.pieces[pending[k]].as_ref(),
+                    None => self.shapes[draw_weighted(&self.districts[district].shapes, ctx.rng()).expect("checked")].as_ref(),
+                };
+                let piece = shape.draw(ctx.rng());
                 let mut meets: Vec<Point> = piece.sites.iter().filter(|(_, d)| *d == facing.opposite()).map(|(q, _)| *q).collect();
                 meets.shuffle(ctx.rng());
-                let Some(by) = meets.iter().map(|q| site - *q).find(|by| fits(ctx.terrain(), &walkable, &ground, &piece.cells, *by)) else {
+                let Some(by) = meets.iter().map(|q| site - *q).find(|by| fits(ctx.terrain(), &grown.walkable, &grown.ground, &piece, *by)) else {
                     spent += 1;
                     continue;
                 };
                 spent = 0;
                 grown.frontier.swap_remove(i);
-                let to = self.lay(ctx, &mut grown, &piece, by, (shape, district), Some(site));
+                if let Some(k) = owed {
+                    pending.remove(k);
+                }
+                let to = self.lay(ctx, &mut grown, &piece, by, (shape, district, owed.is_some()), Some(site));
 
-                let join = self.shapes[shape].join();
+                // A painted piece is entered by its own join, whichever of
+                // the two was attached to the other.
+                let join = grown.joins[to].or(grown.joins[from]).unwrap_or(shape.join());
+                // Only an entry of a painted piece is ever opened into it.
+                let entry = |q: Point| [from, to].iter().all(|a| grown.areas[*a].entries.as_ref().is_none_or(|e| e.contains(&q)));
                 let mut cells = vec![site];
                 let mut under = vec![ctx.terrain().get(site).expect("a site is on the map")];
-                ctx.terrain_mut().set(site, if join == Join::Door { self.door } else { self.floor });
+                ctx.terrain_mut().set(site, self.tile_of(join));
                 if let Join::Mouth(width) = join {
                     // Widen along the wall while the same two areas face each
                     // other across it, a cell to one side and then the other,
@@ -714,7 +835,8 @@ impl<C: BuildContext> Pass<C> for Accrete {
                             continue;
                         }
                         let q = next[k];
-                        let across = solid(ctx.terrain(), &walkable, q)
+                        let across = solid(ctx.terrain(), &grown.walkable, q)
+                            && entry(q)
                             && grown.owner.get(q - facing.offset()).copied() == Some(from as u32 + 1)
                             && grown.owner.get(q + facing.offset()).copied() == Some(to as u32 + 1);
                         if !across {
@@ -737,6 +859,10 @@ impl<C: BuildContext> Pass<C> for Accrete {
             }
         }
 
+        if !pending.is_empty() {
+            let owed: Vec<&str> = pending.iter().map(|k| self.pieces[*k].name()).collect();
+            return Err(Self::err(format!("grew without laying {}: no site took it in {} attempts in a row", owed.join(", "), self.patience)));
+        }
         if grown.open * 100 < self.open_pct * total {
             return Err(Self::err(format!(
                 "grew to {}% open of the {}% asked for, once every passage with one way in was taken back",
@@ -755,6 +881,9 @@ impl<C: BuildContext> Pass<C> for Accrete {
         }
         for barrier in laid {
             ctx.emit(barrier);
+        }
+        for stamp in grown.stamps {
+            ctx.emit(stamp);
         }
         Ok(())
     }
@@ -840,6 +969,8 @@ pub(crate) mod tests {
         let mut tiles = TileRegistry::standard();
         let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
         let door = tiles.register(TileProps::floor("way through")).unwrap();
+        tiles.register(TileProps::wall("locked").opens_to("way through")).unwrap();
+        tiles.register(TileProps::wall("sealed")).unwrap();
         Rig { tiles, wall, floor, door }
     }
 
@@ -858,7 +989,21 @@ pub(crate) mod tests {
         ];
         let districts: Vec<District> = all.into_iter().take(districts).collect();
         let mix = (0..districts.len()).map(|i| (i, 1)).collect();
-        Accrete { floor: rig.floor, door: rig.door, shapes, districts, mix, districts_per_10k: 7, open_pct: 38, patience: 300, barriers: Vec::new() }
+        Accrete {
+            floor: rig.floor,
+            door: rig.door,
+            shapes,
+            districts,
+            mix,
+            districts_per_10k: 7,
+            open_pct: 38,
+            patience: 300,
+            barriers: Vec::new(),
+            locked: rig.door,
+            sealed: rig.door,
+            pieces: Vec::new(),
+            late_pct: 0,
+        }
     }
 
     pub(crate) fn build(pass: Accrete, rig: &Rig, w: i32, h: i32, seed: u64) -> Result<BaseContext, BuildError> {
@@ -1213,6 +1358,144 @@ pub(crate) mod tests {
             assert_eq!(cell_at_share(0, side), 0);
             assert_eq!(cell_at_share(100, side), side - 1);
             assert_eq!(cell_at_share(50, side), (side - 1 + 1) / 2);
+        }
+    }
+
+    use crate::prefab::tests::hall;
+    use crate::prefab::{Orient, PrefabShape, Stamped};
+
+    /// The usual growth, owing one hall painted from a prefab, joined by
+    /// `join`, laid once a quarter of the map is open.
+    fn owing(rig: &Rig, join: Join) -> Accrete {
+        let mut pass = accrete(rig, 3);
+        pass.pieces = vec![Box::new(PrefabShape::new("hall", &hall(rig.wall, rig.floor), join).unwrap())];
+        pass.late_pct = 25;
+        pass.locked = rig.locked();
+        pass.sealed = rig.sealed();
+        pass
+    }
+
+    impl Rig {
+        fn locked(&self) -> TileId {
+            self.tiles.id("locked").expect("registered by rig")
+        }
+        fn sealed(&self) -> TileId {
+            self.tiles.id("sealed").expect("registered by rig")
+        }
+    }
+
+    #[test]
+    fn a_grown_piece_is_entered_only_through_its_entries_in_all_eight_orientations() {
+        let rig = rig();
+        let facings = Orient::TurnedOrMirrored.facings(&hall(rig.wall, rig.floor));
+        let mut seen = [false; 8];
+        for s in 0..80 {
+            let chain = Chain::new().then(owing(&rig, Join::Mouth(3))).then(crate::OpenLoops { door: rig.door, min_detour: 10, max: 8 });
+            let ctx =
+                chain.run_retrying(|| BaseContext::blank(84, 48, rig.tiles.clone(), rig.wall), RunSeed(s), 20).unwrap_or_else(|e| panic!("seed {s}: {e}"));
+            let halls: Vec<&Area> = ctx.outputs().iter::<Area>().filter(|a| a.shape == "hall").collect();
+            assert_eq!(halls.len(), 1, "seed {s}: the piece owed is laid once");
+            let hall = halls[0];
+            let entries = hall.entries.as_ref().expect("a painted piece names its entries");
+            assert_eq!(hall.cells.len(), 11, "seed {s}: its floor is the floor inside its wall");
+            for c in &hall.cells {
+                for d in Direction::CARDINALS {
+                    let n = *c + d.offset();
+                    if !hall.cells.contains(&n) && walkable(&ctx, n) {
+                        assert!(entries.contains(&n), "seed {s}: {n:?} opens into the hall and is no entry");
+                    }
+                }
+            }
+            for o in ctx.outputs().iter::<Opening>().filter(|o| o.areas.0 == hall.index || o.areas.1 == hall.index) {
+                assert_eq!((o.join, o.cells.len()), (Join::Mouth(3), 1), "seed {s}: by its own join, and no wider than an entry");
+            }
+            let stamp = ctx.outputs().first::<Stamped>().expect("a painted piece is stamped");
+            assert_eq!(stamp.prefab, Some(7), "seed {s}: its key reaches the stamp");
+            assert!(stamp.marks.iter().all(|(_, m)| hall.cells.contains(m)), "seed {s}: its mark stands on its floor");
+            // Which facing it was laid in: the one whose every painted cell
+            // is on the map as painted, entries aside.
+            let origin = Point::new(stamp.bounds.x, stamp.bounds.y);
+            let matching: Vec<usize> = (0..8)
+                .filter(|f| {
+                    let p = &facings[*f];
+                    (p.width(), p.height()) == (stamp.bounds.width, stamp.bounds.height)
+                        && Rect::new(0, 0, p.width(), p.height()).cells().all(|q| p.tile(q).is_none_or(|t| ctx.terrain().get(q + origin) == Some(t)))
+                })
+                .collect();
+            assert!(!matching.is_empty(), "seed {s}: nothing grew over its wall");
+            seen[matching[0]] = true;
+        }
+        assert!(seen.iter().all(|f| *f), "every facing was laid: {seen:?}");
+    }
+
+    /// A walled room `w` by `h` overall with one entry, mid-way along its
+    /// top wall.
+    fn walled(rig: &Rig, name: &str, w: usize, h: usize, join: Join) -> Box<dyn Shape> {
+        let mut rows = vec!["#".repeat(w); h];
+        for row in rows.iter_mut().take(h - 1).skip(1) {
+            *row = format!("#{}#", ".".repeat(w - 2));
+        }
+        rows[0].replace_range(w / 2..w / 2 + 1, "E");
+        let rows: Vec<&str> = rows.iter().map(String::as_str).collect();
+        let (wall, floor) = (rig.wall, rig.floor);
+        let prefab = crate::prefab::Prefab::parse_cells(&rows, |c| match c {
+            '#' => crate::prefab::Cell::Tile(wall),
+            '.' => crate::prefab::Cell::Tile(floor),
+            _ => crate::prefab::Cell::Entry,
+        })
+        .unwrap();
+        Box::new(PrefabShape::new(name, &prefab, join).unwrap())
+    }
+
+    #[test]
+    fn a_piece_that_cannot_fit_fails_the_place_by_name_and_retrying_returns_the_first_attempt_that_laid_it() {
+        let rig = rig();
+        let mut wide = accrete(&rig, 3);
+        wide.pieces = vec![walled(&rig, "too wide", 90, 6, Join::Door)];
+        let e = build(wide, &rig, 84, 48, 1).expect_err("no attempt lays it");
+        assert!(e.pass == "accrete" && e.reason.contains("too wide"), "{e}");
+
+        // A large room asked of a crowded map with little patience: some
+        // attempts find no site for it and some do.
+        let pass = || {
+            let mut pass = accrete(&rig, 3);
+            pass.pieces = vec![walled(&rig, "great hall", 24, 16, Join::Door)];
+            pass.late_pct = 34;
+            pass.patience = 40;
+            pass
+        };
+        let run =
+            |s: u64, attempts: u32| Chain::new().then(pass()).run_retrying(|| BaseContext::blank(84, 48, rig.tiles.clone(), rig.wall), RunSeed(s), attempts);
+        let mut retried = 0;
+        for s in 0..40 {
+            let Some(first) = (1..=30).find(|n| run(s, *n).is_ok()) else { panic!("seed {s}: no attempt laid it") };
+            if first == 1 {
+                continue;
+            }
+            retried += 1;
+            let failed = run(s, first - 1).expect_err("the attempts before it failed");
+            assert!(failed.reason.contains("great hall"), "seed {s}: it failed for the piece: {failed}");
+            let (laid, again) = (run(s, first).unwrap(), run(s, 30).unwrap());
+            assert_eq!(laid.terrain(), again.terrain(), "seed {s}: the first attempt that laid it is the place");
+            assert_eq!(again.outputs().iter::<Area>().filter(|a| a.shape == "great hall").count(), 1, "seed {s}");
+        }
+        assert!(retried > 0, "some seed needed a second attempt");
+    }
+
+    #[test]
+    fn a_locked_join_is_laid_as_the_locked_tile_and_a_sealed_one_as_the_sealed_tile_on_every_way_in() {
+        let rig = rig();
+        for (join, tile) in [(Join::Locked(5), rig.locked()), (Join::Sealed, rig.sealed())] {
+            for s in 0..20 {
+                let ctx = build(owing(&rig, join), &rig, 84, 48, s).unwrap_or_else(|e| panic!("{join:?} seed {s}: {e}"));
+                let hall = ctx.outputs().iter::<Area>().find(|a| a.shape == "hall").expect("laid").index;
+                let ways: Vec<&Opening> = ctx.outputs().iter::<Opening>().filter(|o| o.areas.0 == hall || o.areas.1 == hall).collect();
+                assert!(!ways.is_empty(), "seed {s}");
+                for o in ways {
+                    assert_eq!(o.join, join, "seed {s}");
+                    assert_eq!(ctx.terrain().get(o.cells[0]), Some(tile), "{join:?} seed {s}");
+                }
+            }
         }
     }
 }

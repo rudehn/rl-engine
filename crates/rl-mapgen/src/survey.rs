@@ -252,7 +252,15 @@ mod tests {
         }
         for (i, cells) in &cells {
             let b = bounds_of(cells);
-            ctx.emit(Area { index: *i as usize, shape: "s".into(), district: "d".into(), inner: largest_rect(cells, b), bounds: b, cells: cells.clone() });
+            ctx.emit(Area {
+                index: *i as usize,
+                shape: "s".into(),
+                district: "d".into(),
+                inner: largest_rect(cells, b),
+                bounds: b,
+                cells: cells.clone(),
+                entries: None,
+            });
         }
         for y in 0..h {
             for x in 0..w {

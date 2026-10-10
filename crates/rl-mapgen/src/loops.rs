@@ -27,7 +27,9 @@ use crate::walk::{UNREACHED, steps_between};
 ///
 /// Longest first is what makes a loop worth having: a door that saves
 /// three steps is a second door, and one that saves sixty is another way
-/// round. It reads [`Area`]s and does nothing on a map with none.
+/// round. It reads [`Area`]s and does nothing on a map with none, and
+/// never cuts into one painted from a prefab, whose [`Area::entries`] are
+/// its only ways in.
 #[derive(Debug, Clone, Copy)]
 pub struct OpenLoops {
     /// The tile a loop opens as.
@@ -57,7 +59,9 @@ impl<C: BuildContext> Pass<C> for OpenLoops {
             return Ok(());
         }
         let mut owner = Grid::<u32>::filled(w, h, 0);
-        for a in ctx.outputs().iter::<Area>() {
+        // A painted piece is entered only at its entries, by its own join,
+        // so no wall of one is a candidate.
+        for a in ctx.outputs().iter::<Area>().filter(|a| a.entries.is_none()) {
             for c in &a.cells {
                 owner.set(*c, a.index as u32 + 1);
             }
