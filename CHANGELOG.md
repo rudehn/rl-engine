@@ -6,6 +6,11 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The party rail: the new `PartyPanel::new(rect)` lists every actor whose `Leader` is the player, one line each with its glyph, name and a health bar in the vitals' own tones, wherever it stands, and draws nothing, heading included, while nobody follows.
+  Its view is the new `PartyView`, filled by `PartyViewPlugin` in `ViewSet::Collect` with the shared `Row`, so a game pushes a follower's own words, such as its order, as a `Facet` in `ViewSet::Annotate` as it does on the nearby rail; a follower on another map is listed in `PartyView::elsewhere` and drawn muted with the panel's word for it, `elsewhere` by default and replaced with `PartyPanel::elsewhere`, and the heading `Party` with `PartyPanel::heading`.
+  The rows keep the order their followers joined in, by the new `rl_bevy::Joined`, a stamp `Leader` puts on a follower when it is added and takes off when it is removed, whoever inserted it; `rl-save` keeps it with the actor, so the order is the same after a load, and a save written before it stamps its followers afresh.
+  The health tone the vitals use is public as `rl_ui::view::health_tone(current, max)`, for a game drawing its own bar by the same rule.
+
 - The nearby rail's default heading over its things is `Things in sight`, where it was `On the ground`: the list is every item and prop in sight, nearest first, not what lies underfoot. A game that set its own with `NearbyPanel::headings` is unchanged.
   The count of hostiles beside the actors' heading is left unsaid at nought, so a `0` no longer stands over a list of people as though it counted them.
 

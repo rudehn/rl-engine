@@ -304,7 +304,7 @@ const NAME_KEPT: usize = 4;
 /// nor what; the name's end is the part a reader can most do without. A
 /// row too narrow to keep [`NAME_KEPT`] of the name beside the tail is
 /// clipped from the end as a whole instead.
-fn clip_keeping(name: &str, tail: &str, width: usize) -> String {
+pub(crate) fn clip_keeping(name: &str, tail: &str, width: usize) -> String {
     let (named, told) = (name.chars().count(), tail.chars().count());
     if named + told <= width {
         return format!("{name}{tail}");

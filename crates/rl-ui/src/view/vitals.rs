@@ -87,6 +87,20 @@ impl VitalsView {
     }
 }
 
+/// The tone health reads in, by how close to death: bad at a quarter or
+/// less, worth noticing at half or less, good above.
+///
+/// One rule, so a panel needs no thresholds of its own and every panel that
+/// draws a health bar, the player's or a follower's, agrees on when it is
+/// bad.
+pub fn health_tone(current: i32, max: i32) -> crate::tone::ToneId {
+    match current * 4 {
+        n if n <= max => Tones::BAD,
+        n if n <= max * 2 => Tones::NOTICE,
+        _ => Tones::GOOD,
+    }
+}
+
 /// How much of a noise reading is left one turn later.
 ///
 /// A noise is a moment, but a reading that snapped from full to nothing
@@ -209,16 +223,9 @@ pub fn collect_vitals(mut view: ResMut<VitalsView>, mut me: Me) {
     view.seen = (hides && me.watchers.running()).then(|| me.watchers.watched(entity));
     view.exposure = me.lighting.as_deref().map(|l| l.band(pos.0));
     if let Some(health) = health {
-        // Tone by how close to death, so a panel needs no thresholds of
-        // its own and every panel agrees on when it is bad.
-        let tone = match health.current * 4 {
-            n if n <= health.max => Tones::BAD,
-            n if n <= health.max * 2 => Tones::NOTICE,
-            _ => Tones::GOOD,
-        };
         // A killing blow can carry health below zero; the bar reads empty
         // rather than a negative count on the screen the run ends on.
-        view.bars.push(Bar::new("health", health.current.max(0), health.max, tone));
+        view.bars.push(Bar::new("health", health.current.max(0), health.max, health_tone(health.current, health.max)));
     }
     let Some(registries) = &me.registries else { return };
     for active in afflicted.into_iter().flat_map(|a| a.iter()) {

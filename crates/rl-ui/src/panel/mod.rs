@@ -26,6 +26,7 @@ pub mod inventory;
 pub mod log;
 pub mod nearby;
 pub mod offers;
+pub mod party;
 pub mod records;
 pub mod scrollback;
 pub mod settings;
@@ -44,6 +45,7 @@ pub use inventory::{ChoosingFor, INVENTORY_MODAL, InventoryKeys, InventoryLayout
 pub use log::LogPanel;
 pub use nearby::{ActivityWords, AlertWords, NearbyPanel};
 pub use offers::{OFFERS_MODAL, OffersLayout, OffersMenu, OffersPanel, offers_modal};
+pub use party::{PartyLayout, PartyPanel};
 pub use records::{RECORDS_MODAL, RecordsLayout, RecordsPanel, RecordsScreen, records_modal};
 pub use scrollback::{SCROLLBACK_MODAL, Scrollback, ScrollbackKeys, ScrollbackPanel, scrollback_modal};
 pub use settings::{SETTINGS_MODAL, SettingsLayout, SettingsPanel, SettingsScreen, settings_modal};

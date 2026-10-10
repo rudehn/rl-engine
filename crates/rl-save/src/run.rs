@@ -40,9 +40,9 @@
 
 use bevy::prelude::*;
 use rl_bevy::{
-    AbandonRun, Afflict, Afflicted, Burning, Counters, Dead, Emptied, EndOfFrame, EndRun, Ending, EngineState, Equipped, Health, Hidden, Inventory, Leader,
-    LeaveRun, MapId, Needs, OnMap, PlaceEntered, Position, Post, PropKind, Quests, Reads, Registries, Remains, SavedRun, Stack, Stocked, Transition, Turns,
-    Wearable, WorkKinds, Working,
+    AbandonRun, Afflict, Afflicted, Burning, Counters, Dead, Emptied, EndOfFrame, EndRun, Ending, EngineState, Equipped, Health, Hidden, Inventory, Joined,
+    Leader, LeaveRun, MapId, Needs, OnMap, PlaceEntered, Position, Post, PropKind, Quests, Reads, Registries, Remains, SavedRun, Stack, Stocked, Transition,
+    Turns, Wearable, WorkKinds, Working,
 };
 use rl_core::Point;
 use rl_rules::{Equipment, Work};
@@ -404,6 +404,12 @@ pub struct EntityState {
     /// definition, so the leader is kept here, by save id, and not in it.
     #[serde(default)]
     pub leader: Option<SaveId>,
+    /// Where it came in the order followers joined, its [`Joined`], kept
+    /// beside the leader so a party listed in that order reads the same
+    /// after a load. `None` from a save written before it was kept, and the
+    /// follower is then stamped afresh, after everyone saved with one.
+    #[serde(default)]
+    pub joined: Option<u64>,
 }
 
 /// How long something alight has left, as a save keeps it. An enum of its
@@ -486,6 +492,7 @@ impl EntityState {
             // saved, a body gone at the end of its frame, is not given an id
             // that would come back bound to nothing.
             leader: e.get::<Leader>().and_then(|l| remap.saved(l.0)),
+            joined: e.get::<Joined>().map(|j| j.0),
             working,
             // One with no turns left has burnt out and is only waiting for
             // the removal that was queued with it.
@@ -560,8 +567,12 @@ impl EntityState {
         if let Some(at) = self.post {
             target.insert(Post(at));
         }
-        if let Some(leader) = self.leader.and_then(|id| remap.entity(id)) {
-            target.insert(Leader(leader));
+        // The stamp with the leader, in one insert, so the leader's hook
+        // finds it there and does not stamp the follower afresh.
+        match (self.leader.and_then(|id| remap.entity(id)), self.joined) {
+            (Some(leader), Some(joined)) => drop(target.insert((Joined(joined), Leader(leader)))),
+            (Some(leader), None) => drop(target.insert(Leader(leader))),
+            (None, _) => {}
         }
         if let Some(working) = working {
             target.insert(working);
@@ -1345,6 +1356,30 @@ mod tests {
         assert_eq!(w.get::<Leader>(who("Bo")), Some(&Leader(who("Ada"))), "Bo follows Ada again, as she came back");
         assert_eq!(w.get::<Leader>(who("Cy")), None, "Cy's leader was not saved, so Cy follows nobody");
         assert_eq!(w.get::<Leader>(who("Ada")), None, "and the leader follows nobody");
+    }
+
+    /// The order a leader's followers joined in comes back with them, even
+    /// where it is not the order they were made in, which is the order a
+    /// load makes them again in.
+    #[test]
+    fn followers_keep_the_order_they_joined_in_when_the_run_is_continued() {
+        let backend = std::sync::Arc::new(MemoryBackend::default());
+        let (mut app, start) = game(Saves(backend.clone()));
+        let me = app.world_mut().spawn((Actor, Player, Blocks, You, Position(start), Viewshed::new(6), RevealsMap, Health::full(30))).id();
+        let early = app.world_mut().spawn((Actor, Blocks, Person("Early".into()), Position(start.offset(1, 3)), Health::full(20))).id();
+        app.world_mut().spawn((Actor, Blocks, Person("Late".into()), Position(start.offset(3, 3)), Health::full(20), Leader(me)));
+        app.world_mut().entity_mut(early).insert(Leader(me));
+        play(&mut app);
+        save_run(app.world_mut()).unwrap();
+
+        let (mut back, _) = game(Saves(backend));
+        load_run(back.world()).unwrap().expect("a save").restore(back.world_mut()).unwrap();
+        play(&mut back);
+        let w = back.world_mut();
+        let mut order: Vec<(Joined, String)> = w.query::<(&Joined, &Person)>().iter(w).map(|(j, p)| (*j, p.0.clone())).collect();
+        order.sort();
+        let names: Vec<&str> = order.iter().map(|(_, n)| n.as_str()).collect();
+        assert_eq!(names, vec!["Late", "Early"], "the one made later joined first, and still comes first");
     }
 
     /// Something alight comes back alight with the turns it had left, and a
