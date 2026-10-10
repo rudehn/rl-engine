@@ -18,9 +18,9 @@
 //! the player comes, like everything else on a map nobody is reading.
 //!
 //! A place keeps its [`Lock`]s, the doors its builder locked to a tag and
-//! the gates it sealed, and its save keeps them with it. A build also
-//! carries out the [`Secret`](rl_mapgen::Secret)s its builder hid, each a
-//! cell walled over that is something else once found.
+//! the gates it sealed, and its save keeps them with it. It keeps its
+//! [`Secret`](crate::secrets::Secret)s the same way: the cells its builder
+//! walled over, each something else once found.
 
 use bevy::prelude::*;
 use rl_core::Point;

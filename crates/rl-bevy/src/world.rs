@@ -26,6 +26,7 @@ use rl_world::{ChunkRules, WorldGraph};
 
 use crate::components::{Player, Position, Viewshed};
 use crate::places::{Lock, MapId, PlaceBuild, Spot};
+use crate::secrets::Secret;
 
 /// The coarse world.
 #[derive(Resource, Deref)]
@@ -198,6 +199,8 @@ pub struct PlaceMap {
     pub spots: Vec<Spot>,
     /// Every lock and seal not yet opened or lifted.
     pub locks: Vec<Lock>,
+    /// Every cell still hiding what it is, walled over in `terrain`.
+    pub secrets: Vec<Secret>,
     /// Whether the player has arrived here yet. A place is built for
     /// whoever gets there first, and a monster that ran down the stairs
     /// ahead of the player builds the floor it lands on; the game still
@@ -322,8 +325,45 @@ impl WorldMap {
     /// Keeps a freshly built place. Does not switch to it.
     pub fn install_place(&mut self, map: MapId, build: PlaceBuild) {
         assert!(!map.is_surface(), "the surface is not a place");
-        self.places
-            .insert(map, PlaceMap { terrain: build.terrain, entry: build.entry, exit: build.exit, spots: build.spots, locks: build.locks, visited: false });
+        let secrets = build.secrets.into_iter().map(Secret::from).collect();
+        let place = PlaceMap { terrain: build.terrain, entry: build.entry, exit: build.exit, spots: build.spots, locks: build.locks, secrets, visited: false };
+        self.places.insert(map, place);
+    }
+
+    /// Every cell of `map` still hiding what it is, in the order its builder
+    /// hid them. None on the surface, or once every one is found.
+    pub fn secrets(&self, map: MapId) -> &[Secret] {
+        self.places.get(&map).map_or(&[], |p| p.secrets.as_slice())
+    }
+
+    /// Finds the secret on `at` in `map` and every other cell of its
+    /// group, lays each one's real tile, and hands them back; empty when
+    /// nothing is hidden there. How the spotting roll finds one, and how a
+    /// game finds one by any other means.
+    ///
+    /// The whole group, because a mouth wider than a cell is one opening:
+    /// half of one found would show a wall with a hole in it. When `map`
+    /// is the one being read the opacity epoch moves if what a cell hides
+    /// lets sight through, and the cost epoch always, even where no tile
+    /// changed how it is walked, since a found door is one a mind may
+    /// now path through by opening it, which the opening view did not route
+    /// through while it was wall.
+    pub fn find_secret(&mut self, map: MapId, at: Point) -> Vec<Secret> {
+        let Some(place) = self.places.get_mut(&map) else { return Vec::new() };
+        let Some(group) = place.secrets.iter().find(|s| s.at == at).map(|s| s.group) else { return Vec::new() };
+        let (found, kept): (Vec<Secret>, Vec<Secret>) = std::mem::take(&mut place.secrets).into_iter().partition(|s| s.group == group);
+        place.secrets = kept;
+        let mut sight_changed = false;
+        for secret in &found {
+            let was = place.terrain.get(secret.at);
+            place.terrain.set(secret.at, secret.is);
+            sight_changed |= was.is_none_or(|w| self.tables.opaque[w.index()] != self.tables.opaque[secret.is.index()]);
+        }
+        if map == self.current {
+            self.opacity_epoch += u64::from(sight_changed);
+            self.cost_epoch += 1;
+        }
+        found
     }
 
     /// Marks `map` as somewhere the player has arrived, and answers
@@ -525,7 +565,15 @@ impl WorldMap {
             .map(|(id, p)| {
                 (
                     *id,
-                    PlaceSave { terrain: p.terrain.clone(), entry: p.entry, exit: p.exit, spots: p.spots.clone(), locks: p.locks.clone(), visited: p.visited },
+                    PlaceSave {
+                        terrain: p.terrain.clone(),
+                        entry: p.entry,
+                        exit: p.exit,
+                        spots: p.spots.clone(),
+                        locks: p.locks.clone(),
+                        secrets: p.secrets.clone(),
+                        visited: p.visited,
+                    },
                 )
             })
             .collect();
@@ -540,7 +588,9 @@ impl WorldMap {
         self.places = save
             .places
             .into_iter()
-            .map(|(id, p)| (id, PlaceMap { terrain: p.terrain, entry: p.entry, exit: p.exit, spots: p.spots, locks: p.locks, visited: p.visited }))
+            .map(|(id, p)| {
+                (id, PlaceMap { terrain: p.terrain, entry: p.entry, exit: p.exit, spots: p.spots, locks: p.locks, secrets: p.secrets, visited: p.visited })
+            })
             .collect();
         self.current = MapId::SURFACE;
         self.switch_to(save.current);
@@ -573,6 +623,10 @@ pub struct PlaceSave {
     /// places had locks.
     #[serde(default)]
     pub locks: Vec<Lock>,
+    /// Every cell still hiding what it is; none in a save written before
+    /// places had secrets, whose walls then stay walls.
+    #[serde(default)]
+    pub secrets: Vec<Secret>,
     /// Whether the player had arrived there. A save written before anyone
     /// but the player travelled holds only places the player built by
     /// arriving, so one with no word on it reads as visited.

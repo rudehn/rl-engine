@@ -292,6 +292,42 @@ mod tests {
         assert!(w.get::<MyTurn>(player2).is_some(), "the player, who held the turn when saved, holds it again");
     }
 
+    /// A place's secrets are kept with its terrain, so a continued run
+    /// finds what was found still found and what was hidden still hidden,
+    /// and still there to find.
+    #[test]
+    fn a_found_secret_stays_found_and_a_hidden_one_hidden_through_a_save() {
+        let place = rl_bevy::MapId(1);
+        let tiles = rl_grid::TileRegistry::standard();
+        let (wall, floor, door) = (tiles.expect("wall"), tiles.expect("floor"), tiles.expect("door_closed"));
+        let (shut, open) = (Point::new(3, 1), Point::new(5, 1));
+        let mut terrain = rl_grid::Terrain::filled(8, 3, floor);
+        terrain.set(shut, wall);
+        terrain.set(open, wall);
+        let secrets = vec![
+            rl_mapgen::Secret { at: shut, is: door, spot: 6, group: 0, joins: (0, 1) },
+            rl_mapgen::Secret { at: open, is: floor, spot: 6, group: 1, joins: (1, 2) },
+        ];
+        let (mut app, _) = fresh();
+        {
+            let mut map = app.world_mut().resource_mut::<WorldMap>();
+            map.install_place(place, rl_bevy::PlaceBuild { terrain, entry: Point::new(1, 1), exit: None, spots: Vec::new(), locks: Vec::new(), secrets });
+            map.switch_to(place);
+            map.find_secret(place, open);
+        }
+        app.insert_resource(Seed(RunSeed(5)));
+        let save = EngineSave::capture(app.world_mut(), &mut EntityRemap::new());
+        let back: EngineSave = crate::decode(1, &crate::encode(1, &save).unwrap()).unwrap();
+
+        let (mut app2, _) = fresh();
+        back.restore(app2.world_mut(), &EntityRemap::new());
+        let mut map = app2.world_mut().resource_mut::<WorldMap>();
+        assert_eq!((map.tile(shut), map.tile(open)), (Some(wall), Some(floor)), "the hidden one is wall and the found one open");
+        assert_eq!(map.secrets(place), [rl_bevy::Secret { at: shut, is: door, spot: 6, group: 0 }]);
+        map.find_secret(place, shut);
+        assert_eq!(map.tile(shut), Some(door), "and the hidden one is still there to find");
+    }
+
     /// The stairs the player saw are part of what the player knows, so a
     /// continued run still draws them out of sight; and a save written
     /// before things were remembered still reads, remembering none.
