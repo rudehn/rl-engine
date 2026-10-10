@@ -7,17 +7,19 @@ use super::*;
 /// way in to be measured from.
 struct Mouth(Point);
 
-/// Lays the throne at the north end of floor ten, after the rooms are cut
-/// and before the way in is chosen: a hall a cell larger than the piece all
-/// round, carved over whatever the rooms put there, the piece in the middle
-/// of it facing south down the floor, and a corridor from under its mouth
-/// to the nearest room clear of the hall. A floor with no room clear of
-/// the hall is refused, since nothing would reach the throne.
+/// Lays the throne at the north end of floor ten, after the floor is grown
+/// and before the lakes and the way in: a hall a cell larger than the
+/// piece all round, carved over whatever grew there, the piece in the
+/// middle of it facing south down the floor, and a corridor from under its
+/// mouth to the nearest cell of an area clear of the hall. A floor with no
+/// area clear of the hall is refused, since nothing would reach the
+/// throne.
 ///
-/// The ordinary rooms are never large enough for the throne, so it does not
-/// wait for one. The hall's ring of floor is what keeps the floor whole: a
-/// room or corridor the hall cut through meets the ring, and the ring goes
-/// round the piece.
+/// The hall's ring of floor is what keeps the floor whole: an area or a
+/// passage the hall cut through meets the ring, and the ring goes round
+/// the piece. Carved rather than grown, so the areas it cuts keep their
+/// cells as growth recorded them; laying the throne as a piece growth
+/// joins through its own entries replaces this.
 pub(super) struct ThroneHall {
     /// The throne, as drawn: its mouth in the middle of its bottom row.
     pub(super) piece: Prefab,
@@ -48,37 +50,51 @@ impl Pass<BaseContext> for ThroneHall {
         }
         StampPrefab { name: "throne", prefab: self.piece.clone(), at: Placement::At(Point::new(hall.x + 1, hall.y + 1)), orient: Orient::Fixed }.apply(ctx)?;
         let mouth = Point::new(hall.x + 1 + w / 2, hall.y + 1 + h);
-        let under = hall.bottom();
-        let nearest = ctx
-            .outputs()
-            .iter::<Room>()
-            .map(|room| room.0)
-            .filter(|room| room.intersection(&hall).is_none())
-            .min_by_key(|room| (geometry::manhattan(room.center(), mouth), room.center()));
         // Refused rather than laid shut away: a hall with nothing to join
         // its mouth to is a floor the walk to the throne cannot cross, and
         // a change to the floor's size or the throne's that brings it about
         // should fail where it happens.
-        let room = nearest.ok_or_else(|| BuildError::new("throne_hall", format!("no room clear of the {w}x{h} throne's hall to join its mouth to")))?;
-        // Straight down out of the hall, along the row under it, then up
-        // or down into the room: never back into the hall.
-        let to = room.center();
-        let corridor = (mouth.y..=under)
-            .map(|y| Point::new(mouth.x, y))
-            .chain((mouth.x.min(to.x)..=mouth.x.max(to.x)).map(|x| Point::new(x, under)))
-            .chain((under.min(to.y)..=under.max(to.y)).map(|y| Point::new(to.x, y)))
-            .collect::<Vec<_>>();
-        for p in corridor {
-            ctx.terrain_mut().set(p, self.floor);
+        if !join_mouth(ctx, hall, mouth, self.floor) {
+            return Err(BuildError::new("throne_hall", format!("no area clear of the {w}x{h} throne's hall to join its mouth to")));
         }
         ctx.emit(Mouth(mouth));
         Ok(())
     }
 }
 
+/// Carves `tile` from `mouth`, under the bottom row of `hall`, to the
+/// nearest cell of a grown area outside it: straight down out of the
+/// hall, along the row under it, then up or down into the area, never
+/// back into the hall, so a cell straight above it is never the one
+/// joined. `false`, carving nothing, when no such cell lies outside the
+/// hall.
+fn join_mouth(ctx: &mut BaseContext, hall: Rect, mouth: Point, tile: TileId) -> bool {
+    let under = hall.bottom();
+    let above = |p: Point| p.y < under && (hall.x..hall.x + hall.width).contains(&p.x);
+    let nearest = ctx
+        .outputs()
+        .iter::<Area>()
+        .flat_map(|area| area.cells.iter().copied())
+        .filter(|p| !hall.contains(*p) && !above(*p))
+        .min_by_key(|p| (geometry::manhattan(*p, mouth), *p));
+    let Some(to) = nearest else {
+        return false;
+    };
+    let corridor = (mouth.y..=under)
+        .map(|y| Point::new(mouth.x, y))
+        .chain((mouth.x.min(to.x)..=mouth.x.max(to.x)).map(|x| Point::new(x, under)))
+        .chain((under.min(to.y)..=under.max(to.y)).map(|y| Point::new(to.x, y)))
+        .collect::<Vec<_>>();
+    for p in corridor {
+        ctx.terrain_mut().set(p, tile);
+    }
+    true
+}
+
 /// Emits as the way in the cell farthest by walking from the throne's
 /// mouth, so the throne is where the floor ends and the walk to it is the
-/// whole of floor ten.
+/// whole of floor ten; fails, for the floor to be grown again, when that
+/// cell is nearer a piece than the population keeps from the way in.
 pub(super) struct FarthestFromTheThrone;
 
 impl Pass<BaseContext> for FarthestFromTheThrone {
@@ -95,6 +111,13 @@ impl Pass<BaseContext> for FarthestFromTheThrone {
         let pieces = pieces(ctx);
         let far = farthest(ctx, mouth, |p| pieces.iter().any(|r| r.contains(p)))
             .ok_or_else(|| BuildError::new("farthest_from_the_throne", "nowhere to walk to from the throne"))?;
+        // A floor that winds back on itself can leave its farthest cell
+        // beside the throne's wall; grown again rather than arriving
+        // within the population's distance of the boss.
+        let clear = pieces.iter().map(|r| geometry::chebyshev(far, geometry::clamp_to(far, *r))).min().unwrap_or(i32::MAX);
+        if clear < MIN_DISTANCE_FROM_ENTRY {
+            return Err(BuildError::new("farthest_from_the_throne", format!("the farthest cell from the throne is {clear} from a piece")));
+        }
         ctx.emit(StartPoint(far));
         Ok(())
     }
@@ -224,29 +247,21 @@ impl Undermere {
 
     /// The [`Lair`] pass `floor`'s own chain stamps, if this run draws one
     /// there: the piece named exactly as its boss is in `monsters.ron`,
-    /// so the one name serves both. `connect` is the caller's: a room
-    /// band's own, since `JoinCaves` reads a closed door as a wall and
-    /// would as readily wall a room behind one in as join it, which only
-    /// a cave band, with no doors to misread, may ask this to leave to it.
-    pub(super) fn lair_pass(&self, floor: u32, connect: bool) -> Result<Option<Lair>, BuildError> {
+    /// so the one name serves both.
+    pub(super) fn lair_pass(&self, floor: u32) -> Result<Option<Lair>, BuildError> {
         match self.lair_on(floor) {
-            Some((boss, margin)) => Ok(Some(Lair { name: boss.name, piece: self.prefabs.piece(boss.name)?, margin, connect })),
+            Some((boss, margin)) => Ok(Some(Lair { name: boss.name, piece: self.prefabs.piece(boss.name)?, margin })),
             None => Ok(None),
         }
     }
 }
 
-/// Lays a mini-boss's lair somewhere midway through the floor's own
-/// generation: a hall a cell larger than the piece all round, carved
-/// over whatever stood there, the piece stamped fixed in its centre, as
-/// [`ThroneHall`] lays the throne. A cave band's own `JoinCaves`, which
-/// runs right after this, joins the hall to the rest of the floor the
-/// same way it joins off any cut-off pocket of its own cave; a room band
-/// cannot be handed to `JoinCaves` the same way, since a closed door
-/// reads to it as a wall and a room reached by one alone as a pocket to
-/// wall in rather than join, so `connect` asks this to join itself
-/// instead, by a corridor to the nearest room clear of the hall, exactly
-/// as the throne's own hall does.
+/// Lays a mini-boss's lair over the grown floor, before its lakes: a hall
+/// a cell larger than the piece all round, carved over whatever stood
+/// there, the piece stamped fixed in its centre, and a corridor from its
+/// mouth to the nearest area clear of it, as [`ThroneHall`] lays the
+/// throne. Laying the lair as a piece growth joins through its own entries
+/// replaces this.
 pub(super) struct Lair {
     /// A stable name, so two lairs, or the throne, draw different streams.
     name: &'static str,
@@ -254,10 +269,6 @@ pub(super) struct Lair {
     piece: Prefab,
     /// What the hall is floored with outside the piece's own footprint.
     margin: TileId,
-    /// Whether to carve its own corridor to the nearest room: a room
-    /// band needs one; a cave band's `JoinCaves` already joins whatever
-    /// this leaves disconnected.
-    connect: bool,
 }
 
 impl Pass<BaseContext> for Lair {
@@ -272,9 +283,8 @@ impl Pass<BaseContext> for Lair {
     fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let (w, h) = (self.piece.width(), self.piece.height());
         let bounds = ctx.terrain().bounds();
-        // The hall, a row of wall all round it at the map's edge, and,
-        // where it must connect itself, one more row below for the
-        // corridor out of its mouth.
+        // The hall, a row of wall all round it at the map's edge, and one
+        // more row below for the corridor out of its mouth.
         if w + 4 > bounds.width || h + 5 > bounds.height {
             return Err(BuildError::new(self.name, format!("a {w}x{h} lair does not fit a {}x{} floor", bounds.width, bounds.height)));
         }
@@ -285,26 +295,9 @@ impl Pass<BaseContext> for Lair {
             ctx.terrain_mut().set(p, self.margin);
         }
         StampPrefab { name: self.name, prefab: self.piece.clone(), at: Placement::At(Point::new(hall.x + 1, hall.y + 1)), orient: Orient::Fixed }.apply(ctx)?;
-        if !self.connect {
-            return Ok(());
-        }
         let mouth = Point::new(hall.x + 1 + w / 2, hall.y + 1 + h);
-        let under = hall.bottom();
-        let nearest = ctx
-            .outputs()
-            .iter::<Room>()
-            .map(|room| room.0)
-            .filter(|room| room.intersection(&hall).is_none())
-            .min_by_key(|room| (geometry::manhattan(room.center(), mouth), room.center()));
-        let room = nearest.ok_or_else(|| BuildError::new(self.name, format!("no room clear of the {w}x{h} lair's hall to join its mouth to")))?;
-        let to = room.center();
-        let corridor = (mouth.y..=under)
-            .map(|y| Point::new(mouth.x, y))
-            .chain((mouth.x.min(to.x)..=mouth.x.max(to.x)).map(|x| Point::new(x, under)))
-            .chain((under.min(to.y)..=under.max(to.y)).map(|y| Point::new(to.x, y)))
-            .collect::<Vec<_>>();
-        for p in corridor {
-            ctx.terrain_mut().set(p, self.margin);
+        if !join_mouth(ctx, hall, mouth, self.margin) {
+            return Err(BuildError::new(self.name, format!("no area clear of the {w}x{h} lair's hall to join its mouth to")));
         }
         Ok(())
     }

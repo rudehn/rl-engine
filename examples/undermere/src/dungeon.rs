@@ -4,22 +4,24 @@
 //!
 //! The town is one hand-drawn piece, `assets/prefabs/mereholt.ron`,
 //! stamped over a blank map of its own size, so the piece is the whole
-//! town and every run comes to the same one. A floor is a chain of the
-//! engine's passes, varied by its [`Biome`] so a band is told apart from
-//! the first step onto it: the Upper Halls are rooms behind doors, the
-//! Fungal Deeps caves grown by cellular automata, the Catacombs a
-//! partition of crypts, the Drowned Cathedral halls with deep water
-//! standing in them, the Forge of Embers caves with pools of lava, and the
-//! Throne rooms with the throne laid at one end.
+//! town and every run comes to the same one. A floor is grown, as
+//! Foundry's decks are, by the engine's accretion from a recipe of
+//! `assets/layout.ron`: its biome, drawn by [`biomes`], names the recipes
+//! it may be grown by, and the floor draws one. Rooms and halls behind
+//! doors, passages one or two wide, caves, and districts that mix them are
+//! all shapes in that file, so the Cellars' crawlways and the Old Mines'
+//! galleries differ by data rather than by code. Each floor is surveyed
+//! and held to what its recipe requires, and grown again, up to forty
+//! attempts, when it falls short.
 //!
 //! A few passes are Undermere's own, each small and each here because the
-//! engine's leave something a floor needs: caves joined the way a body
-//! walks, water and lava that never cut a floor in two, furniture that
-//! never shuts a way, a slot that stands on the floor drawn round it, and
-//! the throne's hall, as far from it as the floor allows. Everything that
-//! decides what a place is made of is in this module and nowhere else, so
-//! a later part's generation changes this file and nothing that reads a
-//! built place.
+//! engine's leave something a floor needs: an area floored again by its
+//! shape and district, furniture that never shuts a way, a slot that
+//! stands on the floor drawn round it, and the bosses' halls, the
+//! throne's with the way in as far from it as the floor allows.
+//! Everything that decides what a place is made of is in this module and
+//! nowhere else, so a later part's generation changes this file and
+//! nothing that reads a built place.
 //!
 //! [`PlaceBuild::from_context`] reads the way in, the way on and the
 //! pieces' slots back out, the way Foundry's decks are read. What stands
@@ -30,9 +32,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use rand::Rng;
 use rl_engine::prelude::*;
+use rl_engine::rl_bevy::layout::LayoutTiles;
 use rl_engine::rl_core::Rect;
-use rl_engine::rl_mapgen::dungeon::{Bsp, Doors, ExitPoint, FarthestExit, RandomStart, Room, Rooms};
-use rl_engine::rl_mapgen::passes::{CellularCave, StartPoint};
+use rl_engine::rl_mapgen::dungeon::{ExitPoint, FarthestExit, RandomStart};
+use rl_engine::rl_mapgen::passes::StartPoint;
+use rl_engine::rl_mapgen::{Area, Opening};
 use rl_engine::rl_render::TileAppearance;
 use rl_engine::rl_rules::layout::{self, LayoutDef};
 
@@ -62,17 +66,20 @@ pub const TOWN: MapId = MapId(100);
 /// beside the arrival either.
 pub const MIN_DISTANCE_FROM_ENTRY: i32 = 6;
 
-/// How large a floor is, in tiles: a little wider than the map's part of
-/// the screen and as tall, so a floor scrolls a few tiles side to side and
-/// never up and down.
-const FLOOR_SIZE: (i32, i32) = (70, 40);
+/// How many times a floor is grown before the run gives up on it. A floor
+/// that fails this many is a recipe that asks too much, which the test
+/// over a span of seeds is there to find before a player does.
+const ATTEMPTS: u32 = 40;
 
-/// How much of a cave starts as rock, in percent, before the engine's
-/// cellular automaton wears it away: enough that what is left is chambers
-/// and the passages between them rather than an open field, which the
-/// engine's own forty-five is. What splits off is joined back by
-/// [`JoinCaves`].
-const CAVE_FILL_PCT: u32 = 56;
+/// The way down is drawn among the cells whose walk from the way in is
+/// at least this much less than a hundred, in a hundred, of the longest:
+/// the farthest third, so the stairs are not always in the one corner a
+/// player learns to make for.
+const EXIT_AMONG_PCT: u32 = 33;
+
+/// How far the way down keeps from every piece stamped before it, so it
+/// is never inside a lair nor in its doorway.
+const EXIT_CLEAR: i32 = 2;
 
 /// How every tile looks, compiled in so the binary runs from anywhere.
 const TILES_RON: &str = include_str!("../assets/tiles.ron");
@@ -97,35 +104,29 @@ pub fn floor_of(map: MapId) -> Option<u32> {
     (1..=FLOORS).contains(&map.0).then_some(map.0)
 }
 
-/// Which of today's six chains grows a floor: fixed by the floor number,
-/// same as the design's own bands, and unchanged by [`biomes`] drawing a
-/// floor's look from more than one biome within it. Every biome of a band
-/// maps to the same family, so which chain runs never depends on which
-/// biome a seed drew, only on the floor.
-///
-/// This is the interim the dungeon task's controller asked for: task 10
-/// replaces every arm with the drawn biome's own recipe, grown by
-/// `Accrete`; until then, the closest of today's six chains runs, carrying
-/// the drawn biome's wall and floor rather than a family's own fixed
-/// ones.
+/// A floor's band, for what is strewn on it once it is grown: rubble and
+/// braziers, glowcaps, bones and candles, puddles and moonlight. Fixed by
+/// the floor number, same as the design's own bands, whichever biome a
+/// seed drew: the biomes' own decor replaces it once a pool file names
+/// it, and until then every biome of a band is strewn alike.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Family {
-    /// Floors one and two: rooms behind doors.
+    /// Floors one and two: rubble and braziers.
     UpperHalls,
-    /// Floors three and four: caves grown by cellular automata.
+    /// Floors three and four: glowcaps.
     FungalDeeps,
-    /// Floors five and six: a partition of crypts.
+    /// Floors five and six: bones and candles.
     Catacombs,
-    /// Floors seven and eight: halls with a lake standing in them.
+    /// Floors seven and eight: puddles and shafts of moonlight.
     DrownedCathedral,
-    /// Floor nine: caves with pools of lava.
+    /// Floor nine: nothing but its lava.
     ForgeOfEmbers,
-    /// Floor ten: rooms, and the throne's hall at one end of them.
+    /// Floor ten: nothing but the throne.
     Throne,
 }
 
 impl Family {
-    /// The family that grows floor `floor`.
+    /// The band floor `floor` stands in.
     fn of(floor: u32) -> Family {
         match floor {
             ..=2 => Family::UpperHalls,
@@ -137,9 +138,10 @@ impl Family {
         }
     }
 
-    /// Every tile a floor of this family may show beyond the drawn
-    /// biome's own wall and floor: a family's shared patches and
-    /// furnishings, and a mini-boss's lair tiles wherever its own range
+    /// Every tile a floor of this band may show beyond the drawn biome's
+    /// own wall, floor, paint and lakes: the doors every grown floor but
+    /// the throne's hangs, the band's patches and furnishings, and a
+    /// mini-boss's lair tiles wherever its own range
     /// reaches this family's floors, exactly as the fixed six biomes
     /// listed before this task. A lair's own tiles are listed on every
     /// family its boss's range reaches, including the family whose own
@@ -155,7 +157,7 @@ impl Family {
     fn shared_tiles(self) -> &'static [&'static str] {
         match self {
             Family::UpperHalls => &["door", "open door", "rubble"],
-            Family::FungalDeeps => &["glowcaps", "goblin hall wall", "goblin hall floor", "web", "cave wall", "moss"],
+            Family::FungalDeeps => &["door", "open door", "glowcaps", "goblin hall wall", "goblin hall floor", "web", "cave wall", "moss"],
             Family::Catacombs => &[
                 "bones",
                 "door",
@@ -170,8 +172,10 @@ impl Family {
                 "crypt wall",
                 "crypt floor",
             ],
-            Family::DrownedCathedral => &["flooded floor", "deep water", "moonlit marble", "crypt wall", "crypt floor", "forge wall", "ash", "lava"],
-            Family::ForgeOfEmbers => &["lava", "forge wall", "ash"],
+            Family::DrownedCathedral => {
+                &["door", "open door", "flooded floor", "deep water", "moonlit marble", "crypt wall", "crypt floor", "forge wall", "ash", "lava"]
+            }
+            Family::ForgeOfEmbers => &["door", "open door", "lava", "forge wall", "ash"],
             // Whichever of the three `FINAL_BOSSES` floor ten draws
             // paints its own hall beyond its wall and its floor: the
             // Drowned King's dais and black pool, the Mother Below's
@@ -212,6 +216,9 @@ fn registry() -> TileRegistry {
             // it by walking into it, and it shuts again behind them.
             TileProps::named("door").passable(true).opaque(true).blocks_projectiles(true).opens_to("open door"),
             TileProps::floor("open door").closes_to("door"),
+            // What a lake of water and a lake of lava are crossed by.
+            TileProps::floor("bridge"),
+            TileProps::floor("iron bridge"),
             // The Upper Halls.
             TileProps::wall("hall wall"),
             TileProps::floor("hall floor"),
@@ -219,6 +226,8 @@ fn registry() -> TileRegistry {
             // The Cellars, floors one and two's other biome.
             TileProps::wall("cellar wall"),
             TileProps::floor("cellar floor"),
+            // Bare ground: the cellars' root caves and the mines' caves.
+            TileProps::floor("earth"),
             // The Watch Barracks, floors one and two's third biome.
             TileProps::wall("barracks wall"),
             TileProps::floor("barracks floor"),
@@ -252,6 +261,8 @@ fn registry() -> TileRegistry {
             TileProps::wall("forge wall"),
             TileProps::floor("ash"),
             TileProps::named("lava"),
+            // A smithy's floor among the ash.
+            TileProps::floor("flagstones"),
             // The Ashen Galleries, floor nine's other biome.
             TileProps::wall("cinder wall"),
             TileProps::floor("cinder floor"),
@@ -279,27 +290,30 @@ pub struct Undermere {
     tiles: TileRegistry,
     prefabs: Prefabs<MonsterDef>,
     seed: RunSeed,
+    layout: LayoutDef,
+    defs: Registry<biomes::BiomeDef>,
     biomes: BTreeMap<u32, BiomeDraw>,
 }
 
 impl Undermere {
-    /// Registers every tile a place is built of, loads every piece against
-    /// them, and draws every floor's biome. The load reads the content
-    /// registries and the bestiary itself, the same ones the run inserts,
-    /// which is what makes a piece's prop and monster ids match the
-    /// running game's.
+    /// Registers every tile a place is built of, loads every piece and the
+    /// layout against them, and draws every floor's biome and recipe. The
+    /// load reads the content registries and the bestiary itself, the same
+    /// ones the run inserts, which is what makes a piece's prop and
+    /// monster ids match the running game's.
     pub fn new(seed: RunSeed) -> Self {
         let tiles = registry();
         // After the tiles, which the pieces paint by name.
         let prefabs = crate::prefabs::load(&tiles);
-        let defs = biomes::load(&tiles, &layout());
+        let layout = layout();
+        let defs = biomes::load(&tiles, &layout);
         let boss = lairs::draw_final_boss(seed);
         let mut biomes = BTreeMap::new();
         for floor in 1..FLOORS {
             biomes.insert(floor, biomes::draw(&defs, floor, seed, &tiles));
         }
-        biomes.insert(FLOORS, biomes::throne(&defs, boss.biome, &tiles));
-        Self { tiles, prefabs, seed, biomes }
+        biomes.insert(FLOORS, biomes::throne(&defs, boss.biome, seed, &tiles));
+        Self { tiles, prefabs, seed, layout, defs, biomes }
     }
 
     /// The biome `floor` draws: pure over `self.seed`, so every call
@@ -335,19 +349,22 @@ impl Undermere {
     }
 
     /// Runs `map`'s chain and hands back the context still open, so a test
-    /// can read a [`Stamped`] pass emitted before [`PlaceBuild::from_context`]
-    /// flattens every mark into a `Spot` and drops the stamp's own bounds.
+    /// can read a [`Stamped`] or a [`Surveyed`] pass emitted before
+    /// [`PlaceBuild::from_context`] flattens every mark into a `Spot` and
+    /// drops the rest.
     fn generate(&self, map: MapId) -> Result<BaseContext, BuildError> {
-        let (mut ctx, chain) = match (map, floor_of(map)) {
-            (TOWN, _) => self.town()?,
-            (_, Some(floor)) => self.floor(floor)?,
-            (_, None) => return Err(BuildError::new("undermere", format!("{map:?} is no place in the Undermere"))),
-        };
         // One stream per place, so building floor two first does not change
         // floor one.
         let seed = RunSeed(self.seed.derive(SeedDomain::new(b"undermere.place"), u64::from(map.0)));
-        chain.run(&mut ctx, seed)?;
-        Ok(ctx)
+        match (map, floor_of(map)) {
+            (TOWN, _) => {
+                let (mut ctx, chain) = self.town()?;
+                chain.run(&mut ctx, seed)?;
+                Ok(ctx)
+            }
+            (_, Some(floor)) => self.grow(floor, self.biome_of(floor), seed, ATTEMPTS),
+            (_, None) => Err(BuildError::new("undermere", format!("{map:?} is no place in the Undermere"))),
+        }
     }
 
     /// Mereholt: its piece stamped over a blank map of its own size, so the
@@ -364,132 +381,125 @@ impl Undermere {
         Ok((ctx, chain))
     }
 
-    /// Floor `floor`, as its biome builds it.
+    // ANCHOR: grow
+    /// Floor `floor`, grown as `drawn` says: its recipe of
+    /// `assets/layout.ron` accreted, loops cut through it, each area
+    /// floored by its shape and district, the lakes and the bridges of its
+    /// biome, the way in and the way down, the survey, the band's decor,
+    /// and the recipe's requirements last, the whole grown again from the
+    /// next attempt, up to `attempts`, whenever a pass refuses it.
     ///
-    /// Every floor but the last ends the same way: its way in drawn clear of
-    /// whatever was stamped before it, its way on the cell farthest from
-    /// that by walking, doors opened, and every slot then stood on the floor
-    /// round it. The last is the throne's: its way in is as far from the
-    /// throne as the floor allows, and it has no way on. Everything in
-    /// between is the biome's.
-    fn floor(&self, floor: u32) -> Result<(BaseContext, Chain<BaseContext>), BuildError> {
-        let family = Family::of(floor);
-        let drawn = self.biome_of(floor);
-        let t = |name: &str| self.tile(name);
-        let (width, height) = FLOOR_SIZE;
+    /// The way in is drawn clear of whatever was stamped before it and the
+    /// way down among the farthest third of the floor from it, clear of
+    /// every piece. Floor ten is the throne's: no doors, since the walk
+    /// there is through halls, its way in as far from the throne as the
+    /// floor allows, and no way down.
+    fn grow(&self, floor: u32, drawn: &BiomeDraw, seed: RunSeed, attempts: u32) -> Result<BaseContext, BuildError> {
+        let throne = floor == FLOORS;
         // Floor ten's own wall is whichever of the three [`FINAL_BOSSES`]
-        // this run draws, never the drawn throne biome's own, so the
-        // whole floor is built of the drawn boss's own look and not only
-        // its piece.
-        let fill = if floor == FLOORS { t(self.final_boss().wall) } else { drawn.wall };
-        let ctx = BaseContext::blank(width, height, self.tiles.clone(), fill);
-        let start = RandomStart.clear_of_stamps(MIN_DISTANCE_FROM_ENTRY);
-        // A chest or two on every floor but the throne's, where the run ends.
-        let chests = Furnish { name: "chests", piece: self.prefabs.piece("chest")?, count: (1, 2) };
-        let chain = match family {
-            Family::UpperHalls => {
-                let hall = drawn.floor;
-                let chain = Chain::new()
-                    .then(Rooms { floor: hall, attempts: 40, min_size: 5, max_size: 11, min_rooms: 5 })
-                    .then(Doors { door: t("door") })
-                    .then(start)
-                    .then(FarthestExit)
-                    .then(Patches { name: "rubble", tile: t("rubble"), on: hall, count: (5, 9), size: (2, 6), phase: Phase::Finish })
-                    .then(Furnish { name: "braziers", piece: self.prefabs.piece("brazier")?, count: (3, 5) })
-                    .then(chests);
-                // Floor one's way in is where the gate lets out, so its way
-                // up is the gate's other side.
-                let chain = if floor == 1 { chain.then(GateBack { gate: t("gate") }) } else { chain };
-                chain.then(Underfoot)
+        // this run draws, which is the drawn throne biome's own.
+        let fill = if throne { self.tile(self.final_boss().wall) } else { drawn.wall };
+        let door = if throne { drawn.floor } else { self.tile("door") };
+        // Undermere grows no locked or sealed piece yet, so its door
+        // stands for both.
+        let tiles = LayoutTiles { floor: drawn.floor, door, locked: door, sealed: door };
+        let grown = rl_engine::rl_bevy::layout::passes(&self.layout, &drawn.recipe, &tiles)?;
+        let (width, height) = grown.size;
+        let mut chain = Chain::new().then(grown.accrete).then(grown.loops).then(Paint { floor: drawn.floor, rules: drawn.paint.clone() });
+        // The bosses' halls are stamped and carved over what grew, before
+        // the lakes, which keep off a stamp and the ring round it.
+        if throne {
+            let boss = self.final_boss();
+            chain = chain.then(ThroneHall { piece: self.prefabs.piece(boss.piece)?, floor: self.tile(boss.floor) });
+        } else if let Some(lair) = self.lair_pass(floor)? {
+            chain = chain.then(lair);
+        }
+        if let Some((lakes, bridges)) = drawn.lakes.clone() {
+            chain = chain.then(lakes);
+            if let Some(bridges) = bridges {
+                chain = chain.then(bridges);
             }
-            Family::FungalDeeps => {
-                let (wall, moss) = (drawn.wall, drawn.floor);
-                let chain = Chain::new().then(CellularCave { wall, floor: moss, fill_pct: CAVE_FILL_PCT, ..Default::default() });
-                // Before `JoinCaves`, so the lair's own hall is just one
-                // more pocket for it to join to the rest of the cave; a
-                // cave band needs no corridor of its own.
-                let chain = match self.lair_pass(floor, false)? {
-                    Some(lair) => chain.then(lair),
-                    None => chain,
-                };
-                chain
-                    .then(JoinCaves { floor: moss, wall })
-                    .then(start)
-                    .then(FarthestExit)
-                    .then(Patches { name: "glowcaps", tile: t("glowcaps"), on: moss, count: (8, 12), size: (2, 6), phase: Phase::Finish })
-                    .then(chests)
-                    .then(Underfoot)
-            }
-            Family::Catacombs => {
-                let crypt = drawn.floor;
-                let chain = Chain::new().then(Bsp { floor: crypt, min_leaf: 9, padding: 1 }).then(Doors { door: t("door") });
-                // After the rooms and their doors, so the lair's own
-                // corridor can find one clear of its hall to join.
-                let chain = match self.lair_pass(floor, true)? {
-                    Some(lair) => chain.then(lair),
-                    None => chain,
-                };
-                chain
-                    .then(start)
-                    .then(FarthestExit)
-                    .then(Patches { name: "bones", tile: t("bones"), on: crypt, count: (6, 10), size: (1, 4), phase: Phase::Finish })
-                    .then(Furnish { name: "candles", piece: self.prefabs.piece("candelabra")?, count: (5, 8) })
-                    .then(chests)
-                    .then(Underfoot)
-            }
-            Family::DrownedCathedral => {
-                let (marble, deep, flooded) = (drawn.floor, t("deep water"), t("flooded floor"));
-                let chain = Chain::new().then(Rooms { floor: marble, attempts: 40, min_size: 6, max_size: 12, min_rooms: 4 }).then(Patches {
-                    name: "pools",
-                    tile: deep,
-                    on: marble,
-                    count: (4, 7),
-                    size: (6, 24),
-                    phase: Phase::Structures,
-                });
-                let chain = match self.lair_pass(floor, true)? {
-                    Some(lair) => chain.then(lair),
-                    None => chain,
-                };
-                chain
-                    .then(start)
-                    .then(FarthestExit)
-                    .then(Rim { name: "shallows", tile: flooded, on: marble, around: deep, chance_pct: 70 })
-                    .then(Patches { name: "puddles", tile: flooded, on: marble, count: (3, 6), size: (2, 6), phase: Phase::Finish })
-                    .then(Patches { name: "shafts", tile: t("moonlit marble"), on: marble, count: (3, 5), size: (1, 1), phase: Phase::Finish })
-                    .then(chests)
-                    .then(Underfoot)
-            }
-            Family::ForgeOfEmbers => {
-                let (wall, ash) = (drawn.wall, drawn.floor);
-                let chain = Chain::new().then(CellularCave { wall, floor: ash, fill_pct: CAVE_FILL_PCT, ..Default::default() });
-                let chain = match self.lair_pass(floor, false)? {
-                    Some(lair) => chain.then(lair),
-                    None => chain,
-                };
-                chain
-                    .then(JoinCaves { floor: ash, wall })
-                    .then(Patches { name: "lava", tile: t("lava"), on: ash, count: (5, 8), size: (8, 30), phase: Phase::Connect })
-                    .then(start)
-                    .then(FarthestExit)
-                    .then(chests)
-                    .then(Underfoot)
-            }
-            // No way down: the throne is where the Undermere ends. The
-            // piece and the floor tile are whichever of the three
-            // `FINAL_BOSSES` this run draws; `ThroneHall` itself asks for
-            // neither by name; see `FinalBoss`.
-            Family::Throne => {
-                let boss = self.final_boss();
-                let floor = t(boss.floor);
-                Chain::new()
-                    .then(Rooms { floor, attempts: 40, min_size: 5, max_size: 10, min_rooms: 4 })
-                    .then(ThroneHall { piece: self.prefabs.piece(boss.piece)?, floor })
-                    .then(FarthestFromTheThrone)
-                    .then(Underfoot)
-            }
+        }
+        chain = if throne {
+            chain.then(FarthestFromTheThrone)
+        } else {
+            chain.then(RandomStart.clear_of_stamps(MIN_DISTANCE_FROM_ENTRY)).then(FarthestExit.among_farthest(EXIT_AMONG_PCT).clear_of_stamps(EXIT_CLEAR))
         };
-        Ok((ctx, chain))
+        chain = self.decor(chain.then(Survey), floor, drawn)?;
+        // Floor one's way in is where the gate lets out, so its way up is
+        // the gate's other side.
+        if floor == 1 {
+            chain = chain.then(GateBack { gate: self.tile("gate") });
+        }
+        let make = || BaseContext::blank(width, height, self.tiles.clone(), fill);
+        chain.then(Underfoot).then(grown.require).run_retrying(make, seed, attempts)
+    }
+    // ANCHOR_END: grow
+
+    /// What a band strews on its floor once the ways are known: rubble and
+    /// braziers in the first band, glowcaps in the second, bones and
+    /// candles in the third, puddles and moonlight in the fourth, and a
+    /// chest or two on every floor but the throne's. The biomes' own decor
+    /// replaces this by band once a pool file names it.
+    fn decor(&self, chain: Chain<BaseContext>, floor: u32, drawn: &BiomeDraw) -> Result<Chain<BaseContext>, BuildError> {
+        let t = |name: &str| self.tile(name);
+        let on = drawn.floor;
+        let chain = match Family::of(floor) {
+            Family::UpperHalls => chain
+                .then(Patches { name: "rubble", tile: t("rubble"), on, count: (5, 9), size: (2, 6), phase: Phase::Finish })
+                .then(Furnish { name: "braziers", piece: self.prefabs.piece("brazier")?, count: (3, 5) }),
+            Family::FungalDeeps => chain.then(Patches { name: "glowcaps", tile: t("glowcaps"), on, count: (8, 12), size: (2, 6), phase: Phase::Finish }),
+            Family::Catacombs => chain
+                .then(Patches { name: "bones", tile: t("bones"), on, count: (6, 10), size: (1, 4), phase: Phase::Finish })
+                .then(Furnish { name: "candles", piece: self.prefabs.piece("candelabra")?, count: (5, 8) }),
+            Family::DrownedCathedral => chain
+                .then(Patches { name: "puddles", tile: t("flooded floor"), on, count: (3, 6), size: (2, 6), phase: Phase::Finish })
+                .then(Patches { name: "shafts", tile: t("moonlit marble"), on, count: (3, 5), size: (1, 1), phase: Phase::Finish }),
+            Family::ForgeOfEmbers | Family::Throne => chain,
+        };
+        Ok(if floor == FLOORS { chain } else { chain.then(Furnish { name: "chests", piece: self.prefabs.piece("chest")?, count: (1, 2) }) })
+    }
+
+    /// Floor `floor` as rows of glyphs, for `undermere --floor N --seed S`
+    /// and for reading a recipe before calling it done: `#` what cannot be
+    /// walked on, `.` what can, `+` a door, `~` what a body wades through,
+    /// `≈` what stops it, `=` a bridge, `<` the way in and `>` the way
+    /// down. `recipe` grows the floor by that recipe of a biome of its band
+    /// in place of the one the seed draws; an error names a recipe no
+    /// biome of the floor grows.
+    pub fn render(&self, floor: u32, recipe: Option<&str>) -> Result<String, BuildError> {
+        if !(1..=FLOORS).contains(&floor) {
+            return Err(BuildError::new("undermere", format!("floor {floor} is outside 1 to {FLOORS}")));
+        }
+        let drawn = match recipe {
+            None => self.biome_of(floor).clone(),
+            Some(r) => biomes::with_recipe(&self.defs, floor, r, &self.tiles)
+                .ok_or_else(|| BuildError::new("undermere", format!("no biome of floor {floor} grows {r:?}")))?,
+        };
+        let seed = RunSeed(self.seed.derive(SeedDomain::new(b"undermere.place"), u64::from(floor)));
+        let built = PlaceBuild::from_context(self.grow(floor, &drawn, seed, ATTEMPTS)?)?;
+        let tables = self.tiles.tables();
+        let (door, bridges) = (self.tile("door"), [self.tile("bridge"), self.tile("iron bridge")]);
+        let bounds = built.terrain.bounds();
+        let mut out = format!("floor {floor}: {}, {}\n", drawn.name, drawn.recipe);
+        for y in 0..bounds.height {
+            for x in 0..bounds.width {
+                let p = Point::new(x, y);
+                let tile = built.terrain.get(p).expect("in bounds");
+                out.push(match () {
+                    _ if p == built.entry => '<',
+                    _ if Some(p) == built.exit => '>',
+                    _ if tile == door => '+',
+                    _ if bridges.contains(&tile) => '=',
+                    _ if !tables.passable[tile.index()] && !tables.opaque[tile.index()] => '≈',
+                    _ if !tables.passable[tile.index()] => '#',
+                    _ if tables.move_cost[tile.index()] > 100 => '~',
+                    _ => '.',
+                });
+            }
+            out.push('\n');
+        }
+        Ok(out)
     }
 }
 
@@ -622,89 +632,62 @@ impl Pass<BaseContext> for GateBack {
     }
 }
 
-/// How many cells a pocket of cave needs to be worth a tunnel: anything
-/// smaller is walled in.
-const SMALLEST_POCKET: usize = 12;
-
-/// Joins every region of a cave a body can walk across, one orthogonal
-/// step at a time, to the largest, by the shortest tunnel through the rock,
-/// and walls in a pocket too small to be worth one.
+/// Floors each grown area again by the name of its shape or district, as
+/// the biome's `paint` list says: a ruin's caves in the Upper Halls are
+/// rubble, a cellar's root caves bare earth. The engine records the names
+/// and reads no meaning into them; this is where Undermere does.
 ///
-/// The engine's `KeepLargestRegion` walls in everything but the largest
-/// region instead. Its cellular cave wears the rock away every round, so a
-/// fill sparse enough to stay in one piece is an open field with pillars
-/// in it, and at the fill that reads as a cave, chambers and the passages
-/// between them, it splits into islands, and keeping one walled in half the
-/// floor on some seeds. Joined, the cave keeps its whole extent. It also
-/// joins a region by diagonals, where a body may not step diagonally between
-/// two walls; this joins only what a body can walk.
-struct JoinCaves {
-    /// What a tunnel is cut as.
+/// Only the area's own floor is painted, so a door stays a door, and an
+/// arch or a mouth between two areas takes the paint only when both sides
+/// share it, so a threshold reads as belonging to neither when they
+/// differ. Runs straight after growth and its loops, before anything is
+/// stamped over the floor or laid on it.
+struct Paint {
+    /// What growth carved every piece as.
     floor: TileId,
-    /// What a pocket too small to join is filled with.
-    wall: TileId,
+    /// The biome's rules: an area named by either of its names, its shape
+    /// first, is floored with the tile.
+    rules: Vec<(String, TileId)>,
 }
 
-impl Pass<BaseContext> for JoinCaves {
+impl Paint {
+    /// What an area of `shape` in `district` is floored with.
+    fn floor_of(&self, shape: &str, district: &str) -> TileId {
+        self.rules.iter().find(|(on, _)| on == shape || on == district).map_or(self.floor, |(_, t)| *t)
+    }
+}
+
+impl Pass<BaseContext> for Paint {
     fn name(&self) -> &'static str {
-        "join_caves"
+        "paint"
     }
 
     fn phase(&self) -> Phase {
-        Phase::Connect
+        Phase::Structures
     }
 
     fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
-        let tables = ctx.tiles().tables();
-        loop {
-            let terrain = ctx.terrain();
-            let regions = rl_engine::rl_grid::region::label_regions(terrain, |i| tables.walkable[terrain.get_idx(i).index()], Steps::Four);
-            let main = regions.largest().ok_or_else(|| BuildError::new("join_caves", "no open cell to keep"))?;
-            let pockets: Vec<usize> =
-                (0..terrain.len()).filter(|idx| regions.label_idx(*idx).is_some_and(|l| l != main && regions.size(l) < SMALLEST_POCKET)).collect();
-            if !pockets.is_empty() {
-                for idx in pockets {
-                    ctx.terrain_mut().set_idx(idx, self.wall);
-                }
-                continue;
-            }
-            if regions.count() == 1 {
-                return Ok(());
-            }
-            // Out from the largest region through anything but the map's
-            // edge, which stays rock, to the nearest cell of another.
-            let (width, height) = (terrain.width(), terrain.height());
-            let inside = |p: Point| p.x > 0 && p.y > 0 && p.x < width - 1 && p.y < height - 1;
-            let mut came: Vec<Option<usize>> = vec![None; terrain.len()];
-            let mut seen = vec![false; terrain.len()];
-            let mut queue = std::collections::VecDeque::new();
-            for idx in (0..terrain.len()).filter(|idx| regions.label_idx(*idx) == Some(main)) {
-                seen[idx] = true;
-                queue.push_back(idx);
-            }
-            let mut reached = None;
-            while let Some(idx) = queue.pop_front() {
-                if regions.label_idx(idx).is_some_and(|l| l != main) {
-                    reached = Some(idx);
-                    break;
-                }
-                let p = terrain.idx_point(idx);
-                for n in Direction::CARDINALS.map(|d| p + d.offset()).into_iter().filter(|n| inside(*n)) {
-                    let next = terrain.checked_idx(n).expect("inside the map");
-                    if !std::mem::replace(&mut seen[next], true) {
-                        came[next] = Some(idx);
-                        queue.push_back(next);
-                    }
-                }
-            }
-            let mut at = reached.ok_or_else(|| BuildError::new("join_caves", "a region no tunnel reaches"))?;
-            while let Some(back) = came[at] {
-                if !tables.walkable[ctx.terrain().get_idx(at).index()] {
-                    ctx.terrain_mut().set_idx(at, self.floor);
-                }
-                at = back;
+        if self.rules.is_empty() {
+            return Ok(());
+        }
+        let tiles: Vec<TileId> = ctx.outputs().iter::<Area>().map(|a| self.floor_of(&a.shape, &a.district)).collect();
+        let tile_of = |index: usize| tiles.get(index).copied().unwrap_or(self.floor);
+        let mut paint: Vec<(Point, TileId)> = Vec::new();
+        for (area, tile) in ctx.outputs().iter::<Area>().zip(&tiles) {
+            paint.extend(area.cells.iter().filter(|_| *tile != self.floor).map(|p| (*p, *tile)));
+        }
+        for opening in ctx.outputs().iter::<Opening>() {
+            let (a, b) = (tile_of(opening.areas.0), tile_of(opening.areas.1));
+            if a == b && a != self.floor {
+                paint.extend(opening.cells.iter().map(|p| (*p, a)));
             }
         }
+        for (p, tile) in paint {
+            if ctx.terrain().get(p) == Some(self.floor) {
+                ctx.terrain_mut().set(p, tile);
+            }
+        }
+        Ok(())
     }
 }
 
@@ -806,48 +789,6 @@ impl Pass<BaseContext> for Patches {
                         frontier.push(n);
                     }
                 }
-            }
-        }
-        Ok(())
-    }
-}
-
-/// Edges `around` with `tile`: each cell of `on` beside it becomes `tile`
-/// on a roll of `chance_pct`, so deep water has a ragged shallow edge, the
-/// way the town's lake has its shallows.
-struct Rim {
-    /// A stable name, so two rims in one chain draw different streams.
-    name: &'static str,
-    /// What the edge is made of.
-    tile: TileId,
-    /// What the edge is laid over.
-    on: TileId,
-    /// What it edges.
-    around: TileId,
-    /// The chance for each cell beside it, in percent.
-    chance_pct: u32,
-}
-
-impl Pass<BaseContext> for Rim {
-    fn name(&self) -> &'static str {
-        self.name
-    }
-
-    fn phase(&self) -> Phase {
-        Phase::Finish
-    }
-
-    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
-        let kept = ways(ctx);
-        let terrain = ctx.terrain();
-        let edge: Vec<Point> = terrain
-            .iter()
-            .filter(|(p, t)| *t == self.on && !kept.contains(p) && geometry::square(*p, 1).any(|q| terrain.get(q) == Some(self.around)))
-            .map(|(p, _)| p)
-            .collect();
-        for p in edge {
-            if ctx.rng().random_range(0..100) < self.chance_pct {
-                ctx.terrain_mut().set(p, self.tile);
             }
         }
         Ok(())
@@ -1216,9 +1157,15 @@ mod tests {
                     (undermere.tiles().get(drawn.wall).name.as_str(), undermere.tiles().get(drawn.floor).name.as_str())
                 };
                 assert!(shown.contains(wall) && shown.contains(floor_tile), "floor {floor}, seed {s}: {shown:?}");
-                // The gate lets out on floor one: its other side.
+                // The gate lets out on floor one: its other side. Beyond
+                // its band's own, a floor shows what its biome paints, its
+                // lakes, their shore and their bridges.
                 let shared = Family::of(floor).shared_tiles();
-                let allowed: BTreeSet<&str> = shared.iter().copied().chain([wall, floor_tile]).chain((floor == 1).then_some("gate")).collect();
+                let name = |t: TileId| undermere.tiles().get(t).name.as_str();
+                let painted = drawn.paint.iter().map(|(_, t)| name(*t));
+                let lakes = drawn.lakes.iter().flat_map(|(l, b)| [Some(l.tile), l.wreath.map(|(t, _)| t), b.map(|b| b.tile)]).flatten().map(name);
+                let allowed: BTreeSet<&str> =
+                    shared.iter().copied().chain([wall, floor_tile]).chain(painted).chain(lakes).chain((floor == 1).then_some("gate")).collect();
                 let strays: Vec<&&str> = shown.difference(&allowed).collect();
                 assert!(strays.is_empty(), "floor {floor}, seed {s}: {strays:?} on a floor of {}", drawn.name);
             }
@@ -1231,7 +1178,7 @@ mod tests {
     fn each_floor_draws_a_biome_whose_band_includes_it() {
         for s in 0..40 {
             let undermere = Undermere::new(RunSeed(s));
-            let defs = biomes::load(undermere.tiles(), &layout());
+            let defs = &undermere.defs;
             for floor in 1..=FLOORS {
                 let drawn = undermere.biome_of(floor);
                 let bare = drawn.name.trim_start_matches("the ");
@@ -1301,8 +1248,8 @@ mod tests {
     }
 
     /// Brogue draws a wall lighter than the floor it bounds, so the shape
-    /// of a room or a cave reads at a glance even in the dark. Every band's
-    /// wall has a ground lighter than each of its floors, the doors hung in
+    /// of a room or a cave reads at a glance even in the dark. Every biome's
+    /// wall has a ground lighter than each of its floors, painted or not, the doors hung in
     /// it and the tiles that glow aside: in every channel, so it is the
     /// lighter under any light that lands on both, and by a margin the eye
     /// reads, in full light and remembered alike.
@@ -1310,9 +1257,11 @@ mod tests {
     fn every_biomes_walls_are_lighter_than_its_floors() {
         let undermere = Undermere::new(RunSeed(0));
         let look = undermere.appearance();
-        let defs = biomes::load(undermere.tiles(), &layout());
-        for (_, def) in defs.iter() {
+        for (_, def) in undermere.defs.iter() {
             reads_against(&undermere, &look, &def.name, &def.wall, &def.floor);
+            for paint in &def.paint {
+                reads_against(&undermere, &look, &def.name, &def.wall, &paint.tile);
+            }
         }
     }
 
@@ -1432,5 +1381,128 @@ mod tests {
             assert_ne!(lairs[0].1, lairs[1].1, "seed {s}: both lairs on floor {}", lairs[0].1);
         }
         assert_eq!(seen.len(), MINI_BOSSES.len(), "every mini-boss drawn somewhere over the span: {seen:?}");
+    }
+
+    /// A floor of a biome that grows `recipe`, the `pick`th of those it
+    /// may stand on round and round, so a span of picks reaches both floors
+    /// of a band; and that biome drawn with it.
+    fn grown_by(undermere: &Undermere, recipe: &str, pick: u64) -> (u32, BiomeDraw) {
+        let floors: Vec<(u32, BiomeDraw)> =
+            (1..=FLOORS).filter_map(|floor| biomes::with_recipe(&undermere.defs, floor, recipe, undermere.tiles()).map(|d| (floor, d))).collect();
+        assert!(!floors.is_empty(), "no biome grows {recipe}");
+        floors[(pick % floors.len() as u64) as usize].clone()
+    }
+
+    /// Every recipe grown on seed `s`, by a run of that seed so its lairs
+    /// stand where that run's do, on one of the floors its biome stands
+    /// on: within the forty attempts a floor is given, its requirements
+    /// met, since `Require` is the chain's last pass; the size the recipe
+    /// says; the way down outside every piece and at least the recipe's
+    /// route, a third of the longer side or more, from the way in; every
+    /// open cell walked to from the way in with every secret found and
+    /// every lock opened, and the way down with none of them.
+    fn every_recipe_meets_itself_on(s: u64) {
+        let undermere = Undermere::new(RunSeed(s));
+        let tables = undermere.tiles().tables();
+        for recipe in &undermere.layout.recipes {
+            let (floor, drawn) = grown_by(&undermere, &recipe.name, s);
+            let at = format!("{} on floor {floor}, seed {s}", recipe.name);
+            let ctx = undermere.grow(floor, &drawn, RunSeed(s), ATTEMPTS).unwrap_or_else(|e| panic!("{at}: {e}"));
+            let bounds = ctx.terrain().bounds();
+            assert_eq!((bounds.width, bounds.height), recipe.size, "{at}");
+            let route = ctx.outputs().first::<rl_engine::rl_mapgen::Surveyed>().unwrap_or_else(|| panic!("{at}: not surveyed")).route;
+            let pieces = pieces(&ctx);
+            let built = PlaceBuild::from_context(ctx).unwrap_or_else(|e| panic!("{at}: {e}"));
+            if floor == FLOORS {
+                assert_eq!(built.exit, None, "{at}: the throne's floor has no way down");
+            } else {
+                let exit = built.exit.unwrap_or_else(|| panic!("{at}: no way down"));
+                assert!(pieces.iter().all(|r| !r.contains(exit)), "{at}: the way down at {exit:?} is inside a piece");
+                let route = route.unwrap_or_else(|| panic!("{at}: no route"));
+                let third = bounds.width.max(bounds.height) as u32 / 3;
+                assert!(route >= recipe.require.route && recipe.require.route >= third, "{at}: {route} steps down, asked {}", recipe.require.route);
+            }
+            let mut found = built.terrain.clone();
+            for secret in &built.secrets {
+                found.set(secret.at, secret.is);
+            }
+            let locks: BTreeSet<Point> = built.locks.iter().map(|l| l.at).collect();
+            let passable = |terrain: &Terrain, p: Point| terrain.get(p).is_some_and(|t| tables.passable[t.index()]);
+            let all_open = |p: Point| passable(&found, p) || locks.contains(&p);
+            let seen = walked(built.entry, all_open);
+            for p in bounds.cells().filter(|p| all_open(*p)) {
+                assert!(seen.contains(&p), "{at}: {p:?} is not walked to with every secret found and every lock opened");
+            }
+            if let Some(exit) = built.exit {
+                let none_open = walked(built.entry, |p| passable(&built.terrain, p) && !locks.contains(&p));
+                assert!(none_open.contains(&exit), "{at}: the way down is walked to only through a secret or a lock");
+            }
+        }
+    }
+
+    /// [`every_recipe_meets_itself_on`] over a few seeds, so the suite
+    /// stays quick; the span the design asks for is the ignored test
+    /// beside it.
+    #[test]
+    fn every_recipe_grows_within_forty_attempts_and_meets_itself_over_a_few_seeds() {
+        for s in 0..6 {
+            every_recipe_meets_itself_on(s);
+        }
+    }
+
+    /// [`every_recipe_meets_itself_on`] over seeds 0 to 200, every recipe
+    /// on each: some minutes, so run by hand with `--ignored` whenever
+    /// `assets/layout.ron` or a pass of the floor chain changes.
+    #[test]
+    #[ignore = "seeds 0 to 200 of every recipe take minutes; run by hand when the layout or the chain changes"]
+    fn every_recipe_grows_within_forty_attempts_and_meets_itself_over_seeds_0_to_200() {
+        for s in 0..200 {
+            every_recipe_meets_itself_on(s);
+        }
+    }
+
+    /// Floor one is grown anew each run: no two of twenty seeds lay it out
+    /// alike.
+    #[test]
+    fn floor_ones_layout_differs_between_any_two_of_twenty_seeds() {
+        let floors: Vec<Terrain> = (0..20).map(|s| Undermere::new(RunSeed(s)).build(map_of(1), None).unwrap().terrain).collect();
+        for i in 0..floors.len() {
+            for j in i + 1..floors.len() {
+                assert_ne!(floors[i], floors[j], "seeds {i} and {j} lay floor one out alike");
+            }
+        }
+    }
+
+    /// A tuning aid, not a property: for every recipe, or the one named by
+    /// `SWEEP_RECIPE`, how many of `SWEEP_SEEDS` seeds (a hundred if unset)
+    /// grow on their first attempt, how long one attempt takes, and why the
+    /// rest were refused, numbers masked so like reasons count together.
+    /// Run by hand with `--ignored --nocapture` while tuning
+    /// `assets/layout.ron`; a recipe most of whose first attempts fail is
+    /// one to loosen before the forty attempts a floor is given run out.
+    #[test]
+    #[ignore = "a tuning aid that prints, run by hand"]
+    fn sweep_every_recipe_and_print_why_first_attempts_fail() {
+        let seeds: u64 = std::env::var("SWEEP_SEEDS").ok().and_then(|v| v.parse().ok()).unwrap_or(100);
+        let only = std::env::var("SWEEP_RECIPE").ok();
+        let undermere = Undermere::new(RunSeed(0));
+        for recipe in undermere.layout.recipes.iter().map(|r| r.name.clone()).filter(|r| only.as_ref().is_none_or(|o| o == r)) {
+            let (floor, drawn) = grown_by(&undermere, &recipe, 0);
+            let mut why: BTreeMap<String, u32> = BTreeMap::new();
+            let started = std::time::Instant::now();
+            for s in 0..seeds {
+                if let Err(e) = undermere.grow(floor, &drawn, RunSeed(s), 1) {
+                    let masked: String = e.to_string().chars().map(|c| if c.is_ascii_digit() { '#' } else { c }).collect();
+                    *why.entry(masked).or_default() += 1;
+                }
+            }
+            let failed: u32 = why.values().sum();
+            eprintln!("{recipe}: {} of {seeds} first attempts grow, {:?} an attempt", seeds - u64::from(failed), started.elapsed() / seeds as u32);
+            let mut why: Vec<(String, u32)> = why.into_iter().collect();
+            why.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+            for (reason, n) in why.iter().take(4) {
+                eprintln!("    {n:>4}  {reason}");
+            }
+        }
     }
 }

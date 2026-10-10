@@ -1,44 +1,66 @@
 //! Biomes, as data: `assets/biomes.ron`'s own schema, the draw that picks
-//! one of a floor's band, and [`BiomeDraw`], the plain handful every system
-//! that reads a floor's look keeps instead of the whole of [`Undermere`].
+//! one of a floor's band and one of its recipes, and [`BiomeDraw`], the
+//! plain handful every system that reads a floor's look or growth keeps
+//! instead of the whole of [`Undermere`].
 //!
 //! Twelve biomes stand two or three to a band, floors one to nine, drawn
 //! by weight from a stream of the floor alone, so a run's biomes are a
 //! pure function of its seed and any floor may be grown first. The three
 //! throne biomes stand on floor ten, one to a boss, never drawn by
 //! weight: [`throne`] reads off [`FinalBoss::biome`](super::lairs::FinalBoss)
-//! instead, so the two draws can never disagree.
+//! instead, so the two draws can never disagree. A floor's recipe is drawn
+//! from its biome's list by weight on a stream of its own, so adding a
+//! recipe to a biome moves no other floor's biome.
 //!
-//! This task draws the biome and reads its name, its ambient and its
-//! favored kinds; [`floor`](super::Undermere::floor) still grows every
-//! floor with today's six chains, chosen by [`Family`](super::Family), so
-//! `recipes`, `lakes`, `decor` and `dressings` are carried and checked
-//! against what this task can check, a tile's name among them, and left
-//! for task 10 to grow a floor by.
+//! A recipe names one in `assets/layout.ron`, checked at load both ways:
+//! every recipe a biome names is in the layout, and every recipe in the
+//! layout is named by some biome, so none is grown for nothing. `decor`
+//! and `dressings` are carried and left for the pool and dressing files of
+//! a later task to check against.
 
 use super::*;
 
-/// One named recipe of `assets/layout.ron` a biome may grow a floor by,
-/// checked against the layout at load; the floors are grown by it once
-/// the floor chain reads it.
+/// One recipe of `assets/layout.ron` a biome may grow a floor by, at a
+/// weight, and the lakes a floor grown by it lays, if any: lakes belong to
+/// a recipe, not a biome, since a cathedral's naves stand in water and its
+/// cloister does not.
 #[derive(Debug, Clone, serde::Deserialize)]
 pub(crate) struct RecipeWeight {
     pub(crate) name: String,
     pub(crate) weight: u32,
+    #[serde(default)]
+    pub(crate) lakes: Option<LakesDef>,
 }
 
-/// `rl_mapgen::lakes::Lakes`'s own fields, `tile` a name rather than a
-/// [`TileId`] until this is resolved. Not yet run: task 10 wires the pass
-/// in.
+/// `rl_mapgen::Lakes`'s own fields, `tile` a name rather than a
+/// [`TileId`], and the bridges laid over what it lays.
 #[derive(Debug, Clone, serde::Deserialize)]
 pub(crate) struct LakesDef {
-    pub(crate) name: String,
     pub(crate) tile: String,
     pub(crate) count: (u32, u32),
     pub(crate) size: (u32, u32),
     pub(crate) wreath: Option<(String, u32)>,
-    #[allow(dead_code)] // Read by task 10, once the `Lakes` pass is wired in.
     pub(crate) cut: bool,
+    #[serde(default)]
+    pub(crate) within: Vec<String>,
+    #[serde(default)]
+    pub(crate) bridges: Option<BridgesDef>,
+}
+
+/// `rl_mapgen::Bridges`'s own fields, `tile` a name; what it crosses is
+/// the lake's own tile.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub(crate) struct BridgesDef {
+    pub(crate) tile: String,
+    pub(crate) longest: u32,
+    pub(crate) detour: u32,
+}
+
+/// An area's floor painted again by the name of its shape or district.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub(crate) struct PaintDef {
+    pub(crate) on: String,
+    pub(crate) tile: String,
 }
 
 /// One biome, as `assets/biomes.ron` writes it: the file's own doc comment
@@ -52,10 +74,11 @@ pub(crate) struct BiomeDef {
     pub(crate) floor: String,
     pub(crate) ambient: (u8, (u8, u8, u8)),
     pub(crate) recipes: Vec<RecipeWeight>,
-    pub(crate) lakes: Option<LakesDef>,
-    #[allow(dead_code)] // Read by task 10, once a pool file exists to check it against.
+    #[serde(default)]
+    pub(crate) paint: Vec<PaintDef>,
+    #[allow(dead_code)] // Read once a pool file exists to check it against.
     pub(crate) decor: Vec<String>,
-    #[allow(dead_code)] // Read by task 10, once a dressing file exists to check it against.
+    #[allow(dead_code)] // Read once a dressing file exists to check it against.
     pub(crate) dressings: Vec<String>,
     pub(crate) favored: Vec<String>,
 }
@@ -86,26 +109,79 @@ pub(crate) struct BiomeDraw {
     /// than refused here, the same tolerance `population::BANDS` already
     /// gives its own names.
     pub(crate) favored: Vec<String>,
+    /// The recipe of `assets/layout.ron` the floor is grown by.
+    pub(crate) recipe: String,
+    /// The lakes the floor's recipe lays, and the bridges over them;
+    /// `None` for a dry floor.
+    pub(crate) lakes: Option<(Lakes, Option<Bridges>)>,
+    /// What an area is floored with in place of `floor`, by the name of
+    /// its shape or its district, the first that names either.
+    pub(crate) paint: Vec<(String, TileId)>,
 }
 
-fn to_draw(def: &BiomeDef, tiles: &TileRegistry) -> BiomeDraw {
+/// The resolved lakes of `def`, named `lakes` and `bridges` for the chain:
+/// one of each to a floor, so the stream a name keys never collides.
+fn to_lakes(def: &LakesDef, tiles: &TileRegistry) -> (Lakes, Option<Bridges>) {
+    let tile = tiles.expect(&def.tile);
+    let lakes = Lakes {
+        name: "lakes",
+        tile,
+        count: def.count,
+        size: def.size,
+        wreath: def.wreath.as_ref().map(|(t, pct)| (tiles.expect(t), *pct)),
+        cut: def.cut,
+        within: def.within.clone(),
+    };
+    let bridges = def.bridges.as_ref().map(|b| Bridges { name: "bridges", across: tile, tile: tiles.expect(&b.tile), longest: b.longest, detour: b.detour });
+    (lakes, bridges)
+}
+
+/// `def` drawn with its recipe at `recipe`, an index into its list.
+fn to_draw(def: &BiomeDef, recipe: usize, tiles: &TileRegistry) -> BiomeDraw {
     let (intensity, (r, g, b)) = def.ambient;
+    let r_def = &def.recipes[recipe];
     BiomeDraw {
         name: format!("the {}", def.name),
         wall: tiles.expect(&def.wall),
         floor: tiles.expect(&def.floor),
         ambient: Light::new(intensity, Rgb::new(r, g, b)),
         favored: def.favored.clone(),
+        recipe: r_def.name.clone(),
+        lakes: r_def.lakes.as_ref().map(|l| to_lakes(l, tiles)),
+        paint: def.paint.iter().map(|p| (p.on.clone(), tiles.expect(&p.tile))).collect(),
     }
 }
 
 /// Every biome, compiled in so the binary runs from anywhere.
 const BIOMES_RON: &str = include_str!("../../assets/biomes.ron");
 
-/// Checks `def` against `tiles` and `layout`: its wall, its floor, a
-/// lake's tile and wreath, if it carries one, and every recipe it names,
-/// which must be in `assets/layout.ron`. Its floor band, its weight, and
-/// its recipes' own weights are checked against nothing but themselves.
+/// Checks one lake's tiles, its ranges, the shapes it starts in against
+/// `layout`, and that a lake that may cut is bridged over a tile that
+/// stops a body, as `Lakes::cut` asks.
+fn check_lakes(lakes: &LakesDef, tiles: &TileRegistry, layout: &LayoutDef) -> Result<(), String> {
+    let named = |name: &str| tiles.id(name).ok_or_else(|| format!("{name:?} is not a registered tile"));
+    let tile = named(&lakes.tile)?;
+    if let Some((wreath, _)) = &lakes.wreath {
+        named(wreath)?;
+    }
+    if lakes.count.0 > lakes.count.1 || lakes.size.0 > lakes.size.1 {
+        return Err(format!("lake of {:?} has its fewest past its most", lakes.tile));
+    }
+    if let Some(bridges) = &lakes.bridges {
+        named(&bridges.tile)?;
+    }
+    if let Some(shape) = lakes.within.iter().find(|w| !layout.shapes.iter().any(|s| s.name == **w)) {
+        return Err(format!("lake of {:?} starts within {shape:?}, which is no shape of assets/layout.ron", lakes.tile));
+    }
+    if lakes.cut && (lakes.bridges.is_none() || tiles.tables().passable[tile.index()]) {
+        return Err(format!("lake of {:?} may cut, so it must stop a body and be bridged", lakes.tile));
+    }
+    Ok(())
+}
+
+/// Checks `def` against `tiles` and `layout`: its wall, its floor, what it
+/// paints, and every recipe it names with its lakes. Its floor band and
+/// its weights are checked against nothing but themselves.
 fn check(def: &BiomeDef, tiles: &TileRegistry, layout: &LayoutDef) -> Result<(), String> {
     if def.floors.0 > def.floors.1 || def.floors.0 < 1 || def.floors.1 > FLOORS {
         return Err(format!("floors {:?} outside 1..={FLOORS}", def.floors));
@@ -113,7 +189,7 @@ fn check(def: &BiomeDef, tiles: &TileRegistry, layout: &LayoutDef) -> Result<(),
     if def.weight == 0 {
         return Err("a weight of nought is never drawn".to_string());
     }
-    for name in [&def.wall, &def.floor] {
+    for name in [&def.wall, &def.floor].into_iter().chain(def.paint.iter().map(|p| &p.tile)) {
         if tiles.id(name).is_none() {
             return Err(format!("{name:?} is not a registered tile"));
         }
@@ -128,27 +204,17 @@ fn check(def: &BiomeDef, tiles: &TileRegistry, layout: &LayoutDef) -> Result<(),
         if layout.recipe(&r.name).is_none() {
             return Err(format!("recipe {:?} is not in assets/layout.ron", r.name));
         }
-    }
-    if let Some(lakes) = &def.lakes {
-        if tiles.id(&lakes.tile).is_none() {
-            return Err(format!("lake tile {:?} is not a registered tile", lakes.tile));
-        }
-        if let Some((wreath, _)) = &lakes.wreath
-            && tiles.id(wreath).is_none()
-        {
-            return Err(format!("lake wreath {wreath:?} is not a registered tile"));
-        }
-        if lakes.count.0 > lakes.count.1 || lakes.size.0 > lakes.size.1 {
-            return Err(format!("lake {:?} has its fewest past its most", lakes.name));
+        if let Some(lakes) = &r.lakes {
+            check_lakes(lakes, tiles, layout)?;
         }
     }
     Ok(())
 }
 
 /// Loads and checks every biome against `tiles` and `layout`, and that
-/// every recipe of `layout` is named by some biome, so none is written for
-/// nothing. Panics with every problem at once, since a broken biome is a
-/// run that cannot grow a floor.
+/// every recipe of `layout` is named by some biome. Panics with every
+/// problem at once, since a broken biome is a run that cannot grow a
+/// floor.
 pub(crate) fn load(tiles: &TileRegistry, layout: &LayoutDef) -> Registry<BiomeDef> {
     let defs: Registry<BiomeDef> = Registry::from_ron_str(BIOMES_RON).unwrap_or_else(|e| panic!("assets/biomes.ron: {e}"));
     defs.validate(|def, _| check(def, tiles, layout)).unwrap_or_else(|e| panic!("assets/biomes.ron: {e}"));
@@ -158,36 +224,62 @@ pub(crate) fn load(tiles: &TileRegistry, layout: &LayoutDef) -> Registry<BiomeDe
     defs
 }
 
-/// Draws `floor`'s biome from its band, weighted, from the floor's own
-/// stream: pure over `seed`, so a run's biomes are a pure function of its
-/// seed and any floor may be grown first.
-pub(crate) fn draw(defs: &Registry<BiomeDef>, floor: u32, seed: RunSeed, tiles: &TileRegistry) -> BiomeDraw {
-    let mut rng = seed.rng(SeedDomain::new(b"undermere.biome"), u64::from(floor));
-    let candidates: Vec<&BiomeDef> = defs.iter().map(|(_, d)| d).filter(|d| (d.floors.0..=d.floors.1).contains(&floor)).collect();
-    let total: u32 = candidates.iter().map(|d| d.weight).sum();
-    assert!(total > 0, "no biome stands on floor {floor}");
+/// One of `weights` drawn by weight from `rng`, as its index.
+fn weighted(rng: &mut impl Rng, weights: impl Iterator<Item = u32> + Clone) -> usize {
+    let total: u32 = weights.clone().sum();
+    assert!(total > 0, "nothing to draw from");
     let mut roll = rng.random_range(0..total);
-    let def = candidates
-        .into_iter()
-        .find(|d| {
-            if d.weight > roll {
+    weights
+        .enumerate()
+        .find(|(_, w)| {
+            if *w > roll {
                 true
             } else {
-                roll -= d.weight;
+                roll -= w;
                 false
             }
         })
-        .expect("a positive roll under the total always finds a row");
-    to_draw(def, tiles)
+        .map(|(i, _)| i)
+        .expect("a roll under the total always finds a row")
+}
+
+/// The recipe `def` grows `floor` by, as an index into its list, drawn by
+/// weight from the floor's own recipe stream.
+fn draw_recipe(def: &BiomeDef, floor: u32, seed: RunSeed) -> usize {
+    let mut rng = seed.rng(SeedDomain::new(b"undermere.recipe"), u64::from(floor));
+    weighted(&mut rng, def.recipes.iter().map(|r| r.weight))
+}
+
+/// Draws `floor`'s biome from its band, weighted, from the floor's own
+/// stream, and its recipe from the floor's recipe stream: pure over
+/// `seed`, so a run's biomes are a pure function of its seed and any floor
+/// may be grown first.
+pub(crate) fn draw(defs: &Registry<BiomeDef>, floor: u32, seed: RunSeed, tiles: &TileRegistry) -> BiomeDraw {
+    let mut rng = seed.rng(SeedDomain::new(b"undermere.biome"), u64::from(floor));
+    let candidates: Vec<&BiomeDef> = defs.iter().map(|(_, d)| d).filter(|d| (d.floors.0..=d.floors.1).contains(&floor)).collect();
+    assert!(!candidates.is_empty(), "no biome stands on floor {floor}");
+    let def = candidates[weighted(&mut rng, candidates.iter().map(|d| d.weight))];
+    to_draw(def, draw_recipe(def, floor, seed), tiles)
 }
 
 /// Floor ten's biome: whichever of the three throne biomes stands with
 /// `boss`, named by [`FinalBoss::biome`](super::lairs::FinalBoss). Never a
 /// weighted draw of its own, so it can never disagree with the boss
 /// [`Undermere::final_boss`](super::Undermere::final_boss) draws.
-pub(crate) fn throne(defs: &Registry<BiomeDef>, boss_biome: &str, tiles: &TileRegistry) -> BiomeDraw {
-    let id = defs.expect(boss_biome);
-    to_draw(defs.get(id), tiles)
+pub(crate) fn throne(defs: &Registry<BiomeDef>, boss_biome: &str, seed: RunSeed, tiles: &TileRegistry) -> BiomeDraw {
+    let def = defs.get(defs.expect(boss_biome));
+    to_draw(def, draw_recipe(def, FLOORS, seed), tiles)
+}
+
+/// The biome standing on `floor` that names `recipe`, drawn with it: what
+/// `undermere --floor N --seed S --recipe R` prints, so a recipe can be
+/// read on any seed without hunting for one that draws it. `None` when no
+/// biome of the floor names it.
+pub(crate) fn with_recipe(defs: &Registry<BiomeDef>, floor: u32, recipe: &str, tiles: &TileRegistry) -> Option<BiomeDraw> {
+    defs.iter().map(|(_, d)| d).filter(|d| (d.floors.0..=d.floors.1).contains(&floor)).find_map(|d| {
+        let at = d.recipes.iter().position(|r| r.name == recipe)?;
+        Some(to_draw(d, at, tiles))
+    })
 }
 
 #[cfg(test)]
@@ -219,7 +311,7 @@ mod tests {
         for name in ["Drowned Throne", "Brood Hollow", "Wyrm's Hall"] {
             let def = defs.get(defs.expect(name));
             assert_eq!(def.floors, (FLOORS, FLOORS), "{name} stands only on floor ten");
-            let drawn = throne(&defs, name, &tiles);
+            let drawn = throne(&defs, name, RunSeed(0), &tiles);
             assert_eq!(drawn.name, format!("the {name}"));
         }
     }
@@ -264,6 +356,40 @@ mod tests {
             for (name, count) in &counts {
                 assert!(*count > 0, "band {band:?}: {name} is never drawn");
                 assert!(u64::from(*count) * 3 <= u64::from(total) * 2, "band {band:?}: {name} takes {count} of {total}");
+            }
+        }
+    }
+
+    /// Over seeds 0 to 200, every recipe of every biome is drawn on some
+    /// floor, and none takes more than two thirds of its biome's floors,
+    /// the throne biomes' single recipes aside.
+    #[test]
+    fn every_recipe_of_every_biome_is_drawn_and_none_takes_more_than_two_thirds_of_its_biomes_floors() {
+        let defs = defs();
+        let tiles = registry();
+        let mut counts: std::collections::BTreeMap<(String, String), u32> = std::collections::BTreeMap::new();
+        for (_, def) in defs.iter() {
+            for r in &def.recipes {
+                counts.insert((def.name.clone(), r.name.clone()), 0);
+            }
+        }
+        for s in 0..200u64 {
+            for floor in 1..FLOORS {
+                let drawn = draw(&defs, floor, RunSeed(s), &tiles);
+                let biome = drawn.name.trim_start_matches("the ").to_string();
+                *counts.get_mut(&(biome, drawn.recipe.clone())).expect("a recipe of its own biome") += 1;
+            }
+            let boss = lairs::draw_final_boss(RunSeed(s));
+            let drawn = throne(&defs, boss.biome, RunSeed(s), &tiles);
+            let biome = drawn.name.trim_start_matches("the ").to_string();
+            *counts.get_mut(&(biome, drawn.recipe.clone())).expect("the throne's own recipe") += 1;
+        }
+        for (_, def) in defs.iter() {
+            let of_biome: u32 = def.recipes.iter().map(|r| counts[&(def.name.clone(), r.name.clone())]).sum();
+            for r in &def.recipes {
+                let n = counts[&(def.name.clone(), r.name.clone())];
+                assert!(n > 0, "{}: {} is never drawn", def.name, r.name);
+                assert!(def.recipes.len() == 1 || n * 3 <= of_biome * 2, "{}: {} takes {n} of {of_biome}", def.name, r.name);
             }
         }
     }

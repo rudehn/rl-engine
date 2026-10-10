@@ -5,7 +5,7 @@
 // misspells is a kind that is never favored rather than a load that fails.
 //
 // Every field:
-//   name:     unique; the draw, the log and task 10's recipes and pools
+//   name:     unique; the draw, the log and the pools
 //             name it by this, bare, "the " added only for the log
 //   floors:   (first, last), the floors it may be drawn on, both included;
 //             the three throne biomes are drawn one to a boss, never by
@@ -19,15 +19,37 @@
 //             carved as
 //   ambient:  (intensity, (r, g, b)), `rl_grid::Light::new`'s own two
 //             arguments: how this floor reads before anything lights it
-//   recipes:  named layout plans task 10 draws between, each a name and a
-//             weight; not yet resolved against a layout file, since task
-//             10 writes it
-//   lakes:    optional; `rl_mapgen::lakes::Lakes`'s own fields, `tile` a
-//             name from `dungeon::registry` rather than a `TileId`; not yet
-//             run, since task 10 wires the pass in
+//   recipes:  [(name:, weight:, lakes:)], the recipes of
+//             `assets/layout.ron` a floor of this biome is grown by, drawn
+//             by weight; every one must be in the layout, and every recipe
+//             in the layout must be named here by some biome. `lakes` is
+//             optional, none if left out, and None or Some((...)) when
+//             given: the lakes a floor grown by that recipe lays, so a
+//             cathedral's naves stand in deep water and its cloister
+//             stays dry. `rl_mapgen::Lakes`'s own fields, every tile a
+//             name from `dungeon::registry`:
+//               tile:    what a lake is made of
+//               count:   (fewest, most) lakes tried for
+//               size:    (fewest, most) cells a lake grows to
+//               wreath:  None, or Some((tile, chance_pct)): a shore laid
+//                        on each floor cell beside a lake at the chance
+//               cut:     whether a lake may part the floor into islands;
+//                        true only of a tile that stops a body, and only
+//                        with bridges
+//               within:  optional, any area if left out; [shape], the
+//                        shapes of `assets/layout.ron` a lake may start
+//                        in, so a lake of a hall's size never fills a
+//                        small room wall to wall
+//               bridges: optional, None if left out; Some((tile:,
+//                        longest:, detour:)): what a bridge is made of,
+//                        the most cells of lake one spans, and the
+//                        shortest walk round worth one
+//   paint:    optional, none if left out; [(on:, tile:)], an area whose
+//             shape or district is named `on` floored with `tile` in place
+//             of `floor`, the first rule that names either winning
 //   decor:    names from the design's flavor pool table that are this
 //             biome's own rather than any floor's; not yet resolved, since
-//             task 10 writes the pool file
+//             no pool file exists yet
 //   dressings: the subset of `decor` that fits any area rather than one
 //             fixed piece; not yet resolved, for the same reason
 //   favored:  names from `monsters.ron`; a name the bestiary does not
@@ -40,7 +62,8 @@
         wall: "hall wall", floor: "hall floor",
         ambient: (26, (205, 190, 170)),
         recipes: [(name: "great halls", weight: 1), (name: "wings", weight: 1), (name: "galleries", weight: 1)],
-        lakes: None,
+        // Where small caves of rubble break into the halls.
+        paint: [(on: "ruin", tile: "rubble")],
         decor: ["Feasting Hall", "Guard Room", "Steward's Audience"],
         dressings: ["Feasting Hall", "Guard Room"],
         favored: ["jackal"],
@@ -50,7 +73,8 @@
         wall: "cellar wall", floor: "cellar floor",
         ambient: (24, (150, 130, 110)),
         recipes: [(name: "storerooms", weight: 1), (name: "burrowed", weight: 1)],
-        lakes: None,
+        // The root caves are bare earth, the storerooms flagged.
+        paint: [(on: "root cave", tile: "earth")],
         decor: ["Wine Cellar", "Root Cellar", "Coal Store"],
         dressings: ["Wine Cellar", "Root Cellar"],
         favored: ["rat"],
@@ -60,7 +84,6 @@
         wall: "barracks wall", floor: "barracks floor",
         ambient: (27, (190, 150, 90)),
         recipes: [(name: "blocks", weight: 1), (name: "parade", weight: 1)],
-        lakes: None,
         decor: ["Bunk Room", "Mess Hall", "Drill Yard"],
         dressings: ["Bunk Room", "Mess Hall", "Drill Yard"],
         favored: ["kobold"],
@@ -72,7 +95,6 @@
         wall: "cave wall", floor: "moss",
         ambient: (22, (90, 170, 150)),
         recipes: [(name: "grottoes", weight: 1), (name: "band", weight: 1), (name: "knot", weight: 1)],
-        lakes: None,
         decor: ["Glowcap Ring", "Puffball Grove", "Moss Garden"],
         dressings: ["Puffball Grove", "Moss Garden"],
         favored: ["myconid"],
@@ -84,7 +106,6 @@
         // than a dim colour of its own.
         ambient: (0, (0, 0, 0)),
         recipes: [(name: "warren", weight: 1), (name: "nest", weight: 1)],
-        lakes: None,
         decor: ["Husk Gallery", "Silk Curtains", "Old Egg Cases"],
         dressings: ["Husk Gallery", "Silk Curtains", "Old Egg Cases"],
         favored: ["cave spider"],
@@ -94,7 +115,9 @@
         wall: "mine wall", floor: "mine floor",
         ambient: (20, (160, 140, 90)),
         recipes: [(name: "workings", weight: 1), (name: "deep seam", weight: 1)],
-        lakes: None,
+        // The natural caves the miners broke into are earth; what they
+        // dug is the mine's own floor.
+        paint: [(on: "pocket", tile: "earth"), (on: "cave", tile: "earth")],
         decor: ["Cart Track", "Shored Gallery", "Ore Seam"],
         dressings: ["Shored Gallery", "Ore Seam"],
         favored: ["goblin", "kobold"],
@@ -106,7 +129,6 @@
         wall: "crypt wall", floor: "crypt floor",
         ambient: (19, (150, 160, 205)),
         recipes: [(name: "grid", weight: 1), (name: "ossuaries", weight: 1)],
-        lakes: None,
         decor: ["Ossuary Wall", "Tomb Row", "Embalmers' Room"],
         dressings: ["Ossuary Wall", "Tomb Row"],
         favored: ["skeleton"],
@@ -115,11 +137,15 @@
         name: "Sunken Library", floors: (5, 6), weight: 1,
         wall: "library wall", floor: "library floor",
         ambient: (18, (140, 110, 200)),
-        recipes: [(name: "stacks", weight: 1), (name: "atrium", weight: 1)],
-        lakes: Some((
-            name: "seeping pools", tile: "flooded floor",
-            count: (2, 3), size: (6, 16), wreath: None, cut: false,
-        )),
+        // Water seeping through the floor of every room and stack alike.
+        recipes: [
+            (name: "stacks", weight: 1, lakes: Some((
+                tile: "flooded floor", count: (2, 3), size: (6, 16), wreath: None, cut: false,
+            ))),
+            (name: "atrium", weight: 1, lakes: Some((
+                tile: "flooded floor", count: (2, 3), size: (6, 16), wreath: None, cut: false,
+            ))),
+        ],
         decor: ["Reading Room", "Fallen Stacks", "Orrery"],
         dressings: ["Reading Room", "Fallen Stacks"],
         favored: ["wraith", "will-o'-wisp"],
@@ -130,11 +156,15 @@
         name: "Drowned Cathedral", floors: (7, 8), weight: 1,
         wall: "cathedral wall", floor: "marble",
         ambient: (17, (80, 115, 210)),
-        recipes: [(name: "nave", weight: 1), (name: "cloister", weight: 1)],
-        lakes: Some((
-            name: "nave lakes", tile: "deep water",
-            count: (2, 4), size: (20, 60), wreath: Some(("flooded floor", 70)), cut: false,
-        )),
+        recipes: [
+            // Deep water standing in the naves, never in the chapels.
+            (name: "nave", weight: 1, lakes: Some((
+                tile: "deep water", count: (2, 4), size: (20, 60), wreath: Some(("flooded floor", 70)), cut: false,
+                within: ["nave"],
+                bridges: Some((tile: "bridge", longest: 8, detour: 30)),
+            ))),
+            (name: "cloister", weight: 1),
+        ],
         decor: ["Choir Stalls", "Baptistery", "Fallen Bell"],
         dressings: ["Choir Stalls"],
         favored: ["ghoul"],
@@ -146,11 +176,18 @@
         // Matches `Forge of Embers`' own floor: the engine's dim band
         // starts at 16, so a deeper band than this would have nowhere
         // left to sit but the special nought `Spider Warrens` keeps.
-        recipes: [(name: "shore", weight: 1), (name: "archipelago", weight: 1)],
-        lakes: Some((
-            name: "the underlake", tile: "deep water",
-            count: (1, 2), size: (80, 200), wreath: Some(("flooded floor", 60)), cut: true,
-        )),
+        recipes: [
+            // Caves along one or two great lakes.
+            (name: "shore", weight: 1, lakes: Some((
+                tile: "deep water", count: (4, 6), size: (60, 140), wreath: Some(("flooded floor", 60)), cut: true,
+                bridges: Some((tile: "bridge", longest: 10, detour: 24)),
+            ))),
+            // Lakes over most of the floor, the caves islands in them.
+            (name: "archipelago", weight: 1, lakes: Some((
+                tile: "deep water", count: (16, 22), size: (80, 180), wreath: Some(("flooded floor", 60)), cut: true,
+                bridges: Some((tile: "bridge", longest: 16, detour: 24)),
+            ))),
+        ],
         decor: ["Stilt Hut", "Shell Midden"],
         dressings: ["Shell Midden"],
         favored: ["drowned thrall", "wight"],
@@ -161,11 +198,22 @@
         name: "Forge of Embers", floors: (9, 9), weight: 1,
         wall: "forge wall", floor: "ash",
         ambient: (16, (210, 80, 50)),
-        recipes: [(name: "smithies", weight: 1), (name: "smelter", weight: 1)],
-        lakes: Some((
-            name: "lava lakes", tile: "lava",
-            count: (3, 5), size: (10, 30), wreath: None, cut: false,
-        )),
+        recipes: [
+            // Lava lakes in the ash caves among the smithies.
+            (name: "smithies", weight: 1, lakes: Some((
+                tile: "lava", count: (3, 5), size: (10, 30), wreath: None, cut: false,
+                within: ["cave", "small cave"],
+                bridges: Some((tile: "iron bridge", longest: 6, detour: 30)),
+            ))),
+            // Lakes of lava standing in the smelter's halls.
+            (name: "smelter", weight: 1, lakes: Some((
+                tile: "lava", count: (1, 3), size: (30, 70), wreath: None, cut: false,
+                within: ["great hall", "hall"],
+                bridges: Some((tile: "iron bridge", longest: 6, detour: 30)),
+            ))),
+        ],
+        // The smithies are flagged; the caves round them are ash.
+        paint: [(on: "smithy", tile: "flagstones")],
         decor: ["Smithy", "Slag Heaps"],
         dressings: ["Smithy", "Slag Heaps"],
         favored: ["salamander"],
@@ -174,11 +222,18 @@
         name: "Ashen Galleries", floors: (9, 9), weight: 1,
         wall: "cinder wall", floor: "cinder floor",
         ambient: (16, (200, 90, 40)),
-        recipes: [(name: "flows", weight: 1), (name: "vents", weight: 1)],
-        lakes: Some((
-            name: "lava pools", tile: "lava",
-            count: (5, 9), size: (4, 10), wreath: None, cut: false,
-        )),
+        recipes: [
+            // Lava lakes along the cooled flows.
+            (name: "flows", weight: 1, lakes: Some((
+                tile: "lava", count: (3, 5), size: (20, 50), wreath: None, cut: false,
+                within: ["long cave", "cave"],
+                bridges: Some((tile: "iron bridge", longest: 6, detour: 30)),
+            ))),
+            // Many small pools: the vents.
+            (name: "vents", weight: 1, lakes: Some((
+                tile: "lava", count: (5, 9), size: (4, 10), wreath: None, cut: false,
+            ))),
+        ],
         decor: ["Obsidian Spires", "Cinder Drifts"],
         dressings: ["Obsidian Spires", "Cinder Drifts"],
         favored: ["fire imp"],
@@ -191,8 +246,11 @@
         name: "Drowned Throne", floors: (10, 10), weight: 1,
         wall: "throne wall", floor: "throne floor",
         ambient: (16, (90, 140, 160)),
-        recipes: [(name: "drowned throne", weight: 1)],
-        lakes: None,
+        // Halls standing in black water.
+        recipes: [(name: "drowned throne", weight: 1, lakes: Some((
+            tile: "black pool", count: (3, 5), size: (10, 30), wreath: None, cut: false,
+            within: ["hall"],
+        )))],
         decor: [],
         dressings: [],
         favored: [],
@@ -202,7 +260,6 @@
         wall: "cave wall", floor: "moss",
         ambient: (16, (120, 80, 90)),
         recipes: [(name: "brood hollow", weight: 1)],
-        lakes: None,
         decor: [],
         dressings: [],
         favored: [],
@@ -211,8 +268,11 @@
         name: "Wyrm's Hall", floors: (10, 10), weight: 1,
         wall: "forge wall", floor: "ash",
         ambient: (16, (200, 70, 30)),
-        recipes: [(name: "wyrm's hall", weight: 1)],
-        lakes: None,
+        // Burning pools among the pillars.
+        recipes: [(name: "wyrm's hall", weight: 1, lakes: Some((
+            tile: "lava", count: (3, 5), size: (6, 16), wreath: None, cut: false,
+            within: ["hall", "cross"],
+        )))],
         decor: [],
         dressings: [],
         favored: [],

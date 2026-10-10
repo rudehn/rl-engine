@@ -230,9 +230,9 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [2_860_039_877_341_420_817, 4_757_673_516_979_391_303, 11_713_115_826_838_814_096],
-        "fingerprint tripwire: re-baselined for task 9, biomes as data (a floor one to nine now draws one of two or \
-         three biomes by seed, each its own wall, floor and ambient, in place of one fixed biome a band, so the \
-         script's own floors read and light differently)"
+        [11_836_873_818_032_742_598, 10_374_234_003_230_262_217, 17_619_422_277_315_636_038],
+        "fingerprint tripwire: re-baselined for part 4's task 10, the floor chain (every floor is now grown by \
+         accretion from a recipe of assets/layout.ron its biome names, larger and laid out anew, so the script \
+         walks, meets and fights on other floors)"
     );
 }
