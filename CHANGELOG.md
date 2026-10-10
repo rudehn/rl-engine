@@ -6,6 +6,11 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- A place can hold lakes that never part it: the new `Lakes` pass in `rl-mapgen` grows blobs of a tile over the open floor and the rock beside it, from a cell with floor all round, refusing any that would leave a region of floor in two or gone, or an `Area` in two, and wreathing each with a shore tile at a chance; it keeps to one area, takes rock only where nothing walkable but its own floor touches it, never covers an opening or a cell beside one, a painted piece, a stamp or an earlier lake, and takes the floor it makes impassable out of its area, bounds and inner rectangle measured again, so it runs in `Structures` after `Accrete` and `OpenLoops` and before the start, the exit and `Survey`.
+  The new `Bridges` pass, in `Connect`, lays a tile straight across a liquid with the liquid on both flanks, where the span is at most `longest` and the walk round between the banks is at least `detour`, longest walk round first and measured again after each, never landing on an opening or a painted piece.
+  Each lake laid is published as a `Lake` and each bridge as a `Bridge`, and `Outputs::iter_mut` lets a pass change what an earlier one published in place.
+  Nothing moves for a game that adds neither.
+
 - The way down can be kept out of the pieces and drawn from more than one cell: `FarthestExit.clear_of_stamps(n)` keeps it at least `n` cells, Chebyshev, from every `Stamped` emitted before it, falling back to a cell outside every stamp where none is that clear, and `FarthestExit.among_farthest(pct)` draws it from the chain's stream among every cell whose walk from the start is at least `100 - pct` in a hundred of the longest, refused past a hundred; both build the new `FarExit`, which takes the other too, and draw on the plain exit's stream, so a chain that asks for neither builds exactly what it did.
 
 - A place can be made to hold pieces grown from prefabs: `Accrete`'s new `pieces` are shapes the place must hold, each laid once and joined by its own join, tried at every attempt once the open share passes the new `late_pct` so they attach out along the frontier, with growth going on past `open_pct` until each is down; a place that ends growth with one not laid fails naming it, for `run_retrying` to grow again.

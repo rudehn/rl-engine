@@ -65,6 +65,13 @@ impl Outputs {
         self.items.iter().filter_map(|b| b.downcast_ref::<T>())
     }
 
+    /// Every value of type `T`, mutably, in emission order: for a pass
+    /// that changes what an earlier one published, as a lake takes the
+    /// floor it covers out of its area, without moving it in the order.
+    pub fn iter_mut<T: Any>(&mut self) -> impl Iterator<Item = &mut T> {
+        self.items.iter_mut().filter_map(|b| b.downcast_mut::<T>())
+    }
+
     /// Removes and returns every value of type `T`, in emission order.
     pub fn take<T: Any>(&mut self) -> Vec<T> {
         let mut taken = Vec::new();
@@ -197,7 +204,11 @@ mod tests {
         out.push(2u32);
         assert_eq!(out.iter::<u32>().copied().collect::<Vec<_>>(), vec![1, 2]);
         assert_eq!(out.first::<&str>(), Some(&"a"));
-        assert_eq!(out.take::<u32>(), vec![1, 2]);
+        for v in out.iter_mut::<u32>() {
+            *v += 10;
+        }
+        assert_eq!(out.iter::<u32>().copied().collect::<Vec<_>>(), vec![11, 12], "changed in place, in order");
+        assert_eq!(out.take::<u32>(), vec![11, 12]);
         assert_eq!(out.len(), 1);
         assert!(out.take::<u32>().is_empty());
     }

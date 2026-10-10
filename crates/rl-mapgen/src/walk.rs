@@ -40,6 +40,18 @@ pub(crate) fn steps_from(width: i32, height: i32, open: impl Fn(Point) -> bool, 
 /// The flood stops where it arrives, so asking about two cells close
 /// together costs what lies between them and not the whole map.
 pub(crate) fn steps_between(width: i32, height: i32, open: impl Fn(Point) -> bool, from: Point, to: Point) -> u32 {
+    steps_up_to(width, height, open, from, to, UNREACHED)
+}
+
+/// Whether `to` can be walked to from `from` in fewer than `under` steps.
+/// The flood stops at `under`, so a pass ruling out short walks among
+/// many spends only the cells near each and never the whole map.
+pub(crate) fn walks_under(width: i32, height: i32, open: impl Fn(Point) -> bool, from: Point, to: Point, under: u32) -> bool {
+    under > 0 && steps_up_to(width, height, open, from, to, under - 1) != UNREACHED
+}
+
+/// [`steps_between`], counting no further than `limit` steps.
+fn steps_up_to(width: i32, height: i32, open: impl Fn(Point) -> bool, from: Point, to: Point, limit: u32) -> u32 {
     let mut steps = Grid::filled(width, height, UNREACHED);
     if !open(from) || !steps.set(from, 0) {
         return UNREACHED;
@@ -49,6 +61,9 @@ pub(crate) fn steps_between(width: i32, height: i32, open: impl Fn(Point) -> boo
         let here = steps.get(p).copied().expect("queued cells are on the grid");
         if p == to {
             return here;
+        }
+        if here >= limit {
+            continue;
         }
         for d in Direction::CARDINALS {
             let n = p + d.offset();
@@ -90,5 +105,15 @@ mod tests {
         assert_eq!(steps_between(5, 3, open, Point::new(0, 0), Point::new(0, 0)), 0);
         assert_eq!(steps_between(5, 3, |p| p.x != 2, Point::new(0, 0), Point::new(4, 0)), UNREACHED);
         assert_eq!(steps_between(5, 3, open, Point::new(2, 0), Point::new(0, 0)), UNREACHED, "from a cell that is not open");
+    }
+
+    #[test]
+    fn a_walk_is_under_a_count_only_when_it_is_shorter_than_it() {
+        let open = |p: Point| !(p.x == 2 && p.y < 2);
+        let (from, to) = (Point::new(0, 0), Point::new(3, 0));
+        assert!(walks_under(5, 3, open, from, to, 8), "seven steps is under eight");
+        assert!(!walks_under(5, 3, open, from, to, 7), "seven steps is not under seven");
+        assert!(!walks_under(5, 3, open, from, from, 0), "nothing is under nought");
+        assert!(!walks_under(5, 3, |p| p.x != 2, Point::new(0, 0), Point::new(4, 0), 100), "no walk at all");
     }
 }

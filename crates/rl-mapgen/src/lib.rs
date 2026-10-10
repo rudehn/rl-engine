@@ -16,7 +16,9 @@
 //! round any [`Barrier`] present, and publishes an [`Area`] per piece and
 //! an [`Opening`] per [`Join`];
 //! [`OpenLoops`] then cuts the longest detours through, so there is more
-//! than one way round. A [`Cave`] is a shape not built of rectangles,
+//! than one way round. [`Lakes`] lays water or anything else over the
+//! floor without ever parting it, and [`Bridges`] crosses it where
+//! walking round is long. A [`Cave`] is a shape not built of rectangles,
 //! drawn by the cellular automaton, grown and joined like any other, and
 //! a [`PrefabShape`](prefab::PrefabShape) is a hand-drawn piece grown as an
 //! area of its own, entered only through the entries its file draws.
@@ -35,6 +37,7 @@ pub mod cave;
 pub mod chain;
 pub mod context;
 pub mod dungeon;
+pub mod lakes;
 pub mod loops;
 pub mod passes;
 pub mod prefab;
@@ -45,6 +48,7 @@ pub use accrete::{Accrete, Area, Barrier, District, Join, LaidBarrier, Opening, 
 pub use cave::Cave;
 pub use chain::{BuildError, Chain, Pass, Phase};
 pub use context::{BaseContext, BuildContext, Outputs};
+pub use lakes::{Bridge, Bridges, Lake, Lakes};
 pub use loops::OpenLoops;
 pub use survey::{AreaFacts, Require, Survey, Surveyed};
 
@@ -57,6 +61,7 @@ pub mod prelude {
     pub use crate::chain::{BuildError, Chain, Pass, Phase};
     pub use crate::context::{BaseContext, BuildContext, Outputs};
     pub use crate::dungeon;
+    pub use crate::lakes::{Bridges, Lakes};
     pub use crate::loops::OpenLoops;
     pub use crate::passes;
     pub use crate::prefab::{Orient, Placement, Prefab, PrefabShape, StampEachRoom, StampOneOf, StampPrefab, Stamped};
