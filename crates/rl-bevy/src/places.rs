@@ -16,6 +16,9 @@
 //! hunting or keeping beside, when it stood next to them as they left,
 //! and takes a way out when it runs. It is frozen where it lands until
 //! the player comes, like everything else on a map nobody is reading.
+//!
+//! A place keeps its [`Lock`]s, the doors its builder locked to a tag and
+//! the gates it sealed, and its save keeps them with it.
 
 use bevy::prelude::*;
 use rl_core::Point;

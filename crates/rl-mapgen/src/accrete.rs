@@ -403,7 +403,7 @@ pub struct LaidBarrier {
 /// ](crate::prefab::PrefabShape) draws, is entered only at its entries and
 /// by its own join, whichever piece is attached to which, is never taken
 /// back for having one way in, and is published as a
-/// [`Stamped`](crate::prefab::Stamped) besides its area, so its marks are
+/// [`Stamped`] besides its area, so its marks are
 /// filled as a stamp's are.
 ///
 /// A [`Barrier`] present on this build is drawn before anything else and
