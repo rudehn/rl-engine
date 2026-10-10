@@ -25,7 +25,7 @@ use crate::bestiary::MonsterDef;
 use crate::content::Library;
 
 /// Every piece, compiled in so the binary runs from anywhere.
-const PIECES: [&str; 12] = [
+const PIECES: [&str; 25] = [
     include_str!("../assets/prefabs/mereholt.ron"),
     include_str!("../assets/prefabs/throne.ron"),
     include_str!("../assets/prefabs/chest.ron"),
@@ -39,6 +39,21 @@ const PIECES: [&str; 12] = [
     // The floor ten boss, drawn from three.
     include_str!("../assets/prefabs/mother_below.ron"),
     include_str!("../assets/prefabs/ember_wyrm.ron"),
+    // The flavor pool's thirteen fixed pieces: nothing to take, each a
+    // place that says what it was.
+    include_str!("../assets/prefabs/flavor/cold_campsite.ron"),
+    include_str!("../assets/prefabs/flavor/last_words.ron"),
+    include_str!("../assets/prefabs/flavor/fallen_statue.ron"),
+    include_str!("../assets/prefabs/flavor/wayside_shrine.ron"),
+    include_str!("../assets/prefabs/flavor/stewards_audience.ron"),
+    include_str!("../assets/prefabs/flavor/coal_store.ron"),
+    include_str!("../assets/prefabs/flavor/glowcap_ring.ron"),
+    include_str!("../assets/prefabs/flavor/cart_track.ron"),
+    include_str!("../assets/prefabs/flavor/embalmers_room.ron"),
+    include_str!("../assets/prefabs/flavor/orrery.ron"),
+    include_str!("../assets/prefabs/flavor/baptistery.ron"),
+    include_str!("../assets/prefabs/flavor/fallen_bell.ron"),
+    include_str!("../assets/prefabs/flavor/stilt_hut.ron"),
 ];
 
 /// Every role a prefab's slot may draw for, compiled in the same way.
