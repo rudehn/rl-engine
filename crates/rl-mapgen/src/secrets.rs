@@ -8,15 +8,13 @@
 //!
 //! Safe means two things only. A loop's opening, whose closing leaves
 //! every area joined to every other it was joined to, so a secret door is
-//! a shortcut and never the only way on; or the one opening of a dead end
-//! that holds neither the way in nor the way down, so a hidden room is a
-//! pocket. Neither is ever an opening joined locked or sealed, whose lock
+//! a shortcut and never the only way on; or the one opening of a dead-end
+//! room that holds neither the way in nor the way down, so a hidden room
+//! is a pocket. Neither is ever an opening joined locked or sealed, whose lock
 //! is already what keeps it, nor an opening of a piece painted from a
 //! prefab, whose entries were drawn by hand. And nothing is hidden that
 //! makes the walk from the way in to the way down any longer, so a player
 //! who never finds a secret still walks the place as it was grown.
-
-use std::collections::BTreeSet;
 
 use rand::Rng;
 use rand::seq::SliceRandom;
@@ -26,7 +24,7 @@ use rl_grid::{BitGrid, Terrain, TileId, TileTables};
 use crate::accrete::{Area, Join, Opening};
 use crate::chain::{BuildError, Pass, Phase};
 use crate::context::BuildContext;
-use crate::dungeon::{ExitPoint, walk_through_doors};
+use crate::dungeon::{ExitPoint, Room, walk_through_doors};
 use crate::passes::StartPoint;
 use crate::survey::Surveyed;
 
@@ -45,7 +43,8 @@ pub struct Secret {
     /// The tile it really is, laid back when it is found.
     pub is: TileId,
     /// Percent chance a turn of being spotted while in sight, the unit a
-    /// hidden prop's chance is given in.
+    /// hidden prop's chance is given in: [`HideOpenings::loop_spot`] or
+    /// [`HideOpenings::room_spot`], by what it hides.
     pub spot: u8,
     /// The opening it hides, numbered from nought in the order they were
     /// hidden.
@@ -60,7 +59,12 @@ pub struct Secret {
 /// The hidden rooms come first, since a place may need them: a count
 /// drawn from [`rooms`](Self::rooms), raised to
 /// [`at_least_rooms`](Self::at_least_rooms), of dead ends the
-/// [`Surveyed`] names, each holding neither way. Then a count drawn from
+/// [`Surveyed`] names, each holding neither way and each a room: an area
+/// with a [`Room`] its growth emitted on its floor, as
+/// [`Accrete`](crate::Accrete) emits one for every shape that
+/// [`is_room`](crate::Shape::is_room). A dead-end passage is never hidden,
+/// since what a hidden room is for, something stood inside it, needs a
+/// room to stand in. Then a count drawn from
 /// [`loops`](Self::loops) of loops' openings. The candidates of each are
 /// tried in an order drawn from the pass's stream, and each is kept only
 /// when it is safe with every opening hidden before it already shut. A
@@ -91,14 +95,18 @@ pub struct Secret {
 /// something behind a secret runs after this one and reads both.
 #[derive(Debug, Clone, Copy)]
 pub struct HideOpenings {
-    /// How many loops' openings to hide, at least and at most, drawn
-    /// evenly.
+    /// How many loops' openings to try to hide: a count drawn evenly from
+    /// this range, fewer when the place has fewer safe ones.
     pub loops: (u32, u32),
-    /// How many dead ends' doors to hide, at least and at most, drawn
-    /// evenly.
+    /// How many dead-end rooms' doors to try to hide: a count drawn evenly
+    /// from this range, fewer when the place has fewer safe ones, but
+    /// never fewer than [`at_least_rooms`](Self::at_least_rooms) without
+    /// failing.
     pub rooms: (u32, u32),
-    /// Every secret's [`Secret::spot`].
-    pub spot: u8,
+    /// The [`Secret::spot`] of every cell of a loop's opening.
+    pub loop_spot: u8,
+    /// The [`Secret::spot`] of every cell of a hidden room's door.
+    pub room_spot: u8,
     /// The fewest hidden rooms the place may have; a place with fewer safe
     /// dead ends fails. Nought for a place that may have none.
     pub at_least_rooms: u32,
@@ -128,8 +136,9 @@ impl Walks {
     }
 }
 
-/// What `before` reached and `after` does not, but for `own`.
-fn lost(before: &BitGrid, after: &BitGrid, own: &[Point]) -> BTreeSet<Point> {
+/// What `before` reached and `after` does not, but for `own`, in the
+/// grid's row order, so two such lists compare as sets.
+fn lost(before: &BitGrid, after: &BitGrid, own: &[Point]) -> Vec<Point> {
     before.iter().filter(|p| !after.contains(*p) && !own.contains(p)).collect()
 }
 
@@ -183,6 +192,13 @@ fn wall_over<C: BuildContext>(ctx: &mut C, cells: &[Point], wall: TileId) -> Vec
         .collect()
 }
 
+/// Lays back on `cells` the tiles [`wall_over`] handed back.
+fn lay_back<C: BuildContext>(ctx: &mut C, cells: &[Point], was: Vec<TileId>) {
+    for (c, t) in cells.iter().zip(was) {
+        ctx.terrain_mut().set(*c, t);
+    }
+}
+
 impl<C: BuildContext> Pass<C> for HideOpenings {
     fn name(&self) -> &'static str {
         "hide_openings"
@@ -207,6 +223,10 @@ impl<C: BuildContext> Pass<C> for HideOpenings {
         let tables = ctx.tiles().tables();
         let ways: Vec<Point> = std::iter::once(start).chain(exit).collect();
         let painted = |i: usize| areas.iter().any(|a| a.index == i && a.entries.is_some());
+        // Pieces' floors never share a cell, so a room's rectangle on an
+        // area's floor is that area's own.
+        let room_rects: Vec<rl_core::Rect> = ctx.outputs().iter::<Room>().map(|r| r.0).collect();
+        let is_room = |a: &Area| a.cells.iter().any(|c| room_rects.iter().any(|r| r.contains(*c)));
 
         // Each opening's wall tile, or `None` where it may never be hidden.
         let walls: Vec<Option<TileId>> = openings
@@ -222,7 +242,7 @@ impl<C: BuildContext> Pass<C> for HideOpenings {
         // A dead end holding neither way, with its one opening hideable.
         let mut rooms: Vec<(usize, &Area)> = areas
             .iter()
-            .filter(|a| dead_ends.get(a.index) == Some(&true) && a.entries.is_none() && !a.cells.iter().any(|c| ways.contains(c)))
+            .filter(|a| dead_ends.get(a.index) == Some(&true) && a.entries.is_none() && is_room(a) && !a.cells.iter().any(|c| ways.contains(c)))
             .filter_map(|a| {
                 let mut its = openings.iter().enumerate().filter(|(_, o)| o.areas.0 == a.index || o.areas.1 == a.index);
                 match (its.next(), its.next()) {
@@ -244,7 +264,11 @@ impl<C: BuildContext> Pass<C> for HideOpenings {
             let o = &openings[i];
             let was = wall_over(ctx, &o.cells, walls[i].expect("only hideable openings are candidates"));
             let after = Walks::of(ctx, start, exit);
-            let floor = |reached: &BitGrid| room.cells.iter().copied().filter(|c| reached.contains(*c)).collect::<BTreeSet<Point>>();
+            let mut mine = BitGrid::new(ctx.terrain().width(), ctx.terrain().height());
+            for c in &room.cells {
+                mine.insert(*c);
+            }
+            let floor = |reached: &BitGrid| reached.iter().filter(|c| mine.contains(*c)).collect::<Vec<Point>>();
             let (shut, open) = (floor(&now.shut), floor(&now.open));
             let pocket = !shut.is_empty() && lost(&now.shut, &after.shut, &o.cells) == shut && lost(&now.open, &after.open, &o.cells) == open;
             if pocket && after.to_exit == now.to_exit {
@@ -252,9 +276,7 @@ impl<C: BuildContext> Pass<C> for HideOpenings {
                 hidden.push((i, was));
                 now = after;
             } else {
-                for (c, t) in o.cells.iter().zip(was) {
-                    ctx.terrain_mut().set(*c, t);
-                }
+                lay_back(ctx, &o.cells, was);
             }
         }
         let rooms_hidden = hidden.len() as u32;
@@ -284,16 +306,15 @@ impl<C: BuildContext> Pass<C> for HideOpenings {
                 now = after;
             } else {
                 gone[i] = false;
-                for (c, t) in o.cells.iter().zip(was) {
-                    ctx.terrain_mut().set(*c, t);
-                }
+                lay_back(ctx, &o.cells, was);
             }
         }
 
         for (group, (i, was)) in hidden.into_iter().enumerate() {
             let o = &openings[i];
+            let spot = if (group as u32) < rooms_hidden { self.room_spot } else { self.loop_spot };
             for (at, is) in o.cells.iter().zip(was) {
-                ctx.emit(Secret { at: *at, is, spot: self.spot, group: group as u32, joins: o.areas });
+                ctx.emit(Secret { at: *at, is, spot, group: group as u32, joins: o.areas });
             }
         }
         Ok(())
@@ -313,7 +334,7 @@ mod tests {
     use rl_core::{Direction, RunSeed};
     use rl_grid::TileRegistry;
 
-    const ASKED: HideOpenings = HideOpenings { loops: (1, 3), rooms: (0, 2), spot: 6, at_least_rooms: 0 };
+    const ASKED: HideOpenings = HideOpenings { loops: (1, 3), rooms: (0, 2), loop_spot: 6, room_spot: 5, at_least_rooms: 0 };
 
     /// A place grown with loops, a way in and a way down, and surveyed; at
     /// an even seed it owes a piece painted from a prefab and joined
@@ -411,6 +432,8 @@ mod tests {
                 let Some(room) = hidden_room(&ctx, &group[0]) else { continue };
                 rooms += 1;
                 let cells = &areas[room].cells;
+                let rooms: Vec<rl_core::Rect> = ctx.outputs().iter::<Room>().map(|r| r.0).collect();
+                assert!(cells.iter().any(|c| rooms.iter().any(|r| r.contains(*c))), "seed {s}: a hidden room is a room");
                 assert!(!cells.contains(&start) && !cells.contains(&exit), "seed {s}: a hidden room holds neither way");
                 let shut = walk_through_doors(&ctx, start, false);
                 assert!(cells.iter().all(|c| shut.value(*c).is_none()), "seed {s}: with its secret shut nothing walks into it");
@@ -429,8 +452,8 @@ mod tests {
 
     #[test]
     fn counts_fall_within_the_bounds_asked_and_no_secret_is_a_lock_a_painted_piece_or_a_way() {
-        let asked = HideOpenings { loops: (1, 2), rooms: (1, 1), spot: 5, at_least_rooms: 1 };
-        let mut loops = 0;
+        let asked = HideOpenings { loops: (1, 2), rooms: (1, 1), loop_spot: 6, room_spot: 5, at_least_rooms: 1 };
+        let (mut short, mut tried) = (0, 0);
         for s in seeds() {
             let ctx = grown(s, Some(asked)).unwrap();
             let found = secrets(&ctx);
@@ -440,16 +463,23 @@ mod tests {
             let all = groups(&found);
             let rooms = all.iter().filter(|g| hidden_room(&ctx, &g[0]).is_some()).count() as u32;
             assert_eq!(rooms, 1, "seed {s}: one room was asked and one required");
-            assert!(all.len() as u32 - rooms <= asked.loops.1, "seed {s}: {} loops hidden", all.len() as u32 - rooms);
-            loops += all.len() as u32 - rooms;
+            let loops = all.len() as u32 - rooms;
+            assert!(loops <= asked.loops.1, "seed {s}: {loops} loops hidden");
+            // A place with a loop at all has something to try; it falls
+            // short only where every loop it has is on the route.
+            if ctx.outputs().first::<Surveyed>().unwrap().loops > 0 {
+                tried += 1;
+                short += u32::from(loops < asked.loops.0);
+            }
             let tables = ctx.tiles().tables();
             for group in &all {
                 let cells: Vec<Point> = group.iter().map(|g| g.at).collect();
                 let o = openings.iter().find(|o| o.cells == cells).unwrap_or_else(|| panic!("seed {s}: a group is one opening's cells, {cells:?}"));
                 assert!(!matches!(o.join, Join::Locked(_) | Join::Sealed), "seed {s}: a lock is never hidden");
                 assert!(!painted.contains(&o.areas.0) && !painted.contains(&o.areas.1), "seed {s}: a painted piece's entries are never hidden");
+                let spot = if hidden_room(&ctx, &group[0]).is_some() { asked.room_spot } else { asked.loop_spot };
                 for g in group {
-                    assert_eq!((g.joins, g.spot), (o.areas, 5));
+                    assert_eq!((g.joins, g.spot), (o.areas, spot), "seed {s}: each kind carries its own chance");
                     assert!(g.at != start && g.at != exit);
                     let t = ctx.terrain().get(g.at).unwrap();
                     assert!(!tables.passable[t.index()] && tables.opaque[t.index()], "seed {s}: a secret is walled");
@@ -458,40 +488,78 @@ mod tests {
                 }
             }
         }
-        assert!(loops > 0, "some seed hid a loop, or the bound on loops proves nothing");
+        assert!(tried > 0 && short * 5 <= tried, "{short} of {tried} places with a loop hid fewer loops than the least asked");
+    }
+
+    /// A place drawn from pieces, each a rectangle of floor and whether
+    /// its growth called it a room, and openings of floor between them,
+    /// the way in at the first piece's corner and the way down at the
+    /// second's far corner.
+    fn drawn(w: i32, h: i32, pieces: &[(rl_core::Rect, bool)], openings: &[(Point, Direction, (usize, usize))]) -> BaseContext {
+        let tiles = TileRegistry::standard();
+        let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
+        let mut ctx = BaseContext::blank(w, h, tiles, wall);
+        for (index, (bounds, room)) in pieces.iter().enumerate() {
+            let cells: Vec<Point> = bounds.cells().collect();
+            for c in &cells {
+                ctx.terrain_mut().set(*c, floor);
+            }
+            if *room {
+                ctx.emit(Room(*bounds));
+            }
+            ctx.emit(Area { index, shape: "s".into(), district: "d".into(), inner: *bounds, bounds: *bounds, cells, entries: None });
+        }
+        for (at, facing, areas) in openings {
+            ctx.terrain_mut().set(*at, floor);
+            ctx.emit(Opening { cells: vec![*at], facing: *facing, areas: *areas, join: Join::Door });
+        }
+        let (first, second) = (pieces[0].0, pieces[1].0);
+        ctx.emit(StartPoint(Point::new(first.x, first.y)));
+        ctx.emit(ExitPoint(Point::new(second.x + second.width - 1, second.y + second.height - 1)));
+        ctx
     }
 
     /// Two rooms and one door between them, the way in in one and the way
     /// down in the other: no loop, and no dead end without a way in it.
     fn two_rooms() -> BaseContext {
-        let tiles = TileRegistry::standard();
-        let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
-        let mut ctx = BaseContext::blank(11, 5, tiles, wall);
-        for (index, x) in [(0, 1), (1, 6)] {
-            let bounds = rl_core::Rect::new(x, 1, 4, 3);
-            let cells: Vec<Point> = bounds.cells().collect();
-            for c in &cells {
-                ctx.terrain_mut().set(*c, floor);
-            }
-            ctx.emit(Area { index, shape: "room".into(), district: "d".into(), inner: bounds, bounds, cells, entries: None });
+        let pieces = [(rl_core::Rect::new(1, 1, 4, 3), true), (rl_core::Rect::new(6, 1, 4, 3), true)];
+        drawn(11, 5, &pieces, &[(Point::new(5, 2), Direction::East, (0, 1))])
+    }
+
+    /// Two rooms holding the ways, and two dead ends: a passage below the
+    /// first and a room beside the second.
+    #[test]
+    fn a_dead_end_passage_is_never_hidden_and_a_dead_end_room_is() {
+        let pieces = [
+            (rl_core::Rect::new(1, 1, 4, 3), true),
+            (rl_core::Rect::new(6, 1, 4, 3), true),
+            (rl_core::Rect::new(2, 5, 1, 3), false),
+            (rl_core::Rect::new(11, 1, 4, 3), true),
+        ];
+        let openings =
+            [(Point::new(5, 2), Direction::East, (0, 1)), (Point::new(2, 4), Direction::South, (0, 2)), (Point::new(10, 2), Direction::East, (1, 3))];
+        for seed in 0..8 {
+            let mut ctx = drawn(16, 9, &pieces, &openings);
+            Chain::new().then(Survey).then(HideOpenings { loops: (0, 0), rooms: (2, 2), ..ASKED }).run(&mut ctx, RunSeed(seed)).unwrap();
+            let found = secrets(&ctx);
+            assert_eq!(found.iter().map(|s| (s.at, s.joins, s.spot)).collect::<Vec<_>>(), vec![(Point::new(10, 2), (1, 3), 5)], "seed {seed}");
         }
-        ctx.terrain_mut().set(Point::new(5, 2), floor);
-        ctx.emit(Opening { cells: vec![Point::new(5, 2)], facing: Direction::East, areas: (0, 1), join: Join::Arch });
-        ctx.emit(StartPoint(Point::new(1, 1)));
-        ctx.emit(ExitPoint(Point::new(9, 3)));
-        ctx
     }
 
     #[test]
     fn a_place_with_nothing_safe_to_hide_hides_nothing_and_fails_only_when_rooms_were_required() {
         let mut ctx = two_rooms();
         let before = ctx.terrain().clone();
-        Chain::new().then(Survey).then(HideOpenings { loops: (3, 3), rooms: (2, 2), spot: 6, at_least_rooms: 0 }).run(&mut ctx, RunSeed(0)).unwrap();
+        Chain::new()
+            .then(Survey)
+            .then(HideOpenings { loops: (3, 3), rooms: (2, 2), loop_spot: 6, room_spot: 5, at_least_rooms: 0 })
+            .run(&mut ctx, RunSeed(0))
+            .unwrap();
         assert!(secrets(&ctx).is_empty());
         assert_eq!(ctx.terrain(), &before);
 
         let mut ctx = two_rooms();
-        let required = HideOpenings { loops: (0, 0), rooms: (0, 0), spot: 6, at_least_rooms: 1 };
+        let required = HideOpenings { loops: (0, 0), rooms: (0, 0), loop_spot: 6, room_spot: 5, at_least_rooms: 1 };
         let err = Chain::new().then(Survey).then(required).run(&mut ctx, RunSeed(0)).unwrap_err();
         assert_eq!(err.pass, "hide_openings");
         assert!(err.reason.contains("fewer than 1"), "{}", err.reason);
