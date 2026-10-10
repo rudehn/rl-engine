@@ -142,13 +142,21 @@ pub fn mark(terminal: &mut Terminal, view: &rl_render::MapView, drawn: Option<&D
             // and so a tick on someone's tile would put them out, most
             // often the player looking at what stands next to them. That
             // side goes unmarked: three ticks still frame the cell, and
-            // the one left off is where someone visibly is.
+            // the one left off is where someone visibly is. With someone
+            // on every side there is no tick left to stand, so the cell is
+            // washed as a glow washes it: a cursor that vanished in a
+            // packed fight would leave the player pointing at nothing.
             let around = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+            let mut ticked = false;
             for ((dx, dy), glyph) in around.into_iter().zip(marks) {
                 let at = cell.offset(dx, dy);
                 if !drawn.is_some_and(|d| d.at(at)) {
                     view.put(terminal, at, glyph, color);
+                    ticked = true;
                 }
+            }
+            if !ticked {
+                view.wash(terminal, cell, color);
             }
         }
     }
@@ -489,6 +497,37 @@ mod style_tests {
         let glyph = |p: Point| view.get(&terminal, p).map(|c| c.glyph);
         assert_eq!(glyph(at.offset(1, 0)), Some('g'), "the gull is still drawn");
         assert_eq!([glyph(at.offset(-1, 0)), glyph(at.offset(0, -1)), glyph(at.offset(0, 1))], [Some('-'), Some('|'), Some('|')], "the rest are marked");
+    }
+
+    /// Ticks round a crab with a gull on all four sides of it would leave
+    /// nothing marked, so the cell is washed instead and everyone round it
+    /// stays drawn: a cursor is never invisible.
+    #[test]
+    fn ticks_round_a_cell_with_someone_on_every_side_wash_the_cell_instead() {
+        let mut stage = Stage::new_with(NearbyPanel::new(Rect::new(40, 0, 20, 20)), |app| {
+            app.add_plugins(rl_render::MapViewPlugin::new(Rect::new(0, 0, 40, 20)));
+        })
+        .screen(60, 24);
+        stage.actor("crab", 'c', 2, 0);
+        for (dx, dy) in [(1, 0), (3, 0), (2, -1), (2, 1)] {
+            stage.actor("gull", 'g', dx, dy);
+        }
+        stage.tick();
+        let at = stage.at.offset(2, 0);
+        let world = stage.app.world();
+        let (palette, view) = (world.resource::<Palette>().clone(), *world.resource::<rl_render::MapView>());
+        let drawn = world.resource::<DrawnActors>();
+        assert!([(-1, 0), (1, 0), (0, -1), (0, 1)].iter().all(|(dx, dy)| drawn.at(at.offset(*dx, *dy))), "a gull on every side of it");
+        let mut terminal = world.resource::<Terminal>().clone();
+        let around: Vec<Point> = [(-1, 0), (1, 0), (0, -1), (0, 1)].iter().map(|(dx, dy)| at.offset(*dx, *dy)).collect();
+        let glyphs = |terminal: &Terminal| around.iter().map(|p| view.get(terminal, *p).map(|c| c.glyph)).collect::<Vec<_>>();
+        let before = glyphs(&terminal);
+        let style = CursorStyle::ticks().breathing(None);
+        mark(&mut terminal, &view, Some(drawn), at, style, &palette, 0.0);
+        let cell = view.get(&terminal, at).expect("on screen");
+        assert_eq!(cell.glyph, 'c', "the crab still shows");
+        assert_eq!(cell.bg, style.color(&palette, 0.0), "on a washed cell");
+        assert_eq!(glyphs(&terminal), before, "and nobody round it is put out");
     }
 
     /// Pulsing is a second tone to breathe toward, and no pulse is the

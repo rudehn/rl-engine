@@ -30,6 +30,7 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 - A cursor's ticks never stand on someone the map drew beside the cell it points at: the look cursor on a monster next to the player used to put the player's own glyph out under its tick.
   The map keeps who it drew each frame in the new `DrawnActors`, which `MapViewPlugin` adds, and the side a tick would cover goes unmarked; anything else, a wall or a thing lying about, still takes its tick.
+  With someone on all four sides no tick is left to stand, so the cell is washed in the cursor's colour as a glow washes it, and a cursor never vanishes in a packed fight.
   `cursor::mark` takes `drawn: Option<&DrawnActors>` after the view, so a game that drew a cursor with it passes its `Option<Res<DrawnActors>>` through, or `None` for the old drawing; the new `CursorMap` system parameter borrows the map view and the account together and marks with both, as the look, targeting and nearby presenters now do.
 
 - An offer may ask first: `Offering::asking(question)` carries a yes-or-no question in the game's words, and the offers screen, taking such an offer up, shows it with two answers, No picked out above Yes.
