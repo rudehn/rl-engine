@@ -230,9 +230,9 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [8_924_283_690_018_885_518, 9_201_145_474_449_155_662, 16_340_022_658_209_830_925],
-        "fingerprint tripwire: re-baselined for Dress keeping every slot reachable (a thing that would leave \
-         a slot laid before it with no clear cell beside it is taken back, so a dense dressing lays a thing \
-         or two fewer and every seed's furniture, and the way the script walks round it, differs)"
+        [3_208_325_787_168_137_999, 1_287_101_436_025_862_759, 4_002_172_349_275_692_977],
+        "fingerprint tripwire: re-baselined for the dressings' furniture blocking again (tables, shelves, \
+         barrels, beds, pews, racks, hearths, anvils, desks, troughs, sarcophagi and the drill yard's dummies \
+         and posts stand in the way, so the script walks round them and the people of Mereholt and below do too)"
     );
 }

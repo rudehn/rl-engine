@@ -600,24 +600,18 @@ mod tests {
             ("lamp post", true),
             ("well", true),
             ("forge", true),
-            // `anvil`, `shelf`, `barrel`, `table`, `hearth`, `bed`, `pew`
-            // and `rack` do not block: `assets/dressings.ron` places them
-            // at a density `rl_mapgen::Dress` only checks one slot at a
-            // time, conservatively, never reconsidering an earlier slot
-            // once a later one closes round it; two of them diagonal to a
-            // third can trap it for a mover that never cuts a corner, as
-            // the fingerprint's own scripted delve did on floor two of
-            // seed two before this was found. `altar` and `counter`,
-            // placed once by hand in Mereholt, still do.
-            ("anvil", false),
-            ("shelf", false),
-            ("barrel", false),
-            ("table", false),
+            // The furniture blocks, by hand in Mereholt and at a density
+            // in the dressed rooms, which `rl_mapgen::Dress` keeps whole:
+            // nothing it lays cuts a room or shuts in a slot laid before.
+            ("anvil", true),
+            ("shelf", true),
+            ("barrel", true),
+            ("table", true),
             ("counter", true),
-            ("hearth", false),
-            ("bed", false),
+            ("hearth", true),
+            ("bed", true),
             ("altar", true),
-            ("pew", false),
+            ("pew", true),
             ("candelabra", false),
             ("brazier", true),
             ("throne", true),
@@ -625,7 +619,7 @@ mod tests {
             ("banner", false),
             ("bone organ", true),
             ("font", true),
-            ("rack", false),
+            ("rack", true),
             ("egg sac", true),
             ("fire", true),
             ("shackles", false),
@@ -649,16 +643,16 @@ mod tests {
             ("cracked bell", true),
             ("fishing net", false),
             ("creel", false),
-            // The flavor and reward dressings' own scenery: none of these
-            // block, for the same reason as `anvil` above.
+            // The flavor and reward dressings' own scenery: the furniture
+            // among it blocks, as the town's does, and the clutter does not.
             ("chalk mark", false),
             ("bench", false),
             ("dice", false),
             ("roots", false),
             ("sack", false),
             ("footlocker", false),
-            ("straw dummy", false),
-            ("practice post", false),
+            ("straw dummy", true),
+            ("practice post", true),
             ("fungus stalk", false),
             ("cocooned husk", false),
             ("empty egg case", false),
@@ -666,13 +660,13 @@ mod tests {
             ("fallen beam", false),
             ("ore vein", false),
             ("skull", false),
-            ("sarcophagus", false),
-            ("desk", false),
+            ("sarcophagus", true),
+            ("desk", true),
             ("reading lamp", false),
             ("page drift", false),
             ("ruined screen", false),
             ("shell heap", false),
-            ("quench trough", false),
+            ("quench trough", true),
             ("slag heap", false),
             ("obsidian spire", false),
             ("midden", false),
