@@ -31,6 +31,10 @@
 //! areas each [`Prefer`]s, the most secluded, a dead end, a junction or a
 //! room behind a secret, a piece stamped and a dressing published as a
 //! [`DressAt`], and fails the place on a required one that fits nowhere.
+//! [`Dress`] lays each [`Dressing`], things along the walls, in the
+//! corners, in the center, in rows or scattered at a density, in the area
+//! a `DressAt` names and in every room nothing took, by its district,
+//! never beside an opening and never cutting an area in two.
 //!
 //! Engine passes are generic over the context, so a game extends the
 //! context with its own state and engine passes still run on it.
@@ -42,6 +46,7 @@ pub mod accrete;
 pub mod cave;
 pub mod chain;
 pub mod context;
+pub mod dress;
 pub mod dungeon;
 pub mod lakes;
 pub mod loops;
@@ -56,6 +61,7 @@ pub use accrete::{Accrete, Area, Barrier, District, Join, LaidBarrier, Opening, 
 pub use cave::Cave;
 pub use chain::{BuildError, Chain, Pass, Phase};
 pub use context::{BaseContext, BuildContext, Outputs};
+pub use dress::{DistrictDressings, Dress, Dressed, Dressing};
 pub use lakes::{Bridge, Bridges, Lake, Lakes};
 pub use loops::OpenLoops;
 pub use pool::{DressAt, Lay, PoolPick, Prefer, StampPicks};
@@ -70,6 +76,7 @@ pub mod prelude {
     pub use crate::accrete::{Accrete, Shape};
     pub use crate::chain::{BuildError, Chain, Pass, Phase};
     pub use crate::context::{BaseContext, BuildContext, Outputs};
+    pub use crate::dress::{DistrictDressings, Dress, Dressed, Dressing};
     pub use crate::dungeon;
     pub use crate::lakes::{Bridges, Lakes};
     pub use crate::loops::OpenLoops;

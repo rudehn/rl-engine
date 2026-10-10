@@ -129,6 +129,10 @@ impl<C: BuildContext> Pass<C> for StampPicks {
         let keep: Vec<Point> = std::iter::once(start).chain(ctx.outputs().first::<ExitPoint>().map(|e| e.0)).collect();
         let areas: Vec<Area> = ctx.outputs().iter::<Area>().cloned().collect();
         let rooms: Vec<Rect> = ctx.outputs().iter::<Room>().map(|r| r.0).collect();
+        // A room on an area's floor, and not its inner rectangle, since a
+        // lake measures that again and leaves the room as growth emitted
+        // it; pieces' floors never share a cell, so the room is the area's.
+        let is_room = |a: &Area| a.cells.iter().any(|c| rooms.iter().any(|r| r.contains(*c)));
         let secrets: Vec<Secret> = ctx.outputs().iter::<Secret>().copied().collect();
         let walked = walk_through_doors(ctx, start, true);
         let facts = |i: usize| surveyed.areas.get(i).copied();
@@ -156,7 +160,7 @@ impl<C: BuildContext> Pass<C> for StampPicks {
                 .iter()
                 .filter(|a| {
                     a.entries.is_none()
-                        && rooms.contains(&a.inner)
+                        && is_room(a)
                         && (pick.shapes.is_empty() || pick.shapes.contains(&a.shape))
                         && taken.iter().all(|t| a.inner.intersection(t).is_none())
                         && !dressed.contains(&a.index)
@@ -278,6 +282,18 @@ mod tests {
     fn most_secluded(ctx: &BaseContext, candidates: &[usize]) -> usize {
         let s = ctx.outputs().first::<Surveyed>().unwrap();
         *candidates.iter().rev().max_by_key(|i| s.areas[**i].seclusion).unwrap()
+    }
+
+    /// A lake takes floor from an area and measures its inner rectangle
+    /// again, and leaves the room growth emitted as it was; the area is
+    /// still a room a pick may land in, inside its new rectangle.
+    #[test]
+    fn an_area_a_lake_measured_again_still_takes_a_pick() {
+        let mut ctx = plain();
+        for a in ctx.outputs_mut().iter_mut::<Area>().filter(|a| a.index == 3) {
+            a.inner = Rect::new(19, 1, 5, 4);
+        }
+        assert_eq!(landed(ctx, vec![pick("p", 2, Prefer::Secluded, true)], 0).unwrap(), vec![3]);
     }
 
     #[test]

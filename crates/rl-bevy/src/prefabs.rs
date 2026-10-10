@@ -6,8 +6,11 @@
 //! game's mapgen chain from [`Prefabs::piece`], keyed so each mark of the
 //! stamp remembers which prefab it came from, and arrives here as a
 //! place's [`Spot`](crate::places::Spot)s, or grown as an area of its own
-//! from [`Prefabs::grown`], whose stamp arrives the same way. What is here
-//! is the other half, the loop every game wrote by hand at its marks:
+//! from [`Prefabs::grown`], whose stamp arrives the same way. A dressing
+//! ([`rl_rules::dressing`]) is a prefab's legend laid by rules rather
+//! than rows, by [`Dress`](rl_mapgen::Dress) from [`Prefabs::dressing`],
+//! and its slots arrive and fill the same way again. What is here is the
+//! other half, the loop every game wrote by hand at its marks:
 //!
 //! - **When**: on the arrival that built the place, and never again, so a
 //!   revisit finds what it left.
@@ -37,9 +40,11 @@ use rl_core::seed::position_hash;
 use rl_core::{Id, Point};
 use rl_mapgen::BuildError;
 use rl_mapgen::accrete::Join;
+use rl_mapgen::dress::{Dressing, Spread, Stand, Thing};
 use rl_mapgen::prefab::{Cell, Prefab, PrefabShape};
 use rl_rules::content::{BandedTable, Registry};
-use rl_rules::prefab::{Pick, PrefabDef, Slot};
+use rl_rules::dressing::DressingDef;
+use rl_rules::prefab::{Legended, Pick, PrefabDef, Slot};
 use rl_rules::prop::Stock;
 use rl_rules::role::{self, RoleDef};
 
@@ -77,11 +82,18 @@ pub trait ActorMaker: Resource {
     fn band(&self, map: MapId) -> i32;
 }
 
-/// Every prefab a game loaded and the roles their monster slots name.
+/// Every prefab and dressing a game loaded and the roles their monster
+/// slots name.
 struct Loaded<M> {
     defs: Registry<PrefabDef<M>>,
     roles: Registry<RoleDef<M>>,
+    dressings: Registry<DressingDef<M>>,
 }
+
+/// The bit a dressing's key carries and a prefab's never does, so one
+/// number on a spot names either and the two registries never collide:
+/// a game has far fewer than two billion prefabs.
+const DRESSING: u32 = 1 << 31;
 
 /// A game's prefabs and roles, keyed by the registry id a stamped piece
 /// carries.
@@ -102,7 +114,18 @@ impl<M: Send + Sync + 'static> Prefabs<M> {
     /// Every prefab, loaded with [`rl_rules::prefab::load`], and every
     /// role, loaded with [`rl_rules::role::load`].
     pub fn new(defs: Registry<PrefabDef<M>>, roles: Registry<RoleDef<M>>) -> Self {
-        Self(Arc::new(Loaded { defs, roles }))
+        Self::with_dressings(defs, roles, Registry::default())
+    }
+
+    /// As [`new`](Self::new), with the dressings loaded with
+    /// [`rl_rules::dressing::load`], whose slots then fill as a prefab's.
+    pub fn with_dressings(defs: Registry<PrefabDef<M>>, roles: Registry<RoleDef<M>>, dressings: Registry<DressingDef<M>>) -> Self {
+        Self(Arc::new(Loaded { defs, roles, dressings }))
+    }
+
+    /// Every dressing.
+    pub fn dressings(&self) -> &Registry<DressingDef<M>> {
+        &self.0.dressings
     }
 
     /// Every prefab.
@@ -140,9 +163,38 @@ impl<M: Send + Sync + 'static> Prefabs<M> {
         PrefabShape::new(name, &self.piece(name)?, join)
     }
 
-    /// What `glyph` stands for in the prefab keyed `key`, if the key names
-    /// a prefab and the glyph a slot in it.
+    /// The dressing called `name`, as [`Dress`](rl_mapgen::Dress) lays it:
+    /// each glyph of a rule a tile when its legend paints one and a slot
+    /// otherwise, keyed so the slots it emits find their meaning again. An
+    /// error naming it when there is none, so a chain can `?` it.
+    pub fn dressing(&self, name: &str) -> Result<Dressing, BuildError> {
+        let id = self.dressings().id(name).ok_or_else(|| BuildError::new("dressing", format!("no dressing is called {name:?}")))?;
+        let def = self.dressings().get(id);
+        let things = def
+            .things
+            .iter()
+            .map(|t| Thing {
+                glyph: t.glyph,
+                stands: def.legend().tile(t.glyph).map_or(Stand::Slot, Stand::Tile),
+                at: match t.at {
+                    rl_rules::dressing::Spread::Walls => Spread::Walls,
+                    rl_rules::dressing::Spread::Corners => Spread::Corners,
+                    rl_rules::dressing::Spread::Center => Spread::Center,
+                    rl_rules::dressing::Spread::Rows { aisle } => Spread::Rows { aisle },
+                    rl_rules::dressing::Spread::Scatter => Spread::Scatter,
+                },
+                density_pct: t.density_pct,
+            })
+            .collect();
+        Ok(Dressing { name: def.name.clone(), things, repaint: def.repaint, key: Some(DRESSING | id.raw()) })
+    }
+
+    /// What `glyph` stands for in the prefab or the dressing keyed `key`,
+    /// if the key names one and the glyph a slot in it.
     pub fn slot(&self, key: u32, glyph: char) -> Option<&Slot<M>> {
+        if key & DRESSING != 0 {
+            return self.dressings().try_get(Id::from_raw(key & !DRESSING))?.legend().slot(glyph);
+        }
         self.defs().try_get(Id::from_raw(key))?.slot(glyph)
     }
 }
@@ -244,16 +296,18 @@ where
     }
 }
 
-/// Refuses play when a prefab's slot names an item the game has no
-/// definition for, asks for a tag no row of the loot table carries, or a
-/// role none of whose members has a row in the spawn table: each needs the
-/// game's own tables, which a prefab file cannot see when it loads, so a
-/// typo is a startup failure rather than a slot that is quietly empty.
+/// Refuses play when a prefab's or a dressing's slot names an item the
+/// game has no definition for, asks for a tag no row of the loot table
+/// carries, or a role none of whose members has a row in the spawn
+/// table: each needs the game's own tables, which a file cannot see when
+/// it loads, so a typo is a startup failure rather than a slot that is
+/// quietly empty.
 fn check_prefabs<A: ActorMaker, I: ItemMaker>(prefabs: Res<Prefabs<A::Def>>, actors: Res<A>, items: Res<I>, registries: Res<Registries>) {
     let mut problems = Vec::new();
-    for (_, def) in prefabs.defs().iter() {
-        let prefab = &def.name;
-        for (c, slot) in def.slots() {
+    let legends =
+        prefabs.defs().iter().map(|(_, d)| (d.name.as_str(), d.legend())).chain(prefabs.dressings().iter().map(|(_, d)| (d.name.as_str(), d.legend())));
+    for (prefab, legend) in legends {
+        for (c, slot) in legend.slots() {
             match slot {
                 Slot::Item(roll) => match &roll.what {
                     Stock::Item(name) if items.id_of(name).is_none() => problems.push(format!("{prefab}: '{c}' holds {name:?}, which is no item")),
@@ -425,6 +479,11 @@ mod tests {
     /// An app filling prefabs from `files` over the toy monsters and items,
     /// a locker among the props, and the run seed `seed`.
     fn app(files: &[&str], seed: RunSeed) -> App {
+        dressed_app(files, "[]", seed)
+    }
+
+    /// As [`app`], with the dressings `dressings` beside the prefabs.
+    fn dressed_app(files: &[&str], dressings: &str, seed: RunSeed) -> App {
         let mut app = headless_app();
         app.add_plugins(PrefabPlugin::<Beasts, Toys>::default());
         let tiles = TileRegistry::standard();
@@ -436,8 +495,12 @@ mod tests {
             let names = Names::new().tags(&tags).with("prop", &props).with("monster", &beasts.defs).with("role", &roles);
             Registry::from_defs(files.iter().map(|text| rl_rules::prefab::load(text, &tiles, &names).unwrap()).collect()).unwrap()
         };
+        let dressings = {
+            let names = Names::new().tags(&tags).with("prop", &props).with("monster", &beasts.defs).with("role", &roles);
+            rl_rules::dressing::load(dressings, &tiles, &names).unwrap()
+        };
         let items = toys(&tags, ScatterRules::new());
-        app.insert_resource(Prefabs::new(defs, roles))
+        app.insert_resource(Prefabs::with_dressings(defs, roles, dressings))
             .insert_resource(beasts)
             .insert_resource(items)
             .insert_resource(Registries { tags, props, ..Default::default() })
@@ -770,6 +833,21 @@ mod tests {
         play(&[r#"(name: "ingots", ground: "floor", rows: ["i"], legend: { 'i': Item(item: "ingot") })"#]);
     }
 
+    /// A dressing's slots are held to the game's tables as a prefab's are.
+    #[test]
+    #[should_panic(expected = "ingots: 'i' holds \"ingot\", which is no item")]
+    fn play_refuses_a_dressing_holding_an_item_the_game_has_no_definition_for() {
+        let mut app = dressed_app(
+            &[],
+            r#"[(name: "ingots", legend: { 'i': Item(item: "ingot") }, place: [(glyph: 'i', at: Walls, density_pct: 10)])]"#,
+            crate::testing::TEST_SEED,
+        );
+        install(&mut app, MapId(1), stamped(Vec::new()));
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+    }
+
     #[test]
     #[should_panic(expected = "nothing in the loot table carries it")]
     fn play_refuses_a_prefab_asking_for_a_tag_nothing_carries() {
@@ -780,5 +858,85 @@ mod tests {
     #[should_panic(expected = "no monster in it has a row in the spawn table")]
     fn play_refuses_a_role_none_of_whose_members_can_be_drawn() {
         play(&[r#"(name: "nest", ground: "floor", rows: ["f"], legend: { 'f': Monster(role: "fliers") })"#]);
+    }
+
+    /// Weapons two bands deep in every corner, lockers along the walls,
+    /// heavies down the middle and a mark scattered: a dressing in the test
+    /// game's terms.
+    const BUNKS: &str = r#"[(
+        name: "bunks",
+        legend: { 'A': Prop("locker"), 'k': Monster(monster: "heavy"), 'w': Item(tag: "weapon", band: 2), 'm': Mark },
+        place: [
+            (glyph: 'w', at: Corners, density_pct: 100),
+            (glyph: 'A', at: Walls, density_pct: 30),
+            (glyph: 'k', at: Center, density_pct: 100),
+            (glyph: 'm', at: Scatter, density_pct: 5),
+        ],
+    )]"#;
+
+    /// A room of nine by seven at (2, 3) dressed with `bunks` by its
+    /// district, its door in its top wall and the way in beyond it.
+    fn bunked(app: &App, seed: RunSeed) -> PlaceBuild {
+        use rl_mapgen::{Area, Dress, Opening};
+        let tiles = TileRegistry::standard();
+        let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
+        let mut ctx = BaseContext::blank(15, 13, tiles, wall);
+        let bounds = rl_core::Rect::new(2, 3, 9, 7);
+        for c in bounds.cells().chain([Point::new(6, 2), Point::new(6, 1)]) {
+            ctx.terrain_mut().set(c, floor);
+        }
+        ctx.emit(rl_mapgen::dungeon::Room(bounds));
+        ctx.emit(Area { index: 0, shape: "room".into(), district: "d".into(), cells: bounds.cells().collect(), bounds, inner: bounds, entries: None });
+        ctx.emit(Opening { cells: vec![Point::new(6, 2)], facing: rl_core::Direction::North, areas: (0, 0), join: rl_mapgen::Join::Door });
+        ctx.emit(rl_mapgen::passes::StartPoint(Point::new(6, 1)));
+        let bunks = app.world().resource::<Prefabs<Beast>>().dressing("bunks").unwrap();
+        let pass = Dress { name: "dress", floor, dressings: vec![bunks], districts: vec![rl_mapgen::DistrictDressings::new("d", vec![(0, 1)])] };
+        Chain::new().then(pass).run(&mut ctx, seed).unwrap();
+        PlaceBuild::from_context(ctx).unwrap()
+    }
+
+    /// A dressing's slots are spots keyed to it, filled on the first
+    /// arrival each by what its legend names, as a prefab's are, and a
+    /// save of the place keeps them keyed, so they still find their
+    /// meaning once loaded.
+    #[test]
+    fn a_dressing_s_slots_fill_and_save_as_a_prefab_s() {
+        let deck = MapId(2);
+        for s in 0..8 {
+            let mut app = dressed_app(&[], BUNKS, crate::testing::TEST_SEED);
+            let build = bunked(&app, RunSeed(s));
+            let spots: Vec<(char, Point)> = build.spots.iter().map(|spot| (char::from_u32(spot.tag).unwrap(), spot.at)).collect();
+            let keyed = |glyph: char| spots.iter().filter(|(c, _)| *c == glyph).map(|(_, p)| *p).collect::<BTreeSet<_>>();
+            assert_eq!(keyed('w').len(), 4, "seed {s}: a weapon in every corner");
+            assert_eq!(keyed('k'), BTreeSet::from([Point::new(5, 6), Point::new(6, 6), Point::new(7, 6)]), "seed {s}: heavies down the middle");
+            assert!(!keyed('A').is_empty(), "seed {s}: lockers along the walls");
+            assert!(build.spots.iter().all(|spot| spot.prefab.is_some()), "seed {s}: every slot is keyed");
+            let entry = build.entry;
+            install(&mut app, deck, build);
+            arrive(&mut app, deck, entry, true);
+            for p in keyed('w') {
+                assert_eq!(at(&mut app, deck, p), vec!["item saber (Placed)"], "seed {s}: drawn two bands deep");
+            }
+            for p in keyed('k') {
+                assert_eq!(at(&mut app, deck, p), vec!["beast heavy"], "seed {s}");
+            }
+            for p in keyed('A') {
+                assert_eq!(at(&mut app, deck, p), vec!["prop locker"], "seed {s}");
+            }
+            let marks = keyed('m').len();
+            assert_eq!(everything(&mut app, deck).len(), spots.len() - marks, "seed {s}: one thing a slot, and a mark is the game's");
+
+            let saved = app.world().resource::<WorldMap>().export();
+            let mut back = WorldMap::new(TileRegistry::standard().tables());
+            back.import(ron::from_str(&ron::to_string(&saved).unwrap()).unwrap());
+            let before = &app.world().resource::<WorldMap>().place(deck).unwrap().spots;
+            let after = &back.place(deck).unwrap().spots;
+            assert_eq!(after, before, "seed {s}: the save keeps every spot and its key");
+            let prefabs = app.world().resource::<Prefabs<Beast>>();
+            assert!(
+                after.iter().all(|spot| prefabs.slot(spot.prefab.unwrap(), char::from_u32(spot.tag).unwrap()).is_some()),
+                "seed {s}: and each still finds its slot"
+            );
+        }
     }
 }

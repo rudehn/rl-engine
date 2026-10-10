@@ -48,18 +48,15 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 21 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
 | 22 | The resolvers in `ResolveSet::Act` are unordered | 4 | low | medium |
 | 23 | A prop cannot block sight, or block the way and let a shot past | 3 | medium | medium |
-| 24 | Furnishing a room of any size | 1 | medium | medium |
-| 25 | A furnishing pool with bands and a budget | 1 | low | medium |
-| 26 | Furnishing a map that is not rooms | 1 | low | medium |
-| 27 | A coloured light cannot warm a tile with little of its colour | 3 | low | low |
-| 28 | The player has no long action | 3 | medium | medium |
+| 24 | A coloured light cannot warm a tile with little of its colour | 3 | low | low |
+| 25 | The player has no long action | 3 | medium | medium |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
 The corner-cutting fallbacks went the same day: every tactic that picks a neighbour itself now asks whether the move resolver would take that step.
 The one that mattered most was the bench, which disproved the item that had been ranked first on the performance side: the turn loop is linear in the crowd, not quadratic, and the perceive stage's scans are not where the time goes.
 Six more were built on 2026-09-30, healing at their head: healing as its own path to health, the light recast inside the turn, the flow field cache, every game's lines inside a turn through `Tell`, anyone travelling when its wits say so, and a `Burning` thing saved.
-The table was renumbered that day, and again on 2026-10-04 for two gaps Undermere's floors found, so a number here is a place in the order as it stands and not the one an older note may cite.
+The table was renumbered that day, again on 2026-10-04 for two gaps Undermere's floors found, and again on 2026-10-10 when the three furnishing items were built, so a number here is a place in the order as it stands and not the one an older note may cite.
 
 Why the order that is left, in four moves:
 
@@ -73,9 +70,9 @@ Why the order that is left, in four moves:
    Item 19 is a measurement, not a change: run the lit bench before deciding there is anything to fix.
 4. **The rest wait on something.**
    Item 21 waits on a game that actually wants the tactics it would add, and item 22 on a second game asking for it.
-   Items 23 to 26 were raised on 2026-09-28 when Foundry's rooms were first furnished, and are the next steps of that work rather than debt: 23 is what the furnished rooms most visibly lack, 24 what the larger rooms do, and 25 and 26 wait on Foundry's zones and on a game that furnishes a cave.
-   Item 27 is polish Undermere's play found on 2026-10-07, and waits on a part that works on how a game looks, since it moves every lit game's pictures.
-   Item 28 was ruled around rather than built on 2026-10-07, when Undermere gave a captive a long action only a mind could take up, and waits on a game that wants the player to take one too.
+   Item 23 was raised on 2026-09-28 when Foundry's rooms were first furnished, and is what the furnished rooms most visibly lack; the three furnishing items raised beside it were built on 2026-10-10.
+   Item 24 is polish Undermere's play found on 2026-10-07, and waits on a part that works on how a game looks, since it moves every lit game's pictures.
+   Item 25 was ruled around rather than built on 2026-10-07, when Undermere gave a captive a long action only a mind could take up, and waits on a game that wants the player to take one too.
 
 Section 5 is documentation and section 6 is the release, and both are gated on the API settling rather than on this list.
 Section 9 is low priority and deliberately outside the order.
@@ -84,21 +81,10 @@ The performance section is done for now: eight items opened there, the benches c
 ## 1. Own the loops the games keep rewriting
 
 Its three original items and the swap below were built on 2026-09-16, and the plan's progress log says how.
-What is left is furnishing, the loop every game with rooms writes next, opened on 2026-09-28 when `StampEachRoom` gave Foundry a piece in every room.
-
-- **Furnishing a room of any size.**
-  `StampEachRoom` centres a fixed piece, and rooms run from seven cells to twelve, so a twelve-cell hall around a five-cell piece is a bare ring with a cluster in the middle; Foundry draws each room kind twice, small and large, to soften it.
-  A room kind should be a legend and where its things go rather than rows: against the walls, in the corners, in the centre, never in front of a doorway, at a density, with a floor repainted, so one kind dresses a room of any size.
-  It should reuse the prefab legend and slots, so the per-cell streams, the save, the coverage report and the load checks come with it, and the pass should guarantee what Foundry's deck test checks today, that nothing it stands walls a cell or a corridor off.
-  This is not the theme or category `docs/design/prefabs.md` section 8 rejected: a room kind is what it places, and nothing reads a label off it.
-- **A furnishing pool with bands and a budget.**
-  `docs/design/prefabs.md` section 9 names the pool: per-piece bands and weights, groups a chain draws from, and a budget per place.
-  `StampEachRoom` takes one flat weighted list, so Foundry's four zones, which want a pump room common in assembly and a furnace hall only in fabrication, would each need a chain of their own.
-- **Furnishing a map that is not rooms.**
-  `Placement::InRoom`, `Placement::AnyRoom` and `StampEachRoom` read the `Room`s that `Rooms` and `Bsp` emit and nothing else, so a map carved by `CellularCave`, a drunkard's walk or diffusion-limited aggregation gets no piece from any of them.
-  The seam should be a pass that finds room-like open areas in any terrain, from `rl-grid`'s region labelling and a distance to the nearest wall, and emits them as `Room`s, so every room-reading pass works on a cave unchanged rather than each growing a second placement.
-  A cave's area has no wall all round it the way a carved room does, so the pass that stamps into one needs what section 9 of the prefab design calls a connectivity check and a rollback: flood the region before and after, and refuse a piece that cut it.
-  `Placement::Fits`, anywhere the cells a piece paints and marks land on open floor, is the smaller half, and wants the same check.
+Furnishing, the loop every game with rooms writes next, was opened on 2026-09-28 when `StampEachRoom` gave Foundry a piece in every room, and built on 2026-10-10 for Undermere's dungeon in two halves.
+A pool, `rl_rules::pool` with `StampPicks` and `rl_bevy::layout::picked`, says which pieces a run holds, by floor, weight, limit, group and budget, and places each in the area it prefers.
+A dressing, `rl_rules::dressing` with `Dress` and `rl_bevy::layout::dress`, fills every room the pool left from a weighted list by district, by a prefab's legend and rules for where each glyph goes rather than rows, so one dressing fills a closet, a hall and a cave, never beside an opening and never cutting an area in two.
+Foundry still furnishes with `StampEachRoom`, and may adopt both.
 
 ## 2. Open the minds
 
@@ -374,11 +360,8 @@ Left over from the worn gear and unseen slice on 2026-09-27, the same way.
   The aimed use's landing is worked out in `ResolveSet::Triggers`, before `reveal_attackers` runs, so the fix is a report of who it landed on that the reveal can read, as `AbilityEvent::Used` is for an ability.
 
 Left over from the layout slice on 2026-10-01: the three pieces of work `docs/design/layout.md` section 0 says key on what it publishes.
+The furnisher and the run director were built on 2026-10-10 as the dressing and the pool, and section 1 says how; what is left is:
 
-- **A furnisher that fills an area to its size.**
-  Rows of one machine with aisles between, by a theme per district, in place of `StampEachRoom`'s one centered piece.
-- **A run director.**
-  Which pieces a run holds and on which place, limits per place and per run, and rewards put by `AreaFacts::seclusion`; prefabs attached by their own door as a `Shape` belong here.
 - **Tells.**
   A thing seen before it is reached.
 - **Foundry's recipes are a first draw.**

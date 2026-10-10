@@ -1,16 +1,18 @@
-//! A layout file as the passes that grow it, and a pool's picks as the
-//! pieces and the stamps a place is given.
+//! A layout file as the passes that grow it, a pool's picks as the
+//! pieces and the stamps a place is given, and a dressing file as the pass
+//! that dresses what they left.
 //!
 //! `rl-rules` owns the files and names no mapgen type; `rl-mapgen` owns
 //! the passes and reads no file. This is the one place that sees both, as
 //! [`Prefabs::piece`](crate::prefabs::Prefabs::piece) is for a prefab, and
-//! like it there is no plugin and no system here: a game calls [`passes`]
-//! and [`picked`] where it builds a place.
+//! like it there is no plugin and no system here: a game calls [`passes`],
+//! [`picked`] and [`dress`] where it builds a place.
 
 use rl_grid::TileId;
 use rl_mapgen::accrete::{Accrete, Barrier, Cross, District, Join, Passage, Rectangle, Shape};
 use rl_mapgen::prefab::Orient;
-use rl_mapgen::{BuildError, Cave, Lay, OpenLoops, PoolPick, Prefer, Require, StampPicks};
+use rl_mapgen::{BuildError, Cave, Dress, Lay, OpenLoops, PoolPick, Prefer, Require, StampPicks};
+use rl_rules::dressing::DistrictDressings;
 use rl_rules::layout::{JoinDef, LayoutDef, ShapeKind};
 use rl_rules::pool::{self, Joined, Pick, Placed, Pool};
 
@@ -144,6 +146,29 @@ pub fn picked<M: Send + Sync + 'static>(pool: &Pool, picks: &[Pick], prefabs: &P
         placed.push(PoolPick { name: entry.name.clone(), lay, shapes, prefer: prefer(entry.prefer), required: pick.required });
     }
     Ok(Picked { pieces, stamp: StampPicks { name: "pool picks", picks: placed, orient } })
+}
+
+/// The pass that dresses a place: every dressing in `prefabs`, cut from
+/// it by [`Prefabs::dressing`](crate::prefabs::Prefabs::dressing) so its
+/// slots fill as a stamp's, laid where a pick's
+/// [`DressAt`](rl_mapgen::DressAt) says and in every room nothing took by
+/// its district's list in `lists`, repainting only `floor`. For the chain
+/// after the pool's [`StampPicks`] and anything else that stamps. An error
+/// naming a dressing a list names and `prefabs` does not hold, which
+/// [`check_districts`](rl_rules::dressing::check_districts) refuses at
+/// load.
+pub fn dress<M: Send + Sync + 'static>(prefabs: &Prefabs<M>, floor: TileId, lists: &[DistrictDressings]) -> Result<Dress, BuildError> {
+    let dressings = prefabs.dressings().iter().map(|(_, d)| prefabs.dressing(&d.name)).collect::<Result<Vec<_>, _>>()?;
+    // Ids are dense and in file order, so a dressing's id is its place in
+    // the list just cut.
+    let index =
+        |name: &str| prefabs.dressings().id(name).map(|id| id.index()).ok_or_else(|| BuildError::new("dressing", format!("no dressing is called {name:?}")));
+    let mut districts = Vec::new();
+    for list in lists {
+        let dressings = list.dressings.iter().map(|(name, weight)| Ok((index(name)?, *weight))).collect::<Result<Vec<_>, BuildError>>()?;
+        districts.push(rl_mapgen::DistrictDressings { district: list.district.clone(), nothing: list.nothing, dressings });
+    }
+    Ok(Dress { name: "dress", floor, dressings, districts })
 }
 
 /// The pool file's preference as the pass's: the same five, named twice
@@ -366,5 +391,81 @@ mod tests {
             }
         }
         assert!(dressings > 0, "some dressing was placed, or this proves nothing");
+    }
+
+    /// Rubble a pool hands out, and crates a district's list lays.
+    const DRESSINGS: &str = r#"[
+        (name: "rubble", legend: { 'r': Tile("floor") }, place: [(glyph: 'r', at: Scatter, density_pct: 10)]),
+        (name: "crates", legend: { 'c': Mark }, place: [(glyph: 'c', at: Walls, density_pct: 40)]),
+    ]"#;
+
+    /// A place built from a run's picks and then dressed: every area a
+    /// dressed pick was given is laid with that dressing whatever its
+    /// district's list says, and the rooms nothing took are dressed from
+    /// the list, `tight`'s always and `wide`'s never, each slot keyed so it
+    /// finds its meaning again.
+    #[test]
+    fn a_place_is_dressed_where_its_picks_say_and_by_its_districts_elsewhere() {
+        use rand::SeedableRng;
+        use rl_mapgen::{Area, DressAt, Dressed};
+        use rl_rules::content::Registry;
+        use rl_rules::names::Names;
+        use rl_rules::pool::Place;
+
+        let def = rl_rules::layout::load(FILE).unwrap();
+        let mut tiles = TileRegistry::standard();
+        let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
+        let door = tiles.register(TileProps::floor("way through")).unwrap();
+        let piece = |text: &str| rl_rules::prefab::load::<()>(text, &tiles, &Names::new()).unwrap();
+        let defs = Registry::from_defs(vec![
+            piece(r######"(name: "closet", rows: ["#####", "#...#", "#...#", "##E##"], legend: { '#': Tile("wall"), '.': Tile("floor"), 'E': Entry })"######),
+            piece(r#"(name: "pile", rows: ["...", "...", "..."], legend: { '.': Tile("floor") })"#),
+        ])
+        .unwrap();
+        let dressings = rl_rules::dressing::load::<()>(DRESSINGS, &tiles, &Names::new()).unwrap();
+        let prefabs = Prefabs::<()>::with_dressings(defs, Registry::from_defs(Vec::new()).unwrap(), dressings);
+        let pool = rl_rules::pool::load(POOL, &def, prefabs.defs(), &Names::new()).unwrap();
+        rl_rules::dressing::check_pool(&pool, prefabs.dressings()).unwrap();
+        let lists: Vec<DistrictDressings> =
+            ron::from_str(r#"[(district: "tight", dressings: [("crates", 1)]), (district: "wide", nothing: 1, dressings: [])]"#).unwrap();
+        rl_rules::dressing::check_districts(&lists, prefabs.dressings(), &def).unwrap();
+        let places: Vec<Place> = (1..=3).map(|band| Place { band, tags: Vec::new() }).collect();
+        let (mut given, mut listed) = (0, 0);
+        for seed in 0..10 {
+            let plan = pool.plan_run(&mut rand::rngs::StdRng::seed_from_u64(seed), &places);
+            for (p, picks) in plan.iter().enumerate() {
+                let picked = picked(&pool, picks, &prefabs, Orient::Turned).unwrap();
+                let mut grow = passes(&def, "test", &LayoutTiles { floor, door, locked: door, sealed: door }).unwrap();
+                grow.accrete.pieces = picked.pieces;
+                let (w, h) = grow.size;
+                let chain = Chain::new()
+                    .then(grow.accrete)
+                    .then(grow.loops)
+                    .then(RandomStart)
+                    .then(FarthestExit)
+                    .then(Survey)
+                    .then(picked.stamp)
+                    .then(dress(&prefabs, floor, &lists).unwrap())
+                    .then(grow.require);
+                let ctx = chain
+                    .run_retrying(|| BaseContext::blank(w, h, tiles.clone(), wall), RunSeed(seed * 10 + p as u64), 40)
+                    .unwrap_or_else(|e| panic!("seed {seed}: {e}"));
+                let at: Vec<&DressAt> = ctx.outputs().iter::<DressAt>().collect();
+                let dressed: Vec<&Dressed> = ctx.outputs().iter::<Dressed>().collect();
+                for d in &at {
+                    assert!(dressed.iter().any(|x| x.area == d.area && x.dressing == "rubble"), "seed {seed} place {p}: {d:?} was laid");
+                }
+                let district = |i: usize| ctx.outputs().iter::<Area>().find(|a| a.index == i).unwrap().district.clone();
+                for d in dressed.iter().filter(|d| !at.iter().any(|a| a.area == d.area)) {
+                    assert!(d.dressing == "crates" && district(d.area) == "tight", "seed {seed} place {p}: {d:?} in {}", district(d.area));
+                    listed += 1;
+                }
+                given += at.len();
+                for s in ctx.outputs().iter::<rl_mapgen::prefab::Stamped>().filter(|s| s.marks.iter().any(|(c, _)| *c == 'c')) {
+                    assert!(s.prefab.is_some_and(|key| prefabs.slot(key, 'c').is_some()), "seed {seed}: a crate finds its slot");
+                }
+            }
+        }
+        assert!(given > 0 && listed > 0, "given {given} and listed {listed}, or this proves nothing");
     }
 }
