@@ -10,7 +10,7 @@
 use rl_grid::TileId;
 use rl_mapgen::accrete::{Accrete, Barrier, Cross, District, Join, Passage, Rectangle, Shape};
 use rl_mapgen::prefab::Orient;
-use rl_mapgen::{BuildError, Cave, InsidePick, OpenLoops, Prefer, Require, StampPicks};
+use rl_mapgen::{BuildError, Cave, Lay, OpenLoops, PoolPick, Prefer, Require, StampPicks};
 use rl_rules::layout::{JoinDef, LayoutDef, ShapeKind};
 use rl_rules::pool::{self, Joined, Pick, Placed, Pool};
 
@@ -107,43 +107,26 @@ pub fn passes(def: &LayoutDef, recipe: &str, tiles: &LayoutTiles) -> Result<Layo
 pub struct Picked {
     /// The pieces grown as areas of their own, for the place's
     /// `accrete.pieces`; growth fails the place when one is not laid,
-    /// whatever its kind, since a piece grown is the place's shape.
+    /// which is why the pool file grows only a required kind.
     pub pieces: Vec<Box<dyn Shape>>,
-    /// The pass that stamps the picks laid inside an area, for the chain
-    /// after its `Survey` and any `HideOpenings`.
+    /// The pass that places the rest, a piece stamped inside an area or a
+    /// dressing given one, for the chain after its `Survey` and any
+    /// `HideOpenings`, and before the pass that dresses.
     pub stamp: StampPicks,
-    /// The picks laid by a dressing, as the pool drew them, for the
-    /// dressing pass to lay.
-    pub dressed: Vec<DressedPick>,
-}
-
-/// A pick laid by a dressing.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DressedPick {
-    /// The entry's name, for what a failure names it by.
-    pub name: String,
-    /// The dressing's name.
-    pub dressing: String,
-    /// The area it prefers.
-    pub prefer: Prefer,
-    /// Whether a place it fits nowhere fails.
-    pub required: bool,
 }
 
 /// The picks `picks` of `pool`, as [`Pool::plan_run`] drew them for one
-/// place, as the pieces growth lays, the stamps inside areas, each piece
-/// turned as `orient` allows, and the dressings: every piece cut from
-/// `prefabs` and keyed, so its slots fill as any stamp's do. An error
+/// place, as the pieces growth lays and the pass that places the rest in
+/// the order drawn, each piece turned as `orient` allows: every piece cut
+/// from `prefabs` and keyed, so its slots fill as any stamp's do. An error
 /// naming the piece when there is none or a grown one has no entry, so a
 /// chain can `?` it.
 pub fn picked<M: Send + Sync + 'static>(pool: &Pool, picks: &[Pick], prefabs: &Prefabs<M>, orient: Orient) -> Result<Picked, BuildError> {
     let mut pieces: Vec<Box<dyn Shape>> = Vec::new();
-    let mut inside = Vec::new();
-    let mut dressed = Vec::new();
+    let mut placed = Vec::new();
     for pick in picks {
         let entry = &pool.entries[pick.entry];
-        let prefer = prefer(entry.prefer);
-        match &entry.placed {
+        let (lay, shapes) = match &entry.placed {
             Placed::Grown { piece, join } => {
                 let join = match *join {
                     Joined::Door => Join::Door,
@@ -153,15 +136,14 @@ pub fn picked<M: Send + Sync + 'static>(pool: &Pool, picks: &[Pick], prefabs: &P
                     Joined::Sealed => Join::Sealed,
                 };
                 pieces.push(Box::new(prefabs.grown(piece, join)?));
+                continue;
             }
-            Placed::Inside { piece, shapes } => {
-                let prefab = prefabs.piece(piece)?;
-                inside.push(InsidePick { name: entry.name.clone(), prefab, shapes: shapes.clone(), prefer, required: pick.required });
-            }
-            Placed::Dressed { dressing } => dressed.push(DressedPick { name: entry.name.clone(), dressing: dressing.clone(), prefer, required: pick.required }),
-        }
+            Placed::Inside { piece, shapes } => (Lay::Stamp(prefabs.piece(piece)?), shapes.clone()),
+            Placed::Dressed { dressing } => (Lay::Dress(dressing.clone()), Vec::new()),
+        };
+        placed.push(PoolPick { name: entry.name.clone(), lay, shapes, prefer: prefer(entry.prefer), required: pick.required });
     }
-    Ok(Picked { pieces, stamp: StampPicks { name: "pool picks", picks: inside, orient }, dressed })
+    Ok(Picked { pieces, stamp: StampPicks { name: "pool picks", picks: placed, orient } })
 }
 
 /// The pool file's preference as the pass's: the same five, named twice
@@ -327,9 +309,9 @@ mod tests {
     /// A run planned from a pool and each of its places built from the
     /// picks: every grown pick is an area of its own, every pick stamped
     /// inside lands in an area of its shapes, and every dressed pick is
-    /// handed on.
+    /// given a dead end, as it prefers, or dropped, since it is flavor.
     #[test]
-    fn a_places_picks_are_grown_stamped_and_handed_on_as_the_pool_drew_them() {
+    fn a_places_picks_are_grown_stamped_and_dressed_as_the_pool_drew_them() {
         use rand::SeedableRng;
         use rl_mapgen::prefab::Stamped;
         use rl_rules::content::Registry;
@@ -350,14 +332,14 @@ mod tests {
         let pile = prefabs.defs().id("pile").unwrap().raw();
         let pool = rl_rules::pool::load(POOL, &def, prefabs.defs(), &Names::new()).unwrap();
         let places: Vec<Place> = (1..=3).map(|band| Place { band, tags: Vec::new() }).collect();
+        let mut dressings = 0;
         for seed in 0..10 {
             let plan = pool.plan_run(&mut rand::rngs::StdRng::seed_from_u64(seed), &places);
             for (p, picks) in plan.iter().enumerate() {
                 let picked = picked(&pool, picks, &prefabs, Orient::Turned).unwrap();
                 let named = |name: &str| picks.iter().filter(|k| pool.entries[k.entry].name == name).count();
                 assert_eq!(picked.pieces.len(), named("closet"));
-                assert_eq!(picked.dressed.len(), named("rubble"));
-                assert!(picked.dressed.iter().all(|d| d.dressing == "rubble" && d.prefer == Prefer::DeadEnd && !d.required));
+                assert_eq!(picked.stamp.picks.len(), named("pile") + named("rubble"), "the rest are the pass's");
                 let mut grow = passes(&def, "test", &LayoutTiles { floor, door, locked: door, sealed: door }).unwrap();
                 grow.accrete.pieces = picked.pieces;
                 let (w, h) = grow.size;
@@ -374,7 +356,15 @@ mod tests {
                     let home = areas.iter().find(|a| a.inner.intersection(&s.bounds) == Some(s.bounds)).expect("inside one area");
                     assert!(home.shape == "cell" || home.shape == "big", "seed {seed}: a pile in a {}", home.shape);
                 }
+                let at: Vec<&rl_mapgen::DressAt> = ctx.outputs().iter::<rl_mapgen::DressAt>().collect();
+                assert!(at.len() <= named("rubble"), "seed {seed} place {p}: no more dressings placed than drawn");
+                let surveyed = ctx.outputs().first::<Surveyed>().unwrap();
+                for d in &at {
+                    assert!(d.dressing == "rubble" && surveyed.areas[d.area].dead_end, "seed {seed} place {p}: {d:?} is not in a dead end");
+                }
+                dressings += at.len();
             }
         }
+        assert!(dressings > 0, "some dressing was placed, or this proves nothing");
     }
 }

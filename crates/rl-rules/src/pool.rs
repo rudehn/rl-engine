@@ -60,12 +60,17 @@
 //! //                and are all of one kind
 //! //     placed:    how it is laid, one of
 //! //       Grown(join)       grown as an area of its own through the entries
-//! //                         its prefab draws, joined by one of
+//! //                         its prefab draws; only of a kind every budget
+//! //                         covering its floors marks required, since
+//! //                         growth fails a place that cannot lay a piece
+//! //                         it owes rather than dropping it; joined by one of
 //! //                           Door, Arch, Mouth(n) with n at least 1,
 //! //                           Locked("tag") opened by a carrier of the tag,
 //! //                           Sealed, a gate the game lifts
 //! //       Inside([shape])   stamped inside an area one of the layout's
-//! //                         named shapes drew; any area if the list is empty
+//! //                         named shapes drew, at least one of them a
+//! //                         shape that draws rooms, not a Passage; any
+//! //                         area if the list is empty
 //! //       Dressed           a dressing laid over an area of any size
 //! //     prefer:    optional, Anywhere if left out, and only Anywhere for a
 //! //                grown piece: the area an Inside or Dressed pick goes
@@ -326,7 +331,9 @@ enum JoinRon {
 /// of nought or a per-place limit past the per-run one, a piece and a
 /// dressing both or neither or the wrong one for how it is placed, a grown
 /// prefab with no entry to join it by, a mouth of no width, a preference
-/// on a grown piece, and a group whose entries are of more than one kind.
+/// on a grown piece, a grown piece of a kind some budget on its floors
+/// does not require, an inside piece whose shapes all draw no room, and a
+/// group whose entries are of more than one kind.
 pub fn load<M>(text: &str, layout: &LayoutDef, pieces: &Registry<PrefabDef<M>>, names: &Names<'_>) -> Result<Pool, ContentError> {
     let options = ron::options::Options::default().with_default_extension(ron::extensions::Extensions::IMPLICIT_SOME);
     let a: PoolRon = options.from_str(text).map_err(|e| ContentError::Parse(e.to_string()))?;
@@ -335,13 +342,13 @@ pub fn load<M>(text: &str, layout: &LayoutDef, pieces: &Registry<PrefabDef<M>>, 
     let mut twice = |what: &str, names: Vec<&str>| {
         for (i, name) in names.iter().enumerate() {
             if names[..i].contains(name) {
-                errors.push(format!("{name}: two {what}s share this name"));
+                errors.push(format!("{name}: two {what} share this name"));
             }
         }
     };
-    twice("weight", a.weights.iter().map(|(n, _)| n.as_str()).collect());
-    twice("tag", a.tags.iter().map(String::as_str).collect());
-    twice("entry", a.entries.iter().map(|e| e.name.as_str()).collect());
+    twice("weights", a.weights.iter().map(|(n, _)| n.as_str()).collect());
+    twice("tags", a.tags.iter().map(String::as_str).collect());
+    twice("entries", a.entries.iter().map(|e| e.name.as_str()).collect());
 
     let backwards = |(lo, hi): (i32, i32)| lo > hi;
     let mut kinds: Vec<String> = Vec::new();
@@ -419,6 +426,13 @@ pub fn load<M>(text: &str, layout: &LayoutDef, pieces: &Registry<PrefabDef<M>>, 
                 if e.prefer != Prefer::Anywhere {
                     errors.push(format!("{name}: prefers {:?}, and a grown piece goes where growth attaches it", e.prefer));
                 }
+                let loose = |b: &&Budget| Some(b.kind) == kind && !b.required && b.floors.0.max(e.floors.0) <= b.floors.1.min(e.floors.1);
+                if let Some(b) = budgets.iter().find(loose) {
+                    errors.push(format!(
+                        "{name}: is grown, and its kind {:?} is not required on floors {} to {}; growth cannot drop a piece it owes",
+                        e.kind, b.floors.0, b.floors.1
+                    ));
+                }
                 let join = match join {
                     JoinRon::Door => Joined::Door,
                     JoinRon::Arch => Joined::Arch,
@@ -442,6 +456,11 @@ pub fn load<M>(text: &str, layout: &LayoutDef, pieces: &Registry<PrefabDef<M>>, 
                 let piece = piece(&mut errors);
                 for shape in shapes.iter().filter(|s| !shape_names.contains(&s.as_str())) {
                     errors.push(format!("{name}: names unknown shape {shape:?}"));
+                }
+                // A passage is no room, and nothing is stamped in one.
+                let roomy = |n: &String| layout.shapes.iter().any(|s| s.name == *n && !matches!(s.kind, crate::layout::ShapeKind::Passage { .. }));
+                if !shapes.is_empty() && shapes.iter().all(|n| shape_names.contains(&n.as_str())) && !shapes.iter().any(roomy) {
+                    errors.push(format!("{name}: names only shapes that draw no room, so it can never be stamped"));
                 }
                 Placed::Inside { piece, shapes: shapes.clone() }
             }
@@ -554,12 +573,19 @@ impl Pool {
     /// is drawn, in an order drawn from `rng`, and after them every other,
     /// each an entry that fits the place, by weight, under every limit and
     /// group. A draw is kept only when the picks still to make can all be
-    /// made as fully as before it, worked out exactly as a flow from the
+    /// made as fully as before it, worked out exactly as two flows from the
     /// picks owed through the entries that fit to each entry's per-run
-    /// limit; one that cannot is drawn again without that entry. So a
-    /// budget is met whenever the pool can meet it, a scarce entry is not
-    /// spent on a floor others could have filled, and a pick no entry can
-    /// fill is left out, a required one before any other. Within a place,
+    /// limit: the most of the required picks still owed that can be made,
+    /// and the most of all of them. One that lowers either by more than
+    /// its own pick is drawn again without that entry. A flow that has
+    /// made the most required picks can always go on to make the most of
+    /// all, since making more never unmakes one, so the two are kept
+    /// together and a required draw never spends an entry a later floor
+    /// of the same kind, required there or not, could not do without. So
+    /// a budget is met whenever the pool can meet it, a scarce entry is
+    /// not spent on a floor others could have filled, and a pick no entry
+    /// can fill is left out, one not required before any required one.
+    /// Within a place,
     /// required picks come first.
     pub fn plan_run(&self, rng: &mut impl Rng, places: &[Place]) -> Vec<Vec<Pick>> {
         let mut plan = Plan::new(self, places);
@@ -579,8 +605,8 @@ impl Pool {
         for (tier, slots) in owed.iter_mut().enumerate() {
             let required = tier == 0;
             slots.shuffle(rng);
-            let mut most = plan.most(required);
             for &(p, k) in slots.iter() {
+                let (most_required, most) = (plan.most(true), plan.most(false));
                 let mut candidates: Vec<usize> = plan.fitting[p].iter().copied().filter(|&e| self.entries[e].kind == k && plan.open(p, e)).collect();
                 plan.owed[p][k] -= 1;
                 while !candidates.is_empty() {
@@ -598,8 +624,7 @@ impl Pool {
                         .expect("the roll is below the total");
                     let e = candidates.swap_remove(at);
                     plan.take(p, e, true);
-                    if plan.most(required) + 1 == most {
-                        most -= 1;
+                    if plan.most(false) + 1 == most && (!required || plan.most(true) + 1 == most_required) {
                         picks[p].push(Pick { entry: e, required });
                         break;
                     }
@@ -684,15 +709,15 @@ impl<'a> Plan<'a> {
         }
     }
 
-    /// The most of the picks still owed to budgets that are `required`, or
-    /// that are not, that can all be made together: a maximum flow from
+    /// The most of the picks still owed, to required budgets alone when
+    /// `only_required`, that can all be made together: a maximum flow from
     /// each place's owed picks of a kind, through a gate of one for each
     /// group at that place, to each entry that fits and is open, each
     /// carrying at most its per-place limit less what the place holds,
     /// and on to the end through each entry's per-run limit less what the
     /// run holds. A group is of one kind, so a gate never carries one kind
     /// into another's entries.
-    fn most(&self, required: bool) -> u32 {
+    fn most(&self, only_required: bool) -> u32 {
         let mut net = Net::default();
         let (source, sink) = (net.node(), net.node());
         let entries: Vec<usize> = (0..self.pool.entries.len()).map(|_| net.node()).collect();
@@ -702,7 +727,7 @@ impl<'a> Plan<'a> {
         for (p, fitting) in self.fitting.iter().enumerate() {
             let mut gates: Vec<Option<usize>> = vec![None; self.groups.len()];
             for (k, &owed) in self.owed[p].iter().enumerate() {
-                if owed == 0 || self.required[p][k] != required {
+                if owed == 0 || (only_required && !self.required[p][k]) {
                     continue;
                 }
                 let slot = net.node();
@@ -891,12 +916,13 @@ mod tests {
                 (name: "d", kind: "reward", piece: "shut", dressing: "x", floors: (1, 2), weight: "rare", per_run: 0, group: "g", placed: Grown(Locked("lock"))),
                 (name: "e", kind: "flavor", floors: (1, 2), weight: "rare", group: "g", placed: Dressed),
                 (name: "a", kind: "reward", piece: "stash", floors: (12, 14), weight: "rare", placed: Dressed),
+                (name: "f", kind: "reward", piece: "stash", floors: (1, 2), weight: "rare", placed: Inside(["run"])),
             ],
         )"#;
         let Err(ContentError::Invalid(errors)) = read(&w, text) else { panic!("the pool is refused") };
         let says = |what: &str| assert!(errors.iter().any(|e| e.contains(what)), "no error says {what:?} among {errors:#?}");
         says("rare: two weights share this name");
-        says("a: two entrys share this name");
+        says("a: two entries share this name");
         says("budget 0 (flavor on 5 to 1): its floors run backwards");
         says("its count runs backwards, from 3 to 2");
         says("budget 2 (reward on 4 to 9): covers a floor budget 1 of the same kind covers");
@@ -913,11 +939,13 @@ mod tests {
         says("d: a limit of nought");
         says("d: grows \"shut\", which draws no entry");
         says("d: unknown tag \"lock\"");
+        says("d: is grown, and its kind \"reward\" is not required on floors 1 to 5");
+        says("f: names only shapes that draw no room");
         says("e: is dressed and names no dressing");
         says("e: is a flavor in group \"g\", which d holds as a reward");
         says("a: is dressed, and names a piece rather than a dressing");
         says("a: no budget of its kind \"reward\" covers any of floors 12 to 14");
-        assert_eq!(errors.len(), 25, "{errors:#?}");
+        assert_eq!(errors.len(), 27, "{errors:#?}");
     }
 
     /// A piece's slots are reported at the floors its entries stand on,
@@ -1047,19 +1075,76 @@ mod tests {
         }
     }
 
+    /// One kind required on the first three floors and not on the next
+    /// three, a frequent entry standing on all six that only three may
+    /// hold, and a rare one standing on the first three alone: a draw
+    /// floor by floor, or the required floors drawn with no thought for
+    /// the rest, spends the frequent one where the rare one would do and
+    /// leaves the last floors empty.
+    const TIGHT: &str = r#"(
+        weights: [("rare", 1), ("frequent", 1000)],
+        tags: [],
+        budgets: [
+            (floors: (1, 3), kind: "find", count: (1, 1), required: true),
+            (floors: (4, 6), kind: "find", count: (1, 1)),
+            (floors: (1, 6), kind: "sight", count: (1, 2)),
+        ],
+        entries: [
+            (name: "everywhere", kind: "find", dressing: "x", floors: (1, 6), weight: "frequent", per_run: 3, placed: Dressed),
+            (name: "early", kind: "find", dressing: "x", floors: (1, 3), weight: "rare", per_run: 3, placed: Dressed),
+            (name: "sight one", kind: "sight", dressing: "x", floors: (1, 6), weight: "frequent", group: "sights", per_run: 6, placed: Dressed),
+            (name: "sight two", kind: "sight", dressing: "x", floors: (1, 6), weight: "rare", group: "sights", per_run: 6, placed: Dressed),
+            (name: "sight more", kind: "sight", dressing: "x", floors: (1, 6), weight: "rare", per_run: 2, placed: Dressed),
+        ],
+    )"#;
+
     #[test]
     fn every_budget_is_met_whenever_the_pool_can_meet_it() {
-        let pool = read(&world(), RUN).unwrap();
-        let places = floors();
-        for seed in SEEDS {
-            for (place, here) in places.iter().zip(plan(&pool, &places, seed)) {
-                for (k, kind) in pool.kinds.iter().enumerate() {
-                    let n = here.iter().filter(|p| pool.entries[p.entry].kind == k).count() as u32;
-                    let (lo, hi) = pool.budget(k, place.band).map_or((0, 0), |b| b.count);
-                    assert!((lo..=hi).contains(&n), "seed {seed}: floor {} holds {n} {kind}, its budget {lo} to {hi}", place.band);
-                    assert!(here.iter().filter(|p| pool.entries[p.entry].kind == k).all(|p| p.required == pool.budget(k, place.band).unwrap().required));
-                }
+        let tight = read(&world(), TIGHT).unwrap();
+        let six: Vec<Place> = (1..=6).map(|band| Place { band, tags: Vec::new() }).collect();
+        for (pool, places) in [(read(&world(), RUN).unwrap(), floors()), (tight, six)] {
+            for seed in SEEDS {
+                budgets_met(&pool, &places, seed);
             }
+        }
+    }
+
+    fn budgets_met(pool: &Pool, places: &[Place], seed: u64) {
+        for (place, here) in places.iter().zip(plan(pool, places, seed)) {
+            for (k, kind) in pool.kinds.iter().enumerate() {
+                let n = here.iter().filter(|p| pool.entries[p.entry].kind == k).count() as u32;
+                let (lo, hi) = pool.budget(k, place.band).map_or((0, 0), |b| b.count);
+                assert!((lo..=hi).contains(&n), "seed {seed}: floor {} holds {n} {kind}, its budget {lo} to {hi}", place.band);
+                assert!(here.iter().filter(|p| pool.entries[p.entry].kind == k).all(|p| p.required == pool.budget(k, place.band).unwrap().required));
+            }
+        }
+    }
+
+    /// A kind required on one floor and not on the next: the required
+    /// floor takes the rare entry that stands only there, since the
+    /// frequent one is the only one the next floor can hold.
+    #[test]
+    fn a_required_draw_never_spends_what_a_later_floor_of_the_kind_needs() {
+        let pool = read(
+            &world(),
+            r#"(
+                weights: [("rare", 1), ("frequent", 1000)],
+                tags: [],
+                budgets: [
+                    (floors: (1, 1), kind: "reward", count: (1, 1), required: true),
+                    (floors: (2, 2), kind: "reward", count: (1, 1)),
+                ],
+                entries: [
+                    (name: "x", kind: "reward", dressing: "x", floors: (1, 2), weight: "frequent", placed: Dressed),
+                    (name: "y", kind: "reward", dressing: "x", floors: (1, 1), weight: "rare", placed: Dressed),
+                ],
+            )"#,
+        )
+        .unwrap();
+        let places: Vec<Place> = (1..=2).map(|band| Place { band, tags: Vec::new() }).collect();
+        for seed in SEEDS {
+            let picks = plan(&pool, &places, seed);
+            assert_eq!(picks, vec![vec![Pick { entry: 1, required: true }], vec![Pick { entry: 0, required: false }]], "seed {seed}");
         }
     }
 

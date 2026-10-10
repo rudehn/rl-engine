@@ -1,12 +1,13 @@
-//! Stamping a place's picks into the areas they prefer.
+//! Placing a place's picks in the areas they prefer.
 //!
 //! A run's pool draws each place's picks before any place is built; the
 //! picks laid as areas of their own are [`Accrete`](crate::Accrete)'s
-//! pieces, and [`StampPicks`] is the pass for the rest, each a prefab
-//! stamped inside an area its [`Prefer`] names and its shapes allow. The
-//! file, the draw and what a kind means are `rl-rules`'s; this pass reads
-//! only what growth, the [`Survey`](crate::Survey) and the secrets
-//! published.
+//! pieces, and [`StampPicks`] is the pass for the rest: each a prefab
+//! stamped inside an area its [`Prefer`] names and its shapes allow, or a
+//! dressing given such an area, published as a [`DressAt`] for the pass
+//! that dresses. The file, the draw and what a kind means are
+//! `rl-rules`'s; this pass reads only what growth, the
+//! [`Survey`](crate::Survey) and the secrets published.
 
 use rand::Rng;
 use rl_core::{Point, Rect};
@@ -45,13 +46,24 @@ pub enum Prefer {
     Anywhere,
 }
 
-/// One pick to stamp inside an area.
+/// What a pick lays in the area it is given.
 #[derive(Debug, Clone)]
-pub struct InsidePick {
+pub enum Lay {
+    /// A piece stamped inside the area, which must hold it with a cell of
+    /// the area all round.
+    Stamp(Prefab),
+    /// A dressing, by name, which fits an area of any size and is laid by
+    /// the pass that dresses, from the [`DressAt`] this one publishes.
+    Dress(String),
+}
+
+/// One pick to place in an area.
+#[derive(Debug, Clone)]
+pub struct PoolPick {
     /// What a failure names it by.
     pub name: String,
-    /// The piece.
-    pub prefab: Prefab,
+    /// What it lays.
+    pub lay: Lay,
     /// The shapes whose areas it may go in, by [`Area::shape`]; any if
     /// empty.
     pub shapes: Vec<String>,
@@ -61,17 +73,29 @@ pub struct InsidePick {
     pub required: bool,
 }
 
-/// Stamps each of a place's picks inside an area its preference names.
+/// A dressing given an area: the pass that dresses lays it there first,
+/// before it dresses the areas no stamp or pick took.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DressAt {
+    /// The dressing's name.
+    pub dressing: String,
+    /// The area, by [`Area::index`].
+    pub area: usize,
+}
+
+/// Places each of a place's picks in an area its preference names.
 ///
-/// The picks are placed in the order given, each into an area that is a
+/// The picks are placed in the order given, each in an area that is a
 /// room, as [`StampEachRoom`](crate::prefab::StampEachRoom) furnishes, of
 /// one of its shapes, painted from no prefab, touched by no [`Stamped`]
-/// before it, and preferred: for [`Prefer::Secluded`] the most secluded
-/// such area it fits, ties to the first laid, and for any other an area
-/// drawn evenly among those it fits. It is laid as `StampEachRoom` lays a
-/// piece, in a facing [`Orient`] allows with a cell of the room all round
-/// it, off the way in and the way down, and emits its [`Stamped`], so the
-/// next pick and every later pass keep out of it.
+/// and given to no dressing before it, and preferred: for
+/// [`Prefer::Secluded`] the most secluded such area it fits, ties to the
+/// first laid, and for any other an area drawn evenly among those it fits.
+/// A piece is laid as `StampEachRoom` lays one, in a facing [`Orient`]
+/// allows with a cell of the room all round it, off the way in and the
+/// way down, and emits its [`Stamped`], so the next pick and every later
+/// pass keep out of it. A dressing fits any such area and is published as
+/// a [`DressAt`], laid by the pass that dresses.
 ///
 /// A required pick that fits nowhere fails the place, naming it, for
 /// [`Chain::run_retrying`](crate::Chain::run_retrying) to grow another
@@ -86,7 +110,7 @@ pub struct StampPicks {
     /// A stable name, so two passes in one chain draw different streams.
     pub name: &'static str,
     /// The picks, in the order they choose their areas.
-    pub picks: Vec<InsidePick>,
+    pub picks: Vec<PoolPick>,
     /// How a piece may be turned before it lands.
     pub orient: Orient,
 }
@@ -117,12 +141,17 @@ impl<C: BuildContext> Pass<C> for StampPicks {
             Prefer::Junction => facts(a.index).is_some_and(|f| f.junction),
             Prefer::Secluded | Prefer::Anywhere => facts(a.index).is_some_and(|f| f.seclusion != u32::MAX),
         };
+        // The areas given to a dressing so far, which no later pick takes.
+        let mut dressed: Vec<usize> = Vec::new();
 
         for pick in &self.picks {
-            let facings = self.orient.facings(&pick.prefab);
+            let facings = match &pick.lay {
+                Lay::Stamp(prefab) => self.orient.facings(prefab),
+                Lay::Dress(_) => Vec::new(),
+            };
             let taken: Vec<Rect> = ctx.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
             // Each area it may go in, with every facing that fits there and
-            // where that facing would be laid.
+            // where that facing would be laid; none for a dressing.
             let fits: Vec<(&Area, Vec<(&Prefab, Point)>)> = areas
                 .iter()
                 .filter(|a| {
@@ -130,10 +159,11 @@ impl<C: BuildContext> Pass<C> for StampPicks {
                         && rooms.contains(&a.inner)
                         && (pick.shapes.is_empty() || pick.shapes.contains(&a.shape))
                         && taken.iter().all(|t| a.inner.intersection(t).is_none())
+                        && !dressed.contains(&a.index)
                         && prefers(a, pick.prefer)
                 })
                 .map(|a| (a, facings.iter().filter_map(|f| laid_in(a.inner, f, &keep).map(|at| (f, at))).collect::<Vec<_>>()))
-                .filter(|(_, faces)| !faces.is_empty())
+                .filter(|(_, faces)| matches!(pick.lay, Lay::Dress(_)) || !faces.is_empty())
                 .collect();
             if fits.is_empty() {
                 if pick.required {
@@ -141,17 +171,24 @@ impl<C: BuildContext> Pass<C> for StampPicks {
                 }
                 continue;
             }
-            let chosen = match pick.prefer {
+            let (area, faces) = match pick.prefer {
                 // The first laid of the most secluded, since `max_by_key`
                 // keeps the last of equals and the areas run in laying order.
                 Prefer::Secluded => fits.iter().rev().max_by_key(|(a, _)| facts(a.index).map_or(0, |f| f.seclusion)).expect("not empty"),
                 _ => &fits[ctx.rng().random_range(0..fits.len())],
             };
-            let faces = &chosen.1;
-            let (piece, origin) = faces[ctx.rng().random_range(0..faces.len())];
-            piece.stamp(ctx.terrain_mut(), origin);
-            let marks = piece.marks().iter().map(|(c, p)| (*c, origin + *p)).collect();
-            ctx.emit(Stamped { bounds: Rect::new(origin.x, origin.y, piece.width(), piece.height()), marks, prefab: piece.key() });
+            match &pick.lay {
+                Lay::Dress(dressing) => {
+                    dressed.push(area.index);
+                    ctx.emit(DressAt { dressing: dressing.clone(), area: area.index });
+                }
+                Lay::Stamp(_) => {
+                    let (piece, origin) = faces[ctx.rng().random_range(0..faces.len())];
+                    piece.stamp(ctx.terrain_mut(), origin);
+                    let marks = piece.marks().iter().map(|(c, p)| (*c, origin + *p)).collect();
+                    ctx.emit(Stamped { bounds: Rect::new(origin.x, origin.y, piece.width(), piece.height()), marks, prefab: piece.key() });
+                }
+            }
         }
         Ok(())
     }
@@ -218,16 +255,16 @@ mod tests {
         place(|_, _| {}, Join::Door, true)
     }
 
-    fn pick(name: &str, size: usize, prefer: Prefer, required: bool) -> InsidePick {
+    fn pick(name: &str, size: usize, prefer: Prefer, required: bool) -> PoolPick {
         let tiles = TileRegistry::standard();
         let row = ".".repeat(size);
         let rows: Vec<&str> = (0..size).map(|_| row.as_str()).collect();
         let prefab = Prefab::parse(&rows, |_| Some(tiles.expect("floor"))).unwrap();
-        InsidePick { name: name.into(), prefab, shapes: Vec::new(), prefer, required }
+        PoolPick { name: name.into(), lay: Lay::Stamp(prefab), shapes: Vec::new(), prefer, required }
     }
 
     /// The area each stamp landed in, in the order the picks were placed.
-    fn landed(mut ctx: BaseContext, picks: Vec<InsidePick>, seed: u64) -> Result<Vec<usize>, BuildError> {
+    fn landed(mut ctx: BaseContext, picks: Vec<PoolPick>, seed: u64) -> Result<Vec<usize>, BuildError> {
         Chain::new().then(StampPicks { name: "picks", picks, orient: Orient::Turned }).run(&mut ctx, RunSeed(seed))?;
         let areas: Vec<&Area> = ctx.outputs().iter::<Area>().collect();
         Ok(ctx
@@ -306,7 +343,7 @@ mod tests {
                 assert!(!painted.contains(&3), "seed {seed}: {prefer:?} stamped into a painted piece");
             }
             let hall = place(|i, a| a.shape = if i == 4 { "hall" } else { "room" }.into(), Join::Door, true);
-            let only = InsidePick { shapes: vec!["hall".into()], ..pick("p", 3, Prefer::Anywhere, true) };
+            let only = PoolPick { shapes: vec!["hall".into()], ..pick("p", 3, Prefer::Anywhere, true) };
             assert_eq!(landed(hall, vec![only], seed).unwrap(), vec![4], "seed {seed}");
         }
     }
@@ -318,5 +355,56 @@ mod tests {
         assert!(err.reason.contains("great hall"), "{}", err.reason);
         let kept = landed(plain(), vec![pick("rug", 9, Prefer::Anywhere, false), pick("p", 3, Prefer::Junction, true)], 0).unwrap();
         assert_eq!(kept, vec![2], "the flavor pick is dropped and the next still placed");
+    }
+
+    fn dress(name: &str, prefer: Prefer, required: bool) -> PoolPick {
+        PoolPick { name: name.into(), lay: Lay::Dress(name.into()), shapes: Vec::new(), prefer, required }
+    }
+
+    /// Where each dressing was given an area, by name and area.
+    fn dressed(mut ctx: BaseContext, picks: Vec<PoolPick>, seed: u64) -> Result<Vec<(String, usize)>, BuildError> {
+        Chain::new().then(StampPicks { name: "picks", picks, orient: Orient::Turned }).run(&mut ctx, RunSeed(seed))?;
+        Ok(ctx.outputs().iter::<DressAt>().map(|d| (d.dressing.clone(), d.area)).collect())
+    }
+
+    #[test]
+    fn a_dressed_pick_is_given_an_area_its_preference_names_and_never_one_taken() {
+        for seed in 0..20 {
+            assert_eq!(dressed(plain(), vec![dress("a", Prefer::Secluded, true)], seed).unwrap(), vec![("a".into(), 3)], "seed {seed}");
+            assert_eq!(dressed(plain(), vec![dress("a", Prefer::Hidden, true)], seed).unwrap(), vec![("a".into(), 5)], "seed {seed}");
+            assert_eq!(dressed(plain(), vec![dress("a", Prefer::Junction, true)], seed).unwrap(), vec![("a".into(), 2)], "seed {seed}");
+
+            // Two dead ends are reached, and each is given once.
+            let mut two: Vec<usize> = dressed(plain(), vec![dress("a", Prefer::DeadEnd, true), dress("b", Prefer::DeadEnd, true)], seed)
+                .unwrap()
+                .into_iter()
+                .map(|(_, area)| area)
+                .collect();
+            two.sort_unstable();
+            assert_eq!(two, vec![3, 4], "seed {seed}");
+
+            // A stamp's room is not given to a dressing, nor a dressing's to a stamp.
+            let after_stamp = dressed(plain(), vec![pick("p", 3, Prefer::Secluded, true), dress("a", Prefer::Secluded, true)], seed).unwrap();
+            assert_eq!(after_stamp, vec![("a".into(), most_secluded(&plain(), &[0, 1, 2, 4]))], "seed {seed}");
+            let after_dress = landed(plain(), vec![dress("a", Prefer::Secluded, true), pick("p", 3, Prefer::Secluded, true)], seed).unwrap();
+            assert_eq!(after_dress, vec![most_secluded(&plain(), &[0, 1, 2, 4])], "seed {seed}");
+
+            // Never behind a lock, and never in a painted piece.
+            let locked = dressed(place(|_, _| {}, Join::Locked(1), true), vec![dress("a", Prefer::DeadEnd, true)], seed).unwrap();
+            assert_eq!(locked, vec![("a".into(), 4)], "seed {seed}");
+            let painted = dressed(place(|i, a| a.entries = (i == 3).then(Vec::new), Join::Door, true), vec![dress("a", Prefer::DeadEnd, true)], seed).unwrap();
+            assert_eq!(painted, vec![("a".into(), 4)], "seed {seed}");
+        }
+    }
+
+    #[test]
+    fn a_required_dressing_with_no_area_fails_the_place_and_a_flavor_one_is_dropped() {
+        let three = |third_required| vec![dress("a", Prefer::DeadEnd, true), dress("b", Prefer::DeadEnd, true), dress("c", Prefer::DeadEnd, third_required)];
+        let err = dressed(plain(), three(true), 0).unwrap_err();
+        assert!(err.pass == "picks" && err.reason.contains("c:"), "{}", err.reason);
+        let kept = dressed(plain(), three(false), 0).unwrap();
+        assert_eq!(kept.len(), 2, "the third has no dead end left and is dropped: {kept:?}");
+        let none = dressed(place(|_, _| {}, Join::Door, false), vec![dress("h", Prefer::Hidden, true)], 0).unwrap_err();
+        assert!(none.reason.contains("h:"), "{}", none.reason);
     }
 }
