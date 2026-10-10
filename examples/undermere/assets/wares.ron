@@ -8,12 +8,15 @@
 //             Only a thing that takes levels rolls one, and what it rolls is added to the
 //             least a found one of its kind is at uncursed: nought for a weapon or armor, a
 //             ring's one, a staff's two, a wand's lowest `found_at`
-//   keepers:  [(name:, buys:, always:, draws:, parts:)], one per keeper:
+//   keepers:  [(name:, buys:, purse:, always:, draws:, parts:)], one per keeper:
 //     name:   "smith" | "apothecary" | "curio" | "temple"; who stands behind the counter,
 //             the name `src/shops.rs` finds the keeper by
 //     buys:   Anything | Tags([tag]), the kinds the keeper buys, always things with a price:
 //             Anything buys whatever has one, Tags only things carrying one of the tags
 //             from `items.ron`'s list, and Tags([]) nothing; a keeper stocks only what it buys
+//     purse:  the gold the keeper holds for each tier, set afresh at each stocking and never
+//             added to, so it holds this times the tier; gold paid to the keeper goes into
+//             it and is gone at the next stocking; above nought unless it buys nothing
 //     always: optional; [(item:, count:)] on every shelf of every stocking, that many
 //     draws:  optional; how many of `parts` are drawn by weight a stocking, nought when
 //             left out
@@ -37,7 +40,7 @@
     ],
     keepers: [
         // The smithy: six drawn, and arrows always.
-        (name: "smith", buys: Tags(["weapon", "armor", "thrown"]), always: [(item: "arrow", count: 10)], draws: 6, parts: [
+        (name: "smith", buys: Tags(["weapon", "armor", "thrown"]), purse: 200, always: [(item: "arrow", count: 10)], draws: 6, parts: [
             (item: "dart", bands: (1, 5), weight: 1, group: (8, 8)),
             (item: "javelin", bands: (1, 5), weight: 1, group: (4, 4)),
             (item: "dagger", bands: (1, 5), weight: 1),
@@ -60,7 +63,7 @@
             (item: "plate armor", bands: (4, 5), weight: 1),
         ]),
         // The apothecary: potions of healing always, then four drawn.
-        (name: "apothecary", buys: Tags(["potion", "scroll"]), always: [(item: "potion of healing", count: 3)], draws: 4, parts: [
+        (name: "apothecary", buys: Tags(["potion", "scroll"]), purse: 200, always: [(item: "potion of healing", count: 3)], draws: 4, parts: [
             (item: "scroll of identify", bands: (1, 5), weight: 1),
             (item: "potion of darkness", bands: (1, 5), weight: 1),
             (item: "potion of confusion", bands: (1, 5), weight: 1),
@@ -77,8 +80,9 @@
             (item: "scroll of recharging", bands: (3, 5), weight: 1),
         ]),
         // The curio shop: four drawn, rare and dear, and in a quarter of the deepest
-        // stockings a potion of life besides.
-        (name: "curio", buys: Anything, draws: 4, parts: [
+        // stockings a potion of life besides. It buys the rare, so its purse is twice
+        // the others', enough for an artifact's 400 from the first tier.
+        (name: "curio", buys: Anything, purse: 400, draws: 4, parts: [
             (item: "wand of plenty", bands: (1, 5), weight: 1),
             (item: "wand of beckoning", bands: (1, 5), weight: 1),
             (item: "wand of teleport other", bands: (2, 5), weight: 1),
@@ -102,6 +106,6 @@
         ]),
         // The temple of the Still Water: its rites are offerings, not wares; its wares
         // are waystones, three on every shelf, and waystones are all it buys.
-        (name: "temple", buys: Tags(["waystone"]), always: [(item: "waystone", count: 3)]),
+        (name: "temple", buys: Tags(["waystone"]), purse: 200, always: [(item: "waystone", count: 3)]),
     ],
 )

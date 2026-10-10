@@ -67,14 +67,6 @@ pub const WARES_STREAM: &[u8] = b"undermere.wares";
 /// sees at most five stockings.
 pub const TIERS: RangeInclusive<u32> = 1..=5;
 
-/// The gold a keeper holds for every tier its stocking was drawn for: what
-/// it can pay out for what the adventurer brings up, set afresh with each
-/// stocking rather than added to, so selling everything to one keeper at
-/// the first tier empties it, and what the adventurer paid a keeper is
-/// gone at the next restock. A deal conserves coins; a restock does not,
-/// on purpose, so no purse grows past what its tier allows.
-pub const PURSE_PER_TIER: u32 = 200;
-
 /// What no keeper ever stocks by name: the two scrolls that only ever
 /// harm their reader, which keepers buy cheap and never sell. An artifact
 /// is never stocked either, by its `artifact` tag, since each is a
@@ -92,11 +84,6 @@ fn never_stocked(def: Id<ItemDef>, armory: &Armory) -> bool {
 /// floors, five for the last two.
 pub fn tier_of(floor: u32) -> u32 {
     (floor.saturating_sub(1) / 2 + 1).clamp(*TIERS.start(), *TIERS.end())
-}
-
-/// A keeper's purse for a stocking at `tier`: [`PURSE_PER_TIER`] a tier.
-pub fn purse(tier: u32) -> u32 {
-    PURSE_PER_TIER * tier
 }
 
 /// The kinds a keeper buys.
@@ -127,7 +114,8 @@ pub struct Stocking {
     /// What is on the shelf: what is always there first, then what was
     /// drawn, then what turned up on its own chance.
     pub wares: Vec<Ware>,
-    /// The gold the keeper can pay out, [`purse`] at the stocking's tier.
+    /// The gold the keeper can pay out, its [`purse`](Keeper::purse) at
+    /// the stocking's tier.
     pub purse: u32,
 }
 
@@ -138,6 +126,8 @@ pub struct Keeper {
     pub name: String,
     /// The kinds it buys.
     pub buys: Buys,
+    /// The gold its purse holds for each tier, `purse` in `wares.ron`.
+    purse_per_tier: u32,
     /// What every stocking holds, with how many and the level a thing of
     /// it is at plain, when it takes levels.
     always: Vec<(Id<ItemDef>, u32, Option<i32>)>,
@@ -169,6 +159,20 @@ impl Keeper {
                 Buys::Anything => true,
                 Buys::Tags(tags) => def.tags.iter().any(|t| tags.contains(&t.id())),
             }
+    }
+
+    /// The gold it holds for a stocking at `tier`: its `purse` from
+    /// `wares.ron` for every tier, what it can pay out for what the
+    /// adventurer brings up. Set afresh with each stocking rather than
+    /// added to, so selling everything to one keeper at the first tier
+    /// empties it, and what the adventurer paid a keeper is gone at the
+    /// next restock. A deal conserves coins; a restock does not, on
+    /// purpose, so no purse grows past what its tier allows. A keeper's own
+    /// in the file rather than one rule for all, so the curio, the shop
+    /// that buys the rare, can carry twice the others' and pay for an
+    /// artifact from the first tier.
+    pub fn purse(&self, tier: u32) -> u32 {
+        self.purse_per_tier * tier
     }
 }
 
@@ -251,7 +255,7 @@ impl Wares {
             let plain = chanced.iter().find(|p| p.row.item == def).and_then(|p| p.plain);
             wares.push(Ware { def, count, level: self.level(plain, band, rng) });
         }
-        Stocking { keeper: keeper.name.clone(), wares, purse: purse(tier) }
+        Stocking { keeper: keeper.name.clone(), wares, purse: keeper.purse(tier) }
     }
 
     /// The level of a ware at plain level `plain` stocked at `band`: the
@@ -524,6 +528,7 @@ struct AuthoredFile {
 struct AuthoredKeeper {
     name: String,
     buys: AuthoredBuys,
+    purse: u32,
     #[serde(default)]
     always: Vec<AuthoredAlways>,
     #[serde(default)]
@@ -568,7 +573,10 @@ impl AuthoredKeeper {
             AuthoredBuys::Anything => Buys::Anything,
             AuthoredBuys::Tags(tags) => Buys::Tags(tags.into_iter().map(NameRef::id).collect()),
         };
-        let mut keeper = Keeper { name: self.name, buys, always: Vec::new(), draws: self.draws, parts: Vec::new() };
+        let mut keeper = Keeper { name: self.name, buys, purse_per_tier: self.purse, always: Vec::new(), draws: self.draws, parts: Vec::new() };
+        if keeper.purse_per_tier == 0 && keeper.buys != Buys::Tags(Vec::new()) {
+            errors.push(format!("{}: a purse of nothing pays for nothing it buys", keeper.name));
+        }
         let check = |def: Id<ItemDef>, keeper: &Keeper, errors: &mut Vec<String>| {
             let d = armory.defs.get(def);
             let at = format!("{}: {}", keeper.name, d.name);
@@ -778,12 +786,19 @@ mod tests {
         }
     }
 
+    /// The gold `post`'s keeper holds a tier, as `wares.ron` sets it.
+    fn purse_a_tier(post: Post) -> u32 {
+        if post.keeper == "curio" { 400 } else { 200 }
+    }
+
     #[test]
-    fn a_keepers_purse_is_two_hundred_gold_a_tier() {
+    fn a_keepers_purse_is_two_hundred_gold_a_tier_and_the_curios_four_hundred() {
         let library = library();
         let mut rng = StdRng::seed_from_u64(1);
-        for tier in TIERS {
-            assert_eq!(library.wares.stock("smith", tier, &mut rng).purse, 200 * tier);
+        for post in POSTS {
+            for tier in TIERS {
+                assert_eq!(library.wares.stock(post.keeper, tier, &mut rng).purse, purse_a_tier(post) * tier, "{} at tier {tier}", post.keeper);
+            }
         }
     }
 
@@ -805,17 +820,18 @@ mod tests {
     #[test]
     fn a_ware_not_in_items_ron_is_a_load_error_naming_it() {
         let library = library();
-        let text = r#"(levels: [], keepers: [(name: "smith", buys: Anything, draws: 1, parts: [(item: "sword of legend", bands: (1, 5), weight: 1)])])"#;
+        let text =
+            r#"(levels: [], keepers: [(name: "smith", buys: Anything, purse: 200, draws: 1, parts: [(item: "sword of legend", bands: (1, 5), weight: 1)])])"#;
         let error = Wares::read(text, &library.registries, &library.armory).expect_err("no such item").to_string();
         assert!(error.contains("sword of legend"), "{error}");
     }
 
     #[test]
-    fn gold_an_artifact_a_bad_scroll_a_kind_the_keeper_does_not_buy_or_a_part_always_there_is_refused_naming_each() {
+    fn gold_an_artifact_a_bad_scroll_a_kind_the_keeper_does_not_buy_a_part_always_there_or_an_empty_purse_is_refused_naming_each() {
         let library = library();
         let errors = refused(
             &library,
-            r#"(name: "smith", buys: Tags(["weapon"]), always: [(item: "gold coin", count: 1), (item: "dagger", count: 1)], draws: 1, parts: [
+            r#"(name: "smith", buys: Tags(["weapon"]), purse: 0, always: [(item: "gold coin", count: 1), (item: "dagger", count: 1)], draws: 1, parts: [
                 (item: "dagger", bands: (1, 5), weight: 1),
                 (item: "the Widow's Fang", bands: (1, 5), weight: 1),
                 (item: "scroll of summon monsters", bands: (1, 5), weight: 1),
@@ -830,6 +846,7 @@ mod tests {
             "tiers 0 to 6",
             "not both",
             "dagger: a part of something always on the shelf",
+            "smith: a purse of nothing",
         ] {
             assert!(joined.contains(said), "{said:?} not in:\n{joined}");
         }
@@ -1060,9 +1077,10 @@ mod tests {
 
     /// A keeper's shelf is the run's first stocking at the first tier,
     /// ware for ware, a thing that takes levels one apiece at the level
-    /// rolled for it, and its purse two hundred gold beside it.
+    /// rolled for it, and its purse beside it, two hundred gold or the
+    /// curio's four hundred.
     #[test]
-    fn a_keepers_shelf_is_stocking_nought_at_tier_one_and_its_purse_two_hundred_gold_over_a_span_of_seeds() {
+    fn a_keepers_shelf_is_stocking_nought_at_tier_one_and_its_purse_a_tiers_gold_over_a_span_of_seeds() {
         for s in 0..3 {
             let (mut app, _) = in_mereholt(s);
             let (wares, armory) = (app.world().resource::<Wares>().clone(), app.world().resource::<Armory>().clone());
@@ -1072,7 +1090,7 @@ mod tests {
                 let k = keeper(&mut app, post.role);
                 let (wares, purse) = carried(&app, k);
                 assert_eq!(wares, as_carried(&armory, shelf_of(&stocking, post)), "seed {s}: {}'s shelf", post.role);
-                assert_eq!(purse, PURSE_PER_TIER, "seed {s}: {}'s purse", post.role);
+                assert_eq!(purse, purse_a_tier(post), "seed {s}: {}'s purse", post.role);
             }
         }
     }
@@ -1117,7 +1135,7 @@ mod tests {
                 let k = keeper(&mut app, post.role);
                 let (wares, purse) = carried(&app, k);
                 assert_eq!(wares, as_carried(&armory, shelf_of(&stocking, post)), "seed {s}: {}'s shelf", post.role);
-                assert_eq!(purse, 2 * PURSE_PER_TIER, "seed {s}: {}'s purse set for tier two", post.role);
+                assert_eq!(purse, 2 * purse_a_tier(post), "seed {s}: {}'s purse set for tier two", post.role);
             }
             let restocked = bags(&mut app);
             crate::testing::arrive(&mut app, crate::dungeon::map_of(4));
@@ -1311,11 +1329,6 @@ mod tests {
         let crown = make(&mut app, "the Crown of Grubnak");
         give(&mut app, me, crown);
         let curio = keeper(&mut app, "curio");
-        // A first shelf's purse is 200, short of an artifact's 400: a
-        // mini-boss's floor is past the first tier, where the purse is not.
-        let till = make(&mut app, "gold coin");
-        app.world_mut().get_mut::<Stack>(till).expect("gold stacks").count = 400;
-        give(&mut app, curio, till);
         open_trade(&mut app, me, curio);
         let gold = |app: &App| -> u32 {
             let world = app.world();
@@ -1336,6 +1349,24 @@ mod tests {
         app.update();
         assert!(app.world().get::<Inventory>(curio).expect("a shelf").contains(crown), "nor can it be bought back");
         assert_eq!(gold(&app), before + 400, "and nothing was paid");
+    }
+
+    /// At the first tier the curio's purse is four hundred, an artifact's
+    /// price to it, so the one shop that buys the rare can pay for one the
+    /// first evening home; the sale takes the purse whole.
+    #[test]
+    fn at_tier_one_the_curio_pays_four_hundred_for_an_artifact_from_its_own_purse() {
+        let (mut app, me) = in_mereholt(0);
+        assert_eq!(app.world().resource::<Shelves>().tier, 1, "the first tier");
+        let crown = make(&mut app, "the Crown of Grubnak");
+        give(&mut app, me, crown);
+        let curio = keeper(&mut app, "curio");
+        assert_eq!(carried(&app, curio).1, 400, "the curio's purse at tier one");
+        open_trade(&mut app, me, curio);
+        app.world_mut().write_message(Sell { customer: me, trader: curio, item: crown, count: 1 });
+        app.update();
+        assert!(app.world().get::<Inventory>(curio).expect("a shelf").contains(crown), "the curio bought it");
+        assert_eq!(carried(&app, curio).1, 0, "with all four hundred of its purse");
     }
 
     /// What the vitals say of the gold carried, and the tone it is said in.

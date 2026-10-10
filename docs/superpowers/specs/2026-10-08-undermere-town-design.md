@@ -79,7 +79,7 @@ A floor lays 0 to 2 piles of 3d8 times its number, and kobolds, goblins, archers
 The prices below are set against that estimate; part 5's first task measures the real figure with the soak, and the prices move with it before anything else is tuned.
 
 A thing is priced at what the adventurer knows of it.
-A level known above nought adds 100 a level; a level not yet known counts as nought, as the vitals and the forecast already count it, so a shop never tells a level.
+A level known above its kind's plain level, nought for a weapon or armor, a ring's 1 and a staff's 2, adds 100 a level above it; a level not yet known counts as the plain one, as the vitals and the forecast already count it, so a shop never tells a level.
 A thing whose kind is not known, or that shows a curse's sign, has no worth: the keepers will not buy what nobody can name, and nobody buys a curse.
 A keeper pays a quarter of a thing's worth, rounded down.
 Artifacts are never sold; the curio buys them at 400.
@@ -199,6 +199,8 @@ Several lines teach a rule the game never explains anywhere else; that is what t
 - **The apothecary**, behind the counter: "Everything on my shelves has a name, and I'll tell you it. What you bring me had better have one too."
 - **The curio dealer**: "Rare things, dear things. Things the dead had no more use for."
 - **The priest**, at the altar: "The Still Water mends, unbinds and names. It asks a little gold for the candles."
+
+Each keeper carries a purse set afresh at each stocking, 200 gold a tier and the curio dealer's 400, since it is the shop that buys the rare and so can pay an artifact's 400 from tier one, and gold paid to a keeper goes into it.
 
 **The townsfolk.**
 
