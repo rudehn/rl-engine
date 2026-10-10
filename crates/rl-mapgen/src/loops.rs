@@ -11,6 +11,7 @@ use rl_grid::{BitGrid, Terrain, TileId};
 use crate::accrete::{Area, Join, Opening};
 use crate::chain::{BuildError, Pass, Phase};
 use crate::context::BuildContext;
+use crate::dungeon::DoorWalk;
 use crate::walk::{UNREACHED, steps_between};
 
 /// Opens a door in the wall between two areas that touch but are far
@@ -107,17 +108,12 @@ impl<C: BuildContext> Pass<C> for OpenLoops {
         }
 
         // The walk between a candidate's two sides as the place stands,
-        // through shut doors and never through a lock, as the exit is
-        // drawn. A side a later pass has built over is no way through at
-        // all.
-        let mut shut = BitGrid::new(w, h);
-        for o in ctx.outputs().iter::<Opening>().filter(|o| matches!(o.join, Join::Locked(_) | Join::Sealed)) {
-            for c in &o.cells {
-                shut.insert(*c);
-            }
-        }
+        // by the rule the exit is drawn by: through shut doors and never
+        // through a lock. A side a later pass has built over is no way
+        // through at all.
+        let rule = DoorWalk::new(ctx, true);
         let measure = |terrain: &Terrain, c: &Candidate| {
-            let open = |q: Point| passable_at(terrain, &passable, q) && !shut.contains(q);
+            let open = |q: Point| rule.open(terrain, q);
             steps_between(w, h, open, c.at - c.facing.offset(), c.at + c.facing.offset())
         };
         for c in &mut candidates {

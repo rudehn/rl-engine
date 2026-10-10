@@ -8,7 +8,7 @@
 
 use rand::Rng;
 use rl_core::{Direction, Grid2D, Point, Rect};
-use rl_grid::{BitGrid, CostSource, DijkstraMap, PathRules, Terrain, TileId, TileTables};
+use rl_grid::{BitGrid, CostSource, DijkstraMap, PathRules, Terrain, TileId};
 
 use crate::chain::{BuildError, Pass, Phase};
 use crate::context::BuildContext;
@@ -264,18 +264,16 @@ fn bridged<C: BuildContext>(ctx: &C) -> BitGrid {
     cells
 }
 
-/// The open cells of `area`, never one a bridge was laid on.
-fn open_cells<C: BuildContext>(ctx: &C, area: Rect) -> Vec<Point> {
-    let tables = ctx.tiles().tables();
-    let bridged = bridged(ctx);
-    area.cells().filter(|p| ctx.terrain().get(*p).is_some_and(|t| tables.walkable[t.index()]) && !bridged.contains(*p)).collect()
+/// The open cells of `area`, never one of `bridged`.
+fn open_cells<C: BuildContext>(ctx: &C, walkable: &[bool], bridged: &BitGrid, area: Rect) -> Vec<Point> {
+    area.cells().filter(|p| ctx.terrain().get(*p).is_some_and(|t| walkable[t.index()]) && !bridged.contains(*p)).collect()
 }
 
 /// The cells [`RandomStart`] draws from: the first room's open cells, or
 /// the whole map's when no room was emitted.
-fn start_cells<C: BuildContext>(ctx: &C) -> Vec<Point> {
+fn start_cells<C: BuildContext>(ctx: &C, walkable: &[bool], bridged: &BitGrid) -> Vec<Point> {
     let area = ctx.outputs().first::<Room>().map(|r| r.0).unwrap_or_else(|| ctx.terrain().bounds());
-    open_cells(ctx, area)
+    open_cells(ctx, walkable, bridged, area)
 }
 
 /// One of `cells`, drawn from the chain's stream for the start, as the
@@ -297,7 +295,7 @@ impl<C: BuildContext> Pass<C> for RandomStart {
         Phase::Exits
     }
     fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
-        let cells = start_cells(ctx);
+        let cells = start_cells(ctx, &ctx.tiles().tables().walkable, &bridged(ctx));
         emit_start(ctx, &cells)
     }
 }
@@ -309,7 +307,8 @@ impl<C: BuildContext> Pass<C> for RandomStart {
 /// drawn from, would stand it beside the arrival. So the start is drawn
 /// from the first room, in the order they were emitted, with an open cell
 /// that clear of every [`Stamped`] bounds, and stands in a room as the
-/// plain start does. Where no cell anywhere is that clear, it is
+/// plain start does, and never on a [`Bridge`], as the plain start never
+/// is. Where no cell anywhere is that clear, it is
 /// [`RandomStart`]'s own pick, from the same stream: a start closer than
 /// a game hoped is a worse map, and a chain that failed over it would be
 /// no map at all.
@@ -334,26 +333,73 @@ impl<C: BuildContext> Pass<C> for ClearStart {
         if areas.is_empty() {
             areas.push(ctx.terrain().bounds());
         }
-        let cells = areas.into_iter().map(|area| open_cells(ctx, area).into_iter().filter(clear).collect::<Vec<_>>()).find(|cells| !cells.is_empty());
-        let cells = cells.unwrap_or_else(|| start_cells(ctx));
+        let (walkable, bridged) = (ctx.tiles().tables().walkable, bridged(ctx));
+        let cells = areas
+            .into_iter()
+            .map(|area| open_cells(ctx, &walkable, &bridged, area).into_iter().filter(clear).collect::<Vec<_>>())
+            .find(|cells| !cells.is_empty());
+        let cells = cells.unwrap_or_else(|| start_cells(ctx, &walkable, &bridged));
         emit_start(ctx, &cells)
     }
 }
 
-/// Floods as a walker who opens doors does: a cell counts as open when the
+/// The one rule a walker who opens doors goes by: a cell is open when the
 /// registry marks it passable, even where it is not walkable this moment,
 /// because a corridor through a shut door still joins the rooms either
-/// side of it. Only [`FarthestExit`] and the passes that must agree with
-/// it, through [`walk_through_doors`], read terrain this way; everything
-/// that moves a body during play still asks a
-/// [`TerrainView`](rl_grid::TerrainView), which stops at a shut door as it
-/// should.
+/// side of it, and when it is no cell of an
+/// [`Opening`](crate::accrete::Opening) joined locked or sealed, which no
+/// walker gets through, whatever tile it was laid as.
+///
+/// [`FarthestExit`] draws the way down by it, through
+/// [`walk_through_doors`], and [`Survey`](crate::survey::Survey) and
+/// [`OpenLoops`](crate::loops::OpenLoops) count their four-way steps by
+/// it, so the route the survey measures and the detour a loop is cut for
+/// are walked as the exit was. A pass that must agree with the exit asks
+/// this rather than a rule of its own that could disagree with it about a
+/// door or a lock. Everything that moves a body during play still asks a
+/// [`TerrainView`](rl_grid::TerrainView), which stops at a shut door as
+/// it should.
+pub(crate) struct DoorWalk {
+    passable: Vec<bool>,
+    locks: BitGrid,
+}
+
+impl DoorWalk {
+    /// The rule over `ctx` as it stands. With `locks_shut`, every lock and
+    /// seal is shut; without it every one is taken as opened, for a pass
+    /// asking what is reached once nothing is shut.
+    pub(crate) fn new<C: BuildContext>(ctx: &C, locks_shut: bool) -> Self {
+        let locks = if locks_shut { lock_cells(ctx) } else { BitGrid::new(ctx.terrain().width(), ctx.terrain().height()) };
+        DoorWalk { passable: ctx.tiles().tables().passable, locks }
+    }
+
+    /// Whether a walker who opens doors, and never a lock, gets through
+    /// `p` of `terrain`. The terrain is a parameter so a pass changing it
+    /// as it goes reads the rule over what it has built so far.
+    pub(crate) fn open(&self, terrain: &Terrain, p: Point) -> bool {
+        terrain.get(p).is_some_and(|t| self.passable[t.index()]) && !self.locks.contains(p)
+    }
+}
+
+/// Every cell of an [`Opening`](crate::accrete::Opening) joined locked or
+/// sealed: the cells [`DoorWalk`] never walks through, and the ones a
+/// pass taking the passable cells away from itself takes away.
+pub(crate) fn lock_cells<C: BuildContext>(ctx: &C) -> BitGrid {
+    use crate::accrete::{Join, Opening};
+    let mut cells = BitGrid::new(ctx.terrain().width(), ctx.terrain().height());
+    for o in ctx.outputs().iter::<Opening>().filter(|o| matches!(o.join, Join::Locked(_) | Join::Sealed)) {
+        for c in &o.cells {
+            cells.insert(*c);
+        }
+    }
+    cells
+}
+
+/// [`DoorWalk`] as a [`CostSource`], each open cell at its tile's cost.
 struct ThroughDoors<'a> {
     terrain: &'a Terrain,
-    tables: &'a TileTables,
-    /// Every cell of an opening joined locked or sealed, which no walker
-    /// gets through, whatever tile it was laid as.
-    shut: BitGrid,
+    move_cost: Vec<u32>,
+    rule: DoorWalk,
 }
 
 impl Grid2D for ThroughDoors<'_> {
@@ -367,28 +413,16 @@ impl Grid2D for ThroughDoors<'_> {
 
 impl CostSource for ThroughDoors<'_> {
     fn cost_idx(&self, idx: usize) -> Option<u32> {
-        let id = self.terrain.get_idx(idx).index();
-        (self.tables.passable[id] && !self.shut.contains(self.idx_point(idx))).then(|| self.tables.move_cost[id])
+        self.rule.open(self.terrain, self.idx_point(idx)).then(|| self.move_cost[self.terrain.get_idx(idx).index()])
     }
 }
 
-/// The walk [`FarthestExit`] draws the way down by, from `from`: doors
-/// opened on the way, and, with `locks_shut`, never through an
-/// [`Opening`](crate::accrete::Opening) joined locked or sealed. Without
-/// it every lock and seal is taken as opened, for a pass asking what is
-/// reached once nothing is shut. A pass that must not change what the
-/// exit was drawn by asks this, rather than a walk of its own that could
-/// disagree with it about a door.
+/// The walk [`FarthestExit`] draws the way down by, from `from`, by
+/// [`DoorWalk`]: doors opened on the way, and, with `locks_shut`, never
+/// through a lock or a seal. Without it every lock and seal is taken as
+/// opened, for a pass asking what is reached once nothing is shut.
 pub(crate) fn walk_through_doors<C: BuildContext>(ctx: &C, from: Point, locks_shut: bool) -> DijkstraMap {
-    let tables = ctx.tiles().tables();
-    let mut shut = BitGrid::new(ctx.terrain().width(), ctx.terrain().height());
-    let locked = |o: &&crate::accrete::Opening| matches!(o.join, crate::accrete::Join::Locked(_) | crate::accrete::Join::Sealed);
-    for o in ctx.outputs().iter::<crate::accrete::Opening>().filter(|o| locks_shut && locked(o)) {
-        for c in &o.cells {
-            shut.insert(*c);
-        }
-    }
-    let through_doors = ThroughDoors { terrain: ctx.terrain(), tables: &tables, shut };
+    let through_doors = ThroughDoors { terrain: ctx.terrain(), move_cost: ctx.tiles().tables().move_cost, rule: DoorWalk::new(ctx, locks_shut) };
     let mut map = DijkstraMap::covering(&through_doors);
     map.build(&through_doors, [from], PathRules::default());
     map
@@ -748,9 +782,7 @@ mod tests {
         Chain::new().then(Rooms { floor, ..Default::default() }).then(Doors { door }).then(RandomStart).run(&mut c, RunSeed(4)).unwrap();
         let start = c.outputs().first::<StartPoint>().unwrap().0;
         let tables = c.tiles().tables();
-        let through = ThroughDoors { terrain: c.terrain(), tables: &tables, shut: BitGrid::new(60, 40) };
-        let mut walk = DijkstraMap::covering(&through);
-        walk.build(&through, [start], PathRules::default());
+        let walk = walk_through_doors(&c, start, true);
         let far = walk.iter().filter(|(p, _)| tables.walkable[c.terrain().get(*p).unwrap().index()]).map(|(_, v)| v).max().unwrap();
         let mut landed = std::collections::BTreeSet::new();
         for seed in 0..40 {

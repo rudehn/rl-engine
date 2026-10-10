@@ -8,12 +8,10 @@
 
 use rl_core::{Direction, Grid2D, Point};
 
-use rl_grid::BitGrid;
-
-use crate::accrete::{Area, Join, Opening};
+use crate::accrete::{Area, Opening};
 use crate::chain::{BuildError, Pass, Phase};
 use crate::context::BuildContext;
-use crate::dungeon::ExitPoint;
+use crate::dungeon::{DoorWalk, ExitPoint};
 use crate::passes::StartPoint;
 use crate::walk::{UNREACHED, steps_from};
 
@@ -45,7 +43,10 @@ pub struct Surveyed {
     /// The independent loops among areas and openings: openings less
     /// areas plus one.
     pub loops: u32,
-    /// The share of the map that can be walked on, in a hundred.
+    /// The share of the map that can be walked on as it stands, in a
+    /// hundred: floor, read as `walkable`, so a shut door is not counted
+    /// though the route walks through it. It is the floor a recipe's
+    /// growth aimed at a share of, not the cells the route may cross.
     pub open_pct: u32,
     /// Orthogonal steps from the start to the exit; `None` with no exit.
     pub route: Option<u32>,
@@ -79,20 +80,14 @@ impl<C: BuildContext> Pass<C> for Survey {
         if areas.is_empty() {
             return Err(err("no area emitted before it"));
         }
-        // Walked as the exit was drawn: through a shut door, which is
-        // passable though not walkable this moment, and never through an
-        // opening joined locked or sealed. Read as walkable, a door game's
-        // route stopped at the first door it met.
-        let passable = ctx.tiles().tables().passable;
+        // Walked as the exit was drawn, by its rule: through a shut door,
+        // which is passable though not walkable this moment, and never
+        // through a lock. Read as walkable, a door game's route stopped at
+        // the first door it met.
+        let rule = DoorWalk::new(ctx, true);
         let bounds = ctx.terrain().bounds();
         let (w, h) = (bounds.width, bounds.height);
-        let mut shut = BitGrid::new(w, h);
-        for o in openings.iter().filter(|o| matches!(o.join, Join::Locked(_) | Join::Sealed)) {
-            for c in &o.cells {
-                shut.insert(*c);
-            }
-        }
-        let open = |p: Point| ctx.terrain().get(p).is_some_and(|t| passable[t.index()]) && !shut.contains(p);
+        let open = |p: Point| rule.open(ctx.terrain(), p);
 
         // The shortest route, walked down from the start to the exit.
         let mut route_cells = vec![start];
@@ -129,7 +124,11 @@ impl<C: BuildContext> Pass<C> for Survey {
             })
             .collect();
 
-        let open_cells = bounds.cells().filter(|p| open(*p)).count() as u32;
+        // The share is of the floor as it stands, read as walkable and not
+        // by the route's rule: a shut door is not floor, and a lock is
+        // counted by its tile as every other cell is.
+        let walkable = ctx.tiles().tables().walkable;
+        let open_cells = bounds.cells().filter(|p| ctx.terrain().get(*p).is_some_and(|t| walkable[t.index()])).count() as u32;
         let loops = (openings.len() as u32 + 1).saturating_sub(areas.len() as u32);
         let surveyed = Surveyed { areas: facts, loops, open_pct: open_cells * 100 / (w * h) as u32, route };
         ctx.emit(surveyed);

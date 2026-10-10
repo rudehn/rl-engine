@@ -29,6 +29,7 @@ use rl_grid::{BitGrid, TileId};
 use crate::accrete::{Area, Join, Opening, bounds_of, largest_rect};
 use crate::chain::{BuildError, Pass, Phase};
 use crate::context::BuildContext;
+use crate::dungeon::lock_cells;
 use crate::prefab::Stamped;
 use crate::walk::{UNREACHED, steps_between, walks_under};
 
@@ -201,14 +202,12 @@ fn shuts(o: &Opening) -> bool {
     matches!(o.join, Join::Locked(_) | Join::Sealed)
 }
 
-/// Every cell a walker who opens doors gets to: passable, and not an
-/// opening joined locked or sealed.
+/// Every cell a walker who opens doors gets to: passable, and none of the
+/// [`lock_cells`] the exit's own rule never walks through.
 fn ways<C: BuildContext>(ctx: &C, passable: &BitGrid) -> BitGrid {
     let mut open = passable.clone();
-    for o in ctx.outputs().iter::<Opening>().filter(|o| shuts(o)) {
-        for c in &o.cells {
-            open.set(*c, false);
-        }
+    for c in lock_cells(ctx).iter() {
+        open.set(c, false);
     }
     open
 }
@@ -1227,6 +1226,34 @@ mod tests {
             }
         }
         assert!(laid > 0, "some lake was laid in a big area");
+    }
+
+    /// A lake that may cut, kept within a shape, starts only in an area of
+    /// that shape and still spreads from there into what it parts: kept to
+    /// a shape no area is drawn by, nothing is laid; kept to "big", every
+    /// lake reaches into a big area and some reach past one. Each place is
+    /// a first attempt, so the dry place is the same one the lakes are laid
+    /// over.
+    #[test]
+    fn a_lake_that_may_cut_within_a_shape_starts_there_and_spreads_past_it() {
+        let (mut laid, mut past) = (0, 0);
+        for s in 0..16 {
+            let nowhere = grown(s, SIZES[0], false, |c, r| c.then(Lakes { within: vec!["drawn by none".into()], ..islands(r) }));
+            assert_eq!(nowhere.outputs().iter::<Lake>().count(), 0, "seed {s}: a lake started in no area of the shape named");
+            let (Ok(dry), Ok(within)) =
+                (attempt(s, SIZES[0], false, 1, |c, _| c), attempt(s, SIZES[0], false, 1, |c, r| c.then(Lakes { within: vec!["big".into()], ..islands(r) })))
+            else {
+                continue;
+            };
+            let big: BTreeSet<Point> = dry.outputs().iter::<Area>().filter(|a| a.shape == "big").flat_map(|a| a.cells.iter().copied()).collect();
+            for lake in within.outputs().iter::<Lake>() {
+                laid += 1;
+                assert!(lake.cells.iter().any(|p| big.contains(p)), "seed {s}: a lake that touches no big area");
+                past += usize::from(lake.cells.iter().any(|p| !big.contains(p)));
+            }
+        }
+        assert!(laid > 0, "some lake was laid in a big area");
+        assert!(past > 0, "no lake that may cut spread past the big area it started in");
     }
 
     /// A bridge is a way over a lake, not somewhere to arrive or leave:
