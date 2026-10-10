@@ -23,6 +23,7 @@ Pushing a tag publishes its release page from its section here, through `scripts
   The rail's health wash reads its tone from `health_tone`, the vitals' own rule, where it kept a copy of the thresholds; the tones are the same.
 
 - An ending with more to say than the menu's rectangle holds keeps every choice in it and cuts its own words from the end instead: a long enough list of sections used to push Quit under the frame, where the cursor could still reach it and nobody could see it.
+  A cut ending ends on a muted ellipsis, keeps its empty row over the choices, and never keeps a section's heading without one of its lines.
   Nothing to change in a game; one that wants all its words on the screen gives the menu a taller rectangle, as before.
 
 - The nearby rail's health wash is a fifth of the health's tone where it was over a third: every unhurt row read as a slab of the good tone, an ally's name in that same tone read green on green, and the row picked out was barely told from the rest.
