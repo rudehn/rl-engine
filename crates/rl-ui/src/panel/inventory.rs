@@ -104,6 +104,10 @@ pub struct InventoryLayout {
     pub what: String,
     /// Shown in place of rows when there are none.
     pub empty: String,
+    /// What the close key is said to do while the bag is choosing, a thing
+    /// for a use or for an offer: backing out, which takes nothing up, so
+    /// the footer says so rather than naming a bare key.
+    pub never_mind: String,
 }
 
 /// Which row the cursor is on, and what the bag is choosing for. The
@@ -224,7 +228,7 @@ pub struct InventoryPanel(InventoryLayout);
 impl InventoryPanel {
     /// The bag in `rect`.
     pub fn new(rect: Rect) -> Self {
-        Self(InventoryLayout { rect, title: "Inventory".into(), what: "inventory".into(), empty: "Nothing.".into() })
+        Self(InventoryLayout { rect, title: "Inventory".into(), what: "inventory".into(), empty: "Nothing.".into(), never_mind: "never mind".into() })
     }
 
     /// Sets what the top border says.
@@ -243,6 +247,13 @@ impl InventoryPanel {
     /// Sets what an empty bag says.
     pub fn empty(mut self, text: impl Into<String>) -> Self {
         self.0.empty = text.into();
+        self
+    }
+
+    /// Sets what the close key is said to do while the bag is choosing,
+    /// `never mind` by default, the offers screen's words.
+    pub fn never_mind(mut self, words: impl Into<String>) -> Self {
+        self.0.never_mind = words.into();
         self
     }
 }
@@ -638,7 +649,7 @@ pub fn draw_inventory(mut terminal: ResMut<Terminal>, mut menu: ResMut<Inventory
             let rows: Vec<&ItemRow> = choices.iter().filter_map(|on| view.rows.iter().find(|r| r.entity == *on)).collect();
             let at = selected.min(rows.len().saturating_sub(1));
             choose_at(&mut menu, at);
-            (prompt, rows, at, format!("{confirm} choose \u{2022} {close}"))
+            (prompt, rows, at, format!("{confirm} choose \u{2022} {close} {}", layout.never_mind))
         }
         None => {
             menu.selected = menu.selected.min(view.rows.len().saturating_sub(1));
@@ -1222,7 +1233,7 @@ mod tests {
         stage.press(KeyCode::KeyU);
         assert!(stage.row(0).contains(" Polish which? "), "under the trigger's prompt: {:?}", stage.row(0));
         assert!(inside(&stage, 1).starts_with("coat") && inside(&stage, 2) == "boots", "only what it may be made on: {:?}", stage.rows());
-        assert!(stage.row(13).contains("enter choose \u{2022} esc"), "{:?}", stage.row(13));
+        assert!(stage.row(13).contains("enter choose \u{2022} esc never mind"), "the close key says what it does: {:?}", stage.row(13));
         assert!(stage.app.world().resource::<Modals>().any_open(), "still up, choosing");
 
         stage.press(KeyCode::ArrowDown);
@@ -1289,8 +1300,12 @@ mod tests {
     /// and a polish, in that order. Returns the stage, Mirela, the stone
     /// and the polish.
     fn giving() -> (Stage, Entity, Entity, Entity) {
-        let plugins =
-            (rl_bevy::PropsPlugin, crate::OffersPanel::new(Rect::new(0, 0, 52, 14)), crate::InteractKey, InventoryPanel::new(Rect::new(0, 0, 52, 14)));
+        let plugins = (
+            rl_bevy::PropsPlugin,
+            crate::OffersPanel::new(Rect::new(0, 0, 52, 14)),
+            crate::InteractKey,
+            InventoryPanel::new(Rect::new(0, 0, 52, 14)).never_mind("keep it"),
+        );
         let mut stage = Stage::new_with(plugins, |app| {
             app.insert_resource(rl_bevy::Seed(rl_bevy::testing::TEST_SEED));
             app.add_verb("give");
@@ -1343,6 +1358,7 @@ mod tests {
         };
         assert_eq!(bag(&stage), (true, false), "taken up there, the bag in its place");
         assert!(stage.row(0).contains(" Hand over which? "), "under the offer's prompt: {:?}", stage.row(0));
+        assert!(stage.row(13).contains("enter choose \u{2022} esc keep it"), "the close key in the game's words: {:?}", stage.row(13));
         assert_eq!((inside(&stage, 1), inside(&stage, 2)), ("stone".to_string(), "polish".to_string()), "among what the game names: {:#?}", stage.rows());
         assert_eq!(taken(&stage), before, "nothing written, no time passed");
 

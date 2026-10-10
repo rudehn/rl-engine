@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The bag's footer while it chooses, a thing for a use or for an offer, says what the close key does, `esc never mind` as the offers screen says it, where it named a bare `esc`.
+  The words are the new `InventoryLayout::never_mind`, `never mind` by default and replaced with `InventoryPanel::never_mind(words)`; a game that built an `InventoryLayout` with a struct literal adds it.
+
 - A body can be named one way for a kind and another for someone with a proper name: `RemainsNaming` is two templates, `kind` and `proper`, made by `RemainsNaming::new(template)` for both and `.proper(template)` for the second, chosen by the new `rl_core::noun::is_proper`, so a game's "{what} corpse" need not make "Brenna corpse" of a named one.
   A proper name is one that starts with a capital, or with `the` and then a capital, so a title such as "the Widow" lies as "the corpse of the Widow" and "the stairs" is still a kind.
   `RemainsPlugin::naming` takes either a template, as before, or a `RemainsNaming`; a game that built `RemainsNaming("...".into())` writes `RemainsNaming::new("...")`, and one that read its `.0` reads `.kind`.
