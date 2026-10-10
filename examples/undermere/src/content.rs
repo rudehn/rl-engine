@@ -751,7 +751,7 @@ mod tests {
         app.world_mut().write_message(Intent::new(me, Bump(Direction::East)));
         settle(&mut app);
         assert_eq!(app.world().get::<Health>(keeper).map(|h| h.current), Some(20), "talked to, not struck");
-        assert_eq!(app.world().resource::<Heard>().0, vec![Interacted { actor: me, target: keeper, verb: talk }], "the walk key talked to them");
+        assert_eq!(app.world().resource::<Heard>().0, vec![Interacted { actor: me, target: keeper, verb: talk, thing: None }], "the walk key talked to them");
     }
 
     /// A file's colour and flicker in `0..=1` become the engine's bytes,

@@ -267,7 +267,7 @@ mod tests {
         // player's first turn precedes every monster's, never that nothing
         // moves before this one action does.
         let before = crate::testing::clock(&app);
-        app.world_mut().write_message(Intent::new(player, Interact { target: offer.target, verb: offer.verb }));
+        app.world_mut().write_message(Intent::new(player, Interact { target: offer.target, verb: offer.verb, thing: None }));
         crate::testing::settle(&mut app);
         assert_eq!(crate::testing::clock(&app) - before, 300, "a charge takes three turns to set");
         assert!(crate::testing::quest_done(&app, "first_charge"));

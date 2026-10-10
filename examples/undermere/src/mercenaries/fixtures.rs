@@ -35,10 +35,16 @@ pub(super) fn beside(app: &mut App, who: Entity) -> Point {
 /// Stands the adventurer beside `who` and takes up `verb` on it, as the
 /// offers screen's choice does.
 pub(super) fn take(app: &mut App, me: Entity, who: Entity, verb: &str) {
+    take_with(app, me, who, verb, None);
+}
+
+/// [`take`], with the thing the bag chose for an offer that chooses
+/// first, as a pick in the bag takes it up.
+pub(super) fn take_with(app: &mut App, me: Entity, who: Entity, verb: &str, thing: Option<Entity>) {
     let cell = beside(app, who);
     stand_on(app, me, cell);
     let verb = app.world().resource::<Verbs>().get(verb).expect("a verb");
-    app.world_mut().write_message(Intent::new(me, Interact { target: who, verb }));
+    app.world_mut().write_message(Intent::new(me, Interact { target: who, verb, thing }));
     settle(app);
 }
 

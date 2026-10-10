@@ -41,9 +41,7 @@ pub use container::{CONTAINER_MODAL, ContainerKeys, ContainerLayout, ContainerMe
 pub use controls::{CONTROLS_MODAL, ControlsLayout, ControlsPanel, ControlsScreen, controls_modal};
 pub use gear::GearPanel;
 pub use inspect::InspectPanel;
-pub use inventory::{
-    AskForThing, Asked, Choosing, ChoosingFor, INVENTORY_MODAL, InventoryKeys, InventoryLayout, InventoryMenu, InventoryPanel, ThingChosen, inventory_modal,
-};
+pub use inventory::{Choosing, ChoosingFor, INVENTORY_MODAL, InventoryKeys, InventoryLayout, InventoryMenu, InventoryPanel, OfferChoice, inventory_modal};
 pub use log::LogPanel;
 pub use nearby::{ActivityWords, AlertWords, NearbyPanel};
 pub use offers::{Confirming, OFFERS_MODAL, OffersLayout, OffersMenu, OffersPanel, offers_modal};

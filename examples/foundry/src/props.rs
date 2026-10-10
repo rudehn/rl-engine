@@ -420,7 +420,7 @@ mod tests {
         };
         let offer = offer.expect("standing beside it, the locker offers to open");
         assert!(offer.refused.is_none(), "with a card in the bag, nothing refuses it");
-        app.world_mut().write_message(Intent::new(player, Interact { target: locker, verb: Verbs::OPEN }));
+        app.world_mut().write_message(Intent::new(player, Interact { target: locker, verb: Verbs::OPEN, thing: None }));
         crate::testing::settle(&mut app);
 
         let left = app.world().get::<Stack>(card).map(|s| s.count);

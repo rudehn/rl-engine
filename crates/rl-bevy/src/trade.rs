@@ -659,7 +659,7 @@ mod tests {
     fn taking_up_the_trade_offer_opens_a_trade_and_walking_out_of_reach_closes_it() {
         let mut rig = Rig::new();
         let trade = rig.app.world().resource::<Verbs>().get(TRADE).unwrap();
-        rig.app.world_mut().write_message(Intent::new(rig.player, Interact { target: rig.trader, verb: trade }));
+        rig.app.world_mut().write_message(Intent::new(rig.player, Interact { target: rig.trader, verb: trade, thing: None }));
         rig.app.update();
         assert_eq!(rig.app.world().resource::<Trading>().open(), Some(Parties { customer: rig.player, trader: rig.trader }), "a trade is open");
         assert_eq!(rig.now(), 100, "for the offer's time");

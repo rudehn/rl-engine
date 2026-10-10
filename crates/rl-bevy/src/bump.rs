@@ -177,7 +177,7 @@ pub fn redirect_bumps(mut intents: MessageReader<Intent<Bump>>, mut resolution: 
             // follows.
             match way.offers_at(actor, target) {
                 Offered::One(offer) => {
-                    out.interacts.write(Intent::new(actor, Interact { target: offer.target, verb: offer.verb }));
+                    out.interacts.write(Intent::new(actor, Interact { target: offer.target, verb: offer.verb, thing: None }));
                     continue;
                 }
                 Offered::Several(what) => {
@@ -232,7 +232,8 @@ impl Way<'_, '_> {
     /// one it refuses, is a question or an explanation, which is a screen's;
     /// and so is one with a price, since spending currency is a choice a
     /// movement key must never make by walking into someone, and one that
-    /// asks first, since a movement key cannot answer.
+    /// asks first, a yes or one of the actor's things, since a movement key
+    /// cannot answer.
     fn offers_at(&self, actor: Entity, target: Point) -> Offered {
         let Some(offered) = self.offered.as_deref() else { return Offered::None };
         let mine = offered.for_actor(actor);
@@ -492,7 +493,7 @@ mod tests {
         let (start, before) = (rig.at(), rig.now());
         rig.bump(Direction::East);
         let heard = rig.app.world().resource::<Heard>();
-        assert_eq!(heard.2, vec![Interacted { actor: rig.player, target: captive, verb: free }], "the walk key freed the captive");
+        assert_eq!(heard.2, vec![Interacted { actor: rig.player, target: captive, verb: free, thing: None }], "the walk key freed the captive");
         assert!(heard.0.is_empty(), "and nothing was refused");
         assert_eq!((rig.at(), rig.now()), (start, before + 200), "for what the offer costs, without a step");
     }
@@ -582,24 +583,29 @@ mod tests {
         rig.bump(Direction::East);
         assert_eq!(
             rig.app.world().resource::<Heard>().2,
-            vec![Interacted { actor: rig.player, target: captive, verb: free }],
+            vec![Interacted { actor: rig.player, target: captive, verb: free, thing: None }],
             "unpriced, the walk key takes it up"
         );
     }
 
-    /// Walking into someone whose one offer asks first comes to a question
-    /// for a screen, never to the offer: nothing is taken up, and the step
-    /// and the turn are kept.
+    /// Walking into someone whose one offer asks first, a yes or a thing,
+    /// comes to a question for a screen, never to the offer: nothing is
+    /// taken up, and the step and the turn are kept.
     #[test]
-    fn bumping_someone_whose_one_offer_asks_first_asks_rather_than_acts() {
-        let mut rig = Rig::new();
-        let free = rig.verb("free");
-        let captive = rig.beside(None, vec![crate::props::Offering::new(free, 200).asking("Free them?")]);
-        let (start, before) = (rig.at(), rig.now());
-        rig.bump(Direction::East);
-        let heard = rig.app.world().resource::<Heard>();
-        assert_eq!(heard.0, vec![Bumped { actor: rig.player, into: captive, offers: true }], "a question for a screen");
-        assert!(heard.2.is_empty(), "and nothing was taken up");
-        assert_eq!((rig.at(), rig.now()), (start, before), "for nothing");
+    fn bumping_someone_whose_one_offer_asks_or_chooses_first_asks_rather_than_acts() {
+        for chooses in [false, true] {
+            let mut rig = Rig::new();
+            let free = rig.verb("free");
+            let among = rig.app.register_system(|_: In<crate::props::Chooser>| Vec::new());
+            let offer = crate::props::Offering::new(free, 200);
+            let offer = if chooses { offer.choosing("Free them with which?", among) } else { offer.asking("Free them?") };
+            let captive = rig.beside(None, vec![offer]);
+            let (start, before) = (rig.at(), rig.now());
+            rig.bump(Direction::East);
+            let heard = rig.app.world().resource::<Heard>();
+            assert_eq!(heard.0, vec![Bumped { actor: rig.player, into: captive, offers: true }], "chooses {chooses}: a question for a screen");
+            assert!(heard.2.is_empty(), "chooses {chooses}: and nothing was taken up");
+            assert_eq!((rig.at(), rig.now()), (start, before), "chooses {chooses}: for nothing");
+        }
     }
 }

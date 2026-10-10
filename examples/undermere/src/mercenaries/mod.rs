@@ -48,9 +48,10 @@
 //! use and counts gear at what it seems worth, by [`SeenWorth`]. A kind it
 //! uses where the adventurer sees it, by [`Witnessed`], is learned as if
 //! they had used it, and a curse it puts on there is seen to cling. `give`
-//! asks the pack which thing to hand over, through the engine's
-//! [`AskForThing`], and [`hand_over`] moves the one chosen; [`PutOnBetter`]
-//! puts on whatever in its pack it is better off wearing.
+//! is the engine's choosing offer: the pack asks which thing to hand over
+//! before anything is spent, among what [`give_choices`] names, and
+//! [`answer_give`] moves the one chosen; [`PutOnBetter`] puts on whatever
+//! in its pack it is better off wearing.
 //!
 //! [`DISMISS`] asks first, as the engine's asking offer, and costs nothing
 //! until the yes, which [`answer_dismiss`] answers by [`dismiss`]: the

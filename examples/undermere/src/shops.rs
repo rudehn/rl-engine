@@ -941,7 +941,7 @@ mod tests {
         let cell = beside(app, keeper).first().copied().expect("somewhere to stand beside the keeper");
         stand_on(app, me, cell);
         let trade = app.world().resource::<Verbs>().get(TRADE).expect("TradePlugin declares it");
-        app.world_mut().write_message(Intent::new(me, Interact { target: keeper, verb: trade }));
+        app.world_mut().write_message(Intent::new(me, Interact { target: keeper, verb: trade, thing: None }));
         settle(app);
         assert!(app.world().resource::<Trading>().open().is_some(), "the trade opened");
     }

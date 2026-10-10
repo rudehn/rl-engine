@@ -8,7 +8,9 @@
 //! It takes the one thing on offer. Where several are offered it asks,
 //! by opening the offers screen, if the game added one; a game with no
 //! such screen gets nothing rather than a guess. The one thing on offer
-//! that asks first is asked about on that screen, its question up at once.
+//! that asks first is asked about on that screen, its question up at once,
+//! and the one that chooses first opens the bag choosing for it, as
+//! [`InventoryPanel`](crate::InventoryPanel) says.
 //!
 //! Opt-in with [`InteractKey`], beside the panels: a game with no props
 //! adds nothing and the key does not exist.
@@ -124,7 +126,7 @@ pub fn interact_key(
     // Before any early return, so an ask from a frame the key was not
     // pressed is never mistaken for one from a frame it was.
     let took_way = way.by(holding.single().ok());
-    let Screens { modals, menu } = &mut screens;
+    let Screens { modals, menu, commands } = &mut screens;
     if took_way || modals.any_open() || !binds.interact.just_pressed(keys.input()) {
         return;
     }
@@ -132,9 +134,18 @@ pub fn interact_key(
     let mut open = offered.open_to(player);
     let Some(offer) = open.next().cloned() else { return };
     let lone = open.next().is_none();
-    if lone && offer.asks.is_none() {
-        intents.write(Intent::new(player, Interact { target: offer.target, verb: offer.verb }));
-        return;
+    match (lone, &offer.asks) {
+        (true, None) => {
+            intents.write(Intent::new(player, Interact { target: offer.target, verb: offer.verb, thing: None }));
+            return;
+        }
+        // Chosen for in the bag, with no screen between: the one offer
+        // needs no question but which thing.
+        (true, Some(AsksFirst::Thing { prompt, among })) => {
+            crate::panel::inventory::choose_for_offer(commands, player, offer.target, offer.verb, prompt.clone(), *among);
+            return;
+        }
+        _ => {}
     }
     // Several, or one that asks first: a question, asked by the screen
     // that exists to ask it, on the lone offer's own question at once. A
@@ -146,12 +157,14 @@ pub fn interact_key(
     }
 }
 
-/// The screens the interact key opens: the stack, and the offers screen's
-/// own state, for a lone offer that asks first, when the game added it.
+/// The screens the interact key opens: the stack, the offers screen's own
+/// state, for a lone offer that asks first, when the game added it, and
+/// the commands that open the bag for a lone offer that chooses first.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Screens<'w> {
+pub struct Screens<'w, 's> {
     modals: ResMut<'w, Modals>,
     menu: Option<ResMut<'w, OffersMenu>>,
+    commands: Commands<'w, 's>,
 }
 
 #[cfg(test)]

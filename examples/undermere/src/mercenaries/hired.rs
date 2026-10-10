@@ -41,12 +41,15 @@ pub struct Mercenary {
 
 /// What a hired mercenary called `name` offers the adventurer: [`GIVE`],
 /// answered by [`answer_give`], then [`DISMISS`], answered by
-/// [`answer_dismiss`]. Dismissing asks first, in its name, since it cannot
-/// be taken back.
-pub fn hired_offers(verbs: &Verbs, name: &str) -> Offers {
+/// [`answer_dismiss`]. Giving chooses the thing first, in its name, among
+/// what [`give_choices`] names, so backing out of the pack costs nothing;
+/// dismissing asks first, in its name, since it cannot be taken back.
+pub fn hired_offers(world: &World, name: &str) -> Offers {
+    let verbs = world.resource::<Verbs>();
+    let among = world.resource::<GiveAmong>().0;
     let question = format!("Dismiss {name}? The fee is not given back, and {name} sets down everything you gave.");
     Offers(vec![
-        Offering::new(verbs.get(GIVE).expect("UndermerePlugin declares give"), GIVE_TIME),
+        Offering::new(verbs.get(GIVE).expect("UndermerePlugin declares give"), GIVE_TIME).choosing(format!("Give {name} which?"), among),
         Offering::new(verbs.get(DISMISS).expect("UndermerePlugin declares dismiss"), DISMISS_TIME).asking(question),
     ])
 }
@@ -65,7 +68,7 @@ pub fn hire(world: &mut World, candidate: Entity, adventurer: Entity) {
     let name = world.get::<Name>(candidate).map_or_else(String::new, |n| n.as_str().to_string());
     spend_fee(world, candidate);
     befriend(world, candidate);
-    let offers = hired_offers(world.resource::<Verbs>(), &name);
+    let offers = hired_offers(world, &name);
     let hired = Mercenary { name, fee, order: Order::Follow };
     world.entity_mut(candidate).remove::<Candidate>().insert((Leader(adventurer), hired, offers));
     obey(world, candidate, Order::Follow);
@@ -83,7 +86,7 @@ pub fn hire(world: &mut World, candidate: Entity, adventurer: Entity) {
 /// this, so the post [`obey`] gives one on hold here, where the restore
 /// first stands it, is replaced by the one it held.
 pub fn serve_again(world: &mut World, mercenary: Entity, hired: Mercenary) {
-    let offers = hired_offers(world.resource::<Verbs>(), &hired.name);
+    let offers = hired_offers(world, &hired.name);
     let order = hired.order;
     world.entity_mut(mercenary).insert((Name::new(hired.name.clone()), hired, offers));
     obey(world, mercenary, order);

@@ -763,7 +763,7 @@ mod tests {
         let coins = |app: &App| -> u32 { gold(app).iter().map(|i| app.world().get::<Stack>(*i).map_or(1, |s| s.count)).sum() };
         let found = |app: &App| app.world().resource::<Tally>().gold_found;
         let things = |app: &App| app.world().resource::<Tally>().items_found;
-        app.world_mut().write_message(Intent::new(me, Interact { target: trader, verb: trade }));
+        app.world_mut().write_message(Intent::new(me, Interact { target: trader, verb: trade, thing: None }));
         settle(&mut app);
         let before = coins(&app);
         app.world_mut().write_message(Sell { customer: me, trader, item: dagger, count: 1 });

@@ -326,7 +326,7 @@ mod tests {
         let cell = beside(app, priest);
         stand_on(app, me, cell);
         let verb = app.world().resource::<Verbs>().get(rite).expect("the rite is a verb");
-        app.world_mut().write_message(Intent::new(me, Interact { target: priest, verb }));
+        app.world_mut().write_message(Intent::new(me, Interact { target: priest, verb, thing: None }));
         settle(app);
     }
 

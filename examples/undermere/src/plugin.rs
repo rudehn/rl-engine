@@ -313,12 +313,13 @@ impl Plugin for UndermerePlugin {
         // What a hired mercenary knows of what it carries and sees: its own
         // kit whole, and anything else only as the adventurer knows it; a
         // thing it is better off wearing put on by the engine's own rule;
-        // and a thing handed to it moved across once the bag has chosen it.
-        app.add_message::<AskForThing>().add_message::<ThingChosen>().add_choice::<crate::mercenaries::PutOn>();
+        // and what `give` chooses among, asked as the offer is taken up.
+        app.add_choice::<crate::mercenaries::PutOn>();
+        let among = app.register_system(crate::mercenaries::give_choices);
+        app.insert_resource(crate::mercenaries::GiveAmong(among));
         app.add_systems(Turn, crate::mercenaries::know_as_the_adventurer_does.in_set(DecideSet::Perceive).after(PerceiveSet::Annotate));
         app.add_systems(Turn, crate::mercenaries::put_on.in_set(ResolveSet::Redirect));
         app.add_systems(Turn, crate::mercenaries::release_own_kit.in_set(CleanupSet::Requeue));
-        app.add_systems(Update, crate::mercenaries::hand_over.after(EngineSet::Input).before(EngineSet::Turns));
         app.add_systems(Turn, crate::mercenaries::keep_hire_offered.in_set(TurnSet::Schedule));
         app.add_systems(Turn, crate::townsfolk::sense_beats.in_set(PerceiveSet::Annotate));
         app.add_systems(Turn, crate::townsfolk::walk_rounds.in_set(TurnSet::Schedule));

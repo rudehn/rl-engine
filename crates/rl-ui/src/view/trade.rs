@@ -214,7 +214,7 @@ mod tests {
     fn open(stage: &mut Stage, trader: Entity) {
         let player = stage.player;
         let trade = stage.app.world().resource::<Verbs>().get(TRADE).expect("declared");
-        stage.app.world_mut().write_message(Interacted { actor: player, target: trader, verb: trade });
+        stage.app.world_mut().write_message(Interacted { actor: player, target: trader, verb: trade, thing: None });
         stage.tick();
     }
 

@@ -637,7 +637,7 @@ fn act(world: &mut World, me: Entity, choice: Choice) {
         Choice::Zap(item, at) => send(world, me, UseItemAt { item, at }),
         Choice::Throw(item, at) => send(world, me, Throw { item, at }),
         Choice::Wear(it) => send(world, me, Equip(it)),
-        Choice::Free(target, verb) => send(world, me, Interact { target, verb }),
+        Choice::Free(target, verb) => send(world, me, Interact { target, verb, thing: None }),
         Choice::Wait => send(world, me, Wait),
     }
 }

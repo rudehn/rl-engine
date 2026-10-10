@@ -1559,7 +1559,12 @@ mod tests {
 
         press(&mut app, KeyCode::Enter);
         undermere::testing::settle(&mut app);
-        assert_eq!(app.world().resource::<Heard>().0, vec![Interacted { actor: me, target: talker, verb: talk }], "Enter talked: {:#?}", written(&app));
+        assert_eq!(
+            app.world().resource::<Heard>().0,
+            vec![Interacted { actor: me, target: talker, verb: talk, thing: None }],
+            "Enter talked: {:#?}",
+            written(&app)
+        );
         assert!(!app.world().resource::<Modals>().any_open(), "and asked nothing: {:#?}", written(&app));
     }
 
@@ -1584,7 +1589,7 @@ mod tests {
         let screen = written(&app);
         assert!(screen.iter().any(|r| r.contains(&format!("Give {name} which?"))), "the pack, choosing: {screen:#?}");
         let choices = match &app.world().resource::<InventoryMenu>().choosing {
-            Some(rl_engine::rl_ui::Choosing::Asked(asked)) => asked.ask.choices.clone(),
+            Some(rl_engine::rl_ui::Choosing::Offer(offer)) => offer.choices.clone(),
             other => panic!("asked: {other:?}"),
         };
         let rows: Vec<Entity> = {
@@ -1611,6 +1616,32 @@ mod tests {
         assert!(screen.iter().any(|r| r.contains("in your pay")), "the pay on the look panel: {screen:#?}");
         assert!(screen.iter().any(|r| r.contains("carries a potion of healing")), "and the thing given: {screen:#?}");
         assert!(!screen.iter().any(|r| r.contains("a sword for hire")), "and no longer for hire: {screen:#?}");
+    }
+
+    /// On the real screen, `give` opens the pack choosing under "Give Name
+    /// which?" before anything is done, and the close key backs out with
+    /// nothing handed over and no turn spent.
+    #[test]
+    fn backing_out_of_give_on_the_real_screen_hands_nothing_over_and_costs_no_turn() {
+        let mut app = on_screen(RunSeed(7));
+        let (me, merc, _, name) = hire_on_screen(&mut app);
+        let (before, mine, theirs) = (
+            app.world().resource::<Turns>().now(),
+            app.world().get::<Inventory>(me).expect("a pack").items.clone(),
+            app.world().get::<Inventory>(merc).expect("its pack").items.clone(),
+        );
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Enter);
+        undermere::testing::settle(&mut app);
+        let screen = written(&app);
+        assert!(screen.iter().any(|r| r.contains(&format!("Give {name} which?"))), "the pack, choosing: {screen:#?}");
+        assert_eq!(app.world().resource::<Turns>().now(), before, "nothing done yet");
+        press(&mut app, KeyCode::Escape);
+        undermere::testing::settle(&mut app);
+        assert!(!app.world().resource::<Modals>().any_open(), "put away: {:#?}", written(&app));
+        assert_eq!(app.world().get::<Inventory>(me).map(|b| b.items.clone()), Some(mine), "nothing handed over");
+        assert_eq!(app.world().get::<Inventory>(merc).map(|b| b.items.clone()), Some(theirs), "nothing taken");
+        assert_eq!(app.world().resource::<Turns>().now(), before, "and no turn spent");
     }
 
     /// Opens the offers screen on the mercenary beside the adventurer and

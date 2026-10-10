@@ -1024,7 +1024,7 @@ mod tests {
             (0..8).map(|i| there + Direction::from_index(i).offset()).find(|p| map.is_walkable_on(TOWN, *p)).expect("ground beside the smith")
         };
         stand_on(&mut app, me, beside);
-        app.world_mut().write_message(Intent::new(me, Interact { target: smith, verb: trade }));
+        app.world_mut().write_message(Intent::new(me, Interact { target: smith, verb: trade, thing: None }));
         settle(&mut app);
         let view = app.world().resource::<TradeView>();
         let trader = view.trader.as_ref().expect("the shop is open");

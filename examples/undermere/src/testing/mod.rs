@@ -115,7 +115,7 @@ pub fn talk_to(app: &mut App, me: Entity, role: &str) -> String {
         (0..8).map(|i| there + Direction::from_index(i).offset()).find(|p| map.is_walkable_on(crate::dungeon::TOWN, *p)).expect("ground beside them")
     };
     stand_on(app, me, beside);
-    app.world_mut().write_message(Intent::new(me, Interact { target: who, verb: talk }));
+    app.world_mut().write_message(Intent::new(me, Interact { target: who, verb: talk, thing: None }));
     settle(app);
     said(app).last().cloned().expect("something said")
 }

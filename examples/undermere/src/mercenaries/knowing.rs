@@ -244,29 +244,26 @@ impl Givable<'_, '_> {
     }
 }
 
-/// Answers a hired mercenary's [`GIVE`], its step already spent: asks the
-/// bag which of the adventurer's things to hand over, among what
-/// [`Givable`] offers. With nothing to give, says so.
+/// The system naming what the adventurer may give a hired mercenary, by
+/// [`Givable`], registered once by the plugin: what [`GIVE`] chooses
+/// among, as the engine's choosing offer asks it.
+#[derive(Resource, Debug, Clone, Copy)]
+pub struct GiveAmong(pub Among);
+
+/// What a hired mercenary's [`GIVE`] chooses among: what [`Givable`]
+/// offers of the taker's pack. With nothing to give, says so, since the
+/// pack then stays shut and nothing else would.
 ///
-/// In `TurnSet::React`, beside hiring's own answer.
-pub fn answer_give(
-    mut done: MessageReader<Interacted>,
-    verbs: Res<Verbs>,
-    hired: Query<&Mercenary>,
-    givable: Givable,
-    mut asks: MessageWriter<AskForThing>,
-    mut tell: MessageWriter<Tell>,
-) {
-    let Some(give) = verbs.get(GIVE) else { return };
-    for ev in done.read().filter(|ev| ev.verb == give) {
-        let Ok(hired) = hired.get(ev.target) else { continue };
-        let choices = givable.of(ev.actor);
-        if choices.is_empty() {
-            tell.write(Tell::new(format!("You have nothing to give {}.", hired.name), Tones::MUTED));
-            continue;
-        }
-        asks.write(AskForThing { user: ev.actor, asker: ev.target, verb: give, prompt: format!("Give {} which?", hired.name), choices });
+/// Run by the engine as the offer is taken up, before any time is spent,
+/// so a pack with nothing in it to give costs nothing to find so.
+pub fn give_choices(In(chooser): In<Chooser>, givable: Givable, hired: Query<&Mercenary>, mut tell: MessageWriter<Tell>) -> Vec<Entity> {
+    let choices = givable.of(chooser.taker);
+    if choices.is_empty()
+        && let Ok(hired) = hired.get(chooser.offerer)
+    {
+        tell.write(Tell::new(format!("You have nothing to give {}.", hired.name), Tones::MUTED));
     }
+    choices
 }
 
 /// What handing a thing over reads of it: its name, how many, and what it
@@ -317,14 +314,16 @@ impl Handing<'_, '_> {
     }
 }
 
-/// Moves the thing the bag chose for a [`GIVE`] from the adventurer's pack
-/// to the mercenary's, and says so in the mercenaries' tone. Nothing is
-/// taken back: what a mercenary carries comes back only when it drops it.
+/// Answers a hired mercenary's [`GIVE`], taken up with the thing the
+/// pack chose and its step spent: moves the thing from the adventurer's
+/// pack to the mercenary's and says so in the mercenaries' tone. Nothing
+/// is taken back: what a mercenary carries comes back only when it drops
+/// it.
 ///
-/// Every frame, after the bag's keys: the choice spends no time, since
-/// the `give` that asked spent its step.
-pub fn hand_over(
-    mut chosen: MessageReader<ThingChosen>,
+/// In `TurnSet::React`, beside hiring's own answer, so the mercenary
+/// finds the thing in its pack on its next turn.
+pub fn answer_give(
+    mut done: MessageReader<Interacted>,
     verbs: Res<Verbs>,
     hired: Query<&Mercenary>,
     mut handing: Handing,
@@ -333,9 +332,9 @@ pub fn hand_over(
     mut log: ResMut<MessageLog>,
 ) {
     let Some(give) = verbs.get(GIVE) else { return };
-    for c in chosen.read().filter(|c| c.verb == give) {
-        let Ok(hired) = hired.get(c.asker) else { continue };
-        let Some(said) = handing.hand(c.user, c.asker, c.thing) else { continue };
+    for ev in done.read().filter(|ev| ev.verb == give) {
+        let (Ok(hired), Some(thing)) = (hired.get(ev.target), ev.thing) else { continue };
+        let Some(said) = handing.hand(ev.actor, ev.target, thing) else { continue };
         log.push(format!("You give {} {said}.", hired.name), tones.get(TONE).unwrap_or(Tones::TEXT), turns.turn_number());
     }
 }
@@ -346,7 +345,7 @@ mod tests {
     use rl_engine::rl_ui::InspectViewPlugin;
 
     use super::*;
-    use crate::mercenaries::fixtures::{hired, take};
+    use crate::mercenaries::fixtures::{hired, take_with};
     use crate::testing::{arena, arena_with, at, clear_floor, find, give, kill, lay, make, name_of, pass_turns, said, settle, wall_off, wear};
 
     /// The potion a mercenary mends with that the adventurer does not know
@@ -389,6 +388,14 @@ mod tests {
 
     fn knows(app: &App, kind: &str) -> bool {
         app.world().resource::<Lore>().knows(kind)
+    }
+
+    /// What `give` on `hired` offers `me` to choose among, asked as the
+    /// engine asks it when the offer is taken up.
+    fn choices(app: &mut App, me: Entity, hired: Entity) -> Vec<Entity> {
+        let among = app.world().resource::<GiveAmong>().0;
+        let verb = app.world().resource::<Verbs>().get(GIVE).expect("give");
+        app.world_mut().run_system_with(among, Chooser { taker: me, offerer: hired, verb }).expect("the choices run")
     }
 
     /// A mercenary drinks its own potion when hurt whether or not the
@@ -468,27 +475,24 @@ mod tests {
         }
     }
 
-    /// `give` asks the bag which thing, among what the adventurer carries
-    /// and does not wear; the thing chosen moves to the mercenary's pack
-    /// with a line saying so, and a sword better than its fists is worn on
-    /// its next turn.
+    /// `give` chooses among what the adventurer carries and does not
+    /// wear; taken up with a sword, it spends the adventurer's turn, moves
+    /// the sword to the mercenary's pack with a line saying so, and the
+    /// sword, better than its fists, is worn on its next turn.
     #[test]
-    fn a_sword_given_through_the_bag_is_worn_on_the_mercenarys_next_turn() {
+    fn a_sword_given_takes_a_turn_and_is_worn_on_the_mercenarys_next_turn() {
         let (mut app, me, here) = arena(3);
         let brenna = hired(&mut app, me, here.offset(2, 0), "Brenna");
         let sword = told(&mut app, "sword", 0);
         give(&mut app, me, sword);
-        take(&mut app, me, brenna, GIVE);
-        let asked: Vec<AskForThing> = app.world_mut().resource_mut::<Messages<AskForThing>>().drain().collect();
-        let [ask] = asked.as_slice() else { panic!("one question: {asked:?}") };
-        assert_eq!((ask.user, ask.asker, ask.prompt.as_str()), (me, brenna, "Give Brenna which?"));
+        let offered = choices(&mut app, me, brenna);
         let worn = app.world().get::<Equipped>(me).expect("slots").clone();
-        assert!(ask.choices.contains(&sword) && ask.choices.iter().all(|t| !worn.contains(*t)), "what is carried and not worn: {ask:?}");
-        app.world_mut().write_message(ThingChosen { user: me, asker: brenna, verb: ask.verb, thing: sword });
-        app.update();
-        assert!(carries(&app, brenna, sword) && !carries(&app, me, sword), "handed over");
+        assert!(offered.contains(&sword) && offered.iter().all(|t| !worn.contains(*t)), "what is carried and not worn: {offered:?}");
+        let before = app.world().resource::<Turns>().now();
+        take_with(&mut app, me, brenna, GIVE, Some(sword));
+        assert!(app.world().resource::<Turns>().now() > before, "for a turn");
+        assert!((carries(&app, brenna, sword) || wears(&app, brenna, sword)) && !carries(&app, me, sword), "handed over");
         assert!(said(&app).contains(&"You give Brenna a sword.".to_string()), "{:?}", said(&app));
-        assert!(!wears(&app, brenna, sword), "not worn before its turn");
         pass_turns(&mut app, 1);
         assert!(wears(&app, brenna, sword), "worn on its next turn");
     }
@@ -532,25 +536,38 @@ mod tests {
             let bag = &world.get::<Inventory>(me).expect("a pack").items;
             *bag.iter().find(|i| world.get::<ItemKind>(**i).is_some_and(|k| k.0 == id)).expect("a waystone in the pack")
         };
-        take(&mut app, me, brenna, GIVE);
-        let asked: Vec<AskForThing> = app.world_mut().resource_mut::<Messages<AskForThing>>().drain().collect();
-        let [ask] = asked.as_slice() else { panic!("one question: {asked:?}") };
-        assert!(ask.choices.contains(&potions) && ask.choices.contains(&darts), "what it can drink and throw: {ask:?}");
-        assert!(!ask.choices.contains(&stone), "but never the way home: {ask:?}");
+        let offered = choices(&mut app, me, brenna);
+        assert!(offered.contains(&potions) && offered.contains(&darts), "what it can drink and throw: {offered:?}");
+        assert!(!offered.contains(&stone), "but never the way home: {offered:?}");
 
-        let verb = ask.verb;
-        app.world_mut().write_message(ThingChosen { user: me, asker: brenna, verb, thing: potions });
-        app.update();
+        take_with(&mut app, me, brenna, GIVE, Some(potions));
         let count = |app: &App, thing: Entity| app.world().get::<Stack>(thing).map(|s| s.count);
         assert!(carries(&app, me, potions) && count(&app, potions) == Some(2), "two kept");
         let theirs = app.world().get::<Inventory>(brenna).expect("a pack").items.iter().copied().find(|t| name_of(&app, *t) == name_of(&app, potions));
         assert_eq!(theirs.map(|t| count(&app, t)), Some(Some(1)), "and one of its own handed over");
         assert!(said(&app).iter().any(|l| l.starts_with("You give Brenna a potion")), "{:?}", said(&app));
 
-        app.world_mut().write_message(ThingChosen { user: me, asker: brenna, verb, thing: darts });
-        app.update();
+        take_with(&mut app, me, brenna, GIVE, Some(darts));
         assert!(carries(&app, brenna, darts) && !carries(&app, me, darts) && count(&app, darts) == Some(5), "the darts whole");
         assert!(said(&app).contains(&"You give Brenna 5 darts.".to_string()), "{:?}", said(&app));
+    }
+
+    /// With nothing in the pack to give, `give` chooses among nothing, so
+    /// the pack stays shut, and says so.
+    #[test]
+    fn give_with_nothing_to_give_offers_nothing_and_says_so() {
+        let (mut app, me, here) = arena(3);
+        let brenna = hired(&mut app, me, here.offset(2, 0), "Brenna");
+        let keep: Vec<Entity> = {
+            let world = app.world();
+            let id = world.resource::<Armory>().defs.expect(crate::waystone::WAYSTONE);
+            let bag = &world.get::<Inventory>(me).expect("a pack").items;
+            bag.iter().copied().filter(|i| world.get::<ItemKind>(*i).is_some_and(|k| k.0 == id)).collect()
+        };
+        app.world_mut().get_mut::<Inventory>(me).expect("a pack").items = keep;
+        assert!(choices(&mut app, me, brenna).is_empty(), "nothing but the way home");
+        app.update();
+        assert!(said(&app).contains(&"You have nothing to give Brenna.".to_string()), "{:?}", said(&app));
     }
 
     /// A cursed thing a mercenary puts on stays on, as the adventurer's

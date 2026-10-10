@@ -207,7 +207,10 @@ mod tests {
             let (merc, name) = hire_one(&mut app, me);
             let dismissing = app.world().resource::<Verbs>().get(DISMISS).expect("dismiss");
             let offer = app.world().get::<Offers>(merc).and_then(|o| o.0.iter().find(|o| o.verb == dismissing).cloned()).expect("dismiss offered");
-            assert!(offer.asks.as_deref().is_some_and(|q| q.starts_with(&format!("Dismiss {name}?"))), "seed {seed}: asks in its name: {offer:?}");
+            assert!(
+                offer.asks.as_ref().and_then(AsksFirst::question).is_some_and(|q| q.starts_with(&format!("Dismiss {name}?"))),
+                "seed {seed}: asks in its name: {offer:?}"
+            );
             let clock = app.world().resource::<Turns>().now();
             take(&mut app, me, merc, DISMISS);
             let world = app.world();

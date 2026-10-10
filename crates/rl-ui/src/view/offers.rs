@@ -30,9 +30,9 @@ pub struct OfferRow {
     pub time: u32,
     /// What it would cost in the currency, when it has a price.
     pub price: Option<u32>,
-    /// The question asked before it is taken up, in the game's words, when
-    /// it asks one.
-    pub asks: Option<String>,
+    /// What is asked before it is taken up, a yes or no or one of the
+    /// player's things, in the game's words, when anything is.
+    pub asks: Option<AsksFirst>,
     /// Why it cannot be taken up, in words, when it cannot.
     pub refused: Option<String>,
 }

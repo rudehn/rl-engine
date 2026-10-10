@@ -24,6 +24,12 @@
 //! are the ones a prop's offer has, because what can be done here is one
 //! question whoever stands here.
 //!
+//! An offer may ask before it is taken up, [`AsksFirst`]: a yes or no,
+//! [`Offering::asking`], or one of the taker's things,
+//! [`Offering::choosing`], which a screen asks and only an answer turns
+//! into the [`Interact`], so the act it stands for is still the engine's
+//! to check and to charge, and backing out costs nothing.
+//!
 //! Offers and the interactions that answer them, containers that stock and
 //! empty, triggers that land an effect list, and hiding that a turn in
 //! sight rolls away are all here. `docs/design/props.md` is the whole
@@ -182,9 +188,9 @@ pub struct Offer {
     /// What taking it up costs in the trade slice's
     /// [`Currency`], when it has a price.
     pub price: Option<u32>,
-    /// The question asked before it is taken up, when it asks one; see
-    /// [`Offering::asking`].
-    pub asks: Option<String>,
+    /// What is asked before it is taken up, when anything is; see
+    /// [`Offering::asking`] and [`Offering::choosing`].
+    pub asks: Option<AsksFirst>,
     /// Why it cannot be taken up, when it cannot. An offer is listed
     /// either way, so a screen can grey a row and say why, as the ability
     /// menu does.
@@ -228,9 +234,65 @@ pub struct Offering {
     /// What taking it up costs, in the trade slice's
     /// [`Currency`], or nothing.
     pub price: Option<u32>,
-    /// The yes-or-no question asked before it is taken up, in the game's
-    /// words, or nothing.
-    pub asks: Option<String>,
+    /// What is asked before it is taken up, a yes or no or one of the
+    /// taker's things, or nothing.
+    pub asks: Option<AsksFirst>,
+}
+
+/// What an offer asks before it is taken up: whoever shows the offers asks
+/// it, and only an answer is the [`Interact`], resolved, checked for reach
+/// and charged its time as any offer is. Backing out is nothing and costs
+/// nothing.
+///
+/// One or the other, never both, so one field rather than two that could
+/// both be set: an offer that wants a thing has already asked whether, by
+/// being taken up.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AsksFirst {
+    /// A question in the game's words, answered yes or no; see
+    /// [`Offering::asking`].
+    YesOrNo(String),
+    /// Which of the taker's things, under `prompt` in the game's words,
+    /// among what `among` answers; see [`Offering::choosing`].
+    Thing {
+        /// What the choice is asked under.
+        prompt: String,
+        /// The game's system naming what may be chosen.
+        among: Among,
+    },
+}
+
+impl AsksFirst {
+    /// The yes-or-no question, when it is one.
+    pub fn question(&self) -> Option<&str> {
+        match self {
+            Self::YesOrNo(question) => Some(question),
+            Self::Thing { .. } => None,
+        }
+    }
+}
+
+/// A game's system naming what a taker may choose for an offer that
+/// chooses first: registered with `App::register_system`, given the
+/// [`Chooser`], returning the things to choose among in the order listed.
+///
+/// A system rather than a list on the offer, since what may be handed
+/// over is the taker's pack as it stands when the offer is taken up,
+/// which no offer put on earlier can know; and rather than a tag, since
+/// what a game will take is a rule over the whole thing, what it is worn
+/// on, what its use does, which no one tag says.
+pub type Among = bevy::ecs::system::SystemId<In<Chooser>, Vec<Entity>>;
+
+/// Who is choosing a thing for which offer: what an offer's [`Among`] is
+/// asked of.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Chooser {
+    /// Who took the offer up, whose things are chosen among.
+    pub taker: Entity,
+    /// Who or what offers it.
+    pub offerer: Entity,
+    /// Which of its offers.
+    pub verb: VerbId,
 }
 
 impl Offering {
@@ -251,7 +313,25 @@ impl Offering {
     /// gone out of reach by the time of the yes is refused like any other
     /// offer out of reach, and the time it costs is its own.
     pub fn asking(mut self, question: impl Into<String>) -> Self {
-        self.asks = Some(question.into());
+        self.asks = Some(AsksFirst::YesOrNo(question.into()));
+        self
+    }
+
+    /// Chooses one of the taker's things before it is taken up: whoever
+    /// shows the offers opens the bag under `prompt`, choosing among what
+    /// the game's `among` names, and only a pick is the [`Interact`],
+    /// carrying the thing picked, resolved, checked for reach and for the
+    /// thing still being carried, and charged its time as any offer is;
+    /// backing out is nothing and costs nothing. Never taken up by walking
+    /// into whoever offers it, as an asking one never is.
+    ///
+    /// Chosen before the act rather than by the game after it, for the
+    /// reason [`asking`](Self::asking) is asked first: an offer resolved
+    /// before the choice has spent its time on a choice the player may
+    /// back out of. Asking and choosing are one or the other, the last
+    /// said.
+    pub fn choosing(mut self, prompt: impl Into<String>, among: Among) -> Self {
+        self.asks = Some(AsksFirst::Thing { prompt: prompt.into(), among });
         self
     }
 
@@ -448,6 +528,11 @@ pub struct Interact {
     pub target: Entity,
     /// Which of the things it offers.
     pub verb: VerbId,
+    /// The thing of the actor's own chosen for an offer that chooses
+    /// first, [`Offering::choosing`]; `None` for every other offer. A
+    /// thing no longer carried, a thing for an offer that chooses none, or
+    /// none for one that does, is refused, for nothing.
+    pub thing: Option<Entity>,
 }
 impl Action for Interact {}
 
@@ -466,6 +551,9 @@ pub struct Interacted {
     pub target: Entity,
     /// What they did.
     pub verb: VerbId,
+    /// The thing of theirs they chose, for an offer that chooses first;
+    /// `None` for every other.
+    pub thing: Option<Entity>,
 }
 
 /// What answering an interaction reads: what was offered, what each offer
@@ -479,6 +567,9 @@ pub struct Answering<'w, 's> {
     props: Query<'w, 's, &'static PropKind, With<Prop>>,
     /// What a priced offer is paid in.
     currency: Option<Res<'w, Currency>>,
+    /// What each actor carries, for the thing a choosing offer was taken
+    /// up with.
+    bags: Query<'w, 's, &'static Inventory>,
 }
 
 /// Resolves an interaction against what the gate offered.
@@ -489,12 +580,20 @@ pub fn resolve_interactions(
     what: Answering,
     mut world: crate::effects::EffectWorld,
 ) {
-    let Answering { offered, effects, registries, verbs, props, currency } = &what;
+    let Answering { offered, effects, registries, verbs, props, currency, bags } = &what;
     for intent in intents.read() {
         let Some(offer) = offered.find(intent.actor, intent.action.target, intent.action.verb) else {
             continue;
         };
-        if offer.refused.is_some() || !resolution.claim(intent.actor) {
+        // A choosing offer is taken up with one of the actor's things, still
+        // carried, since the bag chose it a moment ago and anything may
+        // have moved it since; any other offer with none.
+        let chooses = matches!(offer.asks, Some(AsksFirst::Thing { .. }));
+        let fits = match intent.action.thing {
+            Some(thing) => chooses && bags.get(intent.actor).is_ok_and(|bag| bag.contains(thing)),
+            None => !chooses,
+        };
+        if offer.refused.is_some() || !fits || !resolution.claim(intent.actor) {
             continue;
         }
         resolution.done(intent.actor, offer.time);
@@ -521,7 +620,7 @@ pub fn resolve_interactions(
                 effects.land_on(crate::effects::Source::Offer(intent.action.target), intent.action.target, at, vec![intent.actor], &mut world);
             }
         }
-        done.write(Interacted { actor: intent.actor, target: intent.action.target, verb: intent.action.verb });
+        done.write(Interacted { actor: intent.actor, target: intent.action.target, verb: intent.action.verb, thing: intent.action.thing });
     }
 }
 
@@ -1318,11 +1417,15 @@ mod offers {
         });
 
         let before = app.world().resource::<Turns>().now();
-        app.world_mut().write_message(Intent::new(player, Interact { target: console, verb: charge }));
+        app.world_mut().write_message(Intent::new(player, Interact { target: console, verb: charge, thing: None }));
         app.update();
 
         assert_eq!(app.world().resource::<Turns>().now(), before + 300, "the turn cost what the offer said");
-        assert_eq!(app.world().resource::<Seen>().0, vec![Interacted { actor: player, target: console, verb: charge }], "and the game is told what was done");
+        assert_eq!(
+            app.world().resource::<Seen>().0,
+            vec![Interacted { actor: player, target: console, verb: charge, thing: None }],
+            "and the game is told what was done"
+        );
     }
 
     /// Nothing is spent finding out what the gate already worked out.
@@ -1333,7 +1436,7 @@ mod offers {
         let player = player_at(&mut app, start);
 
         let before = app.world().resource::<Turns>().now();
-        app.world_mut().write_message(Intent::new(player, Interact { target: far, verb: Verbs::OPEN }));
+        app.world_mut().write_message(Intent::new(player, Interact { target: far, verb: Verbs::OPEN, thing: None }));
         app.update();
         assert_eq!(app.world().resource::<Turns>().now(), before, "a turn is not spent learning it was out of reach");
     }
@@ -1354,7 +1457,11 @@ mod offers {
 
         app.world_mut().write_message(Intent::new(player, crate::bump::Bump(rl_core::Direction::East)));
         app.update();
-        assert_eq!(app.world().resource::<Seen>().0, vec![Interacted { actor: player, target: supply, verb: Verbs::OPEN }], "the walk key opened the crate");
+        assert_eq!(
+            app.world().resource::<Seen>().0,
+            vec![Interacted { actor: player, target: supply, verb: Verbs::OPEN, thing: None }],
+            "the walk key opened the crate"
+        );
         assert_eq!(app.world().get::<Position>(player).map(|p| p.0), Some(start), "and the player did not move");
 
         // A bench offering two things is left for a screen to ask about.
@@ -1497,7 +1604,7 @@ mod actor_offers {
         app.update();
         assert!(offered(&app, player).is_empty(), "walked off, it offers nothing");
         let before = app.world().resource::<Turns>().now();
-        app.world_mut().write_message(Intent::new(player, Interact { target: captive, verb: free }));
+        app.world_mut().write_message(Intent::new(player, Interact { target: captive, verb: free, thing: None }));
         app.update();
         assert_eq!(app.world().resource::<Turns>().now(), before, "and reaching for it costs nothing");
         assert!(app.world().resource::<Seen>().0.is_empty(), "nor does anything happen");
@@ -1520,7 +1627,7 @@ mod actor_offers {
         assert_eq!(refused, Some(Refused::Needs(key)), "listed, and refused for a reason it can name");
 
         let before = app.world().resource::<Turns>().now();
-        app.world_mut().write_message(Intent::new(player, Interact { target: captive, verb: free }));
+        app.world_mut().write_message(Intent::new(player, Interact { target: captive, verb: free, thing: None }));
         app.update();
         assert_eq!(app.world().resource::<Turns>().now(), before, "a refused offer costs nothing");
 
@@ -1528,10 +1635,40 @@ mod actor_offers {
         app.world_mut().entity_mut(player).insert(Inventory { items: vec![tool] });
         app.update();
         let before = app.world().resource::<Turns>().now();
-        app.world_mut().write_message(Intent::new(player, Interact { target: captive, verb: free }));
+        app.world_mut().write_message(Intent::new(player, Interact { target: captive, verb: free, thing: None }));
         app.update();
         assert_eq!(app.world().resource::<Turns>().now(), before + 200, "carried, it costs what the offer said");
-        assert_eq!(app.world().resource::<Seen>().0, vec![Interacted { actor: player, target: captive, verb: free }], "and the game is told");
+        assert_eq!(app.world().resource::<Seen>().0, vec![Interacted { actor: player, target: captive, verb: free, thing: None }], "and the game is told");
+    }
+
+    /// An offer that chooses first is taken up only with a thing the taker
+    /// still carries, charged its own time, and the game hears the thing;
+    /// none at all, one no longer carried, or one given to an offer that
+    /// chooses none, is refused for nothing.
+    #[test]
+    fn a_choosing_offer_is_taken_up_only_with_a_thing_still_carried_and_heard_with_it() {
+        let (mut app, start, free, _) = arena();
+        let among = app.register_system(|_: In<Chooser>| Vec::new());
+        let captive = someone(&mut app, start.offset(1, 0), Offers(vec![Offering::new(free, 200).choosing("Free them with which?", among)]));
+        let plain = someone(&mut app, start.offset(-1, 0), Offers(vec![Offering::new(free, 100)]));
+        let player = player_at(&mut app, start, Offers::default());
+        watch(&mut app);
+        let (kept, gone) = (app.world_mut().spawn(Item).id(), app.world_mut().spawn(Item).id());
+        app.world_mut().entity_mut(player).insert(Inventory { items: vec![kept] });
+        app.update();
+        let now = |app: &App| app.world().resource::<Turns>().now();
+        let before = now(&app);
+        for (target, thing) in [(captive, None), (captive, Some(gone)), (plain, Some(kept))] {
+            app.world_mut().write_message(Intent::new(player, Interact { target, verb: free, thing }));
+            app.update();
+            assert_eq!(now(&app), before, "{thing:?} for {target:?} is refused for nothing");
+        }
+        assert!(app.world().resource::<Seen>().0.is_empty(), "and nothing is heard");
+
+        app.world_mut().write_message(Intent::new(player, Interact { target: captive, verb: free, thing: Some(kept) }));
+        app.update();
+        assert_eq!(now(&app), before + 200, "a thing carried costs the offer's own time");
+        assert_eq!(app.world().resource::<Seen>().0, vec![Interacted { actor: player, target: captive, verb: free, thing: Some(kept) }], "heard with it");
     }
 
     /// The arena with `scrip` as the currency, and a stack of `count` of it.
@@ -1566,7 +1703,7 @@ mod actor_offers {
         assert_eq!(here.find(player, fair, free).map(|o| o.refused), Some(None), "30 carried meets a price of 30");
 
         let before = app.world().resource::<Turns>().now();
-        app.world_mut().write_message(Intent::new(player, Interact { target: dear, verb: free }));
+        app.world_mut().write_message(Intent::new(player, Interact { target: dear, verb: free, thing: None }));
         app.update();
         assert_eq!(app.world().resource::<Turns>().now(), before, "a price not met costs nothing");
         assert!(app.world().resource::<Seen>().0.is_empty(), "and nothing is done");
@@ -1604,7 +1741,7 @@ mod actor_offers {
         assert!(app.world().get::<Inventory>(offerer).is_none(), "the offerer carries nothing yet");
 
         let before = app.world().resource::<Turns>().now();
-        app.world_mut().write_message(Intent::new(player, Interact { target: offerer, verb: free }));
+        app.world_mut().write_message(Intent::new(player, Interact { target: offerer, verb: free, thing: None }));
         app.update();
         assert_eq!(app.world().resource::<Turns>().now(), before + 200, "it costs its time");
         assert_eq!(app.world().resource::<Paid>().0, vec![(30, 50)], "the answer ran with the 50 already moved");
@@ -1626,7 +1763,7 @@ mod actor_offers {
         app.update();
         watch(&mut app);
         assert_eq!(offered(&app, player), vec![Offer { target: captive, verb: free, time: 200, price: None, asks: None, refused: None }]);
-        app.world_mut().write_message(Intent::new(player, Interact { target: captive, verb: free }));
+        app.world_mut().write_message(Intent::new(player, Interact { target: captive, verb: free, thing: None }));
         app.update();
         assert_eq!(app.world().resource::<Seen>().0.len(), 1, "taken up");
         assert_eq!(app.world().get::<Stack>(coins).map(|s| s.count), Some(80), "and the taker's pile is untouched");
@@ -1660,7 +1797,7 @@ mod actor_offers {
         assert_eq!(offered(&app, player).iter().map(|o| o.target).collect::<Vec<_>>(), vec![neutral], "the foe offers nothing, the neutral does");
 
         let before = app.world().resource::<Turns>().now();
-        app.world_mut().write_message(Intent::new(player, Interact { target: foe, verb: free }));
+        app.world_mut().write_message(Intent::new(player, Interact { target: foe, verb: free, thing: None }));
         app.update();
         assert_eq!(app.world().resource::<Turns>().now(), before, "reaching for a foe's offer costs nothing");
         assert!(app.world().resource::<Seen>().0.is_empty(), "and does nothing");
@@ -1672,7 +1809,7 @@ mod actor_offers {
 
     fn reach_once(mut commands: Commands, reach: Res<Reach>, holding: Query<(), With<MyTurn>>, mut intents: MessageWriter<Intent<Interact>>) {
         if holding.contains(reach.0) {
-            intents.write(Intent::new(reach.0, Interact { target: reach.1, verb: reach.2 }));
+            intents.write(Intent::new(reach.0, Interact { target: reach.1, verb: reach.2, thing: None }));
             commands.remove_resource::<Reach>();
         }
     }

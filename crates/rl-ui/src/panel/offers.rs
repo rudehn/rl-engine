@@ -27,6 +27,13 @@
 //! offer is still on offer: whatever took it out of reach takes the
 //! question with it, unanswered.
 //!
+//! An offer that chooses first, [`Offering::choosing`], is chosen for when
+//! it is taken up here: the screen is put away and the bag opens in its
+//! place, under the offer's prompt among what the game's system names, as
+//! [`InventoryPanel`](crate::InventoryPanel) says. A pick is the offer
+//! taken up with the thing picked out, the same [`Interact`]; backing out
+//! is nothing and costs nothing.
+//!
 //! The screen sits over the map, so it moves off what it is about, as the
 //! look panel moves off its cursor: when the one choosing or anyone or
 //! anything offering a row stands under its rectangle, it is drawn in its
@@ -199,8 +206,11 @@ pub fn open_on_crowded_bump(mut bumped: MessageReader<Bumped>, view: Res<OffersV
 }
 
 /// Opens the screen, walks it, takes the row picked out, and closes it;
-/// or, for a row that asks first, asks, and takes it up only on a yes.
+/// or, for a row that asks first, asks, and takes it up only on a yes; or,
+/// for one that chooses first, puts itself away and opens the bag
+/// choosing.
 pub fn offers_keys(
+    mut commands: Commands,
     keys: ControlInput,
     view: Res<OffersView>,
     mut menu: ResMut<OffersMenu>,
@@ -226,7 +236,7 @@ pub fn offers_keys(
     if let Some(confirming) = menu.confirming.as_mut() {
         // Whatever took the offer out of reach, or took it off whoever
         // offered it, takes the question with it, unanswered.
-        let Some(row) = view.rows.iter().find(|r| r.target == confirming.target && r.verb == confirming.verb && r.asks.is_some()) else {
+        let Some(row) = view.rows.iter().find(|r| r.target == confirming.target && r.verb == confirming.verb && question(r).is_some()) else {
             menu.confirming = None;
             modals.close_one(modal);
             return;
@@ -242,7 +252,7 @@ pub fn offers_keys(
         // the turn; the screen stays up until they do.
         let agreed = take && confirming.yes && row.open() && holding.single().is_ok();
         if let (true, Ok(player)) = (agreed, holding.single()) {
-            intents.write(Intent::new(player, Interact { target: row.target, verb: row.verb }));
+            intents.write(Intent::new(player, Interact { target: row.target, verb: row.verb, thing: None }));
         }
         if answered || agreed {
             menu.confirming = None;
@@ -266,16 +276,29 @@ pub fn offers_keys(
     }
     let (Ok(player), Some(row)) = (holding.single(), view.row(menu.selected)) else { return };
     // A refused row stays on screen and says why: taking it up would
-    // spend nothing and teach nothing. One that asks first asks.
+    // spend nothing and teach nothing. One that asks first asks, and one
+    // that chooses first chooses, in the bag.
     if !row.open() {
         return;
     }
-    if row.asks.is_some() {
-        menu.confirming = Some(Confirming { target: row.target, verb: row.verb, yes: false });
-        return;
+    match &row.asks {
+        Some(AsksFirst::YesOrNo(_)) => {
+            menu.confirming = Some(Confirming { target: row.target, verb: row.verb, yes: false });
+            return;
+        }
+        Some(AsksFirst::Thing { prompt, among }) => {
+            crate::panel::inventory::choose_for_offer(&mut commands, player, row.target, row.verb, prompt.clone(), *among)
+        }
+        None => {
+            intents.write(Intent::new(player, Interact { target: row.target, verb: row.verb, thing: None }));
+        }
     }
-    intents.write(Intent::new(player, Interact { target: row.target, verb: row.verb }));
     modals.close_one(modal);
+}
+
+/// A row's yes-or-no question, when it asks one.
+fn question(row: &crate::view::offers::OfferRow) -> Option<&str> {
+    row.asks.as_ref().and_then(AsksFirst::question)
 }
 
 /// What the offers screen draws from.
@@ -328,8 +351,7 @@ pub fn draw_offers(mut terminal: ResMut<Terminal>, mut menu: ResMut<OffersMenu>,
     if rect.width < 12 || rect.height < 4 {
         return;
     }
-    let asked =
-        menu.confirming.and_then(|c| view.rows.iter().find(|r| r.target == c.target && r.verb == c.verb).and_then(|r| r.asks.as_deref()).map(|q| (q, c.yes)));
+    let asked = menu.confirming.and_then(|c| view.rows.iter().find(|r| r.target == c.target && r.verb == c.verb).and_then(question).map(|q| (q, c.yes)));
     if let Some((question, yes)) = asked {
         draw_question(&mut terminal, &screen, rect, question, yes);
         return;
@@ -590,7 +612,11 @@ mod tests {
         stage.tick();
 
         let tip = stage.app.world().resource::<Verbs>().get("tip").expect("the game's verb");
-        assert_eq!(stage.app.world().resource::<Seen>().0, vec![Interacted { actor: player, target: bench, verb: tip }], "the second row, not the first");
+        assert_eq!(
+            stage.app.world().resource::<Seen>().0,
+            vec![Interacted { actor: player, target: bench, verb: tip, thing: None }],
+            "the second row, not the first"
+        );
         let modals = stage.app.world().resource::<Modals>();
         assert!(!modals.is_open(offers_modal(modals)), "and the question is answered, so the screen is gone");
     }
@@ -752,7 +778,7 @@ mod tests {
         stage.tick();
         let (heard, now) = done(&stage);
         let tip = stage.app.world().resource::<Verbs>().get("tip").expect("declared");
-        assert_eq!(heard, vec![Interacted { actor: stage.player, target: mirela, verb: tip }], "taken up");
+        assert_eq!(heard, vec![Interacted { actor: stage.player, target: mirela, verb: tip, thing: None }], "taken up");
         assert_eq!(now - clock, 200, "for its own time");
     }
 

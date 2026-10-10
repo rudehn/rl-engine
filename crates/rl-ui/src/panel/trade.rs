@@ -463,7 +463,7 @@ mod tests {
         let player = stage.player;
         stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![purse, awl] });
         let trade = stage.app.world().resource::<Verbs>().get(TRADE).expect("declared");
-        stage.app.world_mut().write_message(Interacted { actor: player, target: trader, verb: trade });
+        stage.app.world_mut().write_message(Interacted { actor: player, target: trader, verb: trade, thing: None });
         stage.tick();
         stage.tick();
         (stage, trader)
