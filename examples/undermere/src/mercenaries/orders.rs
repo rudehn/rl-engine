@@ -273,7 +273,9 @@ pub fn order_party(mut key: OrderKey, mut commands: Commands, party: Query<(Enti
 /// it, and a potion of a kind not yet known by its face. On the rail the
 /// order takes the place of what the mercenary knows of the adventurer
 /// and what it is doing this turn, `unaware` and `follow`, which say less
-/// of a hired hand than its order.
+/// of a hired hand than its order. On the party panel it stands on every
+/// mercenary's row but one left on another floor, which the panel marks
+/// as left behind instead.
 ///
 /// In `ViewSet::Annotate`, after the kind's own words and the game's own
 /// forecast, so both are there to take off and nothing puts a forecast
@@ -310,7 +312,12 @@ pub fn show_orders(
         }
     }
     if let Some(mut view) = party {
-        for row in view.rows_mut() {
+        // One left on another floor waits where it was left whatever its
+        // order, so its row says that, in the panel's own words, and not
+        // an order it cannot be following; the rail is too narrow for
+        // both.
+        let away = view.elsewhere.clone();
+        for row in view.rows_mut().filter(|r| !away.contains(&r.entity)) {
             if let Ok(hired) = hired.get(row.entity) {
                 row.facets.push(facets.facet("order", hired.order.doing()));
             }

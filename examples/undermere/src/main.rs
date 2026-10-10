@@ -60,6 +60,11 @@ const VITALS_ROWS: i32 = 9;
 /// unidentified armor beside it take the three; past that a name is kept
 /// to its row, and no slot is ever pushed off the rail.
 const GEAR_ROWS: i32 = 12;
+/// Rows the rail gives to the company at its foot: the heading and its
+/// rule, and one apiece for the most who can follow the adventurer, the
+/// two hired and the captive freed. A row above them is kept blank, so the
+/// last thing in sight never runs into the heading.
+const PARTY_ROWS: i32 = 5;
 
 /// The screen, cut up once so every panel and the map agree on it.
 ///
@@ -74,6 +79,9 @@ struct Screen {
     vitals: Rect,
     gear: Rect,
     nearby: Rect,
+    party: Rect,
+    /// The blank row between what is in sight and the company.
+    spacer: Rect,
     hint: Rect,
     inspect: Rect,
     target: Rect,
@@ -101,6 +109,13 @@ impl Screen {
         let (gear, nearby) = panel::split_top(below, GEAR_ROWS);
         // The last row of the rail says how to see the controls.
         let (nearby, hint) = panel::split_bottom(nearby, 1);
+        // The company at the foot of the rail, over the hint: blank while
+        // nobody follows, where the rail is blank most turns anyway, so
+        // the room it keeps is never a hole between the vitals, what is
+        // worn and what is in sight; and in one place from the first hire
+        // on, where the eye learns to find it.
+        let (nearby, party) = panel::split_bottom(nearby, PARTY_ROWS);
+        let (nearby, spacer) = panel::split_bottom(nearby, 1);
         // The targeting box sits over the bottom of the nearby list while
         // the cursor is up, where the eye already is when choosing what to
         // aim at, and never over the map, where it would hide what is
@@ -116,6 +131,8 @@ impl Screen {
             vitals,
             gear,
             nearby,
+            party,
+            spacer,
             hint,
             // Low on the left of the map; it moves to the top while the
             // cursor is under it.
@@ -163,12 +180,14 @@ impl Screen {
 /// window draws. The narrator that fills the log is added beside the
 /// engine's plugins, as `testing::headless` adds it.
 fn add_panels(app: &mut App, screen: &Screen) {
-    // The gutter belongs to no panel, so it is painted blank with the
-    // chrome each frame: nothing else would ever paint it again.
-    let gutter = screen.gutter;
+    // The gutter and the rail's spacer belong to no panel, so they are
+    // painted blank with the chrome each frame: nothing else would ever
+    // paint them again.
+    let blank = [screen.gutter, screen.spacer];
     app.add_systems(
         Update,
-        (move |mut terminal: ResMut<Terminal>, palette: Res<Palette>| panel::clear(&mut terminal, gutter, &palette)).in_set(PresentSet::Chrome),
+        (move |mut terminal: ResMut<Terminal>, palette: Res<Palette>| blank.into_iter().for_each(|r| panel::clear(&mut terminal, r, &palette)))
+            .in_set(PresentSet::Chrome),
     );
     app.add_plugins((
         // A blow struck beside the adventurer is a thousand hundredths of
@@ -199,6 +218,11 @@ fn add_panels(app: &mut App, screen: &Screen) {
                     .word(undermere::conditions::SLEEPING, "asleep")
                     .word(undermere::captives::SHACKLED, "shackled"),
             ),
+        // Who follows the adventurer, wherever they are, each with the
+        // order it was given: "company" rather than the engine's "party",
+        // and one left on another floor is "left behind", which is how it
+        // came to be there and what the adventurer must do about it.
+        PartyPanel::new(screen.party).heading("Company").elsewhere("left behind"),
         LogPanel::new(screen.log),
         InspectPanel::new(screen.inspect).hints("move \u{2022} tab next \u{2022} esc close").cursor(CursorStyle::ticks()),
         TargetPanel::new(screen.target).hints("[tab/shift-tab] cycle").cursor(CursorStyle::ticks()),
@@ -1335,6 +1359,65 @@ mod tests {
         }
         assert!(!screen.iter().any(|r| r.contains("leaves.")), "and says nobody left: {screen:#?}");
         assert!(!app.world().resource::<Modals>().any_open(), "and no screen is up over the floor: {screen:#?}");
+    }
+
+    /// The rail's foot is blank until someone follows; then it heads them
+    /// "Company", over a rule, each in the order it joined with its order
+    /// and a full health bar. Taking the gate with one of them beside the
+    /// adventurer and the other still in the tavern, the one that came is
+    /// still following on floor one, and the one that stayed is muted,
+    /// marked left behind in place of its order, and keeps its bar.
+    #[test]
+    fn the_company_at_the_rails_foot_shows_each_follower_with_its_order_and_one_left_on_another_floor_marked_left_behind() {
+        let mut app = on_screen(RunSeed(7));
+        let screen = Screen::new();
+        let rail = COLS - RAIL;
+        let company = |app: &App| (screen.party.y..screen.party.bottom()).map(|y| from(app, rail, y)).collect::<Vec<_>>();
+        assert!(company(&app).iter().all(String::is_empty), "nobody follows yet: {:#?}", company(&app));
+
+        let (me, first, _, first_name) = hire_on_screen(&mut app);
+        let (_, second, _, second_name) = hire_on_screen(&mut app);
+        let lines = company(&app);
+        assert_eq!(lines[0], "Company", "the heading: {lines:#?}");
+        assert!(lines[1].chars().all(|c| c == '\u{2500}'), "a rule under it: {lines:#?}");
+        let bar = "\u{2588}".repeat(6);
+        for (line, name) in lines[2..4].iter().zip([&first_name, &second_name]) {
+            assert!(line.starts_with(&format!("h {name} · following")), "{name} with its order, in the order they joined: {lines:#?}");
+            assert!(line.ends_with(&bar), "and its health full at the rail's edge: {lines:#?}");
+        }
+        assert_eq!(from(&app, rail, screen.party.y - 1), "", "a blank row over the heading");
+
+        let town = undermere::dungeon::TOWN;
+        let gate = {
+            let world = app.world_mut();
+            world
+                .query::<(&Position, &OnMap, &undermere::stairs::Way)>()
+                .iter(world)
+                .find(|(_, on, way)| on.0 == town && **way == undermere::stairs::Way::Gate)
+                .map(|(p, ..)| p.0)
+        };
+        let gate = gate.expect("the gate stands in Mereholt");
+        undermere::testing::stand_on(&mut app, me, gate);
+        let beside = {
+            let map = app.world().resource::<WorldMap>();
+            (0..8).map(|i| gate + Direction::from_index(i).offset()).find(|p| map.is_walkable_on(town, *p)).expect("ground beside the gate")
+        };
+        undermere::testing::stand_on(&mut app, first, beside);
+        assert!(geometry::chebyshev(undermere::testing::at(&app, second), gate) > undermere::mercenaries::LEASH, "the other is far off in the tavern");
+        press(&mut app, KeyCode::Enter);
+        undermere::testing::settle(&mut app);
+        assert_eq!(undermere::testing::here(&app), undermere::dungeon::map_of(1), "through the gate: {:#?}", written(&app));
+        assert_eq!(app.world().get::<OnMap>(second).map(|m| m.0), Some(town), "the other stayed: {:#?}", written(&app));
+
+        let lines = company(&app);
+        assert!(lines[2].starts_with(&format!("h {first_name} · following")), "the one that came: {lines:#?}");
+        assert!(lines[3].starts_with(&format!("h {second_name} (left behind)")), "the one that stayed, with no order: {lines:#?}");
+        assert!(lines[3].ends_with(&bar), "and its health still shown: {lines:#?}");
+        let terminal = app.world().resource::<Terminal>();
+        let palette = app.world().resource::<Palette>();
+        let tone = |y: i32| terminal.get(rail + 2, y).expect("on the screen").fg;
+        assert_eq!(tone(screen.party.y + 3), palette.get(Tones::MUTED), "left behind reads muted");
+        assert_eq!(tone(screen.party.y + 2), palette.get(Tones::TEXT), "and the one beside the adventurer does not");
     }
 
     /// Enter is the way's key and the key for what is here. Off any way,
