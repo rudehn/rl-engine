@@ -17,6 +17,14 @@
 //! who cannot open the cache wants to know it is a cache and that it wants
 //! a cutter. A row with a price shows it beside the time, and one the
 //! player cannot pay says how much it wants.
+//!
+//! A game may put one more question once an offer of its own is taken up,
+//! whether the player means it, with [`AskToConfirm`]: the screen opens on
+//! the game's words with two answers, No picked out, the way the title
+//! asks before giving up a save. Yes writes [`Confirmed`] for the game to
+//! act on; No, or putting the screen away, answers nothing. The offer that
+//! asked has spent its time before the question is put, so an offer a
+//! player should be able to back out of for nothing is offered at none.
 
 use bevy::prelude::*;
 use rl_bevy::prelude::*;
@@ -26,7 +34,7 @@ use rl_render::{Cell, Terminal};
 
 use crate::controls::{ControlInput, key_name};
 use crate::modal::{AddModal, ModalId, Modals};
-use crate::panel::{clear, clip, frame};
+use crate::panel::{clear, clip, frame, wrap};
 use crate::tone::{Palette, Tones};
 use crate::view::offers::{OffersView, OffersViewPlugin};
 
@@ -40,14 +48,67 @@ pub struct OffersLayout {
     pub rect: Rect,
     /// Drawn in the top border.
     pub title: String,
+    /// The answer to an [`AskToConfirm`] that writes [`Confirmed`].
+    pub yes: String,
+    /// The answer that writes nothing, picked out when the question is
+    /// asked, so a press too many backs out rather than goes ahead.
+    pub no: String,
 }
 
-/// Which row the cursor is on. The screen's own state, since a view holds
-/// no cursor.
+/// A game's yes-or-no question about an offer of its own just taken up:
+/// whether the player means it.
+///
+/// The sibling of the bag's [`AskForThing`](crate::AskForThing), for a
+/// question with two answers rather than a thing to choose. A game writes
+/// it when it hears the offer taken up, most often in `TurnSet::React`:
+/// the offers screen opens on `prompt` with No picked out, Yes writes
+/// [`Confirmed`] and puts the screen away, and No or the close key put it
+/// away answering nothing. The engine does nothing on a yes and spends no
+/// time on one, since the offer that asked spent its own. Opened only for
+/// the player and only with no screen up, as the bag's question is.
+#[derive(Message, Debug, Clone, PartialEq, Eq)]
+pub struct AskToConfirm {
+    /// Who answers: the player.
+    pub user: Entity,
+    /// Who or what asked, for the game to answer: the one the offer was
+    /// taken up on.
+    pub asker: Entity,
+    /// What for: the verb of the offer taken up, so two questions put by
+    /// one asker are told apart.
+    pub verb: VerbId,
+    /// The question, in the game's words.
+    pub prompt: String,
+}
+
+/// A yes to an [`AskToConfirm`]: the question's own `user`, `asker` and
+/// `verb`.
+#[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Confirmed {
+    /// Who said yes.
+    pub user: Entity,
+    /// Who or what asked.
+    pub asker: Entity,
+    /// What for.
+    pub verb: VerbId,
+}
+
+/// The screen asking a game's [`AskToConfirm`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Confirming {
+    /// The question.
+    pub ask: AskToConfirm,
+    /// Whether Yes is picked out rather than No.
+    pub yes: bool,
+}
+
+/// Which row the cursor is on, and the question while one is asked. The
+/// screen's own state, since a view holds no cursor.
 #[derive(Resource, Debug, Default)]
 pub struct OffersMenu {
     /// The row picked out, clamped to the rows there are when drawn.
     pub selected: usize,
+    /// A game's question, while the screen asks it in place of the rows.
+    pub confirming: Option<Confirming>,
 }
 
 impl OffersMenu {
@@ -71,7 +132,14 @@ pub struct OffersPanel(OffersLayout);
 impl OffersPanel {
     /// The screen in `rect`.
     pub fn new(rect: Rect) -> Self {
-        Self(OffersLayout { rect, title: "Here".into() })
+        Self(OffersLayout { rect, title: "Here".into(), yes: "Yes".into(), no: "No".into() })
+    }
+
+    /// Replaces the two answers to an [`AskToConfirm`].
+    pub fn answers(mut self, yes: impl Into<String>, no: impl Into<String>) -> Self {
+        self.0.yes = yes.into();
+        self.0.no = no.into();
+        self
     }
 
     /// Replaces what the top border says.
@@ -87,8 +155,10 @@ impl Plugin for OffersPanel {
             app.add_plugins(OffersViewPlugin);
         }
         app.add_modal(OFFERS_MODAL);
-        app.insert_resource(self.0.clone()).init_resource::<OffersMenu>();
-        app.add_systems(Update, offers_keys.in_set(EngineSet::Input))
+        app.insert_resource(self.0.clone()).init_resource::<OffersMenu>().add_message::<AskToConfirm>().add_message::<Confirmed>();
+        // A game's question opens the screen before it reads its keys, in
+        // the frame after the offer that asked was taken up.
+        app.add_systems(Update, (confirm_when_asked, offers_keys).chain().in_set(EngineSet::Input))
             // After the pass, not with the keys: a bump is refused inside
             // the turn, which runs after input, so a reader in `Input` would
             // see it a frame late. `Narrate` is where the rest of what a
@@ -141,21 +211,63 @@ pub fn open_on_crowded_bump(mut bumped: MessageReader<Bumped>, view: Res<OffersV
     }
 }
 
-/// Opens the screen, walks it, takes the row picked out, and closes it.
+/// Opens the screen on a game's [`AskToConfirm`], for the player and only
+/// with no screen up.
+pub fn confirm_when_asked(mut asked: MessageReader<AskToConfirm>, players: Query<(), With<Player>>, mut menu: ResMut<OffersMenu>, mut modals: ResMut<Modals>) {
+    let modal = offers_modal(&modals);
+    for ask in asked.read() {
+        if players.contains(ask.user) && !modals.any_open() {
+            menu.confirming = Some(Confirming { ask: ask.clone(), yes: false });
+            modals.open(modal);
+        }
+    }
+}
+
+/// Opens the screen, walks it, takes the row picked out, and closes it;
+/// or, while a game's question is up, moves between its answers and
+/// answers it.
 pub fn offers_keys(
     keys: ControlInput,
     view: Res<OffersView>,
     mut menu: ResMut<OffersMenu>,
     mut modals: ResMut<Modals>,
     mut intents: MessageWriter<Intent<Interact>>,
+    mut confirmed: MessageWriter<Confirmed>,
     holding: Query<Entity, (With<Player>, With<MyTurn>)>,
 ) {
     let modal = offers_modal(&modals);
+    // A question lasts only while the screen is up, however it was put
+    // away.
+    if !modals.is_open(modal) {
+        menu.confirming = None;
+    }
     if !modals.is_top(modal) {
         return;
     }
     let bindings = keys.bindings();
     let input = keys.input();
+    if let Some(confirming) = menu.confirming.as_mut() {
+        if modals.just_opened() {
+            return;
+        }
+        let take = input.just_pressed(bindings.cursor.confirm) || input.just_pressed(bindings.cursor.also_confirm);
+        if bindings.directions.just_pressed(input).is_some() {
+            confirming.yes = !confirming.yes;
+        }
+        let answered = input.just_pressed(bindings.cursor.close) || (take && !confirming.yes);
+        // A yes is an act, taken only while the player holds the turn; the
+        // screen stays up until they do.
+        let agreed = take && confirming.yes && holding.contains(confirming.ask.user);
+        if agreed {
+            let ask = &confirming.ask;
+            confirmed.write(Confirmed { user: ask.user, asker: ask.asker, verb: ask.verb });
+        }
+        if answered || agreed {
+            menu.confirming = None;
+            modals.close_one(modal);
+        }
+        return;
+    }
     // Nothing to choose between any more: whatever moved the player away
     // took the question with it.
     if input.just_pressed(bindings.cursor.close) || view.rows.is_empty() {
@@ -210,6 +322,10 @@ pub fn draw_offers(mut terminal: ResMut<Terminal>, mut menu: ResMut<OffersMenu>,
     if rect.width < 12 || rect.height < 4 {
         return;
     }
+    if let Some(confirming) = &menu.confirming {
+        draw_question(&mut terminal, &screen, confirming);
+        return;
+    }
     let bindings = keys.bindings();
     menu.selected = menu.selected.min(view.rows.len().saturating_sub(1));
     let hints = format!("{} do it \u{2022} {} never mind", key_name(bindings.cursor.confirm), key_name(bindings.cursor.close));
@@ -231,6 +347,32 @@ pub fn draw_offers(mut terminal: ResMut<Terminal>, mut menu: ResMut<OffersMenu>,
             (None, None) => format!("{} ({})", row.label, cost(row.time)),
         };
         terminal.print_on(inner.x, y, &clip(&said, inner.width.max(0) as usize), fg, bg);
+    }
+}
+
+/// A game's question in place of the rows: its words wrapped from the
+/// top, a line left empty, and its two answers a row each, No first, the
+/// one picked out drawn as a picked row is. The answers are kept to the
+/// bottom of the screen when the words run long, which are cut short
+/// rather than the answers.
+fn draw_question(terminal: &mut Terminal, screen: &HereScreen, confirming: &Confirming) {
+    let HereScreen { layout, keys, palette, .. } = screen;
+    let (rect, bindings) = (layout.rect, keys.bindings());
+    let hints = format!("{} answer \u{2022} {} never mind", key_name(bindings.cursor.confirm), key_name(bindings.cursor.close));
+    clear(terminal, rect, palette);
+    frame(terminal, rect, &layout.title, &hints, palette);
+    let inner = Rect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
+    let (text, surface, select) = (palette.get(Tones::TEXT), palette.get(Tones::SURFACE), palette.get(Tones::SELECT));
+    let room = (inner.height - 3).max(0) as usize;
+    for (i, line) in wrap(&confirming.ask.prompt, inner.width.max(0) as usize).iter().take(room).enumerate() {
+        terminal.print(inner.x, inner.y + i as i32, line, text);
+    }
+    let answers = [(&layout.no, !confirming.yes), (&layout.yes, confirming.yes)];
+    for (i, (word, picked)) in answers.into_iter().enumerate() {
+        let y = inner.bottom() - 2 + i as i32;
+        let bg = if picked { select } else { surface };
+        terminal.fill(Rect::new(inner.x, y, inner.width, 1), Cell::new(' ', text).on(bg));
+        terminal.print_on(inner.x, y, &clip(word, inner.width.max(0) as usize), text, bg);
     }
 }
 
@@ -452,6 +594,90 @@ mod tests {
         let modals = stage.app.world().resource::<Modals>();
         assert!(!modals.is_open(offers_modal(modals)), "nothing to choose between any more");
         let _ = Point::ZERO;
+    }
+
+    /// Puts a game's question to the player about `bench`'s `tip`, and lets
+    /// the screen open on it.
+    fn ask(stage: &mut Stage, bench: Entity) -> AskToConfirm {
+        let tip = stage.app.world().resource::<Verbs>().get("tip").expect("the game's verb");
+        let ask = AskToConfirm { user: stage.player, asker: bench, verb: tip, prompt: "Tip the workbench over for good?".into() };
+        stage.app.world_mut().write_message(ask.clone());
+        stage.tick();
+        ask
+    }
+
+    /// Every yes the screen has written since the last look.
+    fn yeses(stage: &mut Stage) -> Vec<Confirmed> {
+        stage.app.world_mut().resource_mut::<Messages<Confirmed>>().drain().collect()
+    }
+
+    /// A game's question opens the screen on its words with No picked out,
+    /// and taking No, or putting the screen away, answers nothing.
+    #[test]
+    fn a_games_question_opens_on_no_and_backing_out_of_it_answers_nothing() {
+        let (mut stage, bench) = stage();
+        let ask = ask(&mut stage, bench);
+        let modals = stage.app.world().resource::<Modals>();
+        assert!(modals.is_open(offers_modal(modals)), "the question is asked");
+        assert_eq!(stage.app.world().resource::<OffersMenu>().confirming, Some(Confirming { ask: ask.clone(), yes: false }), "No picked out");
+        let rows = stage.rows();
+        let text = rows.join("\n");
+        assert!(text.contains("Tip the workbench over for good?"), "in the game's words:\n{text}");
+        let (no, yes) = (rows.iter().position(|r| r.contains(" No ")), rows.iter().position(|r| r.contains(" Yes ")));
+        assert!(matches!((no, yes), (Some(no), Some(yes)) if no + 1 == yes), "No above Yes:\n{text}");
+
+        for key in [KeyCode::Enter, KeyCode::Escape] {
+            if key == KeyCode::Escape {
+                ask_again(&mut stage, &ask);
+            }
+            stage.press(key);
+            stage.tick();
+            let modals = stage.app.world().resource::<Modals>();
+            assert!(!modals.is_open(offers_modal(modals)), "{key:?} puts it away");
+            assert_eq!(stage.app.world().resource::<OffersMenu>().confirming, None, "{key:?}");
+            assert!(yeses(&mut stage).is_empty(), "{key:?} answers nothing");
+        }
+    }
+
+    /// Puts `ask` to the player again.
+    fn ask_again(stage: &mut Stage, ask: &AskToConfirm) {
+        stage.app.world_mut().write_message(ask.clone());
+        stage.tick();
+    }
+
+    /// A direction moves to Yes, and taking it writes the question's own
+    /// answer and puts the screen away; nothing is done for it but that.
+    #[test]
+    fn yes_to_a_games_question_writes_confirmed_and_puts_the_screen_away() {
+        let (mut stage, bench) = stage();
+        let ask = ask(&mut stage, bench);
+        stage.press(KeyCode::ArrowDown);
+        stage.tick();
+        assert!(stage.app.world().resource::<OffersMenu>().confirming.as_ref().is_some_and(|c| c.yes), "Yes picked out");
+        stage.press(KeyCode::Enter);
+        stage.tick();
+        assert_eq!(yeses(&mut stage), vec![Confirmed { user: ask.user, asker: ask.asker, verb: ask.verb }]);
+        let modals = stage.app.world().resource::<Modals>();
+        assert!(!modals.is_open(offers_modal(modals)), "and the screen is gone");
+    }
+
+    /// A question is never put over another screen, nor to anyone but the
+    /// player.
+    #[test]
+    fn a_games_question_waits_for_no_screen_and_is_put_only_to_the_player() {
+        let (mut stage, bench) = stage();
+        let mut ask = ask(&mut stage, bench);
+        stage.press(KeyCode::Escape);
+        stage.tick();
+        ask.user = bench;
+        ask_again(&mut stage, &ask);
+        assert!(!stage.app.world().resource::<Modals>().any_open(), "asked of someone else");
+        let other = stage.app.world_mut().resource_mut::<Modals>().declare("other");
+        stage.app.world_mut().resource_mut::<Modals>().open(other);
+        ask.user = stage.player;
+        ask_again(&mut stage, &ask);
+        let modals = stage.app.world().resource::<Modals>();
+        assert!(!modals.is_open(offers_modal(modals)), "over another screen");
     }
 
     /// A cost reads as turns, since that is what a player spends.
