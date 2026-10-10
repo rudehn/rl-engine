@@ -1366,7 +1366,7 @@ pub(crate) mod tests {
 
     /// The usual growth, owing one hall painted from a prefab, joined by
     /// `join`, laid once a quarter of the map is open.
-    fn owing(rig: &Rig, join: Join) -> Accrete {
+    pub(crate) fn owing(rig: &Rig, join: Join) -> Accrete {
         let mut pass = accrete(rig, 3);
         pass.pieces = vec![Box::new(PrefabShape::new("hall", &hall(rig.wall, rig.floor), join).unwrap())];
         pass.late_pct = 25;

@@ -363,8 +363,64 @@ impl CostSource for ThroughDoors<'_> {
 /// in row order, the lower point by [`Point`]'s own ordering, so a seed
 /// always picks the same one. Fails without a start or with nowhere to
 /// stand that is farther than it.
+///
+/// [`clear_of_stamps`](Self::clear_of_stamps) keeps it out of and away
+/// from the pieces stamped before it, and [`among_farthest`
+/// ](Self::among_farthest) draws it from the farthest share rather than
+/// taking the one farthest cell.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct FarthestExit;
+
+impl FarthestExit {
+    /// This exit, kept at least `cells` cells, Chebyshev, from the bounds
+    /// of every [`Stamped`] a pass emitted before it.
+    ///
+    /// Opt-in, as [`RandomStart::clear_of_stamps`] is, so a chain that
+    /// never asks draws exactly the exit it always has.
+    pub fn clear_of_stamps(self, cells: i32) -> FarExit {
+        FarExit::default().clear_of_stamps(cells)
+    }
+
+    /// This exit drawn from every cell whose walk from the start is
+    /// within the farthest `pct` in a hundred of the longest walk.
+    pub fn among_farthest(self, pct: u32) -> FarExit {
+        FarExit::default().among_farthest(pct)
+    }
+}
+
+/// A [`FarthestExit`] kept clear of stamps, drawn from the farthest share,
+/// or both, made by [`FarthestExit::clear_of_stamps`] and
+/// [`FarthestExit::among_farthest`].
+///
+/// Clear of stamps, so a piece holding what fights, or a vault reached
+/// through a door, never holds the way down. Where no cell is that clear,
+/// it is drawn from the cells outside every stamp, so it never lands in
+/// one; a place with nowhere to stand outside one fails. Among the
+/// farthest, so one place does not always put its way down in the same
+/// corner: the longest walk is measured to where it may stand, and the
+/// exit is drawn from the chain's stream among every such cell whose walk
+/// is at least `100 - pct` in a hundred of it.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FarExit {
+    clear: i32,
+    among_pct: Option<u32>,
+}
+
+impl FarExit {
+    /// Kept at least `cells` cells from every stamp, as
+    /// [`FarthestExit::clear_of_stamps`].
+    pub fn clear_of_stamps(mut self, cells: i32) -> Self {
+        self.clear = cells;
+        self
+    }
+
+    /// Drawn from the farthest `pct` in a hundred, as
+    /// [`FarthestExit::among_farthest`].
+    pub fn among_farthest(mut self, pct: u32) -> Self {
+        self.among_pct = Some(pct);
+        self
+    }
+}
 
 impl<C: BuildContext> Pass<C> for FarthestExit {
     fn name(&self) -> &'static str {
@@ -374,15 +430,48 @@ impl<C: BuildContext> Pass<C> for FarthestExit {
         Phase::Exits
     }
     fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
-        let start = ctx.outputs().first::<StartPoint>().ok_or_else(|| BuildError::new("farthest_exit", "no start point emitted before it"))?.0;
+        FarExit::default().apply(ctx)
+    }
+}
+
+impl<C: BuildContext> Pass<C> for FarExit {
+    // The plain exit's name, so both draw from one stream.
+    fn name(&self) -> &'static str {
+        "farthest_exit"
+    }
+    fn phase(&self) -> Phase {
+        Phase::Exits
+    }
+    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+        let err = |reason: String| BuildError::new("farthest_exit", reason);
+        if self.among_pct.is_some_and(|pct| pct > 100) {
+            return Err(err(format!("the farthest {}% is a share past a hundred", self.among_pct.unwrap_or(0))));
+        }
+        let start = ctx.outputs().first::<StartPoint>().ok_or_else(|| err("no start point emitted before it".into()))?.0;
         let tables = ctx.tiles().tables();
         let through_doors = ThroughDoors { terrain: ctx.terrain(), tables: &tables };
         let mut map = DijkstraMap::covering(&through_doors);
         map.build(&through_doors, [start], PathRules::default());
         let walkable = |p: Point| ctx.terrain().get(p).is_some_and(|t| tables.walkable[t.index()]);
-        let far = map.iter().filter(|(p, _)| *p != start && walkable(*p)).max_by_key(|(p, v)| (*v, std::cmp::Reverse(*p))).map(|(p, _)| p);
-        let far = far.ok_or_else(|| BuildError::new("farthest_exit", "nowhere to stand farther than the start"))?;
-        ctx.emit(ExitPoint(far));
+        let stamps: Vec<Rect> = ctx.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
+        let away = |p: Point| stamps.iter().map(|r| rl_core::geometry::chebyshev(p, rl_core::geometry::clamp_to(p, *r))).min().unwrap_or(i32::MAX);
+        let standing: Vec<(Point, i32)> = map.iter().filter(|(p, _)| *p != start && walkable(*p)).collect();
+        let clear: Vec<(Point, i32)> = standing.iter().copied().filter(|(p, _)| away(*p) >= self.clear).collect();
+        let kept = self.clear > 0;
+        let cells = if clear.is_empty() && kept { standing.into_iter().filter(|(p, _)| away(*p) >= 1).collect() } else { clear };
+        let far = cells
+            .iter()
+            .map(|(_, v)| *v)
+            .max()
+            .ok_or_else(|| err(format!("nowhere to stand farther than the start{}", if kept { " and outside every stamp" } else { "" })))?;
+        let at = match self.among_pct {
+            None => cells.iter().max_by_key(|(p, v)| (*v, std::cmp::Reverse(*p))).expect("some cell is the farthest").0,
+            Some(pct) => {
+                let within: Vec<Point> = cells.iter().filter(|(_, v)| i64::from(*v) * 100 >= i64::from(far) * i64::from(100 - pct)).map(|(p, _)| *p).collect();
+                within[ctx.rng().random_range(0..within.len())]
+            }
+        };
+        ctx.emit(ExitPoint(at));
         Ok(())
     }
 }
@@ -561,5 +650,91 @@ mod tests {
         Chain::new().then(FarthestExit).run(&mut c, RunSeed(1)).unwrap();
         let exit = c.outputs().first::<ExitPoint>().unwrap().0;
         assert_eq!(exit, Point::new(0, 1), "a tie should break toward the lower point, not the higher");
+    }
+
+    /// A grown place owing a hall painted from a prefab, its way in drawn,
+    /// and its way out by `exit`: the exit and the hall's stamp.
+    fn exit_beside_a_grown_piece(exit: impl Pass<BaseContext> + 'static, seed: u64) -> (Point, Rect) {
+        use crate::accrete::tests::{owing, rig};
+        let rig = rig();
+        let chain = Chain::new().then(owing(&rig, crate::Join::Door)).then(RandomStart).then(exit);
+        let c =
+            chain.run_retrying(|| BaseContext::blank(84, 48, rig.tiles.clone(), rig.wall), RunSeed(seed), 20).unwrap_or_else(|e| panic!("seed {seed}: {e}"));
+        (c.outputs().first::<ExitPoint>().unwrap().0, c.outputs().first::<Stamped>().unwrap().bounds)
+    }
+
+    /// Over a span of grown places, each holding a hall painted from a
+    /// prefab, the exit kept clear of stamps stands as far off as it was
+    /// asked.
+    #[test]
+    fn an_exit_kept_clear_of_stamps_never_lands_inside_one() {
+        for seed in 0..40 {
+            let (exit, hall) = exit_beside_a_grown_piece(FarthestExit.clear_of_stamps(3), seed);
+            assert!(clearance(exit, hall) >= 3, "seed {seed}: {exit:?} is {} from {hall:?}", clearance(exit, hall));
+        }
+    }
+
+    /// The exit `exit` draws on a corridor from (1, 2) to (28, 2) with a
+    /// stamp over its last five cells.
+    fn exit_on_a_corridor(exit: impl Pass<BaseContext> + 'static) -> Point {
+        let (mut c, _, floor, _) = ctx();
+        for x in 1..29 {
+            c.terrain_mut().set(Point::new(x, 2), floor);
+        }
+        c.emit(StartPoint(Point::new(1, 2)));
+        c.emit(Stamped { bounds: Rect::new(24, 1, 5, 3), marks: Vec::new(), prefab: None });
+        Chain::new().then(exit).run(&mut c, RunSeed(1)).unwrap();
+        c.outputs().first::<ExitPoint>().unwrap().0
+    }
+
+    /// A corridor with a stamp over its far end: the plain exit lands in
+    /// the stamp, one kept three clear stands three short of it, and one
+    /// asked to stand farther off than the corridor allows still stands
+    /// outside it, on the nearest cell to the stamp it may.
+    #[test]
+    fn a_clear_exit_stands_short_of_a_stamp_over_the_far_end_and_outside_it_when_nothing_is_that_clear() {
+        assert_eq!(exit_on_a_corridor(FarthestExit), Point::new(28, 2), "the plain exit is in the stamp");
+        assert_eq!(exit_on_a_corridor(FarthestExit.clear_of_stamps(3)), Point::new(21, 2));
+        assert_eq!(exit_on_a_corridor(FarthestExit.clear_of_stamps(100)), Point::new(23, 2));
+    }
+
+    /// Drawn from the farthest third of one place, the exit falls on many
+    /// cells over a span of the exit's own seeds, each at least two thirds
+    /// as far on foot as the farthest.
+    #[test]
+    fn among_the_farthest_third_the_exit_lands_on_different_cells_each_within_the_farthest_third() {
+        let (mut c, _, floor, door) = ctx();
+        Chain::new().then(Rooms { floor, ..Default::default() }).then(Doors { door }).then(RandomStart).run(&mut c, RunSeed(4)).unwrap();
+        let start = c.outputs().first::<StartPoint>().unwrap().0;
+        let tables = c.tiles().tables();
+        let through = ThroughDoors { terrain: c.terrain(), tables: &tables };
+        let mut walk = DijkstraMap::covering(&through);
+        walk.build(&through, [start], PathRules::default());
+        let far = walk.iter().filter(|(p, _)| tables.walkable[c.terrain().get(*p).unwrap().index()]).map(|(_, v)| v).max().unwrap();
+        let mut landed = std::collections::BTreeSet::new();
+        for seed in 0..40 {
+            let mut drawn = BaseContext::blank(60, 40, c.tiles().clone(), c.tiles().expect("wall"));
+            *drawn.terrain_mut() = c.terrain().clone();
+            drawn.emit(StartPoint(start));
+            Chain::new().then(FarthestExit.among_farthest(33)).run(&mut drawn, RunSeed(seed)).unwrap();
+            let exit = drawn.outputs().first::<ExitPoint>().unwrap().0;
+            let steps = walk.value(exit).expect("the exit was reached");
+            assert!(steps * 100 >= far * 67, "seed {seed}: {exit:?} is {steps} of the farthest {far}");
+            assert!(tables.walkable[c.terrain().get(exit).unwrap().index()] && exit != start, "seed {seed}");
+            landed.insert(exit);
+        }
+        assert!(landed.len() >= 10, "the exit fell on only {} cells", landed.len());
+    }
+
+    #[test]
+    fn a_farthest_share_past_a_hundred_is_an_error_by_name() {
+        let (mut c, _, floor, _) = ctx();
+        let e = Chain::new()
+            .then(Rooms { floor, ..Default::default() })
+            .then(RandomStart)
+            .then(FarthestExit.among_farthest(101))
+            .run(&mut c, RunSeed(1))
+            .unwrap_err();
+        assert_eq!(e.pass, "farthest_exit");
     }
 }
