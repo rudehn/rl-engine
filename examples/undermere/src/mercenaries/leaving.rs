@@ -183,7 +183,7 @@ mod tests {
     use crate::bestiary::Bestiary;
     use crate::mercenaries::fixtures::{hired, in_mereholt, offered, take, waiting};
     use crate::tally::{FallenMercenary, Tally, score};
-    use crate::testing::{arena_on, at, gold, kill, make, monster, pack, said, set_gold, worn};
+    use crate::testing::{arena_on, at, gold, kill, make, monster, pack, said, set_gold, settle, worn};
 
     /// A candidate hired from the tavern with its kit, and its name.
     fn hire_one(app: &mut App, me: Entity) -> (Entity, String) {
@@ -351,5 +351,36 @@ mod tests {
         let jackal = monster(&mut app, "jackal", here.offset(-3, 0));
         kill(&mut app, jackal, Some(captive));
         assert_eq!(*app.world().resource::<Tally>(), after, "a freed captive's kill counts nowhere");
+    }
+
+    /// A hired mercenary's blow on one of the party, a second mercenary, a
+    /// freed captive or the adventurer, is no damage dealt, as an area
+    /// blow that caught a friend is not the fighting the number counts;
+    /// the same blow on a rat beside them is. A blow on the adventurer is
+    /// still damage taken, whoever struck it.
+    #[test]
+    fn a_hired_mercenarys_blow_on_one_of_the_party_is_no_damage_dealt_and_on_a_foe_it_is() {
+        let (mut app, me, here) = arena_on(5, 1);
+        let brenna = hired(&mut app, me, here.offset(2, 0), "Brenna");
+        let mareth = hired(&mut app, me, here.offset(-2, 0), "Mareth");
+        let captive = monster(&mut app, "goblin", here.offset(0, 2));
+        crate::captives::free(app.world_mut(), captive, me);
+        let rat = monster(&mut app, "rat", here.offset(3, 0));
+        let crush = app.world().resource::<Registries>().damage_kinds.expect("crush");
+        let strike = |app: &mut App, target| {
+            app.world_mut().write_message(DamageEvent::new(target, rl_engine::rl_rules::Hit::from_source(Some(brenna), crush, 3)));
+            settle(app);
+        };
+        let before = app.world().resource::<Tally>().clone();
+        let health = |app: &App, who| app.world().get::<Health>(who).expect("health").current;
+        for (friend, who) in [(mareth, "a mercenary"), (captive, "a freed captive"), (me, "the adventurer")] {
+            let was = health(&app, friend);
+            strike(&mut app, friend);
+            assert!(health(&app, friend) < was, "the blow on {who} landed");
+            assert_eq!(app.world().resource::<Tally>().damage_dealt, before.damage_dealt, "a blow on {who} dealt nothing");
+        }
+        assert!(app.world().resource::<Tally>().damage_taken > before.damage_taken, "the adventurer still took it");
+        strike(&mut app, rat);
+        assert!(app.world().resource::<Tally>().damage_dealt > before.damage_dealt, "the rat's blow counted");
     }
 }

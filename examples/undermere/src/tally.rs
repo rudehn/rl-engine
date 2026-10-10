@@ -63,7 +63,8 @@ pub struct Tally {
     /// Health the blows, shots and fires of the adventurer and the
     /// mercenaries they hired took from others: the company's, as the
     /// kills beside it are, so a run whose sellswords did the killing does
-    /// not read as many kills and no damage.
+    /// not read as many kills and no damage. Others means outside the
+    /// party, so a blow that caught a friend is not counted.
     pub damage_dealt: u32,
     /// Health the adventurer lost, to anything, their own fire included.
     pub damage_taken: u32,
@@ -167,11 +168,14 @@ pub fn remember_depth(mut entered: MessageReader<PlaceEntered>, mut tally: ResMu
 
 /// Counts the fighting the adventurer did and took: every blow, shot and
 /// burn that landed on them, every one of theirs or a hired mercenary's
-/// that landed on anything else, and every death either gets the credit
-/// for, at its kind's threat. A
-/// boss's death is noted by name whoever's hand it fell to, since the
-/// record of the run it won names it, and so is whatever killed the
-/// adventurer, since the record of the run it ended names that.
+/// that landed on anything outside the party, and every death either gets
+/// the credit for, at its kind's threat. A blow on one of the party, a
+/// mercenary, a freed captive or the adventurer, is no damage dealt
+/// whoever struck it, as an area blow that caught a friend is not the
+/// fighting the number is about. A boss's death is noted by name
+/// whoever's hand it fell to, since the record of the run it won names
+/// it, and so is whatever killed the adventurer, since the record of the
+/// run it ended names that.
 ///
 /// A death a hired mercenary gets the credit for is a kill of the run's as
 /// the adventurer's is, on the kills, the deadliest and the Slain line
@@ -198,7 +202,8 @@ pub fn count_the_fighting(
     // to the same target in the one pass.
     let mut landed: BTreeMap<Entity, Vec<i32>> = BTreeMap::new();
     for d in dealt.read().filter(|d| d.dealt > 0) {
-        if Some(d.target) == me || (d.hit.credit.is_some() && d.hit.credit == me) || credit.hired(d.hit.credit) {
+        let ours = (d.hit.credit.is_some() && d.hit.credit == me) || credit.hired(d.hit.credit);
+        if Some(d.target) == me || (ours && !credit.in_party(d.target)) {
             landed.entry(d.target).or_default().push(d.dealt);
         }
     }
@@ -491,6 +496,7 @@ pub struct Credit<'w, 's> {
     adventurer: Query<'w, 's, Entity, With<Adventurer>>,
     names: Query<'w, 's, &'static Name>,
     party: Query<'w, 's, (&'static Mercenary, Option<&'static OnMap>)>,
+    leaders: Query<'w, 's, &'static Leader>,
 }
 
 impl Credit<'_, '_> {
@@ -498,6 +504,14 @@ impl Credit<'_, '_> {
     /// blows count as the adventurer's do, but on the Mini-bosses line.
     fn hired(&self, by: Option<Entity>) -> bool {
         by.is_some_and(|by| self.party.contains(by))
+    }
+
+    /// Whether `who` is one of the adventurer's party: the adventurer, or
+    /// anyone following them, hired or freed. By [`Leader`], as the party
+    /// rail lists it, so the two never disagree on who is a friend.
+    fn in_party(&self, who: Entity) -> bool {
+        let me = self.adventurer.single().ok();
+        Some(who) == me || self.leaders.get(who).is_ok_and(|l| Some(l.0) == me)
     }
 
     /// `dead` as a fallen mercenary, killed by `by`, when it was one the
