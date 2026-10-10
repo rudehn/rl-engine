@@ -41,6 +41,9 @@
 //! - [`layout`]: the shapes a place is grown from, the districts that
 //!   favor some of them and the recipes a place names, as one file with
 //!   every name resolved at load; the growing is `rl-mapgen`'s.
+//! - [`pool`]: the pieces a run may hold, by floor, tag, weight, limit,
+//!   group and budget, as one file with every name resolved at load; the
+//!   laying is `rl-mapgen`'s.
 //! - [`ai`]: tactic-priority brains over Dijkstra maps.
 //! - [`work`]: one thing an actor does across many turns, counted in its
 //!   own turns, and the one cell it reaches its target from.
@@ -80,6 +83,7 @@ pub mod layout;
 pub mod loot;
 pub mod namegen;
 pub mod names;
+pub mod pool;
 pub mod prefab;
 pub mod prop;
 pub mod role;

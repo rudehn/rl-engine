@@ -484,7 +484,8 @@ pub struct CoverageRow {
     /// appended when it is not nought: `"brute +1"`.
     pub what: String,
     /// The band asked and what the draw there reaches, one pair for every
-    /// band the report covers.
+    /// band the report covers, or for those its piece is laid at in a
+    /// pool's report.
     pub reach: Vec<(i32, Reach)>,
 }
 
@@ -515,7 +516,8 @@ impl Coverage {
 
     /// A table, one column per band and one row per drawn slot: `✓` where
     /// the draw lands on the band asked, `~N` where it falls back to band
-    /// `N`, `✗` where it finds nothing.
+    /// `N`, `✗` where it finds nothing, and blank at a band the row was
+    /// not drawn at.
     pub fn render(&self) -> String {
         let mut prefabs: Vec<&str> = Vec::new();
         for row in &self.rows {
@@ -537,11 +539,12 @@ impl Coverage {
             for row in self.rows.iter().filter(|r| r.prefab == prefab) {
                 let label = format!("  {} {}", row.glyph, row.what);
                 out.push_str(&format!("{label:<label_width$}"));
-                for (_, reach) in &row.reach {
-                    let cell = match reach {
-                        Reach::Exact => "✓".to_string(),
-                        Reach::Fallback(band) => format!("~{band}"),
-                        Reach::Empty => "✗".to_string(),
+                for band in self.bands.clone() {
+                    let cell = match row.reach.iter().find(|(b, _)| *b == band).map(|(_, reach)| reach) {
+                        Some(Reach::Exact) => "✓".to_string(),
+                        Some(Reach::Fallback(band)) => format!("~{band}"),
+                        Some(Reach::Empty) => "✗".to_string(),
+                        None => String::new(),
                     };
                     out.push_str(&format!("{cell:>4}"));
                 }

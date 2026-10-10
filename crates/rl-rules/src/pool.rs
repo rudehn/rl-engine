@@ -1,0 +1,670 @@
+//! A pool: the pieces a run may hold, how often, where and how many.
+//!
+//! A pool file is [`Pool`], read once by [`load`], which resolves every
+//! name in it and reports every mistake at once, as a layout file is. An
+//! [`Entry`] is one thing a place may be given: a prefab grown as an area
+//! of its own, a prefab stamped inside an area, or a dressing; the floors
+//! and place tags it may stand on; a named weight; how many of it one place
+//! and one run may hold; an exclusive group; and, for one stamped inside,
+//! the kind of area it prefers. A [`Budget`] says how many picks of a kind
+//! a floor gets, and whether a pick of it the place cannot fit fails the
+//! place or is dropped.
+//!
+//! A kind is a string the file names in its budgets and nothing else: no
+//! kind means anything to the engine, which only counts them, and the
+//! piece itself says nothing about what kind of room it is
+//! (`docs/design/prefabs.md` section 8 refused categories on a prefab).
+//!
+//! What this module does not hold is the laying. Growing a piece is
+//! `rl-mapgen`'s `Accrete` and stamping one inside an area its
+//! `StampPicks`; `rl-bevy` turns a place's picks into both. This crate
+//! names no mapgen type, so a pool loads and every mistake in it is
+//! reported with no map and no `App`.
+//!
+//! ```text
+//! // A pool: the pieces a run may hold, how often, where and how many.
+//! //
+//! // Every field:
+//! //   weights: [(name, weight)], how often an entry is drawn, by a name
+//! //            the entries use, so a retune is one line; nought is never
+//! //   tags:    every place tag an entry may name in where or not
+//! //   budgets: how many picks of a kind a floor gets
+//! //     floors:   (first, last), the floors it covers; two budgets of one
+//! //               kind never cover the same floor, and a floor no budget
+//! //               of a kind covers gets none of that kind
+//! //     kind:     the kind it counts; any string, read only here
+//! //     count:    (fewest, most), drawn evenly for each floor
+//! //     required: optional, false if left out; true fails a place that
+//! //               cannot fit a pick of this kind, false drops the pick
+//! //   entries: what a place may be given
+//! //     name:      the entry's name
+//! //     kind:      a kind some budget names
+//! //     piece:     the prefab it lays, for Grown and Inside
+//! //     dressing:  the dressing it lays, for Dressed; one of piece and
+//! //                dressing, never both
+//! //     floors:    (first, last), the floors it may stand on
+//! //     where:     optional, any if left out: tags of which a place must
+//! //                carry one
+//! //     not:       optional, none if left out: tags a place must carry
+//! //                none of
+//! //     weight:    a name from weights
+//! //     per_place: optional, 1 if left out: the most of it on one floor
+//! //     per_run:   optional, 1 if left out: the most of it in one run,
+//! //                no fewer than per_place
+//! //     group:     optional: entries sharing a group never share a floor,
+//! //                and are all of one kind
+//! //     placed:    how it is laid, one of
+//! //       Grown(join)       grown as an area of its own through the entries
+//! //                         its prefab draws, joined by one of
+//! //                           Door, Arch, Mouth(n) with n at least 1,
+//! //                           Locked("tag") opened by a carrier of the tag,
+//! //                           Sealed, a gate the game lifts
+//! //       Inside([shape])   stamped inside an area one of the layout's
+//! //                         named shapes drew; any area if the list is empty
+//! //       Dressed           a dressing laid over an area of any size
+//! //     prefer:    optional, Anywhere if left out, and only Anywhere for a
+//! //                grown piece: the area an Inside or Dressed pick goes
+//! //                in, one of
+//! //       Secluded   the area farthest from the route it fits
+//! //       DeadEnd    an area with one way in
+//! //       Hidden     an area reached only through a secret
+//! //       Junction   an area three ways or more lead out of
+//! //       Anywhere   any area it fits
+//! (
+//!     weights: [("rare", 5), ("common", 50)],
+//!     tags: ["wet", "dry"],
+//!     budgets: [
+//!         (floors: (1, 5), kind: "flavor", count: (2, 3)),
+//!         (floors: (1, 5), kind: "reward", count: (1, 1), required: true),
+//!     ],
+//!     entries: [
+//!         (name: "locked store", kind: "reward", piece: "store", floors: (1, 5), weight: "common",
+//!          group: "stores", placed: Grown(Locked("key"))),
+//!         (name: "side stash", kind: "reward", piece: "stash", floors: (2, 5), not: ["wet"], weight: "rare",
+//!          placed: Inside(["room"]), prefer: Secluded),
+//!         (name: "puddles", kind: "flavor", dressing: "puddles", floors: (1, 5), where: ["wet"],
+//!          weight: "common", per_place: 2, per_run: 4, placed: Dressed, prefer: DeadEnd),
+//!     ],
+//! )
+//! ```
+
+use std::ops::RangeInclusive;
+
+use serde::Deserialize;
+
+use crate::affix::TagId;
+use crate::content::{ContentError, Registry};
+use crate::layout::LayoutDef;
+use crate::names::Names;
+use crate::prefab::{Coverage, PrefabDef, Sources};
+
+/// How a grown piece is joined to what it is attached to: a layout
+/// shape's joins, and the two only a piece the pool places may carry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Joined {
+    /// One cell of the door tile.
+    Door,
+    /// One cell of floor.
+    Arch,
+    /// Floor up to this many cells wide, at least one.
+    Mouth(u8),
+    /// One cell of the locked tile, opened by whoever carries the tag.
+    Locked(TagId),
+    /// One cell of the sealed tile, a gate the game lifts.
+    Sealed,
+}
+
+/// How an entry is laid.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Placed {
+    /// A prefab grown as an area of its own, through the entries it draws.
+    Grown {
+        /// The prefab's name.
+        piece: String,
+        /// How it is joined.
+        join: Joined,
+    },
+    /// A prefab stamped inside an area.
+    Inside {
+        /// The prefab's name.
+        piece: String,
+        /// The layout shapes whose areas it may go in; any if empty.
+        shapes: Vec<String>,
+    },
+    /// A dressing laid over an area of any size.
+    Dressed {
+        /// The dressing's name, which the dressings' own load checks.
+        dressing: String,
+    },
+}
+
+/// The area an entry stamped inside or dressed prefers. A grown piece has
+/// none, since growth decides where it attaches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+pub enum Prefer {
+    /// The area farthest from the route that it fits: what a player went
+    /// out of their way to find.
+    Secluded,
+    /// An area with one way in.
+    DeadEnd,
+    /// An area reached only through a secret.
+    Hidden,
+    /// An area three ways or more lead out of.
+    Junction,
+    /// Any area it fits.
+    #[default]
+    Anywhere,
+}
+
+/// One thing a place may be given.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Entry {
+    /// The entry's name.
+    pub name: String,
+    /// An index into [`Pool::kinds`].
+    pub kind: usize,
+    /// The first and last floor it may stand on.
+    pub floors: (i32, i32),
+    /// Tags of which a place must carry one; any place if empty.
+    pub within: Vec<String>,
+    /// Tags a place must carry none of.
+    pub not: Vec<String>,
+    /// How often it is drawn, the weight its name resolved to.
+    pub weight: u32,
+    /// The most of it on one floor.
+    pub per_place: u32,
+    /// The most of it in one run.
+    pub per_run: u32,
+    /// Entries sharing a group never share a floor.
+    pub group: Option<String>,
+    /// How it is laid.
+    pub placed: Placed,
+    /// The area it prefers.
+    pub prefer: Prefer,
+}
+
+impl Entry {
+    /// Whether it may stand on a floor numbered `band` carrying `tags`.
+    pub fn fits(&self, band: i32, tags: &[String]) -> bool {
+        (self.floors.0..=self.floors.1).contains(&band)
+            && (self.within.is_empty() || self.within.iter().any(|t| tags.contains(t)))
+            && !self.not.iter().any(|t| tags.contains(t))
+    }
+
+    /// The prefab it lays, for a grown piece or one stamped inside.
+    pub fn piece(&self) -> Option<&str> {
+        match &self.placed {
+            Placed::Grown { piece, .. } | Placed::Inside { piece, .. } => Some(piece),
+            Placed::Dressed { .. } => None,
+        }
+    }
+}
+
+/// How many picks of a kind each of a run of floors gets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Budget {
+    /// The first and last floor it covers.
+    pub floors: (i32, i32),
+    /// An index into [`Pool::kinds`].
+    pub kind: usize,
+    /// The fewest and most picks, drawn evenly for each floor.
+    pub count: (u32, u32),
+    /// Whether a pick of it a place cannot fit fails the place. A run
+    /// never quietly loses what a required kind promised; a pick of a kind
+    /// that is not required is dropped instead.
+    pub required: bool,
+}
+
+/// A loaded pool file, every name resolved.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pool {
+    /// Every kind a budget names, in the order first named.
+    pub kinds: Vec<String>,
+    /// Every budget.
+    pub budgets: Vec<Budget>,
+    /// Every entry.
+    pub entries: Vec<Entry>,
+}
+
+impl Pool {
+    /// The budget of `kind` covering floor `band`, if one does.
+    pub fn budget(&self, kind: usize, band: i32) -> Option<&Budget> {
+        self.budgets.iter().find(|b| b.kind == kind && (b.floors.0..=b.floors.1).contains(&band))
+    }
+
+    /// Every dressing an entry names, for the dressings' load to check.
+    pub fn dressings(&self) -> impl Iterator<Item = &str> {
+        self.entries.iter().filter_map(|e| match &e.placed {
+            Placed::Dressed { dressing } => Some(dressing.as_str()),
+            _ => None,
+        })
+    }
+}
+
+/// A pool as authored, before its names are resolved.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PoolRon {
+    weights: Vec<(String, u32)>,
+    tags: Vec<String>,
+    budgets: Vec<BudgetRon>,
+    entries: Vec<EntryRon>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BudgetRon {
+    floors: (i32, i32),
+    kind: String,
+    count: (u32, u32),
+    #[serde(default)]
+    required: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EntryRon {
+    name: String,
+    kind: String,
+    #[serde(default)]
+    piece: Option<String>,
+    #[serde(default)]
+    dressing: Option<String>,
+    floors: (i32, i32),
+    #[serde(default, rename = "where")]
+    within: Vec<String>,
+    #[serde(default)]
+    not: Vec<String>,
+    weight: String,
+    #[serde(default = "one")]
+    per_place: u32,
+    #[serde(default = "one")]
+    per_run: u32,
+    #[serde(default)]
+    group: Option<String>,
+    placed: PlacedRon,
+    #[serde(default)]
+    prefer: Prefer,
+}
+
+fn one() -> u32 {
+    1
+}
+
+#[derive(Deserialize)]
+enum PlacedRon {
+    Grown(JoinRon),
+    Inside(Vec<String>),
+    Dressed,
+}
+
+#[derive(Deserialize)]
+enum JoinRon {
+    Door,
+    Arch,
+    Mouth(u8),
+    Locked(String),
+    Sealed,
+}
+
+/// Reads a pool file, checking every prefab against `pieces`, every
+/// shape against `layout` and every lock's tag against the tags in
+/// `names`.
+///
+/// Reports every problem in the file at once rather than the first, each
+/// naming the weight, budget or entry it is about: a name used twice, a
+/// weight, tag, kind, prefab, shape or lock tag that resolves to nothing,
+/// floors or a count that run backwards, two budgets of one kind covering
+/// one floor, an entry whose floors no budget of its kind covers, a limit
+/// of nought or a per-place limit past the per-run one, a piece and a
+/// dressing both or neither or the wrong one for how it is placed, a grown
+/// prefab with no entry to join it by, a mouth of no width, a preference
+/// on a grown piece, and a group whose entries are of more than one kind.
+pub fn load<M>(text: &str, layout: &LayoutDef, pieces: &Registry<PrefabDef<M>>, names: &Names<'_>) -> Result<Pool, ContentError> {
+    let options = ron::options::Options::default().with_default_extension(ron::extensions::Extensions::IMPLICIT_SOME);
+    let a: PoolRon = options.from_str(text).map_err(|e| ContentError::Parse(e.to_string()))?;
+    let mut errors = Vec::new();
+
+    let mut twice = |what: &str, names: Vec<&str>| {
+        for (i, name) in names.iter().enumerate() {
+            if names[..i].contains(name) {
+                errors.push(format!("{name}: two {what}s share this name"));
+            }
+        }
+    };
+    twice("weight", a.weights.iter().map(|(n, _)| n.as_str()).collect());
+    twice("tag", a.tags.iter().map(String::as_str).collect());
+    twice("entry", a.entries.iter().map(|e| e.name.as_str()).collect());
+
+    let backwards = |(lo, hi): (i32, i32)| lo > hi;
+    let mut kinds: Vec<String> = Vec::new();
+    let mut budgets: Vec<Budget> = Vec::new();
+    for (i, b) in a.budgets.iter().enumerate() {
+        let what = format!("budget {i} ({} on {} to {})", b.kind, b.floors.0, b.floors.1);
+        if backwards(b.floors) {
+            errors.push(format!("{what}: its floors run backwards"));
+        }
+        if b.count.0 > b.count.1 {
+            errors.push(format!("{what}: its count runs backwards, from {} to {}", b.count.0, b.count.1));
+        }
+        let kind = kinds.iter().position(|k| *k == b.kind).unwrap_or_else(|| {
+            kinds.push(b.kind.clone());
+            kinds.len() - 1
+        });
+        for (j, other) in budgets.iter().enumerate() {
+            if other.kind == kind && other.floors.0.max(b.floors.0) <= other.floors.1.min(b.floors.1) {
+                errors.push(format!("{what}: covers a floor budget {j} of the same kind covers"));
+            }
+        }
+        budgets.push(Budget { floors: b.floors, kind, count: b.count, required: b.required });
+    }
+
+    let shape_names: Vec<&str> = layout.shapes.iter().map(|s| s.name.as_str()).collect();
+    let mut entries = Vec::new();
+    for e in &a.entries {
+        let name = &e.name;
+        let kind = kinds.iter().position(|k| *k == e.kind);
+        match kind {
+            None => errors.push(format!("{name}: no budget counts its kind {:?}, so it is never drawn", e.kind)),
+            Some(k) if !backwards(e.floors) && !budgets.iter().any(|b| b.kind == k && b.floors.0.max(e.floors.0) <= b.floors.1.min(e.floors.1)) => {
+                errors.push(format!("{name}: no budget of its kind {:?} covers any of floors {} to {}, so it is never drawn", e.kind, e.floors.0, e.floors.1));
+            }
+            Some(_) => {}
+        }
+        if backwards(e.floors) {
+            errors.push(format!("{name}: its floors run backwards, from {} to {}", e.floors.0, e.floors.1));
+        }
+        let weight = a.weights.iter().find(|(w, _)| *w == e.weight).map(|(_, w)| *w);
+        if weight.is_none() {
+            errors.push(format!("{name}: names unknown weight {:?}", e.weight));
+        }
+        for tag in e.within.iter().chain(&e.not) {
+            if !a.tags.contains(tag) {
+                errors.push(format!("{name}: names unknown tag {tag:?}"));
+            }
+        }
+        if e.per_place == 0 || e.per_run == 0 {
+            errors.push(format!("{name}: a limit of nought; an entry kept out of play takes a weight of nought instead"));
+        } else if e.per_place > e.per_run {
+            errors.push(format!("{name}: per_place is {}, past its per_run of {}", e.per_place, e.per_run));
+        }
+        let piece = |errors: &mut Vec<String>| -> String {
+            let Some(piece) = &e.piece else {
+                errors.push(format!("{name}: a grown or inside entry names a piece"));
+                return String::new();
+            };
+            if e.dressing.is_some() {
+                errors.push(format!("{name}: names both a piece and a dressing"));
+            }
+            if pieces.id(piece).is_none() {
+                errors.push(format!("{name}: names unknown prefab {piece:?}"));
+            }
+            piece.clone()
+        };
+        let placed = match &e.placed {
+            PlacedRon::Grown(join) => {
+                let piece = piece(&mut errors);
+                if let Some(def) = pieces.id(&piece).map(|id| pieces.get(id))
+                    && !def.rows().iter().any(|row| row.chars().any(|c| def.entry(c)))
+                {
+                    errors.push(format!("{name}: grows {piece:?}, which draws no entry to join it by"));
+                }
+                if e.prefer != Prefer::Anywhere {
+                    errors.push(format!("{name}: prefers {:?}, and a grown piece goes where growth attaches it", e.prefer));
+                }
+                let join = match join {
+                    JoinRon::Door => Joined::Door,
+                    JoinRon::Arch => Joined::Arch,
+                    JoinRon::Mouth(0) => {
+                        errors.push(format!("{name}: Mouth(0) is no way through; a mouth is at least 1 wide"));
+                        Joined::Mouth(1)
+                    }
+                    JoinRon::Mouth(n) => Joined::Mouth(*n),
+                    JoinRon::Locked(tag) => match names.tag(tag) {
+                        Ok(tag) => Joined::Locked(tag),
+                        Err(why) => {
+                            errors.push(format!("{name}: {why}"));
+                            Joined::Sealed
+                        }
+                    },
+                    JoinRon::Sealed => Joined::Sealed,
+                };
+                Placed::Grown { piece, join }
+            }
+            PlacedRon::Inside(shapes) => {
+                let piece = piece(&mut errors);
+                for shape in shapes.iter().filter(|s| !shape_names.contains(&s.as_str())) {
+                    errors.push(format!("{name}: names unknown shape {shape:?}"));
+                }
+                Placed::Inside { piece, shapes: shapes.clone() }
+            }
+            PlacedRon::Dressed => {
+                if e.piece.is_some() {
+                    errors.push(format!("{name}: is dressed, and names a piece rather than a dressing"));
+                }
+                let dressing = e.dressing.clone().unwrap_or_else(|| {
+                    errors.push(format!("{name}: is dressed and names no dressing"));
+                    String::new()
+                });
+                Placed::Dressed { dressing }
+            }
+        };
+        entries.push(Entry {
+            name: name.clone(),
+            kind: kind.unwrap_or(0),
+            floors: e.floors,
+            within: e.within.clone(),
+            not: e.not.clone(),
+            weight: weight.unwrap_or(0),
+            per_place: e.per_place,
+            per_run: e.per_run,
+            group: e.group.clone(),
+            placed,
+            prefer: e.prefer,
+        });
+    }
+
+    // A group's entries share a floor's one place in it; one of a single
+    // kind keeps the draw a flow that counts each kind apart.
+    for (i, e) in a.entries.iter().enumerate() {
+        if let Some(group) = &e.group
+            && let Some(other) = a.entries[..i].iter().find(|o| o.group.as_ref() == Some(group) && o.kind != e.kind)
+        {
+            errors.push(format!("{}: is a {} in group {group:?}, which {} holds as a {}; a group is of one kind", e.name, e.kind, other.name, other.kind));
+        }
+    }
+
+    if errors.is_empty() { Ok(Pool { kinds, budgets, entries }) } else { Err(ContentError::Invalid(errors)) }
+}
+
+/// [`prefab::coverage`](crate::prefab::coverage) over every piece the pool
+/// lays, each at the floors its entries may stand on and no others, so a
+/// slot is never reported empty on a floor its piece is never laid on.
+///
+/// A piece two entries name is reported once, at the floors of both. The
+/// report's bands run from the first floor any piece stands on to the
+/// last, and a row leaves blank each band its piece is not laid at.
+pub fn coverage<M, I: Copy>(pool: &Pool, pieces: &Registry<PrefabDef<M>>, sources: &Sources<'_, M, I>) -> Coverage {
+    // Each piece in the order first named, and every floor it stands on.
+    let mut laid: Vec<(&str, Vec<i32>)> = Vec::new();
+    for e in &pool.entries {
+        let Some(piece) = e.piece() else { continue };
+        let at = match laid.iter().position(|(p, _)| *p == piece) {
+            Some(at) => at,
+            None => {
+                laid.push((piece, Vec::new()));
+                laid.len() - 1
+            }
+        };
+        laid[at].1.extend(e.floors.0..=e.floors.1);
+    }
+    let first = laid.iter().flat_map(|(_, f)| f.iter().copied()).min().unwrap_or(1);
+    let last = laid.iter().flat_map(|(_, f)| f.iter().copied()).max().unwrap_or(0);
+    let mut rows = Vec::new();
+    for (piece, floors) in laid {
+        let Some(id) = pieces.id(piece) else { continue };
+        let report = crate::prefab::coverage([pieces.get(id)], sources, first..=last);
+        rows.extend(report.rows.into_iter().map(|mut row| {
+            row.reach.retain(|(band, _)| floors.contains(band));
+            row
+        }));
+    }
+    Coverage { bands: RangeInclusive::new(first, last), rows }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::affix::TagDef;
+    use rl_grid::{TileProps, TileRegistry};
+
+    struct World {
+        layout: LayoutDef,
+        pieces: Registry<PrefabDef<()>>,
+        tags: Registry<TagDef>,
+    }
+
+    const LAYOUT: &str = r#"(
+        shapes: [
+            (name: "room", kind: Rectangle(w: (5, 9), h: (5, 8)), join: Door),
+            (name: "run", kind: Passage(width: (1, 2), length: (4, 12), bend_pct: 30), join: Arch),
+        ],
+        districts: [(name: "rooms", shapes: [("room", 4), ("run", 1)])],
+        recipes: [],
+    )"#;
+
+    fn world() -> World {
+        let mut tiles = TileRegistry::new();
+        tiles.register(TileProps::wall("wall")).unwrap();
+        tiles.register(TileProps::floor("floor")).unwrap();
+        let piece = |name: &str, rows: &str| {
+            let entry = if rows.contains('E') { ", 'E': Entry" } else { "" };
+            let text = format!(r#"(name: "{name}", rows: [{rows}], legend: {{'#': Tile("wall"), '.': Tile("floor"){entry}}})"#);
+            crate::prefab::load::<()>(&text, &tiles, &Names::new()).unwrap()
+        };
+        let tags = Registry::from_defs(vec![TagDef::new("key")]).unwrap();
+        let pieces = Registry::from_defs(vec![
+            piece("store", r######""#####", "#...#", "#...#", "##E##""######),
+            piece("stash", r#"".#.""#),
+            piece("shut", r####""###", "#.#", "###""####),
+            crate::prefab::load::<()>(r#"(name: "rack", ground: "floor", rows: ["w"], legend: { 'w': Item(tag: "key") })"#, &tiles, &Names::new().tags(&tags))
+                .unwrap(),
+        ])
+        .unwrap();
+        World { layout: crate::layout::load(LAYOUT).unwrap(), pieces, tags }
+    }
+
+    fn read(w: &World, text: &str) -> Result<Pool, ContentError> {
+        load(text, &w.layout, &w.pieces, &Names::new().tags(&w.tags))
+    }
+
+    const POOL: &str = r#"(
+        weights: [("rare", 5), ("common", 50)],
+        tags: ["wet", "dry"],
+        budgets: [
+            (floors: (1, 5), kind: "flavor", count: (2, 3)),
+            (floors: (1, 5), kind: "reward", count: (1, 1), required: true),
+        ],
+        entries: [
+            (name: "locked store", kind: "reward", piece: "store", floors: (1, 5), weight: "common", group: "stores", placed: Grown(Locked("key"))),
+            (name: "side stash", kind: "reward", piece: "stash", floors: (2, 5), not: ["wet"], weight: "rare", placed: Inside(["room"]), prefer: Secluded),
+            (name: "puddles", kind: "flavor", dressing: "puddles", floors: (1, 5), where: ["wet"], weight: "common", per_place: 2, per_run: 4, placed: Dressed, prefer: DeadEnd),
+        ],
+    )"#;
+
+    #[test]
+    fn a_pool_file_resolves_every_name_it_carries() {
+        let w = world();
+        let pool = read(&w, POOL).unwrap();
+        assert_eq!(pool.kinds, vec!["flavor", "reward"]);
+        assert_eq!(pool.budgets[1], Budget { floors: (1, 5), kind: 1, count: (1, 1), required: true });
+        assert!(!pool.budgets[0].required, "a budget is not required unless it says so");
+        let store = &pool.entries[0];
+        assert_eq!((store.kind, store.weight, store.per_place, store.per_run), (1, 50, 1, 1), "limits default to one");
+        assert_eq!(store.placed, Placed::Grown { piece: "store".into(), join: Joined::Locked(w.tags.expect("key")) });
+        assert_eq!(store.prefer, Prefer::Anywhere);
+        let stash = &pool.entries[1];
+        assert_eq!((stash.weight, stash.prefer, &stash.not), (5, Prefer::Secluded, &vec!["wet".to_string()]));
+        assert_eq!(stash.placed, Placed::Inside { piece: "stash".into(), shapes: vec!["room".into()] });
+        let puddles = &pool.entries[2];
+        assert_eq!((puddles.per_place, puddles.per_run, &puddles.within), (2, 4, &vec!["wet".to_string()]));
+        assert_eq!(pool.dressings().collect::<Vec<_>>(), vec!["puddles"]);
+        let tags = |t: &[&str]| t.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert!(stash.fits(3, &tags(&["dry"])) && !stash.fits(3, &tags(&["wet", "dry"])) && !stash.fits(1, &tags(&[])));
+        assert!(puddles.fits(1, &tags(&["wet"])) && !puddles.fits(1, &tags(&["dry"])));
+    }
+
+    #[test]
+    fn the_load_refuses_every_mistake_in_a_pool_at_once() {
+        let w = world();
+        let text = r#"(
+            weights: [("rare", 5), ("rare", 6)],
+            tags: ["wet"],
+            budgets: [
+                (floors: (5, 1), kind: "flavor", count: (3, 2)),
+                (floors: (1, 5), kind: "reward", count: (1, 1)),
+                (floors: (4, 9), kind: "reward", count: (1, 1)),
+            ],
+            entries: [
+                (name: "a", kind: "flavor", piece: "stash", floors: (1, 2), weight: "uncommon", placed: Inside(["hall"])),
+                (name: "b", kind: "risk", piece: "nowhere", floors: (1, 2), weight: "rare", placed: Grown(Mouth(0)), prefer: Secluded),
+                (name: "c", kind: "reward", piece: "stash", floors: (6, 3), where: ["damp"], weight: "rare", per_place: 2, placed: Inside([])),
+                (name: "d", kind: "reward", piece: "shut", dressing: "x", floors: (1, 2), weight: "rare", per_run: 0, group: "g", placed: Grown(Locked("lock"))),
+                (name: "e", kind: "flavor", floors: (1, 2), weight: "rare", group: "g", placed: Dressed),
+                (name: "a", kind: "reward", piece: "stash", floors: (12, 14), weight: "rare", placed: Dressed),
+            ],
+        )"#;
+        let Err(ContentError::Invalid(errors)) = read(&w, text) else { panic!("the pool is refused") };
+        let says = |what: &str| assert!(errors.iter().any(|e| e.contains(what)), "no error says {what:?} among {errors:#?}");
+        says("rare: two weights share this name");
+        says("a: two entrys share this name");
+        says("budget 0 (flavor on 5 to 1): its floors run backwards");
+        says("its count runs backwards, from 3 to 2");
+        says("budget 2 (reward on 4 to 9): covers a floor budget 1 of the same kind covers");
+        says("a: names unknown weight \"uncommon\"");
+        says("a: names unknown shape \"hall\"");
+        says("b: no budget counts its kind \"risk\"");
+        says("b: names unknown prefab \"nowhere\"");
+        says("b: Mouth(0) is no way through");
+        says("b: prefers Secluded, and a grown piece");
+        says("c: its floors run backwards, from 6 to 3");
+        says("c: names unknown tag \"damp\"");
+        says("c: per_place is 2, past its per_run of 1");
+        says("d: names both a piece and a dressing");
+        says("d: a limit of nought");
+        says("d: grows \"shut\", which draws no entry");
+        says("d: unknown tag \"lock\"");
+        says("e: is dressed and names no dressing");
+        says("e: is a flavor in group \"g\", which d holds as a reward");
+        says("a: is dressed, and names a piece rather than a dressing");
+        says("a: no budget of its kind \"reward\" covers any of floors 12 to 14");
+        assert_eq!(errors.len(), 25, "{errors:#?}");
+    }
+
+    /// A piece's slots are reported at the floors its entries stand on,
+    /// so a piece laid only deep is never called empty on a shallow floor.
+    #[test]
+    fn a_pool_s_coverage_reports_each_piece_at_its_own_floors_and_no_others() {
+        let w = world();
+        let text = POOL.replace(
+            "entries: [",
+            r#"entries: [
+            (name: "rack low", kind: "flavor", piece: "rack", floors: (2, 3), weight: "rare", placed: Inside([])),
+            (name: "rack deep", kind: "flavor", piece: "rack", floors: (5, 5), weight: "rare", placed: Inside([])),"#,
+        );
+        let pool = read(&w, &text).unwrap();
+        let roles = Registry::<crate::role::RoleDef<()>>::from_defs(Vec::new()).unwrap();
+        let monsters = crate::content::BandedTable::new(Vec::new());
+        let row = |lo, hi| vec![crate::loot::LootRow { item: 1u32, bands: (lo, hi), weight: 1, group: (1, 1), tags: vec![w.tags.expect("key")] }];
+        let items = crate::loot::LootTable::new(row(1, 9), |n| n.to_string());
+        let report = coverage(&pool, &w.pieces, &Sources { roles: &roles, monsters: &monsters, items: &items, tags: &w.tags });
+        assert_eq!(report.bands, 1..=5, "from the first floor a piece stands on to the last");
+        assert_eq!(report.rows.len(), 1, "a piece two entries name is one row");
+        assert_eq!(report.rows[0].reach.iter().map(|(b, _)| *b).collect::<Vec<_>>(), vec![2, 3, 5]);
+        assert!(report.render().lines().nth(1).unwrap().ends_with("       ✓   ✓       ✓"), "{}", report.render());
+
+        let items = crate::loot::LootTable::new(Vec::new(), |n: &u32| n.to_string());
+        let report = coverage(&pool, &w.pieces, &Sources { roles: &roles, monsters: &monsters, items: &items, tags: &w.tags });
+        assert_eq!(report.empties(), vec![("rack", 'w', 2), ("rack", 'w', 3), ("rack", 'w', 5)]);
+    }
+}
