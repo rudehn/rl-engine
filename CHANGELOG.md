@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The nearby rail's health wash is a fifth of the health's tone where it was over a third: every unhurt row read as a slab of the good tone, an ally's name in that same tone read green on green, and the row picked out was barely told from the rest.
+  Nothing to change in a game; a row still reads as its health bar.
+
 - A cursor's ticks never stand on someone the map drew beside the cell it points at: the look cursor on a monster next to the player used to put the player's own glyph out under its tick.
   The map keeps who it drew each frame in the new `DrawnActors`, which `MapViewPlugin` adds, and the side a tick would cover goes unmarked; anything else, a wall or a thing lying about, still takes its tick.
   `cursor::mark` takes `drawn: Option<&DrawnActors>` after the view, so a game that drew a cursor with it passes its `Option<Res<DrawnActors>>` through, or `None` for the old drawing; the new `CursorMap` system parameter borrows the map view and the account together and marks with both, as the look, targeting and nearby presenters now do.

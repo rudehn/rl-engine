@@ -242,6 +242,16 @@ pub fn draw_nearby(
     }
 }
 
+/// How much of the health's tone a row's wash is mixed of, the rest the
+/// row's own background.
+///
+/// A fifth: enough that a row reads at a glance as a bar and a wounded
+/// one stands out by its colour, and little enough that the name over it
+/// keeps its own. At more than a third, every unhurt row was a slab of
+/// the good tone, an ally's name in that same tone read green on green,
+/// and the row picked out was barely told from the rest.
+const WASH: f32 = 0.2;
+
 fn draw_row(terminal: &mut Terminal, inner: Rect, y: i32, row: &Row, focused: bool, layout: &NearbyLayout, palette: &Palette) {
     // The row is the bar: health fills it from the left in the health's
     // own tone, mixed into the row's background rather than painted over
@@ -258,7 +268,7 @@ fn draw_row(terminal: &mut Terminal, inner: Rect, y: i32, row: &Row, focused: bo
         f if f <= 0.5 => Tones::NOTICE,
         _ => Tones::GOOD,
     });
-    let wash = base.mix(&hurt, 0.35);
+    let wash = base.mix(&hurt, WASH);
     if filled > 0 {
         terminal.fill(Rect::new(inner.x, y, filled, 1), Cell::new(' ', base).on(wash));
     }
@@ -343,7 +353,7 @@ mod tests {
             let palette = stage.app.world().resource::<Palette>();
             (palette.get(Tones::SURFACE), palette.get(Tones::GOOD))
         };
-        let full = surface.mix(&good, 0.35);
+        let full = surface.mix(&good, WASH);
         for x in [0, 12, 23] {
             assert_eq!(bg(&stage, x, 2), full, "the crab's row is washed at column {x}");
         }
@@ -499,7 +509,7 @@ mod tests {
         let tile = stage.app.world().resource::<MapView>().to_screen(stage.at.offset(3, 0)).expect("the gull is on the map");
         // Unpicked and unhurt, so the row carries its own health wash
         // rather than the selection.
-        let unpicked = surface.mix(&stage.app.world().resource::<Palette>().get(Tones::GOOD), 0.35);
+        let unpicked = surface.mix(&stage.app.world().resource::<Palette>().get(Tones::GOOD), WASH);
         assert_eq!(bg(&stage, 45, 3), unpicked, "nothing is picked out yet");
 
         stage.press(CursorKeys::default().next);
@@ -507,7 +517,7 @@ mod tests {
         assert!(stage.rows()[3].contains("g gull"), "{:?}", stage.rows()[3]);
         // Picked out and unhurt: the selection is what the health washes
         // over, so the row reads as picked whatever its health.
-        let picked = select.mix(&stage.app.world().resource::<Palette>().get(Tones::GOOD), 0.35);
+        let picked = select.mix(&stage.app.world().resource::<Palette>().get(Tones::GOOD), WASH);
         for x in [40, 45, 63] {
             assert_eq!(bg(&stage, x, 3), picked, "the gull's row, edge to edge, at column {x}");
         }
