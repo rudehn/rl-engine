@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- An ending with more to say than the menu's rectangle holds keeps every choice in it and cuts its own words from the end instead: a long enough list of sections used to push Quit under the frame, where the cursor could still reach it and nobody could see it.
+  Nothing to change in a game; one that wants all its words on the screen gives the menu a taller rectangle, as before.
+
 - The nearby rail's health wash is a fifth of the health's tone where it was over a third: every unhurt row read as a slab of the good tone, an ally's name in that same tone read green on green, and the row picked out was barely told from the rest.
   Nothing to change in a game; a row still reads as its health bar.
 

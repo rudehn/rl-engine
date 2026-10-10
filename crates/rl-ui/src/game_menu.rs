@@ -435,6 +435,11 @@ pub fn draw_game_menu(mut terminal: ResMut<Terminal>, screen: MenuScreen) {
         words.push((String::new(), Tones::MUTED));
     }
     let items = MenuItem::offered(playing, settings_offered(modals, settings.as_deref()).is_some(), title_menu.is_some());
+    // The choices are the way off this screen, so it is the words that
+    // give way when both do not fit: an ending long enough to push Quit
+    // under the frame left a row the cursor could reach and nobody could
+    // see. Cut from the end, where the game's last section is.
+    words.truncate(((rect.height - 2).max(0) as usize).saturating_sub(items.len()));
     let height = ((words.len() + items.len()) as i32 + 2).min(rect.height);
     let rect = Rect::new(rect.x, rect.y, rect.width, height);
     clear(&mut terminal, rect, palette);
@@ -619,6 +624,26 @@ mod tests {
         assert!(body.iter().all(|l| !l.contains("morgue")), "nothing is written anywhere: {body:?}");
         stage.press(KeyCode::Escape);
         assert!(stage.app.world().resource::<Modals>().any_open(), "escape does not leave an ending");
+    }
+
+    /// An ending with more to say than its frame holds keeps every choice
+    /// in it, Quit last, and gives up the end of what it had to say
+    /// instead.
+    #[test]
+    fn an_ending_too_long_for_its_frame_keeps_every_choice_and_cuts_its_words() {
+        let mut stage = Stage::new((GameMenuPanel::new(Rect::new(0, 0, 44, 12)).died("You are dead."), crate::SheetViewPlugin)).screen(44, 12);
+        stage.app.add_systems(
+            Update,
+            (|mut view: ResMut<EndingView>| {
+                let body = (1..=12).map(|n| format!("line {n}")).collect::<Vec<_>>().join("\n");
+                view.section("The long of it", &body);
+            })
+            .in_set(crate::ViewSet::Annotate),
+        );
+        die(&mut stage);
+        let body: Vec<String> = (1..11).map(|y| inside(&stage, y)).collect();
+        assert_eq!(body[body.len() - 3..], ["A new run", "This seed again", "Quit"], "every choice, at the foot: {body:?}");
+        assert!(body.contains(&"The long of it".to_string()) && !body.contains(&"line 12".to_string()), "and the words cut short above them: {body:?}");
     }
 
     /// The run's own line, the summary of the record filed for it, stands
