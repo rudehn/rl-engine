@@ -94,7 +94,10 @@ pub struct Lakes {
     /// walls between them, and leave islands and spits that only a bridge
     /// reaches. Off, a lake is a pond in one area that the floor is walked
     /// round. On, the chain must hold a [`Bridges`] over the same tile,
-    /// which joins every part back or fails the place.
+    /// which joins every part back or fails the place, and the tile must
+    /// stop a body: one a body crosses parts nothing, and eating the walls
+    /// between areas it would open ways no [`Opening`] records, so the pass
+    /// fails rather than lay it.
     ///
     /// Every part a lake leaves of what it parts has room to stand in, a
     /// cell with floor all round it, so a lake never leaves a doorway or
@@ -121,8 +124,9 @@ pub struct Lake {
 /// [`longest`](Self::longest) cells wide and walking round from one bank
 /// to the other is at least [`detour`](Self::detour) steps; then fails
 /// the place if any of its floor still cannot be walked to from the rest,
-/// every lock open, so [`Chain::run_retrying`](crate::Chain::run_retrying)
-/// grows another.
+/// every lock open, or if floor of an area that was walked to without a
+/// key is now reached only through a lock, so
+/// [`Chain::run_retrying`](crate::Chain::run_retrying) grows another.
 ///
 /// A crossing has the liquid on both flanks of every cell it spans, as
 /// Brogue's bridges do, so it crosses a lake and never runs along its edge
@@ -390,6 +394,12 @@ impl<C: BuildContext> Pass<C> for Lakes {
     }
     fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
         let tables = ctx.tiles().tables();
+        if self.cut && tables.passable[self.tile.index()] {
+            return Err(BuildError::new(
+                self.name,
+                "a lake that may cut is of a tile that stops a body; one a body crosses cuts nothing and eats walls into ways no opening records",
+            ));
+        }
         let bounds = ctx.terrain().bounds();
         let (w, h) = (bounds.width, bounds.height);
         if w < 3 || h < 3 {
@@ -668,6 +678,27 @@ impl<C: BuildContext> Pass<C> for Bridges {
         let parts = label_regions(&joined, |i| joined.get_idx(i), Steps::Four).count();
         if parts > 1 {
             return Err(BuildError::new(self.name, format!("the floor is in {parts} parts after every bridge that could be laid")));
+        }
+
+        // Every lock shut, what was walked to without a key must still be:
+        // a lake that parted an area so that some of it is reached only
+        // through a lock drawn on a piece cell by cell has put a key on the
+        // way to floor that never needed one. The area graph is what the
+        // place was before any lake, so the areas it reaches without a lock
+        // are the ones that must still be walked between.
+        let openings: Vec<&Opening> = ctx.outputs().iter::<Opening>().collect();
+        let areas = ctx.outputs().iter::<Area>().map(|a| a.index + 1).max().unwrap_or(0);
+        let behind = behind_locks(areas, &openings);
+        let open = ways(ctx, &passable_cells(ctx));
+        let free: Vec<Point> =
+            ctx.outputs().iter::<Area>().filter(|a| !behind[a.index]).flat_map(|a| a.cells.iter().copied()).filter(|p| open.contains(*p)).collect();
+        if let Some(start) = free.first() {
+            let mut reached = BitGrid::new(w, h);
+            flood(&open, *start, |i| open.get_idx(i), Steps::Four, &mut reached);
+            let stranded = free.iter().filter(|p| !reached.contains(**p)).count();
+            if stranded > 0 {
+                return Err(BuildError::new(self.name, format!("{stranded} cells walked to without a key before are reached only through a lock")));
+            }
         }
         Ok(())
     }
@@ -1026,5 +1057,140 @@ mod tests {
             both += usize::from(laid(r.water) && laid(r.pool));
         }
         assert!(both >= 15, "only {both} of 20 places hold both");
+    }
+
+    /// The areas as they stood before any lake, kept by a pass that runs
+    /// ahead of the lakes, so a test can ask what a lake took.
+    struct Before(Vec<Area>);
+
+    struct Record;
+
+    impl Pass<BaseContext> for Record {
+        fn name(&self) -> &'static str {
+            "record"
+        }
+        fn phase(&self) -> Phase {
+            Phase::Structures
+        }
+        fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
+            let areas = ctx.outputs().iter::<Area>().cloned().collect();
+            ctx.emit(Before(areas));
+            Ok(())
+        }
+    }
+
+    /// The usual growth, with a rectangle drawn cell by cell and joined by
+    /// a lock among its shapes: growth goes on past it, so what grows on
+    /// from it lies behind the lock too.
+    fn vaulted() -> crate::Accrete {
+        let base = rig();
+        let mut pass = accrete(&base, 3);
+        pass.shapes.push(Box::new(crate::accrete::Rectangle { name: "vault".into(), w: (5, 8), h: (5, 7), join: Join::Locked(5) }));
+        let vault = pass.shapes.len() - 1;
+        for d in &mut pass.districts {
+            d.shapes.push((vault, 2));
+        }
+        pass.locked = base.tiles.id("locked").expect("registered by the rig");
+        pass
+    }
+
+    /// No lake covers and no bridge lands on an area reached from the first
+    /// only through a lock drawn on a piece cell by cell, and with every
+    /// lock shut every cell of the areas reached without one is still
+    /// walked to from the rest.
+    #[test]
+    fn no_lake_or_bridge_reaches_past_a_lock_on_a_piece_drawn_cell_by_cell() {
+        let r = rig_with_water();
+        let passable = r.tiles.tables().passable;
+        let mut locked_away = 0;
+        for s in 0..80 {
+            let chain = Chain::new().then(vaulted()).then(OpenLoops { door: r.door, min_detour: 20, max: 6 }).then(Record).then(islands(&r)).then(bridges(&r));
+            let ctx = chain.run_retrying(|| BaseContext::blank(84, 48, r.tiles.clone(), r.wall), RunSeed(s), 40).unwrap_or_else(|e| panic!("seed {s}: {e}"));
+            let before = &ctx.outputs().first::<Before>().unwrap().0;
+            let openings: Vec<&Opening> = ctx.outputs().iter::<Opening>().collect();
+            // Walked to from the first area through openings with no lock.
+            let mut free = vec![false; before.len()];
+            free[0] = true;
+            let mut stack = vec![0];
+            while let Some(a) = stack.pop() {
+                for o in openings.iter().filter(|o| !matches!(o.join, Join::Locked(_) | Join::Sealed)) {
+                    for (x, y) in [(o.areas.0, o.areas.1), (o.areas.1, o.areas.0)] {
+                        if x == a && !free[y] {
+                            free[y] = true;
+                            stack.push(y);
+                        }
+                    }
+                }
+            }
+            let kept: Vec<Point> = before.iter().filter(|a| !free[a.index]).flat_map(|a| a.cells.iter().copied()).collect();
+            locked_away += usize::from(before.iter().any(|a| !free[a.index] && a.entries.is_none()));
+            for lake in ctx.outputs().iter::<Lake>() {
+                assert!(lake.cells.iter().chain(&lake.wreath).all(|p| !kept.contains(p)), "seed {s}: a lake lies behind a lock");
+            }
+            for b in ctx.outputs().iter::<Bridge>() {
+                let step = b.facing.offset();
+                let banks = [b.cells[0].offset(-step.x, -step.y), b.cells[b.cells.len() - 1].offset(step.x, step.y)];
+                assert!(banks.iter().all(|p| !kept.contains(p)), "seed {s}: a bridge lands behind a lock");
+            }
+            let terrain = ctx.terrain();
+            let shut: Vec<Point> = openings.iter().filter(|o| matches!(o.join, Join::Locked(_) | Join::Sealed)).flat_map(|o| o.cells.clone()).collect();
+            let open = |i: usize| passable[terrain.get_idx(i).index()] && !shut.contains(&terrain.idx_point(i));
+            let walked: Vec<Point> = ctx
+                .outputs()
+                .iter::<Area>()
+                .filter(|a| free[a.index])
+                .flat_map(|a| a.cells.iter().copied())
+                .filter(|p| terrain.checked_idx(*p).is_some_and(open))
+                .collect();
+            let mut reached = BitGrid::new(terrain.width(), terrain.height());
+            flood(terrain, walked[0], open, Steps::Four, &mut reached);
+            assert!(walked.iter().all(|p| reached.contains(*p)), "seed {s}: floor once walked to is reached only through a lock");
+        }
+        assert!(locked_away >= 10, "only {locked_away} of 80 places have an area drawn cell by cell behind a lock");
+    }
+
+    #[test]
+    fn a_lake_that_may_cut_of_a_tile_a_body_crosses_is_refused() {
+        let r = rig_with_water();
+        let mut ctx = BaseContext::blank(8, 8, r.tiles.clone(), r.wall);
+        let pass = Lakes { tile: r.shore, ..islands(&r) };
+        assert_eq!(pass.apply(&mut ctx).unwrap_err().pass, "lakes");
+    }
+
+    /// Room `A` opens on `C` by a door and on `B` by a lock, and `C` opens on
+    /// `B` by a second lock. Liquid too wide to bridge parts `C`, so its far
+    /// part is one piece with the rest only through `B`, every lock open,
+    /// and reached only through a lock with them shut: the place fails.
+    #[test]
+    fn a_place_whose_lake_left_free_floor_behind_a_lock_fails_naming_the_pass() {
+        let r = rig_with_water();
+        let (floor, locked) = (r.tiles.expect("floor"), r.tiles.id("locked").unwrap());
+        let mut ctx = BaseContext::blank(20, 5, r.tiles.clone(), r.wall);
+        let row = |x0: i32, x1: i32, y: i32| (x0..=x1).map(move |x| Point::new(x, y)).collect::<Vec<_>>();
+        let a = row(1, 3, 1);
+        let c: Vec<Point> = row(5, 7, 1).into_iter().chain(row(12, 13, 1)).collect();
+        let mut b = row(15, 17, 1);
+        b.extend([Point::new(17, 2)]);
+        b.extend(row(1, 17, 3));
+        for p in a.iter().chain(&c).chain(&b) {
+            ctx.terrain_mut().set(*p, floor);
+        }
+        for p in row(8, 11, 1) {
+            ctx.terrain_mut().set(p, r.water);
+        }
+        ctx.terrain_mut().set(Point::new(4, 1), r.door);
+        ctx.terrain_mut().set(Point::new(14, 1), locked);
+        ctx.terrain_mut().set(Point::new(2, 2), locked);
+        for (index, cells) in [a, c, b].into_iter().enumerate() {
+            let bounds = bounds_of(&cells);
+            ctx.emit(Area { index, shape: "room".into(), district: "d".into(), inner: bounds, bounds, cells, entries: None });
+        }
+        ctx.emit(Opening { cells: vec![Point::new(4, 1)], facing: Direction::East, areas: (0, 1), join: Join::Door });
+        ctx.emit(Opening { cells: vec![Point::new(14, 1)], facing: Direction::East, areas: (1, 2), join: Join::Locked(1) });
+        ctx.emit(Opening { cells: vec![Point::new(2, 2)], facing: Direction::South, areas: (0, 2), join: Join::Locked(2) });
+        let pass = Bridges { name: "spans", across: r.water, tile: r.bridge, longest: 2, detour: 20 };
+        let err = Chain::new().then(pass).run(&mut ctx, RunSeed(1)).unwrap_err();
+        assert_eq!(err.pass, "spans");
+        assert!(err.reason.contains("only through a lock"), "{}", err.reason);
     }
 }
