@@ -18,8 +18,9 @@
 
 use super::*;
 
-/// One named recipe a biome may grow a floor by, not yet resolved against
-/// a layout file, which task 10 writes.
+/// One named recipe of `assets/layout.ron` a biome may grow a floor by,
+/// checked against the layout at load; the floors are grown by it once
+/// the floor chain reads it.
 #[derive(Debug, Clone, serde::Deserialize)]
 pub(crate) struct RecipeWeight {
     pub(crate) name: String,
@@ -101,12 +102,11 @@ fn to_draw(def: &BiomeDef, tiles: &TileRegistry) -> BiomeDraw {
 /// Every biome, compiled in so the binary runs from anywhere.
 const BIOMES_RON: &str = include_str!("../../assets/biomes.ron");
 
-/// Checks `def` against `tiles`, the one registry this task can check a
-/// biome's data against: its wall, its floor, and a lake's tile and
-/// wreath, if it carries one. Its floor band, its weight, and its
-/// recipes' own weights are checked against nothing but themselves, since
-/// nothing but this file says what they should be yet.
-fn check(def: &BiomeDef, tiles: &TileRegistry) -> Result<(), String> {
+/// Checks `def` against `tiles` and `layout`: its wall, its floor, a
+/// lake's tile and wreath, if it carries one, and every recipe it names,
+/// which must be in `assets/layout.ron`. Its floor band, its weight, and
+/// its recipes' own weights are checked against nothing but themselves.
+fn check(def: &BiomeDef, tiles: &TileRegistry, layout: &LayoutDef) -> Result<(), String> {
     if def.floors.0 > def.floors.1 || def.floors.0 < 1 || def.floors.1 > FLOORS {
         return Err(format!("floors {:?} outside 1..={FLOORS}", def.floors));
     }
@@ -125,6 +125,9 @@ fn check(def: &BiomeDef, tiles: &TileRegistry) -> Result<(), String> {
         if r.weight == 0 {
             return Err(format!("recipe {:?} has a weight of nought", r.name));
         }
+        if layout.recipe(&r.name).is_none() {
+            return Err(format!("recipe {:?} is not in assets/layout.ron", r.name));
+        }
     }
     if let Some(lakes) = &def.lakes {
         if tiles.id(&lakes.tile).is_none() {
@@ -142,12 +145,16 @@ fn check(def: &BiomeDef, tiles: &TileRegistry) -> Result<(), String> {
     Ok(())
 }
 
-/// Loads and checks every biome against `tiles`. Panics with every
-/// problem at once, since a broken biome is a run that cannot grow a
-/// floor.
-pub(crate) fn load(tiles: &TileRegistry) -> Registry<BiomeDef> {
-    let defs = Registry::from_ron_str(BIOMES_RON).unwrap_or_else(|e| panic!("assets/biomes.ron: {e}"));
-    defs.validate(|def, _| check(def, tiles)).unwrap_or_else(|e| panic!("assets/biomes.ron: {e}"));
+/// Loads and checks every biome against `tiles` and `layout`, and that
+/// every recipe of `layout` is named by some biome, so none is written for
+/// nothing. Panics with every problem at once, since a broken biome is a
+/// run that cannot grow a floor.
+pub(crate) fn load(tiles: &TileRegistry, layout: &LayoutDef) -> Registry<BiomeDef> {
+    let defs: Registry<BiomeDef> = Registry::from_ron_str(BIOMES_RON).unwrap_or_else(|e| panic!("assets/biomes.ron: {e}"));
+    defs.validate(|def, _| check(def, tiles, layout)).unwrap_or_else(|e| panic!("assets/biomes.ron: {e}"));
+    let unnamed: Vec<&str> =
+        layout.recipes.iter().map(|r| r.name.as_str()).filter(|r| !defs.iter().any(|(_, d)| d.recipes.iter().any(|w| w.name == *r))).collect();
+    assert!(unnamed.is_empty(), "assets/layout.ron: no biome grows {unnamed:?}");
     defs
 }
 
@@ -189,7 +196,7 @@ mod tests {
 
     /// Loads against the real tiles, the way `Undermere::new` does.
     fn defs() -> Registry<BiomeDef> {
-        load(&registry())
+        load(&registry(), &layout())
     }
 
     /// Every floor one to ten has at least one biome that stands on it,

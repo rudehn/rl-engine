@@ -1,0 +1,381 @@
+// How a floor of the Undermere is grown: the shapes it is built from, the
+// districts that favor some of them, and the twenty-nine recipes the
+// biomes in `assets/biomes.ron` name, two or three to a biome and one to
+// each throne. A piece's body is carved from the drawn biome's floor, and
+// a Door opens as a "door"; `dungeon.rs` paints an area's floor again by
+// its shape or district afterwards, as the biome's `paint` list says.
+//
+// Every field:
+//   shapes: every shape a district may draw
+//     name: the shape's name; an area remembers it, and nothing in the
+//           engine reads a meaning into it
+//     kind: one of, every range from 1 to 4096
+//       Rectangle(w: (fewest, most), h: (fewest, most))
+//       Cross(long: (fewest, most), short: (fewest, most))
+//                         two bars overlapped on their centers; the most
+//                         of short is less than the fewest of long
+//       Passage(width: (fewest, most), length: (fewest, most), bend_pct: 0)
+//                         bend_pct is the chance in a hundred of a second
+//                         leg at a right angle; a passage is not a room,
+//                         and nothing is stamped in it
+//       Cave(w: (fewest, most), h: (fewest, most), fill_pct: 55, visits_pct: 100)
+//                         grown by the cellular automaton inside a box of
+//                         w by h, and its largest region kept; fill_pct is
+//                         the share of the box that starts as rock, 1 to
+//                         99, and visits_pct how many cells the rule is
+//                         applied at as a share of the box, 1 to 10000
+//     join: how a piece of it is joined to what it is attached to, one of
+//       Door              one cell of the door tile
+//       Arch              one cell of floor
+//       Mouth(n)          floor up to n cells wide, n at least 1
+//   districts: a region's taste in shapes
+//     name:   the district's name; an area remembers it
+//     shapes: [(shape, weight)], at least one weight more than nought
+//   recipes: what a biome names to be grown
+//     name:              the recipe's name
+//     size:              (width, height) in cells, each 3 to 4096
+//     open_pct:          the share of the map to open, 1 to 100
+//     late_pct:          optional, the share open before the pieces a
+//                        floor must hold are laid, 0 to open_pct; two
+//                        thirds of open_pct, rounded down, if left out
+//     patience:          attempts in a row that may fail before growth
+//                        gives up, more than nought
+//     districts_per_10k: district seeds per ten thousand cells, rounded,
+//                        never fewer than one seed; at most 10000
+//     districts:         [(district, weight)], at least one weight more
+//                        than nought
+//     barriers:          optional, none if left out: rock growth goes
+//                        round, so a floor bends round it
+//       from:       (x_pct, y_pct), one end as shares of the width and
+//                   height, each 0 to 100
+//       to:         (x_pct, y_pct), the other end
+//       chance_pct: the chance in a hundred it is laid, 0 to 100
+//       jitter_pct: the furthest both ends are shifted together, as a
+//                   share of the width and of the height, 0 to 100
+//                   A barrier a shift could lay from one edge of the
+//                   map to the opposite is refused; one cutting off a
+//                   corner is not, and the corner stays rock.
+//     loops:             (min_detour, max): the shortest detour in steps
+//                        worth a door, and the most doors
+//     require:           what the grown floor must meet or be grown again
+//       open_pct:     (at least, at most)
+//       areas:        [(shape, fewest)], each a shape some district of
+//                     this recipe draws
+//       loops:        fewest, no more than loops' max
+//       dead_end_pct: the largest share of areas with one way in, 0 to 100
+//       route:        fewest steps from the way in to the way down, a
+//                     third of the map's longer side or more on every
+//                     floor with a way down; nought on the throne's,
+//                     which has none
+(
+    shapes: [
+        // Rooms and halls, behind doors or opening by mouths.
+        (name: "room", kind: Rectangle(w: (5, 9), h: (4, 7)), join: Door),
+        (name: "chamber", kind: Rectangle(w: (8, 12), h: (6, 9)), join: Door),
+        (name: "hall", kind: Rectangle(w: (12, 18), h: (8, 11)), join: Mouth(3)),
+        (name: "great hall", kind: Rectangle(w: (18, 26), h: (10, 14)), join: Mouth(3)),
+        (name: "cross", kind: Cross(long: (11, 15), short: (5, 7)), join: Door),
+        (name: "great cross", kind: Cross(long: (15, 21), short: (7, 9)), join: Mouth(3)),
+        (name: "storeroom", kind: Rectangle(w: (3, 6), h: (3, 5)), join: Door),
+        // The barracks' cells are all one size, so a block reads as built
+        // to a plan.
+        (name: "cell", kind: Rectangle(w: (5, 5), h: (4, 4)), join: Door),
+        (name: "crypt", kind: Rectangle(w: (3, 5), h: (3, 5)), join: Door),
+        (name: "stack", kind: Rectangle(w: (16, 24), h: (3, 4)), join: Arch),
+        (name: "reading room", kind: Rectangle(w: (5, 8), h: (4, 6)), join: Door),
+        (name: "chapel", kind: Rectangle(w: (5, 8), h: (5, 7)), join: Door),
+        (name: "nave", kind: Rectangle(w: (20, 28), h: (9, 13)), join: Mouth(3)),
+        (name: "smithy", kind: Rectangle(w: (6, 9), h: (5, 7)), join: Door),
+
+        // Passages, one to two wide.
+        (name: "corridor", kind: Passage(width: (1, 1), length: (4, 10), bend_pct: 30), join: Arch),
+        (name: "crawlway", kind: Passage(width: (1, 1), length: (3, 8), bend_pct: 50), join: Arch),
+        (name: "passage", kind: Passage(width: (2, 2), length: (6, 14), bend_pct: 25), join: Arch),
+        // The mines' galleries run straight and two wide, dug to a plan.
+        (name: "gallery", kind: Passage(width: (2, 2), length: (10, 20), bend_pct: 10), join: Arch),
+        // The catacombs' run long and one wide.
+        (name: "long gallery", kind: Passage(width: (1, 1), length: (10, 22), bend_pct: 15), join: Arch),
+        (name: "tunnel", kind: Passage(width: (1, 1), length: (4, 12), bend_pct: 60), join: Arch),
+
+        // Caves, each its own area.
+        (name: "rubble cave", kind: Cave(w: (7, 12), h: (5, 9), fill_pct: 48, visits_pct: 150), join: Mouth(1)),
+        (name: "root cave", kind: Cave(w: (6, 10), h: (5, 8), fill_pct: 48, visits_pct: 150), join: Mouth(1)),
+        (name: "pocket", kind: Cave(w: (5, 8), h: (4, 7), fill_pct: 45, visits_pct: 150), join: Mouth(1)),
+        (name: "small cave", kind: Cave(w: (7, 11), h: (6, 9), fill_pct: 48, visits_pct: 150), join: Mouth(2)),
+        (name: "cave", kind: Cave(w: (11, 17), h: (8, 12), fill_pct: 50, visits_pct: 200), join: Mouth(2)),
+        (name: "large cave", kind: Cave(w: (16, 24), h: (11, 16), fill_pct: 50, visits_pct: 300), join: Mouth(3)),
+        (name: "long cave", kind: Cave(w: (20, 30), h: (6, 9), fill_pct: 48, visits_pct: 200), join: Mouth(2)),
+    ],
+    districts: [
+        // The Upper Halls.
+        (name: "halls", shapes: [("hall", 4), ("room", 3), ("cross", 1), ("corridor", 1)]),
+        (name: "wings", shapes: [("room", 4), ("chamber", 2), ("cross", 1), ("corridor", 3)]),
+        (name: "galleries", shapes: [("passage", 4), ("corridor", 2), ("room", 3)]),
+        (name: "ruin", shapes: [("rubble cave", 4), ("room", 1), ("crawlway", 1)]),
+        // The Cellars.
+        (name: "storerooms", shapes: [("storeroom", 5), ("crawlway", 4), ("room", 1)]),
+        (name: "roots", shapes: [("root cave", 5), ("crawlway", 2), ("storeroom", 1)]),
+        // The Watch Barracks.
+        (name: "cells", shapes: [("cell", 6), ("corridor", 3)]),
+        (name: "mess", shapes: [("cross", 3), ("room", 2), ("corridor", 2)]),
+        (name: "parade", shapes: [("great hall", 4), ("cross", 2), ("corridor", 1)]),
+        // The Fungal Deeps.
+        (name: "grottoes", shapes: [("large cave", 3), ("cave", 3), ("small cave", 1)]),
+        (name: "band", shapes: [("long cave", 4), ("cave", 2)]),
+        (name: "knot", shapes: [("small cave", 5), ("pocket", 2), ("tunnel", 1)]),
+        // The Spider Warrens.
+        (name: "warren", shapes: [("small cave", 3), ("pocket", 2), ("tunnel", 4)]),
+        (name: "nest", shapes: [("large cave", 5), ("cave", 1), ("tunnel", 1)]),
+        // The Old Mines.
+        (name: "workings", shapes: [("chamber", 3), ("gallery", 4), ("pocket", 2)]),
+        (name: "seam", shapes: [("cave", 3), ("pocket", 3), ("gallery", 2), ("chamber", 1)]),
+        // The Catacombs.
+        (name: "crypts", shapes: [("crypt", 6), ("long gallery", 3)]),
+        (name: "ossuaries", shapes: [("hall", 3), ("cross", 3), ("long gallery", 2)]),
+        // The Sunken Library.
+        (name: "stacks", shapes: [("stack", 5), ("passage", 2), ("reading room", 1)]),
+        (name: "atrium", shapes: [("great cross", 2), ("cross", 2), ("reading room", 4), ("passage", 2)]),
+        // The Drowned Cathedral.
+        (name: "nave", shapes: [("nave", 3), ("cross", 1), ("chapel", 2), ("passage", 1)]),
+        (name: "cloister", shapes: [("chapel", 4), ("passage", 4)]),
+        // The Underlake.
+        (name: "shore", shapes: [("cave", 3), ("large cave", 2), ("small cave", 2)]),
+        (name: "islands", shapes: [("large cave", 3), ("cave", 2)]),
+        // The Forge of Embers and the Ashen Galleries.
+        (name: "smithies", shapes: [("smithy", 4), ("corridor", 2)]),
+        (name: "smelter", shapes: [("great hall", 2), ("hall", 2), ("passage", 1)]),
+        (name: "ash", shapes: [("cave", 3), ("small cave", 3)]),
+        (name: "flows", shapes: [("long cave", 4), ("cave", 2), ("tunnel", 1)]),
+        (name: "vents", shapes: [("small cave", 4), ("pocket", 3), ("tunnel", 2)]),
+        // The throne floors.
+        (name: "throne halls", shapes: [("hall", 3), ("room", 2), ("corridor", 2)]),
+        (name: "hollow", shapes: [("cave", 3), ("large cave", 2), ("small cave", 2)]),
+        (name: "pillared", shapes: [("hall", 3), ("cross", 2), ("passage", 2)]),
+    ],
+    recipes: [
+        // The Upper Halls: halls by mouths; wings split by two barriers
+        // and met at their ends; long galleries looping between small
+        // chambers. A ruin breaks into each.
+        (
+            name: "great halls", size: (96, 54), open_pct: 38, patience: 300, districts_per_10k: 7,
+            districts: [("halls", 5), ("ruin", 1)],
+            loops: (min_detour: 24, max: 6),
+            require: (open_pct: (32, 60), areas: [("hall", 2)], loops: 2, dead_end_pct: 55, route: 32),
+        ),
+        (
+            name: "wings", size: (100, 56), open_pct: 36, patience: 300, districts_per_10k: 8,
+            districts: [("wings", 4), ("halls", 1), ("ruin", 1)],
+            barriers: [
+                (from: (33, 0), to: (33, 70), chance_pct: 100, jitter_pct: 4),
+                (from: (67, 30), to: (67, 100), chance_pct: 100, jitter_pct: 4),
+            ],
+            loops: (min_detour: 24, max: 6),
+            require: (open_pct: (30, 60), areas: [("room", 6)], loops: 2, dead_end_pct: 55, route: 34),
+        ),
+        (
+            name: "galleries", size: (100, 56), open_pct: 34, patience: 300, districts_per_10k: 8,
+            districts: [("galleries", 5), ("ruin", 1)],
+            loops: (min_detour: 16, max: 10),
+            require: (open_pct: (28, 60), areas: [("passage", 6), ("room", 4)], loops: 4, dead_end_pct: 50, route: 34),
+        ),
+
+        // The Cellars: small rooms on crawlways, tight and full of dead
+        // ends; or burrowed through by root caves.
+        (
+            name: "storerooms", size: (90, 52), open_pct: 32, patience: 300, districts_per_10k: 9,
+            districts: [("storerooms", 5), ("roots", 1)],
+            loops: (min_detour: 30, max: 3),
+            require: (open_pct: (26, 60), areas: [("storeroom", 10)], loops: 1, dead_end_pct: 65, route: 30),
+        ),
+        (
+            name: "burrowed", size: (90, 52), open_pct: 34, patience: 300, districts_per_10k: 9,
+            districts: [("roots", 1), ("storerooms", 1)],
+            loops: (min_detour: 30, max: 4),
+            require: (open_pct: (28, 60), areas: [("root cave", 4), ("storeroom", 4)], loops: 1, dead_end_pct: 65, route: 30),
+        ),
+
+        // The Watch Barracks: blocks of uniform cells; or a parade hall
+        // with mess halls round it.
+        (
+            name: "blocks", size: (96, 54), open_pct: 34, patience: 300, districts_per_10k: 9,
+            districts: [("cells", 4), ("mess", 1)],
+            loops: (min_detour: 24, max: 6),
+            require: (open_pct: (28, 60), areas: [("cell", 10)], loops: 2, dead_end_pct: 70, route: 32),
+        ),
+        (
+            name: "parade", size: (96, 54), open_pct: 38, patience: 300, districts_per_10k: 6,
+            districts: [("parade", 3), ("mess", 2), ("cells", 1)],
+            loops: (min_detour: 24, max: 6),
+            require: (open_pct: (32, 60), areas: [("great hall", 1), ("cross", 2)], loops: 2, dead_end_pct: 60, route: 32),
+        ),
+
+        // The Fungal Deeps: large grottoes; a long band of caves the floor
+        // follows round three barriers; or a knot of small caves.
+        (
+            name: "grottoes", size: (100, 56), open_pct: 42, patience: 300, districts_per_10k: 6,
+            districts: [("grottoes", 1)],
+            loops: (min_detour: 24, max: 6),
+            require: (open_pct: (36, 62), areas: [("large cave", 3)], loops: 2, dead_end_pct: 55, route: 34),
+        ),
+        (
+            name: "band", size: (120, 40), open_pct: 40, patience: 300, districts_per_10k: 7,
+            districts: [("band", 1)],
+            barriers: [
+                (from: (25, 0), to: (25, 60), chance_pct: 100, jitter_pct: 3),
+                (from: (50, 40), to: (50, 100), chance_pct: 100, jitter_pct: 3),
+                (from: (75, 0), to: (75, 60), chance_pct: 100, jitter_pct: 3),
+            ],
+            loops: (min_detour: 24, max: 4),
+            require: (open_pct: (32, 62), areas: [("long cave", 3)], loops: 1, dead_end_pct: 55, route: 40),
+        ),
+        (
+            name: "knot", size: (96, 54), open_pct: 36, patience: 300, districts_per_10k: 9,
+            districts: [("knot", 1)],
+            loops: (min_detour: 12, max: 12),
+            require: (open_pct: (30, 60), areas: [("small cave", 8)], loops: 5, dead_end_pct: 45, route: 32),
+        ),
+
+        // The Spider Warrens: small caves and tunnels, mostly dead ends; or
+        // a nest of large caves among them.
+        (
+            name: "warren", size: (96, 54), open_pct: 30, patience: 300, districts_per_10k: 9,
+            districts: [("warren", 1)],
+            loops: (min_detour: 30, max: 3),
+            require: (open_pct: (24, 60), areas: [("small cave", 6)], loops: 1, dead_end_pct: 60, route: 32),
+        ),
+        (
+            name: "nest", size: (100, 56), open_pct: 34, patience: 300, districts_per_10k: 8,
+            districts: [("nest", 2), ("warren", 3)],
+            loops: (min_detour: 30, max: 4),
+            require: (open_pct: (28, 60), areas: [("large cave", 2), ("small cave", 4)], loops: 1, dead_end_pct: 60, route: 34),
+        ),
+
+        // The Old Mines: chambers on straight galleries with many loops;
+        // or a deep seam of caves split by a barrier, chambers rarer.
+        (
+            name: "workings", size: (100, 56), open_pct: 36, patience: 300, districts_per_10k: 8,
+            districts: [("workings", 1)],
+            loops: (min_detour: 14, max: 10),
+            require: (open_pct: (30, 60), areas: [("chamber", 4)], loops: 5, dead_end_pct: 45, route: 34),
+        ),
+        (
+            name: "deep seam", size: (100, 56), open_pct: 36, patience: 300, districts_per_10k: 8,
+            districts: [("seam", 1)],
+            barriers: [(from: (15, 50), to: (75, 50), chance_pct: 100, jitter_pct: 8)],
+            loops: (min_detour: 20, max: 6),
+            require: (open_pct: (30, 60), areas: [("cave", 3)], loops: 2, dead_end_pct: 55, route: 34),
+        ),
+
+        // The Catacombs: a grid of small crypts on long galleries; or
+        // ossuary halls and crosses with galleries between.
+        (
+            name: "grid", size: (96, 54), open_pct: 30, patience: 300, districts_per_10k: 9,
+            districts: [("crypts", 1)],
+            loops: (min_detour: 24, max: 6),
+            require: (open_pct: (24, 60), areas: [("crypt", 12)], loops: 2, dead_end_pct: 70, route: 32),
+        ),
+        (
+            name: "ossuaries", size: (96, 54), open_pct: 34, patience: 300, districts_per_10k: 8,
+            districts: [("ossuaries", 3), ("crypts", 1)],
+            loops: (min_detour: 24, max: 6),
+            require: (open_pct: (28, 60), areas: [("hall", 2), ("cross", 2)], loops: 2, dead_end_pct: 55, route: 32),
+        ),
+
+        // The Sunken Library: long stacks side by side; or atria and the
+        // reading rooms round them.
+        (
+            name: "stacks", size: (100, 56), open_pct: 36, patience: 300, districts_per_10k: 8,
+            districts: [("stacks", 1)],
+            loops: (min_detour: 20, max: 8),
+            require: (open_pct: (30, 60), areas: [("stack", 5)], loops: 3, dead_end_pct: 50, route: 34),
+        ),
+        (
+            name: "atrium", size: (96, 54), open_pct: 36, patience: 300, districts_per_10k: 8,
+            districts: [("atrium", 1)],
+            loops: (min_detour: 24, max: 6),
+            require: (open_pct: (30, 60), areas: [("great cross", 1), ("reading room", 4)], loops: 2, dead_end_pct: 55, route: 32),
+        ),
+
+        // The Drowned Cathedral: naves with deep water standing in them;
+        // or chapels round a cloister garth.
+        (
+            name: "nave", size: (104, 58), open_pct: 40, patience: 300, districts_per_10k: 7,
+            districts: [("nave", 1)],
+            loops: (min_detour: 24, max: 6),
+            require: (open_pct: (30, 62), areas: [("nave", 2)], loops: 2, dead_end_pct: 55, route: 35),
+        ),
+        (
+            name: "cloister", size: (100, 56), open_pct: 36, patience: 300, districts_per_10k: 8,
+            districts: [("cloister", 1)],
+            barriers: [(from: (35, 50), to: (65, 50), chance_pct: 100, jitter_pct: 6)],
+            loops: (min_detour: 20, max: 8),
+            require: (open_pct: (28, 60), areas: [("chapel", 5)], loops: 3, dead_end_pct: 55, route: 34),
+        ),
+
+        // The Underlake: caves along a great lake; or islands in lakes
+        // over most of the floor.
+        (
+            name: "shore", size: (104, 58), open_pct: 42, patience: 300, districts_per_10k: 7,
+            districts: [("shore", 1)],
+            loops: (min_detour: 24, max: 6),
+            require: (open_pct: (24, 62), areas: [("cave", 3)], loops: 1, dead_end_pct: 60, route: 35),
+        ),
+        (
+            name: "archipelago", size: (104, 58), open_pct: 46, patience: 300, districts_per_10k: 6,
+            districts: [("islands", 1)],
+            loops: (min_detour: 24, max: 6),
+            require: (open_pct: (20, 62), areas: [("large cave", 3)], loops: 1, dead_end_pct: 60, route: 35),
+        ),
+
+        // The Forge of Embers: smithies among ash caves; or a smelter's
+        // halls round a lake of lava.
+        (
+            name: "smithies", size: (96, 54), open_pct: 38, patience: 300, districts_per_10k: 8,
+            districts: [("smithies", 2), ("ash", 3)],
+            loops: (min_detour: 24, max: 6),
+            require: (open_pct: (28, 60), areas: [("smithy", 3)], loops: 2, dead_end_pct: 55, route: 32),
+        ),
+        (
+            name: "smelter", size: (96, 54), open_pct: 40, patience: 300, districts_per_10k: 7,
+            districts: [("smelter", 2), ("ash", 1)],
+            loops: (min_detour: 24, max: 6),
+            require: (open_pct: (28, 60), areas: [("great hall", 1)], loops: 2, dead_end_pct: 55, route: 32),
+        ),
+
+        // The Ashen Galleries: long caves of cooled flows; or small caves
+        // round many small vents.
+        (
+            name: "flows", size: (104, 58), open_pct: 38, patience: 300, districts_per_10k: 7,
+            districts: [("flows", 1)],
+            loops: (min_detour: 24, max: 6),
+            require: (open_pct: (28, 60), areas: [("long cave", 3)], loops: 2, dead_end_pct: 55, route: 35),
+        ),
+        (
+            name: "vents", size: (96, 54), open_pct: 34, patience: 300, districts_per_10k: 9,
+            districts: [("vents", 1)],
+            loops: (min_detour: 20, max: 8),
+            require: (open_pct: (26, 60), areas: [("small cave", 8)], loops: 3, dead_end_pct: 55, route: 32),
+        ),
+
+        // The throne floors: compact, the fight being the point and the
+        // walk to it not. None has a way down.
+        (
+            name: "drowned throne", size: (72, 44), open_pct: 34, patience: 300, districts_per_10k: 8,
+            districts: [("throne halls", 1)],
+            loops: (min_detour: 20, max: 4),
+            require: (open_pct: (26, 62), areas: [("hall", 2)], loops: 1, dead_end_pct: 60, route: 0),
+        ),
+        (
+            name: "brood hollow", size: (72, 44), open_pct: 38, patience: 300, districts_per_10k: 8,
+            districts: [("hollow", 1)],
+            loops: (min_detour: 20, max: 4),
+            require: (open_pct: (26, 62), areas: [("cave", 2)], loops: 1, dead_end_pct: 60, route: 0),
+        ),
+        (
+            name: "wyrm's hall", size: (72, 44), open_pct: 36, patience: 300, districts_per_10k: 8,
+            districts: [("pillared", 1)],
+            loops: (min_detour: 20, max: 4),
+            require: (open_pct: (26, 62), areas: [("hall", 2)], loops: 1, dead_end_pct: 60, route: 0),
+        ),
+    ],
+)

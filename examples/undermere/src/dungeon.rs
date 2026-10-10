@@ -34,6 +34,7 @@ use rl_engine::rl_core::Rect;
 use rl_engine::rl_mapgen::dungeon::{Bsp, Doors, ExitPoint, FarthestExit, RandomStart, Room, Rooms};
 use rl_engine::rl_mapgen::passes::{CellularCave, StartPoint};
 use rl_engine::rl_render::TileAppearance;
+use rl_engine::rl_rules::layout::{self, LayoutDef};
 
 use crate::bestiary::MonsterDef;
 
@@ -75,6 +76,15 @@ const CAVE_FILL_PCT: u32 = 56;
 
 /// How every tile looks, compiled in so the binary runs from anywhere.
 const TILES_RON: &str = include_str!("../assets/tiles.ron");
+
+/// How every floor is grown, compiled in beside the tiles.
+const LAYOUT_RON: &str = include_str!("../assets/layout.ron");
+
+/// The layout every floor is grown from; a mistake in the file stops the
+/// game at startup, every one of them named.
+fn layout() -> LayoutDef {
+    layout::load(LAYOUT_RON).unwrap_or_else(|e| panic!("assets/layout.ron: {e}"))
+}
 
 /// The map id of floor `floor`; floors count from one.
 pub fn map_of(floor: u32) -> MapId {
@@ -282,7 +292,7 @@ impl Undermere {
         let tiles = registry();
         // After the tiles, which the pieces paint by name.
         let prefabs = crate::prefabs::load(&tiles);
-        let defs = biomes::load(&tiles);
+        let defs = biomes::load(&tiles, &layout());
         let boss = lairs::draw_final_boss(seed);
         let mut biomes = BTreeMap::new();
         for floor in 1..FLOORS {
@@ -1221,7 +1231,7 @@ mod tests {
     fn each_floor_draws_a_biome_whose_band_includes_it() {
         for s in 0..40 {
             let undermere = Undermere::new(RunSeed(s));
-            let defs = biomes::load(undermere.tiles());
+            let defs = biomes::load(undermere.tiles(), &layout());
             for floor in 1..=FLOORS {
                 let drawn = undermere.biome_of(floor);
                 let bare = drawn.name.trim_start_matches("the ");
@@ -1300,7 +1310,7 @@ mod tests {
     fn every_biomes_walls_are_lighter_than_its_floors() {
         let undermere = Undermere::new(RunSeed(0));
         let look = undermere.appearance();
-        let defs = biomes::load(undermere.tiles());
+        let defs = biomes::load(undermere.tiles(), &layout());
         for (_, def) in defs.iter() {
             reads_against(&undermere, &look, &def.name, &def.wall, &def.floor);
         }
