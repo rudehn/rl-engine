@@ -16,9 +16,10 @@
 //! an opening, a hidden one included since it is an opening once found,
 //! or on or beside the way in or the way down; and nothing cuts an area,
 //! checked by flooding the area before and after each thing that blocks
-//! and taking back the one that cut it. The file, its names and its checks
-//! are `rl-rules`'s; this reads only what growth and the passes after it
-//! published.
+//! and taking back the one that cut it or that left a slot, its own or one
+//! laid before it, with no open cell beside it. The file, its names and its
+//! checks are `rl-rules`'s; this reads only what growth and the passes
+//! after it published.
 
 use rand::Rng;
 use rand::seq::SliceRandom;
@@ -67,9 +68,14 @@ pub enum Stand {
     /// This tile, painted on its cell.
     Tile(TileId),
     /// A slot: a mark on its cell, emitted as a [`Stamped`] mark for
-    /// whoever fills the dressing's slots. A slot blocks, as far as the
-    /// check that nothing cuts an area knows, since what it holds, a prop
-    /// that blocks or an item that does not, is not this crate's to know.
+    /// whoever fills the dressing's slots. What it holds, a prop that
+    /// blocks or an item that does not, is not this crate's to know, so
+    /// the check that nothing cuts an area takes it both ways: it blocks
+    /// the area's other cells, and its own cell keeps an open cell
+    /// straight beside it, from which an item in it is stepped onto and a
+    /// thing in it is used. Taken only the first way, a slot holding an
+    /// item could be shut in by things laid after it, which the area's
+    /// count of regions never sees, since the slot was never counted.
     Slot,
 }
 
@@ -264,6 +270,15 @@ impl Frame {
 
     /// How many regions the cells `open` leaves of the area, with the rim,
     /// joined orthogonally, as growth promises every open cell is.
+    ///
+    /// Orthogonally is how a mover joins them, read strictly. A mover
+    /// steps eight ways but never past the corner of a cell it cannot
+    /// stand on, and what stands in a slot may be such a corner to some
+    /// mover: the move resolver lets a diagonal past a thing on the floor,
+    /// but a mind declines one whose crook it cannot step on. A diagonal
+    /// between two open cells passes two cells that are open too, the
+    /// rim's or the area's, so it joins nothing two orthogonal steps do
+    /// not, and the count is the same whichever reading a mover keeps.
     fn regions(&self, open: &[bool]) -> usize {
         let mut seen = vec![false; open.len()];
         let mut count = 0;
@@ -290,12 +305,21 @@ impl Frame {
         }
         count
     }
+
+    /// Whether the cell at `i` has a cell straight beside it that `open`
+    /// leaves clear or the rim holds: somewhere a body stands to step onto
+    /// it or to use what stands there.
+    fn beside_open(&self, open: &[bool], i: usize) -> bool {
+        let p = self.point(i);
+        Direction::CARDINALS.iter().any(|d| self.at(p + d.offset()).is_some_and(|j| open[j] || self.rim[j]))
+    }
 }
 
 /// Lays `dressing` in `area` and repaints it, and returns its slots as
 /// marks: each thing on a cell its spread offers, drawn from the pass's
 /// stream, never on or beside a cell of `keep` or a way out of the area,
-/// and never one that leaves the area in more regions than before.
+/// and never one that leaves the area in more regions than before or that
+/// leaves a slot with no open cell straight beside it.
 fn dress_area<C: BuildContext>(ctx: &mut C, area: &Area, dressing: &Dressing, keep: &[Point], floor: TileId) -> Vec<(char, Point)> {
     let walkable = ctx.tiles().tables().walkable;
     let walk = |ctx: &C, p: Point| ctx.terrain().get(p).is_some_and(|t| walkable[t.index()]);
@@ -328,6 +352,9 @@ fn dress_area<C: BuildContext>(ctx: &mut C, area: &Area, dressing: &Dressing, ke
     let mut taken = vec![false; size];
     let mut regions = frame.regions(&open);
     let mut marks = Vec::new();
+    // Every slot laid so far, each asked again after every thing that
+    // blocks: the one that shuts a slot in is rarely the slot's own.
+    let mut slots: Vec<usize> = Vec::new();
     for thing in &dressing.things {
         let mut cells = spread.cells(&frame, thing.at);
         cells.shuffle(ctx.rng());
@@ -344,10 +371,12 @@ fn dress_area<C: BuildContext>(ctx: &mut C, area: &Area, dressing: &Dressing, ke
             if taken[i] || near[i] {
                 continue;
             }
+            let slot = thing.stands == Stand::Slot;
             if blocks {
                 open[i] = false;
                 let after = frame.regions(&open);
-                if after > regions {
+                let shut_in = slot.then_some(i).into_iter().chain(slots.iter().copied()).any(|s| !frame.beside_open(&open, s));
+                if after > regions || shut_in {
                     open[i] = true;
                     continue;
                 }
@@ -360,7 +389,10 @@ fn dress_area<C: BuildContext>(ctx: &mut C, area: &Area, dressing: &Dressing, ke
                 Stand::Tile(t) => {
                     ctx.terrain_mut().set(p, t);
                 }
-                Stand::Slot => marks.push((thing.glyph, p)),
+                Stand::Slot => {
+                    slots.push(i);
+                    marks.push((thing.glyph, p));
+                }
             }
         }
     }
@@ -448,8 +480,8 @@ mod tests {
     use crate::loops::OpenLoops;
     use crate::secrets::HideOpenings;
     use crate::survey::Survey;
-    use rl_core::RunSeed;
-    use rl_grid::TileProps;
+    use rl_core::{Grid2D, RunSeed};
+    use rl_grid::{CostSource, DijkstraMap, PathRules, TileProps};
     use std::collections::BTreeSet;
 
     /// The key the test dressing's slots carry.
@@ -621,6 +653,88 @@ mod tests {
         }
     }
 
+    /// Every slot in the corners first and then a slot on every cell along
+    /// the walls: each corner's two neighbours are wall cells, and taking
+    /// both shut the corner in while the count of regions, which had
+    /// already let the corner go, stayed one. Each slot keeps a clear cell
+    /// straight beside it now, so an item in it is stepped onto.
+    #[test]
+    fn a_slot_laid_first_is_never_shut_in_by_the_things_laid_after_it() {
+        let (r, ..) = tiles();
+        let d = dressing("crowd", vec![slot('c', Spread::Corners, 100), slot('w', Spread::Walls, 100)], None);
+        for (w, h) in [(5, 5), (7, 6), (12, 9)] {
+            let bounds = Rect::new(2, 3, w, h);
+            for s in 0..50 {
+                let mut ctx = room(&r, w, h);
+                Chain::new().then(dress(r.floor, d.clone())).run(&mut ctx, RunSeed(s)).unwrap();
+                let got: BTreeSet<Point> = slots(&ctx).into_iter().map(|(_, p)| p).collect();
+                assert!(got.iter().any(|p| bounds.contains(*p) && !bounds.inflate(-1).contains(*p)), "{w}x{h} seed {s}: something stands");
+                for p in &got {
+                    let clear = Direction::CARDINALS.iter().map(|d| *p + d.offset()).any(|q| bounds.contains(q) && !got.contains(&q));
+                    assert!(clear, "{w}x{h} seed {s}: the slot at {p:?} is shut in by {got:?}");
+                }
+            }
+        }
+    }
+
+    /// The ground a strict mover reads in one area: the area's own cells a
+    /// body can stand on that nothing stands in, and its openings, each
+    /// entered and passed beside; nothing else, so no diagonal passes the
+    /// corner of a thing standing, which is the reading the guard keeps.
+    struct Ground {
+        width: i32,
+        open: Vec<bool>,
+    }
+
+    impl Grid2D for Ground {
+        fn width(&self) -> i32 {
+            self.width
+        }
+
+        fn height(&self) -> i32 {
+            self.open.len() as i32 / self.width
+        }
+    }
+
+    impl CostSource for Ground {
+        fn cost_idx(&self, idx: usize) -> Option<u32> {
+            self.open[idx].then_some(100)
+        }
+    }
+
+    /// The cells of `area` a body can stand on, or could if what stands
+    /// there does not block, that a mover stepping eight ways from the
+    /// area's openings never reaches: a clear cell it never stands on, or
+    /// a slot it never steps onto from a cell beside it.
+    fn unreached(ctx: &BaseContext, area: &Area, stood: &BTreeSet<Point>) -> Vec<Point> {
+        let walkable = ctx.tiles().tables().walkable;
+        let (w, h) = (ctx.terrain().width(), ctx.terrain().height());
+        let walk = |p: Point| ctx.terrain().get(p).is_some_and(|t| walkable[t.index()]);
+        let own: Vec<Point> = area.cells.iter().copied().filter(|c| walk(*c)).collect();
+        let doors: Vec<Point> =
+            ctx.outputs().iter::<Opening>().filter(|o| o.areas.0 == area.index || o.areas.1 == area.index).flat_map(|o| o.cells.clone()).collect();
+        let mut ground = Ground { width: w, open: vec![false; (w * h) as usize] };
+        for p in own.iter().filter(|p| !stood.contains(p)).chain(&doors) {
+            ground.open[(p.y * w + p.x) as usize] = true;
+        }
+        let goals = if doors.is_empty() { own.iter().filter(|p| !stood.contains(p)).take(1).copied().collect() } else { doors };
+        let mut flood = DijkstraMap::covering(&ground);
+        flood.build(&ground, goals, PathRules::EIGHT_WAY);
+        let entered = |from: Point, to: Point| {
+            let (dx, dy) = (to.x - from.x, to.y - from.y);
+            dx == 0 || dy == 0 || (ground.lets_diagonal_past(from.offset(dx, 0)) && ground.lets_diagonal_past(from.offset(0, dy)))
+        };
+        own.into_iter()
+            .filter(|p| {
+                if stood.contains(p) {
+                    !Direction::ALL.iter().map(|d| *p + d.offset()).any(|n| flood.value(n).is_some() && entered(n, *p))
+                } else {
+                    flood.value(*p).is_none()
+                }
+            })
+            .collect()
+    }
+
     /// Rooms, a hall, crosses and two sizes of cave in two districts,
     /// joined by passages, at a share both test sizes reach.
     fn grow(r: &Rig) -> Accrete {
@@ -658,7 +772,9 @@ mod tests {
     /// once, pillars in the middle, rows and slots along every wall and in
     /// every corner, never stands a thing on or beside an opening, a
     /// hidden one, the way in or the way down, and leaves every area one
-    /// region with everything standing.
+    /// region with everything standing, every cell of it a body can stand
+    /// on reached from its openings by a mover stepping eight ways and
+    /// never past a corner, whether what stands in a slot blocks or not.
     #[test]
     fn nothing_stands_beside_an_opening_and_every_area_stays_one_region() {
         let (r, pillar, rubble) = (tiles().0, tiles().1, tiles().2);
@@ -714,6 +830,8 @@ mod tests {
                 for a in ctx.outputs().iter::<Area>() {
                     let open: Vec<Point> = a.cells.iter().copied().filter(|c| ctx.terrain().get(*c).is_some_and(|t| walkable[t.index()])).collect();
                     assert_eq!(regions(&open, &stood), 1, "{w}x{h} seed {s}: area {} ({}) was cut", a.index, a.shape);
+                    let lost = unreached(&ctx, a, &got.iter().map(|(_, p)| *p).collect());
+                    assert!(lost.is_empty(), "{w}x{h} seed {s}: area {} ({}) has cells no mover reaches: {lost:?}", a.index, a.shape);
                 }
                 let dressed: Vec<usize> = ctx.outputs().iter::<Dressed>().map(|d| d.area).collect();
                 let shape = |i: usize| ctx.outputs().iter::<Area>().find(|a| a.index == i).unwrap().shape.clone();

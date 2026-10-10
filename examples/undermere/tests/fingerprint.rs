@@ -230,10 +230,9 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [11_868_548_921_032_720_590, 13_048_657_989_788_341_499, 8_202_142_804_736_417_534],
-        "fingerprint tripwire: re-baselined for the flood that descends as it built (the script's ground \
-         refuses a cell a blocking prop stands on and lets a diagonal past it, as the move resolver does, and \
-         a descent now takes the diagonal between two such props that the flood priced its way by, so seeds \
-         two and three walk a different way down)"
+        [8_924_283_690_018_885_518, 9_201_145_474_449_155_662, 16_340_022_658_209_830_925],
+        "fingerprint tripwire: re-baselined for Dress keeping every slot reachable (a thing that would leave \
+         a slot laid before it with no clear cell beside it is taken back, so a dense dressing lays a thing \
+         or two fewer and every seed's furniture, and the way the script walks round it, differs)"
     );
 }
