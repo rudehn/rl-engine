@@ -330,6 +330,23 @@ impl Resolution<'_, '_> {
         self.holding.contains(actor) && self.acting.claim_action(actor)
     }
 
+    /// Refuses an intent that found nothing to act on, without claiming
+    /// the player's turn: a game may read one key as two asks, a way
+    /// through and what is here, and the press should still do the one
+    /// that found something. Anyone else is claimed and charged as by
+    /// [`failed`](Self::failed), so a monster's refusal is never a second
+    /// action beside another of the same pass.
+    pub fn refuse(&mut self, actor: Entity, cost: u32) {
+        if !self.holding.contains(actor) || self.acting.has_acted(actor) {
+            return;
+        }
+        if self.players.contains(actor) {
+            self.refusals.write(ActionRefused { actor });
+        } else if self.acting.claim_action(actor) {
+            self.finished.write(ActionDone { actor, cost });
+        }
+    }
+
     /// Whether something already spent `actor`'s turn this pass.
     pub fn spent(&self, actor: Entity) -> bool {
         self.acting.has_acted(actor)

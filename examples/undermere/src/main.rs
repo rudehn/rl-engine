@@ -1337,6 +1337,50 @@ mod tests {
         assert!(!app.world().resource::<Modals>().any_open(), "and no screen is up over the floor: {screen:#?}");
     }
 
+    /// Enter is the way's key and the key for what is here. Off any way,
+    /// with one townsperson in reach offering only talk, the press that
+    /// asked for a way and found none still talks to them, rather than
+    /// the way's refusal spending the press.
+    #[test]
+    fn enter_off_any_way_with_one_offer_in_reach_takes_it_up() {
+        #[derive(Resource, Default)]
+        struct Heard(Vec<Interacted>);
+        let mut app = on_screen(RunSeed(7));
+        app.init_resource::<Heard>().add_systems(Update, |mut heard: ResMut<Heard>, mut done: MessageReader<Interacted>| {
+            heard.0.extend(done.read().copied());
+        });
+        let me = undermere::testing::adventurer(&mut app);
+        let town = undermere::dungeon::TOWN;
+        let taken: Vec<Point> = {
+            let world = app.world_mut();
+            world.query_filtered::<&Position, Or<(With<Blocks>, With<Transition>, With<Offers>)>>().iter(world).map(|p| p.0).collect()
+        };
+        // A cell and its east neighbour both free, nothing that offers or
+        // leads anywhere within reach of the cell.
+        let map = app.world().resource::<WorldMap>();
+        let place = map.place(town).expect("Mereholt was built");
+        let near = |p: Point, q: &Point| geometry::chebyshev(p, *q) <= 2;
+        let (stand, beside) = (place.entry.x - 12..place.entry.x + 12)
+            .flat_map(|x| (place.entry.y - 12..place.entry.y + 12).map(move |y| Point::new(x, y)))
+            .map(|p| (p, p.offset(1, 0)))
+            .find(|(p, b)| map.is_walkable_on(town, *p) && map.is_walkable_on(town, *b) && !taken.iter().any(|q| near(*p, q)))
+            .expect("a quiet corner of Mereholt");
+        undermere::testing::stand_on(&mut app, me, stand);
+        let talk = app.world().resource::<Verbs>().get(undermere::townsfolk::TALK).expect("Undermere declares talk");
+        let townsfolk = app.world().resource::<Registries>().factions.expect(undermere::content::TOWNSFOLK);
+        let talker = app
+            .world_mut()
+            .spawn((Actor, Blocks, Position(beside), OnMap(town), Health::full(20), Faction(townsfolk), Offers(vec![Offering::new(talk, 100)])))
+            .id();
+        undermere::testing::settle(&mut app);
+        assert_eq!(app.world().resource::<OfferedHere>().open_to(me).count(), 1, "one offer in reach: {:#?}", written(&app));
+
+        press(&mut app, KeyCode::Enter);
+        undermere::testing::settle(&mut app);
+        assert_eq!(app.world().resource::<Heard>().0, vec![Interacted { actor: me, target: talker, verb: talk }], "Enter talked: {:#?}", written(&app));
+        assert!(!app.world().resource::<Modals>().any_open(), "and asked nothing: {:#?}", written(&app));
+    }
+
     /// Given a thing on the real screen, as a player gives one: the
     /// interact key beside a hired mercenary asks give or dismiss, `give`
     /// opens the pack choosing under "Give Name which?", the thing picked

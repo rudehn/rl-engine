@@ -154,10 +154,10 @@ pub trait PlaceRules: Send + Sync {
 pub struct PlaceRulesRes(pub Box<dyn PlaceRules>);
 
 /// Go through the [`Transition`] on the actor's cell. Refused off one,
-/// and refused to anyone but the player whose
-/// [`Intelligence`] lacks
-/// [`Wits::TRAVELS`]: a monster stays on the map it was put on unless the
-/// game says its kind does not.
+/// before the turn is claimed and so at no cost to the player, since the
+/// key a game binds it to may mean something else there. Refused to anyone
+/// but the player whose [`Intelligence`] lacks [`Wits::TRAVELS`]: a monster
+/// stays on the map it was put on unless the game says its kind does not.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GoThrough;
 impl Action for GoThrough {}
@@ -308,23 +308,25 @@ pub fn resolve_warps(
     let Travel { mut travellers, transitions } = travel;
     let mut trips: Vec<Trip> = Vec::new();
     for intent in intents.read() {
+        let found = travellers.get(intent.actor).ok().and_then(|(_, (pos, _, on, ..))| {
+            let (at, here) = (pos.0, on.map(|m| m.0).unwrap_or(MapId::SURFACE));
+            transitions.iter().find(|(p, m, _)| p.0 == at && m.map(|m| m.0).unwrap_or(MapId::SURFACE) == here).map(|(_, _, t)| (at, here, t.to))
+        });
+        // Nothing to go through is refused before the turn is claimed: a
+        // game may bind its way to a key that means something else off
+        // one, and the press then still does that.
+        let Some((at, here, to)) = found else {
+            resolution.refuse(intent.actor, BASE_ACTION_COST);
+            continue;
+        };
         if !resolution.claim(intent.actor) {
             continue;
         }
-        let Ok((_, (pos, _, on, _, player, wits, ..))) = travellers.get(intent.actor) else {
-            resolution.failed(intent.actor, BASE_ACTION_COST);
-            continue;
-        };
+        let Ok((_, (_, _, _, _, player, wits, ..))) = travellers.get(intent.actor) else { continue };
         if !player && !wits.is_some_and(|w| w.has(Wits::TRAVELS)) {
             resolution.failed(intent.actor, BASE_ACTION_COST);
             continue;
         }
-        let (at, here) = (pos.0, on.map(|m| m.0).unwrap_or(MapId::SURFACE));
-        let found = transitions.iter().find(|(p, m, _)| p.0 == at && m.map(|m| m.0).unwrap_or(MapId::SURFACE) == here).map(|(_, _, t)| t.to);
-        let Some(to) = found else {
-            resolution.failed(intent.actor, BASE_ACTION_COST);
-            continue;
-        };
         trips.push(Trip { actor: intent.actor, to, is_action: true, after: None });
         // Nearest first, then by entity, so who gets the cell beside the
         // landing never depends on the order a query happened to run in.
@@ -913,12 +915,32 @@ mod tests {
     }
 
     #[test]
-    fn entering_off_a_transition_is_refused_for_free() {
+    fn entering_off_a_transition_is_refused_for_free_and_goes_nowhere() {
         let mut r = rig();
+        #[derive(Resource, Default)]
+        struct Went(usize);
+        r.app.init_resource::<Went>().add_systems(PostUpdate, |mut went: ResMut<Went>, mut read: MessageReader<Travelled>| went.0 += read.read().count());
         let before = r.app.world().resource::<Turns>().now();
         intend(&mut r, GoThrough);
         assert_eq!(r.app.world().resource::<Turns>().now(), before);
         assert!(r.app.world().get::<MyTurn>(r.player).is_some());
         assert_eq!(r.app.world().resource::<WorldMap>().current(), MapId::SURFACE);
+        assert_eq!(r.app.world().get::<Position>(r.player).map(|p| p.0), Some(r.start));
+        assert_eq!(r.app.world().resource::<Went>().0, 0, "and nobody travelled");
+    }
+
+    /// A game may read one key as two asks, its way through and what is
+    /// here. Off any way the first finds nothing, and the turn is still the
+    /// second's to spend, rather than claimed by an ask that did nothing.
+    #[test]
+    fn a_way_asked_for_off_any_way_leaves_the_same_press_free_to_take_up_what_is_underfoot() {
+        let mut r = rig();
+        let coin = r.app.world_mut().spawn((Item, Position(r.start))).id();
+        r.app.update();
+        let before = r.app.world().resource::<Turns>().now();
+        r.app.world_mut().write_message(Intent { actor: r.player, action: GoThrough });
+        intend(&mut r, PickUp);
+        assert!(r.app.world().get::<Inventory>(r.player).unwrap().contains(coin), "the same press picked the coin up");
+        assert!(r.app.world().resource::<Turns>().now() > before, "and spent the turn on it");
     }
 }
