@@ -606,6 +606,7 @@ pub(crate) mod tests {
                 exit: None,
                 spots: vec![crate::places::Spot { tag: 'A' as u32, at: mark, prefab: None }],
                 locks: Vec::new(),
+                secrets: Vec::new(),
             },
         );
         world.switch_to(map);

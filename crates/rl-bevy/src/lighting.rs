@@ -601,7 +601,7 @@ mod tests {
         fn build(&self, _: MapId, _: Option<&WorldGraph>) -> Result<PlaceBuild, BuildError> {
             let (wall, floor) = (self.0.expect("wall"), self.0.expect("floor"));
             let terrain = Terrain::from_fn(20, 9, |p| if ROOM[p.y as usize].as_bytes()[p.x as usize] == b'#' { wall } else { floor });
-            Ok(PlaceBuild { terrain, entry: Point::new(5, 4), exit: None, spots: Vec::new(), locks: Vec::new() })
+            Ok(PlaceBuild { terrain, entry: Point::new(5, 4), exit: None, spots: Vec::new(), locks: Vec::new(), secrets: Vec::new() })
         }
     }
 

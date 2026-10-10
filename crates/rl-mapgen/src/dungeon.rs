@@ -329,8 +329,9 @@ impl<C: BuildContext> Pass<C> for ClearStart {
 /// Floods as a walker who opens doors does: a cell counts as open when the
 /// registry marks it passable, even where it is not walkable this moment,
 /// because a corridor through a shut door still joins the rooms either
-/// side of it. [`FarthestExit`] is the only pass that reads terrain this
-/// way; everything that moves a body during play still asks a
+/// side of it. Only [`FarthestExit`] and the passes that must agree with
+/// it, through [`walk_through_doors`], read terrain this way; everything
+/// that moves a body during play still asks a
 /// [`TerrainView`](rl_grid::TerrainView), which stops at a shut door as it
 /// should.
 struct ThroughDoors<'a> {
@@ -355,6 +356,28 @@ impl CostSource for ThroughDoors<'_> {
         let id = self.terrain.get_idx(idx).index();
         (self.tables.passable[id] && !self.shut.contains(self.idx_point(idx))).then(|| self.tables.move_cost[id])
     }
+}
+
+/// The walk [`FarthestExit`] draws the way down by, from `from`: doors
+/// opened on the way, and, with `locks_shut`, never through an
+/// [`Opening`](crate::accrete::Opening) joined locked or sealed. Without
+/// it every lock and seal is taken as opened, for a pass asking what is
+/// reached once nothing is shut. A pass that must not change what the
+/// exit was drawn by asks this, rather than a walk of its own that could
+/// disagree with it about a door.
+pub(crate) fn walk_through_doors<C: BuildContext>(ctx: &C, from: Point, locks_shut: bool) -> DijkstraMap {
+    let tables = ctx.tiles().tables();
+    let mut shut = BitGrid::new(ctx.terrain().width(), ctx.terrain().height());
+    let locked = |o: &&crate::accrete::Opening| matches!(o.join, crate::accrete::Join::Locked(_) | crate::accrete::Join::Sealed);
+    for o in ctx.outputs().iter::<crate::accrete::Opening>().filter(|o| locks_shut && locked(o)) {
+        for c in &o.cells {
+            shut.insert(*c);
+        }
+    }
+    let through_doors = ThroughDoors { terrain: ctx.terrain(), tables: &tables, shut };
+    let mut map = DijkstraMap::covering(&through_doors);
+    map.build(&through_doors, [from], PathRules::default());
+    map
 }
 
 /// Emits the cell farthest by walking from the [`StartPoint`] as the
@@ -454,15 +477,7 @@ impl<C: BuildContext> Pass<C> for FarExit {
         }
         let start = ctx.outputs().first::<StartPoint>().ok_or_else(|| err("no start point emitted before it".into()))?.0;
         let tables = ctx.tiles().tables();
-        let mut shut = BitGrid::new(ctx.terrain().width(), ctx.terrain().height());
-        for o in ctx.outputs().iter::<crate::accrete::Opening>().filter(|o| matches!(o.join, crate::accrete::Join::Locked(_) | crate::accrete::Join::Sealed)) {
-            for c in &o.cells {
-                shut.insert(*c);
-            }
-        }
-        let through_doors = ThroughDoors { terrain: ctx.terrain(), tables: &tables, shut };
-        let mut map = DijkstraMap::covering(&through_doors);
-        map.build(&through_doors, [start], PathRules::default());
+        let map = walk_through_doors(ctx, start, true);
         let walkable = |p: Point| ctx.terrain().get(p).is_some_and(|t| tables.walkable[t.index()]);
         let stamps: Vec<Rect> = ctx.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
         let away = |p: Point| stamps.iter().map(|r| rl_core::geometry::chebyshev(p, rl_core::geometry::clamp_to(p, *r))).min().unwrap_or(i32::MAX);

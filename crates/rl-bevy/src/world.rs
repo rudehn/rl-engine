@@ -736,8 +736,14 @@ mod tests {
     fn locked_place() -> (WorldMap, MapId, [Lock; 2]) {
         let tiles = TileRegistry::standard();
         let locks = [Lock { at: Point::new(3, 1), key: Some(rl_rules::TagId::from_raw(5)) }, Lock { at: Point::new(6, 1), key: None }];
-        let build =
-            PlaceBuild { terrain: Terrain::filled(9, 3, tiles.expect("floor")), entry: Point::new(1, 1), exit: None, spots: Vec::new(), locks: locks.to_vec() };
+        let build = PlaceBuild {
+            terrain: Terrain::filled(9, 3, tiles.expect("floor")),
+            entry: Point::new(1, 1),
+            exit: None,
+            spots: Vec::new(),
+            locks: locks.to_vec(),
+            secrets: Vec::new(),
+        };
         let mut map = WorldMap::new(tiles.tables());
         map.install_place(MapId(1), build);
         map.switch_to(MapId(1));

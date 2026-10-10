@@ -18,7 +18,9 @@
 //! the player comes, like everything else on a map nobody is reading.
 //!
 //! A place keeps its [`Lock`]s, the doors its builder locked to a tag and
-//! the gates it sealed, and its save keeps them with it.
+//! the gates it sealed, and its save keeps them with it. A build also
+//! carries out the [`Secret`](rl_mapgen::Secret)s its builder hid, each a
+//! cell walled over that is something else once found.
 
 use bevy::prelude::*;
 use rl_core::Point;
@@ -136,6 +138,9 @@ pub struct PlaceBuild {
     pub spots: Vec<Spot>,
     /// Every door locked to a tag and every seal.
     pub locks: Vec<Lock>,
+    /// Every cell the builder hid, walled over in `terrain`, in the order
+    /// [`HideOpenings`](rl_mapgen::HideOpenings) published them.
+    pub secrets: Vec<rl_mapgen::Secret>,
 }
 
 impl PlaceBuild {
@@ -151,7 +156,8 @@ impl PlaceBuild {
     /// to another piece. Every cell of an [`Opening`](rl_mapgen::Opening)
     /// joined [`Locked`](rl_mapgen::Join::Locked) becomes a [`Lock`] to
     /// that tag, and every one joined [`Sealed`](rl_mapgen::Join::Sealed)
-    /// a seal.
+    /// a seal. Every [`Secret`](rl_mapgen::Secret) a pass published is
+    /// carried as it was.
     pub fn from_context(ctx: rl_mapgen::BaseContext) -> Result<Self, BuildError> {
         use rl_mapgen::BuildContext;
         let entry = ctx.outputs().first::<rl_mapgen::passes::StartPoint>().ok_or_else(|| BuildError::new("place", "the chain emitted no start point"))?.0;
@@ -173,8 +179,9 @@ impl PlaceBuild {
             })
             .flat_map(|(o, key)| o.cells.iter().map(move |at| Lock { at: *at, key }))
             .collect();
+        let secrets = ctx.outputs().iter::<rl_mapgen::Secret>().copied().collect();
         let (terrain, _) = ctx.finish();
-        Ok(Self { terrain, entry, exit, spots, locks })
+        Ok(Self { terrain, entry, exit, spots, locks, secrets })
     }
 }
 
@@ -561,7 +568,7 @@ mod tests {
             let entry = ctx.outputs().first::<StartPoint>().unwrap().0;
             let exit = ctx.outputs().first::<rl_mapgen::dungeon::ExitPoint>().map(|e| e.0);
             let (terrain, _) = ctx.finish();
-            Ok(PlaceBuild { terrain, entry, exit, spots: vec![Spot { tag: 7, at: entry, prefab: None }], locks: Vec::new() })
+            Ok(PlaceBuild { terrain, entry, exit, spots: vec![Spot { tag: 7, at: entry, prefab: None }], locks: Vec::new(), secrets: Vec::new() })
         }
     }
 
@@ -924,6 +931,22 @@ mod tests {
         ctx.emit(rl_mapgen::passes::StartPoint(Point::new(5, 5)));
         let build = PlaceBuild::from_context(ctx).unwrap();
         assert_eq!(build.spots, vec![Spot { tag: 'A' as u32, at: Point::new(2, 1), prefab: Some(3) }]);
+    }
+
+    #[test]
+    fn a_build_carries_out_every_secret_its_chain_hid_as_it_was_published() {
+        use rl_mapgen::{BaseContext, BuildContext, Secret};
+        let tiles = rl_grid::TileRegistry::standard();
+        let mut ctx = BaseContext::blank(10, 10, tiles.clone(), tiles.expect("floor"));
+        let hid = [
+            Secret { at: Point::new(3, 1), is: tiles.expect("floor"), spot: 6, group: 0, joins: (0, 1) },
+            Secret { at: Point::new(3, 2), is: tiles.expect("floor"), spot: 6, group: 0, joins: (0, 1) },
+        ];
+        for s in hid {
+            ctx.emit(s);
+        }
+        ctx.emit(rl_mapgen::passes::StartPoint(Point::new(5, 5)));
+        assert_eq!(PlaceBuild::from_context(ctx).unwrap().secrets, hid.to_vec());
     }
 
     #[test]
