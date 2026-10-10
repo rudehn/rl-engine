@@ -144,8 +144,24 @@ pub struct CellularCave {
 
 impl Default for CellularCave {
     fn default() -> Self {
-        Self { wall: TileId(0), floor: TileId(0), fill_pct: 45, rounds: 4, threshold: 5 }
+        Self { wall: TileId(0), floor: TileId(0), fill_pct: 45, rounds: 4, threshold: WALL_THRESHOLD }
     }
+}
+
+/// The neighbours that wall a cell in by default: five of eight, so a cell
+/// with walls on more than half its sides becomes one and a cell with
+/// open ground on four or more opens.
+pub(crate) const WALL_THRESHOLD: u32 = 5;
+
+/// The automaton's rule for one cell: whether `p` is wall when at least
+/// `threshold` of its eight neighbours in `solid` are, a neighbour off the
+/// grid counting as wall so what is grown stays inside it. One rule shared
+/// by the whole-map [`CellularCave`] and the randomly applied
+/// [`Cave`](crate::cave::Cave), so the two read the same numbers the same
+/// way.
+pub(crate) fn walled(solid: &Grid<bool>, p: Point, threshold: u32) -> bool {
+    let walls = Steps::Eight.directions().iter().filter(|d| solid.get(p + d.offset()).copied().unwrap_or(true)).count() as u32;
+    walls >= threshold
 }
 
 impl<C: BuildContext> Pass<C> for CellularCave {
@@ -162,8 +178,7 @@ impl<C: BuildContext> Pass<C> for CellularCave {
         let mut next = solid.clone();
         for _ in 0..self.rounds {
             for (p, cell) in next.iter_mut() {
-                let walls = Steps::Eight.directions().iter().filter(|d| solid.get(p + d.offset()).copied().unwrap_or(true)).count() as u32;
-                *cell = walls >= self.threshold;
+                *cell = walled(&solid, p, self.threshold);
             }
             solid.swap_with(&mut next);
         }

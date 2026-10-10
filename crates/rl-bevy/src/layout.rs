@@ -8,7 +8,7 @@
 
 use rl_grid::TileId;
 use rl_mapgen::accrete::{Accrete, Cross, District, Join, Passage, Rectangle, Shape};
-use rl_mapgen::{BuildError, OpenLoops, Require};
+use rl_mapgen::{BuildError, Cave, OpenLoops, Require};
 use rl_rules::layout::{JoinDef, LayoutDef, ShapeKind};
 
 /// The passes one recipe asks for, and the size of the map to run them on.
@@ -45,6 +45,7 @@ pub fn passes(def: &LayoutDef, recipe: &str, floor: TileId, door: TileId) -> Res
                 ShapeKind::Rectangle { w, h } => Box::new(Rectangle { name, w, h, join }),
                 ShapeKind::Cross { long, short } => Box::new(Cross { name, long, short, join }),
                 ShapeKind::Passage { width, length, bend_pct } => Box::new(Passage { name, width, length, bend_pct, join }),
+                ShapeKind::Cave { w, h, fill_pct, visits_pct } => Box::new(Cave { name, w, h, fill_pct, visits_pct, join }),
             }
         })
         .collect();
@@ -115,6 +116,38 @@ mod tests {
             assert!(surveyed.loops >= 1 && surveyed.route.is_some_and(|r| r >= 20), "seed {s}: {surveyed:?}");
             assert!(ctx.outputs().iter::<rl_mapgen::Area>().any(|a| a.shape == "big"), "seed {s}: the file's names reach the areas");
         }
+    }
+
+    #[test]
+    fn a_cave_named_in_a_file_is_grown_as_a_cave_and_surveyed_like_any_area() {
+        let file = FILE
+            .replacen(
+                r#"(name: "run","#,
+                r#"(name: "hollow", kind: Cave(w: (10, 18), h: (8, 12), fill_pct: 55, visits_pct: 100), join: Mouth(2)),
+            (name: "run","#,
+                1,
+            )
+            .replacen(r#"("cell", 5), ("run", 2)"#, r#"("hollow", 5), ("cell", 2), ("run", 2)"#, 1)
+            .replacen(r#"areas: [("big", 1)]"#, r#"areas: [("big", 1), ("hollow", 1)]"#, 1);
+        let def = rl_rules::layout::load(&file).unwrap();
+        let mut tiles = TileRegistry::standard();
+        let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
+        let door = tiles.register(TileProps::floor("way through")).unwrap();
+        let (mut caves, mut shaped) = (0, 0);
+        for s in 0..30 {
+            let p = passes(&def, "test", floor, door).unwrap();
+            let (w, h) = p.size;
+            let chain = Chain::new().then(p.accrete).then(p.loops).then(RandomStart).then(FarthestExit).then(Survey).then(p.require);
+            let ctx = chain.run_retrying(|| BaseContext::blank(w, h, tiles.clone(), wall), RunSeed(s), 40).unwrap_or_else(|e| panic!("seed {s}: {e}"));
+            let surveyed = ctx.outputs().first::<Surveyed>().unwrap();
+            for a in ctx.outputs().iter::<rl_mapgen::Area>().filter(|a| a.shape == "hollow") {
+                assert_ne!(surveyed.areas[a.index].seclusion, u32::MAX, "seed {s}: cave {} is rated", a.index);
+                caves += 1;
+                shaped += usize::from(a.inner.area() < a.cells.len() as i32);
+            }
+        }
+        // A small cave can come out square, so the shape shows in the many.
+        assert!(shaped * 10 > caves * 9, "{shaped} of {caves} caves are more than a rectangle");
     }
 
     #[test]

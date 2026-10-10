@@ -41,7 +41,8 @@ pub struct Piece {
     /// Each cell outside the body that touches exactly one body cell
     /// orthogonally, with the direction that leads out of the body through
     /// it. A cell touching two is in a concave corner, and a door there
-    /// would open onto the piece's own wall.
+    /// would open onto the piece's own wall. A shape may offer fewer: a
+    /// [`Cave`](crate::cave::Cave) offers none on rock it encloses.
     pub sites: Vec<(Point, Direction)>,
 }
 

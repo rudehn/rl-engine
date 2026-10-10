@@ -6,6 +6,10 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- A place can grow caves: the new `Cave` shape in `rl-mapgen` draws a piece by the cellular automaton applied at random cells inside a box, keeps its largest orthogonal region, and offers sites only in the rock outside its rim, so `Accrete` lays it, joins it and publishes it as one area like a rectangle, and the survey rates it.
+  A layout file names one as `Cave(w: (fewest, most), h: (fewest, most), fill_pct:, visits_pct:)`, `fill_pct` the share of the box that starts as rock, 1 to 99, and `visits_pct` how many cells the rule is applied at as a share of the box, 1 to 10000; `load` refuses either outside that by the shape's name, and `layout::passes` builds it.
+  `ShapeKind` has a new variant, so a game that matches on it adds an arm.
+
 - An actor can be hard for the player to see: one carrying the new `Concealed` component is not drawn on the map, listed in the nearby rail, stepped to by the look and aim cursors or named by the look panel while it stands outside the lit band and is not beside the player.
   Stealth hid a subject only from minds, and the player is no mind, so a monster meant to be hard to see in the dark was drawn plainly.
   What the player sees of a thing is now one question, the new `PlayerSight::shows(at, on, concealed)`, asked by the map, by `InSight` and so `Sighted`, and by the look panel, with the rule itself the new `conceals(lighting, from, at)`; with no `Lighting` every cell is lit and the marker hides nothing.

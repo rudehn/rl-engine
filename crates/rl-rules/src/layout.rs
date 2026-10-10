@@ -32,6 +32,12 @@
 //! //                         bend_pct is the chance in a hundred of a second
 //! //                         leg at a right angle; a passage is not a room,
 //! //                         and nothing is stamped in it
+//! //       Cave(w: (fewest, most), h: (fewest, most), fill_pct: 55, visits_pct: 100)
+//! //                         grown by the cellular automaton inside a box of
+//! //                         w by h, and its largest region kept; fill_pct is
+//! //                         the share of the box that starts as rock, 1 to
+//! //                         99, and visits_pct how many cells the rule is
+//! //                         applied at as a share of the box, 1 to 10000
 //! //     join: how a piece of it is joined to what it is attached to, one of
 //! //       Door              one cell of the door tile
 //! //       Arch              one cell of floor
@@ -86,6 +92,11 @@ use crate::content::ContentError;
 /// overflows.
 const MOST: i32 = 4096;
 
+/// The most a cave's visits may be, a hundred to a cell: far past where
+/// more visits change the cave, and few enough that a box of the largest
+/// sides is still drawn in moments.
+const MOST_VISITS_PCT: u32 = 10_000;
+
 /// Which of the engine's generators draws a shape, and its ranges, each
 /// `(fewest, most)` in cells.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -114,15 +125,29 @@ pub enum ShapeKind {
         /// The chance in a hundred of a second leg at a right angle.
         bend_pct: u32,
     },
+    /// A cave grown by the cellular automaton inside a box, its largest
+    /// region kept.
+    Cave {
+        /// The box's width.
+        w: (i32, i32),
+        /// The box's height.
+        h: (i32, i32),
+        /// The share of the box that starts as rock, 1 to 99.
+        fill_pct: u32,
+        /// How many cells the rule is applied at, as a share of the box's
+        /// cells, more than nought.
+        visits_pct: u32,
+    },
 }
 
 impl ShapeKind {
     /// Whether the smallest piece this kind can draw lies inside `wide` by
     /// `tall`. A rectangle and a cross are drawn one way up; a passage
-    /// lies or stands, so either will do.
+    /// lies or stands, so either will do. A cave lies inside its box, so
+    /// the smallest box is what must fit.
     fn fits(self, wide: i32, tall: i32) -> bool {
         match self {
-            ShapeKind::Rectangle { w, h } => w.0 <= wide && h.0 <= tall,
+            ShapeKind::Rectangle { w, h } | ShapeKind::Cave { w, h, .. } => w.0 <= wide && h.0 <= tall,
             ShapeKind::Cross { long, .. } => long.0 <= wide && long.0 <= tall,
             ShapeKind::Passage { width, length, .. } => {
                 let (long, short) = (length.0.max(width.0), width.0);
@@ -134,7 +159,7 @@ impl ShapeKind {
     /// Each range by the name the file gives it.
     fn ranges(self) -> Vec<(&'static str, (i32, i32))> {
         match self {
-            ShapeKind::Rectangle { w, h } => vec![("w", w), ("h", h)],
+            ShapeKind::Rectangle { w, h } | ShapeKind::Cave { w, h, .. } => vec![("w", w), ("h", h)],
             ShapeKind::Cross { long, short } => vec![("long", long), ("short", short)],
             ShapeKind::Passage { width, length, .. } => vec![("width", width), ("length", length)],
         }
@@ -288,11 +313,12 @@ fn adds_up(rows: &[(String, u32)]) -> bool {
 /// naming the shape, district or recipe it is about: a name used twice, a
 /// name that resolves to nothing, a list in which nothing carries weight,
 /// a range that runs backwards or starts below one, a cross whose bars
-/// are thicker than they are long, a mouth of no width, a share outside a
-/// hundred, no patience, weights that overflow, a size or a range or a
-/// density past any map, more loops required than may be opened, a requirement for a shape the recipe never
-/// draws, and a map too small for any shape its recipe draws or for one
-/// it requires.
+/// are thicker than they are long, a cave whose rock fills none or all of
+/// its box or that is visited never or past reason, a mouth of no width,
+/// a share outside a hundred, no patience, weights that overflow, a size
+/// or a range or a density past any map, more loops required than may be
+/// opened, a requirement for a shape the recipe never draws, and a map
+/// too small for any shape its recipe draws or for one it requires.
 pub fn load(text: &str) -> Result<LayoutDef, ContentError> {
     let options = ron::options::Options::default().with_default_extension(ron::extensions::Extensions::IMPLICIT_SOME);
     let a: LayoutRon = options.from_str(text).map_err(|e| ContentError::Parse(e.to_string()))?;
@@ -320,6 +346,16 @@ pub fn load(text: &str) -> Result<LayoutDef, ContentError> {
                 errors.push(format!("{}: a bar as thick as {} is not shorter than one as long as {}", s.name, short.1, long.0));
             }
             ShapeKind::Passage { bend_pct, .. } if bend_pct > 100 => errors.push(format!("{}: bend_pct is {bend_pct}, more than 100", s.name)),
+            ShapeKind::Cave { fill_pct, visits_pct, .. } => {
+                if !(1..=99).contains(&fill_pct) {
+                    errors.push(format!("{}: fill_pct is {fill_pct}, outside 1 to 99, so the cave is all rock or all open", s.name));
+                }
+                if visits_pct == 0 {
+                    errors.push(format!("{}: visits_pct is nought, so the automaton never runs", s.name));
+                } else if visits_pct > MOST_VISITS_PCT {
+                    errors.push(format!("{}: visits_pct is {visits_pct}, more than {MOST_VISITS_PCT}", s.name));
+                }
+            }
             _ => {}
         }
         if s.join == JoinDef::Mouth(0) {
@@ -430,6 +466,7 @@ mod tests {
             (name: "big", kind: Rectangle(w: (12, 18), h: (9, 12)), join: Mouth(3)),
             (name: "cross", kind: Cross(long: (11, 15), short: (5, 7)), join: Door),
             (name: "run", kind: Passage(width: (1, 2), length: (5, 12), bend_pct: 30), join: Arch),
+            (name: "hollow", kind: Cave(w: (10, 16), h: (8, 12), fill_pct: 55, visits_pct: 100), join: Mouth(2)),
         ],
         districts: [
             (name: "wide", shapes: [("big", 5), ("cell", 2), ("run", 1)]),
@@ -455,7 +492,8 @@ mod tests {
     #[test]
     fn a_layout_file_loads_with_every_name_resolved_to_an_index() {
         let def = load(GOOD).unwrap();
-        assert_eq!(def.shapes.len(), 4);
+        assert_eq!(def.shapes.len(), 5);
+        assert_eq!(def.shapes[4].kind, ShapeKind::Cave { w: (10, 16), h: (8, 12), fill_pct: 55, visits_pct: 100 });
         assert_eq!(def.districts[0].shapes, vec![(1, 5), (0, 2), (3, 1)]);
         let recipe = def.recipe("upper").unwrap();
         assert_eq!(recipe.districts, vec![(0, 2), (1, 1)]);
@@ -504,6 +542,31 @@ mod tests {
         // Two mistakes, two problems: the file is read to the end.
         let two = swap("w: (7, 10)", "w: (10, 7)").replacen("open_pct: 38", "open_pct: 140", 1);
         assert!(problems(&two).len() >= 2);
+    }
+
+    #[test]
+    fn a_cave_whose_rock_fills_none_or_all_of_it_never_visited_or_written_backwards_is_refused_by_name() {
+        for (from, to, field) in [
+            ("fill_pct: 55", "fill_pct: 0", "fill_pct"),
+            ("fill_pct: 55", "fill_pct: 100", "fill_pct"),
+            ("visits_pct: 100", "visits_pct: 0", "visits_pct"),
+            ("visits_pct: 100", "visits_pct: 4000000000", "visits_pct"),
+            ("w: (10, 16)", "w: (16, 10)", "w runs"),
+            ("h: (8, 12)", "h: (12, 8)", "h runs"),
+        ] {
+            assert!(GOOD.contains(from), "the good file has no {from:?} to swap");
+            let found = problems(&GOOD.replacen(from, to, 1));
+            assert!(found.iter().any(|p| p.contains("hollow") && p.contains(field)), "{to}: wanted a problem naming the cave and {field:?}, got {found:?}");
+        }
+        // A cave box wider than the map less its border does not fit it.
+        let wide = GOOD.replacen(r#"areas: [("big", 1)]"#, r#"areas: [("hollow", 1)]"#, 1).replacen(
+            r#"("cell", 5), ("cross", 2), ("run", 2)"#,
+            r#"("cell", 5), ("cross", 2), ("run", 2), ("hollow", 1)"#,
+            1,
+        );
+        assert!(load(&wide).is_ok(), "the cave fits an 84x48 map and the recipe draws it");
+        let too_wide = wide.replacen("w: (10, 16)", "w: (90, 100)", 1);
+        assert!(problems(&too_wide).iter().any(|p| p.contains("upper") && p.contains("hollow")));
     }
 
     #[test]

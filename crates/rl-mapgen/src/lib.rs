@@ -15,7 +15,9 @@
 //! [`Piece`] to a wall of what already stands, biased by [`District`]s,
 //! and publishes an [`Area`] per piece and an [`Opening`] per [`Join`];
 //! [`OpenLoops`] then cuts the longest detours through, so there is more
-//! than one way round. [`Survey`] measures what was built, as a
+//! than one way round. A [`Cave`] is a shape not built of rectangles,
+//! drawn by the cellular automaton, grown and joined like any other.
+//! [`Survey`] measures what was built, as a
 //! [`Surveyed`] with an [`AreaFacts`] per area, and [`Require`] fails a
 //! place that falls short, for [`Chain::run_retrying`] to build again.
 //!
@@ -26,6 +28,7 @@
 #![forbid(unsafe_code)]
 
 pub mod accrete;
+pub mod cave;
 pub mod chain;
 pub mod context;
 pub mod dungeon;
@@ -36,6 +39,7 @@ pub mod survey;
 mod walk;
 
 pub use accrete::{Accrete, Area, District, Join, Opening, Piece, Shape};
+pub use cave::Cave;
 pub use chain::{BuildError, Chain, Pass, Phase};
 pub use context::{BaseContext, BuildContext, Outputs};
 pub use loops::OpenLoops;
