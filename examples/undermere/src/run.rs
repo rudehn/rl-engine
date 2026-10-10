@@ -157,8 +157,9 @@ impl ExtraPack {
 /// from `UNDERMERE_NEAR`, beside `UNDERMERE_START`. `camp` is a goblin
 /// camp's fire, `captive` a captive's shackles, `lair` the floor's
 /// mini-boss, `throne` the floor's boss, a [`role`] of `townsfolk.ron`
-/// that person in Mereholt (`smith`, `priest`, `child`, ...), and anything
-/// else a monster of that name. Absent, nothing, which is every real run.
+/// that person in Mereholt (`smith`, `priest`, `child`, ...),
+/// [`candidates`](crate::mercenaries::NEAR_CANDIDATES) the swords for hire
+/// in its tavern, and anything else a monster of that name. Absent, nothing, which is every real run.
 ///
 /// The adventurer is warped along the way from where they arrived to it,
 /// [`NEAR_STEPS`] short of it, so what they see is what a player walking
@@ -186,12 +187,18 @@ pub fn stand_near(world: &mut World) {
     else {
         return;
     };
-    let person = world.resource::<Townsfolk>().role(&near).is_some();
+    let candidates = near == crate::mercenaries::NEAR_CANDIDATES;
+    let person = candidates || world.resource::<Townsfolk>().role(&near).is_some();
     if (here == TOWN) != person {
         return;
     }
-    let target =
-        if person { world.query::<(&Position, &Townsperson)>().iter(world).find(|(_, p)| p.0 == near).map(|(p, _)| p.0) } else { sought(world, &near, here) };
+    let target = if candidates {
+        world.query_filtered::<&Position, With<crate::mercenaries::Candidate>>().iter(world).map(|p| p.0).min()
+    } else if person {
+        world.query::<(&Position, &Townsperson)>().iter(world).find(|(_, p)| p.0 == near).map(|(p, _)| p.0)
+    } else {
+        sought(world, &near, here)
+    };
     let Some(target) = target else { return };
     let steps = if person { 1 } else { NEAR_STEPS };
     world.remove_resource::<StartNear>();

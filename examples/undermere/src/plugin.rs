@@ -102,6 +102,7 @@ impl Plugin for UndermerePlugin {
         // The gold carried, said on the rail in the coin's own colour.
         let (r, g, b) = library.armory.defs.get(library.armory.defs.expect(crate::finds::GOLD)).color;
         app.add_tone(crate::shops::GOLD_TONE, Color::srgb(r, g, b));
+        crate::mercenaries::declare_tone(app, &library.bestiary);
         app.insert_resource(library.registries).insert_resource(library.abilities).insert_resource(library.armory).insert_resource(library.bestiary);
         app.insert_resource(library.faces);
         // What Mereholt's keepers may stock, read once with the rest: each
@@ -122,6 +123,14 @@ impl Plugin for UndermerePlugin {
         app.insert_resource(library.townsfolk).insert_resource(library.names).insert_resource(library.rumours);
         app.init_resource::<crate::townsfolk::Folk>().reset_on_new_run::<crate::townsfolk::Folk>();
         app.init_resource::<crate::townsfolk::GivenNames>().reset_on_new_run::<crate::townsfolk::GivenNames>();
+        // The swords for hire at the Sunken Lantern: what they may carry
+        // and ask, read with the rest; `hire`, the verb a candidate offers
+        // beside talk; and how many visits the run has made, which says
+        // which three wait there. The tone they speak in is their kind's,
+        // declared above while the bestiary is still to hand.
+        app.add_verb(crate::mercenaries::HIRE);
+        app.insert_resource(library.mercenaries);
+        app.init_resource::<crate::mercenaries::Tavern>().reset_on_new_run::<crate::mercenaries::Tavern>();
         // What the adventurer knows of the run's things, dealt out afresh
         // by every run's start and given back by a continued run's save;
         // nothing between two runs, so the next one's faces are its own.
@@ -166,8 +175,9 @@ impl Plugin for UndermerePlugin {
         // A place fills the moment it is first entered: the engine's slots
         // in `PrefabSet::Fill`, then the depth, the ways through and the
         // place's line in the log, the floor's people, Mereholt's people at
-        // their marks, the keepers' shelves filled or restocked, the fixtures' light
-        // and the floor's things, before the engine's loot in
+        // their marks, the keepers' shelves filled or restocked, the
+        // tavern's candidates seated on every arrival in Mereholt, the
+        // fixtures' light and the floor's things, before the engine's loot in
         // `LootSet::Scatter`, each reading the same `PlaceEntered` through
         // its own cursor. After the slots, so the people keep off every
         // cell a piece marked; the things after the ways through, which
@@ -183,6 +193,7 @@ impl Plugin for UndermerePlugin {
                 crate::population::populate,
                 crate::townsfolk::gather,
                 crate::shops::keep_shops,
+                crate::mercenaries::seat_candidates,
                 crate::light::light_fixtures,
                 crate::finds::lay,
             )
@@ -277,6 +288,10 @@ impl Plugin for UndermerePlugin {
         // its beat beside the engine's own senses, and a lamplighter's
         // round laid at the start of a pass once the lamps stand.
         app.add_systems(Turn, crate::townsfolk::answer_talk.in_set(TurnSet::React));
+        // A candidate's own talk, its kit and its fee, and its `hire` kept
+        // off while the party is full, counted at the start of every pass.
+        app.add_systems(Turn, crate::mercenaries::answer_candidates.in_set(TurnSet::React));
+        app.add_systems(Turn, crate::mercenaries::keep_hire_offered.in_set(TurnSet::Schedule));
         app.add_systems(Turn, crate::townsfolk::sense_beats.in_set(PerceiveSet::Annotate));
         app.add_systems(Turn, crate::townsfolk::walk_rounds.in_set(TurnSet::Schedule));
         // A waystone: refused in Mereholt before its use is spent, the

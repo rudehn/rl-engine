@@ -10,7 +10,8 @@
 //! name); without `UNDERMERE_START`, `UNDERMERE_NEAR=smith` stands them
 //! beside that person in Mereholt instead (any role of `townsfolk.ron`,
 //! `smith`, `priest`, `gatewarden`, `child`...), one step from their shop
-//! or their talk. For one of the pack, `UNDERMERE_PACK="ring of light:-2,
+//! or their talk; `UNDERMERE_NEAR=candidates` stands them in the tavern
+//! beside the swords for hire. For one of the pack, `UNDERMERE_PACK="ring of light:-2,
 //! potion of extra healing*2"` puts those in it as if found.
 
 use bevy::prelude::*;
@@ -231,6 +232,17 @@ fn add_panels(app: &mut App, screen: &Screen) {
     // What is known of a monster's traits on the look panel: every plain
     // one in its own words, and a "?" for every trick not yet seen.
     app.add_systems(Update, undermere::bestiary_lore::annotate_inspect.in_set(ViewSet::Annotate));
+    // A candidate in the tavern: what it holds and asks on the look panel,
+    // under its kind's own words, and for hire on the rail; and talking to
+    // one listed as "talk to" it beside its `hire`.
+    app.add_systems(
+        Update,
+        undermere::mercenaries::show_candidates
+            .after(undermere::bestiary_lore::annotate_inspect)
+            .after(undermere::seeming::seem_forecast)
+            .in_set(ViewSet::Annotate),
+    );
+    app.add_systems(Update, undermere::mercenaries::talk_rows.in_set(ViewSet::Annotate));
     // What the player may set, opened from the menu and from the title:
     // fullscreen is the engine's, declared by `RoguelikePlugins`. And
     // every run that has ended, best first, which the title opens.
@@ -1167,5 +1179,45 @@ mod tests {
         assert_eq!(undermere::testing::at(&app, me), from, "and nobody stepped");
         let said = undermere::testing::said(&app);
         assert!(!said.iter().any(|line| line.contains("in the way")), "the priest is asked about, not in the way: {said:#?}");
+    }
+
+    /// Walking into a candidate in the tavern asks rather than hires: the
+    /// offers screen opens with `hire` at the candidate's fee and talking
+    /// to them, and the press spends nothing and moves nobody.
+    #[test]
+    fn walking_into_a_candidate_opens_the_offers_screen_with_its_fee_and_spends_nothing() {
+        let mut app = on_screen(RunSeed(7));
+        let me = undermere::testing::adventurer(&mut app);
+        let candidate = {
+            let world = app.world_mut();
+            world.query_filtered::<Entity, With<undermere::mercenaries::Candidate>>().iter(world).next().expect("a candidate waits")
+        };
+        let at = undermere::testing::at(&app, candidate);
+        let town = undermere::dungeon::TOWN;
+        let taken: Vec<Point> = {
+            let world = app.world_mut();
+            world.query_filtered::<&Position, With<Blocks>>().iter(world).map(|p| p.0).collect()
+        };
+        let sides = [((0, -1), KeyCode::ArrowDown), ((0, 1), KeyCode::ArrowUp), ((-1, 0), KeyCode::ArrowRight), ((1, 0), KeyCode::ArrowLeft)];
+        let map = app.world().resource::<WorldMap>();
+        let (from, key) = sides
+            .into_iter()
+            .map(|((dx, dy), key)| (at.offset(dx, dy), key))
+            .find(|(cell, _)| map.is_walkable_on(town, *cell) && !taken.contains(cell))
+            .expect("a side of the candidate to walk in from");
+        undermere::testing::stand_on(&mut app, me, from);
+        let (mine, theirs) = (undermere::testing::pack(&app, me), undermere::testing::pack(&app, candidate));
+        press(&mut app, key);
+        undermere::testing::settle(&mut app);
+        let modals = app.world().resource::<Modals>();
+        assert!(modals.is_open(offers_modal(modals)), "the offers screen is up: {:#?}", written(&app));
+        let name = undermere::testing::name_of(&app, candidate);
+        let fee = app.world().get::<undermere::mercenaries::Candidate>(candidate).expect("a candidate").fee;
+        let view = app.world().resource::<rl_engine::rl_ui::view::offers::OffersView>();
+        let rows: Vec<(String, Option<u32>)> = view.rows.iter().map(|r| (r.label.clone(), r.price)).collect();
+        assert_eq!(rows, [(format!("hire {name}"), Some(fee)), (format!("talk to {name}"), None)], "hire at the fee, and talk");
+        assert_eq!(undermere::testing::pack(&app, me), mine, "nothing paid");
+        assert_eq!(undermere::testing::pack(&app, candidate), theirs, "and nothing taken");
+        assert_eq!(undermere::testing::at(&app, me), from, "and nobody stepped");
     }
 }

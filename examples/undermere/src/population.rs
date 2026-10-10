@@ -821,12 +821,13 @@ mod tests {
     }
 
     /// Mereholt has nobody to fight and nothing lying about, the first time
-    /// and every time after, where floor one has both.
+    /// and every time after, where floor one has both. The swords for hire
+    /// waiting in its tavern are of a kind, and are nobody to fight.
     #[test]
     fn the_town_is_never_populated_and_never_scattered() {
         let on = |app: &mut App, map: MapId| {
             let world = app.world_mut();
-            let monsters = world.query::<(&Kind, &OnMap)>().iter(world).filter(|(_, on)| on.0 == map).count();
+            let monsters = world.query_filtered::<(&Kind, &OnMap), Without<crate::mercenaries::Candidate>>().iter(world).filter(|(_, on)| on.0 == map).count();
             let lying = world.query_filtered::<&OnMap, (With<Item>, With<Position>)>().iter(world).filter(|on| on.0 == map).count();
             (monsters, lying)
         };

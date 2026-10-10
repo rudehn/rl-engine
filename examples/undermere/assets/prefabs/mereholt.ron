@@ -53,8 +53,10 @@
 // never behind a counter. The townsfolk: `U` the drunk at the tavern door, `G`
 // the gatewarden at the causeway's head, `N` the fishwife on the shore, `R` the
 // gravedigger in the gardens, and where the two who walk set out from, `M` the
-// lamplighter beside a lamp post and `C` the child on the square. The houses stay
-// empty. The gate is a tile, `*`, and the town's one: the chain reports it as the
+// lamplighter beside a lamp post and `C` the child on the square. The three `x`
+// in the tavern, one beside each of its tables, are where the swords for hire
+// wait, three new ones on every arrival, stood there by `src/mercenaries.rs`.
+// The houses stay empty. The gate is a tile, `*`, and the town's one: the chain reports it as the
 // town's way on, and the ways through stand the gate there on the first arrival.
 // Lit windows and lamp posts are what the dusk is lit by, and `light.rs` lights
 // them.
@@ -65,10 +67,10 @@
         r##########"TTTTT""TTTTTT"TTTT"T"TTTTT"T""T,,,TTT"TT"TTTTTTT"TTT"TT"TTTTTTTT"##########,
         r##########"TTT"T""T""T"TT""""TT"""""""T""T,,,"T"TT"""TT"T""""""""""T""T"""T"##########,
         r##########"T"###w#####"""""""###w#####w###,,,"""""""===w===w===""""""""""TT"##########,
-        r##########"TT#h_____t#"""""""#bBBB______H#,,,"""""""=FF______s=""###w###"TT"##########,
-        r##########"TT#_______#"""""""#bBI___t__t_#,,,"""""""=____aS___=""#h____#""T"##########,
+        r##########"TT#h_____t#"""""""#bBBB__x___H#,,,"""""""=FF______s=""###w###"TT"##########,
+        r##########"TT#_______#"""""""#bBI___t__tx#,,,"""""""=____aS___=""#h____#""T"##########,
         r##########"TT#_____b_#"""""""#_______t___#,,,"""""""=________b=""#_____#"TT"##########,
-        r##########"T"###+#####"""""""#___________#,,,"""""""====+======""#____b#"TT"##########,
+        r##########"T"###+#####"""""""#_______x___#,,,"""""""====+======""#____b#"TT"##########,
         r##########"T"""",""""""""""""#w####+####w#,,,""""""L"""",""""""""###+###""T"##########,
         r##########"TT""",,,,,,,,,,,,,,,,,"",U""""",,,""""""""""",""",,,,,,,,,""""TT"##########,
         r##########"T"%%%%%%%%"""%%%%%%%","L.......................L"T""""""""""""TT"##########,
@@ -126,6 +128,7 @@
         'R': Mark,
         'M': Mark,
         'C': Mark,
+        'x': Mark,
         'W': Prop("well"),
         'L': Prop("lamp post"),
         'F': Prop("forge"),

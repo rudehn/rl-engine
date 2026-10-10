@@ -230,8 +230,8 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [8_347_163_467_729_755_853, 8_094_123_632_719_960_732, 5_755_972_555_783_606_584],
-        "fingerprint tripwire: re-baselined for the town part (Mereholt's people stand and walk from the first \
-         arrival, and a waystone is found as a kind of its own from floor five)"
+        [3_596_848_804_214_699_663, 10_218_450_264_247_151_857, 17_049_211_692_478_829_304],
+        "fingerprint tripwire: re-baselined for the tavern's candidates (three more actors stand in Mereholt from \
+         the first arrival; with them left out the delve prints as it did before)"
     );
 }
