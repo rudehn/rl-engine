@@ -1,14 +1,18 @@
-// A placeholder prefab for task 13's "A Fallen Adventurer": a one-cell shell with
-// nothing in it, so the pool entry loads and the draw is exercised end
-// to end now. Task 13 fills this file in, in place, once its mechanism
-// (traps, props, items) exists; it does not replace this file
-// wholesale, so the pool entry above never changes.
+// A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
+// stands for; see `treasure_room.ron` for the full field list.
+//
+// Remains with a full pack still on them: whoever they were did not leave.
 (
     name: "A Fallen Adventurer",
+    ground: "hall floor",
     rows: [
-        ".",
+        "rw",
+        "ia",
     ],
     legend: {
-        '.': Tile("hall floor"),
+        'r': Prop("remains"),
+        'w': Item(tag: "weapon", count: 1),
+        'i': Item(tag: "potion", count: (1, 2)),
+        'a': Item(tag: "armor", count: 1),
     },
 )

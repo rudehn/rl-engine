@@ -139,6 +139,8 @@ pub const DISCORDANT: &str = "discordant";
 pub const CAPTIVE: &str = "captive";
 /// The cloud a potion of paralysis bursts into.
 pub const PARALYTIC: &str = "paralytic";
+/// The cloud a caustic vent breathes out, a risk-and-reward piece's own.
+pub const CAUSTIC: &str = "caustic";
 /// The cloud a potion of confusion bursts into.
 pub const CONFUSING: &str = "confusing";
 /// The cloud a potion of darkness gives off: it shrouds whoever breathes
@@ -277,6 +279,7 @@ pub fn registries() -> Registries {
         GasDef::new(PARALYTIC).spread(40).fade(20).inflicts(25, statuses.expect(PARALYSED), 3),
         GasDef::new(CONFUSING).spread(50).fade(15).inflicts(25, statuses.expect(CONFUSED), 3),
         GasDef::new(DARKNESS).spread(30).fade(8).veils_at(120).inflicts(25, statuses.expect(SHROUDED), 5),
+        GasDef::new(CAUSTIC).spread(40).fade(20).inflicts(30, statuses.expect("poisoned"), 4),
     ])
     .unwrap();
     let mut registries = Registries {
@@ -405,7 +408,7 @@ pub fn add_game_effects(app: &mut App) {
     app.add_effect::<moving::Teleport>();
     app.add_effect::<bodies::Polymorph>().add_effect::<bodies::Plenty>().add_effect::<bodies::Conjure>().add_effect::<bodies::Life>();
     app.add_effect::<bodies::Summon>().add_effect::<bodies::RaiseDead>();
-    app.add_effect::<minds::Dominate>().add_effect::<minds::Discord>().add_effect::<minds::Aggravate>();
+    app.add_effect::<minds::Dominate>().add_effect::<minds::Discord>().add_effect::<minds::Aggravate>().add_effect::<minds::WakeFloor>();
     app.add_effect::<senses::Darkness>().add_effect::<senses::MagicMapping>();
     app.add_effect::<charges::Recharge>();
     app.add_effect::<crate::tricks::Steal>().add_effect::<crate::tricks::Wither>();
@@ -671,12 +674,53 @@ mod tests {
             ("obsidian spire", false),
             ("midden", false),
             ("lectern", false),
+            // The reward pool's own fixed pieces.
+            ("coin chest", true),
+            ("ancient tome", true),
+            ("overturned wagon", true),
+            ("spring", true),
+            ("frost-rimed anvil", true),
+            ("moonwell", true),
+            // The risk-and-reward pool's own fixed pieces, and
+            // `src/vaults.rs`'s own mechanisms behind them.
+            ("cage gate", false),
+            ("stone pedestal", false),
+            ("guardian statue", true),
+            ("iron grate", false),
+            ("dry straw", false),
+            ("warding glyph", false),
+            ("grave sigil", false),
+            ("hidden dart plate", false),
+            ("caustic vent", false),
+            ("paralysis vent", false),
+            ("ember trap", false),
+            ("concealed lever", false),
+            ("cracked tile", false),
+        ];
+        // Every prop with a container, a trigger or an offer answers for
+        // itself, so a room of them is something to act on and not just
+        // furniture to walk round.
+        const NOT_SCENERY: &[&str] = &[
+            "chest",
+            "egg sac",
+            "coin chest",
+            "spring",
+            "frost-rimed anvil",
+            "moonwell",
+            "warding glyph",
+            "grave sigil",
+            "hidden dart plate",
+            "caustic vent",
+            "paralysis vent",
+            "ember trap",
+            "concealed lever",
+            "cracked tile",
         ];
         assert_eq!(r.props.len(), props.len(), "a prop this list does not name");
         for (name, blocks) in props {
             let def = r.props.get(r.props.id(name).unwrap_or_else(|| panic!("no prop called {name:?}")));
             assert_eq!(def.blocks, blocks, "{name}: whether it stands in the way");
-            assert_eq!(def.is_scenery(), name != "chest" && name != "egg sac", "{name}");
+            assert_eq!(def.is_scenery(), !NOT_SCENERY.contains(&name), "{name}");
         }
         let chest = r.props.get(r.props.expect("chest"));
         assert!(chest.container.as_ref().is_some_and(|c| c.contents.len() == 3), "a weapon, armor and a potion, by tag");

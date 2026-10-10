@@ -1,21 +1,24 @@
-// A placeholder prefab for task 13's "The Trapped Corridor": a walled shell with
-// nothing but its own wall and the one entry it joins by, so the pool
-// entry loads and the draw is exercised end to end now. Task 13 fills
-// this file in, in place, once its mechanism (traps, a lock's key, a
-// lever) exists; it does not replace this file wholesale, so the pool
-// entry above never changes.
+// A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
+// stands for; see `treasure_room.ron` for the full field list.
+//
+// A corridor of hidden plates to a room that holds the prize: every plate
+// its own `props.ron` "hidden dart plate", spotted or sprung.
 (
     name: "The Trapped Corridor",
+    ground: "hall floor",
     rows: [
-        "#######",
-        "#.....#",
-        "#.....#",
-        "#.....#",
-        "###E###",
+        "#########",
+        "#.......#",
+        "#.d.d.d.#",
+        "#.......#",
+        "#...P...#",
+        "####E####",
     ],
     legend: {
         '#': Tile("hall wall"),
         '.': Tile("hall floor"),
+        'd': Prop("hidden dart plate"),
+        'P': Item(tag: "weapon", count: 1, band: 1),
         'E': Entry,
     },
 )

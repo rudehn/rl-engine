@@ -634,23 +634,33 @@ pub fn lead_lair_bands(
     mut commands: Commands,
     mut entered: MessageReader<PlaceEntered>,
     bestiary: Res<Bestiary>,
-    posted: Query<(Entity, &Kind, &OnMap), With<Post>>,
+    posted: Query<(Entity, &Kind, &OnMap, &Post)>,
+    map: Res<WorldMap>,
 ) {
     for ev in entered.read().filter(|ev| ev.first) {
-        let (mut boss, mut followers) = (None, Vec::new());
-        for (e, kind, on) in &posted {
+        let Some(place) = map.place(ev.map) else { continue };
+        // The piece a post's own cell was stamped from, so a risk-and-
+        // reward piece's own monster, posted on the same floor as a
+        // lair, is never swept into the lair's band for standing near
+        // it: only a post of the lair's own piece follows its boss.
+        let piece_at = |p: Point| place.spots.iter().find(|s| s.at == p).and_then(|s| s.prefab);
+        let (mut boss, mut boss_piece, mut followers) = (None, None, Vec::new());
+        for (e, kind, on, post) in &posted {
             if on.0 != ev.map {
                 continue;
             }
             if bestiary.defs.get(kind.0).miniboss {
                 boss = Some(e);
+                boss_piece = piece_at(post.0);
             } else {
-                followers.push(e);
+                followers.push((e, post.0));
             }
         }
-        if let Some(boss) = boss {
-            for follower in followers {
-                commands.entity(follower).insert(Leader(boss));
+        if let (Some(boss), Some(boss_piece)) = (boss, boss_piece) {
+            for (follower, at) in followers {
+                if piece_at(at) == Some(boss_piece) {
+                    commands.entity(follower).insert(Leader(boss));
+                }
             }
         }
     }
@@ -873,10 +883,21 @@ mod tests {
                     .iter()
                     .filter(|spot| {
                         let slot = spot.prefab.zip(char::from_u32(spot.tag)).and_then(|(key, glyph)| prefabs.slot(key, glyph));
-                        matches!(slot, Some(Slot::Monster { .. }))
+                        // A piece's mark is filled by the game itself, a
+                        // pool piece's captive or sleeper among them.
+                        matches!(slot, Some(Slot::Monster { .. } | Slot::Mark))
                     })
                     .map(|spot| spot.at)
                     .collect();
+                // A boss's own piece, a lair or the throne: the posts its
+                // court stands at, apart from a risk-and-reward piece's own
+                // guards, which keep their posts as the court does and are
+                // no part of it.
+                let boss_piece = |key: u32| {
+                    let Some(def) = prefabs.defs().try_get(Id::from_raw(key)) else { return false };
+                    crate::dungeon::MINI_BOSSES.iter().any(|b| b.name == def.name) || crate::dungeon::FINAL_BOSSES.iter().any(|b| b.piece == def.name)
+                };
+                let court_posts: Vec<Point> = place.spots.iter().filter(|s| posts.contains(&s.at) && s.prefab.is_some_and(boss_piece)).map(|s| s.at).collect();
                 let marked: Vec<Point> = place.spots.iter().map(|spot| spot.at).collect();
                 let spawned = spawned_on(&app, map_of(floor));
                 for p in &spawned {
@@ -893,7 +914,7 @@ mod tests {
                 // mini-boss's lair on this floor, whose boss and entourage
                 // are posted the same way and never more than five
                 // strong.
-                let court = spawned.len() - people.len();
+                let court = spawned.iter().filter(|p| court_posts.contains(p)).count();
                 if floor == FLOORS {
                     assert!(court == 1 || court == 6, "seed {s}, floor {floor}: the drawn boss alone, or the king and his court: {court}");
                 } else {

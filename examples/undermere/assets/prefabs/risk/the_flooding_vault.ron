@@ -1,21 +1,25 @@
-// A placeholder prefab for task 13's "The Flooding Vault": a walled shell with
-// nothing but its own wall and the one entry it joins by, so the pool
-// entry loads and the draw is exercised end to end now. Task 13 fills
-// this file in, in place, once its mechanism (traps, a lock's key, a
-// lever) exists; it does not replace this file wholesale, so the pool
-// entry above never changes.
+// A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
+// stands for; see `treasure_room.ron` for the full field list.
+//
+// Lift the prize and water pours in through grates, rising to deep:
+// 'P' is a `Mark`, read by `src/vaults.rs`'s own `spawn_flood_trigger`,
+// which spawns the prize there and starts the flood on its taking; the
+// grates themselves are the decorative "iron grate" either side of it.
 (
     name: "The Flooding Vault",
+    ground: "hall floor",
     rows: [
         "#######",
+        "#g...g#",
         "#.....#",
-        "#.....#",
-        "#.....#",
+        "#..P..#",
         "###E###",
     ],
     legend: {
         '#': Tile("hall wall"),
         '.': Tile("hall floor"),
+        'g': Prop("iron grate"),
+        'P': Mark,
         'E': Entry,
     },
 )

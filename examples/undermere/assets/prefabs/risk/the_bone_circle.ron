@@ -1,14 +1,20 @@
-// A placeholder prefab for task 13's "The Bone Circle": a one-cell shell with
-// nothing in it, so the pool entry loads and the draw is exercised end
-// to end now. Task 13 fills this file in, in place, once its mechanism
-// (traps, props, items) exists; it does not replace this file
-// wholesale, so the pool entry above never changes.
+// A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
+// stands for; see `treasure_room.ron` for the full field list.
+//
+// A ring of bodies that rise when it is crossed, a staff at its heart:
+// the "grave sigil" at the center is what is crossed, and `Hatch` is what
+// rises, beside the skulls that ring it.
 (
     name: "The Bone Circle",
+    ground: "hall floor",
     rows: [
-        ".",
+        "kgk",
+        "gSg",
+        "kgk",
     ],
     legend: {
-        '.': Tile("hall floor"),
+        'k': Prop("skull"),
+        'g': Prop("grave sigil"),
+        'S': Item(tag: "staff", count: 1),
     },
 )

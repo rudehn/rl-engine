@@ -90,4 +90,5 @@ pub mod title;
 pub mod traits;
 pub mod tricks;
 pub mod typeface;
+pub mod vaults;
 pub mod wearing;

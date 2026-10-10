@@ -62,6 +62,8 @@ impl Plugin for UndermerePlugin {
             // The run's captive: the one verb `PropsPlugin` does not already
             // know, offered by an actor rather than a prop.
             .add_verb(crate::captives::FREE_VERB)
+            // The sealed vault's own concealed lever.
+            .add_verb("pull")
             .add_plugins((PrefabPlugin::<Bestiary, Armory>::default(), LootPlugin::<Armory>::default()))
             .add_plugins((FactsPlugin, RecordsPlugin))
             // What the dead leave lying where they fell, for `raising` to
@@ -227,6 +229,26 @@ impl Plugin for UndermerePlugin {
         );
         // A shackled captive's own "free".
         app.add_systems(Turn, crate::captives::answer_free.in_set(TurnSet::React));
+        // The risk-and-reward pool's own mechanisms: a vault's key or a
+        // seal's lever, a caged altar's cages, a chained captive, a
+        // flooding vault's and a rotten floor's own prize, and a
+        // collapsing gallery's. `spawn_vault_marks` fills every `Mark`
+        // these pieces carry, after the engine's own `PrefabSet::Fill`
+        // has filled every ordinary slot beside them.
+        app.add_systems(Turn, crate::vaults::spawn_vault_marks.in_set(TurnSet::React).after(PrefabSet::Fill));
+        app.add_systems(
+            Turn,
+            (
+                crate::vaults::answer_pull_lever,
+                crate::vaults::shut_other_cages,
+                crate::vaults::start_flood,
+                crate::vaults::rise_floods,
+                crate::vaults::trigger_rotten_floor,
+                crate::vaults::land_falling,
+                crate::vaults::collapse_gallery_behind,
+            )
+                .in_set(TurnSet::React),
+        );
         // What is known of a kind's tricks, learned off the same messages
         // the tricks above, an ability's own landing and the engine's own
         // actor triggers already answer with: each only once its effect

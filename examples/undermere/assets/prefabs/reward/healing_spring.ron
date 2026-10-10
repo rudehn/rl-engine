@@ -1,14 +1,15 @@
-// A placeholder prefab for task 13's "Healing Spring": a one-cell shell with
-// nothing in it, so the pool entry loads and the draw is exercised end
-// to end now. Task 13 fills this file in, in place, once its mechanism
-// (traps, props, items) exists; it does not replace this file
-// wholesale, so the pool entry above never changes.
+// A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
+// stands for; see `treasure_room.ron` for the full field list.
+//
+// A spring that heals fully, once: taken as a single flask whose drinking
+// is the engine's own `Mend`, so the spring itself never answers twice.
 (
     name: "Healing Spring",
+    ground: "hall floor",
     rows: [
-        ".",
+        "S",
     ],
     legend: {
-        '.': Tile("hall floor"),
+        'S': Prop("spring"),
     },
 )

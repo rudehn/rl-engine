@@ -226,6 +226,57 @@ impl FromArgs for AlertDrowned {
     }
 }
 
+/// Every sleeper on the user's own floor woken, and the whole floor made
+/// aware of where they stand: a warding glyph's own, crossed and crying
+/// out through the halls. Takes no arguments.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct WakeFloor;
+
+impl Effect for WakeFloor {
+    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+        let user = landing.user;
+        world.commands.queue(move |world: &mut World| wake_floor(world, user));
+    }
+
+    fn describe(&self, _: &Registries, _: EffectBonus) -> String {
+        "every sleeper on the floor wakes, and knows where you are".to_string()
+    }
+}
+
+impl FromArgs for WakeFloor {
+    const KIND: &'static str = "WakeFloor";
+
+    fn from_args(args: &RawValue, _: &Names<'_>) -> Result<Self, String> {
+        no_args(args, Self::KIND).map(|_| Self)
+    }
+}
+
+/// Wakes every sleeper on `reader`'s own floor, cured of whatever holds it
+/// asleep, and makes the whole floor aware of `reader` where they stand,
+/// as [`aggravate`] does: a warding glyph cried out, so the floor is told
+/// at once rather than only whoever is close enough to hear a shriek.
+pub fn wake_floor(world: &mut World, reader: Entity) {
+    aggravate(world, reader);
+    let here = world.get::<OnMap>(reader).map_or(MapId::SURFACE, |m| m.0);
+    let floor: Vec<Entity> = {
+        let mut q = world.query_filtered::<(Entity, &OnMap), With<Kind>>();
+        q.iter(world).filter(|(_, on)| on.0 == here).map(|(e, _)| e).collect()
+    };
+    let mut cured = Vec::new();
+    world.resource_scope::<Registries, _>(|world, registries| {
+        let mut q = world.query::<(&mut Afflicted, &mut StatBlock)>();
+        for e in &floor {
+            let Ok((mut afflicted, mut stats)) = q.get_mut(world, *e) else { continue };
+            for status in afflicted.0.wake(&registries.statuses, &mut stats.0) {
+                cured.push((*e, status));
+            }
+        }
+    });
+    for (target, status) in cured {
+        world.write_message(StatusEvent::Cured { target, status });
+    }
+}
+
 /// Whether a kind's own name says it is one of the drowned: `drowned
 /// thrall`, `the Drowned Abbess`, `the Drowned King`, read loosely by the
 /// word rather than by a trait or a faction, since none of the three

@@ -1,14 +1,23 @@
-// A placeholder prefab for task 13's "The Goblin Stockade": a one-cell shell with
-// nothing in it, so the pool entry loads and the draw is exercised end
-// to end now. Task 13 fills this file in, in place, once its mechanism
-// (traps, props, items) exists; it does not replace this file
-// wholesale, so the pool entry above never changes.
+// A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
+// stands for; see `treasure_room.ron` for the full field list.
+//
+// A camp round a fire, bedrolls where sleepers lay, their loot pile and
+// a watch standing over it: one monster slot, since a floor's own lair
+// or another risk-and-reward piece beside it already counts toward the
+// floor's own court and the population tests' own bound on it.
 (
     name: "The Goblin Stockade",
+    ground: "hall floor",
     rows: [
-        ".",
+        "b.b",
+        "oFo",
+        "b.a",
     ],
     legend: {
         '.': Tile("hall floor"),
+        'b': Prop("bedroll"),
+        'a': Monster(monster: "goblin archer"),
+        'F': Prop("brazier"),
+        'o': Item(item: "gold coin", count: (1, 2)),
     },
 )

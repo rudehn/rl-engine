@@ -17,7 +17,8 @@
 //               either hand's finger, "left finger" | "right finger"
 //   also:       optional; slots it also claims when worn, for a two-hander
 //   tags:       optional; "weapon" | "armor" | "potion" | "scroll" | "staff" | "wand" | "ring" |
-//               "gold" | "arrow" | "light" | "thrown"; what a chest's row asks for by tag, and
+//               "gold" | "arrow" | "light" | "thrown" | "vault key"; what a chest's row asks for
+//               by tag, and
 //               the kinds a floor's things are drawn by: potions, scrolls, weapons, armor,
 //               staffs, wands, rings and thrown things, each kind as often as `finds.rs` weighs
 //               it and each thing of a kind as `item_spawns.ron` does. A weapon, armor,
@@ -54,7 +55,8 @@
 //               known; Discord(turns:), every foe in sight at odds with everyone for that many
 //               turns; Aggravate, a shriek and every monster on the floor aware of the user;
 //               Summon(fewest:, most:), that many of the floor's monsters beside the user, aware
-//               of them. Each of Undermere's own takes
+//               of them; WakeFloor, every sleeper on the floor woken and aware of the user, a
+//               warding glyph's own. Each of Undermere's own takes
 //               only the arguments it names, and none where it names none. Landed by any trigger
 //               with no list of its own
 //   triggers:   optional; [(on:, area:, fires:, effects:, look:, every:, targeting:, asks:)] what it
@@ -395,4 +397,23 @@
     // that further down; a floor's piles are laid besides its things, and
     // what the dead leave is their own.
     (name: "gold coin", glyph: '$', color: (1.0, 0.85, 0.3), tags: ["gold"], stack: true, pile: "3d8"),
+
+    // The risk-and-reward pool's own key, `assets/prefabs/risk/the_locked_vault.ron`:
+    // carried or worn by nobody until `src/vaults.rs` drops one elsewhere on a
+    // floor that drew the vault, the `Join::Locked("vault key")` tag itself.
+    (name: "vault key", glyph: '~', color: (0.85, 0.75, 0.3), tags: ["vault key"]),
+
+    // The reward pool's own one-shot waters, each spent by its use, drawn from
+    // a spring, a frost-rimed anvil and a moonwell `assets/prefabs/reward/`
+    // stands once and never refills: `Mend`, the engine's own, and `Enchant`
+    // and `Identify`, Undermere's, asked exactly as their scrolls ask them.
+    (name: "flask of spring water", glyph: '!', color: (0.55, 0.85, 0.95), stack: true,
+     consumable: (charges: 1, when_empty: Destroyed),
+     triggers: [(on: "use", effects: [(kind: "Mend", args: (roll: "12d10+120"))])]),
+    (name: "phial of quenching oil", glyph: '!', color: (0.75, 0.88, 0.95), stack: true,
+     consumable: (charges: 1, when_empty: Destroyed),
+     triggers: [(on: "use", asks: (prompt: "Temper which?"), effects: [(kind: "Enchant")])]),
+    (name: "phial of moonwell water", glyph: '!', color: (0.65, 0.65, 0.9), stack: true,
+     consumable: (charges: 1, when_empty: Destroyed),
+     triggers: [(on: "use", asks: (prompt: "Tell the nature of which?"), effects: [(kind: "Identify")])]),
 ]

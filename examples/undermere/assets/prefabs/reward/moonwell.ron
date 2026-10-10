@@ -1,14 +1,15 @@
-// A placeholder prefab for task 13's "Moonwell": a one-cell shell with
-// nothing in it, so the pool entry loads and the draw is exercised end
-// to end now. Task 13 fills this file in, in place, once its mechanism
-// (traps, props, items) exists; it does not replace this file
-// wholesale, so the pool entry above never changes.
+// A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
+// stands for; see `treasure_room.ron` for the full field list.
+//
+// A well whose water tells what one carried thing is, taken as a single
+// phial: `src/lore.rs`'s `Identify`, asked exactly as the scroll asks it.
 (
     name: "Moonwell",
+    ground: "hall floor",
     rows: [
-        ".",
+        "W",
     ],
     legend: {
-        '.': Tile("hall floor"),
+        'W': Prop("moonwell"),
     },
 )

@@ -1,14 +1,37 @@
-// A placeholder prefab for task 13's "Treasure Room": a one-cell shell with
-// nothing in it, so the pool entry loads and the draw is exercised end
-// to end now. Task 13 fills this file in, in place, once its mechanism
-// (traps, props, items) exists; it does not replace this file
-// wholesale, so the pool entry above never changes.
+// A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
+// stands for. The pool stamps it inside an area through `rl_mapgen::StampPicks`;
+// the engine fills its slots on the arrival that built the place.
+//
+// Every field:
+//   name:   the piece's name, which a pool entry asks for
+//   ground: the tile painted under every slot; required when the legend has any
+//           slot, and it must be a tile a monster can stand on
+//   rows:   the piece, one string per row, all the same width; a space is left as
+//           the map had it, and every other glyph must be in the legend
+//   legend: glyph to what it stands for, one of
+//     Tile("name")                          a tile from assets/tiles.ron
+//     Prop("name")                          a prop from props.ron
+//     Item(item: "item", count: 1)          that item, by name; count is 1 or
+//                                           a range, count: (fewest, most)
+//     Item(tag: "tag", count: 1, band: 0)   drawn by tag at the place's band
+//                                           plus band
+//     Monster(monster: "monster")           that monster
+//     Monster(role: "role", band: 0)        drawn for a role
+//     Mark                                  a position the game finds by this
+//                                           glyph and fills itself
+//
+// Heaps of gold round a chest of coin, with nothing guarding either.
 (
     name: "Treasure Room",
+    ground: "hall floor",
     rows: [
-        ".",
+        "g.g",
+        ".c.",
+        "g.g",
     ],
     legend: {
         '.': Tile("hall floor"),
+        'g': Item(item: "gold coin", count: (2, 4)),
+        'c': Prop("coin chest"),
     },
 )

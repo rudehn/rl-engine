@@ -1,14 +1,21 @@
-// A placeholder prefab for task 13's "The Guarded Hoard": a one-cell shell with
-// nothing in it, so the pool entry loads and the draw is exercised end
-// to end now. Task 13 fills this file in, in place, once its mechanism
-// (traps, props, items) exists; it does not replace this file
-// wholesale, so the pool entry above never changes.
+// A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
+// stands for; see `treasure_room.ron` for the full field list.
+//
+// Gold and a chest with one of the floor's own standing guard: one
+// monster slot, since a floor's own lair or another risk-and-reward
+// piece beside it already counts toward the floor's own court and the
+// population tests' own bound on it.
 (
     name: "The Guarded Hoard",
+    ground: "hall floor",
     rows: [
-        ".",
+        ".h.",
+        "gcg",
     ],
     legend: {
         '.': Tile("hall floor"),
+        'h': Monster(monster: "goblin"),
+        'g': Item(item: "gold coin", count: (1, 2)),
+        'c': Prop("chest"),
     },
 )

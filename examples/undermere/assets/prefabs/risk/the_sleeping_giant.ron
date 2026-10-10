@@ -1,21 +1,24 @@
-// A placeholder prefab for task 13's "The Sleeping Giant": a walled shell with
-// nothing but its own wall and the one entry it joins by, so the pool
-// entry loads and the draw is exercised end to end now. Task 13 fills
-// this file in, in place, once its mechanism (traps, a lock's key, a
-// lever) exists; it does not replace this file wholesale, so the pool
-// entry above never changes.
+// A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
+// stands for; see `treasure_room.ron` for the full field list.
+//
+// An ogre asleep across a narrow way, the prize behind him: stands awake
+// rather than dozing, since a piece's own monster slots always do (see
+// the task's report).
 (
     name: "The Sleeping Giant",
+    ground: "hall floor",
     rows: [
         "#######",
         "#.....#",
-        "#.....#",
-        "#.....#",
+        "#..O..#",
+        "#..P..#",
         "###E###",
     ],
     legend: {
         '#': Tile("hall wall"),
         '.': Tile("hall floor"),
+        'O': Monster(monster: "ogre"),
+        'P': Item(tag: "armor", count: 1),
         'E': Entry,
     },
 )

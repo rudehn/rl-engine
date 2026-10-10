@@ -1,21 +1,25 @@
-// A placeholder prefab for task 13's "The Locked Vault": a walled shell with
-// nothing but its own wall and the one entry it joins by, so the pool
-// entry loads and the draw is exercised end to end now. Task 13 fills
-// this file in, in place, once its mechanism (traps, a lock's key, a
-// lever) exists; it does not replace this file wholesale, so the pool
-// entry above never changes.
+// A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
+// stands for; see `treasure_room.ron` for the full field list.
+//
+// A vault door no hand opens; its key lies elsewhere on the floor, often
+// guarded: `src/vaults.rs`'s own `place_vault_fixtures` drops it there,
+// since nothing of this piece's own is reachable until the door is.
 (
     name: "The Locked Vault",
+    ground: "hall floor",
     rows: [
         "#######",
-        "#.....#",
-        "#.....#",
-        "#.....#",
+        "#g...g#",
+        "#..A..#",
+        "#..o..#",
         "###E###",
     ],
     legend: {
         '#': Tile("hall wall"),
         '.': Tile("hall floor"),
+        'g': Monster(monster: "skeleton"),
+        'A': Item(tag: "weapon", count: 1, band: 1),
+        'o': Item(item: "gold coin", count: (2, 4)),
         'E': Entry,
     },
 )

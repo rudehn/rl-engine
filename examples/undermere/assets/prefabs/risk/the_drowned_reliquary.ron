@@ -1,21 +1,22 @@
-// A placeholder prefab for task 13's "The Drowned Reliquary": a walled shell with
-// nothing but its own wall and the one entry it joins by, so the pool
-// entry loads and the draw is exercised end to end now. Task 13 fills
-// this file in, in place, once its mechanism (traps, a lock's key, a
-// lever) exists; it does not replace this file wholesale, so the pool
-// entry above never changes.
+// A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
+// stands for; see `treasure_room.ron` for the full field list.
+//
+// A reliquary on an island, reached over flooded floor: a causeway seen
+// rather than one that must be spotted (`HideOpenings` is a later task's).
 (
     name: "The Drowned Reliquary",
+    ground: "hall floor",
     rows: [
         "#######",
-        "#.....#",
-        "#.....#",
-        "#.....#",
+        "#~~~~~#",
+        "#~~A~~#",
+        "#~~~~~#",
         "###E###",
     ],
     legend: {
         '#': Tile("hall wall"),
-        '.': Tile("hall floor"),
+        '~': Tile("flooded floor"),
+        'A': Item(tag: "wand", count: 1),
         'E': Entry,
     },
 )

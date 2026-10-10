@@ -1,21 +1,24 @@
-// A placeholder prefab for task 13's "The Warded Hall": a walled shell with
-// nothing but its own wall and the one entry it joins by, so the pool
-// entry loads and the draw is exercised end to end now. Task 13 fills
-// this file in, in place, once its mechanism (traps, a lock's key, a
-// lever) exists; it does not replace this file wholesale, so the pool
-// entry above never changes.
+// A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
+// stands for; see `treasure_room.ron` for the full field list.
+//
+// Warding glyphs that cry out when crossed, waking the floor; an altar
+// beyond: `effects/minds.rs`'s own `WakeFloor`, carved where it is seen
+// and understood rather than hidden.
 (
     name: "The Warded Hall",
+    ground: "hall floor",
     rows: [
         "#######",
         "#.....#",
-        "#.....#",
-        "#.....#",
+        "#..g..#",
+        "#..A..#",
         "###E###",
     ],
     legend: {
         '#': Tile("hall wall"),
         '.': Tile("hall floor"),
+        'g': Prop("warding glyph"),
+        'A': Item(tag: "staff", count: 1, band: 1),
         'E': Entry,
     },
 )

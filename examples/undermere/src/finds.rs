@@ -259,12 +259,15 @@ mod tests {
     }
 
     /// Every floor holds at least its things and a scroll of enchanting
-    /// besides, and none, one or two piles of gold, the first time it is
-    /// entered, over a span of seeds. At least rather than exactly: the
-    /// reward pool may dress a floor with items of its own (Armory,
+    /// besides, and at most a generous few piles of gold, the first time
+    /// it is entered, over a span of seeds. At least rather than exactly:
+    /// the reward pool may dress a floor with items of its own (Armory,
     /// Apothecary's Shelves, Scriptorium, Quartermaster's Store) besides
     /// this budget, a source this test does not try to predict the count
-    /// of.
+    /// of, and the risk-and-reward and reward pools' own pieces (Treasure
+    /// Room, the Guarded Hoard, the Locked Vault, Overturned Wagon, the
+    /// Goblin Stockade) may each add one more pile besides `GOLD_PILES`'s
+    /// own, up to a few of a floor's picks.
     #[test]
     fn every_floor_holds_a_scroll_of_enchanting_and_its_things_besides_gold_over_a_span_of_seeds() {
         for seed in 0..3 {
@@ -278,7 +281,7 @@ mod tests {
                 assert!(things.len() as u32 > things_on(floor), "seed {seed}, floor {floor}: {things:?}");
                 assert!(things.iter().any(|t| t == LAID), "seed {seed}, floor {floor}: no scroll of enchanting in {things:?}");
                 let gold = on_floor(&mut app, floor, true);
-                assert!(GOLD_PILES.contains(&(gold.len() as u32)), "seed {seed}, floor {floor}: {} piles of gold", gold.len());
+                assert!(gold.len() as u32 <= *GOLD_PILES.end() + 6, "seed {seed}, floor {floor}: {} piles of gold", gold.len());
             }
         }
     }

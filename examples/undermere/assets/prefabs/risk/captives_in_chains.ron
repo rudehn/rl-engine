@@ -1,14 +1,23 @@
-// A placeholder prefab for task 13's "Captives in Chains": a one-cell shell with
-// nothing in it, so the pool entry loads and the draw is exercised end
-// to end now. Task 13 fills this file in, in place, once its mechanism
-// (traps, props, items) exists; it does not replace this file
-// wholesale, so the pool entry above never changes.
+// A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
+// stands for; see `treasure_room.ron` for the full field list.
+//
+// Part 3's captives, shackled under guard; freed, they follow: 'C' is a
+// `Mark`, read by `src/vaults.rs`'s own `spawn_chained_captive`, which
+// shackles the monster it stands there exactly as `population.rs`'s own
+// captive is shackled. One cell: the guard over it is a flavor that
+// risks a monster slot's own distance-from-entry and lair-band checks
+// for no mechanism of its own, so it stays scenery, the shackles beside
+// an empty post.
 (
     name: "Captives in Chains",
+    ground: "hall floor",
     rows: [
-        ".",
+        "s.s",
+        ".C.",
     ],
     legend: {
         '.': Tile("hall floor"),
+        's': Prop("shackles"),
+        'C': Mark,
     },
 )

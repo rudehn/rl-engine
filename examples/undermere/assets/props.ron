@@ -149,4 +149,53 @@
 
     // The reward pool's own dressed entries, `assets/dressings.ron`.
     (name: "lectern",       glyph: 'n', color: (r: 120, g: 95, b: 70)),
+
+    // The reward pool's own fixed pieces, `assets/prefabs/reward/`: a
+    // chest of coin, a scholar's desk and shelves (reusing "desk" and
+    // "shelf" above), a spilled cart, and the three one-shot waters a
+    // spring, an anvil and a well hold.
+    (name: "coin chest", glyph: '=', color: (r: 195, g: 170, b: 80), blocks: true,
+     container: (contents: [(item: "gold coin", count: (6, 10))],
+                 opened: (glyph: '=', color: (r: 110, g: 95, b: 50))),
+     offers: [(verb: "open", time: 100)]),
+    (name: "ancient tome", glyph: 'b', color: (r: 150, g: 115, b: 75), blocks: true),
+    (name: "overturned wagon", glyph: 'w', color: (r: 130, g: 95, b: 55), blocks: true),
+    (name: "spring", glyph: 'o', color: (r: 130, g: 200, b: 220), blocks: true,
+     container: (contents: [(item: "flask of spring water", count: 1)]),
+     offers: [(verb: "open", time: 100)]),
+    (name: "frost-rimed anvil", glyph: 'n', color: (r: 170, g: 200, b: 215), blocks: true,
+     container: (contents: [(item: "phial of quenching oil", count: 1)]),
+     offers: [(verb: "open", time: 100)]),
+    (name: "moonwell", glyph: 'o', color: (r: 170, g: 170, b: 230), blocks: true,
+     container: (contents: [(item: "phial of moonwell water", count: 1)]),
+     offers: [(verb: "open", time: 100)]),
+
+    // The risk-and-reward pool's own fixed pieces, `assets/prefabs/risk/`.
+    // `src/vaults.rs` owns the cage gate, the key and the lever it is
+    // never drawn with and the flood, the fall and the collapse; the
+    // warding glyph, the grave sigil and the cracked tile below answer for
+    // themselves through `effects/minds.rs`'s own `WakeFloor` and
+    // `effects/bodies.rs`'s own `Hatch`, and the traps through the
+    // engine's own `Harm`, `Emit` and `Ignite`.
+    (name: "cage gate", glyph: '+', color: (r: 150, g: 145, b: 140)),
+    (name: "stone pedestal", glyph: '_', color: (r: 170, g: 165, b: 150)),
+    (name: "cracked tile", glyph: '^', color: (r: 150, g: 130, b: 100),
+     triggers: [(on: "entered", fires: 1, effects: [(kind: "Hatch", args: (monster: "rat", count: 4))])]),
+    (name: "guardian statue", glyph: '&', color: (r: 140, g: 140, b: 150), blocks: true),
+    (name: "iron grate", glyph: '"', color: (r: 110, g: 115, b: 125)),
+    (name: "dry straw", glyph: '"', color: (r: 190, g: 170, b: 90)),
+    (name: "warding glyph", glyph: ':', color: (r: 220, g: 150, b: 60),
+     triggers: [(on: "entered", fires: 1, effects: [(kind: "WakeFloor")])]),
+    (name: "grave sigil", glyph: ':', color: (r: 150, g: 90, b: 160),
+     triggers: [(on: "entered", fires: 1, effects: [(kind: "Hatch", args: (monster: "skeleton", count: 4))])]),
+    (name: "hidden dart plate", glyph: '^', color: (r: 140, g: 130, b: 120), hidden: (spot: 20),
+     triggers: [(on: "entered", fires: 1, effects: [(kind: "Harm", args: (kind: "pierce", roll: "1d6"))])]),
+    (name: "caustic vent", glyph: '^', color: (r: 120, g: 170, b: 90), hidden: (spot: 15),
+     triggers: [(on: "entered", fires: 1, area: Burst(radius: 1), effects: [(kind: "Emit", args: (gas: "caustic", amount: 150))])]),
+    (name: "paralysis vent", glyph: '^', color: (r: 190, g: 140, b: 190), hidden: (spot: 8),
+     triggers: [(on: "entered", fires: 1, area: Burst(radius: 1), effects: [(kind: "Emit", args: (gas: "paralytic", amount: 200))])]),
+    (name: "ember trap", glyph: '^', color: (r: 220, g: 120, b: 50), hidden: (spot: 20),
+     triggers: [(on: "entered", fires: 1, effects: [(kind: "Ignite", args: (turns: 3))])]),
+    (name: "concealed lever", glyph: '/', color: (r: 160, g: 150, b: 120), hidden: (spot: 20),
+     offers: [(verb: "pull", time: 100)]),
 ]

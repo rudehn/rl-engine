@@ -1,21 +1,29 @@
-// A placeholder prefab for task 13's "Caged Altars": a walled shell with
-// nothing but its own wall and the one entry it joins by, so the pool
-// entry loads and the draw is exercised end to end now. Task 13 fills
-// this file in, in place, once its mechanism (traps, a lock's key, a
-// lever) exists; it does not replace this file wholesale, so the pool
-// entry above never changes.
+// A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
+// stands for; see `treasure_room.ron` for the full field list.
+//
+// Three caged things on altars; take one and the other cages slam shut:
+// '1'-'3' and '4'-'6' are `Mark`s, read by `src/vaults.rs`'s own
+// `spawn_caged_altars`, which pairs them by position in the alphabet
+// rather than by where they stand, since the room is symmetric.
 (
     name: "Caged Altars",
+    ground: "hall floor",
     rows: [
         "#######",
-        "#.....#",
-        "#.....#",
+        "#1#2#3#",
+        "#4.5.6#",
         "#.....#",
         "###E###",
     ],
     legend: {
         '#': Tile("hall wall"),
         '.': Tile("hall floor"),
+        '1': Mark,
+        '2': Mark,
+        '3': Mark,
+        '4': Mark,
+        '5': Mark,
+        '6': Mark,
         'E': Entry,
     },
 )

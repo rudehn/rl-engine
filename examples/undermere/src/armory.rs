@@ -1200,6 +1200,12 @@ mod tests {
             "the Choirmaster's Staff",
             "the Abbess's Chalice",
             "the Forgemaster's Hammer",
+            // The risk-and-reward pool's key, and the reward pool's three
+            // one-shot waters.
+            "vault key",
+            "flask of spring water",
+            "phial of quenching oil",
+            "phial of moonwell water",
         ];
         for name in armory {
             assert!(library.armory.defs.id(name).is_some(), "no item called {name:?}");

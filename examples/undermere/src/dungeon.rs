@@ -50,11 +50,13 @@ use crate::bestiary::MonsterDef;
 
 mod biomes;
 mod lairs;
+mod pieces;
 
 pub(crate) use biomes::BiomeDraw;
 use lairs::ClearOfTheThrone;
 #[cfg(test)]
 pub(crate) use lairs::{FINAL_BOSSES, MINI_BOSSES};
+use pieces::QuietWayIn;
 
 /// How many floors the Undermere goes down. The tenth is the throne's, and
 /// has no way down.
@@ -542,7 +544,7 @@ impl Undermere {
         } else {
             chain.then(RandomStart.clear_of_stamps(MIN_DISTANCE_FROM_ENTRY)).then(FarthestExit.among_farthest(EXIT_AMONG_PCT).clear_of_stamps(EXIT_CLEAR))
         };
-        chain = chain.then(Survey).then(picked.stamp);
+        chain = chain.then(Survey).then(picked.stamp).then(QuietWayIn);
         // `Dress` lays a dressed pick where `picked.stamp` chose for it,
         // then dresses every area nothing else took, from the biome's
         // own weighted list, `nothing` among the choices.
@@ -586,9 +588,11 @@ impl Undermere {
     /// and for reading a recipe before calling it done: `#` what cannot be
     /// walked on, `.` what can, `+` a door, `~` what a body wades through,
     /// `≈` what stops it, `=` a bridge, `<` the way in and `>` the way
-    /// down. `recipe` grows the floor by that recipe of a biome of its band
+    /// down, and a piece's or a dressing's slot by its own legend glyph.
+    /// `recipe` grows the floor by that recipe of a biome of its band
     /// in place of the one the seed draws; an error names a recipe no
-    /// biome of the floor grows.
+    /// biome of the floor grows, and a floor that cannot be grown is
+    /// named with its biome and recipe.
     pub fn render(&self, floor: u32, recipe: Option<&str>) -> Result<String, BuildError> {
         if !(1..=FLOORS).contains(&floor) {
             return Err(BuildError::new("undermere", format!("floor {floor} is outside 1 to {FLOORS}")));
@@ -599,7 +603,8 @@ impl Undermere {
                 .ok_or_else(|| BuildError::new("undermere", format!("no biome of floor {floor} grows {r:?}")))?,
         };
         let seed = RunSeed(self.seed.derive(SeedDomain::new(b"undermere.place"), u64::from(floor)));
-        let built = PlaceBuild::from_context(self.grow(floor, &drawn, seed, ATTEMPTS)?)?;
+        let grown = self.grow(floor, &drawn, seed, ATTEMPTS).map_err(|e| BuildError::new(e.pass, format!("{}, {}: {}", drawn.name, drawn.recipe, e.reason)))?;
+        let built = PlaceBuild::from_context(grown)?;
         let tables = self.tiles.tables();
         let (door, bridges) = (self.tile("door"), [self.tile("bridge"), self.tile("iron bridge")]);
         let bounds = built.terrain.bounds();
@@ -608,10 +613,14 @@ impl Undermere {
             for x in 0..bounds.width {
                 let p = Point::new(x, y);
                 let tile = built.terrain.get(p).expect("in bounds");
+                // What a piece or a dressing laid at a cell is shown by
+                // its own glyph, so a printed floor reads as its rooms.
+                let laid = built.spots.iter().find(|s| s.at == p).and_then(|s| char::from_u32(s.tag));
                 out.push(match () {
                     _ if p == built.entry => '<',
                     _ if Some(p) == built.exit => '>',
                     _ if tile == door => '+',
+                    _ if laid.is_some() => laid.expect("just checked"),
                     _ if bridges.contains(&tile) => '=',
                     _ if !tables.passable[tile.index()] && !tables.opaque[tile.index()] => '≈',
                     _ if !tables.passable[tile.index()] => '#',
@@ -627,7 +636,9 @@ impl Undermere {
 
 impl PlaceRules for Undermere {
     fn build(&self, map: MapId, _: Option<&WorldGraph>) -> Result<PlaceBuild, BuildError> {
-        PlaceBuild::from_context(self.generate(map)?)
+        let mut built = PlaceBuild::from_context(self.generate(map)?)?;
+        crate::vaults::place_vault_fixtures(&mut built, &self.tiles, self.seed, map);
+        Ok(built)
     }
 }
 

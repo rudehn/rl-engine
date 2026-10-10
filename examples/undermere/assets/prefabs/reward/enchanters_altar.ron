@@ -1,14 +1,16 @@
-// A placeholder prefab for task 13's "Enchanter's Altar": a one-cell shell with
-// nothing in it, so the pool entry loads and the draw is exercised end
-// to end now. Task 13 fills this file in, in place, once its mechanism
-// (traps, props, items) exists; it does not replace this file
-// wholesale, so the pool entry above never changes.
+// A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
+// stands for; see `treasure_room.ron` for the full field list.
+//
+// An altar at the end of its own dead end, a scroll of enchanting left
+// waiting on it.
 (
     name: "Enchanter's Altar",
+    ground: "hall floor",
     rows: [
-        ".",
+        "as",
     ],
     legend: {
-        '.': Tile("hall floor"),
+        'a': Prop("altar"),
+        's': Item(item: "scroll of enchanting", count: 1),
     },
 )

@@ -84,6 +84,11 @@ pub fn prepare(commands: &mut Commands, seed: &Seed, registries: &Registries) {
     // The pieces the places are stamped from, shared with the engine that
     // fills their slots, so a stamp's key names the same piece in both.
     commands.insert_resource(undermere.prefabs().clone());
+    // The risk-and-reward pool's own mechanisms read a few tiles by name
+    // at runtime, which only `undermere.tiles()` can still answer once it
+    // is boxed away below.
+    commands.insert_resource(crate::vaults::VaultTiles::new(undermere.tiles()));
+    commands.init_resource::<crate::vaults::RisingFloods>();
     commands.insert_resource(PlaceRulesRes(Box::new(undermere)));
 }
 

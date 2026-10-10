@@ -1,14 +1,21 @@
-// A placeholder prefab for task 13's "The Tinder Room": a one-cell shell with
-// nothing in it, so the pool entry loads and the draw is exercised end
-// to end now. Task 13 fills this file in, in place, once its mechanism
-// (traps, props, items) exists; it does not replace this file
-// wholesale, so the pool entry above never changes.
+// A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
+// stands for; see `treasure_room.ron` for the full field list.
+//
+// Dry straw over the floor, a lit brazier by the door, the prize at the
+// back: an ember caught underfoot is `props.ron`'s own "ember trap".
 (
     name: "The Tinder Room",
+    ground: "hall floor",
     rows: [
-        ".",
+        "F.",
+        "ex",
+        "xP",
     ],
     legend: {
         '.': Tile("hall floor"),
+        'F': Prop("brazier"),
+        'x': Prop("dry straw"),
+        'e': Prop("ember trap"),
+        'P': Item(tag: "scroll", count: 1),
     },
 )

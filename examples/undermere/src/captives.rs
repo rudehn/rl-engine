@@ -46,6 +46,13 @@ pub fn shackled(registries: &Registries, verbs: &Verbs, at: Point) -> impl Bundl
 /// it, or `None` for anything not shackled: what the save keeps of a
 /// captive, since the rest of [`shackled`] follows from it.
 pub fn held_at(world: &World, captive: Entity) -> Option<Point> {
+    // Never the risk-and-reward pool's own "Captives in Chains", shackled
+    // exactly the same way for the same reason, but a second, independent
+    // source: the run's own captive, which this answers for, is part 3's
+    // alone and the one `dungeon::captive_floor` draws.
+    if world.get::<crate::vaults::PoolCaptive>(captive).is_some() {
+        return None;
+    }
     let free_verb = world.resource::<Verbs>().get(FREE_VERB)?;
     let offers = world.get::<Offers>(captive)?;
     if !offers.0.iter().any(|o| o.verb == free_verb) {
@@ -151,8 +158,11 @@ mod tests {
                 arrive(&mut app, map_of(f));
                 let free_verb = app.world().resource::<Verbs>().get(FREE_VERB).expect("declared");
                 let world = app.world_mut();
+                // Never the risk-and-reward pool's own "Captives in
+                // Chains", shackled the identical way but a second,
+                // independent source now: see `held_at`'s own doc.
                 let count = world
-                    .query::<(&OnMap, &Offers)>()
+                    .query_filtered::<(&OnMap, &Offers), Without<crate::vaults::PoolCaptive>>()
                     .iter(world)
                     .filter(|(on, offers)| on.0 == map_of(f) && offers.0.iter().any(|o| o.verb == free_verb))
                     .count();

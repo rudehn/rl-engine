@@ -1,21 +1,19 @@
-// A placeholder prefab for task 13's "Jeweller's Niche": a walled shell with
-// nothing but its own wall and the one entry it joins by, so the pool
-// entry loads and the draw is exercised end to end now. Task 13 fills
-// this file in, in place, once its mechanism (traps, a lock's key, a
-// lever) exists; it does not replace this file wholesale, so the pool
-// entry above never changes.
+// A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
+// stands for; see `treasure_room.ron` for the full field list.
+//
+// A cubby cut into a corridor's own wall, a ring caught by the light as it
+// is passed.
 (
     name: "Jeweller's Niche",
+    ground: "hall floor",
     rows: [
-        "#######",
-        "#.....#",
-        "#.....#",
-        "#.....#",
-        "###E###",
+        "###",
+        "#R#",
+        "#E#",
     ],
     legend: {
         '#': Tile("hall wall"),
-        '.': Tile("hall floor"),
+        'R': Item(tag: "ring", count: 1),
         'E': Entry,
     },
 )
