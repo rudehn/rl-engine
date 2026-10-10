@@ -156,18 +156,24 @@ fn as_written(name: &str) -> bool {
 }
 
 /// Whether `name` is a proper name, by the one test every function here
-/// uses: it starts with a capital. A kind is written lower case, `goblin`,
-/// and someone with a name of their own is not, `Brenna`, so a sentence
-/// that reads for one can be told from one that does not without a list
-/// of who is who.
+/// uses: it starts with a capital, or with `the` and then a capital. A
+/// kind is written lower case, `goblin`, and someone with a name of their
+/// own is not, `Brenna`, so a sentence that reads for one can be told from
+/// one that does not without a list of who is who. A title is a name too,
+/// `the Widow`, and its article is part of how it is said rather than a
+/// sign of a kind, which is why `the stairs` is not one and `the Widow`
+/// is. Only `the`: nobody is called `a Widow`.
 ///
 /// ```
 /// use rl_core::noun::is_proper;
 /// assert!(is_proper("Brenna"));
+/// assert!(is_proper("the Widow"));
 /// assert!(!is_proper("goblin"));
+/// assert!(!is_proper("the stairs"));
 /// ```
 pub fn is_proper(name: &str) -> bool {
-    name.chars().next().is_some_and(char::is_uppercase)
+    let capital = |s: &str| s.chars().next().is_some_and(char::is_uppercase);
+    capital(name) || name.strip_prefix("the ").is_some_and(capital)
 }
 
 /// `name` with `a` or `an` before it, unless it already carries an article
@@ -368,6 +374,16 @@ mod tests {
         assert_eq!(with_the("a crust of bread"), "a crust of bread");
         assert_eq!(with_the("Grubnak"), "Grubnak");
         assert_eq!(with_the(""), "");
+    }
+
+    #[test]
+    fn a_capital_or_the_and_a_capital_makes_a_proper_name_and_any_other_article_does_not() {
+        for name in ["Brenna", "Grubnak the goblin king", "the Widow", "the Drowned Abbess", "The Choirmaster"] {
+            assert!(is_proper(name), "{name}");
+        }
+        for name in ["goblin", "the stairs", "a Widow", "an Ember", "some Gold", "the ", "the", ""] {
+            assert!(!is_proper(name), "{name}");
+        }
     }
 
     #[test]

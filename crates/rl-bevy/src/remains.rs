@@ -764,6 +764,7 @@ mod tests {
         let naming = RemainsNaming::new("{what} corpse").proper("the corpse of {what}");
         assert_eq!(naming.name_for("goblin"), "goblin corpse");
         assert_eq!(naming.name_for("Brenna"), "the corpse of Brenna");
+        assert_eq!(naming.name_for("the Widow"), "the corpse of the Widow", "a title with its article is a proper name");
         assert_eq!(RemainsNaming::new("{what} remains").name_for("Brenna"), "Brenna remains", "one template for both unless a game says");
 
         let (mut app, start, sides) = arena();

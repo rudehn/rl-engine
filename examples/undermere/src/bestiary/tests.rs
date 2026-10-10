@@ -597,6 +597,32 @@ fn a_conjured_blade_leaves_no_body_where_a_goblin_does() {
     assert!(app.world().get::<Remains>(goblin).is_some(), "the goblin lies where it fell");
 }
 
+/// Every named mini-boss struck down lies as the corpse of its name, `the
+/// corpse of the Widow`, where a kind lies as its kind's, `goblin
+/// corpse`; a boss leaves no body, since its death ends the run, but its
+/// name is said the same way should one ever be left.
+#[test]
+fn every_named_mini_boss_lies_as_the_corpse_of_its_name_and_a_kind_as_its_kinds() {
+    use crate::testing::{arena, kill, monster, name_of, settle};
+    let (mut app, _, here) = arena(21);
+    let defs = app.world().resource::<Bestiary>().defs.clone();
+    let minibosses: Vec<&str> = defs.iter().filter(|(_, d)| d.miniboss).map(|(_, d)| d.name.as_str()).collect();
+    assert!(minibosses.len() >= 5, "the five mini-bosses: {minibosses:?}");
+    let naming = app.world().resource::<RemainsNaming>().clone();
+    for (_, boss) in defs.iter().filter(|(_, d)| d.boss) {
+        assert_eq!(naming.name_for(&boss.name), format!("the corpse of {}", boss.name));
+    }
+    for (step, name) in minibosses.iter().enumerate() {
+        let body = monster(&mut app, name, here.offset(1, step as i32 - 2));
+        kill(&mut app, body, None);
+        settle(&mut app);
+        assert_eq!(name_of(&app, body), format!("the corpse of {name}"));
+    }
+    let goblin = monster(&mut app, "goblin", here.offset(-1, 0));
+    kill(&mut app, goblin, None);
+    assert_eq!(name_of(&app, goblin), "goblin corpse", "a kind reads as before");
+}
+
 /// A burn is no blow: a pink jelly left burning loses health to every
 /// tick of it and is still one jelly when the fire is done, where it
 /// once split on every turn it burned.
