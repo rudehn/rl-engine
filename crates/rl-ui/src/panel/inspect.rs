@@ -26,7 +26,7 @@ use rl_rules::forecast::Outlook;
 use crate::cursor::{CursorMap, CursorStyle};
 use crate::modal::Modals;
 use crate::panel::nearby::relation_tone;
-use crate::panel::{bar, clear, clip, frame, wrap};
+use crate::panel::{bar, clear, clip, frame, hides, other_place, wrap};
 use crate::tone::{Palette, ToneId, Tones};
 use crate::view::inspect::inspect_modal;
 use crate::view::{InspectView, InspectViewPlugin, WorkRow};
@@ -180,7 +180,7 @@ pub fn place_inspect(
     };
     // Recomputed every frame rather than kept, so a map resized while the
     // panel is moved takes it to the new mirror.
-    let elsewhere = layout.elsewhere.unwrap_or_else(|| mirrored(layout.rect, map_view.viewport));
+    let elsewhere = other_place(layout.rect, layout.elsewhere, map_view.viewport);
     let moved = placed.0.is_some_and(|rect| rect != layout.rect);
     let (here, there) = if moved { (elsewhere, layout.rect) } else { (layout.rect, elsewhere) };
     let marked = marked(&map_view, view.cursor);
@@ -346,12 +346,6 @@ fn fitting(heights: impl ExactSizeIterator<Item = usize>, rows: usize) -> usize 
     shown
 }
 
-/// `rect` turned top for bottom within `map`, so a panel along the
-/// bottom edge lands along the top one the same distance in.
-fn mirrored(rect: Rect, map: Rect) -> Rect {
-    Rect::new(rect.x, map.y + map.bottom() - rect.bottom(), rect.width, rect.height)
-}
-
 /// The terminal cells the cursor must keep in sight: every cell of its own
 /// tile and of the four beside it, where ticks go, which on a map of wide
 /// tiles is more than each tile's first. A glowing cursor marks only its
@@ -359,10 +353,6 @@ fn mirrored(rect: Rect, map: Rect) -> Rect {
 /// keeps them too.
 fn marked(map: &MapView, cursor: Point) -> Vec<Point> {
     [(0, 0), (-1, 0), (1, 0), (0, -1), (0, 1)].into_iter().flat_map(|(dx, dy)| map.cells(cursor.offset(dx, dy))).collect()
-}
-
-fn hides(rect: Rect, cells: &[Point]) -> bool {
-    cells.iter().any(|&p| rect.contains(p))
 }
 
 /// How far off the thing under the cursor is, and what it stands on when

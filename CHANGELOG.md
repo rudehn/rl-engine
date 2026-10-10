@@ -6,6 +6,10 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The offers screen moves off what it is about, as the look panel moves off its cursor: while the one choosing, or anyone or anything offering a row, stands under its rectangle, it is drawn in its other place, the rectangle mirrored top for bottom in the map, or where the new `OffersPanel::else_at(rect)` says.
+  A game's rectangle becomes its preferred place, so nothing to change unless it wants the other place named; `OffersLayout` has the new `elsewhere`, so a game that built it with a struct literal adds `elsewhere: None`.
+  An asking offer's answers follow its question after one empty row, where they used to sit at the screen's foot under a gap.
+
 - The party rail keeps a follower's facets whole and clips its name to make room, as the nearby rail keeps a state: a long name used to push the game's facet, a follower's order, off the row's end.
 
 - Tab with nothing open steps only through the rows the nearby rail lists, as a game left them in `ViewSet::Annotate`: a game that takes a row out, as one listing its followers on the party rail does, no longer has Tab land on a row nobody can see.

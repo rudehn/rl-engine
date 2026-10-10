@@ -162,11 +162,13 @@ impl Screen {
             // its price, `unbind what you wear (1 turn, 60 gold coins)`,
             // and tall enough for six rows, or for a question of two
             // lines, a blank and its answers: a mercenary's dismissal
-            // asks in two. Low on the left where the look panel stands,
-            // and not over the middle of the map, where the adventurer
-            // stands on arriving in Mereholt with the party round them:
-            // in Mereholt that is the lake, where nobody who offers
-            // anything ever stands.
+            // asks in two. Its preferred place, low on the left where the
+            // look panel stands, and not over the middle of the map, where
+            // the adventurer stands on arriving in Mereholt with the party
+            // round them: in Mereholt that is the lake, where nobody who
+            // offers anything ever stands. On a floor, the adventurer or
+            // whoever offers may stand under it, and the screen moves to
+            // the top, as the look panel does off its cursor.
             here: Rect::new(map.x + 2, map.bottom() - 10, 52, 8),
             controls: map.inflate(-2),
             // The most the menu may take: the run's own line, the seed and

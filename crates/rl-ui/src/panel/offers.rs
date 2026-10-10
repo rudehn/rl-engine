@@ -26,16 +26,23 @@
 //! away, is nothing and costs nothing. The question lasts only while its
 //! offer is still on offer: whatever took it out of reach takes the
 //! question with it, unanswered.
+//!
+//! The screen sits over the map, so it moves off what it is about, as the
+//! look panel moves off its cursor: when the one choosing or anyone or
+//! anything offering a row stands under its rectangle, it is drawn in its
+//! other place, the game's [`OffersPanel::else_at`] or its rectangle
+//! mirrored top for bottom in the map. A screen that covered the person
+//! it asks about asks the player to choose blind.
 
 use bevy::prelude::*;
 use rl_bevy::prelude::*;
 use rl_bevy::{Bumped, EngineSet, PresentSet};
 use rl_core::{Direction, Rect};
-use rl_render::{Cell, Terminal};
+use rl_render::{Cell, MapView, Terminal};
 
 use crate::controls::{ControlInput, key_name};
 use crate::modal::{AddModal, ModalId, Modals};
-use crate::panel::{clear, clip, frame, wrap};
+use crate::panel::{clear, clip, frame, hides, other_place, wrap};
 use crate::tone::{Palette, Tones};
 use crate::view::offers::{OffersView, OffersViewPlugin};
 
@@ -47,6 +54,11 @@ pub const OFFERS_MODAL: &str = "offers";
 pub struct OffersLayout {
     /// The terminal cells it occupies.
     pub rect: Rect,
+    /// Where it goes while the one choosing, or what offers a row, stands
+    /// under `rect`. `None` mirrors `rect` top for bottom within the map,
+    /// which suits a screen along either edge; a game names a place when
+    /// its screen is not there.
+    pub elsewhere: Option<Rect>,
     /// Drawn in the top border.
     pub title: String,
     /// The answer to an asking offer's question that takes it up.
@@ -101,7 +113,14 @@ pub struct OffersPanel(OffersLayout);
 impl OffersPanel {
     /// The screen in `rect`.
     pub fn new(rect: Rect) -> Self {
-        Self(OffersLayout { rect, title: "Here".into(), yes: "Yes".into(), no: "No".into() })
+        Self(OffersLayout { rect, elsewhere: None, title: "Here".into(), yes: "Yes".into(), no: "No".into() })
+    }
+
+    /// Sets where the screen goes while what it is about stands under its
+    /// rectangle, in place of the mirror of it.
+    pub fn else_at(mut self, rect: Rect) -> Self {
+        self.0.elsewhere = Some(rect);
+        self
     }
 
     /// Replaces the two answers to an asking offer's question.
@@ -261,12 +280,31 @@ pub fn offers_keys(
 
 /// What the offers screen draws from.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct HereScreen<'w> {
+pub struct HereScreen<'w, 's> {
     layout: Res<'w, OffersLayout>,
     view: Res<'w, OffersView>,
     keys: ControlInput<'w>,
     modals: Res<'w, Modals>,
     palette: Res<'w, Palette>,
+    map: Option<Res<'w, MapView>>,
+    places: Query<'w, 's, &'static Position>,
+}
+
+impl HereScreen<'_, '_> {
+    /// Where the screen is drawn this frame: its rectangle, or its other
+    /// place when the rectangle covers the one choosing or anything a row
+    /// is offered by and the other place covers none of them. Worked out
+    /// afresh each frame rather than kept, since nothing walks while the
+    /// screen is up and a map resized under it takes it to the new mirror.
+    /// Without a [`MapView`] nothing is drawn under it to keep clear.
+    fn rect(&self) -> Rect {
+        let here = self.layout.rect;
+        let Some(map) = &self.map else { return here };
+        let about = self.view.actor.into_iter().chain(self.view.rows.iter().map(|r| r.target));
+        let cells: Vec<rl_core::Point> = about.filter_map(|e| self.places.get(e).ok()).flat_map(|p| map.cells(p.0)).collect();
+        let there = other_place(here, self.layout.elsewhere, map.viewport);
+        if hides(here, &cells) && !hides(there, &cells) { there } else { here }
+    }
 }
 
 /// What a turn's worth of time reads as: `2 turns`, or hundredths when it
@@ -282,18 +320,18 @@ fn cost(time: u32) -> String {
 /// Draws what is on offer here, the row picked out, and why a row cannot
 /// be taken up.
 pub fn draw_offers(mut terminal: ResMut<Terminal>, mut menu: ResMut<OffersMenu>, screen: HereScreen) {
-    let HereScreen { layout, view, keys, modals, palette } = &screen;
+    let HereScreen { layout, view, keys, modals, palette, .. } = &screen;
     if !modals.is_open(offers_modal(modals)) {
         return;
     }
-    let rect = layout.rect;
+    let rect = screen.rect();
     if rect.width < 12 || rect.height < 4 {
         return;
     }
     let asked =
         menu.confirming.and_then(|c| view.rows.iter().find(|r| r.target == c.target && r.verb == c.verb).and_then(|r| r.asks.as_deref()).map(|q| (q, c.yes)));
     if let Some((question, yes)) = asked {
-        draw_question(&mut terminal, &screen, question, yes);
+        draw_question(&mut terminal, &screen, rect, question, yes);
         return;
     }
     let bindings = keys.bindings();
@@ -322,25 +360,30 @@ pub fn draw_offers(mut terminal: ResMut<Terminal>, mut menu: ResMut<OffersMenu>,
 
 /// An offer's question in place of the rows: its words wrapped from the
 /// top, a line left empty, and its two answers a row each, No first, the
-/// one picked out drawn as a picked row is. The answers are kept to the
-/// bottom of the screen when the words run long, which are cut short
-/// rather than the answers, and the empty line goes before the words do,
-/// so a screen too short for both still asks something.
-fn draw_question(terminal: &mut Terminal, screen: &HereScreen, question: &str, yes: bool) {
+/// one picked out drawn as a picked row is. The answers follow the words
+/// after the one empty line, so a short question in a tall screen does not
+/// stand over a gap; when the words run long they are cut short rather
+/// than the answers, which keep to the bottom, and the empty line goes
+/// before the words do, so a screen too short for both still asks
+/// something.
+fn draw_question(terminal: &mut Terminal, screen: &HereScreen, rect: Rect, question: &str, yes: bool) {
     let HereScreen { layout, keys, palette, .. } = screen;
-    let (rect, bindings) = (layout.rect, keys.bindings());
+    let bindings = keys.bindings();
     let hints = format!("{} answer \u{2022} {} never mind", key_name(bindings.cursor.confirm), key_name(bindings.cursor.close));
     clear(terminal, rect, palette);
     frame(terminal, rect, &layout.title, &hints, palette);
     let inner = Rect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
     let (text, surface, select) = (palette.get(Tones::TEXT), palette.get(Tones::SURFACE), palette.get(Tones::SELECT));
     let room = (inner.height - 3).max((inner.height - 2).min(1)).max(0) as usize;
-    for (i, line) in wrap(question, inner.width.max(0) as usize).iter().take(room).enumerate() {
+    let lines = wrap(question, inner.width.max(0) as usize);
+    let shown = lines.len().min(room);
+    for (i, line) in lines.iter().take(shown).enumerate() {
         terminal.print(inner.x, inner.y + i as i32, line, text);
     }
+    let first = (inner.y + shown as i32 + 1).min(inner.bottom() - 2);
     let answers = [(&layout.no, !yes), (&layout.yes, yes)];
     for (i, (word, picked)) in answers.into_iter().enumerate() {
-        let y = inner.bottom() - 2 + i as i32;
+        let y = first + i as i32;
         let bg = if picked { select } else { surface };
         terminal.fill(Rect::new(inner.x, y, inner.width, 1), Cell::new(' ', text).on(bg));
         terminal.print_on(inner.x, y, &clip(word, inner.width.max(0) as usize), text, bg);
@@ -609,6 +652,55 @@ mod tests {
     /// Every offer taken up, as the game hears it.
     #[derive(Resource, Default)]
     struct Heard(Vec<Interacted>);
+
+    /// Mirela beside the player, on the map's middle row, with the screen
+    /// in `panel` opened by the interact key on her asking offer: the row
+    /// the screen's title is drawn on.
+    fn opened_over_the_map(panel: OffersPanel) -> Option<usize> {
+        let mut stage = Stage::new_with((panel, crate::InteractKey), |app| {
+            app.add_plugins((PropsPlugin, rl_render::MapViewPlugin::new(Rect::new(0, 0, 40, 20))));
+            app.insert_resource(Seed(TEST_SEED));
+            app.add_verb("tip");
+        })
+        .screen(40, 20);
+        let tip = stage.app.world().resource::<Verbs>().get("tip").expect("declared");
+        let at = stage.at.offset(1, 0);
+        let offers = Offers(vec![Offering::new(tip, 200).asking("Tip it over?")]);
+        stage.app.world_mut().spawn((Actor, Blocks, Position(at), OnMap(MapId::SURFACE), Name::new("Mirela"), offers));
+        stage.tick();
+        stage.tick();
+        let map = stage.app.world().resource::<MapView>();
+        assert_eq!((map.to_screen(stage.at), map.to_screen(at)), (Some(Point::new(20, 10)), Some(Point::new(21, 10))), "both on row ten");
+        stage.press(KeyCode::Enter);
+        stage.tick();
+        stage.rows().iter().position(|r| r.contains("Here"))
+    }
+
+    /// The screen over the map moves off the one choosing and whoever it
+    /// offers for, as the look panel moves off its cursor: to its mirror
+    /// top for bottom, or where the game says; and stays put when neither
+    /// stands under it.
+    #[test]
+    fn the_screen_moves_off_the_player_and_its_offerer_to_its_mirror_or_where_the_game_says() {
+        assert_eq!(opened_over_the_map(OffersPanel::new(Rect::new(1, 12, 38, 7))), Some(12), "clear of them, where the game put it");
+        assert_eq!(opened_over_the_map(OffersPanel::new(Rect::new(1, 10, 38, 7))), Some(3), "over them, so mirrored top for bottom");
+        let named = OffersPanel::new(Rect::new(1, 10, 38, 7)).else_at(Rect::new(1, 1, 38, 7));
+        assert_eq!(opened_over_the_map(named), Some(1), "or where the game names");
+    }
+
+    /// A short question in a tall screen is followed by one empty row and
+    /// then its answers, not by a gap down to the screen's foot.
+    #[test]
+    fn a_short_question_is_followed_by_one_empty_row_and_then_its_answers() {
+        let (mut stage, _) = asking();
+        stage.press(KeyCode::Enter);
+        stage.tick();
+        let rows = stage.rows();
+        let inner = |y: usize| rows[y].chars().skip(10).take(36).collect::<String>();
+        assert_eq!(inner(5).trim(), "Tip it over for good?", "the question on the first row:\n{}", rows.join("\n"));
+        assert_eq!(inner(6).trim(), "", "one empty row");
+        assert_eq!((inner(7).trim(), inner(8).trim()), ("No", "Yes"), "then the answers:\n{}", rows.join("\n"));
+    }
 
     /// What the stage has heard taken up, and the turn clock.
     fn done(stage: &Stage) -> (Vec<Interacted>, u32) {

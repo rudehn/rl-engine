@@ -154,6 +154,21 @@ pub fn tint(terminal: &mut Terminal, map: &MapView, cell: Point, tone: ToneId, p
     map.wash(terminal, cell, palette.get(tone));
 }
 
+/// Where a panel drawn over the map goes when its own rectangle would hide
+/// what it is about: the game's `elsewhere`, or `rect` turned top for
+/// bottom within `map`, so a panel along the bottom edge lands along the
+/// top one the same distance in. Shared by the look panel and the offers
+/// screen, so the two move the same way and a game learns one rule.
+pub(crate) fn other_place(rect: Rect, elsewhere: Option<Rect>, map: Rect) -> Rect {
+    elsewhere.unwrap_or_else(|| Rect::new(rect.x, map.y + map.bottom() - rect.bottom(), rect.width, rect.height))
+}
+
+/// Whether `rect` covers any of `cells`, terminal cells a panel over the
+/// map must keep in sight.
+pub(crate) fn hides(rect: Rect, cells: &[Point]) -> bool {
+    cells.iter().any(|&p| rect.contains(p))
+}
+
 /// Cuts `text` to `width` characters, with an ellipsis when it did not
 /// fit. Panels are narrow and a name that runs off the edge reads as a
 /// different name.
