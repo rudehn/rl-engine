@@ -296,6 +296,8 @@ impl Plugin for UndermerePlugin {
         // taking it into the party; and `hire` kept off while the party is
         // full, counted at the start of every pass.
         app.add_systems(Turn, (crate::mercenaries::answer_candidates, crate::mercenaries::answer_hire, crate::mercenaries::answer_give).in_set(TurnSet::React));
+        // The party after the adventurer through every way and warp they take.
+        app.add_systems(Turn, crate::mercenaries::follow_through.in_set(TurnSet::React));
         // What a hired mercenary knows of what it carries and sees: its own
         // kit whole, and anything else only as the adventurer knows it; a
         // thing it is better off wearing put on by the engine's own rule;

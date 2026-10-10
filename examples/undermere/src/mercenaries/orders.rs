@@ -187,11 +187,22 @@ impl MercenaryBrains {
 /// Puts `mercenary` under `order`: its brain for it, and on hold a
 /// [`Post`] at the cell it stands on, which any other order takes off.
 /// The order itself is the caller's to have written on its [`Mercenary`].
+///
+/// Also takes [`Wits::TRAVELS`] off it, under every order: the party goes
+/// through a way only after the adventurer, by
+/// [`follow_through`](super::follow_through), and never by the engine's
+/// own travel, which would take one fleeing alone down a stair. Here
+/// rather than in the kind's row alone, since every way a mercenary is
+/// given a brain comes through this, and a trait added to the kind later
+/// would otherwise hand it the wit unnoticed.
 pub fn obey(world: &mut World, mercenary: Entity, order: Order) {
     let mind = world.resource::<MercenaryBrains>().mind(order);
     let at = world.get::<Position>(mercenary).map(|p| p.0);
     let mut e = world.entity_mut(mercenary);
     e.insert(mind);
+    if let Some(mut wits) = e.get_mut::<Intelligence>() {
+        wits.0 = wits.0.without(Wits::TRAVELS);
+    }
     match (order, at) {
         (Order::Hold, Some(at)) => {
             e.insert(Post(at));

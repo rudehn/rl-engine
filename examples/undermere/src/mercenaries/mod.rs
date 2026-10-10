@@ -52,6 +52,14 @@
 //! [`AskForThing`], and [`hand_over`] moves the one chosen; [`PutOnBetter`]
 //! puts on whatever in its pack it is better off wearing.
 //!
+//! The party goes where the adventurer goes, from beside them: on their
+//! own `Travelled`, through a stair, the gate or a waystone's call alike,
+//! [`follow_through`] sends after them each mercenary near the cell they
+//! left with a line to it, onto a free cell beside where they landed. One
+//! left behind, by distance, a wall or the hold order, waits frozen where
+//! it stood, still theirs. None travels of its own accord: [`obey`] keeps
+//! the engine's wit for it off every mercenary.
+//!
 //! Undermere's own rather than a keeper's [`Wares`](crate::shops::Wares):
 //! a kit is a part at a time, each on its own chance, where a shelf is a
 //! count of draws; and a kit's level may be below nought, which the
@@ -67,12 +75,14 @@ mod kit;
 mod knowing;
 mod orders;
 mod tavern;
+mod travel;
 
 pub use hired::*;
 pub use kit::*;
 pub use knowing::*;
 pub use orders::*;
 pub use tavern::*;
+pub use travel::*;
 
 #[cfg(doc)]
 use crate::armory::Armory;

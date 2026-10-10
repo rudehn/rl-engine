@@ -21,7 +21,9 @@
 //! way through does for whoever takes it, so a reader of that message
 //! hears of this too; the engine's own followers do not follow a warp,
 //! so a freed captive is left at the mark, where the gate brings the
-//! adventurer back to it. The mark and where the gate leads are
+//! adventurer back to it, while a hired mercenary near them comes home
+//! beside them, by [`follow_through`](crate::mercenaries::follow_through),
+//! which answers that message as it answers a stair. The mark and where the gate leads are
 //! the engine's to save, a prop and a way through's `Transition`; the
 //! mark's light is put back on it as it appears, by
 //! [`light`](crate::light), and its place in memory is the map's, which
