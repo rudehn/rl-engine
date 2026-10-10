@@ -324,6 +324,10 @@ impl Plugin for UndermerePlugin {
             Update,
             crate::shops::learn_by_buying.after(EngineSet::Turns).before(EngineSet::Present).before(crate::lore::keep_names).before(crate::armory::keep_worth),
         );
+        // What a deal hands the adventurer is theirs, not a find: the gold
+        // a sale pays and the thing bought, marked counted before the next
+        // pickup could count them.
+        app.add_systems(Update, crate::tally::count_deals.after(EngineSet::Turns).before(EngineSet::Present));
         // A scroll that asks which thing to read it on is named as it asks:
         // after the keys that turn the pack to choosing, before the names.
         app.add_systems(Update, crate::lore::learn_by_asking.after(EngineSet::Input).before(EngineSet::Turns));

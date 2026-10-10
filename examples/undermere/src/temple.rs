@@ -206,7 +206,9 @@ pub fn rite_rows(mut view: ResMut<OffersView>, rites: Res<Rites>, verbs: Res<Ver
 /// and naming only what was handed back,
 /// `Hesk finds nothing to mend, and gives back your 30 gold coins.`:
 /// the engine takes the price before the answer runs, and a rite that
-/// sold the adventurer nothing should cost them nothing.
+/// sold the adventurer nothing should cost them nothing. What comes back
+/// is the adventurer's own, by
+/// [`count_as_owned`](crate::tally::count_as_owned), never a find.
 ///
 /// In `TurnSet::React`, where every answer to `Interacted` is read; every
 /// other verb is left for whatever answers it. Exclusive, since whether a
@@ -226,6 +228,10 @@ pub fn answer_rites(world: &mut World, mut cursor: Local<MessageCursor<Interacte
                 Some(currency) if !works => rl_engine::rl_bevy::pay(world, ev.target, ev.actor, rite.price, currency),
                 _ => 0,
             };
+            // The price handed back is the adventurer's own, not a find.
+            if back > 0 {
+                crate::tally::count_as_owned(world, ev.actor);
+            }
             let mut state = SystemState::<(Purse, EffectWorld)>::new(world);
             let Ok((purse, mut effects)) = state.get_mut(world) else { continue };
             let coin = purse.coin_name([ev.target, ev.actor]);
@@ -282,7 +288,9 @@ mod tests {
     use crate::dungeon::{TOWN, map_of};
     use crate::lore::{Lore, Unfamiliar};
     use crate::shops::Shopkeeper;
-    use crate::testing::{adventurer, arrive, continued, equip, find, give, headless, make, name_of, pass_turns, said, settle, stand_on, unequip};
+    use crate::testing::{
+        adventurer, arrive, continued, equip, find, give, headless, make, name_of, pass_turns, put_down, said, settle, stand_on, take_up, unequip,
+    };
 
     /// The rites as the spec prices them, in the order the priest offers
     /// them.
@@ -437,6 +445,24 @@ mod tests {
             let silent = ["You give", "You were whole already.", "A cleansing light", "You know everything"];
             assert!(!lines.iter().any(|(t, _)| silent.iter().any(|s| t.starts_with(s))), "{rite}: nothing landed: {lines:#?}");
         }
+    }
+
+    /// The price a rite with nothing to do hands back is the adventurer's
+    /// own, not treasure: paid out of their whole purse and handed back
+    /// out of the priest's, then dropped and taken up, it counts nothing.
+    #[test]
+    fn the_price_a_rite_hands_back_is_never_counted_as_treasure() {
+        let (mut app, me, priest) = in_mereholt(5);
+        set_gold(&mut app, me, 30);
+        let purse = app.world().get::<Inventory>(me).expect("a pack").items.iter().copied().find(|i| name_of(&app, *i) == "gold coin").expect("a purse");
+        app.world_mut().entity_mut(purse).insert(crate::tally::Counted(30));
+        take_rite(&mut app, me, priest, "mend");
+        assert_eq!(gold(&app, me), 30, "the price came back");
+        let back = app.world().get::<Inventory>(me).expect("a pack").items.iter().copied().find(|i| name_of(&app, *i) == "gold coin").expect("a purse");
+        put_down(&mut app, me, back);
+        take_up(&mut app, me);
+        assert_eq!(gold(&app, me), 30, "every coin taken up again");
+        assert_eq!(app.world().resource::<crate::tally::Tally>().gold_found, 0, "handed back, not found");
     }
 
     /// A rite the adventurer cannot pay for is listed as wanting its price

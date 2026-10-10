@@ -15,6 +15,7 @@
 
 use std::collections::BTreeMap;
 
+use bevy::ecs::message::MessageCursor;
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_core::noun::with_article;
@@ -298,6 +299,51 @@ pub fn count_what_is_found(
     }
 }
 
+/// Marks every piece of the currency `who` carries as counted whole: what
+/// they were just paid, by a sale or a rite's refund, is theirs, not a
+/// find, however often it is dropped, stolen and won back after.
+///
+/// Every piece rather than the one paid into, since a payment lands in
+/// whichever stack the pack already holds; exact, because a purse never
+/// holds found coins not yet counted, a pickup counting them as it takes
+/// them up. Nothing without a [`Currency`].
+pub fn count_as_owned(world: &mut World, who: Entity) {
+    let Some(currency) = world.get_resource::<Currency>().copied() else { return };
+    let Some(bag) = world.get::<Inventory>(who) else { return };
+    let pieces: Vec<(Entity, u32)> = bag
+        .items
+        .iter()
+        .filter(|i| currency.is(world.get::<Tagged>(**i)))
+        .map(|i| (*i, world.get::<Stack>(*i).map_or(1, |s| s.count)))
+        .collect();
+    for (piece, count) in pieces {
+        world.entity_mut(piece).insert(Counted(count));
+    }
+}
+
+/// Keeps a deal's goods out of the tally's finds: the gold a sale pays the
+/// adventurer, by [`count_as_owned`], and a thing they buy, counted whole,
+/// so dropping either and taking it up again is not treasure found.
+///
+/// In `Update`, after the turns, as the game reads every [`Traded`]; the
+/// deal is struck before them while the trade screen holds the turns, so
+/// no pickup comes between the deal and this.
+pub fn count_deals(world: &mut World, mut cursor: Local<MessageCursor<Traded>>) {
+    let Some(messages) = world.get_resource::<Messages<Traded>>() else { return };
+    let deals: Vec<Traded> = cursor.read(messages).copied().filter(|d| world.get::<Adventurer>(d.customer).is_some()).collect();
+    for deal in deals {
+        match deal.deal {
+            Deal::Sold => count_as_owned(world, deal.customer),
+            Deal::Bought => {
+                let count = world.get::<Stack>(deal.item).map_or(1, |s| s.count);
+                if let Ok(mut thing) = world.get_entity_mut(deal.item) {
+                    thing.insert(Counted(count));
+                }
+            }
+        }
+    }
+}
+
 /// How wide a ledger line is, label to value: room for the longest label
 /// and the longest value, the name of the deadliest kill, with dots
 /// between, and narrower than both the end screen and the records screen,
@@ -573,12 +619,16 @@ mod tests {
 
     /// A sale pays the adventurer in gold out of the trader's own purse:
     /// it rises in the adventurer's pack, but it is paid, not found, so
-    /// the tally counts none of it as treasure.
+    /// the tally counts none of it as treasure, then or after: dropped and
+    /// taken up again, or stolen by a monkey and taken back off its body.
+    /// And a thing bought is no find either, dropped and taken up.
     #[test]
     fn gold_paid_for_a_sale_is_not_counted_as_treasure() {
         let mut app = headless(RunSeed(1));
         let me = arrive(&mut app, map_of(1));
+        sturdy(&mut app, me);
         clear_monsters(&mut app);
+        clear_floor(&mut app);
         let here = at(&app, me);
         let weapon = app.world().resource::<Registries>().tags.expect("weapon");
         let dagger = make(&mut app, "dagger");
@@ -586,30 +636,64 @@ mod tests {
         let trade = app.world().resource::<Verbs>().get(TRADE).expect("TradePlugin declares it");
         let till = make(&mut app, "gold coin");
         app.world_mut().get_mut::<Stack>(till).expect("gold stacks").count = 1000;
+        let wares = make(&mut app, "dagger");
+        app.world_mut().entity_mut(wares).insert(Worth(5));
         let trader = app
             .world_mut()
             .spawn((
                 Actor,
                 Blocks,
                 Position(here.offset(1, 0)),
-                Inventory { items: vec![till] },
+                Inventory { items: vec![till, wares] },
                 Trader { buys: vec![weapon], pays_pct: 25 },
                 Offers(vec![Offering::new(trade, 0)]),
             ))
             .id();
         app.update();
-        let coins = |app: &App| -> u32 {
-            let world = app.world();
-            let bag = &world.get::<Inventory>(me).expect("a pack").items;
-            bag.iter().filter(|i| name_of(app, **i) == "gold coin").map(|i| world.get::<Stack>(*i).map_or(1, |s| s.count)).sum()
+        let gold = |app: &App| -> Vec<Entity> {
+            let bag = &app.world().get::<Inventory>(me).expect("a pack").items;
+            bag.iter().copied().filter(|i| name_of(app, *i) == "gold coin").collect()
         };
+        let coins = |app: &App| -> u32 { gold(app).iter().map(|i| app.world().get::<Stack>(*i).map_or(1, |s| s.count)).sum() };
+        let found = |app: &App| app.world().resource::<Tally>().gold_found;
+        let things = |app: &App| app.world().resource::<Tally>().items_found;
         app.world_mut().write_message(Intent::new(me, Interact { target: trader, verb: trade }));
         settle(&mut app);
         let before = coins(&app);
         app.world_mut().write_message(Sell { customer: me, trader, item: dagger, count: 1 });
         app.update();
-        assert!(coins(&app) > before, "paid for the dagger: {before} before, {} after", coins(&app));
-        assert_eq!(app.world().resource::<Tally>().gold_found, 0, "paid, not found");
+        let paid = coins(&app);
+        assert!(paid > before, "paid for the dagger: {before} before, {paid} after");
+        assert_eq!(found(&app), 0, "paid, not found");
+
+        app.world_mut().write_message(Buy { customer: me, trader, item: wares, count: 1 });
+        app.update();
+        let bought = app.world().get::<Inventory>(me).expect("a pack").items.iter().copied().find(|i| name_of(&app, *i) == "dagger").expect("the dagger bought");
+        app.world_mut().resource_mut::<Trading>().close();
+        app.update();
+        put_down(&mut app, me, bought);
+        take_up(&mut app, me);
+        assert_eq!(things(&app), 0, "a thing bought, dropped and taken up, is no find");
+
+        let purse = gold(&app);
+        assert_eq!(purse.len(), 1, "the sale's coins joined the kit's purse");
+        let carried = coins(&app);
+        put_down(&mut app, me, purse[0]);
+        take_up(&mut app, me);
+        assert_eq!((found(&app), coins(&app)), (0, carried), "dropped and taken up, the sale's coins are still no treasure");
+
+        // Nothing in the pack but the purse, so a monkey's theft takes it.
+        app.world_mut().get_mut::<Inventory>(me).expect("a pack").items.retain(|i| purse.contains(i));
+        app.world_mut().entity_mut(me).remove::<Equipped>();
+        let beside = here.offset(0, 1);
+        lay_floor(&mut app, &[beside]);
+        let monkey = monster(&mut app, "monkey", beside);
+        assert!(crate::tricks::steal(app.world_mut(), monkey, me), "the monkey takes the purse");
+        assert_eq!(coins(&app), 0, "the purse is gone");
+        kill(&mut app, monkey, Some(me));
+        stand_on(&mut app, me, beside);
+        take_up(&mut app, me);
+        assert_eq!((found(&app), coins(&app)), (0, carried), "stolen and won back, the sale's coins are still no treasure");
     }
 
     /// The tally is saved with the run: continued from the save the
