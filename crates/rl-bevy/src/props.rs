@@ -26,7 +26,8 @@
 //!
 //! Offers and the interactions that answer them, containers that stock and
 //! empty, triggers that land an effect list, and hiding that a turn in
-//! sight rolls away are all here. `docs/design/props.md` is the whole
+//! sight rolls away, for a prop and for a place's
+//! [`Secret`](crate::secrets::Secret) alike, are all here. `docs/design/props.md` is the whole
 //! design.
 
 use bevy::prelude::*;
@@ -828,8 +829,77 @@ pub fn perceive_props(mut thinking: ResMut<crate::minds::Thinking>, sight: crate
 /// is the point.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Hidden {
-    /// Percent chance a turn to spot it while it is in sight.
+    /// Percent chance a turn to spot it while it is in sight, before the
+    /// roll's nearness, keenness and stillness.
     pub spot: u8,
+}
+
+/// A finder's own eye for what is hidden: points added to the percent
+/// chance of every roll it makes to spot something, a hidden prop or a
+/// [`Secret`](crate::secrets::Secret).
+///
+/// On the finder rather than rewritten into every hidden thing's chance,
+/// so what makes someone keen, a worn thing or a status, is the game's to
+/// keep on one entity, and taking it off takes its points with it. It adds
+/// to a chance of nought too: something nobody could spot is found by the
+/// keen. Not saved by the engine; a game keeps it as it keeps whatever it
+/// is derived from.
+#[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Keen(pub u8);
+
+/// How the spotting roll weighs a chance: by how near the hidden thing is,
+/// and by whether the turn was spent standing still.
+///
+/// Set with [`PropsPlugin::spotting`], or replaced as a resource. The
+/// default is the roll with neither, whole at any distance in sight and
+/// the same whatever the turn was spent on, so a game that never asks
+/// spots exactly as it always did.
+///
+/// Nearness is what makes a secret found by being near it, not by
+/// glancing down a hall at it. Stillness is the lever a player who
+/// suspects a wall has: there is no search action, since pressing a key at
+/// every wall is a chore, and walking past still rolls, but the wait key
+/// they already rest with searches harder.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpotRules {
+    /// Within this many cells, Chebyshev, the chance is whole.
+    pub near: u32,
+    /// Past [`near`](Self::near) and out to this many cells it is half;
+    /// beyond, there is none.
+    pub far: u32,
+    /// What a turn the finder spent waiting multiplies the chance by.
+    pub still: u32,
+}
+
+impl Default for SpotRules {
+    fn default() -> Self {
+        Self { near: u32::MAX, far: u32::MAX, still: 1 }
+    }
+}
+
+impl SpotRules {
+    /// The chance, as `(in, out of)`, of spotting something of `spot`
+    /// percent from `distance` cells away, by a finder `keen` points
+    /// keener, on a turn it `waited` or did anything else; `None` when
+    /// there is none at all.
+    ///
+    /// The percent and the keenness are summed and held to certainty
+    /// first, so a keen eye never makes half a chance more than half;
+    /// then halved past [`near`](Self::near), then multiplied for
+    /// stillness and held to certainty again. A ratio rather than a
+    /// rounded percent, so half of a five is two and a half and not two.
+    pub fn chance(&self, spot: u8, keen: u8, distance: u32, waited: bool) -> Option<(u32, u32)> {
+        let out_of = if distance <= self.near {
+            100
+        } else if distance <= self.far {
+            200
+        } else {
+            return None;
+        };
+        let percent = (u32::from(spot) + u32::from(keen)).min(100);
+        let chance = percent.saturating_mul(if waited { self.still } else { 1 }).min(out_of);
+        (chance > 0).then_some((chance, out_of))
+    }
 }
 
 /// A hidden prop was spotted.
@@ -846,40 +916,148 @@ pub struct Spotted {
 /// A hidden prop, and where it is.
 type Unspotted<'w, 's> = Query<'w, 's, (Entity, &'static Position, Option<&'static OnMap>, &'static Hidden)>;
 
-/// Rolls for the player to spot what is hidden in sight.
+/// The player, as the roll reads it: who, where, what it sees, how keen,
+/// and the turn it holds, whose being newly dealt is what starts a roll.
+type Finder<'w, 's> = Query<
+    'w,
+    's,
+    (Entity, &'static Position, Option<&'static OnMap>, &'static crate::components::Viewshed, Option<&'static Keen>, Ref<'static, MyTurn>),
+    With<crate::components::Player>,
+>;
+
+/// Rolls for the player to spot what is hidden in sight: hidden props, and
+/// the [`Secret`](crate::secrets::Secret)s of the place it stands in.
 ///
 /// In [`DecideSet::Notice`](crate::plugin::DecideSet::Notice), beside the
 /// stealth roll it resembles, and only for the player: a mind that will
-/// not interact with a prop has nothing to do with having seen one, and a
-/// trap catches whoever steps on it either way.
+/// not interact with a prop has nothing to do with having seen one, a trap
+/// catches whoever steps on it either way, and a secret is wall to every
+/// mind until the player finds it, so a hidden room is never a monster's
+/// back door.
 ///
-/// There is no searching. Spending turns pressing a key at every wall is a
-/// chore the genre has spent twenty years removing, so a prop in sight is
-/// rolled for each turn and found or not.
+/// Once a turn, on the pass that deals the player its turn. The turn loop
+/// runs a pass a frame while the player is deciding and one for every
+/// monster that acts between, so a roll made every pass would find things
+/// faster the longer a player looked at the screen and the more monsters
+/// were awake.
+///
+/// Each roll is a chance from [`SpotRules::chance`]: the thing's own
+/// percent with the player's [`Keen`] added, weighed by the distance to it
+/// and multiplied when the player's last turn was a [`Wait`]. A secret is
+/// rolled for once for its whole group, while any cell of it is in sight,
+/// at the distance to its nearest cell, so a wide mouth is found no faster
+/// than a one-cell door; found, every cell of it is laid as what it is.
+///
+/// Every roll comes from [`PropRng`], props first and then secrets by
+/// group, so neither nudges a later blow. A secret is found through
+/// `Commands`, which lands it at the pass's next sync point, so this
+/// system only reads the map and orders against nothing that does.
+///
+/// [`Wait`]: crate::turn::Wait
 pub fn spot_hidden_props(
     mut commands: Commands,
     mut spotted: MessageWriter<Spotted>,
-    mut rng: ResMut<PropRng>,
-    map: Res<crate::world::WorldMap>,
-    player: Query<(Entity, &crate::components::Viewshed, Option<&OnMap>), With<crate::components::Player>>,
+    mut dice: SpotDice,
+    mut stillness: Stillness,
+    map: Res<WorldMap>,
+    player: Finder,
     hidden: Unspotted,
 ) {
-    use rand::Rng;
-    let Ok((who, sight, on)) = player.single() else { return };
+    let held = player.single().ok();
+    stillness.note(held.as_ref().map(|(who, ..)| *who));
+    let Some((who, stands, on, sight, keen, turn)) = held else { return };
+    if !turn.is_added() {
+        return;
+    }
+    let still = stillness.take();
     let here = on.map(|m| m.0).unwrap_or(MapId::SURFACE);
     if here != map.current() {
         return;
     }
+    let keen = keen.map_or(0, |k| k.0);
+    let from = stands.0;
     for (prop, at, prop_on, secret) in &hidden {
         if prop_on.map(|m| m.0).unwrap_or(MapId::SURFACE) != here || !sight.can_see(at.0) {
             continue;
         }
-        if secret.spot == 0 || !rng.0.random_ratio(u32::from(secret.spot.min(100)), 100) {
+        if !dice.roll(secret.spot, keen, geometry::chebyshev(from, at.0), still) {
             continue;
         }
         commands.entity(prop).remove::<Hidden>();
         spotted.write(Spotted { prop, by: who, at: at.0 });
     }
+    for (nearest, spot) in groups_in_sight(map.secrets(here), sight, from) {
+        if !dice.roll(spot, keen, geometry::chebyshev(from, nearest), still) {
+            continue;
+        }
+        commands.queue(move |world: &mut World| {
+            world.resource_mut::<WorldMap>().find_secret(here, nearest);
+        });
+    }
+}
+
+/// The spotting roll's dice: the chance [`SpotRules`] gives, drawn from
+/// [`PropRng`].
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct SpotDice<'w> {
+    rules: Res<'w, SpotRules>,
+    rng: ResMut<'w, PropRng>,
+}
+
+impl SpotDice<'_> {
+    /// Whether something of `spot` percent, `distance` cells away, is
+    /// spotted by a finder `keen` points keener that `waited` or not. No
+    /// draw is made where there is no chance, so a thing out of reach
+    /// moves the stream no more than one out of sight.
+    fn roll(&mut self, spot: u8, keen: u8, distance: i32, waited: bool) -> bool {
+        use rand::Rng;
+        let distance = u32::try_from(distance).unwrap_or(0);
+        self.rules.chance(spot, keen, distance, waited).is_some_and(|(chance, out_of)| self.rng.0.random_ratio(chance, out_of))
+    }
+}
+
+/// Whether the player's last turn was spent waiting, as the spotting roll
+/// reads it.
+///
+/// Read from the [`Wait`](crate::turn::Wait) the player asked for, on the
+/// pass that spends it, while the player still holds the turn it spends,
+/// and kept until its next turn is dealt, which is when the roll is made.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Stillness<'w, 's> {
+    waits: MessageReader<'w, 's, crate::turn::Intent<crate::turn::Wait>>,
+    waited: Local<'s, bool>,
+}
+
+impl Stillness<'_, '_> {
+    /// Notes whether `who`, the player while it holds a turn, asked to
+    /// wait since this was last read; with nobody, only reads past them.
+    fn note(&mut self, who: Option<Entity>) {
+        let asked = self.waits.read().any(|w| Some(w.actor) == who);
+        *self.waited |= asked;
+    }
+
+    /// Whether it waited, forgotten for the turn after.
+    fn take(&mut self) -> bool {
+        std::mem::take(&mut *self.waited)
+    }
+}
+
+/// Every group of `secrets` with a cell in `sight`, as its cell nearest
+/// `from` and its chance, in group order.
+///
+/// A `BTreeMap` by group, so the groups are rolled for in the same order
+/// on every run of a seed, whatever order their cells were listed in.
+fn groups_in_sight(secrets: &[crate::secrets::Secret], sight: &crate::components::Viewshed, from: Point) -> Vec<(Point, u8)> {
+    let mut groups: std::collections::BTreeMap<u32, (Point, u8, bool)> = std::collections::BTreeMap::new();
+    for s in secrets {
+        let seen = sight.can_see(s.at);
+        let group = groups.entry(s.group).or_insert((s.at, s.spot, seen));
+        if geometry::chebyshev(from, s.at) < geometry::chebyshev(from, group.0) {
+            group.0 = s.at;
+        }
+        group.2 |= seen;
+    }
+    groups.into_values().filter(|(_, _, seen)| *seen).map(|(at, spot, _)| (at, spot)).collect()
 }
 
 /// Set once a prop with nothing to show has been reported, so the report
@@ -932,6 +1110,21 @@ pub enum PropSet {
 /// holds, and does to whoever sets it off.
 pub struct PropsPlugin;
 
+impl PropsPlugin {
+    /// Props, with the spotting roll weighed by `rules`: how near a hidden
+    /// thing must be, and what a turn spent waiting is worth. Plain
+    /// [`PropsPlugin`] keeps [`SpotRules::default`], whole at any distance
+    /// in sight and the same whatever the turn was spent on.
+    ///
+    /// Inserted as [`SpotRules`], so a game may also replace it later.
+    pub fn spotting(rules: SpotRules) -> impl Plugin {
+        move |app: &mut App| {
+            app.insert_resource(rules);
+            app.add_plugins(PropsPlugin);
+        }
+    }
+}
+
 impl Plugin for PropsPlugin {
     fn build(&self, app: &mut App) {
         use crate::plugin::{DecideSet, Needs, Reads, ResolveSet, Turn};
@@ -945,6 +1138,7 @@ impl Plugin for PropsPlugin {
             .add_action::<Interact>()
             .add_message::<FillContainer>()
             .add_message::<Spotted>()
+            .init_resource::<SpotRules>()
             // What props read that belongs to plugins a game may have left
             // out: taking out of a container says so in items' own words,
             // and a prop that bursts hears its own death. A game may have
@@ -1844,18 +2038,26 @@ mod traps {
         assert!(deck.app.world().get::<Hidden>(plate).is_some(), "and is still unspotted: springing is not seeing");
     }
 
-    /// A prop in sight is rolled for: a certainty is found on the first
-    /// pass it is in sight for, and a prop nobody can spot stays hidden
-    /// however long it is looked at.
+    /// A prop in sight is rolled for once a turn: a certainty is found on
+    /// the first turn the player is dealt with it in sight, and not on the
+    /// frames the player spends deciding, and a prop nobody can spot stays
+    /// hidden however long it is looked at.
     #[test]
     fn a_hidden_prop_in_sight_is_spotted_by_a_roll_and_never_without_one() {
         let mut deck = deck();
-        // Spotted at a hundred percent: in sight, so the pass that follows
-        // putting it down finds it.
+        // Spotted at a hundred percent, but only once the player's next
+        // turn comes round: the frames before it are no turns at all.
         let certain = {
             let at = deck.at.offset(2, 0);
             put(&mut deck, "hidden plate", at)
         };
+        for _ in 0..3 {
+            deck.app.update();
+        }
+        assert!(deck.app.world().get::<Hidden>(certain).is_some(), "three frames of the player deciding roll nothing");
+        let player = deck.player;
+        deck.app.world_mut().write_message(Intent::new(player, crate::turn::Wait));
+        deck.app.update();
         assert!(deck.app.world().get::<Hidden>(certain).is_none(), "spotted, and from then on an ordinary prop");
 
         // The same plate, with no chance of being spotted at all.
@@ -1864,12 +2066,28 @@ mod traps {
             put(&mut deck, "hidden plate", at)
         };
         deck.app.world_mut().entity_mut(never).insert(Hidden { spot: 0 });
-        let player = deck.player;
         for _ in 0..5 {
             deck.app.world_mut().write_message(Intent::new(player, crate::turn::Wait));
             deck.app.update();
         }
         assert!(deck.app.world().get::<Hidden>(never).is_some(), "five turns of looking at it and still unseen");
+    }
+
+    /// Keenness is the finder's, and a hidden prop's roll takes it as a
+    /// secret's does: a plate nobody could spot is spotted by the keen.
+    #[test]
+    fn a_keen_finder_spots_a_prop_nobody_else_could() {
+        let mut deck = deck();
+        let plate = {
+            let at = deck.at.offset(3, 0);
+            put(&mut deck, "hidden plate", at)
+        };
+        deck.app.world_mut().entity_mut(plate).insert(Hidden { spot: 0 });
+        let player = deck.player;
+        deck.app.world_mut().entity_mut(player).insert(Keen(100));
+        deck.app.world_mut().write_message(Intent::new(player, crate::turn::Wait));
+        deck.app.update();
+        assert!(deck.app.world().get::<Hidden>(plate).is_none(), "spotted at what the finder adds");
     }
 
     /// A plate harms in the pass the step was taken: the step, the report,
@@ -2038,5 +2256,207 @@ mod traps {
         walk(&mut deck, rl_core::Direction::East);
         assert_eq!(health(&deck), 20, "nothing landed");
         assert!(deck.app.world().get::<crate::effects::Triggers>(plate).is_none_or(|t| t.0.is_empty()), "a trigger that would not build arms nothing");
+    }
+}
+
+#[cfg(test)]
+mod spotting {
+    use rl_core::{Direction, RunSeed};
+    use rl_grid::{Terrain, TileRegistry};
+
+    use super::*;
+    use crate::components::{Actor, Player, Viewshed};
+    use crate::places::PlaceBuild;
+    use crate::plugin::headless_app;
+    use crate::state::EngineState;
+    use crate::turn::{Intent, Step, Wait};
+
+    const PLACE: MapId = MapId(1);
+    /// Where the player stands: the west end of the hall.
+    const START: Point = Point::new(1, 3);
+    /// A cell past the wall across the hall, which the player never sees.
+    const BEYOND: Point = Point::new(20, 3);
+
+    struct Rig {
+        app: App,
+        player: Entity,
+        floor: rl_grid::TileId,
+    }
+
+    /// A hall walled round with a wall across it at x = 17, the player at
+    /// its west end, and each `(cell, spot, group)` walled over and hidden
+    /// as floor.
+    fn rig(seed: u64, rules: SpotRules, hide: &[(Point, u8, u32)]) -> Rig {
+        let tiles = TileRegistry::standard();
+        let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
+        let mut terrain = Terrain::filled(24, 7, wall);
+        for x in 1..23 {
+            for y in 1..6 {
+                terrain.set(Point::new(x, y), floor);
+            }
+        }
+        for y in 0..7 {
+            terrain.set(Point::new(17, y), wall);
+        }
+        let secrets = hide
+            .iter()
+            .map(|&(at, spot, group)| {
+                terrain.set(at, wall);
+                rl_mapgen::Secret { at, is: floor, spot, group, joins: (0, 1) }
+            })
+            .collect();
+        let mut map = WorldMap::new(tiles.tables());
+        map.install_place(PLACE, PlaceBuild { terrain, entry: START, exit: None, spots: Vec::new(), locks: Vec::new(), secrets });
+        map.switch_to(PLACE);
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin, PropsPlugin::spotting(rules)));
+        crate::testing::two_sides(&mut app);
+        app.insert_resource(map).insert_resource(crate::seed::Seed(RunSeed(seed)));
+        let player = app.world_mut().spawn((Actor, Player, crate::components::Blocks, Position(START), OnMap(PLACE), Viewshed::new(30))).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        Rig { app, player, floor }
+    }
+
+    impl Rig {
+        fn wait(&mut self) {
+            let player = self.player;
+            self.app.world_mut().write_message(Intent::new(player, Wait));
+            self.app.update();
+        }
+
+        fn step(&mut self, dir: Direction) {
+            let player = self.player;
+            self.app.world_mut().write_message(Intent::new(player, Step(dir)));
+            self.app.update();
+        }
+
+        fn found(&self, at: Point) -> bool {
+            self.app.world().resource::<WorldMap>().tile(at) == Some(self.floor)
+        }
+
+        /// How many waited turns until `at` is found, up to `most`.
+        fn turns_to_find(&mut self, at: Point, most: u32) -> Option<u32> {
+            (1..=most).find(|_| {
+                self.wait();
+                self.found(at)
+            })
+        }
+    }
+
+    /// How many of `seeds` find `at`, hidden at `spot`, on the first turn.
+    fn found_at_once(seeds: std::ops::Range<u64>, rules: SpotRules, at: Point, spot: u8) -> usize {
+        seeds
+            .filter(|&seed| {
+                let mut rig = rig(seed, rules, &[(at, spot, 0)]);
+                rig.wait();
+                rig.found(at)
+            })
+            .count()
+    }
+
+    #[test]
+    fn the_chance_is_whole_near_half_out_to_far_and_none_beyond_with_keen_added_and_stillness_multiplying() {
+        let rules = SpotRules { near: 2, far: 7, still: 3 };
+        assert_eq!(rules.chance(6, 0, 2, false), Some((6, 100)), "whole within near");
+        assert_eq!(rules.chance(5, 0, 3, false), Some((5, 200)), "half past it, two and a half and not two");
+        assert_eq!(rules.chance(6, 0, 7, false), Some((6, 200)), "half out to far");
+        assert_eq!(rules.chance(100, 50, 8, true), None, "and none beyond, however keen and still");
+        assert_eq!(rules.chance(6, 15, 1, false), Some((21, 100)), "keenness adds");
+        assert_eq!(rules.chance(0, 15, 1, false), Some((15, 100)), "even to nought");
+        assert_eq!(rules.chance(0, 0, 1, true), None, "and nought with none is never");
+        assert_eq!(rules.chance(90, 30, 5, false), Some((100, 200)), "held to certainty before it is halved");
+        assert_eq!(rules.chance(6, 0, 1, true), Some((18, 100)), "a waited turn triples");
+        assert_eq!(rules.chance(50, 0, 1, true), Some((100, 100)), "to certainty and no further");
+        assert_eq!(SpotRules::default().chance(6, 0, 900, true), Some((6, 100)), "and the default weighs neither");
+    }
+
+    #[test]
+    fn a_secret_in_sight_is_found_at_its_chance_and_becomes_its_tile_and_one_out_of_sight_never() {
+        let pillar = Point::new(6, 3);
+        let mut rig = rig(1, SpotRules::default(), &[(pillar, 100, 0), (BEYOND, 100, 1)]);
+        for _ in 0..3 {
+            rig.app.update();
+        }
+        assert!(!rig.found(pillar), "frames spent deciding are no turns");
+        rig.wait();
+        assert!(rig.found(pillar), "a certainty in sight is found on the turn and is the floor it was");
+        assert_eq!(rig.app.world().resource::<WorldMap>().secrets(PLACE).len(), 1);
+        for _ in 0..5 {
+            rig.wait();
+        }
+        assert!(!rig.found(BEYOND), "a certainty out of sight is never found");
+
+        // At a half: found on the first turn on about half the seeds.
+        let found = found_at_once(0..60, SpotRules::default(), pillar, 50);
+        assert!((15..=45).contains(&found), "{found} of 60 at a half");
+    }
+
+    #[test]
+    fn past_near_a_secret_is_found_at_half_its_chance_and_past_far_never() {
+        let rules = SpotRules { near: 2, far: 7, still: 1 };
+        assert_eq!(found_at_once(0..10, rules, START.offset(2, 0), 100), 10, "within near, a certainty is certain");
+        let half = found_at_once(0..60, rules, START.offset(5, 0), 100);
+        assert!((15..=45).contains(&half), "{half} of 60 past near");
+        let mut far = rig(0, rules, &[(START.offset(8, 0), 100, 0)]);
+        assert_eq!(far.turns_to_find(START.offset(8, 0), 10), None, "past far, ten turns of certainty find nothing");
+    }
+
+    #[test]
+    fn a_finder_s_keenness_adds_to_every_roll() {
+        let pillar = Point::new(6, 3);
+        let mut dull = rig(0, SpotRules::default(), &[(pillar, 0, 0)]);
+        assert_eq!(dull.turns_to_find(pillar, 10), None, "a nought is never found");
+        let mut keen = rig(0, SpotRules::default(), &[(pillar, 0, 0)]);
+        let player = keen.player;
+        keen.app.world_mut().entity_mut(player).insert(Keen(100));
+        assert_eq!(keen.turns_to_find(pillar, 1), Some(1), "but by the keen, at what they add");
+    }
+
+    #[test]
+    fn a_waited_turn_multiplies_the_chance_and_a_moved_turn_does_not() {
+        let rules = SpotRules { still: 100, ..SpotRules::default() };
+        let pillar = Point::new(8, 3);
+        assert_eq!(found_at_once(0..20, rules, pillar, 1), 20, "a one in a hundred, waited on a hundredfold, is certain");
+        let moved = (0..20)
+            .filter(|&seed| {
+                let mut rig = rig(seed, rules, &[(pillar, 1, 0)]);
+                rig.step(Direction::East);
+                rig.found(pillar)
+            })
+            .count();
+        assert!(moved <= 3, "walked past, it is one in a hundred: {moved} of 20");
+    }
+
+    #[test]
+    fn one_cell_of_a_group_found_finds_it_all_and_a_wide_mouth_is_found_no_faster_than_a_door() {
+        let rules = SpotRules { near: 2, far: 7, still: 3 };
+        let mouth = [Point::new(5, 2), Point::new(5, 3), Point::new(5, 4)];
+        for seed in 0..20 {
+            let mut door = rig(seed, rules, &[(mouth[1], 20, 0)]);
+            let mut wide = rig(seed, rules, &mouth.map(|at| (at, 20, 0)));
+            let (one, three) = (door.turns_to_find(mouth[1], 40), wide.turns_to_find(mouth[1], 40));
+            assert!(one.is_some(), "seed {seed}: found within forty turns");
+            assert_eq!(one, three, "seed {seed}: one roll for the group, at its nearest cell");
+            assert!(mouth.iter().all(|&at| wide.found(at)), "seed {seed}: and every cell of it found together");
+        }
+    }
+
+    #[test]
+    fn props_and_secrets_draw_from_one_stream_so_a_secret_moves_no_later_blow() {
+        use rand::RngCore;
+        let draws = |hide: &[(Point, u8, u32)]| {
+            let mut rig = rig(7, SpotRules::default(), hide);
+            for _ in 0..5 {
+                rig.wait();
+            }
+            let world = rig.app.world_mut();
+            (world.resource_mut::<PropRng>().0.next_u64(), world.resource_mut::<crate::combat::CombatRng>().0.next_u64())
+        };
+        let (bare_props, bare_blows) = draws(&[]);
+        let (props, blows) = draws(&[(Point::new(6, 3), 1, 0)]);
+        assert_ne!(props, bare_props, "the secret was rolled for from props' stream");
+        assert_eq!(blows, bare_blows, "and the next blow is the one it would have been");
     }
 }
