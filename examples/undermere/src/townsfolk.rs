@@ -60,6 +60,9 @@ const NAMES_RON: &str = include_str!("../assets/names.ron");
 /// The set in `names.ron` Mereholt's people are named from.
 pub const TOWNSFOLK_SET: &str = "townsfolk";
 
+/// The set in `names.ron` the swords for hire are named from.
+pub const MERCENARY_SET: &str = "mercenary";
+
 /// The stream the run's names are drawn from, apart from every other
 /// draw, so naming the town never moves what a floor holds.
 pub const NAMES_STREAM: &[u8] = b"undermere.names";
@@ -293,16 +296,23 @@ pub struct NameSets(pub NameBook);
 
 impl NameSets {
     /// Reads `assets/names.ron`. Panics naming the file at a set that does
-    /// not read, and when the townsfolk's set is missing.
+    /// not read, and when the townsfolk's set or the mercenaries' is
+    /// missing.
     pub fn load() -> Self {
         let book = namegen::load(NAMES_RON).unwrap_or_else(|e| panic!("assets/names.ron: {e}"));
         assert!(book.set(TOWNSFOLK_SET).is_some(), "assets/names.ron: no {TOWNSFOLK_SET:?} set to name Mereholt's people from");
+        assert!(book.set(MERCENARY_SET).is_some(), "assets/names.ron: no {MERCENARY_SET:?} set to name the swords for hire from");
         Self(book)
     }
 
     /// The set Mereholt's people are named from.
     pub fn townsfolk(&self) -> &NameSet {
         self.0.set(TOWNSFOLK_SET).expect("checked at load")
+    }
+
+    /// The set the swords for hire are named from.
+    pub fn mercenary(&self) -> &NameSet {
+        self.0.set(MERCENARY_SET).expect("checked at load")
     }
 }
 

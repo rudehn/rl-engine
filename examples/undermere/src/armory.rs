@@ -466,6 +466,23 @@ impl Armory {
         self.plain.get(def.index()).copied().flatten()
     }
 
+    /// What one of `def` at `level` is worth with its kind and its level
+    /// both told, as a keeper names a ware and a hireling names its kit:
+    /// `None` for a def with no price, gold, or a level below nought, which
+    /// nobody pays for; else its price, with [`WORTH_PER_LEVEL`] a level
+    /// above its kind's [plain level](Self::plain_level). The arithmetic
+    /// of a thing's `Worth`, with what the adventurer does not know of it
+    /// left to [`keep_worth`]; a hireling's fee reads it without a `Lore`,
+    /// since what a hireling says it carries is told, not learned.
+    pub fn told_worth(&self, def: Id<ItemDef>, level: i32) -> Option<u32> {
+        let price = self.defs.get(def).price?;
+        let plain = self.plain_level(def).unwrap_or(0);
+        if level < 0 {
+            return None;
+        }
+        Some(price + WORTH_PER_LEVEL * (level - plain).max(0) as u32)
+    }
+
     /// Whether `def` is an artifact, a mini-boss's own: bought by the curio
     /// and never sold.
     pub fn is_artifact(&self, def: Id<ItemDef>) -> bool {
@@ -1084,17 +1101,11 @@ pub fn spawn_items(commands: &mut Commands, armory: &Armory, def: Id<ItemDef>, c
 /// an unknown potion on a shelf is for sale at its kind's price, where
 /// one in the pack is worth nothing to anybody.
 fn worth_of(armory: &Armory, lore: &Lore, def: Id<ItemDef>, level: i32, unfamiliar: bool, cursed: bool, shelved: bool) -> Option<u32> {
-    let d = armory.defs.get(def);
-    let price = d.price?;
-    if cursed || !(shelved || lore.knows(&d.name)) {
+    if cursed || !(shelved || lore.knows(&armory.defs.get(def).name)) {
         return None;
     }
-    let plain = armory.plain_level(def).unwrap_or(0);
-    let level = if unfamiliar { plain } else { level };
-    if level < 0 {
-        return None;
-    }
-    Some(price + WORTH_PER_LEVEL * (level - plain).max(0) as u32)
+    let level = if unfamiliar { armory.plain_level(def).unwrap_or(0) } else { level };
+    armory.told_worth(def, level)
 }
 
 /// A thing whose worth may have changed: one just made, one whose level

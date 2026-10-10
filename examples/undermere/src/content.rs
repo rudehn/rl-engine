@@ -462,6 +462,8 @@ pub struct Library {
     pub faces: crate::lore::Faces,
     /// What Mereholt's keepers may stock.
     pub wares: crate::shops::Wares,
+    /// What a sword for hire may carry, and what it asks.
+    pub mercenaries: crate::mercenaries::Mercenaries,
     /// The rites the temple's priest offers, their effects built.
     pub rites: crate::temple::Rites,
     /// Mereholt's people, a row a role.
@@ -484,13 +486,14 @@ impl Library {
         let bestiary = Bestiary::load(&registries, &traits, &armory.defs, kinds, moments);
         let faces = crate::lore::Faces::load(&registries, &armory.defs);
         let wares = crate::shops::Wares::load(&registries, &armory);
+        let mercenaries = crate::mercenaries::Mercenaries::load(&registries, &armory);
         let rites = crate::temple::Rites::load(&registries, kinds);
         // After the monsters, which a line waiting on one slain names.
         let townsfolk = crate::townsfolk::Townsfolk::load(&bestiary);
         let names = crate::townsfolk::NameSets::load();
         // After the townsfolk, whose roles a rumour's `{role}` names.
         let rumours = crate::rumours::Rumours::load(&townsfolk);
-        Self { registries, abilities, traits, armory, bestiary, faces, wares, rites, townsfolk, names, rumours }
+        Self { registries, abilities, traits, armory, bestiary, faces, wares, mercenaries, rites, townsfolk, names, rumours }
     }
 }
 

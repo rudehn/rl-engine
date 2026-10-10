@@ -14,8 +14,9 @@
 //   ranged:  optional; its shot, written "NdS+B kind @range", as "1d6 pierce @6", range in
 //            tiles; with one it shoots whatever it sees in reach and strikes what is beside it
 //   armor:   optional; flat armor of its own, 0 when left out, added to what a trait gives
-//   faction: "beasts" | "goblins" | "undead" | "dar", or "adventurer" for what fights on the
-//            adventurer's side from the moment it is made; the dar fight only the adventurer
+//   faction: "beasts" | "goblins" | "undead" | "dar"; "adventurer" for what fights on the
+//            adventurer's side from the moment it is made; or "townsfolk" for what stands
+//            with Mereholt's people until it is hired; the dar fight only the adventurer
 //   traits:  names from `traits.ron`, each at most once, in the order the examine panel
 //            lists them; two that set the same single value are refused, naming both
 //   boss:    optional; true for the one whose death wins the run, false when left out
@@ -120,4 +121,10 @@
     // nothing. Nowhere in the spawn table, so it is never found, only made.
     (name: "spectral blade", glyph: '†', color: (0.72, 0.86, 1.0), hp: 1, attack: "1d3 slash", faction: "adventurer",
      traits: ["mindless", "swift", "deathless"], conjured: true),
+    // The one kind of hireling, waiting at the Sunken Lantern on Mereholt's
+    // side until it is hired: on the adventurer's footing, sixty health and
+    // a bare fist, since what it fights with is the kit `mercenaries.ron`
+    // rolls it. Nowhere in the spawn table or a piece, so it is never found
+    // below, only met in town.
+    (name: "mercenary", glyph: 'h', color: (0.85, 0.72, 0.5), hp: 60, attack: "1d2 crush", faction: "townsfolk", traits: ["mercenary"]),
 ]

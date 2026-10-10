@@ -95,14 +95,17 @@ pub enum Buys {
     Tags(Vec<TagId>),
 }
 
-/// One ware on a shelf: what it is, how many, and its level.
+/// One ware on a shelf, or one thing in a hireling's
+/// [kit](crate::mercenaries::Mercenaries::kit): what it is, how many, and
+/// its level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Ware {
     /// What it is.
     pub def: Id<ItemDef>,
-    /// How many lie together on the shelf.
+    /// How many lie together on the shelf, or are carried together.
     pub count: u32,
-    /// Its level, nought for a thing that takes none and never below.
+    /// Its level, nought for a thing that takes none: never below on a
+    /// shelf, and below, cursed, in a kit.
     pub level: i32,
 }
 

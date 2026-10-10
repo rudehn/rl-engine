@@ -33,7 +33,10 @@
 //! reached, and the shelves they sell from; [`temple`] is the rites
 //! the priest among them mends, unbinds and names by, for a price; and
 //! [`waystone`] is the way home from below, ten quiet turns of kneeling,
-//! and the mark the gate leads back down to.
+//! and the mark the gate leads back down to. [`mercenaries`] is the swords
+//! for hire at the Sunken Lantern: one kind, each with a name drawn from a
+//! set of its own and a kit rolled at the depth reached, asking what that
+//! kit is worth.
 //!
 //! The run is [`run`]'s: the adventurer and what they set out with, and a
 //! run carried on from a save, which [`save`] says how to write down.
@@ -81,6 +84,7 @@ pub mod finds;
 pub mod input;
 pub mod light;
 pub mod lore;
+pub mod mercenaries;
 pub mod plugin;
 pub mod population;
 pub mod prefabs;

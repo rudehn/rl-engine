@@ -158,4 +158,8 @@
     (name: "spawning", says: "spawns its young from the walls", trick: true),
     (name: "welling", says: "a drowned thrall rises from the black pool to join him", trick: true),
     (name: "wyrm breath", says: "breathes fire", abilities: ["wyrm breath"], trick: true),
+    // A sword for hire: thinks, wears and uses what it carries as the
+    // adventurer does, and runs at a quarter of its health rather than
+    // dying for a fee.
+    (name: "mercenary", says: "a sword for hire", wits: ["sapient", "uses", "equips"], flee_at: 25),
 ]

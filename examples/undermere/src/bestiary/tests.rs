@@ -110,6 +110,7 @@ fn every_monster_of_the_bestiary_is_in_the_file_and_the_floor_ten_boss_is_one_of
         "the Drowned Abbess",
         "the Forgemaster",
         "spectral blade",
+        "mercenary",
     ];
     let defs = &library.bestiary.defs;
     for name in bestiary_kinds {

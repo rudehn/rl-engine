@@ -17,10 +17,44 @@
 // back to back, three letters seen again later in it, is thrown away and
 // drawn again.
 //
+//   mercenary: the swords for hire at the Sunken Lantern, given names of
+//              the hill country they walk down from: two syllables, three
+//              one time in three, and one name in four followed by a
+//              byname of its own, Brenna, Tolvar, Osk Halfhand; never two
+//              vowels running together across syllables.
 //   townsfolk: Mereholt's people, given names of a lakeside town, plain and
 //              short: two syllables, three one time in three. Drawn afresh
 //              every run, so the smith is somebody else next time.
 {
+    "mercenary": (
+        pools: {
+            "start": [
+                "ald", "as", "bar", "ber", "bren", "dag", "ey", "ger", "grim", "hal",
+                "har", "ing", "ket", "kol", "mar", "os", "rag", "rol", "sig", "sten",
+                "tol", "ulf", "vor", "yr",
+            ],
+            "middle": ["a", "e", "i", "o", "an", "er", "ul"],
+            "end": [
+                "a", "ar", "borg", "dis", "en", "eth", "gar", "hild", "ild", "in",
+                "is", "k", "ka", "mund", "na", "nar", "old", "ra", "ric", "rik",
+                "vald", "var", "wyn",
+            ],
+            "byname": [
+                "halfhand", "greycloak", "redbeard", "stonefist", "longshanks", "ironside",
+                "ashborn", "blackwater", "quickstep", "crowfoot", "saltmarsh", "brokentooth",
+            ],
+        },
+        patterns: [
+            (weight: 3, parts: [Pool("start"), Maybe(33, "middle"), Pool("end")]),
+            (weight: 1, parts: [Pool("start"), Maybe(33, "middle"), Pool("end"), Text(" "), Pool("byname")]),
+        ],
+        case: Title,
+        length: (3, 24),
+        // Two vowels that run together across syllables, Dagiin or
+        // Tolaold; the pairs the bynames hold, redbeard's and crowfoot's,
+        // are left off the list.
+        forbid: ["aa", "ae", "ai", "ao", "ee", "ei", "eo", "ia", "ie", "ii", "io", "oe", "oi", "ua", "ue", "uo"],
+    ),
     "townsfolk": (
         pools: {
             "start": [
