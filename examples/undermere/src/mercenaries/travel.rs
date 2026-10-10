@@ -78,6 +78,38 @@ pub fn follow_through(
     }
 }
 
+/// Says a mercenary sent after the adventurer follows them, where the
+/// engine's narrator would say it leaves.
+///
+/// The narrator hears a warp as a going of the traveller's own accord,
+/// since a [`WarpRequest`] names nobody it goes after, and it judges the
+/// going seen by the cell it left, in a sight not yet cast on the map the
+/// adventurer arrived on: so each of the party coming through beside them
+/// read "Mareth leaves." A mercenary told of as leaving that stands on
+/// the map being read, led by the adventurer, has come with them, which
+/// is the engine's own "follows you" line, said beside them where it now
+/// stands. In `ViewSet::Annotate`, where a game edits the rows before
+/// they are spoken.
+pub fn say_who_came(
+    mut narration: ResMut<NarrationView>,
+    map: Res<WorldMap>,
+    party: Query<(&Position, &OnMap, &Leader), With<Mercenary>>,
+    players: Query<(), With<Player>>,
+) {
+    for row in &mut narration.rows {
+        if row.words != Words::Phrase(Phrase::Leaves) {
+            continue;
+        }
+        let Some((at, on, leader)) = row.who.and_then(|who| party.get(who).ok()) else { continue };
+        if on.0 == map.current() && players.contains(leader.0) {
+            row.words = Words::Phrase(Phrase::FollowsYou);
+            row.at = Some(at.0);
+            row.seen = true;
+            row.who_seen = true;
+        }
+    }
+}
+
 /// The maps the party is read off and landed on, current or not: what
 /// blocks a line on the map left, and who stands where on the one arrived
 /// on.
@@ -291,6 +323,8 @@ mod tests {
             assert!(stayed(&app, far, map_of(1), four, me), "seed {s}: from four it was left where it stood, still theirs");
             assert!(stayed(&app, holding, map_of(1), two, me), "seed {s}: on hold it kept its post, still theirs");
             assert!(!said(&app).iter().any(|l| l.contains("stays behind")), "seed {s}: nothing said of those left by choice");
+            assert!(said(&app).iter().any(|l| l == "Brenna follows you."), "seed {s}: the one that came is told of as following: {:?}", said(&app));
+            assert!(!said(&app).iter().any(|l| l.ends_with("leaves.")), "seed {s}: and nobody as leaving: {:?}", said(&app));
         }
     }
 

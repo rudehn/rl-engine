@@ -343,7 +343,7 @@ fn main() -> AppExit {
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_bevy::testing::{KeyScriptPlugin, press};
+    use rl_engine::rl_bevy::testing::{KeyScript, KeyScriptPlugin, press};
     use rl_engine::rl_render::{MapView, MapViewPlugin, Terminal};
     use undermere::run::Adventurer;
 
@@ -1287,6 +1287,58 @@ mod tests {
         assert!(screen.iter().any(|r| r.contains(&name)), "under its name: {screen:#?}");
         assert!(!screen.iter().any(|r| r.contains("outlook") || r.contains("Chance to hit")), "and no forecast: {screen:#?}");
         assert!(screen.iter().any(|r| r.contains(&format!("{name} · holding"))), "the rail says it too: {screen:#?}");
+    }
+
+    /// Two hired in the tavern and stood by the adventurer on the Drowned
+    /// Gate come through it with them as the player takes it, on cells of
+    /// their own beside them on floor one, and the rail lists both as
+    /// following.
+    #[test]
+    fn a_party_of_two_hired_in_the_tavern_comes_through_the_gate_beside_the_adventurer_onto_floor_one() {
+        let mut app = on_screen(RunSeed(7));
+        let (me, first, _, first_name) = hire_on_screen(&mut app);
+        let (_, second, _, second_name) = hire_on_screen(&mut app);
+        let town = undermere::dungeon::TOWN;
+        let gate = {
+            let world = app.world_mut();
+            world
+                .query::<(&Position, &OnMap, &undermere::stairs::Way)>()
+                .iter(world)
+                .find(|(_, on, way)| on.0 == town && **way == undermere::stairs::Way::Gate)
+                .map(|(p, ..)| p.0)
+                .expect("the gate stands in Mereholt")
+        };
+        undermere::testing::stand_on(&mut app, me, gate);
+        let taken: Vec<Point> = {
+            let world = app.world_mut();
+            world.query_filtered::<&Position, With<Blocks>>().iter(world).map(|p| p.0).collect()
+        };
+        let free: Vec<Point> = {
+            let map = app.world().resource::<WorldMap>();
+            (0..8).map(|i| gate + Direction::from_index(i).offset()).filter(|p| map.is_walkable_on(town, *p) && !taken.contains(p)).collect()
+        };
+        undermere::testing::stand_on(&mut app, first, free[0]);
+        undermere::testing::stand_on(&mut app, second, free[1]);
+        // `>`, the way's own key: Enter is also the engine's key for what
+        // is in reach, which a party beside the adventurer always offers.
+        app.world_mut().resource_mut::<KeyScript>().hold(KeyCode::ShiftLeft);
+        press(&mut app, KeyCode::Period);
+        app.world_mut().resource_mut::<KeyScript>().release(KeyCode::ShiftLeft);
+        undermere::testing::settle(&mut app);
+        let screen = written(&app);
+        assert_eq!(undermere::testing::here(&app), undermere::dungeon::map_of(1), "through the gate: {screen:#?}");
+        let landed = undermere::testing::at(&app, me);
+        for who in [first, second] {
+            assert_eq!(app.world().get::<OnMap>(who).map(|m| m.0), Some(undermere::dungeon::map_of(1)), "came through: {screen:#?}");
+            assert!(geometry::chebyshev(undermere::testing::at(&app, who), landed) <= 1, "beside them: {screen:#?}");
+        }
+        assert_ne!(undermere::testing::at(&app, first), undermere::testing::at(&app, second), "on cells of their own");
+        for name in [first_name, second_name] {
+            assert!(screen.iter().any(|r| r.contains(&format!("{name} · following"))), "the rail lists {name} following: {screen:#?}");
+            assert!(screen.iter().any(|r| r.starts_with(&format!("{name} follows you."))), "the log says {name} came: {screen:#?}");
+        }
+        assert!(!screen.iter().any(|r| r.contains("leaves.")), "and says nobody left: {screen:#?}");
+        assert!(!app.world().resource::<Modals>().any_open(), "and no screen is up over the floor: {screen:#?}");
     }
 
     /// Given a thing on the real screen, as a player gives one: the

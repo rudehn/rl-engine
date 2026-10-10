@@ -58,7 +58,9 @@
 //! left with a line to it, onto a free cell beside where they landed. One
 //! left behind, by distance, a wall or the hold order, waits frozen where
 //! it stood, still theirs. None travels of its own accord: [`obey`] keeps
-//! the engine's wit for it off every mercenary.
+//! the engine's wit for it off every mercenary. [`say_who_came`] has the
+//! log say one that came through follows the adventurer, where the
+//! narrator, hearing a warp, would say it left.
 //!
 //! Undermere's own rather than a keeper's [`Wares`](crate::shops::Wares):
 //! a kit is a part at a time, each on its own chance, where a shelf is a

@@ -388,6 +388,9 @@ impl Plugin for UndermerePlugin {
         // The gold carried, on the vitals under the gauges, wherever the
         // game draws them.
         app.add_systems(Update, crate::shops::count_gold.in_set(ViewSet::Annotate));
+        // A mercenary come through beside the adventurer is told of as
+        // following them, not as leaving.
+        app.add_systems(Update, crate::mercenaries::say_who_came.in_set(ViewSet::Annotate));
         // Each place's ambient, set between the turns and the light, so the
         // frame the stairs land on is drawn in the new place's light; and
         // beside it a camp's fire lit, so the frame it is stood is lit.
