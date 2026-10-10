@@ -15,6 +15,12 @@
 //                         bend_pct is the chance in a hundred of a second
 //                         leg at a right angle; a passage is not a room,
 //                         and nothing is stamped in it
+//       Cave(w: (fewest, most), h: (fewest, most), fill_pct: 55, visits_pct: 100)
+//                         grown by the cellular automaton inside a box of
+//                         w by h, and its largest region kept; fill_pct is
+//                         the share of the box that starts as rock, 1 to
+//                         99, and visits_pct how many cells the rule is
+//                         applied at as a share of the box, 1 to 10000
 //     join: how a piece of it is joined to what it is attached to, one of
 //       Door              one cell of the door tile
 //       Arch              one cell of floor
@@ -32,7 +38,18 @@
 //                        never fewer than one seed; at most 10000
 //     districts:         [(district, weight)], at least one weight more
 //                        than nought
-//     loops:             (min_detour, max): the shortest detour in steps
+//     barriers:          optional, none if left out: rock growth goes
+//                        round, so a deck bends round it
+//       from:       (x_pct, y_pct), one end as shares of the width and
+//                   height, each 0 to 100
+//       to:         (x_pct, y_pct), the other end
+//       chance_pct: the chance in a hundred it is laid, 0 to 100
+//       jitter_pct: the furthest both ends are shifted together, as a
+//                   share of the width and of the height, 0 to 100
+//                   A barrier a shift could lay from one edge of the
+//                   map to the opposite is refused; one cutting off a
+//                   corner is not, and the corner stays rock.
+//     loops:            (min_detour, max): the shortest detour in steps
 //                        worth a hatch, and the most hatches
 //     require:           what the built deck must meet or be built again
 //       open_pct:     (at least, at most)

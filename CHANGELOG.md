@@ -6,6 +6,10 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- A recipe may lay barriers, rock that growth goes round: the new `Barrier` in `rl-mapgen` is a segment given in shares of the map, laid at `chance_pct` and shifted as a whole by up to `jitter_pct` of each side, and `Accrete`'s new `barriers` field keeps every piece's body and the ring round it off its cells, so what lies across one is reached only round its ends; each one laid is published as a `LaidBarrier`.
+  A layout file names them on a recipe as `barriers: [(from: (x_pct, y_pct), to: (x_pct, y_pct), chance_pct:, jitter_pct:)]`, optional and empty when left out, so a layout written before loads unchanged; `load` refuses a share past a hundred, and a barrier some shift could lay from one edge of the recipe's map to the opposite, by recipe and barrier, and `layout::passes` builds them.
+  To change: a game that builds an `Accrete` itself adds `barriers: Vec::new()`, and one that builds a `RecipeDef` adds `barriers`.
+
 - A place can grow caves: the new `Cave` shape in `rl-mapgen` draws a piece by the cellular automaton applied at random cells inside a box, keeps its largest orthogonal region, and offers sites only in the rock outside its rim, so `Accrete` lays it, joins it and publishes it as one area like a rectangle, and the survey rates it.
   A layout file names one as `Cave(w: (fewest, most), h: (fewest, most), fill_pct:, visits_pct:)`, `fill_pct` the share of the box that starts as rock, 1 to 99, and `visits_pct` how many cells the rule is applied at as a share of the box, 1 to 10000; `load` refuses either outside that by the shape's name, and `layout::passes` builds it.
   `ShapeKind` has a new variant, so a game that matches on it adds an arm.

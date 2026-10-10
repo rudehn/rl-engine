@@ -5,9 +5,9 @@
 //! every name in it to an index and reports every mistake at once. A
 //! shape is one of the generators the engine ships, with its ranges and
 //! how it is joined; a district is a region's weighted taste in shapes; a
-//! recipe is a size, how full to grow it, which districts to scatter, how
-//! many detours to cut through, and what the built place must meet or be
-//! built again.
+//! recipe is a size, how full to grow it, which districts to scatter, the
+//! barriers growth goes round, how many detours to cut through, and what
+//! the built place must meet or be built again.
 //!
 //! What this module does not hold is the growing. The passes are
 //! `rl-mapgen`'s, a tier 1 crate beside this one; this crate names no
@@ -55,6 +55,17 @@
 //! //                        never fewer than one seed; at most 10000
 //! //     districts:         [(district, weight)], at least one weight more
 //! //                        than nought
+//! //     barriers:          optional, none if left out: rock growth goes
+//! //                        round, so a place bends round it
+//! //       from:       (x_pct, y_pct), one end as shares of the width and
+//! //                   height, each 0 to 100
+//! //       to:         (x_pct, y_pct), the other end
+//! //       chance_pct: the chance in a hundred it is laid, 0 to 100
+//! //       jitter_pct: the furthest both ends are shifted together, as a
+//! //                   share of the width and of the height, 0 to 100
+//! //                   A barrier a shift could lay from one edge of the
+//! //                   map to the opposite is refused; one cutting off a
+//! //                   corner is not, and the corner stays rock.
 //! //     loops:             (min_detour, max): the shortest detour in steps
 //! //                        worth a door, and the most doors
 //! //     require:           what the built place must meet or be built again
@@ -76,6 +87,7 @@
 //!         (
 //!             name: "floor", size: (60, 40), open_pct: 35, patience: 200, districts_per_10k: 5,
 //!             districts: [("rooms", 1)],
+//!             barriers: [(from: (50, 0), to: (50, 60), chance_pct: 50, jitter_pct: 10)],
 //!             loops: (min_detour: 20, max: 4),
 //!             require: (open_pct: (30, 60), areas: [("room", 4)], loops: 1, dead_end_pct: 60, route: 20),
 //!         ),
@@ -208,6 +220,50 @@ pub struct LoopsDef {
     pub max: u32,
 }
 
+/// A segment of rock growth goes round, in shares of the map, laid at a
+/// chance and shifted by a jitter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BarrierDef {
+    /// One end, as shares of the width and height, each 0 to 100.
+    pub from: (u32, u32),
+    /// The other end.
+    pub to: (u32, u32),
+    /// The chance in a hundred it is laid.
+    pub chance_pct: u32,
+    /// The furthest both ends are shifted together, as a share of the
+    /// width along a row and of the height along a column.
+    pub jitter_pct: u32,
+}
+
+/// The cell a share of a side of `side` cells falls on, rounded: nought
+/// the first and a hundred the last. `rl-mapgen`'s `cell_at_share` is its
+/// twin, which lays the barrier this checks.
+fn cell_at_share(pct: u32, side: i32) -> i32 {
+    ((i64::from(pct) * i64::from(side - 1) + 50) / 100) as i32
+}
+
+/// How near an edge a barrier's end may come and still leave a way round
+/// it: a cell inside the border, with a cell of clearance either side of
+/// a body, as `Accrete` grows.
+const REACH: i32 = 2;
+
+impl BarrierDef {
+    /// Whether some shift its jitter allows lays it from one edge of a `w`
+    /// by `h` map to the opposite one. The same arithmetic as
+    /// `rl_mapgen::accrete::Barrier::may_cut`, which refuses it again at
+    /// growth for a pass built without a file; `rl-bevy` holds the two
+    /// together in a test, since this crate names no mapgen type.
+    pub fn may_cut(&self, w: i32, h: i32) -> bool {
+        let across = |a: u32, b: u32, n: i32| {
+            let (lo, hi) = (cell_at_share(a.min(b), n), cell_at_share(a.max(b), n));
+            let jitter = cell_at_share(self.jitter_pct, n);
+            (-jitter).max(n - 1 - REACH - hi) <= jitter.min(REACH - lo)
+        };
+        across(self.from.0, self.to.0, w) || across(self.from.1, self.to.1, h)
+    }
+}
+
 /// What a built place must meet or be built again.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RequireDef {
@@ -239,6 +295,8 @@ pub struct RecipeDef {
     pub districts_per_10k: u32,
     /// Each an index into [`LayoutDef::districts`] and its weight.
     pub districts: Vec<(usize, u32)>,
+    /// The barriers growth goes round; none if the file names none.
+    pub barriers: Vec<BarrierDef>,
     /// The detours to cut through.
     pub loops: LoopsDef,
     /// What the built place must meet.
@@ -288,6 +346,9 @@ struct RecipeRon {
     patience: u32,
     districts_per_10k: u32,
     districts: Vec<(String, u32)>,
+    // Optional, so a layout written before barriers loads unchanged.
+    #[serde(default)]
+    barriers: Vec<BarrierDef>,
     loops: LoopsDef,
     require: RequireRon,
 }
@@ -317,8 +378,10 @@ fn adds_up(rows: &[(String, u32)]) -> bool {
 /// its box or that is visited never or past reason, a mouth of no width,
 /// a share outside a hundred, no patience, weights that overflow, a size
 /// or a range or a density past any map, more loops required than may be
-/// opened, a requirement for a shape the recipe never draws, and a map
-/// too small for any shape its recipe draws or for one it requires.
+/// opened, a requirement for a shape the recipe never draws, a map too
+/// small for any shape its recipe draws or for one it requires, and a
+/// barrier with a share past a hundred or that may reach from one edge
+/// of its recipe's map to the opposite.
 pub fn load(text: &str) -> Result<LayoutDef, ContentError> {
     let options = ron::options::Options::default().with_default_extension(ron::extensions::Extensions::IMPLICIT_SOME);
     let a: LayoutRon = options.from_str(text).map_err(|e| ContentError::Parse(e.to_string()))?;
@@ -422,6 +485,20 @@ pub fn load(text: &str) -> Result<LayoutDef, ContentError> {
         if r.require.dead_end_pct > 100 {
             errors.push(format!("{}: require.dead_end_pct is {}, more than 100", r.name, r.require.dead_end_pct));
         }
+        for (i, b) in r.barriers.iter().enumerate() {
+            let shares = [("from", b.from.0), ("from", b.from.1), ("to", b.to.0), ("to", b.to.1), ("chance_pct", b.chance_pct), ("jitter_pct", b.jitter_pct)];
+            for (field, pct) in shares.iter().filter(|(_, pct)| *pct > 100) {
+                errors.push(format!("{}: barrier {i}'s {field} has a share of {pct}, more than 100", r.name));
+            }
+            // A share past a hundred is already wrong, and would lay the
+            // barrier off the map besides.
+            if shares.iter().all(|(_, pct)| *pct <= 100) && b.may_cut(r.size.0, r.size.1) {
+                errors.push(format!(
+                    "{}: barrier {i} may reach from one edge of a {}x{} map to the opposite, and growth could never cross it",
+                    r.name, r.size.0, r.size.1
+                ));
+            }
+        }
         // Every shape a district of this recipe draws with a weight.
         let drawn: Vec<usize> =
             mix.iter().filter(|(_, w)| *w > 0).flat_map(|(d, _)| districts[*d].shapes.iter().filter(|(_, w)| *w > 0).map(|(s, _)| *s)).collect();
@@ -445,6 +522,7 @@ pub fn load(text: &str) -> Result<LayoutDef, ContentError> {
             patience: r.patience,
             districts_per_10k: r.districts_per_10k,
             districts: mix,
+            barriers: r.barriers.clone(),
             loops: r.loops,
             require: RequireDef { open_pct: r.require.open_pct, areas, loops: r.require.loops, dead_end_pct: r.require.dead_end_pct, route: r.require.route },
         });
@@ -567,6 +645,44 @@ mod tests {
         assert!(load(&wide).is_ok(), "the cave fits an 84x48 map and the recipe draws it");
         let too_wide = wide.replacen("w: (10, 16)", "w: (90, 100)", 1);
         assert!(problems(&too_wide).iter().any(|p| p.contains("upper") && p.contains("hollow")));
+    }
+
+    #[test]
+    fn a_recipe_with_no_barriers_has_none_and_one_with_barriers_keeps_them_in_order() {
+        assert!(load(GOOD).unwrap().recipe("upper").unwrap().barriers.is_empty(), "left out, a recipe has none");
+        let barred = GOOD.replacen(
+            "loops: (min_detour",
+            "barriers: [(from: (50, 0), to: (50, 70), chance_pct: 100, jitter_pct: 5), (from: (0, 40), to: (30, 0), chance_pct: 0, jitter_pct: 0)],
+                loops: (min_detour",
+            1,
+        );
+        let barriers = load(&barred).unwrap().recipe("upper").unwrap().barriers.clone();
+        assert_eq!(barriers.len(), 2);
+        assert_eq!(barriers[0], BarrierDef { from: (50, 0), to: (50, 70), chance_pct: 100, jitter_pct: 5 });
+        assert_eq!(barriers[1].chance_pct, 0, "a corner cut off is allowed, and nought is a chance like any other");
+    }
+
+    #[test]
+    fn a_barrier_that_may_reach_edge_to_edge_or_names_a_share_past_a_hundred_is_refused_by_name() {
+        let with = |barrier: &str| GOOD.replacen("loops: (min_detour", &format!("barriers: [{barrier}], loops: (min_detour"), 1);
+        for (barrier, says) in [
+            ("(from: (50, 0), to: (50, 100), chance_pct: 50, jitter_pct: 0)", "opposite"),
+            ("(from: (0, 30), to: (100, 70), chance_pct: 50, jitter_pct: 0)", "opposite"),
+            // Two cells short of each edge of an 84x48 map: no way round either end.
+            ("(from: (3, 50), to: (97, 50), chance_pct: 50, jitter_pct: 0)", "opposite"),
+            // Short of the bottom as written, but a shift may carry it there.
+            ("(from: (50, 0), to: (50, 92), chance_pct: 50, jitter_pct: 10)", "opposite"),
+            ("(from: (50, 0), to: (50, 60), chance_pct: 101, jitter_pct: 0)", "'s chance_pct"),
+            ("(from: (50, 0), to: (50, 60), chance_pct: 50, jitter_pct: 400)", "'s jitter_pct"),
+            ("(from: (150, 0), to: (50, 60), chance_pct: 50, jitter_pct: 0)", "'s from has a share of 150"),
+            ("(from: (50, 0), to: (50, 160), chance_pct: 50, jitter_pct: 0)", "'s to has a share of 160"),
+        ] {
+            let found = problems(&with(barrier));
+            assert!(found.iter().any(|p| p.contains("upper") && p.contains("barrier 0") && p.contains(says)), "{barrier}: wanted {says:?}, got {found:?}");
+        }
+        assert!(load(&with("(from: (50, 0), to: (50, 92), chance_pct: 50, jitter_pct: 0)")).is_ok(), "short of the bottom with no shift");
+        let typo = with("(from: (50, 0), to: (50, 60), chance: 50, jitter_pct: 0)");
+        assert!(matches!(load(&typo), Err(ContentError::Parse(_))), "an unknown field is refused");
     }
 
     #[test]

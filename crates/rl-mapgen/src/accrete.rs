@@ -4,14 +4,16 @@
 //! ](Piece::sites) where it may be joined to another. [`Accrete`] lays a
 //! first piece and attaches every later one to a wall of what already
 //! stands, so the place is walkable from end to end before anything checks
-//! that it is. What it laid it publishes: an [`Area`] per piece and an
-//! [`Opening`] per join.
+//! that it is. A [`Barrier`] is rock growth goes round, so a place bends
+//! round it rather than running straight across. What it laid it
+//! publishes: an [`Area`] per piece, an [`Opening`] per join and a
+//! [`LaidBarrier`] per barrier present.
 
 use rand::seq::SliceRandom;
 use rand::{Rng, RngCore};
-use rl_core::geometry::euclidean_sq;
+use rl_core::geometry::{euclidean_sq, line};
 use rl_core::{Direction, Grid, Grid2D, Point, Rect};
-use rl_grid::{Terrain, TileId};
+use rl_grid::{BitGrid, Terrain, TileId};
 
 use crate::chain::{BuildError, Pass, Phase};
 use crate::context::BuildContext;
@@ -285,6 +287,76 @@ pub struct Opening {
     pub join: Join,
 }
 
+/// The cell a share of a side of `side` cells falls on, rounded: nought is
+/// the first cell and a hundred the last, so a share names the same part
+/// of a map at any size.
+pub fn cell_at_share(pct: u32, side: i32) -> i32 {
+    ((i64::from(pct) * i64::from(side - 1) + 50) / 100) as i32
+}
+
+/// A straight segment of rock growth may not cross, present at a chance
+/// and shifted by a jitter, so one recipe bends its place round a
+/// different wall each time it is built.
+///
+/// It is given in shares of the map, each 0 to 100, so a recipe lays it
+/// at any size. No piece's body or the ring round it may take a cell of
+/// it, so a barrier is never a shared wall a join could open: what lies
+/// either side is reached only round its ends. One that may reach from
+/// an edge to the opposite one is refused, since growth could never cross
+/// to the far side; one that cuts off a corner is allowed, and the corner
+/// stays rock.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Barrier {
+    /// One end, as shares of the map's width and height.
+    pub from: (u32, u32),
+    /// The other end.
+    pub to: (u32, u32),
+    /// The chance in a hundred it is laid at all.
+    pub chance_pct: u32,
+    /// The furthest it is shifted, as a share of the width along a row and
+    /// of the height along a column. Both ends move together, so the
+    /// barrier keeps its length and slope and only its place changes.
+    pub jitter_pct: u32,
+}
+
+/// How close to an edge a barrier's end may come before nothing can pass
+/// it there: a piece needs a cell inside the border, and its body and
+/// ring stand a cell clear of the barrier, so an end within this many
+/// cells of the edge leaves no way round.
+const REACH: i32 = 2;
+
+impl Barrier {
+    /// Its two ends in cells on a `w` by `h` map, unshifted.
+    fn ends(&self, w: i32, h: i32) -> (Point, Point) {
+        let at = |(x, y): (u32, u32)| Point::new(cell_at_share(x, w), cell_at_share(y, h));
+        (at(self.from), at(self.to))
+    }
+
+    /// Whether some shift its jitter allows lays it from one edge of a `w`
+    /// by `h` map to the opposite one, so that growth on one side could
+    /// never cross to the other. `rl-rules` refuses such a barrier when it
+    /// loads a layout, by the same arithmetic.
+    pub fn may_cut(&self, w: i32, h: i32) -> bool {
+        let (a, b) = self.ends(w, h);
+        // A shift `s` along a side of `n` cells lays the ends at `lo + s`
+        // and `hi + s`; it cuts when the first is within reach of the near
+        // edge and the second of the far one.
+        let across = |lo: i32, hi: i32, n: i32, jitter: i32| (-jitter).max(n - 1 - REACH - hi) <= jitter.min(REACH - lo);
+        across(a.x.min(b.x), a.x.max(b.x), w, cell_at_share(self.jitter_pct, w)) || across(a.y.min(b.y), a.y.max(b.y), h, cell_at_share(self.jitter_pct, h))
+    }
+}
+
+/// A barrier that was laid: what a later pass needs to know which rock
+/// growth was kept off.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaidBarrier {
+    /// Which barrier, by its place in [`Accrete::barriers`].
+    pub index: usize,
+    /// Its cells on the map, after the shift; a shift may carry some or
+    /// all of it off.
+    pub cells: Vec<Point>,
+}
+
 /// Grows a place by accretion over a map of solid tile: a first piece,
 /// then each later one attached to a wall of what already stands.
 ///
@@ -300,6 +372,12 @@ pub struct Opening {
 /// is ever put in a passage and a dead end should be somewhere. It fails
 /// if the open share is not reached before `patience` attempts in a row
 /// are spent.
+///
+/// A [`Barrier`] present on this build is drawn before anything else and
+/// kept clear as the border is, and further: a ring may stand on the
+/// border, but no body or ring may take a barrier's cells, so no join or
+/// later loop opens through one and what grows on one side reaches the
+/// other only round its ends.
 pub struct Accrete {
     /// The tile a piece's body is carved from.
     pub floor: TileId,
@@ -317,18 +395,35 @@ pub struct Accrete {
     pub open_pct: u32,
     /// How many attempts in a row may fail before growth gives up.
     pub patience: u32,
+    /// Rock growth goes round, each laid at its own chance; none for a
+    /// place grown wherever it can.
+    pub barriers: Vec<Barrier>,
 }
 
 fn solid(terrain: &Terrain, walkable: &[bool], p: Point) -> bool {
     terrain.get(p).is_some_and(|t| !walkable[t.index()])
 }
 
-/// Whether a piece moved by `by` lies inside `inner` with its body and the
-/// ring round it all solid.
-fn fits(terrain: &Terrain, walkable: &[bool], inner: Rect, cells: &[Point], by: Point) -> bool {
+/// Where growth may stand: the map inside its border, less every cell a
+/// body may not take because its ring would touch a barrier.
+struct Ground<'a> {
+    inner: Rect,
+    /// Each barrier cell and the cells round it.
+    kept: &'a BitGrid,
+}
+
+impl Ground<'_> {
+    fn holds(&self, p: Point) -> bool {
+        self.inner.contains(p) && !self.kept.contains(p)
+    }
+}
+
+/// Whether a piece moved by `by` lies where growth may stand with its body
+/// and the ring round it all solid.
+fn fits(terrain: &Terrain, walkable: &[bool], ground: &Ground, cells: &[Point], by: Point) -> bool {
     cells.iter().all(|c| {
         let p = *c + by;
-        inner.contains(p) && (-1..=1).all(|dy| (-1..=1).all(|dx| solid(terrain, walkable, p.offset(dx, dy))))
+        ground.holds(p) && (-1..=1).all(|dy| (-1..=1).all(|dx| solid(terrain, walkable, p.offset(dx, dy))))
     })
 }
 
@@ -360,7 +455,7 @@ impl Accrete {
 
     /// What can be told is wrong before a cell is drawn, so a mistake in
     /// how the pass was built is one error and not a panic mid-growth.
-    fn check(&self) -> Result<(), BuildError> {
+    fn check(&self, w: i32, h: i32) -> Result<(), BuildError> {
         if self.shapes.is_empty() || self.districts.is_empty() {
             return Err(Self::err("it has no shapes or no districts to draw from"));
         }
@@ -375,6 +470,14 @@ impl Accrete {
         for d in &self.districts {
             if !weighs(&d.shapes, self.shapes.len()) {
                 return Err(Self::err(format!("district {:?} names no shape with a weight, or the weights overflow a u32", d.name)));
+            }
+        }
+        for (i, b) in self.barriers.iter().enumerate() {
+            if [b.from.0, b.from.1, b.to.0, b.to.1, b.chance_pct, b.jitter_pct].iter().any(|pct| *pct > 100) {
+                return Err(Self::err(format!("barrier {i} has a share past a hundred")));
+            }
+            if b.may_cut(w, h) {
+                return Err(Self::err(format!("barrier {i} may reach from one edge of a {w}x{h} map to the opposite, and growth could never cross it")));
             }
         }
         Ok(())
@@ -493,13 +596,34 @@ impl<C: BuildContext> Pass<C> for Accrete {
         Phase::Structures
     }
     fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
-        self.check()?;
         let walkable = ctx.tiles().tables().walkable;
         let bounds = ctx.terrain().bounds();
+        self.check(bounds.width, bounds.height)?;
         if bounds.width < 3 || bounds.height < 3 {
             return Err(Self::err("the map has no room inside its border"));
         }
         let inner = bounds.inflate(-1);
+
+        // The barriers first, so where they lie decides where everything
+        // after may grow. A recipe with none draws nothing here.
+        let mut laid = Vec::new();
+        let mut kept = BitGrid::new(bounds.width, bounds.height);
+        for (index, b) in self.barriers.iter().enumerate() {
+            if ctx.rng().random_range(0..100) >= b.chance_pct {
+                continue;
+            }
+            let (jx, jy) = (cell_at_share(b.jitter_pct, bounds.width), cell_at_share(b.jitter_pct, bounds.height));
+            let shift = Point::new(ctx.rng().random_range(-jx..=jx), ctx.rng().random_range(-jy..=jy));
+            let (from, to) = b.ends(bounds.width, bounds.height);
+            let cells: Vec<Point> = line(from + shift, to + shift).filter(|c| bounds.contains(*c)).collect();
+            for c in &cells {
+                for (dx, dy) in (-1..=1).flat_map(|dy| (-1..=1).map(move |dx| (dx, dy))) {
+                    kept.insert(c.offset(dx, dy));
+                }
+            }
+            laid.push(LaidBarrier { index, cells });
+        }
+        let ground = Ground { inner, kept: &kept };
         let total = (bounds.width * bounds.height) as u32;
         let point_inside = |rng: &mut dyn RngCore| Point::new(rng.random_range(inner.x..inner.right()), rng.random_range(inner.y..inner.bottom()));
 
@@ -531,7 +655,7 @@ impl<C: BuildContext> Pass<C> for Accrete {
             let district = district_at(at);
             let shape = draw_weighted(&self.districts[district].shapes, ctx.rng()).expect("checked");
             let piece = self.shapes[shape].draw(ctx.rng());
-            if fits(ctx.terrain(), &walkable, inner, &piece.cells, at) {
+            if fits(ctx.terrain(), &walkable, &ground, &piece.cells, at) {
                 self.lay(ctx, &mut grown, &piece, at, (shape, district), None);
                 break;
             }
@@ -547,7 +671,7 @@ impl<C: BuildContext> Pass<C> for Accrete {
                 let (site, facing, from) = grown.frontier[i];
                 let beyond = site + facing.offset();
                 // A site another piece has since grown over or against leads nowhere.
-                if !solid(ctx.terrain(), &walkable, site) || !inner.contains(beyond) || !solid(ctx.terrain(), &walkable, beyond) {
+                if !solid(ctx.terrain(), &walkable, site) || !ground.holds(beyond) || !solid(ctx.terrain(), &walkable, beyond) {
                     grown.frontier.swap_remove(i);
                     continue;
                 }
@@ -556,7 +680,7 @@ impl<C: BuildContext> Pass<C> for Accrete {
                 let piece = self.shapes[shape].draw(ctx.rng());
                 let mut meets: Vec<Point> = piece.sites.iter().filter(|(_, d)| *d == facing.opposite()).map(|(q, _)| *q).collect();
                 meets.shuffle(ctx.rng());
-                let Some(by) = meets.iter().map(|q| site - *q).find(|by| fits(ctx.terrain(), &walkable, inner, &piece.cells, *by)) else {
+                let Some(by) = meets.iter().map(|q| site - *q).find(|by| fits(ctx.terrain(), &walkable, &ground, &piece.cells, *by)) else {
                     spent += 1;
                     continue;
                 };
@@ -621,6 +745,9 @@ impl<C: BuildContext> Pass<C> for Accrete {
         }
         for (opening, _) in grown.openings {
             ctx.emit(opening);
+        }
+        for barrier in laid {
+            ctx.emit(barrier);
         }
         Ok(())
     }
@@ -724,7 +851,7 @@ pub(crate) mod tests {
         ];
         let districts: Vec<District> = all.into_iter().take(districts).collect();
         let mix = (0..districts.len()).map(|i| (i, 1)).collect();
-        Accrete { floor: rig.floor, door: rig.door, shapes, districts, mix, districts_per_10k: 7, open_pct: 38, patience: 300 }
+        Accrete { floor: rig.floor, door: rig.door, shapes, districts, mix, districts_per_10k: 7, open_pct: 38, patience: 300, barriers: Vec::new() }
     }
 
     pub(crate) fn build(pass: Accrete, rig: &Rig, w: i32, h: i32, seed: u64) -> Result<BaseContext, BuildError> {
@@ -946,5 +1073,139 @@ pub(crate) mod tests {
             }
         }
         assert!(wide > 0, "some mouth was three wide");
+    }
+
+    fn barrier(from: (u32, u32), to: (u32, u32), chance_pct: u32, jitter_pct: u32) -> Barrier {
+        Barrier { from, to, chance_pct, jitter_pct }
+    }
+
+    /// A wall down from the top edge two thirds of the way, always there
+    /// and shifted a little, and a slanting one up from the bottom that is
+    /// there half the time.
+    fn barred(rig: &Rig) -> Accrete {
+        let mut pass = accrete(rig, 3);
+        pass.barriers = vec![barrier((50, 0), (50, 65), 100, 6), barrier((15, 100), (35, 50), 50, 10)];
+        pass
+    }
+
+    #[test]
+    fn no_piece_s_body_or_ring_takes_a_cell_of_a_barrier_that_was_laid() {
+        let rig = rig();
+        let mut checked = 0;
+        for (w, h, seeds) in sizes() {
+            for s in seeds {
+                let ctx = build(barred(&rig), &rig, w, h, s).unwrap_or_else(|e| panic!("{w}x{h} seed {s}: {e}"));
+                let mut rock = BitGrid::new(w, h);
+                for b in ctx.outputs().iter::<LaidBarrier>() {
+                    assert!(!b.cells.is_empty(), "{w}x{h} seed {s}: barrier {} was laid on the map", b.index);
+                    for c in &b.cells {
+                        rock.insert(*c);
+                        assert!(!walkable(&ctx, *c), "{w}x{h} seed {s}: barrier cell {c:?} was opened");
+                    }
+                }
+                for a in ctx.outputs().iter::<Area>() {
+                    for c in &a.cells {
+                        for (dx, dy) in (-1..=1).flat_map(|dy| (-1..=1).map(move |dx| (dx, dy))) {
+                            assert!(!rock.contains(c.offset(dx, dy)), "{w}x{h} seed {s}: area {} at {c:?} touches a barrier", a.index);
+                        }
+                    }
+                }
+                checked += ctx.outputs().iter::<LaidBarrier>().count();
+            }
+        }
+        assert!(checked > 72, "every build laid the first barrier and some the second: {checked}");
+    }
+
+    #[test]
+    fn a_barrier_at_chance_nought_is_never_laid_at_a_hundred_always_and_at_fifty_sometimes() {
+        let rig = rig();
+        let mut laid = [0; 3];
+        for s in 0..40 {
+            let mut pass = accrete(&rig, 3);
+            pass.barriers = vec![barrier((30, 0), (30, 50), 0, 5), barrier((60, 100), (60, 50), 100, 5), barrier((10, 50), (40, 50), 50, 5)];
+            let ctx = build(pass, &rig, 84, 48, s).unwrap_or_else(|e| panic!("seed {s}: {e}"));
+            for b in ctx.outputs().iter::<LaidBarrier>() {
+                laid[b.index] += 1;
+            }
+        }
+        assert_eq!(laid[0], 0, "chance nought");
+        assert_eq!(laid[1], 40, "chance a hundred");
+        assert!((5..=35).contains(&laid[2]), "chance fifty was laid on {} of 40", laid[2]);
+    }
+
+    #[test]
+    fn every_open_cell_of_a_place_with_barriers_can_be_walked_to_from_every_other() {
+        let rig = rig();
+        for (w, h, seeds) in sizes() {
+            for s in seeds {
+                let ctx = build(barred(&rig), &rig, w, h, s).unwrap_or_else(|e| panic!("{w}x{h} seed {s}: {e}"));
+                let tables = ctx.tiles().tables();
+                let open = |i: usize| tables.walkable[ctx.terrain().get_idx(i).index()];
+                let start = ctx.outputs().first::<Area>().unwrap().cells[0];
+                let mut seen = BitGrid::new(w, h);
+                let reached = flood(ctx.terrain().grid(), start, open, Steps::Four, &mut seen);
+                let total = (0..(w * h) as usize).filter(|i| open(*i)).count();
+                assert_eq!(reached, total, "{w}x{h} seed {s}");
+            }
+        }
+    }
+
+    /// The point of a barrier: what lies just across it is reached only
+    /// round its end.
+    #[test]
+    fn the_walk_to_the_far_side_of_a_barrier_is_on_average_longer_than_without_it() {
+        let rig = rig();
+        let (w, h) = (84, 48);
+        // The open cell nearest a share of the map.
+        let nearest = |ctx: &BaseContext, (x, y): (u32, u32)| {
+            let at = Point::new(cell_at_share(x, w), cell_at_share(y, h));
+            ctx.terrain().bounds().cells().filter(|p| walkable(ctx, *p)).min_by_key(|p| euclidean_sq(*p, at)).expect("a place has open cells")
+        };
+        let walk = |barriers: Vec<Barrier>, s: u64| {
+            let mut pass = accrete(&rig, 3);
+            pass.barriers = barriers;
+            let ctx = build(pass, &rig, w, h, s).unwrap_or_else(|e| panic!("seed {s}: {e}"));
+            let steps = crate::walk::steps_between(w, h, |p| walkable(&ctx, p), nearest(&ctx, (30, 15)), nearest(&ctx, (70, 15)));
+            assert_ne!(steps, crate::walk::UNREACHED, "seed {s}");
+            u64::from(steps)
+        };
+        let (mut with, mut without) = (0, 0);
+        for s in 0..40 {
+            with += walk(vec![barrier((50, 0), (50, 75), 100, 0)], s);
+            without += walk(Vec::new(), s);
+        }
+        assert!(with > without, "with the barrier the walks came to {with} steps, without it {without}");
+    }
+
+    #[test]
+    fn a_barrier_that_may_reach_edge_to_edge_or_names_a_share_past_a_hundred_is_an_error_by_name() {
+        let rig = rig();
+        for b in [
+            barrier((50, 0), (50, 100), 100, 0),
+            barrier((0, 40), (100, 60), 100, 0),
+            // Two cells short of each edge, which leaves no way round.
+            barrier((3, 50), (97, 50), 100, 0),
+            // Stopping short of the bottom where it is drawn, but a shift may carry it there.
+            barrier((50, 0), (50, 92), 100, 10),
+            barrier((50, 0), (50, 50), 101, 0),
+            barrier((50, 0), (50, 150), 100, 0),
+        ] {
+            let mut pass = accrete(&rig, 3);
+            pass.barriers = vec![b];
+            assert_eq!(build(pass, &rig, 84, 48, 1).expect_err("refused").pass, "accrete", "{b:?}");
+        }
+        // The same short of the bottom with no shift, or only cutting off a corner: allowed.
+        for b in [barrier((50, 0), (50, 92), 100, 0), barrier((0, 30), (30, 0), 100, 0)] {
+            assert!(!b.may_cut(84, 48), "{b:?}");
+        }
+    }
+
+    #[test]
+    fn a_share_falls_on_the_first_cell_at_nought_and_the_last_at_a_hundred() {
+        for side in [3, 48, 84, 4096] {
+            assert_eq!(cell_at_share(0, side), 0);
+            assert_eq!(cell_at_share(100, side), side - 1);
+            assert_eq!(cell_at_share(50, side), (side - 1 + 1) / 2);
+        }
     }
 }

@@ -13,7 +13,8 @@
 //!
 //! A place can also be grown: [`Accrete`] attaches each [`Shape`]'s
 //! [`Piece`] to a wall of what already stands, biased by [`District`]s,
-//! and publishes an [`Area`] per piece and an [`Opening`] per [`Join`];
+//! round any [`Barrier`] present, and publishes an [`Area`] per piece and
+//! an [`Opening`] per [`Join`];
 //! [`OpenLoops`] then cuts the longest detours through, so there is more
 //! than one way round. A [`Cave`] is a shape not built of rectangles,
 //! drawn by the cellular automaton, grown and joined like any other.
@@ -38,7 +39,7 @@ pub mod prefab;
 pub mod survey;
 mod walk;
 
-pub use accrete::{Accrete, Area, District, Join, Opening, Piece, Shape};
+pub use accrete::{Accrete, Area, Barrier, District, Join, LaidBarrier, Opening, Piece, Shape};
 pub use cave::Cave;
 pub use chain::{BuildError, Chain, Pass, Phase};
 pub use context::{BaseContext, BuildContext, Outputs};

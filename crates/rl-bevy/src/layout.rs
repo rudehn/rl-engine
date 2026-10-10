@@ -7,7 +7,7 @@
 //! where it builds a place.
 
 use rl_grid::TileId;
-use rl_mapgen::accrete::{Accrete, Cross, District, Join, Passage, Rectangle, Shape};
+use rl_mapgen::accrete::{Accrete, Barrier, Cross, District, Join, Passage, Rectangle, Shape};
 use rl_mapgen::{BuildError, Cave, OpenLoops, Require};
 use rl_rules::layout::{JoinDef, LayoutDef, ShapeKind};
 
@@ -61,6 +61,7 @@ pub fn passes(def: &LayoutDef, recipe: &str, floor: TileId, door: TileId) -> Res
             districts_per_10k: r.districts_per_10k,
             open_pct: r.open_pct,
             patience: r.patience,
+            barriers: r.barriers.iter().map(|b| Barrier { from: b.from, to: b.to, chance_pct: b.chance_pct, jitter_pct: b.jitter_pct }).collect(),
         },
         loops: OpenLoops { door, min_detour: r.loops.min_detour, max: r.loops.max },
         require: Require {
@@ -79,7 +80,8 @@ mod tests {
     use rl_core::RunSeed;
     use rl_grid::{TileProps, TileRegistry};
     use rl_mapgen::dungeon::{FarthestExit, RandomStart};
-    use rl_mapgen::{BaseContext, BuildContext, Chain, Survey, Surveyed};
+    use rl_mapgen::{BaseContext, BuildContext, Chain, LaidBarrier, Survey, Surveyed};
+    use rl_rules::layout::BarrierDef;
 
     const FILE: &str = r#"(
         shapes: [
@@ -148,6 +150,54 @@ mod tests {
         }
         // A small cave can come out square, so the shape shows in the many.
         assert!(shaped * 10 > caves * 9, "{shaped} of {caves} caves are more than a rectangle");
+    }
+
+    #[test]
+    fn a_barrier_named_in_a_file_is_laid_at_its_chance_and_growth_goes_round_it() {
+        let file = FILE.replacen(
+            "loops: (min_detour",
+            "barriers: [(from: (50, 0), to: (50, 65), chance_pct: 100, jitter_pct: 5), (from: (20, 100), to: (20, 55), chance_pct: 0, jitter_pct: 0)],
+                loops: (min_detour",
+            1,
+        );
+        let def = rl_rules::layout::load(&file).unwrap();
+        let mut tiles = TileRegistry::standard();
+        let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
+        let door = tiles.register(TileProps::floor("way through")).unwrap();
+        for s in 0..20 {
+            let p = passes(&def, "test", floor, door).unwrap();
+            let (w, h) = p.size;
+            let chain = Chain::new().then(p.accrete).then(p.loops).then(RandomStart).then(FarthestExit).then(Survey).then(p.require);
+            let ctx = chain.run_retrying(|| BaseContext::blank(w, h, tiles.clone(), wall), RunSeed(s), 40).unwrap_or_else(|e| panic!("seed {s}: {e}"));
+            let laid: Vec<&LaidBarrier> = ctx.outputs().iter::<LaidBarrier>().collect();
+            assert_eq!(laid.iter().map(|b| b.index).collect::<Vec<_>>(), vec![0], "seed {s}: the sure one and not the other");
+            let walkable = ctx.tiles().tables().walkable;
+            assert!(laid[0].cells.iter().all(|c| !walkable[ctx.terrain().get(*c).unwrap().index()]), "seed {s}: no loop or door opens a barrier");
+        }
+    }
+
+    /// `rl-rules` refuses a barrier at load and `rl-mapgen` again at
+    /// growth, each by its own copy of the arithmetic, since neither crate
+    /// names the other; this is where the two are held to one answer.
+    #[test]
+    fn the_file_and_the_pass_agree_on_which_barriers_may_reach_edge_to_edge() {
+        let shares = [0, 2, 5, 8, 50, 92, 95, 98, 100];
+        let mut refused = 0;
+        for (w, h) in [(84, 48), (30, 60), (12, 9)] {
+            for &(a, b) in &[(0, 100), (2, 98), (5, 95), (8, 92), (0, 50), (50, 100), (3, 97)] {
+                for &across in &shares {
+                    for jitter in [0, 3, 10, 40] {
+                        let file = BarrierDef { from: (a, across), to: (b, across), chance_pct: 100, jitter_pct: jitter };
+                        let pass = Barrier { from: file.from, to: file.to, chance_pct: 100, jitter_pct: jitter };
+                        assert_eq!(file.may_cut(w, h), pass.may_cut(w, h), "{w}x{h} {file:?}");
+                        let (file, pass) = (BarrierDef { from: (across, a), to: (across, b), ..file }, Barrier { from: (across, a), to: (across, b), ..pass });
+                        assert_eq!(file.may_cut(w, h), pass.may_cut(w, h), "{w}x{h} {file:?}");
+                        refused += usize::from(pass.may_cut(w, h));
+                    }
+                }
+            }
+        }
+        assert!(refused > 0 && refused < 3 * 7 * 9 * 4, "some cut and some do not: {refused}");
     }
 
     #[test]
