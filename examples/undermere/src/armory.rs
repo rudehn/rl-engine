@@ -301,6 +301,11 @@ pub struct Armory {
     lent: Vec<Folded>,
     /// Whether each definition takes levels, read once off its tags.
     levelled: Vec<bool>,
+    /// Each definition's plain level, read once off its tags and its
+    /// `found_at`: `None` for one that takes no levels.
+    plain: Vec<Option<i32>>,
+    /// Whether each definition is an artifact, read once off its tags.
+    artifacts: Vec<bool>,
     /// Whether each definition's use, aimed at somewhere, shows what it is
     /// with nobody under it, read once off its use trigger.
     shows_unstruck: Vec<bool>,
@@ -346,6 +351,8 @@ impl Armory {
         let names = registries.names();
         let (mut triggers, mut lent, mut errors) = (Vec::new(), Vec::new(), Vec::new());
         let levelled = defs.iter().map(|(_, d)| takes_levels(d, registries)).collect();
+        let plain = defs.iter().map(|(_, d)| plain_level(d, registries)).collect();
+        let artifacts = defs.iter().map(|(_, d)| d.tags.iter().any(|t| registries.tags.name(t.id()) == "artifact")).collect();
         let shows_unstruck = defs.iter().map(|(_, d)| shows_unstruck(d)).collect();
         let lands_seen = defs.iter().map(|(_, d)| lands_seen(d)).collect();
         for (_, d) in defs.iter() {
@@ -365,7 +372,7 @@ impl Armory {
         if !errors.is_empty() {
             return Err(ContentError::Invalid(errors));
         }
-        Ok(Self { defs, table, triggers, lent, levelled, shows_unstruck, lands_seen })
+        Ok(Self { defs, table, triggers, lent, levelled, plain, artifacts, shows_unstruck, lands_seen })
     }
 
     /// Whether a thing of `def`, thrown, shows what it is where it lands
@@ -406,6 +413,25 @@ impl Armory {
     /// wand, and nothing that stacks.
     pub fn takes_levels(&self, def: Id<ItemDef>) -> bool {
         self.levelled.get(def.index()).copied().unwrap_or(false)
+    }
+
+    /// The level a thing of `def` is at plain, or `None` for a thing that
+    /// takes no levels: the least a found one of its kind is at uncursed,
+    /// so a ring sold does something and a staff sold has charges. Never
+    /// below nought.
+    ///
+    /// The one definition both a shelf's stocking and a thing's worth read:
+    /// a ware is stocked at it and better, and a level is worth something
+    /// only above it, so a plain staff costs its `items.ron` price as a
+    /// plain sword does.
+    pub fn plain_level(&self, def: Id<ItemDef>) -> Option<i32> {
+        self.plain.get(def.index()).copied().flatten()
+    }
+
+    /// Whether `def` is an artifact, a mini-boss's own: bought by the curio
+    /// and never sold.
+    pub fn is_artifact(&self, def: Id<ItemDef>) -> bool {
+        self.artifacts.get(def.index()).copied().unwrap_or(false)
     }
 
     /// Whether `def`'s level is learned by wearing it, as well as by being
@@ -514,7 +540,7 @@ pub const ACCURACY_PER_LEVEL: i32 = 5;
 pub const ARMOR_PER_LEVEL: i32 = 1;
 
 /// What one level the adventurer knows adds to a thing's `Worth`, above
-/// its def's own price at level nought.
+/// its def's own price at its plain level.
 pub const WORTH_PER_LEVEL: u32 = 100;
 
 /// The level a staff is found at on the first floors, its power and its
@@ -553,6 +579,24 @@ fn lands_seen(d: &ItemDef) -> bool {
 /// a level is one thing's own.
 fn takes_levels(d: &ItemDef, registries: &Registries) -> bool {
     !d.stack && d.tags.iter().any(|t| LEVELLED_TAGS.contains(&registries.tags.name(t.id())))
+}
+
+/// `d`'s plain level, for [`Armory::plain_level`]: its lowest `found_at`
+/// for a wand, [`STAFF_LEVEL`] for a staff, the least of [`RING_LEVELS`]
+/// for a ring and nought for the rest, or `None` for a thing that takes
+/// no levels.
+fn plain_level(d: &ItemDef, registries: &Registries) -> Option<i32> {
+    if !takes_levels(d, registries) {
+        return None;
+    }
+    let tagged = |name: &str| d.tags.iter().any(|t| registries.tags.name(t.id()) == name);
+    let plain = match d.found_at {
+        Some((lowest, _)) => lowest,
+        None if tagged("staff") => STAFF_LEVEL,
+        None if tagged("ring") => *RING_LEVELS.start(),
+        None => 0,
+    };
+    Some(plain.max(0))
 }
 
 /// Reads an items file against `registries` and the `traits` an item
@@ -992,9 +1036,11 @@ pub fn spawn_items(commands: &mut Commands, armory: &Armory, def: Id<ItemDef>, c
 /// the engine's `Worth`: `None` for a def with no price at all, gold; for
 /// a kind not known; for a curse's sign shown; or for a level known to be
 /// below nought. Else the def's price, with [`WORTH_PER_LEVEL`] a level
-/// above nought once the level is known, an `unfamiliar` one counted as
-/// nought, as a shop that tells nothing of a level the adventurer cannot
-/// read either.
+/// above its kind's [plain level](Armory::plain_level) once the level is
+/// known, an `unfamiliar` one counted as plain, as a shop that tells
+/// nothing of a level the adventurer cannot read either. Above plain
+/// rather than above nought, since a staff is never at nought: its price
+/// is what a plain one costs, as a sword's is.
 ///
 /// A thing a keeper carries is `shelved`, and its kind is named whether
 /// the adventurer knows it or not, since keepers name what they sell: so
@@ -1006,11 +1052,12 @@ fn worth_of(armory: &Armory, lore: &Lore, def: Id<ItemDef>, level: i32, unfamili
     if cursed || !(shelved || lore.knows(&d.name)) {
         return None;
     }
-    let level = if unfamiliar { 0 } else { level };
+    let plain = armory.plain_level(def).unwrap_or(0);
+    let level = if unfamiliar { plain } else { level };
     if level < 0 {
         return None;
     }
-    Some(price + WORTH_PER_LEVEL * level as u32)
+    Some(price + WORTH_PER_LEVEL * (level - plain).max(0) as u32)
 }
 
 /// A thing whose worth may have changed: one just made, one whose level
@@ -1029,6 +1076,10 @@ type Priced<'a> = (Entity, &'a ItemKind, Option<&'a Enchant>, Has<Unfamiliar>, H
 /// whenever `lore` has changed and not only for what else moved, and so
 /// does a keeper's bag changing, since what a keeper carries is priced by
 /// its kind's name and what changed hands is priced again on its new side.
+///
+/// An artifact a keeper carries has no `Worth`: the curio pays a quarter
+/// of its price for one, the 400 the price list says, and never sells it
+/// back, since an artifact is never sold.
 pub fn keep_worth(
     mut commands: Commands,
     lore: Res<Lore>,
@@ -1046,7 +1097,8 @@ pub fn keep_worth(
     let shelved: Vec<Entity> = shelves.iter().flat_map(|bag| bag.items.clone()).collect();
     for (thing, kind, enchant, unfamiliar, cursed, had) in &things {
         let level = enchant.map_or(0, |e| e.level);
-        let worth = worth_of(&armory, &lore, kind.0, level, unfamiliar, cursed, shelved.contains(&thing));
+        let on_shelf = shelved.contains(&thing);
+        let worth = if on_shelf && armory.is_artifact(kind.0) { None } else { worth_of(&armory, &lore, kind.0, level, unfamiliar, cursed, on_shelf) };
         if worth == had.map(|w| w.0) {
             continue;
         }

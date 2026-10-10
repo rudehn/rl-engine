@@ -51,7 +51,7 @@ use ron::options::Options;
 use ron::value::RawValue;
 use serde::{Deserialize, Serialize};
 
-use crate::armory::{Armory, ItemDef, ItemKind, RING_LEVELS, STAFF_LEVEL, spawn_found, spawn_items};
+use crate::armory::{Armory, ItemDef, ItemKind, spawn_found, spawn_items};
 use crate::dungeon::TOWN;
 use crate::lore::Lore;
 use crate::run::Adventurer;
@@ -70,22 +70,22 @@ pub const TIERS: RangeInclusive<u32> = 1..=5;
 /// The gold a keeper holds for every tier its stocking was drawn for: what
 /// it can pay out for what the adventurer brings up, set afresh with each
 /// stocking rather than added to, so selling everything to one keeper at
-/// the first tier empties it.
+/// the first tier empties it, and what the adventurer paid a keeper is
+/// gone at the next restock. A deal conserves coins; a restock does not,
+/// on purpose, so no purse grows past what its tier allows.
 pub const PURSE_PER_TIER: u32 = 200;
 
-/// What no keeper ever stocks, by name: the five artifacts, which are each
-/// a mini-boss's alone, and the two scrolls that only ever harm their
-/// reader, which keepers buy cheap and never sell. Gold is refused by
-/// having no price.
-pub const NEVER_STOCKED: [&str; 7] = [
-    "the Crown of Grubnak",
-    "the Widow's Fang",
-    "the Choirmaster's Staff",
-    "the Abbess's Chalice",
-    "the Forgemaster's Hammer",
-    "scroll of aggravate monsters",
-    "scroll of summon monsters",
-];
+/// What no keeper ever stocks by name: the two scrolls that only ever
+/// harm their reader, which keepers buy cheap and never sell. An artifact
+/// is never stocked either, by its `artifact` tag, since each is a
+/// mini-boss's alone; gold is refused by having no price.
+pub const NEVER_STOCKED: [&str; 2] = ["scroll of aggravate monsters", "scroll of summon monsters"];
+
+/// Whether `def` is never on a shelf: an artifact, or one of
+/// [`NEVER_STOCKED`].
+fn never_stocked(def: Id<ItemDef>, armory: &Armory) -> bool {
+    NEVER_STOCKED.contains(&armory.defs.get(def).name.as_str()) || armory.is_artifact(def)
+}
 
 /// The tier a stocking drawn after reaching floor `floor` is for: one for
 /// floors one and two and before any floor, then one more for every two
@@ -201,7 +201,7 @@ impl Wares {
             if keepers.iter().any(|k| k.name == a.name) {
                 errors.push(format!("{}: a second keeper of the name", a.name));
             }
-            keepers.push(a.build(registries, armory, &mut errors));
+            keepers.push(a.build(armory, &mut errors));
         }
         if !errors.is_empty() {
             return Err(ContentError::Invalid(errors));
@@ -269,25 +269,6 @@ impl Wares {
         let mut rng: StdRng = seed.stream(WARES_STREAM, number);
         self.keepers.iter().map(|k| self.stock(&k.name, tier, &mut rng)).collect()
     }
-}
-
-/// The level a thing of `def` is at plain, or `None` for a thing that
-/// takes no levels: the least a found one of its kind is at uncursed, so a
-/// ring sold does something and a staff sold has charges. Never below
-/// nought.
-fn plain_level(def: Id<ItemDef>, registries: &Registries, armory: &Armory) -> Option<i32> {
-    if !armory.takes_levels(def) {
-        return None;
-    }
-    let d = armory.defs.get(def);
-    let tagged = |name: &str| d.tags.iter().any(|t| registries.tags.name(t.id()) == name);
-    let plain = match d.found_at {
-        Some((lowest, _)) => lowest,
-        None if tagged("staff") => STAFF_LEVEL,
-        None if tagged("ring") => *RING_LEVELS.start(),
-        None => 0,
-    };
-    Some(plain.max(0))
 }
 
 /// What taking up a keeper's `trade` offer costs, in hundredths of a step:
@@ -582,7 +563,7 @@ struct AuthoredPart {
 
 impl AuthoredKeeper {
     /// The keeper, every problem with it pushed onto `errors`.
-    fn build(self, registries: &Registries, armory: &Armory, errors: &mut Vec<String>) -> Keeper {
+    fn build(self, armory: &Armory, errors: &mut Vec<String>) -> Keeper {
         let buys = match self.buys {
             AuthoredBuys::Anything => Buys::Anything,
             AuthoredBuys::Tags(tags) => Buys::Tags(tags.into_iter().map(NameRef::id).collect()),
@@ -596,7 +577,7 @@ impl AuthoredKeeper {
             } else if !keeper.buys(d) {
                 errors.push(format!("{at} is nothing the keeper buys"));
             }
-            if NEVER_STOCKED.contains(&d.name.as_str()) {
+            if never_stocked(def, armory) {
                 errors.push(format!("{at} is never stocked"));
             }
             at
@@ -607,7 +588,7 @@ impl AuthoredKeeper {
             if a.count == 0 {
                 errors.push(format!("{at}: a count of nothing is never on the shelf"));
             }
-            keeper.always.push((def, a.count, plain_level(def, registries, armory)));
+            keeper.always.push((def, a.count, armory.plain_level(def)));
         }
         for a in self.parts {
             let def = a.item.id();
@@ -634,7 +615,7 @@ impl AuthoredKeeper {
                 errors.push(format!("{at}: a group of {} to {} is no group at all", group.0, group.1));
             }
             let row = LootRow::new(def).bands(first, last).weight(a.weight.unwrap_or(0)).group(group.0, group.1);
-            keeper.parts.push(Part { name: armory.defs.get(def).name.clone(), row, chance: a.chance, plain: plain_level(def, registries, armory) });
+            keeper.parts.push(Part { name: armory.defs.get(def).name.clone(), row, chance: a.chance, plain: armory.plain_level(def) });
         }
         keeper
     }
@@ -646,6 +627,7 @@ mod tests {
     use rl_engine::rl_core::RunSeed;
 
     use super::*;
+    use crate::armory::{RING_LEVELS, STAFF_LEVEL, WORTH_PER_LEVEL};
     use crate::content::Library;
     use crate::testing::{adventurer, at, give, headless, lay, make, name_of, pack, settle, stand_on, take_up};
     use rl_engine::rl_ui::{OffersViewPlugin, TradeViewPlugin};
@@ -705,7 +687,7 @@ mod tests {
                     let def = library.armory.defs.get(ware.def);
                     assert!(ware.level >= 0, "{} at {} in tier {tier}", def.name, ware.level);
                     assert!(def.price.is_some(), "{} has no price", def.name);
-                    assert!(!NEVER_STOCKED.contains(&def.name.as_str()), "{} on {}'s shelf", def.name, stocking.keeper);
+                    assert!(!never_stocked(ware.def, &library.armory), "{} on {}'s shelf", def.name, stocking.keeper);
                 }
             }
         }
@@ -860,6 +842,40 @@ mod tests {
         app.add_plugins(TradeViewPlugin).add_systems(Update, shelf_names.in_set(ViewSet::Annotate));
         let me = adventurer(&mut app);
         (app, me)
+    }
+
+    /// Every ware on Mereholt's first shelves is at its kind's plain level,
+    /// and worth just its `items.ron` price: a staff at two charges costs
+    /// what the price list says, as a plain sword does, and a level is
+    /// worth something only above plain, so a staff one better is worth
+    /// a level more. Over a span of seeds.
+    #[test]
+    fn every_plain_ware_a_keeper_stocks_is_worth_its_price_over_a_span_of_seeds() {
+        for s in 0..4 {
+            let (mut app, _) = in_mereholt(s);
+            let mut staffs = Vec::new();
+            for post in POSTS {
+                let k = keeper(&mut app, post.role);
+                let world = app.world();
+                let armory = world.resource::<Armory>();
+                for (thing, def) in shelf(&app, k) {
+                    let d = armory.defs.get(def);
+                    let level = world.get::<Enchant>(thing).map(|e| e.level);
+                    assert_eq!(level, armory.plain_level(def), "seed {s}: {} on the {}'s first shelf is plain", d.name, post.role);
+                    assert_eq!(world.get::<Worth>(thing).map(|w| w.0), d.price, "seed {s}: {} on the {}'s shelf at its price", d.name, post.role);
+                    if armory.plain_level(def).is_some_and(|plain| plain > 0)
+                        && d.tags.iter().any(|t| world.resource::<Registries>().tags.name(t.id()) == "staff")
+                    {
+                        staffs.push((thing, d.price.expect("a staff has a price")));
+                    }
+                }
+            }
+            for (staff, price) in staffs {
+                app.world_mut().get_mut::<Enchant>(staff).expect("a staff takes levels").level += 1;
+                app.update();
+                assert_eq!(app.world().get::<Worth>(staff).map(|w| w.0), Some(price + WORTH_PER_LEVEL), "seed {s}: a level above plain is worth one more");
+            }
+        }
     }
 
     /// Standing beside each of Mereholt's keepers, the offers screen lists
@@ -1283,6 +1299,43 @@ mod tests {
         app.world_mut().write_message(Sell { customer: me, trader: smith, item: healing, count: 1 });
         app.update();
         assert!(app.world().get::<Inventory>(me).expect("a pack").contains(healing), "and the potion stays in the pack");
+    }
+
+    /// An artifact sold to the curio fetches a quarter of its 1600, the
+    /// price list's 400, and is never for sale after: on the curio's side
+    /// it has no worth, so the shelf does not offer it and a buy of it is
+    /// refused.
+    #[test]
+    fn an_artifact_sold_to_the_curio_fetches_four_hundred_and_is_never_offered_back() {
+        let (mut app, me) = in_mereholt(0);
+        let crown = make(&mut app, "the Crown of Grubnak");
+        give(&mut app, me, crown);
+        let curio = keeper(&mut app, "curio");
+        // A first shelf's purse is 200, short of an artifact's 400: a
+        // mini-boss's floor is past the first tier, where the purse is not.
+        let till = make(&mut app, "gold coin");
+        app.world_mut().get_mut::<Stack>(till).expect("gold stacks").count = 400;
+        give(&mut app, curio, till);
+        open_trade(&mut app, me, curio);
+        let gold = |app: &App| -> u32 {
+            let world = app.world();
+            let coin = world.resource::<Armory>().defs.expect("gold coin");
+            let bag = &world.get::<Inventory>(me).expect("a pack").items;
+            bag.iter().filter(|i| world.get::<ItemKind>(**i).is_some_and(|k| k.0 == coin)).map(|i| world.get::<Stack>(*i).map_or(1, |s| s.count)).sum()
+        };
+        let before = gold(&app);
+        app.world_mut().write_message(Sell { customer: me, trader: curio, item: crown, count: 1 });
+        app.update();
+        assert_eq!(gold(&app), before + 400, "a quarter of 1600");
+        assert!(app.world().get::<Inventory>(curio).expect("a shelf").contains(crown), "the curio has it");
+        app.update();
+        assert_eq!(app.world().get::<Worth>(crown), None, "on the curio's side it has no worth");
+        let view = app.world().resource::<TradeView>();
+        assert!(!view.wares.iter().any(|r| r.row.entity == crown), "and is not on the counter: {:?}", view.wares);
+        app.world_mut().write_message(Buy { customer: me, trader: curio, item: crown, count: 1 });
+        app.update();
+        assert!(app.world().get::<Inventory>(curio).expect("a shelf").contains(crown), "nor can it be bought back");
+        assert_eq!(gold(&app), before + 400, "and nothing was paid");
     }
 
     /// What the vitals say of the gold carried, and the tone it is said in.
