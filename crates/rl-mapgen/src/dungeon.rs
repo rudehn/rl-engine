@@ -8,7 +8,7 @@
 
 use rand::Rng;
 use rl_core::{Direction, Grid2D, Point, Rect};
-use rl_grid::{CostSource, DijkstraMap, PathRules, Terrain, TileId, TileTables};
+use rl_grid::{BitGrid, CostSource, DijkstraMap, PathRules, Terrain, TileId, TileTables};
 
 use crate::chain::{BuildError, Pass, Phase};
 use crate::context::BuildContext;
@@ -336,6 +336,9 @@ impl<C: BuildContext> Pass<C> for ClearStart {
 struct ThroughDoors<'a> {
     terrain: &'a Terrain,
     tables: &'a TileTables,
+    /// Every cell of an opening joined locked or sealed, which no walker
+    /// gets through, whatever tile it was laid as.
+    shut: BitGrid,
 }
 
 impl Grid2D for ThroughDoors<'_> {
@@ -350,7 +353,7 @@ impl Grid2D for ThroughDoors<'_> {
 impl CostSource for ThroughDoors<'_> {
     fn cost_idx(&self, idx: usize) -> Option<u32> {
         let id = self.terrain.get_idx(idx).index();
-        self.tables.passable[id].then(|| self.tables.move_cost[id])
+        (self.tables.passable[id] && !self.shut.contains(self.idx_point(idx))).then(|| self.tables.move_cost[id])
     }
 }
 
@@ -359,7 +362,9 @@ impl CostSource for ThroughDoors<'_> {
 /// where it is not walkable, and a map of rooms joined only through doors
 /// otherwise measures no farther than the doors round the room the start
 /// stands in. Never a door itself, since the exit is somewhere to stand
-/// and not a cell nothing has opened yet. Ties break toward the cell first
+/// and not a cell nothing has opened yet, and never past an
+/// [`Opening`](crate::accrete::Opening) joined locked or sealed, which no
+/// walker gets through however its tile is drawn. Ties break toward the cell first
 /// in row order, the lower point by [`Point`]'s own ordering, so a seed
 /// always picks the same one. Fails without a start or with nowhere to
 /// stand that is farther than it.
@@ -449,7 +454,13 @@ impl<C: BuildContext> Pass<C> for FarExit {
         }
         let start = ctx.outputs().first::<StartPoint>().ok_or_else(|| err("no start point emitted before it".into()))?.0;
         let tables = ctx.tiles().tables();
-        let through_doors = ThroughDoors { terrain: ctx.terrain(), tables: &tables };
+        let mut shut = BitGrid::new(ctx.terrain().width(), ctx.terrain().height());
+        for o in ctx.outputs().iter::<crate::accrete::Opening>().filter(|o| matches!(o.join, crate::accrete::Join::Locked(_) | crate::accrete::Join::Sealed)) {
+            for c in &o.cells {
+                shut.insert(*c);
+            }
+        }
+        let through_doors = ThroughDoors { terrain: ctx.terrain(), tables: &tables, shut };
         let mut map = DijkstraMap::covering(&through_doors);
         map.build(&through_doors, [start], PathRules::default());
         let walkable = |p: Point| ctx.terrain().get(p).is_some_and(|t| tables.walkable[t.index()]);
@@ -707,7 +718,7 @@ mod tests {
         Chain::new().then(Rooms { floor, ..Default::default() }).then(Doors { door }).then(RandomStart).run(&mut c, RunSeed(4)).unwrap();
         let start = c.outputs().first::<StartPoint>().unwrap().0;
         let tables = c.tiles().tables();
-        let through = ThroughDoors { terrain: c.terrain(), tables: &tables };
+        let through = ThroughDoors { terrain: c.terrain(), tables: &tables, shut: BitGrid::new(60, 40) };
         let mut walk = DijkstraMap::covering(&through);
         walk.build(&through, [start], PathRules::default());
         let far = walk.iter().filter(|(p, _)| tables.walkable[c.terrain().get(*p).unwrap().index()]).map(|(_, v)| v).max().unwrap();
@@ -736,5 +747,25 @@ mod tests {
             .run(&mut c, RunSeed(1))
             .unwrap_err();
         assert_eq!(e.pass, "farthest_exit");
+    }
+
+    /// A corridor shut half way along by a door of the passable kind: a
+    /// plain door is walked through, one joined locked or sealed is not,
+    /// so the way down stands short of it.
+    #[test]
+    fn the_farthest_exit_never_crosses_an_opening_joined_locked_or_sealed() {
+        for (join, exit) in [(crate::Join::Door, Point::new(28, 2)), (crate::Join::Locked(5), Point::new(19, 2)), (crate::Join::Sealed, Point::new(19, 2))] {
+            let tiles = TileRegistry::standard();
+            let (wall, floor, door) = (tiles.expect("wall"), tiles.expect("floor"), tiles.expect("door_closed"));
+            let mut c = BaseContext::blank(30, 5, tiles, wall);
+            for x in 1..29 {
+                c.terrain_mut().set(Point::new(x, 2), floor);
+            }
+            c.terrain_mut().set(Point::new(20, 2), door);
+            c.emit(crate::accrete::Opening { cells: vec![Point::new(20, 2)], facing: Direction::East, areas: (0, 1), join });
+            c.emit(StartPoint(Point::new(1, 2)));
+            Chain::new().then(FarthestExit).run(&mut c, RunSeed(1)).unwrap();
+            assert_eq!(c.outputs().first::<ExitPoint>().unwrap().0, exit, "{join:?}");
+        }
     }
 }

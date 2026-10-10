@@ -752,9 +752,12 @@ pub fn decide_minds(
     snapshot.sort();
 
     // A closed door is a step for a mind that opens doors, since stepping
-    // into one opens it, and a wall for one that does not. Nor is a cell
-    // some contributor marked a hazard anywhere a mind will step.
-    let can_step = |p: Point| (map.is_walkable(p) || (opens_doors && map.opens(p).is_some())) && !occupancy.is_occupied(p) && !thinking.is_hazard(p);
+    // into one opens it, and a wall for one that does not; a locked one is
+    // a wall to every mind, as the opening view has it, so none tries a
+    // lock it would be refused at every turn. Nor is a cell some
+    // contributor marked a hazard anywhere a mind will step.
+    let opens = |p: Point| opens_doors && map.opens(p).is_some() && map.lock(p).is_none();
+    let can_step = |p: Point| (map.is_walkable(p) || opens(p)) && !occupancy.is_occupied(p) && !thinking.is_hazard(p);
     // The predicate the ability resolver uses, so what a tactic thinks a
     // shape will cover is what it does cover.
     let blocks_shot = |p: Point| map.blocks_projectiles(p) || occupancy.is_occupied(p);
@@ -1226,6 +1229,106 @@ mod tests {
         let start = app.world().get::<Position>(player).unwrap().0;
         assert!(geometry::chebyshev(outside, start) > 3, "it waits outside the ring: {outside:?}");
         let _ = monster;
+    }
+
+    /// Every `Open` anyone wrote, by who.
+    #[derive(Resource, Default)]
+    struct Tried(Vec<Entity>);
+
+    fn tried(mut opens: MessageReader<Intent<Open>>, mut seen: ResMut<Tried>) {
+        seen.0.extend(opens.read().map(|i| i.actor));
+    }
+
+    /// The player in a place, behind a ring of wall whose one gate a place
+    /// joined `join`, and a door-working monster outside it hunting.
+    fn behind_a_place_gate(join: rl_mapgen::Join) -> (App, Entity, Entity, Point, rl_grid::TileRegistry) {
+        use rl_mapgen::{BaseContext, BuildContext, Opening};
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, MindsPlugin));
+        app.init_resource::<Tried>().add_systems(PostUpdate, tried);
+        let mut tiles = rl_grid::TileRegistry::standard();
+        tiles.register(rl_grid::TileProps::named("gate").passable(true).opens_to("gate_open")).unwrap();
+        tiles.register(rl_grid::TileProps::floor("gate_open").closes_to("gate")).unwrap();
+        let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
+        let mut ctx = BaseContext::blank(20, 11, tiles.clone(), floor);
+        let start = Point::new(6, 5);
+        let gate = start.offset(3, 0);
+        for p in ctx.terrain().bounds().cells() {
+            let edge = p.x == 0 || p.y == 0 || p.x == 19 || p.y == 10;
+            if edge || (geometry::chebyshev(p, start) == 3 && p != gate) {
+                ctx.terrain_mut().set(p, wall);
+            }
+        }
+        ctx.terrain_mut().set(gate, tiles.expect("gate"));
+        ctx.emit(Opening { cells: vec![gate], facing: Direction::East, areas: (0, 1), join });
+        ctx.emit(rl_mapgen::passes::StartPoint(start));
+        let place = MapId(1);
+        let mut world = WorldMap::new(tiles.tables());
+        world.install_place(place, crate::places::PlaceBuild::from_context(ctx).unwrap());
+        world.switch_to(place);
+        app.insert_resource(world);
+        let sides = crate::testing::two_sides(&mut app);
+        let player = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Player,
+                Blocks,
+                Position(start),
+                OnMap(place),
+                Viewshed::new(8),
+                Health::full(30),
+                Faction(sides.ours),
+                MeleeAttack::new(sides.kind, DiceRoll::flat(1)),
+            ))
+            .id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        let monster = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Blocks,
+                Position(start.offset(8, 0)),
+                OnMap(place),
+                Health::full(20),
+                Faction(sides.theirs),
+                Perception(8),
+                MeleeAttack::new(sides.kind, DiceRoll::flat(3)),
+                Mind(Arc::new(Brain::new().then(MeleeAdjacent).then(Hunt))),
+                Intelligence(Wits::SAPIENT),
+            ))
+            .id();
+        for _ in 0..40 {
+            if app.world().get::<MyTurn>(player).is_some() {
+                app.world_mut().write_message(Intent::new(player, Wait));
+            }
+            app.update();
+        }
+        (app, player, monster, gate, tiles)
+    }
+
+    /// The gate a door-working mind comes through when it is a plain door
+    /// is a wall to it when the place locked it: it never walks up to try,
+    /// so it is never refused there.
+    #[test]
+    fn a_door_working_mind_never_routes_through_a_locked_door() {
+        let (app, player, _, gate, tiles) = behind_a_place_gate(rl_mapgen::Join::Door);
+        assert_eq!(app.world().resource::<WorldMap>().tile(gate), Some(tiles.expect("gate_open")), "unlocked, it opened the gate");
+        assert!(app.world().get::<Health>(player).unwrap().current < 30, "and came through to strike");
+
+        let (mut app, player, monster, gate, tiles) = behind_a_place_gate(rl_mapgen::Join::Locked(5));
+        assert_eq!(app.world().resource::<WorldMap>().tile(gate), Some(tiles.expect("gate")), "locked, the gate held");
+        assert!(!app.world().resource::<Tried>().0.contains(&monster), "and it never tried the lock");
+        let map = app.world().resource::<WorldMap>();
+        let (view, beyond) = (map.opening_view(), map.to_local(gate.offset(1, 0)).unwrap());
+        let mut flood = rl_grid::DijkstraMap::covering(&view);
+        flood.build(&view, [map.to_local(gate.offset(-1, 0)).unwrap()], rl_grid::PathRules::default());
+        assert_eq!(flood.value(beyond), None, "the opening view does not route through the lock");
+        let epoch = map.cost_epoch();
+        app.world_mut().resource_mut::<WorldMap>().unlock(MapId(1), gate);
+        assert!(app.world().resource::<WorldMap>().cost_epoch() > epoch, "taking a lock off moves the cost epoch, so fields are built again");
+        assert_eq!(app.world().get::<Health>(player).unwrap().current, 30, "and nothing reached the player");
     }
 
     #[test]

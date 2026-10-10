@@ -33,9 +33,10 @@ pub struct LayoutTiles {
     pub floor: TileId,
     /// What a door, and a loop cut through, opens as.
     pub door: TileId,
-    /// What a [`Join::Locked`] is laid as: a tile that opens and that no
-    /// mind paths through, since only a carrier of the lock's tag gets it
-    /// open. A game that grows no locked piece may name its door.
+    /// What a [`Join::Locked`] is laid as: a tile that opens into an open
+    /// door. No mind paths through it while its lock holds, since the
+    /// opening view reads the place's locks, so it may be a door minds
+    /// otherwise use. A game that grows no locked piece may name its door.
     pub locked: TileId,
     /// What a [`Join::Sealed`] is laid as: a gate the game lifts. A game
     /// that grows no sealed piece may name its door.

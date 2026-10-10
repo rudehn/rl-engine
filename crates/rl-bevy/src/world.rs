@@ -306,10 +306,17 @@ impl WorldMap {
     /// lifts a seal, and how an opener carrying the key spends a lock.
     /// What the cell then is stays its tile's business, so a game lifting
     /// a seal that does not open sets the tile it becomes itself.
+    ///
+    /// The cost epoch moves when the current map's lock goes, since the
+    /// opening view routed nothing through it until now.
     pub fn unlock(&mut self, map: MapId, at: Point) -> Option<Lock> {
         let locks = &mut self.places.get_mut(&map)?.locks;
         let i = locks.iter().position(|l| l.at == at)?;
-        Some(locks.remove(i))
+        let lock = locks.remove(i);
+        if map == self.current {
+            self.cost_epoch += 1;
+        }
+        Some(lock)
     }
 
     /// Keeps a freshly built place. Does not switch to it.
@@ -493,7 +500,9 @@ impl WorldMap {
 
     /// The same view for a mover that opens what it walks into: a closed
     /// door costs the turn spent opening it and then the step onto what it
-    /// opens into, so a flood routes through it when that is shorter.
+    /// opens into, so a flood routes through it when that is shorter. A
+    /// door under a [`Lock`] is wall here, key or no key, so no mind is
+    /// led to one.
     pub fn opening_view(&self) -> WindowView<'_> {
         WindowView { map: self, opening: true }
     }
@@ -624,7 +633,13 @@ impl OpacitySource for WindowView<'_> {
 impl CostSource for WindowView<'_> {
     fn cost_idx(&self, idx: usize) -> Option<u32> {
         let p = self.world(idx);
+        // A locked door or a seal is a wall to every mind: none is asked
+        // whether it carries the key, so none walks up to a door it would
+        // then be refused at every turn.
         let opened = || {
+            if self.map.lock(p).is_some() {
+                return None;
+            }
             let into = self.map.opens(p)?.index();
             self.map.tables.walkable[into].then(|| rl_core::turn::BASE_ACTION_COST + self.map.tables.move_cost[into])
         };
@@ -709,5 +724,42 @@ impl Plugin for StreamingPlugin {
 
     fn finish(&self, app: &mut App) {
         crate::plugin::depends_on::<crate::plugin::CorePlugin>(app, "StreamingPlugin");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rl_grid::{Terrain, TileRegistry};
+
+    /// A place holding a door locked to tag 5 and a seal, as built.
+    fn locked_place() -> (WorldMap, MapId, [Lock; 2]) {
+        let tiles = TileRegistry::standard();
+        let locks = [Lock { at: Point::new(3, 1), key: Some(rl_rules::TagId::from_raw(5)) }, Lock { at: Point::new(6, 1), key: None }];
+        let build =
+            PlaceBuild { terrain: Terrain::filled(9, 3, tiles.expect("floor")), entry: Point::new(1, 1), exit: None, spots: Vec::new(), locks: locks.to_vec() };
+        let mut map = WorldMap::new(tiles.tables());
+        map.install_place(MapId(1), build);
+        map.switch_to(MapId(1));
+        (map, MapId(1), locks)
+    }
+
+    #[test]
+    fn a_place_s_locks_and_seals_come_back_from_a_save_and_a_save_without_them_loads_with_none() {
+        let (map, place, [lock, seal]) = locked_place();
+        let text = ron::to_string(&map.export()).unwrap();
+        let mut back = WorldMap::new(TileRegistry::standard().tables());
+        back.import(ron::from_str(&text).unwrap());
+        assert_eq!((back.lock(lock.at), back.lock(seal.at)), (Some(lock), Some(seal)), "both come back where they were");
+        assert_eq!(back.unlock(place, seal.at), Some(seal), "and a seal is still the game's to lift");
+
+        // A save written before places had locks has no word on them.
+        let start = text.find("locks:[").expect("the save names its locks");
+        let end = start + text[start..].find(']').expect("the list ends") + 1;
+        let old = format!("{}{}", &text[..start], text[end..].trim_start_matches(','));
+        assert!(!old.contains("locks"), "{old}");
+        let mut older = WorldMap::new(TileRegistry::standard().tables());
+        older.import(ron::from_str(&old).unwrap());
+        assert_eq!((older.lock(lock.at), older.lock(seal.at)), (None, None), "it loads, with nothing locked");
     }
 }

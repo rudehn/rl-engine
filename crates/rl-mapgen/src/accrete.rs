@@ -34,7 +34,11 @@ pub enum Join {
     /// One cell of [`Accrete::locked`]: a door only an opener carrying the
     /// tag opens. The tag is an opaque number the game gives a meaning to,
     /// the raw id of a tag in its registry as a prefab's key is, so two
-    /// pieces locked by two tags each open to their own.
+    /// pieces locked by two tags each open to their own. Meant for a piece
+    /// painted from a prefab, whose spare entries then stay wall so the
+    /// lock keeps the piece alone; on a shape drawn cell by cell it locks
+    /// that piece's one way in, and what grows on from it lies behind the
+    /// lock too.
     Locked(u32),
     /// One cell of [`Accrete::sealed`]: a gate nothing opens until the game
     /// lifts it.
@@ -431,8 +435,8 @@ pub struct Accrete {
     /// Rock growth goes round, each laid at its own chance; none for a
     /// place grown wherever it can.
     pub barriers: Vec<Barrier>,
-    /// The tile a [`Join::Locked`] is laid as. A game names one no mind
-    /// paths through, since only a carrier of its tag gets it open.
+    /// The tile a [`Join::Locked`] is laid as: a door, for whoever reads
+    /// the [`Opening`] to keep locked.
     pub locked: TileId,
     /// The tile a [`Join::Sealed`] is laid as.
     pub sealed: TileId,
@@ -500,7 +504,7 @@ struct Grown {
     rooms: Vec<bool>,
     /// Whether each area stays however many ways it has: a piece the place
     /// must hold, or one painted from a prefab.
-    kept: Vec<bool>,
+    stays: Vec<bool>,
     /// For a painted piece, its own join, which every way into it is.
     joins: Vec<Option<Join>>,
     /// The tiles each area's cells were carved from, cell for cell.
@@ -606,10 +610,17 @@ impl Accrete {
         }
         grown.under.push(under);
         grown.rooms.push(shape.is_room());
-        grown.kept.push(required || piece.drawn.is_some());
+        grown.stays.push(required || piece.drawn.is_some());
         grown.joins.push(piece.drawn.is_some().then(|| shape.join()));
         grown.open += cells.len() as u32;
-        grown.frontier.extend(piece.sites.iter().map(|(q, d)| (*q + by, *d, index)).filter(|(q, _, _)| Some(*q) != joined));
+        // A painted piece behind a lock or a seal grows nothing past it:
+        // its spare entries stay wall, so all a lock keeps is the piece,
+        // never a part of the place the way on runs through. The first
+        // piece is joined to nothing and keeps its sites, or nothing grows.
+        let shut = piece.drawn.is_some() && joined.is_some() && matches!(shape.join(), Join::Locked(_) | Join::Sealed);
+        if !shut {
+            grown.frontier.extend(piece.sites.iter().map(|(q, d)| (*q + by, *d, index)).filter(|(q, _, _)| Some(*q) != joined));
+        }
         let bounds = bounds_of(&cells);
         grown.areas.push(Area {
             index,
@@ -635,7 +646,7 @@ impl Accrete {
         let mut left = gone.len();
         loop {
             let ways = |i: usize| grown.openings.iter().filter(|(o, _)| o.areas.0 == i || o.areas.1 == i).count();
-            let Some(i) = (0..gone.len()).find(|i| !gone[*i] && !grown.rooms[*i] && !grown.kept[*i] && ways(*i) <= 1) else { break };
+            let Some(i) = (0..gone.len()).find(|i| !gone[*i] && !grown.rooms[*i] && !grown.stays[*i] && ways(*i) <= 1) else { break };
             if left == 1 {
                 break;
             }
@@ -672,16 +683,11 @@ impl Accrete {
         for (opening, _) in &mut grown.openings {
             opening.areas = (renumbered[opening.areas.0], renumbered[opening.areas.1]);
         }
-        let mut kept = gone.iter().map(|g| !g);
-        grown.areas.retain(|_| kept.next().expect("one flag per area"));
-        let mut kept = gone.iter().map(|g| !g);
-        grown.rooms.retain(|_| kept.next().expect("one flag per area"));
-        let mut kept = gone.iter().map(|g| !g);
-        grown.under.retain(|_| kept.next().expect("one flag per area"));
-        let mut kept = gone.iter().map(|g| !g);
-        grown.kept.retain(|_| kept.next().expect("one flag per area"));
-        let mut kept = gone.iter().map(|g| !g);
-        grown.joins.retain(|_| kept.next().expect("one flag per area"));
+        drop_gone(&mut grown.areas, &gone);
+        drop_gone(&mut grown.rooms, &gone);
+        drop_gone(&mut grown.under, &gone);
+        drop_gone(&mut grown.stays, &gone);
+        drop_gone(&mut grown.joins, &gone);
         for (i, area) in grown.areas.iter_mut().enumerate() {
             area.index = i;
             for c in &area.cells {
@@ -690,6 +696,12 @@ impl Accrete {
         }
         removed
     }
+}
+
+/// Drops each entry of a per-area list whose area is `gone`.
+fn drop_gone<T>(list: &mut Vec<T>, gone: &[bool]) {
+    let mut kept = gone.iter().map(|g| !g);
+    list.retain(|_| kept.next().expect("one flag per area"));
 }
 
 /// How many times growth is taken up again after passages that led
@@ -753,7 +765,7 @@ impl<C: BuildContext> Pass<C> for Accrete {
             walkable,
             areas: Vec::new(),
             rooms: Vec::new(),
-            kept: Vec::new(),
+            stays: Vec::new(),
             joins: Vec::new(),
             under: Vec::new(),
             openings: Vec::new(),
@@ -969,8 +981,10 @@ pub(crate) mod tests {
         let mut tiles = TileRegistry::standard();
         let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
         let door = tiles.register(TileProps::floor("way through")).unwrap();
-        tiles.register(TileProps::wall("locked").opens_to("way through")).unwrap();
-        tiles.register(TileProps::wall("sealed")).unwrap();
+        // Both passable, as a game's shut door is, so nothing but the
+        // lock itself keeps a walker out.
+        tiles.register(TileProps::wall("locked").passable(true).opens_to("way through")).unwrap();
+        tiles.register(TileProps::wall("sealed").passable(true)).unwrap();
         Rig { tiles, wall, floor, door }
     }
 
@@ -1495,6 +1509,40 @@ pub(crate) mod tests {
                     assert_eq!(o.join, join, "seed {s}");
                     assert_eq!(ctx.terrain().get(o.cells[0]), Some(tile), "{join:?} seed {s}");
                 }
+            }
+        }
+    }
+
+    /// A hall locked or sealed has two entries, and growth joins it at one:
+    /// the other stays wall, so everything else in the place is walked to
+    /// without crossing the lock, and the way down, measured through every
+    /// door, is never behind it either.
+    #[test]
+    fn a_locked_or_sealed_piece_keeps_only_itself_behind_its_lock_and_the_way_down_is_never_there() {
+        let rig = rig();
+        let (w, h) = (84, 48);
+        for join in [Join::Locked(5), Join::Sealed] {
+            for s in 0..40 {
+                let chain = Chain::new()
+                    .then(owing(&rig, join))
+                    .then(crate::OpenLoops { door: rig.door, min_detour: 10, max: 8 })
+                    .then(crate::dungeon::RandomStart)
+                    .then(crate::dungeon::FarthestExit);
+                let ctx = chain
+                    .run_retrying(|| BaseContext::blank(w, h, rig.tiles.clone(), rig.wall), RunSeed(s), 20)
+                    .unwrap_or_else(|e| panic!("{join:?} seed {s}: {e}"));
+                let hall = ctx.outputs().iter::<Area>().find(|a| a.shape == "hall").expect("laid");
+                let ways = ctx.outputs().iter::<Opening>().filter(|o| o.areas.0 == hall.index || o.areas.1 == hall.index).count();
+                assert_eq!(ways, 1, "{join:?} seed {s}: one way in, the spare entry left wall");
+                let start = ctx.outputs().first::<crate::passes::StartPoint>().unwrap().0;
+                let mut seen = BitGrid::new(w, h);
+                let tables = ctx.tiles().tables();
+                flood(ctx.terrain().grid(), start, |i| tables.walkable[ctx.terrain().get_idx(i).index()], Steps::Four, &mut seen);
+                for a in ctx.outputs().iter::<Area>().filter(|a| a.index != hall.index) {
+                    assert!(a.cells.iter().all(|c| seen.contains(*c)), "{join:?} seed {s}: area {} lies behind the lock", a.index);
+                }
+                let exit = ctx.outputs().first::<crate::dungeon::ExitPoint>().unwrap().0;
+                assert!(seen.contains(exit) && !hall.cells.contains(&exit), "{join:?} seed {s}: the way down at {exit:?} is behind the lock");
             }
         }
     }
