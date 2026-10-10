@@ -16,7 +16,7 @@ use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_core::RunSeed;
 
-use crate::armory::Armory;
+use crate::armory::{Armory, ItemKind};
 use crate::bestiary::Bestiary;
 use crate::dungeon::{Biome, floor_of};
 use crate::run::Adventurer;
@@ -413,4 +413,27 @@ pub fn still(app: &mut App, name: &str, at: Point) -> Entity {
 /// What `who` has lost of the thousand [`still`] gave it.
 pub fn lost(app: &App, who: Entity) -> i32 {
     1000 - app.world().get::<Health>(who).expect("still standing").current
+}
+
+/// The gold coins `who` carries.
+pub fn gold(app: &App, who: Entity) -> u32 {
+    let world = app.world();
+    let coin = world.resource::<Armory>().defs.expect("gold coin");
+    let bag = world.get::<Inventory>(who).map(|b| b.items.clone()).unwrap_or_default();
+    bag.iter().filter(|i| world.get::<ItemKind>(**i).is_some_and(|k| k.0 == coin)).map(|i| world.get::<Stack>(*i).map_or(1, |s| s.count)).sum()
+}
+
+/// Leaves the adventurer carrying exactly `coins` gold coins.
+pub fn set_gold(app: &mut App, me: Entity, coins: u32) {
+    let coin = app.world().resource::<Armory>().defs.expect("gold coin");
+    let bag = app.world().get::<Inventory>(me).expect("a pack").items.clone();
+    let purses: Vec<Entity> = bag.into_iter().filter(|i| app.world().get::<ItemKind>(*i).is_some_and(|k| k.0 == coin)).collect();
+    for purse in purses {
+        app.world_mut().get_mut::<Inventory>(me).expect("a pack").items.retain(|i| *i != purse);
+        app.world_mut().despawn(purse);
+    }
+    let purse = make(app, "gold coin");
+    app.world_mut().get_mut::<Stack>(purse).expect("gold stacks").count = coins;
+    give(app, me, purse);
+    assert_eq!(gold(app, me), coins);
 }

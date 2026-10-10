@@ -282,12 +282,12 @@ mod tests {
     use rl_engine::rl_rules::UNTIL_CURED;
 
     use super::*;
-    use crate::armory::{Armory, ItemKind};
     use crate::dungeon::{TOWN, map_of};
     use crate::lore::{Lore, Unfamiliar};
     use crate::shops::Shopkeeper;
     use crate::testing::{
-        adventurer, arrive, continued, equip, find, give, headless, make, name_of, pass_turns, put_down, said, settle, stand_on, take_up, unequip,
+        adventurer, arrive, continued, equip, find, give, gold, headless, make, name_of, pass_turns, put_down, said, set_gold, settle, stand_on, take_up,
+        unequip,
     };
 
     /// The rites as the spec prices them, in the order the priest offers
@@ -318,29 +318,6 @@ mod tests {
         let map = app.world().resource::<WorldMap>();
         let mut cells = (-1..=1).flat_map(|dy| (-1..=1).map(move |dx| at.offset(dx, dy)));
         cells.find(|p| map.is_walkable_on(TOWN, *p) && !taken.contains(p)).expect("somewhere to stand beside the priest")
-    }
-
-    /// The gold coins `who` carries.
-    fn gold(app: &App, who: Entity) -> u32 {
-        let world = app.world();
-        let coin = world.resource::<Armory>().defs.expect("gold coin");
-        let bag = world.get::<Inventory>(who).map(|b| b.items.clone()).unwrap_or_default();
-        bag.iter().filter(|i| world.get::<ItemKind>(**i).is_some_and(|k| k.0 == coin)).map(|i| world.get::<Stack>(*i).map_or(1, |s| s.count)).sum()
-    }
-
-    /// Leaves the adventurer carrying exactly `coins` gold coins.
-    fn set_gold(app: &mut App, me: Entity, coins: u32) {
-        let coin = app.world().resource::<Armory>().defs.expect("gold coin");
-        let bag = app.world().get::<Inventory>(me).expect("a pack").items.clone();
-        let purses: Vec<Entity> = bag.into_iter().filter(|i| app.world().get::<ItemKind>(*i).is_some_and(|k| k.0 == coin)).collect();
-        for purse in purses {
-            app.world_mut().get_mut::<Inventory>(me).expect("a pack").items.retain(|i| *i != purse);
-            app.world_mut().despawn(purse);
-        }
-        let purse = make(app, "gold coin");
-        app.world_mut().get_mut::<Stack>(purse).expect("gold stacks").count = coins;
-        give(app, me, purse);
-        assert_eq!(gold(app, me), coins);
     }
 
     /// Stands the adventurer beside the priest and takes up `rite`, as the
