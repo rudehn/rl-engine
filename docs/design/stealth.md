@@ -199,6 +199,18 @@ It is part of stealth rather than a plugin of its own because it answers stealth
 Radar sees nothing either; whether it should is an open question, and so is what a mind that walks into an unseen actor learns.
 A thing used whose `use` trigger harms those around its user does not end it either, since a use is not on the list above; whether it should is open too, and meanwhile the harm wakes nobody to an attacker it cannot see.
 
+## 8c. Sleeping
+
+A status that sleeps (`StatusDef::sleeps`, built 2026-10-07 for Undermere's bestiary) holds its holder's turns the way `holds` already did, and ends itself the moment the holder is woken rather than waiting for the game's own `Cure`.
+It sits beside `unseen` rather than inside awareness, because sleep is a thing that happens to one actor's turns, where awareness is a thing every observer keeps about every subject; the two meet only at the reach a sleeper notices by.
+
+A sleeper senses less than a merely held actor: its sight is still recast and noticing still rolled, but only within `SLEEPER_REACH`, two cells, and there only by its chance, never its certain radius, so a hider can cross a sleeping room without waking it, and `wake_on_sight` in `DecideSet::Notice` wakes it on exactly that roll, or on sight alone to a foe that does not hide or that sees on sight regardless.
+This is the sneak-attack seam section 9 deferred, narrowed to one case the content needed now rather than opened in general: a blow lands on a sleeper as it lands on anyone `Watchers::unaware` answers yes for, with or without `StealthPlugin` running, and only then wakes it, in `wake_on_harm` in `TurnSet::React`.
+A full sneak-attack multiplier over every unaware target, phase E, is still undone; sleep borrows the one reader that already existed rather than building a second.
+
+Harm and noticing both wake directly, by curing the sleep in place, rather than through a `Cure` a game would have to write: a `Cure` is not read until the next pass's statuses resolve, and a sleeper struck mid-pass needs to answer for the rest of it awake.
+Noise wakes it too, through `wake_on_noise`, which `docs/design/noise.md` §16 has, since hearing is a second plugin's to add and a game with statuses and no noise should not be asked to wake a sleeper from a sound that cannot reach it.
+
 ## 9. What is not in this slice
 
 - **Two-way stealth: monsters hiding from the player.**

@@ -31,6 +31,7 @@ pub mod fov;
 pub mod gas;
 pub mod items;
 pub mod knowledge;
+pub mod layout;
 pub mod lighting;
 pub mod loot;
 pub mod minds;
@@ -56,7 +57,9 @@ pub mod turn;
 pub mod work;
 pub mod world;
 
-pub use ability::{Abilities, AbilitiesPlugin, AbilityEvent, Aimed, Bystanders, Cooldowns, Grants, Known, Landed, Offered, Pools, Reflected, Use};
+pub use ability::{
+    Abilities, AbilitiesPlugin, AbilityEvent, Aimed, Bystanders, Cooldowns, Grants, Known, Landed, Offered, Pools, ReflectRng, Reflected, Reflects, Use,
+};
 pub use accuracy::{Attempt, HitRules, Marksmanship, Missed};
 pub use ammo::{Ammo, AmmoChanged, AmmoPlugin, AmmoSet, Dry};
 pub use bump::{Bump, BumpRules, Bumped, OnAlly, Swap, Swapped};
@@ -83,8 +86,8 @@ pub use items::{
     Bestows, DropItem, EQUIP_FROM_GROUND_COST, Enchant, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemsPlugin, OwnBlowScore,
     PickUp, Pulse, Stack, Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable, may_use, may_use_on,
 };
-pub use knowledge::{Knowledge, KnowledgeSave, TileSet};
-pub use lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, band_at};
+pub use knowledge::{Knowledge, KnowledgeSave, Recalled, TileSet};
+pub use lighting::{Concealed, DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, PlayerSight, band_at, conceals};
 pub use loot::{ContainersAnswered, Drops, Found, ItemMaker, LootArea, LootPlugin, LootRng, LootSet, Provenance, Scattered};
 pub use minds::{
     AddChoice, CameFrom, DEFAULT_PERCEPTION, Doing, FlowFields, Intelligence, Leader, Mind, MindChose, MindRng, MindsPlugin, Perception, Post, Profile, Sight,
@@ -132,7 +135,7 @@ pub use world::{ChunkLoaded, ChunkRulesRes, PlaceMap, PlaceSave, StreamingPlugin
 /// those stay at the crate root, and an effect in the prelude was a name
 /// that collided with a game's own `Shove` action.
 pub mod prelude {
-    pub use crate::ability::{Abilities, AbilitiesPlugin, AbilityEvent, Cooldowns, Grants, Known, Pools, ReflectRng, Reflected, Reflects, Use};
+    pub use crate::ability::{Abilities, AbilitiesPlugin, AbilityEvent, Cooldowns, Grants, Known, Pools, Reflected, Reflects, Use};
     pub use crate::accuracy::{Attempt, HitRules, Marksmanship, Missed};
     pub use crate::ammo::{Ammo, AmmoChanged, AmmoPlugin, AmmoSet, Dry};
     pub use crate::bump::{Bump, BumpRules, Bumped, OnAlly, Swap, Swapped};
@@ -158,7 +161,7 @@ pub mod prelude {
         Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable,
     };
     pub use crate::knowledge::Knowledge;
-    pub use crate::lighting::{DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, band_at};
+    pub use crate::lighting::{Concealed, DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, PlayerSight, band_at, conceals};
     pub use crate::loot::{Drops, Found, ItemMaker, LootArea, LootPlugin, LootSet, Provenance, Scattered};
     pub use crate::minds::{AddChoice, Doing, Intelligence, Leader, Mind, MindChose, MindsPlugin, Perception, Post, Profile, Thinking};
     pub use crate::noise::{AddSound, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, SoundId, SoundNames, Sounds};

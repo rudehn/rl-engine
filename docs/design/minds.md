@@ -115,6 +115,23 @@ Each stage green and committed on its own, with `docs/OVERVIEW.md`, the changelo
 
 ## 6. What waits
 
-Pack and leader behaviour, keep-at-range, patrol with a post, noise and scent.
+Pack behaviour, keep-at-range, noise and scent (leader behaviour and patrol with a post are built; section 7).
 Each is a new tactic over the seams above; `docs/design/fields.md` already names `TileField<T>` as the substrate for noise and scent.
-Patrol needs per-actor state the shared brain cannot hold, which is a `Sense` a game or a later slice fills.
+
+## 7. What part 3 built
+
+Three slices landed on the seams section 3 opened, each a tactic or a perceive contributor and none a change to `decide_minds` itself.
+
+- **Using what it carries.** `Wits::USES` is a fourth capability a kind either has or does not, read the way `OPENS_DOORS` is.
+  `ItemsPlugin` fills `Snapshot::carried` in `PerceiveSet::Annotate`, a `Carried { item, targeting, mends }` per usable thing a mind with the wit may use, never one whose use asks for another thing, since nothing in a tactic chooses which.
+  `UseCarried` reads it the way `UseAbility` reads `usable`: on itself what mends once it is hurt past `mend_at_pct`, and otherwise what is aimed at foes at a foe or what mends and is aimed at allies at a hurt ally, through `Aim::worth_aiming_at`, the same test an ability's aim is weighed by.
+  A thing aimed at anyone or at the ground is left alone on purpose: the snapshot cannot say whether the first helps whoever it lands on, and the second may carry its user somewhere no tactic has reasoned about.
+- **Following a leader.** `Keep` gained a third roster, `Station::Leader`, beside the allies and enemies section 3.5 already kept station on.
+  The leader is not in the brain, since brains are shared and a leader is not: it lives on the follower as `Leader(Entity)`, and the new `sense_leaders`, chained with `sense_posts` in `PerceiveSet::Annotate`, pushes where it stands as `Led { at, in_sight }`, seen or not, so a follower that loses sight of its chief at a corner does not lose it from its snapshot too.
+  While the leader is dead, elsewhere or gone, `Keep::leader` keeps with the follower's allies instead, the way `Keep::allies` always has, so a band that loses its chief still holds together.
+  `rl-save` maps the follower's `Leader` across a continued run through the entity map, the same device every saved relationship between two actors uses.
+- **Weighing a self-aimed ability.** `UseAbility` cast any ability aimed only at its own caster whenever a foe was in sight, a necromancer blinking with nowhere to go and a healer mending itself whole.
+  The new `Effect::would_act(landing, world)`, read by `AbilitiesPlugin`'s `weigh_self_abilities` in `DecideSet::Perceive` after `PerceiveSet::Annotate`, asks each self-aimed ability's effects whether its landing, built on the caster's own cell exactly as the resolver would land it, would act on anything; `Snapshot::usable` keeps only the ones that would, or any with no effects to ask, since a game answers those itself.
+  The question is asked of the landing's targets rather than its cells, since a self-aimed shape that flies, a teleport among them, covers no cells of its own in the landing the resolver lands; asking the cells first read a blink as never mending and never worth keeping.
+
+None of the three touches `decide_minds`, `TacticCtx` or the sort at the head of `Minds`: a capability is a wit, a roster is a `Station`, and a weighed ability is a smaller `usable` the existing contract never has to know was filtered.

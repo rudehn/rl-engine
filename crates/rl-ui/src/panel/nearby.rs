@@ -280,19 +280,39 @@ fn draw_row(terminal: &mut Terminal, inner: Rect, y: i32, row: &Row, focused: bo
         .map(|w| w.doing.as_str())
         .or_else(|| row.doing.and_then(|tactic| layout.activities.get(tactic)))
         .or_else(|| row.alert.and_then(|alert| layout.alerts.get(alert)));
-    if let Some(word) = state {
-        name.push_str(" (");
-        name.push_str(word);
-        name.push(')');
-    }
+    let state = state.map(|word| format!(" ({word})")).unwrap_or_default();
     // Something that knows of nothing reads muted, so the names in their
     // own colour are the ones that know you are there.
     let tone = if row.alert == Some(Alert::Unaware) { Tones::MUTED } else { relation_tone(row.relation) };
-    let text = clip(&name, (inner.width - 2).max(0) as usize);
+    let text = clip_keeping(&name, &state, (inner.width - 2).max(0) as usize);
     for (i, ch) in text.chars().enumerate() {
         let x = inner.x + 2 + i as i32;
         terminal.print_on(x, y, &ch.to_string(), palette.get(tone), bg_at(x));
     }
+}
+
+/// The fewest of a name's own characters, its ellipsis included, kept
+/// beside the state after it: a row narrower than that clips the two
+/// together from the end, since a state with no name to it says nothing.
+const NAME_KEPT: usize = 4;
+
+/// `name` then `tail` within `width`, the name clipped to make room for the
+/// tail when the two do not fit.
+///
+/// The tail is what the thing is doing, and cut from the end with the
+/// rest, as `Grubnak the goblin king (unawar…` was, it says neither who
+/// nor what; the name's end is the part a reader can most do without. A
+/// row too narrow to keep [`NAME_KEPT`] of the name beside the tail is
+/// clipped from the end as a whole instead.
+fn clip_keeping(name: &str, tail: &str, width: usize) -> String {
+    let (named, told) = (name.chars().count(), tail.chars().count());
+    if named + told <= width {
+        return format!("{name}{tail}");
+    }
+    if width >= told + NAME_KEPT {
+        return format!("{}{tail}", clip(name, width - told));
+    }
+    clip(&format!("{name}{tail}"), width)
 }
 
 #[cfg(test)]
@@ -425,6 +445,30 @@ mod tests {
         assert!(row.contains("crab \u{00b7} a very"), "the facet follows the name: {row:?}");
         assert!(row.chars().count() <= 24, "clipped to the panel, never wrapped: {row:?}");
         assert!(row.contains('\u{2026}'), "and says it was clipped: {row:?}");
+    }
+
+    /// A name too long for the row gives up its end before what the thing
+    /// is doing does: "Grubnak the… (unaware)", never "(unawar…".
+    #[test]
+    fn a_long_name_is_clipped_and_the_state_after_it_is_kept_whole() {
+        let mut stage = Stage::new(NearbyPanel::new(Rect::new(0, 0, 24, 10)).titled("")).screen(24, 10);
+        stage.actor("Grubnak the goblin king", 'g', 2, 0);
+        stage.tick();
+        let mut row = stage.app.world().resource::<NearbyView>().actors[0].clone();
+        row.alert = Some(Alert::Unaware);
+        let palette = stage.app.world().resource::<Palette>().clone();
+        let mut terminal = Terminal::new(24, 1, bevy::math::Vec2::ONE);
+        draw_row(&mut terminal, Rect::new(0, 0, 24, 1), 0, &row, false, &NearbyPanel::new(Rect::new(0, 0, 24, 10)).0, &palette);
+        let said: String = (0..24).filter_map(|x| terminal.get(x, 0).map(|c| c.glyph)).collect();
+        assert_eq!(said.trim_end(), "g Grubnak the\u{2026} (unaware)", "the name clipped, the state whole");
+
+        // A row too narrow to keep four of the name's own characters
+        // beside the state is clipped from the end as before, so the
+        // name is never lost to the word after it.
+        let mut terminal = Terminal::new(14, 1, bevy::math::Vec2::ONE);
+        draw_row(&mut terminal, Rect::new(0, 0, 14, 1), 0, &row, false, &NearbyPanel::new(Rect::new(0, 0, 14, 10)).0, &palette);
+        let said: String = (0..14).filter_map(|x| terminal.get(x, 0).map(|c| c.glyph)).collect();
+        assert_eq!(said.trim_end(), "g Grubnak the\u{2026}", "too narrow for both, the name comes first");
     }
 
     #[test]

@@ -54,8 +54,8 @@ pub(crate) fn step_cost(source: &impl CostSource, from: Point, dir: Direction, r
     if dir.is_diagonal() {
         if !rules.cut_corners {
             let (dx, dy) = dir.delta();
-            let a = source.is_passable(from.offset(dx, 0));
-            let b = source.is_passable(from.offset(0, dy));
+            let a = source.lets_diagonal_past(from.offset(dx, 0));
+            let b = source.lets_diagonal_past(from.offset(0, dy));
             if !a || !b {
                 return None;
             }

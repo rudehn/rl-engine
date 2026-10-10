@@ -16,7 +16,7 @@
             crates/rl-bevy/src/ammo.rs
             crates/rl-bevy/src/effects/mod.rs
             crates/rl-bevy/src/effects/engine.rs
-     fingerprint: 4e0905ac -->
+     fingerprint: 82d43147 -->
 
 # Combat and loadout
 

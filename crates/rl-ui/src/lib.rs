@@ -135,7 +135,7 @@ pub use keys::DirectionKeys;
 pub use log::{LogEntry, MessageLog, Span};
 pub use menu::{ListMenu, MenuRow, draw_menu};
 pub use modal::{AddModal, Modal, ModalId, Modals, modal_is, modal_open, no_modal};
-pub use narrate::{NarrationView, NarrationViewPlugin, NarratorPlugin, Phrase, Phrasebook, Said, Tell, Words};
+pub use narrate::{Called, MassNoun, NarrationView, NarrationViewPlugin, NarratorPlugin, Phrase, Phrasebook, Said, Tell, Words};
 pub use panel::{
     AbilityKeys, AbilityMenu, AbilityPanel, ActivityWords, AlertWords, CONTAINER_MODAL, ChoosingFor, ContainerKeys, ContainerPanel, ControlsPanel, GearPanel,
     INVENTORY_MODAL, InspectPanel, InventoryKeys, InventoryMenu, InventoryPanel, LogPanel, NearbyPanel, OFFERS_MODAL, OffersPanel, RECORDS_MODAL, RecordsPanel,
@@ -277,7 +277,7 @@ pub mod prelude {
     pub use crate::log::{LogEntry, MessageLog, Span};
     pub use crate::menu::{ListMenu, MenuRow, draw_menu};
     pub use crate::modal::{AddModal, ModalId, Modals, modal_is, modal_open, no_modal};
-    pub use crate::narrate::{NarrationView, NarratorPlugin, Phrase, Phrasebook, Said, Tell, Words};
+    pub use crate::narrate::{MassNoun, NarrationView, NarratorPlugin, Phrase, Phrasebook, Said, Tell, Words};
     pub use crate::replay::ReplayPlugin;
     // The module itself, for `panel::split_right` and the drawing
     // helpers a game writing its own presenter reaches for.

@@ -1,13 +1,14 @@
 //! The map, drawn from the player's point of view.
 //!
 //! Visible tiles are drawn lit, remembered tiles in the colours of
-//! memory, unknown tiles blank. What stands on a tile is drawn only while
-//! it is in sight, but for a [`Landmark`], which memory keeps as it keeps
-//! the tile. What a tile looks like is the game's business: it fills a
-//! [`TileAppearance`] table keyed by [`TileId`], with a glyph, both
-//! colours, and how the tile varies from cell to cell. With lighting
-//! turned on, a visible tile's glyph and background and whatever stands on
-//! it are coloured by the light that lands there; see
+//! memory, unknown tiles blank. A remembered tile shows the still thing
+//! last seen on it, an item, a prop or a way through, faded with it; a
+//! creature is never remembered, since where one stood says nothing of
+//! where it is. What a tile looks like is the game's
+//! business: it fills a [`TileAppearance`] table keyed by [`TileId`], with
+//! a glyph, both colours, and how the tile varies from cell to cell. With
+//! lighting turned on, a visible tile's glyph and background and whatever
+//! stands on it are coloured by the light that lands there; see
 //! [`shade`](crate::shade) for how.
 //!
 //! Fire and gas are drawn over the tiles they are on, from
@@ -18,12 +19,16 @@
 //! blended in and stirred, rather than the fields as they stand. Only on
 //! tiles in sight; memory holds no smoke.
 
+use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
+
 use bevy::color::Mix;
 use bevy::prelude::*;
+use rl_bevy::Recalled;
 use rl_bevy::prelude::*;
 use rl_core::Grid2D;
 use rl_core::{Point, Rect};
-use rl_grid::{Light, TileId};
+use rl_grid::{Light, Rgb, TileId};
 use rl_rules::GasId;
 
 use crate::fields::{ShownFields, Wavefronts, churn, track_fields};
@@ -40,26 +45,6 @@ pub struct Glyph {
     /// Draw order among entities on one tile; higher wins.
     pub layer: i32,
 }
-
-/// An entity drawn from memory: out of sight on a cell the player has
-/// seen, its glyph is drawn in the colours of memory, as the tile under it
-/// is, where anything else is drawn only while it is in sight.
-///
-/// For what stands still and is worth finding again, a way through or a
-/// mark a game leaves where it means the player to come back to, never
-/// for what moves: memory is kept a cell at a time, not a thing at a time,
-/// so a landmark is drawn wherever its cell is remembered, even if it was
-/// put there after the cell was last seen. A game puts one on what it
-/// knows the player saw or was there from the place's first sight.
-///
-/// A prop is a landmark by its definition, `remembered` on its
-/// [`Look`](rl_rules::prop::Look), and [`dress_props`] puts this on it
-/// whenever the prop appears, a continued run's included, so a game writes
-/// nothing for it. A game inserts this itself only on a glyph entity of its
-/// own that is no prop, such as stairs it draws by a `Glyph` it gave them,
-/// and puts it back wherever it spawns one again.
-#[derive(Component, Debug, Clone, Copy, Default)]
-pub struct Landmark;
 
 impl Glyph {
     /// A glyph on the default layer.
@@ -130,6 +115,13 @@ impl TileAppearance {
         let still = Vary { shimmer: 0.0, ..vary };
         let fade = |c| self.memory.recall(self.shading.vary(c, still, p, 0.0));
         Cell { glyph: cell.glyph, fg: fade(cell.fg), bg: fade(cell.bg) }
+    }
+
+    /// `ground`, a remembered tile, with `thing` drawn on it in the colours
+    /// of memory, the way the tile's own glyph is.
+    pub fn recalled(&self, ground: Cell, thing: Recalled) -> Cell {
+        let Rgb { r, g, b } = thing.color;
+        Cell { glyph: thing.glyph, fg: self.memory.recall(Color::srgb_u8(r, g, b)), bg: ground.bg }
     }
 
     /// `cell` under `light` at `p` at time `t`: both colours coloured by it.
@@ -372,11 +364,14 @@ impl Plugin for MapViewPlugin {
             .init_resource::<ShownFields>()
             .init_resource::<Wavefronts>()
             .insert_resource(MapView::new(self.viewport).across(self.across))
-            .add_systems(Update, (follow_player, track_fields, draw_map).chain().in_set(PresentSet::Map))
-            // Before the map is drawn, and in `Update` rather than in a
-            // play-only set, because props are put down while a place is
-            // built and `Added` matches for one frame only.
-            .add_systems(Update, (dress_props, redress_emptied).before(draw_map));
+            .add_systems(Update, (follow_player, track_fields, remember_still_things, draw_map).chain().in_set(PresentSet::Map))
+            // In `Update` rather than in a play-only set, because props are
+            // put down while a place is built and `Added` matches for one
+            // frame only. After the turns, which put a place's props down
+            // the frame it is first entered, and before anything is drawn
+            // or remembered, so a prop is never drawn bare for a frame and
+            // a place known by heart remembers every prop in it.
+            .add_systems(Update, (dress_props, redress_emptied).after(EngineSet::Turns).before(EngineSet::Present));
     }
 
     fn finish(&self, app: &mut App) {
@@ -412,19 +407,59 @@ pub fn redress_emptied(mut commands: Commands, registries: Option<Res<Registries
 ///
 /// A prop a game dressed itself keeps what it was given: the query asks
 /// for those with no glyph, so a game that wants one crate to look
-/// different says so and is not overruled. One whose look is `remembered`
-/// is made a [`Landmark`] here too, so memory keeps it through a save and
-/// a reload with nothing for the game to put back.
+/// different says so and is not overruled.
 pub fn dress_props(mut commands: Commands, registries: Option<Res<Registries>>, bare: Undressed) {
     let Some(registries) = registries else { return };
     for (entity, kind) in &bare {
         let look = registries.props.get(kind.0).look;
-        let mut dressed = commands.entity(entity);
-        dressed.insert(Glyph { ch: look.glyph, fg: Color::srgb_u8(look.color.r, look.color.g, look.color.b), layer: look.layer });
-        if look.remembered {
-            dressed.insert(Landmark);
+        commands.entity(entity).insert(Glyph { ch: look.glyph, fg: Color::srgb_u8(look.color.r, look.color.g, look.color.b), layer: look.layer });
+    }
+}
+
+/// What the map draws that stands still: anything but a creature, and
+/// nothing nobody has spotted, since a hidden prop is not seen and so
+/// cannot be remembered either.
+type StillThings<'w, 's> = Query<'w, 's, (&'static Position, &'static Glyph, Option<&'static OnMap>), (Without<Actor>, Without<Hidden>)>;
+
+/// `c` at eight bits a channel, the way [`Knowledge`] keeps a colour.
+fn rgb(c: Color) -> Rgb {
+    let c = c.to_srgba();
+    let channel = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    Rgb::new(channel(c.red), channel(c.green), channel(c.blue))
+}
+
+/// Remembers the still things the player sees, so that the map draws each
+/// where it was seen once its tile is out of sight.
+///
+/// Part of the map view rather than a plugin of its own: a map that
+/// forgets the stairs behind the player is a broken map, not a simpler
+/// one. The memory itself is [`Knowledge`]'s, so it is kept per map and
+/// saved with the rest of what the player knows.
+///
+/// Once a frame, just before the map is drawn, rather than once a turn:
+/// memory is what the player was shown, and this is the frame shown. Of
+/// several things on one tile the one remembered is the one drawn, the
+/// highest layer.
+pub fn remember_still_things(map: Res<WorldMap>, mut knowledge: ResMut<Knowledge>, player: Query<&Viewshed, With<Player>>, still: StillThings) {
+    let Ok(sight) = player.single() else { return };
+    let here = map.current();
+    let mut top: BTreeMap<Point, (i32, Recalled)> = BTreeMap::new();
+    for (pos, glyph, on) in &still {
+        if on.map_or(MapId::SURFACE, |m| m.0) != here {
+            continue;
+        }
+        let look = (glyph.layer, Recalled { glyph: glyph.ch, color: rgb(glyph.fg) });
+        match top.entry(pos.0) {
+            Entry::Vacant(v) => {
+                v.insert(look);
+            }
+            Entry::Occupied(mut o) if o.get().0 < glyph.layer => {
+                o.insert(look);
+            }
+            Entry::Occupied(_) => {}
         }
     }
+    knowledge.see_still(|p| sight.can_see(p), top.into_iter().map(|(p, (_, look))| (p, look)));
 }
 
 /// Keeps the view centred on the player, and inside the map.
@@ -444,9 +479,9 @@ pub struct LightOverlay(pub bool);
 /// enough to read as motion, slow enough that a still frame costs nothing.
 const ANIMATION_RATE: f32 = 12.0;
 
-/// What is drawn of one entity on the map: where, as what, on which map,
-/// and whether memory keeps it.
-type Drawn = (&'static Position, &'static Glyph, Option<&'static OnMap>, Has<Landmark>);
+/// What a thing on the map is drawn by: where, as what, on which map, and
+/// whether it is [`Concealed`] in the dark.
+type Drawn = (&'static Position, &'static Glyph, Option<&'static OnMap>, Has<Concealed>);
 
 /// What the map is drawn from.
 #[derive(bevy::ecs::system::SystemParam)]
@@ -463,6 +498,9 @@ pub struct Scene<'w, 's> {
     /// unseen is the whole of what `Hidden` means, and it is one filter
     /// here rather than a second drawing path.
     glyphs: Query<'w, 's, Drawn, Without<Hidden>>,
+    /// Which of them the player sees: the question the list of what is in
+    /// sight asks too, so the map never draws a thing no panel names.
+    sight: PlayerSight<'w, 's>,
     fields: Res<'w, FieldAppearance>,
     shown: Res<'w, ShownFields>,
     registries: Option<Res<'w, Registries>>,
@@ -470,11 +508,10 @@ pub struct Scene<'w, 's> {
 
 /// Paints the viewport: lit where the player sees, dim where remembered.
 pub fn draw_map(mut terminal: ResMut<Terminal>, scene: Scene) {
-    let Scene { time, view, map, look, knowledge, lighting, overlay, player, glyphs, fields, shown, registries } = &scene;
+    let Scene { time, view, map, look, knowledge, lighting, overlay, player, glyphs, sight, fields, shown, registries } = &scene;
     let now = time.elapsed_secs();
     let t = (now * ANIMATION_RATE).floor() / ANIMATION_RATE;
     let viewshed = player.single().ok();
-    let here = map.current();
     let lighting = lighting.as_deref();
     let overlay = overlay.as_deref().is_some_and(|o| o.0) && lighting.is_some();
     let sees = |p: Point| viewshed.is_some_and(|v| v.can_see(p));
@@ -485,7 +522,10 @@ pub fn draw_map(mut terminal: ResMut<Terminal>, scene: Scene) {
                 Some(l) => look.under(look.seen(id, p, t), l.at(p), p, t),
                 None => look.seen(id, p, t),
             },
-            (Some(id), false) if knowledge.is_explored(p) => look.remembered(id, p),
+            (Some(id), false) if knowledge.is_explored(p) => match knowledge.recalled(p) {
+                Some(thing) => look.recalled(look.remembered(id, p), thing),
+                None => look.remembered(id, p),
+            },
             _ => Cell::default(),
         };
         let here = shown.at(p, now);
@@ -511,10 +551,8 @@ pub fn draw_map(mut terminal: ResMut<Terminal>, scene: Scene) {
         view.set(&mut terminal, p, cell);
     }
     let mut drawn: Vec<(Point, i32)> = Vec::new();
-    for (pos, glyph, on, landmark) in glyphs {
-        let seen = sees(pos.0);
-        let recalled = !seen && landmark && knowledge.is_explored(pos.0);
-        if on.map(|m| m.0).unwrap_or(MapId::SURFACE) != here || !(seen || recalled) {
+    for (pos, glyph, on, concealed) in glyphs {
+        if !sight.shows(pos.0, on, concealed) {
             continue;
         }
         if view.to_screen(pos.0).is_none() {
@@ -529,7 +567,6 @@ pub fn draw_map(mut terminal: ResMut<Terminal>, scene: Scene) {
             drawn.push((pos.0, glyph.layer));
         }
         let fg = match lighting {
-            _ if recalled => look.memory.recall(glyph.fg),
             Some(l) => look.shading.light(glyph.fg, l.at(pos.0), pos.0, t),
             None => glyph.fg,
         };
@@ -544,25 +581,18 @@ mod tests {
     /// A prop is described twice, and this is the second half: the engine
     /// spawns it knowing nothing of colours, and the renderer dresses it.
     #[test]
-    fn a_prop_is_dressed_from_its_definition_a_remembered_one_kept_in_memory_and_one_already_dressed_is_left_alone() {
+    fn a_prop_is_dressed_from_its_definition_and_one_already_dressed_is_left_alone() {
         let mut app = App::new();
         app.add_systems(Update, dress_props);
-        let props = rl_rules::prop::load(
-            r#"[(name: "supply crate", glyph: '&', color: (r: 190, g: 165, b: 115), layer: 2), (name: "beacon", glyph: '!', color: (r: 1, g: 2, b: 3), remembered: true)]"#,
-            &rl_rules::Names::new(),
-        )
-        .expect("the props load");
+        let props = rl_rules::prop::load(r#"[(name: "supply crate", glyph: '&', color: (r: 190, g: 165, b: 115), layer: 2)]"#, &rl_rules::Names::new())
+            .expect("the props load");
         let id = props.expect("supply crate");
-        let beacon_id = props.expect("beacon");
         let registries = Registries { props, ..Default::default() };
         app.insert_resource(registries);
 
         let bare = app.world_mut().spawn((Prop, PropKind(id))).id();
         let dressed = app.world_mut().spawn((Prop, PropKind(id), Glyph { ch: '#', fg: Color::WHITE, layer: 9 })).id();
-        let beacon = app.world_mut().spawn((Prop, PropKind(beacon_id))).id();
         app.update();
-        assert!(app.world().get::<Landmark>(beacon).is_some(), "a prop whose look is remembered is a landmark");
-        assert!(app.world().get::<Landmark>(bare).is_none(), "and one whose look does not say so is not");
 
         let glyph = app.world().get::<Glyph>(bare).expect("it was dressed");
         assert_eq!((glyph.ch, glyph.layer), ('&', 2), "the definition's glyph and layer");
@@ -574,12 +604,6 @@ mod tests {
     /// two tiles east of it and something standing behind that wall:
     /// the glyphs drawn at the wall, behind it and on the thing.
     fn drawn_for(sight: Viewshed) -> [char; 3] {
-        drawn_with(sight, false).map(|cell| cell.glyph)
-    }
-
-    /// [`drawn_for`], with the thing behind the wall a [`Landmark`] when
-    /// `landmark` is, and seen before the wall goes up: the cells drawn.
-    fn drawn_with(sight: Viewshed, landmark: bool) -> [Cell; 3] {
         use rl_bevy::components::RevealsMap;
         let mut app = rl_bevy::plugin::headless_app();
         app.add_plugins((FovPlugin, rl_bevy::world::StreamingPlugin, MapViewPlugin::new(Rect::new(0, 0, 40, 20))));
@@ -592,10 +616,7 @@ mod tests {
         look.set(floor, Cell::new('.', Color::WHITE));
         app.insert_resource(look);
         app.world_mut().spawn((Player, Position(start), sight, RevealsMap));
-        let thing = app.world_mut().spawn((Position(start.offset(4, 0)), Glyph { ch: 'g', fg: Color::WHITE, layer: 1 })).id();
-        if landmark {
-            app.world_mut().entity_mut(thing).insert(Landmark);
-        }
+        app.world_mut().spawn((Actor, Position(start.offset(4, 0)), Glyph { ch: 'g', fg: Color::WHITE, layer: 1 }));
         app.world_mut().resource_mut::<NextState<rl_bevy::state::EngineState>>().set(rl_bevy::state::EngineState::Playing);
         app.update();
         app.update();
@@ -609,7 +630,7 @@ mod tests {
         let terminal = app.world().resource::<Terminal>();
         let at = |dx: i32| {
             let s = view.to_screen(start.offset(dx, 0)).expect("on screen");
-            terminal.get(s.x, s.y).expect("a cell")
+            terminal.get(s.x, s.y).expect("a cell").glyph
         };
         [at(2), at(3), at(4)]
     }
@@ -621,41 +642,153 @@ mod tests {
         assert_eq!(
             drawn_for(Viewshed::new(8)),
             ['#', '.', '.'],
-            "an ordinary sight stops at the wall: the ground behind is remembered, and what stands on it is not drawn"
+            "an ordinary sight stops at the wall: the ground behind is remembered, and the creature seen standing on it is not"
         );
         assert_eq!(drawn_for(Viewshed::everywhere()), ['#', '.', 'g'], "one that sees everywhere is shown what is behind it");
     }
 
-    /// A landmark seen and then walled off is still drawn where it stood,
-    /// in the colours of memory rather than its own, where anything else
-    /// behind the wall is not drawn at all.
-    #[test]
-    fn a_landmark_out_of_sight_is_drawn_from_memory_on_a_cell_once_seen() {
-        let [_, _, thing] = drawn_with(Viewshed::new(8), true);
-        assert_eq!(thing.glyph, 'g', "drawn behind the wall");
-        assert_eq!(thing.fg, Memory::default().recall(Color::WHITE), "in memory's colours");
-    }
-
-    /// A landmark on a cell nobody has seen is drawn no more than anything
-    /// else there: memory draws what was seen, and nothing else.
-    #[test]
-    fn a_landmark_on_a_cell_never_seen_is_not_drawn() {
+    /// A player with ordinary sight on open ground, drawn on a terminal,
+    /// the way `drawn_for` draws one: the app, where the player started,
+    /// and the player.
+    fn open_ground() -> (App, Point, Entity) {
+        use rl_bevy::components::RevealsMap;
         let mut app = rl_bevy::plugin::headless_app();
-        app.add_plugins((FovPlugin, rl_bevy::world::StreamingPlugin, MapViewPlugin::new(Rect::new(0, 0, 40, 20))));
-        app.insert_resource(Terminal::new(40, 20, Vec2::ONE));
+        app.add_plugins((FovPlugin, rl_bevy::world::StreamingPlugin, MapViewPlugin::new(Rect::new(0, 0, 60, 30))));
+        app.insert_resource(Terminal::new(60, 30, Vec2::ONE));
         let start = rl_bevy::testing::surface(&mut app);
+        let tiles = rl_grid::TileRegistry::standard();
         let mut look = TileAppearance::new();
-        let floor = rl_grid::TileRegistry::standard().expect("floor");
-        look.set(floor, Cell::new('.', Color::WHITE));
+        look.set(tiles.expect("wall"), Cell::new('#', Color::WHITE));
+        look.set(tiles.expect("floor"), Cell::new('.', Color::srgb(0.5, 0.5, 0.5)));
         app.insert_resource(look);
-        app.world_mut().spawn((Player, Position(start), Viewshed::new(2)));
-        app.world_mut().spawn((Position(start.offset(6, 0)), Glyph { ch: 'g', fg: Color::WHITE, layer: 1 }, Landmark));
+        let player = app.world_mut().spawn((Actor, Player, Position(start), Viewshed::new(6), RevealsMap)).id();
         app.world_mut().resource_mut::<NextState<rl_bevy::state::EngineState>>().set(rl_bevy::state::EngineState::Playing);
         app.update();
         app.update();
+        (app, start, player)
+    }
+
+    /// Stands the player at `at` and lets sight and the map catch up.
+    fn stand_at(app: &mut App, player: Entity, at: Point) {
+        app.world_mut().get_mut::<Position>(player).expect("a player").0 = at;
+        app.world_mut().get_mut::<Viewshed>(player).expect("eyes").dirty = true;
+        app.update();
+        app.update();
+    }
+
+    /// What the map draws at the world tile `p`.
+    fn drawn_at(app: &App, p: Point) -> Cell {
         let view = *app.world().resource::<MapView>();
-        let s = view.to_screen(start.offset(6, 0)).expect("on screen");
-        assert_eq!(app.world().resource::<Terminal>().get(s.x, s.y).map(|c| c.glyph), Some(' '), "beyond sight and never seen");
+        view.get(app.world().resource::<Terminal>(), p).expect("on screen")
+    }
+
+    /// Whether the player sees `p` now.
+    fn sees(app: &mut App, p: Point) -> bool {
+        app.world_mut().query_filtered::<&Viewshed, With<Player>>().single(app.world()).expect("a player").can_see(p)
+    }
+
+    /// The bug a playtest found: the stairs vanished from the map the
+    /// moment they left sight, since only tiles were remembered. A thing
+    /// seen lying somewhere is drawn there out of sight, in the colours of
+    /// memory, so it reads as remembered rather than seen.
+    #[test]
+    fn a_still_thing_once_seen_is_drawn_where_it_lay_after_it_leaves_sight() {
+        let (mut app, start, player) = open_ground();
+        let bright = Color::srgb_u8(242, 217, 77);
+        let stairs = start.offset(3, 0);
+        app.world_mut().spawn((Position(stairs), Glyph::new('>', bright).on_layer(1)));
+        app.update();
+        assert_eq!(drawn_at(&app, stairs).glyph, '>', "in sight it is drawn");
+        stand_at(&mut app, player, start.offset(-12, 0));
+        assert!(!sees(&mut app, stairs), "the player has walked out of sight of it");
+        let drawn = drawn_at(&app, stairs);
+        assert_eq!(drawn.glyph, '>', "and it is still drawn where it was seen");
+        let memory = app.world().resource::<TileAppearance>().memory;
+        assert_eq!(drawn.fg, memory.recall(bright), "in the colours of memory");
+    }
+
+    /// Where a creature stood says nothing of where it is, so one seen and
+    /// walked away from leaves the ground it stood on drawn bare.
+    #[test]
+    fn a_creature_seen_is_never_remembered() {
+        let (mut app, start, player) = open_ground();
+        let rat = start.offset(3, 0);
+        app.world_mut().spawn((Actor, Position(rat), Glyph::new('r', Color::WHITE).on_layer(5)));
+        app.update();
+        assert_eq!(drawn_at(&app, rat).glyph, 'r');
+        stand_at(&mut app, player, start.offset(-12, 0));
+        assert_eq!(drawn_at(&app, rat).glyph, '.', "the ground, and nothing on it");
+    }
+
+    /// Memory is what was seen, not what is true: a thing taken away
+    /// behind the player's back is drawn until its tile is seen again, and
+    /// forgotten from then on; a thing put down out of sight on ground the
+    /// player knows is not drawn until it is seen.
+    #[test]
+    fn what_comes_or_goes_out_of_sight_changes_nothing_until_its_tile_is_seen_again() {
+        let (mut app, start, player) = open_ground();
+        let (lying, dropped) = (start.offset(3, 0), start.offset(3, 1));
+        let thing = app.world_mut().spawn((Position(lying), Glyph::new('!', Color::WHITE).on_layer(2))).id();
+        app.update();
+        stand_at(&mut app, player, start.offset(-12, 0));
+        app.world_mut().despawn(thing);
+        app.world_mut().spawn((Position(dropped), Glyph::new('?', Color::WHITE).on_layer(2)));
+        app.update();
+        assert!(!sees(&mut app, lying) && !sees(&mut app, dropped));
+        assert_eq!(drawn_at(&app, lying).glyph, '!', "gone, but not seen to go");
+        assert_eq!(drawn_at(&app, dropped).glyph, '.', "put down, but not seen put down");
+
+        stand_at(&mut app, player, start);
+        assert_eq!((drawn_at(&app, lying).glyph, drawn_at(&app, dropped).glyph), ('.', '?'), "in sight, what is there");
+        stand_at(&mut app, player, start.offset(-12, 0));
+        assert_eq!(drawn_at(&app, lying).glyph, '.', "and what went is forgotten once seen gone");
+        assert_eq!(drawn_at(&app, dropped).glyph, '?', "and what came is remembered once seen");
+    }
+
+    /// Of a prop and a thing lying on it, the one remembered is the one
+    /// drawn: the higher layer.
+    #[test]
+    fn of_two_things_on_a_tile_the_one_drawn_on_top_is_the_one_remembered() {
+        let (mut app, start, player) = open_ground();
+        let p = start.offset(3, 0);
+        app.world_mut().spawn((Position(p), Glyph::new('&', Color::WHITE).on_layer(1)));
+        app.world_mut().spawn((Position(p), Glyph::new('/', Color::WHITE).on_layer(2)));
+        app.update();
+        stand_at(&mut app, player, start.offset(-12, 0));
+        assert_eq!(drawn_at(&app, p).glyph, '/');
+    }
+
+    /// A hidden prop is not seen, so it is not remembered either; once
+    /// spotted it is a prop like any other.
+    #[test]
+    fn a_hidden_prop_is_remembered_only_once_it_is_spotted() {
+        let (mut app, start, player) = open_ground();
+        let p = start.offset(3, 0);
+        let trap = app.world_mut().spawn((Position(p), Glyph::new('^', Color::WHITE).on_layer(1), Hidden { spot: 0 })).id();
+        app.update();
+        stand_at(&mut app, player, start.offset(-12, 0));
+        assert_eq!(drawn_at(&app, p).glyph, '.', "never seen, so never remembered");
+
+        app.world_mut().entity_mut(trap).remove::<Hidden>();
+        stand_at(&mut app, player, start);
+        stand_at(&mut app, player, start.offset(-12, 0));
+        assert_eq!(drawn_at(&app, p).glyph, '^', "spotted, and remembered");
+    }
+
+    /// A tile learned rather than seen, as a game writes in a place the
+    /// player knows by heart, remembers what stands on it as it stands,
+    /// though the player has never been in sight of it.
+    #[test]
+    fn a_tile_learned_unseen_remembers_what_stands_on_it() {
+        let (mut app, start, _) = open_ground();
+        let (far, beside) = (start.offset(15, 0), start.offset(15, 1));
+        app.world_mut().spawn((Position(far), Glyph::new('>', Color::WHITE).on_layer(1)));
+        app.world_mut().spawn((Position(beside), Glyph::new('&', Color::WHITE).on_layer(1)));
+        app.world_mut().resource_mut::<Knowledge>().learn(far);
+        app.update();
+        assert!(!sees(&mut app, far));
+        assert_eq!(drawn_at(&app, far).glyph, '>', "known by heart, and drawn from memory");
+        assert!(!app.world().resource::<Knowledge>().is_explored(beside), "and nothing more than was learned");
     }
 
     #[test]

@@ -14,8 +14,8 @@
 //! A way through is an entity, a [`Transition`] where the engine looks for
 //! one when a body goes through, marked with the [`Way`] it is. Stairs are
 //! drawn by a glyph of their own, as Foundry's lifts are, and kept on the
-//! map from memory once seen, a `Landmark`, as the tiles are. The gate is drawn
-//! by the tile it stands on, which shimmers and glows violet on both its
+//! map from memory once seen, as every still thing the map draws is. The
+//! gate is drawn by the tile it stands on, which shimmers and glows violet on both its
 //! sides, so it carries no glyph to hide the tile under.
 //!
 //! Mereholt is where the adventurer lives, so its first arrival writes the
@@ -70,7 +70,7 @@ impl Way {
 fn lay(commands: &mut Commands, way: Way, at: Point, map: MapId, to: Destination) {
     let mut e = commands.spawn((Position(at), OnMap(map), Transition { to }, way, Name::new(way.name())));
     if let Some(glyph) = way.glyph() {
-        e.insert((glyph, rl_engine::rl_render::Landmark));
+        e.insert(glyph);
     }
 }
 
@@ -95,20 +95,23 @@ pub fn place_line(map: MapId) -> String {
     format!("Floor {floor}: {}. {mood}", Biome::of(floor).name())
 }
 
-/// Writes every cell of Mereholt into what the adventurer remembers, so
-/// the town's shape is there from the first frame rather than the slivers
-/// of it in sight, which read as walls strewn about.
+/// Writes every cell of Mereholt into what the adventurer remembers, and
+/// what stands in it, so the town is there whole from the first frame
+/// rather than the slivers of it in sight, which read as walls strewn
+/// about.
 ///
 /// Remembered, not seen: what is in view is still what sight and the light
-/// allow, and the rest is drawn as memory draws anything. Written into the
-/// town's own memory whatever place is being read, since a warp later in
-/// the same pass may already have moved the adventurer on.
+/// allow, and the rest is drawn as memory draws anything, the town's props
+/// and things with it, which the map takes in at its next look since they
+/// are put down in the same pass as this. Written into the town's own
+/// memory whatever place is being read, since a warp later in the same
+/// pass may already have moved the adventurer on.
 pub fn know_the_town(map: &WorldMap, knowledge: &mut Knowledge) {
     let Some(town) = map.place(TOWN) else { return };
     let reading = knowledge.current();
     knowledge.switch(TOWN);
     for p in town.terrain.bounds().cells() {
-        knowledge.mark(p);
+        knowledge.learn(p);
     }
     knowledge.switch(reading);
 }
@@ -227,24 +230,26 @@ mod tests {
         }
     }
 
-    /// Every stair is a landmark, kept on the map from memory once seen as
-    /// the floor under it is, and still one in a continued run.
+    /// Every stair is a still thing the map draws, a glyph on no actor,
+    /// which is what the map keeps in memory once seen, and still one in
+    /// a continued run; `main.rs`'s own test walks away from one and
+    /// reads it drawn from memory.
     #[test]
     fn every_stair_is_kept_on_the_map_from_memory_through_a_save() {
-        use rl_engine::rl_render::Landmark;
-        let unremembered = |app: &mut App| {
+        let undrawn = |app: &mut App| {
             let world = app.world_mut();
-            let stairs = world.query::<(&Way, Has<Landmark>)>().iter(world).filter(|(w, _)| **w != Way::Gate).map(|(_, l)| l).collect::<Vec<_>>();
-            (stairs.len(), stairs.iter().filter(|l| !**l).count())
+            let stairs =
+                world.query_filtered::<(&Way, Has<Glyph>), Without<Actor>>().iter(world).filter(|(w, _)| **w != Way::Gate).map(|(_, g)| g).collect::<Vec<_>>();
+            (stairs.len(), stairs.iter().filter(|g| !**g).count())
         };
         let mut app = headless(RunSeed(2));
         arrive(&mut app, map_of(2));
-        let (laid, forgotten) = unremembered(&mut app);
-        assert!(laid >= 2 && forgotten == 0, "{laid} stairs, {forgotten} not landmarks");
+        let (laid, bare) = undrawn(&mut app);
+        assert!(laid >= 2 && bare == 0, "{laid} stairs, {bare} with no glyph for memory to keep");
         let text = app.world().resource::<rl_engine::rl_save::Saves>().load(crate::save::SLOT).expect("reads").expect("saved on arrival");
         let mut carried_on = crate::testing::continued(&text);
-        let (laid, forgotten) = unremembered(&mut carried_on);
-        assert!(laid >= 2 && forgotten == 0, "continued: {laid} stairs, {forgotten} not landmarks");
+        let (laid, bare) = undrawn(&mut carried_on);
+        assert!(laid >= 2 && bare == 0, "continued: {laid} stairs, {bare} with no glyph for memory to keep");
     }
 
     #[test]

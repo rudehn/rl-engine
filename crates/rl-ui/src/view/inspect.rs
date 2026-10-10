@@ -65,6 +65,11 @@ pub struct InspectView {
     /// says so where it would say what the thing is, so a look at a thing
     /// tells no more than the bag does.
     pub unknown: bool,
+    /// What the game says the subject seems, while it is not yet known,
+    /// printed in place of the bare `unknown`, as
+    /// [`ItemRow::seems`](crate::view::inventory::ItemRow::seems) is in the
+    /// bag. Empty for anything else, and read only while `unknown`.
+    pub seems: Vec<Facet>,
 }
 
 impl InspectView {
@@ -112,11 +117,12 @@ pub fn inspect_modal(modals: &Modals) -> ModalId {
 }
 
 /// Everything the panel names the thing under the cursor by.
-type Subject = (Entity, &'static Position, &'static Name, &'static Glyph, Option<&'static OnMap>);
+type Subject = (Entity, &'static Position, &'static Name, &'static Glyph, Option<&'static OnMap>, Has<Concealed>);
 /// Anything but the player: the cursor describes what you are looking
 /// at, and looking at yourself would forecast a duel with yourself.
-/// What the player is is the vitals panel's question.
-type NotYou = (Without<Dead>, Without<Player>);
+/// What the player is is the vitals panel's question. Never a prop nobody
+/// has spotted, which the map does not draw either.
+type NotYou = (Without<Dead>, Without<Player>, Without<Hidden>);
 
 /// Everything the cursor steers by.
 #[derive(bevy::ecs::system::SystemParam)]
@@ -187,6 +193,10 @@ pub struct Duelists<'w, 's> {
     modals: Res<'w, Modals>,
     map: Res<'w, WorldMap>,
     focus: Res<'w, Focus>,
+    /// What the player sees, the question the map draws by, so the cursor
+    /// names nothing the map left out: a thing out of sight, or one
+    /// [`Concealed`] in the dark.
+    sight: PlayerSight<'w, 's>,
     fire: Option<Res<'w, Fire>>,
     gases: Option<Res<'w, Gases>>,
     player: Query<'w, 's, (Entity, &'static Position, Fighter, Option<&'static Faction>), With<Player>>,
@@ -224,6 +234,7 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
     view.duel = None;
     view.odds = None;
     view.facets.clear();
+    view.seems.clear();
     view.ground.clear();
     view.burning = false;
     view.gas = None;
@@ -232,7 +243,6 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
         return;
     }
     let Ok((me, origin, mine, my_faction)) = duelists.player.single() else { return };
-    let here = duelists.map.current();
     // The ground first, since it is there whether or not anything stands
     // on it: what a burnt cell is now, and what hangs in the air over it.
     let cursor = view.cursor;
@@ -249,9 +259,9 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
     let under = duelists
         .subjects
         .iter()
-        .filter(|(_, pos, _, _, on)| pos.0 == view.cursor && on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here)
-        .max_by_key(|(entity, _, _, glyph, _)| (Some(*entity) == focused, glyph.layer));
-    let Some((entity, pos, name, glyph, _)) = under else { return };
+        .filter(|(_, pos, _, _, on, concealed)| pos.0 == view.cursor && duelists.sight.shows(pos.0, *on, *concealed))
+        .max_by_key(|(entity, _, _, glyph, _, _)| (Some(*entity) == focused, glyph.layer));
+    let Some((entity, pos, name, glyph, _, _)) = under else { return };
     let count = duelists.stacks.get(entity).map_or(1, |s| s.count);
     let mut row = Row::new(entity, rl_core::noun::listed(name.as_str(), count), *glyph).at(geometry::chebyshev(origin.0, pos.0));
     let theirs = duelists.fighters.get(entity).ok();

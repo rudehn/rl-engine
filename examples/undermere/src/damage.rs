@@ -41,14 +41,20 @@ use crate::dungeon::TOWN;
 /// blow's whole, the attacker's own roll, not what a defender's own
 /// resistance took off first. A kind that ignores armor is untouched, as
 /// `SubtractArmor` leaves it.
+///
+/// Never above what resistance alone left of the blow, though: the floor
+/// puts back what armor took, and a defender resisting more than half
+/// had less than the floor left before armor touched it, so a floor of the
+/// whole roll's half would have made its armor raise the damage it took.
 pub struct HalveArmor;
 
 impl<A: Copy> DamageStage<A> for HalveArmor {
-    fn apply(&self, hit: &Hit<A>, _defender: &Defender, _resistances: &Resistances, kinds: &Registry<DamageKind>, amount: i32) -> i32 {
+    fn apply(&self, hit: &Hit<A>, _defender: &Defender, resistances: &Resistances, kinds: &Registry<DamageKind>, amount: i32) -> i32 {
         if hit.amount <= 0 || !kinds.get(hit.kind).armored {
             return amount;
         }
-        let floor = hit.amount - hit.amount / 2;
+        let resisted = hit.amount - (i64::from(hit.amount) * i64::from(resistances.get(hit.kind)) / 100) as i32;
+        let floor = (hit.amount - hit.amount / 2).min(resisted);
         amount.max(floor)
     }
 }
@@ -143,6 +149,28 @@ mod tests {
         let defender = Defender { armor: 1000, blocked: false };
         let amount = resolve(&Hit::by(1u32, fire, 9), &defender, &Resistances::new(), &k, &stages);
         assert_eq!(amount, 9, "armor never touches fire, so the floor has nothing to restore");
+    }
+
+    /// Armor never raises what a blow deals: against a defender resisting
+    /// more than half of it, the floor is what resistance alone left, so
+    /// the same blow with armor deals no more than without, for every
+    /// resistance from none to immune and past it.
+    #[test]
+    fn armor_never_makes_a_resisted_blow_deal_more() {
+        let k = kinds();
+        let slash = k.expect("slash");
+        let stages: [&dyn DamageStage<u32>; 3] = [&ApplyResistance, &SubtractArmor, &HalveArmor];
+        for pct in (0..=150).step_by(10) {
+            let mut r = Resistances::new();
+            r.set(slash, pct);
+            for roll in 1..=20 {
+                let bare = resolve(&Hit::by(1u32, slash, roll), &Defender { armor: 0, blocked: false }, &r, &k, &stages);
+                for armor in [1, 3, 10] {
+                    let armored = resolve(&Hit::by(1u32, slash, roll), &Defender { armor, blocked: false }, &r, &k, &stages);
+                    assert!(armored <= bare, "resist {pct}, roll {roll}, armor {armor}: {armored} armored against {bare} bare");
+                }
+            }
+        }
     }
 
     /// With no armor at all, the floor changes nothing: `SubtractArmor`

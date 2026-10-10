@@ -113,6 +113,12 @@ impl Effect for Mend {
     fn mends(&self) -> bool {
         true
     }
+
+    /// Only with someone hurt to mend: a mend on the whole restores nothing
+    /// and spends the turn.
+    fn would_act(&self, landing: &Landing, world: &World) -> bool {
+        landing.targets.iter().any(|t| world.get::<crate::combat::Health>(*t).is_some_and(|h| h.current < h.max))
+    }
 }
 
 impl FromArgs for Mend {

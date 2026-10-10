@@ -9,6 +9,7 @@
             crates/rl-bevy/src/stealth.rs
             crates/rl-bevy/src/minds.rs
             crates/rl-bevy/src/turn.rs
+            crates/rl-bevy/src/noise.rs
             crates/rl-rules/src/damage.rs
             crates/rl-rules/src/status.rs
             crates/rl-rules/src/stats.rs
@@ -17,7 +18,7 @@
             crates/rl-rules/src/events/quest.rs
             crates/rl-ui/src/facet.rs
             crates/rl-ui/src/narrate.rs
-     fingerprint: c50750c9 -->
+     fingerprint: d79f0261 -->
 
 # Statuses
 
@@ -40,10 +41,15 @@ A game that inserted neither has nothing listening and is told so, loudly, the m
 
 ## The model
 
-`StatusDef` is a `name`, a `stacking` rule, a list of `modifiers`, an optional `tick_damage` as a kind and an amount, an optional `badge` of one character a panel may draw, and three flags, each false unless a status file writes it `true` or its builder sets it: `unseen`, `boon` and `holds`.
-A status that holds takes its holder's turns while it lasts: `pass_held_turns` claims the decision of an actor holding the turn while `Statuses::holding` names a status on it, and spends the turn as a wait costs, so paralysis, a snare and sleep are each one line of a game's statuses.
+`StatusDef` is a `name`, a `stacking` rule, a list of `modifiers`, an optional `tick_damage` as a kind and an amount, an optional `badge` of one character a panel may draw, and four flags, each false unless a status file writes it `true` or its builder sets it: `unseen`, `boon`, `holds` and `sleeps`.
+A status that holds takes its holder's turns while it lasts: `pass_held_turns` claims the decision of an actor holding the turn while `Statuses::holding` names a status on it, and spends the turn as a wait costs, so paralysis and a snare are each one line of a game's statuses.
 Its mind is not asked what to do, though its sight is still recast and its noticing rolled; a held player's keys come to nothing, since the turn is spent before any intent resolves; and a worker caught at its work loses those turns rather than working them.
-The hold ends when the status does, by its time or by a cure, so a sleep a blow breaks is the game's `Cure` on the blow.
+The hold ends when the status does, by its time or by a cure, so a status a blow breaks is the game's `Cure` on the blow.
+A status that sleeps holds its holder the same way, written `sleeps: true`, and ends itself the moment it is woken rather than waiting for the game's own `Cure`: `Sleepers::asleep` answers who is asleep by reading `Statuses::sleeping` off its current statuses, and `Statuses::wake` cures every one that sleeps and reports each with `StatusEvent::Cured`.
+A sleeper senses less than a held actor still does: its sight is recast and its noticing rolled, but only within `SLEEPER_REACH`, two cells, and only by its chance there, never by its certain radius, so a hider can stand over one without waking it.
+`StatusPlugin`'s `wake_on_harm`, in `TurnSet::React`, wakes whoever harm landed on this pass, armor stopped at nothing included, since it was felt; the blow that woke it was rolled on it as on the unaware.
+Its `wake_on_sight`, in `DecideSet::Notice` on the sleeper's own turn after noticing runs, wakes it to a foe it notices within that reach, by the same roll stealth's own noticing uses when stealth runs, or on sight alone when the foe does not hide or sees on sight regardless; a sleeper watches nobody outside the reach.
+`NoisePlugin` adds a third, `wake_on_noise` in `TurnSet::Listen`, which wakes whoever heard a noise this pass with its `Hearing` threshold left on it, so a sleeper with no hearing sleeps through any noise and a game with statuses and no noise has nothing to wake one from it.
 An unseen status hides whoever holds it from every mind while it lasts and ends when its holder attacks, which `StealthPlugin` decides and this plugin knows nothing of; without stealth the flag is carried and read by nobody.
 `status::load` reads them from RON by name, resolving every stat and damage kind through `Names` and reporting every unknown name in the file at once, so a game authors statuses in the words its other content uses.
 The definition is never deserialized as it stands, because its ids index registries a content file cannot see and a number written in one would land on a different stat the day the stat list is reordered.

@@ -21,9 +21,12 @@ use crate::tally::Counted;
 use crate::townsfolk::{GivenNames, NameSets, Townsfolk, Townsperson, name_everyone};
 
 /// The adventurer's health at the start of a run, and the most they ever
-/// have: Brogue's forty, a first cut, since no experience and no levels
-/// raise it and what keeps them alive is what they find.
-pub const HEALTH: i32 = 40;
+/// have but for a potion of life: sixty, since no experience and no levels
+/// raise it, nothing mends it but what they find, and part 3's armor, which
+/// takes at most half a blow, no longer turns the deep floors' blows away
+/// whole. Brogue's forty until part 3's soak, which won one run in a
+/// hundred and fifty on it, and seven in a hundred on fifty.
+pub const HEALTH: i32 = 60;
 
 /// The lantern, by its name in `items.ron`: what the adventurer walks out
 /// with lit, and what dims as they descend.

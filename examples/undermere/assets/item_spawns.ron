@@ -22,16 +22,17 @@
 // in here changes nothing; adding or removing one does.
 [
     // Potions, by the content sheet's weights out of a hundred, all but
-    // three: healing most of all, then the three better thrown. Healing and
-    // extra healing are below the sheet's 25 and 12, at 18 and 9, since
-    // nothing else under the lake heals but a ring: at the sheet's, a
-    // careful delve came to every floor to the eighth at four fifths of its
-    // health (`tests/soak.rs`), and now what heals runs down as it goes.
+    // one: healing most of all, then the three better thrown. Healing and
+    // extra healing are the sheet's 25 and 12 again: part 2 cut them to 18
+    // and 9 when armor turned whole blows away and a careful delve came to
+    // every floor to the eighth at four fifths of its health
+    // (`tests/soak.rs`), and part 3's armor, which takes at most half a
+    // blow, left a delve dying on floors three to seven on what was left.
     // Strength is weighted above the sheet's four, at ten, so that about
     // four turn up over a run, chests and all, as the sheet also asks: at
     // four, one does. Life only from floor six, and strength from floor two.
-    (item: "potion of healing",       bands: (1, 10), weight: 18),
-    (item: "potion of extra healing", bands: (1, 10), weight: 9),
+    (item: "potion of healing",       bands: (1, 10), weight: 25),
+    (item: "potion of extra healing", bands: (1, 10), weight: 12),
     (item: "potion of strength",      bands: (2, 10), weight: 10),
     (item: "potion of life",          bands: (6, 10), weight: 2),
     (item: "potion of haste",         bands: (1, 10), weight: 6),

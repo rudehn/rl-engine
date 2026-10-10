@@ -24,8 +24,8 @@
 //! adventurer back to it. The mark and where the gate leads are
 //! the engine's to save, a prop and a way through's `Transition`; the
 //! mark's light is put back on it as it appears, by
-//! [`light`](crate::light), and its place in memory is its definition's,
-//! `remembered` in `props.ron`, which the engine dresses it by.
+//! [`light`](crate::light), and its place in memory is the map's, which
+//! keeps every still thing it draws once seen.
 //!
 //! In Mereholt, on its streets and on the island alike, a waystone is
 //! refused before the use is spent, by [`refuse_at_home`]: the gate is a
@@ -447,8 +447,6 @@ mod tests {
             let me = adventurer(&mut carried_on);
             assert_eq!(gate(&mut carried_on), (gate_cell, leads), "seed {s}: the gate still leads to the mark");
             assert_eq!(marks(&mut carried_on), [(map_of(3), knelt)], "seed {s}: the mark kept");
-            let registries = carried_on.world().resource::<Registries>();
-            assert!(registries.props.get(registries.props.expect(GATE_MARK)).look.remembered, "seed {s}: and kept on the map from memory");
             go_through(&mut carried_on, me);
             assert_eq!((here(&carried_on), crate::testing::at(&carried_on, me)), (map_of(3), knelt), "seed {s}: back down onto the mark");
         }

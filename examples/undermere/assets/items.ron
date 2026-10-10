@@ -5,6 +5,8 @@
 //   name:       unique; the spawn table and drops refer to it; one of it, singular, since
 //               the engine says a stack as "12 arrows", so a thing counted by its measure is
 //               named by it: "gold coin", never "gold"
+//   mass:       optional; true for a name said with no "a", a stuff: "You put on chain mail.",
+//               never "a chain mail"; false when left out
 //   glyph:      one character, and one the typeface in `assets/fonts/` has
 //   color:      (r, g, b) in 0..=1; a thing wearing a face from `lore.ron` is drawn in the
 //               face's colour instead, known or not, so its colour gives nothing away
@@ -149,6 +151,9 @@
 //   per_level:  optional; [(stat, amount)] added to its wearer's stats for each of its levels
 //               while it is worn, and taken away for each below nought; only on a thing with a
 //               slot that takes levels
+//   caps:       optional; [(stat, most)] the most its wearer's stat comes to while it is
+//               worn, whatever else they wear; the stats as for bestows; only on a thing with
+//               a slot
 //   stack:      optional; whether copies merge into one counted entry; never on a worn thing
 //   pile:       optional; how many make a pile where one is found, as "NdS+B", times the
 //               floor it is found on; only on a thing that stacks; absent, one
@@ -189,13 +194,17 @@
     // The armor: the heavier, the more it turns, the more strength it
     // asks, and the louder every step taken in it, which whatever has ears
     // hears the further off. A shield turns one blow in ten aside, the
-    // one thing under the lake that does.
-    (name: "leather armor", glyph: '[', color: (0.6, 0.45, 0.3), price: 40, slot: "body", tags: ["armor"], armor: 1, strength: 10),
-    (name: "scale mail", glyph: '[', color: (0.55, 0.62, 0.55), price: 100, slot: "body", tags: ["armor"], armor: 2, strength: 13, bestows: [("footfall", 1)]),
-    (name: "chain mail", glyph: '[', color: (0.68, 0.7, 0.75), price: 160, slot: "body", tags: ["armor"], armor: 3, strength: 13, bestows: [("footfall", 1)]),
-    (name: "banded mail", glyph: '[', color: (0.72, 0.62, 0.48), price: 240, slot: "body", tags: ["armor"], armor: 4, strength: 15, bestows: [("footfall", 2)]),
-    (name: "splint mail", glyph: '[', color: (0.6, 0.65, 0.75), price: 320, slot: "body", tags: ["armor"], armor: 5, strength: 17, bestows: [("footfall", 2)]),
-    (name: "plate armor", glyph: '[', color: (0.82, 0.84, 0.9), price: 450, slot: "body", tags: ["armor"], armor: 6, strength: 19, bestows: [("footfall", 3)]),
+    // one thing under the lake that does. A scroll poured into body armor
+    // also knits its wearer's wounds a little faster a level, since the
+    // blow it turns stops growing once the engine's own half-blow floor
+    // is reached, and a scroll spent past that floor would otherwise buy
+    // nothing at all.
+    (name: "leather armor", mass: true, glyph: '[', color: (0.6, 0.45, 0.3), price: 40, slot: "body", tags: ["armor"], armor: 1, strength: 10, per_level: [("regeneration", 1)]),
+    (name: "scale mail", mass: true, glyph: '[', color: (0.55, 0.62, 0.55), price: 100, slot: "body", tags: ["armor"], armor: 2, strength: 13, bestows: [("footfall", 1)], per_level: [("regeneration", 1)]),
+    (name: "chain mail", mass: true, glyph: '[', color: (0.68, 0.7, 0.75), price: 160, slot: "body", tags: ["armor"], armor: 3, strength: 13, bestows: [("footfall", 1)], per_level: [("regeneration", 1)]),
+    (name: "banded mail", mass: true, glyph: '[', color: (0.72, 0.62, 0.48), price: 240, slot: "body", tags: ["armor"], armor: 4, strength: 15, bestows: [("footfall", 2)], per_level: [("regeneration", 1)]),
+    (name: "splint mail", mass: true, glyph: '[', color: (0.6, 0.65, 0.75), price: 320, slot: "body", tags: ["armor"], armor: 5, strength: 17, bestows: [("footfall", 2)], per_level: [("regeneration", 1)]),
+    (name: "plate armor", mass: true, glyph: '[', color: (0.82, 0.84, 0.9), price: 450, slot: "body", tags: ["armor"], armor: 6, strength: 19, bestows: [("footfall", 3)], per_level: [("regeneration", 1)]),
     (name: "shield", glyph: ']', color: (0.62, 0.52, 0.4), price: 60, slot: "off hand", tags: ["armor"], armor: 1, strength: 12, bestows: [("evasion", 10)]),
     (name: "helm", glyph: '^', color: (0.7, 0.7, 0.75), price: 40, slot: "head", tags: ["armor"], armor: 1, strength: 11),
     // The potions, each spent by its use or where it lands when thrown. The
@@ -375,10 +384,12 @@
      triggers: [(on: "hit", effects: [(kind: "Inflict", args: (status: "poisoned", turns: 4)), (kind: "Inflict", chance: 25, args: (status: "webbed", turns: 1))]),
                 (on: "pulse", every: 6000, effects: [(kind: "Whisper")])]),
     // The Choirmaster's Staff: a two-hander with no blow of its own,
-    // `RaiseAlly` aimed at a body within six, two charges and a mending
-    // of minus ten while it is held.
+    // `RaiseAlly` aimed at a body within six, two charges, and no
+    // regeneration while it is held: a cap at nought rather than a cut of
+    // mending, which a ring of regeneration's own mending outweighed and
+    // a long rest's several points at once leaked through.
     (name: "the Choirmaster's Staff", glyph: '_', color: (0.85, 0.85, 1.0), price: 1600, tags: ["artifact"], slot: "main hand", also: ["off hand"],
-     bestows: [("mending", -10)], consumable: (charges: 2, when_empty: Kept, recharge: 300),
+     caps: [("regeneration", 0)], consumable: (charges: 2, when_empty: Kept, recharge: 300),
      triggers: [(on: "use", targeting: (mode: Bolt(range: 6), aim: Ground), look: (glyph: '*', color: (r: 220, g: 220, b: 255)),
                  effects: [(kind: "RaiseAlly", args: (turns: 30))])]),
     // The Abbess's Chalice: carried rather than worn, one charge of Mend

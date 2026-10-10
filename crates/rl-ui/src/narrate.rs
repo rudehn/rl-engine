@@ -26,6 +26,13 @@
 //! in [`ViewSet::Annotate`](crate::ViewSet) before they are spoken, or
 //! drops the presenter and reads the view itself.
 //!
+//! A thing is named as its template asks: `{what}` as any thing, `a
+//! sword`, and `{your what}` as the player's own, `your sword`, which is
+//! how the player's putting on, taking off and dropping read. A thing whose
+//! name takes no `a`, `chain mail` or `gauntlets`, carries [`MassNoun`],
+//! put on it by the game, since only the game knows which of its names are
+//! a stuff.
+//!
 //! What using an item means, what a quest said, and how a game's own events
 //! read stay the game's words, but not its order to keep. A game writes a
 //! [`Tell`] from inside the pass, in [`TurnSet::React`] where it answers
@@ -42,6 +49,7 @@ use std::collections::BTreeMap;
 use bevy::prelude::*;
 use rl_bevy::prelude::*;
 use rl_core::Point;
+use rl_core::noun::Countability;
 use rl_render::Glyph;
 
 use crate::log::{MessageLog, Span};
@@ -181,13 +189,15 @@ pub enum Phrase {
     YouSwapWith,
     /// Someone noticed you.
     NoticesYou,
-    /// You used an ability on nobody in particular.
+    /// You used an ability on nobody in particular, or aimed it at the
+    /// ground and caught one there.
     YouUse,
     /// You used one on someone.
     YouUseOn,
     /// You used one on several.
     YouUseOnMany,
-    /// Someone else used one on nobody in particular.
+    /// Someone else used one on nobody in particular, or aimed it at the
+    /// ground and caught one there.
     Uses,
     /// Someone else used one on someone.
     UsesOn,
@@ -250,8 +260,9 @@ pub struct Said {
     /// A registry's name for the status, kind or ability involved:
     /// `{named}`.
     pub named: String,
-    /// What `who`, `whom` and `what` were called when the row was made,
-    /// filled in by the collector.
+    /// What `who` and `whom` were called when the row was made, filled in
+    /// by the collector, and [`called_thing`](Self::called_thing) the same
+    /// for `what`.
     ///
     /// A row is made inside the pass and spoken after it, and things
     /// change in between: what dies becomes remains and is renamed, what
@@ -261,7 +272,10 @@ pub struct Said {
     /// read when the thing happened rather than when the line is spoken.
     /// Empty falls back to reading them now, which is what a line made
     /// outside the turns wants.
-    pub called: [Option<String>; 3],
+    pub called: [Option<String>; 2],
+    /// What `what` was called when the row was made, and how many of it
+    /// the row is about, read as [`called`](Self::called) is.
+    pub called_thing: Option<Called>,
     /// More words, where there are any: the reasons a use was refused.
     pub detail: String,
     /// How much: `{n}`.
@@ -314,7 +328,8 @@ impl Said {
             whom: None,
             what: None,
             named: String::new(),
-            called: [None, None, None],
+            called: [None, None],
+            called_thing: None,
             detail: String::new(),
             amount: 0,
             at: None,
@@ -332,6 +347,51 @@ impl Said {
         }
     }
 }
+
+/// What a thing was called when a row was made: its name, how many of it
+/// the row is about, and whether the name is said with `a`, which the
+/// presenter puts together as the template asks, `a sword` or `your
+/// sword`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Called {
+    /// Its [`Name`], one of it.
+    pub name: String,
+    /// How many: what its [`Stack`] held, or one.
+    pub count: u32,
+    /// [`Countability::Mass`] for a thing carrying [`MassNoun`].
+    pub countability: Countability,
+}
+
+impl Called {
+    /// As a sentence says it: `a sword`, `5 arrows`, `chain mail`.
+    pub fn counted(&self) -> String {
+        rl_core::noun::counted_as(&self.name, self.count, self.countability)
+    }
+
+    /// As the player's own: `your sword`, `your 5 arrows`.
+    pub fn yours(&self) -> String {
+        rl_core::noun::owned("your", &self.name, self.count, self.countability)
+    }
+}
+
+/// What `name` is called, `count` of it, said with no `a` when `mass`.
+fn called(name: &Name, count: u32, mass: bool) -> Called {
+    let countability = if mass { Countability::Mass } else { Countability::Count };
+    Called { name: name.as_str().to_string(), count, countability }
+}
+
+/// A thing whose name is said with no `a`: a stuff, `chain mail` or
+/// `leather armor`, or a thing named in the plural, `gauntlets`. So a line
+/// reads `You pick up chain mail.` and not `You pick up a chain mail.`
+///
+/// On the thing rather than a list of words the engine keeps, because
+/// whether a name is a stuff is a fact about the game's content that its
+/// spelling does not give away, `mail` being one and `nail` not, and the
+/// game that named the thing is the one that knows. It is about the name
+/// the thing carries, so a game that renames a thing to a name that is not
+/// a stuff takes it off.
+#[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MassNoun;
 
 /// A line of a game's own, told in its place among what the turns did.
 ///
@@ -474,7 +534,7 @@ pub struct Witness<'w, 's> {
     /// from one the game answers itself.
     does: Query<'w, 's, &'static rl_bevy::Triggers>,
     /// What things are called while the pass is still running.
-    names: Query<'w, 's, (Option<&'static Name>, Option<&'static Stack>)>,
+    names: Query<'w, 's, (Option<&'static Name>, Option<&'static Stack>, Has<MassNoun>)>,
 }
 
 impl Witness<'_, '_> {
@@ -532,24 +592,23 @@ impl Witness<'_, '_> {
         if self.is_you(e) {
             return None;
         }
-        let (name, _) = self.names.get(e).ok()?;
+        let (name, ..) = self.names.get(e).ok()?;
         Some(rl_core::noun::with_the(name?.as_str()))
     }
 
-    /// The same for a thing, in the words [`Names::thing`] would use,
+    /// What a thing is called right now, as [`Names::thing`] reads it,
     /// counted as its stack stood when the row was made.
-    fn called_thing(&self, e: Option<Entity>) -> Option<String> {
-        let e = e?;
-        let (name, stack) = self.names.get(e).ok()?;
-        Some(rl_core::noun::counted(name?.as_str(), stack.map_or(1, |s| s.count)))
+    fn called_thing(&self, e: Option<Entity>) -> Option<Called> {
+        let (name, stack, mass) = self.names.get(e?).ok()?;
+        Some(called(name?, stack.map_or(1, |s| s.count), mass))
     }
 
     /// The same for one of a thing, whatever its stack holds: a use takes
     /// one, and by the time the row is made the stack already counts one
     /// fewer.
-    fn called_one(&self, e: Option<Entity>) -> Option<String> {
-        let (name, _) = self.names.get(e?).ok()?;
-        Some(rl_core::noun::counted(name?.as_str(), 1))
+    fn called_one(&self, e: Option<Entity>) -> Option<Called> {
+        let (name, _, mass) = self.names.get(e?).ok()?;
+        Some(called(name?, 1, mass))
     }
 
     fn status_name(&self, id: rl_rules::StatusId) -> String {
@@ -558,6 +617,13 @@ impl Witness<'_, '_> {
 
     fn is_boon(&self, id: rl_rules::StatusId) -> bool {
         self.registries.as_deref().is_some_and(|r| r.statuses.get(id).boon)
+    }
+
+    /// Whether `id` is aimed at someone rather than at the ground, so a
+    /// line may say whom it was used on. True with no abilities to ask,
+    /// since then the targets are all there is to go on.
+    fn aims_at_someone(&self, id: rl_rules::AbilityId) -> bool {
+        self.abilities.as_deref().is_none_or(|a| a.get(id).aim != rl_rules::ability::Aim::Ground)
     }
 
     fn ability_name(&self, id: rl_rules::AbilityId) -> String {
@@ -607,8 +673,14 @@ pub fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witn
             AbilityEvent::Used { user, ability, targets, .. } => {
                 let you = witness.is_you(*user);
                 let others: Vec<Entity> = targets.iter().copied().filter(|t| t != user).collect();
+                // One caught by a use aimed at the ground is told by the
+                // harm it did them, not as whom it was used on: a step
+                // through the air pointed past the player is not cast on
+                // them, and the cell is all it was aimed at. Several caught
+                // are still counted, which says nothing of being aimed at.
                 let (phrase, whom) = match others.as_slice() {
                     [] => (if you { Phrase::YouUse } else { Phrase::Uses }, None),
+                    [_] if !witness.aims_at_someone(*ability) => (if you { Phrase::YouUse } else { Phrase::Uses }, None),
                     [one] => (if you { Phrase::YouUseOn } else { Phrase::UsesOn }, Some(*one)),
                     _ => (if you { Phrase::YouUseOnMany } else { Phrase::UsesOnMany }, None),
                 };
@@ -888,7 +960,8 @@ pub fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witn
         } else {
             witness.called_thing(said.what)
         };
-        said.called = [witness.called_actor(said.who), witness.called_actor(said.whom), thing];
+        said.called = [witness.called_actor(said.who), witness.called_actor(said.whom)];
+        said.called_thing = thing;
     }
     view.rows.extend(first);
     view.rows.extend(rows);
@@ -901,8 +974,11 @@ type Entry = Option<(String, ToneId)>;
 ///
 /// Placeholders: `{who}` and `{whom}` are `you` or `the <Name>`, and
 /// `{Who}` and `{Whom}` the same capitalised; `{what}` is the thing's
-/// [`Name`] said with its count, `a pebble` or `5 pebbles` (see
-/// [`rl_core::noun`]), and `{What}` capitalised; `{n}` the amount;
+/// [`Name`] said with its count, `a pebble` or `5 pebbles`, and with no
+/// `a` for a [`MassNoun`], `chain mail` (see [`rl_core::noun`]);
+/// `{your what}` is the same thing as the player's own, `your pebble`, for
+/// a line about something the player held; `{What}` and `{Your what}` are
+/// capitalised; `{n}` the amount;
 /// `{named}` the registry's name for the status, kind or ability; and
 /// `{detail}` whatever more there is to say. A name other than the player's
 /// is coloured as the thing is drawn.
@@ -959,15 +1035,18 @@ impl Default for Phrasebook {
             (YouDie, "You die.", Tones::BAD),
             (YouPickUp, "You pick up {what}.", Tones::TEXT),
             (PicksUp, "{Who} picks up {what}.", Tones::NOTICE),
-            (YouDrop, "You drop {what}.", Tones::TEXT),
+            // What the player puts on, wields, takes off or drops is
+            // theirs, and said so: "You drop your sword.", where "a sword"
+            // read as though it were any sword.
+            (YouDrop, "You drop {your what}.", Tones::TEXT),
             (Drops, "{Who} drops {what}.", Tones::NOTICE),
-            (YouWear, "You put on {what}.", Tones::TEXT),
+            (YouWear, "You put on {your what}.", Tones::TEXT),
             (Wears, "{Who} puts on {what}.", Tones::NOTICE),
-            (YouWield, "You wield {what}.", Tones::TEXT),
+            (YouWield, "You wield {your what}.", Tones::TEXT),
             (Wields, "{Who} wields {what}.", Tones::NOTICE),
-            (YouTakeOff, "You take off {what}.", Tones::MUTED),
+            (YouTakeOff, "You take off {your what}.", Tones::MUTED),
             (TakesOff, "{Who} takes off {what}.", Tones::MUTED),
-            (WillNotComeOff, "{What} will not come off.", Tones::BAD),
+            (WillNotComeOff, "{Your what} will not come off.", Tones::BAD),
             (YouThrow, "You throw {what}.", Tones::TEXT),
             (Throws, "{Who} throws {what}.", Tones::NOTICE),
             (YouUseThing, "You use {what}.", Tones::TEXT),
@@ -1051,6 +1130,7 @@ pub struct Names<'w, 's> {
     player: Query<'w, 's, (), With<Player>>,
     names: Query<'w, 's, (Option<&'static Name>, Option<&'static Glyph>)>,
     stacks: Query<'w, 's, &'static Stack>,
+    mass: Query<'w, 's, (), With<MassNoun>>,
 }
 
 impl Names<'_, '_> {
@@ -1071,13 +1151,20 @@ impl Names<'_, '_> {
         }
     }
 
-    /// The thing's [`Name`] as a sentence says it, `a pebble` or `5
-    /// pebbles` by its [`Stack`], in its colour, or `something`.
-    fn thing(&self, e: Option<Entity>) -> Named {
-        let count = e.and_then(|e| self.stacks.get(e).ok()).map_or(1, |s| s.count);
-        match e.and_then(|e| self.names.get(e).ok()) {
-            Some((Some(name), glyph)) => Named { text: rl_core::noun::counted(name.as_str(), count), color: glyph.map(|g| g.fg) },
-            _ => self.unseen(),
+    /// The thing as a sentence says it, by `say`: under the name the row
+    /// was made with, `called`, or else its [`Name`] now, counted by its
+    /// [`Stack`]; in its colour, or `something` when it has no name.
+    fn thing(&self, e: Option<Entity>, called: &Option<Called>, say: fn(&Called) -> String) -> Named {
+        let glyph = e.and_then(|e| self.names.get(e).ok());
+        let color = glyph.and_then(|(_, g)| g).map(|g| g.fg);
+        let now = || {
+            let e = e?;
+            let (name, _) = self.names.get(e).ok()?;
+            Some(self::called(name?, self.stacks.get(e).map_or(1, |s| s.count), self.mass.contains(e)))
+        };
+        match called.clone().or_else(now) {
+            Some(called) => Named { text: say(&called), color },
+            None => self.unseen(),
         }
     }
 }
@@ -1117,7 +1204,8 @@ pub fn render(template: &str, said: &Said, names: &Names<'_, '_>, name_who: bool
             "who" if !name_who => Some(names.unseen()),
             "who" => Some(names.actor(said.who).or_called(&said.called[0])),
             "whom" => Some(names.actor(said.whom).or_called(&said.called[1])),
-            "what" => Some(names.thing(said.what).or_called(&said.called[2])),
+            "what" => Some(names.thing(said.what, &said.called_thing, Called::counted)),
+            "your what" => Some(names.thing(said.what, &said.called_thing, Called::yours)),
             "n" => Some(Named { text: said.amount.to_string(), color: None }),
             "named" => Some(Named { text: said.named.clone(), color: None }),
             "detail" => Some(Named { text: said.detail.clone(), color: None }),
@@ -1589,7 +1677,40 @@ mod tests {
         stage.app.world_mut().write_message(Intent::new(player, Unequip(ring)));
         stage.tick();
         let said = lines(&stage);
-        assert!(said.contains(&("A ring will not come off.".to_string(), Tones::BAD)), "{said:?}");
+        assert!(said.contains(&("Your ring will not come off.".to_string(), Tones::BAD)), "{said:?}");
+    }
+
+    /// What the player puts on, takes off and drops is said as theirs, and
+    /// what they pick up with the article its name takes: none for a stuff,
+    /// so chain mail is never `a chain mail`, and `a` for a thing counted
+    /// one at a time.
+    #[test]
+    fn the_players_own_things_are_said_as_theirs_and_a_stuff_takes_no_article() {
+        let mut stage = Stage::new(NarratorPlugin::default());
+        let player = stage.player;
+        let body = rl_rules::EquipShape::in_slot(rl_rules::SlotId::from_raw(0));
+        let mail = stage.app.world_mut().spawn((Item, Name::new("chain mail"), MassNoun, Wearable(body))).id();
+        let here = stage.at;
+        stage.app.world_mut().entity_mut(player).insert((Inventory { items: vec![mail] }, Equipped(rl_rules::Equipment::with_slot_count(1))));
+        stage.tick();
+        stage.app.world_mut().write_message(Intent::new(player, Equip(mail)));
+        stage.tick();
+        stage.app.world_mut().write_message(Intent::new(player, Unequip(mail)));
+        stage.tick();
+        stage.app.world_mut().write_message(Intent::new(player, DropItem(mail)));
+        stage.tick();
+        stage.app.world_mut().write_message(Intent::new(player, PickUp));
+        stage.tick();
+        let theirs = ["You put on your chain mail.", "You take off your chain mail.", "You drop your chain mail.", "You pick up chain mail."];
+        assert_eq!(spoken(&stage, &["You put", "You take", "You drop", "You pick"]), theirs);
+
+        let sword = stage.app.world_mut().spawn((Item, Name::new("sword"), Position(here))).id();
+        stage.app.world_mut().write_message(Intent::new(player, PickUp));
+        stage.tick();
+        assert_eq!(spoken(&stage, &["You pick up a"]), ["You pick up a sword."], "a thing counted one at a time takes an article");
+        stage.app.world_mut().write_message(Intent::new(player, DropItem(sword)));
+        stage.tick();
+        assert_eq!(spoken(&stage, &["You drop your s"]), ["You drop your sword."]);
     }
 
     /// The player strikes a slime and the slime's mind strikes back in the
@@ -1752,6 +1873,36 @@ mod tests {
         stage.tick();
         let said: Vec<String> = lines(&stage).into_iter().map(|(t, _)| t).collect();
         assert!(said.contains(&"The line droid turns it back on the rat.".to_string()), "{said:?}");
+    }
+
+    /// A use aimed at the ground that caught one is told without whom,
+    /// since the cell is what it was aimed at, one that caught several
+    /// still counts them, and one aimed at someone names them: "The rat
+    /// uses burst.", not "The rat uses burst on you.", where the burst was
+    /// a step through the air that landed beside the player.
+    #[test]
+    fn a_use_aimed_at_the_ground_names_nobody_and_one_aimed_at_someone_names_them() {
+        use crate::view::target::harness::abilities;
+        use rl_bevy::{AbilitiesPlugin, AbilityEvent, AddEngineEffects};
+        let mut stage = Stage::new_with((AbilitiesPlugin, rl_bevy::EffectsPlugin, NarratorPlugin::default()), |app| {
+            app.add_engine_effects();
+            abilities(app);
+        });
+        let (bolt, burst) = {
+            let a = stage.app.world().resource::<Abilities>();
+            (a.expect("bolt"), a.expect("burst"))
+        };
+        let (player, at) = (stage.player, stage.at);
+        let rat = stage.actor("rat", 'r', 3, 0);
+        stage.tick();
+        let other = stage.actor("bat", 'b', 3, 1);
+        stage.tick();
+        for (user, ability, whom) in [(rat, burst, vec![player]), (rat, bolt, vec![player]), (player, burst, vec![rat]), (player, burst, vec![rat, other])] {
+            stage.app.world_mut().write_message(AbilityEvent::Used { user, ability, aim: at, targets: whom });
+        }
+        stage.tick();
+        let said = spoken(&stage, &["The rat uses", "You use"]);
+        assert_eq!(said, ["The rat uses burst.", "The rat uses bolt on you.", "You use burst.", "You use burst, catching 2."], "{said:#?}");
     }
 
     /// A bolt from a thing used, or from an ability, is not a blow: the

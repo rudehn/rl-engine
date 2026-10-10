@@ -5,7 +5,8 @@
             crates/rl-bevy/src/cue.rs
             crates/rl-bevy/src/plugin.rs
             crates/rl-bevy/src/components.rs
-     fingerprint: a6b2d512 -->
+            crates/rl-bevy/src/world.rs
+     fingerprint: d9a3db33 -->
 
 # The turn loop
 
@@ -47,6 +48,7 @@ Once it is gone `schedule` deals nobody a turn, and the pass that finds it so ch
 A `Player` that is no `Actor` is an onlooker: never admitted to the queue, so never dealt a turn, while the map being read, the view and everything that asks what the player sees still follow it.
 `TurnHold` is the brake, and it takes only while something watches: `hold_for_cues` raises it after any pass that cued, and `run_turns` then runs no pass until the watcher releases it.
 `Airborne<L>` is what a subsystem has in the air; `launched` hands the landing straight back when nothing watches, so a headless game lands everything at once.
+`resolve_moves` refuses a `Step` into an occupied or unwalkable cell, and a diagonal one besides unless `corner_ok`, the one corner rule, answers yes: a diagonal may squeeze only between two cells `WorldMap::lets_diagonal_past` says let it past, never a wall's corner or a closed door's, which is the same question `CostSource::lets_diagonal_past` puts to a search, so a mind's own path and the move it resolves never disagree and a mover is never refused the same step twice.
 
 ## Using it
 

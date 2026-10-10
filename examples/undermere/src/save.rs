@@ -142,7 +142,7 @@ pub struct MonsterSave {
     #[serde(default)]
     pub ally: bool,
     /// Whether it follows one who freed it by name rather than whichever
-    /// ally is nearest: task 10's own freed captive, read off whether it
+    /// ally is nearest: a freed captive, read off whether it
     /// carries the engine's own `Leader` at the moment it is captured.
     /// `Leader` itself is the generic entity-state machinery's to put
     /// back, once every entity of the save has one; this is only the
@@ -160,6 +160,38 @@ pub struct MonsterSave {
     /// captive came back an ordinary monster of its kind.
     #[serde(default)]
     pub shackled: Option<Point>,
+    /// The side it fights for, by name, when that is neither its kind's
+    /// own nor the adventurer's, which `ally` says: a goblin conjurer's
+    /// blades, a body a necromancer raised. `None` for anything else, and
+    /// in a save written before a continued run kept it, whose blades came
+    /// back on the side their kind is written with.
+    #[serde(default)]
+    pub side: Option<String>,
+    /// Whether it is a body stood back up, whose second death drops
+    /// nothing and counts nothing: see
+    /// [`Raised`](crate::effects::bodies::Raised).
+    #[serde(default)]
+    pub raised: bool,
+    /// Whether it has stolen something and is running with it: see
+    /// [`Stole`](crate::tricks::Stole).
+    #[serde(default)]
+    pub stole: bool,
+}
+
+/// The side `monster` fights for when that is neither its kind's own nor
+/// the adventurer's, nor a captive's, which their own fields say: the side
+/// it went back to after a discord, if it is discordant now, since the
+/// discord's status is the engine's to keep and turns it again.
+fn own_side(world: &World, monster: Entity, kind: Id<crate::bestiary::MonsterDef>) -> Option<String> {
+    if world.get::<crate::allies::Ally>(monster).is_some() || crate::captives::held_at(world, monster).is_some() {
+        return None;
+    }
+    let side = match world.get::<crate::conditions::Discordant>(monster) {
+        Some(turned) => turned.was,
+        None => *world.get::<Faction>(monster)?,
+    };
+    let factions = &world.resource::<Registries>().factions;
+    (side.0 != world.resource::<Bestiary>().defs.get(kind).faction).then(|| factions.name(side.0).to_string())
 }
 
 impl Saveable for Kind {
@@ -171,13 +203,16 @@ impl Saveable for Kind {
             def: world.resource::<Bestiary>().defs.name(kind.0).to_string(),
             // `Leader` alone is a band follower's as readily as a freed
             // captive's; only paired with `Ally` does it mean the
-            // follower fights for the adventurer and is one of task 10's
-            // own, since nothing else on the adventurer's own side gets a
+            // follower fights for the adventurer and is a freed captive,
+            // since nothing else on the adventurer's own side gets a
             // named leader to begin with.
             ally: world.get::<crate::allies::Ally>(entity).is_some(),
             following: world.get::<crate::allies::Ally>(entity).is_some() && world.get::<Leader>(entity).is_some(),
             fades: world.get::<crate::allies::Fades>(entity).map(|f| f.at),
             shackled: crate::captives::held_at(world, entity),
+            side: own_side(world, entity, kind.0),
+            raised: world.get::<crate::effects::bodies::Raised>(entity).is_some(),
+            stole: world.get::<crate::tricks::Stole>(entity).is_some(),
         }
     }
 
@@ -196,12 +231,12 @@ impl Saveable for Kind {
         }
         if saved.following {
             // Overrides `befriend`'s own ally mind with the one that
-            // follows by name: the generic entity state the save already
-            // restores puts `Leader` back on this same entity once every
-            // entity of the save exists to point it at, so the mind only
-            // has to be shaped to read it, not to know yet who it names.
-            let mind = world.resource::<Bestiary>().defs.get(id).follow_mind();
-            world.entity_mut(monster).insert(mind);
+            // follows by name, and gives back the wit to travel with its
+            // leader: the generic entity state the save already restores
+            // puts `Leader` back on this same entity once every entity of
+            // the save exists to point it at, so the follower only has to
+            // be shaped to read it, not to know yet who it names.
+            crate::captives::follow(world, monster);
         }
         if let Some(at) = saved.fades {
             world.entity_mut(monster).insert(crate::allies::Fades { at });
@@ -209,6 +244,15 @@ impl Saveable for Kind {
         if let Some(at) = saved.shackled {
             let shackles = crate::captives::shackled(&registries, world.resource::<Verbs>(), at);
             world.entity_mut(monster).insert(shackles);
+        }
+        if let Some(side) = saved.side.as_deref().and_then(|name| registries.factions.id(name)) {
+            crate::allies::fight_for(world, monster, side);
+        }
+        if saved.raised {
+            crate::effects::bodies::forget_its_life(world, monster);
+        }
+        if saved.stole {
+            world.entity_mut(monster).insert(crate::tricks::Stole);
         }
         monster
     }
@@ -329,7 +373,7 @@ impl Saveable for Way {
     fn restore(world: &mut World, saved: &Way) -> Entity {
         let mut e = world.spawn((*saved, Name::new(saved.name())));
         if let Some(glyph) = saved.glyph() {
-            e.insert((glyph, rl_engine::rl_render::Landmark));
+            e.insert(glyph);
         }
         e.id()
     }
@@ -568,10 +612,50 @@ mod tests {
         assert_eq!((level(held), carried.world().get::<Stuck>(held).is_some()), (Some(-1), true), "still held on");
         assert_eq!((worn_for(&carried, freed), worn_for(&carried, held)), before, "and the turns each has been worn");
         let named = |ring: Entity| carried.world().get::<Name>(ring).map(|n| n.as_str().to_string());
-        assert_eq!((named(freed), named(held)), (Some("-? ring of light".into()), Some("-? ring of stealth".into())), "both still known to be below nought");
+        assert_eq!((named(freed), named(held)), (Some("unidentified ring of light".into()), Some("unidentified ring of stealth".into())), "both unidentified");
+        let shown = |ring: Entity| carried.world().get::<CurseShown>(ring).is_some();
+        assert!(shown(freed) && shown(held), "and both still known to be below nought");
         let bag = &carried.world().get::<Inventory>(me).expect("a pack").items;
         let names: Vec<Option<String>> = bag.iter().map(|i| carried.world().get::<Name>(*i).map(|n| n.as_str().to_string())).collect();
         assert!(names.contains(&face), "the draught under its face: {names:?}");
+    }
+
+    /// What a continued run gives back of who fights for whom and what they
+    /// are about: a goblin conjurer's blade still fights for the goblins,
+    /// not the adventurer its kind is written with; a body a necromancer
+    /// raised still fights for the dead, still raised, with nothing to drop
+    /// again; and a monkey that stole something still runs with it.
+    #[test]
+    fn a_continued_run_keeps_a_blades_side_a_raised_bodys_side_and_a_thiefs_flight() {
+        use crate::testing::monster;
+        let mut app = headless(RunSeed(3));
+        let me = adventurer(&mut app);
+        arrive(&mut app, map_of(1));
+        let here_at = at(&app, me);
+        let registries = app.world().resource::<Registries>().clone();
+        let (goblins, undead) = (registries.factions.expect("goblins"), registries.factions.expect("undead"));
+        let blade = monster(&mut app, "spectral blade", here_at.offset(30, 30));
+        crate::allies::fight_for(app.world_mut(), blade, goblins);
+        let raised = monster(&mut app, "goblin", here_at.offset(31, 30));
+        crate::allies::fight_for(app.world_mut(), raised, undead);
+        crate::effects::bodies::forget_its_life(app.world_mut(), raised);
+        let thief = monster(&mut app, "monkey", here_at.offset(32, 30));
+        app.world_mut().entity_mut(thief).insert(crate::tricks::Stole);
+        rl_engine::rl_save::save_run(app.world_mut()).expect("the run is written down");
+        let text = app.world().resource::<Saves>().load(SLOT).expect("the slot reads").expect("a save");
+
+        let mut again = continued(&text);
+        let world = again.world_mut();
+        let found: Vec<(String, FactionId, bool, bool, bool)> = world
+            .query::<(&Name, &Faction, Has<crate::effects::bodies::Raised>, Has<crate::tricks::Stole>, Has<rl_engine::rl_bevy::Drops<crate::armory::ItemDef>>)>(
+            )
+            .iter(world)
+            .map(|(n, f, r, s, d)| (n.as_str().to_string(), f.0, r, s, d))
+            .collect();
+        let of = |name: &str| found.iter().filter(|f| f.0 == name).cloned().collect::<Vec<_>>();
+        assert!(of("spectral blade").iter().any(|f| f.1 == goblins), "the blade still fights for the goblins: {found:?}");
+        assert!(of("goblin").iter().any(|f| f.1 == undead && f.2 && !f.4), "the raised goblin still fights for the dead, raised, dropping nothing: {found:?}");
+        assert!(of("monkey").iter().any(|f| f.3), "the monkey still runs with what it stole: {found:?}");
     }
 
     /// A save naming something the content no longer has, a thing renamed

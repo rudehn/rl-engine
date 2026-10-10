@@ -14,7 +14,7 @@
             crates/rl-bevy/src/cue.rs
             crates/rl-ui/src/tone.rs
             crates/rl-engine/src/lib.rs
-     fingerprint: 907a5d5b -->
+     fingerprint: 5177f6ae -->
 
 # Rendering
 
@@ -31,7 +31,7 @@ Bytes rather than an asset path, because an asset arrives after the first frames
 Without one, glyphs come from the system's monospace family, which needs Bevy's `system_font_discovery` feature and is another face on every platform, a glyph it lacks drawn as an empty box; a browser has no font database to search, so on wasm they come from the font Bevy embeds, which covers printable ASCII and nothing else.
 `MapViewPlugin` takes the `Rect` it draws in, the way every panel does, so a game has no `MapView` of its own to insert and cannot forget one.
 Its `finish` declares `depends_on::<CorePlugin>` and `depends_on::<FovPlugin>`: without field of view no tile is ever seen or remembered, and the map would draw as nothing at all.
-It chains `follow_player`, `track_fields` and `draw_map` in `PresentSet::Map`, and puts `dress_props` before `draw_map` in plain `Update` rather than in a play-only set, because a prop is put down while a place is built and `Added` matches for one frame only.
+It chains `follow_player`, `track_fields`, `remember_still_things` and `draw_map` in `PresentSet::Map`, and puts `dress_props` in plain `Update` rather than in a play-only set, because a prop is put down while a place is built and `Added` matches for one frame only, and between `EngineSet::Turns` and `EngineSet::Present`, so a prop put down in a turn is never drawn or remembered bare.
 `ParticlesPlugin` declares `depends_on::<MapViewPlugin>` and draws after `draw_map`, so a burst shows through a targeting cursor and under a menu.
 It reads cues in `PresentSet::Narrate` and takes the turns' hold on entering `Playing`, but only if the style takes time, so a headless test with an instant style is never made to wait a frame for a fade.
 `CapturePlugin` does nothing unless `RL_CAPTURE` names a file, which is why it can sit in the group a game adds without asking.
@@ -48,6 +48,7 @@ The camera never scales; the glyphs take a font size scaled with the cell and ar
 `Glyph` is how an entity is drawn, a `ch`, an `fg` and a `layer`, and on a tile with two things on it the higher layer wins.
 `TileAppearance` is what each tile looks like in full light, indexed by `TileId`: `set` and `set_varied` fill it, `lit` reads it back, and an id the game never described draws as a magenta question mark so the gap is visible rather than blank.
 `seen` is that look jittered for the cell and the moment, `remembered` is it jittered as it was seen and then faded, and `under` colours both of a cell's colours by the light landing there.
+`remember_still_things` fills `Knowledge` once a frame with the topmost glyph on every tile in sight of anything that is not an `Actor` and not `Hidden`, or nothing, and `recalled` draws it over the tile once it is out of sight, in its own colour faded by the same `Memory`, so the stairs behind the player read as remembered and stay legible.
 `TileAppearance::load` reads the same table from RON against a `TileRegistry`, refusing the file and naming at once every entry for a tile that is not registered, every tile described twice, and every registered tile the file leaves out, so a gap is reported at startup by name rather than found on the map.
 `Vary` is how a tile strays from cell to cell and over time, a `brightness` spread, a `hue` spread per channel and a `shimmer` that drifts; `Memory` is the brightness, saturation and cool `tint` a remembered tile keeps; `Shading` is how light becomes colour, with the level a tile shows its authored colour at, what an unlit but seen tile keeps, and the speeds a flicker and a shimmer move at.
 All of it is cosmetic, and the only clock is the frame's, so a replayed seed plays identically however it is coloured.
@@ -121,6 +122,7 @@ A `ToneId` is the other half of the same rule, one layer up: a widget takes a ro
 So the boundary falls between a thing and a word about a thing: the map and the entities on it are drawn in their own colours, and everything a panel says about them is drawn in a tone.
 A prop is described twice for the same reason, and the second half is here: the engine spawns it with its kind and no glyph, and `dress_props` gives it the one its definition asks for, so nothing below this crate names a `Color`.
 A prop a game dressed itself keeps what it was given, since the query asks only for those with no glyph.
+Memory is what was seen, not what is true, and which things it keeps is the engine's: an item, a prop or a way through is remembered where it was last seen until its tile is seen again, and a creature never is, since where one stood says nothing of where it is; a game decides only which places are known by heart, by `Knowledge::learn`.
 Fire and gas are drawn on tiles in sight and on the rest of a cloud in sight over known ground, and nowhere else, because memory holds no smoke and a cloud must not show the shape of a room nobody has seen; what hides behind a haze is decided by the map's opacity rather than by the renderer's taste.
 The blending and the waiting are the drawing's alone: what the fields hold, what hides whom and what a turn does never wait for a blast to reach a cell, so a headless game plays the same turns.
 The engine will not animate a game's own action: a resolver says what is worth seeing by writing a `Cued`, and what plays it is a plugin that may not be there.

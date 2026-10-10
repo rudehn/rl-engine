@@ -390,9 +390,9 @@ mod tests {
         let (registries, traits) = shipped();
         let kind = |name: &str| registries.damage_kinds.expect(name);
         let brittle = fold(&ids(&traits, &["brittle"]), &traits).expect("brittle alone sets nothing twice");
-        assert_eq!((brittle.resists.get(kind("slash")), brittle.resists.get(kind("pierce")), brittle.resists.get(kind("crush"))), (50, 50, -50));
+        assert_eq!((brittle.resists.get(kind("slash")), brittle.resists.get(kind("pierce")), brittle.resists.get(kind("crush"))), (33, 33, -50));
         let burns_badly = fold(&ids(&traits, &["burns-badly"]), &traits).expect("burns-badly alone");
-        assert_eq!(burns_badly.resists.get(kind("fire")), -100, "fire hurts a burns-badly kind half again as hard");
+        assert_eq!(burns_badly.resists.get(kind("fire")), -100, "fire hurts a burns-badly kind twice as hard");
         let wakeful = fold(&ids(&traits, &["wakeful"]), &traits).expect("wakeful alone").notice.expect("wakeful sets notice");
         assert!(wakeful.chance_pct > crate::bestiary::NOTICE.chance_pct, "keener than the house's default: {wakeful:?}");
         let luring = fold(&ids(&traits, &["luring"]), &traits).expect("luring alone").keeps_away.expect("luring keeps its distance");

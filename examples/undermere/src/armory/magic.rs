@@ -563,19 +563,15 @@ fn a_ring_of_awareness_puts_fifteen_a_level_on_the_chance_of_spotting_what_is_hi
 }
 
 /// The Choirmaster's Staff raises the body aimed at on its user's own
-/// side for thirty turns, then lets it fade; spends one of its two
-/// charges, which comes back over its own three hundred turns; and costs
-/// its wearer ten mending while it is held.
+/// side for thirty turns, then lets it fade; and spends one of its two
+/// charges, which comes back over its own three hundred turns.
 #[test]
-fn the_choirmasters_staff_raises_a_body_for_thirty_turns_then_fades_and_costs_mending_while_held() {
+fn the_choirmasters_staff_raises_a_body_for_thirty_turns_then_fades() {
     let (mut app, me, here) = arena(1);
     let rat = still(&mut app, "rat", here.offset(2, 0));
     kill(&mut app, rat, Some(me));
     let staff = make(&mut app, "the Choirmaster's Staff");
     equip(&mut app, me, staff);
-    let registries = app.world().resource::<Registries>().clone();
-    let mending = registries.stats.expect(crate::content::MENDING);
-    assert_eq!(app.world().get::<StatBlock>(me).unwrap().0.value(mending, &registries.stats), -10, "mending lost while held");
     zap(&mut app, me, staff, here.offset(2, 0));
     assert!(app.world().get::<Actor>(rat).is_some(), "the rat rises again");
     assert_eq!(app.world().get::<Faction>(rat).map(|f| f.0), app.world().get::<Faction>(me).map(|f| f.0), "fighting for its raiser");
@@ -584,6 +580,83 @@ fn the_choirmasters_staff_raises_a_body_for_thirty_turns_then_fades_and_costs_me
     assert!(app.world().get::<Position>(rat).is_none(), "it fades once its thirty turns are up");
     pass_turns(&mut app, 270);
     assert_eq!(charges(&app, staff), (2, 2), "the charge back after its own three hundred turns");
+}
+
+/// The Choirmaster's Staff's cost: its holder regenerates nothing, a
+/// ring of regeneration three better and its own mending on the same hand
+/// notwithstanding, over a hundred turns waited one at a time; and the
+/// stat itself is held at nought, so no pass however long, a rest of a
+/// hundred turns in one, leaks a point through. Put down, the ring heals
+/// again.
+#[test]
+fn the_choirmasters_staff_lets_its_holder_regenerate_nothing_over_any_length_of_time() {
+    let (mut app, me, _) = arena(4);
+    let registries = app.world().resource::<Registries>().clone();
+    let regeneration = registries.stats.expect(crate::content::REGENERATION);
+    worn(&mut app, me, "ring of regeneration", 3);
+    let staff = make(&mut app, "the Choirmaster's Staff");
+    equip(&mut app, me, staff);
+    app.world_mut().get_mut::<Health>(me).expect("health").current = 1;
+    settle(&mut app);
+    assert_eq!(app.world().get::<StatBlock>(me).unwrap().0.value(regeneration, &registries.stats), 0, "held at nought, whatever the ring adds");
+    pass_turns(&mut app, 100);
+    assert_eq!(app.world().get::<Health>(me).map(|h| h.current), Some(1), "a hundred turns, and nothing regenerated");
+    crate::testing::unequip(&mut app, me, staff);
+    pass_turns(&mut app, 100);
+    assert!(app.world().get::<Health>(me).is_some_and(|h| h.current > 1), "the staff put down, the ring heals again");
+}
+
+/// A mini-boss raised by the Choirmaster's Staff and killed again is paid
+/// for once: its first death drops its artifact and scores the kill and
+/// the mini-boss, and its second drops nothing and adds nothing, however
+/// often the staff could stand it back up.
+#[test]
+fn a_raised_mini_boss_killed_again_drops_nothing_and_adds_nothing_to_the_tally() {
+    use crate::tally::Tally;
+    let (mut app, me, here) = arena(2);
+    let at = here.offset(2, 0);
+    let grubnak = still(&mut app, "Grubnak the goblin king", at);
+    kill(&mut app, grubnak, Some(me));
+    let crown = app.world().resource::<crate::armory::Armory>().defs.expect(crate::artifacts::CROWN_OF_GRUBNAK);
+    let crowns = |app: &mut App| {
+        let world = app.world_mut();
+        world.query::<&crate::armory::ItemKind>().iter(world).filter(|k| k.0 == crown).count()
+    };
+    let paid = |app: &App| {
+        let t = app.world().resource::<Tally>();
+        (t.kills, t.minibosses)
+    };
+    assert_eq!((crowns(&mut app), paid(&app)), (1, (1, 1)), "the first death drops the crown and scores the kill and the mini-boss");
+    let staff = make(&mut app, "the Choirmaster's Staff");
+    equip(&mut app, me, staff);
+    zap(&mut app, me, staff, at);
+    assert!(app.world().get::<Actor>(grubnak).is_some(), "Grubnak rises again");
+    assert!(app.world().get::<crate::effects::bodies::Raised>(grubnak).is_some(), "marked raised");
+    kill(&mut app, grubnak, Some(me));
+    settle(&mut app);
+    assert_eq!((crowns(&mut app), paid(&app)), (1, (1, 1)), "the second death drops nothing and scores nothing");
+}
+
+/// A body raised from a sleeper killed in its sleep rises awake, and
+/// offers, patrols and leaders of its old life are gone with the life.
+#[test]
+fn a_body_raised_rises_awake_and_without_its_old_lifes_errands() {
+    let (mut app, me, here) = arena(3);
+    let at = here.offset(2, 0);
+    let goblin = still(&mut app, "goblin", at);
+    let asleep = app.world().resource::<Registries>().statuses.expect(crate::content::ASLEEP);
+    app.world_mut().write_message(Afflict { target: goblin, status: asleep, turns: crate::bestiary::FOR_LIFE, by: None, held_by: None });
+    app.world_mut().entity_mut(goblin).insert((Leader(me), crate::tricks::PatrolRoute { waypoints: vec![at, here], at: 0 }));
+    settle(&mut app);
+    kill(&mut app, goblin, Some(me));
+    let staff = make(&mut app, "the Choirmaster's Staff");
+    equip(&mut app, me, staff);
+    zap(&mut app, me, staff, at);
+    let world = app.world();
+    assert!(world.get::<Actor>(goblin).is_some(), "it rises");
+    assert!(world.get::<Afflicted>(goblin).is_none_or(|a| !a.0.has(asleep)), "awake");
+    assert!(world.get::<Leader>(goblin).is_none() && world.get::<crate::tricks::PatrolRoute>(goblin).is_none(), "its old errands forgotten");
+    assert!(world.get::<rl_engine::rl_bevy::Drops<crate::armory::ItemDef>>(goblin).is_none(), "and nothing left to drop");
 }
 
 /// The Abbess's Chalice heals fifteen and makes every drowned thing on

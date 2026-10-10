@@ -335,6 +335,12 @@ impl rl_rules::Fields for Walking<'_> {
     fn descents_away(&mut self, goals: &[Point], from: Point) -> Vec<Point> {
         self.descents(goals, from, true)
     }
+
+    /// The move resolver's own corner rule, so a mind that opens doors
+    /// never picks the diagonal past a closed door it would be refused.
+    fn lets_diagonal_past(&self, p: Point) -> bool {
+        self.map.lets_diagonal_past(p)
+    }
 }
 
 /// The snapshot of the mind holding the turn, while the perceive stage

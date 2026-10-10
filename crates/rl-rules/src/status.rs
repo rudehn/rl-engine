@@ -84,7 +84,10 @@ pub struct StatusDef {
     /// Whether it is sleep: it holds its holder's turns as
     /// [`holds`](Self::holds) does, whether or not that is set, and it ends
     /// the moment the holder is woken, by a noise it hears, by harm landing
-    /// on it, or by a foe it notices within [`SLEEPER_REACH`]. What wakes
+    /// on it, or by a foe it notices within [`SLEEPER_REACH`]. Harm that is
+    /// the sleep's own tick wakes nobody, nor does harm landing in the pass
+    /// the sleep is put on, so a sleep that bites and a wound and a sleep
+    /// landed together both leave their holder asleep. What wakes
     /// a sleeper is the engine's, so every game's sleepers wake alike;
     /// who is put to sleep, and for how long, is the game's.
     pub sleeps: bool,

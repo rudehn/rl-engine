@@ -308,3 +308,8 @@ Sounds are interned while the app is built, by the engine and by `add_sound`, no
 Moving `Sounds` into `Registries` was the alternative, and was rejected: it would make a plugin's `add_sound`, called while the app is built, write into a resource the game inserts later, and every game would fill a registry it never wrote.
 Names built without the sounds are the loader's mistake rather than the file's, and the message says so, found by asking for the engine's own first sound, which every `Sounds` holds; asking `Names` directly whether a vocabulary is in scope would be public surface in tier 1 with one caller, answering what the probe already answers exactly.
 A `loudness` below one carries no step and is refused at load, as a pulse's `every` of nought is, since a grenade that lands in silence is a mistake nothing would explain.
+
+## 16. Waking a sleeper
+
+A status that sleeps (`docs/design/stealth.md` §8c) is woken by a noise the same way a listener hears one: `wake_on_noise`, added by `NoisePlugin` in `TurnSet::Listen`, reads the same `NoiseHeard` every listener does and cures the sleep directly rather than through a `Cure`, since a `Cure` written now is not read until the next pass's statuses resolve.
+It lives in `status.rs` rather than here, registered by this plugin because only hearing knows when a noise reached someone; a sleeper with no `Hearing` sleeps through any noise, as a listener with none hears nothing.

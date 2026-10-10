@@ -87,6 +87,11 @@ impl<V: CostSource> CostSource for Ground<'_, V> {
         let at = self.map.to_world(self.view.idx_point(idx));
         if self.props.contains(&at) { None } else { self.view.cost_idx(idx) }
     }
+
+    // The engine's own corner rule, which the opening view answers.
+    fn lets_diagonal_past(&self, p: Point) -> bool {
+        self.view.lets_diagonal_past(p)
+    }
 }
 
 /// The step from `from` toward `goal` on the place being read, the
@@ -225,10 +230,8 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [15_342_442_557_417_225_364, 3_791_365_179_012_816_275, 17_512_802_706_716_597_283],
-        "fingerprint tripwire: re-baselined for part 3 task 10 (a lived-in dungeon: sleepers, goblin camps, feeding \
-         grounds, patrols and a captive all draw from a floor's own population stream ahead of its ordinary groups, \
-         which plan now draws on a stream of its own so they move nothing of its, but the earlier draws move the \
-         bands' own and, through LeavesRemains and the rest, the floors behind them)"
+        [3_980_971_438_599_573_768, 13_862_721_143_101_052_644, 4_494_584_218_363_696_789],
+        "fingerprint tripwire: re-baselined for the monsters part's final review (a jelly splits only on a blow and \
+         only with four health left, and the ogre, the troll and the vampire bat sleep deeply)"
     );
 }

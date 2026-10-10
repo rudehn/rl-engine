@@ -14,7 +14,7 @@
             crates/rl-bevy/src/lighting.rs
             crates/rl-grid/src/light.rs
             crates/rl-ui/src/view/nearby.rs
-     fingerprint: 07976d61 -->
+     fingerprint: c69a2f3f -->
 
 # Stealth
 
@@ -64,6 +64,7 @@ An unseen status a worn thing holds ends by the items plugin's `Cure`, written i
 `reveal_attackers` reads `Struck`, written for every blow or shot before the accuracy roll, `ItemEvent::Thrown`, and `AbilityEvent::Used` with a target other than the user, and writes a `Cure` for every unseen status each attacker holds.
 It runs before `resolve_afflictions` in the same pass, so the marker is gone before the damage lands and `wake_on_damage` points the one struck at an attacker it can see.
 `wake_on_damage` wakes nobody to an attacker still unseen, which is harm from something `reveal_attackers` does not read: a thing used whose `use` trigger hurt those around it, a worn thing pulsing, or a trap its holder set off; a status ticking carries no attacker and wakes nobody at all.
+A status that sleeps (`docs/guide/src/systems/statuses.md`) leans on the same two answers this page gives: `Watchers::unaware` says yes for a sleeper to whoever strikes it, stealth running or not, so the blow that wakes one lands as on the unaware first; and a sleeper's own noticing is the ordinary roll, narrowed to `SLEEPER_REACH` and run only on its turn, so stealth's roll and sleep's wake are one mechanism asked twice rather than two.
 
 ## Using it
 

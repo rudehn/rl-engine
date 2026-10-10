@@ -10,9 +10,6 @@
 //   glyph:     one character, and one the typeface in `assets/fonts/` has
 //   color:     (r: 0..=255, g:, b:), the glyph's colour, as abilities.ron writes a look
 //   layer:     optional; draw order among entities on one cell, default 1
-//   remembered: optional; whether the map keeps it in memory once seen, drawn where it
-//              stands out of sight as the floor under it is, default false; for what
-//              stands still and is worth finding again
 //   blocks:    optional; whether it stands in the way, default false; nothing here
 //              blocks sight, which the engine's props never do yet
 //   health:    optional; what it takes to break it; absent, nothing can
@@ -59,7 +56,9 @@
     // drawn near white and its own light colours it: orange in the halls,
     // blue-green before the throne.
     (name: "brazier",    glyph: '&', color: (r: 235, g: 225, b: 210), blocks: true),
-    (name: "throne",     glyph: '#', color: (r: 150, g: 195, b: 205), blocks: true),
+    // A throne is a high-backed seat, not a block of wall: '#' read as a
+    // piece of the hall's own wall left standing in the middle of it.
+    (name: "throne",     glyph: 'Π', color: (r: 150, g: 195, b: 205), blocks: true),
 
     // A chest in the dungeon: a weapon, a piece of armor or both, maybe, and a
     // potion or two for certain, each drawn at the floor it stands on.
@@ -68,20 +67,20 @@
                  opened: (glyph: '=', color: (r: 110, g: 85, b: 50))),
      offers: [(verb: "open", time: 100)]),
 
-    // Task 8a's five lairs: Grubnak's banners, the Choirmaster's bone organ,
+    // The five mini-bosses' lairs: Grubnak's banners, the Choirmaster's bone organ,
     // the Abbess's font, the Forgemaster's racks, and the Widow's egg sacs,
     // the one of these that is not scenery. One hit spends its one health,
     // and the `Hatch` effect its `destroyed` trigger lands is `effects/bodies.rs`'s
     // own; stepped beside rather than struck, `tricks::hatch_beside` lands
     // the same way, since a step beside it never breaks it.
-    (name: "banner",     glyph: '|', color: (r: 150, g: 40, b: 40)),
+    (name: "banner",     glyph: '|', color: (r: 210, g: 60, b: 50)),
     (name: "bone organ", glyph: 'n', color: (r: 220, g: 215, b: 195), blocks: true),
     (name: "font",       glyph: 'u', color: (r: 150, g: 195, b: 205), blocks: true),
     (name: "rack",       glyph: '=', color: (r: 110, g: 90, b: 70), blocks: true),
     (name: "egg sac", glyph: 'o', color: (r: 230, g: 230, b: 200), blocks: true, health: 1,
      triggers: [(on: "destroyed", effects: [(kind: "Hatch", args: (monster: "cave spider", count: 2))])]),
 
-    // Task 10's own: a lived-in dungeon. A camp's fire burns beside its
+    // A lived-in dungeon. A camp's fire burns beside its
     // sleeping band, stood by `population::populate` rather than a piece,
     // so a game that spawns it directly, not through a slot, still shows
     // and lights nothing it was not given; shackles lie at a captive's
@@ -93,7 +92,7 @@
     // Where the adventurer last knelt with a waystone, which the Drowned Gate
     // leads back to: one in the whole run, moved by every call, stood by
     // `src/waystone.rs` rather than a piece, lit the gate's violet by
-    // `light.rs` and drawn from memory once seen, so the map shows where the
-    // gate will bring the adventurer back.
-    (name: "gate mark", glyph: '◊', color: (r: 205, g: 150, b: 255), remembered: true),
+    // `light.rs` and drawn from memory once seen, as every prop is, so the map
+    // shows where the gate will bring the adventurer back.
+    (name: "gate mark", glyph: '◊', color: (r: 205, g: 150, b: 255)),
 ]

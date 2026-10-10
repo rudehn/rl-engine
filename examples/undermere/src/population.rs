@@ -24,17 +24,19 @@ use crate::bestiary::{Bestiary, Kind, MonsterDef, spawn_monster};
 use crate::dungeon::{FLOORS, MIN_DISTANCE_FROM_ENTRY, floor_of};
 use crate::stairs::Way;
 
-/// Groups every floor draws before its depth adds any, a first cut: four,
-/// and one more for each floor down, so floor one holds five groups and
-/// floor nine thirteen.
-pub const BASE_GROUPS: u32 = 4;
+/// Groups every floor draws before its depth adds any: three, and one more
+/// for each floor down, so floor one holds four groups and floor nine
+/// twelve. Four until part 3's soak, when a bestiary with venom, webs,
+/// paralysis and blades that glance off bone made a floor of four and its
+/// depth a floor too many.
+pub const BASE_GROUPS: u32 = 3;
 
 /// Groups the throne's floor draws besides its court: few, so the king
 /// and his knights are the fight that matters there and the way to them
 /// is not a fourteenth floor of the dead. What they are is the spawn
 /// table's floor ten, the drowned, the wights and the ogres of the floors
 /// above, and never a knight, who is the throne's alone.
-pub const THRONE_GROUPS: u32 = 4;
+pub const THRONE_GROUPS: u32 = 3;
 
 /// The percent chance a plain monster starts a floor asleep, by floor:
 /// about half on floor one, falling to about a sixth by floor nine, the
@@ -42,7 +44,7 @@ pub const THRONE_GROUPS: u32 = 4;
 /// rounded to the nearest whole percent. Index `0` is floor one.
 pub const SLEEP_PCT: [u32; 9] = [50, 46, 42, 38, 33, 29, 25, 21, 17];
 
-/// The percent chance a monster of `floor` starts asleep: [`SLEEP_PCT`]'s
+/// The percent chance a monster of `floor` starts asleep: `SLEEP_PCT`'s
 /// own, doubled and capped at a hundred for a `sleepy` kind, and nought,
 /// whatever `floor` says, for a `wakeful` one. Pure, so a test can check
 /// the share it draws without an `App`.
@@ -207,7 +209,7 @@ struct Feeder {
 /// what already stands there.
 const FEEDERS: &[Feeder] = &[
     Feeder { floors: (1, 2), beast: "jackal", prey: "rat" },
-    Feeder { floors: (3, 4), beast: "ogre", prey: "goblin" },
+    Feeder { floors: (4, 4), beast: "ogre", prey: "goblin" },
     Feeder { floors: (5, 7), beast: "ghoul", prey: "skeleton" },
     Feeder { floors: (8, 9), beast: "troll", prey: "fire imp" },
 ];
@@ -220,7 +222,7 @@ const FEEDING_GROUND_PCT: u32 = 50;
 /// How the feeding ground's own corpse is dressed, a bone-pale glyph
 /// rather than whatever the live kind looked like: [`lay_down`] keeps a
 /// body's glyph as it was in life, since the engine does not say what
-/// remains look like, and task 10's own scene wants its prey to read as
+/// remains look like, and a feeding ground wants its prey to read as
 /// dead on sight rather than as the animal it was standing beside its
 /// own feeder.
 const REMAINS_GLYPH: char = '%';
@@ -316,7 +318,7 @@ fn place_patrol(commands: &mut Commands, stocked: &Stocked, site: &Site, free: &
 
 /// Stands a monster of `floor`'s own band shackled and neutral, offering
 /// [`crate::captives::FREE_VERB`] through the engine's own actor offers,
-/// with shackles lying at its feet: task 10's own captive, the one a run
+/// with shackles lying at its feet: the run's own captive, the one a run
 /// draws drawn by [`crate::dungeon::captive_floor`].
 ///
 /// Held in place by a one-waypoint `PatrolRoute`, the universal brain's
@@ -354,7 +356,7 @@ struct Site {
     floor: u32,
 }
 
-/// What every one of task 10's placing functions reads from the
+/// What every one of the lived-in dungeon's placing functions reads from the
 /// bestiary's own content, bundled for the same reason [`Site`] is: a
 /// function reads only the field its own scene needs, and clippy's limit
 /// on a function's own arguments is never the reason one of them is
@@ -447,7 +449,8 @@ fn camp_fire_cell(cells: &[Point], free: &mut impl FnMut(Point) -> bool, open: i
 
 /// Populates every floor on the arrival that built it: a band of its own,
 /// the dar trio or a goblin war band wherever `BANDS` names its floor,
-/// then [`groups_on`]'s number of ordinary groups, drawn at its own band,
+/// then [`groups_on`]'s number of ordinary groups less one for each band,
+/// feeding ground and patrol placed, drawn at its own band,
 /// planned against the floor as built and off every cell a piece marked,
 /// where a chest, a brazier or the king's court stands or will stand even
 /// where the engine's slot drew nothing, off every way the floor has, so
@@ -491,13 +494,15 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
         // and a band drawing from it would stand somewhere else whenever
         // one of them was added or tuned.
         let mut band_rng = seed.stream(b"undermere.population.bands", u64::from(floor));
+        let mut scenes = 0;
         for band in BANDS.iter().filter(|b| (b.floors.0..=b.floors.1).contains(&floor)) {
             // Half the time a goblin war band is placed at all, it comes
             // together as a camp round its own fire instead of standing
-            // in the open: the controller's own share for task 10's camps.
+            // in the open: the share of war bands a camp is.
             let camp = band.leader == "goblin" && rng.random_ratio(1, 2);
             let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p) && outside(p);
             if let Some(used) = place_band(&mut commands, &stocked, &site, band, &mut free, &mut band_rng, camp) {
+                scenes += 1;
                 if camp {
                     let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p) && outside(p);
                     if let Some(fire_at) = camp_fire_cell(&used, &mut free, |p| map.is_walkable_on(ev.map, p)) {
@@ -514,12 +519,14 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
         {
             let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p) && outside(p);
             if let Some(used) = place_feeding_ground(&mut commands, &stocked, &site, feeder, turns.now(), &mut free, &mut rng) {
+                scenes += 1;
                 marked.extend(used);
             }
         }
         {
             let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p) && outside(p);
             if let Some(used) = place_patrol(&mut commands, &stocked, &site, &mut free, &mut rng) {
+                scenes += 1;
                 marked.extend(used);
             }
         }
@@ -529,7 +536,7 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
                 marked.extend(used);
             }
         }
-        // Its own stream, not `rng`'s current position: task 10's own
+        // Its own stream, not `rng`'s current position: the lived-in dungeon's
         // bands, camps, feeding grounds, patrols and captives all draw
         // from `rng` ahead of this, floor by floor and run by run, and
         // `plan` drawing from the same position they left it at would
@@ -540,7 +547,13 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
         // existed, for whichever seed happens to land one.
         let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p) && outside(p);
         let mut plan_rng = seed.stream(b"undermere.population.plan", u64::from(floor));
-        let groups = plan(&bestiary.spawns, floor as i32, bounds, ev.entry, groups_on(floor), &mut free, &mut plan_rng);
+        // A band, a feeding ground and a patrol each stand in for one of
+        // the floor's ordinary groups rather than beside all of them:
+        // three goblins round a fire are one of the floor's fights, and a
+        // floor with its scenes and every group as well was a floor more
+        // crowded than its depth, the soak's first read of part 3 dying
+        // on floors three to five three runs in five.
+        let groups = plan(&bestiary.spawns, floor as i32, bounds, ev.entry, groups_on(floor).saturating_sub(scenes), &mut free, &mut plan_rng);
         // Who of them sleeps draws from the same stream, after `plan` has
         // drawn all it will, so it moves with nothing but the groups.
         for (id, at) in groups.into_iter().flatten() {
@@ -553,7 +566,7 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
 
 /// Wires every entourage member a lair's own prefab just stood up to the
 /// one mini-boss among them with the engine's own `Leader`, the moment a
-/// floor's arrival fills its slots: task 8a's own band, brought together
+/// floor's arrival fills its slots: a mini-boss's own band, brought together
 /// the same way `place_band`'s already are, but by the engine's prefab
 /// slots rather than by this module's own placement. Read by
 /// [`MonsterDef::miniboss`] rather than a name, since nothing else `Post`
@@ -650,14 +663,14 @@ mod tests {
         crate::content::Library::load(&crate::content::effect_kinds(), &Moments::default()).bestiary
     }
 
-    /// Four groups and one more for each floor down, to floor nine's
-    /// thirteen, and the throne's floor four: what every floor draws where
+    /// Three groups and one more for each floor down, to floor nine's
+    /// twelve, and the throne's floor three: what every floor draws where
     /// nothing is in the way.
     #[test]
-    fn on_open_ground_every_floor_draws_four_groups_and_one_more_for_each_floor_down_but_the_throne_over_a_span_of_seeds() {
+    fn on_open_ground_every_floor_draws_three_groups_and_one_more_for_each_floor_down_but_the_throne_over_a_span_of_seeds() {
         let bestiary = bestiary();
         let (bounds, entry) = open_ground();
-        assert_eq!((1..=FLOORS).map(groups_on).collect::<Vec<_>>(), [5, 6, 7, 8, 9, 10, 11, 12, 13, 4]);
+        assert_eq!((1..=FLOORS).map(groups_on).collect::<Vec<_>>(), [4, 5, 6, 7, 8, 9, 10, 11, 12, 3]);
         for floor in 1..=FLOORS {
             for s in 0..20 {
                 let mut rng = rand::rngs::StdRng::seed_from_u64(s);
@@ -671,9 +684,9 @@ mod tests {
     /// The throne's floor draws few groups, and only of what walks floors
     /// seven to nine, the drowned, the wights and the ogres, so the
     /// court is the fight that matters there: never a knight of it out on
-    /// the floor, and never more than four groups.
+    /// the floor, and never more than three groups.
     #[test]
-    fn the_throne_floor_draws_at_most_four_groups_of_what_walks_floors_seven_to_nine_over_a_span_of_seeds() {
+    fn the_throne_floor_draws_at_most_three_groups_of_what_walks_floors_seven_to_nine_over_a_span_of_seeds() {
         let bestiary = bestiary();
         let (bounds, entry) = open_ground();
         let deep: Vec<Id<MonsterDef>> = (7..=9).flat_map(|band| bestiary.spawns.at(band).map(|row| row.item)).collect();
@@ -682,7 +695,7 @@ mod tests {
         for s in 0..40 {
             let mut rng = rand::rngs::StdRng::seed_from_u64(s);
             let groups = plan(&bestiary.spawns, FLOORS as i32, bounds, entry, groups_on(FLOORS), &mut |_| true, &mut rng);
-            assert!(!groups.is_empty() && groups.len() <= 4, "seed {s}: {} groups", groups.len());
+            assert!(!groups.is_empty() && groups.len() <= 3, "seed {s}: {} groups", groups.len());
             for (id, _) in groups.iter().flatten() {
                 assert!(*id != court, "seed {s}: a knight of the court out on the floor");
                 assert!(deep.contains(id), "seed {s}: a {} on the throne's floor", bestiary.defs.get(*id).name);
@@ -787,9 +800,9 @@ mod tests {
                 // The throne's own, on floor ten alone: six where this
                 // run draws the Drowned King, the king and his five
                 // knights, or one alone where it draws the Mother Below
-                // or the Ember Wyrm, task 9's own two with no entourage.
-                // Elsewhere nothing, unless this seed draws one of task
-                // 8a's own lairs on this floor, whose boss and entourage
+                // or the Ember Wyrm, the two floor ten bosses with no
+                // entourage. Elsewhere nothing, unless this seed draws a
+                // mini-boss's lair on this floor, whose boss and entourage
                 // are posted the same way and never more than five
                 // strong.
                 let court = spawned.len() - people.len();
@@ -895,7 +908,7 @@ mod tests {
         }
     }
 
-    /// Task 8a's own: whichever lair a floor draws holds its boss, found
+    /// A mini-boss's lair: whichever lair a floor draws holds its boss, found
     /// by `MonsterDef::miniboss` rather than by name, and every other
     /// monster the lair's own slots stood is led by it, `lead_lair_bands`
     /// run the moment the arrival filled them. The Widow's own entourage
@@ -975,7 +988,7 @@ mod tests {
         }
     }
 
-    /// Task 10's camps: half the floors a goblin war band is placed on
+    /// A goblin camp: half the floors a goblin war band is placed on
     /// floors three to six dress it round a fire, every follower asleep
     /// and the leader alone keeping the watch, found somewhere over a
     /// span of seeds since the dressing itself is a coin flip.
@@ -1023,7 +1036,7 @@ mod tests {
         assert!(camps > 0, "some seed over the span dressed its goblin band as a camp");
     }
 
-    /// Task 10's feeding grounds: a beast stands over its prey's own
+    /// A feeding ground: a beast stands over its prey's own
     /// remains, a real body the engine's own `Remains` carries rather
     /// than a scenery corpse, found somewhere over a span of seeds since
     /// a floor draws one only [`FEEDING_GROUND_PCT`] of the time.

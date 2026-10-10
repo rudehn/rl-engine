@@ -59,7 +59,7 @@ impl Plugin for UndermerePlugin {
         // facts the quest counts, and the record a run ends in.
         app.add_plugins((CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, ThrowingPlugin, ConsumablesPlugin, LightingPlugin, StealthPlugin))
             .add_plugins((AbilitiesPlugin, FirePlugin, GasPlugin, NoisePlugin::new(NOISE), PropsPlugin, AmmoPlugin))
-            // Task 10's captive: the one verb `PropsPlugin` does not already
+            // The run's captive: the one verb `PropsPlugin` does not already
             // know, offered by an actor rather than a prop.
             .add_verb(crate::captives::FREE_VERB)
             .add_plugins((PrefabPlugin::<Bestiary, Armory>::default(), LootPlugin::<Armory>::default()))
@@ -72,6 +72,9 @@ impl Plugin for UndermerePlugin {
             // broken off by harm, and answered by `waystone`.
             .add_plugins(WorkPlugin)
             .add_work(crate::waystone::CALLING);
+        // Which kind a death's remnant stands for, so a burst of spores
+        // where a myconid fell is learned as the myconid's.
+        rl_engine::rl_bevy::KeepOnRemnant::keep_on_remnant::<crate::bestiary::KindTag>(app);
         // The engine's effects Undermere names, for the potions, the staffs
         // and the breaths, beside the `Ignite` fire declares and the `Emit`
         // the clouds do; and Undermere's own, for the scrolls, the potions,
@@ -214,10 +217,13 @@ impl Plugin for UndermerePlugin {
         // where every blow, shot and tick of fire or poison is answered.
         app.add_systems(Turn, crate::damage::sync_mereholt_peace.in_set(TurnSet::Schedule));
         // What the adventurer's hands showed of their things, then a curse
-        // closing on them, then the turns they have worn what they do not
-        // know yet: chained, since each says so in the log, and the lines
-        // land in this order.
-        app.add_systems(Turn, (crate::lore::learn_by_use, crate::enchant::bind_on_wear, crate::lore::grow_familiar).chain().in_set(TurnSet::React));
+        // closing on them, then how long wearing a thing tells its level,
+        // then the turns they have worn what they do not know yet: chained,
+        // since each says so in the log, and the lines land in this order.
+        app.add_systems(
+            Turn,
+            (crate::lore::learn_by_use, crate::enchant::bind_on_wear, crate::lore::tell_unfamiliar, crate::lore::grow_familiar).chain().in_set(TurnSet::React),
+        );
         // What a zap at somewhere strikes, weighed between the actions that
         // make one and the triggers that land it, so a wand zapped at
         // nobody is not learned by it; and what any use showed nothing of,
@@ -234,7 +240,7 @@ impl Plugin for UndermerePlugin {
         // What a monster throws: only what strikes, and whether it has
         // stolen something and should run with it.
         app.add_systems(Turn, (crate::bestiary::throw_what_strikes, crate::tricks::sense_stole).in_set(DecideSet::Perceive).after(PerceiveSet::Annotate));
-        // Task 10's own lived-in dungeon: a patrolling mind's next
+        // The lived-in dungeon: a patrolling mind's next
         // waypoint, sensed beside the engine's own post and leader, and
         // never for an actor with no route of its own.
         app.add_systems(Turn, crate::tricks::sense_patrols.in_set(PerceiveSet::Annotate));
@@ -244,7 +250,7 @@ impl Plugin for UndermerePlugin {
         // The bestiary's own tricks that read what a turn did rather than
         // the trait model's fold: a blow that splits what it left alive, a
         // blow that mends its own drainer, a step that leaves fire behind
-        // it, a cell's own dark kept or lifted, a troll's regeneration
+        // it, a troll's regeneration
         // halted while it burns, a Choirmaster's choir kept over its own
         // side, the Widow's egg sacs stepped beside, the Mother Below's
         // young torn from the walls and gone the pass she dies, and the
@@ -255,7 +261,6 @@ impl Plugin for UndermerePlugin {
                 crate::tricks::judge_splits,
                 crate::tricks::judge_draining,
                 crate::tricks::trail_fire,
-                crate::tricks::keep_shrouded,
                 crate::tricks::keep_regen_halted,
                 crate::tricks::sing_choir,
                 crate::tricks::hatch_beside,
@@ -265,7 +270,7 @@ impl Plugin for UndermerePlugin {
             )
                 .in_set(TurnSet::React),
         );
-        // A shackled captive's own "free": task 10's.
+        // A shackled captive's own "free".
         app.add_systems(Turn, crate::captives::answer_free.in_set(TurnSet::React));
         app.add_systems(Turn, crate::temple::answer_rites.in_set(TurnSet::React));
         // Mereholt's people: what talking to one says, a wanderer kept to
@@ -289,7 +294,7 @@ impl Plugin for UndermerePlugin {
             (
                 crate::bestiary_lore::learn_from_abilities,
                 crate::bestiary_lore::learn_from_triggers,
-                crate::bestiary_lore::learn_splitting,
+                crate::bestiary_lore::learn_from_statuses,
                 crate::bestiary_lore::learn_fire_trail,
                 crate::bestiary_lore::learn_draining,
                 crate::bestiary_lore::learn_reflecting,
@@ -333,10 +338,22 @@ impl Plugin for UndermerePlugin {
         app.add_systems(Update, crate::lore::learn_by_asking.after(EngineSet::Input).before(EngineSet::Turns));
         // What the panels count of a worn thing not yet known: its kind's
         // plain numbers, over the engine's true ones, for the vitals' armor,
-        // the look cursor's forecast and the targeting box's chance. Each
-        // reads its view when the game draws it and does nothing where it
-        // does not.
-        app.add_systems(Update, (crate::seeming::seem_armor, crate::seeming::seem_forecast, crate::seeming::seem_aim).in_set(ViewSet::Annotate));
+        // the look cursor's forecast and the targeting box's chance; and
+        // what the pack and the look cursor say of a thing whose kind is
+        // known and whose level is not. Each reads its view when the game
+        // draws it and does nothing where it does not.
+        app.add_systems(
+            Update,
+            (crate::seeming::seem_armor, crate::seeming::seem_forecast, crate::seeming::seem_aim, crate::seeming::seem_pack, crate::seeming::seem_looked_at)
+                .in_set(ViewSet::Annotate),
+        );
+        // What a thing asks of the adventurer's strength, under the pack's
+        // row and the look cursor's: after what a thing not yet known
+        // seems, so the line reads under its numbers.
+        app.add_systems(
+            Update,
+            crate::strength::note_strength.after(crate::seeming::seem_pack).after(crate::seeming::seem_looked_at).in_set(ViewSet::Annotate),
+        );
         // The gold carried, on the vitals under the gauges, wherever the
         // game draws them.
         app.add_systems(Update, crate::shops::count_gold.in_set(ViewSet::Annotate));

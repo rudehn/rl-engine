@@ -6,7 +6,7 @@
             crates/rl-save/src/run.rs
             crates/rl-save/src/unload.rs
             crates/rl-ui/src/game_menu.rs
-     fingerprint: 72dd7038 -->
+     fingerprint: f8d6f414 -->
 
 # The title screen
 
@@ -93,7 +93,7 @@ pub fn start(
     let adventurer = spawn_adventurer(&mut commands, &content.registries);
     let extra = content.extra.as_deref().cloned().unwrap_or_default();
     equip_kit(&mut commands, adventurer, &content.armory, &content.registries, &extra);
-    begin.log.notice(format!("Seed {}. Ten floors under the lake, the Drowned King waits.", seed.0.0), 0);
+    begin.log.notice(format!("Seed {}. Ten floors under the lake, something waits on a drowned throne.", seed.0.0), 0);
     let place = match first.map_or(0, |f| f.0.min(FLOORS)) {
         0 => TOWN,
         floor => map_of(floor),

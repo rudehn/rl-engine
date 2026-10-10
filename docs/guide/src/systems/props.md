@@ -11,11 +11,12 @@
             crates/rl-bevy/src/ability.rs
             crates/rl-bevy/src/effects/mod.rs
             crates/rl-bevy/src/effects/triggers.rs
+            crates/rl-bevy/src/work.rs
             crates/rl-render/src/map_view.rs
             crates/rl-ui/src/interact.rs
             crates/rl-ui/src/focus.rs
             crates/rl-save/src/run.rs
-     fingerprint: 357808e5 -->
+     fingerprint: 30735ec8 -->
 
 # Props
 
@@ -43,10 +44,13 @@ It inserts `Prop`, `PropKind(id)`, a `Name`, a `Position` and an `OnMap`, and th
 A definition that offers nothing, holds nothing, answers no moment, has no `health` and is not hidden is scenery, as `PropDef::is_scenery` reads it, and the prop gets `Scenery` as well.
 No glyph: a look travels as data and whoever draws dresses the prop from the same definition, exactly as a tile is described once as a tile and once as a look.
 `OfferDef` is a `verb`, a `time` in hundredths of a step, an optional `needs` tag and a list of effects.
-`offer_here` works out, for the actor holding the turn and nobody else, what it is offered by what it stands on and what stands beside it, as an `Offer { prop, verb, time, refused }`.
+`offer_here` works out, for the actor holding the turn and nobody else, what it is offered by what it stands on and what stands beside it, as an `Offer { target, verb, time, refused }`, `target` whatever offered it, a prop or an actor.
 A refused offer is still listed, with `Refused::Needs(tag)` saying which tag it wants, so a screen greys the row and says why rather than hiding it.
 A container's lock is folded in here, since opening a locked thing wants its key as surely as an offer that asked for one itself, and an `Emptied` container stops offering `open`.
-`Interact { prop, verb }` is the one action whatever the verb: its resolver spends the offer's `time`, lands whatever effects the offer carried, and writes `Interacted { actor, prop, verb }`.
+`Interact { target, verb }` is the one action whatever the verb: its resolver spends the offer's `time`, lands whatever effects the offer carried, and writes `Interacted { actor, target, verb }`.
+An actor offers the same way a prop does, through its own `Offers`, a list of `Offering { verb, time, needs }` built with `Offering::new(verb, time)` and `.needing(tag)` rather than read from a definition, since what an actor offers is its own rather than its kind's, a captive to free or someone to talk to.
+`offer_here` reads whichever of the two an actor carries, and refuses an actor's own offers to its own holder and to anyone the gate's `CombatRules` call hostile, so a foe is struck rather than talked past and a bump into one takes nothing up; an ally's offers stand, as a prop's do.
+`Offers` is read where it sits and never saved by the engine, so a game puts it back on with whatever it saves the actor as, a prop included.
 Verbs are interned by `Verbs`, `OPEN` and `SEARCH` first and the rest through `app.add_verb`, so two games spell `open` the same way.
 `Container` is `Inventory` on something that is not an actor, so everything that reads a bag reads this one.
 A container's `contents` are `ContentRoll`s, each a `Stock::Item` by name in a count or a `Stock::Tag` in a number of draws, with a `band` offset for a tag.
@@ -60,7 +64,7 @@ Each trigger is the `TriggerSpec` an item's are, an `on` moment by name, an `Are
 `report_entered` reads `Stepped`, which the move resolver writes for every step it lets through, so anything that walks sets off a plate, and it lands in the same pass, before damage.
 `report_destroyed` reads `DeathEvent`, which a prop with `Health` raises like anything else, and since the prop is gone by the end of the frame it leaves a `Remnant` carrying its triggers and its name, reported and landed a pass later; a prop with nothing to do when broken leaves none.
 Both only report `Fired { on, moment, by, at }`, the second through the remnant; [Effects](effects.md) lands the list, rolling each chance and reading each argument exactly as a spell does, over the one cell or the burst the trigger names, and a game reads the same message for what no effect can say.
-`Hidden { spot }` is a prop nobody has spotted: the map view and a mind's contributor both skip one, which is a query filter rather than a second drawing path, and `spot_hidden_props` rolls `spot` percent a turn for the player alone while it is in sight, writing `Spotted` and taking the component off.
+`Hidden { spot }` is a prop nobody has spotted: the map view, what it remembers and a mind's contributor all skip one, which is a query filter rather than a second drawing path, and `spot_hidden_props` rolls `spot` percent a turn for the player alone while it is in sight, writing `Spotted` and taking the component off.
 `perceive_props` puts what the mind holding the turn can see into `Snapshot::props` as a `PropView` of which entity, where, and whose side, so a mind that walks to wrecks and a mind that walks to crates read one list.
 
 ## Using it
@@ -92,11 +96,11 @@ pub fn answer_charge(
         if ev.verb != charge {
             continue;
         }
-        let Ok((_, on)) = consoles.get(ev.prop) else { continue };
+        let Ok((_, on)) = consoles.get(ev.target) else { continue };
         let deck = crate::decks::deck_of(on.map(|m| m.0).unwrap_or(MapId::SURFACE));
         // The glyph comes off with the kind, so the renderer dresses it
         // again from the definition of a console already used.
-        commands.entity(ev.prop).remove::<Glyph>().insert(PropKind(spent));
+        commands.entity(ev.target).remove::<Glyph>().insert(PropKind(spent));
         report.happened.write(Happened(Fact::new(report.facts.charge_set).about(u64::from(deck))));
         report.tell.write(Tell::new("You set the charge. The reactor stirs.", Tones::GOOD));
     }
@@ -107,9 +111,11 @@ pub fn answer_charge(
 
 The engine decides whether an interaction is possible, what it costs and when it resolves; what it meant is the game's, read off `Interacted` and filtered by verb.
 There is no registry of behaviours and no trait to implement, because a game already knows how to answer a message, and a refusal is free: the offers are worked out before the player acts, so nothing is spent finding out that nothing was there.
-A prop that blocks and offers one thing it can take up is walked into, because the bump redirect writes the interaction; one offering two, or offering one it refuses, spends no turn and says so as `Bumped`, since a walk key can neither ask a question nor give a reason.
+A prop or an actor that blocks and offers one thing that can be taken up is walked into, because the bump redirect writes the interaction; one offering two, or offering one it refuses, spends no turn and says so as `Bumped`, whose `offers` field is what it was offered, since a walk key can neither ask a question nor give a reason.
+`OffersPanel` opens on that field rather than asking whether the thing bumped was a prop, which is what lets a captive bumped into with nothing free to say read the same way a workbench with two tools does.
 What a bump cannot reach, a body underfoot or a plate already found, is `InteractKey`'s, which takes the one offer in reach and takes none where two are offered.
 `OffersPanel` and `ContainerPanel`, in `rl-ui`, are where that question and that rummaging are drawn, and a game with neither gets nothing rather than a guess.
+A verb whose answer takes several turns is the game's to begin: an offer taken up is `Interacted` at once, and a game that wants the taking to cost more than its offer's `time` begins a `Works` on the target itself, which the engine's multi-turn work already carries to done or broken without asking the player again.
 A prop that blocks sight is not here: field of view reads the map's tiles and the veil gas writes into, so a sight-blocking prop is a second mechanism and the veil is where it goes on the day something needs it.
 Doors stay tiles, because a door has no state of its own to remember and props are for things that remember something.
 Scenery is a prop rather than a tile because it stands in the way and can be looked at by name, and it stays out of what is listed in sight, the nearby rail and the Tab cycle, because a room of machinery would otherwise bury its one crate; the map draws it and the look cursor names it, and a game that hangs a behaviour of its own on one takes `Scenery` off.

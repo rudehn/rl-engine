@@ -445,11 +445,14 @@ fn next_run_seed(previous: RunSeed) -> RunSeed {
 /// forgets to make one is told so by the same check as the first time.
 ///
 /// What a game keeps of its own is its own to forget, in [`EndRun`].
+///
+/// `Disabled` things go too, which no query sees unless it asks: a body's
+/// twin, and a shot's stand-in for a shooter still in the air when the run
+/// ended, are the run's as surely as what stands on the map.
 pub fn clear_run(world: &mut World) {
-    let doomed: Vec<Entity> = world
-        .query_filtered::<Entity, Or<(With<Position>, With<places::OnMap>, With<crate::items::Item>, With<Actor>, With<crate::combat::Dead>, With<crate::effects::Remnant>)>>()
-        .iter(world)
-        .collect();
+    use bevy::ecs::{entity_disabling::Disabled, query::Allow};
+    type OfTheRun = Or<(With<Position>, With<places::OnMap>, With<crate::items::Item>, With<Actor>, With<crate::combat::Dead>, With<crate::effects::Remnant>)>;
+    let doomed: Vec<Entity> = world.query_filtered::<Entity, (OfTheRun, Allow<Disabled>)>().iter(world).collect();
     for e in doomed {
         world.despawn(e);
     }

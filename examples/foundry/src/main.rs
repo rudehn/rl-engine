@@ -10,6 +10,9 @@
 //! every drawn slot of every piece finds on every deck: `✓` where the draw
 //! lands on the deck asked, `~N` where it falls back to deck `N`, and `✗`
 //! where it finds nothing.
+//! `cargo run -p foundry -- --deck 4 --seed 7` prints deck four of that
+//! seed as rows of glyphs: `#` solid, `.` open, `+` a hatch, `<` the way in
+//! and `>` the way down.
 
 use bevy::prelude::*;
 use foundry::cheats::CheatPanel;
@@ -227,12 +230,21 @@ fn main() -> AppExit {
     match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
         [] => {}
         ["--seed", n] => seed = RunSeed(n.parse().expect("--seed takes a number")),
+        ["--deck", n, "--seed", s] | ["--seed", s, "--deck", n] => {
+            let deck = n.parse().expect("--deck takes a number");
+            let foundry = foundry::decks::Foundry::new(RunSeed(s.parse().expect("--seed takes a number")));
+            match foundry.render(foundry::decks::map_of(deck)) {
+                Ok(rows) => print!("{rows}"),
+                Err(e) => eprintln!("deck {deck}: {e}"),
+            }
+            return AppExit::Success;
+        }
         ["--prefabs"] => {
             print!("{}", foundry::prefabs::coverage_report().render());
             return AppExit::Success;
         }
         _ => {
-            eprintln!("usage: foundry [--seed N | --prefabs]");
+            eprintln!("usage: foundry [--seed N | --prefabs | --deck N --seed N]");
             return AppExit::error();
         }
     }
@@ -571,10 +583,12 @@ mod tests {
 
     /// A rat that has the commando in sight and is running from it reads as
     /// fleeing on the rail, not hunting: what it is doing outranks whether
-    /// it has seen you.
+    /// it has seen you. Seed two, where the rat's first step away leaves it
+    /// in the commando's sight; on seed one's deck that step takes it out
+    /// of sight and off the rail, which is the rail being right.
     #[test]
     fn a_hurt_rat_running_from_the_commando_reads_fleeing_on_the_rail() {
-        let mut app = on_screen(RunSeed(1));
+        let mut app = on_screen(RunSeed(2));
         let (rat, me) = foundry::testing::droid_facing_player(&mut app, "coolant rat", 3);
         app.world_mut().get_mut::<Health>(rat).unwrap().current = 1;
         foundry::testing::alert(&mut app, rat, me);

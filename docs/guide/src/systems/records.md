@@ -64,7 +64,9 @@ A game writes its record once, when its run is over, in its own words.
 pub fn record(ending: Option<Res<Ending>>, tally: Res<Tally>, map: Option<Res<WorldMap>>, credit: Credit, mut records: MessageWriter<RecordRun>) {
     let (Some(ending), Some(map)) = (ending, map) else { return };
     let by = match ending.outcome {
-        Outcome::Died { by } => credit.of(by),
+        // As noted at the death, since what did may be gone by now; asked
+        // again only of an ending no death came through.
+        Outcome::Died { by } => tally.slain_by.clone().or_else(|| credit.of(by)),
         _ => None,
     };
     let lines = score(&tally, ending.outcome == Outcome::Won);
@@ -81,7 +83,7 @@ Keeping the list between launches is one more plugin beside the ones a game alre
 <!-- include: ../../../../examples/undermere/src/save.rs:register -->
 ```rust,no_run
 /// What the save is made of: the engine's plugins, the four kinds, and
-/// the three resources; and the records, in their own slot.
+/// the four resources; and the records, in their own slot.
 pub fn register(app: &mut App) {
     app.add_plugins((SavePlugin::new(SLOT).version(VERSION).on_arrival(), UnloadPlugin, RecordsSavePlugin))
         .save_kind::<ItemKind>()
@@ -90,6 +92,7 @@ pub fn register(app: &mut App) {
         .save_kind::<Way>()
         .save_state::<Tally>()
         .save_state::<Lore>()
+        .save_state::<MonsterLore>()
         .save_state::<Quests>();
 }
 ```

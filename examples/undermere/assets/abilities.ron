@@ -28,7 +28,7 @@
 //                per_level:), the user along the line aimed, up to reach cells, Conjure(blades:,
 //                turns:), spectral blades on the user's own side, RaiseDead, the nearest body in
 //                sight and reach stood up as the user's own ally, Wither(turns:), `weakened` capped
-//                at three stacks, Steal, a landed blow's own trick, Rally(turns:), task 8a's own,
+//                at three stacks, Steal, a landed blow's own trick, Rally(turns:), Grubnak's,
 //                every ally in sight hasted, and CallDrowned(count:, range:), drowned thralls stood
 //                up out of the water within range. The damage kinds are
 //                "slash" | "pierce" | "crush" | "fire" | "cold" | "poison" | "lightning", and the
@@ -58,9 +58,9 @@
         description: "A wide gout of flame that burns whatever it reaches and leaves the ground alight.",
         look: (glyph: '*', color: (r: 255, g: 115, b: 25)),
         mode: Cone(length: 5),
-        cooldown: 500,
+        cooldown: 700,
         effects: [
-            (kind: "Harm", args: (kind: "fire", roll: "4d6")),
+            (kind: "Harm", args: (kind: "fire", roll: "2d6+2")),
             (kind: "Ignite", args: (turns: 3)),
         ],
     ),
@@ -158,7 +158,7 @@
         cooldown: 1000,
         effects: [(kind: "RaiseDead")],
     ),
-    // Task 8a's five mini-bosses. Grubnak's war cry needs nowhere pointed,
+    // The five mini-bosses. Grubnak's war cry needs nowhere pointed,
     // the same reason `conjure blades` and `raise dead` take none: its own
     // sight is who it hits, not a cursor.
     (
@@ -168,7 +168,7 @@
         aim: SelfOnly,
         mode: Own,
         cooldown: 2000,
-        effects: [(kind: "Rally", args: (turns: 6))],
+        effects: [(kind: "Rally", args: (turns: 4))],
     ),
     // The Drowned Abbess's venomous spit, at range rather than a bite.
     (
@@ -176,8 +176,8 @@
         description: "A gout of venom spat from afar.",
         look: (glyph: '*', color: (r: 140, g: 200, b: 120)),
         mode: Bolt(range: 6),
-        cooldown: 400,
-        effects: [(kind: "Inflict", args: (status: "poisoned", turns: 6))],
+        cooldown: 600,
+        effects: [(kind: "Inflict", args: (status: "poisoned", turns: 4))],
     ),
     // The Drowned Abbess's: thralls stand up out of whatever water is
     // within her reach, not pointed at one, as `raise dead` is not.
@@ -187,7 +187,7 @@
         look: (glyph: '*', color: (r: 100, g: 150, b: 170)),
         aim: SelfOnly,
         mode: Own,
-        cooldown: 1500,
-        effects: [(kind: "CallDrowned", args: (count: 2, range: 6))],
+        cooldown: 2000,
+        effects: [(kind: "CallDrowned", args: (count: 1, range: 6))],
     ),
 ]

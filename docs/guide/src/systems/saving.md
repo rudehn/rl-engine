@@ -12,7 +12,8 @@
             crates/rl-bevy/src/world.rs
             crates/rl-bevy/src/plugin.rs
             crates/rl-bevy/src/cue.rs
-     fingerprint: 48a9516f -->
+            crates/rl-bevy/src/minds.rs
+     fingerprint: aa6d8824 -->
 
 # Saving and the ending screen
 
@@ -36,7 +37,8 @@ Nothing here is on by default, and a game that registers no kinds and adds neith
 ## The model
 
 `Saveable` is the one trait a game writes, implemented on the component that marks a kind: `capture` writes an entity down as `Self::Saved`, and `restore` spawns one again from that, nowhere, carrying nothing, at full health.
-Neither says anything about position, health, bags, slots, stacks, statuses, remains, where a transition leads, where an actor is posted, the work it is in the middle of or how long something alight has left to burn, because that is `EntityState`, the engine's half of every saved entity, and every field of it is optional, so a kind that gains a bag later still reads an old save.
+Neither says anything about position, health, bags, slots, stacks, statuses, remains, where a transition leads, where an actor is posted, the work it is in the middle of, how long something alight has left to burn, or whom it follows as a leader, because that is `EntityState`, the engine's half of every saved entity, and every field of it is optional, so a kind that gains a bag later still reads an old save.
+`EntityState::leader` is by `SaveId` rather than by the brain it rides on, since a kind's `Brain` is content made again from its definition and not a thing to save: a follower whose leader was saved too follows it again, by the entity map, and one whose leader was not follows nobody rather than an entity that no longer exists.
 A status a worn thing holds is saved apart from the rest, with the thing's save id, and put back held by the thing; one whose thing did not come back is left out rather than put back loose, since it lasted only while that thing was worn.
 Remains are saved as whatever they were, and a prop kind a game laid on a body afterwards is part of what `EntityState` records of the remains, which is why `PropKind` answers false to `Saveable::TAKES_REMAINS`; a capture that finds one entity claimed by two kinds is refused with both named, since restoring it would spawn the thing twice.
 `SaveableState` is the same bargain for a resource a game keeps of a run, with `capture` and `restore` on the resource itself, which must already exist when the save is restored.
@@ -45,7 +47,7 @@ Remains are saved as whatever they were, and a prop kind a game laid on a body a
 `RunSave` is the result: a `format`, the `EngineSave`, a `KindSave` per kind holding each entry's own RON, the `EntityState` of each, and the game's resources by name.
 `RunSave::capture` walks the kinds in registration order and each kind's living entities still in play in spawn order, leaving out the dead and the spent the frame keeps only so the log can name them, so one run writes the same bytes whatever order the archetypes are in; `restore` spawns each kind, binds the ids, puts the engine's state back on them, restores the game's resources and then the engine's own, into a world whose content resources and whose `Seed` the game has already inserted.
 `RunSave::state::<R>` reads one resource out of a save before anything is restored, for the part of a start that runs before the world exists, and `count_of` and `turn` are for a line in the log.
-`EngineSave` is the engine's half: the run's `seed`, the clock, the queue as ids and readings, the map's edits and its built places, what the player has explored and which sites it has found, every chart a mind filled, each saved entity's pools and cooldowns, its charges and what refills them, the progress towards a worn thing's next pulse, and how many more times each of its triggers may fire, and every burning or gassed cell on every map.
+`EngineSave` is the engine's half: the run's `seed`, the clock, the queue as ids and readings, the map's edits and its built places, what the player has explored and the still things it last saw there, which sites it has found, every chart a mind filled, each saved entity's pools and cooldowns, its charges and what refills them, the progress towards a worn thing's next pulse, and how many more times each of its triggers may fire, and every burning or gassed cell on every map.
 `EngineSave::restore` puts every one of those back except the `seed`, which it only carries: a game reads `save.engine.seed` itself and inserts the `Seed` before it builds the world the continued run stands in.
 Whoever held the turn is out of the queue when a save is taken, so it is put back at the front of the present and dealt first on the run that continues.
 What is in the air when a save is taken, a shot, an ability or a thing's aimed use waiting to be seen to land, is not saved: what it cost is spent in the save and what it would have landed is lost, since every `Airborne` is emptied when its run ends.
@@ -130,7 +132,7 @@ fn show_the_take(mut view: ResMut<EndingView>, player: Query<Option<&Inventory>,
 
 ## The line
 
-With the plugin added and nothing else registered, the engine saves the clock and the queue, the run's seed, the surface's edits and every built place, what the player has explored and the sites it has found, the fire and the gas on every map, and what each actor has spent on abilities.
+With the plugin added and nothing else registered, the engine saves the clock and the queue, the run's seed, the surface's edits and every built place, what the player has explored and the still things it last saw there, the sites it has found, the fire and the gas on every map, and what each actor has spent on abilities.
 It saves every prop too, because it spawned them from definitions it can read again.
 Everything else is the game's to register, since the engine cannot know what a monster or a sword is made of: what a kind is written down as, and what spawning one again means, are `Saveable`, and what is not an entity is `SaveableState`.
 The engine then puts its own half back on whatever the game spawned, so giving a kind a bag, a status or a stack later changes nothing about how that game saves it.

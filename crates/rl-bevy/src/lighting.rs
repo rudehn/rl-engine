@@ -22,6 +22,9 @@
 //! reads only whether a tile is dark; stealth's light bonus reads the lit
 //! band, and a to-hit model may read either.
 //!
+//! What the player sees of a thing is one question, [`PlayerSight::shows`]:
+//! on this map, in its viewshed, and not [`Concealed`] out of the light.
+//!
 //! Ambient is a plain field the game writes: once at start for a dungeon,
 //! from a system of its own for a surface with nights. The engine has no
 //! clock hook and no notion of a day.
@@ -30,7 +33,7 @@ use bevy::prelude::*;
 use rl_core::{Grid2D, Point, Rect, geometry};
 use rl_grid::{BitGrid, Emitter, Light, LightBand, LightField, Rgb};
 
-use crate::components::{Actor, Position, Viewshed};
+use crate::components::{Actor, Player, Position, Viewshed};
 use crate::items::{Inventory, Item};
 use crate::places::{MapId, OnMap};
 use crate::turn::TurnEnd;
@@ -463,6 +466,63 @@ pub fn band_at(lighting: Option<&Lighting>, p: Point) -> LightBand {
     lighting.map_or(LightBand::Lit, |l| l.band(p))
 }
 
+/// An actor the player does not see while it stands outside the light,
+/// unless it is beside the player.
+///
+/// Stealth decides what a mind notices, and the player is not a mind: a
+/// subject hard to see in the dark was hidden from every monster and drawn
+/// plainly for the player, who sees by its [`Viewshed`] alone. This is
+/// the player's half. What the player sees of things is decided once, by
+/// [`PlayerSight::shows`], which the map, the list of what is in sight and
+/// so every panel and cursor built on it all ask, so none of them draws or
+/// names a thing another left out.
+///
+/// Outside the light means out of the lit band: a dim fringe is not a
+/// pool of light, and a game whose deep ambient is dim, seen but never
+/// lit, wants the dim to hide what this marks. With no [`Lighting`] every
+/// cell is lit, so the marker hides nothing. Beside the player it is
+/// always seen, as touch reaches what light does not. A game adds and
+/// removes it; the engine reads only whether it is there.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Concealed;
+
+/// Whether a [`Concealed`] thing at `at` goes unseen by a viewer at
+/// `from`: true while `at` is not lit and the two are not beside each
+/// other.
+pub fn conceals(lighting: Option<&Lighting>, from: Point, at: Point) -> bool {
+    band_at(lighting, at) != LightBand::Lit && geometry::chebyshev(from, at) > 1
+}
+
+/// What the player sees of the things on the map, asked by everything that
+/// shows one.
+///
+/// A thing is shown when it is on the current map, in the player's
+/// viewshed, and not [`Concealed`] from where the player stands. Whether
+/// it is a prop nobody has spotted stays its readers' query filter, since
+/// that is a fact about the thing and never about where the player is.
+/// With no player, nothing is shown.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct PlayerSight<'w, 's> {
+    map: Res<'w, WorldMap>,
+    lighting: Option<Res<'w, Lighting>>,
+    player: Query<'w, 's, (Entity, &'static Position, &'static Viewshed), With<Player>>,
+}
+
+impl PlayerSight<'_, '_> {
+    /// The player, where it stands and what its sight reaches, when there
+    /// is exactly one.
+    pub fn viewer(&self) -> Option<(Entity, Point, &Viewshed)> {
+        self.player.single().ok().map(|(entity, pos, sight)| (entity, pos.0, sight))
+    }
+
+    /// Whether the player sees a thing at `at` on `on`, which is
+    /// [`Concealed`] when `concealed`.
+    pub fn shows(&self, at: Point, on: Option<&OnMap>, concealed: bool) -> bool {
+        let Some((_, from, sight)) = self.viewer() else { return false };
+        on.map_or(MapId::SURFACE, |m| m.0) == self.map.current() && sight.can_see(at) && !(concealed && conceals(self.lighting.as_deref(), from, at))
+    }
+}
+
 /// Burns fuel every whole turn and puts out what runs dry.
 pub fn tick_fuel(
     mut commands: Commands,
@@ -786,5 +846,34 @@ mod tests {
         assert!(app.world().get::<Viewshed>(player).unwrap().dirty, "the one carrying it");
         assert!(app.world().get::<Viewshed>(near).unwrap().dirty, "and one whose range meets the light it moved");
         assert!(!app.world().get::<Viewshed>(far).unwrap().dirty, "but not one sixty tiles away, which is what cost a shadowcast per actor a frame");
+    }
+
+    /// Whether the player is shown `e`, by the one question every view asks.
+    fn shown(rig: &mut Rig, e: Entity) -> bool {
+        let ask = move |sight: PlayerSight, things: Query<(&Position, Option<&OnMap>, Has<Concealed>)>| {
+            let (pos, on, concealed) = things.get(e).expect("the thing");
+            sight.shows(pos.0, on, concealed)
+        };
+        rig.app.world_mut().run_system_once(ask).expect("the question ran")
+    }
+
+    /// The player sees four tiles into the dark by dark sight: a plain
+    /// actor there is shown and a [`Concealed`] one is not, until it is
+    /// beside the player or a light falls on it.
+    #[test]
+    fn a_concealed_actor_is_unseen_in_the_dark_but_seen_beside_the_player_or_in_a_light() {
+        let mut rig = Rig::new(Some(Lighting::dark()), Some(6));
+        let here = OnMap(MapId(1));
+        let plain = rig.app.world_mut().spawn((Actor, Position(Point::new(9, 4)), here)).id();
+        let hiding = rig.app.world_mut().spawn((Actor, Concealed, Position(Point::new(9, 5)), here)).id();
+        let close = rig.app.world_mut().spawn((Actor, Concealed, Position(Point::new(6, 5)), here)).id();
+        assert!(rig.sees(Point::new(9, 5)), "its cell is in sight");
+        assert!(shown(&mut rig, plain), "a plain actor in the dark is seen by dark sight");
+        assert!(!shown(&mut rig, hiding), "a concealed one at the same reach is not");
+        assert!(shown(&mut rig, close), "beside the player it is");
+        rig.app.world_mut().spawn((Position(Point::new(10, 5)), LightSource::new(200, 3, amber())));
+        rig.act(Wait);
+        assert_eq!(rig.app.world().resource::<Lighting>().band(Point::new(9, 5)), LightBand::Lit);
+        assert!(shown(&mut rig, hiding), "and in a light's pool it is seen");
     }
 }

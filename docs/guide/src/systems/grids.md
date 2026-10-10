@@ -12,7 +12,7 @@
             crates/rl-grid/src/dijkstra.rs
             crates/rl-grid/src/region.rs
             crates/rl-grid/src/targeting.rs
-     fingerprint: 353371e9 -->
+     fingerprint: 3e17b792 -->
 
 # Grids and tiles
 
@@ -42,10 +42,12 @@ Names are resolved there rather than at registration, which is what lets a door 
 `TileTables` is what the hot loops actually read, a `Vec` per flag indexed by id, with `opens` and `closes` resolved to ids and `burn` resolved to a `Kindling`.
 `Terrain` is a `Grid<TileId>` and nothing else, and `Terrain::view(&registry)` makes a `TerrainView` that answers the two questions from the tables.
 Those two questions are the traits `OpacitySource` and `CostSource`, both supertraits of `Grid2D`, and both answer for an out-of-bounds cell without being asked: off the grid is opaque and impassable, so a scan stops at the edge rather than checking twice.
+`CostSource` answers a third question, `lets_diagonal_past(p)`, which a search asks of both cells a diagonal step squeezes between: `is_passable(p)` unless a source says otherwise, so a cell may be priced enterable, a closed door at the cost of opening it, while still letting no diagonal cut past its corner while it is shut.
 A newtype over a view that overrides one method is how smoke, a hazard or a swimmer's costs go on top without copying the terrain, and the doc-test on `TerrainView` is that pattern written out.
 `BitGrid` is one bit per cell for viewsheds, visited sets and explored maps; `SpatialGrid<E>` is a `BTreeMap<Point, Vec<E>>` for who is standing where, kept out of the terrain so moving every turn does not mark the terrain changed.
 `AStar` is one mover to one goal, holding its scratch buffers across searches, and returns a `Path` of steps and a total cost; `DijkstraMap` is one flood any number of movers descend, bounded to a `Rect` so a continuous world never floods a million cells a turn, with `UNREACHED` for what it did not reach, signed values so `scale` and `rescan` invert it into the safety map a fleeing monster follows, and `take_lower`, which makes the flood from several goals out of one flood from each.
 `PathRules` says whether diagonals are allowed and whether one may cut a corner between two blocked orthogonals, off by default, and a diagonal costs 1414 to an orthogonal's 1000.
+With `cut_corners` off, `step_cost`, which `AStar` and `DijkstraMap` both step through, refuses a diagonal unless `lets_diagonal_past` answers yes of both cells it squeezes between, so the one rule reaches a search and the move resolver alike and a mover never plans a step the resolver would refuse.
 `region::flood` marks what is reachable into a `BitGrid` and `region::label_regions` numbers every connected component at once, both taking passability as a closure over flat indices so they run on anything.
 `targeting::footprint` resolves a `TargetMode`, own cell, adjacent, bolt, ball, beam or cone, into the `Footprint` of cells it covers and the path a projectile took, with blocking passed in as two closures because what blocks is the caller's to say: what stops a projectile, walls and whoever stands in the way, and what stops a burst, walls alone.
 `targeting::burst` is the burst on its own, every cell in the radius a straight line from the centre reaches without crossing a wall, which a ball bursts with where it lands and a thrown thing's trigger with where it comes down; a ball that hits a wall bursts on the near side of it.

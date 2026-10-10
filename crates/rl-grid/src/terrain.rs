@@ -121,6 +121,20 @@ pub trait CostSource: Grid2D {
     fn is_passable(&self, p: Point) -> bool {
         self.cost(p).is_some()
     }
+
+    /// Whether a diagonal step may pass beside `p`, which the corner rule
+    /// asks of both cells a diagonal squeezes between. Whether `p` can be
+    /// entered, unless the source says otherwise.
+    ///
+    /// Its own question because a source may price a cell it cannot yet be
+    /// stood on: one that counts a closed door at the cost of opening it
+    /// can be entered, a turn later, but nothing slips past its corner
+    /// while it is shut, and a mover that is refused the diagonal its path
+    /// planned plans it again every turn and never moves. Such a source
+    /// answers here what the mover's own corner rule answers.
+    fn lets_diagonal_past(&self, p: Point) -> bool {
+        self.is_passable(p)
+    }
 }
 
 /// A terrain read through a registry's flag tables.

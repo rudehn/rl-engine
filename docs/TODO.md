@@ -51,7 +51,9 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 24 | Furnishing a room of any size | 1 | medium | medium |
 | 25 | A furnishing pool with bands and a budget | 1 | low | medium |
 | 26 | Furnishing a map that is not rooms | 1 | low | medium |
-| 27 | `offer_abilities` declares `&mut Stack` it only reads | 4 | low | low |
+| 27 | A coloured light cannot warm a tile with little of its colour | 3 | low | low |
+| 28 | The player has no long action | 3 | medium | medium |
+| 29 | `offer_abilities` declares `&mut Stack` it only reads | 4 | low | low |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
@@ -74,6 +76,8 @@ Why the order that is left, in four moves:
 4. **The rest wait on something.**
    Item 21 waits on a game that actually wants the tactics it would add, and item 22 on a second game asking for it.
    Items 23 to 26 were raised on 2026-09-28 when Foundry's rooms were first furnished, and are the next steps of that work rather than debt: 23 is what the furnished rooms most visibly lack, 24 what the larger rooms do, and 25 and 26 wait on Foundry's zones and on a game that furnishes a cave.
+   Item 27 is polish Undermere's play found on 2026-10-07, and waits on a part that works on how a game looks, since it moves every lit game's pictures.
+   Item 28 was ruled around rather than built on 2026-10-07, when Undermere gave a captive a long action only a mind could take up, and waits on a game that wants the player to take one too.
 
 Section 5 is documentation and section 6 is the release, and both are gated on the API settling rather than on this list.
 Section 9 is low priority and deliberately outside the order.
@@ -103,7 +107,7 @@ What is left is furnishing, the loop every game with rooms writes next, opened o
 The five items that opened this section were built in the six stages of `docs/design/minds.md` on 2026-09-16; what remains is the tactics they make room for.
 
 - **Tactics that are missing, and weights that are fixed.**
-  No pack or leader behaviour, no keep-at-range for a shooter, no patrol or idle routine, and no scent, though `DijkstraMap` is the right tool for it; noise is built, in `docs/design/noise.md`.
+  No pack behaviour, no keep-at-range for a shooter, no patrol or idle routine, and no scent, though `DijkstraMap` is the right tool for it; noise is built, in `docs/design/noise.md`, and so is following a leader, in `docs/design/minds.md` section 7.
   A mind now shoots what it wields when there is a clear shot to take, with `ShootAtRange`, and holds a distance with `Shadow` above it; no game fields a skirmisher yet.
   `UseAbility` scores a footprint at two for a hit and three against for harm, hardcoded in `crates/rl-rules/src/ai/tactics.rs`; make the weights fields.
 - **A searcher dithers where it lost the trail.**
@@ -114,6 +118,12 @@ The five items that opened this section were built in the six stages of `docs/de
   It changes how every game's monsters search, so every fingerprint moves with it.
 
 ## 3. Make what exists real
+
+- **A coloured light cannot warm a tile with little of its colour.**
+  `Shading::light` in `crates/rl-render/src/shade.rs` multiplies a tile's colour by the light that lands on it, channel by channel, so a light's colour can only take away: a fire's orange on green moss darkens the green rather than warming it, and the floor reads as lit by the lantern.
+  Undermere's play found it on 2026-10-07, in task 11 of its part 3, and its camps' fires burn yellower to get round it (`9e68e0e`).
+  Brogue adds a share of a light's own colour as well as multiplying, so a light can lend a tile a colour it does not have; adding a share of the light's colour, scaled by its intensity, after the multiply would do the same here.
+  Every lit game's pictures move with it, so it is polish for a part that works on how a game looks, not a fault to fix in passing.
 
 - **A prop cannot block sight, or block the way and let a shot past.**
   A prop's `blocks` is `Blocks`, which the occupancy index reads for movement and `combat::shot` reads as stopping a shot, and nothing a prop is can block sight.
@@ -126,6 +136,10 @@ The five items that opened this section were built in the six stages of `docs/de
   Foundry's lifts are gated by the game for the commando, the core charged or not, and nothing asks that of a droid that travels.
   Following is only for a mind beside the one that left, as it left; a chase that arrives some turns later would need actors on a map nobody is reading to be dealt turns, which nothing does.
   And the narrator's `Leaves` cannot name the way, "leaves" rather than "takes the lift", because a transition has no name the engine reads.
+- **The player has no long action.**
+  `continue_work` claims a worker's decision before any mind is asked, which is how work shuts a brain out for the turns it takes, but `docs/design/work.md` section 10 has always named this one as waiting: `works.begin` on the player, continued automatically and stopped by a key or an `ExploreInterrupt`, neither of which exists yet.
+  Undermere made the gap concrete rather than closing it: a captive gives a long action to whoever frees it, but only a mind takes it up, and freeing one is ruled not interruptible by a blow, since the engine's multi-turn work already skips the player rather than reading its mind to resume one.
+  A player's own long action wants the stopping key and the interrupt section 10 names, and a ruling on whether a blow still breaks it, which a game that wants one is the day to make.
 - **The tutorial's own `narrate` pushes lines once a frame.**
   Steps 4 to 6 and 8 to 10 of the tutorial read `ItemEvent` in `PresentSet::Narrate` and push "You eat the crust. It helps." straight to the log, which is the pattern the narrator replaced: a frame of several passes says them in buffer order rather than in the order they happened.
   They are not inside a pass, so the rule about `Tell` does not reach them; moving them into `TurnSet::React` as a `Tell` would, and the guide chapters that quote them move with it.
@@ -367,6 +381,17 @@ Left over from the worn gear and unseen slice on 2026-09-27, the same way.
   A player who sets something off on a crowd while hidden would expect to be seen, and the rule would read `Landing::targets` of a `use` trigger the way it reads an ability's.
   Since 2026-10-05 a `use` trigger may be aimed, and Undermere's staffs and wands harm others from one, so the case is real; no game yet has an unseen status beside an aimed use, Foundry's cloak having nothing to zap and Undermere no cloak, so it waits for the first that has both.
   The aimed use's landing is worked out in `ResolveSet::Triggers`, before `reveal_attackers` runs, so the fix is a report of who it landed on that the reveal can read, as `AbilityEvent::Used` is for an ability.
+
+Left over from the layout slice on 2026-10-01: the three pieces of work `docs/design/layout.md` section 0 says key on what it publishes.
+
+- **A furnisher that fills an area to its size.**
+  Rows of one machine with aisles between, by a theme per district, in place of `StampEachRoom`'s one centered piece.
+- **A run director.**
+  Which pieces a run holds and on which place, limits per place and per run, and rewards put by `AreaFacts::seclusion`; prefabs attached by their own door as a `Shape` belong here.
+- **Tells.**
+  A thing seen before it is reached.
+- **Foundry's recipes are a first draw.**
+  Two recipes over three districts at 84 by 48; the size and the mix are meant to grow as the furnisher and the director give a deck more to hold.
 
 ## Tracked elsewhere
 

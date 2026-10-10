@@ -85,9 +85,9 @@
     (name: "spore-burst", says: "bursts into spores when it dies", trick: true,
      triggers: [(on: "died", area: Burst(radius: 1), effects: [(kind: "Emit", args: (gas: "confusing", amount: 200))])]),
     (name: "brittle", says: "bones that blades glance off and hammers break",
-     resists: [("slash", 50), ("pierce", 50), ("crush", -50)]),
+     resists: [("slash", 33), ("pierce", 33), ("crush", -50)]),
     (name: "paralysing", says: "a touch that freezes", trick: true,
-     triggers: [(on: "hit", effects: [(kind: "Inflict", chance: 25, args: (status: "paralysed", turns: 2))])]),
+     triggers: [(on: "hit", effects: [(kind: "Inflict", chance: 15, args: (status: "paralysed", turns: 2))])]),
     // `Wither` rather than the plain `Inflict` every other hit trigger
     // uses: `Stacking::Stack` has no maximum of its own, and the sheet
     // caps this one at three.
@@ -118,10 +118,11 @@
     // it and marks the taker to run.
     (name: "stealing", says: "steals, then runs", wits: ["travels"], trick: true,
      triggers: [(on: "hit", effects: [(kind: "Steal")])]),
-    // Plain rather than a trick: this is how well it is noticed, the same
+    // Plain rather than a trick: this is whether it is seen, the same
     // kind of thing `notice`, `hearing` and `sees in the dark` already
-    // are, not an effect that lands.
-    (name: "shrouded", says: "hard to see in the dark"),
+    // are, not an effect that lands. Out of the light and not beside the
+    // adventurer, it is not on the map at all.
+    (name: "shrouded", says: "unseen out of the light"),
     // Plain: an erratic step is seen the moment it is watched move, the
     // same kind of thing `swift` and `slow` already are.
     (name: "flitting", says: "flits erratically"),
@@ -138,7 +139,7 @@
     // a blow's damage is resolved, so `judge_draining` reads `DamageDealt`
     // in `TurnSet::React` instead of a trigger.
     (name: "draining", says: "drinks what it wounds", trick: true),
-    // Task 8a's own: a mini-boss's tricks and its entourage's. `war-cry`,
+    // A mini-boss's tricks and its entourage's. `war-cry`,
     // `spit` and `calling the drowned` each grant an ability, so they are
     // tricks as every other ability-granting trait is; `singing` is
     // plain, the same reasoning `regenerates` already is, since what it
@@ -148,9 +149,9 @@
     (name: "singing", says: "its song mends the dead that follow it"),
     (name: "spit", says: "spits poison from afar", abilities: ["spit"], trick: true),
     (name: "calling the drowned", says: "calls the drowned up out of the water", abilities: ["call the drowned"], trick: true),
-    // Task 9's own: the floor ten boss, drawn from three. `spawning` and
+    // The floor ten boss, drawn from three. `spawning` and
     // `welling` are game systems, read in `tricks.rs` exactly as
-    // `splitting` and the rest of task 6b's own are, never an ability or
+    // `splitting` and the rest of the game's own tricks are, never an ability or
     // a trigger; `wyrm breath` is the Ember Wyrm's own larger breath, a
     // new ability since its numbers are not the salamander's `fire
     // breath`.

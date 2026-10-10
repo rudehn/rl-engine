@@ -217,6 +217,9 @@ pub struct EffectWorld<'w, 's> {
     /// of the use itself are cued before any effect runs, so a cue an
     /// effect adds plays after them.
     pub cues: MessageWriter<'w, Cued>,
+    // `Without<Transition>` is load-bearing: it is what keeps this query
+    // disjoint from `transitions` below, since a transition is never a
+    // mover and the two would otherwise alias the same entity.
     actors: Query<'w, 's, Mover, Without<Transition>>,
     occupancy: ResMut<'w, Occupancy>,
     map: Res<'w, WorldMap>,
@@ -345,6 +348,25 @@ pub trait Effect: Send + Sync + 'static {
     fn mends(&self) -> bool {
         false
     }
+
+    /// Whether landing this on `landing` now would act on anything, read
+    /// from `world` as it stands: what a mind is told before it spends a
+    /// turn on an ability aimed at its user alone, which leaves it no
+    /// footprint to weigh.
+    ///
+    /// True unless the effect says otherwise, so one that cannot tell is
+    /// cast as it always was. One that needs something there says so: the
+    /// engine's [`Mend`] needs someone hurt among its targets, and a game's
+    /// effect that stands the nearest body back up needs a body in reach.
+    /// The world is read, never changed, and nothing is rolled, so asking
+    /// cannot move the run. Read `landing.targets`, not `landing.cells`:
+    /// the landing asked about is the one the resolver lands, and a shape
+    /// that flies, a ball among them, aimed at its own user's cell covers
+    /// no cells at all.
+    fn would_act(&self, landing: &Landing, world: &World) -> bool {
+        let _ = (landing, world);
+        true
+    }
 }
 
 /// An effect that knows how to build itself out of an ability's RON.
@@ -469,6 +491,14 @@ impl Effects {
     /// whatever its chance: what a mind is told of a thing it carries.
     pub fn mends(&self) -> bool {
         self.0.iter().any(|b| b.effect.mends())
+    }
+
+    /// Whether landing these on `landing` now would act on anything, by
+    /// [`Effect::would_act`]: when any of them would, and when there are
+    /// none, since a list with no effects is one a game answers itself,
+    /// from the [`AbilityEvent`](crate::ability::AbilityEvent) it writes.
+    pub fn would_act(&self, landing: &Landing, world: &World) -> bool {
+        self.0.is_empty() || self.0.iter().any(|b| b.effect.would_act(landing, world))
     }
 
     /// Lands every effect on `landing`, rolling each that may miss.

@@ -239,6 +239,18 @@ fn allowed(world: &World) -> Vec<Allowed> {
         ),
         pair(
             id(engine_props::resolve_interactions),
+            id(combat::resolve_attacks),
+            &[&claims[..], &["Occupancy", "Messages<Cued>", "Messages<DamageEvent>", "Position", "Viewshed"]].concat(),
+            "one action a pass: an interaction and an attack are never resolved in the same one",
+        ),
+        pair(
+            id(engine_props::resolve_takes),
+            id(combat::resolve_attacks),
+            &[&claims[..], &["Equipped"]].concat(),
+            "one action a pass: taking out of a container and an attack are never resolved in the same one",
+        ),
+        pair(
+            id(engine_props::resolve_interactions),
             id(ability::resolve_abilities),
             &[
                 &claims[..],

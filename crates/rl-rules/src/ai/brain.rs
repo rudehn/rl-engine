@@ -121,6 +121,23 @@ pub trait Fields {
     /// The cells next to `from` that step away from `goals`, on a map that
     /// leads away from them and round corners rather than into them.
     fn descents_away(&mut self, goals: &[Point], from: Point) -> Vec<Point>;
+
+    /// Whether a diagonal step may cut past the corner at `p`, by the rule
+    /// the move resolver refuses one by, asked of both cells a diagonal
+    /// squeezes between by every tactic that picks a neighbour itself.
+    ///
+    /// Its own question rather than [`TacticCtx::can_step`], because the
+    /// two part at a closed door: a mind that opens doors may step into
+    /// one, so it is a step, and no diagonal goes past one, so it is not a
+    /// corner. Asked `can_step` alone, such a mind chose the diagonal past
+    /// a door's corner, was refused it, and chose it again every turn.
+    /// True by default, which leaves the corner to `can_step`, the rule for
+    /// a mover that opens nothing; whoever owns a map with doors answers it
+    /// from the map.
+    fn lets_diagonal_past(&self, p: Point) -> bool {
+        let _ = p;
+        true
+    }
 }
 
 /// No fields at all: every tactic falls back to stepping straight at or

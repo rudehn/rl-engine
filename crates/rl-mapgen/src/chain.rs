@@ -125,12 +125,46 @@ impl<C: BuildContext> Chain<C> {
     /// adding, removing or reordering a pass cannot change what any other
     /// pass draws. Stops at the first failure and reports it.
     pub fn run(&self, ctx: &mut C, seed: RunSeed) -> Result<(), BuildError> {
+        self.run_attempt(ctx, seed, 0)
+    }
+
+    /// One attempt: every pass's stream is derived at `attempt`, so two
+    /// attempts of one seed draw nothing in common and attempt nought is
+    /// what [`run`](Self::run) builds.
+    fn run_attempt(&self, ctx: &mut C, seed: RunSeed, attempt: u32) -> Result<(), BuildError> {
         for pass in &self.passes {
-            ctx.set_rng(seed.rng(SeedDomain::new(pass.name().as_bytes()), 0));
+            ctx.set_rng(seed.rng(SeedDomain::new(pass.name().as_bytes()), u64::from(attempt)));
             pass.apply(ctx)?;
             ctx.take_snapshot();
         }
         Ok(())
+    }
+
+    /// Runs the chain over a fresh context from `make`, again from the
+    /// next attempt each time a pass fails, and hands back the first
+    /// context that every pass finished, or the last failure once
+    /// `attempts` are spent.
+    ///
+    /// A generator loose enough to surprise is only safe when what it gets
+    /// wrong is thrown away. A failed pass may have written half its work,
+    /// so each attempt starts from a context nothing has touched. The
+    /// attempt is an index into each pass's stream and nothing else, so one
+    /// seed builds one place however many attempts that took.
+    ///
+    /// # Panics
+    /// Panics if `attempts` is nought: a chain that may not run has no
+    /// place and no error to hand back.
+    pub fn run_retrying(&self, make: impl Fn() -> C, seed: RunSeed, attempts: u32) -> Result<C, BuildError> {
+        assert!(attempts > 0, "a chain needs at least one attempt");
+        let mut last = None;
+        for attempt in 0..attempts {
+            let mut ctx = make();
+            match self.run_attempt(&mut ctx, seed, attempt) {
+                Ok(()) => return Ok(ctx),
+                Err(e) => last = Some(e),
+            }
+        }
+        Err(last.expect("at least one attempt ran"))
     }
 }
 
@@ -269,5 +303,56 @@ mod tests {
         assert_eq!(err.pass, "fails");
         assert_eq!(ctx.terrain().get(Point::new(0, 1)), TileRegistry::standard().id("floor"), "c never ran");
         assert_eq!(chain.names().collect::<Vec<_>>(), vec!["a", "fails", "c"]);
+    }
+
+    /// Fails on attempt nought and passes after, by reading what its own
+    /// stream drew: the stream is the only thing that differs between
+    /// attempts.
+    struct Picky;
+
+    impl Pass<BaseContext> for Picky {
+        fn name(&self) -> &'static str {
+            "picky"
+        }
+        fn phase(&self) -> Phase {
+            Phase::Ground
+        }
+        fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
+            let v = ctx.rng().random_range(0..1000u16);
+            ctx.terrain_mut().set(Point::new(0, 0), TileId(v));
+            if v % 2 == 0 { Err(BuildError::new("picky", "drew even")) } else { Ok(()) }
+        }
+    }
+
+    #[test]
+    fn a_retried_chain_returns_what_attempt_nought_builds_when_attempt_nought_succeeds() {
+        let chain = || Chain::new().then(Roll("a", 0)).then(Roll("b", 1));
+        for s in 0..50 {
+            let mut plain = blank();
+            chain().run(&mut plain, RunSeed(s)).unwrap();
+            let retried = chain().run_retrying(blank, RunSeed(s), 5).unwrap();
+            assert_eq!(plain.terrain(), retried.terrain(), "seed {s}");
+        }
+    }
+
+    #[test]
+    fn a_retried_chain_builds_the_same_place_every_time_however_many_attempts_it_took() {
+        let mut took_more_than_one = 0;
+        for s in 0..50 {
+            let first = Chain::new().then(Picky).run_retrying(blank, RunSeed(s), 20).unwrap();
+            let second = Chain::new().then(Picky).run_retrying(blank, RunSeed(s), 20).unwrap();
+            assert_eq!(first.terrain(), second.terrain(), "seed {s}");
+            let mut once = blank();
+            if Chain::new().then(Picky).run(&mut once, RunSeed(s)).is_err() {
+                took_more_than_one += 1;
+            }
+        }
+        assert!(took_more_than_one > 0, "some seed needed a second attempt, so the retry was exercised");
+    }
+
+    #[test]
+    fn a_chain_out_of_attempts_reports_the_last_failure() {
+        let err = Chain::new().then(Fails).run_retrying(blank, RunSeed(1), 3).unwrap_err();
+        assert_eq!(err.pass, "fails");
     }
 }

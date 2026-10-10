@@ -19,7 +19,8 @@ use super::FAR;
 
 /// A free cell of the place being read, drawn from `rng`, at least
 /// [`FAR`] steps from `from`; with none that far, one of the furthest
-/// there are. `None` on a place with nowhere free at all.
+/// there are. Never a transition, so a far step never lands exactly on a
+/// floor's own stairs. `None` on a place with nowhere free at all.
 pub fn far_cell(world: &mut EffectWorld<'_, '_>, from: Point) -> Option<Point> {
     let open: Vec<Point> = world.map().window_tiles().cells().filter(|p| *p != from && world.is_free(*p) && !world.is_transition(*p)).collect();
     let furthest = open.iter().map(|p| geometry::chebyshev(*p, from)).max()?;

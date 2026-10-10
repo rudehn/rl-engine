@@ -24,7 +24,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use bevy::prelude::*;
 use rand::Rng;
 use rl_core::{Point, RunSeed, SeedDomain};
-use rl_grid::{Footprint, footprint};
+use rl_grid::{Footprint, TargetMode, burst, footprint};
 use rl_rules::ability::{AbilityDef, AbilityId, Aim, Blocked, Cost, Gates, Purse, Targeting, Usable, aim_blocked, blocked};
 use rl_rules::{Names, Registry, Relation, StatId, Statuses, TagId};
 
@@ -467,10 +467,23 @@ impl Bystanders<'_, '_> {
         Landed { landing: Landing { user, source, origin, aim, cells, path, landed_at: landing, targets, bonus: EffectBonus::default(), on: None }, refused }
     }
 
-    /// Turns every target of `landing` but its own user that carries
-    /// [`Reflects`] back onto that user, one time in two, and never lists
-    /// the user twice: a burst that already caught the user and also
-    /// reflects off somebody in it lands on the user once, not twice.
+    /// Turns back, one time in two each, every target of `landing` but its
+    /// own user that carries [`Reflects`]: the body that turns it is
+    /// spared, and its share lands on the user instead, never listing the
+    /// user twice.
+    ///
+    /// Only its own share, because the body turns back what reached it and
+    /// nothing else: the rest of a burst lands where it was aimed, on
+    /// everyone else it caught, and the ground it covers stays there. When
+    /// a use turned back leaves nobody caught where it was aimed, as a bolt
+    /// at one body does, the whole of it lands on its user, its cells the
+    /// shape `mode` draws on the user's own cell, as if the user had been
+    /// aimed at: a bolt that lights its cell lights the user's, and a ball
+    /// bursts round them. Swapping only the targets then left the ground
+    /// effects at the original aim, a turned-back bolt still setting the
+    /// reflecting body's cell alight. Where a projectile stopped is kept,
+    /// since that is where it was turned and where its flight was seen to
+    /// go, and the burst comes back from there.
     ///
     /// The second, explicit step [`Self::land`] itself never takes: called
     /// only once an aim is no longer refused and a resolver is about to
@@ -478,23 +491,46 @@ impl Bystanders<'_, '_> {
     /// aim, so looking at a reflecting body costs nothing and decides
     /// nothing before the use is actually made.
     ///
+    /// Only a use aimed at the body as a foe is turned back: one aimed
+    /// [`Aim::Foe`], or aimed at the ground or at anyone by a user hostile
+    /// to it. A mend or a ward aimed at allies lands as it would, since a
+    /// body turns back what is thrown at it and not what is offered to it;
+    /// turning back half of every mend an ally aimed at a reflecting
+    /// companion made it the one companion nobody could heal.
+    ///
     /// Writes a [`Reflected`] for every target it turns back; a target
     /// left standing where it was aimed writes none.
-    pub fn reflect(&mut self, landing: &mut Landing) {
+    pub fn reflect(&mut self, landing: &mut Landing, targeting: Targeting, map: &WorldMap) {
         let user = landing.user;
         let source = landing.source;
         let mut landed: Vec<Entity> = Vec::with_capacity(landing.targets.len());
+        let (mut turned, mut stayed) = (false, false);
         for target in landing.targets.drain(..) {
-            let reflected = target != user && self.reflects.contains(target) && self.rng.as_mut().is_some_and(|rng| rng.0.random_bool(0.5));
+            let thrown = match targeting.aim {
+                Aim::Foe => true,
+                Aim::Ground | Aim::Anyone => self.relation(user, target) == Some(Relation::Hostile),
+                Aim::Ally | Aim::SelfOnly => false,
+            };
+            let reflected = target != user && thrown && self.reflects.contains(target) && self.rng.as_mut().is_some_and(|rng| rng.0.random_bool(0.5));
             if reflected && let Some(writer) = self.reflected.as_mut() {
                 writer.write(Reflected { by: target, onto: user, source });
             }
+            turned |= reflected;
+            stayed |= !reflected && target != user;
             let onto = if reflected { user } else { target };
             if !landed.contains(&onto) {
                 landed.push(onto);
             }
         }
         landing.targets = landed;
+        if turned && !stayed {
+            let at = landing.origin;
+            landing.cells = match targeting.mode {
+                TargetMode::Ball { radius, .. } => burst(at, radius, map.window_tiles(), |p| map.blocks_projectiles(p)),
+                _ => vec![at],
+            };
+            landing.aim = at;
+        }
     }
 }
 
@@ -556,7 +592,7 @@ pub fn resolve_abilities(
         // Not refused, and about to be cast: the one moment a reflecting
         // body's turn is actually spent, never the gate above or the
         // cursor's own look at the same aim.
-        bystanders.reflect(&mut landing);
+        bystanders.reflect(&mut landing, def.targeting(), world.map());
 
         pay(user, def, &mut state);
         if def.cooldown > 0
@@ -806,6 +842,65 @@ pub fn perceive_abilities(mut thinking: ResMut<crate::minds::Thinking>, offered:
     }
 }
 
+/// Takes from what the mind holding the turn may use every ability aimed
+/// at its user alone whose effects would find nothing to act on, by
+/// [`Effect::would_act`](crate::effects::Effect::would_act), once
+/// [`PerceiveSet::Annotate`](crate::plugin::PerceiveSet::Annotate), where
+/// [`perceive_abilities`] tells it what it may use, is done.
+///
+/// Only those aimed at the user alone. One pointed somewhere is weighed
+/// by whoever its footprint would land on, which already says whether it
+/// has anything to act on; one aimed at its user leaves a tactic nothing
+/// to weigh, and was cast whenever a foe was in sight, standing up no body
+/// where none lay. Asked of the landing the resolver would land, on the
+/// user's own cell, so its cells are the resolver's too: empty for a shape
+/// that flies, which aimed at its own user goes nowhere, and an effect
+/// asked reads the targets instead. What the menu offers the player is untouched: the
+/// player is offered what they can afford and judges what it is worth.
+pub fn weigh_self_abilities(world: &mut World) {
+    let Some(thinking) = world.get_resource::<crate::minds::Thinking>() else { return };
+    let (Some(thinker), Some(usable)) = (thinking.actor(), thinking.snapshot().map(|s| s.usable.clone())) else { return };
+    if !usable.iter().any(|u| u.aim == Aim::SelfOnly) {
+        return;
+    }
+    let Some(origin) = world.get::<crate::components::Position>(thinker).map(|p| p.0) else { return };
+    let kept: Vec<Usable> = {
+        let world: &World = world;
+        let (Some(abilities), Some(map), Some(occupancy)) =
+            (world.get_resource::<Abilities>(), world.get_resource::<WorldMap>(), world.get_resource::<Occupancy>())
+        else {
+            return;
+        };
+        let stops = |p: Point| p != origin && (map.blocks_projectiles(p) || occupancy.is_occupied(p));
+        usable
+            .into_iter()
+            .filter(|u| {
+                if u.aim != Aim::SelfOnly {
+                    return true;
+                }
+                let cells = footprint(u.mode, origin, origin, map.window_tiles(), stops, |p| map.blocks_projectiles(p)).cells;
+                let source = Source::Ability(u.ability);
+                let landing = Landing {
+                    user: thinker,
+                    source,
+                    origin,
+                    aim: origin,
+                    cells,
+                    path: Vec::new(),
+                    landed_at: None,
+                    targets: vec![thinker],
+                    bonus: EffectBonus::default(),
+                    on: None,
+                };
+                abilities.built[u.ability.index()].would_act(&landing, world)
+            })
+            .collect()
+    };
+    if let Some(snapshot) = world.resource_mut::<crate::minds::Thinking>().snapshot_mut() {
+        snapshot.usable = kept;
+    }
+}
+
 /// Rebuilds every actor's [`Known`] from its own [`Grants`].
 ///
 /// Rebuilt rather than edited, the way gear modifiers are: a grant taken
@@ -859,6 +954,10 @@ impl Plugin for AbilitiesPlugin {
             .needs::<Registries>("AbilitiesPlugin", "`Registries`, with the stats an ability's costs and requirements name")
             .add_systems(Turn, offer_abilities.in_set(crate::plugin::DecideSet::Offer))
             .add_systems(Turn, perceive_abilities.in_set(crate::plugin::PerceiveSet::Annotate))
+            // After every annotator rather than among them: it reads the
+            // whole world, so it runs alone, and once the snapshot is
+            // whole, before any mind decides on it.
+            .add_systems(Turn, weigh_self_abilities.after(crate::plugin::PerceiveSet::Annotate).in_set(crate::plugin::DecideSet::Perceive))
             // What has landed, then what is cast this pass.
             .add_systems(Turn, (land_abilities.in_set(crate::plugin::LandSet::Ability), resolve_abilities.in_set(ResolveSet::Act)).chain())
             .add_systems(Turn, refresh_known.in_set(TurnSet::React));
@@ -966,10 +1065,26 @@ mod tests {
         effects: [(kind: "Mend", args: (roll: "5"))],
     ),
     (
+        name: "flare",
+        mode: Bolt(range: 6),
+        effects: [(kind: "Harm", args: (kind: "fire", roll: "4")), (kind: "Paint", args: ())],
+    ),
+    (
+        name: "flareball",
+        mode: Ball(range: 6, radius: 1),
+        effects: [(kind: "Harm", args: (kind: "fire", roll: "4")), (kind: "Paint", args: ())],
+    ),
+    (
         name: "probe",
         aim: Ground,
         mode: Bolt(range: 6),
         effects: [(kind: "Probe", args: ())],
+    ),
+    (
+        name: "salve",
+        aim: Ally,
+        mode: Bolt(range: 6),
+        effects: [(kind: "Mend", args: (roll: "5"))],
     ),
 ]"#;
 
@@ -1027,6 +1142,33 @@ mod tests {
         }
     }
 
+    /// Where a use landed its cells and on whom, as the effects saw it,
+    /// for the reflection tests to read back: a stand-in for any effect
+    /// that changes the ground, such as fire or gas.
+    #[derive(Resource, Debug, Clone, Default)]
+    struct Painted {
+        cells: Vec<Point>,
+        targets: Vec<Entity>,
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    struct Paint;
+
+    impl Effect for Paint {
+        fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+            let painted = Painted { cells: landing.cells.clone(), targets: landing.targets.clone() };
+            world.commands.insert_resource(painted);
+        }
+    }
+
+    impl FromArgs for Paint {
+        const KIND: &'static str = "Paint";
+
+        fn from_args(_args: &RawValue, _names: &Names<'_>) -> Result<Self, String> {
+            Ok(Self)
+        }
+    }
+
     fn app() -> (App, Point) {
         let mut app = crate::plugin::headless_app();
         app.add_plugins((
@@ -1038,7 +1180,7 @@ mod tests {
             crate::items::ItemsPlugin,
             AbilitiesPlugin,
         ));
-        app.add_engine_effects().add_effect::<Mark>().add_effect::<Probe>();
+        app.add_engine_effects().add_effect::<Mark>().add_effect::<Probe>().add_effect::<Paint>();
 
         let content = Content::new();
         let abilities = Abilities::load(ABILITIES, app.world().resource::<EffectKinds>(), &content.names()).expect("the abilities load and build");
@@ -1240,6 +1382,139 @@ mod tests {
                 assert_eq!(reflected[0].onto, me, "seed {seed}: onto names the caster it turned back onto");
             }
         }
+    }
+
+    /// A reflecting body turns back only what is aimed at it as a foe: a
+    /// mend aimed at it by an ally, and a blast an ally aims at the ground
+    /// it stands on, land on it every time, over a span of seeds, and never
+    /// come back on the one who used them.
+    #[test]
+    fn a_reflecting_body_never_turns_back_what_an_ally_aims_at_it() {
+        for seed in 0..40 {
+            let (mut app, start) = app();
+            app.world_mut().resource_mut::<crate::seed::Seed>().0 = RunSeed(seed);
+            let (salve, burst) = (ability(&app, "salve"), ability(&app, "burst"));
+            let me = caster(&mut app, start, 20, &[salve, burst]);
+            let there = start.offset(4, 0);
+            let ours = friend(&mut app, there);
+            app.world_mut().entity_mut(ours).insert((Reflects, Health { current: 10, max: 20 }));
+            settle(&mut app);
+
+            app.world_mut().write_message(Intent::new(me, Use { ability: salve, aim: there }));
+            app.update();
+            assert_eq!(hp(&app, ours), 15, "seed {seed}: an ally's mend lands on the reflecting body");
+
+            settle(&mut app);
+            app.world_mut().write_message(Intent::new(me, Use { ability: burst, aim: there }));
+            app.update();
+            assert_eq!(hp(&app, ours), 12, "seed {seed}: and so does an ally's blast on its ground");
+            assert_eq!(hp(&app, me), 30, "seed {seed}: and neither came back on the one who used it");
+        }
+    }
+
+    /// A bolt turned back lands whole on its caster: the cells its ground
+    /// effects run over are the caster's own, never the reflecting body's,
+    /// and a bolt that is not turned back lands both on the body it was
+    /// aimed at. Over a span of seeds, so both outcomes are seen.
+    #[test]
+    fn a_reflected_bolt_lands_its_cells_where_its_caster_stands() {
+        let (mut reflected, mut landed) = (0, 0);
+        for seed in 0..40 {
+            let (mut app, start) = app();
+            app.world_mut().resource_mut::<crate::seed::Seed>().0 = RunSeed(seed);
+            let flare = ability(&app, "flare");
+            let me = caster(&mut app, start, 20, &[flare]);
+            let there = start.offset(3, 0);
+            let them = foe(&mut app, there);
+            app.world_mut().entity_mut(them).insert(Reflects);
+            settle(&mut app);
+
+            app.world_mut().write_message(Intent::new(me, Use { ability: flare, aim: there }));
+            app.update();
+
+            let painted = app.world().get_resource::<Painted>().expect("the flare landed").clone();
+            if hp(&app, me) < 30 {
+                reflected += 1;
+                assert_eq!(painted.cells, vec![start], "seed {seed}: a reflected bolt lands its cells on its caster");
+                assert_eq!(painted.targets, vec![me], "seed {seed}: and its caster is its only target");
+            } else {
+                landed += 1;
+                assert_eq!(painted.cells, vec![there], "seed {seed}: a bolt not turned back lands on the body it was aimed at");
+                assert_eq!(painted.targets, vec![them], "seed {seed}: and hits it");
+            }
+        }
+        assert!(reflected > 0 && landed > 0, "both outcomes over forty seeds: {reflected} reflected, {landed} landed");
+    }
+
+    /// A ball that catches only the body that turns it back lands whole on
+    /// its caster, as a bolt does: it bursts round the caster, as if the
+    /// caster had been aimed at, and the caster is its only target.
+    #[test]
+    fn a_ball_turned_back_by_the_only_body_it_caught_bursts_round_its_caster() {
+        let mut reflected = 0;
+        for seed in 0..40 {
+            let (mut app, start) = app();
+            app.world_mut().resource_mut::<crate::seed::Seed>().0 = RunSeed(seed);
+            let ball = ability(&app, "flareball");
+            let me = caster(&mut app, start, 20, &[ball]);
+            let there = start.offset(4, 0);
+            let them = foe(&mut app, there);
+            app.world_mut().entity_mut(them).insert(Reflects);
+            settle(&mut app);
+
+            app.world_mut().write_message(Intent::new(me, Use { ability: ball, aim: there }));
+            app.update();
+
+            if hp(&app, me) == 30 {
+                continue;
+            }
+            reflected += 1;
+            let painted = app.world().get_resource::<Painted>().expect("the ball landed").clone();
+            let mut cells = painted.cells.clone();
+            cells.sort_by_key(|p| (p.y, p.x));
+            let mut around: Vec<Point> = rl_core::geometry::disc(start, 1).collect();
+            around.sort_by_key(|p| (p.y, p.x));
+            assert_eq!(cells, around, "seed {seed}: a ball turned back by its only target bursts round its caster");
+            assert_eq!(painted.targets, vec![me], "seed {seed}: and lands on its caster alone");
+            assert_eq!(hp(&app, them), 20, "seed {seed}: sparing the body that turned it");
+        }
+        assert!(reflected > 0, "some of forty seeds turn the ball back");
+    }
+
+    /// A body in a burst turns back only its own share: the two others it
+    /// caught are hurt where it was aimed, as is the caster in the
+    /// reflecting body's place, and the reflecting body is spared; the
+    /// ground stays where it was aimed. Over a span of seeds, so both
+    /// outcomes are seen.
+    #[test]
+    fn a_body_in_a_burst_turns_back_only_its_own_share() {
+        let (mut reflected, mut landed) = (0, 0);
+        for seed in 0..40 {
+            let (mut app, start) = app();
+            app.world_mut().resource_mut::<crate::seed::Seed>().0 = RunSeed(seed);
+            let ball = ability(&app, "flareball");
+            let me = caster(&mut app, start, 20, &[ball]);
+            let there = start.offset(4, 0);
+            let them = foe(&mut app, there);
+            let (above, below) = (foe(&mut app, there.offset(0, -1)), foe(&mut app, there.offset(0, 1)));
+            app.world_mut().entity_mut(them).insert(Reflects);
+            settle(&mut app);
+
+            app.world_mut().write_message(Intent::new(me, Use { ability: ball, aim: there }));
+            app.update();
+
+            assert!(hp(&app, above) < 20 && hp(&app, below) < 20, "seed {seed}: the two others are hurt where it was aimed either way");
+            let painted = app.world().get_resource::<Painted>().expect("the ball landed").clone();
+            assert!(painted.cells.contains(&there), "seed {seed}: and the ground stays where it was aimed");
+            if hp(&app, me) < 30 {
+                reflected += 1;
+                assert_eq!(hp(&app, them), 20, "seed {seed}: the reflecting body is spared its share");
+            } else {
+                landed += 1;
+                assert!(hp(&app, them) < 20, "seed {seed}: not turned back, the body is hurt with the rest");
+            }
+        }
+        assert!(reflected > 0 && landed > 0, "both outcomes over forty seeds: {reflected} reflected, {landed} landed");
     }
 
     /// An unaffordable ability is refused, costs the player no time, keeps
@@ -1478,6 +1753,40 @@ mod tests {
         assert!(used.contains(&them), "the monster reached for its bolt: {used:?}");
         assert!(hp(&app, me) < before, "and it landed: {} then {}", before, hp(&app, me));
         assert!(app.world().get::<Pools>(them).unwrap().get(StatId::from_raw(0)) < 20, "it paid for it");
+    }
+
+    /// A monster does not cast an ability aimed at itself alone whose
+    /// effects would find nothing to act on: a mend at full health, with a
+    /// foe in sight, is left alone, and cast once it is hurt.
+    #[test]
+    fn a_mind_casts_a_self_aimed_ability_only_when_it_has_something_to_act_on() {
+        use rl_rules::ai::tactics::{Hunt, UseAbility};
+        use rl_rules::{Brain, MovementProfile};
+        use std::sync::Arc;
+
+        let (mut app, start) = app();
+        let quaff = ability(&app, "quaff");
+        let me = caster(&mut app, start, 20, &[]);
+        let them = foe(&mut app, start.offset(4, 0));
+        app.world_mut().entity_mut(them).insert((
+            crate::minds::Mind(Arc::new(Brain::new().then(UseAbility::default()).then(Hunt))),
+            crate::minds::Perception(10),
+            crate::minds::Profile(MovementProfile::default()),
+            Grants(vec![quaff]),
+            Inventory::default(),
+        ));
+        settle(&mut app);
+        let used_by_them = |app: &mut App| {
+            for _ in 0..3 {
+                app.world_mut().write_message(Intent::new(me, crate::turn::Wait));
+                app.update();
+            }
+            app.world_mut().resource_mut::<Messages<AbilityEvent>>().drain().any(|e| matches!(e, AbilityEvent::Used { user, .. } if user == them))
+        };
+        assert!(!used_by_them(&mut app), "whole, with a foe in sight, it has nothing to mend");
+
+        app.world_mut().get_mut::<Health>(them).unwrap().current = 5;
+        assert!(used_by_them(&mut app), "hurt, it mends");
     }
 
     /// A monster is never offered an ability it could not pay for, which

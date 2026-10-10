@@ -377,6 +377,16 @@ pub fn name_as_remains(world: &mut World, entity: Entity) {
 /// `Notice` went on watching the player, who stayed marked as seen with
 /// every enemy on the deck dead. Its [`Post`](crate::minds::Post) comes
 /// off as well, since a body keeps no cell and walks back to none.
+///
+/// So do what it offered and what it answered, [`Offers`](crate::props::Offers)
+/// and [`Triggers`](crate::effects::Triggers): both are read on anything
+/// that carries them, so a captive's "free" was still offered by its
+/// corpse, and a bite that poisons left on a body kept
+/// [`arm_props`](crate::props::arm_props) from giving it the triggers of a
+/// prop kind a game dresses it as. The twin keeps both, so a revival
+/// stands up offering and answering what the living actor did; a game
+/// that wants a body to offer something puts that on it at
+/// [`RemainsLeft`].
 pub type WasLiving = (
     Dead,
     Actor,
@@ -390,6 +400,8 @@ pub type WasLiving = (
     crate::noise::Hearing,
     crate::noise::Heard,
     crate::minds::Post,
+    crate::props::Offers,
+    crate::effects::Triggers,
 );
 
 /// Keeps the dead that leave remains, and takes the life off them.
@@ -928,6 +940,40 @@ mod tests {
         app.world_mut().entity_mut(dead).insert(Patrol(9));
         assert!(stand_up(&mut app, dead, 2));
         assert_eq!(app.world().get::<Patrol>(dead), Some(&Patrol(3)), "the actor's own value, not the body's");
+    }
+
+    /// A body offers nothing and answers nothing the living actor did: a
+    /// captive's offer read on its corpse was still taken up, and an
+    /// actor's own triggers left on a body kept a game that dresses its
+    /// bodies as a prop kind from arming them with that kind's. The twin
+    /// keeps both, for a revival.
+    #[test]
+    fn a_body_offers_nothing_and_dressed_as_a_prop_kind_is_armed_with_that_kinds_triggers() {
+        use crate::effects::AddEngineEffects;
+        use crate::props::{Offering, Offers, PropKind, PropsPlugin, Verbs};
+        let (mut app, start, sides) = arena();
+        app.add_plugins(PropsPlugin);
+        app.add_engine_effects();
+        let text = r#"#![enable(implicit_some)] [(name: "wreck", glyph: '%', color: (r: 1, g: 2, b: 3),
+            triggers: [(on: "entered", effects: [(kind: "Harm", args: (kind: "kinetic", roll: "1"))])])]"#;
+        let props = rl_rules::prop::load(text, &app.world().resource::<crate::registries::Registries>().names()).expect("the props load");
+        let wreck = props.expect("wreck");
+        app.world_mut().resource_mut::<crate::registries::Registries>().props = props;
+        let dead = victim(&mut app, start.offset(2, 0), sides, true);
+        app.world_mut().entity_mut(dead).insert((Offers(vec![Offering::new(Verbs::OPEN, 1)]), crate::effects::Triggers::default()));
+        kill(&mut app, dead, sides);
+
+        assert!(app.world().get::<Remains>(dead).is_some(), "it is a body");
+        assert!(app.world().get::<Offers>(dead).is_none(), "which offers nothing");
+        assert!(app.world().get::<crate::effects::Triggers>(dead).is_none(), "and answers nothing");
+        let twin = app.world().get::<Life>(dead).expect("a twin").0;
+        assert!(app.world().get::<Offers>(twin).is_some(), "the twin keeps the offer, for a revival");
+        assert!(app.world().get::<crate::effects::Triggers>(twin).is_some(), "and the triggers");
+
+        app.world_mut().entity_mut(dead).insert(PropKind(wreck));
+        app.update();
+        let armed = app.world().get::<crate::effects::Triggers>(dead).map(|t| t.0.len());
+        assert_eq!(armed, Some(1), "dressed as a wreck, it is armed with the wreck's trigger");
     }
 
     /// Who died this pass, and what a game's answer got back from trying to
