@@ -14,7 +14,10 @@
 //! titled with the use's own prompt and listing only what it may be made
 //! on: confirm writes [`UseOn`] for the thing picked out, and putting the
 //! bag away spends nothing; a game's own use key writing [`AimUse`] for
-//! such a thing opens the bag choosing the same way. Nothing else is used
+//! such a thing opens the bag choosing the same way. A game's own question
+//! no use asks, which thing to hand over, is an [`AskForThing`]: the bag
+//! chooses the same way among what it names, and confirm answers with
+//! [`ThingChosen`], which the game acts on. Nothing else is used
 //! from here; an item a game answers itself from [`ItemEvent::Used`] is
 //! used by the game's own key, since the bag cannot know it does anything
 //! and a use that did nothing would spend a turn. The footer offers only
@@ -111,6 +114,10 @@ pub struct InventoryMenu {
     /// which of its choices the cursor is on. Put away whenever the bag is,
     /// so it never opens choosing for a use nobody asked for again.
     pub choosing: Option<ChoosingFor>,
+    /// While the bag is choosing for a game's own question: the question,
+    /// and which of its choices the cursor is on. Put away whenever the
+    /// bag is, as a use's choosing is.
+    pub asked: Option<Asked>,
 }
 
 impl InventoryMenu {
@@ -129,6 +136,87 @@ pub struct ChoosingFor {
     /// Which of its choices the cursor is on, clamped to the choices there
     /// are when drawn.
     pub selected: usize,
+}
+
+/// A game's question that the bag answers by choosing one of the player's
+/// things: which to hand over, which to offer up.
+///
+/// The sibling of a use that asks for a thing, for a question no use of a
+/// thing asks. A game writes it, most often when an offer of its own is
+/// taken up, as a trade taken up opens the trade screen: the bag opens
+/// choosing among `choices` under `prompt`, confirm writes [`ThingChosen`]
+/// for the thing picked out and puts every screen away, and putting the
+/// bag away answers nothing. What the choice does is the game's: the
+/// engine moves nothing and spends no time, since the offer that asked
+/// has spent its own. Opened only for the player the bag shows and only
+/// with no screen up, as a game's use key opens nothing over another.
+#[derive(Message, Debug, Clone, PartialEq, Eq)]
+pub struct AskForThing {
+    /// Who chooses: the player the bag shows.
+    pub user: Entity,
+    /// Who or what asked, for the game to answer: the one the offer was
+    /// taken up on.
+    pub asker: Entity,
+    /// What for: the verb of the offer taken up, so two questions put by
+    /// one asker are told apart.
+    pub verb: VerbId,
+    /// What the bag is titled while it chooses.
+    pub prompt: String,
+    /// What it may choose among, in the order listed. A thing the bag does
+    /// not hold is left out, and with nothing left the bag says it is
+    /// empty and choosing it answers nothing.
+    pub choices: Vec<Entity>,
+}
+
+/// The thing the player chose for an [`AskForThing`]: the question's own
+/// `user`, `asker` and `verb`, and what was picked out.
+#[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ThingChosen {
+    /// Who chose.
+    pub user: Entity,
+    /// Who or what asked.
+    pub asker: Entity,
+    /// What for.
+    pub verb: VerbId,
+    /// The thing chosen.
+    pub thing: Entity,
+}
+
+/// The bag choosing for a game's [`AskForThing`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Asked {
+    /// The question.
+    pub ask: AskForThing,
+    /// Which of its choices the cursor is on, clamped to the choices there
+    /// are when drawn.
+    pub selected: usize,
+}
+
+/// What the bag is choosing among, with no screen of its own: a use's
+/// choices or a game's question's, each only while the bag holds it.
+fn choices_of(menu: &InventoryMenu, view: &InventoryView) -> Option<(String, Vec<Entity>, usize)> {
+    let held = |things: &[Entity]| -> Vec<Entity> { things.iter().copied().filter(|t| view.rows.iter().any(|r| r.entity == *t)).collect() };
+    if let Some(asked) = &menu.asked {
+        return Some((asked.ask.prompt.clone(), held(&asked.ask.choices), asked.selected));
+    }
+    let choosing = menu.choosing?;
+    let asks = view.rows.iter().find(|r| r.entity == choosing.item)?.asks.as_ref()?;
+    Some((asks.prompt.clone(), held(&asks.choices), choosing.selected))
+}
+
+/// Moves the cursor of whichever choosing the bag holds to `at`.
+fn choose_at(menu: &mut InventoryMenu, at: usize) {
+    if let Some(asked) = menu.asked.as_mut() {
+        asked.selected = at;
+    } else if let Some(choosing) = menu.choosing.as_mut() {
+        choosing.selected = at;
+    }
+}
+
+/// Puts away whatever the bag was choosing for.
+fn stop_choosing(menu: &mut InventoryMenu) {
+    menu.choosing = None;
+    menu.asked = None;
 }
 
 /// `at` moved `by` rows over `rows` of them, wrapping at either end.
@@ -187,11 +275,14 @@ impl Plugin for InventoryPanel {
             .add_message::<Intent<UseItem>>()
             .add_message::<Intent<UseOn>>()
             .add_message::<AimUse>()
-            .add_message::<AimThrow>();
+            .add_message::<AimThrow>()
+            .add_message::<AskForThing>()
+            .add_message::<ThingChosen>();
         app.insert_resource(self.0.clone()).init_resource::<InventoryMenu>().init_resource::<InventoryKeys>();
-        // A game's own use key opens the bag choosing before the bag reads
-        // its keys, so the press that asked is not read again inside it.
-        app.add_systems(Update, (choose_when_asked, inventory_keys).chain().in_set(EngineSet::Input))
+        // A game's own use key, or its own question, opens the bag choosing
+        // before the bag reads its keys, so the press that asked is not
+        // read again inside it.
+        app.add_systems(Update, (choose_when_asked, choose_for_the_game, inventory_keys).chain().in_set(EngineSet::Input))
             .add_systems(Update, draw_inventory.in_set(PresentSet::Overlay));
     }
 
@@ -224,6 +315,7 @@ pub struct BagIntents<'w> {
     uses_on: MessageWriter<'w, Intent<UseOn>>,
     aimed_uses: MessageWriter<'w, AimUse>,
     throws: MessageWriter<'w, AimThrow>,
+    chosen: MessageWriter<'w, ThingChosen>,
 }
 
 /// Opens the bag choosing for a thing a game's own use key asked to use,
@@ -239,7 +331,21 @@ pub fn choose_when_asked(mut asked: MessageReader<AimUse>, view: Res<InventoryVi
     for asked in asked.read() {
         let wants_a_thing = view.rows.iter().any(|r| r.entity == asked.item && r.asks.is_some() && r.usable());
         if view.entity == Some(asked.user) && wants_a_thing && !modals.any_open() {
+            menu.asked = None;
             menu.choosing = Some(ChoosingFor { item: asked.item, selected: 0 });
+            modals.open(modal);
+        }
+    }
+}
+
+/// Opens the bag choosing for a game's [`AskForThing`], for the player it
+/// shows and only with no screen up.
+pub fn choose_for_the_game(mut asked: MessageReader<AskForThing>, view: Res<InventoryView>, mut menu: ResMut<InventoryMenu>, mut modals: ResMut<Modals>) {
+    let modal = inventory_modal(&modals);
+    for ask in asked.read() {
+        if view.entity == Some(ask.user) && !modals.any_open() {
+            menu.choosing = None;
+            menu.asked = Some(Asked { ask: ask.clone(), selected: 0 });
             modals.open(modal);
         }
     }
@@ -251,7 +357,9 @@ pub fn choose_when_asked(mut asked: MessageReader<AimUse>, view: Res<InventoryVi
 /// written for anyone else is dropped unread; the screen stays up until it
 /// does. A use that asks for another of the player's things turns the bag
 /// to choosing among what it may be made on, under its prompt: confirm uses
-/// it on the thing picked out, and putting the bag away spends nothing.
+/// it on the thing picked out, and putting the bag away spends nothing. A
+/// game's question chooses the same way, and confirm answers it with
+/// [`ThingChosen`].
 pub fn inventory_keys(
     keys: ControlInput,
     binds: Res<InventoryKeys>,
@@ -264,11 +372,11 @@ pub fn inventory_keys(
     let modal = inventory_modal(&modals);
     // A choice lasts only while the bag is up, however it was put away.
     if !modals.is_open(modal) {
-        menu.choosing = None;
+        stop_choosing(&mut menu);
     }
     if binds.toggle.just_pressed(keys.input()) && (modals.is_top(modal) || !modals.any_open()) {
         modals.toggle(modal);
-        menu.choosing = None;
+        stop_choosing(&mut menu);
         return;
     }
     // Not in the frame it went up: a game may open the bag on a key the
@@ -280,23 +388,30 @@ pub fn inventory_keys(
     let input = keys.input();
     if input.just_pressed(bindings.cursor.close) {
         modals.close_one(modal);
-        menu.choosing = None;
+        stop_choosing(&mut menu);
         return;
     }
     let confirmed = binds.use_it.just_pressed(input) || input.just_pressed(bindings.cursor.confirm) || input.just_pressed(bindings.cursor.also_confirm);
-    if let Some(choosing) = menu.choosing {
-        let choices = view.rows.iter().find(|r| r.entity == choosing.item).and_then(|r| r.asks.as_ref()).map(|a| a.choices.as_slice()).unwrap_or_default();
+    if let Some((_, choices, selected)) = choices_of(&menu, &view) {
         let by = match bindings.directions.just_pressed(input) {
             Some(Direction::North) => -1,
             Some(Direction::South) => 1,
             _ => 0,
         };
-        let selected = stepped(choosing.selected.min(choices.len().saturating_sub(1)), by, choices.len());
-        menu.choosing = Some(ChoosingFor { selected, ..choosing });
+        let selected = stepped(selected.min(choices.len().saturating_sub(1)), by, choices.len());
+        choose_at(&mut menu, selected);
         let (Some(user), Some(&on)) = (view.entity, choices.get(selected)) else { return };
         if confirmed && holding.contains(user) {
-            intents.uses_on.write(Intent::new(user, UseOn { item: choosing.item, on }));
-            menu.choosing = None;
+            match (&menu.asked, menu.choosing) {
+                (Some(asked), _) => {
+                    intents.chosen.write(ThingChosen { user, asker: asked.ask.asker, verb: asked.ask.verb, thing: on });
+                }
+                (None, Some(choosing)) => {
+                    intents.uses_on.write(Intent::new(user, UseOn { item: choosing.item, on }));
+                }
+                (None, None) => {}
+            }
+            stop_choosing(&mut menu);
             modals.close_all();
         }
         return;
@@ -514,23 +629,22 @@ pub fn draw_inventory(mut terminal: ResMut<Terminal>, mut menu: ResMut<Inventory
     }
     let bindings = keys.bindings();
     let (confirm, close) = (key_name(bindings.cursor.confirm), key_name(bindings.cursor.close));
-    let asking = menu.choosing.and_then(|c| view.rows.iter().find(|r| r.entity == c.item)?.asks.as_ref().map(|a| (c, a)));
     // The cursor survives the rebuild, clamped to the rows there are now,
     // before the footer asks which row it is on.
-    let (title, rows, at, hints) = match asking {
-        Some((choosing, asks)) => {
-            let rows: Vec<&ItemRow> = asks.choices.iter().filter_map(|on| view.rows.iter().find(|r| r.entity == *on)).collect();
-            let at = choosing.selected.min(rows.len().saturating_sub(1));
-            menu.choosing = Some(ChoosingFor { selected: at, ..choosing });
-            (asks.prompt.as_str(), rows, at, format!("{confirm} choose \u{2022} {close}"))
+    let (title, rows, at, hints) = match choices_of(&menu, view) {
+        Some((prompt, choices, selected)) => {
+            let rows: Vec<&ItemRow> = choices.iter().filter_map(|on| view.rows.iter().find(|r| r.entity == *on)).collect();
+            let at = selected.min(rows.len().saturating_sub(1));
+            choose_at(&mut menu, at);
+            (prompt, rows, at, format!("{confirm} choose \u{2022} {close}"))
         }
         None => {
             menu.selected = menu.selected.min(view.rows.len().saturating_sub(1));
-            (layout.title.as_str(), view.rows.iter().collect(), menu.selected, hints(view.row(menu.selected), binds, confirm, close))
+            (layout.title.clone(), view.rows.iter().collect(), menu.selected, hints(view.row(menu.selected), binds, confirm, close))
         }
     };
     clear(&mut terminal, rect, palette);
-    frame(&mut terminal, rect, title, &hints, palette);
+    frame(&mut terminal, rect, &title, &hints, palette);
     let inner = Rect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
     let surface = palette.get(Tones::SURFACE);
     let width = inner.width.max(0) as usize;
@@ -1157,6 +1271,38 @@ mod tests {
         assert!(stage.row(0).contains(" Polish which? "), "choosing: {:?}", stage.row(0));
         assert!(!stage.app.world().resource::<crate::TargetView>().aiming(), "no cursor");
         assert!(stage.app.world_mut().resource_mut::<Messages<Intent<UseItem>>>().drain().next().is_none(), "and nothing used on nothing");
+    }
+
+    /// A game's own question opens the bag choosing under its prompt among
+    /// only what it names that the bag holds; put away it answers nothing,
+    /// and confirmed it answers with the thing picked out, puts every
+    /// screen away, and spends no time and nothing of the thing, since what
+    /// the answer does is the game's.
+    #[test]
+    fn a_games_question_chooses_among_what_it_names_and_confirm_answers_it_with_the_thing_picked_out() {
+        let (mut stage, polish, coat, stone, boots) = chooser();
+        let (user, asker, verb) = (stage.player, coat, rl_bevy::Verbs::SEARCH);
+        let stray = stage.app.world_mut().spawn((Item, Name::new("stray"))).id();
+        let ask = AskForThing { user, asker, verb, prompt: "Hand over which?".into(), choices: vec![stone, stray, polish] };
+        let modals = |stage: &Stage| stage.app.world().resource::<Modals>().any_open();
+        let answers = |stage: &mut Stage| stage.app.world_mut().resource_mut::<Messages<ThingChosen>>().drain().collect::<Vec<_>>();
+        stage.app.world_mut().write_message(ask.clone());
+        stage.tick();
+        assert!(stage.row(0).contains(" Hand over which? "), "under the game's prompt: {:?}", stage.row(0));
+        assert!(inside(&stage, 1) == "stone" && inside(&stage, 2) == "polish", "only what it names that the bag holds: {:?}", stage.rows());
+        stage.press(KeyCode::Escape);
+        assert!(!modals(&stage) && answers(&mut stage).is_empty(), "put away, it answers nothing");
+
+        let before = stage.app.world().resource::<Turns>().now();
+        stage.app.world_mut().write_message(ask);
+        stage.tick();
+        stage.press(KeyCode::ArrowDown);
+        stage.press(KeyCode::Enter);
+        assert_eq!(answers(&mut stage), vec![ThingChosen { user, asker, verb, thing: polish }], "the thing picked out");
+        assert!(!modals(&stage), "and every screen put away");
+        assert_eq!(stage.app.world().resource::<Turns>().now(), before, "no time spent");
+        assert_eq!(stage.app.world().get::<Consumable>(polish).expect("charges").left, 3, "and nothing of the thing");
+        assert!(stage.app.world().get::<Inventory>(user).expect("a bag").items.contains(&boots), "the bag as it was");
     }
 
     /// A worn thing that will not come off is offered no key that would
