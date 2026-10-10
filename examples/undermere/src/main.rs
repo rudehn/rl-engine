@@ -1231,19 +1231,16 @@ mod tests {
         assert_eq!(undermere::testing::at(&app, me), from, "and nobody stepped");
     }
 
-    /// Hired from the offers screen on the real screen, a candidate joins
-    /// the party and says so; `o` orders the party to hold in one line of
-    /// the log and no turn; and the look panel on the mercenary says what
-    /// it is doing, under its name.
-    #[test]
-    fn a_candidate_hired_from_the_offers_screen_and_ordered_with_o_shows_its_order_on_the_look_panel() {
-        let mut app = on_screen(RunSeed(7));
-        let me = undermere::testing::adventurer(&mut app);
+    /// Walks the adventurer of a run begun on the real screen into a
+    /// candidate and hires it from the offers screen, as a player does:
+    /// the adventurer, the mercenary, where it stands and its name.
+    fn hire_on_screen(app: &mut App) -> (Entity, Entity, Point, String) {
+        let me = undermere::testing::adventurer(app);
         let candidate = {
             let world = app.world_mut();
             world.query_filtered::<Entity, With<undermere::mercenaries::Candidate>>().iter(world).next().expect("a candidate waits")
         };
-        let (at, town) = (undermere::testing::at(&app, candidate), undermere::dungeon::TOWN);
+        let (at, town) = (undermere::testing::at(app, candidate), undermere::dungeon::TOWN);
         let taken: Vec<Point> = {
             let world = app.world_mut();
             world.query_filtered::<&Position, With<Blocks>>().iter(world).map(|p| p.0).collect()
@@ -1255,15 +1252,25 @@ mod tests {
             .map(|((dx, dy), key)| (at.offset(dx, dy), key))
             .find(|(cell, _)| map.is_walkable_on(town, *cell) && !taken.contains(cell))
             .expect("a side of the candidate to walk in from");
-        undermere::testing::stand_on(&mut app, me, from);
-        undermere::testing::set_gold(&mut app, me, 1000);
-        let name = undermere::testing::name_of(&app, candidate);
-        press(&mut app, key);
-        press(&mut app, KeyCode::Enter);
-        undermere::testing::settle(&mut app);
-        assert!(app.world().get::<undermere::mercenaries::Mercenary>(candidate).is_some(), "hired: {:#?}", written(&app));
-        assert!(written(&app).iter().any(|r| r.contains(&format!("{name} joins you."))), "{:#?}", written(&app));
+        undermere::testing::stand_on(app, me, from);
+        undermere::testing::set_gold(app, me, 1000);
+        let name = undermere::testing::name_of(app, candidate);
+        press(app, key);
+        press(app, KeyCode::Enter);
+        undermere::testing::settle(app);
+        assert!(app.world().get::<undermere::mercenaries::Mercenary>(candidate).is_some(), "hired: {:#?}", written(app));
+        assert!(written(app).iter().any(|r| r.contains(&format!("{name} joins you."))), "{:#?}", written(app));
+        (me, candidate, at, name)
+    }
 
+    /// Hired from the offers screen on the real screen, a candidate joins
+    /// the party and says so; `o` orders the party to hold in one line of
+    /// the log and no turn; and the look panel on the mercenary says what
+    /// it is doing, under its name.
+    #[test]
+    fn a_candidate_hired_from_the_offers_screen_and_ordered_with_o_shows_its_order_on_the_look_panel() {
+        let mut app = on_screen(RunSeed(7));
+        let (_, _, at, name) = hire_on_screen(&mut app);
         let before = app.world().resource::<Turns>().now();
         press(&mut app, KeyCode::KeyO);
         assert_eq!(app.world().resource::<Turns>().now(), before, "no turn spent");
@@ -1280,5 +1287,49 @@ mod tests {
         assert!(screen.iter().any(|r| r.contains(&name)), "under its name: {screen:#?}");
         assert!(!screen.iter().any(|r| r.contains("outlook") || r.contains("Chance to hit")), "and no forecast: {screen:#?}");
         assert!(screen.iter().any(|r| r.contains(&format!("{name} · holding"))), "the rail says it too: {screen:#?}");
+    }
+
+    /// Given a thing on the real screen, as a player gives one: the
+    /// interact key beside a hired mercenary asks give or dismiss, `give`
+    /// opens the pack choosing under "Give Name which?", the thing picked
+    /// out moves to the mercenary with a line saying so, and the look panel
+    /// on it says it is in the adventurer's pay and carries it.
+    #[test]
+    fn a_thing_given_from_the_pack_on_the_real_screen_moves_to_the_mercenary_and_its_look_lists_it() {
+        let mut app = on_screen(RunSeed(7));
+        let (me, merc, _, name) = hire_on_screen(&mut app);
+        let healing = {
+            let bag = &app.world().get::<Inventory>(me).expect("a pack").items;
+            *bag.iter().find(|t| undermere::testing::name_of(&app, **t).contains("healing")).expect("the healing they set out with")
+        };
+        press(&mut app, KeyCode::Enter);
+        let screen = written(&app);
+        assert!(screen.iter().any(|r| r.contains(&format!("give {name}"))) && screen.iter().any(|r| r.contains(&format!("dismiss {name}"))), "{screen:#?}");
+        press(&mut app, KeyCode::Enter);
+        undermere::testing::settle(&mut app);
+        let screen = written(&app);
+        assert!(screen.iter().any(|r| r.contains(&format!("Give {name} which?"))), "the pack, choosing: {screen:#?}");
+        let choices = app.world().resource::<InventoryMenu>().asked.as_ref().expect("asked").ask.choices.clone();
+        let rows: Vec<Entity> = {
+            let view = app.world().resource::<rl_engine::rl_ui::view::inventory::InventoryView>();
+            choices.into_iter().filter(|t| view.rows.iter().any(|r| r.entity == *t)).collect()
+        };
+        for _ in 0..rows.iter().position(|t| *t == healing).expect("the healing is offered") {
+            press(&mut app, KeyCode::ArrowDown);
+        }
+        press(&mut app, KeyCode::Enter);
+        undermere::testing::settle(&mut app);
+        let carried = &app.world().get::<Inventory>(merc).expect("its pack").items;
+        assert!(carried.contains(&healing), "handed over");
+        assert!(written(&app).iter().any(|r| r.contains(&format!("You give {name} 2 potions of healing."))), "{:#?}", written(&app));
+
+        press(&mut app, KeyCode::KeyX);
+        app.world_mut().resource_mut::<rl_engine::rl_ui::InspectView>().cursor = undermere::testing::at(&app, merc);
+        app.update();
+        app.update();
+        let screen = written(&app);
+        assert!(screen.iter().any(|r| r.contains("in your pay")), "the pay on the look panel: {screen:#?}");
+        assert!(screen.iter().any(|r| r.contains("carries 2 potions of healing")), "and the thing given: {screen:#?}");
+        assert!(!screen.iter().any(|r| r.contains("a sword for hire")), "and no longer for hire: {screen:#?}");
     }
 }

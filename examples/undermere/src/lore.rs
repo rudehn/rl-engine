@@ -437,8 +437,10 @@ enum Shown {
 /// made of it, so a wand of beckoning zapped at a foe beside its user, which
 /// pulls nobody, is not learned by the zap before the bolt has landed.
 ///
-/// Only the adventurer's: what a monster does with a thing is not
-/// something they learn from. In `TurnSet::React`, where the pass's item
+/// Only the adventurer's, and a hired mercenary's they see, which they
+/// learn from exactly as from their own: what a monster does with a thing
+/// is not something they learn from, and nor is what a mercenary does out
+/// of their sight. In `TurnSet::React`, where the pass's item
 /// events are read; the names follow in the same pass's cleanup, once the
 /// narrator has said what was used under the name it was used under.
 pub fn learn_by_use(mut events: MessageReader<ItemEvent>, mut knowing: Knowing, mut flying: Local<Vec<Entity>>, mut tell: MessageWriter<Tell>) {
@@ -447,12 +449,13 @@ pub fn learn_by_use(mut events: MessageReader<ItemEvent>, mut knowing: Knowing, 
         return;
     };
     let in_the_air = knowing.airborne.as_ref().is_some_and(|zaps| !zaps.is_empty());
+    let seen = |actor: Entity| actor == me || knowing.witnessed.sees(actor);
     let mut shown: Vec<(Entity, Shown)> = if in_the_air { Vec::new() } else { flying.drain(..).map(|item| (item, Shown::Used)).collect() };
     for ev in events.read() {
         let (item, how) = match *ev {
-            ItemEvent::Used { actor, item } if actor == me => (item, Shown::Used),
-            ItemEvent::Thrown { actor, item, .. } if actor == me => (item, Shown::Thrown),
-            ItemEvent::Equipped { actor, item } if actor == me => (item, Shown::Worn),
+            ItemEvent::Used { actor, item } if seen(actor) => (item, Shown::Used),
+            ItemEvent::Thrown { actor, item, .. } if seen(actor) => (item, Shown::Thrown),
+            ItemEvent::Equipped { actor, item } if seen(actor) => (item, Shown::Worn),
             _ => continue,
         };
         let aimed = knowing.things.get(item).ok().and_then(|(_, t)| t).and_then(Triggers::targeting).is_some();
@@ -522,8 +525,8 @@ pub fn learn_by_asking(
 }
 
 /// What [`learn_by_use`] reads: the adventurer, what each thing is and
-/// does, what is known, what showed nothing, and whether a zap is still in
-/// the air.
+/// does, what is known, what showed nothing, whether a zap is still in
+/// the air, and which mercenaries the adventurer sees.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Knowing<'w, 's> {
     adventurer: Query<'w, 's, Entity, With<Adventurer>>,
@@ -532,6 +535,7 @@ pub struct Knowing<'w, 's> {
     lore: ResMut<'w, Lore>,
     nothing: ResMut<'w, ShowedNothing>,
     airborne: Option<Res<'w, Airborne<UseLanding>>>,
+    witnessed: crate::mercenaries::Witnessed<'w, 's>,
 }
 
 /// Weighs each use aimed at somewhere and each thrown thing's landing this

@@ -10,6 +10,7 @@ use ron::options::Options;
 use ron::value::RawValue;
 use serde::Deserialize;
 
+use super::OwnKit;
 use crate::armory::{Armory, ItemDef, spawn_item_at, spawn_items};
 use crate::dungeon::FLOORS;
 use crate::shops::Ware;
@@ -137,7 +138,8 @@ impl Mercenaries {
 /// each that takes levels one at a time at its own, so one below nought
 /// is cursed and will not come off once worn, as a thing found below is,
 /// and the rest as [`spawn_items`] makes them. Made as told rather than
-/// found, never unfamiliar, since a hireling says what it is selling.
+/// found, never unfamiliar, since a hireling says what it is selling; and
+/// each its carrier's [`OwnKit`], which it uses knowing what it is.
 pub fn make_kit(commands: &mut Commands, armory: &Armory, kit: &[Ware], registries: &Registries) -> Vec<Entity> {
     let mut made = Vec::new();
     for w in kit {
@@ -146,6 +148,9 @@ pub fn make_kit(commands: &mut Commands, armory: &Armory, kit: &[Ware], registri
         } else {
             made.extend(spawn_items(commands, armory, w.def, w.count, registries));
         }
+    }
+    for thing in &made {
+        commands.entity(*thing).insert(OwnKit);
     }
     made
 }

@@ -295,7 +295,16 @@ impl Plugin for UndermerePlugin {
         // A candidate's own talk, its kit and its fee; `hire` answered by
         // taking it into the party; and `hire` kept off while the party is
         // full, counted at the start of every pass.
-        app.add_systems(Turn, (crate::mercenaries::answer_candidates, crate::mercenaries::answer_hire).in_set(TurnSet::React));
+        app.add_systems(Turn, (crate::mercenaries::answer_candidates, crate::mercenaries::answer_hire, crate::mercenaries::answer_give).in_set(TurnSet::React));
+        // What a hired mercenary knows of what it carries and sees: its own
+        // kit whole, and anything else only as the adventurer knows it; a
+        // thing it is better off wearing put on by the engine's own rule;
+        // and a thing handed to it moved across once the bag has chosen it.
+        app.add_message::<AskForThing>().add_message::<ThingChosen>().add_choice::<crate::mercenaries::PutOn>();
+        app.add_systems(Turn, crate::mercenaries::know_as_the_adventurer_does.in_set(DecideSet::Perceive).after(PerceiveSet::Annotate));
+        app.add_systems(Turn, crate::mercenaries::put_on.in_set(ResolveSet::Redirect));
+        app.add_systems(Turn, crate::mercenaries::release_own_kit.in_set(CleanupSet::Requeue));
+        app.add_systems(Update, crate::mercenaries::hand_over.after(EngineSet::Input).before(EngineSet::Turns));
         app.add_systems(Turn, crate::mercenaries::keep_hire_offered.in_set(TurnSet::Schedule));
         app.add_systems(Turn, crate::townsfolk::sense_beats.in_set(PerceiveSet::Annotate));
         app.add_systems(Turn, crate::townsfolk::walk_rounds.in_set(TurnSet::Schedule));

@@ -9,8 +9,8 @@ use rl_engine::rl_rules::ai::brain::Tactic;
 use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, Keep, KeepPost, Led, MeleeAdjacent, Scavenge, Station, ThrowAtRange, UseCarried};
 use serde::{Deserialize, Serialize};
 
-use super::Mercenary;
-use crate::bestiary::{MonsterDef, SCAVENGE_REACH};
+use super::{KitSeen, MERCENARY, Mercenary, PutOnBetter};
+use crate::bestiary::{Bestiary, MonsterDef, SCAVENGE_REACH};
 use crate::input::Binds;
 
 /// How far from the adventurer a mercenary lets itself be before it
@@ -18,6 +18,10 @@ use crate::input::Binds;
 /// three cells, near enough to be a step from a fight at the adventurer's
 /// side and far enough not to stand in their way.
 pub const LEASH: i32 = 3;
+
+/// What the look panel says of a hired mercenary in place of its kind's
+/// `a sword for hire`.
+pub const IN_PAY: &str = "in your pay";
 
 /// What the party has been told to do, cycled by the order key.
 ///
@@ -158,7 +162,7 @@ impl MercenaryBrains {
             if kind.flee_at() > 0 {
                 brain = brain.then(FleeWhenHurt { at_pct: kind.flee_at() });
             }
-            brain.then(UseCarried::default()).then(MeleeAdjacent).then(ThrowAtRange::default())
+            brain.then(UseCarried::default()).then(PutOnBetter).then(MeleeAdjacent).then(ThrowAtRange::default())
         };
         let keep = Keep::leader(LEASH, 1);
         let unseen = Unseen(Keep::leader(1, 1));
@@ -246,31 +250,45 @@ pub fn order_party(mut key: OrderKey, mut commands: Commands, party: Query<(Enti
 }
 
 /// Says each mercenary's order, `holding`, on the look panel, on the
-/// rail and on its row of the party panel.
+/// rail and on its row of the party panel; and on the look panel that it
+/// is in the adventurer's pay, and what it holds as they know it.
 ///
-/// On the look panel it takes the place of the fight's forecast, since
-/// the odds of a fight with somebody the adventurer is paying are nothing
-/// a player is asking; on the rail it takes the place of what the
-/// mercenary knows of the adventurer and what it is doing this turn,
-/// `unaware` and `follow`, which say less of a hired hand than its order.
+/// On the look panel the pay takes the place of its kind's own words, `a
+/// sword for hire`, which it no longer is, and the order the place of the
+/// fight's forecast, since the odds of a fight with somebody the
+/// adventurer is paying are nothing a player is asking. What it holds is
+/// said as a candidate's kit is, by [`KitSeen`]: its own kit at the level
+/// it told when it was hired, anything handed to it by what is known of
+/// it, and a potion of a kind not yet known by its face. On the rail the
+/// order takes the place of what the mercenary knows of the adventurer
+/// and what it is doing this turn, `unaware` and `follow`, which say less
+/// of a hired hand than its order.
 ///
 /// In `ViewSet::Annotate`, after the kind's own words and the game's own
-/// forecast, so the order is read under `a sword for hire` and nothing
-/// puts a forecast back after it.
+/// forecast, so both are there to take off and nothing puts a forecast
+/// back after it.
 pub fn show_orders(
     look: Option<ResMut<InspectView>>,
     rail: Option<ResMut<NearbyView>>,
     party: Option<ResMut<PartyView>>,
     hired: Query<&Mercenary>,
+    kits: KitSeen,
+    bestiary: Res<Bestiary>,
     mut facets: ResMut<Facets>,
 ) {
     if let Some(mut view) = look
-        && let Some(order) = view.subject.as_ref().and_then(|s| hired.get(s.entity).ok()).map(|m| m.order)
+        && let Some((who, order)) = view.subject.as_ref().and_then(|s| hired.get(s.entity).ok().map(|m| (s.entity, m.order)))
     {
-        let forecast = facets.declare("forecast");
-        view.facets.retain(|f| f.key != forecast);
+        let (forecast, kind) = (facets.declare("forecast"), facets.declare("trait"));
+        let def = bestiary.defs.get(bestiary.defs.expect(MERCENARY));
+        let for_hire: Vec<&str> = def.folded.says.iter().filter(|(name, ..)| name == MERCENARY).map(|(_, says, _)| says.as_str()).collect();
+        view.facets.retain(|f| f.key != forecast && !(f.key == kind && for_hire.contains(&f.text.as_str())));
         (view.duel, view.odds) = (None, None);
+        view.facets.push(facets.facet("pay", IN_PAY));
         view.facets.push(facets.facet("order", order.doing()));
+        for (how, said) in kits.of(who) {
+            view.facets.push(facets.facet("kit", format!("{} {said}", how.verb())));
+        }
     }
     if let Some(mut view) = rail {
         for row in view.actors.iter_mut() {
@@ -512,7 +530,7 @@ mod tests {
         assert!(!lines.iter().any(|l| l.to_lowercase().contains("the brenna")), "{lines:?}");
     }
 
-    /// The order is said on the look panel under the kind's own words and
+    /// The order is said on the look panel beside the mercenary's pay and
     /// on the mercenary's row of the party panel, and changes with it.
     #[test]
     fn the_look_panel_and_the_party_panel_say_each_mercenarys_order() {

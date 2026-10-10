@@ -23,7 +23,6 @@ use rl_engine::rl_rules::ability::RawValue;
 
 use crate::armory::{Armory, ItemKind};
 use crate::lore::{CurseShown, Lore, Unfamiliar, called, kind_called};
-use crate::run::Adventurer;
 
 /// Raise the thing a use was made on by one level: the scroll of
 /// enchanting's.
@@ -151,11 +150,11 @@ pub fn remove_curse(world: &mut World, wearer: Entity) {
     }
 }
 
-/// Says so when the adventurer puts on a cursed thing: it clings to
-/// them, and will not come off. And that it is below nought is plain from
-/// then on, so it is marked [`CurseShown`], and the pack says its level is
-/// below nought, rather than not known at all beside the line that has
-/// just said it is cursed. How far below nought stays unknown, as any
+/// Says so when the adventurer, or a hired mercenary they see, puts on a
+/// cursed thing: it clings to them, and will not come off. And that it is
+/// below nought is plain from then on, so it is marked [`CurseShown`], and
+/// the pack says its level is below nought, rather than not known at all
+/// beside the line that has just said it is cursed. How far below nought stays unknown, as any
 /// level does, until they have worn it long enough or identified it: a
 /// curse shows its sign, not its size.
 ///
@@ -164,21 +163,19 @@ pub fn remove_curse(world: &mut World, wearer: Entity) {
 pub fn bind_on_wear(
     mut commands: Commands,
     mut events: MessageReader<ItemEvent>,
-    adventurer: Query<Entity, With<Adventurer>>,
     stuck: Query<&ItemKind, With<Stuck>>,
     armory: Res<Armory>,
     lore: Res<Lore>,
+    witnessed: crate::mercenaries::Witnessed,
     mut tell: MessageWriter<Tell>,
 ) {
-    let Ok(me) = adventurer.single() else { return };
     for ev in events.read() {
         let ItemEvent::Equipped { actor, item } = *ev else { continue };
         let Ok(kind) = stuck.get(item) else { continue };
-        if actor == me {
-            let the = kind_called(&lore, armory.defs.get(kind.0));
-            tell.write(Tell::new(format!("The {the} clings to you, and will not come off."), Tones::BAD));
-            commands.entity(item).try_insert(CurseShown);
-        }
+        let Some(to) = witnessed.called(actor) else { continue };
+        let the = kind_called(&lore, armory.defs.get(kind.0));
+        tell.write(Tell::new(format!("The {the} clings to {to}, and will not come off."), Tones::BAD));
+        commands.entity(item).try_insert(CurseShown);
     }
 }
 

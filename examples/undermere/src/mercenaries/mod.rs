@@ -38,7 +38,19 @@
 //! [`Order`]: follow, hold, fight freely. [`order_party`] cycles every
 //! mercenary's order at once on the order key, without spending a turn,
 //! and [`show_orders`] says the order on the look panel and the party
-//! panel.
+//! panel, and on the look panel that it is in the adventurer's pay and
+//! what it holds.
+//!
+//! A mercenary never tells the adventurer what they do not know. What it
+//! was made with is its [`OwnKit`], which it knows whole and uses freely;
+//! anything else it uses only once the adventurer knows it, since
+//! [`know_as_the_adventurer_does`] trims what its mind is told it could
+//! use and counts gear at what it seems worth, by [`SeenWorth`]. A kind it
+//! uses where the adventurer sees it, by [`Witnessed`], is learned as if
+//! they had used it, and a curse it puts on there is seen to cling. `give`
+//! asks the pack which thing to hand over, through the engine's
+//! [`AskForThing`], and [`hand_over`] moves the one chosen; [`PutOnBetter`]
+//! puts on whatever in its pack it is better off wearing.
 //!
 //! Undermere's own rather than a keeper's [`Wares`](crate::shops::Wares):
 //! a kit is a part at a time, each on its own chance, where a shelf is a
@@ -52,11 +64,13 @@
 mod fixtures;
 mod hired;
 mod kit;
+mod knowing;
 mod orders;
 mod tavern;
 
 pub use hired::*;
 pub use kit::*;
+pub use knowing::*;
 pub use orders::*;
 pub use tavern::*;
 

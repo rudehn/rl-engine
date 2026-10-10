@@ -421,6 +421,18 @@ impl Armory {
         own + self.lent[def.index()].armor.unwrap_or(0)
     }
 
+    /// What a thing of `def` at `level` is worth to a mind that puts things
+    /// on, the engine's `GearScore`, by `gear_score` at that level's blow,
+    /// shot and armor; `None` for a thing never worn or worth nothing worn.
+    /// The one rule a thing's score is written by when it is made or its
+    /// level changes, and what a thing whose level is not known yet seems
+    /// worth, at nought.
+    pub fn score_at(&self, def: Id<ItemDef>, level: i32) -> Option<i32> {
+        let d = self.defs.get(def);
+        let plus = |dice: DiceRoll| DiceRoll { bonus: dice.bonus + DAMAGE_PER_LEVEL * level, ..dice };
+        d.slot.and_then(|_| gear_score(d.melee.map(|m| plus(m.roll)), d.ranged.map(|r| plus(r.roll)), d.cost, self.armor_at(def, level)))
+    }
+
     /// Whether a thing of `def`'s level moves its wearer's armor: armor's
     /// own, a level a point, and a thing whose line gives the stat `armor`
     /// names for each level. What the vitals' mark asks of a thing whose
@@ -1001,8 +1013,7 @@ fn fit(e: &mut EntityCommands, armory: &Armory, def: Id<ItemDef>, level: i32, st
     }
     // Worth something to a mind that puts things on, so a goblin knows a
     // sword from a dagger without knowing what either is.
-    let score = d.slot.and_then(|_| gear_score(melee.map(|m| m.dice), ranged.map(|r| r.dice), d.cost, armor));
-    match score {
+    match armory.score_at(def, level) {
         Some(score) => {
             e.insert(GearScore(score));
         }
