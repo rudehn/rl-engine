@@ -159,8 +159,15 @@ impl Screen {
             shop: centred(108, 4, 22),
             // What can be done here, when here is more than one thing:
             // wide enough for the temple's longest rite with its turn and
-            // its price, `unbind what you wear (1 turn, 60 gold coins)`.
-            here: centred(48, 10, 6),
+            // its price, `unbind what you wear (1 turn, 60 gold coins)`,
+            // and tall enough for six rows, or for a question of two
+            // lines, a blank and its answers: a mercenary's dismissal
+            // asks in two. Low on the left where the look panel stands,
+            // and not over the middle of the map, where the adventurer
+            // stands on arriving in Mereholt with the party round them:
+            // in Mereholt that is the lake, where nobody who offers
+            // anything ever stands.
+            here: Rect::new(map.x + 2, map.bottom() - 10, 52, 8),
             controls: map.inflate(-2),
             // The most the menu may take: the run's own line, the seed and
             // turn, the record's score and its numbers, and the choices
@@ -1585,6 +1592,15 @@ mod tests {
         assert!(screen.iter().any(|r| r.contains(&format!("Dismiss {name}?"))), "asked in its name: {screen:#?}");
         let (no, yes) = (screen.iter().position(|r| r.contains("No")), screen.iter().position(|r| r.contains("Yes")));
         assert!(matches!((no, yes), (Some(no), Some(yes)) if no < yes), "No over Yes: {screen:#?}");
+        let here = Screen::new().here;
+        let asked: Vec<String> = (here.y + 1..here.bottom() - 1).map(|y| framed(&app, here, y)).collect();
+        let question = format!("Dismiss {name}? The fee is not given back, and {name} sets down everything you gave.");
+        assert_eq!(asked.iter().take_while(|l| !l.is_empty()).cloned().collect::<Vec<_>>().join(" "), question, "the whole question: {asked:#?}");
+        let view = *app.world().resource::<MapView>();
+        for who in [me, merc] {
+            let drawn = view.to_screen(undermere::testing::at(&app, who)).expect("on the map");
+            assert!(!here.contains(drawn), "the screen leaves the one asking and the one asked about in sight: {screen:#?}");
+        }
         press(&mut app, KeyCode::Escape);
         undermere::testing::settle(&mut app);
         let screen = written(&app);
