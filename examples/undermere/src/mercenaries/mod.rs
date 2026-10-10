@@ -92,6 +92,8 @@ mod kit;
 mod knowing;
 mod leaving;
 mod orders;
+#[cfg(test)]
+mod saved;
 mod tavern;
 mod travel;
 
