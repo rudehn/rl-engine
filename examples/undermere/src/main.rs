@@ -170,13 +170,15 @@ impl Screen {
             here: Rect::new(map.x + 2, map.bottom() - 10, 52, 8),
             controls: map.inflate(-2),
             // The most the menu may take: the run's own line, the seed and
-            // turn, the record's score and its numbers, and the choices
-            // under them, with a row to spare for the way back to the
-            // title. The engine closes the frame under the last row, so
-            // the shorter pause menu leaves no gap. Wide enough for the
-            // words a run is won with, which stand whole in its top
-            // border.
-            menu: centred(56, 2, 34),
+            // turn, the record's score and its numbers, the fallen under
+            // them, a party's worth with their heading, and the choices
+            // under those, with a row to spare for the way back to the
+            // title: down to the foot of the map. A run that lost more
+            // has the end of its fallen cut, never a choice. The engine
+            // closes the frame under the last row, so the shorter pause
+            // menu leaves no gap. Wide enough for the words a run is won
+            // with, which stand whole in its top border.
+            menu: centred(56, 2, 38),
             // Where the menu stands, since the menu is what opens it.
             settings: centred(56, 2, 34),
             records: centred(72, 2, 36),
@@ -233,8 +235,10 @@ fn add_panels(app: &mut App, screen: &Screen) {
         // Who follows the adventurer, wherever they are, each with the
         // order it was given: "company" rather than the engine's "party",
         // and one left on another floor is "left behind", which is how it
-        // came to be there and what the adventurer must do about it.
-        PartyPanel::new(screen.party).heading("Company").elsewhere("left behind"),
+        // came to be there and what the adventurer must do about it. Bars
+        // of four cells rather than six, so a name of three syllables
+        // keeps "fighting freely" whole beside it.
+        PartyPanel::new(screen.party).heading("Company").elsewhere("left behind").bars(4),
         LogPanel::new(screen.log),
         InspectPanel::new(screen.inspect).hints("move \u{2022} tab next \u{2022} esc close").cursor(CursorStyle::ticks()),
         TargetPanel::new(screen.target).hints("[tab/shift-tab] cycle").cursor(CursorStyle::ticks()),
@@ -1415,8 +1419,8 @@ mod tests {
     }
 
     /// The rail's foot is blank until someone follows; then it heads them
-    /// "Company", over a rule, each in the order it joined with its order
-    /// and a full health bar. Taking the gate with one of them beside the
+    /// "Company", over a rule, each in the order it joined with its order,
+    /// the longest of them whole, and a full health bar. Taking the gate with one of them beside the
     /// adventurer and the other still in the tavern, the one that came is
     /// still following on floor one, and the one that stayed is muted,
     /// marked left behind in place of its order, and keeps its bar.
@@ -1428,17 +1432,30 @@ mod tests {
         let company = |app: &App| (screen.party.y..screen.party.bottom()).map(|y| from(app, rail, y)).collect::<Vec<_>>();
         assert!(company(&app).iter().all(String::is_empty), "nobody follows yet: {:#?}", company(&app));
 
-        let (me, first, _, first_name) = hire_on_screen(&mut app);
-        let (_, second, _, second_name) = hire_on_screen(&mut app);
+        let (me, first, _, _) = hire_on_screen(&mut app);
+        let (_, second, _, _) = hire_on_screen(&mut app);
+        // Names of three syllables, the longest a hired hand has without
+        // a byname, so the longest order must fit beside the longest name.
+        let (first_name, second_name) = ("Vorihild".to_string(), "Ingnarek".to_string());
+        app.world_mut().entity_mut(first).insert(Name::new(first_name.clone()));
+        app.world_mut().entity_mut(second).insert(Name::new(second_name.clone()));
+        app.update();
         let lines = company(&app);
         assert_eq!(lines[0], "Company", "the heading: {lines:#?}");
         assert!(lines[1].chars().all(|c| c == '\u{2500}'), "a rule under it: {lines:#?}");
-        let bar = "\u{2588}".repeat(6);
+        let bar = "\u{2588}".repeat(4);
         for (line, name) in lines[2..4].iter().zip([&first_name, &second_name]) {
             assert!(line.starts_with(&format!("h {name} · following")), "{name} with its order, in the order they joined: {lines:#?}");
             assert!(line.ends_with(&bar), "and its health full at the rail's edge: {lines:#?}");
         }
         assert_eq!(from(&app, rail, screen.party.y - 1), "", "a blank row over the heading");
+        press(&mut app, KeyCode::KeyO);
+        press(&mut app, KeyCode::KeyO);
+        let lines = company(&app);
+        for (line, name) in lines[2..4].iter().zip([&first_name, &second_name]) {
+            assert!(line.starts_with(&format!("h {name} · fighting freely ")), "the longest order whole beside {name}: {lines:#?}");
+        }
+        press(&mut app, KeyCode::KeyO);
 
         let town = undermere::dungeon::TOWN;
         let gate = {
@@ -1624,9 +1641,9 @@ mod tests {
     }
 
     /// A mercenary killed by a goblin on floor two, and then the
-    /// adventurer: the end screen lists the run's numbers with one
-    /// mercenary lost, and under them the fallen, by name, killer and
-    /// floor.
+    /// adventurer: the end screen lists the run's numbers with two
+    /// mercenaries lost, under them the fallen, by name, killer and
+    /// floor, and under those every choice, the last one too.
     #[test]
     fn the_end_screen_names_a_fallen_mercenary_under_the_runs_numbers() {
         let mut app = on_screen(RunSeed(7));
@@ -1635,11 +1652,13 @@ mod tests {
         let here = undermere::testing::at(&app, me);
         let around = [here.offset(1, 0), here.offset(-1, 0)];
         undermere::testing::lay_floor(&mut app, &around);
-        let merc = undermere::testing::monster(&mut app, undermere::mercenaries::MERCENARY, around[0]);
-        app.world_mut().entity_mut(merc).insert((Name::new("Brenna"), undermere::mercenaries::Candidate { fee: 0 }));
-        undermere::mercenaries::hire(app.world_mut(), merc, me);
         let goblin = undermere::testing::monster(&mut app, "goblin", around[1]);
-        undermere::testing::kill(&mut app, merc, Some(goblin));
+        for name in ["Brenna", "Osk Halfhand"] {
+            let merc = undermere::testing::monster(&mut app, undermere::mercenaries::MERCENARY, around[0]);
+            app.world_mut().entity_mut(merc).insert((Name::new(name), undermere::mercenaries::Candidate { fee: 0 }));
+            undermere::mercenaries::hire(app.world_mut(), merc, me);
+            undermere::testing::kill(&mut app, merc, Some(goblin));
+        }
         undermere::testing::kill(&mut app, me, Some(goblin));
         for _ in 0..4 {
             app.update();
@@ -1648,9 +1667,13 @@ mod tests {
         // The end screen's own column of a row, between its borders, since
         // the rail beside it shares the row.
         let inside = |r: &String| r.split('│').nth(1).unwrap_or_default().trim().to_string();
-        let lost = screen.iter().position(|r| inside(r).starts_with("Mercenaries lost ...") && inside(r).ends_with(" 1"));
+        let lost = screen.iter().position(|r| inside(r).starts_with("Mercenaries lost ...") && inside(r).ends_with(" 2"));
         let heading = screen.iter().position(|r| inside(r) == "The fallen");
         let named = screen.iter().position(|r| inside(r) == "Brenna, slain by a goblin on floor 2");
         assert!(matches!((lost, heading, named), (Some(l), Some(h), Some(n)) if l < h && h + 1 == n), "the fallen under the numbers: {screen:#?}");
+        assert!(screen.iter().any(|r| inside(r) == "Osk Halfhand, slain by a goblin on floor 2"), "both of them: {screen:#?}");
+        for choice in ["A new run", "This seed again", "Settings", "Main menu", "Quit"] {
+            assert!(screen.iter().any(|r| inside(r) == choice), "every choice under them, {choice:?} too: {screen:#?}");
+        }
     }
 }

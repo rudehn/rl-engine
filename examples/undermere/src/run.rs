@@ -224,8 +224,10 @@ pub fn stand_near(world: &mut World) {
 /// [`PARTY`](crate::mercenaries::PARTY): `main.rs` reads it from
 /// `UNDERMERE_PARTY`, beside `UNDERMERE_START` and `UNDERMERE_NEAR`, so a
 /// picture of a party on a deep floor, in a fight or at the end of a run
-/// needs no walk to the tavern and back. Absent, nothing, which is every
-/// real run.
+/// needs no walk to the tavern and back. It waits on the stand
+/// `UNDERMERE_NEAR` asks for, so one asking for what the floor does not
+/// hold, a lair on a floor with none, gets no party either. Absent,
+/// nothing, which is every real run.
 #[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StartParty(pub usize);
 
