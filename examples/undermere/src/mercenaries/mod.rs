@@ -71,6 +71,12 @@
 //! log say one that came through follows the adventurer, where the
 //! narrator, hearing a warp, would say it left.
 //!
+//! The run's save keeps a [`Mercenary`] whole, a candidate's name and fee,
+//! whose kit is its own and the [`Tavern`]'s visits; the engine keeps who
+//! follows whom, in what order and the post one holds. What is not saved
+//! is made again: [`serve_again`] gives a mercenary its offers and the
+//! brain for its order, and [`wait_again`] gives a candidate its offers.
+//!
 //! Undermere's own rather than a keeper's [`Wares`](crate::shops::Wares):
 //! a kit is a part at a time, each on its own chance, where a shelf is a
 //! count of draws; and a kit's level may be below nought, which the

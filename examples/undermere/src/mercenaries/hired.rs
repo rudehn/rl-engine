@@ -71,6 +71,24 @@ pub fn hire(world: &mut World, candidate: Entity, adventurer: Entity) {
     obey(world, candidate, Order::Follow);
 }
 
+/// Makes `mercenary`, restored by a save as its kind on the adventurer's
+/// side, the hired hand `hired` says it was: its name, the
+/// [`Mercenary`] itself, its [`GIVE`] and [`DISMISS`] offers, and the
+/// brain for its order by [`obey`], which keeps the engine's wit to
+/// travel off it as hiring does.
+///
+/// None of that is saved but the [`Mercenary`]: a brain is content made
+/// again, and the engine keeps nobody's offers. Its `Leader`, its place
+/// in the party and the post it holds are the engine's, put back after
+/// this, so the post [`obey`] gives one on hold here, where the restore
+/// first stands it, is replaced by the one it held.
+pub fn serve_again(world: &mut World, mercenary: Entity, hired: Mercenary) {
+    let offers = hired_offers(world.resource::<Verbs>(), &hired.name);
+    let order = hired.order;
+    world.entity_mut(mercenary).insert((Name::new(hired.name.clone()), hired, offers));
+    obey(world, mercenary, order);
+}
+
 /// Takes the currency out of `who`'s pack and out of play.
 fn spend_fee(world: &mut World, who: Entity) {
     let Some(currency) = world.get_resource::<Currency>().copied() else { return };

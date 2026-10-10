@@ -88,14 +88,27 @@ pub fn spawn_candidate(commands: &mut Commands, makers: &Makers, name: &str, kit
     }
     let def = bestiary.defs.get(bestiary.defs.expect(MERCENARY));
     let candidate = spawn_monster(commands, def, at, TOWN, registries, false);
-    commands.entity(candidate).remove::<Mind>().insert((
-        Name::new(name.to_string()),
-        Candidate { fee },
-        Inventory { items: pack },
-        Equipped(worn),
-        candidate_offers(verbs, fee),
-    ));
+    commands.entity(candidate).remove::<Mind>().insert((waiting_as(verbs, name, fee), Inventory { items: pack }, Equipped(worn)));
     candidate
+}
+
+/// Makes `candidate`, restored by a save as its kind, the candidate it was
+/// saved as: called `name`, asking `fee`, with no mind, and offering
+/// [`HIRE`] at the fee and [`TALK`]. What it carries and wears is the
+/// engine's to put back, and its kit's [`OwnKit`] the item's own save.
+///
+/// `hire` is offered even while the party is full, since who follows the
+/// adventurer is put back only after this: [`keep_hire_offered`] takes it
+/// off at the start of the first pass, before anyone could take it up.
+pub fn wait_again(world: &mut World, candidate: Entity, name: &str, fee: u32) {
+    let waiting = waiting_as(world.resource::<Verbs>(), name, fee);
+    world.entity_mut(candidate).remove::<Mind>().insert(waiting);
+}
+
+/// What makes a candidate one: its name, its [`Candidate`] fee and its
+/// offers, one set for one seated and one restored.
+fn waiting_as(verbs: &Verbs, name: &str, fee: u32) -> (Name, Candidate, Offers) {
+    (Name::new(name.to_string()), Candidate { fee }, candidate_offers(verbs, fee))
 }
 
 /// What a candidate offers: [`HIRE`] at `fee`, first, so the offers screen
