@@ -15,9 +15,7 @@ This plan names files, interfaces and the tests to write, and leaves the code to
 ## Global Constraints
 
 - Work in `.claude/worktrees/undermere-dungeon` on branch `undermere-dungeon`; never `cd` to the main checkout, which other sessions use.
-- **The base.** This branch was cut from `layout`, which is not yet on `main` and is 133 commits behind it, and the game tasks also need part 3, still on `undermere`.
-  Tasks 1 to 8 touch only the engine and Foundry, and may be built on `layout` as it stands.
-  Before task 9, `layout` and `undermere` must both have merged to `main`, and this branch is rebased onto that `main`; if `layout` changes in review first, rebase onto whatever it becomes.
+- **The base.** This branch sits on `main`, which has both the layout work and part 3, so every task builds on it directly.
   Do not start task 9 on a base without part 3: lairs, the boss draw, captives, egg sacs and sleepers are all part 3's.
 - Since 2026-10-07 (the lean process): engine slices, tasks 1 to 8, are reviewed per task by a fresh agent; game tasks are not reviewed per task; the whole part runs the full gate at the end and merges as one.
 - Every engine slice: tests in its crate, `#![deny(missing_docs)]` doc comments that say why, no theme words, a `CHANGELOG.md` line under `Unreleased`, every game still passing, and a moved fingerprint explained in its commit before it is re-baselined.
@@ -88,9 +86,9 @@ This plan names files, interfaces and the tests to write, and leaves the code to
 - [ ] Tests (seeds 0..200, rectangles, crosses and caves): nothing stands on or beside an opening; every area stays one walkable region with everything standing; one dressing dresses a 5 by 5 room and a 20 by 12 hall to its density within a tolerance, with things along the walls of both; rows leave their aisles; slots fill and save as a prefab's.
 - [ ] Commit in stages: the file; the pass.
 
-### Task 9: Rebase, and biomes as data
+### Task 9: Biomes as data
 
-**Files:** rebase onto `main` (see Global Constraints); a new `examples/undermere/assets/biomes.ron` (twelve biomes and the three throne floors: floors, weight, tiles, recipes and weights, ambient and light color, lakes, decor, dressings, favored monsters), `src/dungeon.rs` (the `Biome` enum becomes a loaded `BiomeDef`; `Undermere::biome_of(floor)`, pure over the seed), `src/light.rs` (ambient of the drawn biome), `src/population.rs` (favored kinds at three times their weight), `assets/tiles.ron` and `registry()` (the new biomes' tiles).
+**Files:** a new `examples/undermere/assets/biomes.ron` (twelve biomes and the three throne floors: floors, weight, tiles, recipes and weights, ambient and light color, lakes, decor, dressings, favored monsters), `src/dungeon.rs` (the `Biome` enum becomes a loaded `BiomeDef`; `Undermere::biome_of(floor)`, pure over the seed), `src/light.rs` (ambient of the drawn biome), `src/population.rs` (favored kinds at three times their weight), `assets/tiles.ron` and `registry()` (the new biomes' tiles).
 - [ ] Tests: each floor draws a biome of its band; over seeds 0..200 every biome is drawn and none takes more than two thirds of its band's floors; the draw is the same whichever floor is built first; a favored kind is drawn about three times as often on its biome's floors; the log names the drawn biome on arrival.
 - [ ] Commit in stages.
 
