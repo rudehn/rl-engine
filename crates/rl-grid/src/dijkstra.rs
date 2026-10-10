@@ -33,11 +33,16 @@ pub struct DijkstraMap {
     /// The rules the last flood stepped by, so descending takes only the
     /// steps it took.
     rules: PathRules,
-    /// Whether a diagonal may pass beside each reached cell, as the source
-    /// said when the flood reached it, so descending asks the corner rule
+    /// Whether a diagonal may pass beside each cell of the region, as the
+    /// source said when the flood began, so descending asks the corner rule
     /// the flood stepped by without the source to hand. A cell's having a
-    /// value is not the same answer: a source that prices a closed door
-    /// reaches it and still lets nothing past its corner.
+    /// value is not the same answer either way: a source that prices a
+    /// closed door reaches it and still lets nothing past its corner, and
+    /// one that refuses a cell something stands in may still let a
+    /// diagonal past it, as the move resolver does. When only the cells
+    /// reached were recorded, the second was a diagonal the flood stepped
+    /// and descending refused, and a mover whose cheapest way was that
+    /// diagonal stood where it was for ever.
     past: Vec<bool>,
 }
 
@@ -150,13 +155,17 @@ impl DijkstraMap {
     }
 
     fn relax(&mut self, source: &impl CostSource, rules: PathRules, mut order: u64) {
+        // Every cell, reached or not: the two a diagonal squeezes between
+        // lie inside the rectangle of its ends, so inside the region.
+        for local in 0..self.past.len() {
+            self.past[local] = source.lets_diagonal_past(self.point(local));
+        }
         while let Some(Reverse((dist, _, local))) = self.heap.pop() {
             let local = local as usize;
             if dist > self.values[local] {
                 continue;
             }
             let here = self.point(local);
-            self.past[local] = source.lets_diagonal_past(here);
             for dir in rules.directions() {
                 let Some((next, cost)) = step_cost(source, here, *dir, rules) else {
                     continue;
@@ -228,9 +237,9 @@ impl DijkstraMap {
 
     /// Whether the flood could have stepped from `p` toward `dir`.
     ///
-    /// Asked of what the source said of each side as the flood reached it,
-    /// so it is the flood's own corner test, asked without the terrain it
-    /// was built over; a side the flood never reached lets nothing past.
+    /// Asked of what the source said of each side as the flood began, so
+    /// it is the flood's own corner test, asked without the terrain it was
+    /// built over; a side outside the region lets nothing past.
     fn steps(&self, p: Point, dir: Direction) -> bool {
         if !dir.is_diagonal() {
             return true;
@@ -270,8 +279,10 @@ impl DijkstraMap {
         for (mine, theirs) in self.values.iter_mut().zip(&other.values) {
             *mine = (*mine).min(*theirs);
         }
-        // What a cell lets past is the source's, not the flood's, so a
-        // cell either reached says the same of it.
+        // What a cell lets past is the source's, not the flood's, so two
+        // floods over one source say the same of every cell, and a map not
+        // yet flooded, which says nothing lets a diagonal past, takes the
+        // other's word.
         for (mine, theirs) in self.past.iter_mut().zip(&other.past) {
             *mine |= *theirs;
         }
@@ -382,6 +393,118 @@ mod tests {
         assert_eq!(map.descents(p(1, 1)), vec![p(1, 0)], "nor one descending offers");
         let path = AStar::new().find(&source, p(1, 1), p(2, 0), PathRules::default()).expect("a way round");
         assert_eq!(path.steps, vec![p(1, 0), p(2, 0)], "and the search goes round it too");
+    }
+
+    /// What one cell of a [`Mixed`] source is: how it is entered and
+    /// whether a diagonal passes beside it.
+    #[derive(Clone, Copy)]
+    enum Cell {
+        /// Entered at a plain step, passed beside.
+        Floor,
+        /// Neither entered nor passed beside.
+        Wall,
+        /// Entered at its opening, never passed beside: a closed door.
+        Shut,
+        /// Never entered, passed beside: a thing standing in the way,
+        /// whose corner the move resolver lets a diagonal past.
+        Standing,
+    }
+
+    /// A source of cells each answering both questions its own way.
+    struct Mixed {
+        width: i32,
+        cells: Vec<Cell>,
+    }
+
+    impl Mixed {
+        fn parse(rows: &[&str]) -> Self {
+            let cells = rows
+                .iter()
+                .flat_map(|r| r.chars())
+                .map(|c| match c {
+                    '#' => Cell::Wall,
+                    '+' => Cell::Shut,
+                    'o' => Cell::Standing,
+                    _ => Cell::Floor,
+                })
+                .collect();
+            Self { width: rows[0].len() as i32, cells }
+        }
+
+        fn random(width: i32, height: i32, rng: &mut impl Rng) -> Self {
+            let cells = (0..width * height)
+                .map(|_| match rng.random_range(0..100) {
+                    0..15 => Cell::Wall,
+                    15..20 => Cell::Shut,
+                    20..40 => Cell::Standing,
+                    _ => Cell::Floor,
+                })
+                .collect();
+            Self { width, cells }
+        }
+    }
+
+    impl Grid2D for Mixed {
+        fn width(&self) -> i32 {
+            self.width
+        }
+
+        fn height(&self) -> i32 {
+            self.cells.len() as i32 / self.width
+        }
+    }
+
+    impl CostSource for Mixed {
+        fn cost_idx(&self, idx: usize) -> Option<u32> {
+            match self.cells[idx] {
+                Cell::Floor => Some(100),
+                Cell::Shut => Some(200),
+                Cell::Wall | Cell::Standing => None,
+            }
+        }
+
+        fn lets_diagonal_past(&self, p: Point) -> bool {
+            self.checked_idx(p).is_some_and(|i| matches!(self.cells[i], Cell::Floor | Cell::Standing))
+        }
+    }
+
+    #[test]
+    fn a_diagonal_past_two_things_that_cannot_be_entered_is_offered_by_descending_as_the_flood_took_it() {
+        // The goal (1, 0) is one diagonal from (0, 1), past two things
+        // standing in the way that a diagonal may pass beside. The flood
+        // steps it; descending once refused it, since neither was reached,
+        // and a mover standing at (0, 1) waited there for ever.
+        let source = Mixed::parse(&["o.", ".o"]);
+        let mut map = DijkstraMap::covering(&source);
+        map.build(&source, [p(1, 0)], PathRules::default());
+        assert_eq!(map.value(p(0, 1)), Some(141), "the flood takes the diagonal");
+        assert_eq!(map.descend(p(0, 1)), Some(p(1, 0)), "and descending offers it");
+    }
+
+    #[test]
+    fn over_a_seed_range_every_cell_the_flood_reaches_but_a_goal_has_a_step_down_the_flood_itself_would_take() {
+        for rules in [PathRules::default(), PathRules::CARDINAL, PathRules { diagonals: true, cut_corners: true }] {
+            for seed in 0..40u64 {
+                let mut rng = StdRng::seed_from_u64(seed);
+                let source = Mixed::random(20, 15, &mut rng);
+                let goals: Vec<Point> = (0..rng.random_range(1..4)).map(|_| p(rng.random_range(0..20), rng.random_range(0..15))).collect();
+                // A region short of the whole grid as well, so a flood
+                // bounded to part of a map is held to the same.
+                for region in [source.bounds(), Rect::new(2, 1, 15, 12)] {
+                    let mut map = DijkstraMap::new(region);
+                    map.build(&source, goals.iter().copied(), rules);
+                    for (from, value) in map.iter().collect::<Vec<_>>() {
+                        if value == 0 {
+                            continue;
+                        }
+                        let down = map.descend(from).unwrap_or_else(|| panic!("seed {seed}: {from:?} at {value} has no step down under {rules:?}"));
+                        let dir = Direction::between(from, down).expect("a neighbour");
+                        assert!(step_cost(&source, from, dir, rules).is_some(), "seed {seed}: {from:?} to {down:?} is not a step under {rules:?}");
+                        assert!(map.value(down) < Some(value), "seed {seed}: {from:?} to {down:?} is not closer");
+                    }
+                }
+            }
+        }
     }
 
     #[test]
