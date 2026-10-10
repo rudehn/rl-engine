@@ -22,8 +22,10 @@ use crate::walk::{UNREACHED, steps_between};
 /// loop never widens a way through. One candidate is drawn per pair of
 /// areas, whichever side of a wall each lies on, so no pair gains two
 /// doors. The detour is the walk between the two floor cells as the place
-/// stands, measured again after each door, since one door shortens the
-/// others.
+/// stands, through every cell the registry marks passable, a shut door
+/// included, and never through an opening joined locked or sealed, as the
+/// exit is drawn; measured again after each door, since one door shortens
+/// the others.
 ///
 /// Longest first is what makes a loop worth having: a door that saves
 /// three steps is a second door, and one that saves sixty is another way
@@ -40,8 +42,8 @@ pub struct OpenLoops {
     pub max: u32,
 }
 
-fn walkable_at(terrain: &Terrain, walkable: &[bool], p: Point) -> bool {
-    terrain.get(p).is_some_and(|t| walkable[t.index()])
+fn passable_at(terrain: &Terrain, passable: &[bool], p: Point) -> bool {
+    terrain.get(p).is_some_and(|t| passable[t.index()])
 }
 
 impl<C: BuildContext> Pass<C> for OpenLoops {
@@ -52,7 +54,7 @@ impl<C: BuildContext> Pass<C> for OpenLoops {
         Phase::Structures
     }
     fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
-        let walkable = ctx.tiles().tables().walkable;
+        let passable = ctx.tiles().tables().passable;
         let bounds = ctx.terrain().bounds();
         let (w, h) = (bounds.width, bounds.height);
         if w < 3 || h < 3 {
@@ -84,7 +86,7 @@ impl<C: BuildContext> Pass<C> for OpenLoops {
         // Every wall cell between two areas not already joined, by pair.
         let mut by_pair: BTreeMap<(usize, usize), Vec<Candidate>> = BTreeMap::new();
         for p in bounds.inflate(-1).cells() {
-            let is_solid = |q: Point| !walkable_at(ctx.terrain(), &walkable, q);
+            let is_solid = |q: Point| !passable_at(ctx.terrain(), &passable, q);
             if !is_solid(p) || barred.contains(p) {
                 continue;
             }
@@ -104,10 +106,18 @@ impl<C: BuildContext> Pass<C> for OpenLoops {
             candidates.push(cells[ctx.rng().random_range(0..cells.len())]);
         }
 
-        // The walk between a candidate's two sides as the place stands. A
-        // side a later pass has built over is no way through at all.
+        // The walk between a candidate's two sides as the place stands,
+        // through shut doors and never through a lock, as the exit is
+        // drawn. A side a later pass has built over is no way through at
+        // all.
+        let mut shut = BitGrid::new(w, h);
+        for o in ctx.outputs().iter::<Opening>().filter(|o| matches!(o.join, Join::Locked(_) | Join::Sealed)) {
+            for c in &o.cells {
+                shut.insert(*c);
+            }
+        }
         let measure = |terrain: &Terrain, c: &Candidate| {
-            let open = |q: Point| walkable_at(terrain, &walkable, q);
+            let open = |q: Point| passable_at(terrain, &passable, q) && !shut.contains(q);
             steps_between(w, h, open, c.at - c.facing.offset(), c.at + c.facing.offset())
         };
         for c in &mut candidates {
@@ -171,6 +181,7 @@ struct Candidate {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::accrete::Accrete;
     use crate::accrete::tests::{accrete, rig, walkable};
     use crate::chain::Chain;
     use crate::context::BaseContext;
@@ -244,6 +255,24 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A game's shut door is passable but not walkable this moment. Grown
+    /// with one, a place gains its loops as it does with a door that is
+    /// floor: the detour is walked through the doors, not stopped at them.
+    #[test]
+    fn a_detour_through_shut_doors_is_measured_and_cut() {
+        let rig = rig();
+        let shut = rig.tiles.expect("door_closed");
+        let mut with_loops = 0;
+        for s in 0..40 {
+            let grow = Accrete { door: shut, ..accrete(&rig, 3) };
+            let chain = Chain::new().then(grow).then(OpenLoops { door: shut, ..pass() });
+            let ctx = chain.run_retrying(|| BaseContext::blank(84, 48, rig.tiles.clone(), rig.wall), RunSeed(s), 20).unwrap();
+            let (areas, openings) = (ctx.outputs().iter::<Area>().count(), ctx.outputs().iter::<Opening>().count());
+            with_loops += usize::from(openings + 1 > areas);
+        }
+        assert!(with_loops >= 30, "{with_loops} of 40 places behind shut doors gained a loop");
     }
 
     #[test]

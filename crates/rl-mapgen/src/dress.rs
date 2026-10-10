@@ -683,12 +683,12 @@ mod tests {
         let mut wet_tiles = r.tiles.clone();
         let water = wet_tiles.register(TileProps::wall("water")).unwrap();
         let shore = wet_tiles.register(TileProps::floor("shore")).unwrap();
-        let ponds = Lakes { name: "ponds", tile: water, count: (2, 5), size: (20, 70), wreath: Some((shore, 60)), cut: false };
+        let ponds = Lakes { name: "ponds", tile: water, count: (2, 5), size: (20, 70), wreath: Some((shore, 60)), cut: false, within: Vec::new() };
         let (mut caves, mut crosses, mut secrets, mut lakes) = (0, 0, 0, 0);
         for (w, h, seeds, wet) in [(84, 48, 0..200, false), (160, 90, 0..30, false), (84, 48, 0..60, true), (160, 90, 0..8, true)] {
             for s in seeds {
                 let chain = Chain::new().then(grow(&r)).then(OpenLoops { door: r.door, min_detour: 20, max: 6 });
-                let chain = if wet { chain.then(ponds) } else { chain };
+                let chain = if wet { chain.then(ponds.clone()) } else { chain };
                 let chain = chain.then(RandomStart).then(FarthestExit).then(Survey).then(hide).then(pass.clone());
                 let tiles = if wet { &wet_tiles } else { &r.tiles };
                 let ctx =

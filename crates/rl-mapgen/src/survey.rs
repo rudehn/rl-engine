@@ -8,7 +8,9 @@
 
 use rl_core::{Direction, Grid2D, Point};
 
-use crate::accrete::{Area, Opening};
+use rl_grid::BitGrid;
+
+use crate::accrete::{Area, Join, Opening};
 use crate::chain::{BuildError, Pass, Phase};
 use crate::context::BuildContext;
 use crate::dungeon::ExitPoint;
@@ -52,6 +54,12 @@ pub struct Surveyed {
 /// Measures the place and emits one [`Surveyed`]. Runs once the start and
 /// the exit are known; fails without a start, without an area, or when
 /// the exit cannot be walked to.
+///
+/// It walks the place as [`FarthestExit`](crate::dungeon::FarthestExit)
+/// drew the exit: through every cell the registry marks passable, a shut
+/// door included, and never through an [`Opening`] joined locked or
+/// sealed, so the route it measures is the one the exit was drawn by and
+/// an area behind a lock is as secluded as nothing can reach.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Survey;
 
@@ -71,10 +79,20 @@ impl<C: BuildContext> Pass<C> for Survey {
         if areas.is_empty() {
             return Err(err("no area emitted before it"));
         }
-        let walkable = ctx.tiles().tables().walkable;
+        // Walked as the exit was drawn: through a shut door, which is
+        // passable though not walkable this moment, and never through an
+        // opening joined locked or sealed. Read as walkable, a door game's
+        // route stopped at the first door it met.
+        let passable = ctx.tiles().tables().passable;
         let bounds = ctx.terrain().bounds();
         let (w, h) = (bounds.width, bounds.height);
-        let open = |p: Point| ctx.terrain().get(p).is_some_and(|t| walkable[t.index()]);
+        let mut shut = BitGrid::new(w, h);
+        for o in openings.iter().filter(|o| matches!(o.join, Join::Locked(_) | Join::Sealed)) {
+            for c in &o.cells {
+                shut.insert(*c);
+            }
+        }
+        let open = |p: Point| ctx.terrain().get(p).is_some_and(|t| passable[t.index()]) && !shut.contains(p);
 
         // The shortest route, walked down from the start to the exit.
         let mut route_cells = vec![start];
@@ -328,6 +346,35 @@ mod tests {
         let mut ctx = drawn(&cut, Point::new(1, 1), Some(Point::new(5, 1)));
         let err = Chain::new().then(Survey).run(&mut ctx, RunSeed(0)).unwrap_err();
         assert_eq!(err.pass, "survey");
+    }
+
+    /// A shut door is passable but not walkable this moment; the survey
+    /// walks through it as the exit was drawn through it, so a place of
+    /// rooms behind doors is measured, not refused at its first door.
+    #[test]
+    fn the_route_runs_through_shut_doors_as_the_exit_was_drawn() {
+        let mut ctx = drawn(&LINE, Point::new(1, 1), Some(Point::new(11, 1)));
+        let door = ctx.tiles().expect("door_closed");
+        for at in [Point::new(4, 1), Point::new(8, 1), Point::new(5, 3)] {
+            ctx.terrain_mut().set(at, door);
+        }
+        Chain::new().then(Survey).run(&mut ctx, RunSeed(0)).unwrap();
+        let s = ctx.outputs().first::<Surveyed>().unwrap();
+        assert_eq!(s.route, Some(10));
+        assert_eq!(s.areas[3].seclusion, 2, "the door below the middle is walked through to the route");
+    }
+
+    /// An opening joined locked or sealed is shut to the survey whatever
+    /// its tile, as it is to the exit: an exit beyond one is unreachable.
+    #[test]
+    fn the_route_never_runs_through_a_lock() {
+        for join in [Join::Locked(1), Join::Sealed] {
+            let mut ctx = drawn(&LINE, Point::new(1, 1), Some(Point::new(11, 1)));
+            let between = ctx.outputs_mut().iter_mut::<Opening>().find(|o| o.cells == [Point::new(8, 1)]).expect("the drawing's second opening");
+            between.join = join;
+            let err = Chain::new().then(Survey).run(&mut ctx, RunSeed(0)).unwrap_err();
+            assert_eq!(err.pass, "survey", "{join:?}");
+        }
     }
 
     #[test]

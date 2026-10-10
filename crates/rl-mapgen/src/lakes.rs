@@ -73,7 +73,7 @@ const TRIES: u32 = 24;
 /// something in an area never stands it in water. That is why it runs in
 /// [`Phase::Structures`], after growth and loops and before the ways in
 /// and out are chosen round it. Each lake laid is published as a [`Lake`].
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Lakes {
     /// A stable name, so two lakings in one chain, deep lakes and small
     /// pools or one liquid and another, draw different streams.
@@ -108,6 +108,12 @@ pub struct Lakes {
     /// name it by that index and a bridge, not a new area, is what joins
     /// the parts.
     pub cut: bool,
+    /// The shapes a lake may start in, by [`Area::shape`]: deep water in a
+    /// hall and never in the small rooms round it, which a lake of the same
+    /// size fills wall to wall. A lake that may cut still spreads from
+    /// there into whatever it parts. Empty, any area; on a place with no
+    /// areas, anywhere, since there is no shape to ask.
+    pub within: Vec<String>,
 }
 
 /// One lake as it was laid.
@@ -425,13 +431,22 @@ impl<C: BuildContext> Pass<C> for Lakes {
             regions.labels().clone()
         };
         let whose = |p: Point| owner.get(p).copied().unwrap_or(0);
+        // Which owners a lake may start in, by the same label: every one
+        // with no shapes named or no areas to name them by.
+        let mut starts = vec![self.within.is_empty() || !has_areas; owner.iter().map(|(_, o)| *o as usize).max().unwrap_or(0) + 1];
+        for a in ctx.outputs().iter::<Area>().filter(|a| a.entries.is_none() && self.within.contains(&a.shape)) {
+            if let Some(start) = starts.get_mut(a.index + 1) {
+                *start = true;
+            }
+        }
+        let may_start = |p: Point| starts.get(whose(p) as usize).copied().unwrap_or(false);
         let interior = bounds.inflate(-1);
 
         let count = ctx.rng().random_range(self.count.0..=self.count.1);
         for _ in 0..count {
             let floor = |p: Point, own: u32| whose(p) != 0 && (self.cut || whose(p) == own) && open.contains(p) && !kept.contains(p);
             let rock = |p: Point| interior.contains(p) && !cells.contains(p) && !kept.contains(p);
-            let seeds: Vec<Point> = interior.cells().filter(|p| rl_core::geometry::square(*p, 1).all(|q| floor(q, whose(*p)))).collect();
+            let seeds: Vec<Point> = interior.cells().filter(|p| may_start(*p) && rl_core::geometry::square(*p, 1).all(|q| floor(q, whose(*p)))).collect();
             if seeds.is_empty() {
                 break;
             }
@@ -737,7 +752,7 @@ mod tests {
     }
 
     fn lakes(r: &Rig) -> Lakes {
-        Lakes { name: "lakes", tile: r.water, count: (2, 5), size: (20, 70), wreath: Some((r.shore, 60)), cut: false }
+        Lakes { name: "lakes", tile: r.water, count: (2, 5), size: (20, 70), wreath: Some((r.shore, 60)), cut: false, within: Vec::new() }
     }
 
     fn bridges(r: &Rig) -> Bridges {
@@ -747,7 +762,7 @@ mod tests {
     /// Lakes that may part the floor, over about a fifth of it on the
     /// smaller map.
     fn islands(r: &Rig) -> Lakes {
-        Lakes { name: "lakes", tile: r.water, count: (12, 20), size: (60, 160), wreath: Some((r.shore, 40)), cut: true }
+        Lakes { name: "lakes", tile: r.water, count: (12, 20), size: (60, 160), wreath: Some((r.shore, 40)), cut: true, within: Vec::new() }
     }
 
     const SIZES: [(i32, i32); 2] = [(84, 48), (160, 90)];
@@ -1192,5 +1207,47 @@ mod tests {
         let err = Chain::new().then(pass).run(&mut ctx, RunSeed(1)).unwrap_err();
         assert_eq!(err.pass, "spans");
         assert!(err.reason.contains("only through a lock"), "{}", err.reason);
+    }
+
+    /// A lake kept within a shape starts only in an area of that shape,
+    /// and one that may not cut stays there: no floor of an area of any
+    /// other shape goes under it, on either map size.
+    #[test]
+    fn a_lake_within_a_shape_lies_only_in_areas_of_that_shape() {
+        let mut laid = 0;
+        for size in SIZES {
+            for s in 0..12 {
+                let dry = grown(s, size, false, |c, _| c);
+                let within = grown(s, size, false, |c, r| c.then(Lakes { within: vec!["big".into()], ..lakes(r) }));
+                let elsewhere: BTreeSet<Point> = dry.outputs().iter::<Area>().filter(|a| a.shape != "big").flat_map(|a| a.cells.iter().copied()).collect();
+                for lake in within.outputs().iter::<Lake>() {
+                    laid += 1;
+                    assert!(lake.cells.iter().all(|p| !elsewhere.contains(p)), "{size:?} seed {s}: a lake in an area not drawn by \"big\"");
+                }
+            }
+        }
+        assert!(laid > 0, "some lake was laid in a big area");
+    }
+
+    /// A bridge is a way over a lake, not somewhere to arrive or leave:
+    /// over a span of seeds of islands, neither the start nor the exit is
+    /// ever on one, though a room's rectangle a lake was laid in still
+    /// names the cells a bridge crosses.
+    #[test]
+    fn neither_way_stands_on_a_bridge() {
+        use crate::dungeon::{ExitPoint, FarthestExit, RandomStart};
+        use crate::passes::StartPoint;
+        let mut in_a_room = 0;
+        for s in 0..40 {
+            let ctx = grown(s, SIZES[0], false, |c, r| c.then(islands(r)).then(bridges(r)).then(RandomStart).then(FarthestExit));
+            let spans: BTreeSet<Point> = ctx.outputs().iter::<Bridge>().flat_map(|b| b.cells.iter().copied()).collect();
+            let first = ctx.outputs().first::<crate::dungeon::Room>().map(|r| r.0);
+            in_a_room += spans.iter().filter(|p| first.is_some_and(|r| r.contains(**p))).count();
+            let start = ctx.outputs().first::<StartPoint>().unwrap().0;
+            let exit = ctx.outputs().first::<ExitPoint>().unwrap().0;
+            assert!(!spans.contains(&start), "seed {s}: the start at {start:?} is on a bridge");
+            assert!(!spans.contains(&exit), "seed {s}: the exit at {exit:?} is on a bridge");
+        }
+        assert!(in_a_room > 0, "some bridge crossed the first room, where the start is drawn");
     }
 }

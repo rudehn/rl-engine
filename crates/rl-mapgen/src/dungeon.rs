@@ -12,6 +12,7 @@ use rl_grid::{BitGrid, CostSource, DijkstraMap, PathRules, Terrain, TileId, Tile
 
 use crate::chain::{BuildError, Pass, Phase};
 use crate::context::BuildContext;
+use crate::lakes::Bridge;
 pub use crate::passes::StartPoint;
 use crate::prefab::Stamped;
 
@@ -233,7 +234,8 @@ impl<C: BuildContext> Pass<C> for Doors {
 }
 
 /// Emits a random open cell as the [`StartPoint`]; inside the first
-/// emitted [`Room`] when there is one. Fails if there is no open cell.
+/// emitted [`Room`] when there is one, and never on a [`Bridge`]. Fails if
+/// there is no open cell.
 ///
 /// [`clear_of_stamps`](Self::clear_of_stamps) keeps it away from the
 /// pieces stamped before it.
@@ -251,10 +253,22 @@ impl RandomStart {
     }
 }
 
-/// The open cells of `area`.
+/// Every cell a [`Bridge`] was laid on. Neither way in nor way out
+/// stands on one: a bridge is a way over a lake, and a [`Room`] a lake
+/// was laid in still names the cells the bridge crosses.
+fn bridged<C: BuildContext>(ctx: &C) -> BitGrid {
+    let mut cells = BitGrid::new(ctx.terrain().width(), ctx.terrain().height());
+    for p in ctx.outputs().iter::<Bridge>().flat_map(|b| b.cells.iter()) {
+        cells.insert(*p);
+    }
+    cells
+}
+
+/// The open cells of `area`, never one a bridge was laid on.
 fn open_cells<C: BuildContext>(ctx: &C, area: Rect) -> Vec<Point> {
     let tables = ctx.tiles().tables();
-    area.cells().filter(|p| ctx.terrain().get(*p).is_some_and(|t| tables.walkable[t.index()])).collect()
+    let bridged = bridged(ctx);
+    area.cells().filter(|p| ctx.terrain().get(*p).is_some_and(|t| tables.walkable[t.index()]) && !bridged.contains(*p)).collect()
 }
 
 /// The cells [`RandomStart`] draws from: the first room's open cells, or
@@ -384,7 +398,7 @@ pub(crate) fn walk_through_doors<C: BuildContext>(ctx: &C, from: Point, locks_sh
 /// [`ExitPoint`], doors opened on the way: a shut door is passable even
 /// where it is not walkable, and a map of rooms joined only through doors
 /// otherwise measures no farther than the doors round the room the start
-/// stands in. Never a door itself, since the exit is somewhere to stand
+/// stands in. Never a door or a bridge itself, since the exit is somewhere to stand
 /// and not a cell nothing has opened yet, and never past an
 /// [`Opening`](crate::accrete::Opening) joined locked or sealed, which no
 /// walker gets through however its tile is drawn. Ties break toward the cell first
@@ -478,7 +492,8 @@ impl<C: BuildContext> Pass<C> for FarExit {
         let start = ctx.outputs().first::<StartPoint>().ok_or_else(|| err("no start point emitted before it".into()))?.0;
         let tables = ctx.tiles().tables();
         let map = walk_through_doors(ctx, start, true);
-        let walkable = |p: Point| ctx.terrain().get(p).is_some_and(|t| tables.walkable[t.index()]);
+        let bridged = bridged(ctx);
+        let walkable = |p: Point| ctx.terrain().get(p).is_some_and(|t| tables.walkable[t.index()]) && !bridged.contains(p);
         let stamps: Vec<Rect> = ctx.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
         let away = |p: Point| stamps.iter().map(|r| rl_core::geometry::chebyshev(p, rl_core::geometry::clamp_to(p, *r))).min().unwrap_or(i32::MAX);
         let standing: Vec<(Point, i32)> = map.iter().filter(|(p, _)| *p != start && walkable(*p)).collect();
