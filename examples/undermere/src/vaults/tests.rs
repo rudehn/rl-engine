@@ -1,0 +1,362 @@
+//! Each mechanism in its own test, on a floor a run lays its piece on.
+
+use super::lifts::*;
+use super::*;
+use crate::dungeon::{drawn, map_of};
+use crate::testing::{adventurer, arrive, at, clear_monsters, give, headless, make, pass_turns, settle, stand_on, sturdy, take_up};
+
+/// A run that draws `piece`, its adventurer standing on the floor it lays
+/// it, sturdy and alone: the floor's own monsters cleared, so what a test
+/// reads is what the piece did.
+fn on_the_floor_of(piece: &str) -> (App, Entity, MapId) {
+    let (seed, floor) = drawn(piece);
+    let mut app = headless(seed);
+    let me = adventurer(&mut app);
+    sturdy(&mut app, me);
+    let map = map_of(floor);
+    arrive(&mut app, map);
+    clear_monsters(&mut app);
+    (app, me, map)
+}
+
+/// Every prop called `name` on `map`, with where it stands, in row order.
+fn props_called(app: &mut App, map: MapId, name: &str) -> Vec<(Entity, Point)> {
+    let id = app.world().resource::<Registries>().props.expect(name);
+    let world = app.world_mut();
+    let mut found: Vec<(Entity, Point)> = world
+        .query::<(Entity, &PropKind, &Position, &OnMap)>()
+        .iter(world)
+        .filter(|(_, k, _, on)| k.0 == id && on.0 == map)
+        .map(|(e, _, p, _)| (e, p.0))
+        .collect();
+    found.sort_by_key(|(_, p)| (p.y, p.x));
+    found
+}
+
+/// A cell beside `of` a body may stand on, nobody standing there.
+fn beside(app: &App, of: Point) -> Point {
+    let (map, occupancy) = (app.world().resource::<WorldMap>(), app.world().resource::<Occupancy>());
+    Direction::ALL.iter().map(|d| of + d.offset()).find(|p| map.is_walkable(*p) && !occupancy.is_occupied(*p)).expect("a free cell beside it")
+}
+
+/// The way from `from` to the cell `to` beside it.
+fn towards(from: Point, to: Point) -> Direction {
+    *Direction::ALL.iter().find(|d| from + d.offset() == to).expect("beside it")
+}
+
+/// Opens the container `prop` from beside it and takes all it holds, a
+/// turn each, as the player would.
+fn open_and_take(app: &mut App, me: Entity, prop: Entity) {
+    let open = app.world().resource::<Verbs>().get("open").expect("the engine's own");
+    app.world_mut().write_message(Intent::new(me, Interact { target: prop, verb: open }));
+    settle(app);
+    app.world_mut().write_message(Intent::new(me, Take { from: prop, item: None }));
+    settle(app);
+    settle(app);
+}
+
+/// The name of the tile at `p` on `map`.
+fn tile_at(app: &App, map: MapId, p: Point) -> String {
+    let world_map = app.world().resource::<WorldMap>();
+    let t = world_map.place(map).and_then(|place| place.terrain.get(p)).expect("on the map");
+    world_map.tables().names[t.index()].clone()
+}
+
+/// Opening one of Caged Altars' three cages and taking what it holds shuts
+/// the other two for good, on what they hold, and leaves the one opened
+/// empty: the choice of three is a choice of one.
+#[test]
+fn taking_one_caged_thing_shuts_the_other_cages() {
+    let (mut app, me, map) = on_the_floor_of("Caged Altars");
+    let cages: Vec<(Entity, Point)> = CAGES.iter().flat_map(|c| props_called(&mut app, map, c)).collect();
+    assert_eq!(cages.len(), 3, "three cages, one of each");
+    let (cage, there) = cages[0];
+    let next = beside(&app, there);
+    stand_on(&mut app, me, next);
+    open_and_take(&mut app, me, cage);
+    assert!(!app.world().get::<Inventory>(me).expect("a pack").items.is_empty(), "the taker holds what the cage held");
+    let shut: Vec<Point> = props_called(&mut app, map, SHUT_CAGE).into_iter().map(|(_, p)| p).collect();
+    let mut others: Vec<Point> = cages[1..].iter().map(|(_, p)| *p).collect();
+    others.sort_by_key(|p| (p.y, p.x));
+    assert_eq!(shut, others, "the other two shut where they stood");
+    assert_eq!(props_called(&mut app, map, EMPTY_CAGE).into_iter().map(|(_, p)| p).collect::<Vec<_>>(), vec![there], "the one opened stands empty");
+    assert!(CAGES.iter().all(|c| props_called(&mut app, map, c).is_empty()), "and no cage is left to open");
+}
+
+/// Lifting a flooding vault's prize floods its room: wading-deep at once at
+/// its grates, and too deep to cross at the wall farthest from its door
+/// within the vault's own turns.
+#[test]
+fn the_flood_reaches_deep_water_at_the_vaults_far_wall_within_its_turns() {
+    let (mut app, me, map) = on_the_floor_of("The Flooding Vault");
+    let (altar, there) = props_called(&mut app, map, FLOOD_ALTAR)[0];
+    let grates: Vec<Point> = props_called(&mut app, map, GRATE).into_iter().map(|(_, p)| p).collect();
+    let plan = flood_plan(app.world().resource::<WorldMap>(), there, &grates);
+    let far = plan.iter().filter(|(_, _, deep)| deep.is_some()).map(|(p, ..)| *p).collect::<Vec<_>>();
+    assert!(!far.is_empty() && far.len() < plan.len(), "a far end and a near one");
+    let next = beside(&app, there);
+    stand_on(&mut app, me, next);
+    open_and_take(&mut app, me, altar);
+    assert!(grates.iter().any(|g| tile_at(&app, map, *g) == "flooded floor"), "the water comes up through the grates at once");
+    assert!(far.iter().all(|p| tile_at(&app, map, *p) != "deep water"), "and is not deep yet");
+    pass_turns(&mut app, FLOOD_TURNS + 1);
+    for p in &far {
+        assert_eq!(tile_at(&app, map, *p), "deep water", "{p:?}, at the far wall, is too deep to cross");
+    }
+    let near: Vec<&Point> = plan.iter().filter(|(_, _, deep)| deep.is_none()).map(|(p, ..)| p).collect();
+    assert!(near.iter().all(|p| tile_at(&app, map, **p) == "flooded floor"), "and the way back to the door is waded");
+}
+
+/// Lifting a rotten floor's prize brings its planks down, and its taker,
+/// standing on them, lands on an open cell of the floor below, never on
+/// its stairs.
+#[test]
+fn the_rotten_floor_drops_its_taker_onto_an_open_cell_of_the_floor_below_off_its_stairs() {
+    let (mut app, me, map) = on_the_floor_of("The Rotten Floor");
+    let (plinth, there) = props_called(&mut app, map, ROTTEN_PLINTH)[0];
+    let next = beside(&app, there);
+    assert_eq!(tile_at(&app, map, next), "rotten planks", "the taker stands on the planks");
+    stand_on(&mut app, me, next);
+    open_and_take(&mut app, me, plinth);
+    settle(&mut app);
+    let below = map_of(crate::dungeon::floor_of(map).expect("a floor") + 1);
+    assert_eq!(app.world().get::<OnMap>(me).map(|m| m.0), Some(below), "fallen to the floor below");
+    let landed = at(&app, me);
+    let world_map = app.world().resource::<WorldMap>();
+    let place = world_map.place(below).expect("built by the fall");
+    assert!(world_map.is_walkable_on(below, landed), "on open ground");
+    assert!(landed != place.entry && Some(landed) != place.exit, "and off the stairs, at {landed:?}");
+    assert_eq!(tile_at(&app, map, next), "hole", "the planks fell in behind");
+    assert!(!app.world().get::<Inventory>(me).expect("a pack").items.is_empty(), "holding what the plinth held");
+}
+
+/// A locked vault's door is refused to a bare hand and to the key of
+/// another floor's vault, and opens for the key found on its own floor,
+/// which stays in the lock.
+#[test]
+fn the_key_opens_its_own_vault_and_no_other() {
+    let (mut app, me, map) = on_the_floor_of("The Locked Vault");
+    let floor = crate::dungeon::floor_of(map).expect("a floor");
+    let (door, entry) = {
+        let place = app.world().resource::<WorldMap>().place(map).expect("built");
+        (place.locks.iter().find(|l| l.key.is_some()).expect("the vault's lock").at, place.entry)
+    };
+    let outside = {
+        let world_map = app.world().resource::<WorldMap>();
+        let tables = world_map.tables();
+        let reached = walk_from(entry, |p| p != door && world_map.tile(p).is_some_and(|t| tables.passable[t.index()]));
+        Direction::CARDINALS.iter().map(|d| door + d.offset()).find(|n| reached.contains_key(n) && world_map.is_walkable(*n)).expect("a way up to the door")
+    };
+    let open = |app: &mut App| {
+        stand_on(app, me, outside);
+        app.world_mut().write_message(Intent::new(me, Open(towards(outside, door))));
+        settle(app);
+        app.world().resource::<WorldMap>().lock(door).is_none()
+    };
+    assert!(!open(&mut app), "no hand opens it");
+    let other = make(&mut app, KEY_ITEM);
+    let elsewhere = if floor == 1 { 2 } else { 1 };
+    let tags = key_tags(app.world().resource::<Registries>(), elsewhere);
+    app.world_mut().entity_mut(other).insert((VaultKey { floor: elsewhere }, tags));
+    give(&mut app, me, other);
+    assert!(!open(&mut app), "nor the key to another floor's vault");
+    let own = {
+        let world = app.world_mut();
+        world
+            .query::<(&VaultKey, &Position, &OnMap)>()
+            .iter(world)
+            .find(|(k, _, on)| k.floor == floor && on.0 == map)
+            .map(|(_, p, _)| p.0)
+            .expect("its key lies on its floor")
+    };
+    stand_on(&mut app, me, own);
+    take_up(&mut app, me);
+    assert!(open(&mut app), "its own key opens it");
+    assert_eq!(tile_at(&app, map, door), "open vault door");
+    let pack = &app.world().get::<Inventory>(me).expect("a pack").items;
+    assert_eq!(pack.iter().filter(|i| app.world().get::<VaultKey>(**i).is_some()).count(), 1, "the key stayed in the lock, the other floor's still carried");
+}
+
+/// Pulling a sealed vault's lever, once it is spotted, lifts the seal on
+/// its floor and raises the gate, and the lever stays pulled.
+#[test]
+fn the_lever_raises_its_floors_seal() {
+    let (mut app, me, map) = on_the_floor_of("The Sealed Vault");
+    let gate = app.world().resource::<WorldMap>().place(map).expect("built").locks.iter().find(|l| l.key.is_none()).expect("the vault's seal").at;
+    let (lever, there) = props_called(&mut app, map, LEVER)[0];
+    app.world_mut().entity_mut(lever).remove::<rl_engine::rl_bevy::props::Hidden>();
+    let next = beside(&app, there);
+    stand_on(&mut app, me, next);
+    let pull = app.world().resource::<Verbs>().get(PULL_VERB).expect("declared");
+    app.world_mut().write_message(Intent::new(me, Interact { target: lever, verb: pull }));
+    settle(&mut app);
+    assert!(app.world().resource::<WorldMap>().lock(gate).is_none(), "the seal is lifted");
+    assert_eq!(tile_at(&app, map, gate), "raised gate");
+    assert_eq!(props_called(&mut app, map, PULLED_LEVER).into_iter().map(|(_, p)| p).collect::<Vec<_>>(), vec![there], "the lever stays pulled");
+}
+
+/// Steps `me` from beside `onto` onto it, as the player walks, so whatever
+/// it sets off when entered goes off.
+fn step_onto(app: &mut App, me: Entity, onto: Point) {
+    let from = beside(app, onto);
+    stand_on(app, me, from);
+    app.world_mut().write_message(Intent::new(me, Step(towards(from, onto))));
+    settle(app);
+    assert_eq!(at(app, me), onto, "stepped onto {onto:?}");
+}
+
+/// The sleepers `count` of `name` laid asleep on `map` wherever the floor
+/// is open farthest from `near`: the floor's own, for a test of what wakes
+/// them.
+fn sleepers(app: &mut App, map: MapId, near: Point, name: &str, count: usize) -> Vec<Entity> {
+    let cells: Vec<Point> = {
+        let world_map = app.world().resource::<WorldMap>();
+        let place = world_map.place(map).expect("built");
+        let mut open: Vec<Point> =
+            place.terrain.bounds().cells().filter(|p| world_map.is_walkable_on(map, *p) && !app.world().resource::<Occupancy>().is_occupied(*p)).collect();
+        open.sort_by_key(|p| std::cmp::Reverse(geometry::chebyshev(*p, near)));
+        open.into_iter().take(count).collect()
+    };
+    let asleep = app.world().resource::<Registries>().statuses.expect(crate::content::ASLEEP);
+    let made: Vec<Entity> = cells.into_iter().map(|p| crate::testing::monster(app, name, p)).collect();
+    for who in &made {
+        app.world_mut().write_message(Afflict { target: *who, status: asleep, turns: 1000, by: None, held_by: None });
+    }
+    settle(app);
+    made
+}
+
+/// Whether `who` sleeps.
+fn sleeps(app: &App, who: Entity) -> bool {
+    let asleep = app.world().resource::<Registries>().statuses.expect(crate::content::ASLEEP);
+    app.world().get::<Afflicted>(who).is_some_and(|a| a.has(asleep))
+}
+
+/// Crossing a warded hall's glyph wakes every sleeper on the floor, the
+/// farthest as surely as the nearest.
+#[test]
+fn a_glyph_crossed_wakes_every_sleeper_on_the_floor() {
+    let (mut app, me, map) = on_the_floor_of("The Warded Hall");
+    let (_, glyph) = props_called(&mut app, map, "warding glyph")[0];
+    let far = sleepers(&mut app, map, glyph, "goblin", 3);
+    assert!(far.iter().all(|s| sleeps(&app, *s)), "asleep before");
+    step_onto(&mut app, me, glyph);
+    for s in &far {
+        assert!(!sleeps(&app, *s), "{s:?}, far across the floor, wakes");
+    }
+}
+
+/// Stepping on any cell of a bone circle stands every body of its ring up
+/// at once, where each lay, and leaves none lying.
+#[test]
+fn the_circles_bodies_rise_when_it_is_crossed() {
+    let (mut app, me, map) = on_the_floor_of("The Bone Circle");
+    let bones: Vec<Point> = props_called(&mut app, map, "circle bones").into_iter().map(|(_, p)| p).collect();
+    assert_eq!(bones.len(), 4, "a body at each corner of the ring");
+    let (_, sigil) = props_called(&mut app, map, "grave sigil")[0];
+    step_onto(&mut app, me, sigil);
+    assert!(props_called(&mut app, map, "circle bones").is_empty(), "no body left lying");
+    let skeleton = app.world().resource::<crate::bestiary::Bestiary>().defs.expect("skeleton");
+    let world = app.world_mut();
+    let risen: Vec<Point> = world
+        .query::<(&crate::bestiary::Kind, &Position, &OnMap)>()
+        .iter(world)
+        .filter(|(k, _, on)| k.0 == skeleton && on.0 == map)
+        .map(|(_, p, _)| p.0)
+        .collect();
+    assert_eq!(risen.len(), bones.len(), "every body stands up");
+    // Risen where it lay, and a step from it at most once it has had a turn.
+    assert!(risen.iter().all(|p| bones.iter().any(|b| geometry::chebyshev(*p, *b) <= 1)), "{risen:?} from {bones:?}");
+}
+
+/// Lifting a collapsing gallery's prize brings the short way back down in
+/// fallen rock, and the long way round still leads to the floor's way in.
+#[test]
+fn the_gallerys_way_back_falls_in() {
+    let (mut app, me, map) = on_the_floor_of("The Collapsing Gallery");
+    let (plinth, there) = props_called(&mut app, map, KEYSTONE)[0];
+    let lintels: Vec<Point> = props_called(&mut app, map, LINTEL).into_iter().map(|(_, p)| p).collect();
+    assert_eq!(lintels.len(), 2, "a lintel over each way");
+    let next = beside(&app, there);
+    stand_on(&mut app, me, next);
+    open_and_take(&mut app, me, plinth);
+    let fallen: Vec<&Point> = lintels.iter().filter(|p| tile_at(&app, map, **p) == "fallen rock").collect();
+    assert_eq!(fallen.len(), 1, "one way back falls in");
+    let walked = walk_from(next, |p| {
+        tile_at(&app, map, p) != "fallen rock"
+            && app.world().resource::<WorldMap>().tile(p).is_some_and(|t| app.world().resource::<WorldMap>().tables().passable[t.index()])
+    });
+    let entry = app.world().resource::<WorldMap>().place(map).expect("built").entry;
+    assert!(walked.contains_key(&entry), "and the other still leads out to the way in");
+}
+
+/// A run continued mid-flood floods on, and a vault's key carried through
+/// the save still opens its own vault: what the vaults set going outlives
+/// the run being left.
+#[test]
+fn a_flood_rising_and_a_key_carried_outlive_a_continued_run() {
+    let (mut app, me, map) = on_the_floor_of("The Flooding Vault");
+    let (altar, there) = props_called(&mut app, map, FLOOD_ALTAR)[0];
+    let grates: Vec<Point> = props_called(&mut app, map, GRATE).into_iter().map(|(_, p)| p).collect();
+    let far: Vec<Point> = flood_plan(app.world().resource::<WorldMap>(), there, &grates).into_iter().filter(|(_, _, d)| d.is_some()).map(|(p, ..)| p).collect();
+    let next = beside(&app, there);
+    stand_on(&mut app, me, next);
+    open_and_take(&mut app, me, altar);
+    let key = make(&mut app, KEY_ITEM);
+    let tags = key_tags(app.world().resource::<Registries>(), 3);
+    app.world_mut().entity_mut(key).insert((VaultKey { floor: 3 }, tags));
+    give(&mut app, me, key);
+    pass_turns(&mut app, 1);
+    rl_engine::rl_save::save_run(app.world_mut()).expect("the run is written down");
+    let text = app.world().resource::<Saves>().load(crate::save::SLOT).expect("the slot reads").expect("written");
+    let mut again = crate::testing::continued(&text);
+    pass_turns(&mut again, FLOOD_TURNS + 1);
+    assert!(far.iter().all(|p| tile_at(&again, map, *p) == "deep water"), "the water rose on after the run was continued");
+    let me = adventurer(&mut again);
+    let carried: Vec<Entity> = again.world().get::<Inventory>(me).expect("a pack").items.clone();
+    let key = carried.iter().find(|i| again.world().get::<VaultKey>(**i).is_some()).expect("the key carried through the save");
+    assert_eq!(again.world().get::<VaultKey>(*key), Some(&VaultKey { floor: 3 }));
+    let want = again.world().resource::<Registries>().tags.id(&crate::content::vault_key(3));
+    assert_eq!(again.world().get::<Tagged>(*key).map(|t| t.0.clone()), Some(want.into_iter().collect()), "tagged for its own vault again");
+}
+
+/// A piece's marks are filled as the vocabulary says: a guarded hoard's
+/// band sleeps at its posts, and captives in chains are shackled, offering
+/// to be freed, under a dozing gaoler.
+#[test]
+fn a_pieces_sleepers_sleep_at_their_posts_and_its_captives_are_shackled() {
+    for piece in ["The Guarded Hoard", "Captives in Chains"] {
+        let (seed, floor) = drawn(piece);
+        let mut app = headless(seed);
+        let me = adventurer(&mut app);
+        sturdy(&mut app, me);
+        let map = map_of(floor);
+        arrive(&mut app, map);
+        let marks: Vec<(char, Point)> = {
+            let world = app.world();
+            let (place, prefabs) = (world.resource::<WorldMap>().place(map).expect("built"), world.resource::<Prefabs<MonsterDef>>());
+            let key = prefabs.defs().id(piece).expect("a piece").raw();
+            place.spots.iter().filter(|s| s.prefab == Some(key)).filter_map(|s| char::from_u32(s.tag).map(|c| (c, s.at))).collect()
+        };
+        let at_mark = |app: &mut App, p: Point| {
+            let world = app.world_mut();
+            world
+                .query_filtered::<(Entity, &Position, &OnMap), With<crate::bestiary::Kind>>()
+                .iter(world)
+                .find(|(_, at, on)| at.0 == p && on.0 == map)
+                .map(|(e, ..)| e)
+        };
+        assert!(marks.iter().any(|(g, _)| [SLEEPER, CAPTIVE].contains(g)), "{piece}: marks to fill");
+        for (glyph, p) in marks.into_iter().filter(|(g, _)| [SLEEPER, CAPTIVE].contains(g)) {
+            let Some(who) = at_mark(&mut app, p) else { panic!("{piece}: nobody at its {glyph:?} at {p:?}") };
+            match glyph {
+                SLEEPER => {
+                    assert!(sleeps(&app, who), "{piece}: its sleeper sleeps");
+                    assert_eq!(app.world().get::<Post>(who).map(|post| post.0), Some(p), "{piece}: at its post");
+                }
+                CAPTIVE => assert_eq!(crate::captives::held_at(app.world(), who), Some(p), "{piece}: shackled where it was laid"),
+                _ => {}
+            }
+        }
+    }
+}

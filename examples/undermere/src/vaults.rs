@@ -45,6 +45,8 @@ use crate::bestiary::{Bestiary, MonsterDef, spawn_monster};
 use crate::dungeon::{MIN_DISTANCE_FROM_ENTRY, floor_of};
 
 pub mod lifts;
+#[cfg(test)]
+mod tests;
 
 /// A piece's mark for a sleeper of the floor's own, drawn from the floor's
 /// table as the population draws one: a hoard's band, a last stand's

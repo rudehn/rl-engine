@@ -251,6 +251,19 @@ impl Family {
     }
 }
 
+/// The first seed whose run draws the pool entry `name` for a floor, and
+/// that floor: for a test of what a piece does where a run lays it.
+#[cfg(test)]
+pub(crate) fn drawn(name: &str) -> (RunSeed, u32) {
+    for s in 0..400 {
+        let undermere = Undermere::new(RunSeed(s));
+        if let Some(floor) = (1..FLOORS).find(|f| undermere.plan_of(*f).iter().any(|p| undermere.pool.entries[p.entry].name == name)) {
+            return (RunSeed(s), floor);
+        }
+    }
+    panic!("no run over 400 seeds draws {name}")
+}
+
 /// What a risk-and-reward or reward piece draws in a tile of its own, on
 /// any floor it may stand on: a vault's door and gate, open and shut, the
 /// straw, the planks and the hole they leave, a causeway and the deep water
@@ -1932,5 +1945,71 @@ mod tests {
     #[ignore = "every piece in every biome over seeds 0 to 200 takes minutes; run by hand when a piece or the layout changes"]
     fn each_piece_grows_in_every_biome_and_recipe_it_may_stand_in_over_seeds_0_to_200() {
         every_piece_grows_where_it_may_stand(0..200);
+    }
+
+    /// Every prize of every risk-and-reward and reward piece over `seeds`
+    /// can be reached from the way in once the floor's secrets are found
+    /// and its locks and seals opened, with everything standing: an item on
+    /// a cell walked to, a container beside one; and every vault's key and
+    /// lever lies where the way in reaches with every lock shut and every
+    /// secret hidden, so what opens a vault is never behind it.
+    fn every_prize_is_reached_once_its_key_lever_or_secret_is_found(seeds: std::ops::Range<u64>) {
+        let registries = crate::content::registries();
+        for s in seeds {
+            let undermere = Undermere::new(RunSeed(s));
+            let tables = undermere.tiles().tables();
+            let kinds: Vec<usize> = ["risk_reward", "reward"].iter().filter_map(|k| undermere.pool.kinds.iter().position(|n| n == k)).collect();
+            let pieces: BTreeSet<u32> = undermere
+                .pool
+                .entries
+                .iter()
+                .filter(|e| kinds.contains(&e.kind))
+                .filter_map(|e| undermere.prefabs.defs().id(&e.name))
+                .map(|id| id.raw())
+                .collect();
+            for floor in 1..FLOORS {
+                let built = undermere.build(map_of(floor), None).unwrap();
+                let standing = standing(&undermere, &registries, &built);
+                let mut found = built.terrain.clone();
+                for secret in &built.secrets {
+                    found.set(secret.at, secret.is);
+                }
+                let reached = walked(built.entry, |p| found.get(p).is_some_and(|t| tables.passable[t.index()]) && !standing.contains(&p));
+                let near = |p: Point| reached.contains(&p) || Direction::ALL.iter().any(|d| reached.contains(&(p + d.offset())));
+                for spot in built.spots.iter().filter(|s| s.prefab.is_some_and(|k| pieces.contains(&k))) {
+                    let prize = match slot(&undermere, spot) {
+                        Some(Slot::Item { .. }) => true,
+                        Some(Slot::Prop(id)) => registries.props.get(*id).container.is_some(),
+                        _ => false,
+                    };
+                    assert!(!prize || near(spot.at), "floor {floor}, seed {s}: a prize at {:?} cannot be reached", spot.at);
+                }
+                let shut: BTreeSet<Point> = built.locks.iter().map(|l| l.at).collect();
+                let plain =
+                    walked(built.entry, |p| built.terrain.get(p).is_some_and(|t| tables.passable[t.index()]) && !standing.contains(&p) && !shut.contains(&p));
+                for spot in built.spots.iter().filter(|s| [crate::vaults::KEY_TAG, crate::vaults::LEVER_TAG].contains(&s.tag)) {
+                    assert!(plain.contains(&spot.at), "floor {floor}, seed {s}: a vault's key or lever at {:?} is shut away", spot.at);
+                }
+                for lock in &built.locks {
+                    let tag = if lock.key.is_some() { crate::vaults::KEY_TAG } else { crate::vaults::LEVER_TAG };
+                    assert!(built.spots.iter().any(|s| s.tag == tag), "floor {floor}, seed {s}: a vault at {:?} with nothing on its floor to open it", lock.at);
+                }
+            }
+        }
+    }
+
+    /// [`every_prize_is_reached_once_its_key_lever_or_secret_is_found`]
+    /// over forty seeds, as every build is checked.
+    #[test]
+    fn every_prize_is_reached_once_its_key_lever_or_secret_is_found_over_forty_seeds() {
+        every_prize_is_reached_once_its_key_lever_or_secret_is_found(0..40);
+    }
+
+    /// The same over seeds 0 to 200: run by hand when a piece or a fixture
+    /// changes.
+    #[test]
+    #[ignore = "every floor of seeds 0 to 200 takes minutes; run by hand when a piece or a fixture changes"]
+    fn every_prize_is_reached_once_its_key_lever_or_secret_is_found_over_seeds_0_to_200() {
+        every_prize_is_reached_once_its_key_lever_or_secret_is_found(0..200);
     }
 }
