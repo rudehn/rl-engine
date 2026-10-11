@@ -681,4 +681,23 @@ mod tests {
         assert!(app.world().get::<Hidden>(glyph).is_none(), "spotted at a certainty");
         assert!(said(&app).iter().any(|l| l == "You spot an alarm glyph."), "{:?}", said(&app));
     }
+
+    /// Where `who` stands: the map and the cell.
+    fn whereabouts(app: &App, who: Entity) -> (MapId, Point) {
+        (app.world().get::<OnMap>(who).expect("on a map").0, app.world().get::<Position>(who).expect("somewhere").0)
+    }
+
+    /// Nothing falls into the throne's hall: a trapdoor on the floor above
+    /// it holds whoever steps on it, who stays where they stepped.
+    #[test]
+    fn nothing_falls_through_to_the_thrones_floor() {
+        let (mut app, me, here_at) = arena_on(3, FLOORS - 1);
+        let trapdoor = here_at.offset(1, 0);
+        lay_unseeable(&mut app, "trapdoor", trapdoor);
+        app.world_mut().write_message(Intent::new(me, Step(Direction::East)));
+        for _ in 0..3 {
+            settle(&mut app);
+        }
+        assert_eq!(whereabouts(&app, me), (map_of(FLOORS - 1), trapdoor), "still on floor nine, on the trapdoor");
+    }
 }

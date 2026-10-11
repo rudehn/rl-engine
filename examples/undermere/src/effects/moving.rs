@@ -209,8 +209,9 @@ impl FromArgs for Beckon {
 }
 
 /// Sinks the user through the floor to a random cell of the floor below:
-/// a potion of descent's. From Mereholt that is the first floor; on the
-/// deepest there is no floor below, and it shows nothing, so the log says
+/// a potion of descent's. From Mereholt that is the first floor; from the
+/// floor above the throne's, and on the throne's, nothing is below it to
+/// sink to, as [`floor_below`] says, and it shows nothing, so the log says
 /// nothing seemed to happen and the potion is not learned by it. Takes no
 /// arguments.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -250,16 +251,11 @@ pub struct Sinking {
 /// Sends `landing`'s user to the floor below the one they stand on, as
 /// [`Descend`] says, or marks the use as having shown nothing.
 pub fn descend(world: &mut World, landing: &Landing, roll: u64) {
-    use crate::dungeon::{FLOORS, TOWN, floor_of, map_of};
     let user = landing.user;
     let here = world.get::<OnMap>(user).map_or(MapId::SURFACE, |m| m.0);
-    let below = match floor_of(here) {
-        Some(floor) if floor < FLOORS => map_of(floor + 1),
-        None if here == TOWN => map_of(1),
-        _ => {
-            super::showed_nothing(world, landing);
-            return;
-        }
+    let Some(below) = floor_below(here) else {
+        super::showed_nothing(world, landing);
+        return;
     };
     world.entity_mut(user).insert(Sinking { to: below, roll });
     world.write_message(WarpRequest::into_place(user, below));
@@ -268,11 +264,27 @@ pub fn descend(world: &mut World, landing: &Landing, roll: u64) {
     }
 }
 
+/// The floor someone sinking or falling through the floor of `here` lands
+/// on: the first from Mereholt, the next one down from a floor. Never the
+/// throne's, which is entered by its stairs alone, as its trapdoors are
+/// never laid on the floor above it, so a rotten floor given way or a
+/// potion drunk there drops nobody into its hall; and nothing from the
+/// throne's floor or anywhere else.
+pub fn floor_below(here: MapId) -> Option<MapId> {
+    use crate::dungeon::{FLOORS, TOWN, floor_of, map_of};
+    match floor_of(here) {
+        Some(floor) if floor + 1 < FLOORS => Some(map_of(floor + 1)),
+        None if here == TOWN => Some(map_of(1)),
+        _ => None,
+    }
+}
+
 /// Whoever stands where it lands falls through the floor to the one
 /// below, as a rotten floor drops its taker when it gives way and a
 /// trapdoor whoever steps on it: [`fall_through`] for each. Nothing on the
-/// deepest floor, or in Mereholt, which has no floor below it to fall
-/// to. Takes no arguments.
+/// throne's floor or the one above it, as [`floor_below`] says, or in
+/// Mereholt, whose ground is no floor to fall through. Takes no
+/// arguments.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Fall;
 
@@ -302,13 +314,12 @@ impl FromArgs for Fall {
 /// Drops `who` through the floor of the place they stand on to the floor
 /// below, landing where `roll` picks among its free cells off the stairs,
 /// as [`land_sinking`] lands a potion of descent's drinker; false, and
-/// nothing done, on the deepest floor or anywhere that is no floor. The
-/// one fall, which [`Fall`] lands and a rotten floor's own collapse calls.
+/// nothing done, where [`floor_below`] has nothing below or anywhere that
+/// is no floor. The one fall, which [`Fall`] lands and a rotten floor's
+/// own collapse calls.
 pub fn fall_through(world: &mut World, who: Entity, roll: u64) -> bool {
-    use crate::dungeon::{FLOORS, floor_of, map_of};
     let here = world.get::<OnMap>(who).map_or(MapId::SURFACE, |m| m.0);
-    let Some(floor) = floor_of(here).filter(|f| *f < FLOORS) else { return false };
-    let below = map_of(floor + 1);
+    let Some(below) = floor_below(here).filter(|_| here != crate::dungeon::TOWN) else { return false };
     world.entity_mut(who).insert(Sinking { to: below, roll });
     world.write_message(WarpRequest::into_place(who, below));
     if world.get::<Player>(who).is_some() {
