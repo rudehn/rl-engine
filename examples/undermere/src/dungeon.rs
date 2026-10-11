@@ -100,6 +100,13 @@ pub(crate) fn layout() -> LayoutDef {
     layout::load(LAYOUT_RON).unwrap_or_else(|e| panic!("assets/layout.ron: {e}"))
 }
 
+/// The tag a place grown as `drawn` carries in the pool's `where` and
+/// `not`: the biome's bare name, as `assets/biomes.ron` and
+/// `assets/pool.ron` both write it.
+fn place_tag(drawn: &BiomeDraw) -> String {
+    drawn.name.trim_start_matches("the ").to_string()
+}
+
 /// The map id of floor `floor`; floors count from one.
 pub fn map_of(floor: u32) -> MapId {
     MapId(floor)
@@ -440,7 +447,7 @@ impl Undermere {
         let places: Vec<Place> = (1..=FLOORS)
             .map(|floor| {
                 let drawn = biomes.get(&floor).expect("every floor drew a biome above");
-                Place { band: floor as i32, tags: vec![drawn.name.trim_start_matches("the ").to_string()] }
+                Place { band: floor as i32, tags: vec![place_tag(drawn)] }
             })
             .collect();
         let mut rng = seed.rng(SeedDomain::new(b"undermere.pool"), 0);
@@ -454,6 +461,23 @@ impl Undermere {
     /// anywhere but here.
     fn plan_of(&self, floor: u32) -> &[Pick] {
         self.plan.get(&floor).unwrap_or_else(|| panic!("floor {floor} outside 1..={FLOORS}"))
+    }
+
+    /// The run's picks for `floor` that may stand in `drawn`: every one of
+    /// them for the biome the run drew there, and for another biome of the
+    /// band, which `undermere --recipe` and the tests grow a floor as, only
+    /// those whose `where` and `not` let them stand in it, so a cave piece
+    /// the Underlake may hold is never asked of the cathedral's nave.
+    fn picks_for(&self, floor: u32, drawn: &BiomeDraw) -> Vec<Pick> {
+        let tags = [place_tag(drawn)];
+        self.plan_of(floor).iter().filter(|p| self.pool.entries[p.entry].fits(floor as i32, &tags)).copied().collect()
+    }
+
+    /// The stream place `map` is grown from: one per place, so building
+    /// floor two first does not change floor one, and the printed floor is
+    /// grown from the very stream the run's is.
+    fn place_seed(&self, map: MapId) -> RunSeed {
+        RunSeed(self.seed.derive(SeedDomain::new(b"undermere.place"), u64::from(map.0)))
     }
 
     /// The biome `floor` draws: pure over `self.seed`, so every call
@@ -493,16 +517,14 @@ impl Undermere {
     /// [`PlaceBuild::from_context`] flattens every mark into a `Spot` and
     /// drops the rest.
     fn generate(&self, map: MapId) -> Result<BaseContext, BuildError> {
-        // One stream per place, so building floor two first does not change
-        // floor one.
-        let seed = RunSeed(self.seed.derive(SeedDomain::new(b"undermere.place"), u64::from(map.0)));
+        let seed = self.place_seed(map);
         match (map, floor_of(map)) {
             (TOWN, _) => {
                 let (mut ctx, chain) = self.town()?;
                 chain.run(&mut ctx, seed)?;
                 Ok(ctx)
             }
-            (_, Some(floor)) => self.grow(floor, self.biome_of(floor), seed, ATTEMPTS),
+            (_, Some(floor)) => self.grow(floor, self.biome_of(floor), self.plan_of(floor), seed, ATTEMPTS),
             (_, None) => Err(BuildError::new("undermere", format!("{map:?} is no place in the Undermere"))),
         }
     }
@@ -536,7 +558,7 @@ impl Undermere {
     /// there is through halls, its way in held at least half the floor's
     /// longer side from the throne by [`ClearOfTheThrone`], and no way
     /// down.
-    fn grow(&self, floor: u32, drawn: &BiomeDraw, seed: RunSeed, attempts: u32) -> Result<BaseContext, BuildError> {
+    fn grow(&self, floor: u32, drawn: &BiomeDraw, picks: &[Pick], seed: RunSeed, attempts: u32) -> Result<BaseContext, BuildError> {
         let throne = floor == FLOORS;
         // Floor ten's own wall and floor are whichever of the three
         // [`FINAL_BOSSES`] this run draws, so its ordinary rooms read as
@@ -560,7 +582,7 @@ impl Undermere {
         // mini-boss's lair as pieces of the recipe's own accretion, and
         // the rest, stamped inside an area or dressed, are placed by
         // `picked.stamp` once the floor is surveyed, below.
-        let picked = rl_engine::rl_bevy::layout::picked(&self.pool, self.plan_of(floor), &self.prefabs, Orient::TurnedOrMirrored)?;
+        let picked = rl_engine::rl_bevy::layout::picked(&self.pool, picks, &self.prefabs, Orient::TurnedOrMirrored)?;
         // The boss's hall and a mini-boss's lair are grown as pieces of
         // the recipe's own accretion, late, through the one entry each
         // prefab marks, rather than carved over what grew.
@@ -595,7 +617,7 @@ impl Undermere {
         // The floor's secret doors and hidden rooms, walled over before
         // the picks are stamped, so a pick that prefers a hidden room
         // finds one: as many as the floor's picks ask for at the least.
-        let hidden_picks = self.plan_of(floor).iter().filter(|p| self.pool.entries[p.entry].prefer == Prefer::Hidden).count() as u32;
+        let hidden_picks = picks.iter().filter(|p| self.pool.entries[p.entry].prefer == Prefer::Hidden).count() as u32;
         if let Some(hide) = self.hiding.openings(floor, hidden_picks) {
             chain = chain.then(hide);
         }
@@ -674,8 +696,9 @@ impl Undermere {
             Some(r) => biomes::with_recipe(&self.defs, floor, r, &self.tiles)
                 .ok_or_else(|| BuildError::new("undermere", format!("no biome of floor {floor} grows {r:?}")))?,
         };
-        let seed = RunSeed(self.seed.derive(SeedDomain::new(b"undermere.place"), u64::from(floor)));
-        let grown = self.grow(floor, &drawn, seed, ATTEMPTS).map_err(|e| BuildError::new(e.pass, format!("{}, {}: {}", drawn.name, drawn.recipe, e.reason)))?;
+        let grown = self
+            .grow(floor, &drawn, &self.picks_for(floor, &drawn), self.place_seed(map_of(floor)), ATTEMPTS)
+            .map_err(|e| BuildError::new(e.pass, format!("{}, {}: {}", drawn.name, drawn.recipe, e.reason)))?;
         let mut built = PlaceBuild::from_context(grown)?;
         crate::vaults::place_vault_fixtures(&mut built, &self.tiles, &self.prefabs, self.seed, map_of(floor));
         let tables = self.tiles.tables();
@@ -1467,7 +1490,11 @@ mod tests {
     /// limit, every entry is drawn on some run, and a typical run sees
     /// under half the flavor pool, the design's fifth pillar.
     ///
-    /// The run is the median one. A heavy run, every floor drawing the
+    /// Picks, not everything a player meets: twenty-four of the flavor
+    /// entries are also a biome's own dressings, which `Dress` lays in
+    /// areas nothing took whether or not the pool picked them, and those
+    /// are the biome's look rather than the pool's draw, so they are not
+    /// counted here. The run is the median one. A heavy run, every floor drawing the
     /// most its budget allows and few of them repeating one of the ten
     /// entries a run may draw twice, can pass half, and is bounded at
     /// twenty-five, past every seed seen and short of where losing the
@@ -1475,7 +1502,7 @@ mod tests {
     /// budgets were last tuned: median 18 of 43, ninetieth percentile 21,
     /// most 23, from about twenty-seven picks a run.
     #[test]
-    fn over_a_span_of_seeds_no_run_exceeds_a_limit_every_entry_is_drawn_and_a_typical_run_sees_under_half_the_flavor_pool() {
+    fn over_a_span_of_seeds_no_run_exceeds_a_limit_every_entry_is_drawn_and_a_typical_run_picks_under_half_the_flavor_pool() {
         let pool = crate::prefabs::load(&registry(), &layout()).1;
         let flavor_pool = pool.entries.iter().filter(|e| pool.kinds[e.kind] == "flavor").count();
         let mut ever_drawn: BTreeSet<String> = BTreeSet::new();
@@ -1760,17 +1787,12 @@ mod tests {
     /// it drew there, and a cave piece the Underlake may hold has no cave
     /// to stand in when the same floor is grown as the cathedral's nave.
     fn every_recipe_meets_itself_on(s: u64) {
-        let mut undermere = Undermere::new(RunSeed(s));
+        let undermere = Undermere::new(RunSeed(s));
         let tables = undermere.tiles().tables();
         for recipe in undermere.layout.recipes.clone() {
             let (floor, drawn) = grown_by(&undermere, &recipe.name, s);
             let at = format!("{} on floor {floor}, seed {s}", recipe.name);
-            let tags = [drawn.name.trim_start_matches("the ").to_string()];
-            let drawn_for_the_run = undermere.plan.get(&floor).cloned().unwrap_or_default();
-            let fits = drawn_for_the_run.iter().filter(|p| undermere.pool.entries[p.entry].fits(floor as i32, &tags)).copied().collect();
-            undermere.plan.insert(floor, fits);
-            let grown = undermere.grow(floor, &drawn, RunSeed(s), ATTEMPTS);
-            undermere.plan.insert(floor, drawn_for_the_run);
+            let grown = undermere.grow(floor, &drawn, &undermere.picks_for(floor, &drawn), RunSeed(s), ATTEMPTS);
             let ctx = grown.unwrap_or_else(|e| panic!("{at}: {e}"));
             let bounds = ctx.terrain().bounds();
             assert_eq!((bounds.width, bounds.height), recipe.size, "{at}");
@@ -1880,7 +1902,7 @@ mod tests {
             let tables = undermere.tiles().tables();
             let mut bands: Vec<i32> = Vec::new();
             for s in 0..seeds {
-                match undermere.grow(floor, &drawn, RunSeed(s), 1) {
+                match undermere.grow(floor, &drawn, &undermere.picks_for(floor, &drawn), RunSeed(s), 1) {
                     Err(e) => {
                         let masked: String = e.to_string().chars().map(|c| if c.is_ascii_digit() { '#' } else { c }).collect();
                         *why.entry(masked).or_default() += 1;
@@ -1929,13 +1951,13 @@ mod tests {
     /// recipe it may stand in, on each floor they share, over `seeds`, and
     /// names every one that does not grow within a floor's attempts.
     fn every_piece_grows_where_it_may_stand(seeds: std::ops::Range<u64>) {
-        let mut undermere = Undermere::new(RunSeed(0));
+        let undermere = Undermere::new(RunSeed(0));
         let mut failed = Vec::new();
         for (e, drawn, floors) in pieces_in_biomes(&undermere) {
             for s in seeds.clone() {
                 let floor = floors[s as usize % floors.len()];
-                undermere.plan.insert(floor, vec![rl_engine::rl_rules::pool::Pick { entry: e, required: true }]);
-                if let Err(err) = undermere.grow(floor, &drawn, RunSeed(s), ATTEMPTS) {
+                let alone = [rl_engine::rl_rules::pool::Pick { entry: e, required: true }];
+                if let Err(err) = undermere.grow(floor, &drawn, &alone, RunSeed(s), ATTEMPTS) {
                     failed.push(format!("{} on floor {floor}, {}, {}, seed {s}: {err}", undermere.pool.entries[e].name, drawn.name, drawn.recipe));
                 }
             }

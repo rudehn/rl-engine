@@ -42,6 +42,9 @@
 //                spec's own run limit for those, and for the risk,
 //                reward and flavor entries the spec's tables mark
 //                "(run 2)" or "(run 3)"
+//     group:     optional, none if left out: entries sharing a group never
+//                share a floor, and a group's entries are all of one kind;
+//                no entry here names one yet
 //     placed:    how it is laid, one of
 //       Grown(join)       grown as an area of its own, joined by one of
 //                         Door, Arch, Mouth(n), Locked("tag"), Sealed
