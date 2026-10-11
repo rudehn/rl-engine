@@ -234,8 +234,12 @@ impl Plugin for UndermerePlugin {
         );
         // A shackled captive's own "free".
         app.add_systems(Turn, crate::captives::answer_free.in_set(TurnSet::React));
-        // What the adventurer spotted, said in the log.
-        app.add_systems(Turn, crate::traps::tell_spotted.in_set(TurnSet::React));
+        // What a floor hides: its traps and flagstones stood up on its
+        // first arrival, a trap seen going off shown, and what the
+        // adventurer spotted said in the log.
+        app.insert_resource(crate::traps::Hiding::load());
+        app.add_systems(Turn, crate::traps::stand_hidden.in_set(TurnSet::React).after(PrefabSet::Fill));
+        app.add_systems(Turn, (crate::traps::show_sprung, crate::traps::tell_spotted).in_set(TurnSet::React));
         // The risk-and-reward pieces' own: the marks a piece leaves for the
         // game to fill, after the engine's own `PrefabSet::Fill` has filled
         // every slot beside them, a lever and a vault's key, and what

@@ -642,6 +642,11 @@ impl Undermere {
         // own weighted list, `nothing` among the choices.
         chain = chain.then(rl_engine::rl_bevy::layout::dress(&self.prefabs, floor_tile, &self.districts)?);
         chain = self.decor(chain, floor, drawn)?;
+        // The floor's traps and loose flagstones, once everything that
+        // stands somewhere has taken its cell.
+        if let Some(lay) = self.hiding.laying(floor) {
+            chain = chain.then(lay);
+        }
         // Floor one's way in is where the gate lets out, so its way up is
         // the gate's other side.
         if floor == 1 {
@@ -681,8 +686,8 @@ impl Undermere {
     /// walked on, `.` what can, `+` a door, `~` what a body wades through,
     /// `≈` what stops it, `=` a bridge, `<` the way in and `>` the way
     /// down, `*` a locked or sealed door, `?` a cell hiding what it is,
-    /// `K` and `L` a vault's key and lever, and a piece's or a dressing's
-    /// slot by its own legend glyph.
+    /// `K` and `L` a vault's key and lever, `^` a trap or a flagstone, and
+    /// a piece's or a dressing's slot by its own legend glyph.
     /// `recipe` grows the floor by that recipe of a biome of its band
     /// in place of the one the seed draws; an error names a recipe no
     /// biome of the floor grows, and a floor that cannot be grown is
@@ -713,6 +718,7 @@ impl Undermere {
                 let laid = built.spots.iter().find(|s| s.at == p).and_then(|s| match s.tag {
                     crate::vaults::KEY_TAG => Some('K'),
                     crate::vaults::LEVER_TAG => Some('L'),
+                    tag if crate::traps::is_hidden_tag(tag) => Some('^'),
                     tag => char::from_u32(tag),
                 });
                 out.push(match () {
