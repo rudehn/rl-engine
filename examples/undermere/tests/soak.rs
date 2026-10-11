@@ -42,6 +42,7 @@ use undermere::dungeon::{FLOORS, floor_of, map_of};
 use undermere::lore::{Lore, Unfamiliar};
 use undermere::stairs::Way;
 use undermere::tally::Tally;
+use undermere::traps::Hiding;
 
 /// The seeds every half plays: one to fifty, or one to as many as
 /// `UNDERMERE_SOAK_SEEDS` says for a quick look while a change is tried,
@@ -76,6 +77,71 @@ struct Holding {
     kinds: BTreeMap<&'static str, u32>,
     names: BTreeMap<String, u32>,
     carried_gold: f32,
+    /// What it hides, by [`HIDDEN`] kind.
+    hid: BTreeMap<&'static str, u32>,
+}
+
+/// The kinds of hidden thing the soak counts: a loop's secret door, a
+/// hidden room's walled door, a sunken causeway, a trap, a loose
+/// flagstone, and any other hidden prop, which a piece stands up.
+const HIDDEN: [&str; 6] = ["door", "room", "causeway", "trap", "flagstone", "other"];
+
+/// What `here` hides now, by [`HIDDEN`] kind: each secret group, and each
+/// hidden prop.
+fn hidden_on(world: &mut World, here: MapId) -> (BTreeMap<u32, &'static str>, BTreeMap<Entity, &'static str>) {
+    let (door, room) = world.resource::<Hiding>().openings(2, 0).map_or((0, 0), |h| (h.loop_spot, h.room_spot));
+    let groups = world
+        .resource::<WorldMap>()
+        .secrets(here)
+        .iter()
+        .map(|s| {
+            let kind = match s.spot {
+                spot if spot == door => "door",
+                spot if spot == room => "room",
+                undermere::vaults::CAUSEWAY_SPOT => "causeway",
+                _ => "other",
+            };
+            (s.group, kind)
+        })
+        .collect();
+    let props: Vec<(Entity, Id<PropDef>)> =
+        world.query_filtered::<(Entity, &OnMap, &PropKind), With<Hidden>>().iter(world).filter(|(_, on, _)| on.0 == here).map(|(e, _, k)| (e, k.0)).collect();
+    let props = props.into_iter().map(|(e, kind)| (e, prop_kind(world, kind))).collect();
+    (groups, props)
+}
+
+/// How many things lie on `here` or in a chest on it that is not itself
+/// hidden: what a delve leaving it left behind.
+fn left_on(world: &mut World, here: MapId) -> u32 {
+    let lying = world.query_filtered::<&OnMap, (With<Item>, With<Position>)>().iter(world).filter(|on| on.0 == here).count();
+    let chests: usize = world
+        .query_filtered::<(&Inventory, &OnMap), (With<Prop>, Without<Hidden>)>()
+        .iter(world)
+        .filter(|(_, on)| on.0 == here)
+        .map(|(bag, _)| bag.items.len())
+        .sum();
+    (lying + chests) as u32
+}
+
+/// The [`HIDDEN`] kind a prop of `kind` is counted under.
+fn prop_kind(world: &World, kind: Id<PropDef>) -> &'static str {
+    let name = &world.resource::<Registries>().props.get(kind).name;
+    let laid = world.resource::<Hiding>().props();
+    match laid.iter().position(|p| *p == name.as_str()) {
+        Some(at) if at + 1 == laid.len() => "flagstone",
+        Some(_) => "trap",
+        None => "other",
+    }
+}
+
+/// Counts what `here` hides by kind.
+fn count_hidden(world: &mut World, here: MapId) -> BTreeMap<&'static str, u32> {
+    let (groups, props) = hidden_on(world, here);
+    let mut hid = BTreeMap::new();
+    for kind in groups.values().chain(props.values()) {
+        *hid.entry(*kind).or_default() += 1;
+    }
+    hid
 }
 
 impl Holding {
@@ -118,6 +184,7 @@ fn holding(app: &mut App, floor: u32) -> Holding {
         *held.names.entry(def.name.clone()).or_default() += world.get::<Stack>(thing).map_or(1, |s| s.count);
     }
     held.carried_gold = carried_gold(world, floor);
+    held.hid = count_hidden(world, map);
     held
 }
 
@@ -276,11 +343,29 @@ fn carried(world: &mut World, me: Entity) -> Vec<Thing> {
 /// The ground the adventurer walks: the engine's own reading of the place
 /// for a mover that opens doors, less every cell a prop stands in the way
 /// on, which a walk into would come to an interaction rather than a step,
-/// and every cell alight but the one they stand on.
+/// and every cell alight but the one they stand on; and dear to walk over
+/// every trap they know of, as a player walks round one they have seen
+/// where there is a way round.
 struct Ground<'a, V> {
     view: V,
     map: &'a WorldMap,
     closed: &'a BTreeSet<Point>,
+    traps: &'a BTreeSet<Point>,
+}
+
+/// What stepping onto a known trap costs on top of the step: twenty
+/// steps' worth, so a way round of fewer is taken.
+const TRAP_COST: u32 = 20 * rl_engine::rl_core::turn::BASE_ACTION_COST;
+
+/// The cells of `here`'s traps the adventurer can see are there.
+fn known_traps(world: &mut World, here: MapId) -> BTreeSet<Point> {
+    let props: Vec<(Point, Id<PropDef>)> = world
+        .query_filtered::<(&Position, &OnMap, &PropKind), Without<Hidden>>()
+        .iter(world)
+        .filter(|(_, on, _)| on.0 == here)
+        .map(|(p, _, k)| (p.0, k.0))
+        .collect();
+    props.into_iter().filter(|(_, kind)| prop_kind(world, *kind) == "trap").map(|(p, _)| p).collect()
 }
 
 impl<V: Grid2D> Grid2D for Ground<'_, V> {
@@ -296,7 +381,7 @@ impl<V: Grid2D> Grid2D for Ground<'_, V> {
 impl<V: CostSource> CostSource for Ground<'_, V> {
     fn cost_idx(&self, idx: usize) -> Option<u32> {
         let at = self.map.to_world(self.view.idx_point(idx));
-        if self.closed.contains(&at) { None } else { self.view.cost_idx(idx) }
+        if self.closed.contains(&at) { None } else { self.view.cost_idx(idx).map(|cost| if self.traps.contains(&at) { cost + TRAP_COST } else { cost }) }
     }
 
     // The engine's own corner rule, which the opening view answers: what is
@@ -316,10 +401,11 @@ fn toward(world: &mut World, from: Point, goals: &[Point], around: &BTreeSet<Ent
         world.query_filtered::<(&Position, &OnMap), (With<Prop>, With<Blocks>)>().iter(world).filter(|(_, on)| on.0 == here).map(|(p, _)| p.0).collect();
     closed.extend(world.resource::<Fire>().burning().filter(|p| *p != from));
     closed.extend(around.iter().filter_map(|who| world.get::<Position>(*who)).map(|p| p.0).filter(|p| !goals.contains(p)));
+    let traps = known_traps(world, here);
     let map = world.resource::<WorldMap>();
     let from = map.to_local(from)?;
     let goals: Vec<Point> = goals.iter().filter_map(|g| map.to_local(*g)).collect();
-    let ground = Ground { view: map.opening_view(), map, closed: &closed };
+    let ground = Ground { view: map.opening_view(), map, closed: &closed, traps: &traps };
     let mut flood = DijkstraMap::covering(&ground);
     flood.build(&ground, goals, PathRules::default());
     Direction::between(from, flood.descend(from)?)
@@ -336,7 +422,7 @@ fn out_of_fire(world: &mut World, from: Point) -> Option<Direction> {
     let cool: Vec<Point> = geometry::square(from, 6).filter(|p| map.is_walkable_on(here, *p) && !fire.is_burning(*p) && !closed.contains(p)).collect();
     let local = map.to_local(from)?;
     let goals: Vec<Point> = cool.iter().filter_map(|g| map.to_local(*g)).collect();
-    let ground = Ground { view: map.opening_view(), map, closed: &closed };
+    let ground = Ground { view: map.opening_view(), map, closed: &closed, traps: &BTreeSet::new() };
     let mut flood = DijkstraMap::covering(&ground);
     flood.build(&ground, goals, PathRules::default());
     Direction::between(local, flood.descend(local)?)
@@ -667,6 +753,21 @@ struct Leg {
     gold: u32,
     /// Health on arriving and on leaving, or dying.
     health: (i32, i32),
+    /// What the floor hid when they first had a turn on it, by
+    /// [`HIDDEN`] kind: a secret by its group, a hidden prop by itself.
+    hid: BTreeMap<&'static str, u32>,
+    /// What of it they spotted, by the same kinds.
+    found: BTreeMap<&'static str, u32>,
+    /// Of what they spotted, how much was within two cells of them, the
+    /// spotting rules' whole chance, and how much on a turn after a wait.
+    near: u32,
+    waited: u32,
+    /// Hidden traps they set off before spotting them, and traps they
+    /// had spotted and set off anyway, being walked over to reach a thing.
+    sprung: (u32, u32),
+    /// Things still lying on it or in a chest when they went on, and
+    /// whether they went on at all: a floor died on leaves nothing.
+    left: Option<u32>,
 }
 
 /// A delve played to its end.
@@ -740,6 +841,16 @@ struct Watch {
     /// The coins the adventurer carried when last read, by the engine's
     /// count, so what each frame adds to it is what they took up.
     purse: u32,
+    spotted: MessageCursor<Spotted>,
+    fired: MessageCursor<Fired>,
+    /// The floor's secret groups and hidden props by [`HIDDEN`] kind, as
+    /// it was first surveyed, so a find is counted by what it was.
+    hidden: (BTreeMap<u32, &'static str>, BTreeMap<Entity, &'static str>),
+    /// Every hidden prop spotted, so one set off after is told from one
+    /// set off unseen.
+    seen: BTreeSet<Entity>,
+    /// Whether the adventurer's last turn was a wait.
+    waited: bool,
 }
 
 impl Watch {
@@ -789,6 +900,29 @@ impl Watch {
         let purse = purse(world, me);
         leg.gold += purse.saturating_sub(self.purse);
         self.purse = purse;
+        let stands = world.get::<Position>(me).map(|p| p.0);
+        for found in self.spotted.read(world.resource::<Messages<Spotted>>()).filter(|s| s.by == me) {
+            let kind = match found.what {
+                Finding::Prop(prop) => {
+                    self.seen.insert(prop);
+                    self.hidden.1.get(&prop).copied()
+                }
+                Finding::Secret { group, .. } => self.hidden.0.get(&group).copied(),
+            };
+            *leg.found.entry(kind.unwrap_or("other")).or_default() += 1;
+            leg.near += u32::from(stands.is_some_and(|at| geometry::chebyshev(at, found.at) <= undermere::traps::SPOTTING.near as i32));
+            leg.waited += u32::from(self.waited);
+        }
+        for fired in self.fired.read(world.resource::<Messages<Fired>>()).filter(|f| f.by == Some(me) && f.moment == Moments::ENTERED) {
+            if self.hidden.1.get(&fired.on) == Some(&"trap") {
+                if self.seen.contains(&fired.on) {
+                    leg.sprung.1 += 1;
+                } else {
+                    self.seen.insert(fired.on);
+                    leg.sprung.0 += 1;
+                }
+            }
+        }
         for dealt in self.harmed.read(world.resource::<Messages<DamageDealt>>()).filter(|d| d.target == me && d.dealt > 0) {
             let by = dealt.hit.attacker.or(dealt.hit.credit).and_then(|who| world.get::<Kind>(who)).map(|k| bestiary.defs.get(k.0).name.clone());
             self.last_harm = by.unwrap_or_else(|| registries.damage_kinds.name(dealt.hit.kind).to_string());
@@ -826,6 +960,11 @@ fn delve(seed: u64, plan: Plan) -> Delve {
         artifacts,
         took: Vec::new(),
         purse: purse(world, me),
+        spotted: world.resource::<Messages<Spotted>>().get_cursor(),
+        fired: world.resource::<Messages<Fired>>().get_cursor(),
+        hidden: (BTreeMap::new(), BTreeMap::new()),
+        seen: BTreeSet::new(),
+        waited: false,
     };
     let (mut legs, mut floor, mut arrived, mut decided, mut idle) = (BTreeMap::<u32, Leg>::new(), 0, 0, 0, 0);
     let end = loop {
@@ -851,6 +990,7 @@ fn delve(seed: u64, plan: Plan) -> Delve {
         if now != floor {
             if let Some(leg) = legs.get_mut(&floor) {
                 (leg.turns, leg.health.1) = (turn - arrived, health);
+                leg.left = (floor > 0).then(|| left_on(world, map_of(floor)));
             }
             legs.entry(now).or_default().health.0 = health;
             (floor, arrived, memory.on_floor, memory.chasing) = (now, turn, 0, None);
@@ -864,7 +1004,13 @@ fn delve(seed: u64, plan: Plan) -> Delve {
         idle = 0;
         let before = world.resource::<Turns>().now();
         watch.sight(world, me);
+        if memory.on_floor == 0 {
+            let here = world.resource::<WorldMap>().current();
+            watch.hidden = hidden_on(world, here);
+            legs.entry(floor).or_default().hid = count_hidden(world, here);
+        }
         let choice = decide(world, me, &mut memory);
+        watch.waited = choice == Choice::Wait;
         if (FLOOR_TURNS * 3..FLOOR_TURNS * 3 + 3).contains(&memory.on_floor) {
             // Long past when it should have gone down: say where it is
             // and what it keeps choosing, for whoever reads a stall.
@@ -1161,6 +1307,54 @@ fn print_encounters(delves: &[(u64, Delve)]) {
     }
 }
 
+/// Prints what the floors hid and what came of it: floor by floor, what
+/// the census found hidden on the mean; then over every delve's legs,
+/// what was found of each kind against what was there, how near and how
+/// still the finder was, the traps set off seen and unseen, what was
+/// left lying, and the turns a floor took.
+fn print_hidden(census: &[Vec<Holding>], delves: &[(u64, Delve)]) {
+    println!("\n== What a floor hides, on the mean of {} seeds ==", census.len());
+    println!("floor  {}", HIDDEN.map(|k| format!("{k:>9}")).join(""));
+    for floor in 1..=FLOORS as usize {
+        let n = census.len().max(1) as f32;
+        let mean = |k: &str| census.iter().map(|c| c[floor - 1].hid.get(k).copied().unwrap_or(0)).sum::<u32>() as f32 / n;
+        println!("{floor:>5}  {}", HIDDEN.map(|k| format!("{:>9.2}", mean(k))).join(""));
+    }
+    println!("\n== What the delves found of it: found/there over every leg, then where it was found ==");
+    println!("floor  legs {} near% waited% sprung-unseen sprung-seen left turns", HIDDEN.map(|k| format!("{k:>11}")).join(""));
+    let legs = |floor: u32| delves.iter().filter_map(move |(_, d)| d.legs.get(&floor));
+    let mut all: (u32, u32, u32) = (0, 0, 0);
+    for floor in 1..=FLOORS {
+        let these: Vec<&Leg> = legs(floor).collect();
+        if these.is_empty() {
+            continue;
+        }
+        let sum = |f: &dyn Fn(&Leg) -> u32| these.iter().map(|l| f(l)).sum::<u32>();
+        let kinds = HIDDEN.map(|k| {
+            let (found, there) = (sum(&|l| l.found.get(k).copied().unwrap_or(0)), sum(&|l| l.hid.get(k).copied().unwrap_or(0)));
+            format!("{:>11}", format!("{found}/{there}"))
+        });
+        let found = sum(&|l| l.found.values().sum());
+        let pct = |part: u32| if found == 0 { 0.0 } else { part as f32 * 100.0 / found as f32 };
+        let gone: Vec<&&Leg> = these.iter().filter(|l| l.left.is_some()).collect();
+        let left = gone.iter().map(|l| l.left.unwrap_or(0)).sum::<u32>() as f32 / gone.len().max(1) as f32;
+        let turns = gone.iter().map(|l| l.turns).sum::<u32>() as f32 / gone.len().max(1) as f32;
+        println!(
+            "{floor:>5} {:>5} {} {:>5.0} {:>7.0} {:>13} {:>11} {left:>4.1} {turns:>5.0}",
+            these.len(),
+            kinds.join(""),
+            pct(sum(&|l| l.near)),
+            pct(sum(&|l| l.waited)),
+            sum(&|l| l.sprung.0),
+            sum(&|l| l.sprung.1)
+        );
+        all.0 += sum(&|l| l.hid.values().sum());
+        all.1 += found;
+        all.2 += sum(&|l| l.sprung.0);
+    }
+    println!("in all: {} of {} hidden things found ({:.0}%), {} traps set off unseen", all.1, all.0, all.1 as f32 * 100.0 / all.0.max(1) as f32, all.2);
+}
+
 /// Runs `job` on each of `jobs` across the machine's threads, and gives
 /// back what each came to in the order the jobs were given.
 fn spread<J: Copy + Send + Sync, R: Send>(jobs: &[J], job: impl Fn(J) -> R + Sync) -> Vec<R> {
@@ -1199,6 +1393,7 @@ fn soak_fifty_seeds_counted_and_delved_to_their_ends() {
     let delves: Vec<(u64, Delve)> = jobs.iter().map(|(seed, _)| *seed).zip(spread(&jobs, |(seed, plan)| delve(seed, plan))).collect();
     print_delves(&delves);
     print_encounters(&delves);
+    print_hidden(&census, &delves);
     assert!(delves.iter().all(|(_, d)| d.legs.contains_key(&1)), "every delve went through the gate");
 }
 
