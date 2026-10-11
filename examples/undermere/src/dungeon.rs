@@ -1843,13 +1843,24 @@ mod tests {
     /// route, a third of the longer side or more, from the way in; every
     /// open cell walked to from the way in with every secret found and
     /// every lock opened, and the way down with none of them.
+    ///
+    /// The run's picks for the floor are kept only where they may stand
+    /// in the recipe's own biome: the run drew them for whichever biome
+    /// it drew there, and a cave piece the Underlake may hold has no cave
+    /// to stand in when the same floor is grown as the cathedral's nave.
     fn every_recipe_meets_itself_on(s: u64) {
-        let undermere = Undermere::new(RunSeed(s));
+        let mut undermere = Undermere::new(RunSeed(s));
         let tables = undermere.tiles().tables();
-        for recipe in &undermere.layout.recipes {
+        for recipe in undermere.layout.recipes.clone() {
             let (floor, drawn) = grown_by(&undermere, &recipe.name, s);
             let at = format!("{} on floor {floor}, seed {s}", recipe.name);
-            let ctx = undermere.grow(floor, &drawn, RunSeed(s), ATTEMPTS).unwrap_or_else(|e| panic!("{at}: {e}"));
+            let tags = [drawn.name.trim_start_matches("the ").to_string()];
+            let drawn_for_the_run = undermere.plan.get(&floor).cloned().unwrap_or_default();
+            let fits = drawn_for_the_run.iter().filter(|p| undermere.pool.entries[p.entry].fits(floor as i32, &tags)).copied().collect();
+            undermere.plan.insert(floor, fits);
+            let grown = undermere.grow(floor, &drawn, RunSeed(s), ATTEMPTS);
+            undermere.plan.insert(floor, drawn_for_the_run);
+            let ctx = grown.unwrap_or_else(|e| panic!("{at}: {e}"));
             let bounds = ctx.terrain().bounds();
             assert_eq!((bounds.width, bounds.height), recipe.size, "{at}");
             let route = ctx.outputs().first::<rl_engine::rl_mapgen::Surveyed>().unwrap_or_else(|| panic!("{at}: not surveyed")).route;
