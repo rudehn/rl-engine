@@ -854,6 +854,12 @@ pub struct MindWorld<'w, 's> {
     /// Every shown prop that does something at a moment, for the traps a
     /// wary mind steps round.
     traps: Query<'w, 's, Shown, (With<crate::props::Prop>, Without<crate::props::Hidden>)>,
+    /// Whose side gives way, and whether to minds.
+    bumps: Option<Res<'w, crate::bump::BumpRules>>,
+    /// How sides stand to each other, for who is neutral to whom.
+    rules: Option<Res<'w, CombatRules>>,
+    /// Everyone's side.
+    sides: Query<'w, 's, &'static Faction>,
 }
 
 /// A mind chose something of the game's own: what its tactic returned,
@@ -928,6 +934,7 @@ pub struct MindIntents<'w> {
     uses: MessageWriter<'w, Intent<UseItem>>,
     uses_at: MessageWriter<'w, Intent<UseItemAt>>,
     begins: MessageWriter<'w, Intent<crate::work::BeginWork>>,
+    swaps: MessageWriter<'w, Intent<crate::bump::Swap>>,
     chose: MessageWriter<'w, MindChose>,
 }
 
@@ -966,8 +973,22 @@ pub fn decide_minds(
     let Some((thinker, mut snapshot)) = thinking.close() else { return };
     let Ok((mind, my_pos, profile, intelligence, mut came_from, mut doing, mut trails)) = minds.get_mut(thinker) else { return };
     let thinking = &*thinking;
-    let MindWorld { fields, rng, map, occupancy, .. } = &mut world;
+    let MindWorld { fields, rng, map, occupancy, bumps, rules, sides, .. } = &mut world;
     let (fields, rng, map, occupancy) = (&mut **fields, &mut **rng, &**map, &**occupancy);
+    // Who gives way to this mind: one neutral to it of a side the bump
+    // rules name, when they say minds step past too, and never to a mind
+    // of such a side itself, so two of them do not shuffle round each other.
+    let side_of = |e: Entity| sides.get(e).ok().map(|f| f.0);
+    let mine = side_of(thinker);
+    let passing = bumps.as_deref().filter(|r| r.minds_too && !r.gives_way(mine));
+    let neutral = |e: Entity| match (rules.as_deref(), mine, side_of(e)) {
+        (Some(rules), Some(me), Some(them)) => rules.factions.relation(me, them) == rl_rules::Relation::Neutral,
+        _ => false,
+    };
+    let gives_way = |p: Point| {
+        let here = occupancy.at(p);
+        passing.is_some_and(|r| !here.is_empty() && here.iter().all(|e| r.gives_way(side_of(*e)) && neutral(*e)))
+    };
     let wits = intelligence.map(|i| i.0).unwrap_or_default();
     let opens_doors = wits.has(Wits::OPENS_DOORS);
     snapshot.sort();
@@ -978,7 +999,7 @@ pub fn decide_minds(
     // lock it would be refused at every turn. Nor is a cell some
     // contributor marked a hazard anywhere a mind will step.
     let opens = |p: Point| opens_doors && map.opens(p).is_some() && map.lock(p).is_none();
-    let can_step = |p: Point| (map.is_walkable(p) || opens(p)) && !occupancy.is_occupied(p) && !thinking.is_hazard(p);
+    let can_step = |p: Point| (map.is_walkable(p) || opens(p)) && (!occupancy.is_occupied(p) || gives_way(p)) && !thinking.is_hazard(p);
     // The predicate the ability resolver uses, so what a tactic thinks a
     // shape will cover is what it does cover.
     let blocks_shot = |p: Point| map.blocks_projectiles(p) || occupancy.is_occupied(p);
@@ -1014,6 +1035,12 @@ pub fn decide_minds(
         // A step onto a shut door is the turn spent opening it: the door is
         // its own action, and the mind knows what it is walking into.
         Decision::Step(to) => match Direction::between(my_pos.0, to) {
+            // A step into one who gives way is the two changing places.
+            Some(_) if gives_way(to) => {
+                came_from.0 = Some(my_pos.0);
+                let other = occupancy.at(to)[0];
+                intents.swaps.write(Intent::new(thinker, crate::bump::Swap(other)));
+            }
             Some(d) if map.opens(to).is_some() => {
                 intents.opens.write(Intent::new(thinker, Open(d)));
             }

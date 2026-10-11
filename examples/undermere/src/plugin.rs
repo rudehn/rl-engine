@@ -66,7 +66,6 @@ impl Plugin for UndermerePlugin {
             // a flavor piece or a wall carving offers to be read.
             .add_verb(crate::vaults::PULL_VERB)
             .add_verb(crate::writings::READ_VERB)
-            .add_verb(crate::wildlife::PAST_VERB)
             .add_plugins((PrefabPlugin::<Bestiary, Armory>::default(), LootPlugin::<Armory>::default()))
             .add_plugins((FactsPlugin, RecordsPlugin))
             // What the dead leave lying where they fell, for `raising` to
@@ -262,9 +261,11 @@ impl Plugin for UndermerePlugin {
         app.init_resource::<crate::effects::ShowedNothing>();
         app.add_systems(Turn, crate::lore::weigh_landings.in_set(TurnSet::Resolve).after(ResolveSet::Act).before(ResolveSet::Triggers));
         // Who fights beside the adventurer: a conjured blade gone when its
-        // time is up, and a walk into an ally a change of places with it.
+        // time is up, and a walk into an ally or into wildlife a change of
+        // places with it, by the engine's bump rules.
         app.add_systems(Turn, crate::allies::fade.in_set(TurnSet::React));
-        app.insert_resource(BumpRules::new().swap_allies());
+        let bumps = crate::wildlife::bump_rules(app.world().resource::<Registries>());
+        app.insert_resource(bumps);
         // What the potions' statuses do that the engine's do not: a
         // confused step turned about once everyone has chosen and before
         // anything resolves it, and fire immunity kept on whoever holds it.
@@ -303,7 +304,6 @@ impl Plugin for UndermerePlugin {
         );
         // A shackled captive's own "free".
         app.add_systems(Turn, crate::captives::answer_free.in_set(TurnSet::React));
-        app.add_systems(Turn, (crate::wildlife::offer_a_way_past, crate::wildlife::slip_past).in_set(TurnSet::React));
         // What a floor hides: its traps and flagstones stood up on its
         // first arrival, a trap seen going off shown, and what the
         // adventurer spotted said in the log.
