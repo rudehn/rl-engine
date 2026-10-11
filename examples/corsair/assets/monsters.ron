@@ -13,7 +13,8 @@
 //               out of sight, "animal" also runs when hurt and searches for you, "sapient" also
 //               opens doors, picks things up, throws them and puts on better gear; or a list of
 //               "flees" | "searches" | "opens_doors" | "picks_up" | "equips" | "throws" |
-//               "uses" | "travels", which may name a preset too, as ["animal", "opens_doors"];
+//               "uses" | "wary" | "travels", which may name a preset too, as ["animal",
+//               "opens_doors"]; "wary" steps round a trap in plain sight, which "sapient" has;
 //               "uses" lets a brain use what it carries, which none here does; "travels" is in
 //               no preset, and lets it follow you through a way to another map and leave by one
 //               when it runs
