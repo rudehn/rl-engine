@@ -18,7 +18,11 @@
 //! A bump into an ally is a free refusal unless the game says otherwise:
 //! [`BumpRules`] with [`OnAlly::Swap`] makes it a [`Swap`], the two
 //! changing places for the cost of the step, which is what every game with
-//! a companion wants of its walk key.
+//! a companion wants of its walk key. A bump into a neutral is refused the
+//! same way, unless its side is one [`BumpRules::give_way`] names: the small
+//! life of a place, which nobody fights and nobody should be held up by, is
+//! swapped with like an ally, and with [`BumpRules::minds_too`] a mind
+//! steps past it the same way.
 //!
 //! A bump into something that offers one thing, a crate or a captive,
 //! takes it up as an [`Interact`]; one offering more, or one it refuses,
@@ -31,7 +35,7 @@
 use bevy::prelude::*;
 use rl_core::turn::BASE_ACTION_COST;
 use rl_core::{Direction, Point};
-use rl_rules::Relation;
+use rl_rules::{FactionId, Relation};
 
 use crate::combat::{Attack, CombatRules, Faction, Health};
 use crate::components::{MyTurn, Position, Viewshed};
@@ -95,12 +99,27 @@ pub enum OnAlly {
 ///
 /// Optional data: without it every such bump is refused, which is what a
 /// game with no companions wants. An ally is whoever [`CombatRules`] calls
-/// allied; a neutral, and anyone at all in a game with no sides, is always
-/// refused, since walking through a shopkeeper is not what anyone meant.
-#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// allied; a neutral, and anyone at all in a game with no sides, is
+/// refused, since walking through a shopkeeper is not what anyone meant,
+/// unless the neutral's side is one the rules say gives way.
+#[derive(Resource, Debug, Clone, PartialEq, Eq, Default)]
 pub struct BumpRules {
     /// A bump into an ally.
     pub allies: OnAlly,
+    /// The sides whose every member gives way: a bump into one that is
+    /// neutral to the bumper changes places with it, as with an ally under
+    /// [`OnAlly::Swap`], whatever it offers.
+    ///
+    /// Sides, not a mark on each actor, because what gives way is a kind
+    /// of creature a game has already put on a side of its own so that
+    /// nobody fights it; and a list a game names in content, since which
+    /// sides are harmless is the game's to say.
+    pub give_way: Vec<FactionId>,
+    /// Whether a mind steps past one that gives way too, rather than being
+    /// held behind it in a corridor one cell wide: its step into the cell
+    /// is a [`Swap`]. One that gives way never pushes past another that
+    /// does, so two of them do not shuffle round each other.
+    pub minds_too: bool,
 }
 
 impl BumpRules {
@@ -113,6 +132,25 @@ impl BumpRules {
     pub fn swap_allies(mut self) -> Self {
         self.allies = OnAlly::Swap;
         self
+    }
+
+    /// Everyone of `side` gives way to whoever it is neutral to.
+    pub fn give_way(mut self, side: FactionId) -> Self {
+        if !self.give_way.contains(&side) {
+            self.give_way.push(side);
+        }
+        self
+    }
+
+    /// Minds step past whoever gives way, as the player's bump does.
+    pub fn minds_too(mut self) -> Self {
+        self.minds_too = true;
+        self
+    }
+
+    /// Whether one of `side` gives way.
+    pub fn gives_way(&self, side: Option<FactionId>) -> bool {
+        side.is_some_and(|side| self.give_way.contains(&side))
     }
 }
 
@@ -162,11 +200,14 @@ pub fn redirect_bumps(mut intents: MessageReader<Intent<Bump>>, mut resolution: 
         // Whoever stands there and can be struck, by the rule the attack
         // resolver strikes by: alive, with health to lose.
         let someone = way.occupancy.at(target).iter().copied().find(|other| way.standing.contains(*other));
-        let stance = someone.and_then(|other| relation(way.rules.as_deref(), side, way.standing.get(other).ok().flatten()));
+        let theirs = someone.and_then(|other| way.standing.get(other).ok().flatten());
+        let stance = someone.and_then(|_| relation(way.rules.as_deref(), side, theirs));
+        // A neutral of a side that gives way is walked past as an ally is.
+        let gives_way = stance == Some(Relation::Neutral) && way.bumps.as_deref().is_some_and(|r| r.gives_way(theirs.map(|f| f.0)));
         // A foe is struck and an ally walked past whatever either offers:
         // the walk key into a foe is a blow, and a companion with something
         // to say is still a companion to step round.
-        if !matches!(stance, Some(Relation::Hostile | Relation::Allied)) {
+        if !matches!(stance, Some(Relation::Hostile | Relation::Allied)) && !gives_way {
             // Something in the way that offers one thing and nothing else:
             // walking into a crate opens it, the way walking into a door
             // opens that, and walking into a captive frees it. Anything else
@@ -193,6 +234,9 @@ pub fn redirect_bumps(mut intents: MessageReader<Intent<Bump>>, mut resolution: 
                     out.attacks.write(Intent::new(actor, Attack(other)));
                 }
                 Some(Relation::Allied) if way.bumps.as_deref().is_some_and(|r| r.allies == OnAlly::Swap) => {
+                    out.swaps.write(Intent::new(actor, Swap(other)));
+                }
+                Some(Relation::Neutral) if gives_way => {
                     out.swaps.write(Intent::new(actor, Swap(other)));
                 }
                 _ => {
@@ -342,8 +386,16 @@ mod tests {
 
     impl Rig {
         fn new() -> Self {
+            Self::built(false)
+        }
+
+        /// The rig, with minds in play when `minds` is.
+        fn built(minds: bool) -> Self {
             let mut app = headless_app();
             app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::props::PropsPlugin, crate::world::StreamingPlugin));
+            if minds {
+                app.add_plugins(crate::minds::MindsPlugin);
+            }
             crate::props::AddVerb::add_verb(&mut app, "free");
             crate::props::AddVerb::add_verb(&mut app, "talk");
             app.init_resource::<Heard>().add_systems(PostUpdate, hear);
@@ -606,6 +658,91 @@ mod tests {
             assert_eq!(heard.0, vec![Bumped { actor: rig.player, into: captive, offers: true }], "chooses {chooses}: a question for a screen");
             assert!(heard.2.is_empty(), "chooses {chooses}: and nothing was taken up");
             assert_eq!((rig.at(), rig.now()), (start, before), "chooses {chooses}: for nothing");
+        }
+    }
+
+    /// A third side neutral to both of the rig's, and the rules for all
+    /// three.
+    fn small_side(rig: &mut Rig) -> rl_rules::FactionId {
+        let names = rl_rules::Registry::from_defs(["ours", "theirs", "small"].map(rl_rules::faction::FactionDef::new).to_vec()).expect("three sides");
+        rig.app.insert_resource(CombatRules::new(&names).hostile(rig.ours, rig.theirs));
+        names.expect("small")
+    }
+
+    /// A bump into a neutral of a side that gives way changes places with
+    /// it for a step's time, whatever it offers; into a neutral of any other
+    /// side, or with no rules naming its side, it is refused as before.
+    #[test]
+    fn a_bump_into_a_neutral_that_gives_way_changes_places_with_it_and_any_other_neutral_is_refused() {
+        let mut rig = Rig::new();
+        let small = small_side(&mut rig);
+        rig.app.insert_resource(BumpRules::new().give_way(small));
+        let talk = rig.verb("talk");
+        let start = rig.at();
+        let moth = rig.beside(Some(small), vec![crate::props::Offering::new(talk, 100)]);
+        let before = rig.now();
+        rig.bump(Direction::East);
+        assert_eq!(rig.at(), start.offset(1, 0), "past it");
+        assert_eq!(rig.app.world().get::<Position>(moth).unwrap().0, start, "which stands where the player stood");
+        assert_eq!(rig.now(), before + 100, "for a step's time");
+        assert!(rig.app.world().resource::<Heard>().2.is_empty(), "and nothing it offers was taken up");
+
+        let mut rig = Rig::new();
+        let small = small_side(&mut rig);
+        rig.app.insert_resource(BumpRules::new().swap_allies());
+        let start = rig.at();
+        let moth = rig.beside(Some(small), Vec::new());
+        rig.bump(Direction::East);
+        assert_eq!(rig.at(), start, "a side nobody named gives no way");
+        assert_eq!(rig.app.world().resource::<Heard>().0, vec![Bumped { actor: rig.player, into: moth, offers: false }]);
+    }
+
+    /// A hunter behind a neutral that gives way in a corridor one cell wide
+    /// steps past it to the player when the rules say minds do too, and
+    /// waits behind it when they do not.
+    #[test]
+    fn a_mind_steps_past_a_neutral_that_gives_way_only_when_the_rules_say_minds_do() {
+        for minds_too in [true, false] {
+            let mut rig = Rig::built(true);
+            let small = small_side(&mut rig);
+            let rules = BumpRules::new().give_way(small);
+            rig.app.insert_resource(if minds_too { rules.minds_too() } else { rules });
+            let start = rig.start;
+            let wall = rig.tiles.expect("wall");
+            for dx in -1..=6 {
+                let mut map = rig.app.world_mut().resource_mut::<WorldMap>();
+                map.set_tile(start.offset(dx, -1), wall);
+                map.set_tile(start.offset(dx, 1), wall);
+            }
+            rig.app.world_mut().spawn((Actor, Blocks, Position(start.offset(2, 0)), Health::full(5), Faction(small)));
+            let hunter = rig
+                .app
+                .world_mut()
+                .spawn((
+                    Actor,
+                    Blocks,
+                    Position(start.offset(4, 0)),
+                    Health::full(20),
+                    Faction(rig.theirs),
+                    crate::minds::Perception(8),
+                    MeleeAttack::new(rig.kind, DiceRoll::flat(1)),
+                    crate::minds::Mind(std::sync::Arc::new(
+                        rl_rules::Brain::new().then(rl_rules::ai::tactics::MeleeAdjacent).then(rl_rules::ai::tactics::Hunt),
+                    )),
+                ))
+                .id();
+            for _ in 0..40 {
+                if rig.app.world().get::<MyTurn>(rig.player).is_some() {
+                    rig.app.world_mut().write_message(Intent::new(rig.player, crate::turn::Wait));
+                }
+                rig.app.update();
+            }
+            let at = rig.app.world().get::<Position>(hunter).unwrap().0;
+            if minds_too {
+                assert_eq!(at, start.offset(1, 0), "it stepped past the neutral to the player");
+            } else {
+                assert_eq!(at, start.offset(3, 0), "it waits behind the neutral");
+            }
         }
     }
 }

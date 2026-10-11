@@ -53,6 +53,14 @@ impl Wits {
     /// on itself what mends once it is hurt, and what is pointed at what
     /// its aim wants.
     pub const USES: Wits = Wits(1 << 7);
+    /// Steps round a trap it can see: a cell under a shown thing that goes
+    /// off when walked onto costs it as much as a long way round, so its
+    /// ways lead round one wherever a reasonable way round exists, and
+    /// over it only where none does, the way a player walks a corridor
+    /// they cannot avoid. A sapient mind's, and not an animal's, since a
+    /// beast blundering onto a plate it could have seen is what a player
+    /// lures one there for.
+    pub const WARY: Wits = Wits(1 << 8);
 
     /// Nothing but what its brain does unconditionally: it strikes, hunts
     /// what it can perceive and wanders, and forgets you the moment it
@@ -62,9 +70,10 @@ impl Wits {
     /// and a knife on the floor is nothing to it.
     pub const ANIMAL: Wits = Wits(Self::FLEES.0 | Self::SEARCHES.0);
     /// Everything the engine knows how to ask about on the map it stands
-    /// on: doors, and picking up, wearing, throwing and using things
-    /// besides. Leaving that map is [`Wits::TRAVELS`], which no preset has.
-    pub const SAPIENT: Wits = Wits(Self::ANIMAL.0 | Self::OPENS_DOORS.0 | Self::PICKS_UP.0 | Self::EQUIPS.0 | Self::THROWS.0 | Self::USES.0);
+    /// on: doors, picking up, wearing, throwing and using things, and
+    /// stepping round a trap in plain sight. Leaving that map is
+    /// [`Wits::TRAVELS`], which no preset has.
+    pub const SAPIENT: Wits = Wits(Self::ANIMAL.0 | Self::OPENS_DOORS.0 | Self::PICKS_UP.0 | Self::EQUIPS.0 | Self::THROWS.0 | Self::USES.0 | Self::WARY.0);
 
     /// Whether every capability in `wit` is here.
     pub const fn has(self, wit: Wits) -> bool {
@@ -104,7 +113,7 @@ impl Default for Wits {
 const PRESETS: [(&str, Wits); 3] = [("mindless", Wits::MINDLESS), ("animal", Wits::ANIMAL), ("sapient", Wits::SAPIENT)];
 
 /// Each capability by the name content writes it with.
-const CAPABILITIES: [(&str, Wits); 8] = [
+const CAPABILITIES: [(&str, Wits); 9] = [
     ("flees", Wits::FLEES),
     ("searches", Wits::SEARCHES),
     ("opens_doors", Wits::OPENS_DOORS),
@@ -113,6 +122,7 @@ const CAPABILITIES: [(&str, Wits); 8] = [
     ("throws", Wits::THROWS),
     ("travels", Wits::TRAVELS),
     ("uses", Wits::USES),
+    ("wary", Wits::WARY),
 ];
 
 /// Every name content may use, for a message that lists them.
@@ -178,6 +188,8 @@ mod tests {
         assert!(!Wits::MINDLESS.has(Wits::FLEES));
         assert!(Wits::SAPIENT.has(Wits::USES) && !Wits::ANIMAL.has(Wits::USES), "only a sapient mind uses what it carries");
         assert!(!Wits::SAPIENT.has(Wits::TRAVELS), "and no preset leaves its map");
+        assert!(Wits::SAPIENT.has(Wits::WARY) && !Wits::ANIMAL.has(Wits::WARY), "only a sapient mind steps round a trap it sees");
+        assert_eq!(Wits::named("wary"), Some(Wits::WARY));
         assert_eq!(Wits::named("uses"), Some(Wits::USES));
         assert_eq!(Wits::SAPIENT.without(Wits::FLEES).with(Wits::FLEES), Wits::SAPIENT);
         assert_eq!(Wits::default(), Wits::SAPIENT, "a mind nobody flagged does what its brain asks");

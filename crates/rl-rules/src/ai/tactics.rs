@@ -257,6 +257,10 @@ pub struct Led {
 /// beneath it stands its ground at whatever gap it has until the other
 /// moves. That is the tactic's limit: getting past somebody who stands in
 /// the only way out is a fight, and keeping station does not start one.
+///
+/// The gap is measured by its [`Gap`]: on foot for a station on allies or
+/// a leader, as the crow flies for one on enemies, and either for any
+/// station by [`measured`](Self::measured).
 #[derive(Debug, Clone, Copy)]
 pub struct Keep {
     /// Whose company it keeps.
@@ -265,23 +269,69 @@ pub struct Keep {
     pub keep_within: i32,
     /// How near it lets the nearest of them come before it backs off.
     pub no_closer_than: i32,
+    /// How the gap is measured.
+    pub gap: Gap,
+}
+
+/// How [`Keep`] measures the gap it keeps.
+///
+/// On foot for company kept, because a follower's gap is the time it would
+/// take to catch up: measured as the crow flies, a follower three cells off
+/// across a wall with a gap in it stood still while the walk to its leader
+/// was five, and one three off on a diagonal set off only at four and,
+/// walking at its leader's own pace, never made up the steps it lost, so
+/// the leader reached a stair with it five behind. As the crow flies for a
+/// station on enemies, because a spotter's or a skirmisher's distance is
+/// reach, which a shot or a sighting covers in a straight line whatever
+/// the walk, and a station kept on foot would back a skirmisher out of
+/// range round a corner it could still shoot past.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Gap {
+    /// Cells as the crow flies, the larger of the two offsets.
+    #[default]
+    Crow,
+    /// Steps on foot, by [`Fields::on_foot`], a diagonal stride counting
+    /// for its cost and a partial step for a whole one; as the crow flies
+    /// where no field answers, so a station with no way to it is still
+    /// kept as near as the ground allows.
+    OnFoot,
 }
 
 impl Keep {
-    /// Station on the allies: what a companion is.
+    /// Station on the allies, measured on foot: what a companion is.
     pub fn allies(keep_within: i32, no_closer_than: i32) -> Self {
-        Self { on: Station::Allies, keep_within, no_closer_than }
+        Self { on: Station::Allies, keep_within, no_closer_than, gap: Gap::OnFoot }
     }
 
-    /// Station on the enemies: what a spotter or a skirmisher is.
+    /// Station on the enemies, measured as the crow flies: what a spotter
+    /// or a skirmisher is.
     pub fn enemies(keep_within: i32, no_closer_than: i32) -> Self {
-        Self { on: Station::Enemies, keep_within, no_closer_than }
+        Self { on: Station::Enemies, keep_within, no_closer_than, gap: Gap::Crow }
     }
 
-    /// Station on one leader, and on the allies while it is gone: what a
-    /// band's follower is.
+    /// Station on one leader, and on the allies while it is gone, measured
+    /// on foot: what a band's follower is.
     pub fn leader(keep_within: i32, no_closer_than: i32) -> Self {
-        Self { on: Station::Leader, keep_within, no_closer_than }
+        Self { on: Station::Leader, keep_within, no_closer_than, gap: Gap::OnFoot }
+    }
+
+    /// The same station with its gap measured by `gap`.
+    pub fn measured(mut self, gap: Gap) -> Self {
+        self.gap = gap;
+        self
+    }
+
+    /// The gap from `p` to the station: to `nearest` as the crow flies, or
+    /// to the nearest of `marks` on foot.
+    fn gap_from<A: Copy>(&self, ctx: &mut TacticCtx<'_, A>, marks: &[Point], nearest: Point, p: Point) -> i32 {
+        let crow = geometry::chebyshev(p, nearest);
+        match self.gap {
+            Gap::Crow => crow,
+            Gap::OnFoot => {
+                let steps = |cost: u32| i32::try_from(cost.div_ceil(rl_core::turn::BASE_ACTION_COST)).unwrap_or(i32::MAX);
+                ctx.fields.on_foot(marks, p).map_or(crow, steps)
+            }
+        }
     }
 
     /// Who it is keeping station on: the nearest of them, every one of them
@@ -326,18 +376,22 @@ impl<A: Copy> Tactic<A> for Keep {
     fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
         let me = ctx.snapshot.me.pos;
         let (nearest, marks, in_sight) = self.watching(ctx)?;
-        let gap = geometry::chebyshev(me, nearest);
+        let gap = self.gap_from(ctx, &marks, nearest, me);
         if gap > self.keep_within {
             // Closing: the field's way first, and never a step that widens
-            // the gap to the one being closed on.
-            let closing = |p: Point| geometry::chebyshev(p, nearest) <= gap;
-            if let Some(step) = ctx.fields.descents_toward(&marks, me).into_iter().find(|p| (ctx.can_step)(*p) && closing(*p)) {
-                return Some(Decision::Step(step));
+            // the gap to the one being closed on. On foot, every step down
+            // the field narrows it, the way out of a cup and round as
+            // surely as the step straight at them.
+            let descents = ctx.fields.descents_toward(&marks, me);
+            for step in descents {
+                if (ctx.can_step)(step) && self.gap_from(ctx, &marks, nearest, step) <= gap {
+                    return Some(Decision::Step(step));
+                }
             }
             let toward = Direction::between(me, nearest)?;
             for d in [toward, toward.rotate_cw(), toward.rotate_ccw()] {
                 let step = me + d.offset();
-                if steps_to(ctx, me, step) && geometry::chebyshev(step, nearest) < gap {
+                if steps_to(ctx, me, step) && self.gap_from(ctx, &marks, nearest, step) < gap {
                     return Some(Decision::Step(step));
                 }
             }
@@ -356,8 +410,9 @@ impl<A: Copy> Tactic<A> for Keep {
         let turns = [straight, cw, ccw, cw.rotate_cw(), ccw.rotate_ccw(), cw.rotate_cw().rotate_cw(), ccw.rotate_ccw().rotate_ccw()];
         let direct = turns.iter().map(|d| me + d.offset()).filter(|p| steps_to(ctx, me, *p));
         let open: Vec<Point> = field.into_iter().chain(direct).filter(|p| (ctx.can_step)(*p)).collect();
-        let widening = open.iter().copied().filter(|p| geometry::chebyshev(*p, nearest) > gap);
-        let holding = open.iter().copied().filter(|p| geometry::chebyshev(*p, nearest) == gap);
+        let gaps: Vec<i32> = open.iter().map(|p| self.gap_from(ctx, &marks, nearest, *p)).collect();
+        let widening = open.iter().zip(&gaps).filter(|(_, g)| **g > gap).map(|(p, _)| *p);
+        let holding = open.iter().zip(&gaps).filter(|(_, g)| **g == gap).map(|(p, _)| *p);
         let clear = |p: Point| in_sight && clear_shot(p, nearest, geometry::chebyshev(p, nearest), ctx.bounds, |c| c != p && c != me && (ctx.blocks_shot)(c));
         for tier in [widening.collect::<Vec<_>>(), holding.collect::<Vec<_>>()] {
             if let Some(step) = tier.iter().copied().find(|p| clear(*p)).or(tier.first().copied()) {
@@ -2055,6 +2110,66 @@ mod tests {
             rng: &mut rng,
         };
         keep.evaluate(&mut ctx)
+    }
+
+    /// [`Given`], answering the walk as well, as the engine's fields do.
+    struct Walked<'a>(Given<'a>);
+
+    impl Fields for Walked<'_> {
+        fn descents_toward(&mut self, goals: &[Point], from: Point) -> Vec<Point> {
+            self.0.descents_toward(goals, from)
+        }
+
+        fn descents_away(&mut self, goals: &[Point], from: Point) -> Vec<Point> {
+            self.0.descents_away(goals, from)
+        }
+
+        fn on_foot(&mut self, goals: &[Point], from: Point) -> Option<u32> {
+            self.0.field(goals, false).value(from).and_then(|v| u32::try_from(v).ok())
+        }
+    }
+
+    /// What a follower of `keep` at `me` decides with its leader in sight
+    /// at `chief`, across a wall down column five with one gap, at its foot.
+    fn across_a_wall(keep: Keep, me: Point, chief: Point) -> Option<Decision<u32>> {
+        let r = TileRegistry::standard();
+        let mut t = Terrain::filled(12, 12, r.expect("floor"));
+        for y in 0..11 {
+            t.set(Point::new(5, y), r.expect("wall"));
+        }
+        let view_t = t.view(&r);
+        let can_step = |p: Point| p != chief && view_t.is_walkable(p);
+        let mut s = Snapshot::alone(view(1, me.x, me.y, 10));
+        s.add_sense(Led { at: chief, in_sight: true });
+        let mut fields = Walked(Given::over(&view_t));
+        let mut rng = StdRng::seed_from_u64(1);
+        let mut ctx = TacticCtx {
+            snapshot: &s,
+            fields: &mut fields,
+            can_step: &can_step,
+            blocks_shot: &nothing_blocks,
+            blocks_burst: &|_| false,
+            bounds: arena(),
+            rng: &mut rng,
+        };
+        keep.evaluate(&mut ctx)
+    }
+
+    /// Kept on foot, a follower three cells from its leader across a wall
+    /// sets off round it, since the walk is far longer than three; kept as
+    /// the crow flies it stands, three being within three. And every step
+    /// it takes on foot shortens the walk, out of the way the crow would go.
+    #[test]
+    fn a_follower_measuring_on_foot_sets_off_round_a_wall_the_crows_gap_would_have_it_wait_behind() {
+        let (me, chief) = (Point::new(3, 5), Point::new(6, 5));
+        assert_eq!(Keep::leader(3, 1).gap, Gap::OnFoot, "a follower measures on foot unless told otherwise");
+        assert_eq!(Keep::enemies(3, 1).gap, Gap::Crow, "and a shadow as the crow flies");
+        assert_eq!(across_a_wall(Keep::leader(3, 1).measured(Gap::Crow), me, chief), None, "as the crow flies it is near enough");
+        let Some(Decision::Step(to)) = across_a_wall(Keep::leader(3, 1), me, chief) else { panic!("on foot it sets off") };
+        assert!(geometry::chebyshev(to, me) == 1 && to.y > me.y, "toward the gap at the wall's foot: {to:?}");
+        // And three cells off on open ground both measures agree it is near
+        // enough.
+        assert_eq!(across_a_wall(Keep::leader(3, 1), Point::new(9, 5), chief), None, "three straight steps is three");
     }
 
     /// A follower keeps within its distances of its leader and of nobody

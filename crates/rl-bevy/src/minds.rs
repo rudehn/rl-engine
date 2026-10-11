@@ -36,7 +36,7 @@ use rl_rules::{ActorView, Brain, Choice, Decision, MovementProfile, Snapshot, Ta
 
 use crate::ability::Use;
 use crate::combat::{Attack, CombatRules, Dead, Faction, Health};
-use crate::components::{Actor, MyTurn, Player, Position, Viewshed};
+use crate::components::{Actor, Blocks, MyTurn, Player, Position, Viewshed};
 use crate::doors::Open;
 use crate::items::{EquipFromGround, PickUp, UseItem, UseItemAt};
 use crate::lighting::{DarkSight, Lighting};
@@ -196,12 +196,21 @@ fn forget_joined(mut world: DeferredWorld, ctx: HookContext) {
 /// What one field is for: the cells it leads to, in world coordinates and
 /// sorted so two minds wanting the same cells share one flood; the movement
 /// class it is walked by; whether that class opens doors, which changes
-/// what a closed door costs; and whether it leads away rather than toward.
-type FieldKey = (Vec<Point>, MovementProfile, bool, bool);
+/// what a closed door costs; whether it is wary, which changes what a shown
+/// trap costs; and whether it leads away rather than toward.
+type FieldKey = (Vec<Point>, MovementProfile, bool, bool, bool);
 
 /// What one flood is from: a single goal cell in world coordinates, the
-/// movement class it is walked by, and whether that class opens doors.
-type FloodKey = (Point, MovementProfile, bool);
+/// movement class it is walked by, and whether that class opens doors and
+/// is wary.
+type FloodKey = (Point, MovementProfile, bool, bool);
+
+/// What a cell under a shown trap costs a [`Wits::WARY`] mind on top of
+/// its step: as much as ten more steps, so its ways go round a trap in a
+/// room, where the way round is a step or two, and over one in a corridor,
+/// where there is none and refusing the cell would leave it standing there
+/// for good, a follower above all, whose leader walked over it.
+const WARY_OF_A_TRAP: u32 = 10 * rl_core::turn::BASE_ACTION_COST;
 
 /// How many fields, and how many floods, are kept. A moving goal is a new
 /// key every turn, so without a bound either would grow for as long as
@@ -273,45 +282,101 @@ impl<K: Ord + Clone, V> Recent<K, V> {
 /// a hunter asks for the way toward every enemy it sees, a companion toward
 /// its allies, a searcher toward a remembered cell, and every mind that
 /// asks the same question in the same movement class reads the same map.
-/// A field lives until the map's cost epoch changes, so a mind that did
-/// not move and a player who did not move cost nothing the next pass.
+/// A field lives until the map's cost epoch changes, the window moves, or
+/// something standing changes, so a mind that did not move and a player
+/// who did not move cost nothing the next pass.
 ///
 /// A field toward a few goals is the lowest, cell for cell, of one flood
 /// per goal, which is exactly the flood from all of them. So two hunters
 /// that see different enemies share the flood from each enemy both see,
 /// and a goal that stood still is not flooded again because another moved.
 ///
+/// Fields flood round what stands: a blocker that is not an actor, a
+/// blocking prop above all, is a wall to them as surely as a wall tile.
+/// The map's tiles alone were what they flooded once, and a mind behind a
+/// post took its field's way into the post, was refused, and stood there
+/// for good while a way round was three steps off. Actors are not walls to
+/// a field, since they step aside or are fought, and `can_step` refuses the
+/// cell one stands in for the turn it stands there; what stands never
+/// moves on its own, so it is part of the ground a field is flooded over.
+/// What stands is read off [`Occupancy`] when that changes, and the fields
+/// are thrown away only when the cells it stands on differ, so an actor's
+/// step costs a walk over the index and never a flood.
+///
 /// Window-local, like every grid the engine keeps; the points a tactic
 /// hands in and gets back are translated at the boundary, so no map is
 /// ever copied to shift its origin.
-#[derive(Resource, Default)]
+#[derive(Resource)]
 pub struct FlowFields {
-    /// The map's cost epoch the fields were built for.
-    epoch: Option<u64>,
+    /// The map's cost epoch and window generation the fields were built
+    /// for: a field is window-local, so one built before the window moved
+    /// leads from cells that are now somewhere else.
+    epoch: Option<(u64, u64)>,
+    /// Every cell of the current map something that is not an actor stands
+    /// on and blocks, sorted, in world coordinates.
+    standing: Vec<Point>,
+    /// The same cells, window-local, as the floods read them.
+    walls: BitGrid,
+    /// Every cell of the current map under a trap anyone can see, sorted,
+    /// in world coordinates: a prop shown, not [`Hidden`](crate::props::Hidden),
+    /// that still goes off when walked onto.
+    traps: Vec<Point>,
+    /// The same cells, window-local.
+    snares: BitGrid,
     fields: Recent<FieldKey, DijkstraMap>,
     floods: Recent<FloodKey, DijkstraMap>,
+}
+
+impl Default for FlowFields {
+    fn default() -> Self {
+        Self {
+            epoch: None,
+            standing: Vec::new(),
+            walls: BitGrid::new(0, 0),
+            traps: Vec::new(),
+            snares: BitGrid::new(0, 0),
+            fields: Recent::default(),
+            floods: Recent::default(),
+        }
+    }
 }
 
 impl FlowFields {
     /// The field for `key`, built if it is not there.
     fn ensure(&mut self, key: FieldKey, map: &WorldMap) -> Option<&DijkstraMap> {
-        if self.epoch != Some(map.cost_epoch()) {
+        let epoch = (map.cost_epoch(), map.generation());
+        if self.epoch != Some(epoch) {
             self.fields.clear();
             self.floods.clear();
-            self.epoch = Some(map.cost_epoch());
+            self.epoch = Some(epoch);
+            let window = map.window_tiles();
+            self.walls = BitGrid::new(window.width, window.height);
+            for p in self.standing.iter().filter_map(|p| map.to_local(*p)) {
+                self.walls.insert(p);
+            }
+            self.snares = BitGrid::new(window.width, window.height);
+            for p in self.traps.iter().filter_map(|p| map.to_local(*p)) {
+                self.snares.insert(p);
+            }
         }
         if !self.fields.touch(&key) {
-            let (goals, profile, opens_doors, away) = &key;
-            let view = if *opens_doors { map.opening_view() } else { map.view() };
+            let (goals, profile, opens_doors, wary, away) = &key;
             let goals: Vec<(Point, Point)> = goals.iter().filter_map(|g| Some((*g, map.to_local(*g)?))).collect();
             if goals.is_empty() {
                 return None;
             }
+            let ground = |goals: &[Point]| AroundStanding {
+                view: if *opens_doors { map.opening_view() } else { map.view() },
+                walls: &self.walls,
+                snares: wary.then_some(&self.snares),
+                goals: goals.to_vec(),
+            };
             let mut field = if goals.len() <= COMPOSED_UP_TO {
                 let mut field: Option<DijkstraMap> = None;
                 for (goal, local) in goals {
-                    let from = (goal, *profile, *opens_doors);
+                    let from = (goal, *profile, *opens_doors, *wary);
                     if !self.floods.touch(&from) {
+                        let view = ground(&[local]);
                         let mut flood = DijkstraMap::covering(&view);
                         flood.build(&view, [local], PathRules::default());
                         self.floods.insert(from, flood);
@@ -324,17 +389,43 @@ impl FlowFields {
                 }
                 field?
             } else {
+                let locals: Vec<Point> = goals.iter().map(|(_, local)| *local).collect();
+                let view = ground(&locals);
                 let mut field = DijkstraMap::covering(&view);
-                field.build(&view, goals.into_iter().map(|(_, local)| local), PathRules::default());
+                field.build(&view, locals.iter().copied(), PathRules::default());
                 field
             };
             if *away {
+                let view = ground(&[]);
                 field.scale(-12, 10);
                 field.rescan(&view, PathRules::default());
             }
             self.fields.insert(key.clone(), field);
         }
         self.fields.get(&key)
+    }
+
+    /// Takes `cells` as everything that stands on the current map, and
+    /// throws every field away if that is not what stood before.
+    fn see_standing(&mut self, mut cells: Vec<Point>) {
+        cells.sort();
+        cells.dedup();
+        if cells != self.standing {
+            self.standing = cells;
+            self.invalidate();
+        }
+    }
+
+    /// Takes `cells` as every shown trap on the current map, and throws
+    /// every field away if those are not the traps shown before: one
+    /// spotted, sprung for the last time or carried off.
+    fn see_traps(&mut self, mut cells: Vec<Point>) {
+        cells.sort();
+        cells.dedup();
+        if cells != self.traps {
+            self.traps = cells;
+            self.invalidate();
+        }
     }
 
     /// How many fields are built right now, for a test that a shared goal
@@ -357,23 +448,71 @@ impl FlowFields {
     }
 }
 
+/// The window as a field floods it: the map's own costs, a wall wherever
+/// something stands, and for a wary mind a trap's price on a shown trap's
+/// cell; except under a goal, which is where the field leads and so is
+/// never a wall nor priced, whoever stands on a trap to be followed or
+/// fought.
+///
+/// A diagonal past what stands is the map's to allow, as the move
+/// resolver allows it: a prop fills its cell, not the corners beside it.
+struct AroundStanding<'a> {
+    view: crate::world::WindowView<'a>,
+    walls: &'a BitGrid,
+    snares: Option<&'a BitGrid>,
+    goals: Vec<Point>,
+}
+
+impl Grid2D for AroundStanding<'_> {
+    fn width(&self) -> i32 {
+        self.view.width()
+    }
+
+    fn height(&self) -> i32 {
+        self.view.height()
+    }
+}
+
+impl rl_grid::CostSource for AroundStanding<'_> {
+    fn cost_idx(&self, idx: usize) -> Option<u32> {
+        let snared = self.snares.is_some_and(|s| s.get_idx(idx));
+        if !(self.walls.get_idx(idx) || snared) || self.goals.contains(&self.idx_point(idx)) {
+            return self.view.cost_idx(idx);
+        }
+        if self.walls.get_idx(idx) {
+            return None;
+        }
+        self.view.cost_idx(idx).map(|cost| cost + WARY_OF_A_TRAP)
+    }
+
+    fn lets_diagonal_past(&self, p: Point) -> bool {
+        self.view.lets_diagonal_past(p)
+    }
+}
+
 /// The fields as one mind asks them: its movement class, over this map.
 struct Walking<'a> {
     fields: &'a mut FlowFields,
     map: &'a WorldMap,
     profile: MovementProfile,
     opens_doors: bool,
+    wary: bool,
 }
 
 impl Walking<'_> {
-    fn descents(&mut self, goals: &[Point], from: Point, away: bool) -> Vec<Point> {
+    /// The field toward or away from `goals`, and `from` in its coordinates.
+    fn field(&mut self, goals: &[Point], from: Point, away: bool) -> Option<(&DijkstraMap, Point)> {
         let mut goals = goals.to_vec();
         goals.sort();
         goals.dedup();
+        let local = self.map.to_local(from)?;
+        Some((self.fields.ensure((goals, self.profile, self.opens_doors, self.wary, away), self.map)?, local))
+    }
+
+    fn descents(&mut self, goals: &[Point], from: Point, away: bool) -> Vec<Point> {
         let origin = self.map.window_tiles().origin();
-        let Some(local) = self.map.to_local(from) else { return Vec::new() };
-        match self.fields.ensure((goals, self.profile, self.opens_doors, away), self.map) {
-            Some(field) => field.descents(local).into_iter().map(|p| p + origin).collect(),
+        match self.field(goals, from, away) {
+            Some((field, local)) => field.descents(local).into_iter().map(|p| p + origin).collect(),
             None => Vec::new(),
         }
     }
@@ -386,6 +525,13 @@ impl rl_rules::Fields for Walking<'_> {
 
     fn descents_away(&mut self, goals: &[Point], from: Point) -> Vec<Point> {
         self.descents(goals, from, true)
+    }
+
+    /// The field toward `goals` at `from`: the one a mind closing on them
+    /// walks down, so the walk is read off a flood already made.
+    fn on_foot(&mut self, goals: &[Point], from: Point) -> Option<u32> {
+        let (field, local) = self.field(goals, from, false)?;
+        field.value(local).and_then(|v| u32::try_from(v).ok())
     }
 
     /// The move resolver's own corner rule, so a mind that opens doors
@@ -692,13 +838,28 @@ impl crate::seed::Stream for MindRng {
     }
 }
 
+/// A shown prop as a wary mind reads it: where, on which map, and what it
+/// does at its moments.
+type Shown = (&'static Position, Option<&'static OnMap>, &'static crate::effects::Triggers);
+
 /// The shared state a mind reads and the stream it draws from.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct MindWorld<'w> {
+pub struct MindWorld<'w, 's> {
     fields: ResMut<'w, FlowFields>,
     rng: ResMut<'w, MindRng>,
     map: Res<'w, WorldMap>,
     occupancy: Res<'w, Occupancy>,
+    /// What blocks and is no actor: what stands, for the fields.
+    standing: Query<'w, 's, (), (With<Blocks>, Without<Actor>)>,
+    /// Every shown prop that does something at a moment, for the traps a
+    /// wary mind steps round.
+    traps: Query<'w, 's, Shown, (With<crate::props::Prop>, Without<crate::props::Hidden>)>,
+    /// Whose side gives way, and whether to minds.
+    bumps: Option<Res<'w, crate::bump::BumpRules>>,
+    /// How sides stand to each other, for who is neutral to whom.
+    rules: Option<Res<'w, CombatRules>>,
+    /// Everyone's side.
+    sides: Query<'w, 's, &'static Faction>,
 }
 
 /// A mind chose something of the game's own: what its tactic returned,
@@ -773,6 +934,7 @@ pub struct MindIntents<'w> {
     uses: MessageWriter<'w, Intent<UseItem>>,
     uses_at: MessageWriter<'w, Intent<UseItemAt>>,
     begins: MessageWriter<'w, Intent<crate::work::BeginWork>>,
+    swaps: MessageWriter<'w, Intent<crate::bump::Swap>>,
     chose: MessageWriter<'w, MindChose>,
 }
 
@@ -794,11 +956,39 @@ pub fn decide_minds(
     mut world: MindWorld,
     mut minds: Query<Deciding, With<MyTurn>>,
 ) {
+    // Before anything returns early: a change is seen once, by the run of
+    // this system that comes after it, whether or not a mind decides then.
+    if world.occupancy.is_changed() {
+        let standing = world.occupancy.iter().filter(|(_, e)| world.standing.contains(*e)).map(|(p, _)| p).collect();
+        world.fields.see_standing(standing);
+    }
+    // Every run, and not on a change: a trap is shown, sprung for the last
+    // time or carried off by its own components, and the props that do
+    // something at a moment are few.
+    let here = world.map.current();
+    let live = |t: &crate::effects::Trigger| t.on == crate::effects::Moments::ENTERED && t.fires != Some(0);
+    let traps =
+        world.traps.iter().filter(|(_, on, triggers)| on.map_or(MapId::SURFACE, |m| m.0) == here && triggers.0.iter().any(live)).map(|(at, ..)| at.0).collect();
+    world.fields.see_traps(traps);
     let Some((thinker, mut snapshot)) = thinking.close() else { return };
     let Ok((mind, my_pos, profile, intelligence, mut came_from, mut doing, mut trails)) = minds.get_mut(thinker) else { return };
     let thinking = &*thinking;
-    let MindWorld { fields, rng, map, occupancy } = &mut world;
+    let MindWorld { fields, rng, map, occupancy, bumps, rules, sides, .. } = &mut world;
     let (fields, rng, map, occupancy) = (&mut **fields, &mut **rng, &**map, &**occupancy);
+    // Who gives way to this mind: one neutral to it of a side the bump
+    // rules name, when they say minds step past too, and never to a mind
+    // of such a side itself, so two of them do not shuffle round each other.
+    let side_of = |e: Entity| sides.get(e).ok().map(|f| f.0);
+    let mine = side_of(thinker);
+    let passing = bumps.as_deref().filter(|r| r.minds_too && !r.gives_way(mine));
+    let neutral = |e: Entity| match (rules.as_deref(), mine, side_of(e)) {
+        (Some(rules), Some(me), Some(them)) => rules.factions.relation(me, them) == rl_rules::Relation::Neutral,
+        _ => false,
+    };
+    let gives_way = |p: Point| {
+        let here = occupancy.at(p);
+        passing.is_some_and(|r| !here.is_empty() && here.iter().all(|e| r.gives_way(side_of(*e)) && neutral(*e)))
+    };
     let wits = intelligence.map(|i| i.0).unwrap_or_default();
     let opens_doors = wits.has(Wits::OPENS_DOORS);
     snapshot.sort();
@@ -809,12 +999,13 @@ pub fn decide_minds(
     // lock it would be refused at every turn. Nor is a cell some
     // contributor marked a hazard anywhere a mind will step.
     let opens = |p: Point| opens_doors && map.opens(p).is_some() && map.lock(p).is_none();
-    let can_step = |p: Point| (map.is_walkable(p) || opens(p)) && !occupancy.is_occupied(p) && !thinking.is_hazard(p);
+    let can_step = |p: Point| (map.is_walkable(p) || opens(p)) && (!occupancy.is_occupied(p) || gives_way(p)) && !thinking.is_hazard(p);
     // The predicate the ability resolver uses, so what a tactic thinks a
     // shape will cover is what it does cover.
     let blocks_shot = |p: Point| map.blocks_projectiles(p) || occupancy.is_occupied(p);
     let blocks_burst = |p: Point| map.blocks_projectiles(p);
-    let mut walking = Walking { fields, map, profile: profile.map(|p| p.0).unwrap_or_default(), opens_doors };
+    let wary = wits.has(Wits::WARY);
+    let mut walking = Walking { fields, map, profile: profile.map(|p| p.0).unwrap_or_default(), opens_doors, wary };
     let mut ctx = TacticCtx {
         snapshot: &snapshot,
         fields: &mut walking,
@@ -844,6 +1035,12 @@ pub fn decide_minds(
         // A step onto a shut door is the turn spent opening it: the door is
         // its own action, and the mind knows what it is walking into.
         Decision::Step(to) => match Direction::between(my_pos.0, to) {
+            // A step into one who gives way is the two changing places.
+            Some(_) if gives_way(to) => {
+                came_from.0 = Some(my_pos.0);
+                let other = occupancy.at(to)[0];
+                intents.swaps.write(Intent::new(thinker, crate::bump::Swap(other)));
+            }
             Some(d) if map.opens(to).is_some() => {
                 intents.opens.write(Intent::new(thinker, Open(d)));
             }
@@ -1206,6 +1403,156 @@ mod tests {
         assert!(app.world().get_entity(monster).is_err(), "the monster despawned by the end of the frame");
         assert!(!app.world().resource::<Occupancy>().is_occupied(mpos));
         assert!(!app.world().resource::<Turns>().contains(monster));
+    }
+
+    /// The player, and a mind of `brain`, on the player's side or the other,
+    /// five cells east of it among blocking props at `props` round it.
+    fn among_props(brain: Brain<Entity>, ours: bool, props: &[(i32, i32)]) -> (App, Entity, Entity, Point) {
+        let (mut app, start, _) = arena();
+        let sides = crate::testing::two_sides(&mut app);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(sides.ours))).id();
+        let at = start.offset(5, 0);
+        for (dx, dy) in props {
+            app.world_mut().spawn((crate::props::Prop, Blocks, Position(at.offset(*dx, *dy))));
+        }
+        let side = if ours { sides.ours } else { sides.theirs };
+        let mind = app.world_mut().spawn((Actor, Blocks, Position(at), Health::full(20), Faction(side), Perception(8), Mind(Arc::new(brain)))).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        (app, player, mind, start)
+    }
+
+    /// The player waits out `turns` turns, and the mind has as many.
+    fn waiting(app: &mut App, player: Entity, turns: usize) {
+        for _ in 0..turns * 4 {
+            if app.world().get::<MyTurn>(player).is_some() {
+                app.world_mut().write_message(Intent::new(player, Wait));
+            }
+            app.update();
+        }
+    }
+
+    /// A cup of props open on the far side from the player: the straight
+    /// way is through its wall, the way round out of its mouth and back.
+    const CUP: [(i32, i32); 5] = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1)];
+
+    #[test]
+    fn a_hunter_cupped_in_blocking_props_walks_out_of_the_cup_and_round_to_its_prey() {
+        let (mut app, player, hunter, start) = among_props(Brain::new().then(Hunt), false, &CUP);
+        waiting(&mut app, player, 12);
+        let at = app.world().get::<Position>(hunter).unwrap().0;
+        assert!(geometry::is_adjacent(at, start), "it walked round the props to the player, not into them: {at:?} from {start:?}");
+    }
+
+    #[test]
+    fn a_hunter_ringed_by_props_waits_and_comes_out_the_turn_one_is_taken_away() {
+        let ring: Vec<(i32, i32)> = Direction::ALL.iter().map(|d| (d.offset().x, d.offset().y)).collect();
+        let (mut app, player, hunter, start) = among_props(Brain::new().then(Hunt), false, &ring);
+        waiting(&mut app, player, 4);
+        let shut = app.world().get::<Position>(hunter).unwrap().0;
+        assert_eq!(shut, start.offset(5, 0), "nowhere to go");
+        let west = shut.offset(-1, 0);
+        let mut props = app.world_mut().query_filtered::<(Entity, &Position), With<crate::props::Prop>>();
+        let gone = props.iter(app.world()).find(|(_, p)| p.0 == west).map(|(e, _)| e).unwrap();
+        app.world_mut().despawn(gone);
+        waiting(&mut app, player, 8);
+        let at = app.world().get::<Position>(hunter).unwrap().0;
+        assert!(geometry::is_adjacent(at, start), "it came out where the prop stood: {at:?} from {start:?}");
+    }
+
+    #[test]
+    fn a_follower_cupped_in_blocking_props_walks_out_of_the_cup_and_round_to_keep_up() {
+        let (mut app, player, follower, start) = among_props(Brain::new().then(rl_rules::ai::tactics::Keep::allies(1, 1)), true, &CUP);
+        waiting(&mut app, player, 12);
+        let at = app.world().get::<Position>(follower).unwrap().0;
+        assert!(geometry::is_adjacent(at, start), "it walked round the props, measuring its gap on foot: {at:?} from {start:?}");
+    }
+
+    /// The player, a hunter of `wits` six cells east, and a line of traps
+    /// across the straight way between them, shown or `hidden`; in a
+    /// corridor one cell wide when `walled`, where there is no way round.
+    /// Every cell the hunter stood on as it closed, and the traps.
+    fn past_traps(wits: Wits, hidden: bool, walled: bool) -> (Vec<Point>, Vec<Point>, Point) {
+        let (mut app, start, _) = arena();
+        let sides = crate::testing::two_sides(&mut app);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(sides.ours))).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        if walled {
+            let wall = rl_grid::TileRegistry::standard().expect("wall");
+            let mut map = app.world_mut().resource_mut::<WorldMap>();
+            for dx in -1..=7 {
+                map.set_tile(start.offset(dx, -1), wall);
+                map.set_tile(start.offset(dx, 1), wall);
+            }
+        }
+        let traps: Vec<Point> = if walled { vec![start.offset(3, 0)] } else { (-1..=1).map(|dy| start.offset(3, dy)).collect() };
+        let trigger = crate::effects::Trigger {
+            on: crate::effects::Moments::ENTERED,
+            area: rl_rules::ability::Area::Here,
+            fires: None,
+            effects: Arc::new(crate::effects::Effects::default()),
+            look: None,
+            every: None,
+            targeting: None,
+            asks: None,
+        };
+        for at in &traps {
+            let mut trap = app.world_mut().spawn((crate::props::Prop, Position(*at), crate::effects::Triggers(vec![trigger.clone()])));
+            if hidden {
+                trap.insert(crate::props::Hidden { spot: 0 });
+            }
+        }
+        let hunter = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Blocks,
+                Position(start.offset(6, 0)),
+                Health::full(20),
+                Faction(sides.theirs),
+                Perception(8),
+                Intelligence(wits),
+                Mind(Arc::new(Brain::new().then(Hunt))),
+            ))
+            .id();
+        let mut walked = Vec::new();
+        for _ in 0..60 {
+            if app.world().get::<MyTurn>(player).is_some() {
+                app.world_mut().write_message(Intent::new(player, Wait));
+            }
+            app.update();
+            walked.push(app.world().get::<Position>(hunter).unwrap().0);
+        }
+        (walked, traps, start)
+    }
+
+    #[test]
+    fn a_wary_mind_walks_round_a_trap_it_can_see_and_a_beast_walks_over_it() {
+        let (walked, traps, start) = past_traps(Wits::SAPIENT, false, false);
+        assert!(walked.iter().all(|p| !traps.contains(p)), "a sapient mind went round the traps: {walked:?}");
+        assert!(geometry::is_adjacent(*walked.last().unwrap(), start), "and reached the player");
+        let (walked, traps, _) = past_traps(Wits::ANIMAL, false, false);
+        assert!(walked.iter().any(|p| traps.contains(p)), "a beast took the straight way over them: {walked:?}");
+    }
+
+    #[test]
+    fn a_wary_mind_walks_over_a_trap_nobody_has_spotted_and_one_with_no_way_round() {
+        let (walked, traps, _) = past_traps(Wits::SAPIENT, true, false);
+        assert!(walked.iter().any(|p| traps.contains(p)), "a hidden trap is open floor to it: {walked:?}");
+        let (walked, traps, start) = past_traps(Wits::SAPIENT, false, true);
+        assert!(walked.iter().any(|p| traps.contains(p)), "in a corridor it crosses the one trap there is: {walked:?}");
+        assert!(geometry::is_adjacent(*walked.last().unwrap(), start), "rather than standing behind it for good");
+    }
+
+    #[test]
+    fn an_actor_stepping_throws_no_field_away_and_something_standing_that_goes_does() {
+        let mut fields = FlowFields::default();
+        fields.see_standing(vec![Point::new(3, 3)]);
+        fields.fields.insert((vec![Point::ZERO], MovementProfile::default(), false, false, false), DijkstraMap::new(rl_core::Rect::new(0, 0, 1, 1)));
+        fields.see_standing(vec![Point::new(3, 3)]);
+        assert_eq!(fields.len(), 1, "the same cells stand: the field is kept");
+        fields.see_standing(Vec::new());
+        assert!(fields.is_empty(), "what stood is gone: the field is thrown away");
     }
 
     /// The player behind a ring of wall with one gate in it, a gate that can
@@ -2038,16 +2385,16 @@ mod tests {
         let walker = MovementProfile::default();
         let (a, b, c) = (start.offset(2, 0), start.offset(0, 2), start.offset(-2, 0));
         let mut fields = FlowFields::default();
-        assert!(fields.ensure((vec![a, b], walker, false, false), map).is_some());
-        assert!(fields.ensure((vec![a], walker, false, false), map).is_some());
+        assert!(fields.ensure((vec![a, b], walker, false, false, false), map).is_some());
+        assert!(fields.ensure((vec![a], walker, false, false, false), map).is_some());
         assert_eq!((fields.len(), fields.floods.entries.len()), (2, 2), "two fields, and no flood the first did not already make");
-        assert!(fields.ensure((vec![a, c], walker, false, false), map).is_some());
+        assert!(fields.ensure((vec![a, c], walker, false, false, false), map).is_some());
         assert_eq!((fields.len(), fields.floods.entries.len()), (3, 3), "a third field, for the one goal that is new");
         // A composed field is the flood from all of its goals together.
         let view = map.view();
         let mut whole = DijkstraMap::covering(&view);
         whole.build(&view, [a, b].iter().filter_map(|g| map.to_local(*g)), PathRules::default());
-        let composed = fields.ensure((vec![a, b], walker, false, false), map).unwrap();
+        let composed = fields.ensure((vec![a, b], walker, false, false, false), map).unwrap();
         assert!(whole.iter().eq(composed.iter()), "cell for cell what one flood from both gives");
     }
 
@@ -2063,7 +2410,7 @@ mod tests {
         app.update();
         let map = app.world().resource::<WorldMap>();
         let walker = MovementProfile::default();
-        let key = |i: i32| (vec![start.offset(i % 8, i / 8)], walker, false, false);
+        let key = |i: i32| (vec![start.offset(i % 8, i / 8)], walker, false, false, false);
         let mut fields = FlowFields::default();
         fields.ensure(key(0), map);
         for i in 1..=(FIELD_CACHE as i32 + 8) {

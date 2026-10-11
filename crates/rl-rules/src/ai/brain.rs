@@ -122,6 +122,22 @@ pub trait Fields {
     /// leads away from them and round corners rather than into them.
     fn descents_away(&mut self, goals: &[Point], from: Point) -> Vec<Point>;
 
+    /// How far `from` is from the nearest of `goals` on foot, in hundredths
+    /// of a step, the unit every cost is in: the value the field toward
+    /// `goals` holds at `from`, so asking is free once a mind has walked
+    /// down that field. `None` when there is no way, or no field at all,
+    /// and a tactic then measures as the crow flies.
+    ///
+    /// Its own question rather than a count of descents, because the walk
+    /// is what a follower loses time over: three cells off across a wall
+    /// with a gap in it is a walk of five, and a diagonal stride costs a
+    /// straight one and two fifths. `None` by default, so a game that does
+    /// no pathing measures every gap as the crow flies.
+    fn on_foot(&mut self, goals: &[Point], from: Point) -> Option<u32> {
+        let _ = (goals, from);
+        None
+    }
+
     /// Whether a diagonal step may cut past the corner at `p`, by the rule
     /// the move resolver refuses one by, asked of both cells a diagonal
     /// squeezes between by every tactic that picks a neighbour itself.

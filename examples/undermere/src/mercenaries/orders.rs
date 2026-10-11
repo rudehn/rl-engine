@@ -103,66 +103,18 @@ impl<T: Tactic<Entity>> Tactic<Entity> for Leashed<T> {
     }
 }
 
-/// Closing on the one it follows while it cannot see them, or while the
-/// walk to them is longer than the [`LEASH`], wherever the gap stands as
-/// the crow flies.
+/// Closing on the one it follows while it cannot see them, wherever the
+/// gap stands.
 ///
-/// What keeps a follower from losing the adventurer round a corner or a
-/// wall. `Keep::leader` measures the gap as the crow flies, so a follower
-/// three cells from a corner the adventurer has just turned stands still
-/// while they walk on, the gap holding at three across the wall and the
-/// walk between them growing a step a turn. The same is true in sight:
-/// three cells off across a wall with a gap in it is a walk of five, and
-/// three cells off on a diagonal is a walk of more than four, a diagonal
-/// stride taking the engine 141 to a straight one's 100; a follower that
-/// waited there until the crow's gap opened set off two steps behind and
-/// could never make them up, walking at the adventurer's own pace, so the
-/// adventurer reached a stair with it five cells back and went down
-/// without it. Out of sight, or further than the leash on foot, it closes.
+/// What keeps a follower from losing the adventurer round a corner.
+/// `Keep::leader` measures the gap on foot, so a follower sets off as soon
+/// as the walk to the adventurer is longer than the [`LEASH`], across a
+/// wall or round a corner as surely as in the open; but within the leash
+/// it stands, and three steps round a corner is out of sight, where the
+/// adventurer's next turn is one the follower cannot see coming. Out of
+/// sight, it closes to a step.
 #[derive(Debug, Clone, Copy)]
 pub struct Behind(pub Keep);
-
-/// What a straight step costs in [`Behind`]'s walk, and a diagonal one:
-/// the engine's own ratio, so the walk measured is the time the follower
-/// would take.
-const STRAIGHT: i32 = 100;
-const DIAGONAL: i32 = 141;
-
-impl Behind {
-    /// Whether the walk from `from` to `to`, round whatever cannot be
-    /// stepped on and by the corner rule the field keeps, is longer than
-    /// the leash: a Dijkstra flood out from `from` over the cells within
-    /// reach of the leash, which stops as soon as `to` is reached within
-    /// it. Somebody standing in the way is walked round, as the follower
-    /// would have to.
-    fn too_far(ctx: &TacticCtx<'_, Entity>, from: Point, to: Point) -> bool {
-        let most = LEASH * STRAIGHT;
-        let mut best: std::collections::BTreeMap<Point, i32> = std::collections::BTreeMap::from([(from, 0)]);
-        let mut open = std::collections::BinaryHeap::from([std::cmp::Reverse((0, from))]);
-        while let Some(std::cmp::Reverse((cost, at))) = open.pop() {
-            if at == to {
-                return false;
-            }
-            if best.get(&at).is_some_and(|b| *b < cost) {
-                continue;
-            }
-            for d in Direction::ALL {
-                let next = at + d.offset();
-                let (dx, dy) = (d.offset().x, d.offset().y);
-                let squeezed = d.is_diagonal() && !(ctx.fields.lets_diagonal_past(at.offset(dx, 0)) && ctx.fields.lets_diagonal_past(at.offset(0, dy)));
-                if squeezed || (next != to && !(ctx.can_step)(next)) {
-                    continue;
-                }
-                let cost = cost + if d.is_diagonal() { DIAGONAL } else { STRAIGHT };
-                if cost <= most && best.get(&next).is_none_or(|b| cost < *b) {
-                    best.insert(next, cost);
-                    open.push(std::cmp::Reverse((cost, next)));
-                }
-            }
-        }
-        true
-    }
-}
 
 impl Tactic<Entity> for Behind {
     fn name(&self) -> &'static str {
@@ -171,7 +123,7 @@ impl Tactic<Entity> for Behind {
 
     fn evaluate(&self, ctx: &mut TacticCtx<'_, Entity>) -> Option<Decision<Entity>> {
         let led = ctx.snapshot.sense::<Led>()?;
-        if led.in_sight && !Self::too_far(ctx, ctx.snapshot.me.pos, led.at) {
+        if led.in_sight {
             return None;
         }
         self.0.evaluate(ctx)
@@ -463,8 +415,9 @@ mod tests {
     /// turn of the long way across, through whatever rooms, corridors,
     /// corners and doors it takes, and every time they stop. Walking at
     /// their own pace it cannot gain on them, so it holds three only by
-    /// setting off before the walk to them is longer than three, as
-    /// [`Behind`] does, and never by catching up after.
+    /// setting off as soon as the walk to them is longer than three, as
+    /// the engine's `Keep::leader` does by measuring on foot, and never by
+    /// catching up after.
     #[test]
     fn a_follower_keeps_within_three_of_the_adventurer_across_a_floor_with_nothing_to_fight_over_a_span_of_seeds() {
         for seed in 0..12 {
@@ -473,15 +426,6 @@ mod tests {
             let brenna = hired(&mut app, me, here.offset(-1, 0), "Brenna");
             let way = the_long_way(&mut app, here, 60);
             assert!(way.len() >= 30, "seed {seed}: a long way to walk, {} cells", way.len());
-            // Furniture too: a mind's field is the map's tiles alone, so a
-            // follower boxed in by a drill yard's posts on three sides
-            // takes its field's way into a post and stands, an engine
-            // limit this task reports rather than works round here.
-            let world = app.world_mut();
-            let furniture: Vec<Entity> = world.query_filtered::<Entity, (With<Prop>, With<Blocks>)>().iter(world).collect();
-            for thing in furniture {
-                world.despawn(thing);
-            }
             for stretch in way.chunks(6) {
                 let mut widest = 0;
                 walk(&mut app, me, stretch, |app| widest = widest.max(gap(app, me, brenna)));
