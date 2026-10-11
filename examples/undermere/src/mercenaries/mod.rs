@@ -35,9 +35,9 @@
 //! [`befriend`](crate::allies::befriend), following them by `Leader`, and
 //! offering [`GIVE`] and [`DISMISS`]. It thinks with one of the three
 //! brains of [`MercenaryBrains`], built once at load, one for each
-//! [`Order`]: follow, hold, fight freely, every tactic of each [`Wary`] of
-//! what [`sense_shown_traps`] says the adventurer found underfoot, so none
-//! steps it onto a trap they stepped round. [`order_party`] cycles every
+//! [`Order`]: follow, hold, fight freely. A hire is sapient, so the
+//! engine's `Wits::WARY` walks it round a trap the adventurer has found,
+//! and over one in a corridor with no way round. [`order_party`] cycles every
 //! mercenary's order at once on the order key, without spending a turn,
 //! and [`show_orders`] says the order on the look panel and the party
 //! panel, and on the look panel that it is in the adventurer's pay and
@@ -100,7 +100,6 @@ mod orders;
 mod saved;
 mod tavern;
 mod travel;
-mod wary;
 
 pub use hired::*;
 pub use kit::*;
@@ -109,7 +108,6 @@ pub use leaving::*;
 pub use orders::*;
 pub use tavern::*;
 pub use travel::*;
-pub use wary::*;
 
 #[cfg(doc)]
 use crate::armory::Armory;

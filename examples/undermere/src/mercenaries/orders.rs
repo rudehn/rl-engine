@@ -9,7 +9,7 @@ use rl_engine::rl_rules::ai::brain::Tactic;
 use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, Keep, KeepPost, Led, MeleeAdjacent, Scavenge, Station, ThrowAtRange, UseCarried};
 use serde::{Deserialize, Serialize};
 
-use super::{KitSeen, MERCENARY, Mercenary, PutOnBetter, Wary};
+use super::{KitSeen, MERCENARY, Mercenary, PutOnBetter};
 use crate::bestiary::{Bestiary, MonsterDef, SCAVENGE_REACH};
 use crate::input::Binds;
 
@@ -161,19 +161,17 @@ impl MercenaryBrains {
         let first = || {
             let mut brain = Brain::new();
             if kind.flee_at() > 0 {
-                brain = brain.then(Wary(FleeWhenHurt { at_pct: kind.flee_at() }));
+                brain = brain.then(FleeWhenHurt { at_pct: kind.flee_at() });
             }
-            brain.then(Wary(UseCarried::default())).then(Wary(MeleeAdjacent)).then(Wary(ThrowAtRange::default())).then(Wary(PutOnBetter))
+            brain.then(UseCarried::default()).then(MeleeAdjacent).then(ThrowAtRange::default()).then(PutOnBetter)
         };
-        // Every tactic is wary of what the adventurer found underfoot, so
-        // none steps a mercenary onto a trap they stepped round.
-        let keep = Wary(Keep::leader(LEASH, 1));
-        let behind = Wary(Behind(Keep::leader(1, 1)));
-        let fetch = Wary(Leashed(Scavenge { reach: SCAVENGE_REACH }));
+        let keep = Keep::leader(LEASH, 1);
+        let behind = Behind(Keep::leader(1, 1));
+        let fetch = Leashed(Scavenge { reach: SCAVENGE_REACH });
         Self {
-            follow: Arc::new(first().then(keep).then(behind).then(Wary(Leashed(Hunt))).then(fetch)),
-            hold: Arc::new(first().then(Wary(KeepPost))),
-            free: Arc::new(first().then(Wary(Hunt)).then(keep).then(behind).then(fetch)),
+            follow: Arc::new(first().then(keep).then(behind).then(Leashed(Hunt)).then(fetch)),
+            hold: Arc::new(first().then(KeepPost)),
+            free: Arc::new(first().then(Hunt).then(keep).then(behind).then(fetch)),
         }
     }
 
@@ -331,11 +329,13 @@ mod tests {
     use std::collections::{BTreeMap, VecDeque};
     use std::sync::Arc;
 
+    use bevy::ecs::system::RunSystemOnce;
+    use rl_engine::rl_bevy::props::{Hidden, spawn_prop};
     use rl_engine::rl_bevy::testing::{KeyScriptPlugin, press};
 
     use super::*;
     use crate::mercenaries::fixtures::hired;
-    use crate::testing::{arena, arena_with, at, clear_floor, here, pass_turns, said, still};
+    use crate::testing::{arena, arena_with, at, clear_floor, here, pass_turns, said, stand_on, still};
 
     /// Whether `who` thinks with the brain for `order`.
     fn thinks(app: &App, who: Entity, order: Order) -> bool {
@@ -571,5 +571,43 @@ mod tests {
             let row: Vec<&str> = party.rows.iter().filter(|r| r.entity == brenna).flat_map(|r| r.facets.iter().map(|f| f.text.as_str())).collect();
             assert_eq!(row, [word], "the party row");
         }
+    }
+
+    /// A hired follower on the far side of a row of dart plates the
+    /// adventurer found and stepped round never sets foot on one: it goes
+    /// round the row's end rather than over it, and still catches up. It is
+    /// the engine's `Wits::WARY`, which a sapient hire has, pricing a shown
+    /// trap that can still go off in its flow fields; the game adds nothing.
+    #[test]
+    fn a_follower_steps_round_the_traps_the_adventurer_has_found() {
+        let (mut app, me, centre) = arena(2);
+        let row: Vec<Point> = (-3..=4).map(|dx| centre.offset(dx, 0)).collect();
+        let map = here(&app);
+        // Found, as the adventurer finds a plate: shown, no longer hidden.
+        for cell in row.clone() {
+            let plate = app
+                .world_mut()
+                .run_system_once(move |mut commands: Commands, registries: Res<Registries>| {
+                    spawn_prop(&mut commands, &registries, registries.props.expect("dart plate"), cell, map)
+                })
+                .expect("it runs");
+            app.world_mut().entity_mut(plate).remove::<Hidden>();
+        }
+        stand_on(&mut app, me, centre.offset(-4, -1));
+        let brenna = hired(&mut app, me, centre.offset(-4, 1), "Brenna");
+        for _ in 0..9 {
+            app.world_mut().write_message(Intent::new(me, Bump(Direction::East)));
+            for _ in 0..2 {
+                app.update();
+                assert!(!row.contains(&at(&app, brenna)), "it stood on the plate at {:?}", at(&app, brenna));
+            }
+        }
+        assert_eq!(at(&app, me), centre.offset(5, -1), "the adventurer walks beside the row");
+        for _ in 0..12 {
+            app.world_mut().write_message(Intent::new(me, Wait));
+            app.update();
+            assert!(!row.contains(&at(&app, brenna)), "it stood on the plate at {:?}", at(&app, brenna));
+        }
+        assert!(geometry::chebyshev(at(&app, me), at(&app, brenna)) <= LEASH, "and it caught up");
     }
 }
