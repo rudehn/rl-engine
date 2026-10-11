@@ -17,7 +17,8 @@
 //! [`CAUSEWAY`] the causeway already hidden at build. A sleeper keeps the
 //! cell it was laid on as its post, as a piece's guard does.
 //!
-//! In play, [`lifts`] answers a prize taken: the other cages shut, the
+//! In play, [`wells`] answers a reward piece used where it stands, a
+//! spring, an anvil or a moonwell, once. [`lifts`] answers a prize taken: the other cages shut, the
 //! vermin pour out, the water rises, the floor gives way, the gallery
 //! falls in behind. [`answer_pull_lever`] lifts a floor's seal and
 //! [`spend_vault_key`] leaves a key in the lock it opened; what a
@@ -52,6 +53,7 @@ use crate::dungeon::{MIN_DISTANCE_FROM_ENTRY, floor_of};
 pub mod lifts;
 #[cfg(test)]
 mod tests;
+pub mod wells;
 
 /// A piece's mark for a sleeper of the floor's own, drawn from the floor's
 /// table as the population draws one: a hoard's band, a last stand's

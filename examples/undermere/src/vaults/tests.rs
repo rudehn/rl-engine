@@ -666,3 +666,71 @@ fn deep_water_never_rises_under_somebody_standing_in_it() {
     pass_turns(&mut app, 2);
     assert_eq!(tile_at(&app, map, far), "deep water", "and deep once it has gone");
 }
+
+/// The prop `name` of `map`, and where it stands; the first, in row order.
+fn the_one(app: &mut App, map: MapId, name: &str) -> (Entity, Point) {
+    *props_called(app, map, name).first().unwrap_or_else(|| panic!("a {name} on the floor"))
+}
+
+/// Takes up `verb` on `prop` from beside it, with `thing` chosen first
+/// when the offer chooses one.
+fn take_up_on(app: &mut App, me: Entity, prop: Entity, at: Point, verb: &str, thing: Option<Entity>) {
+    let next = beside(app, at);
+    stand_on(app, me, next);
+    let verb = app.world().resource::<Verbs>().get(verb).expect("declared");
+    app.world_mut().write_message(Intent::new(me, Interact { target: prop, verb, thing }));
+    settle(app);
+}
+
+/// A healing spring drunk from heals its drinker whole, where it stands,
+/// and runs dry: drunk from once, never twice.
+#[test]
+fn a_healing_spring_heals_its_drinker_whole_once() {
+    use super::wells::*;
+    let (mut app, me, map) = on_the_floor_of("Healing Spring");
+    let (spring, at) = the_one(&mut app, map, SPRING);
+    // An adventurer's own health rather than the sturdy test one's, which
+    // no draught is written to fill.
+    let full = 120;
+    app.world_mut().entity_mut(me).insert(Health::full(full));
+    app.world_mut().get_mut::<Health>(me).expect("health").current = 1;
+    take_up_on(&mut app, me, spring, at, DRINK_VERB, None);
+    assert_eq!(app.world().get::<Health>(me).expect("health").current, full, "healed whole");
+    assert!(props_called(&mut app, map, SPRING).is_empty(), "the spring is gone");
+    assert_eq!(props_called(&mut app, map, DRY_SPRING).len(), 1, "run dry where it stood");
+}
+
+/// A cold forge's anvil tempers a worn weapon a level, chosen among what
+/// is worn and nothing carried besides, and goes cold.
+#[test]
+fn the_cold_forges_anvil_tempers_a_worn_weapon_once() {
+    use super::wells::*;
+    let (mut app, me, map) = on_the_floor_of("The Cold Forge");
+    let (anvil, at) = the_one(&mut app, map, ANVIL);
+    assert!(app.world().get::<rl_engine::rl_bevy::props::Scenery>(anvil).is_none(), "listed with what can be acted on");
+    let hand = app.world().resource::<Registries>().slots.expect("main hand");
+    let sword = app.world().get::<Equipped>(me).and_then(|worn| worn.in_slot(hand)).expect("the sword they set out with");
+    let carried = make(&mut app, "potion of descent");
+    give(&mut app, me, carried);
+    let among = app.world().resource::<WellChoices>().temper;
+    let choices = app.world_mut().run_system_with(among, Chooser { taker: me, offerer: anvil, verb: Verbs::OPEN }).expect("it runs");
+    assert!(choices.contains(&sword) && !choices.contains(&carried), "the sword worn and not the potion carried: {choices:?}");
+    let before = app.world().get::<Enchant>(sword).map_or(0, |e| e.level);
+    take_up_on(&mut app, me, anvil, at, TEMPER_VERB, Some(sword));
+    assert_eq!(app.world().get::<Enchant>(sword).map_or(0, |e| e.level), before + 1, "tempered a level");
+    assert!(props_called(&mut app, map, ANVIL).is_empty() && props_called(&mut app, map, COLD_ANVIL).len() == 1, "and the anvil is cold");
+}
+
+/// A moonwell drunk from tells what one carried thing is, and darkens.
+#[test]
+fn a_moonwell_tells_what_one_carried_thing_is_once() {
+    use super::wells::*;
+    let (mut app, me, map) = on_the_floor_of("Moonwell");
+    let (well, at) = the_one(&mut app, map, MOONWELL);
+    let potion = make(&mut app, "potion of descent");
+    give(&mut app, me, potion);
+    assert!(!app.world().resource::<crate::lore::Lore>().knows("potion of descent"), "not known before");
+    take_up_on(&mut app, me, well, at, DRINK_VERB, Some(potion));
+    assert!(app.world().resource::<crate::lore::Lore>().knows("potion of descent"), "known after");
+    assert!(props_called(&mut app, map, MOONWELL).is_empty() && props_called(&mut app, map, DARK_MOONWELL).len() == 1, "and the well is dark");
+}

@@ -428,18 +428,4 @@
     // that drew the vault and tags with that floor's own lock, so it opens its
     // own vault and no other, and stays in the lock once it has.
     (name: "vault key", glyph: '-', color: (0.95, 0.8, 0.35)),
-
-    // The reward pool's own one-shot waters, each spent by its use, drawn from
-    // a spring, a frost-rimed anvil and a moonwell `assets/prefabs/reward/`
-    // stands once and never refills: `Mend`, the engine's own, and `Enchant`
-    // and `Identify`, Undermere's, asked exactly as their scrolls ask them.
-    (name: "flask of spring water", glyph: '!', color: (0.55, 0.85, 0.95), stack: true,
-     consumable: (charges: 1, when_empty: Destroyed),
-     triggers: [(on: "use", effects: [(kind: "Mend", args: (roll: "12d10+120"))])]),
-    (name: "phial of quenching oil", glyph: '!', color: (0.75, 0.88, 0.95), stack: true,
-     consumable: (charges: 1, when_empty: Destroyed),
-     triggers: [(on: "use", asks: (prompt: "Temper which?"), effects: [(kind: "Enchant")])]),
-    (name: "phial of moonwell water", glyph: '!', color: (0.65, 0.65, 0.9), stack: true,
-     consumable: (charges: 1, when_empty: Destroyed),
-     triggers: [(on: "use", asks: (prompt: "Tell the nature of which?"), effects: [(kind: "Identify")])]),
 ]

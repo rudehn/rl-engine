@@ -14,8 +14,8 @@
 //              blocks sight, which the engine's props never do yet
 //   health:    optional; what it takes to break it; absent, nothing can
 //   offers:    optional; [(verb:, time:, needs:, effects: [...])]: verb is "open" or
-//              "search", the engine's own, or "pull" or "read", Undermere's, which
-//              `src/vaults.rs` answers; time is hundredths of a step; needs is a
+//              "search", the engine's own, or "pull", "read" or "drink", Undermere's,
+//              which `src/vaults.rs` answers; time is hundredths of a step; needs is a
 //              tag the opener must carry
 //   container: optional; (contents: [...], locked:, opened: (glyph:, color:)) where
 //              contents is a list of rows, each either (item: "name", count:) for that
@@ -153,8 +153,10 @@
     (name: "lectern",       glyph: 'n', color: (r: 120, g: 95, b: 70)),
 
     // The reward pieces', `assets/prefabs/reward/`. A coin chest, a cache chest and a
-    // spilled wagon hold what they say; a spring, a frost-rimed anvil and a
-    // moonwell each hold one draught or one phial, once; a reliquary and an
+    // spilled wagon hold what they say; a spring is drunk from once, its
+    // draught a full mend, and a frost-rimed anvil tempers and a moonwell
+    // tells of one thing, once, offered by `src/vaults/wells.rs` since each
+    // chooses the thing first; each stands spent after; a reliquary and an
     // enchanter's altar hold their one thing; a chronicle and a dead
     // adventurer's scratched words are read, by `src/vaults.rs`.
     (name: "coin chest", glyph: '=', color: (r: 205, g: 175, b: 80), blocks: true,
@@ -171,14 +173,12 @@
      offers: [(verb: "open", time: 150)]),
     (name: "spilled crate", glyph: '=', color: (r: 150, g: 115, b: 70)),
     (name: "spring", glyph: '~', color: (r: 140, g: 215, b: 235), blocks: true,
-     container: (contents: [(item: "flask of spring water", count: 1)], opened: (glyph: '~', color: (r: 70, g: 100, b: 110))),
-     offers: [(verb: "open", time: 100)]),
-    (name: "frost-rimed anvil", glyph: 'n', color: (r: 175, g: 210, b: 230), blocks: true,
-     container: (contents: [(item: "phial of quenching oil", count: 1)], opened: (glyph: 'n', color: (r: 110, g: 115, b: 125))),
-     offers: [(verb: "open", time: 100)]),
-    (name: "moonwell", glyph: 'o', color: (r: 185, g: 185, b: 245), blocks: true,
-     container: (contents: [(item: "phial of moonwell water", count: 1)], opened: (glyph: 'o', color: (r: 90, g: 90, b: 120))),
-     offers: [(verb: "open", time: 100)]),
+     offers: [(verb: "drink", time: 100, effects: [(kind: "Mend", args: (roll: "12d10+120"))])]),
+    (name: "dry spring", glyph: '~', color: (r: 70, g: 100, b: 110), blocks: true),
+    (name: "frost-rimed anvil", glyph: 'n', color: (r: 175, g: 210, b: 230), blocks: true),
+    (name: "cold anvil", glyph: 'n', color: (r: 110, g: 115, b: 125), blocks: true),
+    (name: "moonwell", glyph: 'o', color: (r: 185, g: 185, b: 245), blocks: true),
+    (name: "darkened moonwell", glyph: 'o', color: (r: 90, g: 90, b: 120), blocks: true),
     (name: "reliquary", glyph: '|', color: (r: 235, g: 205, b: 120), blocks: true,
      container: (contents: [(tag: "weapon", count: 1, band: 3)], opened: (glyph: '|', color: (r: 130, g: 115, b: 80))),
      offers: [(verb: "open", time: 100)]),
