@@ -24,7 +24,7 @@ use rl_core::{Interner, Point};
 use rl_rules::{Area, Asks, EffectSpec, Names, Targeting, TriggerSpec};
 
 use super::{EffectKinds, EffectWorld, Effects, Landing, Source};
-use crate::ability::{Aimed, Bystanders};
+use crate::ability::{Aimed, Bystanders, LandedOn};
 use crate::cue::{Airborne, Cued, LookOf, TurnHold};
 use crate::turn::Turns;
 use crate::world::WorldMap;
@@ -527,12 +527,14 @@ impl crate::cue::Lands for UseLanding {}
 
 impl UseLanding {
     /// Comes down: the burst over the footprint in the trigger's look, when
-    /// it has one, then the effects, so a cue an effect adds plays after it.
-    fn land(self, world: &mut EffectWorld<'_, '_>) {
+    /// it has one, then the effects, so a cue an effect adds plays after it,
+    /// and the report of whom it came down on.
+    fn land(self, world: &mut EffectWorld<'_, '_>, landed: &mut MessageWriter<LandedOn>) {
         if let Some(burst) = self.look.and_then(|look| self.landing.burst(world, LookOf::Given(look))) {
             world.cues.write(Cued { actor: self.landing.user, cue: burst });
         }
         self.effects.land(&self.landing, world);
+        landed.write(LandedOn::of(&self.landing));
     }
 }
 
@@ -543,6 +545,8 @@ pub struct AimedUses<'w, 's> {
     bystanders: Bystanders<'w, 's>,
     hold: ResMut<'w, TurnHold>,
     airborne: ResMut<'w, Airborne<UseLanding>>,
+    /// Whom each came down on.
+    landed: MessageWriter<'w, LandedOn>,
 }
 
 impl AimedUses<'_, '_> {
@@ -562,13 +566,16 @@ impl AimedUses<'_, '_> {
         self.bystanders.reflect(&mut landing, aimed.targeting, world.map());
         landing.bonus = bonus;
         let shot = UseLanding { landing, effects: trigger.effects.clone(), look: trigger.look };
-        let Some(flight) = shot.look.and_then(|look| shot.landing.flight(world, LookOf::Given(look))) else {
-            shot.land(world);
+        let flights = shot.look.map(|look| shot.landing.flights(world, LookOf::Given(look))).unwrap_or_default();
+        if flights.is_empty() {
+            shot.land(world, &mut self.landed);
             return;
-        };
-        world.cues.write(Cued { actor: aimed.user, cue: flight });
+        }
+        for flight in flights {
+            world.cues.write(Cued { actor: aimed.user, cue: flight });
+        }
         if let Some(shot) = self.airborne.launched(&mut self.hold, shot) {
-            shot.land(world);
+            shot.land(world, &mut self.landed);
         }
     }
 }
@@ -580,9 +587,15 @@ impl AimedUses<'_, '_> {
 /// In [`ResolveSet::Triggers`](crate::plugin::ResolveSet::Triggers), where
 /// triggers land, ahead of [`land_triggers`]: no turn is dealt while
 /// anything flies, so nothing new is used in the pass that lands it.
-pub fn land_aimed_uses(mut hold: ResMut<TurnHold>, mut airborne: ResMut<Airborne<UseLanding>>, mut turns: ResMut<Turns>, mut world: EffectWorld) {
+pub fn land_aimed_uses(
+    mut hold: ResMut<TurnHold>,
+    mut airborne: ResMut<Airborne<UseLanding>>,
+    mut turns: ResMut<Turns>,
+    mut world: EffectWorld,
+    mut landed: MessageWriter<LandedOn>,
+) {
     for shot in airborne.landing(&mut hold, &mut turns) {
-        shot.land(&mut world);
+        shot.land(&mut world, &mut landed);
     }
 }
 
@@ -659,7 +672,19 @@ pub fn land_triggers(
                             }
                         }
                     }
-                    let landing = Landing { user, source, origin: f.at, aim: f.at, cells, path: Vec::new(), landed_at: Some(f.at), targets, bonus, on };
+                    let landing = Landing {
+                        user,
+                        source,
+                        origin: f.at,
+                        aim: f.at,
+                        cells,
+                        path: Vec::new(),
+                        landed_at: Some(f.at),
+                        targets,
+                        bonus,
+                        on,
+                        turned_by: Vec::new(),
+                    };
                     // Cued before any effect runs, as an ability's burst is,
                     // so a cue an effect adds plays after it.
                     if let Some(burst) = trigger.look.and_then(|look| landing.burst(&world, LookOf::Given(look))) {

@@ -103,31 +103,63 @@ impl Landing {
         }
     }
 
-    /// Where a cue plays on `cell`: on the target standing there, so a
-    /// burst on someone knocked back goes with them and a bolt at someone
-    /// walking away still lands on them, or on the cell when nobody does.
-    fn anchor(&self, world: &EffectWorld<'_, '_>, cell: Point) -> Anchor {
-        self.targets.iter().find(|t| world.position(**t) == Some(cell)).map(|t| Anchor::on(*t, cell)).unwrap_or(Anchor::cell(cell))
+    /// Whether the whole of it was turned back on its user: something
+    /// turned it, and nobody but the user is left under it.
+    ///
+    /// The case [`Bystanders::reflect`](crate::ability::Bystanders::reflect)
+    /// moves the footprint onto the user for, and the one that is seen to
+    /// fly back. A burst that one body in a crowd turned its share of
+    /// still goes off where it was aimed.
+    pub fn turned_back(&self) -> bool {
+        !self.turned_by.is_empty() && self.targets.iter().all(|t| *t == self.user)
     }
 
-    /// The flight to where a projectile stopped, drawn as `look`, for a
+    /// Where a cue plays on `cell`: on the target standing there, so a
+    /// burst on someone knocked back goes with them and a bolt at someone
+    /// walking away still lands on them, or on a body that turned it back
+    /// standing there, or on the cell when nobody does.
+    fn anchor(&self, world: &EffectWorld<'_, '_>, cell: Point) -> Anchor {
+        self.targets.iter().chain(&self.turned_by).find(|t| world.position(**t) == Some(cell)).map(|t| Anchor::on(*t, cell)).unwrap_or(Anchor::cell(cell))
+    }
+
+    /// The flights to where a projectile stopped, drawn as `look`, for a
     /// shape that has one: a bolt or a ball flies, a cone or a nova does
     /// not. One answer for an ability and a thing's aimed use, so the two
     /// are seen to fly the same way.
-    pub(crate) fn flight(&self, world: &EffectWorld<'_, '_>, look: LookOf) -> Option<Cue> {
-        let stop = self.landed_at.filter(|stop| *stop != self.origin)?;
-        Some(Cue::Flight { from: Anchor::on(self.user, self.origin), to: self.anchor(world, stop), look })
+    ///
+    /// One flight, or two when the whole of it was
+    /// [`turned_back`](Self::turned_back): out to the body that turned it,
+    /// and from there back to its user, so what is seen agrees with the
+    /// log's line that it was reflected and with the harm on the user
+    /// that follows. A single flight to the user's own cell would be no
+    /// flight at all, and one to the body alone showed the bolt strike a
+    /// body that then took nothing. Both are cued before the landing
+    /// waits in the air, so it lands only once the return has been seen.
+    pub(crate) fn flights(&self, world: &EffectWorld<'_, '_>, look: LookOf) -> Vec<Cue> {
+        let Some(stop) = self.landed_at.filter(|stop| *stop != self.origin) else { return Vec::new() };
+        let user = Anchor::on(self.user, self.origin);
+        let turned_at = self.anchor(world, stop);
+        let mut flights = vec![Cue::Flight { from: user, to: turned_at, look }];
+        if self.turned_back() {
+            flights.push(Cue::Flight { from: turned_at, to: user, look });
+        }
+        flights
     }
 
     /// The burst over the footprint, drawn as `look`, for a shape that
     /// covers anything, spreading out from where a projectile stopped, or
     /// else from the user: a ball goes off where it lands, and a nova, a
-    /// cone or a line goes out from whoever sent it.
+    /// cone or a line goes out from whoever sent it. One turned back whole
+    /// goes off on its user, where its flight was seen to come back to.
     pub(crate) fn burst(&self, world: &EffectWorld<'_, '_>, look: LookOf) -> Option<Cue> {
         if self.cells.is_empty() {
             return None;
         }
-        let from = self.landed_at.map(|stop| self.anchor(world, stop)).unwrap_or(Anchor::on(self.user, self.origin));
+        let user = Anchor::on(self.user, self.origin);
+        let from = match self.landed_at {
+            Some(stop) if !self.turned_back() => self.anchor(world, stop),
+            _ => user,
+        };
         Some(Cue::Burst { on: self.cells.iter().map(|c| self.anchor(world, *c)).collect(), look, from: Some(from) })
     }
 }
@@ -185,6 +217,14 @@ pub struct Landing {
     /// engine's effects land on `targets` and never read it, since what a
     /// thing is made better or known by is the game's.
     pub on: Option<Entity>,
+    /// Every body that turned its share back on the user, by
+    /// [`Bystanders::reflect`](crate::ability::Bystanders::reflect), in the
+    /// order it met them; empty for a landing nothing turned. Kept beside
+    /// `targets` rather than read back from the [`Reflected`](crate::ability::Reflected)
+    /// messages, since the landing may wait in the air for passes after
+    /// they were written, and how it is seen to fly and come back is
+    /// worked out from it.
+    pub turned_by: Vec<Entity>,
 }
 
 /// An actor an effect may move or look at: never a transition, which an
@@ -544,8 +584,19 @@ impl Effects {
     /// one cell, so a footprint is not invented for something that never
     /// flew.
     pub fn land_on(&self, source: Source, user: Entity, at: Point, targets: Vec<Entity>, world: &mut EffectWorld<'_, '_>) {
-        let landing =
-            Landing { user, source, origin: at, aim: at, cells: vec![at], path: Vec::new(), landed_at: None, targets, bonus: EffectBonus::default(), on: None };
+        let landing = Landing {
+            user,
+            source,
+            origin: at,
+            aim: at,
+            cells: vec![at],
+            path: Vec::new(),
+            landed_at: None,
+            targets,
+            bonus: EffectBonus::default(),
+            on: None,
+            turned_by: Vec::new(),
+        };
         self.land(&landing, world);
     }
 }
@@ -592,6 +643,10 @@ impl Plugin for EffectsPlugin {
             // sites, so it is registered alongside the stream it rolls
             // rather than only where `AbilitiesPlugin` happens to add it.
             .add_message::<crate::ability::Reflected>()
+            // Written by `land_aimed_uses` and `land_triggers` for an aimed
+            // use as well as by `AbilitiesPlugin` for an ability, so here
+            // for the same reason.
+            .add_message::<crate::ability::LandedOn>()
             // `EffectWorld` writes these, so they are this plugin's to
             // register: a writer for a message nobody registered fails the
             // system at startup, and a game with effects should not have to
@@ -667,6 +722,7 @@ mod tests {
             targets: Vec::new(),
             bonus: EffectBonus::default(),
             on: None,
+            turned_by: Vec::new(),
         };
         let bolt = AbilityId::from_raw(0);
         assert_eq!(landing(user, Source::Ability(bolt)).reach(), Reach::Ability(bolt));

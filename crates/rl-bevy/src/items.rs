@@ -1562,6 +1562,42 @@ mod aimed {
         assert!(rig.app.world().get::<MyTurn>(rig.player).is_some(), "then the turn comes round");
     }
 
+    /// Watched, a use a reflecting body turns back is seen to fly to that
+    /// body and back to its user, as a reflected ability is, since both are
+    /// seen by the one landing; one that is not turned back flies once.
+    /// Over a span of rolls, so both outcomes are seen.
+    #[test]
+    fn watched_an_aimed_use_turned_back_is_seen_to_fly_to_the_body_and_back() {
+        use rand::SeedableRng;
+        let (mut reflected, mut landed) = (0, 0);
+        for seed in 0..20 {
+            let mut rig = Rig::new();
+            rig.app.world_mut().resource_mut::<crate::ability::ReflectRng>().0 = rand::rngs::StdRng::seed_from_u64(seed);
+            let rod = rig.carry(
+                r#"[(on: "use", targeting: (mode: Bolt(range: 6)), look: (glyph: '*', color: (r: 255, g: 80, b: 0)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "4"))])]"#,
+            );
+            let look = LookOf::Given(rl_rules::ability::Look { glyph: '*', color: rl_grid::Rgb::new(255, 80, 0) });
+            let at = rig.start.offset(3, 0);
+            let foe = rig.foe(3, 0);
+            rig.app.world_mut().entity_mut(foe).insert(crate::ability::Reflects);
+            rig.cues();
+            rig.app.world_mut().resource_mut::<TurnHold>().watch();
+
+            rig.act(UseItemAt { item: rod, at });
+            let (user, body) = (Anchor::on(rig.player, rig.start), Anchor::on(foe, at));
+            let out = Cue::Flight { from: user, to: body, look };
+            let turned = !rig.app.world_mut().resource_mut::<Messages<crate::ability::Reflected>>().drain().collect::<Vec<_>>().is_empty();
+            if turned {
+                reflected += 1;
+                assert_eq!(rig.cues(), vec![out, Cue::Flight { from: body, to: user, look }], "seed {seed}: out to the body, and back");
+            } else {
+                landed += 1;
+                assert_eq!(rig.cues(), vec![out], "seed {seed}: once, to the body it lands on");
+            }
+        }
+        assert!(reflected > 0 && landed > 0, "both outcomes over twenty seeds: {reflected} reflected, {landed} landed");
+    }
+
     /// A trigger with no look shows nothing, aimed or not, so a use with no
     /// look is not waited on and lands as it is made.
     #[test]

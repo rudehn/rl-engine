@@ -1308,6 +1308,39 @@ mod tests {
         assert!(w.get::<rl_bevy::Working>(who("Cy")).is_none(), "Cy's work was on something that was not saved");
     }
 
+    /// The player's own long action is saved as anyone's work is, and a
+    /// run loaded in the middle of one carries it on with no key pressed.
+    #[test]
+    fn a_run_saved_while_the_player_works_carries_the_work_on_when_loaded() {
+        let backend = std::sync::Arc::new(MemoryBackend::default());
+        let (mut app, start) = game(Saves(backend.clone()));
+        let kind = app.world().resource::<rl_bevy::WorkKinds>().get("mending").unwrap();
+        let mut work = rl_rules::Work::new(kind, 6);
+        work.done = 2;
+        let me =
+            app.world_mut().spawn((Actor, Player, Blocks, You, Position(start), Viewshed::new(6), RevealsMap, Health::full(30), rl_bevy::Working(work))).id();
+        // Slow enough that no turn of it passes before the save.
+        app.insert_resource(rl_bevy::WorkPace::every(std::time::Duration::from_secs(3600)));
+        play(&mut app);
+        let saved = app.world().get::<rl_bevy::Working>(me).expect("at work when saved").0;
+        save_run(app.world_mut()).unwrap();
+
+        let (mut back, _) = game(Saves(backend));
+        back.insert_resource(rl_bevy::WorkPace::every_frame());
+        load_run(back.world()).unwrap().expect("a save").restore(back.world_mut()).unwrap();
+        let w = back.world_mut();
+        let me = w.query_filtered::<Entity, With<Player>>().single(w).expect("the player came back");
+        let at = |app: &App| app.world().get::<rl_bevy::Working>(me).map(|w| (w.0.done, w.0.needed));
+        assert_eq!(at(&back), Some((saved.done, 6)), "at work, as far in as when saved");
+        let clock = back.world().resource::<Turns>().now();
+        play(&mut back);
+        for _ in 0..6 {
+            back.update();
+        }
+        assert_eq!(at(&back), None, "and carried on to the end with no key pressed");
+        assert_eq!(back.world().resource::<Turns>().now() - clock, u32::from(6 - saved.done) * rl_core::turn::BASE_ACTION_COST, "a turn for each it had left");
+    }
+
     /// An actor posted somewhere is posted there again after a load, by
     /// the engine: the game's own record of it says nothing of a post, and
     /// a guard that forgot its cell would wander off the first time it

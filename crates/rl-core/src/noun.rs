@@ -23,7 +23,10 @@
 //! fact about the name the rules here cannot read off its spelling, since
 //! `mail` is a stuff and `nail` is not, so a game says so, and
 //! [`counted_as`] takes it as a [`Countability`]. What is the speaker's own
-//! is [`owned`]: `your chain mail`, whichever kind of name it is.
+//! is [`owned`]: `your chain mail`, whichever kind of name it is, and a
+//! proper name as written, `the Widow's Fang`, since it is called that in
+//! anyone's hand. Whether a name is proper is read off how it is written,
+//! by [`is_proper`] alone: a capital, or `the` and a capital.
 
 /// Words whose plural is not made by a rule.
 const IRREGULAR: [(&str, &str); 12] = [
@@ -71,8 +74,20 @@ const CONNECTIVES: [&str; 13] = ["of", "from", "with", "for", "to", "in", "on", 
 /// assert_eq!(plural("cup of tea"), "cups of tea");
 /// assert_eq!(plural("scroll titled ZUM KA"), "scrolls titled ZUM KA");
 /// ```
+///
+/// A proper name that names its owner counts what is owned, however many
+/// words the owner's own name runs to: `Queen of Thorns's Crown` to
+/// `Queen of Thorns's Crowns`, where the connective in the owner's name
+/// would otherwise count the queen.
+///
+/// ```
+/// use rl_core::noun::plural;
+/// assert_eq!(plural("the Queen of Thorns's Crown"), "Queen of Thorns's Crowns");
+/// assert_eq!(plural("the Crown of Grubnak"), "Crowns of Grubnak");
+/// ```
 pub fn plural(name: &str) -> String {
     let name = bare(name);
+    let (owner, name) = split_owner(name);
     // The word that counts is the last one before a connective, or the
     // last one.
     let (head, tail) = split_head(name);
@@ -80,7 +95,27 @@ pub fn plural(name: &str) -> String {
         Some(at) => head.split_at(at + 1),
         None => ("", head),
     };
-    format!("{before}{}{tail}", plural_word(word))
+    format!("{owner}{before}{}{tail}", plural_word(word))
+}
+
+/// A proper name split after its last possessive, the owner with its
+/// space and what is owned: `Queen of Thorns's ` and `Crown`. Anything
+/// else is all owned.
+///
+/// Only a proper name, because only there is the owner's name a name in
+/// its own right, written with its own connectives: `the Queen of
+/// Thorns's Crown` is one crown of one queen. In a kind's name a
+/// possessive after a connective belongs to what the connective joins,
+/// `letter from Ada's mother`, and is kept as written with it.
+fn split_owner(name: &str) -> (&str, &str) {
+    if !is_proper(name) {
+        return ("", name);
+    }
+    let owner_ends = ["'s ", "s' ", "\u{2019}s ", "s\u{2019} "].iter().filter_map(|mark| name.rfind(mark).map(|at| at + mark.len())).max();
+    match owner_ends {
+        Some(at) if at < name.len() => name.split_at(at),
+        _ => ("", name),
+    }
 }
 
 /// `name` split before its first connective, the space with what follows:
@@ -267,13 +302,23 @@ pub fn counted_as(name: &str, count: u32, countability: Countability) -> String 
 /// with gives way to the owner, so a crust of bread is `your crust of
 /// bread`; a stuff is counted as [`counted_as`] counts it.
 ///
+/// One thing with a proper name is said as written, whoever holds it:
+/// `the Widow's Fang`, never `your Widow's Fang`. Its name is what it is
+/// called in anyone's hand, and the owner in front of it took the place of
+/// the article that is part of the name. Proper is [`is_proper`]'s one
+/// test, the same every function here reads.
+///
 /// ```
 /// use rl_core::noun::{Countability, owned};
 /// assert_eq!(owned("your", "sword", 1, Countability::Count), "your sword");
 /// assert_eq!(owned("your", "arrow", 5, Countability::Count), "your 5 arrows");
 /// assert_eq!(owned("your", "chain mail", 1, Countability::Mass), "your chain mail");
+/// assert_eq!(owned("your", "the Widow's Fang", 1, Countability::Count), "the Widow's Fang");
 /// ```
 pub fn owned(owner: &str, name: &str, count: u32, countability: Countability) -> String {
+    if count == 1 && is_proper(name) {
+        return name.to_string();
+    }
     let name = bare(name);
     match (countability, count) {
         (_, 1) => format!("{owner} {name}"),
@@ -403,6 +448,31 @@ mod tests {
         assert_eq!(owned("your", "chain mail", 1, Countability::Mass), "your chain mail");
         assert_eq!(owned("your", "gauntlets", 2, Countability::Mass), "your 2 gauntlets");
         assert_eq!(owned("its", "a crust of bread", 1, Countability::Count), "its crust of bread", "the owner takes the article's place");
+    }
+
+    #[test]
+    fn one_thing_with_a_proper_name_is_said_as_written_by_whoever_owns_it() {
+        for name in ["the Widow's Fang", "the Crown of Grubnak", "Biter"] {
+            assert_eq!(owned("your", name, 1, Countability::Count), name);
+            assert_eq!(owned("its", name, 1, Countability::Mass), name);
+        }
+        assert_eq!(owned("your", "the stairs", 1, Countability::Count), "your stairs", "a kind's article still gives way");
+        assert_eq!(owned("your", "the Widow's Fang", 2, Countability::Count), "your 2 Widow's Fangs", "several are counted as anything is");
+    }
+
+    #[test]
+    fn a_proper_name_through_a_connective_pluralises_the_word_that_counts() {
+        for (one, many) in [
+            ("the Crown of Grubnak", "Crowns of Grubnak"),
+            ("the Widow's Fang", "Widow's Fangs"),
+            ("the Queen of Thorns's Crown", "Queen of Thorns's Crowns"),
+            ("the Lord of the Deep's Ring of Ages", "Lord of the Deep's Rings of Ages"),
+            ("the Brothers' Knife", "Brothers' Knives"),
+            ("Lady in Red\u{2019}s Fan", "Lady in Red\u{2019}s Fans"),
+        ] {
+            assert_eq!(plural(one), many, "{one}");
+        }
+        assert_eq!(plural("letter from Ada's mother"), "letters from Ada's mother", "a kind's possessive after a connective is kept as written");
     }
 
     #[test]

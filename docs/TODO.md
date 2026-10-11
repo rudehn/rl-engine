@@ -48,17 +48,15 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 21 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
 | 22 | The resolvers in `ResolveSet::Act` are unordered | 4 | low | medium |
 | 23 | A prop cannot block sight, or block the way and let a shot past | 3 | medium | medium |
-| 24 | A coloured light cannot warm a tile with little of its colour | 3 | low | low |
-| 25 | The player has no long action | 3 | medium | medium |
-| 26 | `offer_abilities` declares `&mut Stack` it only reads | 4 | low | low |
-| 27 | A piece stamped where no wall rings it can cut the floor | 1 | low | medium |
+| 24 | `offer_abilities` declares `&mut Stack` it only reads | 4 | low | low |
+| 25 | A piece stamped where no wall rings it can cut the floor | 1 | low | medium |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
 The corner-cutting fallbacks went the same day: every tactic that picks a neighbour itself now asks whether the move resolver would take that step.
 The one that mattered most was the bench, which disproved the item that had been ranked first on the performance side: the turn loop is linear in the crowd, not quadratic, and the perceive stage's scans are not where the time goes.
 Six more were built on 2026-09-30, healing at their head: healing as its own path to health, the light recast inside the turn, the flow field cache, every game's lines inside a turn through `Tell`, anyone travelling when its wits say so, and a `Burning` thing saved.
-The table was renumbered that day, again on 2026-10-04 for two gaps Undermere's floors found, and again on 2026-10-10 when the three furnishing items were built, so a number here is a place in the order as it stands and not the one an older note may cite.
+The table was renumbered that day, again on 2026-10-04 for two gaps Undermere's floors found, again on 2026-10-10 when the three furnishing items were built, and again on 2026-10-11 when the coloured light and the player's long action were built, so a number here is a place in the order as it stands and not the one an older note may cite.
 
 Why the order that is left, in four moves:
 
@@ -70,13 +68,11 @@ Why the order that is left, in four moves:
    Neither is urgent.
 3. **Items 10 to 20 are cleanups** worth taking whenever their file is open for another reason rather than scheduling.
    Item 19 is a measurement, not a change: run the lit bench before deciding there is anything to fix.
-   Item 26, added on 2026-10-09, is one more of these.
+   Item 24, added on 2026-10-09, is one more of these.
 4. **The rest wait on something.**
    Item 21 waits on a game that actually wants the tactics it would add, and item 22 on a second game asking for it.
    Item 23 was raised on 2026-09-28 when Foundry's rooms were first furnished, and is what the furnished rooms most visibly lack; the three furnishing items raised beside it were built on 2026-10-10.
-   Item 24 is polish Undermere's play found on 2026-10-07, and waits on a part that works on how a game looks, since it moves every lit game's pictures.
-   Item 25 was ruled around rather than built on 2026-10-07, when Undermere gave a captive a long action only a mind could take up, and waits on a game that wants the player to take one too.
-   Item 27 is what furnishing left on 2026-10-10, and waits on a game that stamps into a map `Accrete` did not grow.
+   Item 25 is what furnishing left on 2026-10-10, and waits on a game that stamps into a map `Accrete` did not grow.
 
 Section 5 is documentation and section 6 is the release, and both are gated on the API settling rather than on this list.
 Section 9 is low priority and deliberately outside the order.
@@ -109,12 +105,6 @@ The five items that opened this section were built in the six stages of `docs/de
 
 ## 3. Make what exists real
 
-- **A coloured light cannot warm a tile with little of its colour.**
-  `Shading::light` in `crates/rl-render/src/shade.rs` multiplies a tile's colour by the light that lands on it, channel by channel, so a light's colour can only take away: a fire's orange on green moss darkens the green rather than warming it, and the floor reads as lit by the lantern.
-  Undermere's play found it on 2026-10-07, in task 11 of its part 3, and its camps' fires burn yellower to get round it (`9e68e0e`).
-  Brogue adds a share of a light's own colour as well as multiplying, so a light can lend a tile a colour it does not have; adding a share of the light's colour, scaled by its intensity, after the multiply would do the same here.
-  Every lit game's pictures move with it, so it is polish for a part that works on how a game looks, not a fault to fix in passing.
-
 - **A prop cannot block sight, or block the way and let a shot past.**
   A prop's `blocks` is `Blocks`, which the occupancy index reads for movement and `combat::shot` reads as stopping a shot, and nothing a prop is can block sight.
   Tiles already split the three, walkable, opaque and whether a shot passes, and Foundry's rooms want the same of a prop: a coolant tank or a full shelf blocks all three, a workbench or a lathe only the way, as `examples/foundry/DESIGN.md` sets out under Rooms.
@@ -126,10 +116,6 @@ The five items that opened this section were built in the six stages of `docs/de
   Foundry's lifts are gated by the game for the commando, the core charged or not, and nothing asks that of a droid that travels.
   Following is only for a mind beside the one that left, as it left; a chase that arrives some turns later would need actors on a map nobody is reading to be dealt turns, which nothing does.
   And the narrator's `Leaves` cannot name the way, "leaves" rather than "takes the lift", because a transition has no name the engine reads.
-- **The player has no long action.**
-  `continue_work` claims a worker's decision before any mind is asked, which is how work shuts a brain out for the turns it takes, but `docs/design/work.md` section 10 has always named this one as waiting: `works.begin` on the player, continued automatically and stopped by a key or an `ExploreInterrupt`, neither of which exists yet.
-  Undermere made the gap concrete rather than closing it: a captive gives a long action to whoever frees it, but only a mind takes it up, and freeing one is ruled not interruptible by a blow, since the engine's multi-turn work already skips the player rather than reading its mind to resume one.
-  A player's own long action wants the stopping key and the interrupt section 10 names, and a ruling on whether a blow still breaks it, which a game that wants one is the day to make.
 - **The tutorial's own `narrate` pushes lines once a frame.**
   Steps 4 to 6 and 8 to 10 of the tutorial read `ItemEvent` in `PresentSet::Narrate` and push "You eat the crust. It helps." straight to the log, which is the pattern the narrator replaced: a frame of several passes says them in buffer order rather than in the order they happened.
   They are not inside a pass, so the rule about `Tell` does not reach them; moving them into `TurnSet::React` as a `Tell` would, and the guide chapters that quote them move with it.
@@ -366,11 +352,9 @@ None of them is in the order above and none is scheduled: take one when its file
 
 Left over from the worn gear and unseen slice on 2026-09-27, the same way.
 
-- **A use that harms others does not end the unseen.**
-  `reveal_attackers` in `crates/rl-bevy/src/stealth.rs` ends it on a blow or shot, a throw, and an ability landed on another, which is the list the slice's spec gave; a thing used whose `use` trigger harms those around its user is not on it, and `wake_on_damage` wakes nobody to an attacker still unseen.
-  A player who sets something off on a crowd while hidden would expect to be seen, and the rule would read `Landing::targets` of a `use` trigger the way it reads an ability's.
-  Since 2026-10-05 a `use` trigger may be aimed, and Undermere's staffs and wands harm others from one, so the case is real; no game yet has an unseen status beside an aimed use, Foundry's cloak having nothing to zap and Undermere no cloak, so it waits for the first that has both.
-  The aimed use's landing is worked out in `ResolveSet::Triggers`, before `reveal_attackers` runs, so the fix is a report of who it landed on that the reveal can read, as `AbilityEvent::Used` is for an ability.
+- **A use made where its user stands that harms others does not end the unseen.**
+  `reveal_attackers` in `crates/rl-bevy/src/stealth.rs` ends it on a blow or shot, a throw, and anything aimed, an ability or a thing's aimed use, that came down on another, read off `LandedOn` since 2026-10-10; a thing used where its user stands whose `use` trigger harms those around them is not on it, and `wake_on_damage` wakes nobody to an attacker still unseen.
+  A player who sets something off on a crowd while hidden would expect to be seen, and the rule would read the landing of such a `use` trigger the way it reads an aimed one's, which `land_triggers` would report as `LandedOn` too.
 
 Left over from the layout slice on 2026-10-01: the three pieces of work `docs/design/layout.md` section 0 says key on what it publishes.
 The furnisher and the run director were built on 2026-10-10 as the dressing and the pool, and section 1 says how; what is left is:

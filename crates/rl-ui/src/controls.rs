@@ -51,9 +51,12 @@
 use bevy::prelude::*;
 use rl_core::Direction;
 
+use rl_bevy::{Player, Working, Works};
+
 use crate::cursor::{CursorKeys, shifted};
 use crate::game_menu::MenuKeys;
 use crate::keys::DirectionKeys;
+use crate::modal::Modals;
 use crate::panel::ability::AbilityKeys;
 use crate::panel::inventory::InventoryKeys;
 use crate::panel::scrollback::ScrollbackKeys;
@@ -267,6 +270,10 @@ pub enum Keys {
     },
     /// One of the engine's own bindings, read from its resource.
     Engine(EngineKey),
+    /// Any key at all but a modifier held alone, listed as `any key`: what
+    /// stops a long action, where whatever the player reaches for has to
+    /// work, and a key that also asks for something still asks for it.
+    Any,
 }
 
 impl From<KeyCode> for Keys {
@@ -394,6 +401,9 @@ impl Bindings<'_> {
             Keys::Chords(chords) => chords.clone(),
             Keys::Directions { shift } => self.directions.0.iter().map(|(key, _)| Chord { key: *key, shift: *shift }).collect(),
             Keys::Engine(engine) => self.engine(*engine),
+            // No chord in particular: `Controls::which` asks the keys
+            // themselves.
+            Keys::Any => Vec::new(),
         }
     }
 
@@ -421,6 +431,9 @@ impl Bindings<'_> {
     pub fn label(&self, keys: &Keys) -> String {
         if let Keys::Directions { shift } = keys {
             return direction_families(self.directions, *shift);
+        }
+        if *keys == Keys::Any {
+            return "any key".to_string();
         }
         let mut chords: Vec<Chord> = Vec::new();
         for chord in self.chords(keys) {
@@ -539,12 +552,19 @@ impl Controls {
     /// Which of `id`'s chords went down this frame, by its place in the
     /// list, or `None`. For [`Keys::Directions`], the place of the binding
     /// in [`DirectionKeys`].
+    /// [`Keys::Any`] answers `0` for whatever went down.
     pub fn which(&self, id: ControlId, input: &ButtonInput<KeyCode>, bindings: &Bindings) -> Option<usize> {
+        if self.get(id).keys == Keys::Any {
+            return any_key(input).then_some(0);
+        }
         bindings.chords(&self.get(id).keys).iter().position(|chord| chord.just_pressed(input))
     }
 
     /// Whether any of `id`'s chords is held down.
     pub fn pressed(&self, id: ControlId, input: &ButtonInput<KeyCode>, bindings: &Bindings) -> bool {
+        if self.get(id).keys == Keys::Any {
+            return input.get_pressed().any(|key| !MODIFIERS.contains(key));
+        }
         bindings.chords(&self.get(id).keys).iter().any(|chord| chord.pressed(input))
     }
 
@@ -566,6 +586,62 @@ impl Controls {
     /// `id`'s keys as a player reads them. Empty when nothing binds it.
     pub fn label(&self, id: ControlId, bindings: &Bindings) -> String {
         bindings.label(&self.get(id).keys)
+    }
+}
+
+/// The keys that only change what another key means, and mean nothing
+/// pressed alone.
+const MODIFIERS: [KeyCode; 8] = [
+    KeyCode::ShiftLeft,
+    KeyCode::ShiftRight,
+    KeyCode::ControlLeft,
+    KeyCode::ControlRight,
+    KeyCode::AltLeft,
+    KeyCode::AltRight,
+    KeyCode::SuperLeft,
+    KeyCode::SuperRight,
+];
+
+/// Whether a key went down this frame that is not a modifier alone, as
+/// [`Keys::Any`] reads it: Shift reached for on the way to a capital is
+/// not a key pressed.
+pub fn any_key(input: &ButtonInput<KeyCode>) -> bool {
+    input.get_just_pressed().any(|key| !MODIFIERS.contains(key))
+}
+
+/// The heading the stop key is listed under, beside a game's own acts.
+pub const STOP_GROUP: &str = "Act";
+/// What the stop key is listed as doing.
+pub const STOP_ACTION: &str = "stop what you are doing";
+
+/// Stops the player's long action the moment any key goes down, a held
+/// direction repeating included, or while a screen is up.
+///
+/// Any key rather than one: a player who wants it stopped reaches for
+/// whatever is nearest, and a stop key nobody remembers is a turn of work
+/// spent against their wish. The key is not taken: once the work is off,
+/// the key is read as it would have been, so a step is a step and the bag
+/// opens, and nothing the player pressed is swallowed by stopping. A
+/// screen up stops it too, whoever opened it, since the world never moves
+/// behind a screen the player is reading.
+///
+/// Before the input phase, after the held-key repeat has moved on, and
+/// before the particle skipper, which runs the turns at a key: so the
+/// work is off before the frame could spend a turn of it, and the key
+/// lands on the player's own turn. Added by [`UiPlugin`](crate::UiPlugin)
+/// in a game with [`WorkPlugin`](rl_bevy::WorkPlugin).
+pub fn stop_work_on_key(
+    input: Res<ButtonInput<KeyCode>>,
+    repeats: Res<Repeats>,
+    modals: Res<Modals>,
+    workers: Query<Entity, (With<Player>, With<Working>)>,
+    mut works: Works,
+) {
+    if !any_key(&input) && repeats.firing_any().is_none() && !modals.any_open() {
+        return;
+    }
+    for worker in &workers {
+        works.leave_off(worker);
     }
 }
 
@@ -783,6 +859,94 @@ mod focus_tests {
         stage.tick();
         assert!(!stage.app.world().resource::<ButtonInput<KeyCode>>().pressed(KeyCode::KeyL), "and let go when the window loses focus");
         assert_eq!(stage.app.world().resource::<Repeats>().firing(false), None, "with the hold forgotten too");
+    }
+}
+
+#[cfg(test)]
+mod stop_tests {
+    use super::*;
+    use crate::harness::Stage;
+    use rl_bevy::{AddWork, BeginWork, BreakReason, Intent, Turns, WorkBroken, WorkKinds, WorkPace, WorkPlugin};
+    use rl_rules::Work;
+
+    /// Every `WorkBroken`, in order.
+    #[derive(Resource, Default)]
+    struct Broken(Vec<WorkBroken>);
+
+    fn record(mut broken: MessageReader<WorkBroken>, mut seen: ResMut<Broken>) {
+        seen.0.extend(broken.read().copied());
+    }
+
+    /// Frames the game's own input phase saw a `q` in.
+    #[derive(Resource, Default)]
+    struct SawQ(u32);
+
+    fn see_q(input: Res<ButtonInput<KeyCode>>, mut saw: ResMut<SawQ>) {
+        if input.just_pressed(KeyCode::KeyQ) {
+            saw.0 += 1;
+        }
+    }
+
+    /// The player two turns into ten of mending, a turn a frame, with the
+    /// breaks and the game's sight of `q` recorded.
+    fn at_work() -> Stage {
+        let mut stage = Stage::new(WorkPlugin);
+        stage.app.add_work("mending").insert_resource(WorkPace::every_frame());
+        stage.app.init_resource::<Broken>().add_systems(Update, record.after(rl_bevy::EngineSet::Turns));
+        stage.app.init_resource::<SawQ>().add_systems(Update, see_q.in_set(rl_bevy::EngineSet::Input));
+        let kind = stage.app.world().resource::<WorkKinds>().get("mending").unwrap();
+        stage.app.world_mut().write_message(Intent::new(stage.player, BeginWork(Work::new(kind, 10))));
+        stage.app.update();
+        stage.app.update();
+        assert_eq!(stage.app.world().get::<Working>(stage.player).map(|w| w.0.done), Some(2), "two turns in");
+        stage
+    }
+
+    fn reasons(stage: &Stage) -> Vec<BreakReason> {
+        stage.app.world().resource::<Broken>().0.iter().map(|b| b.reason).collect()
+    }
+
+    #[test]
+    fn any_key_stops_the_players_work_before_another_turn_and_is_still_read_as_itself() {
+        let mut stage = at_work();
+        let clock = stage.app.world().resource::<Turns>().now();
+        rl_bevy::testing::press(&mut stage.app, KeyCode::KeyQ);
+        assert_eq!(reasons(&stage), vec![BreakReason::LeftOff]);
+        assert_eq!(stage.app.world().resource::<Broken>().0[0].done, 2, "and no turn more of it");
+        assert_eq!(stage.app.world().resource::<Turns>().now(), clock, "nor any turn at all");
+        assert_eq!(stage.app.world().resource::<SawQ>().0, 1, "and the game still read the key");
+    }
+
+    #[test]
+    fn a_modifier_alone_is_no_key_and_leaves_the_work_on() {
+        let mut stage = at_work();
+        rl_bevy::testing::press(&mut stage.app, KeyCode::ShiftLeft);
+        assert!(reasons(&stage).is_empty());
+        assert_eq!(stage.app.world().get::<Working>(stage.player).map(|w| w.0.done), Some(4), "and it goes on a turn a frame");
+    }
+
+    #[test]
+    fn a_screen_up_stops_the_players_work_whoever_opened_it() {
+        let mut stage = at_work();
+        let screen = stage.app.world_mut().resource_mut::<Modals>().declare("a screen");
+        stage.app.world_mut().resource_mut::<Modals>().open(screen);
+        stage.tick();
+        assert_eq!(reasons(&stage), vec![BreakReason::LeftOff]);
+    }
+
+    #[test]
+    fn the_stop_is_listed_as_any_key_in_a_game_with_work_and_not_in_one_without() {
+        let stage = at_work();
+        let controls = stage.app.world().resource::<Controls>();
+        let stop = controls.find(STOP_GROUP, STOP_ACTION).expect("listed");
+        assert_eq!(controls.get(stop).keys, Keys::Any);
+        let directions = DirectionKeys::default();
+        let (cursor, help) = (CursorKeys::default(), ControlsKeys::default());
+        let bindings = Bindings { directions: &directions, cursor: &cursor, help: &help, log: None, sheet: None, abilities: None, inventory: None, menu: None };
+        assert_eq!(controls.label(stop, &bindings), "any key");
+
+        let stage = Stage::new(());
+        assert_eq!(stage.app.world().resource::<Controls>().find(STOP_GROUP, STOP_ACTION), None, "nothing to stop without work");
     }
 }
 

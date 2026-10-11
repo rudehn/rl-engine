@@ -170,6 +170,8 @@ pub fn say_who_fell(mut narration: ResMut<NarrationView>, mut fell: ResMut<Fell>
         // only if it was seen.
         if *phrase == Phrase::Dies {
             row.who_seen = true;
+        } else {
+            row.whom_seen = true;
         }
         row.words = Words::Own { text: text.to_string(), tone: Tones::BAD };
         row.seen = true;

@@ -125,7 +125,10 @@ pub mod replay;
 pub mod tone;
 pub mod view;
 
-pub use controls::{AddControls, Bindings, Chord, Control, ControlId, ControlInput, Controls, ControlsKeys, EngineKey, Keys, RepeatPace, Repeats, key_name};
+pub use controls::{
+    AddControls, Bindings, Chord, Control, ControlId, ControlInput, Controls, ControlsKeys, EngineKey, Keys, RepeatPace, Repeats, STOP_ACTION, STOP_GROUP,
+    any_key, key_name,
+};
 pub use cursor::{CursorKeys, CursorMap, CursorStyle, Steer, mark};
 pub use facet::{Facet, FacetId, FacetKey, Facets};
 pub use focus::{Focus, InSight, Sighted, Sighting};
@@ -256,6 +259,21 @@ impl Plugin for UiPlugin {
 
     fn finish(&self, app: &mut App) {
         rl_bevy::depends_on::<rl_bevy::CorePlugin>(app, "UiPlugin");
+        // The player's long action is `WorkPlugin`'s, and a game without it
+        // has nothing to stop. In `finish` rather than `build` so the order
+        // the two plugins were added in does not matter, and listed last
+        // under the game's own acts.
+        if app.is_plugin_added::<rl_bevy::WorkPlugin>() {
+            app.add_control(controls::STOP_GROUP, controls::STOP_ACTION, Keys::Any);
+            app.add_systems(
+                Update,
+                controls::stop_work_on_key
+                    .after(controls::advance_repeats)
+                    .before(rl_bevy::EngineSet::Input)
+                    .before(rl_render::particles::skip_on_key)
+                    .run_if(in_state(rl_bevy::EngineState::Playing)),
+            );
+        }
     }
 }
 
