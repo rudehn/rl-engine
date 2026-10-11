@@ -56,7 +56,7 @@ They were a closed enum in `dungeon.rs`; twelve biomes with a dozen fields each 
 A biome's favored monsters multiply their spawn-table weight by three on its floors (spiders in the warrens, goblins and kobolds in the mines, wisps and wraiths in the library, naga and the drowned under the lake), so a biome is also told by what lives in it.
 
 Floors grow from the skeleton's 70 by 40, which is barely more than the map view of about 62 by 37 tiles.
-Each recipe names its size, between 84 by 50 and 110 by 60, about one and a half views a side, and the Fungal Deeps' "band" recipe is 120 by 40, a long cave the floor follows (research 3.3, guided caves).
+Each recipe names its size, between 90 by 52 and 104 by 58 as built, about one and a half views a side, and the Fungal Deeps' "band" recipe is 120 by 40, a long cave the floor follows (research 3.3, guided caves).
 The throne floors are 72 by 44, since the fight there is the point and the walk to it is not.
 Larger was considered and refused for now: Undermere has no clock that makes leaving a floor unexplored a choice (research 9.3), so a larger floor is more walking, not more decisions.
 
@@ -136,12 +136,13 @@ A floor's attempts then vary its layout and never its picks.
 
 | Floors | Flavor | Risk and reward | Reward |
 | --- | --- | --- | --- |
-| 1-2 | 3-5 | 1 | 1-2 |
-| 3-6 | 3-5 | 1-2 | 1-2 |
-| 7-9 | 2-4 | 2 | 1 |
+| 1-2 | 2-4 | 1 | 1-2 |
+| 3-6 | 2-4 | 1-2 | 1-2 |
+| 7-9 | 2-3 | 2 | 1 |
 | 10 | 1-2 | none | none |
 
-A run draws about thirty flavor picks, thirteen risks and twelve rewards; against pools of 43, 22 and 16, filtered by band and by the run's biomes, a run sees about half the risk pool and under half the flavor, which is the design's fifth pillar.
+A run draws about twenty-seven flavor picks, thirteen risks and twelve rewards; against pools of 43, 22 and 16, filtered by band and by the run's biomes, a run sees about half the risk pool and, measured over 500 seeds, a median of 18 of the 43 flavor entries (13 to 23), which is the design's fifth pillar.
+The flavor budgets were 3 to 5 at first; at those a run saw 25 of the 43, nearly every entry its biomes allowed, and the retune is the one in "As built".
 The mix leans to reward and risk over flavor, as research 6.3's game-wide mix does, because flavor is also carried by the dressings in every room the pool did not take.
 Part 3's lairs keep their own draw, two a run, and become grown pieces; the throne is the tenth floor's grown piece.
 The item budget the floors already drop, and the chests, fall to nought or one a floor, retuned in play, since rewards now carry most of what is found.
@@ -293,7 +294,7 @@ A trap fires once and stays sprung, as the engine's props already do, so a wande
 ### What the engine provides, and what the game adds
 
 The engine already hides props, rolls for them in sight, fires a hidden trap, and keeps a sprung or spotted prop as it was through a save.
-It gains, theme-free: cells that hide what they are, made by a mapgen pass that hides openings safely and kept as entities spotted by the same roll and saved; a group found together; nearness, keenness and stillness in the roll; and a `Found` message for both kinds.
+It gains, theme-free: cells that hide what they are, made by a mapgen pass that hides openings safely and kept as records on the place's map, spotted by the same roll and saved; a group found together; nearness, keenness and stillness in the roll; and a `Found` message for both kinds.
 The game adds: how many of each, their chances, the trap props and their effects, the lever and its seal, the flagstones, the causeway, the trapdoor's fall, the ring's `Keen`, and the log's words.
 
 ## A lived-in dungeon
@@ -355,9 +356,9 @@ Research 4.1 lists the prevalence of hidden corridors as a requirement Cogmind c
 
 ### 6. Cells that hide what they are: finding them
 
-A `Secret` is an entity on its map with a position, spawned with the place and saved.
+A `Secret` is a record on its place's map, a cell, the tile it really is, its chance and its group, installed with the place and saved with it, and not an entity.
 The spotting roll in `PropsPlugin` rolls for hidden props and secrets alike, from the same stream, with nearness, a finder's `Keen`, and stillness as above, set on the plugin.
-A secret found sets its cell to the tile it is, finds the rest of its group, and is gone; a `Found` message says what was found, by whom and where, for a prop or a cell alike.
+A secret found sets its cell to the tile it is, finds the rest of its group, and is gone; a `Spotted` message says what was found, by whom and where, for a prop or a cell alike (`Found` was already the engine's name for loot, so the message kept its name and its field became a `Finding`).
 Undermere's rewriting of each hidden prop's chance from the ring goes, replaced by `Keen`.
 
 ### 7. The pool
@@ -408,3 +409,35 @@ The game's, over seeds 0 to 200 unless said:
 ## Not in this part
 
 The town and gold (part 5), mercenaries (part 6), every cell its own shade and a surface layer for stains (part 7), per-area darkness and a light that takes light away, rare floor-wide events and whole-piece states (research 8.4, 6.4), and rivers.
+
+## As built
+
+The build departed from the text above in these places, each with the reason it was decided.
+The text above is left as it was written except where a statement became untrue.
+
+- **Secrets are records, not entities.** A record on the place's map is saved and installed with the place and costs no entity per wall cell; a floor hides a handful of groups of cells.
+- **The message is `Spotted` carrying a `Finding`.** `Found` was taken by loot, so `Spotted` stayed and says what was spotted for a prop and a secret's group alike.
+- **The spotting roll is made once a turn.** It had been made on every pass, so a hidden thing in sight was found faster the longer the screen waited for a key.
+- **Lakes may cut a floor.** The strict mode, a pond that never parts the floor, stays the default, but the archipelago, the shore and the smelter need islands, so a lake given `cut` may part the floor and `Bridges` must then join every region again or the attempt fails and is grown again, as Brogue lays its bridges.
+- **A bridge lands in no locked or sealed region, and lakes and bridges take a `name`.** Free now, a migration later.
+- **A lake may be kept to the shapes it starts in** (`within`), because a lake sized for a nave filled a five-by-six chapel wall to wall.
+- **Hidden rooms and secret doors take separate chances.** A loop's door is spotted at 6 and a dead-end room's at first 5, then 8 once the soak showed the walker passes a dead end far less than a loop.
+- **Hidden rooms are only in rooms.** A dead-end passage is not a room, so no hidden room is a passage.
+- **The counts of hidden things live in `assets/hidden.ron`, by floor,** not in `assets/biomes.ron`, since a biome spans two floors and "from floor two" is a count by floor.
+- **A dressed pick is placed by `StampPicks`,** the area chosen by preference and published as a record that `Dress` lays before dressing the free areas, so a required dressed pick that fits nowhere fails the place and a run never quietly loses a vault.
+- **A grown entry of a kind no budget marks required is refused at load,** since `Accrete` cannot drop a piece it was given.
+- **The budgets-met guarantee holds across a kind required on some bands and not others,** which the load accepts, so `plan_run` keeps a draw only when the picks still owed can all be made.
+- **Flavor is tuned by budgets.** At the spec's counts a run saw 25 of 43 flavor entries; weights cannot spread a run over more than its biomes' entries and lower per-run limits would raise the distinct count, so the budgets fell by one pick to 2 to 4, 2 to 4, 2 to 3 and 1 to 2.
+  The pool test holds the median run under half of the pool and every run at most 25.
+- **Floors fill their size by a higher open share,** a tenth more in the room-and-door recipes, rather than shrinking, so no floor keeps a slab of rock ten cells wide.
+- **The Dress engine fault was mended in the engine.** A flood priced a diagonal that descending refused, and `Dress` let a slot go from its count of regions and then shut it in; the engine owns the promise that a dressing never cuts an area, so furniture blocks again.
+- **The trapdoor and the rotten floor share one fall,** `fall_through`, so there is one landing rule, off the stairs, and a potion of descent lands the same way.
+- **A vault's key is any free cell in the farthest third from the vault,** not a guarded one, since a key handed to a monster needs the drop table to carry it.
+  Each floor's vault door takes its own key tag, so a key opens one vault.
+- **The Collapsing Gallery has one entry and a loop inside it,** not two entries, since two entries needed the floor to stay whole without the gallery.
+- **The Goblin Stockade stands out of the Catacombs and the Sunken Library,** whose rooms cannot hold a camp of five by five.
+- **Sleepers, captives and named sleepers are marks the game fills,** not `Monster` slots, since a prefab's monster cannot be asked to sleep.
+- **Wildlife is slipped past.** A moth in a one-wide corridor held the soak's adventurer for good, since a neutral cannot be bumped and Undermere has no key to swap with one, so wildlife offers "slip past".
+- **A trap's line is in the past tense.** The narrator reads a game's line after the pass's own events, so "You stepped on a hidden dart plate!" comes after the blow it names.
+- **The ring of awareness sets `Keen`,** and `keep_awareness` is gone.
+- **Left for later, reported as engine faults:** a mind's movement field cannot see blocking furniture, and `Keep` measures the crow's gap with no walking distance on offer.

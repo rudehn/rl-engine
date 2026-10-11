@@ -55,26 +55,39 @@ Deeper monsters simply list more traits.
 
 ## Floors
 
-Each depth band has a biome, and each band draws its biome per run from two or three, so floor four is not always caves.
-The bands as planned, with the biome the skeleton ships first:
+Each floor draws its biome from its band, so floor four is not always caves, and the two floors of a band may share one.
+Twelve biomes are in `assets/biomes.ron`, with three more on floor ten, one for each boss's throne, and each floor then draws a recipe of its biome from the twenty-nine in `assets/layout.ron`:
 
-| Floors | Biome (skeleton) | Other biomes (part 4) | Light |
+| Floors | Biome | How it is grown | Light |
 | --- | --- | --- | --- |
-| 1-2 | The Upper Halls: ruined masonry, rooms and corridors | the Cellars | dim, lantern and braziers |
-| 3-4 | The Fungal Deeps: caves | the Spider Warrens | glowing fungus, teal and green |
-| 5-6 | The Catacombs: crypts and ossuaries | the Sunken Library | candles, cold blue |
-| 7-8 | The Drowned Cathedral: flooded halls, bridges | the Underlake | water shimmer, moonlight shafts |
-| 9 | The Forge of Embers: lava and smithies | | firelight |
-| 10 | The Throne: the boss's lair and its court | | the boss's own |
+| 1-2 | The Upper Halls: ruined masonry | halls, rooms and corridors behind doors, a ruin district where small caves of rubble break in | dim and warm, braziers |
+| 1-2 | The Cellars: storerooms under the halls | small rooms, crawlways one cell wide, root-broken cave pockets | darker, a few hung lanterns |
+| 1-2 | The Watch Barracks: the garrison | uniform cells behind doors, cross-shaped mess halls, a parade hall | torch sconces and braziers |
+| 3-4 | The Fungal Deeps: caves | large and medium caves joined by mouths, a long cave the floor follows | glowing fungus, teal and green |
+| 3-4 | The Spider Warrens: web-choked tunnels | many small caves and one-cell tunnels, a low open share | truly dark, the lantern is the light |
+| 3-4 | The Old Mines: dug galleries | chambers among cave pockets on straight two-wide galleries | goblin lanterns, glinting ore |
+| 5-6 | The Catacombs: crypts and ossuaries | small crypts on long one-wide galleries, ossuary halls | candles, cold blue |
+| 5-6 | The Sunken Library: halls of shelves | long stacks, cross-shaped atria, reading rooms, seeping pools | pale violet witchlight, water shimmer |
+| 7-8 | The Drowned Cathedral: flooded halls | naves in deep water joined by bridges, chapels, cloister passages | moonlight shafts, water shimmer |
+| 7-8 | The Underlake: the lake under the lake | big caves where lakes cover much of the floor, islands joined by bridges | glowing water, cold blue-green |
+| 9 | The Forge of Embers: lava and smithies | smithy rooms among ash caves, lava lakes, iron bridges | firelight |
+| 9 | The Ashen Galleries: cooled flows and live vents | caves of obsidian and cinder, lava lakes, few rooms | ember glow and dark between |
+| 10 | The boss's floor: the Drowned Throne, the Brood Hollow or the Wyrm's Hall, by the boss drawn | a compact place grown round the throne's piece | the boss's own |
+
+A floor grows between 90 by 52 and 104 by 58 cells, about one and a half views a side, except the Fungal Deeps' long band at 120 by 40 and the thrones' 72 by 44.
+A biome's favored monsters count three times in its floors' spawn tables, so a biome is told by what lives in it as well as by how it is built.
 
 Generation mixes techniques per biome: accretion halls, cellular caves, crypt grids, lakes with bridges, lava rivers, and districts of one inside another.
-Prefabs come in three kinds, each drawn from a weighted pool with bands and a budget per floor:
+Prefabs come in three kinds, each drawn from its own pool in `assets/pool.ron`, with weights, bands, limits per floor and per run, and a budget per band.
+A run draws all its picks once, at its start, so a floor grown again after a failed attempt is a different layout holding the same pieces, and no limit is ever passed whichever floor is built first.
 
-- **Flavour**: scenery that says what a place was, a library, a shrine, a goblin camp, a collapsed hall. Nothing to take.
-- **Reward**: a treasure room, an armory, a shrine with a gift.
-- **Risk and reward**: an altar vault where taking one caged item locks the others, a key on the floor opening a door elsewhere, a guarded hoard, a trapped corridor, captives in shackles who become allies when freed under fire.
+- **Flavor**, 43 entries: scenery that says what a place was, a library, a shrine, a goblin camp, a collapsed hall. Nothing to take. Thirteen are pieces stamped inside a room and thirty are dressings laid over any area, caves included.
+- **Risk and reward**, 22 entries: an altar vault where taking one caged item locks the others, a key on the floor opening a door elsewhere, a guarded hoard, a trapped corridor, a plinth that drops the floor when lifted, a flooding altar. Grown as rooms of their own behind a lock, a seal or a secret door, or stamped inside a room.
+- **Reward**, 16 entries: a treasure room, an armory, a spring, an anvil, a moonwell. Ten are stamped inside a room, two grown as rooms of their own and four dressings.
 
-The dungeon should feel lived in: monsters asleep, on patrol, at a fire or feeding, goblins and their ogre together, the remains of earlier adventurers with what they carried and a line of what they wrote, inscriptions, bones, blood, cobwebs, and small life that is only scenery.
+A typical run sees 18 of the 43 flavor entries and no run more than 25, which is the fifth pillar held by the numbers.
+
+The dungeon feels lived in: monsters asleep, on patrol, at a fire or feeding, goblins and their ogre together, the remains of earlier adventurers with what they carried and a line of what they wrote, inscriptions, bones, blood, cobwebs, and small life that is only scenery.
 
 ## Monsters
 
@@ -173,7 +186,19 @@ The title screen is a painting that breathes: the black lake under stars, mist o
    A floor now feels lived in: a share of its monsters sleep, falling with depth, a goblin war band comes together round its own fire, a beast stands over a feeding ground, a patrol walks a loop, and a shackled captive fights beside the adventurer once freed and follows it down every stair.
    A soak run by hand plays fifty seeds' floors to their ends, and the run is won far oftener for it, about one in seven where it was one in a hundred and fifty, with every final boss winnable; along the way the adventurer's health rose from forty to sixty, healing came back to the sheet's own numbers, and Grubnak, the Widow, the Abbess, the three bosses and their courts, the ogres, trolls, wights, skeletons and archers were each softened a step where the soak found one deciding runs.
    It left charms, which part 2 also assigned here, and the ring of awareness, assigned to this part and the next, still waiting on hidden things; a coloured light that cannot warm a tile with little of its colour, found in a camp's own fire and filed in `docs/TODO.md` for a part that works on how a game looks; and the player's own long action, which a freed captive gave only to a mind, filed the same way.
-4. **Dungeon generation**: biomes per band, mixed techniques, the three prefab kinds in pools, a lived-in dungeon. Built on the engine's layout work.
+4. **Dungeon generation**: biomes per band, mixed techniques, the three prefab kinds in pools, a lived-in dungeon.
+   Built on the `undermere-dungeon` branch, finished 2026-10-11, as `docs/superpowers/specs/2026-10-08-undermere-dungeon-design.md` set out, and on the engine's layout work.
+   It built the engine's half first: a cave as a shape, a recipe that lays barriers growth goes round, a piece grown from a prefab and joined by an entry, a lock or a seal, lakes that may part a floor and the bridges that join it again, cells that hide what they are and the pass that hides a floor's openings without ever hiding the way on, a spotting roll that weighs nearness, keenness and stillness and is made once a turn, a pool of pieces drawn for a whole run at its start, and a dressing that fills an area of any size, caves included, without shutting a door or cutting an area.
+   Two engine faults surfaced on the way and were mended where they lay: the survey and the loops stopped at a shut door, and a flood priced a diagonal that descending then refused, so a mind stood still between two pieces of furniture.
+   On that it built twelve biomes in `assets/biomes.ron` and twenty-nine recipes in `assets/layout.ron`, every floor a different layout of a biome drawn for it; the lairs and the throne as grown pieces with an entry; and three pools in `assets/pool.ron`, 43 flavor entries, 22 of risk and reward and 16 of reward, with 34 dressings in `assets/dressings.ron`.
+   The vaults work: a key found on the floor that opens one vault, a lever, cages that shut the other two, a flood, a rotten floor that drops its taker to the floor below, a lintel that falls on the short way out.
+   A floor hides what it hides from `assets/hidden.ron`: secret doors from floor two, hidden rooms, seven traps by depth that monsters spring as well as the adventurer, loose flagstones, a causeway under the water; the ring of awareness, which part 2 left waiting, now sets a `Keen` that every roll reads.
+   A floor is lived in beyond part 3's sleepers and camps: blood trails ending at a body, wall inscriptions, the last words of earlier adventurers drawn without repeating, a feeling on arrival that names what the floor holds, and wildlife that is scenery, moths and blind rats, which the adventurer slips past.
+   A soak run by hand plays 150 delves over fifty seeds, and now counts what a floor hides and what the adventurer found of it: about three in ten secret doors, a quarter of the hidden rooms and half the traps, with the run won in 70 of 150 delves and no delve left stalled.
+   It tuned against that: flavor budgets 2 to 4 a floor on floors one to six, so a typical run sees 18 of the 43 flavor entries and none more than 25; a tenth more open ground in the room-and-door recipes, so no floor keeps a slab of rock ten cells wide; hidden rooms spotted at 8 where doors stay at 6.
+   It decided that biomes are drawn per floor, not per band, so both floors of a band may match; that a lake may part a floor and bridges must join it again, or the attempt is grown again; that secrets are records on a place's map and not entities; that the trapdoor and the rotten floor share one fall; that a vault's key is any far free cell and not a guarded one; and that the Goblin Stockade stands out of the Catacombs and the Sunken Library, whose rooms cannot hold it.
+   It left the engine faults that the soak found for the next engine slice: a mind's movement field cannot see blocking furniture, so a mind boxed in by a post stands, and a game that wants a walking distance floods its own; and the narrator reads a game's line after the pass's own events, so Undermere words a trap's line in the past tense.
+   It left braziers, rubble and glowcaps going by band and not by biome, a magic-mapped floor drawn in one cold remembered colour, the archipelago reading as ponds more than islands, since the lakes that would make islands are the ones bridges cannot rejoin, and the sweep of every piece in every recipe over seeds 0 to 200, which has not been finished on a quiet machine; its 0 to 2 version passes.
 5. **Town**: shops and gold, townsfolk, the temple, and whether the gate goes back.
 6. **Mercenaries**: hiring, following, deciding, travelling.
 7. **Polish**: a pass over everything for the look, the feel and the balance.
