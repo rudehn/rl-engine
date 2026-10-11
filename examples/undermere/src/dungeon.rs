@@ -789,6 +789,19 @@ pub(crate) fn pieces(ctx: &BaseContext) -> Vec<Rect> {
     ctx.outputs().iter::<Stamped>().map(|st| st.bounds).collect()
 }
 
+/// Every cell of every piece stamped so far, as a grid over the floor:
+/// [`pieces`] read once, where asking each of its rectangles about every
+/// cell of the floor was most of what [`Furnish`] and [`Patches`] cost, and
+/// the floor's most expensive passes after the accretion itself.
+pub(crate) fn under_pieces(ctx: &BaseContext) -> rl_engine::rl_grid::BitGrid {
+    let terrain = ctx.terrain();
+    let mut under = rl_engine::rl_grid::BitGrid::new(terrain.width(), terrain.height());
+    for p in pieces(ctx).into_iter().flat_map(Rect::cells) {
+        under.insert(p);
+    }
+    under
+}
+
 /// Every cell a stamp has marked for a monster or a prop, which may yet
 /// block: the same cells `rl_mapgen::Dress` itself treats as blocking,
 /// whatever is put there, since neither pass knows that until the place's
@@ -1064,8 +1077,8 @@ impl Pass<BaseContext> for Patches {
     fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let tables = ctx.tiles().tables();
         let solid = !tables.walkable[self.tile.index()];
-        let (kept, pieces) = (ways(ctx), pieces(ctx));
-        let free = |p: Point| !kept.contains(&p) && pieces.iter().all(|r| !r.contains(p));
+        let (kept, under) = (ways(ctx), under_pieces(ctx));
+        let free = |p: Point| !kept.contains(&p) && !under.contains(p);
         let count = ctx.rng().random_range(self.count.0..=self.count.1);
         for _ in 0..count {
             let seeds: Vec<Point> =
@@ -1128,12 +1141,12 @@ impl Pass<BaseContext> for Furnish {
         let tables = ctx.tiles().tables();
         let count = ctx.rng().random_range(self.count.0..=self.count.1);
         for _ in 0..count {
-            let (kept, pieces, blocked) = (ways(ctx), pieces(ctx), slots(ctx));
+            let (kept, under, blocked) = (ways(ctx), under_pieces(ctx), slots(ctx));
             let clear = |p: Point| {
                 kept.iter().all(|w| geometry::chebyshev(p, *w) > 1)
                     && open_all_round(ctx, &tables, p)
                     && walkable(ctx, &tables, p)
-                    && geometry::square(p, 1).all(|q| pieces.iter().all(|r| !r.contains(q)))
+                    && geometry::square(p, 1).all(|q| !under.contains(q))
             };
             let mut spots: Vec<Point> = ctx.terrain().bounds().cells().filter(|p| clear(*p)).collect();
             spots.shuffle(ctx.rng());
@@ -2017,18 +2030,44 @@ mod tests {
     /// Grows each piece alone among a floor's picks, in every biome and
     /// recipe it may stand in, on each floor they share, over `seeds`, and
     /// names every one that does not grow within a floor's attempts.
+    ///
+    /// Every way is a floor grown whole for every seed, seven hundred and
+    /// sixty ways of it, so over two hundred seeds it is a hundred and fifty
+    /// thousand floors: the ways are handed out over every core, the next
+    /// to whichever worker is free, each worker with an Undermere of its own
+    /// to write the one pick into, since the floors are independent and one
+    /// thread took hours. Handed out rather than dealt in turn, because a
+    /// lake biome's ways cost several times a hall's and dealt ones left
+    /// most cores idle while one ground through its share.
     fn every_piece_grows_where_it_may_stand(seeds: std::ops::Range<u64>) {
-        let mut undermere = Undermere::new(RunSeed(0));
-        let mut failed = Vec::new();
-        for (e, drawn, floors) in pieces_in_biomes(&undermere) {
-            for s in seeds.clone() {
-                let floor = floors[s as usize % floors.len()];
-                undermere.plan.insert(floor, vec![rl_engine::rl_rules::pool::Pick { entry: e, required: true }]);
-                if let Err(err) = undermere.grow(floor, &drawn, RunSeed(s), ATTEMPTS) {
-                    failed.push(format!("{} on floor {floor}, {}, {}, seed {s}: {err}", undermere.pool.entries[e].name, drawn.name, drawn.recipe));
-                }
-            }
-        }
+        let ways = pieces_in_biomes(&Undermere::new(RunSeed(0)));
+        let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
+        let next = std::sync::atomic::AtomicUsize::new(0);
+        let mut failed: Vec<String> = std::thread::scope(|scope| {
+            let (ways, next) = (&ways, &next);
+            let workers: Vec<_> = (0..threads)
+                .map(|_| {
+                    let seeds = seeds.clone();
+                    scope.spawn(move || {
+                        let mut undermere = Undermere::new(RunSeed(0));
+                        let mut failed = Vec::new();
+                        while let Some((e, drawn, floors)) = ways.get(next.fetch_add(1, std::sync::atomic::Ordering::Relaxed)) {
+                            for s in seeds.clone() {
+                                let floor = floors[s as usize % floors.len()];
+                                undermere.plan.insert(floor, vec![rl_engine::rl_rules::pool::Pick { entry: *e, required: true }]);
+                                if let Err(err) = undermere.grow(floor, drawn, RunSeed(s), ATTEMPTS) {
+                                    let name = &undermere.pool.entries[*e].name;
+                                    failed.push(format!("{name} on floor {floor}, {}, {}, seed {s}: {err}", drawn.name, drawn.recipe));
+                                }
+                            }
+                        }
+                        failed
+                    })
+                })
+                .collect();
+            workers.into_iter().flat_map(|w| w.join().expect("a worker grew its share")).collect()
+        });
+        failed.sort();
         assert!(failed.is_empty(), "{} failed:\n{}", failed.len(), failed.join("\n"));
     }
 
@@ -2044,7 +2083,7 @@ mod tests {
     /// As [`each_piece_grows_in_every_biome_and_recipe_it_may_stand_in_over_a_few_seeds`],
     /// over seeds 0 to 200: run by hand when a piece or the layout changes.
     #[test]
-    #[ignore = "every piece in every biome over seeds 0 to 200 takes minutes; run by hand when a piece or the layout changes"]
+    #[ignore = "every piece in every biome over seeds 0 to 200 is 152,000 floors, half an hour over eight cores; run by hand when a piece or the layout changes"]
     fn each_piece_grows_in_every_biome_and_recipe_it_may_stand_in_over_seeds_0_to_200() {
         every_piece_grows_where_it_may_stand(0..200);
     }

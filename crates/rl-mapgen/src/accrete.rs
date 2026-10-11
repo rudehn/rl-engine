@@ -69,10 +69,21 @@ pub struct Piece {
 
 impl Piece {
     /// The piece whose body is `cells`, with every site worked out.
+    ///
+    /// The body is looked up on a grid over its bounds, a cell outside
+    /// them being no body, rather than searched for in the list: a cave is
+    /// drawn hundreds of times as a floor accretes, and asking the list of
+    /// every cell beside every cell was a tenth of what growing a floor of
+    /// caves cost.
     pub fn from_cells(mut cells: Vec<Point>) -> Self {
         cells.sort_by_key(|p| (p.y, p.x));
         cells.dedup();
-        let has = |p: Point| cells.binary_search_by_key(&(p.y, p.x), |c| (c.y, c.x)).is_ok();
+        let bounds = bounds_of(&cells);
+        let mut body = BitGrid::new(bounds.width, bounds.height);
+        for c in &cells {
+            body.insert(*c - bounds.origin());
+        }
+        let has = |p: Point| body.contains(p - bounds.origin());
         let mut sites = Vec::new();
         for &c in &cells {
             for d in Direction::CARDINALS {
