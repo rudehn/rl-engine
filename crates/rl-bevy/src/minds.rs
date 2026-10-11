@@ -452,14 +452,19 @@ struct Walking<'a> {
 }
 
 impl Walking<'_> {
-    fn descents(&mut self, goals: &[Point], from: Point, away: bool) -> Vec<Point> {
+    /// The field toward or away from `goals`, and `from` in its coordinates.
+    fn field(&mut self, goals: &[Point], from: Point, away: bool) -> Option<(&DijkstraMap, Point)> {
         let mut goals = goals.to_vec();
         goals.sort();
         goals.dedup();
+        let local = self.map.to_local(from)?;
+        Some((self.fields.ensure((goals, self.profile, self.opens_doors, away), self.map)?, local))
+    }
+
+    fn descents(&mut self, goals: &[Point], from: Point, away: bool) -> Vec<Point> {
         let origin = self.map.window_tiles().origin();
-        let Some(local) = self.map.to_local(from) else { return Vec::new() };
-        match self.fields.ensure((goals, self.profile, self.opens_doors, away), self.map) {
-            Some(field) => field.descents(local).into_iter().map(|p| p + origin).collect(),
+        match self.field(goals, from, away) {
+            Some((field, local)) => field.descents(local).into_iter().map(|p| p + origin).collect(),
             None => Vec::new(),
         }
     }
@@ -472,6 +477,13 @@ impl rl_rules::Fields for Walking<'_> {
 
     fn descents_away(&mut self, goals: &[Point], from: Point) -> Vec<Point> {
         self.descents(goals, from, true)
+    }
+
+    /// The field toward `goals` at `from`: the one a mind closing on them
+    /// walks down, so the walk is read off a flood already made.
+    fn on_foot(&mut self, goals: &[Point], from: Point) -> Option<u32> {
+        let (field, local) = self.field(goals, from, false)?;
+        field.value(local).and_then(|v| u32::try_from(v).ok())
     }
 
     /// The move resolver's own corner rule, so a mind that opens doors
@@ -1354,6 +1366,14 @@ mod tests {
         waiting(&mut app, player, 8);
         let at = app.world().get::<Position>(hunter).unwrap().0;
         assert!(geometry::is_adjacent(at, start), "it came out where the prop stood: {at:?} from {start:?}");
+    }
+
+    #[test]
+    fn a_follower_cupped_in_blocking_props_walks_out_of_the_cup_and_round_to_keep_up() {
+        let (mut app, player, follower, start) = among_props(Brain::new().then(rl_rules::ai::tactics::Keep::allies(1, 1)), true, &CUP);
+        waiting(&mut app, player, 12);
+        let at = app.world().get::<Position>(follower).unwrap().0;
+        assert!(geometry::is_adjacent(at, start), "it walked round the props, measuring its gap on foot: {at:?} from {start:?}");
     }
 
     #[test]

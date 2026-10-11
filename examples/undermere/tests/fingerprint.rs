@@ -230,8 +230,8 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [676_409_793_583_956_709, 6_813_372_197_080_327_372, 711_810_992_116_967_930],
-        "fingerprint tripwire: re-baselined when minds' fields came to flood round blocking props, so a monster or \
-         a follower walks round the floor's furniture rather than standing behind it"
+        [13_403_376_430_861_935_303, 7_889_545_442_739_870_349, 17_866_386_257_296_555_806],
+        "fingerprint tripwire: re-baselined when the engine's Keep came to measure a follower's or a pack's gap on \
+         foot, so the hired, the led and the packs close sooner across walls and round corners"
     );
 }
