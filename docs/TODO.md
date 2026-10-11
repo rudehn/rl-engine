@@ -48,16 +48,15 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 21 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
 | 22 | The resolvers in `ResolveSet::Act` are unordered | 4 | low | medium |
 | 23 | A prop cannot block sight, or block the way and let a shot past | 3 | medium | medium |
-| 24 | A coloured light cannot warm a tile with little of its colour | 3 | low | low |
-| 25 | The player has no long action | 3 | medium | medium |
-| 26 | `offer_abilities` declares `&mut Stack` it only reads | 4 | low | low |
+| 24 | The player has no long action | 3 | medium | medium |
+| 25 | `offer_abilities` declares `&mut Stack` it only reads | 4 | low | low |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
 The corner-cutting fallbacks went the same day: every tactic that picks a neighbour itself now asks whether the move resolver would take that step.
 The one that mattered most was the bench, which disproved the item that had been ranked first on the performance side: the turn loop is linear in the crowd, not quadratic, and the perceive stage's scans are not where the time goes.
 Six more were built on 2026-09-30, healing at their head: healing as its own path to health, the light recast inside the turn, the flow field cache, every game's lines inside a turn through `Tell`, anyone travelling when its wits say so, and a `Burning` thing saved.
-The table was renumbered that day, again on 2026-10-04 for two gaps Undermere's floors found, and again on 2026-10-10 when the three furnishing items were built, so a number here is a place in the order as it stands and not the one an older note may cite.
+The table was renumbered that day, again on 2026-10-04 for two gaps Undermere's floors found, again on 2026-10-10 when the three furnishing items were built, and again on 2026-10-11 when the coloured light was built, so a number here is a place in the order as it stands and not the one an older note may cite.
 
 Why the order that is left, in four moves:
 
@@ -104,12 +103,6 @@ The five items that opened this section were built in the six stages of `docs/de
   It changes how every game's monsters search, so every fingerprint moves with it.
 
 ## 3. Make what exists real
-
-- **A coloured light cannot warm a tile with little of its colour.**
-  `Shading::light` in `crates/rl-render/src/shade.rs` multiplies a tile's colour by the light that lands on it, channel by channel, so a light's colour can only take away: a fire's orange on green moss darkens the green rather than warming it, and the floor reads as lit by the lantern.
-  Undermere's play found it on 2026-10-07, in task 11 of its part 3, and its camps' fires burn yellower to get round it (`9e68e0e`).
-  Brogue adds a share of a light's own colour as well as multiplying, so a light can lend a tile a colour it does not have; adding a share of the light's colour, scaled by its intensity, after the multiply would do the same here.
-  Every lit game's pictures move with it, so it is polish for a part that works on how a game looks, not a fault to fix in passing.
 
 - **A prop cannot block sight, or block the way and let a shot past.**
   A prop's `blocks` is `Blocks`, which the occupancy index reads for movement and `combat::shot` reads as stopping a shot, and nothing a prop is can block sight.

@@ -16,6 +16,13 @@
 //! thing is lit is the game's call, made by inserting or removing the
 //! component; the engine reads only what is there.
 //!
+//! A source may take light away instead: [`LightSource::darkness`], a light
+//! of negative intensity, is a pool of true darkness cast like any other
+//! source, from a fixture, an actor, a carried thing or a cell's glow. It
+//! takes a share of every light and the ambient in its reach, so what it
+//! covers reads darker in every band below, sight and stealth included,
+//! and it can never light or reveal a cell.
+//!
 //! What is seen falls in one of three [`LightBand`]s, which
 //! [`Lighting::band`] names and [`band_at`] names with no lighting read as
 //! lit: dark below `threshold`, dim up to `bright`, and lit above it. Sight
@@ -39,10 +46,12 @@ use crate::places::{MapId, OnMap};
 use crate::turn::TurnEnd;
 use crate::world::WorldMap;
 
-/// Sheds light from wherever its entity is.
+/// Sheds light from wherever its entity is, or with `darkens`, takes it
+/// away.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LightSource {
-    /// Brightness at the source's own tile, 0 to 255.
+    /// Brightness at the source's own tile, 0 to 255; for a darkness, the
+    /// share of light it takes there, out of 255.
     pub intensity: u8,
     /// How far it reaches, in tiles.
     pub radius: i32,
@@ -52,12 +61,27 @@ pub struct LightSource {
     /// that can dip to nothing. Gameplay never reads it.
     #[serde(default)]
     pub flicker: u8,
+    /// Whether it takes light away rather than giving it: a light of
+    /// negative intensity. A flag beside the magnitude rather than a signed
+    /// intensity, so the range stays in the type and every game that reads
+    /// a light's strength as a byte goes on reading it. A darkness has no
+    /// hue and does not flicker, since it takes every channel alike, so its
+    /// `color` and `flicker` are not read.
+    #[serde(default)]
+    pub darkens: bool,
 }
 
 impl LightSource {
     /// A steady source of `intensity` reaching `radius` tiles in `color`.
     pub const fn new(intensity: u8, radius: i32, color: Rgb) -> Self {
-        Self { intensity, radius, color, flicker: 0 }
+        Self { intensity, radius, color, flicker: 0, darkens: false }
+    }
+
+    /// A darkness taking `intensity / 255` of the light at its own tile,
+    /// falling off to nothing at `radius` as a light does: at 255 its heart
+    /// is pitch black whatever shines on it.
+    pub const fn darkness(intensity: u8, radius: i32) -> Self {
+        Self { intensity, radius, color: Rgb::WHITE, flicker: 0, darkens: true }
     }
 
     /// The same source, flickering by `amount` when drawn.
@@ -67,7 +91,7 @@ impl LightSource {
     }
 
     fn at(&self, origin: Point) -> Emitter {
-        Emitter { origin, intensity: self.intensity, radius: self.radius, color: self.color, flicker: self.flicker }
+        Emitter { origin, intensity: self.intensity, radius: self.radius, color: self.color, flicker: self.flicker, darkens: self.darkens }
     }
 }
 
@@ -789,7 +813,8 @@ mod tests {
     /// change touched, and who it can reach.
     #[test]
     fn a_lamp_that_moved_touches_its_two_discs_and_reaches_only_viewers_whose_range_meets_them() {
-        let lamp = |x: i32| Emitter { origin: Point::new(x, 0), intensity: 200, radius: 4, color: rl_grid::Rgb::new(255, 255, 255), flicker: 0 };
+        let lamp =
+            |x: i32| Emitter { origin: Point::new(x, 0), intensity: 200, radius: 4, color: rl_grid::Rgb::new(255, 255, 255), flicker: 0, darkens: false };
 
         assert_eq!(changed_area(&[lamp(0)], &[lamp(0)]), None, "nothing moved, nothing touched");
 
@@ -846,6 +871,74 @@ mod tests {
         assert!(app.world().get::<Viewshed>(player).unwrap().dirty, "the one carrying it");
         assert!(app.world().get::<Viewshed>(near).unwrap().dirty, "and one whose range meets the light it moved");
         assert!(!app.world().get::<Viewshed>(far).unwrap().dirty, "but not one sixty tiles away, which is what cost a shadowcast per actor a frame");
+    }
+
+    /// Every cell of the room, with its band and whether the player sees it.
+    fn survey(rig: &Rig) -> Vec<(Point, LightBand, bool)> {
+        let light = rig.app.world().resource::<Lighting>();
+        Rect::new(0, 0, 20, 9).cells().map(|p| (p, light.band(p), rig.sees(p))).collect()
+    }
+
+    #[test]
+    fn a_darkness_lowers_the_band_of_the_cells_it_reaches_and_nothing_else() {
+        let mut rig = Rig::new(Some(Lighting::new(Light::white(100))), None);
+        let before = survey(&rig);
+        let heart = Point::new(12, 4);
+        rig.app.world_mut().spawn((Position(heart), LightSource::darkness(255, 4)));
+        rig.act(Wait);
+        let after = survey(&rig);
+        assert_eq!(rig.app.world().resource::<Lighting>().band(heart), LightBand::Dark, "pitch black at its heart");
+        assert!(!rig.sees(heart) && rig.in_line(heart), "in line, and unseen for the dark");
+        for ((p, was, saw), (_, is, sees)) in before.into_iter().zip(after) {
+            assert!(is <= was, "{p:?} is never lighter for a darkness");
+            assert!(saw || !sees, "{p:?} is never revealed by one");
+            if geometry::chebyshev(p, heart) >= 4 {
+                assert_eq!((is, sees), (was, saw), "{p:?} is beyond its reach");
+            }
+        }
+    }
+
+    #[test]
+    fn standing_in_a_darkness_hides_as_standing_in_the_dark_does() {
+        let mut rig = Rig::new(Some(Lighting::dark()), None);
+        let here = Point::new(5, 4);
+        rig.app.world_mut().entity_mut(rig.player).insert(LightSource::new(200, 6, amber()));
+        rig.act(Wait);
+        let watcher = Point::new(14, 4);
+        let lit = |rig: &Rig| {
+            let light = rig.app.world().resource::<Lighting>();
+            (light.band(here), perceives(Some(light), watcher, 0, here), conceals(Some(light), watcher, here))
+        };
+        assert_eq!(lit(&rig), (LightBand::Lit, true, false), "the lantern shows its bearer across the room");
+        rig.app.world_mut().spawn((Position(here), LightSource::darkness(255, 3)));
+        rig.act(Wait);
+        let pooled = lit(&rig);
+        rig.app.world_mut().entity_mut(rig.player).remove::<LightSource>();
+        rig.act(Wait);
+        let doused = lit(&rig);
+        assert_eq!(pooled, (LightBand::Dark, false, true), "in the pool the bearer is unseen, lantern and all");
+        assert_eq!(pooled, doused, "exactly as a bearer with no lantern is");
+    }
+
+    /// Over a span of places for the pool, in a room lit by a lamp and a
+    /// dim ambient: wherever it stands, no cell is lighter and none is
+    /// newly seen.
+    #[test]
+    fn a_darkness_never_lightens_or_reveals_a_cell_wherever_it_stands() {
+        let mut rig = Rig::new(Some(Lighting::new(Light::white(30))), None);
+        rig.app.world_mut().spawn((Position(Point::new(14, 4)), LightSource::new(220, 6, amber())));
+        rig.act(Wait);
+        let before = survey(&rig);
+        let pool = rig.app.world_mut().spawn((Position(Point::new(2, 2)), LightSource::darkness(200, 4))).id();
+        for x in (2..18).step_by(3) {
+            for y in 2..7 {
+                rig.app.world_mut().get_mut::<Position>(pool).expect("the pool").0 = Point::new(x, y);
+                rig.act(Wait);
+                for ((p, was, saw), (_, is, sees)) in before.iter().zip(survey(&rig)) {
+                    assert!(is <= *was && (*saw || !sees), "{p:?} with the pool at ({x}, {y})");
+                }
+            }
+        }
     }
 
     /// Whether the player is shown `e`, by the one question every view asks.
