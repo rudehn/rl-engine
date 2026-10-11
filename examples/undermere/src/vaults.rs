@@ -80,6 +80,13 @@ const GOBLIN_KIND: &str = "goblin";
 /// floor's hidden plates.
 pub const CAUSEWAY_SPOT: u8 = 10;
 
+/// The areas a causeway's [`Secret`](rl_engine::rl_mapgen::Secret)
+/// joins: none a reader can look up. The causeway is hidden once the
+/// build's areas have been flattened into its spots, so there is no area
+/// index left to name, and an index past any a floor grows says so where
+/// `(0, 0)` would name the floor's first area as joined to its island.
+pub const JOINS_NO_AREA: (usize, usize) = (usize::MAX, usize::MAX);
+
 /// How far a vault's key or lever lies from anything a piece laid: farther
 /// than any piece's own cell is from the nearest thing it lays.
 const PIECE_CLEAR: i32 = 4;
@@ -261,7 +268,7 @@ fn hide_causeways(built: &mut PlaceBuild, tiles: &TileRegistry, prefabs: &Prefab
     let group = built.secrets.iter().map(|s| s.group + 1).max().unwrap_or(0);
     for at in cells {
         built.terrain.set(at, deep);
-        built.secrets.push(rl_engine::rl_mapgen::Secret { at, is: causeway, spot: CAUSEWAY_SPOT, group, joins: (0, 0) });
+        built.secrets.push(rl_engine::rl_mapgen::Secret { at, is: causeway, spot: CAUSEWAY_SPOT, group, joins: JOINS_NO_AREA });
     }
 }
 
