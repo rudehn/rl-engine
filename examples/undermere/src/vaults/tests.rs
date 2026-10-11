@@ -409,3 +409,92 @@ fn the_sunken_causeway_is_found_whole_from_beside_one_cell_of_it() {
     let said = crate::testing::said(&app);
     assert_eq!(said.iter().filter(|l| *l == "You make out a causeway just under the water.").count(), 1, "said once: {said:?}");
 }
+
+/// Whoever falls through the floor above a locked vault lands where they
+/// can walk back to the way in, whatever the fall's roll: never inside
+/// the vault, whose key lies outside it and whose door no hand opens from
+/// within. Each roll tried is one that drew a cell of the vault while
+/// every free cell off the stairs was a landing.
+#[test]
+fn a_fall_never_lands_inside_a_locked_vault() {
+    let (seed, floor) = drawn("The Locked Vault");
+    assert!(floor >= 2, "a floor above it to fall from");
+    let mut app = crate::testing::headless(seed);
+    let me = adventurer(&mut app);
+    sturdy(&mut app, me);
+    let map = map_of(floor);
+    arrive(&mut app, map);
+    clear_monsters(&mut app);
+    let (inside, rolls) = {
+        let (world_map, occupancy) = (app.world().resource::<WorldMap>(), app.world().resource::<Occupancy>());
+        let place = world_map.place(map).expect("built");
+        let open = open_to_the_way_in(place, world_map.tables());
+        let free: Vec<Point> = place
+            .terrain
+            .bounds()
+            .cells()
+            .filter(|p| world_map.is_walkable_on(map, *p) && !occupancy.is_occupied(*p) && *p != place.entry && Some(*p) != place.exit)
+            .collect();
+        let inside: BTreeSet<Point> = free.iter().copied().filter(|p| !open.contains(p)).collect();
+        let rolls: Vec<u64> = (0..free.len() as u64).filter(|i| inside.contains(&free[*i as usize])).collect();
+        (inside, rolls)
+    };
+    assert!(!rolls.is_empty(), "the vault has room to land in");
+    for roll in rolls {
+        arrive(&mut app, map_of(floor - 1));
+        let fell = crate::effects::moving::fall_through(app.world_mut(), me, roll);
+        assert!(fell, "a floor below to fall to");
+        settle(&mut app);
+        settle(&mut app);
+        assert_eq!(crate::testing::here(&app), map, "fell to the floor below");
+        assert!(!inside.contains(&at(&app, me)), "roll {roll} landed at {:?}, inside the locked vault", at(&app, me));
+    }
+}
+
+/// Over a span of seeds, on every floor a run lays a lock or a seal on:
+/// no cell a fall or a potion of descent may land on, and none a scroll
+/// of teleportation may send its reader to from anywhere on the floor,
+/// lies behind one, that is among the cells a walk from the way in
+/// reaches with every lock opened and does not with them all shut.
+#[test]
+fn no_fall_or_far_step_lands_behind_a_lock_or_a_seal_over_a_span_of_seeds() {
+    use crate::dungeon::{FLOORS, Undermere};
+    use crate::effects::moving::{far_choices, landing_cells};
+    use rl_engine::rl_bevy::places::PlaceRules;
+    let mut floors = 0;
+    for s in 0..40 {
+        let undermere = Undermere::new(RunSeed(s));
+        for floor in 1..FLOORS {
+            let map = map_of(floor);
+            let built = undermere.build(map, None).unwrap_or_else(|e| panic!("floor {floor}, seed {s}: {e}"));
+            if built.locks.is_empty() {
+                continue;
+            }
+            floors += 1;
+            let mut world = WorldMap::new(undermere.tiles().tables().clone());
+            world.install_place(map, built);
+            world.switch_to(map);
+            let place = world.place(map).expect("installed");
+            let tables = world.tables();
+            let tile = |p: Point| place.secrets.iter().find(|x| x.at == p).map(|x| x.is).or_else(|| place.terrain.get(p));
+            let passable = |p: Point| tile(p).is_some_and(|t| tables.passable[t.index()]);
+            let locked = |p: Point| place.locks.iter().any(|l| l.at == p);
+            let opened = walk_from(place.entry, passable);
+            let shut = walk_from(place.entry, |p| !locked(p) && passable(p));
+            let behind: BTreeSet<Point> = opened.keys().copied().filter(|p| !shut.contains_key(p) && !locked(*p)).collect();
+            assert!(!behind.is_empty(), "floor {floor}, seed {s}: a lock with nothing behind it");
+            let walkable = |p: Point| world.is_walkable_on(map, p);
+            let landings = landing_cells(&world, map, |_| true);
+            assert!(!landings.is_empty(), "floor {floor}, seed {s}: somewhere to land");
+            if let Some(p) = landings.iter().find(|p| behind.contains(p)) {
+                panic!("floor {floor}, seed {s}: a fall may land at {p:?}, behind a lock");
+            }
+            for from in shut.keys().copied().filter(|p| walkable(*p)).step_by(17) {
+                if let Some(p) = far_choices(&world, from, walkable).iter().find(|p| behind.contains(p)) {
+                    panic!("floor {floor}, seed {s}: a far step from {from:?} may land at {p:?}, behind a lock");
+                }
+            }
+        }
+    }
+    assert!(floors >= 5, "only {floors} floors over the span lay a lock or a seal");
+}

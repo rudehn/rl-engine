@@ -17,18 +17,34 @@ use rl_engine::prelude::*;
 use rl_engine::rl_rules::ability::{RawValue, read_args};
 
 use super::FAR;
+use crate::vaults::open_to_the_way_in;
 
 /// A free cell of the place being read, drawn from `rng`, at least
 /// [`FAR`] steps from `from`; with none that far, one of the furthest
 /// there are. Never a transition, so a far step never lands exactly on a
-/// floor's own stairs. `None` on a place with nowhere free at all.
+/// floor's own stairs, and never a cell shut away from the way in, so
+/// nobody is sent behind a vault door they cannot open from within, as
+/// [`open_to_the_way_in`] says. `None` on a place with nowhere free at
+/// all.
 pub fn far_cell(world: &mut EffectWorld<'_, '_>, from: Point) -> Option<Point> {
-    let open: Vec<Point> = world.map().window_tiles().cells().filter(|p| *p != from && world.is_free(*p) && !world.is_transition(*p)).collect();
-    let furthest = open.iter().map(|p| geometry::chebyshev(*p, from)).max()?;
-    let far = FAR.min(furthest);
-    let choices: Vec<Point> = open.into_iter().filter(|p| geometry::chebyshev(*p, from) >= far).collect();
+    let choices = far_choices(world.map(), from, |p| world.is_free(p) && !world.is_transition(p));
+    if choices.is_empty() {
+        return None;
+    }
     let pick = world.rng.random_range(0..choices.len());
     Some(choices[pick])
+}
+
+/// What [`far_cell`] draws among on the map being read: each cell `free`
+/// admits, other than `from`, and open to the way in when the map is a
+/// place, at least [`FAR`] steps from `from` or, with none that far, as
+/// far as any is. Empty with nowhere free at all.
+pub fn far_choices(map: &WorldMap, from: Point, free: impl Fn(Point) -> bool) -> Vec<Point> {
+    let reached = map.place(map.current()).map(|place| open_to_the_way_in(place, map.tables()));
+    let open: Vec<Point> = map.window_tiles().cells().filter(|p| *p != from && free(*p) && reached.as_ref().is_none_or(|r| r.contains(p))).collect();
+    let Some(furthest) = open.iter().map(|p| geometry::chebyshev(*p, from)).max() else { return open };
+    let far = FAR.min(furthest);
+    open.into_iter().filter(|p| geometry::chebyshev(*p, from) >= far).collect()
 }
 
 /// Moves the user along the line they aimed it down, as far as its reach
@@ -305,9 +321,8 @@ pub fn fall_through(world: &mut World, who: Entity, roll: u64) -> bool {
 /// cell of the floor they went to, picked by the roll they went with, once
 /// they have arrived: a floor first entered is built, and its people
 /// placed, by the arrival, so the cell is picked among what is free once
-/// it stands. Never on the stairs, up or down, which nobody comes through
-/// a ceiling to land on, and which a fall onto the way down would take
-/// straight on to the next floor's.
+/// it stands, among [`landing_cells`]: never on the stairs, up or down,
+/// nor anywhere shut away from the way in.
 ///
 /// In `TurnSet::React`, after the arrival's own reactions, by the engine's
 /// warp, so who stands where and what can be seen are kept right as any
@@ -325,18 +340,27 @@ pub fn land_sinking(
             continue;
         }
         commands.entity(who).remove::<Sinking>();
-        let Some(place) = map.place(sink.to) else { continue };
-        // The place's own way in and way down, which its stairs stand on,
-        // whether or not they have been stood up yet this frame.
-        let on_stairs = |p: Point| p == place.entry || Some(p) == place.exit || stairs.iter().any(|(at, m)| m.0 == sink.to && at.0 == p);
-        let open: Vec<Point> =
-            place.terrain.bounds().cells().filter(|p| map.is_walkable_on(sink.to, *p) && !occupancy.is_occupied(*p) && !on_stairs(*p)).collect();
+        let on_stairs = |p: Point| stairs.iter().any(|(at, m)| m.0 == sink.to && at.0 == p);
+        let open = landing_cells(&map, sink.to, |p| !occupancy.is_occupied(p) && !on_stairs(p));
         if open.is_empty() {
             continue;
         }
         let at = open[(sink.roll % open.len() as u64) as usize];
         warps.write(WarpRequest { actor: who, to: Destination::Place { map: sink.to, arrive: Arrive::At(at) } });
     }
+}
+
+/// Every cell of the place `to` a fall or a potion of descent may set
+/// someone down on, in the same order every run: ground to stand on that `free` admits,
+/// off the place's way in and way down, which nobody comes through a
+/// ceiling to land on and which a fall onto the way down would take
+/// straight on to the next floor's, and open to the way in, as
+/// [`open_to_the_way_in`] says, so nobody lands behind a vault door
+/// whose key lies outside it. Empty for a map that is no place.
+pub fn landing_cells(map: &WorldMap, to: MapId, free: impl Fn(Point) -> bool) -> Vec<Point> {
+    let Some(place) = map.place(to) else { return Vec::new() };
+    let reached = open_to_the_way_in(place, map.tables());
+    reached.into_iter().filter(|p| *p != place.entry && Some(*p) != place.exit && map.is_walkable_on(to, *p) && free(*p)).collect::<Vec<Point>>()
 }
 
 /// Refuses any argument at all, for an effect that takes none: a field

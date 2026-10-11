@@ -41,7 +41,8 @@ use rl_engine::rl_bevy::doors::DoorEvent;
 use rl_engine::rl_bevy::places::{PlaceBuild, PlaceEntered, Spot};
 use rl_engine::rl_bevy::prefabs::Prefabs;
 use rl_engine::rl_bevy::props::spawn_prop;
-use rl_engine::rl_grid::TileRegistry;
+use rl_engine::rl_bevy::world::PlaceMap;
+use rl_engine::rl_grid::{TileRegistry, TileTables};
 use rl_engine::rl_rules::prefab::Slot;
 
 use crate::armory::{Armory, spawn_item};
@@ -227,6 +228,21 @@ fn walk_from(from: Point, open: impl Fn(Point) -> bool) -> BTreeMap<Point, u32> 
         }
     }
     seen
+}
+
+/// Every cell of `place` walked to from its way in with each lock and seal
+/// still shut taken for a wall and each cell a secret hides taken for what
+/// it really is: everywhere a body put down could walk back from. A fall
+/// and a far step land only among these, so nobody is ever set down
+/// behind a vault door whose key lies outside it, under a gate lifted
+/// only from without, or past a way back fallen in. A secret counts as
+/// found, since whoever lands beside one finds it as anyone does; a lock
+/// once opened is off the place, and the vault behind it is then as open
+/// as any room.
+pub fn open_to_the_way_in(place: &PlaceMap, tables: &TileTables) -> BTreeSet<Point> {
+    let tile = |p: Point| place.secrets.iter().find(|s| s.at == p).map(|s| s.is).or_else(|| place.terrain.get(p));
+    let passable = |p: Point| !place.locks.iter().any(|l| l.at == p) && tile(p).is_some_and(|t| tables.passable[t.index()]);
+    walk_from(place.entry, passable).into_keys().collect()
 }
 
 /// Hides every [`CAUSEWAY`] mark a piece laid as the deep water round it,
