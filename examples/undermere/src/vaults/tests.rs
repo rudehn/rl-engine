@@ -371,8 +371,12 @@ fn a_pieces_sleepers_sleep_at_their_posts_and_its_captives_are_shackled() {
                 .map(|(e, ..)| e)
         };
         assert!(marks.iter().any(|(g, _)| [SLEEPER, CAPTIVE].contains(g)), "{piece}: marks to fill");
+        let wildlife = app.world().resource::<Registries>().factions.expect(crate::content::WILDLIFE);
         for (glyph, p) in marks.into_iter().filter(|(g, _)| [SLEEPER, CAPTIVE].contains(g)) {
             let Some(who) = at_mark(&mut app, p) else { panic!("{piece}: nobody at its {glyph:?} at {p:?}") };
+            let kind = app.world().get::<crate::bestiary::Kind>(who).expect("a monster").0;
+            let side = app.world().resource::<crate::bestiary::Bestiary>().defs.get(kind).faction;
+            assert_ne!(side, wildlife, "{piece}: its {glyph:?} is small life");
             match glyph {
                 SLEEPER => {
                     assert!(sleeps(&app, who), "{piece}: its sleeper sleeps");
@@ -521,4 +525,25 @@ fn no_fall_or_far_step_lands_behind_a_lock_or_a_seal_over_a_span_of_seeds() {
         }
     }
     assert!(floors >= 5, "only {floors} floors over the span lay a lock or a seal");
+}
+
+/// On every floor, over many draws, whoever is cast in a part, a vault's
+/// sleeper or captive, a patrol or the run's own captive, is never one of
+/// the floor's small life, though the floor's own table draws them; and
+/// every floor still has someone to cast.
+#[test]
+fn nobody_cast_in_a_part_is_small_life_on_any_floor() {
+    use rand::SeedableRng;
+    let library = crate::content::Library::load(&crate::content::effect_kinds(), &Moments::default());
+    let (bestiary, registries) = (&library.bestiary, &library.registries);
+    let wildlife = registries.factions.expect(crate::content::WILDLIFE);
+    let small = |id: &Id<MonsterDef>| bestiary.defs.get(*id).faction == wildlife;
+    assert!(bestiary.spawns.entries().iter().any(|row| small(&row.item)), "the table draws small life for the floors' own people");
+    for floor in 1..crate::dungeon::FLOORS {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(u64::from(floor));
+        for _ in 0..2000 {
+            let cast = bestiary.pick_cast(floor, registries, &mut rng).unwrap_or_else(|| panic!("floor {floor}: nobody to cast"));
+            assert!(!small(&cast), "floor {floor}: {} cast in a part", bestiary.defs.get(cast).name);
+        }
+    }
 }

@@ -315,8 +315,8 @@ pub fn spawn_vault_marks(mut commands: Commands, mut entered: MessageReader<Plac
                     spawn_prop(&mut commands, &fill.registries, fill.registries.props.expect(LEVER), spot.at, ev.map);
                 }
                 (_, Some(SLEEPER)) => {
-                    let Some((id, _)) = fill.bestiary.spawns.pick_group(floor as i32, &mut rng) else { continue };
-                    let made = spawn_monster(&mut commands, fill.bestiary.defs.get(*id), spot.at, ev.map, &fill.registries, true);
+                    let Some(id) = fill.bestiary.pick_cast(floor, &fill.registries, &mut rng) else { continue };
+                    let made = spawn_monster(&mut commands, fill.bestiary.defs.get(id), spot.at, ev.map, &fill.registries, true);
                     commands.entity(made).insert(Post(spot.at));
                 }
                 (_, Some(glyph @ (GIANT | GOBLIN))) => {
@@ -325,8 +325,8 @@ pub fn spawn_vault_marks(mut commands: Commands, mut entered: MessageReader<Plac
                     commands.entity(made).insert(Post(spot.at));
                 }
                 (_, Some(CAPTIVE)) => {
-                    let Some((id, _)) = fill.bestiary.spawns.pick_group(floor as i32, &mut rng) else { continue };
-                    let made = spawn_monster(&mut commands, fill.bestiary.defs.get(*id), spot.at, ev.map, &fill.registries, false);
+                    let Some(id) = fill.bestiary.pick_cast(floor, &fill.registries, &mut rng) else { continue };
+                    let made = spawn_monster(&mut commands, fill.bestiary.defs.get(id), spot.at, ev.map, &fill.registries, false);
                     commands.entity(made).insert(crate::captives::shackled(&fill.registries, &fill.verbs, spot.at));
                     spawn_prop(&mut commands, &fill.registries, fill.registries.props.expect("shackles"), spot.at, ev.map);
                 }

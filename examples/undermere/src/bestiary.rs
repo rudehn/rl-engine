@@ -263,6 +263,20 @@ impl Bestiary {
         }
         Self { defs, spawns }
     }
+
+    /// One kind of `floor`'s own, drawn by weight from the floor's table
+    /// as the population draws one, its small life left out: what fills a
+    /// part someone is cast in, a vault's sleeper or captive, a patrol, the
+    /// run's own captive. A moth or a blind cave rat is never a fight, so
+    /// one asleep in a hoard, walking a beat or shackled for rescue would
+    /// be a part nobody plays; the table keeps them for the floor's
+    /// ordinary people alone. Told by side rather than by name, so a kind
+    /// of small life added later is left out with them. `None` for a floor
+    /// whose table draws nothing else.
+    pub fn pick_cast(&self, floor: u32, registries: &Registries, rng: &mut impl rand::Rng) -> Option<Id<MonsterDef>> {
+        let wildlife = registries.factions.id(crate::content::WILDLIFE);
+        self.spawns.pick_where(floor as i32, |id| Some(self.defs.get(*id).faction) != wildlife, rng).map(|e| e.item)
+    }
 }
 
 /// One monster as `monsters.ron` writes it, before its attack is read and

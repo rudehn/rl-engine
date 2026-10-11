@@ -342,7 +342,7 @@ fn place_patrol(commands: &mut Commands, stocked: &Stocked, site: &Site, free: &
         return None;
     }
     let Stocked { bestiary, registries, .. } = stocked;
-    let (id, _) = bestiary.spawns.pick_group(site.floor as i32, rng)?;
+    let id = bestiary.pick_cast(site.floor, registries, rng)?;
     let open: Vec<Point> = site.bounds.cells().filter(|p| geometry::chebyshev(*p, site.entry) >= MIN_DISTANCE_FROM_ENTRY && free(*p)).collect();
     if open.is_empty() {
         return None;
@@ -358,7 +358,7 @@ fn place_patrol(commands: &mut Commands, stocked: &Stocked, site: &Site, free: &
     if waypoints.len() < 2 {
         return None;
     }
-    let walker = spawn_monster(commands, bestiary.defs.get(*id), waypoints[0], site.map, registries, false);
+    let walker = spawn_monster(commands, bestiary.defs.get(id), waypoints[0], site.map, registries, false);
     commands.entity(walker).insert(crate::tricks::PatrolRoute { waypoints: waypoints.clone(), at: 0 });
     Some(waypoints)
 }
@@ -381,10 +381,10 @@ fn place_patrol(commands: &mut Commands, stocked: &Stocked, site: &Site, free: &
 /// cell at all.
 fn place_captive(commands: &mut Commands, stocked: &Stocked, site: &Site, free: &mut impl FnMut(Point) -> bool, rng: &mut impl Rng) -> Option<Vec<Point>> {
     let Stocked { bestiary, registries, verbs } = stocked;
-    let (id, _) = bestiary.spawns.pick_group(site.floor as i32, rng)?;
+    let id = bestiary.pick_cast(site.floor, registries, rng)?;
     let open: Vec<Point> = site.bounds.cells().filter(|p| geometry::chebyshev(*p, site.entry) >= MIN_DISTANCE_FROM_ENTRY && free(*p)).collect();
     let at = *open.get(rng.random_range(0..open.len().max(1)))?;
-    let captive = spawn_monster(commands, bestiary.defs.get(*id), at, site.map, registries, false);
+    let captive = spawn_monster(commands, bestiary.defs.get(id), at, site.map, registries, false);
     commands.entity(captive).insert(crate::captives::shackled(registries, verbs, at));
     let shackles = registries.props.expect("shackles");
     spawn_prop(commands, registries, shackles, at, site.map);
