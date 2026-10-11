@@ -2,8 +2,8 @@
 // stands for; see `treasure_room.ron` for the full field list.
 //
 // A forge long gone cold, its anvil rimed with frost beside a dry quenching
-// trough: the anvil holds one phial of quenching oil, which tempers a thing
-// one level, once.
+// trough: the anvil tempers a worn weapon or piece of armor one level, once,
+// by `src/vaults/wells.rs`.
 (
     name: "The Cold Forge",
     ground: "hall floor",

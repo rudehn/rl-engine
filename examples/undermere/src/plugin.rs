@@ -65,6 +65,8 @@ impl Plugin for UndermerePlugin {
             // A sealed vault's concealed lever, and what a reward piece,
             // a flavor piece or a wall carving offers to be read.
             .add_verb(crate::vaults::PULL_VERB)
+            .add_verb(crate::vaults::wells::DRINK_VERB)
+            .add_verb(crate::vaults::wells::TEMPER_VERB)
             .add_verb(crate::writings::READ_VERB)
             .add_verb(crate::wildlife::PAST_VERB)
             .add_plugins((PrefabPlugin::<Bestiary, Armory>::default(), LootPlugin::<Armory>::default()))
@@ -316,6 +318,15 @@ impl Plugin for UndermerePlugin {
         // lifting a prize sets off.
         app.add_systems(Turn, crate::vaults::spawn_vault_marks.in_set(TurnSet::React).after(PrefabSet::Fill));
         app.add_systems(Turn, (crate::vaults::answer_pull_lever, crate::vaults::spend_vault_key).in_set(TurnSet::React));
+        // A cold forge's anvil and a moonwell choose a thing first, among
+        // what these name, asked as the offer is taken up.
+        let wells = crate::vaults::wells::WellChoices {
+            temper: app.register_system(crate::vaults::wells::temper_choices),
+            tell: app.register_system(crate::vaults::wells::tell_choices),
+        };
+        app.insert_resource(wells);
+        app.add_observer(crate::vaults::wells::offer_at_wells);
+        app.add_systems(Turn, crate::vaults::wells::answer_wells.in_set(TurnSet::React));
         // The lived-in dungeon's own: a readable prop's line, drawn once
         // on the arrival that finds it, and a floor's own feeling, said
         // the same arrival.
@@ -360,6 +371,7 @@ impl Plugin for UndermerePlugin {
         app.add_systems(Turn, crate::mercenaries::release_own_kit.in_set(CleanupSet::Requeue));
         app.add_systems(Turn, crate::mercenaries::keep_hire_offered.in_set(TurnSet::Schedule));
         app.add_systems(Turn, crate::townsfolk::sense_beats.in_set(PerceiveSet::Annotate));
+        app.add_systems(Turn, crate::mercenaries::sense_shown_traps.in_set(PerceiveSet::Annotate));
         app.add_systems(Turn, crate::townsfolk::walk_rounds.in_set(TurnSet::Schedule));
         // A waystone: refused in Mereholt before its use is spent, the
         // adventurer's every turn spent kneeling once it is used, and the

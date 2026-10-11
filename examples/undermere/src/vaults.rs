@@ -17,7 +17,8 @@
 //! [`CAUSEWAY`] the causeway already hidden at build. A sleeper keeps the
 //! cell it was laid on as its post, as a piece's guard does.
 //!
-//! In play, [`lifts`] answers a prize taken: the other cages shut, the
+//! In play, [`wells`] answers a reward piece used where it stands, a
+//! spring, an anvil or a moonwell, once. [`lifts`] answers a prize taken: the other cages shut, the
 //! vermin pour out, the water rises, the floor gives way, the gallery
 //! falls in behind. [`answer_pull_lever`] lifts a floor's seal and
 //! [`spend_vault_key`] leaves a key in the lock it opened; what a
@@ -41,7 +42,8 @@ use rl_engine::rl_bevy::doors::DoorEvent;
 use rl_engine::rl_bevy::places::{PlaceBuild, PlaceEntered, Spot};
 use rl_engine::rl_bevy::prefabs::Prefabs;
 use rl_engine::rl_bevy::props::spawn_prop;
-use rl_engine::rl_grid::TileRegistry;
+use rl_engine::rl_bevy::world::PlaceMap;
+use rl_engine::rl_grid::{TileRegistry, TileTables};
 use rl_engine::rl_rules::prefab::Slot;
 
 use crate::armory::{Armory, spawn_item};
@@ -51,6 +53,7 @@ use crate::dungeon::{MIN_DISTANCE_FROM_ENTRY, floor_of};
 pub mod lifts;
 #[cfg(test)]
 mod tests;
+pub mod wells;
 
 /// A piece's mark for a sleeper of the floor's own, drawn from the floor's
 /// table as the population draws one: a hoard's band, a last stand's
@@ -74,10 +77,21 @@ const GIANT_KIND: &str = "ogre";
 /// The goblin a [`GOBLIN`] mark stands.
 const GOBLIN_KIND: &str = "goblin";
 
+/// The tile a sunken causeway really is, under the deep water it is
+/// hidden as.
+pub const CAUSEWAY_TILE: &str = "sunken causeway";
+
 /// How likely a turn in sight finds a sunken causeway, in percent: the
 /// unit a hidden prop's chance is given in, and as hard to see as the
 /// floor's hidden plates.
 pub const CAUSEWAY_SPOT: u8 = 10;
+
+/// The areas a causeway's [`Secret`](rl_engine::rl_mapgen::Secret)
+/// joins: none a reader can look up. The causeway is hidden once the
+/// build's areas have been flattened into its spots, so there is no area
+/// index left to name, and an index past any a floor grows says so where
+/// `(0, 0)` would name the floor's first area as joined to its island.
+pub const JOINS_NO_AREA: (usize, usize) = (usize::MAX, usize::MAX);
 
 /// How far a vault's key or lever lies from anything a piece laid: farther
 /// than any piece's own cell is from the nearest thing it lays.
@@ -229,6 +243,21 @@ fn walk_from(from: Point, open: impl Fn(Point) -> bool) -> BTreeMap<Point, u32> 
     seen
 }
 
+/// Every cell of `place` walked to from its way in with each lock and seal
+/// still shut taken for a wall and each cell a secret hides taken for what
+/// it really is: everywhere a body put down could walk back from. A fall
+/// and a far step land only among these, so nobody is ever set down
+/// behind a vault door whose key lies outside it, under a gate lifted
+/// only from without, or past a way back fallen in. A secret counts as
+/// found, since whoever lands beside one finds it as anyone does; a lock
+/// once opened is off the place, and the vault behind it is then as open
+/// as any room.
+pub fn open_to_the_way_in(place: &PlaceMap, tables: &TileTables) -> BTreeSet<Point> {
+    let tile = |p: Point| place.secrets.iter().find(|s| s.at == p).map(|s| s.is).or_else(|| place.terrain.get(p));
+    let passable = |p: Point| !place.locks.iter().any(|l| l.at == p) && tile(p).is_some_and(|t| tables.passable[t.index()]);
+    walk_from(place.entry, passable).into_keys().collect()
+}
+
 /// Hides every [`CAUSEWAY`] mark a piece laid as the deep water round it,
 /// an engine secret whose real tile is the sunken causeway, so the island
 /// it leads to is reached once it is spotted and the mark itself is never
@@ -241,11 +270,11 @@ fn hide_causeways(built: &mut PlaceBuild, tiles: &TileRegistry, prefabs: &Prefab
         return;
     }
     built.spots.retain(|s| !is_causeway(s));
-    let (deep, causeway) = (tiles.expect("deep water"), tiles.expect("sunken causeway"));
+    let (deep, causeway) = (tiles.expect("deep water"), tiles.expect(CAUSEWAY_TILE));
     let group = built.secrets.iter().map(|s| s.group + 1).max().unwrap_or(0);
     for at in cells {
         built.terrain.set(at, deep);
-        built.secrets.push(rl_engine::rl_mapgen::Secret { at, is: causeway, spot: CAUSEWAY_SPOT, group, joins: (0, 0) });
+        built.secrets.push(rl_engine::rl_mapgen::Secret { at, is: causeway, spot: CAUSEWAY_SPOT, group, joins: JOINS_NO_AREA });
     }
 }
 
@@ -299,8 +328,8 @@ pub fn spawn_vault_marks(mut commands: Commands, mut entered: MessageReader<Plac
                     spawn_prop(&mut commands, &fill.registries, fill.registries.props.expect(LEVER), spot.at, ev.map);
                 }
                 (_, Some(SLEEPER)) => {
-                    let Some((id, _)) = fill.bestiary.spawns.pick_group(floor as i32, &mut rng) else { continue };
-                    let made = spawn_monster(&mut commands, fill.bestiary.defs.get(*id), spot.at, ev.map, &fill.registries, true);
+                    let Some(id) = fill.bestiary.pick_cast(floor, &fill.registries, &mut rng) else { continue };
+                    let made = spawn_monster(&mut commands, fill.bestiary.defs.get(id), spot.at, ev.map, &fill.registries, true);
                     commands.entity(made).insert(Post(spot.at));
                 }
                 (_, Some(glyph @ (GIANT | GOBLIN))) => {
@@ -309,8 +338,8 @@ pub fn spawn_vault_marks(mut commands: Commands, mut entered: MessageReader<Plac
                     commands.entity(made).insert(Post(spot.at));
                 }
                 (_, Some(CAPTIVE)) => {
-                    let Some((id, _)) = fill.bestiary.spawns.pick_group(floor as i32, &mut rng) else { continue };
-                    let made = spawn_monster(&mut commands, fill.bestiary.defs.get(*id), spot.at, ev.map, &fill.registries, false);
+                    let Some(id) = fill.bestiary.pick_cast(floor, &fill.registries, &mut rng) else { continue };
+                    let made = spawn_monster(&mut commands, fill.bestiary.defs.get(id), spot.at, ev.map, &fill.registries, false);
                     commands.entity(made).insert(crate::captives::shackled(&fill.registries, &fill.verbs, spot.at));
                     spawn_prop(&mut commands, &fill.registries, fill.registries.props.expect("shackles"), spot.at, ev.map);
                 }

@@ -9,7 +9,7 @@ use rl_engine::rl_rules::ai::brain::Tactic;
 use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, Keep, KeepPost, Led, MeleeAdjacent, Scavenge, Station, ThrowAtRange, UseCarried};
 use serde::{Deserialize, Serialize};
 
-use super::{KitSeen, MERCENARY, Mercenary, PutOnBetter};
+use super::{KitSeen, MERCENARY, Mercenary, PutOnBetter, Wary};
 use crate::bestiary::{Bestiary, MonsterDef, SCAVENGE_REACH};
 use crate::input::Binds;
 
@@ -209,17 +209,19 @@ impl MercenaryBrains {
         let first = || {
             let mut brain = Brain::new();
             if kind.flee_at() > 0 {
-                brain = brain.then(FleeWhenHurt { at_pct: kind.flee_at() });
+                brain = brain.then(Wary(FleeWhenHurt { at_pct: kind.flee_at() }));
             }
-            brain.then(UseCarried::default()).then(MeleeAdjacent).then(ThrowAtRange::default()).then(PutOnBetter)
+            brain.then(Wary(UseCarried::default())).then(Wary(MeleeAdjacent)).then(Wary(ThrowAtRange::default())).then(Wary(PutOnBetter))
         };
-        let keep = Keep::leader(LEASH, 1);
-        let behind = Behind(Keep::leader(1, 1));
-        let fetch = Leashed(Scavenge { reach: SCAVENGE_REACH });
+        // Every tactic is wary of what the adventurer found underfoot, so
+        // none steps a mercenary onto a trap they stepped round.
+        let keep = Wary(Keep::leader(LEASH, 1));
+        let behind = Wary(Behind(Keep::leader(1, 1)));
+        let fetch = Wary(Leashed(Scavenge { reach: SCAVENGE_REACH }));
         Self {
-            follow: Arc::new(first().then(keep).then(behind).then(Leashed(Hunt)).then(fetch)),
-            hold: Arc::new(first().then(KeepPost)),
-            free: Arc::new(first().then(Hunt).then(keep).then(behind).then(fetch)),
+            follow: Arc::new(first().then(keep).then(behind).then(Wary(Leashed(Hunt))).then(fetch)),
+            hold: Arc::new(first().then(Wary(KeepPost))),
+            free: Arc::new(first().then(Wary(Hunt)).then(keep).then(behind).then(fetch)),
         }
     }
 

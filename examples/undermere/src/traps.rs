@@ -12,9 +12,10 @@
 //! [`crate::stats::keep_keen`]; [`tell_spotted`] says what was found. A
 //! trap is also found by going off: [`show_sprung`] shows one the
 //! adventurer set off or saw set off, since the engine's own trap stays
-//! hidden when it springs.
+//! hidden when it springs. [`secret_kinds`] tells what each group of a
+//! floor's secrets hides, a [`SecretKind`], by what finding it opens.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use bevy::prelude::*;
 use rand::Rng;
@@ -22,6 +23,7 @@ use rand::seq::{IndexedRandom, SliceRandom};
 use rl_engine::prelude::*;
 use rl_engine::rl_bevy::places::PlaceEntered;
 use rl_engine::rl_core::Rect;
+use rl_engine::rl_grid::{Terrain, TileId, TileTables};
 use rl_engine::rl_mapgen::dungeon::{ExitPoint, Room};
 use rl_engine::rl_mapgen::passes::StartPoint;
 use rl_engine::rl_mapgen::{Area, HideOpenings, Join, Opening, Secret, Surveyed};
@@ -125,6 +127,11 @@ pub struct Hiding {
     traps: Traps,
     /// Loose flagstones in the rooms.
     flagstones: Flagstones,
+    /// The names of `assets/layout.ron`'s passage shapes, the corridors a
+    /// trap may stand in: read from the layout rather than written here,
+    /// so a corridor shape added there takes traps without a word here.
+    #[serde(skip)]
+    passages: BTreeSet<String>,
 }
 
 impl Hiding {
@@ -132,7 +139,13 @@ impl Hiding {
     /// its most or a chance past certain, naming the field: a typo there
     /// would otherwise hide nothing, or panic on the first floor built.
     pub fn load() -> Self {
-        let hiding: Self = ron::from_str(HIDDEN_RON).unwrap_or_else(|e| panic!("assets/hidden.ron: {e}"));
+        let mut hiding: Self = ron::from_str(HIDDEN_RON).unwrap_or_else(|e| panic!("assets/hidden.ron: {e}"));
+        hiding.passages = crate::dungeon::layout()
+            .shapes
+            .into_iter()
+            .filter(|shape| matches!(shape.kind, rl_engine::rl_rules::layout::ShapeKind::Passage { .. }))
+            .map(|shape| shape.name)
+            .collect();
         let mut ranges =
             vec![("secret_doors", hiding.secret_doors.count), ("hidden_rooms", hiding.hidden_rooms.count), ("flagstones", hiding.flagstones.count)];
         ranges.extend(hiding.traps.counts.iter().flat_map(|c| [("a band of traps' floors", c.floors), ("a band of traps", c.count)]));
@@ -188,8 +201,67 @@ impl Hiding {
         let traps = self.traps.counts.iter().find(|c| (c.floors.0..=c.floors.1).contains(&floor)).map_or((0, 0), |c| c.count);
         let kinds: Vec<char> = self.traps.kinds.iter().enumerate().filter(|(_, k)| k.on(floor)).map(|(i, _)| glyph(i)).collect();
         let traps = if kinds.is_empty() { (0, 0) } else { traps };
-        Some(LayHidden { traps, kinds, flagstones: self.flagstones.count, flagstone: glyph(self.traps.kinds.len()) })
+        Some(LayHidden { traps, kinds, flagstones: self.flagstones.count, flagstone: glyph(self.traps.kinds.len()), passages: self.passages.clone() })
     }
+}
+
+/// What a group of secret cells hides, told by what finding it opens
+/// rather than by how hard it is to see, so a chance retuned in
+/// `assets/hidden.ron` never makes a door read as a room.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SecretKind {
+    /// A loop's door walled over: shut, nothing is cut off.
+    Door,
+    /// A dead-end room's one door walled over: shut, the room is cut off.
+    Room,
+    /// A drowned reliquary's causeway, hidden as the deep water round it.
+    Causeway,
+}
+
+/// Each group of `secrets` on a place whose tiles are `terrain` and whose
+/// way in is `entry`, by what it hides. Each secret is `(at, is, group)`,
+/// where it stands, the tile it really is, and the opening it belongs to,
+/// as the build's and the place's secrets both say.
+///
+/// A causeway is told by its tile. A door from a room by a walk from the
+/// way in with every other secret found: a room's door, shut alone, cuts
+/// cells off the walk, which a loop's door never does, since the engine
+/// hides a loop's door only where shutting it cuts nothing off. Locks are
+/// walked through, as the engine hides no door to a room behind one.
+pub fn secret_kinds(terrain: &Terrain, entry: Point, secrets: &[(Point, TileId, u32)], tables: &TileTables) -> BTreeMap<u32, SecretKind> {
+    let groups: BTreeSet<u32> = secrets.iter().map(|(_, _, g)| *g).collect();
+    let walk = |shut: Option<u32>| {
+        let tile = |p: Point| match secrets.iter().find(|(at, ..)| *at == p) {
+            Some((_, is, g)) if Some(*g) != shut => Some(*is),
+            _ => terrain.get(p),
+        };
+        let mut reached = BTreeSet::from([entry]);
+        let mut frontier = vec![entry];
+        while let Some(p) = frontier.pop() {
+            for d in Direction::CARDINALS {
+                let n = p + d.offset();
+                if tile(n).is_some_and(|t| tables.passable[t.index()]) && reached.insert(n) {
+                    frontier.push(n);
+                }
+            }
+        }
+        reached
+    };
+    let whole = walk(None);
+    groups
+        .into_iter()
+        .map(|g| {
+            let cells: Vec<&(Point, TileId, u32)> = secrets.iter().filter(|(.., group)| *group == g).collect();
+            let kind = if cells.iter().any(|(_, is, _)| tables.names[is.index()] == crate::vaults::CAUSEWAY_TILE) {
+                SecretKind::Causeway
+            } else {
+                let shut = walk(Some(g));
+                let lost = whole.iter().any(|p| !shut.contains(p) && !cells.iter().any(|(at, ..)| at == p));
+                if lost { SecretKind::Room } else { SecretKind::Door }
+            };
+            (g, kind)
+        })
+        .collect()
 }
 
 /// The tag of the first thing [`Hiding::props`] names, as a stamp's mark:
@@ -238,6 +310,8 @@ pub struct LayHidden {
     flagstones: (u32, u32),
     /// A flagstone's mark.
     flagstone: char,
+    /// The shapes that are corridors, by name.
+    passages: BTreeSet<String>,
 }
 
 /// The fewest cells, Chebyshev, between two traps.
@@ -253,7 +327,7 @@ impl Pass<BaseContext> for LayHidden {
     }
 
     fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
-        let Some(ground) = Ground::read(ctx) else { return Ok(()) };
+        let Some(ground) = Ground::read(ctx, &self.passages) else { return Ok(()) };
         let mut cells: Vec<Point> = ground.trap_cells().into_iter().collect();
         cells.shuffle(ctx.rng());
         let count = ctx.rng().random_range(self.traps.0..=self.traps.1) as usize;
@@ -306,6 +380,8 @@ struct Ground {
     areas: Vec<Area>,
     /// Which of them is a room.
     room: Vec<bool>,
+    /// Which a corridor: grown as one of the layout's passage shapes.
+    corridor: Vec<bool>,
     /// Which a chokepoint.
     chokepoint: Vec<bool>,
     /// Which a hidden room: the dead end behind a secret.
@@ -318,8 +394,9 @@ struct Ground {
 }
 
 impl Ground {
-    /// Reads `ctx`; `None` for a floor the survey never measured.
-    fn read(ctx: &BaseContext) -> Option<Self> {
+    /// Reads `ctx`, whose corridors are the areas grown as one of
+    /// `passages`; `None` for a floor the survey never measured.
+    fn read(ctx: &BaseContext, passages: &BTreeSet<String>) -> Option<Self> {
         let survey = ctx.outputs().first::<Surveyed>()?.clone();
         let entry = ctx.outputs().first::<StartPoint>()?.0;
         let exit = ctx.outputs().first::<ExitPoint>().map(|e| e.0);
@@ -345,6 +422,7 @@ impl Ground {
         let room = areas.iter().map(|a| a.cells.iter().any(|c| rooms.iter().any(|r| r.contains(*c)))).collect();
         let facts = |a: &Area, read: fn(&rl_engine::rl_mapgen::AreaFacts) -> bool| survey.areas.get(a.index).is_some_and(read);
         let chokepoint = areas.iter().map(|a| facts(a, |f| f.chokepoint)).collect();
+        let corridor = areas.iter().map(|a| passages.contains(&a.shape)).collect();
         let behind: BTreeSet<usize> = ctx.outputs().iter::<Secret>().flat_map(|s| [s.joins.0, s.joins.1]).collect();
         let hidden = areas.iter().map(|a| facts(a, |f| f.dead_end) && behind.contains(&a.index)).collect();
         // A piece's own entries were drawn by hand, and a lock or a seal
@@ -356,15 +434,17 @@ impl Ground {
             .filter(|o| !matches!(o.join, Join::Locked(_) | Join::Sealed) && !pieces.contains(&o.areas.0) && !pieces.contains(&o.areas.1))
             .flat_map(|o| o.cells.iter().copied())
             .collect();
-        Some(Self { clear, far, areas, room, chokepoint, hidden, doorways, stamps })
+        Some(Self { clear, far, areas, room, corridor, chokepoint, hidden, doorways, stamps })
     }
 
     /// Every cell a trap may stand on: a corridor's, a chokepoint's, or a
-    /// doorway's or beside one, clear and far enough from the way in.
+    /// doorway's or beside one, clear and far enough from the way in. A
+    /// corridor is an area grown as a passage, and never just any area
+    /// that is no room, which on a floor of caves is every cave.
     fn trap_cells(&self) -> BTreeSet<Point> {
         let mut cells: BTreeSet<Point> = BTreeSet::new();
         for (i, area) in self.areas.iter().enumerate() {
-            if !self.room[i] || self.chokepoint[i] {
+            if self.corridor[i] || self.chokepoint[i] {
                 cells.extend(area.cells.iter().copied());
             }
         }
@@ -460,7 +540,7 @@ pub fn tell_spotted(
                 format!("You spot {}.", rl_engine::rl_core::noun::with_article(&registries.props.get(kind.0).name))
             }
             Finding::Secret { is, .. } => match map.tables().names[is.index()].as_str() {
-                "sunken causeway" => "You make out a causeway just under the water.".to_string(),
+                crate::vaults::CAUSEWAY_TILE => "You make out a causeway just under the water.".to_string(),
                 _ if map.tables().opens[is.index()].is_some() => "You find a secret door.".to_string(),
                 _ => "You find a hidden way through.".to_string(),
             },
@@ -480,9 +560,21 @@ mod tests {
     use crate::dungeon::{Undermere, map_of};
     use crate::testing::{arena_on, arrive, clear_monsters, here, monster, pass_turns, said, settle, stand_on, sturdy};
 
-    /// The groups of `spot` among `secrets`: one per opening hidden.
-    fn groups(secrets: &[rl_engine::rl_mapgen::Secret], spot: u8) -> usize {
-        secrets.iter().filter(|s| s.spot == spot).map(|s| s.group).collect::<BTreeSet<_>>().len()
+    /// How many openings of each kind `built` hid: its secret doors and its
+    /// hidden rooms, told by what each opens.
+    fn doors_and_rooms(built: &rl_engine::rl_bevy::places::PlaceBuild, tables: &TileTables) -> (usize, usize) {
+        let secrets: Vec<(Point, TileId, u32)> = built.secrets.iter().map(|x| (x.at, x.is, x.group)).collect();
+        let kinds = secret_kinds(&built.terrain, built.entry, &secrets, tables);
+        let count = |kind: SecretKind| kinds.values().filter(|k| **k == kind).count();
+        (count(SecretKind::Door), count(SecretKind::Room))
+    }
+
+    /// The secret doors hidden on the place `on`, as play keeps them.
+    fn secret_doors(map: &WorldMap, on: MapId) -> Vec<rl_engine::rl_bevy::secrets::Secret> {
+        let place = map.place(on).expect("a place");
+        let secrets: Vec<(Point, TileId, u32)> = place.secrets.iter().map(|x| (x.at, x.is, x.group)).collect();
+        let kinds = secret_kinds(&place.terrain, place.entry, &secrets, map.tables());
+        place.secrets.iter().filter(|x| kinds.get(&x.group) == Some(&SecretKind::Door)).copied().collect()
     }
 
     /// Over a span of seeds: no secret door on floor one, never more than
@@ -490,15 +582,13 @@ mod tests {
     /// more hidden rooms than two; nothing hidden on the throne's floor.
     #[test]
     fn secret_doors_and_hidden_rooms_by_depth_over_seeds() {
-        let hiding = Hiding::load();
-        let (door, room) = (hiding.secret_doors.spot, hiding.hidden_rooms.spot);
-        assert_ne!(door, room, "a door and a room are told apart by their chance");
         let (mut floors, mut with_doors) = (0, 0);
         for s in 0..24 {
             let undermere = Undermere::new(RunSeed(s));
+            let tables = undermere.tiles().tables();
             for floor in 1..=FLOORS {
                 let built = undermere.build(map_of(floor), None).unwrap();
-                let (doors, rooms) = (groups(&built.secrets, door), groups(&built.secrets, room));
+                let (doors, rooms) = doors_and_rooms(&built, &tables);
                 assert!(rooms <= 2, "floor {floor}, seed {s}: {rooms} hidden rooms");
                 match floor {
                     1 => assert_eq!(doors, 0, "seed {s}: a secret door on floor one"),
@@ -520,19 +610,17 @@ mod tests {
     /// wall found.
     #[test]
     fn beside_a_secret_door_a_waiting_adventurer_finds_it_within_twenty_turns_on_nine_seeds_in_ten() {
-        let door = Hiding::load().secret_doors.spot;
         let mut found = 0;
         for s in 0..10 {
             let mut app = crate::testing::headless(RunSeed(s));
             let me = (2..FLOORS)
                 .find_map(|floor| {
                     let me = arrive(&mut app, map_of(floor));
-                    let map = app.world().resource::<WorldMap>();
-                    map.secrets(here(&app)).iter().any(|x| x.spot == door).then_some(me)
+                    (!secret_doors(app.world().resource::<WorldMap>(), here(&app)).is_empty()).then_some(me)
                 })
                 .unwrap_or_else(|| panic!("seed {s}: no floor with a secret door"));
             let map = app.world().resource::<WorldMap>();
-            let (on, secret) = (here(&app), *map.secrets(here(&app)).iter().find(|x| x.spot == door).expect("just found"));
+            let (on, secret) = (here(&app), secret_doors(map, here(&app))[0]);
             let beside = Direction::CARDINALS
                 .iter()
                 .map(|d| secret.at + d.offset())
@@ -680,5 +768,139 @@ mod tests {
         pass_turns(&mut app, 2);
         assert!(app.world().get::<Hidden>(glyph).is_none(), "spotted at a certainty");
         assert!(said(&app).iter().any(|l| l == "You spot an alarm glyph."), "{:?}", said(&app));
+    }
+
+    /// Where `who` stands: the map and the cell.
+    fn whereabouts(app: &App, who: Entity) -> (MapId, Point) {
+        (app.world().get::<OnMap>(who).expect("on a map").0, app.world().get::<Position>(who).expect("somewhere").0)
+    }
+
+    /// Stepping on a trapdoor drops the adventurer through it, by its own
+    /// trigger, onto a cell of the floor below off its stairs.
+    #[test]
+    fn a_trapdoor_stepped_on_drops_the_adventurer_to_the_floor_below() {
+        let (mut app, me, here_at) = arena_on(3, 3);
+        let trapdoor = here_at.offset(1, 0);
+        lay_unseeable(&mut app, "trapdoor", trapdoor);
+        app.world_mut().write_message(Intent::new(me, Step(Direction::East)));
+        for _ in 0..3 {
+            settle(&mut app);
+        }
+        let (on, at) = whereabouts(&app, me);
+        assert_eq!(on, map_of(4), "fell through to floor four");
+        let map = app.world().resource::<WorldMap>();
+        let place = map.place(on).expect("built by the fall");
+        assert!(at != place.entry && Some(at) != place.exit && map.is_walkable_on(on, at), "on open ground off the stairs, at {at:?}");
+    }
+
+    /// A monster stepping on a trapdoor falls through it too, by the same
+    /// trigger, and leaves the floor.
+    #[test]
+    fn a_trapdoor_stepped_on_drops_a_monster_to_the_floor_below() {
+        let (mut app, _, here_at) = arena_on(3, 3);
+        let trapdoor = here_at.offset(2, 0);
+        lay_unseeable(&mut app, "trapdoor", trapdoor);
+        let goblin = monster(&mut app, "goblin", trapdoor);
+        app.world_mut().write_message(Stepped { actor: goblin, from: trapdoor.offset(1, 0), to: trapdoor });
+        for _ in 0..3 {
+            settle(&mut app);
+        }
+        assert_eq!(whereabouts(&app, goblin).0, map_of(4), "the goblin fell through to floor four");
+    }
+
+    /// Nothing falls into the throne's hall: a trapdoor on the floor above
+    /// it holds whoever steps on it, who stays where they stepped.
+    #[test]
+    fn nothing_falls_through_to_the_thrones_floor() {
+        let (mut app, me, here_at) = arena_on(3, FLOORS - 1);
+        let trapdoor = here_at.offset(1, 0);
+        lay_unseeable(&mut app, "trapdoor", trapdoor);
+        app.world_mut().write_message(Intent::new(me, Step(Direction::East)));
+        for _ in 0..3 {
+            settle(&mut app);
+        }
+        assert_eq!(whereabouts(&app, me), (map_of(FLOORS - 1), trapdoor), "still on floor nine, on the trapdoor");
+    }
+
+    /// A loose flagstone found and lifted always has something under it:
+    /// its gold is at least a coin, whatever else it rolls.
+    #[test]
+    fn a_loose_flagstone_always_holds_a_coin_at_least() {
+        let library = crate::content::Library::load(&crate::content::effect_kinds(), &Moments::default());
+        let registries = &library.registries;
+        let def = registries.props.get(registries.props.expect("loose flagstone"));
+        let rows = &def.container.as_ref().expect("a container").contents;
+        assert!(rows.iter().any(|r| r.min >= 1), "a row that always rolls something: {rows:?}");
+    }
+
+    /// On a floor of caves, a trap may stand only in a corridor, a
+    /// chokepoint or a doorway, never anywhere in a cave: two caves that
+    /// are neither, joined by a corridor that is not a chokepoint either,
+    /// take traps in the corridor and at its two mouths and nowhere else.
+    #[test]
+    fn on_a_floor_of_caves_a_trap_stands_only_in_a_corridor_a_chokepoint_or_a_doorway() {
+        use rl_engine::rl_mapgen::{AreaFacts, BaseContext, BuildContext};
+        let hiding = Hiding::load();
+        assert!(
+            hiding.passages.contains("corridor") && !hiding.passages.contains("cave"),
+            "the layout's corridors and none of its caves: {:?}",
+            hiding.passages
+        );
+        let tiles = crate::dungeon::registry();
+        let ground = tiles.expect("hall floor");
+        let mut ctx = BaseContext::blank(40, 12, tiles, ground);
+        let block = |x0: i32, x1: i32| -> Vec<Point> { (x0..x1).flat_map(|x| (1..11).map(move |y| Point::new(x, y))).collect() };
+        let corridor: Vec<Point> = (15..25).map(|x| Point::new(x, 5)).collect();
+        let area = |index: usize, shape: &str, cells: Vec<Point>| {
+            let bounds = Rect::new(cells[0].x, 1, cells.last().map_or(1, |p| p.x - cells[0].x + 1), 10);
+            Area { index, shape: shape.into(), district: "d".into(), cells, bounds, inner: bounds, entries: None }
+        };
+        ctx.emit(area(0, "cave", block(0, 15)));
+        ctx.emit(area(1, "corridor", corridor.clone()));
+        ctx.emit(area(2, "cave", block(25, 40)));
+        let mouths = [Point::new(14, 5), Point::new(25, 5)];
+        ctx.emit(Opening { cells: vec![mouths[0]], facing: Direction::East, areas: (0, 1), join: Join::Arch });
+        ctx.emit(Opening { cells: vec![mouths[1]], facing: Direction::East, areas: (1, 2), join: Join::Arch });
+        let facts = |dead_end: bool| AreaFacts { openings: 1, dead_end, chokepoint: false, junction: false, seclusion: 0 };
+        ctx.emit(Surveyed { areas: vec![facts(true), facts(false), facts(true)], loops: 0, open_pct: 100, route: None });
+        ctx.emit(StartPoint(Point::new(1, 1)));
+        let cells = Ground::read(&ctx, &hiding.passages).expect("surveyed").trap_cells();
+        assert!(corridor.iter().all(|p| cells.contains(p)), "the corridor takes traps");
+        for p in &cells {
+            let beside_a_mouth = mouths.iter().any(|m| m == p || Direction::CARDINALS.iter().any(|d| *m + d.offset() == *p));
+            assert!(corridor.contains(p) || beside_a_mouth, "a trap may stand at {p:?}, inside a cave");
+        }
+    }
+
+    /// Over a span of seeds, each secret is told for what it is by what
+    /// finding it opens: every group called a door has the secret doors'
+    /// chance, every one called a room the hidden rooms', and every one
+    /// called a causeway the causeway's. The chances are read only to
+    /// check the telling, and only while the file keeps them apart.
+    #[test]
+    fn each_secret_is_told_by_what_finding_it_opens_over_seeds() {
+        let hiding = Hiding::load();
+        let (door, room) = (hiding.secret_doors.spot, hiding.hidden_rooms.spot);
+        let mut told = BTreeSet::new();
+        for s in 0..24 {
+            let undermere = Undermere::new(RunSeed(s));
+            for floor in 1..FLOORS {
+                let built = undermere.build(map_of(floor), None).unwrap();
+                let secrets: Vec<(Point, TileId, u32)> = built.secrets.iter().map(|x| (x.at, x.is, x.group)).collect();
+                for (group, kind) in secret_kinds(&built.terrain, built.entry, &secrets, &undermere.tiles().tables()) {
+                    let spot = built.secrets.iter().find(|x| x.group == group).expect("a cell of it").spot;
+                    let want = match kind {
+                        SecretKind::Door => door,
+                        SecretKind::Room => room,
+                        SecretKind::Causeway => crate::vaults::CAUSEWAY_SPOT,
+                    };
+                    if door != room {
+                        assert_eq!(spot, want, "floor {floor}, seed {s}: group {group} told as a {kind:?}");
+                    }
+                    told.insert(kind);
+                }
+            }
+        }
+        assert!(told.contains(&SecretKind::Door) && told.contains(&SecretKind::Room), "both doors and rooms over the span: {told:?}");
     }
 }

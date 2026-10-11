@@ -269,6 +269,30 @@ fn the_circles_bodies_rise_when_it_is_crossed() {
     assert!(risen.iter().all(|p| bones.iter().any(|b| geometry::chebyshev(*p, *b) <= 1)), "{risen:?} from {bones:?}");
 }
 
+/// Stepping on one of a bone circle's own bodies stands every body up,
+/// the one stepped on beside the stepper rather than on their cell: the
+/// stepper stands where they stepped, nothing shares their cell, and
+/// every body rises.
+#[test]
+fn a_body_of_the_circle_stepped_on_rises_beside_its_stepper() {
+    let (mut app, me, map) = on_the_floor_of("The Bone Circle");
+    let bones: Vec<Point> = props_called(&mut app, map, "circle bones").into_iter().map(|(_, p)| p).collect();
+    let corner = bones[0];
+    step_onto(&mut app, me, corner);
+    assert_eq!(at(&app, me), corner, "the stepper stands on the corner it stepped on");
+    let skeleton = app.world().resource::<crate::bestiary::Bestiary>().defs.expect("skeleton");
+    let world = app.world_mut();
+    let risen: Vec<Point> = world
+        .query::<(&crate::bestiary::Kind, &Position, &OnMap)>()
+        .iter(world)
+        .filter(|(k, _, on)| k.0 == skeleton && on.0 == map)
+        .map(|(_, p, _)| p.0)
+        .collect();
+    assert_eq!(risen.len(), bones.len(), "every body stands up");
+    assert!(!risen.contains(&corner), "nothing rose onto the stepper's own cell: {risen:?}");
+    assert_eq!(risen.iter().collect::<BTreeSet<_>>().len(), risen.len(), "nor two onto one cell: {risen:?}");
+}
+
 /// Lifting a collapsing gallery's prize brings the short way back down in
 /// fallen rock, and the long way round still leads to the floor's way in.
 #[test]
@@ -347,8 +371,12 @@ fn a_pieces_sleepers_sleep_at_their_posts_and_its_captives_are_shackled() {
                 .map(|(e, ..)| e)
         };
         assert!(marks.iter().any(|(g, _)| [SLEEPER, CAPTIVE].contains(g)), "{piece}: marks to fill");
+        let wildlife = app.world().resource::<Registries>().factions.expect(crate::content::WILDLIFE);
         for (glyph, p) in marks.into_iter().filter(|(g, _)| [SLEEPER, CAPTIVE].contains(g)) {
             let Some(who) = at_mark(&mut app, p) else { panic!("{piece}: nobody at its {glyph:?} at {p:?}") };
+            let kind = app.world().get::<crate::bestiary::Kind>(who).expect("a monster").0;
+            let side = app.world().resource::<crate::bestiary::Bestiary>().defs.get(kind).faction;
+            assert_ne!(side, wildlife, "{piece}: its {glyph:?} is small life");
             match glyph {
                 SLEEPER => {
                     assert!(sleeps(&app, who), "{piece}: its sleeper sleeps");
@@ -408,4 +436,301 @@ fn the_sunken_causeway_is_found_whole_from_beside_one_cell_of_it() {
     }
     let said = crate::testing::said(&app);
     assert_eq!(said.iter().filter(|l| *l == "You make out a causeway just under the water.").count(), 1, "said once: {said:?}");
+}
+
+/// Whoever falls through the floor above a locked vault lands where they
+/// can walk back to the way in, whatever the fall's roll: never inside
+/// the vault, whose key lies outside it and whose door no hand opens from
+/// within. Each roll tried is one that drew a cell of the vault while
+/// every free cell off the stairs was a landing.
+#[test]
+fn a_fall_never_lands_inside_a_locked_vault() {
+    let (seed, floor) = drawn("The Locked Vault");
+    assert!(floor >= 2, "a floor above it to fall from");
+    let mut app = crate::testing::headless(seed);
+    let me = adventurer(&mut app);
+    sturdy(&mut app, me);
+    let map = map_of(floor);
+    arrive(&mut app, map);
+    clear_monsters(&mut app);
+    let (inside, rolls) = {
+        let (world_map, occupancy) = (app.world().resource::<WorldMap>(), app.world().resource::<Occupancy>());
+        let place = world_map.place(map).expect("built");
+        let open = open_to_the_way_in(place, world_map.tables());
+        let free: Vec<Point> = place
+            .terrain
+            .bounds()
+            .cells()
+            .filter(|p| world_map.is_walkable_on(map, *p) && !occupancy.is_occupied(*p) && *p != place.entry && Some(*p) != place.exit)
+            .collect();
+        let inside: BTreeSet<Point> = free.iter().copied().filter(|p| !open.contains(p)).collect();
+        let rolls: Vec<u64> = (0..free.len() as u64).filter(|i| inside.contains(&free[*i as usize])).collect();
+        (inside, rolls)
+    };
+    assert!(!rolls.is_empty(), "the vault has room to land in");
+    for roll in rolls {
+        arrive(&mut app, map_of(floor - 1));
+        let fell = crate::effects::moving::fall_through(app.world_mut(), me, roll);
+        assert!(fell, "a floor below to fall to");
+        settle(&mut app);
+        settle(&mut app);
+        assert_eq!(crate::testing::here(&app), map, "fell to the floor below");
+        assert!(!inside.contains(&at(&app, me)), "roll {roll} landed at {:?}, inside the locked vault", at(&app, me));
+    }
+}
+
+/// Over a span of seeds, on every floor a run lays a lock or a seal on:
+/// no cell a fall or a potion of descent may land on, and none a scroll
+/// of teleportation may send its reader to from anywhere on the floor,
+/// lies behind one, that is among the cells a walk from the way in
+/// reaches with every lock opened and does not with them all shut.
+#[test]
+fn no_fall_or_far_step_lands_behind_a_lock_or_a_seal_over_a_span_of_seeds() {
+    use crate::dungeon::{FLOORS, Undermere};
+    use crate::effects::moving::{far_choices, landing_cells};
+    use rl_engine::rl_bevy::places::PlaceRules;
+    let mut floors = 0;
+    for s in 0..40 {
+        let undermere = Undermere::new(RunSeed(s));
+        for floor in 1..FLOORS {
+            let map = map_of(floor);
+            let built = undermere.build(map, None).unwrap_or_else(|e| panic!("floor {floor}, seed {s}: {e}"));
+            if built.locks.is_empty() {
+                continue;
+            }
+            floors += 1;
+            let mut world = WorldMap::new(undermere.tiles().tables().clone());
+            world.install_place(map, built);
+            world.switch_to(map);
+            let place = world.place(map).expect("installed");
+            let tables = world.tables();
+            let tile = |p: Point| place.secrets.iter().find(|x| x.at == p).map(|x| x.is).or_else(|| place.terrain.get(p));
+            let passable = |p: Point| tile(p).is_some_and(|t| tables.passable[t.index()]);
+            let locked = |p: Point| place.locks.iter().any(|l| l.at == p);
+            let opened = walk_from(place.entry, passable);
+            let shut = walk_from(place.entry, |p| !locked(p) && passable(p));
+            let behind: BTreeSet<Point> = opened.keys().copied().filter(|p| !shut.contains_key(p) && !locked(*p)).collect();
+            assert!(!behind.is_empty(), "floor {floor}, seed {s}: a lock with nothing behind it");
+            let walkable = |p: Point| world.is_walkable_on(map, p);
+            let landings = landing_cells(&world, map, |_| true);
+            assert!(!landings.is_empty(), "floor {floor}, seed {s}: somewhere to land");
+            if let Some(p) = landings.iter().find(|p| behind.contains(p)) {
+                panic!("floor {floor}, seed {s}: a fall may land at {p:?}, behind a lock");
+            }
+            for from in shut.keys().copied().filter(|p| walkable(*p)).step_by(17) {
+                if let Some(p) = far_choices(&world, from, walkable).iter().find(|p| behind.contains(p)) {
+                    panic!("floor {floor}, seed {s}: a far step from {from:?} may land at {p:?}, behind a lock");
+                }
+            }
+        }
+    }
+    assert!(floors >= 5, "only {floors} floors over the span lay a lock or a seal");
+}
+
+/// On every floor, over many draws, whoever is cast in a part, a vault's
+/// sleeper or captive, a patrol or the run's own captive, is never one of
+/// the floor's small life, though the floor's own table draws them; and
+/// every floor still has someone to cast.
+#[test]
+fn nobody_cast_in_a_part_is_small_life_on_any_floor() {
+    use rand::SeedableRng;
+    let library = crate::content::Library::load(&crate::content::effect_kinds(), &Moments::default());
+    let (bestiary, registries) = (&library.bestiary, &library.registries);
+    let wildlife = registries.factions.expect(crate::content::WILDLIFE);
+    let small = |id: &Id<MonsterDef>| bestiary.defs.get(*id).faction == wildlife;
+    assert!(bestiary.spawns.entries().iter().any(|row| small(&row.item)), "the table draws small life for the floors' own people");
+    for floor in 1..crate::dungeon::FLOORS {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(u64::from(floor));
+        for _ in 0..2000 {
+            let cast = bestiary.pick_cast(floor, registries, &mut rng).unwrap_or_else(|| panic!("floor {floor}: nobody to cast"));
+            assert!(!small(&cast), "floor {floor}: {} cast in a part", bestiary.defs.get(cast).name);
+        }
+    }
+}
+
+/// Emptying a Rat Trap's gnawed plinth lets two rats out beside each of its
+/// holes, each on a cell of its own, and the log says the walls crack.
+#[test]
+fn the_rat_traps_vermin_pour_from_every_hole_when_its_prize_is_taken() {
+    let (mut app, me, map) = on_the_floor_of("The Rat Trap");
+    let holes: Vec<Point> = props_called(&mut app, map, RAT_HOLE).into_iter().map(|(_, p)| p).collect();
+    assert_eq!(holes.len(), 3, "a hole in three of its corners");
+    let (plinth, there) = props_called(&mut app, map, RAT_PLINTH)[0];
+    let next = beside(&app, there);
+    stand_on(&mut app, me, next);
+    open_and_take(&mut app, me, plinth);
+    let rat = app.world().resource::<crate::bestiary::Bestiary>().defs.expect(VERMIN.0);
+    let world = app.world_mut();
+    let rats: Vec<Point> =
+        world.query::<(&crate::bestiary::Kind, &Position, &OnMap)>().iter(world).filter(|(k, _, on)| k.0 == rat && on.0 == map).map(|(_, p, _)| p.0).collect();
+    assert_eq!(rats.len() as u32, holes.len() as u32 * VERMIN.1, "two from each hole: {rats:?}");
+    assert_eq!(rats.iter().collect::<BTreeSet<_>>().len(), rats.len(), "each on a cell of its own");
+    assert!(rats.iter().all(|r| holes.iter().any(|h| geometry::chebyshev(*r, *h) <= crate::effects::NEAR + 1)), "each beside a hole: {rats:?}");
+    assert!(crate::testing::said(&app).iter().any(|l| l.contains("squeals")), "the log says so");
+}
+
+/// Stepping on a paralysis vestibule's vent rouses the sleepers of the
+/// room beyond it, every one of the piece's own.
+#[test]
+fn the_paralysis_vestibules_vent_rouses_the_sleepers_beyond_it() {
+    let piece = "The Paralysis Vestibule";
+    let (seed, floor) = drawn(piece);
+    let mut app = headless(seed);
+    let me = adventurer(&mut app);
+    sturdy(&mut app, me);
+    let map = map_of(floor);
+    arrive(&mut app, map);
+    let marks: Vec<Point> = {
+        let world = app.world();
+        let (place, prefabs) = (world.resource::<WorldMap>().place(map).expect("built"), world.resource::<Prefabs<MonsterDef>>());
+        let key = prefabs.defs().id(piece).expect("a piece").raw();
+        place.spots.iter().filter(|s| s.prefab == Some(key) && s.tag == SLEEPER as u32).map(|s| s.at).collect()
+    };
+    let world = app.world_mut();
+    let waiting: Vec<Entity> = world
+        .query_filtered::<(Entity, &Position, &OnMap), With<crate::bestiary::Kind>>()
+        .iter(world)
+        .filter(|(_, p, on)| on.0 == map && marks.contains(&p.0))
+        .map(|(e, ..)| e)
+        .collect();
+    assert_eq!(waiting.len(), marks.len(), "a sleeper on each mark");
+    assert!(waiting.iter().all(|s| sleeps(&app, *s)), "asleep before");
+    let (_, vent) = props_called(&mut app, map, "paralysis vent")[0];
+    step_onto(&mut app, me, vent);
+    for s in &waiting {
+        assert!(!sleeps(&app, *s), "{s:?}, in the room beyond, is roused");
+    }
+}
+
+/// Stepping on a tinder room's ember plate sets its straw alight round the
+/// plate at once, and the fire runs over the straw to the far side of the
+/// room, by the brazier, within a few turns.
+#[test]
+fn the_tinder_rooms_ember_plate_sets_the_straw_alight() {
+    let (mut app, me, map) = on_the_floor_of("The Tinder Room");
+    let (_, plate) = props_called(&mut app, map, "ember plate")[0];
+    let (_, brazier) = props_called(&mut app, map, "brazier").into_iter().find(|(_, p)| geometry::chebyshev(*p, plate) == 2).expect("the room's brazier");
+    let far: Vec<Point> = Direction::ALL.iter().map(|d| brazier + d.offset()).filter(|p| geometry::chebyshev(*p, plate) == 2).collect();
+    assert!(far.iter().all(|p| tile_at(&app, map, *p) == "straw"), "straw beside the brazier");
+    step_onto(&mut app, me, plate);
+    let burning = |app: &App, p: Point| app.world().resource::<rl_engine::rl_bevy::fire::Fire>().is_burning(p);
+    let near: Vec<Point> = Direction::ALL.iter().map(|d| plate + d.offset()).filter(|p| tile_at(&app, map, *p) == "straw").collect();
+    assert!(near.iter().any(|p| burning(&app, *p)), "the straw round the plate catches at once");
+    let mut reached = false;
+    for _ in 0..6 {
+        pass_turns(&mut app, 1);
+        reached |= far.iter().any(|p| burning(&app, *p) || tile_at(&app, map, *p) != "straw");
+    }
+    assert!(reached, "the fire runs over the straw to the brazier's side");
+}
+
+/// Whoever stands under a collapsing gallery's lintel when it falls leaps
+/// clear onto open ground rather than being buried standing in the rock.
+#[test]
+fn whoever_stands_under_the_lintel_leaps_clear_of_the_fall() {
+    let (mut app, me, map) = on_the_floor_of("The Collapsing Gallery");
+    let (plinth, there) = props_called(&mut app, map, KEYSTONE)[0];
+    let lintels: Vec<Point> = props_called(&mut app, map, LINTEL).into_iter().map(|(_, p)| p).collect();
+    let under: Vec<Entity> = lintels.iter().map(|p| crate::testing::still(&mut app, "goblin", *p)).collect();
+    let next = beside(&app, there);
+    stand_on(&mut app, me, next);
+    open_and_take(&mut app, me, plinth);
+    settle(&mut app);
+    let fallen: Vec<Point> = lintels.iter().copied().filter(|p| tile_at(&app, map, *p) == "fallen rock").collect();
+    assert_eq!(fallen.len(), 1, "one way back falls in");
+    for who in under {
+        let stands = at(&app, who);
+        assert!(!fallen.contains(&stands), "{who:?} buried in the rock at {stands:?}");
+        assert!(app.world().resource::<WorldMap>().is_walkable_on(map, stands), "{who:?} on open ground at {stands:?}");
+    }
+}
+
+/// A flooding vault's far end never turns too deep to cross under
+/// somebody standing in it: their cell stays wading-deep until they leave
+/// it, and goes deep once they have.
+#[test]
+fn deep_water_never_rises_under_somebody_standing_in_it() {
+    let (mut app, me, map) = on_the_floor_of("The Flooding Vault");
+    let (altar, there) = props_called(&mut app, map, FLOOD_ALTAR)[0];
+    let grates: Vec<Point> = props_called(&mut app, map, GRATE).into_iter().map(|(_, p)| p).collect();
+    let plan = flood_plan(app.world().resource::<WorldMap>(), there, &grates);
+    let far = plan.iter().find(|(p, _, deep)| deep.is_some() && !grates.contains(p)).map(|(p, ..)| *p).expect("a far end");
+    let wader = crate::testing::still(&mut app, "goblin", far);
+    let next = beside(&app, there);
+    stand_on(&mut app, me, next);
+    open_and_take(&mut app, me, altar);
+    pass_turns(&mut app, FLOOD_TURNS + 2);
+    assert_eq!(at(&app, wader), far, "the wader stands where it was put");
+    assert_eq!(tile_at(&app, map, far), "flooded floor", "wading-deep under the wader");
+    app.world_mut().despawn(wader);
+    pass_turns(&mut app, 2);
+    assert_eq!(tile_at(&app, map, far), "deep water", "and deep once it has gone");
+}
+
+/// The prop `name` of `map`, and where it stands; the first, in row order.
+fn the_one(app: &mut App, map: MapId, name: &str) -> (Entity, Point) {
+    *props_called(app, map, name).first().unwrap_or_else(|| panic!("a {name} on the floor"))
+}
+
+/// Takes up `verb` on `prop` from beside it, with `thing` chosen first
+/// when the offer chooses one.
+fn take_up_on(app: &mut App, me: Entity, prop: Entity, at: Point, verb: &str, thing: Option<Entity>) {
+    let next = beside(app, at);
+    stand_on(app, me, next);
+    let verb = app.world().resource::<Verbs>().get(verb).expect("declared");
+    app.world_mut().write_message(Intent::new(me, Interact { target: prop, verb, thing }));
+    settle(app);
+}
+
+/// A healing spring drunk from heals its drinker whole, where it stands,
+/// and runs dry: drunk from once, never twice.
+#[test]
+fn a_healing_spring_heals_its_drinker_whole_once() {
+    use super::wells::*;
+    let (mut app, me, map) = on_the_floor_of("Healing Spring");
+    let (spring, at) = the_one(&mut app, map, SPRING);
+    // An adventurer's own health rather than the sturdy test one's, which
+    // no draught is written to fill.
+    let full = 120;
+    app.world_mut().entity_mut(me).insert(Health::full(full));
+    app.world_mut().get_mut::<Health>(me).expect("health").current = 1;
+    take_up_on(&mut app, me, spring, at, DRINK_VERB, None);
+    assert_eq!(app.world().get::<Health>(me).expect("health").current, full, "healed whole");
+    assert!(props_called(&mut app, map, SPRING).is_empty(), "the spring is gone");
+    assert_eq!(props_called(&mut app, map, DRY_SPRING).len(), 1, "run dry where it stood");
+}
+
+/// A cold forge's anvil tempers a worn weapon a level, chosen among what
+/// is worn and nothing carried besides, and goes cold.
+#[test]
+fn the_cold_forges_anvil_tempers_a_worn_weapon_once() {
+    use super::wells::*;
+    let (mut app, me, map) = on_the_floor_of("The Cold Forge");
+    let (anvil, at) = the_one(&mut app, map, ANVIL);
+    assert!(app.world().get::<rl_engine::rl_bevy::props::Scenery>(anvil).is_none(), "listed with what can be acted on");
+    let hand = app.world().resource::<Registries>().slots.expect("main hand");
+    let sword = app.world().get::<Equipped>(me).and_then(|worn| worn.in_slot(hand)).expect("the sword they set out with");
+    let carried = make(&mut app, "potion of descent");
+    give(&mut app, me, carried);
+    let among = app.world().resource::<WellChoices>().temper;
+    let choices = app.world_mut().run_system_with(among, Chooser { taker: me, offerer: anvil, verb: Verbs::OPEN }).expect("it runs");
+    assert!(choices.contains(&sword) && !choices.contains(&carried), "the sword worn and not the potion carried: {choices:?}");
+    let before = app.world().get::<Enchant>(sword).map_or(0, |e| e.level);
+    take_up_on(&mut app, me, anvil, at, TEMPER_VERB, Some(sword));
+    assert_eq!(app.world().get::<Enchant>(sword).map_or(0, |e| e.level), before + 1, "tempered a level");
+    assert!(props_called(&mut app, map, ANVIL).is_empty() && props_called(&mut app, map, COLD_ANVIL).len() == 1, "and the anvil is cold");
+}
+
+/// A moonwell drunk from tells what one carried thing is, and darkens.
+#[test]
+fn a_moonwell_tells_what_one_carried_thing_is_once() {
+    use super::wells::*;
+    let (mut app, me, map) = on_the_floor_of("Moonwell");
+    let (well, at) = the_one(&mut app, map, MOONWELL);
+    let potion = make(&mut app, "potion of descent");
+    give(&mut app, me, potion);
+    assert!(!app.world().resource::<crate::lore::Lore>().knows("potion of descent"), "not known before");
+    take_up_on(&mut app, me, well, at, DRINK_VERB, Some(potion));
+    assert!(app.world().resource::<crate::lore::Lore>().knows("potion of descent"), "known after");
+    assert!(props_called(&mut app, map, MOONWELL).is_empty() && props_called(&mut app, map, DARK_MOONWELL).len() == 1, "and the well is dark");
 }

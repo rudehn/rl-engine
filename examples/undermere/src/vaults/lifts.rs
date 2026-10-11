@@ -178,8 +178,20 @@ fn drop_through(world: &mut World, cells: &[Point], hole: TileId, map: MapId) {
 /// one round. The gallery's two ways meet again at its door, so whichever
 /// falls the other still leads out.
 ///
+/// Whoever stands under the lintel leaps clear first, onto the nearest
+/// free cell, rather than be buried standing in the rock; with nowhere
+/// free to leap to, the lintel holds.
+///
 /// In `TurnSet::React`.
-pub fn collapse_behind(mut commands: Commands, registries: Res<Registries>, lifted: Lifted, others: Others, tiles: Res<VaultTiles>, mut map: ResMut<WorldMap>) {
+pub fn collapse_behind(
+    mut commands: Commands,
+    registries: Res<Registries>,
+    lifted: Lifted,
+    others: Others,
+    tiles: Res<VaultTiles>,
+    mut map: ResMut<WorldMap>,
+    occupancy: Res<Occupancy>,
+) {
     for (taken, kind, at, on) in &lifted {
         if !is(&registries, kind, KEYSTONE) || on.0 != map.current() {
             continue;
@@ -190,6 +202,17 @@ pub fn collapse_behind(mut commands: Commands, registries: Res<Registries>, lift
             .filter(|(_, k, p, m)| m.0 == on.0 && is(&registries, k, LINTEL) && walked.contains_key(&p.0))
             .min_by_key(|(_, _, p, _)| (walked[&p.0], p.0.y, p.0.x))
             .map(|(e, _, p, _)| (e, p.0));
+        let lintel = lintel.filter(|(_, cell)| {
+            let under: Vec<Entity> = occupancy.at(*cell).to_vec();
+            let clear = crate::effects::free_cells_near(&map, &occupancy, *cell, under.len(), crate::effects::NEAR);
+            if clear.len() < under.len() {
+                return false;
+            }
+            for (who, to) in under.into_iter().zip(clear) {
+                commands.write_message(WarpRequest { actor: who, to: Destination::Place { map: on.0, arrive: Arrive::At(to) } });
+            }
+            true
+        });
         if let Some((lintel, cell)) = lintel {
             commands.entity(lintel).despawn();
             map.set_tile(cell, tiles.fallen_rock);
@@ -302,16 +325,25 @@ pub fn flood_plan(map: &WorldMap, altar: Point, grates: &[Point]) -> Vec<(Point,
 /// brought it, a turn at a time or all at once for a floor entered again,
 /// and forgets each once it has risen as far as it will.
 ///
+/// Water too deep to cross never rises under somebody standing in it: a
+/// cell they stand on stays wading-deep until they step off, so nobody is
+/// left standing in deep water, and the flood is kept until it is.
+///
 /// In `TurnSet::React`.
-pub fn rise_floods(mut floods: ResMut<RisingFloods>, mut map: ResMut<WorldMap>, tiles: Res<VaultTiles>, turns: Res<Turns>) {
+pub fn rise_floods(mut floods: ResMut<RisingFloods>, mut map: ResMut<WorldMap>, tiles: Res<VaultTiles>, turns: Res<Turns>, occupancy: Res<Occupancy>) {
     let (here, now) = (map.current(), turns.turn_number());
     floods.0.retain(|flood| {
         if flood.map != here.0 {
             return true;
         }
         let since = now.saturating_sub(flood.began);
+        let mut held = false;
         for (p, wet, deep) in &flood.cells {
             let want = match deep {
+                Some(d) if since >= *d && occupancy.is_occupied(*p) => {
+                    held = true;
+                    tiles.flooded
+                }
                 Some(d) if since >= *d => tiles.deep,
                 _ if since >= *wet => tiles.flooded,
                 _ => continue,
@@ -320,6 +352,6 @@ pub fn rise_floods(mut floods: ResMut<RisingFloods>, mut map: ResMut<WorldMap>, 
                 map.set_tile(*p, want);
             }
         }
-        since < FLOOD_TURNS
+        since < FLOOD_TURNS || held
     });
 }

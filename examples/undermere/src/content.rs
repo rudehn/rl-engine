@@ -754,8 +754,11 @@ mod tests {
             ("overturned wagon", true),
             ("spilled crate", false),
             ("spring", true),
+            ("dry spring", true),
             ("frost-rimed anvil", true),
+            ("cold anvil", true),
             ("moonwell", true),
+            ("darkened moonwell", true),
             ("reliquary", true),
             ("enchanter's altar", true),
             ("chronicle", true),
@@ -811,9 +814,10 @@ mod tests {
             "coin chest",
             "cache chest",
             "overturned wagon",
+            // The anvil and the moonwell are scenery as written: their
+            // choosing offers are `src/vaults/wells.rs`'s, which takes
+            // the marker off as it puts each offer on.
             "spring",
-            "frost-rimed anvil",
-            "moonwell",
             "reliquary",
             "enchanter's altar",
             "chronicle",
