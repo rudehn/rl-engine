@@ -291,9 +291,9 @@ pub enum Gap {
     #[default]
     Crow,
     /// Steps on foot, by [`Fields::on_foot`], a diagonal stride counting
-    /// for its cost and the walk rounded to the nearest step, so a diagonal
-    /// neighbour is one step off and a follower kept within one rests
-    /// there; as the crow flies
+    /// for its cost and a partial step for a whole one, but one beside the
+    /// mark one step off however it stands, so a follower kept within one
+    /// rests diagonally beside it; as the crow flies
     /// where no field answers, so a station with no way to it is still
     /// kept as near as the ground allows.
     OnFoot,
@@ -330,10 +330,15 @@ impl Keep {
         match self.gap {
             Gap::Crow => crow,
             Gap::OnFoot => {
-                // To the nearest step, so a diagonal neighbour, 141, is one
-                // step off and three diagonal cells, 424, are four.
-                let base = rl_core::turn::BASE_ACTION_COST;
-                let steps = |cost: u32| i32::try_from(cost.saturating_add(base / 2) / base).unwrap_or(i32::MAX);
+                // Beside the mark is one step off however it is stood, a
+                // diagonal stride as much as a straight one; further off,
+                // a partial step counts whole, so a follower sets off as
+                // soon as the walk is longer than its distance rather than
+                // a step after.
+                if crow <= 1 {
+                    return crow;
+                }
+                let steps = |cost: u32| i32::try_from(cost.div_ceil(rl_core::turn::BASE_ACTION_COST)).unwrap_or(i32::MAX);
                 ctx.fields.on_foot(marks, p).map_or(crow, steps)
             }
         }
@@ -2180,16 +2185,17 @@ mod tests {
         assert_eq!(across_a_wall(Keep::leader(3, 1), Point::new(9, 5), chief), None, "three straight steps is three");
     }
 
-    /// On foot a diagonal stride is a step and two fifths, and the walk is
-    /// rounded to the nearest step: a follower kept within one of its
-    /// leader rests diagonally beside it rather than shuffling to a side,
-    /// and one three diagonal cells off, four steps, still sets off.
+    /// On foot a diagonal stride is a step and two fifths, and a partial
+    /// step counts whole, but beside the leader is one step off however it
+    /// is stood: a follower kept within one rests diagonally beside it
+    /// rather than shuffling to a side, and one three diagonal cells off,
+    /// five steps, still sets off.
     #[test]
     fn a_follower_kept_within_one_on_foot_rests_diagonally_beside_its_leader() {
         let chief = Point::new(8, 5);
         assert_eq!(across_a_wall(Keep::leader(1, 1), Point::new(9, 6), chief), None, "a diagonal neighbour is one step off");
         assert_eq!(across_a_wall(Keep::leader(1, 1), Point::new(7, 4), chief), None, "whichever corner it stands at");
-        assert!(matches!(across_a_wall(Keep::leader(3, 1), Point::new(11, 8), chief), Some(Decision::Step(_))), "three diagonal cells are four steps");
+        assert!(matches!(across_a_wall(Keep::leader(3, 1), Point::new(11, 8), chief), Some(Decision::Step(_))), "three diagonal cells are five steps");
     }
 
     /// A follower keeps within its distances of its leader and of nobody
