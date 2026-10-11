@@ -178,6 +178,21 @@ mod tests {
         }
     }
 
+    /// Numbers that shut every box draw a cave of one cell, the box's
+    /// middle, with a site on each side, rather than stalling or drawing
+    /// nothing.
+    #[test]
+    fn a_cave_whose_every_box_shuts_is_its_middle_cell_alone() {
+        let shut = Cave { name: "shut".into(), w: (5, 9), h: (5, 9), fill_pct: 100, visits_pct: 50, join: Join::Mouth(1) };
+        for s in 0..20 {
+            let piece = shut.draw(&mut stream(s));
+            assert_eq!(piece.cells.len(), 1, "seed {s}: {:?}", piece.cells);
+            let c = piece.cells[0];
+            assert!((2..=4).contains(&c.x) && (2..=4).contains(&c.y), "seed {s}: {c:?} is no box's middle");
+            assert_eq!(piece.sites.len(), 4, "seed {s}: one site a side");
+        }
+    }
+
     #[test]
     fn every_site_is_rock_just_outside_the_body_facing_out_of_it() {
         let mut enclosing = 0;

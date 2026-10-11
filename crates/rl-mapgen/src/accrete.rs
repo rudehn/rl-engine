@@ -329,6 +329,13 @@ pub fn cell_at_share(pct: u32, side: i32) -> i32 {
 /// an edge to the opposite one is refused, since growth could never cross
 /// to the far side; one that cuts off a corner is allowed, and the corner
 /// stays rock.
+///
+/// The refusal asks of one barrier at a time, and of the narrowest piece
+/// growth could lay. Two barriers that together reach edge to edge are
+/// not refused, and neither is a gap at an end that only a narrower shape
+/// than any the recipe draws could take: growth then stops at the
+/// barrier, and a [`Require`](crate::Require) on the open share or the
+/// route is what fails the place.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Barrier {
     /// One end, as shares of the map's width and height.
@@ -346,7 +353,10 @@ pub struct Barrier {
 /// How close to an edge a barrier's end may come before nothing can pass
 /// it there: a piece needs a cell inside the border, and its body and
 /// ring stand a cell clear of the barrier, so an end within this many
-/// cells of the edge leaves no way round.
+/// cells of the edge leaves no way round. It is the margin growth keeps,
+/// the border and the ring, and `rl-rules` holds a twin of it to refuse a
+/// layout file's barrier by; widen either and the other goes with it,
+/// which `rl-bevy`'s test of the two `may_cut`s catches if forgotten.
 const REACH: i32 = 2;
 
 impl Barrier {
@@ -719,10 +729,12 @@ impl<C: BuildContext> Pass<C> for Accrete {
     fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
         let walkable = ctx.tiles().tables().walkable;
         let bounds = ctx.terrain().bounds();
-        self.check(bounds.width, bounds.height)?;
+        // The map first: on one with no inside, every barrier reaches
+        // edge to edge, and naming one would send its author the wrong way.
         if bounds.width < 3 || bounds.height < 3 {
             return Err(Self::err("the map has no room inside its border"));
         }
+        self.check(bounds.width, bounds.height)?;
         let inner = bounds.inflate(-1);
 
         // The barriers first, so where they lie decides where everything
@@ -1358,7 +1370,8 @@ pub(crate) mod tests {
         ] {
             let mut pass = accrete(&rig, 3);
             pass.barriers = vec![b];
-            assert_eq!(build(pass, &rig, 84, 48, 1).expect_err("refused").pass, "accrete", "{b:?}");
+            let e = build(pass, &rig, 84, 48, 1).expect_err("refused");
+            assert!(e.pass == "accrete" && e.reason.contains("barrier 0"), "{b:?}: {e}");
         }
         // The same short of the bottom with no shift, or only cutting off a corner: allowed.
         for b in [barrier((50, 0), (50, 92), 100, 0), barrier((0, 30), (30, 0), 100, 0)] {

@@ -29,7 +29,7 @@ use rl_grid::{BitGrid, TileId};
 use crate::accrete::{Area, Join, Opening, bounds_of, largest_rect};
 use crate::chain::{BuildError, Pass, Phase};
 use crate::context::BuildContext;
-use crate::dungeon::lock_cells;
+use crate::dungeon::{Room, lock_cells};
 use crate::prefab::Stamped;
 use crate::walk::{UNREACHED, steps_between, walks_under};
 
@@ -70,8 +70,10 @@ const TRIES: u32 = 24;
 /// floor.
 ///
 /// Floor a lake makes impassable is taken out of its area, and the area's
-/// bounds and inner rectangle are measured again, so a pass that stands
-/// something in an area never stands it in water. That is why it runs in
+/// bounds and inner rectangle are measured again, as is every [`Room`]
+/// it lay in, inside the room's own rectangle, so a pass that stands
+/// something in an area or a room never stands it in water. A room the
+/// lake covered whole is dropped, which renumbers the rooms after it. That is why it runs in
 /// [`Phase::Structures`], after growth and loops and before the ways in
 /// and out are chosen round it. Each lake laid is published as a [`Lake`].
 #[derive(Debug, Clone)]
@@ -457,17 +459,32 @@ impl<C: BuildContext> Pass<C> for Lakes {
                 if !self.keeps_whole(&after, &regions, has_areas.then_some(&owner), &draft) {
                     continue;
                 }
+                // What this lake made impassable: only that leaves an area
+                // or a room, so a cell some other pass changed is left to it.
+                let wet = |c: Point| (draft.lake.contains(c) || draft.wreath.contains(c)) && !after.contains(c);
                 if has_areas {
                     for a in ctx.outputs_mut().iter_mut::<Area>().filter(|a| a.entries.is_none()) {
                         let before = a.cells.len();
-                        // Only what this lake laid leaves an area, so a
-                        // cell some other pass changed is left to it.
-                        a.cells.retain(|c| !(draft.lake.contains(*c) || draft.wreath.contains(*c)) || after.contains(*c));
+                        a.cells.retain(|c| !wet(*c));
                         if a.cells.len() != before {
                             a.bounds = bounds_of(&a.cells);
                             a.inner = largest_rect(&a.cells, a.bounds);
                         }
                     }
+                }
+                // A room is measured again inside its own rectangle, on a
+                // place of areas or not, since what stamps a room reads
+                // only the rectangle; one left with no dry cell is no room.
+                let mut drowned = false;
+                for room in ctx.outputs_mut().iter_mut::<Room>() {
+                    let dry: Vec<Point> = room.0.cells().filter(|c| !wet(*c)).collect();
+                    if dry.len() as i32 != room.0.area() {
+                        room.0 = largest_rect(&dry, room.0);
+                        drowned |= dry.is_empty();
+                    }
+                }
+                if drowned {
+                    ctx.outputs_mut().retain::<Room>(|room| room.0.area() > 0);
                 }
                 for p in draft.lake.iter() {
                     ctx.terrain_mut().set(p, self.tile);
@@ -1258,23 +1275,42 @@ mod tests {
 
     /// A bridge is a way over a lake, not somewhere to arrive or leave:
     /// over a span of seeds of islands, neither the start nor the exit is
-    /// ever on one, though a room's rectangle a lake was laid in still
-    /// names the cells a bridge crosses.
+    /// ever on one.
     #[test]
     fn neither_way_stands_on_a_bridge() {
         use crate::dungeon::{ExitPoint, FarthestExit, RandomStart};
         use crate::passes::StartPoint;
-        let mut in_a_room = 0;
         for s in 0..40 {
             let ctx = grown(s, SIZES[0], false, |c, r| c.then(islands(r)).then(bridges(r)).then(RandomStart).then(FarthestExit));
             let spans: BTreeSet<Point> = ctx.outputs().iter::<Bridge>().flat_map(|b| b.cells.iter().copied()).collect();
-            let first = ctx.outputs().first::<crate::dungeon::Room>().map(|r| r.0);
-            in_a_room += spans.iter().filter(|p| first.is_some_and(|r| r.contains(**p))).count();
             let start = ctx.outputs().first::<StartPoint>().unwrap().0;
             let exit = ctx.outputs().first::<ExitPoint>().unwrap().0;
             assert!(!spans.contains(&start), "seed {s}: the start at {start:?} is on a bridge");
             assert!(!spans.contains(&exit), "seed {s}: the exit at {exit:?} is on a bridge");
         }
-        assert!(in_a_room > 0, "some bridge crossed the first room, where the start is drawn");
+    }
+
+    /// A room a lake was laid in is measured again round the water, as
+    /// its area is, so what stamps a room or draws a cell from one stands
+    /// on dry floor: over a span of seeds of ponds and of islands, every
+    /// cell of every room can be stood on, and some room moved.
+    #[test]
+    fn a_room_a_lake_lies_in_is_measured_again_round_it() {
+        let passable = rig_with_water().tiles.tables().passable;
+        let mut moved = 0;
+        for s in 0..40 {
+            let dry = grown(s, SIZES[0], false, |c, _| c);
+            let rooms = |ctx: &BaseContext| ctx.outputs().iter::<Room>().map(|r| r.0).collect::<Vec<_>>();
+            for (kind, wet) in
+                [("ponds", grown(s, SIZES[0], false, |c, r| c.then(lakes(r)))), ("islands", grown(s, SIZES[0], false, |c, r| c.then(islands(r))))]
+            {
+                for room in rooms(&wet) {
+                    let under = room.cells().find(|c| !passable[wet.terrain().get(*c).unwrap().index()]);
+                    assert!(under.is_none(), "{kind} seed {s}: room {room:?} holds {under:?}, which no body stands on");
+                }
+                moved += usize::from(rooms(&wet) != rooms(&dry));
+            }
+        }
+        assert!(moved > 10, "only {moved} places had a room a lake lay in, or this proves little");
     }
 }

@@ -323,7 +323,7 @@ mod tests {
         back.restore(app2.world_mut(), &EntityRemap::new());
         let mut map = app2.world_mut().resource_mut::<WorldMap>();
         assert_eq!((map.tile(shut), map.tile(open)), (Some(wall), Some(floor)), "the hidden one is wall and the found one open");
-        assert_eq!(map.secrets(place), [rl_bevy::Secret { at: shut, is: door, spot: 6, group: 0 }]);
+        assert_eq!(map.secrets(place), [rl_bevy::Secret { at: shut, is: door, shows: wall, spot: 6, group: 0 }]);
         map.find_secret(place, shut);
         assert_eq!(map.tile(shut), Some(door), "and the hidden one is still there to find");
     }

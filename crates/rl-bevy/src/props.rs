@@ -1060,7 +1060,9 @@ pub struct SpotRules {
     /// Within this many cells, Chebyshev, the chance is whole.
     pub near: u32,
     /// Past [`near`](Self::near) and out to this many cells it is half;
-    /// beyond, there is none.
+    /// beyond, there is none. Never less than `near`, which a debug build
+    /// asserts on the first roll: a band that ends before it begins is a
+    /// typo, read as no half band at all.
     pub far: u32,
     /// What a turn the finder spent waiting multiplies the chance by.
     pub still: u32,
@@ -1084,6 +1086,7 @@ impl SpotRules {
     /// stillness and held to certainty again. A ratio rather than a
     /// rounded percent, so half of a five is two and a half and not two.
     pub fn chance(&self, spot: u8, keen: u8, distance: u32, waited: bool) -> Option<(u32, u32)> {
+        debug_assert!(self.far >= self.near, "SpotRules far {} is less than near {}: the half band ends before it begins", self.far, self.near);
         let out_of = if distance <= self.near {
             100
         } else if distance <= self.far {
@@ -1264,25 +1267,26 @@ impl Stillness<'_, '_> {
     }
 }
 
-/// Every group of `secrets` with a cell in `sight`, as its cell nearest
-/// `from`, in group order.
+/// Every group of `secrets` with a cell in `sight`, as its cell in sight
+/// nearest `from`, in group order.
 ///
 /// A `BTreeMap` by group, so the groups are rolled for in the same order
 /// on every run of a seed, whatever order their cells were listed in.
 /// Nearest by Chebyshev distance, the one the roll weighs, and among
 /// cells at the same distance by the straight line, so the cell named is
-/// the one square ahead rather than whichever was listed first.
+/// the one square ahead rather than whichever was listed first. Only a
+/// cell in sight is measured: the end of a wide mouth round a corner is
+/// nearer than the end the finder looks at, and weighing it would find
+/// the mouth from closer than anything of it that is seen.
 fn groups_in_sight(secrets: &[crate::secrets::Secret], sight: &crate::components::Viewshed, from: Point) -> Vec<crate::secrets::Secret> {
-    let mut groups: std::collections::BTreeMap<u32, (crate::secrets::Secret, bool)> = std::collections::BTreeMap::new();
-    for s in secrets {
-        let seen = sight.can_see(s.at);
-        let group = groups.entry(s.group).or_insert((*s, seen));
-        if nearness(from, s.at) < nearness(from, group.0.at) {
-            group.0 = *s;
+    let mut groups: std::collections::BTreeMap<u32, crate::secrets::Secret> = std::collections::BTreeMap::new();
+    for s in secrets.iter().filter(|s| sight.can_see(s.at)) {
+        let nearest = groups.entry(s.group).or_insert(*s);
+        if nearness(from, s.at) < nearness(from, nearest.at) {
+            *nearest = *s;
         }
-        group.1 |= seen;
     }
-    groups.into_values().filter(|(_, seen)| *seen).map(|(nearest, _)| nearest).collect()
+    groups.into_values().collect()
 }
 
 /// How near `at` is to `from`: Chebyshev first, then the straight line.
@@ -2859,5 +2863,28 @@ mod spotting {
         let (props, blows) = draws(&[(Point::new(6, 3), 1, 0)]);
         assert_ne!(props, bare_props, "the secret was rolled for from props' stream");
         assert_eq!(blows, bare_blows, "and the next blow is the one it would have been");
+    }
+
+    /// A group is weighed by its nearest cell the finder sees: the end of
+    /// a mouth round a corner, nearer but unseen, is never the one named.
+    #[test]
+    fn a_group_is_measured_from_its_nearest_cell_in_sight_and_never_one_out_of_it() {
+        let secret = |x: i32, group: u32| crate::secrets::Secret { at: Point::new(x, 3), is: rl_grid::TileId(0), shows: rl_grid::TileId(1), spot: 5, group };
+        let mut sight = Viewshed::new(20);
+        sight.visible = rl_grid::BitGrid::new(20, 7);
+        for x in [6, 9] {
+            sight.visible.insert(Point::new(x, 3));
+        }
+        let near_unseen = [secret(3, 0), secret(6, 0), secret(12, 1), secret(9, 1)];
+        let found = groups_in_sight(&near_unseen, &sight, START);
+        assert_eq!(found.iter().map(|s| (s.group, s.at.x)).collect::<Vec<_>>(), [(0, 6), (1, 9)]);
+        assert!(groups_in_sight(&[secret(3, 2)], &sight, START).is_empty(), "a group with no cell in sight is not rolled for");
+    }
+
+    #[test]
+    #[should_panic(expected = "less than near")]
+    #[cfg(debug_assertions)]
+    fn spot_rules_whose_far_is_nearer_than_near_are_refused() {
+        SpotRules { near: 7, far: 2, still: 1 }.chance(10, 0, 1, false);
     }
 }

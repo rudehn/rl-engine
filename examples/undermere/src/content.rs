@@ -693,8 +693,7 @@ mod tests {
             ("fire", true),
             ("shackles", false),
             // The flavor pool's thirteen fixed pieces: each a small, hand
-            // laid piece with open margin round every blocking prop, so
-            // none of the risk above applies to them.
+            // laid piece with open margin round every blocking prop.
             ("cold firepit", false),
             ("bedroll", false),
             ("broken pot", false),

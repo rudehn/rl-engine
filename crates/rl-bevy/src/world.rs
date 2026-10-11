@@ -325,7 +325,7 @@ impl WorldMap {
     /// Keeps a freshly built place. Does not switch to it.
     pub fn install_place(&mut self, map: MapId, build: PlaceBuild) {
         assert!(!map.is_surface(), "the surface is not a place");
-        let secrets = build.secrets.into_iter().map(Secret::from).collect();
+        let secrets = build.secrets.into_iter().map(|s| Secret::hidden(s, build.terrain.get(s.at).unwrap_or(s.is))).collect();
         let place = PlaceMap { terrain: build.terrain, entry: build.entry, exit: build.exit, spots: build.spots, locks: build.locks, secrets, visited: false };
         self.places.insert(map, place);
     }
@@ -348,6 +348,11 @@ impl WorldMap {
     /// changed how it is walked, since a found door is one a mind may
     /// now path through by opening it, which the opening view did not route
     /// through while it was wall.
+    ///
+    /// A cell no longer showing the tile it hid behind, because a game
+    /// changed it since, keeps the change and is found all the same: the
+    /// door a found mouth would have been is not laid over a cell dug
+    /// out or built over.
     pub fn find_secret(&mut self, map: MapId, at: Point) -> Vec<Secret> {
         let Some(place) = self.places.get_mut(&map) else { return Vec::new() };
         let Some(group) = place.secrets.iter().find(|s| s.at == at).map(|s| s.group) else { return Vec::new() };
@@ -355,9 +360,11 @@ impl WorldMap {
         place.secrets = kept;
         let mut sight_changed = false;
         for secret in &found {
-            let was = place.terrain.get(secret.at);
+            if place.terrain.get(secret.at) != Some(secret.shows) {
+                continue;
+            }
             place.terrain.set(secret.at, secret.is);
-            sight_changed |= was.is_none_or(|w| self.tables.opaque[w.index()] != self.tables.opaque[secret.is.index()]);
+            sight_changed |= self.tables.opaque[secret.shows.index()] != self.tables.opaque[secret.is.index()];
         }
         if map == self.current {
             self.opacity_epoch += u64::from(sight_changed);
@@ -589,7 +596,11 @@ impl WorldMap {
             .places
             .into_iter()
             .map(|(id, p)| {
-                (id, PlaceMap { terrain: p.terrain, entry: p.entry, exit: p.exit, spots: p.spots, locks: p.locks, secrets: p.secrets, visited: p.visited })
+                let mut secrets = p.secrets;
+                for s in secrets.iter_mut().filter(|s| s.shows == Secret::unread()) {
+                    s.shows = p.terrain.get(s.at).unwrap_or(s.is);
+                }
+                (id, PlaceMap { terrain: p.terrain, entry: p.entry, exit: p.exit, spots: p.spots, locks: p.locks, secrets, visited: p.visited })
             })
             .collect();
         self.current = MapId::SURFACE;

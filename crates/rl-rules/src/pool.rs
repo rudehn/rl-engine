@@ -608,8 +608,7 @@ impl Pool {
     /// a budget is met whenever the pool can meet it, a scarce entry is
     /// not spent on a floor others could have filled, and a pick no entry
     /// can fill is left out, one not required before any required one.
-    /// Within a place,
-    /// required picks come first.
+    /// Within a place, required picks come first.
     pub fn plan_run(&self, rng: &mut impl Rng, places: &[Place]) -> Vec<Vec<Pick>> {
         let mut plan = Plan::new(self, places);
         // Each place's count of each kind, in place order and then kind
@@ -629,7 +628,10 @@ impl Pool {
             let required = tier == 0;
             slots.shuffle(rng);
             for &(p, k) in slots.iter() {
-                let (most_required, most) = (plan.most(true), plan.most(false));
+                // The required flow is held only in the required tier;
+                // past it, every required pick is made or never can be.
+                let most_required = if required { plan.most(true) } else { 0 };
+                let most = plan.most(false);
                 let mut candidates: Vec<usize> = plan.fitting[p].iter().copied().filter(|&e| self.entries[e].kind == k && plan.open(p, e)).collect();
                 plan.owed[p][k] -= 1;
                 while !candidates.is_empty() {
