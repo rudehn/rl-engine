@@ -380,6 +380,31 @@ The furnisher and the run director were built on 2026-10-10 as the dressing and 
 - **Foundry's recipes are a first draw.**
   Two recipes over three districts at 84 by 48; the size and the mix are meant to grow as the furnisher and the director give a deck more to hold.
 
+Left over from Undermere's dungeon part on 2026-10-11, found by its slices' reviews and not done by the sweep that followed.
+None is scheduled: take one when its file is open.
+
+- **A higher `fill_pct` making a smaller cave is unpinned.**
+  `Cave`'s docs say more rock to start means a smaller cave, and no test holds it, so a change to the automaton could reverse the claim unseen.
+  `crates/rl-mapgen/src/cave.rs`.
+- **A lake is measured before it is trimmed, and has no largest share.**
+  `Lakes` counts a lake's size as drawn, then takes rock only where every way beside it goes under too, so a lake may end smaller than its range says, and nothing stops one covering most of an area.
+  Its barred landings, the flank rule for a bridge and the `Stamped` ring are each untested.
+  `crates/rl-mapgen/src/lakes.rs`.
+- **A non-cut pond can take the one-thick wall between two ponds,** leaving a window between two areas that were separate.
+  `Crossing::flanked` is not measured again after a later lake changes the banks.
+- **An inverted range panics.**
+  `Lakes` and `Bridges` take ranges as `(fewest, most)` with `most` below `fewest` unchecked, so a game's loader must check them itself.
+  The same is true of `SpotRules` with `far` below `near`, which only a debug build asserts.
+- **A forced wait counts as stillness.**
+  `PropsPlugin`'s spotting roll multiplies the chance on a turn the player spent waiting, and cannot tell a wait the player chose from one a status forced, so being held searches.
+- **A painted piece's unjoined entry shows the map's fill.**
+  An entry a piece did not join stays the tile the map was before, which in a game whose fill is not its wall reads as a different wall in the piece's side; Undermere repaints it with a pass of its own, `PieceLook`.
+- **An `Inside` pick that fits nowhere wears out retries.**
+  `StampPicks` fails a place for a required pick no area holds and `run_retrying` grows it again, each attempt as hopeless as the last when the recipe has no area of the shape; refusing such an entry at load would cost nothing.
+- **A game's log line always lands after the engine's lines of the same pass.**
+  The narrator reads a game's `Tell` after the pass's own events, so a game cannot say a cause before the effect the engine narrates: Undermere words a trap's line in the past tense, "You stepped on a hidden dart plate!", to read right under "The dart plate hits you for 4.".
+  Found while photographing Undermere's traps.
+
 ## Tracked elsewhere
 
 - The plan's "Next" line: nights on Corsair's surface, scripted encounters, Bevy UI presenters over the panel views, and the living-world-rogue conversion.
