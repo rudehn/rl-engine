@@ -49,9 +49,11 @@ impl Pass<BaseContext> for QuietWayIn {
 /// and `hall floor`, which this lays the floor's own over, so a vault in
 /// the caves is walled in cave wall, and an entry growth never joined,
 /// left as the rock it was drawn over, reads as the rest of its wall
-/// rather than a patch of some other stone. What a piece draws in a tile
-/// of its own, water, straw, planks, is its own and kept. A boss's lair
-/// and the throne are drawn in their own stone and passed over.
+/// rather than a patch of some other stone. A piece joined by a door is
+/// joined by a carved one, unlike the floor's others, so it is seen before
+/// it is understood. What a piece draws in a tile of its own, water,
+/// straw, planks, is its own and kept. A boss's lair and the throne are
+/// drawn in their own stone and passed over.
 pub(super) struct PieceLook {
     /// The floor's own wall.
     pub(super) wall: TileId,
@@ -61,6 +63,10 @@ pub(super) struct PieceLook {
     pub(super) piece_wall: TileId,
     /// What a piece's floor is drawn in.
     pub(super) piece_floor: TileId,
+    /// The floor's own door, which a piece joined by a door is joined by.
+    pub(super) door: TileId,
+    /// What a piece's own door is carved as.
+    pub(super) carved: TileId,
 }
 
 impl Pass<BaseContext> for PieceLook {
@@ -74,7 +80,14 @@ impl Pass<BaseContext> for PieceLook {
 
     fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let bosses: Vec<&str> = MINI_BOSSES.iter().map(|b| b.name).chain(FINAL_BOSSES.iter().map(|b| b.piece)).collect();
-        let pieces: Vec<Rect> = ctx.outputs().iter::<Area>().filter(|a| a.entries.is_some() && !bosses.contains(&a.shape.as_str())).map(|a| a.bounds).collect();
+        let grown: Vec<&Area> = ctx.outputs().iter::<Area>().filter(|a| a.entries.is_some() && !bosses.contains(&a.shape.as_str())).collect();
+        let (pieces, entries): (Vec<Rect>, Vec<Point>) =
+            (grown.iter().map(|a| a.bounds).collect(), grown.iter().flat_map(|a| a.entries.iter().flatten().copied()).collect());
+        for at in entries {
+            if ctx.terrain().get(at) == Some(self.door) {
+                ctx.terrain_mut().set(at, self.carved);
+            }
+        }
         for b in pieces {
             let around = Rect::new(b.x - 1, b.y - 1, b.width + 2, b.height + 2);
             for p in around.cells() {

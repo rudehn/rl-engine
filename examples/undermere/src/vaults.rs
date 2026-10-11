@@ -19,14 +19,18 @@
 //!
 //! In play, [`lifts`] answers a prize taken: the other cages shut, the
 //! vermin pour out, the water rises, the floor gives way, the gallery
-//! falls in behind. [`answer_pull_lever`] lifts a floor's seal, and
-//! [`spend_vault_key`] leaves a key in the lock it opened. What the
-//! glyphs, the bone circle and the vents do is an effect's, in
-//! [`crate::effects`]: `WakeFloor`, `Rise` and `Rouse`.
+//! falls in behind. [`answer_pull_lever`] lifts a floor's seal,
+//! [`spend_vault_key`] leaves a key in the lock it opened, and
+//! [`answer_read`] reads a chronicle or a dead adventurer's last words
+//! aloud. What the glyphs, the bone circle, the vents and a fall do is an
+//! effect's, in [`crate::effects`]: `WakeFloor`, `Rise`, `Rouse` and
+//! `Fall`.
 //!
 //! Everything here is told apart by what a prop is and where it stands,
-//! which the save already keeps, never by a component of the game's own,
-//! so a run continued mid-vault does what the run left would have done.
+//! which the save already keeps, rather than by a component of the game's
+//! own, so a run continued mid-vault does what the run left would have
+//! done; the two things that are not, a key's floor and a flood still
+//! rising, the save keeps by name.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -74,6 +78,10 @@ const GOBLIN_KIND: &str = "goblin";
 /// unit a hidden prop's chance is given in, and as hard to see as the
 /// floor's hidden plates.
 pub const CAUSEWAY_SPOT: u8 = 10;
+
+/// How far a vault's key or lever lies from anything a piece laid: farther
+/// than any piece's own cell is from the nearest thing it lays.
+const PIECE_CLEAR: i32 = 4;
 
 /// The spot a locked vault's key is dropped at: past every glyph a
 /// legend could carry, so no piece's mark is ever read as it.
@@ -149,7 +157,7 @@ pub fn place_vault_fixtures(built: &mut PlaceBuild, tiles: &TileRegistry, prefab
     let sealed: Vec<Point> = built.locks.iter().filter(|l| l.key.is_none()).map(|l| l.at).collect();
     for (shut, tag, by_wall) in [(locked, KEY_TAG, false), (sealed, LEVER_TAG, true)] {
         let Some(&door) = shut.first() else { continue };
-        if let Some(at) = fixture_cell(built, tiles, door, by_wall, &mut rng) {
+        if let Some(at) = fixture_cell(built, tiles, prefabs, door, by_wall, &mut rng) {
             built.spots.push(Spot { tag, at, prefab: None });
         }
     }
@@ -159,13 +167,14 @@ pub fn place_vault_fixtures(built: &mut PlaceBuild, tiles: &TileRegistry, prefab
 /// without passing any lock or seal, since a piece behind one grows
 /// nothing past it and could never hold its own way out; at least
 /// [`MIN_DISTANCE_FROM_ENTRY`] from the way in and off the way down; on
-/// plain ground nothing else was laid on; and drawn among the third of
+/// plain ground [`PIECE_CLEAR`] from anything a piece laid; and drawn
+/// among the third of
 /// such cells walked farthest from the vault's own door, so finding it is
 /// a search of the floor rather than a step beside the door. A lever
 /// stands against a wall, as a lever is set in one. `None` on a floor
 /// with no such cell, which leaves the vault shut for good rather than
 /// its fixture somewhere it cannot be reached.
-fn fixture_cell(built: &PlaceBuild, tiles: &TileRegistry, door: Point, by_wall: bool, rng: &mut impl Rng) -> Option<Point> {
+fn fixture_cell(built: &PlaceBuild, tiles: &TileRegistry, prefabs: &Prefabs<MonsterDef>, door: Point, by_wall: bool, rng: &mut impl Rng) -> Option<Point> {
     let tables = tiles.tables();
     let shut: BTreeSet<Point> = built.locks.iter().map(|l| l.at).collect();
     let passable = |p: Point| !shut.contains(&p) && built.terrain.get(p).is_some_and(|t| tables.passable[t.index()]);
@@ -183,11 +192,15 @@ fn fixture_cell(built: &PlaceBuild, tiles: &TileRegistry, door: Point, by_wall: 
                 && tables.names[i] != "rotten planks"
         })
     };
+    // A spot a piece laid, and not a dressing's slot: a key or a lever
+    // keeps off every piece, so none lies in a vault that floods or on
+    // planks that fall.
+    let pieces = |s: &Spot| s.prefab.is_some_and(|k| prefabs.defs().try_get(Id::from_raw(k)).is_some());
     let mut cells: Vec<(u32, Point)> = reached
         .keys()
         .copied()
         .filter(|p| geometry::chebyshev(*p, built.entry) >= MIN_DISTANCE_FROM_ENTRY && Some(*p) != built.exit && plain(*p))
-        .filter(|p| !built.spots.iter().any(|s| s.at == *p))
+        .filter(|p| !built.spots.iter().any(|s| s.at == *p || (pieces(s) && geometry::chebyshev(s.at, *p) <= PIECE_CLEAR)))
         .filter(|p| !by_wall || Direction::CARDINALS.iter().any(|d| built.terrain.get(*p + d.offset()).is_some_and(|t| !tables.passable[t.index()])))
         .filter_map(|p| from_door.get(&p).map(|d| (*d, p)))
         .collect();

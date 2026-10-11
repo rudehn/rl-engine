@@ -360,3 +360,19 @@ fn a_pieces_sleepers_sleep_at_their_posts_and_its_captives_are_shackled() {
         }
     }
 }
+
+/// The mark vocabulary is the risk-and-reward and reward pieces' alone: a
+/// town's, a lair's or a flavor piece's mark spelt the same is never filled
+/// as a sleeper, a captive or a causeway, since none of them marks one.
+#[test]
+fn only_a_vault_piece_marks_a_sleeper_a_captive_or_a_causeway() {
+    let undermere = crate::dungeon::Undermere::new(RunSeed(0));
+    let vaults = undermere.vault_pieces();
+    for (_, def) in undermere.prefabs().defs().iter() {
+        for glyph in [SLEEPER, GIANT, GOBLIN, CAPTIVE, CAUSEWAY] {
+            if matches!(def.slot(glyph), Some(Slot::Mark)) {
+                assert!(vaults.contains(&def.name), "{}: marks {glyph:?}, the vaults' own", def.name);
+            }
+        }
+    }
+}

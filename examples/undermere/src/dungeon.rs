@@ -251,6 +251,16 @@ impl Family {
     }
 }
 
+impl Undermere {
+    /// Every risk-and-reward and reward piece the pool lays, by name: the
+    /// pieces whose marks `crate::vaults` fills.
+    #[cfg(test)]
+    pub(crate) fn vault_pieces(&self) -> Vec<String> {
+        let kinds: Vec<usize> = ["risk_reward", "reward"].iter().filter_map(|k| self.pool.kinds.iter().position(|n| n == k)).collect();
+        self.pool.entries.iter().filter(|e| kinds.contains(&e.kind)).map(|e| e.name.clone()).collect()
+    }
+}
+
 /// The first seed whose run draws the pool entry `name` for a floor, and
 /// that floor: for a test of what a piece does where a run lays it.
 #[cfg(test)]
@@ -269,9 +279,11 @@ pub(crate) fn drawn(name: &str) -> (RunSeed, u32) {
 /// straw, the planks and the hole they leave, a causeway and the deep water
 /// round it, fallen rock, and the strewn floors a piece is dressed with.
 #[cfg(test)]
-const PIECE_TILES: [&str; 14] = [
+const PIECE_TILES: [&str; 16] = [
     "vault door",
     "open vault door",
+    "carved door",
+    "open carved door",
     "stone gate",
     "raised gate",
     "straw",
@@ -386,6 +398,10 @@ fn registry() -> TileRegistry {
             // goes through them, and a lock is what refuses a body.
             TileProps::named("vault door").passable(true).opaque(true).blocks_projectiles(true).opens_to("open vault door"),
             TileProps::floor("open vault door").closes_to("vault door"),
+            // Any other piece's door is carved, a door unlike the floor's
+            // others, so the piece is seen before it is understood.
+            TileProps::named("carved door").passable(true).opaque(true).blocks_projectiles(true).opens_to("open carved door"),
+            TileProps::floor("open carved door").closes_to("carved door"),
             TileProps::named("stone gate").passable(true).opaque(true).blocks_projectiles(true),
             TileProps::floor("raised gate"),
             // Dry straw catches from anything burning and burns to rubble.
@@ -595,7 +611,14 @@ impl Undermere {
                 chain = chain.then(bridges);
             }
         }
-        let look = PieceLook { wall: fill, floor: floor_tile, piece_wall: self.tile("hall wall"), piece_floor: self.tile("hall floor") };
+        let look = PieceLook {
+            wall: fill,
+            floor: floor_tile,
+            piece_wall: self.tile("hall wall"),
+            piece_floor: self.tile("hall floor"),
+            door,
+            carved: self.tile("carved door"),
+        };
         chain = chain.then(look);
         chain = if throne {
             chain.then(RandomStart.clear_of_stamps(MIN_DISTANCE_FROM_ENTRY)).then(ClearOfTheThrone)
@@ -667,7 +690,7 @@ impl Undermere {
         let mut built = PlaceBuild::from_context(grown)?;
         crate::vaults::place_vault_fixtures(&mut built, &self.tiles, &self.prefabs, self.seed, map_of(floor));
         let tables = self.tiles.tables();
-        let (door, bridges) = (self.tile("door"), [self.tile("bridge"), self.tile("iron bridge")]);
+        let bridges = [self.tile("bridge"), self.tile("iron bridge")];
         let bounds = built.terrain.bounds();
         let mut out = format!("floor {floor}: {}, {}\n", drawn.name, drawn.recipe);
         for y in 0..bounds.height {
@@ -686,7 +709,7 @@ impl Undermere {
                     _ if Some(p) == built.exit => '>',
                     _ if built.locks.iter().any(|l| l.at == p) => '*',
                     _ if built.secrets.iter().any(|s| s.at == p) => '?',
-                    _ if tile == door => '+',
+                    _ if tables.opens[tile.index()].is_some() => '+',
                     _ if laid.is_some() => laid.expect("just checked"),
                     _ if bridges.contains(&tile) => '=',
                     _ if !tables.passable[tile.index()] && !tables.opaque[tile.index()] => '≈',
