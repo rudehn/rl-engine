@@ -409,6 +409,11 @@ pub fn stand_hidden(mut commands: Commands, mut entered: MessageReader<PlaceEnte
 /// net in plain sight shows where the net was. One gone off out of sight
 /// stays hidden, since nobody saw it.
 ///
+/// Said in the past tense, "You stepped on a hidden dart plate!", because
+/// a game's line is read after the pass's own events: the dart's blow is
+/// already in the log above it, and "You set off a dart plate!" under
+/// "The dart plate hits you for 4." read as a second dart.
+///
 /// In `TurnSet::React`, the pass the trap went off in.
 pub fn show_sprung(
     mut commands: Commands,
@@ -424,10 +429,10 @@ pub fn show_sprung(
         let (Ok(kind), Some(by)) = (hidden.get(ev.on), ev.by) else { continue };
         let what = &registries.props.get(kind.0).name;
         let line = if by == me {
-            format!("You set off {}!", rl_engine::rl_core::noun::with_article(what))
+            format!("You stepped on {}!", rl_engine::rl_core::noun::with_article(&format!("hidden {what}")))
         } else if sight.can_see(ev.at) {
             let who = names.get(by).map_or_else(|_| "something".to_string(), |n| rl_engine::rl_core::noun::with_the(n.as_str()));
-            format!("{} goes off under {who}!", crate::effects::capital(&rl_engine::rl_core::noun::with_article(what)))
+            format!("{} went off under {who}!", crate::effects::capital(&rl_engine::rl_core::noun::with_article(&format!("hidden {what}"))))
         } else {
             continue;
         };
@@ -655,7 +660,7 @@ mod tests {
         app.world_mut().write_message(Stepped { actor: goblin, from: near.offset(1, 0), to: near });
         settle(&mut app);
         assert!(app.world().get::<Hidden>(net).is_none(), "the net is shown");
-        assert!(said(&app).iter().any(|l| l == "A net trap goes off under the goblin!"), "and the log says so: {:?}", said(&app));
+        assert!(said(&app).iter().any(|l| l == "A hidden net trap went off under the goblin!"), "and the log says so: {:?}", said(&app));
         let sight = app.world().get::<Viewshed>(me).expect("the adventurer sees").clone();
         let map = app.world().resource::<WorldMap>();
         let far =
