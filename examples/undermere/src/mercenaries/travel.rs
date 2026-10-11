@@ -13,11 +13,13 @@ use super::{LEASH, Mercenary, Order, TONE};
 type Party<'w, 's> = Query<'w, 's, (Entity, &'static Mercenary, &'static Leader, &'static Position, &'static OnMap), Without<Dead>>;
 
 /// How far from the cell the adventurer left a mercenary may stand and
-/// still come through with them: one past the [`LEASH`], since a follower
-/// reads four cells off mid-walk round a diagonal, a step of 141 against
-/// the adventurer's 100, and the commonest way to take a stair is to walk
-/// onto it and take it at once. Holding the travel to the leash itself
-/// would leave a follower behind for a reason the player never chose.
+/// still come through with them: one past the [`LEASH`]. A follower sets
+/// off before the walk to them is longer than the leash, but it moves on
+/// its own turn, after theirs, and the commonest way to take a stair is to
+/// walk onto it and take it at once, so the stair is taken with the
+/// follower a step short of where it is going. Holding the travel to the
+/// leash itself would leave a follower behind for a reason the player
+/// never chose.
 pub const FOLLOW_REACH: i32 = LEASH + 1;
 
 /// Sends after the adventurer, on their own [`Travelled`], every hired
