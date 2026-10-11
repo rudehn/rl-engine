@@ -114,10 +114,10 @@ impl Pass<BaseContext> for BloodTrail {
 
         // Breadth-first into the dead end's own cells only, so the trail
         // never spills past the doorway it came through; the last cell
-        // reached is where the body lies. `Point` has no `Ord` of its
-        // own, so the parent each cell was reached from is kept by
-        // `(x, y)` rather than in a `BTreeMap<Point, _>`.
-        let mut parent: BTreeMap<(i32, i32), Point> = BTreeMap::new();
+        // reached is where the body lies. The parent each cell was
+        // reached from is kept by the cell, in a `BTreeMap` so the walk
+        // back is the same on every run.
+        let mut parent: BTreeMap<Point, Point> = BTreeMap::new();
         let mut frontier = vec![threshold];
         let mut farthest = threshold;
         for _ in 0..self.max_cells {
@@ -125,9 +125,8 @@ impl Pass<BaseContext> for BloodTrail {
             for p in frontier {
                 for d in Direction::CARDINALS {
                     let n = p + d.offset();
-                    let key = (n.x, n.y);
-                    if area.cells.contains(&n) && walkable(ctx, &tables, n) && !marked.contains(&n) && !parent.contains_key(&key) && n != threshold {
-                        parent.insert(key, p);
+                    if area.cells.contains(&n) && walkable(ctx, &tables, n) && !marked.contains(&n) && !parent.contains_key(&n) && n != threshold {
+                        parent.insert(n, p);
                         next.push(n);
                         farthest = n;
                     }
@@ -140,7 +139,7 @@ impl Pass<BaseContext> for BloodTrail {
         }
         let mut path = vec![farthest];
         while *path.last().expect("just pushed") != threshold {
-            let prev = parent[&(path.last().expect("just pushed").x, path.last().expect("just pushed").y)];
+            let prev = parent[path.last().expect("just pushed")];
             path.push(prev);
         }
         // `path` runs from the body back to the threshold; blood on
