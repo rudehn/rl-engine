@@ -663,8 +663,9 @@ impl Undermere {
     // ANCHOR_END: grow
 
     /// What a band strews on its floor once the ways are known: rubble and
-    /// braziers in the first band, glowcaps in the second, bones and
-    /// candles in the third, puddles and moonlight in the fourth, and a
+    /// braziers in the first band, glowcaps in the second, candles in the
+    /// third and the Catacombs' bones, puddles in the fourth and the
+    /// Drowned Cathedral's moonlight, and a
     /// chest or two on every floor but the throne's. The biomes' own decor
     /// replaces this by band once a pool file names it.
     fn decor(&self, chain: Chain<BaseContext>, floor: u32, drawn: &BiomeDraw) -> Result<Chain<BaseContext>, BuildError> {
@@ -675,12 +676,20 @@ impl Undermere {
                 .then(Patches { name: "rubble", tile: t("rubble"), on, count: (5, 9), size: (2, 6), phase: Phase::Finish })
                 .then(Furnish { name: "braziers", piece: self.prefabs.piece("brazier")?, count: (3, 5) }),
             Family::FungalDeeps => chain.then(Patches { name: "glowcaps", tile: t("glowcaps"), on, count: (8, 12), size: (2, 6), phase: Phase::Finish }),
-            Family::Catacombs => chain
+            // Bones are the Catacombs' own and the shafts of moonlight the
+            // Drowned Cathedral's: strewn on the Sunken Library and the
+            // Underlake that share their bands, a lone cell of the
+            // cathedral's lit marble shone out of a dark lake cave.
+            Family::Catacombs if drawn.name == "the Catacombs" => chain
                 .then(Patches { name: "bones", tile: t("bones"), on, count: (6, 10), size: (1, 4), phase: Phase::Finish })
                 .then(Furnish { name: "candles", piece: self.prefabs.piece("candelabra")?, count: (5, 8) }),
-            Family::DrownedCathedral => chain
+            Family::Catacombs => chain.then(Furnish { name: "candles", piece: self.prefabs.piece("candelabra")?, count: (5, 8) }),
+            Family::DrownedCathedral if drawn.name == "the Drowned Cathedral" => chain
                 .then(Patches { name: "puddles", tile: t("flooded floor"), on, count: (3, 6), size: (2, 6), phase: Phase::Finish })
                 .then(Patches { name: "shafts", tile: t("moonlit marble"), on, count: (3, 5), size: (1, 1), phase: Phase::Finish }),
+            Family::DrownedCathedral => {
+                chain.then(Patches { name: "puddles", tile: t("flooded floor"), on, count: (3, 6), size: (2, 6), phase: Phase::Finish })
+            }
             Family::ForgeOfEmbers | Family::Throne => chain,
         };
         // The lived-in dungeon's own, on any floor but the throne's: a
