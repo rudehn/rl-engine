@@ -103,7 +103,8 @@ pub struct Dressing {
     pub things: Vec<Thing>,
     /// The tile and the share in a hundred of [`Dress::floor`] left clear
     /// that is repainted with it once every thing stands. A body must be
-    /// able to stand on it: a repaint is never checked for cutting.
+    /// able to stand on it, since a repaint is never checked for cutting,
+    /// and [`Dress`] fails on one it could not.
     pub repaint: Option<(TileId, u32)>,
     /// An opaque number its owner set, carried to [`Stamped::prefab`] on
     /// every slot, so the slot's meaning is found again; `None` for a
@@ -139,7 +140,8 @@ pub struct Dressed {
 pub struct Dress {
     /// A stable name, so two passes in one chain draw different streams.
     pub name: &'static str,
-    /// The floor a repaint repaints; any other tile is left as it is.
+    /// The floor a repaint repaints and a [`Stand::Tile`] is laid on; any
+    /// other tile, a shore or a bridge, is left as it is.
     pub floor: TileId,
     /// Every dressing a list or a `DressAt` may name.
     pub dressings: Vec<Dressing>,
@@ -196,6 +198,10 @@ impl<C: BuildContext> Pass<C> for Dress {
             .chain(ctx.outputs().iter::<ExitPoint>().map(|e| e.0))
             .collect();
 
+        let walkable = ctx.tiles().tables().walkable;
+        if let Some(d) = self.dressings.iter().find(|d| d.repaint.is_some_and(|(t, _)| !walkable[t.index()])) {
+            return Err(err(format!("dressing {:?} repaints the floor with a tile no body stands on, and a repaint is never checked for cutting", d.name)));
+        }
         for list in &self.districts {
             if let Some((i, _)) = list.dressings.iter().find(|(i, _)| *i >= self.dressings.len()) {
                 return Err(err(format!("district {:?} names dressing {i}, and there are {}", list.district, self.dressings.len())));
@@ -276,9 +282,10 @@ impl Frame {
     /// stand on, and what stands in a slot may be such a corner to some
     /// mover: the move resolver lets a diagonal past a thing on the floor,
     /// but a mind declines one whose crook it cannot step on. A diagonal
-    /// between two open cells passes two cells that are open too, the
-    /// rim's or the area's, so it joins nothing two orthogonal steps do
-    /// not, and the count is the same whichever reading a mover keeps.
+    /// a mind steps between two open cells passes two cells that are open
+    /// too, the rim's or the area's, so it joins nothing two orthogonal
+    /// steps do not; the resolver's reading, past a slot, can only join
+    /// more. So an area this counts as one region is one to either.
     fn regions(&self, open: &[bool]) -> usize {
         let mut seen = vec![false; open.len()];
         let mut count = 0;
@@ -368,7 +375,11 @@ fn dress_area<C: BuildContext>(ctx: &mut C, area: &Area, dressing: &Dressing, ke
             if placed == want {
                 break;
             }
-            if taken[i] || near[i] {
+            // A tile is laid only over the plain floor, so it never
+            // paints out a shore, a bridge or a tile another pass laid;
+            // a slot only marks its cell, so it may stand on any of them.
+            let painted = matches!(thing.stands, Stand::Tile(_)) && ctx.terrain().get(frame.point(i)) != Some(floor);
+            if taken[i] || near[i] || painted {
                 continue;
             }
             let slot = thing.stands == Stand::Slot;
@@ -476,7 +487,7 @@ mod tests {
     use crate::chain::Chain;
     use crate::context::BaseContext;
     use crate::dungeon::{FarthestExit, RandomStart};
-    use crate::lakes::Lakes;
+    use crate::lakes::{Bridge, Bridges, Lakes};
     use crate::loops::OpenLoops;
     use crate::secrets::HideOpenings;
     use crate::survey::Survey;
@@ -543,6 +554,32 @@ mod tests {
 
     /// How many regions `cells`, less those in `blocked`, make, joined
     /// orthogonally.
+    /// How many of the regions `cells` and the `ways` beside them leave,
+    /// less `blocked`, hold a cell of `cells`, joined orthogonally.
+    fn pieces(cells: &[Point], ways: &[Point], blocked: &[Point]) -> usize {
+        let blocked: BTreeSet<&Point> = blocked.iter().collect();
+        let own: BTreeSet<Point> = cells.iter().copied().filter(|c| !blocked.contains(c)).collect();
+        let open: BTreeSet<Point> = own.iter().copied().chain(ways.iter().copied().filter(|c| !blocked.contains(c))).collect();
+        let mut seen: BTreeSet<Point> = BTreeSet::new();
+        let mut count = 0;
+        for &start in &own {
+            if !seen.insert(start) {
+                continue;
+            }
+            count += 1;
+            let mut stack = vec![start];
+            while let Some(p) = stack.pop() {
+                for d in Direction::CARDINALS {
+                    let q = p + d.offset();
+                    if open.contains(&q) && seen.insert(q) {
+                        stack.push(q);
+                    }
+                }
+            }
+        }
+        count
+    }
+
     fn regions(cells: &[Point], blocked: &[Point]) -> usize {
         let blocked: BTreeSet<&Point> = blocked.iter().collect();
         let open: BTreeSet<Point> = cells.iter().copied().filter(|c| !blocked.contains(c)).collect();
@@ -706,7 +743,7 @@ mod tests {
     /// there does not block, that a mover stepping eight ways from the
     /// area's openings never reaches: a clear cell it never stands on, or
     /// a slot it never steps onto from a cell beside it.
-    fn unreached(ctx: &BaseContext, area: &Area, stood: &BTreeSet<Point>) -> Vec<Point> {
+    fn unreached(ctx: &BaseContext, area: &Area, over: &[Point], stood: &BTreeSet<Point>) -> Vec<Point> {
         let walkable = ctx.tiles().tables().walkable;
         let (w, h) = (ctx.terrain().width(), ctx.terrain().height());
         let walk = |p: Point| ctx.terrain().get(p).is_some_and(|t| walkable[t.index()]);
@@ -714,7 +751,7 @@ mod tests {
         let doors: Vec<Point> =
             ctx.outputs().iter::<Opening>().filter(|o| o.areas.0 == area.index || o.areas.1 == area.index).flat_map(|o| o.cells.clone()).collect();
         let mut ground = Ground { width: w, open: vec![false; (w * h) as usize] };
-        for p in own.iter().filter(|p| !stood.contains(p)).chain(&doors) {
+        for p in own.iter().filter(|p| !stood.contains(p)).chain(&doors).chain(over) {
             ground.open[(p.y * w + p.x) as usize] = true;
         }
         let goals = if doors.is_empty() { own.iter().filter(|p| !stood.contains(p)).take(1).copied().collect() } else { doors };
@@ -733,6 +770,33 @@ mod tests {
                 }
             })
             .collect()
+    }
+
+    /// Every cell of the place a body can stand on, slots left out, that a
+    /// walk from the start does not reach, stepping orthogonally over what
+    /// can be stood on and every opening, a hidden one found: the place
+    /// whole, bridges and the floor between areas included, and not only
+    /// each area by itself.
+    fn beyond_reach(ctx: &BaseContext, stood: &BTreeSet<Point>) -> Vec<Point> {
+        let walkable = ctx.tiles().tables().walkable;
+        let (w, h) = (ctx.terrain().width(), ctx.terrain().height());
+        let ways: BTreeSet<Point> =
+            ctx.outputs().iter::<Opening>().flat_map(|o| o.cells.iter().copied()).chain(ctx.outputs().iter::<Secret>().map(|s| s.at)).collect();
+        let open = |p: Point| !stood.contains(&p) && (ways.contains(&p) || ctx.terrain().get(p).is_some_and(|t| walkable[t.index()]));
+        let start = ctx.outputs().first::<StartPoint>().unwrap().0;
+        let mut reached = vec![false; (w * h) as usize];
+        let mut stack = vec![start];
+        reached[(start.y * w + start.x) as usize] = true;
+        while let Some(p) = stack.pop() {
+            for d in Direction::CARDINALS {
+                let q = p + d.offset();
+                if ctx.terrain().in_bounds(q) && !reached[(q.y * w + q.x) as usize] && open(q) {
+                    reached[(q.y * w + q.x) as usize] = true;
+                    stack.push(q);
+                }
+            }
+        }
+        (0..w * h).map(|i| Point::new(i % w, i / w)).filter(|p| open(*p) && !reached[(p.y * w + p.x) as usize]).collect()
     }
 
     /// Rooms, a hall, crosses and two sizes of cave in two districts,
@@ -772,12 +836,14 @@ mod tests {
     /// once, pillars in the middle, rows and slots along every wall and in
     /// every corner, never stands a thing on or beside an opening, a
     /// hidden one, the way in or the way down, and leaves every area one
-    /// region with everything standing, every cell of it a body can stand
-    /// on reached from its openings by a mover stepping eight ways and
-    /// never past a corner, whether what stands in a slot blocks or not.
+    /// region with everything standing, a bridge over a pond in it a way
+    /// as its doors are, every cell of it a body can stand on reached from
+    /// its openings by a mover stepping eight ways and never past a
+    /// corner, whether what stands in a slot blocks or not; and the whole
+    /// place is walked from the start, every secret found.
     #[test]
     fn nothing_stands_beside_an_opening_and_every_area_stays_one_region() {
-        let (r, pillar, rubble) = (tiles().0, tiles().1, tiles().2);
+        let (r, pillar, rubble) = tiles();
         let d = dressing(
             "everything",
             vec![
@@ -799,17 +865,20 @@ mod tests {
         let mut wet_tiles = r.tiles.clone();
         let water = wet_tiles.register(TileProps::wall("water")).unwrap();
         let shore = wet_tiles.register(TileProps::floor("shore")).unwrap();
+        let span = wet_tiles.register(TileProps::floor("span")).unwrap();
         let ponds = Lakes { name: "ponds", tile: water, count: (2, 5), size: (20, 70), wreath: Some((shore, 60)), cut: false, within: Vec::new() };
-        let (mut caves, mut crosses, mut secrets, mut lakes) = (0, 0, 0, 0);
+        let bridges = Bridges { name: "bridges", across: water, tile: span, longest: 6, detour: 20 };
+        let (mut caves, mut crosses, mut secrets, mut lakes, mut spans) = (0, 0, 0, 0, 0);
         for (w, h, seeds, wet) in [(84, 48, 0..200, false), (160, 90, 0..30, false), (84, 48, 0..60, true), (160, 90, 0..8, true)] {
             for s in seeds {
                 let chain = Chain::new().then(grow(&r)).then(OpenLoops { door: r.door, min_detour: 20, max: 6 });
-                let chain = if wet { chain.then(ponds.clone()) } else { chain };
+                let chain = if wet { chain.then(ponds.clone()).then(bridges) } else { chain };
                 let chain = chain.then(RandomStart).then(FarthestExit).then(Survey).then(hide).then(pass.clone());
                 let tiles = if wet { &wet_tiles } else { &r.tiles };
                 let ctx =
                     chain.run_retrying(|| BaseContext::blank(w, h, tiles.clone(), r.wall), RunSeed(s), 20).unwrap_or_else(|e| panic!("{w}x{h} seed {s}: {e}"));
                 lakes += ctx.outputs().iter::<crate::lakes::Lake>().count();
+                spans += ctx.outputs().iter::<Bridge>().count();
                 let got = slots(&ctx);
                 let stood: Vec<Point> =
                     got.iter().map(|(_, p)| *p).chain((0..w * h).map(|i| Point::new(i % w, i / w)).filter(|p| ctx.terrain().get(*p) == Some(pillar))).collect();
@@ -827,12 +896,17 @@ mod tests {
                     );
                 }
                 let walkable = ctx.tiles().tables().walkable;
+                // A bridge is a way, as a door is: a pond's two banks in
+                // one area may be joined over one as well as round it.
+                let over: Vec<Point> = ctx.outputs().iter::<Bridge>().flat_map(|b| b.cells.iter().copied()).collect();
                 for a in ctx.outputs().iter::<Area>() {
                     let open: Vec<Point> = a.cells.iter().copied().filter(|c| ctx.terrain().get(*c).is_some_and(|t| walkable[t.index()])).collect();
-                    assert_eq!(regions(&open, &stood), 1, "{w}x{h} seed {s}: area {} ({}) was cut", a.index, a.shape);
-                    let lost = unreached(&ctx, a, &got.iter().map(|(_, p)| *p).collect());
+                    assert_eq!(pieces(&open, &over, &stood), 1, "{w}x{h} seed {s}, wet {wet}: area {} ({}) was cut", a.index, a.shape);
+                    let lost = unreached(&ctx, a, &over, &got.iter().map(|(_, p)| *p).collect());
                     assert!(lost.is_empty(), "{w}x{h} seed {s}: area {} ({}) has cells no mover reaches: {lost:?}", a.index, a.shape);
                 }
+                let stranded = beyond_reach(&ctx, &got.iter().map(|(_, p)| *p).collect());
+                assert!(stranded.is_empty(), "{w}x{h} seed {s}: cells no walk from the start reaches, every secret found: {stranded:?}");
                 let dressed: Vec<usize> = ctx.outputs().iter::<Dressed>().map(|d| d.area).collect();
                 let shape = |i: usize| ctx.outputs().iter::<Area>().find(|a| a.index == i).unwrap().shape.clone();
                 caves += dressed.iter().filter(|i| shape(**i) == "hollow" || shape(**i) == "cavern").count();
@@ -842,8 +916,8 @@ mod tests {
             }
         }
         assert!(
-            caves > 100 && crosses > 50 && secrets > 100 && lakes > 50,
-            "caves {caves}, crosses {crosses}, secrets {secrets} and lakes {lakes} dressed beside, or this proves little"
+            caves > 100 && crosses > 50 && secrets > 100 && lakes > 50 && spans > 5,
+            "caves {caves}, crosses {crosses}, secrets {secrets}, lakes {lakes} and bridges {spans} dressed beside, or this proves little"
         );
     }
 
@@ -892,6 +966,45 @@ mod tests {
         ctx.emit(DressAt { dressing: "missing".into(), area: 0 });
         let e = Chain::new().then(dress(r.floor, dressing("store", vec![slot('w', Spread::Walls, 50)], None))).run(&mut ctx, RunSeed(0)).unwrap_err();
         assert!(e.pass == "dress" && e.reason.contains("missing"), "{e}");
+    }
+
+    #[test]
+    fn a_given_dressing_in_an_area_there_is_none_of_fails_naming_it() {
+        let (r, ..) = tiles();
+        let mut ctx = room(&r, 5, 5);
+        ctx.emit(DressAt { dressing: "store".into(), area: 3 });
+        let e = Chain::new().then(dress(r.floor, dressing("store", vec![slot('w', Spread::Walls, 50)], None))).run(&mut ctx, RunSeed(0)).unwrap_err();
+        assert!(e.pass == "dress" && e.reason.contains("area 3"), "{e}");
+    }
+
+    /// A repaint is never checked for cutting, so one of a tile no body
+    /// stands on is refused before anything is laid.
+    #[test]
+    fn a_repaint_no_body_stands_on_is_refused() {
+        let (r, pillar, _) = tiles();
+        let mut ctx = room(&r, 6, 6);
+        let before = ctx.terrain().clone();
+        let e =
+            Chain::new().then(dress(r.floor, dressing("walls", vec![slot('w', Spread::Walls, 50)], Some((pillar, 30))))).run(&mut ctx, RunSeed(0)).unwrap_err();
+        assert!(e.pass == "dress" && e.reason.contains("\"walls\""), "{e}");
+        assert_eq!(ctx.terrain(), &before, "nothing was laid");
+    }
+
+    /// A tile thing is laid only over the plain floor, so a shore or a
+    /// bridge in a room keeps its tile; a slot may mark either.
+    #[test]
+    fn a_tile_thing_never_paints_over_a_tile_that_is_not_the_floor() {
+        let (mut r, _, rubble) = tiles();
+        let shore = r.tiles.register(TileProps::floor("shore")).unwrap();
+        let mut ctx = room(&r, 12, 9);
+        let banks: Vec<Point> = Rect::new(2, 3, 12, 9).cells().filter(|p| (p.x + p.y) % 3 == 0).collect();
+        for p in &banks {
+            ctx.terrain_mut().set(*p, shore);
+        }
+        let d = dressing("heaps", vec![Thing { glyph: 'h', stands: Stand::Tile(rubble), at: Spread::Scatter, density_pct: 100 }], None);
+        Chain::new().then(dress(r.floor, d)).run(&mut ctx, RunSeed(3)).unwrap();
+        assert!(banks.iter().all(|p| ctx.terrain().get(*p) == Some(shore)), "a shore cell was painted over");
+        assert!(Rect::new(2, 3, 12, 9).cells().any(|p| ctx.terrain().get(p) == Some(rubble)), "the floor between took the heaps");
     }
 
     /// A repaint takes its share of the floor left clear, and never a cell

@@ -72,6 +72,14 @@ impl Outputs {
         self.items.iter_mut().filter_map(|b| b.downcast_mut::<T>())
     }
 
+    /// Keeps the values of type `T` that `keep` says to and drops the
+    /// rest, leaving every other value and the order as they were: for a
+    /// pass that undoes what an earlier one published, as a lake that
+    /// covers a room whole leaves no room there.
+    pub fn retain<T: Any>(&mut self, mut keep: impl FnMut(&T) -> bool) {
+        self.items.retain(|b| b.downcast_ref::<T>().is_none_or(&mut keep));
+    }
+
     /// Removes and returns every value of type `T`, in emission order.
     pub fn take<T: Any>(&mut self) -> Vec<T> {
         let mut taken = Vec::new();

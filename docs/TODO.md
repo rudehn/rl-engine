@@ -50,6 +50,7 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 23 | A prop cannot block sight, or block the way and let a shot past | 3 | medium | medium |
 | 24 | A coloured light cannot warm a tile with little of its colour | 3 | low | low |
 | 25 | The player has no long action | 3 | medium | medium |
+| 26 | A piece stamped where no wall rings it can cut the floor | 1 | low | medium |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
@@ -73,6 +74,7 @@ Why the order that is left, in four moves:
    Item 23 was raised on 2026-09-28 when Foundry's rooms were first furnished, and is what the furnished rooms most visibly lack; the three furnishing items raised beside it were built on 2026-10-10.
    Item 24 is polish Undermere's play found on 2026-10-07, and waits on a part that works on how a game looks, since it moves every lit game's pictures.
    Item 25 was ruled around rather than built on 2026-10-07, when Undermere gave a captive a long action only a mind could take up, and waits on a game that wants the player to take one too.
+   Item 26 is what furnishing left on 2026-10-10, and waits on a game that stamps into a map `Accrete` did not grow.
 
 Section 5 is documentation and section 6 is the release, and both are gated on the API settling rather than on this list.
 Section 9 is low priority and deliberately outside the order.
@@ -85,6 +87,8 @@ Furnishing, the loop every game with rooms writes next, was opened on 2026-09-28
 A pool, `rl_rules::pool` with `StampPicks` and `rl_bevy::layout::picked`, says which pieces a run holds, by floor, weight, limit, group and budget, and places each in the area it prefers.
 A dressing, `rl_rules::dressing` with `Dress` and `rl_bevy::layout::dress`, fills every room the pool left from a weighted list by district, by a prefab's legend and rules for where each glyph goes rather than rows, so one dressing fills a closet, a hall and a cave, never beside an opening and never cutting an area in two.
 Foundry still furnishes with `StampEachRoom`, and may adopt both.
+
+- **A piece stamped where no wall rings it can cut the floor.** `Dress` floods an area before and after each thing, but a stamp into a cave on a map `Accrete` did not grow has no area to flood, and the `Placement::Fits` the prefab design proposes, anywhere a piece's cells land on open floor, wants the same check and rollback.
 
 ## 2. Open the minds
 
