@@ -1544,26 +1544,22 @@ mod tests {
     }
 
     /// Over a span of seeds: no entry is ever drawn past its own `per_run`
-    /// limit, every entry is drawn on some run, and no run's flavor picks
-    /// run away with most of the pool.
+    /// limit, every entry is drawn on some run, and a typical run sees
+    /// under half the flavor pool, the design's fifth pillar.
     ///
-    /// Not literally "half": the budget's own ranges (3-5, 3-5, 2-4, 1-2,
-    /// drawn once for each of ten floors) can total past forty on their
-    /// own, against only ten entries a run may draw twice (the "any
-    /// biome" ones; a biome's own is once, by the spec's own words) to
-    /// absorb the rest, so the least a run can ever see is its own total
-    /// picks less those ten, which lands in the mid-twenties on an
-    /// ordinary run and can reach the low thirties on a heavy one — never
-    /// close to half of forty-three, whatever this file weighs an entry.
-    /// Measured over the 500 seeds below: minimum 18, maximum 31, mean
-    /// about 24.6. Thirty-five leaves real margin over every seed seen
-    /// while still catching a real regression (losing the per-run cap
-    /// entirely pushes this toward forty-three).
+    /// The run is the median one. A heavy run, every floor drawing the
+    /// most its budget allows and few of them repeating one of the ten
+    /// entries a run may draw twice, can pass half, and is bounded at
+    /// twenty-five, past every seed seen and short of where losing the
+    /// per-run cap takes it. Measured over the 500 seeds below when the
+    /// budgets were last tuned: median 18 of 43, ninetieth percentile 21,
+    /// most 23, from about twenty-seven picks a run.
     #[test]
-    fn over_a_span_of_seeds_no_run_exceeds_a_limit_every_entry_is_drawn_and_none_runs_away_with_the_flavor_pool() {
+    fn over_a_span_of_seeds_no_run_exceeds_a_limit_every_entry_is_drawn_and_a_typical_run_sees_under_half_the_flavor_pool() {
         let pool = crate::prefabs::load(&registry(), &layout()).1;
         let flavor_pool = pool.entries.iter().filter(|e| pool.kinds[e.kind] == "flavor").count();
         let mut ever_drawn: BTreeSet<String> = BTreeSet::new();
+        let mut seen: Vec<usize> = Vec::new();
         for s in 0..500 {
             let undermere = Undermere::new(RunSeed(s));
             let mut run_counts: BTreeMap<usize, u32> = BTreeMap::new();
@@ -1582,8 +1578,12 @@ mod tests {
                 let per_run = undermere.pool.entries[entry].per_run;
                 assert!(count <= per_run, "seed {s}: {:?} drawn {count} times in one run, past its per_run of {per_run}", undermere.pool.entries[entry].name);
             }
-            assert!(flavor_this_run.len() <= 35, "seed {s}: {} of {flavor_pool} flavor entries in one run", flavor_this_run.len());
+            assert!(flavor_this_run.len() <= 25, "seed {s}: {} of {flavor_pool} flavor entries in one run", flavor_this_run.len());
+            seen.push(flavor_this_run.len());
         }
+        seen.sort_unstable();
+        let typical = seen[seen.len() / 2];
+        assert!(typical * 2 < flavor_pool, "the median run sees {typical} of {flavor_pool} flavor entries, not under half");
         for entry in &pool.entries {
             assert!(ever_drawn.contains(&entry.name), "{:?} was never drawn over seeds 0..500", entry.name);
         }
@@ -1913,10 +1913,26 @@ mod tests {
         }
     }
 
+    /// How wide a strip of rock with nothing walkable in it a floor can
+    /// leave along a side before it reads as space the floor never used.
+    const BAND: i32 = 10;
+
+    /// The widest strip of rock along any one side of `terrain` with no
+    /// cell `walkable` in it: a floor grown short of its size.
+    fn unused_band(terrain: &Terrain, walkable: impl Fn(rl_engine::rl_grid::TileId) -> bool) -> i32 {
+        let bounds = terrain.bounds();
+        let open: Vec<Point> = bounds.cells().filter(|p| terrain.get(*p).is_some_and(&walkable)).collect();
+        let (Some(left), Some(right)) = (open.iter().map(|p| p.x).min(), open.iter().map(|p| p.x).max()) else { return bounds.width.max(bounds.height) };
+        let (top, bottom) = (open.iter().map(|p| p.y).min().unwrap_or(0), open.iter().map(|p| p.y).max().unwrap_or(0));
+        let (x1, y1) = (bounds.x + bounds.width - 1, bounds.y + bounds.height - 1);
+        [left - bounds.x, x1 - right, top - bounds.y, y1 - bottom].into_iter().max().unwrap_or(0)
+    }
+
     /// A tuning aid, not a property: for every recipe, or the one named by
     /// `SWEEP_RECIPE`, how many of `SWEEP_SEEDS` seeds (a hundred if unset)
-    /// grow on their first attempt, how long one attempt takes, and why the
-    /// rest were refused, numbers masked so like reasons count together.
+    /// grow on their first attempt, how long one attempt takes, why the
+    /// rest were refused, numbers masked so like reasons count together,
+    /// and how wide a band of unused rock the grown ones leave along a side.
     /// Run by hand with `--ignored --nocapture` while tuning
     /// `assets/layout.ron`; a recipe most of whose first attempts fail is
     /// one to loosen before the forty attempts a floor is given run out.
@@ -1930,14 +1946,24 @@ mod tests {
             let (floor, drawn) = grown_by(&undermere, &recipe, 0);
             let mut why: BTreeMap<String, u32> = BTreeMap::new();
             let started = std::time::Instant::now();
+            let tables = undermere.tiles().tables();
+            let mut bands: Vec<i32> = Vec::new();
             for s in 0..seeds {
-                if let Err(e) = undermere.grow(floor, &drawn, RunSeed(s), 1) {
-                    let masked: String = e.to_string().chars().map(|c| if c.is_ascii_digit() { '#' } else { c }).collect();
-                    *why.entry(masked).or_default() += 1;
+                match undermere.grow(floor, &drawn, RunSeed(s), 1) {
+                    Err(e) => {
+                        let masked: String = e.to_string().chars().map(|c| if c.is_ascii_digit() { '#' } else { c }).collect();
+                        *why.entry(masked).or_default() += 1;
+                    }
+                    Ok(ctx) => bands.push(unused_band(ctx.terrain(), |t| tables.passable[t.index()])),
                 }
             }
             let failed: u32 = why.values().sum();
             eprintln!("{recipe}: {} of {seeds} first attempts grow, {:?} an attempt", seeds - u64::from(failed), started.elapsed() / seeds as u32);
+            bands.sort_unstable();
+            if let (Some(most), false) = (bands.last(), bands.is_empty()) {
+                let wide = bands.iter().filter(|b| **b >= BAND).count();
+                eprintln!("    unused rock along a side: median {}, most {most}, {wide} of {} floors {BAND} or wider", bands[bands.len() / 2], bands.len());
+            }
             let mut why: Vec<(String, u32)> = why.into_iter().collect();
             why.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
             for (reason, n) in why.iter().take(4) {

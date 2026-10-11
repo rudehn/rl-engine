@@ -393,6 +393,9 @@ mod tests {
         app.insert_resource(crate::run::StartFloor(2));
         let me = crate::testing::adventurer(&mut app);
         assert_eq!(here(&app), map_of(2), "begun on floor two");
+        // Nobody to break the call off: a jackal near the stair on some
+        // seeds is a fight, not what this asks.
+        crate::testing::clear_monsters(&mut app);
         let stone = crate::testing::make(&mut app, crate::waystone::WAYSTONE);
         crate::testing::give(&mut app, me, stone);
         crate::testing::use_thing(&mut app, me, stone);

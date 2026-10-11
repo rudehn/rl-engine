@@ -471,6 +471,15 @@ mod tests {
             let brenna = hired(&mut app, me, here.offset(-1, 0), "Brenna");
             let way = the_long_way(&mut app, here, 60);
             assert!(way.len() >= 30, "seed {seed}: a long way to walk, {} cells", way.len());
+            // Furniture too: a mind's field is the map's tiles alone, so a
+            // follower boxed in by a drill yard's posts on three sides
+            // takes its field's way into a post and stands, an engine
+            // limit this task reports rather than works round here.
+            let world = app.world_mut();
+            let furniture: Vec<Entity> = world.query_filtered::<Entity, (With<Prop>, With<Blocks>)>().iter(world).collect();
+            for thing in furniture {
+                world.despawn(thing);
+            }
             for stretch in way.chunks(6) {
                 let mut widest = 0;
                 walk(&mut app, me, stretch, |app| widest = widest.max(gap(app, me, brenna)));

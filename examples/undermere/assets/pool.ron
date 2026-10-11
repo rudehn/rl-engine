@@ -65,10 +65,15 @@
         "Upper Halls", "Cellars", "Watch Barracks", "Fungal Deeps", "Spider Warrens", "Old Mines",
         "Catacombs", "Sunken Library", "Drowned Cathedral", "Underlake", "Forge of Embers", "Ashen Galleries",
     ],
+    // Flavor sits a pick under the spec's table on floors one to nine,
+    // so a typical run sees under half the flavor pool: at the table's
+    // own counts it saw twenty-five of forty-three, nearly every entry
+    // its biomes allow. `dungeon.rs`'s pool test holds the median run
+    // under half.
     budgets: [
-        (floors: (1, 2), kind: "flavor", count: (3, 5)),
-        (floors: (3, 6), kind: "flavor", count: (3, 5)),
-        (floors: (7, 9), kind: "flavor", count: (2, 4)),
+        (floors: (1, 2), kind: "flavor", count: (2, 4)),
+        (floors: (3, 6), kind: "flavor", count: (2, 4)),
+        (floors: (7, 9), kind: "flavor", count: (2, 3)),
         (floors: (10, 10), kind: "flavor", count: (1, 2)),
         (floors: (1, 2), kind: "risk_reward", count: (1, 1), required: true),
         (floors: (3, 6), kind: "risk_reward", count: (1, 2), required: true),
