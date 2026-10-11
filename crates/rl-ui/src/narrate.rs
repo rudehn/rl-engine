@@ -31,7 +31,21 @@
 //! how the player's putting on, taking off and dropping read. A thing whose
 //! name takes no `a`, `chain mail` or `gauntlets`, carries [`MassNoun`],
 //! put on it by the game, since only the game knows which of its names are
-//! a stuff.
+//! a stuff. A proper name, one written with a capital or with `the` and a
+//! capital, is said as written either way, `the Widow's Fang`, by
+//! [`rl_core::noun`]'s one rule.
+//!
+//! Nothing the player cannot see is named. Whether it can is asked of
+//! [`PlayerSight::shows`], the question the map and every list of what is
+//! in sight ask, so a thing [`Concealed`] in the dark, its cell in sight
+//! but itself not, is `something` in the log as it is nothing on the map,
+//! whichever side of the line it stands on: "Something hits you." and
+//! "You shoot something."
+//!
+//! An ability is named once. A use that harmed someone is told by the harm
+//! line alone, "Your bolt hits the rat for 3.", which names the bolt and
+//! says what it did; "You use bolt on the rat." before it said the bolt
+//! twice. A use that harmed nothing keeps its own line.
 //!
 //! What using an item means, what a quest said, and how a game's own events
 //! read stay the game's words, but not its order to keep. A game writes a
@@ -292,16 +306,27 @@ pub struct Said {
     pub seen: bool,
     /// Whether the player could see whoever did it.
     ///
-    /// A fact, not a decision: whether the doer's own cell was in the
-    /// player's sight. [`speak`] is what turns it into `something`, and
-    /// only while [`Phrasebook::speak_unseen`] is off, since a game that
-    /// asked for the unseen to be narrated asked for it named.
+    /// A fact, not a decision: whether the player saw the doer itself, by
+    /// [`PlayerSight::shows`], the question the map and every list of what
+    /// is in sight ask, so the log never names a thing the map left out:
+    /// one out of sight, and one [`Concealed`] in the dark though its cell
+    /// is in sight. [`speak`] is what turns it into `something`, and only
+    /// while [`Phrasebook::speak_unseen`] is off, since a game that asked
+    /// for the unseen to be narrated asked for it named.
     ///
     /// Without this a shot out of an unlit room read as "The line droid
     /// shoots you", naming a thing the player had never seen, because
     /// `seen` answered yes on the grounds that the player was the one
     /// being shot. True by default, for a row with no doer to hide.
     pub who_seen: bool,
+    /// Whether the player could see whoever it was done to: the same fact
+    /// as [`who_seen`](Self::who_seen), for `{whom}`.
+    ///
+    /// Its own question, because a line is spoken for what the player saw
+    /// of either one: a shot the player loosed into the dark is told,
+    /// and what it struck there is `something` as surely as a shooter in
+    /// the dark is. True by default, for a row with nobody to hide.
+    pub whom_seen: bool,
     /// The whole turn it happened on.
     pub turn: u32,
 }
@@ -335,6 +360,7 @@ impl Said {
             at: None,
             seen: true,
             who_seen: true,
+            whom_seen: true,
             turn,
         }
     }
@@ -522,8 +548,14 @@ pub struct Witness<'w, 's> {
     turns: Res<'w, Turns>,
     registries: Option<Res<'w, Registries>>,
     abilities: Option<Res<'w, Abilities>>,
-    player: Query<'w, 's, (Entity, &'static Position, &'static Viewshed), With<Player>>,
+    /// What the player sees, asked as the map and every view ask it.
+    sight: PlayerSight<'w, 's>,
+    /// The map being played, which a thing that stands nowhere is judged
+    /// on.
+    map: Res<'w, WorldMap>,
     positions: Query<'w, 's, &'static Position>,
+    /// Which map a thing is on, and whether it hides in the dark.
+    looks: Query<'w, 's, (Option<&'static OnMap>, Has<Concealed>)>,
     /// Where each remnant's moment happened, for a remnant that did
     /// something in its own name.
     remnants: Query<'w, 's, &'static rl_bevy::Remnant>,
@@ -539,7 +571,7 @@ pub struct Witness<'w, 's> {
 
 impl Witness<'_, '_> {
     fn is_you(&self, e: Entity) -> bool {
-        self.player.single().is_ok_and(|(me, _, _)| me == e)
+        self.sight.viewer().is_some_and(|(me, _, _)| me == e)
     }
 
     /// Whether using `e` did something the engine landed: it carries a
@@ -571,17 +603,43 @@ impl Witness<'_, '_> {
     /// Whether the player's sight reaches `at`, and nothing else: no
     /// allowance for having been the one it happened to.
     fn sees(&self, at: Option<Point>) -> bool {
-        let (Ok((_, my_pos, sight)), Some(p)) = (self.player.single(), at) else { return false };
-        p == my_pos.0 || sight.can_see(p)
+        let (Some((_, from, sight)), Some(p)) = (self.sight.viewer(), at) else { return false };
+        p == from || sight.can_see(p)
     }
 
     /// Whether the player saw `at`, or was one of `these`.
     fn seen(&self, at: Option<Point>, these: &[Option<Entity>]) -> bool {
-        let Ok((me, my_pos, sight)) = self.player.single() else { return false };
-        if these.iter().flatten().any(|e| *e == me) {
+        these.iter().flatten().any(|e| self.is_you(*e)) || self.sees(at)
+    }
+
+    /// Whether the player sees `e` itself, which is whether a line may
+    /// name it: by [`PlayerSight::shows`], so the log names nothing the
+    /// map does not draw. A cell in sight is not enough, since a thing
+    /// [`Concealed`] in the dark stands in one unseen. The player always
+    /// sees itself.
+    ///
+    /// A remnant stands nowhere, and is seen or not where its moment
+    /// happened, as the actor it stands for would have been there.
+    fn shows(&self, e: Entity) -> bool {
+        if self.is_you(e) {
             return true;
         }
-        at.is_some_and(|p| p == my_pos.0 || sight.can_see(p))
+        match self.positions.get(e) {
+            Ok(at) => {
+                let (on, concealed) = self.looks.get(e).unwrap_or((None, false));
+                self.sight.shows(at.0, on, concealed)
+            }
+            Err(_) => self.remnants.get(e).is_ok_and(|r| self.shows_at(e, r.at)),
+        }
+    }
+
+    /// Whether the player would see `e` at `at` on the map being played:
+    /// where a remnant's moment happened, or the cell one that has gone to
+    /// another map left by, which is the last place the player could have
+    /// seen it.
+    fn shows_at(&self, e: Entity, at: Point) -> bool {
+        let concealed = self.looks.get(e).is_ok_and(|(_, concealed)| concealed);
+        self.sight.shows(at, Some(&OnMap(self.map.current())), concealed)
     }
 
     /// What `e` is called right now as a line names an actor, in the
@@ -662,12 +720,18 @@ pub fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witn
         said.seen = witness.seen(at, &[who, whom]);
         // Whether the line is spoken and whether the doer may be named are
         // two questions: the player is told it was shot either way, but a
-        // shooter it never saw is `something`.
-        said.who_seen = who.is_none_or(|e| witness.is_you(e) || witness.sees(witness.at(e)));
+        // shooter it never saw is `something`, and so is what it shot.
+        said.who_seen = who.is_none_or(|e| witness.shows(e));
+        said.whom_seen = whom.is_none_or(|e| witness.shows(e));
         said
     };
 
     let mut rows: Vec<Said> = Vec::new();
+    // Each use's row, by who used which ability, and each use whose harm
+    // was told by the ability's name: a use that harmed something is told
+    // by that harm alone, so the ability is named once.
+    let mut uses: Vec<(usize, Entity, rl_rules::AbilityId)> = Vec::new();
+    let mut harmed_by: Vec<(Entity, rl_rules::AbilityId)> = Vec::new();
     for ev in heard.abilities.read() {
         match ev {
             AbilityEvent::Used { user, ability, targets, .. } => {
@@ -687,6 +751,7 @@ pub fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witn
                 let mut said = say(phrase, Some(*user), whom);
                 said.named = witness.ability_name(*ability);
                 said.amount = others.len() as i32;
+                uses.push((rows.len(), *user, *ability));
                 rows.push(said);
             }
             AbilityEvent::Refused { user, ability, why } if witness.is_you(*user) => {
@@ -740,7 +805,7 @@ pub fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witn
         if !followed {
             said.at = Some(t.left);
             said.seen = witness.sees(Some(t.left));
-            said.who_seen = said.seen;
+            said.who_seen = witness.shows_at(t.actor, t.left);
         }
         rows.push(said);
     }
@@ -847,6 +912,9 @@ pub fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witn
             said.named = named;
             said.amount = d.dealt;
             rows.push(said);
+            if let (Reach::Ability(id), Some(by)) = (d.reach, d.hit.attacker) {
+                harmed_by.push((by, id));
+            }
             continue;
         }
         // A shot is not a blow: it came from somewhere the player may not
@@ -951,6 +1019,18 @@ pub fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witn
         said.at = tell.who.or(tell.whom).and_then(|e| witness.at(e));
         rows.push(said);
     }
+    // "You use bolt on the rat." and then "Your bolt hits the rat for 3."
+    // say the bolt twice; the harm line says all the first did and how
+    // much, so the use goes. A use that harmed nothing, a mend or a step
+    // through the air, keeps its own line, since it is the only one.
+    // Within the pass, where a use and what it landed are always found
+    // together, so nothing spoken earlier is ever taken back.
+    let unsaid: Vec<usize> = uses.iter().filter(|(_, user, ability)| harmed_by.contains(&(*user, *ability))).map(|(row, ..)| *row).collect();
+    let mut row = 0;
+    rows.retain(|_| {
+        row += 1;
+        !unsaid.contains(&(row - 1))
+    });
     // What each row's subjects are called, read now, inside the pass: by
     // the time the row is spoken the dead have been renamed as remains
     // and a thrown thing has merged into a stack.
@@ -1180,11 +1260,12 @@ pub const UNSEEN: &str = "something";
 /// Fills `template` for `said`: the text, and a span for each name that
 /// has a colour.
 ///
-/// `name_who` is whether `{who}` may be named; `false` makes it
-/// [`UNSEEN`]. The caller decides, because whether an unseen doer is named
-/// depends on [`Phrasebook::speak_unseen`], which is the presenter's
+/// `{who}` and `{whom}` the player did not see, by the row's
+/// [`who_seen`](Said::who_seen) and [`whom_seen`](Said::whom_seen), are
+/// [`UNSEEN`] unless `speak_unseen`. The caller passes it, because whether
+/// the unseen are named is [`Phrasebook::speak_unseen`], the presenter's
 /// setting and not the row's business.
-pub fn render(template: &str, said: &Said, names: &Names<'_, '_>, name_who: bool) -> (String, Vec<Span>) {
+pub fn render(template: &str, said: &Said, names: &Names<'_, '_>, speak_unseen: bool) -> (String, Vec<Span>) {
     let mut out = String::new();
     let mut spans = Vec::new();
     let mut rest = template;
@@ -1199,9 +1280,11 @@ pub fn render(template: &str, said: &Said, names: &Names<'_, '_>, name_who: bool
         rest = &rest[open + close + 1..];
         let capital = key.chars().next().is_some_and(|c| c.is_uppercase());
         let named = match key.to_ascii_lowercase().as_str() {
-            // An unseen doer is `something`, whatever it is called: the
-            // same word a nameless thing gets, so one template serves both.
-            "who" if !name_who => Some(names.unseen()),
+            // An unseen doer, or an unseen one it was done to, is
+            // `something`, whatever it is called: the same word a nameless
+            // thing gets, so one template serves both.
+            "who" if !(said.who_seen || speak_unseen) => Some(names.unseen()),
+            "whom" if !(said.whom_seen || speak_unseen) => Some(names.unseen()),
             "who" => Some(names.actor(said.who).or_called(&said.called[0])),
             "whom" => Some(names.actor(said.whom).or_called(&said.called[1])),
             "what" => Some(names.thing(said.what, &said.called_thing, Called::counted)),
@@ -1250,8 +1333,7 @@ pub fn speak(mut view: ResMut<NarrationView>, book: Res<Phrasebook>, names: Name
             Words::Own { text, tone } => Some((text.as_str(), *tone)),
         };
         let Some((template, tone)) = words else { continue };
-        let name_who = said.who_seen || book.speak_unseen;
-        let (text, spans) = render(template, &said, &names, name_who);
+        let (text, spans) = render(template, &said, &names, book.speak_unseen);
         if !text.is_empty() {
             log.push_spans(text, spans, tone, said.turn);
         }
@@ -1551,6 +1633,26 @@ mod tests {
         assert_eq!(say(loose), "You throw an ember.", "no stack is one");
     }
 
+    /// Several of a thing whose proper name runs through a connective of
+    /// its owner's are counted by what is owned: three of the queen's
+    /// crowns, not three queens.
+    #[test]
+    fn several_of_a_proper_name_through_a_connective_count_the_word_that_counts() {
+        let mut app = App::new();
+        let crowns = app.world_mut().spawn((Name::new("the Queen of Thorns's Crown"), Stack { key: 1, count: 3 })).id();
+        let one = app.world_mut().spawn(Name::new("the Queen of Thorns's Crown")).id();
+        let mut state: bevy::ecs::system::SystemState<Names> = bevy::ecs::system::SystemState::new(app.world_mut());
+        let names = state.get(app.world()).expect("every input is optional");
+        let say = |what: Entity, template: &str| {
+            let mut said = Said::new(Phrase::YouDrop, 0);
+            said.what = Some(what);
+            render(template, &said, &names, false).0
+        };
+        assert_eq!(say(crowns, "You throw {what}."), "You throw 3 Queen of Thorns's Crowns.");
+        assert_eq!(say(crowns, "You drop {your what}."), "You drop your 3 Queen of Thorns's Crowns.");
+        assert_eq!(say(one, "You drop {your what}."), "You drop the Queen of Thorns's Crown.");
+    }
+
     /// A game's answer to every blow, told in `TurnSet::Listen`: the last
     /// phase a game's reaction can land in before the record is read, so a
     /// collector that ran any earlier in the pass would miss it until the
@@ -1711,6 +1813,46 @@ mod tests {
         stage.app.world_mut().write_message(Intent::new(player, DropItem(sword)));
         stage.tick();
         assert_eq!(spoken(&stage, &["You drop your s"]), ["You drop your sword."]);
+    }
+
+    /// A thing with a proper name is said as written in every line about
+    /// the player's own, put on, taken off, dropped and stuck fast, and
+    /// when picked up: never `your Crown of Grubnak`, which read as though
+    /// the name were a kind and the player held one of them.
+    #[test]
+    fn a_thing_with_a_proper_name_is_said_as_written_and_never_as_yours() {
+        let mut stage = Stage::new(NarratorPlugin::default());
+        let player = stage.player;
+        let head = rl_rules::EquipShape::in_slot(rl_rules::SlotId::from_raw(0));
+        let crown = stage.app.world_mut().spawn((Item, Name::new("the Crown of Grubnak"), Wearable(head))).id();
+        stage.app.world_mut().entity_mut(player).insert((Inventory { items: vec![crown] }, Equipped(rl_rules::Equipment::with_slot_count(1))));
+        stage.tick();
+        stage.app.world_mut().write_message(Intent::new(player, Equip(crown)));
+        stage.tick();
+        stage.app.world_mut().write_message(Intent::new(player, Unequip(crown)));
+        stage.tick();
+        stage.app.world_mut().write_message(Intent::new(player, DropItem(crown)));
+        stage.tick();
+        stage.app.world_mut().write_message(Intent::new(player, PickUp));
+        stage.tick();
+        stage.app.world_mut().write_message(Intent::new(player, Equip(crown)));
+        stage.tick();
+        stage.app.world_mut().entity_mut(crown).insert(Stuck);
+        stage.app.world_mut().write_message(Intent::new(player, Unequip(crown)));
+        stage.tick();
+        let said = spoken(&stage, &["You", "The Crown"]);
+        assert_eq!(
+            said,
+            [
+                "You put on the Crown of Grubnak.",
+                "You take off the Crown of Grubnak.",
+                "You drop the Crown of Grubnak.",
+                "You pick up the Crown of Grubnak.",
+                "You put on the Crown of Grubnak.",
+                "The Crown of Grubnak will not come off.",
+            ],
+            "{said:#?}"
+        );
     }
 
     /// The player strikes a slime and the slime's mind strikes back in the
@@ -1940,6 +2082,7 @@ mod tests {
         assert!(mine.contains(&"Your ash rod hits the rat for 4.".to_string()), "the rod, named: {mine:#?}");
         assert!(mine.contains(&"Your bolt hits the rat for 3.".to_string()), "the ability, named: {mine:#?}");
         assert!(!mine.iter().any(|l| l.starts_with("You hit")), "neither reads as a blow: {mine:#?}");
+        assert!(!mine.iter().any(|l| l.starts_with("You use bolt")), "the bolt is named once, by what it did: {mine:#?}");
 
         // The other perspectives, as the pipeline reports them.
         let world = stage.app.world_mut();
@@ -1948,6 +2091,37 @@ mod tests {
         stage.tick();
         let theirs = spoken(&stage, &["The rat"]);
         assert_eq!(theirs, ["The rat's bolt hits you for 2.", "The rat's ash rod hits you, to no effect."], "{theirs:#?}");
+    }
+
+    /// An ability is named once: a bolt that struck is told by the harm it
+    /// did, and a burst that came down on nobody, harming nothing, by its
+    /// use, since that is the only line it has. The same pair from the
+    /// rat's side reads the same way.
+    #[test]
+    fn a_use_that_harms_is_told_by_its_harm_alone_and_one_that_harms_nothing_by_its_use() {
+        use crate::view::target::harness::{abilities, arm};
+        use rl_bevy::{AbilitiesPlugin, AbilityEvent, AddEngineEffects, Use};
+        let mut stage = Stage::new_with((AbilitiesPlugin, rl_bevy::EffectsPlugin, NarratorPlugin::default()), |app| {
+            app.add_engine_effects();
+            abilities(app);
+        });
+        let (bolt, burst, _) = arm(&mut stage);
+        let (player, kind) = (stage.player, stage.kind);
+        let rat = stage.actor("rat", 'r', 3, 0);
+        stage.tick();
+        stage.app.world_mut().write_message(Intent::new(player, Use { ability: bolt, aim: stage.at.offset(3, 0) }));
+        stage.tick();
+        stage.app.world_mut().write_message(Intent::new(player, Use { ability: burst, aim: stage.at.offset(0, -4) }));
+        stage.tick();
+        assert_eq!(spoken(&stage, &["You", "Your"]), ["Your bolt hits the rat for 3.", "You use burst."], "{:#?}", lines(&stage));
+
+        // The rat's side, as the pipeline reports a use and the harm it
+        // landed in one pass.
+        let world = stage.app.world_mut();
+        world.write_message(AbilityEvent::Used { user: rat, ability: bolt, aim: stage.at, targets: vec![player] });
+        world.write_message(DamageEvent::arriving(player, rl_rules::Hit::by(rat, kind, 2), Reach::Ability(bolt)));
+        stage.tick();
+        assert_eq!(spoken(&stage, &["The rat"]), ["The rat's bolt hits you for 2."], "{:#?}", lines(&stage));
     }
 
     /// A heal is told as a mend when it restored something and not at all
@@ -2056,6 +2230,57 @@ mod tests {
 
         let said = spoken(&stage, &["Something", "The line droid"]);
         assert_eq!(said, vec!["Something shoots you for 3.".to_string()], "spoken, but not named: {said:#?}");
+    }
+
+    /// A goblin [`Concealed`] in the dark stands in a cell the player sees
+    /// and is not itself seen, so every line that would name it, as the
+    /// one who did it or the one it was done to, calls it `something`, as
+    /// the map draws nothing there; beside the player it is seen and
+    /// named, and a game that speaks the unseen names it anyway.
+    #[test]
+    fn a_concealed_actor_in_the_dark_is_never_named_by_any_line_until_it_is_seen() {
+        let mut stage = Stage::new_with(NarratorPlugin::default(), |app| {
+            app.add_plugins(LightingPlugin);
+            let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).expect("the player");
+            app.world_mut().entity_mut(player).insert(DarkSight(6));
+        });
+        let (player, kind) = (stage.player, stage.kind);
+        let rat = stage.actor("rat", 'r', 3, 0);
+        let goblin = stage.actor("goblin", 'g', 4, 0);
+        stage.app.world_mut().entity_mut(goblin).insert((Concealed, Health::full(40)));
+        stage.tick();
+        assert!(stage.app.world().get::<Viewshed>(player).expect("a viewshed").can_see(stage.at.offset(4, 0)), "its cell is in sight");
+
+        let world = stage.app.world_mut();
+        world.write_message(DamageEvent::new(player, rl_rules::Hit::by(goblin, kind, 3)));
+        world.write_message(Missed { attacker: goblin, target: player, with: None, reach: Reach::Melee });
+        world.write_message(DamageEvent::arriving(goblin, rl_rules::Hit::by(player, kind, 3), Reach::Shot));
+        world.write_message(DamageEvent::new(rat, rl_rules::Hit::by(goblin, kind, 3)));
+        stage.tick();
+        let left = stage.at.offset(4, 0);
+        stage.app.world_mut().write_message(Travelled { actor: goblin, from: MapId::SURFACE, left, to: MapId(3), after: None });
+        stage.tick();
+        let said = spoken(&stage, &["Something", "You", "The goblin"]);
+        assert_eq!(
+            said,
+            ["Something misses you.", "Something hits you for 3.", "You shoot something for 3.", "Something hits the rat for 3.", "Something leaves."],
+            "{:#?}",
+            lines(&stage)
+        );
+        assert!(!lines(&stage).iter().any(|(t, _)| t.contains("goblin")), "never named: {:#?}", lines(&stage));
+
+        stage.app.world_mut().entity_mut(goblin).insert(Position(stage.at.offset(1, 0)));
+        stage.tick();
+        stage.app.world_mut().write_message(DamageEvent::new(player, rl_rules::Hit::by(goblin, kind, 3)));
+        stage.tick();
+        assert!(spoken(&stage, &["The goblin"]).contains(&"The goblin hits you for 3.".to_string()), "beside the player it is seen");
+
+        stage.app.world_mut().entity_mut(goblin).insert(Position(left));
+        stage.app.world_mut().resource_mut::<Phrasebook>().speak_unseen = true;
+        stage.tick();
+        stage.app.world_mut().write_message(DamageEvent::arriving(goblin, rl_rules::Hit::by(player, kind, 3), Reach::Shot));
+        stage.tick();
+        assert!(spoken(&stage, &["You shoot"]).contains(&"You shoot the goblin for 3.".to_string()), "spoken unseen, named: {:#?}", lines(&stage));
     }
 
     /// Walking into someone whose one offer has a price brings up the

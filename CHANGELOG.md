@@ -6,6 +6,11 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The narrator never names what the player cannot see. `Said::who_seen` is now asked of `PlayerSight::shows`, the question the map asks, rather than of the doer's cell alone, so an actor `Concealed` in the dark in a cell the player sees is `something` in the log as it is nothing on the map; and the new `Said::whom_seen` asks the same of whom it was done to, so a shot into the dark is "You shoot something for 3.".
+  `narrate::render`'s last argument is now `speak_unseen`, the `Phrasebook` setting, where it was whether `{who}` may be named. To change: a game that calls `render` passes `book.speak_unseen`; a game that rewrites a row to name an unseen actor sets `whom_seen` beside `who_seen` when the actor is `{whom}`.
+  An ability that harmed someone is told by its harm line alone, "Your bolt hits the rat for 3.", without "You use bolt on the rat." before it; a use that harmed nothing keeps its own line.
+  A proper name, written with a capital or with `the` and a capital, is said as written by `noun::owned`, "the Widow's Fang" and never "your Widow's Fang", and `noun::plural` counts what a proper name's owner owns, "the Queen of Thorns's Crown" to "Queen of Thorns's Crowns".
+
 - `Dress` no longer shuts a slot in. It counted a slot as blocking and let it go from the area's count of regions, so the things laid after it could close round it with the count unchanged, and a slot holding an item, or a thing a body must stand beside to use, was left where no mover reaches. Every thing that blocks is now taken back as well when it leaves any slot laid so far, its own included, with no clear cell straight beside it. The count of regions still joins cells orthogonally, which is the movers' eight-way rule read strictly: a diagonal between two clear cells passes two cells that are clear too, so the count holds whether a mover passes the corner of a thing standing, as the move resolver does, or declines it, as a mind does. Task 8's property now floods every dressed area eight ways from its openings and finds every cell a body can stand on reached, every slot from a cell beside it.
   A game's dressed rooms may lay a thing or two fewer where a dense dressing crowded one in, so a seed's furniture can differ.
 
