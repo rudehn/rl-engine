@@ -147,6 +147,20 @@
         (name: "ash", shapes: [("cave", 3), ("small cave", 3)]),
         (name: "flows", shapes: [("long cave", 4), ("cave", 2), ("tunnel", 1)]),
         (name: "vents", shapes: [("small cave", 4), ("pocket", 3), ("tunnel", 2)]),
+        // What breaks the one technique of a floor, at low weight, so no
+        // shape tells a player where they are: rooms dug into the caves of
+        // the Fungal Deeps, the Spider Warrens, the Underlake and the
+        // Ashen Galleries, and caves broken into the halls of the
+        // Catacombs, the Sunken Library and the Drowned Cathedral. One of
+        // each to a biome, since an area's district picks its dressings
+        // from its own biome's list.
+        (name: "grotto diggings", shapes: [("room", 3), ("chamber", 1), ("corridor", 2)]),
+        (name: "warren diggings", shapes: [("room", 3), ("chamber", 1), ("corridor", 2)]),
+        (name: "lake diggings", shapes: [("room", 3), ("chamber", 1), ("corridor", 2)]),
+        (name: "ash diggings", shapes: [("room", 3), ("chamber", 1), ("corridor", 2)]),
+        (name: "crypt breach", shapes: [("pocket", 3), ("small cave", 2), ("crawlway", 1)]),
+        (name: "library breach", shapes: [("pocket", 3), ("small cave", 2), ("crawlway", 1)]),
+        (name: "cathedral breach", shapes: [("pocket", 3), ("small cave", 2), ("crawlway", 1)]),
         // The throne floors.
         (name: "throne halls", shapes: [("hall", 3), ("room", 2), ("corridor", 2)]),
         (name: "hollow", shapes: [("cave", 3), ("large cave", 2), ("small cave", 2)]),
@@ -213,13 +227,13 @@
         // follows round three barriers; or a knot of small caves.
         (
             name: "grottoes", size: (100, 56), open_pct: 42, patience: 300, districts_per_10k: 6,
-            districts: [("grottoes", 1)],
+            districts: [("grottoes", 4), ("grotto diggings", 1)],
             loops: (min_detour: 24, max: 6),
             require: (open_pct: (36, 62), areas: [("large cave", 3)], loops: 2, dead_end_pct: 55, route: 34),
         ),
         (
             name: "band", size: (120, 40), open_pct: 40, patience: 300, districts_per_10k: 7,
-            districts: [("band", 1)],
+            districts: [("band", 4), ("grotto diggings", 1)],
             barriers: [
                 (from: (25, 0), to: (25, 60), chance_pct: 100, jitter_pct: 3),
                 (from: (50, 40), to: (50, 100), chance_pct: 100, jitter_pct: 3),
@@ -230,7 +244,7 @@
         ),
         (
             name: "knot", size: (96, 54), open_pct: 36, patience: 300, districts_per_10k: 9,
-            districts: [("knot", 1)],
+            districts: [("knot", 4), ("grotto diggings", 1)],
             loops: (min_detour: 12, max: 12),
             require: (open_pct: (30, 60), areas: [("small cave", 8)], loops: 5, dead_end_pct: 45, route: 32),
         ),
@@ -239,13 +253,13 @@
         // a nest of large caves among them.
         (
             name: "warren", size: (96, 54), open_pct: 30, patience: 300, districts_per_10k: 9,
-            districts: [("warren", 1)],
+            districts: [("warren", 4), ("warren diggings", 1)],
             loops: (min_detour: 30, max: 3),
             require: (open_pct: (24, 60), areas: [("small cave", 6)], loops: 1, dead_end_pct: 60, route: 32),
         ),
         (
             name: "nest", size: (100, 56), open_pct: 34, patience: 300, districts_per_10k: 8,
-            districts: [("nest", 2), ("warren", 3)],
+            districts: [("nest", 4), ("warren", 6), ("warren diggings", 1)],
             loops: (min_detour: 30, max: 4),
             require: (open_pct: (28, 60), areas: [("large cave", 2), ("small cave", 4)], loops: 1, dead_end_pct: 60, route: 34),
         ),
@@ -254,13 +268,13 @@
         // or a deep seam of caves split by a barrier, chambers rarer.
         (
             name: "workings", size: (100, 56), open_pct: 40, patience: 300, districts_per_10k: 8,
-            districts: [("workings", 1)],
+            districts: [("workings", 4), ("seam", 1)],
             loops: (min_detour: 14, max: 10),
             require: (open_pct: (30, 60), areas: [("chamber", 4)], loops: 5, dead_end_pct: 45, route: 34),
         ),
         (
             name: "deep seam", size: (100, 56), open_pct: 36, patience: 300, districts_per_10k: 8,
-            districts: [("seam", 1)],
+            districts: [("seam", 4), ("workings", 1)],
             barriers: [(from: (15, 50), to: (75, 50), chance_pct: 100, jitter_pct: 8)],
             loops: (min_detour: 20, max: 6),
             require: (open_pct: (30, 60), areas: [("cave", 3)], loops: 2, dead_end_pct: 55, route: 34),
@@ -270,7 +284,7 @@
         // ossuary halls and crosses with galleries between.
         (
             name: "grid", size: (96, 54), open_pct: 36, patience: 300, districts_per_10k: 9,
-            districts: [("crypts", 1)],
+            districts: [("crypts", 4), ("crypt breach", 1)],
             loops: (min_detour: 24, max: 6),
             require: (open_pct: (24, 60), areas: [("crypt", 12)], loops: 2, dead_end_pct: 70, route: 32),
         ),
@@ -285,13 +299,13 @@
         // reading rooms round them.
         (
             name: "stacks", size: (100, 56), open_pct: 36, patience: 300, districts_per_10k: 8,
-            districts: [("stacks", 1)],
+            districts: [("stacks", 4), ("library breach", 1)],
             loops: (min_detour: 20, max: 8),
             require: (open_pct: (30, 60), areas: [("stack", 5)], loops: 3, dead_end_pct: 50, route: 34),
         ),
         (
             name: "atrium", size: (96, 54), open_pct: 42, patience: 300, districts_per_10k: 8,
-            districts: [("atrium", 1)],
+            districts: [("atrium", 4), ("library breach", 1)],
             loops: (min_detour: 24, max: 6),
             require: (open_pct: (30, 60), areas: [("great cross", 1), ("reading room", 4)], loops: 2, dead_end_pct: 55, route: 32),
         ),
@@ -300,13 +314,13 @@
         // or chapels round a cloister garth.
         (
             name: "nave", size: (104, 58), open_pct: 46, patience: 300, districts_per_10k: 7,
-            districts: [("nave", 1)],
+            districts: [("nave", 4), ("cathedral breach", 1)],
             loops: (min_detour: 24, max: 6),
             require: (open_pct: (30, 62), areas: [("nave", 2)], loops: 2, dead_end_pct: 55, route: 35),
         ),
         (
             name: "cloister", size: (100, 56), open_pct: 40, patience: 300, districts_per_10k: 8,
-            districts: [("cloister", 1)],
+            districts: [("cloister", 4), ("cathedral breach", 1)],
             barriers: [(from: (35, 50), to: (65, 50), chance_pct: 100, jitter_pct: 6)],
             loops: (min_detour: 20, max: 8),
             require: (open_pct: (28, 60), areas: [("chapel", 5)], loops: 3, dead_end_pct: 55, route: 34),
@@ -316,13 +330,13 @@
         // over most of the floor.
         (
             name: "shore", size: (104, 58), open_pct: 42, patience: 300, districts_per_10k: 7,
-            districts: [("shore", 1)],
+            districts: [("shore", 4), ("lake diggings", 1)],
             loops: (min_detour: 24, max: 6),
             require: (open_pct: (24, 62), areas: [("cave", 3)], loops: 1, dead_end_pct: 60, route: 35),
         ),
         (
             name: "archipelago", size: (104, 58), open_pct: 46, patience: 300, districts_per_10k: 6,
-            districts: [("islands", 1)],
+            districts: [("islands", 4), ("lake diggings", 1)],
             loops: (min_detour: 24, max: 6),
             require: (open_pct: (20, 62), areas: [("large cave", 3)], loops: 1, dead_end_pct: 60, route: 35),
         ),
@@ -346,13 +360,13 @@
         // round many small vents.
         (
             name: "flows", size: (104, 58), open_pct: 38, patience: 300, districts_per_10k: 7,
-            districts: [("flows", 1)],
+            districts: [("flows", 4), ("ash diggings", 1)],
             loops: (min_detour: 24, max: 6),
             require: (open_pct: (28, 60), areas: [("long cave", 3)], loops: 2, dead_end_pct: 55, route: 35),
         ),
         (
             name: "vents", size: (96, 54), open_pct: 34, patience: 300, districts_per_10k: 9,
-            districts: [("vents", 1)],
+            districts: [("vents", 4), ("ash diggings", 1)],
             loops: (min_detour: 20, max: 8),
             require: (open_pct: (26, 60), areas: [("small cave", 8)], loops: 3, dead_end_pct: 55, route: 32),
         ),
