@@ -8,7 +8,7 @@
 //! lock its own floor's key, drops that key and a sealed vault's lever on
 //! cells walked to from the way in without passing a lock, and hides a
 //! drowned reliquary's causeway as the deep water round it, an engine
-//! [`Secret`](rl_engine::rl_mapgen::Secret) spotted as any hidden door is.
+//! [`Secret`] spotted as any hidden door is.
 //!
 //! When a floor is first entered, [`spawn_vault_marks`] fills each piece's
 //! `Mark`s by one vocabulary, whichever piece drew them: [`SLEEPER`] a
@@ -139,7 +139,7 @@ impl VaultTiles {
 /// Finishes a floor's vaults once it is built: a locked vault's lock asks
 /// for its own floor's [`vault_key`](crate::content::vault_key), so a key
 /// opens its own vault and no other; the key and a sealed vault's lever
-/// are dropped where [`fixture_cell`] says; and every [`CAUSEWAY`] mark is
+/// are dropped where `fixture_cell` says; and every [`CAUSEWAY`] mark is
 /// hidden as the deep water round it, found as any secret is. Nothing on a
 /// place that is no floor or drew none of them.
 pub fn place_vault_fixtures(built: &mut PlaceBuild, tiles: &TileRegistry, prefabs: &Prefabs<MonsterDef>, seed: RunSeed, map: MapId) {

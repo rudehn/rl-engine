@@ -77,7 +77,7 @@ fn lay(commands: &mut Commands, way: Way, at: Point, map: MapId, to: Destination
 
 /// What the log says on entering `map`, the town or a floor: where the
 /// adventurer is, and what the place is like. `biome` is the drawn
-/// biome's own log name, [`BiomeDraws::of`]'s `name`, ignored for the
+/// biome's own log name, `BiomeDraws::of`'s `name`, ignored for the
 /// town and required for a floor.
 pub fn place_line(map: MapId, biome: Option<&str>) -> String {
     let Some(floor) = floor_of(map) else {

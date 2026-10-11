@@ -6,7 +6,7 @@
 //! stamped over a blank map of its own size, so the piece is the whole
 //! town and every run comes to the same one. A floor is grown, as
 //! Foundry's decks are, by the engine's accretion from a recipe of
-//! `assets/layout.ron`: its biome, drawn by [`biomes`], names the recipes
+//! `assets/layout.ron`: its biome, drawn by `biomes`, names the recipes
 //! it may be grown by, and the floor draws one. Rooms and halls behind
 //! doors, passages one or two wide, caves, and districts that mix them are
 //! all shapes in that file, so the Cellars' crawlways and the Old Mines'
@@ -421,7 +421,7 @@ pub(crate) fn registry() -> TileRegistry {
 
 /// Undermere's tiles, its pieces, how each of its places is built, and
 /// every floor's own biome, drawn once here and handed out by
-/// [`biome_of`](Self::biome_of).
+/// `biome_of`.
 pub struct Undermere {
     tiles: TileRegistry,
     prefabs: Prefabs<MonsterDef>,

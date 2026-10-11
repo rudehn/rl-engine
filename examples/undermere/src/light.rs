@@ -90,7 +90,7 @@ pub fn lantern_radius(floor: Option<u32>) -> i32 {
 /// hold: the engine boxes `Undermere` behind `PlaceRules` the moment a run
 /// begins, so nothing after that can ask it directly, and a system that
 /// reads this every pass, [`set_ambient`], must not rebuild it to ask
-/// either. Built once, by [`BiomeDraws::new`], off [`Undermere::biome_of`],
+/// either. Built once, by [`BiomeDraws::new`], off `Undermere::biome_of`,
 /// which is pure over the seed, so this is too.
 #[derive(Resource, Clone, Debug)]
 pub struct BiomeDraws(BTreeMap<u32, crate::dungeon::BiomeDraw>);
