@@ -286,12 +286,12 @@ mod tests {
                 };
                 for target in found {
                     let before_first = said(&app).len();
-                    app.world_mut().write_message(Interacted { actor: me, target, verb: read });
+                    app.world_mut().write_message(Interacted { actor: me, target, verb: read, thing: None });
                     app.update();
                     let first_read = said(&app)[before_first..].to_vec();
                     assert_eq!(first_read.len(), 1, "seed {s}, floor {f}: reading told something other than one line: {first_read:?}");
                     let before_second = said(&app).len();
-                    app.world_mut().write_message(Interacted { actor: me, target, verb: read });
+                    app.world_mut().write_message(Interacted { actor: me, target, verb: read, thing: None });
                     app.update();
                     let second_read = said(&app)[before_second..].to_vec();
                     // The log folds a line said twice running into the one,
@@ -306,7 +306,8 @@ mod tests {
     }
 
     /// A floor holding a piece `Writings::feelings` names says it on
-    /// arrival; one holding none of them says none of those lines.
+    /// arrival; one holding none of them says none of those lines. A hidden
+    /// trap of the same kind is no piece, and a floor does not give it away.
     #[test]
     fn a_floor_with_a_feeling_piece_says_it_on_arrival_and_one_without_says_none() {
         let (mut told_one, mut told_none) = (false, false);
@@ -324,8 +325,22 @@ mod tests {
                 let feeling_ids: Vec<PropId> = app.world().resource::<Writings>().feelings.iter().filter_map(|f| registries.props.id(&f.prop)).collect();
                 let world = app.world_mut();
                 let here = world.resource::<WorldMap>().current();
-                let holds_a_feeling_prop =
-                    world.query::<(&PropKind, &OnMap)>().iter(world).filter(|(_, on)| on.0 == here).any(|(k, _)| feeling_ids.contains(&k.0));
+                // A trap `traps.rs` lays is a prop of the same kind but no
+                // piece: it is hidden, so a floor never tells of it.
+                let laid: Vec<Point> = world
+                    .resource::<WorldMap>()
+                    .place(here)
+                    .expect("built")
+                    .spots
+                    .iter()
+                    .filter(|s| crate::traps::is_hidden_tag(s.tag))
+                    .map(|s| s.at)
+                    .collect();
+                let holds_a_feeling_prop = world
+                    .query::<(&PropKind, &Position, &OnMap)>()
+                    .iter(world)
+                    .filter(|(_, at, on)| on.0 == here && !laid.contains(&at.0))
+                    .any(|(k, ..)| feeling_ids.contains(&k.0));
                 if holds_a_feeling_prop {
                     assert!(said_a_feeling, "seed {s}, floor {f}: a feeling piece stands here, unannounced");
                     told_one = true;

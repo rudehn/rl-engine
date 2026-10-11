@@ -300,8 +300,10 @@ pub fn registries() -> Registries {
         stats,
         statuses,
         gases,
-        factions: Registry::from_defs(["adventurer", "beasts", "goblins", "undead", "dar", CAPTIVE, DISCORDANT, TOWNSFOLK, WILDLIFE].map(FactionDef::new).to_vec())
-            .unwrap(),
+        factions: Registry::from_defs(
+            ["adventurer", "beasts", "goblins", "undead", "dar", CAPTIVE, DISCORDANT, TOWNSFOLK, WILDLIFE].map(FactionDef::new).to_vec(),
+        )
+        .unwrap(),
         tags: tags(),
         slots: Registry::from_defs(["main hand", "off hand", "head", "body", "left finger", "right finger", "light"].map(SlotDef::new).to_vec()).unwrap(),
         ..Registries::default()
