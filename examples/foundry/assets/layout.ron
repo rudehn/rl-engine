@@ -49,7 +49,7 @@
 //                   A barrier a shift could lay from one edge of the
 //                   map to the opposite is refused; one cutting off a
 //                   corner is not, and the corner stays rock.
-//     loops:            (min_detour, max): the shortest detour in steps
+//     loops:             (min_detour, max): the shortest detour in steps
 //                        worth a hatch, and the most hatches
 //     require:           what the built deck must meet or be built again
 //       open_pct:     (at least, at most)

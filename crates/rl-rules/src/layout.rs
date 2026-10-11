@@ -108,8 +108,10 @@ use crate::content::ContentError;
 const MOST: i32 = 4096;
 
 /// The most a cave's visits may be, a hundred to a cell: far past where
-/// more visits change the cave, and few enough that a box of the largest
-/// sides is still drawn in moments.
+/// more visits change the cave. A ceiling against a slip of the keyboard
+/// and an overflow, not a promise of speed: a box of the largest sides at
+/// this many is billions of visits, while a cave a place would hold is
+/// drawn in moments even here.
 const MOST_VISITS_PCT: u32 = 10_000;
 
 /// Which of the engine's generators draws a shape, and its ranges, each
@@ -248,7 +250,9 @@ fn cell_at_share(pct: u32, side: i32) -> i32 {
 
 /// How near an edge a barrier's end may come and still leave a way round
 /// it: a cell inside the border, with a cell of clearance either side of
-/// a body, as `Accrete` grows.
+/// a body, as `Accrete` grows. The twin of `rl-mapgen`'s own, tied to the
+/// margin growth keeps; `rl-bevy`'s test of the two `may_cut`s fails when
+/// one moves without the other.
 const REACH: i32 = 2;
 
 impl BarrierDef {

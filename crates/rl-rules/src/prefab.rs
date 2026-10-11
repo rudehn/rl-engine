@@ -634,9 +634,9 @@ fn slot_name(name: &str, offset: i32) -> String {
 /// monster slot naming a role, against `sources` at every band in `bands`:
 /// the same fallback a real draw takes, in the order the prefabs are given
 /// and then glyph order. A dressing's slots are a prefab's, so a report
-/// takes the [`DressingDef`](crate::dressing::DressingDef)s as well. A slot with a fixed item or a fixed monster draws
-/// nothing to report; only what a game's tables might not cover is worth
-/// checking.
+/// takes the [`DressingDef`](crate::dressing::DressingDef)s as well. A
+/// slot with a fixed item or a fixed monster draws nothing to report; only
+/// what a game's tables might not cover is worth checking.
 ///
 /// One band per column serves item and monster slots alike, which assumes
 /// the game's item bands and monster bands agree, as Foundry's do; see
