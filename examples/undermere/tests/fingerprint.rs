@@ -230,8 +230,9 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [13_727_685_606_147_988_756, 9_501_009_517_867_497_147, 5_536_512_531_158_911_470],
-        "fingerprint tripwire: re-baselined for merging main's town into the grown floors (the floors are part 4's \
-         grown biomes, vaults and secrets, and Mereholt stands main's townsfolk, keepers and the tavern's candidates)"
+        [3_473_819_593_343_387_339, 6_813_372_197_080_327_372, 4_800_778_433_426_214_721],
+        "fingerprint tripwire: re-baselined once at the end of part 4 (the dungeon), skipped since its task 13: grown \
+         pieces and vaults, secrets, traps and flagstones, the lived-in floors and their wildlife, the flavor budgets, \
+         the recipes' open shares, the biomes' arrival lines and decor all move every floor of a run"
     );
 }
