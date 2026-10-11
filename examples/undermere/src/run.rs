@@ -164,10 +164,14 @@ impl ExtraPack {
 /// of Mereholt the person it wants to stand beside: `main.rs` reads it from
 /// `UNDERMERE_NEAR`, beside `UNDERMERE_START`. `camp` is a goblin camp's
 /// fire, `captive` a captive's shackles, `lair` the floor's mini-boss,
-/// `throne` the floor's boss, a [`role`] of `townsfolk.ron` that person in
-/// Mereholt (`smith`, `priest`, `child`, ...),
+/// `throne` the floor's boss, `secret` the first thing the floor hides in
+/// its walls, a [`role`] of `townsfolk.ron` that person in Mereholt
+/// (`smith`, `priest`, `child`, ...),
 /// [`candidates`](crate::mercenaries::NEAR_CANDIDATES) the swords for hire
-/// in its tavern, and anything else a monster of that name. Absent,
+/// in its tavern, and anything else a prop of that name, hidden or not (`dart
+/// plate`, `lever`), a tile of that name (`bridge`, `vault door`), or a
+/// monster of that name. `:N` after the name stands them `N` steps short
+/// of it rather than [`NEAR_STEPS`], `trapdoor:1` a step from it. Absent,
 /// nothing, which is every real run.
 ///
 /// The adventurer is warped along the way from where they arrived to it,
@@ -191,7 +195,11 @@ pub const NEAR_STEPS: usize = 4;
 /// somewhere it cannot be, a person below or anything else in Mereholt, or
 /// while the place holds nothing by that name.
 pub fn stand_near(world: &mut World) {
-    let Some(near) = world.get_resource::<StartNear>().map(|n| n.0.clone()) else { return };
+    let Some(asked) = world.get_resource::<StartNear>().map(|n| n.0.clone()) else { return };
+    let (near, short) = match asked.rsplit_once(':').map(|(name, n)| (name, n.parse::<usize>())) {
+        Some((name, Ok(n))) => (name.to_string(), Some(n.max(1))),
+        _ => (asked.clone(), None),
+    };
     let Some((me, at, here)) = world.query_filtered::<(Entity, &Position, &OnMap), With<Adventurer>>().iter(world).next().map(|(e, p, on)| (e, p.0, on.0))
     else {
         return;
@@ -209,17 +217,31 @@ pub fn stand_near(world: &mut World) {
         sought(world, &near, here)
     };
     let Some(target) = target else { return };
-    let steps = if person { 1 } else { NEAR_STEPS };
+    let steps = short.unwrap_or(if person { 1 } else { NEAR_STEPS });
     world.remove_resource::<StartNear>();
     let taken: Vec<Point> = world.query_filtered::<(&Position, &OnMap), With<Actor>>().iter(world).filter(|(_, on)| on.0 == here).map(|(p, _)| p.0).collect();
     let map = world.resource::<WorldMap>();
-    let (Some(from), Some(goal)) = (map.to_local(at), map.to_local(target)) else { return };
+    // What stands in a wall, a secret, is walked up to by the cells
+    // beside it, and the way ends on the one reached; anything else is
+    // walked up to and not onto.
+    let open = |p: Point| map.is_walkable(p) || map.opens(p).is_some();
+    let walled = !open(target);
+    let goals: Vec<Point> = if walled {
+        Direction::ALL.iter().map(|d| target + d.offset()).filter(|p| open(*p)).filter_map(|p| map.to_local(p)).collect()
+    } else {
+        map.to_local(target).into_iter().collect()
+    };
+    let Some(from) = map.to_local(at) else { return };
     let view = map.opening_view();
     let mut flood = DijkstraMap::covering(&view);
-    flood.build(&view, [goal], PathRules::default());
+    flood.build(&view, goals.iter().copied(), PathRules::default());
     let mut way = vec![from];
-    while let Some(next) = flood.descend(*way.last().expect("never empty")).filter(|n| *n != goal) {
+    while !goals.contains(way.last().expect("never empty")) {
+        let Some(next) = flood.descend(*way.last().expect("never empty")) else { break };
         way.push(next);
+    }
+    if !walled && way.len() > 1 {
+        way.pop();
     }
     let stand = way.iter().rev().skip(steps.saturating_sub(1)).map(|p| map.to_world(*p)).find(|p| !taken.contains(p));
     if let Some(stand) = stand {
@@ -299,7 +321,18 @@ fn sought(world: &mut World, near: &str, here: MapId) -> Option<Point> {
     match near {
         "camp" => return find_prop("fire"),
         "captive" => return find_prop("shackles"),
+        "secret" => return world.resource::<WorldMap>().secrets(here).first().map(|s| s.at),
         _ => {}
+    }
+    if let Some(at) = find_prop(near) {
+        return Some(at);
+    }
+    let map = world.resource::<WorldMap>();
+    if let Some(tile) = map.tables().names.iter().position(|n| n == near) {
+        let found = map.window_tiles().cells().find(|p| map.tile(*p).is_some_and(|t| t.index() == tile));
+        if found.is_some() {
+            return found;
+        }
     }
     let living: Vec<(Point, crate::bestiary::Kind)> = world
         .query_filtered::<(&Position, &OnMap, &crate::bestiary::Kind), With<Actor>>()
@@ -607,6 +640,30 @@ mod tests {
             assert!((1..=NEAR_STEPS as i32 + 1).contains(&far), "seed {s}: stood {far} from the boss");
             assert!(app.world().get_resource::<StartNear>().is_none(), "seed {s}: the ask is forgotten once answered");
         }
+    }
+
+    /// A photograph's ask names a secret, a prop or a tile as well as a
+    /// monster, and `:N` stands the adventurer that many steps short:
+    /// one step from the floor's first secret, and a few from its first
+    /// trap, hidden as it is.
+    #[test]
+    fn a_run_started_near_a_secret_or_a_trap_stands_the_steps_it_asks_short_of_it() {
+        use crate::testing::settle;
+        let mut app = headless(RunSeed(1));
+        app.insert_resource(StartFloor(3)).insert_resource(StartNear("secret:1".to_string()));
+        let me = adventurer(&mut app);
+        settle(&mut app);
+        let secret = app.world().resource::<WorldMap>().secrets(map_of(3)).first().map(|s| s.at).expect("floor three hides something");
+        assert_eq!(geometry::chebyshev(at(&app, me), secret), 1, "a step from the secret");
+        let mut app = headless(RunSeed(1));
+        app.insert_resource(StartFloor(3)).insert_resource(StartNear("dart plate".to_string()));
+        let me = adventurer(&mut app);
+        settle(&mut app);
+        let plate = app.world().resource::<Registries>().props.expect("dart plate");
+        let world = app.world_mut();
+        let plates: Vec<Point> = world.query::<(&Position, &PropKind)>().iter(world).filter(|(_, k)| k.0 == plate).map(|(p, _)| p.0).collect();
+        let far = plates.iter().map(|p| geometry::chebyshev(at(&app, me), *p)).min().expect("a dart plate on floor three");
+        assert!((1..=NEAR_STEPS as i32 + 1).contains(&far), "stood {far} from the plate");
     }
 
     /// A photograph's ask for a party hires that many, never more than the

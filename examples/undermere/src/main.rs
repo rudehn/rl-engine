@@ -8,7 +8,8 @@
 //! grows it by that recipe instead. For a picture of a deeper floor,
 //! `UNDERMERE_START=5` starts the run on floor five instead of in Mereholt,
 //! `UNDERMERE_NEAR=camp` stands the adventurer a few steps short of what it
-//! names there (`camp`, `captive`, `lair`, `throne` or a monster's name);
+//! names there (`camp`, `captive`, `lair`, `throne`, `secret`, or a prop's,
+//! a tile's or a monster's name, with `:N` for N steps short);
 //! without `UNDERMERE_START`, `UNDERMERE_NEAR=smith` stands them beside
 //! that person in Mereholt instead (any role of `townsfolk.ron`, `smith`,
 //! `priest`, `gatewarden`, `child`...), one step from their shop or their
