@@ -33,7 +33,9 @@
     // four, one does. Life only from floor six, and strength from floor two.
     (item: "potion of healing",       bands: (1, 10), weight: 25),
     (item: "potion of extra healing", bands: (1, 10), weight: 12),
-    (item: "potion of strength",      bands: (2, 10), weight: 10),
+    // Nine rather than ten since the hidden caches and the loose flagstones
+    // hold potions too: about four a run, as `finds.rs` holds it to.
+    (item: "potion of strength",      bands: (2, 10), weight: 9),
     (item: "potion of life",          bands: (6, 10), weight: 2),
     (item: "potion of haste",         bands: (1, 10), weight: 6),
     (item: "potion of fire immunity", bands: (1, 10), weight: 6),

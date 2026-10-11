@@ -249,14 +249,33 @@
     // Hidden plates: darts from the statues of a gallery, a vent of caustic
     // gas in a chamber's doorway, a vent of paralysing gas in a vestibule
     // that rouses what waits beyond, and embers under a tinder room's straw.
-    (name: "dart plate", glyph: '^', color: (r: 160, g: 150, b: 140), hidden: (spot: 15),
-     triggers: [(on: "entered", fires: 2, effects: [(kind: "Harm", args: (kind: "pierce", roll: "2d4"))])]),
+    // The dart plate and the two vents are also three of the seven traps
+    // `assets/hidden.ron` lays on a floor's corridors and doorways; the
+    // other four follow. Every trap fires once and stays sprung.
+    (name: "dart plate", glyph: '^', color: (r: 160, g: 150, b: 140), hidden: (spot: 20),
+     triggers: [(on: "entered", fires: 1, effects: [(kind: "Harm", args: (kind: "pierce", roll: "2d4"))])]),
     (name: "caustic vent", glyph: '^', color: (r: 130, g: 185, b: 95), hidden: (spot: 12),
      triggers: [(on: "entered", fires: 1, area: Burst(radius: 1), effects: [(kind: "Emit", args: (gas: "caustic", amount: 300))])]),
     (name: "paralysis vent", glyph: '^', color: (r: 200, g: 150, b: 200), hidden: (spot: 8),
      triggers: [(on: "entered", fires: 1, effects: [(kind: "Emit", args: (gas: "paralytic", amount: 200)), (kind: "Rouse", args: (radius: 10))])]),
     (name: "ember plate", glyph: '^', color: (r: 230, g: 130, b: 55), hidden: (spot: 15),
      triggers: [(on: "entered", fires: 1, area: Burst(radius: 1), effects: [(kind: "Ignite", args: (turns: 4))])]),
+    // The floor's own traps besides: a glyph that cries out and wakes the
+    // floor, a net that holds whoever is caught in it, a trapdoor to the
+    // floor below (`src/effects/moving.rs`'s one fall), and a jet of fire.
+    (name: "alarm glyph", glyph: ':', color: (r: 220, g: 120, b: 70), hidden: (spot: 16),
+     triggers: [(on: "entered", fires: 1, effects: [(kind: "WakeFloor")])]),
+    (name: "net trap", glyph: '"', color: (r: 175, g: 160, b: 120), hidden: (spot: 14),
+     triggers: [(on: "entered", fires: 1, effects: [(kind: "Inflict", args: (status: "webbed", turns: 4))])]),
+    (name: "trapdoor", glyph: '_', color: (r: 120, g: 95, b: 70), hidden: (spot: 12),
+     triggers: [(on: "entered", fires: 1, effects: [(kind: "Fall")])]),
+    (name: "fire jet", glyph: '^', color: (r: 255, g: 110, b: 40), hidden: (spot: 10),
+     triggers: [(on: "entered", fires: 1, effects: [(kind: "Harm", args: (kind: "fire", roll: "3d4"))])]),
+    // A loose flagstone with something put by under it, found and lifted:
+    // "open", since a container is opened, where "search" is a body's.
+    (name: "loose flagstone", glyph: ',', color: (r: 165, g: 155, b: 140), hidden: (spot: 10),
+     container: (contents: [(item: "gold coin", count: (0, 2)), (tag: "potion", count: (0, 1))], opened: (glyph: ',', color: (r: 110, g: 105, b: 95))),
+     offers: [(verb: "open", time: 100)]),
     // A sealed vault's lever, set in a wall somewhere else on its floor and
     // hidden until it is spotted; pulled, it raises the vault's gate.
     (name: "concealed lever", glyph: '/', color: (r: 175, g: 160, b: 125), hidden: (spot: 20), offers: [(verb: "pull", time: 100)]),

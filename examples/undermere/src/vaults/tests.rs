@@ -379,3 +379,33 @@ fn only_a_vault_piece_marks_a_sleeper_a_captive_or_a_causeway() {
         }
     }
 }
+
+/// A drowned reliquary's causeway is one secret: waited beside, the whole
+/// of it is found at once, every cell of it the causeway it was, and the
+/// log says so.
+#[test]
+fn the_sunken_causeway_is_found_whole_from_beside_one_cell_of_it() {
+    let (mut app, me, map) = on_the_floor_of("The Drowned Reliquary");
+    let causeway = app.world().resource::<WorldMap>().tables().names.iter().position(|n| n == "sunken causeway").expect("a tile");
+    let cells: Vec<rl_engine::rl_bevy::Secret> = app.world().resource::<WorldMap>().secrets(map).iter().filter(|s| s.is.index() == causeway).copied().collect();
+    assert!(cells.len() > 1, "a causeway of more than one cell");
+    assert!(cells.iter().all(|s| s.group == cells[0].group), "one group");
+    let world_map = app.world().resource::<WorldMap>();
+    let (shore, _) = cells
+        .iter()
+        .find_map(|s| Direction::CARDINALS.iter().map(|d| s.at + d.offset()).find(|p| world_map.is_walkable(*p)).map(|p| (p, s.at)))
+        .expect("a causeway cell beside the shore");
+    stand_on(&mut app, me, shore);
+    for _ in 0..20 {
+        pass_turns(&mut app, 1);
+        if app.world().resource::<WorldMap>().secrets(map).iter().all(|s| s.group != cells[0].group) {
+            break;
+        }
+    }
+    assert!(app.world().resource::<WorldMap>().secrets(map).iter().all(|s| s.group != cells[0].group), "found within twenty turns");
+    for s in &cells {
+        assert_eq!(tile_at(&app, map, s.at), "sunken causeway", "every cell of it at once");
+    }
+    let said = crate::testing::said(&app);
+    assert_eq!(said.iter().filter(|l| *l == "You make out a causeway just under the water.").count(), 1, "said once: {said:?}");
+}
