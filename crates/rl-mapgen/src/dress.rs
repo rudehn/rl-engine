@@ -552,8 +552,6 @@ mod tests {
         bounds.cells().filter(|p| !inner.contains(*p) && !corner(*p)).collect()
     }
 
-    /// How many regions `cells`, less those in `blocked`, make, joined
-    /// orthogonally.
     /// How many of the regions `cells` and the `ways` beside them leave,
     /// less `blocked`, hold a cell of `cells`, joined orthogonally.
     fn pieces(cells: &[Point], ways: &[Point], blocked: &[Point]) -> usize {
@@ -580,6 +578,8 @@ mod tests {
         count
     }
 
+    /// How many regions `cells`, less those in `blocked`, make, joined
+    /// orthogonally.
     fn regions(cells: &[Point], blocked: &[Point]) -> usize {
         let blocked: BTreeSet<&Point> = blocked.iter().collect();
         let open: BTreeSet<Point> = cells.iter().copied().filter(|c| !blocked.contains(c)).collect();
