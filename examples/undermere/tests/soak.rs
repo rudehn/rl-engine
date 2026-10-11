@@ -1027,6 +1027,19 @@ fn delve(seed: u64, plan: Plan) -> Delve {
                 .map(|(p, _, name, side)| format!("{} at {:?} of {:?}", name.as_str(), p.0, side.map(|s| s.0)))
                 .collect();
             eprintln!("    beside them: {beside:?}");
+            if let (Some(at), Some(down)) = (at, ways.iter().find(|(_, w)| *w == Way::Down).map(|(p, _)| *p))
+                && let Some(dir) = toward(world, at, &[down], &BTreeSet::new())
+            {
+                let cell = at + dir.offset();
+                let map = world.resource::<WorldMap>();
+                let tile = map.tile(cell).map(|t| map.tables().names[t.index()].clone());
+                let there: Vec<String> = world
+                    .iter_entities()
+                    .filter(|e| e.get::<Position>().is_some_and(|p| p.0 == cell))
+                    .map(|e| format!("{:?} {} parts", e.get::<Name>().map(|n| n.as_str().to_string()), e.archetype().components().len()))
+                    .collect();
+                eprintln!("    the way down goes {dir:?} onto {tile:?} {:?}, lock {:?}, with {there:?} there", cell, world.resource::<WorldMap>().lock(cell));
+            }
         }
         let level = |world: &World, on: Entity| world.get::<Enchant>(on).map(|e| e.0.level);
         let into = match choice {

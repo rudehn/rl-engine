@@ -41,7 +41,10 @@
 #![enable(implicit_some)]
 (
     secret_doors: (from: 2, count: (1, 3), spot: 6),
-    hidden_rooms: (count: (0, 2), spot: 5),
+    // Eight to a door's six: a hidden room's door ends a dead end, which
+    // is walked past far less than a loop is, and at five the soak found
+    // one room in six against a third of the doors.
+    hidden_rooms: (count: (0, 2), spot: 8),
     traps: (
         counts: [
             (floors: (1, 1), count: (0, 1)),
