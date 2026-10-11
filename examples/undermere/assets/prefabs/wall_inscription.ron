@@ -1,0 +1,18 @@
+// A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
+// stands for; see `brazier.ron` for the full field list.
+//
+// A line of the drowned kingdom's history carved where a wall stands over
+// it, stood by `decor::WallInscriptions` on any floor its chance lands
+// on. `src/writings.rs` gives it a line of `assets/writings.ron`'s own
+// inscriptions on the arrival that finds it, never one already given out
+// this run.
+(
+    name: "wall inscription",
+    ground: "hall floor",
+    rows: [
+        "i",
+    ],
+    legend: {
+        'i': Prop("wall inscription"),
+    },
+)

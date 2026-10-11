@@ -39,6 +39,7 @@ use crate::run::Adventurer;
 use crate::stairs::Way;
 use crate::tally::{Counted, Tally};
 use crate::vaults::VaultKey;
+use crate::writings::WritingsProgress;
 
 /// Bump when a kind's shape below changes so an old save would parse
 /// wrongly.
@@ -66,7 +67,8 @@ pub fn register(app: &mut App) {
         .save_state::<Lore>()
         .save_state::<MonsterLore>()
         .save_state::<crate::vaults::lifts::RisingFloods>()
-        .save_state::<Quests>();
+        .save_state::<Quests>()
+        .save_state::<WritingsProgress>();
 }
 // ANCHOR_END: register
 

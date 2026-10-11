@@ -55,4 +55,8 @@
     (monster: "dar blademaster", floors: (8, 9),   weight: 15, group: (1, 1)),
     (monster: "dar priestess",   floors: (8, 9),   weight: 10, group: (1, 1)),
     (monster: "dar battlemage",  floors: (8, 9),   weight: 10, group: (1, 1)),
+    // The lived-in dungeon's small life: never a fight, so a low weight
+    // and a small group are the whole of how they are tuned.
+    (monster: "moth",            floors: (1, 9),   weight: 8,  group: (1, 2)),
+    (monster: "blind cave rat",  floors: (3, 9),   weight: 8,  group: (1, 2)),
 ]

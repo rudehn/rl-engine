@@ -15,7 +15,8 @@
 //            tiles; with one it shoots whatever it sees in reach and strikes what is beside it
 //   armor:   optional; flat armor of its own, 0 when left out, added to what a trait gives
 //   faction: "beasts" | "goblins" | "undead" | "dar", or "adventurer" for what fights on the
-//            adventurer's side from the moment it is made; the dar fight only the adventurer
+//            adventurer's side from the moment it is made; the dar fight only the adventurer,
+//            and "wildlife" fights nobody, the small life that is never a fight at all
 //   traits:  names from `traits.ron`, each at most once, in the order the examine panel
 //            lists them; two that set the same single value are refused, naming both
 //   boss:    optional; true for the one whose death wins the run, false when left out
@@ -120,4 +121,11 @@
     // nothing. Nowhere in the spawn table, so it is never found, only made.
     (name: "spectral blade", glyph: '†', color: (0.72, 0.86, 1.0), hp: 1, attack: "1d3 slash", faction: "adventurer",
      traits: ["mindless", "swift", "deathless"], conjured: true),
+    // The lived-in dungeon's small life: `wildlife`, so it fights no
+    // side and none fights it, and `attack: "0 crush"` (a flat nought, which
+    // `DiceRoll` parses with no dice at all) so `balance::threat` reads
+    // it as nothing and killing one never scores. One hit is always its
+    // last.
+    (name: "moth", glyph: 'm', color: (0.85, 0.82, 0.7), hp: 1, attack: "0 crush", faction: "wildlife", traits: ["animal", "harmless", "flitting"]),
+    (name: "blind cave rat", glyph: 'r', color: (0.88, 0.86, 0.84), hp: 1, attack: "0 crush", faction: "wildlife", traits: ["animal", "harmless", "timid"]),
 ]

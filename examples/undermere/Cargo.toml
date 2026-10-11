@@ -17,6 +17,9 @@ rl-engine.workspace = true
 bevy.workspace = true
 rand = { workspace = true, features = ["std", "std_rng"] }
 serde.workspace = true
+# `src/writings.rs` reads `assets/writings.ron` itself: a plain struct of
+# lines, with no registry of named things to hang a `Named` impl on.
+ron.workspace = true
 
 [dev-dependencies]
 # Reads the typeface's character map, so the tests hold every glyph the game

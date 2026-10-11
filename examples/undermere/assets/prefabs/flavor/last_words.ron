@@ -25,14 +25,17 @@
 //                                           and fills itself
 //
 // A slumped skeleton beside a wall scratched with its last line: a party
-// that did not leave.
+// that did not leave. `src/writings.rs` gives the scratched words a line
+// of `assets/writings.ron`'s own on the arrival that finds them, never
+// one already given out this run.
 (
     name: "Last Words",
     ground: "hall floor",
     rows: [
-        "r",
+        "rw",
     ],
     legend: {
         'r': Prop("remains"),
+        'w': Prop("scratched words"),
     },
 )

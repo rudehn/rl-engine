@@ -1,0 +1,17 @@
+// A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
+// stands for; see `brazier.ron` for the full field list.
+//
+// A body left where a dead end took it, one cell, stood by
+// `decor::BloodTrail` on what the survey rated rather than any piece of
+// the pool: no line of its own, only the blood that still marks the way
+// to it.
+(
+    name: "fallen body",
+    ground: "hall floor",
+    rows: [
+        "r",
+    ],
+    legend: {
+        'r': Prop("remains"),
+    },
+)

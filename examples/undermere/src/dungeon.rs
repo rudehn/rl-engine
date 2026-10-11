@@ -168,10 +168,11 @@ impl Family {
         // "web" (Web-Choked Corners,
         // Silk Curtains), "rubble" (Collapsed Ceiling), "bones" (Bone
         // Scatter) and "flooded floor" and "moss" (Seep) are every
-        // flavor dressing of `assets/pool.ron`'s own "any biome" rows.
-        // Every band's list carries all five, whatever band stands on.
+        // flavor dressing of `assets/pool.ron`'s own "any biome" rows;
+        // "blood" is `decor::BloodTrail`'s, the same "any floor" reach.
+        // Every band but the throne's carries all six.
         match self {
-            Family::UpperHalls => &["door", "open door", "rubble", "hall wall", "hall floor", "web", "bones", "flooded floor", "moss"],
+            Family::UpperHalls => &["door", "open door", "rubble", "blood", "hall wall", "hall floor", "web", "bones", "flooded floor", "moss"],
             Family::FungalDeeps => &[
                 "door",
                 "open door",
@@ -184,6 +185,7 @@ impl Family {
                 "hall wall",
                 "hall floor",
                 "rubble",
+                "blood",
                 "bones",
                 "flooded floor",
             ],
@@ -203,6 +205,7 @@ impl Family {
                 "hall wall",
                 "hall floor",
                 "rubble",
+                "blood",
             ],
             Family::DrownedCathedral => &[
                 "door",
@@ -219,13 +222,14 @@ impl Family {
                 "hall floor",
                 "web",
                 "rubble",
+                "blood",
                 "bones",
                 "moss",
                 // `Fallen Bell`, the Drowned Cathedral's own fixed piece.
                 "flagstones",
             ],
             Family::ForgeOfEmbers => {
-                &["door", "open door", "lava", "forge wall", "ash", "hall wall", "hall floor", "web", "rubble", "bones", "flooded floor", "moss"]
+                &["door", "open door", "lava", "forge wall", "ash", "hall wall", "hall floor", "web", "rubble", "blood", "bones", "flooded floor", "moss"]
             }
             // Whichever of the three `FINAL_BOSSES` floor ten draws
             // paints its own hall beyond its wall and its floor: the
@@ -336,6 +340,8 @@ fn registry() -> TileRegistry {
             TileProps::wall("hall wall"),
             TileProps::floor("hall floor"),
             TileProps::floor("rubble"),
+            // `decor::BloodTrail`'s own, on any floor its chance lands on.
+            TileProps::floor("blood"),
             // The Cellars, floors one and two's other biome.
             TileProps::wall("cellar wall"),
             TileProps::floor("cellar floor"),
@@ -662,6 +668,22 @@ impl Undermere {
                 .then(Patches { name: "shafts", tile: t("moonlit marble"), on, count: (3, 5), size: (1, 1), phase: Phase::Finish }),
             Family::ForgeOfEmbers | Family::Throne => chain,
         };
+        // The lived-in dungeon's own, on any floor but the throne's: a
+        // body a dead end took, and a line of the kingdom's history
+        // carved where a wall stands over it. Most floors get neither.
+        let chain = if floor == FLOORS {
+            chain
+        } else {
+            chain
+                .then(crate::decor::BloodTrail {
+                    name: "blood trail",
+                    blood: t("blood"),
+                    body: self.prefabs.piece("fallen body")?,
+                    chance_pct: 35,
+                    max_cells: 5,
+                })
+                .then(crate::decor::WallInscriptions { name: "wall inscription", piece: self.prefabs.piece("wall inscription")?, chance_pct: 25 })
+        };
         Ok(if floor == FLOORS { chain } else { chain.then(Furnish { name: "chests", piece: self.prefabs.piece("chest")?, count: (1, 2) }) })
     }
 
@@ -733,12 +755,12 @@ impl PlaceRules for Undermere {
 }
 
 /// The way in and the way on, as far as the chain has chosen them.
-fn ways(ctx: &BaseContext) -> Vec<Point> {
+pub(crate) fn ways(ctx: &BaseContext) -> Vec<Point> {
     ctx.outputs().iter::<StartPoint>().map(|s| s.0).chain(ctx.outputs().iter::<ExitPoint>().map(|e| e.0)).collect()
 }
 
 /// The bounds of every piece stamped so far.
-fn pieces(ctx: &BaseContext) -> Vec<Rect> {
+pub(crate) fn pieces(ctx: &BaseContext) -> Vec<Rect> {
     ctx.outputs().iter::<Stamped>().map(|st| st.bounds).collect()
 }
 
@@ -746,12 +768,12 @@ fn pieces(ctx: &BaseContext) -> Vec<Rect> {
 /// block: the same cells `rl_mapgen::Dress` itself treats as blocking,
 /// whatever is put there, since neither pass knows that until the place's
 /// own arrival fills it.
-fn slots(ctx: &BaseContext) -> BTreeSet<Point> {
+pub(crate) fn slots(ctx: &BaseContext) -> BTreeSet<Point> {
     ctx.outputs().iter::<Stamped>().flat_map(|st| st.marks.iter().map(|(_, p)| *p)).collect()
 }
 
 /// Whether a body can stand on `p` of `ctx`'s terrain.
-fn walkable(ctx: &BaseContext, tables: &TileTables, p: Point) -> bool {
+pub(crate) fn walkable(ctx: &BaseContext, tables: &TileTables, p: Point) -> bool {
     ctx.terrain().get(p).is_some_and(|t| tables.walkable[t.index()])
 }
 

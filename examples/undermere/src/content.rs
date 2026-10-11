@@ -137,6 +137,10 @@ pub const DISCORDANT: &str = "discordant";
 /// shackled, neutral to every side, the adventurer's captors among them,
 /// until it is freed and put on the adventurer's own.
 pub const CAPTIVE: &str = "captive";
+/// The small life of the place: a moth, a blind cave rat, neutral to
+/// every side and never worth fighting, which `combat_rules` leaves off
+/// every `hostile` call for the same reason it leaves off [`CAPTIVE`].
+pub const WILDLIFE: &str = "wildlife";
 /// The cloud a potion of paralysis bursts into.
 pub const PARALYTIC: &str = "paralytic";
 /// The cloud a caustic vent breathes out, a risk-and-reward piece's own.
@@ -287,7 +291,8 @@ pub fn registries() -> Registries {
         stats,
         statuses,
         gases,
-        factions: Registry::from_defs(["adventurer", "beasts", "goblins", "undead", "dar", CAPTIVE, DISCORDANT].map(FactionDef::new).to_vec()).unwrap(),
+        factions: Registry::from_defs(["adventurer", "beasts", "goblins", "undead", "dar", CAPTIVE, DISCORDANT, WILDLIFE].map(FactionDef::new).to_vec())
+            .unwrap(),
         tags: tags(),
         slots: Registry::from_defs(["main hand", "off hand", "head", "body", "left finger", "right finger", "light"].map(SlotDef::new).to_vec()).unwrap(),
         ..Registries::default()
@@ -713,6 +718,9 @@ mod tests {
             ("chronicle", true),
             ("scratched words", false),
             ("adventurer's remains", false),
+            // `src/decor.rs`'s own ambient decor: a wall worth reading, laid
+            // by the survey rather than any piece.
+            ("wall inscription", false),
             // The risk-and-reward pieces', and what `src/vaults.rs` stands
             // down a spent one as.
             ("caged blade", true),
@@ -760,6 +768,7 @@ mod tests {
             "chronicle",
             "scratched words",
             "adventurer's remains",
+            "wall inscription",
             "caged blade",
             "caged staff",
             "caged ring",
@@ -830,6 +839,8 @@ mod tests {
         for other in ["adventurer", "beasts", "goblins", "undead", "dar"] {
             assert_eq!(at(CAPTIVE, other), Relation::Neutral, "a shackled captive and {other}");
             assert_eq!(at(other, CAPTIVE), Relation::Neutral, "{other} and a shackled captive");
+            assert_eq!(at(WILDLIFE, other), Relation::Neutral, "a moth or a cave rat and {other}");
+            assert_eq!(at(other, WILDLIFE), Relation::Neutral, "{other} and a moth or a cave rat");
         }
     }
 
