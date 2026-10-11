@@ -511,8 +511,8 @@ struct Memory {
     let_go: BTreeSet<Entity>,
 }
 
-/// How many blows in a row that take nothing from a foe make it one to
-/// leave alone.
+/// How many blows, throws or zaps in a row that take nothing from a foe
+/// make it one to leave alone.
 const FUTILE_BLOWS: u32 = 25;
 
 /// How many turns a shooter out of sight is still gone after.
@@ -543,7 +543,7 @@ fn decide(world: &mut World, me: Entity, memory: &mut Memory) -> Choice {
     let armory = world.resource::<Armory>().clone();
     let free = |t: &&Thing| !memory.refused.contains(&t.it) && !memory.never.contains(&t.it);
     let usable: Vec<&Thing> = view.pack.iter().filter(free).collect();
-    let choices = [heal(&view, &usable), strike(&view, memory), from_afar(&view, &usable, &armory), chores(&view, &usable, &armory, memory)];
+    let choices = [heal(&view, &usable), strike(&view, memory), from_afar(&view, &usable, &armory, memory), chores(&view, &usable, &armory, memory)];
     choices.into_iter().flatten().next().unwrap_or_else(|| walk(world, &view, memory))
 }
 
@@ -593,8 +593,8 @@ fn strike(view: &Sight, memory: &Memory) -> Option<Choice> {
 /// at a foe half beaten, and one not yet known, to know it; or a dart or a
 /// javelin at a foe five steps off or nearer. A staff used where it stands
 /// rather than aimed is used, once a foe is near.
-fn from_afar(view: &Sight, things: &[&Thing], armory: &Armory) -> Option<Choice> {
-    let foe = view.foes.iter().find(|f| (2..=7).contains(&f.far))?;
+fn from_afar(view: &Sight, things: &[&Thing], armory: &Armory, memory: &Memory) -> Option<Choice> {
+    let foe = view.foes.iter().find(|f| (2..=7).contains(&f.far) && !memory.untouchable.contains(&f.who))?;
     for t in things.iter().filter(|t| matches!(t.kind, Some("staff" | "wand")) && t.left != Some(0)) {
         let wanted = match t.known.as_deref() {
             None => true,
@@ -1036,6 +1036,15 @@ fn delve(seed: u64, plan: Plan) -> Delve {
         let health_of = |world: &World, who: Entity| world.get::<Health>(who).map_or(0, |h| h.current);
         let struck = match choice {
             Choice::Strike(_, foe) => Some((foe, health_of(world, foe))),
+            // A thing thrown or zapped at a foe that takes nothing from it
+            // is as futile as a blow: a foe behind a cage's bars is seen
+            // and never hit, and was thrown at for a whole delve.
+            Choice::Throw(_, at) | Choice::Zap(_, at) => world
+                .query_filtered::<(Entity, &Position), (With<Health>, Without<Prop>)>()
+                .iter(world)
+                .find(|(who, p)| p.0 == at && *who != me)
+                .map(|(foe, _)| foe)
+                .map(|foe| (foe, health_of(world, foe))),
             _ => None,
         };
         act(world, me, choice);
