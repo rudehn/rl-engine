@@ -360,6 +360,7 @@ impl Plugin for UndermerePlugin {
         app.add_systems(Turn, crate::mercenaries::release_own_kit.in_set(CleanupSet::Requeue));
         app.add_systems(Turn, crate::mercenaries::keep_hire_offered.in_set(TurnSet::Schedule));
         app.add_systems(Turn, crate::townsfolk::sense_beats.in_set(PerceiveSet::Annotate));
+        app.add_systems(Turn, crate::mercenaries::sense_shown_traps.in_set(PerceiveSet::Annotate));
         app.add_systems(Turn, crate::townsfolk::walk_rounds.in_set(TurnSet::Schedule));
         // A waystone: refused in Mereholt before its use is spent, the
         // adventurer's every turn spent kneeling once it is used, and the
