@@ -125,6 +125,11 @@ pub struct Hiding {
     traps: Traps,
     /// Loose flagstones in the rooms.
     flagstones: Flagstones,
+    /// The names of `assets/layout.ron`'s passage shapes, the corridors a
+    /// trap may stand in: read from the layout rather than written here,
+    /// so a corridor shape added there takes traps without a word here.
+    #[serde(skip)]
+    passages: BTreeSet<String>,
 }
 
 impl Hiding {
@@ -132,7 +137,13 @@ impl Hiding {
     /// its most or a chance past certain, naming the field: a typo there
     /// would otherwise hide nothing, or panic on the first floor built.
     pub fn load() -> Self {
-        let hiding: Self = ron::from_str(HIDDEN_RON).unwrap_or_else(|e| panic!("assets/hidden.ron: {e}"));
+        let mut hiding: Self = ron::from_str(HIDDEN_RON).unwrap_or_else(|e| panic!("assets/hidden.ron: {e}"));
+        hiding.passages = crate::dungeon::layout()
+            .shapes
+            .into_iter()
+            .filter(|shape| matches!(shape.kind, rl_engine::rl_rules::layout::ShapeKind::Passage { .. }))
+            .map(|shape| shape.name)
+            .collect();
         let mut ranges =
             vec![("secret_doors", hiding.secret_doors.count), ("hidden_rooms", hiding.hidden_rooms.count), ("flagstones", hiding.flagstones.count)];
         ranges.extend(hiding.traps.counts.iter().flat_map(|c| [("a band of traps' floors", c.floors), ("a band of traps", c.count)]));
@@ -188,7 +199,7 @@ impl Hiding {
         let traps = self.traps.counts.iter().find(|c| (c.floors.0..=c.floors.1).contains(&floor)).map_or((0, 0), |c| c.count);
         let kinds: Vec<char> = self.traps.kinds.iter().enumerate().filter(|(_, k)| k.on(floor)).map(|(i, _)| glyph(i)).collect();
         let traps = if kinds.is_empty() { (0, 0) } else { traps };
-        Some(LayHidden { traps, kinds, flagstones: self.flagstones.count, flagstone: glyph(self.traps.kinds.len()) })
+        Some(LayHidden { traps, kinds, flagstones: self.flagstones.count, flagstone: glyph(self.traps.kinds.len()), passages: self.passages.clone() })
     }
 }
 
@@ -238,6 +249,8 @@ pub struct LayHidden {
     flagstones: (u32, u32),
     /// A flagstone's mark.
     flagstone: char,
+    /// The shapes that are corridors, by name.
+    passages: BTreeSet<String>,
 }
 
 /// The fewest cells, Chebyshev, between two traps.
@@ -253,7 +266,7 @@ impl Pass<BaseContext> for LayHidden {
     }
 
     fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
-        let Some(ground) = Ground::read(ctx) else { return Ok(()) };
+        let Some(ground) = Ground::read(ctx, &self.passages) else { return Ok(()) };
         let mut cells: Vec<Point> = ground.trap_cells().into_iter().collect();
         cells.shuffle(ctx.rng());
         let count = ctx.rng().random_range(self.traps.0..=self.traps.1) as usize;
@@ -306,6 +319,8 @@ struct Ground {
     areas: Vec<Area>,
     /// Which of them is a room.
     room: Vec<bool>,
+    /// Which a corridor: grown as one of the layout's passage shapes.
+    corridor: Vec<bool>,
     /// Which a chokepoint.
     chokepoint: Vec<bool>,
     /// Which a hidden room: the dead end behind a secret.
@@ -318,8 +333,9 @@ struct Ground {
 }
 
 impl Ground {
-    /// Reads `ctx`; `None` for a floor the survey never measured.
-    fn read(ctx: &BaseContext) -> Option<Self> {
+    /// Reads `ctx`, whose corridors are the areas grown as one of
+    /// `passages`; `None` for a floor the survey never measured.
+    fn read(ctx: &BaseContext, passages: &BTreeSet<String>) -> Option<Self> {
         let survey = ctx.outputs().first::<Surveyed>()?.clone();
         let entry = ctx.outputs().first::<StartPoint>()?.0;
         let exit = ctx.outputs().first::<ExitPoint>().map(|e| e.0);
@@ -345,6 +361,7 @@ impl Ground {
         let room = areas.iter().map(|a| a.cells.iter().any(|c| rooms.iter().any(|r| r.contains(*c)))).collect();
         let facts = |a: &Area, read: fn(&rl_engine::rl_mapgen::AreaFacts) -> bool| survey.areas.get(a.index).is_some_and(read);
         let chokepoint = areas.iter().map(|a| facts(a, |f| f.chokepoint)).collect();
+        let corridor = areas.iter().map(|a| passages.contains(&a.shape)).collect();
         let behind: BTreeSet<usize> = ctx.outputs().iter::<Secret>().flat_map(|s| [s.joins.0, s.joins.1]).collect();
         let hidden = areas.iter().map(|a| facts(a, |f| f.dead_end) && behind.contains(&a.index)).collect();
         // A piece's own entries were drawn by hand, and a lock or a seal
@@ -356,15 +373,17 @@ impl Ground {
             .filter(|o| !matches!(o.join, Join::Locked(_) | Join::Sealed) && !pieces.contains(&o.areas.0) && !pieces.contains(&o.areas.1))
             .flat_map(|o| o.cells.iter().copied())
             .collect();
-        Some(Self { clear, far, areas, room, chokepoint, hidden, doorways, stamps })
+        Some(Self { clear, far, areas, room, corridor, chokepoint, hidden, doorways, stamps })
     }
 
     /// Every cell a trap may stand on: a corridor's, a chokepoint's, or a
-    /// doorway's or beside one, clear and far enough from the way in.
+    /// doorway's or beside one, clear and far enough from the way in. A
+    /// corridor is an area grown as a passage, and never just any area
+    /// that is no room, which on a floor of caves is every cave.
     fn trap_cells(&self) -> BTreeSet<Point> {
         let mut cells: BTreeSet<Point> = BTreeSet::new();
         for (i, area) in self.areas.iter().enumerate() {
-            if !self.room[i] || self.chokepoint[i] {
+            if self.corridor[i] || self.chokepoint[i] {
                 cells.extend(area.cells.iter().copied());
             }
         }
@@ -743,5 +762,44 @@ mod tests {
         let def = registries.props.get(registries.props.expect("loose flagstone"));
         let rows = &def.container.as_ref().expect("a container").contents;
         assert!(rows.iter().any(|r| r.min >= 1), "a row that always rolls something: {rows:?}");
+    }
+
+    /// On a floor of caves, a trap may stand only in a corridor, a
+    /// chokepoint or a doorway, never anywhere in a cave: two caves that
+    /// are neither, joined by a corridor that is not a chokepoint either,
+    /// take traps in the corridor and at its two mouths and nowhere else.
+    #[test]
+    fn on_a_floor_of_caves_a_trap_stands_only_in_a_corridor_a_chokepoint_or_a_doorway() {
+        use rl_engine::rl_mapgen::{AreaFacts, BaseContext, BuildContext};
+        let hiding = Hiding::load();
+        assert!(
+            hiding.passages.contains("corridor") && !hiding.passages.contains("cave"),
+            "the layout's corridors and none of its caves: {:?}",
+            hiding.passages
+        );
+        let tiles = crate::dungeon::registry();
+        let ground = tiles.expect("hall floor");
+        let mut ctx = BaseContext::blank(40, 12, tiles, ground);
+        let block = |x0: i32, x1: i32| -> Vec<Point> { (x0..x1).flat_map(|x| (1..11).map(move |y| Point::new(x, y))).collect() };
+        let corridor: Vec<Point> = (15..25).map(|x| Point::new(x, 5)).collect();
+        let area = |index: usize, shape: &str, cells: Vec<Point>| {
+            let bounds = Rect::new(cells[0].x, 1, cells.last().map_or(1, |p| p.x - cells[0].x + 1), 10);
+            Area { index, shape: shape.into(), district: "d".into(), cells, bounds, inner: bounds, entries: None }
+        };
+        ctx.emit(area(0, "cave", block(0, 15)));
+        ctx.emit(area(1, "corridor", corridor.clone()));
+        ctx.emit(area(2, "cave", block(25, 40)));
+        let mouths = [Point::new(14, 5), Point::new(25, 5)];
+        ctx.emit(Opening { cells: vec![mouths[0]], facing: Direction::East, areas: (0, 1), join: Join::Arch });
+        ctx.emit(Opening { cells: vec![mouths[1]], facing: Direction::East, areas: (1, 2), join: Join::Arch });
+        let facts = |dead_end: bool| AreaFacts { openings: 1, dead_end, chokepoint: false, junction: false, seclusion: 0 };
+        ctx.emit(Surveyed { areas: vec![facts(true), facts(false), facts(true)], loops: 0, open_pct: 100, route: None });
+        ctx.emit(StartPoint(Point::new(1, 1)));
+        let cells = Ground::read(&ctx, &hiding.passages).expect("surveyed").trap_cells();
+        assert!(corridor.iter().all(|p| cells.contains(p)), "the corridor takes traps");
+        for p in &cells {
+            let beside_a_mouth = mouths.iter().any(|m| m == p || Direction::CARDINALS.iter().any(|d| *m + d.offset() == *p));
+            assert!(corridor.contains(p) || beside_a_mouth, "a trap may stand at {p:?}, inside a cave");
+        }
     }
 }
