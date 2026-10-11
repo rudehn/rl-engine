@@ -1431,40 +1431,34 @@ mod tests {
         }
     }
 
-    /// A run's biomes are a pure function of its seed: building floor five
-    /// before floor two, or the other way round, never changes what either
-    /// floor draws.
+    /// A run's floors are a pure function of its seed, whichever is built
+    /// first: every floor built deepest first comes out cell for cell as
+    /// it does built shallowest first, its way in, its way down, its spots
+    /// and its secrets with it, and so do its biome and its picks. A floor
+    /// that read a stream or a cache another floor's build had moved would
+    /// differ between the two.
     #[test]
-    fn the_biome_draw_is_the_same_whichever_floor_is_built_first() {
-        for s in 0..10 {
-            let a = Undermere::new(RunSeed(s));
-            a.build(map_of(5), None).unwrap();
-            a.build(map_of(2), None).unwrap();
-            let b = Undermere::new(RunSeed(s));
-            b.build(map_of(2), None).unwrap();
-            b.build(map_of(5), None).unwrap();
+    fn every_floor_is_the_same_whichever_floor_is_built_first() {
+        type Built = (Terrain, Point, Option<Point>, Vec<rl_engine::rl_bevy::Spot>, Vec<rl_engine::rl_mapgen::Secret>);
+        let build_all = |undermere: &Undermere, floors: &[u32]| -> BTreeMap<u32, Built> {
+            floors
+                .iter()
+                .map(|f| {
+                    let b = undermere.build(map_of(*f), None).unwrap();
+                    (*f, (b.terrain, b.entry, b.exit, b.spots, b.secrets))
+                })
+                .collect()
+        };
+        let shallow_first: Vec<u32> = (1..=FLOORS).collect();
+        let deep_first: Vec<u32> = (1..=FLOORS).rev().collect();
+        for s in 0..3 {
+            let (a, b) = (Undermere::new(RunSeed(s)), Undermere::new(RunSeed(s)));
+            let (built_a, built_b) = (build_all(&a, &shallow_first), build_all(&b, &deep_first));
             for floor in 1..=FLOORS {
-                assert_eq!(a.biome_of(floor).name, b.biome_of(floor).name, "seed {s}, floor {floor}");
-            }
-        }
-    }
-
-    /// A floor's picks, like its biome, are drawn once in [`Undermere::new`]
-    /// and never touched again by building a place, so which floor a run
-    /// builds first never changes what any floor was given.
-    #[test]
-    fn a_floors_picks_are_the_same_whichever_floor_is_built_first() {
-        for s in 0..10 {
-            let a = Undermere::new(RunSeed(s));
-            a.build(map_of(5), None).unwrap();
-            a.build(map_of(2), None).unwrap();
-            let b = Undermere::new(RunSeed(s));
-            b.build(map_of(2), None).unwrap();
-            b.build(map_of(5), None).unwrap();
-            for floor in 1..=FLOORS {
-                let (picks_a, picks_b) = (a.plan_of(floor), b.plan_of(floor));
-                let names = |picks: &[rl_engine::rl_rules::pool::Pick]| -> Vec<&str> { picks.iter().map(|p| a.pool.entries[p.entry].name.as_str()).collect() };
-                assert_eq!(names(picks_a), names(picks_b), "seed {s}, floor {floor}");
+                assert_eq!(a.biome_of(floor).name, b.biome_of(floor).name, "seed {s}, floor {floor}: the biome");
+                let names = |u: &Undermere| -> Vec<String> { u.plan_of(floor).iter().map(|p| u.pool.entries[p.entry].name.clone()).collect() };
+                assert_eq!(names(&a), names(&b), "seed {s}, floor {floor}: the picks");
+                assert!(built_a[&floor] == built_b[&floor], "seed {s}, floor {floor}: built otherwise for being built after floor ten");
             }
         }
     }
