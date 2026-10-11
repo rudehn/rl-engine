@@ -196,13 +196,15 @@ fn forget_joined(mut world: DeferredWorld, ctx: HookContext) {
 /// What one field is for: the cells it leads to, in world coordinates and
 /// sorted so two minds wanting the same cells share one flood; the movement
 /// class it is walked by; whether that class opens doors, which changes
-/// what a closed door costs; whether it is wary, which changes what a shown
-/// trap costs; and whether it leads away rather than toward.
+/// what a closed door costs; whether it prices shown traps, which only a
+/// wary mind's does and only on a map with one, so a map with none floods
+/// once for wary and unwary alike; and whether it leads away rather than
+/// toward.
 type FieldKey = (Vec<Point>, MovementProfile, bool, bool, bool);
 
 /// What one flood is from: a single goal cell in world coordinates, the
 /// movement class it is walked by, and whether that class opens doors and
-/// is wary.
+/// prices shown traps.
 type FloodKey = (Point, MovementProfile, bool, bool);
 
 /// What a cell under a shown trap costs a [`Wits::WARY`] mind on top of
@@ -500,18 +502,21 @@ struct Walking<'a> {
 }
 
 impl Walking<'_> {
-    /// The field toward or away from `goals`, and `from` in its coordinates.
-    fn field(&mut self, goals: &[Point], from: Point, away: bool) -> Option<(&DijkstraMap, Point)> {
+    /// The field toward or away from `goals`, priced for shown traps when
+    /// `wary` and there is one, and `from` in its coordinates.
+    fn field(&mut self, goals: &[Point], from: Point, away: bool, wary: bool) -> Option<(&DijkstraMap, Point)> {
         let mut goals = goals.to_vec();
         goals.sort();
         goals.dedup();
         let local = self.map.to_local(from)?;
-        Some((self.fields.ensure((goals, self.profile, self.opens_doors, self.wary, away), self.map)?, local))
+        let priced = wary && !self.fields.traps.is_empty();
+        Some((self.fields.ensure((goals, self.profile, self.opens_doors, priced, away), self.map)?, local))
     }
 
     fn descents(&mut self, goals: &[Point], from: Point, away: bool) -> Vec<Point> {
         let origin = self.map.window_tiles().origin();
-        match self.field(goals, from, away) {
+        let wary = self.wary;
+        match self.field(goals, from, away, wary) {
             Some((field, local)) => field.descents(local).into_iter().map(|p| p + origin).collect(),
             None => Vec::new(),
         }
@@ -527,10 +532,12 @@ impl rl_rules::Fields for Walking<'_> {
         self.descents(goals, from, true)
     }
 
-    /// The field toward `goals` at `from`: the one a mind closing on them
-    /// walks down, so the walk is read off a flood already made.
+    /// The field toward `goals` at `from`, unpriced: the walk itself, so a
+    /// shown trap between a wary follower and its leader is not ten steps
+    /// of gap that sets it off over the trap. The same flood the mind walks
+    /// down unless it is wary on a map with a trap shown.
     fn on_foot(&mut self, goals: &[Point], from: Point) -> Option<u32> {
-        let (field, local) = self.field(goals, from, false)?;
+        let (field, local) = self.field(goals, from, false, false)?;
         field.value(local).and_then(|v| u32::try_from(v).ok())
     }
 
@@ -1450,11 +1457,16 @@ mod tests {
         waiting(&mut app, player, 4);
         let shut = app.world().get::<Position>(hunter).unwrap().0;
         assert_eq!(shut, start.offset(5, 0), "nowhere to go");
-        let west = shut.offset(-1, 0);
+        // The east prop, away from the player: a hunter on a stale field,
+        // with every prop still a wall in it, falls back on the steps
+        // toward its prey, west, and never finds this way out.
+        let east = shut.offset(1, 0);
         let mut props = app.world_mut().query_filtered::<(Entity, &Position), With<crate::props::Prop>>();
-        let gone = props.iter(app.world()).find(|(_, p)| p.0 == west).map(|(e, _)| e).unwrap();
+        let gone = props.iter(app.world()).find(|(_, p)| p.0 == east).map(|(e, _)| e).unwrap();
         app.world_mut().despawn(gone);
-        waiting(&mut app, player, 8);
+        waiting(&mut app, player, 2);
+        assert_ne!(app.world().get::<Position>(hunter).unwrap().0, shut, "it was out within two turns");
+        waiting(&mut app, player, 10);
         let at = app.world().get::<Position>(hunter).unwrap().0;
         assert!(geometry::is_adjacent(at, start), "it came out where the prop stood: {at:?} from {start:?}");
     }
@@ -1542,6 +1554,56 @@ mod tests {
         let (walked, traps, start) = past_traps(Wits::SAPIENT, false, true);
         assert!(walked.iter().any(|p| traps.contains(p)), "in a corridor it crosses the one trap there is: {walked:?}");
         assert!(geometry::is_adjacent(*walked.last().unwrap(), start), "rather than standing behind it for good");
+    }
+
+    /// A wary follower in a corridor one cell wide, a shown trap between
+    /// it and the leader it keeps within three of, two steps off: the walk
+    /// is two, not the twelve the trap's price makes the field, so it rests
+    /// where it is rather than closing over the trap.
+    #[test]
+    fn a_wary_follower_within_its_distance_of_its_leader_rests_behind_a_trap_between_them() {
+        let (mut app, start, _) = arena();
+        let sides = crate::testing::two_sides(&mut app);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(sides.ours))).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        let wall = rl_grid::TileRegistry::standard().expect("wall");
+        {
+            let mut map = app.world_mut().resource_mut::<WorldMap>();
+            for dx in -1..=4 {
+                map.set_tile(start.offset(dx, -1), wall);
+                map.set_tile(start.offset(dx, 1), wall);
+            }
+        }
+        let trigger = crate::effects::Trigger {
+            on: crate::effects::Moments::ENTERED,
+            area: rl_rules::ability::Area::Here,
+            fires: None,
+            effects: Arc::new(crate::effects::Effects::default()),
+            look: None,
+            every: None,
+            targeting: None,
+            asks: None,
+        };
+        let trap = start.offset(1, 0);
+        app.world_mut().spawn((crate::props::Prop, Position(trap), crate::effects::Triggers(vec![trigger])));
+        let keeps = Mind(Arc::new(Brain::new().then(rl_rules::ai::tactics::Keep::leader(3, 1))));
+        let follower = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Blocks,
+                Position(start.offset(2, 0)),
+                Health::full(20),
+                Faction(sides.ours),
+                Perception(8),
+                Intelligence(Wits::SAPIENT),
+                keeps,
+                Leader(player),
+            ))
+            .id();
+        waiting(&mut app, player, 6);
+        assert_eq!(app.world().get::<Position>(follower).unwrap().0, start.offset(2, 0), "two steps is within three: it stays off the trap");
     }
 
     #[test]

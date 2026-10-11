@@ -125,8 +125,10 @@ pub trait Fields {
     /// How far `from` is from the nearest of `goals` on foot, in hundredths
     /// of a step, the unit every cost is in: the value the field toward
     /// `goals` holds at `from`, so asking is free once a mind has walked
-    /// down that field. `None` when there is no way, or no field at all,
-    /// and a tactic then measures as the crow flies.
+    /// down that field. The walk itself, never what a field adds to steer
+    /// a mind, so a wary mind's price on a shown trap is no part of it and
+    /// is answered from an unpriced field. `None` when there is no way, or
+    /// no field at all, and a tactic then measures as the crow flies.
     ///
     /// Its own question rather than a count of descents, because the walk
     /// is what a follower loses time over: three cells off across a wall

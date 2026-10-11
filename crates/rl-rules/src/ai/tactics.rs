@@ -291,7 +291,9 @@ pub enum Gap {
     #[default]
     Crow,
     /// Steps on foot, by [`Fields::on_foot`], a diagonal stride counting
-    /// for its cost and a partial step for a whole one; as the crow flies
+    /// for its cost and the walk rounded to the nearest step, so a diagonal
+    /// neighbour is one step off and a follower kept within one rests
+    /// there; as the crow flies
     /// where no field answers, so a station with no way to it is still
     /// kept as near as the ground allows.
     OnFoot,
@@ -328,7 +330,10 @@ impl Keep {
         match self.gap {
             Gap::Crow => crow,
             Gap::OnFoot => {
-                let steps = |cost: u32| i32::try_from(cost.div_ceil(rl_core::turn::BASE_ACTION_COST)).unwrap_or(i32::MAX);
+                // To the nearest step, so a diagonal neighbour, 141, is one
+                // step off and three diagonal cells, 424, are four.
+                let base = rl_core::turn::BASE_ACTION_COST;
+                let steps = |cost: u32| i32::try_from(cost.saturating_add(base / 2) / base).unwrap_or(i32::MAX);
                 ctx.fields.on_foot(marks, p).map_or(crow, steps)
             }
         }
@@ -378,13 +383,16 @@ impl<A: Copy> Tactic<A> for Keep {
         let (nearest, marks, in_sight) = self.watching(ctx)?;
         let gap = self.gap_from(ctx, &marks, nearest, me);
         if gap > self.keep_within {
-            // Closing: the field's way first, and never a step that widens
-            // the gap to the one being closed on. On foot, every step down
-            // the field narrows it, the way out of a cup and round as
-            // surely as the step straight at them.
+            // Closing: the field's way first, and as the crow flies never a
+            // step that widens the gap to the one being closed on. On foot
+            // every step down the field is taken unmeasured: it is the way
+            // out of a cup and round, and a wary mind's way round a trap,
+            // which the field prices and the walk does not, may lengthen
+            // the walk for a step or two.
+            let on_foot = self.gap == Gap::OnFoot;
             let descents = ctx.fields.descents_toward(&marks, me);
             for step in descents {
-                if (ctx.can_step)(step) && self.gap_from(ctx, &marks, nearest, step) <= gap {
+                if (ctx.can_step)(step) && (on_foot || self.gap_from(ctx, &marks, nearest, step) <= gap) {
                     return Some(Decision::Step(step));
                 }
             }
@@ -2170,6 +2178,18 @@ mod tests {
         // And three cells off on open ground both measures agree it is near
         // enough.
         assert_eq!(across_a_wall(Keep::leader(3, 1), Point::new(9, 5), chief), None, "three straight steps is three");
+    }
+
+    /// On foot a diagonal stride is a step and two fifths, and the walk is
+    /// rounded to the nearest step: a follower kept within one of its
+    /// leader rests diagonally beside it rather than shuffling to a side,
+    /// and one three diagonal cells off, four steps, still sets off.
+    #[test]
+    fn a_follower_kept_within_one_on_foot_rests_diagonally_beside_its_leader() {
+        let chief = Point::new(8, 5);
+        assert_eq!(across_a_wall(Keep::leader(1, 1), Point::new(9, 6), chief), None, "a diagonal neighbour is one step off");
+        assert_eq!(across_a_wall(Keep::leader(1, 1), Point::new(7, 4), chief), None, "whichever corner it stands at");
+        assert!(matches!(across_a_wall(Keep::leader(3, 1), Point::new(11, 8), chief), Some(Decision::Step(_))), "three diagonal cells are four steps");
     }
 
     /// A follower keeps within its distances of its leader and of nobody
