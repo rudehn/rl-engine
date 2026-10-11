@@ -672,24 +672,24 @@ impl Undermere {
         let t = |name: &str| self.tile(name);
         let on = drawn.floor;
         let chain = match Family::of(floor) {
-            Family::UpperHalls => chain
-                .then(Patches { name: "rubble", tile: t("rubble"), on, count: (5, 9), size: (2, 6), phase: Phase::Finish })
-                .then(Furnish { name: "braziers", piece: self.prefabs.piece("brazier")?, count: (3, 5) }),
-            Family::FungalDeeps => chain.then(Patches { name: "glowcaps", tile: t("glowcaps"), on, count: (8, 12), size: (2, 6), phase: Phase::Finish }),
+            Family::UpperHalls => chain.then(Patches { name: "rubble", tile: t("rubble"), on, count: (5, 9), size: (2, 6) }).then(Furnish {
+                name: "braziers",
+                piece: self.prefabs.piece("brazier")?,
+                count: (3, 5),
+            }),
+            Family::FungalDeeps => chain.then(Patches { name: "glowcaps", tile: t("glowcaps"), on, count: (8, 12), size: (2, 6) }),
             // Bones are the Catacombs' own and the shafts of moonlight the
             // Drowned Cathedral's: strewn on the Sunken Library and the
             // Underlake that share their bands, a lone cell of the
             // cathedral's lit marble shone out of a dark lake cave.
             Family::Catacombs if drawn.name == "the Catacombs" => chain
-                .then(Patches { name: "bones", tile: t("bones"), on, count: (6, 10), size: (1, 4), phase: Phase::Finish })
+                .then(Patches { name: "bones", tile: t("bones"), on, count: (6, 10), size: (1, 4) })
                 .then(Furnish { name: "candles", piece: self.prefabs.piece("candelabra")?, count: (5, 8) }),
             Family::Catacombs => chain.then(Furnish { name: "candles", piece: self.prefabs.piece("candelabra")?, count: (5, 8) }),
             Family::DrownedCathedral if drawn.name == "the Drowned Cathedral" => chain
-                .then(Patches { name: "puddles", tile: t("flooded floor"), on, count: (3, 6), size: (2, 6), phase: Phase::Finish })
-                .then(Patches { name: "shafts", tile: t("moonlit marble"), on, count: (3, 5), size: (1, 1), phase: Phase::Finish }),
-            Family::DrownedCathedral => {
-                chain.then(Patches { name: "puddles", tile: t("flooded floor"), on, count: (3, 6), size: (2, 6), phase: Phase::Finish })
-            }
+                .then(Patches { name: "puddles", tile: t("flooded floor"), on, count: (3, 6), size: (2, 6) })
+                .then(Patches { name: "shafts", tile: t("moonlit marble"), on, count: (3, 5), size: (1, 1) }),
+            Family::DrownedCathedral => chain.then(Patches { name: "puddles", tile: t("flooded floor"), on, count: (3, 6), size: (2, 6) }),
             Family::ForgeOfEmbers | Family::Throne => chain,
         };
         // The lived-in dungeon's own, on any floor but the throne's: a
@@ -997,45 +997,17 @@ fn open_all_round(ctx: &BaseContext, tables: &TileTables, p: Point) -> bool {
     geometry::square(p, 1).all(|q| q == p || walkable(ctx, tables, q))
 }
 
-/// The ring of eight round a cell, clockwise from north: each a single
-/// step from the next, so a run of walkable cells round the ring is a run
-/// a body can walk along.
-const RING: [(i32, i32); 8] = [(0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1)];
-
-/// Whether `p` can stop being walkable without cutting anything off: the
-/// cells a body steps to from it all join up through its own ring, so
-/// whatever walked through `p` can walk round it instead.
-///
-/// A local answer, and a sure one: if the cells beside `p` are joined round
-/// it they are joined everywhere, so the floor stays one piece. It refuses
-/// some cells that a longer way round would have spared, and a patch only
-/// grows elsewhere for it.
-fn keeps_the_walk_whole(ctx: &BaseContext, tables: &TileTables, p: Point) -> bool {
-    let open: Vec<bool> = RING.iter().map(|(dx, dy)| walkable(ctx, tables, p.offset(*dx, *dy))).collect();
-    if open.iter().all(|o| *o) {
-        return true;
-    }
-    // Every run of walkable cells round the ring, counted only when it
-    // holds a cell a body steps to straight from `p`: those are the even
-    // places, north, east, south and west.
-    let mut runs = 0;
-    for start in (0..8).filter(|i| open[*i] && !open[(i + 7) % 8]) {
-        let beside = (start..start + 8).take_while(|i| open[i % 8]).any(|i| i % 2 == 0);
-        runs += usize::from(beside);
-    }
-    runs <= 1
-}
-
-/// Grows patches of `tile` over cells of `on`: rubble in the halls, bones in
-/// the crypts, glowcaps on the moss, deep water and puddles in the
-/// cathedral, shafts of light on its marble, and lava in the forge.
+/// Grows patches of `tile` over cells of `on`: rubble in the halls, bones
+/// in the crypts, glowcaps on the moss, puddles and shafts of light on the
+/// cathedral's marble.
 ///
 /// Each patch grows from a cell with open floor all round it, so it starts
 /// in a room or a cave rather than a corridor, one cell at a time to a
-/// size drawn from `size`. A tile a body cannot stand on is never laid
-/// where it would cut the floor in two ([`keeps_the_walk_whole`]), so a
-/// lake grows round a corridor rather than across it. It never covers the
-/// way in or out, nor a piece already stamped.
+/// size drawn from `size`. It never covers the way in or out, nor a piece
+/// already stamped. Only a tile a body can stand on is laid, so a patch
+/// never cuts the floor in two: the water and the lava that stop a body
+/// are `rl_mapgen::Lakes`'s, laid with the structures so the ways are
+/// chosen round them.
 struct Patches {
     /// A stable name, so two patchings in one chain draw different streams.
     name: &'static str,
@@ -1047,9 +1019,6 @@ struct Patches {
     count: (u32, u32),
     /// The fewest and the most cells in each.
     size: (u32, u32),
-    /// When it runs: before the ways are chosen for a patch that stops a
-    /// body, so they are chosen round it, and after for one that does not.
-    phase: Phase,
 }
 
 impl Pass<BaseContext> for Patches {
@@ -1058,12 +1027,11 @@ impl Pass<BaseContext> for Patches {
     }
 
     fn phase(&self) -> Phase {
-        self.phase
+        Phase::Finish
     }
 
     fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let tables = ctx.tiles().tables();
-        let solid = !tables.walkable[self.tile.index()];
         let (kept, pieces) = (ways(ctx), pieces(ctx));
         let free = |p: Point| !kept.contains(&p) && pieces.iter().all(|r| !r.contains(p));
         let count = ctx.rng().random_range(self.count.0..=self.count.1);
@@ -1079,7 +1047,7 @@ impl Pass<BaseContext> for Patches {
             while laid < size && !frontier.is_empty() {
                 let next = ctx.rng().random_range(0..frontier.len());
                 let p = frontier.swap_remove(next);
-                if ctx.terrain().get(p) != Some(self.on) || !free(p) || (solid && !keeps_the_walk_whole(ctx, &tables, p)) {
+                if ctx.terrain().get(p) != Some(self.on) || !free(p) {
                     continue;
                 }
                 ctx.terrain_mut().set(p, self.tile);
