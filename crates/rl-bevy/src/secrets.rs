@@ -45,6 +45,13 @@ pub struct Secret {
     pub at: Point,
     /// The tile it really is, laid when it is found.
     pub is: TileId,
+    /// The tile it shows while hidden, the wall its build laid over it.
+    /// Found, the cell becomes [`is`](Self::is) only while it still shows
+    /// this, so a cell a game changed since, dug out or built over, keeps
+    /// the change rather than having a door laid over it. A save written
+    /// before this was kept reads it from the saved terrain.
+    #[serde(default = "Secret::unread")]
+    pub shows: TileId,
     /// Percent chance a turn of being spotted while in sight, before the
     /// roll's nearness, keenness and stillness.
     pub spot: u8,
@@ -53,9 +60,19 @@ pub struct Secret {
     pub group: u32,
 }
 
-impl From<rl_mapgen::Secret> for Secret {
-    fn from(s: rl_mapgen::Secret) -> Self {
-        Self { at: s.at, is: s.is, spot: s.spot, group: s.group }
+impl Secret {
+    /// What `secret` says, kept by a place whose build shows `shows` on
+    /// its cell.
+    pub fn hidden(secret: rl_mapgen::Secret, shows: TileId) -> Self {
+        Self { at: secret.at, is: secret.is, shows, spot: secret.spot, group: secret.group }
+    }
+
+    /// What a save written before [`shows`](Self::shows) was kept reads
+    /// it as until the place it is in fills it from its terrain: no tile
+    /// a registry hands out, which a registry would need every id but one
+    /// to reach.
+    pub(crate) const fn unread() -> TileId {
+        TileId(u16::MAX)
     }
 }
 
@@ -108,6 +125,19 @@ mod tests {
         assert_eq!(map.secrets(PLACE).len(), 1);
         assert!(map.find_secret(PLACE, Point::new(6, 2)).is_empty(), "a found secret is found once");
         assert!(map.find_secret(PLACE, Point::new(4, 2)).is_empty(), "and a plain cell hides nothing");
+    }
+
+    /// A game that dug through a hidden mouth's middle keeps its dug
+    /// cell when the mouth is found; the cells still wall open as ever.
+    #[test]
+    fn a_found_secret_leaves_a_cell_a_game_changed_since_as_the_game_left_it() {
+        let (mut map, tiles) = hiding();
+        let dug = tiles.expect("door_open");
+        assert!(map.set_tile(Point::new(6, 2), dug), "the game changes the middle of the mouth");
+        let found = map.find_secret(PLACE, Point::new(6, 1));
+        assert_eq!(found.len(), 3, "the whole group is found");
+        assert_eq!(map.tile(Point::new(6, 2)), Some(dug), "the changed cell keeps the change");
+        assert_eq!((map.tile(Point::new(6, 1)), map.tile(Point::new(6, 3))), (Some(tiles.expect("floor")), Some(tiles.expect("floor"))));
     }
 
     #[test]
@@ -171,5 +201,15 @@ mod tests {
         let mut older = WorldMap::new(tiles.tables());
         older.import(ron::from_str(&old).unwrap());
         assert!(older.secrets(PLACE).is_empty(), "it loads, hiding nothing");
+
+        // One written before a secret kept the tile it shows reads it
+        // from the terrain saved with it, and is found as ever.
+        let unshown = text.replace(&format!("shows:{},", ron::to_string(&tiles.expect("wall")).unwrap()), "");
+        assert!(!unshown.contains("shows"), "{unshown}");
+        let mut before = WorldMap::new(tiles.tables());
+        before.import(ron::from_str(&unshown).unwrap());
+        assert_eq!(before.secrets(PLACE), map.secrets(PLACE), "the shown wall is read back from the terrain");
+        before.find_secret(PLACE, Point::new(3, 2));
+        assert_eq!(before.tile(Point::new(3, 2)), Some(tiles.expect("door_closed")));
     }
 }
