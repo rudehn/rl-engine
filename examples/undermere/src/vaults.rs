@@ -19,12 +19,12 @@
 //!
 //! In play, [`lifts`] answers a prize taken: the other cages shut, the
 //! vermin pour out, the water rises, the floor gives way, the gallery
-//! falls in behind. [`answer_pull_lever`] lifts a floor's seal,
-//! [`spend_vault_key`] leaves a key in the lock it opened, and
-//! [`answer_read`] reads a chronicle or a dead adventurer's last words
-//! aloud. What the glyphs, the bone circle, the vents and a fall do is an
-//! effect's, in [`crate::effects`]: `WakeFloor`, `Rise`, `Rouse` and
-//! `Fall`.
+//! falls in behind. [`answer_pull_lever`] lifts a floor's seal and
+//! [`spend_vault_key`] leaves a key in the lock it opened; what a
+//! reward piece's own book or a dead adventurer's own wall offers to be
+//! read is [`crate::writings`]'s. What the glyphs, the bone circle, the
+//! vents and a fall do is an effect's, in [`crate::effects`]:
+//! `WakeFloor`, `Rise`, `Rouse` and `Fall`.
 //!
 //! Everything here is told apart by what a prop is and where it stands,
 //! which the save already keeps, rather than by a component of the game's
@@ -380,58 +380,5 @@ pub fn spend_vault_key(
         bag.items.retain(|i| *i != key);
         commands.entity(key).despawn();
         commands.write_message(Tell::new("The key turns, and stays in the lock.", Tones::NOTICE));
-    }
-}
-
-/// What a reward piece offers to be read, declared by
-/// [`crate::plugin::UndermerePlugin`].
-pub const READ_VERB: &str = "read";
-
-/// The chronicle a library nook keeps, a page of the drowned kingdom's
-/// history to each copy, picked by where the book lies.
-pub const CHRONICLE: (&str, &[&str]) = (
-    "chronicle",
-    &[
-        "In the reign of the last King the mere rose a hand's breadth every spring, and no prayer turned it back.",
-        "The Abbess held that the cathedral's bells would keep the water out. They rang until the ropes rotted.",
-        "The forges under the city were never let go cold, lest the stone remember it lay beneath a lake.",
-        "The standing stones on the shore were raised to keep something in, the chronicle says, and not out.",
-        "The King did not drown. He waited on his throne, and the water came to him.",
-        "Within a generation of the flood the goblins held the upper halls, and called them a kingdom of their own.",
-    ],
-);
-
-/// What a dead adventurer scratched beside where they fell, a line to
-/// each, picked by where they lie.
-pub const LAST_WORDS: (&str, &[&str]) = (
-    "scratched words",
-    &[
-        "\"the water was rising. tell Mira I went down for the ring\"",
-        "\"do not lift it\"",
-        "\"three of us came down. I am the one left to write it\"",
-        "\"they sleep in the dark beyond. walk soft\"",
-        "\"the key was never on this floor. it was never on this floor\"",
-        "\"Mereholt, I am sorry\"",
-    ],
-);
-
-/// Reading a chronicle or a dead adventurer's last words says its line in
-/// the log: the same line for the same book or wall every time it is read,
-/// since where it lies picks it, and nothing spent.
-///
-/// In `TurnSet::React`, where every answer to an `Interacted` is.
-pub fn answer_read(
-    mut done: MessageReader<Interacted>,
-    verbs: Res<Verbs>,
-    registries: Res<Registries>,
-    props: Query<(&PropKind, &Position)>,
-    mut tell: MessageWriter<Tell>,
-) {
-    let Some(read) = verbs.get(READ_VERB) else { return };
-    for ev in done.read().filter(|ev| ev.verb == read) {
-        let Ok((kind, at)) = props.get(ev.target) else { continue };
-        let Some((_, lines)) = [CHRONICLE, LAST_WORDS].into_iter().find(|(name, _)| registries.props.id(name) == Some(kind.0)) else { continue };
-        let pick = (at.0.x.unsigned_abs() as usize * 31 + at.0.y.unsigned_abs() as usize) % lines.len();
-        tell.write(Tell::new(lines[pick], Tones::NOTICE));
     }
 }

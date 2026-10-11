@@ -1,8 +1,10 @@
 //! Undermere's pieces, as data: Mereholt, the whole town in one piece; the
 //! floor ten boss's own throne, one of three a run draws between
 //! (`dungeon::FinalBoss`); and the one-cell pieces the floors are
-//! furnished with, a chest, a brazier and a candelabra. Each is a file
-//! under `assets/prefabs/`.
+//! furnished with, a chest, a brazier, a candelabra, the body
+//! `decor::BloodTrail` stands at the end of its own trail, and the wall
+//! `decor::WallInscriptions` carves a line into. Each is a file under
+//! `assets/prefabs/`.
 //!
 //! The engine fills them. `dungeon` stamps each piece by name through
 //! [`Prefabs::piece`], and on the arrival that built a place the engine's
@@ -28,12 +30,14 @@ use crate::bestiary::MonsterDef;
 use crate::content::Library;
 
 /// Every piece, compiled in so the binary runs from anywhere.
-const PIECES: [&str; 59] = [
+const PIECES: [&str; 61] = [
     include_str!("../assets/prefabs/mereholt.ron"),
     include_str!("../assets/prefabs/throne.ron"),
     include_str!("../assets/prefabs/chest.ron"),
     include_str!("../assets/prefabs/brazier.ron"),
     include_str!("../assets/prefabs/candelabra.ron"),
+    include_str!("../assets/prefabs/fallen_body.ron"),
+    include_str!("../assets/prefabs/wall_inscription.ron"),
     include_str!("../assets/prefabs/grubnak.ron"),
     include_str!("../assets/prefabs/widow.ron"),
     include_str!("../assets/prefabs/choirmaster.ron"),

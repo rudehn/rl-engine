@@ -187,6 +187,9 @@
      offers: [(verb: "open", time: 100)]),
     (name: "chronicle", glyph: 'b', color: (r: 190, g: 150, b: 95), blocks: true, offers: [(verb: "read", time: 100)]),
     (name: "scratched words", glyph: ':', color: (r: 200, g: 195, b: 180), offers: [(verb: "read", time: 100)]),
+    // `src/decor.rs`'s own: a wall worth reading, carved by hands the
+    // place no longer has, laid by the survey rather than any piece.
+    (name: "wall inscription", glyph: '"', color: (r: 175, g: 170, b: 150), offers: [(verb: "read", time: 100)]),
     (name: "adventurer's remains", glyph: '%', color: (r: 225, g: 215, b: 190),
      container: (contents: [(tag: "potion", count: (1, 2)), (tag: "scroll", count: 1), (item: "gold coin", count: 1)],
                  opened: (glyph: '%', color: (r: 140, g: 132, b: 118))),

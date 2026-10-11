@@ -56,6 +56,15 @@
     // Running is a wit as well as a threshold, so a coward runs whatever
     // else its wits are, and the panel's words for it are never a lie.
     (name: "cowardly", says: "runs when hurt", wits: ["flees"], flee_at: 50),
+    // A hundred rather than `cowardly`'s fifty: it runs the moment it is
+    // seen, never waiting to be hurt first, which a thing this small
+    // never survives being.
+    (name: "timid", says: "flees before it is ever touched", wits: ["flees"], flee_at: 100),
+    // Says what it is rather than changing anything: the small life's
+    // own attack is already a flat nought in `monsters.ron`, and its
+    // faction already fights nobody; this is the examine panel's word
+    // for why.
+    (name: "harmless", says: "means nothing by it, and nothing it does can hurt you"),
     (name: "swift", says: "fast", speed: 150),
     (name: "slow", says: "slow", speed: 70),
     (name: "keen-nosed", says: "hard to sneak past", perception: 10, notice: (certain: 4, chance_pct: 50)),

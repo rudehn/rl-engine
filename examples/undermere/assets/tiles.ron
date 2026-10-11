@@ -50,6 +50,9 @@
     (tile: "hall wall",      glyph: '#',  fg: (0.7, 0.64, 0.56),  bg: (0.46, 0.41, 0.35), vary: (0.1, 0.02)),
     (tile: "hall floor",     glyph: '.',  fg: (0.56, 0.52, 0.47), bg: (0.22, 0.2, 0.18),  vary: (0.12, 0.02)),
     (tile: "rubble",         glyph: ',',  fg: (0.62, 0.57, 0.5),  bg: (0.22, 0.2, 0.18),  vary: (0.15, 0.03)),
+    // `decor::BloodTrail`'s own, on any floor: a strewn tile like rubble
+    // and bones, so it keeps the fill of the floor it lies on.
+    (tile: "blood",          glyph: ',',  fg: (0.55, 0.1, 0.12),  bg: (0.22, 0.2, 0.18),  vary: (0.12, 0.04)),
 
     // The Cellars, floors one and two's other biome.
     (tile: "cellar wall",    glyph: '#',  fg: (0.62, 0.54, 0.42), bg: (0.4, 0.33, 0.24),  vary: (0.1, 0.02)),

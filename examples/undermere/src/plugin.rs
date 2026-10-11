@@ -62,10 +62,10 @@ impl Plugin for UndermerePlugin {
             // The run's captive: the one verb `PropsPlugin` does not already
             // know, offered by an actor rather than a prop.
             .add_verb(crate::captives::FREE_VERB)
-            // A sealed vault's concealed lever, and what a reward piece
-            // offers to be read.
+            // A sealed vault's concealed lever, and what a reward piece,
+            // a flavor piece or a wall carving offers to be read.
             .add_verb(crate::vaults::PULL_VERB)
-            .add_verb(crate::vaults::READ_VERB)
+            .add_verb(crate::writings::READ_VERB)
             .add_plugins((PrefabPlugin::<Bestiary, Armory>::default(), LootPlugin::<Armory>::default()))
             .add_plugins((FactsPlugin, RecordsPlugin))
             // What the dead leave lying where they fell, for `raising` to
@@ -153,6 +153,11 @@ impl Plugin for UndermerePlugin {
         // Every flooding vault still filling: none at a run's start, and
         // what a continued run's save says.
         app.init_resource::<crate::vaults::lifts::RisingFloods>().reset_on_new_run::<crate::vaults::lifts::RisingFloods>();
+        // The lines `assets/writings.ron` holds, read once; and which of
+        // them a run has already given out, none at a run's start, and
+        // what a continued run's save says.
+        app.insert_resource(crate::writings::load());
+        app.init_resource::<crate::writings::WritingsProgress>().reset_on_new_run::<crate::writings::WritingsProgress>();
 
         // The run's start, and a continued run after the fresh start has
         // stood aside.
@@ -308,7 +313,12 @@ impl Plugin for UndermerePlugin {
         // every slot beside them, a lever and a vault's key, and what
         // lifting a prize sets off.
         app.add_systems(Turn, crate::vaults::spawn_vault_marks.in_set(TurnSet::React).after(PrefabSet::Fill));
-        app.add_systems(Turn, (crate::vaults::answer_pull_lever, crate::vaults::spend_vault_key, crate::vaults::answer_read).in_set(TurnSet::React));
+        app.add_systems(Turn, (crate::vaults::answer_pull_lever, crate::vaults::spend_vault_key).in_set(TurnSet::React));
+        // The lived-in dungeon's own: a readable prop's line, drawn once
+        // on the arrival that finds it, and a floor's own feeling, said
+        // the same arrival.
+        app.add_systems(Turn, (crate::writings::assign_writings, crate::writings::tell_floor_feeling).in_set(TurnSet::React).after(PrefabSet::Fill));
+        app.add_systems(Turn, crate::writings::answer_read.in_set(TurnSet::React));
         {
             use crate::vaults::lifts::*;
             app.add_systems(

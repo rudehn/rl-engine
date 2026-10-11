@@ -1,0 +1,77 @@
+// What the dead left behind, and what the drowned kingdom's history
+// reads like carved into a wall. `src/writings.rs` loads this once; its
+// lines are drawn the first time the place that holds them is entered,
+// and a line already given out this run is never given out again.
+//
+// Every field:
+//   last_words:   lines a dead adventurer scratched beside where they
+//                 fell, read off a "scratched words" prop beside
+//                 remains: `assets/prefabs/flavor/last_words.ron`,
+//                 `assets/prefabs/reward/a_fallen_adventurer.ron` and
+//                 `assets/prefabs/risk/the_last_stand.ron` each carry
+//                 one. Never the same line twice a run; a run that asks
+//                 for more than this file holds repeats rather than
+//                 failing, which thirty-odd lines against four pieces
+//                 (two "Last Words" at most, one each of the others)
+//                 never does.
+//   inscriptions: lines of the drowned kingdom's history, read off a
+//                 "chronicle" or a "wall inscription" prop:
+//                 `assets/prefabs/reward/library_nook.ron`'s book and
+//                 `decor::WallInscriptions`'s own carving. Never the
+//                 same line twice a run, by the same rule.
+//   feelings:     [(prop:, says:)], a prop whose presence on a floor is
+//                 said once, on the arrival that finds the floor,
+//                 since what it is tells of what the floor holds
+//                 before anyone has found it. One row for each risk
+//                 piece this is worth spoiling ahead of time for: "The
+//                 Flooding Vault" (`iron grate`), "The Tinder Room"
+//                 (`ember plate`), "The Bone Circle" (`circle bones`),
+//                 "The Warded Hall" (`warding glyph`), "The Paralysis
+//                 Vestibule" (`paralysis vent`). A prop the game lays itself
+//                 at build, as the sealed vault's lever, is no piece's
+//                 slot and cannot be named here. The rest keep their tell for the
+//                 door `assets/prefabs/risk/`'s own comment already
+//                 promises, and say nothing before it.
+(
+    last_words: [
+        "\"the water was rising. tell Mira I went down for the ring\"",
+        "\"do not lift it\"",
+        "\"three of us came down. I am the one left to write it\"",
+        "\"they sleep in the dark beyond. walk soft\"",
+        "\"the key was never on this floor. it was never on this floor\"",
+        "\"Mereholt, I am sorry\"",
+        "\"I can hear the bell from here, under all this water. I did not think I would\"",
+        "\"my lantern went out on the stair above. I kept walking anyway\"",
+        "\"whoever reads this, go back. there is nothing down here worth your name\"",
+        "\"the map was wrong about this room. it is wrong about the next one too\"",
+        "\"I traded the rope for the rest of the bread. I would do it again\"",
+        "\"something in the dark already knew my name before I said it\"",
+        "\"we drew lots for who went first through the door. I lost twice\"",
+        "\"the gold is real. so is what is guarding it. I know that now\"",
+        "\"I left a line of chalk behind me the whole way down. it did not help\"",
+        "\"tell the town the bell still rings, down here, on its own\"",
+        "\"I thought the quiet meant we were alone\"",
+        "\"my own torch lit the thing's eyes before it lit anything else\"",
+    ],
+    inscriptions: [
+        "In the reign of the last King the mere rose a hand's breadth every spring, and no prayer turned it back.",
+        "The Abbess held that the cathedral's bells would keep the water out. They rang until the ropes rotted.",
+        "The forges under the city were never let go cold, lest the stone remember it lay beneath a lake.",
+        "The standing stones on the shore were raised to keep something in, the chronicle says, and not out.",
+        "The King did not drown. He waited on his throne, and the water came to him.",
+        "Within a generation of the flood the goblins held the upper halls, and called them a kingdom of their own.",
+        "The miners struck water a hundred years before the lake ever rose, and sealed the seam, and said nothing.",
+        "Every well in the old town once ran sweet. The last of them turned before the flood did, which nobody read as a warning until after.",
+        "The library moved its lowest shelves twice in one generation, each time further from a floor that kept rising on its own.",
+        "A census taken the year before the flood counted every soul in the lower wards twice, as if the clerks already knew only the count would be left of them.",
+        "The spider that holds the warrens now is not the first to have made a home of a drowned kingdom's cellars, only the one that stayed.",
+        "What the Drowned King asked of his knights at the end was not to win, the stone in the throne room says, only to keep him company.",
+    ],
+    feelings: [
+        (prop: "iron grate", says: "You hear water pouring somewhere below."),
+        (prop: "ember plate", says: "The air smells of old smoke."),
+        (prop: "circle bones", says: "The quiet here does not feel entirely empty."),
+        (prop: "warding glyph", says: "Something underfoot remembers being woken, and has not forgotten."),
+        (prop: "paralysis vent", says: "The air sits strangely still, like a held breath."),
+    ],
+)

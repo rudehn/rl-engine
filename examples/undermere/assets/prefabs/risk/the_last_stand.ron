@@ -2,12 +2,15 @@
 // stands for; see `treasure_room.ron` for the full field list.
 //
 // An adventurer's remains, pack still full, among the hidden plates that
-// brought them down, and their killers asleep beside them.
+// brought them down, their killers asleep beside them, and their last
+// line scratched on the floor within reach of a still hand.
+// `src/writings.rs` gives it a line of `assets/writings.ron`'s own on
+// the arrival that finds them, never one already given out this run.
 (
     name: "The Last Stand",
     ground: "hall floor",
     rows: [
-        "zd ",
+        "zdw",
         "d%d",
         " dz",
     ],
@@ -15,5 +18,6 @@
         'z': Mark,
         'd': Prop("dart plate"),
         '%': Prop("adventurer's remains"),
+        'w': Prop("scratched words"),
     },
 )

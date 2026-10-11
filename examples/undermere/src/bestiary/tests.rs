@@ -111,6 +111,8 @@ fn every_monster_of_the_bestiary_is_in_the_file_and_the_floor_ten_boss_is_one_of
         "the Forgemaster",
         "spectral blade",
         "mercenary",
+        "moth",
+        "blind cave rat",
     ];
     let defs = &library.bestiary.defs;
     for name in bestiary_kinds {
@@ -978,4 +980,16 @@ fn a_goblin_of_grubnaks_band_whose_leader_is_gone_keeps_station_on_its_allies_ra
     };
     let decision = brain.decide(ctx);
     assert_eq!(decision.1, Some("follow"), "a goblin of Grubnak's own band keeps station on its ally instead of freezing once its king is gone");
+}
+
+/// The lived-in dungeon's small life is worth nothing to kill: a flat
+/// nought attack, whatever its dice would otherwise say, makes
+/// `balance::threat` nought exactly, hostile health and armor besides.
+#[test]
+fn small_life_is_worth_nothing_to_kill() {
+    let library = library();
+    for name in ["moth", "blind cave rat"] {
+        let def = library.bestiary.defs.get(library.bestiary.defs.expect(name));
+        assert_eq!(rl_engine::rl_rules::balance::threat(def), 0.0, "{name}'s own threat");
+    }
 }
