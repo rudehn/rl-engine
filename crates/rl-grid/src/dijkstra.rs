@@ -50,7 +50,8 @@ pub struct DijkstraMap {
     /// a side is marked only where the source said it lets one past. Not
     /// asked of every cell in the region, which cost a source lookup per
     /// cell on every flood whether a diagonal was taken or not, and not
-    /// kept at all under rules that never read it.
+    /// kept at all under rules that never read it, so under `CARDINAL`
+    /// or `cut_corners` it holds nothing meaningful.
     past: Vec<bool>,
 }
 
@@ -253,9 +254,10 @@ impl DijkstraMap {
 
     /// Whether the flood could have stepped from `p` toward `dir`.
     ///
-    /// Asked of what the source said of each side as the flood began, so
-    /// it is the flood's own corner test, asked without the terrain it was
-    /// built over; a side outside the region lets nothing past.
+    /// Asked of the sides the flood recorded in `past` as it took
+    /// diagonals, so it is the flood's own corner test, asked without the
+    /// terrain it was built over; a side outside the region, or one no
+    /// taken diagonal marked, lets nothing past.
     fn steps(&self, p: Point, dir: Direction) -> bool {
         if !dir.is_diagonal() {
             return true;
@@ -295,10 +297,11 @@ impl DijkstraMap {
         for (mine, theirs) in self.values.iter_mut().zip(&other.values) {
             *mine = (*mine).min(*theirs);
         }
-        // What a cell lets past is the source's, not the flood's, so two
-        // floods over one source say the same of every cell, and a map not
-        // yet flooded, which says nothing lets a diagonal past, takes the
-        // other's word.
+        // A diagonal between two cells reached in the union is taken by
+        // whichever flood reached its end, and a mark only ever means the
+        // source let that diagonal past, so the marks of both are true of
+        // the union and an or loses none; the multi-goal property test
+        // holds this against a flood from all the goals at once.
         for (mine, theirs) in self.past.iter_mut().zip(&other.past) {
             *mine |= *theirs;
         }

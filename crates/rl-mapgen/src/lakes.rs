@@ -73,9 +73,10 @@ const TRIES: u32 = 24;
 /// bounds and inner rectangle are measured again, as is every [`Room`]
 /// it lay in, inside the room's own rectangle, so a pass that stands
 /// something in an area or a room never stands it in water. A room the
-/// lake covered whole is dropped, which renumbers the rooms after it. That is why it runs in
-/// [`Phase::Structures`], after growth and loops and before the ways in
-/// and out are chosen round it. Each lake laid is published as a [`Lake`].
+/// lake covered whole is dropped, which renumbers the rooms after it.
+/// That is why it runs in [`Phase::Structures`], after growth and loops
+/// and before the ways in and out are chosen round it. Each lake laid is
+/// published as a [`Lake`].
 #[derive(Debug, Clone)]
 pub struct Lakes {
     /// A stable name, so two lakings in one chain, deep lakes and small
@@ -741,8 +742,9 @@ mod tests {
     use crate::accrete::tests::{accrete, owing, rig};
     use crate::chain::Chain;
     use crate::context::BaseContext;
+    use crate::dungeon::Rooms;
     use crate::loops::OpenLoops;
-    use rl_core::RunSeed;
+    use rl_core::{Rect, RunSeed};
     use rl_grid::{Terrain, TileProps, TileRegistry};
 
     /// The accretion rig's tiles with a liquid that stops a body, a shore
@@ -1312,5 +1314,42 @@ mod tests {
             }
         }
         assert!(moved > 10, "only {moved} places had a room a lake lay in, or this proves little");
+    }
+
+    /// Small rooms and corridors with no areas at all, then `more`: a
+    /// place where nothing but the rooms say where the floor is.
+    fn roomed(seed: u64, more: impl FnOnce(Chain<BaseContext>, &Rig) -> Chain<BaseContext>) -> Result<BaseContext, BuildError> {
+        let r = rig_with_water();
+        let floor = rig().floor;
+        let rooms = Rooms { floor, attempts: 60, min_size: 2, max_size: 4, min_rooms: 3 };
+        more(Chain::new().then(rooms), &r).run_retrying(|| BaseContext::blank(40, 24, r.tiles.clone(), r.wall), RunSeed(seed), 20)
+    }
+
+    /// A lake that covers a room whole leaves no room there, the rooms
+    /// that remain keep their order, and every room cell on a place with
+    /// no areas is one a body can stand on.
+    #[test]
+    fn a_lake_that_covers_a_room_whole_drops_it_and_the_rest_keep_their_order_on_a_place_with_no_areas() {
+        let passable = rig_with_water().tiles.tables().passable;
+        let (mut dropped, mut shrunk) = (0, 0);
+        for s in 0..120 {
+            let dry = roomed(s, |c, _| c).unwrap();
+            let Ok(wet) = roomed(s, |c, r| c.then(islands(r))) else { continue };
+            assert!(wet.outputs().first::<Area>().is_none(), "seed {s}: this rig has no areas");
+            let before: Vec<Rect> = dry.outputs().iter::<Room>().map(|r| r.0).collect();
+            let after: Vec<Rect> = wet.outputs().iter::<Room>().map(|r| r.0).collect();
+            // Each room left lies in a distinct earlier one, in order.
+            let mut at = 0;
+            for room in &after {
+                let inside = |b: &Rect| b.contains(room.origin()) && b.contains(Point::new(room.right() - 1, room.bottom() - 1));
+                let found = before[at..].iter().position(inside);
+                at += found.unwrap_or_else(|| panic!("seed {s}: room {room:?} is in none of {before:?} after the ones before it")) + 1;
+                let under = room.cells().find(|c| !passable[wet.terrain().get(*c).unwrap().index()]);
+                assert!(under.is_none(), "seed {s}: room {room:?} holds {under:?}, which no body stands on");
+            }
+            dropped += usize::from(after.len() < before.len());
+            shrunk += usize::from(after.len() == before.len() && after != before);
+        }
+        assert!(dropped > 0, "no lake covered a room whole in 120 places, or this proves little ({shrunk} rooms only shrank)");
     }
 }

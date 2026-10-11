@@ -205,6 +205,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn retain_drops_only_the_values_of_its_type_it_is_told_to_and_keeps_every_order() {
+        let mut out = Outputs::default();
+        for (i, v) in [1u32, 2, 3, 4].into_iter().enumerate() {
+            out.push(v);
+            out.push(if i % 2 == 0 { "a" } else { "b" });
+            out.push(i as i64);
+        }
+        out.retain::<u32>(|v| v % 2 == 0);
+        assert_eq!(out.iter::<u32>().copied().collect::<Vec<_>>(), vec![2, 4]);
+        assert_eq!(out.iter::<&str>().copied().collect::<Vec<_>>(), vec!["a", "b", "a", "b"], "other types are left alone");
+        assert_eq!(out.iter::<i64>().copied().collect::<Vec<_>>(), vec![0, 1, 2, 3]);
+        out.retain::<u32>(|_| false);
+        assert_eq!(out.iter::<u32>().count(), 0);
+        assert_eq!(out.iter::<i64>().count(), 4);
+    }
+
+    #[test]
     fn outputs_are_collected_by_type() {
         let mut out = Outputs::default();
         out.push(1u32);
