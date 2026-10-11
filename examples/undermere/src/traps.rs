@@ -687,6 +687,39 @@ mod tests {
         (app.world().get::<OnMap>(who).expect("on a map").0, app.world().get::<Position>(who).expect("somewhere").0)
     }
 
+    /// Stepping on a trapdoor drops the adventurer through it, by its own
+    /// trigger, onto a cell of the floor below off its stairs.
+    #[test]
+    fn a_trapdoor_stepped_on_drops_the_adventurer_to_the_floor_below() {
+        let (mut app, me, here_at) = arena_on(3, 3);
+        let trapdoor = here_at.offset(1, 0);
+        lay_unseeable(&mut app, "trapdoor", trapdoor);
+        app.world_mut().write_message(Intent::new(me, Step(Direction::East)));
+        for _ in 0..3 {
+            settle(&mut app);
+        }
+        let (on, at) = whereabouts(&app, me);
+        assert_eq!(on, map_of(4), "fell through to floor four");
+        let map = app.world().resource::<WorldMap>();
+        let place = map.place(on).expect("built by the fall");
+        assert!(at != place.entry && Some(at) != place.exit && map.is_walkable_on(on, at), "on open ground off the stairs, at {at:?}");
+    }
+
+    /// A monster stepping on a trapdoor falls through it too, by the same
+    /// trigger, and leaves the floor.
+    #[test]
+    fn a_trapdoor_stepped_on_drops_a_monster_to_the_floor_below() {
+        let (mut app, _, here_at) = arena_on(3, 3);
+        let trapdoor = here_at.offset(2, 0);
+        lay_unseeable(&mut app, "trapdoor", trapdoor);
+        let goblin = monster(&mut app, "goblin", trapdoor);
+        app.world_mut().write_message(Stepped { actor: goblin, from: trapdoor.offset(1, 0), to: trapdoor });
+        for _ in 0..3 {
+            settle(&mut app);
+        }
+        assert_eq!(whereabouts(&app, goblin).0, map_of(4), "the goblin fell through to floor four");
+    }
+
     /// Nothing falls into the throne's hall: a trapdoor on the floor above
     /// it holds whoever steps on it, who stays where they stepped.
     #[test]

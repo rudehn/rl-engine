@@ -548,6 +548,82 @@ fn nobody_cast_in_a_part_is_small_life_on_any_floor() {
     }
 }
 
+/// Emptying a Rat Trap's gnawed plinth lets two rats out beside each of its
+/// holes, each on a cell of its own, and the log says the walls crack.
+#[test]
+fn the_rat_traps_vermin_pour_from_every_hole_when_its_prize_is_taken() {
+    let (mut app, me, map) = on_the_floor_of("The Rat Trap");
+    let holes: Vec<Point> = props_called(&mut app, map, RAT_HOLE).into_iter().map(|(_, p)| p).collect();
+    assert_eq!(holes.len(), 3, "a hole in three of its corners");
+    let (plinth, there) = props_called(&mut app, map, RAT_PLINTH)[0];
+    let next = beside(&app, there);
+    stand_on(&mut app, me, next);
+    open_and_take(&mut app, me, plinth);
+    let rat = app.world().resource::<crate::bestiary::Bestiary>().defs.expect(VERMIN.0);
+    let world = app.world_mut();
+    let rats: Vec<Point> =
+        world.query::<(&crate::bestiary::Kind, &Position, &OnMap)>().iter(world).filter(|(k, _, on)| k.0 == rat && on.0 == map).map(|(_, p, _)| p.0).collect();
+    assert_eq!(rats.len() as u32, holes.len() as u32 * VERMIN.1, "two from each hole: {rats:?}");
+    assert_eq!(rats.iter().collect::<BTreeSet<_>>().len(), rats.len(), "each on a cell of its own");
+    assert!(rats.iter().all(|r| holes.iter().any(|h| geometry::chebyshev(*r, *h) <= crate::effects::NEAR + 1)), "each beside a hole: {rats:?}");
+    assert!(crate::testing::said(&app).iter().any(|l| l.contains("squeals")), "the log says so");
+}
+
+/// Stepping on a paralysis vestibule's vent rouses the sleepers of the
+/// room beyond it, every one of the piece's own.
+#[test]
+fn the_paralysis_vestibules_vent_rouses_the_sleepers_beyond_it() {
+    let piece = "The Paralysis Vestibule";
+    let (seed, floor) = drawn(piece);
+    let mut app = headless(seed);
+    let me = adventurer(&mut app);
+    sturdy(&mut app, me);
+    let map = map_of(floor);
+    arrive(&mut app, map);
+    let marks: Vec<Point> = {
+        let world = app.world();
+        let (place, prefabs) = (world.resource::<WorldMap>().place(map).expect("built"), world.resource::<Prefabs<MonsterDef>>());
+        let key = prefabs.defs().id(piece).expect("a piece").raw();
+        place.spots.iter().filter(|s| s.prefab == Some(key) && s.tag == SLEEPER as u32).map(|s| s.at).collect()
+    };
+    let world = app.world_mut();
+    let waiting: Vec<Entity> = world
+        .query_filtered::<(Entity, &Position, &OnMap), With<crate::bestiary::Kind>>()
+        .iter(world)
+        .filter(|(_, p, on)| on.0 == map && marks.contains(&p.0))
+        .map(|(e, ..)| e)
+        .collect();
+    assert_eq!(waiting.len(), marks.len(), "a sleeper on each mark");
+    assert!(waiting.iter().all(|s| sleeps(&app, *s)), "asleep before");
+    let (_, vent) = props_called(&mut app, map, "paralysis vent")[0];
+    step_onto(&mut app, me, vent);
+    for s in &waiting {
+        assert!(!sleeps(&app, *s), "{s:?}, in the room beyond, is roused");
+    }
+}
+
+/// Stepping on a tinder room's ember plate sets its straw alight round the
+/// plate at once, and the fire runs over the straw to the far side of the
+/// room, by the brazier, within a few turns.
+#[test]
+fn the_tinder_rooms_ember_plate_sets_the_straw_alight() {
+    let (mut app, me, map) = on_the_floor_of("The Tinder Room");
+    let (_, plate) = props_called(&mut app, map, "ember plate")[0];
+    let (_, brazier) = props_called(&mut app, map, "brazier").into_iter().find(|(_, p)| geometry::chebyshev(*p, plate) == 2).expect("the room's brazier");
+    let far: Vec<Point> = Direction::ALL.iter().map(|d| brazier + d.offset()).filter(|p| geometry::chebyshev(*p, plate) == 2).collect();
+    assert!(far.iter().all(|p| tile_at(&app, map, *p) == "straw"), "straw beside the brazier");
+    step_onto(&mut app, me, plate);
+    let burning = |app: &App, p: Point| app.world().resource::<rl_engine::rl_bevy::fire::Fire>().is_burning(p);
+    let near: Vec<Point> = Direction::ALL.iter().map(|d| plate + d.offset()).filter(|p| tile_at(&app, map, *p) == "straw").collect();
+    assert!(near.iter().any(|p| burning(&app, *p)), "the straw round the plate catches at once");
+    let mut reached = false;
+    for _ in 0..6 {
+        pass_turns(&mut app, 1);
+        reached |= far.iter().any(|p| burning(&app, *p) || tile_at(&app, map, *p) != "straw");
+    }
+    assert!(reached, "the fire runs over the straw to the brazier's side");
+}
+
 /// Whoever stands under a collapsing gallery's lintel when it falls leaps
 /// clear onto open ground rather than being buried standing in the rock.
 #[test]
