@@ -129,7 +129,7 @@ pub use trade::{Buy, Currency, Deal, Parties, Sell, TRADE, TradePlugin, TradeRef
 pub use turn::{
     Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Pace, Resolution, Speeds, Step, Stepped, TurnEnd, TurnRules, Turns, Wait,
 };
-pub use work::{AddWork, BeginWork, BreakReason, Toil, WorkBegan, WorkBroken, WorkDone, WorkKinds, WorkPlugin, Working, Works};
+pub use work::{AddWork, BeginWork, BreakReason, StopWork, Toil, WorkBegan, WorkBroken, WorkDone, WorkKinds, WorkPace, WorkPlugin, Working, Works};
 pub use world::{ChunkLoaded, ChunkRulesRes, PlaceMap, PlaceSave, StreamingPlugin, WindowView, WorldMap, WorldMapSave, WorldRes, WorldSettings};
 
 /// The names a game writes.
@@ -197,7 +197,7 @@ pub mod prelude {
     pub use crate::turn::{
         Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Pace, Resolution, Speeds, Step, Stepped, TurnEnd, TurnRules, Turns, Wait,
     };
-    pub use crate::work::{AddWork, WorkDone, WorkKinds, WorkPlugin, Working};
+    pub use crate::work::{AddWork, StopWork, WorkDone, WorkKinds, WorkPace, WorkPlugin, Working};
     pub use crate::world::{ChunkLoaded, ChunkRulesRes, StreamingPlugin, WorldMap, WorldRes, WorldSettings};
     pub use rl_grid::LightBand;
 }

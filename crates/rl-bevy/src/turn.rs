@@ -298,6 +298,14 @@ impl Acting {
         self.acted.contains(&actor)
     }
 
+    /// Whether the player `actor` asked for something this pass that was
+    /// refused by [`Resolution::refuse`]: answered without its turn being
+    /// spent, so [`has_acted`](Self::has_acted) does not see it, though
+    /// the player did ask.
+    pub fn was_refused(&self, actor: Entity) -> bool {
+        self.refused.contains(&actor)
+    }
+
     fn mark(list: &mut Vec<Entity>, actor: Entity) -> bool {
         if list.contains(&actor) {
             return false;

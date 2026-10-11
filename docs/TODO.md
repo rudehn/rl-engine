@@ -48,15 +48,14 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 21 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
 | 22 | The resolvers in `ResolveSet::Act` are unordered | 4 | low | medium |
 | 23 | A prop cannot block sight, or block the way and let a shot past | 3 | medium | medium |
-| 24 | The player has no long action | 3 | medium | medium |
-| 25 | `offer_abilities` declares `&mut Stack` it only reads | 4 | low | low |
+| 24 | `offer_abilities` declares `&mut Stack` it only reads | 4 | low | low |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
 The corner-cutting fallbacks went the same day: every tactic that picks a neighbour itself now asks whether the move resolver would take that step.
 The one that mattered most was the bench, which disproved the item that had been ranked first on the performance side: the turn loop is linear in the crowd, not quadratic, and the perceive stage's scans are not where the time goes.
 Six more were built on 2026-09-30, healing at their head: healing as its own path to health, the light recast inside the turn, the flow field cache, every game's lines inside a turn through `Tell`, anyone travelling when its wits say so, and a `Burning` thing saved.
-The table was renumbered that day, again on 2026-10-04 for two gaps Undermere's floors found, again on 2026-10-10 when the three furnishing items were built, and again on 2026-10-11 when the coloured light was built, so a number here is a place in the order as it stands and not the one an older note may cite.
+The table was renumbered that day, again on 2026-10-04 for two gaps Undermere's floors found, again on 2026-10-10 when the three furnishing items were built, and again on 2026-10-11 when the coloured light and the player's long action were built, so a number here is a place in the order as it stands and not the one an older note may cite.
 
 Why the order that is left, in four moves:
 
@@ -68,12 +67,10 @@ Why the order that is left, in four moves:
    Neither is urgent.
 3. **Items 10 to 20 are cleanups** worth taking whenever their file is open for another reason rather than scheduling.
    Item 19 is a measurement, not a change: run the lit bench before deciding there is anything to fix.
-   Item 26, added on 2026-10-09, is one more of these.
+   Item 24, added on 2026-10-09, is one more of these.
 4. **The rest wait on something.**
    Item 21 waits on a game that actually wants the tactics it would add, and item 22 on a second game asking for it.
    Item 23 was raised on 2026-09-28 when Foundry's rooms were first furnished, and is what the furnished rooms most visibly lack; the three furnishing items raised beside it were built on 2026-10-10.
-   Item 24 is polish Undermere's play found on 2026-10-07, and waits on a part that works on how a game looks, since it moves every lit game's pictures.
-   Item 25 was ruled around rather than built on 2026-10-07, when Undermere gave a captive a long action only a mind could take up, and waits on a game that wants the player to take one too.
 
 Section 5 is documentation and section 6 is the release, and both are gated on the API settling rather than on this list.
 Section 9 is low priority and deliberately outside the order.
@@ -115,10 +112,6 @@ The five items that opened this section were built in the six stages of `docs/de
   Foundry's lifts are gated by the game for the commando, the core charged or not, and nothing asks that of a droid that travels.
   Following is only for a mind beside the one that left, as it left; a chase that arrives some turns later would need actors on a map nobody is reading to be dealt turns, which nothing does.
   And the narrator's `Leaves` cannot name the way, "leaves" rather than "takes the lift", because a transition has no name the engine reads.
-- **The player has no long action.**
-  `continue_work` claims a worker's decision before any mind is asked, which is how work shuts a brain out for the turns it takes, but `docs/design/work.md` section 10 has always named this one as waiting: `works.begin` on the player, continued automatically and stopped by a key or an `ExploreInterrupt`, neither of which exists yet.
-  Undermere made the gap concrete rather than closing it: a captive gives a long action to whoever frees it, but only a mind takes it up, and freeing one is ruled not interruptible by a blow, since the engine's multi-turn work already skips the player rather than reading its mind to resume one.
-  A player's own long action wants the stopping key and the interrupt section 10 names, and a ruling on whether a blow still breaks it, which a game that wants one is the day to make.
 - **The tutorial's own `narrate` pushes lines once a frame.**
   Steps 4 to 6 and 8 to 10 of the tutorial read `ItemEvent` in `PresentSet::Narrate` and push "You eat the crust. It helps." straight to the log, which is the pattern the narrator replaced: a frame of several passes says them in buffer order rather than in the order they happened.
   They are not inside a pass, so the rule about `Tell` does not reach them; moving them into `TurnSet::React` as a `Tell` would, and the guide chapters that quote them move with it.

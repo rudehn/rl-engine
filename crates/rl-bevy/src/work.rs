@@ -12,21 +12,36 @@
 //! [`WorkBegan`] is written when work starts. [`break_work`] breaks it off
 //! with a [`WorkBroken`] and its [`BreakReason`] when the worker is hurt or
 //! dies, when its target is gone or out of reach, or when another worker
-//! finishes the same target; a game stops it with [`Works::stop`]. What a
-//! kind of work is
-//! called is interned by [`WorkKinds`] from the word a panel shows,
-//! through [`AddWork::add_work`]. [`WorkPlugin`] is opt-in.
+//! finishes the same target; a game stops it with [`Works::stop`], or by
+//! writing a [`StopWork`], which [`answer_stops`] reads at the head of
+//! every pass. What a kind of work is called is interned by [`WorkKinds`]
+//! from the word a panel shows, through [`AddWork::add_work`].
+//!
+//! The player works by the same [`Working`], begun by [`Works::begin`]
+//! from whatever the player did, and [`work_for_player`] spends its turns
+//! for it, at most one each [`WorkPace`], as [`pace_player_work`] allows,
+//! so they pass without a key and slowly enough to be watched. Spending
+//! one of them on anything else leaves the work off, as
+//! [`BreakReason::LeftOff`]; so does a key, which is `rl-ui`'s to read
+//! and which it answers with [`Works::leave_off`]. A foe coming into the
+//! player's sight breaks it as [`BreakReason::FoeSighted`] before another
+//! turn of it is spent, and [`PlayerAtWork`] keeps who was already in
+//! sight. [`WorkPlugin`] is opt-in.
+
+use std::time::Duration;
 
 use bevy::prelude::*;
 use rl_core::Interner;
 use rl_core::turn::BASE_ACTION_COST;
 use rl_rules::work::{Progress, Work, WorkKind, WorkKindId, in_reach};
 
-use crate::combat::{DamageDealt, DeathEvent};
-use crate::components::{MyTurn, Player, Position};
+use crate::combat::{CombatRules, DamageDealt, Dead, DeathEvent, Faction};
+use crate::components::{Actor, MyTurn, Player, Position};
+use crate::lighting::{Concealed, PlayerSight};
 use crate::places::{MapId, OnMap};
-use crate::plugin::{DecideSet, Reads, ResolveSet, Turn, TurnSet};
-use crate::turn::{Acting, Action, AddAction, Intent, Resolution};
+use crate::plugin::{DecideSet, EngineSet, Reads, ResetsOnNewRun, ResolveSet, Turn, TurnSet};
+use crate::stealth::Unseen;
+use crate::turn::{Acting, Action, ActionDone, AddAction, Intent, Resolution};
 
 /// Every kind of work in play, by the word a panel shows for it.
 ///
@@ -122,8 +137,17 @@ pub enum BreakReason {
     OutOfReach,
     /// Another worker finished work on the same target.
     DoneByAnother,
-    /// The game stopped it.
+    /// The game stopped it, with [`Works::stop`] or a [`StopWork`].
     Stopped,
+    /// A foe came into the player's sight: one the faction matrix sets at
+    /// odds with the player either way round, since whichever side would
+    /// start the fight, it is the player's to look up for. Only the
+    /// player's work breaks so, because only the player chose to work
+    /// rather than watch; a mind is asked again once it is done.
+    FoeSighted,
+    /// The worker left off of its own accord: the player pressed a key, or
+    /// spent a turn of the work on something else.
+    LeftOff,
 }
 
 /// Work was broken off, this pass, and everything done on it is lost.
@@ -168,10 +192,54 @@ impl Works<'_, '_> {
     }
 
     /// Stops `actor`'s work, if it has any, as a rule of the game's own.
+    ///
+    /// At once, so a stop written before the turns run this frame is
+    /// answered before another turn of the work is spent. A [`StopWork`]
+    /// says the same from anywhere a message can be written.
     pub fn stop(&mut self, actor: Entity) {
+        self.break_off(actor, BreakReason::Stopped);
+    }
+
+    /// `actor` leaves its work off of its own accord, if it has any: what
+    /// a key pressed while the player works comes to, and read as
+    /// [`BreakReason::LeftOff`] rather than a rule of the game's.
+    pub fn leave_off(&mut self, actor: Entity) {
+        self.break_off(actor, BreakReason::LeftOff);
+    }
+
+    fn break_off(&mut self, actor: Entity, reason: BreakReason) {
         let Ok(work) = self.working.get(actor) else { return };
         self.commands.entity(actor).remove::<Working>();
-        self.broken.write(WorkBroken { actor, kind: work.0.kind, target: work.0.target, done: work.0.done, reason: BreakReason::Stopped });
+        self.broken.write(WorkBroken { actor, kind: work.0.kind, target: work.0.target, done: work.0.done, reason });
+    }
+}
+
+/// Breaks off `actor`'s work, if it has any, as [`BreakReason::Stopped`]:
+/// a rule of the game's own, written as a message.
+///
+/// The hook for anything a game adds that should break work off, such as
+/// a noise heard or a shout from a friend, from any system that can write
+/// a message. [`answer_stops`] reads it at the head of every pass, before
+/// any turn of work is spent in it, so a stop written in one pass's
+/// `TurnSet::React` or in a frame's drawing is answered before the next
+/// turn of the work. [`Works::stop`] is the same, at once.
+#[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StopWork(pub Entity);
+
+/// Breaks off the work of everyone a [`StopWork`] names.
+///
+/// At the head of [`DecideSet::Sense`], before [`continue_work`] claims a
+/// mind's turn for it and long before [`work_for_player`] spends the
+/// player's, so a stop is never a turn late.
+pub fn answer_stops(mut stops: MessageReader<StopWork>, mut works: Works) {
+    // Once each: the work comes off when the commands run, so a second
+    // stop for the same worker in one read would find it still there.
+    let mut stopped: Vec<Entity> = Vec::new();
+    for StopWork(actor) in stops.read() {
+        if !stopped.contains(actor) {
+            stopped.push(*actor);
+            works.stop(*actor);
+        }
     }
 }
 
@@ -232,13 +300,230 @@ type AtWork<'w, 's> = Query<'w, 's, Entity, (With<Working>, With<MyTurn>, Withou
 /// Carries on the work of whoever holds the turn, before any mind is
 /// asked: claiming the decision is what keeps the perceive stage shut.
 ///
-/// Not the player's: the player's own long actions wait for a slice of
-/// their own, with a key to stop them.
+/// Not the player's: [`work_for_player`] spends those, later in the pass,
+/// so that whatever the player asked for this frame is resolved first.
 pub fn continue_work(mut acting: ResMut<Acting>, mut toil: MessageWriter<Intent<Toil>>, working: AtWork) {
     for actor in &working {
         if acting.claim_decision(actor) {
             toil.write(Intent::new(actor, Toil));
         }
+    }
+}
+
+/// The least wall-clock time between two turns of the player's work.
+///
+/// A held status spends its holder's turns as fast as the loop runs, and
+/// that is right for turns nobody chose. Work is chosen, can be stopped by
+/// a key, and is broken off by what happens while it goes on, so its
+/// turns are paced to be watched: the world is seen to move around the
+/// player, and a key pressed to stop it lands before the work is over.
+/// The pace decides only when a turn is spent, never what it does, so a
+/// replay keyed by the turn clock plays the same at any pace.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkPace(pub Duration);
+
+impl WorkPace {
+    /// One turn of the work each `every` of the wall clock, at most.
+    pub const fn every(every: Duration) -> Self {
+        Self(every)
+    }
+
+    /// One turn of the work a frame: what a test, or a run nobody watches,
+    /// wants.
+    pub const fn every_frame() -> Self {
+        Self(Duration::ZERO)
+    }
+}
+
+impl Default for WorkPace {
+    /// Twenty turns a second: ten turns of work are half a second to
+    /// watch, and a key lands well inside them.
+    fn default() -> Self {
+        Self::every(Duration::from_millis(50))
+    }
+}
+
+/// The engine's hand on the player's work: whether a turn of it is due,
+/// and which foes were already in sight.
+///
+/// Kept by [`pace_player_work`] and [`work_for_player`]; never saved,
+/// since every part of it is put back from the world. A work that was
+/// begun this session starts with whoever was in sight when it was begun;
+/// one that was not, a run loaded mid-work, starts with nobody, so a foe
+/// in sight on its first turn breaks it, since nobody can say whether
+/// that foe came into sight before the save or after the work began.
+#[derive(Resource, Debug, Default)]
+pub struct PlayerAtWork {
+    /// The player whose work the rest is about.
+    worker: Option<Entity>,
+    /// Wall-clock time waited since the last turn of it.
+    waited: Duration,
+    /// Whether the pace has allowed the next turn.
+    due: bool,
+    /// The foes in sight at the last turn of it.
+    seen: Vec<Entity>,
+}
+
+/// Lets the player's work have a turn once its [`WorkPace`] has passed.
+///
+/// Once a frame, before [`EngineSet::Input`], where a key would have asked
+/// for the turn: a pass may run hundreds of times a frame, and a turn
+/// allowed there would spend the whole work in one frame. Before the set
+/// rather than in it, so a game's own input systems, an exclusive one
+/// among them, need no order against it. With nobody at work it
+/// forgets everything, so the next work begins from nothing.
+pub fn pace_player_work(time: Res<Time>, pace: Res<WorkPace>, mut hand: ResMut<PlayerAtWork>, workers: Query<(), (With<Player>, With<Working>)>) {
+    if workers.is_empty() {
+        *hand = PlayerAtWork::default();
+        return;
+    }
+    if !hand.due {
+        hand.waited += time.delta();
+        hand.due = hand.waited >= pace.0;
+    }
+}
+
+/// Anyone who might stand in the player's sight.
+type Bystanders<'w, 's> =
+    Query<'w, 's, (Entity, &'static Position, Option<&'static OnMap>, Option<&'static Faction>, Has<Concealed>), (With<Actor>, Without<Dead>, Without<Unseen>)>;
+
+/// What the player at work looks up to see: its own side, what it sees,
+/// the sides' rules and whoever stands about.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Lookout<'w, 's> {
+    sides: Query<'w, 's, Option<&'static Faction>, With<Player>>,
+    sight: PlayerSight<'w, 's>,
+    rules: Option<Res<'w, CombatRules>>,
+    bystanders: Bystanders<'w, 's>,
+}
+
+impl Lookout<'_, '_> {
+    /// Every foe `me` sees, in a fixed order, or `None` when `me` is not
+    /// the player: an actor alive and not [`Unseen`], shown by
+    /// [`PlayerSight`], so one concealed in the dark is no foe in sight, and
+    /// at odds with the player either way round. With no rules, or with no
+    /// side on either, anyone is at odds with anyone, as stealth reads it:
+    /// a game with no sides has nobody to be friends with.
+    fn foes(&self, me: Entity) -> Option<Vec<Entity>> {
+        let mine = self.sides.get(me).ok()?;
+        let rules = self.rules.as_deref();
+        let mut foes: Vec<Entity> = self
+            .bystanders
+            .iter()
+            .filter(|(other, at, on, theirs, concealed)| {
+                let odds = match (rules, mine, *theirs) {
+                    (Some(rules), Some(mine), Some(theirs)) => rules.factions.is_hostile(mine.0, theirs.0) || rules.factions.is_hostile(theirs.0, mine.0),
+                    _ => true,
+                };
+                *other != me && odds && self.sight.shows(at.0, *on, *concealed)
+            })
+            .map(|(other, ..)| other)
+            .collect();
+        foes.sort();
+        Some(foes)
+    }
+}
+
+/// The player at work, and whether it holds the turn.
+type PlayerWorking<'w, 's> = Query<'w, 's, (Entity, &'static mut Working, Has<MyTurn>), With<Player>>;
+
+/// What [`work_for_player`] spends a turn with or breaks the work off by.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct PlayerToil<'w, 's> {
+    commands: Commands<'w, 's>,
+    acting: ResMut<'w, Acting>,
+    spent: MessageWriter<'w, ActionDone>,
+    done: MessageWriter<'w, WorkDone>,
+    broken: MessageWriter<'w, WorkBroken>,
+}
+
+impl PlayerToil<'_, '_> {
+    fn break_off(&mut self, actor: Entity, work: &Work<Entity>, reason: BreakReason) {
+        self.commands.entity(actor).remove::<Working>();
+        self.broken.write(WorkBroken { actor, kind: work.kind, target: work.target, done: work.done, reason });
+    }
+}
+
+/// Spends the turn the player holds on its work, when nothing else has,
+/// and breaks the work off when something else has or a foe has come into
+/// sight.
+///
+/// After every resolver and before the sweep, so whatever the player asked
+/// for this frame, a game's action or the engine's, has been answered
+/// first: a turn the player spent on anything else, or an ask refused,
+/// leaves the work off as [`BreakReason::LeftOff`] and the player's own
+/// act stands, so no key the player meant is swallowed by the work. A
+/// turn something claimed the decision for, as a status that holds does,
+/// is lost to the work as it is to a mind's, and leaves it on.
+///
+/// Otherwise the player looks up before working: a foe in sight that was
+/// not in sight at the last turn of it breaks the work as
+/// [`BreakReason::FoeSighted`], and the player keeps the turn, unspent, to
+/// answer the foe. Then, when [`pace_player_work`] has let a turn be due,
+/// it is spent as a wait costs and counted, and on its last
+/// [`WorkDone`] is written, as [`resolve_toil`] does for a mind; until
+/// then the player holds the turn and the frame ends, so the world is
+/// drawn between every two turns of the work.
+pub fn work_for_player(
+    mut hand: ResMut<PlayerAtWork>,
+    mut began: MessageReader<WorkBegan>,
+    mut hurt: MessageReader<DamageDealt>,
+    mut toil: PlayerToil,
+    mut workers: PlayerWorking,
+    lookout: Lookout,
+) {
+    let mut fresh: Vec<Entity> = Vec::new();
+    for b in began.read() {
+        // Read off the player rather than its work, which the commands of
+        // whatever began it may not have put on yet.
+        if let Some(foes) = lookout.foes(b.actor) {
+            // Begun with whoever was in sight then, which the player chose
+            // to begin it in front of.
+            hand.worker = Some(b.actor);
+            hand.seen = foes;
+            fresh.push(b.actor);
+        }
+    }
+    let harmed: Vec<Entity> = hurt.read().filter(|h| h.dealt > 0).map(|h| h.target).collect();
+    for (me, mut work, holds) in &mut workers {
+        if hand.worker != Some(me) {
+            // Work this session never saw begun: a run loaded mid-work.
+            hand.worker = Some(me);
+            hand.seen.clear();
+        }
+        // The turn it was begun on is its first, spent by the beginning.
+        if !holds || fresh.contains(&me) || toil.acting.has_decided(me) {
+            continue;
+        }
+        // Hurt in this very pass, by a trap or a fire on the player's own
+        // turn: no turn of work, and [`break_work`] breaks it off as hurt
+        // once the pass reaches `React`.
+        if harmed.contains(&me) {
+            continue;
+        }
+        if toil.acting.has_acted(me) || toil.acting.was_refused(me) {
+            toil.break_off(me, &work.0, BreakReason::LeftOff);
+            continue;
+        }
+        let now = lookout.foes(me).unwrap_or_default();
+        let sighted = now.iter().any(|foe| !hand.seen.contains(foe));
+        hand.seen = now;
+        if sighted {
+            toil.break_off(me, &work.0, BreakReason::FoeSighted);
+            continue;
+        }
+        if !hand.due {
+            continue;
+        }
+        hand.due = false;
+        hand.waited = Duration::ZERO;
+        toil.acting.claim_decision(me);
+        toil.acting.claim_action(me);
+        if work.0.advance() == Progress::Finished {
+            toil.commands.entity(me).remove::<Working>();
+            toil.done.write(WorkDone { actor: me, kind: work.0.kind, target: work.0.target });
+        }
+        toil.spent.write(ActionDone { actor: me, cost: BASE_ACTION_COST });
     }
 }
 
@@ -274,7 +559,8 @@ pub fn resolve_toil(
     }
 }
 
-/// Work: an actor doing one thing across many turns.
+/// Work: an actor doing one thing across many turns, the player's own
+/// long actions among them.
 ///
 /// Opt-in. A mind that decides to work in a game without it is refused
 /// by the sweeper, the way a blow is in a game without combat.
@@ -283,9 +569,13 @@ pub struct WorkPlugin;
 impl Plugin for WorkPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<WorkKinds>()
+            .init_resource::<WorkPace>()
+            .init_resource::<PlayerAtWork>()
+            .reset_on_new_run::<PlayerAtWork>()
             .add_message::<WorkBegan>()
             .add_message::<WorkDone>()
             .add_message::<WorkBroken>()
+            .add_message::<StopWork>()
             // Harm and death are combat's; without combat nothing is ever
             // hurt, and an empty queue says so.
             .reads::<DamageDealt>()
@@ -293,8 +583,13 @@ impl Plugin for WorkPlugin {
             .add_systems(Turn, break_work.in_set(TurnSet::React))
             .add_action::<BeginWork>()
             .add_action::<Toil>()
-            .add_systems(Turn, continue_work.in_set(DecideSet::Sense))
-            .add_systems(Turn, (resolve_begins, resolve_toil).chain().in_set(ResolveSet::Act));
+            .add_systems(Turn, (answer_stops, continue_work).chain().in_set(DecideSet::Sense))
+            .add_systems(Turn, (resolve_begins, resolve_toil).chain().in_set(ResolveSet::Act))
+            // Between the resolvers and the sweep rather than in a set of
+            // its own: after everything the player could have asked for,
+            // and before anything that would refuse it.
+            .add_systems(Turn, work_for_player.after(TurnSet::Resolve).before(TurnSet::Sweep))
+            .add_systems(Update, pace_player_work.before(EngineSet::Input));
     }
 }
 
@@ -564,5 +859,188 @@ mod tests {
         app.world_mut().despawn(thing);
         pass(&mut app, player);
         assert_eq!(reasons(&app).last(), Some(&BreakReason::OutOfReach), "which it drops once the thing is gone");
+    }
+
+    /// The player at work on `needed` turns of mending, begun as a game
+    /// begins it, by an act that spends the player's turn; a turn a frame;
+    /// and the clock when it was begun.
+    fn player_at_work(needed: u16) -> (App, Point, Entity, u32) {
+        let (mut app, start, player, kind) = arena();
+        app.insert_resource(WorkPace::every_frame());
+        let began = app.world().resource::<Turns>().now();
+        app.world_mut().write_message(Intent::new(player, BeginWork(Work::new(kind, needed))));
+        app.update();
+        assert!(app.world().get::<Working>(player).is_some(), "the player took the work up");
+        (app, start, player, began)
+    }
+
+    /// Turns the player's work has done.
+    fn done(app: &App, player: Entity) -> Option<u16> {
+        app.world().get::<Working>(player).map(|w| w.0.done)
+    }
+
+    /// Frames, with no key pressed and nothing written for the player.
+    fn frames(app: &mut App, n: usize) {
+        for _ in 0..n {
+            app.update();
+        }
+    }
+
+    #[test]
+    fn the_players_work_spends_one_turn_a_frame_without_a_key_and_is_done_after_exactly_the_turns_it_needs() {
+        for needed in 2..=6u16 {
+            let (mut app, _, player, began) = player_at_work(needed);
+            for turn in 2..needed {
+                app.update();
+                assert_eq!(done(&app, player), Some(turn), "{needed}: one turn a frame, never the whole work in one");
+            }
+            app.update();
+            assert!(app.world().get::<Working>(player).is_none(), "{needed}: done, and nothing is left working");
+            let finished = &app.world().resource::<Finished>().0;
+            assert_eq!(finished.len(), 1, "{needed}: one finish");
+            assert_eq!(finished[0].0.actor, player);
+            assert_eq!(finished[0].1 - began, (needed as u32 - 1) * BASE_ACTION_COST, "{needed}: a wait's cost a turn, the first spent beginning it");
+            frames(&mut app, 3);
+            assert!(app.world().get::<MyTurn>(player).is_some(), "{needed}: and the player then holds its turn and waits for a key");
+            assert_eq!(app.world().resource::<Turns>().now() - began, needed as u32 * BASE_ACTION_COST, "{needed}: with no turn spent for it");
+        }
+    }
+
+    #[test]
+    fn the_players_work_waits_out_its_pace_between_turns() {
+        let (mut app, _, player, _) = player_at_work(20);
+        app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(std::time::Duration::from_millis(20)));
+        app.insert_resource(WorkPace::every(std::time::Duration::from_millis(50)));
+        // A frame for the manual clock to take over from the real one.
+        app.update();
+        let from = done(&app, player).unwrap();
+        frames(&mut app, 9);
+        assert_eq!(done(&app, player), Some(from + 3), "a turn each 50 ms at 20 ms a frame: three in nine frames, whatever the phase");
+    }
+
+    #[test]
+    fn a_stop_written_while_the_player_works_breaks_it_off_before_another_turn_is_spent() {
+        let (mut app, _, player, _) = player_at_work(10);
+        frames(&mut app, 2);
+        let clock = app.world().resource::<Turns>().now();
+        app.world_mut().write_message(StopWork(player));
+        frames(&mut app, 3);
+        assert_eq!(reasons(&app), vec![BreakReason::Stopped]);
+        assert_eq!(app.world().resource::<Broken>().0[0].done, 3, "the turns it had done, and none more");
+        assert_eq!(app.world().resource::<Turns>().now(), clock, "nothing spent since");
+        assert!(app.world().get::<MyTurn>(player).is_some(), "the player holds its turn");
+    }
+
+    #[test]
+    fn a_blow_that_lands_on_the_player_at_work_breaks_it_off_before_another_turn_of_it() {
+        let (mut app, _, player, _) = player_at_work(10);
+        frames(&mut app, 2);
+        let damage = app.world().resource::<TheSides>().0.kind;
+        app.world_mut().write_message(crate::combat::DamageEvent::new(player, rl_rules::Hit::from_source(None, damage, 2)));
+        frames(&mut app, 3);
+        assert_eq!(reasons(&app), vec![BreakReason::Hurt]);
+        assert_eq!(app.world().resource::<Broken>().0[0].done, 3, "the pass it landed in was no turn of work");
+        assert!(app.world().get::<Working>(player).is_none());
+    }
+
+    #[test]
+    fn a_foe_stepping_into_the_players_sight_breaks_its_work_off_and_the_player_keeps_the_turn() {
+        let (mut app, start, player, kind) = arena();
+        app.insert_resource(WorkPace::every_frame());
+        let sides = app.world().resource::<TheSides>().0;
+        // In sight when the work is taken up: the player chose to begin
+        // in front of it.
+        app.world_mut().spawn((Actor, Blocks, Position(start.offset(-3, 0)), Health::full(5), crate::combat::Faction(sides.theirs)));
+        // A friend and a foe, both out of sight.
+        let friend = app.world_mut().spawn((Actor, Blocks, Position(start.offset(0, 12)), Health::full(5), crate::combat::Faction(sides.ours))).id();
+        let foe = app.world_mut().spawn((Actor, Blocks, Position(start.offset(12, 0)), Health::full(5), crate::combat::Faction(sides.theirs))).id();
+        app.world_mut().write_message(Intent::new(player, BeginWork(Work::new(kind, 20))));
+        frames(&mut app, 3);
+        assert!(reasons(&app).is_empty(), "a foe already in sight leaves it on");
+        app.world_mut().get_mut::<Position>(friend).unwrap().0 = start.offset(0, 3);
+        frames(&mut app, 2);
+        assert!(reasons(&app).is_empty(), "and so does a friend coming into sight");
+        let worked = done(&app, player).unwrap();
+        app.world_mut().get_mut::<Position>(foe).unwrap().0 = start.offset(4, 0);
+        let clock = app.world().resource::<Turns>().now();
+        frames(&mut app, 3);
+        assert_eq!(reasons(&app), vec![BreakReason::FoeSighted]);
+        assert_eq!(app.world().resource::<Broken>().0[0].done, worked, "before another turn of it");
+        assert_eq!(app.world().resource::<Turns>().now(), clock, "and the turn is the player's, unspent");
+        assert!(app.world().get::<MyTurn>(player).is_some());
+    }
+
+    #[test]
+    fn the_player_spending_a_turn_of_work_on_anything_else_leaves_it_off_and_does_that_instead() {
+        let (mut app, _, player, _) = player_at_work(10);
+        frames(&mut app, 2);
+        let clock = app.world().resource::<Turns>().now();
+        app.world_mut().write_message(Intent::new(player, Wait));
+        app.update();
+        assert_eq!(reasons(&app), vec![BreakReason::LeftOff]);
+        assert_eq!(app.world().resource::<Broken>().0[0].done, 3, "the wait was not a turn of work");
+        assert_eq!(app.world().resource::<Turns>().now(), clock + BASE_ACTION_COST, "and the wait was spent");
+    }
+
+    #[test]
+    fn a_status_that_holds_the_player_takes_its_turns_from_the_work_and_leaves_it_on() {
+        let (mut app, _, player, _) = player_at_work(10);
+        app.insert_resource(SpendTheirs(player));
+        app.add_systems(Turn, spend_theirs.in_set(DecideSet::Sense));
+        frames(&mut app, 4);
+        assert!(reasons(&app).is_empty(), "lost turns are not a choice");
+        assert_eq!(done(&app, player), Some(1), "and none of them was work");
+    }
+
+    /// Whose turns [`spend_theirs`] takes, as a status that holds takes them.
+    #[derive(Resource)]
+    struct SpendTheirs(Entity);
+
+    fn spend_theirs(who: Res<SpendTheirs>, mut acting: ResMut<Acting>, mut spent: MessageWriter<ActionDone>, holding: Query<(), With<MyTurn>>) {
+        if holding.contains(who.0) && acting.claim_decision(who.0) && acting.claim_action(who.0) {
+            spent.write(ActionDone { actor: who.0, cost: BASE_ACTION_COST });
+        }
+    }
+
+    /// What a run loaded mid-work has: the player carrying the work, and
+    /// nothing of this session's to say it was ever begun.
+    #[test]
+    fn work_the_player_was_saved_at_carries_on_and_a_foe_in_sight_when_it_does_breaks_it() {
+        let (mut app, start, player, kind) = arena();
+        app.insert_resource(WorkPace::every_frame());
+        app.world_mut().entity_mut(player).insert(Working(Work { kind, target: None, done: 4, needed: 6 }));
+        frames(&mut app, 3);
+        assert!(app.world().get::<Working>(player).is_none(), "carried on from where it was");
+        assert_eq!(app.world().resource::<Finished>().0.len(), 1, "and done");
+
+        let (mut app, _, player, kind) = arena();
+        app.insert_resource(WorkPace::every_frame());
+        let sides = app.world().resource::<TheSides>().0;
+        app.world_mut().spawn((Actor, Blocks, Position(start.offset(3, 0)), Health::full(5), crate::combat::Faction(sides.theirs)));
+        app.world_mut().entity_mut(player).insert(Working(Work { kind, target: None, done: 4, needed: 6 }));
+        frames(&mut app, 2);
+        assert_eq!(reasons(&app), vec![BreakReason::FoeSighted], "nobody can say the foe was there before the save");
+    }
+
+    #[test]
+    fn a_mind_works_on_beside_the_player_and_is_never_broken_off_by_what_comes_into_sight() {
+        let (mut app, start, player, kind) = arena();
+        app.insert_resource(WorkPace::every_frame());
+        let sides = app.world().resource::<TheSides>().0;
+        let mender = app
+            .world_mut()
+            .spawn((Actor, Blocks, Position(start.offset(-12, 0)), Health::full(5), Viewshed::new(8), crate::combat::Faction(sides.theirs)))
+            .id();
+        app.world_mut().entity_mut(mender).insert(Working(Work::new(kind, 6)));
+        app.world_mut().write_message(Intent::new(player, BeginWork(Work::new(kind, 20))));
+        app.update();
+        app.world_mut().get_mut::<Position>(mender).unwrap().0 = start.offset(-6, 0);
+        frames(&mut app, 2);
+        assert_eq!(reasons(&app), vec![BreakReason::FoeSighted], "the player looks up");
+        for _ in 0..8 {
+            pass(&mut app, player);
+        }
+        let finished: Vec<Entity> = app.world().resource::<Finished>().0.iter().map(|(d, _)| d.actor).collect();
+        assert_eq!(finished, vec![mender], "the mender, with the player in its sight, works on to the end");
     }
 }
