@@ -36,7 +36,7 @@ use rl_rules::{ActorView, Brain, Choice, Decision, MovementProfile, Snapshot, Ta
 
 use crate::ability::Use;
 use crate::combat::{Attack, CombatRules, Dead, Faction, Health};
-use crate::components::{Actor, MyTurn, Player, Position, Viewshed};
+use crate::components::{Actor, Blocks, MyTurn, Player, Position, Viewshed};
 use crate::doors::Open;
 use crate::items::{EquipFromGround, PickUp, UseItem, UseItemAt};
 use crate::lighting::{DarkSight, Lighting};
@@ -273,45 +273,82 @@ impl<K: Ord + Clone, V> Recent<K, V> {
 /// a hunter asks for the way toward every enemy it sees, a companion toward
 /// its allies, a searcher toward a remembered cell, and every mind that
 /// asks the same question in the same movement class reads the same map.
-/// A field lives until the map's cost epoch changes, so a mind that did
-/// not move and a player who did not move cost nothing the next pass.
+/// A field lives until the map's cost epoch changes, the window moves, or
+/// something standing changes, so a mind that did not move and a player
+/// who did not move cost nothing the next pass.
 ///
 /// A field toward a few goals is the lowest, cell for cell, of one flood
 /// per goal, which is exactly the flood from all of them. So two hunters
 /// that see different enemies share the flood from each enemy both see,
 /// and a goal that stood still is not flooded again because another moved.
 ///
+/// Fields flood round what stands: a blocker that is not an actor, a
+/// blocking prop above all, is a wall to them as surely as a wall tile.
+/// The map's tiles alone were what they flooded once, and a mind behind a
+/// post took its field's way into the post, was refused, and stood there
+/// for good while a way round was three steps off. Actors are not walls to
+/// a field, since they step aside or are fought, and `can_step` refuses the
+/// cell one stands in for the turn it stands there; what stands never
+/// moves on its own, so it is part of the ground a field is flooded over.
+/// What stands is read off [`Occupancy`] when that changes, and the fields
+/// are thrown away only when the cells it stands on differ, so an actor's
+/// step costs a walk over the index and never a flood.
+///
 /// Window-local, like every grid the engine keeps; the points a tactic
 /// hands in and gets back are translated at the boundary, so no map is
 /// ever copied to shift its origin.
-#[derive(Resource, Default)]
+#[derive(Resource)]
 pub struct FlowFields {
-    /// The map's cost epoch the fields were built for.
-    epoch: Option<u64>,
+    /// The map's cost epoch and window generation the fields were built
+    /// for: a field is window-local, so one built before the window moved
+    /// leads from cells that are now somewhere else.
+    epoch: Option<(u64, u64)>,
+    /// Every cell of the current map something that is not an actor stands
+    /// on and blocks, sorted, in world coordinates.
+    standing: Vec<Point>,
+    /// The same cells, window-local, as the floods read them.
+    walls: BitGrid,
     fields: Recent<FieldKey, DijkstraMap>,
     floods: Recent<FloodKey, DijkstraMap>,
+}
+
+impl Default for FlowFields {
+    fn default() -> Self {
+        Self { epoch: None, standing: Vec::new(), walls: BitGrid::new(0, 0), fields: Recent::default(), floods: Recent::default() }
+    }
 }
 
 impl FlowFields {
     /// The field for `key`, built if it is not there.
     fn ensure(&mut self, key: FieldKey, map: &WorldMap) -> Option<&DijkstraMap> {
-        if self.epoch != Some(map.cost_epoch()) {
+        let epoch = (map.cost_epoch(), map.generation());
+        if self.epoch != Some(epoch) {
             self.fields.clear();
             self.floods.clear();
-            self.epoch = Some(map.cost_epoch());
+            self.epoch = Some(epoch);
+            let window = map.window_tiles();
+            self.walls = BitGrid::new(window.width, window.height);
+            for p in self.standing.iter().filter_map(|p| map.to_local(*p)) {
+                self.walls.insert(p);
+            }
         }
         if !self.fields.touch(&key) {
             let (goals, profile, opens_doors, away) = &key;
-            let view = if *opens_doors { map.opening_view() } else { map.view() };
             let goals: Vec<(Point, Point)> = goals.iter().filter_map(|g| Some((*g, map.to_local(*g)?))).collect();
             if goals.is_empty() {
                 return None;
             }
+            let ground = |goals: &[Point]| AroundStanding {
+                view: if *opens_doors { map.opening_view() } else { map.view() },
+                walls: &self.walls,
+                goals: goals.to_vec(),
+            };
             let mut field = if goals.len() <= COMPOSED_UP_TO {
                 let mut field: Option<DijkstraMap> = None;
                 for (goal, local) in goals {
                     let from = (goal, *profile, *opens_doors);
                     if !self.floods.touch(&from) {
+                        let view = ground(&[local]);
                         let mut flood = DijkstraMap::covering(&view);
                         flood.build(&view, [local], PathRules::default());
                         self.floods.insert(from, flood);
@@ -324,17 +361,31 @@ impl FlowFields {
                 }
                 field?
             } else {
+                let locals: Vec<Point> = goals.iter().map(|(_, local)| *local).collect();
+                let view = ground(&locals);
                 let mut field = DijkstraMap::covering(&view);
-                field.build(&view, goals.into_iter().map(|(_, local)| local), PathRules::default());
+                field.build(&view, locals.iter().copied(), PathRules::default());
                 field
             };
             if *away {
+                let view = ground(&[]);
                 field.scale(-12, 10);
                 field.rescan(&view, PathRules::default());
             }
             self.fields.insert(key.clone(), field);
         }
         self.fields.get(&key)
+    }
+
+    /// Takes `cells` as everything that stands on the current map, and
+    /// throws every field away if that is not what stood before.
+    fn see_standing(&mut self, mut cells: Vec<Point>) {
+        cells.sort();
+        cells.dedup();
+        if cells != self.standing {
+            self.standing = cells;
+            self.invalidate();
+        }
     }
 
     /// How many fields are built right now, for a test that a shared goal
@@ -354,6 +405,41 @@ impl FlowFields {
         self.epoch = None;
         self.fields.clear();
         self.floods.clear();
+    }
+}
+
+/// The window as a field floods it: the map's own costs, and a wall
+/// wherever something stands, except under a goal, which is where the
+/// field leads and so is never a wall to it.
+///
+/// A diagonal past what stands is the map's to allow, as the move
+/// resolver allows it: a prop fills its cell, not the corners beside it.
+struct AroundStanding<'a> {
+    view: crate::world::WindowView<'a>,
+    walls: &'a BitGrid,
+    goals: Vec<Point>,
+}
+
+impl Grid2D for AroundStanding<'_> {
+    fn width(&self) -> i32 {
+        self.view.width()
+    }
+
+    fn height(&self) -> i32 {
+        self.view.height()
+    }
+}
+
+impl rl_grid::CostSource for AroundStanding<'_> {
+    fn cost_idx(&self, idx: usize) -> Option<u32> {
+        if self.walls.get_idx(idx) && !self.goals.contains(&self.idx_point(idx)) {
+            return None;
+        }
+        self.view.cost_idx(idx)
+    }
+
+    fn lets_diagonal_past(&self, p: Point) -> bool {
+        self.view.lets_diagonal_past(p)
     }
 }
 
@@ -694,11 +780,13 @@ impl crate::seed::Stream for MindRng {
 
 /// The shared state a mind reads and the stream it draws from.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct MindWorld<'w> {
+pub struct MindWorld<'w, 's> {
     fields: ResMut<'w, FlowFields>,
     rng: ResMut<'w, MindRng>,
     map: Res<'w, WorldMap>,
     occupancy: Res<'w, Occupancy>,
+    /// What blocks and is no actor: what stands, for the fields.
+    standing: Query<'w, 's, (), (With<Blocks>, Without<Actor>)>,
 }
 
 /// A mind chose something of the game's own: what its tactic returned,
@@ -794,10 +882,16 @@ pub fn decide_minds(
     mut world: MindWorld,
     mut minds: Query<Deciding, With<MyTurn>>,
 ) {
+    // Before anything returns early: a change is seen once, by the run of
+    // this system that comes after it, whether or not a mind decides then.
+    if world.occupancy.is_changed() {
+        let standing = world.occupancy.iter().filter(|(_, e)| world.standing.contains(*e)).map(|(p, _)| p).collect();
+        world.fields.see_standing(standing);
+    }
     let Some((thinker, mut snapshot)) = thinking.close() else { return };
     let Ok((mind, my_pos, profile, intelligence, mut came_from, mut doing, mut trails)) = minds.get_mut(thinker) else { return };
     let thinking = &*thinking;
-    let MindWorld { fields, rng, map, occupancy } = &mut world;
+    let MindWorld { fields, rng, map, occupancy, .. } = &mut world;
     let (fields, rng, map, occupancy) = (&mut **fields, &mut **rng, &**map, &**occupancy);
     let wits = intelligence.map(|i| i.0).unwrap_or_default();
     let opens_doors = wits.has(Wits::OPENS_DOORS);
@@ -1206,6 +1300,71 @@ mod tests {
         assert!(app.world().get_entity(monster).is_err(), "the monster despawned by the end of the frame");
         assert!(!app.world().resource::<Occupancy>().is_occupied(mpos));
         assert!(!app.world().resource::<Turns>().contains(monster));
+    }
+
+    /// The player, and a mind of `brain`, on the player's side or the other,
+    /// five cells east of it among blocking props at `props` round it.
+    fn among_props(brain: Brain<Entity>, ours: bool, props: &[(i32, i32)]) -> (App, Entity, Entity, Point) {
+        let (mut app, start, _) = arena();
+        let sides = crate::testing::two_sides(&mut app);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(sides.ours))).id();
+        let at = start.offset(5, 0);
+        for (dx, dy) in props {
+            app.world_mut().spawn((crate::props::Prop, Blocks, Position(at.offset(*dx, *dy))));
+        }
+        let side = if ours { sides.ours } else { sides.theirs };
+        let mind = app.world_mut().spawn((Actor, Blocks, Position(at), Health::full(20), Faction(side), Perception(8), Mind(Arc::new(brain)))).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        (app, player, mind, start)
+    }
+
+    /// The player waits out `turns` turns, and the mind has as many.
+    fn waiting(app: &mut App, player: Entity, turns: usize) {
+        for _ in 0..turns * 4 {
+            if app.world().get::<MyTurn>(player).is_some() {
+                app.world_mut().write_message(Intent::new(player, Wait));
+            }
+            app.update();
+        }
+    }
+
+    /// A cup of props open on the far side from the player: the straight
+    /// way is through its wall, the way round out of its mouth and back.
+    const CUP: [(i32, i32); 5] = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1)];
+
+    #[test]
+    fn a_hunter_cupped_in_blocking_props_walks_out_of_the_cup_and_round_to_its_prey() {
+        let (mut app, player, hunter, start) = among_props(Brain::new().then(Hunt), false, &CUP);
+        waiting(&mut app, player, 12);
+        let at = app.world().get::<Position>(hunter).unwrap().0;
+        assert!(geometry::is_adjacent(at, start), "it walked round the props to the player, not into them: {at:?} from {start:?}");
+    }
+
+    #[test]
+    fn a_hunter_ringed_by_props_waits_and_comes_out_the_turn_one_is_taken_away() {
+        let ring: Vec<(i32, i32)> = Direction::ALL.iter().map(|d| (d.offset().x, d.offset().y)).collect();
+        let (mut app, player, hunter, start) = among_props(Brain::new().then(Hunt), false, &ring);
+        waiting(&mut app, player, 4);
+        let shut = app.world().get::<Position>(hunter).unwrap().0;
+        assert_eq!(shut, start.offset(5, 0), "nowhere to go");
+        let west = shut.offset(-1, 0);
+        let mut props = app.world_mut().query_filtered::<(Entity, &Position), With<crate::props::Prop>>();
+        let gone = props.iter(app.world()).find(|(_, p)| p.0 == west).map(|(e, _)| e).unwrap();
+        app.world_mut().despawn(gone);
+        waiting(&mut app, player, 8);
+        let at = app.world().get::<Position>(hunter).unwrap().0;
+        assert!(geometry::is_adjacent(at, start), "it came out where the prop stood: {at:?} from {start:?}");
+    }
+
+    #[test]
+    fn an_actor_stepping_throws_no_field_away_and_something_standing_that_goes_does() {
+        let mut fields = FlowFields::default();
+        fields.see_standing(vec![Point::new(3, 3)]);
+        fields.fields.insert((vec![Point::ZERO], MovementProfile::default(), false, false), DijkstraMap::new(rl_core::Rect::new(0, 0, 1, 1)));
+        fields.see_standing(vec![Point::new(3, 3)]);
+        assert_eq!(fields.len(), 1, "the same cells stand: the field is kept");
+        fields.see_standing(Vec::new());
+        assert!(fields.is_empty(), "what stood is gone: the field is thrown away");
     }
 
     /// The player behind a ring of wall with one gate in it, a gate that can

@@ -230,9 +230,8 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [3_473_819_593_343_387_339, 6_813_372_197_080_327_372, 4_800_778_433_426_214_721],
-        "fingerprint tripwire: re-baselined once at the end of part 4 (the dungeon), skipped since its task 13: grown \
-         pieces and vaults, secrets, traps and flagstones, the lived-in floors and their wildlife, the flavor budgets, \
-         the recipes' open shares, the biomes' arrival lines and decor all move every floor of a run"
+        [676_409_793_583_956_709, 6_813_372_197_080_327_372, 711_810_992_116_967_930],
+        "fingerprint tripwire: re-baselined when minds' fields came to flood round blocking props, so a monster or \
+         a follower walks round the floor's furniture rather than standing behind it"
     );
 }
