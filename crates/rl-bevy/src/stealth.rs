@@ -287,7 +287,7 @@ impl Plugin for StealthPlugin {
             .add_message::<Cure>()
             .reads::<crate::combat::Struck>()
             .reads::<crate::items::ItemEvent>()
-            .reads::<crate::ability::AbilityEvent>()
+            .reads::<crate::ability::LandedOn>()
             .add_stream::<StealthRng>("StealthPlugin")
             .add_systems(Turn, update_awareness.in_set(DecideSet::Notice))
             .add_systems(Turn, (filter_unseen, filter_unnoticed).chain().in_set(PerceiveSet::Filter))
@@ -325,8 +325,19 @@ pub fn mark_unseen(mut commands: Commands, registries: Option<Res<Registries>>, 
 }
 
 /// Ends every unseen status on whoever made an attack this pass: a blow or
-/// a shot, landed or not, a throw, or an ability landed on anyone but
-/// themselves.
+/// a shot, landed or not, a throw, or anything aimed, an ability or a
+/// thing's aimed use, that came down on anyone but themselves or was
+/// turned back by another.
+///
+/// One rule for every attack, so a staff pointed from the unseen gives its
+/// user away exactly as a blow does, cure and wake alike: the aimed use is
+/// read off [`LandedOn`](crate::ability::LandedOn), the report an ability
+/// lands with too, rather than given a cure of its own. A use reports
+/// whom it landed on only once its trigger lands, in
+/// [`ResolveSet::Triggers`](crate::plugin::ResolveSet::Triggers), so it is
+/// read here and not off [`ItemEvent::Used`](crate::items::ItemEvent::Used),
+/// which is written before anyone knows. One that caught nobody but its
+/// user, a blink or a mend pointed at the user's own feet, is no attack.
 ///
 /// Before the statuses resolve in the same pass, so the cure lands before
 /// the damage does and the one struck wakes to an attacker it can see.
@@ -334,7 +345,7 @@ pub fn mark_unseen(mut commands: Commands, registries: Option<Res<Registries>>, 
 pub fn reveal_attackers(
     mut struck: MessageReader<crate::combat::Struck>,
     mut items: MessageReader<crate::items::ItemEvent>,
-    mut abilities: MessageReader<crate::ability::AbilityEvent>,
+    mut aimed: MessageReader<crate::ability::LandedOn>,
     registries: Option<Res<Registries>>,
     unseen: Query<&Afflicted, With<Unseen>>,
     mut cure: MessageWriter<Cure>,
@@ -344,10 +355,7 @@ pub fn reveal_attackers(
         crate::items::ItemEvent::Thrown { actor, .. } => Some(*actor),
         _ => None,
     }));
-    attackers.extend(abilities.read().filter_map(|e| match e {
-        crate::ability::AbilityEvent::Used { user, targets, .. } if targets.iter().any(|t| t != user) => Some(*user),
-        _ => None,
-    }));
+    attackers.extend(aimed.read().filter(|landed| landed.reached_another()).map(|landed| landed.user));
     let Some(registries) = registries else { return };
     attackers.sort();
     attackers.dedup();
@@ -497,9 +505,10 @@ pub fn update_awareness(mut watch: Watch, mut noticed: MessageWriter<Noticed>) {
 /// Not by an attacker still [`Unseen`]: every attack [`reveal_attackers`]
 /// reads has ended that before the damage lands, so harm credited to one
 /// still unseen came from something that is not on its list, a thing it
-/// used whose `use` trigger hurt those around it, a worn thing pulsing, or
-/// a trap it set off, and that gives nothing away. Whether a use that
-/// harms others should end the unseen is open. A status ticking carries
+/// used where it stood whose `use` trigger hurt those around it, a worn
+/// thing pulsing, or a trap it set off, and that gives nothing away.
+/// Whether a use made where its user stands that harms others should end
+/// the unseen is open; one aimed somewhere does. A status ticking carries
 /// no attacker and wakes nobody whoever is unseen.
 pub fn wake_on_damage(
     mut dealt: MessageReader<DamageDealt>,
@@ -1025,6 +1034,49 @@ mod tests {
         field.app.world_mut().write_message(Intent::new(player, crate::ability::Use { ability: jab, aim: there }));
         field.app.update();
         assert!(!unseen(&field), "one aimed at another is");
+        assert!(field.aware().knows(player), "and the one it hit knows where from");
+    }
+
+    /// A thing in the player's bag whose `use` is `triggers`, an aimed one.
+    fn carry(field: &mut Field, triggers: &str) -> Entity {
+        use crate::effects::{EffectKinds, Moments, Triggers};
+        let specs: Vec<rl_rules::TriggerSpec> = rl_rules::Names::new().load_list(triggers).expect("the triggers parse");
+        let built = {
+            let world = field.app.world();
+            let names = world.resource::<crate::registries::Registries>().names();
+            Triggers::build(&specs, &[], world.resource::<Moments>(), world.resource::<EffectKinds>(), &names).expect("the triggers build")
+        };
+        let thing = field.app.world_mut().spawn((crate::items::Item, built)).id();
+        let player = field.player;
+        field.app.world_mut().get_mut::<crate::items::Inventory>(player).unwrap().items.push(thing);
+        thing
+    }
+
+    /// A staff pointed from the unseen gives its user away as a blow does:
+    /// aimed at bare ground and catching nobody it is no attack, and aimed
+    /// at another it ends the unseen in the pass it lands, before the harm
+    /// does, so the one it hit wakes to where it came from.
+    #[test]
+    fn an_unseen_user_that_zaps_another_is_seen_after_and_the_one_zapped_knows_where_from() {
+        let (mut field, hidden) = armed_field(6);
+        let (player, watcher) = (field.player, field.watcher);
+        let staff = carry(
+            &mut field,
+            r#"[(on: "use", targeting: (mode: Ball(range: 8, radius: 1), aim: Ground), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "1"))])]"#,
+        );
+        hide(&mut field, hidden);
+
+        let bare = field.at(player).offset(0, -4);
+        field.app.world_mut().write_message(Intent::new(player, crate::items::UseItemAt { item: staff, at: bare }));
+        field.app.update();
+        assert!(unseen(&field), "a blast on bare ground catches nobody and gives nobody away");
+        assert!(!field.aware().knows(player));
+
+        let there = field.at(watcher);
+        field.app.world_mut().write_message(Intent::new(player, crate::items::UseItemAt { item: staff, at: there }));
+        field.app.update();
+        assert!(field.app.world().get::<crate::combat::Health>(watcher).unwrap().current < 100, "the zap landed: the test can fail");
+        assert!(!unseen(&field), "a staff pointed at another is an attack");
         assert!(field.aware().knows(player), "and the one it hit knows where from");
     }
 

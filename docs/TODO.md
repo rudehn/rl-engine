@@ -362,11 +362,9 @@ None of them is in the order above and none is scheduled: take one when its file
 
 Left over from the worn gear and unseen slice on 2026-09-27, the same way.
 
-- **A use that harms others does not end the unseen.**
-  `reveal_attackers` in `crates/rl-bevy/src/stealth.rs` ends it on a blow or shot, a throw, and an ability landed on another, which is the list the slice's spec gave; a thing used whose `use` trigger harms those around its user is not on it, and `wake_on_damage` wakes nobody to an attacker still unseen.
-  A player who sets something off on a crowd while hidden would expect to be seen, and the rule would read `Landing::targets` of a `use` trigger the way it reads an ability's.
-  Since 2026-10-05 a `use` trigger may be aimed, and Undermere's staffs and wands harm others from one, so the case is real; no game yet has an unseen status beside an aimed use, Foundry's cloak having nothing to zap and Undermere no cloak, so it waits for the first that has both.
-  The aimed use's landing is worked out in `ResolveSet::Triggers`, before `reveal_attackers` runs, so the fix is a report of who it landed on that the reveal can read, as `AbilityEvent::Used` is for an ability.
+- **A use made where its user stands that harms others does not end the unseen.**
+  `reveal_attackers` in `crates/rl-bevy/src/stealth.rs` ends it on a blow or shot, a throw, and anything aimed, an ability or a thing's aimed use, that came down on another, read off `LandedOn` since 2026-10-10; a thing used where its user stands whose `use` trigger harms those around them is not on it, and `wake_on_damage` wakes nobody to an attacker still unseen.
+  A player who sets something off on a crowd while hidden would expect to be seen, and the rule would read the landing of such a `use` trigger the way it reads an aimed one's, which `land_triggers` would report as `LandedOn` too.
 
 Left over from the layout slice on 2026-10-01: the three pieces of work `docs/design/layout.md` section 0 says key on what it publishes.
 The furnisher and the run director were built on 2026-10-10 as the dressing and the pool, and section 1 says how; what is left is:

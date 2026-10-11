@@ -59,7 +59,8 @@ pub mod work;
 pub mod world;
 
 pub use ability::{
-    Abilities, AbilitiesPlugin, AbilityEvent, Aimed, Bystanders, Cooldowns, Grants, Known, Landed, Offered, Pools, ReflectRng, Reflected, Reflects, Use,
+    Abilities, AbilitiesPlugin, AbilityEvent, Aimed, Bystanders, Cooldowns, Grants, Known, Landed, LandedOn, Offered, Pools, ReflectRng, Reflected, Reflects,
+    Use,
 };
 pub use accuracy::{Attempt, HitRules, Marksmanship, Missed};
 pub use ammo::{Ammo, AmmoChanged, AmmoPlugin, AmmoSet, Dry};

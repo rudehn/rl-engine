@@ -858,4 +858,78 @@ mod tests {
         assert!(!app.world().resource::<TurnHold>().in_flight());
         assert!(app.world().get::<MyTurn>(me).is_some(), "and the player holds its turn, hurt, in the frame the key was read");
     }
+
+    /// The cells the head of `animation` is drawn on, in order, each once
+    /// however many frames it stays there, with every anchor where it was
+    /// written.
+    fn head_path(animation: &Animation) -> Vec<Point> {
+        let mut path: Vec<Point> = Vec::new();
+        let (duration, frames) = (animation.duration(), 1000);
+        for i in 0..frames {
+            let Some(head) = animation.frame(duration * i as f32 / frames as f32, &fixed).first().map(|s| s.at) else { continue };
+            if path.last() != Some(&head) {
+                path.push(head);
+            }
+        }
+        path
+    }
+
+    /// The path a bolt is drawn along, from a real cast through the
+    /// plugin: turned back, out to the body that turned it, onto its cell,
+    /// and home to the caster's own, so the picture agrees with the log's
+    /// line that it was reflected; not turned back, out to the body and no
+    /// further, as before. Over a span of seeds, so both outcomes are seen.
+    #[test]
+    fn a_reflected_bolt_is_drawn_to_the_body_that_turned_it_and_back_to_its_caster() {
+        use rl_core::{Rect, RunSeed};
+        let (mut reflected, mut landed) = (0, 0);
+        for seed in 0..40 {
+            let mut app = rl_bevy::plugin::headless_app();
+            app.add_plugins((crate::map_view::MapViewPlugin::new(Rect::new(0, 0, 40, 20)), ParticlesPlugin));
+            app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, rl_bevy::world::StreamingPlugin, AbilitiesPlugin));
+            app.add_engine_effects();
+            app.insert_resource(Terminal::new(40, 20, Vec2::ONE));
+            app.insert_resource(ParticleStyle { cell_secs: 0.01, burst_secs: 0.05, ..ParticleStyle::default() });
+            let start = rl_bevy::testing::surface(&mut app);
+            let sides = rl_bevy::testing::two_sides(&mut app);
+            app.insert_resource(rl_bevy::Seed(RunSeed(seed)));
+            let kinds = rl_rules::Registry::from_defs(vec![rl_rules::DamageKind::new("kinetic")]).unwrap();
+            let abilities = Abilities::load(
+                r#"[(name: "bolt", mode: Bolt(range: 8), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "1"))])]"#,
+                app.world().resource::<EffectKinds>(),
+                &rl_rules::Names::new().damage_kinds(&kinds),
+            )
+            .expect("the bolt loads");
+            let bolt = abilities.expect("bolt");
+            app.insert_resource(abilities);
+            let me = app
+                .world_mut()
+                .spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), RevealsMap, Health::full(30), Faction(sides.ours), Grants(vec![bolt])))
+                .id();
+            let there = start.offset(3, 0);
+            app.world_mut().spawn((Actor, Blocks, Position(there), Health::full(30), Faction(sides.theirs), Reflects));
+            app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+            app.update();
+            app.update();
+            assert!(app.world().get::<MyTurn>(me).is_some(), "seed {seed}: the caster holds the turn");
+
+            app.world_mut().write_message(Intent::new(me, Use { ability: bolt, aim: there }));
+            app.update();
+            let turned = app.world_mut().resource_mut::<Messages<Reflected>>().drain().count() > 0;
+            let particles = app.world().resource::<Particles>();
+            let [(flight, _)] = particles.playing.as_slice() else { panic!("seed {seed}: the cast is one animation: {:?}", particles.playing) };
+            let path = head_path(flight);
+            let out = vec![start.offset(1, 0), start.offset(2, 0), there];
+            if turned {
+                reflected += 1;
+                assert!(matches!(flight.steps.as_slice(), [Beat::Trail(_), Beat::Trail(_)]), "seed {seed}: two flights: {:?}", flight.steps);
+                let back = vec![start.offset(2, 0), start.offset(1, 0), start];
+                assert_eq!(path, [out, back].concat(), "seed {seed}: out to the body that turned it, and home to the caster");
+            } else {
+                landed += 1;
+                assert_eq!(path, out, "seed {seed}: out to the body it lands on, and no further");
+            }
+        }
+        assert!(reflected > 0 && landed > 0, "both outcomes over forty seeds: {reflected} reflected, {landed} landed");
+    }
 }

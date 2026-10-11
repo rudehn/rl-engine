@@ -369,6 +369,48 @@ pub struct Reflected {
     pub source: Source,
 }
 
+/// Something aimed came down: an ability, or a thing's own aimed use, with
+/// whom it landed on and who turned it back.
+///
+/// Written for both, in the pass each lands, so a rule about anything a
+/// user points at someone reads one report and cannot treat a bolt sent
+/// from the pack differently from a bolt an actor knows: stealth's
+/// [`reveal_attackers`](crate::stealth::reveal_attackers) is that rule.
+/// [`AbilityEvent::Used`] says the same of an ability for the game and the
+/// log, and stays the report a game reads; an aimed use had no report of
+/// whom it landed on before this, since [`ItemEvent::Used`](crate::items::ItemEvent::Used)
+/// is written when the use is made and the landing is worked out later,
+/// when its trigger lands.
+#[derive(Message, Debug, Clone, PartialEq, Eq)]
+pub struct LandedOn {
+    /// Who aimed it.
+    pub user: Entity,
+    /// What it was: an ability, or the `use` trigger of the thing used.
+    pub source: Source,
+    /// Everyone it landed on, the user too when it was turned back or
+    /// caught them.
+    pub targets: Vec<Entity>,
+    /// Every body that turned its share back on the user, as
+    /// [`Landing::turned_by`] holds them.
+    pub turned_by: Vec<Entity>,
+}
+
+impl LandedOn {
+    /// What `landing` reports as it comes down.
+    pub fn of(landing: &Landing) -> Self {
+        Self { user: landing.user, source: landing.source, targets: landing.targets.clone(), turned_by: landing.turned_by.clone() }
+    }
+
+    /// Whether it was aimed at anyone but its user: it landed on another,
+    /// or another turned it back.
+    ///
+    /// A body that turned it back was aimed at as surely as one it landed
+    /// on, so a bolt reflected onto its own caster still counts.
+    pub fn reached_another(&self) -> bool {
+        !self.turned_by.is_empty() || self.targets.iter().any(|t| *t != self.user)
+    }
+}
+
 /// The roll [`Reflects`] spends, its own stream so adding or rolling for a
 /// reflecting body never shifts a single roll combat or an effect already
 /// drew: the same reasoning [`crate::minds::MindRng`] is kept apart for.
@@ -464,7 +506,22 @@ impl Bystanders<'_, '_> {
                 }
             }
         }
-        Landed { landing: Landing { user, source, origin, aim, cells, path, landed_at: landing, targets, bonus: EffectBonus::default(), on: None }, refused }
+        Landed {
+            landing: Landing {
+                user,
+                source,
+                origin,
+                aim,
+                cells,
+                path,
+                landed_at: landing,
+                targets,
+                bonus: EffectBonus::default(),
+                on: None,
+                turned_by: Vec::new(),
+            },
+            refused,
+        }
     }
 
     /// Turns back, one time in two each, every target of `landing` but its
@@ -482,8 +539,13 @@ impl Bystanders<'_, '_> {
     /// bursts round them. Swapping only the targets then left the ground
     /// effects at the original aim, a turned-back bolt still setting the
     /// reflecting body's cell alight. Where a projectile stopped is kept,
-    /// since that is where it was turned and where its flight was seen to
-    /// go, and the burst comes back from there.
+    /// since that is where it was turned: its flight is seen to go there
+    /// and come back to the user, and the burst goes off on the user once
+    /// it has.
+    ///
+    /// Every body that turns its share back is kept in the landing's
+    /// [`turned_by`](Landing::turned_by), for how it is seen to fly and for
+    /// the [`LandedOn`] written when it comes down.
     ///
     /// The second, explicit step [`Self::land`] itself never takes: called
     /// only once an aim is no longer refused and a resolver is about to
@@ -512,8 +574,11 @@ impl Bystanders<'_, '_> {
                 Aim::Ally | Aim::SelfOnly => false,
             };
             let reflected = target != user && thrown && self.reflects.contains(target) && self.rng.as_mut().is_some_and(|rng| rng.0.random_bool(0.5));
-            if reflected && let Some(writer) = self.reflected.as_mut() {
-                writer.write(Reflected { by: target, onto: user, source });
+            if reflected {
+                landing.turned_by.push(target);
+                if let Some(writer) = self.reflected.as_mut() {
+                    writer.write(Reflected { by: target, onto: user, source });
+                }
             }
             turned |= reflected;
             stayed |= !reflected && target != user;
@@ -554,7 +619,7 @@ impl crate::cue::Lands for Landing {}
 /// costs the turn, the way a shot at nothing does.
 pub fn resolve_abilities(
     mut intents: MessageReader<Intent<Use>>,
-    mut events: MessageWriter<AbilityEvent>,
+    mut reports: Reports,
     mut resolution: Resolution,
     catalog: Catalog,
     mut state: UserState,
@@ -585,7 +650,7 @@ pub fn resolve_abilities(
         let mut why = gate(user, id, def, &state, now);
         why.extend(refused);
         if !why.is_empty() {
-            events.write(AbilityEvent::Refused { user, ability: id, why });
+            reports.events.write(AbilityEvent::Refused { user, ability: id, why });
             resolution.failed(user, def.time);
             continue;
         }
@@ -604,20 +669,22 @@ pub fn resolve_abilities(
         // The turn is spent on the cast. With something watching, a
         // projectile is seen to fly before it lands: what it does waits in
         // the air for the first pass after the flight has been seen.
-        let landing = match landing.flight(&world, LookOf::Ability(id)) {
-            Some(flight) => {
+        let flights = landing.flights(&world, LookOf::Ability(id));
+        let landing = if flights.is_empty() {
+            landing
+        } else {
+            for flight in flights {
                 world.cues.write(Cued { actor: user, cue: flight });
-                match airborne.launched(&mut hold, landing) {
-                    None => {
-                        resolution.done(user, def.time);
-                        continue;
-                    }
-                    Some(landing) => landing,
-                }
             }
-            None => landing,
+            match airborne.launched(&mut hold, landing) {
+                None => {
+                    resolution.done(user, def.time);
+                    continue;
+                }
+                Some(landing) => landing,
+            }
         };
-        land(landing, &abilities, &mut world, &mut events);
+        land(landing, &abilities, &mut world, &mut reports);
         resolution.done(user, def.time);
     }
 }
@@ -632,22 +699,31 @@ pub fn land_abilities(
     mut airborne: ResMut<Airborne<Landing>>,
     mut turns: ResMut<Turns>,
     mut world: EffectWorld,
-    mut events: MessageWriter<AbilityEvent>,
+    mut reports: Reports,
 ) {
     for landing in airborne.landing(&mut hold, &mut turns) {
-        land(landing, &abilities, &mut world, &mut events);
+        land(landing, &abilities, &mut world, &mut reports);
     }
 }
 
-/// Lands a use: the burst over the footprint, the effects, and the report.
-fn land(landing: Landing, abilities: &Abilities, world: &mut EffectWorld<'_, '_>, events: &mut MessageWriter<AbilityEvent>) {
+/// What a use is reported by: refused or landed, for the game, and what it
+/// came down on, for every rule about anything aimed.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Reports<'w> {
+    events: MessageWriter<'w, AbilityEvent>,
+    landed: MessageWriter<'w, LandedOn>,
+}
+
+/// Lands a use: the burst over the footprint, the effects, and the reports.
+fn land(landing: Landing, abilities: &Abilities, world: &mut EffectWorld<'_, '_>, reports: &mut Reports<'_>) {
     let user = landing.user;
     let Some(id) = landing.ability() else { return };
     if let Some(burst) = landing.burst(world, LookOf::Ability(id)) {
         world.cues.write(Cued { actor: user, cue: burst });
     }
     abilities.built[id.index()].land(&landing, world);
-    events.write(AbilityEvent::Used { user, ability: id, aim: landing.aim, targets: landing.targets });
+    reports.landed.write(LandedOn::of(&landing));
+    reports.events.write(AbilityEvent::Used { user, ability: id, aim: landing.aim, targets: landing.targets });
 }
 
 /// Every reason `def` may not be used by `user` right now.
@@ -891,6 +967,7 @@ pub fn weigh_self_abilities(world: &mut World) {
                     targets: vec![thinker],
                     bonus: EffectBonus::default(),
                     on: None,
+                    turned_by: Vec::new(),
                 };
                 abilities.built[u.ability.index()].would_act(&landing, world)
             })
@@ -1352,6 +1429,68 @@ mod tests {
             targets_hurt += them_hurt as u32;
         }
         assert!(casters_hurt > 0 && targets_hurt > 0, "both outcomes over forty seeds: {casters_hurt} reflected, {targets_hurt} landed");
+    }
+
+    /// Watched, a bolt turned back is seen to fly to the body that turned it
+    /// and back to its caster, and lands only once both have been seen,
+    /// bursting on the caster; one that is not turned back flies once, to
+    /// the body, and bursts there, as it always did. The picture then
+    /// agrees with the log's line that it was reflected. Over a span of
+    /// seeds, so both outcomes are seen.
+    #[test]
+    fn a_reflected_bolt_is_seen_to_fly_to_the_body_that_turned_it_and_back_to_its_caster() {
+        let (mut reflected, mut landed) = (0, 0);
+        for seed in 0..40 {
+            let (mut app, start) = app();
+            app.world_mut().resource_mut::<crate::seed::Seed>().0 = RunSeed(seed);
+            let bolt = ability(&app, "bolt");
+            let me = caster(&mut app, start, 20, &[bolt]);
+            let there = start.offset(3, 0);
+            let them = foe(&mut app, there);
+            app.world_mut().entity_mut(them).insert(Reflects);
+            settle(&mut app);
+            app.world_mut().resource_mut::<TurnHold>().watch();
+            cues(&mut app);
+
+            app.world_mut().write_message(Intent::new(me, Use { ability: bolt, aim: there }));
+            app.update();
+            let turned = !app.world_mut().resource_mut::<Messages<Reflected>>().drain().collect::<Vec<_>>().is_empty();
+            let (caster, body, look) = (Anchor::on(me, start), Anchor::on(them, there), LookOf::Ability(bolt));
+            let out = Cue::Flight { from: caster, to: body, look };
+            let flown = cues(&mut app);
+            assert_eq!((hp(&app, me), hp(&app, them)), (30, 20), "seed {seed}: nothing lands while it is in the air");
+            if turned {
+                reflected += 1;
+                assert_eq!(flown, vec![out, Cue::Flight { from: body, to: caster, look }], "seed {seed}: out to the body that turned it, and back");
+            } else {
+                landed += 1;
+                assert_eq!(flown, vec![out], "seed {seed}: one flight, to the body it lands on");
+            }
+
+            app.world_mut().resource_mut::<TurnHold>().release();
+            app.update();
+            let burst = cues(&mut app);
+            let [Cue::Burst { from, .. }] = burst.as_slice() else { panic!("seed {seed}: a burst where it landed: {burst:?}") };
+            let (hurt, burst_from) = if turned { (me, caster) } else { (them, body) };
+            assert_eq!(*from, Some(burst_from), "seed {seed}: bursting on whoever it came down on");
+            assert!(hp(&app, hurt) < if turned { 30 } else { 20 }, "seed {seed}: and hurting them");
+        }
+        assert!(reflected > 0 && landed > 0, "both outcomes over forty seeds: {reflected} reflected, {landed} landed");
+    }
+
+    /// What came down reaches another when it landed on anyone but its user
+    /// or was turned back by anyone, and not when it caught its user alone,
+    /// so a bolt reflected onto its own caster still counts as aimed at
+    /// another.
+    #[test]
+    fn landed_on_reaches_another_by_landing_on_them_or_being_turned_back_by_them() {
+        let mut world = World::new();
+        let (me, them) = (world.spawn_empty().id(), world.spawn_empty().id());
+        let report = |targets: Vec<Entity>, turned_by: Vec<Entity>| LandedOn { user: me, source: Source::Ability(AbilityId::from_raw(0)), targets, turned_by };
+        assert!(report(vec![them], vec![]).reached_another(), "landed on another");
+        assert!(report(vec![me], vec![them]).reached_another(), "turned back onto its user by another");
+        assert!(!report(vec![me], vec![]).reached_another(), "its user alone");
+        assert!(!report(vec![], vec![]).reached_another(), "nobody at all");
     }
 
     /// A reflection writes a [`Reflected`] naming the reflecting body and

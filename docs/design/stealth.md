@@ -194,10 +194,11 @@ That rule is about `Stealth`'s quiet, which is for good; the unseen is a status 
 An observer that was alert loses the unseen as it loses anything out of sight, and searches where it last saw it for its memory.
 Noise is still heard, since hearing is not sight.
 One a worn thing holds also ends when the thing is no longer worn, through the same cure, in the pass it comes off; the items plugin writes that cure, since wearing is its to know, and stealth only reads the status going.
-A blow or a shot, landed or not, a throw, or an ability landed on anyone but its user ends every unseen status its maker holds, in the same pass and before the damage lands, so the one struck wakes to an attacker it can see; being hurt does not end it.
+A blow or a shot, landed or not, a throw, or anything aimed, an ability or a thing's aimed use, that came down on anyone but its user or was turned back by another, ends every unseen status its maker holds, in the same pass and before the damage lands, so the one struck wakes to an attacker it can see; being hurt does not end it.
+An aimed use is read off `LandedOn`, the report an ability lands with as well, because its landing is worked out when its trigger lands, after the use was reported, and one report for both keeps a staff and a spell from ever being told apart by the rule.
 It is part of stealth rather than a plugin of its own because it answers stealth's question, who can see whom, and two plugins would make a game order their filters by hand.
 Radar sees nothing either; whether it should is an open question, and so is what a mind that walks into an unseen actor learns.
-A thing used whose `use` trigger harms those around its user does not end it either, since a use is not on the list above; whether it should is open too, and meanwhile the harm wakes nobody to an attacker it cannot see.
+A thing used where its user stands whose `use` trigger harms those around them does not end it either, since such a use is not on the list above; whether it should is open too, and meanwhile the harm wakes nobody to an attacker it cannot see.
 
 ## 8c. Sleeping
 

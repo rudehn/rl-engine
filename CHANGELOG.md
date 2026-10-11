@@ -6,6 +6,10 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- A thing's aimed use gives an unseen user away as an attack does. Anything aimed, an ability or a `use` trigger with a `targeting`, now writes the new `LandedOn { user, source, targets, turned_by }` in the pass it comes down, and stealth's `reveal_attackers` reads that rather than `AbilityEvent::Used`, so a staff pointed at another from the unseen ends the unseen before its harm lands, and the one it hit wakes knowing where from. `LandedOn::reached_another` is the test it uses: landed on anyone but its user, or turned back by anyone.
+  A reflected flight is seen as the log tells it: a bolt or an aimed use that a `Reflects` body turned back whole flies out to that body and back to its user, and bursts on the user, where it flew once to the body and burst there.
+  To change: `Landing` has a new field, `turned_by`, every body that turned its share back; a game that writes a `Landing` literal adds `turned_by: Vec::new()`.
+
 - The narrator never names what the player cannot see. `Said::who_seen` is now asked of `PlayerSight::shows`, the question the map asks, rather than of the doer's cell alone, so an actor `Concealed` in the dark in a cell the player sees is `something` in the log as it is nothing on the map; and the new `Said::whom_seen` asks the same of whom it was done to, so a shot into the dark is "You shoot something for 3.".
   `narrate::render`'s last argument is now `speak_unseen`, the `Phrasebook` setting, where it was whether `{who}` may be named. To change: a game that calls `render` passes `book.speak_unseen`; a game that rewrites a row to name an unseen actor sets `whom_seen` beside `who_seen` when the actor is `{whom}`.
   An ability that harmed someone is told by its harm line alone, "Your bolt hits the rat for 3.", without "You use bolt on the rat." before it; a use that harmed nothing keeps its own line.
