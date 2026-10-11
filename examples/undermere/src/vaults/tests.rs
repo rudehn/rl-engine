@@ -547,3 +547,46 @@ fn nobody_cast_in_a_part_is_small_life_on_any_floor() {
         }
     }
 }
+
+/// Whoever stands under a collapsing gallery's lintel when it falls leaps
+/// clear onto open ground rather than being buried standing in the rock.
+#[test]
+fn whoever_stands_under_the_lintel_leaps_clear_of_the_fall() {
+    let (mut app, me, map) = on_the_floor_of("The Collapsing Gallery");
+    let (plinth, there) = props_called(&mut app, map, KEYSTONE)[0];
+    let lintels: Vec<Point> = props_called(&mut app, map, LINTEL).into_iter().map(|(_, p)| p).collect();
+    let under: Vec<Entity> = lintels.iter().map(|p| crate::testing::still(&mut app, "goblin", *p)).collect();
+    let next = beside(&app, there);
+    stand_on(&mut app, me, next);
+    open_and_take(&mut app, me, plinth);
+    settle(&mut app);
+    let fallen: Vec<Point> = lintels.iter().copied().filter(|p| tile_at(&app, map, *p) == "fallen rock").collect();
+    assert_eq!(fallen.len(), 1, "one way back falls in");
+    for who in under {
+        let stands = at(&app, who);
+        assert!(!fallen.contains(&stands), "{who:?} buried in the rock at {stands:?}");
+        assert!(app.world().resource::<WorldMap>().is_walkable_on(map, stands), "{who:?} on open ground at {stands:?}");
+    }
+}
+
+/// A flooding vault's far end never turns too deep to cross under
+/// somebody standing in it: their cell stays wading-deep until they leave
+/// it, and goes deep once they have.
+#[test]
+fn deep_water_never_rises_under_somebody_standing_in_it() {
+    let (mut app, me, map) = on_the_floor_of("The Flooding Vault");
+    let (altar, there) = props_called(&mut app, map, FLOOD_ALTAR)[0];
+    let grates: Vec<Point> = props_called(&mut app, map, GRATE).into_iter().map(|(_, p)| p).collect();
+    let plan = flood_plan(app.world().resource::<WorldMap>(), there, &grates);
+    let far = plan.iter().find(|(p, _, deep)| deep.is_some() && !grates.contains(p)).map(|(p, ..)| *p).expect("a far end");
+    let wader = crate::testing::still(&mut app, "goblin", far);
+    let next = beside(&app, there);
+    stand_on(&mut app, me, next);
+    open_and_take(&mut app, me, altar);
+    pass_turns(&mut app, FLOOD_TURNS + 2);
+    assert_eq!(at(&app, wader), far, "the wader stands where it was put");
+    assert_eq!(tile_at(&app, map, far), "flooded floor", "wading-deep under the wader");
+    app.world_mut().despawn(wader);
+    pass_turns(&mut app, 2);
+    assert_eq!(tile_at(&app, map, far), "deep water", "and deep once it has gone");
+}
