@@ -862,6 +862,12 @@ impl Rise {
     /// on `map` off the map and stands a [`Rise::monster`] where it lay,
     /// aware of each of `by`. Nothing with no monster of that name, read
     /// against the bestiary now, as [`hatch`] reads its own.
+    ///
+    /// The bones lie underfoot, so whoever crossed the ring may be standing
+    /// on one: what rises there stands up on the nearest free cell
+    /// instead, as a hatchling does, and bones with nowhere free within
+    /// [`NEAR`](super::NEAR) stay where they lie rather than rise into
+    /// somebody.
     pub fn raise(&self, world: &mut World, at: Point, map: MapId, by: &[Entity]) {
         let Some(kind) = world.resource::<Bestiary>().defs.id(&self.monster) else { return };
         let Some(prop) = world.resource::<Registries>().props.id(&self.prop) else { return };
@@ -873,9 +879,21 @@ impl Rise {
                 .collect()
         };
         let seen: Vec<(Entity, Point)> = by.iter().filter_map(|e| world.get::<Position>(*e).map(|p| (*e, p.0))).collect();
+        // Who stands where is not kept up while this runs, so the cells
+        // already risen onto are kept here.
+        let mut taken: Vec<Point> = Vec::new();
+        let mut risen_any = false;
         for (body, cell) in &bodies {
+            let stand = {
+                let (tiles, occupancy) = (world.resource::<WorldMap>(), world.resource::<Occupancy>());
+                let free = |p: &Point| !taken.contains(p) && tiles.is_walkable(*p) && !occupancy.is_occupied(*p);
+                Some(*cell).filter(free).or_else(|| free_cells_near(tiles, occupancy, *cell, taken.len() + 1, super::NEAR).into_iter().find(free))
+            };
+            let Some(stand) = stand else { continue };
+            taken.push(stand);
+            risen_any = true;
             world.despawn(*body);
-            let risen = spawn_monster_now(world, kind, *cell, map);
+            let risen = spawn_monster_now(world, kind, stand, map);
             if let Some(mut aware) = world.get_mut::<Aware>(risen) {
                 for (who, there) in &seen {
                     let mut knows = aware.of(*who);
@@ -884,7 +902,7 @@ impl Rise {
                 }
             }
         }
-        if !bodies.is_empty() && by.iter().any(|e| world.get::<Player>(*e).is_some()) {
+        if risen_any && by.iter().any(|e| world.get::<Player>(*e).is_some()) {
             world.write_message(Tell::new("The bones of the circle stir, and stand.", Tones::BAD));
         }
     }

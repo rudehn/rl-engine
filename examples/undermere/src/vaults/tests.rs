@@ -269,6 +269,30 @@ fn the_circles_bodies_rise_when_it_is_crossed() {
     assert!(risen.iter().all(|p| bones.iter().any(|b| geometry::chebyshev(*p, *b) <= 1)), "{risen:?} from {bones:?}");
 }
 
+/// Stepping on one of a bone circle's own bodies stands every body up,
+/// the one stepped on beside the stepper rather than on their cell: the
+/// stepper stands where they stepped, nothing shares their cell, and
+/// every body rises.
+#[test]
+fn a_body_of_the_circle_stepped_on_rises_beside_its_stepper() {
+    let (mut app, me, map) = on_the_floor_of("The Bone Circle");
+    let bones: Vec<Point> = props_called(&mut app, map, "circle bones").into_iter().map(|(_, p)| p).collect();
+    let corner = bones[0];
+    step_onto(&mut app, me, corner);
+    assert_eq!(at(&app, me), corner, "the stepper stands on the corner it stepped on");
+    let skeleton = app.world().resource::<crate::bestiary::Bestiary>().defs.expect("skeleton");
+    let world = app.world_mut();
+    let risen: Vec<Point> = world
+        .query::<(&crate::bestiary::Kind, &Position, &OnMap)>()
+        .iter(world)
+        .filter(|(k, _, on)| k.0 == skeleton && on.0 == map)
+        .map(|(_, p, _)| p.0)
+        .collect();
+    assert_eq!(risen.len(), bones.len(), "every body stands up");
+    assert!(!risen.contains(&corner), "nothing rose onto the stepper's own cell: {risen:?}");
+    assert_eq!(risen.iter().collect::<BTreeSet<_>>().len(), risen.len(), "nor two onto one cell: {risen:?}");
+}
+
 /// Lifting a collapsing gallery's prize brings the short way back down in
 /// fallen rock, and the long way round still leads to the floor's way in.
 #[test]
