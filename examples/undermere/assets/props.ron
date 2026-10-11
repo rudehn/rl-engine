@@ -201,13 +201,16 @@
     // their holes, the water rises through the grates, the planks give
     // way, the lintel nearer the way in falls. Each is stood down as a
     // shut or empty cage or a bare plinth once it has been answered.
-    (name: "caged blade", glyph: '#', color: (r: 205, g: 210, b: 225), blocks: true,
+    // A full cage is drawn as the kind of thing in it, a blade, a staff
+    // or a ring, never as the wall's '#' it read as beside a wall; a shut
+    // one keeps the bars.
+    (name: "caged blade", glyph: ')', color: (r: 205, g: 210, b: 225), blocks: true,
      container: (contents: [(tag: "weapon", count: 1, band: 2)], opened: (glyph: '_', color: (r: 120, g: 120, b: 130))),
      offers: [(verb: "open", time: 100)]),
-    (name: "caged staff", glyph: '#', color: (r: 205, g: 210, b: 225), blocks: true,
+    (name: "caged staff", glyph: '/', color: (r: 205, g: 210, b: 225), blocks: true,
      container: (contents: [(tag: "staff", count: 1, band: 1)], opened: (glyph: '_', color: (r: 120, g: 120, b: 130))),
      offers: [(verb: "open", time: 100)]),
-    (name: "caged ring", glyph: '#', color: (r: 205, g: 210, b: 225), blocks: true,
+    (name: "caged ring", glyph: '=', color: (r: 205, g: 210, b: 225), blocks: true,
      container: (contents: [(tag: "ring", count: 1, band: 1)], opened: (glyph: '_', color: (r: 120, g: 120, b: 130))),
      offers: [(verb: "open", time: 100)]),
     (name: "shut cage", glyph: '#', color: (r: 105, g: 100, b: 110), blocks: true),
@@ -254,7 +257,9 @@
     // that rouses what waits beyond, and embers under a tinder room's straw.
     // The dart plate and the two vents are also three of the seven traps
     // `assets/hidden.ron` lays on a floor's corridors and doorways; the
-    // other four follow. Every trap fires once and stays sprung.
+    // other four follow. Every trap fires once and stays sprung, and every
+    // one is drawn '^' in its own colour, the one mark a player reads as a
+    // trap: a net drawn '"' was lost among the glowcaps and the grass.
     (name: "dart plate", glyph: '^', color: (r: 160, g: 150, b: 140), hidden: (spot: 20),
      triggers: [(on: "entered", fires: 1, effects: [(kind: "Harm", args: (kind: "pierce", roll: "2d4"))])]),
     (name: "caustic vent", glyph: '^', color: (r: 130, g: 185, b: 95), hidden: (spot: 12),
@@ -266,11 +271,11 @@
     // The floor's own traps besides: a glyph that cries out and wakes the
     // floor, a net that holds whoever is caught in it, a trapdoor to the
     // floor below (`src/effects/moving.rs`'s one fall), and a jet of fire.
-    (name: "alarm glyph", glyph: ':', color: (r: 220, g: 120, b: 70), hidden: (spot: 16),
+    (name: "alarm glyph", glyph: '^', color: (r: 220, g: 120, b: 70), hidden: (spot: 16),
      triggers: [(on: "entered", fires: 1, effects: [(kind: "WakeFloor")])]),
-    (name: "net trap", glyph: '"', color: (r: 175, g: 160, b: 120), hidden: (spot: 14),
+    (name: "net trap", glyph: '^', color: (r: 175, g: 160, b: 120), hidden: (spot: 14),
      triggers: [(on: "entered", fires: 1, effects: [(kind: "Inflict", args: (status: "webbed", turns: 4))])]),
-    (name: "trapdoor", glyph: '_', color: (r: 120, g: 95, b: 70), hidden: (spot: 12),
+    (name: "trapdoor", glyph: '^', color: (r: 120, g: 95, b: 70), hidden: (spot: 12),
      triggers: [(on: "entered", fires: 1, effects: [(kind: "Fall")])]),
     (name: "fire jet", glyph: '^', color: (r: 255, g: 110, b: 40), hidden: (spot: 10),
      triggers: [(on: "entered", fires: 1, effects: [(kind: "Harm", args: (kind: "fire", roll: "3d4"))])]),
