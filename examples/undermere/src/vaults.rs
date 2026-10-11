@@ -86,7 +86,7 @@ pub const CAUSEWAY_TILE: &str = "sunken causeway";
 /// floor's hidden plates.
 pub const CAUSEWAY_SPOT: u8 = 10;
 
-/// The areas a causeway's [`Secret`](rl_engine::rl_mapgen::Secret)
+/// The areas a causeway's [`Secret`]
 /// joins: none a reader can look up. The causeway is hidden once the
 /// build's areas have been flattened into its spots, so there is no area
 /// index left to name, and an index past any a floor grows says so where
