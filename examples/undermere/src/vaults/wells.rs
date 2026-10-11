@@ -59,32 +59,20 @@ pub struct WellChoices {
 /// [`Scenery`] marker its written definition earns it, so it is listed
 /// with what can be acted on.
 ///
-/// An observer of that marker going on, which `spawn_prop` puts on every
-/// prop like these as it stands it up, rather than a system in the turn:
-/// one more system there reorders the systems around it that nothing
-/// orders, and the engine's `close_emptied_containers` then marked a
-/// vault's prize container emptied before it was stocked.
-pub fn offer_at_wells(
-    stood: On<Add, Scenery>,
-    mut commands: Commands,
-    names: Query<&Name, With<PropKind>>,
-    verbs: Option<Res<Verbs>>,
-    choices: Option<Res<WellChoices>>,
-) {
-    // By the name `spawn_prop` gives it, and every resource optional: a
-    // place is often stood up while a system has the registries out of the
-    // world, and only an anvil or a moonwell needs the others.
-    let Ok(name) = names.get(stood.entity) else { return };
-    if name.as_str() != ANVIL && name.as_str() != MOONWELL {
-        return;
+/// Keyed on that marker going on, which `spawn_prop` puts on every prop
+/// like these as it stands it up, so a well stood up mid-turn is offered
+/// by the next pass's gate.
+pub fn offer_at_wells(mut commands: Commands, stood: Query<(Entity, &Name), Added<Scenery>>, verbs: Res<Verbs>, choices: Res<WellChoices>) {
+    for (well, name) in &stood {
+        let offer = match name.as_str() {
+            ANVIL => Offering::new(verbs.get(TEMPER_VERB).expect("UndermerePlugin declares temper"), WELL_TIME).choosing("Temper which?", choices.temper),
+            MOONWELL => {
+                Offering::new(verbs.get(DRINK_VERB).expect("UndermerePlugin declares drink"), WELL_TIME).choosing("Learn the nature of which?", choices.tell)
+            }
+            _ => continue,
+        };
+        commands.entity(well).insert(Offers(vec![offer])).remove::<Scenery>();
     }
-    let (verbs, choices) = (verbs.expect("the verbs stand before any place"), choices.expect("UndermerePlugin registers the wells' choices"));
-    let offer = if name.as_str() == ANVIL {
-        Offering::new(verbs.get(TEMPER_VERB).expect("UndermerePlugin declares temper"), WELL_TIME).choosing("Temper which?", choices.temper)
-    } else {
-        Offering::new(verbs.get(DRINK_VERB).expect("UndermerePlugin declares drink"), WELL_TIME).choosing("Learn the nature of which?", choices.tell)
-    };
-    commands.entity(stood.entity).insert(Offers(vec![offer])).remove::<Scenery>();
 }
 
 /// What an anvil may temper: each weapon or piece of armor the taker

@@ -325,7 +325,7 @@ impl Plugin for UndermerePlugin {
             tell: app.register_system(crate::vaults::wells::tell_choices),
         };
         app.insert_resource(wells);
-        app.add_observer(crate::vaults::wells::offer_at_wells);
+        app.add_systems(Turn, crate::vaults::wells::offer_at_wells.in_set(TurnSet::Schedule));
         app.add_systems(Turn, crate::vaults::wells::answer_wells.in_set(TurnSet::React));
         // The lived-in dungeon's own: a readable prop's line, drawn once
         // on the arrival that finds it, and a floor's own feeling, said
