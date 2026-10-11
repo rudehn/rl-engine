@@ -280,9 +280,10 @@
     (name: "fire jet", glyph: '^', color: (r: 255, g: 110, b: 40), hidden: (spot: 10),
      triggers: [(on: "entered", fires: 1, effects: [(kind: "Harm", args: (kind: "fire", roll: "3d4"))])]),
     // A loose flagstone with something put by under it, found and lifted:
-    // "open", since a container is opened, where "search" is a body's.
+    // "open", since a container is opened, where "search" is a body's. A coin
+    // at least, so one found and lifted is never found for nothing.
     (name: "loose flagstone", glyph: ',', color: (r: 165, g: 155, b: 140), hidden: (spot: 10),
-     container: (contents: [(item: "gold coin", count: (0, 2)), (tag: "potion", count: (0, 1))], opened: (glyph: ',', color: (r: 110, g: 105, b: 95))),
+     container: (contents: [(item: "gold coin", count: (1, 2)), (tag: "potion", count: (0, 1))], opened: (glyph: ',', color: (r: 110, g: 105, b: 95))),
      offers: [(verb: "open", time: 100)]),
     // A sealed vault's lever, set in a wall somewhere else on its floor and
     // hidden until it is spotted; pulled, it raises the vault's gate.

@@ -733,4 +733,15 @@ mod tests {
         }
         assert_eq!(whereabouts(&app, me), (map_of(FLOORS - 1), trapdoor), "still on floor nine, on the trapdoor");
     }
+
+    /// A loose flagstone found and lifted always has something under it:
+    /// its gold is at least a coin, whatever else it rolls.
+    #[test]
+    fn a_loose_flagstone_always_holds_a_coin_at_least() {
+        let library = crate::content::Library::load(&crate::content::effect_kinds(), &Moments::default());
+        let registries = &library.registries;
+        let def = registries.props.get(registries.props.expect("loose flagstone"));
+        let rows = &def.container.as_ref().expect("a container").contents;
+        assert!(rows.iter().any(|r| r.min >= 1), "a row that always rolls something: {rows:?}");
+    }
 }
