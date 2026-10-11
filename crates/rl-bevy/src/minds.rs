@@ -969,9 +969,13 @@ pub fn decide_minds(
         let standing = world.occupancy.iter().filter(|(_, e)| world.standing.contains(*e)).map(|(p, _)| p).collect();
         world.fields.see_standing(standing);
     }
-    // Every run, and not on a change: a trap is shown, sprung for the last
-    // time or carried off by its own components, and the props that do
-    // something at a moment are few.
+    // Every run, and not on a change: a trap is shown, hidden, spent,
+    // carried off or left behind on another map by as many different
+    // changes, and a change filter missing one leaves a field pricing a
+    // trap that is not there. The walk is over every armed prop, since
+    // each carries `Triggers` whether it has a moment to answer or not: a
+    // read of each, far cheaper than one flood, and the fields are thrown
+    // away only when the cells it finds differ.
     let here = world.map.current();
     let live = |t: &crate::effects::Trigger| t.on == crate::effects::Moments::ENTERED && t.fires != Some(0);
     let traps =
@@ -1604,6 +1608,25 @@ mod tests {
             .id();
         waiting(&mut app, player, 6);
         assert_eq!(app.world().get::<Position>(follower).unwrap().0, start.offset(2, 0), "two steps is within three: it stays off the trap");
+    }
+
+    /// In a running game, a pass in which only actors move keeps every
+    /// field made before it, and one in which a blocking prop is put down
+    /// throws them away: a field marked before the hunter walks is still
+    /// there after it has walked, and gone once a prop stands.
+    #[test]
+    fn a_running_game_keeps_its_fields_while_only_actors_move_and_drops_them_when_a_prop_stands() {
+        let (mut app, player, hunter, start) = among_props(Brain::new().then(Hunt), false, &[]);
+        waiting(&mut app, player, 1);
+        let marked = (vec![Point::new(-99, -99)], MovementProfile::default(), false, false, false);
+        app.world_mut().resource_mut::<FlowFields>().fields.insert(marked.clone(), DijkstraMap::new(rl_core::Rect::new(0, 0, 1, 1)));
+        let before = app.world().get::<Position>(hunter).unwrap().0;
+        waiting(&mut app, player, 2);
+        assert_ne!(app.world().get::<Position>(hunter).unwrap().0, before, "the hunter walked");
+        assert!(app.world().resource::<FlowFields>().fields.get(&marked).is_some(), "and the field made before it was kept");
+        app.world_mut().spawn((crate::props::Prop, Blocks, Position(start.offset(0, 3))));
+        waiting(&mut app, player, 1);
+        assert!(app.world().resource::<FlowFields>().fields.get(&marked).is_none(), "a prop stood, and it was thrown away");
     }
 
     #[test]

@@ -59,7 +59,9 @@ impl Wits {
     /// over it only where none does, the way a player walks a corridor
     /// they cannot avoid. A sapient mind's, and not an animal's, since a
     /// beast blundering onto a plate it could have seen is what a player
-    /// lures one there for.
+    /// lures one there for. Any shown thing with an `entered` trigger that
+    /// can still go off is priced, whatever it does, a healing glyph as
+    /// much as a dart plate, since what a trigger lands is the game's.
     pub const WARY: Wits = Wits(1 << 8);
 
     /// Nothing but what its brain does unconditionally: it strikes, hunts

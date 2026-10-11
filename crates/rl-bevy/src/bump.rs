@@ -118,7 +118,9 @@ pub struct BumpRules {
     /// Whether a mind steps past one that gives way too, rather than being
     /// held behind it in a corridor one cell wide: its step into the cell
     /// is a [`Swap`]. One that gives way never pushes past another that
-    /// does, so two of them do not shuffle round each other.
+    /// does, so two of them do not shuffle round each other. A swap sets
+    /// off what each of the two is put onto, as a step would, so stepping
+    /// past one is no way over the plate it stood on.
     pub minds_too: bool,
 }
 
@@ -664,9 +666,17 @@ mod tests {
     /// A third side neutral to both of the rig's, and the rules for all
     /// three.
     fn small_side(rig: &mut Rig) -> rl_rules::FactionId {
+        small_side_hunted(rig, false)
+    }
+
+    /// [`small_side`], with the rig's other side hostile to it when
+    /// `hunted`.
+    fn small_side_hunted(rig: &mut Rig, hunted: bool) -> rl_rules::FactionId {
         let names = rl_rules::Registry::from_defs(["ours", "theirs", "small"].map(rl_rules::faction::FactionDef::new).to_vec()).expect("three sides");
-        rig.app.insert_resource(CombatRules::new(&names).hostile(rig.ours, rig.theirs));
-        names.expect("small")
+        let small = names.expect("small");
+        let rules = CombatRules::new(&names).hostile(rig.ours, rig.theirs);
+        rig.app.insert_resource(if hunted { rules.hostile(rig.theirs, small) } else { rules });
+        small
     }
 
     /// A bump into a neutral of a side that gives way changes places with
@@ -679,11 +689,11 @@ mod tests {
         rig.app.insert_resource(BumpRules::new().give_way(small));
         let talk = rig.verb("talk");
         let start = rig.at();
-        let moth = rig.beside(Some(small), vec![crate::props::Offering::new(talk, 100)]);
+        let critter = rig.beside(Some(small), vec![crate::props::Offering::new(talk, 100)]);
         let before = rig.now();
         rig.bump(Direction::East);
         assert_eq!(rig.at(), start.offset(1, 0), "past it");
-        assert_eq!(rig.app.world().get::<Position>(moth).unwrap().0, start, "which stands where the player stood");
+        assert_eq!(rig.app.world().get::<Position>(critter).unwrap().0, start, "which stands where the player stood");
         assert_eq!(rig.now(), before + 100, "for a step's time");
         assert!(rig.app.world().resource::<Heard>().2.is_empty(), "and nothing it offers was taken up");
 
@@ -691,10 +701,72 @@ mod tests {
         let small = small_side(&mut rig);
         rig.app.insert_resource(BumpRules::new().swap_allies());
         let start = rig.at();
-        let moth = rig.beside(Some(small), Vec::new());
+        let critter = rig.beside(Some(small), Vec::new());
         rig.bump(Direction::East);
         assert_eq!(rig.at(), start, "a side nobody named gives no way");
-        assert_eq!(rig.app.world().resource::<Heard>().0, vec![Bumped { actor: rig.player, into: moth, offers: false }]);
+        assert_eq!(rig.app.world().resource::<Heard>().0, vec![Bumped { actor: rig.player, into: critter, offers: false }]);
+    }
+
+    /// A dead-end corridor one cell wide east of the player, a critter of the small
+    /// side two cells along it, and a hunter of the rig's other side two
+    /// further, under `rules`, with the small side hunted by the other
+    /// when `hunted`, something else that blocks on the critter's cell when
+    /// `crowded`, and the hunter striking what is beside it before it hunts
+    /// when it `strikes`. Where the hunter and the critter stood after each
+    /// of forty frames, the critter's `None` once it is gone, and the
+    /// corridor's start.
+    fn past_a_critter(
+        rules: impl Fn(rl_rules::FactionId, rl_rules::FactionId) -> BumpRules,
+        hunted: bool,
+        crowded: bool,
+        strikes: bool,
+    ) -> (Vec<(Point, Option<Point>)>, Point) {
+        let mut rig = Rig::built(true);
+        let small = small_side_hunted(&mut rig, hunted);
+        rig.app.insert_resource(rules(small, rig.theirs));
+        let start = rig.start;
+        let wall = rig.tiles.expect("wall");
+        // Shut at the hunter's end, so the only way to the player is past
+        // the critter.
+        for dx in -1..=7 {
+            let mut map = rig.app.world_mut().resource_mut::<WorldMap>();
+            map.set_tile(start.offset(dx, -1), wall);
+            map.set_tile(start.offset(dx, 1), wall);
+        }
+        rig.app.world_mut().resource_mut::<WorldMap>().set_tile(start.offset(7, 0), wall);
+        let critter = rig.app.world_mut().spawn((Actor, Blocks, Position(start.offset(2, 0)), Health::full(5), Faction(small))).id();
+        if crowded {
+            // Blocking, and no prop, so the hunter still sees the player
+            // past it.
+            rig.app.world_mut().spawn((Blocks, Position(start.offset(2, 0))));
+        }
+        let brain = rl_rules::Brain::new();
+        let brain = if strikes { brain.then(rl_rules::ai::tactics::MeleeAdjacent) } else { brain };
+        let brain = brain.then(rl_rules::ai::tactics::Hunt);
+        let hunter = rig
+            .app
+            .world_mut()
+            .spawn((
+                Actor,
+                Blocks,
+                Position(start.offset(4, 0)),
+                Health::full(20),
+                Faction(rig.theirs),
+                crate::minds::Perception(8),
+                MeleeAttack::new(rig.kind, DiceRoll::flat(1)),
+                crate::minds::Mind(std::sync::Arc::new(brain)),
+            ))
+            .id();
+        let mut trace = Vec::new();
+        for _ in 0..40 {
+            if rig.app.world().get::<MyTurn>(rig.player).is_some() {
+                rig.app.world_mut().write_message(Intent::new(rig.player, crate::turn::Wait));
+            }
+            rig.app.update();
+            let at = |e: Entity| rig.app.world().get::<Position>(e).map(|p| p.0);
+            trace.push((at(hunter).expect("the hunter stands"), at(critter)));
+        }
+        (trace, start)
     }
 
     /// A hunter behind a neutral that gives way in a corridor one cell wide
@@ -702,47 +774,40 @@ mod tests {
     /// waits behind it when they do not.
     #[test]
     fn a_mind_steps_past_a_neutral_that_gives_way_only_when_the_rules_say_minds_do() {
-        for minds_too in [true, false] {
-            let mut rig = Rig::built(true);
-            let small = small_side(&mut rig);
-            let rules = BumpRules::new().give_way(small);
-            rig.app.insert_resource(if minds_too { rules.minds_too() } else { rules });
-            let start = rig.start;
-            let wall = rig.tiles.expect("wall");
-            for dx in -1..=6 {
-                let mut map = rig.app.world_mut().resource_mut::<WorldMap>();
-                map.set_tile(start.offset(dx, -1), wall);
-                map.set_tile(start.offset(dx, 1), wall);
-            }
-            rig.app.world_mut().spawn((Actor, Blocks, Position(start.offset(2, 0)), Health::full(5), Faction(small)));
-            let hunter = rig
-                .app
-                .world_mut()
-                .spawn((
-                    Actor,
-                    Blocks,
-                    Position(start.offset(4, 0)),
-                    Health::full(20),
-                    Faction(rig.theirs),
-                    crate::minds::Perception(8),
-                    MeleeAttack::new(rig.kind, DiceRoll::flat(1)),
-                    crate::minds::Mind(std::sync::Arc::new(
-                        rl_rules::Brain::new().then(rl_rules::ai::tactics::MeleeAdjacent).then(rl_rules::ai::tactics::Hunt),
-                    )),
-                ))
-                .id();
-            for _ in 0..40 {
-                if rig.app.world().get::<MyTurn>(rig.player).is_some() {
-                    rig.app.world_mut().write_message(Intent::new(rig.player, crate::turn::Wait));
-                }
-                rig.app.update();
-            }
-            let at = rig.app.world().get::<Position>(hunter).unwrap().0;
-            if minds_too {
-                assert_eq!(at, start.offset(1, 0), "it stepped past the neutral to the player");
-            } else {
-                assert_eq!(at, start.offset(3, 0), "it waits behind the neutral");
-            }
-        }
+        let (trace, start) = past_a_critter(|small, _| BumpRules::new().give_way(small).minds_too(), false, false, true);
+        assert_eq!(trace.last().unwrap().0, start.offset(1, 0), "it stepped past the neutral to the player");
+        let (trace, start) = past_a_critter(|small, _| BumpRules::new().give_way(small), false, false, true);
+        assert_eq!(trace.last().unwrap().0, start.offset(3, 0), "it waits behind the neutral");
+    }
+
+    /// One that gives way never pushes past another that does: a hunter
+    /// whose own side gives way waits behind the critter, minds too or not.
+    #[test]
+    fn a_mind_of_a_side_that_gives_way_never_steps_past_another_that_does() {
+        let (trace, start) = past_a_critter(|small, theirs| BumpRules::new().give_way(small).give_way(theirs).minds_too(), false, false, true);
+        assert!(trace.iter().all(|(_, critter)| *critter == Some(start.offset(2, 0))), "the critter was never moved");
+        assert_eq!(trace.last().unwrap().0, start.offset(3, 0), "and the hunter waits behind it");
+    }
+
+    /// A mind hostile to a side that gives way strikes one of it rather than
+    /// changing places with it: the critter is never swapped, and dies where
+    /// it stood before the hunter walks on.
+    #[test]
+    fn a_mind_hostile_to_a_side_that_gives_way_strikes_rather_than_swaps() {
+        let (trace, start) = past_a_critter(|small, _| BumpRules::new().give_way(small).minds_too(), true, false, true);
+        assert!(trace.iter().all(|(_, critter)| critter.is_none_or(|c| c == start.offset(2, 0))), "the critter was never swapped");
+        assert_eq!(trace.last().unwrap().1, None, "it was struck down");
+        // And with nothing to strike with, it hunts the critter to its cell
+        // and is refused there, rather than changing places with its prey.
+        let (trace, start) = past_a_critter(|small, _| BumpRules::new().give_way(small).minds_too(), true, false, false);
+        assert!(trace.iter().all(|(_, critter)| *critter == Some(start.offset(2, 0))), "the critter was never swapped: {trace:?}");
+    }
+
+    /// A cell holding a critter that gives way and something else that
+    /// blocks is no way past: the swap would put the hunter onto the other.
+    #[test]
+    fn a_cell_holding_a_neutral_that_gives_way_and_another_blocker_is_refused() {
+        let (trace, start) = past_a_critter(|small, _| BumpRules::new().give_way(small).minds_too(), false, true, true);
+        assert!(trace.iter().all(|(hunter, critter)| hunter.x > start.x + 2 && *critter == Some(start.offset(2, 0))), "it never got past: {trace:?}");
     }
 }

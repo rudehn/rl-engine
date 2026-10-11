@@ -962,18 +962,32 @@ pub fn arm_props(mut commands: Commands, built: Option<Res<PropEffects>>, fresh:
     }
 }
 
-/// Reports the `entered` moment on every armed prop a step lands on.
+/// Reports the `entered` moment on every armed prop a step or a swap lands
+/// someone on.
 ///
 /// Reads [`Stepped`](crate::turn::Stepped), which the move resolver writes
 /// for every step it lets through, so anything that walks sets off a
 /// plate: the player, a droid, a rat. Whether it could see the plate never
-/// comes into it, which is the point of a hidden one.
-pub fn report_entered(mut steps: MessageReader<crate::turn::Stepped>, props: Armed, map: Res<WorldMap>, mut fired: MessageWriter<Fired>) {
+/// comes into it, which is the point of a hidden one. And reads
+/// [`Swapped`](crate::bump::Swapped) for both who changed places, each at
+/// the cell it now stands on, since a swap is no step but both still come
+/// to stand on a plate: one that gave way to a passer-by is put onto
+/// whatever the passer-by stood on, and the passer-by onto what it did.
+pub fn report_entered(
+    mut steps: MessageReader<crate::turn::Stepped>,
+    mut swaps: MessageReader<crate::bump::Swapped>,
+    standing: Query<&Position>,
+    props: Armed,
+    map: Res<WorldMap>,
+    mut fired: MessageWriter<Fired>,
+) {
     let here = map.current();
-    for step in steps.read() {
+    let swapped = swaps.read().flat_map(|s| [s.actor, s.with]).filter_map(|who| standing.get(who).ok().map(|at| (who, at.0)));
+    let entered: Vec<(Entity, Point)> = steps.read().map(|step| (step.actor, step.to)).chain(swapped).collect();
+    for (who, to) in entered {
         for (prop, at, on) in &props {
-            if at.0 == step.to && on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here {
-                fired.write(Fired { on: prop, moment: Moments::ENTERED, by: Some(step.actor), at: step.to });
+            if at.0 == to && on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here {
+                fired.write(Fired { on: prop, moment: Moments::ENTERED, by: Some(who), at: to });
             }
         }
     }
@@ -2619,6 +2633,36 @@ mod traps {
         assert_eq!((hits[0].hit.attacker, hits[0].hit.credit), (Some(plate), Some(plate)), "the plate struck, and is credited");
         let stepped = deck.app.world().resource::<Reports>().0.iter().find(|f| f.moment == crate::effects::Moments::ENTERED).map(|f| f.by);
         assert_eq!(stepped, Some(Some(deck.player)), "and the report still says who stepped on it");
+    }
+
+    /// A swap is no step, but both who change places come to stand on a
+    /// new cell: a plate under each is entered, the one by whoever was
+    /// swapped onto it, so a passer-by a neutral gave way to cannot walk
+    /// over a plate the neutral stood on without setting it off.
+    #[test]
+    fn a_swap_sets_off_the_plates_both_who_changed_places_are_put_onto() {
+        let mut deck = deck();
+        let (mine, theirs) = (deck.at, deck.at.offset(1, 0));
+        let under_me = put(&mut deck, "pressure plate", mine);
+        let under_them = put(&mut deck, "pressure plate", theirs);
+        let us = deck.app.world().get::<crate::combat::Faction>(deck.player).copied().expect("a side");
+        let other = deck.app.world_mut().spawn((Actor, Blocks, Position(theirs), OnMap(MapId::SURFACE), Health::full(20), us)).id();
+        deck.app.init_resource::<Reports>().add_systems(bevy::app::PostUpdate, keep);
+        for _ in 0..8 {
+            if deck.app.world().get::<Position>(deck.player).map(|p| p.0) == Some(theirs) {
+                break;
+            }
+            if deck.app.world().get::<crate::components::MyTurn>(deck.player).is_some() {
+                let player = deck.player;
+                deck.app.world_mut().write_message(Intent::new(player, crate::bump::Swap(other)));
+            }
+            deck.app.update();
+        }
+        assert_eq!(deck.app.world().get::<Position>(other).map(|p| p.0), Some(mine), "the two changed places");
+        let entered: Vec<(Entity, Option<Entity>)> =
+            deck.app.world().resource::<Reports>().0.iter().filter(|f| f.moment == crate::effects::Moments::ENTERED).map(|f| (f.on, f.by)).collect();
+        assert!(entered.contains(&(under_them, Some(deck.player))), "the one who swapped entered the plate it was put onto: {entered:?}");
+        assert!(entered.contains(&(under_me, Some(other))), "and the one swapped with entered the other: {entered:?}");
     }
 
     /// A barrel broken just before the loop stops to show something still
