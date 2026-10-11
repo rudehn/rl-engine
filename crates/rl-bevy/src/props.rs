@@ -665,9 +665,9 @@ impl crate::seed::Stream for PropRng {
 /// The engine rolled the count from the definition and its own stream.
 /// [`LootPlugin`](crate::loot::LootPlugin) answers it in
 /// [`PropSet::Fill`]; a game without one answers a fixed item itself,
-/// spawning what it names and pushing the entities onto the prop's
-/// [`Inventory`], and cannot be asked for a tag, which needs a loot table
-/// to draw from.
+/// there too, spawning what it names and pushing the entities onto the
+/// prop's [`Inventory`], and cannot be asked for a tag, which needs a
+/// loot table to draw from.
 #[derive(Message, Debug, Clone)]
 pub struct FillContainer {
     /// Which container.
@@ -690,8 +690,23 @@ pub struct Stocked;
 /// A container waiting to be filled, and which definition says with what.
 type Unstocked = (Entity, &'static PropKind);
 
-/// A container whose bag has just changed, and what it was made from.
-type JustEmptied<'w, 's> = Query<'w, 's, (Entity, &'static PropKind, &'static Inventory), (With<Container>, Without<Emptied>, Changed<Inventory>)>;
+/// A stocked container whose bag has just changed, or that has just been
+/// stocked, and what it was made from.
+///
+/// Only a [`Stocked`] one, because a container put down mid-turn, as a
+/// prefab's slot is, holds nothing until the next frame's
+/// [`PropSet::Stock`] asks for its contents, and a bag that was never
+/// filled is not one just emptied. Any pass in between may run the check,
+/// and the order of unordered systems is not something to lean on.
+/// `Added<Stocked>` as well, so a container that rolled nothing is shown
+/// done as it is stocked whenever it was put down, rather than only when
+/// the check happened to run before it was stocked.
+type JustEmptied<'w, 's> = Query<
+    'w,
+    's,
+    (Entity, &'static PropKind, &'static Inventory),
+    (With<Container>, With<Stocked>, Without<Emptied>, Or<(Changed<Inventory>, Added<Stocked>)>),
+>;
 
 /// Refuses play when a container asks for a kind of thing by tag and no
 /// [`LootPlugin`](crate::loot::LootPlugin) is there to draw it, rather
@@ -816,6 +831,10 @@ pub fn resolve_takes(
 
 /// Marks a container that has been emptied, when its definition says what
 /// an emptied one looks like.
+///
+/// Read only once it is [`Stocked`], which is safe because what it holds
+/// lands in [`PropSet::Fill`], the same frame and before any turn: a
+/// game answering [`FillContainer`] itself answers it there.
 ///
 /// What it looks like afterwards is the renderer's to apply, from the
 /// same definition, the way a full one's look is.
@@ -2142,23 +2161,8 @@ mod containers {
         app.insert_resource(Registries { props, ..Default::default() });
         app.insert_resource(crate::seed::Seed(crate::testing::TEST_SEED));
 
-        // The game's half: spawn what it was asked for and put it in.
-        app.add_systems(Update, |mut commands: Commands, mut asks: MessageReader<FillContainer>, mut bags: Query<&mut Inventory>| {
-            for ask in asks.read() {
-                let rl_rules::prop::Stock::Item(name) = &ask.what else { continue };
-                let mut items = Vec::new();
-                for _ in 0..ask.count {
-                    let mut item = commands.spawn((Item, Name::new(name.clone())));
-                    if name == "slug" {
-                        item.insert(Stack { key: 1, count: 1 });
-                    }
-                    items.push(item.id());
-                }
-                if let Ok(mut bag) = bags.get_mut(ask.prop) {
-                    bag.items.extend(items);
-                }
-            }
-        });
+        // The game's half, where an answer is due.
+        app.add_systems(Update, answer_asks.in_set(PropSet::Fill));
 
         let registries = app.world().resource::<Registries>().clone();
         let id = registries.props.expect(name);
@@ -2169,6 +2173,24 @@ mod containers {
             app.update();
         }
         Chest { app, player, prop }
+    }
+
+    /// The game's half: spawns what it was asked for and puts it in.
+    fn answer_asks(mut commands: Commands, mut asks: MessageReader<FillContainer>, mut bags: Query<&mut Inventory>) {
+        for ask in asks.read() {
+            let rl_rules::prop::Stock::Item(name) = &ask.what else { continue };
+            let mut items = Vec::new();
+            for _ in 0..ask.count {
+                let mut item = commands.spawn((Item, Name::new(name.clone())));
+                if name == "slug" {
+                    item.insert(Stack { key: 1, count: 1 });
+                }
+                items.push(item.id());
+            }
+            if let Ok(mut bag) = bags.get_mut(ask.prop) {
+                bag.items.extend(items);
+            }
+        }
     }
 
     fn bag_of(app: &App, who: Entity) -> Vec<Entity> {
@@ -2267,6 +2289,39 @@ mod containers {
             bin.app.world().resource::<OfferedHere>().find(bin.player, bin.prop, Verbs::OPEN).is_some(),
             "and still offers, for the screen to say it is empty"
         );
+    }
+
+    /// The container a turn's reaction put down, as a prefab's slot does.
+    #[derive(Resource, Default)]
+    struct Raised(Option<Entity>);
+
+    /// Puts a crate down once, mid-turn, the way `PrefabSet::Fill` stands
+    /// up a slot's container on the arrival that built the place.
+    fn raise_a_crate(mut commands: Commands, registries: Res<Registries>, mut raised: ResMut<Raised>, start: Query<&Position, With<Player>>) {
+        if raised.0.is_some() {
+            return;
+        }
+        let Ok(at) = start.single() else { return };
+        let id = registries.props.expect("supply crate");
+        raised.0 = Some(spawn_prop(&mut commands, &registries, id, at.0.offset(0, 1), MapId::SURFACE));
+    }
+
+    /// A container put down mid-turn holds nothing until the next frame
+    /// stocks it, and the emptied check in the same pass must not read
+    /// that bag, which was never filled, as one just emptied. Pinned in
+    /// the order that once lost a vault's prize: the reaction that puts it
+    /// down runs, and its commands land, before the check.
+    #[test]
+    fn a_container_put_down_mid_turn_is_never_marked_emptied_before_its_stock_lands() {
+        let mut it = chest("supply crate");
+        it.app.init_resource::<Raised>();
+        it.app.add_systems(crate::plugin::Turn, raise_a_crate.in_set(crate::plugin::TurnSet::React).before(close_emptied_containers));
+        for _ in 0..3 {
+            it.app.update();
+        }
+        let raised = it.app.world().resource::<Raised>().0.expect("a crate was put down");
+        assert_eq!(bag_of(&it.app, raised).len(), 3, "its stock landed");
+        assert!(it.app.world().get::<Emptied>(raised).is_none(), "and it was never marked emptied");
     }
 
     /// Nothing is spent on what the screen already knows is impossible.
