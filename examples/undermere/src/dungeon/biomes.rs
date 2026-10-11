@@ -83,6 +83,8 @@ pub(crate) struct BiomeDef {
     pub(crate) name: String,
     pub(crate) floors: (u32, u32),
     pub(crate) weight: u32,
+    /// What the log says on arriving, one line for each of its floors.
+    pub(crate) moods: Vec<String>,
     pub(crate) wall: String,
     pub(crate) floor: String,
     pub(crate) ambient: (u8, (u8, u8, u8)),
@@ -113,6 +115,11 @@ impl Named for BiomeDef {
 pub(crate) struct BiomeDraw {
     /// The log's own name, "the" already on it: "the Fungal Deeps".
     pub(crate) name: String,
+    /// What the log says of each of its floors on arriving, from
+    /// `first`'s on.
+    pub(crate) moods: Vec<String>,
+    /// The first floor it may be drawn on, which `moods` counts from.
+    pub(crate) first: u32,
     /// What the floor is filled with before anything is carved.
     pub(crate) wall: TileId,
     /// What its rooms or caves are carved as.
@@ -132,6 +139,15 @@ pub(crate) struct BiomeDraw {
     /// What an area is floored with in place of `floor`, by the name of
     /// its shape or its district, the first that names either.
     pub(crate) paint: Vec<(String, TileId)>,
+}
+
+impl BiomeDraw {
+    /// What the log says of `floor` on arriving: its own line, or the
+    /// last there is for a floor past them, which the load refuses.
+    pub(crate) fn mood(&self, floor: u32) -> &str {
+        let at = floor.saturating_sub(self.first) as usize;
+        self.moods.get(at).or(self.moods.last()).map_or("", String::as_str)
+    }
 }
 
 /// The resolved lakes of `def`, named `lakes` and `bridges` for the chain:
@@ -157,6 +173,8 @@ pub(super) fn to_draw(def: &BiomeDef, recipe: usize, tiles: &TileRegistry) -> Bi
     let r_def = &def.recipes[recipe];
     BiomeDraw {
         name: format!("the {}", def.name),
+        moods: def.moods.clone(),
+        first: def.floors.0,
         wall: tiles.expect(&def.wall),
         floor: tiles.expect(&def.floor),
         ambient: Light::new(intensity, Rgb::new(r, g, b)),
@@ -200,6 +218,9 @@ fn check_lakes(lakes: &LakesDef, tiles: &TileRegistry, layout: &LayoutDef) -> Re
 fn check(def: &BiomeDef, tiles: &TileRegistry, layout: &LayoutDef) -> Result<(), String> {
     if def.floors.0 > def.floors.1 || def.floors.0 < 1 || def.floors.1 > FLOORS {
         return Err(format!("floors {:?} outside 1..={FLOORS}", def.floors));
+    }
+    if def.moods.len() as u32 != def.floors.1 - def.floors.0 + 1 {
+        return Err(format!("{} moods for {} floors: one a floor", def.moods.len(), def.floors.1 - def.floors.0 + 1));
     }
     if def.weight == 0 {
         return Err("a weight of nought is never drawn".to_string());

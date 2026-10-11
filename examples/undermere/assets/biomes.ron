@@ -15,6 +15,9 @@
 //   weight:   how often it is drawn against every other row of its band;
 //             only the ratio matters, and every row here is 1: the design
 //             draws a band's biomes equally
+//   moods:    [line], what the log says of the place on arriving, after
+//             "Floor N: the <name>.", one for each of its floors in order
+//             from its first, so a band's two floors read as one going on
 //   wall:     a tile from `dungeon::registry`, what the floor is filled
 //             with before anything is carved
 //   floor:    a tile from `dungeon::registry`, what its rooms or caves are
@@ -61,6 +64,7 @@
     // Floors one and two.
     (
         name: "Upper Halls", floors: (1, 2), weight: 1,
+        moods: ["Braziers still burn in the empty halls.", "The halls run on, colder and older."],
         wall: "hall wall", floor: "hall floor",
         ambient: (26, (205, 190, 170)),
         recipes: [(name: "great halls", weight: 1), (name: "wings", weight: 1), (name: "galleries", weight: 1)],
@@ -72,6 +76,7 @@
     ),
     (
         name: "Cellars", floors: (1, 2), weight: 1,
+        moods: ["Barrels and racks stand in the dust.", "The cellars go down further than any house needed."],
         wall: "cellar wall", floor: "cellar floor",
         ambient: (24, (150, 130, 110)),
         recipes: [(name: "storerooms", weight: 1), (name: "burrowed", weight: 1)],
@@ -83,6 +88,7 @@
     ),
     (
         name: "Watch Barracks", floors: (1, 2), weight: 1,
+        moods: ["Bunks stand in rows for a watch that never came back.", "The masonry is older here, and cracked."],
         wall: "barracks wall", floor: "barracks floor",
         ambient: (27, (190, 150, 90)),
         recipes: [(name: "blocks", weight: 1), (name: "parade", weight: 1)],
@@ -94,6 +100,7 @@
     // Floors three and four.
     (
         name: "Fungal Deeps", floors: (3, 4), weight: 1,
+        moods: ["Something glows in the dark.", "The caps grow thick here, and the air tastes of earth."],
         wall: "cave wall", floor: "moss",
         ambient: (22, (90, 170, 150)),
         recipes: [(name: "grottoes", weight: 1), (name: "band", weight: 1), (name: "knot", weight: 1)],
@@ -103,6 +110,7 @@
     ),
     (
         name: "Spider Warrens", floors: (3, 4), weight: 1,
+        moods: ["Silk hangs across the tunnels.", "The webs thicken, and something moves in them."],
         wall: "warren wall", floor: "warren floor",
         // Truly dark: the lantern is the only light, so nought rather
         // than a dim colour of its own.
@@ -114,6 +122,7 @@
     ),
     (
         name: "Old Mines", floors: (3, 4), weight: 1,
+        moods: ["Old timbers hold the rock up, mostly.", "The seams run deeper, and the shoring thins."],
         wall: "mine wall", floor: "mine floor",
         ambient: (20, (160, 140, 90)),
         recipes: [(name: "workings", weight: 1), (name: "deep seam", weight: 1)],
@@ -128,6 +137,7 @@
     // Floors five and six.
     (
         name: "Catacombs", floors: (5, 6), weight: 1,
+        moods: ["Candles burn for the dead.", "The dead lie deeper here, and not all of them lie still."],
         wall: "crypt wall", floor: "crypt floor",
         ambient: (19, (150, 160, 205)),
         recipes: [(name: "grid", weight: 1), (name: "ossuaries", weight: 1)],
@@ -137,6 +147,7 @@
     ),
     (
         name: "Sunken Library", floors: (5, 6), weight: 1,
+        moods: ["Damp pages lie where the shelves have fallen.", "The stacks rise out of standing water."],
         wall: "library wall", floor: "library floor",
         ambient: (18, (140, 110, 200)),
         // Water seeping through the floor of every room and stack alike.
@@ -156,6 +167,7 @@
     // Floors seven and eight.
     (
         name: "Drowned Cathedral", floors: (7, 8), weight: 1,
+        moods: ["Cold water stands in the nave.", "Pale light falls through the water overhead."],
         wall: "cathedral wall", floor: "marble",
         ambient: (17, (80, 115, 210)),
         recipes: [
@@ -173,6 +185,7 @@
     ),
     (
         name: "Underlake", floors: (7, 8), weight: 1,
+        moods: ["Black water laps at the stone.", "The lake goes on under the rock, and the shore with it."],
         wall: "underlake wall", floor: "underlake floor",
         ambient: (16, (60, 150, 180)),
         // Matches `Forge of Embers`' own floor: the engine's dim band
@@ -198,6 +211,7 @@
     // Floor nine.
     (
         name: "Forge of Embers", floors: (9, 9), weight: 1,
+        moods: ["The air shimmers over pools of fire."],
         wall: "forge wall", floor: "ash",
         ambient: (16, (210, 80, 50)),
         recipes: [
@@ -222,6 +236,7 @@
     ),
     (
         name: "Ashen Galleries", floors: (9, 9), weight: 1,
+        moods: ["Ash drifts in the still air."],
         wall: "cinder wall", floor: "cinder floor",
         ambient: (16, (200, 90, 40)),
         recipes: [
@@ -246,6 +261,7 @@
     // second shape for these three.
     (
         name: "Drowned Throne", floors: (10, 10), weight: 1,
+        moods: ["Something waits on the throne."],
         wall: "throne wall", floor: "throne floor",
         ambient: (16, (90, 140, 160)),
         // Halls standing in black water.
@@ -259,6 +275,7 @@
     ),
     (
         name: "Brood Hollow", floors: (10, 10), weight: 1,
+        moods: ["Something waits on the throne."],
         wall: "cave wall", floor: "moss",
         ambient: (16, (120, 80, 90)),
         recipes: [(name: "brood hollow", weight: 1)],
@@ -268,6 +285,7 @@
     ),
     (
         name: "Wyrm's Hall", floors: (10, 10), weight: 1,
+        moods: ["Something waits on the throne."],
         wall: "forge wall", floor: "ash",
         ambient: (16, (200, 70, 30)),
         // Burning pools among the pillars.

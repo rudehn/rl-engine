@@ -77,25 +77,15 @@ fn lay(commands: &mut Commands, way: Way, at: Point, map: MapId, to: Destination
 
 /// What the log says on entering `map`, the town or a floor: where the
 /// adventurer is, and what the place is like. `biome` is the drawn
-/// biome's own log name, `BiomeDraws::of`'s `name`, ignored for the
-/// town and required for a floor.
-pub fn place_line(map: MapId, biome: Option<&str>) -> String {
+/// biome's own log name, `BiomeDraws::of`'s `name`, and its line for the
+/// floor, `mood`: ignored for the town and required for a floor, since
+/// what a floor is like is its biome's, the Cellars' first floor no hall
+/// of braziers.
+pub fn place_line(map: MapId, biome: Option<(&str, &str)>) -> String {
     let Some(floor) = floor_of(map) else {
         return "Mereholt, at dusk, on the shore of the black lake.".to_string();
     };
-    let mood = match floor {
-        1 => "Braziers still burn in the empty halls.",
-        2 => "The masonry is older here, and cracked.",
-        3 => "Something glows in the dark.",
-        4 => "The caps grow thick here, and the air tastes of earth.",
-        5 => "Candles burn for the dead.",
-        6 => "The dead lie deeper here, and not all of them lie still.",
-        7 => "Cold water stands in the nave.",
-        8 => "Pale light falls through the water overhead.",
-        9 => "The air shimmers over pools of fire.",
-        _ => "Something waits on the throne.",
-    };
-    let biome = biome.unwrap_or_else(|| panic!("floor {floor} names no drawn biome"));
+    let (biome, mood) = biome.unwrap_or_else(|| panic!("floor {floor} names no drawn biome"));
     format!("Floor {floor}: {biome}. {mood}")
 }
 
@@ -142,7 +132,7 @@ pub fn link_places(
 ) {
     let ArrivalLines { help, mut tell, draws } = lines;
     for ev in entered.read() {
-        let biome = floor_of(ev.map).map(|floor| draws.of(floor).name.as_str());
+        let biome = floor_of(ev.map).map(|floor| (draws.of(floor).name.as_str(), draws.of(floor).mood(floor)));
         tell.write(Tell::new(place_line(ev.map, biome), Tones::NOTICE));
         if !ev.first {
             continue;
@@ -405,7 +395,8 @@ mod tests {
         assert_eq!(here(&app), TOWN, "home by a waystone, the town's first arrival");
         let said = crate::testing::said(&app);
         let controls = said.iter().position(|l| l == "Press ? for the controls.").expect("said on the first floor");
-        let floor_two = place_line(map_of(2), Some(&app.world().resource::<BiomeDraws>().of(2).name));
+        let draw = app.world().resource::<BiomeDraws>().of(2).clone();
+        let floor_two = place_line(map_of(2), Some((&draw.name, draw.mood(2))));
         assert_eq!(said[controls - 1], floor_two, "under floor two's line: {said:#?}");
         assert_eq!(said.iter().filter(|l| *l == "Press ? for the controls.").count(), 1, "once: {said:#?}");
     }
@@ -450,9 +441,12 @@ mod tests {
         go_through(&mut app, me);
         let lines: Vec<String> = app.world().resource::<MessageLog>().iter().map(|e| e.text.clone()).collect();
         let draws = app.world().resource::<BiomeDraws>().clone();
-        let (town, one) = (place_line(TOWN, None), place_line(map_of(1), Some(&draws.of(1).name)));
+        let (town, one) = (place_line(TOWN, None), place_line(map_of(1), Some((&draws.of(1).name, draws.of(1).mood(1)))));
         let said: Vec<&String> = lines.iter().filter(|l| **l == town || **l == one).collect();
         assert_eq!(said, [&town, &one, &town], "{lines:#?}");
-        assert_eq!(place_line(map_of(3), Some("the Fungal Deeps")), "Floor 3: the Fungal Deeps. Something glows in the dark.");
+        assert_eq!(
+            place_line(map_of(3), Some(("the Fungal Deeps", "Something glows in the dark."))),
+            "Floor 3: the Fungal Deeps. Something glows in the dark."
+        );
     }
 }
