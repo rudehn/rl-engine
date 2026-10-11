@@ -55,26 +55,27 @@ pub struct Spawns<'a> {
 
 /// [`BandedTable::pick_group`], but every row whose item `spawns.favor`
 /// lists draws at [`FAVORED_WEIGHT`] times its plain weight.
+///
+/// Composed of the table's own draws rather than walking its rows again:
+/// with `plain` the band's whole weight and `favored` the favored rows'
+/// share of it, a draw goes to the favored rows alone with a chance of
+/// `(FAVORED_WEIGHT - 1) * favored` in `plain + (FAVORED_WEIGHT - 1) *
+/// favored`, and to the whole band otherwise. A favored row of weight `w`
+/// then comes up `FAVORED_WEIGHT * w` times in that total and any other
+/// row `w` times, which is the boost and nothing else.
 fn pick_group_favoring(spawns: &Spawns, rng: &mut impl Rng) -> Option<(Id<MonsterDef>, u32)> {
-    let weight_of = |e: &BandedEntry<Id<MonsterDef>>| {
-        let w = u64::from(e.weight);
-        if spawns.favor.contains(&e.item) { w * u64::from(FAVORED_WEIGHT) } else { w }
-    };
-    let rows: Vec<&BandedEntry<Id<MonsterDef>>> = spawns.table.at(spawns.band).collect();
-    let total: u64 = rows.iter().copied().map(weight_of).sum();
-    if total == 0 {
+    let favored = |id: &Id<MonsterDef>| spawns.favor.contains(id);
+    let weight = |keep: &dyn Fn(&Id<MonsterDef>) -> bool| -> u64 { spawns.table.at(spawns.band).filter(|e| keep(&e.item)).map(|e| u64::from(e.weight)).sum() };
+    let (plain, extra) = (weight(&|_| true), weight(&favored) * u64::from(FAVORED_WEIGHT - 1));
+    if plain == 0 {
         return None;
     }
-    let mut roll = rng.random_range(0..total);
-    for e in rows {
-        let w = weight_of(e);
-        if w > roll {
-            let n = if e.max_group > e.min_group { rng.random_range(e.min_group..=e.max_group) } else { e.min_group };
-            return Some((e.item, n));
-        }
-        roll -= w;
+    if extra > 0 && rng.random_range(0..plain + extra) < extra {
+        let e = spawns.table.pick_where(spawns.band, favored, rng)?;
+        let n = if e.max_group > e.min_group { rng.random_range(e.min_group..=e.max_group) } else { e.min_group };
+        return Some((e.item, n));
     }
-    None
+    spawns.table.pick_group(spawns.band, rng).map(|(id, n)| (*id, n))
 }
 
 /// Groups every floor draws before its depth adds any: three, and one more
@@ -833,6 +834,76 @@ mod tests {
         assert!(plain_count > 0, "the unfavored row was never drawn");
         let ratio = f64::from(favored_count) / f64::from(plain_count);
         assert!((2.0..4.0).contains(&ratio), "favored {favored_count}, plain {plain_count}, ratio {ratio}");
+    }
+
+    /// No biome favors a kind for nothing: every kind a biome of
+    /// `assets/biomes.ron` favors is in the bestiary and spawns on every
+    /// floor that biome may stand on, so a biome is told by what lives in
+    /// it on each of its floors rather than one of them. Read off the
+    /// draws over a span of seeds, which reaches every biome on every one
+    /// of its floors.
+    #[test]
+    fn every_favored_kind_spawns_on_every_floor_its_biome_stands_on() {
+        let bestiary = bestiary();
+        let mut seen = std::collections::BTreeSet::new();
+        for s in 0..80 {
+            let undermere = crate::dungeon::Undermere::new(RunSeed(s));
+            for floor in 1..=FLOORS {
+                let drawn = undermere.biome_of(floor);
+                for name in &drawn.favored {
+                    let id = bestiary.defs.id(name).unwrap_or_else(|| panic!("{}: {name} is no monster", drawn.name));
+                    assert!(bestiary.spawns.at(floor as i32).any(|e| e.item == id), "{} on floor {floor}: {name} never spawns there", drawn.name);
+                }
+                seen.insert((drawn.name.clone(), floor));
+            }
+        }
+        assert!(seen.len() >= 25, "every biome on each of its floors, about: {}", seen.len());
+    }
+
+    /// A floor's population favors its own biome's kinds: over a span of
+    /// seeds of floor three, each of its three biomes' favored kinds make
+    /// up a larger share of the floor's monsters where that biome was
+    /// drawn than where another was, so the population is handed the
+    /// drawn biome's list and not some other floor's or none.
+    #[test]
+    fn a_floor_is_populated_with_more_of_its_own_biomes_favored_kinds() {
+        let floor = 3;
+        // Every biome of the band, by the seeds' own draws of it.
+        let mut band: Vec<crate::dungeon::BiomeDraw> = Vec::new();
+        for s in 0..20 {
+            let drawn = crate::dungeon::Undermere::new(RunSeed(s)).biome_of(floor).clone();
+            if !band.iter().any(|b| b.name == drawn.name) {
+                band.push(drawn);
+            }
+        }
+        // For each, its favored kinds' monsters and every monster where it
+        // was drawn, and the same where another was.
+        let mut tally: std::collections::BTreeMap<String, [(u32, u32); 2]> = std::collections::BTreeMap::new();
+        for s in 0..36 {
+            let mut app = headless(RunSeed(s));
+            watch(&mut app);
+            arrive(&mut app, map_of(floor));
+            let drawn = app.world().resource::<BiomeDraws>().of(floor).name.clone();
+            let bestiary = app.world().resource::<Bestiary>();
+            let made: Vec<&str> = app
+                .world()
+                .resource::<Spawned>()
+                .0
+                .iter()
+                .filter(|(on, _, _)| *on == map_of(floor))
+                .map(|(_, _, k)| bestiary.defs.get(*k).name.as_str())
+                .collect();
+            for biome in &band {
+                let ours = made.iter().filter(|m| biome.favored.iter().any(|f| f == *m)).count() as u32;
+                let side = &mut tally.entry(biome.name.clone()).or_default()[usize::from(biome.name != drawn)];
+                *side = (side.0 + ours, side.1 + made.len() as u32);
+            }
+        }
+        for (biome, [(here, of_here), (there, of_there)]) in &tally {
+            assert!(*of_here > 0 && *of_there > 0, "{biome}: drawn and not drawn over the span: {tally:?}");
+            let (share_here, share_there) = (f64::from(*here) / f64::from(*of_here), f64::from(*there) / f64::from(*of_there));
+            assert!(share_here > share_there * 1.5, "{biome}: its own kinds are {share_here:.2} of its floors and {share_there:.2} of others': {tally:?}");
+        }
     }
 
     /// Where every monster stood the moment it was made, by place, and

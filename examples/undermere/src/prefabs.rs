@@ -1,18 +1,22 @@
-//! Undermere's pieces, as data: Mereholt, the whole town in one piece; the
-//! floor ten boss's own throne, one of three a run draws between
-//! (`dungeon::FinalBoss`); and the one-cell pieces the floors are
-//! furnished with, a chest, a brazier, a candelabra, the body
-//! `decor::BloodTrail` stands at the end of its own trail, and the wall
-//! `decor::WallInscriptions` carves a line into. Each is a file under
-//! `assets/prefabs/`.
+//! Undermere's pieces, as data: Mereholt, the whole town in one piece;
+//! the floor ten boss's own throne, one of three a run draws between
+//! (`dungeon::FinalBoss`), and the five mini-bosses' lairs; the one-cell
+//! pieces a floor is furnished with, a chest, and the brazier, candelabra,
+//! hanging lantern and witchlight a biome's decor in `assets/biomes.ron`
+//! names, the body `decor::BloodTrail` stands at the end of its own trail
+//! and the wall `decor::WallInscriptions` carves a line into; and the
+//! pool's pieces, flavor, risk and reward, under `assets/prefabs/flavor/`,
+//! `risk/` and `reward/`. Each is a file under `assets/prefabs/`, and the
+//! pool's dressings and the pool itself are loaded beside them.
 //!
 //! The engine fills them. `dungeon` stamps each piece by name through
 //! [`Prefabs::piece`], and on the arrival that built a place the engine's
 //! `PrefabPlugin` puts down what every slot names: a prop from
 //! `props.ron`, or a monster from the bestiary, made by
 //! [`Bestiary`](crate::bestiary::Bestiary) exactly as a floor's own
-//! population would make it. The one mark Undermere gives a meaning to
-//! itself is the town's `@`, where a run arrives.
+//! population would make it. The marks Undermere gives a meaning to
+//! itself are the town's `@`, where a run arrives, and a vault piece's,
+//! which [`vaults`](crate::vaults) fills.
 //!
 //! The five mini-bosses add a lair apiece, each its own piece, and
 //! the one role a slot draws for yet, `grubnak-honor-guard`, in
@@ -30,12 +34,14 @@ use crate::bestiary::MonsterDef;
 use crate::content::Library;
 
 /// Every piece, compiled in so the binary runs from anywhere.
-const PIECES: [&str; 61] = [
+const PIECES: [&str; 63] = [
     include_str!("../assets/prefabs/mereholt.ron"),
     include_str!("../assets/prefabs/throne.ron"),
     include_str!("../assets/prefabs/chest.ron"),
     include_str!("../assets/prefabs/brazier.ron"),
     include_str!("../assets/prefabs/candelabra.ron"),
+    include_str!("../assets/prefabs/hanging_lantern.ron"),
+    include_str!("../assets/prefabs/witchlight.ron"),
     include_str!("../assets/prefabs/fallen_body.ron"),
     include_str!("../assets/prefabs/wall_inscription.ron"),
     include_str!("../assets/prefabs/grubnak.ron"),
@@ -61,8 +67,8 @@ const PIECES: [&str; 61] = [
     include_str!("../assets/prefabs/flavor/baptistery.ron"),
     include_str!("../assets/prefabs/flavor/fallen_bell.ron"),
     include_str!("../assets/prefabs/flavor/stilt_hut.ron"),
-    // The risk-and-reward pool's twenty-two placeholder pieces: task 13
-    // fills each in, in place, once its mechanism exists.
+    // The risk-and-reward pool's twenty-two pieces: what each does that
+    // no prop or effect says is `src/vaults.rs`'s.
     include_str!("../assets/prefabs/risk/caged_altars.ron"),
     include_str!("../assets/prefabs/risk/the_locked_vault.ron"),
     include_str!("../assets/prefabs/risk/the_trapped_corridor.ron"),

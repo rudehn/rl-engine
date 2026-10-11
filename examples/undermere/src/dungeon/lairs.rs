@@ -8,13 +8,16 @@
 use super::*;
 use rl_engine::rl_mapgen::Join;
 
-/// Fails the floor when the way in is nearer the grown piece with
-/// [`Area::entries`] than half the floor's longer side, walking: the
-/// throne is grown now, so its mouth is wherever its one entry fell
-/// rather than always south, and [`RandomStart`] draws the way in with no
-/// care for which piece it ends up facing. A floor whose way in already
-/// clears it passes untouched, for [`Chain::run_retrying`] to grow
-/// another where it does not.
+/// Fails the floor when the way in is nearer the throne than half the
+/// floor's longer side, walking: the throne is grown now, so its mouth is
+/// wherever its one entry fell rather than always south, and
+/// [`RandomStart`] draws the way in with no care for which piece it ends
+/// up facing. The throne is the area grown as one of [`FINAL_BOSSES`]'
+/// pieces, found by its name as [`PieceLook`] finds the bosses', rather
+/// than as the first grown piece, which would be another the day floor
+/// ten's pool picks hold one grown. A floor whose way in already clears it
+/// passes untouched, for [`Chain::run_retrying`] to grow another where it
+/// does not.
 pub(super) struct ClearOfTheThrone;
 
 impl Pass<BaseContext> for ClearOfTheThrone {
@@ -29,7 +32,11 @@ impl Pass<BaseContext> for ClearOfTheThrone {
     fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let err = |reason: String| BuildError::new("clear_of_the_throne", reason);
         let start = ctx.outputs().first::<StartPoint>().ok_or_else(|| err("no start point emitted before it".into()))?.0;
-        let throne = ctx.outputs().iter::<Area>().find(|a| a.entries.is_some()).ok_or_else(|| err("no throne grown".into()))?;
+        let throne = ctx
+            .outputs()
+            .iter::<Area>()
+            .find(|a| a.entries.is_some() && FINAL_BOSSES.iter().any(|b| b.piece == a.shape))
+            .ok_or_else(|| err("no throne grown".into()))?;
         let bounds = ctx.terrain().bounds();
         let need = bounds.width.max(bounds.height) / 2;
         let tables = ctx.tiles().tables();

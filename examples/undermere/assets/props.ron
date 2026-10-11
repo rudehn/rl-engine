@@ -58,6 +58,11 @@
     (name: "pew",        glyph: '=', color: (r: 140, g: 100, b: 65), blocks: true),
     // Candles stand in the temple and in the crypts, and nothing trips on them.
     (name: "candelabra", glyph: 'i', color: (r: 255, g: 230, b: 160)),
+    // A lantern hung from a hook or a prop of timber: the Cellars' few, and
+    // the goblins' in the Old Mines.
+    (name: "hanging lantern", glyph: 'i', color: (r: 230, g: 170, b: 90)),
+    // A cold violet flame under glass, the Sunken Library's witchlight.
+    (name: "witchlight", glyph: 'i', color: (r: 190, g: 150, b: 255)),
 
     // A brazier burns in the colour of the place it stands in, so its iron is
     // drawn near white and its own light colours it: orange in the halls,

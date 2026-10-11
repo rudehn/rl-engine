@@ -76,17 +76,16 @@ fn lay(commands: &mut Commands, way: Way, at: Point, map: MapId, to: Destination
 }
 
 /// What the log says on entering `map`, the town or a floor: where the
-/// adventurer is, and what the place is like. `biome` is the drawn
-/// biome's own log name, `BiomeDraws::of`'s `name`, and its line for the
-/// floor, `mood`: ignored for the town and required for a floor, since
-/// what a floor is like is its biome's, the Cellars' first floor no hall
-/// of braziers.
-pub fn place_line(map: MapId, biome: Option<(&str, &str)>) -> String {
+/// adventurer is, and what the place is like. A floor's is its drawn
+/// biome's, read off `draws`, its log name and its line for the floor,
+/// since what a floor is like is its biome's, the Cellars' first floor no
+/// hall of braziers; every floor has a draw, so no floor goes unnamed.
+pub fn place_line(map: MapId, draws: &BiomeDraws) -> String {
     let Some(floor) = floor_of(map) else {
         return "Mereholt, at dusk, on the shore of the black lake.".to_string();
     };
-    let (biome, mood) = biome.unwrap_or_else(|| panic!("floor {floor} names no drawn biome"));
-    format!("Floor {floor}: {biome}. {mood}")
+    let drawn = draws.of(floor);
+    format!("Floor {floor}: {}. {}", drawn.name, drawn.mood(floor))
 }
 
 /// Writes every cell of Mereholt into what the adventurer remembers, and
@@ -132,8 +131,7 @@ pub fn link_places(
 ) {
     let ArrivalLines { help, mut tell, draws } = lines;
     for ev in entered.read() {
-        let biome = floor_of(ev.map).map(|floor| (draws.of(floor).name.as_str(), draws.of(floor).mood(floor)));
-        tell.write(Tell::new(place_line(ev.map, biome), Tones::NOTICE));
+        tell.write(Tell::new(place_line(ev.map, &draws), Tones::NOTICE));
         if !ev.first {
             continue;
         }
@@ -349,7 +347,8 @@ mod tests {
         crate::testing::settle(&mut app);
         let lines: Vec<String> = app.world().resource::<MessageLog>().iter().map(|e| e.text.clone()).collect();
         let line = |text: &str| lines.iter().position(|l| l == text).unwrap_or_else(|| panic!("{text:?} not in {lines:#?}"));
-        assert!(line(&place_line(TOWN, None)) < line("Press ? for the controls."), "{lines:#?}");
+        let town = place_line(TOWN, app.world().resource::<BiomeDraws>());
+        assert!(line(&town) < line("Press ? for the controls."), "{lines:#?}");
     }
 
     /// How to see the keys is said once a run, on the first arrival in
@@ -375,7 +374,8 @@ mod tests {
         assert_eq!(here(&app), TOWN, "home by a waystone");
         let said = crate::testing::said(&app);
         assert_eq!(said.iter().filter(|l| *l == "Press ? for the controls.").count(), 1, "{said:#?}");
-        assert_eq!(said.iter().filter(|l| **l == place_line(TOWN, None)).count(), 3, "while the town's own line is said on every arrival");
+        let town = place_line(TOWN, app.world().resource::<BiomeDraws>());
+        assert_eq!(said.iter().filter(|l| **l == town).count(), 3, "while the town's own line is said on every arrival");
 
         // A run begun below, as a photograph's is, says it on that first
         // floor, and not again on the town's first arrival by a waystone.
@@ -395,8 +395,7 @@ mod tests {
         assert_eq!(here(&app), TOWN, "home by a waystone, the town's first arrival");
         let said = crate::testing::said(&app);
         let controls = said.iter().position(|l| l == "Press ? for the controls.").expect("said on the first floor");
-        let draw = app.world().resource::<BiomeDraws>().of(2).clone();
-        let floor_two = place_line(map_of(2), Some((&draw.name, draw.mood(2))));
+        let floor_two = place_line(map_of(2), app.world().resource::<BiomeDraws>());
         assert_eq!(said[controls - 1], floor_two, "under floor two's line: {said:#?}");
         assert_eq!(said.iter().filter(|l| *l == "Press ? for the controls.").count(), 1, "once: {said:#?}");
     }
@@ -441,12 +440,16 @@ mod tests {
         go_through(&mut app, me);
         let lines: Vec<String> = app.world().resource::<MessageLog>().iter().map(|e| e.text.clone()).collect();
         let draws = app.world().resource::<BiomeDraws>().clone();
-        let (town, one) = (place_line(TOWN, None), place_line(map_of(1), Some((&draws.of(1).name, draws.of(1).mood(1)))));
+        let (town, one) = (place_line(TOWN, &draws), place_line(map_of(1), &draws));
         let said: Vec<&String> = lines.iter().filter(|l| **l == town || **l == one).collect();
         assert_eq!(said, [&town, &one, &town], "{lines:#?}");
-        assert_eq!(
-            place_line(map_of(3), Some(("the Fungal Deeps", "Something glows in the dark."))),
-            "Floor 3: the Fungal Deeps. Something glows in the dark."
-        );
+        // Floor one's line is one of its three biomes' own first lines,
+        // as `assets/biomes.ron` writes them.
+        let firsts = [
+            "Floor 1: the Upper Halls. Braziers still burn in the empty halls.",
+            "Floor 1: the Cellars. Barrels and racks stand in the dust.",
+            "Floor 1: the Watch Barracks. Bunks stand in rows for a watch that never came back.",
+        ];
+        assert!(firsts.contains(&one.as_str()), "{one}");
     }
 }
