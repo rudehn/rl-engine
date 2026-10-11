@@ -186,8 +186,8 @@
             ))),
             // Lakes over most of the floor, the caves islands in them.
             (name: "archipelago", weight: 1, lakes: Some((
-                tile: "deep water", count: (16, 22), size: (80, 180), wreath: Some(("flooded floor", 60)), cut: true,
-                bridges: Some((tile: "bridge", longest: 16, detour: 24)),
+                tile: "deep water", count: (10, 14), size: (60, 150), wreath: Some(("flooded floor", 60)), cut: true,
+                bridges: Some((tile: "bridge", longest: 20, detour: 24)),
             ))),
         ],
         decor: ["Stilt Hut", "Shell Midden"],

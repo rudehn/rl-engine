@@ -157,13 +157,13 @@
         // and met at their ends; long galleries looping between small
         // chambers. A ruin breaks into each.
         (
-            name: "great halls", size: (96, 54), open_pct: 38, patience: 300, districts_per_10k: 7,
+            name: "great halls", size: (96, 54), open_pct: 44, patience: 300, districts_per_10k: 7,
             districts: [("halls", 5), ("ruin", 1)],
             loops: (min_detour: 24, max: 6),
             require: (open_pct: (32, 60), areas: [("hall", 2)], loops: 2, dead_end_pct: 55, route: 32),
         ),
         (
-            name: "wings", size: (100, 56), open_pct: 36, patience: 300, districts_per_10k: 8,
+            name: "wings", size: (100, 56), open_pct: 40, patience: 300, districts_per_10k: 8,
             districts: [("wings", 4), ("halls", 1), ("ruin", 1)],
             barriers: [
                 (from: (33, 0), to: (33, 70), chance_pct: 100, jitter_pct: 4),
@@ -182,7 +182,7 @@
         // The Cellars: small rooms on crawlways, tight and full of dead
         // ends; or burrowed through by root caves.
         (
-            name: "storerooms", size: (90, 52), open_pct: 32, patience: 300, districts_per_10k: 9,
+            name: "storerooms", size: (90, 52), open_pct: 38, patience: 300, districts_per_10k: 9,
             districts: [("storerooms", 5), ("roots", 1)],
             loops: (min_detour: 30, max: 3),
             require: (open_pct: (26, 60), areas: [("storeroom", 10)], loops: 1, dead_end_pct: 65, route: 30),
@@ -197,13 +197,13 @@
         // The Watch Barracks: blocks of uniform cells; or a parade hall
         // with mess halls round it.
         (
-            name: "blocks", size: (96, 54), open_pct: 34, patience: 300, districts_per_10k: 9,
+            name: "blocks", size: (96, 54), open_pct: 38, patience: 300, districts_per_10k: 9,
             districts: [("cells", 4), ("mess", 1)],
             loops: (min_detour: 24, max: 6),
             require: (open_pct: (28, 60), areas: [("cell", 10)], loops: 2, dead_end_pct: 70, route: 32),
         ),
         (
-            name: "parade", size: (96, 54), open_pct: 38, patience: 300, districts_per_10k: 6,
+            name: "parade", size: (96, 54), open_pct: 42, patience: 300, districts_per_10k: 6,
             districts: [("parade", 3), ("mess", 2), ("cells", 1)],
             loops: (min_detour: 24, max: 6),
             require: (open_pct: (32, 60), areas: [("great hall", 1), ("cross", 2)], loops: 2, dead_end_pct: 60, route: 32),
@@ -253,7 +253,7 @@
         // The Old Mines: chambers on straight galleries with many loops;
         // or a deep seam of caves split by a barrier, chambers rarer.
         (
-            name: "workings", size: (100, 56), open_pct: 36, patience: 300, districts_per_10k: 8,
+            name: "workings", size: (100, 56), open_pct: 40, patience: 300, districts_per_10k: 8,
             districts: [("workings", 1)],
             loops: (min_detour: 14, max: 10),
             require: (open_pct: (30, 60), areas: [("chamber", 4)], loops: 5, dead_end_pct: 45, route: 34),
@@ -269,13 +269,13 @@
         // The Catacombs: a grid of small crypts on long galleries; or
         // ossuary halls and crosses with galleries between.
         (
-            name: "grid", size: (96, 54), open_pct: 30, patience: 300, districts_per_10k: 9,
+            name: "grid", size: (96, 54), open_pct: 36, patience: 300, districts_per_10k: 9,
             districts: [("crypts", 1)],
             loops: (min_detour: 24, max: 6),
             require: (open_pct: (24, 60), areas: [("crypt", 12)], loops: 2, dead_end_pct: 70, route: 32),
         ),
         (
-            name: "ossuaries", size: (96, 54), open_pct: 34, patience: 300, districts_per_10k: 8,
+            name: "ossuaries", size: (96, 54), open_pct: 44, patience: 300, districts_per_10k: 8,
             districts: [("ossuaries", 3), ("crypts", 1)],
             loops: (min_detour: 24, max: 6),
             require: (open_pct: (28, 60), areas: [("hall", 2), ("cross", 2)], loops: 2, dead_end_pct: 55, route: 32),
@@ -290,7 +290,7 @@
             require: (open_pct: (30, 60), areas: [("stack", 5)], loops: 3, dead_end_pct: 50, route: 34),
         ),
         (
-            name: "atrium", size: (96, 54), open_pct: 36, patience: 300, districts_per_10k: 8,
+            name: "atrium", size: (96, 54), open_pct: 42, patience: 300, districts_per_10k: 8,
             districts: [("atrium", 1)],
             loops: (min_detour: 24, max: 6),
             require: (open_pct: (30, 60), areas: [("great cross", 1), ("reading room", 4)], loops: 2, dead_end_pct: 55, route: 32),
@@ -299,13 +299,13 @@
         // The Drowned Cathedral: naves with deep water standing in them;
         // or chapels round a cloister garth.
         (
-            name: "nave", size: (104, 58), open_pct: 40, patience: 300, districts_per_10k: 7,
+            name: "nave", size: (104, 58), open_pct: 46, patience: 300, districts_per_10k: 7,
             districts: [("nave", 1)],
             loops: (min_detour: 24, max: 6),
             require: (open_pct: (30, 62), areas: [("nave", 2)], loops: 2, dead_end_pct: 55, route: 35),
         ),
         (
-            name: "cloister", size: (100, 56), open_pct: 36, patience: 300, districts_per_10k: 8,
+            name: "cloister", size: (100, 56), open_pct: 40, patience: 300, districts_per_10k: 8,
             districts: [("cloister", 1)],
             barriers: [(from: (35, 50), to: (65, 50), chance_pct: 100, jitter_pct: 6)],
             loops: (min_detour: 20, max: 8),
@@ -336,7 +336,7 @@
             require: (open_pct: (28, 60), areas: [("smithy", 3)], loops: 2, dead_end_pct: 55, route: 32),
         ),
         (
-            name: "smelter", size: (96, 54), open_pct: 40, patience: 300, districts_per_10k: 7,
+            name: "smelter", size: (96, 54), open_pct: 44, patience: 300, districts_per_10k: 7,
             districts: [("smelter", 2), ("ash", 1)],
             loops: (min_detour: 24, max: 6),
             require: (open_pct: (28, 60), areas: [("great hall", 1)], loops: 2, dead_end_pct: 55, route: 32),
@@ -360,7 +360,7 @@
         // The throne floors: compact, the fight being the point and the
         // walk to it not. None has a way down.
         (
-            name: "drowned throne", size: (72, 44), open_pct: 34, patience: 300, districts_per_10k: 8,
+            name: "drowned throne", size: (72, 44), open_pct: 44, patience: 300, districts_per_10k: 8,
             districts: [("throne halls", 1)],
             loops: (min_detour: 20, max: 4),
             require: (open_pct: (26, 62), areas: [("hall", 2)], loops: 1, dead_end_pct: 60, route: 0),
@@ -372,7 +372,7 @@
             require: (open_pct: (26, 62), areas: [("cave", 2)], loops: 1, dead_end_pct: 60, route: 0),
         ),
         (
-            name: "wyrm's hall", size: (72, 44), open_pct: 36, patience: 300, districts_per_10k: 8,
+            name: "wyrm's hall", size: (72, 44), open_pct: 40, patience: 300, districts_per_10k: 8,
             districts: [("pillared", 1)],
             loops: (min_detour: 20, max: 4),
             require: (open_pct: (26, 62), areas: [("hall", 2)], loops: 1, dead_end_pct: 60, route: 0),
