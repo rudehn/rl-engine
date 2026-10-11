@@ -76,7 +76,7 @@ Why the order that is left, in four moves:
    Item 23 was raised on 2026-09-28 when Foundry's rooms were first furnished, and is what the furnished rooms most visibly lack; the three furnishing items raised beside it were built on 2026-10-10.
    Item 24 is polish Undermere's play found on 2026-10-07, and waits on a part that works on how a game looks, since it moves every lit game's pictures.
    Item 25 was ruled around rather than built on 2026-10-07, when Undermere gave a captive a long action only a mind could take up, and waits on a game that wants the player to take one too.
-   Item 26 is what furnishing left on 2026-10-10, and waits on a game that stamps into a map `Accrete` did not grow.
+   Item 27 is what furnishing left on 2026-10-10, and waits on a game that stamps into a map `Accrete` did not grow.
 
 Section 5 is documentation and section 6 is the release, and both are gated on the API settling rather than on this list.
 Section 9 is low priority and deliberately outside the order.
