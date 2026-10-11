@@ -42,7 +42,7 @@ use undermere::dungeon::{FLOORS, floor_of, map_of};
 use undermere::lore::{Lore, Unfamiliar};
 use undermere::stairs::Way;
 use undermere::tally::Tally;
-use undermere::traps::Hiding;
+use undermere::traps::{Hiding, SecretKind};
 
 /// The seeds every half plays: one to fifty, or one to as many as
 /// `UNDERMERE_SOAK_SEEDS` says for a quick look while a change is tried,
@@ -89,21 +89,21 @@ const HIDDEN: [&str; 6] = ["door", "room", "causeway", "trap", "flagstone", "oth
 /// What `here` hides now, by [`HIDDEN`] kind: each secret group, and each
 /// hidden prop.
 fn hidden_on(world: &mut World, here: MapId) -> (BTreeMap<u32, &'static str>, BTreeMap<Entity, &'static str>) {
-    let (door, room) = world.resource::<Hiding>().openings(2, 0).map_or((0, 0), |h| (h.loop_spot, h.room_spot));
-    let groups = world
-        .resource::<WorldMap>()
-        .secrets(here)
-        .iter()
-        .map(|s| {
-            let kind = match s.spot {
-                spot if spot == door => "door",
-                spot if spot == room => "room",
-                undermere::vaults::CAUSEWAY_SPOT => "causeway",
-                _ => "other",
-            };
-            (s.group, kind)
-        })
-        .collect();
+    let map = world.resource::<WorldMap>();
+    let groups = map.place(here).map_or_else(BTreeMap::new, |place| {
+        let secrets: Vec<_> = place.secrets.iter().map(|s| (s.at, s.is, s.group)).collect();
+        undermere::traps::secret_kinds(&place.terrain, place.entry, &secrets, map.tables())
+            .into_iter()
+            .map(|(group, kind)| {
+                let kind = match kind {
+                    SecretKind::Door => "door",
+                    SecretKind::Room => "room",
+                    SecretKind::Causeway => "causeway",
+                };
+                (group, kind)
+            })
+            .collect()
+    });
     let props: Vec<(Entity, Id<PropDef>)> =
         world.query_filtered::<(Entity, &OnMap, &PropKind), With<Hidden>>().iter(world).filter(|(_, on, _)| on.0 == here).map(|(e, _, k)| (e, k.0)).collect();
     let props = props.into_iter().map(|(e, kind)| (e, prop_kind(world, kind))).collect();

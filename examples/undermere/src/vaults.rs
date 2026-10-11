@@ -75,6 +75,10 @@ const GIANT_KIND: &str = "ogre";
 /// The goblin a [`GOBLIN`] mark stands.
 const GOBLIN_KIND: &str = "goblin";
 
+/// The tile a sunken causeway really is, under the deep water it is
+/// hidden as.
+pub const CAUSEWAY_TILE: &str = "sunken causeway";
+
 /// How likely a turn in sight finds a sunken causeway, in percent: the
 /// unit a hidden prop's chance is given in, and as hard to see as the
 /// floor's hidden plates.
@@ -264,7 +268,7 @@ fn hide_causeways(built: &mut PlaceBuild, tiles: &TileRegistry, prefabs: &Prefab
         return;
     }
     built.spots.retain(|s| !is_causeway(s));
-    let (deep, causeway) = (tiles.expect("deep water"), tiles.expect("sunken causeway"));
+    let (deep, causeway) = (tiles.expect("deep water"), tiles.expect(CAUSEWAY_TILE));
     let group = built.secrets.iter().map(|s| s.group + 1).max().unwrap_or(0);
     for at in cells {
         built.terrain.set(at, deep);
