@@ -689,6 +689,8 @@ mod tests {
             ("altar", true),
             ("pew", true),
             ("candelabra", false),
+            ("hanging lantern", false),
+            ("witchlight", false),
             ("brazier", true),
             ("throne", true),
             ("chest", true),

@@ -50,6 +50,11 @@ pub const FIRE: LightDef = LightDef { radius: 4, color: (1.0, 0.5, 0.2), flicker
 pub const CAMPFIRE: LightDef = LightDef { radius: 5, color: (1.0, 0.82, 0.5), flicker: 0.4 };
 /// Candles, on an altar or a candelabra: pale gold, and steadier than fire.
 pub const CANDLES: LightDef = LightDef { radius: 4, color: (1.0, 0.88, 0.58), flicker: 0.2 };
+/// A lantern hung in the Cellars or by the goblins in the Old Mines: warm,
+/// and nearer in than a brazier, so a cellar is lit in pools.
+pub const HUNG_LANTERN: LightDef = LightDef { radius: 4, color: (1.0, 0.72, 0.4), flicker: 0.15 };
+/// The Sunken Library's witchlight: a pale violet, steady under its glass.
+pub const WITCHLIGHT: LightDef = LightDef { radius: 4, color: (0.78, 0.6, 1.0), flicker: 0.05 };
 /// A brazier left burning in the Upper Halls: wide enough to light the room
 /// it stands in.
 pub const BRAZIER: LightDef = LightDef { radius: 6, color: (1.0, 0.6, 0.28), flicker: 0.4 };
@@ -69,13 +74,17 @@ pub const LAVA: LightDef = LightDef { radius: 3, color: (1.0, 0.52, 0.15), flick
 /// A shaft of pale light come down through the lake onto the cathedral's
 /// marble.
 pub const SHAFT: LightDef = LightDef { radius: 2, color: (0.72, 0.84, 1.0), flicker: 0.0 };
+/// The Underlake's shallows, lit from below: a cold blue-green, and every
+/// cell of a pool sheds it, as lava's does.
+pub const SHALLOWS: LightDef = LightDef { radius: 2, color: (0.45, 0.9, 1.0), flicker: 0.1 };
 
 /// Every tile that glows by itself, by its name in `assets/tiles.ron`, and
 /// the light it sheds: the town's lit windows and the gate, and below them
-/// the glowcaps, the lava and the cathedral's shafts of light. Each is
-/// drawn brighter than the walls round it, as a light is, where every
-/// other floor is darker than its band's wall.
-pub const GLOWING: [(&str, LightDef); 5] = [("lit window", WINDOW), ("gate", GATE), ("glowcaps", GLOWCAP), ("lava", LAVA), ("moonlit marble", SHAFT)];
+/// the glowcaps, the lava, the cathedral's shafts of light and the
+/// Underlake's lit shallows. Each is drawn brighter than the floor round
+/// it, as a light is.
+pub const GLOWING: [(&str, LightDef); 6] =
+    [("lit window", WINDOW), ("gate", GATE), ("glowcaps", GLOWCAP), ("lava", LAVA), ("moonlit marble", SHAFT), ("glowing shallows", SHALLOWS)];
 
 /// How far the adventurer's lantern reaches on `floor`, `None` for the
 /// town: seven tiles at the top, and a tile less every third floor, down
@@ -211,13 +220,22 @@ impl Fixtures {
     /// What lights the places of `undermere`, with the props named in
     /// `registries`: of the tiles, every one [`GLOWING`] names; of the
     /// props, lamp posts, the forge and the hearth, the altar and
-    /// candelabras, and braziers wherever they stand.
+    /// candelabras, hanging lanterns and witchlights, and braziers
+    /// wherever they stand.
     pub fn new(undermere: &Undermere, registries: &Registries) -> Self {
         let tile = |name: &str| undermere.tiles().expect(name);
         let prop = |name: &str| registries.props.expect(name);
         Self {
             tiles: GLOWING.iter().map(|(name, light)| (tile(name), *light)).collect(),
-            props: vec![(prop("lamp post"), LAMP), (prop("forge"), FIRE), (prop("hearth"), FIRE), (prop("altar"), CANDLES), (prop("candelabra"), CANDLES)],
+            props: vec![
+                (prop("lamp post"), LAMP),
+                (prop("forge"), FIRE),
+                (prop("hearth"), FIRE),
+                (prop("altar"), CANDLES),
+                (prop("candelabra"), CANDLES),
+                (prop("hanging lantern"), HUNG_LANTERN),
+                (prop("witchlight"), WITCHLIGHT),
+            ],
             loose: vec![(prop("fire"), CAMPFIRE), (prop(crate::waystone::GATE_MARK), GATE_MARK)],
             brazier: prop("brazier"),
             prefabs: undermere.prefabs().clone(),
@@ -326,13 +344,7 @@ mod tests {
             let undermere = Undermere::new(RunSeed(s));
             for floor in 1..FLOORS {
                 let drawn = undermere.biome_of(floor);
-                let key = match floor {
-                    1 | 2 => (1, 2),
-                    3 | 4 => (3, 4),
-                    5 | 6 => (5, 6),
-                    7 | 8 => (7, 8),
-                    _ => (9, 9),
-                };
+                let key = (drawn.first, drawn.last);
                 let seen = by_band.entry(key).or_default();
                 if !seen.contains(&drawn.ambient) {
                     seen.push(drawn.ambient);
@@ -370,8 +382,8 @@ mod tests {
     /// own is in the dim band, which stealth reads as harder to pick out
     /// than the lit one. The Spider Warrens are the one exception: truly
     /// dark, so nothing beyond the lantern there is seen at all. Over two
-    /// seeds, every band has such cells in sight on one of its floors'
-    /// arrivals.
+    /// seeds, every band, by its biomes' own floors, and the throne's floor
+    /// have such cells in sight on one of their floors' arrivals.
     #[test]
     fn beyond_every_light_a_floor_is_seen_dimly_but_the_spider_warrens_truly_dark() {
         let mut checked = BTreeSet::new();
@@ -406,17 +418,12 @@ mod tests {
                     assert!(bright.is_empty(), "seed {s}, floor {floor}: beyond every light is dim, not {bright:?}");
                 }
                 if !beyond.is_empty() {
-                    checked.insert(match floor {
-                        1 | 2 => (1, 2),
-                        3 | 4 => (3, 4),
-                        5 | 6 => (5, 6),
-                        7 | 8 => (7, 8),
-                        _ => (9, FLOORS),
-                    });
+                    let drawn = app.world().resource::<BiomeDraws>().of(floor);
+                    checked.insert((drawn.first, drawn.last));
                 }
             }
         }
-        assert_eq!(checked.len(), 5, "every band had something in sight beyond its lights: {checked:?}");
+        assert_eq!(checked.len(), 6, "every band and the throne's floor had something in sight beyond its lights: {checked:?}");
     }
 
     /// Everything that glows in a place has its light and nothing else
@@ -436,6 +443,7 @@ mod tests {
                 "glowcaps" => Some(GLOWCAP),
                 "lava" => Some(LAVA),
                 "moonlit marble" => Some(SHAFT),
+                "glowing shallows" => Some(SHALLOWS),
                 _ => None,
             };
             for map in std::iter::once(TOWN).chain((1..=FLOORS).map(map_of)) {
@@ -450,6 +458,8 @@ mod tests {
                         "lamp post" => LAMP,
                         "forge" | "hearth" => FIRE,
                         "altar" | "candelabra" => CANDLES,
+                        "hanging lantern" => HUNG_LANTERN,
+                        "witchlight" => WITCHLIGHT,
                         "brazier" if map == map_of(FLOORS) => COLD_BRAZIER,
                         "brazier" => BRAZIER,
                         _ => continue,
@@ -462,6 +472,48 @@ mod tests {
                 assert_eq!(lit, expected, "{map:?}, seed {s}");
             }
         }
+    }
+
+    /// The Spider Warrens are truly dark, so nothing their own decor lays
+    /// sheds light: no glowing tile on any floor drawn as the warrens, and
+    /// none of the pieces it furnishes with stands a lit prop. What else
+    /// lights a warren is a risk-and-reward piece's own, a camp's fire or
+    /// the lantern, each a light somebody put there.
+    #[test]
+    fn a_floor_drawn_as_the_spider_warrens_lays_nothing_that_glows() {
+        let registries = crate::content::registries();
+        let mut checked = 0;
+        for s in 0..30 {
+            let undermere = Undermere::new(RunSeed(s));
+            let fixtures = Fixtures::new(&undermere, &registries);
+            for floor in 1..FLOORS {
+                let drawn = undermere.biome_of(floor);
+                if drawn.name != "the Spider Warrens" {
+                    continue;
+                }
+                assert_eq!(drawn.ambient, Light::DARK, "the warrens' ambient is nought");
+                for decor in &drawn.decor {
+                    match decor {
+                        crate::dungeon::Decor::Patches { tile, .. } => {
+                            assert!(fixtures.tiles.iter().all(|(t, _)| t != tile), "the warrens strew {:?}, which glows", undermere.tiles().get(*tile).name);
+                        }
+                        crate::dungeon::Decor::Furnish { piece, .. } => {
+                            let defs = undermere.prefabs().defs();
+                            let lit = defs.get(defs.expect(piece)).slots().any(|(_, slot)| match slot {
+                                Slot::Prop(id) => *id == fixtures.brazier || fixtures.props.iter().any(|(p, _)| p == id),
+                                _ => false,
+                            });
+                            assert!(!lit, "the warrens furnish with {piece:?}, which sheds light");
+                        }
+                    }
+                }
+                let built = undermere.build(map_of(floor), None).unwrap();
+                let glowing: Vec<Point> = built.terrain.iter().filter(|(_, t)| fixtures.tiles.iter().any(|(g, _)| g == t)).map(|(p, _)| p).collect();
+                assert!(glowing.is_empty(), "seed {s}, floor {floor}: the warrens glow at {glowing:?}");
+                checked += 1;
+            }
+        }
+        assert!(checked > 0, "some seed drew the Spider Warrens");
     }
 
     /// On the first arrival in Mereholt every one of its fixtures is lit,

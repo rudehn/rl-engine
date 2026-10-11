@@ -15,9 +15,11 @@
 //! A recipe names one in `assets/layout.ron`, checked at load both ways:
 //! every recipe a biome names is in the layout, and every recipe in the
 //! layout is named by some biome, so none is grown for nothing. `decor` is
-//! carried and left for a pool-consistency check of a later task;
-//! [`district_dressings`] turns `dressings` into the weighted list
-//! `rl_mapgen::Dress` gives every area the pool's picks left bare.
+//! what a floor of the biome is strewn with once its ways are known, and
+//! so most of what lights it: the Fungal Deeps' glowcaps, the Catacombs'
+//! candles, and nothing at all in the Spider Warrens, whose dark is the
+//! design's. [`district_dressings`] turns `dressings` into the weighted
+//! list `rl_mapgen::Dress` gives every area the pool's picks left bare.
 
 use rl_engine::rl_rules::dressing::DistrictDressings;
 
@@ -69,6 +71,34 @@ pub(crate) struct BridgesDef {
     pub(crate) detour: u32,
 }
 
+/// One thing a biome strews on its floors, as `assets/biomes.ron` writes
+/// it: the file's own doc comment lists every field.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub(crate) enum DecorDef {
+    /// Patches of `tile` grown over the biome's floor.
+    Patches { tile: String, count: (u32, u32), size: (u32, u32) },
+    /// A one-cell piece of `assets/prefabs/` stood on open floor.
+    Furnish { piece: String, count: (u32, u32) },
+}
+
+/// [`DecorDef`] resolved against the tiles, for the chain: a piece stays a
+/// name, since the pieces are [`Undermere`]'s and the chain asks them for
+/// it, and [`check_pieces`] has already found every one.
+#[derive(Debug, Clone)]
+pub(crate) enum Decor {
+    /// Patches of `tile` over the floor, `count` of them, each of `size`
+    /// cells.
+    Patches { tile: TileId, count: (u32, u32), size: (u32, u32) },
+    /// `count` of the one-cell piece `piece`.
+    Furnish { piece: String, count: (u32, u32) },
+}
+
+/// The pass name each of a biome's decor rows runs under, in its order: a
+/// pass's name keys its stream, so two rows of one biome never draw the
+/// same one, and a name must be `'static`. A biome may strew as many
+/// kinds of thing as there are names here, which the load checks.
+pub(crate) const DECOR_PASSES: [&str; 4] = ["decor one", "decor two", "decor three", "decor four"];
+
 /// An area's floor painted again by the name of its shape or district.
 #[derive(Debug, Clone, serde::Deserialize)]
 pub(crate) struct PaintDef {
@@ -91,8 +121,9 @@ pub(crate) struct BiomeDef {
     pub(crate) recipes: Vec<RecipeWeight>,
     #[serde(default)]
     pub(crate) paint: Vec<PaintDef>,
-    #[allow(dead_code)] // Read once a pool file exists to check it against.
-    pub(crate) decor: Vec<String>,
+    /// What its floors are strewn with, in order, each under the pass
+    /// name [`DECOR_PASSES`] gives its place in the list.
+    pub(crate) decor: Vec<DecorDef>,
     /// Named dressings of `assets/dressings.ron`, this biome's own rather
     /// than any floor's; [`district_dressings`] weighs each at
     /// [`DRESSING_WEIGHT`] in every district this biome grows.
@@ -120,6 +151,10 @@ pub(crate) struct BiomeDraw {
     pub(crate) moods: Vec<String>,
     /// The first floor it may be drawn on, which `moods` counts from.
     pub(crate) first: u32,
+    /// The last floor it may be drawn on: with `first`, the band it
+    /// stands in, for whatever reads floors by their band.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) last: u32,
     /// What the floor is filled with before anything is carved.
     pub(crate) wall: TileId,
     /// What its rooms or caves are carved as.
@@ -139,6 +174,8 @@ pub(crate) struct BiomeDraw {
     /// What an area is floored with in place of `floor`, by the name of
     /// its shape or its district, the first that names either.
     pub(crate) paint: Vec<(String, TileId)>,
+    /// What the floor is strewn with once its ways are known, in order.
+    pub(crate) decor: Vec<Decor>,
 }
 
 impl BiomeDraw {
@@ -175,6 +212,7 @@ pub(super) fn to_draw(def: &BiomeDef, recipe: usize, tiles: &TileRegistry) -> Bi
         name: format!("the {}", def.name),
         moods: def.moods.clone(),
         first: def.floors.0,
+        last: def.floors.1,
         wall: tiles.expect(&def.wall),
         floor: tiles.expect(&def.floor),
         ambient: Light::new(intensity, Rgb::new(r, g, b)),
@@ -182,6 +220,14 @@ pub(super) fn to_draw(def: &BiomeDef, recipe: usize, tiles: &TileRegistry) -> Bi
         recipe: r_def.name.clone(),
         lakes: r_def.lakes.as_ref().map(|l| to_lakes(l, tiles)),
         paint: def.paint.iter().map(|p| (p.on.clone(), tiles.expect(&p.tile))).collect(),
+        decor: def
+            .decor
+            .iter()
+            .map(|d| match d {
+                DecorDef::Patches { tile, count, size } => Decor::Patches { tile: tiles.expect(tile), count: *count, size: *size },
+                DecorDef::Furnish { piece, count } => Decor::Furnish { piece: piece.clone(), count: *count },
+            })
+            .collect(),
     }
 }
 
@@ -212,8 +258,53 @@ fn check_lakes(lakes: &LakesDef, tiles: &TileRegistry, layout: &LayoutDef) -> Re
     Ok(())
 }
 
+/// Checks `def`'s decor against `tiles`: no more rows than
+/// [`DECOR_PASSES`] names, every range in order, and every patch of a
+/// registered tile a body can stand on, since `Patches` never asks whether
+/// what it lays cuts the floor in two. Water and lava that stop a body are
+/// a recipe's lakes, which the structures lay before the ways are chosen.
+fn check_decor(def: &BiomeDef, tiles: &TileRegistry) -> Result<(), String> {
+    if def.decor.len() > DECOR_PASSES.len() {
+        return Err(format!("{} decor rows, past the {} there are pass names for", def.decor.len(), DECOR_PASSES.len()));
+    }
+    for d in &def.decor {
+        let (what, count) = match d {
+            DecorDef::Patches { tile, count, size } => {
+                let id = tiles.id(tile).ok_or_else(|| format!("decor {tile:?} is not a registered tile"))?;
+                if !tiles.tables().walkable[id.index()] {
+                    return Err(format!("decor {tile:?} stops a body; lay it as a recipe's lakes"));
+                }
+                if size.0 == 0 || size.0 > size.1 {
+                    return Err(format!("decor {tile:?} has a size of {size:?}"));
+                }
+                (tile, count)
+            }
+            DecorDef::Furnish { piece, count } => (piece, count),
+        };
+        if count.0 > count.1 {
+            return Err(format!("decor {what:?} has its fewest past its most"));
+        }
+    }
+    Ok(())
+}
+
+/// Checks every piece a biome of `defs` furnishes with against `prefabs`:
+/// it must be there, and of one cell, which is all `Furnish` stands. Apart
+/// from [`load`], since the pieces are loaded by
+/// [`crate::prefabs::load`] beside the bestiary, and the rumours read the
+/// biomes without either.
+pub(crate) fn check_pieces(defs: &Registry<BiomeDef>, prefabs: &Prefabs<MonsterDef>) {
+    for (_, def) in defs.iter() {
+        for d in &def.decor {
+            let DecorDef::Furnish { piece, .. } = d else { continue };
+            let found = prefabs.piece(piece).unwrap_or_else(|e| panic!("assets/biomes.ron: {}: {e}", def.name));
+            assert!((found.width(), found.height()) == (1, 1), "assets/biomes.ron: {}: {piece:?} is not of one cell", def.name);
+        }
+    }
+}
+
 /// Checks `def` against `tiles` and `layout`: its wall, its floor, what it
-/// paints, and every recipe it names with its lakes. Its floor band and
+/// paints, what it strews, and every recipe it names with its lakes. Its floor band and
 /// its weights are checked against nothing but themselves.
 fn check(def: &BiomeDef, tiles: &TileRegistry, layout: &LayoutDef) -> Result<(), String> {
     if def.floors.0 > def.floors.1 || def.floors.0 < 1 || def.floors.1 > FLOORS {
@@ -230,6 +321,7 @@ fn check(def: &BiomeDef, tiles: &TileRegistry, layout: &LayoutDef) -> Result<(),
             return Err(format!("{name:?} is not a registered tile"));
         }
     }
+    check_decor(def, tiles)?;
     if def.recipes.is_empty() {
         return Err("no recipe to grow a floor by".to_string());
     }

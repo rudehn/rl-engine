@@ -27,8 +27,9 @@
 //                                           and fills itself
 //   A monster at a slot holds that cell as its post.
 //
-// A brazier left burning in the Upper Halls, stood on open floor by
-// `dungeon::Furnish`, a few to a floor, so some rooms are lit and most are not.
+// A brazier left burning in the Upper Halls and the Watch Barracks, stood on
+// open floor by `dungeon::Furnish` as `assets/biomes.ron`'s decor asks, a few
+// to a floor, so some rooms are lit and most are not.
 (
     name: "brazier",
     ground: "hall floor",

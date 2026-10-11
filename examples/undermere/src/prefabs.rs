@@ -30,12 +30,14 @@ use crate::bestiary::MonsterDef;
 use crate::content::Library;
 
 /// Every piece, compiled in so the binary runs from anywhere.
-const PIECES: [&str; 61] = [
+const PIECES: [&str; 63] = [
     include_str!("../assets/prefabs/mereholt.ron"),
     include_str!("../assets/prefabs/throne.ron"),
     include_str!("../assets/prefabs/chest.ron"),
     include_str!("../assets/prefabs/brazier.ron"),
     include_str!("../assets/prefabs/candelabra.ron"),
+    include_str!("../assets/prefabs/hanging_lantern.ron"),
+    include_str!("../assets/prefabs/witchlight.ron"),
     include_str!("../assets/prefabs/fallen_body.ron"),
     include_str!("../assets/prefabs/wall_inscription.ron"),
     include_str!("../assets/prefabs/grubnak.ron"),

@@ -52,11 +52,24 @@
 //   paint:    optional, none if left out; [(on:, tile:)], an area whose
 //             shape or district is named `on` floored with `tile` in place
 //             of `floor`, the first rule that names either winning
-//   decor:    names from the design's flavor pool table that are this
-//             biome's own rather than any floor's; not yet resolved, since
-//             no pool file exists yet
-//   dressings: the subset of `decor` that fits any area rather than one
-//             fixed piece; not yet resolved, for the same reason
+//   decor:    [Patches(tile:, count:, size:) | Furnish(piece:, count:)],
+//             what a floor of it is strewn with once its ways are known, in
+//             order, at most four rows; none if empty, as the throne floors
+//             are. What lights a floor beyond its ambient is mostly this,
+//             so it is where a biome's light is written: `light.rs` lights
+//             the glowing tiles and the props that shed light
+//               Patches: patches of `tile`, a tile from `dungeon::registry`
+//                        that a body can stand on (the water and lava that
+//                        stop one are `lakes`), grown over the biome's
+//                        `floor`; count (fewest, most) patches, size
+//                        (fewest, most) cells each, fewest at least one
+//               Furnish: `piece`, a one-cell piece of `assets/prefabs/`,
+//                        stood on open floor where it shuts nothing off;
+//                        count (fewest, most)
+//   dressings: named dressings of `assets/dressings.ron`, this biome's own
+//             rather than any floor's, weighed in every district it grows;
+//             the pool's own flavor entries name the biomes they stand in
+//             by `where` in `assets/pool.ron`
 //   favored:  names from `monsters.ron`; a name the bestiary does not
 //             carry is dropped rather than refused, as `population::BANDS`
 //             already tolerates for the same kind of name
@@ -70,7 +83,11 @@
         recipes: [(name: "great halls", weight: 1), (name: "wings", weight: 1), (name: "galleries", weight: 1)],
         // Where small caves of rubble break into the halls.
         paint: [(on: "ruin", tile: "rubble")],
-        decor: ["Feasting Hall", "Guard Room", "Steward's Audience"],
+        // Fallen masonry, and braziers still burning in a few rooms.
+        decor: [
+            Patches(tile: "rubble", count: (5, 9), size: (2, 6)),
+            Furnish(piece: "brazier", count: (3, 5)),
+        ],
         dressings: ["Feasting Hall", "Guard Room"],
         favored: ["jackal"],
     ),
@@ -82,7 +99,8 @@
         recipes: [(name: "storerooms", weight: 1), (name: "burrowed", weight: 1)],
         // The root caves are bare earth, the storerooms flagged.
         paint: [(on: "root cave", tile: "earth")],
-        decor: ["Wine Cellar", "Root Cellar", "Coal Store"],
+        // Darker than the halls above: a few hung lanterns.
+        decor: [Furnish(piece: "hanging lantern", count: (2, 4))],
         dressings: ["Wine Cellar", "Root Cellar"],
         favored: ["rat"],
     ),
@@ -92,7 +110,8 @@
         wall: "barracks wall", floor: "barracks floor",
         ambient: (27, (190, 150, 90)),
         recipes: [(name: "blocks", weight: 1), (name: "parade", weight: 1)],
-        decor: ["Bunk Room", "Mess Hall", "Drill Yard"],
+        // Braziers burning for a watch that never came back.
+        decor: [Furnish(piece: "brazier", count: (3, 5))],
         dressings: ["Bunk Room", "Mess Hall", "Drill Yard"],
         favored: ["kobold"],
     ),
@@ -104,7 +123,8 @@
         wall: "cave wall", floor: "moss",
         ambient: (22, (90, 170, 150)),
         recipes: [(name: "grottoes", weight: 1), (name: "band", weight: 1), (name: "knot", weight: 1)],
-        decor: ["Glowcap Ring", "Puffball Grove", "Moss Garden"],
+        // Glowcaps, the teal light the caves are seen by.
+        decor: [Patches(tile: "glowcaps", count: (8, 12), size: (2, 6))],
         dressings: ["Puffball Grove", "Moss Garden"],
         favored: ["myconid"],
     ),
@@ -116,7 +136,9 @@
         // than a dim colour of its own.
         ambient: (0, (0, 0, 0)),
         recipes: [(name: "warren", weight: 1), (name: "nest", weight: 1)],
-        decor: ["Husk Gallery", "Silk Curtains", "Old Egg Cases"],
+        // Webs across the tunnels, and nothing that shines: the lantern
+        // is the light.
+        decor: [Patches(tile: "web", count: (4, 7), size: (1, 3))],
         dressings: ["Husk Gallery", "Silk Curtains", "Old Egg Cases"],
         favored: ["cave spider"],
     ),
@@ -129,7 +151,11 @@
         // The natural caves the miners broke into are earth; what they
         // dug is the mine's own floor.
         paint: [(on: "pocket", tile: "earth"), (on: "cave", tile: "earth")],
-        decor: ["Cart Track", "Shored Gallery", "Ore Seam"],
+        // Fallen rock, and the goblins' lanterns.
+        decor: [
+            Patches(tile: "rubble", count: (3, 6), size: (2, 5)),
+            Furnish(piece: "hanging lantern", count: (3, 5)),
+        ],
         dressings: ["Shored Gallery", "Ore Seam"],
         favored: ["goblin", "kobold"],
     ),
@@ -141,7 +167,11 @@
         wall: "crypt wall", floor: "crypt floor",
         ambient: (19, (150, 160, 205)),
         recipes: [(name: "grid", weight: 1), (name: "ossuaries", weight: 1)],
-        decor: ["Ossuary Wall", "Tomb Row", "Embalmers' Room"],
+        // Bones, and candles kept burning for the dead.
+        decor: [
+            Patches(tile: "bones", count: (6, 10), size: (1, 4)),
+            Furnish(piece: "candelabra", count: (5, 8)),
+        ],
         dressings: ["Ossuary Wall", "Tomb Row"],
         favored: ["skeleton"],
     ),
@@ -159,7 +189,8 @@
                 tile: "flooded floor", count: (2, 3), size: (6, 16), wreath: None, cut: false,
             ))),
         ],
-        decor: ["Reading Room", "Fallen Stacks", "Orrery"],
+        // Witchlight, pale violet, among the stacks.
+        decor: [Furnish(piece: "witchlight", count: (4, 6))],
         dressings: ["Reading Room", "Fallen Stacks"],
         favored: ["wraith", "will-o'-wisp"],
     ),
@@ -179,7 +210,11 @@
             ))),
             (name: "cloister", weight: 1),
         ],
-        decor: ["Choir Stalls", "Baptistery", "Fallen Bell"],
+        // Puddles, and shafts of pale light down through the lake.
+        decor: [
+            Patches(tile: "flooded floor", count: (3, 6), size: (2, 6)),
+            Patches(tile: "moonlit marble", count: (3, 5), size: (1, 1)),
+        ],
         dressings: ["Choir Stalls"],
         favored: ["ghoul"],
     ),
@@ -203,7 +238,8 @@
                 bridges: Some((tile: "bridge", longest: 20, detour: 24)),
             ))),
         ],
-        decor: ["Stilt Hut", "Shell Midden"],
+        // Shallows lit from below, cold blue-green.
+        decor: [Patches(tile: "glowing shallows", count: (4, 7), size: (2, 5))],
         dressings: ["Shell Midden"],
         favored: ["drowned thrall", "wight"],
     ),
@@ -230,7 +266,8 @@
         ],
         // The smithies are flagged; the caves round them are ash.
         paint: [(on: "smithy", tile: "flagstones")],
-        decor: ["Smithy", "Slag Heaps"],
+        // The lava is the light.
+        decor: [],
         dressings: ["Smithy", "Slag Heaps"],
         favored: ["salamander"],
     ),
@@ -251,7 +288,8 @@
                 tile: "lava", count: (5, 9), size: (4, 10), wreath: None, cut: false,
             ))),
         ],
-        decor: ["Obsidian Spires", "Cinder Drifts"],
+        // The vents' lava is the light, and dark between.
+        decor: [],
         dressings: ["Obsidian Spires", "Cinder Drifts"],
         favored: ["fire imp"],
     ),
