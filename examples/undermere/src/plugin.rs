@@ -66,6 +66,7 @@ impl Plugin for UndermerePlugin {
             // a flavor piece or a wall carving offers to be read.
             .add_verb(crate::vaults::PULL_VERB)
             .add_verb(crate::writings::READ_VERB)
+            .add_verb(crate::wildlife::PAST_VERB)
             .add_plugins((PrefabPlugin::<Bestiary, Armory>::default(), LootPlugin::<Armory>::default()))
             .add_plugins((FactsPlugin, RecordsPlugin))
             // What the dead leave lying where they fell, for `raising` to
@@ -302,6 +303,7 @@ impl Plugin for UndermerePlugin {
         );
         // A shackled captive's own "free".
         app.add_systems(Turn, crate::captives::answer_free.in_set(TurnSet::React));
+        app.add_systems(Turn, (crate::wildlife::offer_a_way_past, crate::wildlife::slip_past).in_set(TurnSet::React));
         // What a floor hides: its traps and flagstones stood up on its
         // first arrival, a trap seen going off shown, and what the
         // adventurer spotted said in the log.

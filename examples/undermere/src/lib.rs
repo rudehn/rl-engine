@@ -22,8 +22,8 @@
 //! lays the ways between them and names each in the log, [`population`]
 //! puts each floor's people down the first time it is entered, asleep,
 //! on patrol, at a goblin camp's fire or a feeding ground by its own
-//! shares, and [`captives`] is the one of them the adventurer may free to
-//! follow; [`finds`] lays its things, drawn a kind at a time with a
+//! shares, [`captives`] is the one of them the adventurer may free to
+//! follow, and [`wildlife`] the moths and rats they slip past; [`finds`] lays its things, drawn a kind at a time with a
 //! scroll of enchanting besides, and [`light`] lights them and dims the
 //! lantern as the adventurer descends. [`traps`] is what a floor hides,
 //! its secret doors, hidden rooms and traps, and the log's words for
@@ -113,4 +113,5 @@ pub mod typeface;
 pub mod vaults;
 pub mod waystone;
 pub mod wearing;
+pub mod wildlife;
 pub mod writings;
