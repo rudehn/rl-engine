@@ -400,7 +400,10 @@ fn toward(world: &mut World, from: Point, goals: &[Point], around: &BTreeSet<Ent
     let mut closed: BTreeSet<Point> =
         world.query_filtered::<(&Position, &OnMap), (With<Prop>, With<Blocks>)>().iter(world).filter(|(_, on)| on.0 == here).map(|(p, _)| p.0).collect();
     closed.extend(world.resource::<Fire>().burning().filter(|p| *p != from));
-    closed.extend(around.iter().filter_map(|who| world.get::<Position>(*who)).map(|p| p.0).filter(|p| !goals.contains(p)));
+    // Never the cell they stand on: a foe left alone that died there is a
+    // corpse underfoot, and closing it shut every way out of it.
+    let standing = around.iter().filter(|who| world.get::<Dead>(**who).is_none()).filter_map(|who| world.get::<Position>(*who));
+    closed.extend(standing.map(|p| p.0).filter(|p| !goals.contains(p) && *p != from));
     let traps = known_traps(world, here);
     let map = world.resource::<WorldMap>();
     let from = map.to_local(from)?;
@@ -511,8 +514,8 @@ struct Memory {
     let_go: BTreeSet<Entity>,
 }
 
-/// How many blows, throws or zaps in a row that take nothing from a foe
-/// make it one to leave alone.
+/// How many blows or throws in a row that take nothing from a foe make
+/// it one to leave alone.
 const FUTILE_BLOWS: u32 = 25;
 
 /// How many turns a shooter out of sight is still gone after.
@@ -1039,6 +1042,18 @@ fn delve(seed: u64, plan: Plan) -> Delve {
                     .map(|e| format!("{:?} {} parts", e.get::<Name>().map(|n| n.as_str().to_string()), e.archetype().components().len()))
                     .collect();
                 eprintln!("    the way down goes {dir:?} onto {tile:?} {:?}, lock {:?}, with {there:?} there", cell, world.resource::<WorldMap>().lock(cell));
+                let registries = world.resource::<Registries>();
+                let held: Vec<String> = world
+                    .get::<Afflicted>(me)
+                    .map(|a| a.0.iter().map(|s| format!("{} {}", registries.statuses.get(s.id).name, s.turns)).collect())
+                    .unwrap_or_default();
+                eprintln!("    holding them: {held:?}");
+                let shunned: Vec<String> = memory
+                    .untouchable
+                    .iter()
+                    .filter_map(|who| Some(format!("{:?} at {:?}", world.get::<Name>(*who)?.as_str(), world.get::<Position>(*who)?.0)))
+                    .collect();
+                eprintln!("    left alone: {shunned:?}, stuck {}, the way round them {:?}", memory.stuck, toward(world, at, &[down], &memory.untouchable));
             }
         }
         let level = |world: &World, on: Entity| world.get::<Enchant>(on).map(|e| e.0.level);
@@ -1049,10 +1064,12 @@ fn delve(seed: u64, plan: Plan) -> Delve {
         let health_of = |world: &World, who: Entity| world.get::<Health>(who).map_or(0, |h| h.current);
         let struck = match choice {
             Choice::Strike(_, foe) => Some((foe, health_of(world, foe))),
-            // A thing thrown or zapped at a foe that takes nothing from it
-            // is as futile as a blow: a foe behind a cage's bars is seen
-            // and never hit, and was thrown at for a whole delve.
-            Choice::Throw(_, at) | Choice::Zap(_, at) => world
+            // A thing thrown at a foe that takes nothing from it is as
+            // futile as a blow: a foe behind a cage's bars is seen and never
+            // hit, and was thrown at for a whole delve. Not a zap, since a
+            // staff of slowness or poison takes nothing on the turn it
+            // strikes, and a foe it made untouchable stood in the way down.
+            Choice::Throw(_, at) => world
                 .query_filtered::<(Entity, &Position), (With<Health>, Without<Prop>)>()
                 .iter(world)
                 .find(|(who, p)| p.0 == at && *who != me)
