@@ -230,8 +230,9 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [13_403_376_430_861_935_303, 15_136_563_671_432_992_745, 863_578_839_392_989_359],
-        "fingerprint tripwire: re-baselined when wildlife came to give way through the engine's bump rules, so a \
-         monster steps past a moth or a rat where it once waited behind it"
+        [12_826_463_484_626_565_180, 7_694_520_662_295_449_001, 11_520_846_931_859_029_772],
+        "fingerprint tripwire: re-baselined when the dungeon part's fix waves met the engine's path fixes: minds flood \
+         round blocking props, a wary mind steps round a shown trap, a follower measures its gap on foot, wildlife \
+         gives way and a swap sets off the plates both are put onto"
     );
 }
