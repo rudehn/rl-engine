@@ -34,7 +34,7 @@ pub struct DijkstraMap {
     /// steps it took.
     rules: PathRules,
     /// Whether a diagonal may pass beside each cell of the region, as the
-    /// source said when the flood began, so descending asks the corner rule
+    /// source said while the flood ran, so descending asks the corner rule
     /// the flood stepped by without the source to hand. A cell's having a
     /// value is not the same answer either way: a source that prices a
     /// closed door reaches it and still lets nothing past its corner, and
@@ -43,6 +43,14 @@ pub struct DijkstraMap {
     /// reached were recorded, the second was a diagonal the flood stepped
     /// and descending refused, and a mover whose cheapest way was that
     /// diagonal stood where it was for ever.
+    ///
+    /// Recorded for the two sides of each diagonal the flood took, which
+    /// is exact: descending asks only of a step between two reached cells,
+    /// the flood examined every such diagonal from the cell it popped, and
+    /// a side is marked only where the source said it lets one past. Not
+    /// asked of every cell in the region, which cost a source lookup per
+    /// cell on every flood whether a diagonal was taken or not, and not
+    /// kept at all under rules that never read it.
     past: Vec<bool>,
 }
 
@@ -98,7 +106,6 @@ impl DijkstraMap {
     /// attractive goal can start lower.
     pub fn build_weighted(&mut self, source: &impl CostSource, goals: impl IntoIterator<Item = (Point, i32)>, rules: PathRules) {
         self.values.iter_mut().for_each(|v| *v = UNREACHED);
-        self.past.iter_mut().for_each(|p| *p = false);
         self.heap.clear();
         self.rules = rules;
         let mut order = 0u64;
@@ -155,10 +162,11 @@ impl DijkstraMap {
     }
 
     fn relax(&mut self, source: &impl CostSource, rules: PathRules, mut order: u64) {
-        // Every cell, reached or not: the two a diagonal squeezes between
-        // lie inside the rectangle of its ends, so inside the region.
-        for local in 0..self.past.len() {
-            self.past[local] = source.lets_diagonal_past(self.point(local));
+        // A rescan pops every reached cell again, so it records afresh
+        // what a build did and forgets nothing it still needs.
+        let corners = rules.diagonals && !rules.cut_corners;
+        if corners {
+            self.past.iter_mut().for_each(|p| *p = false);
         }
         while let Some(Reverse((dist, _, local))) = self.heap.pop() {
             let local = local as usize;
@@ -171,6 +179,14 @@ impl DijkstraMap {
                     continue;
                 };
                 let Some(n) = self.local(next) else { continue };
+                if corners && dir.is_diagonal() {
+                    // Taken, so the source let it past both sides, which
+                    // lie between two cells of the region and so in it.
+                    let (dx, dy) = dir.delta();
+                    let w = self.region.width as isize;
+                    self.past[(local as isize + dx as isize) as usize] = true;
+                    self.past[(local as isize + dy as isize * w) as usize] = true;
+                }
                 let nd = dist.saturating_add(cost as i32);
                 if nd < self.values[n] {
                     self.values[n] = nd;
@@ -504,6 +520,39 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    /// What descending asks of a corner is recorded only for the
+    /// diagonals the flood took, and a rescan or a second flood over
+    /// another source records it afresh; this holds that to the source's
+    /// own rule for every diagonal between two reached cells.
+    #[test]
+    fn over_a_seed_range_descending_asks_the_corner_rule_of_the_last_source_flooded_after_a_build_a_rescan_and_a_rebuild() {
+        let rules = PathRules::default();
+        let exact = |map: &DijkstraMap, source: &Mixed, seed: u64, when: &str| {
+            for (from, _) in map.iter().collect::<Vec<_>>() {
+                for dir in Direction::ALL.into_iter().filter(|d| d.is_diagonal()) {
+                    if map.value(from + dir.offset()).is_none() {
+                        continue;
+                    }
+                    let flood = step_cost(source, from, dir, rules).is_some();
+                    assert_eq!(map.steps(from, dir), flood, "seed {seed}: {from:?} toward {dir:?} {when}");
+                }
+            }
+        };
+        for seed in 0..40u64 {
+            let mut rng = StdRng::seed_from_u64(seed);
+            let (first, second) = (Mixed::random(20, 15, &mut rng), Mixed::random(20, 15, &mut rng));
+            let goal = p(rng.random_range(0..20), rng.random_range(0..15));
+            let mut map = DijkstraMap::covering(&first);
+            map.build(&first, [goal], rules);
+            exact(&map, &first, seed, "after a build");
+            map.scale(-12, 10);
+            map.rescan(&first, rules);
+            exact(&map, &first, seed, "after a rescan");
+            map.build(&second, [goal], rules);
+            exact(&map, &second, seed, "after a build over another source");
         }
     }
 

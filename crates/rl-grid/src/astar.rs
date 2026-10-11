@@ -53,10 +53,13 @@ pub(crate) fn step_cost(source: &impl CostSource, from: Point, dir: Direction, r
     let base = source.cost(to)?;
     if dir.is_diagonal() {
         if !rules.cut_corners {
+            // A side outside the source lets nothing past and is never
+            // asked about, so a source overriding the question may index
+            // its own tables by it; a step from a cell outside the bounds
+            // into one inside has a side out.
             let (dx, dy) = dir.delta();
-            let a = source.lets_diagonal_past(from.offset(dx, 0));
-            let b = source.lets_diagonal_past(from.offset(0, dy));
-            if !a || !b {
+            let past = |side: Point| source.in_bounds(side) && source.lets_diagonal_past(side);
+            if !past(from.offset(dx, 0)) || !past(from.offset(0, dy)) {
                 return None;
             }
         }

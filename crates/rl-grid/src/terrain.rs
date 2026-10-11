@@ -132,6 +132,10 @@ pub trait CostSource: Grid2D {
     /// while it is shut, and a mover that is refused the diagonal its path
     /// planned plans it again every turn and never moves. Such a source
     /// answers here what the mover's own corner rule answers.
+    ///
+    /// The searches in this crate ask it only of a cell in bounds, a side
+    /// out of bounds letting nothing past, so an override they call may
+    /// index by it unchecked.
     fn lets_diagonal_past(&self, p: Point) -> bool {
         self.is_passable(p)
     }
