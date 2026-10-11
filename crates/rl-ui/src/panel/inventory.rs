@@ -14,13 +14,18 @@
 //! titled with the use's own prompt and listing only what it may be made
 //! on: confirm writes [`UseOn`] for the thing picked out, and putting the
 //! bag away spends nothing; a game's own use key writing [`AimUse`] for
-//! such a thing opens the bag choosing the same way. Nothing else is used
-//! from here; an item a game answers itself from [`ItemEvent::Used`] is
-//! used by the game's own key, since the bag cannot know it does anything
-//! and a use that did nothing would spend a turn. The footer offers only
-//! the keys that do something to the row picked out: wear or take off,
-//! drop, use, throw, and close, and for a worn thing that will not come
-//! off, none that would take it off.
+//! such a thing opens the bag choosing the same way. An offer that
+//! chooses first, [`Offering::choosing`], taken up on the offers screen or
+//! by the interact key, opens the bag choosing the same way, under the
+//! offer's prompt among what the game's system names: confirm takes the
+//! offer up with the thing picked out, the [`Interact`] the engine checks
+//! and charges, and putting the bag away takes nothing up and costs
+//! nothing. Nothing else is used from here; an item a game answers itself
+//! from [`ItemEvent::Used`] is used by the game's own key, since the bag
+//! cannot know it does anything and a use that did nothing would spend a
+//! turn. The footer offers only the keys that do something to the row
+//! picked out: wear or take off, drop, use, throw, and close, and for a
+//! worn thing that will not come off, none that would take it off.
 //!
 //! Under the rows, the row picked out is described from its own
 //! components: the blow it is swung with, the shot it fires, what it adds
@@ -99,6 +104,10 @@ pub struct InventoryLayout {
     pub what: String,
     /// Shown in place of rows when there are none.
     pub empty: String,
+    /// What the close key is said to do while the bag is choosing, a thing
+    /// for a use or for an offer: backing out, which takes nothing up, so
+    /// the footer says so rather than naming a bare key.
+    pub never_mind: String,
 }
 
 /// Which row the cursor is on, and what the bag is choosing for. The
@@ -107,10 +116,21 @@ pub struct InventoryLayout {
 pub struct InventoryMenu {
     /// The row picked out, clamped to the rows there are when drawn.
     pub selected: usize,
-    /// While the bag is choosing what a use is made on: the thing used, and
-    /// which of its choices the cursor is on. Put away whenever the bag is,
-    /// so it never opens choosing for a use nobody asked for again.
-    pub choosing: Option<ChoosingFor>,
+    /// While the bag is choosing, what for: a use, or an offer, one at a
+    /// time. Put away whenever the bag is, so it never opens choosing for
+    /// something nobody asked for again.
+    pub choosing: Option<Choosing>,
+}
+
+/// What the bag is choosing for: one thing at a time, so one field rather
+/// than two that could both be set.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Choosing {
+    /// What a use is made on: the thing used, and which of its choices
+    /// the cursor is on.
+    Use(ChoosingFor),
+    /// What an offer that chooses first is taken up with.
+    Offer(OfferChoice),
 }
 
 impl InventoryMenu {
@@ -118,6 +138,15 @@ impl InventoryMenu {
     /// end.
     pub fn move_by(&mut self, by: i32, rows: usize) {
         self.selected = stepped(self.selected, by, rows);
+    }
+
+    /// The thing whose use the bag is choosing for, while it chooses for
+    /// one, and not for an offer.
+    pub fn using(&self) -> Option<Entity> {
+        match &self.choosing {
+            Some(Choosing::Use(choosing)) => Some(choosing.item),
+            _ => None,
+        }
     }
 }
 
@@ -129,6 +158,56 @@ pub struct ChoosingFor {
     /// Which of its choices the cursor is on, clamped to the choices there
     /// are when drawn.
     pub selected: usize,
+}
+
+/// The bag choosing what an offer that chooses first,
+/// [`Offering::choosing`], is taken up with: the offer, its prompt, and
+/// what the game's system named when it was taken up.
+///
+/// The choices are asked of the game once, as the bag opens, rather than
+/// every frame, since they are the player's things and nothing moves them
+/// while the bag is up; what the bag no longer holds is left out as it is
+/// drawn, and the engine refuses a pick no longer carried.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OfferChoice {
+    /// Who or what offers it.
+    pub target: Entity,
+    /// Which of its offers.
+    pub verb: VerbId,
+    /// What the bag is titled while it chooses.
+    pub prompt: String,
+    /// What it may choose among, in the order listed.
+    pub choices: Vec<Entity>,
+    /// Which of its choices the cursor is on, clamped to the choices there
+    /// are when drawn.
+    pub selected: usize,
+}
+
+/// What the bag is choosing among, with no screen of its own: a use's
+/// choices or a game's question's, each only while the bag holds it.
+fn choices_of(menu: &InventoryMenu, view: &InventoryView) -> Option<(String, Vec<Entity>, usize)> {
+    let held = |things: &[Entity]| -> Vec<Entity> { things.iter().copied().filter(|t| view.rows.iter().any(|r| r.entity == *t)).collect() };
+    match menu.choosing.as_ref()? {
+        Choosing::Offer(offer) => Some((offer.prompt.clone(), held(&offer.choices), offer.selected)),
+        Choosing::Use(choosing) => {
+            let asks = view.rows.iter().find(|r| r.entity == choosing.item)?.asks.as_ref()?;
+            Some((asks.prompt.clone(), held(&asks.choices), choosing.selected))
+        }
+    }
+}
+
+/// Moves the cursor of whichever choosing the bag holds to `at`.
+fn choose_at(menu: &mut InventoryMenu, at: usize) {
+    match menu.choosing.as_mut() {
+        Some(Choosing::Offer(offer)) => offer.selected = at,
+        Some(Choosing::Use(choosing)) => choosing.selected = at,
+        None => {}
+    }
+}
+
+/// Puts away whatever the bag was choosing for.
+fn stop_choosing(menu: &mut InventoryMenu) {
+    menu.choosing = None;
 }
 
 /// `at` moved `by` rows over `rows` of them, wrapping at either end.
@@ -149,7 +228,7 @@ pub struct InventoryPanel(InventoryLayout);
 impl InventoryPanel {
     /// The bag in `rect`.
     pub fn new(rect: Rect) -> Self {
-        Self(InventoryLayout { rect, title: "Inventory".into(), what: "inventory".into(), empty: "Nothing.".into() })
+        Self(InventoryLayout { rect, title: "Inventory".into(), what: "inventory".into(), empty: "Nothing.".into(), never_mind: "never mind".into() })
     }
 
     /// Sets what the top border says.
@@ -170,6 +249,13 @@ impl InventoryPanel {
         self.0.empty = text.into();
         self
     }
+
+    /// Sets what the close key is said to do while the bag is choosing,
+    /// `never mind` by default, the offers screen's words.
+    pub fn never_mind(mut self, words: impl Into<String>) -> Self {
+        self.0.never_mind = words.into();
+        self
+    }
 }
 
 impl Plugin for InventoryPanel {
@@ -187,7 +273,8 @@ impl Plugin for InventoryPanel {
             .add_message::<Intent<UseItem>>()
             .add_message::<Intent<UseOn>>()
             .add_message::<AimUse>()
-            .add_message::<AimThrow>();
+            .add_message::<AimThrow>()
+            .add_message::<Intent<Interact>>();
         app.insert_resource(self.0.clone()).init_resource::<InventoryMenu>().init_resource::<InventoryKeys>();
         // A game's own use key opens the bag choosing before the bag reads
         // its keys, so the press that asked is not read again inside it.
@@ -224,6 +311,7 @@ pub struct BagIntents<'w> {
     uses_on: MessageWriter<'w, Intent<UseOn>>,
     aimed_uses: MessageWriter<'w, AimUse>,
     throws: MessageWriter<'w, AimThrow>,
+    interacts: MessageWriter<'w, Intent<Interact>>,
 }
 
 /// Opens the bag choosing for a thing a game's own use key asked to use,
@@ -239,10 +327,38 @@ pub fn choose_when_asked(mut asked: MessageReader<AimUse>, view: Res<InventoryVi
     for asked in asked.read() {
         let wants_a_thing = view.rows.iter().any(|r| r.entity == asked.item && r.asks.is_some() && r.usable());
         if view.entity == Some(asked.user) && wants_a_thing && !modals.any_open() {
-            menu.choosing = Some(ChoosingFor { item: asked.item, selected: 0 });
+            menu.choosing = Some(Choosing::Use(ChoosingFor { item: asked.item, selected: 0 }));
             modals.open(modal);
         }
     }
+}
+
+/// Opens the bag choosing what `taker` takes up `target`'s `verb` with, an
+/// offer that chooses first, asking the game's `among` what may be chosen.
+///
+/// Queued as a command, since the game's system is run on the world and
+/// the offers screen and the interact key that take the offer up are
+/// ordinary systems. With nothing to choose among the bag stays shut and
+/// nothing is taken up: the game's system, which knows why, says so if it
+/// wants to, as only it can.
+///
+/// # Panics
+/// When the game added no [`InventoryPanel`], which a choosing offer
+/// cannot be taken up without, or its system is gone.
+pub(crate) fn choose_for_offer(commands: &mut Commands, taker: Entity, target: Entity, verb: VerbId, prompt: String, among: Among) {
+    commands.queue(move |world: &mut World| {
+        assert!(world.contains_resource::<InventoryMenu>(), "play cannot go on: an offer chooses first, and the bag chooses for it; add InventoryPanel");
+        let chooser = Chooser { taker, offerer: target, verb };
+        let choices = world.run_system_with(among, chooser).unwrap_or_else(|e| panic!("an offer that chooses first named a system that could not run: {e}"));
+        if choices.is_empty() {
+            return;
+        }
+        let mut menu = world.resource_mut::<InventoryMenu>();
+        menu.choosing = Some(Choosing::Offer(OfferChoice { target, verb, prompt, choices, selected: 0 }));
+        let mut modals = world.resource_mut::<Modals>();
+        let bag = inventory_modal(&modals);
+        modals.open(bag);
+    });
 }
 
 /// Opens, closes and walks the bag, and acts on the row picked out.
@@ -251,7 +367,9 @@ pub fn choose_when_asked(mut asked: MessageReader<AimUse>, view: Res<InventoryVi
 /// written for anyone else is dropped unread; the screen stays up until it
 /// does. A use that asks for another of the player's things turns the bag
 /// to choosing among what it may be made on, under its prompt: confirm uses
-/// it on the thing picked out, and putting the bag away spends nothing.
+/// it on the thing picked out, and putting the bag away spends nothing. An
+/// offer that chooses first chooses the same way, and confirm takes it up
+/// with the thing picked out.
 pub fn inventory_keys(
     keys: ControlInput,
     binds: Res<InventoryKeys>,
@@ -264,11 +382,11 @@ pub fn inventory_keys(
     let modal = inventory_modal(&modals);
     // A choice lasts only while the bag is up, however it was put away.
     if !modals.is_open(modal) {
-        menu.choosing = None;
+        stop_choosing(&mut menu);
     }
     if binds.toggle.just_pressed(keys.input()) && (modals.is_top(modal) || !modals.any_open()) {
         modals.toggle(modal);
-        menu.choosing = None;
+        stop_choosing(&mut menu);
         return;
     }
     // Not in the frame it went up: a game may open the bag on a key the
@@ -280,23 +398,33 @@ pub fn inventory_keys(
     let input = keys.input();
     if input.just_pressed(bindings.cursor.close) {
         modals.close_one(modal);
-        menu.choosing = None;
+        stop_choosing(&mut menu);
         return;
     }
     let confirmed = binds.use_it.just_pressed(input) || input.just_pressed(bindings.cursor.confirm) || input.just_pressed(bindings.cursor.also_confirm);
-    if let Some(choosing) = menu.choosing {
-        let choices = view.rows.iter().find(|r| r.entity == choosing.item).and_then(|r| r.asks.as_ref()).map(|a| a.choices.as_slice()).unwrap_or_default();
+    if let Some((_, choices, selected)) = choices_of(&menu, &view) {
         let by = match bindings.directions.just_pressed(input) {
             Some(Direction::North) => -1,
             Some(Direction::South) => 1,
             _ => 0,
         };
-        let selected = stepped(choosing.selected.min(choices.len().saturating_sub(1)), by, choices.len());
-        menu.choosing = Some(ChoosingFor { selected, ..choosing });
+        let selected = stepped(selected.min(choices.len().saturating_sub(1)), by, choices.len());
+        choose_at(&mut menu, selected);
         let (Some(user), Some(&on)) = (view.entity, choices.get(selected)) else { return };
         if confirmed && holding.contains(user) {
-            intents.uses_on.write(Intent::new(user, UseOn { item: choosing.item, on }));
-            menu.choosing = None;
+            match &menu.choosing {
+                // The offer taken up, checked by the engine as any is: an
+                // offerer gone out of reach while the bag was up is
+                // refused, for nothing.
+                Some(Choosing::Offer(offer)) => {
+                    intents.interacts.write(Intent::new(user, Interact { target: offer.target, verb: offer.verb, thing: Some(on) }));
+                }
+                Some(Choosing::Use(choosing)) => {
+                    intents.uses_on.write(Intent::new(user, UseOn { item: choosing.item, on }));
+                }
+                None => {}
+            }
+            stop_choosing(&mut menu);
             modals.close_all();
         }
         return;
@@ -334,7 +462,7 @@ pub fn inventory_keys(
         // and one made on a thing keeps the bag up, choosing for it.
         match (row.usable(), row.targeting, row.asks.is_some()) {
             (true, _, true) => {
-                menu.choosing = Some(ChoosingFor { item, selected: 0 });
+                menu.choosing = Some(Choosing::Use(ChoosingFor { item, selected: 0 }));
                 false
             }
             (true, Some(_), false) => {
@@ -514,23 +642,22 @@ pub fn draw_inventory(mut terminal: ResMut<Terminal>, mut menu: ResMut<Inventory
     }
     let bindings = keys.bindings();
     let (confirm, close) = (key_name(bindings.cursor.confirm), key_name(bindings.cursor.close));
-    let asking = menu.choosing.and_then(|c| view.rows.iter().find(|r| r.entity == c.item)?.asks.as_ref().map(|a| (c, a)));
     // The cursor survives the rebuild, clamped to the rows there are now,
     // before the footer asks which row it is on.
-    let (title, rows, at, hints) = match asking {
-        Some((choosing, asks)) => {
-            let rows: Vec<&ItemRow> = asks.choices.iter().filter_map(|on| view.rows.iter().find(|r| r.entity == *on)).collect();
-            let at = choosing.selected.min(rows.len().saturating_sub(1));
-            menu.choosing = Some(ChoosingFor { selected: at, ..choosing });
-            (asks.prompt.as_str(), rows, at, format!("{confirm} choose \u{2022} {close}"))
+    let (title, rows, at, hints) = match choices_of(&menu, view) {
+        Some((prompt, choices, selected)) => {
+            let rows: Vec<&ItemRow> = choices.iter().filter_map(|on| view.rows.iter().find(|r| r.entity == *on)).collect();
+            let at = selected.min(rows.len().saturating_sub(1));
+            choose_at(&mut menu, at);
+            (prompt, rows, at, format!("{confirm} choose \u{2022} {close} {}", layout.never_mind))
         }
         None => {
             menu.selected = menu.selected.min(view.rows.len().saturating_sub(1));
-            (layout.title.as_str(), view.rows.iter().collect(), menu.selected, hints(view.row(menu.selected), binds, confirm, close))
+            (layout.title.clone(), view.rows.iter().collect(), menu.selected, hints(view.row(menu.selected), binds, confirm, close))
         }
     };
     clear(&mut terminal, rect, palette);
-    frame(&mut terminal, rect, title, &hints, palette);
+    frame(&mut terminal, rect, &title, &hints, palette);
     let inner = Rect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
     let surface = palette.get(Tones::SURFACE);
     let width = inner.width.max(0) as usize;
@@ -1106,7 +1233,7 @@ mod tests {
         stage.press(KeyCode::KeyU);
         assert!(stage.row(0).contains(" Polish which? "), "under the trigger's prompt: {:?}", stage.row(0));
         assert!(inside(&stage, 1).starts_with("coat") && inside(&stage, 2) == "boots", "only what it may be made on: {:?}", stage.rows());
-        assert!(stage.row(13).contains("enter choose \u{2022} esc"), "{:?}", stage.row(13));
+        assert!(stage.row(13).contains("enter choose \u{2022} esc never mind"), "the close key says what it does: {:?}", stage.row(13));
         assert!(stage.app.world().resource::<Modals>().any_open(), "still up, choosing");
 
         stage.press(KeyCode::ArrowDown);
@@ -1157,6 +1284,147 @@ mod tests {
         assert!(stage.row(0).contains(" Polish which? "), "choosing: {:?}", stage.row(0));
         assert!(!stage.app.world().resource::<crate::TargetView>().aiming(), "no cursor");
         assert!(stage.app.world_mut().resource_mut::<Messages<Intent<UseItem>>>().drain().next().is_none(), "and nothing used on nothing");
+    }
+
+    /// Everything the game heard taken up, and every interaction written,
+    /// heard or not.
+    #[derive(Resource, Default)]
+    struct Taken {
+        heard: Vec<Interacted>,
+        asked: usize,
+    }
+
+    /// Mirela beside the player offering one thing, `give`, for two turns,
+    /// that chooses first among what the player carries but a keepsake,
+    /// under "Hand over which?"; the player carrying a stone, a keepsake
+    /// and a polish, in that order. Returns the stage, Mirela, the stone
+    /// and the polish.
+    fn giving() -> (Stage, Entity, Entity, Entity) {
+        let plugins = (
+            rl_bevy::PropsPlugin,
+            crate::OffersPanel::new(Rect::new(0, 0, 52, 14)),
+            crate::InteractKey,
+            InventoryPanel::new(Rect::new(0, 0, 52, 14)).never_mind("keep it"),
+        );
+        let mut stage = Stage::new_with(plugins, |app| {
+            app.insert_resource(rl_bevy::Seed(rl_bevy::testing::TEST_SEED));
+            app.add_verb("give");
+            app.init_resource::<Taken>()
+                .add_systems(rl_bevy::Turn, |mut taken: ResMut<Taken>, mut done: MessageReader<Interacted>| taken.heard.extend(done.read().copied()))
+                .add_systems(Last, |mut taken: ResMut<Taken>, mut asked: MessageReader<Intent<Interact>>| taken.asked += asked.read().count());
+        })
+        .screen(52, 14);
+        let among = stage.app.register_system(|In(chooser): In<Chooser>, bags: Query<&Inventory>, names: Query<&Name>| -> Vec<Entity> {
+            let bag = bags.get(chooser.taker).map(|b| b.items.clone()).unwrap_or_default();
+            bag.into_iter().filter(|t| names.get(*t).is_ok_and(|n| n.as_str() != "keepsake")).collect()
+        });
+        let give = stage.app.world().resource::<Verbs>().get("give").expect("declared");
+        let [stone, keepsake, polish] = ["stone", "keepsake", "polish"].map(|name| stage.app.world_mut().spawn((Item, Name::new(name))).id());
+        let player = stage.player;
+        stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![stone, keepsake, polish] });
+        let offers = Offers(vec![Offering::new(give, 200).choosing("Hand over which?", among)]);
+        let beside = stage.at.offset(1, 0);
+        let mirela = stage.app.world_mut().spawn((Actor, Blocks, Position(beside), OnMap(MapId::SURFACE), Name::new("Mirela"), offers)).id();
+        stage.tick();
+        stage.tick();
+        (stage, mirela, stone, polish)
+    }
+
+    /// What the stage heard taken up, how many interactions were written,
+    /// and the turn clock.
+    fn taken(stage: &Stage) -> (Vec<Interacted>, usize, u32) {
+        let taken = stage.app.world().resource::<Taken>();
+        (taken.heard.clone(), taken.asked, stage.app.world().resource::<Turns>().now())
+    }
+
+    /// Walking into Mirela opens the offers screen and takes nothing up;
+    /// taking her row up there, or pressing the interact key beside her,
+    /// opens the bag under the offer's prompt among only what the game
+    /// names, before anything is written or any time passes.
+    #[test]
+    fn an_offer_that_chooses_first_opens_the_bag_among_what_the_game_names_before_any_time_passes() {
+        let (mut stage, _, _, _) = giving();
+        let before = taken(&stage);
+        let player = stage.player;
+        stage.app.world_mut().write_message(Intent::new(player, Bump(Direction::East)));
+        stage.tick();
+        let modals = stage.app.world().resource::<Modals>();
+        assert!(modals.is_open(crate::offers_modal(modals)), "a bump opens the offers screen");
+        assert_eq!(taken(&stage), before, "and takes nothing up");
+        stage.press(KeyCode::Enter);
+        let bag = |stage: &Stage| {
+            let modals = stage.app.world().resource::<Modals>();
+            (modals.is_top(inventory_modal(modals)), modals.is_open(crate::offers_modal(modals)))
+        };
+        assert_eq!(bag(&stage), (true, false), "taken up there, the bag in its place");
+        assert!(stage.row(0).contains(" Hand over which? "), "under the offer's prompt: {:?}", stage.row(0));
+        assert!(stage.row(13).contains("enter choose \u{2022} esc keep it"), "the close key in the game's words: {:?}", stage.row(13));
+        assert_eq!((inside(&stage, 1), inside(&stage, 2)), ("stone".to_string(), "polish".to_string()), "among what the game names: {:#?}", stage.rows());
+        assert_eq!(taken(&stage), before, "nothing written, no time passed");
+
+        stage.press(KeyCode::Escape);
+        stage.press(KeyCode::Enter);
+        assert_eq!(bag(&stage), (true, false), "the interact key opens the bag at once");
+        assert_eq!(taken(&stage), before, "and nothing is written");
+    }
+
+    /// A pick takes the offer up with the thing picked out, charged the
+    /// offer's own time, and puts every screen away.
+    #[test]
+    fn a_pick_takes_the_offer_up_with_the_thing_picked_out_for_its_own_time() {
+        let (mut stage, mirela, _, polish) = giving();
+        let (_, _, clock) = taken(&stage);
+        stage.press(KeyCode::Enter);
+        stage.press(KeyCode::ArrowDown);
+        stage.press(KeyCode::Enter);
+        let (heard, _, now) = taken(&stage);
+        let give = stage.app.world().resource::<Verbs>().get("give").expect("declared");
+        assert_eq!(heard, vec![Interacted { actor: stage.player, target: mirela, verb: give, thing: Some(polish) }], "taken up with the polish");
+        assert_eq!(now - clock, 200, "for its own time");
+        assert!(!stage.app.world().resource::<Modals>().any_open(), "and every screen put away");
+    }
+
+    /// Putting the bag away takes nothing up, writes nothing and costs
+    /// nothing, and leaves the turn the player's.
+    #[test]
+    fn backing_out_of_an_offers_choice_writes_nothing_and_costs_nothing() {
+        let (mut stage, _, _, _) = giving();
+        let before = taken(&stage);
+        stage.press(KeyCode::Enter);
+        stage.press(KeyCode::Escape);
+        assert!(!stage.app.world().resource::<Modals>().any_open(), "put away");
+        assert_eq!(taken(&stage), before, "nothing written and no time");
+        assert!(stage.app.world().get::<MyTurn>(stage.player).is_some(), "and the turn still the player's");
+    }
+
+    /// A pick of a thing that left the pack in the very frame it was
+    /// picked, on a bag still listing it, is refused by the engine; and so
+    /// is a pick for Mirela once she has walked out of reach. Neither
+    /// takes anything up or spends any time.
+    #[test]
+    fn a_pick_no_longer_carried_or_for_an_offerer_out_of_reach_is_refused_for_nothing() {
+        let (mut stage, mirela, stone, polish) = giving();
+        let (_, _, clock) = taken(&stage);
+        let player = stage.player;
+        stage.press(KeyCode::Enter);
+        stage.press(KeyCode::ArrowDown);
+        stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![stone] });
+        stage.app.world_mut().resource_mut::<rl_bevy::testing::KeyScript>().press(KeyCode::Enter);
+        stage.tick();
+        stage.tick();
+        let (heard, asked, now) = taken(&stage);
+        assert_eq!((heard.len(), now), (0, clock), "the polish, gone, is refused for nothing");
+        assert_eq!(asked, 1, "though it was asked for");
+
+        stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![stone, polish] });
+        stage.tick();
+        stage.press(KeyCode::Enter);
+        stage.app.world_mut().entity_mut(mirela).insert(Position(stage.at.offset(6, 0)));
+        stage.tick();
+        stage.tick();
+        stage.press(KeyCode::Enter);
+        let (heard, _, now) = taken(&stage);
+        assert_eq!((heard.len(), now), (0, clock), "out of reach, refused for nothing");
     }
 
     /// A worn thing that will not come off is offered no key that would

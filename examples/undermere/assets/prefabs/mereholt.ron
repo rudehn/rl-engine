@@ -43,10 +43,23 @@
 // the shore of the black lake to the south. A causeway runs out over the water
 // to the island, where a ring of standing stones holds the Drowned Gate.
 //
-// `@` is where a run arrives, a mark on the cobbles south of the well. The gate
-// is a tile, `*`, and the town's one: the chain reports it as the town's way on,
-// and the ways through stand the gate there on the first arrival. Lit windows
-// and lamp posts are what the dusk is lit by, and `light.rs` lights them.
+// `@` is where a run arrives, a mark on the cobbles south of the well. Every
+// other mark is where one of the town's people stands on the first arrival,
+// found by the post `townsfolk.ron` gives them. The keepers: `S` the smith beside
+// the anvil, `Y` the apothecary in the west building and `D` the curio dealer in
+// the south-east one, each on the door's side of their counter, `P` the priest
+// beside the altar, and `I` the innkeeper beside the tavern's counter. An offer
+// is taken up from beside its actor, so each stands where the floor reaches them,
+// never behind a counter. The townsfolk: `U` the drunk at the tavern door, `G`
+// the gatewarden at the causeway's head, `N` the fishwife on the shore, `R` the
+// gravedigger in the gardens, and where the two who walk set out from, `M` the
+// lamplighter beside a lamp post and `C` the child on the square. The three `x`
+// in the tavern, one beside each of its tables, are where the swords for hire
+// wait, three new ones on every arrival, stood there by `src/mercenaries/`.
+// The houses stay empty. The gate is a tile, `*`, and the town's one: the chain reports it as the
+// town's way on, and the ways through stand the gate there on the first arrival.
+// Lit windows and lamp posts are what the dusk is lit by, and `light.rs` lights
+// them.
 (
     name: "Mereholt",
     ground: "cobbles",
@@ -54,29 +67,29 @@
         r##########"TTTTT""TTTTTT"TTTT"T"TTTTT"T""T,,,TTT"TT"TTTTTTT"TTT"TT"TTTTTTTT"##########,
         r##########"TTT"T""T""T"TT""""TT"""""""T""T,,,"T"TT"""TT"T""""""""""T""T"""T"##########,
         r##########"T"###w#####"""""""###w#####w###,,,"""""""===w===w===""""""""""TT"##########,
-        r##########"TT#h_____t#"""""""#bBBB______H#,,,"""""""=FF______s=""###w###"TT"##########,
-        r##########"TT#_______#"""""""#bB____t__t_#,,,"""""""=____a____=""#h____#""T"##########,
+        r##########"TT#h_____t#"""""""#bBBB__x___H#,,,"""""""=FF______s=""###w###"TT"##########,
+        r##########"TT#_______#"""""""#bBI___t__tx#,,,"""""""=____aS___=""#h____#""T"##########,
         r##########"TT#_____b_#"""""""#_______t___#,,,"""""""=________b=""#_____#"TT"##########,
-        r##########"T"###+#####"""""""#___________#,,,"""""""====+======""#____b#"TT"##########,
+        r##########"T"###+#####"""""""#_______x___#,,,"""""""====+======""#____b#"TT"##########,
         r##########"T"""",""""""""""""#w####+####w#,,,""""""L"""",""""""""###+###""T"##########,
-        r##########"TT""",,,,,,,,,,,,,,,,,"","""""",,,""""""""""",""",,,,,,,,,""""TT"##########,
+        r##########"TT""",,,,,,,,,,,,,,,,,"",U""""",,,""""""""""",""",,,,,,,,,""""TT"##########,
         r##########"T"%%%%%%%%"""%%%%%%%","L.......................L"T""""""""""""TT"##########,
-        r##########"TT"""""""""""%%%%%%%""..........................."""====w====="T"##########,
+        r##########"TT"""""""""""%%%R%%%""..M........................"""====w====="T"##########,
         r##########"T"####w#####""""""""""..........................."""=_____c__=TT"##########,
-        r##########"TT#s_____k_#""L""""""".............W............."""=__p_____=TT"##########,
-        r##########"T"#s___BB__+,,,,,,,,,,...........................,,,+______A_="T"##########,
+        r##########"TT#s_____k_#""L"""""""........C....W............."""=__p___P_=TT"##########,
+        r##########"T"#s___BBY_+,,,,,,,,,,...........................,,,+______A_="T"##########,
         r##########"T"#s_______#"""""""""".............@............."""=__p_____=TT"##########,
         r##########"TT####w#####""""""""""..........................."""=_____c__="T"##########,
         r##########"T""""""""""""""""""""""L.......................L""""====w====="T"##########,
         r##########"TT"""""""""""""""""""""""","""""""",,,,,,,,,""""""""""""""""""TT"##########,
         r##########"T""""""""""""""T""""""####+#w##"""",""""""",#####w#####"""""""TT"##########,
         r##########"T"""""""""""""""""""""#h______#"""",""""""",#________s#"""""T""T"##########,
-        r##########"TT""T"""""""""""""""""#______t#"""L,""""""",+___BB___s#"""""""TT"##########,
+        r##########"TT""T"""""""""""""""""#______t#"""L,""""""",+__DBB___s#"""""""TT"##########,
         r##########"T"""""""""""""""""""""#########"""",""T"""""#________s#""""""""T"##########,
         r##########"T"""""""""T"""""""""""""""""""""""",""""""""#####w#####"""""""TT"##########,
         r##########"TT"""""""""""""""""T""---"""""""""","""""""""""""""""-"""T""""TT"##########,
-        r##########"T"""""""""""""""""""-------"""""""".."""""""""""""-------"""""TT"##########,
-        r##########"-"""""-------""-------~~~----------..---""""""-------~----------"##########,
+        r##########"T"""""""""""""""""""-------""""""""..G""""""""""""-------"""""TT"##########,
+        r##########"-"""""-------""-------~~~----------..---""N"""-------~----------"##########,
         r##########"--------------------~~~~~~~--------..-------------~~~~~~~-------"##########,
         r##########"~-----~~~~~~~--~~~~~~~~~~~~~~~~~~~~..~~~------~~~~~~~~~~~~~~~~~~"##########,
         r##########"~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~..~~~~~~~~~~~~~~~~~~~~~~~~~~~"##########,
@@ -104,6 +117,18 @@
         '0': Tile("standing stone"),
         '*': Tile("gate"),
         '@': Mark,
+        'S': Mark,
+        'Y': Mark,
+        'D': Mark,
+        'P': Mark,
+        'I': Mark,
+        'G': Mark,
+        'U': Mark,
+        'N': Mark,
+        'R': Mark,
+        'M': Mark,
+        'C': Mark,
+        'x': Mark,
         'W': Prop("well"),
         'L': Prop("lamp post"),
         'F': Prop("forge"),

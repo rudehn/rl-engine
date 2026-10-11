@@ -346,14 +346,19 @@ mod tests {
 
     /// The same king and pool walled off from the adventurer's sight: a
     /// thrall still rises, and nothing of `welling` is learned, since
-    /// neither the king nor the water it rose from was seen.
+    /// neither the king nor the water it rose from was seen. The ground
+    /// round the hall, as far as a thrall may rise from anywhere the king
+    /// can stand inside it, is laid plain first, so the walled pool is the
+    /// only water and no thrall rises from a floor's own shallows in the
+    /// open.
     #[test]
     fn a_thrall_welling_up_out_of_the_adventurers_sight_teaches_nothing() {
         use crate::bestiary::Bestiary;
-        use crate::testing::{arena, monster, pass_turns, sturdy, wall_off};
+        use crate::testing::{arena, lay_floor, monster, pass_turns, sturdy, wall_off};
         let (mut app, me, here) = arena(62);
         sturdy(&mut app, me);
         let hall = here.offset(3, 0);
+        lay_floor(&mut app, &geometry::square(hall, RISE_RANGE + 1).collect::<Vec<_>>());
         let ring: Vec<Point> = geometry::square(hall, 2).filter(|p| geometry::chebyshev(*p, hall) == 2).collect();
         wall_off(&mut app, &ring);
         monster(&mut app, "the Drowned King", hall);

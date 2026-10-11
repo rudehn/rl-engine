@@ -29,7 +29,7 @@ use rl_bevy::PresentSet;
 use rl_core::{Point, Rect};
 use rl_render::{MapView, Terminal};
 
-use crate::cursor::CursorStyle;
+use crate::cursor::{CursorMap, CursorStyle};
 use crate::panel::nearby::relation_tone;
 use crate::panel::{clear, clip, frame, odds_tone};
 use crate::tone::{Palette, ToneId, Tones};
@@ -106,18 +106,11 @@ pub fn pulsed(tone: ToneId, index: usize, t: f32, palette: &Palette) -> Color {
 }
 
 /// Paints the footprint and the box.
-pub fn draw_target(
-    mut terminal: ResMut<Terminal>,
-    layout: Res<TargetLayout>,
-    view: Res<TargetView>,
-    map: Option<Res<MapView>>,
-    time: Res<Time>,
-    palette: Res<Palette>,
-) {
+pub fn draw_target(mut terminal: ResMut<Terminal>, layout: Res<TargetLayout>, view: Res<TargetView>, map: CursorMap, time: Res<Time>, palette: Res<Palette>) {
     if !view.aiming() {
         return;
     }
-    let Some(map) = map else { return };
+    let Some(view_of_map) = map.view() else { return };
     let t = time.elapsed_secs();
     // The flight first, then what is out of reach continuing its count so
     // the pulse runs on through the colour change, then the cells hit, so
@@ -125,20 +118,20 @@ pub fn draw_target(
     // arrived by.
     let flight: Vec<Point> = view.path.iter().filter(|p| !view.cells.contains(p)).copied().collect();
     for (i, cell) in flight.iter().enumerate() {
-        tint(&mut terminal, &map, *cell, pulsed(Tones::NOTICE, i, t, &palette));
+        tint(&mut terminal, view_of_map, *cell, pulsed(Tones::NOTICE, i, t, &palette));
     }
     for (i, cell) in view.beyond.iter().enumerate() {
-        tint(&mut terminal, &map, *cell, pulsed(Tones::BAD, flight.len() + i, t, &palette));
+        tint(&mut terminal, view_of_map, *cell, pulsed(Tones::BAD, flight.len() + i, t, &palette));
     }
     let ground = palette.get(if view.legal { Tones::SELECT } else { Tones::BAD });
     for cell in &view.cells {
-        tint(&mut terminal, &map, *cell, ground);
+        tint(&mut terminal, view_of_map, *cell, ground);
     }
     // The cursor itself last and brightest, since a ball's burst can
     // cover it and a player needs to know where the keys are moving. The
     // same mark the look cursor uses, so aiming and looking point the
     // same way.
-    crate::cursor::mark(&mut terminal, &map, view.cursor, layout.cursor, &palette, t);
+    map.mark(&mut terminal, view.cursor, layout.cursor, &palette, t);
 
     let rect = layout.rect;
     if rect.height < 3 || rect.width < 8 {

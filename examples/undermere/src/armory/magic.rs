@@ -419,7 +419,10 @@ fn a_continued_run_keeps_a_bound_goblin_on_the_adventurers_side_and_a_conjured_b
     let before = allies(&mut app);
     assert_eq!(before.len(), 3, "the goblin and two blades: {before:?}");
     app.world().resource::<Saves>().delete(SLOT).expect("the slot can be emptied");
-    crate::testing::arrive(&mut app, crate::dungeon::map_of(1));
+    // Floor two rather than one: `arena`'s own arrival already stood them
+    // on floor one, and a warp onto the floor already stood on writes no
+    // arrival to save from.
+    crate::testing::arrive(&mut app, crate::dungeon::map_of(2));
     let text = app.world().resource::<Saves>().load(SLOT).expect("the slot reads").expect("the arrival wrote the run down");
     let mut carried_on = crate::testing::continued(&text);
     assert_eq!(allies(&mut carried_on), before, "each on the adventurer's side, the blades to fade when they were going to");

@@ -132,13 +132,14 @@ Itemized, every line shown on the end screen and in the records:
 | Line | Points |
 | --- | --- |
 | Depth | 100 for each floor reached, counted by the deepest |
-| Slain | each kill's threat, the engine's `balance::threat` of what was killed, summed and rounded |
+| Slain | each kill's threat, the adventurer's and their hired mercenaries', the engine's `balance::threat` of what was killed, summed and rounded |
 | Treasure | the gold found |
 | Mini-bosses | 500 each |
 | Victory | 5000 |
 
 The numbers are a first cut and expected to move as the content arrives; the lines are the design.
 The stats beside the score: turns, the deepest floor, kills and the deadliest thing killed, damage dealt and taken, potions drunk, items found, gold found, mercenaries lost, and the seed.
+Kills, the deadliest and damage dealt are the company's, the adventurer's and their hired mercenaries', as the Slain line is; damage taken is the adventurer's own, and so is the Mini-bosses line, which pays for the blow.
 
 ## Presentation
 

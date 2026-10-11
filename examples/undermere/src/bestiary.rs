@@ -502,7 +502,7 @@ const THROW_CHANCE_PCT: u32 = 50;
 /// Corsair's four, a short detour, so a goblin that sees a better blade
 /// across the room takes it up on its way and one at the far end of the
 /// floor is left for the adventurer.
-const SCAVENGE_REACH: i32 = 4;
+pub(crate) const SCAVENGE_REACH: i32 = 4;
 
 /// The brain a monster of `folded` decides with, built once per kind from
 /// what it is, so a monster that never runs has no `FleeWhenHurt` in it

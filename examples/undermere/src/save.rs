@@ -6,13 +6,18 @@
 //! way through leads, every place built, the clock and what the
 //! adventurer has seen. Undermere says only what each kind of thing it
 //! spawns is: the adventurer and the strength they have come to, a
-//! monster by its definition's name, an item by its definition's name,
-//! its level, whether it is still cursed on, how long it has been worn
-//! towards knowing its level and how much of it the tally has counted, and
-//! a way through by which way it is. What Undermere keeps of a run outside
-//! its entities, the [`Tally`] and the [`Lore`] of what is known, goes
-//! through [`SaveableState`], and the engine's `Quests` is saved the same
-//! way. It keeps no `Counters`, since the tally counts what the score is
+//! monster by its definition's name, a mercenary with what it was hired
+//! as and a candidate with its name and fee, one of Mereholt's people by
+//! role and name, an item by its definition's name, its level, whether it
+//! is still cursed on, how long it has been worn towards knowing its
+//! level, how much of it the tally has counted and whether it is its
+//! carrier's own kit, and a way through by which way it is. What
+//! Undermere keeps of a run outside its entities, the [`Tally`], the
+//! [`Lore`] of what is known, which stocking the [`Shelves`] are, the
+//! [`Folk`] of Mereholt with what each has said, every name the run has
+//! given and how often it has come to the [`Tavern`], goes through
+//! [`SaveableState`], and the engine's `Quests`
+//! is saved the same way. It keeps no `Counters`, since the tally counts what the score is
 //! made of.
 //!
 //! The run is written on the way out, by the engine's stash when the
@@ -35,9 +40,12 @@ use crate::armory::{Armory, ItemKind};
 use crate::bestiary::{Bestiary, Kind};
 use crate::bestiary_lore::MonsterLore;
 use crate::lore::{CurseShown, Lore, Unfamiliar};
+use crate::mercenaries::{Candidate, Mercenary, OwnKit, Tavern};
 use crate::run::Adventurer;
+use crate::shops::Shelves;
 use crate::stairs::Way;
 use crate::tally::{Counted, Tally};
+use crate::townsfolk::{Folk, GivenNames, Kit, Townsfolk, Townsperson};
 use crate::vaults::VaultKey;
 
 /// Bump when a kind's shape below changes so an old save would parse
@@ -48,23 +56,35 @@ use crate::vaults::VaultKey;
 // v3: an item's level, curse and familiarity, the adventurer's strength,
 // what is known of the run's things, and a finger slot on either hand.
 // v4: what is known of the run's monsters' tricks.
-pub const VERSION: u32 = 4;
+// v5: Mereholt's keepers, and which stocking their shelves are.
+// v6: Mereholt's people, keepers among them, by role and name, the run's
+// names, and what each has said.
+// Still v6 with the mercenaries, and with a vault's key and its rising
+// floods: everything they added to a save is read as absent from one
+// written before them, which is what that run had, so an older run
+// continues rather than being refused.
+pub const VERSION: u32 = 6;
 
 /// The slot every run saves to.
 pub const SLOT: &str = "undermere";
 
 // ANCHOR: register
-/// What the save is made of: the engine's plugins, the four kinds, and
-/// the four resources; and the records, in their own slot.
+/// What the save is made of: the engine's plugins, the five kinds, and
+/// the nine resources; and the records, in their own slot.
 pub fn register(app: &mut App) {
     app.add_plugins((SavePlugin::new(SLOT).version(VERSION).on_arrival(), UnloadPlugin, RecordsSavePlugin))
         .save_kind::<ItemKind>()
         .save_kind::<Kind>()
         .save_kind::<Adventurer>()
         .save_kind::<Way>()
+        .save_kind::<Townsperson>()
         .save_state::<Tally>()
         .save_state::<Lore>()
         .save_state::<MonsterLore>()
+        .save_state::<Shelves>()
+        .save_state::<Folk>()
+        .save_state::<GivenNames>()
+        .save_state::<Tavern>()
         .save_state::<crate::vaults::lifts::RisingFloods>()
         .save_state::<Quests>();
 }
@@ -167,6 +187,34 @@ pub struct MonsterSave {
     /// [`Stole`](crate::tricks::Stole).
     #[serde(default)]
     pub stole: bool,
+    /// What it was hired as, for a mercenary in the adventurer's pay: its
+    /// name, its fee and its order, which put back its brain and its
+    /// offers; `None` for anything else, and in a save written before
+    /// anyone could be hired.
+    #[serde(default)]
+    pub hired: Option<Mercenary>,
+    /// What it asks, for a candidate waiting to be hired; `None` for
+    /// anything else, and in a save written before anyone waited.
+    #[serde(default)]
+    pub candidate: Option<CandidateSave>,
+    /// The name of the mercenary whose body this is, put back before the
+    /// engine names it as remains; `None` for anything else, and in a save
+    /// written before a body kept it, whose mercenary lay back down as one
+    /// of its kind.
+    #[serde(default)]
+    pub fallen: Option<String>,
+}
+
+/// A candidate waiting at the tavern's tables, as the save writes it: its
+/// name, which the run has given and keeps among its names, and its fee.
+/// Its kit is what it carries and wears, the engine's to keep, and each
+/// thing's being its own is the thing's.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CandidateSave {
+    /// What it is called.
+    pub name: String,
+    /// What hiring it costs, in gold coins.
+    pub fee: u32,
 }
 
 /// The side `monster` fights for when that is neither its kind's own nor
@@ -194,16 +242,21 @@ impl Saveable for Kind {
             def: world.resource::<Bestiary>().defs.name(kind.0).to_string(),
             // `Leader` alone is a band follower's as readily as a freed
             // captive's; only paired with `Ally` does it mean the
-            // follower fights for the adventurer and is a freed captive,
-            // since nothing else on the adventurer's own side gets a
-            // named leader to begin with.
+            // follower fights for the adventurer, and of those only a
+            // freed captive and a mercenary get a named leader to begin
+            // with; a mercenary is put back by its order, from `hired`.
             ally: world.get::<crate::allies::Ally>(entity).is_some(),
-            following: world.get::<crate::allies::Ally>(entity).is_some() && world.get::<Leader>(entity).is_some(),
+            following: world.get::<crate::allies::Ally>(entity).is_some() && world.get::<Leader>(entity).is_some() && world.get::<Mercenary>(entity).is_none(),
             fades: world.get::<crate::allies::Fades>(entity).map(|f| f.at),
             shackled: crate::captives::held_at(world, entity),
             side: own_side(world, entity, kind.0),
             raised: world.get::<crate::effects::bodies::Raised>(entity).is_some(),
             stole: world.get::<crate::tricks::Stole>(entity).is_some(),
+            hired: world.get::<Mercenary>(entity).cloned(),
+            candidate: world
+                .get::<Candidate>(entity)
+                .map(|c| CandidateSave { name: world.get::<Name>(entity).map_or_else(String::new, |n| n.as_str().to_string()), fee: c.fee }),
+            fallen: world.get::<crate::mercenaries::Fallen>(entity).map(|f| f.0.clone()),
         }
     }
 
@@ -245,6 +298,15 @@ impl Saveable for Kind {
         if saved.stole {
             world.entity_mut(monster).insert(crate::tricks::Stole);
         }
+        if let Some(hired) = &saved.hired {
+            crate::mercenaries::serve_again(world, monster, hired.clone());
+        }
+        if let Some(waiting) = &saved.candidate {
+            crate::mercenaries::wait_again(world, monster, &waiting.name, waiting.fee);
+        }
+        if let Some(name) = &saved.fallen {
+            world.entity_mut(monster).insert((Name::new(name.clone()), crate::mercenaries::Fallen(name.clone())));
+        }
         monster
     }
 }
@@ -283,6 +345,10 @@ pub struct ItemSave {
     /// in a save written before a vault had a key.
     #[serde(default)]
     pub opens: Option<u32>,
+    /// Whether it is the kit of the candidate or mercenary carrying it,
+    /// which it uses knowing what it is: see [`OwnKit`].
+    #[serde(default)]
+    pub own_kit: bool,
 }
 
 impl Saveable for ItemKind {
@@ -298,6 +364,7 @@ impl Saveable for ItemKind {
             unfamiliar: world.get::<Unfamiliar>(entity).map(|u| u.worn),
             curse_shown: world.get::<CurseShown>(entity).is_some(),
             opens: world.get::<VaultKey>(entity).map(|k| k.floor),
+            own_kit: world.get::<OwnKit>(entity).is_some(),
         }
     }
 
@@ -327,6 +394,9 @@ impl Saveable for ItemKind {
         }
         if let Some(floor) = saved.opens {
             e.insert((VaultKey { floor }, crate::vaults::key_tags(&registries, floor)));
+        }
+        if saved.own_kit {
+            e.insert(OwnKit);
         }
         item
     }
@@ -376,6 +446,105 @@ impl Saveable for Way {
             e.insert(glyph);
         }
         e.id()
+    }
+}
+
+/// One of Mereholt's people, as the save writes them: their role and the
+/// name this run gave them. The engine gives back where they stand, their
+/// health and a keeper's bag, which is its shelf and its purse as they
+/// were left; the rest of them is their role's, made again by
+/// [`townsfolk::spawn_person`], since the engine saves neither a keeper's
+/// `Trader` nor anybody's offers, and a lamplighter's round is laid again
+/// from where they stand.
+///
+/// [`townsfolk::spawn_person`]: crate::townsfolk::spawn_person
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersonSave {
+    /// The role, in `townsfolk.ron`.
+    pub role: String,
+    /// What this run calls them.
+    pub name: String,
+}
+
+impl Saveable for Townsperson {
+    type Saved = PersonSave;
+
+    fn capture(world: &World, entity: Entity) -> PersonSave {
+        let role = world.get::<Townsperson>(entity).expect("a person's role").0.clone();
+        let name = world.get::<Name>(entity).map_or_else(|| role.clone(), |n| n.as_str().to_string());
+        PersonSave { role, name }
+    }
+
+    fn restore(world: &mut World, saved: &PersonSave) -> Entity {
+        let Some(role) = world.resource::<Townsfolk>().role(&saved.role).cloned() else {
+            warn!("a saved person is the {:?}, which this build has no role for; they come back as nothing", saved.role);
+            return world.spawn_empty().id();
+        };
+        // Nowhere, on no place, carrying nothing: the engine puts them
+        // back where they were with what they had.
+        spawned(world, |commands, world| {
+            let person = crate::townsfolk::spawn_person(commands, &Kit::of(world), &role, &saved.name);
+            commands.entity(person).insert((Position(Point::ZERO), OnMap(MapId::SURFACE)));
+            person
+        })
+    }
+}
+
+/// Mereholt's people as the run has them, as the save writes it: the whole
+/// of [`Folk`], each role's name and which of its lines it has said, so a
+/// continued run names the same people and talks on where it left off.
+impl SaveableState for Folk {
+    type Saved = Folk;
+
+    fn capture(&self) -> Folk {
+        self.clone()
+    }
+
+    fn restore(&mut self, saved: Folk) {
+        *self = saved;
+    }
+}
+
+/// Every name the run has given, as the save writes it, so what the
+/// continued run names later still draws against them.
+impl SaveableState for GivenNames {
+    type Saved = GivenNames;
+
+    fn capture(&self) -> GivenNames {
+        self.clone()
+    }
+
+    fn restore(&mut self, saved: GivenNames) {
+        *self = saved;
+    }
+}
+
+/// How many times the run has come to Mereholt, as the save writes it: the
+/// whole of [`Tavern`], so the next visit after a continue seats the three
+/// the run would have seated, drawn at the visit it has come to.
+impl SaveableState for Tavern {
+    type Saved = Tavern;
+
+    fn capture(&self) -> Tavern {
+        *self
+    }
+
+    fn restore(&mut self, saved: Tavern) {
+        *self = saved;
+    }
+}
+
+/// Which stocking Mereholt's shelves are, as the save writes it: the whole
+/// of [`Shelves`], so a continued run restocks when this one would have.
+impl SaveableState for Shelves {
+    type Saved = Shelves;
+
+    fn capture(&self) -> Shelves {
+        *self
+    }
+
+    fn restore(&mut self, saved: Shelves) {
+        *self = saved;
     }
 }
 
@@ -466,7 +635,7 @@ mod tests {
         arrive(&mut app, map_of(4));
         let before = looks(&mut app);
         assert_eq!((before.place, before.deepest), (map_of(4), 4), "{before:?}");
-        assert_eq!(before.pack.len(), 4, "the kit: {before:?}");
+        assert_eq!(before.pack.len(), crate::run::KIT.len(), "the kit: {before:?}");
         assert_eq!(before.lantern, Some(crate::light::lantern_radius(Some(4))), "the lantern dimmed for floor four");
         assert!(!before.monsters.is_empty() && !before.ways.is_empty(), "{before:?}");
         let text = app.world().resource::<Saves>().load(SLOT).expect("the slot reads").expect("the arrival wrote the run down");

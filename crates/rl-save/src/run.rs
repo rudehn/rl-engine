@@ -40,9 +40,9 @@
 
 use bevy::prelude::*;
 use rl_bevy::{
-    AbandonRun, Afflict, Afflicted, Burning, Counters, Dead, Emptied, EndOfFrame, EndRun, Ending, EngineState, Equipped, Health, Hidden, Inventory, Leader,
-    LeaveRun, MapId, Needs, OnMap, PlaceEntered, Position, Post, PropKind, Quests, Reads, Registries, Remains, SavedRun, Stack, Stocked, Transition, Turns,
-    Wearable, WorkKinds, Working,
+    AbandonRun, Afflict, Afflicted, Burning, Counters, Dead, Emptied, EndOfFrame, EndRun, Ending, EngineState, Equipped, Health, Hidden, Inventory, Joined,
+    Leader, LeaveRun, MapId, Needs, OnMap, PlaceEntered, Position, Post, PropKind, Quests, Reads, Registries, Remains, SavedRun, Stack, Stocked, Transition,
+    Turns, Wearable, WorkKinds, Working,
 };
 use rl_core::Point;
 use rl_rules::{Equipment, Work};
@@ -404,6 +404,12 @@ pub struct EntityState {
     /// definition, so the leader is kept here, by save id, and not in it.
     #[serde(default)]
     pub leader: Option<SaveId>,
+    /// Where it came in the order followers joined, its [`Joined`], kept
+    /// beside the leader so a party listed in that order reads the same
+    /// after a load. `None` from a save written before it was kept, and the
+    /// follower is then stamped afresh, after everyone saved with one.
+    #[serde(default)]
+    pub joined: Option<u64>,
 }
 
 /// How long something alight has left, as a save keeps it. An enum of its
@@ -486,6 +492,7 @@ impl EntityState {
             // saved, a body gone at the end of its frame, is not given an id
             // that would come back bound to nothing.
             leader: e.get::<Leader>().and_then(|l| remap.saved(l.0)),
+            joined: e.get::<Joined>().map(|j| j.0),
             working,
             // One with no turns left has burnt out and is only waiting for
             // the removal that was queued with it.
@@ -560,8 +567,12 @@ impl EntityState {
         if let Some(at) = self.post {
             target.insert(Post(at));
         }
-        if let Some(leader) = self.leader.and_then(|id| remap.entity(id)) {
-            target.insert(Leader(leader));
+        // The stamp with the leader, in one insert, so the leader's hook
+        // finds it there and does not stamp the follower afresh.
+        match (self.leader.and_then(|id| remap.entity(id)), self.joined) {
+            (Some(leader), Some(joined)) => drop(target.insert((Joined(joined), Leader(leader)))),
+            (Some(leader), None) => drop(target.insert(Leader(leader))),
+            (None, _) => {}
         }
         if let Some(working) = working {
             target.insert(working);
@@ -1347,6 +1358,30 @@ mod tests {
         assert_eq!(w.get::<Leader>(who("Ada")), None, "and the leader follows nobody");
     }
 
+    /// The order a leader's followers joined in comes back with them, even
+    /// where it is not the order they were made in, which is the order a
+    /// load makes them again in.
+    #[test]
+    fn followers_keep_the_order_they_joined_in_when_the_run_is_continued() {
+        let backend = std::sync::Arc::new(MemoryBackend::default());
+        let (mut app, start) = game(Saves(backend.clone()));
+        let me = app.world_mut().spawn((Actor, Player, Blocks, You, Position(start), Viewshed::new(6), RevealsMap, Health::full(30))).id();
+        let early = app.world_mut().spawn((Actor, Blocks, Person("Early".into()), Position(start.offset(1, 3)), Health::full(20))).id();
+        app.world_mut().spawn((Actor, Blocks, Person("Late".into()), Position(start.offset(3, 3)), Health::full(20), Leader(me)));
+        app.world_mut().entity_mut(early).insert(Leader(me));
+        play(&mut app);
+        save_run(app.world_mut()).unwrap();
+
+        let (mut back, _) = game(Saves(backend));
+        load_run(back.world()).unwrap().expect("a save").restore(back.world_mut()).unwrap();
+        play(&mut back);
+        let w = back.world_mut();
+        let mut order: Vec<(Joined, String)> = w.query::<(&Joined, &Person)>().iter(w).map(|(j, p)| (*j, p.0.clone())).collect();
+        order.sort();
+        let names: Vec<&str> = order.iter().map(|(_, n)| n.as_str()).collect();
+        assert_eq!(names, vec!["Late", "Early"], "the one made later joined first, and still comes first");
+    }
+
     /// Something alight comes back alight with the turns it had left, and a
     /// fire that never goes out comes back as one. The burning cell under
     /// it is saved with the engine's fields, but only the thing itself
@@ -1443,6 +1478,39 @@ mod tests {
         assert_eq!(ground, vec![(3, start.offset(2, 0))], "the dropped coins lie where they lay");
         let stairs: Vec<(Point, Transition)> = w.query::<(&Position, &Transition)>().iter(w).map(|(p, t)| (p.0, *t)).collect();
         assert!(stairs.is_empty(), "a transition nobody registered a kind for is not the engine's to spawn");
+    }
+
+    /// A trader's stock is its pack, so it comes back as any actor's pack
+    /// does: the same things in the same order, a pile with its count,
+    /// with nothing written by the game about what it sells.
+    #[test]
+    fn a_stocked_traders_inventory_survives_a_save_as_any_actors_does() {
+        let backend = std::sync::Arc::new(MemoryBackend::default());
+        let (mut app, start) = game(Saves(backend.clone()));
+        app.world_mut().spawn((Actor, Player, Blocks, You, Position(start), Viewshed::new(6), RevealsMap, Health::full(30)));
+        let till = app.world_mut().spawn((Item, Thing { def: "coin".into(), notches: 0 }, Stack { key: 1, count: 40 })).id();
+        let ware = app.world_mut().spawn((Item, Thing { def: "ring".into(), notches: 1 }, rl_bevy::Worth(25))).id();
+        app.world_mut().spawn((
+            Actor,
+            Blocks,
+            Person("Ada".into()),
+            Position(start.offset(1, 0)),
+            Health::full(20),
+            Inventory { items: vec![ware, till] },
+            rl_bevy::Trader { buys: Vec::new(), pays_pct: 25 },
+        ));
+        play(&mut app);
+        save_run(app.world_mut()).unwrap();
+
+        let (mut back, _) = game(Saves(backend));
+        load_run(back.world()).unwrap().expect("a save").restore(back.world_mut()).unwrap();
+        play(&mut back);
+        let w = back.world_mut();
+        let stock = w.query_filtered::<&Inventory, With<Person>>().single(w).expect("the trader came back").items.clone();
+        let w = back.world();
+        let things: Vec<(&str, u8, Option<u32>)> =
+            stock.iter().map(|i| w.get::<Thing>(*i).map(|t| (t.def.as_str(), t.notches, w.get::<Stack>(*i).map(|s| s.count))).unwrap()).collect();
+        assert_eq!(things, vec![("ring", 1, None), ("coin", 0, Some(40))], "its stock, in order, the pile with its count");
     }
 
     /// A game with the player wearing a ring in its one slot, `dazed` on

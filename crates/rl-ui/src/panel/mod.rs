@@ -26,12 +26,14 @@ pub mod inventory;
 pub mod log;
 pub mod nearby;
 pub mod offers;
+pub mod party;
 pub mod records;
 pub mod scrollback;
 pub mod settings;
 pub mod sheet;
 pub mod target;
 pub mod title;
+pub mod trade;
 pub mod vitals;
 
 pub use ability::{AbilityKeys, AbilityLayout, AbilityMenu, AbilityPanel, ability_modal, reach};
@@ -39,16 +41,18 @@ pub use container::{CONTAINER_MODAL, ContainerKeys, ContainerLayout, ContainerMe
 pub use controls::{CONTROLS_MODAL, ControlsLayout, ControlsPanel, ControlsScreen, controls_modal};
 pub use gear::GearPanel;
 pub use inspect::InspectPanel;
-pub use inventory::{ChoosingFor, INVENTORY_MODAL, InventoryKeys, InventoryLayout, InventoryMenu, InventoryPanel, inventory_modal};
+pub use inventory::{Choosing, ChoosingFor, INVENTORY_MODAL, InventoryKeys, InventoryLayout, InventoryMenu, InventoryPanel, OfferChoice, inventory_modal};
 pub use log::LogPanel;
 pub use nearby::{ActivityWords, AlertWords, NearbyPanel};
-pub use offers::{OFFERS_MODAL, OffersLayout, OffersMenu, OffersPanel, offers_modal};
+pub use offers::{Confirming, OFFERS_MODAL, OffersLayout, OffersMenu, OffersPanel, offers_modal};
+pub use party::{PartyLayout, PartyPanel};
 pub use records::{RECORDS_MODAL, RecordsLayout, RecordsPanel, RecordsScreen, records_modal};
 pub use scrollback::{SCROLLBACK_MODAL, Scrollback, ScrollbackKeys, ScrollbackPanel, scrollback_modal};
 pub use settings::{SETTINGS_MODAL, SettingsLayout, SettingsPanel, SettingsScreen, settings_modal};
 pub use sheet::{SHEET_MODAL, SheetKeys, SheetLayout, SheetPanel, plain_op, sheet_modal};
 pub use target::{TargetLayout, TargetPanel};
 pub use title::{TitleMenu, TitlePanel, TitleRow, TitleSet, TitleWords, title_is_up};
+pub use trade::{TRADE_MODAL, TradeKeys, TradeLayout, TradeMenu, TradePanel, TradeSide, TradeWords, trade_modal};
 pub use vitals::VitalsPanel;
 
 use bevy::prelude::Color;
@@ -146,6 +150,21 @@ pub fn bar(terminal: &mut Terminal, x: i32, y: i32, width: i32, fraction: f32, t
 /// not showing.
 pub fn tint(terminal: &mut Terminal, map: &MapView, cell: Point, tone: ToneId, palette: &Palette) {
     map.wash(terminal, cell, palette.get(tone));
+}
+
+/// Where a panel drawn over the map goes when its own rectangle would hide
+/// what it is about: the game's `elsewhere`, or `rect` turned top for
+/// bottom within `map`, so a panel along the bottom edge lands along the
+/// top one the same distance in. Shared by the look panel and the offers
+/// screen, so the two move the same way and a game learns one rule.
+pub(crate) fn other_place(rect: Rect, elsewhere: Option<Rect>, map: Rect) -> Rect {
+    elsewhere.unwrap_or_else(|| Rect::new(rect.x, map.y + map.bottom() - rect.bottom(), rect.width, rect.height))
+}
+
+/// Whether `rect` covers any of `cells`, terminal cells a panel over the
+/// map must keep in sight.
+pub(crate) fn hides(rect: Rect, cells: &[Point]) -> bool {
+    cells.iter().any(|&p| rect.contains(p))
 }
 
 /// Cuts `text` to `width` characters, with an ellipsis when it did not

@@ -22,8 +22,10 @@ pub mod inspect;
 pub mod inventory;
 pub mod nearby;
 pub mod offers;
+pub mod party;
 pub mod sheet;
 pub mod target;
+pub mod trade;
 pub mod vitals;
 
 pub use ability::{AbilityRow, AbilityView, AbilityViewPlugin};
@@ -34,15 +36,47 @@ pub use inspect::{InspectView, InspectViewPlugin};
 pub use inventory::{Asking, InventoryView, InventoryViewPlugin, ItemRow};
 pub use nearby::{NearbyView, NearbyViewPlugin};
 pub use offers::{OfferRow, OffersView, OffersViewPlugin};
+pub use party::{PartyView, PartyViewPlugin};
 pub use sheet::{Change, ResistLine, SheetView, SheetViewPlugin, StatLine, StatusLine, Strike, WornLine};
 pub use target::{AimAt, AimFire, AimRange, AimThrow, AimUse, TargetView, TargetViewPlugin, target_modal};
-pub use vitals::{VitalsView, VitalsViewPlugin};
+pub use trade::{TradeRow, TradeView, TradeViewPlugin};
+pub use vitals::{VitalsView, VitalsViewPlugin, health_tone};
 
 use bevy::prelude::*;
 use rl_render::Glyph;
 use rl_rules::Relation;
 
 use crate::facet::{Facet, FacetId};
+
+/// Every named thing that carries tags, for finding what a piece of the
+/// currency is called by [`currency_name`].
+pub type NamedPieces<'w, 's> = Query<'w, 's, (Entity, &'static Name, &'static rl_bevy::Tagged)>;
+
+/// What one piece of the trade slice's currency is called: the `Name` of
+/// the first piece among `near`, else of any named piece in play, the
+/// lowest entity first so the word never flickers between frames. Empty
+/// with no currency, or no named piece anywhere.
+///
+/// One place for the word, so the trade screen and the offers screen
+/// name the same currency the same way, and in the game's own word for a
+/// piece rather than its tag's. Public so a game's own line about a
+/// payment, as one an offer's answer writes, names it by the same rule.
+pub fn currency_name(currency: Option<&rl_bevy::Currency>, near: impl IntoIterator<Item = Entity>, pieces: &NamedPieces) -> String {
+    let Some(currency) = currency else { return String::new() };
+    let is = |(_, _, tags): &(Entity, &Name, &rl_bevy::Tagged)| currency.is(Some(*tags));
+    let nearby = near.into_iter().filter_map(|e| pieces.get(e).ok()).find(is);
+    nearby.or_else(|| pieces.iter().filter(is).min_by_key(|(e, _, _)| *e)).map(|(_, name, _)| name.as_str().to_string()).unwrap_or_default()
+}
+
+/// `amount` of the currency called `name`, as every screen says it:
+/// `1 scrip`, `25 scrips`, or the bare number when it has no name.
+pub fn sum_of(name: &str, amount: u32) -> String {
+    match (name.is_empty(), amount) {
+        (true, _) => amount.to_string(),
+        (false, 1) => format!("1 {name}"),
+        (false, _) => rl_core::noun::listed(name, amount),
+    }
+}
 
 /// What something in sight is doing about the player.
 ///

@@ -18,6 +18,9 @@
 //! is drawn is what [`ShownFields`] shows,
 //! blended in and stirred, rather than the fields as they stand. Only on
 //! tiles in sight; memory holds no smoke.
+//!
+//! Who the map drew this frame is kept in [`DrawnActors`], for whatever is
+//! drawn over it after, a cursor, to leave them showing.
 
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
@@ -363,6 +366,7 @@ impl Plugin for MapViewPlugin {
             .init_resource::<FieldAppearance>()
             .init_resource::<ShownFields>()
             .init_resource::<Wavefronts>()
+            .init_resource::<DrawnActors>()
             .insert_resource(MapView::new(self.viewport).across(self.across))
             .add_systems(Update, (follow_player, track_fields, remember_still_things, draw_map).chain().in_set(PresentSet::Map))
             // In `Update` rather than in a play-only set, because props are
@@ -481,7 +485,29 @@ const ANIMATION_RATE: f32 = 12.0;
 
 /// What a thing on the map is drawn by: where, as what, on which map, and
 /// whether it is [`Concealed`] in the dark.
-type Drawn = (&'static Position, &'static Glyph, Option<&'static OnMap>, Has<Concealed>);
+type Drawn = (&'static Position, &'static Glyph, Option<&'static OnMap>, Has<Concealed>, Has<Actor>);
+
+/// The tiles the map drew someone on this frame: every actor the player
+/// sees, the player among them, refilled by [`draw_map`].
+///
+/// What a mark drawn over the map after it asks so as not to cover
+/// anyone, a cursor's ticks above all: a tick standing on the player's
+/// own cell, the commonest neighbour of whatever they look at, hides
+/// where they are. The map answers it rather than the world, since it
+/// is what decided who was shown, by the one question of sight a panel
+/// listing them asks too. Anyone, not anything: a tick may stand on a
+/// thing lying about or a table as it does on a wall, for a cursor
+/// framed on fewer sides in every furnished room would read as no
+/// cursor.
+#[derive(Resource, Debug, Default)]
+pub struct DrawnActors(Vec<Point>);
+
+impl DrawnActors {
+    /// Whether the map drew someone on `p` this frame.
+    pub fn at(&self, p: Point) -> bool {
+        self.0.contains(&p)
+    }
+}
 
 /// What the map is drawn from.
 #[derive(bevy::ecs::system::SystemParam)]
@@ -507,7 +533,7 @@ pub struct Scene<'w, 's> {
 }
 
 /// Paints the viewport: lit where the player sees, dim where remembered.
-pub fn draw_map(mut terminal: ResMut<Terminal>, scene: Scene) {
+pub fn draw_map(mut terminal: ResMut<Terminal>, mut actors: ResMut<DrawnActors>, scene: Scene) {
     let Scene { time, view, map, look, knowledge, lighting, overlay, player, glyphs, sight, fields, shown, registries } = &scene;
     let now = time.elapsed_secs();
     let t = (now * ANIMATION_RATE).floor() / ANIMATION_RATE;
@@ -551,12 +577,16 @@ pub fn draw_map(mut terminal: ResMut<Terminal>, scene: Scene) {
         view.set(&mut terminal, p, cell);
     }
     let mut drawn: Vec<(Point, i32)> = Vec::new();
-    for (pos, glyph, on, concealed) in glyphs {
+    actors.0.clear();
+    for (pos, glyph, on, concealed, actor) in glyphs {
         if !sight.shows(pos.0, on, concealed) {
             continue;
         }
         if view.to_screen(pos.0).is_none() {
             continue;
+        }
+        if actor {
+            actors.0.push(pos.0);
         }
         if let Some(existing) = drawn.iter_mut().find(|(q, _)| *q == pos.0) {
             if existing.1 >= glyph.layer {
@@ -718,6 +748,24 @@ mod tests {
         assert_eq!(drawn_at(&app, rat).glyph, 'r');
         stand_at(&mut app, player, start.offset(-12, 0));
         assert_eq!(drawn_at(&app, rat).glyph, '.', "the ground, and nothing on it");
+    }
+
+    /// The map keeps who it drew, for whatever is drawn over it after: a
+    /// creature in sight, and neither one out of sight nor a thing lying
+    /// in sight.
+    #[test]
+    fn the_map_keeps_the_tiles_it_drew_someone_on_and_only_those() {
+        let (mut app, start, _) = open_ground();
+        let (rat, far, lying) = (start.offset(3, 0), start.offset(20, 0), start.offset(2, 1));
+        app.world_mut().spawn((Actor, Position(rat), Glyph::new('r', Color::WHITE)));
+        app.world_mut().spawn((Actor, Position(far), Glyph::new('r', Color::WHITE)));
+        app.world_mut().spawn((Position(lying), Glyph::new('!', Color::WHITE)));
+        app.update();
+        assert_eq!(drawn_at(&app, rat).glyph, 'r', "the rat is drawn");
+        let drawn = app.world().resource::<DrawnActors>();
+        assert!(drawn.at(rat), "and kept as drawn");
+        assert!(!drawn.at(far), "not the one out of sight");
+        assert!(!drawn.at(lying), "nor a thing lying about");
     }
 
     /// Memory is what was seen, not what is true: a thing taken away

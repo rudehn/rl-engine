@@ -298,7 +298,7 @@ mod tests {
         let player = stage.player;
         assert!(!stage.app.world().resource::<Modals>().any_open(), "nothing is up before anything is opened");
 
-        stage.app.world_mut().write_message(Interacted { actor: player, target: chest, verb: Verbs::OPEN });
+        stage.app.world_mut().write_message(Interacted { actor: player, target: chest, verb: Verbs::OPEN, thing: None });
         stage.tick();
         let modals = stage.app.world().resource::<Modals>();
         assert!(modals.is_open(container_modal(modals)), "the screen is up");
@@ -313,7 +313,7 @@ mod tests {
     fn taking_all_empties_it_and_the_screen_stays_up_until_it_is_closed() {
         let (mut stage, chest) = stage();
         let player = stage.player;
-        stage.app.world_mut().write_message(Interacted { actor: player, target: chest, verb: Verbs::OPEN });
+        stage.app.world_mut().write_message(Interacted { actor: player, target: chest, verb: Verbs::OPEN, thing: None });
         stage.tick();
 
         stage.press(KeyCode::KeyA);
@@ -331,7 +331,7 @@ mod tests {
     fn walking_away_closes_the_screen() {
         let (mut stage, chest) = stage();
         let player = stage.player;
-        stage.app.world_mut().write_message(Interacted { actor: player, target: chest, verb: Verbs::OPEN });
+        stage.app.world_mut().write_message(Interacted { actor: player, target: chest, verb: Verbs::OPEN, thing: None });
         stage.tick();
 
         let far = stage.at.offset(-6, 0);

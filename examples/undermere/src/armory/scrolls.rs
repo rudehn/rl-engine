@@ -10,7 +10,7 @@ use rl_engine::prelude::*;
 use crate::content::DISCORDANT;
 use crate::effects::FAR;
 use crate::lore::Lore;
-use crate::testing::{arena, arena_on, at, find, give, monster, name_of, pass_turns, read_on, said, settle, use_thing};
+use crate::testing::{arena, arena_in_mereholt, arena_on, at, find, give, monster, name_of, pass_turns, read_on, said, settle, use_thing};
 
 /// `name` found at `level` and put in `me`'s pack.
 fn carried(app: &mut App, me: Entity, name: &str, level: i32) -> Entity {
@@ -147,7 +147,7 @@ fn summon_monsters_calls_up_two_or_three_of_the_floors_monsters_beside_the_reade
         assert!((2..=3).contains(&came.len()), "seed {seed}: two or three beside the reader: {came:?}");
         assert!(came.iter().all(|(_, knows)| *knows), "seed {seed}: each knowing where they are");
     }
-    let (mut app, me, _) = arena(59);
+    let (mut app, me, _) = arena_in_mereholt(59);
     let scroll = carried(&mut app, me, "scroll of summon monsters", 0);
     use_thing(&mut app, me, scroll);
     assert!(said(&app).iter().any(|l| l == "Nothing seems to happen."), "{:#?}", said(&app));

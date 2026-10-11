@@ -61,6 +61,21 @@ impl NearbyView {
         self.focused.is_some_and(|s| s.entity == row.entity)
     }
 
+    /// Whether `entity` has a row in either list, as the game left them:
+    /// an annotate system may take a row out, as one listed on a panel of
+    /// its own is, and Tab steps only through what is still here.
+    pub fn lists(&self, entity: Entity) -> bool {
+        self.actors.iter().chain(&self.things).any(|r| r.entity == entity)
+    }
+
+    /// The row picked out, when it is still listed: [`focused`](Self::focused)
+    /// less one the game took out of the lists, which the panel neither
+    /// highlights nor marks on the map, since a mark with no row beside it
+    /// reads as a cursor left behind.
+    pub fn picked(&self) -> Option<Sighting> {
+        self.focused.filter(|s| self.lists(s.entity))
+    }
+
     /// How many actors are hostile to the player.
     pub fn threats(&self) -> usize {
         self.actors.iter().filter(|r| r.relation == Some(Relation::Hostile)).count()
@@ -115,6 +130,7 @@ pub struct Around<'w, 's> {
     stacks: Query<'w, 's, &'static Stack>,
     work: crate::view::Workings<'w, 's>,
     doing: Query<'w, 's, &'static rl_bevy::Doing>,
+    bodies: Query<'w, 's, (), With<rl_bevy::Remains>>,
 }
 
 /// Fills [`NearbyView`] from the player's viewshed, in [`InSight`]'s order.
@@ -131,8 +147,12 @@ pub fn collect_nearby(mut view: ResMut<NearbyView>, around: Around) {
         let count = around.stacks.get(sighting.entity).map_or(1, |s| s.count);
         let mut row = Row::new(sighting.entity, rl_core::noun::listed(name.as_str(), count), *glyph).at(sighting.distance);
         row.health = health.map(|h| (h.current, h.max));
+        // A body keeps the side it fought for, which is what a mind is
+        // told of it, but on the rail it is nobody's: a fallen friend in
+        // the friend's tone, or a slain foe in the foe's, reads as still
+        // standing.
         row.relation = match (mine, faction) {
-            (Some(mine), Some(theirs)) => Some(around.rules.factions.relation(mine.0, theirs.0)),
+            (Some(mine), Some(theirs)) if !around.bodies.contains(sighting.entity) => Some(around.rules.factions.relation(mine.0, theirs.0)),
             _ => None,
         };
         // Hunting outranks searching: something that has seen you is not
@@ -351,6 +371,37 @@ mod tests {
         assert_eq!(focused(&stage), None, "let go");
     }
 
+    /// A game's annotate system that lists the one it was told about on a
+    /// panel of its own, so takes its row off the rail.
+    fn list_elsewhere(mut view: ResMut<NearbyView>, noted: Res<Noted>) {
+        view.actors.retain(|r| r.entity != noted.0);
+    }
+
+    #[test]
+    fn tab_steps_only_through_the_rows_a_game_left_on_the_rail_and_a_cursor_left_on_one_taken_off_marks_nothing() {
+        let mut stage = Stage::new(NearbyViewPlugin);
+        let near = stage.actor("near one", 'n', 1, 0);
+        let follower = stage.actor("follower", 'f', 2, 0);
+        let far = stage.actor("far one", 'r', 3, 0);
+        stage.app.insert_resource(Noted(follower));
+        stage.app.add_systems(Update, list_elsewhere.in_set(crate::ViewSet::Annotate));
+        stage.tick();
+        let focused = |stage: &Stage| stage.app.world().resource::<NearbyView>().focused.map(|s| s.entity);
+        let keys = CursorKeys::default();
+        for (want, why) in [(near, "the top row"), (far, "past the one listed elsewhere"), (near, "and round again")] {
+            stage.press(keys.next);
+            assert_eq!(focused(&stage), Some(want), "{why}");
+        }
+
+        // Picked out some other way, as by the look cursor: still the
+        // focus, but nothing on the rail to highlight or mark.
+        stage.app.world_mut().resource_mut::<Focus>().set(Some(follower));
+        stage.tick();
+        let view = stage.app.world().resource::<NearbyView>();
+        assert_eq!(view.focused.map(|s| s.entity), Some(follower), "the focus is the cursor's to keep");
+        assert_eq!(view.picked(), None, "but the rail picks out nothing it does not list");
+    }
+
     #[test]
     fn a_row_that_leaves_sight_is_no_longer_picked_out() {
         let mut stage = Stage::new(NearbyViewPlugin);
@@ -363,6 +414,19 @@ mod tests {
         stage.tick();
         stage.tick();
         assert_eq!(stage.app.world().resource::<NearbyView>().focused, None, "out of sight, so nothing is highlighted");
+    }
+
+    #[test]
+    fn a_body_on_the_rail_is_on_nobodys_side_whoever_it_fought_for() {
+        let mut stage = Stage::new(NearbyViewPlugin);
+        let body = stage.thing("goblin remains", '%', 2, 0);
+        let foe = stage.actor("foe", 'f', 3, 0);
+        let side = *stage.app.world().get::<Faction>(foe).expect("a side");
+        stage.app.world_mut().entity_mut(body).insert((side, rl_bevy::Remains { since: 0, credit: None }));
+        stage.tick();
+        let view = stage.app.world().resource::<NearbyView>();
+        assert_eq!(view.things.iter().find(|r| r.entity == body).map(|r| r.relation), Some(None), "no side: {:?}", view.things);
+        assert_eq!(view.actors[0].relation, Some(Relation::Hostile), "while the foe beside it keeps its own");
     }
 
     #[test]

@@ -137,6 +137,14 @@ pub const DISCORDANT: &str = "discordant";
 /// shackled, neutral to every side, the adventurer's captors among them,
 /// until it is freed and put on the adventurer's own.
 pub const CAPTIVE: &str = "captive";
+/// Part 5's keepers and the Mereholt crowd around them: at peace with
+/// everyone, the adventurer included, and excluded from the discord loop
+/// in [`combat_rules`] rather than merely unnamed in it, so nobody is ever
+/// hostile to it, not even a victim of the scroll. Doing without the harm
+/// [`damage::StopsHarmInMereholt`](crate::damage::StopsHarmInMereholt)
+/// already drops would still leave a discordant townsperson swinging at
+/// a neighbour, which the design rules out by the faction alone.
+pub const TOWNSFOLK: &str = "townsfolk";
 /// The cloud a potion of paralysis bursts into.
 pub const PARALYTIC: &str = "paralytic";
 /// The cloud a caustic vent breathes out, a risk-and-reward piece's own.
@@ -287,7 +295,8 @@ pub fn registries() -> Registries {
         stats,
         statuses,
         gases,
-        factions: Registry::from_defs(["adventurer", "beasts", "goblins", "undead", "dar", CAPTIVE, DISCORDANT].map(FactionDef::new).to_vec()).unwrap(),
+        factions: Registry::from_defs(["adventurer", "beasts", "goblins", "undead", "dar", CAPTIVE, DISCORDANT, TOWNSFOLK].map(FactionDef::new).to_vec())
+            .unwrap(),
         tags: tags(),
         slots: Registry::from_defs(["main hand", "off hand", "head", "body", "left finger", "right finger", "light"].map(SlotDef::new).to_vec()).unwrap(),
         ..Registries::default()
@@ -302,7 +311,9 @@ pub fn registries() -> Registries {
 /// dar fight only the adventurer, a deep culture of their own that neither
 /// raids the goblins nor hunts the beasts. The discordant fight everyone,
 /// each other among them, which is what a scroll of discord turns a foe
-/// into for a while.
+/// into for a while, Mereholt's [`TOWNSFOLK`] the one side left out of
+/// that: nobody is ever hostile to it, so a townsperson never has to be
+/// asked whether it fights, a scroll's victim included.
 ///
 /// And which stats a blow and a heal read: accuracy against evasion for
 /// whether it lands, the armor stat beside whatever armor is worn, mending
@@ -318,6 +329,7 @@ pub fn registries() -> Registries {
 pub fn combat_rules(registries: &Registries) -> CombatRules {
     let [adventurer, beasts, goblins, undead, dar] = ["adventurer", "beasts", "goblins", "undead", "dar"].map(|name| registries.factions.expect(name));
     let discord = registries.factions.expect(DISCORDANT);
+    let townsfolk = registries.factions.expect(TOWNSFOLK);
     let stat = |name: &str| registries.stats.expect(name);
     let mut rules = CombatRules::new(&registries.factions)
         .hostile(adventurer, beasts)
@@ -328,7 +340,9 @@ pub fn combat_rules(registries: &Registries) -> CombatRules {
         .hostile(undead, beasts)
         .hostile(undead, goblins);
     for (side, _) in registries.factions.iter() {
-        rules = rules.hostile(discord, side);
+        if side != townsfolk {
+            rules = rules.hostile(discord, side);
+        }
     }
     rules
         .accuracy_stat(stat(ACCURACY))
@@ -382,7 +396,7 @@ pub fn vault_key(floor: u32) -> String {
 /// Every tag: the kinds of thing a chest's row and a floor's finds are
 /// drawn by, and the lock and the key of each floor's vault.
 pub fn tags() -> Registry<TagDef> {
-    let kinds = ["weapon", "armor", "potion", "scroll", "staff", "wand", "ring", "gold", "arrow", "light", "thrown"].map(String::from);
+    let kinds = ["weapon", "armor", "potion", "scroll", "staff", "wand", "ring", "gold", "arrow", "light", "thrown", "artifact", "waystone"].map(String::from);
     let keys = std::iter::once(VAULT_KEY.to_string()).chain((1..crate::dungeon::FLOORS).map(vault_key));
     Registry::from_defs(kinds.into_iter().chain(keys).map(TagDef::new).collect()).expect("every tag has a name of its own")
 }
@@ -406,7 +420,9 @@ pub fn effect_kinds() -> EffectKinds {
 /// engine knows nothing of: a thing's level, what is known of it, a curse,
 /// the adventurer's strength, and what [`effects`](crate::effects) holds,
 /// where someone stands, who they are, whose side they are on, what they
-/// see and what their things hold; and [`tricks`](crate::tricks) holds a
+/// see, what their things hold and a body made whole; a waystone's call
+/// home, in [`waystone`](crate::waystone); and
+/// [`tricks`](crate::tricks) holds a
 /// landed blow that steals and a touch that saps strength no faster than
 /// three stacks. The one list, for the app and for [`effect_kinds`] alike.
 ///
@@ -416,13 +432,15 @@ pub fn effect_kinds() -> EffectKinds {
 /// and two effects registered under one name would be the second quietly
 /// taking the first's place.
 pub fn add_game_effects(app: &mut App) {
-    use crate::effects::{bodies, charges, minds, moving, senses};
+    use crate::effects::{bodies, charges, mending, minds, moving, senses};
     use rl_engine::rl_bevy::{Cleanse, Harm, Inflict, Mend, Pull, Shove};
     app.add_effect::<Harm>().add_effect::<Mend>().add_effect::<Inflict>().add_effect::<Cleanse>().add_effect::<Shove>().add_effect::<Pull>();
     app.add_effect::<crate::enchant::Enchanting>()
         .add_effect::<crate::enchant::RemoveCurse>()
         .add_effect::<crate::lore::Identify>()
+        .add_effect::<crate::lore::NameWorn>()
         .add_effect::<crate::strength::Strengthen>();
+    app.add_effect::<mending::Whole>().add_effect::<mending::CureLasting>();
     app.add_effect::<moving::Blink>()
         .add_effect::<moving::TeleportOther>()
         .add_effect::<moving::Beckon>()
@@ -441,6 +459,7 @@ pub fn add_game_effects(app: &mut App) {
     app.add_effect::<crate::tricks::Steal>().add_effect::<crate::tricks::Wither>();
     app.add_effect::<bodies::Rally>().add_effect::<bodies::CallDrowned>().add_effect::<bodies::Hatch>().add_effect::<bodies::Rise>();
     app.add_effect::<bodies::RaiseAlly>().add_effect::<bodies::Whisper>().add_effect::<minds::AlertDrowned>();
+    app.add_effect::<crate::waystone::CallGate>();
 }
 
 /// Reads `abilities.ron` against `registries`, its effects built through
@@ -469,6 +488,18 @@ pub struct Library {
     pub bestiary: Bestiary,
     /// The faces the things of a kind wear until the kind is known.
     pub faces: crate::lore::Faces,
+    /// What Mereholt's keepers may stock.
+    pub wares: crate::shops::Wares,
+    /// What a sword for hire may carry, and what it asks.
+    pub mercenaries: crate::mercenaries::Mercenaries,
+    /// The rites the temple's priest offers, their effects built.
+    pub rites: crate::temple::Rites,
+    /// Mereholt's people, a row a role.
+    pub townsfolk: crate::townsfolk::Townsfolk,
+    /// The sets every name the run gives is drawn from.
+    pub names: crate::townsfolk::NameSets,
+    /// What the innkeeper may tell of a run's dungeon.
+    pub rumours: crate::rumours::Rumours,
 }
 
 impl Library {
@@ -482,7 +513,15 @@ impl Library {
         let armory = Armory::load(&registries, &traits, kinds, moments);
         let bestiary = Bestiary::load(&registries, &traits, &armory.defs, kinds, moments);
         let faces = crate::lore::Faces::load(&registries, &armory.defs);
-        Self { registries, abilities, traits, armory, bestiary, faces }
+        let wares = crate::shops::Wares::load(&registries, &armory);
+        let mercenaries = crate::mercenaries::Mercenaries::load(&registries, &armory);
+        let rites = crate::temple::Rites::load(&registries, kinds);
+        // After the monsters, which a line waiting on one slain names.
+        let townsfolk = crate::townsfolk::Townsfolk::load(&bestiary);
+        let names = crate::townsfolk::NameSets::load();
+        // After the townsfolk, whose roles a rumour's `{role}` names.
+        let rumours = crate::rumours::Rumours::load(&townsfolk);
+        Self { registries, abilities, traits, armory, bestiary, faces, wares, mercenaries, rites, townsfolk, names, rumours }
     }
 }
 
@@ -511,7 +550,7 @@ mod tests {
     #[test]
     fn the_registries_hold_every_side_kind_status_slot_and_tag_the_content_names() {
         let r = registries();
-        for side in ["adventurer", "beasts", "goblins", "undead", "dar", CAPTIVE] {
+        for side in ["adventurer", "beasts", "goblins", "undead", "dar", CAPTIVE, TOWNSFOLK] {
             assert!(r.factions.id(side).is_some(), "{side}");
         }
         for kind in ["slash", "pierce", "crush", "fire", "cold", "poison"] {
@@ -523,7 +562,7 @@ mod tests {
         for slot in ["main hand", "off hand", "head", "body", "left finger", "right finger", "light"] {
             assert!(r.slots.id(slot).is_some(), "{slot}");
         }
-        for tag in ["weapon", "armor", "potion", "scroll", "staff", "wand", "ring", "gold", "arrow", "light", "thrown"] {
+        for tag in ["weapon", "armor", "potion", "scroll", "staff", "wand", "ring", "gold", "arrow", "light", "thrown", "artifact", "waystone"] {
             assert!(r.tags.id(tag).is_some(), "{tag}");
         }
         for (one, other) in PAIRS {
@@ -744,6 +783,8 @@ mod tests {
             ("pulled lever", false),
             ("offering altar", true),
             ("guardian statue", true),
+            // Where the Drowned Gate brings the adventurer back.
+            ("gate mark", false),
         ];
         // Every prop that holds something, sets something off, hides or
         // offers to be worked answers for itself, so a room of them is
@@ -833,6 +874,43 @@ mod tests {
             assert_eq!(at(CAPTIVE, other), Relation::Neutral, "a shackled captive and {other}");
             assert_eq!(at(other, CAPTIVE), Relation::Neutral, "{other} and a shackled captive");
         }
+        for other in ["adventurer", "beasts", "goblins", "undead", "dar", CAPTIVE, DISCORDANT] {
+            assert_eq!(at(TOWNSFOLK, other), Relation::Neutral, "Mereholt's own and {other}: nobody is hostile to it");
+            assert_eq!(at(other, TOWNSFOLK), Relation::Neutral, "{other} and Mereholt's own: nobody is hostile to it");
+        }
+        assert_eq!(at(TOWNSFOLK, TOWNSFOLK), Relation::Allied, "the keepers and the crowd stand together");
+    }
+
+    /// What the neutral faction buys, in the one place it is read: a bump
+    /// into a townsperson is neither a blow nor a free refusal, the same
+    /// as the engine's own bump reads any neutral offering one thing, so
+    /// it comes to an `Interact` instead. Task 9 gives Mereholt's people
+    /// their own actor; this stands in for one with nothing but the side
+    /// and the offer the design asks of it.
+    #[test]
+    fn a_townsperson_bumped_is_talked_to_not_struck() {
+        use crate::testing::{adventurer, at, headless, settle};
+
+        #[derive(Resource, Default)]
+        struct Heard(Vec<Interacted>);
+        fn hear(mut done: MessageReader<Interacted>, mut heard: ResMut<Heard>) {
+            heard.0.extend(done.read().copied());
+        }
+
+        let mut app = headless(RunSeed(0));
+        app.add_verb("talk");
+        let talk = app.world().resource::<Verbs>().get("talk").expect("just declared");
+        app.init_resource::<Heard>().add_systems(Update, hear);
+        let me = adventurer(&mut app);
+        let townsfolk = app.world().resource::<Registries>().factions.expect(TOWNSFOLK);
+        let beside = at(&app, me).offset(1, 0);
+        let keeper =
+            app.world_mut().spawn((Actor, Blocks, Position(beside), Health::full(20), Faction(townsfolk), Offers(vec![Offering::new(talk, 100)]))).id();
+        app.update();
+        app.world_mut().write_message(Intent::new(me, Bump(Direction::East)));
+        settle(&mut app);
+        assert_eq!(app.world().get::<Health>(keeper).map(|h| h.current), Some(20), "talked to, not struck");
+        assert_eq!(app.world().resource::<Heard>().0, vec![Interacted { actor: me, target: keeper, verb: talk, thing: None }], "the walk key talked to them");
     }
 
     /// A file's colour and flicker in `0..=1` become the engine's bytes,

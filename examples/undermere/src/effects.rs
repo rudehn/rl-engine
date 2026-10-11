@@ -16,7 +16,8 @@
 //! more life. [`minds`] is whose side someone is on and what they know of
 //! the adventurer: a foe bound, foes turned on each other, a floor woken.
 //! [`senses`] is what is seen: a dark to hide in, a floor's whole layout.
-//! [`charges`] is what a reader's things hold.
+//! [`charges`] is what a reader's things hold. [`mending`] is a body made
+//! whole and rid of what would never pass, which the temple's `mend` is.
 //!
 //! An effect that needs more of the world than [`EffectWorld`] holds, a
 //! monster's kind or its health, queues a closure on its commands and does
@@ -27,6 +28,7 @@
 
 pub mod bodies;
 pub mod charges;
+pub mod mending;
 pub mod minds;
 pub mod moving;
 pub mod senses;

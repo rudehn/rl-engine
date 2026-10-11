@@ -251,7 +251,7 @@ mod tests {
     /// Whatever the console offers the player, and to whom.
     fn charge_offered(app: &App, player: Entity) -> Option<Offer> {
         let verb = app.world().resource::<Verbs>().get(CHARGE)?;
-        app.world().resource::<OfferedHere>().for_actor(player).iter().find(|o| o.verb == verb).copied()
+        app.world().resource::<OfferedHere>().for_actor(player).iter().find(|o| o.verb == verb).cloned()
     }
 
     #[test]
@@ -267,7 +267,7 @@ mod tests {
         // player's first turn precedes every monster's, never that nothing
         // moves before this one action does.
         let before = crate::testing::clock(&app);
-        app.world_mut().write_message(Intent::new(player, Interact { target: offer.target, verb: offer.verb }));
+        app.world_mut().write_message(Intent::new(player, Interact { target: offer.target, verb: offer.verb, thing: None }));
         crate::testing::settle(&mut app);
         assert_eq!(crate::testing::clock(&app) - before, 300, "a charge takes three turns to set");
         assert!(crate::testing::quest_done(&app, "first_charge"));

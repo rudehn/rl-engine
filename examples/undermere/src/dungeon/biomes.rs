@@ -300,11 +300,47 @@ fn draw_recipe(def: &BiomeDef, floor: u32, seed: RunSeed) -> usize {
 /// `seed`, so a run's biomes are a pure function of its seed and any floor
 /// may be grown first.
 pub(crate) fn draw(defs: &Registry<BiomeDef>, floor: u32, seed: RunSeed, tiles: &TileRegistry) -> BiomeDraw {
-    let mut rng = seed.rng(SeedDomain::new(b"undermere.biome"), u64::from(floor));
-    let candidates: Vec<&BiomeDef> = defs.iter().map(|(_, d)| d).filter(|d| (d.floors.0..=d.floors.1).contains(&floor)).collect();
-    assert!(!candidates.is_empty(), "no biome stands on floor {floor}");
-    let def = candidates[weighted(&mut rng, candidates.iter().map(|d| d.weight))];
+    let def = drawn_def(&band(defs, floor), floor, seed);
     to_draw(def, draw_recipe(def, floor, seed), tiles)
+}
+
+/// Every biome that may stand on `floor`, in the file's order.
+fn band(defs: &Registry<BiomeDef>, floor: u32) -> Vec<&BiomeDef> {
+    defs.iter().map(|(_, d)| d).filter(|d| (d.floors.0..=d.floors.1).contains(&floor)).collect()
+}
+
+/// The one of `band` that `floor` draws by weight from its own stream:
+/// [`draw`]'s and [`biomes_drawn`]'s both, so the floor and the rumour of
+/// it can never disagree.
+fn drawn_def<'a>(band: &[&'a BiomeDef], floor: u32, seed: RunSeed) -> &'a BiomeDef {
+    assert!(!band.is_empty(), "no biome stands on floor {floor}");
+    let mut rng = seed.rng(SeedDomain::new(b"undermere.biome"), u64::from(floor));
+    band[weighted(&mut rng, band.iter().map(|d| d.weight))]
+}
+
+/// Each biome the run of `seed` draws on a floor that could have drawn
+/// another, by the name the log gives it on arrival, shallowest first and
+/// each once: what the innkeeper's rumours of the floors are told from,
+/// since a floor that could have been nothing else is no news. Reads
+/// `assets/biomes.ron` itself and draws each floor by [`drawn_def`], from
+/// the seed alone, so a rumour told in Mereholt before a floor is built
+/// is of the biome that floor will be grown as. Floor ten's is the
+/// boss's, never drawn here, and its rumour is the boss's own.
+pub(crate) fn biomes_drawn(seed: RunSeed) -> Vec<String> {
+    drawn_names(&load(&registry(), &layout()), seed)
+}
+
+/// [`biomes_drawn`] over `defs` already loaded.
+fn drawn_names(defs: &Registry<BiomeDef>, seed: RunSeed) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    for floor in 1..FLOORS {
+        let band = band(defs, floor);
+        let name = format!("the {}", drawn_def(&band, floor, seed).name);
+        if band.len() > 1 && !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    names
 }
 
 /// Floor ten's biome: whichever of the three throne biomes stands with
@@ -424,7 +460,7 @@ mod tests {
                 let biome = drawn.name.trim_start_matches("the ").to_string();
                 *counts.get_mut(&(biome, drawn.recipe.clone())).expect("a recipe of its own biome") += 1;
             }
-            let boss = lairs::draw_final_boss(RunSeed(s));
+            let boss = lairs::final_boss(RunSeed(s));
             let drawn = throne(&defs, boss.biome, RunSeed(s), &tiles);
             let biome = drawn.name.trim_start_matches("the ").to_string();
             *counts.get_mut(&(biome, drawn.recipe.clone())).expect("the throne's own recipe") += 1;
@@ -436,6 +472,26 @@ mod tests {
                 assert!(n > 0, "{}: {} is never drawn", def.name, r.name);
                 assert!(def.recipes.len() == 1 || n * 3 <= of_biome * 2, "{}: {} takes {n} of {of_biome}", def.name, r.name);
             }
+        }
+    }
+
+    /// The biomes the innkeeper's rumours are told from are the floors'
+    /// own, shallowest first and each once, over a span of seeds: the
+    /// rumour and the floor are drawn by the one function, and a floor
+    /// that could have drawn nothing else is left out.
+    #[test]
+    fn the_biomes_a_rumour_is_told_of_are_the_ones_the_floors_draw_over_a_span_of_seeds() {
+        let defs = defs();
+        let tiles = registry();
+        for s in 0..200u64 {
+            let mut floors: Vec<String> = Vec::new();
+            for floor in (1..FLOORS).filter(|f| band(&defs, *f).len() > 1) {
+                let name = draw(&defs, floor, RunSeed(s), &tiles).name;
+                if !floors.contains(&name) {
+                    floors.push(name);
+                }
+            }
+            assert_eq!(drawn_names(&defs, RunSeed(s)), floors, "seed {s}");
         }
     }
 }

@@ -138,8 +138,60 @@ pub struct Post(pub Point);
 /// carry across. Saved by `rl-save` with the actor, and dropped on the way
 /// back when the leader was not saved with it. Kept when either of them
 /// leaves the map: a leader elsewhere counts as gone until it is back.
+///
+/// Taking one stamps the follower with [`Joined`], and losing it takes the
+/// stamp off; inserting a new `Leader` over an old one keeps the stamp.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+#[component(on_add = stamp_joined, on_remove = forget_joined)]
 pub struct Leader(pub Entity);
+
+/// Where a follower comes in the order every follower began following:
+/// one more than the latest stamp in the world when it took its
+/// [`Leader`], so a list of one leader's followers sorted by it is the
+/// order they joined in.
+///
+/// A stamp of its own rather than a field of `Leader`, because a game
+/// writes `Leader(chief)` and should not have to know a count to do it;
+/// the hook on `Leader` stamps it whoever inserted it. A counter rather
+/// than the clock, because two followers taken on in one instant, a band
+/// spawned whole, still have an order. Saved by `rl-save` with the actor,
+/// so the order survives a load, and put back with the `Leader` so the
+/// hook leaves it as it was; a follower that leaves and comes back joins
+/// at the end.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Joined(pub u64);
+
+/// Stamps a new follower with the next [`Joined`], unless it already has
+/// one: a load puts the saved stamp back with the `Leader`.
+///
+/// Through a command, since the next stamp is read off every follower and
+/// a hook cannot query; by the time it runs the follower may have left
+/// again, or been despawned, and then nothing is stamped.
+fn stamp_joined(mut world: DeferredWorld, ctx: HookContext) {
+    let follower = ctx.entity;
+    world.commands().queue(move |world: &mut World| {
+        let Ok(e) = world.get_entity(follower) else { return };
+        if !e.contains::<Leader>() || e.contains::<Joined>() {
+            return;
+        }
+        let next = world.query::<&Joined>().iter(world).map(|j| j.0).max().map_or(1, |n| n + 1);
+        world.entity_mut(follower).insert(Joined(next));
+    });
+}
+
+/// Takes the [`Joined`] stamp off a follower that stopped following, so
+/// one that follows again joins at the end. Checked when the command runs,
+/// so a `Leader` taken off and put back in one frame keeps its place.
+fn forget_joined(mut world: DeferredWorld, ctx: HookContext) {
+    let follower = ctx.entity;
+    world.commands().queue(move |world: &mut World| {
+        if let Ok(mut e) = world.get_entity_mut(follower)
+            && !e.contains::<Leader>()
+        {
+            e.remove::<Joined>();
+        }
+    });
+}
 
 /// What one field is for: the cells it leads to, in world coordinates and
 /// sorted so two minds wanting the same cells share one flood; the movement
@@ -2197,5 +2249,32 @@ mod tests {
         assert!(!app.world().get::<Viewshed>(player).unwrap().can_see(far), "the player never saw either");
         let hurt = |e: Entity| app.world().get::<Health>(e).is_some_and(|h| h.current < h.max);
         assert!(hurt(ours) || hurt(theirs), "and they closed and fought anyway");
+    }
+
+    /// The order followers joined in is read off [`Joined`], whoever
+    /// inserted the `Leader`: in the order they took it, a band spawned in
+    /// one batch included, a new leader over an old one keeping the place,
+    /// and one that left and came back going to the end.
+    #[test]
+    fn followers_are_stamped_in_the_order_they_took_a_leader_and_one_that_rejoins_goes_last() {
+        let mut world = World::new();
+        let chief = world.spawn_empty().id();
+        let first = world.spawn(Leader(chief)).id();
+        let band: Vec<Entity> = world.spawn_batch([Leader(chief), Leader(chief)]).collect();
+        let joined = |world: &World, e: Entity| world.get::<Joined>(e).map(|j| j.0);
+        assert_eq!(joined(&world, first), Some(1));
+        assert_eq!(band.iter().map(|e| joined(&world, *e)).collect::<Vec<_>>(), vec![Some(2), Some(3)], "a band spawned whole still has an order");
+
+        let other = world.spawn_empty().id();
+        world.entity_mut(first).insert(Leader(other));
+        assert_eq!(joined(&world, first), Some(1), "a new leader keeps the place");
+
+        world.entity_mut(first).remove::<Leader>();
+        assert_eq!(joined(&world, first), None, "leaving takes the stamp off");
+        world.entity_mut(first).insert(Leader(chief));
+        assert_eq!(joined(&world, first), Some(4), "and coming back joins at the end");
+
+        let restored = world.spawn((Joined(9), Leader(chief))).id();
+        assert_eq!(joined(&world, restored), Some(9), "a stamp put back with the leader, as a load does, is kept");
     }
 }

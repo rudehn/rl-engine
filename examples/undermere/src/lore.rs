@@ -437,8 +437,10 @@ enum Shown {
 /// made of it, so a wand of beckoning zapped at a foe beside its user, which
 /// pulls nobody, is not learned by the zap before the bolt has landed.
 ///
-/// Only the adventurer's: what a monster does with a thing is not
-/// something they learn from. In `TurnSet::React`, where the pass's item
+/// Only the adventurer's, and a hired mercenary's they see, which they
+/// learn from exactly as from their own: what a monster does with a thing
+/// is not something they learn from, and nor is what a mercenary does out
+/// of their sight. In `TurnSet::React`, where the pass's item
 /// events are read; the names follow in the same pass's cleanup, once the
 /// narrator has said what was used under the name it was used under.
 pub fn learn_by_use(mut events: MessageReader<ItemEvent>, mut knowing: Knowing, mut flying: Local<Vec<Entity>>, mut tell: MessageWriter<Tell>) {
@@ -447,12 +449,13 @@ pub fn learn_by_use(mut events: MessageReader<ItemEvent>, mut knowing: Knowing, 
         return;
     };
     let in_the_air = knowing.airborne.as_ref().is_some_and(|zaps| !zaps.is_empty());
+    let seen = |actor: Entity| actor == me || knowing.witnessed.sees(actor);
     let mut shown: Vec<(Entity, Shown)> = if in_the_air { Vec::new() } else { flying.drain(..).map(|item| (item, Shown::Used)).collect() };
     for ev in events.read() {
         let (item, how) = match *ev {
-            ItemEvent::Used { actor, item } if actor == me => (item, Shown::Used),
-            ItemEvent::Thrown { actor, item, .. } if actor == me => (item, Shown::Thrown),
-            ItemEvent::Equipped { actor, item } if actor == me => (item, Shown::Worn),
+            ItemEvent::Used { actor, item } if seen(actor) => (item, Shown::Used),
+            ItemEvent::Thrown { actor, item, .. } if seen(actor) => (item, Shown::Thrown),
+            ItemEvent::Equipped { actor, item } if seen(actor) => (item, Shown::Worn),
             _ => continue,
         };
         let aimed = knowing.things.get(item).ok().and_then(|(_, t)| t).and_then(Triggers::targeting).is_some();
@@ -510,8 +513,8 @@ pub fn learn_by_asking(
     mut log: ResMut<MessageLog>,
     turns: Res<Turns>,
 ) {
-    let Some(choosing) = menu.and_then(|m| m.choosing) else { return };
-    let Ok(kind) = things.get(choosing.item) else { return };
+    let Some(item) = menu.and_then(|m| m.using()) else { return };
+    let Ok(kind) = things.get(item) else { return };
     let name = &armory.defs.get(kind.0).name;
     if lore.knows(name) || !lore.learn(name) {
         return;
@@ -522,8 +525,8 @@ pub fn learn_by_asking(
 }
 
 /// What [`learn_by_use`] reads: the adventurer, what each thing is and
-/// does, what is known, what showed nothing, and whether a zap is still in
-/// the air.
+/// does, what is known, what showed nothing, whether a zap is still in
+/// the air, and which mercenaries the adventurer sees.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Knowing<'w, 's> {
     adventurer: Query<'w, 's, Entity, With<Adventurer>>,
@@ -532,6 +535,7 @@ pub struct Knowing<'w, 's> {
     lore: ResMut<'w, Lore>,
     nothing: ResMut<'w, ShowedNothing>,
     airborne: Option<Res<'w, Airborne<UseLanding>>>,
+    witnessed: crate::mercenaries::Witnessed<'w, 's>,
 }
 
 /// Weighs each use aimed at somewhere and each thrown thing's landing this
@@ -729,6 +733,73 @@ pub fn identify(world: &mut World, thing: Entity) {
     });
     world.entity_mut(thing).remove::<Unfamiliar>();
     world.write_message(Tell::new(line, tone));
+}
+
+/// Make everything the user wears known, its kind and its level, and so
+/// whether it is cursed: the temple's `name`. What they carry and do not
+/// wear is left as it was, so the scroll of identify stays the way to
+/// name a potion. Written `(kind: "NameWorn")`.
+///
+/// Each thing is made known as [`identify`] makes one, and said so in the
+/// same words; a wearer who knew all of it already is told that once.
+/// Only the adventurer's knowledge is kept, so on anyone else it does
+/// nothing.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NameWorn;
+
+impl Effect for NameWorn {
+    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+        let wearer = landing.user;
+        world.commands.queue(move |world: &mut World| name_worn(world, wearer));
+    }
+
+    fn describe(&self, _: &Registries, _: EffectBonus) -> String {
+        "makes known everything worn".to_string()
+    }
+}
+
+impl FromArgs for NameWorn {
+    const KIND: &'static str = "NameWorn";
+
+    fn from_args(args: &RawValue, _: &Names<'_>) -> Result<Self, String> {
+        crate::effects::moving::no_args(args, Self::KIND).map(|_| Self)
+    }
+}
+
+/// Everything `wearer` wears that they do not know whole yet, once each
+/// however many slots it fills: a kind still wearing its face, or a level
+/// they are not familiar with. What [`NameWorn`] tells.
+pub fn untold_worn(world: &World, wearer: Entity) -> Vec<Entity> {
+    let Some(equipped) = world.get::<Equipped>(wearer) else { return Vec::new() };
+    let mut worn: Vec<Entity> = Vec::new();
+    for (_, item) in equipped.0.worn() {
+        if !worn.contains(&item) {
+            worn.push(item);
+        }
+    }
+    let (armory, lore) = (world.resource::<Armory>(), world.resource::<Lore>());
+    let untold = |thing: &Entity| {
+        let Some(kind) = world.get::<ItemKind>(*thing) else { return false };
+        let name = &armory.defs.get(kind.0).name;
+        world.get::<Unfamiliar>(*thing).is_some() || (lore.face(name).is_some() && !lore.knows(name))
+    };
+    worn.into_iter().filter(untold).collect()
+}
+
+/// Identifies everything the adventurer `wearer` wears that they do not
+/// know whole yet: a kind still wearing its face, or a level they are not
+/// familiar with.
+pub fn name_worn(world: &mut World, wearer: Entity) {
+    if world.get::<Player>(wearer).is_none() || world.get::<Equipped>(wearer).is_none() {
+        return;
+    }
+    let untold = untold_worn(world, wearer);
+    if untold.is_empty() {
+        world.write_message(Tell::new("You know everything you wear already.", Tones::MUTED));
+    }
+    for thing in untold {
+        identify(world, thing);
+    }
 }
 
 #[cfg(test)]

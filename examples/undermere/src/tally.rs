@@ -2,19 +2,21 @@
 //!
 //! [`Tally`] is kept as the run goes, each count by a system reading what
 //! a turn did in `TurnSet::React`: [`count_the_fighting`] the kills, their
-//! threat and the damage, [`count_what_is_found`] the gold and the things
-//! taken up and the potions drunk, and [`remember_depth`] the deepest
-//! floor. It is saved with the run and put back to nought when the run
-//! ends.
+//! threat, the damage and the mercenaries who fell, [`count_what_is_found`]
+//! the gold and the things taken up and the potions drunk, and
+//! [`remember_depth`] the deepest floor. It is saved with the run and put
+//! back to nought when the run ends.
 //!
 //! [`score`] is the design's five lines and [`total`] what they come to;
 //! [`record`] writes the run down once it is over, as one [`RecordRun`]
-//! carrying the line the records list shows and two sections, the score
-//! line by line and the run's numbers. The end screen and the records
-//! screen both draw that one record, so the two never disagree.
+//! carrying the line the records list shows and its sections, the score
+//! line by line, the run's numbers, and, when any fell, the mercenaries
+//! lost, each a [`FallenMercenary`]. The end screen and the records screen
+//! both draw that one record, so the two never disagree.
 
 use std::collections::BTreeMap;
 
+use bevy::ecs::message::MessageCursor;
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_core::noun::with_article;
@@ -22,6 +24,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::bestiary::{Bestiary, Kind};
 use crate::dungeon::floor_of;
+use crate::mercenaries::Mercenary;
 use crate::run::Adventurer;
 
 /// Points for each floor reached, counted by the deepest.
@@ -42,17 +45,26 @@ pub const VICTORY_POINTS: i64 = 5000;
 #[derive(Resource, Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Tally {
-    /// Monsters the adventurer killed.
+    /// Monsters the adventurer and the mercenaries they hired killed: the
+    /// run's number beside the Slain line, which counts the same deaths,
+    /// so the two never read as two different fights.
     pub kills: u32,
-    /// The engine's `balance::threat` of everything the adventurer killed,
-    /// summed, and rounded only when it is scored.
+    /// The engine's `balance::threat` of everything the adventurer and the
+    /// mercenaries they hired killed, summed, and rounded only when it is
+    /// scored: the gold spent on the party is the adventurer's choice, and
+    /// a party that kills is the return on it.
     pub threat_slain: f32,
-    /// The deadliest thing the adventurer killed, by name, and its threat.
+    /// The deadliest thing the adventurer or a mercenary they hired
+    /// killed, by name, and its threat.
     pub deadliest: Option<(String, f32)>,
     /// Coins of gold found, each counted the first time the adventurer
     /// took it up.
     pub gold_found: u32,
-    /// Health the adventurer's blows, shots and fires took from others.
+    /// Health the blows, shots and fires of the adventurer and the
+    /// mercenaries they hired took from others: the company's, as the
+    /// kills beside it are, so a run whose sellswords did the killing does
+    /// not read as many kills and no damage. Others means outside the
+    /// party, so a blow that caught a friend is not counted.
     pub damage_dealt: u32,
     /// Health the adventurer lost, to anything, their own fire included.
     pub damage_taken: u32,
@@ -61,7 +73,9 @@ pub struct Tally {
     /// Things other than gold the adventurer took up, each the first time
     /// it came into their hands, a pile of arrows one thing.
     pub items_found: u32,
-    /// Mini-bosses the adventurer killed.
+    /// Mini-bosses the adventurer killed, by their own hand: a line of the
+    /// score worth [`MINIBOSS_POINTS`] each, which a hireling's blow does
+    /// not buy.
     pub minibosses: u32,
     /// The deepest floor reached, nought while the run has reached none.
     pub deepest: u32,
@@ -69,10 +83,35 @@ pub struct Tally {
     /// whoever's hand it fell to: what the record of a run won says it
     /// slew.
     pub boss_slain: Option<String>,
+    /// Every mini-boss and boss that has died this run, by name, in the
+    /// order they fell, whoever's hand they fell to: what a townsperson's
+    /// line waiting on one being slain asks.
+    pub fallen: Vec<String>,
     /// What killed the adventurer, as the record says it, noted at the
     /// death: what did may be gone by the time the record is written, a
     /// monster's last burst or a shooter that died behind its shot.
     pub slain_by: Option<String>,
+    /// Every hired mercenary who died, in the order they fell: how many
+    /// the run lost, and who, where and to what.
+    pub mercenaries_fallen: Vec<FallenMercenary>,
+}
+
+/// A hired mercenary who died, as the end screen and the records name it.
+///
+/// Its name kept as a word rather than the body it left, which is gone or
+/// renamed long before the run is written down; and what killed it as the
+/// record says it, read at the death, for the same reason as
+/// [`Tally::slain_by`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FallenMercenary {
+    /// What it was called.
+    pub name: String,
+    /// The floor it fell on, nought for Mereholt.
+    pub floor: u32,
+    /// What killed it, `a goblin` or `your own hand`; `None` when nothing
+    /// got the credit or what did was gone.
+    pub by: Option<String>,
 }
 
 impl Tally {
@@ -85,6 +124,13 @@ impl Tally {
         if self.deadliest.as_ref().is_none_or(|(_, worst)| threat > *worst) {
             self.deadliest = Some((name.to_string(), threat));
         }
+    }
+
+    /// How many hired mercenaries the run has lost: the stats line
+    /// `DESIGN.md` plans, counted off the fallen rather than kept beside
+    /// them, so the two cannot disagree.
+    pub fn mercenaries_lost(&self) -> u32 {
+        u32::try_from(self.mercenaries_fallen.len()).unwrap_or(u32::MAX)
     }
 }
 
@@ -121,11 +167,25 @@ pub fn remember_depth(mut entered: MessageReader<PlaceEntered>, mut tally: ResMu
 }
 
 /// Counts the fighting the adventurer did and took: every blow, shot and
-/// burn that landed on them, every one of theirs that landed on anything
-/// else, and every death they get the credit for, at its kind's threat. A
-/// boss's death is noted by name whoever's hand it fell to, since the
-/// record of the run it won names it, and so is whatever killed the
-/// adventurer, since the record of the run it ended names that.
+/// burn that landed on them, every one of theirs or a hired mercenary's
+/// that landed on anything outside the party, and every death either gets
+/// the credit for, at its kind's threat. A blow on one of the party, a
+/// mercenary, a freed captive or the adventurer, is no damage dealt
+/// whoever struck it, as an area blow that caught a friend is not the
+/// fighting the number is about. A boss's death is noted by name
+/// whoever's hand it fell to, since the record of the run it won names
+/// it, and so is whatever killed the adventurer, since the record of the
+/// run it ended names that.
+///
+/// A death a hired mercenary gets the credit for is a kill of the run's as
+/// the adventurer's is, on the kills, the deadliest and the Slain line
+/// alike, so the numbers beside the score count the deaths the score
+/// does; only the mini-bosses stay the adventurer's own, since that line
+/// pays for the blow. A hired mercenary's own death is a loss, noted with
+/// where it fell and what killed it, and never a kill, even at the
+/// adventurer's hand, so hiring one to cut it down scores nothing. What a
+/// freed captive or a dominated foe kills counts nowhere: the party the
+/// score pays for is the one bought.
 pub fn count_the_fighting(
     mut dealt: MessageReader<DamageDealt>,
     mut deaths: MessageReader<DeathEvent>,
@@ -142,7 +202,8 @@ pub fn count_the_fighting(
     // to the same target in the one pass.
     let mut landed: BTreeMap<Entity, Vec<i32>> = BTreeMap::new();
     for d in dealt.read().filter(|d| d.dealt > 0) {
-        if Some(d.target) == me || (d.hit.credit.is_some() && d.hit.credit == me) {
+        let ours = (d.hit.credit.is_some() && d.hit.credit == me) || credit.hired(d.hit.credit);
+        if Some(d.target) == me || (ours && !credit.in_party(d.target)) {
             landed.entry(d.target).or_default().push(d.dealt);
         }
     }
@@ -171,6 +232,10 @@ pub fn count_the_fighting(
         if Some(death.entity) == me {
             tally.slain_by = credit.of(death.credit);
         }
+        if let Some(fallen) = credit.fallen(death.entity, death.credit) {
+            tally.mercenaries_fallen.push(fallen);
+            continue;
+        }
         // A raised body's second death is counted nowhere: its first
         // already paid its kill, its mini-boss and its threat.
         let Ok((kind, false)) = kinds.get(death.entity) else { continue };
@@ -178,11 +243,16 @@ pub fn count_the_fighting(
         if def.boss {
             tally.boss_slain = Some(def.name.clone());
         }
+        if (def.boss || def.miniboss) && !tally.fallen.contains(&def.name) {
+            tally.fallen.push(def.name.clone());
+        }
         if death.credit.is_some() && death.credit == me {
             tally.slay(&def.name, threat(def));
             if def.miniboss {
                 tally.minibosses += 1;
             }
+        } else if credit.hired(death.credit) {
+            tally.slay(&def.name, threat(def));
         }
     }
 }
@@ -293,6 +363,47 @@ pub fn count_what_is_found(
     }
 }
 
+/// Marks every piece of the currency `who` carries as counted whole: what
+/// they were just paid, by a sale or a rite's refund, is theirs, not a
+/// find, however often it is dropped, stolen and won back after.
+///
+/// Every piece rather than the one paid into, since a payment lands in
+/// whichever stack the pack already holds; exact, because a purse never
+/// holds found coins not yet counted, a pickup counting them as it takes
+/// them up. Nothing without a [`Currency`].
+pub fn count_as_owned(world: &mut World, who: Entity) {
+    let Some(currency) = world.get_resource::<Currency>().copied() else { return };
+    let Some(bag) = world.get::<Inventory>(who) else { return };
+    let pieces: Vec<(Entity, u32)> =
+        bag.items.iter().filter(|i| currency.is(world.get::<Tagged>(**i))).map(|i| (*i, world.get::<Stack>(*i).map_or(1, |s| s.count))).collect();
+    for (piece, count) in pieces {
+        world.entity_mut(piece).insert(Counted(count));
+    }
+}
+
+/// Keeps a deal's goods out of the tally's finds: the gold a sale pays the
+/// adventurer, by [`count_as_owned`], and a thing they buy, counted whole,
+/// so dropping either and taking it up again is not treasure found.
+///
+/// In `Update`, after the turns, as the game reads every [`Traded`]; the
+/// deal is struck before them while the trade screen holds the turns, so
+/// no pickup comes between the deal and this.
+pub fn count_deals(world: &mut World, mut cursor: Local<MessageCursor<Traded>>) {
+    let Some(messages) = world.get_resource::<Messages<Traded>>() else { return };
+    let deals: Vec<Traded> = cursor.read(messages).copied().filter(|d| world.get::<Adventurer>(d.customer).is_some()).collect();
+    for deal in deals {
+        match deal.deal {
+            Deal::Sold => count_as_owned(world, deal.customer),
+            Deal::Bought => {
+                let count = world.get::<Stack>(deal.item).map_or(1, |s| s.count);
+                if let Ok(mut thing) = world.get_entity_mut(deal.item) {
+                    thing.insert(Counted(count));
+                }
+            }
+        }
+    }
+}
+
 /// How wide a ledger line is, label to value: room for the longest label
 /// and the longest value, the name of the deadliest kill, with dots
 /// between, and narrower than both the end screen and the records screen,
@@ -353,18 +464,64 @@ pub fn sections(lines: &[(String, i64)], tally: &Tally, turns: u32) -> Vec<Recor
         ("Potions drunk", tally.potions_drunk.to_string()),
         ("Items found", tally.items_found.to_string()),
         ("Gold found", tally.gold_found.to_string()),
+        ("Mercenaries lost", tally.mercenaries_lost().to_string()),
     ];
-    vec![RecordSection { heading: "Score".to_string(), body: score }, RecordSection { heading: "The run".to_string(), body: ledger(&run) }]
+    let mut sections = vec![RecordSection { heading: "Score".to_string(), body: score }, RecordSection { heading: "The run".to_string(), body: ledger(&run) }];
+    if !tally.mercenaries_fallen.is_empty() {
+        let fallen: Vec<String> = tally.mercenaries_fallen.iter().map(fallen_line).collect();
+        sections.push(RecordSection { heading: FALLEN.to_string(), body: fallen.join("\n") });
+    }
+    sections
 }
 
-/// What a record says gets the credit for the adventurer's death.
+/// The heading the mercenaries a run lost are listed under, below its
+/// numbers, and only when it lost any.
+pub const FALLEN: &str = "The fallen";
+
+/// One fallen mercenary as the record lists it, in the words the run's own
+/// summary uses: `Brenna, slain by a goblin on floor 3`.
+fn fallen_line(fallen: &FallenMercenary) -> String {
+    let place = if fallen.floor == 0 { "in Mereholt".to_string() } else { format!("on floor {}", fallen.floor) };
+    match &fallen.by {
+        Some(by) => format!("{}, slain by {by} {place}", fallen.name),
+        None => format!("{}, died {place}", fallen.name),
+    }
+}
+
+/// Who gets the credit for a death: what a record says killed the
+/// adventurer or one of their mercenaries, and whether a kill is the
+/// party's.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Credit<'w, 's> {
     adventurer: Query<'w, 's, Entity, With<Adventurer>>,
     names: Query<'w, 's, &'static Name>,
+    party: Query<'w, 's, (&'static Mercenary, Option<&'static OnMap>)>,
+    leaders: Query<'w, 's, &'static Leader>,
 }
 
 impl Credit<'_, '_> {
+    /// Whether `by` is a mercenary the adventurer hired, whose kills and
+    /// blows count as the adventurer's do, but on the Mini-bosses line.
+    fn hired(&self, by: Option<Entity>) -> bool {
+        by.is_some_and(|by| self.party.contains(by))
+    }
+
+    /// Whether `who` is one of the adventurer's party: the adventurer, or
+    /// anyone following them, hired or freed. By [`Leader`], as the party
+    /// rail lists it, so the two never disagree on who is a friend.
+    fn in_party(&self, who: Entity) -> bool {
+        let me = self.adventurer.single().ok();
+        Some(who) == me || self.leaders.get(who).is_ok_and(|l| Some(l.0) == me)
+    }
+
+    /// `dead` as a fallen mercenary, killed by `by`, when it was one the
+    /// adventurer hired; read in the pass it died in, while it still is.
+    fn fallen(&self, dead: Entity, by: Option<Entity>) -> Option<FallenMercenary> {
+        let (hired, on) = self.party.get(dead).ok()?;
+        let floor = on.and_then(|on| floor_of(on.0)).unwrap_or(0);
+        Some(FallenMercenary { name: hired.name.clone(), floor, by: self.of(by) })
+    }
+
     /// Whoever `by` is, as the summary says it: a goblin, the Drowned
     /// King, or the adventurer's own hand; `None` when nothing gets the
     /// credit or what did is gone.
@@ -505,6 +662,14 @@ mod tests {
         sturdy(&mut app, me);
         clear_monsters(&mut app);
         clear_floor(&mut app);
+        // This test is about a pile found below, not the kit's own purse,
+        // which `the_kits_purse_is_not_counted_as_treasure` already
+        // covers: taken clean out of the pack, so a fresh pile is the only
+        // gold the adventurer ever carries here.
+        let purse =
+            app.world().get::<Inventory>(me).expect("a pack").items.iter().copied().find(|i| name_of(&app, *i) == "gold coin").expect("the kit's purse");
+        app.world_mut().get_mut::<Inventory>(me).expect("a pack").items.retain(|i| *i != purse);
+        app.world_mut().despawn(purse);
         let here = at(&app, me);
         let beside = here.offset(1, 0);
         lay_floor(&mut app, &[beside]);
@@ -546,6 +711,96 @@ mod tests {
         lay(&mut app, dagger, here);
         take_up(&mut app, me);
         assert_eq!(things(&app), 1, "a dagger off the floor is");
+    }
+
+    /// The fifty gold the adventurer walks out of Mereholt with is their
+    /// own from the first turn, never a find: a fresh run's tally counts
+    /// no treasure before anything is picked up off a floor.
+    #[test]
+    fn the_kits_purse_is_not_counted_as_treasure() {
+        let mut app = headless(RunSeed(0));
+        adventurer(&mut app);
+        assert_eq!(app.world().resource::<Tally>().gold_found, 0, "the kit's purse is carried, not found");
+    }
+
+    /// A sale pays the adventurer in gold out of the trader's own purse:
+    /// it rises in the adventurer's pack, but it is paid, not found, so
+    /// the tally counts none of it as treasure, then or after: dropped and
+    /// taken up again, or stolen by a monkey and taken back off its body.
+    /// And a thing bought is no find either, dropped and taken up.
+    #[test]
+    fn gold_paid_for_a_sale_is_not_counted_as_treasure() {
+        let mut app = headless(RunSeed(1));
+        let me = arrive(&mut app, map_of(1));
+        sturdy(&mut app, me);
+        clear_monsters(&mut app);
+        clear_floor(&mut app);
+        let here = at(&app, me);
+        let weapon = app.world().resource::<Registries>().tags.expect("weapon");
+        let dagger = make(&mut app, "dagger");
+        app.world_mut().get_mut::<Inventory>(me).expect("a pack").items.push(dagger);
+        let trade = app.world().resource::<Verbs>().get(TRADE).expect("TradePlugin declares it");
+        let till = make(&mut app, "gold coin");
+        app.world_mut().get_mut::<Stack>(till).expect("gold stacks").count = 1000;
+        let wares = make(&mut app, "dagger");
+        app.world_mut().entity_mut(wares).insert(Worth(5));
+        let trader = app
+            .world_mut()
+            .spawn((
+                Actor,
+                Blocks,
+                Position(here.offset(1, 0)),
+                Inventory { items: vec![till, wares] },
+                Trader { buys: vec![weapon], pays_pct: 25 },
+                Offers(vec![Offering::new(trade, 0)]),
+            ))
+            .id();
+        app.update();
+        let gold = |app: &App| -> Vec<Entity> {
+            let bag = &app.world().get::<Inventory>(me).expect("a pack").items;
+            bag.iter().copied().filter(|i| name_of(app, *i) == "gold coin").collect()
+        };
+        let coins = |app: &App| -> u32 { gold(app).iter().map(|i| app.world().get::<Stack>(*i).map_or(1, |s| s.count)).sum() };
+        let found = |app: &App| app.world().resource::<Tally>().gold_found;
+        let things = |app: &App| app.world().resource::<Tally>().items_found;
+        app.world_mut().write_message(Intent::new(me, Interact { target: trader, verb: trade, thing: None }));
+        settle(&mut app);
+        let before = coins(&app);
+        app.world_mut().write_message(Sell { customer: me, trader, item: dagger, count: 1 });
+        app.update();
+        let paid = coins(&app);
+        assert!(paid > before, "paid for the dagger: {before} before, {paid} after");
+        assert_eq!(found(&app), 0, "paid, not found");
+
+        app.world_mut().write_message(Buy { customer: me, trader, item: wares, count: 1 });
+        app.update();
+        let bought =
+            app.world().get::<Inventory>(me).expect("a pack").items.iter().copied().find(|i| name_of(&app, *i) == "dagger").expect("the dagger bought");
+        app.world_mut().resource_mut::<Trading>().close();
+        app.update();
+        put_down(&mut app, me, bought);
+        take_up(&mut app, me);
+        assert_eq!(things(&app), 0, "a thing bought, dropped and taken up, is no find");
+
+        let purse = gold(&app);
+        assert_eq!(purse.len(), 1, "the sale's coins joined the kit's purse");
+        let carried = coins(&app);
+        put_down(&mut app, me, purse[0]);
+        take_up(&mut app, me);
+        assert_eq!((found(&app), coins(&app)), (0, carried), "dropped and taken up, the sale's coins are still no treasure");
+
+        // Nothing in the pack but the purse, so a monkey's theft takes it.
+        app.world_mut().get_mut::<Inventory>(me).expect("a pack").items.retain(|i| purse.contains(i));
+        app.world_mut().entity_mut(me).remove::<Equipped>();
+        let beside = here.offset(0, 1);
+        lay_floor(&mut app, &[beside]);
+        let monkey = monster(&mut app, "monkey", beside);
+        assert!(crate::tricks::steal(app.world_mut(), monkey, me), "the monkey takes the purse");
+        assert_eq!(coins(&app), 0, "the purse is gone");
+        kill(&mut app, monkey, Some(me));
+        stand_on(&mut app, me, beside);
+        take_up(&mut app, me);
+        assert_eq!((found(&app), coins(&app)), (0, carried), "stolen and won back, the sale's coins are still no treasure");
     }
 
     /// The tally is saved with the run: continued from the save the
@@ -611,7 +866,7 @@ mod tests {
         let labels: Vec<&str> = run.iter().map(|r| r.split(" .").next().unwrap_or_default()).collect();
         assert_eq!(
             labels,
-            ["Turns", "Deepest floor", "Kills", "Deadliest", "Damage dealt", "Damage taken", "Potions drunk", "Items found", "Gold found"],
+            ["Turns", "Deepest floor", "Kills", "Deadliest", "Damage dealt", "Damage taken", "Potions drunk", "Items found", "Gold found", "Mercenaries lost"],
             "{run:?}"
         );
         assert!(run[1].ends_with(" 3"), "floor three: {run:?}");

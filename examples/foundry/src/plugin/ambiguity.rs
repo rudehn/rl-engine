@@ -228,13 +228,15 @@ fn allowed(world: &World) -> Vec<Allowed> {
         pair(
             id(engine_props::resolve_interactions),
             id(engine_props::resolve_takes),
-            &[&claims[..], &["Position"]].concat(),
+            // The pack a choosing offer's thing is checked in, as a take
+            // fills it.
+            &[&claims[..], &["Position", "Inventory"]].concat(),
             "one action a pass: opening a crate and taking out of it are two actions, never resolved in the same pass",
         ),
         pair(
             id(engine_props::resolve_interactions),
             id(throwing::resolve_throws),
-            &[&claims[..], &["Occupancy", "Messages<Cued>", "Messages<DamageEvent>", "Position"]].concat(),
+            &[&claims[..], &["Occupancy", "Messages<Cued>", "Messages<DamageEvent>", "Position", "Inventory"]].concat(),
             "one action a pass: an interaction and a throw are never resolved in the same one",
         ),
         pair(
@@ -274,7 +276,7 @@ fn allowed(world: &World) -> Vec<Allowed> {
             id(items::resolve_items),
             // Who stands where and what the user sees, for an aimed use's
             // refusals, read as an ability's resolver reads them.
-            &[&claims[..], &["Position", "Occupancy", "Viewshed"]].concat(),
+            &[&claims[..], &["Position", "Occupancy", "Viewshed", "Inventory"]].concat(),
             "one action a pass: an interaction and an item action are never resolved in the same one",
         ),
         pair(
@@ -317,7 +319,7 @@ fn allowed(world: &World) -> Vec<Allowed> {
         pair(
             id(engine_props::resolve_interactions),
             id(throwing::land_throws),
-            &["Occupancy", "Messages<Cued>", "Messages<DamageEvent>", "Position"],
+            &["Occupancy", "Messages<Cued>", "Messages<DamageEvent>", "Position", "Inventory"],
             "a throw lands in a pass no interaction is resolved in",
         ),
         pair(

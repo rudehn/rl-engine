@@ -95,7 +95,7 @@ pub const THRONE_GROUPS: u32 = 3;
 /// about half on floor one, falling to about a sixth by floor nine, the
 /// controller's own span, interpolated by hand between those two and
 /// rounded to the nearest whole percent. Index `0` is floor one.
-const SLEEP_PCT: [u32; 9] = [50, 46, 42, 38, 33, 29, 25, 21, 17];
+pub const SLEEP_PCT: [u32; 9] = [50, 46, 42, 38, 33, 29, 25, 21, 17];
 
 /// The percent chance a monster of `floor` starts asleep: `SLEEP_PCT`'s
 /// own, doubled and capped at a hundred for a `sleepy` kind, and nought,
@@ -930,12 +930,13 @@ mod tests {
     }
 
     /// Mereholt has nobody to fight and nothing lying about, the first time
-    /// and every time after, where floor one has both.
+    /// and every time after, where floor one has both. The swords for hire
+    /// waiting in its tavern are of a kind, and are nobody to fight.
     #[test]
     fn the_town_is_never_populated_and_never_scattered() {
         let on = |app: &mut App, map: MapId| {
             let world = app.world_mut();
-            let monsters = world.query::<(&Kind, &OnMap)>().iter(world).filter(|(_, on)| on.0 == map).count();
+            let monsters = world.query_filtered::<(&Kind, &OnMap), Without<crate::mercenaries::Candidate>>().iter(world).filter(|(_, on)| on.0 == map).count();
             let lying = world.query_filtered::<&OnMap, (With<Item>, With<Position>)>().iter(world).filter(|on| on.0 == map).count();
             (monsters, lying)
         };

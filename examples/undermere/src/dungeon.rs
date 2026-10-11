@@ -52,10 +52,9 @@ mod biomes;
 mod lairs;
 mod pieces;
 
-pub(crate) use biomes::BiomeDraw;
+pub(crate) use biomes::{BiomeDraw, biomes_drawn};
 use lairs::ClearOfTheThrone;
-#[cfg(test)]
-pub(crate) use lairs::{FINAL_BOSSES, MINI_BOSSES};
+pub(crate) use lairs::{FINAL_BOSSES, MINI_BOSSES, final_boss, lairs};
 use pieces::{PieceLook, QuietWayIn};
 
 /// How many floors the Undermere goes down. The tenth is the throne's, and
@@ -306,7 +305,7 @@ const PIECE_TILES: [&str; 16] = [
 /// the cathedral's flooded floor or the black pools before the throne.
 /// Deep water, the lake and lava stop a body and nothing else: they are
 /// seen across and shot over.
-fn registry() -> TileRegistry {
+pub(crate) fn registry() -> TileRegistry {
     let wading = |name: &str| TileProps::floor(name).move_cost(200);
     let mut tiles = TileRegistry::new();
     tiles
@@ -460,7 +459,7 @@ impl Undermere {
         // against.
         let (prefabs, pool) = crate::prefabs::load(&tiles, &layout);
         let defs = biomes::load(&tiles, &layout);
-        let boss = lairs::draw_final_boss(seed);
+        let boss = final_boss(seed);
         let mut biomes = BTreeMap::new();
         for floor in 1..FLOORS {
             biomes.insert(floor, biomes::draw(&defs, floor, seed, &tiles));
@@ -1378,6 +1377,7 @@ mod tests {
                 (vec![boss.piece], vec![])
             };
             assert_eq!(monsters, expected_monsters, "seed {s}: {}", boss.piece);
+            assert!(monsters.contains(&boss.name), "seed {s}: the boss stood is the one {:?} names, as its rumour is told", boss.name);
             assert_eq!(props, expected_props, "seed {s}: {}", boss.piece);
             // The way in is held at least half the floor's longer side
             // from the throne, walking, as `ClearOfTheThrone` asks: the

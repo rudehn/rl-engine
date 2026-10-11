@@ -10,10 +10,10 @@ use std::collections::BTreeMap;
 use bevy::prelude::*;
 use rl_bevy::PresentSet;
 use rl_core::Rect;
-use rl_render::{Cell, MapView, Terminal};
+use rl_render::{Cell, Terminal};
 use rl_rules::Relation;
 
-use crate::cursor::CursorStyle;
+use crate::cursor::{CursorMap, CursorStyle};
 use crate::modal::Modals;
 use crate::panel::{clear, clip, frame, section};
 use crate::tone::{Palette, ToneId, Tones};
@@ -26,9 +26,12 @@ pub struct NearbyLayout {
     pub rect: Rect,
     /// The title in the top border. Empty draws no frame.
     pub title: String,
-    /// The heading over the actors.
+    /// The heading over the actors, with how many of them are hostile at
+    /// its right when any are: nought is left unsaid, since a `0` over a
+    /// list of people reads as a count of them that is wrong.
     pub actors: String,
-    /// The heading over the things on the ground.
+    /// The heading over the things: every item and prop in sight, nearest
+    /// first, which is more than what lies underfoot.
     pub things: String,
     /// What each state is called, in the game's own words. An empty word
     /// says nothing at all for that state, which is what a game that
@@ -120,13 +123,15 @@ impl ActivityWords {
 pub struct NearbyPanel(NearbyLayout);
 
 impl NearbyPanel {
-    /// A rail in `rect`, with the engine's default headings.
+    /// A rail in `rect`, with the engine's default headings: `In sight`
+    /// over the actors and `Things in sight` over the things, which says
+    /// what that list holds where a game has not said it in its own words.
     pub fn new(rect: Rect) -> Self {
         Self(NearbyLayout {
             rect,
             title: "Nearby".into(),
             actors: "In sight".into(),
-            things: "On the ground".into(),
+            things: "Things in sight".into(),
             alerts: AlertWords::default(),
             activities: ActivityWords::default(),
             cursor: CursorStyle::glow(Tones::SELECT),
@@ -192,15 +197,15 @@ pub fn draw_nearby(
     view: Res<NearbyView>,
     palette: Res<Palette>,
     modals: Res<Modals>,
-    map: Option<Res<MapView>>,
+    map: CursorMap,
     time: Res<Time>,
 ) {
-    if let (Some(focused), Some(map)) = (view.focused, map.as_deref())
+    if let Some(focused) = view.picked()
         && !modals.any_open()
     {
         // The same mark the look cursor and the targeting cursor use, so
         // the row picked out and the cell it stands on read as one thing.
-        crate::cursor::mark(&mut terminal, map, focused.at, layout.cursor, &palette, time.elapsed_secs());
+        map.mark(&mut terminal, focused.at, layout.cursor, &palette, time.elapsed_secs());
     }
     let rect = layout.rect;
     if rect.width < 6 || rect.height < 4 {
@@ -215,7 +220,8 @@ pub fn draw_nearby(
     };
     let mut y = inner.y;
     let bottom = inner.bottom();
-    for (heading, rows, count) in [(&layout.actors, &view.actors, Some(view.threats())), (&layout.things, &view.things, None)] {
+    let threats = Some(view.threats()).filter(|n| *n > 0);
+    for (heading, rows, count) in [(&layout.actors, &view.actors, threats), (&layout.things, &view.things, None)] {
         if rows.is_empty() || y + 3 > bottom {
             continue;
         }
@@ -236,6 +242,16 @@ pub fn draw_nearby(
     }
 }
 
+/// How much of the health's tone a row's wash is mixed of, the rest the
+/// row's own background.
+///
+/// A fifth: enough that a row reads at a glance as a bar and a wounded
+/// one stands out by its colour, and little enough that the name over it
+/// keeps its own. At more than a third, every unhurt row was a slab of
+/// the good tone, an ally's name in that same tone read green on green,
+/// and the row picked out was barely told from the rest.
+const WASH: f32 = 0.2;
+
 fn draw_row(terminal: &mut Terminal, inner: Rect, y: i32, row: &Row, focused: bool, layout: &NearbyLayout, palette: &Palette) {
     // The row is the bar: health fills it from the left in the health's
     // own tone, mixed into the row's background rather than painted over
@@ -247,12 +263,8 @@ fn draw_row(terminal: &mut Terminal, inner: Rect, y: i32, row: &Row, focused: bo
         Some(_) => ((inner.width as f32 * row.health_fraction()).round() as i32).clamp(0, inner.width),
         None => 0,
     };
-    let hurt = palette.get(match row.health_fraction() {
-        f if f <= 0.25 => Tones::BAD,
-        f if f <= 0.5 => Tones::NOTICE,
-        _ => Tones::GOOD,
-    });
-    let wash = base.mix(&hurt, 0.35);
+    let hurt = palette.get(row.health.map_or(Tones::GOOD, |(current, max)| crate::view::health_tone(current, max)));
+    let wash = base.mix(&hurt, WASH);
     if filled > 0 {
         terminal.fill(Rect::new(inner.x, y, filled, 1), Cell::new(' ', base).on(wash));
     }
@@ -298,7 +310,7 @@ const NAME_KEPT: usize = 4;
 /// nor what; the name's end is the part a reader can most do without. A
 /// row too narrow to keep [`NAME_KEPT`] of the name beside the tail is
 /// clipped from the end as a whole instead.
-fn clip_keeping(name: &str, tail: &str, width: usize) -> String {
+pub(crate) fn clip_keeping(name: &str, tail: &str, width: usize) -> String {
     let (named, told) = (name.chars().count(), tail.chars().count());
     if named + told <= width {
         return format!("{name}{tail}");
@@ -314,6 +326,7 @@ mod tests {
     use super::*;
     use crate::cursor::CursorKeys;
     use crate::harness::Stage;
+    use rl_render::MapView;
 
     #[test]
     fn the_rail_prints_a_heading_a_glyph_a_name_and_the_row_itself_is_the_health_bar() {
@@ -326,7 +339,7 @@ mod tests {
         assert_eq!(rows[0], "In sight               1", "the heading carries the threat count");
         assert!(rows[1].starts_with('\u{2500}'), "underlined: {:?}", rows[1]);
         assert!(rows[2].starts_with("c crab"), "glyph then name: {:?}", rows[2]);
-        assert_eq!(rows[4], "On the ground", "the second heading has no count");
+        assert_eq!(rows[4], "Things in sight", "the second heading says what it lists, and has no count");
         assert!(rows[6].starts_with("! rum"), "{:?}", rows[6]);
 
         // The row is the bar: a crab at full health is washed edge to
@@ -336,11 +349,24 @@ mod tests {
             let palette = stage.app.world().resource::<Palette>();
             (palette.get(Tones::SURFACE), palette.get(Tones::GOOD))
         };
-        let full = surface.mix(&good, 0.35);
+        let full = surface.mix(&good, WASH);
         for x in [0, 12, 23] {
             assert_eq!(bg(&stage, x, 2), full, "the crab's row is washed at column {x}");
         }
         assert_eq!(bg(&stage, 12, 6), surface, "a thing on the floor has no health to show");
+    }
+
+    /// With nobody hostile in sight the heading carries no count, so a
+    /// `0` never stands over a list of people as though it counted them.
+    #[test]
+    fn the_heading_says_no_count_when_nothing_in_sight_is_hostile() {
+        let mut stage = Stage::new(NearbyPanel::new(Rect::new(0, 0, 24, 10)).titled("")).screen(24, 10);
+        let keeper = stage.actor("keeper", 'k', 2, 0);
+        stage.app.world_mut().entity_mut(keeper).remove::<rl_bevy::Faction>();
+        stage.tick();
+        let rows = stage.rows();
+        assert_eq!(rows[0], "In sight", "no count at nought");
+        assert!(rows[2].starts_with("k keeper"), "{:?}", rows[2]);
     }
 
     #[test]
@@ -479,7 +505,7 @@ mod tests {
         let tile = stage.app.world().resource::<MapView>().to_screen(stage.at.offset(3, 0)).expect("the gull is on the map");
         // Unpicked and unhurt, so the row carries its own health wash
         // rather than the selection.
-        let unpicked = surface.mix(&stage.app.world().resource::<Palette>().get(Tones::GOOD), 0.35);
+        let unpicked = surface.mix(&stage.app.world().resource::<Palette>().get(Tones::GOOD), WASH);
         assert_eq!(bg(&stage, 45, 3), unpicked, "nothing is picked out yet");
 
         stage.press(CursorKeys::default().next);
@@ -487,7 +513,7 @@ mod tests {
         assert!(stage.rows()[3].contains("g gull"), "{:?}", stage.rows()[3]);
         // Picked out and unhurt: the selection is what the health washes
         // over, so the row reads as picked whatever its health.
-        let picked = select.mix(&stage.app.world().resource::<Palette>().get(Tones::GOOD), 0.35);
+        let picked = select.mix(&stage.app.world().resource::<Palette>().get(Tones::GOOD), WASH);
         for x in [40, 45, 63] {
             assert_eq!(bg(&stage, x, 3), picked, "the gull's row, edge to edge, at column {x}");
         }

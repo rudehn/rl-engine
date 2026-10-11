@@ -7,16 +7,25 @@
 //! three of that run as glyphs and quits, and `--recipe knot` after them
 //! grows it by that recipe instead. For a picture of a deeper floor,
 //! `UNDERMERE_START=5` starts the run on floor five instead of in Mereholt,
-//! `UNDERMERE_NEAR=camp` stands the adventurer a few steps short of what
-//! it names there (`camp`, `captive`, `lair`, `throne` or a monster's
-//! name), and for one of the pack, `UNDERMERE_PACK="ring of light:-2, potion of
-//! extra healing*2"` puts those in it as if found.
+//! `UNDERMERE_NEAR=camp` stands the adventurer a few steps short of what it
+//! names there (`camp`, `captive`, `lair`, `throne` or a monster's name);
+//! without `UNDERMERE_START`, `UNDERMERE_NEAR=smith` stands them beside
+//! that person in Mereholt instead (any role of `townsfolk.ron`, `smith`,
+//! `priest`, `gatewarden`, `child`...), one step from their shop or their
+//! talk; `UNDERMERE_NEAR=candidates` stands them in the tavern beside the
+//! swords for hire. For one of the pack, `UNDERMERE_PACK="ring of light:-2,
+//! potion of extra healing*2"` puts those in it as if found. For a party,
+//! `UNDERMERE_PARTY=2` hires that many beside the adventurer wherever the
+//! run starts, after `UNDERMERE_NEAR` has stood them; with
+//! `UNDERMERE_START=10 UNDERMERE_NEAR=throne` a few steps into the throne
+//! room is a fight the party can fall in, and the end screen that names the
+//! fallen is that fight lost.
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_core::{Rect, RunSeed};
 use undermere::plugin::UndermerePlugin;
-use undermere::run::{ExtraPack, StartFloor, StartNear};
+use undermere::run::{ExtraPack, StartFloor, StartNear, StartParty};
 use undermere::typeface::DEJAVU_SANS_MONO;
 
 /// Terminal size in cells.
@@ -45,9 +54,10 @@ const RAIL: i32 = 34;
 /// is aimed, the range, the target, the chance, and up to four lines of it.
 const TARGET_ROWS: i32 = 10;
 /// Rows the rail gives to vitals: its heading with the rule under it, the
-/// name, health, armor, seen and lit, noise, and a last row for the
-/// badges, blank most turns, which sets what is worn off from the gauges.
-const VITALS_ROWS: i32 = 8;
+/// name, health, armor, seen and lit, noise, and two rows for the badges
+/// and the gold carried, the badges first when there are any and the last
+/// row blank most turns, which sets what is worn off from the gauges.
+const VITALS_ROWS: i32 = 9;
 /// Rows the rail gives to what is worn: the heading and its rule, one
 /// apiece for the seven slots, a blank row setting the list off from what
 /// is nearby under it, the gap the badges' row leaves above, and two more
@@ -57,6 +67,11 @@ const VITALS_ROWS: i32 = 8;
 /// unidentified armor beside it take the three; past that a name is kept
 /// to its row, and no slot is ever pushed off the rail.
 const GEAR_ROWS: i32 = 12;
+/// Rows the rail gives to the company at its foot: the heading and its
+/// rule, and one apiece for the most who can follow the adventurer, the
+/// two hired and the captive freed. A row above them is kept blank, so the
+/// last thing in sight never runs into the heading.
+const PARTY_ROWS: i32 = 5;
 
 /// The screen, cut up once so every panel and the map agree on it.
 ///
@@ -71,11 +86,15 @@ struct Screen {
     vitals: Rect,
     gear: Rect,
     nearby: Rect,
+    party: Rect,
+    /// The blank row between what is in sight and the company.
+    spacer: Rect,
     hint: Rect,
     inspect: Rect,
     target: Rect,
     pack: Rect,
     chest: Rect,
+    shop: Rect,
     here: Rect,
     controls: Rect,
     menu: Rect,
@@ -97,6 +116,13 @@ impl Screen {
         let (gear, nearby) = panel::split_top(below, GEAR_ROWS);
         // The last row of the rail says how to see the controls.
         let (nearby, hint) = panel::split_bottom(nearby, 1);
+        // The company at the foot of the rail, over the hint: blank while
+        // nobody follows, where the rail is blank most turns anyway, so
+        // the room it keeps is never a hole between the vitals, what is
+        // worn and what is in sight; and in one place from the first hire
+        // on, where the eye learns to find it.
+        let (nearby, party) = panel::split_bottom(nearby, PARTY_ROWS);
+        let (nearby, spacer) = panel::split_bottom(nearby, 1);
         // The targeting box sits over the bottom of the nearby list while
         // the cursor is up, where the eye already is when choosing what to
         // aim at, and never over the map, where it would hide what is
@@ -112,6 +138,8 @@ impl Screen {
             vitals,
             gear,
             nearby,
+            party,
+            spacer,
             hint,
             // Low on the left of the map; it moves to the top while the
             // cursor is under it.
@@ -125,17 +153,36 @@ impl Screen {
             pack: centred(64, 4, 32),
             // What is in a chest, and the keys that take it.
             chest: centred(48, 6, 14),
-            // What can be done here, when here is more than one thing.
-            here: centred(40, 10, 6),
+            // A keeper's shelf beside the pack, wide enough for a long
+            // name and its price on either side and for the longest
+            // greeting under the keeper's name, the apothecary's: the
+            // frame, that line, the headings and their rule, fifteen rows,
+            // as many as the pack shows, and the purses at the foot.
+            shop: centred(108, 4, 22),
+            // What can be done here, when here is more than one thing:
+            // wide enough for the temple's longest rite with its turn and
+            // its price, `unbind what you wear (1 turn, 60 gold coins)`,
+            // and tall enough for six rows, or for a question of two
+            // lines, a blank and its answers: a mercenary's dismissal
+            // asks in two. Its preferred place, low on the left where the
+            // look panel stands, and not over the middle of the map, where
+            // the adventurer stands on arriving in Mereholt with the party
+            // round them: in Mereholt that is the lake, where nobody who
+            // offers anything ever stands. On a floor, the adventurer or
+            // whoever offers may stand under it, and the screen moves to
+            // the top, as the look panel does off its cursor.
+            here: Rect::new(map.x + 2, map.bottom() - 10, 52, 8),
             controls: map.inflate(-2),
             // The most the menu may take: the run's own line, the seed and
-            // turn, the record's score and its numbers, and the choices
-            // under them, with a row to spare for the way back to the
-            // title. The engine closes the frame under the last row, so
-            // the shorter pause menu leaves no gap. Wide enough for the
-            // words a run is won with, which stand whole in its top
-            // border.
-            menu: centred(56, 2, 34),
+            // turn, the record's score and its numbers, the fallen under
+            // them, a party's worth with their heading, and the choices
+            // under those, with a row to spare for the way back to the
+            // title: down to the foot of the map. A run that lost more
+            // has the end of its fallen cut, never a choice. The engine
+            // closes the frame under the last row, so the shorter pause
+            // menu leaves no gap. Wide enough for the words a run is won
+            // with, which stand whole in its top border.
+            menu: centred(56, 2, 38),
             // Where the menu stands, since the menu is what opens it.
             settings: centred(56, 2, 34),
             records: centred(72, 2, 36),
@@ -151,12 +198,14 @@ impl Screen {
 /// window draws. The narrator that fills the log is added beside the
 /// engine's plugins, as `testing::headless` adds it.
 fn add_panels(app: &mut App, screen: &Screen) {
-    // The gutter belongs to no panel, so it is painted blank with the
-    // chrome each frame: nothing else would ever paint it again.
-    let gutter = screen.gutter;
+    // The gutter and the rail's spacer belong to no panel, so they are
+    // painted blank with the chrome each frame: nothing else would ever
+    // paint them again.
+    let blank = [screen.gutter, screen.spacer];
     app.add_systems(
         Update,
-        (move |mut terminal: ResMut<Terminal>, palette: Res<Palette>| panel::clear(&mut terminal, gutter, &palette)).in_set(PresentSet::Chrome),
+        (move |mut terminal: ResMut<Terminal>, palette: Res<Palette>| blank.into_iter().for_each(|r| panel::clear(&mut terminal, r, &palette)))
+            .in_set(PresentSet::Chrome),
     );
     app.add_plugins((
         // A blow struck beside the adventurer is a thousand hundredths of
@@ -171,21 +220,37 @@ fn add_panels(app: &mut App, screen: &Screen) {
         // says so by its own status and one awake and unaware does not
         // sleep. What
         // it is doing outranks what it knows when it is running, at its
-        // post, or drifting with nothing better to do.
-        NearbyPanel::new(screen.nearby).titled("").cursor(CursorStyle::ticks()).alerts(AlertWords::new("unaware", "searching", "hunting")).activities(
-            ActivityWords::new()
-                .word("flee_when_hurt", "fleeing")
-                .word("keep_post", "guarding")
-                .word("wander", "wandering")
-                .word(undermere::conditions::SLEEPING, "asleep")
-                .word(undermere::captives::SHACKLED, "shackled"),
-        ),
+        // post, or drifting with nothing better to do. The things below
+        // are everything in sight that is not someone, stairs and a gate
+        // mark as well as what lies about, so not "on the ground".
+        NearbyPanel::new(screen.nearby)
+            .titled("")
+            .headings("In sight", "Around you")
+            .cursor(CursorStyle::ticks())
+            .alerts(AlertWords::new("unaware", "searching", "hunting"))
+            .activities(
+                ActivityWords::new()
+                    .word("flee_when_hurt", "fleeing")
+                    .word("keep_post", "guarding")
+                    .word("wander", "wandering")
+                    .word(undermere::conditions::SLEEPING, "asleep")
+                    .word(undermere::captives::SHACKLED, "shackled"),
+            ),
+        // Who follows the adventurer, wherever they are, each with the
+        // order it was given: "company" rather than the engine's "party",
+        // and one left on another floor is "left behind", which is how it
+        // came to be there and what the adventurer must do about it. Bars
+        // of four cells rather than six, so a name of three syllables
+        // keeps "fighting freely" whole beside it.
+        PartyPanel::new(screen.party).heading("Company").elsewhere("left behind").bars(4),
         LogPanel::new(screen.log),
         InspectPanel::new(screen.inspect).hints("move \u{2022} tab next \u{2022} esc close").cursor(CursorStyle::ticks()),
         TargetPanel::new(screen.target).hints("[tab/shift-tab] cycle").cursor(CursorStyle::ticks()),
         InventoryPanel::new(screen.pack).title("Pack").called("pack").empty("Nothing but lint."),
         // What is in a chest, opened by walking into it.
         ContainerPanel::new(screen.chest).empty("Empty."),
+        // A keeper's shelf and the pack, opened by walking into the keeper.
+        TradePanel::new(screen.shop),
         // What can be done here, when walking into it would be a guess.
         OffersPanel::new(screen.here).title("Here"),
         InteractKey,
@@ -198,9 +263,40 @@ fn add_panels(app: &mut App, screen: &Screen) {
     app.add_systems(Update, undermere::conditions::note_statuses.in_set(ViewSet::Annotate));
     // A captive said shackled on the rail, until it is freed.
     app.add_systems(Update, undermere::captives::note_captives.in_set(ViewSet::Annotate));
+    // A keeper's wares by their true names, in the shop's own colour, and
+    // the keeper's greeting under their name.
+    app.add_systems(Update, (undermere::shops::shelf_names, undermere::townsfolk::greet).in_set(ViewSet::Annotate));
+    // A person of Mereholt's role beside their name, on the look panel in
+    // place of the forecast the game's own seeming may have redone, and on
+    // the rail in place of what they know of the adventurer.
+    app.add_systems(Update, undermere::townsfolk::name_roles.after(undermere::seeming::seem_forecast).in_set(ViewSet::Annotate));
+    // The temple's rites by what they do, not "name the priest", and every
+    // keeper's trade as "trade with" them, not "trade the priest".
+    app.add_systems(Update, (undermere::temple::rite_rows, undermere::shops::trade_rows).in_set(ViewSet::Annotate));
     // What is known of a monster's traits on the look panel: every plain
     // one in its own words, and a "?" for every trick not yet seen.
     app.add_systems(Update, undermere::bestiary_lore::annotate_inspect.in_set(ViewSet::Annotate));
+    // A candidate in the tavern: what it holds and asks on the look panel,
+    // under its kind's own words, and for hire on the rail; and talking to
+    // one listed as "talk to" it beside its `hire`.
+    app.add_systems(
+        Update,
+        undermere::mercenaries::show_candidates
+            .after(undermere::bestiary_lore::annotate_inspect)
+            .after(undermere::seeming::seem_forecast)
+            .in_set(ViewSet::Annotate),
+    );
+    app.add_systems(Update, undermere::mercenaries::talk_rows.in_set(ViewSet::Annotate));
+    // A hired mercenary's order, under its kind's own words on the look
+    // panel in place of a fight's forecast, and on the rail and its row of
+    // the party panel.
+    app.add_systems(
+        Update,
+        undermere::mercenaries::show_orders
+            .after(undermere::bestiary_lore::annotate_inspect)
+            .after(undermere::seeming::seem_forecast)
+            .in_set(ViewSet::Annotate),
+    );
     // What the player may set, opened from the menu and from the title:
     // fullscreen is the engine's, declared by `RoguelikePlugins`. And
     // every run that has ended, best first, which the title opens.
@@ -302,6 +398,9 @@ fn main() -> AppExit {
     }
     if let Ok(near) = std::env::var("UNDERMERE_NEAR") {
         app.insert_resource(StartNear(near));
+    }
+    if let Some(party) = std::env::var("UNDERMERE_PARTY").ok().and_then(|n| n.parse().ok()) {
+        app.insert_resource(StartParty(party));
     }
     if let Ok(pack) = std::env::var("UNDERMERE_PACK") {
         app.insert_resource(ExtraPack::parse(&pack));
@@ -431,7 +530,9 @@ mod tests {
     #[test]
     fn new_game_after_a_run_ends_and_is_left_for_the_title_begins_on_a_fresh_seed() {
         let mut app = on_screen(RunSeed(7));
-        let me = undermere::testing::adventurer(&mut app);
+        // Mereholt is at peace with the adventurer, so a blow struck there
+        // is dropped before it reaches Health; floor one is not.
+        let me = undermere::testing::arrive(&mut app, undermere::dungeon::map_of(1));
         undermere::testing::kill(&mut app, me, None);
         undermere::testing::settle(&mut app);
         assert_eq!(*app.world().resource::<State<EngineState>>().get(), EngineState::Over, "the run is over");
@@ -575,7 +676,7 @@ mod tests {
         let row = app.world().resource::<InventoryView>().rows.iter().position(|r| r.entity == scroll).expect("in the pack");
         app.world_mut().resource_mut::<InventoryMenu>().selected = row;
         press(&mut app, KeyCode::KeyU);
-        let choosing = app.world().resource::<InventoryMenu>().choosing.map(|c| c.item);
+        let choosing = app.world().resource::<InventoryMenu>().using();
         assert_eq!(choosing, Some(scroll), "the pack asks what to read it on");
         assert!(knows(&app), "and it is known");
         assert_eq!(app.world().get::<Name>(scroll).map(|n| n.as_str().to_string()).as_deref(), Some("scroll of enchanting"), "called what it is");
@@ -620,6 +721,78 @@ mod tests {
             app.update();
             assert!(rail(&app).ends_with(&format!("rat ({word})")), "{doing:?}, seen {sees:?}, heard {heard:?}: {:?}", rail(&app));
         }
+    }
+
+    /// The rail beside the smith says who is in sight with no count of
+    /// foes, since there are none, and on a floor heads what else is in
+    /// sight `Around you`, not `On the ground`, which it is not.
+    #[test]
+    fn the_rail_counts_no_foes_at_nought_and_heads_its_things_around_you() {
+        use undermere::testing::{arrive, at, clear_monsters, lay, lay_floor, make, settle, stand_on};
+        let mut app = on_screen(RunSeed(7));
+        let me = undermere::testing::adventurer(&mut app);
+        let smith = undermere::testing::townsperson(&mut app, "smith");
+        let beside = at(&app, smith).offset(0, -1);
+        stand_on(&mut app, me, beside);
+        let rail = |app: &App| (0..ROWS).map(|y| from(app, COLS - RAIL, y)).collect::<Vec<_>>();
+        let lines = rail(&app);
+        let heading = lines.iter().position(|r| r.trim() == "In sight").unwrap_or_else(|| panic!("a bare heading: {lines:#?}"));
+        let name = undermere::testing::name_of(&app, smith);
+        assert!(lines[heading + 2..].iter().any(|r| r.contains(&name)), "over the smith, {name}: {lines:#?}");
+
+        arrive(&mut app, undermere::dungeon::map_of(1));
+        clear_monsters(&mut app);
+        let here = at(&app, me);
+        lay_floor(&mut app, &[here.offset(1, 0), here.offset(2, 0)]);
+        let potion = make(&mut app, "potion of healing");
+        lay(&mut app, potion, here.offset(2, 0));
+        settle(&mut app);
+        let lines = rail(&app);
+        assert!(lines.iter().any(|r| r.trim() == "Around you"), "{lines:#?}");
+        assert!(!lines.iter().any(|r| r.contains("On the ground")), "{lines:#?}");
+    }
+
+    /// The rail says the gold the adventurer carries among the vitals,
+    /// above what is worn: the fifty they set out with, on the first screen.
+    #[test]
+    fn the_rail_says_the_gold_carried_among_the_vitals() {
+        let app = on_screen(RunSeed(7));
+        let lines: Vec<String> = (0..ROWS).map(|y| from(&app, COLS - RAIL, y)).collect();
+        let gold = lines.iter().position(|r| r == "gold 50").unwrap_or_else(|| panic!("the gold carried, on the rail: {lines:#?}"));
+        let worn = lines.iter().position(|r| r.starts_with("Worn")).expect("what is worn, on the rail");
+        assert!(gold < worn, "among the vitals, above what is worn: {lines:#?}");
+    }
+
+    /// A gate mark seen is drawn from memory once it is out of sight, in
+    /// memory's colours rather than its own glow, so the map shows where
+    /// the gate will bring the adventurer back: one stood three tiles off
+    /// on floor one, then walled in.
+    #[test]
+    fn a_gate_mark_once_seen_is_drawn_from_memory_out_of_sight() {
+        use rl_engine::rl_core::geometry;
+        use undermere::testing::{arrive, at, clear_monsters, lay_floor, settle, wall_off};
+        let mut app = on_screen(RunSeed(7));
+        let floor = undermere::dungeon::map_of(1);
+        let me = arrive(&mut app, floor);
+        clear_monsters(&mut app);
+        let here = at(&app, me);
+        lay_floor(&mut app, &geometry::square(here, 4).collect::<Vec<_>>());
+        let mark = here.offset(3, 0);
+        undermere::waystone::set_mark(app.world_mut(), floor, mark);
+        settle(&mut app);
+        let drawn = |app: &App| {
+            let s = app.world().resource::<MapView>().to_screen(mark).expect("on screen");
+            let cell = app.world().resource::<Terminal>().get(s.x, s.y).expect("a cell");
+            (cell.glyph, cell.fg)
+        };
+        let (glyph, seen) = drawn(&app);
+        assert_eq!(glyph, '\u{25ca}', "the mark, in sight");
+
+        wall_off(&mut app, &geometry::square(mark, 1).filter(|p| *p != mark).collect::<Vec<_>>());
+        settle(&mut app);
+        let (glyph, remembered) = drawn(&app);
+        assert_eq!(glyph, '\u{25ca}', "walled in, still drawn where it stands");
+        assert_ne!(remembered, seen, "from memory, not its own glow");
     }
 
     /// Every glyph on the screen as it stands, kept beside the first
@@ -991,5 +1164,604 @@ mod tests {
         scripted.persist(undermere::save::SLOT, "a scripted run").unwrap();
         assert_eq!(real.load(undermere::save::SLOT).unwrap(), before, "the player's slot is as it was");
         assert!(scripted.exists(undermere::save::SLOT), "and the scripted run has one of its own");
+    }
+
+    /// Every keeper's greeting, quoted as the trade screen says it, fits
+    /// the line under their name whole: the frame and its margins take
+    /// two cells a side.
+    #[test]
+    fn every_keepers_greeting_fits_the_trade_screens_line() {
+        let line = (Screen::new().shop.width - 4) as usize;
+        let app = on_screen(RunSeed(0));
+        for role in app.world().resource::<undermere::townsfolk::Townsfolk>().roles() {
+            let Some(greeting) = &role.greeting else { continue };
+            assert!(greeting.chars().count() + 2 <= line, "the {}'s greeting is {} long, the line {line}", role.role, greeting.chars().count() + 2);
+        }
+    }
+
+    /// Walking into a keeper with the key that walks opens their shop on
+    /// the screen, and the press that opened it does nothing more there:
+    /// nothing is bought or sold, and the cursor stands where the screen
+    /// opens, on the shelf's first row, where the next press of that key
+    /// moves it a row down.
+    #[test]
+    fn walking_into_a_keeper_opens_the_shop_and_the_same_press_does_not_act_on_its_first_frame() {
+        let mut app = on_screen(RunSeed(7));
+        let me = undermere::testing::adventurer(&mut app);
+        let smith = undermere::testing::townsperson(&mut app, "smith");
+        let at = undermere::testing::at(&app, smith);
+        undermere::testing::stand_on(&mut app, me, at.offset(0, -1));
+        let (mine, theirs) = (undermere::testing::pack(&app, me), undermere::testing::pack(&app, smith));
+        press(&mut app, KeyCode::ArrowDown);
+        undermere::testing::settle(&mut app);
+        let modals = app.world().resource::<Modals>();
+        assert!(modals.is_open(trade_modal(modals)), "the smith's shop is up");
+        assert_eq!(app.world().resource::<Trading>().open().map(|p| (p.customer, p.trader)), Some((me, smith)), "a trade with the smith");
+        let name = undermere::testing::name_of(&app, smith);
+        assert!(written(&app).iter().any(|r| r.contains(&name)), "the screen names the smith, {name}: {:#?}", written(&app));
+        let greeting = "\"Steel, leather, and arrows by the bundle. I buy what's straight and sell what's sharp.\"";
+        assert!(written(&app).iter().any(|r| r.contains(greeting)), "and their greeting reads whole under it: {:#?}", written(&app));
+        let menu = app.world().resource::<rl_engine::rl_ui::panel::trade::TradeMenu>();
+        assert_eq!((menu.side, menu.wares, menu.pack), (rl_engine::rl_ui::TradeSide::Wares, 0, 0), "the cursor where the screen opens");
+        assert_eq!(undermere::testing::pack(&app, me), mine, "nothing bought or sold");
+        assert_eq!(undermere::testing::pack(&app, smith), theirs, "and the shelf as it was");
+        assert_eq!(undermere::testing::at(&app, me), at.offset(0, -1), "and nobody stepped");
+        // The same key pressed again, on the screen, moves the cursor: so
+        // the first press would have shown, had it reached the screen.
+        press(&mut app, KeyCode::ArrowDown);
+        assert_eq!(app.world().resource::<rl_engine::rl_ui::panel::trade::TradeMenu>().wares, 1, "the next press moves down a row");
+    }
+
+    /// Walking into the priest asks rather than pays: the offers screen
+    /// opens listing `trade` and the three rites, each rite at its price,
+    /// and the press that opened it spends nothing, takes nothing up and
+    /// moves nobody, since the walk key never spends gold; nor does the log
+    /// call the priest in the way.
+    #[test]
+    fn walking_into_the_priest_opens_the_offers_screen_with_each_rites_price_and_pays_nothing() {
+        let mut app = on_screen(RunSeed(7));
+        let me = undermere::testing::adventurer(&mut app);
+        let priest = undermere::testing::townsperson(&mut app, "priest");
+        let at = undermere::testing::at(&app, priest);
+        let town = undermere::dungeon::TOWN;
+        let taken: Vec<Point> = {
+            let world = app.world_mut();
+            world.query_filtered::<&Position, With<Blocks>>().iter(world).map(|p| p.0).collect()
+        };
+        let sides = [((0, -1), KeyCode::ArrowDown), ((0, 1), KeyCode::ArrowUp), ((-1, 0), KeyCode::ArrowRight), ((1, 0), KeyCode::ArrowLeft)];
+        let map = app.world().resource::<WorldMap>();
+        let (from, key) = sides
+            .into_iter()
+            .map(|((dx, dy), key)| (at.offset(dx, dy), key))
+            .find(|(cell, _)| map.is_walkable_on(town, *cell) && !taken.contains(cell))
+            .expect("a side of the priest to walk in from");
+        undermere::testing::stand_on(&mut app, me, from);
+        let (mine, theirs) = (undermere::testing::pack(&app, me), undermere::testing::pack(&app, priest));
+        press(&mut app, key);
+        undermere::testing::settle(&mut app);
+        let modals = app.world().resource::<Modals>();
+        assert!(modals.is_open(offers_modal(modals)), "the offers screen is up: {:#?}", written(&app));
+        assert!(!modals.is_open(trade_modal(modals)), "and not the shop");
+        let view = app.world().resource::<rl_engine::rl_ui::view::offers::OffersView>();
+        let rows: Vec<(String, Option<u32>)> = view.rows.iter().map(|r| (r.label.clone(), r.price)).collect();
+        let trade = format!("trade with {}", undermere::testing::name_of(&app, priest));
+        let offered = [(trade.as_str(), None), ("mend your wounds", Some(30)), ("unbind what you wear", Some(60)), ("name what you wear", Some(60))]
+            .map(|(v, p)| (v.to_string(), p));
+        assert_eq!(rows, offered.to_vec(), "trade and the rites at their prices");
+        for rite in ["mend your wounds (1 turn, 30 gold coins)", "unbind what you wear - needs 60 gold coins", "name what you wear - needs 60 gold coins"] {
+            assert!(written(&app).iter().any(|r| r.contains(rite)), "the screen lists {rite:?} whole: {:#?}", written(&app));
+        }
+        assert_eq!(undermere::testing::pack(&app, me), mine, "nothing paid");
+        assert_eq!(undermere::testing::pack(&app, priest), theirs, "and nothing taken");
+        assert_eq!(undermere::testing::at(&app, me), from, "and nobody stepped");
+        let said = undermere::testing::said(&app);
+        assert!(!said.iter().any(|line| line.contains("in the way")), "the priest is asked about, not in the way: {said:#?}");
+    }
+
+    /// Walking into a candidate in the tavern asks rather than hires: the
+    /// offers screen opens with `hire` at the candidate's fee and talking
+    /// to them, and the press spends nothing and moves nobody.
+    #[test]
+    fn walking_into_a_candidate_opens_the_offers_screen_with_its_fee_and_spends_nothing() {
+        let mut app = on_screen(RunSeed(7));
+        let me = undermere::testing::adventurer(&mut app);
+        let candidate = {
+            let world = app.world_mut();
+            world.query_filtered::<Entity, With<undermere::mercenaries::Candidate>>().iter(world).next().expect("a candidate waits")
+        };
+        let at = undermere::testing::at(&app, candidate);
+        let town = undermere::dungeon::TOWN;
+        let taken: Vec<Point> = {
+            let world = app.world_mut();
+            world.query_filtered::<&Position, With<Blocks>>().iter(world).map(|p| p.0).collect()
+        };
+        let sides = [((0, -1), KeyCode::ArrowDown), ((0, 1), KeyCode::ArrowUp), ((-1, 0), KeyCode::ArrowRight), ((1, 0), KeyCode::ArrowLeft)];
+        let map = app.world().resource::<WorldMap>();
+        let (from, key) = sides
+            .into_iter()
+            .map(|((dx, dy), key)| (at.offset(dx, dy), key))
+            .find(|(cell, _)| map.is_walkable_on(town, *cell) && !taken.contains(cell))
+            .expect("a side of the candidate to walk in from");
+        undermere::testing::stand_on(&mut app, me, from);
+        let (mine, theirs) = (undermere::testing::pack(&app, me), undermere::testing::pack(&app, candidate));
+        press(&mut app, key);
+        undermere::testing::settle(&mut app);
+        let modals = app.world().resource::<Modals>();
+        assert!(modals.is_open(offers_modal(modals)), "the offers screen is up: {:#?}", written(&app));
+        let name = undermere::testing::name_of(&app, candidate);
+        let fee = app.world().get::<undermere::mercenaries::Candidate>(candidate).expect("a candidate").fee;
+        let view = app.world().resource::<rl_engine::rl_ui::view::offers::OffersView>();
+        let rows: Vec<(String, Option<u32>)> = view.rows.iter().map(|r| (r.label.clone(), r.price)).collect();
+        assert_eq!(rows, [(format!("hire {name}"), Some(fee)), (format!("talk to {name}"), None)], "hire at the fee, and talk");
+        assert_eq!(undermere::testing::pack(&app, me), mine, "nothing paid");
+        assert_eq!(undermere::testing::pack(&app, candidate), theirs, "and nothing taken");
+        assert_eq!(undermere::testing::at(&app, me), from, "and nobody stepped");
+    }
+
+    /// The look cursor on a candidate frames it without hiding the
+    /// adventurer beside it, from whichever side they stand: the tick that
+    /// would stand on their cell is left off, and the one across from them
+    /// is drawn.
+    #[test]
+    fn the_look_cursor_beside_the_adventurer_never_hides_them() {
+        let mut app = on_screen(RunSeed(7));
+        let me = undermere::testing::adventurer(&mut app);
+        let candidate = {
+            let world = app.world_mut();
+            world.query_filtered::<Entity, With<undermere::mercenaries::Candidate>>().iter(world).next().expect("a candidate waits")
+        };
+        let at = undermere::testing::at(&app, candidate);
+        let taken: Vec<Point> = {
+            let world = app.world_mut();
+            world.query_filtered::<&Position, With<Blocks>>().iter(world).map(|p| p.0).collect()
+        };
+        let town = undermere::dungeon::TOWN;
+        let sides: Vec<(i32, i32)> = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+            .into_iter()
+            .filter(|(dx, dy)| app.world().resource::<WorldMap>().is_walkable_on(town, at.offset(*dx, *dy)) && !taken.contains(&at.offset(*dx, *dy)))
+            .collect();
+        assert!(!sides.is_empty(), "a side of the candidate to stand on");
+        for (dx, dy) in sides {
+            undermere::testing::stand_on(&mut app, me, at.offset(dx, dy));
+            press(&mut app, KeyCode::KeyX);
+            app.world_mut().resource_mut::<InspectView>().cursor = at;
+            app.update();
+            app.update();
+            let view = *app.world().resource::<MapView>();
+            let glyph = |p: Point| view.get(app.world().resource::<Terminal>(), p).map(|c| c.glyph);
+            assert_eq!(glyph(at.offset(dx, dy)), Some('@'), "the adventurer, standing at ({dx}, {dy}) from it, is still drawn");
+            let across = glyph(at.offset(-dx, -dy));
+            assert!(matches!(across, Some('-' | '|')), "the tick across from them is drawn: {across:?}");
+            press(&mut app, KeyCode::Escape);
+        }
+    }
+
+    /// Walks the adventurer of a run begun on the real screen into a
+    /// candidate and hires it from the offers screen, as a player does:
+    /// the adventurer, the mercenary, where it stands and its name.
+    fn hire_on_screen(app: &mut App) -> (Entity, Entity, Point, String) {
+        let me = undermere::testing::adventurer(app);
+        let candidate = {
+            let world = app.world_mut();
+            world.query_filtered::<Entity, With<undermere::mercenaries::Candidate>>().iter(world).next().expect("a candidate waits")
+        };
+        let (at, town) = (undermere::testing::at(app, candidate), undermere::dungeon::TOWN);
+        let taken: Vec<Point> = {
+            let world = app.world_mut();
+            world.query_filtered::<&Position, With<Blocks>>().iter(world).map(|p| p.0).collect()
+        };
+        let sides = [((0, -1), KeyCode::ArrowDown), ((0, 1), KeyCode::ArrowUp), ((-1, 0), KeyCode::ArrowRight), ((1, 0), KeyCode::ArrowLeft)];
+        let map = app.world().resource::<WorldMap>();
+        let (from, key) = sides
+            .into_iter()
+            .map(|((dx, dy), key)| (at.offset(dx, dy), key))
+            .find(|(cell, _)| map.is_walkable_on(town, *cell) && !taken.contains(cell))
+            .expect("a side of the candidate to walk in from");
+        undermere::testing::stand_on(app, me, from);
+        undermere::testing::set_gold(app, me, 1000);
+        let name = undermere::testing::name_of(app, candidate);
+        press(app, key);
+        press(app, KeyCode::Enter);
+        undermere::testing::settle(app);
+        assert!(app.world().get::<undermere::mercenaries::Mercenary>(candidate).is_some(), "hired: {:#?}", written(app));
+        assert!(written(app).iter().any(|r| r.contains(&format!("{name} joins you."))), "{:#?}", written(app));
+        (me, candidate, at, name)
+    }
+
+    /// Hired from the offers screen on the real screen, a candidate joins
+    /// the party and says so; `o` orders the party to hold in one line of
+    /// the log and no turn; and the look panel on the mercenary says what
+    /// it is doing, under its name.
+    #[test]
+    fn a_candidate_hired_from_the_offers_screen_and_ordered_with_o_shows_its_order_on_the_look_panel() {
+        let mut app = on_screen(RunSeed(7));
+        let (_, _, at, name) = hire_on_screen(&mut app);
+        let before = app.world().resource::<Turns>().now();
+        press(&mut app, KeyCode::KeyO);
+        assert_eq!(app.world().resource::<Turns>().now(), before, "no turn spent");
+        assert!(written(&app).iter().any(|r| r.contains("You order the party to hold.")), "{:#?}", written(&app));
+
+        press(&mut app, KeyCode::KeyX);
+        let modal = rl_engine::rl_ui::view::inspect::inspect_modal(app.world().resource::<Modals>());
+        app.world_mut().resource_mut::<rl_engine::rl_ui::InspectView>().cursor = at;
+        app.update();
+        app.update();
+        let screen = written(&app);
+        assert!(app.world().resource::<Modals>().is_open(modal), "looking: {screen:#?}");
+        assert!(screen.iter().any(|r| r.contains("holding")), "the order on the look panel: {screen:#?}");
+        assert!(screen.iter().any(|r| r.contains(&name)), "under its name: {screen:#?}");
+        assert!(!screen.iter().any(|r| r.contains("outlook") || r.contains("Chance to hit")), "and no forecast: {screen:#?}");
+        assert!(screen.iter().any(|r| r.contains(&format!("{name} · holding"))), "the rail says it too: {screen:#?}");
+    }
+
+    /// Two hired in the tavern and stood by the adventurer on the Drowned
+    /// Gate come through it with them as the player takes it, on cells of
+    /// their own beside them on floor one, and the rail lists both as
+    /// following.
+    #[test]
+    fn a_party_of_two_hired_in_the_tavern_comes_through_the_gate_beside_the_adventurer_onto_floor_one() {
+        let mut app = on_screen(RunSeed(7));
+        let (me, first, _, first_name) = hire_on_screen(&mut app);
+        let (_, second, _, second_name) = hire_on_screen(&mut app);
+        let town = undermere::dungeon::TOWN;
+        let gate = {
+            let world = app.world_mut();
+            world
+                .query::<(&Position, &OnMap, &undermere::stairs::Way)>()
+                .iter(world)
+                .find(|(_, on, way)| on.0 == town && **way == undermere::stairs::Way::Gate)
+                .map(|(p, ..)| p.0)
+                .expect("the gate stands in Mereholt")
+        };
+        undermere::testing::stand_on(&mut app, me, gate);
+        let taken: Vec<Point> = {
+            let world = app.world_mut();
+            world.query_filtered::<&Position, With<Blocks>>().iter(world).map(|p| p.0).collect()
+        };
+        let free: Vec<Point> = {
+            let map = app.world().resource::<WorldMap>();
+            (0..8).map(|i| gate + Direction::from_index(i).offset()).filter(|p| map.is_walkable_on(town, *p) && !taken.contains(p)).collect()
+        };
+        undermere::testing::stand_on(&mut app, first, free[0]);
+        undermere::testing::stand_on(&mut app, second, free[1]);
+        press(&mut app, KeyCode::Enter);
+        undermere::testing::settle(&mut app);
+        let screen = written(&app);
+        assert_eq!(undermere::testing::here(&app), undermere::dungeon::map_of(1), "through the gate: {screen:#?}");
+        let landed = undermere::testing::at(&app, me);
+        for who in [first, second] {
+            assert_eq!(app.world().get::<OnMap>(who).map(|m| m.0), Some(undermere::dungeon::map_of(1)), "came through: {screen:#?}");
+            assert!(geometry::chebyshev(undermere::testing::at(&app, who), landed) <= 1, "beside them: {screen:#?}");
+        }
+        assert_ne!(undermere::testing::at(&app, first), undermere::testing::at(&app, second), "on cells of their own");
+        for name in [first_name, second_name] {
+            assert!(screen.iter().any(|r| r.contains(&format!("{name} · following"))), "the rail lists {name} following: {screen:#?}");
+            assert!(screen.iter().any(|r| r.starts_with(&format!("{name} follows you."))), "the log says {name} came: {screen:#?}");
+        }
+        assert!(!screen.iter().any(|r| r.contains("leaves.")), "and says nobody left: {screen:#?}");
+        assert!(!app.world().resource::<Modals>().any_open(), "and no screen is up over the floor: {screen:#?}");
+    }
+
+    /// Two hired and standing beside the adventurer in the tavern are in
+    /// sight, and each is listed once on the rail, under Company, with
+    /// nothing of either under In sight; Tab steps past them to what the
+    /// rail still lists.
+    #[test]
+    fn a_party_of_two_in_sight_is_listed_once_each_under_company_and_tab_steps_past_them() {
+        let mut app = on_screen(RunSeed(7));
+        let (_, first, _, first_name) = hire_on_screen(&mut app);
+        let (_, second, _, second_name) = hire_on_screen(&mut app);
+        app.update();
+        let screen = Screen::new();
+        let rail = COLS - RAIL;
+        let lines: Vec<String> = (0..ROWS).map(|y| from(&app, rail, y)).collect();
+        for name in [&first_name, &second_name] {
+            let at: Vec<usize> = lines.iter().enumerate().filter(|(_, l)| l.contains(name.as_str())).map(|(y, _)| y).collect();
+            assert_eq!(at.len(), 1, "{name} listed once: {lines:#?}");
+            assert!(at[0] as i32 >= screen.party.y, "under Company: {lines:#?}");
+        }
+        let focus = |app: &App| app.world().resource::<rl_engine::rl_ui::Focus>().get();
+        for _ in 0..6 {
+            press(&mut app, KeyCode::Tab);
+            let picked = focus(&app);
+            assert!(picked != Some(first) && picked != Some(second), "Tab never lands on the party: {:#?}", written(&app));
+        }
+    }
+
+    /// The rail's foot is blank until someone follows; then it heads them
+    /// "Company", over a rule, each in the order it joined with its order,
+    /// the longest of them whole, and a full health bar. Taking the gate
+    /// with one of them beside the adventurer and the other still in the
+    /// tavern, the one that came is still following on floor one, and the
+    /// one that stayed is muted, marked left behind in place of its order,
+    /// and keeps its bar.
+    #[test]
+    fn the_company_at_the_rails_foot_shows_each_follower_with_its_order_and_one_left_on_another_floor_marked_left_behind() {
+        let mut app = on_screen(RunSeed(7));
+        let screen = Screen::new();
+        let rail = COLS - RAIL;
+        let company = |app: &App| (screen.party.y..screen.party.bottom()).map(|y| from(app, rail, y)).collect::<Vec<_>>();
+        assert!(company(&app).iter().all(String::is_empty), "nobody follows yet: {:#?}", company(&app));
+
+        let (me, first, _, _) = hire_on_screen(&mut app);
+        let (_, second, _, _) = hire_on_screen(&mut app);
+        // Names of three syllables, the longest a hired hand has without
+        // a byname, so the longest order must fit beside the longest name.
+        let (first_name, second_name) = ("Vorihild".to_string(), "Ingnarek".to_string());
+        app.world_mut().entity_mut(first).insert(Name::new(first_name.clone()));
+        app.world_mut().entity_mut(second).insert(Name::new(second_name.clone()));
+        app.update();
+        let lines = company(&app);
+        assert_eq!(lines[0], "Company", "the heading: {lines:#?}");
+        assert!(lines[1].chars().all(|c| c == '\u{2500}'), "a rule under it: {lines:#?}");
+        let bar = "\u{2588}".repeat(4);
+        for (line, name) in lines[2..4].iter().zip([&first_name, &second_name]) {
+            assert!(line.starts_with(&format!("h {name} · following")), "{name} with its order, in the order they joined: {lines:#?}");
+            assert!(line.ends_with(&bar), "and its health full at the rail's edge: {lines:#?}");
+        }
+        assert_eq!(from(&app, rail, screen.party.y - 1), "", "a blank row over the heading");
+        press(&mut app, KeyCode::KeyO);
+        press(&mut app, KeyCode::KeyO);
+        let lines = company(&app);
+        for (line, name) in lines[2..4].iter().zip([&first_name, &second_name]) {
+            assert!(line.starts_with(&format!("h {name} · fighting freely ")), "the longest order whole beside {name}: {lines:#?}");
+        }
+        press(&mut app, KeyCode::KeyO);
+
+        let town = undermere::dungeon::TOWN;
+        let gate = {
+            let world = app.world_mut();
+            world
+                .query::<(&Position, &OnMap, &undermere::stairs::Way)>()
+                .iter(world)
+                .find(|(_, on, way)| on.0 == town && **way == undermere::stairs::Way::Gate)
+                .map(|(p, ..)| p.0)
+        };
+        let gate = gate.expect("the gate stands in Mereholt");
+        undermere::testing::stand_on(&mut app, me, gate);
+        let beside = {
+            let map = app.world().resource::<WorldMap>();
+            (0..8).map(|i| gate + Direction::from_index(i).offset()).find(|p| map.is_walkable_on(town, *p)).expect("ground beside the gate")
+        };
+        undermere::testing::stand_on(&mut app, first, beside);
+        assert!(geometry::chebyshev(undermere::testing::at(&app, second), gate) > undermere::mercenaries::LEASH, "the other is far off in the tavern");
+        press(&mut app, KeyCode::Enter);
+        undermere::testing::settle(&mut app);
+        assert_eq!(undermere::testing::here(&app), undermere::dungeon::map_of(1), "through the gate: {:#?}", written(&app));
+        assert_eq!(app.world().get::<OnMap>(second).map(|m| m.0), Some(town), "the other stayed: {:#?}", written(&app));
+
+        let lines = company(&app);
+        assert!(lines[2].starts_with(&format!("h {first_name} · following")), "the one that came: {lines:#?}");
+        assert!(lines[3].starts_with(&format!("h {second_name} (left behind)")), "the one that stayed, with no order: {lines:#?}");
+        assert!(lines[3].ends_with(&bar), "and its health still shown: {lines:#?}");
+        let terminal = app.world().resource::<Terminal>();
+        let palette = app.world().resource::<Palette>();
+        let tone = |y: i32| terminal.get(rail + 2, y).expect("on the screen").fg;
+        assert_eq!(tone(screen.party.y + 3), palette.get(Tones::MUTED), "left behind reads muted");
+        assert_eq!(tone(screen.party.y + 2), palette.get(Tones::TEXT), "and the one beside the adventurer does not");
+    }
+
+    /// Enter is the way's key and the key for what is here. Off any way,
+    /// with one townsperson in reach offering only talk, the press that
+    /// asked for a way and found none still talks to them, rather than
+    /// the way's refusal spending the press.
+    #[test]
+    fn enter_off_any_way_with_one_offer_in_reach_takes_it_up() {
+        #[derive(Resource, Default)]
+        struct Heard(Vec<Interacted>);
+        let mut app = on_screen(RunSeed(7));
+        app.init_resource::<Heard>().add_systems(Update, |mut heard: ResMut<Heard>, mut done: MessageReader<Interacted>| {
+            heard.0.extend(done.read().copied());
+        });
+        let me = undermere::testing::adventurer(&mut app);
+        let town = undermere::dungeon::TOWN;
+        let taken: Vec<Point> = {
+            let world = app.world_mut();
+            world.query_filtered::<&Position, Or<(With<Blocks>, With<Transition>, With<Offers>)>>().iter(world).map(|p| p.0).collect()
+        };
+        // A cell and its east neighbour both free, nothing that offers or
+        // leads anywhere within reach of the cell.
+        let map = app.world().resource::<WorldMap>();
+        let place = map.place(town).expect("Mereholt was built");
+        let near = |p: Point, q: &Point| geometry::chebyshev(p, *q) <= 2;
+        let (stand, beside) = (place.entry.x - 12..place.entry.x + 12)
+            .flat_map(|x| (place.entry.y - 12..place.entry.y + 12).map(move |y| Point::new(x, y)))
+            .map(|p| (p, p.offset(1, 0)))
+            .find(|(p, b)| map.is_walkable_on(town, *p) && map.is_walkable_on(town, *b) && !taken.iter().any(|q| near(*p, q)))
+            .expect("a quiet corner of Mereholt");
+        undermere::testing::stand_on(&mut app, me, stand);
+        let talk = app.world().resource::<Verbs>().get(undermere::townsfolk::TALK).expect("Undermere declares talk");
+        let townsfolk = app.world().resource::<Registries>().factions.expect(undermere::content::TOWNSFOLK);
+        let talker = app
+            .world_mut()
+            .spawn((Actor, Blocks, Position(beside), OnMap(town), Health::full(20), Faction(townsfolk), Offers(vec![Offering::new(talk, 100)])))
+            .id();
+        undermere::testing::settle(&mut app);
+        assert_eq!(app.world().resource::<OfferedHere>().open_to(me).count(), 1, "one offer in reach: {:#?}", written(&app));
+
+        press(&mut app, KeyCode::Enter);
+        undermere::testing::settle(&mut app);
+        assert_eq!(
+            app.world().resource::<Heard>().0,
+            vec![Interacted { actor: me, target: talker, verb: talk, thing: None }],
+            "Enter talked: {:#?}",
+            written(&app)
+        );
+        assert!(!app.world().resource::<Modals>().any_open(), "and asked nothing: {:#?}", written(&app));
+    }
+
+    /// Given a thing on the real screen, as a player gives one: the
+    /// interact key beside a hired mercenary asks give or dismiss, `give`
+    /// opens the pack choosing under "Give Name which?", one of the stack
+    /// picked out moves to the mercenary with a line saying so, and the
+    /// look panel on it says it is in the adventurer's pay and carries it.
+    #[test]
+    fn a_thing_given_from_the_pack_on_the_real_screen_moves_to_the_mercenary_and_its_look_lists_it() {
+        let mut app = on_screen(RunSeed(7));
+        let (me, merc, _, name) = hire_on_screen(&mut app);
+        let healing = {
+            let bag = &app.world().get::<Inventory>(me).expect("a pack").items;
+            *bag.iter().find(|t| undermere::testing::name_of(&app, **t).contains("healing")).expect("the healing they set out with")
+        };
+        press(&mut app, KeyCode::Enter);
+        let screen = written(&app);
+        assert!(screen.iter().any(|r| r.contains(&format!("give {name}"))) && screen.iter().any(|r| r.contains(&format!("dismiss {name}"))), "{screen:#?}");
+        press(&mut app, KeyCode::Enter);
+        undermere::testing::settle(&mut app);
+        let screen = written(&app);
+        assert!(screen.iter().any(|r| r.contains(&format!("Give {name} which?"))), "the pack, choosing: {screen:#?}");
+        let choices = match &app.world().resource::<InventoryMenu>().choosing {
+            Some(rl_engine::rl_ui::Choosing::Offer(offer)) => offer.choices.clone(),
+            other => panic!("asked: {other:?}"),
+        };
+        let rows: Vec<Entity> = {
+            let view = app.world().resource::<rl_engine::rl_ui::view::inventory::InventoryView>();
+            choices.into_iter().filter(|t| view.rows.iter().any(|r| r.entity == *t)).collect()
+        };
+        for _ in 0..rows.iter().position(|t| *t == healing).expect("the healing is offered") {
+            press(&mut app, KeyCode::ArrowDown);
+        }
+        press(&mut app, KeyCode::Enter);
+        undermere::testing::settle(&mut app);
+        let carried = &app.world().get::<Inventory>(merc).expect("its pack").items;
+        let theirs = carried.iter().find(|t| undermere::testing::name_of(&app, **t).contains("healing")).copied();
+        let count = |thing: Entity| app.world().get::<Stack>(thing).map_or(1, |s| s.count);
+        assert_eq!(theirs.map(count), Some(1), "one handed over, a potion of its own");
+        assert_eq!(count(healing), 1, "and the other kept");
+        assert!(written(&app).iter().any(|r| r.contains(&format!("You give {name} a potion of healing."))), "{:#?}", written(&app));
+
+        press(&mut app, KeyCode::KeyX);
+        app.world_mut().resource_mut::<rl_engine::rl_ui::InspectView>().cursor = undermere::testing::at(&app, merc);
+        app.update();
+        app.update();
+        let screen = written(&app);
+        assert!(screen.iter().any(|r| r.contains("in your pay")), "the pay on the look panel: {screen:#?}");
+        assert!(screen.iter().any(|r| r.contains("carries a potion of healing")), "and the thing given: {screen:#?}");
+        assert!(!screen.iter().any(|r| r.contains("a sword for hire")), "and no longer for hire: {screen:#?}");
+    }
+
+    /// On the real screen, `give` opens the pack choosing under "Give Name
+    /// which?" before anything is done, and the close key backs out with
+    /// nothing handed over and no turn spent.
+    #[test]
+    fn backing_out_of_give_on_the_real_screen_hands_nothing_over_and_costs_no_turn() {
+        let mut app = on_screen(RunSeed(7));
+        let (me, merc, _, name) = hire_on_screen(&mut app);
+        let (before, mine, theirs) = (
+            app.world().resource::<Turns>().now(),
+            app.world().get::<Inventory>(me).expect("a pack").items.clone(),
+            app.world().get::<Inventory>(merc).expect("its pack").items.clone(),
+        );
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Enter);
+        undermere::testing::settle(&mut app);
+        let screen = written(&app);
+        assert!(screen.iter().any(|r| r.contains(&format!("Give {name} which?"))), "the pack, choosing: {screen:#?}");
+        assert_eq!(app.world().resource::<Turns>().now(), before, "nothing done yet");
+        press(&mut app, KeyCode::Escape);
+        undermere::testing::settle(&mut app);
+        assert!(!app.world().resource::<Modals>().any_open(), "put away: {:#?}", written(&app));
+        assert_eq!(app.world().get::<Inventory>(me).map(|b| b.items.clone()), Some(mine), "nothing handed over");
+        assert_eq!(app.world().get::<Inventory>(merc).map(|b| b.items.clone()), Some(theirs), "nothing taken");
+        assert_eq!(app.world().resource::<Turns>().now(), before, "and no turn spent");
+    }
+
+    /// Opens the offers screen on the mercenary beside the adventurer and
+    /// takes up `dismiss` on it, as a player walks the rows to it.
+    fn dismiss_on_screen(app: &mut App, name: &str) {
+        press(app, KeyCode::Enter);
+        let row = {
+            let view = app.world().resource::<rl_engine::rl_ui::view::offers::OffersView>();
+            view.rows.iter().position(|r| r.label == format!("dismiss {name}")).unwrap_or_else(|| panic!("dismiss {name} is offered: {:#?}", written(app)))
+        };
+        for _ in 0..row {
+            press(app, KeyCode::ArrowDown);
+        }
+        press(app, KeyCode::Enter);
+        undermere::testing::settle(app);
+    }
+
+    /// On the real screen, `dismiss` on a mercenary asks in its name with
+    /// No picked out, and the close key backs out with the mercenary still
+    /// following, carrying what it was hired with, and no turn spent. Asked
+    /// again, Yes lets it go for a turn: it keeps the kit it was hired with
+    /// and is for hire again at the fee it was hired for, and the log says
+    /// so.
+    #[test]
+    fn dismissing_a_mercenary_on_the_real_screen_asks_first_and_only_a_yes_lets_it_go() {
+        let mut app = on_screen(RunSeed(7));
+        let (me, merc, _, name) = hire_on_screen(&mut app);
+        let (before, kit) = (app.world().resource::<Turns>().now(), app.world().get::<Inventory>(merc).expect("a pack").items.clone());
+        dismiss_on_screen(&mut app, &name);
+        let screen = written(&app);
+        assert!(screen.iter().any(|r| r.contains(&format!("Dismiss {name}?"))), "asked in its name: {screen:#?}");
+        let (no, yes) = (screen.iter().position(|r| r.contains("No")), screen.iter().position(|r| r.contains("Yes")));
+        assert!(matches!((no, yes), (Some(no), Some(yes)) if no < yes), "No over Yes: {screen:#?}");
+        let here = Screen::new().here;
+        let asked: Vec<String> = (here.y + 1..here.bottom() - 1).map(|y| framed(&app, here, y)).collect();
+        let question = format!("Dismiss {name}? The fee is not given back, and {name} sets down everything you gave.");
+        assert_eq!(asked.iter().take_while(|l| !l.is_empty()).cloned().collect::<Vec<_>>().join(" "), question, "the whole question: {asked:#?}");
+        let view = *app.world().resource::<MapView>();
+        for who in [me, merc] {
+            let drawn = view.to_screen(undermere::testing::at(&app, who)).expect("on the map");
+            assert!(!here.contains(drawn), "the screen leaves the one asking and the one asked about in sight: {screen:#?}");
+        }
+        press(&mut app, KeyCode::Escape);
+        undermere::testing::settle(&mut app);
+        let screen = written(&app);
+        assert!(!screen.iter().any(|r| r.contains(&format!("Dismiss {name}?"))), "backed out: {screen:#?}");
+        assert_eq!(app.world().get::<Leader>(merc), Some(&Leader(me)), "still following");
+        assert_eq!(app.world().get::<Inventory>(merc).map(|b| b.items.clone()), Some(kit.clone()), "still carrying its kit");
+        assert_eq!(app.world().resource::<Turns>().now(), before, "and no turn spent");
+
+        let fee = app.world().get::<undermere::mercenaries::Mercenary>(merc).expect("hired").fee;
+        dismiss_on_screen(&mut app, &name);
+        press(&mut app, KeyCode::ArrowDown);
+        press(&mut app, KeyCode::Enter);
+        undermere::testing::settle(&mut app);
+        let screen = written(&app);
+        assert!(app.world().get::<undermere::mercenaries::Mercenary>(merc).is_none(), "let go: {screen:#?}");
+        assert!(app.world().resource::<Turns>().now() > before, "for a turn");
+        assert!(screen.iter().any(|r| r.contains(&format!("{name} leaves your service."))), "said: {screen:#?}");
+        assert_eq!(app.world().get::<Inventory>(merc).map(|b| b.items.clone()), Some(kit), "its own kit kept");
+        let offers = app.world().get::<Offers>(merc).expect("offers");
+        assert!(offers.0.first().is_some_and(|o| o.price == Some(fee)), "for hire again at its kit's fee: {offers:?}");
+    }
+
+    /// A mercenary killed by a goblin on floor two, and then the
+    /// adventurer: the end screen lists the run's numbers with two
+    /// mercenaries lost, under them the fallen, by name, killer and
+    /// floor, and under those every choice, the last one too.
+    #[test]
+    fn the_end_screen_names_a_fallen_mercenary_under_the_runs_numbers() {
+        let mut app = on_screen(RunSeed(7));
+        let me = undermere::testing::arrive(&mut app, undermere::dungeon::map_of(2));
+        undermere::testing::clear_monsters(&mut app);
+        let here = undermere::testing::at(&app, me);
+        let around = [here.offset(1, 0), here.offset(-1, 0)];
+        undermere::testing::lay_floor(&mut app, &around);
+        let goblin = undermere::testing::monster(&mut app, "goblin", around[1]);
+        for name in ["Brenna", "Osk Halfhand"] {
+            let merc = undermere::testing::monster(&mut app, undermere::mercenaries::MERCENARY, around[0]);
+            app.world_mut().entity_mut(merc).insert((Name::new(name), undermere::mercenaries::Candidate { fee: 0 }));
+            undermere::mercenaries::hire(app.world_mut(), merc, me);
+            undermere::testing::kill(&mut app, merc, Some(goblin));
+        }
+        undermere::testing::kill(&mut app, me, Some(goblin));
+        for _ in 0..4 {
+            app.update();
+        }
+        let screen = written(&app);
+        // The end screen's own column of a row, between its borders, since
+        // the rail beside it shares the row.
+        let inside = |r: &String| r.split('│').nth(1).unwrap_or_default().trim().to_string();
+        let lost = screen.iter().position(|r| inside(r).starts_with("Mercenaries lost ...") && inside(r).ends_with(" 2"));
+        let heading = screen.iter().position(|r| inside(r) == "The fallen");
+        let named = screen.iter().position(|r| inside(r) == "Brenna, slain by a goblin on floor 2");
+        assert!(matches!((lost, heading, named), (Some(l), Some(h), Some(n)) if l < h && h + 1 == n), "the fallen under the numbers: {screen:#?}");
+        assert!(screen.iter().any(|r| inside(r) == "Osk Halfhand, slain by a goblin on floor 2"), "both of them: {screen:#?}");
+        for choice in ["A new run", "This seed again", "Settings", "Main menu", "Quit"] {
+            assert!(screen.iter().any(|r| inside(r) == choice), "every choice under them, {choice:?} too: {screen:#?}");
+        }
     }
 }

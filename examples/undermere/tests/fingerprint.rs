@@ -230,9 +230,8 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [3_208_325_787_168_137_999, 1_287_101_436_025_862_759, 4_002_172_349_275_692_977],
-        "fingerprint tripwire: re-baselined for the dressings' furniture blocking again (tables, shelves, \
-         barrels, beds, pews, racks, hearths, anvils, desks, troughs, sarcophagi and the drill yard's dummies \
-         and posts stand in the way, so the script walks round them and the people of Mereholt and below do too)"
+        [13_727_685_606_147_988_756, 9_501_009_517_867_497_147, 5_536_512_531_158_911_470],
+        "fingerprint tripwire: re-baselined for merging main's town into the grown floors (the floors are part 4's \
+         grown biomes, vaults and secrets, and Mereholt stands main's townsfolk, keepers and the tavern's candidates)"
     );
 }

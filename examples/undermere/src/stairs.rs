@@ -5,15 +5,17 @@
 //! through on each the first time the place is entered, the way Foundry's
 //! lifts are laid, so the way on is always as far from the arrival as the
 //! place allows. In Mereholt the way on is the Drowned Gate, which leads to
-//! floor one's way in; on floor one the way up is the gate's far side, and
+//! floor one's way in, or to the gate mark a waystone left, by
+//! [`waystone`](crate::waystone); on floor one the way up is the gate's far side, and
 //! leads back onto the gate; every other floor has stairs up at its way in
 //! and down at its way on, and the tenth has no way down, since the throne
 //! is where the Undermere ends.
 //!
 //! A way through is an entity, a [`Transition`] where the engine looks for
 //! one when a body goes through, marked with the [`Way`] it is. Stairs are
-//! drawn by a glyph of their own, as Foundry's lifts are. The gate is drawn
-//! by the tile it stands on, which shimmers and glows violet on both its
+//! drawn by a glyph of their own, as Foundry's lifts are, and kept on the
+//! map from memory once seen, as every still thing the map draws is. The
+//! gate is drawn by the tile it stands on, which shimmers and glows violet on both its
 //! sides, so it carries no glyph to hide the tile under.
 //!
 //! Mereholt is where the adventurer lives, so its first arrival writes the
@@ -121,32 +123,41 @@ pub fn know_the_town(map: &WorldMap, knowledge: &mut Knowledge) {
 /// Lays a place's ways through the first time it is entered, and names the
 /// place in the log on every arrival, coming up as well as going down.
 ///
-/// On the run's first arrival in Mereholt it also says how to see the
-/// keys, under the town's own line: said when the run is begun, it would
-/// be written before the arrival and read as though it came first. And
-/// the adventurer knows the town they live in, [`know_the_town`].
+/// On the run's first arrival anywhere, which is Mereholt in every real
+/// run and a deeper floor in a photograph begun there, it also says how to
+/// see the keys, under the place's own line: said when the run is begun,
+/// it would be written before the arrival and read as though it came
+/// first, and said on the town's first arrival instead, it would be said
+/// again on coming home to a town first seen mid-run. The first arrival is
+/// the one that finds no other place visited, which the save keeps, so a
+/// continued run never says it twice. And the adventurer knows the town
+/// they live in, [`know_the_town`].
 pub fn link_places(
     mut commands: Commands,
     mut entered: MessageReader<PlaceEntered>,
-    help: Res<ControlsKeys>,
-    mut tell: MessageWriter<Tell>,
+    lines: ArrivalLines,
     map: Res<WorldMap>,
-    draws: Res<BiomeDraws>,
     mut knowledge: ResMut<Knowledge>,
+    marks: crate::waystone::GateMarks,
 ) {
+    let ArrivalLines { help, mut tell, draws } = lines;
     for ev in entered.read() {
         let biome = floor_of(ev.map).map(|floor| draws.of(floor).name.as_str());
         tell.write(Tell::new(place_line(ev.map, biome), Tones::NOTICE));
         if !ev.first {
             continue;
         }
+        let visited = std::iter::once(TOWN).chain((1..=FLOORS).map(map_of)).filter(|m| map.place(*m).is_some_and(|p| p.visited)).count();
+        if visited == 1 {
+            tell.write(Tell::new(format!("Press {} for the controls.", help.toggle.label()), Tones::MUTED));
+        }
         let Some(floor) = floor_of(ev.map) else {
-            // The town: how to see the keys, the gate, its way on, leading
-            // to floor one's way in, and the whole of it known.
+            // The town: the gate, its way on, leading to floor one's way in
+            // or to a gate mark left before the town was ever entered, and
+            // the whole of it known.
             if ev.map == TOWN {
-                tell.write(Tell::new(format!("Press {} for the controls.", help.toggle.label()), Tones::MUTED));
                 if let Some(gate) = ev.exit {
-                    lay(&mut commands, Way::Gate, gate, ev.map, Destination::Place { map: map_of(1), arrive: Arrive::Entry });
+                    lay(&mut commands, Way::Gate, gate, ev.map, crate::waystone::gate_to(marks.mark()));
                 }
                 know_the_town(&map, &mut knowledge);
             }
@@ -163,6 +174,16 @@ pub fn link_places(
             lay(&mut commands, Way::Down, down, ev.map, Destination::Place { map: map_of(floor + 1), arrive: Arrive::Entry });
         }
     }
+}
+
+/// What [`link_places`] says on an arrival from: the keys it names on the
+/// run's first, the log it writes to, and each floor's drawn biome, whose
+/// name its line carries.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct ArrivalLines<'w> {
+    help: Res<'w, ControlsKeys>,
+    tell: MessageWriter<'w, Tell>,
+    draws: Res<'w, BiomeDraws>,
 }
 
 #[cfg(test)]
@@ -222,6 +243,28 @@ mod tests {
             assert_eq!(here(&app), TOWN, "seed {s}: floor one's way up leads back to Mereholt");
             assert_eq!(at(&app, me), gate, "seed {s}: onto the gate");
         }
+    }
+
+    /// Every stair is a still thing the map draws, a glyph on no actor,
+    /// which is what the map keeps in memory once seen, and still one in
+    /// a continued run; `main.rs`'s own test walks away from one and
+    /// reads it drawn from memory.
+    #[test]
+    fn every_stair_is_kept_on_the_map_from_memory_through_a_save() {
+        let undrawn = |app: &mut App| {
+            let world = app.world_mut();
+            let stairs =
+                world.query_filtered::<(&Way, Has<Glyph>), Without<Actor>>().iter(world).filter(|(w, _)| **w != Way::Gate).map(|(_, g)| g).collect::<Vec<_>>();
+            (stairs.len(), stairs.iter().filter(|g| !**g).count())
+        };
+        let mut app = headless(RunSeed(2));
+        arrive(&mut app, map_of(2));
+        let (laid, bare) = undrawn(&mut app);
+        assert!(laid >= 2 && bare == 0, "{laid} stairs, {bare} with no glyph for memory to keep");
+        let text = app.world().resource::<rl_engine::rl_save::Saves>().load(crate::save::SLOT).expect("reads").expect("saved on arrival");
+        let mut carried_on = crate::testing::continued(&text);
+        let (laid, bare) = undrawn(&mut carried_on);
+        assert!(laid >= 2 && bare == 0, "continued: {laid} stairs, {bare} with no glyph for memory to keep");
     }
 
     #[test]
@@ -317,6 +360,51 @@ mod tests {
         let lines: Vec<String> = app.world().resource::<MessageLog>().iter().map(|e| e.text.clone()).collect();
         let line = |text: &str| lines.iter().position(|l| l == text).unwrap_or_else(|| panic!("{text:?} not in {lines:#?}"));
         assert!(line(&place_line(TOWN, None)) < line("Press ? for the controls."), "{lines:#?}");
+    }
+
+    /// How to see the keys is said once a run, on the first arrival in
+    /// Mereholt, and never again however the adventurer comes back: up
+    /// through the gate, or home by a waystone.
+    #[test]
+    fn the_controls_line_is_said_once_a_run_however_often_mereholt_is_entered() {
+        let mut app = headless(RunSeed(3));
+        let me = arrive(&mut app, TOWN);
+        let gate = ways_here(&mut app)[0].0;
+        stand_on(&mut app, me, gate);
+        go_through(&mut app, me);
+        go_through(&mut app, me);
+        assert_eq!(here(&app), TOWN, "up through the gate");
+        stand_on(&mut app, me, gate);
+        go_through(&mut app, me);
+        let stone = crate::testing::make(&mut app, crate::waystone::WAYSTONE);
+        crate::testing::give(&mut app, me, stone);
+        crate::testing::use_thing(&mut app, me, stone);
+        for _ in 0..40 {
+            app.update();
+        }
+        assert_eq!(here(&app), TOWN, "home by a waystone");
+        let said = crate::testing::said(&app);
+        assert_eq!(said.iter().filter(|l| *l == "Press ? for the controls.").count(), 1, "{said:#?}");
+        assert_eq!(said.iter().filter(|l| **l == place_line(TOWN, None)).count(), 3, "while the town's own line is said on every arrival");
+
+        // A run begun below, as a photograph's is, says it on that first
+        // floor, and not again on the town's first arrival by a waystone.
+        let mut app = headless(RunSeed(3));
+        app.insert_resource(crate::run::StartFloor(2));
+        let me = crate::testing::adventurer(&mut app);
+        assert_eq!(here(&app), map_of(2), "begun on floor two");
+        let stone = crate::testing::make(&mut app, crate::waystone::WAYSTONE);
+        crate::testing::give(&mut app, me, stone);
+        crate::testing::use_thing(&mut app, me, stone);
+        for _ in 0..40 {
+            app.update();
+        }
+        assert_eq!(here(&app), TOWN, "home by a waystone, the town's first arrival");
+        let said = crate::testing::said(&app);
+        let controls = said.iter().position(|l| l == "Press ? for the controls.").expect("said on the first floor");
+        let floor_two = place_line(map_of(2), Some(&app.world().resource::<BiomeDraws>().of(2).name));
+        assert_eq!(said[controls - 1], floor_two, "under floor two's line: {said:#?}");
+        assert_eq!(said.iter().filter(|l| *l == "Press ? for the controls.").count(), 1, "once: {said:#?}");
     }
 
     /// The adventurer lives in Mereholt, so the first arrival there knows

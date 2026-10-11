@@ -37,9 +37,12 @@ use crate::stairs::Way;
 
 /// The kinds a floor's things are drawn from, by the tag each kind's
 /// members carry, and how often each is drawn against the others: potions
-/// and scrolls most, weapons and armor a third as often, and staffs,
-/// wands, rings and thrown things least.
-pub const KINDS: [(&str, u32); 8] = [("potion", 30), ("scroll", 30), ("weapon", 10), ("armor", 10), ("staff", 6), ("wand", 5), ("ring", 5), ("thrown", 4)];
+/// and scrolls most, weapons and armor a third as often, staffs, wands,
+/// rings and thrown things less, and a waystone, the way home, rarest of
+/// all, and only where `item_spawns.ron` lays one, from floor five: about
+/// one run in two finds one.
+pub const KINDS: [(&str, u32); 9] =
+    [("potion", 30), ("scroll", 30), ("weapon", 10), ("armor", 10), ("staff", 6), ("wand", 5), ("ring", 5), ("thrown", 4), ("waystone", 1)];
 
 /// The things every floor holds before its depth adds any.
 pub const BASE_THINGS: u32 = 6;

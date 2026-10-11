@@ -267,4 +267,11 @@
      offers: [(verb: "open", time: 100)]),
     // A gallery's statues, flanking the hall its plates fire from.
     (name: "guardian statue", glyph: '&', color: (r: 150, g: 150, b: 165), blocks: true),
+
+    // Where the adventurer last knelt with a waystone, which the Drowned Gate
+    // leads back to: one in the whole run, moved by every call, stood by
+    // `src/waystone.rs` rather than a piece, lit the gate's violet by
+    // `light.rs` and drawn from memory once seen, as every prop is, so the map
+    // shows where the gate will bring the adventurer back.
+    (name: "gate mark", glyph: '◊', color: (r: 205, g: 150, b: 255)),
 ]

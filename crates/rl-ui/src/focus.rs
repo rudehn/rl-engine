@@ -192,16 +192,23 @@ pub fn cycle(list: &[Sighting], from: Option<Entity>, back: bool) -> Option<&Sig
 }
 
 /// With nothing open, the cursor's "next" key steps [`Focus`] through what
-/// is in sight, Shift steps it back, and the close key lets go of it.
+/// is in sight and has a row on the nearby rail, Shift steps it back, and
+/// the close key lets go of it.
 ///
-/// Only with nothing open: inside a cursor the same keys move the cursor,
-/// which moves the focus with it.
-pub fn browse(input: CursorInput, modals: Res<Modals>, sighted: Res<Sighted>, mut focus: ResMut<Focus>) {
+/// Only what the rail lists, as the game left it in `ViewSet::Annotate`:
+/// a game that lists someone elsewhere, as a party panel lists a
+/// follower, takes its row out there, and a step landing on it would
+/// highlight nothing. The rail of the last frame drawn is the one read,
+/// which is what the player sees as they press. Only with nothing open:
+/// inside a cursor the same keys move the cursor, which moves the focus
+/// with it, through everything in sight.
+pub fn browse(input: CursorInput, modals: Res<Modals>, sighted: Res<Sighted>, rail: Res<crate::NearbyView>, mut focus: ResMut<Focus>) {
     if modals.any_open() {
         return;
     }
     if input.just_pressed(input.keys().next) {
-        focus.step(sighted.list(), input.back());
+        let listed: Vec<Sighting> = sighted.list().iter().filter(|s| rail.lists(s.entity)).copied().collect();
+        focus.step(&listed, input.back());
     } else if input.just_pressed(input.keys().close) && focus.get().is_some() {
         focus.clear();
     }

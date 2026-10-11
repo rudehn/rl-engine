@@ -27,7 +27,18 @@
 //! scroll of enchanting besides, and [`light`] lights them and dims the
 //! lantern as the adventurer descends. [`traps`] is what a floor hides,
 //! its secret doors, hidden rooms and traps, and the log's words for
-//! finding them.
+//! finding them. [`townsfolk`] is Mereholt's
+//! people, named afresh each run, standing at their posts or walking the
+//! town, each with something to say, and [`rumours`] what the innkeeper
+//! among them has heard of this run's dungeon; [`shops`] is the keepers among them:
+//! what they may stock, a stocking of their shelves drawn at the depth
+//! reached, and the shelves they sell from; [`temple`] is the rites
+//! the priest among them mends, unbinds and names by, for a price; and
+//! [`waystone`] is the way home from below, ten quiet turns of kneeling,
+//! and the mark the gate leads back down to. [`mercenaries`] is the swords
+//! for hire at the Sunken Lantern: one kind, each with a name drawn from a
+//! set of its own and a kit rolled at the depth reached, asking what that
+//! kit is worth.
 //!
 //! The run is [`run`]'s: the adventurer and what they set out with, and a
 //! run carried on from a save, which [`save`] says how to write down.
@@ -75,23 +86,29 @@ pub mod finds;
 pub mod input;
 pub mod light;
 pub mod lore;
+pub mod mercenaries;
 pub mod plugin;
 pub mod population;
 pub mod prefabs;
 pub mod quest;
+pub mod rumours;
 pub mod run;
 pub mod save;
 pub mod seeming;
+pub mod shops;
 pub mod staffs;
 pub mod stairs;
 pub mod stats;
 pub mod strength;
 pub mod tally;
+pub mod temple;
 pub mod testing;
 pub mod title;
+pub mod townsfolk;
 pub mod traits;
 pub mod traps;
 pub mod tricks;
 pub mod typeface;
 pub mod vaults;
+pub mod waystone;
 pub mod wearing;

@@ -79,7 +79,7 @@ A floor lays 0 to 2 piles of 3d8 times its number, and kobolds, goblins, archers
 The prices below are set against that estimate; part 5's first task measures the real figure with the soak, and the prices move with it before anything else is tuned.
 
 A thing is priced at what the adventurer knows of it.
-A level known above nought adds 100 a level; a level not yet known counts as nought, as the vitals and the forecast already count it, so a shop never tells a level.
+A level known above its kind's plain level, nought for a weapon or armor, a ring's 1 and a staff's 2, adds 100 a level above it; a level not yet known counts as the plain one, as the vitals and the forecast already count it, so a shop never tells a level.
 A thing whose kind is not known, or that shows a curse's sign, has no worth: the keepers will not buy what nobody can name, and nobody buys a curse.
 A keeper pays a quarter of a thing's worth, rounded down.
 Artifacts are never sold; the curio buys them at 400.
@@ -200,6 +200,8 @@ Several lines teach a rule the game never explains anywhere else; that is what t
 - **The curio dealer**: "Rare things, dear things. Things the dead had no more use for."
 - **The priest**, at the altar: "The Still Water mends, unbinds and names. It asks a little gold for the candles."
 
+Each keeper carries a purse set afresh at each stocking, 200 gold a tier and the curio dealer's 400, since it is the shop that buys the rare and so can pay an artifact's 400 from tier one, and gold paid to a keeper goes into it.
+
 **The townsfolk.**
 
 - **The gatewarden**, at the head of the causeway, keeps the post.
@@ -229,6 +231,7 @@ The innkeeper says one rumour a talk, in a fixed order: the floor ten boss, then
 Rumours are always true and never exact: they say what is down there, never which floor or how to beat it.
 The boss's rumour hints and never names, since part 3 keeps which of three waits on the Drowned Throne unnamed until floor ten shows it; a rumour that named it would undo that.
 They read the run's draws, which part 3 makes for the boss and the mini-bosses and part 4 for the biomes; a draw not fixed by the time the run starts has no rumour, and the plan checks that each one is.
+Part 4 draws a biome for each floor rather than one for each band, so since the two were merged on 2026-10-10 the innkeeper tells each biome drawn on a floor that could have drawn another, shallowest first and each once, by `dungeon::biomes_drawn`, which draws by the floors' own function.
 The lines are `assets/rumours.ron`, one per drawable thing.
 
 | Drawn | Rumour |

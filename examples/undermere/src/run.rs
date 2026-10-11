@@ -18,6 +18,7 @@ use crate::dungeon::{FLOORS, TOWN, Undermere, floor_of, map_of};
 use crate::light::Fixtures;
 use crate::lore::{Faces, Lore};
 use crate::tally::Counted;
+use crate::townsfolk::{GivenNames, NameSets, Townsfolk, Townsperson, name_everyone};
 
 /// The adventurer's health at the start of a run, and the most they ever
 /// have but for a potion of life: sixty, since no experience and no levels
@@ -32,9 +33,11 @@ pub const HEALTH: i32 = 60;
 pub const LANTERN: &str = "lantern";
 
 /// What the adventurer walks out of Mereholt with, by name and count: a
-/// sword in hand, leather on their back, a lit lantern, and two potions of
-/// healing in the pack. Everything that is worn is worn.
-pub const KIT: [(&str, u32); 4] = [("sword", 1), ("leather armor", 1), (LANTERN, 1), ("potion of healing", 2)];
+/// sword in hand, leather on their back, a lit lantern, two potions of
+/// healing, a waystone for the way home and fifty gold in the pack.
+/// Everything that is worn is worn.
+pub const KIT: [(&str, u32); 6] =
+    [("sword", 1), ("leather armor", 1), (LANTERN, 1), ("potion of healing", 2), (crate::waystone::WAYSTONE, 1), ("gold coin", 50)];
 
 /// How the adventurer is drawn.
 pub const ADVENTURER: Color = Color::WHITE;
@@ -69,10 +72,20 @@ pub fn prepare(commands: &mut Commands, seed: &Seed, registries: &Registries) {
     // Resistance first, then armor: the traits' resistances are what make
     // fire nothing to a salamander and poison nothing to the dead, and the
     // engine's default list is armor alone, which would leave them written
-    // down and never played. Last, Undermere's own floor on what armor
+    // down and never played. Then Undermere's own floor on what armor
     // took: never more than half of the blow's own roll, so plate and
     // scrolls still matter on every floor and nothing is ever immune.
-    commands.insert_resource(DamageStages(vec![Box::new(ApplyResistance), Box::new(SubtractArmor), Box::new(crate::damage::HalveArmor)]));
+    // Last of all, Mereholt's own peace: a flag kept outside the pipeline,
+    // since no stage before it can ask where a blow landed, dropping
+    // whatever reaches it to nothing while the town is the place loaded.
+    let peace = crate::damage::MereholtPeace::new();
+    commands.insert_resource(peace.clone());
+    commands.insert_resource(DamageStages(vec![
+        Box::new(ApplyResistance),
+        Box::new(SubtractArmor),
+        Box::new(crate::damage::HalveArmor),
+        Box::new(crate::damage::StopsHarmInMereholt(peace)),
+    ]));
     commands.insert_resource(Lighting::dark());
     // Standing in fire scorches, a point a turn for three turns.
     commands.insert_resource(FireRules::new().inflicts(registries.statuses.expect("scorched"), 3));
@@ -118,9 +131,9 @@ pub fn spawn_adventurer(commands: &mut Commands, registries: &Registries) -> Ent
 
 /// Things put in the adventurer's pack as if they had been found, beside
 /// the kit, for a photograph of the pack: `main.rs` reads them from
-/// `UNDERMERE_PACK`, written `potion of extra healing*2, ring of light:-2`, each
-/// a name from `items.ron` with a count after `*` and a level after `:`.
-/// Absent, nothing, which is every real run.
+/// `UNDERMERE_PACK`, written `potion of extra healing*2, ring of light:-2`,
+/// each a name from `items.ron` with a count after `*` and a level after
+/// `:`. Absent, nothing, which is every real run.
 #[derive(Resource, Debug, Clone, Default, PartialEq, Eq)]
 pub struct ExtraPack(pub Vec<(String, i32, u32)>);
 
@@ -147,16 +160,23 @@ impl ExtraPack {
     }
 }
 
-/// What a photograph of a deeper floor wants in sight on arriving there:
-/// `main.rs` reads it from `UNDERMERE_NEAR`, beside `UNDERMERE_START`.
-/// `camp` is a goblin camp's fire, `captive` a captive's shackles, `lair`
-/// the floor's mini-boss, `throne` the floor's boss, and anything else a
-/// monster of that name. Absent, nothing, which is every real run.
+/// What a photograph of a deeper floor wants in sight on arriving there, or
+/// of Mereholt the person it wants to stand beside: `main.rs` reads it from
+/// `UNDERMERE_NEAR`, beside `UNDERMERE_START`. `camp` is a goblin camp's
+/// fire, `captive` a captive's shackles, `lair` the floor's mini-boss,
+/// `throne` the floor's boss, a [`role`] of `townsfolk.ron` that person in
+/// Mereholt (`smith`, `priest`, `child`, ...),
+/// [`candidates`](crate::mercenaries::NEAR_CANDIDATES) the swords for hire
+/// in its tavern, and anything else a monster of that name. Absent,
+/// nothing, which is every real run.
 ///
 /// The adventurer is warped along the way from where they arrived to it,
 /// [`NEAR_STEPS`] short of it, so what they see is what a player walking
 /// up to it would see, not a cell picked from above that might look at it
-/// through a wall.
+/// through a wall; beside a person, so one step into them opens the shop
+/// or talks.
+///
+/// [`role`]: crate::townsfolk::Role::role
 #[derive(Resource, Debug, Clone, PartialEq, Eq)]
 pub struct StartNear(pub String);
 
@@ -166,18 +186,30 @@ pub struct StartNear(pub String);
 pub const NEAR_STEPS: usize = 4;
 
 /// Stands the adventurer [`NEAR_STEPS`] short of what [`StartNear`] names,
-/// once it stands on the floor they arrived on, and forgets the ask; does
-/// nothing in Mereholt, or while the floor holds nothing by that name.
+/// or beside a person of Mereholt it names, once it stands on the place
+/// they arrived on, and forgets the ask; does nothing while they are
+/// somewhere it cannot be, a person below or anything else in Mereholt, or
+/// while the place holds nothing by that name.
 pub fn stand_near(world: &mut World) {
     let Some(near) = world.get_resource::<StartNear>().map(|n| n.0.clone()) else { return };
     let Some((me, at, here)) = world.query_filtered::<(Entity, &Position, &OnMap), With<Adventurer>>().iter(world).next().map(|(e, p, on)| (e, p.0, on.0))
     else {
         return;
     };
-    if here == TOWN {
+    let candidates = near == crate::mercenaries::NEAR_CANDIDATES;
+    let person = candidates || world.resource::<Townsfolk>().role(&near).is_some();
+    if (here == TOWN) != person {
         return;
     }
-    let Some(target) = sought(world, &near, here) else { return };
+    let target = if candidates {
+        world.query_filtered::<&Position, With<crate::mercenaries::Candidate>>().iter(world).map(|p| p.0).min()
+    } else if person {
+        world.query::<(&Position, &Townsperson)>().iter(world).find(|(_, p)| p.0 == near).map(|(p, _)| p.0)
+    } else {
+        sought(world, &near, here)
+    };
+    let Some(target) = target else { return };
+    let steps = if person { 1 } else { NEAR_STEPS };
     world.remove_resource::<StartNear>();
     let taken: Vec<Point> = world.query_filtered::<(&Position, &OnMap), With<Actor>>().iter(world).filter(|(_, on)| on.0 == here).map(|(p, _)| p.0).collect();
     let map = world.resource::<WorldMap>();
@@ -189,10 +221,71 @@ pub fn stand_near(world: &mut World) {
     while let Some(next) = flood.descend(*way.last().expect("never empty")).filter(|n| *n != goal) {
         way.push(next);
     }
-    let stand = way.iter().rev().skip(NEAR_STEPS.saturating_sub(1)).map(|p| map.to_world(*p)).find(|p| !taken.contains(p));
+    let stand = way.iter().rev().skip(steps.saturating_sub(1)).map(|p| map.to_world(*p)).find(|p| !taken.contains(p));
     if let Some(stand) = stand {
         info!("standing the adventurer at {stand:?}, short of the {near} at {target:?}");
         world.write_message(WarpRequest { actor: me, to: Destination::Place { map: here, arrive: Arrive::At(stand) } });
+    }
+}
+
+/// How many hired hands a photograph wants following the adventurer from
+/// the first frame they stand anywhere, at most
+/// [`PARTY`](crate::mercenaries::PARTY): `main.rs` reads it from
+/// `UNDERMERE_PARTY`, beside `UNDERMERE_START` and `UNDERMERE_NEAR`, so a
+/// picture of a party on a deep floor, in a fight or at the end of a run
+/// needs no walk to the tavern and back. It waits on the stand
+/// `UNDERMERE_NEAR` asks for, so one asking for what the floor does not
+/// hold, a lair on a floor with none, gets no party either. Absent,
+/// nothing, which is every real run.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StartParty(pub usize);
+
+/// The run's stream a photograph's party is drawn from: its own, so asking
+/// for one moves no draw the run would make without it.
+pub const PARTY_STREAM: &[u8] = b"undermere.start-party";
+
+/// Hires [`StartParty`]'s hands on the cells beside the adventurer, once
+/// they stand somewhere and [`StartNear`] has stood them where it asked,
+/// and forgets the ask. Each is drawn as the tavern draws a candidate, a
+/// kit at the deepest floor reached and a name the run has not given,
+/// made a candidate and hired the one way a player's hire is, so what the
+/// photograph shows is what playing would.
+pub fn hire_party(world: &mut World) {
+    use crate::mercenaries::{Makers, Mercenaries, PARTY, hire, spawn_candidate};
+    let Some(StartParty(wanted)) = world.get_resource::<StartParty>().copied() else { return };
+    let Some((me, at, here)) = world.query_filtered::<(Entity, &Position, &OnMap), With<Adventurer>>().iter(world).next().map(|(e, p, on)| (e, p.0, on.0))
+    else {
+        return;
+    };
+    world.remove_resource::<StartParty>();
+    let taken: Vec<Point> = world.query_filtered::<(&Position, &OnMap), With<Blocks>>().iter(world).filter(|(_, on)| on.0 == here).map(|(p, _)| p.0).collect();
+    let map = world.resource::<WorldMap>();
+    let cells: Vec<Point> =
+        (0..8).map(|i| at + Direction::from_index(i).offset()).filter(|p| map.is_walkable_on(here, *p) && !taken.contains(p)).take(wanted.min(PARTY)).collect();
+    let mut given = world.resource::<GivenNames>().clone();
+    let mut rng = world.resource::<Seed>().stream(PARTY_STREAM, 0);
+    let mut queue = CommandQueue::default();
+    let made: Vec<Entity> = {
+        let mut commands = Commands::new(&mut queue, world);
+        let (mercenaries, armory, names) = (world.resource::<Mercenaries>(), world.resource::<Armory>(), world.resource::<NameSets>());
+        let deepest = world.resource::<crate::tally::Tally>().deepest;
+        let makers = Makers::of(world);
+        cells
+            .into_iter()
+            .map(|cell| {
+                let kit = mercenaries.kit(deepest, armory, &mut rng);
+                let name = names.mercenary().draw_distinct(&mut rng, |n| given.has(n)).expect("the mercenaries' names never run dry");
+                given.give(&name);
+                let candidate = spawn_candidate(&mut commands, &makers, &name, &kit, mercenaries.fee(&kit, armory), cell);
+                commands.entity(candidate).insert(OnMap(here));
+                candidate
+            })
+            .collect()
+    };
+    queue.apply(world);
+    world.insert_resource(given);
+    for candidate in made {
+        hire(world, candidate, me);
     }
 }
 
@@ -294,6 +387,11 @@ pub fn start(
         lore.learn(name);
     }
     commands.insert_resource(lore);
+    // Who Mereholt's people are this run, each named apart from everybody
+    // else the run names.
+    let mut given = GivenNames::default();
+    commands.insert_resource(name_everyone(&content.townsfolk, &content.names, &seed, &mut given));
+    commands.insert_resource(given);
     let adventurer = spawn_adventurer(&mut commands, &content.registries);
     let extra = content.extra.as_deref().cloned().unwrap_or_default();
     equip_kit(&mut commands, adventurer, &content.armory, &content.registries, &extra);
@@ -379,6 +477,8 @@ pub struct Content<'w> {
     registries: Res<'w, Registries>,
     armory: Res<'w, Armory>,
     faces: Res<'w, Faces>,
+    townsfolk: Res<'w, Townsfolk>,
+    names: Res<'w, NameSets>,
     extra: Option<Res<'w, ExtraPack>>,
 }
 
@@ -401,7 +501,7 @@ mod tests {
     /// A new run, over a span of seeds: the one adventurer in Mereholt,
     /// where its piece marks the arrival, at full health, the sword in
     /// hand, the leather on and the lantern lit in its place, and two
-    /// potions of healing in the pack.
+    /// potions of healing and fifty gold in the pack.
     #[test]
     fn a_new_run_puts_the_adventurer_in_mereholt_with_their_kit() {
         for s in 0..4 {
@@ -420,7 +520,9 @@ mod tests {
             let mut carried = pack(&app, me);
             carried.sort();
             let kit: Vec<(String, u32)> =
-                [(LANTERN, 1), ("leather armor", 1), ("potion of healing", 2), ("sword", 1)].map(|(n, c)| (n.to_string(), c)).to_vec();
+                [("gold coin", 50), (LANTERN, 1), ("leather armor", 1), ("potion of healing", 2), ("sword", 1), (crate::waystone::WAYSTONE, 1)]
+                    .map(|(n, c)| (n.to_string(), c))
+                    .to_vec();
             assert_eq!(carried, kit, "seed {s}: everything worn is carried, and the potions are one stack of two");
             let bag = &app.world().get::<Inventory>(me).expect("a pack").items;
             let lantern = bag.iter().copied().find(|i| app.world().get::<Name>(*i).is_some_and(|n| n.as_str() == LANTERN));
@@ -504,6 +606,79 @@ mod tests {
             let far = geometry::chebyshev(at(&app, me), boss);
             assert!((1..=NEAR_STEPS as i32 + 1).contains(&far), "seed {s}: stood {far} from the boss");
             assert!(app.world().get_resource::<StartNear>().is_none(), "seed {s}: the ask is forgotten once answered");
+        }
+    }
+
+    /// A photograph's ask for a party hires that many, never more than the
+    /// party holds, beside the adventurer where the run starts and after
+    /// any stand it asked for: each a mercenary of its own name, following
+    /// them, on the floor they stand on. The run's own draws are not
+    /// moved: the floor's monsters stand where they would without it.
+    #[test]
+    fn a_run_started_with_a_party_has_it_hired_and_following_beside_the_adventurer() {
+        use crate::mercenaries::{Mercenary, Order, PARTY};
+        use crate::testing::settle;
+        let monsters = |app: &mut App| {
+            let world = app.world_mut();
+            let mut all: Vec<Point> = world.query_filtered::<&Position, (With<crate::bestiary::Kind>, Without<Mercenary>)>().iter(world).map(|p| p.0).collect();
+            all.sort();
+            all
+        };
+        for (s, (floor, near)) in [(1, None), (FLOORS, Some("throne"))].into_iter().enumerate() {
+            let begin = |party: Option<usize>| {
+                let mut app = headless(RunSeed(s as u64));
+                app.insert_resource(StartFloor(floor));
+                if let Some(near) = near {
+                    app.insert_resource(StartNear(near.to_string()));
+                }
+                if let Some(n) = party {
+                    app.insert_resource(StartParty(n));
+                }
+                let me = adventurer(&mut app);
+                settle(&mut app);
+                (app, me)
+            };
+            let (mut plain, _) = begin(None);
+            let (mut app, me) = begin(Some(PARTY + 1));
+            let hired: Vec<(Entity, Mercenary)> = {
+                let world = app.world_mut();
+                world.query::<(Entity, &Mercenary)>().iter(world).map(|(e, m)| (e, m.clone())).collect()
+            };
+            assert_eq!(hired.len(), PARTY, "floor {floor}: the most the party holds");
+            assert_ne!(hired[0].1.name, hired[1].1.name, "floor {floor}: each its own name");
+            for (who, mercenary) in &hired {
+                assert_eq!(mercenary.order, Order::Follow, "floor {floor}");
+                assert_eq!(app.world().get::<Leader>(*who).map(|l| l.0), Some(me), "floor {floor}: following the adventurer");
+                assert_eq!(app.world().get::<OnMap>(*who).map(|m| m.0), Some(map_of(floor)), "floor {floor}: on their floor");
+                assert!(geometry::chebyshev(at(&app, *who), at(&app, me)) <= 2, "floor {floor}: beside them");
+            }
+            assert!(app.world().get_resource::<StartParty>().is_none(), "floor {floor}: the ask is forgotten once answered");
+            assert_eq!(monsters(&mut app), monsters(&mut plain), "floor {floor}: the run's own draws unmoved");
+        }
+    }
+
+    /// A photograph's ask to start by one of Mereholt's people who keeps
+    /// a post stands the adventurer beside them, one step from their shop
+    /// or their talk, for every one of them and every seed tried.
+    #[test]
+    fn a_run_started_by_a_person_who_keeps_a_post_stands_beside_them_in_mereholt() {
+        use crate::testing::settle;
+        use crate::townsfolk::Moves;
+        let townsfolk = crate::content::Library::load(&crate::content::effect_kinds(), &Moments::default()).townsfolk;
+        for s in [0, 1, 7] {
+            for role in townsfolk.roles().filter(|r| r.moves == Moves::Keeps) {
+                let mut app = headless(RunSeed(s));
+                app.insert_resource(StartNear(role.role.clone()));
+                let me = adventurer(&mut app);
+                settle(&mut app);
+                let person = {
+                    let world = app.world_mut();
+                    let mut q = world.query::<(&Position, &Townsperson)>();
+                    q.iter(world).find(|(_, p)| p.0 == role.role).map(|(p, _)| p.0).expect("the person stands")
+                };
+                assert_eq!(geometry::chebyshev(at(&app, me), person), 1, "seed {s}: beside the {} at {person:?}, stood at {:?}", role.role, at(&app, me));
+                assert!(app.world().get_resource::<StartNear>().is_none(), "seed {s}: the ask is forgotten once answered");
+            }
         }
     }
 

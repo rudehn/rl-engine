@@ -7,10 +7,18 @@
 //!
 //! It takes the one thing on offer. Where several are offered it asks,
 //! by opening the offers screen, if the game added one; a game with no
-//! such screen gets nothing rather than a guess.
+//! such screen gets nothing rather than a guess. The one thing on offer
+//! that asks first is asked about on that screen, its question up at once,
+//! and the one that chooses first opens the bag choosing for it, as
+//! [`InventoryPanel`](crate::InventoryPanel) says.
 //!
 //! Opt-in with [`InteractKey`], beside the panels: a game with no props
 //! adds nothing and the key does not exist.
+//!
+//! One press is one action. A game may bind the same key to its way
+//! through, as Enter is the obvious key for both; the press that takes the
+//! stairs then is not also a reach for what is beside them, so the key
+//! stands aside, as [`interact_key`] says, reading [`WayAsked`].
 
 use bevy::prelude::*;
 use rl_bevy::EngineSet;
@@ -18,6 +26,7 @@ use rl_bevy::prelude::*;
 
 use crate::controls::{AddControls, Chord, ControlInput};
 use crate::modal::Modals;
+use crate::panel::offers::{Confirming, OffersMenu};
 
 /// The key that takes what is offered here.
 ///
@@ -46,7 +55,12 @@ pub struct InteractKey;
 
 impl Plugin for InteractKey {
     fn build(&self, app: &mut App) {
-        app.init_resource::<InteractKeys>().add_systems(Update, interact_key.in_set(EngineSet::Input));
+        // After the input phase rather than in it, so every game key read
+        // from the same press has written what it asked for: see
+        // `interact_key`. Gated on play as that phase is, since outside
+        // the set it does not inherit its run condition.
+        app.init_resource::<InteractKeys>()
+            .add_systems(Update, interact_key.after(EngineSet::Input).before(EngineSet::Turns).run_if(in_state(EngineState::Playing)));
     }
 
     fn finish(&self, app: &mut App) {
@@ -57,33 +71,100 @@ impl Plugin for InteractKey {
     }
 }
 
+/// Whether the player asked this frame to go through a way it stands on.
+///
+/// Read from the [`GoThrough`] a game's input wrote, since which key takes
+/// a way is the game's to bind and the engine cannot see it otherwise. The
+/// way underfoot matters too: a game that writes a [`GoThrough`] for every
+/// press of its key, way or none, leaves it refused off one, and that
+/// press took nothing, so the key should still reach.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct WayAsked<'w, 's> {
+    asked: MessageReader<'w, 's, Intent<GoThrough>>,
+    standing: Query<'w, 's, (&'static Position, Option<&'static OnMap>)>,
+    ways: Query<'w, 's, (&'static Position, Option<&'static OnMap>), With<Transition>>,
+}
+
+impl WayAsked<'_, '_> {
+    /// Whether `player` asked to go through a way on its own cell.
+    ///
+    /// Reads every ask written since the last call, with a player or
+    /// without one, so none is left over to be mistaken for a later press's.
+    pub fn by(&mut self, player: Option<Entity>) -> bool {
+        let mut asked = false;
+        for intent in self.asked.read() {
+            asked |= Some(intent.actor) == player;
+        }
+        let Some((at, on)) = player.and_then(|p| self.standing.get(p).ok()) else { return false };
+        let map = |on: Option<&OnMap>| on.map(|m| m.0).unwrap_or(MapId::SURFACE);
+        asked && self.ways.iter().any(|(way, way_on)| way.0 == at.0 && map(way_on) == map(on))
+    }
+}
+
 /// Writes the interaction for the one offer in reach.
 ///
 /// Nothing while a screen is up: a key that acted through an open bag
 /// would act on what the player cannot see.
+///
+/// Nothing either when the same press asked to take a way through, which
+/// a game binding its way to this key does. Both read the press in the
+/// same frame, before the turn resolves either, so the reach would be for
+/// the offers beside the way being left: two of them opened a screen that
+/// stood over the new floor, and one was a second ask from one key.
+/// So this runs after the input phase, where whatever the game asked for
+/// has been written, and stands aside for the way. For a way only: a game
+/// binding another action of its own to this key still writes two asks.
 pub fn interact_key(
     keys: ControlInput,
     binds: Res<InteractKeys>,
-    mut modals: ResMut<Modals>,
+    mut screens: Screens,
     offered: Res<OfferedHere>,
     mut intents: MessageWriter<Intent<Interact>>,
+    mut way: WayAsked,
     holding: Query<Entity, (With<Player>, With<MyTurn>)>,
 ) {
-    if modals.any_open() || !binds.interact.just_pressed(keys.input()) {
+    // Before any early return, so an ask from a frame the key was not
+    // pressed is never mistaken for one from a frame it was.
+    let took_way = way.by(holding.single().ok());
+    let Screens { modals, menu, commands } = &mut screens;
+    if took_way || modals.any_open() || !binds.interact.just_pressed(keys.input()) {
         return;
     }
     let Ok(player) = holding.single() else { return };
     let mut open = offered.open_to(player);
-    let Some(offer) = open.next().copied() else { return };
-    if open.next().is_none() {
-        intents.write(Intent::new(player, Interact { target: offer.target, verb: offer.verb }));
-        return;
+    let Some(offer) = open.next().cloned() else { return };
+    let lone = open.next().is_none();
+    match (lone, &offer.asks) {
+        (true, None) => {
+            intents.write(Intent::new(player, Interact { target: offer.target, verb: offer.verb, thing: None }));
+            return;
+        }
+        // Chosen for in the bag, with no screen between: the one offer
+        // needs no question but which thing.
+        (true, Some(AsksFirst::Thing { prompt, among })) => {
+            crate::panel::inventory::choose_for_offer(commands, player, offer.target, offer.verb, prompt.clone(), *among);
+            return;
+        }
+        _ => {}
     }
-    // Several: a question, asked by the screen that exists to ask it. A
+    // Several, or one that asks first: a question, asked by the screen
+    // that exists to ask it, on the lone offer's own question at once. A
     // game without one gets nothing, which is better than a guess.
-    if let Some(offers) = modals.get(crate::panel::offers::OFFERS_MODAL) {
-        modals.open(offers);
+    let Some(offers) = modals.get(crate::panel::offers::OFFERS_MODAL) else { return };
+    modals.open(offers);
+    if let (true, Some(menu)) = (lone, menu.as_deref_mut()) {
+        menu.confirming = Some(Confirming { target: offer.target, verb: offer.verb, yes: false });
     }
+}
+
+/// The screens the interact key opens: the stack, the offers screen's own
+/// state, for a lone offer that asks first, when the game added it, and
+/// the commands that open the bag for a lone offer that chooses first.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Screens<'w, 's> {
+    modals: ResMut<'w, Modals>,
+    menu: Option<ResMut<'w, OffersMenu>>,
+    commands: Commands<'w, 's>,
 }
 
 #[cfg(test)]
@@ -92,6 +173,7 @@ mod tests {
     use crate::harness::Stage;
     use rl_bevy::props::Stocked;
     use rl_bevy::testing::TEST_SEED;
+    use rl_core::Point;
 
     /// A player standing on a body that offers one thing, with a bench
     /// that offers two three cells off, out of reach until it is walked to.
@@ -162,6 +244,103 @@ mod tests {
         stage.press(KeyCode::Enter);
         stage.tick();
         assert!(stage.app.world().resource::<Seen>().0.is_empty(), "nothing was guessed at");
+    }
+
+    /// A game's own input that takes the way underfoot on Enter, the
+    /// interact key, as one binding its stairs to Enter does: for every
+    /// press, way or none, and so refused off one.
+    fn way_on_enter(keys: Res<ButtonInput<KeyCode>>, holding: Query<Entity, (With<Player>, With<MyTurn>)>, mut ways: MessageWriter<Intent<GoThrough>>) {
+        if keys.just_pressed(KeyCode::Enter)
+            && let Ok(player) = holding.single()
+        {
+            ways.write(Intent::new(player, GoThrough));
+        }
+    }
+
+    /// Every interaction that happened, recorded from now on.
+    #[derive(Resource, Default)]
+    struct Done(Vec<Interacted>);
+
+    /// The stage with the game's way on Enter, the offers screen declared
+    /// as a game with one has it, and the interactions recorded.
+    fn shared_key() -> (Stage, Entity, Entity) {
+        let (mut stage, under, beside) = stage();
+        stage.app.add_systems(Update, way_on_enter.in_set(EngineSet::Input));
+        stage.app.world_mut().resource_mut::<Modals>().declare(crate::panel::offers::OFFERS_MODAL);
+        stage.app.init_resource::<Done>().add_systems(Turn, |mut done: ResMut<Done>, mut read: MessageReader<Interacted>| {
+            done.0.extend(read.read().copied());
+        });
+        (stage, under, beside)
+    }
+
+    /// A way on `from` down to `to`, on the same ground for brevity.
+    fn way(stage: &mut Stage, from: Point, to: Point) {
+        stage.app.world_mut().spawn((Position(from), Transition { to: Destination::Surface(to) }));
+        stage.tick();
+    }
+
+    /// The press that took the stairs is not also a reach for the two
+    /// things beside them, which would open a screen over the far side.
+    #[test]
+    fn a_press_of_the_shared_key_on_a_way_travels_and_opens_no_offers_on_arrival() {
+        let (mut stage, under, bench) = shared_key();
+        stage.app.world_mut().entity_mut(under).despawn();
+        let at = stage.app.world().get::<Position>(bench).expect("the bench stands somewhere").0;
+        let (from, landing) = (at.offset(-1, 0), at.offset(-7, 0));
+        let player = stage.player;
+        stage.app.world_mut().entity_mut(player).insert(Position(from));
+        // A second bench beside the landing, so the far side offers two as
+        // well and a screen opened there would have something to show.
+        let registries = stage.app.world().resource::<Registries>().clone();
+        let kind = registries.props.expect("workbench");
+        let mut commands = stage.app.world_mut().commands();
+        spawn_prop(&mut commands, &registries, kind, landing.offset(-1, 0), MapId::SURFACE);
+        stage.app.world_mut().flush();
+        way(&mut stage, from, landing);
+
+        stage.press(KeyCode::Enter);
+        stage.tick();
+        let w = stage.app.world();
+        assert_eq!(w.get::<Position>(player).map(|p| p.0), Some(landing), "the press took the way");
+        assert!(!w.resource::<Modals>().any_open(), "and opened no offers over the far side");
+        assert!(w.resource::<Done>().0.is_empty(), "nor took anything up: {:?}", w.resource::<Done>().0);
+    }
+
+    /// One thing on offer on the way is no question to ask, so the key
+    /// would have asked to take it up as well: two asks from one press,
+    /// which only the turn's one-action claim kept from being two actions.
+    #[test]
+    fn a_press_of_the_shared_key_on_a_way_asks_for_the_way_and_nothing_else() {
+        let (mut stage, _, _) = shared_key();
+        #[derive(Resource, Default)]
+        struct Asked(usize);
+        stage.app.init_resource::<Asked>().add_systems(PostUpdate, |mut asked: ResMut<Asked>, mut read: MessageReader<Intent<Interact>>| {
+            asked.0 += read.read().count();
+        });
+        let (from, landing) = (stage.at, stage.at.offset(-6, 0));
+        way(&mut stage, from, landing);
+
+        stage.press(KeyCode::Enter);
+        stage.tick();
+        let w = stage.app.world();
+        assert_eq!(w.get::<Position>(stage.player).map(|p| p.0), Some(landing), "the press took the way");
+        assert_eq!(w.resource::<Asked>().0, 0, "and asked to take up nothing left behind");
+    }
+
+    /// Off any way the game's ask is refused and took nothing, so the
+    /// same key still reaches: two things beside it are a question.
+    #[test]
+    fn a_press_of_the_shared_key_off_any_way_still_asks_which_of_two() {
+        let (mut stage, under, bench) = shared_key();
+        stage.app.world_mut().entity_mut(under).despawn();
+        let at = stage.app.world().get::<Position>(bench).expect("the bench stands somewhere").0;
+        let player = stage.player;
+        stage.app.world_mut().entity_mut(player).insert(Position(at.offset(-1, 0)));
+        stage.tick();
+
+        stage.press(KeyCode::Enter);
+        let offers = stage.app.world().resource::<Modals>().get(crate::panel::offers::OFFERS_MODAL).expect("declared");
+        assert!(stage.app.world().resource::<Modals>().is_open(offers), "the offers were asked about");
     }
 
     /// A key that acted through an open screen would act on what the

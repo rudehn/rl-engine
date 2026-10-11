@@ -48,7 +48,7 @@ fn towards(from: Point, to: Point) -> Direction {
 /// turn each, as the player would.
 fn open_and_take(app: &mut App, me: Entity, prop: Entity) {
     let open = app.world().resource::<Verbs>().get("open").expect("the engine's own");
-    app.world_mut().write_message(Intent::new(me, Interact { target: prop, verb: open }));
+    app.world_mut().write_message(Intent::new(me, Interact { target: prop, verb: open, thing: None }));
     settle(app);
     app.world_mut().write_message(Intent::new(me, Take { from: prop, item: None }));
     settle(app);
@@ -188,7 +188,7 @@ fn the_lever_raises_its_floors_seal() {
     let next = beside(&app, there);
     stand_on(&mut app, me, next);
     let pull = app.world().resource::<Verbs>().get(PULL_VERB).expect("declared");
-    app.world_mut().write_message(Intent::new(me, Interact { target: lever, verb: pull }));
+    app.world_mut().write_message(Intent::new(me, Interact { target: lever, verb: pull, thing: None }));
     settle(&mut app);
     assert!(app.world().resource::<WorldMap>().lock(gate).is_none(), "the seal is lifted");
     assert_eq!(tile_at(&app, map, gate), "raised gate");
@@ -361,14 +361,17 @@ fn a_pieces_sleepers_sleep_at_their_posts_and_its_captives_are_shackled() {
     }
 }
 
-/// The mark vocabulary is the risk-and-reward and reward pieces' alone: a
-/// town's, a lair's or a flavor piece's mark spelt the same is never filled
-/// as a sleeper, a captive or a causeway, since none of them marks one.
+/// The mark vocabulary is the risk-and-reward and reward pieces' alone on
+/// the floors: a lair's or a flavor piece's mark spelt the same is never
+/// filled as a sleeper, a captive or a causeway, since none of them marks
+/// one. Mereholt's own marks are its people's posts, `townsfolk.ron`'s,
+/// and may spell the same, since [`spawn_vault_marks`] fills a floor's
+/// marks and never the town's.
 #[test]
 fn only_a_vault_piece_marks_a_sleeper_a_captive_or_a_causeway() {
     let undermere = crate::dungeon::Undermere::new(RunSeed(0));
     let vaults = undermere.vault_pieces();
-    for (_, def) in undermere.prefabs().defs().iter() {
+    for (_, def) in undermere.prefabs().defs().iter().filter(|(_, def)| def.name != "Mereholt") {
         for glyph in [SLEEPER, GIANT, GOBLIN, CAPTIVE, CAUSEWAY] {
             if matches!(def.slot(glyph), Some(Slot::Mark)) {
                 assert!(vaults.contains(&def.name), "{}: marks {glyph:?}, the vaults' own", def.name);

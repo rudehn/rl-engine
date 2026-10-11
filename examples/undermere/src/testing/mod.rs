@@ -16,7 +16,7 @@ use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_core::RunSeed;
 
-use crate::armory::Armory;
+use crate::armory::{Armory, ItemKind};
 use crate::bestiary::Bestiary;
 use crate::dungeon::floor_of;
 use crate::run::Adventurer;
@@ -93,6 +93,31 @@ pub fn stand_on(app: &mut App, me: Entity, at: Point) {
     let here = here(app);
     app.world_mut().write_message(WarpRequest { actor: me, to: Destination::Place { map: here, arrive: Arrive::At(at) } });
     settle(app);
+}
+
+/// The one of Mereholt's people whose role in `townsfolk.ron` is `role`,
+/// whatever this run named them.
+pub fn townsperson(app: &mut App, role: &str) -> Entity {
+    let world = app.world_mut();
+    let found = world.query::<(Entity, &crate::townsfolk::Townsperson)>().iter(world).find(|(_, p)| p.0 == role).map(|(e, _)| e);
+    found.unwrap_or_else(|| panic!("nobody in Mereholt is the {role}"))
+}
+
+/// Talks to the person of `role` through the engine's own offer, as a
+/// walk into them would, from ground beside them in Mereholt, and returns
+/// what the log said last.
+pub fn talk_to(app: &mut App, me: Entity, role: &str) -> String {
+    let who = townsperson(app, role);
+    let talk = app.world().resource::<Verbs>().get(crate::townsfolk::TALK).expect("declared");
+    let there = at(app, who);
+    let beside = {
+        let map = app.world().resource::<WorldMap>();
+        (0..8).map(|i| there + Direction::from_index(i).offset()).find(|p| map.is_walkable_on(crate::dungeon::TOWN, *p)).expect("ground beside them")
+    };
+    stand_on(app, me, beside);
+    app.world_mut().write_message(Intent::new(me, Interact { target: who, verb: talk, thing: None }));
+    settle(app);
+    said(app).last().cloned().expect("something said")
 }
 
 /// Takes the way through `me` stands on.
@@ -307,10 +332,27 @@ pub const REACH: i32 = 5;
 /// their hands is what strikes, and a miss for want of strength or a lamp
 /// post in the way is never what it reads.
 ///
+/// On floor one rather than in Mereholt: part 5's peace there drops every
+/// blow and every zap to nothing before it reaches `Health`, which an
+/// arena staged in the town would make true of nothing a test put in the
+/// adventurer's hands. [`arena_on`] is this with the floor named, for a
+/// test about the floor itself; this is that with the one every other
+/// test about combat, which cares only that a floor is under its feet,
+/// never names.
+///
 /// Empty-handed, since a blow is struck with the first weapon worn in slot
 /// order: a dagger put on beside the sword they set out with goes to the
 /// free hand, and the sword would strike.
 pub fn arena(seed: u64) -> (App, Entity, Point) {
+    arena_on(seed, 1)
+}
+
+/// An [`arena`] staged in Mereholt rather than on a floor: for a test
+/// that asks something of the town itself rather than of open ground
+/// under the adventurer's feet, a scroll of summon monsters finding no
+/// spawn table to draw from, since nothing stands there that the town
+/// did not put.
+pub fn arena_in_mereholt(seed: u64) -> (App, Entity, Point) {
     let mut app = headless(RunSeed(seed));
     let me = adventurer(&mut app);
     let here = stage(&mut app, me);
@@ -323,12 +365,12 @@ pub fn arena(seed: u64) -> (App, Entity, Point) {
 pub fn arena_with<M>(seed: u64, views: impl bevy::app::Plugins<M>) -> (App, Entity, Point) {
     let mut app = headless(RunSeed(seed));
     app.add_plugins(views);
-    let me = adventurer(&mut app);
+    let me = arrive(&mut app, crate::dungeon::map_of(1));
     let here = stage(&mut app, me);
     (app, me, here)
 }
 
-/// An [`arena`] on floor `floor` rather than in Mereholt, where the floor's
+/// An [`arena`] on floor `floor` rather than floor one, where that floor's
 /// own monsters are found, for what is about the floor: a summoning, a
 /// shriek heard over it, its map.
 pub fn arena_on(seed: u64, floor: u32) -> (App, Entity, Point) {
@@ -376,4 +418,27 @@ pub fn still(app: &mut App, name: &str, at: Point) -> Entity {
 /// What `who` has lost of the thousand [`still`] gave it.
 pub fn lost(app: &App, who: Entity) -> i32 {
     1000 - app.world().get::<Health>(who).expect("still standing").current
+}
+
+/// The gold coins `who` carries.
+pub fn gold(app: &App, who: Entity) -> u32 {
+    let world = app.world();
+    let coin = world.resource::<Armory>().defs.expect("gold coin");
+    let bag = world.get::<Inventory>(who).map(|b| b.items.clone()).unwrap_or_default();
+    bag.iter().filter(|i| world.get::<ItemKind>(**i).is_some_and(|k| k.0 == coin)).map(|i| world.get::<Stack>(*i).map_or(1, |s| s.count)).sum()
+}
+
+/// Leaves the adventurer carrying exactly `coins` gold coins.
+pub fn set_gold(app: &mut App, me: Entity, coins: u32) {
+    let coin = app.world().resource::<Armory>().defs.expect("gold coin");
+    let bag = app.world().get::<Inventory>(me).expect("a pack").items.clone();
+    let purses: Vec<Entity> = bag.into_iter().filter(|i| app.world().get::<ItemKind>(*i).is_some_and(|k| k.0 == coin)).collect();
+    for purse in purses {
+        app.world_mut().get_mut::<Inventory>(me).expect("a pack").items.retain(|i| *i != purse);
+        app.world_mut().despawn(purse);
+    }
+    let purse = make(app, "gold coin");
+    app.world_mut().get_mut::<Stack>(purse).expect("gold stacks").count = coins;
+    give(app, me, purse);
+    assert_eq!(gold(app, me), coins);
 }

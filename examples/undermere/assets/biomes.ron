@@ -6,7 +6,9 @@
 //
 // Every field:
 //   name:     unique; the draw, the log and the pools
-//             name it by this, bare, "the " added only for the log
+//             name it by this, bare, "the " added only for the log; one
+//             drawn on floors one to nine needs a rumour in
+//             `assets/rumours.ron` under the log's name
 //   floors:   (first, last), the floors it may be drawn on, both included;
 //             the three throne biomes are drawn one to a boss, never by
 //             weight, and still carry (10, 10) for the schema

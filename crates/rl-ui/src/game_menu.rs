@@ -432,9 +432,29 @@ pub fn draw_game_menu(mut terminal: ResMut<Terminal>, screen: MenuScreen) {
         // drawn only as far down as its rows reach and a game that wants
         // more room gives it a taller one.
         words.extend(section_lines(view.sections.iter().map(|section| (section.heading.as_str(), section.body.as_str())), width));
-        words.push((String::new(), Tones::MUTED));
     }
     let items = MenuItem::offered(playing, settings_offered(modals, settings.as_deref()).is_some(), title_menu.is_some());
+    // The choices are the way off this screen, so it is the words that
+    // give way when both do not fit: an ending long enough to push Quit
+    // under the frame left a row the cursor could reach and nobody could
+    // see. Cut from the end, where the game's last section is, with a
+    // muted ellipsis saying words were cut and the empty row under the
+    // words kept, so the last of them never butts against the first
+    // choice; and never down to a heading with none of its lines, which
+    // reads as a section with nothing in it.
+    let room = ((rect.height - 2).max(0) as usize).saturating_sub(items.len());
+    let spacer = usize::from(!words.is_empty());
+    if words.len() + spacer > room {
+        words.truncate(room.saturating_sub(2));
+        while words.last().is_some_and(|(line, tone)| line.is_empty() || *tone == Tones::TITLE) {
+            words.pop();
+        }
+        words.push(("\u{2026}".to_string(), Tones::MUTED));
+    }
+    if spacer > 0 {
+        words.push((String::new(), Tones::MUTED));
+    }
+    words.truncate(room);
     let height = ((words.len() + items.len()) as i32 + 2).min(rect.height);
     let rect = Rect::new(rect.x, rect.y, rect.width, height);
     clear(&mut terminal, rect, palette);
@@ -619,6 +639,52 @@ mod tests {
         assert!(body.iter().all(|l| !l.contains("morgue")), "nothing is written anywhere: {body:?}");
         stage.press(KeyCode::Escape);
         assert!(stage.app.world().resource::<Modals>().any_open(), "escape does not leave an ending");
+    }
+
+    /// An ending with more to say than its frame holds keeps every choice
+    /// in it, Quit last, and gives up the end of what it had to say
+    /// instead.
+    #[test]
+    fn an_ending_too_long_for_its_frame_keeps_every_choice_and_cuts_its_words() {
+        let mut stage = Stage::new((GameMenuPanel::new(Rect::new(0, 0, 44, 12)).died("You are dead."), crate::SheetViewPlugin)).screen(44, 12);
+        stage.app.add_systems(
+            Update,
+            (|mut view: ResMut<EndingView>| {
+                let body = (1..=12).map(|n| format!("line {n}")).collect::<Vec<_>>().join("\n");
+                view.section("The long of it", &body);
+            })
+            .in_set(crate::ViewSet::Annotate),
+        );
+        die(&mut stage);
+        let body: Vec<String> = (1..11).map(|y| inside(&stage, y)).collect();
+        assert_eq!(
+            body[body.len() - 5..],
+            ["\u{2026}", "", "A new run", "This seed again", "Quit"],
+            "every choice at the foot, a blank over them and a sign words were cut: {body:?}"
+        );
+        assert!(body.contains(&"The long of it".to_string()) && !body.contains(&"line 12".to_string()), "and the words cut short above them: {body:?}");
+    }
+
+    /// A cut that would leave a heading with none of its lines takes the
+    /// heading too: the ending stops at the last section it can show
+    /// something of.
+    #[test]
+    fn a_cut_ending_never_keeps_a_heading_without_a_line_of_its_own() {
+        let mut stage = Stage::new((GameMenuPanel::new(Rect::new(0, 0, 44, 13)).died("You are dead."), crate::SheetViewPlugin)).screen(44, 13);
+        stage.app.add_systems(
+            Update,
+            (|mut view: ResMut<EndingView>| {
+                view.section("First", "one");
+                view.section("Second", "two\nthree");
+            })
+            .in_set(crate::ViewSet::Annotate),
+        );
+        die(&mut stage);
+        let body: Vec<String> = (1..12).map(|y| inside(&stage, y)).collect();
+        let quit = body.iter().position(|l| l == "Quit").expect("every choice");
+        assert!(body.contains(&"one".to_string()), "the first section whole: {body:?}");
+        assert!(!body.contains(&"Second".to_string()), "and no heading left bare: {body:?}");
+        assert_eq!(body[quit - 4..=quit], ["\u{2026}", "", "A new run", "This seed again", "Quit"], "{body:?}");
     }
 
     /// The run's own line, the summary of the record filed for it, stands

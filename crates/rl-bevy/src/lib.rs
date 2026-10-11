@@ -53,6 +53,7 @@ pub mod stealth;
 pub mod testing;
 pub mod throwing;
 pub mod title;
+pub mod trade;
 pub mod turn;
 pub mod work;
 pub mod world;
@@ -90,8 +91,8 @@ pub use knowledge::{Knowledge, KnowledgeSave, Recalled, TileSet};
 pub use lighting::{Concealed, DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, PlayerSight, band_at, conceals};
 pub use loot::{ContainersAnswered, Drops, Found, ItemMaker, LootArea, LootPlugin, LootRng, LootSet, Provenance, Scattered};
 pub use minds::{
-    AddChoice, CameFrom, DEFAULT_PERCEPTION, Doing, FlowFields, Intelligence, Leader, Mind, MindChose, MindRng, MindsPlugin, Perception, Post, Profile, Sight,
-    Thinking, Trails, a_mind_holds_the_turn,
+    AddChoice, CameFrom, DEFAULT_PERCEPTION, Doing, FlowFields, Intelligence, Joined, Leader, Mind, MindChose, MindRng, MindsPlugin, Perception, Post, Profile,
+    Sight, Thinking, Trails, a_mind_holds_the_turn,
 };
 pub use noise::{
     AddSound, Earshot, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, NoiseRunning, Sound, SoundId, SoundNames, Sounds,
@@ -106,8 +107,9 @@ pub use plugin::{
 };
 pub use prefabs::{ActorMaker, PrefabPlugin, PrefabSet, Prefabs};
 pub use props::{
-    AddVerb, Container, Emptied, FillContainer, Finding, Hidden, Interact, Interacted, Keen, Offer, OfferedHere, Offering, Offers, PendingFires, Prop,
-    PropEffects, PropKind, PropRng, PropSet, PropsPlugin, Refused, Scenery, SpotRules, Spotted, Stocked, Take, Verb, VerbId, Verbs, spawn_prop,
+    AddVerb, Among, AsksFirst, Chooser, Container, Emptied, FillContainer, Finding, Hidden, Interact, Interacted, Keen, Offer, OfferedHere, Offering, Offers,
+    PendingFires, Prop, PropEffects, PropKind, PropRng, PropSet, PropsPlugin, Refused, Scenery, SpotRules, Spotted, Stocked, Take, Verb, VerbId, Verbs,
+    spawn_prop,
 };
 pub use records::{MAX_RECORDS, RecordOutcome, RecordRun, RecordSection, RecordsPlugin, RunRecord, RunRecords};
 pub use registries::Registries;
@@ -122,6 +124,7 @@ pub use status::{Afflict, Afflicted, Cure, Sleepers, StatBlock, StatusEvent, Sta
 pub use stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, StealthRng, StealthRunning, Unseen, Watchers};
 pub use throwing::{Flight, Throw, Throwable, ThrowingPlugin, flight};
 pub use title::{AbandonRun, ContinueRun, HoldStart, LeaveRun, SavedRun, begin_run};
+pub use trade::{Buy, Currency, Deal, Parties, Sell, TRADE, TradePlugin, TradeRefusal, TradeRefused, Traded, Trader, Trading, Ware, Worth, pay};
 pub use turn::{
     Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Pace, Resolution, Speeds, Step, Stepped, TurnEnd, TurnRules, Turns, Wait,
 };
@@ -164,7 +167,7 @@ pub mod prelude {
     pub use crate::knowledge::Knowledge;
     pub use crate::lighting::{Concealed, DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, PlayerSight, band_at, conceals};
     pub use crate::loot::{Drops, Found, ItemMaker, LootArea, LootPlugin, LootSet, Provenance, Scattered};
-    pub use crate::minds::{AddChoice, Doing, Intelligence, Leader, Mind, MindChose, MindsPlugin, Perception, Post, Profile, Thinking};
+    pub use crate::minds::{AddChoice, Doing, Intelligence, Joined, Leader, Mind, MindChose, MindsPlugin, Perception, Post, Profile, Thinking};
     pub use crate::noise::{AddSound, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, SoundId, SoundNames, Sounds};
     pub use crate::places::{
         Arrive, Destination, GoThrough, Lock, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Transition, Travelled,
@@ -176,8 +179,8 @@ pub mod prelude {
     };
     pub use crate::prefabs::{ActorMaker, PrefabPlugin, PrefabSet, Prefabs};
     pub use crate::props::{
-        AddVerb, Container, Emptied, FillContainer, Finding, Hidden, Interact, Interacted, Keen, Offer, OfferedHere, Offering, Offers, Prop, PropKind, PropSet,
-        PropsPlugin, Refused, Scenery, SpotRules, Spotted, Take, VerbId, Verbs, spawn_prop,
+        AddVerb, Among, AsksFirst, Chooser, Container, Emptied, FillContainer, Finding, Hidden, Interact, Interacted, Keen, Offer, OfferedHere, Offering,
+        Offers, Prop, PropKind, PropSet, PropsPlugin, Refused, Scenery, SpotRules, Spotted, Take, VerbId, Verbs, spawn_prop,
     };
     pub use crate::records::{MAX_RECORDS, RecordOutcome, RecordRun, RecordSection, RecordsPlugin, RunRecord, RunRecords};
     pub use crate::registries::Registries;
@@ -189,6 +192,7 @@ pub mod prelude {
     pub use crate::stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, Unseen, Watchers};
     pub use crate::throwing::{Throw, Throwable, ThrowingPlugin};
     pub use crate::title::{AbandonRun, ContinueRun, HoldStart, LeaveRun, SavedRun, begin_run};
+    pub use crate::trade::{Buy, Currency, Deal, Parties, Sell, TRADE, TradePlugin, TradeRefusal, TradeRefused, Traded, Trader, Trading, Ware, Worth};
     pub use crate::turn::{
         Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Pace, Resolution, Speeds, Step, Stepped, TurnEnd, TurnRules, Turns, Wait,
     };

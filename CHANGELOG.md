@@ -72,6 +72,97 @@ Pushing a tag publishes its release page from its section here, through `scripts
   A layout file names one as `Cave(w: (fewest, most), h: (fewest, most), fill_pct:, visits_pct:)`, `fill_pct` the share of the box that starts as rock, 1 to 99, and `visits_pct` how many cells the rule is applied at as a share of the box, 1 to 10000; `load` refuses either outside that by the shape's name, and `layout::passes` builds it.
   `ShapeKind` has a new variant, so a game that matches on it adds an arm.
 
+- The bag's footer while it chooses, a thing for a use or for an offer, says what the close key does, `esc never mind` as the offers screen says it, where it named a bare `esc`.
+  The words are the new `InventoryLayout::never_mind`, `never mind` by default and replaced with `InventoryPanel::never_mind(words)`; a game that built an `InventoryLayout` with a struct literal adds it.
+
+- A body can be named one way for a kind and another for someone with a proper name: `RemainsNaming` is two templates, `kind` and `proper`, made by `RemainsNaming::new(template)` for both and `.proper(template)` for the second, chosen by the new `rl_core::noun::is_proper`, so a game's "{what} corpse" need not make "Brenna corpse" of a named one.
+  A proper name is one that starts with a capital, or with `the` and then a capital, so a title such as "the Widow" lies as "the corpse of the Widow" and "the stairs" is still a kind.
+  `RemainsPlugin::naming` takes either a template, as before, or a `RemainsNaming`; a game that built `RemainsNaming("...".into())` writes `RemainsNaming::new("...")`, and one that read its `.0` reads `.kind`.
+  It takes a `&str` or a `String` but no longer a `&String`, so a game that passed `&template` writes `template.as_str()` or passes the `String` itself.
+
+- A body on the nearby rail is on nobody's side: it keeps the faction it fought for, which a mind still reads, but its row no longer carries a relation, so a slain foe is not listed in the foe's tone and a fallen friend not in the friend's.
+  Nothing to change in a game.
+
+- The offers screen moves off what it is about, as the look panel moves off its cursor: while the one choosing, or anyone or anything offering a row, stands under its rectangle, it is drawn in its other place, the rectangle mirrored top for bottom in the map, or where the new `OffersPanel::else_at(rect)` says.
+  A game's rectangle becomes its preferred place, so nothing to change unless it wants the other place named; `OffersLayout` has the new `elsewhere`, so a game that built it with a struct literal adds `elsewhere: None`.
+  An asking offer's answers follow its question after one empty row, where they used to sit at the screen's foot under a gap.
+
+- The party rail keeps a follower's facets whole and clips its name to make room, as the nearby rail keeps a state: a long name used to push the game's facet, a follower's order, off the row's end.
+
+- Tab with nothing open steps only through the rows the nearby rail lists, as a game left them in `ViewSet::Annotate`: a game that takes a row out, as one listing its followers on the party rail does, no longer has Tab land on a row nobody can see.
+  The rail neither highlights nor marks on the map a focus it does not list, which the look cursor may still leave there; the new `NearbyView::lists(entity)` and `NearbyView::picked()` say which.
+  The rail's health wash reads its tone from `health_tone`, the vitals' own rule, where it kept a copy of the thresholds; the tones are the same.
+
+- An ending with more to say than the menu's rectangle holds keeps every choice in it and cuts its own words from the end instead: a long enough list of sections used to push Quit under the frame, where the cursor could still reach it and nobody could see it.
+  A cut ending ends on a muted ellipsis, keeps its empty row over the choices, and never keeps a section's heading without one of its lines.
+  Nothing to change in a game; one that wants all its words on the screen gives the menu a taller rectangle, as before.
+
+- The nearby rail's health wash is a fifth of the health's tone where it was over a third: every unhurt row read as a slab of the good tone, an ally's name in that same tone read green on green, and the row picked out was barely told from the rest.
+  Nothing to change in a game; a row still reads as its health bar.
+
+- A cursor's ticks never stand on someone the map drew beside the cell it points at: the look cursor on a monster next to the player used to put the player's own glyph out under its tick.
+  The map keeps who it drew each frame in the new `DrawnActors`, which `MapViewPlugin` adds, and the side a tick would cover goes unmarked; anything else, a wall or a thing lying about, still takes its tick.
+  With someone on all four sides no tick is left to stand, so the cell is washed in the cursor's colour as a glow washes it, and a cursor never vanishes in a packed fight.
+  `cursor::mark` takes `drawn: Option<&DrawnActors>` after the view, so a game that drew a cursor with it passes its `Option<Res<DrawnActors>>` through, or `None` for the old drawing; the new `CursorMap` system parameter borrows the map view and the account together and marks with both, as the look, targeting and nearby presenters now do.
+
+- An offer may ask before it is taken up, a yes or no or one of the taker's things, and only an answer takes it up, as the ordinary `Intent<Interact>`, so the engine checks the offer's reach and charges its own time as for any offer; backing out writes nothing and costs nothing.
+  `Offering::asking(question)` carries a yes-or-no question in the game's words, and the offers screen, taking such an offer up, shows it with two answers, No picked out above Yes: an offerer gone out of reach by the yes is refused like any other, and the question goes unanswered with its offer if whatever offered it leaves reach while it is up.
+  `Offering::choosing(prompt, among)` chooses one of the taker's things first: taken up on the offers screen, or by the interact key when it is the one offer, it opens the bag under `prompt` among what `among` names, a system of the game's registered with `App::register_system`, given the new `Chooser { taker, offerer, verb }` and returning the things, run as the offer is taken up; a pick writes the interaction carrying the thing, refused if it is no longer carried, and with nothing to choose among the bag stays shut and the game's system says why if it wants to.
+  `Interact` and `Interacted` carry the new `thing: Option<Entity>`, the thing chosen, `None` for every other offer: a game that built either with a struct literal adds `thing: None`, and one answering a choosing offer reads the thing off `Interacted`.
+  A walk into whoever offers either never takes it up, as with a priced offer, and comes to the offers screen instead; the interact key on a lone asking offer opens the screen on its question at once.
+  `Offering`, `Offer` and `OfferRow` carry the new `asks: Option<AsksFirst>`, `AsksFirst::YesOrNo(question)` or `AsksFirst::Thing { prompt, among }`, so they are `Clone` and no longer `Copy`: a game that copied one out of `OfferedHere` with `.copied()` uses `.cloned()`, and one that built any with a struct literal adds `asks: None`.
+  The answers read `Yes` and `No`, and `OffersPanel::answers(yes, no)` words them otherwise; `OffersLayout` has the two new fields and `OffersMenu` a new `confirming`, so a game that built either with a struct literal adds them.
+  `InventoryMenu::choosing` is now an `Option<Choosing>`, the new enum of what the bag chooses for, `Choosing::Use(ChoosingFor)` or `Choosing::Offer(OfferChoice)`, since it chooses for one at a time: a game that set `choosing: Some(ChoosingFor { .. })` wraps it in `Choosing::Use`, one that read `choosing.item` reads the new `InventoryMenu::using()`, and one that built an `InventoryMenu` with a struct literal is unchanged.
+
+- The offers screen opens on its first row however it is opened, where the interact key opened it on whichever row was taken last, so a second visit read as a choice already made.
+
+- A `GoThrough` asked where no way through stands is refused before the turn is claimed, so it costs nothing and the same press can still take up what is offered here: a game binding its way and the interact key to one key, as Enter, now talks to the one person in reach off a way, where the refusal used to spend the press.
+  The player's refusal is still an `ActionRefused`, so a game answering one, as Foundry's lift out does, is unchanged; anyone else is still charged for asking, as before.
+  The rule is the new `Resolution::refuse(actor, cost)`, for a game's own resolver whose intent can find nothing to act on; it refuses the player once a pass, and the sweep for an unresolved action leaves a refused player alone, so the refusal is answered once, with no warning.
+
+- One press is one action: a game that binds its way through to the interact key, as Enter is the obvious key for both, no longer has the press that takes the stairs also reach for what is beside them, opening the offers screen over the far side or asking to take up the one thing on offer as well.
+  `InteractKey`'s `interact_key` now runs after `EngineSet::Input` and before `EngineSet::Turns`, where it sees the player's `Intent<GoThrough>` the game's input wrote for the same press, and stands aside when the player stands on a `Transition`; off any way, where the game's ask is refused, the key reaches as it did.
+
+- The party rail: the new `PartyPanel::new(rect)` lists every actor whose `Leader` is the player, one line each with its glyph, name and a health bar in the vitals' own tones, wherever it stands, and draws nothing, heading included, while nobody follows.
+  Its view is the new `PartyView`, filled by `PartyViewPlugin` in `ViewSet::Collect` with the shared `Row`, so a game pushes a follower's own words, such as its order, as a `Facet` in `ViewSet::Annotate` as it does on the nearby rail; a follower on another map is listed in `PartyView::elsewhere` and drawn muted with the panel's word for it, `elsewhere` by default and replaced with `PartyPanel::elsewhere`, and the heading `Party` with `PartyPanel::heading`.
+  The rows keep the order their followers joined in, by the new `rl_bevy::Joined`, a stamp `Leader` puts on a follower when it is added and takes off when it is removed, whoever inserted it; `rl-save` keeps it with the actor, so the order is the same after a load, and a save written before it stamps its followers afresh.
+  The health tone the vitals use is public as `rl_ui::view::health_tone(current, max)`, for a game drawing its own bar by the same rule.
+
+- The nearby rail's default heading over its things is `Things in sight`, where it was `On the ground`: the list is every item and prop in sight, nearest first, not what lies underfoot. A game that set its own with `NearbyPanel::headings` is unchanged.
+  The count of hostiles beside the actors' heading is left unsaid at nought, so a `0` no longer stands over a list of people as though it counted them.
+
+- The trade slice's one way to move currency is public, as `rl_bevy::pay(world, payer, payee, amount, currency)`: real stacks split off and merged into the payee's pack, as a deal and an offer's price are paid, so a game that gives a price back, for an offer its answer found nothing to do for, moves the coins by the same rule the engine took them by rather than making or destroying any.
+  It returns what it paid, all of `amount` or what a short purse held, and gives a payee carrying no pack one first, so no coin paid is ever left in nobody's bag; a priced offer's offerer is given its pack the same way, by `pay`.
+
+- A walk into someone that brings up the offers screen no longer also logs them as in the way: the narrator's `Phrase::YouBumpInto` is said only of a `Bumped` without `offers`, so walking into a keeper whose one offer has a price, or into anything offering several things or one refused, is asked about on the screen alone.
+  A game without `OffersPanel` hears nothing from such a bump, where it heard `The clerk is in the way.`; one that wants a line for it reads `Bumped { offers: true }` and tells its own.
+
+- The trade screen shows the trader's purse at the foot of its side, beside the customer's at the foot of theirs, from the new `TradeView::trader_purse`, and words a short purse by whose it is: `TradeWords::short` ("cannot pay") on the wares, the new `TradeWords::trader_short` ("they lack") on the pack, where it is the trader who cannot pay; `TradeWords::refusal(why, deal)` now takes the side's `Deal`.
+  The wares list only what is for sale, what the trader prices and does not wear, so a keeper's own gear and what it puts no price on are off the counter; the pack is still listed whole.
+  A row of more than one says its price is for one, `10 arrows  2 each`, in the new `TradeWords::each`, where `2` alone read as the ten for two; a game that builds `TradeWords` field by field names it.
+  The new `Trader::each(deal, ware)` is the price of one, its worth bought and the trader's share sold, which `Trader::quote` and the screen both ask, so the screen no longer keeps its own copy of the rule.
+
+- An actor's offer may have a price: the new `Offering::priced(price)` costs that much in the trade slice's `Currency`, and the gate refuses it to a taker carrying less with the new `Refused::Short(price)`, as it refuses one needing a tag the taker lacks; `Offer` carries the new `price` field beside its time.
+  Walking into someone never spends currency: a lone offer with a price is not taken up by a bump, which reports `Bumped { offers: true }` so the offers screen asks, as it does for a refused or a second offer; an unpriced lone offer is still taken up by walking into it.
+  Taken up, the price is paid as a deal is, from the taker's stacks into the offerer's own pack, given one if it carries none, before the game's `Interacted` answer runs in `TurnSet::React`, so a service is a verb with a price and the currency stays conserved.
+  A priced offer in a game with no `Currency` stops play, saying what is missing, rather than being refused for ever; a game that prices an offer adds `TradePlugin`.
+  `Currency::count(bag, piece)` and `Currency::is(tags)` are the trade slice's own way to count a purse, public so a screen counts by the same rule.
+  The offers screen shows a price beside the time, and a row the purse cannot meet reads `needs 50 scrips`; `OfferRow` has the new `price` and `OffersView` the new `currency`.
+  Both screens name the currency alike, by the `Name` of a piece of it, counted with the new `rl_ui::view::sum_of(name, amount)`; the rule that finds the name is public as the new `rl_ui::view::currency_name(currency, near, pieces)` over a `rl_ui::view::NamedPieces` query, so a game's own line about a payment names the coin as the screens do.
+  A game constructing an `Offer` by hand adds `price: None`, and one that matches on `Refused` exhaustively gains an arm.
+
+- A trade has a screen: the new `TradePanel::new(rect)` goes up when the engine opens a trade and comes down when it ends, listing the trader's wares on the left with what one costs and the customer's pack on the right with what the trader would pay for one, the customer's currency at the foot, named by the currency's own `Name`.
+  The direction keys walk the rows and cross between the sides, the cursors' confirm key buys or sells one of the row picked out, the new `TradeKeys::whole` (`a` by default) deals the whole of it, and the cursors' close key puts the screen away and ends the trade; dealing takes no turn and leaves the screen up.
+  Its view is the new `TradeView`, kept by the new `TradeViewPlugin`: each side's rows are a `TradeRow` holding the shared `Row`, its count, the price of one and the `TradeRefusal` a deal for one would meet, greyed and said in the words of the new `TradeWords`, which a game replaces with `TradePanel::words`.
+  The trader is a `Row` too, titled by its `Name`, and the line under its name is whatever the game pushes onto it as a `Facet` in `ViewSet::Annotate`.
+  The rule a deal is refused by is public as the new `Trader::quote(deal, Ware { worth, tags, worn }, count, purse)`, which both the engine and the screen ask.
+
+- Two actors can trade: the new `TradePlugin` declares the `trade` verb, `TRADE`, and opens a trade in the new `Trading` resource when the player takes up that offer from an actor carrying the new `Trader { buys, pays_pct }`, closing it again when either side is out of reach, dead or gone.
+  Inside it, the new `Buy` and `Sell` messages are resolved at once and take no turn: a buy pays the thing's `Worth` per one, a sell is paid the trader's `pays_pct` share of it per one, rounded down, and each is answered with `Traded`, or with `TradeRefused` and a `TradeRefusal` a screen can say: `Short` of currency, `NotBought`, `NoWorth`, or `Worn`.
+  The currency is whatever carries the tag the game names in the new `Currency` resource, which the plugin needs before play begins; it changes hands as real stacks, split off and merged as a pickup merges, so nothing is made or destroyed, and a trader that buys needs currency of its own to pay with.
+  `Worth(u32)` is the game's price on an item, the worth of one of a stack, and a thing without one is neither sold nor bought; it and `Trader` are not saved by the engine, which the game puts back as it puts back `Offers`, while the trader's stock is its `Inventory` and is saved as any actor's is.
+  The plugin needs `ItemsPlugin` and `PropsPlugin`.
+
 - An actor can be hard for the player to see: one carrying the new `Concealed` component is not drawn on the map, listed in the nearby rail, stepped to by the look and aim cursors or named by the look panel while it stands outside the lit band and is not beside the player.
   Stealth hid a subject only from minds, and the player is no mind, so a monster meant to be hard to see in the dark was drawn plainly.
   What the player sees of a thing is now one question, the new `PlayerSight::shows(at, on, concealed)`, asked by the map, by `InSight` and so `Sighted`, and by the look panel, with the rule itself the new `conceals(lighting, from, at)`; with no `Lighting` every cell is lit and the marker hides nothing.

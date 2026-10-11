@@ -50,6 +50,7 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 23 | A prop cannot block sight, or block the way and let a shot past | 3 | medium | medium |
 | 24 | A coloured light cannot warm a tile with little of its colour | 3 | low | low |
 | 25 | The player has no long action | 3 | medium | medium |
+| 26 | `offer_abilities` declares `&mut Stack` it only reads | 4 | low | low |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
@@ -68,6 +69,7 @@ Why the order that is left, in four moves:
    Neither is urgent.
 3. **Items 10 to 20 are cleanups** worth taking whenever their file is open for another reason rather than scheduling.
    Item 19 is a measurement, not a change: run the lit bench before deciding there is anything to fix.
+   Item 26, added on 2026-10-09, is one more of these.
 4. **The rest wait on something.**
    Item 21 waits on a game that actually wants the tactics it would add, and item 22 on a second game asking for it.
    Item 23 was raised on 2026-09-28 when Foundry's rooms were first furnished, and is what the furnished rooms most visibly lack; the three furnishing items raised beside it were built on 2026-10-10.
@@ -192,6 +194,10 @@ The five items that opened this section were built in the six stages of `docs/de
 - **One allowlist entry in Foundry's ambiguity test is wider than its reason.**
   The entry on `Acting` and the action messages (`examples/foundry/src/plugin/ambiguity.rs`) admits any pair of systems, though its reason only holds for resolvers and sweepers.
   Narrow it to systems in `TurnSet::Resolve` and `TurnSet::Sweep`, so a future system that writes those outside them fails the test.
+- **`offer_abilities` declares `&mut Stack` it only reads.**
+  The ability gate takes the resolver's `UserState` (`crates/rl-bevy/src/ability.rs`), whose `tagged` query is `Option<&mut Stack>` because paying an ability's cost spends from a stack, so the gate in `DecideSet::Offer` claims write access it never uses.
+  Since a price on an offer is counted from the taker's stacks, `offer_here` reads `Stack` beside it, and the pair is declared `ambiguous_with` in `PropsPlugin` to state that neither writes; without it every game's ambiguity test would report them.
+  Give the gate a read-only param of its own, and the `ambiguous_with` goes.
 
 - **The resolvers in `ResolveSet::Act` are unordered, and every game's ambiguity test pays for it.**
   Nine systems resolve in that set and nearly all of them write `DamageEvent`, `Position`, `Stack`, `Occupancy` and the cue queue, with nothing declaring an order between them.
@@ -275,6 +281,9 @@ The run's teardown was a third, and stopped being one on 2026-09-22, when `Reset
   `Heard` in `crates/rl-ui/src/narrate.rs` is a `SystemParam` holding twelve `MessageReader`s, one per engine subsystem, feeding a closed `Phrase` enum and a `Phrasebook` of defaults.
   Adding a subsystem to `rl-bevy` therefore means editing `rl-ui`: a reader, a variant, a template.
   The enum being closed is defensible, since it enumerates the events the engine itself raises, but the *reading* need not be: a `app.narrates::<LightEvent>(..)` that turns one message kind into rows would let each subsystem carry its own phrases and its own defaults.
+- **A game cannot refuse an offer at the gate.**
+  `Refused` in `crates/rl-bevy/src/props.rs` says only `Needs` and `Short`, so an offer the game would judge pointless, such as Undermere's `mend` for an adventurer already whole, is taken up, spends its turn and its price, and is answered with the price handed back by `pay`.
+  The seam is a game-supplied refusal read at the offer gate in `DecideSet::Offer`, greyed on the offers screen like a short purse, costing neither the turn nor the coins; `Interacted` carrying the price the engine took would let a refunding game read what was paid rather than repeat its own table.
 
 ## 8. Make the loops cheap, and know that they are
 
