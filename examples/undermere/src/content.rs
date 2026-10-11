@@ -703,6 +703,7 @@ mod tests {
             ("lectern", false),
             // The reward pieces'.
             ("coin chest", true),
+            ("cache chest", true),
             ("overturned wagon", true),
             ("spilled crate", false),
             ("spring", true),
@@ -751,6 +752,7 @@ mod tests {
             "chest",
             "egg sac",
             "coin chest",
+            "cache chest",
             "overturned wagon",
             "spring",
             "frost-rimed anvil",

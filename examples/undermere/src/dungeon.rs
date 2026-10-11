@@ -44,7 +44,7 @@ use rl_engine::rl_mapgen::{Area, Opening};
 use rl_engine::rl_render::TileAppearance;
 use rl_engine::rl_rules::dressing;
 use rl_engine::rl_rules::layout::{self, LayoutDef};
-use rl_engine::rl_rules::pool::{Pick, Place, Pool};
+use rl_engine::rl_rules::pool::{Pick, Place, Pool, Prefer};
 
 use crate::bestiary::MonsterDef;
 
@@ -442,6 +442,8 @@ pub struct Undermere {
     /// seed kept beside the lair draw, so a floor's picks never depend
     /// on which floor is built first.
     plan: BTreeMap<u32, Vec<Pick>>,
+    /// What a floor hides, `assets/hidden.ron`.
+    hiding: crate::traps::Hiding,
 }
 
 impl Undermere {
@@ -480,7 +482,8 @@ impl Undermere {
             .collect();
         let mut rng = seed.rng(SeedDomain::new(b"undermere.pool"), 0);
         let plan = (1..=FLOORS).zip(pool.plan_run(&mut rng, &places)).collect();
-        Self { tiles, prefabs, seed, layout, defs, biomes, districts, pool, plan }
+        let hiding = crate::traps::Hiding::load();
+        Self { tiles, prefabs, seed, layout, defs, biomes, districts, pool, plan, hiding }
     }
 
     /// The picks `floor` was drawn, in [`Undermere::new`]: pure over
@@ -625,7 +628,15 @@ impl Undermere {
         } else {
             chain.then(RandomStart.clear_of_stamps(MIN_DISTANCE_FROM_ENTRY)).then(FarthestExit.among_farthest(EXIT_AMONG_PCT).clear_of_stamps(EXIT_CLEAR))
         };
-        chain = chain.then(Survey).then(picked.stamp).then(QuietWayIn);
+        chain = chain.then(Survey);
+        // The floor's secret doors and hidden rooms, walled over before
+        // the picks are stamped, so a pick that prefers a hidden room
+        // finds one: as many as the floor's picks ask for at the least.
+        let hidden_picks = self.plan_of(floor).iter().filter(|p| self.pool.entries[p.entry].prefer == Prefer::Hidden).count() as u32;
+        if let Some(hide) = self.hiding.openings(floor, hidden_picks) {
+            chain = chain.then(hide);
+        }
+        chain = chain.then(picked.stamp).then(QuietWayIn);
         // `Dress` lays a dressed pick where `picked.stamp` chose for it,
         // then dresses every area nothing else took, from the biome's
         // own weighted list, `nothing` among the choices.
@@ -1505,9 +1516,8 @@ mod tests {
     }
 
     /// Over a span of seeds: no entry is ever drawn past its own `per_run`
-    /// limit, every entry the pool can still draw (every one but
-    /// `Hidden Cache`, withheld until its mechanism exists) is drawn on
-    /// some run, and no run's flavor picks run away with most of the pool.
+    /// limit, every entry is drawn on some run, and no run's flavor picks
+    /// run away with most of the pool.
     ///
     /// Not literally "half": the budget's own ranges (3-5, 3-5, 2-4, 1-2,
     /// drawn once for each of ten floors) can total past forty on their
@@ -1547,11 +1557,6 @@ mod tests {
             assert!(flavor_this_run.len() <= 35, "seed {s}: {} of {flavor_pool} flavor entries in one run", flavor_this_run.len());
         }
         for entry in &pool.entries {
-            if entry.name == "Hidden Cache" {
-                // Withheld (weight "withheld", nought) until `HideOpenings`
-                // exists; see `assets/pool.ron`'s own weights note.
-                continue;
-            }
             assert!(ever_drawn.contains(&entry.name), "{:?} was never drawn over seeds 0..500", entry.name);
         }
     }

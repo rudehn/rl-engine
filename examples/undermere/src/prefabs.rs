@@ -81,9 +81,8 @@ const PIECES: [&str; 59] = [
     include_str!("../assets/prefabs/risk/the_bone_circle.ron"),
     include_str!("../assets/prefabs/risk/the_brood_chamber.ron"),
     include_str!("../assets/prefabs/risk/the_last_stand.ron"),
-    // The reward pool's twelve placeholder pieces (the other four are
-    // dressed, in `assets/dressings.ron`); `Hidden Cache` is withheld in
-    // `assets/pool.ron` until `HideOpenings` exists, but still loads.
+    // The reward pool's twelve pieces (the other four are dressed, in
+    // `assets/dressings.ron`).
     include_str!("../assets/prefabs/reward/jewellers_niche.ron"),
     include_str!("../assets/prefabs/reward/quiet_reliquary.ron"),
     include_str!("../assets/prefabs/reward/treasure_room.ron"),

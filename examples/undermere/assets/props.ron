@@ -152,13 +152,18 @@
     // The reward pool's own dressed entries, `assets/dressings.ron`.
     (name: "lectern",       glyph: 'n', color: (r: 120, g: 95, b: 70)),
 
-    // The reward pieces', `assets/prefabs/reward/`. A coin chest and a
+    // The reward pieces', `assets/prefabs/reward/`. A coin chest, a cache chest and a
     // spilled wagon hold what they say; a spring, a frost-rimed anvil and a
     // moonwell each hold one draught or one phial, once; a reliquary and an
     // enchanter's altar hold their one thing; a chronicle and a dead
     // adventurer's scratched words are read, by `src/vaults.rs`.
     (name: "coin chest", glyph: '=', color: (r: 205, g: 175, b: 80), blocks: true,
      container: (contents: [(item: "gold coin", count: (3, 5))], opened: (glyph: '=', color: (r: 110, g: 95, b: 50))),
+     offers: [(verb: "open", time: 100)]),
+    // A hidden cache's chest: the dungeon's chest, its things two floors deeper.
+    (name: "cache chest", glyph: '=', color: (r: 215, g: 170, b: 95), blocks: true,
+     container: (contents: [(tag: "weapon", count: (0, 1), band: 2), (tag: "armor", count: (0, 1), band: 2), (tag: "potion", count: (1, 2), band: 2)],
+                 opened: (glyph: '=', color: (r: 115, g: 90, b: 55))),
      offers: [(verb: "open", time: 100)]),
     (name: "overturned wagon", glyph: '&', color: (r: 140, g: 100, b: 60), blocks: true,
      container: (contents: [(tag: "weapon", count: 1, band: 1), (item: "gold coin", count: (1, 2))],

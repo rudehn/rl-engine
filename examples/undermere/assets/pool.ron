@@ -12,10 +12,7 @@
 //            the entries use; "withheld" is nought and never drawn, the
 //            documented way to keep an entry out of a run until its
 //            mechanism exists (`rl_rules::pool::load`'s own error for a
-//            limit of nought says so): `Hidden Cache` is withheld here,
-//            since nothing walls a secret over yet (`HideOpenings` is a
-//            later task), so `Prefer::Hidden` would never find an area
-//            and the floor would fail every attempt
+//            limit of nought says so); nothing is withheld now
 //   tags:    every place tag an entry may name in `where` or `not`: the
 //            twelve biomes, by the bare name `dungeon/biomes.rs` draws
 //   budgets: how many picks of a kind a floor gets, one row a band
@@ -403,8 +400,9 @@
     ),
 
     // Reward: 16. Four are dressed (assets/dressings.ron); the rest are
-    // prefabs under assets/prefabs/reward/. Hidden Cache is withheld until
-    // HideOpenings exists (see the weights note above).
+    // prefabs under assets/prefabs/reward/. Hidden Cache stands in a room
+    // behind a secret door, which `dungeon.rs` walls over for it, so a
+    // floor that draws one always has its room.
     (
         name: "Treasure Room", kind: "reward", floors: (1, 9), weight: "common",
         per_run: 3,
@@ -428,7 +426,7 @@
         dressing: "Scriptorium", placed: Dressed,
     ),
     (
-        name: "Hidden Cache", kind: "reward", floors: (1, 9), weight: "withheld",
+        name: "Hidden Cache", kind: "reward", floors: (1, 9), weight: "common",
         per_run: 3,
         piece: "Hidden Cache", placed: Inside([]),
         prefer: Hidden,

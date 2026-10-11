@@ -25,7 +25,9 @@
 //! shares, and [`captives`] is the one of them the adventurer may free to
 //! follow; [`finds`] lays its things, drawn a kind at a time with a
 //! scroll of enchanting besides, and [`light`] lights them and dims the
-//! lantern as the adventurer descends.
+//! lantern as the adventurer descends. [`traps`] is what a floor hides,
+//! its secret doors, hidden rooms and traps, and the log's words for
+//! finding them.
 //!
 //! The run is [`run`]'s: the adventurer and what they set out with, and a
 //! run carried on from a save, which [`save`] says how to write down.
@@ -88,6 +90,7 @@ pub mod tally;
 pub mod testing;
 pub mod title;
 pub mod traits;
+pub mod traps;
 pub mod tricks;
 pub mod typeface;
 pub mod vaults;

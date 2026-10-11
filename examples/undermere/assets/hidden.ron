@@ -1,0 +1,26 @@
+// What a floor of the Undermere hides, and how hard each thing is to see:
+// its secret doors and hidden rooms, walled over by `rl_mapgen::HideOpenings`
+// in `dungeon.rs`'s chain. `src/traps.rs` loads this file. Floors one to
+// nine hide things; the throne's floor hides nothing, so its fight is the
+// one in plain sight. Every chance is a percent a turn while the thing is
+// in sight, before `plugin.rs`'s spotting rules: whole within two cells,
+// half out to seven, tripled on a turn spent waiting, and a ring of
+// awareness's fifteen a level added to every roll.
+//
+// Every field:
+//   secret_doors: (from:, count:, spot:), a loop's opening walled over, so a
+//                 shortcut and never the way on
+//     from:   the first floor that has any
+//     count:  (fewest, most), drawn evenly for each floor from `from` on;
+//             fewer where the floor has fewer loops safe to hide
+//     spot:   the chance a turn, 0 to 100
+//   hidden_rooms: (count:, spot:), a dead-end room's one door walled over, a
+//                 pocket; a floor whose pool picks ask for a hidden room
+//                 (`assets/pool.ron`'s `prefer: Hidden`) has at least one
+//                 for each such pick, raised past `count`'s fewest
+//     count:  (fewest, most), drawn evenly for each floor
+//     spot:   the chance a turn, 0 to 100
+(
+    secret_doors: (from: 2, count: (1, 3), spot: 6),
+    hidden_rooms: (count: (0, 2), spot: 5),
+)

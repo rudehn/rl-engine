@@ -5000,6 +5000,7 @@ dependencies = [
  "bevy",
  "rand 0.9.5",
  "rl-engine",
+ "ron 0.10.1",
  "serde",
  "ttf-parser",
 ]

@@ -58,7 +58,7 @@ impl Plugin for UndermerePlugin {
         // the arrows a bow spends, the slots the pieces fill, loot, the
         // facts the quest counts, and the record a run ends in.
         app.add_plugins((CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, ThrowingPlugin, ConsumablesPlugin, LightingPlugin, StealthPlugin))
-            .add_plugins((AbilitiesPlugin, FirePlugin, GasPlugin, NoisePlugin::new(NOISE), PropsPlugin, AmmoPlugin))
+            .add_plugins((AbilitiesPlugin, FirePlugin, GasPlugin, NoisePlugin::new(NOISE), PropsPlugin::spotting(crate::traps::SPOTTING), AmmoPlugin))
             // The run's captive: the one verb `PropsPlugin` does not already
             // know, offered by an actor rather than a prop.
             .add_verb(crate::captives::FREE_VERB)
@@ -172,7 +172,7 @@ impl Plugin for UndermerePlugin {
         // wisdom keeps.
         app.add_systems(
             Turn,
-            (crate::stats::regenerate, crate::staffs::keep_pace, crate::staffs::reap, crate::stats::keep_awareness).chain().in_set(TurnSet::React),
+            (crate::stats::regenerate, crate::staffs::keep_pace, crate::staffs::reap, crate::stats::keep_keen).chain().in_set(TurnSet::React),
         );
         // How loud every step is, read off the footfall stat at the start
         // of every pass, before anyone steps in it: what is worn is folded
@@ -234,6 +234,8 @@ impl Plugin for UndermerePlugin {
         );
         // A shackled captive's own "free".
         app.add_systems(Turn, crate::captives::answer_free.in_set(TurnSet::React));
+        // What the adventurer spotted, said in the log.
+        app.add_systems(Turn, crate::traps::tell_spotted.in_set(TurnSet::React));
         // The risk-and-reward pieces' own: the marks a piece leaves for the
         // game to fill, after the engine's own `PrefabSet::Fill` has filled
         // every slot beside them, a lever and a vault's key, and what

@@ -1,14 +1,46 @@
-// A placeholder prefab for task 13's "Hidden Cache": a one-cell shell with
-// nothing in it, so the pool entry loads and the draw is exercised end
-// to end now. Task 13 fills this file in, in place, once its mechanism
-// (traps, props, items) exists; it does not replace this file
-// wholesale, so the pool entry above never changes.
+// A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
+// stands for. The pool stamps it inside an area through `rl_mapgen::StampPicks`;
+// the engine fills its slots on the arrival that built the place.
+//
+// Every field:
+//   name:   the piece's name, which a pool entry asks for
+//   ground: the tile painted under every slot; required when the legend has any
+//           slot, and it must be a tile a monster can stand on
+//   rows:   the piece, one string per row, all the same width; a space is left as
+//           the map had it, and every other glyph must be in the legend
+//   legend: glyph to what it stands for, one of
+//     Tile("name")                          a tile from assets/tiles.ron
+//     Prop("name")                          a prop from props.ron
+//     Item(item: "item", count: 1)          that item, by name; count is 1 or
+//                                           a range, count: (fewest, most)
+//     Item(tag: "tag", count: 1, band: 0)   drawn by tag at the place's band
+//                                           plus band
+//     Monster(monster: "monster")           that monster
+//     Monster(role: "role", band: 0)        drawn for a role
+//     Mark                                  a position the game finds by this
+//                                           glyph and fills itself: in a risk-and-
+//                                           reward or reward piece, 'z' a sleeper
+//                                           of the floor's own, 'Z' an ogre asleep,
+//                                           'G' a goblin asleep, 'C' a captive of
+//                                           the floor's own, shackled, and 'c' a
+//                                           cell of a sunken causeway, hidden as
+//                                           the deep water round it until it is
+//                                           spotted (`src/vaults.rs`)
+//     Entry                                 a cell of a grown piece's outer wall
+//                                           where it may be joined; a piece grown
+//                                           in `hall wall` and `hall floor` is
+//                                           walled and floored as its floor is
+//
+// A chest of things two floors deeper than the room it stands in, in a room
+// walled in behind a secret door: the pool's `prefer: Hidden` puts it there,
+// and `dungeon.rs` hides a room for it on every floor that draws it.
 (
     name: "Hidden Cache",
+    ground: "hall floor",
     rows: [
-        ".",
+        "h",
     ],
     legend: {
-        '.': Tile("hall floor"),
+        'h': Prop("cache chest"),
     },
 )

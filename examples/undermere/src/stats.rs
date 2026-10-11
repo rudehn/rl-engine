@@ -8,7 +8,7 @@
 //! reaches the adventurer's own stealth here, by [`keep_stealth`],
 //! footfall how loud every actor's steps are, by [`keep_footfall`],
 //! regeneration health back over time, by [`regenerate`], and awareness
-//! how easily what is hidden is spotted, by [`keep_awareness`].
+//! how easily what is hidden is spotted, by [`keep_keen`].
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
@@ -136,22 +136,22 @@ pub fn regenerate(
     }
 }
 
-/// Keeps every hidden prop as easy to spot as its definition says, and as
-/// many points easier a turn as the adventurer's awareness stat: a ring of
-/// awareness's fifteen a level, and never below nothing nor above certain.
+/// Keeps the adventurer's eye for what is hidden, the engine's [`Keen`],
+/// what their awareness stat makes it: a ring of awareness's fifteen a
+/// level, added to every roll to spot a hidden thing or a secret, and
+/// never below nothing.
 ///
-/// Derived every pass from the definition rather than added to, so a ring
-/// taken off takes its points with it. In `TurnSet::React`, so the roll
-/// the next pass makes for what is in sight is made at the chance the ring
-/// gives.
-pub fn keep_awareness(registries: Res<Registries>, adventurer: Query<&StatBlock, With<Adventurer>>, mut hidden: Query<(&PropKind, &mut Hidden)>) {
+/// On the finder rather than rewritten into every hidden thing's chance,
+/// so a secret, which is a cell and not a prop, is found as much faster as
+/// a trap is. Derived every pass from the stat rather than added to, so a
+/// ring taken off takes its points with it. In `TurnSet::React`, so the
+/// roll the next turn makes is made with the eye the ring gives.
+pub fn keep_keen(mut commands: Commands, registries: Res<Registries>, adventurer: Query<(Entity, &StatBlock, Option<&Keen>), With<Adventurer>>) {
     let Some(stat) = registries.stats.id(crate::content::AWARENESS) else { return };
-    let awareness = adventurer.single().map_or(0, |stats| stats.0.value(stat, &registries.stats));
-    for (kind, mut secret) in &mut hidden {
-        let own = registries.props.get(kind.0).hidden.map_or(0, |h| i32::from(h.spot));
-        let spot = (own + awareness).clamp(0, 100) as u8;
-        if secret.spot != spot {
-            secret.spot = spot;
+    for (who, stats, keen) in &adventurer {
+        let points = stats.0.value(stat, &registries.stats).clamp(0, i32::from(u8::MAX)) as u8;
+        if keen.map(|k| k.0) != Some(points) {
+            commands.entity(who).insert(Keen(points));
         }
     }
 }

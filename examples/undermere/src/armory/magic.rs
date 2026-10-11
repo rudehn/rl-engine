@@ -543,20 +543,18 @@ fn a_ring_of_regeneration_gives_ten_health_back_a_hundred_turns_a_level_and_a_cu
     assert_eq!(app.world().get::<Health>(me).map(|h| h.current), Some(20), "half of a heal of twenty");
 }
 
-/// A ring of awareness two better adds thirty to the chance a turn of
-/// spotting a hidden thing, on top of what its definition gives, and takes
-/// it away again when it comes off.
+/// A ring of awareness two better makes its wearer thirty points keener,
+/// the engine's `Keen` added to every roll to spot a hidden thing or a
+/// secret, and takes it away again when it comes off.
 #[test]
 fn a_ring_of_awareness_puts_fifteen_a_level_on_the_chance_of_spotting_what_is_hidden() {
     let (mut app, me, _) = arena(15);
-    let barrel = app.world().resource::<Registries>().props.expect("barrel");
-    let secret = app.world_mut().spawn((PropKind(barrel), Hidden { spot: 0 })).id();
     let ring = worn(&mut app, me, "ring of awareness", 2);
     pass_turns(&mut app, 1);
-    assert_eq!(app.world().get::<Hidden>(secret).map(|h| h.spot), Some(30), "thirty a turn");
+    assert_eq!(app.world().get::<Keen>(me).map(|k| k.0), Some(30), "thirty a roll");
     crate::testing::unequip(&mut app, me, ring);
     pass_turns(&mut app, 1);
-    assert_eq!(app.world().get::<Hidden>(secret).map(|h| h.spot), Some(0), "and the barrel's own nought without it");
+    assert_eq!(app.world().get::<Keen>(me).map(|k| k.0), Some(0), "and nothing without it");
 }
 
 /// The Choirmaster's Staff raises the body aimed at on its user's own
