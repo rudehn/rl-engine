@@ -138,19 +138,97 @@ pub struct Keeper {
     draws: u32,
     /// The parts, each item at most once and none of them an `always` one.
     parts: Vec<Part>,
+    /// Whether each item, by its index, may be drawn by a tag row for this
+    /// keeper: priced, one it buys and not one that is never stocked. An
+    /// item named outright is checked at load instead.
+    sellable: Vec<bool>,
+}
+
+/// What a row of a shelf or of a hireling's kit names: one item, or any
+/// item carrying a tag, drawn at the row's band from the armory's own
+/// table, the one a chest's tag row draws from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Source {
+    /// This item.
+    Item(Id<ItemDef>),
+    /// Anything the armory's table lays that carries this tag.
+    Tag(TagId),
+}
+
+impl Source {
+    /// The row's name, which the rows of a table are sorted by: the item's,
+    /// or `tag` and the tag's, which sorts a tag row beside no item.
+    pub fn name(self, armory: &Armory, registries: &Registries) -> String {
+        match self {
+            Source::Item(def) => armory.defs.get(def).name.clone(),
+            Source::Tag(tag) => format!("tag {}", registries.tags.get(tag).name),
+        }
+    }
+
+    /// The item a draw at `band` lands on, `None` when there is none to
+    /// land on. An item row lands on its item when `allowed` takes it. A
+    /// tag row is [`LootTable::pick_tagged`] over the rows of `table` whose
+    /// items `allowed` takes, so a tag is drawn with the weights and the
+    /// bands that a chest's row for it is, and an item no shelf may hold
+    /// is never the one drawn.
+    pub fn draw(self, table: &LootTable<Id<ItemDef>>, band: i32, allowed: impl Fn(Id<ItemDef>) -> bool, rng: &mut impl Rng) -> Option<Id<ItemDef>> {
+        match self {
+            Source::Item(def) => allowed(def).then_some(def),
+            Source::Tag(tag) => {
+                let rows = table.rows().iter().filter(|r| allowed(r.item)).cloned().collect();
+                LootTable::new(rows, |_| String::new()).pick_tagged(tag, band, rng)
+            }
+        }
+    }
+}
+
+/// A row of a shelf's parts or of a kit's, as written: `item` or `tag`,
+/// never both, and the tiers or bands it applies at, with the rest of what
+/// `wares.ron` and `mercenaries.ron` each say of it.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AuthoredRow {
+    #[serde(default)]
+    item: Option<NameRef<ItemDef>>,
+    #[serde(default)]
+    tag: Option<NameRef<TagDef>>,
+    /// The tiers or bands, both included.
+    pub bands: (i32, i32),
+    /// How often it is drawn against the other rows.
+    #[serde(default)]
+    pub weight: Option<u32>,
+    /// Percent of stockings it is on the shelf, for a shelf's row.
+    #[serde(default)]
+    pub chance: Option<u32>,
+    /// The fewest and most together.
+    #[serde(default)]
+    pub group: Option<(u32, u32)>,
+}
+
+impl AuthoredRow {
+    /// What the row names: its item or its tag, refusing both or neither,
+    /// and a tag nothing the armory's table lays carries, which no draw
+    /// could ever land on. The one reading a shelf and a kit share.
+    pub fn source(&self, armory: &Armory) -> Result<Source, String> {
+        match (&self.item, &self.tag) {
+            (Some(item), None) => Ok(Source::Item(item.id())),
+            (None, Some(tag)) if armory.table.carries(tag.id()) => Ok(Source::Tag(tag.id())),
+            (None, Some(_)) => Err("a tag nothing in item_spawns.ron carries".to_string()),
+            (Some(_), Some(_)) => Err("an item or a tag, not both".to_string()),
+            (None, None) => Err("neither an item nor a tag".to_string()),
+        }
+    }
 }
 
 /// One part of a keeper's shelf, drawn or on its own chance.
 #[derive(Debug, Clone)]
 struct Part {
-    /// The item's name, which the table is sorted by.
+    /// The row's name, which the table is sorted by.
     name: String,
     /// The tiers, weight and count, as a loot table's row.
-    row: LootRow<Id<ItemDef>>,
+    row: LootRow<Source>,
     /// Percent of stockings it is on the shelf, instead of being drawn.
     chance: Option<u32>,
-    /// The level a thing of it is at plain, when it takes levels.
-    plain: Option<i32>,
 }
 
 impl Keeper {
@@ -185,6 +263,10 @@ impl Keeper {
 pub struct Wares {
     levels: LevelTable,
     keepers: Vec<Keeper>,
+    /// The armory's table, which a tag row draws from.
+    table: LootTable<Id<ItemDef>>,
+    /// The level each item, by its index, is at plain, when it takes levels.
+    plains: Vec<Option<i32>>,
 }
 
 impl Wares {
@@ -208,12 +290,13 @@ impl Wares {
             if keepers.iter().any(|k| k.name == a.name) {
                 errors.push(format!("{}: a second keeper of the name", a.name));
             }
-            keepers.push(a.build(armory, &mut errors));
+            keepers.push(a.build(armory, registries, &mut errors));
         }
         if !errors.is_empty() {
             return Err(ContentError::Invalid(errors));
         }
-        Ok(Self { levels, keepers })
+        let plains = armory.defs.iter().map(|(id, _)| armory.plain_level(id)).collect();
+        Ok(Self { levels, keepers, table: armory.table.clone(), plains })
     }
 
     /// Every keeper, in the file's order.
@@ -245,18 +328,41 @@ impl Wares {
             wares.push(Ware { def, count, level: self.level(plain, band, rng) });
         }
         let drawn: Vec<&Part> = keeper.parts.iter().filter(|p| p.chance.is_none()).collect();
-        for _ in 0..keeper.draws {
-            let open = drawn.iter().filter(|p| wares.iter().all(|w| w.def != p.row.item)).map(|p| p.row.clone()).collect();
-            let table = LootTable::new(open, |id| drawn.iter().find(|p| p.row.item == id).map(|p| p.name.clone()).unwrap_or_default());
-            let Some((def, count)) = table.pick(band, rng) else { break };
-            let plain = drawn.iter().find(|p| p.row.item == def).and_then(|p| p.plain);
-            wares.push(Ware { def, count, level: self.level(plain, band, rng) });
+        'draws: for _ in 0..keeper.draws {
+            // An item named outright is open while it is off the shelf, a
+            // tag always, until a draw of it finds nothing left to land
+            // on; the same item never lands twice.
+            let mut open: Vec<LootRow<Source>> = drawn
+                .iter()
+                .filter(|p| match p.row.item {
+                    Source::Item(def) => wares.iter().all(|w| w.def != def),
+                    Source::Tag(_) => true,
+                })
+                .map(|p| p.row.clone())
+                .collect();
+            loop {
+                let table = LootTable::new(open.clone(), |source| drawn.iter().find(|p| p.row.item == source).map(|p| p.name.clone()).unwrap_or_default());
+                let Some((source, count)) = table.pick(band, rng) else { break 'draws };
+                let on_shelf = |def: Id<ItemDef>| wares.iter().any(|w| w.def == def);
+                let landed = source.draw(&self.table, band, |def| !on_shelf(def) && (matches!(source, Source::Item(_)) || keeper.sellable[def.index()]), rng);
+                match landed {
+                    Some(def) => {
+                        wares.push(Ware { def, count, level: self.level(self.plains[def.index()], band, rng) });
+                        break;
+                    }
+                    None => open.retain(|row| row.item != source),
+                }
+            }
         }
-        let chanced: Vec<&Part> = keeper.parts.iter().filter(|p| p.chance.is_some() && p.row.applies(band)).collect();
-        let rows = chanced.iter().map(|p| DropRow::new(p.row.item, p.chance.unwrap_or(0)).count(p.row.group.0, p.row.group.1)).collect();
+        let chanced: Vec<(Id<ItemDef>, &Part)> = keeper
+            .parts
+            .iter()
+            .filter(|p| p.chance.is_some() && p.row.applies(band))
+            .filter_map(|p| if let Source::Item(def) = p.row.item { Some((def, p)) } else { None })
+            .collect();
+        let rows = chanced.iter().map(|(def, p)| DropRow::new(*def, p.chance.unwrap_or(0)).count(p.row.group.0, p.row.group.1)).collect();
         for (def, count) in DropTable(rows).roll(rng) {
-            let plain = chanced.iter().find(|p| p.row.item == def).and_then(|p| p.plain);
-            wares.push(Ware { def, count, level: self.level(plain, band, rng) });
+            wares.push(Ware { def, count, level: self.level(self.plains[def.index()], band, rng) });
         }
         Stocking { keeper: keeper.name.clone(), wares, purse: keeper.purse(tier) }
     }
@@ -537,7 +643,7 @@ struct AuthoredKeeper {
     #[serde(default)]
     draws: u32,
     #[serde(default)]
-    parts: Vec<AuthoredPart>,
+    parts: Vec<AuthoredRow>,
 }
 
 /// What a keeper buys, as written.
@@ -555,28 +661,15 @@ struct AuthoredAlways {
     count: u32,
 }
 
-/// A part, as written.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct AuthoredPart {
-    item: NameRef<ItemDef>,
-    bands: (i32, i32),
-    #[serde(default)]
-    weight: Option<u32>,
-    #[serde(default)]
-    chance: Option<u32>,
-    #[serde(default)]
-    group: Option<(u32, u32)>,
-}
-
 impl AuthoredKeeper {
     /// The keeper, every problem with it pushed onto `errors`.
-    fn build(self, armory: &Armory, errors: &mut Vec<String>) -> Keeper {
+    fn build(self, armory: &Armory, registries: &Registries, errors: &mut Vec<String>) -> Keeper {
         let buys = match self.buys {
             AuthoredBuys::Anything => Buys::Anything,
             AuthoredBuys::Tags(tags) => Buys::Tags(tags.into_iter().map(NameRef::id).collect()),
         };
-        let mut keeper = Keeper { name: self.name, buys, purse_per_tier: self.purse, always: Vec::new(), draws: self.draws, parts: Vec::new() };
+        let mut keeper =
+            Keeper { name: self.name, buys, purse_per_tier: self.purse, always: Vec::new(), draws: self.draws, parts: Vec::new(), sellable: Vec::new() };
         if keeper.purse_per_tier == 0 && keeper.buys != Buys::Tags(Vec::new()) {
             errors.push(format!("{}: a purse of nothing pays for nothing it buys", keeper.name));
         }
@@ -601,14 +694,29 @@ impl AuthoredKeeper {
             }
             keeper.always.push((def, a.count, armory.plain_level(def)));
         }
+        keeper.sellable = armory.defs.iter().map(|(id, d)| d.price.is_some() && keeper.buys(d) && !never_stocked(id, armory)).collect();
         for a in self.parts {
-            let def = a.item.id();
-            let at = check(def, &keeper, errors);
-            if keeper.parts.iter().any(|p| p.row.item == def) {
+            let source = match a.source(armory) {
+                Ok(source) => source,
+                Err(why) => {
+                    errors.push(format!("{}: {why}", keeper.name));
+                    continue;
+                }
+            };
+            let at = match source {
+                Source::Item(def) => check(def, &keeper, errors),
+                Source::Tag(_) => format!("{}: {}", keeper.name, source.name(armory, registries)),
+            };
+            if keeper.parts.iter().any(|p| p.row.item == source) {
                 errors.push(format!("{at}: a second part of the same thing"));
             }
-            if keeper.always.iter().any(|(always, ..)| *always == def) {
+            if let Source::Item(def) = source
+                && keeper.always.iter().any(|(always, ..)| *always == def)
+            {
                 errors.push(format!("{at}: a part of something always on the shelf"));
+            }
+            if matches!(source, Source::Tag(_)) && a.chance.is_some() {
+                errors.push(format!("{at}: a tag is drawn by weight, never on a chance"));
             }
             let (first, last) = a.bands;
             if first > last || !TIERS.contains(&(first.max(0) as u32)) || !TIERS.contains(&(last.max(0) as u32)) {
@@ -625,8 +733,8 @@ impl AuthoredKeeper {
             if group.0 == 0 || group.0 > group.1 {
                 errors.push(format!("{at}: a group of {} to {} is no group at all", group.0, group.1));
             }
-            let row = LootRow::new(def).bands(first, last).weight(a.weight.unwrap_or(0)).group(group.0, group.1);
-            keeper.parts.push(Part { name: armory.defs.get(def).name.clone(), row, chance: a.chance, plain: armory.plain_level(def) });
+            let row = LootRow::new(source).bands(first, last).weight(a.weight.unwrap_or(0)).group(group.0, group.1);
+            keeper.parts.push(Part { name: source.name(armory, registries), row, chance: a.chance });
         }
         keeper
     }
@@ -701,6 +809,56 @@ mod tests {
                     assert!(!never_stocked(ware.def, &library.armory), "{} on {}'s shelf", def.name, stocking.keeper);
                 }
             }
+        }
+    }
+
+    /// A part that names a tag draws only items carrying it, from what the
+    /// armory's table lays, never the same item twice on a shelf nor one the
+    /// keeper may not stock, and over a span of seeds each potion the table
+    /// lays at the tier turns up.
+    #[test]
+    fn a_tag_part_draws_only_items_carrying_the_tag_each_once_over_a_span_of_seeds() {
+        let library = library();
+        let text = r#"(levels: [(bands: (1, 5), levels: [(0, 1)])], keepers: [
+            (name: "tagged", buys: Tags(["potion", "scroll"]), purse: 100, draws: 5, parts: [(tag: "potion", bands: (1, 5), weight: 1)]),
+        ])"#;
+        let wares = Wares::read(text, &library.registries, &library.armory).expect("a tag part reads");
+        let potion = library.registries.tags.expect("potion");
+        let mut seen = std::collections::BTreeSet::new();
+        for s in 0..300 {
+            let stocking = wares.stock("tagged", 3, &mut rand::rngs::StdRng::seed_from_u64(s));
+            assert_eq!(stocking.wares.len(), 5, "seed {s}: five draws");
+            let defs: Vec<_> = stocking.wares.iter().map(|w| w.def).collect();
+            for def in &defs {
+                let d = library.armory.defs.get(*def);
+                assert!(d.tags.iter().any(|t| t.id() == potion), "seed {s}: {} is no potion", d.name);
+                assert!(!never_stocked(*def, &library.armory), "seed {s}: {}", d.name);
+                seen.insert(d.name.clone());
+            }
+            assert_eq!(defs.iter().map(|d| d.index()).collect::<std::collections::BTreeSet<_>>().len(), 5, "seed {s}: no potion twice");
+        }
+        for table_potion in library.armory.table.rows().iter().filter(|r| r.tags.contains(&potion) && r.applies(3)) {
+            let name = &library.armory.defs.get(table_potion.item).name;
+            assert!(seen.contains(name), "{name} is laid at the tier and never stocked");
+        }
+    }
+
+    /// A tag nothing in the table carries, an item and a tag together, a
+    /// part with neither, and a tag on a chance are each refused, naming the
+    /// keeper.
+    #[test]
+    fn a_tag_part_that_cannot_be_drawn_or_is_written_both_ways_is_refused() {
+        let library = library();
+        let errors = refused(
+            &library,
+            r#"(name: "a", buys: Anything, purse: 100, draws: 1, parts: [(tag: "gold", bands: (1, 5), weight: 1)]),
+               (name: "b", buys: Anything, purse: 100, draws: 1, parts: [(item: "dagger", tag: "weapon", bands: (1, 5), weight: 1)]),
+               (name: "c", buys: Anything, purse: 100, draws: 1, parts: [(bands: (1, 5), weight: 1)]),
+               (name: "d", buys: Anything, purse: 100, draws: 1, parts: [(tag: "potion", bands: (1, 5), chance: 10)])"#,
+        )
+        .join("\n");
+        for said in ["a: a tag nothing", "b: an item or a tag, not both", "c: neither an item nor a tag", "d: tag potion: a tag is drawn by weight"] {
+            assert!(errors.contains(said), "{said:?} not in:\n{errors}");
         }
     }
 

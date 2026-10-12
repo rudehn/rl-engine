@@ -284,7 +284,9 @@ pub(crate) fn registry() -> TileRegistry {
             TileProps::floor("garden"),
             TileProps::wall("timber wall"),
             TileProps::wall("stone wall"),
-            TileProps::wall("lit window"),
+            // Glass: seen and lit through, shot and walked into no more than
+            // a wall is.
+            TileProps::named("lit window").blocks_projectiles(true),
             TileProps::wall("tree"),
             wading("shallows"),
             TileProps::named("lake"),
@@ -2085,5 +2087,20 @@ mod tests {
     #[ignore = "every floor of seeds 0 to 200 takes minutes; run by hand when a piece or a fixture changes"]
     fn every_prize_is_reached_once_its_key_lever_or_secret_is_found_over_seeds_0_to_200() {
         every_prize_is_reached_once_its_key_lever_or_secret_is_found(0..200);
+    }
+
+    #[test]
+    fn a_lit_window_is_seen_through_and_is_not_walked_or_shot_through() {
+        let tiles = registry();
+        let (wall, window, floor) = (tiles.id("stone wall").unwrap(), tiles.id("lit window").unwrap(), tiles.id("cobbles").unwrap());
+        // A street cell and a room cell with a wall between them, and a
+        // window set in that wall in the street's line of sight.
+        let terrain = rl_engine::rl_grid::Terrain::from_fn(7, 5, |p| if p.x == 3 { if p.y == 2 { window } else { wall } } else { floor });
+        let view = terrain.view(&tiles);
+        let (street, room) = (Point::new(1, 2), Point::new(5, 2));
+        assert!(rl_engine::rl_grid::fov::can_see(&view, street, room, 8), "the room is seen through the window");
+        assert!(!rl_engine::rl_grid::fov::can_see(&view, Point::new(1, 0), Point::new(5, 0), 8), "a wall beside it is not");
+        assert!(!view.is_walkable(Point::new(3, 2)), "a body does not pass the glass");
+        assert!(view.blocks_projectiles_idx(2 * 7 + 3), "a shot stops at it");
     }
 }

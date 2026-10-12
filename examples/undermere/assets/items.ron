@@ -189,14 +189,17 @@
      melee: (roll: "2d6+2", kind: "pierce", shape: Pierce(1), look: (glyph: '*', color: (r: 205, g: 220, b: 240)))),
     // ANCHOR: bow
     (name: "bow", glyph: '}', color: (0.65, 0.5, 0.32), price: 80, slot: "main hand", also: ["off hand"], tags: ["weapon"], ammo: "arrow", strength: 12,
-     ranged: (range: 8, effective: 5, roll: "1d6+1", kind: "pierce", look: (glyph: '|', color: (r: 191, g: 173, b: 128)))),
-    // What is thrown, found by the handful: arrows, which the bow spends
-    // a shot at a time and which fly badly from the hand, and darts and
-    // javelins, made to be thrown and picked up again where they land.
-    (name: "arrow", glyph: '|', color: (0.75, 0.68, 0.5), price: 2, tags: ["arrow", "thrown"], stack: true, throw: (range: 4, strike: ("1d2", "pierce"))),
+     ranged: (range: 10, effective: 7, roll: "2d4+1", kind: "pierce", look: (glyph: '|', color: (r: 191, g: 173, b: 128)))),
+    // The bow outshoots anything thrown: it reaches ten cells and is true
+    // to seven, and strikes for 2d4+1 where a javelin, the best thrown, is
+    // 1d6+1 to six and true to four. Arrows are ammunition and nothing
+    // else, spent a shot at a time and never thrown; darts and javelins,
+    // made to be thrown and picked up again where they land, are what
+    // someone without a bow has.
+    (name: "arrow", glyph: '|', color: (0.75, 0.68, 0.5), price: 2, tags: ["arrow"], stack: true),
     // ANCHOR_END: bow
     (name: "dart", glyph: '|', color: (0.7, 0.72, 0.78), price: 3, tags: ["thrown"], stack: true, throw: (range: 6, effective: 4, strike: ("1d3", "pierce"))),
-    (name: "javelin", glyph: '/', color: (0.7, 0.6, 0.42), price: 8, tags: ["thrown"], stack: true, throw: (range: 6, effective: 4, strike: ("2d4", "pierce"))),
+    (name: "javelin", glyph: '/', color: (0.7, 0.6, 0.42), price: 8, tags: ["thrown"], stack: true, throw: (range: 6, effective: 4, strike: ("1d6+1", "pierce"))),
     // The armor: the heavier, the more it turns, the more strength it
     // asks, and the louder every step taken in it, which whatever has ears
     // hears the further off. A shield turns one blow in ten aside, the
@@ -301,8 +304,7 @@
     // back over the turns its line says, divided by its level. Each level
     // adds two to a bolt's roll, which keeps a firebolt near the content
     // sheet's (L+1)d4 on average with less to it by luck, five turns of
-    // poison, two of slowness, two cells to a blink and a blade to a
-    // conjuring. Every bolt is seen to fly.
+    // poison, two of slowness and a blade to a conjuring. Every bolt is seen to fly.
     (name: "staff of firebolt", glyph: '/', color: (0.85, 0.45, 0.25), price: 250, tags: ["staff"], effect_per_level: (amount: 2),
      consumable: (charges: 0, per_level: 1, when_empty: Kept, recharge: 500),
      triggers: [(on: "use", targeting: (mode: Bolt(range: 8)), look: (glyph: '*', color: (r: 255, g: 120, b: 40)),
@@ -320,10 +322,13 @@
      consumable: (charges: 0, per_level: 1, when_empty: Kept, recharge: 500),
      triggers: [(on: "use", targeting: (mode: Bolt(range: 8)), look: (glyph: '*', color: (r: 150, g: 160, b: 200)),
                  effects: [(kind: "Inflict", args: (status: "slowed", turns: 5))])]),
+    // A blink reaches as far as the bolt that aims it, five cells at every
+    // level, since a bolt's range is one number the cursor cannot make
+    // follow a level: a level buys charges alone.
     (name: "staff of blinking", glyph: '/', color: (0.8, 0.85, 1.0), price: 220, tags: ["staff"], effect_per_level: (amount: 1),
      consumable: (charges: 0, per_level: 1, when_empty: Kept, recharge: 1000),
-     triggers: [(on: "use", targeting: (mode: Bolt(range: 12), aim: Ground), look: (glyph: '*', color: (r: 220, g: 230, b: 255)),
-                 effects: [(kind: "Blink", args: (reach: 2, per_level: 2))])]),
+     triggers: [(on: "use", targeting: (mode: Bolt(range: 5), aim: Ground), look: (glyph: '*', color: (r: 220, g: 230, b: 255)),
+                 effects: [(kind: "Blink", args: (reach: 5, per_level: 0))])]),
     (name: "staff of conjuration", glyph: '/', color: (0.75, 0.85, 1.0), price: 220, tags: ["staff"], effect_per_level: (amount: 1),
      consumable: (charges: 0, per_level: 1, when_empty: Kept, recharge: 1000),
      triggers: [(on: "use", effects: [(kind: "Conjure", args: (blades: 1, turns: 15))])]),

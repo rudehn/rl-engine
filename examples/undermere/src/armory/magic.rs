@@ -166,18 +166,22 @@ fn plenty_on_an_ally_gives_a_second_ally_and_on_a_foe_a_second_foe_each_at_half_
     assert_eq!(goblins, [(false, 4), (false, 4), (true, 5), (true, 5)], "two allies at five, two foes at four");
 }
 
-/// A staff of blinking a level one reaches four cells, two and two a
-/// level: aimed five off down open ground, it sets the adventurer down on
-/// the fourth, and aimed three off, on the third.
+/// A staff of blinking reaches five cells at every level it holds a charge
+/// at, which is also as far as its bolt is aimed: pointed at the fifth
+/// cell down open ground it sets the adventurer down there, pointed past
+/// it it still stops at the fifth, and pointed nearer it lands where it
+/// was pointed.
 #[test]
-fn a_staff_of_blinking_moves_its_user_down_the_line_as_far_as_its_level_reaches() {
-    let (mut app, me, here) = arena(4);
-    let staff = carried(&mut app, me, "staff of blinking", 1);
-    zap(&mut app, me, staff, here.offset(5, 0));
-    assert_eq!(at(&app, me), here.offset(4, 0), "four cells, and no further");
-    let staff = carried(&mut app, me, "staff of blinking", 1);
-    zap(&mut app, me, staff, here.offset(4, -3));
-    assert_eq!(at(&app, me), here.offset(4, -3), "where it was aimed, when that is within reach");
+fn a_staff_of_blinking_reaches_exactly_as_far_as_its_aim_at_every_level() {
+    for level in 1..=3 {
+        // Aimed, and where the adventurer is set down.
+        for ((x, y), (lands_x, lands_y)) in [((5, 0), (5, 0)), ((5, -3), (5, -3)), ((6, 0), (5, 0))] {
+            let (mut app, me, here) = arena(4);
+            let staff = carried(&mut app, me, "staff of blinking", level);
+            zap(&mut app, me, staff, here.offset(x, y));
+            assert_eq!(at(&app, me), here.offset(lands_x, lands_y), "level {level}, aimed at ({x}, {y})");
+        }
+    }
 }
 
 /// A wand of teleport other sends the goblin it strikes far off, a wand
