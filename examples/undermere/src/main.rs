@@ -240,10 +240,8 @@ fn add_panels(app: &mut App, screen: &Screen) {
         // Who follows the adventurer, wherever they are, each with the
         // order it was given: "company" rather than the engine's "party",
         // and one left on another floor is "left behind", which is how it
-        // came to be there and what the adventurer must do about it. Bars
-        // of four cells rather than six, so a name of three syllables
-        // keeps "fighting freely" whole beside it.
-        PartyPanel::new(screen.party).heading("Company").elsewhere("left behind").bars(4),
+        // came to be there and what the adventurer must do about it.
+        PartyPanel::new(screen.party).heading("Company").elsewhere("left behind"),
         LogPanel::new(screen.log),
         InspectPanel::new(screen.inspect).hints("move \u{2022} tab next \u{2022} esc close").cursor(CursorStyle::ticks()),
         TargetPanel::new(screen.target).hints("[tab/shift-tab] cycle").cursor(CursorStyle::ticks()),
@@ -1471,7 +1469,8 @@ mod tests {
 
     /// The rail's foot is blank until someone follows; then it heads them
     /// "Company", over a rule, each in the order it joined with its order,
-    /// the longest of them whole, and a full health bar. Taking the gate
+    /// the longest of them whole, over its row washed edge to edge as a
+    /// full health bar. Taking the gate
     /// with one of them beside the adventurer and the other still in the
     /// tavern, the one that came is still following on floor one, and the
     /// one that stayed is muted, marked left behind in place of its order,
@@ -1495,17 +1494,19 @@ mod tests {
         let lines = company(&app);
         assert_eq!(lines[0], "Company", "the heading: {lines:#?}");
         assert!(lines[1].chars().all(|c| c == '\u{2500}'), "a rule under it: {lines:#?}");
-        let bar = "\u{2588}".repeat(4);
-        for (line, name) in lines[2..4].iter().zip([&first_name, &second_name]) {
-            assert!(line.starts_with(&format!("h {name} · following")), "{name} with its order, in the order they joined: {lines:#?}");
-            assert!(line.ends_with(&bar), "and its health full at the rail's edge: {lines:#?}");
+        let bg = |app: &App, x: i32, y: i32| app.world().resource::<Terminal>().get(x, screen.party.y + y).expect("on the screen").bg;
+        let surface = app.world().resource::<Palette>().get(Tones::SURFACE);
+        for (y, name) in [(2, &first_name), (3, &second_name)] {
+            assert!(lines[y as usize].starts_with(&format!("h {name} · following")), "{name} with its order, in the order they joined: {lines:#?}");
+            assert_ne!(bg(&app, rail, y), surface, "the row is its health bar: {lines:#?}");
+            assert_eq!(bg(&app, COLS - 1, y), bg(&app, rail, y), "full, so washed to the rail's edge: {lines:#?}");
         }
         assert_eq!(from(&app, rail, screen.party.y - 1), "", "a blank row over the heading");
         press(&mut app, KeyCode::KeyO);
         press(&mut app, KeyCode::KeyO);
         let lines = company(&app);
         for (line, name) in lines[2..4].iter().zip([&first_name, &second_name]) {
-            assert!(line.starts_with(&format!("h {name} · fighting freely ")), "the longest order whole beside {name}: {lines:#?}");
+            assert_eq!(*line, format!("h {name} · fighting freely"), "the longest order whole beside {name}: {lines:#?}");
         }
         press(&mut app, KeyCode::KeyO);
 
@@ -1533,8 +1534,8 @@ mod tests {
 
         let lines = company(&app);
         assert!(lines[2].starts_with(&format!("h {first_name} · following")), "the one that came: {lines:#?}");
-        assert!(lines[3].starts_with(&format!("h {second_name} (left behind)")), "the one that stayed, with no order: {lines:#?}");
-        assert!(lines[3].ends_with(&bar), "and its health still shown: {lines:#?}");
+        assert_eq!(lines[3], format!("h {second_name} (left behind)"), "the one that stayed, with no order: {lines:#?}");
+        assert_eq!(bg(&app, COLS - 1, 3), bg(&app, rail, 3), "and its health still shown: {lines:#?}");
         let terminal = app.world().resource::<Terminal>();
         let palette = app.world().resource::<Palette>();
         let tone = |y: i32| terminal.get(rail + 2, y).expect("on the screen").fg;

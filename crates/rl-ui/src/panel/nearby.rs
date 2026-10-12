@@ -250,27 +250,10 @@ pub fn draw_nearby(
 /// keeps its own. At more than a third, every unhurt row was a slab of
 /// the good tone, an ally's name in that same tone read green on green,
 /// and the row picked out was barely told from the rest.
-const WASH: f32 = 0.2;
+pub(crate) const WASH: f32 = 0.2;
 
 fn draw_row(terminal: &mut Terminal, inner: Rect, y: i32, row: &Row, focused: bool, layout: &NearbyLayout, palette: &Palette) {
-    // The row is the bar: health fills it from the left in the health's
-    // own tone, mixed into the row's background rather than painted over
-    // it, so a wounded thing reads at a glance without a column of its
-    // own and without shouting.
     let base = palette.get(if focused { Tones::SELECT } else { Tones::SURFACE });
-    terminal.fill(Rect::new(inner.x, y, inner.width, 1), Cell::new(' ', base).on(base));
-    let filled = match row.health {
-        Some(_) => ((inner.width as f32 * row.health_fraction()).round() as i32).clamp(0, inner.width),
-        None => 0,
-    };
-    let hurt = palette.get(row.health.map_or(Tones::GOOD, |(current, max)| crate::view::health_tone(current, max)));
-    let wash = base.mix(&hurt, WASH);
-    if filled > 0 {
-        terminal.fill(Rect::new(inner.x, y, filled, 1), Cell::new(' ', base).on(wash));
-    }
-    let bg_at = |x: i32| if x < inner.x + filled { wash } else { base };
-
-    terminal.print_on(inner.x, y, &row.glyph.ch.to_string(), row.glyph.fg, bg_at(inner.x));
     let mut name = row.label.clone();
     for facet in &row.facets {
         name.push_str(" \u{00b7} ");
@@ -291,8 +274,34 @@ fn draw_row(terminal: &mut Terminal, inner: Rect, y: i32, row: &Row, focused: bo
     // own colour are the ones that know you are there.
     let tone = if row.alert == Some(Alert::Unaware) { Tones::MUTED } else { relation_tone(row.relation) };
     let text = clip_keeping(&name, &state, (inner.width - 2).max(0) as usize);
+    paint_row(terminal, Rect::new(inner.x, y, inner.width, 1), row, base, &text, tone, palette);
+}
+
+/// Paints `row` on `line`, one cell high: its glyph, then `text` in
+/// `tone`, over the row as its own health bar.
+///
+/// Health fills the line from the left in the health's own tone, mixed
+/// into `base` rather than painted over it, so a wounded thing reads at
+/// a glance without a column of its own and without shouting. A row
+/// with no health is `base` edge to edge. The nearby rail and the party
+/// rail both draw their rows so, and a follower reads as hurt by the
+/// same wash a foe beside it does.
+pub(crate) fn paint_row(terminal: &mut Terminal, line: Rect, row: &Row, base: Color, text: &str, tone: ToneId, palette: &Palette) {
+    let (x0, y) = (line.x, line.y);
+    terminal.fill(line, Cell::new(' ', base).on(base));
+    let filled = match row.health {
+        Some(_) => ((line.width as f32 * row.health_fraction()).round() as i32).clamp(0, line.width),
+        None => 0,
+    };
+    let hurt = palette.get(row.health.map_or(Tones::GOOD, |(current, max)| crate::view::health_tone(current, max)));
+    let wash = base.mix(&hurt, WASH);
+    if filled > 0 {
+        terminal.fill(Rect::new(x0, y, filled, 1), Cell::new(' ', base).on(wash));
+    }
+    let bg_at = |x: i32| if x < x0 + filled { wash } else { base };
+    terminal.print_on(x0, y, &row.glyph.ch.to_string(), row.glyph.fg, bg_at(x0));
     for (i, ch) in text.chars().enumerate() {
-        let x = inner.x + 2 + i as i32;
+        let x = x0 + 2 + i as i32;
         terminal.print_on(x, y, &ch.to_string(), palette.get(tone), bg_at(x));
     }
 }

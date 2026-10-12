@@ -1,20 +1,27 @@
 //! The party rail: one line a follower, with a health bar.
 //!
 //! A heading, then each follower in the order it joined: its glyph, its
-//! name and whatever the game pushed onto its row, and a bar at the right
-//! in the tones the vitals draw the player's own health in, so a follower
-//! at a quarter reads as bad by the same rule the player does. One on
-//! another map is muted and says so after its name, and keeps its bar.
+//! name and whatever the game pushed onto its row, over the row as its
+//! own health bar, as the nearby rail draws a row, in the tones the vitals
+//! draw the player's own health in, so a follower at a quarter reads as
+//! bad by the same rule the player does and by the same wash a foe beside
+//! it does. One on another map is muted and says so after its name, and
+//! keeps its bar.
+//!
+//! The bar was once a few cells at the row's right edge. Beside a name
+//! and its order on a rail a third of the screen wide it was too short to
+//! tell a quarter from a third, and it took the cells the order needed,
+//! so it spans the row now and the words lie over it.
 
 use bevy::prelude::*;
 use rl_bevy::PresentSet;
 use rl_core::Rect;
 use rl_render::Terminal;
 
-use crate::panel::nearby::clip_keeping;
-use crate::panel::{bar, clear, section};
+use crate::panel::nearby::{clip_keeping, paint_row};
+use crate::panel::{clear, section};
 use crate::tone::{Palette, Tones};
-use crate::view::{PartyView, PartyViewPlugin, Row, health_tone};
+use crate::view::{PartyView, PartyViewPlugin, Row};
 
 /// Where the party rail is drawn and what it says.
 #[derive(Resource, Debug, Clone)]
@@ -28,8 +35,6 @@ pub struct PartyLayout {
     /// game's own words. Empty says nothing, and the muted name alone
     /// marks it.
     pub elsewhere: String,
-    /// Cells given to each health bar.
-    pub bar_width: i32,
 }
 
 /// Draws [`PartyView`] as a rail.
@@ -42,10 +47,10 @@ pub struct PartyPanel(PartyLayout);
 
 impl PartyPanel {
     /// A rail in `rect`, headed `Party`, with a follower on another map
-    /// marked `elsewhere` and six cells for each bar: the engine's words
-    /// for what the rows are, plain enough to ship with and to replace.
+    /// marked `elsewhere`: the engine's words for what the rows are,
+    /// plain enough to ship with and to replace.
     pub fn new(rect: Rect) -> Self {
-        Self(PartyLayout { rect, heading: "Party".into(), elsewhere: "elsewhere".into(), bar_width: 6 })
+        Self(PartyLayout { rect, heading: "Party".into(), elsewhere: "elsewhere".into() })
     }
 
     /// Replaces the heading. Empty draws none.
@@ -57,12 +62,6 @@ impl PartyPanel {
     /// Replaces what a follower on another map is called.
     pub fn elsewhere(mut self, word: impl Into<String>) -> Self {
         self.0.elsewhere = word.into();
-        self
-    }
-
-    /// Sets how many cells a bar gets.
-    pub fn bars(mut self, width: i32) -> Self {
-        self.0.bar_width = width;
         self
     }
 }
@@ -97,18 +96,12 @@ pub fn draw_party(mut terminal: ResMut<Terminal>, layout: Res<PartyLayout>, view
         if y >= rect.bottom() {
             break;
         }
-        draw_row(&mut terminal, rect, y, row, view.is_elsewhere(row), &layout, &palette);
+        draw_row(&mut terminal, Rect::new(rect.x, y, rect.width, 1), row, view.is_elsewhere(row), &layout, &palette);
         y += 1;
     }
 }
 
-fn draw_row(terminal: &mut Terminal, rect: Rect, y: i32, row: &Row, elsewhere: bool, layout: &PartyLayout, palette: &Palette) {
-    let bg = palette.get(Tones::SURFACE);
-    terminal.print_on(rect.x, y, &row.glyph.ch.to_string(), row.glyph.fg, bg);
-    // The bar at the right edge, a space clear of the name, when the rail
-    // has room for both it and a few letters of the name.
-    let shows_bar = row.health.is_some() && layout.bar_width > 0 && rect.width >= layout.bar_width + 6;
-    let text_end = if shows_bar { rect.right() - layout.bar_width - 1 } else { rect.right() };
+fn draw_row(terminal: &mut Terminal, line: Rect, row: &Row, elsewhere: bool, layout: &PartyLayout, palette: &Palette) {
     // What the game says of a follower, its order, is the row's point, so
     // the facets and the elsewhere mark are kept whole and the name gives
     // way: a long name read as `Dagdis Longsh… · fighting freely` still
@@ -122,12 +115,9 @@ fn draw_row(terminal: &mut Terminal, rect: Rect, y: i32, row: &Row, elsewhere: b
     if elsewhere && !layout.elsewhere.is_empty() {
         tail.push_str(&format!(" ({})", layout.elsewhere));
     }
-    let text = clip_keeping(&row.label, &tail, (text_end - rect.x - 2).max(0) as usize);
+    let text = clip_keeping(&row.label, &tail, (line.width - 2).max(0) as usize);
     let tone = if elsewhere { Tones::MUTED } else { Tones::TEXT };
-    terminal.print_on(rect.x + 2, y, &text, palette.get(tone), bg);
-    if let (true, Some((hp, max))) = (shows_bar, row.health) {
-        bar(terminal, rect.right() - layout.bar_width, y, layout.bar_width, row.health_fraction(), health_tone(hp, max), palette);
-    }
+    paint_row(terminal, line, row, palette.get(Tones::SURFACE), &text, tone, palette);
 }
 
 #[cfg(test)]
@@ -147,6 +137,16 @@ mod tests {
         stage.app.world().resource::<Terminal>().get(x, y).expect("on the screen").fg
     }
 
+    fn bg(stage: &Stage, x: i32, y: i32) -> Color {
+        stage.app.world().resource::<Terminal>().get(x, y).expect("on the screen").bg
+    }
+
+    /// The background a row's health washes `tone` over.
+    fn washed(stage: &Stage, tone: crate::tone::ToneId) -> Color {
+        let palette = stage.app.world().resource::<Palette>();
+        palette.get(Tones::SURFACE).mix(&palette.get(tone), crate::panel::nearby::WASH)
+    }
+
     #[test]
     fn with_nobody_following_the_rail_draws_nothing_not_even_its_heading() {
         let mut stage = Stage::new(PartyPanel::new(Rect::new(0, 0, 24, 6))).screen(24, 6);
@@ -155,8 +155,11 @@ mod tests {
         assert!(stage.rows().iter().all(|r| r.is_empty()), "{:?}", stage.rows());
     }
 
+    /// The row is the bar, as on the nearby rail: health washes it from
+    /// the left, edge to edge at full, in the tone the vitals would read
+    /// the same health in, and the name lies over it.
     #[test]
-    fn a_follower_is_a_line_under_the_heading_with_a_health_bar_in_the_vitals_tones() {
+    fn a_follower_is_a_line_under_the_heading_and_its_row_is_its_health_bar_in_the_vitals_tones() {
         let mut stage = Stage::new(PartyPanel::new(Rect::new(0, 0, 24, 6))).screen(24, 6);
         let hale = party(&mut stage, "hale", 'h', 2);
         let hurt = party(&mut stage, "hurt", 'u', 3);
@@ -168,14 +171,18 @@ mod tests {
         let rows = stage.rows();
         assert_eq!(rows[0], "Party");
         assert!(rows[1].starts_with('\u{2500}'), "underlined: {:?}", rows[1]);
-        // The bar takes the last six cells, from column 18.
-        assert_eq!(rows[2], format!("{:<18}{}", "h hale", "\u{2588}".repeat(6)));
-        assert_eq!(rows[3], format!("{:<18}{}{}", "u hurt", "\u{2588}".repeat(2), "\u{2591}".repeat(4)), "a fifth, rounded up");
-        assert_eq!(rows[4], format!("{:<18}{}{}", "w worn", "\u{2588}".repeat(3), "\u{2591}".repeat(3)));
+        assert_eq!(&rows[2..5], ["h hale", "u hurt", "w worn"], "a glyph and a name, and no bar beside them");
 
-        let palette = stage.app.world().resource::<Palette>().clone();
-        for (y, tone) in [(2, Tones::GOOD), (3, Tones::BAD), (4, Tones::NOTICE)] {
-            assert_eq!(fg(&stage, 18, y), palette.get(tone), "row {y} reads as the vitals would read the same health");
+        let surface = stage.app.world().resource::<Palette>().get(Tones::SURFACE);
+        // Twenty-four cells: all of them at full, five at a fifth, twelve
+        // at a half, each in its own tone and the rest the rail's own.
+        for (y, tone, filled) in [(2, Tones::GOOD, 24), (3, Tones::BAD, 5), (4, Tones::NOTICE, 12)] {
+            let wash = washed(&stage, tone);
+            assert_eq!(bg(&stage, 0, y), wash, "row {y} reads as the vitals would read the same health");
+            assert_eq!(bg(&stage, filled - 1, y), wash, "row {y} is washed to column {}", filled - 1);
+            if filled < 24 {
+                assert_eq!(bg(&stage, filled, y), surface, "and no further on row {y}");
+            }
         }
     }
 
@@ -188,8 +195,8 @@ mod tests {
         stage.tick();
         let rows = stage.rows();
         assert_eq!(rows[0], "Company");
-        assert!(rows[2].starts_with("l left (below)"), "{:?}", rows[2]);
-        assert!(rows[2].ends_with(&"\u{2588}".repeat(6)), "{:?}", rows[2]);
+        assert_eq!(rows[2], "l left (below)");
+        assert_eq!(bg(&stage, 29, 2), washed(&stage, Tones::GOOD), "and keeps its bar, edge to edge");
         let palette = stage.app.world().resource::<Palette>().clone();
         assert_eq!(fg(&stage, 2, 2), palette.get(Tones::MUTED));
     }
@@ -205,7 +212,7 @@ mod tests {
         stage.app.add_systems(Update, order.in_set(crate::ViewSet::Annotate));
         party(&mut stage, "kit", 'k', 2);
         stage.tick();
-        assert!(stage.rows()[2].starts_with("k kit \u{00b7} hold "), "{:?}", stage.rows()[2]);
+        assert_eq!(stage.rows()[2], "k kit \u{00b7} hold");
     }
 
     /// A name of twenty-four letters beside the longest order gives way to
@@ -223,7 +230,8 @@ mod tests {
         stage.tick();
         let row = &stage.rows()[2];
         assert!(row.starts_with("h Dagdis"), "the name's start: {row:?}");
-        assert!(row.contains("\u{2026} \u{00b7} fighting freely "), "the name cut, the order whole: {row:?}");
+        assert!(row.ends_with("\u{2026} \u{00b7} fighting freely"), "the name cut, the order whole: {row:?}");
+        assert_eq!(row.chars().count(), 36, "and the whole row is the name's, now the bar lies under it: {row:?}");
     }
 
     /// The rail clears what it drew once the last follower is gone, rather
