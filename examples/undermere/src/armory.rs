@@ -1383,10 +1383,30 @@ mod tests {
         let dagger = world.get::<MeleeAttack>(made[1]).expect("the dagger stabs");
         assert_eq!((dagger.dice, dagger.kind, dagger.cost, dagger.unaware), (plus(1, 4, 1), kind("pierce"), None, Some(500)));
         let bow = world.get::<RangedAttack>(made[2]).expect("the bow shoots");
-        assert_eq!((bow.dice, bow.range, bow.effective_range()), (plus(1, 6, 1), 8, 5));
+        assert_eq!((bow.dice, bow.range, bow.effective_range()), (plus(2, 4, 1), 10, 7));
         assert_eq!(world.get::<Ammo>(made[2]).map(|a| a.tag), library.registries.tags.id("arrow"), "and spends an arrow a shot");
         let shapes: Vec<_> = made[3..].iter().map(|e| world.get::<MeleeAttack>(*e).and_then(|m| m.shape)).collect();
         assert_eq!(shapes, [Some(AttackShape::Sweep), Some(AttackShape::Pierce(1)), None], "an axe sweeps, a pike runs on, a sword strikes its target");
+    }
+
+    /// An arrow is ammunition and nothing else: it has no throw, so the
+    /// throwing key never offers it. A bow with arrows out-damages the best
+    /// thing thrown, a javelin, shoots further and is true further, so the
+    /// bow is the ranged choice and darts and javelins the stopgap.
+    #[test]
+    fn arrows_are_never_thrown_and_a_bow_out_damages_and_out_ranges_a_javelin_and_a_dart() {
+        let library = library();
+        let (world, made) = spawned(&library, &["arrow", "bow", "javelin", "dart"]);
+        assert!(world.get::<Throwable>(made[0]).is_none(), "an arrow has no throw");
+        assert!(library.armory.defs.get(library.armory.defs.expect("arrow")).stack, "and stacks as ammunition");
+        let bow = world.get::<RangedAttack>(made[1]).expect("the bow shoots");
+        for thrown in &made[2..] {
+            let throw = world.get::<Throwable>(*thrown).expect("a javelin and a dart are thrown");
+            let (_, dice) = throw.strike.expect("and strike");
+            assert!(bow.dice.avg() > dice.avg(), "the bow's {} against {}", bow.dice.avg(), dice.avg());
+            assert!(bow.range > throw.range, "the bow reaches {} against {}", bow.range, throw.range);
+            assert!(bow.effective_range() > throw.effective.unwrap_or(throw.range / 3), "and is true further");
+        }
     }
 
     /// Spawns `name` at `level` through the library's armory into a bare

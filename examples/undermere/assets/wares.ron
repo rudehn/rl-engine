@@ -40,7 +40,7 @@
     ],
     keepers: [
         // The smithy: six drawn, and arrows always.
-        (name: "smith", buys: Tags(["weapon", "armor", "thrown"]), purse: 200, always: [(item: "arrow", count: 10)], draws: 6, parts: [
+        (name: "smith", buys: Tags(["weapon", "armor", "arrow", "thrown"]), purse: 200, always: [(item: "arrow", count: 10)], draws: 6, parts: [
             (item: "dart", bands: (1, 5), weight: 1, group: (8, 8)),
             (item: "javelin", bands: (1, 5), weight: 1, group: (4, 4)),
             (item: "dagger", bands: (1, 5), weight: 1),
