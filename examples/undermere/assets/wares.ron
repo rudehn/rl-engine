@@ -20,12 +20,17 @@
 //     always: optional; [(item:, count:)] on every shelf of every stocking, that many
 //     draws:  optional; how many of `parts` are drawn by weight a stocking, nought when
 //             left out
-//     parts:  optional; [(item:, bands:, weight:, chance:, group:)], each drawn as the
-//             engine's `LootTable` draws at a band, the band being the tier, and never one
-//             already on the shelf, so no item is on one shelf twice:
+//     parts:  optional; [(item: or tag:, bands:, weight:, chance:, group:)], each drawn as
+//             the engine's `LootTable` draws at a band, the band being the tier, and never
+//             one already on the shelf, so no item is on one shelf twice:
 //       item:   a name in `items.ron`, with a price, so never gold, and never an artifact,
 //               a scroll of aggravate monsters or one of summon monsters; one part a keeper,
 //               and none of an item in `always`
+//       tag:    instead of item: a tag some row of `item_spawns.ron` carries, drawn as a
+//               chest's row for it is, by `LootTable::pick_tagged` over that table's rows
+//               at the tier, among the items the keeper buys and may stock, so a shelf
+//               holds whatever the dungeon can; drawn by weight, never on a chance; one
+//               part a keeper for a tag; what it draws rolls its own level
 //       bands:  (first tier, last tier), both included, tiers running 1 to 5
 //       weight: optional; how often against every other drawn part that applies at the
 //               tier; required on a part without a chance, refused on one with
@@ -39,67 +44,30 @@
         (bands: (4, 5), levels: [(0, 6), (1, 3), (2, 1)]),
     ],
     keepers: [
-        // The smithy: six drawn, and arrows always.
+        // The smithy: six drawn, and arrows always. Most of the shelf is drawn by kind, from
+        // everything the dungeon lays of it at the tier, as a chest's row is; darts and
+        // javelins stay named for the size of the handful.
         (name: "smith", buys: Tags(["weapon", "armor", "arrow", "thrown"]), purse: 200, always: [(item: "arrow", count: 10)], draws: 6, parts: [
             (item: "dart", bands: (1, 5), weight: 1, group: (8, 8)),
             (item: "javelin", bands: (1, 5), weight: 1, group: (4, 4)),
-            (item: "dagger", bands: (1, 5), weight: 1),
-            (item: "sword", bands: (1, 5), weight: 1),
-            (item: "spear", bands: (1, 5), weight: 1),
-            (item: "mace", bands: (1, 5), weight: 1),
-            (item: "axe", bands: (1, 5), weight: 1),
-            (item: "bow", bands: (1, 5), weight: 1),
-            (item: "leather armor", bands: (1, 5), weight: 1),
-            (item: "helm", bands: (1, 5), weight: 1),
-            (item: "shield", bands: (1, 5), weight: 1),
-            (item: "scale mail", bands: (1, 5), weight: 1),
-            (item: "broadsword", bands: (2, 5), weight: 1),
-            (item: "war pike", bands: (2, 5), weight: 1),
-            (item: "war hammer", bands: (2, 5), weight: 1),
-            (item: "war axe", bands: (2, 5), weight: 1),
-            (item: "chain mail", bands: (2, 5), weight: 1),
-            (item: "banded mail", bands: (3, 5), weight: 1),
-            (item: "splint mail", bands: (3, 5), weight: 1),
+            (tag: "weapon", bands: (1, 5), weight: 6),
+            (tag: "armor", bands: (1, 5), weight: 4),
+            // Plate is laid from the sixth floor only, so it is named to be sold sooner.
             (item: "plate armor", bands: (4, 5), weight: 1),
         ]),
-        // The apothecary: potions of healing always, then four drawn.
+        // The apothecary: potions of healing always, then four drawn from every potion and
+        // scroll the dungeon holds.
         (name: "apothecary", buys: Tags(["potion", "scroll"]), purse: 200, always: [(item: "potion of healing", count: 3)], draws: 4, parts: [
-            (item: "scroll of identify", bands: (1, 5), weight: 1),
-            (item: "potion of darkness", bands: (1, 5), weight: 1),
-            (item: "potion of confusion", bands: (1, 5), weight: 1),
-            (item: "potion of incineration", bands: (1, 5), weight: 1),
-            (item: "potion of paralysis", bands: (1, 5), weight: 1),
-            (item: "scroll of remove curse", bands: (1, 5), weight: 1),
-            (item: "potion of descent", bands: (1, 5), weight: 1),
-            (item: "potion of fire immunity", bands: (1, 5), weight: 1),
-            (item: "scroll of teleportation", bands: (1, 5), weight: 1),
-            (item: "potion of haste", bands: (2, 5), weight: 1),
-            (item: "scroll of magic mapping", bands: (2, 5), weight: 1),
-            (item: "scroll of discord", bands: (2, 5), weight: 1),
-            (item: "potion of extra healing", bands: (2, 5), weight: 1),
-            (item: "scroll of recharging", bands: (3, 5), weight: 1),
+            (tag: "potion", bands: (1, 5), weight: 5),
+            (tag: "scroll", bands: (1, 5), weight: 5),
         ]),
         // The curio shop: four drawn, rare and dear, and in a quarter of the deepest
         // stockings a potion of life besides. It buys the rare, so its purse is twice
         // the others', enough for an artifact's 400 from the first tier.
         (name: "curio", buys: Anything, purse: 400, draws: 4, parts: [
-            (item: "wand of plenty", bands: (1, 5), weight: 1),
-            (item: "wand of beckoning", bands: (1, 5), weight: 1),
-            (item: "wand of teleport other", bands: (2, 5), weight: 1),
-            (item: "wand of polymorph", bands: (2, 5), weight: 1),
-            (item: "staff of slowness", bands: (1, 5), weight: 1),
-            (item: "staff of poison", bands: (1, 5), weight: 1),
-            (item: "staff of blinking", bands: (2, 5), weight: 1),
-            (item: "staff of conjuration", bands: (2, 5), weight: 1),
-            (item: "staff of firebolt", bands: (2, 5), weight: 1),
-            (item: "staff of lightning", bands: (2, 5), weight: 1),
-            (item: "ring of light", bands: (2, 5), weight: 1),
-            (item: "ring of stealth", bands: (2, 5), weight: 1),
-            (item: "ring of wisdom", bands: (2, 5), weight: 1),
-            (item: "ring of awareness", bands: (2, 5), weight: 1),
-            (item: "ring of regeneration", bands: (3, 5), weight: 1),
-            (item: "ring of reaping", bands: (3, 5), weight: 1),
-            (item: "wand of domination", bands: (3, 5), weight: 1),
+            (tag: "staff", bands: (1, 5), weight: 3),
+            (tag: "wand", bands: (1, 5), weight: 3),
+            (tag: "ring", bands: (1, 5), weight: 3),
             (item: "scroll of enchanting", bands: (2, 5), weight: 1),
             (item: "potion of strength", bands: (3, 5), weight: 1),
             (item: "potion of life", bands: (5, 5), chance: 25),

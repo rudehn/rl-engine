@@ -16,8 +16,12 @@
 //              fourth part, a ring one time in ten, is a row here and no code
 //     chance:  percent of candidates carrying one, 1 to 100
 //     rows:    which one, drawn by weight among the rows at the band, as the
-//              engine's spawn file reads them: [(item:, bands:, weight:, group:)]
+//              engine's spawn file reads them: [(item: or tag:, bands:, weight:, group:)]
 //       item:    a name in `items.ron`
+//       tag:     instead of item: a tag some row of `item_spawns.ron` carries, drawn
+//              as a chest's row for it is, by `LootTable::pick_tagged` over that
+//              table at the band, when the row is the one drawn; the same reading
+//              of a row as `wares.ron`'s, in `src/shops.rs`
 //       bands:   (first, last), both included, each from 0 to 10
 //       weight:  how often against every other row of the part at the band,
 //                above nought; only the ratio matters
@@ -47,6 +51,7 @@
         ]),
         (name: "consumable", chance: 50, rows: [
             (item: "potion of healing", bands: (0, 10), weight: 4),
+            (tag: "potion", bands: (3, 10), weight: 2),
             (item: "dart", bands: (0, 10), weight: 2, group: (4, 8)),
             (item: "javelin", bands: (0, 10), weight: 1, group: (2, 3)),
         ]),

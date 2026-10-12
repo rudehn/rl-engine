@@ -4,7 +4,7 @@
 use bevy::prelude::*;
 use rand::Rng;
 use rl_engine::prelude::*;
-use rl_engine::rl_rules::loot::{self, LootRow, LootTable};
+use rl_engine::rl_rules::loot::{LootRow, LootTable};
 use ron::extensions::Extensions;
 use ron::options::Options;
 use ron::value::RawValue;
@@ -13,7 +13,7 @@ use serde::Deserialize;
 use super::OwnKit;
 use crate::armory::{Armory, ItemDef, spawn_item_at, spawn_items};
 use crate::dungeon::FLOORS;
-use crate::shops::Ware;
+use crate::shops::{AuthoredRow, Source, Ware};
 
 const MERCENARIES_RON: &str = include_str!("../../assets/mercenaries.ron");
 
@@ -35,7 +35,7 @@ struct Part {
     /// Percent of candidates carrying one.
     chance: u32,
     /// Which one, drawn at the band.
-    rows: LootTable<Id<ItemDef>>,
+    rows: LootTable<Source>,
 }
 
 /// Everything `mercenaries.ron` holds: the fee, the parts of a kit, and
@@ -45,6 +45,8 @@ pub struct Mercenaries {
     fee: Fee,
     parts: Vec<Part>,
     levels: LootTable<i32>,
+    /// The armory's table, which a tag row draws from.
+    table: LootTable<Id<ItemDef>>,
 }
 
 impl Mercenaries {
@@ -61,7 +63,6 @@ impl Mercenaries {
         let options = Options::default().with_default_extension(Extensions::IMPLICIT_SOME);
         let file: AuthoredFile = options.from_str(text).map_err(|e| ContentError::Parse(e.to_string()))?;
         let names = registries.names().with("item", &armory.defs);
-        let tags = |d: &ItemDef| d.tags.iter().map(|t| t.id()).collect();
         let mut errors = Vec::new();
         let mut parts: Vec<Part> = Vec::new();
         for a in file.parts {
@@ -72,19 +73,46 @@ impl Mercenaries {
             if !(1..=100).contains(&a.chance) {
                 errors.push(format!("{at}: a chance of {} percent", a.chance));
             }
-            match loot::load(a.rows.get_ron(), &names, &armory.defs, tags) {
-                Ok(rows) => {
-                    if rows.rows().is_empty() {
-                        errors.push(format!("{at}: no rows, so never carried"));
-                    }
-                    for row in rows.rows() {
-                        floors(&format!("{at}: {}", armory.defs.get(row.item).name), row.bands, &mut errors);
-                    }
-                    parts.push(Part { name: a.name, chance: a.chance, rows });
+            let authored: Vec<AuthoredRow> = match names.load_list(a.rows.get_ron()) {
+                Ok(authored) => authored,
+                Err(ContentError::Invalid(problems)) => {
+                    errors.extend(problems.into_iter().map(|e| format!("{at}: {e}")));
+                    continue;
                 }
-                Err(ContentError::Invalid(problems)) => errors.extend(problems.into_iter().map(|e| format!("{at}: {e}"))),
-                Err(other) => errors.push(format!("{at}: {other}")),
+                Err(other) => {
+                    errors.push(format!("{at}: {other}"));
+                    continue;
+                }
+            };
+            let mut rows = Vec::new();
+            for (i, row) in authored.iter().enumerate() {
+                let source = match row.source(armory) {
+                    Ok(source) => source,
+                    Err(why) => {
+                        errors.push(format!("{at}: entry {}: {why}", i + 1));
+                        continue;
+                    }
+                };
+                let name = source.name(armory, registries);
+                floors(&format!("{at}: {name}"), row.bands, &mut errors);
+                let weight = row.weight.unwrap_or(0);
+                if weight == 0 {
+                    errors.push(format!("{at}: {name}: a weight of nothing is never drawn; leave the row out instead"));
+                }
+                if row.chance.is_some() {
+                    errors.push(format!("{at}: {name}: a kit's row has a weight, never a chance"));
+                }
+                let group = row.group.unwrap_or((1, 1));
+                if group.0 == 0 || group.0 > group.1 {
+                    errors.push(format!("{at}: {name}: a group of {} to {} is no group at all", group.0, group.1));
+                }
+                rows.push(LootRow::new(source).bands(row.bands.0, row.bands.1).weight(weight).group(group.0, group.1));
             }
+            if rows.is_empty() {
+                errors.push(format!("{at}: no rows, so never carried"));
+            }
+            let rows = LootTable::new(rows, |source| source.name(armory, registries));
+            parts.push(Part { name: a.name, chance: a.chance, rows });
         }
         let mut levels = Vec::new();
         for (i, a) in file.levels.into_iter().enumerate() {
@@ -98,7 +126,7 @@ impl Mercenaries {
         if !errors.is_empty() {
             return Err(ContentError::Invalid(errors));
         }
-        Ok(Self { fee: file.fee, parts, levels: LootTable::new(levels, |level| level.to_string()) })
+        Ok(Self { fee: file.fee, parts, levels: LootTable::new(levels, |level| level.to_string()), table: armory.table.clone() })
     }
 
     /// Rolls one candidate's kit at `band`, the deepest floor the run has
@@ -115,7 +143,8 @@ impl Mercenaries {
             if rng.random_range(0..100) >= part.chance {
                 continue;
             }
-            let Some((def, count)) = part.rows.pick(band, rng) else { continue };
+            let Some((source, count)) = part.rows.pick(band, rng) else { continue };
+            let Some(def) = source.draw(&self.table, band, |_| true, rng) else { continue };
             let level = armory.plain_level(def).map_or(0, |plain| plain + self.levels.pick(band, rng).map_or(0, |(level, _)| level));
             kit.push(Ware { def, count, level });
         }
@@ -232,6 +261,34 @@ mod tests {
             Err(e) => e.to_string(),
             Ok(_) => panic!("expected the fixture refused"),
         }
+    }
+
+    /// A part that names a tag carries only items carrying it, from the
+    /// band's rows of the armory's table, over a span of seeds; and a row
+    /// naming both an item and a tag is refused.
+    #[test]
+    fn a_tag_row_draws_only_items_carrying_the_tag_over_a_span_of_seeds() {
+        let library = library();
+        let text =
+            r#"(fee: (base: 80, share_pct: 100), parts: [(name: "weapon", chance: 100, rows: [(tag: "weapon", bands: (0, 10), weight: 1)])], levels: [])"#;
+        let merc = Mercenaries::read(text, &library.registries, &library.armory).expect("a tag row reads");
+        let weapon = library.registries.tags.expect("weapon");
+        let mut seen = std::collections::BTreeSet::new();
+        for s in 0..400 {
+            for band in [0, 5, 10] {
+                let kit = merc.kit(band, &library.armory, &mut StdRng::seed_from_u64(s));
+                assert_eq!(kit.len(), 1, "seed {s}: the one weapon");
+                assert!(tagged(&library, &kit[0], "weapon"), "seed {s}: {} is no weapon", named(&library, &kit[0]));
+                assert!(library.armory.table.rows().iter().any(|r| r.item == kit[0].def && r.tags.contains(&weapon)), "laid by the table");
+                seen.insert((band, named(&library, &kit[0])));
+            }
+        }
+        assert!(seen.contains(&(10, "war hammer".to_string())) && !seen.contains(&(0, "war hammer".to_string())), "deeper bands draw deeper rows: {seen:?}");
+        let error = refused(
+            &library,
+            r#"(fee: (base: 80, share_pct: 100), parts: [(name: "weapon", chance: 100, rows: [(item: "sword", tag: "weapon", bands: (0, 10), weight: 1)])], levels: [])"#,
+        );
+        assert!(error.contains("weapon: entry 1: an item or a tag, not both"), "{error}");
     }
 
     /// The mercenaries' set never runs dry: on every seed of a span it
