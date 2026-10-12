@@ -78,6 +78,7 @@ pub mod bestiary_lore;
 pub mod captives;
 pub mod conditions;
 pub mod content;
+pub mod corpses;
 pub mod damage;
 pub mod decor;
 pub mod doors;

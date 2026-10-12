@@ -267,16 +267,6 @@ const FEEDERS: &[Feeder] = &[
 /// the pillar "no two runs show everything" read down to one flourish.
 const FEEDING_GROUND_PCT: u32 = 50;
 
-/// How the feeding ground's own corpse is dressed, a bone-pale glyph
-/// rather than whatever the live kind looked like: [`lay_down`] keeps a
-/// body's glyph as it was in life, since the engine does not say what
-/// remains look like, and a feeding ground wants its prey to read as
-/// dead on sight rather than as the animal it was standing beside its
-/// own feeder.
-const REMAINS_GLYPH: char = '%';
-/// Bone-pale, the remains' own colour.
-const REMAINS_COLOR: (f32, f32, f32) = (0.85, 0.82, 0.7);
-
 /// Stands `feeder`'s beast beside its prey's own remains, both free cells
 /// near one another, the prey laid down as the engine's own remains
 /// rather than spawned already dead, so a necromancer's `raising` finds
@@ -304,7 +294,9 @@ fn place_feeding_ground(
     let beast_at = geometry::square(remains_at, 1).find(|p| *p != remains_at && open.contains(p))?;
     let prey = spawn_monster(commands, bestiary.defs.get(prey_id), remains_at, site.map, registries, false);
     commands.queue(move |world: &mut World| rl_engine::rl_bevy::remains::lay_down(world, prey, now, None));
-    commands.entity(prey).insert((Glyph::new(REMAINS_GLYPH, Color::srgb(REMAINS_COLOR.0, REMAINS_COLOR.1, REMAINS_COLOR.2)).on_layer(5),));
+    // Drawn as a corpse like every body, by `corpses::dress_the_dead`: the
+    // engine keeps a body's glyph as it was in life, and the prey must read
+    // as dead on sight rather than as an animal beside its own feeder.
     let beast = spawn_monster(commands, bestiary.defs.get(beast_id), beast_at, site.map, registries, false);
     // Not the engine's own `Post`: `lead_lair_bands` reads every `Post`
     // on a lair's floor as that lair's own entourage, and a feeding
