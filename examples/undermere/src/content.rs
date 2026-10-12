@@ -950,4 +950,45 @@ mod tests {
         assert_eq!(glow.color, Rgb::new(89, 255, 204));
         assert_eq!(glow.flicker, 77);
     }
+
+    /// A prop is drawn in a colour clearly apart from the ground it stands
+    /// on, and in a glyph a floor does not wear: in plain red-green-blue
+    /// steps of 255 it is at least thirty from each walkable floor's glyph
+    /// colour and forty-five from each one's fill, and its glyph is none of
+    /// the floors' own `.`, `,`, `:` and `-`. The loose flagstone alone is
+    /// meant to be found by looking closely, as a flagstone is, and is let
+    /// blend with the cobbles it lies among.
+    #[test]
+    fn every_prop_is_drawn_clear_of_every_floor_in_colour_and_in_glyph() {
+        use rl_engine::rl_core::RunSeed;
+        let undermere = crate::dungeon::Undermere::new(RunSeed(7));
+        let looks = undermere.appearance();
+        let rgb = |c: Color| {
+            let c = c.to_srgba();
+            [c.red * 255.0, c.green * 255.0, c.blue * 255.0]
+        };
+        let apart = |a: [f32; 3], b: [f32; 3]| a.iter().zip(b).map(|(x, y)| (x - y).powi(2)).sum::<f32>().sqrt();
+        let floors: Vec<(String, [f32; 3], [f32; 3])> = undermere
+            .tiles()
+            .iter()
+            .filter(|(_, tile)| tile.walkable && !["door", "gate", "bridge", "causeway", "pool"].iter().any(|w| tile.name.contains(w)))
+            .map(|(id, tile)| (tile.name.clone(), rgb(looks.lit(id).fg), rgb(looks.lit(id).bg)))
+            .collect();
+        assert!(floors.len() > 20, "the floors are read: {}", floors.len());
+        let mut blenders = Vec::new();
+        for (_, prop) in registries().props.iter() {
+            if prop.name == "loose flagstone" {
+                continue;
+            }
+            let c = prop.look.color;
+            let c = [f32::from(c.r), f32::from(c.g), f32::from(c.b)];
+            for (floor, fg, bg) in &floors {
+                if apart(c, *fg) < 30.0 || apart(c, *bg) < 45.0 {
+                    blenders.push(format!("{} on {floor}", prop.name));
+                }
+            }
+            assert!(!['.', ',', ':', '-'].contains(&prop.look.glyph), "{} is drawn '{}', as a floor is", prop.name, prop.look.glyph);
+        }
+        assert!(blenders.is_empty(), "props that blend into a floor: {blenders:#?}");
+    }
 }
