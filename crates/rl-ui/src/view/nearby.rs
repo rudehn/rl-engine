@@ -37,7 +37,9 @@ use crate::view::{Alert, Row};
 pub struct NearbyView {
     /// Actors, nearest first. Never includes the player.
     pub actors: Vec<Row>,
-    /// Items and props on visible ground, nearest first.
+    /// Items and props on visible ground, nearest first: every item, and
+    /// a prop when there is something to do with it or about it, as
+    /// [`Business`] reads it.
     pub things: Vec<Row>,
     /// The row picked out, and where it stands: what [`Focus`] names, when
     /// that is in either list.
@@ -131,6 +133,29 @@ pub struct Around<'w, 's> {
     work: crate::view::Workings<'w, 's>,
     doing: Query<'w, 's, &'static rl_bevy::Doing>,
     bodies: Query<'w, 's, (), With<rl_bevy::Remains>>,
+    props: Business<'w, 's>,
+}
+
+/// Whether a prop in sight is worth a row: something to do with it or
+/// about it, by [`has_business`](rl_bevy::props::has_business) on its
+/// definition or an [`Offers`] the game hung on it.
+///
+/// Read here rather than in [`InSight`], because a barrel that can only be
+/// broken is still something a cursor steps onto to aim at; it is only
+/// beside what can be acted on that it is one row too many. A thing that
+/// is no prop of a known kind, an item or a body, is always listed.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Business<'w, 's> {
+    registries: Option<Res<'w, Registries>>,
+    kinds: Query<'w, 's, (&'static PropKind, Option<&'static Offers>)>,
+}
+
+impl Business<'_, '_> {
+    /// Whether `entity`, a thing in sight, has a row on the rail.
+    pub fn listed(&self, entity: Entity) -> bool {
+        let (Some(registries), Ok((kind, offers))) = (self.registries.as_deref(), self.kinds.get(entity)) else { return true };
+        offers.is_some_and(|o| !o.0.is_empty()) || rl_bevy::props::has_business(registries.props.get(kind.0))
+    }
 }
 
 /// Fills [`NearbyView`] from the player's viewshed, in [`InSight`]'s order.
@@ -144,6 +169,9 @@ pub fn collect_nearby(mut view: ResMut<NearbyView>, around: Around) {
     view.focused = around.focus.within(list).copied();
     for sighting in list.iter().copied() {
         let Ok((name, glyph, health, faction)) = around.seen.get(sighting.entity) else { continue };
+        if !sighting.actor && !around.props.listed(sighting.entity) {
+            continue;
+        }
         let count = around.stacks.get(sighting.entity).map_or(1, |s| s.count);
         let mut row = Row::new(sighting.entity, rl_core::noun::listed(name.as_str(), count), *glyph).at(sighting.distance);
         row.health = health.map(|h| (h.current, h.max));
@@ -232,6 +260,52 @@ mod tests {
         let view = stage.app.world().resource::<NearbyView>();
         let names: Vec<&str> = view.things.iter().map(|r| r.label.as_str()).collect();
         assert_eq!(names, vec!["a crate"]);
+    }
+
+    /// Puts a prop of the kind called `name` from `props` `dx` cells east
+    /// of the player, as a game's `spawn_prop` would, with a glyph to be
+    /// drawn by.
+    fn prop(stage: &mut Stage, name: &str, dx: i32) -> Entity {
+        let registries = stage.app.world().resource::<Registries>().clone();
+        let at = stage.at.offset(dx, 0);
+        let prop = rl_bevy::props::spawn_prop(&mut stage.app.world_mut().commands(), &registries, registries.props.expect(name), at, MapId::SURFACE);
+        stage.app.world_mut().flush();
+        stage.app.world_mut().entity_mut(prop).insert(Glyph::new(name.chars().next().unwrap_or('?'), Color::WHITE));
+        prop
+    }
+
+    /// A barrel that can only be broken and a sac that bursts when it is
+    /// are not listed, beside a chest, a lever and a found trap, which
+    /// are; and a game that hangs an offer on a bare prop gives it its
+    /// row. The look cursor's list keeps all of them.
+    #[test]
+    fn a_prop_is_listed_only_when_there_is_something_to_do_with_it_or_about_it() {
+        let text = r#"#![enable(implicit_some)] [
+            (name: "chest", glyph: '=', color: (r: 1, g: 1, b: 1), container: (contents: []), offers: [(verb: "open", time: 100)]),
+            (name: "lever", glyph: '/', color: (r: 1, g: 1, b: 1), offers: [(verb: "pull", time: 100)]),
+            (name: "trap", glyph: '^', color: (r: 1, g: 1, b: 1), hidden: (spot: 10), triggers: [(on: "entered", effects: [])]),
+            (name: "barrel", glyph: '0', color: (r: 1, g: 1, b: 1), health: 4),
+            (name: "sac", glyph: 'o', color: (r: 1, g: 1, b: 1), health: 1, triggers: [(on: "destroyed", effects: [])]),
+            (name: "well", glyph: 'o', color: (r: 1, g: 1, b: 1)),
+        ]"#;
+        let mut stage = Stage::new(NearbyViewPlugin);
+        let names = stage.app.world().resource::<Registries>().names();
+        stage.app.world_mut().resource_mut::<Registries>().props = rl_rules::prop::load(text, &names).expect("the props load");
+        let [chest, lever, trap, barrel, sac, well] = ["chest", "lever", "trap", "barrel", "sac", "well"].map(|name| prop(&mut stage, name, 1));
+        // The trap has been spotted, and the well offers what the game
+        // gave it, as a game whose wells choose a thing first does.
+        stage.app.world_mut().entity_mut(trap).remove::<Hidden>();
+        stage.app.world_mut().entity_mut(well).remove::<Scenery>().insert(Offers(vec![rl_bevy::Offering::new(rl_bevy::Verbs::OPEN, 100)]));
+        stage.tick();
+
+        let view = stage.app.world().resource::<NearbyView>();
+        let mut listed: Vec<Entity> = view.things.iter().map(|r| r.entity).collect();
+        listed.sort();
+        let mut want = vec![chest, lever, trap, well];
+        want.sort();
+        assert_eq!(listed, want, "{:?}", view.things.iter().map(|r| &r.label).collect::<Vec<_>>());
+        let sighted: Vec<Entity> = stage.app.world().resource::<crate::focus::Sighted>().list().iter().map(|s| s.entity).collect();
+        assert!(sighted.contains(&barrel) && sighted.contains(&sac), "still in sight for a cursor to step onto");
     }
 
     #[test]

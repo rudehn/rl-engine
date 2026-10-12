@@ -77,6 +77,21 @@ pub struct PropKind(pub PropId);
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct Scenery;
 
+/// Whether a prop of this definition is something to do with or about:
+/// it offers a verb, holds things, or hides until it is spotted, so that
+/// once found it is a thing a player steps round.
+///
+/// Narrower than "not [`Scenery`]". A prop that can only be broken, or
+/// that answers a moment nobody can see coming, is more than scenery to
+/// a mind or a cursor, which may aim at it; but beside what can be acted
+/// on it is one more row for every barrel and every sac, which is what a
+/// list of what is in sight leaves out by this. A game that hangs an
+/// [`Offers`] of its own on a prop has given it something to do, which a
+/// list reads off the prop rather than off its definition.
+pub fn has_business(def: &rl_rules::prop::PropDef) -> bool {
+    !def.offers.is_empty() || def.container.is_some() || def.hidden.is_some()
+}
+
 /// Puts a prop of kind `id` at `at` on `map`, with everything its
 /// definition asks for.
 ///
@@ -1626,6 +1641,31 @@ mod offers {
         let console = put(&mut app, "reactor console", start.offset(2, 0));
         assert!(app.world().entity(lathe).contains::<Scenery>());
         assert!(!app.world().entity(console).contains::<Scenery>());
+    }
+
+    /// Something to do with it or about it: what offers, holds or hides
+    /// is, and what can only be broken, or answers a moment in plain
+    /// sight, is not, though neither of those is scenery.
+    #[test]
+    fn a_prop_has_business_when_it_offers_holds_or_hides_and_not_when_it_can_only_be_broken() {
+        let text = r#"#![enable(implicit_some)] [
+            (name: "chest", glyph: '=', color: (r: 1, g: 1, b: 1), container: (contents: []), offers: [(verb: "open", time: 100)]),
+            (name: "lever", glyph: '/', color: (r: 1, g: 1, b: 1), offers: [(verb: "pull", time: 100)]),
+            (name: "trap", glyph: '^', color: (r: 1, g: 1, b: 1), hidden: (spot: 10), triggers: [(on: "entered", effects: [])]),
+            (name: "barrel", glyph: '0', color: (r: 1, g: 1, b: 1), health: 4),
+            (name: "sac", glyph: 'o', color: (r: 1, g: 1, b: 1), health: 1, triggers: [(on: "destroyed", effects: [])]),
+            (name: "plate", glyph: '^', color: (r: 1, g: 1, b: 1), triggers: [(on: "entered", effects: [])]),
+            (name: "lathe", glyph: '0', color: (r: 1, g: 1, b: 1)),
+        ]"#;
+        let props = rl_rules::prop::load(text, &Names::new()).expect("the props load");
+        let business = |name: &str| has_business(props.get(props.expect(name)));
+        for name in ["chest", "lever", "trap"] {
+            assert!(business(name), "{name} is something to do with or about");
+        }
+        for name in ["barrel", "sac", "plate", "lathe"] {
+            assert!(!business(name), "{name} is not");
+        }
+        assert!(!props.get(props.expect("sac")).is_scenery(), "and a sac is still no scenery, so a cursor steps onto it");
     }
 
     /// The gate answers for whoever holds the turn, about what it can
