@@ -281,6 +281,57 @@ impl KitSeen<'_, '_> {
     }
 }
 
+/// The facet key a row's kit is said under, on the look panel, the rail
+/// and the company alike; the rail and the company draw it beneath the
+/// row, since it does not fit beside a name.
+pub const KIT_FACET: &str = "kit";
+
+/// What `held` says on a row, a line a verb, wielded first, then worn,
+/// then carried: `wields a +1 spear`, `wears leather armor and a cap`,
+/// `carries 6 darts`. A line a verb rather than one sentence, so a rail
+/// with room wraps each whole, and one without joins them with its own
+/// mark and clips the end, which is what is carried.
+pub fn kit_lines(held: &[(Held, String)]) -> Vec<String> {
+    [Held::Wields, Held::Wears, Held::Carries]
+        .into_iter()
+        .filter_map(|how| {
+            let things: Vec<String> = held.iter().filter(|(h, _)| *h == how).map(|(_, said)| said.clone()).collect();
+            (!things.is_empty()).then(|| format!("{} {}", how.verb(), and_list(&things)))
+        })
+        .collect()
+}
+
+/// Says under each row of the rail and of the company what that one
+/// holds, by [`kit_lines`], each thing named as the adventurer knows it:
+/// a goblin that picked up a sword is a goblin with a sword, and a
+/// hireling's kit is in sight without opening the look panel.
+///
+/// Only what wields and wears, an [`Equipped`]: a keeper's pack is its
+/// shelf, which the shop shows, and a rat holds nothing. In
+/// `ViewSet::Annotate`; order among the game's other notes does not
+/// matter, since the panels draw this one beneath the row.
+pub fn show_kit(
+    rail: Option<ResMut<NearbyView>>,
+    party: Option<ResMut<PartyView>>,
+    holders: Query<(), (With<Equipped>, Without<Trader>)>,
+    kits: KitSeen,
+    mut facets: ResMut<Facets>,
+) {
+    let mut note = |row: &mut Row| {
+        if holders.contains(row.entity) {
+            for line in kit_lines(&kits.of(row.entity)) {
+                row.facets.push(facets.facet(KIT_FACET, line).toned(Tones::MUTED));
+            }
+        }
+    };
+    if let Some(mut view) = rail {
+        view.actors.iter_mut().for_each(&mut note);
+    }
+    if let Some(mut view) = party {
+        view.rows_mut().for_each(&mut note);
+    }
+}
+
 /// `items` as a sentence lists them: `a`, `a and b`, `a, b and c`.
 pub(super) fn and_list(items: &[String]) -> String {
     match items {
@@ -342,7 +393,7 @@ pub fn show_candidates(
         view.facets.retain(|f| f.key != forecast);
         (view.duel, view.odds) = (None, None);
         for (how, said) in kits.of(who) {
-            view.facets.push(facets.facet("kit", format!("{} {said}", how.verb())));
+            view.facets.push(facets.facet(KIT_FACET, format!("{} {said}", how.verb())));
         }
         view.facets.push(facets.facet("fee", format!("asks {}", sum_of(GOLD, candidate.fee))));
     }
@@ -570,6 +621,56 @@ mod tests {
         assert!(line.ends_with(&format!("Hire me for {fee} gold coins.\"")), "{line}");
         let told = app.world().resource::<MessageLog>().iter().last().map(|l| l.tone).expect("a line");
         assert_eq!(Some(told), app.world().resource::<Tones>().get(TONE), "in the mercenaries' own tone");
+    }
+
+    /// A row's kit is a line a verb, wielded, worn and carried in that
+    /// order whatever the pack's, each listing its things as a sentence
+    /// does; nothing held is no line at all.
+    #[test]
+    fn a_rows_kit_is_a_line_a_verb_wielded_then_worn_then_carried() {
+        let held = |things: &[(Held, &str)]| things.iter().map(|(how, t)| (*how, t.to_string())).collect::<Vec<_>>();
+        assert!(kit_lines(&[]).is_empty());
+        let kit = held(&[(Held::Carries, "6 darts"), (Held::Wears, "leather armor"), (Held::Wields, "a +1 spear"), (Held::Wears, "a cap")]);
+        assert_eq!(kit_lines(&kit), ["wields a +1 spear", "wears leather armor and a cap", "carries 6 darts"]);
+        assert_eq!(kit_lines(&held(&[(Held::Carries, "a potion"), (Held::Carries, "a scroll")])), ["carries a potion and a scroll"]);
+    }
+
+    /// On the rail, a candidate in sight says what it holds beneath its
+    /// row, each thing as the adventurer knows it: an unknown potion by its
+    /// face. A hireling in the company says the same, and the rail does
+    /// not list it, since the company does.
+    #[test]
+    fn the_rail_and_the_company_say_what_each_one_holds_naming_an_unknown_potion_by_its_face() {
+        let (mut app, me) = in_mereholt(5);
+        app.add_plugins((rl_engine::rl_ui::NearbyViewPlugin, rl_engine::rl_ui::view::PartyViewPlugin))
+            .add_systems(Update, (show_orders, show_kit).in_set(ViewSet::Annotate));
+        let [candidate, hireling] = [waiting(&mut app)[0], waiting(&mut app)[1]];
+        let kind = "potion of extra healing";
+        let face = app.world().resource::<Lore>().face(kind).expect("a potion wears a face").called.clone();
+        let potion = make(&mut app, kind);
+        app.world_mut().get_mut::<Inventory>(candidate).expect("a pack").items.push(potion);
+        set_gold(&mut app, me, 1000);
+        take(&mut app, me, hireling, HIRE);
+        assert_eq!(app.world().get::<Leader>(hireling).map(|l| l.0), Some(me), "hired");
+        let cell = beside(&mut app, candidate);
+        stand_on(&mut app, me, cell);
+        app.update();
+
+        let kit = KIT_FACET.to_string();
+        let lines = |row: &Row, facets: &Facets| -> Vec<String> { row.facets.iter().filter(|f| facets.name(f.key) == kit).map(|f| f.text.clone()).collect() };
+        let facets = app.world().resource::<Facets>();
+        let rail = app.world().resource::<NearbyView>();
+        let row = rail.actors.iter().find(|r| r.entity == candidate).expect("the candidate is in sight");
+        let said = lines(row, facets);
+        assert!(said.first().is_some_and(|l| l.starts_with("wields ")), "what it wields first: {said:?}");
+        assert!(said.last().is_some_and(|l| l.starts_with("carries ") && l.contains(&with_article(&face))), "the potion by its face, {face:?}: {said:?}");
+        assert!(!said.iter().any(|l| l.contains(kind)), "never its kind: {said:?}");
+        assert!(row.facets.iter().filter(|f| facets.name(f.key) == kit).all(|f| f.tone == Tones::MUTED), "said muted, under the name");
+        assert!(!rail.lists(hireling), "the hireling is the company's to list");
+
+        let party = app.world().resource::<PartyView>();
+        let row = party.rows.iter().find(|r| r.entity == hireling).expect("the hireling follows");
+        assert!(lines(row, facets).first().is_some_and(|l| l.starts_with("wields ")), "{:?}", row.facets);
     }
 
     /// A candidate's line lists its kit as a sentence does, and one with
