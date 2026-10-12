@@ -510,8 +510,14 @@ pub fn update_awareness(mut watch: Watch, mut noticed: MessageWriter<Noticed>) {
 /// Whether a use made where its user stands that harms others should end
 /// the unseen is open; one aimed somewhere does. A status ticking carries
 /// no attacker and wakes nobody whoever is unseen.
+///
+/// Not by a blow that killed its target: [`Dead`](crate::combat::Dead)
+/// lands only in cleanup, so the [`DeathEvent`] is what says the target is
+/// past noticing, and the log would otherwise read that the kill was
+/// noticed.
 pub fn wake_on_damage(
     mut dealt: MessageReader<DamageDealt>,
+    mut deaths: MessageReader<crate::combat::DeathEvent>,
     mut missed: MessageReader<crate::accuracy::Missed>,
     mut observers: Query<&mut Aware>,
     attackers: Query<&Position, (With<Stealth>, Without<Unseen>)>,
@@ -525,7 +531,11 @@ pub fn wake_on_damage(
         }
         aware.0.insert(attacker, state);
     };
+    let killed: Vec<Entity> = deaths.read().map(|d| d.entity).collect();
     for ev in dealt.read() {
+        if killed.contains(&ev.target) {
+            continue;
+        }
         // A blow that armor stopped at zero still woke it. A mend never
         // comes here: it is not damage dealt, so a hider who patches a
         // sleeper up has not struck it.
@@ -697,6 +707,31 @@ mod tests {
         assert!(field.aware().knows(player), "struck, so it knows where from");
         field.wait();
         assert!(field.distance() < 5, "and goes for it: {}", field.distance());
+    }
+
+    /// A kill is not a notice: the log read "You kill the kobold; the kobold
+    /// notices you!" because the killing blow woke its target. The one-blow
+    /// kill goes through the real combat pass, and a blow that leaves the
+    /// target standing still wakes it.
+    #[test]
+    fn a_blow_that_kills_an_unaware_target_does_not_make_it_notice() {
+        let mut field = Field::new(blind(), 5, 10, true, None);
+        field.app.init_resource::<Heard>().add_systems(Update, listen);
+        field.wait();
+        let (watcher, player) = (field.watcher, field.player);
+        let kind = field.app.world().resource::<crate::registries::Registries>().damage_kinds.expect("kinetic");
+        field.app.world_mut().write_message(crate::combat::DamageEvent::new(watcher, Hit::by(player, kind, 500)));
+        field.wait();
+        field.app.update();
+        assert!(field.app.world().get::<crate::combat::Dead>(watcher).is_some() || field.app.world().get_entity(watcher).is_err(), "the blow killed it");
+        assert_eq!(field.app.world().resource::<Heard>().0, 0, "and a dead target noticed nothing");
+
+        let mut hurt = Field::new(blind(), 5, 10, true, None);
+        hurt.wait();
+        let (watcher, player) = (hurt.watcher, hurt.player);
+        hurt.app.world_mut().write_message(crate::combat::DamageEvent::new(watcher, Hit::by(player, kind, 5)));
+        hurt.wait();
+        assert!(hurt.aware().knows(player), "one that survives the blow notices it");
     }
 
     /// A heal is not damage dealt, so one by a hider wakes nobody, whether
