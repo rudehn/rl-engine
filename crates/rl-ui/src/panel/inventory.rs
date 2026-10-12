@@ -2,30 +2,39 @@
 //! it.
 //!
 //! A modal the engine runs end to end, the way the ability menu is:
-//! [`InventoryKeys::toggle`] opens and closes it, the direction keys walk
-//! the rows, and four keys act on the row picked out. Wearing, dropping and
-//! using are the engine's own item actions, so the screen writes their
-//! intents itself; throwing opens the targeting cursor through
-//! [`AimThrow`], the way a game's throw key would. A game binds nothing.
-//! Using an item with a `use` trigger uses it where it stands, and using
-//! one whose use is aimed opens the targeting cursor through [`AimUse`], as
-//! throwing does, and puts it away again for nothing. Using one whose use
-//! asks for another of the player's things turns the bag to choosing,
-//! titled with the use's own prompt and listing only what it may be made
-//! on: confirm writes [`UseOn`] for the thing picked out, and putting the
-//! bag away spends nothing; a game's own use key writing [`AimUse`] for
-//! such a thing opens the bag choosing the same way. An offer that
-//! chooses first, [`Offering::choosing`], taken up on the offers screen or
-//! by the interact key, opens the bag choosing the same way, under the
-//! offer's prompt among what the game's system names: confirm takes the
-//! offer up with the thing picked out, the [`Interact`] the engine checks
-//! and charges, and putting the bag away takes nothing up and costs
-//! nothing. Nothing else is used from here; an item a game answers itself
-//! from [`ItemEvent::Used`] is used by the game's own key, since the bag
-//! cannot know it does anything and a use that did nothing would spend a
-//! turn. The footer offers only the keys that do something to the row
-//! picked out: wear or take off, drop, use, throw, and close, and for a
-//! worn thing that will not come off, none that would take it off.
+//! [`InventoryKeys::toggle`] opens it, and it works in two steps so that no
+//! key means two things on one screen. On the list, each row is lettered
+//! `a` to `z` in the order it is listed, and its letter picks it out and
+//! opens it; the direction keys walk the rows, held as well as pressed, and
+//! the cursors' confirm key opens the row under the cursor, which is how a
+//! row past `z` is reached. An opened row takes the bag's action keys, and
+//! the close key goes back to the list. So `d` on the list is the fourth
+//! row and `d` on an opened row drops it, and neither is ever a guess.
+//!
+//! Wearing, dropping and using are the engine's own item actions, so the
+//! screen writes their intents itself; throwing opens the targeting cursor
+//! through [`AimThrow`], the way a game's throw key would. A game binds
+//! nothing. Using an item with a `use` trigger uses it where it stands, and
+//! using one whose use is aimed opens the targeting cursor through
+//! [`AimUse`], as throwing does, and puts it away again for nothing. Using
+//! one whose use asks for another of the player's things turns the bag to
+//! choosing, titled with the use's own prompt and listing only what it may
+//! be made on, lettered in its own order: a letter or confirm writes
+//! [`UseOn`] for the thing picked out, and putting the bag away spends
+//! nothing; a game's own use key writing [`AimUse`] for such a thing opens
+//! the bag choosing the same way. An offer that chooses first,
+//! [`Offering::choosing`], taken up on the offers screen or by the interact
+//! key, opens the bag choosing the same way, under the offer's prompt among
+//! what the game's system names: a letter or confirm takes the offer up
+//! with the thing picked out, the [`Interact`] the engine checks and
+//! charges, and putting the bag away takes nothing up and costs nothing.
+//! Nothing else is used from here; an item a game answers itself from
+//! [`ItemEvent::Used`] is used by the game's own key, since the bag cannot
+//! know it does anything and a use that did nothing would spend a turn.
+//! The footer offers only the keys that do something: on the list, the
+//! letters and the key that opens; on an opened row, wear or take off,
+//! drop, use, throw, and back, and for a worn thing that will not come off,
+//! none that would take it off.
 //!
 //! Under the rows, the row picked out is described from its own
 //! components: the blow it is swung with, the shot it fires, what it adds
@@ -49,7 +58,7 @@ use rl_bevy::{EngineSet, PresentSet};
 use rl_core::{Direction, Rect};
 use rl_render::{Cell, Terminal};
 
-use crate::controls::{AddControls, Chord, ControlInput, EngineKey, key_name};
+use crate::controls::{AddControls, Chord, ControlInput, EngineKey, is_letter, key_name, lettered_row, row_letter};
 use crate::modal::{ModalId, Modals};
 use crate::panel::ability::reach;
 use crate::panel::sheet::plain_op;
@@ -65,12 +74,17 @@ pub const INVENTORY_MODAL: &str = "inventory";
 
 /// The keys the bag answers to. Walking the rows and closing use the
 /// direction and cursor keys every other screen uses, and the cursors'
-/// confirm key uses the row picked out as well.
+/// confirm key opens the row under the cursor and uses an opened one.
+///
+/// Every key but the toggle is read on an opened row only, since on the
+/// list each letter is a row's.
 #[derive(Resource, Debug, Clone)]
 pub struct InventoryKeys {
-    /// Opens and closes the bag.
+    /// Opens and closes the bag. A plain letter is a row's on the list, so
+    /// a toggle that is one closes the bag from an opened row, and the
+    /// close key closes it from the list.
     pub toggle: Chord,
-    /// Puts the row picked out on, or takes it off.
+    /// Puts the opened row on, or takes it off.
     pub wear: Chord,
     /// Drops it.
     pub drop: Chord,
@@ -110,12 +124,17 @@ pub struct InventoryLayout {
     pub never_mind: String,
 }
 
-/// Which row the cursor is on, and what the bag is choosing for. The
-/// screen's own state, since a view holds no cursor.
+/// Which row the cursor is on, whether it is opened, and what the bag is
+/// choosing for. The screen's own state, since a view holds no cursor.
 #[derive(Resource, Debug, Default)]
 pub struct InventoryMenu {
     /// The row picked out, clamped to the rows there are when drawn.
     pub selected: usize,
+    /// Whether that row is opened, taking the action keys, rather than
+    /// picked out on the list. Back to the list whenever the bag is put
+    /// away, so it always comes up on the list unless a game opens it on a
+    /// row with [`open`](Self::open).
+    pub opened: bool,
     /// While the bag is choosing, what for: a use, or an offer, one at a
     /// time. Put away whenever the bag is, so it never opens choosing for
     /// something nobody asked for again.
@@ -134,6 +153,13 @@ pub enum Choosing {
 }
 
 impl InventoryMenu {
+    /// Picks out `row` and opens it, for a game that puts the bag up on
+    /// one thing: a throw key that opens it on what can be thrown.
+    pub fn open(&mut self, row: usize) {
+        self.selected = row;
+        self.opened = true;
+    }
+
     /// Moves the cursor `by` rows over `rows` of them, wrapping at either
     /// end.
     pub fn move_by(&mut self, by: i32, rows: usize) {
@@ -205,9 +231,18 @@ fn choose_at(menu: &mut InventoryMenu, at: usize) {
     }
 }
 
-/// Puts away whatever the bag was choosing for.
-fn stop_choosing(menu: &mut InventoryMenu) {
+/// Turns the bag to choosing for `what`, over the whole list rather than
+/// an opened row, since what it chooses among is a list of its own.
+fn start_choosing(menu: &mut InventoryMenu, what: Choosing) {
+    menu.choosing = Some(what);
+    menu.opened = false;
+}
+
+/// Puts away whatever the bag was choosing for, and the row it had open:
+/// how the bag comes up next time, on the list.
+fn back_to_the_list(menu: &mut InventoryMenu) {
     menu.choosing = None;
+    menu.opened = false;
 }
 
 /// `at` moved `by` rows over `rows` of them, wrapping at either end.
@@ -327,7 +362,7 @@ pub fn choose_when_asked(mut asked: MessageReader<AimUse>, view: Res<InventoryVi
     for asked in asked.read() {
         let wants_a_thing = view.rows.iter().any(|r| r.entity == asked.item && r.asks.is_some() && r.usable());
         if view.entity == Some(asked.user) && wants_a_thing && !modals.any_open() {
-            menu.choosing = Some(Choosing::Use(ChoosingFor { item: asked.item, selected: 0 }));
+            start_choosing(&mut menu, Choosing::Use(ChoosingFor { item: asked.item, selected: 0 }));
             modals.open(modal);
         }
     }
@@ -354,14 +389,15 @@ pub(crate) fn choose_for_offer(commands: &mut Commands, taker: Entity, target: E
             return;
         }
         let mut menu = world.resource_mut::<InventoryMenu>();
-        menu.choosing = Some(Choosing::Offer(OfferChoice { target, verb, prompt, choices, selected: 0 }));
+        start_choosing(&mut menu, Choosing::Offer(OfferChoice { target, verb, prompt, choices, selected: 0 }));
         let mut modals = world.resource_mut::<Modals>();
         let bag = inventory_modal(&modals);
         modals.open(bag);
     });
 }
 
-/// Opens, closes and walks the bag, and acts on the row picked out.
+/// Opens, closes and walks the bag, opens a row, and acts on an opened
+/// one.
 ///
 /// An action is taken only while the player holds the turn, since an intent
 /// written for anyone else is dropped unread; the screen stays up until it
@@ -380,13 +416,18 @@ pub fn inventory_keys(
     mut intents: BagIntents,
 ) {
     let modal = inventory_modal(&modals);
-    // A choice lasts only while the bag is up, however it was put away.
+    // However the bag was put away, by its own keys or by a screen that
+    // closed everything, it comes back on the list, choosing for nothing.
     if !modals.is_open(modal) {
-        stop_choosing(&mut menu);
+        back_to_the_list(&mut menu);
     }
-    if binds.toggle.just_pressed(keys.input()) && (modals.is_top(modal) || !modals.any_open()) {
+    let input = keys.input();
+    // On a list every plain letter is a row's, the toggle's included, so
+    // what a key does there never depends on how much is carried.
+    let lettered = modals.is_top(modal) && (!menu.opened || menu.choosing.is_some());
+    if binds.toggle.just_pressed(input) && !(lettered && a_letter(&binds.toggle)) && (modals.is_top(modal) || !modals.any_open()) {
         modals.toggle(modal);
-        stop_choosing(&mut menu);
+        back_to_the_list(&mut menu);
         return;
     }
     // Not in the frame it went up: a game may open the bag on a key the
@@ -395,20 +436,29 @@ pub fn inventory_keys(
         return;
     }
     let bindings = keys.bindings();
-    let input = keys.input();
     if input.just_pressed(bindings.cursor.close) {
-        modals.close_one(modal);
-        stop_choosing(&mut menu);
+        if menu.opened {
+            // Back to the list is the opened row closing, so it is recorded
+            // on the stack as a close: the engine's catch-all for the close
+            // key sees the press answered and leaves the bag up. The stack
+            // is as it was, the bag on top.
+            menu.opened = false;
+            modals.close_one(modal);
+            modals.open(modal);
+        } else {
+            modals.close_one(modal);
+            back_to_the_list(&mut menu);
+        }
         return;
     }
-    let confirmed = binds.use_it.just_pressed(input) || input.just_pressed(bindings.cursor.confirm) || input.just_pressed(bindings.cursor.also_confirm);
+    let confirmed = input.just_pressed(bindings.cursor.confirm) || input.just_pressed(bindings.cursor.also_confirm);
     if let Some((_, choices, selected)) = choices_of(&menu, &view) {
-        let by = match bindings.directions.just_pressed(input) {
-            Some(Direction::North) => -1,
-            Some(Direction::South) => 1,
-            _ => 0,
-        };
-        let selected = stepped(selected.min(choices.len().saturating_sub(1)), by, choices.len());
+        // A letter picks its choice and makes it, there being nothing else
+        // to do with a choice; the use key confirms too, unless it is a
+        // letter, which is a choice's here.
+        let lettered = lettered_row(input).filter(|at| *at < choices.len());
+        let confirmed = confirmed || lettered.is_some() || (binds.use_it.just_pressed(input) && !a_letter(&binds.use_it));
+        let selected = lettered.unwrap_or_else(|| stepped(selected.min(choices.len().saturating_sub(1)), walked(&keys), choices.len()));
         choose_at(&mut menu, selected);
         let (Some(user), Some(&on)) = (view.entity, choices.get(selected)) else { return };
         if confirmed && holding.contains(user) {
@@ -424,21 +474,23 @@ pub fn inventory_keys(
                 }
                 None => {}
             }
-            stop_choosing(&mut menu);
+            back_to_the_list(&mut menu);
             modals.close_all();
         }
         return;
     }
-    match bindings.directions.just_pressed(input) {
-        Some(Direction::North) => menu.move_by(-1, view.rows.len()),
-        Some(Direction::South) => menu.move_by(1, view.rows.len()),
-        _ => {}
-    }
-    let (Some(user), Some(row)) = (view.entity, view.row(menu.selected)) else { return };
-    if !holding.contains(user) {
+    if !menu.opened {
+        pick(&mut menu, view.rows.len(), &keys);
         return;
     }
+    let Some(row) = view.row(menu.selected) else {
+        // The row went while it was open; the list is what is left.
+        menu.opened = false;
+        return;
+    };
+    let Some(user) = view.entity.filter(|user| holding.contains(*user)) else { return };
     let item = row.entity;
+    let confirmed = confirmed || binds.use_it.just_pressed(input);
     // A worn thing that will not come off is offered no key that would take
     // it off, and the keys the footer leaves out do nothing to it.
     let acted = if binds.wear.just_pressed(input) {
@@ -462,7 +514,7 @@ pub fn inventory_keys(
         // and one made on a thing keeps the bag up, choosing for it.
         match (row.usable(), row.targeting, row.asks.is_some()) {
             (true, _, true) => {
-                menu.choosing = Some(Choosing::Use(ChoosingFor { item, selected: 0 }));
+                start_choosing(&mut menu, Choosing::Use(ChoosingFor { item, selected: 0 }));
                 false
             }
             (true, Some(_), false) => {
@@ -486,18 +538,71 @@ pub fn inventory_keys(
         // An action spends a turn, and the turn loop assumes no screen is
         // up when it runs.
         modals.close_all();
+        back_to_the_list(&mut menu);
     }
 }
 
-/// The keys that do something to `row`, and the one that closes the bag.
+/// Whether `chord` is a plain letter, and so a row's on a lettered list
+/// before it is anything else.
+fn a_letter(chord: &Chord) -> bool {
+    !chord.shift && is_letter(chord.key)
+}
+
+/// The rows a direction key asks a lettered list to walk this frame: one
+/// up, one down, or none.
+///
+/// A direction bound to a letter does not walk, pressed or held, since the
+/// letter is a row's: the vi keys would otherwise open a row in a long bag
+/// and walk a short one. A held key walks at
+/// [`RepeatPace`](crate::RepeatPace), the pace the look cursor steps at.
+fn walked(keys: &ControlInput) -> i32 {
+    let (input, directions) = (keys.input(), &keys.bindings().directions.0);
+    let pressed = directions.iter().find(|(key, _)| !is_letter(*key) && input.just_pressed(*key)).map(|(_, d)| *d);
+    // A repeat is of the first direction key held, as `advance_repeats`
+    // finds it, so that is the one that must not be a letter.
+    let held_off_the_letters = directions.iter().find(|(key, _)| input.pressed(*key)).is_some_and(|(key, _)| !is_letter(*key));
+    match pressed.or_else(|| keys.repeats().firing(false).filter(|_| held_off_the_letters)) {
+        Some(Direction::North) => -1,
+        Some(Direction::South) => 1,
+        _ => 0,
+    }
+}
+
+/// The list's keys over `rows` rows: a letter opens its row, the confirm
+/// key opens the row under the cursor, and the direction keys walk.
+fn pick(menu: &mut InventoryMenu, rows: usize, keys: &ControlInput) {
+    let (input, bindings) = (keys.input(), keys.bindings());
+    if let Some(row) = lettered_row(input).filter(|row| *row < rows) {
+        menu.open(row);
+        return;
+    }
+    if rows > 0 && (input.just_pressed(bindings.cursor.confirm) || input.just_pressed(bindings.cursor.also_confirm)) {
+        menu.open(menu.selected.min(rows - 1));
+        return;
+    }
+    menu.move_by(walked(keys), rows);
+}
+
+/// The letters a list of `rows` rows offers, `a-c` for three, and nothing
+/// for none; past `z` the cursor reaches the rest.
+fn letters(rows: usize) -> Option<String> {
+    match rows.min(26).checked_sub(1).and_then(row_letter)? {
+        'a' => Some("a".to_string()),
+        last => Some(format!("a-{last}")),
+    }
+}
+
+/// What the footer offers: on the list, the letters there are and the key
+/// that opens the row under the cursor; on an opened row, the keys that do
+/// something to it and the one that goes back.
 ///
 /// Only what applies, so the footer never offers to wear a pebble, or to
 /// take off, drop or throw a worn thing that will not come off. Short
 /// enough for a narrow frame: the direction keys walk the rows on every
 /// screen and need no saying here.
-fn hints(row: Option<&ItemRow>, binds: &InventoryKeys, confirm: String, close: String) -> String {
+fn hints(view: &InventoryView, menu: &InventoryMenu, binds: &InventoryKeys, confirm: String, close: String) -> String {
     let mut keys = Vec::new();
-    if let Some(row) = row {
+    if let Some(row) = view.row(menu.selected).filter(|_| menu.opened) {
         if row.worn() && !row.stuck {
             keys.push(format!("{} take off", binds.wear.label()));
         } else if !row.worn() && row.wearable() {
@@ -512,8 +617,13 @@ fn hints(row: Option<&ItemRow>, binds: &InventoryKeys, confirm: String, close: S
         if row.throw_range.is_some() && !row.stuck {
             keys.push(format!("{} throw", binds.throw.label()));
         }
+        keys.push(format!("{close} back"));
+        return keys.join(" \u{2022} ");
     }
-    keys.push(close);
+    if let Some(letters) = letters(view.rows.len()) {
+        keys.push(format!("{letters} {confirm} open"));
+    }
+    keys.push(format!("{close} close"));
     keys.join(" \u{2022} ")
 }
 
@@ -649,11 +759,12 @@ pub fn draw_inventory(mut terminal: ResMut<Terminal>, mut menu: ResMut<Inventory
             let rows: Vec<&ItemRow> = choices.iter().filter_map(|on| view.rows.iter().find(|r| r.entity == *on)).collect();
             let at = selected.min(rows.len().saturating_sub(1));
             choose_at(&mut menu, at);
-            (prompt, rows, at, format!("{confirm} choose \u{2022} {close} {}", layout.never_mind))
+            let letters = letters(rows.len()).map(|l| format!("{l} ")).unwrap_or_default();
+            (prompt, rows, at, format!("{letters}{confirm} choose \u{2022} {close} {}", layout.never_mind))
         }
         None => {
             menu.selected = menu.selected.min(view.rows.len().saturating_sub(1));
-            (layout.title.clone(), view.rows.iter().collect(), menu.selected, hints(view.row(menu.selected), binds, confirm, close))
+            (layout.title.clone(), view.rows.iter().collect(), menu.selected, hints(view, &menu, binds, confirm, close))
         }
     };
     clear(&mut terminal, rect, palette);
@@ -677,11 +788,22 @@ pub fn draw_inventory(mut terminal: ResMut<Terminal>, mut menu: ResMut<Inventory
         let y = inner.y + (i - first) as i32;
         let selected = i == at;
         let bg = if selected { palette.get(Tones::SELECT) } else { surface };
-        let fg = palette.get(if row.worn() { Tones::NOTICE } else { Tones::TEXT });
+        // With a row opened, the rest of the list steps back, so the keys
+        // along the bottom read as that row's.
+        let tone = match (menu.opened && !selected, row.worn()) {
+            (true, _) => Tones::MUTED,
+            (false, true) => Tones::NOTICE,
+            (false, false) => Tones::TEXT,
+        };
+        let fg = palette.get(tone);
         terminal.fill(Rect::new(inner.x, y, inner.width, 1), Cell::new(' ', fg).on(bg));
-        // The item's own glyph first, in its own colour, then its name; a
-        // stack says how many.
-        let mut x = inner.x;
+        // The row's letter, then the item's own glyph in its own colour,
+        // then its name; a stack says how many. A row past the letters
+        // keeps their room, so every name starts in one column.
+        if let Some(letter) = row_letter(i) {
+            terminal.print_on(inner.x, y, &format!("{letter})"), fg, bg);
+        }
+        let mut x = inner.x + 3;
         if let Some(glyph) = row.glyph {
             terminal.set(x, y, Cell::new(glyph.ch, glyph.fg).on(bg));
             x += 2;
@@ -816,23 +938,23 @@ mod tests {
         stage.tick();
         stage.press(KeyCode::KeyI);
         let listed = |stage: &Stage| (1..5).map(|y| inside(stage, y)).collect::<Vec<_>>();
-        assert_eq!(listed(&stage), ["pebble 0", "pebble 1", "pebble 2", "pebble 3"]);
+        assert_eq!(listed(&stage), ["a) pebble 0", "b) pebble 1", "c) pebble 2", "d) pebble 3"]);
         assert!(!stage.row(0).contains('\u{25b2}'), "nothing above the first row: {:?}", stage.row(0));
         assert!(stage.row(5).contains(" \u{25bc} 6 more "), "six below, on the rule: {:?}", stage.row(5));
 
         for _ in 0..4 {
             stage.press(KeyCode::ArrowDown);
         }
-        assert_eq!(listed(&stage), ["pebble 1", "pebble 2", "pebble 3", "pebble 4"], "down past the foot moves the list by one");
+        assert_eq!(listed(&stage), ["b) pebble 1", "c) pebble 2", "d) pebble 3", "e) pebble 4"], "down past the foot moves the list by one");
         assert!(stage.row(0).contains(" \u{25b2} 1 more ") && stage.row(0).contains(" Bag "), "one above, beside the title: {:?}", stage.row(0));
         assert!(stage.row(5).contains(" \u{25bc} 5 more "), "{:?}", stage.row(5));
         stage.press(KeyCode::ArrowUp);
-        assert_eq!(listed(&stage), ["pebble 1", "pebble 2", "pebble 3", "pebble 4"], "back up inside the list, it holds still");
+        assert_eq!(listed(&stage), ["b) pebble 1", "c) pebble 2", "d) pebble 3", "e) pebble 4"], "back up inside the list, it holds still");
 
         // A game that picks a row itself has it brought into view.
         stage.app.world_mut().resource_mut::<InventoryMenu>().selected = 9;
         stage.tick();
-        assert_eq!(listed(&stage), ["pebble 6", "pebble 7", "pebble 8", "pebble 9"]);
+        assert_eq!(listed(&stage), ["g) pebble 6", "h) pebble 7", "i) pebble 8", "j) pebble 9"]);
         assert!(stage.row(0).contains(" \u{25b2} 6 more ") && !stage.row(5).contains('\u{25bc}'), "{:?} {:?}", stage.row(0), stage.row(5));
         let terminal = stage.app.world().resource::<Terminal>();
         let x = stage.row(0).chars().position(|c| c == '\u{25b2}').unwrap() as i32;
@@ -846,28 +968,215 @@ mod tests {
         stage.press(KeyCode::KeyI);
         assert!(stage.row(0).contains(" Bag "), "{:?}", stage.row(0));
         let first = inside(&stage, 1);
-        assert!(first.starts_with(") a blade") && first.ends_with("hand"), "glyph, name, and the slot it is worn in at the right: {first:?}");
-        assert_eq!(inside(&stage, 2), "a hat");
-        assert_eq!(inside(&stage, 3), "3 knives", "a stack says how many");
-        assert!(stage.row(13).contains("e take off \u{2022} d drop \u{2022} esc"), "the worn blade can come off or be dropped: {:?}", stage.row(13));
+        assert!(first.starts_with("a) ) a blade") && first.ends_with("hand"), "letter, glyph, name, and the slot it is worn in at the right: {first:?}");
+        assert_eq!(inside(&stage, 2), "b) a hat");
+        assert_eq!(inside(&stage, 3), "c) 3 knives", "a stack says how many");
+        assert!(stage.row(13).contains("a-c enter open \u{2022} esc close"), "the list offers its letters: {:?}", stage.row(13));
         assert_eq!(inside(&stage, 5), "1d6 kinetic", "the blade's own blow");
         assert_eq!(inside(&stage, 6), "worn on the hand");
+        stage.press(KeyCode::Enter);
+        assert!(stage.row(13).contains("e take off \u{2022} d drop \u{2022} esc back"), "the worn blade can come off or be dropped: {:?}", stage.row(13));
+        stage.press(KeyCode::Escape);
 
         stage.press(KeyCode::ArrowDown);
         assert_eq!(inside(&stage, 5), "armor +1");
         assert_eq!(inside(&stage, 6), "resists kinetic 10%", "what it resists, under its armor");
         assert_eq!(inside(&stage, 7), "goes on the head");
-        assert!(stage.row(13).contains("e wear \u{2022} d drop \u{2022} esc"), "the hat goes on: {:?}", stage.row(13));
+        stage.press(KeyCode::Enter);
+        assert!(stage.row(13).contains("e wear \u{2022} d drop \u{2022} esc back"), "the hat goes on: {:?}", stage.row(13));
+        stage.press(KeyCode::Escape);
         stage.press(KeyCode::ArrowDown);
         assert_eq!(inside(&stage, 5), "thrown 1d4 kinetic to 5");
+        stage.press(KeyCode::Enter);
         assert!(
-            stage.row(13).contains("d drop \u{2022} t throw \u{2022} esc") && !stage.row(13).contains("wear"),
+            stage.row(13).contains("d drop \u{2022} t throw \u{2022} esc back") && !stage.row(13).contains("wear"),
             "knives are thrown, never worn: {:?}",
             stage.row(13)
         );
 
         stage.press(KeyCode::Escape);
+        stage.press(KeyCode::Escape);
         assert!(!stage.app.world().resource::<Modals>().any_open());
+    }
+
+    /// Where the cursor is, and whether its row is opened.
+    fn menu(stage: &Stage) -> (usize, bool) {
+        let menu = stage.app.world().resource::<InventoryMenu>();
+        (menu.selected, menu.opened)
+    }
+
+    /// Whether the bag is up at all.
+    fn up(stage: &Stage) -> bool {
+        let modals = stage.app.world().resource::<Modals>();
+        modals.is_open(inventory_modal(modals))
+    }
+
+    /// Every intent the bag wrote since the last call, as a count.
+    fn intents_written(stage: &mut Stage) -> usize {
+        let w = stage.app.world_mut();
+        w.resource_mut::<Messages<Intent<Unequip>>>().drain().count()
+            + w.resource_mut::<Messages<Intent<Equip>>>().drain().count()
+            + w.resource_mut::<Messages<Intent<DropItem>>>().drain().count()
+            + w.resource_mut::<Messages<Intent<UseItem>>>().drain().count()
+            + w.resource_mut::<Messages<AimThrow>>().drain().count()
+    }
+
+    /// A player carrying `n` plain things named by their place, in a bag
+    /// frame of the usual size.
+    fn carrying(n: usize) -> Stage {
+        let mut stage = Stage::new(InventoryPanel::new(Rect::new(0, 0, 52, 14)).title("Bag")).screen(52, 14);
+        let items = (0..n).map(|i| stage.app.world_mut().spawn((Item, Name::new(format!("thing {i}")))).id()).collect();
+        let player = stage.player;
+        stage.app.world_mut().entity_mut(player).insert(Inventory { items });
+        stage.tick();
+        stage
+    }
+
+    /// The letters run `a` to `z` down the list, by a row's place in it and
+    /// not its place on screen, and a row past `z` has none but keeps its
+    /// name in line with the rest.
+    #[test]
+    fn rows_are_lettered_a_to_z_in_list_order_and_rows_past_z_have_none() {
+        let mut stage = carrying(28);
+        stage.press(KeyCode::KeyI);
+        assert_eq!([inside(&stage, 1), inside(&stage, 2)], ["a) thing 0", "b) thing 1"]);
+        stage.press(KeyCode::ArrowUp);
+        assert_eq!(menu(&stage), (27, false), "up from the top wraps to the last row");
+        let shown: Vec<String> = (1..7).map(|y| inside(&stage, y)).collect();
+        assert_eq!(shown[3..], ["z) thing 25", "   thing 26", "   thing 27"], "{shown:?}");
+        assert!(stage.row(13).contains("a-z enter open"), "{:?}", stage.row(13));
+        stage.press(KeyCode::KeyZ);
+        assert_eq!(menu(&stage), (25, true), "z is the twenty-sixth row, never one past it");
+    }
+
+    /// On the list a letter picks out its row and opens it in one press,
+    /// and writes nothing; a letter with no row does nothing.
+    #[test]
+    fn a_letter_on_the_list_picks_out_its_row_and_opens_it() {
+        let (mut stage, _, _, _) = staged();
+        stage.press(KeyCode::KeyI);
+        stage.press(KeyCode::KeyZ);
+        assert_eq!(menu(&stage), (0, false), "no row z, so nothing");
+        stage.press(KeyCode::KeyC);
+        assert_eq!(menu(&stage), (2, true), "c is the knives, opened");
+        assert!(stage.row(13).contains("d drop \u{2022} t throw \u{2022} esc back"), "{:?}", stage.row(13));
+        assert_eq!(intents_written(&mut stage), 0, "opening a row spends nothing");
+        stage.press(KeyCode::KeyA);
+        assert_eq!(menu(&stage), (2, true), "and an opened row reads no letters");
+    }
+
+    /// Enter on the list opens the row under the cursor, the way to a row
+    /// past `z`, rather than using it; on an opened row the direction keys
+    /// do not walk away from it.
+    #[test]
+    fn enter_on_the_list_opens_the_row_under_the_cursor_and_uses_nothing() {
+        let (mut stage, triggers) = with_triggers(r#"[(on: "use", effects: [(kind: "Mend", args: (roll: "5"))])]"#);
+        let player = stage.player;
+        let salve = stage.app.world_mut().spawn((Item, Name::new("salve"), triggers.clone(), Consumable::new(1, WhenEmpty::Destroyed))).id();
+        let tonic = stage.app.world_mut().spawn((Item, Name::new("tonic"), triggers, Consumable::new(1, WhenEmpty::Destroyed))).id();
+        stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![salve, tonic] });
+        stage.tick();
+
+        stage.press(KeyCode::KeyI);
+        stage.press(KeyCode::ArrowDown);
+        stage.press(KeyCode::Enter);
+        assert_eq!(menu(&stage), (1, true), "the tonic, opened");
+        assert_eq!(intents_written(&mut stage), 0, "and not drunk");
+        stage.press(KeyCode::ArrowUp);
+        assert_eq!(menu(&stage), (1, true), "an opened row stays opened on its own row");
+        stage.press(KeyCode::Enter);
+        let uses: Vec<Entity> = stage.app.world_mut().resource_mut::<Messages<Intent<UseItem>>>().drain().map(|i| i.action.0).collect();
+        assert_eq!(uses, vec![tonic], "Enter on the opened row uses it");
+    }
+
+    /// The action keys are letters on the list, and act only on an opened
+    /// row: `e` on a list of five opens the fifth row and wears nothing.
+    #[test]
+    fn the_action_keys_act_only_on_an_opened_row() {
+        let (mut stage, blade, _, _) = staged();
+        let player = stage.player;
+        let more: Vec<Entity> = (0..2).map(|i| stage.app.world_mut().spawn((Item, Name::new(format!("pebble {i}")))).id()).collect();
+        stage.app.world_mut().get_mut::<Inventory>(player).unwrap().items.extend(more);
+        stage.tick();
+
+        stage.press(KeyCode::KeyI);
+        stage.press(KeyCode::KeyE);
+        assert_eq!(menu(&stage), (4, true), "e is the fifth row, opened");
+        assert_eq!(intents_written(&mut stage), 0, "and nothing is worn or taken off");
+        stage.press(KeyCode::Escape);
+        stage.press(KeyCode::KeyA);
+        stage.press(KeyCode::KeyE);
+        let off: Vec<Entity> = stage.app.world_mut().resource_mut::<Messages<Intent<Unequip>>>().drain().map(|i| i.action.0).collect();
+        assert_eq!(off, vec![blade], "e on the opened blade takes it off");
+        assert!(!up(&stage), "and the bag is put away for the turn");
+    }
+
+    /// Esc steps back one step at a time: from an opened row to the list,
+    /// and from the list out of the bag. The toggle's own letter is a
+    /// row's on the list and the toggle again on an opened row, and the bag
+    /// always comes back up on the list.
+    #[test]
+    fn esc_goes_back_from_an_opened_row_to_the_list_and_from_the_list_out() {
+        let (mut stage, _, _, _) = staged();
+        stage.press(KeyCode::KeyI);
+        stage.press(KeyCode::KeyB);
+        stage.press(KeyCode::Escape);
+        assert_eq!((menu(&stage), up(&stage)), ((1, false), true), "back on the list, on the same row");
+        stage.press(KeyCode::KeyI);
+        assert_eq!((menu(&stage), up(&stage)), ((1, false), true), "i on the list is row i's, and there is none");
+        stage.press(KeyCode::Escape);
+        assert!(!up(&stage), "and out");
+
+        stage.press(KeyCode::KeyI);
+        stage.press(KeyCode::KeyB);
+        stage.press(KeyCode::KeyI);
+        assert!(!up(&stage), "on an opened row the toggle closes the bag");
+        stage.press(KeyCode::KeyI);
+        assert_eq!(menu(&stage), (1, false), "which comes back up on the list");
+    }
+
+    /// Ten rows, frames a tenth of a second apart, and the repeat's pace
+    /// set to fire on every frame once it starts.
+    fn timed(rows: usize) -> Stage {
+        let mut stage = carrying(rows);
+        stage.app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(std::time::Duration::from_millis(100)));
+        stage.app.insert_resource(crate::RepeatPace { delay: 0.25, every: 0.05 });
+        stage.press(KeyCode::KeyI);
+        stage
+    }
+
+    /// The row the cursor is on after each of `frames` frames with `key`
+    /// held down from the first.
+    fn holding(stage: &mut Stage, key: KeyCode, frames: usize) -> Vec<usize> {
+        stage.app.world_mut().resource_mut::<rl_bevy::testing::KeyScript>().hold(key);
+        let walked = (0..frames)
+            .map(|_| {
+                stage.tick();
+                menu(stage).0
+            })
+            .collect();
+        stage.app.world_mut().resource_mut::<rl_bevy::testing::KeyScript>().release(key);
+        stage.tick();
+        walked
+    }
+
+    /// A direction key held down walks the list at the pace the look
+    /// cursor steps at: the press, then nothing until the delay is up, then
+    /// a row each time the repeat fires.
+    #[test]
+    fn a_held_direction_key_walks_the_list_at_the_cursors_pace() {
+        let mut stage = timed(10);
+        assert_eq!(holding(&mut stage, KeyCode::ArrowDown, 6), vec![1, 1, 1, 2, 3, 4]);
+        assert_eq!(menu(&stage), (4, false), "and stops when let go");
+    }
+
+    /// A direction bound to a letter is the letter's on the list, held or
+    /// pressed: `j` is the tenth row, never a step down a shorter list.
+    #[test]
+    fn a_held_letter_never_walks_the_list_where_it_is_also_a_direction() {
+        let mut stage = timed(5);
+        assert_eq!(holding(&mut stage, KeyCode::KeyJ, 6), vec![0; 6]);
+        assert_eq!(menu(&stage), (0, false));
     }
 
     /// A game's facet reads with the thing's own numbers, since it is a
@@ -910,6 +1219,7 @@ mod tests {
         let closed = |stage: &Stage| !stage.app.world().resource::<Modals>().is_open(inventory_modal(stage.app.world().resource::<Modals>()));
 
         stage.press(KeyCode::KeyI);
+        stage.press(KeyCode::KeyA);
         stage.press(KeyCode::KeyE);
         assert_eq!(drain(&mut stage).0, vec![blade], "the worn blade is taken off");
         assert!(closed(&stage));
@@ -917,26 +1227,30 @@ mod tests {
         assert!(stage.app.world().get::<Equipped>(player).unwrap().slot_of(blade).is_none(), "and the engine resolved it");
 
         stage.press(KeyCode::KeyI);
-        stage.press(KeyCode::ArrowDown);
+        stage.press(KeyCode::KeyB);
         stage.press(KeyCode::KeyE);
         assert_eq!(drain(&mut stage).1, vec![hat], "the hat goes on");
         assert!(closed(&stage));
 
         stage.press(KeyCode::KeyI);
+        stage.press(KeyCode::Enter);
         stage.press(KeyCode::KeyD);
         assert_eq!(drain(&mut stage).2, vec![hat], "the cursor stayed on the hat, which is dropped");
         stage.tick();
         stage.press(KeyCode::KeyI);
-        assert_eq!(inside(&stage, 2), "3 knives", "and is out of the bag");
+        assert_eq!(inside(&stage, 2), "b) 3 knives", "and is out of the bag");
+        stage.press(KeyCode::KeyB);
         stage.press(KeyCode::Enter);
         assert!(drain(&mut stage).3.is_empty(), "knives lend nothing to use, so confirm does nothing and spends no turn");
         assert!(!closed(&stage), "and the bag stays up");
 
-        stage.press(KeyCode::ArrowUp);
+        stage.press(KeyCode::Escape);
+        stage.press(KeyCode::KeyA);
         stage.press(KeyCode::KeyT);
         assert!(drain(&mut stage).4.is_empty(), "a blade is not thrown");
         assert!(!closed(&stage), "so the bag stays up");
-        stage.press(KeyCode::ArrowDown);
+        stage.press(KeyCode::Escape);
+        stage.press(KeyCode::KeyB);
         stage.press(KeyCode::KeyT);
         assert_eq!(drain(&mut stage).4, vec![knives], "the knives are");
         assert!(closed(&stage), "and the bag closed for the cursor");
@@ -944,7 +1258,8 @@ mod tests {
 
     /// A game that opens the bag on its own key, one the bag also reads,
     /// opens it and no more: the press that put the screen up is not read
-    /// again inside it, whichever of the two systems runs first.
+    /// again inside it, whichever of the two systems runs first. Here it
+    /// opens the bag on a row, the way a throw key opens it on what flies.
     #[test]
     fn a_game_key_that_opens_the_bag_is_not_also_read_by_it() {
         let (mut stage, blade, hat, knives) = staged();
@@ -952,9 +1267,10 @@ mod tests {
         stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![knives, blade, hat] });
         stage.app.add_systems(
             Update,
-            (|keys: Res<ButtonInput<KeyCode>>, mut modals: ResMut<Modals>| {
+            (|keys: Res<ButtonInput<KeyCode>>, mut modals: ResMut<Modals>, mut menu: ResMut<InventoryMenu>| {
                 if keys.just_pressed(KeyCode::KeyT) && !modals.any_open() {
                     let bag = inventory_modal(&modals);
+                    menu.open(0);
                     modals.open(bag);
                 }
             })
@@ -1016,10 +1332,11 @@ mod tests {
         stage.tick();
 
         stage.press(KeyCode::KeyI);
-        assert_eq!(inside(&stage, 1), "2 poultices");
+        assert_eq!(inside(&stage, 1), "a) 2 poultices");
         assert!(detail(&stage).iter().any(|l| l == "use: mends 5"), "described by what it does: {:?}", detail(&stage));
         assert!(stage.app.world().resource::<InventoryView>().rows[0].usable(), "and the row knows it is used");
 
+        stage.press(KeyCode::KeyA);
         stage.press(KeyCode::KeyU);
         let uses: Vec<Entity> = stage.app.world_mut().resource_mut::<Messages<Intent<UseItem>>>().drain().map(|i| i.action.0).collect();
         assert_eq!(uses, vec![poultice], "and the use key uses it");
@@ -1039,6 +1356,7 @@ mod tests {
         stage.press(KeyCode::KeyI);
         assert!(detail(&stage).iter().any(|l| l == "on landing: 3 kinetic in a burst of 1"), "{:?}", detail(&stage));
         assert!(!stage.app.world().resource::<InventoryView>().rows[0].usable(), "nothing to use");
+        stage.press(KeyCode::KeyA);
         stage.press(KeyCode::KeyU);
         assert!(stage.app.world_mut().resource_mut::<Messages<Intent<UseItem>>>().drain().next().is_none(), "and the use key spends no turn on it");
     }
@@ -1060,6 +1378,7 @@ mod tests {
         assert!(detail(&stage).iter().any(|l| l == "empty"), "{:?}", detail(&stage));
         let rows = &stage.app.world().resource::<InventoryView>().rows;
         assert!(rows[0].usable() && !rows[1].usable(), "a live wand is used and a dead one is not");
+        stage.press(KeyCode::KeyB);
         stage.press(KeyCode::KeyU);
         assert!(stage.app.world_mut().resource_mut::<Messages<Intent<UseItem>>>().drain().next().is_none(), "so the use key does nothing on it");
     }
@@ -1112,6 +1431,7 @@ mod tests {
 
         stage.press(KeyCode::KeyI);
         assert!(detail(&stage).iter().any(|l| l == "aimed at a foe, a bolt up to 6 away"), "{:?}", detail(&stage));
+        stage.press(KeyCode::KeyA);
         stage.press(KeyCode::KeyU);
         let aims: Vec<AimUse> = stage.app.world_mut().resource_mut::<Messages<AimUse>>().drain().collect();
         assert_eq!(aims, vec![AimUse { user: player, item: rod }], "the cursor is asked for");
@@ -1148,6 +1468,7 @@ mod tests {
         let before = now(&stage);
 
         stage.press(KeyCode::KeyI);
+        stage.press(KeyCode::KeyA);
         stage.press(KeyCode::KeyU);
         let view = stage.app.world().resource::<crate::TargetView>();
         assert_eq!((view.using, view.cursor), (Some(rod), stage.at.offset(3, 0)), "the cursor opened on the rat");
@@ -1157,6 +1478,7 @@ mod tests {
         assert!(stage.app.world().get::<MyTurn>(player).is_some(), "and the turn is still the player's");
 
         stage.press(KeyCode::KeyI);
+        stage.press(KeyCode::KeyA);
         stage.press(KeyCode::KeyU);
         stage.press(KeyCode::Enter);
         assert_eq!((hp(&stage, foe), hp(&stage, player)), (6, 30), "the bolt landed on the rat, not on its user");
@@ -1230,16 +1552,39 @@ mod tests {
     fn a_use_that_asks_for_a_thing_chooses_under_its_prompt_and_confirm_writes_use_on() {
         let (mut stage, polish, _, _, boots) = chooser();
         stage.press(KeyCode::KeyI);
+        stage.press(KeyCode::KeyA);
         stage.press(KeyCode::KeyU);
         assert!(stage.row(0).contains(" Polish which? "), "under the trigger's prompt: {:?}", stage.row(0));
-        assert!(inside(&stage, 1).starts_with("coat") && inside(&stage, 2) == "boots", "only what it may be made on: {:?}", stage.rows());
-        assert!(stage.row(13).contains("enter choose \u{2022} esc never mind"), "the close key says what it does: {:?}", stage.row(13));
+        assert!(
+            inside(&stage, 1).starts_with("a) coat") && inside(&stage, 2) == "b) boots",
+            "only what it may be made on, lettered in its own order: {:?}",
+            stage.rows()
+        );
+        assert!(stage.row(13).contains("a-b enter choose \u{2022} esc never mind"), "the close key says what it does: {:?}", stage.row(13));
         assert!(stage.app.world().resource::<Modals>().any_open(), "still up, choosing");
 
         stage.press(KeyCode::ArrowDown);
         stage.press(KeyCode::Enter);
         let uses: Vec<UseOn> = stage.app.world_mut().resource_mut::<Messages<Intent<UseOn>>>().drain().map(|i| i.action).collect();
         assert_eq!(uses, vec![UseOn { item: polish, on: boots }], "the use, on the thing picked out");
+        assert!(!stage.app.world().resource::<Modals>().any_open(), "and every screen put away");
+    }
+
+    /// While choosing, every plain letter is a choice's: a letter makes its
+    /// choice in one press, and the use key, being a letter, confirms
+    /// nothing there.
+    #[test]
+    fn a_letter_while_choosing_makes_its_choice_in_one_press() {
+        let (mut stage, polish, _, _, boots) = chooser();
+        stage.press(KeyCode::KeyI);
+        stage.press(KeyCode::KeyA);
+        stage.press(KeyCode::KeyU);
+        stage.press(KeyCode::KeyU);
+        let uses = |stage: &mut Stage| stage.app.world_mut().resource_mut::<Messages<Intent<UseOn>>>().drain().map(|i| i.action).collect::<Vec<_>>();
+        assert!(uses(&mut stage).is_empty(), "u is the twenty-first choice's, and there are two");
+        assert!(stage.row(0).contains(" Polish which? "), "still choosing: {:?}", stage.row(0));
+        stage.press(KeyCode::KeyB);
+        assert_eq!(uses(&mut stage), vec![UseOn { item: polish, on: boots }], "b is the boots, chosen");
         assert!(!stage.app.world().resource::<Modals>().any_open(), "and every screen put away");
     }
 
@@ -1254,6 +1599,7 @@ mod tests {
         let marked = |stage: &Stage, thing: Entity| stage.app.world().get::<Marked>(thing).is_some();
         let before = now(&stage);
         stage.press(KeyCode::KeyI);
+        stage.press(KeyCode::KeyA);
         stage.press(KeyCode::KeyU);
         stage.press(KeyCode::Escape);
         assert!(!stage.app.world().resource::<Modals>().any_open(), "put away");
@@ -1262,7 +1608,8 @@ mod tests {
         assert!(stage.app.world().get::<MyTurn>(stage.player).is_some(), "and the turn is still the player's");
 
         stage.press(KeyCode::KeyI);
-        assert_eq!(inside(&stage, 1), "polish", "the bag opens as it always does, not choosing");
+        assert_eq!(inside(&stage, 1), "a) polish", "the bag opens as it always does, not choosing");
+        stage.press(KeyCode::KeyA);
         stage.press(KeyCode::KeyU);
         stage.press(KeyCode::Enter);
         assert!(marked(&stage, coat) && !marked(&stage, boots) && !marked(&stage, stone), "on the coat picked out, worn as it is");
@@ -1359,7 +1706,7 @@ mod tests {
         assert_eq!(bag(&stage), (true, false), "taken up there, the bag in its place");
         assert!(stage.row(0).contains(" Hand over which? "), "under the offer's prompt: {:?}", stage.row(0));
         assert!(stage.row(13).contains("enter choose \u{2022} esc keep it"), "the close key in the game's words: {:?}", stage.row(13));
-        assert_eq!((inside(&stage, 1), inside(&stage, 2)), ("stone".to_string(), "polish".to_string()), "among what the game names: {:#?}", stage.rows());
+        assert_eq!((inside(&stage, 1), inside(&stage, 2)), ("a) stone".to_string(), "b) polish".to_string()), "among what the game names: {:#?}", stage.rows());
         assert_eq!(taken(&stage), before, "nothing written, no time passed");
 
         stage.press(KeyCode::Escape);
@@ -1435,8 +1782,9 @@ mod tests {
         stage.app.world_mut().entity_mut(blade).insert(Stuck);
         stage.tick();
         stage.press(KeyCode::KeyI);
+        stage.press(KeyCode::KeyA);
         let footer = stage.row(13);
-        assert!(!footer.contains("take off") && !footer.contains("drop") && footer.contains("esc"), "{footer:?}");
+        assert!(!footer.contains("take off") && !footer.contains("drop") && footer.contains("esc back"), "{footer:?}");
         assert!(detail(&stage).iter().any(|l| l == "will not come off"), "{:?}", detail(&stage));
         stage.press(KeyCode::KeyE);
         stage.press(KeyCode::KeyD);
@@ -1467,6 +1815,7 @@ mod tests {
         stage.press(KeyCode::ArrowDown);
         assert_eq!(said(&stage), ["unknown", "goes on the finger"], "not its armor, and where it goes");
         stage.press(KeyCode::ArrowUp);
+        stage.press(KeyCode::Enter);
         stage.press(KeyCode::KeyU);
         let uses: Vec<Entity> = stage.app.world_mut().resource_mut::<Messages<Intent<UseItem>>>().drain().map(|i| i.action.0).collect();
         assert_eq!(uses, vec![draught], "and it is used as what it is");
@@ -1526,9 +1875,10 @@ mod tests {
         stage.press(KeyCode::KeyI);
         stage.press(KeyCode::ArrowDown);
         stage.press(KeyCode::ArrowDown);
-        assert_eq!(inside(&stage, 3), "3 knives", "by its name and how many");
+        assert_eq!(inside(&stage, 3), "c) 3 knives", "by its name and how many");
         let said: Vec<String> = detail(&stage)[4..].iter().filter(|l| !l.is_empty()).cloned().collect();
         assert_eq!(said, ["unknown"], "not how far it flies, nor what it strikes for");
+        stage.press(KeyCode::Enter);
         assert!(stage.row(13).contains("t throw"), "{:?}", stage.row(13));
         stage.press(KeyCode::KeyT);
         let thrown: Vec<Entity> = stage.app.world_mut().resource_mut::<Messages<AimThrow>>().drain().map(|a| a.item).collect();

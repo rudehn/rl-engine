@@ -90,10 +90,10 @@ pub struct Pack<'w> {
 /// and nothing at all while a screen is up.
 ///
 /// `f` opens the engine's targeting cursor on the nearest foe in sight,
-/// with whatever shoots in hand. `t` opens the pack on the first thing in
-/// it that can be thrown, rather than throwing it: which of several is
-/// meant is the player's to pick, and the pack's own `t` sends the row
-/// picked out to the same cursor. A key with nothing to do says so without
+/// with whatever shoots in hand. `t` opens the pack with the first thing in
+/// it that can be thrown opened, rather than throwing it: the pack's own
+/// `t` sends that row to the same cursor, and Esc goes back to the list
+/// when another of several is meant. A key with nothing to do says so without
 /// spending the turn, since a mistyped key should not cost a life.
 pub fn player_input(mut kb: Keyboard, loadout: Loadout, mut pack: Pack, mut intents: PlayerIntents) {
     if kb.modals.any_open() {
@@ -121,7 +121,7 @@ pub fn player_input(mut kb: Keyboard, loadout: Loadout, mut pack: Pack, mut inte
         let (Some(view), Some(menu)) = (pack.view.as_deref(), pack.menu.as_deref_mut()) else { return };
         match view.rows.iter().position(|row| row.throw_range.is_some()) {
             Some(row) => {
-                menu.selected = row;
+                menu.open(row);
                 let bag = inventory_modal(&kb.modals);
                 kb.modals.open(bag);
             }

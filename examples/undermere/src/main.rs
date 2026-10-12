@@ -675,7 +675,7 @@ mod tests {
         let before = app.world().resource::<Turns>().now();
         press(&mut app, KeyCode::KeyI);
         let row = app.world().resource::<InventoryView>().rows.iter().position(|r| r.entity == scroll).expect("in the pack");
-        app.world_mut().resource_mut::<InventoryMenu>().selected = row;
+        app.world_mut().resource_mut::<InventoryMenu>().open(row);
         press(&mut app, KeyCode::KeyU);
         let choosing = app.world().resource::<InventoryMenu>().using();
         assert_eq!(choosing, Some(scroll), "the pack asks what to read it on");
@@ -973,8 +973,10 @@ mod tests {
         line.trim_end().to_string()
     }
 
-    /// The pack opened on `thing`: its row in the list, and every line under
-    /// the rule saying what it is, top to bottom, as the screen draws them.
+    /// The pack opened on `thing`: its row in the list past the row's
+    /// letter, which says where it falls in the pack and not what it is,
+    /// and every line under the rule saying what it is, top to bottom, as
+    /// the screen draws them.
     fn pack_on(app: &mut App, thing: Entity) -> (String, Vec<String>) {
         press(app, KeyCode::KeyI);
         let at = app.world().resource::<InventoryView>().rows.iter().position(|r| r.entity == thing).expect("in the pack");
@@ -983,7 +985,8 @@ mod tests {
         let pack = Screen::new().pack;
         let lines: Vec<String> = (pack.y + 1..pack.bottom() - 1).map(|y| framed(app, pack, y)).collect();
         let rule = lines.iter().position(|l| l.starts_with('\u{2500}')).expect("a rule under the rows");
-        let listed = lines[..rule].iter().find(|l| l.contains(&undermere::testing::name_of(app, thing))).cloned().unwrap_or_default();
+        let listed =
+            lines[..rule].iter().find(|l| l.contains(&undermere::testing::name_of(app, thing))).map(|l| l.chars().skip(3).collect()).unwrap_or_default();
         let detail = lines[rule + 1..].iter().take_while(|l| !l.is_empty()).cloned().collect();
         press(app, KeyCode::Escape);
         (listed, detail)

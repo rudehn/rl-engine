@@ -183,6 +183,28 @@ fn letter(key: KeyCode) -> Option<char> {
     LETTERS.iter().position(|k| *k == key).map(|i| (b'a' + i as u8) as char)
 }
 
+/// The letter a lettered list draws beside its row at `index`: `a` for the
+/// first, `z` for the twenty-sixth, and none past that, for a row a player
+/// reaches with the cursor instead.
+pub fn row_letter(index: usize) -> Option<char> {
+    (index < LETTERS.len()).then(|| (b'a' + index as u8) as char)
+}
+
+/// The row of a lettered list whose letter went down this frame, `0` for
+/// `a`. Without Shift only, since a capital is another chord.
+pub fn lettered_row(input: &ButtonInput<KeyCode>) -> Option<usize> {
+    if shifted(input) {
+        return None;
+    }
+    LETTERS.iter().position(|key| input.just_pressed(*key))
+}
+
+/// Whether `key` types a letter, and so is a row's on a lettered list
+/// before it is anything else.
+pub fn is_letter(key: KeyCode) -> bool {
+    letter(key).is_some()
+}
+
 /// The digit a key along the top row types, if it types one.
 fn digit(key: KeyCode) -> Option<char> {
     DIGITS.iter().position(|k| *k == key).map(|i| (b'0' + i as u8) as char)
@@ -737,6 +759,12 @@ impl ControlInput<'_> {
     pub fn input(&self) -> &ButtonInput<KeyCode> {
         &self.input
     }
+
+    /// What the held direction key is doing this frame, for a screen that
+    /// walks a list by the direction keys rather than by a control.
+    pub fn repeats(&self) -> &Repeats {
+        &self.repeats
+    }
 }
 
 /// How a held direction key repeats: the wait before the first repeat,
@@ -1015,6 +1043,15 @@ mod tests {
         assert_eq!(Chord::key(KeyCode::ArrowUp).label(), "\u{2191}");
         assert_eq!(Chord::key(KeyCode::Escape).label(), "esc");
         assert_eq!(Chord::key(KeyCode::F3).label(), "f3");
+    }
+
+    #[test]
+    fn a_lettered_list_runs_a_to_z_and_reads_its_letters_without_shift() {
+        assert_eq!((row_letter(0), row_letter(25), row_letter(26)), (Some('a'), Some('z'), None));
+        assert_eq!(lettered_row(&input(&[KeyCode::KeyC])), Some(2));
+        assert_eq!(lettered_row(&input(&[KeyCode::ShiftLeft, KeyCode::KeyC])), None, "a capital is another chord");
+        assert_eq!(lettered_row(&input(&[KeyCode::Digit3])), None);
+        assert!(is_letter(KeyCode::KeyJ) && !is_letter(KeyCode::ArrowDown));
     }
 
     #[test]
