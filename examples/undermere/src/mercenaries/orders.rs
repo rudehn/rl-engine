@@ -9,7 +9,7 @@ use rl_engine::rl_rules::ai::brain::Tactic;
 use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, Keep, KeepPost, Led, MeleeAdjacent, Scavenge, Station, ThrowAtRange, UseCarried};
 use serde::{Deserialize, Serialize};
 
-use super::{KitSeen, MERCENARY, Mercenary, PutOnBetter};
+use super::{KIT_FACET, KitSeen, MERCENARY, Mercenary, PutOnBetter};
 use crate::bestiary::{Bestiary, MonsterDef, SCAVENGE_REACH};
 use crate::input::Binds;
 
@@ -303,7 +303,7 @@ pub fn show_orders(
         view.facets.push(facets.facet("pay", IN_PAY));
         view.facets.push(facets.facet("order", order.doing()));
         for (how, said) in kits.of(who) {
-            view.facets.push(facets.facet("kit", format!("{} {said}", how.verb())));
+            view.facets.push(facets.facet(KIT_FACET, format!("{} {said}", how.verb())));
         }
     }
     if let (Some(mut view), Some(party)) = (rail, party.as_deref()) {

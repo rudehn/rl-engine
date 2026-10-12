@@ -69,10 +69,12 @@ const VITALS_ROWS: i32 = 9;
 /// to its row, and no slot is ever pushed off the rail.
 const GEAR_ROWS: i32 = 12;
 /// Rows the rail gives to the company at its foot: the heading and its
-/// rule, and one apiece for the most who can follow the adventurer, the
-/// two hired and the captive freed. A row above them is kept blank, so the
-/// last thing in sight never runs into the heading.
-const PARTY_ROWS: i32 = 5;
+/// rule, and two apiece for the most who can follow the adventurer, the
+/// two hired and the captive freed: a follower's row, and under it a line
+/// of what it holds, which the panel clips to the one line when the rows
+/// it holds would not all fit wrapped. A row above them is kept blank, so
+/// the last thing in sight never runs into the heading.
+const PARTY_ROWS: i32 = 8;
 
 /// The screen, cut up once so every panel and the map agree on it.
 ///
@@ -223,8 +225,11 @@ fn add_panels(app: &mut App, screen: &Screen) {
         // it is doing outranks what it knows when it is running, at its
         // post, or drifting with nothing better to do. The things below
         // are everything in sight that is not someone, stairs and a gate
-        // mark as well as what lies about, so not "on the ground".
+        // mark as well as what lies about, so not "on the ground". What
+        // each one holds is said beneath its row, since it does not fit
+        // beside a name.
         NearbyPanel::new(screen.nearby)
+            .beneath(undermere::mercenaries::KIT_FACET)
             .titled("")
             .headings("In sight", "Around you")
             .cursor(CursorStyle::ticks())
@@ -240,8 +245,9 @@ fn add_panels(app: &mut App, screen: &Screen) {
         // Who follows the adventurer, wherever they are, each with the
         // order it was given: "company" rather than the engine's "party",
         // and one left on another floor is "left behind", which is how it
-        // came to be there and what the adventurer must do about it.
-        PartyPanel::new(screen.party).heading("Company").elsewhere("left behind"),
+        // came to be there and what the adventurer must do about it. What
+        // each holds is said beneath its row, as on the rail above.
+        PartyPanel::new(screen.party).heading("Company").elsewhere("left behind").beneath(undermere::mercenaries::KIT_FACET),
         LogPanel::new(screen.log),
         InspectPanel::new(screen.inspect).hints("move \u{2022} tab next \u{2022} esc close").cursor(CursorStyle::ticks()),
         TargetPanel::new(screen.target).hints("[tab/shift-tab] cycle").cursor(CursorStyle::ticks()),
@@ -286,6 +292,9 @@ fn add_panels(app: &mut App, screen: &Screen) {
             .in_set(ViewSet::Annotate),
     );
     app.add_systems(Update, undermere::mercenaries::talk_rows.in_set(ViewSet::Annotate));
+    // What each one in sight and each follower wields, wears and carries,
+    // beneath its row on the rail and in the company.
+    app.add_systems(Update, undermere::mercenaries::show_kit.in_set(ViewSet::Annotate));
     // A hired mercenary's order, under its kind's own words on the look
     // panel in place of a fight's forecast, and on the rail and its row of
     // the party panel.
@@ -1470,7 +1479,7 @@ mod tests {
     /// The rail's foot is blank until someone follows; then it heads them
     /// "Company", over a rule, each in the order it joined with its order,
     /// the longest of them whole, over its row washed edge to edge as a
-    /// full health bar. Taking the gate
+    /// full health bar, and under it what it holds. Taking the gate
     /// with one of them beside the adventurer and the other still in the
     /// tavern, the one that came is still following on floor one, and the
     /// one that stayed is muted, marked left behind in place of its order,
@@ -1494,19 +1503,31 @@ mod tests {
         let lines = company(&app);
         assert_eq!(lines[0], "Company", "the heading: {lines:#?}");
         assert!(lines[1].chars().all(|c| c == '\u{2500}'), "a rule under it: {lines:#?}");
-        let bg = |app: &App, x: i32, y: i32| app.world().resource::<Terminal>().get(x, screen.party.y + y).expect("on the screen").bg;
+        // The line a follower's row is on, under the heading.
+        let row_of =
+            |lines: &[String], name: &str| lines.iter().position(|l| l.starts_with(&format!("h {name}"))).unwrap_or_else(|| panic!("{name}: {lines:#?}"));
+        let (first_at, second_at) = (row_of(&lines, &first_name), row_of(&lines, &second_name));
+        assert_eq!(first_at, 2, "the first to join first: {lines:#?}");
+        assert!(second_at > first_at + 1, "and the second after what the first holds: {lines:#?}");
+        // Each hired hand wields what it was hired with, so each has a line
+        // under its row.
+        for (y, name) in [(first_at, &first_name), (second_at, &second_name)] {
+            assert!(lines[y].starts_with(&format!("h {name} · following")), "{name} with its order: {lines:#?}");
+            assert!(lines[y + 1].starts_with("  wields "), "and what it holds under it: {lines:#?}");
+        }
+        let bg = |app: &App, x: i32, y: usize| app.world().resource::<Terminal>().get(x, screen.party.y + y as i32).expect("on the screen").bg;
         let surface = app.world().resource::<Palette>().get(Tones::SURFACE);
-        for (y, name) in [(2, &first_name), (3, &second_name)] {
-            assert!(lines[y as usize].starts_with(&format!("h {name} · following")), "{name} with its order, in the order they joined: {lines:#?}");
+        for y in [first_at, second_at] {
             assert_ne!(bg(&app, rail, y), surface, "the row is its health bar: {lines:#?}");
             assert_eq!(bg(&app, COLS - 1, y), bg(&app, rail, y), "full, so washed to the rail's edge: {lines:#?}");
+            assert_eq!(bg(&app, COLS - 1, y + 1), surface, "and the line of what it holds is not: {lines:#?}");
         }
         assert_eq!(from(&app, rail, screen.party.y - 1), "", "a blank row over the heading");
         press(&mut app, KeyCode::KeyO);
         press(&mut app, KeyCode::KeyO);
         let lines = company(&app);
-        for (line, name) in lines[2..4].iter().zip([&first_name, &second_name]) {
-            assert_eq!(*line, format!("h {name} · fighting freely"), "the longest order whole beside {name}: {lines:#?}");
+        for name in [&first_name, &second_name] {
+            assert_eq!(lines[row_of(&lines, name)], format!("h {name} · fighting freely"), "the longest order whole beside {name}: {lines:#?}");
         }
         press(&mut app, KeyCode::KeyO);
 
@@ -1533,14 +1554,15 @@ mod tests {
         assert_eq!(app.world().get::<OnMap>(second).map(|m| m.0), Some(town), "the other stayed: {:#?}", written(&app));
 
         let lines = company(&app);
-        assert!(lines[2].starts_with(&format!("h {first_name} · following")), "the one that came: {lines:#?}");
-        assert_eq!(lines[3], format!("h {second_name} (left behind)"), "the one that stayed, with no order: {lines:#?}");
-        assert_eq!(bg(&app, COLS - 1, 3), bg(&app, rail, 3), "and its health still shown: {lines:#?}");
+        let (first_at, second_at) = (row_of(&lines, &first_name), row_of(&lines, &second_name));
+        assert!(lines[first_at].starts_with(&format!("h {first_name} · following")), "the one that came: {lines:#?}");
+        assert_eq!(lines[second_at], format!("h {second_name} (left behind)"), "the one that stayed, with no order: {lines:#?}");
+        assert_eq!(bg(&app, COLS - 1, second_at), bg(&app, rail, second_at), "and its health still shown: {lines:#?}");
         let terminal = app.world().resource::<Terminal>();
         let palette = app.world().resource::<Palette>();
-        let tone = |y: i32| terminal.get(rail + 2, y).expect("on the screen").fg;
-        assert_eq!(tone(screen.party.y + 3), palette.get(Tones::MUTED), "left behind reads muted");
-        assert_eq!(tone(screen.party.y + 2), palette.get(Tones::TEXT), "and the one beside the adventurer does not");
+        let tone = |y: usize| terminal.get(rail + 2, screen.party.y + y as i32).expect("on the screen").fg;
+        assert_eq!(tone(second_at), palette.get(Tones::MUTED), "left behind reads muted");
+        assert_eq!(tone(first_at), palette.get(Tones::TEXT), "and the one beside the adventurer does not");
     }
 
     /// Enter is the way's key and the key for what is here. Off any way,

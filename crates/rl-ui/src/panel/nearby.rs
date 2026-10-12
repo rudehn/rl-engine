@@ -14,8 +14,9 @@ use rl_render::{Cell, Terminal};
 use rl_rules::Relation;
 
 use crate::cursor::{CursorMap, CursorStyle};
+use crate::facet::{Facet, FacetId, Facets};
 use crate::modal::Modals;
-use crate::panel::{clear, clip, frame, section};
+use crate::panel::{clear, clip, frame, section, wrap};
 use crate::tone::{Palette, ToneId, Tones};
 use crate::view::{Alert, NearbyView, NearbyViewPlugin, Row};
 
@@ -45,6 +46,11 @@ pub struct NearbyLayout {
     /// default, since the rail's own highlight is a glow and the two read
     /// as one thing.
     pub cursor: CursorStyle,
+    /// The facets drawn on lines of their own beneath a row, by key,
+    /// rather than after its name: a note too long to share a line with
+    /// a name on a narrow rail, such as what someone carries. Empty draws
+    /// every facet after the name.
+    pub beneath: Vec<String>,
 }
 
 /// What each [`Alert`] is called on a row, in the game's own words.
@@ -135,6 +141,7 @@ impl NearbyPanel {
             alerts: AlertWords::default(),
             activities: ActivityWords::default(),
             cursor: CursorStyle::glow(Tones::SELECT),
+            beneath: Vec::new(),
         })
     }
 
@@ -169,6 +176,16 @@ impl NearbyPanel {
         self.0.activities = words;
         self
     }
+
+    /// Draws the facets under `key` beneath their row rather than after
+    /// its name: wrapped whole, one facet after another, while the rail
+    /// has room for every row so drawn, and each row's on one clipped line
+    /// when it has not, joined as the facets after a name are. A row picked
+    /// out is picked out with its lines.
+    pub fn beneath(mut self, key: impl Into<String>) -> Self {
+        self.0.beneath.push(key.into());
+        self
+    }
 }
 
 impl Plugin for NearbyPanel {
@@ -190,16 +207,18 @@ pub fn relation_tone(relation: Option<Relation>) -> ToneId {
     }
 }
 
+/// What the rail draws: its layout, its view, and the facet keys the
+/// layout names, so the system that paints it reads them as one.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Rail<'w> {
+    layout: Res<'w, NearbyLayout>,
+    view: Res<'w, NearbyView>,
+    facets: Res<'w, Facets>,
+}
+
 /// Paints the rail, and the tile of the row picked out.
-pub fn draw_nearby(
-    mut terminal: ResMut<Terminal>,
-    layout: Res<NearbyLayout>,
-    view: Res<NearbyView>,
-    palette: Res<Palette>,
-    modals: Res<Modals>,
-    map: CursorMap,
-    time: Res<Time>,
-) {
+pub fn draw_nearby(mut terminal: ResMut<Terminal>, rail: Rail, palette: Res<Palette>, modals: Res<Modals>, map: CursorMap, time: Res<Time>) {
+    let (layout, view) = (&*rail.layout, &*rail.view);
     if let Some(focused) = view.picked()
         && !modals.any_open()
     {
@@ -218,25 +237,49 @@ pub fn draw_nearby(
         frame(&mut terminal, rect, &layout.title, "", &palette);
         Rect::new(rect.x + 1, rect.y + 1, rect.width - 2, rect.height - 2)
     };
+    let beneath = Beneath::new(&layout.beneath, &rail.facets, inner.width);
+    let threats = Some(view.threats()).filter(|n| *n > 0);
+    let sections = [(&layout.actors, &view.actors, threats), (&layout.things, &view.things, None)];
+    // Every row's notes wrapped whole when the whole rail fits so, and
+    // each row's on one clipped line when it does not: a list that ran
+    // off the bottom to say all of the first row's would hide the rows
+    // under it, which are what the rail is for.
+    let wrapped = |rows: &Vec<Row>| rows.iter().map(|r| 1 + beneath.lines(r, false).len()).sum::<usize>();
+    let whole: usize = sections.iter().filter(|(_, rows, _)| !rows.is_empty()).map(|(_, rows, _)| 3 + wrapped(rows)).sum();
+    let compact = whole > inner.height as usize + 1;
     let mut y = inner.y;
     let bottom = inner.bottom();
-    let threats = Some(view.threats()).filter(|n| *n > 0);
-    for (heading, rows, count) in [(&layout.actors, &view.actors, threats), (&layout.things, &view.things, None)] {
+    for (heading, rows, count) in sections {
         if rows.is_empty() || y + 3 > bottom {
             continue;
         }
         section(&mut terminal, inner, y, heading, count, &palette);
         y += 2;
-        // Keep the row picked out on the rail: when it falls below the rows
-        // that fit, the list starts late enough to show it last.
+        let lines: Vec<Vec<(String, ToneId)>> = rows.iter().map(|r| beneath.lines(r, compact)).collect();
+        // Keep the row picked out on the rail, notes and all: when it
+        // falls below what fits, the list starts late enough to show it
+        // last.
         let room = (bottom - y).max(0) as usize;
-        let skip = rows.iter().position(|r| view.is_focused(r)).map_or(0, |i| (i + 1).saturating_sub(room));
-        for row in rows.iter().skip(skip) {
+        let skip = rows.iter().position(|r| view.is_focused(r)).map_or(0, |focused| {
+            let mut used = 0;
+            (0..=focused)
+                .rev()
+                .find(|&i| {
+                    used += 1 + lines[i].len();
+                    used > room
+                })
+                .map_or(0, |i| i + 1)
+                .min(focused)
+        });
+        for (row, notes) in rows.iter().zip(&lines).skip(skip) {
             if y >= bottom {
                 break;
             }
-            draw_row(&mut terminal, inner, y, row, view.is_focused(row), &layout, &palette);
+            let focused = view.is_focused(row);
+            draw_row(&mut terminal, Rect::new(inner.x, y, inner.width, 1), row, focused, &beneath, layout, &palette);
             y += 1;
+            let base = palette.get(if focused { Tones::SELECT } else { Tones::SURFACE });
+            y = paint_beneath(&mut terminal, inner, y, bottom, notes, base, &palette);
         }
         y += 1;
     }
@@ -252,10 +295,12 @@ pub fn draw_nearby(
 /// and the row picked out was barely told from the rest.
 pub(crate) const WASH: f32 = 0.2;
 
-fn draw_row(terminal: &mut Terminal, inner: Rect, y: i32, row: &Row, focused: bool, layout: &NearbyLayout, palette: &Palette) {
+/// Draws `row` on `line`, one cell high, with the facets `beneath` does
+/// not take after its name.
+fn draw_row(terminal: &mut Terminal, line: Rect, row: &Row, focused: bool, beneath: &Beneath, layout: &NearbyLayout, palette: &Palette) {
     let base = palette.get(if focused { Tones::SELECT } else { Tones::SURFACE });
     let mut name = row.label.clone();
-    for facet in &row.facets {
+    for facet in row.facets.iter().filter(|f| !beneath.takes(f)) {
         name.push_str(" \u{00b7} ");
         name.push_str(&facet.text);
     }
@@ -273,8 +318,8 @@ fn draw_row(terminal: &mut Terminal, inner: Rect, y: i32, row: &Row, focused: bo
     // Something that knows of nothing reads muted, so the names in their
     // own colour are the ones that know you are there.
     let tone = if row.alert == Some(Alert::Unaware) { Tones::MUTED } else { relation_tone(row.relation) };
-    let text = clip_keeping(&name, &state, (inner.width - 2).max(0) as usize);
-    paint_row(terminal, Rect::new(inner.x, y, inner.width, 1), row, base, &text, tone, palette);
+    let text = clip_keeping(&name, &state, (line.width - 2).max(0) as usize);
+    paint_row(terminal, line, row, base, &text, tone, palette);
 }
 
 /// Paints `row` on `line`, one cell high: its glyph, then `text` in
@@ -303,6 +348,65 @@ pub(crate) fn paint_row(terminal: &mut Terminal, line: Rect, row: &Row, base: Co
     for (i, ch) in text.chars().enumerate() {
         let x = x0 + 2 + i as i32;
         terminal.print_on(x, y, &ch.to_string(), palette.get(tone), bg_at(x));
+    }
+}
+
+/// Paints `lines` under a row from `y`, set in under its name, each on
+/// `base` edge to edge so a row and its notes read as one block, and
+/// stops at `bottom`. Returns the line after the last one drawn.
+pub(crate) fn paint_beneath(terminal: &mut Terminal, inner: Rect, mut y: i32, bottom: i32, lines: &[(String, ToneId)], base: Color, palette: &Palette) -> i32 {
+    for (line, tone) in lines {
+        if y >= bottom {
+            break;
+        }
+        terminal.fill(Rect::new(inner.x, y, inner.width, 1), Cell::new(' ', base).on(base));
+        terminal.print_on(inner.x + 2, y, line, palette.get(*tone), base);
+        y += 1;
+    }
+    y
+}
+
+/// The facets a rail draws beneath a row rather than after its name, and
+/// how they are laid out there.
+///
+/// Each is wrapped whole onto as many lines as it takes, as the inspect
+/// panel wraps its facets, set in two cells under the name; or, where the
+/// rail has no room for that, all of a row's on one line, joined as the
+/// facets after a name are and clipped, so every row keeps one line of
+/// what it says rather than the first row keeping all of it.
+pub(crate) struct Beneath {
+    keys: Vec<FacetId>,
+    width: usize,
+}
+
+impl Beneath {
+    /// The facets keyed `names`, in a rail `width` cells wide. A key no
+    /// game has declared is a key no row carries.
+    pub(crate) fn new(names: &[String], facets: &Facets, width: i32) -> Self {
+        Self { keys: names.iter().filter_map(|n| facets.get(n)).collect(), width: (width - 2).max(0) as usize }
+    }
+
+    /// No facet drawn beneath: every one after the name.
+    #[cfg(test)]
+    pub(crate) fn none() -> Self {
+        Self { keys: Vec::new(), width: 0 }
+    }
+
+    /// Whether `facet` is drawn beneath its row.
+    pub(crate) fn takes(&self, facet: &Facet) -> bool {
+        self.keys.contains(&facet.key)
+    }
+
+    /// The lines beneath `row`, each in its facet's tone: every facet
+    /// wrapped, or all of them on one clipped line when `compact`.
+    pub(crate) fn lines(&self, row: &Row, compact: bool) -> Vec<(String, ToneId)> {
+        let notes: Vec<&Facet> = row.facets.iter().filter(|f| self.takes(f)).collect();
+        let Some(first) = notes.first() else { return Vec::new() };
+        if compact {
+            let joined = notes.iter().map(|f| f.text.as_str()).collect::<Vec<_>>().join(" \u{00b7} ");
+            return vec![(clip(&joined, self.width), first.tone)];
+        }
+        notes.iter().flat_map(|f| wrap(&f.text, self.width).into_iter().map(|line| (line, f.tone))).collect()
     }
 }
 
@@ -395,7 +499,7 @@ mod tests {
         row.alert = Some(Alert::Hunting);
         let palette = stage.app.world().resource::<Palette>().clone();
         let mut terminal = Terminal::new(24, 1, bevy::math::Vec2::ONE);
-        draw_row(&mut terminal, Rect::new(0, 0, 24, 1), 0, &row, false, &NearbyPanel::new(Rect::new(0, 0, 24, 10)).0, &palette);
+        draw_row(&mut terminal, Rect::new(0, 0, 24, 1), &row, false, &Beneath::none(), &NearbyPanel::new(Rect::new(0, 0, 24, 10)).0, &palette);
         let said: String = (0..24).filter_map(|x| terminal.get(x, 0).map(|c| c.glyph)).collect();
         assert!(said.contains("(hunting)"), "{said:?}");
     }
@@ -417,7 +521,7 @@ mod tests {
             row.doing = doing;
             row.work = work.then(|| crate::view::WorkRow { doing: "mending".into(), target: None, left: 3 });
             let mut terminal = Terminal::new(30, 1, bevy::math::Vec2::ONE);
-            draw_row(&mut terminal, Rect::new(0, 0, 30, 1), 0, &row, false, &layout, &palette);
+            draw_row(&mut terminal, Rect::new(0, 0, 30, 1), &row, false, &Beneath::none(), &layout, &palette);
             (0..30).filter_map(|x| terminal.get(x, 0).map(|c| c.glyph)).collect::<String>()
         };
         assert!(say(Some("flee_when_hurt"), false).contains("rat (fleeing)"), "{:?}", say(Some("flee_when_hurt"), false));
@@ -435,7 +539,7 @@ mod tests {
         row.work = Some(crate::view::WorkRow { doing: "mending".into(), target: None, left: 3 });
         let palette = stage.app.world().resource::<Palette>().clone();
         let mut terminal = Terminal::new(24, 1, bevy::math::Vec2::ONE);
-        draw_row(&mut terminal, Rect::new(0, 0, 24, 1), 0, &row, false, &NearbyPanel::new(Rect::new(0, 0, 24, 10)).0, &palette);
+        draw_row(&mut terminal, Rect::new(0, 0, 24, 1), &row, false, &Beneath::none(), &NearbyPanel::new(Rect::new(0, 0, 24, 10)).0, &palette);
         let said: String = (0..24).filter_map(|x| terminal.get(x, 0).map(|c| c.glyph)).collect();
         assert!(said.contains("drone (mending)"), "{said:?}");
         assert!(!said.contains("hunting"), "what it is busy with, not what it knows: {said:?}");
@@ -474,7 +578,7 @@ mod tests {
         row.alert = Some(Alert::Unaware);
         let palette = stage.app.world().resource::<Palette>().clone();
         let mut terminal = Terminal::new(24, 1, bevy::math::Vec2::ONE);
-        draw_row(&mut terminal, Rect::new(0, 0, 24, 1), 0, &row, false, &NearbyPanel::new(Rect::new(0, 0, 24, 10)).0, &palette);
+        draw_row(&mut terminal, Rect::new(0, 0, 24, 1), &row, false, &Beneath::none(), &NearbyPanel::new(Rect::new(0, 0, 24, 10)).0, &palette);
         let said: String = (0..24).filter_map(|x| terminal.get(x, 0).map(|c| c.glyph)).collect();
         assert_eq!(said.trim_end(), "g Grubnak the\u{2026} (unaware)", "the name clipped, the state whole");
 
@@ -482,9 +586,70 @@ mod tests {
         // beside the state is clipped from the end as before, so the
         // name is never lost to the word after it.
         let mut terminal = Terminal::new(14, 1, bevy::math::Vec2::ONE);
-        draw_row(&mut terminal, Rect::new(0, 0, 14, 1), 0, &row, false, &NearbyPanel::new(Rect::new(0, 0, 14, 10)).0, &palette);
+        draw_row(&mut terminal, Rect::new(0, 0, 14, 1), &row, false, &Beneath::none(), &NearbyPanel::new(Rect::new(0, 0, 14, 10)).0, &palette);
         let said: String = (0..14).filter_map(|x| terminal.get(x, 0).map(|c| c.glyph)).collect();
         assert_eq!(said.trim_end(), "g Grubnak the\u{2026}", "too narrow for both, the name comes first");
+    }
+
+    /// Pushes what each actor holds under `kit`, and a mark after its name.
+    fn kit_and_mark(mut view: ResMut<NearbyView>, mut facets: ResMut<crate::Facets>) {
+        for row in view.rows_mut() {
+            row.facets.push(facets.facet("mark", "marked"));
+            row.facets.push(facets.facet("kit", "wields a long spear with a hooked head").toned(Tones::MUTED));
+        }
+    }
+
+    /// A facet the layout puts beneath its row is wrapped whole under the
+    /// name, where the rail has room for every row's so, on the row's own
+    /// background, so the row picked out is picked out notes and all; the
+    /// facet it does not stays after the name.
+    #[test]
+    fn a_facet_put_beneath_is_wrapped_under_the_name_and_picked_out_with_its_row() {
+        let mut stage = Stage::new(NearbyPanel::new(Rect::new(0, 0, 24, 10)).titled("").beneath("kit")).screen(24, 10);
+        stage.app.add_systems(Update, kit_and_mark.in_set(crate::ViewSet::Annotate));
+        stage.actor("crab", 'c', 2, 0);
+        stage.actor("gull", 'g', 3, 0);
+        stage.tick();
+        let rows = stage.rows();
+        let lines = [
+            "c crab \u{00b7} marked",
+            "  wields a long spear",
+            "  with a hooked head",
+            "g gull \u{00b7} marked",
+            "  wields a long spear",
+            "  with a hooked head",
+        ];
+        assert_eq!(&rows[2..8], lines, "{rows:?}");
+        let palette = stage.app.world().resource::<Palette>().clone();
+        assert_eq!(stage.app.world().resource::<Terminal>().get(2, 3).map(|c| c.fg), Some(palette.get(Tones::MUTED)), "in the facet's tone");
+
+        stage.press(CursorKeys::default().next);
+        stage.press(CursorKeys::default().next);
+        for y in [5, 6, 7] {
+            assert_ne!(bg(&stage, 23, y), palette.get(Tones::SURFACE), "the gull's row and notes are picked out at row {y}");
+        }
+        assert_eq!(bg(&stage, 23, 6), palette.get(Tones::SELECT), "its notes on the selection itself");
+        assert_eq!(bg(&stage, 23, 3), palette.get(Tones::SURFACE), "and the crab's are not");
+    }
+
+    /// With no room to wrap every row's notes, each row keeps one clipped
+    /// line of them, and the row picked out below what fits scrolls into
+    /// view with its line.
+    #[test]
+    fn with_no_room_to_wrap_every_rows_notes_each_keeps_one_clipped_line_and_scrolls_with_it() {
+        let mut stage = Stage::new(NearbyPanel::new(Rect::new(0, 0, 24, 6)).titled("").beneath("kit")).screen(24, 6);
+        stage.app.add_systems(Update, kit_and_mark.in_set(crate::ViewSet::Annotate));
+        stage.actor("crab", 'c', 2, 0);
+        stage.actor("gull", 'g', 3, 0);
+        stage.actor("newt", 'n', 4, 0);
+        stage.tick();
+        let rows = stage.rows();
+        assert_eq!(&rows[2..6], ["c crab \u{00b7} marked", "  wields a long spear w\u{2026}", "g gull \u{00b7} marked", "  wields a long spear w\u{2026}"]);
+        for _ in 0..3 {
+            stage.press(CursorKeys::default().next);
+        }
+        let rows = stage.rows();
+        assert_eq!(&rows[2..6], ["g gull \u{00b7} marked", "  wields a long spear w\u{2026}", "n newt \u{00b7} marked", "  wields a long spear w\u{2026}"]);
     }
 
     #[test]

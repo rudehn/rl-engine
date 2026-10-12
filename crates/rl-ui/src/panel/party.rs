@@ -18,7 +18,8 @@ use rl_bevy::PresentSet;
 use rl_core::Rect;
 use rl_render::Terminal;
 
-use crate::panel::nearby::{clip_keeping, paint_row};
+use crate::facet::Facets;
+use crate::panel::nearby::{Beneath, clip_keeping, paint_beneath, paint_row};
 use crate::panel::{clear, section};
 use crate::tone::{Palette, Tones};
 use crate::view::{PartyView, PartyViewPlugin, Row};
@@ -35,6 +36,10 @@ pub struct PartyLayout {
     /// game's own words. Empty says nothing, and the muted name alone
     /// marks it.
     pub elsewhere: String,
+    /// The facets drawn on lines of their own beneath a follower's row,
+    /// by key, rather than after its name, as on the nearby rail. Empty
+    /// draws every facet after the name.
+    pub beneath: Vec<String>,
 }
 
 /// Draws [`PartyView`] as a rail.
@@ -50,7 +55,7 @@ impl PartyPanel {
     /// marked `elsewhere`: the engine's words for what the rows are,
     /// plain enough to ship with and to replace.
     pub fn new(rect: Rect) -> Self {
-        Self(PartyLayout { rect, heading: "Party".into(), elsewhere: "elsewhere".into() })
+        Self(PartyLayout { rect, heading: "Party".into(), elsewhere: "elsewhere".into(), beneath: Vec::new() })
     }
 
     /// Replaces the heading. Empty draws none.
@@ -62,6 +67,15 @@ impl PartyPanel {
     /// Replaces what a follower on another map is called.
     pub fn elsewhere(mut self, word: impl Into<String>) -> Self {
         self.0.elsewhere = word.into();
+        self
+    }
+
+    /// Draws the facets under `key` beneath their follower's row rather
+    /// than after its name: wrapped whole while the rail has room for every
+    /// follower's so drawn, and each follower's on one clipped line when it
+    /// has not, so every follower keeps its row.
+    pub fn beneath(mut self, key: impl Into<String>) -> Self {
+        self.0.beneath.push(key.into());
         self
     }
 }
@@ -76,7 +90,7 @@ impl Plugin for PartyPanel {
 }
 
 /// Paints the party rail.
-pub fn draw_party(mut terminal: ResMut<Terminal>, layout: Res<PartyLayout>, view: Res<PartyView>, palette: Res<Palette>) {
+pub fn draw_party(mut terminal: ResMut<Terminal>, layout: Res<PartyLayout>, view: Res<PartyView>, palette: Res<Palette>, facets: Res<Facets>) {
     let rect = layout.rect;
     if rect.width < 6 || rect.height < 1 {
         return;
@@ -92,23 +106,27 @@ pub fn draw_party(mut terminal: ResMut<Terminal>, layout: Res<PartyLayout>, view
         section(&mut terminal, rect, y, &layout.heading, None, &palette);
         y += 2;
     }
+    let beneath = Beneath::new(&layout.beneath, &facets, rect.width);
+    let whole: i32 = view.rows.iter().map(|r| 1 + beneath.lines(r, false).len() as i32).sum();
+    let compact = whole > rect.bottom() - y;
     for row in &view.rows {
         if y >= rect.bottom() {
             break;
         }
-        draw_row(&mut terminal, Rect::new(rect.x, y, rect.width, 1), row, view.is_elsewhere(row), &layout, &palette);
-        y += 1;
+        draw_row(&mut terminal, Rect::new(rect.x, y, rect.width, 1), row, view.is_elsewhere(row), &layout, &beneath, &palette);
+        let base = palette.get(Tones::SURFACE);
+        y = paint_beneath(&mut terminal, rect, y + 1, rect.bottom(), &beneath.lines(row, compact), base, &palette);
     }
 }
 
-fn draw_row(terminal: &mut Terminal, line: Rect, row: &Row, elsewhere: bool, layout: &PartyLayout, palette: &Palette) {
+fn draw_row(terminal: &mut Terminal, line: Rect, row: &Row, elsewhere: bool, layout: &PartyLayout, beneath: &Beneath, palette: &Palette) {
     // What the game says of a follower, its order, is the row's point, so
     // the facets and the elsewhere mark are kept whole and the name gives
     // way: a long name read as `Dagdis Longsh… · fighting freely` still
     // says who, where `Dagdis Longshanks · fighti…` said neither what it
     // was doing nor that it was cut there.
     let mut tail = String::new();
-    for facet in &row.facets {
+    for facet in row.facets.iter().filter(|f| !beneath.takes(f)) {
         tail.push_str(" \u{00b7} ");
         tail.push_str(&facet.text);
     }
@@ -232,6 +250,48 @@ mod tests {
         assert!(row.starts_with("h Dagdis"), "the name's start: {row:?}");
         assert!(row.ends_with("\u{2026} \u{00b7} fighting freely"), "the name cut, the order whole: {row:?}");
         assert_eq!(row.chars().count(), 36, "and the whole row is the name's, now the bar lies under it: {row:?}");
+    }
+
+    /// Pushes what each follower holds under `kit`, beneath its row, and
+    /// its order after its name.
+    fn kit_and_order(mut view: ResMut<PartyView>, mut facets: ResMut<crate::Facets>) {
+        for row in view.rows_mut() {
+            row.facets.push(facets.facet("order", "hold"));
+            row.facets.push(facets.facet("kit", "wields a long spear with a hooked head").toned(Tones::MUTED));
+        }
+    }
+
+    /// A facet the layout puts beneath the row is wrapped whole under the
+    /// name in its own tone, and the one it does not stays after the name.
+    #[test]
+    fn a_facet_put_beneath_is_wrapped_under_the_name_and_the_rest_stay_after_it() {
+        let mut stage = Stage::new(PartyPanel::new(Rect::new(0, 0, 24, 8)).beneath("kit")).screen(24, 8);
+        stage.app.add_systems(Update, kit_and_order.in_set(crate::ViewSet::Annotate));
+        party(&mut stage, "kit", 'k', 2);
+        stage.tick();
+        let rows = stage.rows();
+        assert_eq!(&rows[2..6], ["k kit \u{00b7} hold", "  wields a long spear", "  with a hooked head", ""], "{rows:?}");
+        let palette = stage.app.world().resource::<Palette>().clone();
+        assert_eq!(fg(&stage, 2, 3), palette.get(Tones::MUTED), "in the facet's own tone");
+        assert_eq!(bg(&stage, 23, 3), palette.get(Tones::SURFACE), "and the health wash is the row's alone");
+    }
+
+    /// With no room to wrap every follower's notes, each keeps one clipped
+    /// line, so the second follower is not pushed off the rail by the
+    /// first one's.
+    #[test]
+    fn with_no_room_to_wrap_every_followers_notes_each_keeps_one_clipped_line() {
+        let mut stage = Stage::new(PartyPanel::new(Rect::new(0, 0, 24, 6)).beneath("kit")).screen(24, 6);
+        stage.app.add_systems(Update, kit_and_order.in_set(crate::ViewSet::Annotate));
+        party(&mut stage, "kit", 'k', 2);
+        party(&mut stage, "tam", 't', 3);
+        stage.tick();
+        let rows = stage.rows();
+        assert_eq!(
+            &rows[2..6],
+            ["k kit \u{00b7} hold", "  wields a long spear w\u{2026}", "t tam \u{00b7} hold", "  wields a long spear w\u{2026}"],
+            "{rows:?}"
+        );
     }
 
     /// The rail clears what it drew once the last follower is gone, rather
