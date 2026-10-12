@@ -301,8 +301,7 @@
     // back over the turns its line says, divided by its level. Each level
     // adds two to a bolt's roll, which keeps a firebolt near the content
     // sheet's (L+1)d4 on average with less to it by luck, five turns of
-    // poison, two of slowness, two cells to a blink and a blade to a
-    // conjuring. Every bolt is seen to fly.
+    // poison, two of slowness and a blade to a conjuring. Every bolt is seen to fly.
     (name: "staff of firebolt", glyph: '/', color: (0.85, 0.45, 0.25), price: 250, tags: ["staff"], effect_per_level: (amount: 2),
      consumable: (charges: 0, per_level: 1, when_empty: Kept, recharge: 500),
      triggers: [(on: "use", targeting: (mode: Bolt(range: 8)), look: (glyph: '*', color: (r: 255, g: 120, b: 40)),
@@ -320,10 +319,13 @@
      consumable: (charges: 0, per_level: 1, when_empty: Kept, recharge: 500),
      triggers: [(on: "use", targeting: (mode: Bolt(range: 8)), look: (glyph: '*', color: (r: 150, g: 160, b: 200)),
                  effects: [(kind: "Inflict", args: (status: "slowed", turns: 5))])]),
+    // A blink reaches as far as the bolt that aims it, five cells at every
+    // level, since a bolt's range is one number the cursor cannot make
+    // follow a level: a level buys charges alone.
     (name: "staff of blinking", glyph: '/', color: (0.8, 0.85, 1.0), price: 220, tags: ["staff"], effect_per_level: (amount: 1),
      consumable: (charges: 0, per_level: 1, when_empty: Kept, recharge: 1000),
-     triggers: [(on: "use", targeting: (mode: Bolt(range: 12), aim: Ground), look: (glyph: '*', color: (r: 220, g: 230, b: 255)),
-                 effects: [(kind: "Blink", args: (reach: 2, per_level: 2))])]),
+     triggers: [(on: "use", targeting: (mode: Bolt(range: 5), aim: Ground), look: (glyph: '*', color: (r: 220, g: 230, b: 255)),
+                 effects: [(kind: "Blink", args: (reach: 5, per_level: 0))])]),
     (name: "staff of conjuration", glyph: '/', color: (0.75, 0.85, 1.0), price: 220, tags: ["staff"], effect_per_level: (amount: 1),
      consumable: (charges: 0, per_level: 1, when_empty: Kept, recharge: 1000),
      triggers: [(on: "use", effects: [(kind: "Conjure", args: (blades: 1, turns: 15))])]),
