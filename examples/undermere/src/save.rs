@@ -88,7 +88,8 @@ pub fn register(app: &mut App) {
         .save_state::<Tavern>()
         .save_state::<crate::vaults::lifts::RisingFloods>()
         .save_state::<Quests>()
-        .save_state::<WritingsProgress>();
+        .save_state::<WritingsProgress>()
+        .save_state::<crate::doors::Passed>();
 }
 // ANCHOR_END: register
 

@@ -30,6 +30,9 @@ pub struct Binds {
     /// Cycle every hired mercenary's order, by
     /// [`order_party`](crate::mercenaries::order_party).
     pub order: ControlId,
+    /// Mark the doors seen and not yet walked through, until the next key;
+    /// read by [`mark_doors`](crate::doors::mark_doors).
+    pub mark_doors: ControlId,
 }
 
 /// Declares the keys, under the headings the `?` screen groups them by.
@@ -50,6 +53,7 @@ pub fn declare_controls(app: &mut App) {
         fire: app.add_control("Act", "shoot at the nearest foe", KeyCode::KeyF),
         throw: app.add_control("Act", "throw something from the pack", KeyCode::KeyT),
         order: app.add_control("Act", "order the party: follow, hold, fight freely", KeyCode::KeyO),
+        mark_doors: app.add_control("Look", "mark the doors not yet gone through", KeyCode::KeyM),
     };
     app.insert_resource(binds);
 }

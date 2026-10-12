@@ -80,6 +80,7 @@ pub mod conditions;
 pub mod content;
 pub mod damage;
 pub mod decor;
+pub mod doors;
 pub mod dungeon;
 pub mod effects;
 pub mod enchant;
