@@ -292,7 +292,7 @@ mod tests {
         assert_eq!(reached(3), (true, true, true), "once floor three is reached");
     }
 
-    /// A fee is its base, twenty, plus half of what its kit is worth told:
+    /// A fee is its base, eighty, plus all of what its kit is worth told:
     /// a sword one better is its price and a hundred, armor and a potion at
     /// plain their prices, darts their price each; a cursed sword adds
     /// nothing, and an empty kit costs the base. Over a span of seeds no
@@ -304,13 +304,28 @@ mod tests {
         let (merc, armory) = (&library.mercenaries, &library.armory);
         let ware = |name: &str, count: u32, level: i32| Ware { def: armory.defs.expect(name), count, level };
         let kit = [ware("sword", 1, 1), ware("leather armor", 1, 0), ware("dart", 6, 0), ware("potion of healing", 1, 0)];
-        assert_eq!(merc.fee(&kit, armory), 20 + (60 + 100 + 40 + 6 * 3 + 40) / 2);
-        assert_eq!(merc.fee(&[ware("sword", 1, -1)], armory), 20, "a cursed sword is worth nothing");
-        assert_eq!(merc.fee(&[], armory), 20, "nothing worth anything");
+        assert_eq!(merc.fee(&kit, armory), 80 + 60 + 100 + 40 + 6 * 3 + 40);
+        assert_eq!(merc.fee(&[ware("sword", 1, -1)], armory), 80, "a cursed sword is worth nothing");
+        assert_eq!(merc.fee(&[], armory), 80, "nothing worth anything");
         for kit in kits(&library, 5) {
             let worth: u32 = kit.iter().map(|w| armory.told_worth(w.def, w.level).unwrap_or(0) * w.count).sum();
-            assert_eq!(merc.fee(&kit, armory), 20 + worth / 2, "{kit:?}");
+            assert_eq!(merc.fee(&kit, armory), 80 + worth, "{kit:?}");
         }
+    }
+
+    /// On the first evening the cheapest candidate asks about what the
+    /// smithy's best weapon of the first tier does, the axe or the bow, and
+    /// the dearest asks several times that: a hireling is a purchase to
+    /// save for.
+    #[test]
+    fn the_cheapest_first_evening_candidate_costs_a_smithys_best_first_tier_weapon_and_the_dearest_several_times_that() {
+        let library = library();
+        let armory = &library.armory;
+        let best = ["axe", "bow"].map(|n| armory.defs.get(armory.defs.expect(n)).price.expect("priced")).into_iter().max().expect("two");
+        let fees: Vec<u32> = kits(&library, 0).iter().map(|kit| library.mercenaries.fee(kit, armory)).collect();
+        let (cheapest, dearest) = (*fees.iter().min().expect("kits"), *fees.iter().max().expect("kits"));
+        assert!((best * 9 / 10..=best * 11 / 10).contains(&cheapest), "cheapest {cheapest} against a weapon at {best}");
+        assert!(dearest >= 3 * best, "dearest {dearest} against a weapon at {best}");
     }
 
     /// A thing rolled below nought is made cursed as a thing found below
@@ -377,7 +392,7 @@ mod tests {
         let library = library();
         let error = refused(
             &library,
-            r#"(fee: (base: 20, share_pct: 50), parts: [(name: "weapon", chance: 100, rows: [(item: "sword of legend", bands: (0, 10), weight: 1)])], levels: [])"#,
+            r#"(fee: (base: 80, share_pct: 100), parts: [(name: "weapon", chance: 100, rows: [(item: "sword of legend", bands: (0, 10), weight: 1)])], levels: [])"#,
         );
         assert!(error.contains("weapon") && error.contains("sword of legend"), "{error}");
     }
@@ -390,7 +405,7 @@ mod tests {
         let library = library();
         let error = refused(
             &library,
-            r#"(fee: (base: 20, share_pct: 50), parts: [
+            r#"(fee: (base: 80, share_pct: 100), parts: [
                 (name: "weapon", chance: 0, rows: [(item: "sword", bands: (0, 11), weight: 1)]),
                 (name: "weapon", chance: 50, rows: [(item: "dagger", bands: (0, 10), weight: 0)]),
             ], levels: [(bands: (-1, 10), level: 0, weight: 0)])"#,

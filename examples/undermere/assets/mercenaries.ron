@@ -32,7 +32,7 @@
 //     level:   the level, below nought or not
 //     weight:  how often against every other row at the band, above nought
 (
-    fee: (base: 20, share_pct: 50),
+    fee: (base: 80, share_pct: 100),
     parts: [
         (name: "weapon", chance: 100, rows: [
             (item: "dagger", bands: (0, 10), weight: 3),
