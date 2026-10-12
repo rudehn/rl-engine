@@ -41,8 +41,11 @@
     // one: the one tile that is a way through, and it glows violet.
     (tile: "gate",           glyph: 'Ω',  fg: (0.92, 0.66, 1.0),  bg: (0.42, 0.18, 0.55), vary: (0.08, 0.04), shimmer: 0.35),
     // The doors of the town's houses and of the halls and crypts below.
-    (tile: "door",           glyph: '+',  fg: (0.86, 0.64, 0.38), bg: (0.44, 0.3, 0.16),  vary: (0.1, 0.03)),
-    (tile: "open door",      glyph: '\'', fg: (0.86, 0.64, 0.38), bg: (0.27, 0.2, 0.13),  vary: (0.1, 0.03)),
+    // The only bright gold glyph on a dark fill: every wall is a lighter
+    // fill than every floor, in browns, greys and blues, so a door reads
+    // as neither by the reverse and by a colour no wall or floor wears.
+    (tile: "door",           glyph: '+',  fg: (1.0, 0.78, 0.26),  bg: (0.3, 0.14, 0.05),   vary: (0.06, 0.02)),
+    (tile: "open door",      glyph: '\'', fg: (1.0, 0.78, 0.26),  bg: (0.2, 0.1, 0.05),    vary: (0.06, 0.02)),
     (tile: "bridge",         glyph: '=',  fg: (0.66, 0.5, 0.34),  bg: (0.3, 0.21, 0.13),  vary: (0.1, 0.03)),
     (tile: "iron bridge",    glyph: '=',  fg: (0.62, 0.62, 0.64), bg: (0.2, 0.2, 0.22),   vary: (0.08, 0.02)),
 

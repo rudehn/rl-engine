@@ -165,6 +165,18 @@ impl Plugin for UndermerePlugin {
         // stood aside.
         app.add_systems(NewRun, crate::run::start);
         app.add_systems(NewRun, crate::run::resume.after(crate::run::start));
+        // A continued run lays its bodies back down in `resume`, with the
+        // glyph they lived with: drawn as corpses once it has.
+        app.add_systems(NewRun, crate::corpses::dress_the_dead.after(crate::run::resume));
+        // Every body, the turn it is left, drawn as a corpse of its kind.
+        app.add_systems(Turn, crate::corpses::dress_the_dead.in_set(TurnSet::React));
+        // The doors the adventurer has walked through, kept with the run,
+        // and the key that marks the ones not yet.
+        app.init_resource::<crate::doors::Passed>().reset_on_new_run::<crate::doors::Passed>();
+        app.init_resource::<crate::doors::DoorTiles>().init_resource::<crate::doors::DoorMarks>().reset_on_new_run::<crate::doors::DoorMarks>();
+        app.add_systems(Turn, crate::doors::note_doors_passed.in_set(TurnSet::React));
+        app.add_systems(Update, crate::doors::mark_doors.in_set(EngineSet::Input));
+        app.add_systems(Update, crate::doors::draw_door_marks.in_set(PresentSet::Overlay));
         // What a run is saved as, and when: on the way out and on every
         // arrival.
         crate::save::register(app);
