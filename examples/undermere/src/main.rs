@@ -699,6 +699,11 @@ mod tests {
         app.world_mut().resource_mut::<WorldMap>().set_tile(door, shut);
         app.world_mut().resource_mut::<Knowledge>().mark(door);
         app.update();
+        // The lantern's flicker and the wash's breath move with the game
+        // clock, which in a test follows the wall: held still, the frames
+        // before and after the key are drawn at one instant, so only what
+        // the key changed can differ, however slowly a loaded machine runs.
+        app.world_mut().resource_mut::<Time<bevy::time::Virtual>>().pause();
         let cells_of = |app: &App, p: Point| {
             let view = app.world().resource::<MapView>();
             let t = app.world().resource::<Terminal>();
