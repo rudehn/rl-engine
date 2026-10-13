@@ -703,6 +703,31 @@ mod tests {
         assert_eq!(app.world().resource::<Turns>().now(), before, "and no turn went by");
     }
 
+    /// `t` opens the pack on the darts, which are made to be thrown, and not
+    /// on the potion of healing that comes before them in the pack, which
+    /// can be thrown too; with no darts it opens on the potion.
+    #[test]
+    fn t_opens_the_pack_on_what_is_made_to_be_thrown_before_a_potion_that_can_be() {
+        let mut app = on_screen(RunSeed(3));
+        let me = undermere::testing::adventurer(&mut app);
+        let potion = undermere::testing::make(&mut app, "potion of healing");
+        undermere::testing::give(&mut app, me, potion);
+        let darts = undermere::testing::make(&mut app, "dart");
+        undermere::testing::give(&mut app, me, darts);
+        app.update();
+        let rows = |app: &App, who: Entity| app.world().resource::<InventoryView>().rows.iter().position(|r| r.entity == who).expect("in the pack");
+        assert!(rows(&app, potion) < rows(&app, darts), "the potion is listed first");
+        press(&mut app, KeyCode::KeyT);
+        assert_eq!(app.world().resource::<InventoryMenu>().selected, rows(&app, darts), "opened on the darts");
+        press(&mut app, KeyCode::Escape);
+        press(&mut app, KeyCode::Escape);
+        app.world_mut().entity_mut(darts).despawn();
+        app.update();
+        press(&mut app, KeyCode::KeyT);
+        let first = app.world().resource::<InventoryView>().rows.iter().position(|r| r.throw_range.is_some()).expect("a potion to throw");
+        assert_eq!(app.world().resource::<InventoryMenu>().selected, first, "with no darts, on the first thing that can be thrown");
+    }
+
     /// The nearby rail says what a monster is doing in Undermere's words:
     /// asleep while it knows of nothing and no tactic has moved it,
     /// searching once it has heard something, hunting once it has the

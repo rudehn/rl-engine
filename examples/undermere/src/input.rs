@@ -25,7 +25,7 @@ pub struct Binds {
     pub pick_up: ControlId,
     /// Shoot what is wielded, through the targeting cursor.
     pub fire: ControlId,
-    /// Open the pack on the first thing in it that can be thrown.
+    /// Open the pack on the first thing in it made to be thrown.
     pub throw: ControlId,
     /// Cycle every hired mercenary's order, by
     /// [`order_party`](crate::mercenaries::order_party).
@@ -85,8 +85,10 @@ pub struct PlayerIntents<'w> {
 /// The pack's screen, which `t` opens: absent from a test that draws no
 /// screens, where `t` has nothing to open.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Pack<'w> {
+pub struct Pack<'w, 's> {
     view: Option<Res<'w, InventoryView>>,
+    registries: Res<'w, Registries>,
+    tagged: Query<'w, 's, &'static Tagged>,
     menu: Option<ResMut<'w, InventoryMenu>>,
 }
 
@@ -95,7 +97,7 @@ pub struct Pack<'w> {
 ///
 /// `f` opens the engine's targeting cursor on the nearest foe in sight,
 /// with whatever shoots in hand. `t` opens the pack with the first thing in
-/// it that can be thrown opened, rather than throwing it: the pack's own
+/// it made to be thrown opened, or when there is none the first that can be, rather than throwing it: the pack's own
 /// `t` sends that row to the same cursor, and Esc goes back to the list
 /// when another of several is meant. A key with nothing to do says so without
 /// spending the turn, since a mistyped key should not cost a life.
@@ -123,7 +125,12 @@ pub fn player_input(mut kb: Keyboard, loadout: Loadout, mut pack: Pack, mut inte
         }
     } else if keys.just_pressed(binds.throw) {
         let (Some(view), Some(menu)) = (pack.view.as_deref(), pack.menu.as_deref_mut()) else { return };
-        match view.rows.iter().position(|row| row.throw_range.is_some()) {
+        // What is made to be thrown comes first: a potion can be thrown,
+        // but a hand reaching for `t` means the darts before the healing.
+        let thrown = pack.registries.tags.id("thrown");
+        let made_for_it = |row: &&ItemRow| thrown.is_some_and(|tag| pack.tagged.get(row.entity).is_ok_and(|tags| tags.contains(&tag)));
+        let first = view.rows.iter().position(|row| row.throw_range.is_some() && made_for_it(&row));
+        match first.or_else(|| view.rows.iter().position(|row| row.throw_range.is_some())) {
             Some(row) => {
                 menu.open(row);
                 let bag = inventory_modal(&kb.modals);
