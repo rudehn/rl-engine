@@ -14,7 +14,7 @@ use std::sync::Arc;
 use bevy::prelude::*;
 use rl_bevy::prelude::*;
 use rl_bevy::testing::{Sides, surface, two_sides};
-use rl_core::{DiceRoll, Point, RunSeed, geometry};
+use rl_core::{DiceRoll, RunSeed, geometry};
 use rl_rules::Brain;
 use rl_rules::ai::awareness::{NoticeStats, StealthStats};
 use rl_rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, SearchLastKnown, Wander};
@@ -28,22 +28,25 @@ fn fold(hash: &mut u64, value: i64) {
 }
 
 /// The world as the fingerprint reads it: the clock, then every actor's
-/// place and health in spawn order.
+/// place and health in the order of where they stand, row then column.
 ///
-/// Spawn order rather than the entity index itself: systems are entities
-/// too, so adding one anywhere shifts every index that follows, and that
-/// is not a change to the run.
+/// Where they stand rather than which entity they are: Bevy numbers every
+/// entity from one allocator, which counts whatever is spawned anywhere
+/// and hands a freed number to the next spawn, so a change to when
+/// anything unrelated is made renumbers every actor after it, and that is
+/// not a change to the run. Two that block cannot share a cell; any that
+/// do are put after by their health, and two alike in all three are
+/// folded the same whichever comes first.
 fn fingerprint(app: &mut App) -> u64 {
     let mut hash = 0xcbf2_9ce4_8422_2325u64;
     fold(&mut hash, i64::from(app.world().resource::<Turns>().now()));
     let world = app.world_mut();
-    let mut actors: Vec<(u32, Point, i32)> =
-        world.query::<(Entity, &Position, &Health)>().iter(world).map(|(e, p, h)| (e.index().index(), p.0, h.current)).collect();
+    let mut actors: Vec<(i32, i32, i32)> = world.query::<(&Position, &Health)>().iter(world).map(|(p, h)| (p.0.y, p.0.x, h.current)).collect();
     actors.sort();
-    for (rank, (_, at, hp)) in actors.into_iter().enumerate() {
+    for (rank, (y, x, hp)) in actors.into_iter().enumerate() {
         fold(&mut hash, rank as i64);
-        fold(&mut hash, i64::from(at.x));
-        fold(&mut hash, i64::from(at.y));
+        fold(&mut hash, i64::from(x));
+        fold(&mut hash, i64::from(y));
         fold(&mut hash, i64::from(hp));
     }
     hash
@@ -111,7 +114,7 @@ fn a_seeded_run_of_minds_combat_and_stealth_comes_to_the_same_run_every_time() {
     assert_eq!(first, run(7, 120), "one seed, two runs, one fingerprint");
     assert_ne!(first, run(8, 120), "another seed is another run");
     assert_eq!(
-        first, 18_290_667_109_399_898_158,
+        first, 13_609_451_396_769_826_707,
         "fingerprint tripwire: a change moved a roll, a decision or an order; re-baseline on purpose and say so in the changelog"
     );
 }

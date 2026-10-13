@@ -449,11 +449,14 @@ pub fn update_awareness(mut watch: Watch, mut noticed: MessageWriter<Noticed>) {
     let reach = perception.map(|p| p.0).unwrap_or(DEFAULT_PERCEPTION);
     let reach = if asleep { reach.min(rl_rules::SLEEPER_REACH) } else { reach };
     let mut seen = Vec::new();
-    // In spawn order rather than the order the query walks the archetypes
-    // in, since each subject in view costs a roll and which subject gets
-    // which roll must not depend on how the world happens to be laid out.
+    // In the order of where they stand, by map, row and column, rather
+    // than the order the query walks the archetypes in or the entities'
+    // numbers, which Bevy reuses as it likes: each subject in view costs a
+    // roll, and which subject gets which roll must not depend on how the
+    // world happens to be laid out or numbered. The number settles only
+    // two that stand on one cell, which two that block never do.
     let mut subjects: Vec<Hiding<'_>> = watch.subjects.iter().collect();
-    subjects.sort_by_key(|(e, ..)| (e.index(), *e));
+    subjects.sort_by_key(|(e, at, _, _, on, _)| (on.map(|m| m.0), at.0.y, at.0.x, *e));
     for (subject, at, stealth, theirs, on, hidden) in subjects {
         if subject == observer {
             continue;

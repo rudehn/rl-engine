@@ -394,7 +394,10 @@ pub fn resolve_noise(
     }
     let here = map.current();
     let mut near: Vec<_> = listeners.iter_mut().filter(|(.., on, _)| on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here).collect();
-    near.sort_by_key(|(e, ..)| *e);
+    // What each hears is written in the order of where they stand, not
+    // in the order of their entities' numbers, which Bevy reuses as it
+    // likes; the number settles only two on one cell.
+    near.sort_by_key(|(e, pos, ..)| (pos.0.y, pos.0.x, *e));
     let view = SoundView { map: &map, muffle: rules.door_muffle };
     let mut loudest: Vec<Option<(i32, Reverse<Point>)>> = vec![None; near.len()];
     for noise in &noises {

@@ -539,10 +539,14 @@ type Arrivals<'w, 's> = Query<'w, 's, (Has<Player>, Option<&'static Position>, O
 /// monsters its own arrival put there.
 ///
 /// Actors admitted in one pass go in with the player first and the rest in
-/// the order they were spawned. A query's iteration order follows the
-/// archetypes as they happened to be created, which a new component
-/// anywhere in the engine can reorder; the first turn of a run must not
-/// depend on that.
+/// the order of where they stand, by row and then column. A query's
+/// iteration order follows the archetypes as they happened to be created,
+/// which a new component anywhere in the engine can reorder, and an
+/// entity's number is not the order it was spawned in, since Bevy hands a
+/// freed number to the next spawn, so a light made a moment earlier would
+/// renumber every monster after it; the first turn of a run must depend on
+/// neither. Two that block never share a cell, and the number settles only
+/// two that do not, admitted together where they stand together.
 pub fn admit_new_actors(
     mut turns: ResMut<Turns>,
     mut occupancy: ResMut<Occupancy>,
@@ -553,21 +557,21 @@ pub fn admit_new_actors(
 ) {
     let mut waiting = std::mem::take(&mut turns.arriving);
     waiting.extend(added_actors.iter());
-    let mut fresh: Vec<(bool, Entity)> = Vec::new();
+    let mut fresh: Vec<(bool, i32, i32, Entity)> = Vec::new();
     for e in waiting {
         // Despawned, no longer an actor, already queued, or seen twice:
         // nothing to admit.
         let Ok((player, pos, on)) = actors.get(e) else { continue };
-        if turns.queue.contains(e) || fresh.iter().any(|(_, f)| *f == e) || turns.arriving.contains(&e) {
+        if turns.queue.contains(e) || fresh.iter().any(|(.., f)| *f == e) || turns.arriving.contains(&e) {
             continue;
         }
         match pos {
-            Some(pos) if where_play_is(&map, pos.0, on) => fresh.push((!player, e)),
+            Some(pos) if where_play_is(&map, pos.0, on) => fresh.push((!player, pos.0.y, pos.0.x, e)),
             _ => turns.arriving.push(e),
         }
     }
-    fresh.sort_by_key(|(not_player, e)| (*not_player, e.index()));
-    for (_, e) in fresh {
+    fresh.sort();
+    for (.., e) in fresh {
         turns.queue.insert_now(e);
     }
     let here = occupancy.current();

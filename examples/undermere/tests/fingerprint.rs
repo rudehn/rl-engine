@@ -29,27 +29,33 @@ fn fold(hash: &mut u64, value: i64) {
 }
 
 /// The run as the fingerprint reads it: the clock and the place being
-/// read, then every actor's place and health in spawn order, then the
-/// tally, its score's lines and its counts.
+/// read, then every actor's place and health in the order of where they
+/// stand, by place, row and column, then the tally, its score's lines and
+/// its counts.
 ///
-/// Spawn order rather than the entity index itself: systems are entities
-/// too, so adding one anywhere shifts every index after it, and that is
-/// not a change to the run. The tally's threat is read as the score reads
-/// it, rounded, so a float summed in another order on another machine is
-/// not a different run.
+/// Where they stand rather than which entity they are: Bevy numbers every
+/// entity from one allocator, which counts whatever is spawned anywhere
+/// and hands a freed number to the next spawn, so a light made a moment
+/// earlier or a body laid a pass later renumbers every monster after it,
+/// and that is not a change to the run. Two things that block cannot
+/// share a cell; anything else that can, a body or one that does not
+/// block, is put after by its health, and two alike in all four are
+/// folded the same whichever comes first. The tally's threat is read as
+/// the score reads it, rounded, so a float summed in another order on
+/// another machine is not a different run.
 fn fingerprint(app: &mut App) -> u64 {
     let mut hash = 0xcbf2_9ce4_8422_2325u64;
     fold(&mut hash, i64::from(app.world().resource::<Turns>().now()));
     fold(&mut hash, i64::from(app.world().resource::<WorldMap>().current().0));
     let world = app.world_mut();
-    let mut actors: Vec<(u32, u32, Point, i32)> =
-        world.query::<(Entity, &Position, &OnMap, &Health)>().iter(world).map(|(e, p, on, h)| (e.index().index(), on.0.0, p.0, h.current)).collect();
+    let mut actors: Vec<(u32, i32, i32, i32)> =
+        world.query::<(&Position, &OnMap, &Health)>().iter(world).map(|(p, on, h)| (on.0.0, p.0.y, p.0.x, h.current)).collect();
     actors.sort();
-    for (rank, (_, map, at, hp)) in actors.into_iter().enumerate() {
+    for (rank, (map, y, x, hp)) in actors.into_iter().enumerate() {
         fold(&mut hash, rank as i64);
         fold(&mut hash, i64::from(map));
-        fold(&mut hash, i64::from(at.x));
-        fold(&mut hash, i64::from(at.y));
+        fold(&mut hash, i64::from(x));
+        fold(&mut hash, i64::from(y));
         fold(&mut hash, i64::from(hp));
     }
     let tally = world.resource::<Tally>().clone();
@@ -124,10 +130,12 @@ enum Choice {
 }
 
 /// The script's choice for the adventurer's turn, first that applies: a
-/// blow at a monster beside them, the same one every run when there are
-/// several; the way on, when they stand on it; whatever lies where they
-/// stand, the first time they stand there; and otherwise the next step to
-/// the way on, the gate in Mereholt and the stairs down below.
+/// blow at a monster beside them, the first clockwise from north when
+/// there are several, so which one is chosen is a fact about the board
+/// rather than about the order they were spawned in; the way on, when
+/// they stand on it; whatever lies where they stand, the first time they
+/// stand there; and otherwise the next step to the way on, the gate in
+/// Mereholt and the stairs down below.
 fn decide(world: &mut World, me: Entity, tried: &mut BTreeSet<(MapId, Point)>) -> Choice {
     let here = world.resource::<WorldMap>().current();
     let at = world.get::<Position>(me).expect("standing somewhere").0;
@@ -136,11 +144,11 @@ fn decide(world: &mut World, me: Entity, tried: &mut BTreeSet<(MapId, Point)>) -
     // killed it, and `Dead` itself lasts only the one pass between dying
     // and being laid down as a body; `Actor` is what a body no longer is.
     let foe = world
-        .query_filtered::<(Entity, &Position, &OnMap), (With<Kind>, With<Actor>)>()
+        .query_filtered::<(&Position, &OnMap), (With<Kind>, With<Actor>)>()
         .iter(world)
-        .filter(|(_, p, on)| on.0 == here && p.0 != at && geometry::chebyshev(at, p.0) <= 1)
-        .min_by_key(|(e, _, _)| e.index().index())
-        .and_then(|(_, p, _)| Direction::between(at, p.0));
+        .filter(|(p, on)| on.0 == here && geometry::chebyshev(at, p.0) <= 1)
+        .filter_map(|(p, _)| Direction::between(at, p.0))
+        .min_by_key(|dir| dir.index());
     if let Some(dir) = foe {
         return Choice::Strike(dir);
     }
@@ -233,10 +241,10 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [12_826_463_484_626_565_180, 11_152_141_353_759_877_679, 11_520_846_931_859_029_772],
-        "fingerprint tripwire: re-baselined for seed three after the engine took over lighting tiles and props from \
-         their definitions: every lit room looks the same, but the fixtures are made when a place is built rather \
-         than on the game's arrival, so what is spawned after them is numbered differently and the scripted run, \
-         which picks its foes by number, fights another"
+        [17_789_207_108_726_490_835, 15_017_421_223_644_069_061, 13_145_090_223_247_674_010],
+        "fingerprint tripwire: re-baselined once the fingerprint, the script and the engine stopped reading Bevy's entity \
+         numbers as spawn order: the actors are hashed and the foe struck chosen by where they stand, and actors admitted \
+         to the turn queue together, the subjects a watcher rolls for and the listeners a noise reaches go in that order \
+         too, so a run no longer changes when something unrelated is spawned or freed"
     );
 }
