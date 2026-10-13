@@ -490,6 +490,26 @@ impl Undermere {
         self.biomes.get(&floor).unwrap_or_else(|| panic!("floor {floor} outside 1..={FLOORS}"))
     }
 
+    /// The light everywhere in `map` before anything in it is lit, which
+    /// its build carries: in every place, the engine's dim band, above the
+    /// least a cell needs to be seen and below the bright band.
+    ///
+    /// Mereholt is at dusk, blue and low; every floor below is its own drawn
+    /// biome's own ambient, from `assets/biomes.ron`, darker the deeper a
+    /// band stands, down to the throne's, among the darkest; the Spider
+    /// Warrens' alone is nought, truly dark, so the lantern is the only
+    /// light. Seen at all otherwise, so a floor's shape reads beyond the
+    /// lantern in deep, dark colour and is remembered where it was seen, as
+    /// Brogue keeps it; and no brighter than dim, so a body out there with no
+    /// light of its own is harder to pick out than one in a lamp's light, and
+    /// the lantern's pool stands out warm and bright. Any other map is dark.
+    pub fn ambient_of(&self, map: MapId) -> rl_engine::rl_grid::Light {
+        if map == TOWN {
+            return rl_engine::rl_grid::Light::new(30, rl_engine::rl_grid::Rgb::new(120, 140, 215));
+        }
+        floor_of(map).map_or(rl_engine::rl_grid::Light::DARK, |floor| self.biome_of(floor).ambient)
+    }
+
     /// The registered tiles, for `WorldMap::new`.
     pub fn tiles(&self) -> &TileRegistry {
         &self.tiles
@@ -743,6 +763,7 @@ impl PlaceRules for Undermere {
     fn build(&self, map: MapId, _: Option<&WorldGraph>) -> Result<PlaceBuild, BuildError> {
         let mut built = PlaceBuild::from_context(self.generate(map)?)?;
         crate::vaults::place_vault_fixtures(&mut built, &self.tiles, &self.prefabs, self.seed, map);
+        built.ambient = self.ambient_of(map);
         Ok(built)
     }
 }

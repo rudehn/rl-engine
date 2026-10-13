@@ -16,7 +16,6 @@
 //! picture painted under it, so a headless run has none and begins at
 //! startup.
 use bevy::prelude::*;
-use rl_engine::rl_bevy::EngineState;
 use rl_engine::rl_bevy::plugin::{EngineSet, NewRun, PerceiveSet, ResetsOnNewRun, Turn, TurnSet};
 use rl_engine::rl_bevy::{AddSound, AddVerb, AddWork, ConsumablesPlugin, LootPlugin, LootSet, PrefabPlugin, PrefabSet, PropsPlugin, RemainsPlugin, WorkPlugin};
 use rl_engine::rl_ui::{AddModal, AimFire, AimThrow, NarrationViewPlugin, NarratorPlugin, Phrase, Tones, ViewSet};
@@ -273,11 +272,8 @@ impl Plugin for FoundryPlugin {
         // else a deck fills with, and the line the log gives each deck.
         // First of Foundry's lines in a pass, for the order of the log.
         app.add_systems(Turn, crate::lifts::link_decks.before(crate::droids::sound_alarm).in_set(TurnSet::React));
-        // Light: each deck's ambient, set between the turns and the light,
-        // so the frame a lift lands on
-        // is drawn in the new deck's light; and the stores' wall lamps,
-        // hung on first arrival.
-        app.add_systems(Update, crate::light::set_ambient.after(EngineSet::Turns).before(EngineSet::Light).run_if(in_state(EngineState::Playing)));
+        // Light: the stores' wall lamps, hung on first arrival. Each deck's
+        // ambient is its build's, which the engine lights it by.
         app.add_systems(Turn, crate::light::light_the_lamps.in_set(TurnSet::React));
     }
 

@@ -31,7 +31,7 @@ use std::collections::BTreeMap;
 use crate::armory::{Armory, ItemKind};
 use crate::bestiary::MonsterDef;
 use crate::content::LightDef;
-use crate::dungeon::{FLOORS, TOWN, Undermere, floor_of};
+use crate::dungeon::{FLOORS, Undermere, floor_of};
 use crate::run::Adventurer;
 
 /// A lamp post's lantern: warm, and far enough to light the street round
@@ -98,8 +98,7 @@ pub fn lantern_radius(floor: Option<u32>) -> i32 {
 /// This run's biome for every floor, kept in a shape every system can
 /// hold: the engine boxes `Undermere` behind `PlaceRules` the moment a run
 /// begins, so nothing after that can ask it directly, and a system that
-/// reads this every pass, [`set_ambient`], must not rebuild it to ask
-/// either. Built once, by [`BiomeDraws::new`], off `Undermere::biome_of`,
+/// reads this every pass must not rebuild it to ask either. Built once, by [`BiomeDraws::new`], off `Undermere::biome_of`,
 /// which is pure over the seed, so this is too.
 #[derive(Resource, Clone, Debug)]
 pub struct BiomeDraws(BTreeMap<u32, crate::dungeon::BiomeDraw>);
@@ -116,26 +115,6 @@ impl BiomeDraws {
     pub(crate) fn of(&self, floor: u32) -> &crate::dungeon::BiomeDraw {
         self.0.get(&floor).unwrap_or_else(|| panic!("floor {floor} outside 1..={FLOORS}"))
     }
-}
-
-/// The light everywhere in `map` before anything in it is lit: in every
-/// place, the engine's dim band, above the least a cell needs to be seen
-/// and below the bright band.
-///
-/// Mereholt is at dusk, blue and low; every floor below is its own drawn
-/// biome's own ambient, from `assets/biomes.ron`, darker the deeper a
-/// band stands, down to the throne's, among the darkest; the Spider
-/// Warrens' alone is nought, truly dark, so the lantern is the only
-/// light. Seen at all otherwise, so a floor's shape reads beyond the
-/// lantern in deep, dark colour and is remembered where it was seen, as
-/// Brogue keeps it; and no brighter than dim, so a body out there with no
-/// light of its own is harder to pick out than one in a lamp's light, and
-/// the lantern's pool stands out warm and bright. Any other map is dark.
-pub fn ambient_of(draws: &BiomeDraws, map: MapId) -> Light {
-    if map == TOWN {
-        return Light::new(30, Rgb::new(120, 140, 215));
-    }
-    floor_of(map).map_or(Light::DARK, |floor| draws.of(floor).ambient)
 }
 
 /// The adventurer as the lantern reads them: what they carry, where, the
@@ -182,16 +161,6 @@ pub fn dim_the_lantern(
                 light.intensity = intensity;
             }
         }
-    }
-}
-
-/// Sets the current place's ambient, between the turns and the light, so
-/// the frame the stairs land on is drawn in the new place's light rather
-/// than the old one's.
-pub fn set_ambient(map: Res<WorldMap>, draws: Res<BiomeDraws>, mut lighting: ResMut<Lighting>) {
-    let ambient = ambient_of(&draws, map.current());
-    if lighting.ambient != ambient {
-        lighting.ambient = ambient;
     }
 }
 
@@ -333,8 +302,7 @@ mod tests {
             (lighting.threshold, lighting.bright, lighting.ambient)
         };
         let band = |light: Light| LightBand::of(light.intensity, threshold, bright);
-        let draws = BiomeDraws::new(&Undermere::new(RunSeed(0)));
-        assert_eq!(band(ambient_of(&draws, TOWN)), LightBand::Dim, "Mereholt at dusk");
+        assert_eq!(band(Undermere::new(RunSeed(0)).ambient_of(TOWN)), LightBand::Dim, "Mereholt at dusk");
 
         // Every one of the nine floors' biomes, over a span of seeds, by
         // the band its own floors fall in: (1, 2), (3, 4), (5, 6), (7, 8)
@@ -612,10 +580,10 @@ mod tests {
     #[test]
     fn each_place_is_drawn_in_its_own_ambient() {
         let mut app = crate::testing::headless(RunSeed(3));
+        let undermere = Undermere::new(RunSeed(3));
         crate::testing::arrive(&mut app, TOWN);
-        let draws = app.world().resource::<BiomeDraws>().clone();
-        assert_eq!(app.world().resource::<Lighting>().ambient, ambient_of(&draws, TOWN));
+        assert_eq!(app.world().resource::<Lighting>().ambient, undermere.ambient_of(TOWN));
         crate::testing::arrive(&mut app, map_of(5));
-        assert_eq!(app.world().resource::<Lighting>().ambient, ambient_of(&draws, map_of(5)));
+        assert_eq!(app.world().resource::<Lighting>().ambient, undermere.ambient_of(map_of(5)));
     }
 }

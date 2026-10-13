@@ -132,7 +132,15 @@ mod tests {
             let terrain = Terrain::filled(10, 8, tiles.expect("floor"));
             map.install_place(
                 MapId(id),
-                PlaceBuild { terrain, entry: Point::new(1, 1), exit: None, spots: Vec::new(), locks: Vec::new(), secrets: Vec::new() },
+                PlaceBuild {
+                    terrain,
+                    entry: Point::new(1, 1),
+                    exit: None,
+                    spots: Vec::new(),
+                    locks: Vec::new(),
+                    secrets: Vec::new(),
+                    ambient: rl_grid::Light::DARK,
+                },
             );
         }
         map.switch_to(MapId(1));

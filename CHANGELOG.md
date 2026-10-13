@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- A place carries its own ambient light. `PlaceBuild`, `PlaceMap` and `PlaceSave` gain `ambient`, the light everywhere in the place before anything in it is lit, which the builder sets and the place's save keeps, and `LightingPlugin` makes it `Lighting::ambient` whenever the current map changes and when a run is restored onto a place: at the head of the pass the place is arrived on, so the first mind to decide there sees by it, and again before the frame is drawn. `Light::DARK` is no ambient, and is what `PlaceBuild::from_context` gives. An ambient a game writes in the middle of a place stands until the player leaves it. On the surface the engine writes nothing but the ambient that stood there when the player first went into a place, given back when they come out. A save written before has no ambient and loads its places dark.
+  To change: a game that writes a `PlaceBuild` or `PlaceSave` literal adds `ambient` (`Light::DARK` for none). A game that set the ambient from the current map every frame, as Undermere's and Foundry's `set_ambient` did, sets it on its build instead and drops the system; a game with places that inserted a lit `Lighting` once at start sets that light on each build, since an arrival now takes the place's.
+
 - The Corsair, Delve and Heist example games are removed, so the examples are the tutorial, Undermere and Foundry, fewer games to keep up with the engine. `OverworldPlugin` and `StreamingPlugin` stay in the engine unchanged, with no example game using them for now: their reference pages say so where a snippet stood, and every other page that quoted one of the three quotes Undermere or Foundry instead.
   To change: nothing in a game. `cargo run -p corsair`, `-p delve` and `-p heist` are gone, and a game that copied from one of them keeps its copy.
 

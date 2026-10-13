@@ -470,16 +470,9 @@ impl Plugin for UndermerePlugin {
         // A mercenary come through beside the adventurer is told of as
         // following them, not as leaving.
         app.add_systems(Update, crate::mercenaries::say_who_came.in_set(ViewSet::Annotate));
-        // Each place's ambient, set between the turns and the light, so the
-        // frame the stairs land on is drawn in the new place's light; and
-        // beside it a camp's fire lit, so the frame it is stood is lit.
-        app.add_systems(
-            Update,
-            (crate::light::set_ambient, crate::light::light_loose_props)
-                .after(EngineSet::Turns)
-                .before(EngineSet::Light)
-                .run_if(in_state(EngineState::Playing)),
-        );
+        // A camp's fire lit between the turns and the light, so the frame
+        // it is stood is lit.
+        app.add_systems(Update, crate::light::light_loose_props.after(EngineSet::Turns).before(EngineSet::Light).run_if(in_state(EngineState::Playing)));
         // A photograph's ask to stand near something on the floor it
         // starts on, which a real run never makes.
         app.add_systems(

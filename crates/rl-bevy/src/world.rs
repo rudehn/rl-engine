@@ -201,6 +201,9 @@ pub struct PlaceMap {
     pub locks: Vec<Lock>,
     /// Every cell still hiding what it is, walled over in `terrain`.
     pub secrets: Vec<Secret>,
+    /// The light everywhere in it before anything is lit, as its builder
+    /// chose.
+    pub ambient: rl_grid::Light,
     /// Whether the player has arrived here yet. A place is built for
     /// whoever gets there first, and a monster that ran down the stairs
     /// ahead of the player builds the floor it lands on; the game still
@@ -326,7 +329,16 @@ impl WorldMap {
     pub fn install_place(&mut self, map: MapId, build: PlaceBuild) {
         assert!(!map.is_surface(), "the surface is not a place");
         let secrets = build.secrets.into_iter().map(|s| Secret::hidden(s, build.terrain.get(s.at).unwrap_or(s.is))).collect();
-        let place = PlaceMap { terrain: build.terrain, entry: build.entry, exit: build.exit, spots: build.spots, locks: build.locks, secrets, visited: false };
+        let place = PlaceMap {
+            terrain: build.terrain,
+            entry: build.entry,
+            exit: build.exit,
+            spots: build.spots,
+            locks: build.locks,
+            secrets,
+            ambient: build.ambient,
+            visited: false,
+        };
         self.places.insert(map, place);
     }
 
@@ -579,6 +591,7 @@ impl WorldMap {
                         spots: p.spots.clone(),
                         locks: p.locks.clone(),
                         secrets: p.secrets.clone(),
+                        ambient: p.ambient,
                         visited: p.visited,
                     },
                 )
@@ -600,7 +613,17 @@ impl WorldMap {
                 for s in secrets.iter_mut().filter(|s| s.shows == Secret::unread()) {
                     s.shows = p.terrain.get(s.at).unwrap_or(s.is);
                 }
-                (id, PlaceMap { terrain: p.terrain, entry: p.entry, exit: p.exit, spots: p.spots, locks: p.locks, secrets, visited: p.visited })
+                let place = PlaceMap {
+                    terrain: p.terrain,
+                    entry: p.entry,
+                    exit: p.exit,
+                    spots: p.spots,
+                    locks: p.locks,
+                    secrets,
+                    ambient: p.ambient,
+                    visited: p.visited,
+                };
+                (id, place)
             })
             .collect();
         self.current = MapId::SURFACE;
@@ -638,6 +661,10 @@ pub struct PlaceSave {
     /// places had secrets, whose walls then stay walls.
     #[serde(default)]
     pub secrets: Vec<Secret>,
+    /// The light everywhere in it before anything is lit; dark in a save
+    /// written before places carried their own.
+    #[serde(default)]
+    pub ambient: rl_grid::Light,
     /// Whether the player had arrived there. A save written before anyone
     /// but the player travelled holds only places the player built by
     /// arriving, so one with no word on it reads as visited.
@@ -808,6 +835,7 @@ mod tests {
             spots: Vec::new(),
             locks: locks.to_vec(),
             secrets: Vec::new(),
+            ambient: rl_grid::Light::DARK,
         };
         let mut map = WorldMap::new(tiles.tables());
         map.install_place(MapId(1), build);

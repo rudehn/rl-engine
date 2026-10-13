@@ -17,7 +17,7 @@
 use rl_engine::rl_bevy::layout::LayoutTiles;
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::RunSeed;
-use rl_engine::rl_grid::{TileId, TileProps, TileRegistry};
+use rl_engine::rl_grid::{Light, Rgb, TileId, TileProps, TileRegistry};
 use rl_engine::rl_mapgen::dungeon::{FarthestExit, RandomStart};
 use rl_engine::rl_mapgen::prefab::{Orient, Placement, Prefab, StampEachRoom, StampOneOf, StampPrefab};
 use rl_engine::rl_mapgen::{BaseContext, BuildError, Chain, Survey};
@@ -51,6 +51,17 @@ pub fn recipe_of(deck: u32) -> &'static str {
 /// The deck a map id is; decks count from one.
 pub fn deck_of(map: MapId) -> u32 {
     map.0
+}
+
+/// The light everywhere on `deck`, which its build carries. Deck one
+/// keeps a dim working light, lit enough to be seen, so the first fight
+/// is learned with the lights on; every deck below it is dark, which is
+/// where a probe's radar starts to matter.
+pub fn ambient_of(deck: u32) -> Light {
+    match deck {
+        1 => Light::new(36, Rgb::new(185, 200, 225)),
+        _ => Light::DARK,
+    }
 }
 
 /// The map id of a deck.
@@ -243,7 +254,9 @@ impl Foundry {
 
 impl PlaceRules for Foundry {
     fn build(&self, map: MapId, _: Option<&WorldGraph>) -> Result<PlaceBuild, BuildError> {
-        PlaceBuild::from_context(self.generate(map)?)
+        let mut built = PlaceBuild::from_context(self.generate(map)?)?;
+        built.ambient = ambient_of(deck_of(map));
+        Ok(built)
     }
 }
 

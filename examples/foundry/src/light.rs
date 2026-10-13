@@ -15,9 +15,8 @@
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
-use rl_engine::rl_grid::{Light, Rgb, TileId};
+use rl_engine::rl_grid::{Rgb, TileId};
 
-use crate::decks::deck_of;
 use crate::input::Binds;
 
 /// The commando's shoulder lamp: a steady, cool light reaching six tiles.
@@ -29,31 +28,10 @@ pub const SHOULDER_LAMP: LightSource = LightSource::new(200, 6, Rgb::new(215, 23
 /// corridor outside its door.
 pub const WALL_LAMP: LightSource = LightSource::new(170, 5, Rgb::new(255, 225, 150));
 
-/// The light everywhere on `deck`. Deck one keeps a dim working light, lit
-/// enough to be seen, so the first fight is learned with the lights on;
-/// every deck below it is dark, which is where a probe's radar starts to
-/// matter.
-pub fn ambient_of(deck: u32) -> Light {
-    match deck {
-        1 => Light::new(36, Rgb::new(185, 200, 225)),
-        _ => Light::DARK,
-    }
-}
-
 /// The tile a wall lamp is, from `decks::Foundry`, kept so a deck's lamps
 /// can be found after the map has been handed to the engine.
 #[derive(Resource, Debug, Clone, Copy)]
 pub struct LampTile(pub TileId);
-
-/// Sets the current deck's ambient, between the turns and the light, so
-/// the frame a lift lands on is drawn in the new deck's light rather than
-/// the old one's.
-pub fn set_ambient(map: Res<WorldMap>, mut lighting: ResMut<Lighting>) {
-    let ambient = ambient_of(deck_of(map.current()));
-    if lighting.ambient != ambient {
-        lighting.ambient = ambient;
-    }
-}
 
 /// Hangs a [`WALL_LAMP`] on every lamp tile of a deck the first time it
 /// is entered. A fixture: an entity with no turns, so the engine keeps it
@@ -117,6 +95,7 @@ pub fn toggle_lamp(
 mod tests {
     use rl_engine::rl_bevy::testing::{KeyScript, KeyScriptPlugin};
     use rl_engine::rl_core::{Point, RunSeed};
+    use rl_engine::rl_grid::Light;
 
     use super::*;
 
@@ -126,6 +105,7 @@ mod tests {
 
     #[test]
     fn deck_one_is_lit_enough_to_see_and_the_decks_below_are_dark() {
+        use crate::decks::ambient_of;
         assert!(ambient_of(1).intensity >= rl_engine::rl_bevy::lighting::DEFAULT_THRESHOLD, "deck one's working light is enough to see by");
         assert_eq!(ambient_of(2), Light::DARK);
         assert_eq!(ambient_of(3), Light::DARK);

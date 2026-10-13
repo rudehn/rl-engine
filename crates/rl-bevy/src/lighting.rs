@@ -32,9 +32,16 @@
 //! What the player sees of a thing is one question, [`PlayerSight::shows`]:
 //! on this map, in its viewshed, and not [`Concealed`] out of the light.
 //!
-//! Ambient is a plain field the game writes: once at start for a dungeon,
-//! from a system of its own for a surface with nights. The engine has no
-//! clock hook and no notion of a day.
+//! Ambient is the light everywhere on the current map, blended in last.
+//! A place carries its own, [`PlaceBuild::ambient`](crate::places::PlaceBuild::ambient),
+//! which its builder chose and its save keeps, and the plugin takes it into
+//! [`Lighting::ambient`] whenever the current map changes or a run is
+//! restored, before anybody decides or anything is drawn by the light: in
+//! the pass the stairs land, and in the frame. The surface is the game's:
+//! the plugin writes nothing there but the ambient that stood when the
+//! player first went into a place, given back when they come out, so a
+//! surface lit once at start stays lit and one with nights is lit by the
+//! game's own system. The engine has no clock hook and no notion of a day.
 
 use bevy::prelude::*;
 use rl_core::{Grid2D, Point, Rect, geometry};
@@ -128,8 +135,10 @@ pub const DEFAULT_BRIGHT: u8 = 64;
 /// The light over the loaded window. Inserting it turns lighting on.
 #[derive(Resource, Debug, Clone)]
 pub struct Lighting {
-    /// Light everywhere on the current map, blended in last. The game
-    /// writes it; the engine never changes it.
+    /// Light everywhere on the current map, blended in last. In a place,
+    /// the place's own ambient, taken by the plugin the first pass the
+    /// place is current; on the surface, the game's. A game may still
+    /// write it, and what it writes stands until the current map changes.
     pub ambient: Light,
     /// The intensity at or above which a tile is seen.
     pub threshold: u8,
@@ -150,6 +159,13 @@ pub struct Lighting {
     glow: (MapId, Vec<(Point, LightSource)>),
     /// Whether the glow was replaced by a different one since the last cast.
     glow_moved: bool,
+    /// The place whose ambient was last taken, and the map's generation
+    /// then, which a switch of maps and a restored run both move. `None`
+    /// on the surface.
+    followed: Option<(MapId, u64)>,
+    /// The ambient that stood on the surface when the player went into a
+    /// place, given back when they come out.
+    surface_ambient: Option<Light>,
 }
 
 impl Lighting {
@@ -172,6 +188,8 @@ impl Lighting {
             static_dirty: true,
             glow: (MapId::SURFACE, Vec::new()),
             glow_moved: false,
+            followed: None,
+            surface_ambient: None,
         }
     }
 
@@ -213,6 +231,33 @@ impl Lighting {
         let glow = (map, glow);
         self.glow_moved |= self.glow != glow;
         self.glow = glow;
+    }
+
+    /// Takes the current place's ambient, once per arrival: when the place
+    /// or the map's generation differs from the last one taken, which is
+    /// a switch of maps or a restored run, and never otherwise, so an
+    /// ambient a game writes in the middle of a place stands until the
+    /// player leaves it. On the surface it gives back the ambient that
+    /// stood there before the first place was entered.
+    fn follow_place(&mut self, map: &WorldMap) {
+        let here = map.current();
+        let Some(place) = map.place(here).filter(|_| !here.is_surface()) else {
+            if self.followed.take().is_some()
+                && let Some(ambient) = self.surface_ambient.take()
+            {
+                self.ambient = ambient;
+            }
+            return;
+        };
+        let key = (here, map.generation());
+        if self.followed == Some(key) {
+            return;
+        }
+        if self.followed.is_none() {
+            self.surface_ambient = Some(self.ambient);
+        }
+        self.followed = Some(key);
+        self.ambient = place.ambient;
     }
 
     /// Whether something only this resource and the map know of has changed
@@ -308,7 +353,9 @@ fn changed_area(was: &[Emitter], now: &[Emitter]) -> Option<Rect> {
 type Lit = (Option<&'static Position>, &'static mut Viewshed);
 
 /// Recasts whatever changed and marks stale the viewsheds the change could
-/// reach. Runs after the turns and before sight.
+/// reach. Runs after the turns and before sight, and takes a place's
+/// ambient first, so a run restored onto a place is drawn in that place's
+/// light from its first frame.
 ///
 /// Only those it could reach: a viewshed is cut down to what is lit inside
 /// its own range, so a lamp that moved at the far end of the window cannot
@@ -319,6 +366,7 @@ type Lit = (Option<&'static Position>, &'static mut Viewshed);
 /// or a frame three times over at sixty-four of them.
 pub fn update_lighting(map: Res<WorldMap>, lighting: Option<ResMut<Lighting>>, sources: Sources, mut viewsheds: Query<Lit>) {
     let Some(mut lighting) = lighting else { return };
+    lighting.follow_place(&map);
     recast(&map, &mut lighting, &sources, &mut viewsheds);
 }
 
@@ -361,9 +409,12 @@ impl LightMoves<'_, '_> {
 /// every mind that acted in the same frame, and a lamp carried a step lit
 /// the cell it had left: one turn of sight by light that was gone. The
 /// viewsheds a change reaches are marked stale here exactly as there, and
-/// [`sense`](crate::minds::sense) recasts the one about to decide.
+/// [`sense`](crate::minds::sense) recasts the one about to decide. A place
+/// arrived on in the pass before is lit by its own ambient here, so the
+/// first mind to decide on it sees by that light, not the last map's.
 pub fn relight(map: Res<WorldMap>, lighting: Option<ResMut<Lighting>>, mut moves: LightMoves, sources: Sources, mut viewsheds: Query<Lit>) {
     let Some(mut lighting) = lighting else { return };
+    lighting.follow_place(&map);
     if moves.any() || lighting.is_behind(&map) {
         recast(&map, &mut lighting, &sources, &mut viewsheds);
     }
@@ -567,9 +618,9 @@ pub fn tick_fuel(
     }
 }
 
-/// Lighting: what each source sheds, what fuel costs, and the gate that
-/// decides what a viewshed actually sees. Dark until a game says
-/// otherwise.
+/// Lighting: what each source sheds, what fuel costs, the gate that
+/// decides what a viewshed actually sees, and each place lit by its own
+/// ambient. Dark until a game or a place's build says otherwise.
 pub struct LightingPlugin;
 
 impl Plugin for LightingPlugin {
@@ -618,14 +669,16 @@ mod tests {
         "####################",
     ];
 
-    /// One dark room, whatever map is asked for.
-    struct Room(TileRegistry);
+    /// One room, whatever map is asked for: map `n` under the `n`th
+    /// ambient listed, and dark past the end of the list.
+    struct Room(TileRegistry, Vec<Light>);
 
     impl PlaceRules for Room {
-        fn build(&self, _: MapId, _: Option<&WorldGraph>) -> Result<PlaceBuild, BuildError> {
+        fn build(&self, map: MapId, _: Option<&WorldGraph>) -> Result<PlaceBuild, BuildError> {
             let (wall, floor) = (self.0.expect("wall"), self.0.expect("floor"));
             let terrain = Terrain::from_fn(20, 9, |p| if ROOM[p.y as usize].as_bytes()[p.x as usize] == b'#' { wall } else { floor });
-            Ok(PlaceBuild { terrain, entry: Point::new(5, 4), exit: None, spots: Vec::new(), locks: Vec::new(), secrets: Vec::new() })
+            let ambient = self.1.get((map.0 as usize).wrapping_sub(1)).copied().unwrap_or(Light::DARK);
+            Ok(PlaceBuild { terrain, entry: Point::new(5, 4), exit: None, spots: Vec::new(), locks: Vec::new(), secrets: Vec::new(), ambient })
         }
     }
 
@@ -636,19 +689,26 @@ mod tests {
     }
 
     impl Rig {
-        fn new(lighting: Option<Lighting>, dark_sight: Option<i32>) -> Self {
+        /// The player in a room on map 1, lit when `ambient` is given by
+        /// that ambient, the room's own.
+        fn new(ambient: Option<Light>, dark_sight: Option<i32>) -> Self {
+            Self::rooms(ambient.map(|a| vec![a]), dark_sight)
+        }
+
+        /// The player in a room on map 1, lit when `ambients` is given,
+        /// map `n` by its `n`th.
+        fn rooms(ambients: Option<Vec<Light>>, dark_sight: Option<i32>) -> Self {
             let mut app = headless_app();
             app.add_plugins((crate::fov::FovPlugin, crate::items::ItemsPlugin));
             let tiles = TileRegistry::standard();
             let wall = tiles.expect("wall");
             app.insert_resource(WorldMap::new(tiles.tables()));
-            app.insert_resource(PlaceRulesRes(Box::new(Room(tiles))));
             // Lighting is a plugin: without it there is no gate at all,
             // which is what a game that never lights anything gets.
-            if let Some(l) = lighting {
+            if ambients.is_some() {
                 app.add_plugins(LightingPlugin);
-                app.insert_resource(l);
             }
+            app.insert_resource(PlaceRulesRes(Box::new(Room(tiles, ambients.unwrap_or_default()))));
             let mut player = app.world_mut().spawn((Actor, Player, Blocks, Position(Point::ZERO), Viewshed::new(12), RevealsMap, Inventory::default()));
             if let Some(d) = dark_sight {
                 player.insert(DarkSight(d));
@@ -694,7 +754,7 @@ mod tests {
 
     #[test]
     fn in_the_dark_the_player_sees_only_what_it_touches() {
-        let rig = Rig::new(Some(Lighting::dark()), None);
+        let rig = Rig::new(Some(Light::DARK), None);
         assert_eq!(rig.seen_count(), 9, "itself and its eight neighbours");
         assert!(rig.in_line(Point::new(15, 4)) && !rig.sees(Point::new(15, 4)));
         assert!(!rig.app.world().resource::<Knowledge>().is_explored(Point::new(15, 4)), "not remembered until lit");
@@ -702,21 +762,55 @@ mod tests {
 
     #[test]
     fn dark_sight_reaches_further_than_touch() {
-        let rig = Rig::new(Some(Lighting::dark()), Some(4));
+        let rig = Rig::new(Some(Light::DARK), Some(4));
         assert!(rig.sees(Point::new(9, 4)));
         assert!(!rig.sees(Point::new(10, 4)));
     }
 
     #[test]
     fn ambient_lights_the_whole_room() {
-        let rig = Rig::new(Some(Lighting::new(Light::white(40))), None);
+        let rig = Rig::new(Some(Light::white(40)), None);
         let v = rig.app.world().get::<Viewshed>(rig.player).unwrap();
         assert_eq!(v.visible.count(), v.line.count());
     }
 
+    /// Each place is lit by its own ambient from the frame the player
+    /// arrives, with nothing of a game's writing it; an ambient written in
+    /// the middle of a place stands until the player leaves it, and
+    /// coming back is lit as the place's builder said.
+    #[test]
+    fn a_place_is_lit_by_its_own_ambient_from_the_frame_it_is_arrived_on() {
+        let lit = Light::white(40);
+        let mut rig = Rig::rooms(Some(vec![Light::DARK, lit]), None);
+        let ambient = |rig: &Rig| rig.app.world().resource::<Lighting>().ambient;
+        let whole_room = |rig: &Rig| {
+            let v = rig.app.world().get::<Viewshed>(rig.player).unwrap();
+            v.visible.count() == v.line.count()
+        };
+        assert_eq!((ambient(&rig), rig.seen_count()), (Light::DARK, 9), "map 1 is dark");
+
+        let player = rig.player;
+        rig.app.world_mut().write_message(WarpRequest::into_place(player, MapId(2)));
+        rig.app.update();
+        assert_eq!(rig.app.world().resource::<WorldMap>().current(), MapId(2));
+        assert_eq!(ambient(&rig), lit, "the frame of arrival is lit by the place's own ambient");
+        assert!(whole_room(&rig), "and the player sees the whole room by it in that frame");
+
+        rig.app.world_mut().resource_mut::<Lighting>().ambient = Light::white(100);
+        rig.act(Wait);
+        assert_eq!(ambient(&rig), Light::white(100), "what a game writes in the middle of a place stands");
+
+        rig.app.world_mut().write_message(WarpRequest::into_place(player, MapId(1)));
+        rig.app.update();
+        assert_eq!((ambient(&rig), rig.seen_count()), (Light::DARK, 9), "back on map 1, dark again in the frame of arrival");
+        rig.app.world_mut().write_message(WarpRequest::into_place(player, MapId(2)));
+        rig.app.update();
+        assert_eq!(ambient(&rig), lit, "and map 2 is lit by its builder's word, not by what was written there");
+    }
+
     #[test]
     fn a_fixture_lights_what_it_can_see_until_a_wall_goes_up() {
-        let mut rig = Rig::new(Some(Lighting::dark()), None);
+        let mut rig = Rig::new(Some(Light::DARK), None);
         let brazier = Point::new(14, 4);
         rig.app.world_mut().spawn((Position(brazier), LightSource::new(200, 5, amber())));
         rig.act(Wait);
@@ -744,7 +838,7 @@ mod tests {
 
     #[test]
     fn a_carried_light_moves_with_the_carrier_and_lies_where_dropped() {
-        let mut rig = Rig::new(Some(Lighting::dark()), None);
+        let mut rig = Rig::new(Some(Light::DARK), None);
         let torch = rig.app.world_mut().spawn((Item, Position(Point::new(7, 4)), LightSource::new(180, 4, amber()))).id();
         rig.act(Wait);
         assert!(rig.sees(Point::new(9, 4)), "lit by the torch on the floor");
@@ -777,7 +871,7 @@ mod tests {
 
     #[test]
     fn fuel_burns_down_and_the_light_goes_out_once() {
-        let mut rig = Rig::new(Some(Lighting::dark()), None);
+        let mut rig = Rig::new(Some(Light::DARK), None);
         // Counted through a reader rather than by peeking at the buffer:
         // when a headless app swaps its message buffers depends on wall
         // time, so a peek sees a message on one frame, two, or none, and
@@ -881,7 +975,7 @@ mod tests {
 
     #[test]
     fn a_darkness_lowers_the_band_of_the_cells_it_reaches_and_nothing_else() {
-        let mut rig = Rig::new(Some(Lighting::new(Light::white(100))), None);
+        let mut rig = Rig::new(Some(Light::white(100)), None);
         let before = survey(&rig);
         let heart = Point::new(12, 4);
         rig.app.world_mut().spawn((Position(heart), LightSource::darkness(255, 4)));
@@ -900,7 +994,7 @@ mod tests {
 
     #[test]
     fn standing_in_a_darkness_hides_as_standing_in_the_dark_does() {
-        let mut rig = Rig::new(Some(Lighting::dark()), None);
+        let mut rig = Rig::new(Some(Light::DARK), None);
         let here = Point::new(5, 4);
         rig.app.world_mut().entity_mut(rig.player).insert(LightSource::new(200, 6, amber()));
         rig.act(Wait);
@@ -925,7 +1019,7 @@ mod tests {
     /// newly seen.
     #[test]
     fn a_darkness_never_lightens_or_reveals_a_cell_wherever_it_stands() {
-        let mut rig = Rig::new(Some(Lighting::new(Light::white(30))), None);
+        let mut rig = Rig::new(Some(Light::white(30)), None);
         rig.app.world_mut().spawn((Position(Point::new(14, 4)), LightSource::new(220, 6, amber())));
         rig.act(Wait);
         let before = survey(&rig);
@@ -955,7 +1049,7 @@ mod tests {
     /// beside the player or a light falls on it.
     #[test]
     fn a_concealed_actor_is_unseen_in_the_dark_but_seen_beside_the_player_or_in_a_light() {
-        let mut rig = Rig::new(Some(Lighting::dark()), Some(6));
+        let mut rig = Rig::new(Some(Light::DARK), Some(6));
         let here = OnMap(MapId(1));
         let plain = rig.app.world_mut().spawn((Actor, Position(Point::new(9, 4)), here)).id();
         let hiding = rig.app.world_mut().spawn((Actor, Concealed, Position(Point::new(9, 5)), here)).id();

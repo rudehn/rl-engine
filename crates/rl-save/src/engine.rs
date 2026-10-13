@@ -311,7 +311,18 @@ mod tests {
         let (mut app, _) = fresh();
         {
             let mut map = app.world_mut().resource_mut::<WorldMap>();
-            map.install_place(place, rl_bevy::PlaceBuild { terrain, entry: Point::new(1, 1), exit: None, spots: Vec::new(), locks: Vec::new(), secrets });
+            map.install_place(
+                place,
+                rl_bevy::PlaceBuild {
+                    terrain,
+                    entry: Point::new(1, 1),
+                    exit: None,
+                    spots: Vec::new(),
+                    locks: Vec::new(),
+                    secrets,
+                    ambient: rl_grid::Light::DARK,
+                },
+            );
             map.switch_to(place);
             map.find_secret(place, open);
         }
@@ -326,6 +337,54 @@ mod tests {
         assert_eq!(map.secrets(place), [rl_bevy::Secret { at: shut, is: door, shows: wall, spot: 6, group: 0 }]);
         map.find_secret(place, shut);
         assert_eq!(map.tile(shut), Some(door), "and the hidden one is still there to find");
+    }
+
+    /// A place keeps the ambient its builder gave it through a save, and a
+    /// continued run onto it is lit by it from its first frame, with
+    /// nothing of the game's writing the light; a save written before
+    /// places carried one loads them dark.
+    #[test]
+    fn a_place_s_ambient_survives_a_save_and_lights_the_continued_run_from_its_first_frame() {
+        let (lit, dim) = (rl_grid::Light::white(40), rl_grid::Light::new(20, rl_grid::Rgb::new(90, 110, 200)));
+        let floor = rl_grid::TileRegistry::standard().expect("floor");
+        let build = |ambient| rl_bevy::PlaceBuild {
+            terrain: rl_grid::Terrain::filled(8, 5, floor),
+            entry: Point::new(1, 1),
+            exit: None,
+            spots: Vec::new(),
+            locks: Vec::new(),
+            secrets: Vec::new(),
+            ambient,
+        };
+        let (mut app, _) = fresh();
+        {
+            let mut map = app.world_mut().resource_mut::<WorldMap>();
+            map.install_place(rl_bevy::MapId(1), build(lit));
+            map.install_place(rl_bevy::MapId(2), build(dim));
+            map.switch_to(rl_bevy::MapId(2));
+        }
+        app.insert_resource(Seed(RunSeed(5)));
+        let save = EngineSave::capture(app.world_mut(), &mut EntityRemap::new());
+        let text = crate::encode(1, &save).unwrap();
+        let back: EngineSave = crate::decode(1, &text).unwrap();
+
+        let (mut app2, _) = fresh();
+        app2.add_plugins(rl_bevy::LightingPlugin);
+        app2.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app2.update();
+        assert_eq!(app2.world().resource::<rl_bevy::Lighting>().ambient, rl_grid::Light::DARK, "dark before the continue");
+        back.restore(app2.world_mut(), &EntityRemap::new());
+        app2.update();
+        assert_eq!(app2.world().resource::<rl_bevy::Lighting>().ambient, dim, "the place the run was saved on, in its own light");
+        let map = app2.world().resource::<WorldMap>();
+        assert_eq!(map.place(rl_bevy::MapId(1)).map(|p| p.ambient), Some(lit), "and the other place keeps its own");
+
+        // A save written before places had an ambient has no word on it.
+        let text = ron::to_string(&save.map).unwrap();
+        let old = text.replace(&format!(",ambient:{}", ron::to_string(&dim).unwrap()), "").replace(&format!(",ambient:{}", ron::to_string(&lit).unwrap()), "");
+        assert!(!old.contains("ambient"), "{old}");
+        let older: rl_bevy::WorldMapSave = ron::from_str(&old).unwrap();
+        assert!(older.places.iter().all(|(_, p)| p.ambient == rl_grid::Light::DARK), "it loads, with every place dark");
     }
 
     /// The stairs the player saw are part of what the player knows, so a

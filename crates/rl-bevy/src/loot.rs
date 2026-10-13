@@ -607,6 +607,7 @@ pub(crate) mod tests {
                 spots: vec![crate::places::Spot { tag: 'A' as u32, at: mark, prefab: None }],
                 locks: Vec::new(),
                 secrets: Vec::new(),
+                ambient: rl_grid::Light::DARK,
             },
         );
         world.switch_to(map);

@@ -1185,7 +1185,15 @@ mod tests {
         fn build(&self, _: crate::places::MapId, _: Option<&rl_world::WorldGraph>) -> Result<crate::places::PlaceBuild, rl_mapgen::BuildError> {
             let (wall, floor) = (self.0.expect("wall"), self.0.expect("floor"));
             let terrain = rl_grid::Terrain::from_fn(12, 8, |p| if p.x == 0 || p.y == 0 || p.x == 11 || p.y == 7 { wall } else { floor });
-            Ok(crate::places::PlaceBuild { terrain, entry: Point::new(2, 2), exit: None, spots: Vec::new(), locks: Vec::new(), secrets: Vec::new() })
+            Ok(crate::places::PlaceBuild {
+                terrain,
+                entry: Point::new(2, 2),
+                exit: None,
+                spots: Vec::new(),
+                locks: Vec::new(),
+                secrets: Vec::new(),
+                ambient: rl_grid::Light::DARK,
+            })
         }
     }
 

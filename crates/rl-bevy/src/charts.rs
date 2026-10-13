@@ -190,7 +190,15 @@ mod tests {
                     HALLS.len() as i32,
                     |p| if HALLS[p.y as usize].as_bytes()[p.x as usize] == b'#' { wall } else { floor },
                 );
-            Ok(PlaceBuild { terrain, entry: Point::new(1, 1), exit: None, spots: Vec::new(), locks: Vec::new(), secrets: Vec::new() })
+            Ok(PlaceBuild {
+                terrain,
+                entry: Point::new(1, 1),
+                exit: None,
+                spots: Vec::new(),
+                locks: Vec::new(),
+                secrets: Vec::new(),
+                ambient: rl_grid::Light::DARK,
+            })
         }
     }
 

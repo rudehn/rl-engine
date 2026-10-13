@@ -2834,7 +2834,10 @@ mod spotting {
             })
             .collect();
         let mut map = WorldMap::new(tiles.tables());
-        map.install_place(PLACE, PlaceBuild { terrain, entry: START, exit: None, spots: Vec::new(), locks: Vec::new(), secrets });
+        map.install_place(
+            PLACE,
+            PlaceBuild { terrain, entry: START, exit: None, spots: Vec::new(), locks: Vec::new(), secrets, ambient: rl_grid::Light::DARK },
+        );
         map.switch_to(PLACE);
         let mut app = headless_app();
         app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin, PropsPlugin::spotting(rules)));

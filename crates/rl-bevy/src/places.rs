@@ -141,6 +141,13 @@ pub struct PlaceBuild {
     /// Every cell the builder hid, walled over in `terrain`, in the order
     /// [`HideOpenings`](rl_mapgen::HideOpenings) published them.
     pub secrets: Vec<rl_mapgen::Secret>,
+    /// The light everywhere in the place before anything in it is lit,
+    /// which [`LightingPlugin`](crate::lighting::LightingPlugin) makes the
+    /// ambient whenever the place is current. Kept with the place and its
+    /// save, so the builder that knew why a floor is lit is the only thing
+    /// that says so. [`Light::DARK`](rl_grid::Light::DARK) is no ambient,
+    /// and is what [`from_context`](Self::from_context) gives.
+    pub ambient: rl_grid::Light,
 }
 
 impl PlaceBuild {
@@ -157,7 +164,8 @@ impl PlaceBuild {
     /// joined [`Locked`](rl_mapgen::Join::Locked) becomes a [`Lock`] to
     /// that tag, and every one joined [`Sealed`](rl_mapgen::Join::Sealed)
     /// a seal. Every [`Secret`](rl_mapgen::Secret) a pass published is
-    /// carried as it was.
+    /// carried as it was. The ambient is dark; a builder lighting the
+    /// place sets [`ambient`](Self::ambient) on what this returns.
     pub fn from_context(ctx: rl_mapgen::BaseContext) -> Result<Self, BuildError> {
         use rl_mapgen::BuildContext;
         let entry = ctx.outputs().first::<rl_mapgen::passes::StartPoint>().ok_or_else(|| BuildError::new("place", "the chain emitted no start point"))?.0;
@@ -181,7 +189,7 @@ impl PlaceBuild {
             .collect();
         let secrets = ctx.outputs().iter::<rl_mapgen::Secret>().copied().collect();
         let (terrain, _) = ctx.finish();
-        Ok(Self { terrain, entry, exit, spots, locks, secrets })
+        Ok(Self { terrain, entry, exit, spots, locks, secrets, ambient: rl_grid::Light::DARK })
     }
 }
 
@@ -570,7 +578,15 @@ mod tests {
             let entry = ctx.outputs().first::<StartPoint>().unwrap().0;
             let exit = ctx.outputs().first::<rl_mapgen::dungeon::ExitPoint>().map(|e| e.0);
             let (terrain, _) = ctx.finish();
-            Ok(PlaceBuild { terrain, entry, exit, spots: vec![Spot { tag: 7, at: entry, prefab: None }], locks: Vec::new(), secrets: Vec::new() })
+            Ok(PlaceBuild {
+                terrain,
+                entry,
+                exit,
+                spots: vec![Spot { tag: 7, at: entry, prefab: None }],
+                locks: Vec::new(),
+                secrets: Vec::new(),
+                ambient: rl_grid::Light::DARK,
+            })
         }
     }
 

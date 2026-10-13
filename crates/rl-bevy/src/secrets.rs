@@ -105,7 +105,7 @@ mod tests {
         let secret = |at: Point, is, group| rl_mapgen::Secret { at, is, spot: 6, group, joins: (0, 1) };
         let secrets =
             vec![secret(Point::new(3, 2), door, 0), secret(Point::new(6, 1), floor, 1), secret(Point::new(6, 2), floor, 1), secret(Point::new(6, 3), floor, 1)];
-        let build = PlaceBuild { terrain, entry: Point::new(2, 2), exit: None, spots: Vec::new(), locks: Vec::new(), secrets };
+        let build = PlaceBuild { terrain, entry: Point::new(2, 2), exit: None, spots: Vec::new(), locks: Vec::new(), secrets, ambient: rl_grid::Light::DARK };
         let mut map = WorldMap::new(tiles.tables());
         map.install_place(PLACE, build);
         map.switch_to(PLACE);
@@ -179,6 +179,7 @@ mod tests {
                 spots: Vec::new(),
                 locks: Vec::new(),
                 secrets: Vec::new(),
+                ambient: rl_grid::Light::DARK,
             },
         );
         map.switch_to(MapId(2));
