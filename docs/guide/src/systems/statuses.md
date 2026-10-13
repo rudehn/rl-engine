@@ -79,7 +79,7 @@ A `QuestDef` opens when every quest in its `after` is done and is done when ever
 
 ## Using it
 
-A status is a registry entry, and these are the four Foundry's decks have.
+A status is a registry entry, and these are the four statuses Foundry's decks have.
 
 <!-- include: ../../../../examples/foundry/src/content.rs:statuses -->
 ```rust,no_run

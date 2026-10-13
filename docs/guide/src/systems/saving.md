@@ -98,7 +98,7 @@ Registering is the step an implementation does not show, and it is the whole of 
 <!-- include: ../../../../examples/undermere/src/save.rs:register -->
 ```rust,no_run
 /// What the save is made of: the engine's plugins, the five kinds, and
-/// the nine resources; and the records, in their own slot.
+/// the ten resources; and the records, in their own slot.
 pub fn register(app: &mut App) {
     app.add_plugins((SavePlugin::new(SLOT).version(VERSION).on_arrival(), UnloadPlugin, RecordsSavePlugin))
         .save_kind::<ItemKind>()

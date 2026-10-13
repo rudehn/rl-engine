@@ -71,7 +71,7 @@ pub const SLOT: &str = "undermere";
 
 // ANCHOR: register
 /// What the save is made of: the engine's plugins, the five kinds, and
-/// the nine resources; and the records, in their own slot.
+/// the ten resources; and the records, in their own slot.
 pub fn register(app: &mut App) {
     app.add_plugins((SavePlugin::new(SLOT).version(VERSION).on_arrival(), UnloadPlugin, RecordsSavePlugin))
         .save_kind::<ItemKind>()
