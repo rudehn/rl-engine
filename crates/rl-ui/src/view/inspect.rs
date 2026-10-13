@@ -6,7 +6,8 @@
 //! loaded window. The picture is a view: the subject's name, glyph and
 //! health, and a forecast of the fight, run through
 //! [`rl_rules::forecast`] so the numbers on the panel are the numbers the
-//! damage pipeline will produce.
+//! damage pipeline will produce, for anyone the player could fight: not an
+//! ally, and nobody in a peaceful place.
 //!
 //! The cursor is a modal, declared under the name `inspect`, so a game
 //! gates its own movement keys on [`no_modal`](crate::no_modal) and gets
@@ -46,7 +47,8 @@ pub struct InspectView {
     /// The topmost entity under the cursor, if any.
     pub subject: Option<Row>,
     /// How a fight with the subject is likely to go, when both sides can
-    /// be read as combatants.
+    /// be read as combatants and a fight could happen: never with an ally,
+    /// and never with anyone standing in a peaceful place.
     ///
     /// Reckoned from what each side truly wears, as the fight would be, an
     /// unknown thing's true numbers among them, as the vitals' armor is: a
@@ -229,6 +231,12 @@ type Fighter = Option<&'static Health>;
 /// [`Loadout`], so a jerkin the subject wears and a blade the player wields
 /// count in the panel exactly as they will in the fight, and its speed from
 /// [`Speeds`], so haste counts as the turns count it.
+///
+/// No fight is forecast with an ally, nor with anyone standing in a
+/// [`peaceful`](rl_bevy::PlaceBuild::peaceful) place, where no blow lands:
+/// the odds of a fight that cannot happen are nothing a player is asking.
+/// A neutral subject is forecast as a hostile one is, since a rat that
+/// ignores the player can still be fought.
 pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
     view.subject = None;
     view.duel = None;
@@ -261,7 +269,7 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
         .iter()
         .filter(|(_, pos, _, _, on, concealed)| pos.0 == view.cursor && duelists.sight.shows(pos.0, *on, *concealed))
         .max_by_key(|(entity, _, _, glyph, _, _)| (Some(*entity) == focused, glyph.layer));
-    let Some((entity, pos, name, glyph, _, _)) = under else { return };
+    let Some((entity, pos, name, glyph, on, _)) = under else { return };
     let count = duelists.stacks.get(entity).map_or(1, |s| s.count);
     let mut row = Row::new(entity, rl_core::noun::listed(name.as_str(), count), *glyph).at(geometry::chebyshev(origin.0, pos.0));
     let theirs = duelists.fighters.get(entity).ok();
@@ -272,6 +280,7 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
         row.relation = Some(duelists.rules.factions.relation(mine_f.0, theirs_f.0));
     }
     row.work = duelists.work.row(entity);
+    let relation = row.relation;
     view.subject = Some(row);
     view.unknown = duelists.unknown.contains(entity);
 
@@ -280,6 +289,9 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
     // blows it needs and how long it will take to kill you back; the
     // forecast is about a fight, and a crate does not fight.
     if duelists.props.contains(entity) {
+        return;
+    }
+    if relation == Some(Relation::Allied) || duelists.map.is_peaceful(on.map_or(MapId::SURFACE, |m| m.0)) {
         return;
     }
     let Some((subject, _)) = theirs else { return };
@@ -541,6 +553,83 @@ mod tests {
         stage.tick();
         stage.tick();
         assert!(stage.app.world().resource::<InspectView>().burning, "and it burns now");
+    }
+
+    /// Nobody forecasts a fight with a friend: an ally under the cursor is
+    /// named, its health shown and its side said, and no duel is run.
+    #[test]
+    fn an_ally_under_the_cursor_is_never_forecast_as_a_fight() {
+        let mut stage = stage();
+        let friend = stage.actor("a friend", 'f', 1, 0);
+        let ours = stage.app.world().get::<Faction>(stage.player).expect("the player's side").0;
+        stage.app.world_mut().entity_mut(friend).insert(Faction(ours));
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let view = stage.app.world().resource::<InspectView>();
+        let row = view.subject.as_ref().expect("the friend, pointed at");
+        assert_eq!((row.label.as_str(), row.relation), ("a friend", Some(Relation::Allied)));
+        assert_eq!((view.duel, view.odds.is_some()), (None, false), "and no fight forecast with them");
+    }
+
+    /// A subject neither side is hostile to is still forecast: a rat that
+    /// ignores the player is still a fight the player can pick.
+    #[test]
+    fn a_neutral_subject_is_forecast_as_a_fight_where_the_place_is_not_peaceful() {
+        let mut stage = Stage::new_with(InspectViewPlugin, |app| {
+            let sides = app.world().resource::<Registries>().factions.clone();
+            app.insert_resource(CombatRules::new(&sides));
+        });
+        stage.actor("a rat", 'r', 1, 0);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let view = stage.app.world().resource::<InspectView>();
+        assert_eq!(view.subject.as_ref().and_then(|r| r.relation), Some(Relation::Neutral));
+        assert!(view.duel.is_some(), "a neutral rat can still be fought");
+    }
+
+    /// In a peaceful place nothing is harmed, so nothing is forecast: a
+    /// hostile subject standing there is named and no duel is run.
+    #[test]
+    fn nobody_in_a_peaceful_place_is_forecast_as_a_fight() {
+        let mut stage = stage();
+        let floor = stage.app.world().resource::<WorldMap>().tile(stage.at).expect("the player stands on floor");
+        let town = MapId(1);
+        stage.app.world_mut().resource_mut::<WorldMap>().install_place(
+            town,
+            rl_bevy::PlaceBuild {
+                terrain: rl_grid::Terrain::filled(12, 9, floor),
+                entry: Point::new(4, 4),
+                exit: None,
+                spots: Vec::new(),
+                locks: Vec::new(),
+                secrets: Vec::new(),
+                ambient: rl_grid::Light::DARK,
+                peaceful: true,
+            },
+        );
+        let player = stage.player;
+        stage.app.world_mut().write_message(rl_bevy::WarpRequest::into_place(player, town));
+        stage.tick();
+        let (kind, theirs) = (stage.kind, stage.theirs);
+        stage.app.world_mut().spawn((
+            Actor,
+            Blocks,
+            Position(Point::new(5, 4)),
+            OnMap(town),
+            Health::full(10),
+            Faction(theirs),
+            MeleeAttack::new(kind, rl_core::DiceRoll::new(1, 4)),
+            Name::new("a brawler"),
+            rl_render::Glyph::new('b', Color::WHITE).on_layer(5),
+        ));
+        stage.tick();
+        stage.tick();
+        assert_eq!(stage.app.world().resource::<WorldMap>().current(), town, "the player is in the peaceful place");
+        stage.press(CursorKeys::default().look);
+        let view = stage.app.world().resource::<InspectView>();
+        let row = view.subject.as_ref().expect("the brawler, pointed at");
+        assert_eq!((row.label.as_str(), row.relation), ("a brawler", Some(Relation::Hostile)));
+        assert_eq!((view.duel, view.odds.is_some()), (None, false), "and no fight forecast where no blow lands");
     }
 
     #[test]

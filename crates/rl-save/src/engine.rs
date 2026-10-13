@@ -321,6 +321,7 @@ mod tests {
                     locks: Vec::new(),
                     secrets,
                     ambient: rl_grid::Light::DARK,
+                    peaceful: false,
                 },
             );
             map.switch_to(place);
@@ -355,6 +356,7 @@ mod tests {
             locks: Vec::new(),
             secrets: Vec::new(),
             ambient,
+            peaceful: false,
         };
         let (mut app, _) = fresh();
         {

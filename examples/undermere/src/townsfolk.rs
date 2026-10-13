@@ -655,23 +655,21 @@ pub struct Said<'w> {
 
 /// Says a person's role beside their name, `Hesk`, "the smith", since the
 /// name is the run's and says nothing of what they do: under it on the
-/// look panel, in place of a fight's forecast, which nothing in Mereholt
-/// can have; and after it on the rail, in place of what the person knows
+/// look panel, where a fight's forecast would stand, which the engine runs
+/// nowhere in Mereholt's peace; and after it on the rail, in place of what
+/// the person knows
 /// of the adventurer, since a lamplighter on their round is not a sentry
 /// who has not noticed anyone.
 ///
-/// In `ViewSet::Annotate`, after the game's own forecast, reading what the
-/// look panel's and the rail's collectors put there this frame; each view
-/// is read only where the game draws it.
+/// In `ViewSet::Annotate`, reading what the look panel's and the rail's
+/// collectors put there this frame; each view is read only where the game
+/// draws it.
 pub fn name_roles(look: Option<ResMut<InspectView>>, rail: Option<ResMut<NearbyView>>, people: Query<&Townsperson>, roles: Roles) {
     let Roles { townsfolk, mut facets } = roles;
     let role_of = |entity: Entity| people.get(entity).ok().and_then(|p| townsfolk.role(&p.0));
     if let Some(mut view) = look
         && let Some(role) = view.subject.as_ref().and_then(|s| role_of(s.entity))
     {
-        let forecast = facets.declare("forecast");
-        view.facets.retain(|f| f.key != forecast);
-        (view.duel, view.odds) = (None, None);
         view.facets.insert(0, facets.facet("role", role.called.clone()));
     }
     if let Some(mut view) = rail {

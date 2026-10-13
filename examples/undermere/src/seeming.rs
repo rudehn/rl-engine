@@ -268,7 +268,9 @@ pub fn seem_armor(vitals: Option<ResMut<VitalsView>>, seeming: Seeming) {
 /// under it that unknown gear is counted plain, the forecast's own `?`.
 ///
 /// In `ViewSet::Annotate`, over the engine's forecast, which is left as it
-/// is when nothing in the fight is unknown.
+/// is when nothing in the fight is unknown; and only where the engine
+/// forecast a fight at all, so the words never qualify a forecast that is
+/// not there, an ally's or one in Mereholt's peace.
 pub fn seem_forecast(view: Option<ResMut<InspectView>>, seeming: Seeming, players: Query<Entity, With<Player>>, mut facets: ResMut<Facets>) {
     let Some(mut view) = view else { return };
     let (Some(_), Some(them), Ok(me)) = (view.duel, view.subject.as_ref().map(|s| s.entity), players.single()) else { return };

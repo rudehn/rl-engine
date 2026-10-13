@@ -678,7 +678,7 @@ mod tests {
             let (wall, floor) = (self.0.expect("wall"), self.0.expect("floor"));
             let terrain = Terrain::from_fn(20, 9, |p| if ROOM[p.y as usize].as_bytes()[p.x as usize] == b'#' { wall } else { floor });
             let ambient = self.1.get((map.0 as usize).wrapping_sub(1)).copied().unwrap_or(Light::DARK);
-            Ok(PlaceBuild { terrain, entry: Point::new(5, 4), exit: None, spots: Vec::new(), locks: Vec::new(), secrets: Vec::new(), ambient })
+            Ok(PlaceBuild { terrain, entry: Point::new(5, 4), exit: None, spots: Vec::new(), locks: Vec::new(), secrets: Vec::new(), ambient, peaceful: false })
         }
     }
 

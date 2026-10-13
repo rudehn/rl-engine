@@ -267,9 +267,8 @@ pub fn order_party(mut key: OrderKey, mut commands: Commands, party: Query<(Enti
 /// follower with a row of the party panel off the nearby rail.
 ///
 /// On the look panel the pay takes the place of its kind's own words, `a
-/// sword for hire`, which it no longer is, and the order the place of the
-/// fight's forecast, since the odds of a fight with somebody the
-/// adventurer is paying are nothing a player is asking. What it holds is
+/// sword for hire`, which it no longer is; the engine forecasts no fight
+/// with an ally, so the order stands where a forecast would. What it holds is
 /// said as a candidate's kit is, by [`KitSeen`]: its own kit at the level
 /// it told when it was hired, anything handed to it by what is known of
 /// it, and a potion of a kind not yet known by its face. On the party
@@ -280,9 +279,8 @@ pub fn order_party(mut key: OrderKey, mut commands: Commands, party: Query<(Enti
 /// and clipped the copy; the engine's Tab steps only through what the
 /// rail still lists.
 ///
-/// In `ViewSet::Annotate`, after the kind's own words and the game's own
-/// forecast, so both are there to take off and nothing puts a forecast
-/// back after it.
+/// In `ViewSet::Annotate`, after the kind's own words, so they are there
+/// to take off.
 pub fn show_orders(
     look: Option<ResMut<InspectView>>,
     rail: Option<ResMut<NearbyView>>,
@@ -295,11 +293,10 @@ pub fn show_orders(
     if let Some(mut view) = look
         && let Some((who, order)) = view.subject.as_ref().and_then(|s| hired.get(s.entity).ok().map(|m| (s.entity, m.order)))
     {
-        let (forecast, kind) = (facets.declare("forecast"), facets.declare("trait"));
+        let kind = facets.declare("trait");
         let def = bestiary.defs.get(bestiary.defs.expect(MERCENARY));
         let for_hire: Vec<&str> = def.folded.says.iter().filter(|(name, ..)| name == MERCENARY).map(|(_, says, _)| says.as_str()).collect();
-        view.facets.retain(|f| f.key != forecast && !(f.key == kind && for_hire.contains(&f.text.as_str())));
-        (view.duel, view.odds) = (None, None);
+        view.facets.retain(|f| !(f.key == kind && for_hire.contains(&f.text.as_str())));
         view.facets.push(facets.facet("pay", IN_PAY));
         view.facets.push(facets.facet("order", order.doing()));
         for (how, said) in kits.of(who) {

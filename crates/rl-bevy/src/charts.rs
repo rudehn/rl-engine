@@ -198,6 +198,7 @@ mod tests {
                 locks: Vec::new(),
                 secrets: Vec::new(),
                 ambient: rl_grid::Light::DARK,
+                peaceful: false,
             })
         }
     }

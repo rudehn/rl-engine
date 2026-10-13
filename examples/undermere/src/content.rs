@@ -141,9 +141,9 @@ pub const CAPTIVE: &str = "captive";
 /// everyone, the adventurer included, and excluded from the discord loop
 /// in [`combat_rules`] rather than merely unnamed in it, so nobody is ever
 /// hostile to it, not even a victim of the scroll. Doing without the harm
-/// [`damage::StopsHarmInMereholt`](crate::damage::StopsHarmInMereholt)
-/// already drops would still leave a discordant townsperson swinging at
-/// a neighbour, which the design rules out by the faction alone.
+/// the town's peace already drops, as its build marks it peaceful, would
+/// still leave a discordant townsperson swinging at a neighbour, which the
+/// design rules out by the faction alone.
 pub const TOWNSFOLK: &str = "townsfolk";
 
 /// The small life of the place: a moth, a blind cave rat, neutral to

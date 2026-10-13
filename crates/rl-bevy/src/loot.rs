@@ -608,6 +608,7 @@ pub(crate) mod tests {
                 locks: Vec::new(),
                 secrets: Vec::new(),
                 ambient: rl_grid::Light::DARK,
+                peaceful: false,
             },
         );
         world.switch_to(map);

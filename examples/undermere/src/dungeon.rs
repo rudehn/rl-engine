@@ -764,6 +764,10 @@ impl PlaceRules for Undermere {
         let mut built = PlaceBuild::from_context(self.generate(map)?)?;
         crate::vaults::place_vault_fixtures(&mut built, &self.tiles, &self.prefabs, self.seed, map);
         built.ambient = self.ambient_of(map);
+        // Mereholt's peace: nothing in the town is harmed, a blow, a shot
+        // or a tick of fire or poison alike, and nobody in it is forecast
+        // as a fight, since its people are not there to be fought.
+        built.peaceful = map == TOWN;
         Ok(built)
     }
 }

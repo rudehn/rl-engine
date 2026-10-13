@@ -42,6 +42,7 @@ use rl_rules::{DamageStage, FactionId, Factions, Hit, Registry, Relation, Resist
 use crate::components::{Actor, Blocks, MyTurn, Player, Position};
 use crate::cue::{AddAirborne, Airborne, Anchor, Cue, Cued, LookOf, TurnHold};
 use crate::items::{Equipped, Item};
+use crate::places::{MapId, OnMap};
 use crate::registries::Registries;
 use crate::status::StatBlock;
 use crate::turn::{Action, Intent, Occupancy, Resolution, Turns};
@@ -634,7 +635,7 @@ pub struct DeathEvent {
 }
 
 /// A defender as the damage system sees it.
-type DefenderData = (&'static mut Health, &'static Position, Has<Player>, Has<Invulnerable>);
+type DefenderData = (&'static mut Health, &'static Position, Has<Player>, Has<Invulnerable>, Option<&'static OnMap>);
 
 /// The combat components an actor or an item may carry, as a query asks
 /// for them.
@@ -1290,30 +1291,59 @@ pub fn line_of_fire(map: &WorldMap, occupancy: &Occupancy, from: Point, to: Poin
     shot(map, occupancy, from, to, range).landing == Some(to)
 }
 
+/// Everything that decides how much of a hit lands: the stages, the kinds
+/// they read, what the target wears, and whether the place it stands in
+/// is peaceful.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Mitigation<'w, 's> {
+    registries: Res<'w, Registries>,
+    stages: Res<'w, DamageStages>,
+    map: Res<'w, WorldMap>,
+    loadout: Loadout<'w, 's>,
+}
+
+impl Mitigation<'_, '_> {
+    /// What of `hit` lands on `target`, standing on `map`: negative for a
+    /// hit it absorbs, nothing that harms an `invulnerable` one, and
+    /// nothing at all in a peaceful place.
+    fn lands(&self, hit: &Hit<Entity>, target: Entity, invulnerable: bool, map: MapId) -> i32 {
+        let defender = Defender { armor: self.loadout.armor(target), blocked: false };
+        let resists = self.loadout.resistances(target);
+        let stages: Vec<&dyn DamageStage<Entity>> = self.stages.0.iter().map(|s| s.as_ref() as &dyn DamageStage<Entity>).collect();
+        let amount = rl_rules::resolve(hit, &defender, &resists, &self.registries.damage_kinds, &stages);
+        let amount = if invulnerable { amount.min(0) } else { amount };
+        if self.map.is_peaceful(map) { 0 } else { amount }
+    }
+}
+
 /// Runs the damage stages and applies what is left to health.
 ///
 /// The armor and the resistances a blow meets are the target's
 /// [`Loadout`]: its own, what it wears, and the armor stat. An
 /// [`Invulnerable`] target keeps what it absorbs and nothing that harms it.
+///
+/// A target standing in a [`peaceful`](crate::places::PlaceBuild::peaceful)
+/// place takes nothing either way: every hit on it lands as nothing, a
+/// blow, a shot, a tick of fire or poison, and an absorbed one restores
+/// nothing, and the hit is still reported with nothing dealt. Here, after
+/// every stage, rather than as a stage of a game's own, since a stage is
+/// handed a hit and a defender and never the place the blow lands in, and
+/// so that no stage before it has to be taught to let the place alone.
+/// A heal still heals there, and a status the same blow afflicts still
+/// lands, since neither is a hit.
 pub fn apply_damage(
     mut events: MessageReader<DamageEvent>,
     mut dealt: MessageWriter<DamageDealt>,
     mut deaths: MessageWriter<DeathEvent>,
-    registries: Res<Registries>,
-    stages: Res<DamageStages>,
-    loadout: Loadout,
+    mitigation: Mitigation,
     mut targets: Query<DefenderData>,
 ) {
     for ev in events.read() {
-        let Ok((mut health, pos, is_player, invulnerable)) = targets.get_mut(ev.target) else { continue };
+        let Ok((mut health, pos, is_player, invulnerable, on)) = targets.get_mut(ev.target) else { continue };
         if health.current <= 0 {
             continue;
         }
-        let defender = Defender { armor: loadout.armor(ev.target), blocked: false };
-        let resists = loadout.resistances(ev.target);
-        let stage_refs: Vec<&dyn DamageStage<Entity>> = stages.0.iter().map(|s| s.as_ref() as &dyn DamageStage<Entity>).collect();
-        let amount = rl_rules::resolve(&ev.hit, &defender, &resists, &registries.damage_kinds, &stage_refs);
-        let amount = if invulnerable { amount.min(0) } else { amount };
+        let amount = mitigation.lands(&ev.hit, ev.target, invulnerable, on.map_or(MapId::SURFACE, |m| m.0));
         let before = health.current;
         health.current = (health.current - amount).min(health.max);
         // A hit absorbed reports what it restored, which at full health is
@@ -2422,6 +2452,59 @@ mod tests {
         app.world_mut().write_message(DamageEvent::new(who, rl_rules::Hit::from_source(None, blunt, 4)));
         app.update();
         assert_eq!(app.world().get::<Health>(who).unwrap().current, 11, "and without it, a hit hurts again");
+    }
+
+    /// Every hit on anyone standing in a peaceful place lands as nothing,
+    /// a killing blow and an absorbed one alike, and is still reported with
+    /// nothing dealt; the same hits on someone in a place that is not
+    /// peaceful land as ever.
+    #[test]
+    fn nothing_standing_in_a_peaceful_place_is_harmed_and_elsewhere_the_same_hits_land() {
+        let (mut app, _, blunt) = arena();
+        let floor = rl_grid::TileRegistry::standard().expect("floor");
+        let build = |peaceful| crate::places::PlaceBuild {
+            terrain: rl_grid::Terrain::filled(6, 6, floor),
+            entry: Point::new(1, 1),
+            exit: None,
+            spots: Vec::new(),
+            locks: Vec::new(),
+            secrets: Vec::new(),
+            ambient: rl_grid::Light::DARK,
+            peaceful,
+        };
+        {
+            let mut map = app.world_mut().resource_mut::<WorldMap>();
+            map.install_place(MapId(1), build(true));
+            map.install_place(MapId(2), build(false));
+        }
+        let at = Point::new(2, 2);
+        let spawn = |app: &mut App, map| app.world_mut().spawn((Actor, Blocks, Position(at), OnMap(map), Health { current: 10, max: 30 })).id();
+        let (calm, rough) = (spawn(&mut app, MapId(1)), spawn(&mut app, MapId(2)));
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        let health = |app: &App, who| app.world().get::<Health>(who).map(|h| h.current);
+        let hit = |app: &mut App, who, amount| {
+            app.world_mut().write_message(DamageEvent::new(who, rl_rules::Hit::from_source(None, blunt, amount)));
+            app.update();
+        };
+        hit(&mut app, calm, 999);
+        assert_eq!(health(&app, calm), Some(10), "a killing blow in the peaceful place takes nothing");
+        // Half again resistant, so a hit of ten is five absorbed.
+        app.insert_resource(DamageStages(vec![Box::new(rl_rules::damage::ApplyResistance), Box::new(SubtractArmor)]));
+        let mut absorbs = Resistances::new();
+        absorbs.set(blunt, 150);
+        for who in [calm, rough] {
+            app.world_mut().entity_mut(who).insert(Resists(absorbs.clone()));
+        }
+        hit(&mut app, calm, 10);
+        assert_eq!(health(&app, calm), Some(10), "and an absorbed one restores nothing");
+        let dealt: Vec<(i32, i32)> = app.world_mut().resource_mut::<Messages<DamageDealt>>().drain().map(|d| (d.dealt, d.lost)).collect();
+        assert_eq!(dealt, vec![(0, 0), (0, 0)], "each is reported, with nothing dealt");
+        hit(&mut app, rough, 10);
+        assert_eq!(health(&app, rough), Some(15), "elsewhere the absorbed hit restores");
+        app.world_mut().entity_mut(rough).remove::<Resists>();
+        hit(&mut app, rough, 999);
+        assert!(health(&app, rough).is_none_or(|h| h <= 0), "and the killing blow kills");
     }
 
     #[test]

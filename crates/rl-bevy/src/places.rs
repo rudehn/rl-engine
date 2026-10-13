@@ -148,6 +148,13 @@ pub struct PlaceBuild {
     /// that says so. [`Light::DARK`](rl_grid::Light::DARK) is no ambient,
     /// and is what [`from_context`](Self::from_context) gives.
     pub ambient: rl_grid::Light,
+    /// Whether nothing in the place is harmed: every hit on anyone standing
+    /// in it lands as nothing, and no fight with anyone in it is forecast.
+    /// A town, where the people are not there to be fought. Kept with the
+    /// place and its save, so the rule is the place's and not a flag a
+    /// game keeps in step with whichever map is current. False from
+    /// [`from_context`](Self::from_context).
+    pub peaceful: bool,
 }
 
 impl PlaceBuild {
@@ -164,8 +171,10 @@ impl PlaceBuild {
     /// joined [`Locked`](rl_mapgen::Join::Locked) becomes a [`Lock`] to
     /// that tag, and every one joined [`Sealed`](rl_mapgen::Join::Sealed)
     /// a seal. Every [`Secret`](rl_mapgen::Secret) a pass published is
-    /// carried as it was. The ambient is dark; a builder lighting the
-    /// place sets [`ambient`](Self::ambient) on what this returns.
+    /// carried as it was. The ambient is dark and the place is not
+    /// peaceful; a builder lighting the place or keeping its peace sets
+    /// [`ambient`](Self::ambient) or [`peaceful`](Self::peaceful) on what
+    /// this returns.
     pub fn from_context(ctx: rl_mapgen::BaseContext) -> Result<Self, BuildError> {
         use rl_mapgen::BuildContext;
         let entry = ctx.outputs().first::<rl_mapgen::passes::StartPoint>().ok_or_else(|| BuildError::new("place", "the chain emitted no start point"))?.0;
@@ -189,7 +198,7 @@ impl PlaceBuild {
             .collect();
         let secrets = ctx.outputs().iter::<rl_mapgen::Secret>().copied().collect();
         let (terrain, _) = ctx.finish();
-        Ok(Self { terrain, entry, exit, spots, locks, secrets, ambient: rl_grid::Light::DARK })
+        Ok(Self { terrain, entry, exit, spots, locks, secrets, ambient: rl_grid::Light::DARK, peaceful: false })
     }
 }
 
@@ -586,6 +595,7 @@ mod tests {
                 locks: Vec::new(),
                 secrets: Vec::new(),
                 ambient: rl_grid::Light::DARK,
+                peaceful: false,
             })
         }
     }

@@ -2836,7 +2836,7 @@ mod spotting {
         let mut map = WorldMap::new(tiles.tables());
         map.install_place(
             PLACE,
-            PlaceBuild { terrain, entry: START, exit: None, spots: Vec::new(), locks: Vec::new(), secrets, ambient: rl_grid::Light::DARK },
+            PlaceBuild { terrain, entry: START, exit: None, spots: Vec::new(), locks: Vec::new(), secrets, ambient: rl_grid::Light::DARK, peaceful: false },
         );
         map.switch_to(PLACE);
         let mut app = headless_app();

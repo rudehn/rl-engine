@@ -204,6 +204,8 @@ pub struct PlaceMap {
     /// The light everywhere in it before anything is lit, as its builder
     /// chose.
     pub ambient: rl_grid::Light,
+    /// Whether nothing in it is harmed, as its builder chose.
+    pub peaceful: bool,
     /// Whether the player has arrived here yet. A place is built for
     /// whoever gets there first, and a monster that ran down the stairs
     /// ahead of the player builds the floor it lands on; the game still
@@ -292,6 +294,13 @@ impl WorldMap {
         (!self.current.is_surface()).then(|| self.places.get(&self.current)).flatten()
     }
 
+    /// Whether nothing on `map` is harmed: a built place its builder made
+    /// [`peaceful`](PlaceBuild::peaceful). Never the surface, which is no
+    /// place.
+    pub fn is_peaceful(&self, map: MapId) -> bool {
+        self.places.get(&map).is_some_and(|p| p.peaceful)
+    }
+
     /// Whether `map` has been built.
     pub fn has_place(&self, map: MapId) -> bool {
         self.places.contains_key(&map)
@@ -337,6 +346,7 @@ impl WorldMap {
             locks: build.locks,
             secrets,
             ambient: build.ambient,
+            peaceful: build.peaceful,
             visited: false,
         };
         self.places.insert(map, place);
@@ -592,6 +602,7 @@ impl WorldMap {
                         locks: p.locks.clone(),
                         secrets: p.secrets.clone(),
                         ambient: p.ambient,
+                        peaceful: p.peaceful,
                         visited: p.visited,
                     },
                 )
@@ -621,6 +632,7 @@ impl WorldMap {
                     locks: p.locks,
                     secrets,
                     ambient: p.ambient,
+                    peaceful: p.peaceful,
                     visited: p.visited,
                 };
                 (id, place)
@@ -665,6 +677,10 @@ pub struct PlaceSave {
     /// written before places carried their own.
     #[serde(default)]
     pub ambient: rl_grid::Light,
+    /// Whether nothing in it is harmed; not, in a save written before a
+    /// place could be peaceful.
+    #[serde(default)]
+    pub peaceful: bool,
     /// Whether the player had arrived there. A save written before anyone
     /// but the player travelled holds only places the player built by
     /// arriving, so one with no word on it reads as visited.
@@ -836,6 +852,7 @@ mod tests {
             locks: locks.to_vec(),
             secrets: Vec::new(),
             ambient: rl_grid::Light::DARK,
+            peaceful: false,
         };
         let mut map = WorldMap::new(tiles.tables());
         map.install_place(MapId(1), build);
@@ -860,5 +877,36 @@ mod tests {
         let mut older = WorldMap::new(TileRegistry::standard().tables());
         older.import(ron::from_str(&old).unwrap());
         assert_eq!((older.lock(lock.at), older.lock(seal.at)), (None, None), "it loads, with nothing locked");
+    }
+
+    /// A peaceful place stays peaceful through a save, and one that is not
+    /// stays at war; a save written before a place could be peaceful loads
+    /// every place at war, as every place was.
+    #[test]
+    fn a_place_s_peace_comes_back_from_a_save_and_a_save_without_it_loads_none() {
+        let tiles = TileRegistry::standard();
+        let build = |peaceful| PlaceBuild {
+            terrain: Terrain::filled(4, 4, tiles.expect("floor")),
+            entry: Point::new(1, 1),
+            exit: None,
+            spots: Vec::new(),
+            locks: Vec::new(),
+            secrets: Vec::new(),
+            ambient: rl_grid::Light::DARK,
+            peaceful,
+        };
+        let mut map = WorldMap::new(tiles.tables());
+        map.install_place(MapId(1), build(true));
+        map.install_place(MapId(2), build(false));
+        let text = ron::to_string(&map.export()).unwrap();
+        let mut back = WorldMap::new(tiles.tables());
+        back.import(ron::from_str(&text).unwrap());
+        assert_eq!((back.is_peaceful(MapId(1)), back.is_peaceful(MapId(2)), back.is_peaceful(MapId::SURFACE)), (true, false, false));
+
+        let old = text.replace(",peaceful:true", "").replace(",peaceful:false", "");
+        assert!(!old.contains("peaceful"), "{old}");
+        let mut older = WorldMap::new(tiles.tables());
+        older.import(ron::from_str(&old).unwrap());
+        assert!(!older.is_peaceful(MapId(1)), "it loads, with no place at peace");
     }
 }

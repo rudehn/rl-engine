@@ -372,8 +372,9 @@ pub fn answer_candidates(
 }
 
 /// Says on the look panel what a candidate holds, each thing by the name
-/// the adventurer knows it by, `wields a +1 spear`, and what it asks, in
-/// place of a fight's forecast, since nothing in Mereholt is harmed; and
+/// the adventurer knows it by, `wields a +1 spear`, and what it asks,
+/// where a fight's forecast would stand, which the engine runs nowhere in
+/// Mereholt's peace; and
 /// on the rail that it is for hire, in place of what it knows of the
 /// adventurer, as a townsperson's role is.
 ///
@@ -389,9 +390,6 @@ pub fn show_candidates(
     if let Some(mut view) = look
         && let Some((who, candidate)) = view.subject.as_ref().and_then(|s| candidates.get(s.entity).ok().map(|c| (s.entity, c)))
     {
-        let forecast = facets.declare("forecast");
-        view.facets.retain(|f| f.key != forecast);
-        (view.duel, view.odds) = (None, None);
         for (how, said) in kits.of(who) {
             view.facets.push(facets.facet(KIT_FACET, format!("{} {said}", how.verb())));
         }
