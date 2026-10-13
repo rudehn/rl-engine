@@ -50,7 +50,7 @@
     (name: "anvil",      glyph: 'n', color: (r: 212, g: 212, b: 254), blocks: true),
     (name: "shelf",      glyph: '=', color: (r: 198, g: 145, b: 92), blocks: true),
     (name: "barrel",     glyph: '0', color: (r: 175, g: 115, b: 49), blocks: true),
-    (name: "table",      glyph: '┬', color: (r: 197, g: 145, b: 93), blocks: true),
+    (name: "table",      glyph: '▭', color: (r: 197, g: 145, b: 93), blocks: true),
     (name: "counter",    glyph: '=', color: (r: 141, g: 91, b: 41),   blocks: true),
     (name: "hearth",     glyph: '&', color: (r: 255, g: 145, b: 60), blocks: true),
     (name: "bed",        glyph: '▬', color: (r: 198, g: 177, b: 146), blocks: true),
