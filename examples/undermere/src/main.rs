@@ -85,6 +85,8 @@ const PARTY_ROWS: i32 = 8;
 struct Screen {
     map: Rect,
     gutter: Rect,
+    /// The column of nothing between the rail and the window's edge.
+    edge: Rect,
     log: Rect,
     vitals: Rect,
     gear: Rect,
@@ -112,7 +114,7 @@ impl Screen {
         // A column of nothing at the window's edge, as the gutter keeps one
         // at the map's, so a heading's count, a rule and a row's bar end a
         // cell short of the glass rather than flush against it.
-        let (rail, _) = panel::split_right(rail, 1);
+        let (rail, edge) = panel::split_right(rail, 1);
         // A column of nothing between the map and the rail, so a room on a
         // floor's east edge does not run its wall into the rail's words,
         // and the odd column besides when the left is an odd number of
@@ -141,6 +143,7 @@ impl Screen {
         Self {
             map,
             gutter,
+            edge,
             log,
             vitals,
             gear,
@@ -205,10 +208,10 @@ impl Screen {
 /// window draws. The narrator that fills the log is added beside the
 /// engine's plugins, as `testing::headless` adds it.
 fn add_panels(app: &mut App, screen: &Screen) {
-    // The gutter and the rail's spacer belong to no panel, so they are
-    // painted blank with the chrome each frame: nothing else would ever
-    // paint them again.
-    let blank = [screen.gutter, screen.spacer];
+    // The gutter, the rail's spacer and its edge belong to no panel, so
+    // they are painted blank with the chrome each frame: nothing else would
+    // ever paint them again.
+    let blank = [screen.gutter, screen.spacer, screen.edge];
     app.add_systems(
         Update,
         (move |mut terminal: ResMut<Terminal>, palette: Res<Palette>| blank.into_iter().for_each(|r| panel::clear(&mut terminal, r, &palette)))
@@ -1523,8 +1526,10 @@ mod tests {
         let surface = app.world().resource::<Palette>().get(Tones::SURFACE);
         for y in [first_at, second_at] {
             assert_ne!(bg(&app, rail, y), surface, "the row is its health bar: {lines:#?}");
-            assert_eq!(bg(&app, COLS - 1, y), bg(&app, rail, y), "full, so washed to the rail's edge: {lines:#?}");
-            assert_eq!(bg(&app, COLS - 1, y + 1), surface, "and the line of what it holds is not: {lines:#?}");
+            let last = screen.party.x + screen.party.width - 1;
+            assert_eq!(bg(&app, last, y), bg(&app, rail, y), "full, so washed to the rail's edge: {lines:#?}");
+            assert_eq!(bg(&app, last, y + 1), surface, "and the line of what it holds is not: {lines:#?}");
+            assert_eq!(bg(&app, COLS - 1, y), surface, "and the window's edge is a column of the rail's surface: {lines:#?}");
         }
         assert_eq!(from(&app, rail, screen.party.y - 1), "", "a blank row over the heading");
         press(&mut app, KeyCode::KeyO);
@@ -1561,7 +1566,7 @@ mod tests {
         let (first_at, second_at) = (row_of(&lines, &first_name), row_of(&lines, &second_name));
         assert!(lines[first_at].starts_with(&format!("h {first_name} · following")), "the one that came: {lines:#?}");
         assert_eq!(lines[second_at], format!("h {second_name} (left behind)"), "the one that stayed, with no order: {lines:#?}");
-        assert_eq!(bg(&app, COLS - 1, second_at), bg(&app, rail, second_at), "and its health still shown: {lines:#?}");
+        assert_eq!(bg(&app, screen.party.x + screen.party.width - 1, second_at), bg(&app, rail, second_at), "and its health still shown: {lines:#?}");
         let terminal = app.world().resource::<Terminal>();
         let palette = app.world().resource::<Palette>();
         let tone = |y: usize| terminal.get(rail + 2, screen.party.y + y as i32).expect("on the screen").fg;
