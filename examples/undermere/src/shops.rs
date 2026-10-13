@@ -86,6 +86,13 @@ pub fn tier_of(floor: u32) -> u32 {
     (floor.saturating_sub(1) / 2 + 1).clamp(*TIERS.start(), *TIERS.end())
 }
 
+/// The deepest floor tier `tier` covers: a tier is two floors, so the
+/// armory's table, whose bands are floors, is drawn from at this one and
+/// a tier's shelf holds whatever the dungeon lays by its last floor.
+pub fn deepest_floor(tier: u32) -> i32 {
+    2 * tier as i32
+}
+
 /// The kinds a keeper buys.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Buys {
@@ -194,6 +201,9 @@ pub struct AuthoredRow {
     tag: Option<NameRef<TagDef>>,
     /// The tiers or bands, both included.
     pub bands: (i32, i32),
+    /// Items a tag row never lands on, for a shelf's row.
+    #[serde(default)]
+    pub except: Vec<NameRef<ItemDef>>,
     /// How often it is drawn against the other rows.
     #[serde(default)]
     pub weight: Option<u32>,
@@ -229,6 +239,8 @@ struct Part {
     row: LootRow<Source>,
     /// Percent of stockings it is on the shelf, instead of being drawn.
     chance: Option<u32>,
+    /// Items a tag part never lands on.
+    except: Vec<Id<ItemDef>>,
 }
 
 impl Keeper {
@@ -344,7 +356,13 @@ impl Wares {
                 let table = LootTable::new(open.clone(), |source| drawn.iter().find(|p| p.row.item == source).map(|p| p.name.clone()).unwrap_or_default());
                 let Some((source, count)) = table.pick(band, rng) else { break 'draws };
                 let on_shelf = |def: Id<ItemDef>| wares.iter().any(|w| w.def == def);
-                let landed = source.draw(&self.table, band, |def| !on_shelf(def) && (matches!(source, Source::Item(_)) || keeper.sellable[def.index()]), rng);
+                let except: &[Id<ItemDef>] = drawn.iter().find(|p| p.row.item == source).map_or(&[], |p| &p.except);
+                let landed = source.draw(
+                    &self.table,
+                    deepest_floor(tier),
+                    |def| !on_shelf(def) && (matches!(source, Source::Item(_)) || (keeper.sellable[def.index()] && !except.contains(&def))),
+                    rng,
+                );
                 match landed {
                     Some(def) => {
                         wares.push(Ware { def, count, level: self.level(self.plains[def.index()], band, rng) });
@@ -715,6 +733,9 @@ impl AuthoredKeeper {
             {
                 errors.push(format!("{at}: a part of something always on the shelf"));
             }
+            if matches!(source, Source::Item(_)) && !a.except.is_empty() {
+                errors.push(format!("{at}: an except list belongs to a tag row"));
+            }
             if matches!(source, Source::Tag(_)) && a.chance.is_some() {
                 errors.push(format!("{at}: a tag is drawn by weight, never on a chance"));
             }
@@ -734,7 +755,7 @@ impl AuthoredKeeper {
                 errors.push(format!("{at}: a group of {} to {} is no group at all", group.0, group.1));
             }
             let row = LootRow::new(source).bands(first, last).weight(a.weight.unwrap_or(0)).group(group.0, group.1);
-            keeper.parts.push(Part { name: source.name(armory, registries), row, chance: a.chance });
+            keeper.parts.push(Part { name: source.name(armory, registries), row, chance: a.chance, except: a.except.into_iter().map(NameRef::id).collect() });
         }
         keeper
     }
@@ -837,9 +858,59 @@ mod tests {
             }
             assert_eq!(defs.iter().map(|d| d.index()).collect::<std::collections::BTreeSet<_>>().len(), 5, "seed {s}: no potion twice");
         }
-        for table_potion in library.armory.table.rows().iter().filter(|r| r.tags.contains(&potion) && r.applies(3)) {
+        for table_potion in library.armory.table.rows().iter().filter(|r| r.tags.contains(&potion) && r.applies(deepest_floor(3))) {
             let name = &library.armory.defs.get(table_potion.item).name;
             assert!(seen.contains(name), "{name} is laid at the tier and never stocked");
+        }
+    }
+
+    /// The tier-one smithy draws its weapons at the last floor of the tier,
+    /// the table's bands being floors, so a mace and a bow, laid from the
+    /// second floor, can be on its shelf.
+    #[test]
+    fn the_first_tiers_smithy_can_stock_a_bow_and_a_mace_over_a_span_of_seeds() {
+        let library = library();
+        let seen = |name: &str| stockings(&library, 1).any(|s| s.keeper == "smith" && names(&library, &s).iter().any(|n| n == name));
+        assert!(seen("bow") && seen("mace"));
+    }
+
+    /// Scrolls of enchanting are the curio shop's alone, and so are potions
+    /// of strength and life, however the apothecary's tag rows draw.
+    #[test]
+    fn no_keeper_but_the_curio_ever_stocks_enchanting_strength_or_life_over_a_span_of_seeds() {
+        let library = library();
+        let mut curio_sells_enchanting = false;
+        for tier in TIERS {
+            for stocking in stockings(&library, tier) {
+                for name in names(&library, &stocking) {
+                    if stocking.keeper == "curio" {
+                        curio_sells_enchanting |= name == "scroll of enchanting";
+                    } else {
+                        assert!(
+                            !["scroll of enchanting", "potion of strength", "potion of life"].contains(&name.as_str()),
+                            "{} at tier {tier} sells {name}",
+                            stocking.keeper
+                        );
+                    }
+                }
+            }
+        }
+        assert!(curio_sells_enchanting, "the curio still sells enchanting");
+    }
+
+    /// An except list naming no item, or on an item row, is refused.
+    #[test]
+    fn an_except_list_that_names_no_item_or_sits_on_an_item_row_is_refused() {
+        let library = library();
+        let errors =
+            refused(&library, r#"(name: "b", buys: Anything, purse: 100, draws: 1, parts: [(item: "dagger", bands: (1, 5), weight: 1, except: ["dagger"])])"#)
+                .join("\n");
+        assert!(errors.contains("b: dagger: an except list belongs to a tag row"), "{errors}");
+        let text = r#"(levels: [(bands: (1, 5), levels: [(0, 1)])], keepers: [
+            (name: "a", buys: Anything, purse: 100, draws: 1, parts: [(tag: "potion", bands: (1, 5), weight: 1, except: ["potion of nothing"])])])"#;
+        match Wares::read(text, &library.registries, &library.armory) {
+            Err(ContentError::Invalid(errors)) => assert!(errors.join("\n").contains("potion of nothing")),
+            other => panic!("expected the fixture refused, got {other:?}"),
         }
     }
 
@@ -863,16 +934,16 @@ mod tests {
     }
 
     #[test]
-    fn plate_armor_waits_for_tier_four_and_a_potion_of_life_for_tier_five_over_a_span_of_seeds() {
+    fn plate_armor_waits_for_tier_three_and_a_potion_of_life_for_tier_five_over_a_span_of_seeds() {
         let library = library();
         let seen = |tier: u32, name: &str| stockings(&library, tier).any(|s| names(&library, &s).iter().any(|n| n == name));
-        for tier in 1..=3 {
+        for tier in 1..=2 {
             assert!(!seen(tier, "plate armor"), "plate armor at tier {tier}");
         }
         for tier in 1..=4 {
             assert!(!seen(tier, "potion of life"), "a potion of life at tier {tier}");
         }
-        assert!(seen(4, "plate armor") && seen(5, "potion of life"));
+        assert!(seen(3, "plate armor") && seen(4, "plate armor") && seen(5, "potion of life"));
     }
 
     #[test]

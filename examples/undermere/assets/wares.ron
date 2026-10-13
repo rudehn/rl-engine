@@ -30,7 +30,11 @@
 //               chest's row for it is, by `LootTable::pick_tagged` over that table's rows
 //               at the tier, among the items the keeper buys and may stock, so a shelf
 //               holds whatever the dungeon can; drawn by weight, never on a chance; one
-//               part a keeper for a tag; what it draws rolls its own level
+//               part a keeper for a tag; what it draws rolls its own level; drawn at the
+//               last floor of the tier, the table's bands being floors and a tier two of them
+//       except: optional, on a tag row only; [item] names in `items.ron` the row never lands
+//               on, however the table lays them, so a keeper that sells one by name alone
+//               keeps it
 //       bands:  (first tier, last tier), both included, tiers running 1 to 5
 //       weight: optional; how often against every other drawn part that applies at the
 //               tier; required on a part without a chance, refused on one with
@@ -52,14 +56,16 @@
             (item: "javelin", bands: (1, 5), weight: 1, group: (4, 4)),
             (tag: "weapon", bands: (1, 5), weight: 6),
             (tag: "armor", bands: (1, 5), weight: 4),
-            // Plate is laid from the sixth floor only, so it is named to be sold sooner.
+            // Plate is laid from the sixth floor only, the last of the third tier, so it is named too.
             (item: "plate armor", bands: (4, 5), weight: 1),
         ]),
         // The apothecary: potions of healing always, then four drawn from every potion and
         // scroll the dungeon holds.
         (name: "apothecary", buys: Tags(["potion", "scroll"]), purse: 200, always: [(item: "potion of healing", count: 3)], draws: 4, parts: [
-            (tag: "potion", bands: (1, 5), weight: 5),
-            (tag: "scroll", bands: (1, 5), weight: 5),
+            // What the curio shop sells by name is kept off this shelf, so the economy of
+            // the enchanting scrolls, strength and life stays the curio's.
+            (tag: "potion", bands: (1, 5), weight: 5, except: ["potion of strength", "potion of life"]),
+            (tag: "scroll", bands: (1, 5), weight: 5, except: ["scroll of enchanting"]),
         ]),
         // The curio shop: four drawn, rare and dear, and in a quarter of the deepest
         // stockings a potion of life besides. It buys the rare, so its purse is twice

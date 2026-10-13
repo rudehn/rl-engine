@@ -99,6 +99,9 @@ impl Mercenaries {
                 if weight == 0 {
                     errors.push(format!("{at}: {name}: a weight of nothing is never drawn; leave the row out instead"));
                 }
+                if !row.except.is_empty() {
+                    errors.push(format!("{at}: {name}: an except list belongs to a shelf's row"));
+                }
                 if row.chance.is_some() {
                     errors.push(format!("{at}: {name}: a kit's row has a weight, never a chance"));
                 }
