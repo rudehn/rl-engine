@@ -488,10 +488,10 @@ fn a_fall_never_lands_inside_a_locked_vault() {
 fn no_fall_or_far_step_lands_behind_a_lock_or_a_seal_over_a_span_of_seeds() {
     use crate::dungeon::{FLOORS, Undermere};
     use crate::effects::moving::{far_choices, landing_cells};
-    use crate::testing::par_seeds;
+    use crate::testing::{par_seeds, seeds};
     use rl_engine::rl_bevy::places::PlaceRules;
     let floors = std::sync::atomic::AtomicUsize::new(0);
-    par_seeds(0..40, |s| {
+    par_seeds(seeds(0..40), |s| {
         let undermere = Undermere::new(RunSeed(s));
         for floor in 1..FLOORS {
             let map = map_of(floor);

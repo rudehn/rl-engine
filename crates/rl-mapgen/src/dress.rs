@@ -491,7 +491,7 @@ mod tests {
     use crate::loops::OpenLoops;
     use crate::secrets::HideOpenings;
     use crate::survey::Survey;
-    use crate::testing::par_seeds;
+    use crate::testing::{par_seeds, seeds};
     use rl_core::{Grid2D, RunSeed};
     use rl_grid::{CostSource, DijkstraMap, PathRules, TileProps};
     use std::collections::BTreeSet;
@@ -871,8 +871,8 @@ mod tests {
         let ponds = Lakes { name: "ponds", tile: water, count: (2, 5), size: (20, 70), wreath: Some((shore, 60)), cut: false, within: Vec::new() };
         let bridges = Bridges { name: "bridges", across: water, tile: span, longest: 6, detour: 20 };
         let (caves, crosses, secrets, lakes, spans) = (AtomicUsize::new(0), AtomicUsize::new(0), AtomicUsize::new(0), AtomicUsize::new(0), AtomicUsize::new(0));
-        for (w, h, seeds, wet) in [(84, 48, 0..200, false), (160, 90, 0..30, false), (84, 48, 0..60, true), (160, 90, 0..8, true)] {
-            par_seeds(seeds, |s| {
+        for (w, h, range, wet) in [(84, 48, seeds(0..200), false), (160, 90, 0..30, false), (84, 48, seeds(0..60), true), (160, 90, 0..8, true)] {
+            par_seeds(range, |s| {
                 let chain = Chain::new().then(grow(&r)).then(OpenLoops { door: r.door, min_detour: 20, max: 6 });
                 let chain = if wet { chain.then(ponds.clone()).then(bridges) } else { chain };
                 let chain = chain.then(RandomStart).then(FarthestExit).then(Survey).then(hide).then(pass.clone());

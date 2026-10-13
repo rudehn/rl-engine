@@ -67,6 +67,8 @@ jobs:
       # `cargo test --doc` runs.
       - name: tests
         run: cargo nextest run --workspace --profile ci
+        env:
+          RL_FULL_SEEDS: 1
       - name: doc-tests
         run: cargo test --workspace --doc
       - name: the starter template generates and builds

@@ -136,7 +136,7 @@ mod tests {
     use crate::context::{BaseContext, BuildContext};
     use crate::dungeon::{FarthestExit, RandomStart};
     use crate::survey::{Survey, Surveyed};
-    use crate::testing::par_seeds;
+    use crate::testing::{par_seeds, seeds};
     use rand::rngs::StdRng;
     use rl_core::{Grid2D, RunSeed, SeedDomain};
     use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
@@ -264,7 +264,9 @@ mod tests {
         for (w, h) in SIZES {
             for rectangles in [false, true] {
                 let (failed, mixed) = (AtomicUsize::new(0), AtomicUsize::new(0));
-                par_seeds(0..200, |s| {
+                let run = seeds(0..200);
+                let ran = (run.end - run.start) as usize;
+                par_seeds(run, |s| {
                     let ctx = match build(accrete(&rig, rectangles), &rig, w, h, s) {
                         Ok(ctx) => ctx,
                         Err(BuildError { pass, .. }) => {
@@ -292,8 +294,8 @@ mod tests {
                     }
                 });
                 let (failed, mixed) = (failed.into_inner(), mixed.into_inner());
-                assert!(failed < 10, "{w}x{h}, rectangles {rectangles}: {failed} of 200 failed");
-                assert!(!rectangles || mixed > 100, "{w}x{h}: caves and rectangles shared {mixed} of 200 places");
+                assert!(failed * 20 < ran, "{w}x{h}, rectangles {rectangles}: {failed} of {ran} failed");
+                assert!(!rectangles || mixed * 2 > ran, "{w}x{h}: caves and rectangles shared {mixed} of {ran} places");
             }
         }
         // A share caves cannot be packed to fails by name, and does not hang.
@@ -307,8 +309,10 @@ mod tests {
     fn the_survey_counts_every_cave_and_rates_its_seclusion() {
         let rig = rig();
         let (rated, secluded) = (AtomicUsize::new(0), AtomicUsize::new(0));
+        let run = seeds(0..200);
+        let ran = 2 * (run.end - run.start) as usize;
         for (w, h) in SIZES {
-            par_seeds(0..200, |s| {
+            par_seeds(run.clone(), |s| {
                 let chain = Chain::new().then(accrete(&rig, true)).then(RandomStart).then(FarthestExit).then(Survey);
                 let ctx = chain
                     .run_retrying(|| BaseContext::blank(w, h, rig.tiles.clone(), rig.wall), RunSeed(s), 20)
@@ -325,6 +329,6 @@ mod tests {
             });
         }
         let (rated, secluded) = (rated.into_inner(), secluded.into_inner());
-        assert!(rated > 400 && secluded > 0, "{rated} caves rated, {secluded} of them off the route");
+        assert!(rated > ran && secluded > 0, "{rated} caves rated, {secluded} of them off the route");
     }
 }

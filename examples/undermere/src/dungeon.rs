@@ -1189,7 +1189,7 @@ mod tests {
     use rl_engine::rl_rules::prefab::{Pick, Slot};
 
     use super::*;
-    use crate::testing::par_seeds;
+    use crate::testing::{par_seeds, seeds};
 
     /// Every place a run walks through: the town, then the floors in order.
     fn places() -> impl Iterator<Item = MapId> {
@@ -1239,7 +1239,7 @@ mod tests {
     /// every place is built over three hundred seeds.
     #[test]
     fn every_floor_and_the_town_build_over_a_span_of_seeds_with_an_entry_and_a_way_on() {
-        par_seeds(0..300, |s| {
+        par_seeds(seeds(0..300), |s| {
             let undermere = Undermere::new(RunSeed(s));
             let tables = undermere.tiles().tables();
             for map in places() {
@@ -1268,7 +1268,7 @@ mod tests {
     #[test]
     fn every_open_cell_of_every_floor_can_be_walked_to_from_its_entry_with_everything_standing() {
         let registries = crate::content::registries();
-        par_seeds(0..60, |s| {
+        par_seeds(seeds(0..60), |s| {
             let undermere = Undermere::new(RunSeed(s));
             let tables = undermere.tiles().tables();
             for floor in 1..=FLOORS {
@@ -1524,6 +1524,9 @@ mod tests {
         let flavor_pool = pool.entries.iter().filter(|e| pool.kinds[e.kind] == "flavor").count();
         let ever_drawn: std::sync::Mutex<BTreeSet<String>> = std::sync::Mutex::new(BTreeSet::new());
         let seen: std::sync::Mutex<Vec<usize>> = std::sync::Mutex::new(Vec::new());
+        // Always the whole range: "every entry is drawn on some run" is a
+        // property of rare draws, and this reads each run's plan, not its floors,
+        // so five hundred seeds are cheap.
         par_seeds(0..500, |s| {
             let undermere = Undermere::new(RunSeed(s));
             let mut run_counts: BTreeMap<usize, u32> = BTreeMap::new();
@@ -1684,7 +1687,7 @@ mod tests {
     #[test]
     fn no_monster_a_piece_stands_is_within_the_populations_distance_of_the_way_in() {
         let measured = AtomicUsize::new(0);
-        par_seeds(0..60, |s| {
+        par_seeds(seeds(0..60), |s| {
             let undermere = Undermere::new(RunSeed(s));
             for map in places() {
                 let built = undermere.build(map, None).unwrap();
@@ -1759,7 +1762,7 @@ mod tests {
     #[test]
     fn every_lair_and_the_throne_is_entered_only_through_its_entries() {
         let measured = AtomicUsize::new(0);
-        par_seeds(0..40, |s| {
+        par_seeds(seeds(0..40), |s| {
             let undermere = Undermere::new(RunSeed(s));
             let tables = undermere.tiles().tables();
             for floor in 1..=FLOORS {
@@ -2081,7 +2084,7 @@ mod tests {
     /// over forty seeds, as every build is checked.
     #[test]
     fn every_prize_is_reached_once_its_key_lever_or_secret_is_found_over_forty_seeds() {
-        every_prize_is_reached_once_its_key_lever_or_secret_is_found(0..40);
+        every_prize_is_reached_once_its_key_lever_or_secret_is_found(seeds(0..40));
     }
 
     /// The same over seeds 0 to 200: run by hand when a piece or a fixture

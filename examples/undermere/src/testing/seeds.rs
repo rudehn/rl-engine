@@ -6,6 +6,21 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+/// How many seeds of a range an everyday run plays.
+pub const QUICK: u64 = 30;
+
+/// The seeds a generation test plays: the first [`QUICK`] of `full`, or all
+/// of `full` when the environment sets `RL_FULL_SEEDS`, as CI does.
+///
+/// Every seed is a whole run generated from scratch, and a property that
+/// holds on thirty of them is as good a tripwire for a change as one that
+/// holds on five hundred. The wide range is for the release and for CI,
+/// where it catches the rare seed. A test about something rare, such as an
+/// entry being drawn at least once, keeps its own range and says why.
+pub fn seeds(full: Range<u64>) -> Range<u64> {
+    if std::env::var_os("RL_FULL_SEEDS").is_some() { full } else { full.start..full.end.min(full.start + QUICK) }
+}
+
 /// Runs `check` on every seed of `seeds`, spread over as many threads as
 /// the machine has cores.
 ///

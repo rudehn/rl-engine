@@ -667,7 +667,7 @@ mod tests {
 
     use super::*;
     use crate::dungeon::{TOWN, map_of};
-    use crate::testing::{adventurer, arrive, headless, par_seeds, sturdy};
+    use crate::testing::{adventurer, arrive, headless, par_seeds, seeds, sturdy};
 
     /// Whatever a floor's population stands that blocks, a camp's fire
     /// first among them, never stands between the way in and the way
@@ -677,7 +677,7 @@ mod tests {
     /// corridor on floor five, held every delve of it there for good.
     #[test]
     fn nothing_the_population_stands_cuts_the_way_in_off_from_the_way_down_over_a_span_of_seeds() {
-        par_seeds(0..50, |s| {
+        par_seeds(seeds(0..50), |s| {
             let mut app = headless(RunSeed(s));
             let me = adventurer(&mut app);
             sturdy(&mut app, me);
@@ -871,7 +871,7 @@ mod tests {
         // For each, its favored kinds' monsters and every monster where it
         // was drawn, and the same where another was.
         let tally: std::sync::Mutex<std::collections::BTreeMap<String, [(u32, u32); 2]>> = std::sync::Mutex::new(std::collections::BTreeMap::new());
-        par_seeds(0..36, |s| {
+        par_seeds(seeds(0..36), |s| {
             let mut app = headless(RunSeed(s));
             watch(&mut app);
             arrive(&mut app, map_of(floor));
@@ -1170,7 +1170,7 @@ mod tests {
     #[test]
     fn a_goblin_camp_holds_a_fire_its_followers_asleep_and_its_leader_keeping_the_watch_over_a_span_of_seeds() {
         let camps = std::sync::atomic::AtomicUsize::new(0);
-        par_seeds(0..40, |s| {
+        par_seeds(seeds(0..40), |s| {
             let mut app = headless(RunSeed(s));
             let me = adventurer(&mut app);
             sturdy(&mut app, me);

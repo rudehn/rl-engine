@@ -927,7 +927,7 @@ impl<C: BuildContext> Pass<C> for Accrete {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::testing::par_seeds;
+    use crate::testing::{par_seeds, seeds};
     use rand::rngs::StdRng;
 
     fn stream(s: u64) -> StdRng {
@@ -1127,7 +1127,7 @@ pub(crate) mod tests {
     #[test]
     fn a_place_that_built_reached_its_open_share_and_one_that_did_not_failed() {
         let rig = rig();
-        par_seeds(0..40, |s| {
+        par_seeds(seeds(0..40), |s| {
             for target in [38, 95] {
                 let mut pass = accrete(&rig, 3);
                 pass.open_pct = target;
@@ -1506,7 +1506,7 @@ pub(crate) mod tests {
         let run =
             |s: u64, attempts: u32| Chain::new().then(pass()).run_retrying(|| BaseContext::blank(84, 48, rig.tiles.clone(), rig.wall), RunSeed(s), attempts);
         let retried = std::sync::atomic::AtomicUsize::new(0);
-        par_seeds(0..40, |s| {
+        par_seeds(seeds(0..40), |s| {
             let Some(first) = (1..=30).find(|n| run(s, *n).is_ok()) else { panic!("seed {s}: no attempt laid it") };
             if first == 1 {
                 return;

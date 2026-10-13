@@ -23,7 +23,7 @@ pub use droids::*;
 pub use gear::*;
 pub use loot::*;
 pub use mission::*;
-pub use seeds::par_seeds;
+pub use seeds::{par_seeds, seeds};
 
 use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;

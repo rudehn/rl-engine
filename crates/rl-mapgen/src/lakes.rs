@@ -744,7 +744,7 @@ mod tests {
     use crate::context::BaseContext;
     use crate::dungeon::Rooms;
     use crate::loops::OpenLoops;
-    use crate::testing::par_seeds;
+    use crate::testing::{par_seeds, seeds};
     use rl_core::{Rect, RunSeed};
     use rl_grid::{Terrain, TileProps, TileRegistry};
     use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
@@ -838,7 +838,7 @@ mod tests {
         let r = rig_with_water();
         for size in SIZES {
             let (places, wet) = (AtomicUsize::new(0), AtomicUsize::new(0));
-            par_seeds(0..200, |s| {
+            par_seeds(seeds(0..200), |s| {
                 let dry = grown(s, size, false, |c, _| c);
                 let lakes = grown(s, size, false, |c, r| c.then(lakes(r)));
                 let mut terrain = dry.terrain().clone();
@@ -865,7 +865,7 @@ mod tests {
     fn a_lake_keeps_off_openings_and_painted_pieces_and_every_area_stays_one_piece() {
         let r = rig_with_water();
         let passable = r.tiles.tables().passable;
-        par_seeds(0..60, |s| {
+        par_seeds(seeds(0..60), |s| {
             let dry = grown(s, SIZES[0], true, |c, _| c);
             let wet = grown(s, SIZES[0], true, |c, r| c.then(lakes(r)));
             let shut: Vec<Point> = wet.outputs().iter::<Opening>().filter(|o| matches!(o.join, Join::Locked(_))).flat_map(|o| o.cells.clone()).collect();
@@ -897,7 +897,7 @@ mod tests {
         let walkable = r.tiles.tables().walkable;
         let shores = AtomicUsize::new(0);
         for size in SIZES {
-            par_seeds(0..200, |s| {
+            par_seeds(seeds(0..200), |s| {
                 let dry = grown(s, size, false, |c, _| c);
                 let wet = grown(s, size, false, |c, r| c.then(lakes(r)));
                 for lake in wet.outputs().iter::<Lake>() {
@@ -920,7 +920,7 @@ mod tests {
         let passable = r.tiles.tables().passable;
         let laid = AtomicUsize::new(0);
         for size in SIZES {
-            par_seeds(0..200, |s| {
+            par_seeds(seeds(0..200), |s| {
                 let wet = grown(s, size, false, |c, r| c.then(lakes(r)));
                 let bridged = grown(s, size, false, |c, r| c.then(lakes(r)).then(bridges(r)));
                 let mut terrain = wet.terrain().clone();
@@ -968,7 +968,7 @@ mod tests {
             }
         }
         for size in SIZES {
-            par_seeds(0..200, |s| {
+            par_seeds(seeds(0..200), |s| {
                 let plain = grown(s, size, false, |c, r| c.then(lakes(r)));
                 let more = grown(s, size, false, |c, r| c.then(Idle).then(lakes(r)).then(bridges(r)));
                 let (a, b): (Vec<&Lake>, Vec<&Lake>) = (plain.outputs().iter().collect(), more.outputs().iter().collect());
@@ -991,9 +991,9 @@ mod tests {
     #[test]
     fn a_lake_that_may_cut_leaves_islands_and_the_bridges_join_every_one() {
         let r = rig_with_water();
-        for (size, seeds) in [(SIZES[0], 0..200), (SIZES[1], 0..20)] {
+        for (size, range) in [(SIZES[0], seeds(0..200)), (SIZES[1], 0..20)] {
             let islanded = AtomicUsize::new(0);
-            par_seeds(seeds, |s| {
+            par_seeds(range, |s| {
                 let ctx = grown(s, size, false, |c, r| c.then(islands(r)).then(bridges(r)));
                 assert_eq!(parts(&ctx, ctx.terrain()), 1, "{size:?} seed {s}: left in parts");
                 let mut unbridged = ctx.terrain().clone();
@@ -1019,7 +1019,7 @@ mod tests {
     fn a_bridge_never_leads_round_a_lock() {
         let r = rig_with_water();
         let passable = r.tiles.tables().passable;
-        par_seeds(0..60, |s| {
+        par_seeds(seeds(0..60), |s| {
             let ctx = grown(s, SIZES[0], true, |c, r| c.then(islands(r)).then(bridges(r)));
             assert_eq!(parts(&ctx, ctx.terrain()), 1, "seed {s}: left in parts");
             let shut: Vec<Point> = ctx.outputs().iter::<Opening>().filter(|o| shuts(o)).flat_map(|o| o.cells.clone()).collect();
@@ -1139,7 +1139,7 @@ mod tests {
         let r = rig_with_water();
         let passable = r.tiles.tables().passable;
         let locked_away = AtomicUsize::new(0);
-        par_seeds(0..80, |s| {
+        par_seeds(seeds(0..80), |s| {
             let chain = Chain::new().then(vaulted()).then(OpenLoops { door: r.door, min_detour: 20, max: 6 }).then(Record).then(islands(&r)).then(bridges(&r));
             let ctx = chain.run_retrying(|| BaseContext::blank(84, 48, r.tiles.clone(), r.wall), RunSeed(s), 40).unwrap_or_else(|e| panic!("seed {s}: {e}"));
             let before = &ctx.outputs().first::<Before>().unwrap().0;
@@ -1286,7 +1286,7 @@ mod tests {
     fn neither_way_stands_on_a_bridge() {
         use crate::dungeon::{ExitPoint, FarthestExit, RandomStart};
         use crate::passes::StartPoint;
-        par_seeds(0..40, |s| {
+        par_seeds(seeds(0..40), |s| {
             let ctx = grown(s, SIZES[0], false, |c, r| c.then(islands(r)).then(bridges(r)).then(RandomStart).then(FarthestExit));
             let spans: BTreeSet<Point> = ctx.outputs().iter::<Bridge>().flat_map(|b| b.cells.iter().copied()).collect();
             let start = ctx.outputs().first::<StartPoint>().unwrap().0;
@@ -1304,7 +1304,7 @@ mod tests {
     fn a_room_a_lake_lies_in_is_measured_again_round_it() {
         let passable = rig_with_water().tiles.tables().passable;
         let moved = AtomicUsize::new(0);
-        par_seeds(0..40, |s| {
+        par_seeds(seeds(0..40), |s| {
             let dry = grown(s, SIZES[0], false, |c, _| c);
             let rooms = |ctx: &BaseContext| ctx.outputs().iter::<Room>().map(|r| r.0).collect::<Vec<_>>();
             for (kind, wet) in
@@ -1337,7 +1337,7 @@ mod tests {
     fn a_lake_that_covers_a_room_whole_drops_it_and_the_rest_keep_their_order_on_a_place_with_no_areas() {
         let passable = rig_with_water().tiles.tables().passable;
         let (dropped, shrunk) = (AtomicUsize::new(0), AtomicUsize::new(0));
-        par_seeds(0..120, |s| {
+        par_seeds(seeds(0..120), |s| {
             let dry = roomed(s, |c, _| c).unwrap();
             let Ok(wet) = roomed(s, |c, r| c.then(islands(r))) else { return };
             assert!(wet.outputs().first::<Area>().is_none(), "seed {s}: this rig has no areas");

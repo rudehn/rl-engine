@@ -243,7 +243,7 @@ mod tests {
 
     use super::*;
     use crate::dungeon::{FLOORS, map_of};
-    use crate::testing::{adventurer, arrive, headless, par_seeds, said};
+    use crate::testing::{adventurer, arrive, headless, par_seeds, said, seeds};
     use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 
     /// A line is never drawn twice while the pool holds an unused one,
@@ -312,7 +312,7 @@ mod tests {
     #[test]
     fn a_floor_with_a_feeling_piece_says_it_on_arrival_and_one_without_says_none() {
         let (told_one, told_none) = (AtomicBool::new(false), AtomicBool::new(false));
-        par_seeds(0..40, |s| {
+        par_seeds(seeds(0..40), |s| {
             let mut app = headless(RunSeed(s));
             adventurer(&mut app);
             for f in 1..FLOORS {

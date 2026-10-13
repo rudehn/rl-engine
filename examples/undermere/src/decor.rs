@@ -197,7 +197,7 @@ mod tests {
 
     use super::*;
     use crate::dungeon::{FLOORS, Undermere, map_of};
-    use crate::testing::par_seeds;
+    use crate::testing::{par_seeds, seeds};
 
     /// Over a span of seeds, some floor but never the throne's shows a
     /// blood trail, and not every floor does: `BloodTrail::chance_pct`
@@ -205,7 +205,7 @@ mod tests {
     #[test]
     fn a_blood_trail_turns_up_on_some_floors_but_never_the_throne_over_a_span_of_seeds() {
         let (with_blood, total) = (AtomicUsize::new(0), AtomicUsize::new(0));
-        par_seeds(0..60, |s| {
+        par_seeds(seeds(0..60), |s| {
             let undermere = Undermere::new(RunSeed(s));
             let blood = undermere.tiles().id("blood").expect("blood is a registered tile");
             for f in 1..FLOORS {

@@ -307,7 +307,7 @@ mod tests {
 
     use super::*;
     use crate::dungeon::{FLOORS, TOWN, map_of};
-    use crate::testing::par_seeds;
+    use crate::testing::{par_seeds, seeds};
 
     #[test]
     fn the_lantern_dims_by_a_tile_every_third_floor() {
@@ -563,7 +563,7 @@ mod tests {
             q.iter(world).filter(|(_, on, kind, _)| on.0 == map && kind.0 == fire).map(|(p, _, _, light)| (p.0, light.copied())).collect()
         };
         let camps = std::sync::atomic::AtomicUsize::new(0);
-        par_seeds(0..40, |s| {
+        par_seeds(seeds(0..40), |s| {
             let mut app = crate::testing::headless(RunSeed(s));
             let me = crate::testing::adventurer(&mut app);
             crate::testing::sturdy(&mut app, me);

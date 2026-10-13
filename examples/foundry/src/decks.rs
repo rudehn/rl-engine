@@ -258,11 +258,11 @@ mod tests {
     use rl_engine::rl_mapgen::prefab::Stamped;
 
     use super::*;
-    use crate::testing::par_seeds;
+    use crate::testing::{par_seeds, seeds};
 
     #[test]
     fn every_deck_builds_over_a_span_of_seeds_with_an_entry_and_an_exit() {
-        par_seeds(0..300, |s| {
+        par_seeds(seeds(0..300), |s| {
             let foundry = Foundry::new(RunSeed(s));
             for deck in 1..=DECKS {
                 let built = foundry.build(map_of(deck), None).unwrap_or_else(|e| panic!("deck {deck}, seed {s}: {e}"));
@@ -313,7 +313,7 @@ mod tests {
         use rl_engine::rl_rules::prefab::Slot;
         let min = crate::droids::MIN_DISTANCE_FROM_ENTRY;
         let guards = AtomicUsize::new(0);
-        par_seeds(0..100, |s| {
+        par_seeds(seeds(0..100), |s| {
             let foundry = Foundry::new(RunSeed(s));
             for deck in [2, 4, 5, 7, 8] {
                 let built = foundry.build(map_of(deck), None).unwrap();
@@ -341,7 +341,7 @@ mod tests {
         use rl_engine::rl_rules::prefab::Slot;
         let tables = Foundry::new(RunSeed(0)).tiles().tables();
         let checked = AtomicUsize::new(0);
-        par_seeds(0..60, |s| {
+        par_seeds(seeds(0..60), |s| {
             let foundry = Foundry::new(RunSeed(s));
             let post = foundry.prefabs().defs().expect("guard post").raw();
             for deck in [2, 4, 5, 7, 8] {
@@ -407,7 +407,7 @@ mod tests {
     #[test]
     fn no_two_vaults_overlap_and_every_guaranteed_mark_sits_on_a_floor_tile() {
         let tables = Foundry::new(RunSeed(0)).tiles().tables();
-        par_seeds(0..200, |s| {
+        par_seeds(seeds(0..200), |s| {
             let foundry = Foundry::new(RunSeed(s));
             for deck in 1..=DECKS {
                 let ctx = foundry.generate(map_of(deck)).unwrap_or_else(|e| panic!("deck {deck}, seed {s}: {e}"));
@@ -440,7 +440,7 @@ mod tests {
     #[test]
     fn no_room_on_any_deck_is_left_empty_over_a_span_of_seeds() {
         use rl_engine::rl_mapgen::dungeon::Room;
-        par_seeds(0..100, |s| {
+        par_seeds(seeds(0..100), |s| {
             let foundry = Foundry::new(RunSeed(s));
             for deck in 1..=DECKS {
                 let ctx = foundry.generate(map_of(deck)).unwrap();
@@ -463,7 +463,7 @@ mod tests {
         use rl_engine::rl_rules::prefab::Slot;
         let registries = crate::content::registries();
         let tables = Foundry::new(RunSeed(0)).tiles().tables();
-        par_seeds(0..60, |s| {
+        par_seeds(seeds(0..60), |s| {
             let foundry = Foundry::new(RunSeed(s));
             for deck in 1..=DECKS {
                 let built = foundry.build(map_of(deck), None).unwrap();
@@ -509,7 +509,7 @@ mod tests {
     #[test]
     fn every_mark_and_the_way_down_can_be_walked_to_from_the_entry_over_a_span_of_seeds() {
         let tables = Foundry::new(RunSeed(0)).tiles().tables();
-        par_seeds(0..60, |s| {
+        par_seeds(seeds(0..60), |s| {
             let foundry = Foundry::new(RunSeed(s));
             for deck in 1..=DECKS {
                 let built = foundry.build(map_of(deck), None).unwrap();
@@ -539,7 +539,7 @@ mod tests {
     #[test]
     fn every_deck_meets_what_its_recipe_requires_over_a_span_of_seeds() {
         use rl_engine::rl_mapgen::{Area, Surveyed};
-        par_seeds(0..150, |s| {
+        par_seeds(seeds(0..150), |s| {
             let foundry = Foundry::new(RunSeed(s));
             for deck in 1..=DECKS {
                 let ctx = foundry.generate(map_of(deck)).unwrap_or_else(|e| panic!("deck {deck}, seed {s}: {e}"));
