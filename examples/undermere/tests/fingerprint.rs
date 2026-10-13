@@ -230,9 +230,9 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [12_826_463_484_626_565_180, 7_694_520_662_295_449_001, 1_830_717_854_014_587_648],
-        "fingerprint tripwire: re-baselined, once, after the play notes merged: a lit window is seen and lit through, a \
-         kill notices nothing, arrows are never thrown and the bow outshoots a javelin, the doors passed are kept, and \
-         shops and hirelings' kits draw by tag"
+        [12_826_463_484_626_565_180, 11_152_141_353_759_877_679, 6_383_646_124_677_067_881],
+        "fingerprint tripwire: re-baselined, once, after the engine took over each place's ambient and the quests: a \
+         floor is lit by its own ambient from the pass the stairs land, so the first minds there see by it, and the \
+         facts fed inside the pass put a set in the turn that reorders the reactions this game leaves unordered"
     );
 }
