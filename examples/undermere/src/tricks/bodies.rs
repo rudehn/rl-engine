@@ -84,8 +84,9 @@ fn try_split(world: &mut World, target: Entity) -> bool {
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct Drains;
 
-/// Mends every `Drains` attacker what its own landed blow dealt this
-/// pass, by the engine's `Heal`, scaled by its own mending as any heal is.
+/// Mends every `Drains` attacker the health its own landed blow took this
+/// pass, by the engine's `Heal`, scaled by its own mending as any heal is:
+/// a bite drains no more life than its victim had left.
 ///
 /// `hit.attacker` rather than `hit.credit`: the one who triggers an
 /// on-hit rider, which is what draining is, and never damage over time or
@@ -93,11 +94,11 @@ pub struct Drains;
 ///
 /// In `TurnSet::React`, after `apply_damage` has written `DamageDealt`.
 pub fn judge_draining(mut dealt: MessageReader<DamageDealt>, draining: Query<(), With<Drains>>, mut heals: MessageWriter<Heal>) {
-    for hit in dealt.read().filter(|d| d.dealt > 0) {
+    for hit in dealt.read().filter(|d| d.lost > 0) {
         if let Some(attacker) = hit.hit.attacker
             && draining.contains(attacker)
         {
-            heals.write(Heal::new(attacker, hit.dealt).by(attacker));
+            heals.write(Heal::new(attacker, hit.lost).by(attacker));
         }
     }
 }

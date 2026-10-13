@@ -191,39 +191,19 @@ pub fn count_the_fighting(
     mut deaths: MessageReader<DeathEvent>,
     credit: Credit,
     kinds: Query<(&Kind, Has<crate::effects::bodies::Raised>)>,
-    healths: Query<&Health>,
     bestiary: Res<Bestiary>,
     mut tally: ResMut<Tally>,
 ) {
     let me = credit.adventurer.single().ok();
-    // A hit absorbed reports what it mended, below nought, which neither
-    // side lost; what is left, grouped by who took it, in the order it
-    // landed, since a weapon's extra strikes can carry more than one blow
-    // to the same target in the one pass.
-    let mut landed: BTreeMap<Entity, Vec<i32>> = BTreeMap::new();
-    for d in dealt.read().filter(|d| d.dealt > 0) {
+    // Counted by the health a blow took, so a killing blow past its
+    // target's last health counts for what was left; a hit absorbed
+    // reports what it mended, below nought, which neither side lost.
+    for d in dealt.read().filter(|d| d.lost > 0) {
         let ours = (d.hit.credit.is_some() && d.hit.credit == me) || credit.hired(d.hit.credit);
-        if Some(d.target) == me || (ours && !credit.in_party(d.target)) {
-            landed.entry(d.target).or_default().push(d.dealt);
-        }
-    }
-    for (target, blows) in landed {
-        // `DamageDealt::dealt` is the blow's raw amount, not clamped to
-        // what its target had left, so a killing blow past their last
-        // health reports more than they lost. Its health now already
-        // reflects every blow below with no floor of its own, so the
-        // health before the first of them comes back by adding the blows
-        // to it, and each is then counted for no more than was left when
-        // its turn came.
-        let mut before = healths.get(target).map_or(0, |h| h.current) + blows.iter().sum::<i32>();
-        for amount in blows {
-            let taken = amount.min(before.max(0)) as u32;
-            if Some(target) == me {
-                tally.damage_taken += taken;
-            } else {
-                tally.damage_dealt += taken;
-            }
-            before -= amount;
+        if Some(d.target) == me {
+            tally.damage_taken += d.lost as u32;
+        } else if ours && !credit.in_party(d.target) {
+            tally.damage_dealt += d.lost as u32;
         }
     }
     for death in deaths.read() {

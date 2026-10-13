@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `DamageDealt` says what health was lost: the new `lost` is the health the target lost, never more than it had, where `dealt` stays the blow as it landed, so a killing blow of 30 on a target with 5 left is `dealt: 30, lost: 5`. For a hit absorbed both are the same negative, what it restored. `dealt` was documented as health lost and never was past a target's last health.
+  To change: a game that writes a `DamageDealt` literal adds `lost`; a game that counted harm done from `dealt`, or rebuilt the clamped figure from the target's health, reads `lost`.
+
 - A scripted run never touches the player's save, in any game that names its saves. `RoguelikePlugins::saves("my-game")` adds the new `PlayerSaves`, which inserts `Saves`: the platform's default under that name, unless the run is `scripted()`, a replay, a recording or a capture, which saves in memory. A scripted run started on the player's save would play a different run, and its first save, an arrival or the window closing, would write over the player's.
   To change: a game that inserts `Saves::platform_default(name)` itself calls `.saves(name)` on its `RoguelikePlugins` instead, and a game that copied a `scripted` check and a memory backend for it drops both for the engine's.
 

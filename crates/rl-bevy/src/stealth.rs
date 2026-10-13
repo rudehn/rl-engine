@@ -702,7 +702,13 @@ mod tests {
         assert!(!field.aware().knows(field.player));
         let (watcher, player) = (field.watcher, field.player);
         let kind = field.app.world().resource::<crate::registries::Registries>().damage_kinds.expect("kinetic");
-        field.app.world_mut().write_message(DamageDealt { target: watcher, hit: Hit::by(player, kind, 1), dealt: 1, reach: crate::combat::Reach::Melee });
+        field.app.world_mut().write_message(DamageDealt {
+            target: watcher,
+            hit: Hit::by(player, kind, 1),
+            dealt: 1,
+            lost: 1,
+            reach: crate::combat::Reach::Melee,
+        });
         field.wait();
         assert!(field.aware().knows(player), "struck, so it knows where from");
         field.wait();
@@ -1002,7 +1008,13 @@ mod tests {
         let (watcher, player) = (field.watcher, field.player);
         field.app.world_mut().entity_mut(player).insert(Unseen);
         let kind = field.app.world().resource::<crate::registries::Registries>().damage_kinds.expect("kinetic");
-        field.app.world_mut().write_message(DamageDealt { target: watcher, hit: Hit::by(player, kind, 1), dealt: 1, reach: crate::combat::Reach::Melee });
+        field.app.world_mut().write_message(DamageDealt {
+            target: watcher,
+            hit: Hit::by(player, kind, 1),
+            dealt: 1,
+            lost: 1,
+            reach: crate::combat::Reach::Melee,
+        });
         field.wait();
         assert!(!field.aware().knows(player), "hurt by something it never saw, and none the wiser");
     }
