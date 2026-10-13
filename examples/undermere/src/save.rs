@@ -64,7 +64,10 @@ use crate::writings::WritingsProgress;
 // floods: everything they added to a save is read as absent from one
 // written before them, which is what that run had, so an older run
 // continues rather than being refused.
-pub const VERSION: u32 = 6;
+// v7: each place's ambient light and Mereholt's peace, kept with the place
+// by the engine. Absent from an older save they read as dark and at war,
+// which is not what that run had, so it is refused rather than continued.
+pub const VERSION: u32 = 7;
 
 /// The slot every run saves to.
 pub const SLOT: &str = "undermere";
