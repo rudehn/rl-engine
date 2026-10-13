@@ -704,6 +704,43 @@ mod tests {
         assert_eq!(app.world().resource::<Turns>().now(), before, "and no turn went by");
     }
 
+    /// The mark key washes a door seen and not passed in its own cell, the
+    /// door's glyph left showing, and puts nothing on the cells beside it,
+    /// where a still frame would read a tick as part of the map.
+    #[test]
+    fn the_mark_key_washes_the_doors_own_cell_and_leaves_every_cell_beside_it_alone() {
+        let mut app = on_screen(RunSeed(3));
+        let me = undermere::testing::adventurer(&mut app);
+        let here = undermere::testing::at(&app, me);
+        let door = here.offset(2, 0);
+        undermere::testing::lay_floor(&mut app, &[here.offset(1, 0), door, here.offset(3, 0)]);
+        let shut = app.world().resource::<undermere::doors::DoorTiles>().shut();
+        app.world_mut().resource_mut::<WorldMap>().set_tile(door, shut);
+        app.world_mut().resource_mut::<Knowledge>().mark(door);
+        app.update();
+        let cells_of = |app: &App, p: Point| {
+            let view = app.world().resource::<MapView>();
+            let t = app.world().resource::<Terminal>();
+            let at = view.to_screen(p).expect("on the map");
+            (0..ACROSS).map(|dx| t.get(at.x + dx, at.y).expect("on the screen")).collect::<Vec<_>>()
+        };
+        let beside = [here.offset(1, 0), here.offset(3, 0), door.offset(0, -1), door.offset(0, 1)];
+        let before: Vec<_> = beside.iter().map(|p| cells_of(&app, *p)).collect();
+        let door_before = cells_of(&app, door);
+        press(&mut app, KeyCode::KeyM);
+        let door_after = cells_of(&app, door);
+        for (b, a) in door_before.iter().zip(&door_after) {
+            assert_eq!(b.glyph, a.glyph, "the door's own glyph is left on top");
+            assert_ne!(b.bg, a.bg, "and its fill is washed");
+            let wash = a.bg.to_srgba();
+            assert!(wash.blue > wash.red && wash.blue > 0.3, "in a blue no door wears: {wash:?}");
+        }
+        let after: Vec<_> = beside.iter().map(|p| cells_of(&app, *p)).collect();
+        assert_eq!(before, after, "nothing is drawn on the cells beside it");
+        press(&mut app, KeyCode::Period);
+        assert_eq!(cells_of(&app, door).iter().map(|c| c.glyph).collect::<Vec<_>>(), door_before.iter().map(|c| c.glyph).collect::<Vec<_>>());
+    }
+
     /// `t` opens the pack on the darts, which are made to be thrown, and not
     /// on the potion of healing that comes before them in the pack, which
     /// can be thrown too; with no darts it opens on the potion.

@@ -110,6 +110,9 @@ impl Plugin for UndermerePlugin {
         // The gold carried, said on the rail in the coin's own colour.
         let (r, g, b) = library.armory.defs.get(library.armory.defs.expect(crate::finds::GOLD)).color;
         app.add_tone(crate::shops::GOLD_TONE, Color::srgb(r, g, b));
+        for (name, (r, g, b)) in [crate::doors::MARK_TONE, crate::doors::MARK_PULSE_TONE].into_iter().zip(crate::doors::MARK_COLORS) {
+            app.add_tone(name, Color::srgb(r, g, b));
+        }
         crate::mercenaries::declare_tone(app, &library.bestiary);
         // The three brains a hired mercenary thinks with, one an order,
         // built once from its kind beside the kind's own ally mind.

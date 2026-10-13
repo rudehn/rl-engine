@@ -8,10 +8,10 @@
 //! (it is [`SaveableState`], so a continued run still knows).
 //!
 //! The mark key, declared in [`input`](crate::input) under "Look", shows
-//! every door the map remembers and the record lacks, as ticks round the
-//! cell that pulse, until the next key of any kind is pressed. A door
-//! never seen is not marked, since the mark would give away where it is;
-//! a door seen and not passed is exactly what the player wants to be
+//! every door the map remembers and the record lacks, as the door's own
+//! cell washed in a blue that pulses, its glyph left on top, until the next
+//! key of any kind is pressed. A door never seen is not marked, since the
+//! mark would give away where it is; a door seen and not passed is exactly what the player wants to be
 //! reminded of. An open door counts as a door: a door shuts again behind
 //! whoever opens it, so which of the two tiles it is says nothing about
 //! whether anyone went through.
@@ -72,6 +72,11 @@ impl DoorTiles {
     pub fn new() -> Self {
         let tiles = crate::dungeon::registry();
         Self { shut: tiles.expect("door"), open: tiles.expect("open door") }
+    }
+
+    /// The tile of a shut door.
+    pub fn shut(&self) -> TileId {
+        self.shut
     }
 
     /// Whether `tile` is a door in either state.
@@ -161,17 +166,37 @@ fn is_modifier(key: KeyCode) -> bool {
     )
 }
 
-/// How a door not passed is marked: ticks in the notice tone, breathing
-/// toward the title's, so they read apart from the look cursor's.
-fn style() -> CursorStyle {
-    CursorStyle::ticks().in_tone(Tones::NOTICE).breathing(Some(Tones::TITLE))
+/// The tone a door not passed is washed in, declared in a bright azure by
+/// [`UndermerePlugin`](crate::plugin::UndermerePlugin): no door, wall or
+/// floor wears a blue like it, so the mark cannot be read as part of the map.
+pub const MARK_TONE: &str = "door mark";
+/// The tone the wash breathes toward, a paler azure, so the pulse is seen
+/// on a still frame as well as in motion.
+pub const MARK_PULSE_TONE: &str = "door mark glow";
+
+/// The colours of the two tones, in `0..=1`.
+pub const MARK_COLORS: [(f32, f32, f32); 2] = [(0.1, 0.38, 0.78), (0.2, 0.62, 1.0)];
+
+/// How a door not passed is marked: its own cell washed in azure that
+/// breathes, the door's gold glyph left on top. Not ticks on the cells
+/// beside it, which a still frame reads as map glyphs.
+fn style(tones: Option<&Tones>) -> CursorStyle {
+    let find = |name: &str, fallback| tones.and_then(|t| t.get(name)).unwrap_or(fallback);
+    CursorStyle::glow(find(MARK_TONE, Tones::SELECT)).breathing(Some(find(MARK_PULSE_TONE, Tones::NOTICE)))
 }
 
 /// Draws the marks over the map. In `PresentSet::Overlay`.
-pub fn draw_door_marks(marks: Res<DoorMarks>, terminal: Option<ResMut<Terminal>>, palette: Option<Res<Palette>>, map: CursorMap, time: Res<Time>) {
+pub fn draw_door_marks(
+    marks: Res<DoorMarks>,
+    terminal: Option<ResMut<Terminal>>,
+    palette: Option<Res<Palette>>,
+    tones: Option<Res<Tones>>,
+    map: CursorMap,
+    time: Res<Time>,
+) {
     let (Some(mut terminal), Some(palette)) = (terminal, palette) else { return };
     for cell in &marks.0 {
-        map.mark(&mut terminal, *cell, style(), &palette, time.elapsed_secs());
+        map.mark(&mut terminal, *cell, style(tones.as_deref()), &palette, time.elapsed_secs());
     }
 }
 
