@@ -104,12 +104,7 @@ A fact is the game's reading of an engine message, which is the only translation
         if !bestiary.defs.get(kind.0).boss {
             continue;
         }
-        let fact = Fact::new(facts.boss_slain).about(u64::from(kind.0.raw()));
-        happened.write(Happened(fact));
-        let mut tracker = quests.tracker.clone();
-        if tracker.feed(&fact, &quests.defs).iter().any(|change| matches!(change, Change::QuestDone { victory: true, .. })) {
-            over.write(RunOver::won());
-        }
+        happened.write(Happened(Fact::new(facts.boss_slain).about(u64::from(kind.0.raw()))));
     }
 ```
 
