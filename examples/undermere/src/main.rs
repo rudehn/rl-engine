@@ -109,6 +109,10 @@ struct Screen {
 impl Screen {
     fn new() -> Self {
         let (left, rail) = panel::split_right(Rect::new(0, 0, COLS, ROWS), RAIL);
+        // A column of nothing at the window's edge, as the gutter keeps one
+        // at the map's, so a heading's count, a rule and a row's bar end a
+        // cell short of the glass rather than flush against it.
+        let (rail, _) = panel::split_right(rail, 1);
         // A column of nothing between the map and the rail, so a room on a
         // floor's east edge does not run its wall into the rail's words,
         // and the odd column besides when the left is an odd number of
