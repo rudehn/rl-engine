@@ -951,6 +951,46 @@ mod tests {
         assert_eq!(glow.flicker, 77);
     }
 
+    /// Every prop that is not meant to blend, and every walkable floor, each
+    /// as plain red-green-blue steps of 255 multiplied channel by channel by
+    /// `tint`, which is how a light colours what it lands on, the floors
+    /// `only` and the props `standing` when they are not empty. Those the prop
+    /// is too close to, by thirty from a floor's glyph colour or forty-five
+    /// from its fill, are returned by name.
+    fn blenders(tint: [f32; 3], only: &[&str], standing: &[&str]) -> Vec<String> {
+        use rl_engine::rl_core::RunSeed;
+        let undermere = crate::dungeon::Undermere::new(RunSeed(7));
+        let looks = undermere.appearance();
+        let rgb = |c: Color| {
+            let c = c.to_srgba();
+            [c.red * 255.0 * tint[0], c.green * 255.0 * tint[1], c.blue * 255.0 * tint[2]]
+        };
+        let apart = |a: [f32; 3], b: [f32; 3]| a.iter().zip(b).map(|(x, y)| (x - y).powi(2)).sum::<f32>().sqrt();
+        let floors: Vec<(String, [f32; 3], [f32; 3])> = undermere
+            .tiles()
+            .iter()
+            .filter(|(_, tile)| tile.walkable && !["door", "gate", "bridge", "causeway", "pool"].iter().any(|w| tile.name.contains(w)))
+            .filter(|(_, tile)| only.is_empty() || only.contains(&tile.name.as_str()))
+            .map(|(id, tile)| (tile.name.clone(), rgb(looks.lit(id).fg), rgb(looks.lit(id).bg)))
+            .collect();
+        assert!(floors.len() > 20 || !only.is_empty(), "the floors are read: {}", floors.len());
+        assert!(only.is_empty() || floors.len() == only.len(), "every floor asked for is read: {} of {only:?}", floors.len());
+        let mut blenders = Vec::new();
+        for (_, prop) in registries().props.iter() {
+            if prop.name == "loose flagstone" || !(standing.is_empty() || standing.contains(&prop.name.as_str())) {
+                continue;
+            }
+            let c = prop.look.color;
+            let c = [f32::from(c.r) * tint[0], f32::from(c.g) * tint[1], f32::from(c.b) * tint[2]];
+            for (floor, fg, bg) in &floors {
+                if apart(c, *fg) < 30.0 || apart(c, *bg) < 45.0 {
+                    blenders.push(format!("{} on {floor}", prop.name));
+                }
+            }
+        }
+        blenders
+    }
+
     /// A prop is drawn in a colour clearly apart from the ground it stands
     /// on, and in a glyph a floor does not wear: in plain red-green-blue
     /// steps of 255 it is at least thirty from each walkable floor's glyph
@@ -960,35 +1000,24 @@ mod tests {
     /// blend with the cobbles it lies among.
     #[test]
     fn every_prop_is_drawn_clear_of_every_floor_in_colour_and_in_glyph() {
-        use rl_engine::rl_core::RunSeed;
-        let undermere = crate::dungeon::Undermere::new(RunSeed(7));
-        let looks = undermere.appearance();
-        let rgb = |c: Color| {
-            let c = c.to_srgba();
-            [c.red * 255.0, c.green * 255.0, c.blue * 255.0]
-        };
-        let apart = |a: [f32; 3], b: [f32; 3]| a.iter().zip(b).map(|(x, y)| (x - y).powi(2)).sum::<f32>().sqrt();
-        let floors: Vec<(String, [f32; 3], [f32; 3])> = undermere
-            .tiles()
-            .iter()
-            .filter(|(_, tile)| tile.walkable && !["door", "gate", "bridge", "causeway", "pool"].iter().any(|w| tile.name.contains(w)))
-            .map(|(id, tile)| (tile.name.clone(), rgb(looks.lit(id).fg), rgb(looks.lit(id).bg)))
-            .collect();
-        assert!(floors.len() > 20, "the floors are read: {}", floors.len());
-        let mut blenders = Vec::new();
-        for (_, prop) in registries().props.iter() {
-            if prop.name == "loose flagstone" {
-                continue;
-            }
-            let c = prop.look.color;
-            let c = [f32::from(c.r), f32::from(c.g), f32::from(c.b)];
-            for (floor, fg, bg) in &floors {
-                if apart(c, *fg) < 30.0 || apart(c, *bg) < 45.0 {
-                    blenders.push(format!("{} on {floor}", prop.name));
-                }
-            }
+        for (_, prop) in registries().props.iter().filter(|(_, p)| p.name != "loose flagstone") {
             assert!(!['.', ',', ':', '-'].contains(&prop.look.glyph), "{} is drawn '{}', as a floor is", prop.name, prop.look.glyph);
         }
+        let blenders = blenders([1.0; 3], &[], &[]);
         assert!(blenders.is_empty(), "props that blend into a floor: {blenders:#?}");
+    }
+
+    /// The same under the tavern hearth's light on the floors of the town,
+    /// which takes the blue out of everything: the barrels, counters and tables of the town stood brown
+    /// on a floor that is brown in firelight, and a counter all but
+    /// vanished. Held to the same margin once both are multiplied by the
+    /// hearth's colour.
+    #[test]
+    fn every_prop_is_drawn_clear_of_every_floor_under_the_hearths_light_too() {
+        let (r, g, b) = crate::light::FIRE.color;
+        // Mereholt's pieces, `assets/prefabs/mereholt.ron`, on the town's floors.
+        let town = ["well", "lamp post", "forge", "anvil", "shelf", "barrel", "table", "counter", "hearth", "bed", "candelabra", "altar", "pew"];
+        let blenders = blenders([r, g, b], &["cobbles", "road", "planks", "garden", "grass"], &town);
+        assert!(blenders.is_empty(), "props that blend into a floor under firelight: {blenders:#?}");
     }
 }
