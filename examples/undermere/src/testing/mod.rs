@@ -23,7 +23,7 @@ use crate::run::Adventurer;
 
 mod seeds;
 
-pub use seeds::{par_seeds, seeds};
+pub use seeds::{QUICK, par_seeds, seeds};
 
 /// A run with no window, seeded, begun on the first update.
 ///
