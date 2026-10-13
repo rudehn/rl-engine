@@ -69,12 +69,13 @@ const VITALS_ROWS: i32 = 9;
 /// to its row, and no slot is ever pushed off the rail.
 const GEAR_ROWS: i32 = 12;
 /// Rows the rail gives to the company at its foot: the heading and its
-/// rule, and two apiece for the most who can follow the adventurer, the
-/// two hired and the captive freed: a follower's row, and under it a line
-/// of what it holds, which the panel clips to the one line when the rows
-/// it holds would not all fit wrapped. A row above them is kept blank, so
-/// the last thing in sight never runs into the heading.
-const PARTY_ROWS: i32 = 8;
+/// rule, and four apiece for two followers, the two hired: a follower's
+/// row, and under it the three lines of what it holds that a kit of a
+/// weapon, armor and a shield or a bow comes to, which the panel clips to
+/// one line when the rows would not all fit wrapped, so two followers at
+/// their fullest are never clipped. A row above them is kept blank, so the
+/// last thing in sight never runs into the heading.
+const PARTY_ROWS: i32 = 10;
 
 /// The screen, cut up once so every panel and the map agree on it.
 ///
