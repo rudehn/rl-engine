@@ -251,22 +251,24 @@ impl PlaceRules for Foundry {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
     use rl_engine::rl_core::Rect;
     use rl_engine::rl_mapgen::BuildContext;
     use rl_engine::rl_mapgen::prefab::Stamped;
 
     use super::*;
+    use crate::testing::par_seeds;
 
     #[test]
     fn every_deck_builds_over_a_span_of_seeds_with_an_entry_and_an_exit() {
-        for s in 0..300 {
+        par_seeds(0..300, |s| {
             let foundry = Foundry::new(RunSeed(s));
             for deck in 1..=DECKS {
                 let built = foundry.build(map_of(deck), None).unwrap_or_else(|e| panic!("deck {deck}, seed {s}: {e}"));
                 assert_ne!(Some(built.entry), built.exit, "deck {deck}, seed {s}: the way in is the way out");
             }
-        }
+        });
     }
 
     /// The charge decks, and only they, hold a reactor: three, six and
@@ -274,14 +276,14 @@ mod tests {
     /// would let one run set the same charge twice.
     #[test]
     fn only_the_charge_decks_hold_a_reactor_and_each_holds_exactly_one() {
-        for s in 0..20 {
+        par_seeds(0..20, |s| {
             let foundry = Foundry::new(RunSeed(s));
             for deck in 1..=DECKS {
                 let built = foundry.build(map_of(deck), None).unwrap();
                 let reactors = built.spots.iter().filter(|s| s.tag == 'R' as u32).count();
                 assert_eq!(reactors, usize::from(matches!(deck, 3 | 6 | 9 | 10)), "deck {deck}, seed {s}");
             }
-        }
+        });
     }
 
     /// The guard post decks, and only they, hold one: two, four, five,
@@ -289,14 +291,14 @@ mod tests {
     /// which every post has exactly one of.
     #[test]
     fn only_the_guard_post_decks_hold_one_and_each_holds_exactly_one() {
-        for s in 0..20 {
+        par_seeds(0..20, |s| {
             let foundry = Foundry::new(RunSeed(s));
             for deck in 1..=DECKS {
                 let built = foundry.build(map_of(deck), None).unwrap();
                 let posts = built.spots.iter().filter(|s| s.tag == 'b' as u32).count();
                 assert_eq!(posts, usize::from(matches!(deck, 2 | 4 | 5 | 7 | 8)), "deck {deck}, seed {s}");
             }
-        }
+        });
     }
 
     /// No guard post stands a guard within the distance the deck's own
@@ -310,8 +312,8 @@ mod tests {
         use rl_engine::rl_core::geometry::chebyshev;
         use rl_engine::rl_rules::prefab::Slot;
         let min = crate::droids::MIN_DISTANCE_FROM_ENTRY;
-        let mut guards = 0;
-        for s in 0..100 {
+        let guards = AtomicUsize::new(0);
+        par_seeds(0..100, |s| {
             let foundry = Foundry::new(RunSeed(s));
             for deck in [2, 4, 5, 7, 8] {
                 let built = foundry.build(map_of(deck), None).unwrap();
@@ -320,12 +322,12 @@ mod tests {
                     if matches!(slot, Some(Slot::Monster { .. })) {
                         let d = chebyshev(spot.at, built.entry);
                         assert!(d >= min, "deck {deck}, seed {s}: a guard's slot at {:?} is {d} from the entry at {:?}", spot.at, built.entry);
-                        guards += 1;
+                        guards.fetch_add(1, Relaxed);
                     }
                 }
             }
-        }
-        assert!(guards > 0, "some guard's slot was measured");
+        });
+        assert!(guards.into_inner() > 0, "some guard's slot was measured");
     }
 
     /// With every guard on its post and the locker standing, every floor
@@ -338,8 +340,8 @@ mod tests {
     fn with_every_guard_home_every_floor_cell_of_a_guard_post_can_be_walked_to_from_the_entry() {
         use rl_engine::rl_rules::prefab::Slot;
         let tables = Foundry::new(RunSeed(0)).tiles().tables();
-        let mut checked = 0;
-        for s in 0..60 {
+        let checked = AtomicUsize::new(0);
+        par_seeds(0..60, |s| {
             let foundry = Foundry::new(RunSeed(s));
             let post = foundry.prefabs().defs().expect("guard post").raw();
             for deck in [2, 4, 5, 7, 8] {
@@ -369,13 +371,13 @@ mod tests {
                         let p = rl_engine::rl_core::Point::new(x, y);
                         if open(p) {
                             assert!(seen.contains(&(x, y)), "deck {deck}, seed {s}: {p:?} in the guard post cannot be walked to with its guards home");
-                            checked += 1;
+                            checked.fetch_add(1, Relaxed);
                         }
                     }
                 }
             }
-        }
-        assert!(checked > 0, "some guard post cell was checked");
+        });
+        assert!(checked.into_inner() > 0, "some guard post cell was checked");
     }
 
     /// The armory's mark, measured from its stamp's corner, is its facing.
@@ -405,7 +407,7 @@ mod tests {
     #[test]
     fn no_two_vaults_overlap_and_every_guaranteed_mark_sits_on_a_floor_tile() {
         let tables = Foundry::new(RunSeed(0)).tiles().tables();
-        for s in 0..200 {
+        par_seeds(0..200, |s| {
             let foundry = Foundry::new(RunSeed(s));
             for deck in 1..=DECKS {
                 let ctx = foundry.generate(map_of(deck)).unwrap_or_else(|e| panic!("deck {deck}, seed {s}: {e}"));
@@ -429,7 +431,7 @@ mod tests {
                     }
                 }
             }
-        }
+        });
     }
 
     /// No room on any deck is left empty: the armory, the store and the
@@ -438,7 +440,7 @@ mod tests {
     #[test]
     fn no_room_on_any_deck_is_left_empty_over_a_span_of_seeds() {
         use rl_engine::rl_mapgen::dungeon::Room;
-        for s in 0..100 {
+        par_seeds(0..100, |s| {
             let foundry = Foundry::new(RunSeed(s));
             for deck in 1..=DECKS {
                 let ctx = foundry.generate(map_of(deck)).unwrap();
@@ -447,7 +449,7 @@ mod tests {
                     assert!(stamps.iter().any(|b| room.0.intersection(b).is_some()), "deck {deck}, seed {s}: room {:?} is empty", room.0);
                 }
             }
-        }
+        });
     }
 
     /// With every prop that stands in the way and every guard at its post,
@@ -461,7 +463,7 @@ mod tests {
         use rl_engine::rl_rules::prefab::Slot;
         let registries = crate::content::registries();
         let tables = Foundry::new(RunSeed(0)).tiles().tables();
-        for s in 0..60 {
+        par_seeds(0..60, |s| {
             let foundry = Foundry::new(RunSeed(s));
             for deck in 1..=DECKS {
                 let built = foundry.build(map_of(deck), None).unwrap();
@@ -494,7 +496,7 @@ mod tests {
                     assert!(seen.contains(&(p.x, p.y)), "deck {deck}, seed {s}: {p:?} cannot be walked to with everything standing");
                 }
             }
-        }
+        });
     }
 
     /// Every mark a player must reach, and the way down, can be walked to
@@ -507,7 +509,7 @@ mod tests {
     #[test]
     fn every_mark_and_the_way_down_can_be_walked_to_from_the_entry_over_a_span_of_seeds() {
         let tables = Foundry::new(RunSeed(0)).tiles().tables();
-        for s in 0..60 {
+        par_seeds(0..60, |s| {
             let foundry = Foundry::new(RunSeed(s));
             for deck in 1..=DECKS {
                 let built = foundry.build(map_of(deck), None).unwrap();
@@ -529,7 +531,7 @@ mod tests {
                     assert!(reached(exit), "deck {deck}, seed {s}: the way down at {exit:?} cannot be walked to");
                 }
             }
-        }
+        });
     }
 
     /// Every deck is grown, surveyed and held to its recipe, and builds
@@ -537,7 +539,7 @@ mod tests {
     #[test]
     fn every_deck_meets_what_its_recipe_requires_over_a_span_of_seeds() {
         use rl_engine::rl_mapgen::{Area, Surveyed};
-        for s in 0..150 {
+        par_seeds(0..150, |s| {
             let foundry = Foundry::new(RunSeed(s));
             for deck in 1..=DECKS {
                 let ctx = foundry.generate(map_of(deck)).unwrap_or_else(|e| panic!("deck {deck}, seed {s}: {e}"));
@@ -545,7 +547,7 @@ mod tests {
                 assert!(surveyed.loops >= 2, "deck {deck}, seed {s}: {} loops", surveyed.loops);
                 assert_eq!(surveyed.areas.len(), ctx.outputs().iter::<Area>().count());
             }
-        }
+        });
     }
 
     /// Two decks of one run are not grown to one plan: over a span of
@@ -553,7 +555,7 @@ mod tests {
     /// lower decks name different recipes.
     #[test]
     fn the_decks_of_a_run_differ_from_each_other() {
-        for s in 0..20 {
+        par_seeds(0..20, |s| {
             let foundry = Foundry::new(RunSeed(s));
             let maps: Vec<String> = (1..=DECKS).map(|d| foundry.render(map_of(d)).unwrap()).collect();
             for i in 0..maps.len() {
@@ -561,7 +563,7 @@ mod tests {
                     assert_ne!(maps[i], maps[j], "seed {s}: decks {} and {} are the same map", i + 1, j + 1);
                 }
             }
-        }
+        });
         assert_ne!(recipe_of(1), recipe_of(5), "the upper and the lower decks name different recipes");
     }
 

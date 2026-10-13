@@ -1181,6 +1181,7 @@ pub(crate) fn captive_floor(seed: RunSeed) -> u32 {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
     use rl_engine::rl_core::Rect;
     use rl_engine::rl_mapgen::Join;
@@ -1188,6 +1189,7 @@ mod tests {
     use rl_engine::rl_rules::prefab::{Pick, Slot};
 
     use super::*;
+    use crate::testing::par_seeds;
 
     /// Every place a run walks through: the town, then the floors in order.
     fn places() -> impl Iterator<Item = MapId> {
@@ -1237,7 +1239,7 @@ mod tests {
     /// every place is built over three hundred seeds.
     #[test]
     fn every_floor_and_the_town_build_over_a_span_of_seeds_with_an_entry_and_a_way_on() {
-        for s in 0..300 {
+        par_seeds(0..300, |s| {
             let undermere = Undermere::new(RunSeed(s));
             let tables = undermere.tiles().tables();
             for map in places() {
@@ -1252,7 +1254,7 @@ mod tests {
                     assert_ne!(on, built.entry, "{map:?}, seed {s}: the way in is the way on");
                 }
             }
-        }
+        });
     }
 
     /// With every prop that stands in the way and every monster a piece
@@ -1266,7 +1268,7 @@ mod tests {
     #[test]
     fn every_open_cell_of_every_floor_can_be_walked_to_from_its_entry_with_everything_standing() {
         let registries = crate::content::registries();
-        for s in 0..60 {
+        par_seeds(0..60, |s| {
             let undermere = Undermere::new(RunSeed(s));
             let tables = undermere.tiles().tables();
             for floor in 1..=FLOORS {
@@ -1292,7 +1294,7 @@ mod tests {
                     assert!(walked(built.entry, plain).contains(&exit), "floor {floor}, seed {s}: the way down at {exit:?} is shut off");
                 }
             }
-        }
+        });
     }
 
     /// Mereholt is drawn by hand, so the grass the tree line and the backs
@@ -1413,7 +1415,7 @@ mod tests {
 
     #[test]
     fn each_floor_draws_its_own_wall_and_floor_and_shows_nothing_its_biome_and_its_lairs_do_not_lay() {
-        for s in 0..20 {
+        par_seeds(0..20, |s| {
             let undermere = Undermere::new(RunSeed(s));
             for floor in 1..=FLOORS {
                 let drawn = undermere.biome_of(floor);
@@ -1450,7 +1452,7 @@ mod tests {
                 let strays: Vec<&&str> = shown.difference(&allowed).collect();
                 assert!(strays.is_empty(), "floor {floor}, seed {s}: {strays:?} on a floor of {}", drawn.name);
             }
-        }
+        });
     }
 
     /// Every floor's drawn biome stands on a band that includes it: the
@@ -1680,19 +1682,19 @@ mod tests {
     /// throne as the floor allows.
     #[test]
     fn no_monster_a_piece_stands_is_within_the_populations_distance_of_the_way_in() {
-        let mut measured = 0;
-        for s in 0..60 {
+        let measured = AtomicUsize::new(0);
+        par_seeds(0..60, |s| {
             let undermere = Undermere::new(RunSeed(s));
             for map in places() {
                 let built = undermere.build(map, None).unwrap();
                 for spot in built.spots.iter().filter(|spot| matches!(slot(&undermere, spot), Some(Slot::Monster { .. }))) {
                     let d = geometry::chebyshev(spot.at, built.entry);
                     assert!(d >= MIN_DISTANCE_FROM_ENTRY, "{map:?}, seed {s}: a monster's post at {:?} is {d} from the way in", spot.at);
-                    measured += 1;
+                    measured.fetch_add(1, Relaxed);
                 }
             }
-        }
-        assert!(measured > 0, "some monster's post was measured");
+        });
+        assert!(measured.into_inner() > 0, "some monster's post was measured");
     }
 
     /// A throne or a lair too large for the floor it is asked to grow on
@@ -1755,8 +1757,8 @@ mod tests {
     /// walk through.
     #[test]
     fn every_lair_and_the_throne_is_entered_only_through_its_entries() {
-        let mut measured = 0;
-        for s in 0..40 {
+        let measured = AtomicUsize::new(0);
+        par_seeds(0..40, |s| {
             let undermere = Undermere::new(RunSeed(s));
             let tables = undermere.tiles().tables();
             for floor in 1..=FLOORS {
@@ -1771,11 +1773,11 @@ mod tests {
                             }
                         }
                     }
-                    measured += 1;
+                    measured.fetch_add(1, Relaxed);
                 }
             }
-        }
-        assert!(measured > 0, "some lair or the throne was measured");
+        });
+        assert!(measured.into_inner() > 0, "some lair or the throne was measured");
     }
 
     /// A floor of a biome that grows `recipe`, the `pick`th of those it
@@ -1853,9 +1855,9 @@ mod tests {
     /// beside it.
     #[test]
     fn every_recipe_grows_within_forty_attempts_and_meets_itself_over_a_few_seeds() {
-        for s in 0..6 {
+        par_seeds(0..6, |s| {
             every_recipe_meets_itself_on(s);
-        }
+        });
     }
 
     /// [`every_recipe_meets_itself_on`] over seeds 0 to 200, every recipe
@@ -2031,7 +2033,7 @@ mod tests {
     /// secret hidden, so what opens a vault is never behind it.
     fn every_prize_is_reached_once_its_key_lever_or_secret_is_found(seeds: std::ops::Range<u64>) {
         let registries = crate::content::registries();
-        for s in seeds {
+        par_seeds(seeds, |s| {
             let undermere = Undermere::new(RunSeed(s));
             let tables = undermere.tiles().tables();
             let kinds: Vec<usize> = ["risk_reward", "reward"].iter().filter_map(|k| undermere.pool.kinds.iter().position(|n| n == k)).collect();
@@ -2071,7 +2073,7 @@ mod tests {
                     assert!(built.spots.iter().any(|s| s.tag == tag), "floor {floor}, seed {s}: a vault at {:?} with nothing on its floor to open it", lock.at);
                 }
             }
-        }
+        });
     }
 
     /// [`every_prize_is_reached_once_its_key_lever_or_secret_is_found`]

@@ -180,13 +180,15 @@ pub fn lay(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, gro
 #[cfg(test)]
 mod tests {
     use rand::SeedableRng;
+    use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
+
     use rl_engine::rl_core::RunSeed;
 
     use super::*;
     use crate::bestiary::Kind;
     use crate::content::Library;
     use crate::dungeon::{FLOORS, map_of};
-    use crate::testing::{adventurer, arrive, headless, sturdy};
+    use crate::testing::{adventurer, arrive, headless, par_seeds, sturdy};
 
     fn library() -> Library {
         Library::load(&crate::content::effect_kinds(), &Moments::default())
@@ -273,7 +275,7 @@ mod tests {
     /// own, up to a few of a floor's picks.
     #[test]
     fn every_floor_holds_a_scroll_of_enchanting_and_its_things_besides_gold_over_a_span_of_seeds() {
-        for seed in 0..3 {
+        par_seeds(0..3, |seed| {
             let mut app = headless(RunSeed(seed));
             let me = adventurer(&mut app);
             sturdy(&mut app, me);
@@ -286,7 +288,7 @@ mod tests {
                 let gold = on_floor(&mut app, floor, true);
                 assert!(gold.len() as u32 <= *GOLD_PILES.end() + 6, "seed {seed}, floor {floor}: {} piles of gold", gold.len());
             }
-        }
+        });
     }
 
     /// A floor with room for one thing holds its scroll of enchanting and
@@ -319,9 +321,9 @@ mod tests {
     /// asks for can be come by, and few enough that it is still asked.
     #[test]
     fn about_four_potions_of_strength_turn_up_over_a_run_over_a_span_of_seeds() {
-        let runs = 24;
-        let mut found = 0;
-        for seed in 0..runs {
+        let runs = 24u64;
+        let found = AtomicU32::new(0);
+        par_seeds(0..runs, |seed| {
             let mut app = headless(RunSeed(seed));
             let me = adventurer(&mut app);
             sturdy(&mut app, me);
@@ -331,8 +333,9 @@ mod tests {
             let world = app.world_mut();
             let strength = world.resource::<Armory>().defs.expect("potion of strength");
             let mut things = world.query::<(&crate::armory::ItemKind, Option<&Stack>)>();
-            found += things.iter(world).filter(|(kind, _)| kind.0 == strength).map(|(_, stack)| stack.map_or(1, |s| s.count)).sum::<u32>();
-        }
+            found.fetch_add(things.iter(world).filter(|(kind, _)| kind.0 == strength).map(|(_, stack)| stack.map_or(1, |s| s.count)).sum::<u32>(), Relaxed);
+        });
+        let found = found.into_inner();
         assert!((3 * runs as u32..=5 * runs as u32).contains(&found), "{found} over {runs} runs");
     }
 }

@@ -55,6 +55,8 @@ pub mod pool;
 pub mod prefab;
 pub mod secrets;
 pub mod survey;
+#[cfg(test)]
+mod testing;
 mod walk;
 
 pub use accrete::{Accrete, Area, Barrier, District, Join, LaidBarrier, Opening, Piece, Shape};

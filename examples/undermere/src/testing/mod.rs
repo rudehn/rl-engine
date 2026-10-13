@@ -21,6 +21,10 @@ use crate::bestiary::Bestiary;
 use crate::dungeon::floor_of;
 use crate::run::Adventurer;
 
+mod seeds;
+
+pub use seeds::par_seeds;
+
 /// A run with no window, seeded, begun on the first update.
 pub fn headless(seed: RunSeed) -> App {
     let mut app = rl_engine::rl_bevy::plugin::headless_app();

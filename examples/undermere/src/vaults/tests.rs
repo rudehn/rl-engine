@@ -488,9 +488,10 @@ fn a_fall_never_lands_inside_a_locked_vault() {
 fn no_fall_or_far_step_lands_behind_a_lock_or_a_seal_over_a_span_of_seeds() {
     use crate::dungeon::{FLOORS, Undermere};
     use crate::effects::moving::{far_choices, landing_cells};
+    use crate::testing::par_seeds;
     use rl_engine::rl_bevy::places::PlaceRules;
-    let mut floors = 0;
-    for s in 0..40 {
+    let floors = std::sync::atomic::AtomicUsize::new(0);
+    par_seeds(0..40, |s| {
         let undermere = Undermere::new(RunSeed(s));
         for floor in 1..FLOORS {
             let map = map_of(floor);
@@ -498,7 +499,7 @@ fn no_fall_or_far_step_lands_behind_a_lock_or_a_seal_over_a_span_of_seeds() {
             if built.locks.is_empty() {
                 continue;
             }
-            floors += 1;
+            floors.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let mut world = WorldMap::new(undermere.tiles().tables().clone());
             world.install_place(map, built);
             world.switch_to(map);
@@ -523,7 +524,8 @@ fn no_fall_or_far_step_lands_behind_a_lock_or_a_seal_over_a_span_of_seeds() {
                 }
             }
         }
-    }
+    });
+    let floors = floors.into_inner();
     assert!(floors >= 5, "only {floors} floors over the span lay a lock or a seal");
 }
 

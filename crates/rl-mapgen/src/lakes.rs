@@ -744,8 +744,10 @@ mod tests {
     use crate::context::BaseContext;
     use crate::dungeon::Rooms;
     use crate::loops::OpenLoops;
+    use crate::testing::par_seeds;
     use rl_core::{Rect, RunSeed};
     use rl_grid::{Terrain, TileProps, TileRegistry};
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
     /// The accretion rig's tiles with a liquid that stops a body, a shore
     /// that does not, and a bridge.
@@ -835,8 +837,8 @@ mod tests {
     fn the_walkable_floor_is_one_region_after_every_lake() {
         let r = rig_with_water();
         for size in SIZES {
-            let (mut places, mut wet) = (0, 0);
-            for s in 0..200 {
+            let (places, wet) = (AtomicUsize::new(0), AtomicUsize::new(0));
+            par_seeds(0..200, |s| {
                 let dry = grown(s, size, false, |c, _| c);
                 let lakes = grown(s, size, false, |c, r| c.then(lakes(r)));
                 let mut terrain = dry.terrain().clone();
@@ -846,9 +848,10 @@ mod tests {
                     assert_eq!(regions(&terrain, &r.tiles, &[]), 1, "{size:?} seed {s}: lake {i} parts the floor");
                 }
                 assert_eq!(&terrain, lakes.terrain(), "{size:?} seed {s}: every lake laid is published");
-                places += 1;
-                wet += usize::from(lakes.outputs().first::<Lake>().is_some());
-            }
+                places.fetch_add(1, Relaxed);
+                wet.fetch_add(usize::from(lakes.outputs().first::<Lake>().is_some()), Relaxed);
+            });
+            let (places, wet) = (places.into_inner(), wet.into_inner());
             assert!(wet * 10 >= places * 9, "{size:?}: only {wet} of {places} places have a lake");
         }
     }
@@ -862,7 +865,7 @@ mod tests {
     fn a_lake_keeps_off_openings_and_painted_pieces_and_every_area_stays_one_piece() {
         let r = rig_with_water();
         let passable = r.tiles.tables().passable;
-        for s in 0..60 {
+        par_seeds(0..60, |s| {
             let dry = grown(s, SIZES[0], true, |c, _| c);
             let wet = grown(s, SIZES[0], true, |c, r| c.then(lakes(r)));
             let shut: Vec<Point> = wet.outputs().iter::<Opening>().filter(|o| matches!(o.join, Join::Locked(_))).flat_map(|o| o.cells.clone()).collect();
@@ -885,16 +888,16 @@ mod tests {
                 let mut reached = BitGrid::new(wet.terrain().width(), wet.terrain().height());
                 assert_eq!(flood(wet.terrain(), a.cells[0], inside, Steps::Four, &mut reached), a.cells.len(), "seed {s}: area {} is in two", a.index);
             }
-        }
+        });
     }
 
     #[test]
     fn a_wreath_only_borders_its_own_lake_and_only_over_floor() {
         let r = rig_with_water();
         let walkable = r.tiles.tables().walkable;
-        let mut shores = 0;
+        let shores = AtomicUsize::new(0);
         for size in SIZES {
-            for s in 0..200 {
+            par_seeds(0..200, |s| {
                 let dry = grown(s, size, false, |c, _| c);
                 let wet = grown(s, size, false, |c, r| c.then(lakes(r)));
                 for lake in wet.outputs().iter::<Lake>() {
@@ -903,11 +906,11 @@ mod tests {
                         assert!(walkable[dry.terrain().get(*p).unwrap().index()], "{size:?} seed {s}: {p:?} was not floor");
                         assert_eq!(wet.terrain().get(*p), Some(r.shore), "{size:?} seed {s}: {p:?} was laid over by another lake");
                     }
-                    shores += lake.wreath.len();
+                    shores.fetch_add(lake.wreath.len(), Relaxed);
                 }
-            }
+            });
         }
-        assert!(shores > 0, "no lake on any seed has a shore");
+        assert!(shores.into_inner() > 0, "no lake on any seed has a shore");
     }
 
     #[test]
@@ -915,9 +918,9 @@ mod tests {
         let r = rig_with_water();
         let pass = bridges(&r);
         let passable = r.tiles.tables().passable;
-        let mut laid = 0;
+        let laid = AtomicUsize::new(0);
         for size in SIZES {
-            for s in 0..200 {
+            par_seeds(0..200, |s| {
                 let wet = grown(s, size, false, |c, r| c.then(lakes(r)));
                 let bridged = grown(s, size, false, |c, r| c.then(lakes(r)).then(bridges(r)));
                 let mut terrain = wet.terrain().clone();
@@ -938,12 +941,12 @@ mod tests {
                     for p in &b.cells {
                         terrain.set(*p, r.bridge);
                     }
-                    laid += 1;
+                    laid.fetch_add(1, Relaxed);
                 }
                 assert_eq!(&terrain, bridged.terrain(), "{size:?} seed {s}: every bridge laid is published");
-            }
+            });
         }
-        assert!(laid > 0, "no bridge on any seed");
+        assert!(laid.into_inner() > 0, "no bridge on any seed");
     }
 
     /// A pass the chain gains draws from its own stream, so the lakes laid
@@ -965,12 +968,12 @@ mod tests {
             }
         }
         for size in SIZES {
-            for s in 0..200 {
+            par_seeds(0..200, |s| {
                 let plain = grown(s, size, false, |c, r| c.then(lakes(r)));
                 let more = grown(s, size, false, |c, r| c.then(Idle).then(lakes(r)).then(bridges(r)));
                 let (a, b): (Vec<&Lake>, Vec<&Lake>) = (plain.outputs().iter().collect(), more.outputs().iter().collect());
                 assert_eq!(a, b, "{size:?} seed {s}");
-            }
+            });
         }
     }
 
@@ -988,9 +991,9 @@ mod tests {
     #[test]
     fn a_lake_that_may_cut_leaves_islands_and_the_bridges_join_every_one() {
         let r = rig_with_water();
-        for (size, seeds) in [(SIZES[0], 0..200u64), (SIZES[1], 0..20)] {
-            let mut islanded = 0;
-            for s in seeds {
+        for (size, seeds) in [(SIZES[0], 0..200), (SIZES[1], 0..20)] {
+            let islanded = AtomicUsize::new(0);
+            par_seeds(seeds, |s| {
                 let ctx = grown(s, size, false, |c, r| c.then(islands(r)).then(bridges(r)));
                 assert_eq!(parts(&ctx, ctx.terrain()), 1, "{size:?} seed {s}: left in parts");
                 let mut unbridged = ctx.terrain().clone();
@@ -999,13 +1002,13 @@ mod tests {
                         unbridged.set(*p, r.water);
                     }
                 }
-                islanded += usize::from(parts(&ctx, &unbridged) > 1);
+                islanded.fetch_add(usize::from(parts(&ctx, &unbridged) > 1), Relaxed);
                 for a in ctx.outputs().iter::<Area>() {
                     assert!(!a.cells.is_empty(), "{size:?} seed {s}: area {} is all under water", a.index);
                     assert!(a.cells.iter().all(|c| r.tiles.tables().passable[ctx.terrain().get(*c).unwrap().index()]), "{size:?} seed {s}: area {}", a.index);
                 }
-            }
-            assert!(islanded > 0, "{size:?}: no place has an island");
+            });
+            assert!(islanded.into_inner() > 0, "{size:?}: no place has an island");
         }
     }
 
@@ -1016,7 +1019,7 @@ mod tests {
     fn a_bridge_never_leads_round_a_lock() {
         let r = rig_with_water();
         let passable = r.tiles.tables().passable;
-        for s in 0..60 {
+        par_seeds(0..60, |s| {
             let ctx = grown(s, SIZES[0], true, |c, r| c.then(islands(r)).then(bridges(r)));
             assert_eq!(parts(&ctx, ctx.terrain()), 1, "seed {s}: left in parts");
             let shut: Vec<Point> = ctx.outputs().iter::<Opening>().filter(|o| shuts(o)).flat_map(|o| o.cells.clone()).collect();
@@ -1033,7 +1036,7 @@ mod tests {
                 let banks = [b.cells[0].offset(-step.x, -step.y), b.cells[b.cells.len() - 1].offset(step.x, step.y)];
                 assert!(banks.iter().all(|p| reached.contains(*p)), "seed {s}: a bridge lands behind a lock");
             }
-        }
+        });
     }
 
     /// Two rooms either side of four cells of liquid: a bridge three long
@@ -1135,8 +1138,8 @@ mod tests {
     fn no_lake_or_bridge_reaches_past_a_lock_on_a_piece_drawn_cell_by_cell() {
         let r = rig_with_water();
         let passable = r.tiles.tables().passable;
-        let mut locked_away = 0;
-        for s in 0..80 {
+        let locked_away = AtomicUsize::new(0);
+        par_seeds(0..80, |s| {
             let chain = Chain::new().then(vaulted()).then(OpenLoops { door: r.door, min_detour: 20, max: 6 }).then(Record).then(islands(&r)).then(bridges(&r));
             let ctx = chain.run_retrying(|| BaseContext::blank(84, 48, r.tiles.clone(), r.wall), RunSeed(s), 40).unwrap_or_else(|e| panic!("seed {s}: {e}"));
             let before = &ctx.outputs().first::<Before>().unwrap().0;
@@ -1156,7 +1159,7 @@ mod tests {
                 }
             }
             let kept: Vec<Point> = before.iter().filter(|a| !free[a.index]).flat_map(|a| a.cells.iter().copied()).collect();
-            locked_away += usize::from(before.iter().any(|a| !free[a.index] && a.entries.is_none()));
+            locked_away.fetch_add(usize::from(before.iter().any(|a| !free[a.index] && a.entries.is_none())), Relaxed);
             for lake in ctx.outputs().iter::<Lake>() {
                 assert!(lake.cells.iter().chain(&lake.wreath).all(|p| !kept.contains(p)), "seed {s}: a lake lies behind a lock");
             }
@@ -1178,7 +1181,8 @@ mod tests {
             let mut reached = BitGrid::new(terrain.width(), terrain.height());
             flood(terrain, walked[0], open, Steps::Four, &mut reached);
             assert!(walked.iter().all(|p| reached.contains(*p)), "seed {s}: floor once walked to is reached only through a lock");
-        }
+        });
+        let locked_away = locked_away.into_inner();
         assert!(locked_away >= 10, "only {locked_away} of 80 places have an area drawn cell by cell behind a lock");
     }
 
@@ -1282,14 +1286,14 @@ mod tests {
     fn neither_way_stands_on_a_bridge() {
         use crate::dungeon::{ExitPoint, FarthestExit, RandomStart};
         use crate::passes::StartPoint;
-        for s in 0..40 {
+        par_seeds(0..40, |s| {
             let ctx = grown(s, SIZES[0], false, |c, r| c.then(islands(r)).then(bridges(r)).then(RandomStart).then(FarthestExit));
             let spans: BTreeSet<Point> = ctx.outputs().iter::<Bridge>().flat_map(|b| b.cells.iter().copied()).collect();
             let start = ctx.outputs().first::<StartPoint>().unwrap().0;
             let exit = ctx.outputs().first::<ExitPoint>().unwrap().0;
             assert!(!spans.contains(&start), "seed {s}: the start at {start:?} is on a bridge");
             assert!(!spans.contains(&exit), "seed {s}: the exit at {exit:?} is on a bridge");
-        }
+        });
     }
 
     /// A room a lake was laid in is measured again round the water, as
@@ -1299,8 +1303,8 @@ mod tests {
     #[test]
     fn a_room_a_lake_lies_in_is_measured_again_round_it() {
         let passable = rig_with_water().tiles.tables().passable;
-        let mut moved = 0;
-        for s in 0..40 {
+        let moved = AtomicUsize::new(0);
+        par_seeds(0..40, |s| {
             let dry = grown(s, SIZES[0], false, |c, _| c);
             let rooms = |ctx: &BaseContext| ctx.outputs().iter::<Room>().map(|r| r.0).collect::<Vec<_>>();
             for (kind, wet) in
@@ -1310,9 +1314,10 @@ mod tests {
                     let under = room.cells().find(|c| !passable[wet.terrain().get(*c).unwrap().index()]);
                     assert!(under.is_none(), "{kind} seed {s}: room {room:?} holds {under:?}, which no body stands on");
                 }
-                moved += usize::from(rooms(&wet) != rooms(&dry));
+                moved.fetch_add(usize::from(rooms(&wet) != rooms(&dry)), Relaxed);
             }
-        }
+        });
+        let moved = moved.into_inner();
         assert!(moved > 10, "only {moved} places had a room a lake lay in, or this proves little");
     }
 
@@ -1331,10 +1336,10 @@ mod tests {
     #[test]
     fn a_lake_that_covers_a_room_whole_drops_it_and_the_rest_keep_their_order_on_a_place_with_no_areas() {
         let passable = rig_with_water().tiles.tables().passable;
-        let (mut dropped, mut shrunk) = (0, 0);
-        for s in 0..120 {
+        let (dropped, shrunk) = (AtomicUsize::new(0), AtomicUsize::new(0));
+        par_seeds(0..120, |s| {
             let dry = roomed(s, |c, _| c).unwrap();
-            let Ok(wet) = roomed(s, |c, r| c.then(islands(r))) else { continue };
+            let Ok(wet) = roomed(s, |c, r| c.then(islands(r))) else { return };
             assert!(wet.outputs().first::<Area>().is_none(), "seed {s}: this rig has no areas");
             let before: Vec<Rect> = dry.outputs().iter::<Room>().map(|r| r.0).collect();
             let after: Vec<Rect> = wet.outputs().iter::<Room>().map(|r| r.0).collect();
@@ -1347,9 +1352,10 @@ mod tests {
                 let under = room.cells().find(|c| !passable[wet.terrain().get(*c).unwrap().index()]);
                 assert!(under.is_none(), "seed {s}: room {room:?} holds {under:?}, which no body stands on");
             }
-            dropped += usize::from(after.len() < before.len());
-            shrunk += usize::from(after.len() == before.len() && after != before);
-        }
+            dropped.fetch_add(usize::from(after.len() < before.len()), Relaxed);
+            shrunk.fetch_add(usize::from(after.len() == before.len() && after != before), Relaxed);
+        });
+        let (dropped, shrunk) = (dropped.into_inner(), shrunk.into_inner());
         assert!(dropped > 0, "no lake covered a room whole in 120 places, or this proves little ({shrunk} rooms only shrank)");
     }
 }

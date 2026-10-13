@@ -17,11 +17,13 @@ mod droids;
 mod gear;
 mod loot;
 mod mission;
+mod seeds;
 
 pub use droids::*;
 pub use gear::*;
 pub use loot::*;
 pub use mission::*;
+pub use seeds::par_seeds;
 
 use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;

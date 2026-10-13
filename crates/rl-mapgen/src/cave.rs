@@ -136,8 +136,10 @@ mod tests {
     use crate::context::{BaseContext, BuildContext};
     use crate::dungeon::{FarthestExit, RandomStart};
     use crate::survey::{Survey, Surveyed};
+    use crate::testing::par_seeds;
     use rand::rngs::StdRng;
     use rl_core::{Grid2D, RunSeed, SeedDomain};
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
     fn stream(s: u64) -> StdRng {
         RunSeed(s).rng(SeedDomain::new(b"test"), 0)
@@ -163,7 +165,7 @@ mod tests {
 
     #[test]
     fn a_cave_body_is_one_orthogonal_region_inside_its_box() {
-        for s in 0..200 {
+        par_seeds(0..200, |s| {
             for cave in caves() {
                 let piece = cave.draw(&mut stream(s));
                 assert!(!piece.cells.is_empty(), "seed {s}: {} drew no body", cave.name);
@@ -175,7 +177,7 @@ mod tests {
                 let reached = flood(&body, start, |i| body.cells()[i], Steps::Four, &mut seen);
                 assert_eq!(reached, piece.cells.len(), "seed {s}: {} is more than one region", cave.name);
             }
-        }
+        });
     }
 
     /// Numbers that shut every box draw a cave of one cell, the box's
@@ -195,8 +197,8 @@ mod tests {
 
     #[test]
     fn every_site_is_rock_just_outside_the_body_facing_out_of_it() {
-        let mut enclosing = 0;
-        for s in 0..200 {
+        let enclosing = AtomicUsize::new(0);
+        par_seeds(0..200, |s| {
             for cave in caves() {
                 let piece = cave.draw(&mut stream(s));
                 let body = marked(&piece.cells, &cave);
@@ -212,10 +214,10 @@ mod tests {
                 // Nothing facing out was dropped, and what was dropped faced rock the cave encloses.
                 let every = Piece::from_cells(piece.cells.clone()).sites;
                 assert!(every.iter().filter(|(q, _)| is_outside(*q)).all(|site| piece.sites.contains(site)), "seed {s}: {}", cave.name);
-                enclosing += usize::from(every.len() > piece.sites.len());
+                enclosing.fetch_add(usize::from(every.len() > piece.sites.len()), Relaxed);
             }
-        }
-        assert!(enclosing > 0, "some cave enclosed rock and offered no site on it");
+        });
+        assert!(enclosing.into_inner() > 0, "some cave enclosed rock and offered no site on it");
     }
 
     /// Caves alone in one district, or caves in one and rectangles in
@@ -261,14 +263,14 @@ mod tests {
         let rig = rig();
         for (w, h) in SIZES {
             for rectangles in [false, true] {
-                let (mut failed, mut mixed) = (0, 0);
-                for s in 0..200 {
+                let (failed, mixed) = (AtomicUsize::new(0), AtomicUsize::new(0));
+                par_seeds(0..200, |s| {
                     let ctx = match build(accrete(&rig, rectangles), &rig, w, h, s) {
                         Ok(ctx) => ctx,
                         Err(BuildError { pass, .. }) => {
                             assert_eq!(pass, "accrete", "{w}x{h} seed {s}");
-                            failed += 1;
-                            continue;
+                            failed.fetch_add(1, Relaxed);
+                            return;
                         }
                     };
                     let tables = ctx.tiles().tables();
@@ -281,14 +283,15 @@ mod tests {
                     let caves = ctx.outputs().iter::<Area>().filter(|a| is_cave(a)).count();
                     let all = ctx.outputs().iter::<Area>().count();
                     if rectangles {
-                        mixed += usize::from(caves > 0 && caves < all);
+                        mixed.fetch_add(usize::from(caves > 0 && caves < all), Relaxed);
                     } else {
                         assert_eq!(caves, all, "{w}x{h} seed {s}: caves alone grew something else");
                     }
                     for a in ctx.outputs().iter::<Area>() {
                         assert!(a.cells.iter().all(|c| walkable(&ctx, *c)), "{w}x{h} seed {s}: area {} is not all floor", a.index);
                     }
-                }
+                });
+                let (failed, mixed) = (failed.into_inner(), mixed.into_inner());
                 assert!(failed < 10, "{w}x{h}, rectangles {rectangles}: {failed} of 200 failed");
                 assert!(!rectangles || mixed > 100, "{w}x{h}: caves and rectangles shared {mixed} of 200 places");
             }
@@ -303,9 +306,9 @@ mod tests {
     #[test]
     fn the_survey_counts_every_cave_and_rates_its_seclusion() {
         let rig = rig();
-        let (mut rated, mut secluded) = (0, 0);
+        let (rated, secluded) = (AtomicUsize::new(0), AtomicUsize::new(0));
         for (w, h) in SIZES {
-            for s in 0..200 {
+            par_seeds(0..200, |s| {
                 let chain = Chain::new().then(accrete(&rig, true)).then(RandomStart).then(FarthestExit).then(Survey);
                 let ctx = chain
                     .run_retrying(|| BaseContext::blank(w, h, rig.tiles.clone(), rig.wall), RunSeed(s), 20)
@@ -316,11 +319,12 @@ mod tests {
                 for i in areas.iter().filter(|a| is_cave(a)).map(|a| a.index) {
                     let facts = surveyed.areas[i];
                     assert!(facts.openings >= 1 && facts.seclusion != u32::MAX, "{w}x{h} seed {s}: cave {i} is {facts:?}");
-                    rated += 1;
-                    secluded += usize::from(facts.seclusion > 0);
+                    rated.fetch_add(1, Relaxed);
+                    secluded.fetch_add(usize::from(facts.seclusion > 0), Relaxed);
                 }
-            }
+            });
         }
+        let (rated, secluded) = (rated.into_inner(), secluded.into_inner());
         assert!(rated > 400 && secluded > 0, "{rated} caves rated, {secluded} of them off the route");
     }
 }

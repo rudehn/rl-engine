@@ -191,30 +191,34 @@ impl Pass<BaseContext> for WallInscriptions {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+
     use rl_engine::rl_core::RunSeed;
 
     use super::*;
     use crate::dungeon::{FLOORS, Undermere, map_of};
+    use crate::testing::par_seeds;
 
     /// Over a span of seeds, some floor but never the throne's shows a
     /// blood trail, and not every floor does: `BloodTrail::chance_pct`
     /// is a chance, read on every floor's own decor, not a certainty.
     #[test]
     fn a_blood_trail_turns_up_on_some_floors_but_never_the_throne_over_a_span_of_seeds() {
-        let (mut with_blood, mut total) = (0usize, 0usize);
-        for s in 0..60u64 {
+        let (with_blood, total) = (AtomicUsize::new(0), AtomicUsize::new(0));
+        par_seeds(0..60, |s| {
             let undermere = Undermere::new(RunSeed(s));
             let blood = undermere.tiles().id("blood").expect("blood is a registered tile");
             for f in 1..FLOORS {
                 let built = undermere.build(map_of(f), None).expect("a floor still builds with its own decor");
-                total += 1;
+                total.fetch_add(1, Relaxed);
                 if built.terrain.iter().any(|(_, t)| t == blood) {
-                    with_blood += 1;
+                    with_blood.fetch_add(1, Relaxed);
                 }
             }
             let throne = undermere.build(map_of(FLOORS), None).expect("the throne still builds");
             assert!(!throne.terrain.iter().any(|(_, t)| t == blood), "seed {s}: the throne shows a blood trail");
-        }
+        });
+        let (with_blood, total) = (with_blood.into_inner(), total.into_inner());
         assert!(with_blood > 0, "no floor in the span ever showed a blood trail");
         assert!(with_blood < total, "every floor in the span showed a blood trail");
     }
