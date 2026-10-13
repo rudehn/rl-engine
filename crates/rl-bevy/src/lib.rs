@@ -79,7 +79,7 @@ pub use effects::{
     FromArgs, Harm, Ignite, Inflict, KeepOnRemnant, Landing, LandsAsItself, Mend, Moment, MomentId, Moments, Noise, Pull, Remnant, RemnantKeeps, Shove, Source,
     Teleport, Trigger, Triggers, area_cells, bury_remnants, land_triggers, report_died, report_remnants,
 };
-pub use events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
+pub use events::{Counters, FactSet, FactsPlugin, Happened, QuestChange, Quests};
 pub use fields::{MapFields, SavedField};
 pub use fire::{Burning, FIRE_GLOW, Fire, FireEvent, FirePlugin, FireRules, Flammable, Kindle};
 pub use fov::FovPlugin;
@@ -157,7 +157,7 @@ pub mod prelude {
         AddEffect, AddEngineEffects, AddMoment, Effect, EffectBonus, EffectKinds, EffectWorld, Effects, EffectsPlugin, Fired, FromArgs, Landing, Moments,
         Triggers,
     };
-    pub use crate::events::{Counters, FactsPlugin, Happened, QuestChange, Quests};
+    pub use crate::events::{Counters, FactSet, FactsPlugin, Happened, QuestChange, Quests};
     pub use crate::fire::{Burning, Fire, FireEvent, FirePlugin, FireRules, Flammable, Kindle};
     pub use crate::fov::FovPlugin;
     pub use crate::gas::{Breathed, GasPlugin, Gases, Release, Vents};

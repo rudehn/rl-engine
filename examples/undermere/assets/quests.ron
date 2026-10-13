@@ -15,6 +15,8 @@
 //               fact at least n; a death is a fact of one
 //   victory:    optional; true for the quest whose finishing wins the run, false when left
 //               out
+//   ending:     optional; what the run's ending says when this wins it, only on a victory;
+//               nothing when left out
 #![enable(implicit_some)]
 [
     // Named for the king the floor ten of part 1 held, and kept so a save

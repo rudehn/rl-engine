@@ -67,7 +67,6 @@ fn names() -> Vec<(&'static str, TypeId)> {
         ("mission::spawn_console_on_arrival", id(mission::spawn_console_on_arrival)),
         ("mission::answer_charge", id(mission::answer_charge)),
         ("mission::offer_the_pick", id(mission::offer_the_pick)),
-        ("mission::answer_victory", id(mission::answer_victory)),
         ("lifts::ride_out", id(lifts::ride_out)),
         ("run::resume", id(run::resume)),
         ("gear::load_armory", id(gear::load_armory)),

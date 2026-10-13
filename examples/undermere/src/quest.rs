@@ -2,13 +2,13 @@
 //! count, and the run won when the quest marked `victory` is done.
 //!
 //! [`load`] reads the file into the engine's [`Quests`] and the [`Facts`]
-//! its objectives count, as Foundry's `mission.rs` reads its charges;
-//! [`report_bosses`] writes that fact whenever a monster marked `boss`
-//! dies, and ends the run won in the same pass when the fact finishes the
-//! quest marked `victory`. The win is the file's: a later part that
-//! changes what wins a run, a boss drawn from a pool or a crown to carry
-//! home, changes the file rather than a system that knows which death is
-//! the last.
+//! its objectives count, through the engine's quest loader, as Foundry's
+//! `mission.rs` reads its charges; [`report_bosses`] writes that fact
+//! whenever a monster marked `boss` dies, and the engine ends the run won
+//! in the same pass when the fact finishes the quest marked `victory`. The
+//! win is the file's: a later part that changes what wins a run, a boss
+//! drawn from a pool or a crown to carry home, changes the file rather
+//! than a system that knows which death is the last.
 //!
 //! Loaded once, before any run, as the content is: the engine forgets a
 //! run's progress when the run ends, so the next run's quest is open again
@@ -34,35 +34,6 @@ impl Facts {
         let defs = Registry::from_defs(vec![FactDef::new("boss_slain")]).expect("one fact kind, named once");
         Self { boss_slain: defs.expect("boss_slain") }
     }
-}
-
-/// A quest as `quests.ron` writes it.
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct QuestRon {
-    name: String,
-    title: String,
-    text: String,
-    #[serde(default)]
-    after: Vec<String>,
-    objectives: Vec<ObjectiveRon>,
-    #[serde(default)]
-    victory: bool,
-}
-
-impl Named for QuestRon {
-    fn name(&self) -> &str {
-        &self.name
-    }
-}
-
-/// One objective as `quests.ron` writes it.
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ObjectiveRon {
-    text: String,
-    on: On,
-    need: Need,
 }
 
 /// What an objective counts: a closed list of the facts Undermere writes,
@@ -92,78 +63,39 @@ pub fn load(registries: &Registries) -> (Quests, Facts) {
     (Quests::new(defs), facts)
 }
 
-/// The quests in `text`, every problem with them at once: a quest after
-/// one the file does not have, a quest with nothing to do, and a file in
-/// which no quest wins the run.
+/// The quests in `text`, refused with every problem at once, and refused
+/// if no quest wins the run, since Undermere always has a way to win.
 fn read(text: &str, names: &Names, facts: &Facts) -> Result<Registry<QuestDef>, ContentError> {
-    let authored: Registry<QuestRon> = names.load(text)?;
-    authored.validate(|q, all| {
-        if let Some(a) = q.after.iter().find(|a| all.id(a).is_none()) {
-            return Err(format!("after unknown quest {a:?}"));
-        }
-        if q.objectives.is_empty() {
-            return Err("no objectives".into());
-        }
-        Ok(())
-    })?;
-    if !authored.iter().any(|(_, q)| q.victory) {
-        return Err(ContentError::Invalid(vec!["no quest is marked victory, so no run could be won".into()]));
-    }
-    let defs = authored
-        .iter()
-        .map(|(_, q)| QuestDef {
-            name: q.name.clone(),
-            title: q.title.clone(),
-            text: q.text.clone(),
-            after: q.after.iter().map(|a| Id::from_raw(authored.expect(a).raw())).collect(),
-            objectives: q.objectives.iter().map(|o| Objective { text: o.text.clone(), on: o.on.matcher(facts), need: o.need }).collect(),
-            victory: q.victory,
-        })
-        .collect();
-    Registry::from_defs(defs)
-}
-
-/// What reporting a boss's death reads and writes.
-#[derive(bevy::ecs::system::SystemParam)]
-pub struct Report<'w> {
-    bestiary: Res<'w, Bestiary>,
-    facts: Res<'w, Facts>,
-    quests: Res<'w, Quests>,
-    happened: MessageWriter<'w, Happened>,
-    over: MessageWriter<'w, RunOver>,
+    rl_engine::rl_rules::events::quest::load_winnable(text, names, |on: &On| on.matcher(facts))
 }
 
 /// Writes [`Facts::boss_slain`] for every monster marked `boss` that dies,
 /// about its definition, whoever's hand it fell to, since a boss burned to
-/// death is as dead as one cut down; and ends the run won, in the same
-/// pass, when that fact finishes the quest marked `victory`.
+/// death is as dead as one cut down.
 ///
-/// The run is won the moment the boss dies. The engine feeds the tracker
-/// only after the frame's turns, and the rest of this frame's turns are
-/// the court's, so a run left to end on the tracker's report could be lost
-/// to a knight's blow after the king had fallen. The fact is put to a copy
-/// of the tracker here instead, so it is still the quest file that says
-/// what wins, and the engine's own feeding of it later changes nothing it
-/// has not already been told. With no words of its own: the menu's title
-/// over the ending says the king is dead, and the run's record who slew
-/// him.
+/// The run is won the moment the boss dies: the engine feeds the fact to
+/// the tracker in the same pass, after `TurnSet::React`, and ends the run
+/// won there when it finishes the quest marked `victory`, so a knight's
+/// blow later in the frame cannot take the win away. With no words of
+/// its own: the menu's title over the ending says the king is dead, and
+/// the run's record who slew him.
 ///
 /// In `TurnSet::React`, while the dead still stand where they fell and
 /// carry their [`Kind`].
-pub fn report_bosses(mut deaths: MessageReader<DeathEvent>, kinds: Query<&Kind>, report: Report) {
-    let Report { bestiary, facts, quests, mut happened, mut over } = report;
+pub fn report_bosses(
+    mut deaths: MessageReader<DeathEvent>,
+    kinds: Query<&Kind>,
+    bestiary: Res<Bestiary>,
+    facts: Res<Facts>,
+    mut happened: MessageWriter<Happened>,
+) {
     // ANCHOR: slain
     for death in deaths.read() {
         let Ok(kind) = kinds.get(death.entity) else { continue };
         if !bestiary.defs.get(kind.0).boss {
             continue;
         }
-        let fact = Fact::new(facts.boss_slain).about(u64::from(kind.0.raw()));
-        happened.write(Happened(fact));
-        let mut tracker = quests.tracker.clone();
-        if tracker.feed(&fact, &quests.defs).iter().any(|change| matches!(change, Change::QuestDone { victory: true, .. })) {
-            over.write(RunOver::won());
-        }
+        happened.write(Happened(Fact::new(facts.boss_slain).about(u64::from(kind.0.raw()))));
     }
     // ANCHOR_END: slain
 }
@@ -187,8 +119,7 @@ mod tests {
 
     /// The run is won the moment the king dies: over in the very frame of
     /// the blow, before any later turn of that frame, a knight's among
-    /// them, could take the win away, and not a frame later when the
-    /// engine's tracker reports the quest done.
+    /// them, could take the win away, and not a frame later.
     #[test]
     fn the_run_is_won_in_the_frame_the_king_dies() {
         use rl_engine::rl_core::RunSeed;
@@ -220,9 +151,8 @@ mod tests {
     /// every turn, and the adventurer is down to three of their forty. In
     /// one frame the adventurer fells the king and waits, and the knight's
     /// turn, later in that frame, brings a blow that kills them. The king
-    /// fell first, so the run is won and its record says so; a win left to
-    /// the engine's report of the quest, a frame later, would have lost the
-    /// run to that blow.
+    /// fell first, so the run is won and its record says so; a win heard
+    /// only after the frame's turns would have lost the run to that blow.
     #[test]
     fn a_blow_from_the_court_in_the_frame_the_king_falls_does_not_take_the_win_away() {
         use rl_engine::rl_core::RunSeed;

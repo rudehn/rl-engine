@@ -204,16 +204,11 @@ impl Plugin for FoundryPlugin {
         app.add_verb(crate::mission::CHARGE);
         app.add_systems(Turn, crate::mission::answer_charge.in_set(TurnSet::React));
         // A game's reaction to the mission finishing, not to a turn
-        // itself: an ordinary `Update` system, reading `QuestChange` one
-        // frame behind the
-        // fact that finished it (`rl_bevy::events`'s own doc on it).
-        // Before the input set, so the pick is open before any key handler
+        // itself: an ordinary `Update` system, reading the `QuestChange`
+        // the tracker wrote in the pass the fact landed. Before the input set, so the pick is open before any key handler
         // reads `Modals` that frame and a key cannot fall through to the
         // world while the pick is pending, and before the drawing.
         app.add_systems(Update, crate::mission::offer_the_pick.before(EngineSet::Input));
-        // The mission's end, answered as its charges are: from the tracker's
-        // report, one frame behind the fact that finished it.
-        app.add_systems(Update, crate::mission::answer_victory.before(EngineSet::Input));
         // The lift out: a refused `GoThrough` on it, answered in the pass.
         app.add_systems(Turn, crate::lifts::ride_out.in_set(TurnSet::React));
         // Uplink's own reach bonus: after `heat`'s chain and ammunition's

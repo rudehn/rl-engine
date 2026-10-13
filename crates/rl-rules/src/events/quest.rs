@@ -6,9 +6,16 @@
 //! after is done, and is done when every objective is. The [`Tracker`]
 //! holds the state and reports every change as it feeds facts, so a game
 //! narrates, rewards or ends the run from the changes and nothing else.
+//!
+//! A game's quests are a file, read by [`load`] or [`load_winnable`]: the
+//! schema is the engine's, and what an objective counts is the game's own
+//! closed list, so an objective naming a fact nothing writes is refused
+//! when the file is read rather than left open for ever.
 
-use crate::content::{Named, Registry};
+use crate::content::{ContentError, Named, Registry};
+use crate::names::Names;
 use rl_core::Id;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::events::fact::{Fact, Matcher};
@@ -67,6 +74,10 @@ pub struct QuestDef {
     pub objectives: Vec<Objective>,
     /// Whether finishing this ends the run in victory.
     pub victory: bool,
+    /// What the run's ending says when finishing this wins it; empty for
+    /// nothing, and never said of a quest that is not `victory`.
+    #[serde(default)]
+    pub ending: String,
 }
 
 impl Named for QuestDef {
@@ -200,6 +211,136 @@ impl Tracker {
     }
 }
 
+/// A quest as a quest file writes it, over the game's own list of what
+/// an objective may count.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct QuestRon<On> {
+    name: String,
+    title: String,
+    text: String,
+    #[serde(default)]
+    after: Vec<String>,
+    objectives: Vec<ObjectiveRon<On>>,
+    #[serde(default)]
+    victory: bool,
+    #[serde(default)]
+    ending: String,
+}
+
+impl<On> Named for QuestRon<On> {
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+/// One objective as a quest file writes it.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ObjectiveRon<On> {
+    text: String,
+    on: On,
+    need: Need,
+}
+
+/// The quests in a quest file, or every problem with them at once.
+///
+/// `On` is the game's own list of what an objective counts, an enum in
+/// the game's crate, and `matcher` turns one into the [`Matcher`] the
+/// tracker counts facts with; a variant may carry what it is about, a
+/// deck or a [`NameRef`](crate::NameRef) resolved through `names`. A
+/// closed list rather than a fact named by a string, so a file counting
+/// something the game never writes is refused here instead of read as a
+/// quest that can never finish.
+///
+/// The file is a RON list of quests, `implicit_some` on:
+///
+/// ```text
+/// name:       unique; another quest's `after` names it by this
+/// title:      what the quest is called
+/// text:       what it asks, in a line or two
+/// after:      optional; names of quests that must be done before this one
+///             opens; none when left out, and it is open from the start
+/// objectives: a list of (text, on, need)
+///   text:     what the objective asks
+///   on:       what it counts: a variant of the game's `On`
+///   need:     Total(n), matching amounts adding up to n | Latest(n), the
+///             latest matching amount at least n
+/// victory:    optional; true for a quest whose finishing wins the run
+/// ending:     optional; what the run's ending says when this wins it
+/// ```
+///
+/// Refused, every one reported together, each named by its quest: a quest
+/// `after` one the file does not have, a quest with no objectives, and an
+/// `ending` on a quest that wins nothing, which would never be said; and
+/// whatever [`Names::load`] refuses, a duplicate name, an unknown field or
+/// an `On` the game does not have. A file in which nothing wins is read:
+/// a game with no way to win is a game, and [`load_winnable`] is the call
+/// for one that has.
+///
+/// ```
+/// use rl_rules::events::quest::load;
+/// use rl_rules::{FactDef, Matcher, Names, Registry};
+///
+/// #[derive(serde::Deserialize)]
+/// enum On {
+///     RatSlain,
+/// }
+///
+/// let facts = Registry::from_defs(vec![FactDef::new("rat_slain")]).unwrap();
+/// let slain = facts.expect("rat_slain");
+/// let text = r#"[(name: "rats", title: "Rats", text: "", objectives: [(text: "Kill three", on: RatSlain, need: Total(3))])]"#;
+/// let quests = load(text, &Names::new(), |on: &On| match on {
+///     On::RatSlain => Matcher::any(slain),
+/// })
+/// .unwrap();
+/// assert_eq!(quests.get(quests.expect("rats")).objectives[0].required(), 3);
+/// ```
+pub fn load<On: DeserializeOwned>(text: &str, names: &Names<'_>, matcher: impl Fn(&On) -> Matcher) -> Result<Registry<QuestDef>, ContentError> {
+    read(text, names, matcher, false)
+}
+
+/// [`load`], and a file in which no quest is marked `victory` refused
+/// too, beside every other problem, since a run under it could only end
+/// in death.
+pub fn load_winnable<On: DeserializeOwned>(text: &str, names: &Names<'_>, matcher: impl Fn(&On) -> Matcher) -> Result<Registry<QuestDef>, ContentError> {
+    read(text, names, matcher, true)
+}
+
+/// What [`load`] and [`load_winnable`] share.
+fn read<On: DeserializeOwned>(text: &str, names: &Names<'_>, matcher: impl Fn(&On) -> Matcher, winnable: bool) -> Result<Registry<QuestDef>, ContentError> {
+    let authored: Registry<QuestRon<On>> = names.load(text)?;
+    let mut errors = Vec::new();
+    for (_, q) in authored.iter() {
+        errors.extend(q.after.iter().filter(|a| authored.id(a).is_none()).map(|a| format!("{}: after unknown quest {a:?}", q.name)));
+        if q.objectives.is_empty() {
+            errors.push(format!("{}: no objectives", q.name));
+        }
+        if !q.ending.is_empty() && !q.victory {
+            errors.push(format!("{}: an ending, on a quest that wins nothing, would never be said", q.name));
+        }
+    }
+    if winnable && !authored.iter().any(|(_, q)| q.victory) {
+        errors.push("no quest is marked victory, so no run could be won".into());
+    }
+    if !errors.is_empty() {
+        return Err(ContentError::Invalid(errors));
+    }
+    let defs = authored
+        .iter()
+        .map(|(_, q)| QuestDef {
+            name: q.name.clone(),
+            title: q.title.clone(),
+            text: q.text.clone(),
+            after: q.after.iter().map(|a| QuestId::from_raw(authored.expect(a).raw())).collect(),
+            objectives: q.objectives.iter().map(|o| Objective { text: o.text.clone(), on: matcher(&o.on), need: o.need }).collect(),
+            victory: q.victory,
+            ending: q.ending.clone(),
+        })
+        .collect();
+    Registry::from_defs(defs)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -216,6 +357,7 @@ mod tests {
                 after: vec![],
                 objectives: vec![Objective::count("Kill three crabs", Matcher::any(killed).about(1), 3)],
                 victory: false,
+                ending: String::new(),
             },
             QuestDef {
                 name: "hoard".into(),
@@ -227,6 +369,7 @@ mod tests {
                     Objective::reach("Carry 100 doubloons", Matcher::any(carrying).about(7), 100),
                 ],
                 victory: true,
+                ending: String::new(),
             },
         ])
         .unwrap();
@@ -264,5 +407,74 @@ mod tests {
             vec![Change::ObjectiveDone { quest: hoard, objective: 0 }, Change::QuestDone { quest: hoard, victory: true }]
         );
         assert_eq!(t.in_state(QuestState::Done).collect::<Vec<_>>(), vec![legs, hoard]);
+    }
+
+    #[derive(Debug, Clone, Copy, serde::Deserialize)]
+    enum On {
+        Killed(u64),
+        Entered,
+    }
+
+    fn matcher(facts: &Registry<FactDef>) -> impl Fn(&On) -> Matcher + '_ {
+        |on| match on {
+            On::Killed(what) => Matcher::any(facts.expect("killed")).about(*what),
+            On::Entered => Matcher::any(facts.expect("entered")),
+        }
+    }
+
+    #[test]
+    fn a_quest_file_reads_into_definitions_with_its_order_its_matchers_and_its_ending() {
+        let (facts, _) = quests();
+        let text = r#"[
+            (name: "legs", title: "Sea legs", text: "", objectives: [(text: "Kill three crabs", on: Killed(1), need: Total(3))]),
+            (name: "hoard", title: "The hoard", text: "Find it.", after: ["legs"], objectives: [(text: "Find the vault", on: Entered, need: Latest(1))], victory: true, ending: "Rich at last."),
+        ]"#;
+        let quests = load_winnable(text, &Names::new(), matcher(&facts)).unwrap();
+        let (legs, hoard) = (quests.expect("legs"), quests.expect("hoard"));
+        assert_eq!(quests.get(legs).objectives[0].on, Matcher::any(facts.expect("killed")).about(1));
+        assert_eq!(quests.get(hoard).after, vec![legs]);
+        assert_eq!((quests.get(hoard).victory, quests.get(hoard).ending.as_str()), (true, "Rich at last."));
+        assert_eq!((quests.get(legs).victory, quests.get(legs).ending.as_str()), (false, ""));
+    }
+
+    /// Every problem in the file comes back in one refusal, each named by
+    /// its quest, so an author fixes the file once.
+    #[test]
+    fn every_problem_in_a_quest_file_is_reported_at_once() {
+        let (facts, _) = quests();
+        let text = r#"[
+            (name: "lost", title: "Lost", text: "", after: ["nowhere", "legs"], objectives: []),
+            (name: "legs", title: "Legs", text: "", objectives: [(text: "Kill", on: Killed(1), need: Total(1))], ending: "Said by nobody."),
+        ]"#;
+        let expected = [
+            r#"lost: after unknown quest "nowhere""#,
+            "lost: no objectives",
+            "legs: an ending, on a quest that wins nothing, would never be said",
+            "no quest is marked victory, so no run could be won",
+        ];
+        match load_winnable(text, &Names::new(), matcher(&facts)) {
+            Err(ContentError::Invalid(errors)) => assert_eq!(errors, expected),
+            other => panic!("refused for the wrong reason: {other:?}"),
+        }
+        match load(text, &Names::new(), matcher(&facts)) {
+            Err(ContentError::Invalid(errors)) => assert_eq!(errors, expected[..3], "and a file that need not win is not refused for winning nothing"),
+            other => panic!("refused for the wrong reason: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_quest_file_that_wins_nothing_reads_unless_it_must_be_winnable() {
+        let (facts, _) = quests();
+        let text = r#"[(name: "legs", title: "Legs", text: "", objectives: [(text: "Kill", on: Killed(1), need: Total(1))])]"#;
+        assert_eq!(load(text, &Names::new(), matcher(&facts)).map(|q| q.len()), Ok(1));
+        assert!(load_winnable(text, &Names::new(), matcher(&facts)).is_err());
+    }
+
+    #[test]
+    fn an_objective_counting_what_the_game_never_writes_is_refused_by_name() {
+        let (facts, _) = quests();
+        let text = r#"[(name: "rats", title: "Rats", text: "", objectives: [(text: "Kill rats", on: RatSlain, need: Total(1))], victory: true)]"#;
+        let refused = load(text, &Names::new(), matcher(&facts)).expect_err("it is refused");
+        assert!(refused.to_string().contains("RatSlain"), "naming what it counts: {refused}");
     }
 }

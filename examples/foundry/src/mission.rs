@@ -2,15 +2,16 @@
 //! next, decks three, six and nine, then the core on deck ten, each
 //! opening a pick of its own once its console is set.
 //!
-//! [`load`] turns `assets/quests.ron` into a [`Quests`] and the one
-//! [`Facts`] kind it counts; Foundry's objective vocabulary is
-//! one variant, `On::ChargeSet`. [`spawn_console_on_arrival`] plants the
+//! [`load`] turns `assets/quests.ron` into a [`Quests`] and the
+//! [`Facts`] kinds it counts, through the engine's quest loader; Foundry's
+//! objective vocabulary is `On::ChargeSet` and `On::LiftOut`, and the
+//! engine ends the run won, with the file's `ending`, in the pass the lift
+//! out is ridden. [`spawn_console_on_arrival`] plants the
 //! reactor console on the `R` mark of any deck that reports one, beside the
 //! loot the engine scatters on the same arrival
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
-use rl_engine::rl_core::Id;
 
 const QUESTS_RON: &str = include_str!("../assets/quests.ron");
 
@@ -28,26 +29,6 @@ impl Facts {
         let defs = Registry::from_defs(vec![FactDef::new("charge_set"), FactDef::new("lift_out")]).unwrap();
         Self { charge_set: defs.expect("charge_set"), lift_out: defs.expect("lift_out") }
     }
-}
-
-/// A task as authored in `quests.ron`.
-#[derive(Debug, Clone, serde::Deserialize)]
-struct QuestRon {
-    name: String,
-    title: String,
-    text: String,
-    #[serde(default)]
-    after: Vec<String>,
-    objectives: Vec<ObjectiveRon>,
-    #[serde(default)]
-    victory: bool,
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-struct ObjectiveRon {
-    text: String,
-    on: On,
-    need: Need,
 }
 
 /// What an objective counts: the deck whose reactor was charged, or the
@@ -71,12 +52,6 @@ impl On {
     }
 }
 
-impl Named for QuestRon {
-    fn name(&self) -> &str {
-        &self.name
-    }
-}
-
 /// Loads `quests.ron` and its one fact kind. Panics listing every problem,
 /// since a broken mission file is a game that cannot start.
 pub fn load(registries: &Registries) -> (Quests, Facts) {
@@ -86,30 +61,10 @@ pub fn load(registries: &Registries) -> (Quests, Facts) {
     (Quests::new(defs), facts)
 }
 
-/// The tasks in `text`.
+/// The tasks in `text`, refused with every problem at once, and refused
+/// if none wins the run, since a mission always ends somewhere.
 fn tasks(text: &str, names: &Names, facts: &Facts) -> Result<Registry<QuestDef>, ContentError> {
-    let authored: Registry<QuestRon> = names.load(text)?;
-    authored.validate(|q, all| {
-        if let Some(a) = q.after.iter().find(|a| all.id(a).is_none()) {
-            return Err(format!("after unknown quest {a:?}"));
-        }
-        if q.objectives.is_empty() {
-            return Err("no objectives".into());
-        }
-        Ok(())
-    })?;
-    let defs = authored
-        .iter()
-        .map(|(_, q)| QuestDef {
-            name: q.name.clone(),
-            title: q.title.clone(),
-            text: q.text.clone(),
-            after: q.after.iter().map(|a| Id::from_raw(authored.expect(a).raw())).collect(),
-            objectives: q.objectives.iter().map(|o| Objective { text: o.text.clone(), on: o.on.matcher(facts), need: o.need }).collect(),
-            victory: q.victory,
-        })
-        .collect();
-    Registry::from_defs(defs)
+    rl_engine::rl_rules::events::quest::load_winnable(text, names, |on: &On| on.matcher(facts))
 }
 
 /// Loads the mission fresh every run, the way `run::start` loads the
@@ -201,11 +156,11 @@ pub fn answer_charge(
 
 /// Reacts to the tracker's own report of a charge quest finishing: never
 /// a mere `Progress`, and never a quest that is not one of the four
-/// charges, so a later mission of any kind cannot open this pick. One
-/// frame behind the fact that finished it (`rl_bevy::events`'s own doc on
-/// [`QuestChange`]), which is why this is a plain `Update` system rather
-/// than anything in `TurnSet`: nothing here is itself a reaction to a
-/// turn, only to what the tracker made of one after the fact. Runs before
+/// charges, so a later mission of any kind cannot open this pick. The
+/// tracker reports it in the pass the fact landed, and this reads it at
+/// the head of the next frame, a plain `Update` system rather than
+/// anything in `TurnSet`: a screen opens between frames, not between
+/// passes, and nothing here is itself a reaction to a turn. Runs before
 /// `EngineSet::Input`, so the key handlers find the pick open.
 ///
 /// The mission is loaded as a run begins, so on the title before the
@@ -225,18 +180,6 @@ pub fn offer_the_pick(
             && charges.contains(&quest)
         {
             crate::upgrades::offer(&mut modals, &mut screen, &mut choosing, &taken);
-        }
-    }
-}
-
-/// Ends the run won when the tracker reports the victory quest done: the
-/// win is the mission's, written in
-/// `quests.ron`, not a system that knows which quest is last. In `Update`
-/// beside [`offer_the_pick`], for the same reason.
-pub fn answer_victory(mut changes: MessageReader<QuestChange>, mut over: MessageWriter<RunOver>) {
-    for change in changes.read() {
-        if let Change::QuestDone { victory: true, .. } = change.0 {
-            over.write(RunOver::won().saying("The lift climbs out of the foundry, and the core goes up under it."));
         }
     }
 }

@@ -10,6 +10,8 @@
 //     need:     Total(n) counts matching facts
 //   victory:    optional; finishing this wins the run: the last task, riding the lift
 //               out on deck one once the core is charged
+//   ending:     optional; what the run's ending says when this wins it; only on a
+//               victory
 #![enable(implicit_some)]
 [
     (
@@ -46,5 +48,6 @@
         after: ["core_charge"],
         objectives: [(text: "Ride the lift out on deck one", on: LiftOut, need: Total(1))],
         victory: true,
+        ending: "The lift climbs out of the foundry, and the core goes up under it.",
     ),
 ]
