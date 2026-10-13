@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The Corsair, Delve and Heist example games are removed, so the examples are the tutorial, Undermere and Foundry, fewer games to keep up with the engine. `OverworldPlugin` and `StreamingPlugin` stay in the engine unchanged, with no example game using them for now: their reference pages say so where a snippet stood, and every other page that quoted one of the three quotes Undermere or Foundry instead.
+  To change: nothing in a game. `cargo run -p corsair`, `-p delve` and `-p heist` are gone, and a game that copied from one of them keeps its copy.
+
 - `DamageDealt` says what health was lost: the new `lost` is the health the target lost, never more than it had, where `dealt` stays the blow as it landed, so a killing blow of 30 on a target with 5 left is `dealt: 30, lost: 5`. For a hit absorbed both are the same negative, what it restored. `dealt` was documented as health lost and never was past a target's last health.
   To change: a game that writes a `DamageDealt` literal adds `lost`; a game that counted harm done from `dealt`, or rebuilt the clamped figure from the target's health, reads `lost`.
 

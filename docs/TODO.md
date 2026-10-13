@@ -25,54 +25,52 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 
 | # | Item | Section | Impact | Effort |
 |---|------|---------|--------|--------|
-| 1 | Corsair's tests play a different game from its binary | 3 | medium | medium |
-| 2 | No map fingerprint tests for Corsair, Delve and Heist | 3 | medium | low |
-| 3 | `OnMap` as a required component | 4 | medium | medium |
-| 4 | What the save holds is stated where the save is | 7 | medium | medium |
-| 5 | `OverworldPlugin` declares one requirement and needs four | 3 | medium | low |
-| 6 | A searcher dithers where it lost the trail | 2 | medium | low |
-| 7 | No game fields a kind that travels | 3 | medium | medium |
-| 8 | Movement profiles that change costs | 3 | medium | high |
-| 9 | The narrator hears what registers itself | 7 | medium | high |
-| 10 | `Thinking` splits its context from its snapshot | 4 | low | low |
-| 11 | `TargetView` holds the enum it keeps reconstructing | 4 | low | low |
-| 12 | `WorldMap::tile` walks a `BTreeMap` per call | 8 | low | low |
-| 13 | Admission scans its waiting actors linearly | 4 | low | low |
-| 14 | One allowlist entry in Foundry's ambiguity test | 4 | low | low |
-| 15 | `Rooms` can run out of attempts on a small map | 3 | low | low |
-| 16 | The `Doors` pass hangs two doors back to back | 3 | low | low |
-| 17 | `HalveIfBlocked` can never fire | 3 | low | low |
-| 18 | Two engine types are named for a theme word | 4 | low | low |
-| 19 | A light that moved costs a second cast, unmeasured | 8 | low | low |
-| 20 | Split `crates/rl-bevy/src/ability.rs` | 4 | low | medium |
-| 21 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
-| 22 | The resolvers in `ResolveSet::Act` are unordered | 4 | low | medium |
-| 23 | A prop cannot block sight, or block the way and let a shot past | 3 | medium | medium |
-| 24 | `offer_abilities` declares `&mut Stack` it only reads | 4 | low | low |
-| 25 | A piece stamped where no wall rings it can cut the floor | 1 | low | medium |
+| 1 | `OnMap` as a required component | 4 | medium | medium |
+| 2 | What the save holds is stated where the save is | 7 | medium | medium |
+| 3 | `OverworldPlugin` declares one requirement and needs four | 3 | medium | low |
+| 4 | A searcher dithers where it lost the trail | 2 | medium | low |
+| 5 | No game fields a kind that travels | 3 | medium | medium |
+| 6 | Movement profiles that change costs | 3 | medium | high |
+| 7 | The narrator hears what registers itself | 7 | medium | high |
+| 8 | `Thinking` splits its context from its snapshot | 4 | low | low |
+| 9 | `TargetView` holds the enum it keeps reconstructing | 4 | low | low |
+| 10 | `WorldMap::tile` walks a `BTreeMap` per call | 8 | low | low |
+| 11 | Admission scans its waiting actors linearly | 4 | low | low |
+| 12 | One allowlist entry in Foundry's ambiguity test | 4 | low | low |
+| 13 | `Rooms` can run out of attempts on a small map | 3 | low | low |
+| 14 | The `Doors` pass hangs two doors back to back | 3 | low | low |
+| 15 | `HalveIfBlocked` can never fire | 3 | low | low |
+| 16 | Two engine types are named for a theme word | 4 | low | low |
+| 17 | A light that moved costs a second cast, unmeasured | 8 | low | low |
+| 18 | Split `crates/rl-bevy/src/ability.rs` | 4 | low | medium |
+| 19 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
+| 20 | The resolvers in `ResolveSet::Act` are unordered | 4 | low | medium |
+| 21 | A prop cannot block sight, or block the way and let a shot past | 3 | medium | medium |
+| 22 | `offer_abilities` declares `&mut Stack` it only reads | 4 | low | low |
+| 23 | A piece stamped where no wall rings it can cut the floor | 1 | low | medium |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
 The corner-cutting fallbacks went the same day: every tactic that picks a neighbour itself now asks whether the move resolver would take that step.
 The one that mattered most was the bench, which disproved the item that had been ranked first on the performance side: the turn loop is linear in the crowd, not quadratic, and the perceive stage's scans are not where the time goes.
 Six more were built on 2026-09-30, healing at their head: healing as its own path to health, the light recast inside the turn, the flow field cache, every game's lines inside a turn through `Tell`, anyone travelling when its wits say so, and a `Burning` thing saved.
-The table was renumbered that day, again on 2026-10-04 for two gaps Undermere's floors found, again on 2026-10-10 when the three furnishing items were built, and again on 2026-10-11 when the coloured light and the player's long action were built, so a number here is a place in the order as it stands and not the one an older note may cite.
+The table was renumbered that day, again on 2026-10-04 for two gaps Undermere's floors found, again on 2026-10-10 when the three furnishing items were built, again on 2026-10-11 when the coloured light and the player's long action were built, and again on 2026-10-12 when the two items that were only about the Corsair, Delve and Heist examples went with the games, so a number here is a place in the order as it stands and not the one an older note may cite.
 
 Why the order that is left, in four moves:
 
-1. **The middle band first, 1 to 7.**
+1. **The middle band first, 1 to 5.**
    This is behaviour and consistency debt: what a second game hits, not a first.
    None of it is speculative, and none of it needs measuring first.
-   Item 7 is travel: built and tested in the engine, and no game's content asks for it, which is the shape of the failure `docs/PLAN.md` section 1 was written against.
-2. **Then 8 and 9**, the high-effort ones, of which only the narrator's registry is structural.
+   Item 5 is travel: built and tested in the engine, and no game's content asks for it, which is the shape of the failure `docs/PLAN.md` section 1 was written against.
+2. **Then 6 and 7**, the high-effort ones, of which only the narrator's registry is structural.
    Neither is urgent.
-3. **Items 10 to 20 are cleanups** worth taking whenever their file is open for another reason rather than scheduling.
-   Item 19 is a measurement, not a change: run the lit bench before deciding there is anything to fix.
-   Item 24, added on 2026-10-09, is one more of these.
+3. **Items 8 to 18 are cleanups** worth taking whenever their file is open for another reason rather than scheduling.
+   Item 17 is a measurement, not a change: run the lit bench before deciding there is anything to fix.
+   Item 22, added on 2026-10-09, is one more of these.
 4. **The rest wait on something.**
-   Item 21 waits on a game that actually wants the tactics it would add, and item 22 on a second game asking for it.
-   Item 23 was raised on 2026-09-28 when Foundry's rooms were first furnished, and is what the furnished rooms most visibly lack; the three furnishing items raised beside it were built on 2026-10-10.
-   Item 25 is what furnishing left on 2026-10-10, and waits on a game that stamps into a map `Accrete` did not grow.
+   Item 19 waits on a game that actually wants the tactics it would add, and item 20 on a second game asking for it.
+   Item 21 was raised on 2026-09-28 when Foundry's rooms were first furnished, and is what the furnished rooms most visibly lack; the three furnishing items raised beside it were built on 2026-10-10.
+   Item 23 is what furnishing left on 2026-10-10, and waits on a game that stamps into a map `Accrete` did not grow.
 
 Section 5 is documentation and section 6 is the release, and both are gated on the API settling rather than on this list.
 Section 9 is low priority and deliberately outside the order.
@@ -131,15 +129,9 @@ The five items that opened this section were built in the six stages of `docs/de
   Two doors stand where one was meant, and where they are shut a walker opens both to cross one gap.
   Seen in Undermere's halls and crypts, and Foundry's decks share it, since every game that chains `Rooms` and `Doors` does.
   The fix is to skip a ring cell whose neighbour across the gap is already a door, or to hang one door per corridor rather than one per room it meets; either moves the maps of every game that hangs doors, so their fingerprints are re-baselined with it.
-- **Corsair's tests play a different game from its binary.**
-  Corsair's binary runs `honour_portals`, `populate_places`, `drop_loot` and `inflict_on_hit`, and its test harness adds none of the four, so no Corsair test exercises them.
-  One plugin that both the binary and the harness add, as Foundry's `FoundryPlugin` is, would close the gap for good.
 - **`on_equip`.**
   Effects land once and wearing is a standing state, which is why `docs/design/items.md` section 6 defers it; a cursed plate that bites when put on is a real case and would be one more moment, reported by the items resolver on `Equip`.
   It waits for a game that wants it.
-- **Corsair, Delve and Heist have no map fingerprint tests.**
-  A change to their maps goes unnoticed: the Foundry branch changed Corsair's cave maps and Delve's heart floor, and nothing in either game noticed.
-  A fingerprint tripwire per game over a few seeds' maps, labelled as such, would make the next such change a deliberate re-baseline.
 
 - **`HalveIfBlocked` can never fire.**
   The engine builds a `Defender` in exactly two places and both hardcode the flag: `apply_damage` at `crates/rl-bevy/src/combat.rs:659` and `expected_damage` at `crates/rl-rules/src/forecast.rs:70`, each `blocked: false`.
@@ -206,7 +198,7 @@ The plugin table landed on 2026-09-21, with `scripts/check-overview.sh` behind i
 The design docs still owed, and which files a slice owes, are in `AGENTS.md`.
 
 - **Guide chapters for the second half.**
-  Lighting, stealth, abilities, statuses, saving and streaming each get one paragraph in `docs/guide/src/09-where-to-go-next.md`, and the alternative is the 1,280-line `examples/delve/src/main.rs`.
+  Lighting, stealth, abilities, statuses, saving and streaming each get one paragraph in `docs/guide/src/09-where-to-go-next.md`, and the alternative is reading Undermere or Foundry whole.
   Four chapters in the guide's style: lights out, being noticed, an ability in RON, saving the run.
 - **One picture of the frame.**
   `EngineSet`, the `Turn` passes and their sets are described in prose in `crates/rl-bevy/src/plugin.rs`; a diagram on one page of the guide would replace what readers reverse-engineer today.
@@ -216,7 +208,6 @@ The design docs still owed, and which files a slice owes, are in `AGENTS.md`.
 - **A start helper.**
   A game begins with seven incantations: the plugin group, the seed, the tiles, their appearance, `WorldMap::new(tables)`, `PlaceRulesRes`, a warp, and then the state flip to `Playing`.
   One `start_in_place(player, map)` command could take the last two, and the tutorial's chapter 1 shrinks with it.
-- **Split the delve's `main.rs`** into input, narration and content modules the way Corsair is, so the second worked example reads at the same grain as the first.
 
 - **The design notes no longer describe the code.**
   Six were mined for the system reference on 2026-09-21 and 2026-09-22 and every one was wrong in a structural claim rather than a detail: `docs/design/minds.md`, `remains.md`, `fields.md`, `noise.md`, `stealth.md` and `props.md` each name a type, a field or a mechanism that has moved or never existed, and two contradict themselves between a section and their own account of what the build changed.
@@ -224,17 +215,10 @@ The design docs still owed, and which files a slice owes, are in `AGENTS.md`.
   What a note is still right about is why a subsystem is shaped as it is; the fix is a line at the top of each saying the reference supersedes its model, and the decision about deleting them is `docs/PLAN.md`'s.
 - **The worked example teaches an XOR where the rule says `derive`.**
   `docs/guide/src/systems/mapgen.md` spends four sentences of `The line` on a pass's stream coming from `RunSeed::derive`, which `AGENTS.md` names as the mechanism, and the snippet directly above it derives a floor's seed with `RunSeed(self.seed.0 ^ (depth as u64) << 32)` at `examples/tutorial/src/bin/step06_descent.rs:135`.
-  `examples/corsair/src/places.rs` does the same with an XOR of its own.
-  Both are still derived from the run's seed, so neither breaks the rule about constants or entropy, and the choice of index is the caller's; what is wrong is that the example a reader copies is not the mechanism the page and the guide both name.
-  Changing either line changes every map those seeds generate and may disturb fingerprint tests, so it is its own slice rather than a correction to the page.
+  It is still derived from the run's seed, so it does not break the rule about constants or entropy, and the choice of index is the caller's; what is wrong is that the example a reader copies is not the mechanism the page and the guide both name.
+  Changing the line changes every map those seeds generate and may disturb fingerprint tests, so it is its own slice rather than a correction to the page.
   Recorded in the same breath: A*'s insertion-order tie-break was documented at `crates/rl-grid/src/astar.rs:10` with no test behind it until 2026-09-22, when writing `systems/grids.md` turned up the claim that ties are pinned by tests and only the flood half was.
   Other documented properties may be unpinned the same way, and a page that claims one is the occasion to check.
-- **Two snippets in the reference name no game.**
-  Every page in `docs/guide/src/systems/` that quotes an example attributes it, "Warren's floor", "Foundry's probe", "Corsair's `Plunder`", "The tutorial's lantern".
-  `docs/guide/src/systems/fields.md` is the exception: both of its `Using it` snippets come from `examples/delve/src/main.rs` and its two lead-in sentences name no game, so a reader of the published book meets two unattributed blocks, the include marker that names the path being hidden in the rendered page.
-  The cause was `scripts/check-systems-style.sh`, which banned the word the game is named for until 2026-09-22; `statuses.md` had gone the other way and written "the caves below", which is now "Delve's caves".
-  Neither of the two sentences takes a name without being rewritten, since both are general statements of what the snippet is an instance of rather than sentences about a game, so it is a small rewrite of another page's prose rather than a correction, and it waits for whoever is next in that file.
-  Found on 2026-09-22 while lifting the ban.
 
 ## 6. Publish it
 

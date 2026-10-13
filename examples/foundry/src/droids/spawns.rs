@@ -81,8 +81,7 @@ pub struct Stock<'w> {
     registries: Res<'w, Registries>,
 }
 
-/// Populates a deck on every arrival, the way `examples/delve` fills a
-/// floor: follows `plan_population` against the deck's real terrain,
+/// Populates a deck on every arrival: follows `plan_population` against the deck's real terrain,
 /// never on a cell a piece marked as a spot, and spawns what it plans. A
 /// first arrival draws at the deck's own band. A revisit is the climb,
 /// and the climb is drawn at the band of the deepest deck the run has

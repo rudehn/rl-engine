@@ -3,10 +3,8 @@
 //!
 //! A system registered separately in `main.rs` and again in
 //! `testing::headless` is two places to keep in step, and nothing stops
-//! them drifting apart: Corsair's binary runs `honour_portals`,
-//! `populate_places`, `drop_loot` and `inflict_on_hit`, and its harness
-//! runs none of them, so a test there exercises a different game from
-//! the one that ships. `FoundryPlugin` is the one list instead: `main.rs`
+//! them drifting apart until a test exercises a different game from the
+//! one that ships. `FoundryPlugin` is the one list instead: `main.rs`
 //! adds it beside the engine's plugins, `testing::headless` adds it
 //! beside the engine plugins it needs, and neither registers a game
 //! system of its own. Every later task adds its systems here.
@@ -144,8 +142,7 @@ impl Plugin for FoundryPlugin {
         // put back to one when the run ends: the next run in the same
         // launch, a restart's or one begun from the title, has been nowhere.
         app.init_resource::<crate::climb::Deepest>().reset_on_new_run::<crate::climb::Deepest>();
-        // A deck fills the moment it is first entered, the way delve's own
-        // floors do: the engine's prefab slots in `PrefabSet::Fill`, then
+        // A deck fills the moment it is first entered: the engine's prefab slots in `PrefabSet::Fill`, then
         // its droids, then its props, then the engine's loot in
         // `LootSet::Scatter`, each from its own stream and each reading the
         // same `PlaceEntered` through its own cursor. The slots are filled
@@ -208,8 +205,8 @@ impl Plugin for FoundryPlugin {
         app.add_verb(crate::mission::CHARGE);
         app.add_systems(Turn, crate::mission::answer_charge.in_set(TurnSet::React));
         // A game's reaction to the mission finishing, not to a turn
-        // itself: an ordinary `Update` system, the way Corsair's own
-        // `narrate_quests` is, reading `QuestChange` one frame behind the
+        // itself: an ordinary `Update` system, reading `QuestChange` one
+        // frame behind the
         // fact that finished it (`rl_bevy::events`'s own doc on it).
         // Before the input set, so the pick is open before any key handler
         // reads `Modals` that frame and a key cannot fall through to the
@@ -227,8 +224,8 @@ impl Plugin for FoundryPlugin {
             Turn,
             crate::upgrades::react_uplink.after(crate::heat::heat_on_struck).after(rl_engine::rl_bevy::AmmoSet::Resolve).in_set(TurnSet::React),
         );
-        // The pick screen: declared while building, the way Corsair
-        // declares its ledger, so `upgrades::modal` finds it the moment
+        // The pick screen: declared while building, so `upgrades::modal`
+        // finds it the moment
         // anything looks. `choice_keys` is exclusive (it calls
         // `upgrades::apply`, which needs the whole `World`), so it is
         // ordered the same place a game's own key handlers run, chained
@@ -276,8 +273,8 @@ impl Plugin for FoundryPlugin {
         // else a deck fills with, and the line the log gives each deck.
         // First of Foundry's lines in a pass, for the order of the log.
         app.add_systems(Turn, crate::lifts::link_decks.before(crate::droids::sound_alarm).in_set(TurnSet::React));
-        // Light: each deck's ambient, set between the turns and the light
-        // the way delve's `set_ambient` is, so the frame a lift lands on
+        // Light: each deck's ambient, set between the turns and the light,
+        // so the frame a lift lands on
         // is drawn in the new deck's light; and the stores' wall lamps,
         // hung on first arrival.
         app.add_systems(Update, crate::light::set_ambient.after(EngineSet::Turns).before(EngineSet::Light).run_if(in_state(EngineState::Playing)));

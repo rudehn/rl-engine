@@ -803,7 +803,7 @@ mod tests {
         assert_eq!(field.app.world().resource::<Watched>().0, Some(false), "two tiles off and never noticed: not watching");
 
         // The same monster with no Notice sees on sight, the way every
-        // surface monster in Corsair does, and it is watching.
+        // monster in a game without stealth does, and it is watching.
         let watcher = field.watcher;
         field.app.world_mut().entity_mut(watcher).remove::<(Notice, Aware)>();
         field.wait();

@@ -6,7 +6,7 @@
 //! count and enchant, on the ground or in whose bag; the player with its
 //! bag, its slots and its statuses; the stairs; and then the same in
 //! reverse, items first so bags can point at them. Five hundred lines in
-//! Corsair, and every game would write them again.
+//! the first game to write them, and every game would write them again.
 //!
 //! The engine walks the world instead. A game implements [`Saveable`] on
 //! the component that marks a kind of thing it spawns, saying how to write

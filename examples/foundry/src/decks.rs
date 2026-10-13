@@ -11,8 +11,7 @@
 //! `assets/prefabs/` loaded against the tiles by [`crate::prefabs::load`],
 //! one chain per deck stamping them by name, run again from the next
 //! attempt when a deck falls short of its recipe, and [`PlaceBuild::from_context`]
-//! to read the entry, the exit and the pieces' marks back out, the way
-//! delve's `Whale` does for the whale's floors. What stands at a mark is
+//! to read the entry, the exit and the pieces' marks back out. What stands at a mark is
 //! the engine's to put down, from what the piece's file says.
 
 use rl_engine::rl_bevy::layout::LayoutTiles;

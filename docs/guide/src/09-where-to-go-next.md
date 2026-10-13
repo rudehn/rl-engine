@@ -9,8 +9,8 @@ The Systems pages are the reference for the rest, one per system, and each tease
 - **You supply** a `LightSource` on a prop, an actor or an item, `Fuel` if it burns down, and `DarkSight` on whoever sees without one.
 - **You get** the `Viewshed` split from [chapter 2](02-sight-and-light.md) starting to matter: `line` stays geometric, `visible` shrinks to what is lit, and a monster that sheds nothing is found only where a light reaches it.
   `Fuel` reports `LightEvent::BurntOut`.
-- **Worked examples** `heist`, where wall lamps are the only light, snuffing one is how you cross a room, and the watch light them again.
-  `delve` below the Maw: a brand that can be smothered, a torch to set down, and `v` to see the light as digits.
+- **Worked examples** `undermere`, where every place is seen dimly by its own ambient and a lantern, a brazier or a clump of glowcaps is what makes it bright.
+  `foundry` below deck one, where the lights are out and the commando sees by a shoulder lamp and a helmet's dark sight.
 - **Reference** [Sight and lighting](systems/sight.md).
 - **Design** [`docs/design/lighting.md`](https://github.com/rudehn/rl-engine/blob/main/docs/design/lighting.md).
 
@@ -20,8 +20,8 @@ The Systems pages are the reference for the rest, one per system, and each tease
 - **You supply** `Notice` on an observer, which is a certain radius, a chance beyond it, a bonus while the subject stands in light, and a memory; `Stealth` on a subject narrows both.
 - **You get** a roll between being seen and being noticed.
   A monster that has not noticed you does not act on you, one that loses you searches where it last saw you, and `Watchers` answers who is watching whom for the panels.
-- **Worked examples** `heist`: a thief the watch have to notice, a pebble that draws them to the wrong corner, and a shout that brings the rest.
-  `delve` is built around it and Corsair's caves use it.
+- **Worked examples** `foundry`: a commando the droids have to notice, and a probe that signals and then sounds an alarm that brings the rest.
+  `undermere` gives every monster a `Notice`, and a potion's darkness shrouds whoever stands in it.
 - **Reference** [Stealth](systems/stealth.md).
 - **Design** [`docs/design/stealth.md`](https://github.com/rudehn/rl-engine/blob/main/docs/design/stealth.md).
 
@@ -32,7 +32,7 @@ The Systems pages are the reference for the rest, one per system, and each tease
   The engine ships ten effects, seven registered together by `add_engine_effects` and three by the fire, gas and noise plugins, and a game registers its own with `add_effect`.
 - **You get** a key that writes `AimAt`, a cursor the engine opens, a preview of what the shot would cover, and the turn spent.
   An item never lends an ability: what a potion does is its own triggers, which the engine lands when it is drunk or thrown, so a potion is a line of RON.
-- **Worked examples** `delve` has five, `corsair` four, and `crates/rl-bevy/tests/genres.rs` loads five genres of them into one registry.
+- **Worked examples** `undermere` has fourteen, `foundry` one, and `crates/rl-bevy/tests/genres.rs` loads five genres of them into one registry.
 - **Reference** [Abilities](systems/abilities.md).
 - **Design** [`docs/design/abilities.md`](https://github.com/rudehn/rl-engine/blob/main/docs/design/abilities.md).
 
@@ -42,7 +42,7 @@ The Systems pages are the reference for the rest, one per system, and each tease
 - **You supply** what wearing a thing does, on the thing: a worn blade carries the `MeleeAttack` it is swung with, a coat its `Armor`, and an affix what it `Bestows` on a stat.
 - **You get** afflictions ticked by the turn through the damage pipeline, with stacking rules and cures; a stat block with a modifier accumulator; an equipment slot graph with displacement; and an affix model of prefixes and suffixes with level-scaled grants, weighted rolling and per-instance state.
   `Loadout` sums the gear at the blow and `fold_gear` keeps the stats current, so nothing is ever copied onto the wearer.
-- **Worked example** `corsair` uses all of it.
+- **Worked example** `undermere` uses all of it.
 - **Reference** [Statuses](systems/statuses.md) for the afflictions and the stat block, [Items and equipment](systems/items.md) for the slots, the affixes and the `Loadout`, [Uses and charges](systems/uses.md) for what a thing does when it is used and what that costs it, and [Ammunition](systems/ammunition.md) for what a shot spends.
 
 ## Quests
@@ -60,7 +60,7 @@ The Systems pages are the reference for the rest, one per system, and each tease
 - **You get** the rest of the walk: where each thing stands, its health, its bag, its slots and its statuses, along with the scheduler's queue, the world's edits and places, and what has been explored.
   The envelope is versioned and refuses a mismatch instead of guessing, entities are remapped on the way back in, and `SavePlugin` keeps the save a turn behind the run so a closed window saves.
   It forgets the save when the run ends.
-- **Worked example** Corsair's `save.rs`: four kinds and four resources, in about four hundred lines.
+- **Worked example** Foundry's `save.rs`: four kinds and four resources, in about two hundred and fifty lines before its tests.
 - **Reference** [Saving and the ending screen](systems/saving.md).
 
 ## The run's beginning and end
@@ -106,16 +106,13 @@ The Systems pages are the reference for the rest, one per system, and each tease
 - **You supply** the world's parameters.
 - **You get** FBM noise, elevation banding, priority-flood hydrology, climate, scored site placement and a road router, streamed around the player with a seam hash so chunk edges agree, keeping your edits across unload and reload.
   `rl-overworld` draws it with a portal picker.
-- **Worked example** `corsair`.
+- **Worked example** none yet: no example game streams a surface.
 - **Reference** [Places and streaming](systems/places.md) for the two kinds of map and the streaming, and [The overworld](systems/overworld.md) for the screen over them.
 
 ## Balance
 
 `rl-rules::balance` scores threat and prints a band report over the `BandedTable` from [chapter 7](07-content-in-files.md).
-
-```sh
-cargo run -p corsair -- --balance
-```
+No example game has a flag that prints it yet.
 
 ## Panels, past the two you have
 
@@ -176,9 +173,6 @@ A tool that needs only one of them can depend on that crate alone and never comp
 
 | Example | What it shows |
 |---|---|
-| `delve` | Five floors of a beached whale, no surface at all; lighting, stealth and five knacks; `floors.rs` is the whole map builder |
-| `corsair` | An open-world pirate roguelike with a pirate's abilities, built only on the public API |
-| `heist` | Three floors of a counting house in the dark; stealth and light end to end, with a score to carry out |
 | `foundry` | Ten decks of a droid foundry; combat depth, with guns that run hot or dry, droids that shoot back, and a probe that shouts for them |
 | `undermere` | A delve from a lakeside town down ten floors to a drowned king, written as a whole game; the engine's title and records, monsters written as traits, and square tiles |
 
