@@ -22,11 +22,16 @@ use crate::dungeon::floor_of;
 use crate::run::Adventurer;
 
 /// A run with no window, seeded, begun on the first update.
+///
+/// The adventurer's long actions take a turn a frame rather than one each
+/// [`WorkPace`] of the wall clock, so a test, a fingerprint or a soak
+/// counts frames and never waits on time.
 pub fn headless(seed: RunSeed) -> App {
     let mut app = rl_engine::rl_bevy::plugin::headless_app();
     app.add_plugins((FovPlugin, UiPlugin, crate::plugin::narrator()));
     app.insert_resource(Seed(seed)).insert_resource(Saves::new(MemoryBackend::default()));
     app.add_plugins(crate::plugin::UndermerePlugin);
+    app.insert_resource(WorkPace::every_frame());
     app
 }
 

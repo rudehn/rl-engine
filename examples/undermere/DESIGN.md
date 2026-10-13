@@ -29,7 +29,7 @@ The model is Brogue: a dungeon that is beautiful to look at, items as the only p
 4. The run is won the moment the boss on floor ten dies, and lost when the adventurer dies.
 5. The end screen gives the score, line by line, and the run's story in numbers; the run joins the records.
 
-The adventurer can come back to town mid-run: by climbing out, or by a waystone, ten turns of kneeling that any harm breaks off, and the gate then leads back down to where they knelt, so a trip home buys time at the shops and never moves them forward.
+The adventurer can come back to town mid-run: by climbing out, or by a waystone, ten turns of kneeling that any harm, a foe coming into sight or a key breaks off, and the gate then leads back down to where they knelt, so a trip home buys time at the shops and never moves them forward.
 
 ## The screen
 
