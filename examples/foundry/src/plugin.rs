@@ -267,9 +267,6 @@ impl Plugin for FoundryPlugin {
         // else a deck fills with, and the line the log gives each deck.
         // First of Foundry's lines in a pass, for the order of the log.
         app.add_systems(Turn, crate::lifts::link_decks.before(crate::droids::sound_alarm).in_set(TurnSet::React));
-        // Light: the stores' wall lamps, hung on first arrival. Each deck's
-        // ambient is its build's, which the engine lights it by.
-        app.add_systems(Turn, crate::light::light_the_lamps.in_set(TurnSet::React));
     }
 
     /// Every line Foundry says from inside a turn is a `Tell`, which only

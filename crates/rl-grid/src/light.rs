@@ -128,31 +128,103 @@ impl Light {
     }
 }
 
-/// A point source of light, or of darkness.
+/// What a thing that glows sheds: how bright, how far, in what colour,
+/// how much it flickers, and whether it darkens instead.
+///
+/// One description for every light there is. A tile kind and a prop kind
+/// carry one in their definitions, a game's own content writes one for a
+/// lantern or a glowing trait, the Bevy layer's `LightSource` is this on
+/// an entity, and an [`Emitter`] is this at a cell, so a light written in
+/// a file is cast exactly as written, with nothing converting it on the
+/// way. Plain data and serde, so a content file and a save write it the
+/// same way:
+///
+/// ```
+/// use rl_grid::{Glow, Rgb};
+///
+/// let lamp: Glow = ron::from_str("(intensity: 200, radius: 5, color: (r: 255, g: 204, b: 133), flicker: 31)").unwrap();
+/// assert_eq!(lamp, Glow::new(200, 5, Rgb::new(255, 204, 133)).flickering(31));
+/// let pool: Glow = ron::from_str("(intensity: 255, radius: 3, darkens: true)").unwrap();
+/// assert_eq!(pool, Glow::darkness(255, 3));
+/// ```
+///
+/// The full option space a file writes: `intensity`, 0 to 255; `radius`,
+/// in tiles; `color`, `(r:, g:, b:)` in bytes, white when left out;
+/// `flicker`, 0 to 255, steady when left out; `darkens`, false when left
+/// out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+pub struct Glow {
+    /// Brightness at the source's own tile, 0 to 255; for a darkness, the
+    /// share of light it takes there, out of 255.
+    pub intensity: u8,
+    /// How far it reaches, in tiles; light is exactly zero at the rim.
+    pub radius: i32,
+    /// Its hue at full strength. White when a file leaves it out, which is
+    /// also all a darkness needs, since a darkness has no hue.
+    #[serde(default = "white")]
+    pub color: Rgb,
+    /// How far it flickers when drawn, 0 for steady to 255 for a flame
+    /// that can dip to nothing. Drawn, never played: gameplay reads the
+    /// steady intensity.
+    #[serde(default)]
+    pub flicker: u8,
+    /// Whether it takes light away rather than giving it: a light of
+    /// negative intensity. A flag beside the magnitude rather than a signed
+    /// intensity, so the range stays in the type and every reader of a
+    /// light's strength as a byte goes on reading it. A darkness takes
+    /// every channel alike and holds still, so its `color` and `flicker`
+    /// are not read.
+    #[serde(default)]
+    pub darkens: bool,
+}
+
+fn white() -> Rgb {
+    Rgb::WHITE
+}
+
+impl Glow {
+    /// A steady light of `intensity` reaching `radius` tiles in `color`.
+    pub const fn new(intensity: u8, radius: i32, color: Rgb) -> Self {
+        Self { intensity, radius, color, flicker: 0, darkens: false }
+    }
+
+    /// A darkness taking `intensity / 255` of the light at its own tile,
+    /// falling off to nothing at `radius` as a light does: at 255 its heart
+    /// is pitch black whatever shines on it.
+    pub const fn darkness(intensity: u8, radius: i32) -> Self {
+        Self { intensity, radius, color: Rgb::WHITE, flicker: 0, darkens: true }
+    }
+
+    /// The same light, flickering by `amount` when drawn.
+    pub const fn flickering(mut self, amount: u8) -> Self {
+        self.flicker = amount;
+        self
+    }
+
+    /// This glow shining from `origin`.
+    pub const fn at(self, origin: Point) -> Emitter {
+        Emitter { origin, glow: self }
+    }
+}
+
+/// A point source of light, or of darkness: a [`Glow`] at a cell.
+///
+/// Ordered by its origin and then its glow, which is the order
+/// [`LightField::cast_all`] casts in, so the order emitters were gathered
+/// in never reaches the field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Emitter {
     /// Where it shines from.
     pub origin: Point,
-    /// Brightness at the origin, or with `darkens` the share of light
-    /// taken away there, out of 255.
-    pub intensity: u8,
-    /// How far it reaches, in tiles; light is exactly zero at the rim.
-    pub radius: i32,
-    /// Its hue at full strength.
-    pub color: Rgb,
-    /// How far it flickers, 0 for steady to 255 for a flame that can dip
-    /// to nothing. Drawn, never played; a darkness does not flicker.
-    pub flicker: u8,
-    /// Whether this takes light away rather than giving it: a light of
-    /// negative intensity. Its `color` and `flicker` are not read, since a
-    /// darkness takes every channel alike and holds still.
-    pub darkens: bool,
+    /// What it sheds.
+    pub glow: Glow,
 }
 
 impl Emitter {
     /// The light this emitter lands on a tile `d` away, before shadows.
     pub fn light_at(&self, d: i32) -> Light {
-        Light::new(falloff(self.intensity, self.radius, d), self.color).flickering(self.flicker)
+        let g = &self.glow;
+        Light::new(falloff(g.intensity, g.radius, d), g.color).flickering(g.flicker)
     }
 }
 
@@ -297,13 +369,14 @@ impl LightField {
     /// it must match the field's shape.
     pub fn cast(&mut self, source: &impl OpacitySource, emitter: &Emitter, scratch: &mut BitGrid) {
         debug_assert_eq!((scratch.width(), scratch.height()), (self.width(), self.height()));
-        if emitter.intensity == 0 || !self.in_bounds(emitter.origin) {
+        let glow = &emitter.glow;
+        if glow.intensity == 0 || !self.in_bounds(emitter.origin) {
             return;
         }
-        fov::compute(source, emitter.origin, emitter.radius, scratch);
-        if emitter.darkens {
+        fov::compute(source, emitter.origin, glow.radius, scratch);
+        if glow.darkens {
             for p in scratch.iter() {
-                self.darken(p, falloff(emitter.intensity, emitter.radius, distance(emitter.origin, p)));
+                self.darken(p, falloff(glow.intensity, glow.radius, distance(emitter.origin, p)));
             }
             return;
         }
@@ -478,7 +551,7 @@ mod tests {
         // Wall at x=10 with a gap at y=4; light at (8,2) does not reach (12,2).
         let mut field = LightField::new(20, 9);
         let mut scratch = BitGrid::new(20, 9);
-        field.cast(&t.view(&r), &Emitter { origin: Point::new(8, 2), intensity: 200, radius: 8, color: Rgb::WHITE, flicker: 0, darkens: false }, &mut scratch);
+        field.cast(&t.view(&r), &Glow::new(200, 8, Rgb::WHITE).at(Point::new(8, 2)), &mut scratch);
         assert_eq!(field.at(Point::new(8, 2)).intensity, 200);
         assert!(field.at(Point::new(9, 2)).intensity > 0);
         assert_eq!(field.at(Point::new(12, 2)).intensity, 0, "behind the wall");
@@ -491,13 +564,9 @@ mod tests {
         let view = t.view(&r);
         let mut rng = StdRng::seed_from_u64(9);
         let mut emitters: Vec<Emitter> = (0..12)
-            .map(|i| Emitter {
-                origin: Point::new(2 + (i * 5) % 26, 2 + (i * 7) % 16),
-                intensity: 120 + i as u8 * 10,
-                radius: 6,
-                color: Rgb::new(255, 150, 40),
-                flicker: (i * 20) as u8,
-                darkens: i % 3 == 0,
+            .map(|i| {
+                let glow = Glow { intensity: 120 + i as u8 * 10, radius: 6, color: Rgb::new(255, 150, 40), flicker: (i * 20) as u8, darkens: i % 3 == 0 };
+                glow.at(Point::new(2 + (i * 5) % 26, 2 + (i * 7) % 16))
             })
             .collect();
         let mut scratch = BitGrid::new(30, 20);
@@ -513,11 +582,11 @@ mod tests {
     }
 
     fn lamp(origin: Point, intensity: u8, radius: i32) -> Emitter {
-        Emitter { origin, intensity, radius, color: Rgb::new(255, 150, 40), flicker: 120, darkens: false }
+        Glow::new(intensity, radius, Rgb::new(255, 150, 40)).flickering(120).at(origin)
     }
 
     fn darkness(origin: Point, intensity: u8, radius: i32) -> Emitter {
-        Emitter { origin, intensity, radius, color: Rgb::WHITE, flicker: 0, darkens: true }
+        Glow::darkness(intensity, radius).at(origin)
     }
 
     /// Every light over a span of shades: the darkness takes a share, the

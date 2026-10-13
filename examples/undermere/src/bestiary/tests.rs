@@ -299,7 +299,7 @@ fn a_spawned_monster_carries_what_its_traits_gave_it() {
     .expect("a beetle reads");
     let beetle = defs.get(defs.expect("lamp beetle"));
     let (world, e) = spawn(&library, beetle);
-    let glow = library.traits.get(library.traits.expect("fungal glow")).light.expect("fungal glow is a light").source();
+    let glow = library.traits.get(library.traits.expect("fungal glow")).light.map(LightSource).expect("fungal glow is a light");
     assert_eq!(world.get::<LightSource>(e), Some(&glow));
     let threshold = library.traits.get(library.traits.expect("cowardly")).flee_at.expect("cowardly runs at some share");
     let at = threshold * beetle.hp / 100;

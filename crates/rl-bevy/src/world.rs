@@ -211,6 +211,11 @@ pub struct PlaceMap {
     /// ahead of the player builds the floor it lands on; the game still
     /// fills that floor the first time the player sees it.
     pub visited: bool,
+    /// Whether the light its tiles shed by themselves has been put up
+    /// since it was built or restored. Never saved: that light is the
+    /// tiles', so a restored place puts it up again from them, the way its
+    /// building did.
+    lit: bool,
 }
 
 /// The map every reader reads: the streamed surface, when the game has
@@ -348,6 +353,7 @@ impl WorldMap {
             ambient: build.ambient,
             peaceful: build.peaceful,
             visited: false,
+            lit: false,
         };
         self.places.insert(map, place);
     }
@@ -393,6 +399,19 @@ impl WorldMap {
             self.cost_epoch += 1;
         }
         found
+    }
+
+    /// Every built place whose tiles' own light is not up yet: each one
+    /// built or restored since the lighting last looked.
+    pub(crate) fn unlit_places(&self) -> impl Iterator<Item = MapId> + '_ {
+        self.places.iter().filter(|(_, p)| !p.lit).map(|(id, _)| *id)
+    }
+
+    /// Notes that the light of `map`'s tiles is up.
+    pub(crate) fn mark_lit(&mut self, map: MapId) {
+        if let Some(place) = self.places.get_mut(&map) {
+            place.lit = true;
+        }
     }
 
     /// Marks `map` as somewhere the player has arrived, and answers
@@ -634,6 +653,7 @@ impl WorldMap {
                     ambient: p.ambient,
                     peaceful: p.peaceful,
                     visited: p.visited,
+                    lit: false,
                 };
                 (id, place)
             })

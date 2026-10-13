@@ -1,8 +1,8 @@
 // What stands in Mereholt and below it that is neither a monster nor a thing to
 // carry: the town's furniture, the lights of the floors, the throne, and the
 // chests found in the dungeon. Where each stands is a piece's in
-// `assets/prefabs/`; what light it sheds is the game's, in `light.rs`, since
-// the engine's props carry no light of their own.
+// `assets/prefabs/`; what light it sheds is its own `light`, which the engine
+// hangs on it wherever and however it is stood.
 //
 // Every field (the ones marked "optional" may be left out):
 //   name:      unique; the name the nearby rail and the look cursor show, and the
@@ -31,6 +31,11 @@
 //              the moments it answers: "entered" | "destroyed" or a moment a game
 //              registers, written as in abilities.ron
 //   hidden:    optional; (spot:) percent a turn to spot it while in sight
+//   light:     optional; the light it sheds wherever it stands, as the engine writes
+//              every light: (intensity: 0..=255, radius: tiles, color: (r:, g:, b:) in
+//              bytes, flicker: 0..=255, may be left out, darkens: true for a darkness, may
+//              be left out); every light here is at intensity 200, so a lamp and a glowing
+//              cap differ by how far they reach and their colour
 //
 // Everything here but the containers, the egg sac, the triggered and hidden
 // things and what offers to be pulled or read is scenery: it offers, holds and
@@ -38,10 +43,13 @@
 // look cursor still names it.
 #![enable(implicit_some)]
 [
-    // The town. A lamp post's lantern and a forge's fire are lit by `light.rs`.
-    (name: "lamp post",  glyph: '|', color: (r: 240, g: 205, b: 130), blocks: true),
+    // The town. A lamp post's lantern is warm, and far enough to light the
+    // street round it; a forge's fire, and a hearth's, orange and restless.
+    (name: "lamp post",  glyph: '|', color: (r: 240, g: 205, b: 130), blocks: true,
+     light: (intensity: 200, radius: 5, color: (r: 255, g: 204, b: 133), flicker: 31)),
     (name: "well",       glyph: 'o', color: (r: 204, g: 220, b: 252), blocks: true),
-    (name: "forge",      glyph: '&', color: (r: 255, g: 130, b: 50),  blocks: true),
+    (name: "forge",      glyph: '&', color: (r: 255, g: 130, b: 50),  blocks: true,
+     light: (intensity: 200, radius: 4, color: (r: 255, g: 128, b: 51), flicker: 89)),
     // The furniture blocks, in Mereholt's pieces and in the rooms
     // `assets/dressings.ron` dresses below, so a room is something to
     // fight round: `rl_mapgen::Dress` takes back any thing that would cut
@@ -52,22 +60,35 @@
     (name: "barrel",     glyph: '0', color: (r: 206, g: 152, b: 98), blocks: true),
     (name: "table",      glyph: '▭', color: (r: 222, g: 184, b: 136), blocks: true),
     (name: "counter",    glyph: '=', color: (r: 238, g: 206, b: 160),   blocks: true),
-    (name: "hearth",     glyph: '&', color: (r: 255, g: 145, b: 60), blocks: true),
+    (name: "hearth",     glyph: '&', color: (r: 255, g: 145, b: 60), blocks: true,
+     light: (intensity: 200, radius: 4, color: (r: 255, g: 128, b: 51), flicker: 89)),
     (name: "bed",        glyph: '▬', color: (r: 198, g: 177, b: 146), blocks: true),
-    (name: "altar",      glyph: '_', color: (r: 216, g: 207, b: 175), blocks: true),
+    // The altar's candles and a candelabra's: pale gold, and steadier than fire.
+    (name: "altar",      glyph: '_', color: (r: 216, g: 207, b: 175), blocks: true,
+     light: (intensity: 200, radius: 4, color: (r: 255, g: 224, b: 148), flicker: 51)),
     (name: "pew",        glyph: '=', color: (r: 204, g: 158, b: 108), blocks: true),
     // Candles stand in the temple and in the crypts, and nothing trips on them.
-    (name: "candelabra", glyph: 'i', color: (r: 255, g: 230, b: 160)),
+    (name: "candelabra", glyph: 'i', color: (r: 255, g: 230, b: 160),
+     light: (intensity: 200, radius: 4, color: (r: 255, g: 224, b: 148), flicker: 51)),
     // A lantern hung from a hook or a prop of timber: the Cellars' few, and
-    // the goblins' in the Old Mines.
-    (name: "hanging lantern", glyph: 'i', color: (r: 221, g: 163, b: 86)),
-    // A cold violet flame under glass, the Sunken Library's witchlight.
-    (name: "witchlight", glyph: 'i', color: (r: 190, g: 150, b: 255)),
+    // the goblins' in the Old Mines. Warm, and nearer in than a brazier, so a
+    // cellar is lit in pools.
+    (name: "hanging lantern", glyph: 'i', color: (r: 221, g: 163, b: 86),
+     light: (intensity: 200, radius: 4, color: (r: 255, g: 184, b: 102), flicker: 38)),
+    // A cold violet flame under glass, the Sunken Library's witchlight: pale,
+    // and steady under its glass.
+    (name: "witchlight", glyph: 'i', color: (r: 190, g: 150, b: 255),
+     light: (intensity: 200, radius: 4, color: (r: 199, g: 153, b: 255), flicker: 13)),
 
     // A brazier burns in the colour of the place it stands in, so its iron is
     // drawn near white and its own light colours it: orange in the halls,
-    // blue-green before the throne.
-    (name: "brazier",    glyph: '&', color: (r: 254, g: 243, b: 227), blocks: true),
+    // wide enough to light the room it stands in, and a cold blue-green
+    // before the throne, where `assets/prefabs/throne.ron` stands the cold
+    // one, the same iron burning another flame.
+    (name: "brazier",    glyph: '&', color: (r: 254, g: 243, b: 227), blocks: true,
+     light: (intensity: 200, radius: 6, color: (r: 255, g: 153, b: 71), flicker: 102)),
+    (name: "cold brazier", glyph: '&', color: (r: 254, g: 243, b: 227), blocks: true,
+     light: (intensity: 200, radius: 6, color: (r: 89, g: 242, b: 204), flicker: 64)),
     // A throne is a high-backed seat, not a block of wall: '#' read as a
     // piece of the hall's own wall left standing in the middle of it.
     (name: "throne",     glyph: 'Π', color: (r: 153, g: 204, b: 215), blocks: true),
@@ -96,11 +117,15 @@
 
     // A lived-in dungeon. A camp's fire burns beside its
     // sleeping band, stood by `population::populate` rather than a piece,
-    // so a game that spawns it directly, not through a slot, still shows
-    // and lights nothing it was not given; shackles lie at a captive's
+    // wider than a hearth's, so a sleeping band round it is seen from across
+    // the dark before it is reached, and yellower than the forge's orange:
+    // light multiplies a tile's colour channel by channel, and an orange
+    // light on the Fungal Deeps' green moss, which has almost no red to
+    // warm, came out darker than the dark round it; shackles lie at a captive's
     // feet until it is freed, and are never taken off, since freeing
     // changes who the captive fights for rather than what is lying there.
-    (name: "fire", glyph: '^', color: (r: 255, g: 120, b: 40), blocks: true),
+    (name: "fire", glyph: '^', color: (r: 255, g: 120, b: 40), blocks: true,
+     light: (intensity: 200, radius: 5, color: (r: 255, g: 209, b: 128), flicker: 102)),
     (name: "shackles", glyph: '∞', color: (r: 213, g: 213, b: 255)),
 
     // The flavor pool's own fixed pieces, `assets/prefabs/flavor/`: a place
@@ -306,8 +331,10 @@
 
     // Where the adventurer last knelt with a waystone, which the Drowned Gate
     // leads back to: one in the whole run, moved by every call, stood by
-    // `src/waystone.rs` rather than a piece, lit the gate's violet by
-    // `light.rs` and drawn from memory once seen, as every prop is, so the map
-    // shows where the gate will bring the adventurer back.
-    (name: "gate mark", glyph: '◊', color: (r: 205, g: 150, b: 255)),
+    // `src/waystone.rs` rather than a piece, lit the gate's violet, nearer in,
+    // a glow on the floor rather than a gate's worth of light, and drawn from
+    // memory once seen, as every prop is, so the map shows where the gate will
+    // bring the adventurer back.
+    (name: "gate mark", glyph: '◊', color: (r: 205, g: 150, b: 255),
+     light: (intensity: 200, radius: 4, color: (r: 191, g: 107, b: 255), flicker: 38)),
 ]

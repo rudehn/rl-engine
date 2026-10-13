@@ -16,6 +16,15 @@
 //! thing is lit is the game's call, made by inserting or removing the
 //! component; the engine reads only what is there.
 //!
+//! Except for what is lit by definition. The light is a [`Glow`], the one
+//! light type, and a tile kind and a prop kind may carry one in their
+//! definitions: the plugin puts up a fixture on every cell of a glowing
+//! tile in every place built or restored, [`light_places`], and gives
+//! every prop of a glowing kind its source the moment it is given its
+//! kind, [`light_prop`]. So a lamp in a data file is lit wherever it
+//! stands and however it got there, and a game writes no light of its own
+//! for it.
+//!
 //! A source may take light away instead: [`LightSource::darkness`], a light
 //! of negative intensity, is a pool of true darkness cast like any other
 //! source, from a fixture, an actor, a carried thing or a cell's glow. It
@@ -45,60 +54,51 @@
 
 use bevy::prelude::*;
 use rl_core::{Grid2D, Point, Rect, geometry};
-use rl_grid::{BitGrid, Emitter, Light, LightBand, LightField, Rgb};
+use rl_grid::{BitGrid, Emitter, Glow, Light, LightBand, LightField, Rgb};
 
 use crate::components::{Actor, Player, Position, Viewshed};
 use crate::items::{Inventory, Item};
 use crate::places::{MapId, OnMap};
+use crate::props::PropKind;
+use crate::registries::Registries;
 use crate::turn::TurnEnd;
 use crate::world::WorldMap;
 
 /// Sheds light from wherever its entity is, or with `darkens`, takes it
-/// away.
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct LightSource {
-    /// Brightness at the source's own tile, 0 to 255; for a darkness, the
-    /// share of light it takes there, out of 255.
-    pub intensity: u8,
-    /// How far it reaches, in tiles.
-    pub radius: i32,
-    /// Its hue at full strength.
-    pub color: Rgb,
-    /// How far it flickers when drawn, 0 for steady to 255 for a flame
-    /// that can dip to nothing. Gameplay never reads it.
-    #[serde(default)]
-    pub flicker: u8,
-    /// Whether it takes light away rather than giving it: a light of
-    /// negative intensity. A flag beside the magnitude rather than a signed
-    /// intensity, so the range stays in the type and every game that reads
-    /// a light's strength as a byte goes on reading it. A darkness has no
-    /// hue and does not flicker, since it takes every channel alike, so its
-    /// `color` and `flicker` are not read.
-    #[serde(default)]
-    pub darkens: bool,
-}
+/// away: a [`Glow`] on an entity.
+///
+/// The glow is the one light type, so what a tile's or a prop's definition
+/// writes, what a game's content writes and what is cast are the same
+/// value; this only puts it on an entity. Saved as the glow alone, so a
+/// save written when this carried the glow's fields itself reads
+/// unchanged, and its fields read and write through it as they always
+/// did: `source.radius = 4`.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Deref, DerefMut, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct LightSource(pub Glow);
 
 impl LightSource {
     /// A steady source of `intensity` reaching `radius` tiles in `color`.
     pub const fn new(intensity: u8, radius: i32, color: Rgb) -> Self {
-        Self { intensity, radius, color, flicker: 0, darkens: false }
+        Self(Glow::new(intensity, radius, color))
     }
 
     /// A darkness taking `intensity / 255` of the light at its own tile,
     /// falling off to nothing at `radius` as a light does: at 255 its heart
     /// is pitch black whatever shines on it.
     pub const fn darkness(intensity: u8, radius: i32) -> Self {
-        Self { intensity, radius, color: Rgb::WHITE, flicker: 0, darkens: true }
+        Self(Glow::darkness(intensity, radius))
     }
 
     /// The same source, flickering by `amount` when drawn.
-    pub const fn flickering(mut self, amount: u8) -> Self {
-        self.flicker = amount;
-        self
+    pub const fn flickering(self, amount: u8) -> Self {
+        Self(self.0.flickering(amount))
     }
+}
 
-    fn at(&self, origin: Point) -> Emitter {
-        Emitter { origin, intensity: self.intensity, radius: self.radius, color: self.color, flicker: self.flicker, darkens: self.darkens }
+impl From<Glow> for LightSource {
+    fn from(glow: Glow) -> Self {
+        Self(glow)
     }
 }
 
@@ -313,7 +313,8 @@ fn changed_area(was: &[Emitter], now: &[Emitter]) -> Option<Rect> {
     let mut cover = |e: &Emitter| {
         // The rim, where light reaches exactly zero, is still a cell whose
         // value can change, so the disc is taken inclusive of it.
-        let disc = Rect::from_corners(e.origin.offset(-e.radius, -e.radius), e.origin.offset(e.radius, e.radius));
+        let r = e.glow.radius;
+        let disc = Rect::from_corners(e.origin.offset(-r, -r), e.origin.offset(r, r));
         area = Some(match area {
             Some(a) => a.union(&disc),
             None => disc,
@@ -442,7 +443,7 @@ fn recast(map: &WorldMap, lighting: &mut Lighting, sources: &Sources, viewsheds:
         if !on_map(on) {
             continue;
         }
-        if is_actor { &mut dynamics } else { &mut statics }.push(source.at(local(pos.0)));
+        if is_actor { &mut dynamics } else { &mut statics }.push(source.0.at(local(pos.0)));
     }
     for (pos, bag, on) in &sources.carriers {
         if !on_map(on) {
@@ -450,12 +451,12 @@ fn recast(map: &WorldMap, lighting: &mut Lighting, sources: &Sources, viewsheds:
         }
         for item in &bag.items {
             if let Ok(source) = sources.carried.get(*item) {
-                dynamics.push(source.at(local(pos.0)));
+                dynamics.push(source.0.at(local(pos.0)));
             }
         }
     }
     if lighting.glow.0 == here {
-        dynamics.extend(lighting.glow.1.iter().map(|(p, source)| source.at(local(*p))));
+        dynamics.extend(lighting.glow.1.iter().map(|(p, source)| source.0.at(local(*p))));
     }
     statics.sort_unstable();
     dynamics.sort_unstable();
@@ -618,9 +619,63 @@ pub fn tick_fuel(
     }
 }
 
+/// Puts up the light every glowing tile of a place sheds, once for each
+/// place built and once more for each place a continued run restored: a
+/// fixture, a [`LightSource`] with a position and no turns, on every cell
+/// whose tile's definition carries a [`Glow`].
+///
+/// Read off the place's own terrain rather than kept or saved, so a
+/// restored place is lit exactly as its building lit it and the two can
+/// never disagree; the map notes which places are lit and forgets it
+/// for every place it restores. Lit when built rather than when first
+/// entered, since a fixture on a map nobody reads is never cast. A tile
+/// that changes later keeps the fixture it was given: what a game does to
+/// the map after it is built is the game's to light. Places only: the
+/// streamed surface comes and goes with the window, and a game lighting
+/// its surface lights it as it streams.
+pub fn light_places(mut commands: Commands, map: Option<ResMut<WorldMap>>) {
+    let Some(mut map) = map else { return };
+    // Asked through a shared borrow first, so a pass with nothing to light
+    // never marks the map changed.
+    if map.unlit_places().next().is_none() {
+        return;
+    }
+    let unlit: Vec<MapId> = map.unlit_places().collect();
+    for id in unlit {
+        if let Some(place) = map.place(id) {
+            let lights = &map.tables().lights;
+            for (p, tile) in place.terrain.iter() {
+                if let Some(glow) = lights.get(tile.index()).copied().flatten() {
+                    commands.spawn((Position(p), OnMap(id), LightSource(glow)));
+                }
+            }
+        }
+        map.mark_lit(id);
+    }
+}
+
+/// Gives a prop the light its definition says it sheds, the moment it is
+/// given its kind: by a piece's slot, by a game standing it loose, by an
+/// effect, or by a save putting it back. One rule at the one place every
+/// prop passes through, so no way of spawning one can forget it.
+///
+/// On the prop rather than beside it, so the light goes where the prop
+/// does and goes out when it is destroyed. A kind with no light leaves
+/// whatever light the entity already has: a game that lit something
+/// itself and then dressed it as a prop keeps its own light.
+pub fn light_prop(insert: On<Insert, PropKind>, mut commands: Commands, registries: Option<Res<Registries>>, kinds: Query<&PropKind>) {
+    let Some(registries) = registries else { return };
+    let Ok(kind) = kinds.get(insert.entity) else { return };
+    let Some(def) = registries.props.try_get(kind.0) else { return };
+    if let Some(glow) = def.light {
+        commands.entity(insert.entity).insert(LightSource(glow));
+    }
+}
+
 /// Lighting: what each source sheds, what fuel costs, the gate that
 /// decides what a viewshed actually sees, and each place lit by its own
-/// ambient. Dark until a game or a place's build says otherwise.
+/// ambient and by whatever its tiles' and props' definitions say they
+/// shed. Dark until a game or a place's build says otherwise.
 pub struct LightingPlugin;
 
 impl Plugin for LightingPlugin {
@@ -631,8 +686,9 @@ impl Plugin for LightingPlugin {
             // Dark rather than the ambient the game chose: a new run writes
             // its own ambient in `NewRun`, as the first one did.
             .reset_on_new_run_with::<Lighting>(Lighting::dark)
-            .add_systems(Update, update_lighting.in_set(EngineSet::Light))
-            .add_systems(Turn, relight.in_set(DecideSet::Light))
+            .add_systems(Update, (light_places, update_lighting).chain().in_set(EngineSet::Light))
+            .add_systems(Turn, (light_places, relight).chain().in_set(DecideSet::Light))
+            .add_observer(light_prop)
             .add_systems(Turn, tick_fuel.in_set(ResolveSet::Effects));
     }
 
@@ -808,6 +864,116 @@ mod tests {
         assert_eq!(ambient(&rig), lit, "and map 2 is lit by its builder's word, not by what was written there");
     }
 
+    /// The room again, with a lamp set in its top wall at (10, 0): a tile
+    /// whose definition sheds light.
+    struct LampRoom(TileRegistry);
+
+    impl PlaceRules for LampRoom {
+        fn build(&self, map: MapId, world: Option<&WorldGraph>) -> Result<PlaceBuild, BuildError> {
+            let mut build = Room(self.0.clone(), Vec::new()).build(map, world)?;
+            build.terrain.set(Point::new(10, 0), self.0.expect("lamp"));
+            Ok(build)
+        }
+    }
+
+    fn lamp() -> Glow {
+        Glow::new(200, 4, amber()).flickering(40)
+    }
+
+    /// The player in the lamp room on map 1, in the dark, with a lamp post
+    /// that sheds light and a stool that does not among the props.
+    fn lamp_rig() -> (App, Entity) {
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, crate::items::ItemsPlugin, LightingPlugin));
+        let mut tiles = TileRegistry::standard();
+        tiles.register(rl_grid::TileProps::wall("lamp").light(lamp())).unwrap();
+        app.insert_resource(WorldMap::new(tiles.tables()));
+        app.insert_resource(PlaceRulesRes(Box::new(LampRoom(tiles))));
+        let props = rl_rules::prop::load(
+            r#"#![enable(implicit_some)]
+            [
+                (name: "lamp post", glyph: '|', color: (r: 240, g: 205, b: 130), light: (intensity: 200, radius: 4, color: (r: 255, g: 150, b: 40), flicker: 40)),
+                (name: "stool", glyph: 'n', color: (r: 200, g: 180, b: 150)),
+            ]"#,
+            &rl_rules::Names::new(),
+        )
+        .expect("the props load");
+        app.insert_resource(Registries { props, ..Default::default() });
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(Point::ZERO), Viewshed::new(12), RevealsMap, Inventory::default())).id();
+        app.world_mut().write_message(WarpRequest::into_place(player, MapId(1)));
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        (app, player)
+    }
+
+    /// Every fixture standing, where, on which map and what it sheds,
+    /// props aside.
+    fn fixtures(app: &mut App) -> Vec<(Point, MapId, LightSource)> {
+        let world = app.world_mut();
+        let mut q = world.query_filtered::<(&Position, &OnMap, &LightSource), (Without<PropKind>, Without<Actor>, Without<Item>)>();
+        let mut found: Vec<(Point, MapId, LightSource)> = q.iter(world).map(|(p, on, l)| (p.0, on.0, *l)).collect();
+        found.sort_by_key(|(p, on, _)| (*on, *p));
+        found
+    }
+
+    /// A tile whose definition sheds light is lit by the engine the pass
+    /// its place is built, with nothing written by the game, and only that
+    /// tile: every other is a tile with no light and stands unlit. A place
+    /// restored from what the map saves, onto a world its fixtures did not
+    /// survive, is lit again from its tiles, once.
+    #[test]
+    fn a_glowing_tile_is_lit_when_its_place_is_built_and_again_when_it_is_restored() {
+        let (mut app, _) = lamp_rig();
+        let at = Point::new(10, 0);
+        assert_eq!(fixtures(&mut app), vec![(at, MapId(1), LightSource(lamp()))], "the lamp, and nothing else");
+        let lighting = app.world().resource::<Lighting>();
+        assert_eq!(lighting.at(at).intensity, 200, "it is cast");
+        assert_eq!(lighting.band(Point::new(10, 1)), LightBand::Lit, "and lights the floor below it");
+        assert_eq!(lighting.at(Point::new(3, 7)).intensity, 0, "beyond its reach the room is dark");
+
+        app.update();
+        assert_eq!(fixtures(&mut app).len(), 1, "a place is lit once, not every pass");
+
+        let saved = app.world().resource::<WorldMap>().export();
+        let standing: Vec<Entity> = app.world_mut().query_filtered::<Entity, (With<LightSource>, Without<Actor>)>().iter(app.world()).collect();
+        for e in standing {
+            app.world_mut().despawn(e);
+        }
+        app.world_mut().resource_mut::<WorldMap>().import(saved);
+        app.update();
+        assert_eq!(fixtures(&mut app), vec![(at, MapId(1), LightSource(lamp()))], "restored, the lamp is lit again, once");
+        assert_eq!(app.world().resource::<Lighting>().band(Point::new(10, 1)), LightBand::Lit);
+    }
+
+    /// A prop whose definition sheds light carries it however it came to
+    /// be one: stood by `spawn_prop`, or given its kind on an entity that
+    /// was something else first. A prop whose definition sheds none
+    /// carries none.
+    #[test]
+    fn a_glowing_prop_is_lit_however_it_is_spawned_and_a_plain_one_is_not() {
+        let (mut app, _) = lamp_rig();
+        let registries = app.world().resource::<Registries>().clone();
+        let (post, stool) = (registries.props.expect("lamp post"), registries.props.expect("stool"));
+        let stood = app
+            .world_mut()
+            .run_system_once(move |mut commands: Commands, registries: Res<Registries>| {
+                (
+                    crate::props::spawn_prop(&mut commands, &registries, post, Point::new(3, 4), MapId(1)),
+                    crate::props::spawn_prop(&mut commands, &registries, stool, Point::new(5, 4), MapId(1)),
+                )
+            })
+            .unwrap();
+        let dressed = app.world_mut().spawn((Position(Point::new(16, 4)), OnMap(MapId(1)))).id();
+        app.world_mut().entity_mut(dressed).insert(PropKind(post));
+        app.update();
+        let light = |app: &App, e: Entity| app.world().get::<LightSource>(e).copied();
+        assert_eq!(light(&app, stood.0), Some(LightSource(lamp())), "stood from its definition");
+        assert_eq!(light(&app, dressed), Some(LightSource(lamp())), "given its kind afterwards");
+        assert_eq!(light(&app, stood.1), None, "a stool sheds nothing");
+        assert_eq!(app.world().resource::<Lighting>().band(Point::new(3, 5)), LightBand::Lit, "and the post's light is cast");
+    }
+
     #[test]
     fn a_fixture_lights_what_it_can_see_until_a_wall_goes_up() {
         let mut rig = Rig::new(Some(Light::DARK), None);
@@ -907,8 +1073,7 @@ mod tests {
     /// change touched, and who it can reach.
     #[test]
     fn a_lamp_that_moved_touches_its_two_discs_and_reaches_only_viewers_whose_range_meets_them() {
-        let lamp =
-            |x: i32| Emitter { origin: Point::new(x, 0), intensity: 200, radius: 4, color: rl_grid::Rgb::new(255, 255, 255), flicker: 0, darkens: false };
+        let lamp = |x: i32| Glow::new(200, 4, Rgb::WHITE).at(Point::new(x, 0));
 
         assert_eq!(changed_area(&[lamp(0)], &[lamp(0)]), None, "nothing moved, nothing touched");
 

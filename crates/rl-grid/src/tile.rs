@@ -8,11 +8,16 @@
 //! lava registers them and they are first-class from the first frame.
 //!
 //! Anything only the game cares about (glyph, colour, flavour text) belongs
-//! in a game-side table keyed by the same id, not here.
+//! in a game-side table keyed by the same id, not here. The light a tile
+//! sheds is not that: it decides what is seen, so it is a [`Glow`] on the
+//! tile's own record, and the Bevy layer's lighting hangs it on every cell
+//! of the kind.
 
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
+
+use crate::light::Glow;
 
 /// A dense index into a [`TileRegistry`].
 ///
@@ -68,6 +73,10 @@ pub struct TileProps {
     /// How it burns, when it does. Nothing burns unless it says so.
     #[serde(default)]
     pub burn: Option<Burn>,
+    /// The light every cell of it sheds by itself: lava, a lit window, a
+    /// wall lamp. `None`, as most tiles are, sheds nothing.
+    #[serde(default)]
+    pub light: Option<Glow>,
 }
 
 /// How a tile burns.
@@ -110,6 +119,7 @@ impl TileProps {
             opens_to: None,
             closes_to: None,
             burn: None,
+            light: None,
         }
     }
 
@@ -170,6 +180,12 @@ impl TileProps {
     /// `leaves`.
     pub fn burns(mut self, catch_pct: u8, turns: u8, leaves: impl Into<String>) -> Self {
         self.burn = Some(Burn { catch_pct, turns, leaves: leaves.into() });
+        self
+    }
+
+    /// Builder: every cell of it sheds `light`.
+    pub fn light(mut self, light: Glow) -> Self {
+        self.light = Some(light);
         self
     }
 
@@ -282,6 +298,16 @@ impl TileRegistry {
         self.id(name).unwrap_or_else(|| panic!("no tile named {name:?}"))
     }
 
+    /// Sets the light every cell of `id` sheds, or with `None` takes it
+    /// away: for a game that registers its tiles in code and writes their
+    /// light in a file beside their looks, read once the names exist.
+    ///
+    /// # Panics
+    /// Panics if `id` was not issued by this registry.
+    pub fn set_light(&mut self, id: TileId, light: Option<Glow>) {
+        self.props[id.index()].light = light;
+    }
+
     /// Number of kinds registered.
     pub fn len(&self) -> usize {
         self.props.len()
@@ -324,6 +350,7 @@ impl TileRegistry {
             opens: self.props.iter().map(|p| resolve(p, &p.opens_to, "opens to")).collect(),
             closes: self.props.iter().map(|p| resolve(p, &p.closes_to, "closes to")).collect(),
             burns: self.props.iter().map(kindling).collect(),
+            lights: self.props.iter().map(|p| p.light).collect(),
         }
     }
 }
@@ -349,6 +376,8 @@ pub struct TileTables {
     pub closes: Vec<Option<TileId>>,
     /// How each tile burns, if it does.
     pub burns: Vec<Option<Kindling>>,
+    /// The light each tile sheds by itself, if it sheds any.
+    pub lights: Vec<Option<Glow>>,
 }
 
 #[cfg(test)]
@@ -438,5 +467,24 @@ mod tests {
         let mut r = TileRegistry::new();
         r.register_all(list).unwrap();
         assert_eq!(r.get(r.expect("b")).effective_move_cost(), 250);
+    }
+
+    /// A tile says what light it sheds in the same file that says what it
+    /// is, and the tables carry it beside the flags; a tile that says
+    /// nothing sheds nothing.
+    #[test]
+    fn a_tiles_light_reaches_the_tables_and_a_tile_without_one_sheds_none() {
+        let list: Vec<TileProps> = ron::from_str(
+            r#"[(name: "rock", opaque: true), (name: "lava", walkable: true, light: Some((intensity: 200, radius: 3, color: (r: 255, g: 133, b: 38), flicker: 77)))]"#,
+        )
+        .unwrap();
+        let mut r = TileRegistry::new();
+        r.register_all(list).unwrap();
+        let lava = Glow::new(200, 3, crate::light::Rgb::new(255, 133, 38)).flickering(77);
+        let tables = r.tables();
+        assert_eq!(tables.lights[r.expect("lava").index()], Some(lava));
+        assert_eq!(tables.lights[r.expect("rock").index()], None);
+        r.set_light(r.expect("rock"), Some(Glow::darkness(255, 2)));
+        assert_eq!(r.tables().lights[r.expect("rock").index()], Some(Glow::darkness(255, 2)), "and a light set after registering lands too");
     }
 }

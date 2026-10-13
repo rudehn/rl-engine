@@ -90,7 +90,6 @@ fn names() -> Vec<(&'static str, TypeId)> {
         ("cheats::keep_godmode", id(cheats::keep_godmode)),
         ("cheats::reveal_the_deck", id(cheats::reveal_the_deck)),
         ("lifts::link_decks", id(lifts::link_decks)),
-        ("light::light_the_lamps", id(light::light_the_lamps)),
         ("engine stealth::wake_on_damage", id(stealth::wake_on_damage)),
         ("engine combat::resolve_attacks", id(combat::resolve_attacks)),
         ("engine combat::land_shots", id(combat::land_shots)),

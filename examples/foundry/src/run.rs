@@ -38,7 +38,6 @@ pub struct Commando;
 /// one is.
 pub fn prepare(commands: &mut Commands, seed: &Seed, registries: &Registries) {
     let foundry = Foundry::new(seed.0);
-    commands.insert_resource(crate::light::LampTile(foundry.lamp()));
     commands.insert_resource(foundry.appearance());
     commands.insert_resource(WorldMap::new(foundry.tiles().tables()));
 
@@ -203,18 +202,6 @@ pub fn resume(world: &mut World) {
     for upgrade in taken.0.iter().copied() {
         crate::upgrades::apply(upgrade, player, world);
     }
-    // The wall lamps, which are the decks' own and not the run's, hung
-    // again on every deck built, as each first arrival hung them.
-    let lamp = world.resource::<crate::light::LampTile>().0;
-    let mut queue = bevy::ecs::world::CommandQueue::default();
-    {
-        let map = world.resource::<WorldMap>();
-        let mut commands = Commands::new(&mut queue, world);
-        for deck in 1..=crate::decks::DECKS {
-            crate::light::hang_lamps(&mut commands, map, map_of(deck), lamp);
-        }
-    }
-    queue.apply(world);
     // A charge set whose pick was still waiting when the run was saved:
     // a pick is not a turn, so the save may have caught the charge and not
     // the choice, and the choice is offered again rather than lost.

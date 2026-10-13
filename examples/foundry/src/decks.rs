@@ -75,7 +75,6 @@ pub struct Foundry {
     hull: TileId,
     deck: TileId,
     hatch: TileId,
-    lamp: TileId,
     layout: LayoutDef,
     prefabs: Prefabs<MonsterDef>,
     seed: RunSeed,
@@ -97,15 +96,19 @@ impl Foundry {
         // the frame still blocks a shot through it.
         let hatch = tiles.register(TileProps::floor("hatch").opaque(true)).unwrap();
         tiles.register(TileProps::wall("console")).unwrap();
-        let lamp = tiles.register(TileProps::wall("lamp")).unwrap();
+        tiles.register(TileProps::wall("lamp")).unwrap();
         // Floor that says what a room was for, and crosses like any deck.
         for floor in ["hazard stripe", "oil stain", "scorch mark", "drain grate", "cable trench"] {
             tiles.register(TileProps::floor(floor)).unwrap();
         }
+        // A wall lamp sheds its light by itself, as `assets/tiles.ron`
+        // writes it beside its look, and the engine hangs that light on
+        // every lamp of every deck built or restored.
+        rl_engine::rl_render::looks::light_tiles(TILES_RON, &mut tiles).unwrap_or_else(|e| panic!("assets/tiles.ron: {e}"));
         // After the tiles, which the pieces paint by name.
         let prefabs = crate::prefabs::load(&tiles);
         let layout = layout::load(LAYOUT_RON).unwrap_or_else(|e| panic!("assets/layout.ron: {e}"));
-        Self { tiles, hull, deck, hatch, lamp, layout, prefabs, seed }
+        Self { tiles, hull, deck, hatch, layout, prefabs, seed }
     }
 
     /// The registered tiles, for `WorldMap::new`.
@@ -118,12 +121,6 @@ impl Foundry {
     /// key each stamp carries, which names a piece in this very set.
     pub fn prefabs(&self) -> &Prefabs<MonsterDef> {
         &self.prefabs
-    }
-
-    /// The wall lamp's tile, for `light::light_the_lamps` to find on a
-    /// built deck.
-    pub fn lamp(&self) -> TileId {
-        self.lamp
     }
 
     /// Each tile in full light, from `assets/tiles.ron`; a tile the file

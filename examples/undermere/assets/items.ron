@@ -137,7 +137,9 @@
 //   cost:       optional; what one blow or shot with it costs, in hundredths of a step;
 //               absent is 100
 //   light:      optional; the light it sheds where it lies and from whoever carries it, as
-//               (radius: tiles, color: (r, g, b) in 0..=1, flicker: 0..=1, may be left out)
+//               the engine writes every light: (intensity: 0..=255, radius: tiles,
+//               color: (r:, g:, b:) in bytes, flicker: 0..=255, may be left out, darkens:
+//               true for a darkness, may be left out); every light here is at intensity 200
 //   lends:      optional; names from `traits.ron` it gives whoever wears it, while it is worn;
 //               only on a thing with a slot, and two lent traits may not set one value
 //   strength:   optional; the strength it asks of whoever wears it: each point they are short
@@ -372,8 +374,8 @@
     // The lights: the lantern the adventurer walks out of Mereholt with,
     // and a torch, worse to carry and better to throw into a dark room, so
     // found among the thrown things.
-    (name: "lantern", glyph: '(', color: (1.0, 0.85, 0.55), price: 40, slot: "light", tags: ["light"], light: (radius: 7, color: (1.0, 0.85, 0.6), flicker: 0.1)),
-    (name: "torch", glyph: '(', color: (0.85, 0.55, 0.25), price: 10, slot: "light", tags: ["light", "thrown"], throw: (range: 6), light: (radius: 5, color: (1.0, 0.62, 0.3), flicker: 0.35)),
+    (name: "lantern", glyph: '(', color: (1.0, 0.85, 0.55), price: 40, slot: "light", tags: ["light"], light: (intensity: 200, radius: 7, color: (r: 255, g: 217, b: 153), flicker: 26)),
+    (name: "torch", glyph: '(', color: (0.85, 0.55, 0.25), price: 10, slot: "light", tags: ["light", "thrown"], throw: (range: 6), light: (intensity: 200, radius: 5, color: (r: 255, g: 158, b: 77), flicker: 89)),
     // The five artifacts, one to a mini-boss, each carrying its cost in
     // its own row rather than in a level: no tags, so none takes a level,
     // none is found by the ordinary budget, and none wears a face or

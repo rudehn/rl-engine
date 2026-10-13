@@ -22,8 +22,9 @@
 //               is adjacent, 25 percent a turn beyond
 //   hearing:    how it hears, as (threshold: steps of loudness a sound must still have when
 //               it arrives, memory: turns it goes looking, may be left out, 6); absent, deaf
-//   light:      the light it sheds, as (radius: tiles, color: (r, g, b) in 0..=1, flicker:
-//               0..=1, 0 steady, may be left out)
+//   light:      the light it sheds, as the engine writes every light: (intensity: 0..=255,
+//               radius: tiles, color: (r:, g:, b:) in bytes, flicker: 0..=255, 0 steady, may
+//               be left out, darkens: true for a darkness, may be left out)
 //   resists:    [(damage kind, percent removed)]: "slash" | "pierce" | "crush" | "fire" |
 //               "cold" | "poison"; 100 immune, negative a weakness
 //   armor:      flat armor, added to the monster's own
@@ -75,9 +76,9 @@
     (name: "thick-hided", says: "a hide that turns blows", armor: 2),
     (name: "armored", says: "plated", armor: 4),
     (name: "fire-blooded", says: "fire cannot hurt it; cold bites deep", resists: [("fire", 100), ("cold", -50)]),
-    (name: "fungal glow", says: "glows a soft green", light: (radius: 4, color: (0.35, 1.0, 0.8), flicker: 0.0)),
-    (name: "ember glow", says: "smoulders, lighting the dark", light: (radius: 4, color: (1.0, 0.55, 0.2), flicker: 0.3)),
-    (name: "grave light", says: "lit by a cold, drowned light", light: (radius: 5, color: (0.55, 0.75, 1.0), flicker: 0.1)),
+    (name: "fungal glow", says: "glows a soft green", light: (intensity: 200, radius: 4, color: (r: 89, g: 255, b: 204))),
+    (name: "ember glow", says: "smoulders, lighting the dark", light: (intensity: 200, radius: 4, color: (r: 255, g: 140, b: 51), flicker: 77)),
+    (name: "grave light", says: "lit by a cold, drowned light", light: (intensity: 200, radius: 5, color: (r: 140, g: 191, b: 255), flicker: 26)),
     (name: "regenerates", says: "its wounds close as you watch", statuses: ["regenerating"]),
     (name: "fire breath", says: "breathes fire", abilities: ["fire breath"], trick: true),
     (name: "drowning grasp", says: "drags the living down with a grip of cold water", abilities: ["drowning grasp"], trick: true),

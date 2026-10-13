@@ -5,7 +5,7 @@
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use rl_core::{Grid2D, Point, Rect, Steps};
-use rl_grid::{AStar, BitGrid, DijkstraMap, Emitter, LightField, PathRules, Rgb, Terrain, TileField, TileRegistry, fov, region};
+use rl_grid::{AStar, BitGrid, DijkstraMap, Emitter, Glow, LightField, PathRules, Rgb, Terrain, TileField, TileRegistry, fov, region};
 
 /// A cave-like map: 35% walls, then two smoothing passes so it has rooms
 /// and corridors rather than static.
@@ -127,9 +127,7 @@ fn bench_light(c: &mut Criterion) {
     let (t, r) = cave(96, 64, 1);
     let view = t.view(&r);
     let mut rng = StdRng::seed_from_u64(3);
-    let emitters: Vec<Emitter> = (0..20)
-        .map(|i| Emitter { origin: open_cell(&t, &r, &mut rng), intensity: 150 + i * 5, radius: 8, color: Rgb::new(255, 150, 40), flicker: 0, darkens: false })
-        .collect();
+    let emitters: Vec<Emitter> = (0..20).map(|i| Glow::new(150 + i * 5, 8, Rgb::new(255, 150, 40)).at(open_cell(&t, &r, &mut rng))).collect();
     let mut field = LightField::new(96, 64);
     let mut scratch = BitGrid::new(96, 64);
     group.bench_function("20_sources_radius_8", |b| {

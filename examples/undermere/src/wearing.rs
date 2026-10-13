@@ -254,7 +254,7 @@ mod tests {
 
         equip(&mut app, me, ring);
         let traits = traits();
-        let ember = traits.get(traits.expect("ember glow")).light.expect("a glow").source();
+        let ember = traits.get(traits.expect("ember glow")).light.map(LightSource).expect("a glow");
         assert_eq!(
             lent(&mut app, me, ring),
             Lent { resists: (100, -50), regenerating: Some((FOR_LIFE, true)), dark_sight: Some(6), light: Some(ember) },

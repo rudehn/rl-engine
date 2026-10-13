@@ -59,7 +59,7 @@
         '-': Tile("dais"),
         '~': Tile("black pool"),
         'T': Prop("throne"),
-        'b': Prop("brazier"),
+        'b': Prop("cold brazier"),
         'K': Monster(monster: "the Drowned King"),
         'z': Monster(monster: "skeleton knight"),
         'E': Entry,

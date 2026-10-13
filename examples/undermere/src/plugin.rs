@@ -215,8 +215,8 @@ impl Plugin for UndermerePlugin {
         // in `PrefabSet::Fill`, then the depth, the ways through and the
         // place's line in the log, the floor's people, Mereholt's people at
         // their marks, the keepers' shelves filled or restocked, the
-        // tavern's candidates seated on every arrival in Mereholt, the
-        // fixtures' light and the floor's things, before the engine's loot in
+        // tavern's candidates seated on every arrival in Mereholt, and the
+        // floor's things, before the engine's loot in
         // `LootSet::Scatter`, each reading the same `PlaceEntered` through
         // its own cursor. After the slots, so the people keep off every
         // cell a piece marked; the things after the ways through, which
@@ -233,7 +233,6 @@ impl Plugin for UndermerePlugin {
                 crate::townsfolk::gather,
                 crate::shops::keep_shops,
                 crate::mercenaries::seat_candidates,
-                crate::light::light_fixtures,
                 crate::finds::lay,
             )
                 .chain()
@@ -465,9 +464,6 @@ impl Plugin for UndermerePlugin {
         // A mercenary come through beside the adventurer is told of as
         // following them, not as leaving.
         app.add_systems(Update, crate::mercenaries::say_who_came.in_set(ViewSet::Annotate));
-        // A camp's fire lit between the turns and the light, so the frame
-        // it is stood is lit.
-        app.add_systems(Update, crate::light::light_loose_props.after(EngineSet::Turns).before(EngineSet::Light).run_if(in_state(EngineState::Playing)));
         // A photograph's ask to stand near something on the floor it
         // starts on, which a real run never makes.
         app.add_systems(

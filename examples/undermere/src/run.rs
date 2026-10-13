@@ -15,7 +15,6 @@ use rl_engine::rl_rules::damage::{ApplyResistance, SubtractArmor};
 
 use crate::armory::Armory;
 use crate::dungeon::{FLOORS, TOWN, Undermere, floor_of, map_of};
-use crate::light::Fixtures;
 use crate::lore::{Faces, Lore};
 use crate::tally::Counted;
 use crate::townsfolk::{GivenNames, NameSets, Townsfolk, Townsperson, name_everyone};
@@ -80,7 +79,6 @@ pub fn prepare(commands: &mut Commands, seed: &Seed, registries: &Registries) {
     commands.insert_resource(Lighting::dark());
     // Standing in fire scorches, a point a turn for three turns.
     commands.insert_resource(FireRules::new().inflicts(registries.statuses.expect("scorched"), 3));
-    commands.insert_resource(Fixtures::new(&undermere, registries));
     // Every floor's drawn biome, read off `undermere` once: the engine
     // boxes it behind `PlaceRules` below, so nothing after this can ask
     // it directly.
@@ -468,17 +466,6 @@ pub fn resume(world: &mut World) {
         begin_afresh(world);
         return;
     };
-    // The fixtures' light is the places' own and not the run's, lit again
-    // on every place built, as each first arrival lit it.
-    let mut queue = CommandQueue::default();
-    {
-        let (map, fixtures) = (world.resource::<WorldMap>(), world.resource::<Fixtures>());
-        let mut commands = Commands::new(&mut queue, world);
-        for place in std::iter::once(TOWN).chain((1..=FLOORS).map(map_of)) {
-            crate::light::light_place(&mut commands, map, place, fixtures);
-        }
-    }
-    queue.apply(world);
     let line = match world.get::<OnMap>(adventurer).and_then(|on| floor_of(on.0)) {
         Some(floor) => format!("Continuing on floor {floor}."),
         None => "Continuing in Mereholt.".to_string(),

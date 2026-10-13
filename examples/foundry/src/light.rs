@@ -1,5 +1,7 @@
-//! Light on the decks: a dim first deck, dark ones below it, the lamps
-//! that hang in the supply stores, and the commando's own shoulder lamp.
+//! Light on the decks: a dim first deck, dark ones below it, and the
+//! commando's own shoulder lamp. The lamps that hang in the supply stores
+//! are wall tiles whose line in `assets/tiles.ron` writes their light, and
+//! the engine hangs it on every one.
 //!
 //! The dark is the design's stealth trade, and the lamp is the player's
 //! side of it. Lit, the commando sees about six tiles in the dark and
@@ -15,46 +17,13 @@
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
-use rl_engine::rl_grid::{Rgb, TileId};
+use rl_engine::rl_grid::Rgb;
 
 use crate::input::Binds;
 
 /// The commando's shoulder lamp: a steady, cool light reaching six tiles.
 /// Steady rather than flickering, since it is a lamp and not a flame.
 pub const SHOULDER_LAMP: LightSource = LightSource::new(200, 6, Rgb::new(215, 230, 255));
-
-/// What one of a store's wall lamps sheds: warmer than the commando's,
-/// and enough to light the small room it hangs in and a little of the
-/// corridor outside its door.
-pub const WALL_LAMP: LightSource = LightSource::new(170, 5, Rgb::new(255, 225, 150));
-
-/// The tile a wall lamp is, from `decks::Foundry`, kept so a deck's lamps
-/// can be found after the map has been handed to the engine.
-#[derive(Resource, Debug, Clone, Copy)]
-pub struct LampTile(pub TileId);
-
-/// Hangs a [`WALL_LAMP`] on every lamp tile of a deck the first time it
-/// is entered. A fixture: an entity with no turns, so the engine keeps it
-/// in its static layer and recasts it only when the map changes.
-pub fn light_the_lamps(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, map: Res<WorldMap>, lamp: Res<LampTile>) {
-    for ev in entered.read() {
-        if ev.first {
-            hang_lamps(&mut commands, &map, ev.map, lamp.0);
-        }
-    }
-}
-
-/// Hangs a [`WALL_LAMP`] on every lamp tile of the built deck `deck`.
-///
-/// Read off the deck's own terrain rather than kept, so a continued run
-/// hangs them again from the decks it restored, the way the first arrival
-/// hung them, and the two can never disagree about where a lamp is.
-pub fn hang_lamps(commands: &mut Commands, map: &WorldMap, deck: MapId, lamp: TileId) {
-    let Some(place) = map.place(deck) else { return };
-    for (p, _) in place.terrain.iter().filter(|(_, t)| *t == lamp) {
-        commands.spawn((Position(p), OnMap(deck), WALL_LAMP));
-    }
-}
 
 /// The player holding the turn, and whether its lamp is lit.
 type LampBearer = (Entity, Has<LightSource>);

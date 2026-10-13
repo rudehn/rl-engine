@@ -24,7 +24,6 @@
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_rules::faction::FactionDef;
-use serde::Deserialize;
 
 use crate::armory::Armory;
 use crate::bestiary::Bestiary;
@@ -35,44 +34,18 @@ const ABILITIES_RON: &str = include_str!("../assets/abilities.ron");
 /// The props file, compiled in beside it.
 const PROPS_RON: &str = include_str!("../assets/props.ron");
 
-/// How bright every light a file writes is at its heart, out of 255.
+/// How bright every light Undermere's files write is at its heart, out of
+/// 255, and the brightness the lantern is lit at again once a darkness
+/// lifts.
 ///
-/// One brightness rather than a field, so how far a light reaches is the
-/// one number a file gives for how bright it is: a lantern and a glowing
-/// cap differ by their radius and their colour, and the lantern dimming
-/// as the adventurer descends is its radius shrinking. 200 is what
-/// Foundry's shoulder lamp sheds too: the light an example hands whoever
-/// carries it.
+/// One brightness for every light, so how far a light reaches is what
+/// tells how bright it is: a lantern and a glowing cap differ by their
+/// radius and their colour, and the lantern dimming as the adventurer
+/// descends is its radius shrinking. 200 is what Foundry's shoulder lamp
+/// sheds too: the light an example hands whoever carries it. Every file
+/// writes it on every light, as the engine's light is written, and a test
+/// holds them to it.
 pub const LIGHT_INTENSITY: u8 = 200;
-
-/// A light as Undermere's files write it: `(radius: 4, color: (0.35, 1.0,
-/// 0.8), flicker: 0.3)`, in the same `0..=1` the files write every colour
-/// in, rather than the engine's bytes.
-///
-/// A trait's glow and a lantern are the same thing, so `traits.ron` and
-/// `items.ron` write them the same way and [`source`](Self::source) turns
-/// both into the engine's [`LightSource`].
-#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct LightDef {
-    /// How far it reaches, in tiles.
-    pub radius: i32,
-    /// Its hue, `(r, g, b)` in `0..=1`.
-    pub color: (f32, f32, f32),
-    /// How far it flickers when drawn, `0` steady to `1` a flame that can
-    /// dip to nothing; absent, steady.
-    #[serde(default)]
-    pub flicker: f32,
-}
-
-impl LightDef {
-    /// The engine's light for it, at [`LIGHT_INTENSITY`].
-    pub fn source(&self) -> LightSource {
-        let byte = |unit: f32| (unit.clamp(0.0, 1.0) * 255.0).round() as u8;
-        let (r, g, b) = self.color;
-        LightSource::new(LIGHT_INTENSITY, self.radius, Rgb::new(byte(r), byte(g), byte(b))).flickering(byte(self.flicker))
-    }
-}
 
 /// What heavy gear asks of its wearer: the adventurer's is 12, and a
 /// potion of strength raises it by one for good.
@@ -694,6 +667,7 @@ mod tests {
             ("hanging lantern", false),
             ("witchlight", false),
             ("brazier", true),
+            ("cold brazier", true),
             ("throne", true),
             ("chest", true),
             ("banner", false),
@@ -943,14 +917,23 @@ mod tests {
         assert_eq!(app.world().resource::<Heard>().0, vec![Interacted { actor: me, target: keeper, verb: talk, thing: None }], "the walk key talked to them");
     }
 
-    /// A file's colour and flicker in `0..=1` become the engine's bytes,
-    /// rounded, at the one brightness every light has.
+    /// Every light Undermere's files write, on a tile, a prop, an item or
+    /// a trait, is at the one brightness, and every one sheds light rather
+    /// than taking it: what tells a lamp from a glowcap is how far it
+    /// reaches and its colour.
     #[test]
-    fn a_light_in_the_files_units_becomes_the_engines_light() {
-        let glow = LightDef { radius: 4, color: (0.35, 1.0, 0.8), flicker: 0.3 }.source();
-        assert_eq!((glow.intensity, glow.radius), (LIGHT_INTENSITY, 4));
-        assert_eq!(glow.color, Rgb::new(89, 255, 204));
-        assert_eq!(glow.flicker, 77);
+    fn every_light_the_files_write_is_at_the_one_brightness() {
+        let library = Library::load(&effect_kinds(), &Moments::default());
+        let undermere = crate::dungeon::Undermere::new(RunSeed(0));
+        let mut lights: Vec<(String, Glow)> = Vec::new();
+        lights.extend(undermere.tiles().iter().filter_map(|(_, t)| t.light.map(|l| (t.name.clone(), l))));
+        lights.extend(library.registries.props.iter().filter_map(|(_, p)| p.light.map(|l| (p.name.clone(), l))));
+        lights.extend(library.armory.defs.iter().filter_map(|(_, d)| d.light.map(|l| (d.name.clone(), l))));
+        lights.extend(library.traits.iter().filter_map(|(_, t)| t.light.map(|l| (t.name.clone(), l))));
+        assert!(lights.len() >= 20, "tiles, props, the lights and the glowing traits: {}", lights.len());
+        for (name, light) in &lights {
+            assert_eq!((light.intensity, light.darkens), (LIGHT_INTENSITY, false), "{name}");
+        }
     }
 
     /// Every prop that is not meant to blend, and every walkable floor, each
@@ -1016,7 +999,9 @@ mod tests {
     /// hearth's colour.
     #[test]
     fn every_prop_is_drawn_clear_of_every_floor_under_the_hearths_light_too() {
-        let (r, g, b) = crate::light::FIRE.color;
+        let hearth = registries().props.iter().find_map(|(_, p)| (p.name == "hearth").then_some(p.light)).flatten().expect("the hearth is lit");
+        let unit = |byte: u8| byte as f32 / 255.0;
+        let (r, g, b) = (unit(hearth.color.r), unit(hearth.color.g), unit(hearth.color.b));
         // Mereholt's pieces, `assets/prefabs/mereholt.ron`, on the town's floors.
         let town = ["well", "lamp post", "forge", "anvil", "shelf", "barrel", "table", "counter", "hearth", "bed", "candelabra", "altar", "pew"];
         let blenders = blenders([r, g, b], &["cobbles", "road", "planks", "garden", "grass"], &town);

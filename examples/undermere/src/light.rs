@@ -1,90 +1,33 @@
-//! Light in Mereholt and under it: an ambient for every place, the
-//! fixtures each place is lit by, and how far the adventurer's lantern
-//! reaches as the dark grows with the danger.
+//! Light in Mereholt and under it: an ambient for every place, and how far
+//! the adventurer's lantern reaches as the dark grows with the danger.
 //!
 //! The dark is the design's, and Brogue's: every place is seen dimly by
 //! its own ambient, so a floor's shape reads beyond the lantern, and the
 //! lantern, a brazier, a clump of glowcaps or a pool of lava is what makes
-//! a place bright, warm and plain to read. The engine's lighting does the
-//! rest: a fixture is a `LightSource` on an entity with no turns, cast
-//! once and cast again only when the map changes.
+//! a place bright, warm and plain to read.
 //!
-//! What a place is lit by is read off the place itself, by [`Fixtures`]:
-//! the tiles that glow, and the props a piece stood at its slots that shed
-//! light, which the engine's props do not carry, so the game names them
-//! here. Read off the built place rather than kept, so a run continued
-//! from a save can light every place it restores with [`light_place`] the
-//! way each first arrival did, and the two can never disagree.
+//! What a place is lit by is its content's, and the engine's to light:
+//! every tile that glows says so beside its look in `assets/tiles.ron`,
+//! and every prop that sheds light says so in `assets/props.ron`, so the
+//! engine hangs a fixture on each glowing cell of every place built or
+//! restored and a light on each lit prop however it was stood, a piece's
+//! slot, a camp's fire, a gate mark. A brazier before the throne burns a
+//! cold blue-green because the throne stands a cold brazier, a kind of its
+//! own. What is left here is the lantern, the one light that is the run's
+//! rather than a place's.
 //!
-//! Every light is a [`LightDef`], as the content files write a light, at
-//! the one brightness every light has: what tells a lamp from a glowcap is
-//! how far it reaches and its colour.
+//! Every light is written at the one brightness,
+//! [`LIGHT_INTENSITY`](crate::content::LIGHT_INTENSITY): what tells a lamp
+//! from a glowcap is how far it reaches and its colour.
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
-use rl_engine::rl_bevy::Spot;
-use rl_engine::rl_rules::prefab::Slot;
-use rl_engine::rl_rules::prop::PropId;
 
 use std::collections::BTreeMap;
 
 use crate::armory::{Armory, ItemKind};
-use crate::bestiary::MonsterDef;
-use crate::content::LightDef;
 use crate::dungeon::{FLOORS, Undermere, floor_of};
 use crate::run::Adventurer;
-
-/// A lamp post's lantern: warm, and far enough to light the street round
-/// it.
-pub const LAMP: LightDef = LightDef { radius: 5, color: (1.0, 0.8, 0.52), flicker: 0.12 };
-/// A lit window: firelight through the glass, a little way into the street
-/// and the room behind it.
-pub const WINDOW: LightDef = LightDef { radius: 3, color: (1.0, 0.76, 0.42), flicker: 0.1 };
-/// A forge or a hearth: orange, and restless.
-pub const FIRE: LightDef = LightDef { radius: 4, color: (1.0, 0.5, 0.2), flicker: 0.35 };
-/// A camp's fire in the open: wider than a hearth's, so a sleeping band
-/// round it is seen from across the dark before it is reached. Yellower
-/// than the forge's own orange: light multiplies a tile's colour channel
-/// by channel, and an orange light on the Fungal Deeps' green moss, which
-/// has almost no red to warm, came out darker than the dark round it.
-pub const CAMPFIRE: LightDef = LightDef { radius: 5, color: (1.0, 0.82, 0.5), flicker: 0.4 };
-/// Candles, on an altar or a candelabra: pale gold, and steadier than fire.
-pub const CANDLES: LightDef = LightDef { radius: 4, color: (1.0, 0.88, 0.58), flicker: 0.2 };
-/// A lantern hung in the Cellars or by the goblins in the Old Mines: warm,
-/// and nearer in than a brazier, so a cellar is lit in pools.
-pub const HUNG_LANTERN: LightDef = LightDef { radius: 4, color: (1.0, 0.72, 0.4), flicker: 0.15 };
-/// The Sunken Library's witchlight: a pale violet, steady under its glass.
-pub const WITCHLIGHT: LightDef = LightDef { radius: 4, color: (0.78, 0.6, 1.0), flicker: 0.05 };
-/// A brazier left burning in the Upper Halls: wide enough to light the room
-/// it stands in.
-pub const BRAZIER: LightDef = LightDef { radius: 6, color: (1.0, 0.6, 0.28), flicker: 0.4 };
-/// A brazier before the throne, burning a cold blue-green.
-pub const COLD_BRAZIER: LightDef = LightDef { radius: 6, color: (0.35, 0.95, 0.8), flicker: 0.25 };
-/// The Drowned Gate, on both its sides: violet.
-pub const GATE: LightDef = LightDef { radius: 5, color: (0.75, 0.42, 1.0), flicker: 0.15 };
-/// A gate mark, where a waystone was last used: the gate's violet, nearer
-/// in, a glow on the floor rather than a gate's worth of light.
-pub const GATE_MARK: LightDef = LightDef { radius: 4, ..GATE };
-/// A glowcap: a soft teal, a step or so round it, so a clump of them is a
-/// pool of light and a lone one a mark in the dark.
-pub const GLOWCAP: LightDef = LightDef { radius: 2, color: (0.4, 1.0, 0.85), flicker: 0.0 };
-/// A cell of lava: orange, and every cell of a pool sheds it, so a pool
-/// lights its shore.
-pub const LAVA: LightDef = LightDef { radius: 3, color: (1.0, 0.52, 0.15), flicker: 0.3 };
-/// A shaft of pale light come down through the lake onto the cathedral's
-/// marble.
-pub const SHAFT: LightDef = LightDef { radius: 2, color: (0.72, 0.84, 1.0), flicker: 0.0 };
-/// The Underlake's shallows, lit from below: a cold blue-green, and every
-/// cell of a pool sheds it, as lava's does.
-pub const SHALLOWS: LightDef = LightDef { radius: 2, color: (0.45, 0.9, 1.0), flicker: 0.1 };
-
-/// Every tile that glows by itself, by its name in `assets/tiles.ron`, and
-/// the light it sheds: the town's lit windows and the gate, and below them
-/// the glowcaps, the lava, the cathedral's shafts of light and the
-/// Underlake's lit shallows. Each is drawn brighter than the floor round
-/// it, as a light is.
-pub const GLOWING: [(&str, LightDef); 6] =
-    [("lit window", WINDOW), ("gate", GATE), ("glowcaps", GLOWCAP), ("lava", LAVA), ("moonlit marble", SHAFT), ("glowing shallows", SHALLOWS)];
 
 /// How far the adventurer's lantern reaches on `floor`, `None` for the
 /// town: seven tiles at the top, and a tile less every third floor, down
@@ -164,115 +107,13 @@ pub fn dim_the_lantern(
     }
 }
 
-/// What lights a place: the tiles that glow by themselves, and the props
-/// that shed light where a piece stood them.
-///
-/// Built once from the places' tiles and the content's props, and read for
-/// every place, so the names below are looked up once and a name nobody
-/// registered stops the run at its start.
-#[derive(Resource, Clone)]
-pub struct Fixtures {
-    /// Each tile that glows, and its light.
-    tiles: Vec<(TileId, LightDef)>,
-    /// Each prop that sheds light, and its light, braziers aside.
-    props: Vec<(PropId, LightDef)>,
-    /// Each prop that sheds light wherever it stands, stood by the game
-    /// rather than a piece's slot: a camp's fire, and a gate mark.
-    loose: Vec<(PropId, LightDef)>,
-    /// The brazier, whose flame is the colour of the place it burns in.
-    brazier: PropId,
-    /// The pieces, to read what a place's slots hold.
-    prefabs: Prefabs<MonsterDef>,
-}
-
-impl Fixtures {
-    /// What lights the places of `undermere`, with the props named in
-    /// `registries`: of the tiles, every one [`GLOWING`] names; of the
-    /// props, lamp posts, the forge and the hearth, the altar and
-    /// candelabras, hanging lanterns and witchlights, and braziers
-    /// wherever they stand.
-    pub fn new(undermere: &Undermere, registries: &Registries) -> Self {
-        let tile = |name: &str| undermere.tiles().expect(name);
-        let prop = |name: &str| registries.props.expect(name);
-        Self {
-            tiles: GLOWING.iter().map(|(name, light)| (tile(name), *light)).collect(),
-            props: vec![
-                (prop("lamp post"), LAMP),
-                (prop("forge"), FIRE),
-                (prop("hearth"), FIRE),
-                (prop("altar"), CANDLES),
-                (prop("candelabra"), CANDLES),
-                (prop("hanging lantern"), HUNG_LANTERN),
-                (prop("witchlight"), WITCHLIGHT),
-            ],
-            loose: vec![(prop("fire"), CAMPFIRE), (prop(crate::waystone::GATE_MARK), GATE_MARK)],
-            brazier: prop("brazier"),
-            prefabs: undermere.prefabs().clone(),
-        }
-    }
-
-    /// Every light the place `map`, of `terrain` and `spots`, is lit by:
-    /// each glowing tile in row order, then each lit prop in the order its
-    /// spots were stamped, so the fixtures of a place are spawned in one
-    /// order every run.
-    pub fn of(&self, terrain: &Terrain, spots: &[Spot], map: MapId) -> Vec<(Point, LightSource)> {
-        let brazier = if floor_of(map) == Some(FLOORS) { COLD_BRAZIER } else { BRAZIER };
-        let glowing = terrain.iter().filter_map(|(p, t)| self.tiles.iter().find(|(tile, _)| *tile == t).map(|(_, light)| (p, light.source())));
-        let lit = spots.iter().filter_map(|spot| {
-            let slot = spot.prefab.zip(char::from_u32(spot.tag)).and_then(|(key, glyph)| self.prefabs.slot(key, glyph));
-            let Some(Slot::Prop(id)) = slot else { return None };
-            let light = if *id == self.brazier { Some(brazier) } else { self.props.iter().find(|(prop, _)| prop == id).map(|(_, light)| *light) };
-            light.map(|light| (spot.at, light.source()))
-        });
-        glowing.chain(lit).collect()
-    }
-}
-
-/// Lights every fixture of a place the first time it is entered. A fixture
-/// is an entity with no turns, which the engine keeps in its static layer
-/// and casts again only when the map changes.
-pub fn light_fixtures(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, map: Res<WorldMap>, fixtures: Res<Fixtures>) {
-    for ev in entered.read().filter(|ev| ev.first) {
-        light_place(&mut commands, &map, ev.map, &fixtures);
-    }
-}
-
-/// Lights every prop that sheds light wherever it stands, on the prop
-/// itself, the frame it appears: a camp's fire, which the population stands
-/// on a floor's first arrival, and a gate mark, which a waystone leaves,
-/// neither with a slot [`Fixtures::of`] could read it off.
-///
-/// On the prop rather than a light beside it, so a fire put out takes its
-/// light with it, and read off the prop's kind as it appears rather than
-/// kept, so a fire a save restores is lit the same way, with nothing in the
-/// save to say so. Before the light is cast, so the frame a camp is first
-/// seen is the frame it is lit.
-pub fn light_loose_props(mut commands: Commands, props: Query<(Entity, &PropKind), Added<PropKind>>, fixtures: Res<Fixtures>) {
-    for (prop, kind) in &props {
-        if let Some((_, light)) = fixtures.loose.iter().find(|(id, _)| *id == kind.0) {
-            commands.entity(prop).insert(light.source());
-        }
-    }
-}
-
-/// Lights every fixture of the built place `place`.
-///
-/// Read off the place's own terrain and spots rather than kept, so a run
-/// continued from a save lights each place it restores the way the first
-/// arrival lit it.
-pub fn light_place(commands: &mut Commands, map: &WorldMap, place: MapId, fixtures: &Fixtures) {
-    let Some(built) = map.place(place) else { return };
-    for (p, light) in fixtures.of(&built.terrain, &built.spots, place) {
-        commands.spawn((Position(p), OnMap(place), light));
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
 
     use rl_engine::rl_core::RunSeed;
     use rl_engine::rl_rules::prefab::Slot;
+    use rl_engine::rl_rules::prop::PropId;
 
     use super::*;
     use crate::dungeon::{FLOORS, TOWN, map_of};
@@ -395,50 +236,93 @@ mod tests {
         assert_eq!(checked.len(), 6, "every band and the throne's floor had something in sight beyond its lights: {checked:?}");
     }
 
-    /// Everything that glows in a place has its light and nothing else
-    /// does: every lit window, the gate, every glowcap, every cell of lava
-    /// and every shaft of pale light, and every prop that sheds one. A
-    /// brazier burns the colour of the place it stands in.
+    /// One light standing on a map: where, the prop it is on if it is on
+    /// one, and what it sheds.
+    type Standing = (Point, Option<PropId>, LightSource);
+
+    /// Every light standing on `map` that nobody is or carries: each
+    /// glowing cell's fixture, and each prop's own.
+    fn standing(app: &mut App, map: MapId) -> Vec<Standing> {
+        let world = app.world_mut();
+        let mut q = world.query_filtered::<(&Position, &OnMap, &LightSource, Option<&PropKind>), (Without<Actor>, Without<Item>)>();
+        let mut found: Vec<Standing> = q.iter(world).filter(|(_, on, _, _)| on.0 == map).map(|(p, _, l, k)| (p.0, k.map(|k| k.0), *l)).collect();
+        found.sort_by_key(|(p, k, _)| (*p, *k));
+        found
+    }
+
+    /// What `map` should be lit by, read off the definitions: every cell
+    /// of a tile that writes a light, and every prop of a kind that does.
+    fn planned(app: &mut App, map: MapId) -> Vec<Standing> {
+        let registries = app.world().resource::<Registries>().clone();
+        let world = app.world_mut();
+        let props: Vec<(Point, PropId)> =
+            world.query::<(&Position, &OnMap, &PropKind)>().iter(world).filter(|(_, on, _)| on.0 == map).map(|(p, _, k)| (p.0, k.0)).collect();
+        let world_map = world.resource::<WorldMap>();
+        let lights = &world_map.tables().lights;
+        let place = world_map.place(map).expect("the place was built");
+        let mut planned: Vec<Standing> = place.terrain.iter().filter_map(|(p, t)| lights[t.index()].map(|glow| (p, None, LightSource(glow)))).collect();
+        planned.extend(props.into_iter().filter_map(|(p, kind)| registries.props.get(kind).light.map(|glow| (p, Some(kind), LightSource(glow)))));
+        planned.sort_by_key(|(p, k, _)| (*p, *k));
+        planned
+    }
+
+    /// The tiles and the props that glow are the ones the design lights,
+    /// written in the files: the town's lit windows and the gate, the
+    /// glowcaps, the lava, the shafts of light and the Underlake's lit
+    /// shallows; the lamp posts, the forge and the hearth, the altar and
+    /// the candelabras, the hanging lanterns, the witchlights, the
+    /// braziers warm and cold, a camp's fire and the gate mark. Nothing
+    /// else.
     #[test]
-    fn every_glowing_tile_and_every_lit_prop_of_every_place_has_its_light() {
+    fn exactly_the_tiles_and_props_the_design_lights_write_a_light() {
+        let undermere = Undermere::new(RunSeed(0));
+        let glowing: BTreeSet<&str> = undermere.tiles().iter().filter(|(_, t)| t.light.is_some()).map(|(_, t)| t.name.as_str()).collect();
+        assert_eq!(glowing, BTreeSet::from(["lit window", "gate", "glowcaps", "lava", "moonlit marble", "glowing shallows"]));
         let registries = crate::content::registries();
-        for s in 0..6 {
-            let undermere = Undermere::new(RunSeed(s));
-            let fixtures = Fixtures::new(&undermere, &registries);
-            let tiles = undermere.tiles();
-            let glowing = |name: &str| match name {
-                "lit window" => Some(WINDOW),
-                "gate" => Some(GATE),
-                "glowcaps" => Some(GLOWCAP),
-                "lava" => Some(LAVA),
-                "moonlit marble" => Some(SHAFT),
-                "glowing shallows" => Some(SHALLOWS),
-                _ => None,
-            };
+        let lit: BTreeSet<&str> = registries.props.iter().filter(|(_, p)| p.light.is_some()).map(|(_, p)| p.name.as_str()).collect();
+        let expected = [
+            "lamp post",
+            "forge",
+            "hearth",
+            "altar",
+            "candelabra",
+            "hanging lantern",
+            "witchlight",
+            "brazier",
+            "cold brazier",
+            "fire",
+            crate::waystone::GATE_MARK,
+        ];
+        assert_eq!(lit, BTreeSet::from(expected));
+        let (warm, cold) = (registries.props.get(registries.props.expect("brazier")), registries.props.get(registries.props.expect("cold brazier")));
+        assert_eq!((warm.look, warm.blocks), (cold.look, cold.blocks), "a cold brazier is the same iron, drawn the same");
+        assert_ne!(warm.light, cold.light, "burning another flame");
+    }
+
+    /// Every place, the town and every floor, is lit on its first arrival
+    /// by exactly what its definitions write, and by nothing else that
+    /// stands: a fixture on every glowing cell, and every lit prop's own
+    /// light on the prop. Before the throne every brazier burns cold, and
+    /// nowhere else does one.
+    #[test]
+    fn every_place_is_lit_on_arrival_by_exactly_what_its_tiles_and_props_write() {
+        for s in 0..2 {
+            let mut app = crate::testing::headless(RunSeed(s));
+            let me = crate::testing::adventurer(&mut app);
+            crate::testing::sturdy(&mut app, me);
+            let registries = app.world().resource::<Registries>().clone();
+            let (brazier, cold) = (registries.props.expect("brazier"), registries.props.expect("cold brazier"));
             for map in std::iter::once(TOWN).chain((1..=FLOORS).map(map_of)) {
-                let built = undermere.build(map, None).unwrap();
-                let lit = fixtures.of(&built.terrain, &built.spots, map);
-                let mut expected: Vec<(Point, LightSource)> =
-                    built.terrain.iter().filter_map(|(p, t)| glowing(&tiles.get(t).name).map(|light| (p, light.source()))).collect();
-                for spot in &built.spots {
-                    let prop = spot.prefab.zip(char::from_u32(spot.tag)).and_then(|(key, glyph)| undermere.prefabs().slot(key, glyph));
-                    let Some(Slot::Prop(id)) = prop else { continue };
-                    let light = match registries.props.get(*id).name.as_str() {
-                        "lamp post" => LAMP,
-                        "forge" | "hearth" => FIRE,
-                        "altar" | "candelabra" => CANDLES,
-                        "hanging lantern" => HUNG_LANTERN,
-                        "witchlight" => WITCHLIGHT,
-                        "brazier" if map == map_of(FLOORS) => COLD_BRAZIER,
-                        "brazier" => BRAZIER,
-                        _ => continue,
-                    };
-                    expected.push((spot.at, light.source()));
+                crate::testing::arrive(&mut app, map);
+                let planned = planned(&mut app, map);
+                assert!(!planned.is_empty() || floor_of(map).is_some(), "seed {s}: Mereholt is lit");
+                assert_eq!(standing(&mut app, map), planned, "seed {s}, {map:?}");
+                let kinds: Vec<PropId> = planned.iter().filter_map(|(_, k, _)| *k).collect();
+                if map == map_of(FLOORS) {
+                    assert!(!kinds.contains(&brazier), "seed {s}: a warm brazier before the throne");
+                } else {
+                    assert!(!kinds.contains(&cold), "seed {s}: a cold brazier on {map:?}");
                 }
-                let (mut lit, mut expected) = (lit, expected);
-                lit.sort_by_key(|(p, _)| *p);
-                expected.sort_by_key(|(p, _)| *p);
-                assert_eq!(lit, expected, "{map:?}, seed {s}");
             }
         }
     }
@@ -454,7 +338,7 @@ mod tests {
         let mut checked = 0;
         for s in 0..30 {
             let undermere = Undermere::new(RunSeed(s));
-            let fixtures = Fixtures::new(&undermere, &registries);
+            let glows = |tile: TileId| undermere.tiles().get(tile).light.is_some();
             for floor in 1..FLOORS {
                 let drawn = undermere.biome_of(floor);
                 if drawn.name != "the Spider Warrens" {
@@ -464,12 +348,12 @@ mod tests {
                 for decor in &drawn.decor {
                     match decor {
                         crate::dungeon::Decor::Patches { tile, .. } => {
-                            assert!(fixtures.tiles.iter().all(|(t, _)| t != tile), "the warrens strew {:?}, which glows", undermere.tiles().get(*tile).name);
+                            assert!(!glows(*tile), "the warrens strew {:?}, which glows", undermere.tiles().get(*tile).name);
                         }
                         crate::dungeon::Decor::Furnish { piece, .. } => {
                             let defs = undermere.prefabs().defs();
                             let lit = defs.get(defs.expect(piece)).slots().any(|(_, slot)| match slot {
-                                Slot::Prop(id) => *id == fixtures.brazier || fixtures.props.iter().any(|(p, _)| p == id),
+                                Slot::Prop(id) => registries.props.get(*id).light.is_some(),
                                 _ => false,
                             });
                             assert!(!lit, "the warrens furnish with {piece:?}, which sheds light");
@@ -477,7 +361,7 @@ mod tests {
                     }
                 }
                 let built = undermere.build(map_of(floor), None).unwrap();
-                let glowing: Vec<Point> = built.terrain.iter().filter(|(_, t)| fixtures.tiles.iter().any(|(g, _)| g == t)).map(|(p, _)| p).collect();
+                let glowing: Vec<Point> = built.terrain.iter().filter(|(_, t)| glows(*t)).map(|(p, _)| p).collect();
                 assert!(glowing.is_empty(), "seed {s}, floor {floor}: the warrens glow at {glowing:?}");
                 checked += 1;
             }
@@ -485,37 +369,33 @@ mod tests {
         assert!(checked > 0, "some seed drew the Spider Warrens");
     }
 
-    /// On the first arrival in Mereholt every one of its fixtures is lit,
-    /// and the street beside each lamp post is lit by it.
+    /// On the first arrival in Mereholt every one of its lights is lit, the
+    /// street beside each lamp post is lit by it, and a run continued from
+    /// the save that arrival wrote is lit by the same lights again, the
+    /// windows' and the gate's as well as the lamp posts', once each.
     #[test]
-    fn mereholt_is_lit_by_its_lamps_its_windows_and_the_gate_on_the_first_arrival() {
+    fn mereholt_is_lit_by_its_lamps_its_windows_and_the_gate_on_the_first_arrival_and_once_the_run_is_continued() {
         let mut app = crate::testing::headless(RunSeed(2));
         crate::testing::arrive(&mut app, TOWN);
-        let mut placed: Vec<Point> = {
-            let world = app.world_mut();
-            let mut q = world.query_filtered::<(&Position, &OnMap), (With<LightSource>, Without<Player>)>();
-            q.iter(world).filter(|(_, on)| on.0 == TOWN).map(|(p, _)| p.0).collect()
-        };
-        let place = app.world().resource::<WorldMap>().place(TOWN).unwrap();
-        let mut planned: Vec<Point> = app.world().resource::<Fixtures>().of(&place.terrain, &place.spots, TOWN).into_iter().map(|(p, _)| p).collect();
-        placed.sort();
-        planned.sort();
-        assert_eq!(placed, planned, "every fixture of the town is lit, once");
+        let placed = standing(&mut app, TOWN);
+        assert_eq!(placed, planned(&mut app, TOWN), "every light of the town is lit, once");
         assert!(placed.len() >= 20, "lamps, windows and the gate: {}", placed.len());
         let registries = app.world().resource::<Registries>().clone();
         let lamp_post = registries.props.expect("lamp post");
-        let posts: Vec<Point> = {
-            let world = app.world_mut();
-            let mut q = world.query::<(&Position, &PropKind)>();
-            q.iter(world).filter(|(_, kind)| kind.0 == lamp_post).map(|(p, _)| p.0).collect()
-        };
-        assert_eq!(posts.len(), 7, "Mereholt's seven lamp posts stand");
-        let (map, lighting) = (app.world().resource::<WorldMap>(), app.world().resource::<Lighting>());
-        for post in posts {
-            let beside: Vec<Point> = geometry::square(post, 1).filter(|p| map.is_walkable(*p)).collect();
-            assert!(!beside.is_empty(), "the lamp post at {post:?} stands in the street");
-            assert!(beside.iter().all(|p| lighting.band(*p) == LightBand::Lit), "the street beside the lamp post at {post:?} is lit");
+        let posts: Vec<Point> = placed.iter().filter(|(_, k, _)| *k == Some(lamp_post)).map(|(p, _, _)| *p).collect();
+        assert_eq!(posts.len(), 7, "Mereholt's seven lamp posts stand, lit");
+        {
+            let (map, lighting) = (app.world().resource::<WorldMap>(), app.world().resource::<Lighting>());
+            for post in posts {
+                let beside: Vec<Point> = geometry::square(post, 1).filter(|p| map.is_walkable(*p)).collect();
+                assert!(!beside.is_empty(), "the lamp post at {post:?} stands in the street");
+                assert!(beside.iter().all(|p| lighting.band(*p) == LightBand::Lit), "the street beside the lamp post at {post:?} is lit");
+            }
         }
+        let text = app.world().resource::<Saves>().load(crate::save::SLOT).expect("the slot reads").expect("the arrival wrote the run down");
+        let mut again = crate::testing::continued(&text);
+        crate::testing::settle(&mut again);
+        assert_eq!(standing(&mut again, TOWN), placed, "continued, the town is lit by the same lights, once each");
     }
 
     /// A goblin camp's fire, stood by the population with no slot to read
@@ -530,6 +410,11 @@ mod tests {
             let mut q = world.query::<(&Position, &OnMap, &PropKind, Option<&LightSource>)>();
             q.iter(world).filter(|(_, on, kind, _)| on.0 == map && kind.0 == fire).map(|(p, _, _, light)| (p.0, light.copied())).collect()
         };
+        let campfire = {
+            let registries = crate::content::registries();
+            registries.props.get(registries.props.expect("fire")).light.map(LightSource)
+        };
+        assert!(campfire.is_some(), "a camp's fire is written with a light");
         let camps = std::sync::atomic::AtomicUsize::new(0);
         par_seeds(seeds(0..40), |s| {
             let mut app = crate::testing::headless(RunSeed(s));
@@ -540,7 +425,7 @@ mod tests {
             crate::testing::settle(&mut app);
             let fires = lit_fires(&mut app, map);
             let Some((at, light)) = fires.first().copied() else { return };
-            assert_eq!(light, Some(CAMPFIRE.source()), "seed {s}: the camp's fire carries its own light");
+            assert_eq!(light, campfire, "seed {s}: the camp's fire carries its own light");
             let me_at = crate::testing::at(&app, me);
             let (world_map, lighting) = (app.world().resource::<WorldMap>(), app.world().resource::<Lighting>());
             let beyond = geometry::square(at, 1).filter(|p| world_map.is_walkable(*p) && geometry::chebyshev(*p, me_at) > lantern_radius(Some(4)) + 1);

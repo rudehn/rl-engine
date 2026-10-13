@@ -25,8 +25,6 @@ use std::fmt;
 use rl_engine::prelude::*;
 use serde::Deserialize;
 
-use crate::content::LightDef;
-
 /// The traits file, compiled in so the binary runs from anywhere.
 const TRAITS_RON: &str = include_str!("../assets/traits.ron");
 
@@ -70,7 +68,7 @@ pub struct TraitDef {
     pub hearing: Option<HearingStats>,
     /// The light it sheds.
     #[serde(default)]
-    pub light: Option<LightDef>,
+    pub light: Option<Glow>,
     /// Percent removed per damage kind, added to the other traits'.
     #[serde(default)]
     pub resists: Vec<(NameRef<DamageKind>, i32)>,
@@ -248,7 +246,7 @@ pub fn fold(traits: &[TraitId], all: &Registry<TraitDef>) -> Result<Folded, Clas
         setters.set("flee_at", t.flee_at, &mut folded.flee_at, by)?;
         setters.set("notice", t.notice, &mut folded.notice, by)?;
         setters.set("hearing", t.hearing, &mut folded.hearing, by)?;
-        setters.set("light", t.light.map(|l| l.source()), &mut folded.light, by)?;
+        setters.set("light", t.light.map(LightSource), &mut folded.light, by)?;
         setters.set("armor", t.armor, &mut folded.armor, by)?;
         setters.set("keeps_away", t.keeps_away, &mut folded.keeps_away, by)?;
         if let Some(wits) = t.wits {
@@ -453,7 +451,7 @@ mod tests {
             ("flee_at", "flee_at: 20"),
             ("notice", "notice: (certain: 2, chance_pct: 30)"),
             ("hearing", "hearing: (threshold: 1)"),
-            ("light", "light: (radius: 3, color: (1.0, 1.0, 1.0))"),
+            ("light", "light: (intensity: 200, radius: 3)"),
             ("armor", "armor: 1"),
             ("keeps_away", "keeps_away: (3, 5)"),
         ];

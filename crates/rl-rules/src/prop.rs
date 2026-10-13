@@ -21,7 +21,7 @@
 //! container stands at, so one locker holds better gear the deeper it is.
 
 use rl_core::Id;
-use rl_grid::Rgb;
+use rl_grid::{Glow, Rgb};
 use serde::Deserialize;
 
 use crate::TagId;
@@ -53,6 +53,11 @@ pub struct PropDef {
     pub triggers: Vec<TriggerSpec>,
     /// How hard it is to spot. `None` for a prop in plain sight.
     pub hidden: Option<HiddenDef>,
+    /// The light it sheds wherever it stands: a lamp post, a brazier, a
+    /// camp's fire. On the prop rather than a light the game keeps beside
+    /// it, so the light goes wherever the prop does, by whatever spawned
+    /// it, and goes out with it. `None` for a prop that sheds nothing.
+    pub light: Option<Glow>,
 }
 
 impl Named for PropDef {
@@ -246,6 +251,7 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<PropDef>, ContentE
             container,
             triggers: a.triggers.clone(),
             hidden: a.hidden.map(|h| HiddenDef { spot: h.spot }),
+            light: a.light,
         });
     }
     if !errors.is_empty() {
@@ -303,6 +309,8 @@ struct Authored {
     triggers: Vec<TriggerSpec>,
     #[serde(default)]
     hidden: Option<HiddenRon>,
+    #[serde(default)]
+    light: Option<Glow>,
 }
 
 impl Named for Authored {
@@ -424,6 +432,29 @@ mod tests {
         .expect("the file loads");
         let scenery: Vec<&str> = props.iter().filter(|(_, d)| d.is_scenery()).map(|(_, d)| d.name.as_str()).collect();
         assert_eq!(scenery, vec!["lathe"]);
+    }
+
+    /// A prop says what light it sheds as a light is written everywhere,
+    /// a prop that says nothing sheds nothing, and shedding light is not
+    /// doing anything: a lamp post is still scenery.
+    #[test]
+    fn a_props_light_is_read_as_written_and_a_lit_prop_is_still_scenery() {
+        let tags = tags();
+        let names = Names::new().tags(&tags);
+        let props = load(
+            r#"#![enable(implicit_some)]
+            [
+                (name: "lamp post", glyph: '|', color: (r: 240, g: 205, b: 130), blocks: true,
+                 light: (intensity: 200, radius: 5, color: (r: 255, g: 204, b: 133), flicker: 31)),
+                (name: "well", glyph: 'o', color: (r: 204, g: 220, b: 252), blocks: true),
+            ]"#,
+            &names,
+        )
+        .expect("the file loads");
+        let post = props.get(props.expect("lamp post"));
+        assert_eq!(post.light, Some(Glow::new(200, 5, Rgb::new(255, 204, 133)).flickering(31)));
+        assert!(post.is_scenery(), "a lamp post sheds light and does nothing");
+        assert_eq!(props.get(props.expect("well")).light, None);
     }
 
     /// The file in `docs/design/props.md`, near enough: a crate that

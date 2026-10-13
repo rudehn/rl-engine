@@ -264,8 +264,8 @@ const PIECE_TILES: [&str; 16] = [
 ];
 
 /// Every tile a place is built of, the town's first, then the doors, then
-/// each band's in order. What a tile looks like is `assets/tiles.ron`'s;
-/// what it is to a body is here.
+/// each band's in order. What a tile looks like, and what light it sheds,
+/// is `assets/tiles.ron`'s; what it is to a body is here.
 ///
 /// Wading costs twice a step, whether the water is the town's shallows,
 /// the cathedral's flooded floor or the black pools before the throne.
@@ -388,6 +388,11 @@ pub(crate) fn registry() -> TileRegistry {
             TileProps::wall("fallen rock"),
         ])
         .expect("every tile has a name of its own");
+    // What glows by itself, the town's lit windows and the gate, the
+    // glowcaps, the shafts of light on the cathedral's marble, the
+    // Underlake's shallows and lava, says so beside its look, and the
+    // engine hangs that light on every cell of it.
+    rl_engine::rl_render::looks::light_tiles(TILES_RON, &mut tiles).unwrap_or_else(|e| panic!("assets/tiles.ron: {e}"));
     tiles
 }
 
@@ -1386,7 +1391,10 @@ mod tests {
             // throne"`, rather than his own, `"the Drowned King"`; the
             // other two's piece is named exactly as their own monster.
             let (expected_monsters, expected_props): (Vec<&str>, Vec<&str>) = if boss.piece == "the throne" {
-                (["skeleton knight"; 5].into_iter().chain(["the Drowned King"]).collect(), vec!["brazier", "brazier", "brazier", "brazier", "throne"])
+                (
+                    ["skeleton knight"; 5].into_iter().chain(["the Drowned King"]).collect(),
+                    vec!["cold brazier", "cold brazier", "cold brazier", "cold brazier", "throne"],
+                )
             } else {
                 (vec![boss.piece], vec![])
             };

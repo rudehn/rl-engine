@@ -38,7 +38,6 @@ use rl_engine::prelude::*;
 use rl_engine::rl_rules::ability::Look;
 use serde::Deserialize;
 
-use crate::content::LightDef;
 use crate::lore::{CurseShown, Lore, Unfamiliar};
 use crate::traits::{Folded, TraitDef};
 use crate::wearing::Lends;
@@ -242,7 +241,7 @@ pub struct ItemDef {
     pub cost: Option<u32>,
     /// The light it sheds, where it lies and from whoever carries it.
     #[serde(default)]
-    pub light: Option<LightDef>,
+    pub light: Option<Glow>,
     /// The traits it gives whoever wears it, while it is worn.
     #[serde(default)]
     pub lends: Vec<NameRef<TraitDef>>,
@@ -936,7 +935,7 @@ pub fn spawn_item_at(commands: &mut Commands, armory: &Armory, def: Id<ItemDef>,
         e.insert(lends);
     }
     if let Some(light) = d.light {
-        e.insert(light.source());
+        e.insert(LightSource(light));
     }
     if d.stack {
         e.insert(Stack { key: def.index() as u64, count: 1 });
@@ -1711,7 +1710,7 @@ mod tests {
         for (e, name) in made.iter().zip(["lantern", "torch"]) {
             let def = library.armory.defs.get(library.armory.defs.expect(name));
             let light = def.light.expect("a light");
-            assert_eq!(world.get::<LightSource>(*e), Some(&light.source()), "{name}");
+            assert_eq!(world.get::<LightSource>(*e), Some(&LightSource(light)), "{name}");
         }
         assert!(world.get::<Throwable>(made[1]).is_some(), "a torch can be thrown into the dark");
     }
@@ -1772,7 +1771,7 @@ mod tests {
         [
             (name: "boots of haste", glyph: '[', color: (0.5, 0.5, 0.5), slot: "body", lends: ["swift"]),
             (name: "cap of wits", glyph: '^', color: (0.5, 0.5, 0.5), slot: "head", lends: ["sapient"]),
-            (name: "glowing lantern", glyph: '(', color: (0.5, 0.5, 0.5), slot: "light", light: (radius: 3, color: (1.0, 1.0, 1.0)), lends: ["fungal glow"]),
+            (name: "glowing lantern", glyph: '(', color: (0.5, 0.5, 0.5), slot: "light", light: (intensity: 200, radius: 3), lends: ["fungal glow"]),
         ]"#;
         let Err(ContentError::Invalid(errors)) = read(bad, registries, traits) else { panic!("it read") };
         assert_eq!(

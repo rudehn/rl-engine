@@ -13,6 +13,13 @@
 //! load so the gap is reported at startup, by name, rather than found on
 //! the map. Every unknown name and every tile left out is listed at once.
 //!
+//! A line may also say what light the tile sheds, a [`Glow`] written as
+//! every light is written, because the file a game keeps a tile's colours
+//! in is where its author looks for its glow too. The light is gameplay,
+//! not drawing: [`light_tiles`] reads it out of the same file into the
+//! [`TileRegistry`], where the engine's lighting finds it, and
+//! [`TileAppearance::load`] reads the rest.
+//!
 //! ```
 //! use rl_grid::{TileProps, TileRegistry};
 //! use rl_render::TileAppearance;
@@ -31,9 +38,21 @@
 //! assert_eq!(look.lit(tiles.expect("rock")).glyph, '#');
 //! assert!(TileAppearance::load(r#"[(tile: "rock", glyph: '#', fg: (0.6, 0.6, 0.6))]"#, &tiles).is_err(), "moss was left out");
 //! ```
+//!
+//! A glowing tile's line, and the light it leaves on the registry:
+//!
+//! ```
+//! use rl_grid::{Glow, Rgb, TileProps, TileRegistry};
+//!
+//! let mut tiles = TileRegistry::new();
+//! let lava = tiles.register(TileProps::floor("lava")).unwrap();
+//! let file = r#"[(tile: "lava", glyph: '~', fg: (1.0, 0.5, 0.1), light: (intensity: 200, radius: 3, color: (r: 255, g: 133, b: 38)))]"#;
+//! rl_render::looks::light_tiles(file, &mut tiles).unwrap();
+//! assert_eq!(tiles.get(lava).light, Some(Glow::new(200, 3, Rgb::new(255, 133, 38))));
+//! ```
 
 use bevy::prelude::Color;
-use rl_grid::TileRegistry;
+use rl_grid::{Glow, TileRegistry};
 use rl_rules::ContentError;
 use serde::Deserialize;
 
@@ -45,8 +64,9 @@ use crate::terminal::Cell;
 ///
 /// The full option space: `tile` and `glyph` and `fg` always, `bg` black
 /// when left out, `vary` none when left out, `shimmer` still when left
-/// out. Colours are `(r, g, b)` in `0..=1`, the way the rest of a game's
-/// content writes them.
+/// out, `light` dark when left out. Colours are `(r, g, b)` in `0..=1`,
+/// the way the rest of a game's content writes them; a light is a
+/// [`Glow`], written the way a prop's or a save's is, colour in bytes.
 #[derive(Debug, Clone, Deserialize)]
 struct Look {
     /// The tile's registered name.
@@ -64,6 +84,35 @@ struct Look {
     /// Brightness drifting over time.
     #[serde(default)]
     shimmer: f32,
+    /// The light the tile sheds, read by [`light_tiles`] and not here.
+    #[serde(default)]
+    light: Option<Glow>,
+}
+
+/// Reads a look file's lights into `tiles`: every line that writes a
+/// `light` gives its tile that light, and every line that writes none
+/// leaves its tile as it was, so a light registered in code stands unless
+/// the file says otherwise.
+///
+/// Called where the game builds its registry, before the tables are taken
+/// from it, since the tables are what the map and its lighting read. A
+/// separate read rather than a part of [`TileAppearance::load`], because
+/// the look is wanted wherever something draws and the light only once,
+/// on a registry still being filled. Refuses the file, naming every
+/// problem at once, when it does not parse or names a tile that is not
+/// registered; whether every tile has a line is the look's check.
+pub fn light_tiles(text: &str, tiles: &mut TileRegistry) -> Result<(), ContentError> {
+    let options = ron::Options::default().with_default_extension(ron::extensions::Extensions::IMPLICIT_SOME);
+    let looks: Vec<Look> = options.from_str(text).map_err(|e| ContentError::Parse(e.to_string()))?;
+    let mut errors = Vec::new();
+    for look in &looks {
+        match tiles.id(&look.tile) {
+            Some(id) if look.light.is_some() => tiles.set_light(id, look.light),
+            Some(_) => {}
+            None => errors.push(format!("{}: no tile registered under that name", look.tile)),
+        }
+    }
+    if errors.is_empty() { Ok(()) } else { Err(ContentError::Invalid(errors)) }
 }
 
 impl TileAppearance {
@@ -155,5 +204,24 @@ mod tests {
         let Err(ContentError::Invalid(errors)) = TileAppearance::load(text, &tiles) else { panic!("a bad file loaded") };
         assert_eq!(errors, vec!["rock: described twice", "lava: no tile registered under that name", "moss: registered, but the file gives it no look"]);
         assert!(matches!(TileAppearance::load("not ron", &tiles), Err(ContentError::Parse(_))));
+    }
+
+    /// A line's light lands on its tile and a line without one leaves its
+    /// tile dark, while the look of both is read exactly as before.
+    #[test]
+    fn a_look_files_lights_land_on_the_registry_and_its_looks_are_unchanged() {
+        let mut tiles = tiles();
+        let text = r#"[
+            (tile: "rock", glyph: '#', fg: (0.6, 0.6, 0.6)),
+            (tile: "moss", glyph: '.', fg: (0.4, 0.7, 0.3), light: (intensity: 200, radius: 2, color: (r: 102, g: 255, b: 217))),
+        ]"#;
+        light_tiles(text, &mut tiles).unwrap();
+        assert_eq!(tiles.get(tiles.expect("moss")).light, Some(Glow::new(200, 2, rl_grid::Rgb::new(102, 255, 217))));
+        assert_eq!(tiles.get(tiles.expect("rock")).light, None, "a line with no light sheds none");
+        assert_eq!(TileAppearance::load(text, &tiles).unwrap().lit(tiles.expect("moss")).glyph, '.');
+        let Err(ContentError::Invalid(errors)) = light_tiles(r#"[(tile: "lava", glyph: '~', fg: (1.0, 0.3, 0.0))]"#, &mut tiles) else {
+            panic!("an unknown tile was lit")
+        };
+        assert_eq!(errors, vec!["lava: no tile registered under that name"]);
     }
 }

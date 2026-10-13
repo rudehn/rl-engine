@@ -13,6 +13,11 @@
 //   vary:    optional; (brightness, hue), how far each cell strays from the
 //            authored colour, 0..=1 each; none when left out
 //   shimmer: optional; brightness drifting over time, 0..=1; still when left out
+//   light:   optional; the light every cell of it sheds by itself, as the engine
+//            writes every light, colour in bytes as props.ron writes one:
+//            (intensity: 0..=255, radius: tiles, color: (r:, g:, b:), flicker:
+//            0..=255, may be left out, darkens: true for a darkness, may be left
+//            out); every light here is at intensity 200. None when left out
 //
 // Every tile here writes both colours and a `vary`, so no floor reads as
 // wallpaper; water, lava and the gate shimmer as well. A strewn tile (rubble,
@@ -34,14 +39,18 @@
     (tile: "garden",         glyph: 'ψ',  fg: (0.5, 0.68, 0.3),   bg: (0.2, 0.15, 0.08),  vary: (0.16, 0.06)),
     (tile: "timber wall",    glyph: '#',  fg: (0.78, 0.6, 0.42),  bg: (0.54, 0.4, 0.26),  vary: (0.1, 0.03)),
     (tile: "stone wall",     glyph: '#',  fg: (0.76, 0.76, 0.8),  bg: (0.46, 0.46, 0.5),  vary: (0.08, 0.02)),
-    (tile: "lit window",     glyph: '▒',  fg: (1.0, 0.86, 0.56),  bg: (0.75, 0.5, 0.2),   vary: (0.06, 0.03), shimmer: 0.08),
+    // Firelight through the glass, a little way into the street and the room
+    // behind it.
+    (tile: "lit window",     glyph: '▒',  fg: (1.0, 0.86, 0.56),  bg: (0.75, 0.5, 0.2),   vary: (0.06, 0.03), shimmer: 0.08,
+     light: (intensity: 200, radius: 3, color: (r: 255, g: 194, b: 107), flicker: 26)),
     (tile: "tree",           glyph: '♣',  fg: (0.3, 0.58, 0.3),   bg: (0.07, 0.15, 0.08), vary: (0.15, 0.06)),
     (tile: "shallows",       glyph: '~',  fg: (0.5, 0.72, 0.86),  bg: (0.13, 0.25, 0.36), vary: (0.1, 0.03),  shimmer: 0.25),
     (tile: "lake",           glyph: '≈',  fg: (0.32, 0.5, 0.78),  bg: (0.05, 0.11, 0.24), vary: (0.1, 0.03),  shimmer: 0.3),
     (tile: "standing stone", glyph: '0',  fg: (0.82, 0.8, 0.88),  bg: (0.3, 0.3, 0.36),   vary: (0.08, 0.02)),
     // The Drowned Gate, on the island and again where it lets out on floor
     // one: the one tile that is a way through, and it glows violet.
-    (tile: "gate",           glyph: 'Ω',  fg: (0.92, 0.66, 1.0),  bg: (0.42, 0.18, 0.55), vary: (0.08, 0.04), shimmer: 0.35),
+    (tile: "gate",           glyph: 'Ω',  fg: (0.92, 0.66, 1.0),  bg: (0.42, 0.18, 0.55), vary: (0.08, 0.04), shimmer: 0.35,
+     light: (intensity: 200, radius: 5, color: (r: 191, g: 107, b: 255), flicker: 38)),
     // The doors of the town's houses and of the halls and crypts below.
     // The only bright gold glyph on a dark fill: every wall is a lighter
     // fill than every floor, in browns, greys and blues, so a door reads
@@ -71,7 +80,10 @@
     // The Fungal Deeps, floors three and four.
     (tile: "cave wall",      glyph: '#',  fg: (0.52, 0.65, 0.58), bg: (0.32, 0.42, 0.37), vary: (0.12, 0.04)),
     (tile: "moss",           glyph: '.',  fg: (0.38, 0.66, 0.5),  bg: (0.08, 0.18, 0.13), vary: (0.18, 0.06)),
-    (tile: "glowcaps",       glyph: '"',  fg: (0.55, 1.0, 0.9),   bg: (0.1, 0.34, 0.29),  vary: (0.12, 0.05), shimmer: 0.15),
+    // A soft teal, a step or so round it, so a clump of them is a pool of light
+    // and a lone one a mark in the dark.
+    (tile: "glowcaps",       glyph: '"',  fg: (0.55, 1.0, 0.9),   bg: (0.1, 0.34, 0.29),  vary: (0.12, 0.05), shimmer: 0.15,
+     light: (intensity: 200, radius: 2, color: (r: 102, g: 255, b: 217))),
 
     // The Spider Warrens, floors three and four's other biome: truly
     // dark, so pale rock rather than a colour of its own.
@@ -97,17 +109,22 @@
     (tile: "flooded floor",  glyph: '~',  fg: (0.48, 0.7, 0.84),  bg: (0.11, 0.22, 0.32), vary: (0.1, 0.03),  shimmer: 0.25),
     (tile: "deep water",     glyph: '≈',  fg: (0.3, 0.48, 0.74),  bg: (0.03, 0.08, 0.2),  vary: (0.1, 0.03),  shimmer: 0.3),
     // Marble under a shaft of the pale light that comes down through the lake.
-    (tile: "moonlit marble", glyph: '.',  fg: (0.9, 0.94, 1.0),   bg: (0.34, 0.39, 0.46), vary: (0.05, 0.02), shimmer: 0.1),
+    (tile: "moonlit marble", glyph: '.',  fg: (0.9, 0.94, 1.0),   bg: (0.34, 0.39, 0.46), vary: (0.05, 0.02), shimmer: 0.1,
+     light: (intensity: 200, radius: 2, color: (r: 184, g: 214, b: 255))),
 
     // The Underlake, floors seven and eight's other biome.
     (tile: "underlake wall", glyph: '#',  fg: (0.46, 0.64, 0.68), bg: (0.26, 0.42, 0.46), vary: (0.1, 0.03)),
     (tile: "underlake floor", glyph: '.', fg: (0.34, 0.54, 0.58), bg: (0.08, 0.2, 0.23),  vary: (0.12, 0.03)),
-    (tile: "glowing shallows", glyph: '~', fg: (0.6, 0.95, 0.95),  bg: (0.1, 0.32, 0.36),  vary: (0.1, 0.03),  shimmer: 0.3),
+    // Lit from below, a cold blue-green, and every cell of a pool sheds it.
+    (tile: "glowing shallows", glyph: '~', fg: (0.6, 0.95, 0.95),  bg: (0.1, 0.32, 0.36),  vary: (0.1, 0.03),  shimmer: 0.3,
+     light: (intensity: 200, radius: 2, color: (r: 115, g: 230, b: 255), flicker: 26)),
 
     // The Forge of Embers, floor nine.
     (tile: "forge wall",     glyph: '#',  fg: (0.78, 0.52, 0.43), bg: (0.52, 0.32, 0.25), vary: (0.1, 0.03)),
     (tile: "ash",            glyph: '.',  fg: (0.58, 0.51, 0.47), bg: (0.21, 0.17, 0.15), vary: (0.12, 0.03)),
-    (tile: "lava",           glyph: '≈',  fg: (1.0, 0.7, 0.25),   bg: (0.75, 0.22, 0.02), vary: (0.12, 0.05), shimmer: 0.4),
+    // Orange, and every cell of a pool sheds it, so a pool lights its shore.
+    (tile: "lava",           glyph: '≈',  fg: (1.0, 0.7, 0.25),   bg: (0.75, 0.22, 0.02), vary: (0.12, 0.05), shimmer: 0.4,
+     light: (intensity: 200, radius: 3, color: (r: 255, g: 133, b: 38), flicker: 77)),
     (tile: "flagstones",     glyph: '.',  fg: (0.6, 0.56, 0.52),  bg: (0.24, 0.2, 0.18),  vary: (0.1, 0.02)),
 
     // The Ashen Galleries, floor nine's other biome.
