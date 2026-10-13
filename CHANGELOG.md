@@ -6,6 +6,18 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- A blow that kills an unaware target no longer makes it notice its killer: `wake_on_damage` skips a `DamageDealt` whose target a `DeathEvent` of the same pass names, so the log stops reading "the kobold notices you!" after "You kill the kobold".
+  A target that survives the blow wakes as before, and no game changes a line.
+- The inventory screen is lettered `a)` to `z)` and works in two steps, so no key means two things on it: on the list, a letter or Enter opens a row, and only an opened row takes the action keys (`e` wear, `d` drop, `u` or Enter use, `t` throw); Esc goes back to the list, and Esc again closes the bag.
+  A held arrow walks the list at the look cursor's pace, and every plain letter on the list is a row's, so `i` and the vi keys no longer close or walk it there; while the bag chooses a thing for a use or an offer, a letter makes the choice in one press.
+  `rl_ui::controls` gains `row_letter`, `lettered_row`, `is_letter` and `ControlInput::repeats`, and `InventoryMenu` gains `opened` and `open(row)`.
+  To change: a game that opens the bag on one thing calls `InventoryMenu::open(row)` instead of setting `selected`, or its own keys will no longer act on that row, as Foundry's and Undermere's `t` now do.
+- The nearby rail lists a prop only when there is something to do with it or about it: it offers a verb, holds things, or was hidden and has been found; `rl_bevy::props::has_business(&PropDef)` is the test.
+  A prop that can only be broken, or that answers a moment in plain sight, leaves the rail, and the cursors still step onto it.
+- The party rail's row is its own health bar, washed from the left as a nearby row is.
+  To change: drop `PartyPanel::bars`; `PartyLayout::bar_width` is gone.
+- `NearbyPanel::beneath(key)` and `PartyPanel::beneath(key)` draw a facet key on lines of their own under the row, wrapped while every row fits and clipped to one line each when not, as Undermere's rails now say what each one wields, wears and carries.
+  To change: a game that builds `NearbyLayout` or `PartyLayout` literally adds `beneath: Vec::new()`.
 - A container put down mid-turn, as a prefab's slot stands one up, is no longer marked `Emptied` before it is stocked: `close_emptied_containers` read the empty bag of a container the next frame had yet to fill as one just emptied whenever it happened to run after the slot's spawn, so a vault's prize could arrive already taken. It now reads only a `Stocked` container, and one that is just stocked as well as one whose bag just changed, so a container that rolled nothing is shown done however it was put down.
   To change: a game that answers `FillContainer` itself, without `LootPlugin`, answers it in `PropSet::Fill`, where the engine now relies on it landing before any turn; a game that ordered its own systems or used an observer to dodge the race can drop the workaround.
 
