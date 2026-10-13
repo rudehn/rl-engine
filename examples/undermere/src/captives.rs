@@ -418,9 +418,9 @@ mod tests {
         // turn, and then the `GoThrough` finds it still there.
         let world = app.world_mut();
         let down = world
-            .query::<(&Position, &crate::stairs::Way, &Transition)>()
+            .query::<(&Position, &Stair, &Transition)>()
             .iter(world)
-            .find(|(_, w, _)| **w == crate::stairs::Way::Down)
+            .find(|(_, w, _)| w.climb == Climb::Down)
             .map(|(p, _, t)| (p.0, t.to))
             .expect("the floor the captive was freed on has a way down");
         crate::testing::stand_on(&mut app, captive, down.0.offset(-1, 0));
@@ -455,9 +455,9 @@ mod tests {
         again.insert_resource(peace);
         let world = again.world_mut();
         let down = world
-            .query::<(&Position, &OnMap, &crate::stairs::Way)>()
+            .query::<(&Position, &OnMap, &Stair)>()
             .iter(world)
-            .find(|(_, on, w)| on.0 == map_of(floor + 1) && **w == crate::stairs::Way::Down)
+            .find(|(_, on, w)| on.0 == map_of(floor + 1) && w.climb == Climb::Down)
             .map(|(p, ..)| p.0)
             .expect("the floor it came down to has a way down");
         crate::testing::stand_on(&mut again, follower, down.offset(-1, 0));

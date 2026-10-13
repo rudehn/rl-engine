@@ -40,8 +40,8 @@ use undermere::armory::{Armory, ItemDef, ItemKind};
 use undermere::bestiary::{Bestiary, Kind};
 use undermere::dungeon::{FLOORS, floor_of, map_of};
 use undermere::lore::{Lore, Unfamiliar};
-use undermere::stairs::Way;
 use undermere::tally::Tally;
+use undermere::testing::Way;
 use undermere::traps::{Hiding, SecretKind};
 
 /// The seeds every half plays: one to fifty, or one to as many as
@@ -695,7 +695,7 @@ fn walk(world: &mut World, view: &Sight, memory: &mut Memory) -> Choice {
         }
     }
     let onward = if view.here == undermere::dungeon::TOWN { Way::Gate } else { Way::Down };
-    let way_on = world.query::<(&Position, &OnMap, &Way)>().iter(world).find(|(_, on, way)| on.0 == view.here && **way == onward).map(|(p, _, _)| p.0);
+    let way_on = undermere::testing::way_on(world, view.here, onward);
     if way_on == Some(view.at) {
         return Choice::Through;
     }
@@ -1018,8 +1018,7 @@ fn delve(seed: u64, plan: Plan) -> Delve {
             // Long past when it should have gone down: say where it is
             // and what it keeps choosing, for whoever reads a stall.
             let here = world.resource::<WorldMap>().current();
-            let ways: Vec<(Point, Way)> =
-                world.query::<(&Position, &OnMap, &Way)>().iter(world).filter(|(_, on, _)| on.0 == here).map(|(p, _, w)| (p.0, *w)).collect();
+            let ways: Vec<(Point, Way)> = undermere::testing::ways(world, here).into_iter().map(|(p, w, _)| (p, w)).collect();
             let at = world.get::<Position>(me).map(|p| p.0);
             let with = choice.thing().and_then(|it| world.get::<Name>(it)).map(|n| n.as_str().to_string());
             eprintln!("seed {seed} {plan:?}: {} turns on floor {floor}, at {at:?}, ways {ways:?}, choosing {choice:?} with {with:?}", memory.on_floor);

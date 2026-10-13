@@ -208,7 +208,7 @@ mod tests {
     use crate::dungeon::{TOWN, map_of};
     use crate::mercenaries::fixtures::hired;
     use crate::mercenaries::obey;
-    use crate::stairs::Way;
+    use crate::testing::Way;
     use crate::testing::{
         adventurer, arrive, at, clear_floor, go_through, headless, here, lay_floor, pass_turns, said, settle, stand_on, still, sturdy, wall_off,
     };
@@ -255,13 +255,7 @@ mod tests {
     /// Where the way `way` stands on the place being read.
     fn way_cell(app: &mut App, want: Way) -> Point {
         let here = here(app);
-        let world = app.world_mut();
-        world
-            .query::<(&Position, &OnMap, &Way)>()
-            .iter(world)
-            .find(|(_, on, w)| on.0 == here && **w == want)
-            .map(|(p, ..)| p.0)
-            .expect("the place has that way")
+        crate::testing::way_on(app.world_mut(), here, want).expect("the place has that way")
     }
 
     /// Nothing alive on any place but the adventurer and the party, nothing
@@ -279,7 +273,7 @@ mod tests {
         for other in others {
             world.despawn(other);
         }
-        let ways: Vec<Point> = world.query::<(&Position, &OnMap, &Way)>().iter(world).filter(|(_, on, _)| on.0 == here).map(|(p, ..)| p.0).collect();
+        let ways: Vec<Point> = crate::testing::ways(world, here).into_iter().map(|(p, ..)| p).collect();
         let props: Vec<Entity> = world
             .query_filtered::<(Entity, &Position), With<Prop>>()
             .iter(world)

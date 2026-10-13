@@ -69,26 +69,20 @@ Once the run is over it then fills it from the record `RecordsPlugin` filed for 
 
 ## Using it
 
-A kind is a component and its account of itself, and a way through is the smallest one there is: the engine knows where it leads, so the game writes down which way it is and nothing more.
+A kind is a component and its account of itself, and Undermere's gate is the smallest one there is: the engine knows where it leads, so the game writes down that it is the gate and nothing more.
 
 <!-- include: ../../../../examples/undermere/src/save.rs:way -->
 ```rust,no_run
-/// A way through, as the save writes it: which way it is, which is how it
-/// is named and drawn. The engine keeps where it stands and where it
-/// leads.
-impl Saveable for Way {
-    type Saved = Way;
+/// The gate, as the save writes it: that it is the gate, and nothing
+/// more. The engine keeps where it stands and where it leads, and the
+/// stairs between the floors are the engine's own, saved by the engine.
+impl Saveable for Gate {
+    type Saved = ();
 
-    fn capture(world: &World, entity: Entity) -> Way {
-        *world.get::<Way>(entity).expect("a way's kind")
-    }
+    fn capture(_: &World, _: Entity) {}
 
-    fn restore(world: &mut World, saved: &Way) -> Entity {
-        let mut e = world.spawn((*saved, Name::new(saved.name())));
-        if let Some(glyph) = saved.glyph() {
-            e.insert(glyph);
-        }
-        e.id()
+    fn restore(world: &mut World, _: &()) -> Entity {
+        world.spawn((Gate, Name::new(Gate::NAME))).id()
     }
 }
 ```
@@ -104,7 +98,7 @@ pub fn register(app: &mut App) {
         .save_kind::<ItemKind>()
         .save_kind::<Kind>()
         .save_kind::<Adventurer>()
-        .save_kind::<Way>()
+        .save_kind::<Gate>()
         .save_kind::<Townsperson>()
         .save_state::<Tally>()
         .save_state::<Lore>()

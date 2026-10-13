@@ -82,6 +82,16 @@ impl PlaceRules for Warren {
         chain.then(dungeon::RandomStart).then(dungeon::FarthestExit).run(&mut ctx, seed)?;
         PlaceBuild::from_context(ctx)
     }
+
+    /// The floors, top first, and how their stairs look. The engine lays a
+    /// stair up at every floor's start but the first's and a stair down
+    /// at every floor's far point but the last's, when the floor is built.
+    /// The last floor's far point is ours: the way out.
+    fn ladder(&self) -> Option<Ladder> {
+        let stone = Rgb::new(204, 204, 219);
+        let (up, down) = (StairLook::new('<', stone, "stairs up"), StairLook::new('>', stone, "stairs down"));
+        Some(Ladder::new((1..=FLOORS).map(map_of), up, down).bottom(LadderEnd::Game))
+    }
 }
 ```
 

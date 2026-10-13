@@ -10,7 +10,7 @@
   <p class="weight">Loads about 8 MB</p>
 </div>
 
-Stairs down, a second floor built a different way, and daylight that ends the run.
+Stairs between two floors, a second floor built a different way, and daylight that ends the run.
 
 ## A place is a map that is kept
 
@@ -70,10 +70,20 @@ impl PlaceRules for Warren {
         chain.then(dungeon::RandomStart).then(dungeon::FarthestExit).run(&mut ctx, seed)?;
         PlaceBuild::from_context(ctx)
     }
+
+    /// The floors, top first, and how their stairs look. The engine lays a
+    /// stair up at every floor's start but the first's and a stair down
+    /// at every floor's far point but the last's, when the floor is built.
+    /// The last floor's far point is ours: the way out.
+    fn ladder(&self) -> Option<Ladder> {
+        let stone = Rgb::new(204, 204, 219);
+        let (up, down) = (StairLook::new('<', stone, "stairs up"), StairLook::new('>', stone, "stairs down"));
+        Some(Ladder::new((1..=FLOORS).map(map_of), up, down).bottom(LadderEnd::Game))
+    }
 }
 ```
 
-`build` is handed the `MapId`, so the shape of the run is a `match`.
+`build` is handed the `MapId`, so the shape of the run is a `match`, and `ladder` says the floors stand one under the other and how their stairs look.
 Dug rooms near the surface, a gnawed-out cave under them, and `KeepLargestRegion` after the cave because cave generators produce islands and an unreachable half is a floor whose stairs are sometimes unreachable.
 
 The seed is derived per floor, so the second floor is the same whether or not you dawdled on the first.
@@ -144,21 +154,11 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ra
             }
             placed += 1;
         }
-        // Stairs down while there is a floor below, and the way out on the
-        // last one. Both are entities standing on a cell, nothing more.
-        let depth = floor_of(ev.map);
-        let stone = Color::srgb(0.80, 0.80, 0.86);
-        if let Some(far) = ev.exit {
-            if depth < FLOORS {
-                commands.spawn((
-                    Position(far),
-                    Transition { to: Destination::Place { map: map_of(depth + 1), arrive: Arrive::Entry } },
-                    Name::new("stairs down"),
-                    Glyph::new('>', stone).on_layer(1),
-                ));
-            } else {
-                commands.spawn((Position(far), WayOut, Name::new("a crack of daylight"), Glyph::new('<', Color::srgb(1.0, 0.95, 0.70)).on_layer(1)));
-            }
+        // The stairs are the engine's, laid from the ladder. The bottom of
+        // the ladder is ours: the way out, at the last floor's far point,
+        // an entity standing on a cell and nothing more.
+        if let Some(far) = ev.exit.filter(|_| floor_of(ev.map) == FLOORS) {
+            commands.spawn((Position(far), WayOut, Name::new("a crack of daylight"), Glyph::new('<', Color::srgb(1.0, 0.95, 0.70)).on_layer(1)));
         }
         // Bread to mend with and rocks to throw, scattered the same way.
         let mut dropped = 0;
@@ -175,8 +175,9 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ra
 ```
 
 There is no stairs table and no special tile flag.
-A `Transition` names where it leads and how you arrive, and `GoThrough` takes the one you are standing on.
-Nothing stops you putting one on a rat.
+The engine lays the stairs from the ladder when each floor is built: a stair up at its start, but the first floor's, and a stair down at its far point, but the last floor's.
+Each is an entity with a `Transition`, which names where it leads and how you arrive, and `GoThrough` takes the one you are standing on.
+The bottom of the ladder is yours, so `populate` puts the daylight at the last floor's far point, and nothing stops you putting a `Transition` on a rat.
 
 ## Winning
 
@@ -207,7 +208,7 @@ It runs inside the turn, so the run ends on the step that reached the daylight r
 ## Try it
 
 - Add a third floor. You should only touch `FLOORS`, `name_of` and the `match`.
-- Put a one-way `Transition` back to the first floor at the bottom.
+- Put a `Transition` straight back to the first floor beside the daylight.
 - Go down, kill a rat, come back up, go down again. The rat stays dead.
 
 Next: [content in files](07-content-in-files.md).

@@ -960,7 +960,14 @@ mod tests {
             let remembered = tile_drawn(&app, stairs).expect("on screen");
             assert_eq!(remembered.glyph, '<', "seed {s}: the way up, out of sight from {far:?}, is still drawn");
             let lum = |c: Color| c.to_linear().luminance();
-            assert!(lum(remembered.fg) < lum(undermere::stairs::STAIRS) * 0.6, "seed {s}: and drawn as remembered, not as seen: {seen:?} then {remembered:?}");
+            assert!(
+                lum(remembered.fg)
+                    < lum({
+                        let c = undermere::stairs::STAIRS;
+                        Color::srgb_u8(c.r, c.g, c.b)
+                    }) * 0.6,
+                "seed {s}: and drawn as remembered, not as seen: {seen:?} then {remembered:?}"
+            );
 
             undermere::testing::arrive(&mut app, undermere::dungeon::map_of(3));
             app.world_mut().write_message(WarpRequest { actor: me, to: Destination::Place { map: undermere::dungeon::map_of(2), arrive: Arrive::At(far) } });
@@ -1455,9 +1462,9 @@ mod tests {
         let gate = {
             let world = app.world_mut();
             world
-                .query::<(&Position, &OnMap, &undermere::stairs::Way)>()
+                .query_filtered::<(&Position, &OnMap), With<undermere::stairs::Gate>>()
                 .iter(world)
-                .find(|(_, on, way)| on.0 == town && **way == undermere::stairs::Way::Gate)
+                .find(|(_, on)| on.0 == town)
                 .map(|(p, ..)| p.0)
                 .expect("the gate stands in Mereholt")
         };
@@ -1576,11 +1583,7 @@ mod tests {
         let town = undermere::dungeon::TOWN;
         let gate = {
             let world = app.world_mut();
-            world
-                .query::<(&Position, &OnMap, &undermere::stairs::Way)>()
-                .iter(world)
-                .find(|(_, on, way)| on.0 == town && **way == undermere::stairs::Way::Gate)
-                .map(|(p, ..)| p.0)
+            world.query_filtered::<(&Position, &OnMap), With<undermere::stairs::Gate>>().iter(world).find(|(_, on)| on.0 == town).map(|(p, ..)| p.0)
         };
         let gate = gate.expect("the gate stands in Mereholt");
         undermere::testing::stand_on(&mut app, me, gate);

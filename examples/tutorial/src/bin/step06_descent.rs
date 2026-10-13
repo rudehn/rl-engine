@@ -2,8 +2,9 @@
 //!
 //! The guide chapter is `docs/guide/src/06-two-floors.md`. A floor is a
 //! *place*: built the first time it is entered and kept whole after that.
-//! Stairs are entities with a [`Transition`], and the way out is an entity
-//! too: stand on it and the run is won.
+//! The floors are a ladder the rules describe, and the engine lays the
+//! stairs between them, entities with a [`Transition`]; the way out at the
+//! bottom is an entity too: stand on it and the run is won.
 //!
 //! `cargo run -p tutorial --bin step06_descent`
 //!
@@ -142,6 +143,16 @@ impl PlaceRules for Warren {
         // allows: the stairs down on the first, the way out on the second.
         chain.then(dungeon::RandomStart).then(dungeon::FarthestExit).run(&mut ctx, seed)?;
         PlaceBuild::from_context(ctx)
+    }
+
+    /// The floors, top first, and how their stairs look. The engine lays a
+    /// stair up at every floor's start but the first's and a stair down
+    /// at every floor's far point but the last's, when the floor is built.
+    /// The last floor's far point is ours: the way out.
+    fn ladder(&self) -> Option<Ladder> {
+        let stone = Rgb::new(204, 204, 219);
+        let (up, down) = (StairLook::new('<', stone, "stairs up"), StairLook::new('>', stone, "stairs down"));
+        Some(Ladder::new((1..=FLOORS).map(map_of), up, down).bottom(LadderEnd::Game))
     }
 }
 // ANCHOR_END: rules
@@ -392,21 +403,11 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ra
             }
             placed += 1;
         }
-        // Stairs down while there is a floor below, and the way out on the
-        // last one. Both are entities standing on a cell, nothing more.
-        let depth = floor_of(ev.map);
-        let stone = Color::srgb(0.80, 0.80, 0.86);
-        if let Some(far) = ev.exit {
-            if depth < FLOORS {
-                commands.spawn((
-                    Position(far),
-                    Transition { to: Destination::Place { map: map_of(depth + 1), arrive: Arrive::Entry } },
-                    Name::new("stairs down"),
-                    Glyph::new('>', stone).on_layer(1),
-                ));
-            } else {
-                commands.spawn((Position(far), WayOut, Name::new("a crack of daylight"), Glyph::new('<', Color::srgb(1.0, 0.95, 0.70)).on_layer(1)));
-            }
+        // The stairs are the engine's, laid from the ladder. The bottom of
+        // the ladder is ours: the way out, at the last floor's far point,
+        // an entity standing on a cell and nothing more.
+        if let Some(far) = ev.exit.filter(|_| floor_of(ev.map) == FLOORS) {
+            commands.spawn((Position(far), WayOut, Name::new("a crack of daylight"), Glyph::new('<', Color::srgb(1.0, 0.95, 0.70)).on_layer(1)));
         }
         // Bread to mend with and rocks to throw, scattered the same way.
         let mut dropped = 0;
@@ -580,5 +581,44 @@ mod tests {
             }
         }
         assert!(moved, "no direction key moved the player or spent a turn: input never reached the game");
+    }
+
+    /// Over a span of seeds, every floor has one way up, but the first,
+    /// where the run begins, and one way down, but the last, each a stair
+    /// the engine laid to the floor beside it; the last floor's far point
+    /// is the crack of daylight instead, which is ours, and nothing else
+    /// stands there.
+    #[test]
+    fn every_floor_has_a_stair_to_each_floor_beside_it_and_the_last_its_daylight() {
+        for seed in 1u64..=8 {
+            let (mut app, player) = started(seed);
+            for depth in 1..=FLOORS {
+                app.world_mut().write_message(WarpRequest::into_place(player, map_of(depth)));
+                app.update();
+                app.update();
+                let (entry, exit) = {
+                    let place = app.world().resource::<WorldMap>().place(map_of(depth)).expect("built");
+                    (place.entry, place.exit.expect("a far point"))
+                };
+                let world = app.world_mut();
+                let mut q = world.query::<(&Position, &OnMap, &Transition, &Stair)>();
+                let mut stairs: Vec<(Point, Destination, Climb)> =
+                    q.iter(world).filter(|(_, on, _, _)| on.0 == map_of(depth)).map(|(p, _, t, s)| (p.0, t.to, s.climb)).collect();
+                stairs.sort_by_key(|(p, _, c)| (*p, *c));
+                let mut expected = Vec::new();
+                if depth > 1 {
+                    expected.push((entry, Destination::Place { map: map_of(depth - 1), arrive: Arrive::Exit }, Climb::Up));
+                }
+                if depth < FLOORS {
+                    expected.push((exit, Destination::Place { map: map_of(depth + 1), arrive: Arrive::Entry }, Climb::Down));
+                }
+                expected.sort_by_key(|(p, _, c)| (*p, *c));
+                assert_eq!(stairs, expected, "seed {seed}, floor {depth}");
+                let daylight: Vec<Point> =
+                    world.query_filtered::<(&Position, &OnMap), With<WayOut>>().iter(world).filter(|(_, on)| on.0 == map_of(depth)).map(|(p, _)| p.0).collect();
+                let want: Vec<Point> = if depth == FLOORS { vec![exit] } else { Vec::new() };
+                assert_eq!(daylight, want, "seed {seed}, floor {depth}: the daylight is the last floor's far point, and nowhere else");
+            }
+        }
     }
 }

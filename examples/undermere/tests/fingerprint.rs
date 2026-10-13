@@ -17,7 +17,7 @@ use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_core::RunSeed;
 use undermere::bestiary::Kind;
-use undermere::stairs::Way;
+use undermere::stairs::Gate;
 use undermere::tally::{Tally, score};
 
 /// Folds one value into a running FNV-1a hash.
@@ -144,8 +144,11 @@ fn decide(world: &mut World, me: Entity, tried: &mut BTreeSet<(MapId, Point)>) -
     if let Some(dir) = foe {
         return Choice::Strike(dir);
     }
-    let onward = if here == undermere::dungeon::TOWN { Way::Gate } else { Way::Down };
-    let way_on = world.query::<(&Position, &OnMap, &Way)>().iter(world).find(|(_, on, way)| on.0 == here && **way == onward).map(|(p, _, _)| p.0);
+    let way_on = if here == undermere::dungeon::TOWN {
+        world.query_filtered::<(&Position, &OnMap), With<Gate>>().iter(world).find(|(_, on)| on.0 == here).map(|(p, _)| p.0)
+    } else {
+        world.query::<(&Position, &OnMap, &Stair)>().iter(world).find(|(_, on, stair)| on.0 == here && stair.climb == Climb::Down).map(|(p, _, _)| p.0)
+    };
     if way_on == Some(at) {
         return Choice::Through;
     }

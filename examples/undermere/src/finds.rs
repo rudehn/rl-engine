@@ -33,7 +33,7 @@ use rl_engine::prelude::*;
 
 use crate::armory::{Armory, ItemDef};
 use crate::dungeon::floor_of;
-use crate::stairs::Way;
+use crate::stairs::Gate;
 
 /// The kinds a floor's things are drawn from, by the tag each kind's
 /// members carry, and how often each is drawn against the others: potions
@@ -116,7 +116,7 @@ pub fn plan(kinds: &Kinds, band: i32, count: u32, rng: &mut impl Rng) -> Vec<(Id
 
 /// What stands on a cell for good, which nothing is laid on: a prop, or a
 /// way through.
-type Standing = Or<(With<Prop>, With<Way>)>;
+type Standing = Or<(With<Prop>, With<Stair>, With<Gate>)>;
 
 /// What laying a floor's things reads.
 #[derive(bevy::ecs::system::SystemParam)]

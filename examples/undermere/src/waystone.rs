@@ -44,7 +44,7 @@ use rl_engine::rl_rules::work::Work;
 
 use crate::armory::{Armory, ItemKind};
 use crate::dungeon::{TOWN, map_of};
-use crate::stairs::Way;
+use crate::stairs::Gate;
 
 /// The waystone's name in `items.ron`.
 pub const WAYSTONE: &str = "waystone";
@@ -217,9 +217,9 @@ pub fn set_mark(world: &mut World, map: MapId, at: Point) {
         queue.apply(world);
     });
     let to = gate_to(Some((map, at)));
-    let mut gates = world.query::<(&Way, &OnMap, &mut Transition)>();
-    for (way, on, mut transition) in gates.iter_mut(world) {
-        if *way == Way::Gate && on.0 == TOWN {
+    let mut gates = world.query_filtered::<(&OnMap, &mut Transition), With<Gate>>();
+    for (on, mut transition) in gates.iter_mut(world) {
+        if on.0 == TOWN {
             transition.to = to;
         }
     }
@@ -292,8 +292,8 @@ mod tests {
     /// The gate in Mereholt: where it stands and where it leads.
     fn gate(app: &mut App) -> (Point, Destination) {
         let world = app.world_mut();
-        let mut q = world.query::<(&Way, &OnMap, &Position, &Transition)>();
-        let found = q.iter(world).find(|(w, on, _, _)| **w == Way::Gate && on.0 == TOWN).map(|(_, _, p, t)| (p.0, t.to));
+        let mut q = world.query_filtered::<(&OnMap, &Position, &Transition), With<Gate>>();
+        let found = q.iter(world).find(|(on, _, _)| on.0 == TOWN).map(|(_, p, t)| (p.0, t.to));
         found.expect("the gate stands in Mereholt")
     }
 

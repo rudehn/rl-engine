@@ -53,37 +53,19 @@ Loading generates each new region through `WorldGraph::build_chunk` and the game
 
 ## Using it
 
-A game reaches a place by spawning a `Transition` on a cell, and where those cells are is the game's to decide: Foundry lays a deck's lifts on the entry and the exit the deck was built with, the first time it is entered.
+A game reaches a place by spawning a `Transition` on a cell, and where those cells are is the game's to decide; a game whose places are floors one under another describes them as a `Ladder` from `PlaceRules::ladder` instead, and the engine lays a stair up on each floor's entry and down on its exit when the floor is built, as it does Foundry's lifts.
 
-<!-- include: ../../../../examples/foundry/src/lifts.rs:lifts -->
+<!-- include: ../../../../examples/foundry/src/decks.rs:ladder -->
 ```rust,no_run
-/// Lays a deck's lifts the first time it is entered, and names the deck in
-/// the log every time. On the run's first arrival it also says how to see
-/// the keys, under the deck's own line: in `run::start` it would be
-/// written before the warp lands and read as if it came first.
-pub fn link_decks(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, help: Res<ControlsKeys>, mut tell: MessageWriter<Tell>) {
-    for ev in entered.read() {
-        let deck = deck_of(ev.map);
-        tell.write(Tell::new(deck_line(deck), Tones::NOTICE));
-        if !ev.first {
-            continue;
-        }
-        if deck == 1 {
-            tell.write(Tell::new(format!("Press {} for the controls.", help.toggle.label()), Tones::MUTED));
-        }
-        if deck > 1 {
-            let up = Transition { to: Destination::Place { map: map_of(deck - 1), arrive: Arrive::Exit } };
-            commands.spawn((Position(ev.entry), OnMap(ev.map), Lift, up, Name::new("lift up"), Glyph::new('<', LIFT).on_layer(1)));
-        } else {
-            // The way out, where the commando came in.
-            commands.spawn((Position(ev.entry), OnMap(ev.map), Lift, LiftOut, Name::new("lift out"), Glyph::new('<', LIFT).on_layer(1)));
-        }
-        if let Some(exit) = ev.exit.filter(|_| deck < DECKS) {
-            let down = Transition { to: Destination::Place { map: map_of(deck + 1), arrive: Arrive::Entry } };
-            commands.spawn((Position(exit), OnMap(ev.map), Lift, down, Name::new("lift down"), Glyph::new('>', LIFT).on_layer(1)));
-        }
+    /// The decks, one under another, with a lift between each two: up at
+    /// a deck's entry, down at the farthest exit the deck was built with,
+    /// so the way on is as far from where the commando arrived as the
+    /// deck allows. Deck one's way up is the lift out, which the game
+    /// lays, and the core has nothing below it.
+    fn ladder(&self) -> Option<Ladder> {
+        let (up, down) = (StairLook::new('<', crate::lifts::LIFT, "lift up"), StairLook::new('>', crate::lifts::LIFT, "lift down"));
+        Some(Ladder::new((1..=DECKS).map(map_of), up, down).top(LadderEnd::Game))
     }
-}
 ```
 
 No example game streams a surface yet, so none listens for `ChunkLoaded` to place a way into a region as it loads.

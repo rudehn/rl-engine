@@ -31,14 +31,18 @@ use crate::climb::Deepest;
 use crate::droids::{Kind, Roster};
 use crate::gear::ItemKind;
 use crate::heat::Heat;
-use crate::lifts::{Lift, LiftOut};
+use crate::lifts::LiftOut;
 use crate::run::Commando;
 use crate::upgrades::{Taken, Upgrade};
 
 /// Bump when a kind's shape below changes so an old save would parse
 /// wrongly.
 // v1: the first shape.
-pub const VERSION: u32 = 1;
+// v2: the lifts between decks are the engine's stairs, which it saves
+// itself, and only the lift out is Foundry's; a lift a save from before
+// wrote down is no kind this build has, so the save is refused rather than
+// continued with its decks unlinked.
+pub const VERSION: u32 = 2;
 
 /// The slot every run saves to.
 pub const SLOT: &str = "foundry";
@@ -50,7 +54,7 @@ pub fn register(app: &mut App) {
         .save_kind::<ItemKind>()
         .save_kind::<Kind>()
         .save_kind::<Commando>()
-        .save_kind::<Lift>()
+        .save_kind::<LiftOut>()
         .save_state::<Taken>()
         .save_state::<Deepest>()
         .save_state::<Quests>()
@@ -194,34 +198,17 @@ impl Saveable for ItemKind {
     }
 }
 
-/// A lift, as the save writes it: how it is drawn, and whether it is the
-/// lift out. The engine keeps where a lift leads.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct LiftSave {
-    /// Its glyph.
-    pub glyph: char,
-    /// Whether it is the lift out on deck one.
-    pub out: bool,
-}
+/// The lift out, as the save writes it: that it is the lift out, and
+/// nothing more, since it leads nowhere and stands where the engine puts
+/// it back. The lifts between decks are the engine's stairs, saved by the
+/// engine.
+impl Saveable for LiftOut {
+    type Saved = ();
 
-impl Saveable for Lift {
-    type Saved = LiftSave;
+    fn capture(_: &World, _: Entity) {}
 
-    fn capture(world: &World, entity: Entity) -> LiftSave {
-        LiftSave { glyph: world.get::<Glyph>(entity).map_or('<', |g| g.ch), out: world.get::<LiftOut>(entity).is_some() }
-    }
-
-    fn restore(world: &mut World, saved: &LiftSave) -> Entity {
-        let name = match (saved.out, saved.glyph) {
-            (true, _) => "lift out",
-            (false, '>') => "lift down",
-            (false, _) => "lift up",
-        };
-        let mut e = world.spawn((Lift, Name::new(name), Glyph::new(saved.glyph, crate::lifts::LIFT).on_layer(1)));
-        if saved.out {
-            e.insert(LiftOut);
-        }
-        e.id()
+    fn restore(world: &mut World, _: &()) -> Entity {
+        world.spawn((LiftOut, Name::new("lift out"), LiftOut::glyph())).id()
     }
 }
 
@@ -317,7 +304,7 @@ mod tests {
             if e.get::<PropKind>().is_some_and(|k| k.0 == spent) {
                 spent_consoles += 1;
             }
-            if e.contains::<crate::lifts::Lift>() {
+            if e.contains::<Stair>() || e.contains::<LiftOut>() {
                 lifts += 1;
             }
             // A wreck: where it lies, whether it still wears the droid's

@@ -30,7 +30,8 @@
 //! [`save_run`], and its start, when [`ContinueRun`](rl_bevy::ContinueRun)
 //! asks, calls [`load_run`] and [`RunSave::restore`]. The engine's own
 //! resources are saved by the engine: [`Quests`] and [`Counters`] each
-//! implement [`SaveableState`].
+//! implement [`SaveableState`]. So are the stairs a ladder's floors are
+//! laid with, [`Stair`], the engine's own kind beside the props.
 //!
 //! What a title needs of the slot is kept here too, in `rl-bevy`'s words so
 //! the screen need not depend on this crate: [`SavedRun`] says what the
@@ -41,8 +42,8 @@
 use bevy::prelude::*;
 use rl_bevy::{
     AbandonRun, Afflict, Afflicted, Burning, Counters, Dead, Emptied, EndOfFrame, EndRun, Ending, EngineState, Equipped, Health, Hidden, Inventory, Joined,
-    Leader, LeaveRun, MapId, Needs, OnMap, PlaceEntered, Position, Post, PropKind, Quests, Reads, Registries, Remains, SavedRun, Stack, Stocked, Transition,
-    Turns, Wearable, WorkKinds, Working,
+    Leader, LeaveRun, MapId, Needs, OnMap, PlaceEntered, Position, Post, PropKind, Quests, Reads, Registries, Remains, SavedRun, Stack, Stair, Stocked,
+    Transition, Turns, Wearable, WorkKinds, Working,
 };
 use rl_core::Point;
 use rl_rules::{Equipment, Work};
@@ -193,6 +194,26 @@ pub struct SavedProp {
     /// The chance of spotting it, while it is still unspotted.
     #[serde(default)]
     pub hidden: Option<u8>,
+}
+
+/// A stair is the engine's to lay, so it is the engine's to save.
+///
+/// Written down as the stair it is, which way it climbs and how it looks,
+/// and nothing else: where it stands and where it leads are
+/// [`EntityState`]'s, as every transition's are, so the transition is
+/// written once. Saved with the look it was laid with rather than read
+/// again from the game's ladder, so a stair comes back as it was drawn
+/// whatever the game's rules say now.
+impl Saveable for Stair {
+    type Saved = Stair;
+
+    fn capture(world: &World, entity: Entity) -> Stair {
+        world.get::<Stair>(entity).expect("a stair is what this is keyed by").clone()
+    }
+
+    fn restore(world: &mut World, saved: &Stair) -> Entity {
+        world.spawn((saved.clone(), Name::new(saved.look.name.clone()))).id()
+    }
 }
 
 /// Which regions of the streamed surface have had their loot put down is
@@ -802,6 +823,7 @@ impl Plugin for SavePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<SaveRegistry>()
             .save_kind::<PropKind>()
+            .save_kind::<Stair>()
             .init_resource::<Stash>()
             .init_resource::<Leaving>()
             // Empty until `finish` reads the slot, and there from the
@@ -1511,6 +1533,33 @@ mod tests {
         assert_eq!(ground, vec![(3, start.offset(2, 0))], "the dropped coins lie where they lay");
         let stairs: Vec<(Point, Transition)> = w.query::<(&Position, &Transition)>().iter(w).map(|(p, t)| (p.0, *t)).collect();
         assert!(stairs.is_empty(), "a transition nobody registered a kind for is not the engine's to spawn");
+    }
+
+    /// A stair the engine laid comes back from a save as it was laid,
+    /// once, standing where it stood and leading where it led, with
+    /// nothing written by the game: the engine saves its own kind, and the
+    /// transition with it rather than beside it.
+    #[test]
+    fn a_stair_the_engine_laid_comes_back_once_where_it_stood_leading_where_it_led() {
+        let backend = std::sync::Arc::new(MemoryBackend::default());
+        let (mut app, start) = game(Saves(backend.clone()));
+        app.world_mut().spawn((Actor, Player, Blocks, You, Position(start), Viewshed::new(6), RevealsMap, Health::full(30)));
+        let stair = Stair { climb: rl_bevy::Climb::Down, look: rl_bevy::StairLook::new('>', rl_grid::Rgb::new(235, 219, 158), "stairs down") };
+        let to = Transition { to: Destination::Place { map: MapId(4), arrive: Arrive::Entry } };
+        app.world_mut().spawn((Position(start.offset(1, 1)), to, stair.clone(), Name::new("stairs down")));
+        play(&mut app);
+        save_run(app.world_mut()).unwrap();
+
+        let (mut back, _) = game(Saves(backend));
+        let save = load_run(back.world()).unwrap().expect("a save to continue");
+        assert_eq!(save.count_of::<Stair>(), 1, "written down once, as a stair");
+        save.restore(back.world_mut()).unwrap();
+        play(&mut back);
+        let w = back.world_mut();
+        let stairs: Vec<(Point, Transition, Stair, String)> =
+            w.query::<(&Position, &Transition, &Stair, &Name)>().iter(w).map(|(p, t, s, n)| (p.0, *t, s.clone(), n.as_str().to_string())).collect();
+        assert_eq!(stairs, vec![(start.offset(1, 1), to, stair, "stairs down".to_string())]);
+        assert_eq!(w.query::<&Transition>().iter(w).count(), 1, "and no second transition beside it");
     }
 
     /// A trader's stock is its pack, so it comes back as any actor's pack

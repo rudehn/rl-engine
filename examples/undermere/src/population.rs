@@ -23,7 +23,6 @@ use rl_engine::rl_core::Rect;
 use crate::bestiary::{Bestiary, Kind, MonsterDef, spawn_monster};
 use crate::dungeon::{FLOORS, MIN_DISTANCE_FROM_ENTRY, floor_of};
 use crate::light::BiomeDraws;
-use crate::stairs::Way;
 
 /// How much more often a floor's own biome favors one of its kinds: three
 /// times its plain weight in [`Bestiary::spawns`], the design's own
@@ -185,7 +184,7 @@ pub struct Stock<'w, 's> {
     /// on the stairs it leads to or from: the entry is already kept clear
     /// by its own distance, but nothing else kept a monster off the down
     /// stairs the adventurer has yet to reach.
-    ways: Query<'w, 's, (&'static Position, &'static OnMap), With<Way>>,
+    ways: Query<'w, 's, (&'static Position, &'static OnMap), crate::stairs::WayThrough>,
     /// The clock, for a feeding ground's own scripted remains to carry a
     /// time of death as real as a blow's.
     turns: Res<'w, Turns>,
@@ -691,7 +690,8 @@ mod tests {
                     .filter(|(_, on)| on.0 == map)
                     .map(|(p, _)| p.0)
                     .collect();
-                let down = world.query::<(&Position, &OnMap, &Way)>().iter(world).find(|(_, on, way)| on.0 == map && **way == Way::Down).map(|(p, ..)| p.0);
+                let down =
+                    world.query::<(&Position, &OnMap, &Stair)>().iter(world).find(|(_, on, way)| on.0 == map && way.climb == Climb::Down).map(|(p, ..)| p.0);
                 let down = down.expect("a way down");
                 let world_map = app.world().resource::<WorldMap>();
                 let entry = world_map.place(map).expect("built").entry;

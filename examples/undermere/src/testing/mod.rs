@@ -451,3 +451,42 @@ pub fn set_gold(app: &mut App, me: Entity, coins: u32) {
     give(app, me, purse);
     assert_eq!(gold(app, me), coins);
 }
+
+/// A way through, as a test tells them apart: a stair the engine laid,
+/// up or down, or the gate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Way {
+    /// A stair up.
+    Up,
+    /// A stair down.
+    Down,
+    /// The Drowned Gate.
+    Gate,
+}
+
+/// Every way through standing on `map`, in the order they stand: where,
+/// which it is, and where it leads. Panics on a transition that is neither
+/// a stair nor the gate, which nothing in Undermere lays.
+pub fn ways(world: &mut World, map: MapId) -> Vec<(Point, Way, Destination)> {
+    let mut q = world.query::<(&Position, &OnMap, &Transition, Option<&Stair>, Has<crate::stairs::Gate>)>();
+    let mut ways: Vec<(Point, Way, Destination)> = q
+        .iter(world)
+        .filter(|(_, on, _, _, _)| on.0 == map)
+        .map(|(p, _, t, stair, gate)| {
+            let way = match (stair.map(|s| s.climb), gate) {
+                (Some(Climb::Up), false) => Way::Up,
+                (Some(Climb::Down), false) => Way::Down,
+                (None, true) => Way::Gate,
+                other => panic!("a way through at {:?} is neither a stair nor the gate alone: {other:?}", p.0),
+            };
+            (p.0, way, t.to)
+        })
+        .collect();
+    ways.sort_by_key(|(p, w, _)| (*p, *w));
+    ways
+}
+
+/// Where the way `want` stands on `map`, if it has one.
+pub fn way_on(world: &mut World, map: MapId, want: Way) -> Option<Point> {
+    ways(world, map).into_iter().find(|(_, w, _)| *w == want).map(|(p, ..)| p)
+}

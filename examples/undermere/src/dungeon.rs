@@ -775,6 +775,12 @@ impl PlaceRules for Undermere {
         built.peaceful = map == TOWN;
         Ok(built)
     }
+
+    /// The ten floors under the lake, with stairs between them; Mereholt
+    /// is no floor, and its gate and floor one's are Undermere's own.
+    fn ladder(&self) -> Option<Ladder> {
+        Some(crate::stairs::ladder())
+    }
 }
 
 /// The way in and the way on, as far as the chain has chosen them.

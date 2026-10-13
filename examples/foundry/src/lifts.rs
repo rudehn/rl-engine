@@ -1,36 +1,38 @@
-//! The lifts between decks, and the line the log gives each deck as it is
-//! entered.
+//! The line the log gives each deck as it is entered, and the lift out.
 //!
-//! A deck's builder reports an entry and a farthest exit; this puts a lift
-//! up on the entry and a lift down on the exit the first time the deck is
-//! entered, so the way on is always as
-//! far from where the commando arrived as the deck allows. The last deck
-//! has no lift down, since there is nothing below it, and deck one has no
-//! lift up: it has the [`LiftOut`] instead, where the commando came in,
-//! which leads nowhere the engine could take anyone and is answered by
+//! The lifts between decks are the engine's: the decks are a ladder,
+//! [`Foundry::ladder`](crate::decks::Foundry), and the engine lays a lift
+//! up on a deck's entry and a lift down on its farthest exit when the deck
+//! is built. The last deck has no lift down, since there is nothing below
+//! it, and deck one has no lift up: it has the [`LiftOut`] instead, where
+//! the commando came in, which this lays on deck one's first arrival. It
+//! leads nowhere the engine could take anyone and is answered by
 //! [`ride_out`].
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 
-use crate::decks::{DECKS, deck_of, map_of};
+use crate::decks::{DECKS, deck_of};
 
 /// What a lift is drawn in: the hatch's amber, so a way on reads as part
 /// of the same machinery as a door.
-pub const LIFT: Color = Color::srgb(0.95, 0.8, 0.35);
+pub const LIFT: Rgb = Rgb::new(242, 204, 89);
 
-/// A lift between decks, or the lift out: what a save writes down as a
-/// lift and draws again as one.
-#[derive(Component, Debug, Clone, Copy, Default)]
-pub struct Lift;
-
-/// The lift out on deck one, where the commando came in.
+/// The lift out on deck one, where the commando came in: what a save
+/// writes down as the lift out, and draws again as one.
 ///
 /// Carries no `Transition`: there is nowhere in the foundry it leads, so
 /// the engine refuses a `GoThrough` on it and gives the turn back, and
 /// [`ride_out`] answers the refusal with the mission's own words.
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct LiftOut;
+
+impl LiftOut {
+    /// How the lift out is drawn: a lift up, in the lifts' amber.
+    pub fn glyph() -> Glyph {
+        Glyph::new('<', Color::srgb_u8(LIFT.r, LIFT.g, LIFT.b)).on_layer(1)
+    }
+}
 
 /// What the log says on entering `deck`: its name, and what its light
 /// means for the commando.
@@ -49,31 +51,21 @@ pub fn deck_line(deck: u32) -> String {
 }
 
 // ANCHOR: lifts
-/// Lays a deck's lifts the first time it is entered, and names the deck in
-/// the log every time. On the run's first arrival it also says how to see
-/// the keys, under the deck's own line: in `run::start` it would be
-/// written before the warp lands and read as if it came first.
+/// Names the deck in the log every time it is entered, and on deck one's
+/// first arrival lays the lift out where the commando came in, the way up
+/// the decks' ladder leaves to the game. On the run's first arrival it
+/// also says how to see the keys, under the deck's own line: in
+/// `run::start` it would be written before the warp lands and read as if
+/// it came first.
 pub fn link_decks(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, help: Res<ControlsKeys>, mut tell: MessageWriter<Tell>) {
     for ev in entered.read() {
         let deck = deck_of(ev.map);
         tell.write(Tell::new(deck_line(deck), Tones::NOTICE));
-        if !ev.first {
+        if !ev.first || deck != 1 {
             continue;
         }
-        if deck == 1 {
-            tell.write(Tell::new(format!("Press {} for the controls.", help.toggle.label()), Tones::MUTED));
-        }
-        if deck > 1 {
-            let up = Transition { to: Destination::Place { map: map_of(deck - 1), arrive: Arrive::Exit } };
-            commands.spawn((Position(ev.entry), OnMap(ev.map), Lift, up, Name::new("lift up"), Glyph::new('<', LIFT).on_layer(1)));
-        } else {
-            // The way out, where the commando came in.
-            commands.spawn((Position(ev.entry), OnMap(ev.map), Lift, LiftOut, Name::new("lift out"), Glyph::new('<', LIFT).on_layer(1)));
-        }
-        if let Some(exit) = ev.exit.filter(|_| deck < DECKS) {
-            let down = Transition { to: Destination::Place { map: map_of(deck + 1), arrive: Arrive::Entry } };
-            commands.spawn((Position(exit), OnMap(ev.map), Lift, down, Name::new("lift down"), Glyph::new('>', LIFT).on_layer(1)));
-        }
+        tell.write(Tell::new(format!("Press {} for the controls.", help.toggle.label()), Tones::MUTED));
+        commands.spawn((Position(ev.entry), OnMap(ev.map), LiftOut, Name::new("lift out"), LiftOut::glyph()));
     }
 }
 // ANCHOR_END: lifts
@@ -135,7 +127,8 @@ mod tests {
     use rl_engine::rl_core::RunSeed;
 
     use super::*;
-    use crate::testing::par_seeds;
+    use crate::decks::map_of;
+    use crate::testing::{par_seeds, seeds};
 
     fn player(app: &mut App) -> Entity {
         app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap()
@@ -165,6 +158,66 @@ mod tests {
                 assert!(lift_to(&mut app, deck).is_some(), "seed {s}: deck {} has a lift back up", deck + 1);
             }
             assert_eq!(lift_to(&mut app, DECKS + 1), None, "seed {s}: the last deck has no lift down");
+        });
+    }
+
+    /// One way through standing on a deck: where, where it leads, and what
+    /// it is, a lift of the engine's that climbs one way, or the lift out.
+    type Way = (Point, Option<Destination>, Option<Climb>, bool);
+
+    /// Every way through standing on `deck`, in the order they stand.
+    fn ways_on(app: &mut App, deck: u32) -> Vec<Way> {
+        let world = app.world_mut();
+        let mut q = world.query::<(&Position, &OnMap, Option<&Transition>, Option<&Stair>, Has<LiftOut>)>();
+        let mut ways: Vec<Way> = q
+            .iter(world)
+            .filter(|(_, on, t, _, out)| on.0 == map_of(deck) && (t.is_some() || *out))
+            .map(|(p, _, t, stair, out)| (p.0, t.map(|t| t.to), stair.map(|s| s.climb), out))
+            .collect();
+        ways.sort_by_key(|(p, _, c, _)| (*p, *c));
+        ways
+    }
+
+    /// What every deck should have, by the ladder: a lift up at its entry
+    /// to the deck above's exit, but deck one, whose way up is the lift
+    /// out; and a lift down at its exit to the deck below's entry, but the
+    /// core.
+    fn ladder_of(app: &App, deck: u32) -> Vec<Way> {
+        let place = app.world().resource::<WorldMap>().place(map_of(deck)).expect("the deck was built");
+        let mut ways = vec![match deck {
+            1 => (place.entry, None, None, true),
+            _ => (place.entry, Some(Destination::Place { map: map_of(deck - 1), arrive: Arrive::Exit }), Some(Climb::Up), false),
+        }];
+        if deck < DECKS {
+            let exit = place.exit.expect("a deck above the core has a far exit");
+            ways.push((exit, Some(Destination::Place { map: map_of(deck + 1), arrive: Arrive::Entry }), Some(Climb::Down), false));
+        }
+        ways.sort_by_key(|(p, _, c, _)| (*p, *c));
+        ways
+    }
+
+    /// Over a span of seeds, every deck has exactly one way up and, but
+    /// the core, one way down, each leading to the deck beside it, and
+    /// nothing else that leads anywhere: deck one's way up is the lift out
+    /// and the core has none down, as the decks' ladder says. A run
+    /// continued from the save the last arrival wrote has every deck's
+    /// lifts again, where they stood and leading where they led, once.
+    #[test]
+    fn every_deck_has_one_lift_up_and_but_the_core_one_down_to_the_decks_beside_it_through_a_save_over_a_span_of_seeds() {
+        par_seeds(seeds(0..6), |s| {
+            let mut app = crate::testing::headless(RunSeed(s));
+            let mut seen = Vec::new();
+            for deck in 1..=DECKS {
+                crate::testing::arrive_on(&mut app, deck);
+                let ways = ways_on(&mut app, deck);
+                assert_eq!(ways, ladder_of(&app, deck), "seed {s}: deck {deck}");
+                seen.push(ways);
+            }
+            let text = app.world().resource::<rl_engine::rl_save::Saves>().load(crate::save::SLOT).unwrap().expect("the arrival wrote the run down");
+            let mut again = crate::testing::continued(&text);
+            for deck in 1..=DECKS {
+                assert_eq!(ways_on(&mut again, deck), seen[deck as usize - 1], "seed {s}: deck {deck}, continued");
+            }
         });
     }
 

@@ -136,8 +136,7 @@ fn descent_sinks_the_drinker_to_the_floor_below_and_does_nothing_on_floor_ten() 
     assert_eq!(here(&app), map_of(4), "sunk to the floor below");
     assert!(app.world().resource::<WorldMap>().is_walkable(at(&app, me)), "onto a cell one can stand on");
     let world = app.world_mut();
-    let mut ways = world.query::<(&Position, &OnMap, &crate::stairs::Way)>();
-    let up = ways.iter(world).find(|(_, on, way)| on.0 == map_of(4) && **way == crate::stairs::Way::Up).map(|(p, ..)| p.0);
+    let up = crate::testing::way_on(world, map_of(4), crate::testing::Way::Up);
     assert_ne!(Some(at(&app, me)), up, "somewhere on it, not at the stairs the floor is come down by");
     assert!(app.world().resource::<Lore>().knows("potion of descent"), "and known by it");
 

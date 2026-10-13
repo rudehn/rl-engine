@@ -151,6 +151,14 @@ impl PlaceRules for Warren {
         chain.then(dungeon::RandomStart).then(dungeon::FarthestExit).run(&mut ctx, seed)?;
         PlaceBuild::from_context(ctx)
     }
+
+    /// The floors, top first, and how their stairs look: the engine lays
+    /// them when each floor is built. Nothing below the last floor.
+    fn ladder(&self) -> Option<Ladder> {
+        let stone = Rgb::new(219, 219, 179);
+        let (up, down) = (StairLook::new('<', stone, "stairs up"), StairLook::new('>', stone, "stairs down"));
+        Some(Ladder::new((1..=FLOORS).map(map_of), up, down))
+    }
 }
 // ANCHOR_END: rules
 
@@ -383,29 +391,11 @@ fn populate(
         // cannot shift the numbers this one draws.
         let mut rng = seed.stream(b"warren.rats", ev.map.0 as u64);
 
-        // The stairs. A transition is an entity on a cell, nothing more.
-        let stone = Color::srgb(0.86, 0.86, 0.70);
-        if depth > 1 {
-            commands.spawn((
-                Position(ev.entry),
-                Transition { to: Destination::Place { map: map_of(depth - 1), arrive: Arrive::Exit } },
-                Glyph::new('<', stone).on_layer(1),
-            ));
-        }
-        match (depth < FLOORS, ev.exit) {
-            (true, Some(down)) => {
-                commands.spawn((
-                    Position(down),
-                    Transition { to: Destination::Place { map: map_of(depth + 1), arrive: Arrive::Entry } },
-                    Glyph::new('>', stone).on_layer(1),
-                ));
-            }
-            // The bottom floor: the king stands where the stairs would be.
-            // Weight zero keeps it out of the table, so it is placed by name.
-            (false, Some(throne)) => {
-                bestiary.spawn(&mut commands, bestiary.defs.expect("rat king"), throne);
-            }
-            _ => {}
+        // The stairs are the engine's, laid from the ladder. On the bottom
+        // floor the king stands where the stairs down would be. Weight zero
+        // keeps it out of the table, so it is placed by name.
+        if let Some(throne) = ev.exit.filter(|_| depth == FLOORS) {
+            bestiary.spawn(&mut commands, bestiary.defs.expect("rat king"), throne);
         }
         // Crusts, dropped by whatever came down here before you.
         let mut crusts = 0;

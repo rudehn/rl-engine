@@ -34,7 +34,6 @@ mod tests {
     use crate::armory::Armory;
     use crate::bestiary::Bestiary;
     use crate::dungeon::Undermere;
-    use crate::stairs::Way;
 
     /// Every glyph Undermere's content may be drawn with, each beside what
     /// it is the glyph of: every tile, prop, monster and item as its file
@@ -67,7 +66,8 @@ mod tests {
         for (_, ability) in world.resource::<Abilities>().defs().iter() {
             glyphs.extend(ability.look.map(|l| (l.glyph, format!("the ability {}", ability.name))));
         }
-        glyphs.extend([Way::Up, Way::Down, Way::Gate].into_iter().filter_map(|w| w.glyph().map(|g| (g.ch, w.name().to_string()))));
+        let ladder = crate::stairs::ladder();
+        glyphs.extend([ladder.up, ladder.down].into_iter().map(|l| (l.glyph, l.name)));
         // The engine's own looks, as the game takes them: its own where it
         // sets one, the engine's otherwise.
         let fields = world.get_resource::<FieldAppearance>().cloned().unwrap_or_default();

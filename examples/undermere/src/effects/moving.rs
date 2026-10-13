@@ -343,7 +343,7 @@ pub fn land_sinking(
     sinking: Query<(Entity, &Sinking, &OnMap)>,
     map: Res<WorldMap>,
     occupancy: Res<Occupancy>,
-    stairs: Query<(&Position, &OnMap), With<crate::stairs::Way>>,
+    stairs: Query<(&Position, &OnMap), crate::stairs::WayThrough>,
     mut warps: MessageWriter<WarpRequest>,
 ) {
     for (who, sink, on) in &sinking {

@@ -1,22 +1,21 @@
 //! The ways between places, the line the log gives each place as it is
 //! entered, and the town the adventurer knows by heart.
 //!
-//! A place's builder reports a way in and a way on; this stands a way
-//! through on each the first time the place is entered, the way Foundry's
-//! lifts are laid, so the way on is always as far from the arrival as the
-//! place allows. In Mereholt the way on is the Drowned Gate, which leads to
-//! floor one's way in, or to the gate mark a waystone left, by
-//! [`waystone`](crate::waystone); on floor one the way up is the gate's far side, and
-//! leads back onto the gate; every other floor has stairs up at its way in
-//! and down at its way on, and the tenth has no way down, since the throne
-//! is where the Undermere ends.
+//! The floors are a ladder, [`ladder`], and the engine lays its stairs:
+//! up at a floor's way in and down at its way on, when the floor is built,
+//! so the way on is always as far from the arrival as the place allows,
+//! and the tenth has no way down, since the throne is where the Undermere
+//! ends. Stairs are drawn by a glyph of their own and kept on the map from
+//! memory once seen, as every still thing the map draws is.
 //!
-//! A way through is an entity, a [`Transition`] where the engine looks for
-//! one when a body goes through, marked with the [`Way`] it is. Stairs are
-//! drawn by a glyph of their own, as Foundry's lifts are, and kept on the
-//! map from memory once seen, as every still thing the map draws is. The
-//! gate is drawn by the tile it stands on, which shimmers and glows violet on both its
-//! sides, so it carries no glyph to hide the tile under.
+//! The rest is Undermere's own. In Mereholt the way on is the Drowned
+//! Gate, which leads to floor one's way in, or to the gate mark a waystone
+//! left, by [`waystone`](crate::waystone); on floor one the way up is the
+//! gate's far side, the top of the ladder, and leads back onto the gate.
+//! Each is a [`Transition`] marked [`Gate`], laid by [`link_places`] the
+//! first time its place is entered. The gate is drawn by the tile it
+//! stands on, which shimmers and glows violet on both its sides, so it
+//! carries no glyph to hide the tile under.
 //!
 //! Mereholt is where the adventurer lives, so its first arrival writes the
 //! whole town into what they remember, [`know_the_town`], where a floor
@@ -30,49 +29,35 @@ use crate::light::BiomeDraws;
 
 /// What stairs are drawn in: a pale stone, so a way on reads against every
 /// band's floor.
-pub const STAIRS: Color = Color::srgb(0.92, 0.86, 0.62);
+pub const STAIRS: Rgb = Rgb::new(235, 219, 158);
 
-/// A way through: what a save writes down to draw one again, and how each
-/// is told apart from the others standing on a place.
-///
-/// A closed list, since the ways are the game's own: where each leads is
-/// its [`Transition`], which the engine keeps.
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum Way {
-    /// Stairs up, at the way in of every floor but the first.
-    Up,
-    /// Stairs down, at a floor's way on.
-    Down,
-    /// The Drowned Gate: the town's way on, and floor one's way up.
-    Gate,
+/// The floors, top first, as the engine lays stairs between them: stairs
+/// up `<` and down `>` in [`STAIRS`]' pale stone. Floor one's way up is
+/// the gate, which Undermere lays, and the tenth has nothing below it.
+pub fn ladder() -> Ladder {
+    let (up, down) = (StairLook::new('<', STAIRS, "stairs up"), StairLook::new('>', STAIRS, "stairs down"));
+    Ladder::new((1..=FLOORS).map(map_of), up, down).top(LadderEnd::Game)
 }
 
-impl Way {
+/// The Drowned Gate: the town's way on, and floor one's way up. What a
+/// save writes down to stand one again; where each leads is its
+/// [`Transition`], which the engine keeps, and what it is called is
+/// [`Gate::NAME`].
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Gate;
+
+impl Gate {
     /// What the look cursor and the nearby rail call it.
-    pub fn name(self) -> &'static str {
-        match self {
-            Way::Up => "stairs up",
-            Way::Down => "stairs down",
-            Way::Gate => "the Drowned Gate",
-        }
-    }
-
-    /// How it is drawn, if not by the tile under it: the gate is its tile.
-    pub fn glyph(self) -> Option<Glyph> {
-        match self {
-            Way::Up => Some(Glyph::new('<', STAIRS).on_layer(1)),
-            Way::Down => Some(Glyph::new('>', STAIRS).on_layer(1)),
-            Way::Gate => None,
-        }
-    }
+    pub const NAME: &str = "the Drowned Gate";
 }
 
-/// Stands `way` at `at` on `map`, leading `to`.
-fn lay(commands: &mut Commands, way: Way, at: Point, map: MapId, to: Destination) {
-    let mut e = commands.spawn((Position(at), OnMap(map), Transition { to }, way, Name::new(way.name())));
-    if let Some(glyph) = way.glyph() {
-        e.insert(glyph);
-    }
+/// Any way through standing on a place: a stair the engine laid, or the
+/// gate.
+pub type WayThrough = Or<(With<Stair>, With<Gate>)>;
+
+/// Stands the gate at `at` on `map`, leading `to`.
+fn lay(commands: &mut Commands, at: Point, map: MapId, to: Destination) {
+    commands.spawn((Position(at), OnMap(map), Transition { to }, Gate, Name::new(Gate::NAME)));
 }
 
 /// What the log says on entering `map`, the town or a floor: where the
@@ -109,8 +94,10 @@ pub fn know_the_town(map: &WorldMap, knowledge: &mut Knowledge) {
     knowledge.switch(reading);
 }
 
-/// Lays a place's ways through the first time it is entered, and names the
-/// place in the log on every arrival, coming up as well as going down.
+/// Lays the gate the first time Mereholt or floor one is entered, and names
+/// the place in the log on every arrival, coming up as well as going down.
+/// The stairs between the floors are the engine's, laid from [`ladder`]
+/// when each floor is built.
 ///
 /// On the run's first arrival anywhere, which is Mereholt in every real
 /// run and a deeper floor in a photograph begun there, it also says how to
@@ -139,27 +126,19 @@ pub fn link_places(
         if visited == 1 {
             tell.write(Tell::new(format!("Press {} for the controls.", help.toggle.label()), Tones::MUTED));
         }
-        let Some(floor) = floor_of(ev.map) else {
-            // The town: the gate, its way on, leading to floor one's way in
-            // or to a gate mark left before the town was ever entered, and
-            // the whole of it known.
-            if ev.map == TOWN {
-                if let Some(gate) = ev.exit {
-                    lay(&mut commands, Way::Gate, gate, ev.map, crate::waystone::gate_to(marks.mark()));
-                }
-                know_the_town(&map, &mut knowledge);
+        // The town: the gate, its way on, leading to floor one's way in or
+        // to a gate mark left before the town was ever entered, and the
+        // whole of it known.
+        if ev.map == TOWN {
+            if let Some(gate) = ev.exit {
+                lay(&mut commands, gate, ev.map, crate::waystone::gate_to(marks.mark()));
             }
-            continue;
-        };
-        // Floor one's way up is the gate's far side, onto the gate; every
-        // other floor's goes up the stairs to the way down it came by.
-        let up = match floor {
-            1 => (Way::Gate, Destination::Place { map: TOWN, arrive: Arrive::Exit }),
-            _ => (Way::Up, Destination::Place { map: map_of(floor - 1), arrive: Arrive::Exit }),
-        };
-        lay(&mut commands, up.0, ev.entry, ev.map, up.1);
-        if let Some(down) = ev.exit.filter(|_| floor < FLOORS) {
-            lay(&mut commands, Way::Down, down, ev.map, Destination::Place { map: map_of(floor + 1), arrive: Arrive::Entry });
+            know_the_town(&map, &mut knowledge);
+        }
+        // Floor one's way up, the top of the ladder: the gate's far side,
+        // onto the gate.
+        if floor_of(ev.map) == Some(1) {
+            lay(&mut commands, ev.entry, ev.map, Destination::Place { map: TOWN, arrive: Arrive::Exit });
         }
     }
 }
@@ -180,16 +159,18 @@ mod tests {
 
     use super::*;
     use crate::dungeon::{FLOORS, TOWN, map_of};
-    use crate::testing::{arrive, go_through, headless, stand_on};
+    use crate::testing::{Way, arrive, go_through, headless, stand_on};
 
-    /// Every way through on the map being read: where it stands, where it
-    /// leads, and which way it is.
+    /// Every way through on `map`: where it stands, where it leads, and
+    /// which way it is.
+    fn ways_on(app: &mut App, map: MapId) -> Vec<(Point, Destination, Way)> {
+        crate::testing::ways(app.world_mut(), map).into_iter().map(|(p, way, to)| (p, to, way)).collect()
+    }
+
+    /// Every way through on the map being read.
     fn ways_here(app: &mut App) -> Vec<(Point, Destination, Way)> {
         let here = app.world().resource::<WorldMap>().current();
-        let mut q = app.world_mut().query::<(&Position, &OnMap, &Transition, &Way)>();
-        let mut ways: Vec<(Point, Destination, Way)> = q.iter(app.world()).filter(|(_, on, _, _)| on.0 == here).map(|(p, _, t, w)| (p.0, t.to, *w)).collect();
-        ways.sort_by_key(|(p, _, _)| *p);
-        ways
+        ways_on(app, here)
     }
 
     /// The registered name of the tile at `p` on the map being read.
@@ -233,26 +214,72 @@ mod tests {
         }
     }
 
-    /// Every stair is a still thing the map draws, a glyph on no actor,
-    /// which is what the map keeps in memory once seen, and still one in
-    /// a continued run; `main.rs`'s own test walks away from one and
-    /// reads it drawn from memory.
+    /// Every stair is laid looking as the ladder says, a pale stone `<`
+    /// or `>` on no actor, which the map draws and keeps in memory once
+    /// seen, and still does in a continued run; `main.rs`'s own test walks
+    /// away from one and reads it drawn from memory.
     #[test]
-    fn every_stair_is_kept_on_the_map_from_memory_through_a_save() {
-        let undrawn = |app: &mut App| {
+    fn every_stair_keeps_the_look_the_ladder_gives_it_through_a_save() {
+        let looks = |app: &mut App| {
             let world = app.world_mut();
-            let stairs =
-                world.query_filtered::<(&Way, Has<Glyph>), Without<Actor>>().iter(world).filter(|(w, _)| **w != Way::Gate).map(|(_, g)| g).collect::<Vec<_>>();
-            (stairs.len(), stairs.iter().filter(|g| !**g).count())
+            let mut looks: Vec<(char, Rgb, String)> =
+                world.query_filtered::<&Stair, Without<Actor>>().iter(world).map(|s| (s.look.glyph, s.look.color, s.look.name.clone())).collect();
+            looks.sort();
+            looks.dedup();
+            looks
         };
+        let ladder = ladder();
+        let expected = vec![(ladder.up.glyph, ladder.up.color, ladder.up.name.clone()), (ladder.down.glyph, ladder.down.color, ladder.down.name.clone())];
         let mut app = headless(RunSeed(2));
         arrive(&mut app, map_of(2));
-        let (laid, bare) = undrawn(&mut app);
-        assert!(laid >= 2 && bare == 0, "{laid} stairs, {bare} with no glyph for memory to keep");
+        assert_eq!(looks(&mut app), expected);
         let text = app.world().resource::<rl_engine::rl_save::Saves>().load(crate::save::SLOT).expect("reads").expect("saved on arrival");
         let mut carried_on = crate::testing::continued(&text);
-        let (laid, bare) = undrawn(&mut carried_on);
-        assert!(laid >= 2 && bare == 0, "continued: {laid} stairs, {bare} with no glyph for memory to keep");
+        assert_eq!(looks(&mut carried_on), expected, "continued");
+    }
+
+    /// Over a span of seeds, every floor has exactly one way up and, but
+    /// the tenth, one way down, and nothing else that leads anywhere: the
+    /// way up of every floor below the first is a stair to the floor
+    /// above's way down, floor one's is the gate onto Mereholt's, as the
+    /// ladder leaves it to Undermere, and every way down is a stair to the
+    /// floor below's way in. Mereholt's one way is the gate to floor one.
+    /// A run continued from the save the last arrival wrote has every
+    /// floor's ways again, where they stood and leading where they led,
+    /// once.
+    #[test]
+    fn every_floor_has_one_way_up_and_but_the_last_one_down_to_the_floors_beside_it_through_a_save_over_a_span_of_seeds() {
+        crate::testing::par_seeds(crate::testing::seeds(0..3), |s| {
+            let mut app = headless(RunSeed(s));
+            let me = arrive(&mut app, TOWN);
+            crate::testing::sturdy(&mut app, me);
+            let mut seen = Vec::new();
+            let town = app.world().resource::<WorldMap>().place(TOWN).expect("Mereholt").exit.expect("the gate's cell");
+            assert_eq!(ways_on(&mut app, TOWN), [(town, Destination::Place { map: map_of(1), arrive: Arrive::Entry }, Way::Gate)], "seed {s}: Mereholt");
+            for floor in 1..=FLOORS {
+                arrive(&mut app, map_of(floor));
+                let place = app.world().resource::<WorldMap>().place(map_of(floor)).expect("built");
+                let up = match floor {
+                    1 => (place.entry, Destination::Place { map: TOWN, arrive: Arrive::Exit }, Way::Gate),
+                    _ => (place.entry, Destination::Place { map: map_of(floor - 1), arrive: Arrive::Exit }, Way::Up),
+                };
+                let mut expected = vec![up];
+                if floor < FLOORS {
+                    let exit = place.exit.expect("a floor above the throne has a way on");
+                    expected.push((exit, Destination::Place { map: map_of(floor + 1), arrive: Arrive::Entry }, Way::Down));
+                }
+                expected.sort_by_key(|(p, _, _)| *p);
+                let ways = ways_on(&mut app, map_of(floor));
+                assert_eq!(ways, expected, "seed {s}, floor {floor}");
+                seen.push(ways);
+            }
+            let text = app.world().resource::<rl_engine::rl_save::Saves>().load(crate::save::SLOT).expect("reads").expect("saved on arrival");
+            let mut again = crate::testing::continued(&text);
+            for floor in 1..=FLOORS {
+                assert_eq!(ways_on(&mut again, map_of(floor)), seen[floor as usize - 1], "seed {s}, floor {floor}, continued");
+            }
+            assert_eq!(ways_on(&mut again, TOWN).len(), 1, "seed {s}: Mereholt's gate, continued");
+        });
     }
 
     #[test]

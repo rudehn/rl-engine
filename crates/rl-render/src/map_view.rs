@@ -375,7 +375,7 @@ impl Plugin for MapViewPlugin {
             // the frame it is first entered, and before anything is drawn
             // or remembered, so a prop is never drawn bare for a frame and
             // a place known by heart remembers every prop in it.
-            .add_systems(Update, (dress_props, redress_emptied).after(EngineSet::Turns).before(EngineSet::Present));
+            .add_systems(Update, (dress_props, redress_emptied, dress_stairs).after(EngineSet::Turns).before(EngineSet::Present));
     }
 
     fn finish(&self, app: &mut App) {
@@ -417,6 +417,24 @@ pub fn dress_props(mut commands: Commands, registries: Option<Res<Registries>>, 
     for (entity, kind) in &bare {
         let look = registries.props.get(kind.0).look;
         commands.entity(entity).insert(Glyph { ch: look.glyph, fg: Color::srgb_u8(look.color.r, look.color.g, look.color.b), layer: look.layer });
+    }
+}
+
+/// A stair nobody has drawn yet.
+type UndrawnStairs<'w, 's> = Query<'w, 's, (Entity, &'static Stair), (Added<Stair>, Without<Glyph>)>;
+
+/// The layer a stair is drawn on: over the floor and under whatever is
+/// dropped on it or stands on it, as a prop is by default.
+pub const STAIR_LAYER: i32 = 1;
+
+/// Gives a stair the engine laid the glyph its look asks for, as
+/// [`dress_props`] gives a prop its definition's, so the engine that lays
+/// it names no `Color`. A stair a game drew itself keeps what it was
+/// given.
+pub fn dress_stairs(mut commands: Commands, bare: UndrawnStairs) {
+    for (entity, stair) in &bare {
+        let c = stair.look.color;
+        commands.entity(entity).insert(Glyph { ch: stair.look.glyph, fg: Color::srgb_u8(c.r, c.g, c.b), layer: STAIR_LAYER });
     }
 }
 
@@ -607,6 +625,20 @@ pub fn draw_map(mut terminal: ResMut<Terminal>, mut actors: ResMut<DrawnActors>,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A stair the engine laid is drawn as its look says, in bytes made a
+    /// colour here, and a stair a game drew itself keeps its own glyph.
+    #[test]
+    fn a_stair_is_drawn_from_its_look_and_one_already_drawn_is_left_alone() {
+        let mut app = App::new();
+        app.add_systems(Update, dress_stairs);
+        let stair = Stair { climb: rl_bevy::Climb::Up, look: rl_bevy::StairLook::new('<', Rgb::new(235, 219, 158), "stairs up") };
+        let bare = app.world_mut().spawn(stair.clone()).id();
+        let drawn = app.world_mut().spawn((stair, Glyph { ch: '^', fg: Color::WHITE, layer: 4 })).id();
+        app.update();
+        assert_eq!(app.world().get::<Glyph>(bare), Some(&Glyph { ch: '<', fg: Color::srgb_u8(235, 219, 158), layer: STAIR_LAYER }));
+        assert_eq!(app.world().get::<Glyph>(drawn).map(|g| g.ch), Some('^'));
+    }
 
     /// A prop is described twice, and this is the second half: the engine
     /// spawns it knowing nothing of colours, and the renderer dresses it.

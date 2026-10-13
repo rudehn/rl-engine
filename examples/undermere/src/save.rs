@@ -43,7 +43,7 @@ use crate::lore::{CurseShown, Lore, Unfamiliar};
 use crate::mercenaries::{Candidate, Mercenary, OwnKit, Tavern};
 use crate::run::Adventurer;
 use crate::shops::Shelves;
-use crate::stairs::Way;
+use crate::stairs::Gate;
 use crate::tally::{Counted, Tally};
 use crate::townsfolk::{Folk, GivenNames, Kit, Townsfolk, Townsperson};
 use crate::vaults::VaultKey;
@@ -67,7 +67,11 @@ use crate::writings::WritingsProgress;
 // v7: each place's ambient light and Mereholt's peace, kept with the place
 // by the engine. Absent from an older save they read as dark and at war,
 // which is not what that run had, so it is refused rather than continued.
-pub const VERSION: u32 = 7;
+// v8: the stairs between the floors are the engine's, saved by it, and only
+// the gate is Undermere's own kind; the braziers before the throne are a
+// kind of their own. An older save's ways are a kind this build has none
+// of and its throne's braziers would burn warm, so it is refused.
+pub const VERSION: u32 = 8;
 
 /// The slot every run saves to.
 pub const SLOT: &str = "undermere";
@@ -80,7 +84,7 @@ pub fn register(app: &mut App) {
         .save_kind::<ItemKind>()
         .save_kind::<Kind>()
         .save_kind::<Adventurer>()
-        .save_kind::<Way>()
+        .save_kind::<Gate>()
         .save_kind::<Townsperson>()
         .save_state::<Tally>()
         .save_state::<Lore>()
@@ -437,22 +441,16 @@ impl SaveableState for MonsterLore {
 }
 
 // ANCHOR: way
-/// A way through, as the save writes it: which way it is, which is how it
-/// is named and drawn. The engine keeps where it stands and where it
-/// leads.
-impl Saveable for Way {
-    type Saved = Way;
+/// The gate, as the save writes it: that it is the gate, and nothing
+/// more. The engine keeps where it stands and where it leads, and the
+/// stairs between the floors are the engine's own, saved by the engine.
+impl Saveable for Gate {
+    type Saved = ();
 
-    fn capture(world: &World, entity: Entity) -> Way {
-        *world.get::<Way>(entity).expect("a way's kind")
-    }
+    fn capture(_: &World, _: Entity) {}
 
-    fn restore(world: &mut World, saved: &Way) -> Entity {
-        let mut e = world.spawn((*saved, Name::new(saved.name())));
-        if let Some(glyph) = saved.glyph() {
-            e.insert(glyph);
-        }
-        e.id()
+    fn restore(world: &mut World, _: &()) -> Entity {
+        world.spawn((Gate, Name::new(Gate::NAME))).id()
     }
 }
 // ANCHOR_END: way
@@ -591,7 +589,7 @@ mod tests {
         lantern: Option<i32>,
         deepest: u32,
         monsters: Vec<(String, (i32, i32), i32)>,
-        ways: Vec<((i32, i32), Way)>,
+        ways: Vec<((i32, i32), crate::testing::Way)>,
     }
 
     fn looks(app: &mut App) -> Looks {
@@ -603,11 +601,8 @@ mod tests {
             q.iter(world).filter(|(_, _, on, _, _)| on.0 == place).map(|(n, p, _, h, _)| (n.as_str().to_string(), (p.0.x, p.0.y), h.current)).collect()
         };
         monsters.sort();
-        let mut ways: Vec<((i32, i32), Way)> = {
-            let world = app.world_mut();
-            let mut q = world.query::<(&Position, &OnMap, &Way)>();
-            q.iter(world).filter(|(_, on, _)| on.0 == place).map(|(p, _, w)| ((p.0.x, p.0.y), *w)).collect()
-        };
+        let mut ways: Vec<((i32, i32), crate::testing::Way)> =
+            crate::testing::ways(app.world_mut(), place).into_iter().map(|(p, w, _)| ((p.x, p.y), w)).collect();
         ways.sort_by_key(|(p, _)| *p);
         let world = app.world();
         let bag = &world.get::<Inventory>(me).expect("a pack").items;

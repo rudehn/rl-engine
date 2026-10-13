@@ -17,6 +17,14 @@
 //! and takes a way out when it runs. It is frozen where it lands until
 //! the player comes, like everything else on a map nobody is reading.
 //!
+//! A game whose places are floors one under another says so with a
+//! [`Ladder`], from [`PlaceRules::ladder`], and the engine lays the
+//! stairs: when a floor is built, a [`Stair`] up at its entry to the
+//! floor above's exit and a stair down at its exit to the floor below's
+//! entry, each a [`Transition`] like any other, which the engine saves.
+//! What stands at either end of the ladder, a way out of the run or
+//! nothing, is the game's; so is what a game says on arriving.
+//!
 //! A place keeps its [`Lock`]s, the doors its builder locked to a tag and
 //! the gates it sealed, and its save keeps them with it. It keeps its
 //! [`Secret`](crate::secrets::Secret)s the same way: the cells its builder
@@ -208,6 +216,156 @@ pub trait PlaceRules: Send + Sync {
     /// seed and for whatever the place is under; a delve with no surface
     /// gets `None` and seeds itself.
     fn build(&self, map: MapId, world: Option<&WorldGraph>) -> Result<PlaceBuild, BuildError>;
+
+    /// The floors this game's places stand in one under another, if they
+    /// do, for the engine to lay the stairs between them. `None`, the
+    /// default, is a game with no ladder, whose ways through are all its
+    /// own: it gets no stairs.
+    ///
+    /// Asked each time a place is built rather than once, so it may be
+    /// made on the spot from the game's own constants.
+    fn ladder(&self) -> Option<Ladder> {
+        None
+    }
+}
+
+/// Which way a stair goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+pub enum Climb {
+    /// To the floor above, from a floor's entry to that floor's exit.
+    Up,
+    /// To the floor below, from a floor's exit to that floor's entry.
+    Down,
+}
+
+/// How a ladder's stairs one way look and are called: the glyph and the
+/// colour whoever draws gives them, and the name a panel and the look
+/// cursor show.
+///
+/// Plain data, so the engine keeps it on every stair it lays and in the
+/// save, and a stair comes back looking as it was laid. A colour in bytes,
+/// as a prop's look is, since nothing below the drawing names a `Color`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct StairLook {
+    /// The character drawn.
+    pub glyph: char,
+    /// Its colour.
+    pub color: rl_grid::Rgb,
+    /// What it is called.
+    pub name: String,
+}
+
+impl StairLook {
+    /// A stair drawn `glyph` in `color` and called `name`.
+    pub fn new(glyph: char, color: rl_grid::Rgb, name: impl Into<String>) -> Self {
+        Self { glyph, color, name: name.into() }
+    }
+}
+
+/// A stair the engine laid between two floors of a [`Ladder`]: which way
+/// it goes, and how it looks. Beside the [`Transition`] that says where it
+/// leads, which a save keeps with the entity as it keeps any transition,
+/// so the stair is written down once, as a stair.
+#[derive(Component, Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Stair {
+    /// Up or down.
+    pub climb: Climb,
+    /// How it is drawn and called.
+    pub look: StairLook,
+}
+
+/// What one end of a [`Ladder`] has beyond its last stair.
+///
+/// The engine lays no stair past either end whichever it is: the top floor
+/// has no stair up and the bottom none down. The word is the game's
+/// account of that end, kept on the ladder so whatever reads the ladder,
+/// a test of every floor's ways or a tool listing them, knows a way there
+/// is meant and is the game's to lay, rather than missing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LadderEnd {
+    /// Nothing: the run goes no further that way.
+    Nothing,
+    /// A way of the game's own, which it lays itself at that floor's
+    /// entry for the top or exit for the bottom: a gate to a town, a lift
+    /// out that ends a mission, a crack of daylight.
+    Game,
+}
+
+/// A run's floors, one under another, and how the stairs between them
+/// look.
+///
+/// Every floor but the top gets a stair up at its entry, to the floor
+/// above's exit, and every floor but the bottom a stair down at its exit,
+/// to the floor below's entry, so going up and coming back down lands
+/// where the way was taken. Laid when the floor is built, by whoever gets
+/// there first, so a monster that ran down ahead of the player has a way
+/// back up. A floor whose build has no exit gets no stair down.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Ladder {
+    /// The floors, top first: floor `n` is `floors[n - 1]`, and its
+    /// neighbours are the entries either side.
+    pub floors: Vec<MapId>,
+    /// How a stair up looks.
+    pub up: StairLook,
+    /// How a stair down looks.
+    pub down: StairLook,
+    /// What the top floor has instead of a stair up.
+    pub top: LadderEnd,
+    /// What the bottom floor has instead of a stair down.
+    pub bottom: LadderEnd,
+}
+
+impl Ladder {
+    /// `floors`, top first, with stairs looking `up` and `down`, and
+    /// nothing past either end.
+    pub fn new(floors: impl IntoIterator<Item = MapId>, up: StairLook, down: StairLook) -> Self {
+        Self { floors: floors.into_iter().collect(), up, down, top: LadderEnd::Nothing, bottom: LadderEnd::Nothing }
+    }
+
+    /// The same ladder with `end` at its top.
+    pub fn top(mut self, end: LadderEnd) -> Self {
+        self.top = end;
+        self
+    }
+
+    /// The same ladder with `end` at its bottom.
+    pub fn bottom(mut self, end: LadderEnd) -> Self {
+        self.bottom = end;
+        self
+    }
+
+    /// Which floor `map` is, counting from one at the top, if it is one.
+    pub fn floor_of(&self, map: MapId) -> Option<usize> {
+        self.floors.iter().position(|m| *m == map).map(|i| i + 1)
+    }
+
+    /// The floor above `map`, if `map` is a floor and not the top.
+    pub fn above(&self, map: MapId) -> Option<MapId> {
+        let i = self.floors.iter().position(|m| *m == map)?;
+        i.checked_sub(1).map(|i| self.floors[i])
+    }
+
+    /// The floor below `map`, if `map` is a floor and not the bottom.
+    pub fn below(&self, map: MapId) -> Option<MapId> {
+        let i = self.floors.iter().position(|m| *m == map)?;
+        self.floors.get(i + 1).copied()
+    }
+
+    /// The stairs floor `map` gets, built with `entry` and `exit`: where
+    /// each stands, and what it is and leads to. Empty for a map that is
+    /// no floor of the ladder.
+    pub fn stairs(&self, map: MapId, entry: Point, exit: Option<Point>) -> Vec<(Point, Stair, Transition)> {
+        let mut stairs = Vec::new();
+        if let Some(above) = self.above(map) {
+            let to = Destination::Place { map: above, arrive: Arrive::Exit };
+            stairs.push((entry, Stair { climb: Climb::Up, look: self.up.clone() }, Transition { to }));
+        }
+        if let (Some(below), Some(exit)) = (self.below(map), exit) {
+            let to = Destination::Place { map: below, arrive: Arrive::Entry };
+            stairs.push((exit, Stair { climb: Climb::Down, look: self.down.clone() }, Transition { to }));
+        }
+        stairs
+    }
 }
 
 /// The game's place builder.
@@ -490,7 +648,14 @@ fn warp(
     if !target_map.is_surface() && !maps.map.has_place(target_map) {
         let rules = maps.rules.as_ref().ok_or_else(|| BuildError::new("warp", "no PlaceRulesRes to build a place with"))?;
         let build = rules.0.build(target_map, maps.world.as_deref().map(|w| &w.0))?;
+        let stairs = rules.0.ladder().map(|ladder| ladder.stairs(target_map, build.entry, build.exit)).unwrap_or_default();
         maps.map.install_place(target_map, build);
+        // Laid with the build, by whoever's arrival built it, so a floor
+        // has its way back up before anyone stands on it.
+        for (at, stair, transition) in stairs {
+            let name = Name::new(stair.look.name.clone());
+            commands.spawn((Position(at), OnMap(target_map), transition, stair, name));
+        }
     }
     let Ok((_, (mut pos, viewshed, on, blocks, player, ..))) = travellers.get_mut(actor) else {
         return Err(BuildError::new("warp", "the traveller has no position"));
@@ -1036,5 +1201,107 @@ mod tests {
         intend(&mut r, PickUp);
         assert!(r.app.world().get::<Inventory>(r.player).unwrap().contains(coin), "the same press picked the coin up");
         assert!(r.app.world().resource::<Turns>().now() > before, "and spent the turn on it");
+    }
+
+    /// The caves again, as the floors of a ladder: maps three, four and
+    /// five, top first, with a way of the game's own past the top.
+    struct LadderCaves(Caves);
+
+    impl PlaceRules for LadderCaves {
+        fn build(&self, map: MapId, world: Option<&WorldGraph>) -> Result<PlaceBuild, BuildError> {
+            self.0.build(map, world)
+        }
+
+        fn ladder(&self) -> Option<Ladder> {
+            let (up, down) =
+                (StairLook::new('<', rl_grid::Rgb::new(230, 220, 160), "stairs up"), StairLook::new('>', rl_grid::Rgb::new(230, 220, 160), "stairs down"));
+            Some(Ladder::new([MapId(3), MapId(4), MapId(5)], up, down).top(LadderEnd::Game))
+        }
+    }
+
+    /// Every way through standing on `map`: where, where it leads, and
+    /// which way it climbs when it is a stair.
+    fn ways(app: &mut App, map: MapId) -> Vec<(Point, Destination, Option<Climb>)> {
+        let world = app.world_mut();
+        let mut q = world.query::<(&Position, &OnMap, &Transition, Option<&Stair>)>();
+        let mut found: Vec<(Point, Destination, Option<Climb>)> =
+            q.iter(world).filter(|(_, on, _, _)| on.0 == map).map(|(p, _, t, s)| (p.0, t.to, s.map(|s| s.climb))).collect();
+        found.sort_by_key(|(p, _, c)| (*p, *c));
+        found
+    }
+
+    /// The ladder's neighbours are read off its list, top first, and a map
+    /// that is no floor of it has none and no stairs.
+    #[test]
+    fn a_ladder_names_each_floors_neighbours_and_nothing_for_a_map_off_it() {
+        let look = StairLook::new('<', rl_grid::Rgb::WHITE, "stairs");
+        let ladder = Ladder::new([MapId(3), MapId(4), MapId(5)], look.clone(), look);
+        assert_eq!((ladder.floor_of(MapId(3)), ladder.floor_of(MapId(5)), ladder.floor_of(MapId(9))), (Some(1), Some(3), None));
+        assert_eq!(
+            (ladder.above(MapId(3)), ladder.above(MapId(4)), ladder.below(MapId(4)), ladder.below(MapId(5))),
+            (None, Some(MapId(3)), Some(MapId(5)), None)
+        );
+        assert!(ladder.stairs(MapId(9), Point::ZERO, Some(Point::new(1, 1))).is_empty(), "a map off the ladder gets no stairs");
+        assert_eq!((ladder.top, ladder.bottom), (LadderEnd::Nothing, LadderEnd::Nothing), "nothing past either end unless the game says");
+    }
+
+    /// Down a ladder of three floors from the surface: every floor has one
+    /// stair up at its entry to the floor above's exit, but the top, whose
+    /// way up is the game's and which the engine leaves alone, and one
+    /// stair down at its exit to the floor below's entry, but the bottom.
+    /// Each is laid once, when its floor is built, and named as its look
+    /// says.
+    #[test]
+    fn the_engine_lays_one_stair_up_and_one_down_on_every_floor_of_a_ladder_but_past_its_ends() {
+        let mut r = rig();
+        r.app.insert_resource(PlaceRulesRes(Box::new(LadderCaves(Caves(TileRegistry::standard())))));
+        let player = r.player;
+        r.app.world_mut().write_message(WarpRequest::into_place(player, MapId(3)));
+        r.app.update();
+        for (i, map) in [MapId(3), MapId(4), MapId(5)].into_iter().enumerate() {
+            let (entry, exit) = {
+                let place = r.app.world().resource::<WorldMap>().place(map).expect("built on arrival");
+                (place.entry, place.exit.expect("a cave with a far point"))
+            };
+            let mut expected = Vec::new();
+            if i > 0 {
+                expected.push((entry, Destination::Place { map: MapId(map.0 - 1), arrive: Arrive::Exit }, Some(Climb::Up)));
+            }
+            if i < 2 {
+                expected.push((exit, Destination::Place { map: MapId(map.0 + 1), arrive: Arrive::Entry }, Some(Climb::Down)));
+            }
+            expected.sort_by_key(|(p, _, c)| (*p, *c));
+            assert_eq!(ways(&mut r.app, map), expected, "{map:?}");
+            if i < 2 {
+                let at = r
+                    .app
+                    .world_mut()
+                    .query::<(&Position, &OnMap, &Stair, &Name)>()
+                    .iter(r.app.world())
+                    .find(|(_, on, s, _)| on.0 == map && s.climb == Climb::Down)
+                    .map(|(p, _, _, n)| (p.0, n.as_str().to_string()));
+                assert_eq!(at, Some((exit, "stairs down".to_string())));
+                r.app.world_mut().write_message(WarpRequest { actor: player, to: Destination::Place { map, arrive: Arrive::At(exit) } });
+                r.app.update();
+                intend(&mut r, GoThrough);
+                assert_eq!(r.app.world().resource::<WorldMap>().current(), MapId(map.0 + 1), "down the stairs from {map:?}");
+            }
+        }
+        r.app.world_mut().write_message(WarpRequest::into_place(player, MapId(4)));
+        r.app.update();
+        assert_eq!(ways(&mut r.app, MapId(4)).len(), 2, "coming back lays nothing twice");
+    }
+
+    /// A game with no ladder gets no stairs: its places are entered and
+    /// left only by the ways it lays itself.
+    #[test]
+    fn a_game_with_no_ladder_gets_no_stairs() {
+        let mut r = rig();
+        let player = r.player;
+        r.app.world_mut().write_message(WarpRequest::into_place(player, MapId(3)));
+        r.app.update();
+        assert_eq!(r.app.world().resource::<WorldMap>().current(), MapId(3));
+        assert!(ways(&mut r.app, MapId(3)).is_empty());
+        assert_eq!(r.app.world_mut().query::<&Stair>().iter(r.app.world()).count(), 0);
     }
 }

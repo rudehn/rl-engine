@@ -89,7 +89,7 @@ pub fn register(app: &mut App) {
         .save_kind::<ItemKind>()
         .save_kind::<Kind>()
         .save_kind::<Adventurer>()
-        .save_kind::<Way>()
+        .save_kind::<Gate>()
         .save_kind::<Townsperson>()
         .save_state::<Tally>()
         .save_state::<Lore>()
