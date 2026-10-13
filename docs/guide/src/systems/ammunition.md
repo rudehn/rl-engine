@@ -38,11 +38,14 @@ A fed weapon is a row naming the tag one shot spends, and what it spends is a st
 <!-- include: ../../../../examples/undermere/assets/items.ron:bow -->
 ```ron
     (name: "bow", glyph: '}', color: (0.65, 0.5, 0.32), price: 80, slot: "main hand", also: ["off hand"], tags: ["weapon"], ammo: "arrow", strength: 12,
-     ranged: (range: 8, effective: 5, roll: "1d6+1", kind: "pierce", look: (glyph: '|', color: (r: 191, g: 173, b: 128)))),
-    // What is thrown, found by the handful: arrows, which the bow spends
-    // a shot at a time and which fly badly from the hand, and darts and
-    // javelins, made to be thrown and picked up again where they land.
-    (name: "arrow", glyph: '|', color: (0.75, 0.68, 0.5), price: 2, tags: ["arrow", "thrown"], stack: true, throw: (range: 4, strike: ("1d2", "pierce"))),
+     ranged: (range: 10, effective: 7, roll: "2d4+1", kind: "pierce", look: (glyph: '|', color: (r: 191, g: 173, b: 128)))),
+    // The bow outshoots anything thrown: it reaches ten cells and is true
+    // to seven, and strikes for 2d4+1 where a javelin, the best thrown, is
+    // 1d6+1 to six and true to four. Arrows are ammunition and nothing
+    // else, spent a shot at a time and never thrown; darts and javelins,
+    // made to be thrown and picked up again where they land, are what
+    // someone without a bow has.
+    (name: "arrow", glyph: '|', color: (0.75, 0.68, 0.5), price: 2, tags: ["arrow"], stack: true),
 ```
 
 ## The line
