@@ -19,9 +19,9 @@
 //! the end, so a layer of light can add to what is already there. The
 //! shapes are `art`'s, the word and the town drawn as marks and the gate
 //! as its stones, so a change to the picture is a change to one const.
-//! Three things move, and only three, because a title that never settles
-//! is tiring to look at: the stars twinkle, the gate's glow breathes, and
-//! the mist drifts.
+//! Four things move, and only four, because a title that never settles
+//! is tiring to look at: the stars twinkle, the gate's glow breathes, the
+//! mist drifts, and the moon's path shimmers on the water.
 //!
 //! **The glyphs.** Only ones the game's typeface has: DejaVu Sans Mono,
 //! from [`typeface`](crate::typeface), whose own character map a test
@@ -242,6 +242,7 @@ fn picture(width: i32, height: i32, t: f32) -> Canvas {
     far_shore(&mut canvas);
     moon(&mut canvas);
     lake(&mut canvas);
+    moon_path(&mut canvas, t);
     word(&mut canvas);
     town(&mut canvas);
     gate(&mut canvas, glow);
@@ -411,7 +412,6 @@ fn lake(canvas: &mut Canvas) {
             }
         }
     }
-    moon_path(canvas);
 }
 
 /// The moon's path on the water: under the moon from the far shore to
@@ -419,12 +419,18 @@ fn lake(canvas: &mut Canvas) {
 /// wider and more broken as it nears, as light on rippled water is. The
 /// water under it is lifted a little, and the light itself is glints, a
 /// ripple to a cell, long and joined far off and short dashes near.
-fn moon_path(canvas: &mut Canvas) {
+///
+/// It shimmers `t` seconds in: the glints come and go as swells roll in
+/// toward the viewer, two rows a second, and the path's edges swell
+/// and narrow with them, so the light breaks up and gathers again without
+/// the path ever leaving the moon or the rows it lies on.
+fn moon_path(canvas: &mut Canvas, t: f32) {
     let moon = moon_centre(canvas.width);
     let length = (rows::MIST_FLOOR - rows::HORIZON + 1) as f32;
     for y in rows::HORIZON..=rows::MIST_FLOOR {
         let down = (y - rows::HORIZON) as f32;
-        let half = 3.5 + down * 1.4;
+        let swell = (t * 1.3 - down * 0.8).sin();
+        let half = (3.5 + down * 1.4) * (1.0 + SWAY * swell);
         let strength = (1.0 - down / length).powf(0.8);
         let reach = half as i32 + 1;
         let middle = (moon.x / 8.0) as i32;
@@ -436,19 +442,32 @@ fn moon_path(canvas: &mut Canvas) {
             let column = (1.0 - off * off) * strength;
             let Some(cell) = canvas.at(x, y) else { continue };
             cell.bg = cell.bg.lerp(ink::HALO * 1.4, column * 0.5);
-            if hashed(x * 5 + 3, y * 17) > column * 0.75 + 0.2 * strength {
+            // Whether this cell catches the moon now: its own ripple, as
+            // likely to as the path is bright here on the whole, but more
+            // so under a swell drifting in over it and less between, so a
+            // glint lasts half a second or so and its neighbours light as it
+            // goes out.
+            let swells = 0.2 + 1.6 * noise(x as f32 * 0.45, down * 0.9 - t * 1.8);
+            let chance = (column * 0.75 + 0.2 * strength) * swells;
+            let ripple = hashed(x * 5 + 3, y * 17);
+            if ripple > chance {
                 continue;
             }
-            cell.glyph = match (down < 4.0, hashed(x, y * 3) < 0.5) {
+            let bright = (1.0 - ripple / chance).clamp(0.0, 1.0);
+            cell.glyph = match (down < 4.0, hashed(x, y * 3) < 0.25 + 0.5 * bright) {
                 (true, true) => '━',
                 (true, false) => '─',
-                (false, true) => '-',
-                (false, false) => '~',
+                (false, true) => '~',
+                (false, false) => '-',
             };
-            cell.fg = cell.bg.lerp(ink::GLINT, 0.45 + 0.55 * column);
+            cell.fg = cell.bg.lerp(ink::GLINT, (0.45 + 0.55 * column) * (0.75 + 0.25 * bright));
         }
     }
 }
+
+/// How far the moon's path swells past its width and narrows short of
+/// it as the swells roll in, a part of its width either way.
+const SWAY: f32 = 0.12;
 
 /// UNDERMERE across the sky over the moon: lit silver from above and gone
 /// over to violet at its foot, each stroke a shade brighter along its top
@@ -939,22 +958,64 @@ mod tests {
         }
     }
 
-    /// Three things move and only three: between launch and any moment of
+    /// Four things move and only four: between launch and any moment of
     /// the first minute, every cell that has changed is a star, in the
-    /// gate's reach, or in the rows the mist drifts through. The word,
-    /// the moon, the town, the near water and the menu's dark are still.
+    /// gate's reach, in the moon's path, or in the rows the mist drifts
+    /// through. The word, the moon, the town, the near water and the
+    /// menu's dark are still.
     #[test]
-    fn only_the_stars_the_glow_and_the_mist_move() {
-        let (launch, reach) = (painted(0.0), glow_reach(COLS));
+    fn only_the_stars_the_glow_the_mist_and_the_moons_path_move() {
+        let (launch, reach, path) = (painted(0.0), glow_reach(COLS), path_reach(COLS));
         let mut moved = 0;
         for tenth in (1..600).step_by(13) {
             let terminal = painted(tenth as f32 / 10.0);
             for at in terminal.bounds().cells().filter(|at| terminal.get(at.x, at.y) != launch.get(at.x, at.y)) {
                 moved += 1;
                 let mist = (rows::MIST_TOP..=rows::MIST_FLOOR).contains(&at.y);
-                assert!(is_star(at.x, at.y) || reach.contains(at) || mist, "{} seconds in, ({}, {}) moved", tenth as f32 / 10.0, at.x, at.y);
+                assert!(
+                    is_star(at.x, at.y) || reach.contains(at) || path.contains(at) || mist,
+                    "{} seconds in, ({}, {}) moved",
+                    tenth as f32 / 10.0,
+                    at.x,
+                    at.y
+                );
             }
         }
         assert!(moved > 0, "and the picture does move");
+    }
+
+    /// Everything the moon's path lights at its widest, on a terminal `width`
+    /// across, so its shimmer is seen nowhere else.
+    fn path_reach(width: i32) -> Rect {
+        let middle = (moon_centre(width).x / 8.0) as i32;
+        let reach = ((3.5 + (rows::MIST_FLOOR - rows::HORIZON) as f32 * 1.4) * (1.0 + SWAY)) as i32 + 1;
+        Rect::new(middle - reach, rows::HORIZON, reach * 2 + 1, rows::MIST_FLOOR - rows::HORIZON + 1)
+    }
+
+    /// The glints on the moon's path, as a set of cells, at `t` seconds:
+    /// the path alone, on a blank canvas, so no ripple of the lake's is
+    /// counted as one.
+    fn glints(t: f32) -> std::collections::BTreeSet<(i32, i32)> {
+        let mut canvas = Canvas::new(COLS, ROWS);
+        moon_path(&mut canvas, t);
+        path_reach(COLS).cells().filter(|at| canvas.at(at.x, at.y).is_some_and(|c| c.glyph != ' ')).map(|at| (at.x, at.y)).collect()
+    }
+
+    /// The moon's path shimmers and stays a path: from one moment to the
+    /// next a share of its glints go out and others light, but at every
+    /// moment of a minute every row of it from the far shore down still
+    /// holds some, so the light breaks up without the path ever going.
+    #[test]
+    fn the_moons_path_shimmers_without_ever_going_out() {
+        let mut before = glints(0.0);
+        for tenth in (5..600).step_by(5) {
+            let now = glints(tenth as f32 / 10.0);
+            for y in rows::HORIZON..=rows::MIST_FLOOR {
+                assert!(now.iter().any(|g| g.1 == y), "{} seconds in, row {y} of the path is dark", tenth as f32 / 10.0);
+            }
+            let changed = now.symmetric_difference(&before).count();
+            assert!(changed * 10 >= now.len(), "{} seconds in, only {changed} of {} glints changed in half a second", tenth as f32 / 10.0, now.len());
+            before = now;
+        }
     }
 }
