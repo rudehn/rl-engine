@@ -23,7 +23,8 @@
 // What stops a body, the lake, deep water and lava, is drawn `≈`, and the
 // water a body wades through `~`, so which is which reads before a step is
 // spent on it; trees are `♣` and the gate is `Ω`. `%` is a body's alone, so a garden
-// is `ψ` and a heap of fallen rock `∴`.
+// is `ψ` and a heap of fallen rock `∴`, and a lit window, which is seen through and
+// still not walked through, is `▒`, glass set in a wall of `#`.
 [
     // Mereholt, at dusk.
     (tile: "grass",          glyph: '"',  fg: (0.42, 0.62, 0.32), bg: (0.11, 0.19, 0.09), vary: (0.18, 0.06)),
@@ -33,7 +34,7 @@
     (tile: "garden",         glyph: 'ψ',  fg: (0.5, 0.68, 0.3),   bg: (0.2, 0.15, 0.08),  vary: (0.16, 0.06)),
     (tile: "timber wall",    glyph: '#',  fg: (0.78, 0.6, 0.42),  bg: (0.54, 0.4, 0.26),  vary: (0.1, 0.03)),
     (tile: "stone wall",     glyph: '#',  fg: (0.76, 0.76, 0.8),  bg: (0.46, 0.46, 0.5),  vary: (0.08, 0.02)),
-    (tile: "lit window",     glyph: '#',  fg: (1.0, 0.86, 0.56),  bg: (0.75, 0.5, 0.2),   vary: (0.06, 0.03), shimmer: 0.08),
+    (tile: "lit window",     glyph: '▒',  fg: (1.0, 0.86, 0.56),  bg: (0.75, 0.5, 0.2),   vary: (0.06, 0.03), shimmer: 0.08),
     (tile: "tree",           glyph: '♣',  fg: (0.3, 0.58, 0.3),   bg: (0.07, 0.15, 0.08), vary: (0.15, 0.06)),
     (tile: "shallows",       glyph: '~',  fg: (0.5, 0.72, 0.86),  bg: (0.13, 0.25, 0.36), vary: (0.1, 0.03),  shimmer: 0.25),
     (tile: "lake",           glyph: '≈',  fg: (0.32, 0.5, 0.78),  bg: (0.05, 0.11, 0.24), vary: (0.1, 0.03),  shimmer: 0.3),
