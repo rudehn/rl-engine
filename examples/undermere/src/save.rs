@@ -433,6 +433,7 @@ impl SaveableState for MonsterLore {
     }
 }
 
+// ANCHOR: way
 /// A way through, as the save writes it: which way it is, which is how it
 /// is named and drawn. The engine keeps where it stands and where it
 /// leads.
@@ -451,6 +452,7 @@ impl Saveable for Way {
         e.id()
     }
 }
+// ANCHOR_END: way
 
 /// One of Mereholt's people, as the save writes them: their role and the
 /// name this run gave them. The engine gives back where they stand, their

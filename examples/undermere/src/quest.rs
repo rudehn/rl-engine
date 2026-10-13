@@ -152,6 +152,7 @@ pub struct Report<'w> {
 /// carry their [`Kind`].
 pub fn report_bosses(mut deaths: MessageReader<DeathEvent>, kinds: Query<&Kind>, report: Report) {
     let Report { bestiary, facts, quests, mut happened, mut over } = report;
+    // ANCHOR: slain
     for death in deaths.read() {
         let Ok(kind) = kinds.get(death.entity) else { continue };
         if !bestiary.defs.get(kind.0).boss {
@@ -164,6 +165,7 @@ pub fn report_bosses(mut deaths: MessageReader<DeathEvent>, kinds: Query<&Kind>,
             over.write(RunOver::won());
         }
     }
+    // ANCHOR_END: slain
 }
 
 #[cfg(test)]

@@ -59,24 +59,25 @@ Gas at or above its `veils_at` is written into the map's veil with `set_veil`, a
 
 ## Using it
 
-Gases are content, and a game names them in `Registries::gases` with the five fields the engine acts on: two rates, a threshold, whether it catches, and what breathing it does; Delve names two.
+Gases are content, and a game names them in `Registries::gases` with the five fields the engine acts on: two rates, a threshold, whether it catches, and what breathing it does; Undermere names four.
 
-<!-- include: ../../../../examples/delve/src/main.rs:gases -->
+<!-- include: ../../../../examples/undermere/src/content.rs:gases -->
 ```rust,no_run
     let gases = Registry::from_defs(vec![
-        // What burning flesh gives off: thick enough to hide in while it hangs.
-        GasDef::new("smoke").spread(55).fade(9).veils_at(70),
-        // The reek off a pool of bile. It burns, and a lungful makes the head swim.
-        GasDef::new("reek").spread(35).fade(12).burns().inflicts(60, statuses.expect("dazed"), 1),
+        GasDef::new(PARALYTIC).spread(40).fade(20).inflicts(25, statuses.expect(PARALYSED), 3),
+        GasDef::new(CONFUSING).spread(50).fade(15).inflicts(25, statuses.expect(CONFUSED), 3),
+        GasDef::new(DARKNESS).spread(30).fade(8).veils_at(120).inflicts(25, statuses.expect(SHROUDED), 5),
+        GasDef::new(CAUSTIC).spread(40).fade(20).inflicts(30, statuses.expect("poisoned"), 4),
     ])
     .unwrap();
 ```
 
-Fire takes one resource before play begins, saying what its flames do beyond burning, and Delve's is one line.
+Fire takes one resource before play begins, saying what its flames do beyond burning, and Foundry's is one line.
 
-<!-- include: ../../../../examples/delve/src/main.rs:fire_rules -->
+<!-- include: ../../../../examples/foundry/src/run.rs:fire_rules -->
 ```rust,no_run
-    // Standing in fire scorches, and burning flesh smokes.
+    // Standing in fire scorches, and whatever burns smokes: an incendiary
+    // is a fire and a screen at once.
     commands.insert_resource(FireRules::new().inflicts(registries.statuses.expect("scorched"), 3).smoke(registries.gases.expect("smoke"), 30));
 ```
 

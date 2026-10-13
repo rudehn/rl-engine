@@ -131,8 +131,8 @@ pub fn resistances(profile: Profile, registries: &Registries) -> Resistances {
 /// Every registry Foundry's content names, filled before anything is
 /// loaded against them.
 ///
-/// Assembled the way `delve`'s `registries` is: one `Registry::from_defs`
-/// per table, then the struct literal.
+/// Assembled as one `Registry::from_defs` per table, then the struct
+/// literal.
 pub fn registries() -> Registries {
     let damage_kinds = Registry::from_defs(vec![
         DamageKind::new("kinetic"),
@@ -159,6 +159,7 @@ pub fn registries() -> Registries {
     // point a turn for as long as `run::start`'s `FireRules` says. Cloaked,
     // last, ticks nothing: it hides whoever holds it and does no more.
     // Mending and cloaked are boons, so the log tells them as good news.
+    // ANCHOR: statuses
     let thermal = damage_kinds.expect("thermal");
     let statuses = Registry::from_defs(vec![
         StatusDef { badge: Some('~'), ..StatusDef::new("sensors down") },
@@ -169,6 +170,7 @@ pub fn registries() -> Registries {
         StatusDef { badge: Some('%'), ..StatusDef::new("cloaked").unseen().boon() },
     ])
     .unwrap();
+    // ANCHOR_END: statuses
     // Smoke is the one gas: what a smoke grenade throws and what anything
     // burning gives off, thick enough to hide in while it hangs.
     let gases = Registry::from_defs(vec![GasDef::new("smoke").spread(55).fade(9).veils_at(70)]).unwrap();

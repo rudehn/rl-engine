@@ -230,6 +230,7 @@ impl Roster {
             })
             .collect();
         assert!(unknown.is_empty(), "monster roster: {}", unknown.join("; "));
+        // ANCHOR: brains
         let mut brains = Vec::new();
         for (_, d) in defs.iter() {
             let mut brain = Brain::new();
@@ -255,6 +256,7 @@ impl Roster {
             };
             brains.push(Arc::new(brain.then(SearchLastKnown).then(KeepPost).then(Wander { chance_pct: 30 })));
         }
+        // ANCHOR_END: brains
         Self { defs, table, brains, drops }
     }
 
@@ -292,6 +294,7 @@ impl ActorMaker for Roster {
 /// which [`sensors::sync_dark_sight`] sets from it the moment this pass's
 /// `Turn` schedule runs.
 pub fn spawn_monster(commands: &mut Commands, roster: &Roster, id: Id<MonsterDef>, at: Point, map: MapId, registries: &Registries) -> Entity {
+    // ANCHOR: spawn
     let d = roster.defs.get(id);
     let mut e = commands.spawn((
         (Actor, Blocks, Position(at), OnMap(map)),
@@ -303,6 +306,7 @@ pub fn spawn_monster(commands: &mut Commands, roster: &Roster, id: Id<MonsterDef
         (Notice(d.notice.unwrap_or_default()), Kind(id), LeavesRemains),
         (Name::new(d.name.clone()), Glyph::new(d.glyph, Color::srgb(d.color.0, d.color.1, d.color.2)).on_layer(5)),
     ));
+    // ANCHOR_END: spawn
     if let Some(melee) = d.melee {
         e.insert(melee.attack());
     }

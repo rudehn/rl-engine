@@ -79,27 +79,36 @@ A `QuestDef` opens when every quest in its `after` is done and is done when ever
 
 ## Using it
 
-A status is a registry entry, and these are the two Delve's caves have.
+A status is a registry entry, and these are the four Foundry's decks have.
 
-<!-- include: ../../../../examples/delve/src/main.rs:statuses -->
+<!-- include: ../../../../examples/foundry/src/content.rs:statuses -->
 ```rust,no_run
-    let fire = damage_kinds.expect("fire");
+    let thermal = damage_kinds.expect("thermal");
     let statuses = Registry::from_defs(vec![
-        StatusDef { badge: Some('s'), ..StatusDef::new("scorched").ticks(fire, 1) },
-        StatusDef { badge: Some('z'), ..StatusDef::new("dazed") },
+        StatusDef { badge: Some('~'), ..StatusDef::new("sensors down") },
+        StatusDef { badge: Some('+'), ..StatusDef::new("mending").mends(MEND_PER_TURN).boon() },
+        StatusDef { badge: Some('^'), ..StatusDef::new("scorched").ticks(thermal, 1) },
+        // What a cloak plate's charge puts on its wearer: nothing sees them
+        // until it runs out or they strike.
+        StatusDef { badge: Some('%'), ..StatusDef::new("cloaked").unseen().boon() },
     ])
     .unwrap();
 ```
 
 A fact is the game's reading of an engine message, which is the only translation quests and counters need.
 
-<!-- include: ../../../../examples/corsair/src/quests.rs:killed -->
+<!-- include: ../../../../examples/undermere/src/quest.rs:slain -->
 ```rust,no_run
-    let mut report = |f: Fact| happened.write(Happened(f));
-    for d in out.deaths.read() {
-        if let Ok((kind, faction)) = out.monsters.get(d.entity) {
-            report(Fact::new(facts.killed).about(kind.0.raw() as u64));
-            report(Fact::new(facts.killed_faction).about(faction.0.raw() as u64));
+    for death in deaths.read() {
+        let Ok(kind) = kinds.get(death.entity) else { continue };
+        if !bestiary.defs.get(kind.0).boss {
+            continue;
+        }
+        let fact = Fact::new(facts.boss_slain).about(u64::from(kind.0.raw()));
+        happened.write(Happened(fact));
+        let mut tracker = quests.tracker.clone();
+        if tracker.feed(&fact, &quests.defs).iter().any(|change| matches!(change, Change::QuestDone { victory: true, .. })) {
+            over.write(RunOver::won());
         }
     }
 ```

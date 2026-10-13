@@ -47,48 +47,8 @@ Those are filled by `update_viewsheds` in `FovPlugin`, which touches a region an
 
 ## Using it
 
-A game answers a `PortalRequest` however its own fiction says travel works, and corsair's answer is a warp to the middle of the chosen site's region, from wherever the player happens to be.
-
-<!-- include: ../../../../examples/corsair/src/main.rs:portals -->
-```rust,no_run
-/// Asks the engine to move the player to a discovered site when the
-/// overworld asks, from wherever the player is, a cave included.
-fn honour_portals(
-    mut requests: MessageReader<PortalRequest>,
-    mut warps: MessageWriter<WarpRequest>,
-    world: Res<WorldRes>,
-    mut tell: MessageWriter<Tell>,
-    player: Query<Entity, With<Player>>,
-) {
-    let Ok(entity) = player.single() else { return };
-    for req in requests.read() {
-        let Some(site) = world.sites().get(req.site) else { continue };
-        let target = world.region_tiles(site.position).center();
-        warps.write(WarpRequest { actor: entity, to: Destination::Surface(target) });
-        tell.write(Tell::new("The portal takes you.", Tones::NOTICE));
-    }
-}
-```
-
-The table of how each band looks is the part of turning the screen on that the plugin cannot default, and the numbering in it is the game's from end to end.
-
-<!-- include: ../../../../examples/corsair/src/content.rs:bands -->
-```rust,no_run
-    pub fn band_appearance(&self) -> BandAppearance {
-        let mut look = BandAppearance::new();
-        look.set(SEA, Cell::new('~', Color::srgb(0.2, 0.35, 0.7)).on(Color::srgb(0.03, 0.08, 0.2)));
-        look.set(LAKE, Cell::new('=', Color::srgb(0.3, 0.55, 0.9)));
-        look.set(BEACH, Cell::new(':', Color::srgb(0.85, 0.78, 0.5)));
-        look.set(GRASS, Cell::new('.', Color::srgb(0.35, 0.65, 0.3)));
-        look.set(JUNGLE, Cell::new('T', Color::srgb(0.15, 0.5, 0.2)));
-        look.set(DUNES, Cell::new(',', Color::srgb(0.85, 0.7, 0.4)));
-        look.set(MANGROVE, Cell::new('"', Color::srgb(0.3, 0.5, 0.4)));
-        look.set(HILL, Cell::new('n', Color::srgb(0.55, 0.6, 0.35)));
-        look.set(MOUNTAIN, Cell::new('A', Color::srgb(0.6, 0.55, 0.5)));
-        look.set(VOLCANO, Cell::new('^', Color::srgb(0.95, 0.95, 1.0)));
-        look
-    }
-```
+A game answers a `PortalRequest` however its own fiction says travel works, and the table of how each band looks is the part of turning the screen on that the plugin cannot default, its numbering the game's from end to end.
+No example game uses the overworld yet, so this page has no anchor to quote.
 
 ## The line
 

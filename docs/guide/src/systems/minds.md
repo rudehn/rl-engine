@@ -66,48 +66,35 @@ A follower keeps on the one actor its `Leader(Entity)` component names, seen or 
 
 ## Using it
 
-Heist's watch is a brain per kind, built from that kind's own fields, and a spawn that carries it.
+Foundry's roster is a brain per kind, built from that kind's own fields, and every monster of the kind is spawned carrying it.
 
-<!-- include: ../../../../examples/heist/src/main.rs:watch -->
+<!-- include: ../../../../examples/foundry/src/droids.rs:brains -->
 ```rust,no_run
-    fn load(names: &Names, faction: FactionId) -> Self {
-        let defs: Registry<WatchDef> = names.load(WATCH_RON).unwrap_or_else(|e| panic!("assets/watch.ron: {e}"));
-        let mut table = BandedTable::default();
         let mut brains = Vec::new();
-        for (id, def) in defs.iter() {
-            let (lo, hi, w, gmin, gmax) = def.spawn;
-            table.push(BandedEntry::new(id).bands(lo, hi).weight(w).group(gmin, gmax));
-            // Strike what is in reach, hunt what is seen, search where it was
-            // last seen; a watcher with hands relights the lamps on its round;
-            // otherwise drift.
-            let mut brain = Brain::new().then(MeleeAdjacent).then(Hunt).then(SearchLastKnown);
-            if def.wits.has(Wits::OPENS_DOORS) {
-                brain = brain.then(RelightLamps);
+        for (_, d) in defs.iter() {
+            let mut brain = Brain::new();
+            // First, since nothing a probe would otherwise do matters more
+            // than raising the alarm it has not raised yet.
+            if d.alarm.is_some() {
+                brain = brain.then(SignalAlarm);
             }
-            brains.push(Arc::new(brain.then(Wander { chance_pct: 30 })));
+            if d.melee.is_some() {
+                brain = brain.then(MeleeAdjacent);
+            }
+            if d.ranged.is_some() {
+                brain = brain.then(ShootAtRange::default());
+            }
+            if d.flee_at > 0 {
+                brain = brain.then(FleeWhenHurt { at_pct: d.flee_at });
+            }
+            brain = match (d.repairs, d.shadow) {
+                // A drone that rebuilds has nothing to hunt with.
+                (Some(_), _) => brain.then(RepairWrecks),
+                (None, Some(s)) => brain.then(Keep::enemies(s.keep_within, s.no_closer_than)).then(Hover),
+                (None, None) => brain.then(Hunt),
+            };
+            brains.push(Arc::new(brain.then(SearchLastKnown).then(KeepPost).then(Wander { chance_pct: 30 })));
         }
-        Self { defs, table, brains, faction }
-    }
-
-    fn spawn(&self, commands: &mut Commands, id: Id<WatchDef>, at: Point) -> Entity {
-        let d = self.defs.get(id);
-        commands
-            .spawn((
-                (Actor, Blocks, Kind(id), Position(at), Speed(d.speed), Faction(self.faction), Health::full(d.hp), Armor(d.armor)),
-                (
-                    MeleeAttack::new(d.kind.id(), d.attack),
-                    Perception(d.perception),
-                    DarkSight(d.dark_sight),
-                    Notice(d.notice),
-                    Hearing(d.hearing),
-                    Mind(self.brains[id.index()].clone()),
-                    Intelligence(d.wits),
-                    Name::new(d.name.clone()),
-                    Glyph::new(d.glyph, Color::srgb(d.color.0, d.color.1, d.color.2)).on_layer(5),
-                ),
-            ))
-            .id()
-    }
 ```
 
 ## The line

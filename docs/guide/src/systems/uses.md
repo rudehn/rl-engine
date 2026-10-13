@@ -68,7 +68,7 @@ A use is a trigger and what it costs is its charges, and Undermere's staffs are 
     // sheet's (L+1)d4 on average with less to it by luck, five turns of
     // poison, two of slowness, two cells to a blink and a blade to a
     // conjuring. Every bolt is seen to fly.
-    (name: "staff of firebolt", glyph: '/', color: (0.85, 0.45, 0.25), tags: ["staff"], effect_per_level: (amount: 2),
+    (name: "staff of firebolt", glyph: '/', color: (0.85, 0.45, 0.25), price: 250, tags: ["staff"], effect_per_level: (amount: 2),
      consumable: (charges: 0, per_level: 1, when_empty: Kept, recharge: 500),
      triggers: [(on: "use", targeting: (mode: Bolt(range: 8)), look: (glyph: '*', color: (r: 255, g: 120, b: 40)),
                  effects: [(kind: "Harm", args: (kind: "fire", roll: "1d4+1")), (kind: "Ignite", args: (turns: 3))])]),
