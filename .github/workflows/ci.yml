@@ -60,8 +60,15 @@ jobs:
         run: shopt -s nullglob; for page in docs/guide/src/systems/*.md; do scripts/check-systems-style.sh "$page"; done
       - name: clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+      # nextest pools every test in one run and skips doc-tests, which
+      # `cargo test --doc` runs.
       - name: tests
-        run: cargo test --workspace
+        run: cargo nextest run --workspace --profile ci
+      - name: doc-tests
+        run: cargo test --workspace --doc
       - name: the starter template generates and builds
         run: scripts/check-template.sh
       - name: doc tests and missing docs

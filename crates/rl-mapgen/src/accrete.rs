@@ -927,6 +927,7 @@ impl<C: BuildContext> Pass<C> for Accrete {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::testing::par_seeds;
     use rand::rngs::StdRng;
 
     fn stream(s: u64) -> StdRng {
@@ -1126,7 +1127,7 @@ pub(crate) mod tests {
     #[test]
     fn a_place_that_built_reached_its_open_share_and_one_that_did_not_failed() {
         let rig = rig();
-        for s in 0..40 {
+        par_seeds(0..40, |s| {
             for target in [38, 95] {
                 let mut pass = accrete(&rig, 3);
                 pass.open_pct = target;
@@ -1139,7 +1140,7 @@ pub(crate) mod tests {
                     Err(e) => assert_eq!(e.pass, "accrete", "seed {s}"),
                 }
             }
-        }
+        });
         // A share no place can reach fails, and does not hang.
         let mut pass = accrete(&rig, 3);
         pass.open_pct = 95;
@@ -1504,20 +1505,20 @@ pub(crate) mod tests {
         };
         let run =
             |s: u64, attempts: u32| Chain::new().then(pass()).run_retrying(|| BaseContext::blank(84, 48, rig.tiles.clone(), rig.wall), RunSeed(s), attempts);
-        let mut retried = 0;
-        for s in 0..40 {
+        let retried = std::sync::atomic::AtomicUsize::new(0);
+        par_seeds(0..40, |s| {
             let Some(first) = (1..=30).find(|n| run(s, *n).is_ok()) else { panic!("seed {s}: no attempt laid it") };
             if first == 1 {
-                continue;
+                return;
             }
-            retried += 1;
+            retried.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let failed = run(s, first - 1).expect_err("the attempts before it failed");
             assert!(failed.reason.contains("great hall"), "seed {s}: it failed for the piece: {failed}");
             let (laid, again) = (run(s, first).unwrap(), run(s, 30).unwrap());
             assert_eq!(laid.terrain(), again.terrain(), "seed {s}: the first attempt that laid it is the place");
             assert_eq!(again.outputs().iter::<Area>().filter(|a| a.shape == "great hall").count(), 1, "seed {s}");
-        }
-        assert!(retried > 0, "some seed needed a second attempt");
+        });
+        assert!(retried.into_inner() > 0, "some seed needed a second attempt");
     }
 
     #[test]

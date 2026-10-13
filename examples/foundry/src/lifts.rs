@@ -133,6 +133,7 @@ mod tests {
     use rl_engine::rl_core::RunSeed;
 
     use super::*;
+    use crate::testing::par_seeds;
 
     fn player(app: &mut App) -> Entity {
         app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap()
@@ -147,7 +148,7 @@ mod tests {
 
     #[test]
     fn going_through_each_lift_down_reaches_the_next_deck_and_the_last_has_none_over_a_span_of_seeds() {
-        for s in 0..6 {
+        par_seeds(0..6, |s| {
             let mut app = crate::testing::headless(RunSeed(s));
             crate::testing::settle(&mut app);
             let me = player(&mut app);
@@ -162,7 +163,7 @@ mod tests {
                 assert!(lift_to(&mut app, deck).is_some(), "seed {s}: deck {} has a lift back up", deck + 1);
             }
             assert_eq!(lift_to(&mut app, DECKS + 1), None, "seed {s}: the last deck has no lift down");
-        }
+        });
     }
 
     #[test]

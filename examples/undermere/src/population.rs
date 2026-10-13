@@ -667,7 +667,7 @@ mod tests {
 
     use super::*;
     use crate::dungeon::{TOWN, map_of};
-    use crate::testing::{adventurer, arrive, headless, sturdy};
+    use crate::testing::{adventurer, arrive, headless, par_seeds, sturdy};
 
     /// Whatever a floor's population stands that blocks, a camp's fire
     /// first among them, never stands between the way in and the way
@@ -677,7 +677,7 @@ mod tests {
     /// corridor on floor five, held every delve of it there for good.
     #[test]
     fn nothing_the_population_stands_cuts_the_way_in_off_from_the_way_down_over_a_span_of_seeds() {
-        for s in 0..50u64 {
+        par_seeds(0..50, |s| {
             let mut app = headless(RunSeed(s));
             let me = adventurer(&mut app);
             sturdy(&mut app, me);
@@ -708,7 +708,7 @@ mod tests {
                 }
                 assert!(seen.contains(&down), "seed {s}, floor {floor}: the way down at {down:?} is cut off from the way in at {entry:?}");
             }
-        }
+        });
     }
 
     /// A floor's worth of open ground, larger than any floor, with nothing
@@ -870,8 +870,8 @@ mod tests {
         }
         // For each, its favored kinds' monsters and every monster where it
         // was drawn, and the same where another was.
-        let mut tally: std::collections::BTreeMap<String, [(u32, u32); 2]> = std::collections::BTreeMap::new();
-        for s in 0..36 {
+        let tally: std::sync::Mutex<std::collections::BTreeMap<String, [(u32, u32); 2]>> = std::sync::Mutex::new(std::collections::BTreeMap::new());
+        par_seeds(0..36, |s| {
             let mut app = headless(RunSeed(s));
             watch(&mut app);
             arrive(&mut app, map_of(floor));
@@ -887,10 +887,12 @@ mod tests {
                 .collect();
             for biome in &band {
                 let ours = made.iter().filter(|m| biome.favored.iter().any(|f| f == *m)).count() as u32;
+                let mut tally = tally.lock().unwrap();
                 let side = &mut tally.entry(biome.name.clone()).or_default()[usize::from(biome.name != drawn)];
                 *side = (side.0 + ours, side.1 + made.len() as u32);
             }
-        }
+        });
+        let tally = tally.into_inner().unwrap();
         for (biome, [(here, of_here), (there, of_there)]) in &tally {
             assert!(*of_here > 0 && *of_there > 0, "{biome}: drawn and not drawn over the span: {tally:?}");
             let (share_here, share_there) = (f64::from(*here) / f64::from(*of_here), f64::from(*there) / f64::from(*of_there));
@@ -1167,8 +1169,8 @@ mod tests {
     /// span of seeds since the dressing itself is a coin flip.
     #[test]
     fn a_goblin_camp_holds_a_fire_its_followers_asleep_and_its_leader_keeping_the_watch_over_a_span_of_seeds() {
-        let mut camps = 0;
-        for s in 0..40u64 {
+        let camps = std::sync::atomic::AtomicUsize::new(0);
+        par_seeds(0..40, |s| {
             let mut app = headless(RunSeed(s));
             let me = adventurer(&mut app);
             sturdy(&mut app, me);
@@ -1182,7 +1184,7 @@ mod tests {
             let has_fire =
                 world.query::<(&PropKind, &OnMap, &Position)>().iter(world).any(|(k, on, at)| k.0 == fire_id && on.0 == map && !laid.contains(&at.0));
             if !has_fire {
-                continue;
+                return;
             }
             let (goblin_id, band) = {
                 let bestiary = app.world().resource::<Bestiary>();
@@ -1208,9 +1210,9 @@ mod tests {
                 assert!(sleeps(*follower), "seed {s}: a camp's own follower sleeps");
             }
             assert!(!sleeps(leader), "seed {s}: the leader keeps the watch, awake");
-            camps += 1;
-        }
-        assert!(camps > 0, "some seed over the span dressed its goblin band as a camp");
+            camps.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        });
+        assert!(camps.into_inner() > 0, "some seed over the span dressed its goblin band as a camp");
     }
 
     /// A feeding ground: a beast stands over its prey's own

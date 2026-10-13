@@ -243,7 +243,8 @@ mod tests {
 
     use super::*;
     use crate::dungeon::{FLOORS, map_of};
-    use crate::testing::{adventurer, arrive, headless, said};
+    use crate::testing::{adventurer, arrive, headless, par_seeds, said};
+    use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 
     /// A line is never drawn twice while the pool holds an unused one,
     /// and a pool of one line is read from forever after its one line is
@@ -271,7 +272,7 @@ mod tests {
     /// same line, across as many floors as the seed range gives one.
     #[test]
     fn a_remains_reads_the_same_line_twice_and_no_two_remains_in_a_run_share_one() {
-        for s in 0..24u64 {
+        par_seeds(0..24, |s| {
             let mut app = headless(RunSeed(s));
             let me = adventurer(&mut app);
             let mut lines_this_run = Vec::new();
@@ -302,7 +303,7 @@ mod tests {
             }
             let distinct: BTreeSet<&String> = lines_this_run.iter().collect();
             assert_eq!(distinct.len(), lines_this_run.len(), "seed {s}: a line given to two remains in one run: {lines_this_run:?}");
-        }
+        });
     }
 
     /// A floor holding a piece `Writings::feelings` names says it on
@@ -310,8 +311,8 @@ mod tests {
     /// trap of the same kind is no piece, and a floor does not give it away.
     #[test]
     fn a_floor_with_a_feeling_piece_says_it_on_arrival_and_one_without_says_none() {
-        let (mut told_one, mut told_none) = (false, false);
-        for s in 0..40u64 {
+        let (told_one, told_none) = (AtomicBool::new(false), AtomicBool::new(false));
+        par_seeds(0..40, |s| {
             let mut app = headless(RunSeed(s));
             adventurer(&mut app);
             for f in 1..FLOORS {
@@ -343,14 +344,14 @@ mod tests {
                     .any(|(k, ..)| feeling_ids.contains(&k.0));
                 if holds_a_feeling_prop {
                     assert!(said_a_feeling, "seed {s}, floor {f}: a feeling piece stands here, unannounced");
-                    told_one = true;
+                    told_one.store(true, Relaxed);
                 } else {
                     assert!(!said_a_feeling, "seed {s}, floor {f}: a feeling said with no feeling piece here");
-                    told_none = true;
+                    told_none.store(true, Relaxed);
                 }
             }
-        }
-        assert!(told_one, "no seed in the range held a feeling piece at all");
-        assert!(told_none, "no seed in the range held a floor with none");
+        });
+        assert!(told_one.into_inner(), "no seed in the range held a feeling piece at all");
+        assert!(told_none.into_inner(), "no seed in the range held a floor with none");
     }
 }

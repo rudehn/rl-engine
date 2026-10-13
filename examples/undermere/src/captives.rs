@@ -134,14 +134,14 @@ mod tests {
 
     use super::*;
     use crate::dungeon::{captive_floor, floor_of, map_of};
-    use crate::testing::{adventurer, arrive, headless, sturdy};
+    use crate::testing::{adventurer, arrive, headless, par_seeds, sturdy};
 
     /// Every floor the run's captive did not draw holds none, and the one
     /// it drew holds exactly one, neutral to the adventurer, shackled in
     /// place and offering to be freed.
     #[test]
     fn exactly_one_floor_a_run_draws_holds_one_shackled_captive_offering_to_be_freed_over_a_span_of_seeds() {
-        for s in 0..8u64 {
+        par_seeds(0..8, |s| {
             let mut app = headless(RunSeed(s));
             let me = adventurer(&mut app);
             sturdy(&mut app, me);
@@ -169,7 +169,7 @@ mod tests {
                 }
             }
             assert_eq!(seen, 1, "seed {s}: the one floor the run drew");
-        }
+        });
     }
 
     /// A run continued on the floor whose captive is still shackled finds

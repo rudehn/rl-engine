@@ -1,0 +1,10 @@
+# nextest pools every test of the workspace, so the wall time of a run is set
+# by its longest tests: a test that runs past the slow period is named while
+# the run is still going, and is the next one to make faster.
+[profile.default]
+slow-timeout = { period = "30s" }
+
+# CI reports every failure of a run, not only the first.
+[profile.ci]
+fail-fast = false
+slow-timeout = { period = "30s" }

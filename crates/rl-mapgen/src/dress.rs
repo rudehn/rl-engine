@@ -491,9 +491,11 @@ mod tests {
     use crate::loops::OpenLoops;
     use crate::secrets::HideOpenings;
     use crate::survey::Survey;
+    use crate::testing::par_seeds;
     use rl_core::{Grid2D, RunSeed};
     use rl_grid::{CostSource, DijkstraMap, PathRules, TileProps};
     use std::collections::BTreeSet;
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
     /// The key the test dressing's slots carry.
     const KEY: u32 = 7;
@@ -868,17 +870,17 @@ mod tests {
         let span = wet_tiles.register(TileProps::floor("span")).unwrap();
         let ponds = Lakes { name: "ponds", tile: water, count: (2, 5), size: (20, 70), wreath: Some((shore, 60)), cut: false, within: Vec::new() };
         let bridges = Bridges { name: "bridges", across: water, tile: span, longest: 6, detour: 20 };
-        let (mut caves, mut crosses, mut secrets, mut lakes, mut spans) = (0, 0, 0, 0, 0);
+        let (caves, crosses, secrets, lakes, spans) = (AtomicUsize::new(0), AtomicUsize::new(0), AtomicUsize::new(0), AtomicUsize::new(0), AtomicUsize::new(0));
         for (w, h, seeds, wet) in [(84, 48, 0..200, false), (160, 90, 0..30, false), (84, 48, 0..60, true), (160, 90, 0..8, true)] {
-            for s in seeds {
+            par_seeds(seeds, |s| {
                 let chain = Chain::new().then(grow(&r)).then(OpenLoops { door: r.door, min_detour: 20, max: 6 });
                 let chain = if wet { chain.then(ponds.clone()).then(bridges) } else { chain };
                 let chain = chain.then(RandomStart).then(FarthestExit).then(Survey).then(hide).then(pass.clone());
                 let tiles = if wet { &wet_tiles } else { &r.tiles };
                 let ctx =
                     chain.run_retrying(|| BaseContext::blank(w, h, tiles.clone(), r.wall), RunSeed(s), 20).unwrap_or_else(|e| panic!("{w}x{h} seed {s}: {e}"));
-                lakes += ctx.outputs().iter::<crate::lakes::Lake>().count();
-                spans += ctx.outputs().iter::<Bridge>().count();
+                lakes.fetch_add(ctx.outputs().iter::<crate::lakes::Lake>().count(), Relaxed);
+                spans.fetch_add(ctx.outputs().iter::<Bridge>().count(), Relaxed);
                 let got = slots(&ctx);
                 let stood: Vec<Point> =
                     got.iter().map(|(_, p)| *p).chain((0..w * h).map(|i| Point::new(i % w, i / w)).filter(|p| ctx.terrain().get(*p) == Some(pillar))).collect();
@@ -909,12 +911,13 @@ mod tests {
                 assert!(stranded.is_empty(), "{w}x{h} seed {s}: cells no walk from the start reaches, every secret found: {stranded:?}");
                 let dressed: Vec<usize> = ctx.outputs().iter::<Dressed>().map(|d| d.area).collect();
                 let shape = |i: usize| ctx.outputs().iter::<Area>().find(|a| a.index == i).unwrap().shape.clone();
-                caves += dressed.iter().filter(|i| shape(**i) == "hollow" || shape(**i) == "cavern").count();
-                crosses += dressed.iter().filter(|i| shape(**i) == "cross").count();
+                caves.fetch_add(dressed.iter().filter(|i| shape(**i) == "hollow" || shape(**i) == "cavern").count(), Relaxed);
+                crosses.fetch_add(dressed.iter().filter(|i| shape(**i) == "cross").count(), Relaxed);
                 assert!(dressed.iter().all(|i| shape(*i) != "run"), "{w}x{h} seed {s}: a passage holds nothing");
-                secrets += ctx.outputs().iter::<Secret>().count();
-            }
+                secrets.fetch_add(ctx.outputs().iter::<Secret>().count(), Relaxed);
+            });
         }
+        let (caves, crosses, secrets, lakes, spans) = (caves.into_inner(), crosses.into_inner(), secrets.into_inner(), lakes.into_inner(), spans.into_inner());
         assert!(
             caves > 100 && crosses > 50 && secrets > 100 && lakes > 50 && spans > 5,
             "caves {caves}, crosses {crosses}, secrets {secrets}, lakes {lakes} and bridges {spans} dressed beside, or this proves little"

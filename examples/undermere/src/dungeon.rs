@@ -1491,7 +1491,7 @@ mod tests {
         };
         let shallow_first: Vec<u32> = (1..=FLOORS).collect();
         let deep_first: Vec<u32> = (1..=FLOORS).rev().collect();
-        for s in 0..3 {
+        par_seeds(0..3, |s| {
             let (a, b) = (Undermere::new(RunSeed(s)), Undermere::new(RunSeed(s)));
             let (built_a, built_b) = (build_all(&a, &shallow_first), build_all(&b, &deep_first));
             for floor in 1..=FLOORS {
@@ -1500,7 +1500,7 @@ mod tests {
                 assert_eq!(names(&a), names(&b), "seed {s}, floor {floor}: the picks");
                 assert!(built_a[&floor] == built_b[&floor], "seed {s}, floor {floor}: built otherwise for being built after floor ten");
             }
-        }
+        });
     }
 
     /// Over a span of seeds: no entry is ever drawn past its own `per_run`
@@ -1522,9 +1522,9 @@ mod tests {
     fn over_a_span_of_seeds_no_run_exceeds_a_limit_every_entry_is_drawn_and_a_typical_run_picks_under_half_the_flavor_pool() {
         let pool = crate::prefabs::load(&registry(), &layout()).1;
         let flavor_pool = pool.entries.iter().filter(|e| pool.kinds[e.kind] == "flavor").count();
-        let mut ever_drawn: BTreeSet<String> = BTreeSet::new();
-        let mut seen: Vec<usize> = Vec::new();
-        for s in 0..500 {
+        let ever_drawn: std::sync::Mutex<BTreeSet<String>> = std::sync::Mutex::new(BTreeSet::new());
+        let seen: std::sync::Mutex<Vec<usize>> = std::sync::Mutex::new(Vec::new());
+        par_seeds(0..500, |s| {
             let undermere = Undermere::new(RunSeed(s));
             let mut run_counts: BTreeMap<usize, u32> = BTreeMap::new();
             let mut flavor_this_run: BTreeSet<usize> = BTreeSet::new();
@@ -1532,7 +1532,7 @@ mod tests {
                 for pick in undermere.plan_of(floor) {
                     *run_counts.entry(pick.entry).or_default() += 1;
                     let entry = &undermere.pool.entries[pick.entry];
-                    ever_drawn.insert(entry.name.clone());
+                    ever_drawn.lock().unwrap().insert(entry.name.clone());
                     if undermere.pool.kinds[entry.kind] == "flavor" {
                         flavor_this_run.insert(pick.entry);
                     }
@@ -1543,8 +1543,9 @@ mod tests {
                 assert!(count <= per_run, "seed {s}: {:?} drawn {count} times in one run, past its per_run of {per_run}", undermere.pool.entries[entry].name);
             }
             assert!(flavor_this_run.len() <= 25, "seed {s}: {} of {flavor_pool} flavor entries in one run", flavor_this_run.len());
-            seen.push(flavor_this_run.len());
-        }
+            seen.lock().unwrap().push(flavor_this_run.len());
+        });
+        let (ever_drawn, mut seen) = (ever_drawn.into_inner().unwrap(), seen.into_inner().unwrap());
         seen.sort_unstable();
         let typical = seen[seen.len() / 2];
         assert!(typical * 2 < flavor_pool, "the median run sees {typical} of {flavor_pool} flavor entries, not under half");

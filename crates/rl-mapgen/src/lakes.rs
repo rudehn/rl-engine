@@ -1063,8 +1063,8 @@ mod tests {
     /// and the next attempt of the same seed grows one that can be.
     #[test]
     fn a_place_left_in_parts_is_grown_again() {
-        let mut retried = 0;
-        for s in 0..30 {
+        let retried = AtomicUsize::new(0);
+        par_seeds(0..30, |s| {
             let short = |c: Chain<BaseContext>, r: &Rig| c.then(islands(r)).then(Bridges { longest: 2, ..bridges(r) });
             // Growth may fail a first attempt of its own; only the ones the
             // bridges failed are the case here.
@@ -1073,10 +1073,10 @@ mod tests {
             {
                 let ctx = attempt(s, SIZES[0], false, 40, short).unwrap_or_else(|e| panic!("seed {s}: {e}"));
                 assert_eq!(parts(&ctx, ctx.terrain()), 1, "seed {s}");
-                retried += 1;
+                retried.fetch_add(1, Relaxed);
             }
-        }
-        assert!(retried > 0, "no first attempt was left in parts");
+        });
+        assert!(retried.into_inner() > 0, "no first attempt was left in parts");
     }
 
     /// Each laking draws from its own name's stream, so a chain may hold

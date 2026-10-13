@@ -558,7 +558,8 @@ mod tests {
 
     use super::*;
     use crate::dungeon::{Undermere, map_of};
-    use crate::testing::{arena_on, arrive, clear_monsters, here, monster, pass_turns, said, settle, stand_on, sturdy};
+    use crate::testing::{arena_on, arrive, clear_monsters, here, monster, par_seeds, pass_turns, said, settle, stand_on, sturdy};
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
     /// How many openings of each kind `built` hid: its secret doors and its
     /// hidden rooms, told by what each opens.
@@ -582,8 +583,8 @@ mod tests {
     /// more hidden rooms than two; nothing hidden on the throne's floor.
     #[test]
     fn secret_doors_and_hidden_rooms_by_depth_over_seeds() {
-        let (mut floors, mut with_doors) = (0, 0);
-        for s in 0..24 {
+        let (floors, with_doors) = (AtomicUsize::new(0), AtomicUsize::new(0));
+        par_seeds(0..24, |s| {
             let undermere = Undermere::new(RunSeed(s));
             let tables = undermere.tiles().tables();
             for floor in 1..=FLOORS {
@@ -595,12 +596,13 @@ mod tests {
                     FLOORS => assert!(built.secrets.is_empty(), "seed {s}: something hidden on the throne's floor"),
                     _ => {
                         assert!(doors <= 3, "floor {floor}, seed {s}: {doors} secret doors");
-                        floors += 1;
-                        with_doors += usize::from(doors > 0);
+                        floors.fetch_add(1, Relaxed);
+                        with_doors.fetch_add(usize::from(doors > 0), Relaxed);
                     }
                 }
             }
-        }
+        });
+        let (floors, with_doors) = (floors.into_inner(), with_doors.into_inner());
         assert!(with_doors * 10 >= floors * 8, "only {with_doors} of {floors} floors from two on have a secret door");
     }
 
@@ -653,8 +655,8 @@ mod tests {
     fn traps_and_flagstones_by_depth_over_seeds() {
         let hiding = Hiding::load();
         let flagstone = hiding.flagstones.prop.as_str();
-        let (mut short, mut floors) = (0, 0);
-        for s in 0..24 {
+        let (short, floors) = (AtomicUsize::new(0), AtomicUsize::new(0));
+        par_seeds(0..24, |s| {
             let undermere = Undermere::new(RunSeed(s));
             for floor in 1..=FLOORS {
                 let built = undermere.build(map_of(floor), None).unwrap();
@@ -667,8 +669,8 @@ mod tests {
                 }
                 let band = hiding.traps.counts.iter().find(|c| (c.floors.0..=c.floors.1).contains(&floor)).expect("every floor has a band");
                 assert!(traps.len() as u32 <= band.count.1, "floor {floor}, seed {s}: {} traps", traps.len());
-                floors += 1;
-                short += usize::from((traps.len() as u32) < band.count.0);
+                floors.fetch_add(1, Relaxed);
+                short.fetch_add(usize::from((traps.len() as u32) < band.count.0), Relaxed);
                 for name in &traps {
                     let kind = hiding.traps.kinds.iter().find(|k| k.prop == *name).expect("a kind the file names");
                     assert!(kind.on(floor), "floor {floor}, seed {s}: a {name} laid outside its floors");
@@ -676,7 +678,8 @@ mod tests {
                 assert!(floor != 9 || !traps.contains(&"trapdoor"), "seed {s}: a trapdoor on floor nine");
                 assert!(stones as u32 <= hiding.flagstones.count.1, "floor {floor}, seed {s}: {stones} flagstones");
             }
-        }
+        });
+        let (short, floors) = (short.into_inner(), floors.into_inner());
         assert!(short * 10 <= floors, "{short} of {floors} floors had fewer traps than their band's fewest");
     }
 
@@ -687,7 +690,7 @@ mod tests {
     #[test]
     fn every_trap_is_on_a_walkable_cell_off_the_stairs_and_every_hidden_thing_is_reached_once_the_secrets_are_found() {
         let hiding = Hiding::load();
-        for s in 0..24 {
+        par_seeds(0..24, |s| {
             let undermere = Undermere::new(RunSeed(s));
             let tables = undermere.tiles().tables();
             for floor in 1..FLOORS {
@@ -718,7 +721,7 @@ mod tests {
                     assert!(geometry::chebyshev(at, built.entry) > MIN_DISTANCE_FROM_ENTRY, "floor {floor}, seed {s}: the {name} is by the way in");
                 }
             }
-        }
+        });
     }
 
     /// Stands a `name` at `at` on the place being read, hidden so no roll
@@ -881,8 +884,8 @@ mod tests {
     fn each_secret_is_told_by_what_finding_it_opens_over_seeds() {
         let hiding = Hiding::load();
         let (door, room) = (hiding.secret_doors.spot, hiding.hidden_rooms.spot);
-        let mut told = BTreeSet::new();
-        for s in 0..24 {
+        let told = std::sync::Mutex::new(BTreeSet::new());
+        par_seeds(0..24, |s| {
             let undermere = Undermere::new(RunSeed(s));
             for floor in 1..FLOORS {
                 let built = undermere.build(map_of(floor), None).unwrap();
@@ -897,10 +900,11 @@ mod tests {
                     if door != room {
                         assert_eq!(spot, want, "floor {floor}, seed {s}: group {group} told as a {kind:?}");
                     }
-                    told.insert(kind);
+                    told.lock().unwrap().insert(kind);
                 }
             }
-        }
+        });
+        let told = told.into_inner().unwrap();
         assert!(told.contains(&SecretKind::Door) && told.contains(&SecretKind::Room), "both doors and rooms over the span: {told:?}");
     }
 }

@@ -278,6 +278,7 @@ pub fn wreck_the_dead(mut commands: Commands, mut left: MessageReader<RemainsLef
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::par_seeds;
     use rl_engine::rl_core::RunSeed;
 
     /// A crate in a doorway is a room sealed shut and everything in it
@@ -288,7 +289,7 @@ mod tests {
     /// it shut off the two cells beside it and nothing noticed.
     #[test]
     fn a_prop_that_blocks_never_seals_off_anything_the_deck_could_reach_over_a_span_of_seeds() {
-        for seed in 1..=6u64 {
+        par_seeds(1..7, |seed| {
             let mut app = crate::testing::headless(RunSeed(seed));
             for deck in 1..=crate::decks::DECKS {
                 crate::testing::arrive_on(&mut app, deck);
@@ -312,7 +313,7 @@ mod tests {
                 let lost: Vec<Point> = open.difference(&with_props).filter(|p| !blockers.contains(p)).copied().collect();
                 assert!(lost.is_empty(), "seed {seed}, deck {deck}: props cut off {} cells, first {:?}", lost.len(), lost.first());
             }
-        }
+        });
     }
 
     /// Every prop slot on every deck, an armory's `A`, a store's two `L`s
@@ -324,8 +325,8 @@ mod tests {
     #[test]
     fn every_prop_slot_on_every_deck_holds_its_prop_over_a_span_of_seeds() {
         use rl_engine::rl_rules::prefab::Slot;
-        let mut checked = 0;
-        for seed in 1..=6u64 {
+        let checked = std::sync::atomic::AtomicUsize::new(0);
+        par_seeds(1..7, |seed| {
             let mut app = crate::testing::headless(RunSeed(seed));
             for deck in 1..=crate::decks::DECKS {
                 crate::testing::arrive_on(&mut app, deck);
@@ -342,10 +343,11 @@ mod tests {
                     let Some(Slot::Prop(kind)) = slot else { continue };
                     let glyph = char::from_u32(spot.tag).unwrap_or('?');
                     assert!(standing.contains(&(spot.at, *kind)), "seed {seed}, deck {deck}: '{glyph}' at {:?} holds no prop of its kind", spot.at);
-                    checked += 1;
+                    checked.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 }
             }
-        }
+        });
+        let checked = checked.into_inner();
         assert!(checked >= 6 * 10 * 3, "every deck's armory and two store crates were checked, not {checked}");
     }
 
