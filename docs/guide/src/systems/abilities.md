@@ -77,48 +77,37 @@ A thrown knife and a bolt stop at the same first wall or body, and each hangs in
 
 ## Using it
 
-A verb the engine does not ship is a type with two impls and one registration line, which is Corsair's `Plunder`.
+A verb the engine does not ship is a type with two impls and one registration line, which is Undermere's `Steal`.
 
-<!-- include: ../../../../examples/corsair/src/abilities.rs:plunder -->
+<!-- include: ../../../../examples/undermere/src/tricks/minds.rs:steal -->
 ```rust,no_run
-/// Shake a foe down: whatever is in its purse spills onto the ground at its
-/// feet, to be picked up like any other loot.
-///
-/// A purse is Corsair's, not the engine's, so no engine effect could reach
-/// it; this one reaches it through `commands`, which is the whole of the
-/// escape hatch. It spills rather than pockets because a stack on the ground
-/// merges into the bag through the engine's own pick-up, and an effect that
-/// merged stacks itself would be a second copy of that rule.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct Plunder;
+/// Takes a random thing its target carries but does not wear, then marks
+/// the taker [`Stole`] so its brain flees with it: a monkey's `stealing`.
+/// Takes no arguments.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Steal;
 
-impl Effect for Plunder {
-    fn describe(&self, _: &Registries, _: EffectBonus) -> String {
-        "spills its purse at its feet".to_string()
+impl Effect for Steal {
+    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+        let (thief, targets, landing) = (landing.user, landing.targets.clone(), landing.clone());
+        world.commands.queue(move |world: &mut World| {
+            let took = targets.iter().any(|victim| steal(world, thief, *victim));
+            if !took {
+                crate::effects::showed_nothing(world, &landing);
+            }
+        });
     }
 
-    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
-        for target in landing.targets.clone() {
-            world.commands.queue(move |w: &mut World| {
-                let Some(coin) = w.get::<Purse>(target).map(|p| p.0).filter(|n| *n > 0) else { return };
-                let Some(at) = w.get::<Position>(target).map(|p| p.0) else { return };
-                w.entity_mut(target).insert(Purse(0));
-                w.resource_scope(|w: &mut World, armory: Mut<Armory>| {
-                    let mut queue = bevy::ecs::world::CommandQueue::default();
-                    let mut commands = Commands::new(&mut queue, w);
-                    armory.spawn(&mut commands, armory.defs.expect("doubloon"), coin, Some(at));
-                    queue.apply(w);
-                });
-            });
-        }
+    fn describe(&self, _: &Registries, _: EffectBonus) -> String {
+        "takes something it is not wearing, then runs".to_string()
     }
 }
 
-impl FromArgs for Plunder {
-    const KIND: &'static str = "Plunder";
+impl FromArgs for Steal {
+    const KIND: &'static str = "Steal";
 
-    fn from_args(_: &RawValue, _: &Names<'_>) -> Result<Self, String> {
-        Ok(Plunder)
+    fn from_args(args: &RawValue, _: &Names<'_>) -> Result<Self, String> {
+        crate::effects::moving::no_args(args, Self::KIND).map(|_| Self)
     }
 }
 ```

@@ -63,7 +63,9 @@ A game's place builder is a chain with the recipe's passes at either end of it, 
         let deck = deck_of(map);
         // One stream per deck, so building deck 2 first does not change deck 1.
         let seed = RunSeed(self.seed.0 ^ (deck as u64) << 32);
-        let grown = rl_engine::rl_bevy::layout::passes(&self.layout, recipe_of(deck), self.deck, self.hatch)?;
+        // Foundry grows no locked or sealed piece, so its hatch stands for both.
+        let tiles = LayoutTiles { floor: self.deck, door: self.hatch, locked: self.hatch, sealed: self.hatch };
+        let grown = rl_engine::rl_bevy::layout::passes(&self.layout, recipe_of(deck), &tiles)?;
         let (width, height) = grown.size;
         let mut chain = Chain::new()
             .then(grown.accrete)

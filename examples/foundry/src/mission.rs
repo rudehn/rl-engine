@@ -3,8 +3,7 @@
 //! opening a pick of its own once its console is set.
 //!
 //! [`load`] turns `assets/quests.ron` into a [`Quests`] and the one
-//! [`Facts`] kind it counts, the way `examples/corsair/src/quests.rs`
-//! does for its own, larger vocabulary; Foundry's objective vocabulary is
+//! [`Facts`] kind it counts; Foundry's objective vocabulary is
 //! one variant, `On::ChargeSet`. [`spawn_console_on_arrival`] plants the
 //! reactor console on the `R` mark of any deck that reports one, beside the
 //! loot the engine scatters on the same arrival
@@ -87,8 +86,7 @@ pub fn load(registries: &Registries) -> (Quests, Facts) {
     (Quests::new(defs), facts)
 }
 
-/// The tasks in `text`, the way `examples/corsair/src/quests.rs`'s own
-/// `tasks` builds theirs.
+/// The tasks in `text`.
 fn tasks(text: &str, names: &Names, facts: &Facts) -> Result<Registry<QuestDef>, ContentError> {
     let authored: Registry<QuestRon> = names.load(text)?;
     authored.validate(|q, all| {
@@ -231,8 +229,8 @@ pub fn offer_the_pick(
     }
 }
 
-/// Ends the run won when the tracker reports the victory quest done, the
-/// way Corsair's quests end its runs: the win is the mission's, written in
+/// Ends the run won when the tracker reports the victory quest done: the
+/// win is the mission's, written in
 /// `quests.ron`, not a system that knows which quest is last. In `Update`
 /// beside [`offer_the_pick`], for the same reason.
 pub fn answer_victory(mut changes: MessageReader<QuestChange>, mut over: MessageWriter<RunOver>) {

@@ -4,14 +4,14 @@
 //!
 //! Used from the pack, a waystone lands [`CallGate`], which sets the
 //! adventurer kneeling: the engine's `Work` of the kind [`CALLING`],
-//! [`KNEEL`] turns long, the use itself the first. The engine carries on a
-//! mind's work for it and leaves the player's to the game, so [`kneel`]
-//! spends each of the adventurer's turns on it until it is done, whatever
-//! key is pressed, as a status that holds spends them: kneeling is ten
-//! quiet turns promised. Any harm breaks it off, by the engine's own
-//! `break_work`, and [`broken_off`] says so. The stone is kept, since it is
-//! spent only when the call is answered, which makes it a trip home from a
-//! quiet room and never an escape from a fight.
+//! [`KNEEL`] turns long, the use itself the first. The engine spends the
+//! rest of the turns for them, as it does any of the player's work, paced
+//! to be watched, and breaks it off as it breaks off any: a blow that
+//! lands, a foe coming into sight, a key pressed or a turn spent on
+//! anything else, each of which [`broken_off`] says. The stone is kept,
+//! since it is spent only when the call is answered, which makes it a trip
+//! home from a quiet room and never an escape from a fight: a foe that
+//! comes into sight ends it before it can strike.
 //!
 //! Answered, [`answer_the_call`] spends one stone, stands a [`GATE_MARK`]
 //! where the adventurer knelt, taking up the last one so there is only ever
@@ -40,7 +40,7 @@ use rl_engine::prelude::*;
 use rl_engine::rl_bevy::{BreakReason, Spent, WorkBroken, Works};
 use rl_engine::rl_core::turn::BASE_ACTION_COST;
 use rl_engine::rl_rules::ability::RawValue;
-use rl_engine::rl_rules::work::{Progress, Work};
+use rl_engine::rl_rules::work::Work;
 
 use crate::armory::{Armory, ItemKind};
 use crate::dungeon::{TOWN, map_of};
@@ -141,39 +141,10 @@ pub fn refuse_at_home(
     }
 }
 
-/// The adventurer at work, while they hold the turn.
-type Kneeling<'w, 's> = Query<'w, 's, (Entity, &'static mut Working), (With<Player>, With<MyTurn>)>;
-
-/// Spends the adventurer's turn on the work in hand, for as long as they
-/// are at it, and finishes it on its last: what the engine does for a
-/// mind's work and leaves to the game for the player's.
-///
-/// In `DecideSet::Game`, after a status that holds has taken the turn in
-/// `DecideSet::Sense`, so a turn lost to one is no turn of work. Claims
-/// the decision and the action both, so a key pressed while kneeling
-/// resolves to nothing, as it does while asleep.
-pub fn kneel(
-    mut commands: Commands,
-    mut acting: ResMut<Acting>,
-    mut spent: MessageWriter<ActionDone>,
-    mut done: MessageWriter<WorkDone>,
-    mut working: Kneeling,
-) {
-    for (me, mut work) in &mut working {
-        if !acting.claim_decision(me) || !acting.claim_action(me) {
-            continue;
-        }
-        if work.0.advance() == Progress::Finished {
-            commands.entity(me).remove::<Working>();
-            done.write(WorkDone { actor: me, kind: work.0.kind, target: work.0.target });
-        }
-        spent.write(ActionDone { actor: me, cost: BASE_ACTION_COST });
-    }
-}
-
-/// Says so when the adventurer's call is broken off, by harm or by the
-/// game: the gate does not come, and the stone is still theirs. Nothing
-/// for a death, which says enough.
+/// Says so when the adventurer's call is broken off, whatever broke it:
+/// harm, a foe in sight, the adventurer's own key or step, or the game.
+/// The gate does not come, and the stone is still theirs. Nothing for a
+/// death, which says enough.
 ///
 /// In `TurnSet::React`, where the engine breaks the work off.
 pub fn broken_off(mut broken: MessageReader<WorkBroken>, kinds: Res<WorkKinds>, players: Query<(), With<Player>>, mut tell: MessageWriter<Tell>) {
@@ -349,6 +320,37 @@ mod tests {
         steps.0.extend(stepped.read().copied());
     }
 
+    /// Every work broken off in the run, kept for a test to read.
+    #[derive(Resource, Default)]
+    struct Broken(Vec<WorkBroken>);
+
+    fn record_broken(mut broken: MessageReader<WorkBroken>, mut seen: ResMut<Broken>) {
+        seen.0.extend(broken.read().copied());
+    }
+
+    /// A foe coming into sight while the adventurer kneels breaks the call
+    /// off before it can strike: they look up, as from any work, the stone
+    /// is kept, no mark is left and the log says so.
+    #[test]
+    fn a_foe_coming_into_sight_while_kneeling_breaks_the_call_off_and_the_stone_is_kept() {
+        for s in 0..3 {
+            let (mut app, me, knelt) = arena_on(s, 2);
+            app.init_resource::<Broken>().add_systems(Turn, record_broken.in_set(TurnSet::Cleanup));
+            let stone = stone(&app, me);
+            app.world_mut().write_message(Intent::new(me, UseItem(stone)));
+            app.update();
+            monster(&mut app, "goblin", knelt.offset(3, 0));
+            for _ in 0..30 {
+                app.update();
+            }
+            let reasons: Vec<BreakReason> = app.world().resource::<Broken>().0.iter().map(|b| b.reason).collect();
+            assert_eq!(reasons, [BreakReason::FoeSighted], "seed {s}: broken off by the sight of it, not by its blow");
+            assert!(said(&app).iter().any(|l| l.starts_with("Your call is broken off")), "seed {s}: {:#?}", said(&app));
+            assert_eq!((here(&app), stones(&app, me)), (map_of(2), 1), "seed {s}: still below, the stone kept");
+            assert!(marks(&mut app).is_empty(), "seed {s}: no mark left");
+        }
+    }
+
     #[test]
     fn the_kit_holds_one_waystone() {
         let mut app = headless(RunSeed(0));
@@ -409,18 +411,24 @@ mod tests {
         }
     }
 
-    /// A step asked for while kneeling is never taken: the turn is the
-    /// kneeling's, as it is a sleeper's, and the kneeling goes on to its end.
+    /// A step asked for while kneeling is taken: the adventurer stands up
+    /// and walks, the call is left off, the stone is kept and no gate
+    /// comes, so no key the player meant is swallowed by the kneeling.
     #[test]
-    fn a_step_asked_for_while_kneeling_is_not_taken_and_the_kneeling_goes_on() {
-        let (mut app, me, _) = arena_on(4, 2);
+    fn a_step_asked_for_while_kneeling_leaves_the_kneeling_off_and_is_taken() {
+        let (mut app, me, knelt) = arena_on(4, 2);
         app.init_resource::<Steps>().add_systems(Turn, record_steps.in_set(TurnSet::Record));
-        let calling = app.world().resource::<WorkKinds>().get(CALLING).expect("declared");
-        app.world_mut().entity_mut(me).insert(Working(Work::new(calling, 3)));
+        app.init_resource::<Broken>().add_systems(Turn, record_broken.in_set(TurnSet::Cleanup));
+        use_stone(&mut app, me);
+        assert!(app.world().get::<Working>(me).is_some(), "kneeling");
         app.world_mut().write_message(Intent::new(me, Bump(Direction::East)));
         settle(&mut app);
-        assert!(app.world().resource::<Steps>().0.is_empty(), "no step taken");
-        assert!(app.world().get::<Working>(me).is_none(), "the kneeling went on to its end");
+        assert_eq!(app.world().resource::<Steps>().0.iter().filter(|s| s.actor == me).count(), 1, "the step taken");
+        assert_eq!(crate::testing::at(&app, me), knelt.offset(1, 0), "and the adventurer stands where it led");
+        let reasons: Vec<BreakReason> = app.world().resource::<Broken>().0.iter().map(|b| b.reason).collect();
+        assert_eq!(reasons, [BreakReason::LeftOff], "the call left off");
+        wait_for_home(&mut app);
+        assert_eq!((here(&app), stones(&app, me)), (map_of(2), 1), "still below, the stone kept");
     }
 
     /// Ten quiet turns of kneeling bring the adventurer home: onto the

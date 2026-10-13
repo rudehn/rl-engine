@@ -42,7 +42,7 @@ impl Plugin for SettingsSavePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Settings>()
             .init_resource::<Remembered>()
-            .needs::<Saves>("SettingsSavePlugin", "`Saves`, the backend settings are remembered through, such as `Saves::platform_default(\"my-game\")`")
+            .needs::<Saves>("SettingsSavePlugin", "`Saves`, the backend settings are remembered through, such as the one `RoguelikePlugins::saves(\"my-game\")` inserts, which keeps a scripted run in memory, or `Saves::platform_default(\"my-game\")`")
             .add_systems(Last, remember.run_if(resource_changed::<Settings>).run_if(resource_exists::<Saves>));
     }
 

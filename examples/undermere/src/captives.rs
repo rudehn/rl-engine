@@ -3,17 +3,23 @@
 //! `population::place_captive` stands
 //! one a run, neutral and anchored by a one-waypoint `PatrolRoute`, the
 //! universal brain's own `Patrol`, offering [`FREE_VERB`]
-//! through the engine's own actor offers: a long action of
-//! [`FREE_TIME`], one of a few turns, not interrupted once begun, because
-//! the engine's multi-turn work skips the player and a single long-costed
-//! offer is what is left for the player to take up at all. [`answer_free`]
-//! reads the `Interacted` it lands and [`free`] does what it means: put
-//! the captive on the adventurer's own side, wire it to follow the
-//! adventurer specifically through `Leader` and `Keep::leader`, and give
-//! it the wits to go down the stairs beside them.
+//! through the engine's own actor offers. Taking it up sets the adventurer
+//! to work at the shackles, [`answer_free`] beginning the engine's `Work`
+//! of the kind [`FREEING`], [`FREE_TURNS`] turns long, the offer's own turn
+//! the first. The engine spends the rest for them and breaks it off as it
+//! breaks off any of the player's work: a blow that lands, a foe coming
+//! into sight, a key pressed or a turn spent on anything else. Broken off,
+//! the captive is still bound and [`answer_freeing`] says so; done, it
+//! calls [`free`], which does what freeing means: put the captive on the
+//! adventurer's own side, wire it to follow the adventurer specifically
+//! through `Leader` and `Keep::leader`, and give it the wits to go down
+//! the stairs beside them.
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
+use rl_engine::rl_bevy::{BreakReason, WorkBroken, Works};
+use rl_engine::rl_core::turn::BASE_ACTION_COST;
+use rl_engine::rl_rules::work::Work;
 
 use crate::allies::fight_for;
 use crate::bestiary::{Bestiary, Kind};
@@ -22,11 +28,13 @@ use crate::bestiary::{Bestiary, Kind};
 /// [`AddVerb::add_verb`] by [`crate::plugin::UndermerePlugin`].
 pub const FREE_VERB: &str = "free";
 
-/// How long freeing a captive costs, in hundredths of a step: three of
-/// the adventurer's own turns, spent in the one long action the engine
-/// lets the player take, not broken off by anything short of finishing
-/// it, since nothing shorter is on offer.
-pub const FREE_TIME: u32 = 300;
+/// The kind of work freeing a captive is, as the panels name it.
+pub const FREEING: &str = "freeing a captive";
+
+/// How many of the adventurer's turns freeing a captive takes, the offer's
+/// own the first: long enough that a fight nearby is a reason to leave it
+/// off, short enough to be worth starting in a quiet room.
+pub const FREE_TURNS: u16 = 3;
 
 /// What makes a monster standing at `at` a captive: the captive side,
 /// neutral to everyone, a one-waypoint `PatrolRoute` on its own cell, the
@@ -39,7 +47,7 @@ pub const FREE_TIME: u32 = 300;
 pub fn shackled(registries: &Registries, verbs: &Verbs, at: Point) -> impl Bundle + use<> {
     let side = registries.factions.expect(crate::content::CAPTIVE);
     let free_verb = verbs.get(FREE_VERB).expect("UndermerePlugin declares the free verb");
-    (Faction(side), crate::tricks::PatrolRoute { waypoints: vec![at], at: 0 }, Offers(vec![Offering::new(free_verb, FREE_TIME)]))
+    (Faction(side), crate::tricks::PatrolRoute { waypoints: vec![at], at: 0 }, Offers(vec![Offering::new(free_verb, BASE_ACTION_COST)]))
 }
 
 /// Where a shackled captive is held, the one waypoint [`shackled`] gave
@@ -93,17 +101,44 @@ pub fn follow(world: &mut World, captive: Entity) {
     }
 }
 
-/// Answers a captive's own [`FREE_VERB`]: everything else `Interacted`
+/// Answers a captive's own [`FREE_VERB`] by setting whoever took it up to
+/// work at the shackles, [`FREE_TURNS`] turns of [`FREEING`] on the
+/// captive, the offer's own turn the first: everything else `Interacted`
 /// reports is a prop's or another verb's, left for whatever reads it.
 ///
 /// In `TurnSet::React`, the set every game system answering `Interacted`
 /// already reads from.
-pub fn answer_free(mut commands: Commands, mut done: MessageReader<Interacted>, verbs: Res<Verbs>, players: Query<Entity, With<Player>>) {
-    let Some(free_verb) = verbs.get(FREE_VERB) else { return };
-    let Ok(adventurer) = players.single() else { return };
+pub fn answer_free(mut done: MessageReader<Interacted>, verbs: Res<Verbs>, kinds: Res<WorkKinds>, mut works: Works, mut tell: MessageWriter<Tell>) {
+    let (Some(free_verb), Some(freeing)) = (verbs.get(FREE_VERB), kinds.get(FREEING)) else { return };
     for ev in done.read().filter(|ev| ev.verb == free_verb) {
-        let captive = ev.target;
+        works.begin(ev.actor, Work::new(freeing, FREE_TURNS).on(ev.target));
+        tell.write(Tell::new("You set to work on the shackles.", Tones::NOTICE));
+    }
+}
+
+/// Answers the work [`answer_free`] began: finished, the captive is
+/// [`free`]d to follow the adventurer; broken off, by a blow, a foe in
+/// sight, a key or the game, the log says the captive is still bound,
+/// and it still offers to be freed. Nothing for a death, which says
+/// enough.
+///
+/// In `TurnSet::React`, where the engine finishes work and breaks it off.
+pub fn answer_freeing(
+    mut commands: Commands,
+    mut done: MessageReader<WorkDone>,
+    mut broken: MessageReader<WorkBroken>,
+    kinds: Res<WorkKinds>,
+    players: Query<Entity, With<Player>>,
+    mut tell: MessageWriter<Tell>,
+) {
+    let Some(freeing) = kinds.get(FREEING) else { return };
+    let Ok(adventurer) = players.single() else { return };
+    for ev in done.read().filter(|d| d.kind == freeing) {
+        let Some(captive) = ev.target else { continue };
         commands.queue(move |world: &mut World| free(world, captive, adventurer));
+    }
+    for _ in broken.read().filter(|b| b.kind == freeing && b.reason != BreakReason::Died && b.actor == adventurer) {
+        tell.write(Tell::new("You leave off at the shackles, and the captive is still bound.", Tones::BAD));
     }
 }
 
@@ -135,6 +170,95 @@ mod tests {
     use super::*;
     use crate::dungeon::{captive_floor, floor_of, map_of};
     use crate::testing::{adventurer, arrive, headless, par_seeds, sturdy};
+
+    /// The arena on floor two with a goblin shackled beside the
+    /// adventurer, as `population::place_captive` stands the run's own.
+    fn beside_a_captive(seed: u64) -> (App, Entity, Entity) {
+        let (mut app, me, here) = crate::testing::arena_on(seed, 2);
+        let at = here.offset(1, 0);
+        let captive = crate::testing::monster(&mut app, "goblin", at);
+        let shackles = shackled(app.world().resource::<Registries>(), app.world().resource::<Verbs>(), at);
+        app.world_mut().entity_mut(captive).insert(shackles);
+        crate::testing::settle(&mut app);
+        (app, me, captive)
+    }
+
+    /// The adventurer takes up the captive's offer to be freed, as a walk
+    /// into it or the interact key does.
+    fn begin_freeing(app: &mut App, me: Entity, captive: Entity) {
+        let verb = app.world().resource::<Verbs>().get(FREE_VERB).expect("declared");
+        app.world_mut().write_message(Intent::new(me, Interact { target: captive, verb, thing: None }));
+        app.update();
+    }
+
+    /// A blow that lands while the adventurer works at the shackles breaks
+    /// the freeing off: the captive is still bound, still offering to be
+    /// freed, and the log says so.
+    #[test]
+    fn a_blow_while_freeing_a_captive_breaks_it_off_and_leaves_the_captive_bound() {
+        for s in 0..3 {
+            let (mut app, me, captive) = beside_a_captive(s);
+            begin_freeing(&mut app, me, captive);
+            let crush = app.world().resource::<Registries>().damage_kinds.expect("crush");
+            app.world_mut().write_message(DamageEvent::new(me, rl_engine::rl_rules::Hit::from_source(None, crush, 50)));
+            for _ in 0..20 {
+                app.update();
+            }
+            assert!(held_at(app.world(), captive).is_some(), "seed {s}: still shackled");
+            assert!(app.world().get::<Leader>(captive).is_none(), "seed {s}: and following nobody");
+            assert!(crate::testing::said(&app).iter().any(|l| l.contains("still bound")), "seed {s}: {:#?}", crate::testing::said(&app));
+        }
+    }
+
+    /// Every work broken off in the run, kept for a test to read.
+    #[derive(Resource, Default)]
+    struct Broken(Vec<WorkBroken>);
+
+    fn record_broken(mut broken: MessageReader<WorkBroken>, mut seen: ResMut<Broken>) {
+        seen.0.extend(broken.read().copied());
+    }
+
+    /// A foe coming into sight while the adventurer works at the shackles
+    /// breaks the freeing off before it can strike, and the captive stays
+    /// bound.
+    #[test]
+    fn a_foe_coming_into_sight_while_freeing_a_captive_breaks_it_off_and_leaves_the_captive_bound() {
+        for s in 0..3 {
+            let (mut app, me, captive) = beside_a_captive(s);
+            app.init_resource::<Broken>().add_systems(Turn, record_broken.in_set(TurnSet::Cleanup));
+            begin_freeing(&mut app, me, captive);
+            let here = crate::testing::at(&app, me);
+            crate::testing::monster(&mut app, "goblin", here.offset(-3, 0));
+            for _ in 0..20 {
+                app.update();
+            }
+            let reasons: Vec<BreakReason> = app.world().resource::<Broken>().0.iter().map(|b| b.reason).collect();
+            assert_eq!(reasons, [BreakReason::FoeSighted], "seed {s}: broken off by the sight of it");
+            assert!(held_at(app.world(), captive).is_some(), "seed {s}: still shackled");
+            assert!(crate::testing::said(&app).iter().any(|l| l.contains("still bound")), "seed {s}: {:#?}", crate::testing::said(&app));
+        }
+    }
+
+    /// Taken up in a quiet room, freeing a captive takes the adventurer
+    /// three turns, the offer's own the first, as the single long action it
+    /// once was did, and then the captive follows them on their side and
+    /// offers to be freed no longer.
+    #[test]
+    fn freeing_a_captive_takes_three_turns_and_then_it_follows_the_adventurer() {
+        for s in 0..3 {
+            let (mut app, me, captive) = beside_a_captive(s);
+            let before = app.world().resource::<Turns>().now();
+            begin_freeing(&mut app, me, captive);
+            assert!(held_at(app.world(), captive).is_some(), "seed {s}: still shackled on the first turn");
+            for _ in 0..20 {
+                app.update();
+            }
+            assert_eq!(app.world().resource::<Turns>().now() - before, 3 * BASE_ACTION_COST, "seed {s}: three turns spent");
+            assert_eq!(held_at(app.world(), captive), None, "seed {s}: shackled no longer");
+            assert_eq!(app.world().get::<Leader>(captive).map(|l| l.0), Some(me), "seed {s}: following the adventurer");
+            assert_eq!(app.world().get::<Faction>(captive).map(|f| f.0), app.world().get::<Faction>(me).map(|f| f.0), "seed {s}: on their side");
+        }
+    }
 
     /// Every floor the run's captive did not draw holds none, and the one
     /// it drew holds exactly one, neutral to the adventurer, shackled in

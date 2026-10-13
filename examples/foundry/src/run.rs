@@ -58,9 +58,11 @@ pub fn prepare(commands: &mut Commands, seed: &Seed, registries: &Registries) {
     commands.insert_resource(HitRules(Box::new(Percent::new(5, 16, 30))));
     // ANCHOR_END: accuracy
     commands.insert_resource(Lighting::dark());
+    // ANCHOR: fire_rules
     // Standing in fire scorches, and whatever burns smokes: an incendiary
     // is a fire and a screen at once.
     commands.insert_resource(FireRules::new().inflicts(registries.statuses.expect("scorched"), 3).smoke(registries.gases.expect("smoke"), 30));
+    // ANCHOR_END: fire_rules
     commands.insert_resource(Roster::load(registries));
     // The pieces the decks are stamped from, shared with the engine that
     // fills their slots, so a stamp's key names the same piece in both.

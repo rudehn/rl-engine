@@ -41,8 +41,8 @@ const PROPS_RON: &str = include_str!("../assets/props.ron");
 /// one number a file gives for how bright it is: a lantern and a glowing
 /// cap differ by their radius and their colour, and the lantern dimming
 /// as the adventurer descends is its radius shrinking. 200 is what
-/// Corsair's lantern, Delve's brand and Foundry's shoulder lamp all shed:
-/// the light every example hands whoever carries it.
+/// Foundry's shoulder lamp sheds too: the light an example hands whoever
+/// carries it.
 pub const LIGHT_INTENSITY: u8 = 200;
 
 /// A light as Undermere's files write it: `(radius: 4, color: (0.35, 1.0,
@@ -288,6 +288,7 @@ pub fn registries() -> Registries {
     // enough to, for a few turns more than that, so whoever stands in it is
     // held, turned about or hidden for as long as it hangs. Darkness is
     // thick enough to see through only at its edges.
+    // ANCHOR: gases
     let gases = Registry::from_defs(vec![
         GasDef::new(PARALYTIC).spread(40).fade(20).inflicts(25, statuses.expect(PARALYSED), 3),
         GasDef::new(CONFUSING).spread(50).fade(15).inflicts(25, statuses.expect(CONFUSED), 3),
@@ -295,6 +296,7 @@ pub fn registries() -> Registries {
         GasDef::new(CAUSTIC).spread(40).fade(20).inflicts(30, statuses.expect("poisoned"), 4),
     ])
     .unwrap();
+    // ANCHOR_END: gases
     let mut registries = Registries {
         damage_kinds,
         stats,

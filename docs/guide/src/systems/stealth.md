@@ -68,48 +68,42 @@ A status that sleeps (`docs/guide/src/systems/statuses.md`) leans on the same tw
 
 ## Using it
 
-An observer is authored where it is meant to be fooled, so Corsair puts `Notice` on what walks its caves and deliberately not on what walks its islands in daylight.
+An observer is authored per kind, so Foundry spawns every monster with the `Notice` its kind names, or the engine's default, which is sure only of what is adjacent.
 
-<!-- include: ../../../../examples/corsair/src/monsters.rs:underground -->
+<!-- include: ../../../../examples/foundry/src/droids.rs:spawn -->
 ```rust,no_run
-    /// Spawns one `id` standing at `p` on the current map, underground, where
-    /// whatever carries a lantern has it lit.
-    pub fn spawn_underground(&self, commands: &mut Commands, id: rl_engine::rl_core::Id<MonsterDef>, p: Point) -> Entity {
-        let e = self.spawn(commands, id, p);
-        if let Some(lantern) = self.defs.get(id).lantern {
-            commands.entity(e).insert(lantern);
-        }
-        // Only below: the caves are dark and have somewhere to hide, and
-        // the islands in daylight deliberately do not.
-        if let Some(notice) = self.defs.get(id).notice {
-            commands.entity(e).insert(Notice(notice));
-        }
-        e
-    }
+    let d = roster.defs.get(id);
+    let mut e = commands.spawn((
+        (Actor, Blocks, Position(at), OnMap(map)),
+        (Health::full(d.hp), Armor(d.armor), Faction(d.faction.id()), Resists(resistances(d.profile, registries))),
+        (Perception(d.perception), Speed(d.speed), Mind(roster.brains[id.index()].clone()), Intelligence(d.wits)),
+        // Everything on a deck leaves something behind: a droid a wreck,
+        // a rat a carcass, both named by the engine's remains template and
+        // made worth going through by `props::wreck_the_dead`.
+        (Notice(d.notice.unwrap_or_default()), Kind(id), LeavesRemains),
+        (Name::new(d.name.clone()), Glyph::new(d.glyph, Color::srgb(d.color.0, d.color.1, d.color.2)).on_layer(5)),
+    ));
 ```
 
-The engine carries `Noticed` no further than writing it, and a game decides what being seen sets off.
+The engine carries `Noticed` no further than writing it, and a game decides what being seen sets off: a Foundry probe that knows where the commando is has an alarm to raise.
 
-<!-- include: ../../../../examples/heist/src/main.rs:alarm -->
+<!-- include: ../../../../examples/foundry/src/droids/alarm.rs:sense -->
 ```rust,no_run
-/// A watchman who spots you shouts, and a hound bays: a noise of the
-/// game's own at the watcher, which everyone in earshot comes to.
-fn raise_alarm(
-    mut noticed: MessageReader<Noticed>,
-    mut noise: MessageWriter<MakeNoise>,
-    player: Query<Entity, With<Player>>,
-    watchers: Query<&Position>,
-    sounds: Res<Sounds>,
+/// Tells a probe holding the turn that it has an alarm to raise: it knows
+/// where the commando is and has not raised one yet.
+pub fn sense_alarm(
+    mut thinking: ResMut<Thinking>,
+    kinds: Res<WorkKinds>,
+    quiet: Query<(&Alarm, &Aware), Without<Raised>>,
+    players: Query<Entity, With<Player>>,
 ) {
-    let Ok(me) = player.single() else { return };
-    let shout = sounds.get("shout").expect("declared in main");
-    for ev in noticed.read() {
-        if ev.subject != me {
-            continue;
-        }
-        if let Ok(at) = watchers.get(ev.observer) {
-            noise.write(MakeNoise { at: at.0, loudness: SHOUT, sound: shout, maker: Some(ev.observer) });
-        }
+    let Some(actor) = thinking.actor() else { return };
+    let (Ok((alarm, aware)), Some(kind)) = (quiet.get(actor), kinds.get(SIGNALLING)) else { return };
+    if !players.iter().any(|p| aware.knows(p)) {
+        return;
+    }
+    if let Some(snapshot) = thinking.snapshot_mut() {
+        snapshot.add_sense(Signal { kind, turns: alarm.signal });
     }
 }
 ```

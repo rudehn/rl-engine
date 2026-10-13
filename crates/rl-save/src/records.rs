@@ -47,7 +47,7 @@ impl Plugin for RecordsSavePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<RunRecords>()
             .init_resource::<Remembered>()
-            .needs::<Saves>("RecordsSavePlugin", "`Saves`, the backend records are remembered through, such as `Saves::platform_default(\"my-game\")`")
+            .needs::<Saves>("RecordsSavePlugin", "`Saves`, the backend records are remembered through, such as the one `RoguelikePlugins::saves(\"my-game\")` inserts, which keeps a scripted run in memory, or `Saves::platform_default(\"my-game\")`")
             .add_systems(Last, remember.run_if(resource_changed::<RunRecords>).run_if(resource_exists::<Saves>));
     }
 

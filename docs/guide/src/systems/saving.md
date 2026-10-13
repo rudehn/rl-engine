@@ -69,64 +69,85 @@ Once the run is over it then fills it from the record `RecordsPlugin` filed for 
 
 ## Using it
 
-A kind is a component and its account of itself, and a stairway is the smallest one there is: the engine knows where it leads, so the game writes down the glyph and nothing more.
+A kind is a component and its account of itself, and a way through is the smallest one there is: the engine knows where it leads, so the game writes down which way it is and nothing more.
 
-<!-- include: ../../../../examples/corsair/src/save.rs:kind -->
+<!-- include: ../../../../examples/undermere/src/save.rs:way -->
 ```rust,no_run
-/// A stairway or a cave mouth: the engine knows where it leads, Corsair
-/// only how it is drawn.
-#[derive(Component, Debug, Clone, Copy)]
-pub struct Stairway;
+/// A way through, as the save writes it: which way it is, which is how it
+/// is named and drawn. The engine keeps where it stands and where it
+/// leads.
+impl Saveable for Way {
+    type Saved = Way;
 
-impl Saveable for Stairway {
-    type Saved = char;
-
-    fn capture(world: &World, entity: Entity) -> char {
-        world.get::<rl_engine::rl_render::Glyph>(entity).map_or('>', |g| g.ch)
+    fn capture(world: &World, entity: Entity) -> Way {
+        *world.get::<Way>(entity).expect("a way's kind")
     }
 
-    fn restore(world: &mut World, glyph: &char) -> Entity {
-        world.spawn((Stairway, crate::places::stair_glyph(*glyph))).id()
+    fn restore(world: &mut World, saved: &Way) -> Entity {
+        let mut e = world.spawn((*saved, Name::new(saved.name())));
+        if let Some(glyph) = saved.glyph() {
+            e.insert(glyph);
+        }
+        e.id()
     }
 }
 ```
 
 Registering is the step an implementation does not show, and it is the whole of a game's setup: the plugin at its version, then every kind and every resource.
 
-<!-- include: ../../../../examples/corsair/src/save.rs:register -->
+<!-- include: ../../../../examples/undermere/src/save.rs:register -->
 ```rust,no_run
-/// What the save is made of: the plugin that keeps it, the four kinds, and
-/// the four resources.
+/// What the save is made of: the engine's plugins, the five kinds, and
+/// the ten resources; and the records, in their own slot.
 pub fn register(app: &mut App) {
-    app.add_plugins(SavePlugin::new(SLOT).version(VERSION))
-        // Items before those who carry them is not required, since every
-        // kind is spawned before any bag is filled, but it reads better.
+    app.add_plugins((SavePlugin::new(SLOT).version(VERSION).on_arrival(), UnloadPlugin, RecordsSavePlugin))
         .save_kind::<ItemKind>()
-        .save_kind::<MonsterKind>()
-        .save_kind::<Captain>()
-        .save_kind::<Stairway>()
-        .save_state::<StartOptions>()
-        .save_state::<Scattered>()
-        .save_state::<Bestiary>()
-        .save_state::<Entrances>()
-        .save_state::<Quests>();
+        .save_kind::<Kind>()
+        .save_kind::<Adventurer>()
+        .save_kind::<Way>()
+        .save_kind::<Townsperson>()
+        .save_state::<Tally>()
+        .save_state::<Lore>()
+        .save_state::<MonsterLore>()
+        .save_state::<Shelves>()
+        .save_state::<Folk>()
+        .save_state::<GivenNames>()
+        .save_state::<Tavern>()
+        .save_state::<crate::vaults::lifts::RisingFloods>()
+        .save_state::<Quests>()
+        .save_state::<WritingsProgress>()
+        .save_state::<crate::doors::Passed>();
 }
 ```
 
-What a run was about is a section pushed every frame, like any other view: Heist counts the coin in the thief's bag, which is still there to count whether the thief walked out with it or died on the stairs.
+What a run was about is a section on the end screen, and Undermere's are the sections of the record it files once the run is over, which the screen shows ahead of anything a game pushes.
 
-<!-- include: ../../../../examples/heist/src/main.rs:take -->
+<!-- include: ../../../../examples/undermere/src/tally.rs:record -->
 ```rust,no_run
-/// The take, on the screen the run ends on however it ended.
+/// Writes the run down once it is over: one [`RecordRun`] with its
+/// score, its summary and its two sections, which the engine completes
+/// with the outcome, the seed and the clock, files, and shows on the end
+/// screen.
 ///
-/// Pushed every frame in `ViewSet::Annotate` rather than once on
-/// `RunOver`, because `EndingView` is a view and is cleared and refilled
-/// like every other one. The bag is still there to count after the run
-/// ends, so the number does not have to be captured at the moment of
-/// death.
-fn show_the_take(mut view: ResMut<EndingView>, player: Query<Option<&Inventory>, With<Player>>, coins: Query<&Stack, With<Coin>>) {
-    let Ok(bag) = player.single() else { return };
-    view.section("The take", format!("{} in coin", take_of(bag, &coins)));
+/// On entering `EngineState::Over`, the one door every ending comes
+/// through, the boss's death and the adventurer's alike, and the frame the
+/// engine's `Ending` is first there to read. Nothing in the run moves once
+/// it is over, so the tally read here is the run's last word, and the
+/// adventurer still stands where it ended.
+pub fn record(ending: Option<Res<Ending>>, tally: Res<Tally>, map: Option<Res<WorldMap>>, credit: Credit, mut records: MessageWriter<RecordRun>) {
+    let (Some(ending), Some(map)) = (ending, map) else { return };
+    let by = match ending.outcome {
+        // As noted at the death, since what did may be gone by now; asked
+        // again only of an ending no death came through.
+        Outcome::Died { by } => tally.slain_by.clone().or_else(|| credit.of(by)),
+        _ => None,
+    };
+    let lines = score(&tally, ending.outcome == Outcome::Won);
+    records.write(RecordRun {
+        score: total(&lines),
+        summary: summary(ending.outcome, by.as_deref(), map.current(), &tally),
+        sections: sections(&lines, &tally, ending.turn),
+    });
 }
 ```
 

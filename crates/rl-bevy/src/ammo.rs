@@ -15,8 +15,8 @@
 //! the one place it answers by name whether a worn thing is dry.
 //!
 //! An opt-in plugin, [`AmmoPlugin`], rather than part of [`CombatPlugin`](crate::combat::CombatPlugin):
-//! a game with no ammunition-fed weapon (Corsair's cutlasses, Heist's
-//! stealth) pays nothing for the idea, and one that has some, as a second
+//! a game with no ammunition-fed weapon (all blades, or stealth alone)
+//! pays nothing for the idea, and one that has some, as a second
 //! game with a bow does exactly as Foundry's blasters did, adds the one
 //! plugin rather than writing this loop again.
 //!

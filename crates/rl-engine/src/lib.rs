@@ -14,11 +14,12 @@
 //! [`rl_overworld`], [`rl_save`]) are the Bevy plugins that run the loops.
 //!
 //! The repository README walks through a headless example, and the
-//! `corsair`, `delve`, `heist` and `foundry` example games show the Bevy side
-//! end to end.
+//! `foundry` and `undermere` example games show the Bevy side end to end.
 //!
 //! A game starts from [`RoguelikePlugins`], the window, the terminal and
 //! the plugins every game adds, and then names the subsystems it wants.
+//! A game that saves names itself with [`RoguelikePlugins::saves`], and
+//! [`PlayerSaves`] keeps a [`scripted`] run off the player's save.
 
 #![deny(missing_docs)]
 
@@ -77,6 +78,7 @@ pub struct RoguelikePlugins {
     map: Option<rl_core::Rect>,
     across: i32,
     typeface: Option<Typeface>,
+    saves: Option<String>,
 }
 
 /// A typeface's bytes, which a derived `Debug` would print every one of:
@@ -94,7 +96,16 @@ impl RoguelikePlugins {
     /// A window titled `title`, `cols` by `rows` cells of ten by sixteen
     /// pixels, with the map filling it.
     pub fn new(title: impl Into<String>, cols: i32, rows: i32) -> Self {
-        Self { title: title.into(), cols, rows, cell: Vec2::new(10.0, 16.0), font: 14.0, map: None, across: 1, typeface: None }
+        Self { title: title.into(), cols, rows, cell: Vec2::new(10.0, 16.0), font: 14.0, map: None, across: 1, typeface: None, saves: None }
+    }
+
+    /// Saves the run where the player's saves are kept, under `name`, by
+    /// adding [`PlayerSaves`]: in memory when the run is [`scripted`].
+    /// Without it nothing inserts [`Saves`](rl_save::Saves), and a game
+    /// that saves inserts its own.
+    pub fn saves(mut self, name: impl Into<String>) -> Self {
+        self.saves = Some(name.into());
+        self
     }
 
     /// Draws every glyph in `face`, the bytes of a TrueType or OpenType
@@ -147,7 +158,7 @@ impl PluginGroup for RoguelikePlugins {
         if let Some(Typeface(face)) = self.typeface {
             terminal = terminal.typeface(face);
         }
-        PluginGroupBuilder::start::<Self>()
+        let group = PluginGroupBuilder::start::<Self>()
             .add_group(
                 DefaultPlugins.set(WindowPlugin { primary_window: Some(rl_render::capture::prepare(window)), ..default() }).set(ImagePlugin::default_nearest()),
             )
@@ -165,7 +176,56 @@ impl PluginGroup for RoguelikePlugins {
             // A run written down and played back, when the environment
             // asks: `RL_RECORD=run.ron` and `RL_REPLAY=run.ron`.
             .add(rl_ui::ReplayPlugin::from_env())
-            .add(rl_render::CapturePlugin)
+            .add(rl_render::CapturePlugin);
+        match self.saves {
+            Some(name) => group.add(PlayerSaves::new(name)),
+            None => group,
+        }
+    }
+}
+
+/// Whether this run plays keys from a script rather than from the player:
+/// a replay or a recording, named by [`REPLAY_VAR`](rl_bevy::replay::REPLAY_VAR)
+/// and [`RECORD_VAR`](rl_bevy::replay::RECORD_VAR), or a
+/// [capture](rl_render::capture::requested).
+///
+/// Read from the environment, so it can be asked before there is an app.
+pub fn scripted() -> bool {
+    use rl_bevy::replay::{RECORD_VAR, REPLAY_VAR};
+    std::env::var_os(REPLAY_VAR).is_some() || std::env::var_os(RECORD_VAR).is_some() || rl_render::capture::requested()
+}
+
+/// Inserts the [`Saves`](rl_save::Saves) a run is kept in: the platform's
+/// default under the game's name, files beside the executable or browser
+/// storage, unless the run is [`scripted`], which saves in memory.
+///
+/// A scripted run plays keys against a seed of its own, so starting it on
+/// the player's save would play a different run, and its first save, an
+/// arrival or the window closing, would write over the player's. Every
+/// game that saves needs that guard and none should have to remember it,
+/// so it is the engine's; [`RoguelikePlugins::saves`] adds this.
+#[derive(Debug, Clone)]
+pub struct PlayerSaves {
+    name: String,
+}
+
+impl PlayerSaves {
+    /// The saves of the game called `name`, which names its browser
+    /// storage.
+    pub fn new(name: impl Into<String>) -> Self {
+        Self { name: name.into() }
+    }
+
+    /// Where a run that is, or is not, `scripted` saves: what the plugin
+    /// inserts, given [`scripted`]'s answer.
+    pub fn backend(&self, scripted: bool) -> rl_save::Saves {
+        if scripted { rl_save::Saves::new(rl_save::MemoryBackend::default()) } else { rl_save::Saves::platform_default(&self.name) }
+    }
+}
+
+impl Plugin for PlayerSaves {
+    fn build(&self, app: &mut App) {
+        app.insert_resource(self.backend(scripted()));
     }
 }
 
@@ -204,7 +264,7 @@ impl PluginGroup for RoguelikePlugins {
 /// let _up = title_is_up;
 /// ```
 pub mod prelude {
-    pub use crate::RoguelikePlugins;
+    pub use crate::{PlayerSaves, RoguelikePlugins};
     // Core, minus `Rect`: see the note above.
     pub use rl_bevy::prelude::*;
     pub use rl_core::prelude::{
@@ -219,6 +279,38 @@ pub mod prelude {
     pub use rl_save::prelude::*;
     pub use rl_ui::prelude::*;
     pub use rl_world::prelude::*;
+}
+
+#[cfg(test)]
+mod tests {
+    use rl_save::SaveBackend as _;
+
+    use super::*;
+
+    /// A slot no game saves in, so a test writing it beside the test
+    /// binary touches nothing a game reads.
+    const SLOT: &str = "rl-engine-test-slot";
+
+    /// A run played from a script, a replay, a recording or a capture,
+    /// saves somewhere of its own: it neither starts on the player's save
+    /// nor writes over it.
+    #[test]
+    fn a_scripted_run_never_touches_the_players_save() {
+        let real = rl_save::Saves::platform_default("warren");
+        let before = real.load(SLOT).unwrap();
+        let scripted = PlayerSaves::new("warren").backend(true);
+        scripted.persist(SLOT, "a scripted run").unwrap();
+        assert_eq!(real.load(SLOT).unwrap(), before, "the player's slot is as it was");
+        assert!(scripted.exists(SLOT), "and the scripted run has one of its own");
+    }
+
+    /// Naming the game's saves is what adds them, and a game that names
+    /// none inserts its own.
+    #[test]
+    fn the_players_saves_are_added_only_when_a_game_names_them() {
+        assert!(RoguelikePlugins::new("Warren", 80, 40).saves("warren").build().contains::<PlayerSaves>());
+        assert!(!RoguelikePlugins::new("Warren", 80, 40).build().contains::<PlayerSaves>());
+    }
 }
 
 /// The README's code samples, compiled and run as doc-tests so the

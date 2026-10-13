@@ -57,4 +57,4 @@ The [guide](https://github.com/rudehn/rl-engine/tree/v0.3.0/docs/guide/src) buil
 - more panels, chapter 10;
 - abilities, statuses and saving, in "Where to go next".
 
-The engine's `delve` example is this template grown up: five floors, a brand that burns down, and abilities.
+The engine's `undermere` example is a whole game grown from the same start: ten floors under a lakeside town, a lantern that dims as you descend, and abilities.

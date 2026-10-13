@@ -6,7 +6,7 @@
 //! count and enchant, on the ground or in whose bag; the player with its
 //! bag, its slots and its statuses; the stairs; and then the same in
 //! reverse, items first so bags can point at them. Five hundred lines in
-//! Corsair, and every game would write them again.
+//! the first game to write them, and every game would write them again.
 //!
 //! The engine walks the world instead. A game implements [`Saveable`] on
 //! the component that marks a kind of thing it spawns, saying how to write
@@ -808,7 +808,7 @@ impl Plugin for SavePlugin {
             // start, even without a backend, since it says a slot exists.
             .init_resource::<SavedRun>()
             .insert_resource(SaveSlot { slot: self.slot.clone(), version: self.version })
-            .needs::<Saves>("SavePlugin", "`Saves`, the backend runs are written through, such as `Saves::platform_default(\"my-game\")`")
+            .needs::<Saves>("SavePlugin", "`Saves`, the backend runs are written through, such as the one `RoguelikePlugins::saves(\"my-game\")` inserts, which keeps a scripted run in memory, or `Saves::platform_default(\"my-game\")`")
             .reads::<LeaveRun>()
             // Exclusive, so it conflicts with everything else in `Last`; the
             // engine's own are ordered against it by `EndOfFrame`, and what

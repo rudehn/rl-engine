@@ -37,3 +37,14 @@ jobs:
           else
             gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag
           fi
+  # The guide, published only once the documentation checks above have
+  # passed. A called workflow gets no more than its caller grants, and this
+  # workflow grants only `contents: write`, so the job grants what a Pages
+  # deployment needs itself.
+  guide:
+    needs: check
+    uses: ./.github/workflows/pages.yml
+    permissions:
+      contents: read
+      pages: write
+      id-token: write

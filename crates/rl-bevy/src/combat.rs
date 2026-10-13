@@ -531,6 +531,10 @@ pub enum Reach {
 /// on-hit reactions. Zero means the hit was fully stopped; negative means
 /// the target absorbed it, which a resistance past a hundred does.
 ///
+/// Two figures, because a killing blow is bigger than what it took: a
+/// narrator says the blow, "hits you for 30", and a tally of harm done
+/// counts the health, the 5 the target had left.
+///
 /// Never a mend: health restored is a [`Heal`], reported as [`Healed`], so
 /// a reader of this need not ask whether what it holds was a blow.
 #[derive(Message, Debug, Clone, Copy)]
@@ -539,8 +543,15 @@ pub struct DamageDealt {
     pub target: Entity,
     /// The hit as it arrived.
     pub hit: Hit<Entity>,
-    /// What health lost; negative for a hit absorbed, by what it restored.
+    /// The blow as it landed, after mitigation and before the target's
+    /// health is asked: a blow of 30 on a target with 5 left is 30.
+    /// Negative for a hit absorbed, by what it restored, which at full
+    /// health is nothing.
     pub dealt: i32,
+    /// The health the target lost, never more than it had: a blow of 30 on
+    /// a target with 5 left is 5. For a hit absorbed, the same negative as
+    /// [`dealt`](Self::dealt), since what it restored is all that moved.
+    pub lost: i32,
     /// How it got there, carried through from the [`DamageEvent`] so a
     /// narrator can tell a shot from a blow.
     pub reach: Reach,
@@ -1306,9 +1317,10 @@ pub fn apply_damage(
         let before = health.current;
         health.current = (health.current - amount).min(health.max);
         // A hit absorbed reports what it restored, which at full health is
-        // nothing.
+        // nothing; health below nought was never there to lose.
         let reported = if amount < 0 { before - health.current } else { amount };
-        dealt.write(DamageDealt { target: ev.target, hit: ev.hit, dealt: reported, reach: ev.reach });
+        let lost = before - health.current.max(0);
+        dealt.write(DamageDealt { target: ev.target, hit: ev.hit, dealt: reported, lost, reach: ev.reach });
         if health.current <= 0 {
             deaths.write(DeathEvent { entity: ev.target, at: pos.0, credit: ev.hit.credit, was_player: is_player });
         }
@@ -2373,6 +2385,20 @@ mod tests {
         let (struck, first, _second) = struck_by_two_guns();
         assert!(struck.ranged);
         assert_eq!(struck.with, Some(first));
+    }
+
+    /// A killing blow past the target's last health is reported as the
+    /// blow it was, and as only the health the target had left to lose.
+    #[test]
+    fn a_blow_past_the_last_health_reports_the_whole_blow_dealt_and_only_what_was_left_as_lost() {
+        let (mut app, start, blunt) = arena();
+        let who = app.world_mut().spawn((Actor, Blocks, Position(start), Health { current: 5, max: 30 })).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.world_mut().write_message(DamageEvent::new(who, rl_rules::Hit::from_source(None, blunt, 30)));
+        app.update();
+        let dealt: Vec<(i32, i32)> = app.world_mut().resource_mut::<Messages<DamageDealt>>().drain().map(|d| (d.dealt, d.lost)).collect();
+        assert_eq!(dealt, vec![(30, 5)], "the whole blow dealt, and the five that were left lost");
     }
 
     /// An invulnerable actor is hit and takes nothing, and the hit is still

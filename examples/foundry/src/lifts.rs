@@ -3,7 +3,7 @@
 //!
 //! A deck's builder reports an entry and a farthest exit; this puts a lift
 //! up on the entry and a lift down on the exit the first time the deck is
-//! entered, the way delve's stairs are laid, so the way on is always as
+//! entered, so the way on is always as
 //! far from where the commando arrived as the deck allows. The last deck
 //! has no lift down, since there is nothing below it, and deck one has no
 //! lift up: it has the [`LiftOut`] instead, where the commando came in,
@@ -48,6 +48,7 @@ pub fn deck_line(deck: u32) -> String {
     }
 }
 
+// ANCHOR: lifts
 /// Lays a deck's lifts the first time it is entered, and names the deck in
 /// the log every time. On the run's first arrival it also says how to see
 /// the keys, under the deck's own line: in `run::start` it would be
@@ -75,6 +76,7 @@ pub fn link_decks(mut commands: Commands, mut entered: MessageReader<PlaceEntere
         }
     }
 }
+// ANCHOR_END: lifts
 
 /// The player, where it stands, for [`ride_out`].
 type Rider<'w, 's> = Query<'w, 's, (Entity, &'static Position, Option<&'static OnMap>), With<Player>>;

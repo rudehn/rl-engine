@@ -498,7 +498,7 @@ fn roll_and_kind(text: &str, names: &Names<'_>) -> Result<(DiceRoll, DamageKindI
 }
 
 /// How often a monster that knows an ability reaches for it on a turn one
-/// is ready, as Delve's beasts do: below a hundred, so a breather does not
+/// is ready: below a hundred, so a breather does not
 /// breathe the very turn its breath comes back, which reads as a machine
 /// rather than a monster.
 const ABILITY_CHANCE_PCT: u32 = 40;
@@ -513,7 +513,7 @@ const WANDER_CHANCE_PCT: u32 = 30;
 const THROW_CHANCE_PCT: u32 = 50;
 
 /// The furthest a monster goes for something worth having, in steps:
-/// Corsair's four, a short detour, so a goblin that sees a better blade
+/// four, a short detour, so a goblin that sees a better blade
 /// across the room takes it up on its way and one at the far end of the
 /// floor is left for the adventurer.
 pub(crate) const SCAVENGE_REACH: i32 = 4;
@@ -522,8 +522,8 @@ pub(crate) const SCAVENGE_REACH: i32 = 4;
 /// what it is, so a monster that never runs has no `FleeWhenHurt` in it
 /// rather than one that checks a threshold of nothing every turn.
 ///
-/// Running comes first, before any blow, where Foundry and Delve put it
-/// after the blow: a trait's words are what the examine panel promises,
+/// Running comes first, before any blow, where Foundry puts it after the
+/// blow: a trait's words are what the examine panel promises,
 /// and a monster said to run when hurt that fights on while its enemy
 /// stands beside it, or shoots on from where it stands, never runs at
 /// all. With nowhere to run it fights, since the flight finds no step.

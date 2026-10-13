@@ -76,7 +76,7 @@ pub struct UnloadPlugin;
 impl Plugin for UnloadPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Stash>()
-            .needs::<Saves>("UnloadPlugin", "`Saves`, the backend the stash is written through, such as `Saves::platform_default(\"my-game\")`")
+            .needs::<Saves>("UnloadPlugin", "`Saves`, the backend the stash is written through, such as the one `RoguelikePlugins::saves(\"my-game\")` inserts, which keeps a scripted run in memory, or `Saves::platform_default(\"my-game\")`")
             // In the save stage, after the stash is refreshed, so what is
             // written on the way out is the run as it stood last.
             .add_systems(Last, flush_on_exit.in_set(rl_bevy::EndOfFrame::Save).after(crate::run::refresh_stash));

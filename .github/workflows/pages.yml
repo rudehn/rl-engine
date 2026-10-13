@@ -4,21 +4,18 @@ name: pages
 # which scripts/expand-guide.py keeps true; this is for the sidebar, the
 # search and a link that fits in a release note.
 # Published at a release, when the docs are brought up to the code, rather
-# than on every push to main, where they may lag it.
+# than on every push to main, where they may lag it: release.yml calls this
+# once its CI run with the documentation checks on has passed, so a guide
+# whose pages fail those checks is never put up. Not on a tag of its own,
+# which would publish whatever the release's checks went on to say.
 on:
-  push:
-    tags: ["v*"]
+  workflow_call:
   workflow_dispatch:
 
 permissions:
   contents: read
   pages: write
   id-token: write
-
-# One deployment at a time, and never cancel one half way.
-concurrency:
-  group: pages
-  cancel-in-progress: false
 
 jobs:
   build:
@@ -101,6 +98,12 @@ jobs:
     needs: build
     if: needs.build.outputs.site == 'true'
     runs-on: ubuntu-latest
+    # One deployment at a time, and never cancel one half way. On the job
+    # rather than the workflow, so it holds the same whether this runs by
+    # hand or is called from a release.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

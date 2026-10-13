@@ -90,6 +90,7 @@ pub struct Signal {
     pub turns: u16,
 }
 
+// ANCHOR: sense
 /// Tells a probe holding the turn that it has an alarm to raise: it knows
 /// where the commando is and has not raised one yet.
 pub fn sense_alarm(
@@ -107,6 +108,7 @@ pub fn sense_alarm(
         snapshot.add_sense(Signal { kind, turns: alarm.signal });
     }
 }
+// ANCHOR_END: sense
 
 // ANCHOR: signal
 /// Raise the alarm: begin signalling, which the engine carries on turn

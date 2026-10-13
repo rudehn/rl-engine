@@ -60,6 +60,7 @@ impl Tactic<Entity> for FleeAfterStealing {
     }
 }
 
+// ANCHOR: steal
 /// Takes a random thing its target carries but does not wear, then marks
 /// the taker [`Stole`] so its brain flees with it: a monkey's `stealing`.
 /// Takes no arguments.
@@ -89,6 +90,7 @@ impl FromArgs for Steal {
         crate::effects::moving::no_args(args, Self::KIND).map(|_| Self)
     }
 }
+// ANCHOR_END: steal
 
 /// `thief` takes a random thing `victim` carries but does not wear, as
 /// [`Steal`] says, marks `thief` [`Stole`] and says whether it took

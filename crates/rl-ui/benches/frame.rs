@@ -177,7 +177,7 @@ fn still(c: &mut Criterion) {
 
 /// A frame in which the light moved and nothing else did.
 ///
-/// The claim item 2 of `docs/TODO.md` makes: `update_lighting` marks every
+/// The claim `docs/TODO.md` made when this was written: `update_lighting` marks every
 /// `Viewshed` in the world stale whenever the composed light changed, so
 /// one actor carrying a torch one cell costs every other actor a
 /// shadowcast on the next frame.

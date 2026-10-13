@@ -301,7 +301,7 @@ A use a `Reflects` body turns back writes `Reflected { by, onto, source }`, said
 
 ### rl-overworld
 
-- `OverworldPlugin`, the world map as a screen, opt-in like any other.
+- `OverworldPlugin`, the world map as a screen, opt-in like any other. No example game adds it or `StreamingPlugin` yet.
 - Says what it needs: no layout, no screen, and it says so when play begins rather than drawing nothing.
 - Open or closed on the shared `Modals` stack, so it and a game's own screens cannot both think they own the arrow keys.
 - The world drawn from its bands with rivers, roads, discovered sites and the player.
@@ -332,35 +332,6 @@ A use a `Reflects` body turns back writes `Reflected { by, onto, source }`, said
 Each step is a runnable binary in `examples/tutorial/src/bin`, so every chapter's code is compiled by CI and can be played on its own; the chapters quote the sources through mdBook anchors rather than restating them, and `scripts/check-guide.sh` fails the build if an anchor, an image or a table-of-contents entry stops resolving.
 The same book's `docs/guide/src/systems` is a reference page per subsystem, thirty of them, for reading once the chapters have taught how the pieces fit rather than while learning them.
 Each page names its plugins and the files it documents in a manifest `scripts/check-systems.py` checks against the code, and the check fails the build, not just warns, when a plugin lands with no page or a page falls behind the source it names.
-
-## The dungeon: the Hollow Whale
-
-Five floors of a beached leviathan, mouth to heart, with no surface and, below the Maw's grey daylight, no light but a brand, the bile and whatever a beast sheds: a cave with teeth, a BSP gullet, a stomach of rooms pooled with bile, a bone-walled ribcage, and a prefab heart chamber with a warden whose death wins the run.
-`floors.rs` is the whole map builder; it is the test that a dungeon delve is first-class.
-It is where lighting, stealth, hearing and abilities meet. The brand burns `Fuel` and shift and `L` smothers it, which is a way past a beast that has not noticed you rather than only a way to see less; a torch lies on the first floor to carry and set down, whalers' lamps are the fixtures, and `v` shows light as digits. The delver's five knacks are data in `assets/abilities.ron`, with `Drain` the delve's own effect in `effects.rs`, and gut eels spit back.
-Its bone rats and salt ghosts hear, from `hearing` in `beasts.ron`: a fight carries eight steps of open gut, so a beast round a corner comes to one it cannot see, and a curtain of sinew hides a fight but does not quiet it.
-Fire and gas meet here: slicks of fat catch and burn to cinder, sinew curtains burn away, one bile pool in four reeks of a gas that burns and dazes, burning flesh smokes enough to hide in, and the fireball sets what it lands on alight.
-The rail shows vitals with the mana bar and which beasts in sight have noticed you.
-
-## The heist: the Counting House
-
-Three floors of a counting house after hours, and the worked example of stealth and light together: `examples/heist`.
-A thief with a shaded lantern climbs from the cellars to the strongroom and out of a window onto the roofs, and the coin carried out is the score, in the epitaph and on the screen the run ends on.
-The dark is the mechanic. Wall lamps are the only light; `s` snuffs the one beside you and `L` opens or shades the lantern, so being seen is a thing the player chooses moment by moment.
-What the engine cannot know, the heist says in the engine's own seams: which lamps are out is a `Sense` pushed in `PerceiveSet::Annotate`, relighting one is a `Tactic` of the game's own returning `Decision::own`, and `add_choice` routes it to the game's own action; a thrown pebble is the engine's landing noise, which a watchman who hears it round the walls walks to, and forgets once it sees the spot; a watchman who notices the player shouts, a noise of the game's own that brings everyone in earshot, and the log says what the house heard from `NoiseHeard`.
-It is the test that stealth, light, the perceive stage and a game's own choices meet without any of them knowing about the others.
-
-## The open world: Corsair
-
-Islands in daylight from the world graph, dark caves lit by the player's lantern and the smugglers' own, ports with huts, a bestiary, armory, affixes, statuses, quests and tile looks from RON, caves with a treasure vault, a pistol, a ledger, saving and continuing, and a balance report.
-Its sea chest is the engine's `InventoryPanel` under another name, and a bottle of rum is described by what a pull of it does, which the bottle carries as a `use` trigger and one charge rather than as an ability the captain is said to know.
-Its save is four kinds and four resources: a captain, a monster, an item and a stairway say what they are, and the engine walks the world.
-Its armory is its `ItemMaker`: the engine's `LootPlugin` washes up to two finds onto each region of the sea as it first streams in, three on a port, drawn from `item_spawns.ron` by the region's distance from home, and leaves what a monster drops where it dies; the armory rolls each found blade or coat's enchant and affixes from the stream the engine hands it, and a cave's hoard, laid by hand at its vault's marks, rolls the richer quality a hoard gets.
-Its abilities are a pirate's: a broadside on powder, a grapnel, and a shakedown, `Plunder`, which is Corsair's own effect; a pull of rum is not among them, since the bottle is used and spent rather than aimed; cutthroats throw the grapnel back, and its cave dwellers notice rather than see on sight.
-Its doors shut, and only a mind with the wits opens one: the crab is mindless, the dog and jaguar are animals, and the cutthroats and marines are sapient, which the log shows when one works a door in sight; `c` shuts a door.
-The crew have hands: cutthroats come with throwing knives and throw them from range, marines put on better gear they find, a sapient monster picks up a knife when it has none, and the log says what one in sight takes up, puts on or throws. `r` throws, `t` throws from the chest, `e` puts on what lies underfoot, and a monster's bag survives a save.
-That all five genres of ability share one registry is `crates/rl-bevy/tests/genres.rs`, not a game.
-It is built only on the public API, so it is the test that the seams are right.
 
 ## The fight: Foundry
 
@@ -409,7 +380,6 @@ An engine gap it works around is in `docs/TODO.md`: the `Doors` pass hangs two d
 ## Not built yet
 
 - Heat and cold that put fire out, liquids that flow, and wind.
-- Nights on Corsair's open water, and a lantern the player can douse or run out of.
 - Lit detection ranges, a light-averse tactic, and a ranged penalty in the dark once accuracy exists.
 - Scripted encounters, which want an ability's effect list without the turn, the cost and the cursor.
 - Bevy UI presenters over the panel views (phase H of `docs/design/ui.md`). The views and collectors already do not know which backend draws them; what a node tree would add is wrapping, proportional text, mouse hover and sub-cell bars. Deferred until a game asks for one of those, since it is a second set of presenters to keep and its tests are node trees rather than the exact-text ones that have caught the bugs so far.

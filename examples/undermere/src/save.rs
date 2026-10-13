@@ -71,7 +71,7 @@ pub const SLOT: &str = "undermere";
 
 // ANCHOR: register
 /// What the save is made of: the engine's plugins, the five kinds, and
-/// the nine resources; and the records, in their own slot.
+/// the ten resources; and the records, in their own slot.
 pub fn register(app: &mut App) {
     app.add_plugins((SavePlugin::new(SLOT).version(VERSION).on_arrival(), UnloadPlugin, RecordsSavePlugin))
         .save_kind::<ItemKind>()
@@ -433,6 +433,7 @@ impl SaveableState for MonsterLore {
     }
 }
 
+// ANCHOR: way
 /// A way through, as the save writes it: which way it is, which is how it
 /// is named and drawn. The engine keeps where it stands and where it
 /// leads.
@@ -451,6 +452,7 @@ impl Saveable for Way {
         e.id()
     }
 }
+// ANCHOR_END: way
 
 /// One of Mereholt's people, as the save writes them: their role and the
 /// name this run gave them. The engine gives back where they stand, their

@@ -76,10 +76,13 @@ impl Plugin for UndermerePlugin {
             // body is a "goblin corpse", and one with a name of its own,
             // a mercenary or Grubnak, "the corpse of Brenna".
             .add_plugins(RemainsPlugin::naming(RemainsNaming::new("{what} corpse").proper("the corpse of {what}")))
-            // The engine's multi-turn work, for the waystone's kneeling:
-            // broken off by harm, and answered by `waystone`.
+            // The engine's multi-turn work, the adventurer's long actions:
+            // the waystone's kneeling and freeing a captive, each spent and
+            // broken off by the engine and answered by `waystone` and
+            // `captives`.
             .add_plugins(WorkPlugin)
-            .add_work(crate::waystone::CALLING);
+            .add_work(crate::waystone::CALLING)
+            .add_work(crate::captives::FREEING);
         // Which kind a death's remnant stands for, so a burst of spores
         // where a myconid fell is learned as the myconid's.
         rl_engine::rl_bevy::KeepOnRemnant::keep_on_remnant::<crate::bestiary::KindTag>(app);
@@ -319,8 +322,9 @@ impl Plugin for UndermerePlugin {
             )
                 .in_set(TurnSet::React),
         );
-        // A shackled captive's own "free".
-        app.add_systems(Turn, crate::captives::answer_free.in_set(TurnSet::React));
+        // A shackled captive's own "free": the work at the shackles begun,
+        // and answered when it is done or broken off.
+        app.add_systems(Turn, (crate::captives::answer_freeing, crate::captives::answer_free).chain().in_set(TurnSet::React));
         // What a floor hides: its traps and flagstones stood up on its
         // first arrival, a trap seen going off shown, and what the
         // adventurer spotted said in the log.
@@ -387,11 +391,9 @@ impl Plugin for UndermerePlugin {
         app.add_systems(Turn, crate::mercenaries::keep_hire_offered.in_set(TurnSet::Schedule));
         app.add_systems(Turn, crate::townsfolk::sense_beats.in_set(PerceiveSet::Annotate));
         app.add_systems(Turn, crate::townsfolk::walk_rounds.in_set(TurnSet::Schedule));
-        // A waystone: refused in Mereholt before its use is spent, the
-        // adventurer's every turn spent kneeling once it is used, and the
-        // call answered, or broken off by harm.
+        // A waystone: refused in Mereholt before its use is spent, and the
+        // call answered, or said to be broken off.
         app.add_systems(Turn, crate::waystone::refuse_at_home.in_set(ResolveSet::Travel));
-        app.add_systems(Turn, crate::waystone::kneel.in_set(DecideSet::Game));
         app.add_systems(Turn, (crate::waystone::answer_the_call, crate::waystone::broken_off).in_set(TurnSet::React));
         // What is known of a kind's tricks, learned off the same messages
         // the tricks above, an ability's own landing and the engine's own

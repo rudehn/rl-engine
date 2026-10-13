@@ -90,6 +90,11 @@ pub fn start(
         lore.learn(name);
     }
     commands.insert_resource(lore);
+    // Who Mereholt's people are this run, each named apart from everybody
+    // else the run names.
+    let mut given = GivenNames::default();
+    commands.insert_resource(name_everyone(&content.townsfolk, &content.names, &seed, &mut given));
+    commands.insert_resource(given);
     let adventurer = spawn_adventurer(&mut commands, &content.registries);
     let extra = content.extra.as_deref().cloned().unwrap_or_default();
     equip_kit(&mut commands, adventurer, &content.armory, &content.registries, &extra);

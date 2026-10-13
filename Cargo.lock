@@ -2024,16 +2024,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "corsair"
-version = "0.3.0"
-dependencies = [
- "bevy",
- "rand 0.9.5",
- "rl-engine",
- "serde",
-]
-
-[[package]]
 name = "cpufeatures"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2164,16 +2154,6 @@ name = "data-encoding"
 version = "2.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4583a4551df46e2792f82ceeac45e850d2e2d5debba0b91f102385cda5b11f06"
-
-[[package]]
-name = "delve"
-version = "0.3.0"
-dependencies = [
- "bevy",
- "rand 0.9.5",
- "rl-engine",
- "serde",
-]
 
 [[package]]
 name = "derive_more"
@@ -2767,16 +2747,6 @@ dependencies = [
  "hash32",
  "portable-atomic",
  "stable_deref_trait",
-]
-
-[[package]]
-name = "heist"
-version = "0.3.0"
-dependencies = [
- "bevy",
- "rand 0.9.5",
- "rl-engine",
- "serde",
 ]
 
 [[package]]

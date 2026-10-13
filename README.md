@@ -9,7 +9,7 @@
 It gives you procedural dungeon and world generation, field of view, A* pathfinding, Dijkstra maps, monster AI, combat, items, quests and save games as small tested crates you depend on, not code you copy.
 The core algorithms have no Bevy dependency, so map generation, pathfinding and game rules run headless, test in milliseconds and build for WebAssembly.
 
-![Corsair, the worked example: a procedurally generated island port with docks, water and mangrove in daylight, each cell its own shade of its tile](docs/images/corsair.png)
+![Warren, the guide's game: a dug room lit by sight, remembered corridors in cold blue, two rats closing in, and the log counting their bites](docs/guide/src/images/warren.png)
 
 ## Features
 
@@ -44,7 +44,7 @@ The core algorithms have no Bevy dependency, so map generation, pathfinding and 
 - **Records of every run**: a run ends in a record in the game's own words, a score, a line and its sections, filed best first and a hundred deep, kept between launches, and shown on the screen the run ends on and on a records screen the title opens.
 - **Telling a run afterwards**: keys written down as they are played and pressed again against the clock they were read at, and a screen the run ends on with the outcome, the seed, the turn and whatever the game has to say about it.
 - **Deterministic seeds**: one run seed, named random streams per domain and per pass, and no hash containers in gameplay code, so a seed replays the same map.
-- **Balance tooling**: threat scoring and a spawn-band report you can run from the command line.
+- **Balance tooling**: threat scoring and a spawn-band report over a game's own spawn table.
 
 ## Getting started
 
@@ -143,8 +143,8 @@ let path = AStar::new().find(&view, start, exit, PathRules::default()).expect("r
 println!("{} cells in sight, the exit is {} steps away", seen.count(), path.steps.len());
 ```
 
-The five example games below are what to read once you know which subsystem you are looking for, and every mechanic the engine has is in one of them.
-`examples/delve/src/floors.rs` is a complete multi-floor map builder in one file.
+The two example games below are what to read once you know which subsystem you are looking for, and every mechanic the engine has is in one of them but the overworld and the streamed surface, which no example game uses yet.
+`examples/foundry/src/decks.rs` grows every deck of a run in one file.
 
 ## If the build fails
 
@@ -177,67 +177,6 @@ Each crate declares its tier in its `Cargo.toml`, and `scripts/check-tiers.sh` f
 | 3 | `rl-engine` | facade and prelude |
 
 ## Example games
-
-### Corsair, an open-world roguelike
-
-`examples/corsair` is a small pirate roguelike built only on the public API.
-It has islands from the world graph, ports with huts, a bestiary and an armory in RON, factions and bump-to-attack combat.
-Loot lies on the sand and in the pockets of the dead, with affixes and enchant levels from RON.
-A pistol shoots along a clear line of fire, venom and bleeding tick by the turn, and rum cures them.
-Smugglers' caves under the coves lead down to a treasure vault, and a ledger of tasks from RON ends in a victory.
-A broadside that spends powder, a grapnel that hauls a foe in, and a shakedown that spills a purse at a foe's feet are abilities in `assets/abilities.ron`, while a pull of rum is what the bottle itself does, in `assets/items.ron`; the last is the one effect Corsair adds to the engine's seven, in `src/abilities.rs`, and cutthroats throw the grapnel back.
-In the caves the smugglers have to notice a quiet player instead of seeing it at once, and the rail down the right marks which of them has.
-A message log, a sea chest to equip from, and a world map with a portal picker round it out.
-A game on this engine looks like that.
-
-```sh
-cargo run -p corsair -- --seed 7
-cargo run -p corsair -- --continue   # resume the saved run
-cargo run -p corsair -- --balance    # the spawn table's threat by band
-```
-
-Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `g` to pick up, `e` to put on what is underfoot, `c` to shut a door, `>` `<` or Enter to use a cave mouth or stairs, `f` to aim the pistol, `r` to aim a throwing knife, `1` to `3` to aim a broadside, a grapnel or a shakedown, `u` in the sea chest to drink a bottle, `a` to list them, `x` to look, `tab` to pick out what is in sight, `p` for the ship's log, `i` for the sea chest, `t` for the ledger of tasks, `m` for the map, `@` for the ship's articles, Escape for the menu, `S` to save, `q` to save and quit, and `?` for all of them on one screen.
-
-### The Hollow Whale, a dungeon delve
-
-![The Hollow Whale: the Maw, a cavern of flesh and teeth lit by a brand in the player's hand and grey daylight through the jaw](docs/images/delve.png)
-
-`examples/delve` is the Hollow Whale: five floors down a beached leviathan, mouth to heart, with no surface at all.
-No world graph, no streaming, no overworld: each floor is a place built by a chain of engine passes the first time its stairs are taken, and the run is won when the heart warden dies.
-Below the Maw the lights are off: the only light is the brand the player carries, the bile pooled on the floor, and what the bestiary says a beast sheds.
-`floors.rs` is the whole map builder.
-
-It is also where lighting, stealth and abilities meet.
-The brand burns down, and smothering it slips you past a beast that has not yet noticed you; a whaler's torch lies on the first floor to pick up and set down, lit wherever it lies; whalers' lamps burn on every floor; and `v` shows the light on each tile as a digit.
-The delver has five knacks in `assets/abilities.ron`: a fireball, a blink, a mend, a shield bash that asks the slot graph for the shield on its arm, and a drain that refills mana, the one effect the delve adds, in `src/effects.rs`.
-Gut eels spit back.
-
-```sh
-cargo run -p delve -- --seed 7
-cargo run -p delve -- --seed 7 --floor 3    # start deeper
-```
-
-Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `>` `<` or Enter for stairs, `1` to `5` to aim a knack, `a` to list them, `L` to smother or light the brand, `g` to pick up, `d` to set a torch or lamp down, `i` for the pack, `v` to show light, `x` to look, `tab` to pick out what is in sight, `c` for the character sheet, `p` for the log, Escape for the menu, `q` to quit, and `?` for all of them on one screen.
-
-### The Counting House, a heist
-
-`examples/heist` is three floors of a counting house after hours, and the engine's worked example of stealth and light.
-You are a thief with a shaded lantern and a handful of pebbles, up from the cellars through the counting floor to the strongroom, and out of a window onto the roofs.
-Whatever coin you carry out is the score; the watch carry cudgels and you carry a fist, so a fight is the thing that has gone wrong.
-
-The play is in the dark, and the dark is made of engine seams.
-Wall lamps are the only light: `s` snuffs the one beside you, which is where the watch cannot see you, and a watchman with hands walks over and lights it again.
-That last is a `Sense` the game pushes onto the snapshot, a tactic of the game's own that reads it, and a `Choice` the engine routes to the game's own action.
-`L` opens the lantern, which shows you the room and shows you to the room.
-`t` throws a pebble, and every watcher in earshot enters the sound in its `Aware` and walks to look, until the pebble is forgotten.
-A shut door stops sight and light, and a hound cannot open one.
-A watchman who spots you shouts, and everyone in earshot comes.
-
-```sh
-cargo run -p heist -- --seed 7
-```
-
-Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `g` to pick up, `t` to throw a pebble, `s` to snuff a lamp, `c` to shut a door, `L` to open or shade the lantern, `>` `<` or Enter for stairs and for the window out, `v` to show light, `i` for your pockets, `x` to look, `tab` to pick out what is in sight, `p` for the log, Escape for the menu, `q` to quit, and `?` for all of them on one screen.
 
 ### Foundry, a fight down a droid foundry
 
@@ -274,14 +213,14 @@ Abilities being data that serves any genre is proved by a test, not a game: `cra
 
 ### Pictures of your own
 
-Any of the games photographs its own window when asked, after playing a script of keys through the real input, which is how the pictures above were made:
+Any of the games photographs its own window when asked, after playing a script of keys through the real input:
 
 ```sh
-RL_CAPTURE=shot.png RL_CAPTURE_KEYS="L j*4 l*6 ." cargo run -p delve -- --seed 7
+RL_CAPTURE=shot.png RL_CAPTURE_KEYS="L j*4 l*6 ." cargo run -p foundry -- --seed 7
 
 # Write a run down as it is played, and play it back.
-RL_RECORD=run.ron cargo run -p delve -- --seed 7
-RL_REPLAY=run.ron cargo run -p delve
+RL_RECORD=run.ron cargo run -p foundry -- --seed 7
+RL_REPLAY=run.ron cargo run -p foundry
 ```
 
 The window opens above the others without taking focus, and the screen must be unlocked; a frame that comes back black is refused rather than saved.
@@ -322,7 +261,7 @@ cargo test --workspace                # everything, builds Bevy
 ## Status
 
 rl-engine is pre-1.0 and its API still moves.
-Three complete example games run on it, and CI checks formatting, clippy, tests, docs and the WebAssembly build of every tier-1 crate.
+Two complete example games and the guide's own run on it, and CI checks formatting, clippy, tests, docs and the WebAssembly build of every tier-1 crate.
 
 ## License
 

@@ -29,7 +29,7 @@ The model is Brogue: a dungeon that is beautiful to look at, items as the only p
 4. The run is won the moment the boss on floor ten dies, and lost when the adventurer dies.
 5. The end screen gives the score, line by line, and the run's story in numbers; the run joins the records.
 
-The adventurer can come back to town mid-run: by climbing out, or by a waystone, ten turns of kneeling that any harm breaks off, and the gate then leads back down to where they knelt, so a trip home buys time at the shops and never moves them forward.
+The adventurer can come back to town mid-run: by climbing out, or by a waystone, ten turns of kneeling that any harm, a foe coming into sight or a key breaks off, and the gate then leads back down to where they knelt, so a trip home buys time at the shops and never moves them forward.
 
 ## The screen
 
@@ -132,7 +132,8 @@ Part 5's spec, `docs/superpowers/specs/2026-10-08-undermere-town-design.md`, is 
 
 ## Mercenaries
 
-For part 6: hired at the tavern from a few candidates drawn each visit, each a kind (sellsword, bowman, hedge witch, cleric, brute) with a name, traits (brave, greedy, loyal, drunk) and a kit.
+For part 6: hired at the tavern from a few candidates drawn each visit, each with a generated name and a kit rolled from a data file: a weapon, armor, perhaps a consumable, at levels that may make it weak or stacked, and a fee that follows what it carries.
+Kinds of mercenary and tempers are left for later.
 At most two at once.
 A mercenary follows, fights what the party fights, runs when badly hurt, drinks its own potions, picks up and wears gear better than its own, and follows the adventurer down every stair and through the gate.
 A simple order key switches between follow, hold and fight freely.
