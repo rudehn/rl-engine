@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- A scripted run never touches the player's save, in any game that names its saves. `RoguelikePlugins::saves("my-game")` adds the new `PlayerSaves`, which inserts `Saves`: the platform's default under that name, unless the run is `scripted()`, a replay, a recording or a capture, which saves in memory. A scripted run started on the player's save would play a different run, and its first save, an arrival or the window closing, would write over the player's.
+  To change: a game that inserts `Saves::platform_default(name)` itself calls `.saves(name)` on its `RoguelikePlugins` instead, and a game that copied a `scripted` check and a memory backend for it drops both for the engine's.
+
 - A blow that kills an unaware target no longer makes it notice its killer: `wake_on_damage` skips a `DamageDealt` whose target a `DeathEvent` of the same pass names, so the log stops reading "the kobold notices you!" after "You kill the kobold".
   A target that survives the blow wakes as before, and no game changes a line.
 - The inventory screen is lettered `a)` to `z)` and works in two steps, so no key means two things on it: on the list, a letter or Enter opens a row, and only an opened row takes the action keys (`e` wear, `d` drop, `u` or Enter use, `t` throw); Esc goes back to the list, and Esc again closes the bag.

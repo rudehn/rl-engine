@@ -808,7 +808,7 @@ impl Plugin for SavePlugin {
             // start, even without a backend, since it says a slot exists.
             .init_resource::<SavedRun>()
             .insert_resource(SaveSlot { slot: self.slot.clone(), version: self.version })
-            .needs::<Saves>("SavePlugin", "`Saves`, the backend runs are written through, such as `Saves::platform_default(\"my-game\")`")
+            .needs::<Saves>("SavePlugin", "`Saves`, the backend runs are written through, such as the one `RoguelikePlugins::saves(\"my-game\")` inserts, which keeps a scripted run in memory, or `Saves::platform_default(\"my-game\")`")
             .reads::<LeaveRun>()
             // Exclusive, so it conflicts with everything else in `Last`; the
             // engine's own are ordered against it by `EndOfFrame`, and what

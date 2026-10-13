@@ -325,26 +325,6 @@ fn add_panels(app: &mut App, screen: &Screen) {
     // ANCHOR_END: title
 }
 
-/// Whether this run plays keys from a script of some kind: a replay, a
-/// recording, or a capture.
-fn scripted() -> bool {
-    use rl_engine::rl_bevy::replay::{RECORD_VAR, REPLAY_VAR};
-    std::env::var_os(REPLAY_VAR).is_some() || std::env::var_os(RECORD_VAR).is_some() || rl_engine::rl_render::capture::requested()
-}
-
-/// Where a run is saved: beside the executable, as `undermere.save.ron`,
-/// unless the run is `scripted`, which saves in memory. A scripted run
-/// plays keys against a seed of its own; starting it on the player's save
-/// would play a different run, and its first arrival would write over the
-/// player's.
-fn saves_for(scripted: bool) -> rl_engine::rl_save::Saves {
-    if scripted {
-        rl_engine::rl_save::Saves::new(rl_engine::rl_save::MemoryBackend::default())
-    } else {
-        rl_engine::rl_save::Saves::platform_default("undermere")
-    }
-}
-
 /// Draws each cloud a potion bursts into in its own colour, as
 /// [`CLOUD_TINTS`](undermere::content::CLOUD_TINTS) says, where the
 /// engine's map draws every gas nobody coloured in grey.
@@ -394,14 +374,15 @@ fn main() -> AppExit {
     let screen = Screen::new();
     let mut app = App::new();
     // ANCHOR: typeface
-    // The window, the terminal in the game's own face, the map and the
-    // engine's base; the game's subsystems are `UndermerePlugin`'s, added
+    // The window, the terminal in the game's own face, the map, the
+    // engine's base and where the run is saved, in memory for a scripted
+    // one; the game's subsystems are `UndermerePlugin`'s, added
     // once there, since a second `CombatPlugin` would panic.
-    app.add_plugins(RoguelikePlugins::new("Undermere", COLS, ROWS).cell(CELL).font(FONT).typeface(DEJAVU_SANS_MONO).map(screen.map).across(ACROSS))
+    let engine = RoguelikePlugins::new("Undermere", COLS, ROWS).cell(CELL).font(FONT).typeface(DEJAVU_SANS_MONO).map(screen.map).across(ACROSS);
+    app.add_plugins(engine.saves("undermere"))
         // ANCHOR_END: typeface
         .add_plugins(undermere::plugin::narrator())
         .insert_resource(Seed(seed))
-        .insert_resource(saves_for(scripted()))
         // Remembered beside the save and apart from it. A scripted run's
         // backend is in memory, so a capture or a replay starts on the
         // defaults whatever the player chose.
@@ -1231,20 +1212,6 @@ mod tests {
         let vitals = Screen::new().vitals;
         let armor = (vitals.y..vitals.bottom()).map(|y| from(&app, vitals.x, y)).find(|r| r.contains("armor")).expect("the armor");
         assert!(armor.contains("armor 1") && !armor.contains("armor 1?"), "{armor:?}");
-    }
-
-    /// A run played from a script, a replay, a recording or a capture,
-    /// saves somewhere of its own: it neither starts on the player's save
-    /// nor writes over it.
-    #[test]
-    fn a_scripted_run_never_touches_the_players_save() {
-        use rl_engine::rl_save::SaveBackend as _;
-        let real = rl_engine::rl_save::Saves::platform_default("undermere");
-        let before = real.load(undermere::save::SLOT).unwrap();
-        let scripted = saves_for(true);
-        scripted.persist(undermere::save::SLOT, "a scripted run").unwrap();
-        assert_eq!(real.load(undermere::save::SLOT).unwrap(), before, "the player's slot is as it was");
-        assert!(scripted.exists(undermere::save::SLOT), "and the scripted run has one of its own");
     }
 
     /// Every keeper's greeting, quoted as the trade screen says it, fits

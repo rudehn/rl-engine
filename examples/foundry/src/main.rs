@@ -207,22 +207,6 @@ fn add_panels(app: &mut App, screen: &Screen) {
     app.add_plugins(TitlePanel::new(screen.title_menu)).add_systems(Update, foundry::title::paint_backdrop.in_set(TitleSet::Backdrop));
 }
 
-/// Whether this run plays keys from a script of some kind: a replay, a
-/// recording, or a capture.
-fn scripted() -> bool {
-    use rl_engine::rl_bevy::replay::{RECORD_VAR, REPLAY_VAR};
-    std::env::var_os(REPLAY_VAR).is_some() || std::env::var_os(RECORD_VAR).is_some() || rl_engine::rl_render::capture::requested()
-}
-
-/// Where a run is saved: beside the executable, as `foundry.save.ron`,
-/// unless the run is `scripted`, which saves in memory. A scripted run
-/// plays keys against a seed of its own; starting it on the player's save
-/// would play a different run, and its first arrival would write over the
-/// player's.
-fn saves_for(scripted: bool) -> rl_engine::rl_save::Saves {
-    if scripted { rl_engine::rl_save::Saves::new(rl_engine::rl_save::MemoryBackend::default()) } else { rl_engine::rl_save::Saves::platform_default("foundry") }
-}
-
 fn main() -> AppExit {
     // Through the replay module, so a recorded run replays on its own seed.
     let mut seed = rl_engine::rl_bevy::replay::seed().unwrap_or_else(RunSeed::fresh);
@@ -250,7 +234,7 @@ fn main() -> AppExit {
     }
     let screen = Screen::new();
     let mut app = App::new();
-    app.add_plugins(RoguelikePlugins::new("Foundry", COLS, ROWS).map(screen.map))
+    app.add_plugins(RoguelikePlugins::new("Foundry", COLS, ROWS).map(screen.map).saves("foundry"))
         .add_plugins((CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, ThrowingPlugin, LightingPlugin, StealthPlugin, FactsPlugin, AbilitiesPlugin))
         // Fire and smoke, for the grenades: each registers the effect its
         // grenade names, `Ignite` and `Emit`, before the abilities load.
@@ -263,7 +247,6 @@ fn main() -> AppExit {
         .add_engine_effects()
         .insert_resource(foundry::content::registries())
         .insert_resource(Seed(seed))
-        .insert_resource(saves_for(scripted()))
         // ANCHOR: remember
         // Remembered beside the save and apart from it. A scripted run's
         // backend is in memory, so a capture or a replay starts on the
@@ -621,20 +604,6 @@ mod tests {
         press(&mut app, KeyCode::KeyT);
         let asked: Vec<Entity> = app.world_mut().resource_mut::<Messages<AimThrow>>().drain().map(|a| a.item).collect();
         assert_eq!(asked, vec![blade]);
-    }
-
-    /// A run played from a script, a replay, a recording or a capture,
-    /// saves somewhere of its own: it neither starts on the player's save
-    /// nor writes over it.
-    #[test]
-    fn a_scripted_run_never_touches_the_players_save() {
-        use rl_engine::rl_save::SaveBackend as _;
-        let real = rl_engine::rl_save::Saves::platform_default("foundry");
-        let before = real.load(foundry::save::SLOT).unwrap();
-        let scripted = saves_for(true);
-        scripted.persist(foundry::save::SLOT, "a scripted run").unwrap();
-        assert_eq!(real.load(foundry::save::SLOT).unwrap(), before, "the player's slot is as it was");
-        assert!(scripted.exists(foundry::save::SLOT), "and the scripted run has one of its own");
     }
 
     #[test]
