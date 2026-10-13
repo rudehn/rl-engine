@@ -230,9 +230,9 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [12_826_463_484_626_565_180, 7_694_520_662_295_449_001, 11_520_846_931_859_029_772],
-        "fingerprint tripwire: re-baselined when the dungeon part's fix waves met the engine's path fixes: minds flood \
-         round blocking props, a wary mind steps round a shown trap, a follower measures its gap on foot, wildlife \
-         gives way and a swap sets off the plates both are put onto"
+        [12_826_463_484_626_565_180, 7_694_520_662_295_449_001, 1_830_717_854_014_587_648],
+        "fingerprint tripwire: re-baselined, once, after the play notes merged: a lit window is seen and lit through, a \
+         kill notices nothing, arrows are never thrown and the bow outshoots a javelin, the doors passed are kept, and \
+         shops and hirelings' kits draw by tag"
     );
 }

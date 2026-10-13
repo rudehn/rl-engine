@@ -511,8 +511,8 @@ pub fn update_awareness(mut watch: Watch, mut noticed: MessageWriter<Noticed>) {
 /// the unseen is open; one aimed somewhere does. A status ticking carries
 /// no attacker and wakes nobody whoever is unseen.
 ///
-/// Not by a blow that killed its target: [`Dead`](crate::combat::Dead)
-/// lands only in cleanup, so the [`DeathEvent`] is what says the target is
+/// Not by a blow that killed its target: [`Dead`] lands only in cleanup,
+/// so the [`DeathEvent`](crate::combat::DeathEvent) is what says the target is
 /// past noticing, and the log would otherwise read that the kill was
 /// noticed.
 pub fn wake_on_damage(
