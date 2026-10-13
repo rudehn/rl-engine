@@ -167,10 +167,11 @@ fn plenty_on_an_ally_gives_a_second_ally_and_on_a_foe_a_second_foe_each_at_half_
 }
 
 /// A staff of blinking reaches five cells at every level it holds a charge
-/// at, which is also as far as its bolt is aimed: pointed at the fifth
-/// cell down open ground it sets the adventurer down there, pointed past
-/// it it still stops at the fifth, and pointed nearer it lands where it
-/// was pointed.
+/// at, which is also as far as its bolt is aimed, five cells: pointed at
+/// the fifth cell down open ground it sets the adventurer down there,
+/// pointed past it it still stops at the fifth, and pointed nearer it
+/// lands where it was pointed. The bolt's range is read off the staff, so
+/// the cursor offers no cell the blink will not reach.
 #[test]
 fn a_staff_of_blinking_reaches_exactly_as_far_as_its_aim_at_every_level() {
     for level in 1..=3 {
@@ -178,6 +179,8 @@ fn a_staff_of_blinking_reaches_exactly_as_far_as_its_aim_at_every_level() {
         for ((x, y), (lands_x, lands_y)) in [((5, 0), (5, 0)), ((5, -3), (5, -3)), ((6, 0), (5, 0))] {
             let (mut app, me, here) = arena(4);
             let staff = carried(&mut app, me, "staff of blinking", level);
+            let aimed = app.world().get::<Triggers>(staff).and_then(|t| t.0.iter().find_map(|t| t.targeting.as_ref())).map(|t| t.mode);
+            assert_eq!(aimed, Some(rl_engine::rl_grid::TargetMode::Bolt { range: 5 }), "level {level}: the cursor offers five cells");
             zap(&mut app, me, staff, here.offset(x, y));
             assert_eq!(at(&app, me), here.offset(lands_x, lands_y), "level {level}, aimed at ({x}, {y})");
         }
