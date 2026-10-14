@@ -88,9 +88,11 @@ pub fn vanish(world: &mut World, actor: Entity) {
 /// Takes out every conjured thing whose time is up, and says so of each
 /// the adventurer can see.
 ///
-/// In `TurnSet::React`, so a blade's last turn is the one its time ends
-/// in, read off the turn clock rather than counted, so a long action
-/// counts every turn it took.
+/// Straight after `TurnSet::React`, inside the pass, so a blade's last
+/// turn is the one its time ends in, and after the reactions rather than
+/// among them, since it reads the whole world and would be unordered
+/// against every one. Read off the turn clock rather than counted, so a
+/// long action counts every turn it took.
 pub fn fade(world: &mut World) {
     let now = world.resource::<Turns>().now();
     let mut fading = world.query::<(Entity, &Fades, &Name, &Position)>();

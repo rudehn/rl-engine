@@ -23,12 +23,15 @@
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
-use rl_engine::rl_bevy::plugin::{CleanupSet, NewRun, ResetsOnNewRun, Turn, TurnSet};
-use rl_engine::rl_bevy::{FirePlugin, LootPlugin, LootSet, NoiseRules, PrefabPlugin, PrefabSet, PropsPlugin};
+use rl_engine::rl_bevy::plugin::{CleanupSet, NewRun, ReactSet, ResetsOnNewRun, Turn, TurnSet};
+use rl_engine::rl_bevy::{AmmoSet, FactSet, FirePlugin, LootPlugin, LootSet, NoiseRules, PrefabPlugin, PrefabSet, PropsPlugin};
 
 use crate::armory::Armory;
 use crate::bestiary::Bestiary;
 use crate::content::Library;
+
+#[cfg(test)]
+mod ambiguity;
 
 /// What a sound carries, in steps of loudness over open ground: a step two
 /// tiles, so a keen-eared monster hears the adventurer coming and nothing
@@ -46,41 +49,77 @@ pub fn narrator() -> NarratorPlugin {
     NarratorPlugin::default()
 }
 
+/// The engine's subsystems a run plays with, and nothing of Undermere's
+/// own: fighting and minds, statuses, things carried, worn, thrown and
+/// drunk, light and the dark, being noticed and heard, what monsters
+/// breathe and cast, fire, the clouds potions burst into, the props the
+/// places stand, the arrows a bow spends, the slots the pieces fill,
+/// loot, the facts the quest counts, the record a run ends in, what the
+/// dead leave, the adventurer's long actions and trading.
+///
+/// [`UndermerePlugin`] adds these before any system of its own, and the
+/// ordering test builds the game with these and without the plugin, so
+/// whatever the plugin adds beyond them is the game's to order.
+pub fn add_engine(app: &mut App) {
+    app.add_plugins((CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, ThrowingPlugin, ConsumablesPlugin, LightingPlugin, StealthPlugin))
+        .add_plugins((AbilitiesPlugin, FirePlugin, GasPlugin, NoisePlugin::new(NOISE), PropsPlugin::spotting(crate::traps::SPOTTING), AmmoPlugin))
+        .add_plugins((PrefabPlugin::<Bestiary, Armory>::default(), LootPlugin::<Armory>::default()))
+        .add_plugins((FactsPlugin, RecordsPlugin))
+        // What the dead leave lying where they fell, for `raising` to
+        // find within sight and reach: every monster but the king, who
+        // never dies in a way anything could be left to raise. A kind's
+        // body is a "goblin corpse", and one with a name of its own,
+        // a mercenary or Grubnak, "the corpse of Brenna".
+        .add_plugins(RemainsPlugin::naming(RemainsNaming::new("{what} corpse").proper("the corpse of {what}")))
+        // The engine's multi-turn work, the adventurer's long actions:
+        // the waystone's kneeling and freeing a captive, each spent and
+        // broken off by the engine and answered by `waystone` and
+        // `captives`.
+        .add_plugins(WorkPlugin)
+        // Trading, paid in the `Currency` the plugin inserts once the
+        // content is read.
+        .add_plugins(TradePlugin);
+}
+
+/// The order of Undermere's own answers inside `TurnSet::React`, so no two
+/// that touch the same thing run in whichever order the scheduler picks,
+/// which any system added anywhere could change.
+///
+/// A place filled first, on the arrival that finds it, after the engine's
+/// prefab slots; then the engine's own settling of worn gear, sleep,
+/// charges, ammunition and work; then what the pass did answered, after
+/// the engine's loot too, since a lever or a flood edits the map loot is
+/// laid on; then what the adventurer is derived again from the stats as
+/// they now stand; and last the tally counting all of it. Each step's
+/// own systems are chained, in the order the step reads in.
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ReactStep {
+    /// A place filled the moment it is first entered.
+    Fill,
+    /// What the pass did, answered: work done, offers taken up, the map
+    /// changed, the tricks and what is learned of them.
+    Answer,
+    /// What the adventurer is, kept from the stats as they stand.
+    Keep,
+    /// The run's story in numbers, and the quest's.
+    Count,
+}
+
 /// Undermere's own systems, and the engine's plugins it plays with.
 pub struct UndermerePlugin;
 
 impl Plugin for UndermerePlugin {
     fn build(&self, app: &mut App) {
-        // The engine's subsystems a run plays with: fighting and minds,
-        // statuses, things carried, worn, thrown and drunk, light and the
-        // dark, being noticed and heard, what monsters breathe and cast,
-        // fire, the clouds potions burst into, the props the places stand,
-        // the arrows a bow spends, the slots the pieces fill, loot, the
-        // facts the quest counts, and the record a run ends in.
-        app.add_plugins((CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, ThrowingPlugin, ConsumablesPlugin, LightingPlugin, StealthPlugin))
-            .add_plugins((AbilitiesPlugin, FirePlugin, GasPlugin, NoisePlugin::new(NOISE), PropsPlugin::spotting(crate::traps::SPOTTING), AmmoPlugin))
-            // The run's captive: the one verb `PropsPlugin` does not already
-            // know, offered by an actor rather than a prop.
-            .add_verb(crate::captives::FREE_VERB)
+        add_engine(app);
+        // The run's captive: the one verb `PropsPlugin` does not already
+        // know, offered by an actor rather than a prop.
+        app.add_verb(crate::captives::FREE_VERB)
             // A sealed vault's concealed lever, and what a reward piece,
             // a flavor piece or a wall carving offers to be read.
             .add_verb(crate::vaults::PULL_VERB)
             .add_verb(crate::vaults::wells::DRINK_VERB)
             .add_verb(crate::vaults::wells::TEMPER_VERB)
             .add_verb(crate::writings::READ_VERB)
-            .add_plugins((PrefabPlugin::<Bestiary, Armory>::default(), LootPlugin::<Armory>::default()))
-            .add_plugins((FactsPlugin, RecordsPlugin))
-            // What the dead leave lying where they fell, for `raising` to
-            // find within sight and reach: every monster but the king, who
-            // never dies in a way anything could be left to raise. A kind's
-            // body is a "goblin corpse", and one with a name of its own,
-            // a mercenary or Grubnak, "the corpse of Brenna".
-            .add_plugins(RemainsPlugin::naming(RemainsNaming::new("{what} corpse").proper("the corpse of {what}")))
-            // The engine's multi-turn work, the adventurer's long actions:
-            // the waystone's kneeling and freeing a captive, each spent and
-            // broken off by the engine and answered by `waystone` and
-            // `captives`.
-            .add_plugins(WorkPlugin)
             .add_work(crate::waystone::CALLING)
             .add_work(crate::captives::FREEING);
         // Which kind a death's remnant stands for, so a burst of spores
@@ -109,7 +148,7 @@ impl Plugin for UndermerePlugin {
         // Trading, paid in the one tag every piece of gold carries, so the
         // engine counts a purse and a price without knowing a coin from
         // anything else Undermere calls an item.
-        app.insert_resource(Currency(library.registries.tags.expect("gold"))).add_plugins(TradePlugin);
+        app.insert_resource(Currency(library.registries.tags.expect("gold")));
         // The gold carried, said on the rail in the coin's own colour.
         let (r, g, b) = library.armory.defs.get(library.armory.defs.expect(crate::finds::GOLD)).color;
         app.add_tone(crate::shops::GOLD_TONE, Color::srgb(r, g, b));
@@ -166,7 +205,11 @@ impl Plugin for UndermerePlugin {
         // what a continued run's save says.
         app.insert_resource(crate::writings::load());
         app.init_resource::<crate::writings::WritingsProgress>().reset_on_new_run::<crate::writings::WritingsProgress>();
-
+        // Undermere's reactions in their steps, ordered against the
+        // engine's own phases: see `ReactStep`.
+        app.configure_sets(Turn, (ReactStep::Fill, ReactStep::Answer, ReactStep::Keep, ReactStep::Count).chain().in_set(TurnSet::React))
+            .configure_sets(Turn, ReactStep::Fill.after(PrefabSet::Fill).before(ReactSet::Settle).before(AmmoSet::Resolve))
+            .configure_sets(Turn, ReactStep::Answer.after(ReactSet::Settle).after(AmmoSet::Resolve).after(LootSet::Scatter));
         // The run's start, and a continued run after the fresh start has
         // stood aside.
         app.add_systems(NewRun, crate::run::start);
@@ -174,14 +217,11 @@ impl Plugin for UndermerePlugin {
         // A continued run lays its bodies back down in `resume`, with the
         // glyph they lived with: drawn as corpses once it has.
         app.add_systems(NewRun, crate::corpses::dress_the_dead.after(crate::run::resume));
-        // Every body, the turn it is left, drawn as a corpse of its kind.
-        app.add_systems(Turn, crate::corpses::dress_the_dead.in_set(TurnSet::React));
         // The doors the adventurer has walked through, kept with the run,
-        // and the key that marks the ones not yet.
+        // noted among the answers, and the marks the key with the input
+        // puts on the ones not yet, drawn over the map.
         app.init_resource::<crate::doors::Passed>().reset_on_new_run::<crate::doors::Passed>();
         app.init_resource::<crate::doors::DoorTiles>().init_resource::<crate::doors::DoorMarks>().reset_on_new_run::<crate::doors::DoorMarks>();
-        app.add_systems(Turn, crate::doors::note_doors_passed.in_set(TurnSet::React));
-        app.add_systems(Update, crate::doors::mark_doors.in_set(EngineSet::Input));
         app.add_systems(Update, crate::doors::draw_door_marks.in_set(PresentSet::Overlay));
         // What a run is saved as, and when: on the way out and on every
         // arrival.
@@ -196,18 +236,14 @@ impl Plugin for UndermerePlugin {
         // Which stocking Mereholt's shelves are, begun again with each run.
         app.init_resource::<crate::shops::Shelves>().reset_on_new_run::<crate::shops::Shelves>();
         app.add_observer(crate::tally::note_departure);
-        // What a turn did, counted and answered inside it: the fighting and
-        // what was found and drunk into the tally, and a boss's death into
-        // the fact the quest counts, and the win when it finishes the
-        // quest. Chained, and after the arrivals' chain, which raises the
-        // tally's deepest floor, so nothing writes the tally in an order
-        // the scheduler picks.
+        // What a turn did, counted inside it: the fighting and what was
+        // found and drunk into the tally, and a boss's death into the fact
+        // the quest counts, and the win when it finishes the quest. Last,
+        // after every answer, so what an answer hands over or kills is
+        // counted the pass it happens.
         app.add_systems(
             Turn,
-            (crate::tally::count_the_fighting, crate::tally::count_what_is_found, crate::quest::report_bosses)
-                .chain()
-                .in_set(TurnSet::React)
-                .after(LootSet::Scatter),
+            (crate::tally::count_the_fighting, crate::tally::count_what_is_found, crate::quest::report_bosses).chain().in_set(ReactStep::Count),
         );
         // The run written down the frame it is over, however it ended.
         app.add_systems(OnEnter(EngineState::Over), crate::tally::record);
@@ -236,101 +272,86 @@ impl Plugin for UndermerePlugin {
                 crate::finds::lay,
             )
                 .chain()
-                .in_set(TurnSet::React)
-                .after(PrefabSet::Fill)
+                .in_set(ReactStep::Fill)
                 .before(LootSet::Scatter),
         );
-        // What the adventurer wears and carries, kept in step every pass:
-        // what a worn thing lends, then how far the lantern reaches where
-        // the adventurer stands. Chained, since both light things. Beside
-        // them what too heavy a thing costs, and how sneaky the stealth
-        // stat makes the adventurer, each reading its own numbers.
-        app.add_systems(Turn, (crate::wearing::lend, crate::light::dim_the_lantern).chain().in_set(TurnSet::React));
-        app.add_systems(Turn, (crate::strength::keep_strength, crate::stats::keep_stealth).in_set(TurnSet::React));
-        // What the rings give that the engine does not read itself: health
-        // back over time, a staff's pace and what a blow puts towards its
-        // next charge, and how easily what is hidden is spotted. Chained, so
-        // what a blow puts towards a charge is put at the pace this pass's
-        // wisdom keeps.
+        // What the adventurer and those around them are, kept in step every
+        // pass from the stats as they stand, after the engine has folded
+        // what is worn onto them. First what puts a status or a stat on
+        // somebody: what a worn thing lends, fire immunity and discord kept
+        // on whoever holds them, a Choirmaster's choir, a troll's
+        // regeneration halted while it burns, the Crown of Grubnak's aura.
+        // Then what reads the stats those leave: what too heavy a thing
+        // costs, how far the lantern reaches, how sneaky the stealth stat
+        // makes the adventurer, and what the rings give that the engine
+        // does not read itself, health back over time, a staff's pace and
+        // what a blow puts towards its next charge, at the pace this pass's
+        // wisdom keeps, and how easily what is hidden is spotted.
         app.add_systems(
             Turn,
-            (crate::stats::regenerate, crate::staffs::keep_pace, crate::staffs::reap, crate::stats::keep_keen).chain().in_set(TurnSet::React),
+            (
+                crate::wearing::lend,
+                crate::conditions::keep_fireproof,
+                crate::conditions::keep_discord,
+                crate::tricks::sing_choir,
+                crate::tricks::keep_regen_halted,
+                crate::artifacts::crown_aura,
+                crate::strength::keep_strength,
+                crate::light::dim_the_lantern,
+                crate::stats::keep_stealth,
+                crate::stats::regenerate,
+                crate::staffs::keep_pace,
+                crate::staffs::reap,
+                crate::stats::keep_keen,
+            )
+                .chain()
+                .in_set(ReactStep::Keep),
         );
         // How loud every step is, read off the footfall stat at the start
         // of every pass, before anyone steps in it: what is worn is folded
         // onto the stat in the reactions, unordered against these.
         app.add_systems(Turn, crate::stats::keep_footfall.in_set(TurnSet::Schedule));
-        // What the adventurer's hands showed of their things, then a curse
-        // closing on them, then how long wearing a thing tells its level,
-        // then the turns they have worn what they do not know yet: chained,
-        // since each says so in the log, and the lines land in this order.
-        app.add_systems(
-            Turn,
-            (crate::lore::learn_by_use, crate::enchant::bind_on_wear, crate::lore::tell_unfamiliar, crate::lore::grow_familiar).chain().in_set(TurnSet::React),
-        );
         // What a zap at somewhere strikes, weighed between the actions that
         // make one and the triggers that land it, so a wand zapped at
         // nobody is not learned by it; and what any use showed nothing of,
         // which the reactions above read and empty.
         app.init_resource::<crate::effects::ShowedNothing>();
         app.add_systems(Turn, crate::lore::weigh_landings.in_set(TurnSet::Resolve).after(ResolveSet::Act).before(ResolveSet::Triggers));
-        // Who fights beside the adventurer: a conjured blade gone when its
-        // time is up, and a walk into an ally or into wildlife a change of
-        // places with it, by the engine's bump rules.
-        app.add_systems(Turn, crate::allies::fade.in_set(TurnSet::React));
+        // A walk into an ally or into wildlife a change of places with it,
+        // by the engine's bump rules.
         let bumps = crate::wildlife::bump_rules(app.world().resource::<Registries>());
         app.insert_resource(bumps);
-        // What the potions' statuses do that the engine's do not: a
-        // confused step turned about once everyone has chosen and before
-        // anything resolves it, and fire immunity kept on whoever holds it.
-        // What a monster throws: only what strikes, and whether it has
-        // stolen something and should run with it.
-        app.add_systems(Turn, (crate::bestiary::throw_what_strikes, crate::tricks::sense_stole).in_set(DecideSet::Perceive).after(PerceiveSet::Annotate));
+        // What a hired mercenary knows of what it carries and sees; what a
+        // monster throws, only what strikes; and whether it has stolen
+        // something and should run with it. In that order, so what it
+        // throws and runs with is chosen among what it knows, and all three
+        // after every annotation and before the engine weighs the
+        // snapshot, so it is weighed as the game rewrote it.
+        app.add_systems(
+            Turn,
+            (crate::mercenaries::know_as_the_adventurer_does, crate::bestiary::throw_what_strikes, crate::tricks::sense_stole)
+                .chain()
+                .in_set(DecideSet::Perceive)
+                .after(PerceiveSet::Annotate)
+                .before(PerceiveSet::Weigh),
+        );
         // The lived-in dungeon: a patrolling mind's next
         // waypoint, sensed beside the engine's own post and leader, and
         // never for an actor with no route of its own.
         app.add_systems(Turn, crate::tricks::sense_patrols.in_set(PerceiveSet::Annotate));
         app.add_stream::<crate::conditions::Stumbles>("UndermerePlugin");
         app.add_systems(Turn, crate::conditions::stumble.in_set(DecideSet::Game));
-        app.add_systems(Turn, (crate::conditions::keep_fireproof, crate::conditions::keep_discord).in_set(TurnSet::React));
-        // The bestiary's own tricks that read what a turn did rather than
-        // the trait model's fold: a blow that splits what it left alive, a
-        // blow that mends its own drainer, a step that leaves fire behind
-        // it, a troll's regeneration
-        // halted while it burns, a Choirmaster's choir kept over its own
-        // side, the Widow's egg sacs stepped beside, the Mother Below's
-        // young torn from the walls and gone the pass she dies, and the
-        // Drowned King's own pool.
-        app.add_systems(
-            Turn,
-            (
-                crate::tricks::judge_splits,
-                crate::tricks::judge_draining,
-                crate::tricks::trail_fire,
-                crate::tricks::keep_regen_halted,
-                crate::tricks::sing_choir,
-                crate::tricks::hatch_beside,
-                crate::tricks::spawn_young,
-                crate::tricks::die_with_mother,
-                crate::tricks::rise_from_the_pool,
-            )
-                .in_set(TurnSet::React),
-        );
-        // A shackled captive's own "free": the work at the shackles begun,
-        // and answered when it is done or broken off.
-        app.add_systems(Turn, (crate::captives::answer_freeing, crate::captives::answer_free).chain().in_set(TurnSet::React));
+        add_answers(app);
         // What a floor hides: its traps and flagstones stood up on its
-        // first arrival, a trap seen going off shown, and what the
-        // adventurer spotted said in the log.
+        // first arrival. A trap seen going off, and what the adventurer
+        // spotted, are among the answers.
         app.insert_resource(crate::traps::Hiding::load());
-        app.add_systems(Turn, crate::traps::stand_hidden.in_set(TurnSet::React).after(PrefabSet::Fill));
-        app.add_systems(Turn, (crate::traps::show_sprung, crate::traps::tell_spotted).in_set(TurnSet::React));
+        app.add_systems(Turn, crate::traps::stand_hidden.in_set(ReactStep::Fill));
         // The risk-and-reward pieces' own: the marks a piece leaves for the
         // game to fill, after the engine's own `PrefabSet::Fill` has filled
-        // every slot beside them, a lever and a vault's key, and what
-        // lifting a prize sets off.
-        app.add_systems(Turn, crate::vaults::spawn_vault_marks.in_set(TurnSet::React).after(PrefabSet::Fill));
-        app.add_systems(Turn, (crate::vaults::answer_pull_lever, crate::vaults::spend_vault_key).in_set(TurnSet::React));
+        // every slot beside them. A lever, a vault's key and what lifting a
+        // prize sets off are among the answers.
+        app.add_systems(Turn, crate::vaults::spawn_vault_marks.in_set(ReactStep::Fill));
         // A cold forge's anvil and a moonwell choose a thing first, among
         // what these name, asked as the offer is taken up.
         let wells = crate::vaults::wells::WellChoices {
@@ -338,40 +359,21 @@ impl Plugin for UndermerePlugin {
             tell: app.register_system(crate::vaults::wells::tell_choices),
         };
         app.insert_resource(wells);
-        app.add_systems(Turn, crate::vaults::wells::offer_at_wells.in_set(TurnSet::Schedule));
-        app.add_systems(Turn, crate::vaults::wells::answer_wells.in_set(TurnSet::React));
+        app.add_systems(Turn, crate::vaults::wells::offer_at_wells.in_set(TurnSet::Schedule).before(NamesKept));
         // The lived-in dungeon's own: a readable prop's line, drawn once
         // on the arrival that finds it, and a floor's own feeling, said
         // the same arrival.
-        app.add_systems(Turn, (crate::writings::assign_writings, crate::writings::tell_floor_feeling).in_set(TurnSet::React).after(PrefabSet::Fill));
-        app.add_systems(Turn, crate::writings::answer_read.in_set(TurnSet::React));
-        {
-            use crate::vaults::lifts::*;
-            app.add_systems(
-                Turn,
-                (shut_other_cages, loose_the_vermin, give_way, collapse_behind, start_flood, rise_floods.after(start_flood)).in_set(TurnSet::React),
-            );
-        }
-        app.add_systems(Turn, crate::temple::answer_rites.in_set(TurnSet::React));
-        // Mereholt's people: what talking to one says, a wanderer kept to
-        // its beat beside the engine's own senses, and a lamplighter's
-        // round laid at the start of a pass once the lamps stand.
-        app.add_systems(Turn, crate::townsfolk::answer_talk.in_set(TurnSet::React));
-        // A candidate's own talk, its kit and its fee; `hire` answered by
-        // taking it into the party; and `hire` kept off while the party is
-        // full, counted at the start of every pass.
-        app.add_systems(
-            Turn,
-            (crate::mercenaries::answer_candidates, crate::mercenaries::answer_hire, crate::mercenaries::answer_give, crate::mercenaries::answer_dismiss)
-                .in_set(TurnSet::React),
-        );
-        // One that falls taken out of the party once the tally has counted
+        app.add_systems(Turn, (crate::writings::assign_writings, crate::writings::tell_floor_feeling).chain().in_set(ReactStep::Fill).after(crate::finds::lay));
+        // Two answers that read the whole world, and so would be unordered
+        // against every reaction: a conjured blade gone when its time is
+        // up, and a rite answered. After the reactions and before the
+        // facts, so what either does is counted as a fact this pass.
+        app.add_systems(Turn, (crate::allies::fade, crate::temple::answer_rites).chain().after(TurnSet::React).before(FactSet));
+        // A hired mercenary that falls taken out of the party once the tally has counted
         // it, and its death said as the adventurer's own loss.
         app.init_resource::<crate::mercenaries::Fell>();
-        app.add_systems(Turn, crate::mercenaries::strip_the_fallen.in_set(TurnSet::React).after(crate::tally::count_the_fighting));
-        app.add_systems(Update, crate::mercenaries::say_who_fell.in_set(ViewSet::Annotate));
-        // The party after the adventurer through every way and warp they take.
-        app.add_systems(Turn, crate::mercenaries::follow_through.in_set(TurnSet::React));
+        app.add_systems(Turn, crate::mercenaries::strip_the_fallen.in_set(ReactStep::Count).after(crate::tally::count_the_fighting));
+        app.add_systems(Update, (crate::mercenaries::say_who_fell, crate::mercenaries::say_who_came).chain().in_set(ViewSet::Annotate));
         // What a hired mercenary knows of what it carries and sees: its own
         // kit whole, and anything else only as the adventurer knows it; a
         // thing it is better off wearing put on by the engine's own rule;
@@ -379,37 +381,24 @@ impl Plugin for UndermerePlugin {
         app.add_choice::<crate::mercenaries::PutOn>();
         let among = app.register_system(crate::mercenaries::give_choices);
         app.insert_resource(crate::mercenaries::GiveAmong(among));
-        app.add_systems(Turn, crate::mercenaries::know_as_the_adventurer_does.in_set(DecideSet::Perceive).after(PerceiveSet::Annotate));
         app.add_systems(Turn, crate::mercenaries::put_on.in_set(ResolveSet::Redirect));
         app.add_systems(Turn, crate::mercenaries::release_own_kit.in_set(CleanupSet::Requeue));
+        // `hire` kept off while the party is full, counted at the start of
+        // every pass.
         app.add_systems(Turn, crate::mercenaries::keep_hire_offered.in_set(TurnSet::Schedule));
+        // Mereholt's people: a wanderer kept to its beat beside the
+        // engine's own senses, and a lamplighter's round laid at the start
+        // of a pass once the lamps stand.
         app.add_systems(Turn, crate::townsfolk::sense_beats.in_set(PerceiveSet::Annotate));
         app.add_systems(Turn, crate::townsfolk::walk_rounds.in_set(TurnSet::Schedule));
-        // A waystone: refused in Mereholt before its use is spent, and the
-        // call answered, or said to be broken off.
+        // A waystone refused in Mereholt before its use is spent. The call
+        // answered, or said to be broken off, is among the answers.
         app.add_systems(Turn, crate::waystone::refuse_at_home.in_set(ResolveSet::Travel));
-        app.add_systems(Turn, (crate::waystone::answer_the_call, crate::waystone::broken_off).in_set(TurnSet::React));
-        // What is known of a kind's tricks, learned off the same messages
-        // the tricks above, an ability's own landing and the engine's own
-        // actor triggers already answer with: each only once its effect
-        // lands where the adventurer can see it.
-        app.add_systems(
-            Turn,
-            (
-                crate::bestiary_lore::learn_from_abilities,
-                crate::bestiary_lore::learn_from_triggers,
-                crate::bestiary_lore::learn_from_statuses,
-                crate::bestiary_lore::learn_fire_trail,
-                crate::bestiary_lore::learn_draining,
-                crate::bestiary_lore::learn_reflecting,
-            )
-                .in_set(TurnSet::React),
-        );
         // The shriek a scroll of aggravate monsters lets out.
         app.add_sound(crate::effects::minds::SHRIEK_SOUND);
         // A drinker of descent set down on the floor below once it stands:
         // after the arrival has built and filled it.
-        app.add_systems(Turn, crate::effects::moving::land_sinking.in_set(TurnSet::React).after(crate::finds::lay));
+        app.add_systems(Turn, crate::effects::moving::land_sinking.in_set(ReactStep::Fill).after(crate::finds::lay));
         // Every thing called what is known of it: after the narrator has
         // read the pass, so nothing is told of under a name it had not yet
         // earned, and before the spent are taken out; at the start of every
@@ -417,58 +406,61 @@ impl Plugin for UndermerePlugin {
         // continued run's things, before anything in the pass is told of;
         // and before the frame is drawn, for a frame no pass runs in.
         app.add_systems(Turn, crate::lore::keep_names.in_set(TurnSet::Cleanup).before(CleanupSet::Remove));
-        app.add_systems(Turn, crate::lore::keep_names.in_set(TurnSet::Schedule));
-        app.add_systems(Update, crate::lore::keep_names.after(EngineSet::Turns).before(EngineSet::Present));
+        app.add_systems(Turn, crate::lore::keep_names.in_set(TurnSet::Schedule).in_set(NamesKept));
+
         // Every thing's `Worth` current with what is known of it, at the
         // same three moments as its name, since a shop or a sale reads it
         // no differently from how the log reads a name.
         app.add_systems(Turn, crate::armory::keep_worth.in_set(TurnSet::Cleanup).before(CleanupSet::Remove));
         app.add_systems(Turn, crate::armory::keep_worth.in_set(TurnSet::Schedule));
-        app.add_systems(Update, crate::armory::keep_worth.after(EngineSet::Turns).before(EngineSet::Present));
-        // A thing bought from a keeper is known for what the shelf named
-        // it: the deal is struck before the turns, and the kind learned
-        // before the frame's names and worths are given, so the pack calls
-        // it by its name the frame it lands there.
+
+        // Between the turns and the light, behind the photograph's asks
+        // below, and chained, since four of these read the whole world: a
+        // scroll that asks which thing to read it on named as it asks, in
+        // the frame the keys turned the pack to choosing; a thing bought
+        // from a keeper known for what the shelf named it, the deal struck
+        // before the turns; what a deal hands the adventurer marked as
+        // theirs, not a find, before the next pickup could count it; and
+        // then the frame's names and worths, so the pack calls a thing by
+        // its name the frame it lands there.
         app.add_systems(
             Update,
-            crate::shops::learn_by_buying.after(EngineSet::Turns).before(EngineSet::Present).before(crate::lore::keep_names).before(crate::armory::keep_worth),
+            (crate::lore::learn_by_asking, crate::shops::learn_by_buying, crate::tally::count_deals, crate::lore::keep_names, crate::armory::keep_worth)
+                .chain()
+                .in_set(AfterTurns)
+                .after(crate::run::stand_near),
         );
-        // What a deal hands the adventurer is theirs, not a find: the gold
-        // a sale pays and the thing bought, marked counted before the next
-        // pickup could count them.
-        app.add_systems(Update, crate::tally::count_deals.after(EngineSet::Turns).before(EngineSet::Present));
-        // A scroll that asks which thing to read it on is named as it asks:
-        // after the keys that turn the pack to choosing, before the names.
-        app.add_systems(Update, crate::lore::learn_by_asking.after(EngineSet::Input).before(EngineSet::Turns));
         // What the panels count of a worn thing not yet known: its kind's
         // plain numbers, over the engine's true ones, for the vitals' armor,
         // the look cursor's forecast and the targeting box's chance; and
         // what the pack and the look cursor say of a thing whose kind is
         // known and whose level is not. Each reads its view when the game
         // draws it and does nothing where it does not.
+        // Then what a thing asks of the adventurer's strength, under the
+        // pack's row and the look cursor's, so the line reads under its
+        // numbers; and the gold carried, on the vitals under the gauges,
+        // wherever the game draws them. Chained, since a row's facets read
+        // in the order they are pushed.
         app.add_systems(
             Update,
-            (crate::seeming::seem_armor, crate::seeming::seem_forecast, crate::seeming::seem_aim, crate::seeming::seem_pack, crate::seeming::seem_looked_at)
+            (
+                crate::seeming::seem_armor,
+                crate::seeming::seem_forecast,
+                crate::seeming::seem_aim,
+                crate::seeming::seem_pack,
+                crate::seeming::seem_looked_at,
+                crate::strength::note_strength,
+                crate::shops::count_gold,
+            )
+                .chain()
                 .in_set(ViewSet::Annotate),
         );
-        // What a thing asks of the adventurer's strength, under the pack's
-        // row and the look cursor's: after what a thing not yet known
-        // seems, so the line reads under its numbers.
-        app.add_systems(
-            Update,
-            crate::strength::note_strength.after(crate::seeming::seem_pack).after(crate::seeming::seem_looked_at).in_set(ViewSet::Annotate),
-        );
-        // The gold carried, on the vitals under the gauges, wherever the
-        // game draws them.
-        app.add_systems(Update, crate::shops::count_gold.in_set(ViewSet::Annotate));
-        // A mercenary come through beside the adventurer is told of as
-        // following them, not as leaving.
-        app.add_systems(Update, crate::mercenaries::say_who_came.in_set(ViewSet::Annotate));
         // A photograph's ask to stand near something on the floor it
         // starts on, which a real run never makes.
+        app.configure_sets(Update, AfterTurns.after(EngineSet::Turns).before(EngineSet::Light));
         app.add_systems(
             Update,
-            crate::run::stand_near.after(EngineSet::Turns).run_if(resource_exists::<crate::run::StartNear>).run_if(in_state(EngineState::Playing)),
+            crate::run::stand_near.in_set(AfterTurns).run_if(resource_exists::<crate::run::StartNear>).run_if(in_state(EngineState::Playing)),
         );
         // And its ask for a party, once that stand has been taken: before
         // `stand_near` in the frame, so the frame that asks the warp does
@@ -476,7 +468,7 @@ impl Plugin for UndermerePlugin {
         app.add_systems(
             Update,
             crate::run::hire_party
-                .after(EngineSet::Turns)
+                .in_set(AfterTurns)
                 .before(crate::run::stand_near)
                 .run_if(resource_exists::<crate::run::StartParty>)
                 .run_if(not(resource_exists::<crate::run::StartNear>))
@@ -489,20 +481,21 @@ impl Plugin for UndermerePlugin {
         // cursor press the keys all the same.
         crate::input::declare_controls(app);
         app.add_message::<AimFire>().add_message::<AimThrow>();
-        app.add_systems(Update, (crate::input::player_input, crate::mercenaries::order_party).in_set(EngineSet::Input));
+        // A door marked, the adventurer's keys, the party's orders: chained,
+        // since each may open a screen.
+        app.add_systems(Update, (crate::doors::mark_doors, crate::input::player_input, crate::mercenaries::order_party).chain().in_set(EngineSet::Input));
         // A lair's own band, led the moment its prefab's slots are
         // filled. Its own call rather than folded into the chain above,
         // since nothing in that chain's own order depends on this nor
         // this on it.
-        app.add_systems(Turn, crate::population::lead_lair_bands.in_set(TurnSet::React).after(PrefabSet::Fill));
+        app.add_systems(Turn, crate::population::lead_lair_bands.in_set(ReactStep::Fill));
         // The two artifacts' own clocks: the Crown of Grubnak's aura on
         // whoever stands beside its wearer, recomputed whole every pass,
         // and the Abbess's Chalice refilled the moment a new floor is
         // reached. Neither is a worn thing's own `bestows` or a trigger
         // can reach: one lands on somebody other than the wearer, the
         // other refills on a clock no `recharge` ticks.
-        app.add_systems(Turn, crate::artifacts::crown_aura.in_set(TurnSet::React));
-        app.add_systems(Turn, crate::artifacts::refill_chalice.in_set(TurnSet::React).after(PrefabSet::Fill));
+        app.add_systems(Turn, crate::artifacts::refill_chalice.in_set(ReactStep::Fill));
     }
 
     /// Every line Undermere says from inside a turn is a `Tell`, which
@@ -510,4 +503,93 @@ impl Plugin for UndermerePlugin {
     fn finish(&self, app: &mut App) {
         rl_engine::rl_bevy::plugin::depends_on::<rl_engine::rl_ui::NarrationViewPlugin>(app, "UndermerePlugin");
     }
+}
+
+/// Undermere's frame between the turns and the light: the photograph's
+/// asks, then what a deal hands over, then every thing's name and worth,
+/// so what is drawn and lit is the world as the turns and the asks left
+/// it.
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct AfterTurns;
+
+/// Where every thing is called what is known of it at the start of a
+/// pass, for what is offered there to be named first.
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct NamesKept;
+
+/// Undermere's answers to what a pass did, in [`ReactStep::Answer`], in
+/// the order they are written here.
+///
+/// Work done or broken off first: a shackled captive's own "free", the
+/// work at the shackles begun and answered, and a waystone's call. Then
+/// every offer taken up: a vault's lever and key, a moonwell or an
+/// anvil, something read, somebody talked to, a mercenary hired, given
+/// to or sent away. Then the map changed by what was done: a door walked
+/// through, a trap sprung or spotted, a lift's cage, its vermin, its
+/// floor giving way or flooding, and the party after the adventurer
+/// through every way and warp. Then the bestiary's own tricks that read
+/// what a turn did: a blow that splits what it left alive or mends its
+/// own drainer, a step that leaves fire, the Widow's egg sacs, the Mother
+/// Below's young and the Drowned King's pool. Then what is learned: what
+/// the adventurer's hands showed of their things, a curse closing on
+/// them, how long wearing a thing tells its level, the turns they have
+/// worn what they do not know, and what is known of a kind's tricks, each
+/// only once its effect lands where the adventurer can see it. Last,
+/// every body the turn left, drawn as a corpse of its kind.
+///
+/// One chain, since most of them write the log, the map, a bag or what
+/// the adventurer knows, and an order the scheduler picked would say the
+/// pass differently from one build to the next.
+fn add_answers(app: &mut App) {
+    use crate::vaults::lifts::*;
+    let work = (crate::captives::answer_freeing, crate::captives::answer_free, crate::waystone::answer_the_call, crate::waystone::broken_off).chain();
+    let offers = (
+        crate::vaults::answer_pull_lever,
+        crate::vaults::spend_vault_key,
+        crate::vaults::wells::answer_wells,
+        crate::writings::answer_read,
+        crate::townsfolk::answer_talk,
+        crate::mercenaries::answer_candidates,
+        crate::mercenaries::answer_hire,
+        crate::mercenaries::answer_give,
+        crate::mercenaries::answer_dismiss,
+    )
+        .chain();
+    let map = (
+        crate::doors::note_doors_passed,
+        crate::traps::show_sprung,
+        crate::traps::tell_spotted,
+        shut_other_cages,
+        loose_the_vermin,
+        give_way,
+        collapse_behind,
+        start_flood,
+        rise_floods,
+        crate::mercenaries::follow_through,
+    )
+        .chain();
+    let tricks = (
+        crate::tricks::judge_splits,
+        crate::tricks::judge_draining,
+        crate::tricks::trail_fire,
+        crate::tricks::hatch_beside,
+        crate::tricks::spawn_young,
+        crate::tricks::die_with_mother,
+        crate::tricks::rise_from_the_pool,
+    )
+        .chain();
+    let learned = (
+        crate::lore::learn_by_use,
+        crate::enchant::bind_on_wear,
+        crate::lore::tell_unfamiliar,
+        crate::lore::grow_familiar,
+        crate::bestiary_lore::learn_from_abilities,
+        crate::bestiary_lore::learn_from_triggers,
+        crate::bestiary_lore::learn_from_statuses,
+        crate::bestiary_lore::learn_fire_trail,
+        crate::bestiary_lore::learn_draining,
+        crate::bestiary_lore::learn_reflecting,
+    )
+        .chain();
+    app.add_systems(Turn, (work, offers, map, tricks, learned, crate::corpses::dress_the_dead).chain().in_set(ReactStep::Answer));
 }

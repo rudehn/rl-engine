@@ -126,16 +126,33 @@ impl Allowed {
 /// is [`Allowed`], and unless every allowance is still needed by a pair.
 ///
 /// `game` names whose systems these are in the message; `names` and
-/// `data` name the systems and the data a failure reads by, and anything
-/// they do not name is printed by its id. A conflict over the whole
-/// world, an exclusive system's, comes with no data, and no allowance
-/// covers it.
+/// `data` name the systems and the data a failure reads by. Anything they
+/// do not name is printed as Bevy names it, which is its full path in a
+/// build with Bevy's `debug` feature and a placeholder beside its id
+/// without, so a pair a test has never met can be read by building once
+/// with `--features bevy/debug`. A conflict over the whole world, an
+/// exclusive system's, comes with no data, and no allowance covers it.
 ///
 /// # Panics
 /// Panics with every unexplained pair, or with every allowance no pair
 /// needs, so one run lists everything to fix.
 pub fn assert_ordered(world: &World, game: &str, ours: &[SystemKey], allowed: &[Allowed], names: &[(&str, TypeId)], data: &[(&str, ComponentId)]) {
-    let system = |t: TypeId| names.iter().find(|(_, n)| *n == t).map_or_else(|| format!("{t:?}"), |(n, _)| n.to_string());
+    let mut bevy_names: Vec<(TypeId, String)> = Vec::new();
+    for (_, schedule) in world.resource::<Schedules>().iter() {
+        bevy_names.extend(schedule.systems().expect("initialized").map(|(_, system)| (system.system_type(), system.name().to_string())));
+    }
+    let system = |t: TypeId| {
+        names.iter().find(|(_, n)| *n == t).map(|(n, _)| n.to_string()).unwrap_or_else(|| {
+            let bevy = bevy_names.iter().find(|(n, _)| *n == t).map_or("", |(_, name)| name.as_str());
+            format!("{bevy} {t:?}")
+        })
+    };
+    let datum = |c: &ComponentId| {
+        data.iter().find(|(_, id)| id == c).map(|(n, _)| n.to_string()).unwrap_or_else(|| {
+            let bevy = world.components().get_info(*c).map(|info| info.name().to_string()).unwrap_or_default();
+            format!("{bevy} {c:?}")
+        })
+    };
     let fits = |rule: Option<TypeId>, t: TypeId| rule.is_none_or(|r| r == t);
     let mut used = vec![false; allowed.len()];
     let mut unexplained = Vec::new();
@@ -154,8 +171,7 @@ pub fn assert_ordered(world: &World, game: &str, ours: &[SystemKey], allowed: &[
             match rule {
                 Some(i) => used[i] = true,
                 None => {
-                    let what: Vec<String> =
-                        on.iter().map(|c| data.iter().find(|(_, id)| id == c).map_or_else(|| format!("{c:?}"), |(n, _)| n.to_string())).collect();
+                    let what: Vec<String> = on.iter().map(datum).collect();
                     unexplained.push(format!("{label:?}: {} and {} on {what:?}", system(a), system(b)));
                 }
             }

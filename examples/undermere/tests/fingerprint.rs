@@ -241,10 +241,9 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [17_789_207_108_726_490_835, 15_017_421_223_644_069_061, 13_145_090_223_247_674_010],
-        "fingerprint tripwire: re-baselined once the fingerprint, the script and the engine stopped reading Bevy's entity \
-         numbers as spawn order: the actors are hashed and the foe struck chosen by where they stand, and actors admitted \
-         to the turn queue together, the subjects a watcher rolls for and the listeners a noise reaches go in that order \
-         too, so a run no longer changes when something unrelated is spawned or freed"
+        [17_789_207_108_726_490_835, 15_017_421_223_644_069_061, 7_417_838_151_239_152_721],
+        "fingerprint tripwire: seed three re-baselined once Undermere's systems that touch the same data were ordered, \
+         its reactions in `ReactStep`'s fill, answer, keep and count, rather than run in whichever order the scheduler \
+         picked, which is what moved it when the engine added `FactSet`"
     );
 }

@@ -1452,7 +1452,7 @@ impl Plugin for PropsPlugin {
             // holds giving the gate a read-only param instead.
             .add_systems(Turn, (check_priced_offers, offer_here).chain().in_set(DecideSet::Offer).ambiguous_with(crate::ability::offer_abilities))
             .add_systems(Turn, (resolve_interactions, resolve_takes).in_set(ResolveSet::Act))
-            .add_systems(Turn, close_emptied_containers.in_set(crate::plugin::TurnSet::React))
+            .add_systems(Turn, close_emptied_containers.in_set(crate::plugin::ReactSet::Settle))
             // Outside the turn loop: a container is stocked the frame it is
             // put down, which is while a place is being built and before
             // anyone holds a turn.

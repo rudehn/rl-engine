@@ -271,13 +271,13 @@ pub struct ConsumablesPlugin;
 
 impl Plugin for ConsumablesPlugin {
     fn build(&self, app: &mut App) {
-        use crate::plugin::{CleanupSet, ResolveSet, Turn, TurnSet};
+        use crate::plugin::{CleanupSet, ResolveSet, Turn};
         crate::effects::ensure(app);
         app.init_resource::<SpendingMoments>()
             // After the triggers land, in the same set, so the last charge's
             // effects are in before the thing goes.
             .add_systems(Turn, spend_charges.in_set(ResolveSet::Triggers).after(crate::effects::land_triggers))
-            .add_systems(Turn, (recharge_charges, attune).chain().in_set(TurnSet::React))
+            .add_systems(Turn, (recharge_charges, attune).chain().in_set(crate::plugin::ReactSet::Settle))
             .add_systems(Turn, remove_spent.in_set(CleanupSet::Remove))
             // With the dead, before a restart tears the run down, so what
             // the last pass spent goes with the run it was spent in.

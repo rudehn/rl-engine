@@ -1034,7 +1034,7 @@ impl Plugin for AbilitiesPlugin {
             // After every annotator rather than among them: it reads the
             // whole world, so it runs alone, and once the snapshot is
             // whole, before any mind decides on it.
-            .add_systems(Turn, weigh_self_abilities.after(crate::plugin::PerceiveSet::Annotate).in_set(crate::plugin::DecideSet::Perceive))
+            .add_systems(Turn, weigh_self_abilities.in_set(crate::plugin::PerceiveSet::Weigh))
             // What has landed, then what is cast this pass.
             .add_systems(Turn, (land_abilities.in_set(crate::plugin::LandSet::Ability), resolve_abilities.in_set(ResolveSet::Act)).chain())
             .add_systems(Turn, refresh_known.in_set(TurnSet::React));

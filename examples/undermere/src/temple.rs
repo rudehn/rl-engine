@@ -210,10 +210,12 @@ pub fn rite_rows(mut view: ResMut<OffersView>, rites: Res<Rites>, verbs: Res<Ver
 /// is the adventurer's own, by
 /// [`count_as_owned`](crate::tally::count_as_owned), never a find.
 ///
-/// In `TurnSet::React`, where every answer to `Interacted` is read; every
-/// other verb is left for whatever answers it. Exclusive, since whether a
-/// rite finds work reads the taker's whole state as the effects that would
-/// land on it read it.
+/// Straight after `TurnSet::React`, where every other answer to
+/// `Interacted` is read; every other verb is left for whatever answers
+/// it. Exclusive, since whether a rite finds work reads the taker's whole
+/// state as the effects that would land on it read it, and so after the
+/// reactions rather than among them, against every one of which it would
+/// be unordered.
 pub fn answer_rites(world: &mut World, mut cursor: Local<MessageCursor<Interacted>>) {
     let taken: Vec<Interacted> = cursor.read(world.resource::<Messages<Interacted>>()).copied().collect();
     if taken.is_empty() {

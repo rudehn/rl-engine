@@ -138,8 +138,11 @@ impl Plugin for RecordsPlugin {
             .init_resource::<Waiting>()
             // Before anything draws, so the screen a run ends on shows its
             // record from its first frame rather than from whichever frame
-            // the executor first ran the filing ahead of the drawing in.
-            .add_systems(Update, record_runs.before(EngineSet::Present))
+            // the executor first ran the filing ahead of the drawing in;
+            // and after the frame's play, sight and all, so a game's own
+            // system between the turns and the drawing is ordered against
+            // it by the engine's phases rather than left to the executor.
+            .add_systems(Update, record_runs.after(EngineSet::Fov).before(EngineSet::Present))
             // Not `reset_on_new_run::<RunRecords>()`: that puts the whole
             // resource back to its default, forgetting every filed record
             // along with `this_run`. Only the field is cleared here, and

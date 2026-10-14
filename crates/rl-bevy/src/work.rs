@@ -580,7 +580,7 @@ impl Plugin for WorkPlugin {
             // hurt, and an empty queue says so.
             .reads::<DamageDealt>()
             .reads::<DeathEvent>()
-            .add_systems(Turn, break_work.in_set(TurnSet::React))
+            .add_systems(Turn, break_work.in_set(crate::plugin::ReactSet::Settle))
             .add_action::<BeginWork>()
             .add_action::<Toil>()
             .add_systems(Turn, (answer_stops, continue_work).chain().in_set(DecideSet::Sense))

@@ -403,7 +403,7 @@ pub struct StatusPlugin;
 
 impl Plugin for StatusPlugin {
     fn build(&self, app: &mut App) {
-        use crate::plugin::{DecideSet, Needs, ResolveSet, Turn, TurnSet};
+        use crate::plugin::{DecideSet, Needs, ResolveSet, Turn};
         // Before anything spawns, which is when Bevy allows it; an actor
         // spawned before this plugin was added is a setup Bevy refuses.
         // `try` for the stats, which the items plugin requires as well so
@@ -420,7 +420,7 @@ impl Plugin for StatusPlugin {
             // game added it; with no stealth there is nothing to be after.
             .add_systems(Turn, wake_on_sight.in_set(DecideSet::Notice).after(crate::stealth::update_awareness))
             .add_systems(Turn, (resolve_afflictions, tick_statuses).chain().in_set(ResolveSet::Effects))
-            .add_systems(Turn, wake_on_harm.in_set(TurnSet::React));
+            .add_systems(Turn, wake_on_harm.in_set(crate::plugin::ReactSet::Settle));
     }
 
     fn finish(&self, app: &mut App) {

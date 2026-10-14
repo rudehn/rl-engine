@@ -282,7 +282,11 @@ impl Plugin for CorePlugin {
                     .in_set(TurnSet::Decide),
             )
             .configure_sets(Turn, DecideSet::Perceive.run_if(crate::minds::a_mind_holds_the_turn))
-            .configure_sets(Turn, (PerceiveSet::Begin, PerceiveSet::Roster, PerceiveSet::Filter, PerceiveSet::Annotate).chain().in_set(DecideSet::Perceive))
+            .configure_sets(
+                Turn,
+                (PerceiveSet::Begin, PerceiveSet::Roster, PerceiveSet::Filter, PerceiveSet::Annotate, PerceiveSet::Weigh).chain().in_set(DecideSet::Perceive),
+            )
+            .configure_sets(Turn, ReactSet::Settle.in_set(TurnSet::React))
             .configure_sets(
                 Turn,
                 (ResolveSet::Redirect, ResolveSet::Travel, ResolveSet::Act, ResolveSet::Triggers, ResolveSet::Fields, ResolveSet::Effects, ResolveSet::Damage)
@@ -587,6 +591,26 @@ pub enum PerceiveSet {
     /// Everything else a mind may know: what it carries and sees lying
     /// about, what it may use, where not to step, and a game's own senses.
     Annotate,
+    /// What the mind makes of the finished snapshot before it decides:
+    /// which abilities on itself are worth their cost. After every
+    /// annotation, so a game that rewrites what a mind knows, in
+    /// `Annotate` or after it and before this, is weighed as rewritten.
+    Weigh,
+}
+
+/// The engine's own answers to a pass inside [`TurnSet::React`] that a
+/// game's reactions read the result of: worn gear folded onto its
+/// wearer's stats, sleep broken by harm, charges refilled and an attuned
+/// thing emptied, an emptied container shut, and work broken off.
+///
+/// A named set for the reason [`AmmoSet`](crate::ammo::AmmoSet) is one: a
+/// game that derives something from the stats as they stand, or answers a
+/// broken-off work, orders itself after this set rather than after the
+/// engine's functions, which stay free to split or move.
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ReactSet {
+    /// What the pass changed about who is what, settled.
+    Settle,
 }
 
 /// The stages of [`TurnSet::Resolve`], in order.

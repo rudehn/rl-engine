@@ -31,11 +31,29 @@ pub use seeds::{QUICK, par_seeds, seeds};
 /// [`WorkPace`] of the wall clock, so a test, a fingerprint or a soak
 /// counts frames and never waits on time.
 pub fn headless(seed: RunSeed) -> App {
+    let mut app = windowless(seed);
+    app.add_plugins(crate::plugin::UndermerePlugin);
+    app.insert_resource(WorkPace::every_frame());
+    app
+}
+
+/// [`headless`] without [`UndermerePlugin`](crate::plugin::UndermerePlugin):
+/// the engine's plugins the game plays with and what it saves, and none
+/// of its own systems, so the ordering test can tell the game's systems
+/// from the engine's by what the plugin adds beyond these.
+pub fn headless_without_undermere(seed: RunSeed) -> App {
+    let mut app = windowless(seed);
+    crate::plugin::add_engine(&mut app);
+    crate::save::register(&mut app);
+    app
+}
+
+/// What a window would have brought, the narrator, the run's seed and a
+/// save in memory.
+fn windowless(seed: RunSeed) -> App {
     let mut app = rl_engine::rl_bevy::plugin::headless_app();
     app.add_plugins((FovPlugin, UiPlugin, crate::plugin::narrator()));
     app.insert_resource(Seed(seed)).insert_resource(Saves::new(MemoryBackend::default()));
-    app.add_plugins(crate::plugin::UndermerePlugin);
-    app.insert_resource(WorkPace::every_frame());
     app
 }
 

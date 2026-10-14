@@ -103,7 +103,7 @@ pub use places::{
     StairLook, Transition, Travelled, WarpRequest,
 };
 pub use plugin::{
-    CleanupSet, CorePlugin, DecideSet, EndOfFrame, EndRun, EngineSet, FieldSet, LandSet, Needs, NewRun, PerceiveSet, PresentSet, Reads, Requirements,
+    CleanupSet, CorePlugin, DecideSet, EndOfFrame, EndRun, EngineSet, FieldSet, LandSet, Needs, NewRun, PerceiveSet, PresentSet, ReactSet, Reads, Requirements,
     ResetsOnNewRun, ResolveSet, RunResets, Turn, TurnSet, clear_run, depends_on,
 };
 pub use prefabs::{ActorMaker, PrefabPlugin, PrefabSet, Prefabs};
@@ -175,8 +175,8 @@ pub mod prelude {
         Stair, StairLook, Transition, Travelled, WarpRequest,
     };
     pub use crate::plugin::{
-        CleanupSet, CorePlugin, DecideSet, EndOfFrame, EndRun, EngineSet, FieldSet, LandSet, Needs, NewRun, PerceiveSet, PresentSet, Reads, ResetsOnNewRun,
-        ResolveSet, Turn, TurnSet, depends_on,
+        CleanupSet, CorePlugin, DecideSet, EndOfFrame, EndRun, EngineSet, FieldSet, LandSet, Needs, NewRun, PerceiveSet, PresentSet, ReactSet, Reads,
+        ResetsOnNewRun, ResolveSet, Turn, TurnSet, depends_on,
     };
     pub use crate::prefabs::{ActorMaker, PrefabPlugin, PrefabSet, Prefabs};
     pub use crate::props::{

@@ -1048,7 +1048,7 @@ impl Plugin for ItemsPlugin {
             .add_systems(Turn, end_unworn_holds.in_set(ResolveSet::Effects).before(crate::status::resolve_afflictions))
             // In the pass the slots changed in, so gear counts from the
             // moment it is worn.
-            .add_systems(Turn, fold_gear.in_set(TurnSet::React))
+            .add_systems(Turn, fold_gear.in_set(crate::plugin::ReactSet::Settle))
             .add_systems(Turn, restart_pulses.in_set(TurnSet::React))
             .add_systems(Turn, drop_what_the_dead_carried.in_set(CleanupSet::Remove))
             .add_systems(Turn, forget_removed_items.in_set(CleanupSet::Requeue));
