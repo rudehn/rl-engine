@@ -215,19 +215,19 @@ fn run(seed: u64, turns: usize) -> (u64, Tally) {
 }
 
 /// How many of the adventurer's turns each run is: enough for the script
-/// to go down through the Upper Halls and the Fungal Deeps into the
-/// Catacombs, so three bands' building, people and light are pinned.
+/// to go down through the Drowned Town and the palace grounds into
+/// the first of the kingdom's foundations, so three strata's building, people and light are pinned.
 const TURNS: usize = 400;
 
 /// Fingerprint tripwire: the same seed and the same script come to the
 /// same run, and these runs come to these numbers. Re-baseline
 /// deliberately, saying why in the commit.
 ///
-/// Seed one twice and two and three once, each an app of its own, so the
+/// Seed four twice and two and three once, each an app of its own, so the
 /// four play side by side.
 #[test]
 fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_every_time_on_three_seeds() {
-    let seeds = [1, 2, 3, 1];
+    let seeds = [4, 2, 3, 4];
     let runs: Vec<(u64, Tally)> = std::thread::scope(|scope| {
         let playing: Vec<_> = seeds.map(|seed| scope.spawn(move || run(seed, TURNS))).into_iter().collect();
         playing.into_iter().map(|run| run.join().expect("the run played to its end")).collect()
@@ -241,9 +241,8 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [17_789_207_108_726_490_835, 15_017_421_223_644_069_061, 7_417_838_151_239_152_721],
-        "fingerprint tripwire: seed three re-baselined once Undermere's systems that touch the same data were ordered, \
-         its reactions in `ReactStep`'s fill, answer, keep and count, rather than run in whichever order the scheduler \
-         picked, which is what moved it when the engine added `FactSet`"
+        [6_533_239_510_707_766_236, 17_071_721_530_399_813_621, 9_178_652_965_840_841_736],
+        "fingerprint tripwire: re-baselined once for the strata, the biomes on other floors and the bestiary moved with them; \
+         seed one is replaced by seed four, whose layout the script walks down, where seed one's floor one now leaves it standing"
     );
 }

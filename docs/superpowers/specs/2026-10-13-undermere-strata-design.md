@@ -84,3 +84,33 @@ The list grows over time: the reading dome, the great nave, the market square an
 - A rule that changes a whole floor.
 - The later wave: Cisterns, Elder Wood and Barrows, and the deep strata's landmarks.
 - Foundry.
+
+## As built
+
+Step 1, Undermere's strata, built on the `strata` branch.
+Where it deviates from or extends the spec above:
+
+- **Strata** are `examples/undermere/src/dungeon/strata.rs`: six rows (the thrones are the sixth), each a name, a floor range and the line said on crossing in.
+  The crossing is said on the first arrival on any floor of a stratum when no other floor of it was visited, so a fall or a begun photograph still hears it once, ahead of the floor's line.
+  Load checks hold the strata to a gapless cover of floors 1-10 and every biome to exactly one stratum.
+- **The rail** names the depth on two rows under the gauges, `floor 3` and the stratum, as vitals facets; the vitals gained two rows.
+- **Biomes**: Sunken Library and Drowned Cathedral on 3-4; Catacombs, Old Mines, Fungal Deeps and Spider Warrens on 5-6; Underlake alone on 7-8; Forge and Ashen on 9.
+  Ambient light follows depth (22, 21 at 3-4; 18-20 at 5-6, the Warrens dark; 16 below).
+  The Underlake's rumour is no longer told as a biome rumour, since its floors cannot draw another; the strata carry the hint instead, as four new rumours (strata two to five) told after the biomes.
+- **Favored check**: `biomes::check_favored`, run in `Undermere::new`, demands three favored kinds with a spawn row on every floor of the biome's window, and refuses a name the bestiary lacks.
+- **New kinds**: drowned pilgrim (early thrall), drowned acolyte (early wight, venomous), pale scribe (early wraith, withering), myconid elder, giant spider, spiderling.
+  The Drowned Abbess is softened (38 health, 1d8) for floors 3-4 and calls pilgrims, via a new optional `monster` argument of `CallDrowned`.
+- **Goblins** live with the mines: the war band comes only on a floor whose biome favors its leader (a new `themed` flag on `Band`), the Goblin Stockade stands only in the halls, cellars, barracks and mines, and the ogre-over-goblin feeding ground is gone.
+- **Mini-bosses**: Abbess 3-4; Grubnak, the Widow and the Choirmaster 5-6; the Forgemaster unchanged at 7-9.
+- Pool: flavor entries moved with their biomes; the Reliquary 3-8, Larder 5-6, Brood Chamber 5-8, Wagon 1-6.
+- The save is version 10, refusing older runs.
+- The fingerprint test swaps seed one for seed four, whose floor one the script can walk down after the change.
+
+### The soak, 150 delves over 50 seeds
+
+| | won | died on floors 3, 4, 5, 6, 7, 8, 9, 10 |
+| --- | --- | --- |
+| before | 52 (35%) | 9, 14, 4, 1, 4, 9, 13, 30 |
+| after | 55 (37%) | 1, 2, 10, 5, 9, 8, 23, 21 |
+
+The win rate held; the deaths moved from floors 3-4, where the cave spider's venom had been the killer, to 5-6 where the spiders now live, and from the throne floor to 9.
