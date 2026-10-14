@@ -48,6 +48,9 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 21 | A prop cannot block sight, or block the way and let a shot past | 3 | medium | medium |
 | 22 | `offer_abilities` declares `&mut Stack` it only reads | 4 | low | low |
 | 23 | A piece stamped where no wall rings it can cut the floor | 1 | low | medium |
+| 24 | Entity order still breaks ties in four places | 4 | low | low |
+| 25 | Undermere's ordering check misses what only its binary adds | 3 | low | low |
+| 26 | The pages still name the eight folded plugins | 5 | low | low |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
@@ -103,6 +106,10 @@ The five items that opened this section were built in the six stages of `docs/de
 
 ## 3. Make what exists real
 
+- **Undermere's ordering check misses what only its binary adds.**
+  `examples/undermere/src/plugin/ambiguity.rs` checks every system `UndermerePlugin` adds, on a headless app.
+  The `ViewSet::Annotate` systems `main.rs`'s `add_panels` adds exist only in the binary, so a conflict among them, or between them and the plugin's, is never reported.
+  Moving them into a plugin of their own that the test can add, or checking the binary's app too, would close it.
 - **A prop cannot block sight, or block the way and let a shot past.**
   A prop's `blocks` is `Blocks`, which the occupancy index reads for movement and `combat::shot` reads as stopping a shot, and nothing a prop is can block sight.
   Tiles already split the three, walkable, opaque and whether a shot passes, and Foundry's rooms want the same of a prop: a coolant tank or a full shelf blocks all three, a workbench or a lathe only the way, as `examples/foundry/DESIGN.md` sets out under Rooms.
@@ -156,6 +163,10 @@ The five items that opened this section were built in the six stages of `docs/de
 
 ## 4. Simplify
 
+- **Entity order still breaks ties in four places.**
+  The fingerprints and the engine's turn admission, noticing and noise stopped reading Bevy's entity numbers as spawn order on 2026-10-13, since any unrelated spawn renumbers what follows it.
+  Four places still use the number as a tiebreak: Undermere's raising of the dead (`examples/undermere/src/effects/bodies.rs`), the order of a mercenary's "stays behind" lines (`examples/undermere/src/mercenaries/travel.rs`), a name pick in `crates/rl-ui/src/view/mod.rs`, and the engine's `Aware`, keyed by `Entity` in a `BTreeMap` whose iteration order anything walking it inherits.
+  None moved a fingerprint in the proof runs; each wants a tie broken by position or by value, as the rest now are.
 - **`Thinking` splits its context from its snapshot.**
   `crates/rl-bevy/src/minds.rs` keeps the read-only context, `at`, `reach` and `origin`, in the same resource as the snapshot being filled, so every contributor builds an intermediate `Vec` and `extend`s it at the end purely to satisfy the borrow checker.
   Splitting the two deletes that pattern from six call sites in five crates' worth of subsystems.
@@ -194,6 +205,9 @@ The five items that opened this section were built in the six stages of `docs/de
 
 ## 5. Documentation
 
+- **The pages still name the eight folded plugins.**
+  `ConsumablesPlugin`, `StatusPlugin`, `WorkPlugin`, `UnloadPlugin`, `SettingsSavePlugin`, `RecordsSavePlugin`, `PlayerSaves` and `InteractKey` became part of `ItemsPlugin`, `CorePlugin`, `SavePlugin` and `UiPlugin` on 2026-10-13.
+  The overview and the guide's quotes were updated with them; the system pages' manifests and prose, the design docs and `docs/PLAN.md` were left for the release's documentation pass, and `scripts/check-systems.py` will flag the pages.
 The plugin table landed on 2026-09-21, with `scripts/check-overview.sh` behind it; the plan's progress log says what the review that prompted it found.
 The design docs still owed, and which files a slice owes, are in `AGENTS.md`.
 
