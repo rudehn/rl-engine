@@ -3,8 +3,8 @@
 //! plain handful every system that reads a floor's look or growth keeps
 //! instead of the whole of [`Undermere`].
 //!
-//! Twelve biomes stand two or three to a band, floors one to nine, drawn
-//! by weight from a stream of the floor alone, so a run's biomes are a
+//! Twelve biomes stand one to four to a stratum ([`super::strata`]), floors
+//! one to nine, drawn by weight from a stream of the floor alone, so a run's biomes are a
 //! pure function of its seed and any floor may be grown first. The three
 //! throne biomes stand on floor ten, one to a boss, never drawn by
 //! weight: [`throne`] reads off [`FinalBoss::biome`](super::lairs::FinalBoss)
@@ -24,6 +24,7 @@
 use rl_engine::rl_rules::dressing::DistrictDressings;
 
 use super::*;
+use crate::bestiary::Bestiary;
 
 /// The weight a biome's own named dressing is given in every district it
 /// grows, in [`district_dressings`].
@@ -313,6 +314,7 @@ fn check(def: &BiomeDef, tiles: &TileRegistry, layout: &LayoutDef) -> Result<(),
     if def.moods.len() as u32 != def.floors.1 - def.floors.0 + 1 {
         return Err(format!("{} moods for {} floors: one a floor", def.moods.len(), def.floors.1 - def.floors.0 + 1));
     }
+    super::strata::check_within(def.floors)?;
     if def.weight == 0 {
         return Err("a weight of nought is never drawn".to_string());
     }
@@ -344,12 +346,45 @@ fn check(def: &BiomeDef, tiles: &TileRegistry, layout: &LayoutDef) -> Result<(),
 /// problem at once, since a broken biome is a run that cannot grow a
 /// floor.
 pub(crate) fn load(tiles: &TileRegistry, layout: &LayoutDef) -> Registry<BiomeDef> {
+    super::strata::check();
     let defs: Registry<BiomeDef> = Registry::from_ron_str(BIOMES_RON).unwrap_or_else(|e| panic!("assets/biomes.ron: {e}"));
     defs.validate(|def, _| check(def, tiles, layout)).unwrap_or_else(|e| panic!("assets/biomes.ron: {e}"));
     let unnamed: Vec<&str> =
         layout.recipes.iter().map(|r| r.name.as_str()).filter(|r| !defs.iter().any(|(_, d)| d.recipes.iter().any(|w| w.name == *r))).collect();
     assert!(unnamed.is_empty(), "assets/layout.ron: no biome grows {unnamed:?}");
     defs
+}
+
+/// How many favored kinds a biome of floors one to nine must have able to
+/// spawn on every floor of its window: the least that tells a biome by what
+/// lives in it, and a floor that favors fewer than this is a floor told only
+/// by its walls.
+pub(crate) const FAVORED_AT_LEAST: usize = 3;
+
+/// Checks that every biome of floors one to nine has at least
+/// [`FAVORED_AT_LEAST`] favored kinds able to spawn on each floor of its
+/// window, by the bestiary's spawn table, and that every name it favors is a
+/// kind the bestiary carries. A throne biome favors nothing: its floor is the
+/// boss's. Panics with every shortfall at once, since a biome told by nothing
+/// is content that moved without its monsters.
+pub(crate) fn check_favored(defs: &Registry<BiomeDef>, bestiary: &Bestiary) {
+    let mut errors = Vec::new();
+    for (_, def) in defs.iter().filter(|(_, d)| d.floors.1 < FLOORS) {
+        let mut ids = Vec::new();
+        for name in &def.favored {
+            match bestiary.defs.id(name) {
+                Some(id) => ids.push(id),
+                None => errors.push(format!("{}: favors {name:?}, which monsters.ron does not carry", def.name)),
+            }
+        }
+        for floor in def.floors.0..=def.floors.1 {
+            let able = ids.iter().filter(|id| bestiary.spawns.at(floor as i32).any(|e| e.item == **id && e.weight > 0)).count();
+            if able < FAVORED_AT_LEAST {
+                errors.push(format!("{}: {able} favored kinds can spawn on floor {floor}, and a biome needs {FAVORED_AT_LEAST}", def.name));
+            }
+        }
+    }
+    assert!(errors.is_empty(), "assets/biomes.ron: {errors:#?}");
 }
 
 /// Every district of `layout` that some biome of `defs` grows, each
@@ -485,6 +520,69 @@ mod tests {
         load(&registry(), &layout())
     }
 
+    /// The shipped biomes with `edit` done to each biome's own row, as a
+    /// registry the favored check can be asked of.
+    fn edited(edit: impl Fn(&mut BiomeDef)) -> Registry<BiomeDef> {
+        let mut rows: Vec<BiomeDef> = defs().iter().map(|(_, d)| d.clone()).collect();
+        rows.iter_mut().for_each(edit);
+        Registry::from_defs(rows).expect("the same names as before")
+    }
+
+    fn bestiary() -> Bestiary {
+        crate::content::Library::load(&crate::content::effect_kinds(), &Moments::default()).bestiary
+    }
+
+    /// The shipped biomes each have three favored kinds able to spawn on
+    /// every floor of their window, which `Undermere::new` holds at load.
+    #[test]
+    fn every_shipped_biome_has_three_favored_kinds_able_to_spawn_on_each_of_its_floors() {
+        check_favored(&defs(), &bestiary());
+    }
+
+    /// A biome left with two favored kinds is refused, naming it.
+    #[test]
+    #[should_panic(expected = "Cellars: 2 favored kinds can spawn on floor 1")]
+    fn a_biome_with_only_two_favored_kinds_is_refused_naming_it() {
+        check_favored(
+            &edited(|d| {
+                if d.name == "Cellars" {
+                    d.favored.truncate(2);
+                }
+            }),
+            &bestiary(),
+        );
+    }
+
+    /// A favored kind with no spawn row on the floor counts for nothing
+    /// there: the myconid, moved down to floors five and six, no longer
+    /// serves a biome of floors three and four.
+    #[test]
+    #[should_panic(expected = "Sunken Library: 2 favored kinds can spawn on floor 3")]
+    fn a_favored_kind_that_cannot_spawn_on_a_floor_of_the_window_is_not_counted_there() {
+        check_favored(
+            &edited(|d| {
+                if d.name == "Sunken Library" {
+                    d.favored[2] = "myconid".to_string();
+                }
+            }),
+            &bestiary(),
+        );
+    }
+
+    /// A name the bestiary does not carry is refused rather than dropped.
+    #[test]
+    #[should_panic(expected = "which monsters.ron does not carry")]
+    fn a_favored_name_that_is_no_monster_is_refused() {
+        check_favored(
+            &edited(|d| {
+                if d.name == "Cellars" {
+                    d.favored.push("unicorn".to_string());
+                }
+            }),
+            &bestiary(),
+        );
+    }
+
     /// Every floor one to ten has at least one biome that stands on it,
     /// so [`draw`] and [`throne`] never run out of candidates.
     #[test]
@@ -549,7 +647,9 @@ mod tests {
             }
             for (name, count) in &counts {
                 assert!(*count > 0, "band {band:?}: {name} is never drawn");
-                assert!(u64::from(*count) * 3 <= u64::from(total) * 2, "band {band:?}: {name} takes {count} of {total}");
+                // A stratum with a single biome so far, the Underlake's,
+                // takes all of its floors by definition.
+                assert!(members.len() == 1 || u64::from(*count) * 3 <= u64::from(total) * 2, "band {band:?}: {name} takes {count} of {total}");
             }
         }
     }

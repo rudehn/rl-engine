@@ -82,7 +82,11 @@ use crate::writings::WritingsProgress;
 // `side` field is written as it was, and the engine's `side_was` beside it
 // reads as absent from an older save, whose discordant monster comes back
 // on the side it goes back to and is turned again, as it always was.
-pub const VERSION: u32 = 10;
+// v11: the strata. The biomes stand on other floors and the bestiary has new
+// kinds among the old ones, so an older save's floors were grown by an order
+// this build no longer draws and its monsters are read by ids that moved; it
+// is refused rather than continued on floors that no longer fit their run.
+pub const VERSION: u32 = 11;
 
 /// The slot every run saves to.
 pub const SLOT: &str = "undermere";

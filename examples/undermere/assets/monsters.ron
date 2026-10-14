@@ -56,11 +56,21 @@
     // blow, however armored, dealing at least half its roll.
     (name: "cave spider", glyph: 's', color: (0.68, 0.58, 0.75), hp: 9, attack: (roll: "1d4", kind: "pierce"), faction: "beasts",
      traits: ["animal", "sees in the dark", "venomous", "webbing"]),
+    // The spiders moved down with the Spider Warrens, to floors five and six:
+    // the giant spider is the stronger form the deeper floors ask, and the
+    // spiderlings the swarm round it, a bite apiece and gone at the first blow.
+    (name: "giant spider", glyph: 'S', color: (0.6, 0.5, 0.7), hp: 16, attack: (roll: "1d6", kind: "pierce"), faction: "beasts",
+     traits: ["animal", "sees in the dark", "venomous", "webbing"]),
+    (name: "spiderling", glyph: 's', color: (0.75, 0.68, 0.8), hp: 3, attack: (roll: "1d3", kind: "pierce"), faction: "beasts", traits: ["animal", "sees in the dark", "swift", "packing"]),
     (name: "goblin archer", glyph: 'a', color: (0.6, 0.8, 0.38), hp: 8, attack: (roll: "1d3", kind: "slash"), ranged: (range: 6, roll: "1d6", kind: "pierce"), faction: "goblins", traits: ["sapient", "cowardly", "led"],
      drops: [("gold coin", 40), ("bow", 8)]),
     (name: "goblin conjurer", glyph: 'c', color: (0.6, 0.4, 0.85), hp: 10, attack: (roll: "1d3", kind: "slash"), faction: "goblins", traits: ["sapient", "cowardly", "blinking", "conjuring", "led"]),
     (name: "goblin mystic", glyph: 'y', color: (0.4, 0.7, 0.9), hp: 10, attack: (roll: "1d3", kind: "crush"), faction: "goblins", traits: ["sapient", "cowardly", "warding", "led"]),
     (name: "myconid", glyph: 'f', color: (0.45, 0.9, 0.78), hp: 12, attack: (roll: "1d4", kind: "crush"), faction: "beasts", traits: ["mindless", "slow", "fungal glow", "spore-burst"]),
+    // The myconid moved down with the Fungal Deeps, to floors five and six,
+    // and the elder is its stronger form there: the caps that have had longer
+    // to grow.
+    (name: "myconid elder", glyph: 'F', color: (0.35, 0.8, 0.65), hp: 22, attack: (roll: "1d6", kind: "crush"), faction: "beasts", traits: ["mindless", "slow", "fungal glow", "spore-burst"]),
     (name: "pink jelly", glyph: 'J', color: (0.95, 0.5, 0.7), hp: 30, attack: (roll: "1d4", kind: "crush"), faction: "beasts", traits: ["mindless", "splitting"]),
     (name: "vampire bat", glyph: 'b', color: (0.45, 0.35, 0.5), hp: 9, attack: (roll: "1d4", kind: "pierce"), faction: "beasts", traits: ["animal", "sees in the dark", "flitting", "draining", "sleepy"]),
     (name: "ogre", glyph: 'O', color: (0.72, 0.6, 0.42), hp: 30, attack: (roll: "2d6", kind: "crush"), faction: "goblins", traits: ["sapient", "slow", "thick-hided", "sleepy"],
@@ -73,12 +83,22 @@
     (name: "necromancer", glyph: 'n', color: (0.6, 0.55, 0.8), hp: 16, attack: (roll: "1d4", kind: "slash"), faction: "undead", traits: ["sapient", "cowardly", "blinking", "raising"]),
     (name: "wraith", glyph: 'w', color: (0.75, 0.8, 0.9), hp: 22, attack: (roll: "1d8", kind: "cold"), faction: "undead", traits: ["sapient", "deathless", "withering", "shrouded"]),
     (name: "will-o'-wisp", glyph: 'o', color: (0.6, 0.9, 1.0), hp: 10, attack: (roll: "1d6", kind: "fire"), faction: "beasts", traits: ["mindless", "blinking", "luring", "grave light"]),
-    // Floors seven to nine: the drowned dead, the forge's fire, and the
+    // Floors three and four: the Palace and its Grounds, where the drowned
+    // dead moved up with the cathedral and the scholars' dead with the
+    // library. Each is the weaker early form of a deeper kind, so the curve
+    // the floors were tuned to holds: the pilgrim before the drowned thrall,
+    // the acolyte before the wight, the scribe before the wraith. The deeper
+    // kinds are the same dead a long age on.
+    // `led` for the Drowned Abbess's own two, standing with her as her band.
+    (name: "drowned pilgrim", glyph: 'Z', color: (0.55, 0.72, 0.78), hp: 16, attack: (roll: "1d6", kind: "crush"), faction: "undead", traits: ["mindless", "deathless", "slow", "led"]),
+    (name: "drowned acolyte", glyph: 'W', color: (0.78, 0.86, 0.95), hp: 14, attack: (roll: "1d5", kind: "cold"), faction: "undead", traits: ["sapient", "deathless", "grave light", "venomous"]),
+    (name: "pale scribe", glyph: 'w', color: (0.82, 0.78, 0.92), hp: 12, attack: (roll: "1d4", kind: "cold"), faction: "undead", traits: ["sapient", "deathless", "shrouded", "withering"]),
+    // Floors seven to nine: the drowned dead of the deep, the forge's fire, and the
     // first of the deep culture at the bottom. A wight's touch is the cold
     // of the deep water, which armor does not turn, as it does not turn
     // the forge's fire.
-    // `led` for the Drowned Abbess's own two, standing with her as her
-    // band.
+    // `led` so one drawn into a band keeps station on its leader, as the
+    // pilgrim, its early form, does for the Drowned Abbess.
     (name: "drowned thrall", glyph: 'Z', color: (0.45, 0.65, 0.72), hp: 22, attack: (roll: "2d6", kind: "crush"), faction: "undead", traits: ["mindless", "deathless", "slow", "led"]),
     (name: "wight", glyph: 'W', color: (0.7, 0.8, 0.95), hp: 20, attack: (roll: "1d6+1", kind: "cold"), armor: 1, faction: "undead", traits: ["sapient", "deathless", "grave light", "draining"]),
     (name: "troll", glyph: 'T', color: (0.45, 0.6, 0.35), hp: 40, attack: (roll: "2d6+1", kind: "slash"), faction: "beasts", traits: ["sapient", "regenerates", "burns-badly", "sleepy"]),
@@ -119,7 +139,7 @@
      traits: ["animal", "sees in the dark", "venomous", "webbing", "wakeful"], miniboss: true, drops: [("the Widow's Fang", 100)]),
     (name: "the Choirmaster", glyph: 'n', color: (0.85, 0.85, 1.0), hp: 50, attack: (roll: "1d8", kind: "slash"), faction: "undead",
      traits: ["sapient", "raising", "blinking", "warding", "singing"], miniboss: true, drops: [("the Choirmaster's Staff", 100)]),
-    (name: "the Drowned Abbess", glyph: 'N', color: (0.4, 0.75, 0.7), hp: 50, attack: (roll: "2d6", kind: "pierce"), faction: "undead",
+    (name: "the Drowned Abbess", glyph: 'N', color: (0.4, 0.75, 0.7), hp: 38, attack: (roll: "1d8", kind: "pierce"), faction: "undead",
      traits: ["sapient", "venomous", "regenerates", "spit", "calling the drowned"], miniboss: true, drops: [("the Abbess's Chalice", 100)]),
     (name: "the Forgemaster", glyph: 'O', color: (1.0, 0.5, 0.15), hp: 90, attack: (roll: "3d6", kind: "crush"), faction: "beasts",
      traits: ["sapient", "fire-blooded", "armored", "slow", "wakeful"], miniboss: true, drops: [("the Forgemaster's Hammer", 100)]),

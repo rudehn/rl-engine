@@ -130,12 +130,18 @@ pub(crate) struct MiniBoss {
     pub(crate) floors: (u32, u32),
 }
 
-/// The five, in the content sheet's own order.
+/// The five, in the content sheet's own order, on the floors of the theme
+/// each belongs to: the Abbess with the cathedral on the palace floors, and
+/// Grubnak, the Widow and the Choirmaster with the mines, the warrens and
+/// the catacombs beneath the kingdom. The Forgemaster keeps the deep, where
+/// the forge of the people before the kingdom lies. Every range is at least
+/// two floors wide, so the second mini-boss drawn always has a floor the
+/// first did not take.
 pub(crate) const MINI_BOSSES: [MiniBoss; 5] = [
-    MiniBoss { name: "Grubnak the goblin king", floors: (3, 5) },
-    MiniBoss { name: "the Widow", floors: (4, 6) },
-    MiniBoss { name: "the Choirmaster", floors: (5, 7) },
-    MiniBoss { name: "the Drowned Abbess", floors: (6, 8) },
+    MiniBoss { name: "Grubnak the goblin king", floors: (5, 6) },
+    MiniBoss { name: "the Widow", floors: (5, 6) },
+    MiniBoss { name: "the Choirmaster", floors: (5, 6) },
+    MiniBoss { name: "the Drowned Abbess", floors: (3, 4) },
     MiniBoss { name: "the Forgemaster", floors: (7, 9) },
 ];
 
@@ -156,7 +162,7 @@ pub(crate) fn lairs(seed: RunSeed) -> [(usize, u32); 2] {
     for &boss in order.iter().take(2) {
         let (lo, hi) = MINI_BOSSES[boss].floors;
         let mut floor = rng.random_range(lo..=hi);
-        // Its range is always at least three floors wide and only one
+        // Its range is always at least two floors wide and only one
         // other boss was drawn before it, so there is always a floor
         // in its own range the other did not take.
         if chosen.iter().any(|(_, f)| *f == floor) {

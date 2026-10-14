@@ -5,7 +5,8 @@
 //! may draw and the line said once a run's are all told. [`Rumours::told`]
 //! is one run's, in the order they are told: the floor ten boss it drew,
 //! each mini-boss it drew, shallowest first, each biome it drew on a floor
-//! that could have drawn another, shallowest first, and then the last line. It reads the draws by the
+//! that could have drawn another, shallowest first, each stratum that has a
+//! rumour of its own, shallowest first, and then the last line. It reads the draws by the
 //! very functions the floors are built by, `dungeon::final_boss`,
 //! `dungeon::lairs` and `dungeon::biomes_drawn`, each pure over the run's
 //! seed, so a rumour told in
@@ -25,7 +26,7 @@ use rl_engine::prelude::*;
 use rl_engine::rl_core::RunSeed;
 use serde::Deserialize;
 
-use crate::dungeon::{FINAL_BOSSES, MINI_BOSSES, biomes_drawn, final_boss, lairs};
+use crate::dungeon::{FINAL_BOSSES, MINI_BOSSES, STRATA, biomes_drawn, final_boss, lairs};
 use crate::townsfolk::{Line, Townsfolk, placeholders};
 
 const RUMOURS_RON: &str = include_str!("../assets/rumours.ron");
@@ -35,7 +36,8 @@ const RUMOURS_RON: &str = include_str!("../assets/rumours.ron");
 #[serde(deny_unknown_fields)]
 pub struct Rumour {
     /// What it is of, by name: a boss or a mini-boss as `monsters.ron`
-    /// names it, or a biome as the log names it on arrival.
+    /// names it, a biome as the log names it on arrival, or a stratum as
+    /// [`STRATA`] names it.
     pub of: String,
     /// The words, with a `{role}` for that role's name this run.
     pub say: String,
@@ -115,7 +117,8 @@ impl Rumours {
     /// The run of `seed`'s rumours as lines, in the order they are told:
     /// the floor ten boss it drew, each mini-boss it drew, shallowest
     /// first, each biome it drew on a floor that could have drawn another,
-    /// shallowest first, and the last line. Every line always holds, so
+    /// shallowest first, each stratum with a rumour of its own, shallowest
+    /// first, and the last line. Every line always holds, so
     /// talking says each in turn and then the last again. Panics on a biome
     /// drawn with no rumour, which the file's own test keeps from happening.
     pub fn told(&self, seed: RunSeed) -> Vec<Line> {
@@ -123,7 +126,8 @@ impl Rumours {
         lairs.sort_by_key(|(_, floor)| *floor);
         let biomes = biomes_drawn(seed);
         let drawn = once(final_boss(seed).name).chain(lairs.iter().map(|(boss, _)| MINI_BOSSES[*boss].name)).chain(biomes.iter().map(String::as_str));
-        let said = drawn.map(|name| self.of(name).unwrap_or_else(|| panic!("assets/rumours.ron: {name} was drawn, and it has no rumour")));
+        let strata = STRATA.iter().map(|s| s.name).filter(|name| self.of(name).is_some());
+        let said = drawn.chain(strata).map(|name| self.of(name).unwrap_or_else(|| panic!("assets/rumours.ron: {name} was drawn, and it has no rumour")));
         said.chain(once(self.last())).map(|say| Line { say: say.to_string(), when: None }).collect()
     }
 }
@@ -172,8 +176,9 @@ mod tests {
     }
 
     /// The shipped file reads, with a rumour of each of the three floor
-    /// ten bosses, the five mini-bosses and the twelve biomes floors one to
-    /// nine may draw, twenty in all, and the design's last line.
+    /// ten bosses, the five mini-bosses, the twelve biomes floors one to
+    /// nine may draw and the four strata with a hint of their own, twenty-four in
+    /// all, and the design's last line.
     #[test]
     fn the_rumours_file_reads_with_a_rumour_of_every_boss_mini_boss_and_biome_of_the_design() {
         let rumours = library().rumours;
@@ -181,17 +186,18 @@ mod tests {
             "the Upper Halls",
             "the Cellars",
             "the Watch Barracks",
-            "the Fungal Deeps",
-            "the Spider Warrens",
-            "the Old Mines",
-            "the Catacombs",
             "the Sunken Library",
             "the Drowned Cathedral",
+            "the Catacombs",
+            "the Old Mines",
+            "the Fungal Deeps",
+            "the Spider Warrens",
             "the Underlake",
             "the Forge of Embers",
             "the Ashen Galleries",
         ];
-        let drawable: Vec<&str> = FINAL_BOSSES.iter().map(|b| b.name).chain(MINI_BOSSES.iter().map(|b| b.name)).chain(biomes).collect();
+        let strata = ["The Palace and its Grounds", "Beneath the Kingdom", "Before the Kingdom", "The Oldest Deep"];
+        let drawable: Vec<&str> = FINAL_BOSSES.iter().map(|b| b.name).chain(MINI_BOSSES.iter().map(|b| b.name)).chain(biomes).chain(strata).collect();
         let of: Vec<&str> = rumours.rumours().map(|r| r.of.as_str()).collect();
         assert_eq!(of, drawable, "one rumour each, in the design's order");
         assert_eq!(rumours.last(), "That's all I've heard. Come back when you've been somewhere.");
@@ -265,22 +271,27 @@ mod tests {
     /// Talking to the innkeeper tells the boss floor ten holds, then each
     /// mini-boss the floors hold, shallowest first, each found by going
     /// down and looking, then each biome the floors above ten are grown
-    /// as, shallowest first and each once, then the last line, and the
+    /// as, shallowest first and each once, then each stratum's hint of
+    /// what is deeper and older, then the last line, and the
     /// last line again on every talk after, over a span of seeds that
     /// draws each boss.
     #[test]
-    fn the_innkeeper_tells_what_this_runs_floors_hold_boss_first_then_each_lair_then_each_biome_shallowest_first_then_the_last_line_again() {
+    fn the_innkeeper_tells_what_this_runs_floors_hold_boss_first_then_each_lair_each_biome_each_stratum_then_the_last_line_again() {
         for seed in seeds() {
             let mut app = headless(seed);
             let me = adventurer(&mut app);
             let mut biomes: Vec<String> = Vec::new();
-            for floor in 1..FLOORS {
+            // Floors seven and eight can draw only the Underlake until a later
+            // wave adds to them, so no biome's rumour is told of them: the
+            // stratum's is.
+            for floor in (1..FLOORS).filter(|f| !(7..=8).contains(f)) {
                 let name = app.world().resource::<crate::light::BiomeDraws>().of(floor).name.clone();
                 if !biomes.contains(&name) {
                     biomes.push(name);
                 }
             }
-            let talks = 3 + biomes.len() + 2;
+            let strata: Vec<&str> = STRATA.iter().map(|s| s.name).filter(|n| app.world().resource::<Rumours>().of(n).is_some()).collect();
+            let talks = 3 + biomes.len() + strata.len() + 2;
             let told: Vec<String> = (0..talks).map(|_| words(&talk_to(&mut app, me, "innkeeper")).to_string()).collect();
             sturdy(&mut app, me);
             let mut held: BTreeMap<u32, String> = BTreeMap::new();
@@ -302,7 +313,8 @@ mod tests {
             let folk = app.world().resource::<Folk>();
             let of = |name: &String| folk.say(rumours.of(name).unwrap_or_else(|| panic!("a rumour of {name}")));
             let last = rumours.last().to_string();
-            let expected: Vec<String> = once(&boss).chain(held.values()).chain(&biomes).map(of).chain([last.clone(), last]).collect();
+            let strata: Vec<String> = strata.iter().map(|s| s.to_string()).collect();
+            let expected: Vec<String> = once(&boss).chain(held.values()).chain(&biomes).chain(&strata).map(of).chain([last.clone(), last]).collect();
             assert_eq!(told, expected, "{seed:?}: what the floors hold, {boss} below {held:?}");
         }
     }

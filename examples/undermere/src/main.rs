@@ -55,10 +55,11 @@ const RAIL: i32 = 34;
 /// is aimed, the range, the target, the chance, and up to four lines of it.
 const TARGET_ROWS: i32 = 10;
 /// Rows the rail gives to vitals: its heading with the rule under it, the
-/// name, health, armor, seen and lit, noise, and two rows for the badges
-/// and the gold carried, the badges first when there are any and the last
-/// row blank most turns, which sets what is worn off from the gauges.
-const VITALS_ROWS: i32 = 9;
+/// name, health, armor, seen and lit, noise, the floor and its stratum
+/// on two rows of their own, and two rows for the badges and the gold
+/// carried, the badges first when there are any and the last row blank
+/// most turns, which sets what is worn off from the gauges.
+const VITALS_ROWS: i32 = 11;
 /// Rows the rail gives to what is worn: the heading and its rule, one
 /// apiece for the seven slots, a blank row setting the list off from what
 /// is nearby under it, the gap the badges' row leaves above, and two more

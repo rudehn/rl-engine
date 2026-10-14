@@ -1,4 +1,4 @@
-// A mini-boss's lair: the Widow's den, drawn on one floor of her own 4-6. A
+// A mini-boss's lair: the Widow's den, drawn on one floor of her own 5-6. A
 // cave choked with web (slow to cross, burns away to the moss under it),
 // and her egg sacs either side of her, which hatch two cave spiders when
 // struck or stepped beside (`src/tricks.rs`'s `hatch_beside`, and

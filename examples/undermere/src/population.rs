@@ -222,14 +222,19 @@ struct Band {
     followers: &'static [&'static str],
     /// How many of `followers` come, besides the leader.
     count: usize,
+    /// Whether the band comes only where the floor's drawn biome favors its
+    /// leader: a war band keeps to the goblins' own ground, the mines, and
+    /// not to a library or a warren, while the dar trio comes to every floor
+    /// of its range.
+    themed: bool,
 }
 
 /// The dar trio, floors eight and nine, the blademaster leading; a goblin
-/// war band, floors three to six, a goblin leading two of archer,
+/// war band, floors five and six where the mines are drawn, a goblin leading two of archer,
 /// conjurer or mystic, so a war band never doubles one kind.
 const BANDS: &[Band] = &[
-    Band { floors: (3, 6), leader: "goblin", followers: &["goblin archer", "goblin conjurer", "goblin mystic"], count: 2 },
-    Band { floors: (8, 9), leader: "dar blademaster", followers: &["dar priestess", "dar battlemage"], count: 2 },
+    Band { floors: (5, 6), leader: "goblin", followers: &["goblin archer", "goblin conjurer", "goblin mystic"], count: 2, themed: true },
+    Band { floors: (8, 9), leader: "dar blademaster", followers: &["dar priestess", "dar battlemage"], count: 2, themed: false },
 ];
 
 /// A beast that feeds on another kind's remains, one feeding ground to a
@@ -249,14 +254,13 @@ struct Feeder {
     prey: &'static str,
 }
 
-/// Jackals over a rat on the upper halls, an ogre over a goblin in the
-/// caves, a ghoul, which the sheet already has eating the dead, over a
-/// skeleton in the crypts and the drowned halls, a troll over a fire imp
-/// at the forge: one feeder a floor's band may draw, chosen by hand for
-/// what already stands there.
+/// Jackals over a rat on the upper halls, a ghoul, which the sheet already
+/// has eating the dead, over a skeleton in the crypts and the drowned
+/// halls, a troll over a fire imp at the forge: one feeder a floor's band
+/// may draw, chosen by hand for what already stands there. The palace
+/// floors have none, for the dead there are too new to be eaten.
 const FEEDERS: &[Feeder] = &[
     Feeder { floors: (1, 2), beast: "jackal", prey: "rat" },
-    Feeder { floors: (4, 4), beast: "ogre", prey: "goblin" },
     Feeder { floors: (5, 7), beast: "ghoul", prey: "skeleton" },
     Feeder { floors: (8, 9), beast: "troll", prey: "fire imp" },
 ];
@@ -534,7 +538,8 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
         // one of them was added or tuned.
         let mut band_rng = seed.stream(b"undermere.population.bands", u64::from(floor));
         let mut scenes = 0;
-        for band in BANDS.iter().filter(|b| (b.floors.0..=b.floors.1).contains(&floor)) {
+        let here = draws.of(floor);
+        for band in BANDS.iter().filter(|b| (b.floors.0..=b.floors.1).contains(&floor)).filter(|b| !b.themed || here.favored.iter().any(|f| f == b.leader)) {
             // Half the time a goblin war band is placed at all, it comes
             // together as a camp round its own fire instead of standing
             // in the open: the share of war bands a camp is.
@@ -799,14 +804,14 @@ mod tests {
     /// [`pick_group_favoring`]'s own mechanism, isolated from `plan`'s
     /// geometry: a favored row is drawn about [`FAVORED_WEIGHT`] times as
     /// often as an unfavored row that starts at the same plain weight, over
-    /// a span of seeds. Band 3 carries three rows of weight 20 each, the
+    /// a span of seeds. Band 5 carries three rows of weight 20 each, the
     /// goblin archer, conjurer and mystic (`assets/monster_spawns.ron`), so
     /// favoring one against another of the same weight needs no table of
     /// its own.
     #[test]
     fn a_favored_kind_is_drawn_about_favored_weight_times_as_often_as_an_equal_weight_row_over_a_span_of_seeds() {
         let bestiary = bestiary();
-        let band = 3;
+        let band = 5;
         let archer = bestiary.defs.expect("goblin archer");
         let conjurer = bestiary.defs.expect("goblin conjurer");
         let rows: Vec<&BandedEntry<Id<MonsterDef>>> = bestiary.spawns.at(band).collect();
@@ -853,13 +858,13 @@ mod tests {
     }
 
     /// A floor's population favors its own biome's kinds: over a span of
-    /// seeds of floor three, each of its three biomes' favored kinds make
+    /// seeds of floor five, each of its four biomes' favored kinds make
     /// up a larger share of the floor's monsters where that biome was
     /// drawn than where another was, so the population is handed the
     /// drawn biome's list and not some other floor's or none.
     #[test]
     fn a_floor_is_populated_with_more_of_its_own_biomes_favored_kinds() {
-        let floor = 3;
+        let floor = 5;
         // Every biome of the band, by the seeds' own draws of it.
         let mut band: Vec<crate::dungeon::BiomeDraw> = Vec::new();
         for s in 0..20 {
@@ -1062,11 +1067,57 @@ mod tests {
     /// `Leader`, whatever else the ordinary spawn table also drew.
     #[test]
     fn a_goblin_war_band_is_placed_together_a_goblin_leading_two_of_its_own_kinds_over_a_span_of_seeds() {
-        for s in 0..6u64 {
+        let mut played = 0;
+        for s in 0..40u64 {
+            let Some(floor) = mines_floor(s) else { continue };
             let mut app = headless(RunSeed(s));
             let me = adventurer(&mut app);
             sturdy(&mut app, me);
-            let floor = map_of(4);
+            arrive(&mut app, floor);
+            played += 1;
+            let (goblin_id, band) = {
+                let bestiary = app.world().resource::<Bestiary>();
+                (
+                    bestiary.defs.expect("goblin"),
+                    [bestiary.defs.expect("goblin archer"), bestiary.defs.expect("goblin conjurer"), bestiary.defs.expect("goblin mystic")],
+                )
+            };
+            // Led by a plain goblin, never Grubnak the goblin king: his honor
+            // guard can draw the same three kinds on the same floors.
+            let led: Vec<(Entity, Entity)> = led_among(app.world_mut(), floor, &band)
+                .into_iter()
+                .filter(|(_, leader)| app.world().get::<Kind>(*leader).map(|k| k.0) == Some(goblin_id))
+                .collect();
+            assert_eq!(led.len(), 2, "seed {s}: two of the three, led: {led:?}");
+            let leader = led[0].1;
+            assert!(led.iter().all(|(_, l)| *l == leader), "seed {s}: both led by the same goblin");
+            assert_eq!(app.world().get::<Kind>(leader).map(|k| k.0), Some(goblin_id), "seed {s}: led by a goblin");
+            if played == 6 {
+                break;
+            }
+        }
+        assert_eq!(played, 6, "six runs drew the Old Mines on a floor of beneath the kingdom");
+    }
+
+    /// The map of the Old Mines on floor five or six when this run drew
+    /// them there: the only floors a goblin war band comes together on,
+    /// since it keeps to the biome that favors its leader.
+    fn mines_floor(seed: u64) -> Option<MapId> {
+        let undermere = crate::dungeon::Undermere::new(RunSeed(seed));
+        [5, 6].into_iter().find(|f| undermere.biome_of(*f).name == "the Old Mines").map(map_of)
+    }
+
+    /// A goblin war band comes only where the biome drawn favors its leader:
+    /// on no floor of the Fungal Deeps, the Spider Warrens or the Catacombs.
+    #[test]
+    fn a_goblin_war_band_keeps_to_the_mines_and_comes_to_no_other_floor_of_beneath_the_kingdom() {
+        let mut checked = 0;
+        for s in 0..40u64 {
+            let undermere = crate::dungeon::Undermere::new(RunSeed(s));
+            let Some(floor) = [5, 6].into_iter().find(|f| undermere.biome_of(*f).name != "the Old Mines").map(map_of) else { continue };
+            let mut app = headless(RunSeed(s));
+            let me = adventurer(&mut app);
+            sturdy(&mut app, me);
             arrive(&mut app, floor);
             let (goblin_id, band) = {
                 let bestiary = app.world().resource::<Bestiary>();
@@ -1075,12 +1126,14 @@ mod tests {
                     [bestiary.defs.expect("goblin archer"), bestiary.defs.expect("goblin conjurer"), bestiary.defs.expect("goblin mystic")],
                 )
             };
-            let led = led_among(app.world_mut(), floor, &band);
-            assert_eq!(led.len(), 2, "seed {s}: two of the three, led: {led:?}");
-            let leader = led[0].1;
-            assert!(led.iter().all(|(_, l)| *l == leader), "seed {s}: both led by the same goblin");
-            assert_eq!(app.world().get::<Kind>(leader).map(|k| k.0), Some(goblin_id), "seed {s}: led by a goblin");
+            let led: Vec<(Entity, Entity)> = led_among(app.world_mut(), floor, &band)
+                .into_iter()
+                .filter(|(_, leader)| app.world().get::<Kind>(*leader).map(|k| k.0) == Some(goblin_id))
+                .collect();
+            assert!(led.is_empty(), "seed {s}: a war band on a floor of {}: {led:?}", undermere.biome_of(floor.0).name);
+            checked += 1;
         }
+        assert!(checked > 0, "some seed drew another biome than the mines on floors five and six");
     }
 
     /// A mini-boss's lair: whichever lair a floor draws holds its boss, found
@@ -1164,17 +1217,17 @@ mod tests {
     }
 
     /// A goblin camp: half the floors a goblin war band is placed on
-    /// floors three to six dress it round a fire, every follower asleep
+    /// floors five and six dress it round a fire, every follower asleep
     /// and the leader alone keeping the watch, found somewhere over a
     /// span of seeds since the dressing itself is a coin flip.
     #[test]
     fn a_goblin_camp_holds_a_fire_its_followers_asleep_and_its_leader_keeping_the_watch_over_a_span_of_seeds() {
         let camps = std::sync::atomic::AtomicUsize::new(0);
         par_seeds(seeds(0..40), |s| {
+            let Some(map) = mines_floor(s) else { return };
             let mut app = headless(RunSeed(s));
             let me = adventurer(&mut app);
             sturdy(&mut app, me);
-            let map = map_of(4);
             arrive(&mut app, map);
             let fire_id = app.world().resource::<Registries>().props.expect("fire");
             // A camp's own fire, which the population stands where no piece

@@ -96,6 +96,8 @@ pub fn know_the_town(map: &WorldMap, knowledge: &mut Knowledge) {
 
 /// Lays the gate the first time Mereholt or floor one is entered, and names
 /// the place in the log on every arrival, coming up as well as going down.
+/// The first arrival in a new stratum says the stratum's own crossing line
+/// ahead of the place's, once.
 /// The stairs between the floors are the engine's, laid from [`ladder`]
 /// when each floor is built.
 ///
@@ -118,6 +120,11 @@ pub fn link_places(
 ) {
     let ArrivalLines { help, mut tell, draws } = lines;
     for ev in entered.read() {
+        if ev.first
+            && let Some(stratum) = crate::dungeon::crossed_into(ev.map, |m| map.place(m).is_some_and(|p| p.visited))
+        {
+            tell.write(Tell::new(stratum.crossing, Tones::NOTICE));
+        }
         tell.write(Tell::new(place_line(ev.map, &draws), Tones::NOTICE));
         if !ev.first {
             continue;

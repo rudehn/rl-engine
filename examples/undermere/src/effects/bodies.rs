@@ -684,25 +684,33 @@ pub fn rally(world: &mut World, user: Entity, turns: u32) {
     }
 }
 
-/// Stands up to `count` drowned thralls on cells of standing water within
+/// Stands up to `count` of the drowned on cells of standing water within
 /// `range` of `user`, wading tiles rather than the lake's own deep water
 /// or the throne's black pools, which stop a body rather than letting one
 /// rise: the Drowned Abbess's `call the drowned`. Written `(kind:
-/// "CallDrowned", args: (count: 2, range: 6))`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// "CallDrowned", args: (count: 2, range: 6, monster: "drowned pilgrim"))`,
+/// `monster` left out for [`DROWNED_THRALL`], so the Abbess on the palace
+/// floors calls her own congregation and not the deep's thralls.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CallDrowned {
     /// How many rise, at most.
     pub count: u32,
     /// How far from the caller a cell of water may lie.
     pub range: i32,
+    /// The kind that rises, a name from `monsters.ron`.
+    pub monster: String,
 }
+
+/// The kind a call of the drowned raises when its row names none: the
+/// deep's thrall, which the Drowned King's `welling` raises as well.
+pub const DROWNED_THRALL: &str = "drowned thrall";
 
 impl Effect for CallDrowned {
     fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
-        let (user, count, range) = (landing.user, self.count, self.range);
+        let (user, count, range, monster) = (landing.user, self.count, self.range, self.monster.clone());
         let landing = landing.clone();
         world.commands.queue(move |world: &mut World| {
-            if call_drowned(world, user, count, range).0 == 0 {
+            if call_drowned_of(world, user, &monster, count, range).0 == 0 {
                 super::showed_nothing(world, &landing);
             }
         });
@@ -710,8 +718,8 @@ impl Effect for CallDrowned {
 
     fn describe(&self, _: &Registries, _: EffectBonus) -> String {
         match self.count {
-            1 => format!("a drowned thrall rises from water within {}", self.range),
-            n => format!("up to {n} drowned thralls rise from water within {}", self.range),
+            1 => format!("a {} rises from water within {}", self.monster, self.range),
+            n => format!("up to {n} of the {} rise from water within {}", plural(&self.monster), self.range),
         }
     }
 }
@@ -725,10 +733,17 @@ impl FromArgs for CallDrowned {
         struct Args {
             count: u32,
             range: i32,
+            monster: Option<String>,
         }
         let a: Args = read_args(args)?;
-        Ok(Self { count: a.count, range: a.range })
+        Ok(Self { count: a.count, range: a.range, monster: a.monster.unwrap_or_else(|| DROWNED_THRALL.to_string()) })
     }
+}
+
+/// `name` as a plural, for the kinds a call of the drowned raises: they all
+/// end in a plain word, so an `s` is the whole rule.
+fn plural(name: &str) -> String {
+    format!("{name}s")
 }
 
 /// A tile's move cost that marks it as standing water: the wading tiles
@@ -739,14 +754,19 @@ impl FromArgs for CallDrowned {
 /// with the biomes that add one.
 const WADING_MOVE_COST: u32 = 200;
 
-/// Stands up to `count` drowned thralls on free cells of standing water
+/// [`call_drowned_of`] for the deep's thralls.
+pub fn call_drowned(world: &mut World, caller: Entity, count: u32, range: i32) -> (usize, bool) {
+    call_drowned_of(world, caller, DROWNED_THRALL, count, range)
+}
+
+/// Stands up to `count` of `monster` on free cells of standing water
 /// within `range` of `caller`, nearest rows first so two runs of one seed
 /// agree, as [`CallDrowned`] says. Returns where each rose, and whether
 /// the adventurer saw any of it: the caller, or the water one rose from,
-/// in their sight, since a thrall rising from a pool across the hall from
+/// in their sight, since one rising from a pool across the hall from
 /// a caller out of sight is still seen to rise.
-pub fn call_drowned(world: &mut World, caller: Entity, count: u32, range: i32) -> (usize, bool) {
-    let Some(thrall) = world.resource::<Bestiary>().defs.id("drowned thrall") else { return (0, false) };
+pub fn call_drowned_of(world: &mut World, caller: Entity, monster: &str, count: u32, range: i32) -> (usize, bool) {
+    let Some(thrall) = world.resource::<Bestiary>().defs.id(monster) else { return (0, false) };
     let Some(at) = world.get::<Position>(caller).map(|p| p.0) else { return (0, false) };
     let map = world.get::<OnMap>(caller).map_or(MapId::SURFACE, |m| m.0);
     let worldmap = world.resource::<WorldMap>();
@@ -766,8 +786,8 @@ pub fn call_drowned(world: &mut World, caller: Entity, count: u32, range: i32) -
     }
     if seen {
         let line = match n {
-            1 => "A drowned thrall rises from the water!".to_string(),
-            _ => format!("{n} drowned thralls rise from the water!"),
+            1 => format!("A {monster} rises from the water!"),
+            _ => format!("{n} of the {} rise from the water!", plural(monster)),
         };
         world.write_message(Tell::new(line, Tones::BAD));
     }

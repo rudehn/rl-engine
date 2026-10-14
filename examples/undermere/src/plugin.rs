@@ -442,7 +442,7 @@ impl Plugin for UndermerePlugin {
         // it does not.
         // Then what a thing asks of the adventurer's strength, under the
         // pack's row and the look cursor's, so the line reads under its
-        // numbers; and the gold carried, on the vitals under the gauges,
+        // numbers; the floor and its stratum and the gold carried, on the vitals under the gauges,
         // wherever the game draws them. Chained, since a row's facets read
         // in the order they are pushed.
         app.add_systems(
@@ -454,6 +454,7 @@ impl Plugin for UndermerePlugin {
                 crate::seeming::seem_pack,
                 crate::seeming::seem_looked_at,
                 crate::strength::note_strength,
+                crate::dungeon::name_the_stratum,
                 crate::shops::count_gold,
             )
                 .chain()

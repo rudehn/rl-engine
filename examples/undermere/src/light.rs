@@ -168,7 +168,7 @@ mod tests {
             for light in lights {
                 // The Spider Warrens read true dark; every other biome
                 // reads dim, by design.
-                let expected = if key == &(3, 4) && *light == Light::DARK { LightBand::Dark } else { LightBand::Dim };
+                let expected = if key == &(5, 6) && *light == Light::DARK { LightBand::Dark } else { LightBand::Dim };
                 assert_eq!(band(*light), expected, "{key:?}: {light:?}");
                 distinct.insert((light.intensity, light.color.r, light.color.g, light.color.b));
             }
@@ -420,7 +420,7 @@ mod tests {
             let mut app = crate::testing::headless(RunSeed(s));
             let me = crate::testing::adventurer(&mut app);
             crate::testing::sturdy(&mut app, me);
-            let map = map_of(4);
+            let map = map_of(5);
             crate::testing::arrive(&mut app, map);
             crate::testing::settle(&mut app);
             let fires = lit_fires(&mut app, map);
@@ -428,7 +428,7 @@ mod tests {
             assert_eq!(light, campfire, "seed {s}: the camp's fire carries its own light");
             let me_at = crate::testing::at(&app, me);
             let (world_map, lighting) = (app.world().resource::<WorldMap>(), app.world().resource::<Lighting>());
-            let beyond = geometry::square(at, 1).filter(|p| world_map.is_walkable(*p) && geometry::chebyshev(*p, me_at) > lantern_radius(Some(4)) + 1);
+            let beyond = geometry::square(at, 1).filter(|p| world_map.is_walkable(*p) && geometry::chebyshev(*p, me_at) > lantern_radius(Some(5)) + 1);
             for p in beyond {
                 assert_eq!(lighting.band(p), LightBand::Lit, "seed {s}: the ground at {p:?} beside the fire is lit, the lantern far off");
             }
@@ -437,7 +437,7 @@ mod tests {
             assert_eq!(lit_fires(&mut again, map), fires, "seed {s}: every fire is lit again once the run is continued");
             camps.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         });
-        assert!(camps.into_inner() > 0, "some seed over the span stood a camp's fire on floor four");
+        assert!(camps.into_inner() > 0, "some seed over the span stood a camp's fire on floor five");
     }
 
     /// The lantern the adventurer carries reaches as far as the floor they

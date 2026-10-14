@@ -29,8 +29,9 @@
 //                turns:), spectral blades on the user's own side, RaiseDead, the nearest body in
 //                sight and reach stood up as the user's own ally,
 //                Steal, a landed blow's own trick, Rally(turns:), Grubnak's,
-//                every ally in sight hasted, and CallDrowned(count:, range:), drowned thralls stood
-//                up out of the water within range. The damage kinds are
+//                every ally in sight hasted, and CallDrowned(count:, range:, monster:), the drowned
+//                stood up out of the water within range, monster a kind of monsters.ron, drowned
+//                thrall if left out. The damage kinds are
 //                "slash" | "pierce" | "crush" | "fire" | "cold" | "poison" | "lightning", and the
 //                statuses "poisoned" | "scorched" | "mending" | "regenerating" | "chilled" |
 //                "slowed" | "hasted" | "fireproof" | "shrouded" | "paralysed" | "confused" |
@@ -179,15 +180,16 @@
         cooldown: 600,
         effects: [(kind: "Inflict", args: (status: "poisoned", turns: 4))],
     ),
-    // The Drowned Abbess's: thralls stand up out of whatever water is
-    // within her reach, not pointed at one, as `raise dead` is not.
+    // The Drowned Abbess's: her congregation, drowned pilgrims, stands up
+    // out of whatever water is within her reach, not pointed at one, as
+    // `raise dead` is not.
     (
         name: "call the drowned",
-        description: "Calls drowned thralls up out of the water within reach.",
+        description: "Calls drowned pilgrims up out of the water within reach.",
         look: (glyph: '*', color: (r: 100, g: 150, b: 170)),
         aim: SelfOnly,
         mode: Own,
         cooldown: 2000,
-        effects: [(kind: "CallDrowned", args: (count: 1, range: 6))],
+        effects: [(kind: "CallDrowned", args: (count: 1, range: 6, monster: "drowned pilgrim"))],
     ),
 ]

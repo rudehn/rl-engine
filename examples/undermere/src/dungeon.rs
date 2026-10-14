@@ -51,11 +51,13 @@ use crate::bestiary::MonsterDef;
 mod biomes;
 mod lairs;
 mod pieces;
+mod strata;
 
 pub(crate) use biomes::{BiomeDraw, Decor, biomes_drawn};
 use lairs::ClearOfTheThrone;
 pub(crate) use lairs::{FINAL_BOSSES, MINI_BOSSES, final_boss, lairs};
 use pieces::{PieceLook, QuietWayIn};
+pub use strata::{STRATA, Stratum, crossed_into, name_the_stratum, stratum_of};
 
 /// How many floors the Undermere goes down. The tenth is the throne's, and
 /// has no way down.
@@ -123,9 +125,9 @@ pub fn floor_of(map: MapId) -> Option<u32> {
 /// throne's hangs, every flavor dressing of `assets/pool.ron`'s own "any
 /// biome" rows, and a mini-boss's lair tiles wherever its own range
 /// reaches. By floor rather than by biome, since a lair's range is floors:
-/// the Widow's cave and moss stand on floors 4 to 6, Grubnak's hall on 3
-/// to 6, the Choirmaster's crypt nave on 5 to 7 and the Forgemaster's
-/// forge on 7 to 9. The throne's own floor is read off
+/// the Widow's cave and moss, Grubnak's hall and the Choirmaster's crypt
+/// nave stand on floors 5 and 6, the Drowned Abbess's flooded chapel on 3
+/// and 4 and the Forgemaster's forge on 7 to 9. The throne's own floor is read off
 /// [`Undermere::final_boss`] rather than this, so it carries none of its
 /// own wall and floor.
 #[cfg(test)]
@@ -139,21 +141,11 @@ fn shared_tiles(floor: u32) -> &'static [&'static str] {
     // reach. Every floor but the throne's carries all six.
     match floor {
         ..=2 => &["door", "open door", "rubble", "blood", "hall wall", "hall floor", "web", "bones", "flooded floor", "moss"],
-        3 | 4 => &[
-            "door",
-            "open door",
-            "goblin hall wall",
-            "goblin hall floor",
-            "web",
-            "cave wall",
-            "moss",
-            "hall wall",
-            "hall floor",
-            "rubble",
-            "blood",
-            "bones",
-            "flooded floor",
-        ],
+        // The Drowned Abbess's chapel stands on 3 and 4 in her cathedral's
+        // wall, and `Fallen Bell`, the cathedral's own fixed piece, in flagstones.
+        3 | 4 => &["door", "open door", "cathedral wall", "flagstones", "web", "hall wall", "hall floor", "rubble", "blood", "bones", "flooded floor", "moss"],
+        // Grubnak's hall, the Widow's cave and moss and the Choirmaster's
+        // crypt nave, the beneath-the-kingdom lairs.
         5 | 6 => &[
             "bones",
             "door",
@@ -163,7 +155,6 @@ fn shared_tiles(floor: u32) -> &'static [&'static str] {
             "cave wall",
             "moss",
             "web",
-            "cathedral wall",
             "flooded floor",
             "crypt wall",
             "crypt floor",
@@ -177,8 +168,6 @@ fn shared_tiles(floor: u32) -> &'static [&'static str] {
             "open door",
             "flooded floor",
             "deep water",
-            "crypt wall",
-            "crypt floor",
             "forge wall",
             "ash",
             "lava",
@@ -189,8 +178,6 @@ fn shared_tiles(floor: u32) -> &'static [&'static str] {
             "blood",
             "bones",
             "moss",
-            // `Fallen Bell`, the Drowned Cathedral's own fixed piece.
-            "flagstones",
         ],
         9 => &["door", "open door", "lava", "forge wall", "ash", "hall wall", "hall floor", "web", "rubble", "blood", "bones", "flooded floor", "moss"],
         // Whichever of the three `FINAL_BOSSES` floor ten draws paints its
@@ -313,30 +300,30 @@ pub(crate) fn registry() -> TileRegistry {
             // The Watch Barracks, floors one and two's third biome.
             TileProps::wall("barracks wall"),
             TileProps::floor("barracks floor"),
-            // The Fungal Deeps.
+            // The Fungal Deeps, floors five and six's third biome.
             TileProps::wall("cave wall"),
             TileProps::floor("moss"),
             TileProps::floor("glowcaps"),
-            // The Spider Warrens, floors three and four's other biome.
+            // The Spider Warrens, floors five and six's fourth biome.
             TileProps::wall("warren wall"),
             TileProps::floor("warren floor"),
-            // The Old Mines, floors three and four's third biome.
+            // The Old Mines, floors five and six's second biome.
             TileProps::wall("mine wall"),
             TileProps::floor("mine floor"),
-            // The Catacombs.
+            // The Catacombs, floors five and six's first biome.
             TileProps::wall("crypt wall"),
             TileProps::floor("crypt floor"),
             TileProps::floor("bones"),
-            // The Sunken Library, floors five and six's other biome.
+            // The Sunken Library, floors three and four.
             TileProps::wall("library wall"),
             TileProps::floor("library floor"),
-            // The Drowned Cathedral.
+            // The Drowned Cathedral, floors three and four's other biome.
             TileProps::wall("cathedral wall"),
             TileProps::floor("marble"),
             wading("flooded floor"),
             TileProps::named("deep water"),
             TileProps::floor("moonlit marble"),
-            // The Underlake, floors seven and eight's other biome.
+            // The Underlake, floors seven and eight, alone for now.
             TileProps::wall("underlake wall"),
             TileProps::floor("underlake floor"),
             // Shallow water lit from below, the Underlake's own light.
@@ -434,8 +421,9 @@ impl Undermere {
         // After the tiles, which the pieces paint by name, and the
         // layout, which the pool's grown and inside picks are checked
         // against.
-        let (prefabs, pool) = crate::prefabs::load(&tiles, &layout);
+        let (prefabs, pool, bestiary) = crate::prefabs::load(&tiles, &layout);
         let defs = biomes::load(&tiles, &layout);
+        biomes::check_favored(&defs, &bestiary);
         biomes::check_pieces(&defs, &prefabs);
         let boss = final_boss(seed);
         let mut biomes = BTreeMap::new();

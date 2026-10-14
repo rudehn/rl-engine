@@ -195,47 +195,47 @@
         dressing: "Drill Yard", placed: Dressed,
     ),
     (
-        name: "Glowcap Ring", kind: "flavor", floors: (3, 4), weight: "common",
+        name: "Glowcap Ring", kind: "flavor", floors: (5, 6), weight: "common",
         where: ["Fungal Deeps"],
         piece: "Glowcap Ring", placed: Inside([]),
     ),
     (
-        name: "Puffball Grove", kind: "flavor", floors: (3, 4), weight: "common",
+        name: "Puffball Grove", kind: "flavor", floors: (5, 6), weight: "common",
         where: ["Fungal Deeps"],
         dressing: "Puffball Grove", placed: Dressed,
     ),
     (
-        name: "Moss Garden", kind: "flavor", floors: (3, 4), weight: "uncommon",
+        name: "Moss Garden", kind: "flavor", floors: (5, 6), weight: "uncommon",
         where: ["Fungal Deeps"],
         dressing: "Moss Garden", placed: Dressed,
     ),
     (
-        name: "Husk Gallery", kind: "flavor", floors: (3, 4), weight: "common",
+        name: "Husk Gallery", kind: "flavor", floors: (5, 6), weight: "common",
         where: ["Spider Warrens"],
         dressing: "Husk Gallery", placed: Dressed,
     ),
     (
-        name: "Silk Curtains", kind: "flavor", floors: (3, 4), weight: "common",
+        name: "Silk Curtains", kind: "flavor", floors: (5, 6), weight: "common",
         where: ["Spider Warrens"],
         dressing: "Silk Curtains", placed: Dressed,
     ),
     (
-        name: "Old Egg Cases", kind: "flavor", floors: (3, 4), weight: "uncommon",
+        name: "Old Egg Cases", kind: "flavor", floors: (5, 6), weight: "uncommon",
         where: ["Spider Warrens"],
         dressing: "Old Egg Cases", placed: Dressed,
     ),
     (
-        name: "Cart Track", kind: "flavor", floors: (3, 4), weight: "common",
+        name: "Cart Track", kind: "flavor", floors: (5, 6), weight: "common",
         where: ["Old Mines"],
         piece: "Cart Track", placed: Inside([]),
     ),
     (
-        name: "Shored Gallery", kind: "flavor", floors: (3, 4), weight: "common",
+        name: "Shored Gallery", kind: "flavor", floors: (5, 6), weight: "common",
         where: ["Old Mines"],
         dressing: "Shored Gallery", placed: Dressed,
     ),
     (
-        name: "Ore Seam", kind: "flavor", floors: (3, 4), weight: "uncommon",
+        name: "Ore Seam", kind: "flavor", floors: (5, 6), weight: "uncommon",
         where: ["Old Mines"],
         dressing: "Ore Seam", placed: Dressed,
     ),
@@ -255,32 +255,32 @@
         piece: "Embalmers' Room", placed: Inside([]),
     ),
     (
-        name: "Reading Room", kind: "flavor", floors: (5, 6), weight: "common",
+        name: "Reading Room", kind: "flavor", floors: (3, 4), weight: "common",
         where: ["Sunken Library"],
         dressing: "Reading Room", placed: Dressed,
     ),
     (
-        name: "Fallen Stacks", kind: "flavor", floors: (5, 6), weight: "common",
+        name: "Fallen Stacks", kind: "flavor", floors: (3, 4), weight: "common",
         where: ["Sunken Library"],
         dressing: "Fallen Stacks", placed: Dressed,
     ),
     (
-        name: "Orrery", kind: "flavor", floors: (5, 6), weight: "uncommon",
+        name: "Orrery", kind: "flavor", floors: (3, 4), weight: "uncommon",
         where: ["Sunken Library"],
         piece: "Orrery", placed: Inside([]),
     ),
     (
-        name: "Choir Stalls", kind: "flavor", floors: (7, 8), weight: "common",
+        name: "Choir Stalls", kind: "flavor", floors: (3, 4), weight: "common",
         where: ["Drowned Cathedral"],
         dressing: "Choir Stalls", placed: Dressed,
     ),
     (
-        name: "Baptistery", kind: "flavor", floors: (7, 8), weight: "uncommon",
+        name: "Baptistery", kind: "flavor", floors: (3, 4), weight: "uncommon",
         where: ["Drowned Cathedral"],
         piece: "Baptistery", placed: Inside([]),
     ),
     (
-        name: "Fallen Bell", kind: "flavor", floors: (7, 8), weight: "uncommon",
+        name: "Fallen Bell", kind: "flavor", floors: (3, 4), weight: "uncommon",
         where: ["Drowned Cathedral"],
         piece: "Fallen Bell", placed: Inside([]),
     ),
@@ -367,20 +367,22 @@
         piece: "Gallery of Darts", placed: Grown(Mouth(2)),
     ),
     (
-        name: "The Spider's Larder", kind: "risk_reward", floors: (3, 6), weight: "common",
+        name: "The Spider's Larder", kind: "risk_reward", floors: (5, 6), weight: "common",
         where: ["Fungal Deeps", "Spider Warrens"],
         piece: "The Spider's Larder", placed: Inside(["rubble cave", "root cave", "pocket", "small cave", "cave", "large cave", "long cave"]),
     ),
     (
         name: "The Goblin Stockade", kind: "risk_reward", floors: (2, 6), weight: "common",
         per_run: 2,
-        // The crypt grid and the library's stacks have no room a palisade
-        // stands in, and no goblin keeps a camp among the dead.
-        not: ["Catacombs", "Sunken Library"],
+        // A goblin camp stands where goblins hold the ground: the halls,
+        // cellars and barracks they took, and the mines they dug. The
+        // crypt grid and the library's stacks have no room a palisade
+        // stands in either, and no goblin keeps a camp among the dead.
+        where: ["Upper Halls", "Cellars", "Watch Barracks", "Old Mines"],
         piece: "The Goblin Stockade", placed: Inside([]),
     ),
     (
-        name: "The Drowned Reliquary", kind: "risk_reward", floors: (6, 8), weight: "uncommon",
+        name: "The Drowned Reliquary", kind: "risk_reward", floors: (3, 8), weight: "uncommon",
         where: ["Sunken Library", "Drowned Cathedral", "Underlake"],
         piece: "The Drowned Reliquary", placed: Grown(Arch),
     ),
@@ -397,7 +399,7 @@
         piece: "The Warded Hall", placed: Grown(Door),
     ),
     (
-        name: "The Brood Chamber", kind: "risk_reward", floors: (3, 7), weight: "uncommon",
+        name: "The Brood Chamber", kind: "risk_reward", floors: (5, 8), weight: "uncommon",
         where: ["Fungal Deeps", "Spider Warrens", "Underlake"],
         piece: "The Brood Chamber", placed: Inside(["rubble cave", "root cave", "pocket", "small cave", "cave", "large cave", "long cave"]),
     ),
@@ -487,7 +489,7 @@
         dressing: "Quartermaster's Store", placed: Dressed,
     ),
     (
-        name: "Overturned Wagon", kind: "reward", floors: (1, 4), weight: "uncommon",
+        name: "Overturned Wagon", kind: "reward", floors: (1, 6), weight: "uncommon",
         where: ["Upper Halls", "Cellars", "Watch Barracks", "Old Mines"],
         piece: "Overturned Wagon", placed: Inside([]),
     ),

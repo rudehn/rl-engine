@@ -55,27 +55,34 @@ Deeper monsters simply list more traits.
 
 ## Floors
 
-Each floor draws its biome from its band, so floor four is not always caves, and the two floors of a band may share one.
-Twelve biomes are in `assets/biomes.ron`, with three more on floor ten, one for each boss's throne, and each floor then draws a recipe of its biome from the twenty-nine in `assets/layout.ron`:
+Depth is time.
+Near the top are the kingdom's streets and grounds, below them its tombs and foundations, deeper still the places that were there before the first stone, and at the bottom the oldest thing of all, which drowned it.
+The floors are grouped into **strata**, named ranges of floors kept in `src/dungeon/strata.rs`, and each floor draws its biome from its stratum's, so floor four is not always the same place and the two floors of a stratum may share one.
+Twelve biomes are in `assets/biomes.ron`, with three more on floor ten, one for each boss's throne, and each floor then draws a recipe of its biome from the twenty-nine in `assets/layout.ron`.
 
-| Floors | Biome | How it is grown | Light |
-| --- | --- | --- | --- |
-| 1-2 | The Upper Halls: ruined masonry | halls, rooms and corridors behind doors, a ruin district where small caves of rubble break in | dim and warm, braziers |
-| 1-2 | The Cellars: storerooms under the halls | small rooms, crawlways one cell wide, root-broken cave pockets | darker, a few hung lanterns |
-| 1-2 | The Watch Barracks: the garrison | uniform cells behind doors, cross-shaped mess halls, a parade hall | torch sconces and braziers |
-| 3-4 | The Fungal Deeps: caves | large and medium caves joined by mouths, a long cave the floor follows | glowing fungus, teal and green |
-| 3-4 | The Spider Warrens: web-choked tunnels | many small caves and one-cell tunnels, a low open share | truly dark, the lantern is the light |
-| 3-4 | The Old Mines: dug galleries | chambers among cave pockets on straight two-wide galleries | goblin lanterns, glinting ore |
-| 5-6 | The Catacombs: crypts and ossuaries | small crypts on long one-wide galleries, ossuary halls | candles, cold blue |
-| 5-6 | The Sunken Library: halls of shelves | long stacks, cross-shaped atria, reading rooms, seeping pools | pale violet witchlight, water shimmer |
-| 7-8 | The Drowned Cathedral: flooded halls | naves in deep water joined by bridges, chapels, cloister passages | moonlight shafts, water shimmer |
-| 7-8 | The Underlake: the lake under the lake | big caves where lakes cover much of the floor, islands joined by bridges | glowing water, cold blue-green |
-| 9 | The Forge of Embers: lava and smithies | smithy rooms among ash caves, lava lakes, iron bridges | firelight |
-| 9 | The Ashen Galleries: cooled flows and live vents | caves of obsidian and cinder, lava lakes, few rooms | ember glow and dark between |
-| 10 | The boss's floor: the Drowned Throne, the Brood Hollow or the Wyrm's Hall, by the boss drawn | a compact place grown round the throne's piece | the boss's own |
+The player sees the strata three ways: crossing into one for the first time logs a line of its own ahead of the floor's ("You pass beneath the kingdom."), the rail names the stratum under the floor's number, and the innkeeper's rumours hint at what is deeper and older.
+
+| Floors | Stratum | Biome | How it is grown | Light |
+| --- | --- | --- | --- | --- |
+| 1-2 | The Drowned Town | The Upper Halls: ruined masonry | halls, rooms and corridors behind doors, a ruin district where small caves of rubble break in | dim and warm, braziers |
+| 1-2 | The Drowned Town | The Cellars: storerooms under the halls | small rooms, crawlways one cell wide, root-broken cave pockets | darker, a few hung lanterns |
+| 1-2 | The Drowned Town | The Watch Barracks: the garrison | uniform cells behind doors, cross-shaped mess halls, a parade hall | torch sconces and braziers |
+| 3-4 | The Palace and its Grounds | The Sunken Library: halls of shelves | long stacks, cross-shaped atria, reading rooms, seeping pools | pale violet witchlight, water shimmer |
+| 3-4 | The Palace and its Grounds | The Drowned Cathedral: flooded halls | naves in deep water joined by bridges, chapels, cloister passages | moonlight shafts, water shimmer |
+| 5-6 | Beneath the Kingdom | The Catacombs: crypts and ossuaries | small crypts on long one-wide galleries, ossuary halls | candles, cold blue |
+| 5-6 | Beneath the Kingdom | The Old Mines: dug galleries | chambers among cave pockets on straight two-wide galleries | goblin lanterns, glinting ore |
+| 5-6 | Beneath the Kingdom | The Fungal Deeps: caves | large and medium caves joined by mouths, a long cave the floor follows | glowing fungus, teal and green |
+| 5-6 | Beneath the Kingdom | The Spider Warrens: web-choked tunnels | many small caves and one-cell tunnels, a low open share | truly dark, the lantern is the light |
+| 7-8 | Before the Kingdom | The Underlake: the lake under the lake | big caves where lakes cover much of the floor, islands joined by bridges | glowing water, cold blue-green |
+| 9 | The Oldest Deep | The Forge of Embers: the forge of the people before the kingdom, lava and smithies | smithy rooms among ash caves, lava lakes, iron bridges | firelight |
+| 9 | The Oldest Deep | The Ashen Galleries: cooled flows and live vents | caves of obsidian and cinder, lava lakes, few rooms | ember glow and dark between |
+| 10 | The Thrones | The boss's floor: the Drowned Throne, the Brood Hollow or the Wyrm's Hall, by the boss drawn | a compact place grown round the throne's piece | the boss's own |
+
+Floors seven and eight have only the Underlake until a later wave adds the Elder Wood and the Barrows; that is accepted, and every stratum stays playable throughout.
+The light dims with depth from the Upper Halls down to the Underlake, the Spider Warrens alone truly dark.
 
 A floor grows between 90 by 52 and 104 by 58 cells, about one and a half views a side, except the Fungal Deeps' long band at 120 by 40 and the thrones' 72 by 44.
-A biome's favored monsters count three times in its floors' spawn tables, so a biome is told by what lives in it as well as by how it is built.
+A biome's favored monsters count three times in its floors' spawn tables, so a biome is told by what lives in it as well as by how it is built, and a load check holds every biome of floors one to nine to at least three favored kinds able to spawn on each of its floors.
 
 Generation mixes techniques per biome: accretion halls, cellular caves, crypt grids, lakes with bridges, lava rivers, and districts of one inside another.
 Prefabs come in three kinds, each drawn from its own pool in `assets/pool.ron`, with weights, bands, limits per floor and per run, and a budget per band.
@@ -92,14 +99,17 @@ The dungeon feels lived in: monsters asleep, on patrol, at a fire or feeding, go
 ## Monsters
 
 Every kind has a role (brute, skirmisher, caster, swarm, ambusher, support, summoner), a tell and a trick.
-Tricks by depth, as planned for part 3:
+The bestiary follows its themes: a kind lives where the biome that favors it does, and the strata moved the themes without moving the curve, so how hard a floor is stays what parts three and four tuned it to.
+A kind moved up to the palace floors comes as a weaker early form, a kind moved down to floors five and six as a stronger one, each a core and traits in the same model.
+Tricks by depth, as planned for part 3 and carried by the strata:
 
-- **Floors 1-2, one trick:** rat (packs, flees when hurt), jackal (packs, fast), kobold (throws darts, cowardly), goblin (picks up and wears what it finds), cave spider (webs, venom), monkey (steals and runs).
-- **Floors 3-4, two tricks:** goblin conjurer (spectral blades, blinks), goblin mystic (shields allies), myconid (slow, bursts into spores on death), pink jelly (splits when struck), vampire bat (erratic, drains), ogre (heavy blows, slow).
-- **Floors 5-7, three tricks:** skeleton (knits back together unless burned or crushed), necromancer (raises the dead, blinks, cowardly), ghoul (paralysing claws), wraith (unseen in the dark, drains), will-o'-wisp (glows, lures, blinks), naga (venom, fast in water).
-- **Floors 8-9, four tricks:** salamander (fire breath, fire-blooded, burning trail, glows), troll (regenerates, strong), golem (vast health, slow, reflects magic), the dar trio (blademaster, priestess, battlemage).
+- **Floors 1-2, one trick:** rat (packs, flees when hurt), jackal (packs, fast), kobold (throws darts, cowardly), goblin (picks up and wears what it finds), monkey (steals and runs).
+- **Floors 3-4, the palace and its grounds, one or two tricks:** drowned pilgrim (slow, deathless, the cathedral's congregation), drowned acolyte (deathless, lit by a cold light; the early form of the wight), pale scribe (unseen in the dark; the early form of the wraith), will-o'-wisp (glows, lures, blinks), vampire bat (erratic, drains).
+- **Floors 5-6, beneath the kingdom, two or three tricks:** skeleton (knits back together unless burned or crushed), necromancer (raises the dead, blinks, cowardly), ghoul (paralysing claws), goblin and kobold with the conjurer (spectral blades, blinks), mystic (shields allies) and archer, myconid (slow, bursts into spores on death) and the myconid elder, cave spider, giant spider (webs, venom) and the spiderling swarm, pink jelly (splits when struck), ogre (heavy blows, slow), wraith (unseen in the dark, drains).
+- **Floors 7-8, before the kingdom, three tricks:** drowned thrall and wight (the drowned dead of the deep water, the stronger forms of the palace floors' pilgrim and acolyte), troll (regenerates, strong), ghoul and wraith still walk here; naga (venom, fast in water) is unbuilt.
+- **Floors 8-9, four tricks:** salamander (fire breath, fire-blooded, burning trail, glows), troll, golem (vast health, slow, reflects magic), fire imp, the dar trio (blademaster, priestess, battlemage).
 
-Mini-bosses are named monsters with an entourage and a lair, one or two a run from a pool: Grubnak the goblin king and his war band, the Widow in a web-choked cave of egg sacs, the Bone Choir, the Drowned Abbess in a flooded chapel, the Forgemaster at his anvil.
+Mini-bosses are named monsters with an entourage and a lair, one or two a run from a pool, each on the floors of its theme: the Drowned Abbess in a flooded chapel on floors 3-4 with her pilgrims, Grubnak the goblin king and his war band, the Widow in a web-choked cave of egg sacs and the Bone Choir on floors 5-6, the Forgemaster at his anvil on floors 7-9.
 Each guards something worth the fight.
 
 The final boss is drawn from a pool too, in part 3: the Drowned King, who raises the drowned dead; the Mother Below, who spawns; the Ember Wyrm, who breathes fire.

@@ -1,7 +1,8 @@
 // A mini-boss's lair: the Drowned Abbess's flooded chapel, drawn on one floor
-// of her own 6-8. Its own ground is water to the knee, the font at its
-// head, and her two drowned thralls, `led` over her as her band comes
-// together; two more rise at her own call, from any standing water
+// of her own 3-4, the palace floors the cathedral stands on. Its own ground
+// is water to the knee, the font at its head, and her two drowned pilgrims,
+// `led` over her as her band comes together; more rise at her own call,
+// the same pilgrims, from any standing water
 // within reach (`effects/bodies.rs`'s `CallDrowned`), this chapel's own
 // included. Grown as an area of its own, through the one entry at the
 // foot of the chapel.
@@ -28,7 +29,7 @@
         '.': Tile("flooded floor"),
         'u': Prop("font"),
         'A': Monster(monster: "the Drowned Abbess"),
-        'Z': Monster(monster: "drowned thrall"),
+        'Z': Monster(monster: "drowned pilgrim"),
         'E': Entry,
     },
 )

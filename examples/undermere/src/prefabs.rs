@@ -30,7 +30,7 @@ use rl_engine::rl_rules::pool::{self, Pool};
 use rl_engine::rl_rules::prefab;
 use rl_engine::rl_rules::role;
 
-use crate::bestiary::MonsterDef;
+use crate::bestiary::{Bestiary, MonsterDef};
 use crate::content::Library;
 
 /// Every piece, compiled in so the binary runs from anywhere.
@@ -123,7 +123,9 @@ const POOL_RON: &str = include_str!("../assets/pool.ron");
 /// the props and the bestiary the run loads, so a piece's ids are the
 /// running game's. Panics with every problem in every file, since a
 /// broken piece, dressing or pool entry is a place that cannot be built.
-pub fn load(tiles: &TileRegistry, layout: &LayoutDef) -> (Prefabs<MonsterDef>, Pool) {
+/// The bestiary it read them against comes back too, for the loader of the
+/// biomes to hold their favored kinds against.
+pub fn load(tiles: &TileRegistry, layout: &LayoutDef) -> (Prefabs<MonsterDef>, Pool, Bestiary) {
     // The whole library, in its one order, since the monsters a piece
     // stands are read against the traits and the items they name.
     let library = Library::load(&crate::content::effect_kinds(), &Moments::default());
@@ -138,7 +140,7 @@ pub fn load(tiles: &TileRegistry, layout: &LayoutDef) -> (Prefabs<MonsterDef>, P
     let pool = pool::load(POOL_RON, layout, &defs, &names).unwrap_or_else(|e| panic!("assets/pool.ron: {e}"));
     dressing::check_pool(&pool, &dressings).unwrap_or_else(|e| panic!("assets/pool.ron: {e}"));
     let prefabs = Prefabs::with_dressings(defs, roles, dressings);
-    (prefabs, pool)
+    (prefabs, pool, library.bestiary)
 }
 
 #[cfg(test)]
@@ -153,7 +155,7 @@ mod tests {
     #[test]
     fn every_piece_loads_against_the_tiles_the_props_and_the_bestiary() {
         let undermere = Undermere::new(RunSeed(0));
-        let (prefabs, _pool) = load(undermere.tiles(), &crate::dungeon::layout());
+        let (prefabs, _pool, _) = load(undermere.tiles(), &crate::dungeon::layout());
         assert_eq!(prefabs.defs().len(), PIECES.len());
         for name in [
             "Mereholt",
@@ -184,7 +186,7 @@ mod tests {
     #[test]
     fn the_coverage_report_finds_every_slot_at_every_band_it_may_stand_at() {
         let undermere = Undermere::new(RunSeed(0));
-        let (prefabs, pool) = load(undermere.tiles(), &crate::dungeon::layout());
+        let (prefabs, pool, _) = load(undermere.tiles(), &crate::dungeon::layout());
         let library = Library::load(&crate::content::effect_kinds(), &Moments::default());
         let sources = rl_engine::rl_rules::prefab::Sources {
             roles: prefabs.roles(),

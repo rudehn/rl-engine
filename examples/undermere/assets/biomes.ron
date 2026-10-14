@@ -1,17 +1,25 @@
-// Undermere's biomes: twelve drawn two or three to a band, and the three
+// Undermere's biomes: twelve drawn one to four to a stratum, and the three
 // throne floors drawn one to a boss. `dungeon::biomes` loads this against
-// the registered tiles; the bestiary resolves `favored` at population time,
-// the way `population::BANDS` resolves its own names, so a kind this file
-// misspells is a kind that is never favored rather than a load that fails.
+// the registered tiles. The strata (`src/dungeon/strata.rs`) are the
+// ranges of floors the rows below are grouped by, shallowest first: the
+// Drowned Town on floors 1-2, the Palace and its Grounds on 3-4, Beneath the
+// Kingdom on 5-6, Before the Kingdom on 7-8, the Oldest Deep on 9, and the
+// thrones on 10. Depth is time, so the floors a biome stands on are where
+// its age puts it. Every `favored` name must be a kind of `monsters.ron`
+// with a row in `monster_spawns.ron` on some floor of the biome's window,
+// and at least three must be, which `dungeon::biomes::check_favored` holds
+// at load, so a biome is always told by what lives in it.
 //
 // Every field:
 //   name:     unique; the draw, the log and the pools
 //             name it by this, bare, "the " added only for the log; one
 //             drawn on floors one to nine needs a rumour in
 //             `assets/rumours.ron` under the log's name
-//   floors:   (first, last), the floors it may be drawn on, both included;
-//             the three throne biomes are drawn one to a boss, never by
-//             weight, and still carry (10, 10) for the schema
+//   floors:   (first, last), the floors it may be drawn on, both included,
+//             and inside one stratum of `src/dungeon/strata.rs`, so a
+//             biome belongs to exactly one; the three throne biomes are
+//             drawn one to a boss, never by weight, and still carry
+//             (10, 10) for the schema
 //   weight:   how often it is drawn against every other row of its band;
 //             only the ratio matters, and every row here is 1: the design
 //             draws a band's biomes equally
@@ -70,11 +78,12 @@
 //             rather than any floor's, weighed in every district it grows;
 //             the pool's own flavor entries name the biomes they stand in
 //             by `where` in `assets/pool.ron`
-//   favored:  names from `monsters.ron`; a name the bestiary does not
-//             carry is dropped rather than refused, as `population::BANDS`
-//             already tolerates for the same kind of name
+//   favored:  names from `monsters.ron`, three or more for a biome of
+//             floors one to nine, each with a spawn row somewhere on the
+//             biome's floors, none for a throne; they count three times
+//             in the spawn tables of the biome's floors
 [
-    // Floors one and two.
+    // Floors one and two: the Drowned Town.
     (
         name: "Upper Halls", floors: (1, 2), weight: 1,
         moods: ["Braziers still burn in the empty halls.", "The halls run on, colder and older."],
@@ -89,7 +98,7 @@
             Furnish(piece: "brazier", count: (3, 5)),
         ],
         dressings: ["Feasting Hall", "Guard Room"],
-        favored: ["jackal"],
+        favored: ["jackal", "goblin", "rat"],
     ),
     (
         name: "Cellars", floors: (1, 2), weight: 1,
@@ -102,7 +111,7 @@
         // Darker than the halls above: a few hung lanterns.
         decor: [Furnish(piece: "hanging lantern", count: (2, 4))],
         dressings: ["Wine Cellar", "Root Cellar"],
-        favored: ["rat"],
+        favored: ["rat", "kobold", "jackal"],
     ),
     (
         name: "Watch Barracks", floors: (1, 2), weight: 1,
@@ -113,73 +122,15 @@
         // Braziers burning for a watch that never came back.
         decor: [Furnish(piece: "brazier", count: (3, 5))],
         dressings: ["Bunk Room", "Mess Hall", "Drill Yard"],
-        favored: ["kobold"],
+        favored: ["kobold", "goblin", "jackal"],
     ),
 
-    // Floors three and four.
+    // Floors three and four: the Palace and its Grounds.
     (
-        name: "Fungal Deeps", floors: (3, 4), weight: 1,
-        moods: ["Something glows in the dark.", "The caps grow thick here, and the air tastes of earth."],
-        wall: "cave wall", floor: "moss",
-        ambient: (22, (90, 170, 150)),
-        recipes: [(name: "grottoes", weight: 1), (name: "band", weight: 1), (name: "knot", weight: 1)],
-        // Glowcaps, the teal light the caves are seen by.
-        decor: [Patches(tile: "glowcaps", count: (8, 12), size: (2, 6))],
-        dressings: ["Puffball Grove", "Moss Garden"],
-        favored: ["myconid"],
-    ),
-    (
-        name: "Spider Warrens", floors: (3, 4), weight: 1,
-        moods: ["Silk hangs across the tunnels.", "The webs thicken, and something moves in them."],
-        wall: "warren wall", floor: "warren floor",
-        // Truly dark: the lantern is the only light, so nought rather
-        // than a dim colour of its own.
-        ambient: (0, (0, 0, 0)),
-        recipes: [(name: "warren", weight: 1), (name: "nest", weight: 1)],
-        // Webs across the tunnels, and nothing that shines: the lantern
-        // is the light.
-        decor: [Patches(tile: "web", count: (4, 7), size: (1, 3))],
-        dressings: ["Husk Gallery", "Silk Curtains", "Old Egg Cases"],
-        favored: ["cave spider"],
-    ),
-    (
-        name: "Old Mines", floors: (3, 4), weight: 1,
-        moods: ["Old timbers hold the rock up, mostly.", "The seams run deeper, and the shoring thins."],
-        wall: "mine wall", floor: "mine floor",
-        ambient: (20, (160, 140, 90)),
-        recipes: [(name: "workings", weight: 1), (name: "deep seam", weight: 1)],
-        // The natural caves the miners broke into are earth; what they
-        // dug is the mine's own floor.
-        paint: [(on: "pocket", tile: "earth"), (on: "cave", tile: "earth")],
-        // Fallen rock, and the goblins' lanterns.
-        decor: [
-            Patches(tile: "rubble", count: (3, 6), size: (2, 5)),
-            Furnish(piece: "hanging lantern", count: (3, 5)),
-        ],
-        dressings: ["Shored Gallery", "Ore Seam"],
-        favored: ["goblin", "kobold"],
-    ),
-
-    // Floors five and six.
-    (
-        name: "Catacombs", floors: (5, 6), weight: 1,
-        moods: ["Candles burn for the dead.", "The dead lie deeper here, and not all of them lie still."],
-        wall: "crypt wall", floor: "crypt floor",
-        ambient: (19, (150, 160, 205)),
-        recipes: [(name: "grid", weight: 1), (name: "ossuaries", weight: 1)],
-        // Bones, and candles kept burning for the dead.
-        decor: [
-            Patches(tile: "bones", count: (6, 10), size: (1, 4)),
-            Furnish(piece: "candelabra", count: (5, 8)),
-        ],
-        dressings: ["Ossuary Wall", "Tomb Row"],
-        favored: ["skeleton"],
-    ),
-    (
-        name: "Sunken Library", floors: (5, 6), weight: 1,
+        name: "Sunken Library", floors: (3, 4), weight: 1,
         moods: ["Damp pages lie where the shelves have fallen.", "The stacks rise out of standing water."],
         wall: "library wall", floor: "library floor",
-        ambient: (18, (140, 110, 200)),
+        ambient: (22, (140, 110, 200)),
         // Water seeping through the floor of every room and stack alike.
         recipes: [
             (name: "stacks", weight: 1, lakes: Some((
@@ -192,15 +143,13 @@
         // Witchlight, pale violet, among the stacks.
         decor: [Furnish(piece: "witchlight", count: (4, 6))],
         dressings: ["Reading Room", "Fallen Stacks"],
-        favored: ["wraith", "will-o'-wisp"],
+        favored: ["pale scribe", "will-o'-wisp", "pink jelly"],
     ),
-
-    // Floors seven and eight.
     (
-        name: "Drowned Cathedral", floors: (7, 8), weight: 1,
+        name: "Drowned Cathedral", floors: (3, 4), weight: 1,
         moods: ["Cold water stands in the nave.", "Pale light falls through the water overhead."],
         wall: "cathedral wall", floor: "marble",
-        ambient: (17, (80, 115, 210)),
+        ambient: (21, (80, 115, 210)),
         recipes: [
             // Deep water standing in the naves, never in the chapels.
             (name: "nave", weight: 1, lakes: Some((
@@ -216,11 +165,71 @@
             Patches(tile: "moonlit marble", count: (3, 5), size: (1, 1)),
         ],
         dressings: ["Choir Stalls"],
-        favored: ["ghoul"],
+        favored: ["drowned acolyte", "drowned pilgrim", "vampire bat"],
+    ),
+
+    // Floors five and six: Beneath the Kingdom.
+    (
+        name: "Catacombs", floors: (5, 6), weight: 1,
+        moods: ["Candles burn for the dead.", "The dead lie deeper here, and not all of them lie still."],
+        wall: "crypt wall", floor: "crypt floor",
+        ambient: (18, (150, 160, 205)),
+        recipes: [(name: "grid", weight: 1), (name: "ossuaries", weight: 1)],
+        // Bones, and candles kept burning for the dead.
+        decor: [
+            Patches(tile: "bones", count: (6, 10), size: (1, 4)),
+            Furnish(piece: "candelabra", count: (5, 8)),
+        ],
+        dressings: ["Ossuary Wall", "Tomb Row"],
+        favored: ["skeleton", "ghoul", "necromancer"],
     ),
     (
+        name: "Old Mines", floors: (5, 6), weight: 1,
+        moods: ["Old timbers hold the rock up, mostly.", "The seams run deeper, and the shoring thins."],
+        wall: "mine wall", floor: "mine floor",
+        ambient: (19, (160, 140, 90)),
+        recipes: [(name: "workings", weight: 1), (name: "deep seam", weight: 1)],
+        // The natural caves the miners broke into are earth; what they
+        // dug is the mine's own floor.
+        paint: [(on: "pocket", tile: "earth"), (on: "cave", tile: "earth")],
+        // Fallen rock, and the goblins' lanterns.
+        decor: [
+            Patches(tile: "rubble", count: (3, 6), size: (2, 5)),
+            Furnish(piece: "hanging lantern", count: (3, 5)),
+        ],
+        dressings: ["Shored Gallery", "Ore Seam"],
+        favored: ["goblin", "goblin archer", "kobold"],
+    ),
+    (
+        name: "Fungal Deeps", floors: (5, 6), weight: 1,
+        moods: ["Something glows in the dark.", "The caps grow thick here, and the air tastes of earth."],
+        wall: "cave wall", floor: "moss",
+        ambient: (20, (90, 170, 150)),
+        recipes: [(name: "grottoes", weight: 1), (name: "band", weight: 1), (name: "knot", weight: 1)],
+        // Glowcaps, the teal light the caves are seen by.
+        decor: [Patches(tile: "glowcaps", count: (8, 12), size: (2, 6))],
+        dressings: ["Puffball Grove", "Moss Garden"],
+        favored: ["myconid", "myconid elder", "pink jelly"],
+    ),
+    (
+        name: "Spider Warrens", floors: (5, 6), weight: 1,
+        moods: ["Silk hangs across the tunnels.", "The webs thicken, and something moves in them."],
+        wall: "warren wall", floor: "warren floor",
+        // Truly dark: the lantern is the only light, so nought rather
+        // than a dim colour of its own.
+        ambient: (0, (0, 0, 0)),
+        recipes: [(name: "warren", weight: 1), (name: "nest", weight: 1)],
+        // Webs across the tunnels, and nothing that shines: the lantern
+        // is the light.
+        decor: [Patches(tile: "web", count: (4, 7), size: (1, 3))],
+        dressings: ["Husk Gallery", "Silk Curtains", "Old Egg Cases"],
+        favored: ["cave spider", "giant spider", "spiderling"],
+    ),
+
+    // Floors seven and eight: Before the Kingdom. Only the Underlake until a later wave adds to it.
+    (
         name: "Underlake", floors: (7, 8), weight: 1,
-        moods: ["Black water laps at the stone.", "The lake goes on under the rock, and the shore with it."],
+        moods: ["Black water laps at stone no mason of the kingdom cut.", "The lake goes on under the rock, and the shore with it."],
         wall: "underlake wall", floor: "underlake floor",
         ambient: (16, (60, 150, 180)),
         // Matches `Forge of Embers`' own floor: the engine's dim band
@@ -241,13 +250,13 @@
         // Shallows lit from below, cold blue-green.
         decor: [Patches(tile: "glowing shallows", count: (4, 7), size: (2, 5))],
         dressings: ["Shell Midden"],
-        favored: ["drowned thrall", "wight"],
+        favored: ["drowned thrall", "wight", "troll"],
     ),
 
-    // Floor nine.
+    // Floor nine: the Oldest Deep.
     (
         name: "Forge of Embers", floors: (9, 9), weight: 1,
-        moods: ["The air shimmers over pools of fire."],
+        moods: ["The air shimmers over pools of fire, and the anvils are older than the kingdom."],
         wall: "forge wall", floor: "ash",
         ambient: (16, (210, 80, 50)),
         recipes: [
@@ -269,11 +278,11 @@
         // The lava is the light.
         decor: [],
         dressings: ["Smithy", "Slag Heaps"],
-        favored: ["salamander"],
+        favored: ["golem", "salamander", "fire imp"],
     ),
     (
         name: "Ashen Galleries", floors: (9, 9), weight: 1,
-        moods: ["Ash drifts in the still air."],
+        moods: ["Ash drifts in the still air, from fires that were lit before the kingdom."],
         wall: "cinder wall", floor: "cinder floor",
         ambient: (16, (200, 90, 40)),
         recipes: [
@@ -291,7 +300,7 @@
         // The vents' lava is the light, and dark between.
         decor: [],
         dressings: ["Obsidian Spires", "Cinder Drifts"],
-        favored: ["fire imp"],
+        favored: ["fire imp", "salamander", "troll"],
     ),
 
     // Floor ten: one throne biome per final boss, drawn with it rather

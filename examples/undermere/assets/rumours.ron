@@ -6,8 +6,10 @@
 // Every field:
 //   rumours: one row for each thing a run may draw, each (of: "...", say: "...")
 //              of:   what it is of, by name: a floor ten boss or a mini-boss
-//                    as monsters.ron names it, or a biome as the log names
-//                    it on arrival; every boss and every mini-boss has one
+//                    as monsters.ron names it, a biome as the log names
+//                    it on arrival, or a stratum as `src/dungeon/strata.rs`
+//                    names it; every boss and every mini-boss has one, and
+//                    so has every stratum from the second to the fifth
 //              say:  the words, said as written; always true of what is down
 //                    there and never exact, so never which floor nor how to
 //                    beat it; a floor ten boss's never names any floor ten
@@ -19,8 +21,9 @@
 // A run's rumours are told one a talk, in this order: the floor ten boss it
 // drew, then each mini-boss it drew, shallowest first, then each biome it
 // drew on a floor that could have drawn another, shallowest first and each
-// once; floor ten's biome is its boss's, told by the boss's rumour; a thing
-// it did not draw is never told. Any of the lines may name a person by role,
+// once; floor ten's biome is its boss's, told by the boss's rumour; then the
+// strata that have one, shallowest first, every run; a thing it did not draw
+// is never told. Any of the lines may name a person by role,
 // `{gatewarden}`, and says their name this run.
 (
     rumours: [
@@ -34,19 +37,28 @@
         (of: "the Choirmaster", say: "There's singing near the crypts, and nobody down there has a throat left."),
         (of: "the Drowned Abbess", say: "The old abbey sank with its abbess at prayer. Some say she hasn't stopped."),
         (of: "the Forgemaster", say: "Somebody's working a forge under the lake. You can hear the hammer from the jetty."),
-        // The biomes of floors one to nine, each told once a run draws it.
+        // The biomes of floors one to nine, each told once a run draws it
+        // from more than one, and each placed in its stratum: depth is time.
         (of: "the Upper Halls", say: "Just past the gate it's the old king's halls. Broken stone and long corridors."),
         (of: "the Cellars", say: "Just past the gate it's cellars this season. Casks, damp, and rats the size of dogs."),
         (of: "the Watch Barracks", say: "The old watch kept its barracks just past the gate. Kobolds sleep in the bunks now."),
-        (of: "the Fungal Deeps", say: "Past the first stairs it's caves lit by mushrooms. Don't breathe what the big ones puff."),
-        (of: "the Spider Warrens", say: "Past the first stairs it's webs, whole galleries of them. Burn what you can't cut."),
-        (of: "the Old Mines", say: "Past the first stairs they dug for ore, and the props are older than I am. Mind what you lean on."),
-        (of: "the Catacombs", say: "Halfway down you walk through the dead. They were buried. It didn't take."),
-        (of: "the Sunken Library", say: "There's a library halfway down, half full of water. Scholars went in. Pages came out."),
-        (of: "the Drowned Cathedral", say: "Deep down there's a cathedral. Mind the bridges; the water's colder than it looks."),
-        (of: "the Underlake", say: "Deep down there's a lake under the lake, and things in it that never saw the sun."),
-        (of: "the Forge of Embers", say: "Near the bottom the rock runs hot. Somebody built smithies over the lava, long ago."),
+        (of: "the Sunken Library", say: "Past the town there's a library in the palace grounds, half full of water. Scholars went in. Pages came out."),
+        (of: "the Drowned Cathedral", say: "The palace had a cathedral, and it's still standing in the water. Mind the bridges; the water's colder than it looks."),
+        (of: "the Catacombs", say: "Beneath the kingdom you walk through the dead. They were buried. It didn't take."),
+        (of: "the Old Mines", say: "Beneath the kingdom they dug for ore, and the props are older than I am. Mind what you lean on."),
+        (of: "the Fungal Deeps", say: "Under the palace the rock opens into caves lit by mushrooms. Don't breathe what the big ones puff."),
+        (of: "the Spider Warrens", say: "Under the palace it's webs, whole galleries of them. Burn what you can't cut."),
+        (of: "the Underlake", say: "Older than the kingdom, there's a lake under the lake, and things in it that never saw the sun."),
+        (of: "the Forge of Embers", say: "Near the bottom the rock runs hot. Somebody forged there before the kingdom had a name."),
         (of: "the Ashen Galleries", say: "Near the bottom it's all ash and cinders, and imps that light themselves for fun."),
+        // The strata of the Undermere, told once each after the biomes, so a
+        // run's hints of what lies deeper and older come in the order the
+        // adventurer would walk them. The first and the last have none: the
+        // gate says the first, and the floor ten boss's rumour the last.
+        (of: "The Palace and its Grounds", say: "Past the town it's the palace, sunk whole, grounds and all. Kings walked there."),
+        (of: "Beneath the Kingdom", say: "Below the palace is what the kingdom stood on. Mines, tombs, caves. The deeper you go, the older it gets."),
+        (of: "Before the Kingdom", say: "Under the foundations nobody built a thing. The lake was there first, and so is what lives in it."),
+        (of: "The Oldest Deep", say: "At the very bottom there was a people before the kingdom, and a fire they kept. The forges are theirs, not the king's."),
     ],
     last: "That's all I've heard. Come back when you've been somewhere.",
 )

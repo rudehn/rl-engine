@@ -633,7 +633,7 @@ mod tests {
         settle(&mut app);
         let secret = app.world().resource::<WorldMap>().secrets(map_of(3)).first().map(|s| s.at).expect("floor three hides something");
         assert_eq!(geometry::chebyshev(at(&app, me), secret), 1, "a step from the secret");
-        let mut app = headless(RunSeed(1));
+        let mut app = headless(RunSeed(2));
         app.insert_resource(StartFloor(3)).insert_resource(StartNear("dart plate".to_string()));
         let me = adventurer(&mut app);
         settle(&mut app);
