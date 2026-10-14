@@ -951,7 +951,7 @@ fn delve(seed: u64, plan: Plan) -> Delve {
     let world = app.world();
     let (bestiary, armory) = (world.resource::<Bestiary>(), world.resource::<Armory>());
     let artifacts =
-        bestiary.defs.iter().filter(|(_, d)| d.miniboss).flat_map(|(_, d)| d.drops.0.iter().map(|row| armory.defs.get(row.item).name.clone())).collect();
+        bestiary.defs.iter().filter(|(_, d)| d.miniboss).flat_map(|(_, d)| d.parts.drops.0.iter().map(|row| armory.defs.get(row.item).name.clone())).collect();
     let mut watch = Watch {
         picked: world.resource::<Messages<ItemEvent>>().get_cursor(),
         harmed: world.resource::<Messages<DamageDealt>>().get_cursor(),

@@ -19,18 +19,28 @@
 //! triggers, needing no part of its own; [`resistances`] reads the one
 //! list that adds up.
 //!
+//! An actor's definition types its fields the same way: its blow and its
+//! shot are the same [`Melee`] and [`Ranged`], how it notices and hears
+//! are the engine's own `NoticeStats` and `HearingStats`, its light a
+//! `Glow`, and the span it holds from its enemies a [`KeepAway`]. What it
+//! leaves when it dies is a list of `(item, percent)` that [`drops`] reads
+//! into the engine's table. The rest, its health, its side, its speed, how
+//! far it sees, its wits, are plain numbers and names; the Bevy layer's
+//! `ActorParts` gathers them all and makes them components.
+//!
 //! No part has a default the engine chose. A thing with no level part
 //! takes no level, and a level part grows only the amounts it writes, so
 //! what a `+2` is in a game is in that game's file, or in the defaults its
 //! own loader writes under its lines.
 
-use rl_core::DiceRoll;
+use rl_core::{DiceRoll, Id};
 use serde::{Deserialize, Serialize};
 
 use crate::ability::Look;
 use crate::content::Registry;
 use crate::damage::{DamageKind, Resistances};
 use crate::equip::{EquipShape, SlotDef, pair_of};
+use crate::loot::{DropRow, DropTable};
 use crate::names::NameRef;
 use crate::stats::StatDef;
 
@@ -302,6 +312,32 @@ pub fn resistances(list: &[(NameRef<DamageKind>, i32)]) -> Resistances {
     resists
 }
 
+/// How far an actor keeps from its enemies, as content writes it:
+/// `(within: 5, no_closer: 3)`, the two distances the engine's
+/// [`Keep::enemies`](crate::ai::tactics::Keep::enemies) holds.
+///
+/// It closes when the nearest enemy is further than `within` and backs
+/// away when one is nearer than `no_closer`: a thing that lures, or a
+/// sentry that watches from range. Where in a brain it keeps them, and
+/// what it does once it is at that distance, are a game's, so a part says
+/// only the span.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct KeepAway {
+    /// How far it lets the nearest enemy get before it closes.
+    pub within: i32,
+    /// How near it lets the nearest enemy come before it backs off.
+    pub no_closer: i32,
+}
+
+/// What the dead leave as `list` writes it, `(item, percent)` a row, each
+/// rolled on its own and leaving one: the table an actor's drops part
+/// becomes, its item names already resolved against the game's own item
+/// registry by the load that read them.
+pub fn drops<D>(list: &[(NameRef<D>, u32)]) -> DropTable<Id<D>> {
+    DropTable(list.iter().map(|(item, pct)| DropRow::new(item.id(), *pct)).collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -367,6 +403,16 @@ mod tests {
         assert_eq!(level.stats, [(stat("accuracy"), 0), (stat("stealth"), 10)], "the line's own for a stat it names, the default's kept for the rest");
         assert_eq!((level.clamp(-9), level.clamp(40)), (-3, 40), "no ceiling written");
         assert_eq!(Level::default().clamp(-2), 0, "no level below nought unless the line says how far");
+    }
+
+    #[test]
+    fn a_kept_span_and_a_list_of_drops_read_as_the_engine_plays_them() {
+        let keep: KeepAway = one(&Names::new(), "(within: 5, no_closer: 3)").unwrap();
+        assert_eq!(keep, KeepAway { within: 5, no_closer: 3 });
+        let things = Registry::from_defs(vec![DamageKind::new("coin"), DamageKind::new("bone")]).unwrap();
+        let names = Names::new().with("item", &things);
+        let list: Vec<(NameRef<DamageKind>, u32)> = names.load_list(r#"[("bone", 40), ("coin", 100)]"#).unwrap();
+        assert_eq!(drops(&list), DropTable(vec![DropRow::new(things.expect("bone"), 40), DropRow::new(things.expect("coin"), 100)]));
     }
 
     #[test]

@@ -87,10 +87,10 @@ Foundry's roster is a brain per kind, built from that kind's own fields, and eve
             if d.flee_at > 0 {
                 brain = brain.then(FleeWhenHurt { at_pct: d.flee_at });
             }
-            brain = match (d.repairs, d.shadow) {
+            brain = match (d.repairs, d.keep_away) {
                 // A drone that rebuilds has nothing to hunt with.
                 (Some(_), _) => brain.then(RepairWrecks),
-                (None, Some(s)) => brain.then(Keep::enemies(s.keep_within, s.no_closer_than)).then(Hover),
+                (None, Some(keep)) => brain.then(Keep::enemies(keep.within, keep.no_closer)).then(Hover),
                 (None, None) => brain.then(Hunt),
             };
             brains.push(Arc::new(brain.then(SearchLastKnown).then(KeepPost).then(Wander { chance_pct: 30 })));

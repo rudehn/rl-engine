@@ -39,8 +39,8 @@
 //               Emit(gas:, amount:); or part 3's own, Wither(turns:), `weakened` capped at three
 //               stacks, and Steal, a landed blow's own trick; landed through the engine's actor
 //               triggers
-//   keeps_away: (how far it lets an enemy get before it closes, how close it lets one get
-//               before it backs away), both in tiles
+//   keep_away:  (within:, no_closer:), the engine's span, both in tiles: how far it lets an
+//               enemy get before it closes, and how close it lets one get before it backs away
 //   trick:      whether this is a trick: unknown of a kind until the adventurer has seen it
 //               land (a bite that poisons, a jelly that splits), rather than known on sight
 //               (its look, its speed, whether it flies); absent, false, a plain trait
@@ -113,7 +113,7 @@
     // reason, a will-o'-wisp's grave light: `light` is a single value, so
     // a second trait setting it on the same kind would clash, and every
     // kind that lures in this bestiary already glows some other way.
-    (name: "luring", says: "keeps away, and glows", keeps_away: (5, 3)),
+    (name: "luring", says: "keeps away, and glows", keep_away: (within: 5, no_closer: 3)),
     (name: "wakeful", says: "never sleeps", notice: (certain: 2, chance_pct: 35, lit_bonus: 4, memory: 8)),
     (name: "sleepy", says: "sleeps deeply"),
     // Part 3's own game systems (6b): a trait no field here can carry,

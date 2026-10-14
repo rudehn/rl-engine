@@ -1,7 +1,12 @@
-//! Weighted draws banded by a number: depth, distance from town, danger.
+//! Weighted draws banded by a number: depth, distance from town, danger,
+//! and [`load_spawns`], the file a game writes where its actors turn up in.
 
 use rand::Rng;
+use rl_core::Id;
 use serde::{Deserialize, Serialize};
+
+use crate::content::{ContentError, Named, Registry};
+use crate::names::{NameRef, Names};
 
 /// One row of a banded table.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -160,6 +165,86 @@ impl<T> BandedTable<T> {
     }
 }
 
+/// A spawn file's row as authored, for [`load_spawns`].
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, bound = "")]
+struct Authored<D: 'static> {
+    monster: NameRef<D>,
+    bands: (i32, i32),
+    weight: u32,
+    #[serde(default)]
+    group: Option<(u32, u32)>,
+}
+
+/// Loads where a game's actors turn up from a spawn file, a RON list of
+/// rows, each naming one of the game's own `defs`, which `names` must
+/// resolve through `Names::with`, into the table a population and a
+/// prefab's role draw from.
+///
+/// Every field of a row:
+///
+/// - `monster`: a name in the game's own registry.
+/// - `bands`: `(shallowest, deepest)`, both included: floors, decks,
+///   distance from town, whatever a game's band counts.
+/// - `weight`: how often against every other row that applies at a band;
+///   only the ratio matters.
+/// - `group`: optional; `(fewest, most)` that come together; one when left
+///   out.
+///
+/// A kind may have several rows, so its groups grow with depth, and one
+/// with none never turns up by itself. Rows keep the order they are
+/// written in, which is the order a draw walks them, so moving one changes
+/// what a seed builds. Names that resolve to nothing are reported together
+/// first; once every name resolves, every other problem in the file is
+/// reported at once.
+///
+/// ```
+/// use rl_rules::{Named, Names, Registry, load_spawns};
+///
+/// struct Beast(&'static str);
+/// impl Named for Beast {
+///     fn name(&self) -> &str {
+///         self.0
+///     }
+/// }
+///
+/// let beasts = Registry::from_defs(vec![Beast("rat"), Beast("wolf")]).unwrap();
+/// let names = Names::new().with("monster", &beasts);
+/// let table = load_spawns(
+///     r#"[(monster: "rat", bands: (1, 3), weight: 6, group: (2, 4)), (monster: "wolf", bands: (2, 9), weight: 1)]"#,
+///     &names,
+///     &beasts,
+/// )
+/// .unwrap();
+/// assert_eq!(table.entries()[0].item, beasts.expect("rat"), "in the order written");
+/// assert_eq!((table.entries()[1].min_group, table.entries()[1].max_group), (1, 1), "a group of one unless written");
+/// assert!(!table.covers(10));
+/// ```
+pub fn load_spawns<D: Named + 'static>(text: &str, names: &Names<'_>, defs: &Registry<D>) -> Result<BandedTable<Id<D>>, ContentError> {
+    let authored: Vec<Authored<D>> = names.load_list(text)?;
+    let mut errors = Vec::new();
+    let mut table = BandedTable::default();
+    for (i, a) in authored.iter().enumerate() {
+        let id = a.monster.id();
+        let at = format!("entry {} ({})", i + 1, defs.get(id).name());
+        if a.bands.0 > a.bands.1 {
+            errors.push(format!("{at}: bands {} to {} is no range at all", a.bands.0, a.bands.1));
+        }
+        if a.weight == 0 {
+            errors.push(format!("{at}: a weight of nothing is never drawn; leave the row out instead"));
+        }
+        let (fewest, most) = a.group.unwrap_or((1, 1));
+        if fewest == 0 || fewest > most {
+            errors.push(format!("{at}: a group of {fewest} to {most} is no group at all"));
+        }
+        table.push(BandedEntry::new(id).bands(a.bands.0, a.bands.1).weight(a.weight).group(fewest, most));
+    }
+    if !errors.is_empty() {
+        return Err(ContentError::Invalid(errors));
+    }
+    Ok(table)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -247,5 +332,28 @@ mod tests {
         assert_eq!(table.band_where(1, heavy_or_crab), Some(2), "shallower than all, the shallowest");
         assert_eq!(table.band_where(5, |n| *n == "ghost"), None, "a row with no weight covers nothing");
         assert_eq!(table.band_where(5, |n| *n == "nobody"), None);
+    }
+
+    struct Beast(&'static str);
+
+    impl Named for Beast {
+        fn name(&self) -> &str {
+            self.0
+        }
+    }
+
+    #[test]
+    fn a_spawn_file_names_every_row_that_could_never_be_drawn_at_once() {
+        let beasts = Registry::from_defs(vec![Beast("rat"), Beast("wolf")]).unwrap();
+        let names = Names::new().with("monster", &beasts);
+        let text = r#"[
+            (monster: "rat", bands: (4, 2), weight: 1),
+            (monster: "wolf", bands: (1, 3), weight: 0),
+            (monster: "rat", bands: (1, 3), weight: 1, group: (3, 2)),
+        ]"#;
+        let Err(ContentError::Invalid(errors)) = load_spawns(text, &names, &beasts) else { panic!("it read") };
+        assert_eq!(errors.len(), 3, "{errors:?}");
+        assert!(errors[0].starts_with("entry 1 (rat): bands 4 to 2"), "{errors:?}");
+        assert!(load_spawns(r#"[(monster: "rat", floors: (1, 2), weight: 1)]"#, &names, &beasts).is_err(), "a band under a name of a game's own");
     }
 }

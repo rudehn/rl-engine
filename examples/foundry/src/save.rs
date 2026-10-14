@@ -24,7 +24,7 @@
 use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
 use rl_engine::prelude::*;
-use rl_engine::rl_save::{AddSaveable, SavePlugin, Saveable, SaveableItem, SaveableState};
+use rl_engine::rl_save::{AddSaveable, SavePlugin, Saveable, SaveableActor, SaveableItem, SaveableState};
 use serde::{Deserialize, Serialize};
 
 use crate::climb::Deepest;
@@ -45,7 +45,10 @@ use crate::upgrades::{Taken, Upgrade};
 // v3: an item is the engine's saved item, its definition and level with
 // its heat under `extra`, where it was one record of Foundry's; an older
 // save's items do not read as the new shape, so it is refused.
-pub const VERSION: u32 = 3;
+// v4: a droid is the engine's saved actor, its definition with whether it is
+// bare under `extra`, where it was one record of Foundry's; an older save's
+// droids do not read as the new shape, so it is refused.
+pub const VERSION: u32 = 4;
 
 /// The slot every run saves to.
 pub const SLOT: &str = "foundry";
@@ -62,7 +65,7 @@ pub fn register(app: &mut App) {
     app.add_plugins(SavePlugin::new(SLOT).version(VERSION).on_arrival())
         // ANCHOR_END: remember
         .save_items::<ItemKind>()
-        .save_kind::<Kind>()
+        .save_actors::<Kind>()
         .save_kind::<Commando>()
         .save_kind::<LiftOut>()
         .save_state::<Taken>()
@@ -110,41 +113,34 @@ impl Saveable for Commando {
     }
 }
 
-/// A droid or a critter, as the save writes it: its definition, and
-/// whether it had its own glyph taken off, which is what a wreck is: the
-/// engine lays it back down as remains dressed as the wreckage prop, and
-/// the renderer dresses only what wears no glyph of its own.
+/// What Foundry keeps of a droid or a critter beyond its definition, which
+/// the engine writes and makes it again from: whether it had its own glyph
+/// taken off, which is what a wreck is: the engine lays it back down as
+/// remains dressed as the wreckage prop, and the renderer dresses only what
+/// wears no glyph of its own.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DroidSave {
-    /// The definition's name.
-    pub def: String,
     /// Whether it was drawn as something other than itself.
     #[serde(default)]
     pub bare: bool,
 }
 
-impl Saveable for Kind {
-    type Saved = DroidSave;
+impl SaveableActor for Kind {
+    type Maker = Roster;
+    type Extra = DroidSave;
 
-    fn capture(world: &World, entity: Entity) -> DroidSave {
-        let kind = world.get::<Kind>(entity).expect("a droid's kind");
-        DroidSave { def: world.resource::<Roster>().defs.name(kind.0).to_string(), bare: world.get::<Glyph>(entity).is_none() }
+    fn def(&self) -> Id<crate::droids::MonsterDef> {
+        self.0
     }
 
-    fn restore(world: &mut World, saved: &DroidSave) -> Entity {
-        let Some(id) = world.resource::<Roster>().defs.id(&saved.def) else {
-            warn!("a saved droid is a {:?}, which this build has no definition for; it comes back as nothing", saved.def);
-            return world.spawn_empty().id();
-        };
-        let registries = world.resource::<Registries>().clone();
-        let e = spawned(world, |commands, world| {
-            // Nowhere and on no deck: the engine puts it back where it was.
-            crate::droids::spawn_monster(commands, world.resource::<Roster>(), id, Point::ZERO, MapId::SURFACE, &registries)
-        });
+    fn capture_extra(world: &World, entity: Entity) -> DroidSave {
+        DroidSave { bare: world.get::<Glyph>(entity).is_none() }
+    }
+
+    fn restore_extra(world: &mut World, e: Entity, saved: &DroidSave) {
         if saved.bare {
             world.entity_mut(e).remove::<Glyph>();
         }
-        e
     }
 }
 

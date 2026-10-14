@@ -135,3 +135,30 @@ Three slices landed on the seams section 3 opened, each a tactic or a perceive c
   The question is asked of the landing's targets rather than its cells, since a self-aimed shape that flies, a teleport among them, covers no cells of its own in the landing the resolver lands; asking the cells first read a blink as never mending and never worth keeping.
 
 None of the three touches `decide_minds`, `TacticCtx` or the sort at the head of `Minds`: a capability is a wit, a roster is a `Station`, and a weighed ability is a smaller `usable` the existing contract never has to know was filtered.
+
+## 8. A kind of monster made of parts
+
+Until 2026-10-14 each game spawned its monsters by hand: Undermere's `spawn_monster` and Foundry's put the same health, armor, side, sight, speed, mind, wits, notice, hearing, attacks and drops on an actor in two hand-written bundles, and each saved a monster as its definition's name and spawned it again from that name, and each read its spawn table row by row.
+Items had just stopped doing the same thing (`docs/design/items.md`, section 6a), and the reasoning carries over whole: what is shared is the shape of what the engine already simulates, never a schema, and the defaults are the game's.
+
+`rl_bevy::ActorParts<I>` is every part of one kind of actor, the actor's `ItemParts`, and a game fills one per definition at load from its own fields.
+Each field maps onto a component the engine already plays, `hp` onto `Health`, `wits` onto `Intelligence`, `notice` onto `Notice`, `statuses` onto what `Afflicted` holds for life, `leaves_remains` onto `LeavesRemains`, `drops` onto `Drops<I>`, or onto a tactic the brain is built with, `flee_at` and `keep_away`.
+Every field is optional and absent means no mechanic: no notice is a mind that never notices what tries not to be seen, no remains is a death that leaves nothing, no hearing is deaf.
+A number written is inserted as written, so a game that writes no armor has no `Armor` and one that writes `Some(0)` has `Armor(0)`; the engine never decides that a nought is the same as nothing.
+`ActorParts::insert` puts them on an entity the game spawned with its own marker, its name and its look, rather than spawning one itself, so an actor spawned by hand, as the tutorial's are, and one spawned from parts are the same kind of entity.
+
+A game's defaults are another `ActorParts`, laid under each kind with `ActorParts::over`: a value the kind writes wins, and a list the defaults hold is added to.
+Undermere's is that every monster notices by its own `NOTICE`, sure from four tiles further while the adventurer is lit, and Foundry's that every kind notices by the engine's plain rule and leaves remains; the engine gives a kind that names neither no notice and no remains.
+A default passed to the engine, an `ActorDefaults` beside the parts or an argument to the spawn, was weighed and rejected: the defaults are only a kind of parts, `over` is the rule `Level::over` already is for items, and a game that wants none writes none.
+
+What stays in the games is what the engine does not simulate, and the line is drawn per field.
+Undermere's traits and their fold, its tricks, its boss, mini-boss and conjured kinds, its sleep and its camps are Undermere's; the fold runs first and the parts are filled from the folded values, and whether a kind leaves a body, never a boss or a conjured one, is Undermere's decision written into the part.
+A kind whose wits take things up gets a pack, slots and the worth of its own blow from Undermere, since what a monster does with what it carries is a rule of Undermere's and not a part.
+Foundry's resist profile, its alarm, its repairs and its radar are Foundry's, and its radar is why `dark_sight` is a part Foundry leaves empty: `NativeDarkSight` is folded with what a droid wears and whether it is jammed before anything reads `DarkSight`.
+A shot, a blow, a light and the span a kind keeps from its enemies are parts both games type their fields with, Foundry's `keep_away` among them, and where in a brain a game keeps that span is its own, Foundry's in place of the hunt and beside `Hover`.
+
+A monster is saved the way an item is (`docs/design/items.md`, section 7a): `rl_save::SaveableActor`, registered with `save_actors`, writes which definition it is by its maker's `name_of` and the game's own extra beside it, and restores it through `ActorMaker::make_at`, nowhere and with nothing rolled, before the extra goes back on, since what a game keeps is a change to what it was made as: a side it was turned to, a mind it was given, a look a wreck lost.
+`ActorMaker::make` calls `make_at` unless a game rolls something on a monster, so a game that rolls nothing writes one function.
+
+Where each kind turns up is one file shape in both games, read by `rl_rules::load_spawns`: `(monster, bands: (first, last), weight, group: (fewest, most))`, `group` optional, into the `BandedTable` a population and a prefab's role draw from.
+The band's name is the engine's, `bands` as the item spawn file's is, since a floor and a deck are both a band a maker answers for.

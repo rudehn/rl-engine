@@ -96,7 +96,7 @@ Registering is the step an implementation does not show, and it is the whole of 
 pub fn register(app: &mut App) {
     app.add_plugins(SavePlugin::new(SLOT).version(VERSION).on_arrival())
         .save_items::<ItemKind>()
-        .save_kind::<Kind>()
+        .save_actors::<Kind>()
         .save_kind::<Adventurer>()
         .save_kind::<Gate>()
         .save_kind::<Townsperson>()
@@ -149,13 +149,13 @@ pub fn record(ending: Option<Res<Ending>>, tally: Res<Tally>, map: Option<Res<Wo
 
 With the plugin added and nothing else registered, the engine saves the clock and the queue, the run's seed, the surface's edits and every built place, what the player has explored and the still things it last saw there, the sites it has found, the fire and the gas on every map, and what each actor has spent on abilities.
 It saves every prop too, because it spawned them from definitions it can read again.
-Everything else is the game's to register, since the engine cannot know what a monster or a sword is made of: what a kind is written down as, and what spawning one again means, are `Saveable`, and what is not an entity is `SaveableState`.
+Everything else is the game's to register, since the engine cannot know what a monster or a sword is made of: what a kind is written down as, and what spawning one again means, are `Saveable`, or for an item or an actor the game makes through its maker, `SaveableItem` and `SaveableActor`, which write which definition it is and make it again through the maker, and what is not an entity is `SaveableState`.
 The engine then puts its own half back on whatever the game spawned, so giving a kind a bag, a status or a stack later changes nothing about how that game saves it.
 What a save guarantees is that the run goes on as the same run: the same things in the same places with the same health, bags, gear and statuses, the same clock reading and the same actor holding the turn.
 The seed is the one thing the save writes down and does not put back, and it is the game's to read: `EngineSave::restore` carries `seed` past without inserting a `Seed`, so a game that builds its world before reading `save.engine.seed` replays the saved edits onto regions generated from another seed, silently, and [Places and streaming](places.md)'s account of how a region regenerates is what makes that wrong rather than merely different.
 What it does not guarantee is that a run replayed from its start would arrive at the saved state, because a save is a position and not a record of the moves: every stream [Seeds and determinism](seeds.md) describes has been drawn from by the time the save is written, and a continued run draws from those streams afresh.
 A save that does not fit is refused rather than repaired: either version failing to match is an error, and so is a save holding a kind or a resource this build does not register.
-The one thing the load repairs on its own is content that has gone missing, and only for props: a prop whose definition this build has lost comes back as an empty entity with a warning rather than failing the whole save.
+The one thing the load repairs on its own is content that has gone missing, and only for what the engine makes again from a definition, a prop, or an item or an actor through its maker: one whose definition this build has lost comes back as an empty entity with a warning rather than failing the whole save.
 What is left of a run that cannot be continued is a screen, and a record in a slot of its own where a game keeps records: the run's slot is deleted when the run ends, and the ending is drawn for as long as the player looks at it.
 The outcome, the seed and the turn are the engine's, since it kept them; every heading and every body is the game's, because only the game knows whether a run is measured in coin, in decks cleared or in what the player was made of.
 Nothing in `rl-save` decides when a run is over, and nothing in `rl-ui` writes a byte to storage.

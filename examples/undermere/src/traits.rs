@@ -23,6 +23,7 @@
 use std::fmt;
 
 use rl_engine::prelude::*;
+use rl_engine::rl_rules::parts::KeepAway;
 use serde::Deserialize;
 
 /// The traits file, compiled in so the binary runs from anywhere.
@@ -90,7 +91,7 @@ pub struct TraitDef {
     /// How far it lets an enemy get before it closes, and how close it
     /// lets one get before it backs away: a will-o'-wisp's.
     #[serde(default)]
-    pub keeps_away: Option<(i32, i32)>,
+    pub keep_away: Option<KeepAway>,
     /// Whether this is a trick: unknown of a kind until the adventurer has
     /// seen it land, a bite that poisons or a jelly that splits, rather
     /// than known of it on sight, its look, its speed or whether it
@@ -177,7 +178,7 @@ pub struct Folded {
     pub triggers: Vec<TriggerSpec>,
     /// How far it keeps from an enemy, and how close it lets one get: what
     /// a trait set, or `None` for a kind that closes in as far as it can.
-    pub keeps_away: Option<(i32, i32)>,
+    pub keep_away: Option<KeepAway>,
     /// Each trait with words for the examine panel, by its name, its
     /// words, and whether it is a trick: [`crate::bestiary_lore`]'s look
     /// panel says a plain one's words outright and a trick's only once
@@ -205,7 +206,7 @@ impl Default for Folded {
             abilities: Vec::new(),
             statuses: Vec::new(),
             triggers: Vec::new(),
-            keeps_away: None,
+            keep_away: None,
             says: Vec::new(),
         }
     }
@@ -248,7 +249,7 @@ pub fn fold(traits: &[TraitId], all: &Registry<TraitDef>) -> Result<Folded, Clas
         setters.set("hearing", t.hearing, &mut folded.hearing, by)?;
         setters.set("light", t.light.map(LightSource), &mut folded.light, by)?;
         setters.set("armor", t.armor, &mut folded.armor, by)?;
-        setters.set("keeps_away", t.keeps_away, &mut folded.keeps_away, by)?;
+        setters.set("keep_away", t.keep_away, &mut folded.keep_away, by)?;
         if let Some(wits) = t.wits {
             folded.wits = folded.wits.with(wits);
         }
@@ -396,8 +397,8 @@ mod tests {
         assert_eq!(burns_badly.resists.get(kind("fire")), -100, "fire hurts a burns-badly kind twice as hard");
         let wakeful = fold(&ids(&traits, &["wakeful"]), &traits).expect("wakeful alone").notice.expect("wakeful sets notice");
         assert!(wakeful.chance_pct > crate::bestiary::NOTICE.chance_pct, "keener than the house's default: {wakeful:?}");
-        let luring = fold(&ids(&traits, &["luring"]), &traits).expect("luring alone").keeps_away.expect("luring keeps its distance");
-        assert_eq!(luring, (5, 3), "lets an enemy to five cells before closing, and backs off within three");
+        let luring = fold(&ids(&traits, &["luring"]), &traits).expect("luring alone").keep_away.expect("luring keeps its distance");
+        assert_eq!(luring, KeepAway { within: 5, no_closer: 3 }, "lets an enemy to five cells before closing, and backs off within three");
     }
 
     #[test]
@@ -453,7 +454,7 @@ mod tests {
             ("hearing", "hearing: (threshold: 1)"),
             ("light", "light: (intensity: 200, radius: 3)"),
             ("armor", "armor: 1"),
-            ("keeps_away", "keeps_away: (3, 5)"),
+            ("keep_away", "keep_away: (within: 3, no_closer: 5)"),
         ];
         for (field, value) in values {
             let text = format!(r#"[(name: "one", {value}), (name: "two", {value})]"#);

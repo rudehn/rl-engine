@@ -87,7 +87,7 @@ Keeping the list between launches takes nothing beyond the plugin a game already
 pub fn register(app: &mut App) {
     app.add_plugins(SavePlugin::new(SLOT).version(VERSION).on_arrival())
         .save_items::<ItemKind>()
-        .save_kind::<Kind>()
+        .save_actors::<Kind>()
         .save_kind::<Adventurer>()
         .save_kind::<Gate>()
         .save_kind::<Townsperson>()

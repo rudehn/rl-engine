@@ -68,21 +68,18 @@ A status that sleeps (`docs/guide/src/systems/statuses.md`) leans on the same tw
 
 ## Using it
 
-An observer is authored per kind, so Foundry spawns every monster with the `Notice` its kind names, or the engine's default, which is sure only of what is adjacent.
+An observer is authored per kind, so Foundry's parts give every monster the `Notice` its kind names, or by Foundry's own defaults the engine's plain one, which is sure only of what is adjacent; a kind given none would notice nobody.
 
 <!-- include: ../../../../examples/foundry/src/droids.rs:spawn -->
 ```rust,no_run
     let d = roster.defs.get(id);
     let mut e = commands.spawn((
-        (Actor, Blocks, Position(at), OnMap(map)),
-        (Health::full(d.hp), Armor(d.armor), Faction(d.faction.id()), Resists(resistances(d.profile, registries))),
-        (Perception(d.perception), Speed(d.speed), Mind(roster.brains[id.index()].clone()), Intelligence(d.wits)),
-        // Everything on a deck leaves something behind: a droid a wreck,
-        // a rat a carcass, both named by the engine's remains template and
-        // made worth going through by `props::wreck_the_dead`.
-        (Notice(d.notice.unwrap_or_default()), Kind(id), LeavesRemains),
+        (Actor, Blocks, Position(at), OnMap(map), Kind(id), Resists(resistances(d.profile, registries))),
         (Name::new(d.name.clone()), Glyph::new(d.glyph, Color::srgb(d.color.0, d.color.1, d.color.2)).on_layer(5)),
     ));
+    // Health, a mind, the notice every kind carries by `defaults`, and
+    // remains: everything on a deck leaves something behind.
+    roster.parts[id.index()].insert(&mut e, registries);
 ```
 
 The engine carries `Noticed` no further than writing it, and a game decides what being seen sets off: a Foundry probe that knows where the commando is has an alarm to raise.

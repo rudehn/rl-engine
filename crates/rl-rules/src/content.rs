@@ -8,10 +8,11 @@
 //!
 //! - [`Registry`] holds the definitions, [`Named`] is what a definition
 //!   answers to be registered, and [`ContentError`] is what loading refuses.
-//! - [`BandedTable`] draws from [`BandedEntry`]s by band.
+//! - [`BandedTable`] draws from [`BandedEntry`]s by band, and
+//!   [`load_spawns`] reads one from a game's spawn file.
 
 pub mod registry;
 pub mod table;
 
 pub use registry::{ContentError, Named, Registry};
-pub use table::{BandedEntry, BandedTable};
+pub use table::{BandedEntry, BandedTable, load_spawns};

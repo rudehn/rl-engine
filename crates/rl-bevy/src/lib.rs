@@ -99,7 +99,7 @@ pub use minds::{
 pub use noise::{
     AddSound, Earshot, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, NoiseRunning, Sound, SoundId, SoundNames, Sounds,
 };
-pub use parts::{Attacks, ItemLevel, ItemParts, MadeOf, insert_parts};
+pub use parts::{ActorParts, Attacks, ItemLevel, ItemParts, MadeOf, held_for_life, insert_parts};
 pub use places::{
     Arrive, Climb, Destination, GoThrough, Ladder, LadderEnd, Lock, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Stair,
     StairLook, Transition, Travelled, WarpRequest,
@@ -172,7 +172,7 @@ pub mod prelude {
     pub use crate::loot::{Drops, Found, ItemMaker, LootArea, LootPlugin, LootSet, Provenance, Scattered};
     pub use crate::minds::{AddChoice, Doing, Intelligence, Joined, Leader, Mind, MindChose, MindsPlugin, Perception, Post, Profile, Thinking};
     pub use crate::noise::{AddSound, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, SoundId, SoundNames, Sounds};
-    pub use crate::parts::{Attacks, ItemLevel, ItemParts, MadeOf, insert_parts};
+    pub use crate::parts::{ActorParts, Attacks, ItemLevel, ItemParts, MadeOf, held_for_life, insert_parts};
     pub use crate::places::{
         Arrive, Climb, Destination, GoThrough, Ladder, LadderEnd, Lock, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot,
         Stair, StairLook, Transition, Travelled, WarpRequest,

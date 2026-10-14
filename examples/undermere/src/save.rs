@@ -33,7 +33,7 @@
 use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
 use rl_engine::prelude::*;
-use rl_engine::rl_save::{AddSaveable, SavePlugin, Saveable, SaveableItem, SaveableState};
+use rl_engine::rl_save::{AddSaveable, SavePlugin, Saveable, SaveableActor, SaveableItem, SaveableState};
 use serde::{Deserialize, Serialize};
 
 use crate::armory::{Armory, ItemDef, ItemKind};
@@ -75,7 +75,10 @@ use crate::writings::WritingsProgress;
 // Undermere's own beside them under `extra`, where it was one record of
 // Undermere's; an older save's items do not read as the new shape, so it
 // is refused.
-pub const VERSION: u32 = 9;
+// v10: a monster is the engine's saved actor, its definition with Undermere's
+// own beside it under `extra`, where it was one record of Undermere's; an
+// older save's monsters do not read as the new shape, so it is refused.
+pub const VERSION: u32 = 10;
 
 /// The slot every run saves to.
 pub const SLOT: &str = "undermere";
@@ -86,7 +89,7 @@ pub const SLOT: &str = "undermere";
 pub fn register(app: &mut App) {
     app.add_plugins(SavePlugin::new(SLOT).version(VERSION).on_arrival())
         .save_items::<ItemKind>()
-        .save_kind::<Kind>()
+        .save_actors::<Kind>()
         .save_kind::<Adventurer>()
         .save_kind::<Gate>()
         .save_kind::<Townsperson>()
@@ -153,14 +156,14 @@ impl Saveable for Adventurer {
     }
 }
 
-/// A monster, as the save writes it: its definition, by name, whether it
-/// fights for the adventurer, and when a conjured one fades. The engine
-/// gives back where it stood, its health, what it carried and wore, its
-/// statuses and the post it held.
+/// What Undermere keeps of a monster beyond its definition, which the
+/// engine writes and makes it again from: whether it fights for the
+/// adventurer, when a conjured one fades, and the rest of what has
+/// happened to it that its kind does not say. The engine gives back where
+/// it stood, its health, what it carried and wore, its statuses and the
+/// post it held.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MonsterSave {
-    /// The definition's name.
-    pub def: String,
     /// Whether it fights for the adventurer, dominated, conjured or made
     /// of one that did, which is for good; false in a save written before
     /// anything could.
@@ -247,13 +250,17 @@ fn own_side(world: &World, monster: Entity, kind: Id<crate::bestiary::MonsterDef
     (side.0 != world.resource::<Bestiary>().defs.get(kind).faction).then(|| factions.name(side.0).to_string())
 }
 
-impl Saveable for Kind {
-    type Saved = MonsterSave;
+impl SaveableActor for Kind {
+    type Maker = Bestiary;
+    type Extra = MonsterSave;
 
-    fn capture(world: &World, entity: Entity) -> MonsterSave {
+    fn def(&self) -> Id<crate::bestiary::MonsterDef> {
+        self.0
+    }
+
+    fn capture_extra(world: &World, entity: Entity) -> MonsterSave {
         let kind = world.get::<Kind>(entity).expect("a monster's kind");
         MonsterSave {
-            def: world.resource::<Bestiary>().defs.name(kind.0).to_string(),
             // `Leader` alone is a band follower's as readily as a freed
             // captive's; only paired with `Ally` does it mean the
             // follower fights for the adventurer, and of those only a
@@ -274,16 +281,8 @@ impl Saveable for Kind {
         }
     }
 
-    fn restore(world: &mut World, saved: &MonsterSave) -> Entity {
-        let Some(id) = world.resource::<Bestiary>().defs.id(&saved.def) else {
-            warn!("a saved monster is a {:?}, which this build has no definition for; it comes back as nothing", saved.def);
-            return world.spawn_empty().id();
-        };
+    fn restore_extra(world: &mut World, monster: Entity, saved: &MonsterSave) {
         let registries = world.resource::<Registries>().clone();
-        let monster = spawned(world, |commands, world| {
-            // Nowhere and on no place: the engine puts it back where it was.
-            crate::bestiary::spawn_monster(commands, world.resource::<Bestiary>().defs.get(id), Point::ZERO, MapId::SURFACE, &registries, false)
-        });
         if saved.ally {
             crate::allies::befriend(world, monster);
         }
@@ -321,7 +320,6 @@ impl Saveable for Kind {
         if let Some(name) = &saved.fallen {
             world.entity_mut(monster).insert((Name::new(name.clone()), crate::mercenaries::Fallen(name.clone())));
         }
-        monster
     }
 }
 

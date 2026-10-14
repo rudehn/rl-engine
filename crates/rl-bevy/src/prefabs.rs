@@ -71,8 +71,25 @@ pub trait ActorMaker: Resource {
 
     /// Makes one `def` standing at `at` on `map`, and returns it. `rng`
     /// is the engine's stream for this slot, for whatever the game rolls
-    /// on the monster itself.
-    fn make(&self, commands: &mut Commands, registries: &Registries, def: Id<Self::Def>, at: Point, map: MapId, rng: &mut StdRng) -> Entity;
+    /// on the monster itself; a game that rolls nothing leaves this to
+    /// [`make_at`](Self::make_at), which it calls by default.
+    fn make(&self, commands: &mut Commands, registries: &Registries, def: Id<Self::Def>, at: Point, map: MapId, rng: &mut StdRng) -> Entity {
+        let _ = rng;
+        self.make_at(commands, registries, def, at, map)
+    }
+
+    /// Makes one `def` standing at `at` on `map`, as it was made, with
+    /// nothing rolled: what a save restores one by, before the game puts
+    /// back what else it kept of it, and what [`make`](Self::make) is for a
+    /// game that rolls nothing on a monster.
+    fn make_at(&self, commands: &mut Commands, registries: &Registries, def: Id<Self::Def>, at: Point, map: MapId) -> Entity;
+
+    /// The definition called `name`, which a save finds one by again.
+    fn id_of(&self, name: &str) -> Option<Id<Self::Def>>;
+
+    /// The name of `def`, which [`id_of`](Self::id_of) finds it by again:
+    /// what a save writes one down as.
+    fn name_of(&self, def: Id<Self::Def>) -> &str;
 
     /// Where each monster turns up, which a role draws from.
     fn table(&self) -> &BandedTable<Id<Self::Def>>;
@@ -426,8 +443,16 @@ mod tests {
     impl ActorMaker for Beasts {
         type Def = Beast;
 
-        fn make(&self, commands: &mut Commands, _: &Registries, def: Id<Beast>, at: Point, map: MapId, _: &mut StdRng) -> Entity {
+        fn make_at(&self, commands: &mut Commands, _: &Registries, def: Id<Beast>, at: Point, map: MapId) -> Entity {
             commands.spawn((Actor, Position(at), OnMap(map), ToyKind(def))).id()
+        }
+
+        fn id_of(&self, name: &str) -> Option<Id<Beast>> {
+            self.defs.id(name)
+        }
+
+        fn name_of(&self, def: Id<Beast>) -> &str {
+            self.defs.name(def)
         }
 
         fn table(&self) -> &BandedTable<Id<Beast>> {

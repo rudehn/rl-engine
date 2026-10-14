@@ -14,22 +14,43 @@
 //! parts, so a level is applied once and never on top of itself. What a
 //! level adds is the [`Level`] part's and linear; how a level is found,
 //! what one is worth and what one below nought means are a game's.
+//!
+//! [`ActorParts`] is the same for one kind of actor: its health, side,
+//! sight, wits, notice, hearing, attacks, light, abilities, the statuses
+//! it holds for life, its triggers, resistances and drops, whether it
+//! leaves remains, and the brain it decides with. [`ActorParts::insert`]
+//! puts every one written on a spawned actor; one not written puts
+//! nothing, and a game's defaults are its own, laid under each kind with
+//! [`ActorParts::over`]. [`held_for_life`] is the statuses an actor holds
+//! from its first turn, for a game that holds one more of its own.
 
 use std::sync::Arc;
 
 use bevy::prelude::*;
-use rl_core::DiceRoll;
+use rl_core::{DiceRoll, Id};
 use rl_grid::Glow;
-use rl_rules::parts::{Charges, Level, Melee, Ranged, Throw};
+use rl_rules::parts::{Charges, KeepAway, Level, Melee, Ranged, Throw};
 use rl_rules::stats::Op;
-use rl_rules::{EquipShape, Resistances, StatId, TagId};
+use rl_rules::{
+    AbilityId, Brain, DropTable, EquipShape, FactionId, HearingStats, NoticeStats, Registry, Resistances, StatId, Stats, StatusDef, StatusId, Statuses, TagId,
+    UNTIL_CURED, Wits,
+};
 
+use crate::ability::Grants;
 use crate::ammo::Ammo;
-use crate::combat::{Armor, MeleeAttack, RangedAttack, Resists, Stowed};
+use crate::combat::{Armor, Faction, Health, MeleeAttack, RangedAttack, Resists, Stowed};
+use crate::components::Speed;
 use crate::consumable::{Attuned, Consumable};
 use crate::effects::{EffectBonus, MomentId, Moments, Triggers};
 use crate::items::{Bestows, Equipped, Item, Pulse, Stack, Tagged, Wearable};
-use crate::lighting::LightSource;
+use crate::lighting::{DarkSight, LightSource};
+use crate::loot::Drops;
+use crate::minds::{Intelligence, Mind, Perception};
+use crate::noise::Hearing;
+use crate::registries::Registries;
+use crate::remains::LeavesRemains;
+use crate::status::{Afflicted, StatBlock};
+use crate::stealth::Notice;
 use crate::throwing::Throwable;
 
 /// What something strikes, shoots and is thrown as: the attack parts of
@@ -378,6 +399,326 @@ pub fn level_up(world: &mut World, item: Entity, by: i32) -> Option<i32> {
     Some(level)
 }
 
+/// Every part of one kind of actor, as a game's own definition wrote them,
+/// resolved and built once at load: what [`ActorParts::insert`] puts on
+/// each one spawned.
+///
+/// The actor's [`ItemParts`]. A game fills one per definition from its own
+/// fields, after whatever its own model folds, a list of traits or a
+/// template, has made them plain values, and keeps it beside the
+/// definition. `I` is the game's item definition, which what it drops
+/// names.
+///
+/// Every field is optional and absent means no mechanic, never one the
+/// engine chose: no health is nothing to strike down, no notice is a mind
+/// that never notices anyone trying not to be seen, no remains is a death
+/// that leaves nothing. A number written is inserted as written, nought
+/// included, so a game that writes `armor: Some(0)` gets an `Armor(0)`.
+/// What a game wants on every kind unless a kind says otherwise is its own
+/// default, written once as another `ActorParts` and laid under each with
+/// [`over`](Self::over).
+///
+/// What the engine does not simulate stays off it: a name, a look, what a
+/// kind is worth to a score, a boss's death ending the run, a trick of the
+/// game's own. Those are the game's to insert beside these.
+pub struct ActorParts<I: Send + Sync + 'static> {
+    /// Its health, full; absent, it has no [`Health`] and nothing strikes
+    /// it down.
+    pub hp: Option<i32>,
+    /// Flat armor.
+    pub armor: Option<i32>,
+    /// Its side, which the faction matrix reads.
+    pub faction: Option<FactionId>,
+    /// Percent of normal speed; absent, the hundred every [`Actor`](crate::components::Actor) is
+    /// spawned with.
+    pub speed: Option<u32>,
+    /// How far it sees, in tiles; absent, [`DEFAULT_PERCEPTION`](crate::minds::DEFAULT_PERCEPTION).
+    pub perception: Option<i32>,
+    /// Percent health at or below which it runs: what a brain's
+    /// `FleeWhenHurt` is built with, not a component.
+    pub flee_at: Option<i32>,
+    /// What its mind is able to do; absent, whatever a [`Mind`] is given
+    /// when it names none.
+    pub wits: Option<Wits>,
+    /// How it notices what is trying not to be seen.
+    pub notice: Option<NoticeStats>,
+    /// How it hears.
+    pub hearing: Option<HearingStats>,
+    /// Tiles it sees with no light at all.
+    pub dark_sight: Option<i32>,
+    /// Its blow and its shot, and what each costs.
+    pub attacks: Attacks,
+    /// The span it holds from its enemies: what a brain's `Keep::enemies`
+    /// is built with, not a component.
+    pub keep_away: Option<KeepAway>,
+    /// The light it sheds.
+    pub light: Option<Glow>,
+    /// The abilities it knows.
+    pub abilities: Vec<AbilityId>,
+    /// The statuses it holds for life, on from its first turn.
+    pub statuses: Vec<StatusId>,
+    /// What it does at its own moments, built once and shared by every one
+    /// of its kind.
+    pub triggers: Triggers,
+    /// Percent removed per damage kind.
+    pub resists: Resistances,
+    /// What it leaves when it dies, each row rolled on its own.
+    pub drops: DropTable<Id<I>>,
+    /// Whether its death leaves remains; absent, it leaves nothing.
+    pub leaves_remains: Option<bool>,
+    /// The brain it decides with, built once from the rest; absent, it has
+    /// no mind and never takes a turn of its own.
+    pub mind: Option<Arc<Brain<Entity>>>,
+}
+
+impl<I: Send + Sync + 'static> Default for ActorParts<I> {
+    fn default() -> Self {
+        Self {
+            hp: None,
+            armor: None,
+            faction: None,
+            speed: None,
+            perception: None,
+            flee_at: None,
+            wits: None,
+            notice: None,
+            hearing: None,
+            dark_sight: None,
+            attacks: Attacks::default(),
+            keep_away: None,
+            light: None,
+            abilities: Vec::new(),
+            statuses: Vec::new(),
+            triggers: Triggers::default(),
+            resists: Resistances::new(),
+            drops: DropTable::default(),
+            leaves_remains: None,
+            mind: None,
+        }
+    }
+}
+
+impl<I: Send + Sync + 'static> Clone for ActorParts<I> {
+    fn clone(&self) -> Self {
+        Self {
+            hp: self.hp,
+            armor: self.armor,
+            faction: self.faction,
+            speed: self.speed,
+            perception: self.perception,
+            flee_at: self.flee_at,
+            wits: self.wits,
+            notice: self.notice,
+            hearing: self.hearing,
+            dark_sight: self.dark_sight,
+            attacks: self.attacks,
+            keep_away: self.keep_away,
+            light: self.light,
+            abilities: self.abilities.clone(),
+            statuses: self.statuses.clone(),
+            triggers: self.triggers.clone(),
+            resists: self.resists.clone(),
+            drops: self.drops.clone(),
+            leaves_remains: self.leaves_remains,
+            mind: self.mind.clone(),
+        }
+    }
+}
+
+/// By hand rather than derived, since a derive would ask `I`, which only
+/// names what it drops, to be printable itself.
+impl<I: Send + Sync + 'static> std::fmt::Debug for ActorParts<I> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ActorParts")
+            .field("hp", &self.hp)
+            .field("armor", &self.armor)
+            .field("faction", &self.faction)
+            .field("speed", &self.speed)
+            .field("perception", &self.perception)
+            .field("flee_at", &self.flee_at)
+            .field("wits", &self.wits)
+            .field("notice", &self.notice)
+            .field("hearing", &self.hearing)
+            .field("dark_sight", &self.dark_sight)
+            .field("attacks", &self.attacks)
+            .field("keep_away", &self.keep_away)
+            .field("light", &self.light)
+            .field("abilities", &self.abilities)
+            .field("statuses", &self.statuses)
+            .field("triggers", &self.triggers)
+            .field("resists", &self.resists)
+            .field("drops", &self.drops)
+            .field("leaves_remains", &self.leaves_remains)
+            .field("mind", &self.mind)
+            .finish()
+    }
+}
+
+impl<I: Send + Sync + 'static> ActorParts<I> {
+    /// These parts written over `under`, a game's defaults: each value this
+    /// writes, and `under`'s where this writes none, and every list
+    /// `under`'s and then this one's, the resistances summed, so what every
+    /// kind has and what this kind adds both hold.
+    ///
+    /// The default is the game's, never the engine's: one game's monsters
+    /// notice by its own rule unless a kind says otherwise, another's all
+    /// leave remains, and a third writes none at all.
+    pub fn over(self, under: &ActorParts<I>) -> ActorParts<I> {
+        fn both<T: Clone + PartialEq>(under: &[T], mine: Vec<T>) -> Vec<T> {
+            let mut all = under.to_vec();
+            all.extend(mine.into_iter().filter(|t| !under.contains(t)));
+            all
+        }
+        let mut resists = under.resists.clone();
+        resists.plus(&self.resists);
+        let mut triggers = under.triggers.clone();
+        triggers.0.extend(self.triggers.0);
+        let mut drops = under.drops.clone();
+        drops.0.extend(self.drops.0);
+        ActorParts {
+            hp: self.hp.or(under.hp),
+            armor: self.armor.or(under.armor),
+            faction: self.faction.or(under.faction),
+            speed: self.speed.or(under.speed),
+            perception: self.perception.or(under.perception),
+            flee_at: self.flee_at.or(under.flee_at),
+            wits: self.wits.or(under.wits),
+            notice: self.notice.or(under.notice),
+            hearing: self.hearing.or(under.hearing),
+            dark_sight: self.dark_sight.or(under.dark_sight),
+            attacks: Attacks {
+                melee: self.attacks.melee.or(under.attacks.melee),
+                ranged: self.attacks.ranged.or(under.attacks.ranged),
+                throw: self.attacks.throw.or(under.attacks.throw),
+                cost: self.attacks.cost.or(under.attacks.cost),
+            },
+            keep_away: self.keep_away.or(under.keep_away),
+            light: self.light.or(under.light),
+            abilities: both(&under.abilities, self.abilities),
+            statuses: both(&under.statuses, self.statuses),
+            triggers,
+            resists,
+            drops,
+            leaves_remains: self.leaves_remains.or(under.leaves_remains),
+            mind: self.mind.or_else(|| under.mind.clone()),
+        }
+    }
+
+    /// Every way these parts contradict themselves, each a sentence opening
+    /// with the field it is about, which a game puts under the kind's name:
+    /// what nothing in the engine would ever play as written.
+    ///
+    /// Only what the engine knows to be wrong: whether a kind should run,
+    /// or how far it should see, is the game's to check.
+    pub fn check(&self) -> Vec<String> {
+        let mut wrong = Vec::new();
+        if self.hp.is_some_and(|hp| hp < 1) {
+            wrong.push("hp: health of nothing is dead before it is spawned".to_string());
+        }
+        if self.speed == Some(0) {
+            wrong.push("speed: a speed of nothing never acts".to_string());
+        }
+        if let Some(pct) = self.flee_at.filter(|pct| !(0..=100).contains(pct)) {
+            wrong.push(format!("flee_at: {pct} is not a share of health, which runs from 0 to 100"));
+        }
+        if let Some(keep) = self.keep_away.filter(|k| k.no_closer > k.within) {
+            wrong.push(format!("keep_away: no closer than {} and within {}, which no cell is", keep.no_closer, keep.within));
+        }
+        if self.attacks.ranged.is_some_and(|shot| shot.range < 1) {
+            wrong.push("ranged: a shot reaches one tile or more".to_string());
+        }
+        if self.leaves_remains == Some(true) && self.hp.is_none() {
+            wrong.push("leaves_remains: remains, with no health to lose".to_string());
+        }
+        wrong
+    }
+
+    /// Inserts on `e` every component these parts describe, each only
+    /// where its part is written: [`Health`], full, [`Armor`],
+    /// [`Faction`], [`Speed`], [`Perception`], [`Intelligence`],
+    /// [`Notice`], [`Hearing`], [`DarkSight`], the attacks,
+    /// [`LightSource`], [`Grants`], what it holds for life in [`Afflicted`]
+    /// and [`StatBlock`], [`Triggers`], [`Resists`], [`Drops`],
+    /// [`LeavesRemains`] and [`Mind`]. `registries` holds the statuses it
+    /// holds.
+    ///
+    /// Not [`Actor`](crate::components::Actor) or where it stands: a game spawns those with its own
+    /// marker, its name and its look, and hands the entity here, so a
+    /// thing spawned by hand and one spawned from parts are the same kind
+    /// of entity.
+    pub fn insert(&self, e: &mut EntityCommands, registries: &Registries) {
+        if let Some(hp) = self.hp {
+            e.insert(Health::full(hp));
+        }
+        if let Some(armor) = self.armor {
+            e.insert(Armor(armor));
+        }
+        if let Some(faction) = self.faction {
+            e.insert(Faction(faction));
+        }
+        if let Some(speed) = self.speed {
+            e.insert(Speed(speed));
+        }
+        if let Some(cells) = self.perception {
+            e.insert(Perception(cells));
+        }
+        if let Some(mind) = &self.mind {
+            e.insert(Mind(mind.clone()));
+        }
+        if let Some(wits) = self.wits {
+            e.insert(Intelligence(wits));
+        }
+        if let Some(notice) = self.notice {
+            e.insert(Notice(notice));
+        }
+        if let Some(hearing) = self.hearing {
+            e.insert(Hearing(hearing));
+        }
+        if let Some(cells) = self.dark_sight {
+            e.insert(DarkSight(cells));
+        }
+        self.attacks.insert(e);
+        if let Some(light) = self.light {
+            e.insert(LightSource(light));
+        }
+        if !self.abilities.is_empty() {
+            e.insert(Grants(self.abilities.clone()));
+        }
+        if !self.statuses.is_empty() {
+            e.insert(held_for_life(&self.statuses, &registries.statuses));
+        }
+        if !self.triggers.0.is_empty() {
+            e.insert(self.triggers.clone());
+        }
+        if self.resists != Resistances::new() {
+            e.insert(Resists(self.resists.clone()));
+        }
+        if !self.drops.0.is_empty() {
+            e.insert(Drops::<I>(self.drops.clone()));
+        }
+        if self.leaves_remains == Some(true) {
+            e.insert(LeavesRemains);
+        }
+    }
+}
+
+/// `statuses` held for life, [`UNTIL_CURED`], applied in order onto a
+/// fresh [`Statuses`] and the [`Stats`] they change: what an actor that
+/// holds them from its first turn carries.
+///
+/// Put on rather than asked for, so they are there from the first turn
+/// and never announced: a thing that regenerates did not just start to.
+/// Public for a game that holds one more at a spawn of its own choosing,
+/// a sleeper among a floor's people, and so builds the pair itself from
+/// the parts' statuses and its own.
+pub fn held_for_life(statuses: &[StatusId], registry: &Registry<StatusDef>) -> (Afflicted, StatBlock) {
+    let (mut held, mut stats) = (Statuses::new(), Stats::new());
+    for status in statuses {
+        held.apply(*status, UNTIL_CURED, None, registry, &mut stats);
+    }
+    (Afflicted(held), StatBlock(stats))
+}
+
 #[cfg(test)]
 mod tests {
     use bevy::ecs::world::CommandQueue;
@@ -385,6 +726,7 @@ mod tests {
     use rl_rules::parts::AttackShape;
 
     use super::*;
+    use crate::components::Actor;
 
     #[test]
     fn each_written_attack_part_becomes_its_component_at_the_cost_given_and_nothing_else_appears() {
@@ -503,5 +845,71 @@ mod tests {
         assert_eq!(wrong.len(), 2, "{wrong:?}");
         assert!(wrong[0].starts_with("a worn item cannot stack") && wrong[1].starts_with("a thing that stacks takes no level"), "{wrong:?}");
         assert!(blade().check().is_empty(), "{:?}", blade().check());
+    }
+
+    /// What spawning `parts` puts on an actor, by component name, sorted.
+    fn actor_components(parts: &ActorParts<()>, registries: &Registries) -> (World, Entity, Vec<String>) {
+        let mut world = World::new();
+        let mut queue = CommandQueue::default();
+        let e = {
+            let mut commands = Commands::new(&mut queue, &world);
+            let mut e = commands.spawn(Actor);
+            parts.insert(&mut e, registries);
+            e.id()
+        };
+        queue.apply(&mut world);
+        let mut names: Vec<String> =
+            world.inspect_entity(e).unwrap().map(|c| c.name().to_string().rsplit("::").next().unwrap_or_default().to_string()).collect();
+        names.sort();
+        (world, e, names)
+    }
+
+    #[test]
+    fn an_actor_with_no_parts_written_is_an_actor_and_nothing_else() {
+        let (_, _, names) = actor_components(&ActorParts::default(), &Registries::default());
+        assert_eq!(names, ["Actor", "Speed"], "only what every actor requires: no health, notice, hearing, remains or mind");
+    }
+
+    #[test]
+    fn each_written_actor_part_becomes_its_component_as_written_nought_included() {
+        let statuses = Registry::from_defs(vec![rl_rules::StatusDef::new("regenerating")]).unwrap();
+        let registries = Registries { statuses, ..Registries::default() };
+        let parts: ActorParts<()> = ActorParts {
+            hp: Some(9),
+            armor: Some(0),
+            notice: Some(NoticeStats::default()),
+            statuses: vec![registries.statuses.expect("regenerating")],
+            leaves_remains: Some(true),
+            ..ActorParts::default()
+        };
+        let (world, e, names) = actor_components(&parts, &registries);
+        assert!(names.iter().any(|n| n == "LeavesRemains") && names.iter().any(|n| n == "Notice"), "{names:?}");
+        assert_eq!(world.get::<Armor>(e).map(|a| a.0), Some(0), "a nought written is a nought inserted");
+        assert_eq!(world.get::<Health>(e).map(|h| (h.current, h.max)), Some((9, 9)));
+        let held = &world.get::<Afflicted>(e).expect("what it holds").0;
+        assert!(held.has(registries.statuses.expect("regenerating")), "held from its first turn");
+        assert!(world.get::<Resists>(e).is_none() && world.get::<Hearing>(e).is_none(), "nothing not written");
+    }
+
+    #[test]
+    fn a_kind_written_over_a_games_defaults_keeps_its_own_values_and_adds_its_lists_to_theirs() {
+        let (a, b) = (AbilityId::from_raw(0), AbilityId::from_raw(1));
+        let defaults: ActorParts<()> =
+            ActorParts { notice: Some(NoticeStats::default()), leaves_remains: Some(true), abilities: vec![a], ..ActorParts::default() };
+        let quiet = NoticeStats { certain: 3, ..NoticeStats::default() };
+        let kind: ActorParts<()> = ActorParts { notice: Some(quiet), leaves_remains: Some(false), abilities: vec![b, a], ..ActorParts::default() };
+        let made = kind.over(&defaults);
+        assert_eq!((made.notice, made.leaves_remains), (Some(quiet), Some(false)), "the kind's own, false included");
+        assert_eq!(made.abilities, [a, b], "the defaults' then the kind's, each once");
+        let plain: ActorParts<()> = ActorParts::default().over(&defaults);
+        assert_eq!((plain.notice, plain.leaves_remains), (Some(NoticeStats::default()), Some(true)));
+    }
+
+    #[test]
+    fn actor_parts_the_engine_would_never_play_are_each_named() {
+        let parts: ActorParts<()> =
+            ActorParts { flee_at: Some(120), keep_away: Some(KeepAway { within: 2, no_closer: 4 }), leaves_remains: Some(true), ..ActorParts::default() };
+        assert_eq!(parts.check().len(), 3, "{:?}", parts.check());
+        assert!(ActorParts::<()> { hp: Some(4), leaves_remains: Some(true), ..ActorParts::default() }.check().is_empty());
     }
 }

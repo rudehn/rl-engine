@@ -244,7 +244,7 @@ fn every_drop_and_every_item_spawn_names_a_real_item() {
     let (bestiary, armory) = (&library.bestiary, &library.armory);
     let mut drops = 0;
     for (_, def) in bestiary.defs.iter() {
-        for row in &def.drops.0 {
+        for row in &def.parts.drops.0 {
             assert!(armory.defs.try_get(row.item).is_some(), "{} drops an item the armory does not have", def.name);
             drops += 1;
         }
@@ -253,9 +253,9 @@ fn every_drop_and_every_item_spawn_names_a_real_item() {
     let gold = armory.defs.expect("gold coin");
     for name in ["kobold", "goblin", "goblin archer", "ogre"] {
         let def = bestiary.defs.get(bestiary.defs.expect(name));
-        assert!(def.drops.0.iter().any(|row| row.item == gold), "{name} carries gold");
+        assert!(def.parts.drops.0.iter().any(|row| row.item == gold), "{name} carries gold");
     }
-    assert!(bestiary.defs.get(bestiary.defs.expect("the Drowned King")).drops.is_empty(), "the run is over when he falls");
+    assert!(bestiary.defs.get(bestiary.defs.expect("the Drowned King")).parts.drops.0.is_empty(), "the run is over when he falls");
     for row in armory.table.rows() {
         assert!(armory.defs.try_get(row.item).is_some(), "a spawn row names an item the armory does not have");
     }
@@ -283,8 +283,8 @@ fn each_mini_boss_drops_its_own_artifact_and_only_its_own() {
     for (boss, artifact) in bosses {
         let def = bestiary.defs.get(bestiary.defs.expect(boss));
         let item = library.armory.defs.expect(artifact);
-        assert_eq!(def.drops.0.iter().map(|row| row.item).collect::<Vec<_>>(), vec![item], "{boss} drops only {artifact}");
-        assert_eq!(def.drops.0[0].pct, 100, "{boss} always drops {artifact}");
+        assert_eq!(def.parts.drops.0.iter().map(|row| row.item).collect::<Vec<_>>(), vec![item], "{boss} drops only {artifact}");
+        assert_eq!(def.parts.drops.0[0].pct, 100, "{boss} always drops {artifact}");
     }
 }
 
@@ -545,7 +545,7 @@ fn a_wraiths_touch_weakens_the_adventurer_more_the_more_it_lands() {
 fn a_will_o_wisp_keeps_its_distance_rather_than_closing_to_melee() {
     let library = library();
     let wisp = library.bestiary.defs.get(library.bestiary.defs.expect("will-o'-wisp"));
-    assert_eq!(wisp.folded.keeps_away, Some((5, 3)), "its trait's span");
+    assert_eq!(wisp.folded.keep_away, Some(KeepAway { within: 5, no_closer: 3 }), "its trait's span");
     let (world, e) = spawn(&library, wisp);
     let brain = world.get::<Mind>(e).expect("a mind").0.clone();
     let me = ActorView { id: e, pos: Point::ZERO, health: Some(Vitals { current: wisp.hp, max: wisp.hp }), faction: world.get::<Faction>(e).map(|f| f.0) };

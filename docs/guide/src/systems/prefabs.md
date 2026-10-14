@@ -61,6 +61,8 @@ A prefab file is a piece and its slots, and Foundry's guard post is a locker and
 (
     name: "guard post",
     ground: "deck",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         "#####",
         "#sAs#",
@@ -79,7 +81,7 @@ A prefab file is a piece and its slots, and Foundry's guard post is a locker and
 )
 ```
 
-Turning it on takes the roles the piece's monster slots name and a maker for monsters, whose `make` Foundry answers with the function its own population spawns by, so a guard and a roaming droid of one kind are built the same way.
+Turning it on takes the roles the piece's monster slots name and a maker for monsters, whose `make_at` Foundry answers with the function its own population spawns by, `make` calling it since Foundry rolls nothing on a monster, so a guard and a roaming droid of one kind are built the same way.
 
 <!-- include: ../../../../examples/foundry/assets/roles.ron:roles -->
 ```ron
@@ -97,8 +99,16 @@ Turning it on takes the roles the piece's monster slots name and a maker for mon
 impl ActorMaker for Roster {
     type Def = MonsterDef;
 
-    fn make(&self, commands: &mut Commands, registries: &Registries, def: Id<MonsterDef>, at: Point, map: MapId, _: &mut rand::rngs::StdRng) -> Entity {
+    fn make_at(&self, commands: &mut Commands, registries: &Registries, def: Id<MonsterDef>, at: Point, map: MapId) -> Entity {
         spawn_monster(commands, self, def, at, map, registries)
+    }
+
+    fn id_of(&self, name: &str) -> Option<Id<MonsterDef>> {
+        self.defs.id(name)
+    }
+
+    fn name_of(&self, def: Id<MonsterDef>) -> &str {
+        self.defs.name(def)
     }
 
     fn table(&self) -> &BandedTable<Id<MonsterDef>> {

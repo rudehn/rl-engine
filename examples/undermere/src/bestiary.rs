@@ -9,6 +9,12 @@
 //! reads plain numbers. Two traits of one monster that set the same value
 //! are refused there, naming the monster, the value and both traits.
 //!
+//! The folded values then fill the engine's `ActorParts`, laid over
+//! [`defaults`], Undermere's own rules for what a kind that says nothing
+//! gets, so a spawn hands the engine the parts and adds only what is
+//! Undermere's: its marker, its look, its tricks, the pack and slots of a
+//! kind that uses things, and sleep.
+//!
 //! The [`Bestiary`] is Undermere's [`ActorMaker`]: a monster at a piece's
 //! slot is made by [`spawn_monster`] exactly as one a floor's population
 //! places, so the two can never drift apart.
@@ -24,7 +30,7 @@ use rl_engine::rl_rules::ai::tactics::{
 };
 use rl_engine::rl_rules::faction::FactionDef;
 use rl_engine::rl_rules::parts;
-use serde::Deserialize;
+use rl_engine::rl_rules::parts::KeepAway;
 
 use crate::armory::ItemDef;
 use crate::traits::{Folded, TraitDef};
@@ -47,6 +53,16 @@ pub const FOR_LIFE: u32 = UNTIL_CURED;
 /// is somewhere to hide. The engine's own default has no light bonus at
 /// all, which would make the lantern cost nothing.
 pub const NOTICE: NoticeStats = NoticeStats { certain: 1, chance_pct: 25, lit_bonus: 4, memory: 6 };
+
+/// What a kind gets that its core and its traits say nothing of, laid
+/// under every kind's parts: it notices by [`NOTICE`], since every monster
+/// here watches for the adventurer. Undermere's rule rather than the
+/// engine's, which gives a kind that names no notice none at all. A kind
+/// whose traits give it no wits is mindless, which the fold already says,
+/// since wits are the union of what the traits give.
+pub fn defaults() -> ActorParts<ItemDef> {
+    ActorParts { notice: Some(NOTICE), ..ActorParts::default() }
+}
 
 /// One kind of monster, resolved: its core as written and its traits
 /// folded, with every name looked up.
@@ -77,16 +93,18 @@ pub struct MonsterDef {
     /// blade, and leaves no body when it falls: nothing of it was ever
     /// flesh to raise.
     pub conjured: bool,
-    /// What it leaves when it dies, by the armory's ids.
-    pub drops: DropTable<Id<ItemDef>>,
     /// Its traits' names, in the order the file lists them.
     pub traits: Vec<String>,
     /// Its traits, folded.
     pub folded: Folded,
-    /// What it does at its own moments, folded from its traits and built
-    /// once: a bite that poisons what it struck, a burst where it died.
-    /// Empty for a kind with nothing of its own to answer with.
-    pub triggers: Triggers,
+    /// Everything of it the engine plays, built once from its core and its
+    /// folded traits over [`defaults`]: its health, side, sight, wits,
+    /// notice and hearing, its attacks and light, what it knows and holds
+    /// for life, what it does at its own moments, a bite that poisons what
+    /// it struck or a burst where it died, what it leaves when it dies, by
+    /// the armory's ids, whether it leaves a body, and the brain every one
+    /// of its kind decides with.
+    pub parts: ActorParts<ItemDef>,
     /// Whether it carries the trait of the same name, read off its
     /// `traits` list once at load rather than every spawn: each is a
     /// small game system of its own, built in [`crate::tricks`], and none
@@ -121,9 +139,6 @@ pub struct MonsterDef {
     /// Its own id in the bestiary, so a spawn handed only the definition
     /// can mark what it made.
     id: Id<MonsterDef>,
-    /// The brain every one of its kind decides with, built once from what
-    /// it is.
-    brain: Arc<Brain<Entity>>,
     /// The brain one of its kind decides with once it fights for the
     /// adventurer, built beside the other.
     allied: Arc<Brain<Entity>>,
@@ -203,21 +218,6 @@ impl ThreatSubject for MonsterDef {
     }
 }
 
-/// One row of `monster_spawns.ron`: a kind, the floors it turns up on, how
-/// often, and how many at once.
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct MonsterSpawn {
-    /// Which kind.
-    pub monster: NameRef<MonsterDef>,
-    /// The first and last floor it applies on, both included.
-    pub floors: (i32, i32),
-    /// How often, against every other row that applies on a floor.
-    pub weight: u32,
-    /// The fewest and the most that come together.
-    pub group: (u32, u32),
-}
-
 /// Marks a monster with the definition it was made from: what a save
 /// writes down, and what anything that wants the definition back, a tally
 /// of the dead or an examine panel, reads it through.
@@ -255,12 +255,8 @@ impl Bestiary {
     /// start.
     pub fn load(registries: &Registries, traits: &Registry<TraitDef>, items: &Registry<ItemDef>, kinds: &EffectKinds, moments: &Moments) -> Self {
         let defs = read(MONSTERS_RON, registries, traits, items, kinds, moments).unwrap_or_else(|e| panic!("assets/monsters.ron: {e}"));
-        let rows: Vec<MonsterSpawn> =
-            registries.names().with("monster", &defs).load_list(MONSTER_SPAWNS_RON).unwrap_or_else(|e| panic!("assets/monster_spawns.ron: {e}"));
-        let mut spawns = BandedTable::default();
-        for row in rows {
-            spawns.push(BandedEntry::new(row.monster.id()).bands(row.floors.0, row.floors.1).weight(row.weight).group(row.group.0, row.group.1));
-        }
+        let spawns =
+            load_spawns(MONSTER_SPAWNS_RON, &registries.names().with("monster", &defs), &defs).unwrap_or_else(|e| panic!("assets/monster_spawns.ron: {e}"));
         Self { defs, spawns }
     }
 
@@ -285,7 +281,7 @@ impl Bestiary {
 /// Unknown fields are refused, so a `speed` written on a monster rather
 /// than on a trait fails the load naming it, instead of being a number
 /// nothing reads.
-#[derive(Deserialize)]
+#[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Authored {
     name: String,
@@ -362,9 +358,6 @@ fn resolve(
 ) -> Result<MonsterDef, Vec<String>> {
     let mut errors = Vec::new();
     let (attack, ranged) = (a.attack, a.ranged);
-    if ranged.is_some_and(|shot| shot.range < 1) {
-        errors.push("ranged: a shot reaches one tile or more".to_string());
-    }
     let listed: Vec<_> = a.traits.iter().map(|t| t.id()).collect();
     // Each trait once, said at its second listing: a list says nothing
     // twice, so a trait written twice is a typo for another. Folded only
@@ -408,7 +401,39 @@ fn resolve(
     }
     trick_moments.dedup();
     trick_statuses.dedup();
-    let brain = Arc::new(brain(&folded, ranged.is_some(), tricks));
+    let armor = a.armor + folded.armor.unwrap_or(0);
+    // Every value as the core and the traits wrote it, and nothing they
+    // did not: what a kind that says nothing gets is `defaults`'s. A boss
+    // leaves no body, since his death ends the run before anything could
+    // stand him back up, and nor does a conjured blade, which was never
+    // anything to leave.
+    let parts = ActorParts {
+        hp: Some(a.hp),
+        armor: Some(armor),
+        faction: Some(a.faction.id()),
+        speed: folded.speed,
+        perception: folded.perception,
+        flee_at: folded.flee_at,
+        wits: Some(folded.wits),
+        notice: folded.notice,
+        hearing: folded.hearing,
+        dark_sight: folded.dark_sight,
+        attacks: Attacks { melee: Some(attack), ranged, ..Attacks::default() },
+        keep_away: folded.keep_away,
+        light: folded.light.map(|light| light.0),
+        abilities: folded.abilities.clone(),
+        statuses: folded.statuses.clone(),
+        triggers,
+        resists: folded.resists.clone(),
+        drops: parts::drops(&a.drops),
+        leaves_remains: Some(!a.boss && !a.conjured),
+        mind: Some(Arc::new(brain(&folded, ranged.is_some(), tricks))),
+    }
+    .over(&defaults());
+    let wrong = parts.check();
+    if !wrong.is_empty() {
+        return Err(wrong);
+    }
     let allied = Arc::new(ally_brain(&folded, ranged.is_some()));
     let following = Arc::new(follow_brain(&folded, ranged.is_some()));
     Ok(MonsterDef {
@@ -418,21 +443,19 @@ fn resolve(
         hp: a.hp,
         attack,
         ranged,
-        armor: a.armor + folded.armor.unwrap_or(0),
+        armor,
         faction: a.faction.id(),
         boss: a.boss,
         miniboss: a.miniboss,
         conjured: a.conjured,
-        drops: DropTable(a.drops.iter().map(|(item, pct)| DropRow::new(item.id(), *pct)).collect()),
         traits: listed.iter().map(|t| traits.get(*t).name.clone()).collect(),
         folded,
-        triggers,
+        parts,
         tricks,
         trick_abilities,
         trick_moments,
         trick_statuses,
         id,
-        brain,
         allied,
         following,
     })
@@ -536,8 +559,8 @@ fn brain(folded: &Folded, shoots: bool, tricks: Tricks) -> Brain<Entity> {
     if let Some(at_pct) = folded.flee_at.filter(|pct| *pct > 0) {
         brain = brain.then(FleeWhenHurt { at_pct });
     }
-    if let Some((keep_within, no_closer_than)) = folded.keeps_away {
-        brain = brain.then(Keep::enemies(keep_within, no_closer_than));
+    if let Some(KeepAway { within, no_closer }) = folded.keep_away {
+        brain = brain.then(Keep::enemies(within, no_closer));
     }
     if !folded.abilities.is_empty() {
         brain = brain.then(UseAbility { chance_pct: ABILITY_CHANCE_PCT });
@@ -665,8 +688,16 @@ fn uses_things(wits: Wits) -> bool {
 impl ActorMaker for Bestiary {
     type Def = MonsterDef;
 
-    fn make(&self, commands: &mut Commands, registries: &Registries, def: Id<MonsterDef>, at: Point, map: MapId, _: &mut rand::rngs::StdRng) -> Entity {
+    fn make_at(&self, commands: &mut Commands, registries: &Registries, def: Id<MonsterDef>, at: Point, map: MapId) -> Entity {
         spawn_monster(commands, self.defs.get(def), at, map, registries, false)
+    }
+
+    fn id_of(&self, name: &str) -> Option<Id<MonsterDef>> {
+        self.defs.id(name)
+    }
+
+    fn name_of(&self, def: Id<MonsterDef>) -> &str {
+        self.defs.name(def)
     }
 
     fn table(&self) -> &BandedTable<Id<MonsterDef>> {
@@ -696,87 +727,49 @@ pub fn spawn_monster_now(world: &mut World, def: Id<MonsterDef>, at: Point, map:
     made
 }
 
-/// Spawns `def` on `map` at `at`, carrying what its core and its traits
-/// give it as the engine's own components: health, armor, resistances,
-/// its side, its blow, how far it sees and how fast it moves, a mind and
-/// the wits it decides with, and how it notices what tries not to be
-/// seen, which every monster carries, by [`NOTICE`] unless a trait says.
+/// Spawns `def` on `map` at `at`: its marker, its name and its look, and
+/// then everything of it the engine plays from its parts, which put on
+/// what its core and its traits give it and nothing else, so a kind with
+/// no hearing is deaf and one with no light sheds none. Statuses a trait
+/// holds are on from its first turn and never announced: a monster that
+/// regenerates did not just start to.
 ///
-/// A kind whose wits take things up has an empty pack and empty slots,
-/// one for every slot the registries hold, so what it finds it can carry
-/// and wear, and what its own blow is worth, since the engine strikes with
-/// a worn blade in place of its own and a blade worse than its own is no
-/// gain.
+/// What is Undermere's own goes on beside the parts. A kind whose wits take
+/// things up has an empty pack and empty slots, one for every slot the
+/// registries hold, so what it finds it can carry and wear, and what its
+/// own blow is worth, since the engine strikes with a worn blade in place
+/// of its own and a blade worse than its own is no gain. A shrouded kind is
+/// concealed, and a kind with a trick of its own carries that trick's
+/// marker.
 ///
-/// Its shot, its dark sight, its hearing, its light, what it knows, the
-/// statuses it holds, its own triggers and what it drops are added only
-/// for a kind that has them. Statuses a trait holds are put on here,
-/// [`FOR_LIFE`], rather than asked for, so they are there from the
-/// monster's first turn and never announced: a monster that regenerates
-/// did not just start to.
-///
-/// `asleep` puts the engine's own `asleep` on it the same way, [`FOR_LIFE`]
-/// so it holds until woken rather than for a counted span: the
+/// `asleep` puts the engine's own `asleep` on it beside what it holds,
+/// [`FOR_LIFE`] so it holds until woken rather than for a counted span: the
 /// share of a floor's monsters that starts a run already dozing. `false`
 /// for every caller but a floor's own population, which alone decides who
 /// sleeps.
 pub fn spawn_monster(commands: &mut Commands, def: &MonsterDef, at: Point, map: MapId, registries: &Registries, asleep: bool) -> Entity {
-    let f = &def.folded;
     let (r, g, b) = def.color;
     let mut e = commands.spawn((
         (Actor, Blocks, Position(at), OnMap(map), Kind(def.id), KindTag(def.id)),
-        (Health::full(def.hp), Armor(def.armor), Resists(f.resists.clone()), Faction(def.faction)),
-        (Perception(def.perception()), Speed(def.speed()), Mind(def.brain.clone()), Intelligence(f.wits), Notice(f.notice.unwrap_or(NOTICE))),
         (Name::new(def.name.clone()), Glyph::new(def.glyph, Color::srgb(r, g, b)).on_layer(5)),
     ));
-    Attacks { melee: Some(def.attack), ranged: def.ranged, ..Attacks::default() }.insert(&mut e);
-    if uses_things(f.wits) {
+    def.parts.insert(&mut e, registries);
+    if uses_things(def.folded.wits) {
         // And what its own blow is worth, which a weapon it would strike
         // with instead has to beat: an ogre keeps its fists.
         let own = OwnBlowScore(crate::armory::blow_score(def.attack.roll, None));
         e.insert((Inventory::default(), Equipped(Equipment::with_slot_count(registries.slots.len())), own));
     }
-    if let Some(cells) = f.dark_sight {
-        e.insert(DarkSight(cells));
-    }
-    if let Some(hearing) = f.hearing {
-        e.insert(Hearing(hearing));
-    }
-    if let Some(light) = f.light {
-        e.insert(light);
-    }
-    if !f.abilities.is_empty() {
-        e.insert(Grants(f.abilities.clone()));
-    }
     // `BurnsBadly` holds no status of its own at spawn, but
     // `keep_regen_halted` still needs `Afflicted` and `StatBlock` on the
     // entity to read and to modify, exactly as a trait's own held statuses
-    // do.
-    if !f.statuses.is_empty() || def.tricks.burns_badly || asleep {
-        let (mut held, mut stats) = (Statuses::new(), Stats::new());
-        for status in &f.statuses {
-            held.apply(*status, FOR_LIFE, None, &registries.statuses, &mut stats);
-        }
+    // do; and a sleeper holds `asleep` beside what its kind holds.
+    if def.tricks.burns_badly || asleep {
+        let mut held = def.parts.statuses.clone();
         if asleep {
-            held.apply(registries.statuses.expect(crate::content::ASLEEP), FOR_LIFE, None, &registries.statuses, &mut stats);
+            held.push(registries.statuses.expect(crate::content::ASLEEP));
         }
-        e.insert((Afflicted(held), StatBlock(stats)));
-    }
-    // What it leaves is the engine's to roll and put down when it dies.
-    if !def.drops.is_empty() {
-        e.insert(Drops::<ItemDef>(def.drops.clone()));
-    }
-    // What it does at its own moments, a bite that poisons or a burst
-    // where it dies, built once by the bestiary and shared by every copy.
-    if !def.triggers.0.is_empty() {
-        e.insert(def.triggers.clone());
-    }
-    // A monster leaves what `necromancer`'s `raising` can find within
-    // sight and reach, never the king, whose own death ends the run
-    // before anything could stand him back up, nor a conjured blade,
-    // which was never anything to leave.
-    if !def.boss && !def.conjured {
-        e.insert(LeavesRemains);
+        e.insert(held_for_life(&held, &registries.statuses));
     }
     // Unseen out of the light, the engine's own rule for what the
     // adventurer sees, decided again every frame: a wraith's `shrouded`.

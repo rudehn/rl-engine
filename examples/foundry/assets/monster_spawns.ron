@@ -1,30 +1,31 @@
 // Where Foundry's roster turns up: on which decks, how often, and in what
 // numbers. What each kind is and does is `monsters.ron`; this is only where.
 //
-// Every field:
+// Every field, read by the engine's `load_spawns`:
 //   monster: a name from `monsters.ron`
-//   decks:   (first, last), the decks the row applies on, both included
+//   bands:   (first, last), the decks the row applies on, both included
 //   weight:  how often it is drawn against every other row that applies on a
 //            deck; only the ratio matters
-//   group:   (fewest, most) that come together when it is drawn
+//   group:   optional; (fewest, most) that come together when it is drawn, one
+//            when left out
 //
 // A kind may have several rows, so its groups can grow with depth; a kind
 // with no row never turns up on a deck by itself. Rows are drawn in the
 // order they are written, so moving one changes what a seed builds.
 [
-    (monster: "line droid",    decks: (1, 2),  weight: 100, group: (1, 2)),
-    (monster: "line droid",    decks: (2, 4),  weight: 90,  group: (2, 3)),
-    (monster: "line droid",    decks: (4, 10), weight: 60,  group: (2, 4)),
-    (monster: "probe droid",   decks: (1, 10), weight: 20,  group: (1, 1)),
+    (monster: "line droid",    bands: (1, 2),  weight: 100, group: (1, 2)),
+    (monster: "line droid",    bands: (2, 4),  weight: 90,  group: (2, 3)),
+    (monster: "line droid",    bands: (4, 10), weight: 60,  group: (2, 4)),
+    (monster: "probe droid",   bands: (1, 10), weight: 20,  group: (1, 1)),
     // The first thing that shoots, and not before deck two.
-    (monster: "trooper droid", decks: (2, 3),  weight: 50,  group: (1, 1)),
-    (monster: "trooper droid", decks: (4, 6),  weight: 50,  group: (1, 2)),
-    (monster: "heavy droid",   decks: (3, 8),  weight: 40,  group: (1, 1)),
-    (monster: "heavy droid",   decks: (8, 10), weight: 60,  group: (1, 2)),
+    (monster: "trooper droid", bands: (2, 3),  weight: 50,  group: (1, 1)),
+    (monster: "trooper droid", bands: (4, 6),  weight: 50,  group: (1, 2)),
+    (monster: "heavy droid",   bands: (3, 8),  weight: 40,  group: (1, 1)),
+    (monster: "heavy droid",   bands: (8, 10), weight: 60,  group: (1, 2)),
     // Not before the wrecks are worth rebuilding.
-    (monster: "repair drone",  decks: (3, 10), weight: 25,  group: (1, 1)),
-    (monster: "coolant rat",   decks: (1, 10), weight: 50,  group: (1, 3)),
+    (monster: "repair drone",  bands: (3, 10), weight: 25,  group: (1, 1)),
+    (monster: "coolant rat",   bands: (1, 10), weight: 50,  group: (1, 3)),
     // Not on deck one, where bare hands would barely scratch a shell.
-    (monster: "scrap crab",    decks: (2, 7),  weight: 30,  group: (1, 2)),
-    (monster: "lamp moth",     decks: (7, 10), weight: 40,  group: (3, 5)),
+    (monster: "scrap crab",    bands: (2, 7),  weight: 30,  group: (1, 2)),
+    (monster: "lamp moth",     bands: (7, 10), weight: 40,  group: (3, 5)),
 ]

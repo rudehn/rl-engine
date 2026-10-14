@@ -18,7 +18,10 @@
 //! alight, is the engine's to
 //! capture and put back, in [`EntityState`]. A
 //! resource a game keeps of the run goes through [`SaveableState`] and
-//! [`save_state`](AddSaveable::save_state).
+//! [`save_state`](AddSaveable::save_state). A kind a game makes through
+//! its `ItemMaker` or its `ActorMaker` need not say how it is made again:
+//! [`SaveableItem`] and [`SaveableActor`] write it as its definition, make
+//! it through the maker, and put back only what else the game keeps.
 //!
 //! [`RunSave`] is the result: the engine's own [`EngineSave`], every kind's
 //! entries in the kind's own RON, the engine's state on each, and the
@@ -42,9 +45,9 @@
 use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
 use rl_bevy::{
-    AbandonRun, Afflict, Afflicted, Burning, Counters, Dead, Emptied, EndOfFrame, EndRun, Ending, EngineState, Equipped, Health, Hidden, Inventory, ItemLevel,
-    ItemMaker, Joined, Leader, LeaveRun, MapId, OnMap, PlaceEntered, Position, Post, PropKind, Quests, Reads, Registries, Remains, SavedRun, Stack, Stair,
-    Stocked, Transition, Turns, Wearable, WorkKinds, Working,
+    AbandonRun, ActorMaker, Afflict, Afflicted, Burning, Counters, Dead, Emptied, EndOfFrame, EndRun, Ending, EngineState, Equipped, Health, Hidden, Inventory,
+    ItemLevel, ItemMaker, Joined, Leader, LeaveRun, MapId, OnMap, PlaceEntered, Position, Post, PropKind, Quests, Reads, Registries, Remains, SavedRun, Stack,
+    Stair, Stocked, Transition, Turns, Wearable, WorkKinds, Working,
 };
 use rl_core::{Id, Point};
 use rl_rules::{Equipment, Work};
@@ -333,6 +336,77 @@ fn restore_item<K: SaveableItem>(world: &mut World, saved: &RawValue) -> Result<
     Ok(item)
 }
 
+/// A kind of actor a game makes through its [`ActorMaker`], as the save
+/// sees it: which definition it is, which the engine writes down and makes
+/// again through the maker, and whatever else the game keeps of the one
+/// actor.
+///
+/// Implemented on the component that marks the definition an actor was
+/// made from, and registered with [`AddSaveable::save_actors`] in place of
+/// [`AddSaveable::save_kind`]. Where it stands, its health, what it
+/// carries and wears, its statuses and the post it holds are the engine's
+/// state, as on any saved kind.
+///
+/// On restore it is made first, nowhere, through [`ActorMaker::make_at`],
+/// exactly as its kind is made, and only then is the game's
+/// [`Extra`](Self::Extra) put back on it, since what a game keeps is
+/// often a change to what it was made as: a side it was turned to, a mind
+/// it was given, a look it lost.
+pub trait SaveableActor: Component + Sized {
+    /// The game's actor maker, which names a definition and makes one.
+    type Maker: ActorMaker;
+    /// What else the game keeps of one: `()` for nothing.
+    type Extra: Serialize + DeserializeOwned + Send + Sync + 'static;
+
+    /// The definition this actor was made from.
+    fn def(&self) -> Id<<Self::Maker as ActorMaker>::Def>;
+
+    /// Writes down what else the game keeps of `entity`.
+    fn capture_extra(world: &World, entity: Entity) -> Self::Extra;
+
+    /// Puts `extra` back on `entity`, which has just been made again.
+    fn restore_extra(world: &mut World, entity: Entity, extra: &Self::Extra);
+
+    /// Whether remains carrying `Self` are saved as `Self`, as
+    /// [`Saveable::TAKES_REMAINS`] says for a kind: true for what an actor
+    /// is, which its remains still are.
+    const TAKES_REMAINS: bool = true;
+}
+
+/// An actor, as the save writes it through its [`SaveableActor`]: which
+/// definition, by name, and the game's own extra.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SavedActor<E> {
+    /// The definition's name, as its maker names it.
+    pub def: String,
+    /// What else the game kept of it.
+    pub extra: E,
+}
+
+fn capture_actor<K: SaveableActor>(world: &World, entity: Entity) -> Result<Box<RawValue>, SaveError> {
+    let kind = world.get::<K>(entity).expect("an actor is saved by the kind it carries");
+    let saved = SavedActor { def: world.resource::<K::Maker>().name_of(kind.def()).to_string(), extra: K::capture_extra(world, entity) };
+    RawValue::from_rust(&saved).map_err(|e| SaveError::Encode(e.to_string()))
+}
+
+fn restore_actor<K: SaveableActor>(world: &mut World, saved: &RawValue) -> Result<Entity, SaveError> {
+    let saved: SavedActor<K::Extra> = saved.into_rust().map_err(|e| SaveError::Decode(e.to_string()))?;
+    let Some(def) = world.resource::<K::Maker>().id_of(&saved.def) else {
+        warn!("a saved actor is a {:?}, which this build has no definition for; it comes back as nothing", saved.def);
+        return Ok(world.spawn_empty().id());
+    };
+    let mut queue = CommandQueue::default();
+    let actor = {
+        let world: &World = world;
+        let mut commands = Commands::new(&mut queue, world);
+        // Nowhere and on no place: the engine puts it back where it was.
+        world.resource::<K::Maker>().make_at(&mut commands, world.resource::<Registries>(), def, Point::ZERO, MapId::SURFACE)
+    };
+    queue.apply(world);
+    K::restore_extra(world, actor, &saved.extra);
+    Ok(actor)
+}
+
 /// Registers what a run is made of.
 pub trait AddSaveable {
     /// Saves every entity carrying `K`, by `K`'s own account of it.
@@ -341,6 +415,10 @@ pub trait AddSaveable {
     /// Saves every item carrying `K` as its definition, its level and the
     /// game's extra, made again through `K`'s maker.
     fn save_items<K: SaveableItem>(&mut self) -> &mut Self;
+
+    /// Saves every actor carrying `K` as its definition and the game's
+    /// extra, made again through `K`'s maker.
+    fn save_actors<K: SaveableActor>(&mut self) -> &mut Self;
 
     /// Saves the resource `R`, by its own account of itself.
     fn save_state<R: SaveableState>(&mut self) -> &mut Self;
@@ -366,6 +444,17 @@ impl AddSaveable for App {
             panic!("two saved kinds are both called {label}; the save tells them apart by that name");
         }
         registry.kinds.push(KindEntry { label, collect: collect_items::<K>, capture: capture_item::<K>, restore: restore_item::<K> });
+        self
+    }
+
+    fn save_actors<K: SaveableActor>(&mut self) -> &mut Self {
+        self.init_resource::<SaveRegistry>();
+        let label = short_name::<K>();
+        let mut registry = self.world_mut().resource_mut::<SaveRegistry>();
+        if registry.kinds.iter().any(|k| k.label == label) {
+            panic!("two saved kinds are both called {label}; the save tells them apart by that name");
+        }
+        registry.kinds.push(KindEntry { label, collect: collect_actors::<K>, capture: capture_actor::<K>, restore: restore_actor::<K> });
         self
     }
 
@@ -413,6 +502,17 @@ struct StateEntry {
 /// and the spent are kept to the end of their frame only so the log can
 /// name them, and are gone by the next.
 fn collect<K: Saveable>(world: &mut World) -> Vec<Entity> {
+    let mut found: Vec<Entity> = world.query_filtered::<Entity, (With<K>, Without<Dead>, Without<rl_bevy::Spent>)>().iter(world).collect();
+    if !K::TAKES_REMAINS {
+        found.retain(|e| world.get::<Remains>(*e).is_none());
+    }
+    found.sort_by_key(|e| (e.index(), *e));
+    found
+}
+
+/// Every actor carrying `K` still in play, as [`collect`] finds a kind's,
+/// its remains among them as its `TAKES_REMAINS` says.
+fn collect_actors<K: SaveableActor>(world: &mut World) -> Vec<Entity> {
     let mut found: Vec<Entity> = world.query_filtered::<Entity, (With<K>, Without<Dead>, Without<rl_bevy::Spent>)>().iter(world).collect();
     if !K::TAKES_REMAINS {
         found.retain(|e| world.get::<Remains>(*e).is_none());
@@ -1362,6 +1462,119 @@ mod tests {
             .map(|(level, blow, notched)| (level.map(|l| l.0), blow.map(|b| b.dice.bonus), notched))
             .collect();
         assert_eq!(found, vec![(Some(2), Some(2), Some(&Notched { notches: 3, put_back_at: Some(2) }))]);
+    }
+
+    /// A game's monster definition, which the engine never reads.
+    struct Beast(&'static str);
+
+    impl rl_rules::Named for Beast {
+        fn name(&self) -> &str {
+            self.0
+        }
+    }
+
+    /// A game's actor maker, making every beast from its own parts: twelve
+    /// health, on the far side.
+    #[derive(Resource)]
+    struct Beasts {
+        defs: rl_rules::Registry<Beast>,
+        parts: rl_bevy::ActorParts<Blade>,
+        table: rl_rules::BandedTable<Id<Beast>>,
+    }
+
+    impl Beasts {
+        fn new() -> Self {
+            let parts = rl_bevy::ActorParts { hp: Some(12), faction: Some(rl_rules::FactionId::from_raw(1)), ..Default::default() };
+            Self { defs: rl_rules::Registry::from_defs(vec![Beast("hound"), Beast("crow")]).unwrap(), parts, table: rl_rules::BandedTable::default() }
+        }
+    }
+
+    impl ActorMaker for Beasts {
+        type Def = Beast;
+        fn make_at(&self, commands: &mut Commands, registries: &Registries, def: Id<Beast>, at: Point, map: MapId) -> Entity {
+            let mut e = commands.spawn((Actor, Blocks, Position(at), OnMap(map), BeastKind(def)));
+            self.parts.insert(&mut e, registries);
+            e.id()
+        }
+        fn id_of(&self, name: &str) -> Option<Id<Beast>> {
+            self.defs.id(name)
+        }
+        fn name_of(&self, def: Id<Beast>) -> &str {
+            self.defs.name(def)
+        }
+        fn table(&self) -> &rl_rules::BandedTable<Id<Beast>> {
+            &self.table
+        }
+        fn band(&self, _: MapId) -> i32 {
+            0
+        }
+    }
+
+    /// The game's marker of what a beast was made from.
+    #[derive(Component)]
+    struct BeastKind(Id<Beast>);
+
+    /// What the game keeps of a beast beyond its definition: the side it
+    /// was turned to, and the side it stood on when that was put back.
+    #[derive(Component, Debug, PartialEq, Eq)]
+    struct Turned {
+        to: u32,
+        was: Option<rl_rules::FactionId>,
+    }
+
+    impl SaveableActor for BeastKind {
+        type Maker = Beasts;
+        type Extra = Option<u32>;
+        fn def(&self) -> Id<Beast> {
+            self.0
+        }
+        fn capture_extra(world: &World, entity: Entity) -> Option<u32> {
+            world.get::<Turned>(entity).map(|t| t.to)
+        }
+        fn restore_extra(world: &mut World, entity: Entity, turned: &Option<u32>) {
+            if let Some(to) = *turned {
+                let was = world.get::<rl_bevy::Faction>(entity).map(|f| f.0);
+                world.entity_mut(entity).insert(Turned { to, was });
+            }
+        }
+    }
+
+    /// An actor saved as its definition comes back made by the game's
+    /// maker, with the health it had left put back by the engine, and the
+    /// game's own extra goes back on after, onto an actor already made as
+    /// its kind.
+    #[test]
+    fn an_actor_is_saved_as_its_definition_and_its_extra_is_put_back_after_it_is_made() {
+        let backend = std::sync::Arc::new(MemoryBackend::default());
+        let (mut app, start) = game(Saves(backend.clone()));
+        app.insert_resource(Beasts::new()).save_actors::<BeastKind>();
+        let crow = app.world().resource::<Beasts>().defs.expect("crow");
+        let made = {
+            let mut queue = bevy::ecs::world::CommandQueue::default();
+            let world = app.world();
+            let mut commands = Commands::new(&mut queue, world);
+            let made = world.resource::<Beasts>().make_at(&mut commands, world.resource::<Registries>(), crow, start.offset(3, 0), MapId::SURFACE);
+            commands.entity(made).insert(Turned { to: 7, was: None });
+            queue.apply(app.world_mut());
+            made
+        };
+        app.world_mut().get_mut::<Health>(made).unwrap().current = 5;
+        app.world_mut().spawn((Actor, Player, Blocks, You, Position(start), Viewshed::new(6), RevealsMap, Health::full(30)));
+        play(&mut app);
+        save_run(app.world_mut()).unwrap();
+
+        let (mut back, _) = game(Saves(backend));
+        back.insert_resource(Beasts::new()).save_actors::<BeastKind>();
+        let save = load_run(back.world()).unwrap().expect("a save");
+        assert_eq!(save.count_of::<BeastKind>(), 1);
+        save.restore(back.world_mut()).unwrap();
+        let w = back.world_mut();
+        let found: Vec<_> = w
+            .query::<(&BeastKind, &Position, &Health, Option<&Turned>)>()
+            .iter(w)
+            .map(|(kind, at, health, turned)| (kind.0, at.0, (health.current, health.max), turned))
+            .collect();
+        assert_eq!(found, vec![(crow, start.offset(3, 0), (5, 12), Some(&Turned { to: 7, was: Some(rl_rules::FactionId::from_raw(1)) }))]);
     }
 
     /// The engine's own kind: a game writes down nothing about its props

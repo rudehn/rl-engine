@@ -110,7 +110,7 @@ pub use ai::{
     StealthStats, Tactic, TacticCtx, Vitals, Wits, notices,
 };
 pub use balance::{BandRow, Report, ThreatSubject, threat};
-pub use content::{BandedEntry, BandedTable, ContentError, Named, Registry};
+pub use content::{BandedEntry, BandedTable, ContentError, Named, Registry, load_spawns};
 pub use damage::{DamageKind, DamageStage, Hit, Resistances, resolve};
 pub use dressing::{DistrictDressings, DressingDef};
 pub use equip::{EquipError, EquipShape, Equipment, SlotDef, SlotId, pair_of};
@@ -123,7 +123,7 @@ pub use layout::LayoutDef;
 pub use loot::{DropRow, DropTable, Layout, LevelRow, LevelTable, LootRow, LootTable, Placed, ScatterRules, plan_scatter};
 pub use namegen::{NameBook, NameCase, NameSet};
 pub use names::{NameRef, Names};
-pub use parts::{AttackShape, WhenEmpty};
+pub use parts::{AttackShape, KeepAway, WhenEmpty};
 pub use prefab::{Coverage, CoverageRow, Legend, Legended, Pick, PrefabDef, Reach, Slot};
 pub use prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, Stock};
 pub use role::{RoleDef, RoleId};
@@ -143,7 +143,7 @@ pub mod prelude {
         Snapshot, StealthStats, Tactic, TacticCtx, Vitals, Wits, notices,
     };
     pub use crate::balance::{BandRow, Report, ThreatSubject, threat};
-    pub use crate::content::{BandedEntry, BandedTable, ContentError, Named, Registry};
+    pub use crate::content::{BandedEntry, BandedTable, ContentError, Named, Registry, load_spawns};
     pub use crate::damage::{DamageKind, DamageStage, Hit, Resistances, resolve};
     pub use crate::equip::{EquipError, EquipShape, Equipment, SlotDef, SlotId};
     pub use crate::events::{

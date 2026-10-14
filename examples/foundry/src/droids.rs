@@ -27,7 +27,7 @@ use rl_engine::prelude::*;
 use rl_engine::rl_rules::ai::hearing::HearingStats;
 use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hover, Hunt, Keep, KeepPost, MeleeAdjacent, SearchLastKnown, ShootAtRange, Wander};
 use rl_engine::rl_rules::faction::FactionDef;
-use rl_engine::rl_rules::{DropRow, DropTable};
+use rl_engine::rl_rules::parts::{self, KeepAway};
 use serde::Deserialize;
 
 pub use alarm::{ALARM_LOUDNESS, ALARM_SOUND, Alarm, NOISE, PULSE, Raised, SIGNALLING, SignalAlarm, lower_alarm, sense_alarm, shout_alarm, sound_alarm};
@@ -39,6 +39,7 @@ pub use spawns::populate_deck;
 use rl_engine::rl_rules::parts::{Melee, Ranged};
 
 use crate::content::{Profile, resistances};
+use crate::gear::ItemDef;
 
 /// The roster file, compiled in so the binary runs from anywhere.
 const MONSTERS_RON: &str = include_str!("../assets/monsters.ron");
@@ -95,14 +96,14 @@ pub struct MonsterDef {
     /// How far from the enemies in sight it keeps; present, it hangs at
     /// that distance rather than closing in.
     #[serde(default)]
-    pub shadow: Option<ShadowDef>,
+    pub keep_away: Option<KeepAway>,
     /// How it hears; absent, it is deaf, and neither the alarm nor a
     /// firefight draws it.
     #[serde(default)]
     pub hearing: Option<HearingStats>,
     /// `(item name, percent chance)`, each rolled on its own death.
     #[serde(default)]
-    pub drops: Vec<(String, u32)>,
+    pub drops: Vec<(NameRef<ItemDef>, u32)>,
     /// The turns it takes to rebuild a wreck of its own side, before the
     /// wreck's own share; present, it rebuilds wrecks rather than hunting.
     #[serde(default)]
@@ -113,34 +114,6 @@ impl Named for MonsterDef {
     fn name(&self) -> &str {
         &self.name
     }
-}
-
-/// One row of `monster_spawns.ron`: a kind, the decks it turns up on, how
-/// often, and how many at once.
-///
-/// Its own file rather than a field of [`MonsterDef`], so what a kind is and
-/// where it turns up are read and tuned apart, and a kind can have a row per
-/// band without its definition growing a list of tuples.
-#[derive(Debug, Clone, Copy, Deserialize)]
-pub struct MonsterSpawn {
-    /// Which kind.
-    pub monster: NameRef<MonsterDef>,
-    /// The first and last deck it applies on, both included.
-    pub decks: (i32, i32),
-    /// How often, against every other row that applies on a deck.
-    pub weight: u32,
-    /// The fewest and the most that come together.
-    pub group: (u32, u32),
-}
-
-/// The distance a kind keeps from what it has in sight, as `monsters.ron`
-/// writes it: the engine's [`Keep::enemies`] by its two fields.
-#[derive(Debug, Clone, Copy, Deserialize)]
-pub struct ShadowDef {
-    /// How far it lets the nearest enemy get before it closes.
-    pub keep_within: i32,
-    /// How near it lets the nearest enemy come before it backs off.
-    pub no_closer_than: i32,
 }
 
 /// A monster's own radar, from `monsters.ron`'s `dark_sight`: the probe's
@@ -160,19 +133,27 @@ pub struct NativeDarkSight(i32);
 #[derive(Component, Clone, Copy)]
 pub struct Kind(pub Id<MonsterDef>);
 
-/// The monster definitions, the deck-banded table they spawn from, and the
-/// brain each kind decides with.
+/// The monster definitions, the deck-banded table they spawn from, and
+/// everything of each kind the engine plays.
 #[derive(Resource)]
 pub struct Roster {
     /// The monster definitions, by id.
     pub defs: Registry<MonsterDef>,
     /// What can spawn on which deck, in what group sizes.
     pub table: BandedTable<Id<MonsterDef>>,
-    /// One brain per definition, indexed the same way `defs` is.
-    brains: Vec<Arc<Brain<Entity>>>,
-    /// What each kind leaves when it dies, its names resolved against
-    /// `items.ron` once, indexed the same way `defs` is.
-    drops: Vec<DropTable<Id<crate::gear::ItemDef>>>,
+    /// Each kind's parts over [`defaults`], with the brain it decides with
+    /// and what it leaves when it dies, indexed the same way `defs` is.
+    parts: Vec<ActorParts<ItemDef>>,
+}
+
+/// What every kind on the decks gets that its own line does not say: it
+/// notices by the engine's plain rule, sure only of what is adjacent, and
+/// it leaves something behind, a droid a wreck and a rat a carcass, both
+/// named by the engine's remains template and made worth going through by
+/// `props::wreck_the_dead`. Foundry's choices, not the engine's, which
+/// gives a kind that names neither no notice and no remains.
+pub fn defaults() -> ActorParts<ItemDef> {
+    ActorParts { notice: Some(NoticeStats::default()), leaves_remains: Some(true), ..ActorParts::default() }
 }
 
 impl Roster {
@@ -187,14 +168,15 @@ impl Roster {
     /// compiled-in files, so a test can load a tiny roster of its own, such
     /// as one monster with a guaranteed drop.
     ///
-    /// Builds the spawn table, and gives every kind a brain from what it
-    /// names. [`MeleeAdjacent`] comes first for a kind with a blow, then
+    /// Builds the spawn table, and gives every kind its parts, what it drops
+    /// named against `items.ron`, and a brain from what it names.
+    /// [`MeleeAdjacent`] comes first for a kind with a blow, then
     /// [`ShootAtRange`] for a kind with a shot: the one fires only on an
     /// adjacent enemy and the other only on one two or more tiles off, so
     /// they never compete for the same target. A kind flees only if it
-    /// names `flee_at` above zero. A kind that names `shadow` keeps its
-    /// distance with [`Shadow`] and hangs there with [`Hover`] in place of
-    /// [`Hunt`], which would close the gap it keeps.
+    /// names `flee_at` above zero. A kind that names `keep_away` keeps its
+    /// distance with [`Keep::enemies`] and hangs there with [`Hover`] in
+    /// place of [`Hunt`], which would close the gap it keeps.
     ///
     /// Every kind ends the same way: [`SearchLastKnown`], then
     /// [`KeepPost`], then [`Wander`]. A guard the engine stood at a
@@ -203,35 +185,12 @@ impl Roster {
     /// monster with no post passes straight over `KeepPost`, so one brain
     /// serves a kind whether it was posted or not.
     pub(crate) fn from_ron(ron: &str, spawns: &str, registries: &Registries) -> Self {
-        let defs: Registry<MonsterDef> = registries.names().load(ron).unwrap_or_else(|e| panic!("monster roster: {e}"));
-        let rows: Vec<MonsterSpawn> = registries.names().with("monster", &defs).load_list(spawns).unwrap_or_else(|e| panic!("assets/monster_spawns.ron: {e}"));
-        let mut table = BandedTable::default();
-        for row in rows {
-            table.push(BandedEntry::new(row.monster.id()).bands(row.decks.0, row.decks.1).weight(row.weight).group(row.group.0, row.group.1));
-        }
-        // What each kind drops, by the item ids the armory hands out: both
-        // read `items.ron` through `gear::load_defs`, so an id here is the
-        // same thing there.
+        // What each kind drops is named by the item ids the armory hands
+        // out: both read `items.ron` through `gear::load_defs`, so an id
+        // here is the same thing there.
         let items = crate::gear::load_defs(registries);
-        let mut unknown = Vec::new();
-        let drops: Vec<DropTable<Id<crate::gear::ItemDef>>> = defs
-            .iter()
-            .map(|(_, d)| {
-                DropTable(
-                    d.drops
-                        .iter()
-                        .filter_map(|(name, pct)| match items.id(name) {
-                            Some(id) => Some(DropRow::new(id, *pct)),
-                            None => {
-                                unknown.push(format!("{} drops {name:?}, which is no item", d.name));
-                                None
-                            }
-                        })
-                        .collect(),
-                )
-            })
-            .collect();
-        assert!(unknown.is_empty(), "monster roster: {}", unknown.join("; "));
+        let defs: Registry<MonsterDef> = registries.names().with("item", &items).load(ron).unwrap_or_else(|e| panic!("monster roster: {e}"));
+        let table = load_spawns(spawns, &registries.names().with("monster", &defs), &defs).unwrap_or_else(|e| panic!("assets/monster_spawns.ron: {e}"));
         // ANCHOR: brains
         let mut brains = Vec::new();
         for (_, d) in defs.iter() {
@@ -250,22 +209,51 @@ impl Roster {
             if d.flee_at > 0 {
                 brain = brain.then(FleeWhenHurt { at_pct: d.flee_at });
             }
-            brain = match (d.repairs, d.shadow) {
+            brain = match (d.repairs, d.keep_away) {
                 // A drone that rebuilds has nothing to hunt with.
                 (Some(_), _) => brain.then(RepairWrecks),
-                (None, Some(s)) => brain.then(Keep::enemies(s.keep_within, s.no_closer_than)).then(Hover),
+                (None, Some(keep)) => brain.then(Keep::enemies(keep.within, keep.no_closer)).then(Hover),
                 (None, None) => brain.then(Hunt),
             };
             brains.push(Arc::new(brain.then(SearchLastKnown).then(KeepPost).then(Wander { chance_pct: 30 })));
         }
         // ANCHOR_END: brains
-        Self { defs, table, brains, drops }
+        let parts: Vec<ActorParts<ItemDef>> = defs.iter().zip(brains).map(|((_, d), brain)| parts_of(d, brain)).collect();
+        let wrong: Vec<String> = defs.iter().zip(&parts).flat_map(|((_, d), p)| p.check().into_iter().map(move |w| format!("{}: {w}", d.name))).collect();
+        assert!(wrong.is_empty(), "monster roster: {}", wrong.join("; "));
+        Self { defs, table, parts }
     }
 
     /// What `id` leaves when it dies, as the engine's loot rolls it.
-    pub fn drops(&self, id: Id<MonsterDef>) -> Drops<crate::gear::ItemDef> {
-        Drops(self.drops[id.index()].clone())
+    pub fn drops(&self, id: Id<MonsterDef>) -> Drops<ItemDef> {
+        Drops(self.parts[id.index()].drops.clone())
     }
+}
+
+/// `d`'s parts, deciding with `brain`, over [`defaults`]: everything of it
+/// the engine plays, and nothing of what is Foundry's own. Its radar is
+/// not the engine's dark sight, which [`sensors::sync_dark_sight`] folds
+/// from it, its resistances are its profile's, and its alarm and its
+/// repairs are Foundry's systems, so `spawn_monster` puts each on beside
+/// these.
+fn parts_of(d: &MonsterDef, brain: Arc<Brain<Entity>>) -> ActorParts<ItemDef> {
+    ActorParts {
+        hp: Some(d.hp),
+        armor: Some(d.armor),
+        faction: Some(d.faction.id()),
+        speed: Some(d.speed),
+        perception: Some(d.perception),
+        flee_at: Some(d.flee_at),
+        wits: Some(d.wits),
+        notice: d.notice,
+        hearing: d.hearing,
+        attacks: Attacks { melee: d.melee, ranged: d.ranged, ..Attacks::default() },
+        keep_away: d.keep_away,
+        drops: parts::drops(&d.drops),
+        mind: Some(brain),
+        ..ActorParts::default()
+    }
+    .over(&defaults())
 }
 
 // ANCHOR: maker
@@ -275,8 +263,16 @@ impl Roster {
 impl ActorMaker for Roster {
     type Def = MonsterDef;
 
-    fn make(&self, commands: &mut Commands, registries: &Registries, def: Id<MonsterDef>, at: Point, map: MapId, _: &mut rand::rngs::StdRng) -> Entity {
+    fn make_at(&self, commands: &mut Commands, registries: &Registries, def: Id<MonsterDef>, at: Point, map: MapId) -> Entity {
         spawn_monster(commands, self, def, at, map, registries)
+    }
+
+    fn id_of(&self, name: &str) -> Option<Id<MonsterDef>> {
+        self.defs.id(name)
+    }
+
+    fn name_of(&self, def: Id<MonsterDef>) -> &str {
+        self.defs.name(def)
     }
 
     fn table(&self) -> &BandedTable<Id<MonsterDef>> {
@@ -289,39 +285,30 @@ impl ActorMaker for Roster {
 }
 // ANCHOR_END: maker
 
-/// Spawns `id` on `map` at `at`: an actor with health, armor, resistances,
-/// perception, a mind and the notice every monster carries. `MeleeAttack`,
-/// `RangedAttack`, `Alarm` and `Hearing` are added only for a kind that names them; a kind naming
-/// `dark_sight` gets [`NativeDarkSight`] rather than `DarkSight` itself,
-/// which [`sensors::sync_dark_sight`] sets from it the moment this pass's
-/// `Turn` schedule runs.
+/// Spawns `id` on `map` at `at`: an actor with its name and its look, the
+/// resistances its profile gives it, and everything of it its parts say,
+/// health, armor, perception, a mind, the notice every monster carries,
+/// remains, and its blow, its shot, its hearing and its drops for a kind
+/// that names them. `Alarm` is added only for a kind that names one, and a
+/// kind naming `dark_sight` gets [`NativeDarkSight`] rather than
+/// `DarkSight` itself, which [`sensors::sync_dark_sight`] sets from it the
+/// moment this pass's `Turn` schedule runs.
 pub fn spawn_monster(commands: &mut Commands, roster: &Roster, id: Id<MonsterDef>, at: Point, map: MapId, registries: &Registries) -> Entity {
     // ANCHOR: spawn
     let d = roster.defs.get(id);
     let mut e = commands.spawn((
-        (Actor, Blocks, Position(at), OnMap(map)),
-        (Health::full(d.hp), Armor(d.armor), Faction(d.faction.id()), Resists(resistances(d.profile, registries))),
-        (Perception(d.perception), Speed(d.speed), Mind(roster.brains[id.index()].clone()), Intelligence(d.wits)),
-        // Everything on a deck leaves something behind: a droid a wreck,
-        // a rat a carcass, both named by the engine's remains template and
-        // made worth going through by `props::wreck_the_dead`.
-        (Notice(d.notice.unwrap_or_default()), Kind(id), LeavesRemains),
+        (Actor, Blocks, Position(at), OnMap(map), Kind(id), Resists(resistances(d.profile, registries))),
         (Name::new(d.name.clone()), Glyph::new(d.glyph, Color::srgb(d.color.0, d.color.1, d.color.2)).on_layer(5)),
     ));
+    // Health, a mind, the notice every kind carries by `defaults`, and
+    // remains: everything on a deck leaves something behind.
+    roster.parts[id.index()].insert(&mut e, registries);
     // ANCHOR_END: spawn
-    Attacks { melee: d.melee, ranged: d.ranged, ..Attacks::default() }.insert(&mut e);
     if let Some(n) = d.dark_sight {
         e.insert(NativeDarkSight(n));
     }
     if let Some(signal) = d.alarm {
         e.insert(Alarm { signal });
-    }
-    if let Some(hearing) = d.hearing {
-        e.insert(Hearing(hearing));
-    }
-    // What it leaves is the engine's to roll and put down when it dies.
-    if !d.drops.is_empty() {
-        e.insert(roster.drops(id));
     }
     e.id()
 }
