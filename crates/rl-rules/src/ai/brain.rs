@@ -260,6 +260,12 @@ impl<A: Copy> Brain<A> {
         self
     }
 
+    /// Appends `tactics`, in order, at the lowest priority so far.
+    pub(crate) fn with_all(mut self, tactics: Vec<Box<dyn Tactic<A>>>) -> Self {
+        self.tactics.extend(tactics);
+        self
+    }
+
     /// Decides, and says which tactic decided. `None` for the name means
     /// nothing fired and the actor waits.
     pub fn decide(&self, ctx: &mut TacticCtx<'_, A>) -> (Decision<A>, Option<&'static str>) {

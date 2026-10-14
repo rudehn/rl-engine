@@ -82,6 +82,11 @@ struct Kind(Id<RatDef>);
 
 <!-- include: ../../../examples/tutorial/src/bin/step08_content.rs:bestiary -->
 ```rust,no_run
+/// Warren's chain, the engine's standard one with only what a rat does:
+/// it bites what is beside it, runs once it is hurt enough, hunts what it
+/// sees and otherwise drifts, stepping on two turns in five.
+const WARREN: Standard = Standard { melee: true, flee: true, flee_after_attacks: true, hunt: true, wander_chance: Some(40), ..Standard::NONE };
+
 /// The bestiary: the defs, one brain per def, and the table that says
 /// what belongs at what depth.
 #[derive(Resource)]
@@ -104,11 +109,8 @@ impl Bestiary {
             if weight > 0 {
                 table.push(BandedEntry::new(id).bands(first, last).weight(weight).group(group_min, group_max));
             }
-            let mut brain = Brain::new().then(MeleeAdjacent);
-            if def.flee_at > 0 {
-                brain = brain.then(FleeWhenHurt { at_pct: def.flee_at });
-            }
-            minds.push(Arc::new(brain.then(Hunt).then(Wander { chance_pct: 40 })));
+            let can = Repertoire { flee_at: def.flee_at, melee: true, ..Repertoire::default() };
+            minds.push(Arc::new(WARREN.brain(can).build()));
         }
         Self { defs, table, minds, faction }
     }
@@ -147,7 +149,8 @@ Nothing in `RatDef` is a string that could still be wrong, and nothing spawns a 
 What comes back is an `Id<RatDef>`: a dense index, so `minds[id.index()]` is an array lookup, and typed, so it cannot be passed where an `Id<ItemDef>` belongs.
 
 Note what the loop does with `flee_at`.
-It builds a different brain per definition, from that definition's fields, so a rat that never flees gets a brain with no `FleeWhenHurt` in it, instead of one that checks a flag every turn.
+`WARREN` is the engine's standard chain, a `Standard` holding only the steps Warren wants at Warren's own numbers, and a `Repertoire` is what one rat can do.
+The loop builds a different brain per definition from that definition's fields, so a rat that never flees gets a brain with no `FleeWhenHurt` in it, instead of one that checks a flag every turn.
 The file decides the shape of the brain, not only its numbers.
 
 ## Bands say what belongs where

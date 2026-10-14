@@ -137,7 +137,7 @@ impl Tactic<Entity> for ShoveAdjacent {
 
 A tactic is a type that reads the snapshot and answers with a `Decision`.
 The engine's decisions are its own actions, a step, a blow, a use; yours is `Decision::own(Shove(d))`, a box holding your type.
-`Shove` implements `Choice` as well as `Action`, one `name` for the trace, and the brain puts `ShoveAdjacent` in front of `MeleeAdjacent` for any rat whose file says `shoves: true`.
+`Shove` implements `Choice` as well as `Action`, one `name` for the trace, and the brain puts `ShoveAdjacent` `first`, in front of everything the standard chain holds, for any rat whose file says `shoves: true`.
 
 ```rust,no_run
         .add_choice::<Shove>()

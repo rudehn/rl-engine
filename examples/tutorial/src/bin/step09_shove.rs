@@ -16,7 +16,7 @@ use bevy::prelude::*;
 use rand::Rng;
 use rl_engine::prelude::*;
 use rl_engine::rl_core::Rect;
-use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
+use rl_engine::rl_rules::ai::{Repertoire, Standard};
 use rl_engine::rl_rules::damage::SubtractArmor;
 use rl_engine::rl_rules::faction::FactionDef;
 use serde::Deserialize;
@@ -201,6 +201,11 @@ struct Kind(Id<RatDef>);
 // ANCHOR_END: def
 
 // ANCHOR: bestiary
+/// Warren's chain, the engine's standard one with only what a rat does:
+/// it bites what is beside it, runs once it is hurt enough, hunts what it
+/// sees and otherwise drifts, stepping on two turns in five.
+const WARREN: Standard = Standard { melee: true, flee: true, flee_after_attacks: true, hunt: true, wander_chance: Some(40), ..Standard::NONE };
+
 /// The bestiary: the defs, one brain per def, and the table that says
 /// what belongs at what depth.
 #[derive(Resource)]
@@ -225,15 +230,12 @@ impl Bestiary {
             }
             // A shover leads with its shove; the shove is a choice of Warren's
             // own, which the engine routes to Warren's own action.
-            let mut brain = Brain::new();
+            let can = Repertoire { flee_at: def.flee_at, melee: true, ..Repertoire::default() };
+            let mut brain = WARREN.brain(can);
             if def.shoves {
-                brain = brain.then(ShoveAdjacent);
+                brain = brain.first(ShoveAdjacent);
             }
-            brain = brain.then(MeleeAdjacent);
-            if def.flee_at > 0 {
-                brain = brain.then(FleeWhenHurt { at_pct: def.flee_at });
-            }
-            minds.push(Arc::new(brain.then(Hunt).then(Wander { chance_pct: 40 })));
+            minds.push(Arc::new(brain.build()));
         }
         Self { defs, table, minds, faction }
     }

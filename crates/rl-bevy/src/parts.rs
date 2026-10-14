@@ -21,8 +21,10 @@
 //! leaves remains, and the brain it decides with. [`ActorParts::insert`]
 //! puts every one written on a spawned actor; one not written puts
 //! nothing, and a game's defaults are its own, laid under each kind with
-//! [`ActorParts::over`]. [`held_for_life`] is the statuses an actor holds
-//! from its first turn, for a game that holds one more of its own.
+//! [`ActorParts::over`]. [`ActorParts::repertoire`] is what a kind can do,
+//! which `rl_rules::ai::Standard` builds its brain from. [`held_for_life`]
+//! is the statuses an actor holds from its first turn, for a game that
+//! holds one more of its own.
 
 use std::sync::Arc;
 
@@ -32,8 +34,8 @@ use rl_grid::Glow;
 use rl_rules::parts::{Charges, KeepAway, Level, Melee, Ranged, Throw};
 use rl_rules::stats::Op;
 use rl_rules::{
-    AbilityId, Brain, DropTable, EquipShape, FactionId, HearingStats, NoticeStats, Registry, Resistances, StatId, Stats, StatusDef, StatusId, Statuses, TagId,
-    UNTIL_CURED, Wits,
+    AbilityId, Brain, DropTable, EquipShape, FactionId, HearingStats, NoticeStats, Registry, Repertoire, Resistances, StatId, Stats, StatusDef, StatusId,
+    Statuses, TagId, UNTIL_CURED, Wits,
 };
 
 use crate::ability::Grants;
@@ -604,6 +606,22 @@ impl<I: Send + Sync + 'static> ActorParts<I> {
         }
     }
 
+    /// What a kind of these parts can do, as a standard chain reads it:
+    /// whether it runs and at what, the span it keeps, whether it knows an
+    /// ability, strikes or shoots, and its wits, the sapient a mind is
+    /// given when it names none where no wits are written, as the engine
+    /// would play it.
+    pub fn repertoire(&self) -> Repertoire {
+        Repertoire {
+            flee_at: self.flee_at.unwrap_or(0),
+            keep_away: self.keep_away,
+            abilities: !self.abilities.is_empty(),
+            melee: self.attacks.melee.is_some(),
+            ranged: self.attacks.ranged.is_some(),
+            wits: self.wits.unwrap_or_default(),
+        }
+    }
+
     /// Every way these parts contradict themselves, each a sentence opening
     /// with the field it is about, which a game puts under the kind's name:
     /// what nothing in the engine would ever play as written.
@@ -903,6 +921,15 @@ mod tests {
         assert_eq!(made.abilities, [a, b], "the defaults' then the kind's, each once");
         let plain: ActorParts<()> = ActorParts::default().over(&defaults);
         assert_eq!((plain.notice, plain.leaves_remains), (Some(NoticeStats::default()), Some(true)));
+    }
+
+    #[test]
+    fn what_a_kind_can_do_is_read_from_its_parts_and_unwritten_wits_are_the_ones_a_mind_is_given() {
+        let blow = Melee { roll: DiceRoll::new(1, 4), kind: rl_rules::damage::DamageKindId::from_raw(0).into(), look: None, shape: None, unaware: None };
+        let parts: ActorParts<()> = ActorParts { flee_at: Some(25), attacks: Attacks { melee: Some(blow), ..Attacks::default() }, ..ActorParts::default() };
+        let can = parts.repertoire();
+        assert_eq!((can.flee_at, can.melee, can.ranged, can.abilities), (25, true, false, false));
+        assert_eq!(can.wits, Intelligence::default().0, "what the engine gives a mind that names none");
     }
 
     #[test]

@@ -24,8 +24,9 @@ use std::sync::Arc;
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
+use rl_engine::rl_rules::ai::Standard;
 use rl_engine::rl_rules::ai::hearing::HearingStats;
-use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hover, Hunt, Keep, KeepPost, MeleeAdjacent, SearchLastKnown, ShootAtRange, Wander};
+use rl_engine::rl_rules::ai::tactics::{Hover, Keep};
 use rl_engine::rl_rules::faction::FactionDef;
 use rl_engine::rl_rules::parts::{self, KeepAway};
 use serde::Deserialize;
@@ -169,21 +170,13 @@ impl Roster {
     /// as one monster with a guaranteed drop.
     ///
     /// Builds the spawn table, and gives every kind its parts, what it drops
-    /// named against `items.ron`, and a brain from what it names.
-    /// [`MeleeAdjacent`] comes first for a kind with a blow, then
-    /// [`ShootAtRange`] for a kind with a shot: the one fires only on an
-    /// adjacent enemy and the other only on one two or more tiles off, so
-    /// they never compete for the same target. A kind flees only if it
-    /// names `flee_at` above zero. A kind that names `keep_away` keeps its
-    /// distance with [`Keep::enemies`] and hangs there with [`Hover`] in
-    /// place of [`Hunt`], which would close the gap it keeps.
-    ///
-    /// Every kind ends the same way: [`SearchLastKnown`], then
-    /// [`KeepPost`], then [`Wander`]. A guard the engine stood at a
-    /// prefab's slot that loses the commando searches where it was last
-    /// seen before it walks home, and walks home before it drifts off; a
-    /// monster with no post passes straight over `KeepPost`, so one brain
-    /// serves a kind whether it was posted or not.
+    /// named against `items.ron`, and a brain from what it names by
+    /// [`DROID`], with Foundry's own tactics where the chain takes them: a
+    /// kind with an alarm signals it before anything else, a kind that
+    /// repairs rebuilds wrecks in place of the hunt, and a kind that names
+    /// `keep_away` keeps its distance with [`Keep::enemies`] and hangs
+    /// there with [`Hover`] in place of the hunt, which would close the gap
+    /// it keeps.
     pub(crate) fn from_ron(ron: &str, spawns: &str, registries: &Registries) -> Self {
         // What each kind drops is named by the item ids the armory hands
         // out: both read `items.ron` through `gear::load_defs`, so an id
@@ -191,36 +184,27 @@ impl Roster {
         let items = crate::gear::load_defs(registries);
         let defs: Registry<MonsterDef> = registries.names().with("item", &items).load(ron).unwrap_or_else(|e| panic!("monster roster: {e}"));
         let table = load_spawns(spawns, &registries.names().with("monster", &defs), &defs).unwrap_or_else(|e| panic!("assets/monster_spawns.ron: {e}"));
-        // ANCHOR: brains
-        let mut brains = Vec::new();
+        let mut parts = Vec::new();
         for (_, d) in defs.iter() {
-            let mut brain = Brain::new();
+            let made = parts_of(d);
+            let wrong = made.check();
+            assert!(wrong.is_empty(), "monster roster: {}: {}", d.name, wrong.join("; "));
+            // ANCHOR: brains
+            let mut brain = DROID.brain(made.repertoire());
             // First, since nothing a probe would otherwise do matters more
             // than raising the alarm it has not raised yet.
             if d.alarm.is_some() {
-                brain = brain.then(SignalAlarm);
-            }
-            if d.melee.is_some() {
-                brain = brain.then(MeleeAdjacent);
-            }
-            if d.ranged.is_some() {
-                brain = brain.then(ShootAtRange::default());
-            }
-            if d.flee_at > 0 {
-                brain = brain.then(FleeWhenHurt { at_pct: d.flee_at });
+                brain = brain.first(SignalAlarm);
             }
             brain = match (d.repairs, d.keep_away) {
                 // A drone that rebuilds has nothing to hunt with.
-                (Some(_), _) => brain.then(RepairWrecks),
-                (None, Some(keep)) => brain.then(Keep::enemies(keep.within, keep.no_closer)).then(Hover),
-                (None, None) => brain.then(Hunt),
+                (Some(_), _) => brain.instead_of_hunt(RepairWrecks),
+                (None, Some(keep)) => brain.instead_of_hunt(Keep::enemies(keep.within, keep.no_closer)).instead_of_hunt(Hover),
+                (None, None) => brain,
             };
-            brains.push(Arc::new(brain.then(SearchLastKnown).then(KeepPost).then(Wander { chance_pct: 30 })));
+            // ANCHOR_END: brains
+            parts.push(ActorParts { mind: Some(Arc::new(brain.build())), ..made });
         }
-        // ANCHOR_END: brains
-        let parts: Vec<ActorParts<ItemDef>> = defs.iter().zip(brains).map(|((_, d), brain)| parts_of(d, brain)).collect();
-        let wrong: Vec<String> = defs.iter().zip(&parts).flat_map(|((_, d), p)| p.check().into_iter().map(move |w| format!("{}: {w}", d.name))).collect();
-        assert!(wrong.is_empty(), "monster roster: {}", wrong.join("; "));
         Self { defs, table, parts }
     }
 
@@ -230,13 +214,40 @@ impl Roster {
     }
 }
 
-/// `d`'s parts, deciding with `brain`, over [`defaults`]: everything of it
-/// the engine plays, and nothing of what is Foundry's own. Its radar is
+/// The chain every kind on the decks decides with, the engine's standard
+/// chain at Foundry's numbers: a blow for a kind with one, then a shot for
+/// a kind with a shot, the one fired only at an adjacent enemy and the
+/// other only at one two or more tiles off, so they never compete for the
+/// same target; then running, after the attacks, for a kind that names
+/// `flee_at` above zero, so a droid trades the blow it has in hand before
+/// it goes; then the hunt.
+///
+/// Every kind ends the same way: search where the commando was last seen,
+/// walk back to its post, and drift. A guard the engine stood at a
+/// prefab's slot that loses the commando searches before it walks home,
+/// and walks home before it drifts off; a monster with no post passes
+/// straight over `KeepPost`, so one brain serves a kind whether it was
+/// posted or not. The span a kind keeps is not the chain's: Foundry holds
+/// it in place of the hunt, beside `Hover`.
+const DROID: Standard = Standard {
+    melee: true,
+    shoot: true,
+    flee: true,
+    flee_after_attacks: true,
+    hunt: true,
+    search: true,
+    keep_post: true,
+    wander_chance: Some(30),
+    ..Standard::NONE
+};
+
+/// `d`'s parts over [`defaults`], its brain still to be built from them:
+/// everything of it the engine plays, and nothing of what is Foundry's own. Its radar is
 /// not the engine's dark sight, which [`sensors::sync_dark_sight`] folds
 /// from it, its resistances are its profile's, and its alarm and its
 /// repairs are Foundry's systems, so `spawn_monster` puts each on beside
 /// these.
-fn parts_of(d: &MonsterDef, brain: Arc<Brain<Entity>>) -> ActorParts<ItemDef> {
+fn parts_of(d: &MonsterDef) -> ActorParts<ItemDef> {
     ActorParts {
         hp: Some(d.hp),
         armor: Some(d.armor),
@@ -250,7 +261,6 @@ fn parts_of(d: &MonsterDef, brain: Arc<Brain<Entity>>) -> ActorParts<ItemDef> {
         attacks: Attacks { melee: d.melee, ranged: d.ranged, ..Attacks::default() },
         keep_away: d.keep_away,
         drops: parts::drops(&d.drops),
-        mind: Some(brain),
         ..ActorParts::default()
     }
     .over(&defaults())

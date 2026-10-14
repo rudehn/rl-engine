@@ -25,12 +25,10 @@ use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_bevy::{DEFAULT_PERCEPTION, Inflict, MomentId};
 use rl_engine::rl_rules::ability::EffectSpec;
-use rl_engine::rl_rules::ai::tactics::{
-    FleeWhenHurt, Hunt, Keep, KeepPost, MeleeAdjacent, Scavenge, SearchLastKnown, ShootAtRange, ThrowAtRange, UseAbility, Wander,
-};
+use rl_engine::rl_rules::ai::tactics::Keep;
+use rl_engine::rl_rules::ai::{Repertoire, Standard};
 use rl_engine::rl_rules::faction::FactionDef;
 use rl_engine::rl_rules::parts;
-use rl_engine::rl_rules::parts::KeepAway;
 
 use crate::armory::ItemDef;
 use crate::traits::{Folded, TraitDef};
@@ -427,15 +425,17 @@ fn resolve(
         resists: folded.resists.clone(),
         drops: parts::drops(&a.drops),
         leaves_remains: Some(!a.boss && !a.conjured),
-        mind: Some(Arc::new(brain(&folded, ranged.is_some(), tricks))),
+        mind: None,
     }
     .over(&defaults());
     let wrong = parts.check();
     if !wrong.is_empty() {
         return Err(wrong);
     }
-    let allied = Arc::new(ally_brain(&folded, ranged.is_some()));
-    let following = Arc::new(follow_brain(&folded, ranged.is_some()));
+    let can = parts.repertoire();
+    let parts = ActorParts { mind: Some(Arc::new(brain(can, tricks))), ..parts };
+    let allied = Arc::new(ally_brain(can));
+    let following = Arc::new(follow_brain(can));
     Ok(MonsterDef {
         name: a.name.clone(),
         glyph: a.glyph,
@@ -508,17 +508,21 @@ const THROW_CHANCE_PCT: u32 = 50;
 /// floor is left for the adventurer.
 pub(crate) const SCAVENGE_REACH: i32 = 4;
 
-/// The brain a monster of `folded` decides with, built once per kind from
-/// what it is, so a monster that never runs has no `FleeWhenHurt` in it
-/// rather than one that checks a threshold of nothing every turn.
+/// The chain every monster here decides with: the engine's standard
+/// chain whole, at Undermere's own numbers.
 ///
 /// Running comes first, before any blow, where Foundry puts it after the
 /// blow: a trait's words are what the examine panel promises,
 /// and a monster said to run when hurt that fights on while its enemy
 /// stands beside it, or shoots on from where it stands, never runs at
 /// all. With nowhere to run it fights, since the flight finds no step.
-/// An ability comes next, then the blow, then a shot for a kind that has
-/// one, which only ever fires at what is not beside it.
+/// A kind that keeps its distance, a will-o'-wisp's, comes right after
+/// running: backing away or closing to stay within its trait's span
+/// outranks a blow, so a thing that lures keeps what it lures at arm's
+/// length rather than trading blows with it, and only fights when
+/// `Keep::enemies` finds no step to back away by. An ability comes next,
+/// then the blow, then a shot for a kind that has one, which only ever
+/// fires at what is not beside it.
 ///
 /// A kind whose wits use things uses what it finds, as `sapient` says it
 /// does: it throws what it carries to throw, and fetches gear better than
@@ -529,62 +533,63 @@ pub(crate) const SCAVENGE_REACH: i32 = 4;
 /// when there is something to throw or to fetch, so a goblin with empty
 /// hands and nothing in sight hunts as any other kind does.
 ///
-/// A kind that keeps its distance, a will-o'-wisp's, comes right after
-/// running: backing away or closing to stay within its trait's span
-/// outranks a blow, so a thing that lures keeps what it lures at arm's
-/// length rather than trading blows with it, and only fights when
-/// `Keep::enemies` finds no step to back away by.
-///
 /// Every kind ends the same way, as Foundry's do: hunt what it sees, search
-/// where it last saw it, walk back to the post a piece stood it at, walk
-/// its own loop of waypoints if a floor's population gave it one, and
-/// drift. A monster with no post passes straight over `KeepPost`, and one
-/// with no route straight over [`crate::tricks::Patrol`], so one brain
-/// serves a kind whether a piece placed it, a floor's population put it
-/// on a patrol, or neither.
+/// where it last saw it, walk back to the post a piece stood it at, and
+/// drift. A monster with no post passes straight over `KeepPost`.
+const MONSTER: Standard = Standard {
+    flee: true,
+    flee_after_attacks: false,
+    keep_away: true,
+    ability_chance: Some(ABILITY_CHANCE_PCT),
+    melee: true,
+    shoot: true,
+    throw_chance: Some(THROW_CHANCE_PCT),
+    scavenge_reach: Some(SCAVENGE_REACH),
+    hunt: true,
+    search: true,
+    keep_post: true,
+    wander_chance: Some(WANDER_CHANCE_PCT),
+};
+
+/// The chain one fighting for the adventurer decides with: what it runs
+/// from, breathes and strikes as its own kind does, and then the hunt, with
+/// station kept before it. It neither keeps a span from its enemies, nor
+/// fetches nor throws, so an ally never picks up what the adventurer meant
+/// to, nor goes back to a post a piece stood it at, and it does not
+/// wander: with nothing to fight and the adventurer near, it waits there.
+const ALLY: Standard = Standard { flee: true, ability_chance: Some(ABILITY_CHANCE_PCT), melee: true, shoot: true, hunt: true, ..Standard::NONE };
+
+/// The brain a monster that can do what `can` says decides with, built
+/// once per kind from what it is, by [`MONSTER`], so a monster that never
+/// runs has no `FleeWhenHurt` in it rather than one that checks a
+/// threshold of nothing every turn.
 ///
 /// `tricks` adds four more, none of them a value the trait model's own
-/// fold reads: a monkey that has stolen flees for the way out before
-/// anything else, outranking even `FleeWhenHurt`, since the job is done
-/// and nothing is worth trading a blow for now; a flitting kind's steps
-/// are one in three random, in [`crate::tricks::Flit`] right before the
-/// hunt; and a packing or a led kind keeps station on its own allies or
-/// its one leader there too, above `Wander` and below the blow, exactly
-/// where [`Keep`] already sits for a will-o'-wisp's enemies.
-fn brain(folded: &Folded, shoots: bool, tricks: Tricks) -> Brain<Entity> {
-    let mut brain = Brain::new();
+/// fold reads, and the route a floor's population may give it: a monkey
+/// that has stolen flees for the way out before anything else, outranking
+/// even `FleeWhenHurt`, since the job is done and nothing is worth trading
+/// a blow for now; a packing or a led kind keeps station on its own allies
+/// or its one leader before the hunt, and a flitting kind's steps are one
+/// in three random, in [`crate::tricks::Flit`], right there too; and every
+/// kind walks its own loop of waypoints, if it was given one, before it
+/// drifts, one with no route passing straight over
+/// [`crate::tricks::Patrol`], so one brain serves a kind whether a piece
+/// placed it, a floor's population put it on a patrol, or neither.
+fn brain(can: Repertoire, tricks: Tricks) -> Brain<Entity> {
+    let mut brain = MONSTER.brain(can);
     if tricks.steals {
-        brain = brain.then(crate::tricks::FleeAfterStealing);
-    }
-    if let Some(at_pct) = folded.flee_at.filter(|pct| *pct > 0) {
-        brain = brain.then(FleeWhenHurt { at_pct });
-    }
-    if let Some(KeepAway { within, no_closer }) = folded.keep_away {
-        brain = brain.then(Keep::enemies(within, no_closer));
-    }
-    if !folded.abilities.is_empty() {
-        brain = brain.then(UseAbility { chance_pct: ABILITY_CHANCE_PCT });
-    }
-    brain = brain.then(MeleeAdjacent);
-    if shoots {
-        brain = brain.then(ShootAtRange::default());
-    }
-    if folded.wits.has(Wits::THROWS) {
-        brain = brain.then(ThrowAtRange { chance_pct: THROW_CHANCE_PCT });
-    }
-    if uses_things(folded.wits) {
-        brain = brain.then(Scavenge { reach: SCAVENGE_REACH });
+        brain = brain.first(crate::tricks::FleeAfterStealing);
     }
     if tricks.packs {
-        brain = brain.then(crate::tricks::Unanchored(Keep::allies(PACK_KEEPS_WITHIN, PACK_NO_CLOSER_THAN)));
+        brain = brain.before_hunt(crate::tricks::Unanchored(Keep::allies(PACK_KEEPS_WITHIN, PACK_NO_CLOSER_THAN)));
     }
     if tricks.led {
-        brain = brain.then(Keep::leader(LED_KEEPS_WITHIN, LED_NO_CLOSER_THAN));
+        brain = brain.before_hunt(Keep::leader(LED_KEEPS_WITHIN, LED_NO_CLOSER_THAN));
     }
     if tricks.flits {
-        brain = brain.then(crate::tricks::Unanchored(crate::tricks::Flit { chance_pct: FLIT_CHANCE_PCT }));
+        brain = brain.before_hunt(crate::tricks::Unanchored(crate::tricks::Flit { chance_pct: FLIT_CHANCE_PCT }));
     }
-    brain.then(Hunt).then(SearchLastKnown).then(KeepPost).then(crate::tricks::Patrol).then(Wander { chance_pct: WANDER_CHANCE_PCT })
+    brain.before_wander(crate::tricks::Patrol).build()
 }
 
 /// How far a packing kind, a rat's or a jackal's, lets its own kind get
@@ -611,50 +616,25 @@ const FLIT_CHANCE_PCT: u32 = 33;
 /// whatever it sees across the room, and stays a step or two behind.
 const ALLY_KEEPS_WITHIN: i32 = 3;
 
-/// The brain a monster of `folded` decides with once it fights for the
-/// adventurer, dominated or conjured: what it runs from, breathes and
-/// strikes as its own kind does, and then it keeps station on its allies,
-/// whom the faction matrix says are the adventurer's side, before it
-/// hunts, so it fights what reaches it and otherwise follows. It neither
-/// fetches nor throws, so an ally never picks up what the adventurer meant
-/// to, nor goes back to a post a piece stood it at, and it does not
-/// wander: with nothing to fight and the adventurer near, it waits there.
-fn ally_brain(folded: &Folded, shoots: bool) -> Brain<Entity> {
-    let mut brain = Brain::new();
-    if let Some(at_pct) = folded.flee_at.filter(|pct| *pct > 0) {
-        brain = brain.then(FleeWhenHurt { at_pct });
-    }
-    if !folded.abilities.is_empty() {
-        brain = brain.then(UseAbility { chance_pct: ABILITY_CHANCE_PCT });
-    }
-    brain = brain.then(MeleeAdjacent);
-    if shoots {
-        brain = brain.then(ShootAtRange::default());
-    }
-    brain.then(Keep::allies(ALLY_KEEPS_WITHIN, 1)).then(Hunt)
+/// The brain a monster that can do what `can` says decides with once it
+/// fights for the adventurer, dominated or conjured, by [`ALLY`]: it keeps
+/// station on its allies, whom the faction matrix says are the
+/// adventurer's side, before it hunts, so it fights what reaches it and
+/// otherwise follows.
+fn ally_brain(can: Repertoire) -> Brain<Entity> {
+    ALLY.brain(can).before_hunt(Keep::allies(ALLY_KEEPS_WITHIN, 1)).build()
 }
 
-/// The brain a monster of `folded` decides with once it is freed from
-/// shackles: what it runs from, breathes and strikes as its own kind
-/// does, exactly as [`ally_brain`], and then keeps station on whoever
+/// The brain a monster that can do what `can` says decides with once it is
+/// freed from shackles: what it runs from, breathes and strikes as its own
+/// kind does, exactly as [`ally_brain`], and then keeps station on whoever
 /// freed it, by the engine's own `Keep::leader` over the `Leader`
 /// [`crate::captives::free`] puts on it, rather than `Keep::allies`'s "whoever of
 /// my side is nearest": a freed captive follows the one who freed it
 /// specifically, through a crowd of the adventurer's other allies as
 /// readily as alone with them.
-fn follow_brain(folded: &Folded, shoots: bool) -> Brain<Entity> {
-    let mut brain = Brain::new();
-    if let Some(at_pct) = folded.flee_at.filter(|pct| *pct > 0) {
-        brain = brain.then(FleeWhenHurt { at_pct });
-    }
-    if !folded.abilities.is_empty() {
-        brain = brain.then(UseAbility { chance_pct: ABILITY_CHANCE_PCT });
-    }
-    brain = brain.then(MeleeAdjacent);
-    if shoots {
-        brain = brain.then(ShootAtRange::default());
-    }
-    brain.then(Keep::leader(ALLY_KEEPS_WITHIN, 1)).then(Hunt)
+fn follow_brain(can: Repertoire) -> Brain<Entity> {
+    ALLY.brain(can).before_hunt(Keep::leader(ALLY_KEEPS_WITHIN, 1)).build()
 }
 
 /// Leaves the mind holding the turn only what strikes to throw: a dart, a
@@ -674,13 +654,6 @@ pub fn throw_what_strikes(mut thinking: ResMut<Thinking>, throwables: Query<&Thr
     for lying in snapshot.items.iter_mut().filter(|lying| !strikes(lying.id)) {
         lying.throw_range = None;
     }
-}
-
-/// Whether a mind of `wits` takes things up: puts gear on, or picks up
-/// something to throw. Such a kind has hands, a pack and slots, and its
-/// brain fetches what it sees worth having.
-fn uses_things(wits: Wits) -> bool {
-    wits.has(Wits::EQUIPS) || wits.has(Wits::PICKS_UP.with(Wits::THROWS))
 }
 
 /// The engine's monsters are made here: one at a piece's slot is made
@@ -754,7 +727,7 @@ pub fn spawn_monster(commands: &mut Commands, def: &MonsterDef, at: Point, map: 
         (Name::new(def.name.clone()), Glyph::new(def.glyph, Color::srgb(r, g, b)).on_layer(5)),
     ));
     def.parts.insert(&mut e, registries);
-    if uses_things(def.folded.wits) {
+    if def.folded.wits.takes_things() {
         // And what its own blow is worth, which a weapon it would strike
         // with instead has to beat: an ogre keeps its fists.
         let own = OwnBlowScore(crate::armory::blow_score(def.attack.roll, None));

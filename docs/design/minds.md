@@ -162,3 +162,22 @@ A monster is saved the way an item is (`docs/design/items.md`, section 7a): `rl_
 
 Where each kind turns up is one file shape in both games, read by `rl_rules::load_spawns`: `(monster, bands: (first, last), weight, group: (fewest, most))`, `group` optional, into the `BandedTable` a population and a prefab's role draw from.
 The band's name is the engine's, `bands` as the item spawn file's is, since a floor and a deck are both a band a maker answers for.
+
+## 9. The standard chain
+
+Every game with monsters wrote one brain by hand, and wrote it the same way: run when hurt, keep a span, reach for an ability, strike, shoot, throw, fetch, hunt, search, walk back to a post and drift, each step guarded by whether the kind can.
+`rl_rules::ai::Standard` is that chain, in Undermere's order, the one the user chose as the default, and only the engine's own tactics are in it.
+
+A game writes its chain once as a constant: which steps it holds, a `bool` for each step that needs no number, and every number a step does need, the chance of reaching for an ability, of throwing and of a wanderer's step, and how far a scavenger goes, as an `Option`.
+`Standard::NONE` holds nothing and the engine has no number of its own for any step, so a step whose number a game never gave is not in its chain, and which of `Hunt`, `SearchLastKnown`, `KeepPost` and `Wander` close the chain is the game's to say: the tutorial's rats neither search nor keep a post.
+A shot is taken on every turn there is one, the tactic's own default and not a rule number, since a chance below a hundred is a game's to give a tactic by hand.
+
+`Repertoire` is what one kind can do, read from its parts by `ActorParts::repertoire` or written by hand by a game that keeps none, and a step is in a kind's brain only where the chain holds it and the kind can take it: a threshold above nought to run at, a span to keep, an ability known, a blow, a shot, wits that throw, and wits that take things up, `Wits::takes_things`, the rule `Scavenge` fetches by.
+So the chain says what a game's monsters do and the parts say which of it each kind can, and a kind that never runs still has no `FleeWhenHurt` in its brain.
+
+Where flee goes is the one choice of order: `flee_after_attacks` puts it after the blow, the shot and the throw, as Foundry and the tutorial have it, a droid trading the blow it has in hand before it goes, where Undermere runs first because a kind its examine panel says runs when hurt must not fight on while its enemy stands beside it.
+Everything else a game adds goes in at four named points: `first`, ahead of running, Undermere's flight after a theft and Foundry's alarm; `before_hunt`, after every attack, Undermere's pack, led and flit; `instead_of_hunt`, which leaves `Hunt` out, Foundry's repairs and its span kept beside `Hover`; and `before_wander`, Undermere's patrol.
+A fifth point between the attacks was not needed by any game and is not there; a game wanting another order builds its `Brain` by hand, as it always could.
+
+Undermere's brains for an ally and a freed captive are the same builder over a second constant: run, ability, blow and shot as their kind, then `Keep::allies` or `Keep::leader` before the hunt, and nothing after it.
+Each game's chain, tactic by tactic and in order, is what it was before the builder, which the fingerprints hold.

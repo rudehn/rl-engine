@@ -54,7 +54,8 @@
 //!   group and budget, as one file with every name resolved at load, and
 //!   a whole run's picks drawn from it at once; the laying is
 //!   `rl-mapgen`'s.
-//! - [`ai`]: tactic-priority brains over Dijkstra maps.
+//! - [`ai`]: tactic-priority brains over Dijkstra maps, and the standard
+//!   chain a game builds one from a kind's parts with.
 //! - [`work`]: one thing an actor does across many turns, counted in its
 //!   own turns, and the one cell it reaches its target from.
 //! - [`events`]: facts, counters and quests as data over what happened.
@@ -106,8 +107,8 @@ pub mod work;
 pub use ability::{AbilityDef, AbilityId, Aim, Area, Asks, Blocked, Cost, EffectSpec, Gates, Purse, Requirement, Targeting, TriggerSpec, blocked, read_args};
 pub use accuracy::{Certain, Delivery, HitModel, Line, Odds, Percent, PercentLabels, Shot, range_penalty};
 pub use ai::{
-    ActorView, Awareness, Brain, Carried, Choice, Decision, Fields, HearingStats, ItemView, Missile, MovementProfile, NoFields, NoticeStats, Sense, Snapshot,
-    StealthStats, Tactic, TacticCtx, Vitals, Wits, notices,
+    ActorView, Awareness, Brain, Carried, Choice, Decision, Fields, HearingStats, ItemView, Missile, MovementProfile, NoFields, NoticeStats, Repertoire, Sense,
+    Snapshot, Standard, StandardBrain, StealthStats, Tactic, TacticCtx, Vitals, Wits, notices,
 };
 pub use balance::{BandRow, Report, ThreatSubject, threat};
 pub use content::{BandedEntry, BandedTable, ContentError, Named, Registry, load_spawns};
@@ -139,8 +140,8 @@ pub mod prelude {
     };
     pub use crate::ai::tactics;
     pub use crate::ai::{
-        ActorView, Awareness, Brain, Carried, Choice, Decision, Fields, HearingStats, ItemView, Missile, MovementProfile, NoFields, NoticeStats, Sense,
-        Snapshot, StealthStats, Tactic, TacticCtx, Vitals, Wits, notices,
+        ActorView, Awareness, Brain, Carried, Choice, Decision, Fields, HearingStats, ItemView, Missile, MovementProfile, NoFields, NoticeStats, Repertoire,
+        Sense, Snapshot, Standard, StandardBrain, StealthStats, Tactic, TacticCtx, Vitals, Wits, notices,
     };
     pub use crate::balance::{BandRow, Report, ThreatSubject, threat};
     pub use crate::content::{BandedEntry, BandedTable, ContentError, Named, Registry, load_spawns};

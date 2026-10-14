@@ -13,6 +13,10 @@
 //! - [`profile`]: [`MovementProfile`], the movement class flow fields are shared by.
 //! - [`snapshot`]: [`Snapshot`], [`ActorView`], what it carries and sees lying about, [`Missile`], [`Carried`], [`ItemView`] and [`PropView`], and a game's own [`Sense`].
 //! - [`tactics`]: the tactics every roguelike needs.
+//! - [`standard`]: [`Standard`], the chain every game with monsters wrote
+//!   by hand, as a game's choices of which steps it holds and every number
+//!   a step needs, built for one kind from its [`Repertoire`] into a
+//!   [`StandardBrain`] with a game's own tactics at named points.
 //! - [`wits`]: [`Wits`], what a mind is able to do whatever its brain would
 //!   like, as capabilities with mindless, animal and sapient presets.
 //!
@@ -24,6 +28,7 @@ pub mod brain;
 pub mod hearing;
 pub mod profile;
 pub mod snapshot;
+pub mod standard;
 pub mod tactics;
 pub mod wits;
 
@@ -32,4 +37,5 @@ pub use brain::{Brain, Choice, Decision, Fields, NoFields, Tactic, TacticCtx};
 pub use hearing::HearingStats;
 pub use profile::MovementProfile;
 pub use snapshot::{ActorView, Carried, ItemView, Missile, PropView, Sense, Snapshot, Vitals};
+pub use standard::{Repertoire, Standard, StandardBrain};
 pub use wits::Wits;

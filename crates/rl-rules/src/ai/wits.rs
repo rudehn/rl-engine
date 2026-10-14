@@ -82,6 +82,14 @@ impl Wits {
         self.0 & wit.0 == wit.0
     }
 
+    /// Whether a mind of these wits takes anything up from where it lies:
+    /// gear to put on, or something to throw, which it must both pick up
+    /// and throw to want. What [`Scavenge`](crate::ai::tactics::Scavenge)
+    /// fetches for, and so what a kind needs to carry and wear at all.
+    pub const fn takes_things(self) -> bool {
+        self.has(Wits::EQUIPS) || self.has(Wits::PICKS_UP.with(Wits::THROWS))
+    }
+
     /// These wits with `wit` added.
     pub const fn with(self, wit: Wits) -> Wits {
         Wits(self.0 | wit.0)

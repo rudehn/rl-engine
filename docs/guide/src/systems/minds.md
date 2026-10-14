@@ -3,6 +3,7 @@
      files: crates/rl-rules/src/ai/brain.rs
             crates/rl-rules/src/ai/snapshot.rs
             crates/rl-rules/src/ai/tactics.rs
+            crates/rl-rules/src/ai/standard.rs
             crates/rl-rules/src/ai/wits.rs
             crates/rl-bevy/src/minds.rs
             crates/rl-bevy/src/charts.rs
@@ -56,6 +57,8 @@ A field toward up to four goals is composed from one flood per goal, which is ce
 It also offers `can_step`, which refuses an occupied cell and any cell marked a hazard, `blocks_shot` and `blocks_burst`, the two predicates the ability resolver flies and bursts by, and the turn's stream.
 `can_step` answers whether a cell may be stood on and says nothing about the way in, so a tactic that picks a neighbour for itself rather than taking one a field offered pairs it with the resolver's corner rule: a diagonal that squeezes between two cells the actor cannot stand on is refused silently, and a mind deciding on one would decide the same way again on every turn until something moved.
 The fifteen shipped tactics are `MeleeAdjacent`, `Hunt`, `FleeWhenHurt`, `SearchLastKnown`, `Keep`, `Hover`, `KeepPost`, `Explore`, `Wander`, `GiveWay`, `UseAbility`, `UseCarried`, `ThrowAtRange`, `ShootAtRange` and `Scavenge`.
+`Standard` is the chain most monsters decide with, as a game's choices: which of `FleeWhenHurt`, `Keep::enemies`, `UseAbility`, `MeleeAdjacent`, `ShootAtRange`, `ThrowAtRange`, `Scavenge`, `Hunt`, `SearchLastKnown`, `KeepPost` and `Wander` it holds, in that order, whether running comes after the attacks instead, and every chance and reach, none of them the engine's; `Standard::NONE` holds nothing.
+`Standard::brain(repertoire)` builds it for one kind, each step only where the kind's `Repertoire` can take it, a threshold to run at, a span to keep, an ability, a blow, a shot, wits that throw or take things up, and `StandardBrain` takes a game's own tactics `first`, `before_hunt`, `instead_of_hunt` and `before_wander`; `ActorParts::repertoire` reads one from a kind's parts.
 `UseCarried`, only for a mind with `Wits::USES`, drinks what it carries to mend once it is down to `mend_at_pct` of its health, and otherwise points one aimed at foes at a foe or one that mends and is aimed at allies at a hurt ally, on `chance_pct` of the turns there is somewhere worth pointing it; a thing aimed at anyone or at the ground is never pointed by a mind, since the engine cannot tell what the first helps or where the second takes its user.
 `Charting(ChartId)` on a mind says its sight is written into a chart, a `TileSet` per map in the `Charts` resource under an id the game numbers, by `chart_sight` on each of its turns; `sense_uncharted` then pushes `Uncharted`, the cells the chart lacks that could be stood on beside held ones that could, and `Explore` steps toward the nearest of them by the way there and passes when there is none it can reach.
 Minds naming one chart share it, `Charts::copy` hands what one holds to another, and `Charts::forget` empties one.
@@ -66,35 +69,22 @@ A follower keeps on the one actor its `Leader(Entity)` component names, seen or 
 
 ## Using it
 
-Foundry's roster is a brain per kind, built from that kind's own fields, and every monster of the kind is spawned carrying it.
+Foundry's roster is a brain per kind, the standard chain at Foundry's numbers built from what that kind's parts can do, with an alarm first and repairs or a kept span in place of the hunt, and every monster of the kind is spawned carrying it.
 
 <!-- include: ../../../../examples/foundry/src/droids.rs:brains -->
 ```rust,no_run
-        let mut brains = Vec::new();
-        for (_, d) in defs.iter() {
-            let mut brain = Brain::new();
+            let mut brain = DROID.brain(made.repertoire());
             // First, since nothing a probe would otherwise do matters more
             // than raising the alarm it has not raised yet.
             if d.alarm.is_some() {
-                brain = brain.then(SignalAlarm);
-            }
-            if d.melee.is_some() {
-                brain = brain.then(MeleeAdjacent);
-            }
-            if d.ranged.is_some() {
-                brain = brain.then(ShootAtRange::default());
-            }
-            if d.flee_at > 0 {
-                brain = brain.then(FleeWhenHurt { at_pct: d.flee_at });
+                brain = brain.first(SignalAlarm);
             }
             brain = match (d.repairs, d.keep_away) {
                 // A drone that rebuilds has nothing to hunt with.
-                (Some(_), _) => brain.then(RepairWrecks),
-                (None, Some(keep)) => brain.then(Keep::enemies(keep.within, keep.no_closer)).then(Hover),
-                (None, None) => brain.then(Hunt),
+                (Some(_), _) => brain.instead_of_hunt(RepairWrecks),
+                (None, Some(keep)) => brain.instead_of_hunt(Keep::enemies(keep.within, keep.no_closer)).instead_of_hunt(Hover),
+                (None, None) => brain,
             };
-            brains.push(Arc::new(brain.then(SearchLastKnown).then(KeepPost).then(Wander { chance_pct: 30 })));
-        }
 ```
 
 ## The line

@@ -5,6 +5,7 @@ use rl_engine::rl_core::Rect;
 
 use super::*;
 use crate::content::Library;
+use rl_engine::rl_rules::parts::KeepAway;
 
 /// The deepest floor, the throne's.
 const DEEPEST: i32 = 10;
