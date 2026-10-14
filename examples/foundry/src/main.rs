@@ -256,9 +256,9 @@ fn main() -> AppExit {
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_bevy::testing::{KeyScriptPlugin, press};
     use rl_engine::rl_render::{MapViewPlugin, Terminal};
     use rl_engine::rl_ui::{InventoryMenu, InventoryView, inventory_modal};
+    use rl_engine::testing::{KeyScriptPlugin, press, row, written};
 
     use super::*;
 
@@ -321,12 +321,6 @@ mod tests {
             app.update();
         }
         app
-    }
-
-    /// Row `y` of the screen, as text.
-    fn row(app: &App, y: i32) -> String {
-        let t = app.world().resource::<Terminal>();
-        (0..t.width()).map(|x| t.get(x, y).map_or(' ', |c| c.glyph)).collect()
     }
 
     #[test]
@@ -636,11 +630,6 @@ mod tests {
         let world = app.world();
         let deck = foundry::decks::deck_of(world.get::<OnMap>(me).map_or(MapId::SURFACE, |m| m.0));
         (deck, world.get::<Position>(me).expect("standing somewhere").0, world.resource::<Turns>().now())
-    }
-
-    /// Every row of the screen with something on it, trimmed.
-    fn written(app: &App) -> Vec<String> {
-        (0..ROWS).map(|y| row(app, y).trim().to_string()).filter(|r| !r.is_empty()).collect()
     }
 
     /// The title stands over Foundry's picture, holding the run back, with

@@ -101,7 +101,8 @@
 //! 4. A presenter in [`panel`], as a plugin holding its rectangle. Colours
 //!    come from the [`Palette`] by [`ToneId`], never as literals.
 //! 5. A test per layer: rows for a hand-built world, exact terminal text
-//!    for the drawing.
+//!    for the drawing. [`testing`] reads the screen and the log back from
+//!    an `App`, for the engine's tests and a game's alike.
 //!
 //! # Rules
 //!
@@ -138,6 +139,7 @@ pub mod narrate;
 pub mod panel;
 pub mod player_keys;
 pub mod replay;
+pub mod testing;
 pub mod tone;
 pub mod view;
 

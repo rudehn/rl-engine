@@ -386,8 +386,8 @@ fn main() -> AppExit {
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_bevy::testing::{KeyScriptPlugin, press};
     use rl_engine::rl_render::{MapView, MapViewPlugin, Terminal};
+    use rl_engine::testing::{KeyScriptPlugin, press, row, written};
     use undermere::run::Adventurer;
 
     use super::*;
@@ -447,11 +447,6 @@ mod tests {
             app.update();
         }
         app
-    }
-
-    /// Every row of the screen with something on it, trimmed.
-    fn written(app: &App) -> Vec<String> {
-        (0..ROWS).map(|y| row(app, y).trim().to_string()).filter(|r| !r.is_empty()).collect()
     }
 
     /// How many adventurers stand anywhere.
@@ -555,12 +550,6 @@ mod tests {
         let lines: Vec<String> = app.world().resource::<MessageLog>().iter().map(|line| line.text.clone()).collect();
         assert!(lines.iter().any(|line| line.starts_with(&format!("Seed {seed}."))), "the log names it: {lines:#?}");
         assert!(!lines.iter().any(|line| line.starts_with("Seed 7.")), "and not the run left: {lines:#?}");
-    }
-
-    /// Row `y` of the screen, as text.
-    fn row(app: &App, y: i32) -> String {
-        let t = app.world().resource::<Terminal>();
-        (0..t.width()).map(|x| t.get(x, y).map_or(' ', |c| c.glyph)).collect()
     }
 
     /// The part of row `y` from column `x` on, trimmed at the end.

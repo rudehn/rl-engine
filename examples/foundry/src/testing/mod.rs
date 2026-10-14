@@ -1,10 +1,13 @@
 //! A headless Foundry, for the tests this crate and its integration
 //! tests add.
 //!
-//! The engine plugins the design needs, with no window, plus
+//! The engine's windowless app, [`rl_engine::testing`], with the engine
+//! plugins the design needs, plus
 //! [`FoundryPlugin`](crate::plugin::FoundryPlugin): the same one `main.rs`
 //! adds, so a test exercises exactly what the player runs rather than a
-//! harness that quietly fell behind it.
+//! harness that quietly fell behind it. What every game's tests do alike,
+//! settling a frame, waiting a turn and playing seeds on every core, is
+//! the engine's and re-exported here.
 //!
 //! Split by what a helper sets up rather than kept as one file: `gear`
 //! for weapons, armor and ammunition, `droids` for monsters and their
@@ -17,13 +20,12 @@ mod droids;
 mod gear;
 mod loot;
 mod mission;
-mod seeds;
 
 pub use droids::*;
 pub use gear::*;
 pub use loot::*;
 pub use mission::*;
-pub use seeds::{QUICK, par_seeds, seeds};
+pub use rl_engine::testing::{QUICK, par_seeds, pass_turns, seeds, settle};
 
 use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
@@ -54,13 +56,7 @@ pub fn headless(seed: RunSeed) -> App {
 /// in the memory backend, `ContinueRun` asked for as the title's Continue
 /// asks for it, and the first frames run so the continued run stands.
 pub fn continued(text: &str) -> App {
-    use rl_engine::rl_save::SaveBackend as _;
-    let mut app = headless(RunSeed(0));
-    app.world().resource::<rl_engine::rl_save::Saves>().persist(crate::save::SLOT, text).expect("the memory backend takes it");
-    app.insert_resource(ContinueRun);
-    settle(&mut app);
-    settle(&mut app);
-    app
+    rl_engine::testing::continued(headless(RunSeed(0)), crate::save::SLOT, text)
 }
 
 /// [`headless`] without [`FoundryPlugin`](crate::plugin::FoundryPlugin):
@@ -68,9 +64,8 @@ pub fn continued(text: &str) -> App {
 /// so a test can tell which systems are Foundry's by what adding the
 /// plugin adds. Never plays: nothing starts a run.
 pub fn headless_without_foundry(seed: RunSeed) -> App {
-    let mut app = rl_engine::rl_bevy::plugin::headless_app();
+    let mut app = rl_engine::testing::windowless(seed);
     app.add_plugins((
-        FovPlugin,
         CombatPlugin,
         MindsPlugin,
         ItemsPlugin,
@@ -83,11 +78,8 @@ pub fn headless_without_foundry(seed: RunSeed) -> App {
         GasPlugin,
         NoisePlugin::new(crate::droids::NOISE),
     ));
-    app.add_engine_effects().insert_resource(Seed(seed)).insert_resource(crate::content::registries());
+    app.add_engine_effects().insert_resource(crate::content::registries());
     app.insert_resource(Counters(Ledger::default()));
-    // Saved in memory: a test never touches the disk, and each one starts
-    // with an empty slot of its own.
-    app.insert_resource(rl_engine::rl_save::Saves::new(rl_engine::rl_save::MemoryBackend::default()));
     let abilities = {
         let world = app.world();
         let (kinds, registries) = (world.resource::<EffectKinds>(), world.resource::<Registries>());
@@ -186,22 +178,6 @@ pub fn hit(app: &mut App, target: Entity, kind: &str, amount: i32) {
     let kind = registries.damage_kinds.expect(kind);
     app.world_mut().write_message(DamageDealt { target, hit: Hit::from_source(None, kind, amount), dealt: amount, lost: amount, reach: Reach::default() });
     app.update();
-}
-
-/// Two updates: enough for one resolved action and whatever it triggers to
-/// settle, the way most of this module's own helpers already open with.
-pub fn settle(app: &mut App) {
-    app.update();
-    app.update();
-}
-
-/// Waits the player forward `n` whole turns, one at a time.
-pub fn pass_turns(app: &mut App, n: u32) {
-    let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
-    for _ in 0..n {
-        app.world_mut().write_message(Intent::new(player, Wait));
-        app.update();
-    }
 }
 
 #[cfg(test)]

@@ -150,6 +150,7 @@ Writing an intent is how the game plays itself, and a suite like Warren's runs i
 - `KeyScriptPlugin` and `press(&mut app, key)` play a key the way a keyboard does, so a test drives your real input system instead of writing intents by hand.
 - `surface(&mut app)` stands an open test world up for a test that needs a map and not the game's own.
 - `two_sides(&mut app)` inserts combat rules for two sides at war.
+- `rl_engine::testing` is the same kit with the headless game beside it: `headless(seed, narrator, game)` builds the app above with your narrator and your plugin and saves kept in memory, `settle`, `pass_turns`, `stand_on`, `equip` and their kin drive it as the engine's own intents would, and `row`, `written` and `said` read the screen and the log back.
 
 Where a property exists, assert it over a range of seeds: that every generated floor has somewhere to stand and somewhere to go is forty-eight floors of evidence that costs milliseconds, because generation is tier 1 and never builds an `App`.
 Where no property exists, use a fingerprint test and say so in its name, so a change reads as a change rather than a failure.

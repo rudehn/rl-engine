@@ -42,6 +42,9 @@
 //!
 //! Engine passes are generic over the context, so a game extends the
 //! context with its own state and engine passes still run on it.
+//!
+//! [`testing`] plays a generation test over a range of seeds on every
+//! core, for this crate's tests and a game's alike.
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
@@ -59,8 +62,7 @@ pub mod pool;
 pub mod prefab;
 pub mod secrets;
 pub mod survey;
-#[cfg(test)]
-mod testing;
+pub mod testing;
 mod walk;
 
 pub use accrete::{Accrete, Area, Barrier, District, FirstPiece, Join, LaidBarrier, Landmark, Opening, Piece, Shape, Side, Sides};

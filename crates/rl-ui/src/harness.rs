@@ -112,8 +112,7 @@ impl Stage {
 
     /// One row of the terminal as text, trailing blanks trimmed.
     pub fn row(&self, y: i32) -> String {
-        let t = self.app.world().resource::<rl_render::Terminal>();
-        (0..t.width()).map(|x| t.get(x, y).unwrap_or_default().glyph).collect::<String>().trim_end().to_string()
+        crate::testing::row(&self.app, y).trim_end().to_string()
     }
 
     /// Every row of the terminal, for an assertion over the whole panel.

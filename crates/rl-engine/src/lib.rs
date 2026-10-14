@@ -21,8 +21,14 @@
 //! game that saves names itself with
 //! [`SavePlugin::new`](rl_save::SavePlugin::new), which also keeps a
 //! [scripted](rl_bevy::replay::scripted) run off the player's save.
+//!
+//! [`testing`] is the same game without a window, for its tests: the
+//! headless app with the UI base, the game's narrator and saves kept in
+//! memory, and every helper the engine's own tests drive and read one with.
 
 #![deny(missing_docs)]
+
+pub mod testing;
 
 use bevy::app::PluginGroupBuilder;
 use bevy::prelude::*;
