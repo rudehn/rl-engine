@@ -81,28 +81,17 @@ const PARTY_ROWS: i32 = 10;
 ///
 /// The rail runs down the right; the log is the bottom of the left and
 /// the map the rest of it, with a blank gutter between the two and the
-/// rail. Everything else floats over the map, each cut whole tiles wide
-/// from an even column of it, so a screen's frame never halves a tile.
+/// rail: the engine's [`RailLayout`] cuts all of that. Everything else
+/// floats over the map, each cut whole tiles wide from an even column of
+/// it, so a screen's frame never halves a tile.
 struct Screen {
-    map: Rect,
-    gutter: Rect,
-    /// The column of nothing between the rail and the window's edge.
-    edge: Rect,
-    log: Rect,
-    vitals: Rect,
-    gear: Rect,
-    nearby: Rect,
-    party: Rect,
-    /// The blank row between what is in sight and the company.
-    spacer: Rect,
-    hint: Rect,
+    /// The map, the log, the gutter and every section of the rail.
+    rail: RailScreen,
     inspect: Rect,
-    target: Rect,
     pack: Rect,
     chest: Rect,
     shop: Rect,
     here: Rect,
-    controls: Rect,
     menu: Rect,
     settings: Rect,
     records: Rect,
@@ -111,51 +100,45 @@ struct Screen {
 
 impl Screen {
     fn new() -> Self {
-        let (left, rail) = panel::split_right(Rect::new(0, 0, COLS, ROWS), RAIL);
-        // A column of nothing at the window's edge, as the gutter keeps one
-        // at the map's, so a heading's count, a rule and a row's bar end a
-        // cell short of the glass rather than flush against it.
-        let (rail, edge) = panel::split_right(rail, 1);
-        // A column of nothing between the map and the rail, so a room on a
-        // floor's east edge does not run its wall into the rail's words,
-        // and the odd column besides when the left is an odd number of
-        // cells: a tile is two cells, and half of one is no tile.
-        let (left, gutter) = panel::split_right(left, 1 + (left.width - 1) % ACROSS);
-        let (map, log) = panel::split_bottom(left, LOG_ROWS);
-        let (vitals, below) = panel::split_top(rail, VITALS_ROWS);
-        let (gear, nearby) = panel::split_top(below, GEAR_ROWS);
-        // The last row of the rail says how to see the controls.
-        let (nearby, hint) = panel::split_bottom(nearby, 1);
-        // The company at the foot of the rail, over the hint: blank while
-        // nobody follows, where the rail is blank most turns anyway, so
-        // the room it keeps is never a hole between the vitals, what is
-        // worn and what is in sight; and in one place from the first hire
-        // on, where the eye learns to find it.
-        let (nearby, party) = panel::split_bottom(nearby, PARTY_ROWS);
-        let (nearby, spacer) = panel::split_bottom(nearby, 1);
-        // The targeting box sits over the bottom of the nearby list while
-        // the cursor is up, where the eye already is when choosing what to
-        // aim at, and never over the map, where it would hide what is
-        // being aimed at; the rows above it stay readable.
-        let (_, target) = panel::split_bottom(nearby, TARGET_ROWS);
+        let rail = RailLayout::new(COLS, ROWS, RAIL)
+            // A column of nothing at the window's edge, as the gutter keeps
+            // one at the map's, so a heading's count, a rule and a row's bar
+            // end a cell short of the glass rather than flush against it.
+            .edge(1)
+            // A column of nothing between the map and the rail, so a room on
+            // a floor's east edge does not run its wall into the rail's
+            // words, and the odd column besides when the left is an odd
+            // number of cells: a tile is two cells, and half of one is no
+            // tile.
+            .gutter(1)
+            .tiles_across(ACROSS)
+            .log(LOG_ROWS)
+            .vitals(VITALS_ROWS)
+            .gear(GEAR_ROWS)
+            // The last row of the rail says how to see the controls.
+            .hint()
+            // The company at the foot of the rail, over the hint: blank while
+            // nobody follows, where the rail is blank most turns anyway, so
+            // the room it keeps is never a hole between the vitals, what is
+            // worn and what is in sight; and in one place from the first hire
+            // on, where the eye learns to find it. A blank row over it.
+            .party(PARTY_ROWS)
+            .party_gap(1)
+            // The targeting box sits over the bottom of the nearby list while
+            // the cursor is up, where the eye already is when choosing what to
+            // aim at, and never over the map, where it would hide what is
+            // being aimed at; the rows above it stay readable.
+            .target(TARGET_ROWS)
+            .cut();
+        let map = rail.map;
         // Centred across the map: every width here is a multiple of four,
         // so the map's even width leaves an even margin either side.
-        let centred = |w: i32, y: i32, h: i32| Rect::new(map.x + (map.width - w) / 2, map.y + y, w, h);
+        let centred = |w: i32, y: i32, h: i32| rail.centred(w, y, h);
         Self {
-            map,
-            gutter,
-            edge,
-            log,
-            vitals,
-            gear,
-            nearby,
-            party,
-            spacer,
-            hint,
+            rail,
             // Low on the left of the map; it moves to the top while the
             // cursor is under it.
             inspect: Rect::new(map.x + 2, map.bottom() - 12, 52, 10),
-            target,
             // The pack's rows, a rule, and what the row picked out is: the
             // engine gives the rows half of it, so fifteen of them, enough
             // for a pack of potions, scrolls and rings to be seen whole. A
@@ -183,7 +166,6 @@ impl Screen {
             // whoever offers may stand under it, and the screen moves to
             // the top, as the look panel does off its cursor.
             here: Rect::new(map.x + 2, map.bottom() - 10, 52, 8),
-            controls: map.inflate(-2),
             // The most the menu may take: the run's own line, the seed and
             // turn, the record's score and its numbers, the fallen under
             // them, a party's worth with their heading, and the choices
@@ -212,53 +194,55 @@ fn add_panels(app: &mut App, screen: &Screen) {
     // The gutter, the rail's spacer and its edge belong to no panel, so
     // they are painted blank with the chrome each frame: nothing else would
     // ever paint them again.
-    let blank = [screen.gutter, screen.spacer, screen.edge];
-    app.add_systems(
-        Update,
-        (move |mut terminal: ResMut<Terminal>, palette: Res<Palette>| blank.into_iter().for_each(|r| panel::clear(&mut terminal, r, &palette)))
-            .in_set(PresentSet::Chrome),
+    let rail = &screen.rail;
+    rail.clear_blanks(app);
+    // The rail's panels, each in its cut: what is worn and the log as the
+    // engine makes them, and the rest in Undermere's words.
+    app.add_plugins(
+        rail.panels()
+            // A blow struck beside the adventurer is a thousand hundredths of
+            // a step, half the gauge, so a fight next door reads in the bad
+            // tone and a footstep in the next room barely stirs it. No turn
+            // and position: the strip's last row is the badges'.
+            .set(VitalsPanel::new(rail.vitals).bars(16).heading("Vitals").noise("noise", 2000).without_whereabouts())
+            // A monster that knows of nothing is unaware, one walking to a
+            // noise is searching, and one that has the adventurer is hunting:
+            // not "sleeping" for the first, since a monster that truly sleeps
+            // says so by its own status and one awake and unaware does not
+            // sleep. What it is doing outranks what it knows when it is
+            // running, at its post, or drifting with nothing better to do.
+            // The things below are everything in sight that is not someone,
+            // stairs and a gate mark as well as what lies about, so not "on
+            // the ground". What each one holds is said beneath its row, since
+            // it does not fit beside a name.
+            .set(
+                NearbyPanel::new(rail.nearby)
+                    .beneath(undermere::mercenaries::KIT_FACET)
+                    .titled("")
+                    .headings("In sight", "Around you")
+                    .cursor(CursorStyle::ticks())
+                    .alerts(AlertWords::new("unaware", "searching", "hunting"))
+                    .activities(
+                        ActivityWords::new()
+                            .word("flee_when_hurt", "fleeing")
+                            .word("keep_post", "guarding")
+                            .word("wander", "wandering")
+                            .word(undermere::conditions::SLEEPING, "asleep")
+                            .word(undermere::captives::SHACKLED, "shackled"),
+                    ),
+            )
+            // Who follows the adventurer, wherever they are, each with the
+            // order it was given: "company" rather than the engine's "party",
+            // and one left on another floor is "left behind", which is how it
+            // came to be there and what the adventurer must do about it. What
+            // each holds is said beneath its row, as on the rail above.
+            .set(PartyPanel::new(rail.party).heading("Company").elsewhere("left behind").beneath(undermere::mercenaries::KIT_FACET)),
     );
+    // What is drawn only while it is up: the look panel, the targeting box
+    // over the foot of what is in sight, and the screens over the map.
     app.add_plugins((
-        // A blow struck beside the adventurer is a thousand hundredths of
-        // a step, half the gauge, so a fight next door reads in the bad
-        // tone and a footstep in the next room barely stirs it. No turn
-        // and position: the strip's last row is the badges'.
-        VitalsPanel::new(screen.vitals).bars(16).heading("Vitals").noise("noise", 2000).without_whereabouts(),
-        GearPanel::new(screen.gear),
-        // A monster that knows of nothing is unaware, one walking to a
-        // noise is searching, and one that has the adventurer is hunting:
-        // not "sleeping" for the first, since a monster that truly sleeps
-        // says so by its own status and one awake and unaware does not
-        // sleep. What
-        // it is doing outranks what it knows when it is running, at its
-        // post, or drifting with nothing better to do. The things below
-        // are everything in sight that is not someone, stairs and a gate
-        // mark as well as what lies about, so not "on the ground". What
-        // each one holds is said beneath its row, since it does not fit
-        // beside a name.
-        NearbyPanel::new(screen.nearby)
-            .beneath(undermere::mercenaries::KIT_FACET)
-            .titled("")
-            .headings("In sight", "Around you")
-            .cursor(CursorStyle::ticks())
-            .alerts(AlertWords::new("unaware", "searching", "hunting"))
-            .activities(
-                ActivityWords::new()
-                    .word("flee_when_hurt", "fleeing")
-                    .word("keep_post", "guarding")
-                    .word("wander", "wandering")
-                    .word(undermere::conditions::SLEEPING, "asleep")
-                    .word(undermere::captives::SHACKLED, "shackled"),
-            ),
-        // Who follows the adventurer, wherever they are, each with the
-        // order it was given: "company" rather than the engine's "party",
-        // and one left on another floor is "left behind", which is how it
-        // came to be there and what the adventurer must do about it. What
-        // each holds is said beneath its row, as on the rail above.
-        PartyPanel::new(screen.party).heading("Company").elsewhere("left behind").beneath(undermere::mercenaries::KIT_FACET),
-        LogPanel::new(screen.log),
         InspectPanel::new(screen.inspect).hints("move \u{2022} tab next \u{2022} esc close").cursor(CursorStyle::ticks()),
-        TargetPanel::new(screen.target).hints("[tab/shift-tab] cycle").cursor(CursorStyle::ticks()),
+        TargetPanel::new(rail.target).hints("[tab/shift-tab] cycle").cursor(CursorStyle::ticks()),
         InventoryPanel::new(screen.pack).title("Pack").called("pack").empty("Nothing but lint."),
         // What is in a chest, opened by walking into it.
         ContainerPanel::new(screen.chest).empty("Empty."),
@@ -268,7 +252,7 @@ fn add_panels(app: &mut App, screen: &Screen) {
         OffersPanel::new(screen.here).title("Here"),
         // Every key `input::declare_controls` and the engine's screens
         // declare, with the hint that opens it in the rail's last row.
-        ControlsPanel::new(screen.controls).hint(screen.hint),
+        ControlsPanel::new(rail.controls()).hint(rail.hint),
         GameMenuPanel::new(screen.menu).title("Undermere").died("The Undermere keeps you.").won("The throne is empty, and the lake is still."),
     ));
     // What holds each monster in sight, said after its name on the rail.
@@ -377,7 +361,7 @@ fn main() -> AppExit {
     // engine's base; the game's subsystems, saving among them, are
     // `UndermerePlugin`'s, added once there, since a second
     // `CombatPlugin` would panic.
-    let engine = RoguelikePlugins::new("Undermere", COLS, ROWS).cell(CELL).font(FONT).typeface(DEJAVU_SANS_MONO).map(screen.map).across(ACROSS);
+    let engine = RoguelikePlugins::new("Undermere", COLS, ROWS).cell(CELL).font(FONT).typeface(DEJAVU_SANS_MONO).map(screen.rail.map).across(ACROSS);
     app.add_plugins(engine)
         // ANCHOR_END: typeface
         .add_plugins(undermere::plugin::narrator())
@@ -408,6 +392,35 @@ mod tests {
 
     use super::*;
 
+    /// Every rectangle the screen is cut into, pinned, so a change to how
+    /// the cut is worked out cannot move anything the player sees.
+    #[test]
+    fn every_rectangle_of_the_screen_stands_where_it_always_has() {
+        let s = Screen::new();
+        let r = Rect::new;
+        assert_eq!(s.rail.map, r(0, 0, 124, 40), "map");
+        assert_eq!(s.rail.gutter, r(124, 0, 2, 45), "gutter");
+        assert_eq!(s.rail.edge, r(159, 0, 1, 45), "edge");
+        assert_eq!(s.rail.log, r(0, 40, 124, 5), "log");
+        assert_eq!(s.rail.vitals, r(126, 0, 33, 9), "vitals");
+        assert_eq!(s.rail.gear, r(126, 9, 33, 12), "gear");
+        assert_eq!(s.rail.nearby, r(126, 21, 33, 12), "nearby");
+        assert_eq!(s.rail.party, r(126, 34, 33, 10), "party");
+        assert_eq!(s.rail.party_gap, r(126, 33, 33, 1), "spacer");
+        assert_eq!(s.rail.hint, r(126, 44, 33, 1), "hint");
+        assert_eq!(s.inspect, r(2, 28, 52, 10), "inspect");
+        assert_eq!(s.rail.target, r(126, 23, 33, 10), "target");
+        assert_eq!(s.pack, r(30, 4, 64, 32), "pack");
+        assert_eq!(s.chest, r(38, 6, 48, 14), "chest");
+        assert_eq!(s.shop, r(8, 4, 108, 22), "shop");
+        assert_eq!(s.here, r(2, 30, 52, 8), "here");
+        assert_eq!(s.rail.controls(), r(2, 2, 120, 36), "controls");
+        assert_eq!(s.menu, r(34, 2, 56, 38), "menu");
+        assert_eq!(s.settings, r(34, 2, 56, 34), "settings");
+        assert_eq!(s.records, r(26, 2, 72, 36), "records");
+        assert_eq!(s.title_menu, r(56, 35, 48, 6), "title menu");
+    }
+
     /// The window's own screen drawn into a terminal no window shows, at
     /// the title it opens on: the same cut, the same panels, the same map
     /// view at the same width of tile, and the fullscreen setting the
@@ -416,7 +429,7 @@ mod tests {
     fn at_the_title(seed: RunSeed) -> App {
         let mut app = undermere::testing::headless(seed);
         let screen = Screen::new();
-        app.add_plugins((KeyScriptPlugin, MapViewPlugin::new(screen.map).across(ACROSS), rl_engine::rl_render::FullscreenPlugin));
+        app.add_plugins((KeyScriptPlugin, MapViewPlugin::new(screen.rail.map).across(ACROSS), rl_engine::rl_render::FullscreenPlugin));
         app.insert_resource(Terminal::new(COLS, ROWS, Vec2::ONE));
         add_panels(&mut app, &screen);
         app.finish();
@@ -576,16 +589,16 @@ mod tests {
         assert!(worn > 0 && worn < ROWS / 2, "under the vitals: row {worn}");
         assert!(from(&app, rail, ROWS - 1).ends_with("? controls"), "the rail's last row: {:?}", from(&app, rail, ROWS - 1));
 
-        let log: Vec<String> = (screen.log.y..screen.log.bottom()).map(|y| from(&app, screen.log.x, y)).collect();
-        assert_eq!((screen.log.x, screen.log.bottom()), (0, ROWS), "the log is the bottom of the left");
+        let log: Vec<String> = (screen.rail.log.y..screen.rail.log.bottom()).map(|y| from(&app, screen.rail.log.x, y)).collect();
+        assert_eq!((screen.rail.log.x, screen.rail.log.bottom()), (0, ROWS), "the log is the bottom of the left");
         assert!(log.iter().any(|l| l.starts_with("Seed 7.")), "the run's first line, in the log: {log:#?}");
 
         let at = drawn_at(&mut app);
-        assert!(screen.map.contains(at) && !screen.log.contains(at), "the adventurer on the map, above the log: {at:?}");
+        assert!(screen.rail.map.contains(at) && !screen.rail.log.contains(at), "the adventurer on the map, above the log: {at:?}");
         let cell = app.world().resource::<Terminal>().get(at.x, at.y).expect("on the terminal");
         assert_eq!(cell.glyph, '@', "drawn where the map view says");
-        assert!(screen.map.right() < rail, "the map stops short of the rail");
-        for x in screen.map.right()..rail {
+        assert!(screen.rail.map.right() < rail, "the map stops short of the rail");
+        for x in screen.rail.map.right()..rail {
             let column: String = (0..ROWS).map(|y| app.world().resource::<Terminal>().get(x, y).map_or('?', |c| c.glyph)).collect();
             assert_eq!(column.trim(), "", "the gutter at column {x} is blank");
         }
@@ -598,7 +611,7 @@ mod tests {
     #[test]
     fn a_map_tile_is_drawn_two_cells_wide() {
         let mut app = on_screen(RunSeed(7));
-        let map = Screen::new().map;
+        let map = Screen::new().rail.map;
         let at = drawn_at(&mut app);
         assert_eq!((at.x - map.x) % 2, 0, "the adventurer stands in the first cell of a pair: {at:?}");
         let me = undermere::testing::adventurer(&mut app);
@@ -984,7 +997,7 @@ mod tests {
         let mut app = undermere::testing::headless(RunSeed(0));
         app.world().resource::<Saves>().persist(undermere::save::SLOT, text).expect("the memory backend takes it");
         let screen = Screen::new();
-        app.add_plugins((KeyScriptPlugin, MapViewPlugin::new(screen.map).across(ACROSS), rl_engine::rl_render::FullscreenPlugin));
+        app.add_plugins((KeyScriptPlugin, MapViewPlugin::new(screen.rail.map).across(ACROSS), rl_engine::rl_render::FullscreenPlugin));
         app.insert_resource(Terminal::new(COLS, ROWS, Vec2::ONE));
         add_panels(&mut app, &screen);
         app.finish();
@@ -1204,7 +1217,7 @@ mod tests {
         // The rail says it will not come off as the pack does, under the
         // whole name, and every slot is still drawn; and the vitals' armor
         // is plain, since no ring of light moves it.
-        let gear = Screen::new().gear;
+        let gear = Screen::new().rail.gear;
         let rail: Vec<String> = (gear.y..gear.bottom()).map(|y| from(&app, gear.x, y)).collect();
         let at = rail.iter().position(|r| r.starts_with(&slot)).expect("the ring's slot");
         assert_eq!(
@@ -1216,7 +1229,7 @@ mod tests {
         let x = gear.x + 15;
         let bad = rl_engine::rl_ui::readable(app.world().resource::<Palette>().get(Tones::BAD), app.world().resource::<Palette>());
         assert_eq!(app.world().resource::<Terminal>().get(x, gear.y + at as i32 + 2).map(|c| c.fg), Some(bad), "in the bad tone");
-        let vitals = Screen::new().vitals;
+        let vitals = Screen::new().rail.vitals;
         let armor = (vitals.y..vitals.bottom()).map(|y| from(&app, vitals.x, y)).find(|r| r.contains("armor")).expect("the armor");
         assert!(armor.contains("armor 1") && !armor.contains("armor 1?"), "{armor:?}");
     }
@@ -1513,7 +1526,7 @@ mod tests {
         for name in [&first_name, &second_name] {
             let at: Vec<usize> = lines.iter().enumerate().filter(|(_, l)| l.contains(name.as_str())).map(|(y, _)| y).collect();
             assert_eq!(at.len(), 1, "{name} listed once: {lines:#?}");
-            assert!(at[0] as i32 >= screen.party.y, "under Company: {lines:#?}");
+            assert!(at[0] as i32 >= screen.rail.party.y, "under Company: {lines:#?}");
         }
         let focus = |app: &App| app.world().resource::<rl_engine::rl_ui::Focus>().get();
         for _ in 0..6 {
@@ -1536,7 +1549,7 @@ mod tests {
         let mut app = on_screen(RunSeed(7));
         let screen = Screen::new();
         let rail = COLS - RAIL;
-        let company = |app: &App| (screen.party.y..screen.party.bottom()).map(|y| from(app, rail, y)).collect::<Vec<_>>();
+        let company = |app: &App| (screen.rail.party.y..screen.rail.party.bottom()).map(|y| from(app, rail, y)).collect::<Vec<_>>();
         assert!(company(&app).iter().all(String::is_empty), "nobody follows yet: {:#?}", company(&app));
 
         let (me, first, _, _) = hire_on_screen(&mut app);
@@ -1562,16 +1575,16 @@ mod tests {
             assert!(lines[y].starts_with(&format!("h {name} · following")), "{name} with its order: {lines:#?}");
             assert!(lines[y + 1].starts_with("  wields "), "and what it holds under it: {lines:#?}");
         }
-        let bg = |app: &App, x: i32, y: usize| app.world().resource::<Terminal>().get(x, screen.party.y + y as i32).expect("on the screen").bg;
+        let bg = |app: &App, x: i32, y: usize| app.world().resource::<Terminal>().get(x, screen.rail.party.y + y as i32).expect("on the screen").bg;
         let surface = app.world().resource::<Palette>().get(Tones::SURFACE);
         for y in [first_at, second_at] {
             assert_ne!(bg(&app, rail, y), surface, "the row is its health bar: {lines:#?}");
-            let last = screen.party.x + screen.party.width - 1;
+            let last = screen.rail.party.x + screen.rail.party.width - 1;
             assert_eq!(bg(&app, last, y), bg(&app, rail, y), "full, so washed to the rail's edge: {lines:#?}");
             assert_eq!(bg(&app, last, y + 1), surface, "and the line of what it holds is not: {lines:#?}");
             assert_eq!(bg(&app, COLS - 1, y), surface, "and the window's edge is a column of the rail's surface: {lines:#?}");
         }
-        assert_eq!(from(&app, rail, screen.party.y - 1), "", "a blank row over the heading");
+        assert_eq!(from(&app, rail, screen.rail.party.y - 1), "", "a blank row over the heading");
         press(&mut app, KeyCode::KeyO);
         press(&mut app, KeyCode::KeyO);
         let lines = company(&app);
@@ -1602,10 +1615,10 @@ mod tests {
         let (first_at, second_at) = (row_of(&lines, &first_name), row_of(&lines, &second_name));
         assert!(lines[first_at].starts_with(&format!("h {first_name} · following")), "the one that came: {lines:#?}");
         assert_eq!(lines[second_at], format!("h {second_name} (left behind)"), "the one that stayed, with no order: {lines:#?}");
-        assert_eq!(bg(&app, screen.party.x + screen.party.width - 1, second_at), bg(&app, rail, second_at), "and its health still shown: {lines:#?}");
+        assert_eq!(bg(&app, screen.rail.party.x + screen.rail.party.width - 1, second_at), bg(&app, rail, second_at), "and its health still shown: {lines:#?}");
         let terminal = app.world().resource::<Terminal>();
         let palette = app.world().resource::<Palette>();
-        let tone = |y: usize| terminal.get(rail + 2, screen.party.y + y as i32).expect("on the screen").fg;
+        let tone = |y: usize| terminal.get(rail + 2, screen.rail.party.y + y as i32).expect("on the screen").fg;
         assert_eq!(tone(second_at), palette.get(Tones::MUTED), "left behind reads muted");
         assert_eq!(tone(first_at), palette.get(Tones::TEXT), "and the one beside the adventurer does not");
     }

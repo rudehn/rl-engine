@@ -65,8 +65,11 @@ fn name_of(floor: u32) -> &'static str {
 // ANCHOR: layout
 /// The screen, cut up once, so the map and every panel agree on it.
 ///
-/// `panel::split_*` take a rectangle and a size and hand back both
-/// halves, which is the whole of the engine's opinion about layout.
+/// `RailLayout` cuts the screen most roguelikes draw, a map with the log
+/// under it and a rail down the right, from a few numbers, and hands back
+/// every rectangle; what floats over the map is placed from the map.
+/// `panel::split_*` cut anything else, a rectangle and a size into both
+/// halves.
 struct Screen {
     map: Rect,
     log: Rect,
@@ -80,14 +83,13 @@ struct Screen {
 
 impl Screen {
     fn new() -> Self {
-        let (left, rail) = panel::split_right(Rect::new(0, 0, COLS, ROWS), RAIL);
-        let (map, log) = panel::split_bottom(left, LOG_ROWS);
-        let (vitals, nearby) = panel::split_top(rail, 9);
-        // The last row of the rail says how to see the controls.
-        let (nearby, hint) = panel::split_bottom(nearby, 1);
+        // Vitals at the head of the rail, and its last row the hint that
+        // says how to see the controls; what is in sight is the rest.
+        let rail = RailLayout::new(COLS, ROWS, RAIL).log(LOG_ROWS).vitals(9).hint().cut();
+        let map = rail.map;
         // Over the map, because a modal covers what it is about.
         let inspect = Rect::new(map.x + 2, map.bottom() - 10, map.width.min(46), 9);
-        Self { map, log, vitals, nearby, inspect, scrollback: map.inflate(-2), controls: map.inflate(-2), hint }
+        Self { map, log: rail.log, vitals: rail.vitals, nearby: rail.nearby, inspect, scrollback: map.inflate(-2), controls: rail.controls(), hint: rail.hint }
     }
 }
 // ANCHOR_END: layout

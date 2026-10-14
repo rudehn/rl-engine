@@ -134,6 +134,7 @@ That gives five places to stop, and you can stop at any of them: add the panel a
   The keys every roguelike reads alike, walking, the stairs, waiting, picking up, firing and throwing, are `PlayerKeysPlugin`, named in your own words; step 10 takes four of them and keeps the shove and the crusts in its own system.
 - **Two presenters over one view**: `LogPanel` draws the last few lines along the bottom and `ScrollbackPanel` draws all of them on a screen, over the same log, and neither knows the other exists.
 - **The forecast** in the look cursor is not the panel's arithmetic. `rl_rules::forecast` runs the average roll through the same mitigation pipeline a real blow goes through, so it cannot drift from the fight.
+- **The screen** is cut once, and `RailLayout` cuts the usual one, a map with the log under it and a rail down the right, from a few numbers; its `RailScreen` hands back every rectangle, and `panels()` the rail's panels as a group you edit.
 
 `examples/tutorial/src/bin/step10_panels.rs` is the worked example, with the rail, the look cursor, tones and a controls screen, and [`docs/design/ui.md`](https://github.com/rudehn/rl-engine/blob/main/docs/design/ui.md) is why it is shaped that way.
 [Panels](systems/panels.md) is the reference for the split and for every view the engine ships, and [Controls, modals and cursors](systems/controls.md) for the declaration, the stack and the cursor.

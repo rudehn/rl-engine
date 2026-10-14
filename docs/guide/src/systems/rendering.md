@@ -99,7 +99,7 @@ A game drawn in its own face hands the group the bytes of its font file, compile
     // engine's base; the game's subsystems, saving among them, are
     // `UndermerePlugin`'s, added once there, since a second
     // `CombatPlugin` would panic.
-    let engine = RoguelikePlugins::new("Undermere", COLS, ROWS).cell(CELL).font(FONT).typeface(DEJAVU_SANS_MONO).map(screen.map).across(ACROSS);
+    let engine = RoguelikePlugins::new("Undermere", COLS, ROWS).cell(CELL).font(FONT).typeface(DEJAVU_SANS_MONO).map(screen.rail.map).across(ACROSS);
     app.add_plugins(engine)
 ```
 

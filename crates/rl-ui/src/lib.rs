@@ -49,6 +49,11 @@
 //!     .add_plugins(NearbyPanel::new(rail));
 //! ```
 //!
+//! The screen most roguelikes draw, a map with the log under it and a rail
+//! down the right, is cut from a few numbers by [`RailLayout`], whose
+//! [`RailScreen`] hands back every rectangle and the rail's panels as a
+//! group a game edits; [`layout`] says how.
+//!
 //! # A title screen
 //!
 //! One screen comes before there is a world. [`TitlePanel`] holds the
@@ -125,6 +130,7 @@ pub mod focus;
 pub mod game_menu;
 pub mod interact;
 pub mod keys;
+pub mod layout;
 pub mod log;
 pub mod menu;
 pub mod modal;
@@ -145,6 +151,7 @@ pub use focus::{Focus, InSight, Sighted, Sighting};
 pub use game_menu::{GAME_MENU_MODAL, GameMenu, GameMenuPanel, MenuItem, MenuKeys, describe_sheet, game_menu_modal};
 pub use interact::InteractKeys;
 pub use keys::DirectionKeys;
+pub use layout::{RailLayout, RailPanels, RailScreen};
 pub use log::{LogEntry, MessageLog, Span};
 pub use menu::{ListMenu, MenuRow, draw_menu};
 pub use modal::{AddModal, Modal, ModalId, Modals, modal_is, modal_open, no_modal};
@@ -302,6 +309,7 @@ pub mod prelude {
     pub use crate::game_menu::{GameMenuPanel, MenuKeys, game_menu_modal};
     pub use crate::interact::InteractKeys;
     pub use crate::keys::DirectionKeys;
+    pub use crate::layout::{RailLayout, RailPanels, RailScreen};
     pub use crate::log::{LogEntry, MessageLog, Span};
     pub use crate::menu::{ListMenu, MenuRow, draw_menu};
     pub use crate::modal::{AddModal, ModalId, Modals, modal_is, modal_open, no_modal};

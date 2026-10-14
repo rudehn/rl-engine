@@ -49,20 +49,15 @@ const VITALS_ROWS: i32 = 8;
 /// number and another the way a tighter fit did.
 const GEAR_ROWS: i32 = 11;
 
-/// The screen, cut up once so every panel and the map agree on it.
+/// The screen, cut up once so every panel and the map agree on it: the
+/// map, the log and the rail by the engine's [`RailLayout`], and the
+/// screens that float over the map here.
 struct Screen {
-    map: Rect,
-    gutter: Rect,
-    log: Rect,
-    vitals: Rect,
-    gear: Rect,
-    nearby: Rect,
-    hint: Rect,
+    /// The map, the log, the gutter and every section of the rail.
+    rail: RailScreen,
     inspect: Rect,
-    target: Rect,
     abilities: Rect,
     pack: Rect,
-    controls: Rect,
     menu: Rect,
     settings: Rect,
     choice: Rect,
@@ -75,37 +70,31 @@ struct Screen {
 
 impl Screen {
     fn new() -> Self {
-        let (left, rail) = panel::split_right(Rect::new(0, 0, COLS, ROWS), RAIL);
-        // A column of nothing between the map and the rail, so a room on a
-        // deck's east edge does not run its wall into the rail's words.
-        let (left, gutter) = panel::split_right(left, 1);
-        let (map, log) = panel::split_bottom(left, LOG_ROWS);
-        let (vitals, below) = panel::split_top(rail, VITALS_ROWS);
-        let (gear, nearby) = panel::split_top(below, GEAR_ROWS);
-        // The last row of the rail says how to see the controls.
-        let (nearby, hint) = panel::split_bottom(nearby, 1);
-        // The targeting box sits over the bottom of the nearby list while
-        // the cursor is up, where the eye already is when choosing what to
-        // aim at; the rows above it stay readable.
-        let (_, target) = panel::split_bottom(nearby, TARGET_ROWS);
-        let centred = |w: i32, y: i32, h: i32| Rect::new(map.x + (map.width - w) / 2, map.y + y, w, h);
+        let rail = RailLayout::new(COLS, ROWS, RAIL)
+            // A column of nothing between the map and the rail, so a room on
+            // a deck's east edge does not run its wall into the rail's words.
+            .gutter(1)
+            .log(LOG_ROWS)
+            .vitals(VITALS_ROWS)
+            .gear(GEAR_ROWS)
+            // The last row of the rail says how to see the controls.
+            .hint()
+            // The targeting box sits over the bottom of the nearby list while
+            // the cursor is up, where the eye already is when choosing what to
+            // aim at; the rows above it stay readable.
+            .target(TARGET_ROWS)
+            .cut();
+        let map = rail.map;
+        let centred = |w: i32, y: i32, h: i32| rail.centred(w, y, h);
         Self {
-            map,
-            gutter,
-            log,
-            vitals,
-            gear,
-            nearby,
-            hint,
+            rail,
             inspect: Rect::new(map.x + 2, map.bottom() - 12, map.width.min(52), 10),
-            target,
             // Stims and the four grenades, a rule, and what the one picked
             // out does: how it is aimed, what it costs and every effect, which
             // for an incendiary is two.
             abilities: centred(56, 3, 18),
             // The pack's rows, a rule, and what the row picked out is worth.
             pack: centred(56, 3, 16),
-            controls: map.inflate(-2),
             // The most the menu may take: the ending's words, the seed and
             // turn, and five choices. The engine closes the frame under
             // the last row, so the shorter pause menu leaves no gap.
@@ -136,49 +125,54 @@ impl Screen {
 fn add_panels(app: &mut App, screen: &Screen) {
     // The gutter belongs to no panel, so it is painted blank with the
     // chrome each frame: nothing else would ever paint it again.
-    let gutter = screen.gutter;
-    app.add_systems(
-        Update,
-        (move |mut terminal: ResMut<Terminal>, palette: Res<Palette>| panel::clear(&mut terminal, gutter, &palette)).in_set(PresentSet::Chrome),
-    );
-    app.add_plugins((
-        // Three thousand hundredths of a step is the gauge's full: a shot
-        // or a blow next door reads about a third of it, and a probe's
-        // klaxon, at eight times a shot, pegs it and then falls away over
-        // the turns after. Scaled to the shot alone, everything pegged and
-        // the bar said only "something happened". No turn and position:
-        // the strip's last row is the badges', and a line that showed only
-        // while no status did would come and go.
-        VitalsPanel::new(screen.vitals).bars(12).heading("Vitals").noise("noise", 3000).without_whereabouts(),
-        // What is worn, with each blaster's heat as a facet on its row.
-        GearPanel::new(screen.gear),
-        // One mark for every cell a screen points at: the rail's tab
-        // navigation, the look cursor and the targeting cursor all frame
-        // the cell rather than washing it, so the commando reads them as
-        // one thing and never loses what is standing there.
-        // A droid does not sleep: one that knows of nothing is idle, one
-        // walking to a noise is searching, and one that has the commando
-        // is hunting.
-        NearbyPanel::new(screen.nearby)
-            .titled("")
-            .headings("In sight", "On the deck")
-            .cursor(CursorStyle::ticks())
-            .alerts(AlertWords::new("idle", "searching", "hunting"))
-            // What a droid is doing outranks whether it has the commando:
-            // one running from it, keeping its distance, holding its post
-            // or on its way to a wreck is not hunting it. Everything
-            // unnamed, a blow, a shot or the chase, reads as the alert.
-            .activities(
-                ActivityWords::new()
-                    .word("flee_when_hurt", "fleeing")
-                    .word("shadow", "keeping away")
-                    .word("hover", "keeping away")
-                    .word("keep_post", "guarding")
-                    .word("repair_wrecks", "to a wreck"),
+    let rail = &screen.rail;
+    rail.clear_blanks(app);
+    // The rail's panels, each in its cut: what is worn, with each
+    // blaster's heat as a facet on its row, and the log as the engine makes
+    // them, and the rest in Foundry's words.
+    app.add_plugins(
+        rail.panels()
+            // Three thousand hundredths of a step is the gauge's full: a shot
+            // or a blow next door reads about a third of it, and a probe's
+            // klaxon, at eight times a shot, pegs it and then falls away over
+            // the turns after. Scaled to the shot alone, everything pegged and
+            // the bar said only "something happened". No turn and position:
+            // the strip's last row is the badges', and a line that showed only
+            // while no status did would come and go.
+            .set(VitalsPanel::new(rail.vitals).bars(12).heading("Vitals").noise("noise", 3000).without_whereabouts())
+            // One mark for every cell a screen points at: the rail's tab
+            // navigation, the look cursor and the targeting cursor all frame
+            // the cell rather than washing it, so the commando reads them as
+            // one thing and never loses what is standing there.
+            // A droid does not sleep: one that knows of nothing is idle, one
+            // walking to a noise is searching, and one that has the commando
+            // is hunting.
+            .set(
+                NearbyPanel::new(rail.nearby)
+                    .titled("")
+                    .headings("In sight", "On the deck")
+                    .cursor(CursorStyle::ticks())
+                    .alerts(AlertWords::new("idle", "searching", "hunting"))
+                    // What a droid is doing outranks whether it has the
+                    // commando: one running from it, keeping its distance,
+                    // holding its post or on its way to a wreck is not hunting
+                    // it. Everything unnamed, a blow, a shot or the chase,
+                    // reads as the alert.
+                    .activities(
+                        ActivityWords::new()
+                            .word("flee_when_hurt", "fleeing")
+                            .word("shadow", "keeping away")
+                            .word("hover", "keeping away")
+                            .word("keep_post", "guarding")
+                            .word("repair_wrecks", "to a wreck"),
+                    ),
             ),
-        LogPanel::new(screen.log),
+    );
+    // What is drawn only while it is up: the look panel, the targeting box
+    // over the foot of what is in sight, and the screens over the map.
+    app.add_plugins((
         InspectPanel::new(screen.inspect).hints("move \u{2022} tab next \u{2022} esc close").cursor(CursorStyle::ticks()),
-        TargetPanel::new(screen.target).hints("[tab/shift-tab] cycle").cursor(CursorStyle::ticks()),
+        TargetPanel::new(rail.target).hints("[tab/shift-tab] cycle").cursor(CursorStyle::ticks()),
         AbilityPanel::new(screen.abilities).title("Abilities").called("abilities"),
         // ANCHOR: bags
         InventoryPanel::new(screen.pack).title("Pack").called("pack").empty("Nothing but dust."),
@@ -190,7 +184,7 @@ fn add_panels(app: &mut App, screen: &Screen) {
         OffersPanel::new(screen.here).title("Here"),
         // Every key `input::declare_controls` and the engine's screens
         // declare, with the hint that opens it in the rail's last row.
-        ControlsPanel::new(screen.controls).hint(screen.hint),
+        ControlsPanel::new(rail.controls()).hint(rail.hint),
         GameMenuPanel::new(screen.menu).title("Foundry").died("The foundry keeps you.").won("The core is charged, and you are on the lift."),
         ChoicePanel(screen.choice),
         CheatPanel { menu: screen.cheats, search: screen.search },
@@ -233,7 +227,7 @@ fn main() -> AppExit {
     }
     let screen = Screen::new();
     let mut app = App::new();
-    app.add_plugins(RoguelikePlugins::new("Foundry", COLS, ROWS).map(screen.map))
+    app.add_plugins(RoguelikePlugins::new("Foundry", COLS, ROWS).map(screen.rail.map))
         .add_plugins((CombatPlugin, MindsPlugin, ItemsPlugin, ThrowingPlugin, LightingPlugin, StealthPlugin, FactsPlugin, AbilitiesPlugin))
         // Fire and smoke, for the grenades: each registers the effect its
         // grenade names, `Ignite` and `Emit`, before the abilities load.
@@ -268,6 +262,34 @@ mod tests {
 
     use super::*;
 
+    /// Every rectangle the screen is cut into, pinned, so a change to how
+    /// the cut is worked out cannot move anything the player sees.
+    #[test]
+    fn every_rectangle_of_the_screen_stands_where_it_always_has() {
+        let s = Screen::new();
+        let r = Rect::new;
+        assert_eq!(s.rail.map, r(0, 0, 69, 36), "map");
+        assert_eq!(s.rail.gutter, r(69, 0, 1, 40), "gutter");
+        assert_eq!(s.rail.log, r(0, 36, 69, 4), "log");
+        assert_eq!(s.rail.vitals, r(70, 0, 30, 8), "vitals");
+        assert_eq!(s.rail.gear, r(70, 8, 30, 11), "gear");
+        assert_eq!(s.rail.nearby, r(70, 19, 30, 20), "nearby");
+        assert_eq!(s.rail.hint, r(70, 39, 30, 1), "hint");
+        assert_eq!(s.inspect, r(2, 24, 52, 10), "inspect");
+        assert_eq!(s.rail.target, r(70, 29, 30, 10), "target");
+        assert_eq!(s.abilities, r(6, 3, 56, 18), "abilities");
+        assert_eq!(s.pack, r(6, 3, 56, 16), "pack");
+        assert_eq!(s.rail.controls(), r(2, 2, 65, 32), "controls");
+        assert_eq!(s.menu, r(12, 6, 44, 13), "menu");
+        assert_eq!(s.settings, r(12, 6, 44, 13), "settings");
+        assert_eq!(s.choice, r(4, 8, 60, 7), "choice");
+        assert_eq!(s.cheats, r(6, 6, 56, 10), "cheats");
+        assert_eq!(s.search, r(6, 6, 56, 18), "search");
+        assert_eq!(s.chest, r(11, 6, 46, 14), "chest");
+        assert_eq!(s.here, r(14, 10, 40, 6), "here");
+        assert_eq!(s.title_menu, r(0, 34, 100, 6), "title menu");
+    }
+
     /// The window's own screen drawn into a terminal no window shows, at
     /// the title it opens on: the same cut, the same panels, the same map
     /// view, and the fullscreen setting the window's plugins declare, so a
@@ -278,7 +300,7 @@ mod tests {
         use rl_engine::rl_save::SaveBackend as _;
         let mut app = foundry::testing::headless(seed);
         let screen = Screen::new();
-        app.add_plugins((KeyScriptPlugin, MapViewPlugin::new(screen.map), rl_engine::rl_render::FullscreenPlugin));
+        app.add_plugins((KeyScriptPlugin, MapViewPlugin::new(screen.rail.map), rl_engine::rl_render::FullscreenPlugin));
         app.insert_resource(Terminal::new(COLS, ROWS, Vec2::ONE));
         add_panels(&mut app, &screen);
         if let Some(text) = saved {
@@ -440,8 +462,8 @@ mod tests {
     fn a_blank_column_stands_between_the_map_and_the_rail() {
         let screen = Screen::new();
         let rail = COLS - RAIL;
-        assert_eq!((screen.map.right(), screen.log.right()), (rail - 1, rail - 1), "one column clear of the rail at {rail}");
-        assert_eq!(screen.vitals.x, rail, "and the rail where it was");
+        assert_eq!((screen.rail.map.right(), screen.rail.log.right()), (rail - 1, rail - 1), "one column clear of the rail at {rail}");
+        assert_eq!(screen.rail.vitals.x, rail, "and the rail where it was");
 
         // Painted blank every frame, since nothing else owns it: whatever
         // was on the terminal before does not show through.
