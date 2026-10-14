@@ -44,7 +44,7 @@ A monster is a short core, the things every monster has, and a list of named tra
 
 ```ron
 (name: "goblin conjurer", glyph: 'g', color: (0.6, 0.4, 0.8), hp: 10,
- attack: "1d3 slash", faction: "goblins",
+ attack: (roll: "1d3", kind: "slash"), faction: "goblins",
  traits: ["sapient", "cowardly", "summons blades", "blinks"])
 ```
 

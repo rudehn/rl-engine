@@ -129,13 +129,13 @@ fn a_monster_is_its_core_and_its_traits_folded_together() {
     let library = library();
     let defs = fixture(
         &library,
-        r#"[(name: "test hound", glyph: 'h', color: (0.5, 0.4, 0.3), hp: 7, attack: "1d4+1 pierce", armor: 1, faction: "beasts", traits: ["animal", "swift", "thick-hided"])]"#,
+        r#"[(name: "test hound", glyph: 'h', color: (0.5, 0.4, 0.3), hp: 7, attack: (roll: "1d4+1", kind: "pierce"), armor: 1, faction: "beasts", traits: ["animal", "swift", "thick-hided"])]"#,
     )
     .expect("a hound reads");
     let hound = defs.get(defs.expect("test hound"));
     assert_eq!((hound.glyph, hound.color, hound.hp), ('h', (0.5, 0.4, 0.3), 7), "the core as written");
-    assert_eq!(hound.attack.dice, DiceRoll { num: 1, sides: 4, bonus: 1 });
-    assert_eq!(hound.attack.kind, library.registries.damage_kinds.expect("pierce"));
+    assert_eq!(hound.attack.roll, DiceRoll { num: 1, sides: 4, bonus: 1 });
+    assert_eq!(hound.attack.kind.id(), library.registries.damage_kinds.expect("pierce"));
     assert_eq!(hound.folded.speed, Some(150), "swift");
     assert_eq!(hound.speed(), 150);
     assert_eq!(hound.folded.wits, Wits::ANIMAL, "animal");
@@ -145,43 +145,45 @@ fn a_monster_is_its_core_and_its_traits_folded_together() {
     assert_eq!(hound.flee_at(), 0, "no trait says it runs");
 }
 
-/// A shot is a blow with a range after an `@`, and both name a kind
-/// the registries hold.
+/// A shot is the engine's shot part, a blow's roll and kind with a
+/// range, and both name a kind the registries hold.
 #[test]
 fn a_shot_reads_its_dice_its_kind_and_its_range() {
     let library = library();
     let archer = library.bestiary.defs.get(library.bestiary.defs.expect("goblin archer"));
     let shot = archer.ranged.expect("the archer shoots");
-    assert_eq!((shot.dice, shot.kind, shot.range), (DiceRoll::new(1, 6), library.registries.damage_kinds.expect("pierce"), 6));
-    assert_eq!(archer.attack.dice, DiceRoll::new(1, 3), "and still has a blow");
+    assert_eq!((shot.roll, shot.kind.id(), shot.range), (DiceRoll::new(1, 6), library.registries.damage_kinds.expect("pierce"), 6));
+    assert_eq!(archer.attack.roll, DiceRoll::new(1, 3), "and still has a blow");
 }
 
 #[test]
-fn an_attack_that_does_not_read_is_refused_naming_the_monster_and_the_text() {
+fn an_attack_that_does_not_read_is_refused_naming_where_it_is() {
     let library = library();
     let errors = refused(
         &library,
         r#"[
-            (name: "a", glyph: 'a', color: (1.0, 1.0, 1.0), hp: 1, attack: "1q4 slash", faction: "beasts", traits: []),
-            (name: "b", glyph: 'b', color: (1.0, 1.0, 1.0), hp: 1, attack: "1d4 slsh", faction: "beasts", traits: []),
-            (name: "c", glyph: 'c', color: (1.0, 1.0, 1.0), hp: 1, attack: "1d4", faction: "beasts", traits: []),
-            (name: "d", glyph: 'd', color: (1.0, 1.0, 1.0), hp: 1, attack: "1d4 slash", ranged: "1d6 pierce", faction: "beasts", traits: []),
-            (name: "e", glyph: 'e', color: (1.0, 1.0, 1.0), hp: 1, attack: "1d4 slash @3", faction: "beasts", traits: []),
-            (name: "f", glyph: 'f', color: (1.0, 1.0, 1.0), hp: 1, attack: "1d4 slash", ranged: "1d6 pierce @far", faction: "beasts", traits: []),
+            (name: "a", glyph: 'a', color: (1.0, 1.0, 1.0), hp: 1, attack: (roll: "1q4", kind: "slash"), faction: "beasts", traits: []),
+            (name: "b", glyph: 'b', color: (1.0, 1.0, 1.0), hp: 1, attack: (roll: "1d4", kind: "slsh"), faction: "beasts", traits: []),
+            (name: "c", glyph: 'c', color: (1.0, 1.0, 1.0), hp: 1, attack: (roll: "1d4"), faction: "beasts", traits: []),
+            (name: "d", glyph: 'd', color: (1.0, 1.0, 1.0), hp: 1, attack: (roll: "1d4", kind: "slash"), ranged: (roll: "1d6", kind: "pierce"), faction: "beasts", traits: []),
+            (name: "e", glyph: 'e', color: (1.0, 1.0, 1.0), hp: 1, attack: (roll: "1d4", kind: "slash", range: 3), faction: "beasts", traits: []),
         ]"#,
     );
-    assert_eq!(errors.len(), 6, "{errors:#?}");
-    let expected = [
-        ("a", "attack \"1q4 slash\""),
-        ("b", "attack \"1d4 slsh\": unknown damage kind \"slsh\""),
-        ("c", "attack \"1d4\""),
-        ("d", "ranged \"1d6 pierce\""),
-        ("e", "attack \"1d4 slash @3\""),
-        ("f", "ranged \"1d6 pierce @far\""),
-    ];
-    for ((monster, says), error) in expected.iter().zip(&errors) {
-        assert!(error.starts_with(&format!("{monster}: {says}")), "{error}");
+    assert_eq!(errors.len(), 5, "{errors:#?}");
+    let expected = ["entry 1: ", "b: unknown damage kind \"slsh\"", "entry 3: ", "entry 4: ", "entry 5: "];
+    for (says, error) in expected.iter().zip(&errors) {
+        assert!(error.starts_with(says), "{error}");
     }
+}
+
+#[test]
+fn a_shot_that_reaches_no_tile_is_refused_naming_the_monster() {
+    let library = library();
+    let errors = refused(
+        &library,
+        r#"[(name: "f", glyph: 'f', color: (1.0, 1.0, 1.0), hp: 1, attack: (roll: "1d4", kind: "slash"), ranged: (range: 0, roll: "1d6", kind: "pierce"), faction: "beasts", traits: [])]"#,
+    );
+    assert_eq!(errors, ["f: ranged: a shot reaches one tile or more"]);
 }
 
 #[test]
@@ -189,7 +191,7 @@ fn an_unknown_trait_is_refused_by_name() {
     let library = library();
     let errors = refused(
         &library,
-        r#"[(name: "jackal", glyph: 'j', color: (1.0, 1.0, 1.0), hp: 6, attack: "1d3 pierce", faction: "beasts", traits: ["animal", "swfit"])]"#,
+        r#"[(name: "jackal", glyph: 'j', color: (1.0, 1.0, 1.0), hp: 6, attack: (roll: "1d3", kind: "pierce"), faction: "beasts", traits: ["animal", "swfit"])]"#,
     );
     assert_eq!(errors, ["jackal: unknown trait \"swfit\""]);
 }
@@ -202,7 +204,7 @@ fn a_monster_whose_traits_set_one_value_twice_is_refused_naming_it_the_field_and
     let library = library();
     let errors = refused(
         &library,
-        r#"[(name: "jackal", glyph: 'j', color: (1.0, 1.0, 1.0), hp: 6, attack: "1d3 pierce", faction: "beasts", traits: ["animal", "swift", "slow"])]"#,
+        r#"[(name: "jackal", glyph: 'j', color: (1.0, 1.0, 1.0), hp: 6, attack: (roll: "1d3", kind: "pierce"), faction: "beasts", traits: ["animal", "swift", "slow"])]"#,
     );
     assert_eq!(errors, ["jackal: `speed` is set by both `swift` and `slow`"]);
 }
@@ -212,7 +214,7 @@ fn a_monster_lists_each_trait_once() {
     let library = library();
     let errors = refused(
         &library,
-        r#"[(name: "rat", glyph: 'r', color: (1.0, 1.0, 1.0), hp: 4, attack: "1d3 pierce", faction: "beasts", traits: ["animal", "regenerates", "regenerates"])]"#,
+        r#"[(name: "rat", glyph: 'r', color: (1.0, 1.0, 1.0), hp: 4, attack: (roll: "1d3", kind: "pierce"), faction: "beasts", traits: ["animal", "regenerates", "regenerates"])]"#,
     );
     assert_eq!(errors, ["rat: lists `regenerates` twice"]);
 }
@@ -259,7 +261,7 @@ fn every_drop_and_every_item_spawn_names_a_real_item() {
     }
     let errors = refused(
         &library,
-        r#"[(name: "magpie", glyph: 'm', color: (1.0, 1.0, 1.0), hp: 2, attack: "1d2 pierce", faction: "beasts", traits: [], drops: [("goblet", 50)])]"#,
+        r#"[(name: "magpie", glyph: 'm', color: (1.0, 1.0, 1.0), hp: 2, attack: (roll: "1d2", kind: "pierce"), faction: "beasts", traits: [], drops: [("goblet", 50)])]"#,
     );
     assert_eq!(errors, ["magpie: unknown item \"goblet\""]);
 }
@@ -294,7 +296,7 @@ fn a_spawned_monster_carries_what_its_traits_gave_it() {
     let library = library();
     let defs = fixture(
         &library,
-        r#"[(name: "lamp beetle", glyph: 'b', color: (0.4, 0.9, 0.7), hp: 10, attack: "1d3 pierce", faction: "beasts", traits: ["fungal glow", "cowardly"])]"#,
+        r#"[(name: "lamp beetle", glyph: 'b', color: (0.4, 0.9, 0.7), hp: 10, attack: (roll: "1d3", kind: "pierce"), faction: "beasts", traits: ["fungal glow", "cowardly"])]"#,
     )
     .expect("a beetle reads");
     let beetle = defs.get(defs.expect("lamp beetle"));

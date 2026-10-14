@@ -9,10 +9,16 @@
 //   glyph:   one character, and one the typeface in `assets/fonts/` has
 //   color:   (r, g, b) in 0..=1
 //   hp:      maximum health
-//   attack:  its blow, written "NdS+B kind", as "1d4 slash"; the kinds are "slash" |
-//            "pierce" | "crush" | "fire" | "cold" | "poison"
-//   ranged:  optional; its shot, written "NdS+B kind @range", as "1d6 pierce @6", range in
-//            tiles; with one it shoots whatever it sees in reach and strikes what is beside it
+//   attack:  its blow, (roll:, kind:, look:, shape:, unaware:), the engine's blow as a weapon's
+//            melee in items.ron writes it: roll as "NdS+B", kind "slash" | "pierce" | "crush" |
+//            "fire" | "cold" | "poison"; look optional, (glyph:, color: (r:, g:, b:)) in bytes,
+//            the colour a blow bursts in; shape optional, Sweep | Pierce(n); unaware optional,
+//            what a blow on a foe that has not noticed it is worth in percent, in place of the
+//            house's three hundred
+//   ranged:  optional; its shot, (range:, effective:, roll:, kind:, look:), range in tiles,
+//            one or more; effective optional, a third of range when absent; look optional,
+//            what the shot flies as; with one it shoots whatever it sees in reach and strikes
+//            what is beside it
 //   armor:   optional; flat armor of its own, 0 when left out, added to what a trait gives
 //   faction: "beasts" | "goblins" | "undead" | "dar"; "adventurer" for what fights on the
 //            adventurer's side from the moment it is made; "townsfolk" for what stands
@@ -31,59 +37,59 @@
 #![enable(implicit_some)]
 [
     // The upper floors: vermin, and the smallest of the goblins.
-    (name: "rat", glyph: 'r', color: (0.62, 0.52, 0.42), hp: 4, attack: "1d3 pierce", faction: "beasts", traits: ["animal", "cowardly", "packing"]),
-    (name: "jackal", glyph: 'j', color: (0.8, 0.62, 0.36), hp: 6, attack: "1d3 pierce", faction: "beasts", traits: ["animal", "swift", "packing"]),
-    (name: "kobold", glyph: 'k', color: (0.62, 0.72, 0.32), hp: 6, attack: "1d4 slash", faction: "goblins", traits: ["sapient", "cowardly"],
+    (name: "rat", glyph: 'r', color: (0.62, 0.52, 0.42), hp: 4, attack: (roll: "1d3", kind: "pierce"), faction: "beasts", traits: ["animal", "cowardly", "packing"]),
+    (name: "jackal", glyph: 'j', color: (0.8, 0.62, 0.36), hp: 6, attack: (roll: "1d3", kind: "pierce"), faction: "beasts", traits: ["animal", "swift", "packing"]),
+    (name: "kobold", glyph: 'k', color: (0.62, 0.72, 0.32), hp: 6, attack: (roll: "1d4", kind: "slash"), faction: "goblins", traits: ["sapient", "cowardly"],
      drops: [("gold coin", 40), ("dagger", 8)]),
     // `led` so a plain goblin drawn into Grubnak's own honor guard keeps
     // station on him too, exactly as the archer, the conjurer and the
     // mystic already do in his war band; inert everywhere else, since
     // nothing but a band's own placement ever gives a goblin a `Leader`.
-    (name: "goblin", glyph: 'g', color: (0.42, 0.75, 0.3), hp: 10, attack: "1d5 slash", faction: "goblins", traits: ["sapient", "led"],
+    (name: "goblin", glyph: 'g', color: (0.42, 0.75, 0.3), hp: 10, attack: (roll: "1d5", kind: "slash"), faction: "goblins", traits: ["sapient", "led"],
      drops: [("gold coin", 40), ("sword", 8)]),
-    (name: "monkey", glyph: 'm', color: (0.7, 0.55, 0.35), hp: 8, attack: "1d3 crush", faction: "beasts", traits: ["animal", "swift", "stealing"]),
+    (name: "monkey", glyph: 'm', color: (0.7, 0.55, 0.35), hp: 8, attack: (roll: "1d3", kind: "crush"), faction: "beasts", traits: ["animal", "swift", "stealing"]),
     // The caves and the crypts under them. From the ogre down, a blow that
     // armor turns is two dice: armor turns a point of every blow, and
     // enchanted armor turned every blow of one die down here to nothing,
     // so only fire and the king could hurt an adventurer who put their
     // scrolls into it; part 3's floor on what armor takes keeps every
     // blow, however armored, dealing at least half its roll.
-    (name: "cave spider", glyph: 's', color: (0.68, 0.58, 0.75), hp: 9, attack: "1d4 pierce", faction: "beasts",
+    (name: "cave spider", glyph: 's', color: (0.68, 0.58, 0.75), hp: 9, attack: (roll: "1d4", kind: "pierce"), faction: "beasts",
      traits: ["animal", "sees in the dark", "venomous", "webbing"]),
-    (name: "goblin archer", glyph: 'a', color: (0.6, 0.8, 0.38), hp: 8, attack: "1d3 slash", ranged: "1d6 pierce @6", faction: "goblins", traits: ["sapient", "cowardly", "led"],
+    (name: "goblin archer", glyph: 'a', color: (0.6, 0.8, 0.38), hp: 8, attack: (roll: "1d3", kind: "slash"), ranged: (range: 6, roll: "1d6", kind: "pierce"), faction: "goblins", traits: ["sapient", "cowardly", "led"],
      drops: [("gold coin", 40), ("bow", 8)]),
-    (name: "goblin conjurer", glyph: 'c', color: (0.6, 0.4, 0.85), hp: 10, attack: "1d3 slash", faction: "goblins", traits: ["sapient", "cowardly", "blinking", "conjuring", "led"]),
-    (name: "goblin mystic", glyph: 'y', color: (0.4, 0.7, 0.9), hp: 10, attack: "1d3 crush", faction: "goblins", traits: ["sapient", "cowardly", "warding", "led"]),
-    (name: "myconid", glyph: 'f', color: (0.45, 0.9, 0.78), hp: 12, attack: "1d4 crush", faction: "beasts", traits: ["mindless", "slow", "fungal glow", "spore-burst"]),
-    (name: "pink jelly", glyph: 'J', color: (0.95, 0.5, 0.7), hp: 30, attack: "1d4 crush", faction: "beasts", traits: ["mindless", "splitting"]),
-    (name: "vampire bat", glyph: 'b', color: (0.45, 0.35, 0.5), hp: 9, attack: "1d4 pierce", faction: "beasts", traits: ["animal", "sees in the dark", "flitting", "draining", "sleepy"]),
-    (name: "ogre", glyph: 'O', color: (0.72, 0.6, 0.42), hp: 30, attack: "2d6 crush", faction: "goblins", traits: ["sapient", "slow", "thick-hided", "sleepy"],
+    (name: "goblin conjurer", glyph: 'c', color: (0.6, 0.4, 0.85), hp: 10, attack: (roll: "1d3", kind: "slash"), faction: "goblins", traits: ["sapient", "cowardly", "blinking", "conjuring", "led"]),
+    (name: "goblin mystic", glyph: 'y', color: (0.4, 0.7, 0.9), hp: 10, attack: (roll: "1d3", kind: "crush"), faction: "goblins", traits: ["sapient", "cowardly", "warding", "led"]),
+    (name: "myconid", glyph: 'f', color: (0.45, 0.9, 0.78), hp: 12, attack: (roll: "1d4", kind: "crush"), faction: "beasts", traits: ["mindless", "slow", "fungal glow", "spore-burst"]),
+    (name: "pink jelly", glyph: 'J', color: (0.95, 0.5, 0.7), hp: 30, attack: (roll: "1d4", kind: "crush"), faction: "beasts", traits: ["mindless", "splitting"]),
+    (name: "vampire bat", glyph: 'b', color: (0.45, 0.35, 0.5), hp: 9, attack: (roll: "1d4", kind: "pierce"), faction: "beasts", traits: ["animal", "sees in the dark", "flitting", "draining", "sleepy"]),
+    (name: "ogre", glyph: 'O', color: (0.72, 0.6, 0.42), hp: 30, attack: (roll: "2d6", kind: "crush"), faction: "goblins", traits: ["sapient", "slow", "thick-hided", "sleepy"],
      drops: [("gold coin", 80), ("war hammer", 15)]),
     // `led` for the Choirmaster's own four, which stand with him as his
     // band; an ordinary floor's skeleton never has a
     // `Leader`, so nothing else about it changes.
-    (name: "skeleton", glyph: 'z', color: (0.88, 0.86, 0.76), hp: 12, attack: "1d6 slash", faction: "undead", traits: ["mindless", "deathless", "brittle", "led"]),
-    (name: "ghoul", glyph: 'G', color: (0.58, 0.68, 0.52), hp: 18, attack: "1d8 slash", faction: "undead", traits: ["sapient", "deathless", "keen-nosed", "paralysing"]),
-    (name: "necromancer", glyph: 'n', color: (0.6, 0.55, 0.8), hp: 16, attack: "1d4 slash", faction: "undead", traits: ["sapient", "cowardly", "blinking", "raising"]),
-    (name: "wraith", glyph: 'w', color: (0.75, 0.8, 0.9), hp: 22, attack: "1d8 cold", faction: "undead", traits: ["sapient", "deathless", "withering", "shrouded"]),
-    (name: "will-o'-wisp", glyph: 'o', color: (0.6, 0.9, 1.0), hp: 10, attack: "1d6 fire", faction: "beasts", traits: ["mindless", "blinking", "luring", "grave light"]),
+    (name: "skeleton", glyph: 'z', color: (0.88, 0.86, 0.76), hp: 12, attack: (roll: "1d6", kind: "slash"), faction: "undead", traits: ["mindless", "deathless", "brittle", "led"]),
+    (name: "ghoul", glyph: 'G', color: (0.58, 0.68, 0.52), hp: 18, attack: (roll: "1d8", kind: "slash"), faction: "undead", traits: ["sapient", "deathless", "keen-nosed", "paralysing"]),
+    (name: "necromancer", glyph: 'n', color: (0.6, 0.55, 0.8), hp: 16, attack: (roll: "1d4", kind: "slash"), faction: "undead", traits: ["sapient", "cowardly", "blinking", "raising"]),
+    (name: "wraith", glyph: 'w', color: (0.75, 0.8, 0.9), hp: 22, attack: (roll: "1d8", kind: "cold"), faction: "undead", traits: ["sapient", "deathless", "withering", "shrouded"]),
+    (name: "will-o'-wisp", glyph: 'o', color: (0.6, 0.9, 1.0), hp: 10, attack: (roll: "1d6", kind: "fire"), faction: "beasts", traits: ["mindless", "blinking", "luring", "grave light"]),
     // Floors seven to nine: the drowned dead, the forge's fire, and the
     // first of the deep culture at the bottom. A wight's touch is the cold
     // of the deep water, which armor does not turn, as it does not turn
     // the forge's fire.
     // `led` for the Drowned Abbess's own two, standing with her as her
     // band.
-    (name: "drowned thrall", glyph: 'Z', color: (0.45, 0.65, 0.72), hp: 22, attack: "2d6 crush", faction: "undead", traits: ["mindless", "deathless", "slow", "led"]),
-    (name: "wight", glyph: 'W', color: (0.7, 0.8, 0.95), hp: 20, attack: "1d6+1 cold", armor: 1, faction: "undead", traits: ["sapient", "deathless", "grave light", "draining"]),
-    (name: "troll", glyph: 'T', color: (0.45, 0.6, 0.35), hp: 40, attack: "2d6+1 slash", faction: "beasts", traits: ["sapient", "regenerates", "burns-badly", "sleepy"]),
-    (name: "golem", glyph: 'X', color: (0.65, 0.6, 0.55), hp: 60, attack: "2d10 crush", faction: "goblins", traits: ["mindless", "slow", "armored", "wakeful", "reflecting"]),
-    (name: "dar blademaster", glyph: 'd', color: (0.75, 0.55, 0.9), hp: 24, attack: "2d6 slash", faction: "dar", traits: ["sapient", "swift", "blinking"]),
-    (name: "dar priestess", glyph: 'd', color: (0.9, 0.65, 0.85), hp: 20, attack: "1d6 crush", faction: "dar", traits: ["sapient", "cowardly", "warding", "mends allies", "led"]),
-    (name: "dar battlemage", glyph: 'd', color: (0.6, 0.5, 1.0), hp: 20, attack: "1d6 crush", faction: "dar", traits: ["sapient", "cowardly", "firebolt", "slowness", "led"]),
+    (name: "drowned thrall", glyph: 'Z', color: (0.45, 0.65, 0.72), hp: 22, attack: (roll: "2d6", kind: "crush"), faction: "undead", traits: ["mindless", "deathless", "slow", "led"]),
+    (name: "wight", glyph: 'W', color: (0.7, 0.8, 0.95), hp: 20, attack: (roll: "1d6+1", kind: "cold"), armor: 1, faction: "undead", traits: ["sapient", "deathless", "grave light", "draining"]),
+    (name: "troll", glyph: 'T', color: (0.45, 0.6, 0.35), hp: 40, attack: (roll: "2d6+1", kind: "slash"), faction: "beasts", traits: ["sapient", "regenerates", "burns-badly", "sleepy"]),
+    (name: "golem", glyph: 'X', color: (0.65, 0.6, 0.55), hp: 60, attack: (roll: "2d10", kind: "crush"), faction: "goblins", traits: ["mindless", "slow", "armored", "wakeful", "reflecting"]),
+    (name: "dar blademaster", glyph: 'd', color: (0.75, 0.55, 0.9), hp: 24, attack: (roll: "2d6", kind: "slash"), faction: "dar", traits: ["sapient", "swift", "blinking"]),
+    (name: "dar priestess", glyph: 'd', color: (0.9, 0.65, 0.85), hp: 20, attack: (roll: "1d6", kind: "crush"), faction: "dar", traits: ["sapient", "cowardly", "warding", "mends allies", "led"]),
+    (name: "dar battlemage", glyph: 'd', color: (0.6, 0.5, 1.0), hp: 20, attack: (roll: "1d6", kind: "crush"), faction: "dar", traits: ["sapient", "cowardly", "firebolt", "slowness", "led"]),
     // `led` for the Forgemaster's own three, standing with him as his
     // band.
-    (name: "fire imp", glyph: 'i', color: (1.0, 0.5, 0.25), hp: 10, attack: "1d4 fire", ranged: "1d6 fire @5", faction: "beasts", traits: ["sapient", "swift", "fire-blooded", "blinking", "led"]),
-    (name: "salamander", glyph: 'S', color: (1.0, 0.42, 0.18), hp: 26, attack: "1d8 fire", armor: 1, faction: "beasts",
+    (name: "fire imp", glyph: 'i', color: (1.0, 0.5, 0.25), hp: 10, attack: (roll: "1d4", kind: "fire"), ranged: (range: 5, roll: "1d6", kind: "fire"), faction: "beasts", traits: ["sapient", "swift", "fire-blooded", "blinking", "led"]),
+    (name: "salamander", glyph: 'S', color: (1.0, 0.42, 0.18), hp: 26, attack: (roll: "1d8", kind: "fire"), armor: 1, faction: "beasts",
      traits: ["animal", "fire-blooded", "ember glow", "fire breath", "fire-trail"]),
     // Floor ten: the throne, its court, and the thing that drowned the
     // kingdom. The throne's piece stands each of them at its own slot, and
@@ -91,48 +97,48 @@
     // armor is the standard `armored` trait's four rather than a number
     // of its own, now that the trait is written; it keeps the same four
     // it always had.
-    (name: "skeleton knight", glyph: 'z', color: (0.95, 0.92, 0.75), hp: 16, attack: "1d8+2 slash", faction: "undead", traits: ["mindless", "deathless", "armored", "brittle"]),
-    (name: "the Drowned King", glyph: 'K', color: (0.55, 0.9, 0.95), hp: 90, attack: "2d8 slash", armor: 4, faction: "undead",
+    (name: "skeleton knight", glyph: 'z', color: (0.95, 0.92, 0.75), hp: 16, attack: (roll: "1d8+2", kind: "slash"), faction: "undead", traits: ["mindless", "deathless", "armored", "brittle"]),
+    (name: "the Drowned King", glyph: 'K', color: (0.55, 0.9, 0.95), hp: 90, attack: (roll: "2d8", kind: "slash"), armor: 4, faction: "undead",
      traits: ["sapient", "deathless", "grave light", "regenerates", "drowning grasp", "keen-eared", "welling"], boss: true),
     // The floor ten boss, drawn from three, never the same
     // twice in a run since only one is ever drawn. The Mother Below's
     // spawnling is nowhere in the spawn table, made only by her own
     // `spawning` and taken out of play the pass she dies.
-    (name: "the Mother Below", glyph: 'M', color: (0.75, 0.55, 0.65), hp: 110, attack: "2d6 crush", faction: "beasts",
+    (name: "the Mother Below", glyph: 'M', color: (0.75, 0.55, 0.65), hp: 110, attack: (roll: "2d6", kind: "crush"), faction: "beasts",
      traits: ["mindless", "slow", "regenerates", "spawning"], boss: true),
-    (name: "spawnling", glyph: 's', color: (0.6, 0.45, 0.55), hp: 5, attack: "1d4 pierce", faction: "beasts", traits: ["mindless", "swift"]),
-    (name: "the Ember Wyrm", glyph: 'D', color: (1.0, 0.45, 0.1), hp: 120, attack: "2d6+1 fire", faction: "beasts",
+    (name: "spawnling", glyph: 's', color: (0.6, 0.45, 0.55), hp: 5, attack: (roll: "1d4", kind: "pierce"), faction: "beasts", traits: ["mindless", "swift"]),
+    (name: "the Ember Wyrm", glyph: 'D', color: (1.0, 0.45, 0.1), hp: 120, attack: (roll: "2d6+1", kind: "fire"), faction: "beasts",
      traits: ["animal", "fire-blooded", "ember glow", "wakeful", "wyrm breath"], boss: true),
     // The five mini-bosses, drawn two a run, each with its own lair
     // in `assets/prefabs/` and its own entourage: `assets/roles.ron`'s
     // honor guard for Grubnak, the rest a fixed kind of their own, every
     // one `led` over its boss by `population.rs`'s `BANDS`.
-    (name: "Grubnak the goblin king", glyph: 'g', color: (1.0, 0.8, 0.2), hp: 40, attack: "1d8+2 slash", armor: 2, faction: "goblins",
+    (name: "Grubnak the goblin king", glyph: 'g', color: (1.0, 0.8, 0.2), hp: 40, attack: (roll: "1d8+2", kind: "slash"), armor: 2, faction: "goblins",
      traits: ["sapient", "war-cry", "wakeful"], miniboss: true, drops: [("the Crown of Grubnak", 100)]),
-    (name: "the Widow", glyph: 's', color: (0.9, 0.2, 0.25), hp: 55, attack: "1d8+1 pierce", faction: "beasts",
+    (name: "the Widow", glyph: 's', color: (0.9, 0.2, 0.25), hp: 55, attack: (roll: "1d8+1", kind: "pierce"), faction: "beasts",
      traits: ["animal", "sees in the dark", "venomous", "webbing", "wakeful"], miniboss: true, drops: [("the Widow's Fang", 100)]),
-    (name: "the Choirmaster", glyph: 'n', color: (0.85, 0.85, 1.0), hp: 50, attack: "1d8 slash", faction: "undead",
+    (name: "the Choirmaster", glyph: 'n', color: (0.85, 0.85, 1.0), hp: 50, attack: (roll: "1d8", kind: "slash"), faction: "undead",
      traits: ["sapient", "raising", "blinking", "warding", "singing"], miniboss: true, drops: [("the Choirmaster's Staff", 100)]),
-    (name: "the Drowned Abbess", glyph: 'N', color: (0.4, 0.75, 0.7), hp: 50, attack: "2d6 pierce", faction: "undead",
+    (name: "the Drowned Abbess", glyph: 'N', color: (0.4, 0.75, 0.7), hp: 50, attack: (roll: "2d6", kind: "pierce"), faction: "undead",
      traits: ["sapient", "venomous", "regenerates", "spit", "calling the drowned"], miniboss: true, drops: [("the Abbess's Chalice", 100)]),
-    (name: "the Forgemaster", glyph: 'O', color: (1.0, 0.5, 0.15), hp: 90, attack: "3d6 crush", faction: "beasts",
+    (name: "the Forgemaster", glyph: 'O', color: (1.0, 0.5, 0.15), hp: 90, attack: (roll: "3d6", kind: "crush"), faction: "beasts",
      traits: ["sapient", "fire-blooded", "armored", "slow", "wakeful"], miniboss: true, drops: [("the Forgemaster's Hammer", 100)]),
     // What a staff of conjuration calls up beside the adventurer, on their
     // side, for a few turns: quick, and gone at the first blow, leaving
     // nothing. Nowhere in the spawn table, so it is never found, only made.
-    (name: "spectral blade", glyph: '†', color: (0.72, 0.86, 1.0), hp: 1, attack: "1d3 slash", faction: "adventurer",
+    (name: "spectral blade", glyph: '†', color: (0.72, 0.86, 1.0), hp: 1, attack: (roll: "1d3", kind: "slash"), faction: "adventurer",
      traits: ["mindless", "swift", "deathless"], conjured: true),
     // The one kind of hireling, waiting at the Sunken Lantern on Mereholt's
     // side until it is hired: on the adventurer's footing, sixty health and
     // a bare fist, since what it fights with is the kit `mercenaries.ron`
     // rolls it. Nowhere in the spawn table or a piece, so it is never found
     // below, only met in town.
-    (name: "mercenary", glyph: 'h', color: (0.85, 0.72, 0.5), hp: 60, attack: "1d2 crush", faction: "townsfolk", traits: ["mercenary"]),
+    (name: "mercenary", glyph: 'h', color: (0.85, 0.72, 0.5), hp: 60, attack: (roll: "1d2", kind: "crush"), faction: "townsfolk", traits: ["mercenary"]),
     // The lived-in dungeon's small life: `wildlife`, so it fights no
-    // side and none fights it, and `attack: "0 crush"` (a flat nought, which
+    // side and none fights it, and `attack: (roll: "0", kind: "crush")` (a flat nought, which
     // `DiceRoll` parses with no dice at all) so `balance::threat` reads
     // it as nothing and killing one never scores. One hit is always its
     // last.
-    (name: "moth", glyph: 'm', color: (0.85, 0.82, 0.7), hp: 1, attack: "0 crush", faction: "wildlife", traits: ["animal", "harmless", "flitting"]),
-    (name: "blind cave rat", glyph: 'r', color: (0.88, 0.86, 0.84), hp: 1, attack: "0 crush", faction: "wildlife", traits: ["animal", "harmless", "timid"]),
+    (name: "moth", glyph: 'm', color: (0.85, 0.82, 0.7), hp: 1, attack: (roll: "0", kind: "crush"), faction: "wildlife", traits: ["animal", "harmless", "flitting"]),
+    (name: "blind cave rat", glyph: 'r', color: (0.88, 0.86, 0.84), hp: 1, attack: (roll: "0", kind: "crush"), faction: "wildlife", traits: ["animal", "harmless", "timid"]),
 ]

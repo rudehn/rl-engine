@@ -35,12 +35,11 @@ use rl_engine::rl_render::Glyph;
 use rl_engine::rl_rules::{
     AffixDef, DamageKind, Enchanted, EquipShape, LevelTable, LootTable, NameRef, Named, Registry, Resistances, ScatterRules, SlotDef, TagDef, TagId,
 };
-use rl_engine::rl_rules::{EffectSpec, TriggerSpec};
+use rl_engine::rl_rules::{EffectSpec, TriggerSpec, parts};
 use rl_engine::rl_ui::view::Strike;
 use rl_engine::rl_ui::{Facets, InventoryView, MassNoun, Tones};
 use serde::Deserialize;
 
-use crate::content::{MeleeDef, RangedDef};
 use crate::heat::Heat;
 
 const ITEMS_RON: &str = include_str!("../assets/items.ron");
@@ -99,14 +98,14 @@ pub struct ItemDef {
     pub resists: Vec<(NameRef<DamageKind>, i32)>,
     /// The roll and damage kind a blow deals, while wielded.
     #[serde(default)]
-    pub melee: Option<MeleeDef>,
+    pub melee: Option<parts::Melee>,
     /// The range, roll and damage kind a shot deals, while wielded.
     #[serde(default)]
-    pub ranged: Option<RangedDef>,
+    pub ranged: Option<parts::Ranged>,
     /// How far it flies when thrown, and the blow it strikes whoever it
     /// hits, if any; absent, it cannot be thrown at all.
     #[serde(default)]
-    pub throw: Option<ThrowDef>,
+    pub throw: Option<parts::Throw>,
     /// What one blow or shot costs, in hundredths of a step. Absent is
     /// [`BASE_ACTION_COST`](rl_engine::rl_core::turn::BASE_ACTION_COST).
     #[serde(default)]
@@ -160,20 +159,6 @@ pub struct RechargeDef {
     /// charged and swapped to. Absent, false: it refills in the pack.
     #[serde(default)]
     pub while_worn: bool,
-}
-
-/// A throw as `items.ron` writes it: how far, and the blow it strikes, if
-/// it strikes at all. A grenade strikes nothing; its land trigger bursts.
-#[derive(Debug, Clone, Copy, Deserialize)]
-pub struct ThrowDef {
-    /// The furthest cell it reaches.
-    pub range: i32,
-    /// The furthest cell with no range penalty; absent, a third of `range`.
-    #[serde(default)]
-    pub effective: Option<i32>,
-    /// The roll and damage kind it strikes whoever it hits with.
-    #[serde(default)]
-    pub strike: Option<(DiceRoll, NameRef<DamageKind>)>,
 }
 
 /// Everything a level does to a thing, as `items.ron` writes it: the one
@@ -628,17 +613,10 @@ pub fn spawn_item_at(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, 
     // A level's damage goes on each of its own rolls alike, so a thrown
     // blade at `+2` strikes two harder as its blow does.
     let plus = |dice: DiceRoll| DiceRoll { bonus: dice.bonus + damage, ..dice };
-    if let Some(melee) = d.melee {
-        let attack = melee.attack();
-        e.insert(MeleeAttack { cost: d.cost, dice: plus(attack.dice), ..attack });
-    }
-    if let Some(ranged) = d.ranged {
-        let attack = ranged.attack();
-        e.insert(RangedAttack { cost: d.cost, dice: plus(attack.dice), ..attack });
-    }
-    if let Some(throw) = d.throw {
-        e.insert(Throwable { effective: throw.effective, ..Throwable::new(throw.range, throw.strike.map(|(dice, kind)| (kind.id(), plus(dice)))) });
-    }
+    let melee = d.melee.map(|m| parts::Melee { roll: plus(m.roll), ..m });
+    let ranged = d.ranged.map(|r| parts::Ranged { roll: plus(r.roll), ..r });
+    let throw = d.throw.map(|t| parts::Throw { strike: t.strike.map(|(roll, kind)| (plus(roll), kind)), ..t });
+    Attacks { melee, ranged, throw, cost: d.cost }.insert(&mut e);
     if let Some((per_shot, vent)) = d.heat {
         e.insert(Heat::new(per_shot, vent));
     }

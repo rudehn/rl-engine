@@ -3,8 +3,8 @@
 //!
 //! A monster is written as a short core, the things every monster has,
 //! and a list of traits from `traits.ron`. [`read`] resolves both at load:
-//! the core's attack is read from its `"1d4 slash"`, every name is looked
-//! up once, and the traits are folded into one set of values, so a
+//! the core's attack is the engine's own blow part, `(roll: "1d4", kind:
+//! "slash")`, every name is looked up once, and the traits are folded into one set of values, so a
 //! [`MonsterDef`] is the monster with nothing left to look up and a spawn
 //! reads plain numbers. Two traits of one monster that set the same value
 //! are refused there, naming the monster, the value and both traits.
@@ -22,8 +22,8 @@ use rl_engine::rl_rules::ability::EffectSpec;
 use rl_engine::rl_rules::ai::tactics::{
     FleeWhenHurt, Hunt, Keep, KeepPost, MeleeAdjacent, Scavenge, SearchLastKnown, ShootAtRange, ThrowAtRange, UseAbility, Wander,
 };
-use rl_engine::rl_rules::damage::DamageKindId;
 use rl_engine::rl_rules::faction::FactionDef;
+use rl_engine::rl_rules::parts;
 use serde::Deserialize;
 
 use crate::armory::ItemDef;
@@ -61,9 +61,9 @@ pub struct MonsterDef {
     /// Maximum health.
     pub hp: i32,
     /// Its blow.
-    pub attack: MeleeAttack,
+    pub attack: parts::Melee,
     /// Its shot, for a kind that shoots.
-    pub ranged: Option<RangedAttack>,
+    pub ranged: Option<parts::Ranged>,
     /// Flat armor: its own and what a trait gives, together.
     pub armor: i32,
     /// Its side.
@@ -194,8 +194,8 @@ impl ThreatSubject for MonsterDef {
     }
 
     fn damage_per_hit(&self) -> f32 {
-        let blow = self.attack.dice.avg();
-        self.ranged.map_or(blow, |shot| blow.max(shot.dice.avg()))
+        let blow = self.attack.roll.avg();
+        self.ranged.map_or(blow, |shot| blow.max(shot.roll.avg()))
     }
 
     fn speed_pct(&self) -> u32 {
@@ -292,9 +292,9 @@ struct Authored {
     glyph: char,
     color: (f32, f32, f32),
     hp: i32,
-    attack: String,
+    attack: parts::Melee,
     #[serde(default)]
-    ranged: Option<String>,
+    ranged: Option<parts::Ranged>,
     #[serde(default)]
     armor: i32,
     faction: NameRef<FactionDef>,
@@ -361,11 +361,10 @@ fn resolve(
     moments: &Moments,
 ) -> Result<MonsterDef, Vec<String>> {
     let mut errors = Vec::new();
-    let attack = blow(&a.attack, names).map_err(|e| errors.push(format!("attack {:?}: {e}", a.attack))).ok();
-    let ranged = match &a.ranged {
-        Some(text) => shot(text, names).map_err(|e| errors.push(format!("ranged {text:?}: {e}"))).ok(),
-        None => None,
-    };
+    let (attack, ranged) = (a.attack, a.ranged);
+    if ranged.is_some_and(|shot| shot.range < 1) {
+        errors.push("ranged: a shot reaches one tile or more".to_string());
+    }
     let listed: Vec<_> = a.traits.iter().map(|t| t.id()).collect();
     // Each trait once, said at its second listing: a list says nothing
     // twice, so a trait written twice is a typo for another. Folded only
@@ -382,7 +381,7 @@ fn resolve(
         errors.extend(twice);
         None
     };
-    let (Some(attack), Some(folded)) = (attack, folded) else { return Err(errors) };
+    let Some(folded) = folded else { return Err(errors) };
     if !errors.is_empty() {
         return Err(errors);
     }
@@ -463,38 +462,6 @@ fn learned_by(effect: &EffectSpec, names: &Names<'_>) -> Learned {
         crate::tricks::Steal::KIND => Learned::Itself,
         _ => Learned::Moment,
     }
-}
-
-/// A blow as `monsters.ron` writes it, `"1d4 slash"`: a roll and a kind,
-/// and never a range, which is a shot's.
-fn blow(text: &str, names: &Names<'_>) -> Result<MeleeAttack, String> {
-    if text.contains('@') {
-        return Err("a blow has no range; a shot is written as the monster's `ranged`".into());
-    }
-    let (dice, kind) = roll_and_kind(text, names)?;
-    Ok(MeleeAttack::new(kind, dice))
-}
-
-/// A shot as `monsters.ron` writes it, `"1d6 pierce @6"`: a blow's roll
-/// and kind, and its range in tiles after an `@`.
-fn shot(text: &str, names: &Names<'_>) -> Result<RangedAttack, String> {
-    let Some((head, cells)) = text.split_once('@') else { return Err("a shot names its range after an `@`, as \"1d6 pierce @6\"".into()) };
-    let (dice, kind) = roll_and_kind(head, names)?;
-    let cells = cells.trim();
-    let range =
-        cells.parse::<i32>().ok().filter(|range| *range > 0).ok_or_else(|| format!("{cells:?} is no range; a range is a number of tiles, one or more"))?;
-    Ok(RangedAttack::new(kind, dice, range))
-}
-
-/// `"NdS+B kind"`, read as its roll and the kind it names.
-fn roll_and_kind(text: &str, names: &Names<'_>) -> Result<(DiceRoll, DamageKindId), String> {
-    let mut words = text.split_whitespace();
-    let dice = words.next().ok_or("names no roll")?.parse::<DiceRoll>().map_err(|e| e.to_string())?;
-    let kind = words.collect::<Vec<_>>().join(" ");
-    if kind.is_empty() {
-        return Err("names no kind of damage after its roll".into());
-    }
-    Ok((dice, names.damage_kind(&kind)?))
 }
 
 /// How often a monster that knows an ability reaches for it on a turn one
@@ -758,17 +725,15 @@ pub fn spawn_monster(commands: &mut Commands, def: &MonsterDef, at: Point, map: 
     let (r, g, b) = def.color;
     let mut e = commands.spawn((
         (Actor, Blocks, Position(at), OnMap(map), Kind(def.id), KindTag(def.id)),
-        (Health::full(def.hp), Armor(def.armor), Resists(f.resists.clone()), Faction(def.faction), def.attack),
+        (Health::full(def.hp), Armor(def.armor), Resists(f.resists.clone()), Faction(def.faction)),
         (Perception(def.perception()), Speed(def.speed()), Mind(def.brain.clone()), Intelligence(f.wits), Notice(f.notice.unwrap_or(NOTICE))),
         (Name::new(def.name.clone()), Glyph::new(def.glyph, Color::srgb(r, g, b)).on_layer(5)),
     ));
-    if let Some(ranged) = def.ranged {
-        e.insert(ranged);
-    }
+    Attacks { melee: Some(def.attack), ranged: def.ranged, ..Attacks::default() }.insert(&mut e);
     if uses_things(f.wits) {
         // And what its own blow is worth, which a weapon it would strike
         // with instead has to beat: an ogre keeps its fists.
-        let own = OwnBlowScore(crate::armory::blow_score(def.attack.dice, def.attack.cost));
+        let own = OwnBlowScore(crate::armory::blow_score(def.attack.roll, None));
         e.insert((Inventory::default(), Equipped(Equipment::with_slot_count(registries.slots.len())), own));
     }
     if let Some(cells) = f.dark_sight {

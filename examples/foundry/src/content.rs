@@ -6,12 +6,9 @@
 //! kept in one place so a droid and a commando cannot drift from it.
 
 use rl_engine::rl_bevy::prelude::*;
-use rl_engine::rl_core::DiceRoll;
-use rl_engine::rl_rules::ability::Look;
 use rl_engine::rl_rules::faction::FactionDef;
 use rl_engine::rl_rules::gas::GasDef;
-use rl_engine::rl_rules::{DamageKind, NameRef, Registry, Resistances, SlotDef, StatusDef, TagDef};
-use serde::Deserialize;
+use rl_engine::rl_rules::{DamageKind, Registry, Resistances, SlotDef, StatusDef, TagDef};
 
 /// What one turn of `mending` gives back.
 ///
@@ -56,59 +53,6 @@ impl<'de> serde::Deserialize<'de> for Profile {
             }
         }
         deserializer.deserialize_str(ProfileVisitor)
-    }
-}
-
-/// A blow as a content file writes it: `(roll: "1d6", kind: "kinetic")`,
-/// with an optional `look`.
-///
-/// Named fields rather than a tuple, so the look sits inside the attack
-/// it belongs to, and a droid that punches and shoots says which of the
-/// two a look is for. The look is the engine's own, written the way an
-/// ability's is in `abilities.ron`: a look is one thing wherever it is.
-#[derive(Debug, Clone, Copy, Deserialize)]
-pub struct MeleeDef {
-    /// The damage roll, as `"NdS+B"`.
-    pub roll: DiceRoll,
-    /// The damage kind.
-    pub kind: NameRef<DamageKind>,
-    /// The colour it bursts in on whoever it strikes; absent, it shows
-    /// nothing.
-    #[serde(default)]
-    pub look: Option<Look>,
-}
-
-impl MeleeDef {
-    /// The engine's attack for it, at the ordinary cost.
-    pub fn attack(&self) -> MeleeAttack {
-        MeleeAttack { look: self.look, ..MeleeAttack::new(self.kind.id(), self.roll) }
-    }
-}
-
-/// A shot as a content file writes it: `(range: 5, roll: "1d6", kind:
-/// "energy")`, with an optional `look`, for the reasons [`MeleeDef`] has
-/// named fields.
-#[derive(Debug, Clone, Copy, Deserialize)]
-pub struct RangedDef {
-    /// The furthest cell it reaches.
-    pub range: i32,
-    /// The furthest cell with no range penalty; absent, a third of `range`.
-    #[serde(default)]
-    pub effective: Option<i32>,
-    /// The damage roll, as `"NdS+B"`.
-    pub roll: DiceRoll,
-    /// The damage kind.
-    pub kind: NameRef<DamageKind>,
-    /// What flies from the shooter to the target; absent, a shot lands
-    /// unseen.
-    #[serde(default)]
-    pub look: Option<Look>,
-}
-
-impl RangedDef {
-    /// The engine's attack for it, at the ordinary cost.
-    pub fn attack(&self) -> RangedAttack {
-        RangedAttack { look: self.look, effective: self.effective, ..RangedAttack::new(self.kind.id(), self.roll, self.range) }
     }
 }
 

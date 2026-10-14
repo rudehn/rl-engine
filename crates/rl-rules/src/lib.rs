@@ -22,6 +22,10 @@
 //!   [`Targeting`] is how a use is pointed, an ability's or a thing's own
 //!   aimed use, so both are refused by the one rule, and [`Asks`] what a
 //!   thing's use asks for when it is used on another of its user's things.
+//! - [`parts`]: what a content file writes for something the engine
+//!   already simulates, a blow, a shot, a throw, in one shape any game's
+//!   own definition can type a field with, so two games' files read alike
+//!   without either owning the other's schema.
 //! - [`loot`]: where items turn up and how often, keyed by a game's own
 //!   item ids: a banded table drawn by weight, by group and by tag, what
 //!   the dead leave, a place's scatter, and how good a found thing is by
@@ -89,6 +93,7 @@ pub mod layout;
 pub mod loot;
 pub mod namegen;
 pub mod names;
+pub mod parts;
 pub mod pool;
 pub mod prefab;
 pub mod prop;
@@ -118,6 +123,7 @@ pub use layout::LayoutDef;
 pub use loot::{DropRow, DropTable, Layout, LevelRow, LevelTable, LootRow, LootTable, Placed, ScatterRules, plan_scatter};
 pub use namegen::{NameBook, NameCase, NameSet};
 pub use names::{NameRef, Names};
+pub use parts::AttackShape;
 pub use prefab::{Coverage, CoverageRow, Legend, Legended, Pick, PrefabDef, Reach, Slot};
 pub use prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, Stock};
 pub use role::{RoleDef, RoleId};

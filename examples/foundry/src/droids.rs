@@ -36,7 +36,9 @@ pub use sensors::{Jammed, jam_sensors, sync_dark_sight, unjam_sensors};
 pub(crate) use spawns::MIN_DISTANCE_FROM_ENTRY;
 pub use spawns::populate_deck;
 
-use crate::content::{MeleeDef, Profile, RangedDef, resistances};
+use rl_engine::rl_rules::parts::{Melee, Ranged};
+
+use crate::content::{Profile, resistances};
 
 /// The roster file, compiled in so the binary runs from anywhere.
 const MONSTERS_RON: &str = include_str!("../assets/monsters.ron");
@@ -70,10 +72,10 @@ pub struct MonsterDef {
     pub dark_sight: Option<i32>,
     /// The roll and damage kind a blow deals; absent, it never strikes.
     #[serde(default)]
-    pub melee: Option<MeleeDef>,
+    pub melee: Option<Melee>,
     /// The range, roll and damage kind a shot deals; present, it shoots.
     #[serde(default)]
-    pub ranged: Option<RangedDef>,
+    pub ranged: Option<Ranged>,
     /// Its `Speed`, a percentage of normal: 100 is normal, 200 twice as
     /// fast, and 50 half as fast.
     pub speed: u32,
@@ -307,12 +309,7 @@ pub fn spawn_monster(commands: &mut Commands, roster: &Roster, id: Id<MonsterDef
         (Name::new(d.name.clone()), Glyph::new(d.glyph, Color::srgb(d.color.0, d.color.1, d.color.2)).on_layer(5)),
     ));
     // ANCHOR_END: spawn
-    if let Some(melee) = d.melee {
-        e.insert(melee.attack());
-    }
-    if let Some(ranged) = d.ranged {
-        e.insert(ranged.attack());
-    }
+    Attacks { melee: d.melee, ranged: d.ranged, ..Attacks::default() }.insert(&mut e);
     if let Some(n) = d.dark_sight {
         e.insert(NativeDarkSight(n));
     }

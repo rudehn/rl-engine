@@ -37,6 +37,7 @@ use rl_core::{DiceRoll, Point, RunSeed, SeedDomain, geometry};
 use rl_rules::ability::Look;
 use rl_rules::damage::{DamageKindId, Defender, SubtractArmor};
 use rl_rules::faction::FactionDef;
+use rl_rules::parts::{Melee, Ranged};
 use rl_rules::{DamageStage, FactionId, Factions, Hit, Registry, Relation, Resistances, StatId, StatusId};
 
 use crate::components::{Actor, Blocks, MyTurn, Player, Position};
@@ -135,6 +136,12 @@ impl MeleeAttack {
         Self { kind, dice, cost: None, look: None, shape: None, unaware: None }
     }
 
+    /// The blow `part` describes, costing `cost` hundredths of a step, or
+    /// an ordinary turn for `None`: the authored blow made a component.
+    pub fn from_part(part: &Melee, cost: Option<u32>) -> Self {
+        Self { cost, look: part.look, shape: part.shape, unaware: part.unaware, ..Self::new(part.kind.id(), part.roll) }
+    }
+
     /// One blow costs `cost` hundredths of a step.
     pub const fn costing(mut self, cost: u32) -> Self {
         self.cost = Some(cost);
@@ -202,6 +209,12 @@ impl RangedAttack {
         Self { kind, dice, range, effective: None, cost: None, look: None, shape: None }
     }
 
+    /// The shot `part` describes, costing `cost` hundredths of a step, or
+    /// an ordinary turn for `None`.
+    pub fn from_part(part: &Ranged, cost: Option<u32>) -> Self {
+        Self { cost, look: part.look, effective: part.effective, ..Self::new(part.kind.id(), part.roll, part.range) }
+    }
+
     /// One shot costs `cost` hundredths of a step.
     pub const fn costing(mut self, cost: u32) -> Self {
         self.cost = Some(cost);
@@ -236,33 +249,12 @@ impl RangedAttack {
     }
 }
 
-/// Who else an attack strikes besides the one it was made at.
+/// Who else an attack strikes besides the one it was made at: the
+/// authored part, re-exported here beside the combat that plays it.
 ///
-/// Every one it reaches is rolled for on its own, to land and for damage,
-/// and the whole is one swing: [`Struck`] is written once and the weapon
-/// fires once, so whatever counts swings, heat or ammunition, counts one,
-/// while the weapon's `hit` triggers land on each one struck, where it
-/// stands. It reaches foes only, those the attacker is hostile to by the
-/// faction matrix, so a swing beside an ally or a bystander passes over
-/// them; the target is struck whoever it is, as an attack with no shape
-/// strikes it.
-///
-/// Read from RON as `Sweep` or `Pierce(1)`, so a game's content can name
-/// one in a weapon's row.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
-pub enum AttackShape {
-    /// Every foe beside the attacker, in all eight directions: a swing
-    /// round the wielder. On a shot it is the same ring, round the shooter
-    /// and not where the shot lands, which is a blow's shape lent to a
-    /// shot; a burst where a shot lands is a `hit` trigger with an area.
-    Sweep,
-    /// The target and every foe in the next `n` cells beyond it, on the
-    /// line from the attacker through the target: a thrust that runs on
-    /// through. A wall or a shut door stops it, as either stops a shot, and
-    /// a shot's never runs past the shot's range; nobody standing in it
-    /// does, foe or not, since running on through is the point.
-    Pierce(u32),
-}
+/// The whole is one swing: [`Struck`] is written once and the weapon fires
+/// once, while the weapon's `hit` triggers land on each one struck.
+pub use rl_rules::parts::AttackShape;
 
 /// Extra rolls every hit carries, each its own [`DamageEvent`]: a flaming
 /// blade's fire, a venomed edge's poison.

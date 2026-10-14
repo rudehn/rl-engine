@@ -35,7 +35,7 @@
 use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
 use rl_engine::prelude::*;
-use rl_engine::rl_rules::ability::Look;
+use rl_engine::rl_rules::parts;
 use serde::Deserialize;
 
 use crate::lore::{CurseShown, Lore, Unfamiliar};
@@ -46,69 +46,6 @@ use crate::wearing::Lends;
 const ITEMS_RON: &str = include_str!("../assets/items.ron");
 /// Where each thing is found, compiled in beside it.
 const ITEM_SPAWNS_RON: &str = include_str!("../assets/item_spawns.ron");
-
-/// A blow as `items.ron` writes it: `(roll: "1d6", kind: "slash")`, with
-/// an optional `look`, as Foundry writes one, and the `shape` and the
-/// `unaware` percent that make an axe, a spear and a dagger more than
-/// their rolls.
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct MeleeDef {
-    /// The damage roll, as `"NdS+B"`.
-    pub roll: DiceRoll,
-    /// The damage kind.
-    pub kind: NameRef<DamageKind>,
-    /// The colour it bursts in on whoever it strikes; absent, it shows
-    /// nothing.
-    #[serde(default)]
-    pub look: Option<Look>,
-    /// Who else a blow strikes: `Sweep`, every foe beside the wielder, or
-    /// `Pierce(n)`, the next `n` cells behind the target; absent, the
-    /// target alone.
-    #[serde(default)]
-    pub shape: Option<AttackShape>,
-    /// What a blow on a foe that has not noticed the wielder is worth, in
-    /// percent, in place of the house's
-    /// [`UNAWARE`](crate::content::UNAWARE); absent, the house's.
-    #[serde(default)]
-    pub unaware: Option<u32>,
-}
-
-/// A shot as `items.ron` writes it: `(range: 8, roll: "1d6", kind:
-/// "pierce")`, with an optional `effective` and `look`.
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RangedDef {
-    /// The furthest cell it reaches.
-    pub range: i32,
-    /// The furthest cell with no range penalty; absent, a third of `range`.
-    #[serde(default)]
-    pub effective: Option<i32>,
-    /// The damage roll, as `"NdS+B"`.
-    pub roll: DiceRoll,
-    /// The damage kind.
-    pub kind: NameRef<DamageKind>,
-    /// What flies from the shooter to the target; absent, a shot lands
-    /// unseen.
-    #[serde(default)]
-    pub look: Option<Look>,
-}
-
-/// A throw as `items.ron` writes it: how far, and the blow it strikes, if
-/// it strikes at all. A potion strikes nothing; its land trigger
-/// bursts.
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ThrowDef {
-    /// The furthest cell it reaches.
-    pub range: i32,
-    /// The furthest cell with no range penalty; absent, a third of `range`.
-    #[serde(default)]
-    pub effective: Option<i32>,
-    /// The roll and damage kind it strikes whoever it hits with.
-    #[serde(default)]
-    pub strike: Option<(DiceRoll, NameRef<DamageKind>)>,
-}
 
 /// A thing's charges as `items.ron` writes them: what a use or a landing
 /// costs it, and, for a staff, how long a charge takes to come back.
@@ -221,12 +158,13 @@ pub struct ItemDef {
     /// Percent removed per damage kind, while worn.
     #[serde(default)]
     pub resists: Vec<(NameRef<DamageKind>, i32)>,
-    /// The blow it deals, while wielded.
+    /// The blow it deals, while wielded: an axe's sweep, a spear's thrust
+    /// through, a dagger's own percent on the unaware.
     #[serde(default)]
-    pub melee: Option<MeleeDef>,
+    pub melee: Option<parts::Melee>,
     /// The shot it fires, while wielded.
     #[serde(default)]
-    pub ranged: Option<RangedDef>,
+    pub ranged: Option<parts::Ranged>,
     /// The tag of what one shot spends from its wielder's pack, for a
     /// weapon that shoots something it has to be fed: a bow's arrows.
     #[serde(default)]
@@ -234,7 +172,7 @@ pub struct ItemDef {
     /// How far it flies when thrown, and what it strikes; absent, it
     /// cannot be thrown.
     #[serde(default)]
-    pub throw: Option<ThrowDef>,
+    pub throw: Option<parts::Throw>,
     /// What one blow or shot with it costs, in hundredths of a step;
     /// absent, an ordinary turn.
     #[serde(default)]
@@ -960,8 +898,8 @@ pub fn spawn_item_at(commands: &mut Commands, armory: &Armory, def: Id<ItemDef>,
 fn fit(e: &mut EntityCommands, armory: &Armory, def: Id<ItemDef>, level: i32, stowed: Option<Stowed>, accuracy: Option<StatId>) {
     let d = armory.defs.get(def);
     let plus = |dice: DiceRoll| DiceRoll { bonus: dice.bonus + DAMAGE_PER_LEVEL * level, ..dice };
-    let melee = d.melee.map(|m| MeleeAttack { cost: d.cost, look: m.look, shape: m.shape, unaware: m.unaware, ..MeleeAttack::new(m.kind.id(), plus(m.roll)) });
-    let ranged = d.ranged.map(|r| RangedAttack { cost: d.cost, look: r.look, effective: r.effective, ..RangedAttack::new(r.kind.id(), plus(r.roll), r.range) });
+    let melee = d.melee.map(|m| MeleeAttack::from_part(&parts::Melee { roll: plus(m.roll), ..m }, d.cost));
+    let ranged = d.ranged.map(|r| RangedAttack::from_part(&parts::Ranged { roll: plus(r.roll), ..r }, d.cost));
     match (melee, stowed) {
         (Some(attack), Some(Stowed::Melee(_))) => {
             e.insert(Stowed::Melee(attack));
@@ -985,7 +923,7 @@ fn fit(e: &mut EntityCommands, armory: &Armory, def: Id<ItemDef>, level: i32, st
         }
     }
     if let Some(throw) = d.throw {
-        e.insert(Throwable { effective: throw.effective, ..Throwable::new(throw.range, throw.strike.map(|(dice, kind)| (kind.id(), plus(dice)))) });
+        e.insert(Throwable::from_part(&parts::Throw { strike: throw.strike.map(|(dice, kind)| (plus(dice), kind)), ..throw }));
     }
     let armor = armory.armor_at(def, level);
     if armor != 0 {

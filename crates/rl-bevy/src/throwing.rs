@@ -53,6 +53,11 @@ impl Throwable {
         Self { range, strike, effective: None }
     }
 
+    /// The throw `part` describes: the authored throw made a component.
+    pub fn from_part(part: &rl_rules::parts::Throw) -> Self {
+        Self { effective: part.effective, ..Self::new(part.range, part.strike.map(|(roll, kind)| (kind.id(), roll))) }
+    }
+
     /// No range penalty out to `cells`.
     pub const fn effective_to(mut self, cells: i32) -> Self {
         self.effective = Some(cells);
