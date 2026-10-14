@@ -41,7 +41,7 @@ use rand::{Rng, RngCore};
 use rl_core::{Direction, Grid, Grid2D, Point, Rect};
 use rl_grid::TileId;
 
-use crate::accrete::{Join, Piece, Shape};
+use crate::accrete::{Join, Piece, Shape, Sides};
 use crate::chain::{BuildError, Pass, Phase};
 use crate::context::BuildContext;
 use crate::dungeon::Room;
@@ -425,6 +425,94 @@ pub enum Placement {
     /// stamps in one chain never draw over each other and bury a mark
     /// under the next piece's wall.
     AnyRoom,
+    /// Against one side of the map, its back on the first row or column
+    /// inside the border, along it at a random point kept a margin from
+    /// the corners. A piece meant for an edge is drawn with its back to the
+    /// south, so the side is drawn from those a facing it may land in
+    /// turns its back to ([`Facing::back`]): laid on the north edge it is
+    /// turned a half-turn, on the east or west a quarter-turn, and an edge
+    /// no facing it allows backs onto is never drawn for it. Every piece
+    /// may stand as drawn, so every piece has the south edge.
+    Edge,
+    /// At a random point kept a margin from every edge, a share of each
+    /// side, so whatever grows round it has room on every side.
+    Anywhere,
+    /// A long piece laid across the middle of the map along its own
+    /// length, centred, in any facing it may land in. It does not stretch
+    /// to the map: what grows round it may find a way round its ends, and
+    /// the two halves it lies between are the two sides it divides.
+    Span,
+}
+
+/// The share of a side, in a hundred, that [`Placement::Anywhere`] keeps
+/// clear of every edge and [`Placement::Edge`] of each corner. Enough
+/// that something grows on every side of the piece, small enough that a
+/// piece a third of a map across still has somewhere to go.
+const MARGIN_PCT: i32 = 15;
+
+/// Where a piece goes when the map as a whole is what it is placed on,
+/// rather than a room in it: which of `facings`, each with the size it
+/// lays, it lands in, its corner, and which way it divides the map.
+/// `None` for a placement that needs a room, which is not this one's to
+/// answer, and for [`Placement::Anywhere`] when no facing leaves its
+/// margin.
+///
+/// The way it divides the map is what the way in and the way down keep
+/// either side of: across a [`Placement::Span`]'s length, along an edge
+/// for one against an edge, and across the map's longer side for any
+/// other, so a route between them crosses the piece's band.
+pub(crate) fn on_map(at: Placement, facings: &[(Facing, (i32, i32))], bounds: Rect, rng: &mut dyn RngCore) -> Option<(usize, Point, Sides)> {
+    let (w, h) = (bounds.width, bounds.height);
+    let any = |rng: &mut dyn RngCore, among: &[usize]| among[if among.len() > 1 { rng.random_range(0..among.len()) } else { 0 }];
+    let all: Vec<usize> = (0..facings.len()).collect();
+    let across = if w >= h { Sides::WestEast } else { Sides::NorthSouth };
+    let margin = |side: i32| (side * MARGIN_PCT / 100).max(1);
+    let centred = |(pw, ph): (i32, i32)| Point::new(bounds.x + (w - pw) / 2, bounds.y + (h - ph) / 2);
+    match at {
+        Placement::InRoom(_) | Placement::AnyRoom => None,
+        Placement::Center => {
+            let i = any(rng, &all);
+            Some((i, centred(facings[i].1), across))
+        }
+        Placement::At(p) => Some((any(rng, &all), p, across)),
+        Placement::Span => {
+            let i = any(rng, &all);
+            let (pw, ph) = facings[i].1;
+            Some((i, centred((pw, ph)), if pw >= ph { Sides::NorthSouth } else { Sides::WestEast }))
+        }
+        Placement::Anywhere => {
+            let i = any(rng, &all);
+            let (pw, ph) = facings[i].1;
+            let (mx, my) = (margin(w), margin(h));
+            if w - mx - pw < mx || h - my - ph < my {
+                return None;
+            }
+            Some((i, Point::new(bounds.x + rng.random_range(mx..=w - mx - pw), bounds.y + rng.random_range(my..=h - my - ph)), across))
+        }
+        Placement::Edge => {
+            let backs: Vec<Direction> = [Direction::South, Direction::West, Direction::North, Direction::East]
+                .into_iter()
+                .filter(|d| facings.iter().any(|(f, _)| f.back() == *d))
+                .collect();
+            let back = backs[if backs.len() > 1 { rng.random_range(0..backs.len()) } else { 0 }];
+            let those: Vec<usize> = all.iter().copied().filter(|i| facings[*i].0.back() == back).collect();
+            let i = any(rng, &those);
+            let (pw, ph) = facings[i].1;
+            // Along the edge, kept off the corners where the side allows,
+            // and centred where it does not.
+            let mut along = |side: i32, len: i32| {
+                let m = margin(side);
+                if side - m - len >= m { rng.random_range(m..=side - m - len) } else { (side - len) / 2 }
+            };
+            let (origin, sides) = match back {
+                Direction::South => (Point::new(along(w, pw), h - 1 - ph), Sides::WestEast),
+                Direction::North => (Point::new(along(w, pw), 1), Sides::WestEast),
+                Direction::West => (Point::new(1, along(h, ph)), Sides::NorthSouth),
+                _ => (Point::new(w - 1 - pw, along(h, ph)), Sides::NorthSouth),
+            };
+            Some((i, origin + bounds.origin(), sides))
+        }
+    }
 }
 
 /// How far a stamp lets a piece be turned before it is laid down: the
@@ -532,7 +620,44 @@ impl<C: BuildContext> Pass<C> for StampPrefab {
         Phase::Structures
     }
     fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
-        let prefab = self.orient.apply(&self.prefab, ctx.rng());
+        let bounds = ctx.terrain().bounds();
+        let (prefab, origin) = match self.at {
+            // Where these go depends on which way the piece faces, so the
+            // facing is drawn with the place rather than before it.
+            Placement::Edge | Placement::Anywhere | Placement::Span => {
+                let laid: Vec<Prefab> = self.orient.facings(&self.prefab);
+                let sizes: Vec<(Facing, (i32, i32))> =
+                    self.orient.allowed(&self.prefab).into_iter().zip(&laid).map(|(f, p)| (f, (p.width(), p.height()))).collect();
+                let (i, origin, _) = on_map(self.at, &sizes, bounds, ctx.rng()).ok_or_else(|| {
+                    BuildError::new(
+                        self.name,
+                        format!("no facing of the piece keeps the margin {:?} asks on a {}x{} map", self.at, bounds.width, bounds.height),
+                    )
+                })?;
+                (laid[i].clone(), origin)
+            }
+            _ => {
+                let prefab = self.orient.apply(&self.prefab, ctx.rng());
+                let origin = self.in_place(ctx, &prefab)?;
+                (prefab, origin)
+            }
+        };
+        let (w, h) = (prefab.width(), prefab.height());
+        let placed = Rect::new(origin.x, origin.y, w, h);
+        if placed.intersection(&bounds) != Some(placed) {
+            return Err(BuildError::new(self.name, format!("{placed:?} is off the map")));
+        }
+        prefab.stamp(ctx.terrain_mut(), origin);
+        let marks = prefab.marks().iter().map(|(c, p)| (*c, origin + *p)).collect();
+        ctx.emit(Stamped { bounds: placed, marks, prefab: prefab.key() });
+        Ok(())
+    }
+}
+
+impl StampPrefab {
+    /// The corner `prefab`, already turned, is laid at for a placement on
+    /// a point or in a room.
+    fn in_place<C: BuildContext>(&self, ctx: &mut C, prefab: &Prefab) -> Result<Point, BuildError> {
         let (w, h) = (prefab.width(), prefab.height());
         let bounds = ctx.terrain().bounds();
         let centred = |r: Rect| Point::new(r.x + (r.width - w) / 2, r.y + (r.height - h) / 2);
@@ -541,7 +666,7 @@ impl<C: BuildContext> Pass<C> for StampPrefab {
         // its size would put its walls on the room's edge, over the room's
         // doorways, with an opening that may face the room's own wall.
         let fits = |r: &Rect| r.width >= w + 2 && r.height >= h + 2;
-        let origin = match self.at {
+        Ok(match self.at {
             Placement::Center => centred(bounds),
             Placement::At(p) => p,
             Placement::InRoom(i) => {
@@ -563,15 +688,10 @@ impl<C: BuildContext> Pass<C> for StampPrefab {
                 }
                 centred(rooms[ctx.rng().random_range(0..rooms.len())])
             }
-        };
-        let placed = Rect::new(origin.x, origin.y, w, h);
-        if placed.intersection(&bounds) != Some(placed) {
-            return Err(BuildError::new(self.name, format!("{placed:?} is off the map")));
-        }
-        prefab.stamp(ctx.terrain_mut(), origin);
-        let marks = prefab.marks().iter().map(|(c, p)| (*c, origin + *p)).collect();
-        ctx.emit(Stamped { bounds: placed, marks, prefab: prefab.key() });
-        Ok(())
+            Placement::Edge | Placement::Anywhere | Placement::Span => {
+                return Err(BuildError::new(self.name, format!("{:?} draws its facing with its place, and is not laid here", self.at)));
+            }
+        })
     }
 }
 
@@ -729,23 +849,33 @@ impl PrefabShape {
     /// or when there is nothing inside its wall at all.
     pub fn new(name: impl Into<String>, prefab: &Prefab, join: Join) -> Result<Self, BuildError> {
         let name = name.into();
-        let err = |reason: String| BuildError::new("prefab", format!("{name}: {reason}"));
-        if prefab.entries().is_empty() {
-            return Err(err("has no entry, so a piece grown from it could never be joined".into()));
-        }
-        let mut facings = Vec::new();
-        for facing in Orient::TurnedOrMirrored.facings(prefab) {
-            let (cells, sites) = body_and_sites(&facing);
-            if cells.is_empty() {
-                return Err(err("has nothing inside its wall".into()));
-            }
-            if let Some(e) = facing.entries().iter().find(|e| !sites.iter().any(|(p, _)| p == *e)) {
-                return Err(err(format!("the entry at {e:?} has no inside of the piece straight across from the outside")));
-            }
-            facings.push(Piece { cells, sites, drawn: Some(facing) });
-        }
+        let facings = grown_facings(&name, prefab, Orient::TurnedOrMirrored)?.into_iter().map(|(_, piece)| piece).collect();
         Ok(Self { name, join, facings })
     }
+}
+
+/// Each facing `prefab` may be grown in under `orient`, and the piece it
+/// draws there, as [`PrefabShape`] grows one. An error naming it as
+/// `name` when it has no entry, when an entry has no body straight across
+/// from the outside, or when there is nothing inside its wall at all.
+pub(crate) fn grown_facings(name: &str, prefab: &Prefab, orient: Orient) -> Result<Vec<(Facing, Piece)>, BuildError> {
+    let err = |reason: String| BuildError::new("prefab", format!("{name}: {reason}"));
+    if prefab.entries().is_empty() {
+        return Err(err("has no entry, so a piece grown from it could never be joined".into()));
+    }
+    let mut facings = Vec::new();
+    for f in orient.allowed(prefab) {
+        let facing = f.lay(prefab);
+        let (cells, sites) = body_and_sites(&facing);
+        if cells.is_empty() {
+            return Err(err("has nothing inside its wall".into()));
+        }
+        if let Some(e) = facing.entries().iter().find(|e| !sites.iter().any(|(p, _)| p == *e)) {
+            return Err(err(format!("the entry at {e:?} has no inside of the piece straight across from the outside")));
+        }
+        facings.push((f, Piece { cells, sites, drawn: Some(facing) }));
+    }
+    Ok(facings)
 }
 
 /// The body of `prefab` and the sites at its entries, as [`PrefabShape`]
@@ -1108,6 +1238,43 @@ pub(crate) mod tests {
                 _ => false,
             };
             assert!(on, "{f:?} puts the bottom row's mark at {a:?}, not on its {:?} side", f.back());
+        }
+    }
+
+    /// A stamp may take the placements a landmark does: against an edge
+    /// with the drawing's back on the first row inside the border, kept a
+    /// margin from every edge, or centred across the middle.
+    #[test]
+    fn a_stamp_laid_against_an_edge_anywhere_or_across_the_middle_lands_where_each_says() {
+        let (w, h) = (40, 30);
+        let lay = |at: Placement, orient: Orient, s: u64| {
+            let tiles = TileRegistry::standard();
+            let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
+            let mut c = BaseContext::blank(w, h, tiles, floor);
+            let piece = Prefab::parse(&[".....", "#####"], |ch| (ch == '#').then_some(wall)).unwrap();
+            Chain::new().then(StampPrefab { name: "piece", prefab: piece, at, orient }).run(&mut c, RunSeed(s)).unwrap();
+            (c.outputs().first::<Stamped>().unwrap().bounds, c, wall)
+        };
+        for s in 0..20 {
+            let (b, _, _) = lay(Placement::Edge, Orient::Fixed, s);
+            assert_eq!((b.bottom(), b.width), (h - 1, 5), "seed {s}: as drawn, its back is on the south row inside the border");
+            assert!(b.x >= w * 15 / 100 && b.right() <= w - w * 15 / 100, "seed {s}: kept off the corners");
+            let (b, c, wall) = lay(Placement::Edge, Orient::TurnedOrMirrored, s);
+            let back: Vec<Point> = if b.bottom() == h - 1 {
+                (b.x..b.right()).map(|x| Point::new(x, b.bottom() - 1)).collect()
+            } else if b.y == 1 {
+                (b.x..b.right()).map(|x| Point::new(x, b.y)).collect()
+            } else if b.x == 1 {
+                (b.y..b.bottom()).map(|y| Point::new(b.x, y)).collect()
+            } else {
+                assert_eq!(b.right(), w - 1, "seed {s}: {b:?} is against no edge");
+                (b.y..b.bottom()).map(|y| Point::new(b.right() - 1, y)).collect()
+            };
+            assert!(back.iter().all(|p| c.terrain().get(*p) == Some(wall)), "seed {s}: the side against the edge is its back");
+            let (b, _, _) = lay(Placement::Anywhere, Orient::Fixed, s);
+            assert!(b.x >= 6 && b.right() <= w - 6 && b.y >= 4 && b.bottom() <= h - 4, "seed {s}: {b:?} keeps its margin");
+            let (b, _, _) = lay(Placement::Span, Orient::Fixed, s);
+            assert_eq!((b.x, b.y), ((w - 5) / 2, (h - 2) / 2), "seed {s}: centred across the middle");
         }
     }
 

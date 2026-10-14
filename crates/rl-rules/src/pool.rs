@@ -3,7 +3,8 @@
 //! A pool file is [`Pool`], read once by [`load`], which resolves every
 //! name in it and reports every mistake at once, as a layout file is. An
 //! [`Entry`] is one thing a place may be given: a prefab grown as an area
-//! of its own, a prefab stamped inside an area, or a dressing; the floors
+//! of its own, a prefab seeded as the first piece the place grows round,
+//! a prefab stamped inside an area, or a dressing; the floors
 //! and place tags it may stand on; a named weight; how many of it one place
 //! and one run may hold; an exclusive group; and, for one stamped inside,
 //! the kind of area it prefers. A [`Budget`] says how many picks of a kind
@@ -19,6 +20,12 @@
 //! kind means anything to the engine, which only counts them, and the
 //! piece itself says nothing about what kind of room it is
 //! (`docs/design/prefabs.md` section 8 refused categories on a prefab).
+//! A seeded entry, a landmark, is the one way of being placed that limits
+//! its kind: a place has one first piece, so every seeded entry is of one
+//! kind and every budget of it gives a floor at most one. A run draws its
+//! landmarks with every other pick, once, so `per_run`, one by default,
+//! keeps a run from seeing one twice, and a floor whose tags fit no
+//! seeded entry has none and grows as it would have.
 //!
 //! What this module does not hold is the laying. Growing a piece is
 //! `rl-mapgen`'s `Accrete` and stamping one inside an area its
@@ -67,14 +74,35 @@
 //! //                           Door, Arch, Mouth(n) with n at least 1,
 //! //                           Locked("tag") opened by a carrier of the tag,
 //! //                           Sealed, a gate the game lifts
+//! //       Seeded([placement], stairs)
+//! //                         the place's first piece, laid before anything
+//! //                         grows at one of the placements, drawn afresh for
+//! //                         each attempt, and the place grown out from the
+//! //                         entries its prefab draws, each joined as what
+//! //                         grows against it is; only of a kind every budget
+//! //                         covering its floors marks required and gives at
+//! //                         most one, every seeded entry of one kind; a
+//! //                         placement is one of
+//! //                           Center    the middle of the map
+//! //                           Edge      against a side of the map its
+//! //                                     facings allow, its back drawn to
+//! //                                     the south
+//! //                           Anywhere  anywhere a margin from every edge
+//! //                           Span      a long piece across the middle
+//! //                         and the stairs one of
+//! //                           Free        wherever the game's chain puts them
+//! //                           Beyond      the way in and the way down on
+//! //                                       opposite sides of it
+//! //                           Within('c') the way down on the cell its
+//! //                                       prefab's slot 'c' marks
 //! //       Inside([shape])   stamped inside an area one of the layout's
 //! //                         named shapes drew, at least one of them a
 //! //                         shape that draws rooms, not a Passage; any
 //! //                         area if the list is empty
 //! //       Dressed           a dressing laid over an area of any size
 //! //     prefer:    optional, Anywhere if left out, and only Anywhere for a
-//! //                grown piece: the area an Inside or Dressed pick goes
-//! //                in, one of
+//! //                grown or seeded piece: the area an Inside or Dressed
+//! //                pick goes in, one of
 //! //       Secluded   the area farthest from the route it fits
 //! //       DeadEnd    an area with one way in
 //! //       Hidden     an area reached only through a secret
@@ -86,8 +114,11 @@
 //!     budgets: [
 //!         (floors: (1, 5), kind: "flavor", count: (2, 3)),
 //!         (floors: (1, 5), kind: "reward", count: (1, 1), required: true),
+//!         (floors: (2, 5), kind: "landmark", count: (1, 1), required: true),
 //!     ],
 //!     entries: [
+//!         (name: "great stair", kind: "landmark", piece: "stairwell", floors: (2, 5), weight: "rare",
+//!          placed: Seeded([Center, Edge], Within('>'))),
 //!         (name: "locked store", kind: "reward", piece: "store", floors: (1, 5), weight: "common",
 //!          group: "stores", placed: Grown(Locked("key"))),
 //!         (name: "side stash", kind: "reward", piece: "stash", floors: (2, 5), not: ["wet"], weight: "rare",
@@ -149,6 +180,42 @@ pub enum Placed {
         /// The dressing's name, which the dressings' own load checks.
         dressing: String,
     },
+    /// A prefab laid as the place's first piece, before anything grows,
+    /// for the place to grow round: a landmark.
+    Seeded {
+        /// The prefab's name.
+        piece: String,
+        /// Where it may be laid, one drawn for each attempt.
+        placements: Vec<Placement>,
+        /// Where the way in and the way down stand round it.
+        stairs: Stairs,
+    },
+}
+
+/// Where a seeded piece is laid on the map. The places a stamp may go
+/// that need a room are not here, since no room stands before growth.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+pub enum Placement {
+    /// The middle of the map.
+    Center,
+    /// Against a side of the map its facings allow, its back drawn to the
+    /// south.
+    Edge,
+    /// Anywhere a margin from every edge.
+    Anywhere,
+    /// A long piece across the middle of the map, along its length.
+    Span,
+}
+
+/// Where the way in and the way down stand round a seeded piece.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+pub enum Stairs {
+    /// Wherever the game's own chain puts them.
+    Free,
+    /// On opposite sides of it, so the route between them crosses it.
+    Beyond,
+    /// The way down on the cell the piece's slot of this glyph marks.
+    Within(char),
 }
 
 /// The area an entry stamped inside or dressed prefers. A grown piece has
@@ -204,10 +271,11 @@ impl Entry {
             && !self.not.iter().any(|t| tags.contains(t))
     }
 
-    /// The prefab it lays, for a grown piece or one stamped inside.
+    /// The prefab it lays, for a grown piece, a seeded one or one stamped
+    /// inside.
     pub fn piece(&self) -> Option<&str> {
         match &self.placed {
-            Placed::Grown { piece, .. } | Placed::Inside { piece, .. } => Some(piece),
+            Placed::Grown { piece, .. } | Placed::Inside { piece, .. } | Placed::Seeded { piece, .. } => Some(piece),
             Placed::Dressed { .. } => None,
         }
     }
@@ -309,6 +377,7 @@ enum PlacedRon {
     Grown(JoinRon),
     Inside(Vec<String>),
     Dressed,
+    Seeded(Vec<Placement>, Stairs),
 }
 
 #[derive(Deserialize)]
@@ -331,10 +400,13 @@ enum JoinRon {
 /// one floor, an entry whose floors no budget of its kind covers, a limit
 /// of nought or a per-place limit past the per-run one, a piece and a
 /// dressing both or neither or the wrong one for how it is placed, a grown
-/// prefab with no entry to join it by, a mouth of no width, a preference
-/// on a grown piece, a grown piece of a kind some budget on its floors
-/// does not require, an inside piece whose shapes all draw no room, and a
-/// group whose entries are of more than one kind.
+/// or seeded prefab with no entry to join it by, a mouth of no width, a
+/// preference on a grown or seeded piece, a grown or seeded piece of a
+/// kind some budget on its floors does not require, a seeded piece at no
+/// placement, of a kind a budget gives a floor more than one of, of a
+/// kind another seeded entry is not, or whose way down is a glyph its
+/// prefab draws no slot as, an inside piece whose shapes all draw no
+/// room, and a group whose entries are of more than one kind.
 pub fn load<M>(text: &str, layout: &LayoutDef, pieces: &Registry<PrefabDef<M>>, names: &Names<'_>) -> Result<Pool, ContentError> {
     let options = ron::options::Options::default().with_default_extension(ron::extensions::Extensions::IMPLICIT_SOME);
     let a: PoolRon = options.from_str(text).map_err(|e| ContentError::Parse(e.to_string()))?;
@@ -405,7 +477,7 @@ pub fn load<M>(text: &str, layout: &LayoutDef, pieces: &Registry<PrefabDef<M>>, 
         }
         let piece = |errors: &mut Vec<String>| -> String {
             let Some(piece) = &e.piece else {
-                errors.push(format!("{name}: a grown or inside entry names a piece"));
+                errors.push(format!("{name}: a grown, seeded or inside entry names a piece"));
                 return String::new();
             };
             if e.dressing.is_some() {
@@ -453,6 +525,38 @@ pub fn load<M>(text: &str, layout: &LayoutDef, pieces: &Registry<PrefabDef<M>>, 
                 };
                 Placed::Grown { piece, join }
             }
+            PlacedRon::Seeded(placements, stairs) => {
+                let piece = piece(&mut errors);
+                let def = pieces.id(&piece).map(|id| pieces.get(id));
+                if def.is_some_and(|def| !def.rows().iter().any(|row| row.chars().any(|c| def.entry(c)))) {
+                    errors.push(format!("{name}: seeds {piece:?}, which draws no entry for the place to grow out from"));
+                }
+                if placements.is_empty() {
+                    errors.push(format!("{name}: is seeded at no placement"));
+                }
+                if let (Stairs::Within(mark), Some(def)) = (stairs, def)
+                    && (def.slot(*mark).is_none() || !def.rows().iter().any(|row| row.contains(*mark)))
+                {
+                    errors.push(format!("{name}: its way down is the cell {piece:?} marks '{mark}', and no slot of it is drawn as '{mark}'"));
+                }
+                if e.prefer != Prefer::Anywhere {
+                    errors.push(format!("{name}: prefers {:?}, and a seeded piece goes where its placement lays it", e.prefer));
+                }
+                let overlaps = |b: &&Budget| Some(b.kind) == kind && b.floors.0.max(e.floors.0) <= b.floors.1.min(e.floors.1);
+                if let Some(b) = budgets.iter().filter(overlaps).find(|b| !b.required) {
+                    errors.push(format!(
+                        "{name}: is seeded, and its kind {:?} is not required on floors {} to {}; growth cannot drop the piece it grows round",
+                        e.kind, b.floors.0, b.floors.1
+                    ));
+                }
+                if let Some(b) = budgets.iter().filter(overlaps).find(|b| b.count.1 > 1) {
+                    errors.push(format!(
+                        "{name}: is seeded, and its kind {:?} gives floors {} to {} up to {}; a place grows round one first piece",
+                        e.kind, b.floors.0, b.floors.1, b.count.1
+                    ));
+                }
+                Placed::Seeded { piece, placements: placements.clone(), stairs: *stairs }
+            }
             PlacedRon::Inside(shapes) => {
                 let piece = piece(&mut errors);
                 for shape in shapes.iter().filter(|s| !shape_names.contains(&s.as_str())) {
@@ -489,6 +593,15 @@ pub fn load<M>(text: &str, layout: &LayoutDef, pieces: &Registry<PrefabDef<M>>, 
             placed,
             prefer: e.prefer,
         });
+    }
+
+    // A place has one first piece, so two kinds that could each give a
+    // floor one could give it two.
+    let seeded = |e: &&EntryRon| matches!(e.placed, PlacedRon::Seeded(..));
+    if let Some(first) = a.entries.iter().find(seeded)
+        && let Some(other) = a.entries.iter().filter(seeded).find(|o| o.kind != first.kind)
+    {
+        errors.push(format!("{}: is seeded as a {}, and {} as a {}; every seeded entry is of one kind", other.name, other.kind, first.name, first.kind));
     }
 
     // A group's entries share a floor's one place in it; one of a single
@@ -878,6 +991,12 @@ mod tests {
             piece("shut", r####""###", "#.#", "###""####),
             crate::prefab::load::<()>(r#"(name: "rack", ground: "floor", rows: ["w"], legend: { 'w': Item(tag: "key") })"#, &tiles, &Names::new().tags(&tags))
                 .unwrap(),
+            crate::prefab::load::<()>(
+                r######"(name: "stairwell", ground: "floor", rows: ["##E##", "#.>.#", "#####"], legend: { '#': Tile("wall"), '.': Tile("floor"), '>': Mark, 'E': Entry })"######,
+                &tiles,
+                &Names::new(),
+            )
+            .unwrap(),
         ])
         .unwrap();
         World { layout: crate::layout::load(LAYOUT).unwrap(), pieces, tags }
@@ -1235,5 +1354,87 @@ mod tests {
             differ += usize::from(plan(&pool, &places, seed) != plan(&pool, &places, seed + 1));
         }
         assert!(differ > 45, "another seed plans other picks: {differ} of 50");
+    }
+
+    /// The landmarks of a pool: a budget of one on floors two to eight,
+    /// required, and three seeded entries, one only for a wet floor.
+    const LANDMARKS: &str = r#"(
+        weights: [("rare", 5), ("common", 50)],
+        tags: ["wet", "dry"],
+        budgets: [(floors: (1, 10), kind: "landmark", count: (1, 1), required: true)],
+        entries: [
+            (name: "great stair", kind: "landmark", piece: "stairwell", floors: (2, 8), weight: "common", placed: Seeded([Center, Edge], Within('>'))),
+            (name: "crossing", kind: "landmark", piece: "store", floors: (2, 8), weight: "rare", placed: Seeded([Span], Beyond)),
+            (name: "cistern", kind: "landmark", piece: "store", floors: (2, 8), where: ["wet"], weight: "common", placed: Seeded([Anywhere], Free)),
+        ],
+    )"#;
+
+    #[test]
+    fn a_seeded_entry_loads_with_its_placements_and_its_stairs() {
+        let w = world();
+        let pool = read(&w, LANDMARKS).unwrap();
+        assert_eq!(
+            pool.entries[0].placed,
+            Placed::Seeded { piece: "stairwell".into(), placements: vec![Placement::Center, Placement::Edge], stairs: Stairs::Within('>') }
+        );
+        assert_eq!(pool.entries[1].placed, Placed::Seeded { piece: "store".into(), placements: vec![Placement::Span], stairs: Stairs::Beyond });
+        assert_eq!(pool.entries[0].piece(), Some("stairwell"));
+    }
+
+    #[test]
+    fn every_mistake_in_a_seeded_entry_is_refused_by_name() {
+        let w = world();
+        let text = r#"(
+            weights: [("rare", 5)],
+            tags: [],
+            budgets: [
+                (floors: (1, 2), kind: "landmark", count: (0, 2), required: true),
+                (floors: (3, 4), kind: "landmark", count: (1, 1)),
+                (floors: (1, 4), kind: "vista", count: (1, 1), required: true),
+            ],
+            entries: [
+                (name: "a", kind: "landmark", piece: "shut", floors: (1, 1), weight: "rare", placed: Seeded([Center], Free)),
+                (name: "b", kind: "landmark", piece: "stairwell", floors: (1, 1), weight: "rare", placed: Seeded([], Within('?'))),
+                (name: "c", kind: "landmark", piece: "store", floors: (3, 4), weight: "rare", placed: Seeded([Edge], Free), prefer: DeadEnd),
+                (name: "d", kind: "vista", piece: "store", floors: (1, 4), weight: "rare", placed: Seeded([Edge], Free)),
+            ],
+        )"#;
+        let Err(ContentError::Invalid(errors)) = read(&w, text) else { panic!("the pool is refused") };
+        let says = |what: &str| assert!(errors.iter().any(|e| e.contains(what)), "no error says {what:?} among {errors:#?}");
+        says("a: seeds \"shut\", which draws no entry");
+        says("a: is seeded, and its kind \"landmark\" gives floors 1 to 2 up to 2");
+        says("b: is seeded at no placement");
+        says("b: its way down is the cell \"stairwell\" marks '?'");
+        says("c: prefers DeadEnd, and a seeded piece");
+        says("c: is seeded, and its kind \"landmark\" is not required on floors 3 to 4");
+        says("d: is seeded as a vista, and a as a landmark; every seeded entry is of one kind");
+        assert_eq!(errors.len(), 8, "{errors:#?}");
+    }
+
+    /// Over a span of runs: no run holds one landmark twice, no floor
+    /// holds two, and a floor whose number or tags fit no seeded entry
+    /// holds none, so it grows as it would have.
+    #[test]
+    fn no_run_holds_one_landmark_twice_and_a_floor_no_landmark_fits_holds_none() {
+        use rand::SeedableRng;
+        let w = world();
+        let pool = read(&w, LANDMARKS).unwrap();
+        let places: Vec<Place> = (1..=10).map(|band| Place { band, tags: vec![if band % 3 == 0 { "wet".to_string() } else { "dry".to_string() }] }).collect();
+        for seed in 0..200 {
+            let plan = pool.plan_run(&mut rand::rngs::StdRng::seed_from_u64(seed), &places);
+            let mut seen = Vec::new();
+            for (place, picks) in places.iter().zip(&plan) {
+                assert!(picks.len() <= 1, "seed {seed}: floor {} holds {} landmarks", place.band, picks.len());
+                for pick in picks {
+                    assert!(pool.entries[pick.entry].fits(place.band, &place.tags), "seed {seed}: floor {} holds one that does not fit it", place.band);
+                    assert!(!seen.contains(&pick.entry), "seed {seed}: {} twice in one run", pool.entries[pick.entry].name);
+                    seen.push(pick.entry);
+                }
+            }
+            for band in [1, 9, 10] {
+                assert!(plan[band as usize - 1].is_empty(), "seed {seed}: floor {band} fits no landmark and holds one");
+            }
+            assert_eq!(seen.len(), 3, "seed {seed}: the three are each drawn once, the wet one on a wet floor");
+        }
     }
 }

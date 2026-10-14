@@ -38,7 +38,7 @@ use rand::seq::SliceRandom;
 use rl_engine::prelude::*;
 use rl_engine::rl_bevy::layout::LayoutTiles;
 use rl_engine::rl_core::Rect;
-use rl_engine::rl_mapgen::dungeon::{ExitPoint, FarthestExit, RandomStart};
+use rl_engine::rl_mapgen::dungeon::{ExitPoint, FarthestExit, MarkedStart, RandomStart};
 use rl_engine::rl_mapgen::passes::StartPoint;
 use rl_engine::rl_mapgen::{Area, Opening};
 use rl_engine::rl_render::TileAppearance;
@@ -619,6 +619,10 @@ impl Undermere {
             grown.accrete.pieces.push(piece);
         }
         grown.accrete.pieces.extend(picked.pieces);
+        // A landmark the pool seeded on this floor is its first piece,
+        // and its stairs say where the way in and the way down stand.
+        grown.accrete.first = picked.first;
+        let stairs = picked.stairs;
         let mut chain = Chain::new().then(grown.accrete).then(grown.loops).then(Paint { floor: floor_tile, rules: drawn.paint.clone() });
         if let Some((lakes, bridges)) = drawn.lakes.clone() {
             chain = chain.then(lakes);
@@ -638,7 +642,8 @@ impl Undermere {
         chain = if throne {
             chain.then(RandomStart.clear_of_stamps(MIN_DISTANCE_FROM_ENTRY)).then(ClearOfTheThrone)
         } else {
-            chain.then(RandomStart.clear_of_stamps(MIN_DISTANCE_FROM_ENTRY)).then(FarthestExit.among_farthest(EXIT_AMONG_PCT).clear_of_stamps(EXIT_CLEAR))
+            let start = stairs.start(RandomStart.clear_of_stamps(MIN_DISTANCE_FROM_ENTRY));
+            chain.then(start).then(stairs.exit(FarthestExit.among_farthest(EXIT_AMONG_PCT).clear_of_stamps(EXIT_CLEAR)))
         };
         chain = chain.then(Survey);
         // The floor's secret doors and hidden rooms, walled over before
@@ -875,28 +880,6 @@ impl CostSource for Opened<'_> {
     fn cost_idx(&self, idx: usize) -> Option<u32> {
         let id = self.terrain.get_idx(idx).index();
         self.tables.passable[id].then(|| self.tables.move_cost[id])
-    }
-}
-
-/// Emits the cell a piece marked `mark` as the way in: the town's `@`.
-struct MarkedStart {
-    mark: char,
-}
-
-impl Pass<BaseContext> for MarkedStart {
-    fn name(&self) -> &'static str {
-        "marked_start"
-    }
-
-    fn phase(&self) -> Phase {
-        Phase::Exits
-    }
-
-    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
-        let at = ctx.outputs().iter::<Stamped>().flat_map(|st| st.marks.iter()).find(|(c, _)| *c == self.mark).map(|(_, p)| *p);
-        let at = at.ok_or_else(|| BuildError::new("marked_start", format!("no piece marks a '{}'", self.mark)))?;
-        ctx.emit(StartPoint(at));
-        Ok(())
     }
 }
 
@@ -1435,6 +1418,17 @@ mod tests {
         assert_eq!(seen.len(), FINAL_BOSSES.len(), "every one of the three drawn somewhere over the span: {seen:?}");
     }
 
+    /// The town is stamped at the map's corner, so the cell its drawing
+    /// marks `@` is where the engine's `MarkedStart` puts the way in.
+    #[test]
+    fn the_town_s_way_in_is_the_cell_its_drawing_marks_with_an_at_sign() {
+        let undermere = Undermere::new(RunSeed(0));
+        let town = undermere.prefabs().piece("Mereholt").unwrap();
+        let marked: Vec<Point> = town.marks().iter().filter(|(c, _)| *c == '@').map(|(_, p)| *p).collect();
+        assert_eq!(marked.len(), 1, "the town marks one way in");
+        assert_eq!(undermere.build(TOWN, None).unwrap().entry, marked[0]);
+    }
+
     #[test]
     fn the_town_has_one_gate_and_the_arrival_is_not_on_it() {
         let undermere = Undermere::new(RunSeed(0));
@@ -1765,6 +1759,7 @@ mod tests {
             sealed: undermere.tile("throne floor"),
             pieces: vec![piece],
             late_pct: 0,
+            first: None,
         };
         pass.shapes.push(Box::new(rl_engine::rl_mapgen::accrete::Rectangle { name: "seed".into(), w: (4, 4), h: (4, 4), join: Join::Door }));
         pass.districts[0].shapes.push((0, 1));

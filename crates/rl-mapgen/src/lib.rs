@@ -22,6 +22,10 @@
 //! drawn by the cellular automaton, grown and joined like any other, and
 //! a [`PrefabShape`](prefab::PrefabShape) is a hand-drawn piece grown as an
 //! area of its own, entered only through the entries its file draws.
+//! A [`FirstPiece`] is one laid before anything grows, at a placement, for
+//! a place to grow round, and published as a [`Landmark`] whose
+//! [`Sides`] the way in and the way down may keep to, as
+//! [`Stairs`](dungeon::Stairs) says.
 //! [`Survey`] measures what was built, as a
 //! [`Surveyed`] with an [`AreaFacts`] per area, and [`Require`] fails a
 //! place that falls short, for [`Chain::run_retrying`] to build again.
@@ -59,7 +63,7 @@ pub mod survey;
 mod testing;
 mod walk;
 
-pub use accrete::{Accrete, Area, Barrier, District, Join, LaidBarrier, Opening, Piece, Shape};
+pub use accrete::{Accrete, Area, Barrier, District, FirstPiece, Join, LaidBarrier, Landmark, Opening, Piece, Shape, Side, Sides};
 pub use cave::Cave;
 pub use chain::{BuildError, Chain, Pass, Phase};
 pub use context::{BaseContext, BuildContext, Outputs};

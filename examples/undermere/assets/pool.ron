@@ -48,11 +48,22 @@
 //     placed:    how it is laid, one of
 //       Grown(join)       grown as an area of its own, joined by one of
 //                         Door, Arch, Mouth(n), Locked("tag"), Sealed
+//       Seeded([placement], stairs)
+//                         the floor's first piece, laid before anything
+//                         grows, the floor grown out from its entries; a
+//                         placement is Center | Edge (its back drawn to
+//                         the south) | Anywhere | Span (a long piece across
+//                         the middle), one drawn each attempt, and the
+//                         stairs Free | Beyond (way in and way down on
+//                         opposite sides of it) | Within('c') (the way down
+//                         on its slot 'c'); every seeded entry is of one
+//                         kind, required, at most one to a floor. No entry
+//                         is seeded yet
 //       Inside([shape])   stamped inside an area of one of the named
 //                         shapes; any area if the list is empty
 //       Dressed           a dressing laid over an area of any size
 //     prefer:    optional, Anywhere if left out, and only Anywhere for a
-//                grown piece: Secluded | DeadEnd | Hidden | Junction |
+//                grown or seeded piece: Secluded | DeadEnd | Hidden | Junction |
 //                Anywhere
 //
 // The risk-and-reward and reward pieces are prefabs under

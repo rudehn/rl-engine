@@ -632,6 +632,7 @@ mod tests {
             sealed: floor,
             pieces: vec![Box::new(piece)],
             late_pct: 10,
+            first: None,
         };
         let chain = Chain::new().then(grow).then(rl_mapgen::dungeon::RandomStart);
         PlaceBuild::from_context(chain.run_retrying(|| BaseContext::blank(40, 30, tiles.clone(), wall), seed, 20).unwrap()).unwrap()

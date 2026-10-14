@@ -830,6 +830,7 @@ mod tests {
             sealed: r.door,
             pieces: Vec::new(),
             late_pct: 0,
+            first: None,
         }
     }
 

@@ -8,6 +8,12 @@
 //! round it rather than running straight across. What it laid it
 //! publishes: an [`Area`] per piece, an [`Opening`] per join and a
 //! [`LaidBarrier`] per barrier present.
+//!
+//! The first piece may instead be a [`FirstPiece`], a drawn piece laid at
+//! a [`Placement`] before anything grows, for the place to grow out from
+//! the entries its drawing opens: a landmark, published as a [`Landmark`]
+//! with the [`Sides`] it divides the place into, which the way in and the
+//! way down may keep to opposite sides of.
 
 use rand::seq::SliceRandom;
 use rand::{Rng, RngCore};
@@ -18,7 +24,7 @@ use rl_grid::{BitGrid, Terrain, TileId};
 use crate::chain::{BuildError, Pass, Phase};
 use crate::context::BuildContext;
 use crate::dungeon::Room;
-use crate::prefab::{Prefab, Stamped, pick_weighted};
+use crate::prefab::{Facing, Orient, Placement, Prefab, Stamped, grown_facings, on_map, pick_weighted};
 
 /// How a piece is joined to the one it is attached to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -402,6 +408,129 @@ pub struct LaidBarrier {
     pub cells: Vec<Point>,
 }
 
+/// A drawn piece laid before anything grows, at a placement, for a place
+/// to grow round: a landmark.
+///
+/// It is not a new kind of piece, only a new place for the first one.
+/// [`Accrete`] lays it in the step that otherwise lays a district's shape
+/// at a random point, and grows on exactly as it would have, every later
+/// piece attached to a wall of what already stands, so the place is
+/// joined to it by construction, through the cells its drawing marks as
+/// entries, and the side it is reached from is the side its drawing opens
+/// on. Walling a landmark off, growing the place apart and tunnelling in
+/// was refused: it needs a tunnelling pass and a repair of what it cut
+/// off, which accretion never needs.
+///
+/// A drawing and not any [`Shape`], since where it goes depends on which
+/// way it faces: a piece for an edge backs onto the edge, and a long one
+/// lies across the map along its length. Whatever grows against it opens
+/// each way in by its own join, so a landmark meets the place in the
+/// place's own grammar, a hall's mouth or a cell's door.
+pub struct FirstPiece {
+    /// The name its area carries and a failure names.
+    name: String,
+    /// Where it may go, one drawn for each attempt.
+    at: Vec<Placement>,
+    /// Each facing it may land in, the size it lays and the piece it draws.
+    facings: Vec<(Facing, (i32, i32), Piece)>,
+}
+
+impl FirstPiece {
+    /// `prefab` as the first piece, called `name`, laid at one of `at`,
+    /// drawn afresh for each attempt so a place grown again is grown round
+    /// it somewhere new, in a facing its drawing and `orient` both allow.
+    ///
+    /// An error naming it when `at` is empty, when it names a room, since
+    /// no room stands before growth, or when the drawing could not be
+    /// grown as an area of its own: no entry, an entry with nothing inside
+    /// straight across, or nothing inside its wall.
+    pub fn new(name: impl Into<String>, prefab: &Prefab, at: Vec<Placement>, orient: Orient) -> Result<Self, BuildError> {
+        let name = name.into();
+        let err = |reason: String| BuildError::new("accrete", format!("first piece {name}: {reason}"));
+        if at.is_empty() {
+            return Err(err("has no placement to be laid at".into()));
+        }
+        if let Some(room) = at.iter().find(|p| matches!(p, Placement::InRoom(_) | Placement::AnyRoom)) {
+            return Err(err(format!("cannot be laid {room:?}, since no room stands before growth")));
+        }
+        let facings = grown_facings(&name, prefab, orient)?
+            .into_iter()
+            .map(|(f, piece)| {
+                let size = piece.drawn.as_ref().map_or((0, 0), |d| (d.width(), d.height()));
+                (f, size, piece)
+            })
+            .collect();
+        Ok(Self { name, at, facings })
+    }
+
+    /// The name its area carries.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+/// Which way a [`Landmark`] divides the place grown round it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sides {
+    /// What lies wholly west of its columns, and what lies wholly east.
+    WestEast,
+    /// What lies wholly north of its rows, and what lies wholly south.
+    NorthSouth,
+}
+
+/// One side of a [`Landmark`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Side {
+    /// West or north of it.
+    Before,
+    /// East or south of it.
+    After,
+}
+
+impl Side {
+    /// The side across from this one.
+    pub fn other(self) -> Side {
+        match self {
+            Side::Before => Side::After,
+            Side::After => Side::Before,
+        }
+    }
+}
+
+/// Where a [`FirstPiece`] landed, emitted once by [`Accrete`] when it lays
+/// one, and the way it divides the place.
+///
+/// A cell is on a side only when it lies wholly beyond the piece's bounds
+/// across the divide, not merely past its centre, so a way in on one side
+/// and a way down on the other are a route that crosses the piece's whole
+/// band. It divides across its length for a [`Placement::Span`], along
+/// the edge for one against an edge, and across the map's longer side
+/// otherwise; see [`RandomStart::beyond`](crate::dungeon::RandomStart::beyond).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Landmark {
+    /// The cells its drawing covers.
+    pub bounds: Rect,
+    /// Which way it divides the place.
+    pub sides: Sides,
+}
+
+impl Landmark {
+    /// The side `p` lies on, or `None` for a cell level with the piece.
+    pub fn side(&self, p: Point) -> Option<Side> {
+        let (at, from, to) = match self.sides {
+            Sides::WestEast => (p.x, self.bounds.x, self.bounds.right()),
+            Sides::NorthSouth => (p.y, self.bounds.y, self.bounds.bottom()),
+        };
+        if at < from {
+            Some(Side::Before)
+        } else if at >= to {
+            Some(Side::After)
+        } else {
+            None
+        }
+    }
+}
+
 /// Grows a place by accretion over a map of solid tile: a first piece,
 /// then each later one attached to a wall of what already stands.
 ///
@@ -430,6 +559,13 @@ pub struct LaidBarrier {
 /// back for having one way in, and is published as a
 /// [`Stamped`] besides its area, so its marks are
 /// filled as a stamp's are.
+///
+/// With a [`first`](Self::first) piece, that is the first piece, laid at
+/// its placement and published as a [`Landmark`] besides its area and its
+/// [`Stamped`]; a place grown again from a failed attempt draws its
+/// placement afresh, and one where it fits nowhere in `patience` attempts
+/// fails by its name. Without one, nothing draws from the stream for it,
+/// so every place grown without one is the place it always was.
 ///
 /// A [`Barrier`] present on this build is drawn before anything else and
 /// kept clear as the border is, and further: a ring may stand on the
@@ -467,6 +603,34 @@ pub struct Accrete {
     /// The share of the map, in a hundred, open before the pieces are laid;
     /// no more than `open_pct`.
     pub late_pct: u32,
+    /// The piece laid first, at a placement, for the place to grow round;
+    /// `None` for a first piece drawn by a district at a random point.
+    pub first: Option<FirstPiece>,
+}
+
+/// What one piece is laid as.
+struct Laying<'a> {
+    /// The name its area carries.
+    name: &'a str,
+    /// Whether it emits a room.
+    room: bool,
+    /// For a painted piece, the join every way into it takes; `None` for
+    /// one whose ways in are each joined by what grew against them.
+    join: Option<Join>,
+    /// The district it was grown in, by its place in the list.
+    district: usize,
+    /// Whether it stays however many ways in it has.
+    stays: bool,
+}
+
+impl<'a> Laying<'a> {
+    /// `piece` drawn by `shape` in `district`: kept whatever ways it has
+    /// when `required` or painted, and entered by its shape's join when
+    /// painted.
+    fn of(shape: &'a dyn Shape, piece: &Piece, district: usize, required: bool) -> Self {
+        let painted = piece.drawn.is_some();
+        Laying { name: shape.name(), room: shape.is_room(), join: painted.then(|| shape.join()), district, stays: required || painted }
+    }
 }
 
 fn solid(terrain: &Terrain, walkable: &[bool], p: Point) -> bool {
@@ -587,18 +751,9 @@ impl Accrete {
     }
 
     /// Carves `piece` moved by `by`, or paints it when it was drawn, and
-    /// records it as drawn by `shape` in `district`, kept whatever ways it
-    /// has when `required`, with every site but the one it was joined at
-    /// added to the frontier. Returns its index.
-    fn lay<C: BuildContext>(
-        &self,
-        ctx: &mut C,
-        grown: &mut Grown,
-        piece: &Piece,
-        by: Point,
-        (shape, district, required): (&dyn Shape, usize, bool),
-        joined: Option<Point>,
-    ) -> usize {
+    /// records it as `laying` says, with every site but the one it was
+    /// joined at added to the frontier. Returns its index.
+    fn lay<C: BuildContext>(&self, ctx: &mut C, grown: &mut Grown, piece: &Piece, by: Point, laying: Laying<'_>, joined: Option<Point>) -> usize {
         let index = grown.areas.len();
         let body: Vec<Point> = piece.cells.iter().map(|c| *c + by).collect();
         let before: Vec<TileId> = body.iter().map(|c| ctx.terrain().get(*c).expect("a piece that fits is on the map")).collect();
@@ -630,23 +785,23 @@ impl Accrete {
             grown.owner.set(*c, index as u32 + 1);
         }
         grown.under.push(under);
-        grown.rooms.push(shape.is_room());
-        grown.stays.push(required || piece.drawn.is_some());
-        grown.joins.push(piece.drawn.is_some().then(|| shape.join()));
+        grown.rooms.push(laying.room);
+        grown.stays.push(laying.stays);
+        grown.joins.push(laying.join);
         grown.open += cells.len() as u32;
         // A painted piece behind a lock or a seal grows nothing past it:
         // its spare entries stay wall, so all a lock keeps is the piece,
         // never a part of the place the way on runs through. The first
         // piece is joined to nothing and keeps its sites, or nothing grows.
-        let shut = piece.drawn.is_some() && joined.is_some() && matches!(shape.join(), Join::Locked(_) | Join::Sealed);
+        let shut = joined.is_some() && matches!(laying.join, Some(Join::Locked(_) | Join::Sealed));
         if !shut {
             grown.frontier.extend(piece.sites.iter().map(|(q, d)| (*q + by, *d, index)).filter(|(q, _, _)| Some(*q) != joined));
         }
         let bounds = bounds_of(&cells);
         grown.areas.push(Area {
             index,
-            shape: shape.name().to_string(),
-            district: self.districts[district].name.clone(),
+            shape: laying.name.to_string(),
+            district: self.districts[laying.district].name.clone(),
             inner: largest_rect(&cells, bounds),
             bounds,
             cells,
@@ -797,15 +952,40 @@ impl<C: BuildContext> Pass<C> for Accrete {
             stamps: Vec::new(),
         };
 
-        // The first piece, anywhere it fits.
-        for _ in 0..self.patience {
-            let at = point_inside(ctx.rng());
-            let district = district_at(at);
-            let shape = draw_weighted(&self.districts[district].shapes, ctx.rng()).expect("checked");
-            let piece = self.shapes[shape].draw(ctx.rng());
-            if fits(ctx.terrain(), &grown.walkable, &grown.ground, &piece, at) {
-                self.lay(ctx, &mut grown, &piece, at, (self.shapes[shape].as_ref(), district, false), None);
-                break;
+        let mut landmark = None;
+        if let Some(first) = &self.first {
+            // The landmark, at one of its placements, drawn afresh each try.
+            let sizes: Vec<(Facing, (i32, i32))> = first.facings.iter().map(|(f, size, _)| (*f, *size)).collect();
+            for _ in 0..self.patience {
+                let at = first.at[ctx.rng().random_range(0..first.at.len())];
+                let Some((i, origin, sides)) = on_map(at, &sizes, bounds, ctx.rng()) else { continue };
+                let (_, (w, h), piece) = &first.facings[i];
+                if fits(ctx.terrain(), &grown.walkable, &grown.ground, piece, origin) {
+                    let placed = Rect::new(origin.x, origin.y, *w, *h);
+                    let laying = Laying { name: &first.name, room: false, join: None, district: district_at(placed.center()), stays: true };
+                    self.lay(ctx, &mut grown, piece, origin, laying, None);
+                    landmark = Some(Landmark { bounds: placed, sides });
+                    break;
+                }
+            }
+            if landmark.is_none() {
+                let (name, at) = (&first.name, &first.at);
+                return Err(Self::err(format!(
+                    "the first piece {name} fit none of {at:?} on a {}x{} map in {} attempts",
+                    bounds.width, bounds.height, self.patience
+                )));
+            }
+        } else {
+            // The first piece, anywhere it fits.
+            for _ in 0..self.patience {
+                let at = point_inside(ctx.rng());
+                let district = district_at(at);
+                let shape = draw_weighted(&self.districts[district].shapes, ctx.rng()).expect("checked");
+                let piece = self.shapes[shape].draw(ctx.rng());
+                if fits(ctx.terrain(), &grown.walkable, &grown.ground, &piece, at) {
+                    self.lay(ctx, &mut grown, &piece, at, Laying::of(self.shapes[shape].as_ref(), &piece, district, false), None);
+                    break;
+                }
             }
         }
         if grown.areas.is_empty() {
@@ -845,7 +1025,7 @@ impl<C: BuildContext> Pass<C> for Accrete {
                 if let Some(k) = owed {
                     pending.remove(k);
                 }
-                let to = self.lay(ctx, &mut grown, &piece, by, (shape, district, owed.is_some()), Some(site));
+                let to = self.lay(ctx, &mut grown, &piece, by, Laying::of(shape, &piece, district, owed.is_some()), Some(site));
 
                 // A painted piece is entered by its own join, whichever of
                 // the two was attached to the other.
@@ -919,6 +1099,9 @@ impl<C: BuildContext> Pass<C> for Accrete {
         }
         for stamp in grown.stamps {
             ctx.emit(stamp);
+        }
+        if let Some(landmark) = landmark {
+            ctx.emit(landmark);
         }
         Ok(())
     }
@@ -1041,6 +1224,7 @@ pub(crate) mod tests {
             sealed: rig.door,
             pieces: Vec::new(),
             late_pct: 0,
+            first: None,
         }
     }
 
@@ -1400,8 +1584,8 @@ pub(crate) mod tests {
         }
     }
 
+    use crate::prefab::PrefabShape;
     use crate::prefab::tests::hall;
-    use crate::prefab::{Orient, PrefabShape, Stamped};
 
     /// The usual growth, owing one hall painted from a prefab, joined by
     /// `join`, laid once a quarter of the map is open.
@@ -1570,5 +1754,206 @@ pub(crate) mod tests {
                 assert!(seen.contains(exit) && !hall.cells.contains(&exit), "{join:?} seed {s}: the way down at {exit:?} is behind the lock");
             }
         }
+    }
+
+    /// A walled hall with an entry on its north, west and east walls and
+    /// none on its back, the south, and the mark 'X' at its heart: drawn
+    /// for an edge, as a landmark is.
+    pub(crate) fn landmark(rig: &Rig) -> Prefab {
+        let (wall, floor) = (rig.wall, rig.floor);
+        Prefab::parse_cells(
+            &[
+                "####E####", //
+                "#.......#", //
+                "E...X...E", //
+                "#.......#", //
+                "#########", //
+            ],
+            |c| match c {
+                '#' => crate::prefab::Cell::Tile(wall),
+                '.' => crate::prefab::Cell::Tile(floor),
+                'X' => crate::prefab::Cell::Mark(Some(floor)),
+                'E' => crate::prefab::Cell::Entry,
+                _ => crate::prefab::Cell::Clear,
+            },
+        )
+        .unwrap()
+        .keyed(9)
+    }
+
+    /// A long bar, a run of floor with an entry at each end and two on its
+    /// north wall, for a span.
+    pub(crate) fn bar(rig: &Rig) -> Prefab {
+        let (wall, floor) = (rig.wall, rig.floor);
+        Prefab::parse_cells(
+            &[
+                "#####E#####E#####", //
+                "E...............E", //
+                "#################", //
+            ],
+            |c| match c {
+                '#' => crate::prefab::Cell::Tile(wall),
+                '.' => crate::prefab::Cell::Tile(floor),
+                'E' => crate::prefab::Cell::Entry,
+                _ => crate::prefab::Cell::Clear,
+            },
+        )
+        .unwrap()
+        .keyed(10)
+    }
+
+    /// The usual growth round `prefab` laid first, at one of `at`.
+    pub(crate) fn seeded(rig: &Rig, prefab: &Prefab, at: Vec<Placement>) -> Accrete {
+        let mut pass = accrete(rig, 3);
+        pass.first = Some(FirstPiece::new("landmark", prefab, at, Orient::TurnedOrMirrored).unwrap());
+        pass
+    }
+
+    /// Every open cell of `ctx` can be walked to from every other.
+    fn connected(ctx: &BaseContext) -> bool {
+        let tables = ctx.tiles().tables();
+        let (w, h) = (ctx.terrain().width(), ctx.terrain().height());
+        let open = |i: usize| tables.walkable[ctx.terrain().get_idx(i).index()];
+        let start = ctx.outputs().first::<Area>().unwrap().cells[0];
+        let mut seen = BitGrid::new(w, h);
+        flood(ctx.terrain().grid(), start, open, Steps::Four, &mut seen) == (0..(w * h) as usize).filter(|i| open(*i)).count()
+    }
+
+    /// What every place grown round a landmark holds: the landmark as its
+    /// first area and its one stamp keyed as drawn, published where that
+    /// stamp landed, and every open cell walked to from every other.
+    fn grown_round(pass: Accrete, rig: &Rig, w: i32, h: i32, s: u64) -> (BaseContext, Landmark) {
+        let ctx = build(pass, rig, w, h, s).unwrap_or_else(|e| panic!("{w}x{h} seed {s}: {e}"));
+        let landmark = *ctx.outputs().first::<Landmark>().expect("a landmark is published");
+        assert_eq!(ctx.outputs().first::<Area>().unwrap().shape, "landmark", "{w}x{h} seed {s}: the landmark is the first area");
+        let stamp = ctx.outputs().iter::<Stamped>().find(|st| st.bounds == landmark.bounds).expect("its stamp is where it landed");
+        assert!(stamp.prefab.is_some(), "{w}x{h} seed {s}");
+        assert!(connected(&ctx), "{w}x{h} seed {s}: the place is not all walked to");
+        (ctx, landmark)
+    }
+
+    #[test]
+    fn a_centred_landmark_lies_at_the_middle_of_the_map_and_the_place_grown_round_it_is_connected() {
+        let rig = rig();
+        for (w, h, seeds) in sizes() {
+            for s in seeds {
+                let (_, l) = grown_round(seeded(&rig, &landmark(&rig), vec![Placement::Center]), &rig, w, h, s);
+                assert_eq!((l.bounds.x, l.bounds.y), ((w - l.bounds.width) / 2, (h - l.bounds.height) / 2), "{w}x{h} seed {s}");
+                assert_eq!(l.sides, Sides::WestEast, "a wide map is divided across its width");
+            }
+        }
+    }
+
+    /// The side of `l` that stands against an edge of a `w` by `h` map, its
+    /// back on the first row or column inside the border.
+    fn edge_of(l: &Landmark, w: i32, h: i32) -> Option<Direction> {
+        let b = l.bounds;
+        [(b.bottom() == h - 1, Direction::South), (b.y == 1, Direction::North), (b.x == 1, Direction::West), (b.right() == w - 1, Direction::East)]
+            .into_iter()
+            .find(|(against, _)| *against)
+            .map(|(_, d)| d)
+    }
+
+    #[test]
+    fn an_edge_landmark_stands_against_its_edge_with_its_back_and_any_edge_its_facings_allow_is_drawn() {
+        let rig = rig();
+        let (w, h) = (84, 48);
+        let mut edges = std::collections::BTreeSet::new();
+        for s in 0..40 {
+            let (ctx, l) = grown_round(seeded(&rig, &landmark(&rig), vec![Placement::Edge]), &rig, w, h, s);
+            let edge = edge_of(&l, w, h).unwrap_or_else(|| panic!("seed {s}: {:?} stands against no edge", l.bounds));
+            let b = l.bounds;
+            let back: Vec<Point> = match edge {
+                Direction::South => (b.x..b.right()).map(|x| Point::new(x, b.bottom() - 1)).collect(),
+                Direction::North => (b.x..b.right()).map(|x| Point::new(x, b.y)).collect(),
+                Direction::West => (b.y..b.bottom()).map(|y| Point::new(b.x, y)).collect(),
+                _ => (b.y..b.bottom()).map(|y| Point::new(b.right() - 1, y)).collect(),
+            };
+            assert!(back.iter().all(|p| ctx.terrain().get(*p) == Some(rig.wall)), "seed {s}: the side against the {edge:?} edge is not its back");
+            let along = if matches!(edge, Direction::South | Direction::North) { Sides::WestEast } else { Sides::NorthSouth };
+            assert_eq!(l.sides, along, "seed {s}: an edge piece divides the place along its edge");
+            edges.insert(format!("{edge:?}"));
+        }
+        assert_eq!(edges.len(), 4, "a piece free to turn backs onto every edge: {edges:?}");
+        // A piece that may not turn stands only as drawn, its back south.
+        let upright = landmark(&rig).declaring(crate::prefab::Turn::None, crate::prefab::Mirror::LeftRight);
+        for s in 0..20 {
+            let (_, l) = grown_round(seeded(&rig, &upright, vec![Placement::Edge]), &rig, w, h, s);
+            assert_eq!(edge_of(&l, w, h), Some(Direction::South), "seed {s}");
+        }
+    }
+
+    #[test]
+    fn a_span_crosses_the_middle_of_the_map_along_its_length_and_divides_the_two_halves_it_lies_between() {
+        let rig = rig();
+        let (w, h) = (84, 48);
+        let mut ways = std::collections::BTreeSet::new();
+        for s in 0..40 {
+            let (_, l) = grown_round(seeded(&rig, &bar(&rig), vec![Placement::Span]), &rig, w, h, s);
+            let b = l.bounds;
+            if b.width > b.height {
+                assert!(b.y <= h / 2 && h / 2 < b.bottom() && b.x == (w - b.width) / 2, "seed {s}: {b:?} lies across the middle row");
+                assert_eq!(l.sides, Sides::NorthSouth, "seed {s}");
+            } else {
+                assert!(b.x <= w / 2 && w / 2 < b.right() && b.y == (h - b.height) / 2, "seed {s}: {b:?} lies across the middle column");
+                assert_eq!(l.sides, Sides::WestEast, "seed {s}");
+            }
+            ways.insert(b.width > b.height);
+        }
+        assert_eq!(ways.len(), 2, "a bar free to turn lies both ways");
+    }
+
+    #[test]
+    fn a_landmark_laid_anywhere_keeps_a_margin_from_every_edge_and_lands_in_more_than_one_place() {
+        let rig = rig();
+        let (w, h) = (84, 48);
+        let mut spots = std::collections::BTreeSet::new();
+        for s in 0..30 {
+            let (_, l) = grown_round(seeded(&rig, &landmark(&rig), vec![Placement::Anywhere]), &rig, w, h, s);
+            let (mx, my) = (w * 15 / 100, h * 15 / 100);
+            let b = l.bounds;
+            assert!(b.x >= mx && b.right() <= w - mx && b.y >= my && b.bottom() <= h - my, "seed {s}: {b:?} is inside the margin");
+            spots.insert((b.x, b.y));
+        }
+        assert!(spots.len() > 10, "thirty places put it in {} spots", spots.len());
+    }
+
+    /// Placements drawn per attempt: a place offered two is grown round
+    /// each of them over a span of seeds.
+    #[test]
+    fn a_landmark_offered_several_placements_is_laid_at_each_over_a_span_of_seeds() {
+        let rig = rig();
+        let (w, h) = (84, 48);
+        let (mut centred, mut edged) = (0, 0);
+        for s in 0..30 {
+            let (_, l) = grown_round(seeded(&rig, &landmark(&rig), vec![Placement::Center, Placement::Edge]), &rig, w, h, s);
+            match edge_of(&l, w, h) {
+                Some(_) => edged += 1,
+                None => centred += 1,
+            }
+        }
+        assert!(centred > 0 && edged > 0, "{centred} centred and {edged} against an edge");
+    }
+
+    #[test]
+    fn a_first_piece_asked_into_a_room_or_nowhere_is_refused_naming_why() {
+        let rig = rig();
+        let refused = |at: Vec<Placement>| FirstPiece::new("landmark", &landmark(&rig), at, Orient::TurnedOrMirrored).err().expect("refused").reason;
+        let any = refused(vec![Placement::Center, Placement::AnyRoom]);
+        assert!(any.contains("landmark") && any.contains("AnyRoom") && any.contains("no room"), "{any}");
+        assert!(refused(vec![Placement::InRoom(2)]).contains("InRoom(2)"));
+        assert!(refused(Vec::new()).contains("no placement"));
+        let shut = Prefab::parse(&["###", "#.#", "###"], |c| (c == '#').then_some(rig.wall)).unwrap();
+        let e = FirstPiece::new("shut", &shut, vec![Placement::Center], Orient::Fixed).err().expect("refused").reason;
+        assert!(e.contains("no entry"), "{e}");
+    }
+
+    /// A landmark too large for the map fails the place by its name, never
+    /// a panic and never a place grown without it.
+    #[test]
+    fn a_landmark_that_fits_nowhere_fails_the_place_by_name() {
+        let rig = rig();
+        let e = build(seeded(&rig, &bar(&rig), vec![Placement::Anywhere, Placement::Center]), &rig, 14, 14, 1).expect_err("no map that small holds it");
+        assert!(e.pass == "accrete" && e.reason.contains("landmark"), "{e}");
     }
 }

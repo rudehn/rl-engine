@@ -119,3 +119,27 @@ A landmark that fails every attempt is a content fault, and the load or a sweep 
 - A procedural landmark, grown by code rather than drawn; it is the next step once a drawn one is seen too often.
 - Route decisions as a floor rule (two ways to the stairs of different kinds), and a forked or branching ladder.
 - Foundry.
+
+## As built
+
+Built 2026-10-13 on the `landmarks` branch, in two commits, facings first.
+Where the build differs from the text above, or settles what it left open:
+
+- **Facings are closed under composition.** A declaration's facings are every facing its allowed turns and mirrors reach applied one after another, so `turn: None, mirror: Both` is four facings, the half-turn among them, since both mirrors together are one.
+  A prefab that declares nothing allows all eight, so the stamp's ceiling alone decides, and every prefab file of Undermere and Foundry also declares what its chains stamped it with: `Quarter`/`Both` for what is stamped turned or grown, `None`/`None` for what is stamped fixed.
+- **A narrowed ceiling draws once.** `Orient::apply` keeps its old draws whenever the drawing allows everything the stamp does, which is what keeps every map unmoved; when the drawing narrows the stamp, it draws one facing evenly among what is left, and none when one is left.
+- **A grown piece has no stamp ceiling.** `PrefabShape` lands in whatever its drawing declares, as it landed in all eight before; nothing stands over growth to narrow it.
+- **The first piece is a drawing, not any `Shape`.** `FirstPiece::new(name, &prefab, placements, orient)` takes a `Prefab`, since an `Edge` or a `Span` places by which way the piece faces, which a `Shape`'s random draw cannot say.
+  It precomputes its facings as `PrefabShape` does and refuses a room placement, an empty list and a drawing with no entry by name.
+- **A landmark has no join of its own.** The pool's `Seeded(placements, stairs)` names none, so each way into a landmark is opened by the join of whatever grows against it, through its entries only; a landmark meets the floor in the floor's own grammar.
+- **Placement details.** `Edge` lays the drawing's back on the first row or column inside the border, at a random point along the edge kept 15% of the side from each corner; `Anywhere` keeps 15% of each side from every edge; `Span` is centred, its axis the facing's longer side.
+  `StampPrefab` takes all three too, drawing the facing with the place.
+- **Loading cannot refuse an `Edge` piece for fitting no edge.** Every declaration allows the drawing as drawn, back to the south, so every piece has the south edge; the check the text asks for has nothing to catch.
+- **Sides are beyond the piece's band, not half-planes through its centre.** `Landmark::side` puts a cell on a side only when it lies wholly past the piece's bounds across the divide, so the route between a way in and a way down on opposite sides crosses the whole piece.
+  The divide is across a `Span`'s length, along the edge for an `Edge` piece (a piece on the south edge divides west from east), and across the map's longer side for `Center`, `Anywhere` and `At`.
+  `beyond` with no landmark laid is the plain pass from the same stream, so a chain may ask for it on every floor.
+- **`Stairs` lives in `rl_mapgen::dungeon`.** Its `start(ClearStart)` and `exit(FarExit)` wrap a game's own passes, the exit as a `WayDown` pass, so a game keeps its own clearance and share; `Within` is for the way down only, and the load checks its glyph is a slot the prefab draws.
+- **Seeded kinds.** The engine does not know the kind `"landmark"`: the load requires every seeded entry to be of one kind, required on every budget covering its floors, with no budget giving a floor more than one.
+  `rl_bevy::layout::picked` returns the landmark as `Picked::first` and its stairs as `Picked::stairs`.
+- **Undermere is wired and holds none.** It takes the engine's `MarkedStart`, puts `picked.first` into its accretion and passes its start and exit through `picked.stairs` on every floor but the throne's, which with no seeded entry in its pool is the chain it had, stream for stream.
+  The sweep over every landmark in a game's pool belongs with the slice that gives it landmark content; the engine's own sweeps grow round test landmarks at every placement, connected, in `rl-mapgen` and through a pool in `rl-bevy`.

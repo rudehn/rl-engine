@@ -9,8 +9,9 @@
 //! [`picked`] and [`dress`] where it builds a place.
 
 use rl_grid::TileId;
-use rl_mapgen::accrete::{Accrete, Barrier, Cross, District, Join, Passage, Rectangle, Shape};
-use rl_mapgen::prefab::Orient;
+use rl_mapgen::accrete::{Accrete, Barrier, Cross, District, FirstPiece, Join, Passage, Rectangle, Shape};
+use rl_mapgen::dungeon::Stairs;
+use rl_mapgen::prefab::{Orient, Placement};
 use rl_mapgen::{BuildError, Cave, Dress, Lay, OpenLoops, PoolPick, Prefer, Require, StampPicks};
 use rl_rules::dressing::DistrictDressings;
 use rl_rules::layout::{JoinDef, LayoutDef, ShapeKind};
@@ -53,8 +54,9 @@ pub struct LayoutTiles {
 /// The passes for the recipe called `recipe`, laying `tiles`. They grow no
 /// piece a place must hold until the game puts one in `accrete.pieces`,
 /// as [`Prefabs::grown`](crate::prefabs::Prefabs::grown) makes them, laid
-/// once the recipe's `late_pct` is open. An error naming the recipe when
-/// there is none, so a chain can `?` it.
+/// once the recipe's `late_pct` is open, and no landmark until it puts
+/// one in `accrete.first`, as [`picked`] makes it. An error naming the
+/// recipe when there is none, so a chain can `?` it.
 pub fn passes(def: &LayoutDef, recipe: &str, tiles: &LayoutTiles) -> Result<LayoutPasses, BuildError> {
     let LayoutTiles { floor, door, locked, sealed } = *tiles;
     let r = def.recipe(recipe).ok_or_else(|| BuildError::new("layout", format!("no recipe is called {recipe:?}")))?;
@@ -93,6 +95,7 @@ pub fn passes(def: &LayoutDef, recipe: &str, tiles: &LayoutTiles) -> Result<Layo
             sealed,
             pieces: Vec::new(),
             late_pct: r.late_pct,
+            first: None,
         },
         loops: OpenLoops { door, min_detour: r.loops.min_detour, max: r.loops.max },
         require: Require {
@@ -111,6 +114,14 @@ pub struct Picked {
     /// `accrete.pieces`; growth fails the place when one is not laid,
     /// which is why the pool file grows only a required kind.
     pub pieces: Vec<Box<dyn Shape>>,
+    /// The landmark, a seeded pick, for the place's `accrete.first`, and
+    /// `None` for a place the pool seeded nothing in, which grows as it
+    /// would have.
+    pub first: Option<FirstPiece>,
+    /// Where the landmark wants the way in and the way down, for the
+    /// game's own start and exit to be passed through: [`Stairs::Free`]
+    /// with no landmark.
+    pub stairs: Stairs,
     /// The pass that places the rest, a piece stamped inside an area or a
     /// dressing given one, for the chain after its `Survey` and any
     /// `HideOpenings`, and before the pass that dresses.
@@ -119,12 +130,16 @@ pub struct Picked {
 
 /// The picks `picks` of `pool`, as [`Pool::plan_run`] drew them for one
 /// place, as the pieces growth lays and the pass that places the rest in
-/// the order drawn, each piece turned as `orient` allows: every piece cut
+/// the order drawn, each piece turned as `orient` and its own file allow,
+/// and the landmark seeded first with the stairs it wants: every piece cut
 /// from `prefabs` and keyed, so its slots fill as any stamp's do. An error
-/// naming the piece when there is none or a grown one has no entry, so a
-/// chain can `?` it.
+/// naming the piece when there is none, a grown or seeded one has no
+/// entry, or two seeded picks were drawn for one place, which the pool
+/// file refuses, so a chain can `?` it.
 pub fn picked<M: Send + Sync + 'static>(pool: &Pool, picks: &[Pick], prefabs: &Prefabs<M>, orient: Orient) -> Result<Picked, BuildError> {
     let mut pieces: Vec<Box<dyn Shape>> = Vec::new();
+    let mut first: Option<FirstPiece> = None;
+    let mut stairs = Stairs::Free;
     let mut placed = Vec::new();
     for pick in picks {
         let entry = &pool.entries[pick.entry];
@@ -140,12 +155,33 @@ pub fn picked<M: Send + Sync + 'static>(pool: &Pool, picks: &[Pick], prefabs: &P
                 pieces.push(Box::new(prefabs.grown(piece, join)?));
                 continue;
             }
+            Placed::Seeded { piece, placements, stairs: wanted } => {
+                if first.is_some() {
+                    return Err(BuildError::new("layout", format!("{}: a second landmark for one place, which grows round one", entry.name)));
+                }
+                let at = placements
+                    .iter()
+                    .map(|p| match p {
+                        pool::Placement::Center => Placement::Center,
+                        pool::Placement::Edge => Placement::Edge,
+                        pool::Placement::Anywhere => Placement::Anywhere,
+                        pool::Placement::Span => Placement::Span,
+                    })
+                    .collect();
+                first = Some(FirstPiece::new(piece.clone(), &prefabs.piece(piece)?, at, orient)?);
+                stairs = match *wanted {
+                    pool::Stairs::Free => Stairs::Free,
+                    pool::Stairs::Beyond => Stairs::Beyond,
+                    pool::Stairs::Within(mark) => Stairs::Within(mark),
+                };
+                continue;
+            }
             Placed::Inside { piece, shapes } => (Lay::Stamp(prefabs.piece(piece)?), shapes.clone()),
             Placed::Dressed { dressing } => (Lay::Dress(dressing.clone()), Vec::new()),
         };
         placed.push(PoolPick { name: entry.name.clone(), lay, shapes, prefer: prefer(entry.prefer), required: pick.required });
     }
-    Ok(Picked { pieces, stamp: StampPicks { name: "pool picks", picks: placed, orient } })
+    Ok(Picked { pieces, first, stairs, stamp: StampPicks { name: "pool picks", picks: placed, orient } })
 }
 
 /// The pass that dresses a place: every dressing in `prefabs`, cut from
@@ -391,6 +427,90 @@ mod tests {
             }
         }
         assert!(dressings > 0, "some dressing was placed, or this proves nothing");
+    }
+
+    /// Two landmarks on floors two and three, one to a run each, and none
+    /// on floors one and four.
+    const LANDMARKS: &str = r#"(
+        weights: [("common", 50)],
+        tags: [],
+        budgets: [(floors: (1, 4), kind: "landmark", count: (1, 1), required: true)],
+        entries: [
+            (name: "hall", kind: "landmark", piece: "hall", floors: (2, 3), weight: "common", placed: Seeded([Center, Edge], Beyond)),
+            (name: "stair", kind: "landmark", piece: "stair", floors: (2, 3), weight: "common", placed: Seeded([Anywhere], Within('>'))),
+        ],
+    )"#;
+
+    /// A run planned from a pool of landmarks and each place built from
+    /// its picks: a place seeded with one grows round it, its first area,
+    /// with its stairs where the entry says, and its file's facings
+    /// reach the piece; a place no landmark fits is given none.
+    #[test]
+    fn a_landmark_a_pool_seeds_is_the_piece_a_place_grows_round_with_its_stairs_where_the_entry_says() {
+        use rand::SeedableRng;
+        use rl_mapgen::dungeon::{ExitPoint, FarExit, StartPoint};
+        use rl_mapgen::prefab::{Stamped, Turn};
+        use rl_mapgen::{Area, Landmark};
+        use rl_rules::content::Registry;
+        use rl_rules::names::Names;
+        use rl_rules::pool::Place;
+
+        // The route bound lowered, since a way down within a landmark may
+        // stand close to a way in drawn in the room grown beside it.
+        let def = rl_rules::layout::load(&FILE.replacen("route: 20", "route: 4", 1)).unwrap();
+        let mut tiles = TileRegistry::standard();
+        let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
+        let door = tiles.register(TileProps::floor("way through")).unwrap();
+        let piece = |text: &str| rl_rules::prefab::load::<()>(text, &tiles, &Names::new()).unwrap();
+        let defs = Registry::from_defs(vec![
+            piece(
+                r##########"(name: "hall", turn: None, mirror: LeftRight, rows: ["####E####", "#.......#", "E.......E", "#########"], legend: { '#': Tile("wall"), '.': Tile("floor"), 'E': Entry })"##########,
+            ),
+            piece(
+                r######"(name: "stair", ground: "floor", rows: ["##E##", "#...#", "E.>.E", "#...#", "##E##"], legend: { '#': Tile("wall"), '.': Tile("floor"), '>': Mark, 'E': Entry })"######,
+            ),
+        ])
+        .unwrap();
+        let prefabs = Prefabs::<()>::new(defs, Registry::from_defs(Vec::new()).unwrap());
+        assert_eq!(prefabs.piece("hall").unwrap().turn(), Turn::None, "the file's facings reach the piece");
+        let pool = rl_rules::pool::load(LANDMARKS, &def, prefabs.defs(), &Names::new()).unwrap();
+        let places: Vec<Place> = (1..=4).map(|band| Place { band, tags: Vec::new() }).collect();
+        for seed in 0..10 {
+            let plan = pool.plan_run(&mut rand::rngs::StdRng::seed_from_u64(seed), &places);
+            for (p, picks) in plan.iter().enumerate() {
+                let picked = picked(&pool, picks, &prefabs, Orient::TurnedOrMirrored).unwrap();
+                let seeded = picks.first().map(|k| pool.entries[k.entry].name.clone());
+                assert_eq!(seeded.is_some(), p == 1 || p == 2, "seed {seed} place {p}: a landmark only where one fits");
+                assert_eq!(picked.first.as_ref().map(|f| f.name().to_string()), seeded, "seed {seed} place {p}");
+                let mut grow = passes(&def, "test", &LayoutTiles { floor, door, locked: door, sealed: door }).unwrap();
+                grow.accrete.first = picked.first;
+                let (w, h) = grow.size;
+                let chain = Chain::new()
+                    .then(grow.accrete)
+                    .then(grow.loops)
+                    .then(picked.stairs.start(RandomStart.clear_of_stamps(0)))
+                    .then(picked.stairs.exit(FarExit::default().among_farthest(30)))
+                    .then(Survey)
+                    .then(grow.require);
+                let ctx = chain
+                    .run_retrying(|| BaseContext::blank(w, h, tiles.clone(), wall), RunSeed(seed * 10 + p as u64), 40)
+                    .unwrap_or_else(|e| panic!("seed {seed} place {p}: {e}"));
+                let landmark = ctx.outputs().first::<Landmark>().copied();
+                let Some(name) = seeded else {
+                    assert!(landmark.is_none(), "seed {seed} place {p}: no landmark was drawn and one was laid");
+                    continue;
+                };
+                let landmark = landmark.expect("a seeded place publishes its landmark");
+                assert_eq!(ctx.outputs().first::<Area>().unwrap().shape, name, "seed {seed} place {p}: the landmark is the first area");
+                let (start, exit) = (ctx.outputs().first::<StartPoint>().unwrap().0, ctx.outputs().first::<ExitPoint>().unwrap().0);
+                if name == "hall" {
+                    assert!(landmark.side(start).is_some_and(|s| landmark.side(exit) == Some(s.other())), "seed {seed} place {p}: beyond");
+                } else {
+                    let stamp = ctx.outputs().iter::<Stamped>().find(|st| st.bounds == landmark.bounds).unwrap();
+                    assert_eq!(Some(exit), stamp.marks.iter().find(|(m, _)| *m == '>').map(|(_, at)| *at), "seed {seed} place {p}: within");
+                }
+            }
+        }
     }
 
     /// Rubble a pool hands out, and crates a district's list lays.
