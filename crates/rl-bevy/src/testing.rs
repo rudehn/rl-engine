@@ -9,7 +9,12 @@
 //! one copy, public so a game's tests and the engine's crates share it.
 //!
 //! [`headless_app`](crate::plugin::headless_app) is the app itself; this
-//! module is what goes into it.
+//! module is what goes into it. [`ambiguity`] is the other thing every
+//! game's tests want and none should write twice: the check that a game's
+//! systems touching the same data are ordered, or allowed unordered for a
+//! stated reason.
+
+pub mod ambiguity;
 
 use bevy::input::InputSystems;
 use bevy::prelude::*;

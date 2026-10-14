@@ -2,42 +2,20 @@
 //! Foundry's systems that touch the same data unordered, with at least one
 //! writing it, is either ordered or allowed here with its reason.
 //!
-//! A chain that goes missing still passes every behaviour test while Bevy
-//! happens to run the pair in the order they were declared; this is what
-//! notices.
+//! The check itself is the engine's,
+//! [`rl_bevy::testing::ambiguity`](rl_engine::rl_bevy::testing::ambiguity);
+//! what is Foundry's is the names a failure reads by and the pairs it
+//! leaves unordered on purpose, each with why.
 
 use std::any::TypeId;
 
 use bevy::ecs::component::ComponentId;
-use bevy::ecs::schedule::{InternedScheduleLabel, Schedules};
 use bevy::prelude::*;
+use rl_engine::rl_bevy::testing::ambiguity::{self, Allowed, system_type as id};
 use rl_engine::rl_bevy::turn::{Acting, ActionDone, ActionRefused, Turns};
 use rl_engine::rl_bevy::{Aware, DarkSight, Inventory, Noticed, Position, RangedAttack};
 use rl_engine::rl_core::RunSeed;
 use rl_engine::rl_ui::{Facets, GearView, MessageLog, Modals};
-
-/// Every system in every schedule of `app`, by schedule and by the
-/// type of the system, each schedule built first so its conflicts are
-/// known. By type, not by name: without Bevy's `debug` feature, which
-/// the workspace does not build with, every system is named alike.
-fn systems(app: &mut App) -> Vec<(InternedScheduleLabel, TypeId)> {
-    let world = app.world_mut();
-    let labels: Vec<_> = world.resource::<Schedules>().iter().map(|(_, schedule)| schedule.label()).collect();
-    let mut all = Vec::new();
-    for label in labels {
-        world.schedule_scope(label, |world, schedule| {
-            schedule.initialize(world).expect("every schedule builds");
-            all.extend(schedule.systems().expect("just initialized").map(|(_, system)| (label, system.system_type())));
-        });
-    }
-    all
-}
-
-/// The type a function registers as, to recognise it among a schedule's
-/// systems.
-fn id<M>(system: impl IntoSystem<(), (), M>) -> TypeId {
-    IntoSystem::into_system(system).system_type()
-}
 
 /// A name for each of Foundry's systems, and for each engine system
 /// one of them meets, for a failure to read by.
@@ -129,15 +107,6 @@ fn names() -> Vec<(&'static str, TypeId)> {
     ]
 }
 
-/// Two systems that may conflict on `on` without being ordered, and
-/// why that is harmless. `None` stands for any system.
-struct Allowed {
-    a: Option<TypeId>,
-    b: Option<TypeId>,
-    on: Vec<ComponentId>,
-    why: &'static str,
-}
-
 /// The component or resource ids a test names, by what they are.
 fn ids(world: &World) -> Vec<(&'static str, ComponentId)> {
     let c = world.components();
@@ -180,7 +149,7 @@ fn ids(world: &World) -> Vec<(&'static str, ComponentId)> {
         ("Messages<ItemEvent>", c.component_id::<Messages<rl_engine::rl_bevy::ItemEvent>>()),
         ("Messages<Fired>", c.component_id::<Messages<rl_engine::rl_bevy::Fired>>()),
     ];
-    found.into_iter().map(|(name, id)| (name, id.unwrap_or_else(|| panic!("{name} is registered once every schedule is built")))).collect()
+    ambiguity::data(found)
 }
 
 /// Every conflicting pair Foundry leaves unordered on purpose, each with
@@ -190,23 +159,22 @@ fn allowed(world: &World) -> Vec<Allowed> {
     use crate::*;
     use rl_engine::rl_bevy::{ability, combat, items, props as engine_props, stealth, throwing};
     let ids = ids(world);
-    let on = |names: &[&str]| -> Vec<ComponentId> { names.iter().map(|n| ids.iter().find(|(name, _)| name == n).expect("named in ids").1).collect() };
-    let pair = |a, b, what: &[&str], why| Allowed { a: Some(a), b: Some(b), on: on(what), why };
+    let on = |names: &[&str]| -> Vec<ComponentId> { ambiguity::on(&ids, names) };
+    let pair = |a, b, what: &[&str], why| Allowed::pair(a, b, on(what), why);
     let claims = ["Acting", "Messages<ActionDone>", "Messages<ActionRefused>"];
     let allowed = vec![
-        Allowed { a: None, b: None, on: on(&claims), why: "any two resolvers or sweepers: Resolution::claim spends one actor's one turn once a pass" },
+        Allowed::any(on(&claims), "any two resolvers or sweepers: Resolution::claim spends one actor's one turn once a pass"),
         pair(
             id(droids::lower_alarm),
             id(stealth::wake_on_damage),
             &["Aware"],
             "an alarm is lowered only on a probe that knows of nobody; one a blow wakes in the same pass either keeps its alarm or signals again, and both are right for a probe that had lost the commando",
         ),
-        Allowed {
-            a: Some(id(droids::sense_alarm)),
-            b: None,
-            on: on(&["Thinking"]),
-            why: "one contributor per field of the snapshot: the probe's sense pushes `Signal`, a sense of its own type, and nothing else, and it is sorted once after them all",
-        },
+        Allowed::with_any(
+            id(droids::sense_alarm),
+            on(&["Thinking"]),
+            "one contributor per field of the snapshot: the probe's sense pushes `Signal`, a sense of its own type, and nothing else, and it is sorted once after them all",
+        ),
         pair(
             id(droids::shout_alarm),
             id(stealth::wake_on_damage),
@@ -216,12 +184,11 @@ fn allowed(world: &World) -> Vec<Allowed> {
         // Props, and what they meet. Every entry below is about one of
         // three invariants: one action a pass, one contributor per field of
         // the snapshot, and a container's bag is never a commando's.
-        Allowed {
-            a: Some(id(engine_props::perceive_props)),
-            b: None,
-            on: on(&["Thinking"]),
-            why: "one contributor per field of the snapshot: props fill `props` and nothing else, and it is sorted once after them all",
-        },
+        Allowed::with_any(
+            id(engine_props::perceive_props),
+            on(&["Thinking"]),
+            "one contributor per field of the snapshot: props fill `props` and nothing else, and it is sorted once after them all",
+        ),
         pair(
             id(engine_props::resolve_interactions),
             id(engine_props::resolve_takes),
@@ -356,12 +323,11 @@ fn allowed(world: &World) -> Vec<Allowed> {
             &["Inventory"],
             "a crate's bag and a commando's are never the same bag, and only a commando carries a card",
         ),
-        Allowed {
-            a: Some(id(props::spend_the_keycard)),
-            b: None,
-            on: on(&["Messages<Tell>"]),
-            why: "every reaction writes its own line for the pass, and the narrator speaks them after it; two lines that answer different things say nothing by their order",
-        },
+        Allowed::with_any(
+            id(props::spend_the_keycard),
+            on(&["Messages<Tell>"]),
+            "every reaction writes its own line for the pass, and the narrator speaks them after it; two lines that answer different things say nothing by their order",
+        ),
         // A container's bag and a commando's are never the same bag.
         pair(
             id(engine_props::close_emptied_containers),
@@ -378,32 +344,28 @@ fn allowed(world: &World) -> Vec<Allowed> {
         // Every line a pass leaves is its own, and so is every fact: the
         // lift out answers a refused step through it, the console a charge
         // set, and one pass holds one of the player's actions, never both.
-        Allowed {
-            a: Some(id(lifts::ride_out)),
-            b: None,
-            on: on(&["Messages<Tell>", "Messages<Happened>"]),
-            why: "every reaction writes its own line and its own fact for the pass; the narrator speaks the lines after it and the tracker counts the facts in any order, so two that answer different things say nothing by their order",
-        },
-        Allowed {
-            a: Some(id(mission::answer_charge)),
-            b: None,
-            on: on(&["Messages<Tell>"]),
-            why: "every reaction writes its own line for the pass, and the narrator speaks them after it; two lines that answer different things say nothing by their order",
-        },
+        Allowed::with_any(
+            id(lifts::ride_out),
+            on(&["Messages<Tell>", "Messages<Happened>"]),
+            "every reaction writes its own line and its own fact for the pass; the narrator speaks the lines after it and the tracker counts the facts in any order, so two that answer different things say nothing by their order",
+        ),
+        Allowed::with_any(
+            id(mission::answer_charge),
+            on(&["Messages<Tell>"]),
+            "every reaction writes its own line for the pass, and the narrator speaks them after it; two lines that answer different things say nothing by their order",
+        ),
         // The repair drone: a sense of its own, and a line when a wreck
         // stands back up.
-        Allowed {
-            a: Some(id(droids::sense_wrecks)),
-            b: None,
-            on: on(&["Thinking"]),
-            why: "one contributor per field of the snapshot: the drone's sense pushes `Wrecks`, a sense of its own type, and nothing else, and it is sorted once after them all",
-        },
-        Allowed {
-            a: Some(id(droids::rebuild_wrecks)),
-            b: None,
-            on: on(&["Messages<Tell>"]),
-            why: "every reaction writes its own line for the pass, and the narrator speaks them after it; two lines that answer different things say nothing by their order",
-        },
+        Allowed::with_any(
+            id(droids::sense_wrecks),
+            on(&["Thinking"]),
+            "one contributor per field of the snapshot: the drone's sense pushes `Wrecks`, a sense of its own type, and nothing else, and it is sorted once after them all",
+        ),
+        Allowed::with_any(
+            id(droids::rebuild_wrecks),
+            on(&["Messages<Tell>"]),
+            "every reaction writes its own line for the pass, and the narrator speaks them after it; two lines that answer different things say nothing by their order",
+        ),
     ];
     allowed
 }
@@ -411,59 +373,9 @@ fn allowed(world: &World) -> Vec<Allowed> {
 #[test]
 fn every_conflicting_pair_of_foundrys_systems_is_ordered_or_allowed_for_a_stated_reason() {
     let mut app = crate::testing::headless(RunSeed(0));
-    let with = systems(&mut app);
-    let mut without = systems(&mut crate::testing::headless_without_foundry(RunSeed(0)));
     // Foundry's own: whatever FoundryPlugin added, by schedule and type,
     // so a system added later is covered without being listed anywhere.
-    let mut ours = Vec::new();
-    for entry in with {
-        match without.iter().position(|e| *e == entry) {
-            Some(i) => {
-                without.swap_remove(i);
-            }
-            None => ours.push(entry),
-        }
-    }
+    let ours = ambiguity::added(&mut app, &mut crate::testing::headless_without_foundry(RunSeed(0)));
     let world = app.world();
-    let (allowed, names, ids) = (allowed(world), names(), ids(world));
-    let fits = |rule: Option<TypeId>, t: TypeId| rule.is_none_or(|r| r == t);
-    let mut used = vec![false; allowed.len()];
-    let mut unexplained = Vec::new();
-    for (_, schedule) in world.resource::<Schedules>().iter() {
-        let label = schedule.label();
-        let types: Vec<_> = schedule.systems().expect("initialized").map(|(key, system)| (key, system.system_type())).collect();
-        let type_of = |k| types.iter().find(|(key, _)| *key == k).map(|(_, t)| *t).expect("a system of this schedule");
-        for (a, b, on) in schedule.graph().conflicting_systems().iter() {
-            let (a, b) = (type_of(*a), type_of(*b));
-            if !ours.contains(&(label, a)) && !ours.contains(&(label, b)) {
-                continue;
-            }
-            // An empty list is a conflict over the whole world, an
-            // exclusive system's, which no entry allows.
-            let rule = allowed
-                .iter()
-                .position(|r| ((fits(r.a, a) && fits(r.b, b)) || (fits(r.a, b) && fits(r.b, a))) && !on.is_empty() && on.iter().all(|c| r.on.contains(c)));
-            match rule {
-                Some(i) => used[i] = true,
-                None => {
-                    let system = |t: TypeId| names.iter().find(|(_, n)| *n == t).map_or_else(|| format!("{t:?}"), |(n, _)| n.to_string());
-                    let what: Vec<String> =
-                        on.iter().map(|c| ids.iter().find(|(_, id)| id == c).map_or_else(|| format!("{c:?}"), |(n, _)| n.to_string())).collect();
-                    unexplained.push(format!("{label:?}: {} and {} on {what:?}", system(a), system(b)));
-                }
-            }
-        }
-    }
-    assert!(
-        unexplained.is_empty(),
-        "{} unordered conflicting pairs of Foundry's; order them, or allow them with a reason:\n{}",
-        unexplained.len(),
-        unexplained.join("\n")
-    );
-    let system = |t: Option<TypeId>| {
-        t.map_or_else(|| "any system".to_string(), |t| names.iter().find(|(_, n)| *n == t).map_or_else(|| format!("{t:?}"), |(n, _)| n.to_string()))
-    };
-    let stale: Vec<String> =
-        allowed.iter().zip(&used).filter(|(_, used)| !**used).map(|(r, _)| format!("{} and {}: {}", system(r.a), system(r.b), r.why)).collect();
-    assert!(stale.is_empty(), "allowed pairs that no longer conflict, to take off the list: {stale:#?}");
+    ambiguity::assert_ordered(world, "Foundry", &ours, &allowed(world), &names(), &ids(world));
 }
