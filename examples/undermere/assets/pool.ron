@@ -56,8 +56,10 @@
 //                         the middle), one drawn each attempt, and the
 //                         stairs Free | Beyond (way in and way down on
 //                         opposite sides of it) | Within('c') (the way down
-//                         on its slot 'c'); every seeded entry is of one
-//                         kind, required, at most one to a floor. No entry
+//                         on its Mark slot 'c', the way in far from it);
+//                         every seeded entry is of one kind, required, at
+//                         most one to a floor, and none on floor ten, the
+//                         throne's, unless its stairs are Free. No entry
 //                         is seeded yet
 //       Inside([shape])   stamped inside an area of one of the named
 //                         shapes; any area if the list is empty

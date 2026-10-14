@@ -94,7 +94,7 @@
 //! //                           Beyond      the way in and the way down on
 //! //                                       opposite sides of it
 //! //                           Within('c') the way down on the cell its
-//! //                                       prefab's slot 'c' marks
+//! //                                       prefab's Mark slot 'c' marks
 //! //       Inside([shape])   stamped inside an area one of the layout's
 //! //                         named shapes drew, at least one of them a
 //! //                         shape that draws rooms, not a Passage; any
@@ -139,7 +139,7 @@ use crate::content::{ContentError, Registry};
 use crate::dressing::DressingDef;
 use crate::layout::LayoutDef;
 use crate::names::Names;
-use crate::prefab::{Coverage, Legended, PrefabDef, Sources};
+use crate::prefab::{Coverage, Legended, PrefabDef, Slot, Sources};
 use crate::tag::TagId;
 
 /// How a grown piece is joined to what it is attached to: a layout
@@ -405,7 +405,7 @@ enum JoinRon {
 /// kind some budget on its floors does not require, a seeded piece at no
 /// placement, of a kind a budget gives a floor more than one of, of a
 /// kind another seeded entry is not, or whose way down is a glyph its
-/// prefab draws no slot as, an inside piece whose shapes all draw no
+/// prefab draws no `Mark` slot as, an inside piece whose shapes all draw no
 /// room, and a group whose entries are of more than one kind.
 pub fn load<M>(text: &str, layout: &LayoutDef, pieces: &Registry<PrefabDef<M>>, names: &Names<'_>) -> Result<Pool, ContentError> {
     let options = ron::options::Options::default().with_default_extension(ron::extensions::Extensions::IMPLICIT_SOME);
@@ -534,10 +534,12 @@ pub fn load<M>(text: &str, layout: &LayoutDef, pieces: &Registry<PrefabDef<M>>, 
                 if placements.is_empty() {
                     errors.push(format!("{name}: is seeded at no placement"));
                 }
+                // A mark, and no other slot: the cell is the stairs', and a
+                // prop, an item or a monster filled there would stand on it.
                 if let (Stairs::Within(mark), Some(def)) = (stairs, def)
-                    && (def.slot(*mark).is_none() || !def.rows().iter().any(|row| row.contains(*mark)))
+                    && (!matches!(def.slot(*mark), Some(Slot::Mark)) || !def.rows().iter().any(|row| row.contains(*mark)))
                 {
-                    errors.push(format!("{name}: its way down is the cell {piece:?} marks '{mark}', and no slot of it is drawn as '{mark}'"));
+                    errors.push(format!("{name}: its way down is the cell {piece:?} marks '{mark}', and no Mark slot of it is drawn as '{mark}'"));
                 }
                 if e.prefer != Prefer::Anywhere {
                     errors.push(format!("{name}: prefers {:?}, and a seeded piece goes where its placement lays it", e.prefer));
@@ -992,9 +994,9 @@ mod tests {
             crate::prefab::load::<()>(r#"(name: "rack", ground: "floor", rows: ["w"], legend: { 'w': Item(tag: "key") })"#, &tiles, &Names::new().tags(&tags))
                 .unwrap(),
             crate::prefab::load::<()>(
-                r######"(name: "stairwell", ground: "floor", rows: ["##E##", "#.>.#", "#####"], legend: { '#': Tile("wall"), '.': Tile("floor"), '>': Mark, 'E': Entry })"######,
+                r######"(name: "stairwell", ground: "floor", rows: ["##E##", "#.>.#", "#.w.#", "#####"], legend: { '#': Tile("wall"), '.': Tile("floor"), '>': Mark, 'w': Item(tag: "key"), 'E': Entry })"######,
                 &tiles,
-                &Names::new(),
+                &Names::new().tags(&tags),
             )
             .unwrap(),
         ])
@@ -1397,6 +1399,7 @@ mod tests {
                 (name: "b", kind: "landmark", piece: "stairwell", floors: (1, 1), weight: "rare", placed: Seeded([], Within('?'))),
                 (name: "c", kind: "landmark", piece: "store", floors: (3, 4), weight: "rare", placed: Seeded([Edge], Free), prefer: DeadEnd),
                 (name: "d", kind: "vista", piece: "store", floors: (1, 4), weight: "rare", placed: Seeded([Edge], Free)),
+                (name: "e", kind: "landmark", piece: "stairwell", floors: (1, 1), weight: "rare", placed: Seeded([Center], Within('w'))),
             ],
         )"#;
         let Err(ContentError::Invalid(errors)) = read(&w, text) else { panic!("the pool is refused") };
@@ -1408,7 +1411,8 @@ mod tests {
         says("c: prefers DeadEnd, and a seeded piece");
         says("c: is seeded, and its kind \"landmark\" is not required on floors 3 to 4");
         says("d: is seeded as a vista, and a as a landmark; every seeded entry is of one kind");
-        assert_eq!(errors.len(), 8, "{errors:#?}");
+        says("e: its way down is the cell \"stairwell\" marks 'w'");
+        assert_eq!(errors.len(), 10, "{errors:#?}");
     }
 
     /// Over a span of runs: no run holds one landmark twice, no floor

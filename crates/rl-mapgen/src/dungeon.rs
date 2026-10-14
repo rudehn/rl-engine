@@ -256,7 +256,7 @@ impl RandomStart {
     /// Opt-in, so a chain that never asks draws exactly the start it
     /// always has.
     pub fn clear_of_stamps(self, cells: i32) -> ClearStart {
-        ClearStart { cells, beyond: false }
+        ClearStart { cells, beyond: false, far_from: None }
     }
 
     /// This start, on one side of the place's [`Landmark`], the side drawn
@@ -266,12 +266,14 @@ impl RandomStart {
     ///
     /// On its side it stands as the plain start does: in the first room,
     /// in the order they were emitted, lying wholly on that side, or on any
-    /// open cell of the side when no room does; and the other side when the
-    /// drawn one has nowhere to stand. With no landmark laid it is the
-    /// plain start, from the same stream, so a chain can ask for it on
-    /// every floor and only those grown round a landmark keep to a side.
+    /// open cell of the side when no room does. A side with nowhere to
+    /// stand fails the place naming the landmark, since a way down kept to
+    /// the other side would have nowhere to go either. With no landmark
+    /// laid it is the plain start, from the same stream, so a chain can
+    /// ask for it on every floor and only those grown round a landmark
+    /// keep to a side.
     pub fn beyond(self) -> ClearStart {
-        ClearStart { cells: 0, beyond: true }
+        ClearStart { cells: 0, beyond: true, far_from: None }
     }
 }
 
@@ -335,12 +337,25 @@ impl<C: BuildContext> Pass<C> for RandomStart {
 /// a game hoped is a worse map, and a chain that failed over it would be
 /// no map at all.
 ///
-/// [`beyond`](Self::beyond) keeps it to one side of the landmark as well.
+/// [`beyond`](Self::beyond) keeps it to one side of the landmark as well,
+/// and [`Stairs::Within`] draws it far from the cell the landmark's
+/// drawing marks for the way down.
 #[derive(Debug, Clone, Copy)]
 pub struct ClearStart {
     cells: i32,
     beyond: bool,
+    /// The glyph of a way down within the landmark, which this start is
+    /// drawn far from.
+    far_from: Option<char>,
 }
+
+/// The farthest share, in a hundred, of the walk from a way down within a
+/// landmark that the way in is drawn among. The landmark is the first
+/// piece, so the first room grown is beside it, and a start drawn there
+/// would stand a few steps from the stairs; drawn among the farthest
+/// third and less, the walk between them is most of the place's width, as
+/// a recipe's route bound asks of any way down.
+const WITHIN_START_PCT: u32 = 30;
 
 impl ClearStart {
     /// Kept to one side of the place's [`Landmark`] as well, as
@@ -348,6 +363,25 @@ impl ClearStart {
     pub fn beyond(mut self) -> Self {
         self.beyond = true;
         self
+    }
+
+    /// The way in for a way down within `landmark` on the cell its
+    /// drawing marks `mark`: walked from that cell as [`FarthestExit`]
+    /// walks from a start, and drawn among the farthest
+    /// [`WITHIN_START_PCT`] of what it reaches, clear of every stamp where
+    /// any such cell is.
+    fn far_from_mark<C: BuildContext>(&self, ctx: &mut C, landmark: &Landmark, mark: char, clear: &impl Fn(&Point) -> bool) -> Result<(), BuildError> {
+        let at = landmark_mark(ctx, landmark, mark, "random_start")?;
+        let (walkable, bridged) = (ctx.tiles().tables().walkable, bridged(ctx));
+        let map = walk_through_doors(ctx, at, true);
+        let standing = |p: &Point| *p != at && ctx.terrain().get(*p).is_some_and(|t| walkable[t.index()]) && !bridged.contains(*p);
+        let reached: Vec<(Point, i32)> = map.iter().filter(|(p, _)| standing(p)).collect();
+        let clear_ones: Vec<(Point, i32)> = reached.iter().copied().filter(|(p, _)| clear(p)).collect();
+        let cells = if clear_ones.is_empty() { reached } else { clear_ones };
+        let p = draw_far(ctx, &cells, Some(WITHIN_START_PCT))
+            .ok_or_else(|| BuildError::new("random_start", format!("nowhere to stand walked to from the '{mark}' of the landmark {}", landmark.name)))?;
+        ctx.emit(StartPoint(p));
+        Ok(())
     }
 
     /// The cells it draws from on `side` of `landmark`: the first room
@@ -379,15 +413,20 @@ impl<C: BuildContext> Pass<C> for ClearStart {
     fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
         let stamps: Vec<Rect> = ctx.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
         let clear = |p: &Point| stamps.iter().all(|r| rl_core::geometry::chebyshev(*p, rl_core::geometry::clamp_to(*p, *r)) >= self.cells);
-        if let Some(landmark) = ctx.outputs().first::<Landmark>().copied().filter(|_| self.beyond) {
-            let drawn = if ctx.rng().random_bool(0.5) { Side::Before } else { Side::After };
-            for side in [drawn, drawn.other()] {
-                let cells = self.beyond_cells(ctx, &landmark, side, &clear);
-                if !cells.is_empty() {
-                    return emit_start(ctx, &cells);
-                }
+        let landmark = ctx.outputs().first::<Landmark>().cloned();
+        if let (Some(mark), Some(landmark)) = (self.far_from, &landmark) {
+            return self.far_from_mark(ctx, landmark, mark, &clear);
+        }
+        if let Some(landmark) = landmark.filter(|_| self.beyond) {
+            let sides = [Side::Before, Side::After].map(|side| self.beyond_cells(ctx, &landmark, side, &clear));
+            if let Some(empty) = sides.iter().position(|cells| cells.is_empty()) {
+                let side = [Side::Before, Side::After][empty];
+                let reason =
+                    format!("the landmark {} at {:?} has nowhere to stand on its {side:?} side of {:?}", landmark.name, landmark.bounds, landmark.sides);
+                return Err(BuildError::new("random_start", reason));
             }
-            return Err(BuildError::new("random_start", "no open cell on either side of the landmark"));
+            let drawn = usize::from(!ctx.rng().random_bool(0.5));
+            return emit_start(ctx, &sides[drawn]);
         }
         let mut areas: Vec<Rect> = ctx.outputs().iter::<Room>().map(|r| r.0).collect();
         if areas.is_empty() {
@@ -606,33 +645,50 @@ impl<C: BuildContext> Pass<C> for FarExit {
         let stamps: Vec<Rect> = ctx.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
         let away = |p: Point| stamps.iter().map(|r| rl_core::geometry::chebyshev(p, rl_core::geometry::clamp_to(p, *r))).min().unwrap_or(i32::MAX);
         // The side across the landmark from the start, when kept beyond it.
-        let landmark = ctx.outputs().first::<Landmark>().copied().filter(|_| self.beyond);
-        let across = match landmark {
-            Some(l) => {
-                Some(l.side(start).ok_or_else(|| err(format!("the way in at {start:?} stands level with the landmark, on neither side of it")))?.other())
-            }
+        let landmark = ctx.outputs().first::<Landmark>().cloned().filter(|_| self.beyond);
+        let across = match &landmark {
+            Some(l) => Some(
+                l.side(start).ok_or_else(|| err(format!("the way in at {start:?} stands level with the landmark {}, on neither side of it", l.name)))?.other(),
+            ),
             None => None,
         };
-        let beyond = |p: Point| across.is_none_or(|side| landmark.and_then(|l| l.side(p)) == Some(side));
+        let beyond = |p: Point| across.is_none_or(|side| landmark.as_ref().and_then(|l| l.side(p)) == Some(side));
         let standing: Vec<(Point, i32)> = map.iter().filter(|(p, _)| *p != start && walkable(*p) && beyond(*p)).collect();
         let clear: Vec<(Point, i32)> = standing.iter().copied().filter(|(p, _)| away(*p) >= self.clear).collect();
         let kept = self.clear > 0;
         let cells = if clear.is_empty() && kept { standing.into_iter().filter(|(p, _)| away(*p) >= 1).collect() } else { clear };
-        let far = cells
-            .iter()
-            .map(|(_, v)| *v)
-            .max()
+        let at = draw_far(ctx, &cells, self.among_pct)
             .ok_or_else(|| err(format!("nowhere to stand farther than the start{}", if kept { " and outside every stamp" } else { "" })))?;
-        let at = match self.among_pct {
-            None => cells.iter().max_by_key(|(p, v)| (*v, std::cmp::Reverse(*p))).expect("some cell is the farthest").0,
-            Some(pct) => {
-                let within: Vec<Point> = cells.iter().filter(|(_, v)| i64::from(*v) * 100 >= i64::from(far) * i64::from(100 - pct)).map(|(p, _)| *p).collect();
-                within[ctx.rng().random_range(0..within.len())]
-            }
-        };
         ctx.emit(ExitPoint(at));
         Ok(())
     }
+}
+
+/// The far end of a walk: of `cells`, each with its walk, the one
+/// farthest, ties toward the lower [`Point`], or with `among` a share, one
+/// drawn from the chain's stream among every cell whose walk is at least
+/// `100 - among` in a hundred of the longest. `None` when there are no
+/// cells. The way down is drawn by it from the start, and a way in far
+/// from a way down within a landmark from the landmark's mark.
+fn draw_far<C: BuildContext>(ctx: &mut C, cells: &[(Point, i32)], among: Option<u32>) -> Option<Point> {
+    let far = cells.iter().map(|(_, v)| *v).max()?;
+    Some(match among {
+        None => cells.iter().max_by_key(|(p, v)| (*v, std::cmp::Reverse(*p))).expect("some cell is the farthest").0,
+        Some(pct) => {
+            let within: Vec<Point> = cells.iter().filter(|(_, v)| i64::from(*v) * 100 >= i64::from(far) * i64::from(100 - pct)).map(|(p, _)| *p).collect();
+            within[ctx.rng().random_range(0..within.len())]
+        }
+    })
+}
+
+/// The cell the stamp of `landmark` itself marks `mark` at, never an
+/// earlier stamp drawing the same glyph: the stamp whose bounds are the
+/// landmark's. Fails naming the landmark and the glyph when its drawing
+/// marks none.
+fn landmark_mark<C: BuildContext>(ctx: &C, landmark: &Landmark, mark: char, pass: &'static str) -> Result<Point, BuildError> {
+    let stamp = ctx.outputs().iter::<Stamped>().find(|st| st.bounds == landmark.bounds);
+    let at = stamp.and_then(|st| st.marks.iter().find(|(c, _)| *c == mark)).map(|(_, p)| *p);
+    at.ok_or_else(|| BuildError::new(pass, format!("the landmark {} marks no '{mark}'", landmark.name)))
 }
 
 /// Emits the cell a stamped piece marked `mark` as the [`StartPoint`]:
@@ -706,22 +762,30 @@ impl<C: BuildContext> Pass<C> for MarkedExit {
 /// own and hand back what goes in its chain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Stairs {
-    /// Wherever the game's own passes put them.
+    /// Wherever the game's own passes put them. The landmark is the first
+    /// piece, so the first room grown, where [`RandomStart`] stands the
+    /// way in, is most often the one beside it: a free way in tends to
+    /// stand at the landmark, which is the arrival a game asking for this
+    /// gets.
     #[default]
     Free,
     /// On opposite sides of it, so the route between them crosses it.
     Beyond,
-    /// The way down on the cell its drawing marks with this glyph.
+    /// The way down on the cell its drawing marks with this glyph, and the
+    /// way in drawn among the cells farthest from it, so the walk to the
+    /// stairs is not the few steps from the room grown beside it.
     Within(char),
 }
 
 impl Stairs {
     /// The way in `start` draws, kept to a side of the landmark when the
-    /// stairs stand beyond it.
+    /// stairs stand beyond it, and far from the way down when they stand
+    /// within it.
     pub fn start(self, start: ClearStart) -> ClearStart {
         match self {
+            Stairs::Free => start,
             Stairs::Beyond => start.beyond(),
-            Stairs::Free | Stairs::Within(_) => start,
+            Stairs::Within(mark) => ClearStart { far_from: Some(mark), ..start },
         }
     }
 
@@ -732,7 +796,7 @@ impl Stairs {
         match self {
             Stairs::Free => WayDown::Far(exit),
             Stairs::Beyond => WayDown::Far(exit.beyond()),
-            Stairs::Within(mark) => WayDown::Marked(MarkedExit { mark }),
+            Stairs::Within(mark) => WayDown::Within(mark),
         }
     }
 }
@@ -742,15 +806,17 @@ impl Stairs {
 pub enum WayDown {
     /// The walk's far end, as [`FarthestExit`] draws it.
     Far(FarExit),
-    /// A cell a drawing marks, as [`MarkedExit`] finds it.
-    Marked(MarkedExit),
+    /// The cell the landmark's own drawing marks with this glyph, as
+    /// [`MarkedExit`] finds a mark but never on an earlier stamp drawing
+    /// the same glyph. Fails when no landmark was laid.
+    Within(char),
 }
 
 impl<C: BuildContext> Pass<C> for WayDown {
     fn name(&self) -> &'static str {
         match self {
             WayDown::Far(exit) => Pass::<C>::name(exit),
-            WayDown::Marked(exit) => Pass::<C>::name(exit),
+            WayDown::Within(_) => "marked_exit",
         }
     }
     fn phase(&self) -> Phase {
@@ -759,7 +825,13 @@ impl<C: BuildContext> Pass<C> for WayDown {
     fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
         match self {
             WayDown::Far(exit) => exit.apply(ctx),
-            WayDown::Marked(exit) => exit.apply(ctx),
+            WayDown::Within(mark) => {
+                let landmark = ctx.outputs().first::<Landmark>().cloned();
+                let landmark = landmark.ok_or_else(|| BuildError::new("marked_exit", format!("no landmark was laid to hold the way down '{mark}'")))?;
+                let at = landmark_mark(ctx, &landmark, *mark, "marked_exit")?;
+                ctx.emit(ExitPoint(at));
+                Ok(())
+            }
         }
     }
 }
@@ -1053,7 +1125,7 @@ mod tests {
         let chain = Chain::new().then(seeded(&rig, prefab, at)).then(stairs.start(RandomStart.clear_of_stamps(0))).then(stairs.exit(FarExit::default()));
         let c =
             chain.run_retrying(|| BaseContext::blank(84, 48, rig.tiles.clone(), rig.wall), RunSeed(seed), 20).unwrap_or_else(|e| panic!("seed {seed}: {e}"));
-        let landmark = *c.outputs().first::<Landmark>().unwrap();
+        let landmark = c.outputs().first::<Landmark>().unwrap().clone();
         (c, landmark)
     }
 
@@ -1120,10 +1192,10 @@ mod tests {
         for x in 1..59 {
             c.terrain_mut().set(Point::new(x, 5), floor);
         }
-        c.emit(Landmark { bounds: Rect::new(10, 2, 5, 3), sides: crate::accrete::Sides::WestEast });
+        c.emit(Landmark { name: "hall".into(), bounds: Rect::new(10, 2, 5, 3), sides: crate::accrete::Sides::WestEast });
         c.emit(StartPoint(Point::new(12, 5)));
         let e = Chain::new().then(FarthestExit.beyond()).run(&mut c, RunSeed(1)).unwrap_err();
-        assert!(e.pass == "farthest_exit" && e.reason.contains("level with the landmark"), "{e}");
+        assert!(e.pass == "farthest_exit" && e.reason.contains("level with the landmark hall"), "{e}");
     }
 
     /// A marked way in or way down stands on the first stamp's mark, and a
@@ -1138,5 +1210,60 @@ mod tests {
         assert_eq!(c.outputs().first::<ExitPoint>().unwrap().0, Point::new(6, 3));
         let e = Chain::new().then(MarkedExit { mark: 'v' }).run(&mut c, RunSeed(1)).unwrap_err();
         assert!(e.pass == "marked_exit" && e.reason.contains("'v'"), "{e}");
+    }
+
+    /// Over a span of seeds and every placement a piece with a marked
+    /// way down may take, the way down within the landmark meets a
+    /// recipe's route bound of thirty steps from the way in, on the place
+    /// as grown and with no attempt grown again for it: the way in is
+    /// drawn far from the marked cell, never in the room grown beside the
+    /// landmark.
+    #[test]
+    fn a_way_down_within_a_landmark_is_a_recipes_route_from_the_way_in_on_every_seed() {
+        use crate::accrete::tests::{landmark, rig};
+        use crate::prefab::Placement;
+        use crate::survey::{Require, Survey, Surveyed};
+        let rig = rig();
+        for at in [Placement::Center, Placement::Edge, Placement::Anywhere] {
+            for seed in crate::testing::seeds(0..120) {
+                let (mut c, _) = stairs_round(&landmark(&rig), vec![at], Stairs::Within('X'), seed);
+                let require = Require { open_pct: (0, 100), areas: Vec::new(), loops: 0, dead_end_pct: 100, route: 30 };
+                let met = Chain::new().then(Survey).then(require).run(&mut c, RunSeed(seed));
+                let route = c.outputs().first::<Surveyed>().and_then(|s| s.route);
+                assert!(met.is_ok(), "{at:?} seed {seed}: the route is {route:?}: {met:?}");
+            }
+        }
+    }
+
+    /// A way in kept beyond a landmark with nowhere to stand on one side
+    /// of it fails the place naming the landmark and the side, whichever
+    /// side the stream draws, rather than standing on the other side and
+    /// leaving the way down nowhere to go.
+    #[test]
+    fn a_start_kept_beyond_a_landmark_with_one_side_empty_fails_naming_the_landmark() {
+        for seed in 1..=10 {
+            let (mut c, _, floor, _) = ctx();
+            for x in 1..9 {
+                c.terrain_mut().set(Point::new(x, 5), floor);
+            }
+            c.emit(Landmark { name: "hall".into(), bounds: Rect::new(10, 2, 5, 3), sides: crate::accrete::Sides::WestEast });
+            let e = Chain::new().then(Stairs::Beyond.start(RandomStart.clear_of_stamps(0))).run(&mut c, RunSeed(seed)).unwrap_err();
+            assert!(e.pass == "random_start" && e.reason.contains("landmark hall") && e.reason.contains("After"), "seed {seed}: {e}");
+        }
+    }
+
+    /// The way down within a landmark is the cell the landmark's own
+    /// drawing marks, even when a stamp emitted before it draws the same
+    /// glyph, and a place with no landmark laid fails asking for one.
+    #[test]
+    fn a_way_down_within_a_landmark_is_its_own_stamps_mark_and_never_an_earlier_stamps() {
+        let (mut c, ..) = ctx();
+        c.emit(Stamped { bounds: Rect::new(2, 2, 6, 3), marks: vec![('X', Point::new(3, 3))], prefab: None });
+        let e = Chain::new().then(Stairs::Within('X').exit(FarExit::default())).run(&mut c, RunSeed(1)).unwrap_err();
+        assert!(e.pass == "marked_exit" && e.reason.contains("no landmark"), "{e}");
+        c.emit(Stamped { bounds: Rect::new(20, 2, 5, 3), marks: vec![('X', Point::new(22, 3))], prefab: None });
+        c.emit(Landmark { name: "hall".into(), bounds: Rect::new(20, 2, 5, 3), sides: crate::accrete::Sides::WestEast });
+        Chain::new().then(Stairs::Within('X').exit(FarExit::default())).run(&mut c, RunSeed(1)).unwrap();
+        assert_eq!(c.outputs().first::<ExitPoint>().unwrap().0, Point::new(22, 3));
     }
 }

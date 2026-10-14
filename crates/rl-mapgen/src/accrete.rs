@@ -441,9 +441,16 @@ impl FirstPiece {
     /// it somewhere new, in a facing its drawing and `orient` both allow.
     ///
     /// An error naming it when `at` is empty, when it names a room, since
-    /// no room stands before growth, or when the drawing could not be
-    /// grown as an area of its own: no entry, an entry with nothing inside
-    /// straight across, or nothing inside its wall.
+    /// no room stands before growth, when it names a point, or when the
+    /// drawing could not be grown as an area of its own: no entry, an
+    /// entry with nothing inside straight across, or nothing inside its
+    /// wall.
+    ///
+    /// A point is refused because a landmark's place is drawn afresh for
+    /// each attempt, so a place that failed is grown again round it
+    /// somewhere new, and a corner fixed by the chain would grow every
+    /// attempt round the same spot; nor can a corner fixed before the
+    /// facing is drawn say where a piece that turns should lie.
     pub fn new(name: impl Into<String>, prefab: &Prefab, at: Vec<Placement>, orient: Orient) -> Result<Self, BuildError> {
         let name = name.into();
         let err = |reason: String| BuildError::new("accrete", format!("first piece {name}: {reason}"));
@@ -452,6 +459,9 @@ impl FirstPiece {
         }
         if let Some(room) = at.iter().find(|p| matches!(p, Placement::InRoom(_) | Placement::AnyRoom)) {
             return Err(err(format!("cannot be laid {room:?}, since no room stands before growth")));
+        }
+        if let Some(point) = at.iter().find(|p| matches!(p, Placement::At(_))) {
+            return Err(err(format!("cannot be laid {point:?}, since its place is drawn afresh for each attempt and a fixed corner is not")));
         }
         let facings = grown_facings(&name, prefab, orient)?
             .into_iter()
@@ -506,8 +516,11 @@ impl Side {
 /// band. It divides across its length for a [`Placement::Span`], along
 /// the edge for one against an edge, and across the map's longer side
 /// otherwise; see [`RandomStart::beyond`](crate::dungeon::RandomStart::beyond).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Landmark {
+    /// The name its [`FirstPiece`] was given, which its area carries and
+    /// a failure round it names.
+    pub name: String,
     /// The cells its drawing covers.
     pub bounds: Rect,
     /// Which way it divides the place.
@@ -964,7 +977,7 @@ impl<C: BuildContext> Pass<C> for Accrete {
                     let placed = Rect::new(origin.x, origin.y, *w, *h);
                     let laying = Laying { name: &first.name, room: false, join: None, district: district_at(placed.center()), stays: true };
                     self.lay(ctx, &mut grown, piece, origin, laying, None);
-                    landmark = Some(Landmark { bounds: placed, sides });
+                    landmark = Some(Landmark { name: first.name.clone(), bounds: placed, sides });
                     break;
                 }
             }
@@ -1824,7 +1837,7 @@ pub(crate) mod tests {
     /// stamp landed, and every open cell walked to from every other.
     fn grown_round(pass: Accrete, rig: &Rig, w: i32, h: i32, s: u64) -> (BaseContext, Landmark) {
         let ctx = build(pass, rig, w, h, s).unwrap_or_else(|e| panic!("{w}x{h} seed {s}: {e}"));
-        let landmark = *ctx.outputs().first::<Landmark>().expect("a landmark is published");
+        let landmark = ctx.outputs().first::<Landmark>().expect("a landmark is published").clone();
         assert_eq!(ctx.outputs().first::<Area>().unwrap().shape, "landmark", "{w}x{h} seed {s}: the landmark is the first area");
         let stamp = ctx.outputs().iter::<Stamped>().find(|st| st.bounds == landmark.bounds).expect("its stamp is where it landed");
         assert!(stamp.prefab.is_some(), "{w}x{h} seed {s}");
@@ -1936,12 +1949,14 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_first_piece_asked_into_a_room_or_nowhere_is_refused_naming_why() {
+    fn a_first_piece_asked_into_a_room_at_a_point_or_nowhere_is_refused_naming_why() {
         let rig = rig();
         let refused = |at: Vec<Placement>| FirstPiece::new("landmark", &landmark(&rig), at, Orient::TurnedOrMirrored).err().expect("refused").reason;
         let any = refused(vec![Placement::Center, Placement::AnyRoom]);
         assert!(any.contains("landmark") && any.contains("AnyRoom") && any.contains("no room"), "{any}");
         assert!(refused(vec![Placement::InRoom(2)]).contains("InRoom(2)"));
+        let at = refused(vec![Placement::Edge, Placement::At(Point::new(3, 4))]);
+        assert!(at.contains("landmark") && at.contains("At(") && at.contains("drawn afresh"), "{at}");
         assert!(refused(Vec::new()).contains("no placement"));
         let shut = Prefab::parse(&["###", "#.#", "###"], |c| (c == '#').then_some(rig.wall)).unwrap();
         let e = FirstPiece::new("shut", &shut, vec![Placement::Center], Orient::Fixed).err().expect("refused").reason;

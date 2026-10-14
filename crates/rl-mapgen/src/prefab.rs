@@ -92,7 +92,7 @@ pub enum Mirror {
     None,
     /// Left to right, what [`Prefab::flipped`] does.
     LeftRight,
-    /// Top to bottom, what [`Prefab::flipped_up_down`] does.
+    /// Top to bottom, which is a left-right mirror and a half-turn.
     UpDown,
     /// Either, and so both together, which is the half-turn. The default,
     /// so a drawing that says nothing leaves the stamp to decide.
@@ -104,18 +104,37 @@ pub enum Mirror {
 /// right or not, then turned a number of quarter-turns clockwise.
 ///
 /// A value rather than a turned [`Prefab`], so what decides where a piece
-/// goes can ask which way its back faces before anything is turned.
+/// goes can ask which way its back faces before anything is turned. Made
+/// only by [`new`](Self::new), which keeps the quarters to nought to
+/// three, so two values that lay a piece the same way are equal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Facing {
     /// Quarter-turns clockwise, after any mirror; nought to three.
-    pub quarters: u8,
+    quarters: u8,
     /// Whether it is mirrored left to right first.
-    pub mirrored: bool,
+    mirrored: bool,
 }
 
 impl Facing {
     /// As drawn, which every drawing allows.
     pub const AS_DRAWN: Facing = Facing { quarters: 0, mirrored: false };
+
+    /// Mirrored left to right first or not, then turned `quarters`
+    /// quarter-turns clockwise; four is as drawn, so any number is read
+    /// as what it lays.
+    pub const fn new(quarters: u8, mirrored: bool) -> Facing {
+        Facing { quarters: quarters % 4, mirrored }
+    }
+
+    /// Quarter-turns clockwise, after any mirror; nought to three.
+    pub fn quarters(self) -> u8 {
+        self.quarters
+    }
+
+    /// Whether it is mirrored left to right before it is turned.
+    pub fn mirrored(self) -> bool {
+        self.mirrored
+    }
 
     /// All eight, the four turns as drawn and then the four of the mirror
     /// image, the order [`Orient::facings`] lists them in.
@@ -132,15 +151,15 @@ impl Facing {
 
     /// Its place in [`ALL`](Self::ALL), the bit it is in a [`Facings`].
     fn index(self) -> usize {
-        usize::from(self.quarters % 4) + 4 * usize::from(self.mirrored)
+        usize::from(self.quarters) + 4 * usize::from(self.mirrored)
     }
 
     /// This facing, then `next` applied to what it laid. A mirror turns
     /// a clockwise turn laid before it into an anticlockwise one, which
     /// is why the quarters do not simply add.
     fn then(self, next: Facing) -> Facing {
-        let before = if next.mirrored { (4 - self.quarters % 4) % 4 } else { self.quarters % 4 };
-        Facing { quarters: (next.quarters + before) % 4, mirrored: self.mirrored != next.mirrored }
+        let before = if next.mirrored { (4 - self.quarters) % 4 } else { self.quarters };
+        Facing::new(next.quarters + before, self.mirrored != next.mirrored)
     }
 
     /// `prefab` laid this way, marks, entries and all.
@@ -154,7 +173,7 @@ impl Facing {
     /// keeps the bottom row at the bottom; each clockwise quarter-turn
     /// carries it on, south to west to north to east.
     pub fn back(self) -> Direction {
-        [Direction::South, Direction::West, Direction::North, Direction::East][usize::from(self.quarters % 4)]
+        [Direction::South, Direction::West, Direction::North, Direction::East][usize::from(self.quarters)]
     }
 }
 
@@ -365,10 +384,12 @@ impl Prefab {
         Self { cells, marks, entries, key: self.key, turn: self.turn, mirror: self.mirror }
     }
 
-    /// A copy mirrored top to bottom, marks and all: what a piece that may
-    /// not turn needs to be laid upside down, and the half-turn of
-    /// [`flipped`](Self::flipped) for one that may.
-    pub fn flipped_up_down(&self) -> Self {
+    /// A copy mirrored top to bottom, marks and all, worked out cell by
+    /// cell rather than as a [`Facing`], so the tests can hold
+    /// [`Mirror::UpDown`]'s facing to what its name says. Every caller
+    /// lays a facing instead, which reaches the same piece.
+    #[cfg(test)]
+    fn flipped_up_down(&self) -> Self {
         let (w, h) = (self.width(), self.height());
         let mut cells: Grid<Option<TileId>> = Grid::new(w, h);
         for y in 0..h {
@@ -451,30 +472,44 @@ pub enum Placement {
 const MARGIN_PCT: i32 = 15;
 
 /// Where a piece goes when the map as a whole is what it is placed on,
-/// rather than a room in it: which of `facings`, each with the size it
-/// lays, it lands in, its corner, and which way it divides the map.
-/// `None` for a placement that needs a room, which is not this one's to
-/// answer, and for [`Placement::Anywhere`] when no facing leaves its
-/// margin.
+/// rather than a room in it or a corner a chain fixed: which of
+/// `facings`, each with the size it lays, it lands in, its corner, and
+/// which way it divides the map. `None` for a placement that is not this
+/// one's to answer, a room or a point, and when no facing fits the
+/// placement on the map.
+///
+/// A facing is drawn only among those that fit, inside the border and,
+/// for [`Placement::Anywhere`], inside its margin, so a long piece that
+/// fits only lying along the map's longer side is laid that way rather
+/// than failing whenever the draw stood it on end.
 ///
 /// The way it divides the map is what the way in and the way down keep
 /// either side of: across a [`Placement::Span`]'s length, along an edge
-/// for one against an edge, and across the map's longer side for any
-/// other, so a route between them crosses the piece's band.
+/// for one against an edge, and across the map's longer side for one in
+/// the middle or anywhere, so a route between them crosses the piece's
+/// band.
 pub(crate) fn on_map(at: Placement, facings: &[(Facing, (i32, i32))], bounds: Rect, rng: &mut dyn RngCore) -> Option<(usize, Point, Sides)> {
     let (w, h) = (bounds.width, bounds.height);
     let any = |rng: &mut dyn RngCore, among: &[usize]| among[if among.len() > 1 { rng.random_range(0..among.len()) } else { 0 }];
-    let all: Vec<usize> = (0..facings.len()).collect();
     let across = if w >= h { Sides::WestEast } else { Sides::NorthSouth };
     let margin = |side: i32| (side * MARGIN_PCT / 100).max(1);
     let centred = |(pw, ph): (i32, i32)| Point::new(bounds.x + (w - pw) / 2, bounds.y + (h - ph) / 2);
+    // Each facing that fits this placement: inside the border, the row
+    // and column all round the map, and inside the margin for anywhere.
+    let fits = |(pw, ph): (i32, i32)| match at {
+        Placement::Anywhere => w - margin(w) - pw >= margin(w) && h - margin(h) - ph >= margin(h),
+        _ => pw <= w - 2 && ph <= h - 2,
+    };
+    let all: Vec<usize> = (0..facings.len()).filter(|i| fits(facings[*i].1)).collect();
+    if all.is_empty() {
+        return None;
+    }
     match at {
-        Placement::InRoom(_) | Placement::AnyRoom => None,
+        Placement::InRoom(_) | Placement::AnyRoom | Placement::At(_) => None,
         Placement::Center => {
             let i = any(rng, &all);
             Some((i, centred(facings[i].1), across))
         }
-        Placement::At(p) => Some((any(rng, &all), p, across)),
         Placement::Span => {
             let i = any(rng, &all);
             let (pw, ph) = facings[i].1;
@@ -484,15 +519,12 @@ pub(crate) fn on_map(at: Placement, facings: &[(Facing, (i32, i32))], bounds: Re
             let i = any(rng, &all);
             let (pw, ph) = facings[i].1;
             let (mx, my) = (margin(w), margin(h));
-            if w - mx - pw < mx || h - my - ph < my {
-                return None;
-            }
             Some((i, Point::new(bounds.x + rng.random_range(mx..=w - mx - pw), bounds.y + rng.random_range(my..=h - my - ph)), across))
         }
         Placement::Edge => {
             let backs: Vec<Direction> = [Direction::South, Direction::West, Direction::North, Direction::East]
                 .into_iter()
-                .filter(|d| facings.iter().any(|(f, _)| f.back() == *d))
+                .filter(|d| all.iter().any(|i| facings[*i].0.back() == *d))
                 .collect();
             let back = backs[if backs.len() > 1 { rng.random_range(0..backs.len()) } else { 0 }];
             let those: Vec<usize> = all.iter().copied().filter(|i| facings[*i].0.back() == back).collect();
@@ -629,10 +661,7 @@ impl<C: BuildContext> Pass<C> for StampPrefab {
                 let sizes: Vec<(Facing, (i32, i32))> =
                     self.orient.allowed(&self.prefab).into_iter().zip(&laid).map(|(f, p)| (f, (p.width(), p.height()))).collect();
                 let (i, origin, _) = on_map(self.at, &sizes, bounds, ctx.rng()).ok_or_else(|| {
-                    BuildError::new(
-                        self.name,
-                        format!("no facing of the piece keeps the margin {:?} asks on a {}x{} map", self.at, bounds.width, bounds.height),
-                    )
+                    BuildError::new(self.name, format!("no facing of the piece fits {:?} on a {}x{} map", self.at, bounds.width, bounds.height))
                 })?;
                 (laid[i].clone(), origin)
             }
@@ -1139,7 +1168,48 @@ pub(crate) mod tests {
     }
 
     fn facing(quarters: u8, mirrored: bool) -> Facing {
-        Facing { quarters, mirrored }
+        Facing::new(quarters, mirrored)
+    }
+
+    /// A facing told any number of quarter-turns is the one of nought to
+    /// three that lays the piece the same way, and equal to it.
+    #[test]
+    fn a_facing_told_four_or_more_quarter_turns_is_its_reduced_twin() {
+        let p = four_marked_corners(TileId(1));
+        for quarters in 0..12u8 {
+            for mirrored in [false, true] {
+                let (told, reduced) = (Facing::new(quarters, mirrored), Facing::new(quarters % 4, mirrored));
+                assert_eq!(told, reduced, "{quarters} {mirrored}");
+                assert_eq!(told.quarters(), quarters % 4);
+                assert_eq!(told.lay(&p), reduced.lay(&p));
+            }
+        }
+    }
+
+    /// A piece long on one axis and free to turn, on a map it fits only
+    /// lying along the longer side: every placement that draws its facing
+    /// with its place lays it lying along, on every seed, rather than
+    /// failing whenever the draw stood it on end, and a map it fits no way
+    /// fails naming the placement.
+    #[test]
+    fn a_long_piece_lands_in_a_facing_that_fits_and_one_fitting_no_facing_fails_by_name() {
+        let r = TileRegistry::standard();
+        let (wall, floor) = (r.expect("wall"), r.expect("floor"));
+        let (side, middle) = ("#".repeat(30), format!("#{}#", ".".repeat(28)));
+        let bar = Prefab::parse(&[&side, &middle, &side], |c| Some(if c == '#' { wall } else { floor })).unwrap();
+        let stamp = |at: Placement, w: i32, h: i32, s: u64| {
+            let mut ctx = BaseContext::blank(w, h, r.clone(), wall);
+            let pass = StampPrefab { name: "bar", prefab: bar.clone(), at, orient: Orient::TurnedOrMirrored };
+            Chain::new().then(pass).run(&mut ctx, RunSeed(s)).map(|()| ctx.outputs().first::<Stamped>().unwrap().bounds)
+        };
+        for at in [Placement::Anywhere, Placement::Span, Placement::Edge] {
+            for s in 0..40 {
+                let b = stamp(at, 60, 20, s).unwrap_or_else(|e| panic!("{at:?} seed {s}: {e}"));
+                assert_eq!((b.width, b.height), (30, 3), "{at:?} seed {s}: lying along the map");
+            }
+            let e = stamp(at, 20, 20, 1).expect_err("fits no way");
+            assert!(e.pass == "bar" && e.reason.contains("no facing") && e.reason.contains(&format!("{at:?}")), "{e}");
+        }
     }
 
     /// Every pair a file can write, and exactly the facings each names: the

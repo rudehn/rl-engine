@@ -130,8 +130,10 @@ pub struct Picked {
 
 /// The picks `picks` of `pool`, as [`Pool::plan_run`] drew them for one
 /// place, as the pieces growth lays and the pass that places the rest in
-/// the order drawn, each piece turned as `orient` and its own file allow,
-/// and the landmark seeded first with the stairs it wants: every piece cut
+/// the order drawn, each piece stamped turned as `orient` and its own file
+/// allow, and the landmark seeded first with the stairs it wants, in any
+/// facing its file allows, since it is grown as a piece is and nothing
+/// stamps it: every piece cut
 /// from `prefabs` and keyed, so its slots fill as any stamp's do. An error
 /// naming the piece when there is none, a grown or seeded one has no
 /// entry, or two seeded picks were drawn for one place, which the pool
@@ -168,7 +170,10 @@ pub fn picked<M: Send + Sync + 'static>(pool: &Pool, picks: &[Pick], prefabs: &P
                         pool::Placement::Span => Placement::Span,
                     })
                     .collect();
-                first = Some(FirstPiece::new(piece.clone(), &prefabs.piece(piece)?, at, orient)?);
+                // Grown, so no stamp stands over it to narrow its facings:
+                // its drawing's declaration alone decides, as for a grown
+                // piece, and `orient` is the ceiling of what is stamped.
+                first = Some(FirstPiece::new(piece.clone(), &prefabs.piece(piece)?, at, Orient::TurnedOrMirrored)?);
                 stairs = match *wanted {
                     pool::Stairs::Free => Stairs::Free,
                     pool::Stairs::Beyond => Stairs::Beyond,
@@ -455,9 +460,7 @@ mod tests {
         use rl_rules::names::Names;
         use rl_rules::pool::Place;
 
-        // The route bound lowered, since a way down within a landmark may
-        // stand close to a way in drawn in the room grown beside it.
-        let def = rl_rules::layout::load(&FILE.replacen("route: 20", "route: 4", 1)).unwrap();
+        let def = rl_rules::layout::load(FILE).unwrap();
         let mut tiles = TileRegistry::standard();
         let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
         let door = tiles.register(TileProps::floor("way through")).unwrap();
@@ -495,7 +498,7 @@ mod tests {
                 let ctx = chain
                     .run_retrying(|| BaseContext::blank(w, h, tiles.clone(), wall), RunSeed(seed * 10 + p as u64), 40)
                     .unwrap_or_else(|e| panic!("seed {seed} place {p}: {e}"));
-                let landmark = ctx.outputs().first::<Landmark>().copied();
+                let landmark = ctx.outputs().first::<Landmark>().cloned();
                 let Some(name) = seeded else {
                     assert!(landmark.is_none(), "seed {seed} place {p}: no landmark was drawn and one was laid");
                     continue;
@@ -511,6 +514,55 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A landmark is grown and nothing stamps it, so the ceiling a game
+    /// passes for what it stamps does not narrow it: picked under a fixed
+    /// ceiling, a piece whose file allows every facing still backs onto
+    /// more than the south edge over a span of seeds.
+    #[test]
+    fn a_landmarks_facings_are_its_files_alone_whatever_ceiling_the_stamps_are_given() {
+        use rand::SeedableRng;
+        use rl_mapgen::Landmark;
+        use rl_rules::content::Registry;
+        use rl_rules::names::Names;
+        use rl_rules::pool::Place;
+
+        let def = rl_rules::layout::load(FILE).unwrap();
+        let mut tiles = TileRegistry::standard();
+        let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
+        let door = tiles.register(TileProps::floor("way through")).unwrap();
+        let hall = r##########"(name: "hall", rows: ["####E####", "#.......#", "E.......E", "#########"], legend: { '#': Tile("wall"), '.': Tile("floor"), 'E': Entry })"##########;
+        let defs = Registry::from_defs(vec![rl_rules::prefab::load::<()>(hall, &tiles, &Names::new()).unwrap()]).unwrap();
+        let prefabs = Prefabs::<()>::new(defs, Registry::from_defs(Vec::new()).unwrap());
+        let text = LANDMARKS.replacen(
+            "(2, 3), weight: \"common\", placed: Seeded([Center, Edge], Beyond)",
+            "(1, 4), weight: \"common\", placed: Seeded([Edge], Free)",
+            1,
+        );
+        let text = text.replacen("\n            (name: \"stair\", kind: \"landmark\", piece: \"stair\", floors: (2, 3), weight: \"common\", placed: Seeded([Anywhere], Within('>'))),", "", 1);
+        let pool = rl_rules::pool::load(&text, &def, prefabs.defs(), &Names::new()).unwrap();
+        let place = [Place { band: 1, tags: Vec::new() }];
+        let mut backs = std::collections::BTreeSet::new();
+        for seed in 0..20 {
+            let plan = pool.plan_run(&mut rand::rngs::StdRng::seed_from_u64(seed), &place);
+            let picked = picked(&pool, &plan[0], &prefabs, Orient::Fixed).unwrap();
+            let mut grow = passes(&def, "test", &LayoutTiles { floor, door, locked: door, sealed: door }).unwrap();
+            grow.accrete.first = Some(picked.first.expect("the one landmark is drawn"));
+            let (w, h) = grow.size;
+            let ctx = Chain::new()
+                .then(grow.accrete)
+                .run_retrying(|| BaseContext::blank(w, h, tiles.clone(), wall), RunSeed(seed), 40)
+                .unwrap_or_else(|e| panic!("seed {seed}: {e}"));
+            let b = ctx.outputs().first::<Landmark>().unwrap().bounds;
+            backs.insert(
+                [(b.bottom() == h - 1, "south"), (b.y == 1, "north"), (b.x == 1, "west"), (b.right() == w - 1, "east")]
+                    .into_iter()
+                    .find(|(on, _)| *on)
+                    .map(|(_, edge)| edge),
+            );
+        }
+        assert!(backs.len() > 1, "only {backs:?} under a fixed ceiling");
     }
 
     /// Rubble a pool hands out, and crates a district's list lays.

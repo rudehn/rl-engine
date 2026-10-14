@@ -38,7 +38,7 @@ use rand::seq::SliceRandom;
 use rl_engine::prelude::*;
 use rl_engine::rl_bevy::layout::LayoutTiles;
 use rl_engine::rl_core::Rect;
-use rl_engine::rl_mapgen::dungeon::{ExitPoint, FarthestExit, MarkedStart, RandomStart};
+use rl_engine::rl_mapgen::dungeon::{ExitPoint, FarthestExit, MarkedStart, RandomStart, Stairs};
 use rl_engine::rl_mapgen::passes::StartPoint;
 use rl_engine::rl_mapgen::{Area, Opening};
 use rl_engine::rl_render::TileAppearance;
@@ -620,9 +620,16 @@ impl Undermere {
         }
         grown.accrete.pieces.extend(picked.pieces);
         // A landmark the pool seeded on this floor is its first piece,
-        // and its stairs say where the way in and the way down stand.
-        grown.accrete.first = picked.first;
+        // and its stairs say where the way in and the way down stand. The
+        // throne's floor has no way down and draws its way in clear of the
+        // throne, so a landmark there may only leave its stairs free; one
+        // that asks otherwise is refused rather than quietly ignored.
         let stairs = picked.stairs;
+        if throne && stairs != Stairs::Free {
+            let name = picked.first.as_ref().map_or("", |f| f.name());
+            return Err(BuildError::new("layout", format!("{name}: a landmark on the throne's floor, which has no way down, asks its stairs {stairs:?}")));
+        }
+        grown.accrete.first = picked.first;
         let mut chain = Chain::new().then(grown.accrete).then(grown.loops).then(Paint { floor: floor_tile, rules: drawn.paint.clone() });
         if let Some((lakes, bridges)) = drawn.lakes.clone() {
             chain = chain.then(lakes);
@@ -1740,6 +1747,27 @@ mod tests {
     /// find later, or never: `PrefabShape` and `Accrete` are the engine's
     /// own, covered end to end in `rl_mapgen::accrete`'s own suite, so
     /// this only pins that Undermere's own pieces are among them.
+    /// The throne's floor has no way down and its own way in, so a
+    /// landmark seeded there whose stairs are not free is refused by name
+    /// rather than grown with its stairs ignored.
+    #[test]
+    fn a_landmark_on_the_throne_floor_asking_its_stairs_placed_is_refused_by_name() {
+        use rl_engine::rl_rules::pool::{Placed, Placement, Stairs as Wanted};
+        let mut undermere = Undermere::new(RunSeed(0));
+        let grown = undermere.pool.entries.iter().find(|e| matches!(e.placed, Placed::Grown { .. })).expect("a grown piece").clone();
+        let piece = grown.piece().expect("it lays a piece").to_string();
+        let seeded = rl_engine::rl_rules::pool::Entry {
+            name: "a seeded hall".into(),
+            placed: Placed::Seeded { piece: piece.clone(), placements: vec![Placement::Center], stairs: Wanted::Beyond },
+            ..grown
+        };
+        undermere.pool.entries.push(seeded);
+        let pick = [rl_engine::rl_rules::pool::Pick { entry: undermere.pool.entries.len() - 1, required: true }];
+        let drawn = undermere.biome_of(FLOORS).clone();
+        let refused = undermere.grow(FLOORS, &drawn, &pick, RunSeed(0), 1).expect_err("the throne's floor holds no way down");
+        assert!(refused.pass == "layout" && refused.reason.contains(&piece) && refused.reason.contains("Beyond"), "{refused}");
+    }
+
     #[test]
     fn a_throne_too_large_for_the_floor_is_refused_by_name() {
         let undermere = Undermere::new(RunSeed(0));
