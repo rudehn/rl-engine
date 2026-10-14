@@ -6,6 +6,8 @@
 (
     name: "The Brood Chamber",
     ground: "hall floor",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         "e e",
         " P ",

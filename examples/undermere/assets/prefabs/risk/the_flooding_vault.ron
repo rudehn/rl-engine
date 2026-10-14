@@ -8,6 +8,8 @@
 (
     name: "The Flooding Vault",
     ground: "hall floor",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         "#########",
         "#x~...~x#",

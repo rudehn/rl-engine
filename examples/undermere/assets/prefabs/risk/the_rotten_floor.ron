@@ -8,6 +8,8 @@
 (
     name: "The Rotten Floor",
     ground: "rotten planks",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         "#########",
         "#=======#",

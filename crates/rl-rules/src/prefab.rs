@@ -27,6 +27,12 @@
 //! a band, or a [`Slot::Mark`], a position the file leaves to the game,
 //! found by its glyph among a place's spots once stamped.
 //!
+//! A prefab also says how far its drawing may be turned and mirrored, as
+//! a [`Turn`] and a [`Mirror`]: the drawing is the one that knows an
+//! inscription reads backwards mirrored, where the chain that stamps it
+//! only knows where its door must meet a corridor. Neither is required,
+//! and a prefab that says nothing may be laid any way its stamp allows.
+//!
 //! What this module does not hold is the terrain half. Turning [`rows`
 //! ](PrefabDef::rows), [`tile`](PrefabDef::tile) and [`slot`
 //! ](PrefabDef::slot) into a grid of tiles and entities, with rotation and
@@ -44,6 +50,19 @@
 //! //   ground: the tile painted under every slot; required when the legend
 //! //           has any slot, and whenever it is given, slots or none, it
 //! //           must be a tile a monster can stand on
+//! //   turn:   optional, Quarter if left out: how far the piece may be
+//! //           turned wherever it is laid, one of
+//! //             None      never
+//! //             Half      as drawn or a half-turn
+//! //             Quarter   any of the four quarter-turns
+//! //   mirror: optional, Both if left out: how it may be mirrored, one of
+//! //             None      never
+//! //             LeftRight left to right
+//! //             UpDown    top to bottom
+//! //             Both      either, and both together, the half-turn
+//! //           A chain that stamps it may hold it to fewer facings, never
+//! //           more; a piece meant for the edge of a map is drawn with its
+//! //           back to the south
 //! //   rows:   the piece, one string per row, all the same width; a space is
 //! //           left as the map had it, and every other glyph must be in the
 //! //           legend
@@ -74,6 +93,8 @@
 //! (
 //!     name: "guarded locker",
 //!     ground: "floor",
+//!     turn: Quarter,
+//!     mirror: LeftRight,
 //!     rows: [
 //!         "#######",
 //!         "#s.A.s#",
@@ -199,6 +220,32 @@ pub trait Legended<M>: Named {
     fn legend(&self) -> &Legend<M>;
 }
 
+/// How far a prefab's drawing may be turned, wherever it is laid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+pub enum Turn {
+    /// Never.
+    None,
+    /// As drawn or a half-turn.
+    Half,
+    /// Any of the four quarter-turns; what a file that says nothing gets.
+    #[default]
+    Quarter,
+}
+
+/// How a prefab's drawing may be mirrored, wherever it is laid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+pub enum Mirror {
+    /// Never.
+    None,
+    /// Left to right.
+    LeftRight,
+    /// Top to bottom.
+    UpDown,
+    /// Either, and so both together; what a file that says nothing gets.
+    #[default]
+    Both,
+}
+
 /// A prefab, as its file says it.
 pub struct PrefabDef<M> {
     /// The name a mapgen chain asks for.
@@ -206,13 +253,24 @@ pub struct PrefabDef<M> {
     /// The tile painted under every slot. Always present when the legend
     /// has a slot, and always a tile a monster can stand on.
     pub ground: Option<TileId>,
+    /// How far its drawing may be turned.
+    pub turn: Turn,
+    /// How its drawing may be mirrored.
+    pub mirror: Mirror,
     rows: Vec<String>,
     legend: Legend<M>,
 }
 
 impl<M> std::fmt::Debug for PrefabDef<M> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PrefabDef").field("name", &self.name).field("ground", &self.ground).field("rows", &self.rows).field("legend", &self.legend).finish()
+        f.debug_struct("PrefabDef")
+            .field("name", &self.name)
+            .field("ground", &self.ground)
+            .field("turn", &self.turn)
+            .field("mirror", &self.mirror)
+            .field("rows", &self.rows)
+            .field("legend", &self.legend)
+            .finish()
     }
 }
 
@@ -263,6 +321,10 @@ struct PrefabRon {
     name: String,
     #[serde(default)]
     ground: Option<String>,
+    #[serde(default)]
+    turn: Turn,
+    #[serde(default)]
+    mirror: Mirror,
     rows: Vec<String>,
     legend: BTreeMap<char, LegendRon>,
 }
@@ -375,7 +437,7 @@ pub fn load<M: 'static>(text: &str, tiles: &TileRegistry, names: &Names<'_>) -> 
     if !errors.is_empty() {
         return Err(ContentError::Invalid(errors));
     }
-    Ok(PrefabDef { name: a.name, ground, rows: a.rows, legend })
+    Ok(PrefabDef { name: a.name, ground, turn: a.turn, mirror: a.mirror, rows: a.rows, legend })
 }
 
 /// Resolves every entry of a legend as authored, reporting each name that
@@ -817,6 +879,27 @@ mod tests {
         let w = world();
         let err = read(&w, r#"(name: "bare", rows: ["m"], legend: { 'm': Mark })"#).unwrap_err().to_string();
         assert!(err.contains("no `ground`"), "{err}");
+    }
+
+    /// What a file declares about turning and mirroring is what it loads
+    /// with, `None` included, which the file's implicit `Some` must not
+    /// read as an absent option; and a file that declares nothing may be
+    /// laid any way at all.
+    #[test]
+    fn a_prefab_loads_the_turn_and_mirror_it_declares_and_every_facing_when_it_declares_none() {
+        let w = world();
+        let tiles = |extra: &str| format!(r###"(name: "bar", {extra} rows: ["##"], legend: {{ '#': Tile("wall") }})"###);
+        let plain = read(&w, &tiles("")).unwrap();
+        assert_eq!((plain.turn, plain.mirror), (Turn::Quarter, Mirror::Both));
+        for (text, turn, mirror) in [
+            ("turn: None, mirror: None,", Turn::None, Mirror::None),
+            ("turn: Half, mirror: UpDown,", Turn::Half, Mirror::UpDown),
+            ("mirror: LeftRight,", Turn::Quarter, Mirror::LeftRight),
+        ] {
+            let def = read(&w, &tiles(text)).unwrap_or_else(|e| panic!("{text}: {e}"));
+            assert_eq!((def.turn, def.mirror), (turn, mirror), "{text}");
+        }
+        assert!(read(&w, &tiles("turn: Sideways,")).is_err(), "a turn no file may write");
     }
 
     #[test]

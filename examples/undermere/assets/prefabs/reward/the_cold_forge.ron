@@ -7,6 +7,8 @@
 (
     name: "The Cold Forge",
     ground: "hall floor",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         "qN",
     ],

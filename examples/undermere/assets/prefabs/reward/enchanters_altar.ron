@@ -6,6 +6,8 @@
 (
     name: "Enchanter's Altar",
     ground: "hall floor",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         "iAi",
     ],

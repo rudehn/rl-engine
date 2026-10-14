@@ -7,6 +7,8 @@
 (
     name: "A Fallen Adventurer",
     ground: "hall floor",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         "w%",
     ],

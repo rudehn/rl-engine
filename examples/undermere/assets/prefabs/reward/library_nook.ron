@@ -7,6 +7,8 @@
 (
     name: "Library Nook",
     ground: "hall floor",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         "=b=",
         " ? ",

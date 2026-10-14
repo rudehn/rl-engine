@@ -6,6 +6,8 @@
 (
     name: "the Choirmaster",
     ground: "crypt floor",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         "###############",
         "#.............#",

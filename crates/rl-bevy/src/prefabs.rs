@@ -41,10 +41,10 @@ use rl_core::{Id, Point};
 use rl_mapgen::BuildError;
 use rl_mapgen::accrete::Join;
 use rl_mapgen::dress::{Dressing, Spread, Stand, Thing};
-use rl_mapgen::prefab::{Cell, Prefab, PrefabShape};
+use rl_mapgen::prefab::{Cell, Mirror, Prefab, PrefabShape, Turn};
 use rl_rules::content::{BandedTable, Registry};
 use rl_rules::dressing::DressingDef;
-use rl_rules::prefab::{Legended, Pick, PrefabDef, Slot};
+use rl_rules::prefab::{self, Legended, Pick, PrefabDef, Slot};
 use rl_rules::prop::Stock;
 use rl_rules::role::{self, RoleDef};
 
@@ -140,8 +140,9 @@ impl<M: Send + Sync + 'static> Prefabs<M> {
 
     /// The piece called `name`, keyed so its stamp's marks find their slots
     /// again: each tile as the file paints it, each slot a mark painted with
-    /// the prefab's ground. An error naming the piece when there is none, so
-    /// a chain can `?` it.
+    /// the prefab's ground, and declaring the turns and mirrors its file
+    /// allows, so no stamp lays it a way its drawing refuses. An error
+    /// naming the piece when there is none, so a chain can `?` it.
     pub fn piece(&self, name: &str) -> Result<Prefab, BuildError> {
         let id = self.defs().id(name).ok_or_else(|| BuildError::new("prefab", format!("no prefab is called {name:?}")))?;
         let def = self.defs().get(id);
@@ -151,7 +152,18 @@ impl<M: Send + Sync + 'static> Prefabs<M> {
             (None, None) if def.entry(c) => Cell::Entry,
             (None, None) => Cell::Clear,
         };
-        Prefab::parse_cells(&def.rows(), cell).map(|p| p.keyed(id.raw())).map_err(|e| BuildError::new("prefab", format!("{name}: {e}")))
+        let turn = match def.turn {
+            prefab::Turn::None => Turn::None,
+            prefab::Turn::Half => Turn::Half,
+            prefab::Turn::Quarter => Turn::Quarter,
+        };
+        let mirror = match def.mirror {
+            prefab::Mirror::None => Mirror::None,
+            prefab::Mirror::LeftRight => Mirror::LeftRight,
+            prefab::Mirror::UpDown => Mirror::UpDown,
+            prefab::Mirror::Both => Mirror::Both,
+        };
+        Prefab::parse_cells(&def.rows(), cell).map(|p| p.keyed(id.raw()).declaring(turn, mirror)).map_err(|e| BuildError::new("prefab", format!("{name}: {e}")))
     }
 
     /// The piece called `name` as a shape [`Accrete`](rl_mapgen::accrete::Accrete)

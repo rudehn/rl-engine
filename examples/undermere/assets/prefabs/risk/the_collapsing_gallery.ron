@@ -9,6 +9,8 @@
 (
     name: "The Collapsing Gallery",
     ground: "hall floor",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         "#############",
         "###|#########",

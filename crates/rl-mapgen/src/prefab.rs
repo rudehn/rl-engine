@@ -8,10 +8,15 @@
 //! stays in its alcove however the vault is laid down.
 //!
 //! [`StampPrefab`] stamps one piece at a [`Placement`], and [`Orient`]
-//! says how it may be turned first: fixed, one of the four quarter-turns,
-//! or one of all eight facings with mirroring. Authored per stamp rather
-//! than per prefab, since the same vault may be free to turn in a cave and
-//! fixed against a corridor that has to meet its door. [`StampOneOf`] is the
+//! says how far it may be turned first: fixed, one of the four
+//! quarter-turns, or one of all eight facings with mirroring. Both sides
+//! have a say, since each knows something the other cannot. The drawing
+//! declares the [`Turn`] and the [`Mirror`] it tolerates, because only it
+//! knows that an inscription reads backwards mirrored; the stamp's
+//! `Orient` is a ceiling, because only the place knows that a corridor has
+//! to meet the door. A piece lands in a [`Facing`] both allow, and a piece
+//! that declares nothing allows all eight, so the stamp alone decides, as
+//! it did before drawings could say. [`StampOneOf`] is the
 //! same pass with a weighted choice of pieces in front of it, for a chain
 //! that wants variety without one entry per piece; a piece with no weight
 //! stays in the list without ever being drawn, and nothing carrying weight
@@ -61,6 +66,147 @@ pub enum Cell {
     Entry,
 }
 
+/// How far a drawing tolerates being turned, wherever it is laid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Turn {
+    /// Never: a ship stands on its keel and not on its mast.
+    None,
+    /// As drawn or a half-turn, for a piece that reads the same upside
+    /// down but not on its side.
+    Half,
+    /// Any of the four quarter-turns. The default, so a drawing that says
+    /// nothing leaves the stamp to decide.
+    #[default]
+    Quarter,
+}
+
+/// How a drawing tolerates being mirrored, wherever it is laid.
+///
+/// An up-down mirror is a half-turn and a left-right mirror together, so
+/// with every quarter-turn allowed either mirror reaches all eight
+/// facings; a piece that may not turn at all is the one that needs to
+/// name which.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Mirror {
+    /// Never: an inscription reads backwards mirrored.
+    None,
+    /// Left to right, what [`Prefab::flipped`] does.
+    LeftRight,
+    /// Top to bottom, what [`Prefab::flipped_up_down`] does.
+    UpDown,
+    /// Either, and so both together, which is the half-turn. The default,
+    /// so a drawing that says nothing leaves the stamp to decide.
+    #[default]
+    Both,
+}
+
+/// One of the eight ways a drawing can be laid down: mirrored left to
+/// right or not, then turned a number of quarter-turns clockwise.
+///
+/// A value rather than a turned [`Prefab`], so what decides where a piece
+/// goes can ask which way its back faces before anything is turned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Facing {
+    /// Quarter-turns clockwise, after any mirror; nought to three.
+    pub quarters: u8,
+    /// Whether it is mirrored left to right first.
+    pub mirrored: bool,
+}
+
+impl Facing {
+    /// As drawn, which every drawing allows.
+    pub const AS_DRAWN: Facing = Facing { quarters: 0, mirrored: false };
+
+    /// All eight, the four turns as drawn and then the four of the mirror
+    /// image, the order [`Orient::facings`] lists them in.
+    pub const ALL: [Facing; 8] = [
+        Facing { quarters: 0, mirrored: false },
+        Facing { quarters: 1, mirrored: false },
+        Facing { quarters: 2, mirrored: false },
+        Facing { quarters: 3, mirrored: false },
+        Facing { quarters: 0, mirrored: true },
+        Facing { quarters: 1, mirrored: true },
+        Facing { quarters: 2, mirrored: true },
+        Facing { quarters: 3, mirrored: true },
+    ];
+
+    /// Its place in [`ALL`](Self::ALL), the bit it is in a [`Facings`].
+    fn index(self) -> usize {
+        usize::from(self.quarters % 4) + 4 * usize::from(self.mirrored)
+    }
+
+    /// This facing, then `next` applied to what it laid. A mirror turns
+    /// a clockwise turn laid before it into an anticlockwise one, which
+    /// is why the quarters do not simply add.
+    fn then(self, next: Facing) -> Facing {
+        let before = if next.mirrored { (4 - self.quarters % 4) % 4 } else { self.quarters % 4 };
+        Facing { quarters: (next.quarters + before) % 4, mirrored: self.mirrored != next.mirrored }
+    }
+
+    /// `prefab` laid this way, marks, entries and all.
+    pub fn lay(self, prefab: &Prefab) -> Prefab {
+        if self.mirrored { prefab.flipped().rotated(self.quarters) } else { prefab.rotated(self.quarters) }
+    }
+
+    /// The side the drawing's bottom row ends up on. A piece meant for the
+    /// edge of a map is drawn with its back to the south, so this is the
+    /// edge a piece laid this way may stand against. A left-right mirror
+    /// keeps the bottom row at the bottom; each clockwise quarter-turn
+    /// carries it on, south to west to north to east.
+    pub fn back(self) -> Direction {
+        [Direction::South, Direction::West, Direction::North, Direction::East][usize::from(self.quarters % 4)]
+    }
+}
+
+/// A set of [`Facing`]s, one bit each in the order of [`Facing::ALL`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Facings(u8);
+
+impl Facings {
+    /// Every facing reached by laying `steps` one after another, any
+    /// number of times, from the drawing as it stands. Closed, so a
+    /// drawing that tolerates both mirrors tolerates the half-turn they
+    /// make together, and the intersection of two such sets is closed
+    /// too.
+    fn generated(steps: &[Facing]) -> Self {
+        let mut set = 1u8 << Facing::AS_DRAWN.index();
+        loop {
+            let mut grown = set;
+            for f in Facing::ALL.iter().filter(|f| set & (1 << f.index()) != 0) {
+                for s in steps {
+                    grown |= 1 << f.then(*s).index();
+                }
+            }
+            if grown == set {
+                return Self(set);
+            }
+            set = grown;
+        }
+    }
+
+    /// Every facing a drawing declaring `turn` and `mirror` may land in.
+    fn declared(turn: Turn, mirror: Mirror) -> Self {
+        let mut steps = Vec::new();
+        match turn {
+            Turn::None => {}
+            Turn::Half => steps.push(Facing { quarters: 2, mirrored: false }),
+            Turn::Quarter => steps.push(Facing { quarters: 1, mirrored: false }),
+        }
+        if matches!(mirror, Mirror::LeftRight | Mirror::Both) {
+            steps.push(Facing { quarters: 0, mirrored: true });
+        }
+        if matches!(mirror, Mirror::UpDown | Mirror::Both) {
+            steps.push(Facing { quarters: 2, mirrored: true });
+        }
+        Self::generated(&steps)
+    }
+
+    /// Each facing in the set, in the order of [`Facing::ALL`].
+    fn list(self) -> Vec<Facing> {
+        Facing::ALL.into_iter().filter(|f| self.0 & (1 << f.index()) != 0).collect()
+    }
+}
+
 /// A piece of map drawn by hand.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Prefab {
@@ -74,6 +220,10 @@ pub struct Prefab {
     /// the stamp's marks can be traced back to the definition that gave
     /// them meaning. `None` for a piece nobody keyed.
     key: Option<u32>,
+    /// How far the drawing may be turned.
+    turn: Turn,
+    /// How it may be mirrored.
+    mirror: Mirror,
 }
 
 impl Prefab {
@@ -119,7 +269,7 @@ impl Prefab {
                 }
             }
         }
-        Ok(Self { cells, marks, entries, key: None })
+        Ok(Self { cells, marks, entries, key: None, turn: Turn::default(), mirror: Mirror::default() })
     }
 
     /// This piece, keyed: its stamp reports `key` as [`Stamped::prefab`].
@@ -131,6 +281,30 @@ impl Prefab {
     /// The key its owner set, if any.
     pub fn key(&self) -> Option<u32> {
         self.key
+    }
+
+    /// This piece, declaring how far its drawing may be turned and how it
+    /// may be mirrored. A stamp narrows what it declares and never widens
+    /// it; a piece that declares nothing allows every facing.
+    pub fn declaring(mut self, turn: Turn, mirror: Mirror) -> Self {
+        self.turn = turn;
+        self.mirror = mirror;
+        self
+    }
+
+    /// How far its drawing may be turned.
+    pub fn turn(&self) -> Turn {
+        self.turn
+    }
+
+    /// How its drawing may be mirrored.
+    pub fn mirror(&self) -> Mirror {
+        self.mirror
+    }
+
+    /// Every facing its declaration allows.
+    fn declared(&self) -> Facings {
+        Facings::declared(self.turn, self.mirror)
     }
 
     /// Width in cells.
@@ -188,7 +362,23 @@ impl Prefab {
         }
         let marks = self.marks.iter().map(|(c, p)| (*c, Point::new(w - 1 - p.x, p.y))).collect();
         let entries = self.entries.iter().map(|p| Point::new(w - 1 - p.x, p.y)).collect();
-        Self { cells, marks, entries, key: self.key }
+        Self { cells, marks, entries, key: self.key, turn: self.turn, mirror: self.mirror }
+    }
+
+    /// A copy mirrored top to bottom, marks and all: what a piece that may
+    /// not turn needs to be laid upside down, and the half-turn of
+    /// [`flipped`](Self::flipped) for one that may.
+    pub fn flipped_up_down(&self) -> Self {
+        let (w, h) = (self.width(), self.height());
+        let mut cells: Grid<Option<TileId>> = Grid::new(w, h);
+        for y in 0..h {
+            for x in 0..w {
+                cells.set(Point::new(x, h - 1 - y), self.tile(Point::new(x, y)));
+            }
+        }
+        let marks = self.marks.iter().map(|(c, p)| (*c, Point::new(p.x, h - 1 - p.y))).collect();
+        let entries = self.entries.iter().map(|p| Point::new(p.x, h - 1 - p.y)).collect();
+        Self { cells, marks, entries, key: self.key, turn: self.turn, mirror: self.mirror }
     }
 
     /// One quarter-turn clockwise.
@@ -202,7 +392,7 @@ impl Prefab {
         }
         let marks = self.marks.iter().map(|(c, p)| (*c, Point::new(h - 1 - p.y, p.x))).collect();
         let entries = self.entries.iter().map(|p| Point::new(h - 1 - p.y, p.x)).collect();
-        Self { cells, marks, entries, key: self.key }
+        Self { cells, marks, entries, key: self.key, turn: self.turn, mirror: self.mirror }
     }
 
     /// Writes the prefab with its top-left at `origin`.
@@ -237,11 +427,14 @@ pub enum Placement {
     AnyRoom,
 }
 
-/// How a piece may be turned before it is laid down.
+/// How far a stamp lets a piece be turned before it is laid down: the
+/// ceiling the place puts on what the drawing declares.
 ///
-/// Authored per stamp rather than per prefab, since the same vault may be
-/// free to turn in a cave and fixed against a corridor that has to meet
-/// its door.
+/// Said per stamp as well as per prefab, since the same vault may be free
+/// to turn in a cave and fixed against a corridor that has to meet its
+/// door. It only ever narrows: a piece lands in a facing both its
+/// [`Turn`] and [`Mirror`] and this allow, so a stamp can hold a piece
+/// fixed and can never turn one whose drawing says it may not be.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Orient {
     /// Exactly as it was drawn.
@@ -254,27 +447,47 @@ pub enum Orient {
 }
 
 impl Orient {
-    /// Every facing this policy allows `prefab` to land in: one when
-    /// fixed, the four quarter-turns, or those and their mirror images.
-    /// A symmetric piece repeats itself in the list, which leaves each
-    /// distinct facing equally likely to a uniform pick among them.
-    pub fn facings(self, prefab: &Prefab) -> Vec<Prefab> {
-        let turns = |p: &Prefab| (0..4).map(|q| p.rotated(q)).collect::<Vec<_>>();
+    /// Every facing this ceiling lets a piece land in.
+    fn ceiling(self) -> Facings {
         match self {
-            Orient::Fixed => vec![prefab.clone()],
-            Orient::Turned => turns(prefab),
-            Orient::TurnedOrMirrored => {
-                let mut all = turns(prefab);
-                all.extend(turns(&prefab.flipped()));
-                all
-            }
+            Orient::Fixed => Facings(0b0000_0001),
+            Orient::Turned => Facings(0b0000_1111),
+            Orient::TurnedOrMirrored => Facings(0b1111_1111),
         }
     }
 
-    /// The piece as this policy leaves it, drawing from `rng` only when
-    /// there is a choice to make, so a fixed stamp advances no stream and
-    /// a chain that adds one does not move every map after it.
+    /// Every facing `prefab` may land in under this ceiling: those its
+    /// declaration and this both allow, as drawn always among them, in
+    /// the order of [`Facing::ALL`].
+    pub fn allowed(self, prefab: &Prefab) -> Vec<Facing> {
+        Facings(self.ceiling().0 & prefab.declared().0).list()
+    }
+
+    /// `prefab` laid in each facing [`allowed`](Self::allowed): one when
+    /// fixed, the four quarter-turns, those and their mirror images, or
+    /// whichever of them its drawing declares. A symmetric piece repeats
+    /// itself in the list, which leaves each distinct facing equally
+    /// likely to a uniform pick among them.
+    pub fn facings(self, prefab: &Prefab) -> Vec<Prefab> {
+        self.allowed(prefab).into_iter().map(|f| f.lay(prefab)).collect()
+    }
+
+    /// The piece as this ceiling and its drawing leave it, drawing from
+    /// `rng` only when there is a choice to make, so a fixed stamp
+    /// advances no stream and a chain that adds one does not move every
+    /// map after it.
+    ///
+    /// A drawing that allows everything the ceiling does draws exactly as
+    /// a stamp did before drawings declared anything, so declaring what a
+    /// piece's stamps already allowed moves no map; one that narrows the
+    /// ceiling draws evenly among what is left.
     pub fn apply(self, prefab: &Prefab, rng: &mut impl Rng) -> Prefab {
+        let allowed = Facings(self.ceiling().0 & prefab.declared().0);
+        if allowed != self.ceiling() {
+            let list = allowed.list();
+            let at = if list.len() > 1 { rng.random_range(0..list.len()) } else { 0 };
+            return list[at].lay(prefab);
+        }
         match self {
             Orient::Fixed => prefab.clone(),
             Orient::Turned => prefab.rotated(rng.random_range(0..4)),
@@ -492,8 +705,9 @@ impl<C: BuildContext> Pass<C> for StampEachRoom {
 /// joins them, entries and marks aside. A site is an entry with the
 /// outside on one side and the body straight across, so the cell a join
 /// opens always has the piece's floor behind it. Each draw lays one of
-/// its eight facings, every quarter-turn and its mirror, each worked out
-/// once when the shape is made.
+/// the facings its drawing declares, every quarter-turn and its mirror
+/// for one that declares nothing, each worked out once when the shape is
+/// made; no stamp stands over a grown piece to narrow them further.
 ///
 /// What the piece paints it paints over its body and its wall, rather
 /// than carving its body as floor, and the piece it draws says so in
@@ -781,6 +995,120 @@ pub(crate) mod tests {
         assert_eq!(flipped.tile(Point::new(w - 1, 1)), Some(floor));
 
         assert_eq!(p.flipped().flipped(), p, "twice mirrored is where it started");
+    }
+
+    #[test]
+    fn an_up_down_mirror_moves_every_tile_and_its_marks_and_is_a_half_turn_of_the_left_right_one() {
+        let p = four_marked_corners(TileId(1));
+        let flipped = p.flipped_up_down();
+        let at = |q: &Prefab, c: char| q.marks().iter().find(|(m, _)| *m == c).unwrap().1;
+        assert_eq!(at(&flipped, '1'), Point::new(0, 2), "the top-left corner goes to the bottom-left");
+        assert_eq!(at(&flipped, '3'), Point::new(2, 0), "the bottom-right corner goes to the top-right");
+        assert_eq!(flipped, p.flipped().rotated(2));
+        assert_eq!(flipped.flipped_up_down(), p, "twice mirrored is where it started");
+    }
+
+    fn facing(quarters: u8, mirrored: bool) -> Facing {
+        Facing { quarters, mirrored }
+    }
+
+    /// Every pair a file can write, and exactly the facings each names: the
+    /// turns it allows, each mirror it allows, and what those make
+    /// together, both mirrors being the half-turn.
+    #[test]
+    fn each_declaration_yields_exactly_the_facings_it_names() {
+        let p = four_marked_corners(TileId(1));
+        let half_turned = [facing(0, false), facing(2, false)];
+        let cases: [(Turn, Mirror, Vec<Facing>); 9] = [
+            (Turn::None, Mirror::None, vec![Facing::AS_DRAWN]),
+            (Turn::Half, Mirror::None, half_turned.to_vec()),
+            (Turn::Quarter, Mirror::None, Facing::ALL[..4].to_vec()),
+            (Turn::None, Mirror::LeftRight, vec![facing(0, false), facing(0, true)]),
+            (Turn::None, Mirror::UpDown, vec![facing(0, false), facing(2, true)]),
+            (Turn::None, Mirror::Both, vec![facing(0, false), facing(2, false), facing(0, true), facing(2, true)]),
+            (Turn::Half, Mirror::LeftRight, vec![facing(0, false), facing(2, false), facing(0, true), facing(2, true)]),
+            (Turn::Quarter, Mirror::UpDown, Facing::ALL.to_vec()),
+            (Turn::Quarter, Mirror::Both, Facing::ALL.to_vec()),
+        ];
+        for (turn, mirror, expected) in cases {
+            let declared = p.clone().declaring(turn, mirror);
+            assert_eq!(Orient::TurnedOrMirrored.allowed(&declared), expected, "{turn:?} {mirror:?}");
+        }
+        // What a facing lays is what its name says: the up-down mirror of a
+        // piece that may not turn is the drawing turned over top to bottom.
+        let upside = p.clone().declaring(Turn::None, Mirror::UpDown);
+        assert_eq!(Orient::TurnedOrMirrored.facings(&upside), vec![upside.clone(), upside.flipped_up_down()]);
+    }
+
+    /// A stamp's ceiling only ever narrows: the facings that land are the
+    /// ones both the drawing and the stamp allow, for every declaration a
+    /// file can write under every ceiling, and drawn in a facing outside
+    /// them on no seed.
+    #[test]
+    fn a_stamp_ceiling_never_widens_what_a_drawing_declares() {
+        let p = four_marked_corners(TileId(1));
+        let ceilings = [(Orient::Fixed, 1), (Orient::Turned, 4), (Orient::TurnedOrMirrored, 8)];
+        for turn in [Turn::None, Turn::Half, Turn::Quarter] {
+            for mirror in [Mirror::None, Mirror::LeftRight, Mirror::UpDown, Mirror::Both] {
+                let declared = p.clone().declaring(turn, mirror);
+                let drawing = Orient::TurnedOrMirrored.allowed(&declared);
+                for (orient, room) in ceilings {
+                    let allowed = orient.allowed(&declared);
+                    let stamp: Vec<Facing> = Facing::ALL[..room].to_vec();
+                    let both: Vec<Facing> = drawing.iter().copied().filter(|f| stamp.contains(f)).collect();
+                    assert_eq!(allowed, both, "{turn:?} {mirror:?} under {orient:?}");
+                    let laid: Vec<Prefab> = allowed.iter().map(|f| f.lay(&declared)).collect();
+                    for s in 0..40 {
+                        let mut rng = RunSeed(s).rng(rl_core::SeedDomain::new(b"test"), 0);
+                        let landed = orient.apply(&declared, &mut rng);
+                        assert!(laid.contains(&landed), "{turn:?} {mirror:?} under {orient:?} seed {s}: landed outside both");
+                    }
+                }
+            }
+        }
+    }
+
+    /// A piece that declares nothing lists and lands in the facings its
+    /// stamps gave it before drawings declared anything, in the same order
+    /// and from the same draws, so no generated map moves for it.
+    #[test]
+    fn a_prefab_with_no_declaration_lands_in_the_facings_its_stamps_gave_it_before() {
+        let p = four_marked_corners(TileId(1));
+        let turns = |q: &Prefab| (0..4).map(|n| q.rotated(n)).collect::<Vec<_>>();
+        let mut eight = turns(&p);
+        eight.extend(turns(&p.flipped()));
+        assert_eq!(Orient::Fixed.facings(&p), vec![p.clone()]);
+        assert_eq!(Orient::Turned.facings(&p), turns(&p));
+        assert_eq!(Orient::TurnedOrMirrored.facings(&p), eight);
+        // Declaring everything is the same as declaring nothing.
+        assert_eq!(Orient::TurnedOrMirrored.facings(&p.clone().declaring(Turn::Quarter, Mirror::Both)), eight);
+        for s in 0..40 {
+            let rng = || RunSeed(s).rng(rl_core::SeedDomain::new(b"test"), 0);
+            let mut before = rng();
+            let turned = p.rotated(before.random_range(0..4));
+            let then = if before.random_bool(0.5) { turned.flipped() } else { turned };
+            assert_eq!(Orient::TurnedOrMirrored.apply(&p, &mut rng()), then, "seed {s}");
+            let mut before = rng();
+            assert_eq!(Orient::Turned.apply(&p, &mut rng()), p.rotated(before.random_range(0..4)), "seed {s}");
+        }
+    }
+
+    #[test]
+    fn a_facing_s_back_is_the_side_its_bottom_row_ends_up_on() {
+        // A bar along the bottom row of a square, marked at its left end.
+        let p = Prefab::parse(&["...", "...", "a.."], |c| (c == '.').then_some(TileId(1))).unwrap();
+        for f in Facing::ALL {
+            let laid = f.lay(&p);
+            let (_, a) = laid.marks()[0];
+            let on = match f.back() {
+                Direction::South => a.y == laid.height() - 1,
+                Direction::North => a.y == 0,
+                Direction::West => a.x == 0,
+                Direction::East => a.x == laid.width() - 1,
+                _ => false,
+            };
+            assert!(on, "{f:?} puts the bottom row's mark at {a:?}, not on its {:?} side", f.back());
+        }
     }
 
     #[test]

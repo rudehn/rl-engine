@@ -9,6 +9,8 @@
 (
     name: "wall inscription",
     ground: "hall floor",
+    turn: None,
+    mirror: None,
     rows: [
         "i",
     ],

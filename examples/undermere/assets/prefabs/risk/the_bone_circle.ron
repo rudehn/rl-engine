@@ -6,6 +6,8 @@
 (
     name: "The Bone Circle",
     ground: "hall floor",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         "%:%",
         ":S:",

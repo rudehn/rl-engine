@@ -7,6 +7,8 @@
 (
     name: "Gallery of Darts",
     ground: "hall floor",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         "###########",
         "#&.&.&.&..#",

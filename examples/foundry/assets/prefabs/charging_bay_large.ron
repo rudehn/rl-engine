@@ -8,6 +8,13 @@
 //   ground: the tile painted under every slot; required when the legend
 //           has any slot, and whenever it is given, slots or none, it
 //           must be a tile a monster can stand on
+//   turn:   optional, Quarter if left out: how far the piece may be turned
+//           wherever it is laid: None | Half (as drawn or a half-turn) |
+//           Quarter (any quarter-turn)
+//   mirror: optional, Both if left out: how it may be mirrored: None |
+//           LeftRight | UpDown | Both (either, and both together, the
+//           half-turn); the chain that lays it may hold it to fewer facings,
+//           never more
 //   rows:   the piece, one string per row, all the same width; a space is
 //           left as the map had it, and every other glyph must be in the
 //           legend
@@ -40,6 +47,8 @@
 (
     name: "charging bay large",
     ground: "deck",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         "Y Y Y Y",
         "=======",

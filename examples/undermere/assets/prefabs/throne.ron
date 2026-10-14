@@ -9,6 +9,13 @@
 //           slot, and it must be a tile a monster can stand on. The chain then
 //           stands each slot on the floor drawn round it (`dungeon::Underfoot`),
 //           so the king and his throne stand on the dais
+//   turn:   optional, Quarter if left out: how far the piece may be turned
+//           wherever it is laid: None | Half (as drawn or a half-turn) |
+//           Quarter (any quarter-turn)
+//   mirror: optional, Both if left out: how it may be mirrored: None |
+//           LeftRight | UpDown | Both (either, and both together, the
+//           half-turn); the chain that lays it may hold it to fewer facings,
+//           never more
 //   rows:   the piece, one string per row, all the same width; a space is left as
 //           the map had it, and every other glyph must be in the legend
 //   legend: glyph to what it stands for, one of
@@ -37,6 +44,8 @@
 (
     name: "the throne",
     ground: "throne floor",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         "===================",
         "=~~~.b..-T-..b.~~~=",

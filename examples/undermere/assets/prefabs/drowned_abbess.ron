@@ -8,6 +8,8 @@
 (
     name: "the Drowned Abbess",
     ground: "flooded floor",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         "###############",
         "#.............#",

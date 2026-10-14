@@ -6,6 +6,8 @@
 (
     name: "the Forgemaster",
     ground: "ash",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         "#################",
         "#.......i.......#",

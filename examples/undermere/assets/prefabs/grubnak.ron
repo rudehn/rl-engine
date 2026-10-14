@@ -7,6 +7,8 @@
 (
     name: "Grubnak the goblin king",
     ground: "goblin hall floor",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         "#################",
         "#...b.......b...#",

@@ -8,6 +8,8 @@
 (
     name: "The Trapped Corridor",
     ground: "hall floor",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         "######",
         "#....#",

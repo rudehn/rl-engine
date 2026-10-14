@@ -9,6 +9,8 @@
 (
     name: "The Last Stand",
     ground: "hall floor",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         "zdw",
         "d%d",

@@ -8,6 +8,8 @@
 (
     name: "The Paralysis Vestibule",
     ground: "hall floor",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         "#########",
         "#z.....z#",

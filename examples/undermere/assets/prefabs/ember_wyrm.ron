@@ -13,6 +13,8 @@
 (
     name: "the Ember Wyrm",
     ground: "ash",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         "===================",
         "=~~.............~~=",

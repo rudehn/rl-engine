@@ -7,6 +7,8 @@
 (
     name: "The Goblin Stockade",
     ground: "hall floor",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         "ppppp",
         "pGFGp",

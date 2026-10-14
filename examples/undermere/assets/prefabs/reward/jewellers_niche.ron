@@ -6,6 +6,8 @@
 (
     name: "Jeweller's Niche",
     ground: "hall floor",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         "###",
         "#R#",

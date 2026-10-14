@@ -10,6 +10,13 @@
 //           stands each slot on the floor drawn round it (`dungeon::Underfoot`),
 //           so a table stands on the planks of its room and a lamp post on the
 //           grass of its verge
+//   turn:   optional, Quarter if left out: how far the piece may be turned
+//           wherever it is laid: None | Half (as drawn or a half-turn) |
+//           Quarter (any quarter-turn)
+//   mirror: optional, Both if left out: how it may be mirrored: None |
+//           LeftRight | UpDown | Both (either, and both together, the
+//           half-turn); the chain that lays it may hold it to fewer facings,
+//           never more
 //   rows:   the piece, one string per row, all the same width; a space is left as
 //           the map had it, and every other glyph must be in the legend. A row is
 //           a raw string fenced with ten `#`, one more than the longest run of
@@ -63,6 +70,8 @@
 (
     name: "Mereholt",
     ground: "cobbles",
+    turn: None,
+    mirror: None,
     rows: [
         r##########"TTTTT""TTTTTT"TTTT"T"TTTTT"T""T,,,TTT"TT"TTTTTTT"TTT"TT"TTTTTTTT"##########,
         r##########"TTT"T""T""T"TT""""TT"""""""T""T,,,"T"TT"""TT"T""""""""""T""T"""T"##########,

@@ -7,6 +7,8 @@
 (
     name: "The Tinder Room",
     ground: "straw",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         "s&s",
         "sPs",

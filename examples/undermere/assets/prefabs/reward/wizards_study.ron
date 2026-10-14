@@ -6,6 +6,8 @@
 (
     name: "Wizard's Study",
     ground: "hall floor",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         "=d=",
         "lS ",

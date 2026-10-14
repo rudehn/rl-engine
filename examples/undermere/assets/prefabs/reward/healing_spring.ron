@@ -6,6 +6,8 @@
 (
     name: "Healing Spring",
     ground: "hall floor",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         " m ",
         "mSm",

@@ -7,6 +7,8 @@
 (
     name: "The Spider's Larder",
     ground: "hall floor",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         "&w&",
         "wsw",

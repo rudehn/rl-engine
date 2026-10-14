@@ -6,6 +6,8 @@
 (
     name: "Moonwell",
     ground: "hall floor",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         " i ",
         "iWi",

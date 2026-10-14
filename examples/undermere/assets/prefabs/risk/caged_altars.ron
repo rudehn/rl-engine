@@ -8,6 +8,8 @@
 (
     name: "Caged Altars",
     ground: "hall floor",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         "###########",
         "#i.1.2.3.i#",

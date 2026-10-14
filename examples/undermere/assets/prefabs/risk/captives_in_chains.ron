@@ -8,6 +8,8 @@
 (
     name: "Captives in Chains",
     ground: "hall floor",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         "C C",
         " z ",

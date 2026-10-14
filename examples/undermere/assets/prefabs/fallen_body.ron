@@ -8,6 +8,8 @@
 (
     name: "fallen body",
     ground: "hall floor",
+    turn: None,
+    mirror: None,
     rows: [
         "r",
     ],

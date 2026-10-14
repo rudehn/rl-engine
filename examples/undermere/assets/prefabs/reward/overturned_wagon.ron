@@ -6,6 +6,8 @@
 (
     name: "Overturned Wagon",
     ground: "hall floor",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         "cW",
         " g",

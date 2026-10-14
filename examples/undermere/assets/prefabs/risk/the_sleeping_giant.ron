@@ -6,6 +6,8 @@
 (
     name: "The Sleeping Giant",
     ground: "hall floor",
+    turn: Quarter,
+    mirror: Both,
     rows: [
         "#######",
         "#.....#",
