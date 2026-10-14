@@ -51,6 +51,7 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 24 | Entity order still breaks ties in four places | 4 | low | low |
 | 25 | Undermere's ordering check misses what only its binary adds | 3 | low | low |
 | 26 | The pages still name the eight folded plugins | 5 | low | low |
+| 27 | `UseCarried` decides by default when a mind mends | 4 | low | low |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
@@ -163,6 +164,9 @@ The five items that opened this section were built in the six stages of `docs/de
 
 ## 4. Simplify
 
+- **`UseCarried` decides by default when a mind mends.**
+  `UseCarried::default()` in `crates/rl-rules/src/ai/tactics.rs` drinks to mend at half health, a rule number in the engine, which the rule that a game's numbers stay the game's (set 2026-10-13, when the standard chain was built) forbids.
+  The other tactics' defaults are "whenever it can" or structural and are fine; this one wants no default, or a game's own threshold passed as the standard chain's numbers are, and Undermere's mercenaries and monsters writing theirs.
 - **Entity order still breaks ties in four places.**
   The fingerprints and the engine's turn admission, noticing and noise stopped reading Bevy's entity numbers as spawn order on 2026-10-13, since any unrelated spawn renumbers what follows it.
   Four places still use the number as a tiebreak: Undermere's raising of the dead (`examples/undermere/src/effects/bodies.rs`), the order of a mercenary's "stays behind" lines (`examples/undermere/src/mercenaries/travel.rs`), a name pick in `crates/rl-ui/src/view/mod.rs`, and the engine's `Aware`, keyed by `Entity` in a `BTreeMap` whose iteration order anything walking it inherits.
