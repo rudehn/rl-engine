@@ -15,20 +15,22 @@
 //! 2. [`FleeWhenHurt`], for a kind that runs, unless the chain flees
 //!    after its attacks;
 //! 3. [`Keep::enemies`], for a kind that keeps a span from its enemies;
-//! 4. [`UseAbility`], for a kind that knows one;
-//! 5. [`MeleeAdjacent`], for a kind with a blow;
-//! 6. [`ShootAtRange`], for a kind with a shot;
-//! 7. [`ThrowAtRange`], for a kind whose wits throw;
-//! 8. [`FleeWhenHurt`] here instead, when the chain flees after its
+//! 4. whatever a game puts
+//!    [`before_attacks`](StandardBrain::before_attacks);
+//! 5. [`UseAbility`], for a kind that knows one;
+//! 6. [`MeleeAdjacent`], for a kind with a blow;
+//! 7. [`ShootAtRange`], for a kind with a shot;
+//! 8. [`ThrowAtRange`], for a kind whose wits throw;
+//! 9. [`FleeWhenHurt`] here instead, when the chain flees after its
 //!    attacks;
-//! 9. [`Scavenge`], for a kind whose wits take things up;
-//! 10. whatever a game puts [`before_hunt`](StandardBrain::before_hunt);
-//! 11. [`Hunt`], or whatever a game puts
+//! 10. [`Scavenge`], for a kind whose wits take things up;
+//! 11. whatever a game puts [`before_hunt`](StandardBrain::before_hunt);
+//! 12. [`Hunt`], or whatever a game puts
 //!     [`instead_of_hunt`](StandardBrain::instead_of_hunt);
-//! 12. [`SearchLastKnown`];
-//! 13. [`KeepPost`];
-//! 14. whatever a game puts [`before_wander`](StandardBrain::before_wander);
-//! 15. [`Wander`].
+//! 13. [`SearchLastKnown`];
+//! 14. [`KeepPost`];
+//! 15. whatever a game puts [`before_wander`](StandardBrain::before_wander);
+//! 16. [`Wander`].
 //!
 //! A step is in the brain only when the chain holds it and the kind can
 //! take it, so a kind that never runs has no `FleeWhenHurt` in its brain
@@ -140,7 +142,15 @@ impl Standard {
     /// ready for a game's own tactics at the points the
     /// [module docs](self) name, and then [`build`](StandardBrain::build).
     pub fn brain<A: Copy + 'static>(&self, can: Repertoire) -> StandardBrain<A> {
-        StandardBrain { chain: *self, can, first: Vec::new(), before_hunt: Vec::new(), instead_of_hunt: Vec::new(), before_wander: Vec::new() }
+        StandardBrain {
+            chain: *self,
+            can,
+            first: Vec::new(),
+            before_attacks: Vec::new(),
+            before_hunt: Vec::new(),
+            instead_of_hunt: Vec::new(),
+            before_wander: Vec::new(),
+        }
     }
 }
 
@@ -158,6 +168,7 @@ pub struct StandardBrain<A: Copy> {
     chain: Standard,
     can: Repertoire,
     first: Vec<Box<dyn Tactic<A>>>,
+    before_attacks: Vec<Box<dyn Tactic<A>>>,
     before_hunt: Vec<Box<dyn Tactic<A>>>,
     instead_of_hunt: Vec<Box<dyn Tactic<A>>>,
     before_wander: Vec<Box<dyn Tactic<A>>>,
@@ -169,6 +180,15 @@ impl<A: Copy + 'static> StandardBrain<A> {
     /// off with what it stole.
     pub fn first(mut self, tactic: impl Tactic<A> + 'static) -> Self {
         self.first.push(Box::new(tactic));
+        self
+    }
+
+    /// `tactic` after running and the span kept, and before every attack:
+    /// what a kind that is staying to fight does before it strikes, mending
+    /// or pointing what it carries. Where a chain flees after its attacks,
+    /// running comes after this too.
+    pub fn before_attacks(mut self, tactic: impl Tactic<A> + 'static) -> Self {
+        self.before_attacks.push(Box::new(tactic));
         self
     }
 
@@ -197,7 +217,7 @@ impl<A: Copy + 'static> StandardBrain<A> {
 
     /// The brain, in the order the [module docs](self) give.
     pub fn build(self) -> Brain<A> {
-        let StandardBrain { chain, can, first, before_hunt, instead_of_hunt, before_wander } = self;
+        let StandardBrain { chain, can, first, before_attacks, before_hunt, instead_of_hunt, before_wander } = self;
         let mut brain = Brain::new().with_all(first);
         let flee = (chain.flee && can.flee_at > 0).then_some(FleeWhenHurt { at_pct: can.flee_at });
         if let Some(flee) = flee.filter(|_| !chain.flee_after_attacks) {
@@ -206,6 +226,7 @@ impl<A: Copy + 'static> StandardBrain<A> {
         if let Some(keep) = can.keep_away.filter(|_| chain.keep_away) {
             brain = brain.then(Keep::enemies(keep.within, keep.no_closer));
         }
+        brain = brain.with_all(before_attacks);
         if let Some(chance_pct) = chain.ability_chance.filter(|_| can.abilities) {
             brain = brain.then(UseAbility { chance_pct });
         }
@@ -311,15 +332,32 @@ mod tests {
     }
 
     #[test]
+    fn a_games_own_tactic_before_the_attacks_comes_after_running_and_the_span_and_before_running_kept_for_after() {
+        let ahead: Brain<u32> = EVERY.brain(capable()).before_attacks(Hover).build();
+        assert_eq!(
+            names(&ahead)[..5],
+            ["flee_when_hurt", "shadow", "hover", "use_ability", "melee_adjacent"],
+            "after running and the span, before the ability"
+        );
+        let after: Brain<u32> = Standard { flee_after_attacks: true, ..EVERY }.brain(capable()).before_attacks(Hover).build();
+        assert_eq!(
+            names(&after)[..7],
+            ["shadow", "hover", "use_ability", "melee_adjacent", "shoot_at_range", "throw_at_range", "flee_when_hurt"],
+            "running kept for after the attacks comes after it too"
+        );
+    }
+
+    #[test]
     fn a_games_own_tactics_land_at_the_points_it_names_and_one_in_place_of_the_hunt_leaves_the_hunt_out() {
         let brain: Brain<u32> = EVERY
             .brain(Repertoire { melee: true, ..Repertoire::default() })
             .first(Wander { chance_pct: 1 })
+            .before_attacks(Hover)
             .before_hunt(Keep::allies(3, 1))
             .instead_of_hunt(Keep::enemies(6, 4))
             .instead_of_hunt(Hover)
             .before_wander(KeepPost)
             .build();
-        assert_eq!(names(&brain), ["wander", "melee_adjacent", "follow", "shadow", "hover", "search_last_known", "keep_post", "keep_post", "wander"]);
+        assert_eq!(names(&brain), ["wander", "hover", "melee_adjacent", "follow", "shadow", "hover", "search_last_known", "keep_post", "keep_post", "wander"]);
     }
 }

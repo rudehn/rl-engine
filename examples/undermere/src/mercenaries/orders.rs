@@ -5,8 +5,9 @@ use std::sync::Arc;
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
+use rl_engine::rl_rules::ai::Standard;
 use rl_engine::rl_rules::ai::brain::Tactic;
-use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, Keep, KeepPost, Led, MeleeAdjacent, Scavenge, Station, ThrowAtRange, UseCarried};
+use rl_engine::rl_rules::ai::tactics::{Hunt, Keep, Led, Scavenge, Station, UseCarried};
 use serde::{Deserialize, Serialize};
 
 use super::{KIT_FACET, KitSeen, MERCENARY, Mercenary, PutOnBetter};
@@ -134,6 +135,26 @@ impl Tactic<Entity> for Behind {
     }
 }
 
+/// How often a mercenary throws on a turn a throw is there to be made:
+/// always, since what a hire carries to throw is carried to be spent on
+/// the adventurer's enemies, where a monster's half the time keeps it
+/// closing in.
+const THROW_CHANCE_PCT: u32 = 100;
+
+/// The chain a mercenary decides with under every order: the engine's
+/// standard chain at Undermere's numbers, running at the kind's own
+/// threshold, striking and throwing, with nothing to close it. Each order
+/// closes it its own way, by [`HOLD`], [`FIGHT_FREELY`], or on follow by
+/// the game's own leashed hunt.
+const HIRED: Standard = Standard { flee: true, melee: true, throw_chance: Some(THROW_CHANCE_PCT), ..Standard::NONE };
+
+/// The chain on hold: [`HIRED`]'s, closed by walking back to its post.
+const HOLD: Standard = Standard { keep_post: true, ..HIRED };
+
+/// The chain on fight freely: [`HIRED`]'s, closed by the engine's hunt
+/// of whatever it sees, wherever that takes it.
+const FIGHT_FREELY: Standard = Standard { hunt: true, ..HIRED };
+
 /// The three brains a mercenary thinks with, one for each [`Order`],
 /// built once at load from the one kind, beside its ally mind.
 ///
@@ -155,23 +176,25 @@ pub struct MercenaryBrains {
 }
 
 impl MercenaryBrains {
-    /// The three brains for `kind`, the mercenary's row of the bestiary:
-    /// it runs at the kind's own threshold.
+    /// The three brains for `kind`, the mercenary's row of the bestiary,
+    /// each the standard chain for what the kind can do.
+    ///
+    /// Every order puts the same two of the game's own in: what it carries
+    /// used before any blow, mending first, and gear better than it wears
+    /// put on once nothing is in reach. Follow keeps beside the adventurer
+    /// before the hunt and hunts and fetches leashed in its place; fight
+    /// freely keeps beside them and fetches only once the engine's hunt has
+    /// nothing left to chase, after it, where a game's own route goes.
     pub fn new(kind: &MonsterDef) -> Self {
-        let first = || {
-            let mut brain = Brain::new();
-            if kind.flee_at() > 0 {
-                brain = brain.then(FleeWhenHurt { at_pct: kind.flee_at() });
-            }
-            brain.then(UseCarried::default()).then(MeleeAdjacent).then(ThrowAtRange::default()).then(PutOnBetter)
-        };
+        let can = kind.parts.repertoire();
+        let chain = |chain: Standard| chain.brain(can).before_attacks(UseCarried::default()).before_hunt(PutOnBetter);
         let keep = Keep::leader(LEASH, 1);
         let behind = Behind(Keep::leader(1, 1));
         let fetch = Leashed(Scavenge { reach: SCAVENGE_REACH });
         Self {
-            follow: Arc::new(first().then(keep).then(behind).then(Leashed(Hunt)).then(fetch)),
-            hold: Arc::new(first().then(KeepPost)),
-            free: Arc::new(first().then(Hunt).then(keep).then(behind).then(fetch)),
+            follow: Arc::new(chain(HIRED).before_hunt(keep).before_hunt(behind).instead_of_hunt(Leashed(Hunt)).before_wander(fetch).build()),
+            hold: Arc::new(chain(HOLD).build()),
+            free: Arc::new(chain(FIGHT_FREELY).before_wander(keep).before_wander(behind).before_wander(fetch).build()),
         }
     }
 
