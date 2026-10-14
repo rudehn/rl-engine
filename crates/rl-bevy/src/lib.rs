@@ -71,7 +71,7 @@ pub use combat::{
     Invulnerable, Loadout, MeleeAttack, RangedAttack, Reach, Resists, Stowed, Strikes, Struck, line_of_fire, shot,
 };
 pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
-pub use consumable::{AddSpending, Attuned, Consumable, ConsumablesPlugin, Recharge, SpendingMoments, Spent, WhenEmpty, bury_spent, remove_spent};
+pub use consumable::{AddSpending, Attuned, Consumable, Recharge, SpendingMoments, Spent, WhenEmpty, bury_spent, remove_spent};
 pub use cue::{AddAirborne, Airborne, Anchor, Cue, Cued, Lands, LookOf, TurnHold};
 pub use doors::{Close, DoorEvent, Open};
 pub use effects::{
@@ -121,7 +121,7 @@ pub use secrets::Secret;
 pub use seed::{AddStream, Seed, Stream};
 pub use settings::{AddSettings, Setting, SettingId, Settings};
 pub use state::{Ending, EngineState, Outcome, Restart, RunOver, world_is_shown};
-pub use status::{Afflict, Afflicted, Cure, Sleepers, StatBlock, StatusEvent, StatusPlugin};
+pub use status::{Afflict, Afflicted, Cure, Sleepers, StatBlock, StatusEvent};
 pub use stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, StealthRng, StealthRunning, Unseen, Watchers};
 pub use throwing::{Flight, Throw, Throwable, ThrowingPlugin, flight};
 pub use title::{AbandonRun, ContinueRun, HoldStart, LeaveRun, SavedRun, begin_run};
@@ -129,7 +129,7 @@ pub use trade::{Buy, Currency, Deal, Parties, Sell, TRADE, TradePlugin, TradeRef
 pub use turn::{
     Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Pace, Resolution, Speeds, Step, Stepped, TurnEnd, TurnRules, Turns, Wait,
 };
-pub use work::{AddWork, BeginWork, BreakReason, StopWork, Toil, WorkBegan, WorkBroken, WorkDone, WorkKinds, WorkPace, WorkPlugin, Working, Works};
+pub use work::{AddWork, BeginWork, BreakReason, StopWork, Toil, WorkBegan, WorkBroken, WorkDone, WorkKinds, WorkPace, Working, Works};
 pub use world::{ChunkLoaded, ChunkRulesRes, PlaceMap, PlaceSave, StreamingPlugin, WindowView, WorldMap, WorldMapSave, WorldRes, WorldSettings};
 
 /// The names a game writes.
@@ -150,7 +150,7 @@ pub mod prelude {
         Invulnerable, Loadout, MeleeAttack, RangedAttack, Reach, Resists, Stowed, Strikes, Struck, line_of_fire, shot,
     };
     pub use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
-    pub use crate::consumable::{AddSpending, Attuned, Consumable, ConsumablesPlugin, WhenEmpty};
+    pub use crate::consumable::{AddSpending, Attuned, Consumable, WhenEmpty};
     pub use crate::cue::{AddAirborne, Airborne, Anchor, Cue, Cued, Lands, LookOf, TurnHold};
     pub use crate::doors::{Close, DoorEvent, Open};
     pub use crate::effects::{
@@ -189,7 +189,7 @@ pub mod prelude {
     pub use crate::seed::{AddStream, Seed};
     pub use crate::settings::{AddSettings, Setting, SettingId, Settings};
     pub use crate::state::{Ending, EngineState, Outcome, Restart, RunOver};
-    pub use crate::status::{Afflict, Afflicted, Cure, Sleepers, StatBlock, StatusEvent, StatusPlugin};
+    pub use crate::status::{Afflict, Afflicted, Cure, Sleepers, StatBlock, StatusEvent};
     pub use crate::stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, Unseen, Watchers};
     pub use crate::throwing::{Throw, Throwable, ThrowingPlugin};
     pub use crate::title::{AbandonRun, ContinueRun, HoldStart, LeaveRun, SavedRun, begin_run};
@@ -197,7 +197,7 @@ pub mod prelude {
     pub use crate::turn::{
         Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Pace, Resolution, Speeds, Step, Stepped, TurnEnd, TurnRules, Turns, Wait,
     };
-    pub use crate::work::{AddWork, StopWork, WorkDone, WorkKinds, WorkPace, WorkPlugin, Working};
+    pub use crate::work::{AddWork, StopWork, WorkDone, WorkKinds, WorkPace, Working};
     pub use crate::world::{ChunkLoaded, ChunkRulesRes, StreamingPlugin, WorldMap, WorldRes, WorldSettings};
     pub use rl_grid::LightBand;
 }

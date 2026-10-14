@@ -315,14 +315,7 @@ mod tests {
     impl Rig {
         fn new() -> Self {
             let mut app = headless_app();
-            app.add_plugins((
-                crate::fov::FovPlugin,
-                CombatPlugin,
-                ItemsPlugin,
-                ThrowingPlugin,
-                crate::consumable::ConsumablesPlugin,
-                crate::world::StreamingPlugin,
-            ));
+            app.add_plugins((crate::fov::FovPlugin, CombatPlugin, ItemsPlugin, ThrowingPlugin, crate::effects::EffectsPlugin, crate::world::StreamingPlugin));
             crate::effects::AddEngineEffects::add_engine_effects(&mut app);
             let start = crate::testing::surface(&mut app);
             let sides = crate::testing::two_sides(&mut app);

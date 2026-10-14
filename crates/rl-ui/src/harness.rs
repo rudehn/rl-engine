@@ -34,7 +34,7 @@ impl Stage {
     /// asserts on a resource the game is meant to have inserted by then.
     pub fn new_with<M>(plugins: impl bevy::app::Plugins<M>, setup: impl FnOnce(&mut App)) -> Stage {
         let mut app = rl_bevy::plugin::headless_app();
-        app.add_plugins((FovPlugin, CombatPlugin, StatusPlugin, ItemsPlugin, StreamingPlugin));
+        app.add_plugins((FovPlugin, CombatPlugin, ItemsPlugin, StreamingPlugin));
         app.add_plugins((rl_bevy::testing::KeyScriptPlugin, crate::UiPlugin));
         app.add_plugins(plugins);
         // A panel draws into a terminal, so there is always one; `screen`

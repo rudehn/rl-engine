@@ -12,8 +12,9 @@
 //! and the one that chooses first opens the bag choosing for it, as
 //! [`InventoryPanel`](crate::InventoryPanel) says.
 //!
-//! Opt-in with [`InteractKey`], beside the panels: a game with no props
-//! adds nothing and the key does not exist.
+//! Part of [`UiPlugin`](crate::UiPlugin) in a game with props: a game
+//! that did not add `PropsPlugin` has nothing on offer, and the key does
+//! not exist.
 //!
 //! One press is one action. A game may bind the same key to its way
 //! through, as Enter is the obvious key for both; the press that takes the
@@ -45,30 +46,26 @@ impl Default for InteractKeys {
     }
 }
 
-/// The key that does what is here: reads [`OfferedHere`] and writes the
+/// The key that does what is here, in [`UiPlugin`](crate::UiPlugin)'s
+/// `finish` when the game added `PropsPlugin`, so the order the two were
+/// added in does not matter: reads [`OfferedHere`] and writes the
 /// interaction.
 ///
 /// Adds nothing else. What an interaction costs, whether it is possible
 /// and what it means are all the engine's, worked out before the key was
 /// pressed.
-pub struct InteractKey;
-
-impl Plugin for InteractKey {
-    fn build(&self, app: &mut App) {
-        // After the input phase rather than in it, so every game key read
-        // from the same press has written what it asked for: see
-        // `interact_key`. Gated on play as that phase is, since outside
-        // the set it does not inherit its run condition.
-        app.init_resource::<InteractKeys>()
-            .add_systems(Update, interact_key.after(EngineSet::Input).before(EngineSet::Turns).run_if(in_state(EngineState::Playing)));
+pub(crate) fn finish(app: &mut App) {
+    if !app.is_plugin_added::<PropsPlugin>() {
+        return;
     }
-
-    fn finish(&self, app: &mut App) {
-        rl_bevy::depends_on::<crate::UiPlugin>(app, "InteractKey");
-        rl_bevy::depends_on::<PropsPlugin>(app, "InteractKey");
-        let key = app.world().get_resource::<InteractKeys>().map(|k| k.interact).unwrap_or_else(|| InteractKeys::default().interact);
-        app.add_control(crate::focus::SCREENS_GROUP, "do what is here", [key]);
-    }
+    // After the input phase rather than in it, so every game key read from
+    // the same press has written what it asked for: see `interact_key`.
+    // Gated on play as that phase is, since outside the set it does not
+    // inherit its run condition.
+    app.init_resource::<InteractKeys>()
+        .add_systems(Update, interact_key.after(EngineSet::Input).before(EngineSet::Turns).run_if(in_state(EngineState::Playing)));
+    let key = app.world().resource::<InteractKeys>().interact;
+    app.add_control(crate::focus::SCREENS_GROUP, "do what is here", [key]);
 }
 
 /// Whether the player asked this frame to go through a way it stands on.
@@ -178,7 +175,7 @@ mod tests {
     /// A player standing on a body that offers one thing, with a bench
     /// that offers two three cells off, out of reach until it is walked to.
     fn stage() -> (Stage, Entity, Entity) {
-        let mut stage = Stage::new_with(InteractKey, |app| {
+        let mut stage = Stage::new_with((), |app| {
             app.add_plugins(PropsPlugin);
             app.insert_resource(Seed(TEST_SEED));
             app.add_verb("strip");

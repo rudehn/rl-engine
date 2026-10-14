@@ -11,7 +11,7 @@
 //! score first, and kept apart as `this_run` until the run it belongs to
 //! is torn down.
 //!
-//! `rl-save`'s `RecordsSavePlugin` keeps the list between launches, in a
+//! `rl-save`'s `SavePlugin` keeps the list between launches, in a
 //! slot of its own.
 
 use bevy::ecs::message::MessageCursor;
@@ -85,7 +85,7 @@ pub const MAX_RECORDS: usize = 100;
 /// `this_run` is read by an end screen, and by a records screen opened
 /// from it, so neither draws its own copy of what the run came to; it is
 /// forgotten when the run is torn down, in [`EndRun`], while `records`
-/// stands until `rl-save`'s `RecordsSavePlugin` writes it, which never
+/// stands until `rl-save`'s `SavePlugin` writes it, which never
 /// deletes it.
 #[derive(Resource, Default)]
 pub struct RunRecords {
@@ -127,7 +127,7 @@ pub struct RecordRun {
 /// keeps the list.
 ///
 /// Opt-in: a game that never writes `RecordRun` keeps no records.
-/// `rl-save`'s `RecordsSavePlugin` is what keeps the list between
+/// `rl-save`'s `SavePlugin` is what keeps the list between
 /// launches; without it the list lasts only the process.
 pub struct RecordsPlugin;
 

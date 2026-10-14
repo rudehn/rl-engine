@@ -235,22 +235,13 @@ pub fn step_gases(mut ends: MessageReader<TurnEnd>, mut gases: ResMut<Gases>, ai
     }
 }
 
-/// Refuses play when a gas inflicts a status and nothing would land it.
-fn check_breaths(registries: Option<Res<Registries>>, statuses: Option<Res<Messages<crate::status::StatusEvent>>>) {
-    let Some(registries) = registries else { return };
-    let biting: Vec<&str> = registries.gases.iter().filter(|(_, def)| def.inflicts.is_some()).map(|(_, def)| def.name.as_str()).collect();
-    assert!(
-        biting.is_empty() || statuses.is_some(),
-        "GasPlugin: {biting:?} inflict a status, but StatusPlugin was not added, so breathing them would do nothing; add StatusPlugin"
-    );
-}
-
 /// Gas: [`Gases`], given off by [`Release`] and [`Vents`], spread and faded
 /// every whole turn, hiding what is behind it and breathed by whoever stands
 /// in it.
 ///
-/// Needs [`Registries`] with the gases in it, the run's [`Seed`], and [`StatusPlugin`](crate::status::StatusPlugin)
-/// as well when a gas inflicts a status, which it checks when play begins.
+/// Needs [`Registries`] with the gases in it and the run's [`Seed`]. A
+/// status a gas inflicts is landed by the engine's own
+/// [statuses](crate::status).
 /// Registers the `Emit` ability effect, so abilities may give gas off.
 pub struct GasPlugin;
 
@@ -266,8 +257,7 @@ impl Plugin for GasPlugin {
             .needs::<Registries>("GasPlugin", "`Registries`, with the gases in it, loaded with `gas::load`")
             .needs::<Seed>("GasPlugin", "`Seed(RunSeed(n))`, which a cloud's spill and swirls are hashed from")
             .add_effect::<crate::effects::Emit>()
-            .add_systems(Turn, (release_gas, step_gases).chain().in_set(FieldSet::Gas))
-            .add_systems(OnEnter(crate::state::EngineState::Playing), check_breaths);
+            .add_systems(Turn, (release_gas, step_gases).chain().in_set(FieldSet::Gas));
     }
 
     fn finish(&self, app: &mut App) {
@@ -282,7 +272,7 @@ mod tests {
     use crate::components::{Blocks, Player, RevealsMap, Viewshed};
     use crate::plugin::headless_app;
     use crate::state::EngineState;
-    use crate::status::{Afflicted, StatusPlugin};
+    use crate::status::Afflicted;
     use crate::turn::{Intent, Wait};
     use rl_grid::TileId;
     use rl_rules::gas::GasDef;
@@ -302,7 +292,7 @@ mod tests {
         /// that choke whoever breathes enough of them.
         fn new() -> Self {
             let mut app = headless_app();
-            app.add_plugins((crate::fov::FovPlugin, CombatPlugin, StatusPlugin, GasPlugin, crate::world::StreamingPlugin));
+            app.add_plugins((crate::fov::FovPlugin, CombatPlugin, GasPlugin, crate::world::StreamingPlugin));
             let start = crate::testing::surface(&mut app);
             crate::testing::two_sides(&mut app);
             let statuses = Registry::from_defs(vec![StatusDef::new("choking")]).unwrap();

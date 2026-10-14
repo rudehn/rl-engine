@@ -658,7 +658,7 @@ mod tests {
     /// A stage with Mirela beside the player offering one thing, `tip`,
     /// for two turns, that asks first; every `Interacted` heard kept.
     fn asking() -> (Stage, Entity) {
-        let mut stage = Stage::new_with((OffersPanel::new(Rect::new(8, 4, 40, 8)), crate::InteractKey), |app| {
+        let mut stage = Stage::new_with(OffersPanel::new(Rect::new(8, 4, 40, 8)), |app| {
             app.add_plugins(PropsPlugin);
             app.insert_resource(Seed(TEST_SEED));
             app.add_verb("tip");
@@ -683,7 +683,7 @@ mod tests {
     /// in `panel` opened by the interact key on her asking offer: the row
     /// the screen's title is drawn on.
     fn opened_over_the_map(panel: OffersPanel) -> Option<usize> {
-        let mut stage = Stage::new_with((panel, crate::InteractKey), |app| {
+        let mut stage = Stage::new_with(panel, |app| {
             app.add_plugins((PropsPlugin, rl_render::MapViewPlugin::new(Rect::new(0, 0, 40, 20))));
             app.insert_resource(Seed(TEST_SEED));
             app.add_verb("tip");

@@ -27,13 +27,13 @@
 //! it. Continue reads it back through [`run::resume`](crate::run::resume).
 //!
 //! The records of every run that has ended are kept apart, in a slot of
-//! their own that no run's end deletes, by the engine's
-//! `RecordsSavePlugin`.
+//! their own that no run's end deletes, by the engine's `SavePlugin`,
+//! since the game keeps records with `RecordsPlugin`.
 
 use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
 use rl_engine::prelude::*;
-use rl_engine::rl_save::{AddSaveable, RecordsSavePlugin, SavePlugin, Saveable, SaveableState, UnloadPlugin};
+use rl_engine::rl_save::{AddSaveable, SavePlugin, Saveable, SaveableState};
 use serde::{Deserialize, Serialize};
 
 use crate::armory::{Armory, ItemKind};
@@ -77,10 +77,10 @@ pub const VERSION: u32 = 8;
 pub const SLOT: &str = "undermere";
 
 // ANCHOR: register
-/// What the save is made of: the engine's plugins, the five kinds, and
-/// the ten resources; and the records, in their own slot.
+/// What the save is made of: the engine's plugin, which keeps the records
+/// in their own slot beside it, the five kinds, and the ten resources.
 pub fn register(app: &mut App) {
-    app.add_plugins((SavePlugin::new(SLOT).version(VERSION).on_arrival(), UnloadPlugin, RecordsSavePlugin))
+    app.add_plugins(SavePlugin::new(SLOT).version(VERSION).on_arrival())
         .save_kind::<ItemKind>()
         .save_kind::<Kind>()
         .save_kind::<Adventurer>()

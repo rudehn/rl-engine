@@ -25,11 +25,11 @@
 An effect is one thing that happens to a cell or to whoever stands in it: harm, a mend, a status, a shove, a fire, a cloud of gas.
 Three kinds of thing land them, an ability an actor knows, a prop in the world and an item in a bag, and this is the subsystem all three use as peers.
 It owns what an effect is, how a list of them is built, rolled and described, the one stream they roll from, and the moments at which a prop or an item does what it does.
-What an effect costs the thing that carried it is not here; that is `ConsumablesPlugin`'s, which reads the same messages.
+What an effect costs the thing that carried it is not here; that is `ItemsPlugin`'s charges, which read the same messages.
 
 ## Turning it on
 
-`EffectsPlugin` is added by any plugin that lands effects, `AbilitiesPlugin`, `PropsPlugin` and `ConsumablesPlugin`, when the game has not added it, so a game rarely names it and the order a game lists its plugins in never matters.
+`EffectsPlugin` is added by any plugin that lands effects, `AbilitiesPlugin` and `PropsPlugin`, when the game has not added it, so a game rarely names it and the order a game lists its plugins in never matters.
 It initializes `EffectKinds` and `Moments`, takes the `EffectRng` stream, registers `Fired`, `FiredOn` and the `DamageEvent`, `Afflict` and `Cure` every landing may write, reads `Cued`, adds `Airborne<UseLanding>` for a use in the air, and runs `report_remnants`, `land_aimed_uses` and `land_triggers`, chained, in `ResolveSet::Triggers`.
 It is not unique and builds once, so a game that adds it by hand as well gets one copy and no error.
 That stage sits between `ResolveSet::Act` and `ResolveSet::Fields`: after every action that reports a moment, and before fire, gas, statuses and damage, so a grenade's fire spreads and a stim's mend is applied in the pass that set them off.
@@ -126,7 +126,7 @@ A burst stops at walls and not at whoever stands in it, and it is the call an ab
 A trap lands in the pass it was stepped on, and a prop's or an actor's `destroyed` or `died` trigger a pass after the blow, since a death is known only after damage; an actor's `struck` lands before that, in the same pass as the blow, so a killing blow sets off `struck` and then, the pass after, `died`.
 Whether a self-aimed ability or use would act on anything at all is the engine's own question to ask and the effect's to answer: a game's effect that needs something there to act on says so through `would_act`, and one that needs nothing is kept by every tactic that asks, as it always was.
 A trap's harm is the trap's own and not the doing of whoever stepped on it, so the log never says they hurt themselves; who stepped on it is still on the report.
-Charges are not here: a game with triggers and no costs adds no `ConsumablesPlugin`, and `spend_charges` reads `Fired` after `land_triggers` so what the last charge did lands before the thing is gone.
+Charges are not here: a thing with triggers and no `Consumable` costs nothing, and `spend_charges` reads `Fired` after `land_triggers` so what the last charge did lands before the thing is gone.
 The engine carries a bonus on the carrier and never learns what a level is: the game writes the `EffectBonus` with the level applied when it spawns the thing, and an effect adds it without asking where it came from, so an enchant, a blessing and a curse are one number to the engine and three rules to the game.
 Only what changes in play is saved, a trigger's fires left beside a consumable's charges, and the lists are rebuilt from the definitions.
 A carrier's `EffectBonus` is not saved either: the game's spawn writes it again from whatever the game saved, a level, the way it wrote it the first time.

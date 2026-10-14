@@ -10,15 +10,16 @@
 //! [`SaveBackend`] with a file and a memory implementation (and a
 //! `localStorage` one on wasm), a [`Versioned`] envelope whose version
 //! must match exactly or the save is refused whole, an [`EntityRemap`]
-//! that turns entity ids into stable [`SaveId`]s and back, [`SavePlugin`],
-//! which keeps the [`Stash`] a turn behind the run, forgets the slot when
-//! the run ends and keeps a title told what the slot holds, and
-//! [`UnloadPlugin`], which writes the stash when the page or the window is
-//! closed on it.
+//! that turns entity ids into stable [`SaveId`]s and back, and
+//! [`SavePlugin`], which inserts the backend, in memory for a scripted
+//! run, keeps the [`Stash`] a turn behind the run and writes it when the
+//! page or the window is closed on it, forgets the slot when the run ends
+//! and keeps a title told what the slot holds.
 //!
-//! Apart from all of that, [`SettingsSavePlugin`] remembers what a player
-//! chose in a slot of its own, which no run's ending forgets, and
-//! [`RecordsSavePlugin`] remembers every run's record the same way.
+//! Apart from all of that, `SavePlugin` remembers what a player chose in
+//! the [`settings`] slot, [`SETTINGS_SLOT`], which no run's ending
+//! forgets, and in a game that keeps records every run's [record](records)
+//! the same way, in [`RECORDS_SLOT`].
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
@@ -34,24 +35,22 @@ pub mod versioned;
 
 pub use backend::{FileBackend, MemoryBackend, SaveBackend, SaveError, Saves};
 pub use engine::EngineSave;
-pub use records::{RECORDS_SLOT, RecordsSavePlugin};
+pub use records::RECORDS_SLOT;
 pub use remap::{EntityRemap, SaveId};
 pub use run::{
     AddSaveable, EntityState, KindSave, RunSave, SavePlugin, SaveRegistry, SaveSlot, Saveable, SaveableState, SavedBurning, forget_save, load_run,
     save_on_arrival, save_on_leaving, save_run,
 };
-pub use settings::{SETTINGS_SLOT, SettingsSavePlugin};
-pub use unload::{Stash, UnloadPlugin};
+pub use settings::SETTINGS_SLOT;
+pub use unload::Stash;
 pub use versioned::{Versioned, decode, encode};
 
 /// The names most callers want in scope.
 pub mod prelude {
     pub use crate::backend::{FileBackend, MemoryBackend, SaveBackend, SaveError, Saves};
     pub use crate::engine::EngineSave;
-    pub use crate::records::RecordsSavePlugin;
     pub use crate::remap::{EntityRemap, SaveId};
     pub use crate::run::{AddSaveable, RunSave, SavePlugin, Saveable, SaveableState, load_run, save_run};
-    pub use crate::settings::SettingsSavePlugin;
-    pub use crate::unload::{Stash, UnloadPlugin};
+    pub use crate::unload::Stash;
     pub use crate::versioned::{Versioned, decode, encode};
 }

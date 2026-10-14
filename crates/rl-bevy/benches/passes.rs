@@ -59,13 +59,7 @@ fn passes(crowd: usize, build: Build) -> App {
     let mut app = rl_bevy::plugin::headless_app();
     app.add_plugins(rl_bevy::world::StreamingPlugin);
     if build != Build::Bare {
-        app.add_plugins((
-            rl_bevy::fov::FovPlugin,
-            rl_bevy::combat::CombatPlugin,
-            rl_bevy::minds::MindsPlugin,
-            rl_bevy::items::ItemsPlugin,
-            rl_bevy::status::StatusPlugin,
-        ));
+        app.add_plugins((rl_bevy::fov::FovPlugin, rl_bevy::combat::CombatPlugin, rl_bevy::minds::MindsPlugin, rl_bevy::items::ItemsPlugin));
     }
     let start = testing::surface(&mut app);
     let sides = testing::two_sides(&mut app);

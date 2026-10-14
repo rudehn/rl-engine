@@ -32,6 +32,23 @@ use serde::{Deserialize, Serialize};
 pub const RECORD_VAR: &str = "RL_RECORD";
 /// The environment variable naming the file to play the run from.
 pub const REPLAY_VAR: &str = "RL_REPLAY";
+/// The environment variable naming where a capture saves the window,
+/// which `rl-render`'s `CapturePlugin` reads. Declared here, beside the
+/// other two, because a capture is a scripted run as they are, and
+/// [`scripted`] is asked by crates that know nothing of drawing.
+pub const CAPTURE_VAR: &str = "RL_CAPTURE";
+
+/// Whether this run plays keys from a script rather than from the player:
+/// a replay or a recording, named by [`REPLAY_VAR`] and [`RECORD_VAR`], or
+/// a capture, named by [`CAPTURE_VAR`].
+///
+/// A scripted run plays keys against a seed of its own, so it must neither
+/// start on the player's save nor write over it; `rl-save`'s `SavePlugin`
+/// asks this to keep such a run's saves in memory. Read from the
+/// environment, so it can be asked before there is an app.
+pub fn scripted() -> bool {
+    [REPLAY_VAR, RECORD_VAR, CAPTURE_VAR].into_iter().any(|var| std::env::var_os(var).is_some())
+}
 
 /// One frame's keys, and the turn clock they were read at.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -177,7 +177,6 @@ fn smoke(c: &mut Criterion) {
             rl_bevy::combat::CombatPlugin,
             rl_bevy::minds::MindsPlugin,
             rl_bevy::items::ItemsPlugin,
-            rl_bevy::status::StatusPlugin,
         ));
         if lit {
             app.add_plugins(rl_bevy::lighting::LightingPlugin);

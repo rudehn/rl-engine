@@ -38,7 +38,7 @@ The Systems pages are the reference for the rest, one per system, and each tease
 
 ## Statuses, stats and gear
 
-- **Add** `StatusPlugin`, and put the registries a game needs in `Registries`.
+- **Add** nothing for statuses, which are `CorePlugin`'s, and put the registries a game needs in `Registries`.
 - **You supply** what wearing a thing does, on the thing: a worn blade carries the `MeleeAttack` it is swung with, a coat its `Armor`, and an affix what it `Bestows` on a stat.
 - **You get** afflictions ticked by the turn through the damage pipeline, with stacking rules and cures; a stat block with a modifier accumulator; an equipment slot graph with displacement; and an affix model of prefixes and suffixes with level-scaled grants, weighted rolling and per-instance state.
   `Loadout` sums the gear at the blow and `fold_gear` keeps the stats current, so nothing is ever copied onto the wearer.
@@ -84,7 +84,7 @@ The Systems pages are the reference for the rest, one per system, and each tease
 
 ## Records of every run
 
-- **Add** `RecordsPlugin`, `RecordsSavePlugin` beside your save, and `RecordsPanel::new(rect)` for the screen.
+- **Add** `RecordsPlugin`, kept between launches by your `SavePlugin`, and `RecordsPanel::new(rect)` for the screen.
 - **You supply** one `RecordRun` when your run is over: its score, a line saying what it came to, and the sections you want shown.
 - **You get** every run filed best first and kept between launches in a slot of its own, the run's own record on the screen it ends on, and a screen listing them all, which the title opens.
 - **Worked example** `undermere`, whose score is five lines and a total.

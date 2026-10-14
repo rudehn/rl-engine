@@ -1,5 +1,5 @@
 <!-- documents:
-     plugins: ConsumablesPlugin
+     plugins: ItemsPlugin
      files: crates/rl-bevy/src/items.rs
             crates/rl-bevy/src/consumable.rs
             crates/rl-bevy/src/effects/mod.rs
@@ -27,7 +27,7 @@ The engine owns the use, the aiming, the choosing and the spending; what any of 
 ## Turning it on
 
 A use is an item action, resolved by `ItemsPlugin`'s `resolve_items` from `UseItem`, `UseItemAt` or `UseOn`, and what it lands is landed by `EffectsPlugin`, the subsystem that lands a prop's trap and an ability, so `ItemsPlugin` only reports the moment.
-`ConsumablesPlugin` is what makes doing it cost the thing, opt-in on its own and needing no `AbilitiesPlugin`: it depends on `ItemsPlugin`, adds `EffectsPlugin` if the game has not, runs `spend_charges` in `ResolveSet::Triggers` after `land_triggers`, and runs `recharge_charges` in `TurnSet::React`.
+`ItemsPlugin` is also what makes doing it cost the thing, needing no `AbilitiesPlugin`: it runs `spend_charges` in `ResolveSet::Triggers` after `land_triggers`, and `recharge_charges` in `ReactSet::Settle`; what a use lands needs `EffectsPlugin`, which a game adds or another plugin that lands effects adds for it.
 A game's own use key writes `AimUse` for any thing, which the targeting cursor answers by aiming a use that is aimed and using at once one that is not, and the bag answers by choosing for one that asks; the bag's own use key does the same, and a game with neither screen writes the three actions itself.
 
 ## The model
@@ -105,7 +105,7 @@ A trigger with no list of its own lands the item's shared `effects`, so a draugh
 A thing not yet known is used, aimed and refused by nothing only what it is would explain, since a refusal for nothing or a footprint drawn before it is used tells the player its kind as surely as its name would; what is refused still is what does not depend on it, not carried and worn to be used and not worn, and a game that tells a use that came to nothing says so of one made empty as of one that caught nobody.
 A use of an item with a `use` trigger is said by the narrator, `You use a stim.`; an item with no trigger reports `ItemEvent::Used` and the game answers it, in its own words, which is the escape hatch and is meant to be one: the bag cannot know that a crust of bread mends, and a use that did nothing would still have spent a turn.
 What wearing a thing is worth while it stays on is `Armor`, `Resists`, an attack and `Bestows`, standing states that go through no effects, and what it does at a moment, a pulse or a use, is a list that lands once and is done, bridged to the wearing only by a status the thing holds, which the engine ends when the thing comes off so a game never writes the unwinding.
-Charges are not a use's own: a game with triggers and no costs adds no `ConsumablesPlugin`, and `spend_charges` reads `Fired` after `land_triggers`, so what the last charge did lands before the thing is gone.
+Charges are not a use's own: a thing with triggers and no `Consumable` costs nothing, and `spend_charges` reads `Fired` after `land_triggers`, so what the last charge did lands before the thing is gone.
 A save taken while an aimed use is in the air keeps the charge it spent and loses what it would have landed, since what is in the air belongs to the run and is emptied when the run ends.
 
 ## Where it lives

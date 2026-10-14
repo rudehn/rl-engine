@@ -832,7 +832,7 @@ mod tests {
     use crate::plugin::{Turn, TurnSet, headless_app};
     use crate::registries::Registries;
     use crate::state::EngineState;
-    use crate::status::{Afflict, StatusPlugin};
+    use crate::status::Afflict;
     use rl_rules::{Op, Registry, StatDef, StatusDef, StatusId, UNTIL_CURED};
 
     /// A world with statuses in it and a stat, `quickness`, that `hasted`
@@ -840,7 +840,7 @@ mod tests {
     /// `rules` says so; and a player to pass the turns, holding the first.
     fn quick_arena(rules: bool) -> (App, Point, Entity, [StatusId; 2]) {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin, crate::combat::CombatPlugin, StatusPlugin));
+        app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin, crate::combat::CombatPlugin));
         let start = crate::testing::surface(&mut app);
         crate::testing::two_sides(&mut app);
         let stats = Registry::from_defs(vec![StatDef::new("quickness", 0)]).unwrap();

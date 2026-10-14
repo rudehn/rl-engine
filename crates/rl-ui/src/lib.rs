@@ -133,7 +133,7 @@ pub use cursor::{CursorKeys, CursorMap, CursorStyle, Steer, mark};
 pub use facet::{Facet, FacetId, FacetKey, Facets};
 pub use focus::{Focus, InSight, Sighted, Sighting};
 pub use game_menu::{GAME_MENU_MODAL, GameMenu, GameMenuPanel, MenuItem, MenuKeys, describe_sheet, game_menu_modal};
-pub use interact::{InteractKey, InteractKeys};
+pub use interact::InteractKeys;
 pub use keys::DirectionKeys;
 pub use log::{LogEntry, MessageLog, Span};
 pub use menu::{ListMenu, MenuRow, draw_menu};
@@ -259,21 +259,20 @@ impl Plugin for UiPlugin {
 
     fn finish(&self, app: &mut App) {
         rl_bevy::depends_on::<rl_bevy::CorePlugin>(app, "UiPlugin");
-        // The player's long action is `WorkPlugin`'s, and a game without it
-        // has nothing to stop. In `finish` rather than `build` so the order
-        // the two plugins were added in does not matter, and listed last
-        // under the game's own acts.
-        if app.is_plugin_added::<rl_bevy::WorkPlugin>() {
-            app.add_control(controls::STOP_GROUP, controls::STOP_ACTION, Keys::Any);
-            app.add_systems(
-                Update,
-                controls::stop_work_on_key
-                    .after(controls::advance_repeats)
-                    .before(rl_bevy::EngineSet::Input)
-                    .before(rl_render::particles::skip_on_key)
-                    .run_if(in_state(rl_bevy::EngineState::Playing)),
-            );
-        }
+        // The key that does what is here, in a game with props.
+        interact::finish(app);
+        // The player's long action, which every game has. In `finish`
+        // rather than `build` so it is listed last under the game's own
+        // acts.
+        app.add_control(controls::STOP_GROUP, controls::STOP_ACTION, Keys::Any);
+        app.add_systems(
+            Update,
+            controls::stop_work_on_key
+                .after(controls::advance_repeats)
+                .before(rl_bevy::EngineSet::Input)
+                .before(rl_render::particles::skip_on_key)
+                .run_if(in_state(rl_bevy::EngineState::Playing)),
+        );
     }
 }
 
@@ -290,7 +289,7 @@ pub mod prelude {
     pub use crate::facet::{Facet, FacetId, Facets};
     pub use crate::focus::{Focus, InSight, Sighted, Sighting};
     pub use crate::game_menu::{GameMenuPanel, MenuKeys, game_menu_modal};
-    pub use crate::interact::{InteractKey, InteractKeys};
+    pub use crate::interact::InteractKeys;
     pub use crate::keys::DirectionKeys;
     pub use crate::log::{LogEntry, MessageLog, Span};
     pub use crate::menu::{ListMenu, MenuRow, draw_menu};

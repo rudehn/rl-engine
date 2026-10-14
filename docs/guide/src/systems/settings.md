@@ -1,5 +1,5 @@
 <!-- documents:
-     plugins: FullscreenPlugin, SettingsPanel, SettingsSavePlugin
+     plugins: FullscreenPlugin, SettingsPanel, SavePlugin
      files: crates/rl-bevy/src/settings.rs
             crates/rl-render/src/fullscreen.rs
             crates/rl-ui/src/panel/settings.rs
@@ -20,8 +20,8 @@ None of the three knows the others.
 `RoguelikePlugins` adds `FullscreenPlugin`, so every game on the terminal has one setting declared before it adds anything: `fullscreen`, under `Display`, `Off` or `On`, with F11 as its key.
 Nothing is fullscreen until something sets it, and the key is the settings screen's to read, so a game without `SettingsPanel` has the setting and not the key.
 `SettingsPanel` takes the `Rect` it may draw in, declares the `settings` modal, and in its `finish` turns every setting that has a key into a control, so the controls screen lists it.
-`SettingsSavePlugin` is the opt-in third: it needs `Saves`, says so through `app.needs`, recalls what was remembered in its `finish` and writes in `Last` when a setting has changed.
-Without it every setting works and starts on its default each launch.
+`SavePlugin`, in `rl-save`, is the third: it recalls what was remembered in its `finish` and writes in `EndOfFrame::Save` when a setting has changed.
+In a game that saves nothing every setting works and starts on its default each launch.
 On the web `FullscreenPlugin` declares nothing, because a browser grants fullscreen only from inside the handler of a key or a click and Bevy reads keys a frame later; the canvas follows the page, and the browser's own fullscreen fills the screen.
 
 ## The model
@@ -37,7 +37,7 @@ Words and not places in the list, so a choice added in the middle of a setting d
 `SettingsPanel` lists the settings under their groups, a group standing where its first setting was declared: up and down pick a row, left and right change it, confirm changes it forward and the close key goes back to whatever was under the screen.
 A setting's own key changes it when no screen is open or this one is on top, in any engine state.
 The game menu offers a `Settings` row above `Quit` when the panel was added and at least one setting is declared, and is not drawn while the screen it opened is up; the title offers one on the same terms, and leaves it out rather than drawing it dim when there is nothing to set.
-`SettingsSavePlugin` keeps one slot, `settings`, a RON map of names to words; text that does not parse is a warning and the defaults stand, and loading never writes.
+`SavePlugin` keeps the settings in one slot, `settings`, a RON map of names to words; text that does not parse is a warning and the defaults stand, and loading never writes.
 
 ## Using it
 
@@ -50,14 +50,15 @@ A game adds the screen as it adds any panel, and the menu finds it.
     app.add_plugins(SettingsPanel::new(screen.settings));
 ```
 
-Remembering takes a line of its own beside the backend a run is saved through.
+Remembering comes with the plugin a run is saved with, which names the backend.
 
-<!-- include: ../../../../examples/foundry/src/main.rs:remember -->
+<!-- include: ../../../../examples/foundry/src/save.rs:remember -->
 ```rust,no_run
-        // Remembered beside the save and apart from it. A scripted run's
-        // backend is in memory, so a capture or a replay starts on the
-        // defaults whatever the player chose.
-        .add_plugins(SettingsSavePlugin)
+    // Saved in the player's saves under the game's name, and in memory for
+    // a scripted run, so a capture or a replay starts on the defaults
+    // whatever the player chose; the settings are remembered beside the
+    // run and apart from it.
+    app.add_plugins(SavePlugin::new(SLOT).version(VERSION).on_arrival())
 ```
 
 ## The line

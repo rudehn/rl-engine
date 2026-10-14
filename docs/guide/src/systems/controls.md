@@ -1,5 +1,5 @@
 <!-- documents:
-     plugins: ControlsPanel, GameMenuPanel, InteractKey, KeyScriptPlugin, ReplayPlugin
+     plugins: ControlsPanel, GameMenuPanel, KeyScriptPlugin, ReplayPlugin
      files: crates/rl-ui/src/lib.rs
             crates/rl-ui/src/controls.rs
             crates/rl-ui/src/keys.rs
@@ -31,7 +31,7 @@ Its `finish` declares `depends_on::<UiPlugin>` and adds its own control last, so
 `GameMenuPanel` takes a `Rect` that is the most it may occupy rather than the size it will be, declares the `menu` modal, and draws in `PresentSet::Overlay`.
 Its keys run before `EngineSet::Input` and outside the engine's sets, because those sets stop once the run is over and the menu is the screen the run ends on; `OnEnter(EngineState::Over)` is where it opens itself, with no way back into the run.
 It adds the view that screen's words are drawn from behind it, the way any presenter adds its own, so a game has somewhere to push what it wants the ending to say; [Saving and the ending screen](saving.md) is the page for that.
-`InteractKey` is opt-in beside the panels, so a game with no props adds nothing and the key does not exist; its `finish` declares `depends_on::<UiPlugin>` and `depends_on::<PropsPlugin>` and declares its key under the screens heading.
+The interact key is `UiPlugin`'s in a game with props: its `finish` adds it when `PropsPlugin` was added, whichever came first, and declares it under the screens heading, so a game with no props has no such key.
 `ReplayPlugin` adds a recorder when it is given a path and a player when it is given a recording, and `ReplayPlugin::from_env` reads `RL_RECORD` and `RL_REPLAY` for both.
 `KeyScriptPlugin` is a test's keyboard and lives in `rl-bevy`: it presses in `PreUpdate` after Bevy's input has been cleared, and adds Bevy's `InputPlugin` if the app has none.
 

@@ -650,8 +650,7 @@ pub const STOP_ACTION: &str = "stop what you are doing";
 /// Before the input phase, after the held-key repeat has moved on, and
 /// before the particle skipper, which runs the turns at a key: so the
 /// work is off before the frame could spend a turn of it, and the key
-/// lands on the player's own turn. Added by [`UiPlugin`](crate::UiPlugin)
-/// in a game with [`WorkPlugin`](rl_bevy::WorkPlugin).
+/// lands on the player's own turn. Added by [`UiPlugin`](crate::UiPlugin).
 pub fn stop_work_on_key(
     input: Res<ButtonInput<KeyCode>>,
     repeats: Res<Repeats>,
@@ -894,7 +893,7 @@ mod focus_tests {
 mod stop_tests {
     use super::*;
     use crate::harness::Stage;
-    use rl_bevy::{AddWork, BeginWork, BreakReason, Intent, Turns, WorkBroken, WorkKinds, WorkPace, WorkPlugin};
+    use rl_bevy::{AddWork, BeginWork, BreakReason, Intent, Turns, WorkBroken, WorkKinds, WorkPace};
     use rl_rules::Work;
 
     /// Every `WorkBroken`, in order.
@@ -918,7 +917,7 @@ mod stop_tests {
     /// The player two turns into ten of mending, a turn a frame, with the
     /// breaks and the game's sight of `q` recorded.
     fn at_work() -> Stage {
-        let mut stage = Stage::new(WorkPlugin);
+        let mut stage = Stage::new(());
         stage.app.add_work("mending").insert_resource(WorkPace::every_frame());
         stage.app.init_resource::<Broken>().add_systems(Update, record.after(rl_bevy::EngineSet::Turns));
         stage.app.init_resource::<SawQ>().add_systems(Update, see_q.in_set(rl_bevy::EngineSet::Input));
@@ -962,8 +961,10 @@ mod stop_tests {
         assert_eq!(reasons(&stage), vec![BreakReason::LeftOff]);
     }
 
+    /// Every game has work, so every game lists the stop, last under its
+    /// own acts.
     #[test]
-    fn the_stop_is_listed_as_any_key_in_a_game_with_work_and_not_in_one_without() {
+    fn the_stop_is_listed_as_any_key() {
         let stage = at_work();
         let controls = stage.app.world().resource::<Controls>();
         let stop = controls.find(STOP_GROUP, STOP_ACTION).expect("listed");
@@ -972,9 +973,6 @@ mod stop_tests {
         let (cursor, help) = (CursorKeys::default(), ControlsKeys::default());
         let bindings = Bindings { directions: &directions, cursor: &cursor, help: &help, log: None, sheet: None, abilities: None, inventory: None, menu: None };
         assert_eq!(controls.label(stop, &bindings), "any key");
-
-        let stage = Stage::new(());
-        assert_eq!(stage.app.world().resource::<Controls>().find(STOP_GROUP, STOP_ACTION), None, "nothing to stop without work");
     }
 }
 

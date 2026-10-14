@@ -188,7 +188,6 @@ fn add_panels(app: &mut App, screen: &Screen) {
         // ANCHOR_END: bags
         // What can be done here, when walking into it would be a guess.
         OffersPanel::new(screen.here).title("Here"),
-        InteractKey,
         // Every key `input::declare_controls` and the engine's screens
         // declare, with the hint that opens it in the rail's last row.
         ControlsPanel::new(screen.controls).hint(screen.hint),
@@ -234,8 +233,8 @@ fn main() -> AppExit {
     }
     let screen = Screen::new();
     let mut app = App::new();
-    app.add_plugins(RoguelikePlugins::new("Foundry", COLS, ROWS).map(screen.map).saves("foundry"))
-        .add_plugins((CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, ThrowingPlugin, LightingPlugin, StealthPlugin, FactsPlugin, AbilitiesPlugin))
+    app.add_plugins(RoguelikePlugins::new("Foundry", COLS, ROWS).map(screen.map))
+        .add_plugins((CombatPlugin, MindsPlugin, ItemsPlugin, ThrowingPlugin, LightingPlugin, StealthPlugin, FactsPlugin, AbilitiesPlugin))
         // Fire and smoke, for the grenades: each registers the effect its
         // grenade names, `Ignite` and `Emit`, before the abilities load.
         .add_plugins((FirePlugin, GasPlugin))
@@ -247,12 +246,6 @@ fn main() -> AppExit {
         .add_engine_effects()
         .insert_resource(foundry::content::registries())
         .insert_resource(Seed(seed))
-        // ANCHOR: remember
-        // Remembered beside the save and apart from it. A scripted run's
-        // backend is in memory, so a capture or a replay starts on the
-        // defaults whatever the player chose.
-        .add_plugins(SettingsSavePlugin)
-        // ANCHOR_END: remember
         .add_plugins(FoundryPlugin);
     add_panels(&mut app, &screen);
     if let Some(deck) = std::env::var("FOUNDRY_START").ok().and_then(|d| d.parse().ok()) {

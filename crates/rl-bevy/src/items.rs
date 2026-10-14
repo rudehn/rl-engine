@@ -42,7 +42,7 @@ use rl_rules::{EquipShape, Equipment, StatId};
 
 use crate::ability::{Aimed, Bystanders};
 use crate::combat::DeathEvent;
-use crate::components::{Actor, MyTurn, Player, Position, Viewshed};
+use crate::components::{MyTurn, Player, Position, Viewshed};
 use crate::effects::Triggers;
 use crate::minds::{Sight, Thinking};
 use crate::places::{MapId, OnMap};
@@ -1000,23 +1000,21 @@ pub fn perceive_belongings(mut thinking: ResMut<Thinking>, sight: Sight, belongi
 /// Items: on the ground, in a bag, in a slot, the actions that move them
 /// between the three and use them, and the fold of what worn items bestow.
 ///
-/// Every [`Actor`] is given an empty [`StatBlock`] as it is spawned, the
-/// way [`StatusPlugin`](crate::status::StatusPlugin) gives one, so a
-/// wearer in a game with gear stats and no statuses still has somewhere
-/// for them to land.
+/// What worn gear lends lands on the [`StatBlock`] every
+/// [`Actor`](crate::components::Actor) is given as it is spawned, by
+/// [`CorePlugin`](crate::plugin::CorePlugin)'s statuses.
 ///
 /// A worn [`Pulse`] reports its `pulse` moment on its own clock, and a
 /// status a worn thing holds ends when it is no longer worn, in
-/// [`end_unworn_holds`].
+/// [`end_unworn_holds`]. What a use costs the thing used, its
+/// [`Consumable`](crate::consumable::Consumable) charges, is part of it
+/// too: see [`consumable`](crate::consumable).
 pub struct ItemsPlugin;
 
 impl Plugin for ItemsPlugin {
     fn build(&self, app: &mut App) {
         use crate::plugin::{CleanupSet, ResolveSet, Turn, TurnSet};
         use crate::turn::AddAction;
-        // `try`, because the status plugin registers the same requirement
-        // and the order a game lists its plugins in must not matter.
-        let _ = app.try_register_required_components::<Actor, StatBlock>();
         app.add_message::<ItemEvent>()
             // Read to let the dead drop what they carried. A game without
             // combat has no deaths, and the reader reads nothing.
@@ -1052,6 +1050,7 @@ impl Plugin for ItemsPlugin {
             .add_systems(Turn, restart_pulses.in_set(TurnSet::React))
             .add_systems(Turn, drop_what_the_dead_carried.in_set(CleanupSet::Remove))
             .add_systems(Turn, forget_removed_items.in_set(CleanupSet::Requeue));
+        crate::consumable::build(app);
     }
 
     fn finish(&self, app: &mut App) {
@@ -1216,7 +1215,7 @@ mod tests {
         use rl_rules::stats::Op;
         use rl_rules::{StatDef, StatusDef};
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin, crate::status::StatusPlugin, ItemsPlugin, crate::world::StreamingPlugin));
+        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin, ItemsPlugin, crate::world::StreamingPlugin));
         let start = crate::testing::surface(&mut app);
         let sides = crate::testing::two_sides(&mut app);
         let stats = Registry::from_defs(vec![StatDef::new("might", 10)]).unwrap();
@@ -1348,7 +1347,7 @@ mod aimed {
     use super::*;
     use crate::combat::{CombatPlugin, Faction, Health};
     use crate::components::{Actor, Blocks, Player, RevealsMap, Viewshed};
-    use crate::consumable::{Consumable, ConsumablesPlugin, WhenEmpty};
+    use crate::consumable::{Consumable, WhenEmpty};
     use crate::cue::{Anchor, Cue, Cued, LookOf, TurnHold};
     use crate::effects::{AddEngineEffects, EffectBonus, EffectKinds, Moments, Triggers};
     use crate::plugin::headless_app;
@@ -1371,7 +1370,7 @@ mod aimed {
     impl Rig {
         fn new() -> Self {
             let mut app = headless_app();
-            app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin, CombatPlugin, ItemsPlugin, ConsumablesPlugin));
+            app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin, CombatPlugin, ItemsPlugin, crate::effects::EffectsPlugin));
             app.add_engine_effects();
             let start = crate::testing::surface(&mut app);
             let sides = crate::testing::two_sides(&mut app);
@@ -1690,7 +1689,7 @@ mod aimed {
     /// `ReflectRng` is derived by whichever of `AbilitiesPlugin` or
     /// `EffectsPlugin` adds the stream first; this rig carries neither
     /// `AbilitiesPlugin` nor a game that adds it, only items and
-    /// `ConsumablesPlugin`'s own `effects::ensure`, so a `Reflects` body
+    /// `EffectsPlugin`, so a `Reflects` body
     /// must still turn an aimed use back on its user about half the time,
     /// rather than never, which is what an unset stream would silently do.
     #[test]
@@ -1719,8 +1718,8 @@ mod aimed {
 #[cfg(test)]
 mod chosen {
     use super::*;
-    use crate::components::{Blocks, Player, RevealsMap};
-    use crate::consumable::{Consumable, ConsumablesPlugin, WhenEmpty};
+    use crate::components::{Actor, Blocks, Player, RevealsMap};
+    use crate::consumable::{Consumable, WhenEmpty};
     use crate::effects::{AddEffect, AddEngineEffects, Effect, EffectKinds, EffectWorld, FromArgs, Landing, Moments};
     use crate::plugin::headless_app;
     use crate::registries::Registries;
@@ -1763,7 +1762,7 @@ mod chosen {
     impl Rig {
         fn new() -> Self {
             let mut app = headless_app();
-            app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin, ItemsPlugin, ConsumablesPlugin));
+            app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin, ItemsPlugin, crate::effects::EffectsPlugin));
             app.add_engine_effects();
             app.add_effect::<Polish>().init_resource::<Registries>().insert_resource(crate::seed::Seed(crate::testing::TEST_SEED));
             app.world_mut().resource_mut::<Registries>().tags = rl_rules::Registry::from_defs(vec![rl_rules::TagDef::new("kit")]).unwrap();

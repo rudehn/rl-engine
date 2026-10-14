@@ -1,6 +1,7 @@
 <!-- documents:
-     plugins: WorkPlugin
+     plugins: CorePlugin
      files: crates/rl-bevy/src/work.rs
+            crates/rl-bevy/src/plugin.rs
             crates/rl-rules/src/work.rs
             crates/rl-rules/src/ai/brain.rs
             crates/rl-bevy/src/minds.rs
@@ -19,10 +20,9 @@ The engine owns the loop of it, and the game owns what starting it and finishing
 
 ## Turning it on
 
-`WorkPlugin` is opt-in.
-It adds `continue_work` to `DecideSet::Sense`, `resolve_begins` and `resolve_toil` to `ResolveSet::Act`, and `break_work` to `TurnSet::React`, and registers `BeginWork`, `Toil`, `WorkBegan`, `WorkDone` and `WorkBroken`.
+Work is part of `CorePlugin`, since a game that declares no kind of work has none to do.
+It adds `continue_work` to `DecideSet::Sense`, `resolve_begins` and `resolve_toil` to `ResolveSet::Act`, and `break_work` to `ReactSet::Settle`, and registers `BeginWork`, `Toil`, `WorkBegan`, `WorkDone` and `WorkBroken`.
 Every kind of work is declared with `app.add_work("word")`, where the word is what a panel shows while an actor does it, and looked up again with `WorkKinds::get`.
-`MindsPlugin` registers `BeginWork` itself, so work a mind decides in a game without `WorkPlugin` is refused rather than left holding the turn.
 Harm and death are read from combat, and a game without combat has empty queues and nothing ever hurt.
 
 ## The model

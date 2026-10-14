@@ -2140,9 +2140,9 @@ mod actor_offers {
     /// the one interacted with, and a blow on the worker breaks it off.
     #[test]
     fn work_begun_from_an_actors_offer_is_broken_off_by_a_blow_on_the_worker() {
-        use crate::work::{AddWork, BreakReason, WorkKinds, WorkPlugin, Working};
+        use crate::work::{AddWork, BreakReason, WorkKinds, Working};
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, PropsPlugin, crate::world::StreamingPlugin, crate::combat::CombatPlugin, WorkPlugin));
+        app.add_plugins((crate::fov::FovPlugin, PropsPlugin, crate::world::StreamingPlugin, crate::combat::CombatPlugin));
         app.add_verb("free").add_work("freeing");
         let start = crate::testing::surface(&mut app);
         let sides = crate::testing::two_sides(&mut app);

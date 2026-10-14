@@ -851,7 +851,7 @@ mod tests {
         let mut field = Field::new(keen(), 1, 10, true, None);
         field.app.init_resource::<Swings>().add_systems(PostUpdate, count_swings);
         let player = field.player;
-        field.app.world_mut().entity_mut(player).insert(Unseen);
+        make_unseen(&mut field.app, player);
         for _ in 0..4 {
             field.wait();
         }
@@ -867,7 +867,7 @@ mod tests {
         field.wait();
         assert!(field.aware().knows(field.player), "noticed first");
         let player = field.player;
-        field.app.world_mut().entity_mut(player).insert(Unseen);
+        make_unseen(&mut field.app, player);
         for _ in 0..4 {
             field.wait();
         }
@@ -894,7 +894,8 @@ mod tests {
         field.wait();
         assert!(field.aware().knows(field.player), "noticed first");
         let last_known = field.aware().0.get(&field.player).and_then(|a| a.last_known()).expect("alert to somewhere");
-        field.app.world_mut().entity_mut(field.player).insert(Unseen);
+        let player = field.player;
+        make_unseen(&mut field.app, player);
         let before = rl_core::geometry::chebyshev(field.at(field.watcher), last_known);
         field.wait();
         field.wait();
@@ -913,7 +914,7 @@ mod tests {
         field.wait();
         assert!(field.app.world().resource::<Swings>().0 > 0, "seen, adjacent, it swings: the test can fail");
         field.app.world_mut().resource_mut::<Swings>().0 = 0;
-        field.app.world_mut().entity_mut(player).insert(Unseen);
+        make_unseen(&mut field.app, player);
         for _ in 0..3 {
             field.wait();
         }
@@ -928,17 +929,32 @@ mod tests {
         field.wait();
         assert_eq!(field.app.world().resource::<Watched>().0, Some(true));
         let player = field.player;
-        field.app.world_mut().entity_mut(player).insert(Unseen);
+        make_unseen(&mut field.app, player);
         field.wait();
         assert_eq!(field.app.world().resource::<Watched>().0, Some(false));
     }
 
-    /// The field, with statuses on and a `hidden` status registered as
+    /// Makes `who` unseen at once, the way a game does: by a status
+    /// registered as unseen, held for longer than any test here runs, and
+    /// the marker [`mark_unseen`] keeps on for it. By hand rather than by
+    /// an `Afflict`, so it is on before the next pass rather than during it.
+    fn make_unseen(app: &mut App, who: Entity) {
+        let statuses = rl_rules::Registry::from_defs(vec![rl_rules::StatusDef::new("hidden").unseen()]).unwrap();
+        let hidden = statuses.expect("hidden");
+        let world = app.world_mut();
+        world.resource_mut::<crate::registries::Registries>().statuses = statuses;
+        world.resource_scope(|world, registries: Mut<crate::registries::Registries>| {
+            let (mut afflicted, mut stats) =
+                world.query::<(&mut crate::status::Afflicted, &mut crate::status::StatBlock)>().get_mut(world, who).expect("an actor");
+            afflicted.0.apply(hidden, 1000, None, &registries.statuses, &mut stats.0);
+        });
+        world.entity_mut(who).insert(Unseen);
+    }
+
+    /// The field, with a `hidden` status registered as
     /// unseen, returned with its id.
     fn hiding_field(notice: NoticeStats, gap: i32) -> (Field, rl_rules::StatusId) {
-        let mut field = Field::build(notice, gap, 10, true, None, |app| {
-            app.add_plugins(crate::status::StatusPlugin);
-        });
+        let mut field = Field::build(notice, gap, 10, true, None, |_| {});
         let statuses = rl_rules::Registry::from_defs(vec![rl_rules::StatusDef::new("hidden").unseen()]).unwrap();
         let hidden = statuses.expect("hidden");
         field.app.world_mut().resource_mut::<crate::registries::Registries>().statuses = statuses;
@@ -1009,7 +1025,7 @@ mod tests {
     fn harm_that_is_no_attack_does_not_give_the_unseen_away() {
         let mut field = Field::new(blind(), 5, 10, true, None);
         let (watcher, player) = (field.watcher, field.player);
-        field.app.world_mut().entity_mut(player).insert(Unseen);
+        make_unseen(&mut field.app, player);
         let kind = field.app.world().resource::<crate::registries::Registries>().damage_kinds.expect("kinetic");
         field.app.world_mut().write_message(DamageDealt {
             target: watcher,
@@ -1028,7 +1044,7 @@ mod tests {
     fn armed_field(gap: i32) -> (Field, rl_rules::StatusId) {
         let mut field = Field::build(blind(), gap, 10, true, None, |app| {
             use crate::effects::AddEngineEffects;
-            app.add_plugins((crate::status::StatusPlugin, crate::items::ItemsPlugin, crate::throwing::ThrowingPlugin, crate::ability::AbilitiesPlugin));
+            app.add_plugins((crate::items::ItemsPlugin, crate::throwing::ThrowingPlugin, crate::ability::AbilitiesPlugin));
             app.add_engine_effects();
             // `two_sides` registers `kinetic` as the only damage kind, so the
             // same one-kind registry here resolves to the same id; the
@@ -1162,7 +1178,7 @@ mod tests {
     fn worn_hiding_field() -> (Field, Entity) {
         let mut field = Field::build(blind(), 1, 10, true, None, |app| {
             use crate::effects::AddEngineEffects;
-            app.add_plugins((crate::status::StatusPlugin, crate::items::ItemsPlugin, crate::consumable::ConsumablesPlugin));
+            app.add_plugins((crate::items::ItemsPlugin, crate::effects::EffectsPlugin));
             app.add_engine_effects();
         });
         let statuses = rl_rules::Registry::from_defs(vec![rl_rules::StatusDef::new("hidden").unseen()]).unwrap();
@@ -1276,11 +1292,14 @@ mod tests {
         // watcher's own side) and an other (no side at all), each seen and
         // each unseen, all standing close enough for the roster to sort.
         let enemy_seen = app.world_mut().spawn((Actor, Blocks, Position(start.offset(4, 0)), Health::full(10), Faction(sides.ours))).id();
-        let enemy_unseen = app.world_mut().spawn((Actor, Blocks, Position(start.offset(4, 1)), Health::full(10), Faction(sides.ours), Unseen)).id();
+        let enemy_unseen = app.world_mut().spawn((Actor, Blocks, Position(start.offset(4, 1)), Health::full(10), Faction(sides.ours))).id();
         let ally_seen = app.world_mut().spawn((Actor, Blocks, Position(start.offset(2, 0)), Health::full(10), Faction(sides.theirs))).id();
-        let ally_unseen = app.world_mut().spawn((Actor, Blocks, Position(start.offset(2, 1)), Health::full(10), Faction(sides.theirs), Unseen)).id();
+        let ally_unseen = app.world_mut().spawn((Actor, Blocks, Position(start.offset(2, 1)), Health::full(10), Faction(sides.theirs))).id();
         let other_seen = app.world_mut().spawn((Actor, Blocks, Position(start.offset(3, 1)), Health::full(10))).id();
-        let other_unseen = app.world_mut().spawn((Actor, Blocks, Position(start.offset(3, -1)), Health::full(10), Unseen)).id();
+        let other_unseen = app.world_mut().spawn((Actor, Blocks, Position(start.offset(3, -1)), Health::full(10))).id();
+        for unseen in [enemy_unseen, ally_unseen, other_unseen] {
+            make_unseen(&mut app, unseen);
+        }
 
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();

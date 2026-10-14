@@ -1920,7 +1920,7 @@ mod tests {
         use rl_rules::stats::Op;
         use rl_rules::{EquipShape, Equipment, SlotId, StatDef, StatusDef};
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::status::StatusPlugin, crate::items::ItemsPlugin, crate::world::StreamingPlugin));
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::items::ItemsPlugin, crate::world::StreamingPlugin));
         let start = crate::testing::surface(&mut app);
         let sides = crate::testing::two_sides(&mut app);
         let stats = Registry::from_defs(vec![StatDef::new("armor", 0)]).unwrap();
@@ -2203,7 +2203,7 @@ mod tests {
     fn gunman(roll: i32, consumable: Option<crate::consumable::Consumable>, triggers: Option<&str>) -> (App, Entity, Entity, Entity) {
         use rl_rules::{EquipShape, Equipment, SlotId};
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::items::ItemsPlugin, crate::consumable::ConsumablesPlugin, crate::world::StreamingPlugin));
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::items::ItemsPlugin, crate::effects::EffectsPlugin, crate::world::StreamingPlugin));
         crate::effects::AddEngineEffects::add_engine_effects(&mut app);
         let start = crate::testing::surface(&mut app);
         let sides = crate::testing::two_sides(&mut app);
@@ -2546,7 +2546,7 @@ mod tests {
         around: &[((i32, i32), FactionId)],
     ) -> (App, Point, Entity, Vec<Entity>) {
         let (mut app, start, kind) = arena();
-        app.add_plugins((crate::items::ItemsPlugin, crate::consumable::ConsumablesPlugin));
+        app.add_plugins((crate::items::ItemsPlugin, crate::effects::EffectsPlugin));
         crate::effects::AddEngineEffects::add_engine_effects(&mut app);
         plugins(&mut app);
         let sides = Registry::from_defs(["ours", "theirs", "bystanders"].map(FactionDef::new).to_vec()).unwrap();

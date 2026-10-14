@@ -27,7 +27,7 @@ A status can go further and make its holder unseen, hidden from every mind at an
 ## Turning it on
 
 `StealthPlugin` adds six systems, and the messages and the stream they need, and nothing else: `update_awareness` in `DecideSet::Notice`, before a mind decides; `filter_unseen` then `filter_unnoticed` in `PerceiveSet::Filter`, after the roster stage put everyone in sight into a snapshot; `reveal_attackers` and `mark_unseen` in `ResolveSet::Effects`, either side of the statuses' own two; and `wake_on_damage` in `TurnSet::React`, where a turn's consequences land.
-It registers `Cure` and declares that it reads `Struck`, `ItemEvent` and `AbilityEvent`, so a game with stealth and no statuses, items or abilities has nothing to reveal on rather than a panic; without `StatusPlugin` nothing holds a status, and nothing is ever unseen.
+It registers `Cure` and declares that it reads `Struck`, `ItemEvent` and `AbilityEvent`, so a game with stealth and no items or abilities has nothing to reveal on rather than a panic; with no status registered as unseen nothing is ever unseen.
 It declares `depends_on::<MindsPlugin>`, since noticing is a thing minds act on, and the stream is `StealthRng`, so a tactic added to a brain or a blow struck elsewhere cannot shift which turn a guard spots you on.
 Both sides have to be authored before anything changes: a `Notice` absent means the observer sees on sight, which is the behaviour before stealth existed, and a `Stealth` absent means the subject never hides.
 That is the right way round, and it is why "I added the plugin and nothing happened" is the likely first report.

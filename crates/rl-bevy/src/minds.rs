@@ -1134,9 +1134,6 @@ impl Plugin for MindsPlugin {
             // A blow a mind decides in a game without combat is refused,
             // not left to hang; combat's own registration is the same one.
             .add_action::<Attack>()
-            // Work a mind decides in a game without `WorkPlugin` is refused,
-            // not left to hang, for the same reason as a blow.
-            .add_action::<crate::work::BeginWork>()
             .add_stream::<MindRng>("MindsPlugin")
             .init_resource::<crate::charts::Charts>()
             .reset_on_new_run::<crate::charts::Charts>()
@@ -1176,7 +1173,7 @@ mod tests {
     use super::*;
     use crate::combat::{Armor, CombatPlugin, MeleeAttack};
     use crate::components::{Actor, Blocks};
-    use crate::consumable::{Consumable, ConsumablesPlugin, WhenEmpty};
+    use crate::consumable::{Consumable, WhenEmpty};
     use crate::items::{Equipped, GearScore, Inventory, Item, ItemEvent, Wearable};
     use crate::plugin::headless_app;
     use crate::state::EngineState;
@@ -2042,7 +2039,7 @@ mod tests {
     fn stocked() -> (App, Entity, Point, crate::testing::Sides) {
         use crate::effects::AddEngineEffects;
         let (mut app, start, _) = arena();
-        app.add_plugins((crate::items::ItemsPlugin, ConsumablesPlugin));
+        app.add_plugins((crate::items::ItemsPlugin, crate::effects::EffectsPlugin));
         app.add_engine_effects();
         let sides = crate::testing::two_sides(&mut app);
         let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(sides.ours))).id();

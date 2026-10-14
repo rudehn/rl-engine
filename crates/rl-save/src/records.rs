@@ -23,56 +23,46 @@
 //! run, continuing one or giving one up leaves this slot alone.
 
 use bevy::prelude::*;
-use rl_bevy::plugin::Needs;
-use rl_bevy::{RunRecord, RunRecords};
+use rl_bevy::{RecordsPlugin, RunRecord, RunRecords};
 
 use crate::backend::{SaveBackend, Saves};
 
 /// The slot the run records are remembered in.
 pub const RECORDS_SLOT: &str = "records";
 
-/// Recalls every run's record before the first frame, and writes the list
-/// down again whenever it changes.
-///
-/// Opt-in: without it [`RunRecords`] holds only what has been filed since
-/// the process started.
-pub struct RecordsSavePlugin;
-
 /// What the slot is known to hold, so a frame that filed nothing writes
 /// nothing back.
 #[derive(Resource, Debug, Default)]
 struct Remembered(Vec<RunRecord>);
 
-impl Plugin for RecordsSavePlugin {
-    fn build(&self, app: &mut App) {
-        app.init_resource::<RunRecords>()
-            .init_resource::<Remembered>()
-            .needs::<Saves>("RecordsSavePlugin", "`Saves`, the backend records are remembered through, such as the one `RoguelikePlugins::saves(\"my-game\")` inserts, which keeps a scripted run in memory, or `Saves::platform_default(\"my-game\")`")
-            .add_systems(Last, remember.run_if(resource_changed::<RunRecords>).run_if(resource_exists::<Saves>));
+/// Recalls every run's record before the first frame, and writes the list
+/// down again whenever it changes, in a game that keeps records at all:
+/// in [`SavePlugin`](crate::SavePlugin)'s `finish`, so whether
+/// [`RecordsPlugin`] was added is known whichever order the two were
+/// added in. Without `RecordsPlugin` there is no list to keep, and the
+/// slot is never read or written.
+pub(crate) fn finish(app: &mut App) {
+    if !app.is_plugin_added::<RecordsPlugin>() {
+        return;
     }
-
-    /// In `finish`, with `SettingsSavePlugin`'s own reason: every plugin
-    /// has built by then, though nothing here depends on what any of them
-    /// declared.
-    fn finish(&self, app: &mut App) {
-        let Some(saves) = app.world().get_resource::<Saves>() else { return };
-        let records = match saves.load(RECORDS_SLOT) {
-            Ok(Some(text)) => match ron::from_str::<Vec<RunRecord>>(&text) {
-                Ok(records) => records,
-                Err(e) => {
-                    warn!("the run records could not be read, so the list starts empty and the next record filed replaces it: {e}");
-                    Vec::new()
-                }
-            },
-            Ok(None) => Vec::new(),
+    app.init_resource::<Remembered>().add_systems(Last, remember.run_if(resource_changed::<RunRecords>).in_set(rl_bevy::EndOfFrame::Save));
+    let Some(saves) = app.world().get_resource::<Saves>() else { return };
+    let records = match saves.load(RECORDS_SLOT) {
+        Ok(Some(text)) => match ron::from_str::<Vec<RunRecord>>(&text) {
+            Ok(records) => records,
             Err(e) => {
-                warn!("the run records could not be loaded, so the list starts empty and the next record filed replaces it: {e}");
+                warn!("the run records could not be read, so the list starts empty and the next record filed replaces it: {e}");
                 Vec::new()
             }
-        };
-        app.world_mut().resource_mut::<RunRecords>().records = records.clone();
-        app.world_mut().resource_mut::<Remembered>().0 = records;
-    }
+        },
+        Ok(None) => Vec::new(),
+        Err(e) => {
+            warn!("the run records could not be loaded, so the list starts empty and the next record filed replaces it: {e}");
+            Vec::new()
+        }
+    };
+    app.world_mut().resource_mut::<RunRecords>().records = records.clone();
+    app.world_mut().resource_mut::<Remembered>().0 = records;
 }
 
 /// Writes the list down when it is not what the slot holds.
@@ -97,13 +87,12 @@ mod tests {
     use rl_core::RunSeed;
     use std::sync::Arc;
 
-    /// An app with `RecordsSavePlugin` and `backend` to remember records
-    /// in, finished the way `App::run` finishes one.
+    /// An app that keeps records and saves, with `backend` to remember
+    /// records in, finished the way `App::run` finishes one.
     fn game(backend: &Arc<MemoryBackend>) -> App {
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
+        let mut app = rl_bevy::plugin::headless_app();
         app.insert_resource(Saves(backend.clone()));
-        app.add_plugins(RecordsSavePlugin);
+        app.add_plugins((crate::run::SavePlugin::new("run"), RecordsPlugin));
         app.finish();
         app.cleanup();
         app
@@ -174,7 +163,7 @@ mod tests {
         rl_bevy::testing::surface(&mut app);
         app.insert_resource(Saves(backend.clone()));
         app.insert_resource(Seed(RunSeed(3)));
-        app.add_plugins((crate::run::SavePlugin::new("run"), RecordsSavePlugin));
+        app.add_plugins((crate::run::SavePlugin::new("run"), RecordsPlugin));
         app.finish();
         app.cleanup();
 
@@ -193,5 +182,29 @@ mod tests {
         assert!(!backend.exists("run"), "winning deleted the run's own slot");
         assert!(backend.exists(RECORDS_SLOT), "and left the records slot alone");
         assert_eq!(app.world().resource::<RunRecords>().records.len(), 1, "still in memory too");
+    }
+
+    /// The soft link: a game that saves and keeps no records never has its
+    /// records slot read or written, and a game that adds `RecordsPlugin`
+    /// before or after `SavePlugin` keeps them alike.
+    #[test]
+    fn records_are_kept_between_launches_only_in_a_game_that_keeps_records_whichever_plugin_comes_first() {
+        let backend = Arc::new(MemoryBackend::default());
+        backend.persist(RECORDS_SLOT, r#"[(outcome: Won, summary: "kept", score: 1, seed: 1, turn: 1)]"#).unwrap();
+        let mut saving = rl_bevy::plugin::headless_app();
+        saving.insert_resource(Saves(backend.clone())).add_plugins(crate::run::SavePlugin::new("run"));
+        saving.finish();
+        assert!(!saving.world().contains_resource::<RunRecords>(), "no records kept, so none recalled");
+        for records_first in [false, true] {
+            let mut app = rl_bevy::plugin::headless_app();
+            app.insert_resource(Saves(backend.clone()));
+            if records_first {
+                app.add_plugins((RecordsPlugin, crate::run::SavePlugin::new("run")));
+            } else {
+                app.add_plugins((crate::run::SavePlugin::new("run"), RecordsPlugin));
+            }
+            app.finish();
+            assert_eq!(app.world().resource::<RunRecords>().records.len(), 1, "recalled with RecordsPlugin first: {records_first}");
+        }
     }
 }

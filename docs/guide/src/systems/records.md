@@ -1,5 +1,5 @@
 <!-- documents:
-     plugins: RecordsPlugin, RecordsSavePlugin, RecordsPanel
+     plugins: RecordsPlugin, SavePlugin, RecordsPanel
      files: crates/rl-bevy/src/records.rs
             crates/rl-save/src/records.rs
             crates/rl-ui/src/panel/records.rs
@@ -18,8 +18,8 @@ The screen a run ends on reads the same record, so what it says of a run and wha
 
 `RecordsPlugin` is the record itself: it registers the `RecordRun` message, initialises `RunRecords`, completes and files each record in `Update` ahead of `EngineSet::Present`, so whatever draws a record has it the frame it is filed, and forgets which record is this run's, and any still waiting, in `EndRun`.
 A game writes one `RecordRun` when its run is over, and a game that never writes one keeps no records.
-`RecordsSavePlugin`, in `rl-save`, keeps the list between launches: it needs `Saves`, says so through `app.needs`, reads the `records` slot in its `finish`, before the first frame, and writes it in `Last` on a frame the list changed.
-Without it the list lasts as long as the process.
+`SavePlugin`, in `rl-save`, keeps the list between launches in a game with `RecordsPlugin`, which it learns in its `finish`, whichever was added first: it reads the `records` slot there, before the first frame, and writes it in `EndOfFrame::Save` on a frame the list changed.
+In a game that saves nothing the list lasts as long as the process.
 `RecordsPanel::new(rect)` is the screen: it declares the `records` modal, checks for `UiPlugin` in its `finish`, reads its keys ahead of `EngineSet::Input` and draws after `EngineSet::Present`, outside the engine's sets, because a title opens it before there is a world.
 The screen a run ends on takes nothing more: the `EndingViewPlugin` that `GameMenuPanel` adds reads this run's record whenever there is a `RunRecords` to read it from.
 
@@ -35,7 +35,7 @@ A record still waiting when its run is torn down goes with it in `EndRun`: filed
 `this_run` is cleared in `EndRun`, so the record stands for every frame the ended run's screen is up and is gone before the next run begins, while `records` is never cleared by a run.
 `collect_ending` reads it in `ViewSet::Collect`: `EndingView::summary` is its summary, and its sections are pushed ahead of any a game pushes in `ViewSet::Annotate`.
 So the end screen says the run's line, when a record was filed, under its title and any epitaph, then the seed and the turn, then the sections.
-`RecordsSavePlugin` writes the list as RON in the `records` slot, apart from the run's slot and never deleted with it, and only when the list differs from what the slot is known to hold.
+`SavePlugin` writes the list as RON in the `records` slot, apart from the run's slot and never deleted with it, and only when the list differs from what the slot is known to hold.
 Every field of `RunRecord` is `#[serde(default)]` and a field it does not know is passed over, so a record an earlier or a later build wrote reads as far as it can.
 A slot that does not parse is warned about and left as it is with the list starting empty, and the next record filed writes a fresh list over it.
 `RecordsPanel` lists the records in its rectangle, one row each as `rank. score  summary  date`, the date `YYYY-MM-DD`, or nothing for a record with no time, scrolled to keep the row picked out in view.
@@ -78,14 +78,14 @@ pub fn record(ending: Option<Res<Ending>>, tally: Res<Tally>, map: Option<Res<Wo
 }
 ```
 
-Keeping the list between launches is one more plugin beside the ones a game already saves its run with.
+Keeping the list between launches takes nothing beyond the plugin a game already saves its run with.
 
 <!-- include: ../../../../examples/undermere/src/save.rs:register -->
 ```rust,no_run
-/// What the save is made of: the engine's plugins, the five kinds, and
-/// the ten resources; and the records, in their own slot.
+/// What the save is made of: the engine's plugin, which keeps the records
+/// in their own slot beside it, the five kinds, and the ten resources.
 pub fn register(app: &mut App) {
-    app.add_plugins((SavePlugin::new(SLOT).version(VERSION).on_arrival(), UnloadPlugin, RecordsSavePlugin))
+    app.add_plugins(SavePlugin::new(SLOT).version(VERSION).on_arrival())
         .save_kind::<ItemKind>()
         .save_kind::<Kind>()
         .save_kind::<Adventurer>()

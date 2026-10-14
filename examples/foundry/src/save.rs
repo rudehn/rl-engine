@@ -24,7 +24,7 @@
 use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
 use rl_engine::prelude::*;
-use rl_engine::rl_save::{AddSaveable, SavePlugin, Saveable, SaveableState, UnloadPlugin};
+use rl_engine::rl_save::{AddSaveable, SavePlugin, Saveable, SaveableState};
 use serde::{Deserialize, Serialize};
 
 use crate::climb::Deepest;
@@ -47,10 +47,17 @@ pub const VERSION: u32 = 2;
 /// The slot every run saves to.
 pub const SLOT: &str = "foundry";
 
-/// What the save is made of: the engine's plugins, the four kinds, and the
-/// four resources.
+/// What the save is made of: the engine's plugin, which keeps the player's
+/// settings beside the run and writes the run when the window is closed
+/// on it, the four kinds, and the four resources.
 pub fn register(app: &mut App) {
-    app.add_plugins((SavePlugin::new(SLOT).version(VERSION).on_arrival(), UnloadPlugin))
+    // ANCHOR: remember
+    // Saved in the player's saves under the game's name, and in memory for
+    // a scripted run, so a capture or a replay starts on the defaults
+    // whatever the player chose; the settings are remembered beside the
+    // run and apart from it.
+    app.add_plugins(SavePlugin::new(SLOT).version(VERSION).on_arrival())
+        // ANCHOR_END: remember
         .save_kind::<ItemKind>()
         .save_kind::<Kind>()
         .save_kind::<Commando>()

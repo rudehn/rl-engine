@@ -17,7 +17,7 @@
 //! startup.
 use bevy::prelude::*;
 use rl_engine::rl_bevy::plugin::{EngineSet, NewRun, PerceiveSet, ResetsOnNewRun, Turn, TurnSet};
-use rl_engine::rl_bevy::{AddSound, AddVerb, AddWork, ConsumablesPlugin, LootPlugin, LootSet, PrefabPlugin, PrefabSet, PropsPlugin, RemainsPlugin, WorkPlugin};
+use rl_engine::rl_bevy::{AddSound, AddVerb, AddWork, LootPlugin, LootSet, PrefabPlugin, PrefabSet, PropsPlugin, RemainsPlugin};
 use rl_engine::rl_ui::{AddModal, AimFire, AimThrow, NarrationViewPlugin, NarratorPlugin, Phrase, Tones, ViewSet};
 
 /// The narrator as Foundry words it, for `main.rs` and
@@ -55,7 +55,7 @@ impl Plugin for FoundryPlugin {
         app.add_plugins((PropsPlugin, RemainsPlugin::naming("{what} remains")));
         // Work, for the repair drone: the engine keeps its turns and its
         // row; `droids::repair` says which wrecks and what finishing means.
-        app.add_plugins(WorkPlugin).add_work(crate::droids::REPAIRING).add_work(crate::droids::SIGNALLING);
+        app.add_work(crate::droids::REPAIRING).add_work(crate::droids::SIGNALLING);
         app.add_systems(Turn, crate::droids::sense_wrecks.in_set(PerceiveSet::Annotate))
             .add_systems(Turn, crate::droids::rebuild_wrecks.in_set(TurnSet::React));
         // Loot is the engine's: what lies on a deck when it is first
@@ -67,11 +67,6 @@ impl Plugin for FoundryPlugin {
         // down on a deck's first arrival, the guards made by the roster
         // and the items by the armory.
         app.add_plugins(PrefabPlugin::<crate::droids::Roster, crate::gear::Armory>::default());
-        // What a stim and a medkit do when they are used. Its own plugin,
-        // because a use is not an ability: nothing here is aimed, nothing
-        // waits on a cooldown, and nothing shows on the abilities screen.
-        app.add_plugins(ConsumablesPlugin);
-
         app.add_systems(Turn, crate::props::wreck_the_dead.in_set(TurnSet::React));
         app.add_systems(Turn, crate::props::spend_the_keycard.in_set(TurnSet::React));
         // The commando fades while a cloak hides them, in the pass it went

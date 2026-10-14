@@ -1444,11 +1444,10 @@ mod tests {
     /// its bolt on the foe it was pointed at and not on whoever used it.
     #[test]
     fn a_use_aimed_from_the_bag_and_put_away_spends_nothing_and_confirmed_lands_where_it_was_pointed() {
-        let mut stage =
-            Stage::new_with((rl_bevy::EffectsPlugin, ConsumablesPlugin, crate::TargetViewPlugin, InventoryPanel::new(Rect::new(0, 0, 52, 14))), |app| {
-                app.add_engine_effects();
-            })
-            .screen(52, 14);
+        let mut stage = Stage::new_with((rl_bevy::EffectsPlugin, crate::TargetViewPlugin, InventoryPanel::new(Rect::new(0, 0, 52, 14))), |app| {
+            app.add_engine_effects();
+        })
+        .screen(52, 14);
         let specs: Vec<rl_rules::TriggerSpec> = Names::new()
             .load_list(r#"[(on: "use", targeting: (mode: Bolt(range: 6)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "4"))])]"#)
             .expect("the trigger parses");
@@ -1513,7 +1512,7 @@ mod tests {
     /// with the effects and charges a use resolves through, and the
     /// targeting cursor, which a game's own use key reaches.
     fn chooser() -> (Stage, Entity, Entity, Entity, Entity) {
-        let plugins = (rl_bevy::EffectsPlugin, ConsumablesPlugin, crate::TargetViewPlugin, InventoryPanel::new(Rect::new(0, 0, 52, 14)).title("Bag"));
+        let plugins = (rl_bevy::EffectsPlugin, crate::TargetViewPlugin, InventoryPanel::new(Rect::new(0, 0, 52, 14)).title("Bag"));
         let mut stage = Stage::new_with(plugins, |app| {
             app.add_engine_effects();
             rl_bevy::AddEffect::add_effect::<Mark>(app);
@@ -1647,12 +1646,8 @@ mod tests {
     /// and a polish, in that order. Returns the stage, Mirela, the stone
     /// and the polish.
     fn giving() -> (Stage, Entity, Entity, Entity) {
-        let plugins = (
-            rl_bevy::PropsPlugin,
-            crate::OffersPanel::new(Rect::new(0, 0, 52, 14)),
-            crate::InteractKey,
-            InventoryPanel::new(Rect::new(0, 0, 52, 14)).never_mind("keep it"),
-        );
+        let plugins =
+            (rl_bevy::PropsPlugin, crate::OffersPanel::new(Rect::new(0, 0, 52, 14)), InventoryPanel::new(Rect::new(0, 0, 52, 14)).never_mind("keep it"));
         let mut stage = Stage::new_with(plugins, |app| {
             app.insert_resource(rl_bevy::Seed(rl_bevy::testing::TEST_SEED));
             app.add_verb("give");

@@ -356,14 +356,9 @@ pub fn step_fire(mut ends: MessageReader<TurnEnd>, mut fire: ResMut<Fire>, blaze
     }
 }
 
-/// Refuses play when fire inflicts a status and nothing would land it, or
-/// gives off a gas with no gas to give off.
-fn check_fire_rules(rules: Option<Res<FireRules>>, statuses: Option<Res<Messages<crate::status::StatusEvent>>>, gases: Option<Res<Gases>>) {
+/// Refuses play when fire gives off a gas with no gas to give off.
+fn check_fire_rules(rules: Option<Res<FireRules>>, gases: Option<Res<Gases>>) {
     let Some(rules) = rules else { return };
-    assert!(
-        rules.inflicts.is_none() || statuses.is_some(),
-        "FirePlugin: FireRules::inflicts names a status, but StatusPlugin was not added, so standing in fire would do nothing; add StatusPlugin"
-    );
     assert!(
         rules.smoke.is_none() || gases.is_some(),
         "FirePlugin: FireRules::smoke names a gas, but GasPlugin was not added, so fire would give off nothing; add GasPlugin"
@@ -386,10 +381,9 @@ pub fn perceive_fire(mut thinking: ResMut<crate::minds::Thinking>, fire: Res<Fir
 /// whole turn, glowing and smoking as [`FireRules`] says.
 ///
 /// Needs [`FireRules`], [`Registries`] for which gases burn, and the run's
-/// [`Seed`] the flames roll from; and, as its rules require, which it checks
-/// when play begins, [`StatusPlugin`](crate::status::StatusPlugin) for a
-/// status and [`GasPlugin`](crate::gas::GasPlugin) for smoke. Registers the
-/// `Ignite` ability effect.
+/// [`Seed`] the flames roll from; and, when its rules give off smoke,
+/// [`GasPlugin`](crate::gas::GasPlugin), which it checks when play begins.
+/// Registers the `Ignite` ability effect.
 pub struct FirePlugin;
 
 impl Plugin for FirePlugin {
@@ -425,7 +419,7 @@ mod tests {
     use crate::lighting::LightingPlugin;
     use crate::plugin::headless_app;
     use crate::state::EngineState;
-    use crate::status::{Afflicted, StatusPlugin};
+    use crate::status::Afflicted;
     use crate::turn::{Intent, Wait};
     use rl_grid::{TileProps, TileRegistry};
     use rl_rules::gas::GasDef;
@@ -454,7 +448,7 @@ mod tests {
         /// whoever stands in it, and, `with_gas`, smoke and a vapour that burns.
         fn new(with_gas: bool) -> Self {
             let mut app = headless_app();
-            app.add_plugins((crate::fov::FovPlugin, CombatPlugin, StatusPlugin, LightingPlugin, FirePlugin, crate::world::StreamingPlugin));
+            app.add_plugins((crate::fov::FovPlugin, CombatPlugin, LightingPlugin, FirePlugin, crate::world::StreamingPlugin));
             if with_gas {
                 app.add_plugins(GasPlugin);
             }
@@ -585,7 +579,7 @@ mod tests {
         use rl_rules::ai::tactics::Hunt;
         use std::sync::Arc;
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, MindsPlugin, StatusPlugin, FirePlugin, crate::world::StreamingPlugin));
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, MindsPlugin, FirePlugin, crate::world::StreamingPlugin));
         let start = crate::testing::surface(&mut app);
         let sides = crate::testing::two_sides(&mut app);
         app.insert_resource(FireRules::new());

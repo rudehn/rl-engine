@@ -95,12 +95,12 @@ A game drawn in its own face hands the group the bytes of its font file, compile
 
 <!-- include: ../../../../examples/undermere/src/main.rs:typeface -->
 ```rust,no_run
-    // The window, the terminal in the game's own face, the map, the
-    // engine's base and where the run is saved, in memory for a scripted
-    // one; the game's subsystems are `UndermerePlugin`'s, added
-    // once there, since a second `CombatPlugin` would panic.
+    // The window, the terminal in the game's own face, the map and the
+    // engine's base; the game's subsystems, saving among them, are
+    // `UndermerePlugin`'s, added once there, since a second
+    // `CombatPlugin` would panic.
     let engine = RoguelikePlugins::new("Undermere", COLS, ROWS).cell(CELL).font(FONT).typeface(DEJAVU_SANS_MONO).map(screen.map).across(ACROSS);
-    app.add_plugins(engine.saves("undermere"))
+    app.add_plugins(engine)
 ```
 
 What the engine cannot supply is the look of a tile, which is a table the game fills or a file it loads.

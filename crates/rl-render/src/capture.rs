@@ -37,8 +37,10 @@ use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk};
 use bevy::window::WindowLevel;
 
-/// The environment variable naming where to save.
-pub const CAPTURE_VAR: &str = "RL_CAPTURE";
+/// The environment variable naming where to save, declared in
+/// [`rl_bevy::replay`] beside the replay's own, since a capture is a
+/// scripted run.
+pub use rl_bevy::replay::CAPTURE_VAR;
 /// The environment variable naming the earliest frame to shoot on.
 pub const FRAMES_VAR: &str = "RL_CAPTURE_FRAMES";
 /// The environment variable naming keys to press first.

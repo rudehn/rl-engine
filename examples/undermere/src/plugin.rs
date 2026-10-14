@@ -55,13 +55,13 @@ pub fn narrator() -> NarratorPlugin {
 /// breathe and cast, fire, the clouds potions burst into, the props the
 /// places stand, the arrows a bow spends, the slots the pieces fill,
 /// loot, the facts the quest counts, the record a run ends in, what the
-/// dead leave, the adventurer's long actions and trading.
+/// dead leave and trading.
 ///
 /// [`UndermerePlugin`] adds these before any system of its own, and the
 /// ordering test builds the game with these and without the plugin, so
 /// whatever the plugin adds beyond them is the game's to order.
 pub fn add_engine(app: &mut App) {
-    app.add_plugins((CombatPlugin, MindsPlugin, StatusPlugin, ItemsPlugin, ThrowingPlugin, ConsumablesPlugin, LightingPlugin, StealthPlugin))
+    app.add_plugins((CombatPlugin, MindsPlugin, ItemsPlugin, ThrowingPlugin, LightingPlugin, StealthPlugin))
         .add_plugins((AbilitiesPlugin, FirePlugin, GasPlugin, NoisePlugin::new(NOISE), PropsPlugin::spotting(crate::traps::SPOTTING), AmmoPlugin))
         .add_plugins((PrefabPlugin::<Bestiary, Armory>::default(), LootPlugin::<Armory>::default()))
         .add_plugins((FactsPlugin, RecordsPlugin))
@@ -71,11 +71,6 @@ pub fn add_engine(app: &mut App) {
         // body is a "goblin corpse", and one with a name of its own,
         // a mercenary or Grubnak, "the corpse of Brenna".
         .add_plugins(RemainsPlugin::naming(RemainsNaming::new("{what} corpse").proper("the corpse of {what}")))
-        // The engine's multi-turn work, the adventurer's long actions:
-        // the waystone's kneeling and freeing a captive, each spent and
-        // broken off by the engine and answered by `waystone` and
-        // `captives`.
-        .add_plugins(WorkPlugin)
         // Trading, paid in the `Currency` the plugin inserts once the
         // content is read.
         .add_plugins(TradePlugin);
@@ -120,6 +115,10 @@ impl Plugin for UndermerePlugin {
             .add_verb(crate::vaults::wells::DRINK_VERB)
             .add_verb(crate::vaults::wells::TEMPER_VERB)
             .add_verb(crate::writings::READ_VERB)
+            // The adventurer's long actions, the engine's multi-turn work:
+            // the waystone's kneeling and freeing a captive, each spent and
+            // broken off by the engine and answered by `waystone` and
+            // `captives`.
             .add_work(crate::waystone::CALLING)
             .add_work(crate::captives::FREEING);
         // Which kind a death's remnant stands for, so a burst of spores

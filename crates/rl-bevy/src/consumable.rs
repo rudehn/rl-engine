@@ -261,32 +261,23 @@ pub fn attune(mut events: MessageReader<crate::items::ItemEvent>, mut things: Qu
     }
 }
 
-/// What using, throwing and firing a thing costs it.
-///
-/// Opt-in, like every other subsystem: a game with no consumables adds
-/// nothing and the component is simply never spawned. Adds
-/// [`EffectsPlugin`](crate::effects::EffectsPlugin) if nothing has, since
-/// what a spent thing did is landed there.
-pub struct ConsumablesPlugin;
-
-impl Plugin for ConsumablesPlugin {
-    fn build(&self, app: &mut App) {
-        use crate::plugin::{CleanupSet, ResolveSet, Turn};
-        crate::effects::ensure(app);
-        app.init_resource::<SpendingMoments>()
-            // After the triggers land, in the same set, so the last charge's
-            // effects are in before the thing goes.
-            .add_systems(Turn, spend_charges.in_set(ResolveSet::Triggers).after(crate::effects::land_triggers))
-            .add_systems(Turn, (recharge_charges, attune).chain().in_set(crate::plugin::ReactSet::Settle))
-            .add_systems(Turn, remove_spent.in_set(CleanupSet::Remove))
-            // With the dead, before a restart tears the run down, so what
-            // the last pass spent goes with the run it was spent in.
-            .add_systems(Last, bury_spent.in_set(crate::plugin::EndOfFrame::Bury));
-    }
-
-    fn finish(&self, app: &mut App) {
-        crate::plugin::depends_on::<crate::items::ItemsPlugin>(app, "ConsumablesPlugin");
-    }
+/// What using, throwing and firing a thing costs it: part of
+/// [`ItemsPlugin`](crate::items::ItemsPlugin), since a charge is a fact
+/// about a thing, and a game with no consumables simply never spawns the
+/// component. What a spent thing did is landed by
+/// [`EffectsPlugin`](crate::effects::EffectsPlugin), in a game that adds
+/// it; the charge is spent either way.
+pub(crate) fn build(app: &mut App) {
+    use crate::plugin::{CleanupSet, ResolveSet, Turn};
+    app.init_resource::<SpendingMoments>()
+        // After the triggers land, in the same set, so the last charge's
+        // effects are in before the thing goes.
+        .add_systems(Turn, spend_charges.in_set(ResolveSet::Triggers).after(crate::effects::land_triggers))
+        .add_systems(Turn, (recharge_charges, attune).chain().in_set(crate::plugin::ReactSet::Settle))
+        .add_systems(Turn, remove_spent.in_set(CleanupSet::Remove))
+        // With the dead, before a restart tears the run down, so what
+        // the last pass spent goes with the run it was spent in.
+        .add_systems(Last, bury_spent.in_set(crate::plugin::EndOfFrame::Bury));
 }
 
 #[cfg(test)]
@@ -322,7 +313,7 @@ mod tests {
     /// test can add a plugin and the content its triggers name.
     fn rig_with(consumable: Option<Consumable>, stack: Option<u32>, triggers: &str, extra: impl FnOnce(&mut App)) -> (App, Entity, Entity) {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin, crate::combat::CombatPlugin, ItemsPlugin, ConsumablesPlugin));
+        app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin, crate::combat::CombatPlugin, ItemsPlugin, crate::effects::EffectsPlugin));
         app.add_engine_effects();
         let kinds = Registry::from_defs(vec![DamageKind::new("kinetic")]).expect("one kind");
         let sides = Registry::from_defs(vec![rl_rules::faction::FactionDef::new("ours")]).expect("one side");
@@ -616,11 +607,10 @@ mod tests {
 
     /// A worn thing whose use puts `hidden` on its wearer for twenty turns,
     /// held by the thing when `while_worn`, worn in the player's one slot
-    /// and used once; with statuses on and every status event heard.
+    /// and used once; with a status registered and every status event heard.
     fn used_while_worn(while_worn: bool) -> (App, Entity, Entity, rl_rules::StatusId) {
         let uses = format!(r#"[(on: "use", effects: [(kind: "Inflict", args: (status: "hidden", turns: 20, while_worn: {while_worn}))])]"#);
         let (mut app, player, plate) = rig_with(None, None, &uses, |app| {
-            app.add_plugins(crate::status::StatusPlugin);
             app.world_mut().resource_mut::<Registries>().statuses = Registry::from_defs(vec![rl_rules::StatusDef::new("hidden")]).unwrap();
             app.init_resource::<Heard>().add_systems(PostUpdate, hear);
         });

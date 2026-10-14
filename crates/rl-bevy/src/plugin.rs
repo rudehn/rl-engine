@@ -342,6 +342,11 @@ impl Plugin for CorePlugin {
             .configure_sets(Last, (EndOfFrame::Save, EndOfFrame::Bury, EndOfFrame::Restart).chain())
             .add_systems(Last, restart_runs.in_set(EndOfFrame::Restart))
             .add_systems(OnEnter(EngineState::Idle), begin_pending_run);
+        // Statuses and work are part of the loop rather than subsystems a
+        // game turns on: a game with no statuses registered has nothing to
+        // tick, and one that declares no kind of work has nothing to do.
+        crate::status::build(app);
+        crate::work::build(app);
         // Run on one thread. [`Turn`] is dozens of small systems, and it
         // runs once per actor turn rather than once per frame, so the
         // multi-threaded executor's per-system handoff is paid tens of
@@ -554,8 +559,7 @@ pub enum DecideSet {
     Sense,
     /// Who has noticed whom, for the actor about to decide, from
     /// [`StealthPlugin`](crate::stealth::StealthPlugin), and whether a
-    /// sleeper wakes to it, from
-    /// [`StatusPlugin`](crate::status::StatusPlugin).
+    /// sleeper wakes to it, from the [statuses](crate::status).
     Notice,
     /// What the actor about to decide may choose from, worked out before
     /// anything chooses: the abilities it can use, when the game added
@@ -1045,10 +1049,10 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "StatusPlugin needs")]
+    #[should_panic(expected = "TradePlugin needs")]
     fn a_plugin_without_the_plugin_it_depends_on_says_so_at_build() {
         let mut app = App::new();
-        app.add_plugins((MinimalPlugins, bevy::state::app::StatesPlugin, CorePlugin, crate::status::StatusPlugin));
+        app.add_plugins((MinimalPlugins, bevy::state::app::StatesPlugin, CorePlugin, crate::trade::TradePlugin));
         app.finish();
     }
 
@@ -1298,8 +1302,9 @@ mod tests {
     fn a_reset_declared_twice_is_run_once_and_a_resource_that_is_not_there_is_not_made() {
         let mut app = headless_app();
         app.insert_resource(crate::world::WorldMap::new(TileRegistry::standard().tables()));
+        let before = app.world().resource::<RunResets>().0.len();
         app.reset_on_new_run::<Kept>().reset_on_new_run::<Kept>();
-        assert_eq!(app.world().resource::<RunResets>().0.len(), 1, "declared twice, listed once");
+        assert_eq!(app.world().resource::<RunResets>().0.len(), before + 1, "declared twice, listed once");
 
         clear_run(app.world_mut());
         assert!(app.world().get_resource::<Kept>().is_none(), "a resource the game never inserted is not conjured by its reset");

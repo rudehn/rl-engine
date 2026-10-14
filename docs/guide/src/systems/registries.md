@@ -18,7 +18,7 @@ The engine never learns what any of those ids mean.
 
 There is no plugin here, and no system.
 `Registries` is a resource the game inserts, and a plugin that reads one says so with `needs::<Registries>` and a hint naming which registry it wants filled.
-`StatusPlugin`, `GasPlugin`, `FirePlugin`, `AbilitiesPlugin`, `PropsPlugin` and three of `rl-ui`'s view plugins all declare it, and every one that is missing is reported together when play begins.
+`GasPlugin`, `FirePlugin`, `AbilitiesPlugin`, `PropsPlugin` and three of `rl-ui`'s view plugins all declare it, and every one that is missing is reported together when play begins.
 A registry a game has no use for stays empty, and empty means none: no statuses means no badges on a health bar, no slots means nothing is worn.
 Registries name each other, so a game fills them in the order they refer to one another, the ones that name nothing first and the ones loaded through `Registries::names` after.
 

@@ -26,7 +26,11 @@
 //! and which it answers with [`Works::leave_off`]. A foe coming into the
 //! player's sight breaks it as [`BreakReason::FoeSighted`] before another
 //! turn of it is spent, and [`PlayerAtWork`] keeps who was already in
-//! sight. [`WorkPlugin`] is opt-in.
+//! sight.
+//!
+//! Part of [`CorePlugin`](crate::plugin::CorePlugin): what work a game has
+//! is the kinds it declares, and a game that declares none has no work to
+//! do, so there is nothing to turn on.
 
 use std::time::Duration;
 
@@ -560,37 +564,31 @@ pub fn resolve_toil(
 }
 
 /// Work: an actor doing one thing across many turns, the player's own
-/// long actions among them.
-///
-/// Opt-in. A mind that decides to work in a game without it is refused
-/// by the sweeper, the way a blow is in a game without combat.
-pub struct WorkPlugin;
-
-impl Plugin for WorkPlugin {
-    fn build(&self, app: &mut App) {
-        app.init_resource::<WorkKinds>()
-            .init_resource::<WorkPace>()
-            .init_resource::<PlayerAtWork>()
-            .reset_on_new_run::<PlayerAtWork>()
-            .add_message::<WorkBegan>()
-            .add_message::<WorkDone>()
-            .add_message::<WorkBroken>()
-            .add_message::<StopWork>()
-            // Harm and death are combat's; without combat nothing is ever
-            // hurt, and an empty queue says so.
-            .reads::<DamageDealt>()
-            .reads::<DeathEvent>()
-            .add_systems(Turn, break_work.in_set(crate::plugin::ReactSet::Settle))
-            .add_action::<BeginWork>()
-            .add_action::<Toil>()
-            .add_systems(Turn, (answer_stops, continue_work).chain().in_set(DecideSet::Sense))
-            .add_systems(Turn, (resolve_begins, resolve_toil).chain().in_set(ResolveSet::Act))
-            // Between the resolvers and the sweep rather than in a set of
-            // its own: after everything the player could have asked for,
-            // and before anything that would refuse it.
-            .add_systems(Turn, work_for_player.after(TurnSet::Resolve).before(TurnSet::Sweep))
-            .add_systems(Update, pace_player_work.before(EngineSet::Input));
-    }
+/// long actions among them, as [`CorePlugin`](crate::plugin::CorePlugin)
+/// registers it.
+pub(crate) fn build(app: &mut App) {
+    app.init_resource::<WorkKinds>()
+        .init_resource::<WorkPace>()
+        .init_resource::<PlayerAtWork>()
+        .reset_on_new_run::<PlayerAtWork>()
+        .add_message::<WorkBegan>()
+        .add_message::<WorkDone>()
+        .add_message::<WorkBroken>()
+        .add_message::<StopWork>()
+        // Harm and death are combat's; without combat nothing is ever
+        // hurt, and an empty queue says so.
+        .reads::<DamageDealt>()
+        .reads::<DeathEvent>()
+        .add_systems(Turn, break_work.in_set(crate::plugin::ReactSet::Settle))
+        .add_action::<BeginWork>()
+        .add_action::<Toil>()
+        .add_systems(Turn, (answer_stops, continue_work).chain().in_set(DecideSet::Sense))
+        .add_systems(Turn, (resolve_begins, resolve_toil).chain().in_set(ResolveSet::Act))
+        // Between the resolvers and the sweep rather than in a set of
+        // its own: after everything the player could have asked for,
+        // and before anything that would refuse it.
+        .add_systems(Turn, work_for_player.after(TurnSet::Resolve).before(TurnSet::Sweep))
+        .add_systems(Update, pace_player_work.before(EngineSet::Input));
 }
 
 #[cfg(test)]
@@ -612,14 +610,7 @@ mod tests {
     /// the word the work is called by.
     fn arena() -> (App, Point, Entity, WorkKindId) {
         let mut app = headless_app();
-        app.add_plugins((
-            crate::fov::FovPlugin,
-            crate::world::StreamingPlugin,
-            crate::combat::CombatPlugin,
-            MindsPlugin,
-            crate::remains::RemainsPlugin,
-            WorkPlugin,
-        ));
+        app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin, crate::combat::CombatPlugin, MindsPlugin, crate::remains::RemainsPlugin));
         app.add_work("mending");
         let kind = app.world().resource::<WorkKinds>().get("mending").expect("declared");
         let start = crate::testing::surface(&mut app);

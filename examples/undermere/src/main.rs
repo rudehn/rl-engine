@@ -266,7 +266,6 @@ fn add_panels(app: &mut App, screen: &Screen) {
         TradePanel::new(screen.shop),
         // What can be done here, when walking into it would be a guess.
         OffersPanel::new(screen.here).title("Here"),
-        InteractKey,
         // Every key `input::declare_controls` and the engine's screens
         // declare, with the hint that opens it in the rail's last row.
         ControlsPanel::new(screen.controls).hint(screen.hint),
@@ -374,19 +373,15 @@ fn main() -> AppExit {
     let screen = Screen::new();
     let mut app = App::new();
     // ANCHOR: typeface
-    // The window, the terminal in the game's own face, the map, the
-    // engine's base and where the run is saved, in memory for a scripted
-    // one; the game's subsystems are `UndermerePlugin`'s, added
-    // once there, since a second `CombatPlugin` would panic.
+    // The window, the terminal in the game's own face, the map and the
+    // engine's base; the game's subsystems, saving among them, are
+    // `UndermerePlugin`'s, added once there, since a second
+    // `CombatPlugin` would panic.
     let engine = RoguelikePlugins::new("Undermere", COLS, ROWS).cell(CELL).font(FONT).typeface(DEJAVU_SANS_MONO).map(screen.map).across(ACROSS);
-    app.add_plugins(engine.saves("undermere"))
+    app.add_plugins(engine)
         // ANCHOR_END: typeface
         .add_plugins(undermere::plugin::narrator())
         .insert_resource(Seed(seed))
-        // Remembered beside the save and apart from it. A scripted run's
-        // backend is in memory, so a capture or a replay starts on the
-        // defaults whatever the player chose.
-        .add_plugins(SettingsSavePlugin)
         .add_plugins(UndermerePlugin);
     add_panels(&mut app, &screen);
     tint_clouds(&mut app);

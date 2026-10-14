@@ -518,7 +518,7 @@ mod tests {
 
     #[test]
     fn a_row_says_what_an_actor_is_working_on_and_how_long_it_has_left() {
-        let mut stage = Stage::new_with((NearbyViewPlugin, rl_bevy::WorkPlugin), |app| {
+        let mut stage = Stage::new_with(NearbyViewPlugin, |app| {
             rl_bevy::AddWork::add_work(app, "mending");
         });
         let kind = stage.app.world().resource::<rl_bevy::WorkKinds>().get("mending").unwrap();

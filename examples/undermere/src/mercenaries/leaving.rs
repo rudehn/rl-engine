@@ -296,6 +296,9 @@ mod tests {
     #[test]
     fn a_fallen_mercenary_is_named_in_the_record_and_counted_among_its_numbers() {
         let (mut app, me, here) = arena_on(4, 3);
+        // Finished as `App::run` finishes it, which is when the engine's
+        // saving learns the game keeps records.
+        app.finish();
         let brenna = hired(&mut app, me, here.offset(2, 0), "Brenna");
         let goblin = monster(&mut app, "goblin", here.offset(1, 0));
         kill(&mut app, brenna, Some(goblin));

@@ -1253,7 +1253,6 @@ mod tests {
             crate::world::StreamingPlugin,
             crate::combat::CombatPlugin,
             crate::minds::MindsPlugin,
-            crate::status::StatusPlugin,
             crate::items::ItemsPlugin,
             AbilitiesPlugin,
         ));

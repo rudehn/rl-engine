@@ -1,5 +1,5 @@
 <!-- documents:
-     plugins: SavePlugin, UnloadPlugin, EndingViewPlugin
+     plugins: SavePlugin, EndingViewPlugin
      files: crates/rl-save/src/run.rs
             crates/rl-save/src/engine.rs
             crates/rl-save/src/backend.rs
@@ -25,12 +25,12 @@ What is saved reaches storage through one trait, so a game in a browser and a ga
 ## Turning it on
 
 `SavePlugin::new(slot)` is the loop around a save, and `.version(n)` is the number every save is matched against.
-It declares `needs::<Saves>`, the backend, with a hint naming `Saves::platform_default("my-game")`; it registers `PropKind` as a saved kind itself, inserts `SaveSlot` and the `Stash`, refreshes the stash in `Last`'s `EndOfFrame::Save` stage, and deletes the slot on entering `EngineState::Over` and in the `EndRun` schedule, unless the run is being left for a title.
+It inserts `Saves`, the backend, unless the game inserted its own: `Saves::platform_default` under the name `SavePlugin::new` is given, or memory when `rl_bevy::replay::scripted` says the run is a replay, a recording or a capture, so a scripted run neither starts on the player's save nor writes over it; it registers `PropKind` as a saved kind itself, inserts `SaveSlot` and the `Stash`, refreshes the stash in `Last`'s `EndOfFrame::Save` stage, and deletes the slot on entering `EngineState::Over` and in the `EndRun` schedule, unless the run is being left for a title.
 For a title it does three things more: it inserts `SavedRun`, the title's sign that there is a slot to continue from, and reads the slot into it in its `finish`, before the first frame, forgets the slot the moment `AbandonRun` is triggered, and writes a run left with `LeaveRun` while still in play down through `save_on_leaving`, in the save stage ahead of the teardown; [The title screen](title.md) is the page for those.
 `.on_arrival()` also writes the slot through `save_on_arrival` on any frame the player arrived somewhere while playing, so each place entered is a save point; it runs in the same stage, which comes before the dead are buried and a restart or a leaving tears the run down, so it never writes a world with no run in it.
 It registers no key: saving reads the whole world, so a game's save key is its own exclusive system and calls `save_run`.
-`UnloadPlugin` is the other half and is added on its own, needing the same `Saves`: it writes whatever is stashed on the frame the app is told to exit, after the stash was refreshed, which is the frame a native window's close button produces, and in a browser it also installs a listener for the page being hidden or unloaded.
-`EndingViewPlugin` is the third, and it is not a save at all: it holds what a game wants said on the screen a run ends on, needs `UiPlugin`, and is added by `GameMenuPanel` itself, so a game drawing its ending with the engine's menu adds nothing.
+`SavePlugin` is also the other half: it writes whatever is stashed on the frame the app is told to exit, after the stash was refreshed, which is the frame a native window's close button produces, and in a browser it also installs a listener for the page being hidden or unloaded.
+`EndingViewPlugin` is the second plugin, and it is not a save at all: it holds what a game wants said on the screen a run ends on, needs `UiPlugin`, and is added by `GameMenuPanel` itself, so a game drawing its ending with the engine's menu adds nothing.
 A game that wants the sections under a screen of its own adds the plugin alone and reads the view.
 Nothing here is on by default, and a game that registers no kinds and adds neither save plugin never reaches storage at all.
 
@@ -91,10 +91,10 @@ Registering is the step an implementation does not show, and it is the whole of 
 
 <!-- include: ../../../../examples/undermere/src/save.rs:register -->
 ```rust,no_run
-/// What the save is made of: the engine's plugins, the five kinds, and
-/// the ten resources; and the records, in their own slot.
+/// What the save is made of: the engine's plugin, which keeps the records
+/// in their own slot beside it, the five kinds, and the ten resources.
 pub fn register(app: &mut App) {
-    app.add_plugins((SavePlugin::new(SLOT).version(VERSION).on_arrival(), UnloadPlugin, RecordsSavePlugin))
+    app.add_plugins(SavePlugin::new(SLOT).version(VERSION).on_arrival())
         .save_kind::<ItemKind>()
         .save_kind::<Kind>()
         .save_kind::<Adventurer>()

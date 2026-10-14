@@ -42,8 +42,8 @@
 use bevy::prelude::*;
 use rl_bevy::{
     AbandonRun, Afflict, Afflicted, Burning, Counters, Dead, Emptied, EndOfFrame, EndRun, Ending, EngineState, Equipped, Health, Hidden, Inventory, Joined,
-    Leader, LeaveRun, MapId, Needs, OnMap, PlaceEntered, Position, Post, PropKind, Quests, Reads, Registries, Remains, SavedRun, Stack, Stair, Stocked,
-    Transition, Turns, Wearable, WorkKinds, Working,
+    Leader, LeaveRun, MapId, OnMap, PlaceEntered, Position, Post, PropKind, Quests, Reads, Registries, Remains, SavedRun, Stack, Stair, Stocked, Transition,
+    Turns, Wearable, WorkKinds, Working,
 };
 use rl_core::Point;
 use rl_rules::{Equipment, Work};
@@ -776,11 +776,19 @@ pub struct SaveSlot {
     pub version: u32,
 }
 
-/// Saving a run and continuing it, owned by the engine.
+/// Saving a run and continuing it, and everything else a game keeps
+/// between launches, owned by the engine.
 ///
-/// Needs [`Saves`], the backend. Keeps the [`Stash`] a turn behind the run
-/// so a window closed on it saves, and deletes the slot when the run ends
-/// or is given up, so nothing is continued past its end. With
+/// Inserts [`Saves`], the backend, unless the game inserted its own: the
+/// platform's default under the game's name, files beside the executable
+/// or browser storage, or memory when the run is
+/// [`scripted`](rl_bevy::replay::scripted), a replay, a recording or a
+/// capture, which plays keys against a seed of its own and so must neither
+/// start on the player's save nor write over it. Keeps the [`Stash`] a
+/// turn behind the run and writes it when the game is left, the page
+/// closed or the window's button pressed, so a run left without saying so
+/// is saved; and deletes the slot when the run ends or is given up, so
+/// nothing is continued past its end. With
 /// [`on_arrival`](Self::on_arrival) it also writes the slot whenever the
 /// player arrives somewhere. Registers no key: a game's save key calls
 /// [`save_run`].
@@ -790,6 +798,11 @@ pub struct SaveSlot {
 /// frame and keeps it current as the slot is written and deleted, writes a
 /// run left with [`LeaveRun`] down rather than forgetting it with its
 /// teardown, and forgets the slot the moment [`AbandonRun`] is triggered.
+///
+/// Apart from the run, in slots of their own that no run's ending forgets:
+/// what the player chose in the [settings](crate::settings), and, in a
+/// game that keeps them with `RecordsPlugin`, every run's
+/// [record](crate::records).
 pub struct SavePlugin {
     slot: String,
     version: u32,
@@ -797,9 +810,17 @@ pub struct SavePlugin {
 }
 
 impl SavePlugin {
-    /// Saves to `slot`, at version one.
-    pub fn new(slot: impl Into<String>) -> Self {
-        Self { slot: slot.into(), version: 1, on_arrival: false }
+    /// Saves the game called `name`: its run to the slot `name`, at
+    /// version one, in the player's saves of that name, which name its
+    /// browser storage.
+    pub fn new(name: impl Into<String>) -> Self {
+        Self { slot: name.into(), version: 1, on_arrival: false }
+    }
+
+    /// Where a run that is, or is not, `scripted` saves, when the game
+    /// inserted no [`Saves`] of its own.
+    fn saves(&self, scripted: bool) -> Saves {
+        if scripted { Saves::new(crate::backend::MemoryBackend::default()) } else { Saves::platform_default(&self.slot) }
     }
 
     /// The game's version of its saved shapes. Bump it, and say why next to
@@ -821,6 +842,9 @@ impl SavePlugin {
 
 impl Plugin for SavePlugin {
     fn build(&self, app: &mut App) {
+        if !app.world().contains_resource::<Saves>() {
+            app.insert_resource(self.saves(rl_bevy::replay::scripted()));
+        }
         app.init_resource::<SaveRegistry>()
             .save_kind::<PropKind>()
             .save_kind::<Stair>()
@@ -830,7 +854,6 @@ impl Plugin for SavePlugin {
             // start, even without a backend, since it says a slot exists.
             .init_resource::<SavedRun>()
             .insert_resource(SaveSlot { slot: self.slot.clone(), version: self.version })
-            .needs::<Saves>("SavePlugin", "`Saves`, the backend runs are written through, such as the one `RoguelikePlugins::saves(\"my-game\")` inserts, which keeps a scripted run in memory, or `Saves::platform_default(\"my-game\")`")
             .reads::<LeaveRun>()
             // Exclusive, so it conflicts with everything else in `Last`; the
             // engine's own are ordered against it by `EndOfFrame`, and what
@@ -850,12 +873,16 @@ impl Plugin for SavePlugin {
             app.init_resource::<ArrivedThisFrame>()
                 .add_systems(Last, (note_arrivals, save_on_arrival.ambiguous_with_all()).chain().in_set(EndOfFrame::Save).before(refresh_stash));
         }
+        crate::unload::build(app);
+        crate::settings::build(app);
     }
 
     /// Reads what the slot holds into [`SavedRun`] once every plugin has
     /// built and before the first frame, so a title's first look at it,
     /// and the first key read against it, are the truth. A slot this build
-    /// cannot read is left where it is, for a new run to ask about.
+    /// cannot read is left where it is, for a new run to ask about. Then
+    /// the settings and the records are recalled, and on the web the
+    /// page's handler for the stash is installed.
     fn finish(&self, app: &mut App) {
         let world = app.world_mut();
         // Without a backend there is nothing to read, and play beginning
@@ -872,6 +899,9 @@ impl Plugin for SavePlugin {
             }
         };
         world.insert_resource(saved);
+        crate::settings::finish(app);
+        crate::records::finish(app);
+        crate::unload::finish(app);
     }
 }
 
@@ -1096,7 +1126,7 @@ mod tests {
 
     fn game_with(saves: Saves, plugin: SavePlugin) -> (App, Point) {
         let mut app = rl_bevy::plugin::headless_app();
-        app.add_plugins((FovPlugin, StreamingPlugin, CombatPlugin, StatusPlugin, ItemsPlugin, RemainsPlugin, rl_bevy::PropsPlugin, rl_bevy::WorkPlugin));
+        app.add_plugins((FovPlugin, StreamingPlugin, CombatPlugin, ItemsPlugin, RemainsPlugin, rl_bevy::PropsPlugin));
         rl_bevy::AddWork::add_work(&mut app, "mending");
         let start = rl_bevy::testing::surface(&mut app);
         rl_bevy::testing::two_sides(&mut app);
@@ -1859,5 +1889,29 @@ mod tests {
         assert!(!backend.exists("run"), "nothing to continue");
         assert_eq!(app.world().resource::<Stash>().pending(), None, "nor to write back on the way out");
         assert_eq!(*app.world().resource::<SavedRun>(), SavedRun::Empty);
+    }
+
+    /// A game, or a test, that inserted a backend of its own keeps it: the
+    /// plugin inserts the player's saves only where there are none, so a
+    /// headless test's memory backend is never swapped for the disk.
+    #[test]
+    fn a_backend_the_game_inserted_is_the_one_its_runs_are_saved_through() {
+        let backend = std::sync::Arc::new(MemoryBackend::default());
+        let mut app = rl_bevy::plugin::headless_app();
+        app.insert_resource(Saves(backend.clone())).add_plugins(SavePlugin::new("warren"));
+        app.world().resource::<Saves>().persist("warren", "kept").unwrap();
+        assert_eq!(backend.load("warren").unwrap().as_deref(), Some("kept"));
+    }
+
+    /// A scripted run's saves are in memory, of their own: what it writes
+    /// is not in the player's saves of the same name.
+    #[test]
+    fn a_scripted_run_never_touches_the_players_save() {
+        let slot = format!("rl-save-unit-{}", std::process::id());
+        let real = Saves::platform_default(&slot);
+        let scripted = SavePlugin::new(slot.clone()).saves(true);
+        scripted.persist(&slot, "a scripted run").unwrap();
+        assert_eq!(real.load(&slot).unwrap(), None, "the player's slot is as it was");
+        assert!(scripted.exists(&slot), "and the scripted run has one of its own");
     }
 }

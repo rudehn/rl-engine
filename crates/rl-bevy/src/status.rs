@@ -14,8 +14,10 @@
 //! ([`wake_on_noise`]), or by a foe close by that it notices
 //! ([`wake_on_sight`]). [`Sleepers`] answers who is asleep, which a blow
 //! asks before it lands, since a sleeper is unaware of whoever strikes it.
-//! Opt-in: a game that never adds [`StatusPlugin`] pays nothing, and the
-//! statuses themselves are content, in [`Registries`].
+//! Part of [`CorePlugin`](crate::plugin::CorePlugin): the statuses
+//! themselves are content, in [`Registries`], and a game that registers
+//! none has nothing to tick, so there is nothing to turn on. Without
+//! `Registries` at all nobody is afflicted.
 
 use bevy::prelude::*;
 use rl_core::turn::BASE_ACTION_COST;
@@ -125,16 +127,18 @@ pub enum StatusEvent {
 pub struct FellAsleep(Vec<Entity>);
 
 /// Applies and removes statuses as asked, and notes who was put to sleep
-/// in [`FellAsleep`]. With no [`StatusPlugin`], and so no `FellAsleep` and
-/// nothing to wake anyone on harm, there is nothing to note.
+/// in [`FellAsleep`]. With no [`Registries`] there is no status to apply.
+/// `FellAsleep` is read as optional so the system can run on its own, in a
+/// game's test of what it afflicts, with nothing to wake anyone on harm.
 pub fn resolve_afflictions(
     mut afflicts: MessageReader<Afflict>,
     mut cures: MessageReader<Cure>,
     mut events: MessageWriter<StatusEvent>,
     mut fell: Option<ResMut<FellAsleep>>,
-    registries: Res<Registries>,
+    registries: Option<Res<Registries>>,
     mut actors: Query<(&mut Afflicted, &mut StatBlock)>,
 ) {
+    let Some(registries) = registries.as_deref() else { return };
     for a in afflicts.read() {
         if let Some(fell) = fell.as_deref_mut()
             && registries.statuses.get(a.status).sleeps
@@ -170,11 +174,12 @@ pub fn tick_statuses(
     mut damage: MessageWriter<DamageEvent>,
     mut heals: MessageWriter<Heal>,
     mut events: MessageWriter<StatusEvent>,
-    registries: Res<Registries>,
+    registries: Option<Res<Registries>>,
     map: Res<WorldMap>,
     mut actors: Query<(Entity, &mut Afflicted, &mut StatBlock, Option<&OnMap>), With<Actor>>,
 ) {
     let turns = ends.read().count();
+    let Some(registries) = registries.as_deref() else { return };
     if turns == 0 {
         return;
     }
@@ -224,9 +229,10 @@ pub fn tick_statuses(
 pub fn pass_held_turns(
     mut acting: ResMut<Acting>,
     mut spent: MessageWriter<ActionDone>,
-    registries: Res<Registries>,
+    registries: Option<Res<Registries>>,
     holders: Query<(Entity, &Afflicted), With<MyTurn>>,
 ) {
+    let Some(registries) = registries.as_deref() else { return };
     for (actor, statuses) in &holders {
         if statuses.holding(&registries.statuses).is_none() {
             continue;
@@ -243,7 +249,7 @@ pub fn pass_held_turns(
 /// Read off the statuses as they are now rather than kept in a marker
 /// component beside them, so a sleeper woken by the blow of one pass is
 /// awake to the blow of the next, whichever stage of a pass asks. Nobody is
-/// asleep in a game with no [`Registries`] or no [`StatusPlugin`].
+/// asleep in a game with no [`Registries`].
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Sleepers<'w, 's> {
     registries: Option<Res<'w, Registries>>,
@@ -286,17 +292,18 @@ pub fn wake_on_harm(
     mut dealt: MessageReader<DamageDealt>,
     mut fell: ResMut<FellAsleep>,
     mut events: MessageWriter<StatusEvent>,
-    registries: Res<Registries>,
+    registries: Option<Res<Registries>>,
     mut actors: Query<(&mut Afflicted, &mut StatBlock)>,
 ) {
-    let sleeps = |status: StatusId| registries.statuses.get(status).sleeps;
     let fresh = std::mem::take(&mut fell.0);
+    let Some(registries) = registries.as_deref() else { return };
+    let sleeps = |status: StatusId| registries.statuses.get(status).sleeps;
     for d in dealt.read() {
         if d.hit.status.is_some_and(sleeps) || fresh.contains(&d.target) {
             continue;
         }
         let Ok((mut statuses, mut stats)) = actors.get_mut(d.target) else { continue };
-        wake(d.target, &mut statuses.0, &mut stats.0, &registries, &mut events);
+        wake(d.target, &mut statuses.0, &mut stats.0, registries, &mut events);
     }
 }
 
@@ -358,10 +365,10 @@ pub fn wake_on_sight(
     others: Query<Stirring, (With<Actor>, Without<Dead>)>,
     rules: Option<Res<CombatRules>>,
     stealth: crate::stealth::StealthRunning,
-    registries: Res<Registries>,
+    registries: Option<Res<Registries>>,
     mut events: MessageWriter<StatusEvent>,
 ) {
-    let Some(rules) = rules.as_deref() else { return };
+    let (Some(rules), Some(registries)) = (rules.as_deref(), registries.as_deref()) else { return };
     for (sleeper, pos, faction, sight, aware, on, mut statuses, mut stats) in &mut sleepers {
         let (Some(mine), Some(sight)) = (faction, sight) else { continue };
         if statuses.sleeping(&registries.statuses).is_none() {
@@ -382,50 +389,45 @@ pub fn wake_on_sight(
             close && noticed
         });
         if stirs {
-            wake(sleeper, &mut statuses.0, &mut stats.0, &registries, &mut events);
+            wake(sleeper, &mut statuses.0, &mut stats.0, registries, &mut events);
         }
     }
 }
 
-/// Statuses: what is afflicted, what it costs each turn, what cures it.
+/// Statuses: what is afflicted, what it costs each turn, what cures it,
+/// as [`CorePlugin`](crate::plugin::CorePlugin) registers them.
 ///
-/// Ticks go through the damage pipeline, so combat comes with it, and
-/// [`Registries`] must be in place before play begins, with the statuses in it.
-/// A sleeper wakes to harm and to a foe close by with this alone, and to a
-/// noise where the game added the
+/// Ticks go through the damage pipeline, and so land only where the game
+/// added combat to apply them; the messages are registered here either
+/// way, so a game without combat has statuses that hold and sleep and
+/// harm nobody. A sleeper wakes to harm and to a foe close by with this
+/// alone, and to a noise where the game added the
 /// [`NoisePlugin`](crate::noise::NoisePlugin) as well, which wakes it.
 ///
 /// Every [`Actor`] is given an empty [`Afflicted`] and [`StatBlock`] the
 /// moment it is spawned, so a monster spawned without them still takes a
-/// status rather than silently shrugging it off. Registered here and not
-/// on `Actor` itself, so a game without statuses carries neither.
-pub struct StatusPlugin;
-
-impl Plugin for StatusPlugin {
-    fn build(&self, app: &mut App) {
-        use crate::plugin::{DecideSet, Needs, ResolveSet, Turn};
-        // Before anything spawns, which is when Bevy allows it; an actor
-        // spawned before this plugin was added is a setup Bevy refuses.
-        // `try` for the stats, which the items plugin requires as well so
-        // gear has somewhere to land, whichever of the two is added first.
-        app.register_required_components::<Actor, Afflicted>();
-        let _ = app.try_register_required_components::<Actor, StatBlock>();
-        app.add_message::<Afflict>()
-            .add_message::<Cure>()
-            .add_message::<StatusEvent>()
-            .init_resource::<FellAsleep>()
-            .needs::<Registries>("StatusPlugin", "`Registries`, with the statuses, which may be empty")
-            .add_systems(Turn, pass_held_turns.in_set(DecideSet::Sense))
-            // After the noticing, which is stealth's and runs only if the
-            // game added it; with no stealth there is nothing to be after.
-            .add_systems(Turn, wake_on_sight.in_set(DecideSet::Notice).after(crate::stealth::update_awareness))
-            .add_systems(Turn, (resolve_afflictions, tick_statuses).chain().in_set(ResolveSet::Effects))
-            .add_systems(Turn, wake_on_harm.in_set(crate::plugin::ReactSet::Settle));
-    }
-
-    fn finish(&self, app: &mut App) {
-        crate::plugin::depends_on::<crate::combat::CombatPlugin>(app, "StatusPlugin");
-    }
+/// status rather than silently shrugging it off.
+pub(crate) fn build(app: &mut App) {
+    use crate::plugin::{DecideSet, ResolveSet, Turn};
+    // Before anything spawns, which is when Bevy allows it: `CorePlugin`
+    // is the first plugin a game adds.
+    app.register_required_components::<Actor, Afflicted>();
+    app.register_required_components::<Actor, StatBlock>();
+    app.add_message::<Afflict>()
+        .add_message::<Cure>()
+        .add_message::<StatusEvent>()
+        // What a tick deals and mends, and the harm that wakes a sleeper:
+        // combat's, which a game without it never resolves.
+        .add_message::<DamageEvent>()
+        .add_message::<Heal>()
+        .add_message::<DamageDealt>()
+        .init_resource::<FellAsleep>()
+        .add_systems(Turn, pass_held_turns.in_set(DecideSet::Sense))
+        // After the noticing, which is stealth's and runs only if the
+        // game added it; with no stealth there is nothing to be after.
+        .add_systems(Turn, wake_on_sight.in_set(DecideSet::Notice).after(crate::stealth::update_awareness))
+        .add_systems(Turn, (resolve_afflictions, tick_statuses).chain().in_set(ResolveSet::Effects))
+        .add_systems(Turn, wake_on_harm.in_set(crate::plugin::ReactSet::Settle));
 }
 
 #[cfg(test)]
@@ -465,7 +467,7 @@ mod tests {
     #[test]
     fn a_status_ticks_damage_each_turn_modifies_stats_and_expires() {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin, StatusPlugin, crate::world::StreamingPlugin));
+        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin, crate::world::StreamingPlugin));
         let start = crate::testing::surface(&mut app);
         let kinds = Registry::from_defs(vec![DamageKind::new("venom")]).unwrap();
         let venom_kind = kinds.expect("venom");
@@ -537,7 +539,7 @@ mod tests {
     #[test]
     fn a_status_begun_is_applied_one_kept_up_is_renewed_and_one_that_changed_nothing_is_neither() {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin, StatusPlugin, crate::world::StreamingPlugin));
+        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin, crate::world::StreamingPlugin));
         let start = crate::testing::surface(&mut app);
         crate::testing::two_sides(&mut app);
         let defs = Registry::from_defs(vec![StatusDef::new("dazed"), StatusDef::new("bleeding").stacking(Stacking::Extend)]).unwrap();
@@ -572,7 +574,7 @@ mod tests {
     #[test]
     fn a_status_that_mends_restores_health_each_turn_and_stops_at_the_most() {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin, StatusPlugin, crate::world::StreamingPlugin));
+        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin, crate::world::StreamingPlugin));
         let start = crate::testing::surface(&mut app);
         let facs = Registry::from_defs(vec![FactionDef::new("us")]).unwrap();
         let defs = Registry::from_defs(vec![StatusDef::new("mending").mends(4).boon()]).unwrap();
@@ -603,7 +605,7 @@ mod tests {
     /// first runs; and a player to pass the turns, holding the first.
     fn held_arena(extra: impl FnOnce(&mut App)) -> (App, Point, Entity, StatusId) {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin, crate::combat::CombatPlugin, crate::minds::MindsPlugin, StatusPlugin));
+        app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin, crate::combat::CombatPlugin, crate::minds::MindsPlugin));
         extra(&mut app);
         let start = crate::testing::surface(&mut app);
         crate::testing::two_sides(&mut app);
@@ -725,7 +727,7 @@ mod tests {
     #[test]
     fn a_worker_caught_by_a_status_that_holds_does_no_work_on_the_turns_it_loses() {
         let (mut app, start, player, snared) = held_arena(|app| {
-            app.add_plugins(crate::work::WorkPlugin).add_work("mending");
+            app.add_work("mending");
         });
         let kind = app.world().resource::<WorkKinds>().get("mending").expect("declared");
         let worker = app.world_mut().spawn((Actor, Blocks, Position(start.offset(3, 0)), Health::full(5), Working(Work::new(kind, 4)))).id();
@@ -758,7 +760,7 @@ mod tests {
 
     fn bedroom(extra: impl FnOnce(&mut App)) -> Bedroom {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin, crate::combat::CombatPlugin, crate::minds::MindsPlugin, StatusPlugin));
+        app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin, crate::combat::CombatPlugin, crate::minds::MindsPlugin));
         extra(&mut app);
         let start = crate::testing::surface(&mut app);
         let sides = crate::testing::two_sides(&mut app);

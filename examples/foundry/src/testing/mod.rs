@@ -73,7 +73,6 @@ pub fn headless_without_foundry(seed: RunSeed) -> App {
         FovPlugin,
         CombatPlugin,
         MindsPlugin,
-        StatusPlugin,
         ItemsPlugin,
         ThrowingPlugin,
         LightingPlugin,

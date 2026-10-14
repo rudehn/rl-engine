@@ -27,7 +27,7 @@ Both of those sit inside `ResolveSet::Fields`, after the turn's actions and the 
 Fire runs before gas, so a fire that burns a vapour away and gives off smoke has that smoke spread on the same turn.
 Each is opt-in on its own, because a game may want smoke and no fire, or fire and nothing in the air.
 `FirePlugin` declares `needs::<FireRules>`, `needs::<Registries>` for which gases burn, and `needs::<Seed>` for the rolls; `GasPlugin` declares `needs::<Registries>` for the gases themselves and `needs::<Seed>` for what its spills and swirls are hashed from.
-Both check again as play begins that what the content asks for can happen: fire that inflicts a status wants `StatusPlugin`, fire that smokes wants `GasPlugin`, and a gas that inflicts a status wants `StatusPlugin`, each refused by name rather than left to do nothing.
+Fire checks again as play begins that what the content asks for can happen: fire that smokes wants `GasPlugin`, refused by name rather than left to do nothing.
 Adding `FirePlugin` registers the `Ignite` effect, which writes a `Kindle` for every cell a landing covers, and `GasPlugin` registers `Emit`, which writes a `Release`, so an ability, a trap or a grenade reaches either field without knowing there is a field.
 Both reset on a new run, and both declare `depends_on::<CorePlugin>`.
 

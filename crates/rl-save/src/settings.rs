@@ -17,7 +17,6 @@
 use std::collections::BTreeMap;
 
 use bevy::prelude::*;
-use rl_bevy::plugin::Needs;
 use rl_bevy::settings::Settings;
 
 use crate::backend::{SaveBackend, Saves};
@@ -25,48 +24,43 @@ use crate::backend::{SaveBackend, Saves};
 /// The slot settings are remembered in.
 pub const SETTINGS_SLOT: &str = "settings";
 
-/// Recalls what was remembered before the first frame, and writes it down
-/// when a setting changes.
-///
-/// Opt-in: without it the settings work and start on their defaults every
-/// launch. What it recalls is what was declared in a plugin's `build`; a
-/// setting declared later starts on its default.
-pub struct SettingsSavePlugin;
-
 /// What the slot is known to hold, so a frame that changed nothing, and
 /// the load itself, write nothing.
 #[derive(Resource, Debug, Default)]
 struct Remembered(BTreeMap<String, String>);
 
-impl Plugin for SettingsSavePlugin {
-    fn build(&self, app: &mut App) {
-        app.init_resource::<Settings>()
-            .init_resource::<Remembered>()
-            .needs::<Saves>("SettingsSavePlugin", "`Saves`, the backend settings are remembered through, such as the one `RoguelikePlugins::saves(\"my-game\")` inserts, which keeps a scripted run in memory, or `Saves::platform_default(\"my-game\")`")
-            .add_systems(Last, remember.run_if(resource_changed::<Settings>).run_if(resource_exists::<Saves>));
-    }
+/// Writes the settings down whenever one changes. Part of
+/// [`SavePlugin`](crate::SavePlugin)'s build; without it the settings work
+/// and start on their defaults every launch.
+pub(crate) fn build(app: &mut App) {
+    // In the save stage, so it is ordered against the restart that
+    // follows rather than left to the executor.
+    app.init_resource::<Settings>()
+        .init_resource::<Remembered>()
+        .add_systems(Last, remember.run_if(resource_changed::<Settings>).in_set(rl_bevy::EndOfFrame::Save));
+}
 
-    /// In `finish`, when every plugin has built and so declared its
-    /// settings, and before any plugin's `cleanup`, where the renderer
-    /// puts the window in the mode it finds chosen.
-    fn finish(&self, app: &mut App) {
-        let Some(saves) = app.world().get_resource::<Saves>() else { return };
-        let kept = match saves.load(SETTINGS_SLOT) {
-            Ok(Some(text)) => ron::from_str::<BTreeMap<String, String>>(&text).unwrap_or_else(|e| {
-                warn!("the remembered settings could not be read, so the defaults stand: {e}");
-                BTreeMap::new()
-            }),
-            Ok(None) => BTreeMap::new(),
-            Err(e) => {
-                warn!("the remembered settings could not be loaded, so the defaults stand: {e}");
-                BTreeMap::new()
-            }
-        };
-        let mut settings = app.world_mut().resource_mut::<Settings>();
-        settings.recall(&kept);
-        let now = settings.remembered();
-        app.world_mut().resource_mut::<Remembered>().0 = now;
-    }
+/// Recalls what was remembered, in [`SavePlugin`](crate::SavePlugin)'s
+/// `finish`: when every plugin has built and so declared its settings, and
+/// before any plugin's `cleanup`, where the renderer puts the window in the
+/// mode it finds chosen. A setting declared later starts on its default.
+pub(crate) fn finish(app: &mut App) {
+    let Some(saves) = app.world().get_resource::<Saves>() else { return };
+    let kept = match saves.load(SETTINGS_SLOT) {
+        Ok(Some(text)) => ron::from_str::<BTreeMap<String, String>>(&text).unwrap_or_else(|e| {
+            warn!("the remembered settings could not be read, so the defaults stand: {e}");
+            BTreeMap::new()
+        }),
+        Ok(None) => BTreeMap::new(),
+        Err(e) => {
+            warn!("the remembered settings could not be loaded, so the defaults stand: {e}");
+            BTreeMap::new()
+        }
+    };
+    let mut settings = app.world_mut().resource_mut::<Settings>();
+    settings.recall(&kept);
+    let now = settings.remembered();
+    app.world_mut().resource_mut::<Remembered>().0 = now;
 }
 
 /// Writes the settings down when they are not what the slot holds.
@@ -94,12 +88,11 @@ mod tests {
     /// An app with two settings declared and `backend` to remember them
     /// in, finished the way `App::run` finishes one.
     fn game(backend: &Arc<MemoryBackend>) -> App {
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
+        let mut app = rl_bevy::plugin::headless_app();
         app.insert_resource(Saves(backend.clone()));
         app.add_setting(Setting::new("glow", "Display", "Glow", ["Off", "On"]));
         app.add_setting(Setting::new("pace", "Play", "Pace", ["Slow", "Even", "Fast"]).default_choice(1));
-        app.add_plugins(SettingsSavePlugin);
+        app.add_plugins(crate::run::SavePlugin::new("run"));
         app.finish();
         app.cleanup();
         app
@@ -177,13 +170,5 @@ mod tests {
         let text = backend.load(SETTINGS_SLOT).unwrap().expect("written");
         let kept: BTreeMap<String, String> = ron::from_str(&text).unwrap();
         assert_eq!(kept, BTreeMap::from([("glow".to_string(), "Off".to_string()), ("pace".to_string(), "Fast".to_string())]));
-    }
-
-    #[test]
-    fn the_plugin_says_it_needs_a_backend() {
-        let mut app = rl_bevy::plugin::headless_app();
-        app.add_plugins(SettingsSavePlugin);
-        let missing = app.world().resource::<rl_bevy::plugin::Requirements>().missing(app.world());
-        assert!(missing.iter().any(|m| m.contains("SettingsSavePlugin") && m.contains("Saves")), "{missing:?}");
     }
 }

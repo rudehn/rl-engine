@@ -828,6 +828,9 @@ mod tests {
     #[test]
     fn a_death_ends_in_a_record_naming_what_killed_and_where() {
         let mut app = headless(RunSeed(8));
+        // Finished as `App::run` finishes it, which is when the engine's
+        // saving learns the game keeps records.
+        app.finish();
         let me = arrive(&mut app, map_of(3));
         clear_monsters(&mut app);
         let beside = at(&app, me).offset(1, 0);

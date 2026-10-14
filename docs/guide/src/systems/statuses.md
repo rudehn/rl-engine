@@ -1,6 +1,7 @@
 <!-- documents:
-     plugins: StatusPlugin, FactsPlugin
+     plugins: CorePlugin, FactsPlugin
      files: crates/rl-bevy/src/status.rs
+            crates/rl-bevy/src/plugin.rs
             crates/rl-bevy/src/combat.rs
             crates/rl-bevy/src/events.rs
             crates/rl-bevy/src/items.rs
@@ -29,7 +30,7 @@ Facts are the other end of the same idea: an outcome as data, tallied into count
 
 ## Turning it on
 
-`StatusPlugin` declares `needs::<Registries>`, hinting for statuses that may be empty, and its `finish` declares `depends_on::<CombatPlugin>`, because a tick's damage goes down the pipeline a sword's does.
+Statuses are part of `CorePlugin`: a game that registers none has nothing to tick, and without `Registries` at all nobody is afflicted. A tick's damage goes down the pipeline a sword's does, so it lands only in a game with `CombatPlugin`.
 It registers `Afflict`, `Cure` and `StatusEvent`, and chains `resolve_afflictions` ahead of `tick_statuses`, both in `ResolveSet::Effects`, which runs before `ResolveSet::Damage` so a tick lands in the pass that produced it.
 It runs `pass_held_turns` in `DecideSet::Sense`, where work claims a worker's turns, before any mind or player is asked.
 Every `Actor` is given an empty `Afflicted` and an empty `StatBlock` the moment it is spawned, so a monster spawned without either still takes a status rather than shrugging it off; the stats are registered with `try_register_required_components`, since the items plugin asks for the same one and the order a game lists its plugins in must not matter.
@@ -47,7 +48,7 @@ Its mind is not asked what to do, though its sight is still recast and its notic
 The hold ends when the status does, by its time or by a cure, so a status a blow breaks is the game's `Cure` on the blow.
 A status that sleeps holds its holder the same way, written `sleeps: true`, and ends itself the moment it is woken rather than waiting for the game's own `Cure`: `Sleepers::asleep` answers who is asleep by reading `Statuses::sleeping` off its current statuses, and `Statuses::wake` cures every one that sleeps and reports each with `StatusEvent::Cured`.
 A sleeper senses less than a held actor still does: its sight is recast and its noticing rolled, but only within `SLEEPER_REACH`, two cells, and only by its chance there, never by its certain radius, so a hider can stand over one without waking it.
-`StatusPlugin`'s `wake_on_harm`, in `TurnSet::React`, wakes whoever harm landed on this pass, armor stopped at nothing included, since it was felt; the blow that woke it was rolled on it as on the unaware.
+`wake_on_harm`, in `ReactSet::Settle`, wakes whoever harm landed on this pass, armor stopped at nothing included, since it was felt; the blow that woke it was rolled on it as on the unaware.
 Its `wake_on_sight`, in `DecideSet::Notice` on the sleeper's own turn after noticing runs, wakes it to a foe it notices within that reach, by the same roll stealth's own noticing uses when stealth runs, or on sight alone when the foe does not hide or sees on sight regardless; a sleeper watches nobody outside the reach.
 `NoisePlugin` adds a third, `wake_on_noise` in `TurnSet::Listen`, which wakes whoever heard a noise this pass with its `Hearing` threshold left on it, so a sleeper with no hearing sleeps through any noise and a game with statuses and no noise has nothing to wake one from it.
 An unseen status hides whoever holds it from every mind while it lasts and ends when its holder attacks, which `StealthPlugin` decides and this plugin knows nothing of; without stealth the flag is carried and read by nobody.

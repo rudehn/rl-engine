@@ -1667,7 +1667,7 @@ mod tests {
     /// A stage with consumables and throwing, and `triggers` built for a
     /// thing to carry.
     fn with_things(triggers: &str) -> (Stage, rl_bevy::Triggers) {
-        let stage = Stage::new_with((NarratorPlugin::default(), rl_bevy::ConsumablesPlugin, rl_bevy::ThrowingPlugin), |app| {
+        let stage = Stage::new_with((NarratorPlugin::default(), rl_bevy::EffectsPlugin, rl_bevy::ThrowingPlugin), |app| {
             app.add_engine_effects();
         });
         let specs: Vec<rl_rules::TriggerSpec> = rl_rules::Names::new().load_list(triggers).expect("the triggers parse");
@@ -1913,7 +1913,7 @@ mod tests {
     /// and never as "you".
     #[test]
     fn a_mind_seen_using_what_it_carries_is_named_as_the_one_using_it() {
-        let mut stage = Stage::new_with((NarratorPlugin::default(), rl_bevy::ConsumablesPlugin, MindsPlugin), |app| {
+        let mut stage = Stage::new_with((NarratorPlugin::default(), rl_bevy::EffectsPlugin, MindsPlugin), |app| {
             app.add_engine_effects();
         });
         let specs: Vec<rl_rules::TriggerSpec> =

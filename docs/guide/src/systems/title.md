@@ -46,7 +46,7 @@ The settings screen is moved to stand on the menu while the title is up, as wide
 `TitleWords` is what each row and the question say, changed with `TitlePanel::words`.
 `MenuItem::MainMenu` is the pause and end menus' row back, and it writes `LeaveRun`.
 With `SavePlugin`, a run left while still in play is written to the slot as it stands by `save_on_leaving` in `EndOfFrame::Save`, ahead of the teardown, which then keeps the slot rather than deleting it; a run that is over, or ends in the frame it is left, is only left, and its save forgotten.
-`save_run`, `forget_save` and `UnloadPlugin`'s `flush_on_exit` each write what they did to the slot into `SavedRun`.
+`save_run`, `forget_save` and `SavePlugin`'s `flush_on_exit` each write what they did to the slot into `SavedRun`.
 
 ## Using it
 

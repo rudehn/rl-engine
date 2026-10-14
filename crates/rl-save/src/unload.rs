@@ -10,9 +10,10 @@
 //! [`Stash`] is the last save the game encoded, kept in memory. The game
 //! refreshes it as often as it likes, every turn or every few, and clears
 //! it when a save must not outlive the moment, such as the death that
-//! deletes the run. [`UnloadPlugin`] writes whatever is stashed through
-//! [`Saves`] when the page is being left and, on every platform, when the
-//! app exits, so a native window closed by its button saves too.
+//! deletes the run. [`SavePlugin`](crate::SavePlugin) writes whatever is
+//! stashed through [`Saves`] when the page is being left and, on every
+//! platform, when the app exits, so a native window closed by its button
+//! saves too.
 //!
 //! The hard-won part is that the handler must be synchronous and must
 //! outlive the frame that installed it: the closure is leaked on purpose,
@@ -22,7 +23,7 @@
 use std::sync::{Arc, Mutex};
 
 use bevy::prelude::*;
-use rl_bevy::{Needs, SavedRun};
+use rl_bevy::SavedRun;
 
 use crate::backend::{SaveBackend, SaveError, Saves};
 use crate::run::SaveSlot;
@@ -66,48 +67,41 @@ impl Stash {
 }
 
 /// Writes the [`Stash`] when the game is left: on the web when the page is
-/// hidden or unloaded, and everywhere when the app exits.
+/// hidden or unloaded, and everywhere when the app exits. Part of
+/// [`SavePlugin`](crate::SavePlugin)'s build.
 ///
-/// Needs [`Saves`], the backend it writes through. The game keeps the stash
-/// fresh and clears it when a save must not survive; this plugin decides
-/// nothing about either.
-pub struct UnloadPlugin;
+/// The game keeps the stash fresh and clears it when a save must not
+/// survive; this decides nothing about either.
+pub(crate) fn build(app: &mut App) {
+    app.init_resource::<Stash>()
+        // In the save stage, after the stash is refreshed, so what is
+        // written on the way out is the run as it stood last.
+        .add_systems(Last, flush_on_exit.in_set(rl_bevy::EndOfFrame::Save).after(crate::run::refresh_stash));
+}
 
-impl Plugin for UnloadPlugin {
-    fn build(&self, app: &mut App) {
-        app.init_resource::<Stash>()
-            .needs::<Saves>("UnloadPlugin", "`Saves`, the backend the stash is written through, such as the one `RoguelikePlugins::saves(\"my-game\")` inserts, which keeps a scripted run in memory, or `Saves::platform_default(\"my-game\")`")
-            // In the save stage, after the stash is refreshed, so what is
-            // written on the way out is the run as it stood last.
-            .add_systems(Last, flush_on_exit.in_set(rl_bevy::EndOfFrame::Save).after(crate::run::refresh_stash));
+/// The page's handler, installed once every plugin has built: it holds
+/// the same backend the game saves through, which is why `Saves` shares
+/// its backend rather than owning it.
+pub(crate) fn finish(app: &mut App) {
+    #[cfg(target_arch = "wasm32")]
+    if let Some(saves) = app.world().get_resource::<Saves>() {
+        web::install(app.world().resource::<Stash>().clone(), saves.0.clone());
     }
-
-    fn finish(&self, app: &mut App) {
-        // The page's handler holds the same backend the game saves through,
-        // which is why `Saves` shares its backend rather than owning it.
-        #[cfg(target_arch = "wasm32")]
-        if let Some(saves) = app.world().get_resource::<Saves>() {
-            web::install(app.world().resource::<Stash>().clone(), saves.0.clone());
-        }
-        let _ = app;
-    }
+    let _ = app;
 }
 
 /// Writes the stash on the frame the app is told to exit, which is the
 /// frame a native window's close button produces. When what it writes is
-/// the run's slot, [`SavedRun`] says the slot holds a run. Both are
-/// `SavePlugin`'s and read as optional, since a game may stash what it
-/// writes on the way out without keeping a run's slot at all.
-pub fn flush_on_exit(mut exits: MessageReader<AppExit>, stash: Res<Stash>, saves: Res<Saves>, run: Option<Res<SaveSlot>>, saved: Option<ResMut<SavedRun>>) {
+/// the run's slot, [`SavedRun`] says the slot holds a run; a stash a game
+/// keeps for a slot of its own says nothing about the run's.
+pub fn flush_on_exit(mut exits: MessageReader<AppExit>, stash: Res<Stash>, saves: Res<Saves>, run: Res<SaveSlot>, mut saved: ResMut<SavedRun>) {
     if exits.read().next().is_none() {
         return;
     }
     match stash.flush(saves.0.as_ref()) {
         Ok(true) => {
             info!("the stashed save was written on exit");
-            if let (Some(run), Some(mut saved)) = (run, saved)
-                && stash.pending().as_deref() == Some(run.slot.as_str())
-            {
+            if stash.pending().as_deref() == Some(run.slot.as_str()) {
                 *saved = SavedRun::Readable;
             }
         }
@@ -167,7 +161,7 @@ mod tests {
     fn the_stash_is_written_on_the_frame_the_app_exits() {
         let mut app = rl_bevy::plugin::headless_app();
         let backend: Arc<dyn SaveBackend + Send + Sync> = Arc::new(MemoryBackend::default());
-        app.insert_resource(Saves(backend.clone())).add_plugins(UnloadPlugin);
+        app.insert_resource(Saves(backend.clone())).add_plugins(crate::run::SavePlugin::new("run"));
         app.finish();
         app.cleanup();
         app.world().resource::<Stash>().stash("run", "(turn: 7)");
@@ -176,7 +170,6 @@ mod tests {
         app.world_mut().write_message(AppExit::Success);
         app.update();
         assert_eq!(backend.load("run").unwrap().as_deref(), Some("(turn: 7)"));
-        assert!(!app.world().contains_resource::<SavedRun>(), "and a game keeping no run's slot is not given one to offer");
     }
 
     /// The run's slot written on the way out says it holds a run; a stash
@@ -185,7 +178,7 @@ mod tests {
     fn the_runs_slot_written_on_exit_says_it_holds_a_run() {
         for (slot, holds) in [("run", SavedRun::Readable), ("notes", SavedRun::Empty)] {
             let mut app = rl_bevy::plugin::headless_app();
-            app.insert_resource(Saves::new(MemoryBackend::default())).add_plugins((crate::run::SavePlugin::new("run"), UnloadPlugin));
+            app.insert_resource(Saves::new(MemoryBackend::default())).add_plugins(crate::run::SavePlugin::new("run"));
             app.finish();
             app.cleanup();
             // The words stand in for a run: a stash holds what this build encoded.
