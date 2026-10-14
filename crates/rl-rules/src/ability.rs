@@ -27,13 +27,13 @@ pub use ron::value::RawValue;
 use rl_core::{Id, Point};
 use rl_grid::TargetMode;
 
-use crate::affix::TagId;
 use crate::content::{ContentError, Named, Registry};
 use crate::equip::SlotId;
 use crate::faction::Relation;
 use crate::names::Names;
 use crate::stats::StatId;
 use crate::status::{StatusId, Statuses};
+use crate::tag::TagId;
 
 /// What an ability wants under its footprint.
 ///
@@ -290,7 +290,7 @@ pub struct Asks {
     pub prompt: String,
     /// What the thing chosen must count as; absent, anything.
     #[serde(default)]
-    pub tag: Option<crate::names::NameRef<crate::affix::TagDef>>,
+    pub tag: Option<crate::names::NameRef<crate::tag::TagDef>>,
 }
 
 /// A trigger as a content file writes it: `(on: "land", area: Burst(radius: 1))`,
@@ -721,7 +721,7 @@ fn resolve_requirement(r: &RequirementRon, names: &Names<'_>) -> Result<Requirem
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::affix::TagDef;
+    use crate::tag::TagDef;
 
     /// A trigger reads as its moment and nothing else when it takes the
     /// thing's shared list at its own feet, and as much more as it needs.

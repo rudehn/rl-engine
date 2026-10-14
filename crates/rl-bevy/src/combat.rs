@@ -284,7 +284,7 @@ pub struct Strikes(pub Vec<(DamageKindId, DiceRoll)>);
 /// ```
 ///
 /// The stats are optional, and name the seam between the registered stats
-/// and a blow: a status that hardens the skin or an affix that sharpens the
+/// and a blow: a status that hardens the skin or a ring that sharpens the
 /// hand puts a modifier on a stat, and [`Loadout`] adds the stat's value to
 /// the armor or the roll only when the game says which stat that is. A
 /// game with no stats registry names neither and its armor is components

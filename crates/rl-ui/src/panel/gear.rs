@@ -253,7 +253,7 @@ mod tests {
     /// name and the facet together overrun the row, the name is kept
     /// whole too, and the facet moves to a line of its own under it,
     /// indented to the column the name started in, still in its own tone.
-    /// So the enchant level at the end of a long name, the very thing the
+    /// So the level at the end of a long name, the very thing the
     /// facet would otherwise have cut off, stays on screen.
     #[test]
     fn a_long_name_and_its_facet_wrap_to_a_line_under_it_rather_than_clip() {

@@ -321,7 +321,7 @@ pub fn spawn_vault_marks(mut commands: Commands, mut entered: MessageReader<Plac
             match (spot.tag, mark.map(|(_, glyph)| glyph)) {
                 (KEY_TAG, _) => {
                     let Some(def) = fill.armory.defs.id(KEY_ITEM) else { continue };
-                    let key = spawn_item(&mut commands, &fill.armory, def, &fill.registries);
+                    let key = spawn_item(&mut commands, &fill.armory, def);
                     commands.entity(key).insert((Position(spot.at), OnMap(ev.map), VaultKey { floor }, key_tags(&fill.registries, floor)));
                 }
                 (LEVER_TAG, _) => {

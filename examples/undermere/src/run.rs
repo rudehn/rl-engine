@@ -359,12 +359,12 @@ pub fn equip_kit(commands: &mut Commands, adventurer: Entity, armory: &Armory, r
     for (name, count) in KIT {
         let id = armory.defs.expect(name);
         let each = if armory.defs.get(id).stack { count } else { 1 };
-        for item in crate::armory::spawn_items(commands, armory, id, count, registries) {
+        for item in crate::armory::spawn_items(commands, armory, id, count) {
             commands.entity(item).insert(Counted(each));
-            if let Some(shape) = crate::armory::shape_of(armory.defs.get(id), registries) {
+            if let Some(shape) = &armory.parts(id).wear {
                 // Each piece of the kit has a slot of its own, so none
                 // displaces another.
-                worn.equip(item, &shape).expect("the kit fits the adventurer's slots");
+                worn.equip(item, shape).expect("the kit fits the adventurer's slots");
             }
             pack.push(item);
         }
@@ -375,8 +375,8 @@ pub fn equip_kit(commands: &mut Commands, adventurer: Entity, armory: &Armory, r
             continue;
         };
         match armory.defs.get(id).stack {
-            true => pack.extend(crate::armory::spawn_items(commands, armory, id, *count, registries)),
-            false => pack.extend((0..*count).map(|_| crate::armory::spawn_found(commands, armory, id, *level, registries))),
+            true => pack.extend(crate::armory::spawn_items(commands, armory, id, *count)),
+            false => pack.extend((0..*count).map(|_| crate::armory::spawn_found(commands, armory, id, *level))),
         }
     }
     commands.entity(adventurer).insert((Inventory { items: pack }, Equipped(worn)));
@@ -577,7 +577,7 @@ mod tests {
         let me = adventurer(&mut app);
         let bag = app.world().get::<Inventory>(me).expect("a pack").items.clone();
         let ring = bag[bag.len() - 2];
-        assert_eq!(app.world().get::<Enchant>(ring).map(|e| e.level), Some(-2));
+        assert_eq!(app.world().get::<ItemLevel>(ring).map(|l| l.0), Some(-2));
         assert!(app.world().get::<crate::lore::Unfamiliar>(ring).is_some(), "found, not set out with");
         assert_eq!(app.world().get::<Stack>(bag[bag.len() - 1]).map(|s| s.count), Some(2));
     }

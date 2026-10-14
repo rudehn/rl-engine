@@ -97,19 +97,17 @@ A game builds its definitions' triggers once when it reads the file, against the
 
 <!-- include: ../../../../examples/foundry/src/gear.rs:triggers -->
 ```rust,no_run
-        // Each definition's triggers, built once against the moments and
-        // effect kinds the run registered, and every problem in the file
-        // named at once: a grenade that lands nothing is a typo.
-        let mut triggers = Vec::new();
+        // Each definition's parts, its triggers built once against the
+        // moments and effect kinds the run registered, and every problem in
+        // the file named at once: a grenade that lands nothing is a typo.
+        let mut parts = Vec::new();
         let mut errors = Vec::new();
-        for (_, d) in defs.iter() {
-            triggers.push(match Triggers::build(&d.triggers, &d.effects, moments, kinds, &names) {
-                Ok(t) => t,
-                Err(mine) => {
-                    errors.extend(mine.into_iter().map(|e| format!("{}: {e}", d.name)));
-                    Triggers::default()
-                }
-            });
+        for (id, d) in defs.iter() {
+            let built = Triggers::build(&d.triggers, &d.effects, moments, kinds, &names).and_then(|triggers| parts_of(d, id, triggers, registries));
+            parts.push(Arc::new(built.unwrap_or_else(|mine| {
+                errors.extend(mine.into_iter().map(|e| format!("{}: {e}", d.name)));
+                ItemParts::default()
+            })));
         }
         assert!(errors.is_empty(), "assets/items.ron: {}", errors.join("; "));
 ```

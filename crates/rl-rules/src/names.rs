@@ -32,13 +32,13 @@ use ron::value::RawValue;
 use serde::de::{DeserializeOwned, Error as _};
 use serde::{Deserialize, Deserializer};
 
-use crate::affix::{TagDef, TagId};
 use crate::content::{ContentError, Named, Registry};
 use crate::damage::{DamageKind, DamageKindId};
 use crate::equip::{SlotDef, SlotId};
 use crate::gas::{GasDef, GasId};
 use crate::stats::{StatDef, StatId};
 use crate::status::{StatusDef, StatusId};
+use crate::tag::{TagDef, TagId};
 
 /// A registry, as far as looking a name up in it goes.
 trait Table {
@@ -148,12 +148,12 @@ impl<'a> Names<'a> {
         self.with("status", statuses)
     }
 
-    /// Item tags, for an item cost, a requirement or an affix.
+    /// Item tags, for an item cost, a requirement or what a thing counts as.
     pub fn tags(self, tags: &'a Registry<TagDef>) -> Self {
         self.with("tag", tags)
     }
 
-    /// Equipment slots, for a requirement.
+    /// Equipment slots, for a requirement or where a thing is worn.
     pub fn slots(self, slots: &'a Registry<SlotDef>) -> Self {
         self.with("slot", slots)
     }

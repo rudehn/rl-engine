@@ -381,7 +381,7 @@ fn an_ogre_leaves_a_sword_lying_that_would_hit_softer_than_its_fists() {
     let (world, made) = {
         let mut world = World::new();
         let mut queue = CommandQueue::default();
-        let made = crate::armory::spawn_item(&mut Commands::new(&mut queue, &world), armory, armory.defs.expect("war hammer"), &library.registries);
+        let made = crate::armory::spawn_item(&mut Commands::new(&mut queue, &world), armory, armory.defs.expect("war hammer"));
         queue.apply(&mut world);
         (world, made)
     };

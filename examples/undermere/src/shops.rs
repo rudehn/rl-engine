@@ -536,22 +536,21 @@ pub struct Shops<'w> {
     wares: Res<'w, Wares>,
     seed: Res<'w, Seed>,
     armory: Res<'w, Armory>,
-    registries: Res<'w, Registries>,
 }
 
 impl Shops<'_> {
     /// Makes `shelf`'s wares and purse, in that order, for a keeper's bag.
     fn shelve(&self, commands: &mut Commands, shelf: &Stocking) -> Vec<Entity> {
-        let (armory, registries) = (&*self.armory, &*self.registries);
+        let armory = &*self.armory;
         let mut bag: Vec<Entity> = Vec::new();
         for ware in &shelf.wares {
             if armory.takes_levels(ware.def) {
-                bag.extend((0..ware.count).map(|_| spawn_found(commands, armory, ware.def, ware.level, registries)));
+                bag.extend((0..ware.count).map(|_| spawn_found(commands, armory, ware.def, ware.level)));
             } else {
-                bag.extend(spawn_items(commands, armory, ware.def, ware.count, registries));
+                bag.extend(spawn_items(commands, armory, ware.def, ware.count));
             }
         }
-        bag.extend(spawn_items(commands, armory, armory.defs.expect("gold coin"), shelf.purse, registries));
+        bag.extend(spawn_items(commands, armory, armory.defs.expect("gold coin"), shelf.purse));
         bag
     }
 }
@@ -1109,7 +1108,7 @@ mod tests {
                 let armory = world.resource::<Armory>();
                 for (thing, def) in shelf(&app, k) {
                     let d = armory.defs.get(def);
-                    let level = world.get::<Enchant>(thing).map(|e| e.level);
+                    let level = world.get::<ItemLevel>(thing).map(|l| l.0);
                     assert_eq!(level, armory.plain_level(def), "seed {s}: {} on the {}'s first shelf is plain", d.name, post.role);
                     assert_eq!(world.get::<Worth>(thing).map(|w| w.0), d.price, "seed {s}: {} on the {}'s shelf at its price", d.name, post.role);
                     if armory.plain_level(def).is_some_and(|plain| plain > 0)
@@ -1120,7 +1119,7 @@ mod tests {
                 }
             }
             for (staff, price) in staffs {
-                app.world_mut().get_mut::<Enchant>(staff).expect("a staff takes levels").level += 1;
+                app.world_mut().get_mut::<ItemLevel>(staff).expect("a staff takes levels").0 += 1;
                 app.update();
                 assert_eq!(app.world().get::<Worth>(staff).map(|w| w.0), Some(price + WORTH_PER_LEVEL), "seed {s}: a level above plain is worth one more");
             }
@@ -1274,7 +1273,7 @@ mod tests {
             if def == gold {
                 purse += count;
             } else {
-                wares.push(Ware { def, count, level: world.get::<Enchant>(*item).map_or(0, |e| e.level) });
+                wares.push(Ware { def, count, level: world.get::<ItemLevel>(*item).map_or(0, |l| l.0) });
             }
         }
         (wares, purse)

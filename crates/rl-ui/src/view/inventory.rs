@@ -4,7 +4,7 @@
 //! it is worn and where, how many of a stack there are, and the numbers on
 //! each thing. The numbers are the item's own components, the ones
 //! [`Loadout`] reads when a blow is struck: a blade's [`MeleeAttack`], a
-//! coat's [`Armor`], what an affix [`Bestows`], how far a knife flies. So an
+//! coat's [`Armor`], what a ring [`Bestows`], how far a knife flies. So an
 //! item spawned with them is described for free, in the registries' names,
 //! and a game says nothing twice.
 //!

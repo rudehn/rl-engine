@@ -20,13 +20,32 @@ use serde::{Deserialize, Serialize};
 pub struct SlotDef {
     /// The name content refers to it by.
     pub name: String,
+    /// The slot this one is a pair with, by name: the other hand, the
+    /// other finger. Written on either of the two, or both; what a thing
+    /// that fits either of a pair, [`Wear::either`](crate::parts::Wear::either),
+    /// reaches for. `None` for a slot that goes alone.
+    #[serde(default)]
+    pub pair: Option<String>,
 }
 
 impl SlotDef {
-    /// A slot called `name`.
+    /// A slot called `name`, of no pair.
     pub fn new(name: impl Into<String>) -> Self {
-        Self { name: name.into() }
+        Self { name: name.into(), pair: None }
     }
+
+    /// The same, a pair with the slot called `other`.
+    pub fn paired_with(mut self, other: impl Into<String>) -> Self {
+        self.pair = Some(other.into());
+        self
+    }
+}
+
+/// The other slot of the pair `slot` is one of in `slots`, whichever of the
+/// two names the other, or `None` for a slot that goes alone.
+pub fn pair_of(slots: &Registry<SlotDef>, slot: SlotId) -> Option<SlotId> {
+    let own = slots.get(slot).pair.as_deref().and_then(|other| slots.id(other));
+    own.or_else(|| slots.iter().find(|(_, def)| def.pair.as_deref() == Some(slots.name(slot))).map(|(id, _)| id))
 }
 
 impl Named for SlotDef {
@@ -227,6 +246,13 @@ mod tests {
     fn hands_and_fingers() -> (Registry<SlotDef>, SlotId, SlotId, SlotId, SlotId) {
         let r = Registry::from_defs(vec![SlotDef::new("main hand"), SlotDef::new("off hand"), SlotDef::new("left ring"), SlotDef::new("right ring")]).unwrap();
         (r.clone(), r.expect("main hand"), r.expect("off hand"), r.expect("left ring"), r.expect("right ring"))
+    }
+
+    #[test]
+    fn a_pair_is_found_from_either_of_its_slots_and_a_slot_alone_has_none() {
+        let r = Registry::from_defs(vec![SlotDef::new("main hand").paired_with("off hand"), SlotDef::new("off hand"), SlotDef::new("head")]).unwrap();
+        let (main, off, head) = (r.expect("main hand"), r.expect("off hand"), r.expect("head"));
+        assert_eq!((pair_of(&r, main), pair_of(&r, off), pair_of(&r, head)), (Some(off), Some(main), None));
     }
 
     #[test]

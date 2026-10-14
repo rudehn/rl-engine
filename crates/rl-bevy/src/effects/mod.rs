@@ -167,8 +167,8 @@ impl Landing {
 /// What a carrier's effects land stronger by: turns added to every status
 /// they inflict and an amount added to every harm or mend roll.
 ///
-/// Written by the game when it spawns the thing, whatever made it
-/// stronger (an enchant level, a blessing) already applied, as
+/// Written when the thing is spawned, whatever made it stronger (a level,
+/// a blessing) already applied, as
 /// [`Bestows`](crate::items::Bestows) and [`Armor`](crate::combat::Armor)
 /// are; the engine never learns why. A carrier with none is read as
 /// [`EffectBonus::default`], which adds nothing, so a plain thing behaves

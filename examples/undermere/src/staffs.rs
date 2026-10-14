@@ -46,14 +46,14 @@ pub fn paced(base: u32, wisdom: i32) -> u32 {
 /// else wears a ring.
 pub fn keep_pace(
     adventurer: Query<(&Inventory, &StatBlock), With<Adventurer>>,
-    mut staffs: Query<(Entity, &ItemKind, Option<&Enchant>, &mut Consumable)>,
+    mut staffs: Query<(Entity, &ItemKind, Option<&ItemLevel>, &mut Consumable)>,
     armory: Res<Armory>,
     registries: Res<Registries>,
 ) {
     let stat = registries.stats.id(WISDOM);
     let carrier = adventurer.single().ok();
     for (staff, kind, level, mut held) in &mut staffs {
-        let Some(base) = armory.recharge_at(kind.0, level.map_or(0, |l| l.level)) else { continue };
+        let Some(base) = armory.recharge_at(kind.0, level.map_or(0, |l| l.0)) else { continue };
         let wisdom = match (carrier, stat) {
             (Some((bag, stats)), Some(stat)) if bag.items.contains(&staff) => stats.0.value(stat, &registries.stats),
             _ => 0,

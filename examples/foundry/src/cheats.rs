@@ -224,7 +224,7 @@ impl Acts<'_, '_> {
     /// merges it.
     fn give(&mut self, id: Id<ItemDef>, level: i32) {
         let armory = self.content.armory();
-        let item = spawn_item_at(&mut self.commands, armory, id, level, self.content.registries());
+        let item = spawn_item_at(&mut self.commands, armory, id, level);
         let Ok((me, _, mut bag)) = self.player.single_mut() else { return };
         let stacking = armory.defs.get(id).stack;
         let key = id.index() as u64;
@@ -349,7 +349,7 @@ pub fn search_keys(input: Res<ButtonInput<KeyCode>>, modals: Res<Modals>, mut sc
     if input.just_pressed(KeyCode::ArrowRight) {
         // No higher than the highest `max` in the armory, so the title
         // never promises a level nothing is made at.
-        let most = acts.content.armory().defs.iter().filter_map(|(_, d)| d.enchant.map(|e| e.max)).max().unwrap_or(0);
+        let most = acts.content.armory().defs.iter().filter_map(|(_, d)| d.level.as_ref().and_then(|l| l.max)).max().unwrap_or(0);
         screen.level = (level + 1).min(most);
     }
     if input.just_pressed(KeyCode::ArrowLeft) {

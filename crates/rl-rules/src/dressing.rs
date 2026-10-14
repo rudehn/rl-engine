@@ -317,10 +317,10 @@ pub fn check_districts<M>(lists: &[DistrictDressings], dressings: &Registry<Dres
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::affix::TagDef;
     use crate::prefab::{Pick, Reach, Slot, Sources};
     use crate::prop::{PropDef, Stock};
     use crate::role::RoleDef;
+    use crate::tag::TagDef;
     use rl_grid::TileProps;
 
     struct Beast(&'static str);

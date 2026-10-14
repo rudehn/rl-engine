@@ -45,7 +45,7 @@ use rl_engine::rl_rules::stats::Op;
 use rl_engine::rl_ui::panel::sheet::plain_op;
 use rl_engine::rl_ui::view::sheet::{ResistLine, Strike};
 
-use crate::armory::{ACCURACY_PER_LEVEL, Armory, DAMAGE_PER_LEVEL, ItemKind};
+use crate::armory::{Armory, ItemKind};
 use crate::content::{ACCURACY, ARMOR, STRENGTH};
 use crate::lore::{CurseShown, FAMILIAR_AFTER, Lore, Unfamiliar};
 use crate::run::Adventurer;
@@ -77,7 +77,7 @@ fn less_off(mut rolls: Vec<(DamageKindId, DiceRoll)>, less: i32) -> Vec<(DamageK
 
 /// A thing not yet known as its plain numbers are worked out from: its
 /// kind, its level and the armor it truly gives.
-type Unknowable = (&'static ItemKind, Option<&'static Enchant>, Option<&'static Armor>);
+type Unknowable = (&'static ItemKind, Option<&'static ItemLevel>, Option<&'static Armor>);
 
 /// Everything a fight is reckoned from, and what is not known of it.
 #[derive(bevy::ecs::system::SystemParam)]
@@ -113,6 +113,7 @@ impl Seeming<'_, '_> {
         // the thing seems to give.
         let strength = self.registries.stats.id(STRENGTH).filter(|_| self.adventurers.contains(who));
         let strength = strength.and_then(|stat| self.stats.get(who).ok().map(|s| s.0.value(stat, &self.registries.stats)));
+        let accuracy = self.registries.stats.id(ACCURACY);
         let mut counted: Vec<Entity> = Vec::new();
         for (_, item) in worn.0.worn() {
             if counted.contains(&item) {
@@ -127,15 +128,17 @@ impl Seeming<'_, '_> {
                 let short = short_of(d, strength);
                 unseen.armor -= armor_cost(d, short, gives) - armor_cost(d, short, plain);
             }
-            if d.melee.is_some() || d.ranged.is_some() {
-                unseen.accuracy += ACCURACY_PER_LEVEL * enchant.map_or(0, |e| e.level);
-            }
+            unseen.accuracy += self.armory.per_level(kind.0, accuracy) * enchant.map_or(0, |l| l.0);
         }
         // The blow and the shot from the worn thing the engine strikes and
-        // fires with, when that is one not known yet.
-        let level = |from: Option<Entity>| from.and_then(|item| self.unknown.get(item).ok()).map_or(0, |(_, enchant, _)| enchant.map_or(0, |e| e.level));
-        unseen.blow = DAMAGE_PER_LEVEL * level(self.loadout.melee_with(who).and_then(|(from, _)| from));
-        unseen.shot = DAMAGE_PER_LEVEL * level(self.loadout.ranged_with(who).and_then(|(from, _)| from));
+        // fires with, when that is one not known yet: what its level adds to
+        // a damage roll, that many times.
+        let damage = |from: Option<Entity>| {
+            from.and_then(|item| self.unknown.get(item).ok())
+                .map_or(0, |(kind, level, _)| self.armory.level_of(kind.0).and_then(|l| l.damage).unwrap_or(0) * level.map_or(0, |l| l.0))
+        };
+        unseen.blow = damage(self.loadout.melee_with(who).and_then(|(from, _)| from));
+        unseen.shot = damage(self.loadout.ranged_with(who).and_then(|(from, _)| from));
         unseen
     }
 
@@ -321,8 +324,10 @@ pub struct Plain {
     pub gives: Vec<(String, Op)>,
     /// What it strikes for thrown.
     pub thrown: Option<Strike>,
-    /// What each level of it gives, by the stat's name: all a ring does,
-    /// since at nought it gives nothing.
+    /// What each level of it gives, by the stat's name, as its own line
+    /// writes it: all a ring does, since at nought it gives nothing. Not
+    /// what its tag's level adds, a weapon's accuracy, which every thing
+    /// of its kind has and the pack says nowhere else either.
     pub per_level: Vec<(String, i32)>,
 }
 
@@ -355,7 +360,7 @@ impl Plain {
 /// A thing whose level is not known yet, as [`Unsettled`] reads it: its
 /// kind, its level, how long it has been worn, whether its curse has shown,
 /// and what it resists.
-type Unlearned = (&'static ItemKind, Option<&'static Enchant>, &'static Unfamiliar, Has<CurseShown>, Option<&'static Resists>);
+type Unlearned = (&'static ItemKind, Option<&'static ItemLevel>, &'static Unfamiliar, Has<CurseShown>, Option<&'static Resists>);
 
 /// What the pack and the look cursor read of a thing whose kind the
 /// adventurer knows and whose level they do not: its kind, what they have
@@ -402,9 +407,9 @@ impl Unsettled<'_, '_> {
                         .collect()
                 })
                 .unwrap_or_default(),
-            gives: self.armory.gives_at(kind.0, 0, r.stats.id(ACCURACY)).into_iter().map(|(stat, op)| (r.stats.name(stat).to_string(), op)).collect(),
+            gives: self.armory.gives_at(kind.0, 0).into_iter().map(|(stat, op)| (r.stats.name(stat).to_string(), op)).collect(),
             thrown: d.throw.and_then(|t| t.strike.map(|(dice, k)| strike(k.id(), dice, Some(t.range)))),
-            per_level: d.per_level.iter().map(|(stat, n)| (r.stats.name(stat.id()).to_string(), *n)).collect(),
+            per_level: d.level.iter().flat_map(|l| &l.stats).map(|(stat, n)| (r.stats.name(stat.id()).to_string(), *n)).collect(),
         })
     }
 
@@ -423,7 +428,7 @@ impl Unsettled<'_, '_> {
     pub fn level_lines(&mut self, thing: Entity, plain: &Plain, worn: bool) -> Vec<Facet> {
         let Ok((_, level, unfamiliar, shown, _)) = self.things.get(thing) else { return Vec::new() };
         let mut lines = Vec::new();
-        if shown && level.is_some_and(|l| l.level < 0) {
+        if shown && level.is_some_and(|l| l.0 < 0) {
             lines.push(self.facets.facet("level", "level below nought, how far not yet known").toned(Tones::BAD));
         }
         if !plain.lines().is_empty() {

@@ -86,7 +86,7 @@ Keeping the list between launches takes nothing beyond the plugin a game already
 /// in their own slot beside it, the five kinds, and the ten resources.
 pub fn register(app: &mut App) {
     app.add_plugins(SavePlugin::new(SLOT).version(VERSION).on_arrival())
-        .save_kind::<ItemKind>()
+        .save_items::<ItemKind>()
         .save_kind::<Kind>()
         .save_kind::<Adventurer>()
         .save_kind::<Gate>()

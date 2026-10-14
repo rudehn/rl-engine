@@ -1,9 +1,9 @@
 //! Enchanting, and the curses it lifts.
 //!
 //! A weapon, armor, ring, staff or wand has a level, the engine's
-//! [`Enchant`], set when it is made and changed only by
+//! [`ItemLevel`], set when it is made and changed only by
 //! [`level_up`](crate::armory::level_up), which fits the thing to its new
-//! level by the function that made it. The scroll of enchanting's
+//! level from the parts that made it. The scroll of enchanting's
 //! [`Enchanting`] raises the thing it is read on by one: armor one more,
 //! a weapon's every roll one more and its wielder's aim five, a ring's
 //! power one more, a staff's power and charges, a wand's charges.
@@ -274,7 +274,7 @@ mod tests {
             ("+1 sword".to_string(), "unidentified ring of light".to_string()),
             "and what is known of each"
         );
-        assert_eq!(carried.world().get::<Enchant>(ring).map(|e| e.level), Some(2));
+        assert_eq!(carried.world().get::<ItemLevel>(ring).map(|l| l.0), Some(2));
     }
 
     /// However a worn thing's level changes, its wearer's stats follow in
@@ -339,7 +339,7 @@ mod tests {
         let scroll = find(&mut app, "scroll of enchanting", 0);
         give(&mut app, me, scroll);
         read_on(&mut app, me, scroll, ring);
-        assert_eq!(app.world().get::<Enchant>(ring).map(|e| e.level), Some(0));
+        assert_eq!(app.world().get::<ItemLevel>(ring).map(|l| l.0), Some(0));
         assert!(said(&app).iter().any(|l| l == "Your ring of stealth glows. It will come off now."), "{:#?}", said(&app));
         unequip(&mut app, me, ring);
         assert!(app.world().get::<Equipped>(me).is_some_and(|w| !w.contains(ring)), "enchanted to nought, it came off");
@@ -353,7 +353,7 @@ mod tests {
         crate::testing::use_thing(&mut app, me, scroll);
         unequip(&mut app, me, cursed);
         assert!(app.world().get::<Equipped>(me).is_some_and(|w| !w.contains(cursed)), "freed, it came off");
-        assert_eq!(app.world().get::<Enchant>(cursed).map(|e| e.level), Some(-2), "at the level it was");
+        assert_eq!(app.world().get::<ItemLevel>(cursed).map(|l| l.0), Some(-2), "at the level it was");
     }
 
     /// A cursed thing in the pack, never put on, is enchanted up to nought
@@ -367,7 +367,7 @@ mod tests {
         let scroll = find(&mut app, "scroll of enchanting", 0);
         give(&mut app, me, scroll);
         read_on(&mut app, me, scroll, ring);
-        assert_eq!((app.world().get::<Enchant>(ring).map(|e| e.level), app.world().get::<Stuck>(ring).is_some()), (Some(0), false));
+        assert_eq!((app.world().get::<ItemLevel>(ring).map(|l| l.0), app.world().get::<Stuck>(ring).is_some()), (Some(0), false));
         let lines = said(&app);
         assert!(lines.iter().any(|l| l.ends_with(" ring glows.")), "{lines:#?}");
         assert!(!lines.iter().any(|l| l.contains("come off")), "nothing says it was ever held: {lines:#?}");

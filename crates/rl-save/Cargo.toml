@@ -27,6 +27,7 @@ ron.workspace = true
 [dev-dependencies]
 rl-mapgen.workspace = true
 rl-world.workspace = true
+rand.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # `Storage` for the saves themselves; `Event` and `EventTarget` for the

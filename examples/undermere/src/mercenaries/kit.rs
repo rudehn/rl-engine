@@ -172,13 +172,13 @@ impl Mercenaries {
 /// and the rest as [`spawn_items`] makes them. Made as told rather than
 /// found, never unfamiliar, since a hireling says what it is selling; and
 /// each its carrier's [`OwnKit`], which it uses knowing what it is.
-pub fn make_kit(commands: &mut Commands, armory: &Armory, kit: &[Ware], registries: &Registries) -> Vec<Entity> {
+pub fn make_kit(commands: &mut Commands, armory: &Armory, kit: &[Ware]) -> Vec<Entity> {
     let mut made = Vec::new();
     for w in kit {
         if armory.takes_levels(w.def) {
-            made.extend((0..w.count).map(|_| spawn_item_at(commands, armory, w.def, w.level, registries)));
+            made.extend((0..w.count).map(|_| spawn_item_at(commands, armory, w.def, w.level)));
         } else {
-            made.extend(spawn_items(commands, armory, w.def, w.count, registries));
+            made.extend(spawn_items(commands, armory, w.def, w.count));
         }
     }
     for thing in &made {
@@ -398,13 +398,13 @@ mod tests {
         let mut cursed = 0;
         for kit in kits(&library, 0) {
             let mut queue = CommandQueue::default();
-            let made = make_kit(&mut Commands::new(&mut queue, &world), &library.armory, &kit, &library.registries);
+            let made = make_kit(&mut Commands::new(&mut queue, &world), &library.armory, &kit);
             queue.apply(&mut world);
             let levelled: Vec<&Ware> = kit.iter().filter(|w| library.armory.takes_levels(w.def)).collect();
-            let things: Vec<Entity> = made.into_iter().filter(|&e| world.get::<Enchant>(e).is_some()).collect();
+            let things: Vec<Entity> = made.into_iter().filter(|&e| world.get::<ItemLevel>(e).is_some()).collect();
             assert_eq!(things.len(), levelled.len(), "one thing a levelled ware in {kit:?}");
             for (w, thing) in levelled.iter().zip(things) {
-                let level = world.get::<Enchant>(thing).map(|e| e.level);
+                let level = world.get::<ItemLevel>(thing).map(|l| l.0);
                 assert_eq!(level, Some(w.level), "{}", named(&library, w));
                 assert_eq!(world.get::<Stuck>(thing).is_some(), w.level < 0, "{} at {}", named(&library, w), w.level);
                 cursed += u32::from(w.level < 0 && tagged(&library, w, "weapon"));

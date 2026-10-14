@@ -9,7 +9,7 @@ use rl_engine::rl_ui::view::sum_of;
 use serde::{Deserialize, Serialize};
 
 use super::*;
-use crate::armory::{Armory, shape_of};
+use crate::armory::Armory;
 use crate::bestiary::{Bestiary, spawn_monster};
 use crate::dungeon::TOWN;
 use crate::finds::GOLD;
@@ -76,8 +76,8 @@ pub fn spawn_candidate(commands: &mut Commands, makers: &Makers, name: &str, kit
     let mut pack = Vec::new();
     let mut worn = Equipment::with_slot_count(registries.slots.len());
     for ware in kit {
-        let shape = shape_of(armory.defs.get(ware.def), registries);
-        for thing in make_kit(commands, armory, std::slice::from_ref(ware), registries) {
+        let shape = armory.parts(ware.def).wear.clone();
+        for thing in make_kit(commands, armory, std::slice::from_ref(ware)) {
             // A second of a kind, or a thing whose slot is taken, is
             // carried rather than worn.
             if let Some(shape) = &shape {

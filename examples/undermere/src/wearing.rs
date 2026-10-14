@@ -27,7 +27,7 @@
 //! the engine's `Bestows`, which folds a worn thing's changes to a stat:
 //! armor, the one number a trait sets that a stat could have carried, is
 //! the engine's `Armor` instead. What a thing gives a stat it gives by
-//! its own `bestows` and `per_level`, which the armory writes as the
+//! its own `bestows` and its level's `stats`, which the engine writes as the
 //! engine's `Bestows`. What a worn thing cannot give at all, a mind's
 //! wits, a pace, how far a body sees, notices and hears, when it runs and
 //! what it knows how to do, is refused where the item is read.
@@ -184,7 +184,7 @@ mod tests {
     /// wears no face and takes no level, and what it lends is all it is.
     const RING: &str = r#"#![enable(implicit_some)]
     [
-        (name: "ring of the salamander", glyph: '=', color: (1.0, 0.45, 0.2), slot: "left finger", either: true,
+        (name: "ring of the salamander", glyph: '=', color: (1.0, 0.45, 0.2), wear: (slot: "left finger", either: true),
          lends: ["fire-blooded", "regenerates", "sees in the dark", "ember glow"]),
     ]"#;
 
@@ -204,7 +204,7 @@ mod tests {
         let armory =
             Armory::new(defs, LootTable::default(), &registries, &traits, world.resource::<EffectKinds>(), world.resource::<Moments>()).expect("and is made");
         let mut queue = CommandQueue::default();
-        let ring = crate::armory::spawn_item(&mut Commands::new(&mut queue, app.world()), &armory, armory.defs.expect("ring of the salamander"), &registries);
+        let ring = crate::armory::spawn_item(&mut Commands::new(&mut queue, app.world()), &armory, armory.defs.expect("ring of the salamander"));
         queue.apply(app.world_mut());
         crate::testing::give(app, me, ring);
         ring

@@ -24,7 +24,7 @@
 use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
 use rl_engine::prelude::*;
-use rl_engine::rl_save::{AddSaveable, SavePlugin, Saveable, SaveableState};
+use rl_engine::rl_save::{AddSaveable, SavePlugin, Saveable, SaveableItem, SaveableState};
 use serde::{Deserialize, Serialize};
 
 use crate::climb::Deepest;
@@ -42,7 +42,10 @@ use crate::upgrades::{Taken, Upgrade};
 // itself, and only the lift out is Foundry's; a lift a save from before
 // wrote down is no kind this build has, so the save is refused rather than
 // continued with its decks unlinked.
-pub const VERSION: u32 = 2;
+// v3: an item is the engine's saved item, its definition and level with
+// its heat under `extra`, where it was one record of Foundry's; an older
+// save's items do not read as the new shape, so it is refused.
+pub const VERSION: u32 = 3;
 
 /// The slot every run saves to.
 pub const SLOT: &str = "foundry";
@@ -58,7 +61,7 @@ pub fn register(app: &mut App) {
     // run and apart from it.
     app.add_plugins(SavePlugin::new(SLOT).version(VERSION).on_arrival())
         // ANCHOR_END: remember
-        .save_kind::<ItemKind>()
+        .save_items::<ItemKind>()
         .save_kind::<Kind>()
         .save_kind::<Commando>()
         .save_kind::<LiftOut>()
@@ -145,48 +148,34 @@ impl Saveable for Kind {
     }
 }
 
-/// An item, as the save writes it: what it was made from, the level it
-/// was found at, and how hot it runs if it runs hot at all, which are the
-/// things about an item the engine does not keep.
+/// What Foundry keeps of an item beyond its definition and the level it
+/// was found at, which the engine writes and makes it again at: how hot it
+/// runs, if it runs hot at all, the one thing about an item neither the
+/// engine nor its level keeps.
 ///
 /// The level rather than the clock it makes: the level is what the item
 /// is, and a respawn at it writes the pulse's period and the name from it
 /// again, as the find did. The engine keeps the charges and the progress.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ItemSave {
-    /// The definition's name.
-    pub def: String,
-    /// Its enchant level; nought for a plain thing and for a save written
-    /// before levels were.
-    #[serde(default)]
-    pub level: i32,
     /// Heat carried, and whether it had locked.
     #[serde(default)]
     pub heat: Option<(u32, bool)>,
 }
 
-impl Saveable for ItemKind {
-    type Saved = ItemSave;
+impl SaveableItem for ItemKind {
+    type Maker = crate::gear::Armory;
+    type Extra = ItemSave;
 
-    fn capture(world: &World, entity: Entity) -> ItemSave {
-        let kind = world.get::<ItemKind>(entity).expect("an item's kind");
-        let armory = world.resource::<crate::gear::Armory>();
-        ItemSave {
-            def: armory.defs.name(kind.0).to_string(),
-            level: world.get::<Enchant>(entity).map_or(0, |e| e.level),
-            heat: world.get::<Heat>(entity).map(|h| (h.now, h.locked)),
-        }
+    fn def(&self) -> Id<crate::gear::ItemDef> {
+        self.0
     }
 
-    fn restore(world: &mut World, saved: &ItemSave) -> Entity {
-        let Some(id) = world.resource::<crate::gear::Armory>().defs.id(&saved.def) else {
-            warn!("a saved item is a {:?}, which this build has no definition for; it comes back as nothing", saved.def);
-            return world.spawn_empty().id();
-        };
-        let e = spawned(world, |commands, world| {
-            let armory = world.resource::<crate::gear::Armory>();
-            crate::gear::spawn_item_at(commands, armory, id, saved.level, world.resource::<Registries>())
-        });
+    fn capture_extra(world: &World, entity: Entity) -> ItemSave {
+        ItemSave { heat: world.get::<Heat>(entity).map(|h| (h.now, h.locked)) }
+    }
+
+    fn restore_extra(world: &mut World, e: Entity, saved: &ItemSave) {
         if let (Some((now, locked)), Some(mut heat)) = (saved.heat, world.get_mut::<Heat>(e)) {
             heat.now = now;
             heat.locked = locked;
@@ -201,7 +190,6 @@ impl Saveable for ItemKind {
                 item.insert(Stowed::Melee(attack));
             }
         }
-        e
     }
 }
 
@@ -404,12 +392,11 @@ mod tests {
         let mut app = crate::testing::headless(RunSeed(4));
         crate::testing::settle(&mut app);
         let me = player(&mut app);
-        let registries = app.world().resource::<Registries>().clone();
         let armory = crate::testing::armory_of(&app);
         let plate = {
             let mut queue = CommandQueue::default();
             let mut commands = Commands::new(&mut queue, app.world_mut());
-            let plate = crate::gear::spawn_item_at(&mut commands, &armory, armory.defs.expect("cloak plate"), 2, &registries);
+            let plate = crate::gear::spawn_item_at(&mut commands, &armory, armory.defs.expect("cloak plate"), 2);
             queue.apply(app.world_mut());
             plate
         };
@@ -491,11 +478,10 @@ mod tests {
 
     /// Spawns `name` at `level` into `me`'s pack.
     fn carried_at(app: &mut App, me: Entity, name: &str, level: i32) -> Entity {
-        let registries = app.world().resource::<Registries>().clone();
         let armory = crate::testing::armory_of(app);
         let mut queue = CommandQueue::default();
         let mut commands = Commands::new(&mut queue, app.world_mut());
-        let thing = crate::gear::spawn_item_at(&mut commands, &armory, armory.defs.expect(name), level, &registries);
+        let thing = crate::gear::spawn_item_at(&mut commands, &armory, armory.defs.expect(name), level);
         queue.apply(app.world_mut());
         app.world_mut().get_mut::<Inventory>(me).unwrap().items.push(thing);
         thing
@@ -546,7 +532,7 @@ mod tests {
     /// rangefinder worn come back swinging, cloaking and seeing as a `+2`
     /// does: the save keeps the level and no bonus, and what the level adds,
     /// the cloak's `EffectBonus` among it, is rebuilt from the file's
-    /// enchant block.
+    /// level block.
     #[test]
     fn a_continued_run_keeps_what_each_things_level_adds() {
         let mut app = crate::testing::headless(RunSeed(4));

@@ -86,8 +86,8 @@ pub use fire::{Burning, FIRE_GLOW, Fire, FireEvent, FirePlugin, FireRules, Flamm
 pub use fov::FovPlugin;
 pub use gas::{Breathed, GasPlugin, Gases, Release, Vents};
 pub use items::{
-    Bestows, DropItem, EQUIP_FROM_GROUND_COST, Enchant, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemsPlugin, OwnBlowScore,
-    PickUp, Pulse, Stack, Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable, may_use, may_use_on,
+    Bestows, DropItem, EQUIP_FROM_GROUND_COST, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemsPlugin, OwnBlowScore, PickUp,
+    Pulse, Stack, Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable, may_use, may_use_on,
 };
 pub use knowledge::{Knowledge, KnowledgeSave, Recalled, TileSet};
 pub use lighting::{Concealed, DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, PlayerSight, band_at, conceals};
@@ -99,7 +99,7 @@ pub use minds::{
 pub use noise::{
     AddSound, Earshot, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, NoiseRunning, Sound, SoundId, SoundNames, Sounds,
 };
-pub use parts::Attacks;
+pub use parts::{Attacks, ItemLevel, ItemParts, MadeOf, insert_parts};
 pub use places::{
     Arrive, Climb, Destination, GoThrough, Ladder, LadderEnd, Lock, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Stair,
     StairLook, Transition, Travelled, WarpRequest,
@@ -164,15 +164,15 @@ pub mod prelude {
     pub use crate::fov::FovPlugin;
     pub use crate::gas::{Breathed, GasPlugin, Gases, Release, Vents};
     pub use crate::items::{
-        Bestows, DropItem, Enchant, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemsPlugin, OwnBlowScore, PickUp, Pulse, Stack,
-        Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable,
+        Bestows, DropItem, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemsPlugin, OwnBlowScore, PickUp, Pulse, Stack, Stuck,
+        Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable,
     };
     pub use crate::knowledge::Knowledge;
     pub use crate::lighting::{Concealed, DarkSight, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, PlayerSight, band_at, conceals};
     pub use crate::loot::{Drops, Found, ItemMaker, LootArea, LootPlugin, LootSet, Provenance, Scattered};
     pub use crate::minds::{AddChoice, Doing, Intelligence, Joined, Leader, Mind, MindChose, MindsPlugin, Perception, Post, Profile, Thinking};
     pub use crate::noise::{AddSound, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, SoundId, SoundNames, Sounds};
-    pub use crate::parts::Attacks;
+    pub use crate::parts::{Attacks, ItemLevel, ItemParts, MadeOf, insert_parts};
     pub use crate::places::{
         Arrive, Climb, Destination, GoThrough, Ladder, LadderEnd, Lock, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot,
         Stair, StairLook, Transition, Travelled, WarpRequest,

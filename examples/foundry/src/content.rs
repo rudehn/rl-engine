@@ -125,7 +125,7 @@ pub fn registries() -> Registries {
         factions: Registry::from_defs(vec![FactionDef::new("commando"), FactionDef::new("droids"), FactionDef::new("vermin")]).unwrap(),
         tags: Registry::from_defs(vec![TagDef::new("weapon"), TagDef::new("armor"), TagDef::new("slug"), TagDef::new("med"), TagDef::new("keycard")]).unwrap(),
         slots: Registry::from_defs(vec![
-            SlotDef::new("main hand"),
+            SlotDef::new("main hand").paired_with("off hand"),
             SlotDef::new("off hand"),
             SlotDef::new("head"),
             SlotDef::new("torso"),
@@ -195,7 +195,7 @@ mod tests {
         let mut queue = CommandQueue::default();
         let mut commands = Commands::new(&mut queue, app.world_mut());
         let mut spawned: Vec<(String, Entity)> =
-            armory.defs.iter().map(|(id, d)| (d.name.clone(), crate::gear::spawn_item(&mut commands, &armory, id, &registries))).collect();
+            armory.defs.iter().map(|(id, d)| (d.name.clone(), crate::gear::spawn_item(&mut commands, &armory, id))).collect();
         let map = MapId::SURFACE;
         spawned.extend(
             roster.defs.iter().map(|(id, d)| (d.name.clone(), crate::droids::spawn_monster(&mut commands, &roster, id, Point::ZERO, map, &registries))),
@@ -219,12 +219,10 @@ mod tests {
         let table =
             [("hand blaster", 3, 8), ("ion pistol", 3, 8), ("slug pistol", 3, 9), ("heavy repeater", 4, 10), ("blaster carbine", 6, 12), ("slug rifle", 7, 14)];
         let mut app = crate::testing::headless(RunSeed(1));
-        let registries = app.world().resource::<Registries>().clone();
         let armory = crate::testing::armory_of(&app);
         let mut queue = CommandQueue::default();
         let mut commands = Commands::new(&mut queue, app.world_mut());
-        let spawned: Vec<(String, Entity)> =
-            armory.defs.iter().map(|(id, d)| (d.name.clone(), crate::gear::spawn_item(&mut commands, &armory, id, &registries))).collect();
+        let spawned: Vec<(String, Entity)> = armory.defs.iter().map(|(id, d)| (d.name.clone(), crate::gear::spawn_item(&mut commands, &armory, id))).collect();
         queue.apply(app.world_mut());
         let found = |name: &str| spawned.iter().find(|(n, _)| n == name).map(|(_, e)| *e).unwrap_or_else(|| panic!("{name} is in the armory"));
         for (name, effective, reach) in table {

@@ -98,12 +98,12 @@ use rl_core::Id;
 use rl_grid::{TileId, TileRegistry};
 use serde::Deserialize;
 
-use crate::affix::TagDef;
 use crate::content::{BandedTable, ContentError, Named, Registry};
 use crate::loot::LootTable;
 use crate::names::Names;
 use crate::prop::{ContentRoll, CountRon, PropDef, PropId, Stock, read_stock};
 use crate::role::{self, RoleDef, RoleId};
+use crate::tag::TagDef;
 
 /// Which monster a slot holds: that one, or one drawn for a role.
 pub enum Pick<M> {
@@ -684,9 +684,9 @@ pub fn coverage<'p, M: 'p, I: Copy, D: Legended<M> + 'p>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::affix::TagDef;
     use crate::content::Registry;
     use crate::prop::{PropDef, Stock};
+    use crate::tag::TagDef;
     use rl_grid::{TileProps, TileRegistry};
 
     struct Beast(&'static str);

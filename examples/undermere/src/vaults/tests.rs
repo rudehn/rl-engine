@@ -717,9 +717,9 @@ fn the_cold_forges_anvil_tempers_a_worn_weapon_once() {
     let among = app.world().resource::<WellChoices>().temper;
     let choices = app.world_mut().run_system_with(among, Chooser { taker: me, offerer: anvil, verb: Verbs::OPEN }).expect("it runs");
     assert!(choices.contains(&sword) && !choices.contains(&carried), "the sword worn and not the potion carried: {choices:?}");
-    let before = app.world().get::<Enchant>(sword).map_or(0, |e| e.level);
+    let before = app.world().get::<ItemLevel>(sword).map_or(0, |l| l.0);
     take_up_on(&mut app, me, anvil, at, TEMPER_VERB, Some(sword));
-    assert_eq!(app.world().get::<Enchant>(sword).map_or(0, |e| e.level), before + 1, "tempered a level");
+    assert_eq!(app.world().get::<ItemLevel>(sword).map_or(0, |l| l.0), before + 1, "tempered a level");
     assert!(props_called(&mut app, map, ANVIL).is_empty() && props_called(&mut app, map, COLD_ANVIL).len() == 1, "and the anvil is cold");
 }
 

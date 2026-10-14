@@ -95,7 +95,7 @@ Registering is the step an implementation does not show, and it is the whole of 
 /// in their own slot beside it, the five kinds, and the ten resources.
 pub fn register(app: &mut App) {
     app.add_plugins(SavePlugin::new(SLOT).version(VERSION).on_arrival())
-        .save_kind::<ItemKind>()
+        .save_items::<ItemKind>()
         .save_kind::<Kind>()
         .save_kind::<Adventurer>()
         .save_kind::<Gate>()

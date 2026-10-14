@@ -87,7 +87,7 @@ fn kit_of(world: &World, who: Entity) -> Vec<Ware> {
         .filter(|thing| world.get::<OwnKit>(*thing).is_some())
         .filter_map(|thing| {
             let def = world.get::<ItemKind>(thing)?.0;
-            let level = world.get::<Enchant>(thing).map_or(0, |e| e.level);
+            let level = world.get::<ItemLevel>(thing).map_or(0, |l| l.0);
             let count = world.get::<Stack>(thing).map_or(1, |s| s.count);
             Some(Ware { def, count, level })
         })

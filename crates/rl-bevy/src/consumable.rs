@@ -30,15 +30,9 @@ use crate::effects::{Fired, MomentId, Moments};
 use crate::items::Stack;
 use crate::turn::Turns;
 
-/// What happens to a thing when its last charge is spent.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
-pub enum WhenEmpty {
-    /// It is gone: a stim, a grenade, a ration.
-    Destroyed,
-    /// It stays, empty, and does nothing it is spent by until it refills: a
-    /// wand at zero is still a wand.
-    Kept,
-}
+/// What happens to a thing when its last charge is spent: the authored
+/// part's, re-exported beside the charges it is about.
+pub use rl_rules::parts::WhenEmpty;
 
 /// A thing's refill: one charge every `every` hundredths of a step, on the
 /// turn clock, with `progress` counted towards the next.

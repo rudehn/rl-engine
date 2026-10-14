@@ -4260,6 +4260,7 @@ name = "rl-save"
 version = "0.3.0"
 dependencies = [
  "bevy",
+ "rand 0.9.5",
  "rl-bevy",
  "rl-core",
  "rl-grid",

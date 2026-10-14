@@ -1,11 +1,12 @@
 # Items: what a thing does
 
-Status: built 2026-09-22, against `main` at `0797370`; carriers redrawn 2026-09-23, against `60c430d`, when effects became a subsystem of their own; a use aimed at somewhere and a use made on another thing, things not yet known and things that will not come off, and ammunition added 2026-10-05 for Undermere's second part, against `d61cd5b`.
+Status: built 2026-09-22, against `main` at `0797370`; carriers redrawn 2026-09-23, against `60c430d`, when effects became a subsystem of their own; a use aimed at somewhere and a use made on another thing, things not yet known and things that will not come off, and ammunition added 2026-10-05 for Undermere's second part, against `d61cd5b`; authored parts, the level part and the saved item added 2026-10-13, against `43d0b4a`, when the affix model was removed.
 The reasoning is here; `docs/OVERVIEW.md` lists what exists, and `docs/design/effects.md` says how an effect lands.
 
 ## 0. Summary
 
-The engine owns no item definition and never will: what an item *is* belongs to a game's own registry, and the engine reads components off whatever the game spawned.
+The engine owns no item definition and never will: what an item *is* belongs to a game's own type, and the engine reads components off whatever the game spawned.
+What the engine does own is the shape of every field that describes something it already simulates, as authored parts a game types its own fields with, and the code that turns a definition's parts into components; section 6a has why, and why it is parts and not a schema.
 Where and when items turn up is the engine's, through a trait a game implements on that registry; `docs/design/loot.md` has why.
 This page is about the other half, which the engine does own: what a thing *does*, and which carrier of an effect list it should use.
 It also says why two markers are the engine's, a thing not yet known and a thing that will not come off, and why ammunition is, in sections 8 and 9.
@@ -62,7 +63,7 @@ So an item may write what it holds once, as `effects`, and each trigger that nam
 ```
 
 A thing that does two different things writes two lists, one on each trigger.
-The field names are a game's own; Foundry and Corsair read `triggers` into the engine's `TriggerSpec`, which is the shared part.
+The field names are a game's own; Foundry and Undermere read `triggers` into the engine's `TriggerSpec`, which is the shared part.
 
 ## 3. `Effects`, and why it exists at all
 
@@ -108,7 +109,7 @@ The loss is accepted rather than saved: a landing in the air holds entities and 
 `Consumable` counts charges: `left` of `max`, `WhenEmpty::Destroyed` or `Kept` at zero, and an optional `Recharge` that gives one back for each period of the clock.
 A stim holds one; a wand holds five and is kept when empty, refilling as the turns pass.
 
-A worn thing that holds charges may be `Attuned`: it refills only while worn and is emptied each time it is put on, which Foundry writes on its charges as `recharge: (every:, while_worn: true)`.
+A worn thing that holds charges may be `Attuned`: it refills only while worn and is emptied each time it is put on, which the `Charges` part writes as `while_worn: true` beside its `recharge`.
 That is the anti-swap rule, and it is on the thing rather than on the wearer because it is a fact about the thing: a worn thing that hides its wearer is earned by wearing it.
 Equip time was the other candidate, and it was rejected as the rule because time alone still lets a player swap between fights.
 A pulse is attuned by nature, since its clock only runs while worn.
@@ -127,26 +128,72 @@ A thing spent to nothing is marked `Spent` and kept, as the dead are, until the 
 
 - **`on_equip` effects.** Effects are one-shot; wearing is a standing state. A worn thing's clock is the other half, and it exists: a [`Pulse`] reports the `pulse` moment every period its thing is worn, so a plate that knits wounds is a trigger, not a system. What a worn thing does is already declarative and needs no list: `Armor`, `Resists`, an attack, `Bestows` for the registered stats. A one-shot when something goes on, a cursed plate that bites, is a real case and a small one; it waits for a game that wants it, and would be one more moment.
 - **"Hold a status while worn."** The insulated suit that reads as arc-resistant from the moment it goes on. A status a trigger puts on can already be held by the thing (section 5); one held for as long as the thing is worn, with no trigger to land it, is still a game's own system, as Foundry's `WornDarkSight` and `sync_dark_sight` are. By the rule in `CLAUDE.md`, the second game to write it is the signal it belongs in the engine.
-- **An engine item schema.** `triggers`, `consumable`, `throw` and the rest are Foundry's own field names in Foundry's own file; Corsair's happen to match and need not. What is shared is the components and the authored effect and trigger forms, never the file.
+- **An engine item schema.** No engine type is an item's definition, and no file's shape is the engine's; what is shared is the authored parts in section 6a, which a game's own fields are typed with, and the components they make.
 - **Items as offers.** A crate you open and a medkit you use are nearly the same shape, and props' offers already carry a verb, a time cost and a refusal reason in words. Only a use is chosen, though; a landing or a hit is not, so it would carry half of what an item does. The refusal reasons are the part worth taking later, onto the `use` trigger.
+
+## 6a. Parts, not a schema
+
+Until 2026-10-13 the engine shared the components and the authored effect and trigger forms, and each game wrote the rest of its item file itself.
+Undermere's `ItemDef` then opened with "Foundry's item schema trimmed", and it was: the same `MeleeDef`, `RangedDef`, `ThrowDef` and `ConsumableDef`, the same `slot`, `either` and `also`, the same validation, and a `spawn_item_at` of sixty lines that differed from Foundry's in a resist added rather than set and a hand pair named in code rather than read from the slots.
+By the rule in `CLAUDE.md` the second game writing a thing is the signal it belongs in the engine, and it did, but not as a schema.
+
+What moved is `rl_rules::parts`, a set of authored parts, each the type of one field and each describing only what the engine already simulates:
+
+| Part | Fields | Makes |
+| --- | --- | --- |
+| `Melee` | `roll`, `kind`, `look`, `shape`, `unaware` | `MeleeAttack` |
+| `Ranged` | `range`, `effective`, `roll`, `kind`, `look` | `RangedAttack` |
+| `Throw` | `range`, `effective`, `strike` | `Throwable` |
+| `Wear` | `slot`, `either`, `also` | `Wearable(EquipShape)`, the pair `either` reaches for read from the slot registry's `SlotDef::pair` |
+| `Charges` | `charges`, `when_empty`, `recharge`, `while_worn` | `Consumable`, its `Recharge` in hundredths of a step, and `Attuned` |
+| `Level` | `min`, `max`, `armor`, `damage`, `amount`, `turns`, `pulse`, `charges`, `stats` | what each level adds to all of the above, in section 7 |
+
+The rest of what an item's line says for the engine is a plain list, its armor, its tags, its effects and triggers, its bestows and caps, its ammunition tag, whether it stacks and its `Glow`, needing no part of its own; `parts::resistances` reads the one list that adds up, a kind written twice resisting by both, as two worn things' resistances add on a wearer.
+A game builds an `rl_bevy::ItemParts` from its own fields once at load, its triggers built and its wear resolved, and keeps it beside its definition; `insert_parts` spawns a thing of it at a level and `ItemParts::check` names what the engine would never play, a worn stack or a pulse on a thing never worn.
+`Attacks { melee, ranged, throw, cost }` is the attack half on its own, which a monster uses, since a blow is one thing whoever strikes it: Foundry's droids and Undermere's monsters write their attacks as the same parts their weapons do.
+
+Every field past the essentials is optional, and absent means the engine's plain behaviour, never a mechanic switched on: a thing with no `Level` takes no level, a `Level` grows only the amounts it writes, and no part has a default the engine chose.
+That is the line drawn by the guardrail the user set: the engine shares the shape of what it already plays, and a game's rules stay in the game.
+Undermere's curse, its identification, the strength a thing asks, the traits it lends, how a level is rolled when found and what a staff's level does to its refill are Undermere's fields and Undermere's code; Foundry's heat and its `levels.ron` are Foundry's.
+Using a part is optional too: the tutorial inserts its components by hand and nothing it did changed.
+
+A single engine struct holding every part, embedded in a game's definition, was weighed and rejected.
+It would be the engine's item schema under another name, every game's file would nest its engine half one level down, and a game wanting a different file would have to build the struct anyway; RON's `flatten` cannot be used beside `deny_unknown_fields`, which both games rely on to refuse a misplaced field.
+Parts cost a game one field per part in its own type and one struct literal at load, and buy it its own file.
+
+The look stays with the games.
+A thing's glyph is `rl-render`'s and its mass noun `rl-ui`'s, neither of which `rl-rules` may see, and a helper in a crate that sees both would be a part that is not about simulation at all: a game drawing in tiles, or naming things with articles of its own, has a different look, and the engine has nothing to gain by choosing one.
 
 ## 7. A level, and the one place a game writes what it does
 
 A `+2` thing is the same definition as a `+0` one, spawned stronger.
-`Enchant` records the level and its rolled affixes, and no system of the engine's reads it; the affix model's level-scaled grants are functions the game calls while it spawns the thing.
-Everything a level changes is a component the game writes when it spawns the thing, the level already applied: `Armor`, an attack's dice, `Bestows`, a `Pulse`'s period, and `EffectBonus` for what its effects land, which `docs/design/effects.md` section 8 has.
-So what a level does is the game's rule, written once where the game chooses, and the engine never learns the word.
+The `Level` part says what one level adds, and the engine's rule for it is linear and nothing else: a thing at level `n` is its own numbers plus `n` times each amount, armor to its `Armor`, damage to every damage roll of its blow, its shot and its thrown strike, `amount` and `turns` to its `EffectBonus`, `pulse` to its `Pulse`'s period, `charges` to what a fresh unit holds, and each of `stats` to its `Bestows`.
+Absent amounts are nought, and a level part with none at all is a thing that takes levels and changes nothing with them.
+The only floors are what a component cannot hold: a pulse of under one hundredth, a unit of no charges, a status inflicted for less than nothing.
+`min` and `max` bound the level, nought and no ceiling where neither is written, so a negative level is something a line asks for rather than something every thing can fall to.
+The level a thing is at is `ItemLevel`, which no system of the engine's reads to play; it is what a game names and prices a thing by and what a save keeps.
 
-Foundry writes it in the item's `enchant` block, the one place a reader looks to learn what a `+2` is: `max`, the highest level it is found at, and what one level adds, `armor`, `damage`, `dark_sight`, `pulse`, `turns` and `amount`.
-The item's own numbers stay where they are and are what it is at `+0`.
-Armor and damage are inferred, +1 a level on a thing that has any, because that is what a reader expects of a `+2` plate or blade; every other key is nought unless written, because a reader cannot tell a helmet's dark sight grows unless the file says so.
+`rl_bevy::parts::level_up(world, item, by)` moves a thing's level and fits every component the level decides from the parts it was made of, never from the thing as it stands, so a level is never added to a number that already carries one; what it has left of its charges grows with what it holds, an attack put by while it cannot be made is changed where it is put by, and a wearer's stats are folded again.
+It never lifts `Stuck`: that a thing below nought will not come off is Undermere's curse and not the engine's level, so Undermere's own `level_up` calls the engine's and then frees a thing raised to nought.
+
+Each game writes its own rule over the part, where it reads the file.
+Undermere's is by tag, in `armory::level_defaults`: a weapon's level adds a damage and five accuracy, armor's a point of armor, a staff's and a wand's a charge, and a weapon, armor and ring go down to three below nought, each line's own `level` written over its tag's amount by amount with `Level::over`, so `items.ron` writes a ring's worth and a staff's power and not the rule every weapon shares.
+How fast a staff refills at its level divides rather than adds, so it is not a level amount at all: the line writes its pace at level one, in hundredths, and Undermere's `recharge_at` and `staffs` keep it divided.
+Foundry's is that armor and damage are inferred, +1 a level on a thing that has any, because that is what a reader expects of a `+2` plate or blade; every other key is nought unless written, because a reader cannot tell a plate's clock quickens unless the file says so.
 Balance is set by `max`, 3 for plain armor, 5 for a weapon and 9 for the two plates that do something worn, rather than by a slower rate, since the standard rate is the one a reader expects.
-Each key is refused on a thing with nothing it adds to, `armor` and `damage` written even as nought included, `turns` on a thing with no `Inflict` among its effects and `amount` on one with no `Harm` or `Mend`, so a level rule in the wrong place is a load error naming the item rather than a plate that quietly does less.
-A level never quickens a pulse past a turn, since a plate pulsing several times each time its wearer acts is a rule nobody wrote on purpose, but the floor is on what the level changes: a period written below a turn is the thing at `+0` and stays so, because the base numbers stay where they are.
-What only a worn thing has is written where it belongs rather than at the item's top level: a pulse's period on its pulse trigger's `every`, and a charge that refills only while worn on its charges, `recharge: (every:, while_worn: true)`, which spawns the thing `Attuned`.
+Foundry refuses each key on a thing with nothing it adds to, `armor` and `damage` written even as nought included, `turns` on a thing with no `Inflict` among its effects and `amount` on one with no `Harm` or `Mend`, so a level rule in the wrong place is a load error naming the item rather than a plate that quietly does less; and it refuses a `pulse` that would quicken a clock past a turn by its `max`, the rule its runtime floor used to be, since a plate pulsing several times each time its wearer acts is a rule nobody wrote on purpose.
+Dark sight is Foundry's own component, so what a level adds to it is Foundry's own field, `dark_sight: (tiles:, per_level:)`.
 
-The approaches weighed, on 2026-09-27, are in `docs/superpowers/specs/2026-09-27-enchant-model-design.md`.
+The affix model this replaced, prefixes and suffixes with level-scaled grants and extra strikes, an enhance rule and weighted rolling, was never used by a game: both spawned `Enchanted` with no affixes and wrote their own level arithmetic beside it.
+It was removed rather than kept beside the level part, because two engine answers to what a level is would be one too many.
+
+The approaches weighed for Foundry's block, on 2026-09-27, are in `docs/superpowers/specs/2026-09-27-enchant-model-design.md`.
 Scaling written on the number where it is used, `turns: (base: 10, per_level: 2)`, keeps level rules on the triggers, which is the scatter this removed; inferring every numeric key hides from a reader what grows; and the first build's `per_level` in an effect's arguments, with the level on the `Landing`, put the rule where no reader of an item looked.
+
+## 7a. Saving a thing made of parts
+
+`rl_save::SaveableItem`, registered with `save_items`, saves an item as which definition it is, by its maker's `name_of`, at which level, and the game's own extra beside them.
+It is restored through the game's `ItemMaker::make_at`, so the thing is made again exactly as it was made when found, the level applied once, and only then is the game's extra put back on it, since what a game keeps is often about the level: Undermere's curse and how long it has been worn towards knowing it, Foundry's heat.
 
 ## 8. Things not yet known, and things that will not come off
 
@@ -204,6 +251,9 @@ There is no magazine and no reload action: a game that wants either writes it as
 - `crates/rl-bevy/src/ammo.rs`: `Ammo`, `Dry`, `AmmoChanged`, `spend_ammo` and `sync_ammo`; `Stowed` and `Loadout::dry` are in `combat.rs`.
 - `crates/rl-bevy/src/ability.rs`: `Grants` and `Known`, an actor's own, and `Aimed` and `Bystanders::land`, which an aimed use shares.
 - `crates/rl-rules/src/ability.rs`: `EffectSpec` and `TriggerSpec`, the authored forms any content file can read, and `Targeting` and `Asks`, a use's aim and its question.
-- `crates/rl-rules/src/equip.rs`: `Equipment::equip_keeping`, the slot rule a stuck thing needs.
+- `crates/rl-rules/src/equip.rs`: `Equipment::equip_keeping`, the slot rule a stuck thing needs, and `SlotDef::pair` with `pair_of`, which `either` reaches for.
+- `crates/rl-rules/src/parts.rs`: the authored parts, `Melee`, `Ranged`, `Throw`, `Wear`, `Charges` and `Level`, and `resistances`; tested on plain values, with no `App`.
+- `crates/rl-bevy/src/parts.rs`: `Attacks`, `ItemParts` and its check, `insert_parts`, `level_up`, `ItemLevel` and `MadeOf`.
+- `crates/rl-save/src/run.rs`: `SaveableItem`, `SavedItem` and `save_items`.
 - `crates/rl-ui/src/view/target.rs` and `crates/rl-ui/src/panel/inventory.rs`: `AimUse`, answered by the targeting cursor and by the bag choosing.
-- `examples/foundry/src/gear.rs` and `examples/foundry/assets/items.ron`: a game's own item file mapped onto the components above.
+- `examples/foundry/src/gear.rs` and `examples/foundry/assets/items.ron`, and `examples/undermere/src/armory.rs` and `examples/undermere/assets/items.ron`: two games' own item files typed with the parts above, each with its own rules for a level beside them.

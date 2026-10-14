@@ -79,12 +79,11 @@ pub fn player_with_hand_blaster(app: &mut App) -> (Entity, Entity) {
 /// exposed here so `upgrades.rs` can equip something new after a pick and
 /// see the pick's own effect on it.
 pub fn equip_new(app: &mut App, player: Entity, name: &str) -> Entity {
-    let registries = app.world().resource::<Registries>().clone();
     let armory = crate::testing::armory_of(app);
     let id = armory.defs.expect(name);
     let mut queue = CommandQueue::default();
     let mut commands = Commands::new(&mut queue, app.world_mut());
-    let item = crate::gear::spawn_item(&mut commands, &armory, id, &registries);
+    let item = crate::gear::spawn_item(&mut commands, &armory, id);
     queue.apply(app.world_mut());
     app.world_mut().get_mut::<Inventory>(player).unwrap().items.push(item);
     app.world_mut().write_message(Intent::new(player, Equip(item)));

@@ -104,12 +104,12 @@ use rand::Rng;
 use rand::seq::SliceRandom;
 use serde::Deserialize;
 
-use crate::affix::TagId;
 use crate::content::{ContentError, Registry};
 use crate::dressing::DressingDef;
 use crate::layout::LayoutDef;
 use crate::names::Names;
 use crate::prefab::{Coverage, Legended, PrefabDef, Sources};
+use crate::tag::TagId;
 
 /// How a grown piece is joined to what it is attached to: a layout
 /// shape's joins, and the two only a piece the pool places may carry.
@@ -844,7 +844,7 @@ impl Net {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::affix::TagDef;
+    use crate::tag::TagDef;
     use rl_grid::{TileProps, TileRegistry};
 
     struct World {

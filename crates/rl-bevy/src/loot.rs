@@ -77,7 +77,7 @@ pub enum Found {
 }
 
 /// Why something is being made, and at what band: what a game rolls a
-/// thing's quality or enchant from.
+/// thing's quality or level from.
 ///
 /// The band is the one the draw was asked at: a place's or a region's for
 /// its floor, a container's plus its row's offset, a prefab slot's plus
@@ -106,13 +106,24 @@ pub trait ItemMaker: Resource {
     /// container. A thing that stacks is one stack of `count`; anything
     /// else is `count` entities. `from` says why it is being made and at
     /// what band, and `rng` is the engine's stream for what is being made,
-    /// for whatever the game rolls on the thing itself, a quality or an
-    /// enchant.
+    /// for whatever the game rolls on the thing itself, a quality or a
+    /// level.
     fn make(&self, commands: &mut Commands, registries: &Registries, def: Id<Self::Def>, count: u32, from: Provenance, rng: &mut StdRng) -> Vec<Entity>;
+
+    /// Makes one of `def` at `level`, placed nowhere, as it was made when
+    /// it was found at that level: what a save restores a thing by, before
+    /// the game puts back what else it kept of it. Nothing is rolled, since
+    /// what was rolled is what was saved. A thing that takes no level
+    /// ignores `level`.
+    fn make_at(&self, commands: &mut Commands, registries: &Registries, def: Id<Self::Def>, level: i32) -> Entity;
 
     /// The definition called `name`, which a container names its fixed
     /// contents by.
     fn id_of(&self, name: &str) -> Option<Id<Self::Def>>;
+
+    /// The name of `def`, which [`id_of`](Self::id_of) finds it by again:
+    /// what a save writes a thing down as.
+    fn name_of(&self, def: Id<Self::Def>) -> &str;
 
     /// What can be found where, loaded with
     /// [`rl_rules::loot::load`].
@@ -523,8 +534,16 @@ pub(crate) mod tests {
             }
         }
 
+        fn make_at(&self, commands: &mut Commands, _: &Registries, def: Id<Toy>, _: i32) -> Entity {
+            commands.spawn((Item, Name::new(self.defs.get(def).name))).id()
+        }
+
         fn id_of(&self, name: &str) -> Option<Id<Toy>> {
             self.defs.id(name)
+        }
+
+        fn name_of(&self, def: Id<Toy>) -> &str {
+            self.defs.name(def)
         }
 
         fn table(&self) -> &LootTable<Id<Toy>> {

@@ -63,12 +63,12 @@ A use is a trigger and what it costs is its charges, and Undermere's staffs are 
 ```ron
     // The staffs, zapped from the pack: a staff's level is its power and its
     // charges both, found at two and better deeper, and a spent charge comes
-    // back over the turns its line says, divided by its level. Each level
+    // back over the time its line says, divided by its level. Each level
     // adds two to a bolt's roll, which keeps a firebolt near the content
     // sheet's (L+1)d4 on average with less to it by luck, five turns of
     // poison, two of slowness and a blade to a conjuring. Every bolt is seen to fly.
-    (name: "staff of firebolt", glyph: '/', color: (0.85, 0.45, 0.25), price: 250, tags: ["staff"], effect_per_level: (amount: 2),
-     consumable: (charges: 0, per_level: 1, when_empty: Kept, recharge: 500),
+    (name: "staff of firebolt", glyph: '/', color: (0.85, 0.45, 0.25), price: 250, tags: ["staff"], level: (amount: 2),
+     consumable: (charges: 0, when_empty: Kept, recharge: 50000),
      triggers: [(on: "use", targeting: (mode: Bolt(range: 8)), look: (glyph: '*', color: (r: 255, g: 120, b: 40)),
                  effects: [(kind: "Harm", args: (kind: "fire", roll: "1d4+1")), (kind: "Ignite", args: (turns: 3))])]),
 ```
@@ -77,22 +77,11 @@ A game hangs both on what it spawns from a definition, and Foundry's armory does
 
 <!-- include: ../../../../examples/foundry/src/gear.rs:use -->
 ```rust,no_run
-    // What it does at its moments, a stim's use and a grenade's landing,
-    // built once by the armory and shared by every copy; the engine lands
-    // them. And what doing it costs the thing, which the engine spends.
-    if let Some(triggers) = armory.triggers.get(id.index()).filter(|t| !t.0.is_empty()) {
-        e.insert(triggers.clone());
-    }
-    if let Some(c) = d.consumable {
-        let charges = Consumable::new(c.charges, c.when_empty);
-        e.insert(match c.recharge {
-            Some(r) => charges.recharging(r.every),
-            None => charges,
-        });
-        if c.recharge.is_some_and(|r| r.while_worn) {
-            e.insert(Attuned);
-        }
-    }
+    // Everything the engine plays, a stim's use and a grenade's landing,
+    // what doing either costs the thing, its wear, its armor and its
+    // attacks, from the parts the armory built once and shares with every
+    // copy; the engine lands and spends them.
+    insert_parts(&mut e, parts, level);
 ```
 
 ## The line

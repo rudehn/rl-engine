@@ -241,7 +241,7 @@ pub fn make(app: &mut App, name: &str) -> Entity {
     let thing = {
         let world = app.world();
         let armory = world.resource::<Armory>();
-        crate::armory::spawn_item(&mut Commands::new(&mut queue, world), armory, armory.defs.expect(name), world.resource::<Registries>())
+        crate::armory::spawn_item(&mut Commands::new(&mut queue, world), armory, armory.defs.expect(name))
     };
     queue.apply(app.world_mut());
     thing
@@ -256,7 +256,7 @@ pub fn find(app: &mut App, name: &str, level: i32) -> Entity {
     let thing = {
         let world = app.world();
         let armory = world.resource::<Armory>();
-        crate::armory::spawn_found(&mut Commands::new(&mut queue, world), armory, armory.defs.expect(name), level, world.resource::<Registries>())
+        crate::armory::spawn_found(&mut Commands::new(&mut queue, world), armory, armory.defs.expect(name), level)
     };
     queue.apply(app.world_mut());
     thing

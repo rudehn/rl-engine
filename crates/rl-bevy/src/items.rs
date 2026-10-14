@@ -111,18 +111,13 @@ pub struct GearScore(pub i32);
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct OwnBlowScore(pub i32);
 
-/// An item's enchant level and affixes: what it is called and what a
-/// game writes its combat components and [`Bestows`] from when it spawns
-/// it.
-#[derive(Component, Debug, Clone, Default, Deref, DerefMut)]
-pub struct Enchant(pub rl_rules::Enchanted);
-
 /// What an item does to its wearer's registered stats while it is worn.
 ///
-/// An affix that sharpens the hand or a coat that hardens the skin is a
-/// change to a stat, and this is where the item says so. The game writes
-/// it when the item is spawned, enchant already applied, since an enchant
-/// is rolled per instance; [`fold_gear`] puts every worn item's onto the
+/// A ring that sharpens the eye or a coat that hardens the skin is a
+/// change to a stat, and this is where the item says so. It is written
+/// when the item is spawned, its level already applied, since a level is
+/// one thing's own, by the game or by
+/// [`insert_parts`](crate::parts::insert_parts); [`fold_gear`] puts every worn item's onto the
 /// wearer's [`StatBlock`] tagged with the item, and takes them off again
 /// with it. An item whose worth is a blow or armor carries a
 /// [`MeleeAttack`](crate::combat::MeleeAttack) or an
@@ -132,9 +127,9 @@ pub struct Bestows(pub Vec<(StatId, Op)>);
 
 /// What an item counts as.
 ///
-/// The affix model already rolls against tags; abilities read the same
-/// ones to ask whether a shield is on the arm or a powder charge is in the
-/// bag, so they live on the item rather than in a table only the game can
+/// Abilities read tags to ask whether a shield is on the arm or a powder
+/// charge is in the bag, and loot and ammunition draw and spend by them,
+/// so they live on the item rather than in a table only the game can
 /// read.
 #[derive(Component, Debug, Clone, Default, Deref, DerefMut)]
 pub struct Tagged(pub Vec<rl_rules::TagId>);
@@ -199,8 +194,8 @@ pub struct Stuck;
 /// wounds is a pulse that mends. The clock runs only while the thing is
 /// worn and starts again from nothing each time it is put on, so a wearer
 /// cannot wear it most of a period, swap, and swap back for a pulse on the
-/// next turn. The game writes `every` when it spawns the thing, with the
-/// thing's enchant already applied, as it writes [`Bestows`].
+/// next turn. `every` is written when the thing is spawned, with the
+/// thing's level already applied, as [`Bestows`] is.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Pulse {
     /// Hundredths of a step between pulses.

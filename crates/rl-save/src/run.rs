@@ -3,7 +3,7 @@
 //!
 //! Every game that saves used to write the same walk: every monster by
 //! definition name, position, map and health; every item by definition,
-//! count and enchant, on the ground or in whose bag; the player with its
+//! count and level, on the ground or in whose bag; the player with its
 //! bag, its slots and its statuses; the stairs; and then the same in
 //! reverse, items first so bags can point at them. Five hundred lines in
 //! the first game to write them, and every game would write them again.
@@ -39,13 +39,14 @@
 //! written down by [`save_on_leaving`] rather than forgotten with its
 //! teardown, and [`AbandonRun`] forgets the slot the moment it is triggered.
 
+use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
 use rl_bevy::{
-    AbandonRun, Afflict, Afflicted, Burning, Counters, Dead, Emptied, EndOfFrame, EndRun, Ending, EngineState, Equipped, Health, Hidden, Inventory, Joined,
-    Leader, LeaveRun, MapId, OnMap, PlaceEntered, Position, Post, PropKind, Quests, Reads, Registries, Remains, SavedRun, Stack, Stair, Stocked, Transition,
-    Turns, Wearable, WorkKinds, Working,
+    AbandonRun, Afflict, Afflicted, Burning, Counters, Dead, Emptied, EndOfFrame, EndRun, Ending, EngineState, Equipped, Health, Hidden, Inventory, ItemLevel,
+    ItemMaker, Joined, Leader, LeaveRun, MapId, OnMap, PlaceEntered, Position, Post, PropKind, Quests, Reads, Registries, Remains, SavedRun, Stack, Stair,
+    Stocked, Transition, Turns, Wearable, WorkKinds, Working,
 };
-use rl_core::Point;
+use rl_core::{Id, Point};
 use rl_rules::{Equipment, Work};
 use ron::value::RawValue;
 use serde::de::DeserializeOwned;
@@ -260,10 +261,86 @@ impl SaveableState for Quests {
     }
 }
 
+/// A kind of item a game makes through its [`ItemMaker`], as the save sees
+/// it: which definition it is and at which level, which the engine writes
+/// down and makes again through the maker, and whatever else the game
+/// keeps of the thing.
+///
+/// Implemented on the component that marks the definition an item was
+/// made from, and registered with [`AddSaveable::save_items`] in place of
+/// [`AddSaveable::save_kind`]. The level is the thing's [`ItemLevel`],
+/// nought for a thing with none; its charges, its stack and where it lies
+/// are the engine's state, as on any saved kind.
+///
+/// On restore the thing is made at its level first, through
+/// [`ItemMaker::make_at`], and only then is the game's [`Extra`](Self::Extra)
+/// put back on it, since what a game keeps is often about the level, a
+/// curse that holds a thing below nought or an aim at learning what it is.
+pub trait SaveableItem: Component + Sized {
+    /// The game's item maker, which names a definition and makes one.
+    type Maker: ItemMaker;
+    /// What else the game keeps of one: `()` for nothing.
+    type Extra: Serialize + DeserializeOwned + Send + Sync + 'static;
+
+    /// The definition this thing was made from.
+    fn def(&self) -> Id<<Self::Maker as ItemMaker>::Def>;
+
+    /// Writes down what else the game keeps of `entity`.
+    fn capture_extra(world: &World, entity: Entity) -> Self::Extra;
+
+    /// Puts `extra` back on `entity`, which has just been made again at its
+    /// level.
+    fn restore_extra(world: &mut World, entity: Entity, extra: &Self::Extra);
+}
+
+/// An item, as the save writes it through its [`SaveableItem`]: which
+/// definition, by name, at which level, and the game's own extra.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SavedItem<E> {
+    /// The definition's name, as its maker names it.
+    pub def: String,
+    /// Its level; nought for a thing that takes none.
+    #[serde(default)]
+    pub level: i32,
+    /// What else the game kept of it.
+    pub extra: E,
+}
+
+fn capture_item<K: SaveableItem>(world: &World, entity: Entity) -> Result<Box<RawValue>, SaveError> {
+    let kind = world.get::<K>(entity).expect("an item is saved by the kind it carries");
+    let saved = SavedItem {
+        def: world.resource::<K::Maker>().name_of(kind.def()).to_string(),
+        level: world.get::<ItemLevel>(entity).map_or(0, |l| l.0),
+        extra: K::capture_extra(world, entity),
+    };
+    RawValue::from_rust(&saved).map_err(|e| SaveError::Encode(e.to_string()))
+}
+
+fn restore_item<K: SaveableItem>(world: &mut World, saved: &RawValue) -> Result<Entity, SaveError> {
+    let saved: SavedItem<K::Extra> = saved.into_rust().map_err(|e| SaveError::Decode(e.to_string()))?;
+    let Some(def) = world.resource::<K::Maker>().id_of(&saved.def) else {
+        warn!("a saved item is a {:?}, which this build has no definition for; it comes back as nothing", saved.def);
+        return Ok(world.spawn_empty().id());
+    };
+    let mut queue = CommandQueue::default();
+    let item = {
+        let world: &World = world;
+        let mut commands = Commands::new(&mut queue, world);
+        world.resource::<K::Maker>().make_at(&mut commands, world.resource::<Registries>(), def, saved.level)
+    };
+    queue.apply(world);
+    K::restore_extra(world, item, &saved.extra);
+    Ok(item)
+}
+
 /// Registers what a run is made of.
 pub trait AddSaveable {
     /// Saves every entity carrying `K`, by `K`'s own account of it.
     fn save_kind<K: Saveable>(&mut self) -> &mut Self;
+
+    /// Saves every item carrying `K` as its definition, its level and the
+    /// game's extra, made again through `K`'s maker.
+    fn save_items<K: SaveableItem>(&mut self) -> &mut Self;
 
     /// Saves the resource `R`, by its own account of itself.
     fn save_state<R: SaveableState>(&mut self) -> &mut Self;
@@ -278,6 +355,17 @@ impl AddSaveable for App {
             panic!("two saved kinds are both called {label}; the save tells them apart by that name");
         }
         registry.kinds.push(KindEntry { label, collect: collect::<K>, capture: capture_kind::<K>, restore: restore_kind::<K> });
+        self
+    }
+
+    fn save_items<K: SaveableItem>(&mut self) -> &mut Self {
+        self.init_resource::<SaveRegistry>();
+        let label = short_name::<K>();
+        let mut registry = self.world_mut().resource_mut::<SaveRegistry>();
+        if registry.kinds.iter().any(|k| k.label == label) {
+            panic!("two saved kinds are both called {label}; the save tells them apart by that name");
+        }
+        registry.kinds.push(KindEntry { label, collect: collect_items::<K>, capture: capture_item::<K>, restore: restore_item::<K> });
         self
     }
 
@@ -329,6 +417,13 @@ fn collect<K: Saveable>(world: &mut World) -> Vec<Entity> {
     if !K::TAKES_REMAINS {
         found.retain(|e| world.get::<Remains>(*e).is_none());
     }
+    found.sort_by_key(|e| (e.index(), *e));
+    found
+}
+
+/// Every item carrying `K` still in play, as [`collect`] finds a kind's.
+fn collect_items<K: SaveableItem>(world: &mut World) -> Vec<Entity> {
+    let mut found: Vec<Entity> = world.query_filtered::<Entity, (With<K>, Without<Dead>, Without<rl_bevy::Spent>)>().iter(world).collect();
     found.sort_by_key(|e| (e.index(), *e));
     found
 }
@@ -755,8 +850,9 @@ impl RunSave {
         self.state.iter().find(|(l, _)| l == label).and_then(|(_, raw)| raw.into_rust().ok())
     }
 
-    /// How many of `kind` were saved, for a line in the log.
-    pub fn count_of<K: Saveable>(&self) -> usize {
+    /// How many of `kind`, a [`Saveable`] or a [`SaveableItem`], were
+    /// saved, for a line in the log.
+    pub fn count_of<K: Component>(&self) -> usize {
         let label = short_name::<K>();
         self.kinds.iter().find(|k| k.kind == label).map_or(0, |k| k.entries.len())
     }
@@ -1146,6 +1242,126 @@ mod tests {
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
         app.update();
+    }
+
+    /// A game's item definition, which the engine never reads.
+    struct Blade(&'static str);
+
+    impl rl_rules::Named for Blade {
+        fn name(&self) -> &str {
+            self.0
+        }
+    }
+
+    /// A game's item maker, making every blade from one set of parts that
+    /// takes a level: a damage a level on a blow of 1d6.
+    #[derive(Resource)]
+    struct Blades {
+        defs: rl_rules::Registry<Blade>,
+        parts: std::sync::Arc<rl_bevy::ItemParts>,
+        table: rl_rules::LootTable<Id<Blade>>,
+    }
+
+    impl Blades {
+        fn new() -> Self {
+            let blow = rl_rules::parts::Melee { roll: rl_core::DiceRoll::new(1, 6), kind: Id::from_raw(0).into(), look: None, shape: None, unaware: None };
+            let parts = rl_bevy::ItemParts {
+                attacks: rl_bevy::Attacks { melee: Some(blow), ..Default::default() },
+                level: Some(rl_rules::parts::Level { damage: Some(1), ..Default::default() }),
+                ..Default::default()
+            };
+            let defs = rl_rules::Registry::from_defs(vec![Blade("knife"), Blade("sabre")]).unwrap();
+            Self { defs, parts: std::sync::Arc::new(parts), table: rl_rules::LootTable::default() }
+        }
+    }
+
+    impl ItemMaker for Blades {
+        type Def = Blade;
+        fn make(&self, _: &mut Commands, _: &Registries, _: Id<Blade>, _: u32, _: rl_bevy::Provenance, _: &mut rand::rngs::StdRng) -> Vec<Entity> {
+            Vec::new()
+        }
+        fn make_at(&self, commands: &mut Commands, _: &Registries, def: Id<Blade>, level: i32) -> Entity {
+            let mut e = commands.spawn(BladeKind(def));
+            rl_bevy::insert_parts(&mut e, &self.parts, level);
+            e.id()
+        }
+        fn id_of(&self, name: &str) -> Option<Id<Blade>> {
+            self.defs.id(name)
+        }
+        fn name_of(&self, def: Id<Blade>) -> &str {
+            self.defs.name(def)
+        }
+        fn table(&self) -> &rl_rules::LootTable<Id<Blade>> {
+            &self.table
+        }
+        fn band(&self, _: rl_bevy::LootArea) -> i32 {
+            0
+        }
+    }
+
+    /// The game's marker of what a blade was made from.
+    #[derive(Component)]
+    struct BladeKind(Id<Blade>);
+
+    /// What the game keeps of a blade beyond its level, and the level the
+    /// blade stood at when that was put back on it.
+    #[derive(Component, Debug, PartialEq, Eq)]
+    struct Notched {
+        notches: u8,
+        put_back_at: Option<i32>,
+    }
+
+    impl SaveableItem for BladeKind {
+        type Maker = Blades;
+        type Extra = u8;
+        fn def(&self) -> Id<Blade> {
+            self.0
+        }
+        fn capture_extra(world: &World, entity: Entity) -> u8 {
+            world.get::<Notched>(entity).map_or(0, |n| n.notches)
+        }
+        fn restore_extra(world: &mut World, entity: Entity, notches: &u8) {
+            let put_back_at = world.get::<ItemLevel>(entity).map(|l| l.0);
+            world.entity_mut(entity).insert(Notched { notches: *notches, put_back_at });
+        }
+    }
+
+    /// An item saved as its definition and level comes back made by the
+    /// game's maker at that level, its blow a level's worth stronger and
+    /// never two, and the game's own extra goes back on after, onto a thing
+    /// already at its level.
+    #[test]
+    fn an_item_is_saved_as_its_definition_and_level_and_its_extra_is_put_back_after_the_level() {
+        let backend = std::sync::Arc::new(MemoryBackend::default());
+        let (mut app, start) = game(Saves(backend.clone()));
+        app.insert_resource(Blades::new()).save_items::<BladeKind>();
+        let sabre = app.world().resource::<Blades>().defs.expect("sabre");
+        let made = {
+            let mut queue = bevy::ecs::world::CommandQueue::default();
+            let world = app.world();
+            let mut commands = Commands::new(&mut queue, world);
+            let made = world.resource::<Blades>().make_at(&mut commands, &Registries::default(), sabre, 2);
+            commands.entity(made).insert((Position(start.offset(1, 0)), OnMap(MapId::SURFACE), Notched { notches: 3, put_back_at: None }));
+            queue.apply(app.world_mut());
+            made
+        };
+        app.world_mut().spawn((Actor, Player, Blocks, You, Position(start), Viewshed::new(6), RevealsMap, Health::full(30)));
+        play(&mut app);
+        assert_eq!(app.world().get::<MeleeAttack>(made).map(|m| m.dice.bonus), Some(2));
+        save_run(app.world_mut()).unwrap();
+
+        let (mut back, _) = game(Saves(backend));
+        back.insert_resource(Blades::new()).save_items::<BladeKind>();
+        let save = load_run(back.world()).unwrap().expect("a save");
+        assert_eq!(save.count_of::<BladeKind>(), 1);
+        save.restore(back.world_mut()).unwrap();
+        let w = back.world_mut();
+        let found: Vec<(Option<i32>, Option<i32>, Option<&Notched>)> = w
+            .query_filtered::<(Option<&ItemLevel>, Option<&MeleeAttack>, Option<&Notched>), With<BladeKind>>()
+            .iter(w)
+            .map(|(level, blow, notched)| (level.map(|l| l.0), blow.map(|b| b.dice.bonus), notched))
+            .collect();
+        assert_eq!(found, vec![(Some(2), Some(2), Some(&Notched { notches: 3, put_back_at: Some(2) }))]);
     }
 
     /// The engine's own kind: a game writes down nothing about its props

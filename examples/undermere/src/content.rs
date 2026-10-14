@@ -154,7 +154,9 @@ pub const CLOUD_TINTS: [(&str, (f32, f32, f32)); 3] = [(PARALYTIC, (0.78, 0.45, 
 
 /// The slots that go in pairs, by name: a thing that fits `either` of a
 /// pair is worn in whichever is free, a one-handed blade in either hand
-/// and a ring on either hand's finger.
+/// and a ring on either hand's finger. Written onto the slot registry, the
+/// first of each pair paired with the second, which is where the engine's
+/// `Wear::shape` finds a pair.
 pub const PAIRS: [(&str, &str); 2] = [("main hand", "off hand"), ("left finger", "right finger")];
 
 /// Undermere's stats, each at the value an actor has with nothing on it.
@@ -280,7 +282,15 @@ pub fn registries() -> Registries {
         )
         .unwrap(),
         tags: tags(),
-        slots: Registry::from_defs(["main hand", "off hand", "head", "body", "left finger", "right finger", "light"].map(SlotDef::new).to_vec()).unwrap(),
+        slots: Registry::from_defs(
+            ["main hand", "off hand", "head", "body", "left finger", "right finger", "light"]
+                .map(|slot| match PAIRS.iter().find(|(one, _)| *one == slot) {
+                    Some((_, other)) => SlotDef::new(slot).paired_with(*other),
+                    None => SlotDef::new(slot),
+                })
+                .to_vec(),
+        )
+        .unwrap(),
         ..Registries::default()
     };
     registries.props = rl_engine::rl_rules::prop::load(PROPS_RON, &registries.names()).unwrap_or_else(|e| panic!("assets/props.ron: {e}"));

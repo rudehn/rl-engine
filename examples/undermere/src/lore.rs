@@ -352,10 +352,10 @@ pub fn reads_unknown(armory: &Armory, lore: &Lore, def: Id<ItemDef>, level_known
 
 /// A thing whose name may have changed: one just made, one whose level
 /// changed, and one just found to be unfamiliar.
-type Renamed = (With<ItemKind>, Or<(Added<ItemKind>, Changed<Enchant>, Added<Unfamiliar>)>);
+type Renamed = (With<ItemKind>, Or<(Added<ItemKind>, Changed<ItemLevel>, Added<Unfamiliar>)>);
 
 /// What every thing's name, colour and [`Unknown`] answer to.
-type Named<'a> = (Entity, &'a ItemKind, Option<&'a Enchant>, Has<Unfamiliar>, Has<Unknown>, &'a mut Name, Option<&'a mut Glyph>);
+type Named<'a> = (Entity, &'a ItemKind, Option<&'a ItemLevel>, Has<Unfamiliar>, Has<Unknown>, &'a mut Name, Option<&'a mut Glyph>);
 
 /// Gives every thing the name, the colour and the [`Unknown`] that what is
 /// known of it says: by [`called`] and [`reads_unknown`], drawn in its
@@ -383,7 +383,7 @@ pub fn keep_names(
         return;
     }
     for (thing, kind, level, unfamiliar, unknown, mut name, glyph) in &mut things {
-        let level = level.map_or(0, |l| l.level);
+        let level = level.map_or(0, |l| l.0);
         let now = called(&armory, &lore, kind.0, level, !unfamiliar);
         if name.as_str() != now {
             *name = Name::new(now);
@@ -651,7 +651,7 @@ pub fn grow_familiar(
     mut commands: Commands,
     turns: Res<Turns>,
     adventurer: Query<&Equipped, With<Adventurer>>,
-    mut things: Query<(Entity, &ItemKind, Option<&Enchant>, &mut Unfamiliar)>,
+    mut things: Query<(Entity, &ItemKind, Option<&ItemLevel>, &mut Unfamiliar)>,
     armory: Res<Armory>,
     lore: Res<Lore>,
     mut tell: MessageWriter<Tell>,
@@ -672,7 +672,7 @@ pub fn grow_familiar(
         unfamiliar.worn += now.saturating_sub(since);
         unfamiliar.since = Some(now);
         if unfamiliar.worn >= FAMILIAR_AFTER {
-            let level = level.map_or(0, |l| l.level);
+            let level = level.map_or(0, |l| l.0);
             let kind = kind_called(&lore, armory.defs.get(kind.0));
             tell.write(Tell::new(format!("You are familiar enough with your {kind} to know it is {level:+}."), Tones::NOTICE));
             commands.entity(thing).try_remove::<Unfamiliar>();
@@ -715,7 +715,7 @@ impl FromArgs for Identify {
 pub fn identify(world: &mut World, thing: Entity) {
     let Some(kind) = world.get::<ItemKind>(thing).map(|k| k.0) else { return };
     let count = world.get::<Stack>(thing).map_or(1, |s| s.count);
-    let level = world.get::<Enchant>(thing).map_or(0, |l| l.level);
+    let level = world.get::<ItemLevel>(thing).map_or(0, |l| l.0);
     let unfamiliar = world.get::<Unfamiliar>(thing).is_some();
     let (line, tone) = world.resource_scope(|world, mut lore: Mut<Lore>| {
         let armory = world.resource::<Armory>();

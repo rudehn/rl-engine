@@ -407,7 +407,7 @@ mod tests {
         let card = {
             let id = armory.defs.id("keycard").expect("the armory has keycards");
             let mut commands = app.world_mut().commands();
-            let card = crate::gear::spawn_item(&mut commands, &armory, id, &registries);
+            let card = crate::gear::spawn_item(&mut commands, &armory, id);
             commands.entity(card).insert(Stack { key: 99, count: 2 });
             card
         };

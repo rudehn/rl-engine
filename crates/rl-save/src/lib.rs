@@ -2,7 +2,10 @@
 //! and the engine's own state as a save.
 //!
 //! The engine cannot know what a player is made of, so a game says what
-//! each kind of thing it spawns is, through [`Saveable`], and the engine
+//! each kind of thing it spawns is, through [`Saveable`], or for an item
+//! it makes through its `ItemMaker`, through [`SaveableItem`], which the
+//! engine writes as its definition and level and makes again at that
+//! level before the game's own extra goes back on, and the engine
 //! walks the world: [`RunSave`] holds every kind's entries in the kind's
 //! own words, the engine's state on each of them, the game's resources
 //! through [`SaveableState`], and [`EngineSave`], the scheduler, the
@@ -38,8 +41,8 @@ pub use engine::EngineSave;
 pub use records::RECORDS_SLOT;
 pub use remap::{EntityRemap, SaveId};
 pub use run::{
-    AddSaveable, EntityState, KindSave, RunSave, SavePlugin, SaveRegistry, SaveSlot, Saveable, SaveableState, SavedBurning, forget_save, load_run,
-    save_on_arrival, save_on_leaving, save_run,
+    AddSaveable, EntityState, KindSave, RunSave, SavePlugin, SaveRegistry, SaveSlot, Saveable, SaveableItem, SaveableState, SavedBurning, SavedItem,
+    forget_save, load_run, save_on_arrival, save_on_leaving, save_run,
 };
 pub use settings::SETTINGS_SLOT;
 pub use unload::Stash;
@@ -50,7 +53,7 @@ pub mod prelude {
     pub use crate::backend::{FileBackend, MemoryBackend, SaveBackend, SaveError, Saves};
     pub use crate::engine::EngineSave;
     pub use crate::remap::{EntityRemap, SaveId};
-    pub use crate::run::{AddSaveable, RunSave, SavePlugin, Saveable, SaveableState, load_run, save_run};
+    pub use crate::run::{AddSaveable, RunSave, SavePlugin, Saveable, SaveableItem, SaveableState, SavedItem, load_run, save_run};
     pub use crate::unload::Stash;
     pub use crate::versioned::{Versioned, decode, encode};
 }

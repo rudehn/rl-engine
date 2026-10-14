@@ -457,12 +457,11 @@ mod tests {
     /// run so the pack's rows are read again.
     fn in_the_pack(app: &mut App, name: &str, level: i32) -> Entity {
         let me = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
-        let registries = app.world().resource::<Registries>().clone();
         let armory = foundry::testing::armory_of(app);
         let mut queue = bevy::ecs::world::CommandQueue::default();
         let item = {
             let mut commands = Commands::new(&mut queue, app.world());
-            foundry::gear::spawn_item_at(&mut commands, &armory, armory.defs.expect(name), level, &registries)
+            foundry::gear::spawn_item_at(&mut commands, &armory, armory.defs.expect(name), level)
         };
         queue.apply(app.world_mut());
         app.world_mut().get_mut::<Inventory>(me).expect("the commando has a pack").items.push(item);

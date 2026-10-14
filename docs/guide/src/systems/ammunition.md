@@ -37,7 +37,7 @@ A fed weapon is a row naming the tag one shot spends, and what it spends is a st
 
 <!-- include: ../../../../examples/undermere/assets/items.ron:bow -->
 ```ron
-    (name: "bow", glyph: '}', color: (0.65, 0.5, 0.32), price: 80, slot: "main hand", also: ["off hand"], tags: ["weapon"], ammo: "arrow", strength: 12,
+    (name: "bow", glyph: '}', color: (0.65, 0.5, 0.32), price: 80, wear: (slot: "main hand", also: ["off hand"]), tags: ["weapon"], ammo: "arrow", strength: 12,
      ranged: (range: 10, effective: 7, roll: "2d4+1", kind: "pierce", look: (glyph: '|', color: (r: 191, g: 173, b: 128)))),
     // The bow outshoots anything thrown: it reaches ten cells and is true
     // to seven, and strikes for 2d4+1 where a javelin, the best thrown, is

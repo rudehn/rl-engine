@@ -46,34 +46,34 @@ A game's item registry is its `ItemMaker`, and Foundry's is the armory: a deck's
 /// entered, what a kill leaves, and what a crate or a locker holds. A
 /// deck's band is its number, and Foundry has no streamed surface. The
 /// armory makes each thing, rolling a level from `levels.ron` at the band
-/// it is found at for a thing that names an `enchant`.
+/// it is found at for a thing that names a `level`.
 impl ItemMaker for Armory {
     type Def = ItemDef;
 
-    fn make(
-        &self,
-        commands: &mut Commands,
-        registries: &Registries,
-        def: Id<ItemDef>,
-        count: u32,
-        from: Provenance,
-        rng: &mut rand::rngs::StdRng,
-    ) -> Vec<Entity> {
+    fn make(&self, commands: &mut Commands, _: &Registries, def: Id<ItemDef>, count: u32, from: Provenance, rng: &mut rand::rngs::StdRng) -> Vec<Entity> {
         let d = self.defs.get(def);
         if d.stack {
-            return spawn_items(commands, self, def, count, registries);
+            return spawn_items(commands, self, def, count);
         }
         // Each its own roll: two plates from one crate are two finds.
         (0..count)
             .map(|_| {
-                let level = d.enchant.map_or(0, |e| self.levels.roll(from.band, rng).min(e.max));
-                spawn_item_at(commands, self, def, level, registries)
+                let level = d.level.as_ref().map_or(0, |_| self.levels.roll(from.band, rng));
+                spawn_item_at(commands, self, def, level)
             })
             .collect()
     }
 
+    fn make_at(&self, commands: &mut Commands, _: &Registries, def: Id<ItemDef>, level: i32) -> Entity {
+        spawn_item_at(commands, self, def, level)
+    }
+
     fn id_of(&self, name: &str) -> Option<Id<ItemDef>> {
         self.defs.id(name)
+    }
+
+    fn name_of(&self, def: Id<ItemDef>) -> &str {
+        self.defs.name(def)
     }
 
     fn table(&self) -> &LootTable<Id<ItemDef>> {

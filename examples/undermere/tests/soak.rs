@@ -330,10 +330,10 @@ fn carried(world: &mut World, me: Entity) -> Vec<Thing> {
         let Some(id) = world.get::<ItemKind>(it).map(|k| k.0) else { continue };
         let def = armory.defs.get(id);
         let known = lore.knows(&def.name).then(|| def.name.clone());
-        let level = (!world.entity(it).contains::<Unfamiliar>()).then(|| world.get::<Enchant>(it).map_or(0, |e| e.0.level));
+        let level = (!world.entity(it).contains::<Unfamiliar>()).then(|| world.get::<ItemLevel>(it).map_or(0, |l| l.0));
         let left = world.get::<Consumable>(it).map(|c| c.left);
         let stuck = world.entity(it).contains::<Stuck>();
-        let (kind, slot) = (kind_of(def, registries), def.slot.map(|s| registries.slots.name(s.id()).to_string()));
+        let (kind, slot) = (kind_of(def, registries), def.wear.as_ref().map(|w| registries.slots.name(w.slot.id()).to_string()));
         let worn_in = worn.iter().find(|(_, item)| *item == it).map(|(slot, _)| registries.slots.name(*slot).to_string());
         things.push(Thing { it, def: id, known, level, left, worn: worn_in.is_some(), stuck, kind, slot, worn_in });
     }
@@ -1055,7 +1055,7 @@ fn delve(seed: u64, plan: Plan) -> Delve {
                 eprintln!("    left alone: {shunned:?}, stuck {}, the way round them {:?}", memory.stuck, toward(world, at, &[down], &memory.untouchable));
             }
         }
-        let level = |world: &World, on: Entity| world.get::<Enchant>(on).map(|e| e.0.level);
+        let level = |world: &World, on: Entity| world.get::<ItemLevel>(on).map(|l| l.0);
         let into = match choice {
             Choice::UseOn(_, on) => Some((on, level(world, on))),
             _ => None,

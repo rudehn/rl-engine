@@ -33,10 +33,10 @@
 use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
 use rl_engine::prelude::*;
-use rl_engine::rl_save::{AddSaveable, SavePlugin, Saveable, SaveableState};
+use rl_engine::rl_save::{AddSaveable, SavePlugin, Saveable, SaveableItem, SaveableState};
 use serde::{Deserialize, Serialize};
 
-use crate::armory::{Armory, ItemKind};
+use crate::armory::{Armory, ItemDef, ItemKind};
 use crate::bestiary::{Bestiary, Kind};
 use crate::bestiary_lore::MonsterLore;
 use crate::lore::{CurseShown, Lore, Unfamiliar};
@@ -71,7 +71,11 @@ use crate::writings::WritingsProgress;
 // the gate is Undermere's own kind; the braziers before the throne are a
 // kind of their own. An older save's ways are a kind this build has none
 // of and its throne's braziers would burn warm, so it is refused.
-pub const VERSION: u32 = 8;
+// v9: an item is the engine's saved item, its definition and level with
+// Undermere's own beside them under `extra`, where it was one record of
+// Undermere's; an older save's items do not read as the new shape, so it
+// is refused.
+pub const VERSION: u32 = 9;
 
 /// The slot every run saves to.
 pub const SLOT: &str = "undermere";
@@ -81,7 +85,7 @@ pub const SLOT: &str = "undermere";
 /// in their own slot beside it, the five kinds, and the ten resources.
 pub fn register(app: &mut App) {
     app.add_plugins(SavePlugin::new(SLOT).version(VERSION).on_arrival())
-        .save_kind::<ItemKind>()
+        .save_items::<ItemKind>()
         .save_kind::<Kind>()
         .save_kind::<Adventurer>()
         .save_kind::<Gate>()
@@ -321,23 +325,19 @@ impl Saveable for Kind {
     }
 }
 
-/// An item, as the save writes it: its definition, by name, its level,
-/// whether it is still cursed on, how long the adventurer has worn it
-/// towards knowing its level, and how much of it the tally has counted as
-/// found. Its stack and its charges are the engine's to keep, and what it
-/// lends is its definition's, made again with it at its level.
+/// What Undermere keeps of an item beyond its definition and its level,
+/// which the engine writes and makes it again at: whether it is still
+/// cursed on, how long the adventurer has worn it towards knowing its
+/// level, and how much of it the tally has counted as found. Its stack and
+/// its charges are the engine's to keep, and what it lends is its
+/// definition's, made again with it at its level.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ItemSave {
-    /// The definition's name.
-    pub def: String,
     /// How many of it the tally has counted, nought for what the
     /// adventurer has never held: a pile of gold they carry or dropped is
     /// not counted again in the run carried on.
     #[serde(default)]
     pub counted: u32,
-    /// Its level, nought for a thing that takes none.
-    #[serde(default)]
-    pub level: i32,
     /// Whether it will not come off once worn: a thing below nought is
     /// made stuck, and one a scroll freed is not, at the same level.
     #[serde(default)]
@@ -361,15 +361,17 @@ pub struct ItemSave {
     pub own_kit: bool,
 }
 
-impl Saveable for ItemKind {
-    type Saved = ItemSave;
+impl SaveableItem for ItemKind {
+    type Maker = Armory;
+    type Extra = ItemSave;
 
-    fn capture(world: &World, entity: Entity) -> ItemSave {
-        let kind = world.get::<ItemKind>(entity).expect("an item's kind");
+    fn def(&self) -> Id<ItemDef> {
+        self.0
+    }
+
+    fn capture_extra(world: &World, entity: Entity) -> ItemSave {
         ItemSave {
-            def: world.resource::<Armory>().defs.name(kind.0).to_string(),
             counted: world.get::<Counted>(entity).map_or(0, |c| c.0),
-            level: world.get::<Enchant>(entity).map_or(0, |e| e.level),
             stuck: world.get::<Stuck>(entity).is_some(),
             unfamiliar: world.get::<Unfamiliar>(entity).map(|u| u.worn),
             curse_shown: world.get::<CurseShown>(entity).is_some(),
@@ -378,16 +380,12 @@ impl Saveable for ItemKind {
         }
     }
 
-    /// Made again at its level by the function that made it, so the level
-    /// is applied once and never on top of itself, then held on or let go
-    /// as it was when it was saved.
-    fn restore(world: &mut World, saved: &ItemSave) -> Entity {
-        let Some(id) = world.resource::<Armory>().defs.id(&saved.def) else {
-            warn!("a saved item is a {:?}, which this build has no definition for; it comes back as nothing", saved.def);
-            return world.spawn_empty().id();
-        };
-        let registries = world.resource::<Registries>().clone();
-        let item = spawned(world, |commands, world| crate::armory::spawn_item_at(commands, world.resource::<Armory>(), id, saved.level, &registries));
+    /// Put back on a thing the engine has made again at its level by the
+    /// function that made it, so the level is applied once and never on top
+    /// of itself: held on or let go as it was when it was saved, whatever
+    /// its level made it.
+    fn restore_extra(world: &mut World, item: Entity, saved: &ItemSave) {
+        let keys = saved.opens.map(|floor| crate::vaults::key_tags(world.resource::<Registries>(), floor));
         let mut e = world.entity_mut(item);
         if saved.counted > 0 {
             e.insert(Counted(saved.counted));
@@ -402,13 +400,12 @@ impl Saveable for ItemKind {
         if saved.curse_shown {
             e.insert(CurseShown);
         }
-        if let Some(floor) = saved.opens {
-            e.insert((VaultKey { floor }, crate::vaults::key_tags(&registries, floor)));
+        if let (Some(floor), Some(keys)) = (saved.opens, keys) {
+            e.insert((VaultKey { floor }, keys));
         }
         if saved.own_kit {
             e.insert(OwnKit);
         }
-        item
     }
 }
 
@@ -695,7 +692,7 @@ mod tests {
         let stats = &carried.world().get::<StatBlock>(me).expect("stats").0;
         assert_eq!(stats.base(registries.stats.expect(crate::content::STRENGTH), &registries.stats), 13, "the strength a potion gave");
         let (freed, held) = (on(&carried, me, "left finger"), on(&carried, me, "right finger"));
-        let level = |ring: Entity| carried.world().get::<Enchant>(ring).map(|e| e.level);
+        let level = |ring: Entity| carried.world().get::<ItemLevel>(ring).map(|l| l.0);
         assert_eq!((level(freed), carried.world().get::<Stuck>(freed).is_some()), (Some(-2), false), "lifted, at the level it was");
         assert_eq!((level(held), carried.world().get::<Stuck>(held).is_some()), (Some(-1), true), "still held on");
         assert_eq!((worn_for(&carried, freed), worn_for(&carried, held)), before, "and the turns each has been worn");

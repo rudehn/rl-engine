@@ -1,16 +1,16 @@
 //! The rules layer: shapes in the engine, vocabulary in the game.
 //!
 //! Nothing here names a stat, a damage type, a status, a faction, an
-//! equipment slot, an item tag, an affix, a fact or a quest. The engine
-//! ships the machinery; a game registers what exists and the numbers that
-//! go with it.
+//! equipment slot, an item tag, a fact or a quest. The engine ships the
+//! machinery; a game registers what exists and the numbers that go with
+//! it.
 //!
 //! - [`content`]: registries and banded tables loaded from RON, which hand
 //!   out the ids everything else is keyed by.
 //! - [`stats`], [`damage`], [`status`], [`faction`], [`equip`] and
-//!   [`affix`]: the modifier accumulator, the mitigation pipeline, the tick
-//!   and expiry machinery, the relation matrix, the slot graph and the
-//!   affix and enchant model.
+//!   [`tag`]: the modifier accumulator, the mitigation pipeline, the tick
+//!   and expiry machinery, the relation matrix, the slot graph and its
+//!   pairs, and what a thing counts as.
 //! - [`gas`] and [`fire`]: the rules a turn steps a gas and a fire by over a
 //!   tile field; which gases there are is content, and what burns is the
 //!   caller's to say.
@@ -23,7 +23,8 @@
 //!   aimed use, so both are refused by the one rule, and [`Asks`] what a
 //!   thing's use asks for when it is used on another of its user's things.
 //! - [`parts`]: what a content file writes for something the engine
-//!   already simulates, a blow, a shot, a throw, in one shape any game's
+//!   already simulates, a blow, a shot, a throw, where a thing is worn,
+//!   its charges and what a level of it adds, in one shape any game's
 //!   own definition can type a field with, so two games' files read alike
 //!   without either owning the other's schema.
 //! - [`loot`]: where items turn up and how often, keyed by a game's own
@@ -77,7 +78,6 @@
 
 pub mod ability;
 pub mod accuracy;
-pub mod affix;
 pub mod ai;
 pub mod balance;
 pub mod content;
@@ -100,11 +100,11 @@ pub mod prop;
 pub mod role;
 pub mod stats;
 pub mod status;
+pub mod tag;
 pub mod work;
 
 pub use ability::{AbilityDef, AbilityId, Aim, Area, Asks, Blocked, Cost, EffectSpec, Gates, Purse, Requirement, Targeting, TriggerSpec, blocked, read_args};
 pub use accuracy::{Certain, Delivery, HitModel, Line, Odds, Percent, PercentLabels, Shot, range_penalty};
-pub use affix::{AffixDef, AffixId, AffixKind, Enchanted, EnhanceRule, Scaled, ScaledStrike, TagDef, TagId, roll_affixes};
 pub use ai::{
     ActorView, Awareness, Brain, Carried, Choice, Decision, Fields, HearingStats, ItemView, Missile, MovementProfile, NoFields, NoticeStats, Sense, Snapshot,
     StealthStats, Tactic, TacticCtx, Vitals, Wits, notices,
@@ -113,7 +113,7 @@ pub use balance::{BandRow, Report, ThreatSubject, threat};
 pub use content::{BandedEntry, BandedTable, ContentError, Named, Registry};
 pub use damage::{DamageKind, DamageStage, Hit, Resistances, resolve};
 pub use dressing::{DistrictDressings, DressingDef};
-pub use equip::{EquipError, EquipShape, Equipment, SlotDef, SlotId};
+pub use equip::{EquipError, EquipShape, Equipment, SlotDef, SlotId, pair_of};
 pub use events::{Change, CounterDef, CounterId, Fact, FactDef, FactKind, Ledger, Matcher, Need, Objective, QuestDef, QuestId, QuestState, Tally, Tracker};
 pub use faction::{FactionId, Factions, Relation};
 pub use fire::Tinder;
@@ -123,12 +123,13 @@ pub use layout::LayoutDef;
 pub use loot::{DropRow, DropTable, Layout, LevelRow, LevelTable, LootRow, LootTable, Placed, ScatterRules, plan_scatter};
 pub use namegen::{NameBook, NameCase, NameSet};
 pub use names::{NameRef, Names};
-pub use parts::AttackShape;
+pub use parts::{AttackShape, WhenEmpty};
 pub use prefab::{Coverage, CoverageRow, Legend, Legended, Pick, PrefabDef, Reach, Slot};
 pub use prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, Stock};
 pub use role::{RoleDef, RoleId};
 pub use stats::{Modifier, Op, Source, StatDef, StatId, Stats};
 pub use status::{ActiveStatus, Mended, SLEEPER_REACH, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport, UNTIL_CURED};
+pub use tag::{TagDef, TagId};
 pub use work::{Work, WorkKind, WorkKindId};
 
 /// The names most callers want in scope.
@@ -136,7 +137,6 @@ pub mod prelude {
     pub use crate::ability::{
         AbilityDef, AbilityId, Aim, Area, Asks, Blocked, Cost, EffectSpec, Gates, Purse, Requirement, Targeting, TriggerSpec, blocked, read_args,
     };
-    pub use crate::affix::{AffixDef, AffixId, AffixKind, Enchanted, EnhanceRule, Scaled, ScaledStrike, TagDef, TagId, roll_affixes};
     pub use crate::ai::tactics;
     pub use crate::ai::{
         ActorView, Awareness, Brain, Carried, Choice, Decision, Fields, HearingStats, ItemView, Missile, MovementProfile, NoFields, NoticeStats, Sense,
@@ -159,4 +159,5 @@ pub mod prelude {
     pub use crate::prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, Stock};
     pub use crate::stats::{Modifier, Op, Source, StatDef, StatId, Stats};
     pub use crate::status::{ActiveStatus, Mended, SLEEPER_REACH, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport, UNTIL_CURED};
+    pub use crate::tag::{TagDef, TagId};
 }
