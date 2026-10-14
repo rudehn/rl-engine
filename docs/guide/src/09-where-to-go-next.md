@@ -131,6 +131,7 @@ That gives five places to stop, and you can stop at any of them: add the panel a
 - **Colours** are never passed to a widget. Every widget takes a `ToneId`, a semantic role the `Palette` turns into a colour, and `add_tone` declares a role and colours it in one call.
 - **Screens** are a stack of interned ids in `Modals`, with `no_modal` and `modal_is` as run conditions, so one gate on your input covers every screen you ever add.
 - **Keys** can be declared once in a `Controls` registry and read back by name, which is what lets `ControlsPanel` show exactly the keys the game reads.
+  The keys every roguelike reads alike, walking, the stairs, waiting, picking up, firing and throwing, are `PlayerKeysPlugin`, named in your own words; step 10 takes four of them and keeps the shove and the crusts in its own system.
 - **Two presenters over one view**: `LogPanel` draws the last few lines along the bottom and `ScrollbackPanel` draws all of them on a screen, over the same log, and neither knows the other exists.
 - **The forecast** in the look cursor is not the panel's arithmetic. `rl_rules::forecast` runs the average roll through the same mitigation pipeline a real blow goes through, so it cannot drift from the fight.
 

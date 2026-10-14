@@ -18,7 +18,7 @@
 use bevy::prelude::*;
 use rl_engine::rl_bevy::plugin::{EngineSet, NewRun, PerceiveSet, ResetsOnNewRun, Turn, TurnSet};
 use rl_engine::rl_bevy::{AddSound, AddVerb, AddWork, LootPlugin, LootSet, PrefabPlugin, PrefabSet, PropsPlugin, RemainsPlugin};
-use rl_engine::rl_ui::{AddModal, AimFire, AimThrow, NarrationViewPlugin, NarratorPlugin, Phrase, Tones, ViewSet};
+use rl_engine::rl_ui::{AddModal, AimFire, AimThrow, NarrationViewPlugin, NarratorPlugin, Phrase, PlayerKeysSet, Tones, ViewSet};
 
 /// The narrator as Foundry words it, for `main.rs` and
 /// `testing::headless` both, so a test reads the log the player reads.
@@ -240,22 +240,18 @@ impl Plugin for FoundryPlugin {
         // also a pick, the lamp or a step. The search before the menu and
         // the menu before opening it, so the key that opens the search is
         // not typed into it and the key that closes the menu does not open
-        // it again. The two toggles' upkeep last, so one takes hold the
-        // frame it is pressed.
+        // it again. The engine's standard keys after all of those, then why
+        // `f` found nothing to fire, the same frame. The two toggles'
+        // upkeep last, so one takes hold the frame it is pressed.
         app.add_plugins(crate::cheats::CheatsPlugin);
         app.add_systems(
             Update,
             (
-                crate::cheats::search_keys,
-                crate::cheats::menu_keys,
-                crate::cheats::open_cheats,
-                crate::upgrades::choice_keys,
-                crate::light::toggle_lamp,
-                crate::input::player_input,
-                crate::cheats::keep_godmode,
-                crate::cheats::reveal_the_deck,
+                (crate::cheats::search_keys, crate::cheats::menu_keys, crate::cheats::open_cheats, crate::upgrades::choice_keys, crate::light::toggle_lamp)
+                    .chain()
+                    .before(PlayerKeysSet),
+                (crate::input::say_why_not, crate::cheats::keep_godmode, crate::cheats::reveal_the_deck).chain().after(PlayerKeysSet),
             )
-                .chain()
                 .in_set(EngineSet::Input),
         );
         // The lifts between decks, laid on first arrival beside everything

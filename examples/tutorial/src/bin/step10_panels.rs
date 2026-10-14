@@ -366,7 +366,7 @@ fn start(
 // ANCHOR_END: start
 
 // ANCHOR: keys
-/// Every key Warren answers to, by name.
+/// Warren's own keys, by name.
 ///
 /// The names are what `player_input` checks; the keys behind them are
 /// declared once in `declare_controls`, and the `?` screen lists that
@@ -374,28 +374,30 @@ fn start(
 /// its declaration.
 #[derive(Resource, Clone, Copy)]
 struct Binds {
-    walk: ControlId,
     shove: ControlId,
-    stairs: ControlId,
-    pick_up: ControlId,
     eat: ControlId,
-    wait: ControlId,
     quit: ControlId,
 }
 
 /// Declares the keys, under the headings the `?` screen groups them by.
 ///
-/// The walk is every direction key the engine binds, arrows, `hjklyubn`
-/// and the numpad; the shove is the same keys with Shift held. A chord is
-/// matched exactly, so `L` never reads as a step east.
+/// Walking, the stairs, picking up and waiting are the same in every
+/// roguelike, so they are the engine's `PlayerKeysPlugin`, named here in
+/// Warren's words: the walk is every direction key the engine binds,
+/// arrows, `hjklyubn` and the numpad. The shove is Warren's own, the same
+/// keys with Shift held, and a chord is matched exactly, so `L` never
+/// reads as a step east.
 fn declare_controls(app: &mut App) {
+    app.add_plugins(
+        PlayerKeysPlugin::new()
+            .walk("Move", "walk, or strike whoever is there")
+            .go_through("Move", "take the stairs")
+            .pick_up("Act", "pick up what is here")
+            .wait("Act", "wait a turn"),
+    );
     let binds = Binds {
-        walk: app.add_control("Move", "walk, or strike whoever is there", Keys::Directions { shift: false }),
         shove: app.add_control("Move", "shove whoever is there", Keys::Directions { shift: true }),
-        stairs: app.add_control("Move", "take the stairs", [Chord::key(KeyCode::Enter), Chord::shift(KeyCode::Period), Chord::shift(KeyCode::Comma)]),
-        pick_up: app.add_control("Act", "pick up what is here", KeyCode::KeyG),
         eat: app.add_control("Act", "eat a crust", KeyCode::KeyE),
-        wait: app.add_control("Act", "wait a turn", [KeyCode::Period, KeyCode::Numpad5]),
         quit: app.add_control("Game", "quit", KeyCode::KeyQ),
     };
     app.insert_resource(binds);
@@ -403,51 +405,37 @@ fn declare_controls(app: &mut App) {
 // ANCHOR_END: keys
 
 // ANCHOR: intents
-/// Everything the player's keys can ask for. A system may take seven
+/// Everything Warren's own keys can ask for. A system may take seven
 /// parameters; bundling the writers into one `SystemParam` keeps room for
 /// as many actions as the game grows.
 #[derive(bevy::ecs::system::SystemParam)]
 struct PlayerIntents<'w> {
-    bumps: MessageWriter<'w, Intent<Bump>>,
-    waits: MessageWriter<'w, Intent<Wait>>,
-    pick_ups: MessageWriter<'w, Intent<PickUp>>,
     uses: MessageWriter<'w, Intent<UseItem>>,
-    stairs: MessageWriter<'w, Intent<GoThrough>>,
     shoves: MessageWriter<'w, Intent<Shove>>,
 }
 // ANCHOR_END: intents
 
 // ANCHOR: input
 /// The player, but only while it is holding the turn.
-type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, &'static Position, &'static Inventory), (With<Player>, With<MyTurn>)>;
+type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, &'static Inventory), (With<Player>, With<MyTurn>)>;
 
-/// Keys to intents. Writing an intent is the whole of asking to act: the
-/// engine claims the turn, charges it, and refuses what cannot be done.
-///
-/// The walk keys write a [`Bump`], which the engine resolves to a step, a
-/// blow at a foe, or opening a door, whichever is in the way.
+/// Warren's own keys to intents. Writing an intent is the whole of asking
+/// to act: the engine claims the turn, charges it, and refuses what cannot
+/// be done.
 fn player_input(keys: ControlInput, binds: Res<Binds>, player: PlayerTurn, mut intents: PlayerIntents, mut exit: MessageWriter<AppExit>) {
     if keys.just_pressed(binds.quit) {
         exit.write(AppExit::Success);
         return;
     }
     // No turn in hand means it is somebody else's move; the key is dropped.
-    let Ok((entity, _, bag)) = player.single() else { return };
+    let Ok((entity, bag)) = player.single() else { return };
     if let Some(dir) = keys.direction(binds.shove) {
         intents.shoves.write(Intent::new(entity, Shove(dir)));
-    } else if let Some(dir) = keys.direction(binds.walk) {
-        intents.bumps.write(Intent::new(entity, Bump(dir)));
-    } else if keys.just_pressed(binds.stairs) {
-        intents.stairs.write(Intent::new(entity, GoThrough));
-    } else if keys.just_pressed(binds.pick_up) {
-        intents.pick_ups.write(Intent::new(entity, PickUp));
     } else if keys.just_pressed(binds.eat) {
         // Eating is a use; the engine spends the turn and reports it back.
         if let Some(crust) = bag.items.first().copied() {
             intents.uses.write(Intent::new(entity, UseItem(crust)));
         }
-    } else if keys.just_pressed(binds.wait) {
-        intents.waits.write(Intent::new(entity, Wait));
     }
 }
 // ANCHOR_END: input

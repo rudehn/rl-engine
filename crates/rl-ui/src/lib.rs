@@ -68,6 +68,15 @@
 //!     .add_systems(Update, paint_the_picture.in_set(TitleSet::Backdrop));
 //! ```
 //!
+//! # The player's keys
+//!
+//! Walking, taking the way underfoot, waiting, picking up, firing and
+//! throwing are the same keys in every roguelike, so [`PlayerKeysPlugin`]
+//! reads them, for the verbs a game names and in the words it lists them
+//! by. The game's own verbs stay in its own input system, ordered against
+//! [`PlayerKeysSet`]; a game that writes its input by hand leaves the
+//! plugin out.
+//!
 //! # Adding a panel to the engine
 //!
 //! Write it in this order and the seams come out right:
@@ -121,6 +130,7 @@ pub mod menu;
 pub mod modal;
 pub mod narrate;
 pub mod panel;
+pub mod player_keys;
 pub mod replay;
 pub mod tone;
 pub mod view;
@@ -146,6 +156,7 @@ pub use panel::{
     TRADE_MODAL, TargetPanel, TitleMenu, TitlePanel, TitleRow, TitleSet, TitleWords, TradeKeys, TradePanel, TradeSide, TradeWords, VitalsPanel, ability_modal,
     container_modal, controls_modal, inventory_modal, offers_modal, records_modal, settings_modal, sheet_modal, title_is_up, trade_modal,
 };
+pub use player_keys::{Declined, Otherwise, PlayerKeys, PlayerKeysPlugin, PlayerKeysSet, PlayerVerb};
 pub use replay::ReplayPlugin;
 pub use tone::{AddTone, Palette, Tone, ToneId, Tones, readable};
 pub use view::{
@@ -295,6 +306,7 @@ pub mod prelude {
     pub use crate::menu::{ListMenu, MenuRow, draw_menu};
     pub use crate::modal::{AddModal, ModalId, Modals, modal_is, modal_open, no_modal};
     pub use crate::narrate::{MassNoun, NarrationView, NarratorPlugin, Phrase, Phrasebook, Said, Tell, Words};
+    pub use crate::player_keys::{Declined, Otherwise, PlayerKeys, PlayerKeysPlugin, PlayerKeysSet, PlayerVerb};
     pub use crate::replay::ReplayPlugin;
     // The module itself, for `panel::split_right` and the drawing
     // helpers a game writing its own presenter reaches for.

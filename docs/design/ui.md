@@ -215,6 +215,11 @@ The keys themselves are one registry, `Controls`.
 A game declares each key it answers to once, as a group, an action and the keys, and reads a frame's keys through `ControlInput` by the id it got back; the engine's own screens declare theirs the same way, from the resources that bind them, in `finish` so the game's groups are listed first.
 `ControlsPanel` draws that registry, so what `?` shows is what the game reads, and a key the game stops reading leaves the screen with its declaration.
 
+The keys every game read the same way, walking, the way underfoot, waiting, picking up, firing and throwing, are `PlayerKeysPlugin`, since five games wrote them line for line.
+It is a plugin because a game turns it on or off whole: one with another scheme, or the tutorial's early steps, leave it out.
+A game names each verb it wants with the words `?` lists it by, and the engine supplies no line of its own: a key with nothing to act on says the game's line or nothing, and writes a `Declined` for a game whose reason depends on its own state, as Foundry's hot or dry gun does.
+A game's own verbs stay in its own system, ordered against `PlayerKeysSet` rather than against the engine's function.
+
 ## 8. What the engine does not get
 
 - Main menu, settings, save slots, key rebinding screens.

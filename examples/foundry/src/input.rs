@@ -1,10 +1,13 @@
 //! Keys to intents.
 //!
-//! Every key Foundry answers to is declared once, in [`declare_controls`],
-//! and read by name through [`Binds`]. The `?` screen lists that same
-//! declaration, so the keys it shows are the keys the systems here check.
-//! The screens' own keys (`i` for the pack, `a` for abilities, `x` to look
-//! about) are declared by the engine panels that read them, beside these.
+//! The standard keys, walking, the lift, waiting, picking up, firing and
+//! throwing, are the engine's [`PlayerKeysPlugin`], added in
+//! [`declare_controls`] in Foundry's words. Foundry's own keys are declared
+//! beside them and read by name through [`Binds`]. The `?` screen lists
+//! those same declarations, so the keys it shows are the keys the systems
+//! check. The screens' own keys (`i` for the pack, `a` for abilities, `x`
+//! to look about) are declared by the engine panels that read them, beside
+//! these.
 //!
 //! Registered by [`FoundryPlugin`](crate::plugin::FoundryPlugin), not by
 //! `main.rs`, so a test presses the same keys the player does.
@@ -14,21 +17,9 @@ use rl_engine::prelude::*;
 
 use crate::heat::Heat;
 
-/// Every key Foundry answers to, by name.
+/// Every key of Foundry's own, by name.
 #[derive(Resource, Clone, Copy)]
 pub struct Binds {
-    /// Walk, or strike whoever is there.
-    pub walk: ControlId,
-    /// Take the lift down or up.
-    pub go_through: ControlId,
-    /// Wait a turn.
-    pub wait: ControlId,
-    /// Pick up what is underfoot.
-    pub pick_up: ControlId,
-    /// Fire what is wielded, through the targeting cursor.
-    pub fire: ControlId,
-    /// Open the pack on the first thing in it that can be thrown.
-    pub throw: ControlId,
     /// Switch the shoulder lamp off or on; read by
     /// [`light::toggle_lamp`](crate::light::toggle_lamp).
     pub lamp: ControlId,
@@ -36,54 +27,35 @@ pub struct Binds {
     pub cheats: ControlId,
 }
 
-/// Declares the keys, under the headings the `?` screen groups them by.
+/// Declares the keys, under the headings the `?` screen groups them by:
+/// the engine's standard ones first, then Foundry's own.
+///
+/// `f` opens the engine's targeting cursor, which starts on the nearest
+/// foe in sight, cycles the rest with Tab, previews the line and acts on
+/// confirm; with nothing ready to fire, [`say_why_not`] says why. `t`
+/// opens the pack on the first thing in it that can be thrown, rather than
+/// throwing it: the pack's own `t` sends that row to the same cursor, and
+/// Esc goes back to the list when another of several is meant. Neither
+/// spends a turn when it has nothing to do, since a mistyped key should
+/// not cost a life.
 ///
 /// A chord is matched exactly, so `L`, the lamp, is never `l`, a step
 /// east.
 pub fn declare_controls(app: &mut App) {
+    app.add_plugins(
+        PlayerKeysPlugin::new()
+            .walk("Move", "walk, or strike whoever is there")
+            .go_through("Move", "take the lift")
+            .wait("Act", "wait a turn")
+            .pick_up("Act", "pick up what is here")
+            .fire("Act", "fire at the nearest droid", Otherwise::Nothing)
+            .throw("Act", "throw something from the pack", Otherwise::say("You have nothing to throw.")),
+    );
     let binds = Binds {
-        walk: app.add_control("Move", "walk, or strike whoever is there", Keys::Directions { shift: false }),
-        go_through: app.add_control("Move", "take the lift", [Chord::key(KeyCode::Enter), Chord::shift(KeyCode::Period), Chord::shift(KeyCode::Comma)]),
-        wait: app.add_control("Act", "wait a turn", [KeyCode::Period, KeyCode::Numpad5]),
-        pick_up: app.add_control("Act", "pick up what is here", [KeyCode::KeyG, KeyCode::Comma]),
-        fire: app.add_control("Act", "fire at the nearest droid", KeyCode::KeyF),
-        throw: app.add_control("Act", "throw something from the pack", KeyCode::KeyT),
         lamp: app.add_control("Act", "switch the lamp off, or on", Chord::shift(KeyCode::KeyL)),
         cheats: app.add_control("Debug", "the cheat menu", KeyCode::Backslash),
     };
     app.insert_resource(binds);
-}
-
-/// The player while it holds the turn.
-type PlayerTurn<'w, 's> = Query<'w, 's, Entity, (With<Player>, With<MyTurn>)>;
-
-/// What every key here reads before it asks for anything.
-#[derive(bevy::ecs::system::SystemParam)]
-pub struct Keyboard<'w, 's> {
-    keys: ControlInput<'w>,
-    binds: Res<'w, Binds>,
-    modals: ResMut<'w, Modals>,
-    turns: Res<'w, Turns>,
-    log: ResMut<'w, MessageLog>,
-    player: PlayerTurn<'w, 's>,
-}
-
-/// What the player's keys can ask for.
-#[derive(bevy::ecs::system::SystemParam)]
-pub struct PlayerIntents<'w> {
-    bumps: MessageWriter<'w, Intent<Bump>>,
-    waits: MessageWriter<'w, Intent<Wait>>,
-    transits: MessageWriter<'w, Intent<GoThrough>>,
-    pick_ups: MessageWriter<'w, Intent<PickUp>>,
-    fires: MessageWriter<'w, AimFire>,
-}
-
-/// The pack's screen, which `t` opens: absent from a test that draws no
-/// screens, where `t` has nothing to open.
-#[derive(bevy::ecs::system::SystemParam)]
-pub struct Pack<'w> {
-    view: Option<Res<'w, InventoryView>>,
-    menu: Option<ResMut<'w, InventoryMenu>>,
 }
 
 /// Everything on the deck `f` looks for.
@@ -94,52 +66,15 @@ pub struct Reach<'w, 's> {
     worn: Query<'w, 's, &'static Equipped>,
 }
 
-/// Turns keys into an [`Intent`] for the player while it holds the turn,
-/// and nothing at all while a screen is up: the stack is empty or the
-/// world does not have the keys.
+/// Says why `f` found nothing to fire, the turn it was pressed: the
+/// engine's key declines and spends nothing, and the reason is Foundry's.
 ///
-/// `f` opens the engine's targeting cursor, which starts on the nearest
-/// foe in sight, cycles the rest with Tab, previews the line and acts on
-/// confirm. `t` opens the pack with the first thing in it that can be
-/// thrown opened, rather than throwing it: the pack's own `t` sends that
-/// row to the same cursor, and Esc goes back to the list when another of
-/// several is meant. A key with nothing to do says so without spending the
-/// turn, since a mistyped key should not cost a life.
-pub fn player_input(mut kb: Keyboard, reach: Reach, mut pack: Pack, mut intents: PlayerIntents) {
-    if kb.modals.any_open() {
-        return;
-    }
-    let Ok(me) = kb.player.single() else { return };
-    let now = kb.turns.turn_number();
-    let (keys, binds) = (&kb.keys, *kb.binds);
-    if let Some(dir) = keys.direction(binds.walk) {
-        // A step, a blow at a droid, or a hatch opened: the engine decides.
-        intents.bumps.write(Intent::new(me, Bump(dir)));
-    } else if keys.just_pressed(binds.go_through) {
-        intents.transits.write(Intent::new(me, GoThrough));
-    } else if keys.just_pressed(binds.wait) {
-        intents.waits.write(Intent::new(me, Wait));
-    } else if keys.just_pressed(binds.pick_up) {
-        intents.pick_ups.write(Intent::new(me, PickUp));
-    } else if keys.just_pressed(binds.fire) {
-        // A shot is a weapon's, never the commando's own: what is wielded
-        // and loaded, cool enough to fire.
-        if reach.loadout.ranged(me).is_some() {
-            intents.fires.write(AimFire { user: me });
-        } else {
-            let worn: Vec<Entity> = reach.worn.get(me).map(|e| e.0.worn().map(|(_, item)| item).collect()).unwrap_or_default();
-            kb.log.muted(why_not(&worn, &reach), now);
-        }
-    } else if keys.just_pressed(binds.throw) {
-        let (Some(view), Some(menu)) = (pack.view.as_deref(), pack.menu.as_deref_mut()) else { return };
-        match view.rows.iter().position(|row| row.throw_range.is_some()) {
-            Some(row) => {
-                menu.open(row);
-                let bag = inventory_modal(&kb.modals);
-                kb.modals.open(bag);
-            }
-            None => kb.log.muted("You have nothing to throw.", now),
-        }
+/// A shot is a weapon's, never the commando's own: what is wielded and
+/// loaded, cool enough to fire.
+pub fn say_why_not(mut declined: MessageReader<Declined>, reach: Reach, turns: Res<Turns>, mut log: ResMut<MessageLog>) {
+    for asked in declined.read().filter(|d| d.verb == PlayerVerb::Fire) {
+        let worn: Vec<Entity> = reach.worn.get(asked.actor).map(|e| e.0.worn().map(|(_, item)| item).collect()).unwrap_or_default();
+        log.muted(why_not(&worn, &reach), turns.turn_number());
     }
 }
 

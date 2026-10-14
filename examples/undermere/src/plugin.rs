@@ -480,9 +480,12 @@ impl Plugin for UndermerePlugin {
         // cursor press the keys all the same.
         crate::input::declare_controls(app);
         app.add_message::<AimFire>().add_message::<AimThrow>();
-        // A door marked, the adventurer's keys, the party's orders: chained,
-        // since each may open a screen.
-        app.add_systems(Update, (crate::doors::mark_doors, crate::input::player_input, crate::mercenaries::order_party).chain().in_set(EngineSet::Input));
+        // A door marked, the adventurer's standard keys, the party's
+        // orders: in that order, since each may open a screen.
+        app.add_systems(
+            Update,
+            (crate::doors::mark_doors.before(PlayerKeysSet), crate::mercenaries::order_party.after(PlayerKeysSet)).in_set(EngineSet::Input),
+        );
         // A lair's own band, led the moment its prefab's slots are
         // filled. Its own call rather than folded into the chain above,
         // since nothing in that chain's own order depends on this nor

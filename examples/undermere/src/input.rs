@@ -1,10 +1,12 @@
 //! Keys to intents.
 //!
-//! Every key Undermere answers to is declared once, in
-//! [`declare_controls`], and read by name through [`Binds`]. The `?`
-//! screen lists that same declaration, so the keys it shows are the keys
-//! the systems here check. The screens' own keys, `i` for the pack and
-//! `x` to look about, are declared by the engine panels that read them.
+//! The standard keys, walking, the way through, waiting, picking up,
+//! shooting and throwing, are the engine's [`PlayerKeysPlugin`], added in
+//! [`declare_controls`] in Undermere's words. Undermere's own keys are
+//! declared beside them and read by name through [`Binds`]. The `?`
+//! screen lists those same declarations, so the keys it shows are the
+//! keys the systems check. The screens' own keys, `i` for the pack and `x`
+//! to look about, are declared by the engine panels that read them.
 //!
 //! Registered by [`UndermerePlugin`](crate::plugin::UndermerePlugin), not
 //! by the binary, so a test presses the same keys the player does.
@@ -12,21 +14,9 @@
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 
-/// Every key Undermere answers to, by name.
+/// Every key of Undermere's own, by name.
 #[derive(Resource, Clone, Copy)]
 pub struct Binds {
-    /// Walk, or strike whoever is there.
-    pub walk: ControlId,
-    /// Take the stairs, or go through the gate.
-    pub go_through: ControlId,
-    /// Wait a turn.
-    pub wait: ControlId,
-    /// Pick up what is underfoot.
-    pub pick_up: ControlId,
-    /// Shoot what is wielded, through the targeting cursor.
-    pub fire: ControlId,
-    /// Open the pack on the first thing in it made to be thrown.
-    pub throw: ControlId,
     /// Cycle every hired mercenary's order, by
     /// [`order_party`](crate::mercenaries::order_party).
     pub order: ControlId,
@@ -35,110 +25,33 @@ pub struct Binds {
     pub mark_doors: ControlId,
 }
 
-/// Declares the keys, under the headings the `?` screen groups them by.
+/// Declares the keys, under the headings the `?` screen groups them by:
+/// the engine's standard ones first, then Undermere's own.
 ///
 /// Enter, `>` and `<` all take whatever way through stands underfoot,
 /// stairs or the gate: which way it leads is the way's own, so a key for
-/// each would only be a key to get wrong.
+/// each would only be a key to get wrong. `f` shoots whatever is in hand
+/// through the engine's targeting cursor. `t` opens the pack on the first
+/// thing made to be thrown, and only when there is none on the first that
+/// can be: a potion can be thrown, but a hand reaching for `t` means the
+/// darts before the healing. Either with nothing to do says so without
+/// spending the turn, since a mistyped key should not cost a life.
 pub fn declare_controls(app: &mut App) {
+    app.add_plugins(
+        PlayerKeysPlugin::new()
+            .walk("Move", "walk, or strike whoever is there")
+            .go_through("Move", "take the stairs, or go through the gate")
+            .wait("Act", "wait a turn")
+            .pick_up("Act", "pick up what is here")
+            .fire("Act", "shoot at the nearest foe", Otherwise::say("You have nothing in hand to shoot with."))
+            .throw("Act", "throw something from the pack", Otherwise::say("You have nothing to throw."))
+            .throw_first("thrown"),
+    );
     let binds = Binds {
-        walk: app.add_control("Move", "walk, or strike whoever is there", Keys::Directions { shift: false }),
-        go_through: app.add_control(
-            "Move",
-            "take the stairs, or go through the gate",
-            [Chord::key(KeyCode::Enter), Chord::shift(KeyCode::Period), Chord::shift(KeyCode::Comma)],
-        ),
-        wait: app.add_control("Act", "wait a turn", [KeyCode::Period, KeyCode::Numpad5]),
-        pick_up: app.add_control("Act", "pick up what is here", [KeyCode::KeyG, KeyCode::Comma]),
-        fire: app.add_control("Act", "shoot at the nearest foe", KeyCode::KeyF),
-        throw: app.add_control("Act", "throw something from the pack", KeyCode::KeyT),
         order: app.add_control("Act", "order the party: follow, hold, fight freely", KeyCode::KeyO),
         mark_doors: app.add_control("Look", "mark the doors not yet gone through", KeyCode::KeyM),
     };
     app.insert_resource(binds);
-}
-
-/// The player while it holds the turn.
-type PlayerTurn<'w, 's> = Query<'w, 's, Entity, (With<Player>, With<MyTurn>)>;
-
-/// What every key here reads before it asks for anything.
-#[derive(bevy::ecs::system::SystemParam)]
-pub struct Keyboard<'w, 's> {
-    keys: ControlInput<'w>,
-    binds: Res<'w, Binds>,
-    modals: ResMut<'w, Modals>,
-    turns: Res<'w, Turns>,
-    log: ResMut<'w, MessageLog>,
-    player: PlayerTurn<'w, 's>,
-}
-
-/// What the player's keys can ask for.
-#[derive(bevy::ecs::system::SystemParam)]
-pub struct PlayerIntents<'w> {
-    bumps: MessageWriter<'w, Intent<Bump>>,
-    waits: MessageWriter<'w, Intent<Wait>>,
-    transits: MessageWriter<'w, Intent<GoThrough>>,
-    pick_ups: MessageWriter<'w, Intent<PickUp>>,
-    fires: MessageWriter<'w, AimFire>,
-}
-
-/// The pack's screen, which `t` opens: absent from a test that draws no
-/// screens, where `t` has nothing to open.
-#[derive(bevy::ecs::system::SystemParam)]
-pub struct Pack<'w, 's> {
-    view: Option<Res<'w, InventoryView>>,
-    registries: Res<'w, Registries>,
-    tagged: Query<'w, 's, &'static Tagged>,
-    menu: Option<ResMut<'w, InventoryMenu>>,
-}
-
-/// Turns keys into an [`Intent`] for the player while it holds the turn,
-/// and nothing at all while a screen is up.
-///
-/// `f` opens the engine's targeting cursor on the nearest foe in sight,
-/// with whatever shoots in hand. `t` opens the pack with the first thing in
-/// it made to be thrown opened, or when there is none the first that can be, rather than throwing it: the pack's own
-/// `t` sends that row to the same cursor, and Esc goes back to the list
-/// when another of several is meant. A key with nothing to do says so without
-/// spending the turn, since a mistyped key should not cost a life.
-pub fn player_input(mut kb: Keyboard, loadout: Loadout, mut pack: Pack, mut intents: PlayerIntents) {
-    if kb.modals.any_open() {
-        return;
-    }
-    let Ok(me) = kb.player.single() else { return };
-    let now = kb.turns.turn_number();
-    let (keys, binds) = (&kb.keys, *kb.binds);
-    if let Some(dir) = keys.direction(binds.walk) {
-        // A step, a blow, or a door opened: the engine decides.
-        intents.bumps.write(Intent::new(me, Bump(dir)));
-    } else if keys.just_pressed(binds.go_through) {
-        intents.transits.write(Intent::new(me, GoThrough));
-    } else if keys.just_pressed(binds.wait) {
-        intents.waits.write(Intent::new(me, Wait));
-    } else if keys.just_pressed(binds.pick_up) {
-        intents.pick_ups.write(Intent::new(me, PickUp));
-    } else if keys.just_pressed(binds.fire) {
-        if loadout.ranged(me).is_some() {
-            intents.fires.write(AimFire { user: me });
-        } else {
-            kb.log.muted("You have nothing in hand to shoot with.", now);
-        }
-    } else if keys.just_pressed(binds.throw) {
-        let (Some(view), Some(menu)) = (pack.view.as_deref(), pack.menu.as_deref_mut()) else { return };
-        // What is made to be thrown comes first: a potion can be thrown,
-        // but a hand reaching for `t` means the darts before the healing.
-        let thrown = pack.registries.tags.id("thrown");
-        let made_for_it = |row: &&ItemRow| thrown.is_some_and(|tag| pack.tagged.get(row.entity).is_ok_and(|tags| tags.contains(&tag)));
-        let first = view.rows.iter().position(|row| row.throw_range.is_some() && made_for_it(&row));
-        match first.or_else(|| view.rows.iter().position(|row| row.throw_range.is_some())) {
-            Some(row) => {
-                menu.open(row);
-                let bag = inventory_modal(&kb.modals);
-                kb.modals.open(bag);
-            }
-            None => kb.log.muted("You have nothing to throw.", now),
-        }
-    }
 }
 
 #[cfg(test)]

@@ -67,11 +67,11 @@ With nothing open and something in sight picked out, the close key lets go of it
 
 ## Using it
 
-A game declares its keys once, under the headings the controls screen groups them by, and keeps the ids.
+A game names the standard verbs it wants to `PlayerKeysPlugin`, and declares its own keys once beside them, under the headings the controls screen groups them by, keeping the ids.
 
 <!-- include: ../../../../examples/tutorial/src/bin/step10_panels.rs:keys -->
 ```rust,no_run
-/// Every key Warren answers to, by name.
+/// Warren's own keys, by name.
 ///
 /// The names are what `player_input` checks; the keys behind them are
 /// declared once in `declare_controls`, and the `?` screen lists that
@@ -79,28 +79,30 @@ A game declares its keys once, under the headings the controls screen groups the
 /// its declaration.
 #[derive(Resource, Clone, Copy)]
 struct Binds {
-    walk: ControlId,
     shove: ControlId,
-    stairs: ControlId,
-    pick_up: ControlId,
     eat: ControlId,
-    wait: ControlId,
     quit: ControlId,
 }
 
 /// Declares the keys, under the headings the `?` screen groups them by.
 ///
-/// The walk is every direction key the engine binds, arrows, `hjklyubn`
-/// and the numpad; the shove is the same keys with Shift held. A chord is
-/// matched exactly, so `L` never reads as a step east.
+/// Walking, the stairs, picking up and waiting are the same in every
+/// roguelike, so they are the engine's `PlayerKeysPlugin`, named here in
+/// Warren's words: the walk is every direction key the engine binds,
+/// arrows, `hjklyubn` and the numpad. The shove is Warren's own, the same
+/// keys with Shift held, and a chord is matched exactly, so `L` never
+/// reads as a step east.
 fn declare_controls(app: &mut App) {
+    app.add_plugins(
+        PlayerKeysPlugin::new()
+            .walk("Move", "walk, or strike whoever is there")
+            .go_through("Move", "take the stairs")
+            .pick_up("Act", "pick up what is here")
+            .wait("Act", "wait a turn"),
+    );
     let binds = Binds {
-        walk: app.add_control("Move", "walk, or strike whoever is there", Keys::Directions { shift: false }),
         shove: app.add_control("Move", "shove whoever is there", Keys::Directions { shift: true }),
-        stairs: app.add_control("Move", "take the stairs", [Chord::key(KeyCode::Enter), Chord::shift(KeyCode::Period), Chord::shift(KeyCode::Comma)]),
-        pick_up: app.add_control("Act", "pick up what is here", KeyCode::KeyG),
         eat: app.add_control("Act", "eat a crust", KeyCode::KeyE),
-        wait: app.add_control("Act", "wait a turn", [KeyCode::Period, KeyCode::Numpad5]),
         quit: app.add_control("Game", "quit", KeyCode::KeyQ),
     };
     app.insert_resource(binds);
