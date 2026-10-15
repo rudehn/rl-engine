@@ -23,18 +23,23 @@
 // so how hard a floor is stays what parts three and four tuned it to.
 [
     // The Drowned Town: vermin, and the smallest of the goblins.
-    (monster: "rat",             bands: (1, 3),   weight: 60, group: (1, 3)),
-    (monster: "jackal",          bands: (1, 3),   weight: 30, group: (2, 4)),
+    (monster: "rat",             bands: (1, 2),   weight: 60, group: (1, 3)),
+    (monster: "jackal",          bands: (1, 2),   weight: 30, group: (2, 4)),
     (monster: "kobold",          bands: (1, 2),   weight: 50, group: (1, 2)),
     (monster: "goblin",          bands: (1, 2),   weight: 40, group: (1, 1)),
     (monster: "monkey",          bands: (2, 4),   weight: 30, group: (1, 2)),
     // The Palace and its Grounds: the cathedral's drowned and the library's
-    // dead, each the early form of a kind that lives deeper, and the bats
-    // of both belfry and stacks.
+    // dead, each the early form of a kind that lives deeper, and the guard
+    // drowned at its posts, the palace floors' brute. The acolytes are the
+    // palace's killer, as the cave spider was on these floors before the
+    // strata, so they come fewer on the first of them and the guard only on
+    // the second, as the ogre did.
     (monster: "drowned pilgrim", bands: (3, 4),   weight: 50, group: (1, 3)),
-    (monster: "drowned acolyte", bands: (3, 4),   weight: 40, group: (1, 1)),
+    (monster: "drowned acolyte", bands: (3, 3),   weight: 35, group: (1, 2)),
+    (monster: "drowned acolyte", bands: (4, 4),   weight: 60, group: (1, 2)),
     (monster: "pale scribe",     bands: (3, 4),   weight: 40, group: (1, 1)),
     (monster: "will-o'-wisp",    bands: (3, 4),   weight: 25, group: (1, 1)),
+    (monster: "drowned guard",   bands: (4, 4),   weight: 20, group: (1, 1)),
     // Beneath the Kingdom: the mines' goblins, the fungal caves, the warrens
     // and the crypts. The goblins' casters keep their old weight, now two
     // floors down with the mines they serve.
@@ -45,8 +50,8 @@
     (monster: "goblin mystic",   bands: (5, 6),   weight: 20, group: (1, 1)),
     (monster: "myconid",         bands: (5, 6),   weight: 30, group: (1, 3)),
     (monster: "myconid elder",   bands: (5, 6),   weight: 25, group: (1, 2)),
-    (monster: "cave spider",     bands: (5, 6),   weight: 30, group: (1, 1)),
-    (monster: "giant spider",    bands: (5, 6),   weight: 25, group: (1, 1)),
+    (monster: "cave spider",     bands: (5, 6),   weight: 20, group: (1, 1)),
+    (monster: "giant spider",    bands: (5, 6),   weight: 15, group: (1, 1)),
     (monster: "spiderling",      bands: (5, 6),   weight: 25, group: (3, 5)),
     // Jellies and bats are the floors' own, wherever it is damp or dark.
     (monster: "pink jelly",      bands: (3, 6),   weight: 25, group: (1, 1)),
@@ -64,19 +69,28 @@
     // the forge's fire, and the first of the deep culture at the bottom.
     (monster: "drowned thrall",  bands: (7, 8),   weight: 50, group: (1, 2)),
     (monster: "drowned thrall",  bands: (10, 10), weight: 40, group: (1, 1)),
-    (monster: "wight",           bands: (7, 10),  weight: 30, group: (1, 1)),
-    (monster: "troll",           bands: (7, 9),   weight: 15, group: (1, 1)),
+    (monster: "wight",           bands: (7, 8),   weight: 20, group: (1, 1)),
+    (monster: "wight",           bands: (9, 10),  weight: 30, group: (1, 1)),
+    // Floor nine's two biomes each favor three of the troll, the imp, the
+    // salamander and the golem where before the strata each favored one, so
+    // their rows there are cut by about a third: the floor draws each about
+    // as often as it did, and the forge is not a wall. The wight's row on
+    // the Underlake's floors is cut the same way, for that biome now stands
+    // on both of them.
+    (monster: "troll",           bands: (7, 8),   weight: 15, group: (1, 1)),
+    (monster: "troll",           bands: (9, 9),   weight: 8,  group: (1, 1)),
     // The forge's imps come one or two together rather than three, and a
     // little less often: swift, shooting fire that armor does not turn, in
     // threes they were a third of every death under the lake, and the forge
     // a wall rather than a floor.
-    (monster: "fire imp",        bands: (9, 9),   weight: 40, group: (1, 2)),
-    (monster: "salamander",      bands: (9, 9),   weight: 30, group: (1, 1)),
+    (monster: "fire imp",        bands: (9, 9),   weight: 27, group: (1, 2)),
+    (monster: "salamander",      bands: (9, 9),   weight: 20, group: (1, 1)),
     // The deepest culture under the lake, and the one golem that still
     // stands guard. The dar also come as the trio the design means,
     // `population.rs`'s own band, the blademaster leading; these rows are
     // the dar met apart from it, one at a time.
-    (monster: "golem",           bands: (8, 9),   weight: 10, group: (1, 1)),
+    (monster: "golem",           bands: (8, 8),   weight: 10, group: (1, 1)),
+    (monster: "golem",           bands: (9, 9),   weight: 5,  group: (1, 1)),
     (monster: "dar blademaster", bands: (8, 9),   weight: 15, group: (1, 1)),
     (monster: "dar priestess",   bands: (8, 9),   weight: 10, group: (1, 1)),
     (monster: "dar battlemage",  bands: (8, 9),   weight: 10, group: (1, 1)),

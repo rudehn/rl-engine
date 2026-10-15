@@ -250,7 +250,7 @@
         // Shallows lit from below, cold blue-green.
         decor: [Patches(tile: "glowing shallows", count: (4, 7), size: (2, 5))],
         dressings: ["Shell Midden"],
-        favored: ["drowned thrall", "wight", "troll"],
+        favored: ["drowned thrall", "wight", "will-o'-wisp"],
     ),
 
     // Floor nine: the Oldest Deep.

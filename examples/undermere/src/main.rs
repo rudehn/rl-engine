@@ -407,9 +407,9 @@ mod tests {
         assert_eq!(s.rail.gutter, r(124, 0, 2, 45), "gutter");
         assert_eq!(s.rail.edge, r(159, 0, 1, 45), "edge");
         assert_eq!(s.rail.log, r(0, 40, 124, 5), "log");
-        assert_eq!(s.rail.vitals, r(126, 0, 33, 9), "vitals");
-        assert_eq!(s.rail.gear, r(126, 9, 33, 12), "gear");
-        assert_eq!(s.rail.nearby, r(126, 21, 33, 12), "nearby");
+        assert_eq!(s.rail.vitals, r(126, 0, 33, 11), "vitals");
+        assert_eq!(s.rail.gear, r(126, 11, 33, 12), "gear");
+        assert_eq!(s.rail.nearby, r(126, 23, 33, 10), "nearby");
         assert_eq!(s.rail.party, r(126, 34, 33, 10), "party");
         assert_eq!(s.rail.party_gap, r(126, 33, 33, 1), "spacer");
         assert_eq!(s.rail.hint, r(126, 44, 33, 1), "hint");

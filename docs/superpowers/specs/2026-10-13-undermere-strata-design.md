@@ -98,19 +98,31 @@ Where it deviates from or extends the spec above:
   Ambient light follows depth (22, 21 at 3-4; 18-20 at 5-6, the Warrens dark; 16 below).
   The Underlake's rumour is no longer told as a biome rumour, since its floors cannot draw another; the strata carry the hint instead, as four new rumours (strata two to five) told after the biomes.
 - **Favored check**: `biomes::check_favored`, run in `Undermere::new`, demands three favored kinds with a spawn row on every floor of the biome's window, and refuses a name the bestiary lacks.
-- **New kinds**: drowned pilgrim (early thrall), drowned acolyte (early wight, venomous), pale scribe (early wraith, withering), myconid elder, giant spider, spiderling.
+- **New kinds**: drowned pilgrim (early thrall), drowned acolyte (early wight, venomous, a touch that can freeze), pale scribe (early wraith, withering, a word that slows), drowned guard (the palace floors' brute, armored, on floor 4 as the ogre was; the early form of the throne's knights), myconid elder, giant spider, spiderling.
   The Drowned Abbess is softened (38 health, 1d8) for floors 3-4 and calls pilgrims, via a new optional `monster` argument of `CallDrowned`.
+- **The curve, held**: the acolytes are the palace floors' killer, as the cave spider was before, fewer on floor 3 than on 4; the rats and jackals keep to the Drowned Town; the Underlake favors the will-o'-wisp over the black water rather than the troll, and its wight row is cut by a third since it now stands on both floors seven and eight; floor nine's troll, imp, salamander and golem rows are cut by about a third, since each of its biomes now favors three of them where it favored one; the spiders of floors 5-6 come a little less often.
 - **Goblins** live with the mines: the war band comes only on a floor whose biome favors its leader (a new `themed` flag on `Band`), the Goblin Stockade stands only in the halls, cellars, barracks and mines, and the ogre-over-goblin feeding ground is gone.
 - **Mini-bosses**: Abbess 3-4; Grubnak, the Widow and the Choirmaster 5-6; the Forgemaster unchanged at 7-9.
 - Pool: flavor entries moved with their biomes; the Reliquary 3-8, Larder 5-6, Brood Chamber 5-8, Wagon 1-6.
-- The save is version 10, refusing older runs.
-- The fingerprint test swaps seed one for seed four, whose floor one the script can walk down after the change.
+- The save is version 11, refusing older runs; version 10 is main's own, the engine's saved actor.
+- The rail's pinned rectangles move with the vitals' two new rows: the gear panel starts two rows lower and what is nearby is two rows shorter.
+- **Seed one, which stalled**: the fingerprint's scripted adventurer struck at whatever stood beside it, and on seed one the strata put the run's shackled captive, a rat, beside its path on floor one.
+  A blow at a captive is a walk into it, which begins the freeing, and the script's next intent, written while the player holds the turn for the work, left the freeing off at once, so it struck for good.
+  The soak's script did the same, and all but three of the fourteen delves the soak counted as stalled on main were a captive in the way.
+  Both scripts now leave the turn to the work while the adventurer is working, and the fingerprint strikes only a foe, by the bump's own rule; seed one is restored and the fingerprint re-baselined once.
+  The rest were the soak waiting where nothing could be reached; on the one followed, a descent had set it down in a hidden room, which a descent may land in since a secret counts as found, and it never searched for the walled door; it now searches the walls of wherever it stands when the way on is out of reach.
+  One more stall was a game fault, mended: a flooding vault kept wading-deep only the cell under someone standing in its far end, so whoever lingered by the far wall stood on an island of shallows in deep water for good; now none of the far end goes deep while anyone stands in it.
 
 ### The soak, 150 delves over 50 seeds
 
-| | won | died on floors 3, 4, 5, 6, 7, 8, 9, 10 |
-| --- | --- | --- |
-| before | 52 (35%) | 9, 14, 4, 1, 4, 9, 13, 30 |
-| after | 55 (37%) | 1, 2, 10, 5, 9, 8, 23, 21 |
+Main as it was is before the strata with the soak's old script, main with the scripts and the flood mended is the baseline the strata were tuned against, and the stalls are counted per plan, armor, weapon and staff.
 
-The win rate held; the deaths moved from floors 3-4, where the cave spider's venom had been the killer, to 5-6 where the spiders now live, and from the throne floor to 9.
+| | won | died on floors 3, 4, 5, 6, 7, 8, 9, 10 | stalled |
+| --- | --- | --- | --- |
+| main as it was | 52 (35%) | 9, 14, 4, 1, 4, 9, 13, 30 | 4, 5, 5 |
+| main, scripts mended | 68 (45%) | 6, 14, 6, 1, 7, 5, 16, 24 | 1, 1, 1 |
+| strata, first tuning | 55 (37%) | 1, 2, 10, 5, 9, 8, 23, 21 | 5, 7, 4 |
+| strata, as built | 70 (47%) | 6, 8, 11, 1, 6, 7, 11, 30 | 0, 0, 0 |
+
+Main's three left were the soak waiting with nothing in reach, the stall the search now answers; main's soak ran before the search was written.
+The win rate held, and so did the shape: floors 3-4 kill again, by the acolytes where it was the cave spider's venom, and floor 9 is back under its old share.

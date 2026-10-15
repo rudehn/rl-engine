@@ -130,7 +130,7 @@ enum Choice {
 }
 
 /// The script's choice for the adventurer's turn, first that applies: a
-/// blow at a monster beside them, the first clockwise from north when
+/// blow at a foe beside them, the first clockwise from north when
 /// there are several, so which one is chosen is a fact about the board
 /// rather than about the order they were spawned in; the way on, when
 /// they stand on it; whatever lies where they stand, the first time they
@@ -143,12 +143,21 @@ fn decide(world: &mut World, me: Entity, tried: &mut BTreeSet<(MapId, Point)>) -
     // remains once it dies, still `Kind` and still lying beside whoever
     // killed it, and `Dead` itself lasts only the one pass between dying
     // and being laid down as a body; `Actor` is what a body no longer is.
-    let foe = world
-        .query_filtered::<(&Position, &OnMap), (With<Kind>, With<Actor>)>()
+    //
+    // A foe by the rule a bump strikes by, so a blow is a blow: a captive
+    // shackled beside the way, or one freed and following, is no foe, and
+    // walking into either is freeing it or changing places, which the
+    // script struck at for good once a captive stood beside its path.
+    let mine = world.get::<Faction>(me).expect("on the adventurer's side").0;
+    let beside: Vec<(Point, Faction)> = world
+        .query_filtered::<(&Position, &OnMap, &Faction), (With<Kind>, With<Actor>)>()
         .iter(world)
-        .filter(|(p, on)| on.0 == here && geometry::chebyshev(at, p.0) <= 1)
-        .filter_map(|(p, _)| Direction::between(at, p.0))
-        .min_by_key(|dir| dir.index());
+        .filter(|(p, on, _)| on.0 == here && geometry::chebyshev(at, p.0) <= 1)
+        .map(|(p, _, side)| (p.0, *side))
+        .collect();
+    let sides = &world.resource::<CombatRules>().factions;
+    let foe =
+        beside.into_iter().filter(|(_, side)| sides.is_hostile(mine, side.0)).filter_map(|(p, _)| Direction::between(at, p)).min_by_key(|dir| dir.index());
     if let Some(dir) = foe {
         return Choice::Strike(dir);
     }
@@ -189,7 +198,10 @@ fn run(seed: u64, turns: usize) -> (u64, Tally) {
         if taken == turns {
             break;
         }
-        if app.world().get::<MyTurn>(me).is_some() {
+        // The turns of work the adventurer took up, freeing a captive
+        // they walked into, are the work's to spend: the turn is held
+        // while it goes on, and an intent written into it leaves it off.
+        if app.world().get::<MyTurn>(me).is_some() && app.world().get::<Working>(me).is_none() {
             let world = app.world_mut();
             match decide(world, me, &mut tried) {
                 Choice::Strike(dir) | Choice::Walk(dir) => {
@@ -223,11 +235,11 @@ const TURNS: usize = 400;
 /// same run, and these runs come to these numbers. Re-baseline
 /// deliberately, saying why in the commit.
 ///
-/// Seed four twice and two and three once, each an app of its own, so the
+/// Seed one twice and two and three once, each an app of its own, so the
 /// four play side by side.
 #[test]
 fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_every_time_on_three_seeds() {
-    let seeds = [4, 2, 3, 4];
+    let seeds = [1, 2, 3, 1];
     let runs: Vec<(u64, Tally)> = std::thread::scope(|scope| {
         let playing: Vec<_> = seeds.map(|seed| scope.spawn(move || run(seed, TURNS))).into_iter().collect();
         playing.into_iter().map(|run| run.join().expect("the run played to its end")).collect()
@@ -241,8 +253,9 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [6_533_239_510_707_766_236, 17_071_721_530_399_813_621, 9_178_652_965_840_841_736],
-        "fingerprint tripwire: re-baselined once for the strata, the biomes on other floors and the bestiary moved with them; \
-         seed one is replaced by seed four, whose layout the script walks down, where seed one's floor one now leaves it standing"
+        [5_312_980_596_804_645_239, 799_751_898_187_304_310, 17_774_122_699_582_489_185],
+        "fingerprint tripwire: re-baselined once for the strata, the biomes on other floors and the bestiary moved with them \
+         and the palace floors retuned, and for the script striking only a foe, so seed one's captive, shackled beside its \
+         path on floor one, is walked past rather than struck at for good"
     );
 }

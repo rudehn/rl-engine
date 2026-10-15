@@ -91,8 +91,13 @@
     // kinds are the same dead a long age on.
     // `led` for the Drowned Abbess's own two, standing with her as her band.
     (name: "drowned pilgrim", glyph: 'Z', color: (0.55, 0.72, 0.78), hp: 18, attack: (roll: "1d8", kind: "crush"), faction: "undead", traits: ["mindless", "deathless", "slow", "led"]),
-    (name: "drowned acolyte", glyph: 'W', color: (0.78, 0.86, 0.95), hp: 14, attack: (roll: "1d6", kind: "cold"), faction: "undead", traits: ["sapient", "deathless", "grave light", "venomous"]),
-    (name: "pale scribe", glyph: 'w', color: (0.82, 0.78, 0.92), hp: 12, attack: (roll: "1d5", kind: "cold"), faction: "undead", traits: ["sapient", "deathless", "shrouded", "withering"]),
+    (name: "drowned acolyte", glyph: 'W', color: (0.78, 0.86, 0.95), hp: 14, attack: (roll: "1d8", kind: "cold"), faction: "undead", traits: ["sapient", "deathless", "grave light", "venomous", "paralysing"]),
+    (name: "pale scribe", glyph: 'w', color: (0.82, 0.78, 0.92), hp: 12, attack: (roll: "1d5", kind: "cold"), faction: "undead", traits: ["sapient", "deathless", "shrouded", "withering", "slowness"]),
+    // The palace's own guard, drowned at its posts: the palace floors' brute, as
+    // the ogre was before the goblins went down with the mines, hard to cut
+    // through, and the early form of the throne's skeleton knights.
+    (name: "drowned guard", glyph: 'H', color: (0.5, 0.62, 0.68), hp: 22, attack: (roll: "2d5", kind: "slash"), armor: 2, faction: "undead",
+     traits: ["mindless", "deathless"]),
     // Floors seven to nine: the drowned dead of the deep, the forge's fire, and the
     // first of the deep culture at the bottom. A wight's touch is the cold
     // of the deep water, which armor does not turn, as it does not turn
