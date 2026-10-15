@@ -996,3 +996,18 @@ fn small_life_is_worth_nothing_to_kill() {
         assert_eq!(rl_engine::rl_rules::balance::threat(def), 0.0, "{name}'s own threat");
     }
 }
+
+/// Withering stops at three: a fourth and a fifth touch before the first
+/// runs out are refused by `weakened`'s own cap, whoever lands them.
+#[test]
+fn weakened_stops_stacking_at_three_however_many_touches_land() {
+    use crate::testing::{arena, settle};
+    let (mut app, me, _) = arena(6);
+    let weakened = app.world().resource::<Registries>().statuses.expect(crate::content::WEAKENED);
+    for _ in 0..5 {
+        app.world_mut().write_message(Afflict { target: me, status: weakened, turns: 20, by: None, held_by: None });
+        settle(&mut app);
+    }
+    let stacks = app.world().get::<Afflicted>(me).map_or(0, |a| a.0.iter().filter(|s| s.id == weakened).count());
+    assert_eq!(stacks, crate::content::WEAKENED_MAX_STACKS as usize);
+}

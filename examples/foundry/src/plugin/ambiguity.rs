@@ -336,12 +336,6 @@ fn allowed(world: &World) -> Vec<Allowed> {
             &["Inventory"],
             "a crate's bag and a commando's are never the same bag, and only a commando fires",
         ),
-        pair(
-            id(engine_props::close_emptied_containers),
-            id(rl_engine::rl_bevy::ammo::sync_ammo),
-            &["Inventory"],
-            "a crate's bag and a commando's are never the same bag, and only a commando wields",
-        ),
         // Every line a pass leaves is its own, and so is every fact: the
         // lift out answers a refused step through it, the console a charge
         // set, and one pass holds one of the player's actions, never both.

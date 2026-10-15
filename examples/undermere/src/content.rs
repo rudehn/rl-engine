@@ -96,6 +96,8 @@ pub const ATTACK: &str = "attack";
 pub const HASTED: &str = "hasted";
 /// A potion of fire immunity's: fire does nothing to its holder.
 pub const FIREPROOF: &str = "fireproof";
+/// What fire immunity resists of fire: all of it.
+pub const FIREPROOF_PCT: i32 = 100;
 /// A potion of darkness's: its holder's lantern out, and thirty points of
 /// stealth.
 pub const SHROUDED: &str = "shrouded";
@@ -103,6 +105,9 @@ pub const SHROUDED: &str = "shrouded";
 pub const PARALYSED: &str = "paralysed";
 /// A confusing cloud's: every step its holder takes goes a random way.
 pub const CONFUSED: &str = "confused";
+/// How many of a confused body's steps go a random way, in percent: every
+/// one, as Brogue turns a confused step.
+pub const STUMBLES_PCT: u32 = 100;
 /// A scroll of discord's, and the side its holder fights for while it
 /// lasts, at odds with every side and with itself.
 pub const DISCORDANT: &str = "discordant";
@@ -141,6 +146,10 @@ pub const WARDED: &str = "warded";
 /// lands, so the heaviest gear grows heavier to carry the longer a fight
 /// runs.
 pub const WEAKENED: &str = "weakened";
+/// How many stacks of `weakened` pile onto one body: the content sheet's
+/// own cap, so a fourth touch before the first's clock runs out is refused
+/// rather than let the stat climb without bound.
+pub const WEAKENED_MAX_STACKS: u32 = 3;
 /// Part 2's engine `sleeps`, named for Undermere's own placement and its
 /// `sleepy` and `wakeful` traits: holds its holder until a noise, a blow
 /// or a notice wakes them, as every sleeper does.
@@ -220,6 +229,9 @@ pub fn registries() -> Registries {
     .unwrap();
     let (fire, poison) = (damage_kinds.expect("fire"), damage_kinds.expect("poison"));
     let stats = stats();
+    let factions =
+        Registry::from_defs(["adventurer", "beasts", "goblins", "undead", "dar", CAPTIVE, DISCORDANT, TOWNSFOLK, WILDLIFE].map(FactionDef::new).to_vec())
+            .unwrap();
     // `poisoned` is a point of poison a turn. `scorched` is what standing
     // in fire leaves, a point a turn for as long as the run's `FireRules`
     // says. `mending` is two a turn, for whatever content puts it on.
@@ -230,15 +242,15 @@ pub fn registries() -> Registries {
     // its holder's speed, which the turn loop reads through the speed
     // stat; `slowed`, a staff's, is half off it, and `hasted`, a potion's,
     // its own again. `fireproof` is a potion's hundred percent against
-    // fire, which `conditions` keeps on its holder's resistances;
-    // `shrouded` is darkness's thirty points of stealth, with the lantern
-    // put out; `paralysed` holds its holder's turns; `confused` turns
-    // every step it takes a random way; and `discordant`, a scroll's,
-    // fights for the side of the same name while it lasts. `webbed` holds
-    // as `paralysed` does, for a web rather than a cloud; `warded` is
-    // three armor, a ward's gift, so a boon; `weakened` is a point off
-    // strength, and stacks, a wraith's touch making the next heavier than
-    // the last; `asleep` is the engine's own `sleeps`, named for
+    // fire; `shrouded` is darkness's thirty points of stealth, with the
+    // lantern put out; `paralysed` holds its holder's turns; `confused`
+    // turns every step it takes a random way; and `discordant`, a
+    // scroll's, fights for the side of the same name while it lasts.
+    // `webbed` holds as `paralysed` does, for a web rather than a cloud;
+    // `warded` is three armor, a ward's gift, so a boon; `weakened` is a
+    // point off strength, and stacks to three, a wraith's touch making the
+    // next heavier than the last until the fourth finds nothing more to
+    // take; `asleep` is the engine's own `sleeps`, named for
     // Undermere's placement and its `sleepy` and `wakeful` traits.
     let statuses = Registry::from_defs(vec![
         StatusDef { badge: Some('p'), ..StatusDef::new("poisoned").ticks(poison, 1) },
@@ -248,14 +260,17 @@ pub fn registries() -> Registries {
         StatusDef { badge: Some('c'), ..StatusDef::new("chilled").modifies(stats.expect(SPEED), Op::Add(-25)) },
         StatusDef { badge: Some('s'), ..StatusDef::new("slowed").modifies(stats.expect(SPEED), Op::Add(-50)) },
         StatusDef { badge: Some('h'), ..StatusDef::new(HASTED).modifies(stats.expect(SPEED), Op::Add(100)).boon() },
-        StatusDef { badge: Some('f'), ..StatusDef::new(FIREPROOF).boon() },
+        StatusDef { badge: Some('f'), ..StatusDef::new(FIREPROOF).resists(fire, FIREPROOF_PCT).boon() },
         StatusDef { badge: Some('d'), ..StatusDef::new(SHROUDED).modifies(stats.expect(STEALTH), Op::Add(30)).boon() },
         StatusDef { badge: Some('P'), ..StatusDef::new(PARALYSED).holds() },
-        StatusDef { badge: Some('?'), ..StatusDef::new(CONFUSED) },
-        StatusDef { badge: Some('!'), ..StatusDef::new(DISCORDANT) },
+        StatusDef { badge: Some('?'), ..StatusDef::new(CONFUSED).stumbles(STUMBLES_PCT) },
+        StatusDef { badge: Some('!'), ..StatusDef::new(DISCORDANT).sides_with(factions.expect(DISCORDANT)) },
         StatusDef { badge: Some('b'), ..StatusDef::new(WEBBED).holds() },
         StatusDef { badge: Some('w'), ..StatusDef::new(WARDED).modifies(stats.expect(ARMOR), Op::Add(3)).boon() },
-        StatusDef { badge: Some('-'), ..StatusDef::new(WEAKENED).modifies(stats.expect(STRENGTH), Op::Add(-1)).stacking(Stacking::Stack) },
+        StatusDef {
+            badge: Some('-'),
+            ..StatusDef::new(WEAKENED).modifies(stats.expect(STRENGTH), Op::Add(-1)).stacking(Stacking::Stack).at_most(WEAKENED_MAX_STACKS)
+        },
         StatusDef { badge: Some('Z'), ..StatusDef::new(ASLEEP).sleeps() },
     ])
     .unwrap();
@@ -277,10 +292,7 @@ pub fn registries() -> Registries {
         stats,
         statuses,
         gases,
-        factions: Registry::from_defs(
-            ["adventurer", "beasts", "goblins", "undead", "dar", CAPTIVE, DISCORDANT, TOWNSFOLK, WILDLIFE].map(FactionDef::new).to_vec(),
-        )
-        .unwrap(),
+        factions,
         tags: tags(),
         slots: Registry::from_defs(
             ["main hand", "off hand", "head", "body", "left finger", "right finger", "light"]
@@ -448,7 +460,7 @@ pub fn add_game_effects(app: &mut App) {
         .add_effect::<minds::Rouse>();
     app.add_effect::<senses::Darkness>().add_effect::<senses::MagicMapping>();
     app.add_effect::<charges::Recharge>();
-    app.add_effect::<crate::tricks::Steal>().add_effect::<crate::tricks::Wither>();
+    app.add_effect::<crate::tricks::Steal>();
     app.add_effect::<bodies::Rally>().add_effect::<bodies::CallDrowned>().add_effect::<bodies::Hatch>().add_effect::<bodies::Rise>();
     app.add_effect::<bodies::RaiseAlly>().add_effect::<bodies::Whisper>().add_effect::<minds::AlertDrowned>();
     app.add_effect::<crate::waystone::CallGate>();

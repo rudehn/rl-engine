@@ -421,6 +421,7 @@ fn resolve(
         light: folded.light.map(|light| light.0),
         abilities: folded.abilities.clone(),
         statuses: folded.statuses.clone(),
+        while_holding: folded.while_holding.clone(),
         triggers,
         resists: folded.resists.clone(),
         drops: parts::drops(&a.drops),
@@ -481,7 +482,6 @@ enum Learned {
 fn learned_by(effect: &EffectSpec, names: &Names<'_>) -> Learned {
     match effect.kind.as_str() {
         Inflict::KIND => Inflict::from_args(&effect.args, names).map_or(Learned::Moment, |i| Learned::Status(i.status)),
-        crate::tricks::Wither::KIND => names.status(crate::content::WEAKENED).map_or(Learned::Moment, Learned::Status),
         crate::tricks::Steal::KIND => Learned::Itself,
         _ => Learned::Moment,
     }
@@ -733,11 +733,8 @@ pub fn spawn_monster(commands: &mut Commands, def: &MonsterDef, at: Point, map: 
         let own = OwnBlowScore(crate::armory::blow_score(def.attack.roll, None));
         e.insert((Inventory::default(), Equipped(Equipment::with_slot_count(registries.slots.len())), own));
     }
-    // `BurnsBadly` holds no status of its own at spawn, but
-    // `keep_regen_halted` still needs `Afflicted` and `StatBlock` on the
-    // entity to read and to modify, exactly as a trait's own held statuses
-    // do; and a sleeper holds `asleep` beside what its kind holds.
-    if def.tricks.burns_badly || asleep {
+    // A sleeper holds `asleep` beside what its kind holds.
+    if asleep {
         let mut held = def.parts.statuses.clone();
         if asleep {
             held.push(registries.statuses.expect(crate::content::ASLEEP));
@@ -758,9 +755,6 @@ pub fn spawn_monster(commands: &mut Commands, def: &MonsterDef, at: Point, map: 
         }
         if def.tricks.reflects {
             e.insert(Reflects);
-        }
-        if def.tricks.burns_badly {
-            e.insert(crate::tricks::BurnsBadly);
         }
         if def.tricks.drains {
             e.insert(crate::tricks::Drains);

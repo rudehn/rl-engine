@@ -1,54 +1,9 @@
-//! What holds on a body while something about it lasts: a troll's
-//! mending halted while it burns, and a Choirmaster's song over his
-//! own; and the wraith's shroud, which is the engine's `Concealed`.
+//! What holds on a body while something about it lasts: a Choirmaster's
+//! song over his own; and the wraith's shroud, which is the engine's
+//! `Concealed`. A troll's mending halted while it burns is the engine's
+//! `while_holding`, written on `burns-badly` in `traits.ron`.
 
 use super::*;
-
-/// Marks a kind whose regeneration stops while it burns: a troll's
-/// `burns-badly`, the second half of its trait.
-#[derive(Component, Debug, Clone, Copy, Default)]
-pub struct BurnsBadly;
-
-/// Marks a [`BurnsBadly`] body whose mending is halted this moment, so it
-/// is lifted exactly once when the burning ends.
-#[derive(Component, Debug, Clone, Copy, Default)]
-pub struct RegenHalted;
-
-/// The tag [`keep_regen_halted`]'s own modifier sits under, so it removes
-/// exactly the one it put on the mending stat and nothing else there.
-const REGEN_HALT_TAG: u64 = u64::from_be_bytes(*b"burnbad1");
-
-/// A [`BurnsBadly`] body as [`keep_regen_halted`] reads it: what it
-/// suffers, its stats, and whether its mending is halted now.
-type Burning = (Entity, &'static Afflicted, &'static mut StatBlock, Has<RegenHalted>);
-
-/// Zeroes a [`BurnsBadly`] body's mending while it holds `scorched`, and
-/// lifts the zero the moment the burning ends: regeneration, and nothing
-/// else that mends it, heals it while it burns, as the trait's words say.
-///
-/// A blunt tool beside the trait's one line: every heal is scaled by the
-/// mending stat, so this halts a mend ally's hand along with a troll's
-/// own regeneration while it burns, not only the regeneration by name.
-/// Judged the simpler reading over threading a second,
-/// regeneration-only scale through every heal in the engine for one
-/// trait's one kind; no row of this bestiary both regenerates and is
-/// mended by another's ability, so nothing today tells the two apart.
-///
-/// In `TurnSet::React`.
-pub fn keep_regen_halted(registries: Res<Registries>, mut bodies: Query<Burning, (With<BurnsBadly>, With<Actor>)>, mut commands: Commands) {
-    let Some(scorched) = registries.statuses.id("scorched") else { return };
-    let Some(mending) = registries.stats.id(crate::content::MENDING) else { return };
-    for (e, held, mut stats, halted) in &mut bodies {
-        let burning = held.0.has(scorched);
-        if burning && !halted {
-            stats.0.add(Modifier::new(mending, Op::Add(-100), Source::Game(REGEN_HALT_TAG)));
-            commands.entity(e).insert(RegenHalted);
-        } else if !burning && halted {
-            stats.0.remove_source(Source::Game(REGEN_HALT_TAG));
-            commands.entity(e).remove::<RegenHalted>();
-        }
-    }
-}
 
 /// Marks a kind whose choir mends whoever of its own side stands near it:
 /// the Choirmaster's `singing`. Marked at spawn off [`Tricks::sings`].
@@ -75,7 +30,7 @@ type SingingTo = (Entity, &'static Position, Option<&'static OnMap>, &'static Fa
 /// scaled by the mending stat is what "regenerate" already means
 /// everywhere else in this bestiary.
 ///
-/// Edge-triggered, as `keep_fireproof` is: given only the turn a body
+/// Edge-triggered: given only the turn a body
 /// comes into range, taken only the turn it leaves it. Only what the song
 /// gave is taken back, marked [`Sung`]: a body already regenerating by its
 /// own trait or a worn ring keeps it, in range or out.
@@ -221,27 +176,31 @@ mod tests {
         assert!(!sung(&app), "the song stopped when he died");
     }
 
-    /// A `BurnsBadly` body's mending is zeroed while `resolve_afflictions`
-    /// holds `scorched` on it, and lifted the moment it is cured.
+    /// A troll's mending is zeroed while it holds `scorched`, by the rule
+    /// its `burns-badly` trait writes, and lifted the moment it is cured;
+    /// a goblin burning beside it mends as ever.
     #[test]
     fn a_burns_badly_kinds_mending_is_halted_while_it_burns_and_lifted_once_it_is_not() {
-        let mut app = App::new();
-        app.add_message::<Afflict>().add_message::<Cure>().add_message::<rl_engine::rl_bevy::status::StatusEvent>();
-        let registries = crate::content::registries();
+        use crate::testing::{arena, monster, pass_turns};
+        let (mut app, _, here) = arena(5);
+        let (troll, goblin) = (monster(&mut app, "troll", here.offset(4, 0)), monster(&mut app, "goblin", here.offset(-4, 0)));
+        for who in [troll, goblin] {
+            app.world_mut().entity_mut(who).remove::<Mind>();
+        }
+        let registries = app.world().resource::<Registries>();
         let (scorched, mending) = (registries.statuses.expect("scorched"), registries.stats.expect(crate::content::MENDING));
-        app.insert_resource(registries);
-        app.add_systems(Update, (resolve_afflictions, keep_regen_halted).chain());
-        let e = app.world_mut().spawn((Actor, BurnsBadly, Afflicted(Statuses::new()), StatBlock(Stats::new()))).id();
         // The same formula `Loadout::mending` reads the stat by: a
         // hundred and the stat, never below nothing.
-        let mending_of = |app: &App| (100 + app.world().get::<StatBlock>(e).unwrap().0.value(mending, &app.world().resource::<Registries>().stats)).max(0);
-        app.update();
-        assert_eq!(mending_of(&app), 100, "not burning yet");
-        app.world_mut().write_message(Afflict { target: e, status: scorched, turns: 3, by: None, held_by: None });
-        app.update();
-        assert_eq!(mending_of(&app), 0, "burning, so no mending reaches it");
-        app.world_mut().write_message(Cure { target: e, status: scorched });
-        app.update();
-        assert_eq!(mending_of(&app), 100, "the burning is over, and so is the halt");
+        let mending_of =
+            |app: &App, who: Entity| (100 + app.world().get::<StatBlock>(who).unwrap().0.value(mending, &app.world().resource::<Registries>().stats)).max(0);
+        assert_eq!(mending_of(&app, troll), 100, "not burning yet");
+        for who in [troll, goblin] {
+            app.world_mut().write_message(Afflict { target: who, status: scorched, turns: 3, by: None, held_by: None });
+        }
+        pass_turns(&mut app, 1);
+        assert_eq!((mending_of(&app, troll), mending_of(&app, goblin)), (0, 100), "the troll burning mends nothing, the goblin as ever");
+        app.world_mut().write_message(Cure { target: troll, status: scorched });
+        pass_turns(&mut app, 1);
+        assert_eq!(mending_of(&app, troll), 100, "the burning is over, and so is the halt");
     }
 }

@@ -17,7 +17,8 @@
 //!
 //! [`ActorParts`] is the same for one kind of actor: its health, side,
 //! sight, wits, notice, hearing, attacks, light, abilities, the statuses
-//! it holds for life, its triggers, resistances and drops, whether it
+//! it holds for life and what its stats do while it holds one, its
+//! triggers, resistances and drops, whether it
 //! leaves remains, and the brain it decides with. [`ActorParts::insert`]
 //! puts every one written on a spawned actor; one not written puts
 //! nothing, and a game's defaults are its own, laid under each kind with
@@ -51,7 +52,7 @@ use crate::minds::{Intelligence, Mind, Perception};
 use crate::noise::Hearing;
 use crate::registries::Registries;
 use crate::remains::LeavesRemains;
-use crate::status::{Afflicted, StatBlock};
+use crate::status::{Afflicted, StatBlock, WhileHolding};
 use crate::stealth::Notice;
 use crate::throwing::Throwable;
 
@@ -459,6 +460,10 @@ pub struct ActorParts<I: Send + Sync + 'static> {
     pub abilities: Vec<AbilityId>,
     /// The statuses it holds for life, on from its first turn.
     pub statuses: Vec<StatusId>,
+    /// What its stats do while it holds a status, by status: the kind's
+    /// rule and not the status's, a body whose mending stops while it
+    /// burns. Empty changes nothing.
+    pub while_holding: Vec<(StatusId, Vec<(StatId, Op)>)>,
     /// What it does at its own moments, built once and shared by every one
     /// of its kind.
     pub triggers: Triggers,
@@ -491,6 +496,7 @@ impl<I: Send + Sync + 'static> Default for ActorParts<I> {
             light: None,
             abilities: Vec::new(),
             statuses: Vec::new(),
+            while_holding: Vec::new(),
             triggers: Triggers::default(),
             resists: Resistances::new(),
             drops: DropTable::default(),
@@ -518,6 +524,7 @@ impl<I: Send + Sync + 'static> Clone for ActorParts<I> {
             light: self.light,
             abilities: self.abilities.clone(),
             statuses: self.statuses.clone(),
+            while_holding: self.while_holding.clone(),
             triggers: self.triggers.clone(),
             resists: self.resists.clone(),
             drops: self.drops.clone(),
@@ -547,6 +554,7 @@ impl<I: Send + Sync + 'static> std::fmt::Debug for ActorParts<I> {
             .field("light", &self.light)
             .field("abilities", &self.abilities)
             .field("statuses", &self.statuses)
+            .field("while_holding", &self.while_holding)
             .field("triggers", &self.triggers)
             .field("resists", &self.resists)
             .field("drops", &self.drops)
@@ -577,6 +585,8 @@ impl<I: Send + Sync + 'static> ActorParts<I> {
         triggers.0.extend(self.triggers.0);
         let mut drops = under.drops.clone();
         drops.0.extend(self.drops.0);
+        let mut while_holding = under.while_holding.clone();
+        while_holding.extend(self.while_holding);
         ActorParts {
             hp: self.hp.or(under.hp),
             armor: self.armor.or(under.armor),
@@ -598,6 +608,7 @@ impl<I: Send + Sync + 'static> ActorParts<I> {
             light: self.light.or(under.light),
             abilities: both(&under.abilities, self.abilities),
             statuses: both(&under.statuses, self.statuses),
+            while_holding,
             triggers,
             resists,
             drops,
@@ -656,7 +667,7 @@ impl<I: Send + Sync + 'static> ActorParts<I> {
     /// [`Faction`], [`Speed`], [`Perception`], [`Intelligence`],
     /// [`Notice`], [`Hearing`], [`DarkSight`], the attacks,
     /// [`LightSource`], [`Grants`], what it holds for life in [`Afflicted`]
-    /// and [`StatBlock`], [`Triggers`], [`Resists`], [`Drops`],
+    /// and [`StatBlock`], [`WhileHolding`], [`Triggers`], [`Resists`], [`Drops`],
     /// [`LeavesRemains`] and [`Mind`]. `registries` holds the statuses it
     /// holds.
     ///
@@ -704,6 +715,9 @@ impl<I: Send + Sync + 'static> ActorParts<I> {
         }
         if !self.statuses.is_empty() {
             e.insert(held_for_life(&self.statuses, &registries.statuses));
+        }
+        if !self.while_holding.is_empty() {
+            e.insert(WhileHolding(self.while_holding.clone()));
         }
         if !self.triggers.0.is_empty() {
             e.insert(self.triggers.clone());

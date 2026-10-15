@@ -710,8 +710,9 @@ fn validate_def(d: &ItemDef, traits: &Registry<TraitDef>, registries: &Registrie
 /// A worn thing gives what it is or carries: armor, resistances, a light,
 /// sight in the dark, a status held while it is worn. What a mind thinks
 /// with, how fast and how far a body moves, sees, notices and hears, when
-/// it runs and what it knows how to do are the body's own, read once when
-/// it is made, and a thing that lent them would lend nothing at all.
+/// it runs, what it knows how to do and what its own kind does while it
+/// holds a status are the body's own, read once when it is made, and a
+/// thing that lent them would lend nothing at all.
 fn unlendable(t: &TraitDef) -> Option<&'static str> {
     let set = [
         ("wits", t.wits.is_some()),
@@ -721,6 +722,7 @@ fn unlendable(t: &TraitDef) -> Option<&'static str> {
         ("notice", t.notice.is_some()),
         ("hearing", t.hearing.is_some()),
         ("abilities", !t.abilities.is_empty()),
+        ("while_holding", !t.while_holding.is_empty()),
     ];
     set.into_iter().find_map(|(field, set)| set.then_some(field))
 }

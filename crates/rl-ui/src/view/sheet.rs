@@ -260,13 +260,14 @@ pub fn collect_sheet(
 }
 
 /// What the engine can say applied a modifier: the status's registered
-/// name while it is still on, the worn item's [`Name`], and nothing for a
+/// name while it is still on, whether the status's own or what the kind
+/// does while holding it, the worn item's [`Name`], and nothing for a
 /// source of the game's own, which the game names.
 fn source_named(source: Source, afflicted: Option<&Afflicted>, registries: &Registries, names: &Query<&Name>) -> String {
     match source {
-        Source::Status { status, .. } if afflicted.is_some_and(|a| a.has(status)) => registries.statuses.name(status).to_string(),
+        Source::Status { status, .. } | Source::Holding(status) if afflicted.is_some_and(|a| a.has(status)) => registries.statuses.name(status).to_string(),
         Source::Item(bits) => Entity::try_from_bits(bits).and_then(|item| names.get(item).ok()).map(|n| n.as_str().to_string()).unwrap_or_default(),
-        Source::Status { .. } | Source::Game(_) => String::new(),
+        Source::Status { .. } | Source::Game(_) | Source::Holding(_) => String::new(),
     }
 }
 

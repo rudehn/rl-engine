@@ -94,20 +94,28 @@ struct Derived<S: Stream>(std::marker::PhantomData<S>);
 
 impl AddStream for App {
     fn add_stream<S: Stream>(&mut self, plugin: &'static str) -> &mut Self {
-        if self.world().contains_resource::<Derived<S>>() {
-            return self;
-        }
-        self.insert_resource(Derived::<S>(std::marker::PhantomData));
+        derive_stream::<S>(self);
         self.needs::<Seed>(plugin, "`Seed(RunSeed(n))`, the run's seed every stream derives from, or `Seed::from_args()` for `--seed`")
-            // Not gated on play: a seed inserted before the app runs, or by a
-            // startup system continuing a save, is in place before the first
-            // turn is dealt.
-            .add_systems(Update, derive_stream::<S>.run_if(resource_exists_and_changed::<Seed>).before(EngineSet::Stream))
     }
 }
 
+/// Derives `S` from [`Seed`] whenever one is given, as
+/// [`add_stream`](AddStream::add_stream) does, without saying the seed is
+/// needed: for a subsystem that draws only for some content, which says
+/// when it needs the seed itself.
+pub(crate) fn derive_stream<S: Stream>(app: &mut App) {
+    if app.world().contains_resource::<Derived<S>>() {
+        return;
+    }
+    app.insert_resource(Derived::<S>(std::marker::PhantomData));
+    // Not gated on play: a seed inserted before the app runs, or by a
+    // startup system continuing a save, is in place before the first turn
+    // is dealt.
+    app.add_systems(Update, derive::<S>.run_if(resource_exists_and_changed::<Seed>).before(EngineSet::Stream));
+}
+
 /// Derives `S` from the current seed.
-fn derive_stream<S: Stream>(mut commands: Commands, seed: Res<Seed>) {
+fn derive<S: Stream>(mut commands: Commands, seed: Res<Seed>) {
     commands.insert_resource(S::for_run(seed.0));
 }
 

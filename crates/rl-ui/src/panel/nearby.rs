@@ -18,7 +18,7 @@ use crate::facet::{Facet, FacetId, Facets};
 use crate::modal::Modals;
 use crate::panel::{clear, clip, frame, section, wrap};
 use crate::tone::{Palette, ToneId, Tones};
-use crate::view::{Alert, NearbyFollowers, NearbyView, NearbyViewPlugin, Row};
+use crate::view::{Alert, NearbyFollowers, NearbyStatuses, NearbyView, NearbyViewPlugin, Row};
 
 /// Where the nearby rail is drawn and what the headings say.
 #[derive(Resource, Debug, Clone)]
@@ -126,7 +126,7 @@ impl ActivityWords {
 ///
 /// Adds [`NearbyViewPlugin`] if the game has not, because a panel with no
 /// view behind it can only draw nothing.
-pub struct NearbyPanel(NearbyLayout, NearbyFollowers);
+pub struct NearbyPanel(NearbyLayout, NearbyFollowers, Option<NearbyStatuses>);
 
 impl NearbyPanel {
     /// A rail in `rect`, with the engine's default headings: `In sight`
@@ -145,6 +145,7 @@ impl NearbyPanel {
                 beneath: Vec::new(),
             },
             NearbyFollowers::Listed,
+            None,
         )
     }
 
@@ -199,6 +200,15 @@ impl NearbyPanel {
         self.1 = NearbyFollowers::LeftOut;
         self
     }
+
+    /// Says beside each actor what holds it: every status with a badge as a
+    /// facet keyed `key`, and a sleeper as doing `asleep`, a word the
+    /// [activities](Self::activities) name. Off unless asked, as
+    /// [`NearbyStatuses`] says.
+    pub fn statuses(mut self, key: &'static str, asleep: &'static str) -> Self {
+        self.2 = Some(NearbyStatuses { key, asleep });
+        self
+    }
 }
 
 impl Plugin for NearbyPanel {
@@ -208,6 +218,9 @@ impl Plugin for NearbyPanel {
         }
         if self.1 == NearbyFollowers::LeftOut {
             app.insert_resource(self.1);
+        }
+        if let Some(statuses) = self.2 {
+            app.insert_resource(statuses);
         }
         app.insert_resource(self.0.clone()).add_systems(Update, draw_nearby.in_set(PresentSet::Chrome));
     }

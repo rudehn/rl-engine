@@ -34,19 +34,22 @@
 //               "raise dead" | "war cry" | "spit" | "call the drowned" | "wyrm breath"
 //   statuses:   held for life: "poisoned" | "scorched" | "mending" | "regenerating" | "chilled" |
 //               "webbed" | "warded" | "weakened" | "asleep"
+//   while_holding: [(status, [(stat, op)])], the engine's: what its stats do while it holds
+//               that status, any of the statuses above, each op one of Add(n), MulPct(n),
+//               AtLeast(n) or AtMost(n) on a stat: "mending" | "speed" | "strength" | ...
 //   triggers:   what it does at its own moments: [(on: "hit" | "struck" | "died", area: Here |
 //               Burst(radius: n), effects: [(kind:, chance:, args:)])], the engine's
 //               Harm(kind:, roll:), Mend(roll:), Inflict(status:, turns:), Cleanse(status:),
-//               Emit(gas:, amount:); or part 3's own, Wither(turns:), `weakened` capped at three
-//               stacks, and Steal, a landed blow's own trick; landed through the engine's actor
-//               triggers
+//               Emit(gas:, amount:); or part 3's own, Steal, a landed blow's own trick; landed
+//               through the engine's actor triggers
 //   keep_away:  (within:, no_closer:), the engine's span, both in tiles: how far it lets an
 //               enemy get before it closes, and how close it lets one get before it backs away
 //   trick:      whether this is a trick: unknown of a kind until the adventurer has seen it
 //               land (a bite that poisons, a jelly that splits), rather than known on sight
 //               (its look, its speed, whether it flies); absent, false, a plain trait
 //
-// Lists add up across a monster's traits: wits, resists, abilities, statuses and triggers.
+// Lists add up across a monster's traits: wits, resists, abilities, statuses, while_holding
+// and triggers.
 // Every other field may be set by one of a monster's traits only, and a monster
 // with two traits setting the same one is refused at load, naming both.
 #![enable(implicit_some)]
@@ -99,17 +102,18 @@
      resists: [("slash", 33), ("pierce", 33), ("crush", -50)]),
     (name: "paralysing", says: "a touch that freezes", trick: true,
      triggers: [(on: "hit", effects: [(kind: "Inflict", chance: 15, args: (status: "paralysed", turns: 2))])]),
-    // `Wither` rather than the plain `Inflict` every other hit trigger
-    // uses: `Stacking::Stack` has no maximum of its own, and the sheet
-    // caps this one at three.
+    // Capped at three stacks by `weakened`'s own `max`.
     (name: "withering", says: "saps strength", trick: true,
-     triggers: [(on: "hit", effects: [(kind: "Wither", args: (turns: 20))])]),
+     triggers: [(on: "hit", effects: [(kind: "Inflict", args: (status: "weakened", turns: 20))])]),
     (name: "blinking", says: "blinks from place to place", abilities: ["blink"], trick: true),
     (name: "warding", says: "shields its allies", abilities: ["ward ally"], trick: true),
     (name: "mends allies", says: "mends its allies", abilities: ["mend ally"], trick: true),
     (name: "firebolt", says: "hurls fire from a word", abilities: ["firebolt"], trick: true),
     (name: "slowness", says: "saps your speed with a word", abilities: ["slowness"], trick: true),
-    (name: "burns-badly", says: "burns, and stops healing while it does", resists: [("fire", -100)]),
+    // Its mending a hundred down while it burns: regeneration, and anything
+    // else that mends it, stops.
+    (name: "burns-badly", says: "burns, and stops healing while it does", resists: [("fire", -100)],
+     while_holding: [("scorched", [("mending", Add(-100))])]),
     // Its glow is the light a kind that lures already carries for another
     // reason, a will-o'-wisp's grave light: `light` is a single value, so
     // a second trait setting it on the same kind would clash, and every

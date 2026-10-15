@@ -683,6 +683,7 @@ pub struct Loadout<'w, 's> {
     worn: Query<'w, 's, Gear, With<Item>>,
     equipped: Query<'w, 's, &'static Equipped>,
     resists: Query<'w, 's, &'static Resists>,
+    held: Query<'w, 's, &'static crate::status::StatusResists>,
     spent: Query<'w, 's, &'static crate::consumable::Consumable>,
     dry: Query<'w, 's, (), With<crate::ammo::Dry>>,
     stats: Query<'w, 's, &'static StatBlock>,
@@ -744,11 +745,16 @@ impl Loadout<'_, '_> {
         (100 + self.stat(who, |r| r.mending)).max(0)
     }
 
-    /// What `who` resists: its own [`Resists`] and every worn item's, added
-    /// kind by kind, so a suit that resists a tenth of a bolt resists it for
-    /// whoever wears it, and stops the moment it is taken off.
+    /// What `who` resists: its own [`Resists`], every worn item's and what
+    /// the statuses on it lend, its
+    /// [`StatusResists`](crate::status::StatusResists), added kind by kind,
+    /// so a suit that resists a tenth of a bolt resists it for whoever
+    /// wears it, and stops the moment it is taken off.
     pub fn resistances(&self, who: Entity) -> Resistances {
         let mut total = self.resists.get(who).map(|r| r.0.clone()).unwrap_or_default();
+        if let Ok(held) = self.held.get(who) {
+            total.plus(&held.0);
+        }
         for (item, ..) in self.worn(who) {
             if let Ok(worn) = self.resists.get(item) {
                 total.plus(&worn.0);

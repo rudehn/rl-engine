@@ -208,7 +208,12 @@ impl Plugin for UndermerePlugin {
         // engine's own phases: see `ReactStep`.
         app.configure_sets(Turn, (ReactStep::Fill, ReactStep::Answer, ReactStep::Keep, ReactStep::Count).chain().in_set(TurnSet::React))
             .configure_sets(Turn, ReactStep::Fill.after(PrefabSet::Fill).before(ReactSet::Settle).before(AmmoSet::Resolve))
-            .configure_sets(Turn, ReactStep::Answer.after(ReactSet::Settle).after(AmmoSet::Resolve).after(LootSet::Scatter));
+            .configure_sets(Turn, ReactStep::Answer.after(ReactSet::Settle).after(AmmoSet::Resolve).after(LootSet::Scatter))
+            // What the statuses held lend, fire immunity's resistance, a
+            // discordant side and a troll's halted mending, kept after the
+            // answers and before what reads the stats they leave, which is
+            // where Undermere's own systems kept them before the engine did.
+            .configure_sets(Turn, ReactSet::Statuses.after(ReactStep::Answer).before(ReactStep::Keep));
         // The run's start, and a continued run after the fresh start has
         // stood aside.
         app.add_systems(NewRun, crate::run::start);
@@ -276,10 +281,9 @@ impl Plugin for UndermerePlugin {
         );
         // What the adventurer and those around them are, kept in step every
         // pass from the stats as they stand, after the engine has folded
-        // what is worn onto them. First what puts a status or a stat on
-        // somebody: what a worn thing lends, fire immunity and discord kept
-        // on whoever holds them, a Choirmaster's choir, a troll's
-        // regeneration halted while it burns, the Crown of Grubnak's aura.
+        // what is worn onto them and kept what each status held lends. First
+        // what puts a status or a stat on somebody: what a worn thing lends,
+        // a Choirmaster's choir, the Crown of Grubnak's aura.
         // Then what reads the stats those leave: what too heavy a thing
         // costs, how far the lantern reaches, how sneaky the stealth stat
         // makes the adventurer, and what the rings give that the engine
@@ -290,10 +294,7 @@ impl Plugin for UndermerePlugin {
             Turn,
             (
                 crate::wearing::lend,
-                crate::conditions::keep_fireproof,
-                crate::conditions::keep_discord,
                 crate::tricks::sing_choir,
-                crate::tricks::keep_regen_halted,
                 crate::artifacts::crown_aura,
                 crate::strength::keep_strength,
                 crate::light::dim_the_lantern,
@@ -338,8 +339,6 @@ impl Plugin for UndermerePlugin {
         // waypoint, sensed beside the engine's own post and leader, and
         // never for an actor with no route of its own.
         app.add_systems(Turn, crate::tricks::sense_patrols.in_set(PerceiveSet::Annotate));
-        app.add_stream::<crate::conditions::Stumbles>("UndermerePlugin");
-        app.add_systems(Turn, crate::conditions::stumble.in_set(DecideSet::Game));
         add_answers(app);
         // What a floor hides: its traps and flagstones stood up on its
         // first arrival. A trap seen going off, and what the adventurer

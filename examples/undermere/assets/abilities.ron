@@ -27,8 +27,8 @@
 //                Teleport among them, which sends its user far off; or, part 3's own, Blink(reach:,
 //                per_level:), the user along the line aimed, up to reach cells, Conjure(blades:,
 //                turns:), spectral blades on the user's own side, RaiseDead, the nearest body in
-//                sight and reach stood up as the user's own ally, Wither(turns:), `weakened` capped
-//                at three stacks, Steal, a landed blow's own trick, Rally(turns:), Grubnak's,
+//                sight and reach stood up as the user's own ally,
+//                Steal, a landed blow's own trick, Rally(turns:), Grubnak's,
 //                every ally in sight hasted, and CallDrowned(count:, range:), drowned thralls stood
 //                up out of the water within range. The damage kinds are
 //                "slash" | "pierce" | "crush" | "fire" | "cold" | "poison" | "lightning", and the

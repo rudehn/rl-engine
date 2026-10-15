@@ -220,6 +220,9 @@ fn add_panels(app: &mut App, screen: &Screen) {
             .set(
                 NearbyPanel::new(rail.nearby)
                     .without_followers()
+                    // What holds each monster in sight, said after its name,
+                    // and a sleeper said asleep where its doing goes.
+                    .statuses(undermere::conditions::STATUS_FACET, undermere::conditions::SLEEPING)
                     .beneath(undermere::mercenaries::KIT_FACET)
                     .titled("")
                     .headings("In sight", "Around you")
@@ -258,8 +261,6 @@ fn add_panels(app: &mut App, screen: &Screen) {
         ControlsPanel::new(rail.controls()).hint(rail.hint),
         GameMenuPanel::new(screen.menu).title("Undermere").died("The Undermere keeps you.").won("The throne is empty, and the lake is still."),
     ));
-    // What holds each monster in sight, said after its name on the rail.
-    app.add_systems(Update, undermere::conditions::note_statuses.in_set(ViewSet::Annotate));
     // A captive said shackled on the rail, until it is freed.
     app.add_systems(Update, undermere::captives::note_captives.in_set(ViewSet::Annotate));
     // A keeper's wares by their true names, in the shop's own colour, and

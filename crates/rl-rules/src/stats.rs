@@ -85,6 +85,11 @@ pub enum Source {
     Item(u64),
     /// Something of the game's own: a trait, a blessing, a curse.
     Game(u64),
+    /// What the actor's own kind changes about it while it holds a status,
+    /// by which status: a body that stops mending while it burns. Apart
+    /// from [`Status`](Self::Status), which is what the status does to
+    /// anyone, because this is what it does to one kind.
+    Holding(crate::status::StatusId),
 }
 
 impl Source {

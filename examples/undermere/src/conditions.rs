@@ -1,189 +1,31 @@
-//! What a status does that the engine's statuses do not: a confused body's
-//! every step turned a random way, a discordant one's side changed for as
-//! long as it lasts, and fire immunity's hundred percent kept on whoever
-//! holds it; and, by [`note_statuses`], what holds a monster said beside
-//! its name on the rail.
+//! What Undermere says of what holds a monster, in its own words: the
+//! facet key the rail's list says each status under, and the word for a
+//! sleeper.
 //!
-//! The engine's statuses change stats, tick, hide and hold; the rest is a
-//! game's, keyed by the status. Each here reads the status off its holder
-//! every pass and does what it says while it lasts, so a status put back
-//! by a continued run does it again with nothing saved for it.
+//! What a status does is the engine's, written on each status in
+//! `content.rs`: `confused` stumbles every step, `discordant` names the
+//! side its holder fights for, `fireproof` resists all of fire, and
+//! `weakened` stacks to three. Each is kept on its holder every pass from
+//! what it holds, so a status put back by a continued run does it again
+//! with nothing saved for it but, for a discordant body, the side it goes
+//! back to, which the engine saves too. The rail's saying of them is the
+//! engine's as well, asked for with `NearbyPanel::statuses` in `main.rs`.
 
-use bevy::prelude::*;
-use rand::Rng;
-use rl_engine::prelude::*;
-use rl_engine::rl_ui::view::Alert;
-
-use crate::content::{CONFUSED, DISCORDANT, FIREPROOF};
-
-/// The draws a confused body's steps are turned by: a stream of the run's
-/// own, so a stumble never shifts a blow's roll or a cloud's spread.
-#[derive(Resource)]
-pub struct Stumbles(pub rand::rngs::StdRng);
-
-impl rl_engine::rl_bevy::Stream for Stumbles {
-    fn for_run(seed: rl_engine::rl_core::RunSeed) -> Self {
-        Self(seed.rng(SeedDomain::new(b"undermere.confusion"), 0))
-    }
-}
-
-/// Turns every step a confused body means to take a random way among those
-/// open to it, the adventurer's walk and a mind's step alike: a walk into
-/// someone it did not mean to strike strikes them.
-///
-/// Among the open ways, cells that can be walked on whoever stands there,
-/// as Brogue turns a confused step: a way into a wall would be refused,
-/// which for the adventurer costs nothing and would only ask again. A
-/// body walled in on every side steps as it meant to. In
-/// `DecideSet::Game`, the game's answer to what was chosen, after every
-/// mind has decided and with the adventurer's walk already written, and
-/// before anything resolves it, so the intent the resolver reads is the
-/// one turned about; and by rewriting the intent where it stands rather
-/// than replacing it, so nothing else that reads it reads the old way.
-pub fn stumble(
-    mut steps: MessageMutator<Intent<Step>>,
-    mut walks: MessageMutator<Intent<Bump>>,
-    bodies: Query<(&Afflicted, &Position)>,
-    registries: Res<Registries>,
-    map: Res<WorldMap>,
-    mut rng: ResMut<Stumbles>,
-) {
-    let Some(status) = registries.statuses.id(CONFUSED) else { return };
-    let mut way = |who: Entity| {
-        let (held, at) = bodies.get(who).ok()?;
-        if !held.0.has(status) {
-            return None;
-        }
-        let open: Vec<Direction> = Direction::ALL.into_iter().filter(|d| map.is_walkable(at.0 + d.offset())).collect();
-        (!open.is_empty()).then(|| open[rng.0.random_range(0..open.len())])
-    };
-    for step in steps.read() {
-        if let Some(turned) = way(step.actor) {
-            step.action.0 = turned;
-        }
-    }
-    for walk in walks.read() {
-        if let Some(turned) = way(walk.actor) {
-            walk.action.0 = turned;
-        }
-    }
-}
-
-/// A body fighting for the discordant side while its `discordant` lasts,
-/// and the side it goes back to after.
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Discordant {
-    /// The side it fought for before.
-    pub was: Faction,
-}
-
-/// Keeps every body holding `discordant` on the discordant side, at odds
-/// with every side and with every other discordant body, and puts each
-/// back on the side it was on the pass its discord ends.
-///
-/// The faction matrix is read live by every mind and every blow, so the
-/// side is the whole of it. In `TurnSet::React`, so a body the scroll
-/// turned this pass is turned before anyone decides again. A continued
-/// run's discordant body, its status put back and its side its kind's, is
-/// turned again here with its kind's side to go back to.
-pub fn keep_discord(mut commands: Commands, registries: Res<Registries>, mut bodies: Query<(Entity, &Afflicted, &mut Faction, Option<&Discordant>)>) {
-    let (Some(status), Some(side)) = (registries.statuses.id(DISCORDANT), registries.factions.id(DISCORDANT)) else { return };
-    for (body, held, mut faction, turned) in &mut bodies {
-        match (held.0.has(status), turned) {
-            (true, None) => {
-                commands.entity(body).insert(Discordant { was: *faction });
-                *faction = Faction(side);
-            }
-            (false, Some(turned)) => {
-                *faction = turned.was;
-                commands.entity(body).remove::<Discordant>();
-            }
-            _ => {}
-        }
-    }
-}
-
-/// Marks a body whose resistances carry fire immunity's hundred percent,
-/// so it is taken off again exactly once when the status ends.
-#[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Fireproofed;
-
-/// What fire immunity resists of fire: all of it.
-pub const FIREPROOF_PCT: i32 = 100;
-
-/// A body as fire immunity reads it: its statuses, its own resistances,
-/// and whether they carry fire immunity's share now.
-type Proofing = (Entity, Option<&'static Afflicted>, Option<&'static mut Resists>, Has<Fireproofed>);
-
-/// Keeps fire immunity on whoever holds `fireproof`: [`FIREPROOF_PCT`] of
-/// fire added to their own resistances when it comes on, which the
-/// engine's damage reads as any resistance, and taken off when it ends.
-///
-/// Every pass, in `TurnSet::React`. The engine does not save a body's own
-/// resistances, and does put its statuses back, so a continued run's
-/// fireproof drinker is made fireproof again here, once.
-pub fn keep_fireproof(mut commands: Commands, registries: Res<Registries>, mut bodies: Query<Proofing, With<Actor>>) {
-    let (Some(status), Some(fire)) = (registries.statuses.id(FIREPROOF), registries.damage_kinds.id("fire")) else { return };
-    for (body, held, resists, marked) in &mut bodies {
-        let holds = held.is_some_and(|a| a.0.has(status));
-        let by = match (holds, marked) {
-            (true, false) => FIREPROOF_PCT,
-            (false, true) => -FIREPROOF_PCT,
-            _ => continue,
-        };
-        match resists {
-            Some(mut resists) => resists.0.add(fire, by),
-            None => {
-                let mut fresh = Resistances::new();
-                fresh.add(fire, by);
-                commands.entity(body).insert(Resists(fresh));
-            }
-        }
-        if holds {
-            commands.entity(body).insert(Fireproofed);
-        } else {
-            commands.entity(body).remove::<Fireproofed>();
-        }
-    }
-}
-
-/// Says beside each monster on the rail's list of what is in sight what
-/// has been done to it: every status on it that has a badge, by name, so
-/// a rat in a cloud reads `rat · paralysed (hunting)` and what a thrown
-/// potion or a zapped staff did is read off the screen, not only off the
-/// log.
-///
-/// A game's word on a row, in `ViewSet::Annotate`, since the engine's list
-/// says what a monster knows of the adventurer and nothing of what holds
-/// it. A status with no badge, the king's regenerating, is what a monster
-/// is rather than what happened to it, and stays unsaid, as the vitals
-/// leave it off the adventurer's own badges.
-///
-/// A sleeper says it sleeps where the rail says what a monster is doing,
-/// `goblin archer (asleep)`, and reads muted as one unaware of the
-/// adventurer does, since a body asleep knows of nothing: not beside its
-/// name as well, which said the one thing twice in more than the rail's
-/// width, and not in the hostile red of one that knows they are there.
-pub fn note_statuses(mut nearby: ResMut<NearbyView>, mut facets: ResMut<Facets>, registries: Res<Registries>, held: Query<&Afflicted>) {
-    for row in &mut nearby.actors {
-        let Ok(held) = held.get(row.entity) else { continue };
-        for active in held.iter().map(|active| (active.id, registries.statuses.get(active.id))) {
-            match active {
-                (_, def) if def.sleeps => (row.alert, row.doing) = (Some(Alert::Unaware), Some(SLEEPING)),
-                (id, def) if def.badge.is_some() => row.facets.push(facets.facet("status", registries.statuses.name(id))),
-                _ => {}
-            }
-        }
-    }
-}
+/// The facet key each status a monster holds is said under on the rail,
+/// beside its name: `rat · paralysed (hunting)`.
+pub const STATUS_FACET: &str = "status";
 
 /// What a sleeper is doing, as the rail's activity words name it: not one
 /// of the engine's tactics, so `main.rs` gives it a word of its own beside
-/// theirs.
+/// theirs, `goblin archer (asleep)`.
 pub const SLEEPING: &str = "asleep";
 
 #[cfg(test)]
 mod tests {
+    use bevy::prelude::*;
+    use rl_engine::prelude::*;
+    use rl_engine::rl_ui::view::Alert;
+
     use super::*;
     use crate::content::PARALYSED;
     use crate::testing::{arena, settle, still};
@@ -209,7 +51,7 @@ mod tests {
     #[test]
     fn a_monster_in_sight_is_said_with_what_holds_it_and_nothing_else() {
         let (mut app, _, here) = arena(1);
-        app.add_plugins(NearbyViewPlugin).add_systems(Update, note_statuses.in_set(ViewSet::Annotate));
+        app.add_plugins(NearbyViewPlugin).insert_resource(NearbyStatuses { key: STATUS_FACET, asleep: SLEEPING });
         let (held, free) = (still(&mut app, "goblin", here + Point::new(2, 0)), still(&mut app, "goblin", here + Point::new(-2, 0)));
         afflict(&mut app, held, PARALYSED);
         afflict(&mut app, free, "regenerating");
@@ -223,7 +65,7 @@ mod tests {
     #[test]
     fn a_sleeper_in_sight_is_said_asleep_once_and_muted() {
         let (mut app, _, here) = arena(1);
-        app.add_plugins(NearbyViewPlugin).add_systems(Update, note_statuses.in_set(ViewSet::Annotate));
+        app.add_plugins(NearbyViewPlugin).insert_resource(NearbyStatuses { key: STATUS_FACET, asleep: SLEEPING });
         let (sleeper, waking) = (still(&mut app, "goblin", here + Point::new(2, 0)), still(&mut app, "goblin", here + Point::new(-2, 0)));
         afflict(&mut app, sleeper, crate::content::ASLEEP);
         let row = |app: &App, who: Entity| app.world().resource::<NearbyView>().actors.iter().find(|row| row.entity == who).cloned().expect("on the list");

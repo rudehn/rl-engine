@@ -2,21 +2,21 @@
 //! [`Tricks`] off a monster's traits at load: a pink jelly splitting when
 //! struck, a monkey stealing and fleeing for it, a wraith unseen in a
 //! dark cell, a vampire bat's erratic step, a salamander's trail of fire,
-//! a golem turning magic back, a troll whose regeneration stops while it
-//! burns, and a rat's own pack or a band's own leader, which are brain
-//! shapes rather than anything reactive.
+//! a golem turning magic back, and a rat's own pack or a band's own
+//! leader, which are brain shapes rather than anything reactive.
 //!
 //! `splitting` reads `DamageDealt` rather than the trait model's own
 //! `struck`, which fires before a blow's damage is known; `fire-trail`
-//! reads `Stepped`; `burns-badly`'s halted mending reads what is true of
-//! a body every turn, the way `keep_fireproof` does. `shrouded` needs no
+//! reads `Stepped`. `burns-badly`'s halted mending is the engine's
+//! `while_holding`, written on the trait. `shrouded` needs no
 //! system here at all: the engine's own `Concealed`, put on at spawn,
 //! keeps a wraith off the map, the sighted list and the look panel while
 //! it stands out of the light and not beside the adventurer, decided again
 //! every frame from where the light falls.
-//! `stealing`'s taking and `withering`'s capped stacking are effects,
-//! landed by the engine's actor triggers exactly as `venomous`'s bite is,
-//! each registered in [`crate::content::add_game_effects`].
+//! `stealing`'s taking is an effect, landed by the engine's actor
+//! triggers exactly as `venomous`'s bite is, registered in
+//! [`crate::content::add_game_effects`]; `withering` is the engine's own
+//! `Inflict`, capped at three by `weakened`'s `max`.
 //!
 //! The floor ten bosses' own: [`Spawns`] and [`Wells`] are counted off the engine's own
 //! `ActionDone`, its own turns rather than the floor's clock, so a slow
@@ -31,7 +31,7 @@ use bevy::prelude::*;
 use rand::Rng;
 use rl_engine::prelude::*;
 use rl_engine::rl_bevy::EffectRng;
-use rl_engine::rl_rules::ability::{RawValue, read_args};
+use rl_engine::rl_rules::ability::RawValue;
 use rl_engine::rl_rules::ai::brain::Tactic;
 use rl_engine::rl_rules::ai::tactics::{Station, Ways};
 
@@ -63,8 +63,6 @@ pub struct Tricks {
     pub packs: bool,
     /// `led`: keeps station on its one leader.
     pub led: bool,
-    /// `burns-badly`: its regeneration stops while it burns.
-    pub burns_badly: bool,
     /// `draining`: mends itself what a landed blow of its own dealt.
     pub drains: bool,
     /// `singing`: a choir plays while allies within `SING_RANGE` stand
@@ -96,7 +94,6 @@ impl Tricks {
             reflects: has("reflecting"),
             packs: has("packing"),
             led: has("led"),
-            burns_badly: has("burns-badly"),
             drains: has("draining"),
             sings: has("singing"),
             spawns: has("spawning"),
@@ -112,7 +109,7 @@ impl Tricks {
     /// a running turn has to look up, and `shrouds`, whose `Concealed` is
     /// the engine's and is put on whatever this says.
     pub fn needs_marker(self) -> bool {
-        self.splits || self.fire_trail || self.reflects || self.burns_badly || self.drains || self.sings || self.spawns || self.wells
+        self.splits || self.fire_trail || self.reflects || self.drains || self.sings || self.spawns || self.wells
     }
 }
 

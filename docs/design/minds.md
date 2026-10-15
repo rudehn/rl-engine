@@ -198,3 +198,29 @@ It had been a game's own choice relayed to the engine's intent, which is a decis
 Leaving a map is two wits, `Wits::FOLLOWS_THROUGH` and `Wits::FLEES_THROUGH`, where it was one.
 A hireling that comes down the stairs behind the player and never runs down them alone wanted one without the other, and taking the whole wit off it to stop the running took the following too.
 Content's `travels` reads as both, so nothing written before the split changed meaning, and `Wits::TRAVELS` names the pair.
+
+## 11. What a status does to whoever holds it
+
+Until 2026-10-15 Undermere answered four of its statuses by name in systems of its own: a confused body's steps turned a random way on a stream of Undermere's, a discordant one's side changed and kept in a `Discordant { was }`, fire immunity's hundred percent written into the holder's own `Resists` behind a `Fireproofed` marker, and a wraith's `Wither` effect refusing a fourth stack of `weakened`.
+A troll's mending halted while it burns was a fifth, keyed by a `BurnsBadly` marker, and the rail's saying what holds a monster a sixth, reading nothing but engine fields.
+Each is a mechanic any game might want and none should have to take, so each is now an optional field, absent meaning no mechanic, and every number is the game's.
+
+`StatusDef` gains `max`, the most instances a `Stack` status holds at once, refused past it in `Statuses::put` rather than refreshing one, since which one would be refreshed is a rule nobody wrote; `resists`, what its holder resists while it lasts, per instance; `side`, the faction its holder fights for; and `stumbles`, the percent of its holder's steps and bumps turned a random open way.
+A cap on a status that never stacks is refused at load, since nothing would ever play it.
+Which factions there are and who is hostile to whom stay the game's: a status only names one of them.
+
+What a status lends is kept every pass from what is held, in `ReactSet::Statuses`, rather than answered as the status comes and goes, so a status a save puts back does it again with nothing else saved.
+The side is the exception that has to be saved: once the holder's `Faction` is the status's, the side it goes back to is nowhere else, so it is `SideWas`, and `EntityState::side_was` puts it back as the holder's side for the status to turn it from again.
+What a status resists goes in its own `StatusResists`, which `Loadout::resistances` adds, rather than into the holder's `Resists`, so taking it off is exact whatever else moved them.
+It is kept once a pass rather than read live where a blow is weighed: a draught drunk and a burn landed in one pass are weighed as things stood before it, and the last tick of a burn is still resisted by a ward running out that pass, which is how Undermere played it and so how the engine does.
+
+A kind's own rule for a status, burning halting a troll's mending and nobody else's, is not the status's to say, so it is `ActorParts::while_holding`, a list of stat changes by status that becomes `WhileHolding` on the actor and lands under `Source::Holding(status)`.
+A field on `StatusDef` keyed by kind was weighed and rejected: the status would then name every kind it treats differently, which is the bestiary written into the status table.
+
+A stumble rewrites the intent where it stands, in `DecideSet::Statuses`, a stage after the game's own answer, so what a game wrote is turned too and nothing reading the intent later reads the old way.
+It draws from `StumbleRng`, an engine stream, only where an open way exists and, below a hundred percent, once more for whether to stumble at all, so a holder that always stumbles spends exactly one draw a step.
+The run's seed is asked for by the statuses only when one of them stumbles, through a requirement that holds only then, since `CorePlugin` has never needed a seed and a game whose statuses draw nothing should not start to.
+Undermere's fingerprint did not move with the stream: its scripted delve is never confused.
+
+The rail's saying of it is `NearbyStatuses`, off unless a game asks with `NearbyPanel::statuses(key, asleep)`: every status with a badge as a facet under the game's key, by its registered name, and a sleeper as doing the game's sleep word.
+Undermere's confusion gas, `Discord`'s choice of target, every status name and number, and the lantern going out while shrouded stay Undermere's.

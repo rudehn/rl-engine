@@ -14,20 +14,33 @@
 //! ([`wake_on_noise`]), or by a foe close by that it notices
 //! ([`wake_on_sight`]). [`Sleepers`] answers who is asleep, which a blow
 //! asks before it lands, since a sleeper is unaware of whoever strikes it.
+//!
+//! What a status lends its holder while it lasts is kept in
+//! [`ReactSet::Statuses`](crate::plugin::ReactSet::Statuses), read off
+//! what it holds every pass so a status put back by a save does it again
+//! with nothing else saved: the side it names ([`keep_sides`], with
+//! [`SideWas`] the side to go back to), what it resists
+//! ([`keep_status_resists`], into [`StatusResists`]), and what the
+//! holder's own kind changes while it holds one ([`keep_while_holding`],
+//! from [`WhileHolding`]). A status that stumbles turns its holder's
+//! chosen step a random open way ([`stumble`], on [`StumbleRng`]).
 //! Part of [`CorePlugin`](crate::plugin::CorePlugin): the statuses
 //! themselves are content, in [`Registries`], and a game that registers
 //! none has nothing to tick, so there is nothing to turn on. Without
 //! `Registries` at all nobody is afflicted.
 
 use bevy::prelude::*;
+use rand::Rng;
 use rl_core::turn::BASE_ACTION_COST;
-use rl_rules::{Hit, Stats, StatusId, Statuses};
+use rl_core::{Direction, RunSeed, SeedDomain};
+use rl_rules::stats::{Modifier, Op, Source};
+use rl_rules::{Hit, Resistances, StatId, Stats, StatusId, Statuses};
 
 use crate::combat::{CombatRules, DamageDealt, DamageEvent, Dead, Faction, Heal};
 use crate::components::{Actor, MyTurn, Position, Viewshed};
 use crate::places::{MapId, OnMap};
 use crate::registries::Registries;
-use crate::turn::{Acting, ActionDone, TurnEnd};
+use crate::turn::{Acting, ActionDone, Intent, Step, TurnEnd};
 use crate::world::WorldMap;
 
 /// An actor's stats: base values and every modifier from gear, statuses
@@ -394,6 +407,179 @@ pub fn wake_on_sight(
     }
 }
 
+/// The side a holder fought for before a status put it on another, kept
+/// while any status naming a side is on it and given back the pass the
+/// last ends.
+///
+/// Public, and saved, because what a holder goes back to is nowhere else
+/// once its [`Faction`] is the status's: a game writing down which side a
+/// body is on reads this in place of the faction while it is here.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SideWas(pub Faction);
+
+/// Keeps every holder of a status that names a
+/// [`side`](rl_rules::StatusDef::side) on that side, and puts each back on
+/// the side it was on, its [`SideWas`], the pass the last such status
+/// ends.
+///
+/// Turned once, when the status comes on: a holder some other rule moves
+/// while it lasts is left where that rule put it until the status ends.
+/// The faction matrix is read live by every mind and every blow, so the
+/// side is the whole of it; who is hostile to whom stays the game's. A
+/// holder put back by a save, its status asked for again, is turned again
+/// here from whatever side it was given back.
+pub fn keep_sides(mut commands: Commands, registries: Option<Res<Registries>>, mut bodies: Query<(Entity, &Afflicted, &mut Faction, Option<&SideWas>)>) {
+    let Some(registries) = registries.as_deref() else { return };
+    for (body, held, mut faction, was) in &mut bodies {
+        match (held.side(&registries.statuses), was) {
+            (Some(side), None) => {
+                commands.entity(body).insert(SideWas(*faction));
+                *faction = Faction(side);
+            }
+            (None, Some(was)) => {
+                *faction = was.0;
+                commands.entity(body).remove::<SideWas>();
+            }
+            _ => {}
+        }
+    }
+}
+
+/// What a holder resists because of the statuses on it, kept by
+/// [`keep_status_resists`] and added to its own and its gear's by
+/// [`Loadout::resistances`](crate::combat::Loadout::resistances).
+///
+/// Its own component rather than written into the holder's
+/// [`Resists`](crate::combat::Resists), so taking it off is exact whatever
+/// else changed those. Kept once a pass rather than read live from the
+/// statuses where a blow is weighed: a status takes hold where the pass's
+/// consequences land, after its damage, so a draught and a burn landed in
+/// one pass are weighed as things stood before it, and the last tick of a
+/// burn is resisted by a ward running out in the same pass.
+#[derive(Component, Debug, Clone, Default, PartialEq)]
+pub struct StatusResists(pub Resistances);
+
+/// Keeps every holder's [`StatusResists`] at what its statuses
+/// [`resist`](rl_rules::StatusDef::resists), and takes it off once they
+/// resist nothing. Leaves alone what already reads right.
+pub fn keep_status_resists(mut commands: Commands, registries: Option<Res<Registries>>, bodies: Query<(Entity, &Afflicted, Option<&StatusResists>)>) {
+    let Some(registries) = registries.as_deref() else { return };
+    for (body, held, kept) in &bodies {
+        let lent = held.resistances(&registries.statuses);
+        let none = lent == Resistances::new();
+        match kept {
+            Some(_) if none => drop(commands.entity(body).remove::<StatusResists>()),
+            Some(kept) if kept.0 == lent => {}
+            None if none => {}
+            _ => drop(commands.entity(body).insert(StatusResists(lent))),
+        }
+    }
+}
+
+/// What an actor's own kind changes about its stats while it holds a
+/// status: for each status, the changes, kept by [`keep_while_holding`].
+///
+/// The kind's rule rather than the status's, which is why it is on the
+/// actor and not on the [`StatusDef`](rl_rules::StatusDef): burning halts
+/// one kind's mending and nobody else's. Put on from
+/// [`ActorParts::while_holding`](crate::parts::ActorParts::while_holding),
+/// or by hand.
+#[derive(Component, Debug, Clone, Default, PartialEq)]
+pub struct WhileHolding(pub Vec<(StatusId, Vec<(StatId, Op)>)>);
+
+/// Puts each [`WhileHolding`] change on its actor's stats while it holds
+/// the status, under [`Source::Holding`], and takes them off the pass it
+/// no longer does.
+///
+/// Read off the stats as they stand rather than a marker beside them, so
+/// a status put back by a save puts its changes back with nothing else
+/// saved. Only the living: a body that keeps its kind's rule is not kept.
+pub fn keep_while_holding(mut bodies: Query<(&WhileHolding, &Afflicted, &mut StatBlock), With<Actor>>) {
+    for (rule, held, mut stats) in &mut bodies {
+        for (status, changes) in &rule.0 {
+            let source = Source::Holding(*status);
+            let on = stats.0.modifiers().iter().any(|m| m.source == source);
+            match (held.has(*status), on) {
+                (true, false) => {
+                    for (stat, op) in changes {
+                        stats.0.add(Modifier::new(*stat, *op, source));
+                    }
+                }
+                (false, true) => drop(stats.0.remove_source(source)),
+                _ => {}
+            }
+        }
+    }
+}
+
+/// The draws a stumbling holder's steps are turned by: a stream of the
+/// run's own, so a stumble never shifts a blow's roll or a cloud's spread.
+#[derive(Resource)]
+pub struct StumbleRng(pub rand::rngs::StdRng);
+
+impl crate::seed::Stream for StumbleRng {
+    fn for_run(seed: RunSeed) -> Self {
+        Self(seed.rng(SeedDomain::new(b"status.stumble"), 0))
+    }
+}
+
+/// Turns a holder's chosen step or bump a random way among those open to
+/// it, as often as the keenest status on it that
+/// [`stumbles`](rl_rules::StatusDef::stumbles) says, the player's walk and
+/// a mind's step alike: a walk into someone it did not mean to strike
+/// strikes them.
+///
+/// Among the open ways, cells that can be walked on whoever stands there:
+/// a way into a wall would be refused, which for the player costs nothing
+/// and would only ask again. A holder walled in on every side steps as it
+/// meant to, and no draw is made for it; nor is the percent rolled at a
+/// hundred, so a holder that always stumbles spends one draw a step.
+///
+/// In [`DecideSet::Statuses`](crate::plugin::DecideSet::Statuses), after
+/// every mind and the game have decided and before anything resolves, and
+/// by rewriting the intent where it stands rather than replacing it, so
+/// nothing else that reads it reads the old way. A game whose statuses
+/// never stumble draws nothing.
+pub fn stumble(
+    mut steps: MessageMutator<Intent<Step>>,
+    mut walks: MessageMutator<Intent<crate::bump::Bump>>,
+    bodies: Query<(&Afflicted, &Position)>,
+    registries: Option<Res<Registries>>,
+    map: Res<WorldMap>,
+    mut rng: Option<ResMut<StumbleRng>>,
+) {
+    let Some(registries) = registries.as_deref() else { return };
+    let mut way = |who: Entity| {
+        let (held, at) = bodies.get(who).ok()?;
+        let pct = held.stumbles(&registries.statuses)?;
+        let open: Vec<Direction> = Direction::ALL.into_iter().filter(|d| map.is_walkable(at.0 + d.offset())).collect();
+        if open.is_empty() {
+            return None;
+        }
+        let rng = &mut rng.as_deref_mut().expect("a status that stumbles draws from the run's seed, which CorePlugin asks for").0;
+        if pct < 100 && rng.random_range(0..100) >= pct {
+            return None;
+        }
+        Some(open[rng.random_range(0..open.len())])
+    };
+    for step in steps.read() {
+        if let Some(turned) = way(step.actor) {
+            step.action.0 = turned;
+        }
+    }
+    for walk in walks.read() {
+        if let Some(turned) = way(walk.actor) {
+            walk.action.0 = turned;
+        }
+    }
+}
+
+/// Whether any registered status stumbles: what makes the run's seed a
+/// requirement of the statuses, which otherwise draw nothing.
+fn any_stumbles(world: &World) -> bool {
+    world.get_resource::<Registries>().is_some_and(|r| r.statuses.iter().any(|(_, def)| def.stumbles.is_some()))
+}
+
 /// Statuses: what is afflicted, what it costs each turn, what cures it,
 /// as [`CorePlugin`](crate::plugin::CorePlugin) registers them.
 ///
@@ -427,7 +613,13 @@ pub(crate) fn build(app: &mut App) {
         // game added it; with no stealth there is nothing to be after.
         .add_systems(Turn, wake_on_sight.in_set(DecideSet::Notice).after(crate::stealth::update_awareness))
         .add_systems(Turn, (resolve_afflictions, tick_statuses).chain().in_set(ResolveSet::Effects))
-        .add_systems(Turn, wake_on_harm.in_set(crate::plugin::ReactSet::Settle));
+        .add_systems(Turn, wake_on_harm.in_set(crate::plugin::ReactSet::Settle))
+        .add_systems(Turn, (keep_sides, keep_status_resists, keep_while_holding).chain().in_set(crate::plugin::ReactSet::Statuses))
+        .add_systems(Turn, stumble.in_set(DecideSet::Statuses));
+    // Derived whenever a seed is given, and asked for only where a status
+    // stumbles: a game whose statuses never draw needs no seed for them.
+    crate::seed::derive_stream::<StumbleRng>(app);
+    crate::plugin::needs_when::<crate::seed::Seed>(app, "CorePlugin's statuses", "`Seed(RunSeed(n))`, which a status that stumbles draws from", any_stumbles);
 }
 
 #[cfg(test)]
@@ -980,5 +1172,170 @@ mod tests {
         room.noise(8);
         assert_eq!(room.strike(snared), 2, "struck as anyone");
         assert!(room.app.world().get::<Afflicted>(snared).unwrap().has(room.snared), "and still snared");
+    }
+
+    /// A field with a player in it and two warring sides, where `defs` are
+    /// the statuses, play begun.
+    fn field(defs: Vec<StatusDef>) -> (App, crate::testing::Sides, Entity, Point) {
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin, crate::world::StreamingPlugin));
+        let start = crate::testing::surface(&mut app);
+        let sides = crate::testing::two_sides(&mut app);
+        app.world_mut().resource_mut::<Registries>().statuses = Registry::from_defs(defs).unwrap();
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap, Faction(sides.ours))).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        (app, sides, player, start)
+    }
+
+    fn status(app: &App, name: &str) -> StatusId {
+        app.world().resource::<Registries>().statuses.expect(name)
+    }
+
+    /// A status naming a side puts its holder on it the pass it lands and
+    /// back on its own side the pass it runs out, with the side it had kept
+    /// beside it meanwhile.
+    #[test]
+    fn a_status_naming_a_side_turns_its_holder_until_it_ends_and_gives_its_own_side_back() {
+        let theirs = rl_rules::FactionId::from_raw(1);
+        let (mut app, sides, player, start) = field(vec![StatusDef::new("turned").sides_with(theirs)]);
+        let other = app.world_mut().spawn((Actor, Blocks, Position(start.offset(3, 0)), Faction(sides.ours))).id();
+        let turned = status(&app, "turned");
+        app.world_mut().write_message(Afflict { target: other, status: turned, turns: 2, by: None, held_by: None });
+        app.update();
+        assert_eq!(app.world().get::<Faction>(other), Some(&Faction(sides.theirs)), "turned the pass it landed");
+        assert_eq!(app.world().get::<SideWas>(other), Some(&SideWas(Faction(sides.ours))));
+        for _ in 0..2 {
+            app.world_mut().write_message(Intent::new(player, Wait));
+            app.update();
+        }
+        assert!(!app.world().get::<Afflicted>(other).unwrap().has(turned), "run out");
+        assert_eq!(app.world().get::<Faction>(other), Some(&Faction(sides.ours)), "and back on its own side");
+        assert!(app.world().get::<SideWas>(other).is_none());
+    }
+
+    /// What a status resists is resisted where a blow is weighed while the
+    /// status is on, and not once it is cured.
+    #[test]
+    fn what_a_status_resists_is_resisted_while_it_is_held_and_not_after() {
+        let kind = rl_rules::damage::DamageKindId::from_raw(0);
+        let (mut app, _, player, _) = field(vec![StatusDef::new("warded").resists(kind, 40)]);
+        let warded = status(&app, "warded");
+        let mut own = Resistances::new();
+        own.add(kind, 10);
+        app.world_mut().entity_mut(player).insert(crate::combat::Resists(own));
+        let resisted = |app: &mut App| {
+            use bevy::ecs::system::RunSystemOnce;
+            app.world_mut().run_system_once(move |loadout: crate::combat::Loadout| loadout.resistances(player).get(kind)).unwrap()
+        };
+        assert_eq!(resisted(&mut app), 10, "its own");
+        app.world_mut().write_message(Afflict { target: player, status: warded, turns: UNTIL_CURED, by: None, held_by: None });
+        app.update();
+        assert_eq!(resisted(&mut app), 50, "its own and the ward's");
+        app.world_mut().write_message(Cure { target: player, status: warded });
+        app.update();
+        assert_eq!(resisted(&mut app), 10, "its own again");
+        assert!(app.world().get::<StatusResists>(player).is_none(), "nothing kept for a status that is gone");
+    }
+
+    /// A kind's own rule for a status changes its stats while it holds it
+    /// and gives them back when it lets go, and an actor without the rule
+    /// holding the same status is not changed.
+    #[test]
+    fn a_kind_holding_a_status_has_its_stats_changed_until_it_lets_go_and_nobody_else_does() {
+        let (mut app, _, player, start) = field(vec![StatusDef::new("burning")]);
+        let stat_defs = Registry::from_defs(vec![StatDef::new("mending", 0)]).unwrap();
+        let mending = stat_defs.expect("mending");
+        app.world_mut().resource_mut::<Registries>().stats = stat_defs.clone();
+        let burning = status(&app, "burning");
+        let kind = app.world_mut().spawn((Actor, Blocks, Position(start.offset(2, 0)), WhileHolding(vec![(burning, vec![(mending, Op::Add(-100))])]))).id();
+        let value = |app: &App, who: Entity| app.world().get::<StatBlock>(who).unwrap().value(mending, &stat_defs);
+        for who in [kind, player] {
+            app.world_mut().write_message(Afflict { target: who, status: burning, turns: UNTIL_CURED, by: None, held_by: None });
+        }
+        app.update();
+        assert_eq!((value(&app, kind), value(&app, player)), (-100, 0), "only the kind with the rule");
+        app.update();
+        assert_eq!(value(&app, kind), -100, "put on once, not every pass");
+        app.world_mut().write_message(Cure { target: kind, status: burning });
+        app.update();
+        assert_eq!(value(&app, kind), 0, "and given back");
+    }
+
+    /// A holder that always stumbles, walled in on every side but one,
+    /// steps that one way whichever it meant; walled in on every side, it
+    /// steps as it meant, into the wall, and goes nowhere.
+    #[test]
+    fn a_holder_that_always_stumbles_steps_the_one_open_way_and_a_walled_in_one_goes_nowhere() {
+        let (mut app, _, player, start) = field(vec![StatusDef::new("reeling").stumbles(100)]);
+        let reeling = status(&app, "reeling");
+        app.world_mut().write_message(Afflict { target: player, status: reeling, turns: UNTIL_CURED, by: None, held_by: None });
+        app.update();
+        let around: Vec<Point> = Direction::ALL.into_iter().map(|d| start + d.offset()).filter(|p| *p != start.offset(1, 0)).collect();
+        crate::testing::wall_off(&mut app, &around);
+        app.world_mut().write_message(Intent::new(player, Step(Direction::West)));
+        app.update();
+        assert_eq!(app.world().get::<Position>(player).unwrap().0, start.offset(1, 0), "turned the one open way");
+        let all: Vec<Point> = Direction::ALL.into_iter().map(|d| start.offset(1, 0) + d.offset()).collect();
+        crate::testing::wall_off(&mut app, &all);
+        app.world_mut().write_message(Intent::new(player, Step(Direction::West)));
+        app.update();
+        assert_eq!(app.world().get::<Position>(player).unwrap().0, start.offset(1, 0), "walled in, it went nowhere");
+    }
+
+    /// A holder that stumbles a share of the time goes astray on some
+    /// steps and straight on others; one whose statuses never stumble
+    /// always goes straight.
+    #[test]
+    fn a_holder_that_stumbles_some_of_the_time_goes_astray_on_some_steps_and_straight_on_others() {
+        let (mut app, _, player, _) = field(vec![StatusDef::new("dizzy").stumbles(50)]);
+        let dizzy = status(&app, "dizzy");
+        let walk = |app: &mut App| {
+            let (mut straight, mut astray) = (0, 0);
+            for _ in 0..20 {
+                let from = app.world().get::<Position>(player).unwrap().0;
+                app.world_mut().write_message(Intent::new(player, Step(Direction::East)));
+                app.update();
+                if app.world().get::<Position>(player).unwrap().0 == from + Direction::East.offset() {
+                    straight += 1;
+                } else {
+                    astray += 1;
+                }
+            }
+            (straight, astray)
+        };
+        assert_eq!(walk(&mut app), (20, 0), "nothing held, nothing turned");
+        app.world_mut().write_message(Afflict { target: player, status: dizzy, turns: UNTIL_CURED, by: None, held_by: None });
+        app.update();
+        let (straight, astray) = walk(&mut app);
+        assert!(straight > 0 && astray > 0, "{straight} straight and {astray} astray");
+    }
+
+    /// The run's seed is asked for by the statuses only where one of them
+    /// stumbles, and then loudly when play begins.
+    #[test]
+    #[should_panic(expected = "a status that stumbles draws from")]
+    fn a_game_with_a_status_that_stumbles_and_no_seed_is_told_so_when_play_begins() {
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin));
+        let start = crate::testing::surface(&mut app);
+        app.insert_resource(Registries { statuses: Registry::from_defs(vec![StatusDef::new("reeling").stumbles(100)]).unwrap(), ..Default::default() });
+        app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap));
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+    }
+
+    #[test]
+    fn a_game_whose_statuses_never_stumble_plays_with_no_seed() {
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin));
+        let start = crate::testing::surface(&mut app);
+        app.insert_resource(Registries { statuses: Registry::from_defs(vec![StatusDef::new("dazed")]).unwrap(), ..Default::default() });
+        app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap));
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
     }
 }

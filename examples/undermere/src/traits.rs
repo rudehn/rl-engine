@@ -4,14 +4,16 @@
 //! has, and a list of trait names. A trait is written once, in
 //! `traits.ron`, and bundles what the engine already knows how to do:
 //! wits, speed, sight, a flee threshold, how it notices and hears,
-//! light, resistances, armor, abilities, statuses held for life, how far
-//! it keeps from an enemy, its own triggers, and the words the examine
+//! light, resistances, armor, abilities, statuses held for life, what its
+//! stats do while it holds a status, how far it keeps from an enemy, its
+//! own triggers, and the words the examine
 //! panel says about it. [`fold`] turns a list of traits into one
 //! [`Folded`] set of values at load, so every name is checked once and a
 //! spawn reads plain values.
 //!
 //! Lists add up across the traits folded together: resistances,
-//! abilities, statuses, triggers, and wits, which are a set of
+//! abilities, statuses, what holding one does, triggers, and wits, which
+//! are a set of
 //! capabilities rather than a level. Every other value may be set by one
 //! trait of the list only, and a second setting is a [`Clash`] naming
 //! both. Not last-wins,
@@ -31,6 +33,10 @@ const TRAITS_RON: &str = include_str!("../assets/traits.ron");
 
 /// A registered trait id.
 pub type TraitId = Id<TraitDef>;
+
+/// What a kind's stats do while it holds one status, as `traits.ron`
+/// writes it: the status, and each stat with its change.
+pub type HoldingRule = (NameRef<StatusDef>, Vec<(NameRef<StatDef>, Op)>);
 
 /// One trait, as authored in `traits.ron`.
 ///
@@ -82,6 +88,10 @@ pub struct TraitDef {
     /// The statuses it holds for life, beside the other traits'.
     #[serde(default)]
     pub statuses: Vec<NameRef<StatusDef>>,
+    /// What its stats do while it holds a status, by status: the engine's
+    /// `while_holding`, beside the other traits'.
+    #[serde(default)]
+    pub while_holding: Vec<HoldingRule>,
     /// What it does at its own moments, beside the other traits': a bite
     /// that poisons on `hit`, a burst where it dies on `died`. Landed
     /// through the engine's actor triggers, built once per monster by
@@ -173,6 +183,9 @@ pub struct Folded {
     pub abilities: Vec<AbilityId>,
     /// Every status any of the traits holds, each once, in order.
     pub statuses: Vec<StatusId>,
+    /// What every trait's stats do while it holds a status, in the order
+    /// the traits were listed.
+    pub while_holding: Vec<(StatusId, Vec<(StatId, Op)>)>,
     /// Every trait's triggers, in the order the traits were listed: a
     /// monster's own answers to `hit`, `struck` and `died`.
     pub triggers: Vec<TriggerSpec>,
@@ -205,6 +218,7 @@ impl Default for Folded {
             armor: None,
             abilities: Vec::new(),
             statuses: Vec::new(),
+            while_holding: Vec::new(),
             triggers: Vec::new(),
             keep_away: None,
             says: Vec::new(),
@@ -265,6 +279,9 @@ pub fn fold(traits: &[TraitId], all: &Registry<TraitDef>) -> Result<Folded, Clas
             if !folded.statuses.contains(&status) {
                 folded.statuses.push(status);
             }
+        }
+        for (status, changes) in &t.while_holding {
+            folded.while_holding.push((status.id(), changes.iter().map(|(stat, op)| (stat.id(), *op)).collect()));
         }
         folded.triggers.extend(t.triggers.iter().cloned());
         if let Some(says) = &t.says {

@@ -108,12 +108,69 @@ pub enum NearbyFollowers {
     LeftOut,
 }
 
+/// Whether [`NearbyView`]'s actor rows say what holds each actor, which
+/// [`note_statuses`] reads, and in which of the game's words.
+///
+/// Off unless a game opts in, with
+/// [`NearbyPanel::statuses`](crate::NearbyPanel::statuses) or by inserting
+/// one when it draws the view itself: whether a rail spends its width on
+/// what was done to a monster is a game's choice, and the words are the
+/// game's.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NearbyStatuses {
+    /// The facet key each status is pushed under, which a panel may pick
+    /// out by.
+    pub key: &'static str,
+    /// What a sleeper is said to be doing, in place of its tactic: a word
+    /// the panel's activity words name, as a tactic's name is.
+    pub asleep: &'static str,
+}
+
+/// Says beside each actor on the list what has been done to it: every
+/// status on it with a [`badge`](rl_rules::StatusDef::badge), by its
+/// registered name, as a facet under [`NearbyStatuses::key`], so what a
+/// thrown potion or a zapped staff did is read off the screen and not only
+/// off the log.
+///
+/// A status with no badge is what a monster is rather than what happened
+/// to it, a regeneration it holds for life, and stays unsaid, as a vitals
+/// panel leaves it off the player's own badges. A sleeper is said asleep
+/// once, where the rail says what an actor is doing, as
+/// [`NearbyStatuses::asleep`], and as one unaware of the player, since a
+/// body asleep knows of nothing: not as a facet beside its name too.
+///
+/// In [`ViewSet::Annotate`](crate::ViewSet::Annotate), while a game has
+/// inserted [`NearbyStatuses`]; nothing is said in a game with no
+/// [`Registries`].
+pub fn note_statuses(
+    mut nearby: ResMut<NearbyView>,
+    mut facets: ResMut<crate::facet::Facets>,
+    says: Res<NearbyStatuses>,
+    registries: Option<Res<Registries>>,
+    held: Query<&Afflicted>,
+) {
+    let Some(registries) = registries.as_deref() else { return };
+    for row in &mut nearby.actors {
+        let Ok(held) = held.get(row.entity) else { continue };
+        for active in held.iter() {
+            let def = registries.statuses.get(active.id);
+            if def.sleeps {
+                (row.alert, row.doing) = (Some(Alert::Unaware), Some(says.asleep));
+            } else if def.badge.is_some() {
+                row.facets.push(facets.facet(says.key, registries.statuses.name(active.id)));
+            }
+        }
+    }
+}
+
 /// Keeps [`NearbyView`] current, and walks its rows with the cursors'
 /// "next" key while nothing is open.
 ///
 /// Needs [`WorldMap`], to know which map the rows are on, and
 /// [`CombatRules`], for the relation each row carries. Lists the player's
-/// followers unless the game said otherwise with [`NearbyFollowers`].
+/// followers unless the game said otherwise with [`NearbyFollowers`], and
+/// says what holds each actor when the game asked with
+/// [`NearbyStatuses`].
 pub struct NearbyViewPlugin;
 
 impl Plugin for NearbyViewPlugin {
@@ -124,7 +181,8 @@ impl Plugin for NearbyViewPlugin {
             // a cursor away is not read again as letting go of what it left
             // picked out.
             .add_systems(Update, browse.in_set(EngineSet::Input).before(crate::view::inspect::move_cursor).before(crate::view::target::aim_cursor))
-            .add_systems(Update, collect_nearby.in_set(crate::ViewSet::Collect));
+            .add_systems(Update, collect_nearby.in_set(crate::ViewSet::Collect))
+            .add_systems(Update, note_statuses.run_if(resource_exists::<NearbyStatuses>).in_set(crate::ViewSet::Annotate));
     }
 
     fn finish(&self, app: &mut App) {
@@ -595,5 +653,74 @@ mod tests {
         let row = view.actors.iter().find(|r| r.entity == mender).unwrap();
         assert_eq!(row.work, Some(crate::view::WorkRow { doing: "mending".into(), target: Some("rag doll".into()), left: 4 }));
         assert_eq!(view.actors.iter().find(|r| r.entity == rag).unwrap().work, None, "and nothing on one not at work");
+    }
+
+    /// A stage whose statuses are a badged hold, an unbadged mend and a
+    /// sleep, with each actor named holding what it says.
+    fn held_stage(says: Option<NearbyStatuses>) -> (Stage, [Entity; 4]) {
+        let mut stage = Stage::new_with(NearbyViewPlugin, |app| {
+            if let Some(says) = says {
+                app.insert_resource(says);
+            }
+        });
+        let defs = rl_rules::Registry::from_defs(vec![
+            rl_rules::StatusDef { badge: Some('P'), ..rl_rules::StatusDef::new("held fast").holds() },
+            rl_rules::StatusDef::new("knitting").mends(1),
+            rl_rules::StatusDef::new("dozing").sleeps(),
+        ])
+        .unwrap();
+        stage.app.world_mut().resource_mut::<Registries>().statuses = defs.clone();
+        let holding = |stage: &mut Stage, name: &str, dx: i32, status: Option<&str>| {
+            let e = stage.actor(name, name.chars().next().unwrap_or('?'), dx, 0);
+            let (mut held, mut stats) = (rl_rules::Statuses::new(), rl_rules::Stats::new());
+            if let Some(status) = status {
+                held.apply(defs.expect(status), 5, None, &defs, &mut stats);
+            }
+            stage.app.world_mut().entity_mut(e).insert(Afflicted(held));
+            e
+        };
+        let held = holding(&mut stage, "held", 1, Some("held fast"));
+        let mending = holding(&mut stage, "mending", 2, Some("knitting"));
+        let sleeper = holding(&mut stage, "sleeper", 3, Some("dozing"));
+        let free = holding(&mut stage, "free", 4, None);
+        stage.tick();
+        (stage, [held, mending, sleeper, free])
+    }
+
+    fn row(stage: &Stage, who: Entity) -> Row {
+        stage.app.world().resource::<NearbyView>().actors.iter().find(|r| r.entity == who).cloned().expect("on the list")
+    }
+
+    fn said(stage: &Stage, who: Entity) -> Vec<String> {
+        row(stage, who).facets.iter().map(|f| f.text.clone()).collect()
+    }
+
+    /// With the game's say-so, an actor in sight that a badged status
+    /// holds reads that status by name, one holding only a status with no
+    /// badge reads nothing beside its name, and nor does one holding none.
+    #[test]
+    fn an_actor_is_said_with_what_holds_it_by_name_and_nothing_else_once_the_game_asks() {
+        let (stage, [held, mending, _, free]) = held_stage(Some(NearbyStatuses { key: "status", asleep: "asleep" }));
+        assert_eq!(said(&stage, held), vec!["held fast".to_string()]);
+        assert_eq!(said(&stage, mending), Vec::<String>::new(), "a status with no badge is what it is, not what was done to it");
+        assert_eq!(said(&stage, free), Vec::<String>::new());
+    }
+
+    /// A sleeper is said asleep once, as what it is doing and unaware, with
+    /// no facet saying so twice.
+    #[test]
+    fn a_sleeper_is_said_asleep_once_as_what_it_is_doing_and_unaware() {
+        let (stage, [_, _, sleeper, free]) = held_stage(Some(NearbyStatuses { key: "status", asleep: "asleep" }));
+        assert_eq!(said(&stage, sleeper), Vec::<String>::new(), "not beside its name too");
+        assert_eq!((row(&stage, sleeper).doing, row(&stage, sleeper).alert), (Some("asleep"), Some(Alert::Unaware)));
+        assert_eq!(row(&stage, free).doing, None, "awake, it is doing nothing of the kind");
+    }
+
+    /// Without the game's say-so nothing is said of what holds anyone.
+    #[test]
+    fn nothing_is_said_of_what_holds_an_actor_unless_the_game_asks() {
+        let (stage, [held, _, sleeper, _]) = held_stage(None);
+        assert_eq!(said(&stage, held), Vec::<String>::new());
+        assert_eq!(row(&stage, sleeper).doing, None);
     }
 }

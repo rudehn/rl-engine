@@ -68,8 +68,10 @@ fn afflict(app: &mut App, who: Entity, status: &str, turns: u32) {
 /// Confused, the adventurer's every walk east goes a random way, and so
 /// does a goblin's every step towards them: over a span of seeds, eight
 /// walks east never come to eight steps east and go more than one way, and
-/// a goblin three steps off, which unconfused closes in with every step it
-/// takes, takes one that does not.
+/// a goblin six steps off, which unconfused closes in with every step it
+/// takes, takes one that does not. Six rather than three, so a goblin whose
+/// first two stumbles happened to close in is not then beside the
+/// adventurer striking, which no stumble turns, for the rest of the span.
 #[test]
 fn confusion_turns_every_step_a_random_way_for_the_adventurer_and_a_monster_alike_over_a_span_of_seeds() {
     for seed in 0..4 {
@@ -90,7 +92,7 @@ fn confusion_turns_every_step_a_random_way_for_the_adventurer_and_a_monster_alik
         assert!(taken.len() > 1, "seed {seed}: the steps went more than one way: {ways:?}");
 
         let (mut app, me, here) = arena(40 + seed);
-        let goblin = monster(&mut app, "goblin", here.offset(-3, 0));
+        let goblin = monster(&mut app, "goblin", here.offset(-6, 0));
         afflict(&mut app, goblin, CONFUSED, 40);
         let mut astray = 0;
         for _ in 0..8 {

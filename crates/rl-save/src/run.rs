@@ -13,9 +13,9 @@
 //! one down and how to spawn one again from what was written, and
 //! registers it with [`AddSaveable::save_kind`]. Everything the engine
 //! owns on that entity, where it stands, its health, what it carries and
-//! wears, its statuses and which worn thing holds each held one, its
-//! stack, the transition it is, the post it holds, how long it has left
-//! alight, is the engine's to
+//! wears, its statuses and which worn thing holds each held one, the side
+//! a status turned it from, its stack, the transition it is, the post it
+//! holds, how long it has left alight, is the engine's to
 //! capture and put back, in [`EntityState`]. A
 //! resource a game keeps of the run goes through [`SaveableState`] and
 //! [`save_state`](AddSaveable::save_state). A kind a game makes through
@@ -45,9 +45,9 @@
 use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
 use rl_bevy::{
-    AbandonRun, ActorMaker, Afflict, Afflicted, Burning, Counters, Dead, Emptied, EndOfFrame, EndRun, Ending, EngineState, Equipped, Health, Hidden, Inventory,
-    ItemLevel, ItemMaker, Joined, Leader, LeaveRun, MapId, OnMap, PlaceEntered, Position, Post, PropKind, Quests, Reads, Registries, Remains, SavedRun, Stack,
-    Stair, Stocked, Transition, Turns, Wearable, WorkKinds, Working,
+    AbandonRun, ActorMaker, Afflict, Afflicted, Burning, Counters, Dead, Emptied, EndOfFrame, EndRun, Ending, EngineState, Equipped, Faction, Health, Hidden,
+    Inventory, ItemLevel, ItemMaker, Joined, Leader, LeaveRun, MapId, OnMap, PlaceEntered, Position, Post, PropKind, Quests, Reads, Registries, Remains,
+    SavedRun, SideWas, Stack, Stair, Stocked, Transition, Turns, Wearable, WorkKinds, Working,
 };
 use rl_core::{Id, Point};
 use rl_rules::{Equipment, Work};
@@ -583,6 +583,12 @@ pub struct EntityState {
     /// could be held reads unchanged.
     #[serde(default)]
     pub held: Vec<(String, u32, SaveId)>,
+    /// The side it goes back to, by registered name, while a status has it
+    /// fighting for another: its [`SideWas`]. Put back as its side, so the
+    /// status, asked for again, turns it from there as it did the first
+    /// time, and a game that keeps sides of its own never has to.
+    #[serde(default)]
+    pub side_was: Option<String>,
     /// How many, for a stack.
     #[serde(default)]
     pub stack: Option<u32>,
@@ -681,6 +687,10 @@ impl EntityState {
                 }
             }
         }
+        let side_was = match (e.get::<SideWas>(), registries) {
+            (Some(was), Some(registries)) => Some(registries.factions.name(was.0.0).to_string()),
+            _ => None,
+        };
         let remains = e.get::<Remains>().map(|r| (r.since, r.credit.map(|c| remap.save_id(c))));
         let remains_as = match (remains, e.get::<PropKind>(), registries) {
             (Some(_), Some(kind), Some(registries)) => Some(registries.props.name(kind.0).to_string()),
@@ -699,6 +709,7 @@ impl EntityState {
             worn,
             statuses,
             held,
+            side_was,
             stack: e.get::<Stack>().map(|s| s.count),
             transition: e.get::<Transition>().copied(),
             remains,
@@ -733,6 +744,7 @@ impl EntityState {
             }
             None => Vec::new(),
         };
+        let side_was = self.side_was.as_deref().and_then(|name| world.get_resource::<Registries>()?.factions.id(name));
         let bag: Vec<Entity> = self.bag.iter().filter_map(|id| remap.entity(*id)).collect();
         let worn = self.worn.as_ref().map(|(slots, items)| {
             let mut worn = Equipment::with_slot_count(*slots);
@@ -782,6 +794,9 @@ impl EntityState {
         }
         if let Some(at) = self.post {
             target.insert(Post(at));
+        }
+        if let Some(side) = side_was {
+            target.insert(Faction(side));
         }
         // The stamp with the leader, in one insert, so the leader's hook
         // finds it there and does not stamp the follower afresh.
@@ -1329,7 +1344,8 @@ mod tests {
         {
             let mut registries = app.world_mut().resource_mut::<Registries>();
             registries.slots = rl_rules::Registry::from_defs(vec![SlotDef::new("finger")]).unwrap();
-            registries.statuses = rl_rules::Registry::from_defs(vec![StatusDef::new("dazed")]).unwrap();
+            registries.statuses =
+                rl_rules::Registry::from_defs(vec![StatusDef::new("dazed"), StatusDef::new("turned").sides_with(rl_rules::FactionId::from_raw(1))]).unwrap();
         }
         app.insert_resource(saves).insert_resource(Seed(RunSeed(9))).init_resource::<Stocked>();
         app.add_plugins(plugin).save_kind::<Thing>().save_kind::<Person>().save_kind::<You>().save_state::<Stocked>();
@@ -2342,5 +2358,39 @@ mod tests {
         scripted.persist(&slot, "a scripted run").unwrap();
         assert_eq!(real.load(&slot).unwrap(), None, "the player's slot is as it was");
         assert!(scripted.exists(&slot), "and the scripted run has one of its own");
+    }
+
+    /// A body a status turned comes back on the side it goes back to, the
+    /// status turns it again, and when the status ends it is back where it
+    /// began: in a game that saves no side of its own at all.
+    #[test]
+    fn a_body_a_status_turned_is_turned_again_after_a_continue_and_goes_back_when_it_ends() {
+        let backend = std::sync::Arc::new(MemoryBackend::default());
+        let (mut app, start) = game(Saves(backend.clone()));
+        let (ours, theirs) = (rl_rules::FactionId::from_raw(0), rl_rules::FactionId::from_raw(1));
+        let me = app.world_mut().spawn((Actor, Player, Blocks, You, Position(start), Viewshed::new(6), RevealsMap, Health::full(30))).id();
+        let them = app.world_mut().spawn((Actor, Blocks, Person("a".into()), Position(start.offset(3, 0)), Health::full(20), Faction(ours))).id();
+        play(&mut app);
+        let turned = app.world().resource::<Registries>().statuses.expect("turned");
+        app.world_mut().write_message(Afflict { target: them, status: turned, turns: 20, by: None, held_by: None });
+        app.world_mut().write_message(Intent::new(me, Wait));
+        app.update();
+        assert_eq!(app.world().get::<Faction>(them), Some(&Faction(theirs)), "turned before the save");
+        save_run(app.world_mut()).unwrap();
+
+        let (mut back, _) = game(Saves(backend));
+        load_run(back.world()).unwrap().expect("a save to continue").restore(back.world_mut()).unwrap();
+        play(&mut back);
+        let w = back.world_mut();
+        let them = w.query_filtered::<Entity, With<Person>>().single(w).unwrap();
+        let me = w.query_filtered::<Entity, With<You>>().single(w).unwrap();
+        back.world_mut().write_message(Intent::new(me, Wait));
+        back.update();
+        assert_eq!(back.world().get::<Faction>(them), Some(&Faction(theirs)), "turned again");
+        assert_eq!(back.world().get::<SideWas>(them), Some(&SideWas(Faction(ours))), "with its own side to go back to");
+        back.world_mut().write_message(Cure { target: them, status: turned });
+        back.world_mut().write_message(Intent::new(me, Wait));
+        back.update();
+        assert_eq!(back.world().get::<Faction>(them), Some(&Faction(ours)), "and back on it when the status ends");
     }
 }

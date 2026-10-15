@@ -78,6 +78,10 @@ use crate::writings::WritingsProgress;
 // v10: a monster is the engine's saved actor, its definition with Undermere's
 // own beside it under `extra`, where it was one record of Undermere's; an
 // older save's monsters do not read as the new shape, so it is refused.
+// Still v10 with a discordant monster's side kept by the engine: its own
+// `side` field is written as it was, and the engine's `side_was` beside it
+// reads as absent from an older save, whose discordant monster comes back
+// on the side it goes back to and is turned again, as it always was.
 pub const VERSION: u32 = 10;
 
 /// The slot every run saves to.
@@ -236,14 +240,15 @@ pub struct CandidateSave {
 
 /// The side `monster` fights for when that is neither its kind's own nor
 /// the adventurer's, nor a captive's, which their own fields say: the side
-/// it went back to after a discord, if it is discordant now, since the
-/// discord's status is the engine's to keep and turns it again.
+/// it goes back to after a discord, the engine's `SideWas`, if it is
+/// discordant now, since the discord's status is the engine's to keep and
+/// turns it again.
 fn own_side(world: &World, monster: Entity, kind: Id<crate::bestiary::MonsterDef>) -> Option<String> {
     if world.get::<crate::allies::Ally>(monster).is_some() || crate::captives::held_at(world, monster).is_some() {
         return None;
     }
-    let side = match world.get::<crate::conditions::Discordant>(monster) {
-        Some(turned) => turned.was,
+    let side = match world.get::<SideWas>(monster) {
+        Some(was) => was.0,
         None => *world.get::<Faction>(monster)?,
     };
     let factions = &world.resource::<Registries>().factions;

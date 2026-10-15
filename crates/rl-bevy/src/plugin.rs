@@ -277,7 +277,16 @@ impl Plugin for CorePlugin {
             // a prop held a `Viewshed` in the same pass.
             .configure_sets(
                 Turn,
-                (DecideSet::Light, DecideSet::Sense, DecideSet::Notice, DecideSet::Offer, DecideSet::Perceive, DecideSet::Minds, DecideSet::Game)
+                (
+                    DecideSet::Light,
+                    DecideSet::Sense,
+                    DecideSet::Notice,
+                    DecideSet::Offer,
+                    DecideSet::Perceive,
+                    DecideSet::Minds,
+                    DecideSet::Game,
+                    DecideSet::Statuses,
+                )
                     .chain()
                     .in_set(TurnSet::Decide),
             )
@@ -287,6 +296,7 @@ impl Plugin for CorePlugin {
                 (PerceiveSet::Begin, PerceiveSet::Roster, PerceiveSet::Filter, PerceiveSet::Annotate, PerceiveSet::Weigh).chain().in_set(DecideSet::Perceive),
             )
             .configure_sets(Turn, ReactSet::Settle.in_set(TurnSet::React))
+            .configure_sets(Turn, ReactSet::Statuses.in_set(TurnSet::React).after(ReactSet::Settle))
             .configure_sets(
                 Turn,
                 (ResolveSet::Redirect, ResolveSet::Travel, ResolveSet::Act, ResolveSet::Triggers, ResolveSet::Fields, ResolveSet::Effects, ResolveSet::Damage)
@@ -574,6 +584,11 @@ pub enum DecideSet {
     Minds,
     /// The game's answer to whatever its own tactics chose.
     Game,
+    /// What a status makes of what was chosen: a step or a bump of a holder
+    /// that [`stumbles`](rl_rules::StatusDef::stumbles) turned a random
+    /// way. After the game's answer, so what a game wrote is turned too,
+    /// and before anything resolves it.
+    Statuses,
 }
 
 /// The stages of [`DecideSet::Perceive`], in order.
@@ -615,6 +630,12 @@ pub enum PerceiveSet {
 pub enum ReactSet {
     /// What the pass changed about who is what, settled.
     Settle,
+    /// What the statuses held lend their holders, kept in step with what
+    /// is held now: the side one names, what one resists, and what a
+    /// kind's own stats do while it holds one. After [`Settle`](Self::Settle),
+    /// which wakes sleepers. A game that answers the pass before these take
+    /// hold, as Undermere's do, orders this set after its answers.
+    Statuses,
 }
 
 /// The stages of [`TurnSet::Resolve`], in order.
@@ -755,13 +776,16 @@ struct Requirement {
     resource: &'static str,
     hint: &'static str,
     present: fn(&World) -> bool,
+    /// Whether it is needed at all: always, but for one recorded with
+    /// [`needs_when`].
+    when: fn(&World) -> bool,
 }
 
 impl Requirements {
     /// Every requirement `world` does not meet, one line each: who needs
     /// what, and how to make it.
     pub fn missing(&self, world: &World) -> Vec<String> {
-        self.0.iter().filter(|r| !(r.present)(world)).map(|r| format!("{} needs {}: {}", r.plugin, r.resource, r.hint)).collect()
+        self.0.iter().filter(|r| (r.when)(world) && !(r.present)(world)).map(|r| format!("{} needs {}: {}", r.plugin, r.resource, r.hint)).collect()
     }
 }
 
@@ -781,10 +805,28 @@ impl Needs for App {
         self.init_resource::<Requirements>();
         let mut list = self.world_mut().resource_mut::<Requirements>();
         if !list.0.iter().any(|r| r.plugin == plugin && r.resource == resource) {
-            list.0.push(Requirement { plugin, resource, hint, present: present::<R> });
+            list.0.push(Requirement { plugin, resource, hint, present: present::<R>, when: always });
         }
         self
     }
+}
+
+/// Records that `plugin` needs `R` only when `when` holds of the world as
+/// play begins: for a piece a subsystem uses only for some content, such
+/// as the seed a status draws from only if one stumbles. Reported with
+/// every other missing piece when it is missing and needed.
+pub(crate) fn needs_when<R: Resource>(app: &mut App, plugin: &'static str, hint: &'static str, when: fn(&World) -> bool) {
+    let resource = std::any::type_name::<R>();
+    app.init_resource::<Requirements>();
+    let mut list = app.world_mut().resource_mut::<Requirements>();
+    if !list.0.iter().any(|r| r.plugin == plugin && r.resource == resource) {
+        list.0.push(Requirement { plugin, resource, hint, present: |world| world.contains_resource::<R>(), when });
+    }
+}
+
+/// A requirement that always holds: what [`Needs::needs`] records.
+fn always(_: &World) -> bool {
+    true
 }
 
 /// Panics once, listing every requirement the game's setup left unmet.

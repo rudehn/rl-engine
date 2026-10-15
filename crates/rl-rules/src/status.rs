@@ -5,8 +5,11 @@
 //! What a status *does* is expressed as stat modifiers the engine can
 //! apply and remove, plus an optional damage-over-time the game's damage
 //! pipeline resolves, whether it holds its holder's turns, and whether it
-//! sleeps, a hold a noise, a blow or a foe close by ends early. Anything
-//! richer is the game's, keyed by the id.
+//! sleeps, a hold a noise, a blow or a foe close by ends early; and, each
+//! optional and absent meaning no such mechanic, how many of it may stack,
+//! what its holder resists while it lasts, the side its holder fights for,
+//! and how often its holder's steps go astray. Anything richer is the
+//! game's, keyed by the id.
 //!
 //! [`load`] reads definitions from RON by name, resolving every stat and
 //! damage kind through [`Names`], so a game authors statuses in the words
@@ -17,7 +20,8 @@ use crate::content::{ContentError, Named, Registry};
 use rl_core::Id;
 use serde::{Deserialize, Serialize};
 
-use crate::damage::DamageKindId;
+use crate::damage::{DamageKindId, Resistances};
+use crate::faction::{FactionDef, FactionId};
 use crate::names::Names;
 use crate::stats::{Op, Source, StatId, Stats};
 
@@ -91,6 +95,27 @@ pub struct StatusDef {
     /// a sleeper is the engine's, so every game's sleepers wake alike;
     /// who is put to sleep, and for how long, is the game's.
     pub sleeps: bool,
+    /// The most instances held at once, read only under
+    /// [`Stacking::Stack`]: at the cap a new one is refused, so a stat a
+    /// stacking curse lowers stops falling. `None` stacks without limit.
+    /// A cap rather than a stacking rule of its own, because "stack, up to
+    /// three" is still stacking and every other rule has nothing to count.
+    pub max: Option<u32>,
+    /// What its holder resists while it lasts, per instance, added to the
+    /// holder's own and its gear's where a blow is weighed. Empty resists
+    /// nothing. A field rather than a stat, because a resistance is per
+    /// damage kind and the kinds are the game's.
+    pub resists: Resistances,
+    /// The side its holder fights for while it lasts, going back to the one
+    /// it had when the last such status ends. `None` leaves the side alone.
+    /// Which sides there are and who is hostile to whom stay the game's;
+    /// this only says which of them.
+    pub side: Option<FactionId>,
+    /// The percent of its holder's chosen steps and bumps turned a random
+    /// way among those open to it, `1..=100`. `None` never turns one. A
+    /// percent rather than a flag, so a stagger that sends one step in
+    /// four astray is the same field as a confusion that sends every one.
+    pub stumbles: Option<u32>,
 }
 
 fn refresh() -> Stacking {
@@ -111,6 +136,10 @@ impl StatusDef {
             boon: false,
             holds: false,
             sleeps: false,
+            max: None,
+            resists: Resistances::new(),
+            side: None,
+            stumbles: None,
         }
     }
 
@@ -163,6 +192,32 @@ impl StatusDef {
         self.sleeps = true;
         self
     }
+
+    /// Caps how many instances may be held at once, for a status that
+    /// [`Stacking::Stack`]s.
+    pub fn at_most(mut self, instances: u32) -> Self {
+        self.max = Some(instances);
+        self
+    }
+
+    /// Makes its holder resist `pct` percent of `kind` while it lasts.
+    pub fn resists(mut self, kind: DamageKindId, pct: i32) -> Self {
+        self.resists.add(kind, pct);
+        self
+    }
+
+    /// Puts its holder on `side` while it lasts.
+    pub fn sides_with(mut self, side: FactionId) -> Self {
+        self.side = Some(side);
+        self
+    }
+
+    /// Turns `pct` percent of its holder's steps a random way while it
+    /// lasts.
+    pub fn stumbles(mut self, pct: u32) -> Self {
+        self.stumbles = Some(pct);
+        self
+    }
 }
 
 impl Named for StatusDef {
@@ -196,6 +251,14 @@ struct Authored {
     holds: bool,
     #[serde(default)]
     sleeps: bool,
+    #[serde(default)]
+    max: Option<u32>,
+    #[serde(default)]
+    resists: Vec<(String, i32)>,
+    #[serde(default)]
+    side: Option<String>,
+    #[serde(default)]
+    stumbles: Option<u32>,
 }
 
 impl Named for Authored {
@@ -204,8 +267,8 @@ impl Named for Authored {
     }
 }
 
-/// Loads statuses from RON, resolving every stat and damage kind through
-/// `names`.
+/// Loads statuses from RON, resolving every stat, damage kind and faction
+/// through `names`.
 ///
 /// One entry per status, and every field but `name` may be left out:
 ///
@@ -228,6 +291,15 @@ impl Named for Authored {
 /// - `sleeps`: `true` for sleep, a status that holds its holder until a
 ///   noise, harm or a foe close by wakes it and ends it; `false`, the
 ///   default, otherwise. It holds whether or not `holds` is written.
+/// - `max`: the most instances held at once, at least 1, for a status
+///   whose `stacking` is `Stack` and only there; a further one is refused.
+///   Absent, it stacks without limit.
+/// - `resists`: `(damage kind, percent)` its holder resists while it lasts,
+///   per instance, a kind written twice resisting by both.
+/// - `side`: the faction its holder fights for while it lasts, going back
+///   to its own when it ends. Absent, the side is left alone.
+/// - `stumbles`: the percent, `1` to `100`, of its holder's steps and bumps
+///   turned a random open way while it lasts. Absent, none are.
 ///
 /// Reports every unknown name in the file at once.
 pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<StatusDef>, ContentError> {
@@ -259,6 +331,32 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<StatusDef>, Conten
         if let Some(amount) = a.mends.filter(|amount| *amount < 1) {
             errors.push(format!("{}: `mends` of {amount} restores nothing; it is at least 1", a.name));
         }
+        // A cap on a status that never stacks is a rule nothing plays, so
+        // it is refused rather than read as a promise.
+        match a.max {
+            Some(0) => errors.push(format!("{}: `max` of 0 refuses every instance; it is at least 1", a.name)),
+            Some(_) if a.stacking != Stacking::Stack => {
+                errors.push(format!("{}: `max` caps instances, and only `stacking: Stack` holds more than one", a.name))
+            }
+            _ => {}
+        }
+        if let Some(pct) = a.stumbles.filter(|pct| !(1..=100).contains(pct)) {
+            errors.push(format!("{}: `stumbles` of {pct} is not a percent of steps; it runs from 1 to 100", a.name));
+        }
+        let mut resists = Resistances::new();
+        for (kind, pct) in &a.resists {
+            match names.damage_kind(kind) {
+                Ok(kind) => resists.add(kind, *pct),
+                Err(e) => errors.push(format!("{}: {e}", a.name)),
+            }
+        }
+        let side = a.side.as_deref().and_then(|side| match names.id::<FactionDef>(side) {
+            Ok(side) => Some(side),
+            Err(e) => {
+                errors.push(format!("{}: {e}", a.name));
+                None
+            }
+        });
         defs.push(StatusDef {
             name: a.name.clone(),
             stacking: a.stacking,
@@ -270,6 +368,10 @@ pub fn load(text: &str, names: &Names<'_>) -> Result<Registry<StatusDef>, Conten
             boon: a.boon,
             holds: a.holds,
             sleeps: a.sleeps,
+            max: a.max,
+            resists,
+            side,
+            stumbles: a.stumbles,
         });
     }
     if !errors.is_empty() {
@@ -394,9 +496,14 @@ impl Statuses {
 
     fn put(&mut self, id: StatusId, turns: u32, source: Option<u64>, held_by: Option<u64>, defs: &Registry<StatusDef>, stats: &mut Stats) -> bool {
         let def = defs.get(id);
+        let instances = self.active.iter().filter(|s| s.id == id).count();
         let existing = self.active.iter_mut().find(|s| s.id == id);
         match (def.stacking, existing) {
             (Stacking::Ignore, Some(_)) => false,
+            // At the cap a further instance is refused outright: nothing is
+            // refreshed in its place, since which of the held ones would be
+            // is a rule nobody wrote.
+            (Stacking::Stack, Some(_)) if def.max.is_some_and(|max| instances >= max as usize) => false,
             (Stacking::Refresh, Some(s)) => {
                 let changed = turns > s.turns;
                 s.turns = s.turns.max(turns);
@@ -409,8 +516,7 @@ impl Statuses {
                 true
             }
             _ => {
-                let instance = self.active.iter().filter(|s| s.id == id).count();
-                let tag = source_tag(id, instance);
+                let tag = source_tag(id, instances);
                 for m in &def.modifiers {
                     stats.add(crate::stats::Modifier::new(m.stat, m.op, tag));
                 }
@@ -444,6 +550,29 @@ impl Statuses {
     /// whether the actor is asleep.
     pub fn sleeping(&self, defs: &Registry<StatusDef>) -> Option<StatusId> {
         self.active.iter().map(|s| s.id).find(|id| defs.get(*id).sleeps)
+    }
+
+    /// What every active status makes the actor resist, instance by
+    /// instance, so two stacks of a status that resists a tenth resist a
+    /// fifth.
+    pub fn resistances(&self, defs: &Registry<StatusDef>) -> Resistances {
+        let mut total = Resistances::new();
+        for s in &self.active {
+            total.plus(&defs.get(s.id).resists);
+        }
+        total
+    }
+
+    /// The side the first active status that names one puts the actor on,
+    /// if any.
+    pub fn side(&self, defs: &Registry<StatusDef>) -> Option<FactionId> {
+        self.active.iter().find_map(|s| defs.get(s.id).side)
+    }
+
+    /// The highest percent of the actor's steps any active status turns
+    /// astray, if any does.
+    pub fn stumbles(&self, defs: &Registry<StatusDef>) -> Option<u32> {
+        self.active.iter().filter_map(|s| defs.get(s.id).stumbles).max()
     }
 
     /// Wakes the actor: cures every status that sleeps, modifiers and all,
@@ -798,6 +927,100 @@ mod tests {
         assert_eq!(statuses.sleeping(&defs), None, "awake");
         assert_eq!(statuses.holding(&defs), Some(snared), "and still snared");
         assert_eq!(stats.value(speed, &stat_defs), 100, "the sleep's modifier left with it");
+    }
+
+    /// A capped stack refuses the instance past its cap and nothing else:
+    /// none is refreshed in its place, and once one runs out another fits.
+    #[test]
+    fn a_capped_stack_refuses_an_instance_past_its_cap_until_one_runs_out() {
+        let stat_defs = Registry::from_defs(vec![StatDef::new("might", 10)]).unwrap();
+        let might = stat_defs.expect("might");
+        let defs = Registry::from_defs(vec![StatusDef::new("sapped").modifies(might, Op::Add(-1)).stacking(Stacking::Stack).at_most(3)]).unwrap();
+        let sapped = defs.expect("sapped");
+        let (mut statuses, mut stats) = (Statuses::new(), Stats::new());
+        assert!(statuses.apply(sapped, 1, None, &defs, &mut stats));
+        for _ in 0..2 {
+            assert!(statuses.apply(sapped, 5, None, &defs, &mut stats));
+        }
+        assert!(!statuses.apply(sapped, 9, None, &defs, &mut stats), "a fourth is refused");
+        assert_eq!(statuses.iter().map(|s| s.turns).collect::<Vec<_>>(), vec![1, 5, 5], "and refreshes nothing");
+        assert_eq!(stats.value(might, &stat_defs), 7);
+        statuses.tick(&defs, &mut stats);
+        assert!(statuses.apply(sapped, 5, None, &defs, &mut stats), "the first ran out, so another fits");
+        assert_eq!(stats.value(might, &stat_defs), 7);
+    }
+
+    /// What statuses resist adds instance by instance, the first side named
+    /// is the one taken, and the keenest stumble is the one that counts.
+    #[test]
+    fn held_statuses_answer_what_their_holder_resists_its_side_and_how_often_it_stumbles() {
+        let (_, kinds) = vocabulary();
+        let bite = kinds.expect("bite");
+        let (one, two) = (FactionId::from_raw(1), FactionId::from_raw(2));
+        let defs = Registry::from_defs(vec![
+            StatusDef::new("hide").resists(bite, 10).stacking(Stacking::Stack),
+            StatusDef::new("turned").sides_with(one),
+            StatusDef::new("charmed").sides_with(two),
+            StatusDef::new("dizzy").stumbles(25),
+            StatusDef::new("reeling").stumbles(100),
+        ])
+        .unwrap();
+        let (mut statuses, mut stats) = (Statuses::new(), Stats::new());
+        assert_eq!(
+            (statuses.resistances(&defs), statuses.side(&defs), statuses.stumbles(&defs)),
+            (Resistances::new(), None, None),
+            "nothing held, nothing lent"
+        );
+        for name in ["hide", "hide", "turned", "charmed", "dizzy", "reeling"] {
+            statuses.apply(defs.expect(name), 3, None, &defs, &mut stats);
+        }
+        assert_eq!(statuses.resistances(&defs).get(bite), 20);
+        assert_eq!(statuses.side(&defs), Some(one));
+        assert_eq!(statuses.stumbles(&defs), Some(100));
+    }
+
+    #[test]
+    fn a_status_file_writes_a_cap_resistances_a_side_and_a_stumble_by_name() {
+        let (stats, kinds) = vocabulary();
+        let factions = Registry::from_defs(vec![FactionDef::new("crowd"), FactionDef::new("rogue")]).unwrap();
+        let names = Names::new().stats(&stats).damage_kinds(&kinds).with("faction", &factions);
+        let r = load(
+            r#"#![enable(implicit_some)]
+            [
+                (name: "sapped", stacking: Stack, max: 3),
+                (name: "thick-skinned", resists: [("bite", 50), ("bite", 25)]),
+                (name: "turned", side: "rogue"),
+                (name: "dizzy", stumbles: 100),
+                (name: "plain"),
+            ]"#,
+            &names,
+        )
+        .expect("the file loads");
+        assert_eq!(r.get(r.expect("sapped")).max, Some(3));
+        assert_eq!(r.get(r.expect("thick-skinned")).resists.get(kinds.expect("bite")), 75);
+        assert_eq!(r.get(r.expect("turned")).side, Some(factions.expect("rogue")));
+        assert_eq!(r.get(r.expect("dizzy")).stumbles, Some(100));
+        let plain = r.get(r.expect("plain"));
+        assert_eq!((plain.max, &plain.resists, plain.side, plain.stumbles), (None, &Resistances::new(), None, None), "absent is no mechanic");
+    }
+
+    /// A cap where nothing stacks, a cap of nothing and a stumble that is
+    /// no percent are each refused, with every unknown name beside them.
+    #[test]
+    fn a_cap_nothing_stacks_under_a_stumble_out_of_range_and_unknown_names_are_refused() {
+        let (stats, kinds) = vocabulary();
+        let factions = Registry::from_defs(vec![FactionDef::new("crowd")]).unwrap();
+        let names = Names::new().stats(&stats).damage_kinds(&kinds).with("faction", &factions);
+        let bad = r#"#![enable(implicit_some)]
+        [
+            (name: "a", max: 2),
+            (name: "b", stacking: Stack, max: 0),
+            (name: "c", stumbles: 0),
+            (name: "d", stumbles: 101),
+            (name: "e", resists: [("frost", 10)], side: "nobody"),
+        ]"#;
+        let Err(ContentError::Invalid(errs)) = load(bad, &names) else { panic!("a bad file loaded") };
+        assert_eq!(errs.len(), 6, "{errs:#?}");
     }
 
     #[test]

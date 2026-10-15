@@ -1,6 +1,7 @@
 //! What a body does when a blow lands on it, or it lands one, or it
 //! steps: a jelly splitting, a bat or a wight drinking what it wounds, a
-//! salamander's trail of fire, and a wraith's withering touch.
+//! salamander's trail of fire. A wraith's withering touch is the engine's
+//! `Inflict`, capped at three by `weakened`'s own `max`.
 
 use super::*;
 
@@ -121,87 +122,5 @@ const FIRE_TRAIL_TURNS: u8 = 3;
 pub fn trail_fire(mut stepped: MessageReader<Stepped>, trailing: Query<(), With<FireTrail>>, mut kindle: MessageWriter<Kindle>) {
     for step in stepped.read().filter(|s| trailing.contains(s.actor)) {
         kindle.write(Kindle { at: step.from, turns: FIRE_TRAIL_TURNS });
-    }
-}
-
-/// Caps `weakened`'s own stacking at [`WEAKENED_MAX_STACKS`]: a wraith's
-/// `withering`. `Inflict` has nowhere to say "no more than this many
-/// instances of me at once", since the engine's `Stacking::Stack` has no
-/// maximum of its own; this is that maximum, for one status. Written
-/// `(kind: "Wither", args: (turns: 20))`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Wither {
-    /// How long each stack lasts.
-    pub turns: u32,
-}
-
-impl Effect for Wither {
-    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
-        let (by, turns, targets) = (Some(landing.user), self.turns, landing.targets.clone());
-        world.commands.queue(move |world: &mut World| {
-            for target in targets {
-                wither(world, target, by, turns);
-            }
-        });
-    }
-
-    fn describe(&self, _: &Registries, _: EffectBonus) -> String {
-        format!("saps strength for {} turns, up to three stacks", self.turns)
-    }
-}
-
-impl FromArgs for Wither {
-    const KIND: &'static str = "Wither";
-
-    fn from_args(args: &RawValue, _: &Names<'_>) -> Result<Self, String> {
-        #[derive(serde::Deserialize)]
-        #[serde(deny_unknown_fields)]
-        struct Args {
-            turns: u32,
-        }
-        let a: Args = read_args(args)?;
-        Ok(Self { turns: a.turns })
-    }
-}
-
-/// How many stacks of `weakened` [`Wither`] lets pile onto one target: the
-/// content sheet's own cap.
-pub const WEAKENED_MAX_STACKS: usize = 3;
-
-/// Inflicts `weakened` on `target` for `turns`, credited to `by`, unless
-/// it already holds [`WEAKENED_MAX_STACKS`] instances: a fourth touch
-/// before the first's clock runs out is refused rather than let the stat
-/// climb without bound.
-pub fn wither(world: &mut World, target: Entity, by: Option<Entity>, turns: u32) {
-    let Some(weakened) = world.resource::<Registries>().statuses.id(crate::content::WEAKENED) else { return };
-    let stacks = world.get::<Afflicted>(target).map_or(0, |a| a.0.iter().filter(|s| s.id == weakened).count());
-    if stacks >= WEAKENED_MAX_STACKS {
-        return;
-    }
-    world.write_message(Afflict { target, status: weakened, turns, by, held_by: None });
-}
-
-#[cfg(test)]
-mod tests {
-    use rl_engine::rl_bevy::status::resolve_afflictions;
-
-    use super::*;
-
-    /// `Wither` refuses a fourth and a fifth stack of `weakened` rather
-    /// than let it climb without bound.
-    #[test]
-    fn wither_caps_weakened_at_three_stacks() {
-        let mut app = App::new();
-        app.add_message::<Afflict>().add_message::<Cure>().add_message::<rl_engine::rl_bevy::status::StatusEvent>();
-        app.insert_resource(crate::content::registries());
-        app.add_systems(Update, resolve_afflictions);
-        let e = app.world_mut().spawn((Afflicted(Statuses::new()), StatBlock(Stats::new()))).id();
-        for _ in 0..5 {
-            wither(app.world_mut(), e, None, 20);
-            app.update();
-        }
-        let weakened = app.world().resource::<Registries>().statuses.expect(crate::content::WEAKENED);
-        let stacks = app.world().get::<Afflicted>(e).unwrap().0.iter().filter(|s| s.id == weakened).count();
-        assert_eq!(stacks, WEAKENED_MAX_STACKS, "a fourth and a fifth touch are both refused");
     }
 }
