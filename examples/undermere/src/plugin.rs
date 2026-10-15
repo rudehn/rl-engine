@@ -430,11 +430,17 @@ impl Plugin for UndermerePlugin {
                 .after(crate::run::stand_near),
         );
         // What the panels count of a worn thing not yet known: its kind's
-        // plain numbers, over the engine's true ones, for the vitals' armor,
-        // the look cursor's forecast and the targeting box's chance; and
-        // what the pack and the look cursor say of a thing whose kind is
-        // known and whose level is not. Each reads its view when the game
-        // draws it and does nothing where it does not.
+        // plain numbers, kept on every wearer as the engine's `Seems`
+        // before the collectors read it, for the vitals' armor, the look
+        // cursor's forecast and the targeting box's chance. Every wearer
+        // carries one from the moment it is `Equipped`, so keeping it never
+        // changes what an entity is made of.
+        app.register_required_components::<Equipped, Seems>();
+        app.add_systems(Update, crate::seeming::keep_seems.in_set(PresentSet::Narrate).before(ViewSet::Collect));
+        // Then what the game says of them, and what the pack and the look
+        // cursor say of a thing whose kind is known and whose level is not.
+        // Each reads its view when the game draws it and does nothing where
+        // it does not.
         // Then what a thing asks of the adventurer's strength, under the
         // pack's row and the look cursor's, so the line reads under its
         // numbers; and the gold carried, on the vitals under the gauges,

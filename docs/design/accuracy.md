@@ -39,6 +39,8 @@ A blow reads neither range nor light: it lands on the cell beside the attacker, 
 
 `Marksmanship` is the one place the facts are gathered, and the attack resolver, the throw resolver, the targeting cursor and the inspect panel all ask it.
 The chance a panel prints is therefore the chance the roll uses, the discipline `shot` and `flight` already keep for where a projectile goes.
+The one exception is asked for by name: `odds`, `at_distance` and `fire_odds` take a shift added to the attacker's accuracy, nought for every resolver, which a panel passes to show the chance as the player understands it, a worn thing not yet known lending what it seems to.
+The shift is added only where the game names an accuracy stat, so a game with none still hands its model "no accuracy" rather than a number.
 
 Accuracy and evasion are stats, named on `CombatRules` with `accuracy_stat` and `evasion_stat` the way `armor_stat` is.
 A weapon that should be clumsier is a worn item that moves the accuracy stat, which the engine already supports.

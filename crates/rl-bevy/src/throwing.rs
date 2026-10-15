@@ -206,7 +206,7 @@ pub fn resolve_throws(
         // The flight, in the item's own glyph, landing on whoever it struck
         // wherever they are by the time it is seen.
         let struck = struck.filter(|who| alive.contains(*who));
-        let odds = struck.and_then(|who| marks.odds(actor, who, crate::accuracy::Attempt::Throw(&thrown_as)));
+        let odds = struck.and_then(|who| marks.odds(actor, who, crate::accuracy::Attempt::Throw(&thrown_as), 0));
         let to = struck.map(|who| Anchor::on(who, rests)).unwrap_or(Anchor::cell(rests));
         cues.write(Cued { actor, cue: Cue::Flight { from: Anchor::on(actor, pos.0), to, look: LookOf::Item(thrown) } });
         let landing = ThrowLanding { actor, item: thrown, rests, struck, strike, odds };

@@ -254,7 +254,7 @@ mod tests {
     /// The chance, in percent, of `me`'s blow landing on `foe`, as the
     /// hit model reads it.
     fn chance(app: &mut App, me: Entity, foe: Entity) -> Option<u32> {
-        app.world_mut().run_system_once(move |marks: Marksmanship| marks.odds(me, foe, Attempt::Blow).map(|o| o.percent())).expect("the odds")
+        app.world_mut().run_system_once(move |marks: Marksmanship| marks.odds(me, foe, Attempt::Blow, 0).map(|o| o.percent())).expect("the odds")
     }
 
     /// A war hammer asks twenty of an adventurer of twelve: eight short,

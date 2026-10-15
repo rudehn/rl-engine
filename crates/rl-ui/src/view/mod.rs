@@ -48,6 +48,44 @@ use rl_rules::Relation;
 
 use crate::facet::{Facet, FacetId};
 
+/// How much more a body's numbers truly are than they seem to the player,
+/// which the vitals, the look cursor's forecast and the targeting box take
+/// off before they show them.
+///
+/// The engine counts what a body truly wears, since that is what a blow
+/// meets, and has no idea of a thing whose numbers the player does not
+/// know: whether a thing is known, and what it seems to be until it is, is
+/// a game's. A game that hides some of a thing's numbers keeps this on an
+/// actor before [`ViewSet::Collect`](crate::ViewSet::Collect), as
+/// Undermere keeps on each wearer what the level of every worn thing not
+/// yet known adds past its kind's plain numbers. Absent, or all nought, the
+/// panels show the true numbers, which is every game without the idea.
+///
+/// Each figure is taken off the true one: `armor` off the vitals' armor
+/// and the forecast's, `blow` and `shot` off the first roll of the blow and
+/// the shot the forecast reckons with, and `accuracy` off the accuracy the
+/// chance to hit is worked out from, where the game names an accuracy
+/// stat. A view that took anything off says so with its `seeming` flag,
+/// so the game can say why in its own words.
+#[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Seems {
+    /// Armor that is truly there and does not seem to be.
+    pub armor: i32,
+    /// Damage the blow truly adds past what it seems to.
+    pub blow: i32,
+    /// Damage the shot truly adds past what it seems to.
+    pub shot: i32,
+    /// Accuracy truly lent past what it seems to be.
+    pub accuracy: i32,
+}
+
+impl Seems {
+    /// Whether nothing is taken off: the numbers shown are the true ones.
+    pub fn is_true(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
 /// Every named thing that carries tags, for finding what a piece of the
 /// currency is called by [`currency_name`].
 pub type NamedPieces<'w, 's> = Query<'w, 's, (Entity, &'static Name, &'static rl_bevy::Tagged)>;

@@ -12,7 +12,7 @@
 //! landed, for a narrator to say.
 
 use bevy::prelude::*;
-use rl_core::geometry;
+use rl_core::{Point, geometry};
 use rl_rules::StatId;
 use rl_rules::accuracy::{Certain, Delivery, HitModel, Odds, Shot};
 
@@ -85,7 +85,15 @@ impl Marksmanship<'_, '_> {
     /// stand now, or `None` when the model does not roll it or either is
     /// nowhere. A throw that strikes with nothing is never rolled, since
     /// nothing it does depends on striking.
-    pub fn odds(&self, attacker: Entity, target: Entity, attempt: Attempt) -> Option<Odds> {
+    ///
+    /// `shift` is added to the attacker's accuracy, and is `0` for the
+    /// attack as it truly is, which is what every resolver asks. A panel
+    /// asks with another to show the chance as the player understands it,
+    /// as a game whose worn things are not yet known has its look and
+    /// targeting panels count them at what they seem to lend. Added only
+    /// when the game names an accuracy stat: with none there is no accuracy
+    /// to move, and a model told "no accuracy" is not told a number.
+    pub fn odds(&self, attacker: Entity, target: Entity, attempt: Attempt, shift: i32) -> Option<Odds> {
         let (from, to) = (self.positions.get(attacker).ok()?.0, self.positions.get(target).ok()?.0);
         let (delivery, effective, range) = match attempt {
             Attempt::Blow => (Delivery::Melee, 0, 1),
@@ -101,7 +109,7 @@ impl Marksmanship<'_, '_> {
             effective,
             range,
             light: band_at(self.lighting.as_deref(), to),
-            accuracy: self.stat(attacker, |r| r.accuracy),
+            accuracy: self.stat(attacker, |r| r.accuracy).map(|a| a + shift),
             evasion: self.stat(target, |r| r.evasion),
         };
         self.rules.0.odds(&shot)
@@ -110,16 +118,31 @@ impl Marksmanship<'_, '_> {
     /// The odds of what `attacker` would attack `target` with from where it
     /// stands: a blow when adjacent, a shot while its shot reaches, and
     /// nothing further, which is the rule `resolve_attacks` picks by and
-    /// `forecast::Arms::at` states.
-    pub fn at_distance(&self, loadout: &Loadout, attacker: Entity, target: Entity) -> Option<Odds> {
+    /// `forecast::Arms::at` states. `shift` is as [`Marksmanship::odds`]
+    /// takes it.
+    pub fn at_distance(&self, loadout: &Loadout, attacker: Entity, target: Entity, shift: i32) -> Option<Odds> {
         let (from, to) = (self.positions.get(attacker).ok()?.0, self.positions.get(target).ok()?.0);
         let distance = geometry::chebyshev(from, to);
         if distance <= 1 {
             loadout.melee(attacker)?;
-            return self.odds(attacker, target, Attempt::Blow);
+            return self.odds(attacker, target, Attempt::Blow, shift);
         }
         let gun = loadout.ranged(attacker).filter(|g| distance <= g.range)?;
-        self.odds(attacker, target, Attempt::Shot(&gun))
+        self.odds(attacker, target, Attempt::Shot(&gun), shift)
+    }
+
+    /// The odds of `user` firing `gun` at `target` with the aim on `cursor`,
+    /// as the targeting cursor previews a shot: struck as a blow when the
+    /// aim is on a cell beside the user, point blank, and as the shot
+    /// further off. `shift` is as [`Marksmanship::odds`] takes it.
+    ///
+    /// One call for the preview, so a game that shows the chance another
+    /// way asks the rule the box asks.
+    pub fn fire_odds(&self, user: Entity, target: Entity, cursor: Point, gun: &RangedAttack, shift: i32) -> Option<Odds> {
+        if geometry::is_adjacent(self.positions.get(user).ok()?.0, cursor) {
+            return self.odds(user, target, Attempt::Blow, shift);
+        }
+        self.odds(user, target, Attempt::Shot(gun), shift)
     }
 
     /// The value of the stat `pick` names on `who`, `None` when the game
@@ -147,17 +170,23 @@ mod tests {
     struct Asked(Option<Odds>);
 
     #[derive(Resource, Clone, Copy)]
-    struct Pair(Entity, Entity);
+    struct Pair(Entity, Entity, i32);
 
     fn ask_shot(marks: Marksmanship, pair: Res<Pair>, guns: Query<&RangedAttack>, mut out: ResMut<Asked>) {
         let gun = guns.get(pair.0).expect("the shooter has a gun");
-        out.0 = marks.odds(pair.0, pair.1, Attempt::Shot(gun));
+        out.0 = marks.odds(pair.0, pair.1, Attempt::Shot(gun), pair.2);
     }
 
     /// A shooter with a gun reaching twelve, three of them without penalty,
     /// and a target `gap` cells east, under `rules` and, with `lighting`,
     /// an ambient of that intensity and nothing else.
     fn range(gap: i32, rules: Option<HitRules>, lighting: Option<u8>) -> App {
+        asked(gap, rules, lighting, None, 0)
+    }
+
+    /// [`range`], with the shooter's accuracy a stat at `accuracy` when the
+    /// game names one, and asked with `shift` on it.
+    fn asked(gap: i32, rules: Option<HitRules>, lighting: Option<u8>, accuracy: Option<i32>, shift: i32) -> App {
         let mut app = headless_app();
         app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::world::StreamingPlugin));
         if lighting.is_some() {
@@ -168,6 +197,12 @@ mod tests {
         if let Some(rules) = rules {
             app.insert_resource(rules);
         }
+        if let Some(base) = accuracy {
+            let stats = rl_rules::Registry::from_defs(vec![rl_rules::StatDef::new("accuracy", base)]).expect("one stat");
+            let stat = stats.expect("accuracy");
+            app.world_mut().resource_mut::<Registries>().stats = stats;
+            app.world_mut().resource_mut::<CombatRules>().accuracy = Some(stat);
+        }
         let gun = RangedAttack::new(sides.kind, DiceRoll::flat(1), 12).effective_to(3);
         // The player, since the loaded window, and the light cast over it,
         // follows the player: with none, every tile reads as dark.
@@ -175,8 +210,9 @@ mod tests {
             .world_mut()
             .spawn((Actor, crate::components::Player, Blocks, Position(start), Health::full(10), gun, MeleeAttack::new(sides.kind, DiceRoll::flat(1))))
             .id();
+        app.world_mut().entity_mut(shooter).insert(StatBlock(rl_rules::Stats::new()));
         let target = app.world_mut().spawn((Actor, Blocks, Position(start.offset(gap, 0)), Health::full(10))).id();
-        app.insert_resource(Pair(shooter, target)).init_resource::<Asked>().add_systems(PostUpdate, ask_shot);
+        app.insert_resource(Pair(shooter, target, shift)).init_resource::<Asked>().add_systems(PostUpdate, ask_shot);
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
         // After play begins, since a new run resets lighting to dark.
@@ -186,6 +222,19 @@ mod tests {
         app.update();
         app.update();
         app
+    }
+
+    /// A shift moves the accuracy a game names, and there is nothing to
+    /// move in a game that names none: its chance stays the model's own
+    /// "no accuracy", whatever a panel asks with.
+    #[test]
+    fn a_shift_moves_the_accuracy_only_where_the_game_names_an_accuracy_stat() {
+        let hits = |accuracy: Option<i32>, shift: i32| {
+            let app = asked(2, Some(HitRules(Box::new(Percent::new(5, 16, 30)))), None, accuracy, shift);
+            app.world().resource::<Asked>().0.clone().expect("percent rolls").hits
+        };
+        assert_eq!((hits(Some(80), 0), hits(Some(80), -15), hits(Some(80), 10)), (80, 65, 90), "the named stat, shifted");
+        assert_eq!((hits(None, 0), hits(None, -15)), (100, 100), "no stat named, nothing to shift");
     }
 
     #[test]

@@ -28,13 +28,16 @@ pub struct VitalsView {
     /// any, so a game without the idea draws no number for it.
     ///
     /// The collector counts the true total, what a blow meets, an unknown
-    /// worn thing's armor included, since only a game knows what a thing
-    /// not yet known seems to be. A game whose things are written from a
-    /// level, so that the true total would tell it, writes the figure again
-    /// in [`ViewSet::Annotate`](crate::ViewSet) with each unknown thing
-    /// counted as it seems, as Undermere counts one at its kind's plain
-    /// numbers; the mark below stays either way.
+    /// worn thing's armor included, less the armor the player's
+    /// [`Seems`](crate::view::Seems) says is there and does not seem to
+    /// be, since only a game knows what a thing not yet known seems to be:
+    /// Undermere counts one at its kind's plain numbers, so that the figure
+    /// does not tell its level. The mark below stays either way.
     pub armor: Option<i32>,
+    /// Whether `armor` is what the game's [`Seems`](crate::view::Seems)
+    /// says it seems rather than the true total, for a game that says why
+    /// in its own words.
+    pub seeming: bool,
     /// Whether anything the player wears is not yet known, [`Unknown`]: the
     /// figure above is not settled, whether it counts the thing's true
     /// armor, as the collector does, or what the game says it seems to
@@ -158,6 +161,7 @@ type Vitals = (
     Option<&'static Equipped>,
     Option<&'static Afflicted>,
     Has<Stealth>,
+    Option<&'static crate::view::Seems>,
 );
 
 /// What the player is made of.
@@ -185,7 +189,7 @@ pub fn collect_vitals(mut view: ResMut<VitalsView>, mut me: Me) {
     view.bars.clear();
     view.badges.clear();
     view.facets.clear();
-    let Ok((entity, pos, name, health, armor, worn, afflicted, hides)) = me.player.single() else {
+    let Ok((entity, pos, name, health, armor, worn, afflicted, hides, seems)) = me.player.single() else {
         view.entity = None;
         return;
     };
@@ -215,10 +219,12 @@ pub fn collect_vitals(mut view: ResMut<VitalsView>, mut me: Me) {
     };
     view.turn = turn;
     // What a blow meets, gear included, an unknown thing's true armor too,
-    // which a game corrects in `Annotate`; shown whenever the player has
-    // the idea of armor at all, even at zero.
+    // less what the game says of it does not seem to be there; shown
+    // whenever the player has the idea of armor at all, even at zero.
     let total = me.loadout.armor(entity);
-    view.armor = (armor.is_some() || total != 0).then_some(total);
+    let unseen = seems.map_or(0, |s| s.armor);
+    view.armor = (armor.is_some() || total != 0 || unseen != 0).then_some(total - unseen);
+    view.seeming = unseen != 0;
     view.armor_uncertain = worn.is_some_and(|w| w.0.worn().any(|(_, item)| me.unknown.contains(item)));
     view.seen = (hides && me.watchers.running()).then(|| me.watchers.watched(entity));
     view.exposure = me.lighting.as_deref().map(|l| l.band(pos.0));
@@ -239,6 +245,25 @@ pub fn collect_vitals(mut view: ResMut<VitalsView>, mut me: Me) {
 mod tests {
     use super::*;
     use crate::harness::Stage;
+
+    /// The figure is the true total, and a game that hides some of a worn
+    /// thing's armor keeps a `Seems` on the player: the figure is then the
+    /// total less it, and says it is seeming.
+    #[test]
+    fn the_armor_is_the_true_total_less_what_the_players_seems_takes_off_and_says_so() {
+        let mut stage = Stage::new(VitalsViewPlugin);
+        let player = stage.player;
+        stage.app.world_mut().entity_mut(player).insert(Armor(5));
+        stage.tick();
+        let read = |stage: &Stage| {
+            let view = stage.app.world().resource::<VitalsView>();
+            (view.armor, view.seeming)
+        };
+        assert_eq!(read(&stage), (Some(5), false), "the true total, with no seems");
+        stage.app.world_mut().entity_mut(player).insert(crate::view::Seems { armor: 2, ..Default::default() });
+        stage.tick();
+        assert_eq!(read(&stage), (Some(3), true), "less what seems not to be there");
+    }
 
     /// A noise is a moment, but the reading of it is not: it falls away
     /// over the turns after rather than snapping to nothing, which is

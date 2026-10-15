@@ -1040,7 +1040,7 @@ pub fn resolve_attacks(
         let reach = if ranged { Reach::Shot } else { Reach::Melee };
         let mut landings = Vec::with_capacity(struck_at.len());
         for &(foe, at) in &struck_at {
-            let wide = marks.odds(actor, foe, attempt).is_some_and(|odds| !odds.roll(&mut **rng));
+            let wide = marks.odds(actor, foe, attempt, 0).is_some_and(|odds| !odds.roll(&mut **rng));
             // Read as the blow is rolled. The blow is what wakes the one it
             // lands on, and only once the turn's consequences are read, in
             // `TurnSet::React`, so every foe a sweep catches unaware is

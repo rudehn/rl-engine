@@ -27,7 +27,7 @@ use crate::cursor::{CursorInput, CursorKeys, Steer};
 use crate::facet::Facet;
 use crate::focus::{Focus, InSight};
 use crate::modal::{ModalId, Modals};
-use crate::view::Row;
+use crate::view::{Row, Seems};
 
 /// The name the inspect cursor's modal is declared under.
 pub const INSPECT_MODAL: &str = "inspect";
@@ -50,17 +50,21 @@ pub struct InspectView {
     /// be read as combatants and a fight could happen: never with an ally,
     /// and never with anyone standing in a peaceful place.
     ///
-    /// Reckoned from what each side truly wears, as the fight would be, an
-    /// unknown thing's true numbers among them, as the vitals' armor is: a
-    /// game whose things are written from a level, so that the forecast
-    /// would tell it, forecasts the fight again in
-    /// [`ViewSet::Annotate`](crate::ViewSet) with each unknown thing counted
-    /// as it seems, through the same [`duel`], and `odds` with it.
+    /// Reckoned from what each side truly wears, as the fight would be,
+    /// less what either side's [`Seems`] says does not seem to be there, as
+    /// the vitals' armor is: a game whose things are written from a level,
+    /// so that the forecast would tell it, keeps a `Seems` on each wearer
+    /// of a thing not yet known, and both sides are counted as they seem.
     pub duel: Option<Duel>,
     /// The chance the player's own attack on the subject lands, from where
-    /// it stands: a blow when adjacent, a shot while it reaches. `None`
-    /// when nothing reaches or the game's hit model does not roll.
+    /// it stands: a blow when adjacent, a shot while it reaches, with the
+    /// accuracy the player's [`Seems`] takes off. `None` when nothing
+    /// reaches or the game's hit model does not roll.
     pub odds: Option<Odds>,
+    /// Whether the forecast and the chance count either side as its
+    /// [`Seems`] says it seems rather than as it is, for a game that says
+    /// why in its own words.
+    pub seeming: bool,
     /// What the game added about the subject.
     pub facets: Vec<Facet>,
     /// Whether the subject is a thing not yet known, [`Unknown`]: a panel
@@ -219,6 +223,56 @@ pub struct Duelists<'w, 's> {
     work: crate::view::Workings<'w, 's>,
     /// What is not yet known.
     unknown: Query<'w, 's, (), With<Unknown>>,
+    /// What either side's numbers seem to be, where a game says.
+    seems: Query<'w, 's, &'static Seems>,
+}
+
+impl Duelists<'_, '_> {
+    /// The fight between `me` and `them`, `apart` cells from each other
+    /// with `mine` and `theirs` health left, each side counted as its
+    /// [`Seems`] says it seems, and `me`'s chance of landing what it would
+    /// strike with from here; and whether anything was taken off either
+    /// side.
+    ///
+    /// Both of what each side can do, and the gap between them; the
+    /// forecast picks the melee rolls or the shot from that, by the rule
+    /// `resolve_attacks` uses, so a droid that only shoots is forecast as
+    /// dangerous across the room and harmless once you are on top of it.
+    /// The cost goes with whichever it picked, the same charge the resolver
+    /// would spend the turn on.
+    fn forecast(&self, me: Entity, them: Entity, apart: i32, mine: i32, theirs: i32) -> (Duel, Option<Odds>, bool) {
+        let (my_seems, their_seems) = (self.seems.get(me).copied().unwrap_or_default(), self.seems.get(them).copied().unwrap_or_default());
+        let (my_resists, their_resists) = (self.loadout.resistances(me), self.loadout.resistances(them));
+        let (my_blows, my_shots) = (seeming(self.loadout.blows(me), my_seems.blow), seeming(self.loadout.shots(me), my_seems.shot));
+        let (their_blows, their_shots) = (seeming(self.loadout.blows(them), their_seems.blow), seeming(self.loadout.shots(them), their_seems.shot));
+        let my_arms = self.loadout.arms(me, &my_blows, &my_shots);
+        let their_arms = self.loadout.arms(them, &their_blows, &their_shots);
+        // Each side's chance of landing what it would attack with from here,
+        // so the forecast counts the misses the roll will make.
+        let my_odds = self.marks.at_distance(&self.loadout, me, them, -my_seems.accuracy);
+        let their_odds = self.marks.at_distance(&self.loadout, them, me, -their_seems.accuracy);
+        // Each side as it would fight once in reach, so a monster across the
+        // room still says what it would take rather than "never"; only a side
+        // with no attack at all reads never. The chance to hit stays what it
+        // is from here, which is why it is shown only while something
+        // reaches.
+        let asker = Combatant::closing(mine, self.loadout.armor(me) - my_seems.armor, self.speeds.of(me), &my_resists, &my_arms, apart)
+            .hitting(my_odds.as_ref().map_or(100, Odds::percent));
+        let other = Combatant::closing(theirs, self.loadout.armor(them) - their_seems.armor, self.speeds.of(them), &their_resists, &their_arms, apart)
+            .hitting(their_odds.as_ref().map_or(100, Odds::percent));
+        let stages: Vec<&dyn rl_rules::DamageStage<Entity>> = self.stages.0.iter().map(|s| s.as_ref() as &dyn rl_rules::DamageStage<Entity>).collect();
+        let forecast = duel(&asker, &other, &self.registries.damage_kinds, &stages);
+        (forecast, my_odds, !(my_seems.is_true() && their_seems.is_true()))
+    }
+}
+
+/// The rolls one blow or shot lands as they seem: `unseen` off the first,
+/// the blow or the shot itself, and any extra strikes as they are.
+fn seeming(mut rolls: Vec<(rl_rules::damage::DamageKindId, rl_core::DiceRoll)>, unseen: i32) -> Vec<(rl_rules::damage::DamageKindId, rl_core::DiceRoll)> {
+    if let Some((_, dice)) = rolls.first_mut() {
+        dice.bonus -= unseen;
+    }
+    rolls
 }
 
 /// What a side of a duel is made of, apart from what its [`Loadout`] says
@@ -241,6 +295,7 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
     view.subject = None;
     view.duel = None;
     view.odds = None;
+    view.seeming = false;
     view.facets.clear();
     view.seems.clear();
     view.ground.clear();
@@ -295,35 +350,12 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
         return;
     }
     let Some((subject, _)) = theirs else { return };
-    let (my_health, their_health) = (mine, subject);
-    let (my_resists, their_resists) = (duelists.loadout.resistances(me), duelists.loadout.resistances(entity));
-    let (Some(my_health), Some(their_health)) = (my_health, their_health) else { return };
-    // Both of what each side can do, and the gap between them; the
-    // forecast picks the melee rolls or the shot from that, by the rule
-    // `resolve_attacks` uses, so a droid that only shoots is forecast as
-    // dangerous across the room and harmless once you are on top of it.
-    // The cost goes with whichever it picked, the same charge the resolver
-    // would spend the turn on.
-    let (my_blows, my_shots) = (duelists.loadout.blows(me), duelists.loadout.shots(me));
-    let (their_blows, their_shots) = (duelists.loadout.blows(entity), duelists.loadout.shots(entity));
-    let my_arms = duelists.loadout.arms(me, &my_blows, &my_shots);
-    let their_arms = duelists.loadout.arms(entity, &their_blows, &their_shots);
+    let (Some(my_health), Some(their_health)) = (mine, subject) else { return };
     let apart = geometry::chebyshev(origin.0, pos.0);
-    // Each side's chance of landing what it would attack with from here,
-    // so the forecast counts the misses the roll will make.
-    let mine = duelists.marks.at_distance(&duelists.loadout, me, entity);
-    let theirs = duelists.marks.at_distance(&duelists.loadout, entity, me);
-    // Each side as it would fight once in reach, so a monster across the
-    // room still says what it would take rather than "never"; only a side
-    // with no attack at all reads never. The chance to hit stays what it is
-    // from here, which is why it is shown only while something reaches.
-    let asker = Combatant::closing(my_health.current, duelists.loadout.armor(me), duelists.speeds.of(me), &my_resists, &my_arms, apart)
-        .hitting(mine.as_ref().map_or(100, Odds::percent));
-    let other = Combatant::closing(their_health.current, duelists.loadout.armor(entity), duelists.speeds.of(entity), &their_resists, &their_arms, apart)
-        .hitting(theirs.as_ref().map_or(100, Odds::percent));
-    view.odds = mine;
-    let stages: Vec<&dyn rl_rules::DamageStage<Entity>> = duelists.stages.0.iter().map(|s| s.as_ref() as &dyn rl_rules::DamageStage<Entity>).collect();
-    view.duel = Some(duel(&asker, &other, &duelists.registries.damage_kinds, &stages));
+    let (forecast, odds, seeming) = duelists.forecast(me, entity, apart, my_health.current, their_health.current);
+    view.odds = odds;
+    view.duel = Some(forecast);
+    view.seeming = seeming;
 }
 
 /// Whether the subject is something the player is at odds with, for a
@@ -645,6 +677,34 @@ mod tests {
         assert_eq!(duel.turns_to_fell, Some(3), "10 health at 3.5 a blow is three blows");
         assert_eq!(duel.turns_to_fall, Some(12), "30 health at 2.5 a blow is twelve");
         assert_eq!(duel.outlook, Outlook::Easy);
+    }
+
+    /// The fight forecast with each side as its `Seems` says it seems: a
+    /// player whose blow seems two less, against a weakling whose three
+    /// armor does not seem to be there, is forecast exactly as a player
+    /// whose blow is two less against a weakling with none, and the view
+    /// says it is seeming; with no seems it is the true fight.
+    #[test]
+    fn the_forecast_counts_each_side_as_its_seems_says_and_says_so() {
+        let forecast = |blow: i32, armor: i32, seems: bool| {
+            let mut stage = stage();
+            let weakling = stage.actor("a weakling", 'w', 1, 0);
+            stage.app.world_mut().get_mut::<MeleeAttack>(stage.player).unwrap().dice.bonus = blow;
+            stage.app.world_mut().entity_mut(weakling).insert(Armor(armor));
+            if seems {
+                stage.app.world_mut().entity_mut(stage.player).insert(Seems { blow, ..Default::default() });
+                stage.app.world_mut().entity_mut(weakling).insert(Seems { armor, ..Default::default() });
+            }
+            stage.tick();
+            stage.press(CursorKeys::default().look);
+            let view = stage.app.world().resource::<InspectView>();
+            (view.duel.expect("a duel"), view.seeming)
+        };
+        let (seemed, said) = forecast(2, 3, true);
+        assert_eq!((seemed, said), (forecast(0, 0, false).0, true), "as it seems, and saying so");
+        let (truly, said) = forecast(2, 3, false);
+        assert!(!said, "nothing taken off, nothing said");
+        assert_ne!(truly, seemed, "the true fight is another one");
     }
 
     /// The forecast's blow count comes from armor and dice alone, but a

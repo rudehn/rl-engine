@@ -194,15 +194,19 @@ pub struct TargetView {
     /// with no penalty, and how far it reaches at all. `None` with no aim.
     pub span: Option<AimRange>,
     /// The chance of landing on whoever the aim would strike, and what
-    /// shaped it, from the same call the resolver rolls by. `None` when
+    /// shaped it, from the same call the resolver rolls by, at the accuracy
+    /// the user's [`Seems`](crate::view::Seems) takes off. `None` when
     /// nobody would be struck, the game's model does not roll, or the aim
     /// is an ability, which is never rolled.
     pub odds: Option<rl_rules::Odds>,
+    /// Whether `odds` is worked out at the accuracy the user seems to have
+    /// rather than the one it has, for a game that says why in its own
+    /// words.
+    pub seeming: bool,
     /// What the game added about the aim, in
     /// [`ViewSet::Annotate`](crate::ViewSet), which the box prints under
-    /// the chance to hit: a game that writes `odds` again with an unknown
-    /// thing counted as it seems says so here, as it does under the look
-    /// cursor's forecast.
+    /// the chance to hit: a game whose chance is `seeming` says why here,
+    /// as it does under the look cursor's forecast.
     pub facets: Vec<crate::facet::Facet>,
 }
 
@@ -586,6 +590,7 @@ fn forget(view: &mut TargetView) {
     view.why.clear();
     view.span = None;
     view.odds = None;
+    view.seeming = false;
     view.facets.clear();
 }
 
@@ -624,6 +629,8 @@ pub struct Reach<'w, 's> {
     triggers: Query<'w, 's, &'static Triggers>,
     /// What is not yet known, whose reach the box leaves out.
     unknown: Query<'w, 's, (), With<Unknown>>,
+    /// The accuracy the user seems to have, where a game says.
+    seems: Query<'w, 's, &'static crate::view::Seems>,
 }
 
 impl Reach<'_, '_> {
@@ -666,6 +673,7 @@ pub fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, reach: 
     view.legal = false;
     view.span = None;
     view.odds = None;
+    view.seeming = false;
     view.facets.clear();
     view.unknown = false;
     let Some(user) = view.user else { return };
@@ -695,9 +703,11 @@ pub fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, reach: 
         }
         let legal = view.why.is_empty();
         view.legal = legal;
-        // Point blank is struck as a blow, so its odds are the blow's.
-        let attempt = if point_blank { Attempt::Blow } else { Attempt::Shot(&gun) };
-        view.odds = target.filter(|_| legal).and_then(|who| reach.marks.odds(user, who, attempt));
+        // Point blank is struck as a blow, so its odds are the blow's, at
+        // the accuracy the user seems to have.
+        let shift = -reach.seems.get(user).map_or(0, |s| s.accuracy);
+        view.odds = target.filter(|_| legal).and_then(|who| reach.marks.fire_odds(user, who, view.cursor, &gun, shift));
+        view.seeming = shift != 0 && view.odds.is_some();
         view.targets.extend(target.filter(|_| legal).and_then(|who| reach.row(user, from, who)));
         view.cells = flies.landing.into_iter().collect();
         view.beyond = beyond(flies.landing.unwrap_or(from), view.cursor);
@@ -725,7 +735,9 @@ pub fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, reach: 
         // Whether a throw is rolled at all, only a thing that strikes being
         // rolled, and how far it flies without penalty are the thing's, so
         // one not yet known gives no chance, as its bag row gives no strike.
-        view.odds = struck.filter(|_| !view.unknown).and_then(|who| reach.marks.odds(user, who, Attempt::Throw(throwable)));
+        let shift = -reach.seems.get(user).map_or(0, |s| s.accuracy);
+        view.odds = struck.filter(|_| !view.unknown).and_then(|who| reach.marks.odds(user, who, Attempt::Throw(throwable), shift));
+        view.seeming = shift != 0 && view.odds.is_some();
         // It lands on whoever it strikes, or wherever it comes to rest.
         let lands = match (thrown.struck, thrown.path.last()) {
             (Some(_), Some(end)) => *end,
@@ -897,6 +909,7 @@ mod tests {
     use super::harness::{abilities, arm};
     use super::*;
     use crate::harness::Stage;
+    use crate::view::Seems;
     use rl_bevy::AddEngineEffects;
 
     fn staged() -> Stage {
@@ -1261,6 +1274,40 @@ mod tests {
         let view = stage.app.world().resource::<TargetView>();
         assert_eq!(view.span, Some(AimRange { distance: 5, effective: 3, max: 12 }));
         assert_eq!(view.odds.as_ref().map(rl_rules::Odds::percent), Some(90));
+    }
+
+    /// The chance of a shot at the accuracy the shooter seems to have: with
+    /// an accuracy stat named, a `Seems` taking ten off reads ten less and
+    /// says it is seeming; with none it is the true chance.
+    #[test]
+    fn a_shot_is_reckoned_at_the_accuracy_the_shooters_seems_leaves_and_says_so() {
+        let aimed = |seems: Option<Seems>| {
+            let mut stage = Stage::new_with(TargetViewPlugin, |app| {
+                percent(app);
+                let stats = rl_rules::Registry::from_defs(vec![rl_rules::StatDef::new("accuracy", 100)]).expect("one stat");
+                let stat = stats.expect("accuracy");
+                app.world_mut().resource_mut::<Registries>().stats = stats;
+                app.world_mut().resource_mut::<rl_bevy::CombatRules>().accuracy = Some(stat);
+            });
+            let (user, kind) = (stage.player, stage.kind);
+            stage
+                .app
+                .world_mut()
+                .entity_mut(user)
+                .insert((RangedAttack::new(kind, rl_core::DiceRoll::flat(2), 12).effective_to(3), StatBlock(rl_rules::Stats::new())));
+            if let Some(seems) = seems {
+                stage.app.world_mut().entity_mut(user).insert(seems);
+            }
+            stage.actor("droid", 'd', 3, 0);
+            stage.tick();
+            stage.app.world_mut().write_message(AimFire { user });
+            stage.tick();
+            let view = stage.app.world().resource::<TargetView>();
+            (view.odds.as_ref().map(rl_rules::Odds::percent), view.seeming)
+        };
+        assert_eq!(aimed(None), (Some(100), false), "the true chance");
+        assert_eq!(aimed(Some(Seems { accuracy: 10, ..Default::default() })), (Some(90), true), "ten less, as it seems");
+        assert_eq!(aimed(Some(Seems::default())), (Some(100), false), "nothing taken off, nothing said");
     }
 
     #[test]

@@ -7,13 +7,13 @@
 //! leather being armor 1, which tells the `+2` on the first turn and makes
 //! the [`FAMILIAR_AFTER`] turns of wear that
 //! would teach it mean nothing. What a thing not yet known seems to be is
-//! Undermere's to say, so in `ViewSet::Annotate` it counts every worn or
-//! wielded thing not yet known at its kind's plain numbers, the level of
-//! nought any thing of its kind is: the vitals' armor, which keeps its
+//! Undermere's to say, so [`keep_seems`] keeps on every wearer the engine's
+//! [`Seems`]: what each worn or wielded thing not yet known adds past its
+//! kind's plain numbers, the level of nought any thing of its kind is. The
+//! engine's collectors take that off the vitals' armor, which keeps its
 //! mark, the look cursor's forecast of a fight and its chance to hit, and
-//! the targeting box's chance to hit, each worked out again through the
-//! calls the engine's collector makes and said to count unknown gear
-//! plain.
+//! the targeting box's chance to hit, and say they did; Undermere says, in
+//! its own words, that unknown gear is counted plain.
 //!
 //! Only what a level changes is taken back: the armor a level adds to a
 //! piece of armor, and what a short wearer pays for it, the damage a level
@@ -34,12 +34,7 @@
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
-use rl_engine::rl_bevy::{Attempt, band_at};
-use rl_engine::rl_core::{DiceRoll, Point, geometry};
-use rl_engine::rl_rules::accuracy::{Delivery, Odds, Shot};
-use rl_engine::rl_rules::damage::DamageKindId;
-use rl_engine::rl_rules::forecast::{Combatant, Duel, duel};
-use rl_engine::rl_rules::{DamageStage, StatId};
+use rl_engine::rl_core::DiceRoll;
 
 use rl_engine::rl_rules::stats::Op;
 use rl_engine::rl_ui::panel::sheet::plain_op;
@@ -51,35 +46,11 @@ use crate::lore::{CurseShown, FAMILIAR_AFTER, Lore, Unfamiliar};
 use crate::run::Adventurer;
 use crate::strength::{armor_cost, short_of};
 
-/// What the things someone wears and the adventurer does not know yet add
-/// past their kind's plain numbers, which is what a figure counting them
-/// as known takes back off.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Unseen {
-    /// Armor, less what more a wearer short of strength pays for it.
-    pub armor: i32,
-    /// The bonus a level puts on the blow struck with an unknown thing.
-    pub blow: i32,
-    /// The bonus a level puts on the shot fired with one.
-    pub shot: i32,
-    /// The accuracy every unknown weapon worn lends at its level.
-    pub accuracy: i32,
-}
-
-/// The rolls one blow or shot lands, with `less` off the first, the blow
-/// or the shot itself, and any extra strikes as they are.
-fn less_off(mut rolls: Vec<(DamageKindId, DiceRoll)>, less: i32) -> Vec<(DamageKindId, DiceRoll)> {
-    if let Some((_, dice)) = rolls.first_mut() {
-        dice.bonus -= less;
-    }
-    rolls
-}
-
 /// A thing not yet known as its plain numbers are worked out from: its
 /// kind, its level and the armor it truly gives.
 type Unknowable = (&'static ItemKind, Option<&'static ItemLevel>, Option<&'static Armor>);
 
-/// Everything a fight is reckoned from, and what is not known of it.
+/// Everything what someone's worn things seem to be is reckoned from.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Seeming<'w, 's> {
     armory: Res<'w, Armory>,
@@ -92,21 +63,15 @@ pub struct Seeming<'w, 's> {
     stats: Query<'w, 's, &'static StatBlock>,
     /// Who pays for wearing too heavy a thing: only the adventurer.
     adventurers: Query<'w, 's, (), With<Adventurer>>,
-    bodies: Query<'w, 's, (&'static Position, Option<&'static Health>)>,
-    speeds: Speeds<'w, 's>,
-    marks: Marksmanship<'w, 's>,
-    hits: Res<'w, HitRules>,
-    lighting: Option<Res<'w, Lighting>>,
-    rules: Res<'w, CombatRules>,
-    stages: Res<'w, DamageStages>,
 }
 
 impl Seeming<'_, '_> {
     /// What the things `who` wears and the adventurer does not know yet
-    /// add past their kind's plain numbers. Each thing once, however many
-    /// slots it fills; nothing for someone who wears nothing unknown.
-    pub fn unseen(&self, who: Entity) -> Unseen {
-        let mut unseen = Unseen::default();
+    /// add past their kind's plain numbers, as the engine's [`Seems`] takes
+    /// them off. Each thing once, however many slots it fills; nothing for
+    /// someone who wears nothing unknown.
+    pub fn unseen(&self, who: Entity) -> Seems {
+        let mut unseen = Seems::default();
         let Ok(worn) = self.worn.get(who) else { return unseen };
         // Only the adventurer pays for a thing too heavy for them, and pays
         // by the armor the thing gives, so what they seem to pay is what
@@ -154,157 +119,69 @@ impl Seeming<'_, '_> {
             self.unknown.get(item).is_ok_and(|(kind, ..)| !self.lore.knows(&self.armory.defs.get(kind.0).name) || self.armory.level_moves_armor(kind.0, armor))
         })
     }
+}
 
-    /// The odds `attacker` lands what it would attack `target` with from
-    /// where both stand, its accuracy `less` lower, by the rule the engine's
-    /// `Marksmanship::at_distance` picks the attack by: a blow beside, a
-    /// shot while it reaches, and nothing further.
-    fn odds(&self, attacker: Entity, target: Entity, less: i32) -> Option<Odds> {
-        if less == 0 {
-            return self.marks.at_distance(&self.loadout, attacker, target);
-        }
-        let distance = geometry::chebyshev(self.bodies.get(attacker).ok()?.0.0, self.bodies.get(target).ok()?.0.0);
-        if distance <= 1 {
-            self.loadout.melee(attacker)?;
-            return self.odds_of(attacker, target, Attempt::Blow, less);
-        }
-        let gun = self.loadout.ranged(attacker).filter(|g| distance <= g.range)?;
-        self.odds_of(attacker, target, Attempt::Shot(&gun), less)
-    }
-
-    /// The odds of what `user` fires at `target` with the cursor on
-    /// `cursor`, its accuracy `less` lower, as the targeting cursor previews
-    /// a shot: struck as a blow point blank, and as the shot in hand
-    /// further off.
-    pub fn fire_odds(&self, user: Entity, target: Entity, cursor: Point, less: i32) -> Option<Odds> {
-        if geometry::is_adjacent(self.bodies.get(user).ok()?.0.0, cursor) {
-            return self.odds_of(user, target, Attempt::Blow, less);
-        }
-        let gun = self.loadout.ranged(user)?;
-        self.odds_of(user, target, Attempt::Shot(&gun), less)
-    }
-
-    /// The odds `attacker` lands `attempt` on `target` where both stand, its
-    /// accuracy `less` lower: the engine's own `Marksmanship::odds` when
-    /// nothing is to be taken off, and otherwise the same shot put to the
-    /// run's hit model as that call puts it, with that accuracy.
-    pub fn odds_of(&self, attacker: Entity, target: Entity, attempt: Attempt, less: i32) -> Option<Odds> {
-        if less == 0 {
-            return self.marks.odds(attacker, target, attempt);
-        }
-        let (from, to) = (self.bodies.get(attacker).ok()?.0.0, self.bodies.get(target).ok()?.0.0);
-        let (delivery, effective, range) = match attempt {
-            Attempt::Blow => (Delivery::Melee, 0, 1),
-            Attempt::Shot(gun) => (Delivery::Shot, gun.effective_range(), gun.range),
-            Attempt::Throw(thrown) => {
-                thrown.strike?;
-                (Delivery::Thrown, thrown.effective_range(), thrown.range)
-            }
-        };
-        let stat = |who: Entity, pick: Option<StatId>| pick.map(|stat| self.stats.get(who).map_or(0, |s| s.0.value(stat, &self.registries.stats)));
-        let accuracy = stat(attacker, self.rules.accuracy).map(|a| a - less);
-        let light = band_at(self.lighting.as_deref(), to);
-        let shot = Shot { delivery, distance: geometry::chebyshev(from, to), effective, range, light, accuracy, evasion: stat(target, self.rules.evasion) };
-        self.hits.0.odds(&shot)
-    }
-
-    /// The fight between `me` and `them` as the look cursor forecasts it,
-    /// with every worn or wielded thing not yet known on either side at
-    /// its kind's plain numbers, and `me`'s chance to land what it would
-    /// strike with from here; `None` when nothing either side wears is
-    /// unknown, or either is not a body with health.
-    ///
-    /// Each side as `rl_rules::forecast` reads it, built as the engine's
-    /// collector builds it, so a fight with nothing unknown in it reckons
-    /// exactly what the collector did.
-    pub fn forecast(&self, me: Entity, them: Entity) -> Option<(Duel, Option<Odds>)> {
-        let (mine, theirs) = (self.unseen(me), self.unseen(them));
-        if mine == Unseen::default() && theirs == Unseen::default() {
-            return None;
-        }
-        let ((my_at, Some(my_health)), (their_at, Some(their_health))) = (self.bodies.get(me).ok()?, self.bodies.get(them).ok()?) else { return None };
-        let apart = geometry::chebyshev(my_at.0, their_at.0);
-        let (my_blows, my_shots) = (less_off(self.loadout.blows(me), mine.blow), less_off(self.loadout.shots(me), mine.shot));
-        let (their_blows, their_shots) = (less_off(self.loadout.blows(them), theirs.blow), less_off(self.loadout.shots(them), theirs.shot));
-        let (my_arms, their_arms) = (self.loadout.arms(me, &my_blows, &my_shots), self.loadout.arms(them, &their_blows, &their_shots));
-        let (my_resists, their_resists) = (self.loadout.resistances(me), self.loadout.resistances(them));
-        let (my_odds, their_odds) = (self.odds(me, them, mine.accuracy), self.odds(them, me, theirs.accuracy));
-        let asker = Combatant::closing(my_health.current, self.loadout.armor(me) - mine.armor, self.speeds.of(me), &my_resists, &my_arms, apart)
-            .hitting(my_odds.as_ref().map_or(100, Odds::percent));
-        let other = Combatant::closing(their_health.current, self.loadout.armor(them) - theirs.armor, self.speeds.of(them), &their_resists, &their_arms, apart)
-            .hitting(their_odds.as_ref().map_or(100, Odds::percent));
-        let stages: Vec<&dyn DamageStage<Entity>> = self.stages.0.iter().map(|s| s.as_ref() as &dyn DamageStage<Entity>).collect();
-        Some((duel(&asker, &other, &self.registries.damage_kinds, &stages), my_odds))
+/// Keeps on every wearer the [`Seems`] the engine's panels take off its
+/// true numbers: what each worn or wielded thing not yet known adds past
+/// its kind's plain numbers, as [`Seeming::unseen`] reckons it.
+///
+/// Every wearer carries one from the moment it can wear anything, a
+/// component [`Equipped`] requires in this game, so keeping it changes a
+/// value and never what an entity is made of. Written only when it moved,
+/// so nothing reads a change that did not happen.
+///
+/// Before `ViewSet::Collect`, where the collectors read it.
+pub fn keep_seems(mut wearers: Query<(Entity, &mut Seems)>, seeming: Seeming) {
+    for (who, mut seems) in &mut wearers {
+        seems.set_if_neq(seeming.unseen(who));
     }
 }
 
-/// Counts each thing the adventurer wears and does not know yet at its
-/// kind's plain armor in the vitals' figure, which keeps the mark the
-/// engine put on it while something worn could move it: `+2 leather armor`
-/// not yet known reads `armor 1?`, what any leather gives, and `armor 3`
-/// once it is known.
+/// Takes the mark off the vitals' armor, which the engine puts on it
+/// whenever anything worn is not yet known, when nothing worn could move
+/// it, as [`Seeming::armor_unsettled`] says: an unidentified ring of light
+/// leaves `armor 1` plain. The figure itself the engine counts as it
+/// seems, from [`keep_seems`]: `+2 leather armor` not yet known reads
+/// `armor 1?`, what any leather gives, and `armor 3` once it is known.
 ///
-/// The engine marks the figure whenever anything worn is not yet known,
-/// since it cannot tell what a thing it knows nothing of might move; this
-/// takes the mark off when nothing worn could, as
-/// [`Seeming::armor_unsettled`] says, so an unidentified ring of light
-/// leaves `armor 1` plain. A rule of the kind, which the adventurer knows,
-/// and never of the thing: marking by whether the thing gives armor would
-/// tell a cursed leather at nought armor from a plain one, or a ring of a
-/// kind that gives armor from one that gives light, the turn it went on.
+/// A rule of the kind, which the adventurer knows, and never of the thing:
+/// marking by whether the thing gives armor would tell a cursed leather at
+/// nought armor from a plain one, or a ring of a kind that gives armor from
+/// one that gives light, the turn it went on.
 ///
-/// In `ViewSet::Annotate`, over the engine's true total. Absent vitals, as
-/// in a test that draws none, is nothing to correct.
+/// In `ViewSet::Annotate`. Absent vitals, as in a test that draws none, is
+/// nothing to correct.
 pub fn seem_armor(vitals: Option<ResMut<VitalsView>>, seeming: Seeming) {
     let Some(mut vitals) = vitals else { return };
     let Some(me) = vitals.entity.filter(|_| vitals.armor_uncertain) else { return };
     vitals.armor_uncertain = seeming.armor_unsettled(me);
-    let unseen = seeming.unseen(me).armor;
-    if unseen != 0 {
-        vitals.armor = Some(vitals.armor.unwrap_or(0) - unseen);
+}
+
+/// Says under the look cursor's forecast that unknown gear is counted
+/// plain, the forecast's own `?`, when the engine counted either side's
+/// worn things not yet known as they seem.
+///
+/// In `ViewSet::Annotate`. The engine forecasts no fight with an ally or in
+/// Mereholt's peace, so the words never qualify a forecast that is not
+/// there.
+pub fn seem_forecast(view: Option<ResMut<InspectView>>, mut facets: ResMut<Facets>) {
+    let Some(mut view) = view else { return };
+    if view.seeming {
+        view.facets.push(facets.facet("forecast", "unknown gear counted plain").toned(Tones::MUTED));
     }
 }
 
-/// Forecasts the fight the look cursor is over with every worn or wielded
-/// thing not yet known on either side at its kind's plain numbers, as
-/// [`Seeming::forecast`] reckons it, its chance to hit with it, and says
-/// under it that unknown gear is counted plain, the forecast's own `?`.
-///
-/// In `ViewSet::Annotate`, over the engine's forecast, which is left as it
-/// is when nothing in the fight is unknown; and only where the engine
-/// forecast a fight at all, so the words never qualify a forecast that is
-/// not there, an ally's or one in Mereholt's peace.
-pub fn seem_forecast(view: Option<ResMut<InspectView>>, seeming: Seeming, players: Query<Entity, With<Player>>, mut facets: ResMut<Facets>) {
-    let Some(mut view) = view else { return };
-    let (Some(_), Some(them), Ok(me)) = (view.duel, view.subject.as_ref().map(|s| s.entity), players.single()) else { return };
-    let Some((forecast, odds)) = seeming.forecast(me, them) else { return };
-    view.duel = Some(forecast);
-    view.odds = odds;
-    view.facets.push(facets.facet("forecast", "unknown gear counted plain").toned(Tones::MUTED));
-}
-
-/// Writes the targeting box's chance to hit again with every worn thing
-/// not yet known lending only its kind's plain accuracy, as
-/// [`Seeming::odds_of`] reckons it, and says under it that unknown gear is
-/// counted plain, the chance's own `?`: a `+2` bow not yet known no longer
+/// Says under the targeting box's chance to hit that unknown gear is
+/// counted plain, the chance's own `?`, when the engine reckoned it at the
+/// accuracy the aimer seems to have: a `+2` bow not yet known no longer
 /// reads `+10 accuracy`, the level its wearer has not learned.
 ///
-/// A shot or a blow fired, and a throw, whose chance reads the thrower's
-/// accuracy as well. In `ViewSet::Annotate`, over the engine's chance, which
-/// is left as it is when nothing the aimer wears is unknown.
-pub fn seem_aim(view: Option<ResMut<TargetView>>, seeming: Seeming, missiles: Query<&Throwable>, mut facets: ResMut<Facets>) {
+/// In `ViewSet::Annotate`.
+pub fn seem_aim(view: Option<ResMut<TargetView>>, mut facets: ResMut<Facets>) {
     let Some(mut view) = view else { return };
-    let (Some(user), Some(target), true) = (view.user, view.targets.first().map(|r| r.entity), view.odds.is_some()) else { return };
-    let less = seeming.unseen(user).accuracy;
-    if less == 0 {
-        return;
+    if view.seeming {
+        view.facets.push(facets.facet("odds", "unknown gear counted plain").toned(Tones::MUTED));
     }
-    view.odds = match (view.throwing, view.firing) {
-        (Some(item), _) => missiles.get(item).ok().and_then(|thrown| seeming.odds_of(user, target, Attempt::Throw(thrown), less)),
-        (None, true) => seeming.fire_odds(user, target, view.cursor, less),
-        (None, false) => return,
-    };
-    view.facets.push(facets.facet("odds", "unknown gear counted plain").toned(Tones::MUTED));
 }
 
 /// What any thing of a kind is at nought, in the terms the pack prints a
@@ -499,6 +376,8 @@ mod tests {
     use super::*;
     use crate::lore::{FAMILIAR_AFTER, identify};
     use crate::testing::{arena_with, equip, find, pass_turns, settle, still};
+    use rl_engine::rl_rules::accuracy::Odds;
+    use rl_engine::rl_rules::forecast::Duel;
 
     /// The vitals' armor, and whether it is marked unsettled.
     fn vitals(app: &App) -> (Option<i32>, bool) {

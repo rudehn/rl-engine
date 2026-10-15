@@ -248,7 +248,7 @@ mod tests {
         lay_floor(&mut app, &[beside]);
         let rat = monster(&mut app, "rat", beside);
         let chance = |app: &mut App, from: Entity, to: Entity| {
-            app.world_mut().run_system_once(move |marks: Marksmanship| marks.odds(from, to, Attempt::Blow).map(|o| o.percent())).expect("the odds")
+            app.world_mut().run_system_once(move |marks: Marksmanship| marks.odds(from, to, Attempt::Blow, 0).map(|o| o.percent())).expect("the odds")
         };
         assert_eq!((chance(&mut app, me, rat), chance(&mut app, rat, me)), (Some(100), Some(100)), "everyone lands a blow");
         let shield = make(&mut app, "shield");

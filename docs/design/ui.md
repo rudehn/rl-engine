@@ -284,6 +284,10 @@ Five decisions came out differently, and the reasons are worth keeping.
   Every game then cut the same screen, a map, a log under it and a rail of vitals, gear, what is in sight and a hint, from the same half-dozen numbers, so `RailLayout` does that cut and hands back a `RailScreen` of plain rectangles, still kept in the game's own struct and still no resource or plugin.
   `RailScreen::panels` is a group of the panels always on screen in the rail, which a game edits with `set` and `disable`; the targeting box, the controls screen and every screen over the map stay the game's to add, because the order panels with keys are added in is the order the controls screen lists their keys in, and a group that added them would reorder every game's list.
 
+More came later, from what the games built on the panels:
+
+- **A number the player does not know is a `Seems`, not a second collector.** Undermere hid a worn thing's level by working the vitals' armor, the look cursor's forecast and the targeting box's chance out again in `Annotate`, through copies of `Marksmanship` and the forecast's assembly. The engine cannot know what an unknown thing seems to be, but it can take a number off: a `Seems` on an actor says how much more armor, blow, shot and accuracy it truly has than it seems to, the collectors count it as it seems, and each view's `seeming` flag says they did, so the game's words stay a facet. Absent, the numbers are the true ones, so a game without identification pays nothing.
+
 Found on the way, both fixed: `VitalsViewPlugin` asserted on `StatusRules`, which made a game with no statuses insert an empty registry to have a health bar; and the look cursor would settle on the player when nothing else was in sight, so the inspect panel forecast a duel with yourself.
 
 ## 12. Risks
