@@ -51,7 +51,7 @@
 use bevy::prelude::*;
 use rl_core::Direction;
 
-use rl_bevy::{Player, Working, Works};
+use rl_bevy::{Player, Position, Working, Works};
 
 use crate::cursor::{CursorKeys, shifted};
 use crate::game_menu::MenuKeys;
@@ -647,23 +647,65 @@ pub const STOP_ACTION: &str = "stop what you are doing";
 /// screen up stops it too, whoever opened it, since the world never moves
 /// behind a screen the player is reading.
 ///
+/// But a direction key, pressed or held, toward the very thing the work is
+/// on is pressing on with it, not leaving it off: the work goes on and
+/// the key is taken, so it is not read as a walk into the thing, which
+/// would begin the same work over. A player freeing a captive they walked
+/// into keeps walking into it, or holds the key, and without this every
+/// press left the work off and set to it again from its first turn, so a
+/// held key never finished it. Shift with it is another act, a shove or a
+/// run, and leaves the work off as any key does.
+///
 /// Before the input phase, after the held-key repeat has moved on, and
 /// before the particle skipper, which runs the turns at a key: so the
 /// work is off before the frame could spend a turn of it, and the key
 /// lands on the player's own turn. Added by [`UiPlugin`](crate::UiPlugin).
 pub fn stop_work_on_key(
-    input: Res<ButtonInput<KeyCode>>,
-    repeats: Res<Repeats>,
+    mut input: ResMut<ButtonInput<KeyCode>>,
+    mut repeats: ResMut<Repeats>,
+    directions: Res<DirectionKeys>,
     modals: Res<Modals>,
-    workers: Query<Entity, (With<Player>, With<Working>)>,
+    workers: Query<(Entity, &Working, &Position), With<Player>>,
+    positions: Query<&Position>,
     mut works: Works,
 ) {
     if !any_key(&input) && repeats.firing_any().is_none() && !modals.any_open() {
         return;
     }
-    for worker in &workers {
+    for (worker, working, at) in &workers {
+        let target = working.0.target.and_then(|t| positions.get(t).ok()).map(|p| p.0);
+        if !modals.any_open()
+            && let Some((toward, keys)) = pressing_toward(&input, &repeats, &directions)
+            && target == Some(at.0 + toward.offset())
+        {
+            for key in keys {
+                input.clear_just_pressed(key);
+            }
+            repeats.swallow();
+            continue;
+        }
         works.leave_off(worker);
     }
+}
+
+/// The one direction every key down this frame asks for, without Shift,
+/// and the keys that went down for it: a direction key pressed, or the
+/// held one repeating. `None` when any other key went down beside it, so a
+/// direction and a letter together are not read as a direction alone.
+fn pressing_toward(input: &ButtonInput<KeyCode>, repeats: &Repeats, directions: &DirectionKeys) -> Option<(Direction, Vec<KeyCode>)> {
+    if shifted(input) {
+        return None;
+    }
+    let pressed: Vec<KeyCode> = input.get_just_pressed().filter(|key| !MODIFIERS.contains(key)).copied().collect();
+    let mut toward = repeats.firing(false).filter(|_| pressed.is_empty());
+    for key in &pressed {
+        let dir = directions.0.iter().find(|(k, _)| k == key).map(|(_, d)| *d)?;
+        if toward.is_some_and(|t| t != dir) {
+            return None;
+        }
+        toward = Some(dir);
+    }
+    toward.map(|t| (t, pressed))
 }
 
 /// Declaring controls while the app is built.
@@ -841,6 +883,13 @@ impl Repeats {
     pub fn firing_any(&self) -> Option<(Direction, bool)> {
         self.firing
     }
+
+    /// Takes this frame's repeat, so nothing reads it as a press: what a
+    /// held key spent on something else comes to, as a direction pressing
+    /// on with the player's work is.
+    pub fn swallow(&mut self) {
+        self.firing = None;
+    }
 }
 
 /// Moves [`Repeats`] on by this frame. Runs before any input is read.
@@ -942,6 +991,73 @@ mod stop_tests {
         assert_eq!(stage.app.world().resource::<Broken>().0[0].done, 2, "and no turn more of it");
         assert_eq!(stage.app.world().resource::<Turns>().now(), clock, "nor any turn at all");
         assert_eq!(stage.app.world().resource::<SawQ>().0, 1, "and the game still read the key");
+    }
+
+    /// Frames the game's own input phase saw the east key in.
+    #[derive(Resource, Default)]
+    struct SawEast(u32);
+
+    fn see_east(input: Res<ButtonInput<KeyCode>>, mut saw: ResMut<SawEast>) {
+        if input.just_pressed(KeyCode::ArrowRight) {
+            saw.0 += 1;
+        }
+    }
+
+    /// A direction key pressed toward the very thing the player works at
+    /// presses on with the work: it is not left off, a turn of it goes on
+    /// being spent each frame, and the key is not read as a step into the
+    /// thing; a direction away from it, or toward it with Shift, leaves it
+    /// off as any key does.
+    #[test]
+    fn a_direction_key_toward_the_work_in_hand_presses_on_with_it_and_is_not_read_as_a_step() {
+        let toward = |shift: bool, key: KeyCode| {
+            let mut stage = Stage::new(());
+            stage.app.add_work("mending").insert_resource(WorkPace::every_frame());
+            stage.app.init_resource::<Broken>().add_systems(Update, record.after(rl_bevy::EngineSet::Turns));
+            stage.app.init_resource::<SawEast>().add_systems(Update, see_east.in_set(rl_bevy::EngineSet::Input));
+            let anvil = stage.actor("anvil", 'a', 1, 0);
+            let kind = stage.app.world().resource::<WorkKinds>().get("mending").unwrap();
+            stage.app.world_mut().write_message(Intent::new(stage.player, BeginWork(Work::new(kind, 10).on(anvil))));
+            stage.app.update();
+            if shift {
+                stage.app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(KeyCode::ShiftLeft);
+            }
+            rl_bevy::testing::press(&mut stage.app, key);
+            stage
+        };
+        let stage = toward(false, KeyCode::ArrowRight);
+        assert!(reasons(&stage).is_empty(), "pressing on, not leaving off");
+        assert_eq!(stage.app.world().get::<Working>(stage.player).map(|w| w.0.done), Some(3), "a turn a frame, the key's frame among them");
+        assert_eq!(stage.app.world().resource::<SawEast>().0, 0, "and the key is not read as a step into it");
+        assert_eq!(reasons(&toward(false, KeyCode::ArrowLeft)), vec![BreakReason::LeftOff], "a step away leaves it off");
+        assert_eq!(reasons(&toward(true, KeyCode::ArrowRight)), vec![BreakReason::LeftOff], "and so does Shift toward it");
+    }
+
+    /// A held direction key repeating toward the thing the player works at
+    /// presses on with the work just as a press does, and its repeat is
+    /// taken, so nothing reads it as a press; one repeating away from it
+    /// leaves the work off.
+    #[test]
+    fn a_held_direction_repeating_toward_the_work_in_hand_presses_on_with_it() {
+        use bevy::ecs::system::RunSystemOnce;
+        let holding = |dir: Direction| {
+            let mut stage = Stage::new(());
+            stage.app.add_work("mending").insert_resource(WorkPace::every_frame());
+            let anvil = stage.actor("anvil", 'a', 1, 0);
+            let kind = stage.app.world().resource::<WorkKinds>().get("mending").unwrap();
+            stage.app.world_mut().write_message(Intent::new(stage.player, BeginWork(Work::new(kind, 10).on(anvil))));
+            stage.app.update();
+            let mut repeats = Repeats::default();
+            repeats.advance(Some((dir, false)), false, &RepeatPace { delay: 0.0, every: 0.0 }, 1.0);
+            assert_eq!(repeats.firing_any(), Some((dir, false)), "the hold repeats this frame");
+            stage.app.insert_resource(repeats);
+            stage.app.world_mut().run_system_once(stop_work_on_key).expect("runs");
+            stage.app.world_mut().flush();
+            let working = stage.app.world().get::<Working>(stage.player).is_some();
+            (working, stage.app.world().resource::<Repeats>().firing_any())
+        };
+        assert_eq!(holding(Direction::East), (true, None), "pressing on toward it, the repeat taken");
+        assert!(!holding(Direction::West).0, "a hold away from it leaves it off");
     }
 
     #[test]

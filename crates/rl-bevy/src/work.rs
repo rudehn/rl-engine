@@ -23,10 +23,11 @@
 //! so they pass without a key and slowly enough to be watched. Spending
 //! one of them on anything else leaves the work off, as
 //! [`BreakReason::LeftOff`]; so does a key, which is `rl-ui`'s to read
-//! and which it answers with [`Works::leave_off`]. A foe coming into the
-//! player's sight breaks it as [`BreakReason::FoeSighted`] before another
-//! turn of it is spent, and [`PlayerAtWork`] keeps who was already in
-//! sight.
+//! and which it answers with [`Works::leave_off`], all but a direction
+//! key toward the work's own target, which presses on with it. A foe
+//! coming into the player's sight breaks it as [`BreakReason::FoeSighted`]
+//! before another turn of it is spent, and [`PlayerAtWork`] keeps who was
+//! already in sight.
 //!
 //! Part of [`CorePlugin`](crate::plugin::CorePlugin): what work a game has
 //! is the kinds it declares, and a game that declares none has no work to

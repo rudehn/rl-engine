@@ -1847,4 +1847,36 @@ mod tests {
             assert!(screen.iter().any(|r| inside(r) == choice), "every choice under them, {choice:?} too: {screen:#?}");
         }
     }
+
+    /// A player who keeps pressing the direction key into the captive they
+    /// are freeing presses on with the freeing, played through the real
+    /// keys and the screen's own systems: the captive comes free in its
+    /// three turns, and the log says the work was set to once and never
+    /// left off, where every press used to leave it off and set to it again
+    /// from its first turn, so a held key never freed anyone.
+    #[test]
+    fn pressing_on_into_a_captive_being_freed_frees_it_rather_than_starting_over() {
+        use undermere::testing as t;
+        for s in 0..3 {
+            let mut app = on_screen(RunSeed(s));
+            let me = t::arrive(&mut app, undermere::dungeon::map_of(2));
+            t::sturdy(&mut app, me);
+            t::clear_monsters(&mut app);
+            let here = t::at(&app, me);
+            let at = here.offset(1, 0);
+            t::lay_floor(&mut app, &[here, at]);
+            let captive = t::monster(&mut app, "rat", at);
+            let shackles = undermere::captives::shackled(app.world().resource::<Registries>(), app.world().resource::<Verbs>(), at);
+            app.world_mut().entity_mut(captive).insert(shackles);
+            t::settle(&mut app);
+            for _ in 0..4 {
+                press(&mut app, KeyCode::ArrowRight);
+            }
+            let said = t::said(&app);
+            assert_eq!(undermere::captives::held_at(app.world(), captive), None, "seed {s}: freed: {said:#?}");
+            assert_eq!(app.world().get::<Leader>(captive).map(|l| l.0), Some(me), "seed {s}: and following");
+            assert_eq!(said.iter().filter(|l| l.contains("set to work on the shackles")).count(), 1, "seed {s}: set to once: {said:#?}");
+            assert!(!said.iter().any(|l| l.contains("still bound")), "seed {s}: never left off: {said:#?}");
+        }
+    }
 }

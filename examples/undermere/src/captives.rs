@@ -8,7 +8,9 @@
 //! of the kind [`FREEING`], [`FREE_TURNS`] turns long, the offer's own turn
 //! the first. The engine spends the rest for them and breaks it off as it
 //! breaks off any of the player's work: a blow that lands, a foe coming
-//! into sight, a key pressed or a turn spent on anything else. Broken off,
+//! into sight, a key pressed or a turn spent on anything else, though a
+//! walk into the captive again, pressed or held, presses on with the work
+//! rather than leaving it off and beginning it over. Broken off,
 //! the captive is still bound and [`answer_freeing`] says so; done, it
 //! calls [`free`], which does what freeing means: put the captive on the
 //! adventurer's own side, wire it to follow the adventurer specifically
