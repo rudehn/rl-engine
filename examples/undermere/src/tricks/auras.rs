@@ -63,10 +63,10 @@ const SING_RANGE: i32 = 4;
 /// read off remains sang over its own corpse for good.
 type Singing = (With<Choir>, With<Actor>);
 
-/// A body a choir might sing to: where it stands, its side, what it
-/// suffers and its stats, which the song's regeneration is kept in, and
-/// whether the song already gave it its regeneration.
-type SingingTo = (Entity, &'static Position, &'static Faction, &'static mut Afflicted, &'static mut StatBlock, Has<Sung>);
+/// A body a choir might sing to: where it stands and on which map, its
+/// side, what it suffers and its stats, which the song's regeneration is
+/// kept in, and whether the song already gave it its regeneration.
+type SingingTo = (Entity, &'static Position, Option<&'static OnMap>, &'static Faction, &'static mut Afflicted, &'static mut StatBlock, Has<Sung>);
 
 /// Keeps `regenerating` on every actor of a [`Choir`]'s own side within
 /// `SING_RANGE` of it, and takes it off the turn it falls out of range:
@@ -80,6 +80,10 @@ type SingingTo = (Entity, &'static Position, &'static Faction, &'static mut Affl
 /// gave is taken back, marked [`Sung`]: a body already regenerating by its
 /// own trait or a worn ring keeps it, in range or out.
 ///
+/// Range is counted on the choir's own map only: every floor numbers its
+/// cells from the same origin, so a choir frozen on one floor was once
+/// heard by its side standing at the same coordinates on another.
+///
 /// Put on and taken off the body's own statuses rather than through
 /// `Afflict` and `Cure`, which the narrator says aloud: the song is a
 /// trait of the Choirmaster's, known on sight, as a troll's own
@@ -91,12 +95,14 @@ type SingingTo = (Entity, &'static Position, &'static Faction, &'static mut Affl
 pub fn sing_choir(
     mut commands: Commands,
     registries: Res<Registries>,
-    choir: Query<(&Position, &Faction), Singing>,
+    choir: Query<(&Position, Option<&OnMap>, &Faction), Singing>,
     mut bodies: Query<SingingTo, With<Actor>>,
 ) {
     let Some(status) = registries.statuses.id("regenerating") else { return };
-    for (e, pos, side, mut held, mut stats, sung) in &mut bodies {
-        let sung_to = choir.iter().any(|(at, theirs)| theirs.0 == side.0 && geometry::chebyshev(at.0, pos.0) <= SING_RANGE);
+    let map_of = |on: Option<&OnMap>| on.map_or(MapId::SURFACE, |m| m.0);
+    for (e, pos, on, side, mut held, mut stats, sung) in &mut bodies {
+        let sung_to =
+            choir.iter().any(|(at, singer_on, theirs)| theirs.0 == side.0 && map_of(singer_on) == map_of(on) && geometry::chebyshev(at.0, pos.0) <= SING_RANGE);
         if sung_to && !sung && !held.0.has(status) {
             held.0.apply(status, crate::bestiary::FOR_LIFE, None, &registries.statuses, &mut stats.0);
             commands.entity(e).insert(Sung);
@@ -171,6 +177,28 @@ mod tests {
         app.world_mut().entity_mut(near).insert(Position(Point::new(10, 0)));
         app.update();
         assert!(!app.world().get::<Afflicted>(near).unwrap().0.has(regenerating), "stepped past the range, the choir's own gift is lifted");
+    }
+
+    /// A choir sings only to its own floor: a body of its side standing
+    /// at the same coordinates one floor down hears nothing, and one on
+    /// the choir's floor at the same distance does.
+    #[test]
+    fn a_choir_sings_only_to_its_own_side_on_its_own_floor() {
+        let mut app = App::new();
+        app.add_message::<Afflict>().add_message::<Cure>().add_message::<rl_engine::rl_bevy::status::StatusEvent>();
+        let registries = crate::content::registries();
+        let undead = registries.factions.expect("undead");
+        app.insert_resource(registries);
+        app.add_systems(Update, (sing_choir, resolve_afflictions).chain());
+        let (here, below) = (MapId(1), MapId(2));
+        app.world_mut().spawn((Actor, Position(Point::ZERO), OnMap(here), Faction(undead), Choir));
+        let body = |at: MapId| (Actor, Position(Point::new(2, 0)), OnMap(at), Faction(undead), Afflicted(Statuses::new()), StatBlock(Stats::new()));
+        let beside = app.world_mut().spawn(body(here)).id();
+        let downstairs = app.world_mut().spawn(body(below)).id();
+        app.update();
+        let regenerating = app.world().resource::<Registries>().statuses.expect("regenerating");
+        assert!(app.world().get::<Afflicted>(beside).unwrap().0.has(regenerating), "on the choir's floor, it regenerates");
+        assert!(!app.world().get::<Afflicted>(downstairs).unwrap().0.has(regenerating), "a floor away, the song is not heard");
     }
 
     /// The song ends with the singer: a skeleton beside the Choirmaster
