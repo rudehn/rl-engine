@@ -32,10 +32,10 @@ impl<A: Copy> Tactic<A> for MeleeAdjacent {
 /// [`Sense`](crate::ai::Sense): stairs, a hatch, a cave mouth, each by its
 /// cell.
 ///
-/// The engine's `sense_ways` pushes it for a mind with [`Wits::TRAVELS`]
-/// and nobody else, so a tactic that reads it never has to ask whether
-/// the mind may take one; a game running minds without `rl-bevy` pushes
-/// it itself.
+/// The engine's `sense_ways` pushes it for a mind with
+/// [`Wits::FLEES_THROUGH`] and nobody else, so a tactic that reads it never
+/// has to ask whether the mind may take one; a game running minds without
+/// `rl-bevy` pushes it itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ways(pub Vec<Point>);
 
@@ -43,7 +43,7 @@ pub struct Ways(pub Vec<Point>);
 /// enemy in sight, or straight away from the nearest if there is none.
 ///
 /// A mind that sees a way to another map, which is one with
-/// [`Wits::TRAVELS`], runs for it when it would get there before any
+/// [`Wits::FLEES_THROUGH`], runs for it when it would get there before any
 /// enemy does, and goes through once it stands on it: out of the fight
 /// for good rather than round the next corner.
 ///
@@ -473,6 +473,75 @@ fn squeezes(can_step: &dyn Fn(Point) -> bool, fields: &dyn Fields, from: Point, 
 /// and no diagonal goes past.
 fn steps_to<A: Copy>(ctx: &TacticCtx<'_, A>, from: Point, to: Point) -> bool {
     (ctx.can_step)(to) && !squeezes(ctx.can_step, &*ctx.fields, from, to)
+}
+
+/// The tactic it wraps, except a step that would leave the mind more than
+/// `reach` from the one it follows: then it leaves the turn to the tactics
+/// after it.
+///
+/// What keeps a follower's hunt, or its fetching, at its leader's side.
+/// [`Keep::leader`] above it only closes a gap already open, so without
+/// this a hunt would step out past the leash, be called back, and step out
+/// again for as long as the foe stood there; with it, a foe beyond the
+/// leash is left alone. With no [`Led`] sense, its leader gone from the
+/// map or never had, it lets every step through, since there is nobody to
+/// keep within reach of. How far is the game's: the engine has no leash
+/// of its own.
+#[derive(Debug, Clone, Copy)]
+pub struct Leashed<T> {
+    /// The tactic held in.
+    pub inner: T,
+    /// The furthest from the leader, as the crow flies, a step may take
+    /// the mind.
+    pub reach: i32,
+}
+
+impl<A: Copy, T: Tactic<A>> Tactic<A> for Leashed<T> {
+    fn name(&self) -> &'static str {
+        self.inner.name()
+    }
+
+    fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
+        let decision = self.inner.evaluate(ctx)?;
+        if let (Decision::Step(to), Some(led)) = (&decision, ctx.snapshot.sense::<Led>())
+            && geometry::chebyshev(*to, led.at) > self.reach
+        {
+            return None;
+        }
+        Some(decision)
+    }
+
+    fn keeps_with(&self) -> Option<Station> {
+        self.inner.keeps_with()
+    }
+}
+
+/// The tactic it wraps, only while the one the mind follows is out of its
+/// sight; and nothing for a mind that follows nobody.
+///
+/// What keeps a follower from losing its leader round a corner: a
+/// [`Keep::leader`] that rests a few cells off is wrapped close, a step,
+/// and set after it, so in the open the follower keeps its distance and
+/// round a corner, where the leader's next move is one it cannot see
+/// coming, it closes up.
+#[derive(Debug, Clone, Copy)]
+pub struct OutOfSight<T>(pub T);
+
+impl<A: Copy, T: Tactic<A>> Tactic<A> for OutOfSight<T> {
+    fn name(&self) -> &'static str {
+        self.0.name()
+    }
+
+    fn evaluate(&self, ctx: &mut TacticCtx<'_, A>) -> Option<Decision<A>> {
+        if ctx.snapshot.sense::<Led>()?.in_sight {
+            return None;
+        }
+        self.0.evaluate(ctx)
+    }
+
+    fn keeps_with(&self) -> Option<Station> {
+        self.0.keeps_with()
+    }
 }
 
 /// Hold still while there is something to keep an eye on: an enemy in
@@ -2123,6 +2192,72 @@ mod tests {
             rng: &mut rng,
         };
         keep.evaluate(&mut ctx)
+    }
+
+    /// A tactic that always steps to one cell, and says it keeps with its
+    /// enemies, for what a wrapper passes on.
+    struct StepTo(Point);
+
+    impl Tactic<u32> for StepTo {
+        fn name(&self) -> &'static str {
+            "step_to"
+        }
+        fn evaluate(&self, _: &mut TacticCtx<'_, u32>) -> Option<Decision<u32>> {
+            Some(Decision::Step(self.0))
+        }
+        fn keeps_with(&self) -> Option<Station> {
+            Some(Station::Enemies)
+        }
+    }
+
+    /// What `tactic` decides for a mind at the middle of open ground led,
+    /// or not, by `led`.
+    fn led_by(tactic: &dyn Tactic<u32>, led: Option<Led>) -> Option<Decision<u32>> {
+        let (t, r) = open();
+        let view_t = t.view(&r);
+        let can_step = |p: Point| view_t.is_walkable(p);
+        let mut s = Snapshot::alone(view(1, 6, 6, 10));
+        if let Some(led) = led {
+            s.add_sense(led);
+        }
+        let mut fields = Given::over(&view_t);
+        let mut rng = StdRng::seed_from_u64(1);
+        let mut ctx = TacticCtx {
+            snapshot: &s,
+            fields: &mut fields,
+            can_step: &can_step,
+            blocks_shot: &nothing_blocks,
+            blocks_burst: &|_| false,
+            bounds: arena(),
+            rng: &mut rng,
+        };
+        tactic.evaluate(&mut ctx)
+    }
+
+    /// A leash lets through a step that ends within its reach of the leader
+    /// and holds back one that ends past it, passing the turn on; with no
+    /// leader on the map every step goes through. It answers to its inner
+    /// tactic's name and keeps the company it keeps.
+    #[test]
+    fn a_leashed_tactic_steps_only_within_its_reach_of_the_leader_and_anywhere_with_none() {
+        let leashed = Leashed { inner: StepTo(Point::new(7, 6)), reach: 3 };
+        let led = |x: i32| Some(Led { at: Point::new(x, 6), in_sight: true });
+        assert_eq!(led_by(&leashed, led(4)), Some(Decision::Step(Point::new(7, 6))), "three from the leader is within reach");
+        assert_eq!(led_by(&leashed, led(3)), None, "four is past it, and the turn passes on");
+        assert_eq!(led_by(&leashed, None), Some(Decision::Step(Point::new(7, 6))), "with nobody to keep near, anywhere");
+        assert_eq!((Tactic::<u32>::name(&leashed), Tactic::<u32>::keeps_with(&leashed)), ("step_to", Some(Station::Enemies)));
+    }
+
+    /// Out of sight, a wrapped tactic decides only while the leader is out
+    /// of the mind's sight, and never for a mind that follows nobody.
+    #[test]
+    fn an_out_of_sight_tactic_decides_only_while_the_leader_is_unseen() {
+        let behind = OutOfSight(StepTo(Point::new(7, 6)));
+        let led = |in_sight: bool| Some(Led { at: Point::new(9, 6), in_sight });
+        assert_eq!(led_by(&behind, led(true)), None, "in sight, it leaves the turn");
+        assert_eq!(led_by(&behind, led(false)), Some(Decision::Step(Point::new(7, 6))), "out of sight, it decides");
+        assert_eq!(led_by(&behind, None), None, "following nobody, nothing");
+        assert_eq!((Tactic::<u32>::name(&behind), Tactic::<u32>::keeps_with(&behind)), ("step_to", Some(Station::Enemies)));
     }
 
     /// [`Given`], answering the walk as well, as the engine's fields do.

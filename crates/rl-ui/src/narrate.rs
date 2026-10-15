@@ -150,6 +150,14 @@ pub enum Phrase {
     Kills,
     /// Someone died of no one in particular.
     Dies,
+    /// One on the player's side died of no one in particular: [`Dies`](Phrase::Dies)
+    /// for one the game's [`CombatRules`] say is allied to the player,
+    /// which is a loss rather than good news.
+    AllyDies,
+    /// Someone killed one on the player's side.
+    KillsAlly,
+    /// You killed one on your own side.
+    YouKillAlly,
     /// You died.
     YouDie,
     /// You picked something up.
@@ -567,6 +575,12 @@ pub struct Witness<'w, 's> {
     does: Query<'w, 's, &'static rl_bevy::Triggers>,
     /// What things are called while the pass is still running.
     names: Query<'w, 's, (Option<&'static Name>, Option<&'static Stack>, Has<MassNoun>)>,
+    /// Who stands with whom, for a death on the player's side; absent in
+    /// a game without combat, where nobody is anybody's ally.
+    rules: Option<Res<'w, CombatRules>>,
+    /// Each side, the dead's among them until they are buried at the end
+    /// of the frame.
+    sides: Query<'w, 's, &'static Faction>,
 }
 
 impl Witness<'_, '_> {
@@ -579,6 +593,14 @@ impl Witness<'_, '_> {
     /// own words, since the engine cannot know what eating a crust means.
     fn used_to_effect(&self, e: Entity) -> bool {
         self.does.get(e).is_ok_and(|t| t.on(rl_bevy::Moments::USE).next().is_some())
+    }
+
+    /// Whether `e` is on the player's side, as the game's [`CombatRules`]
+    /// say: false with no rules, and for anyone without a side.
+    fn allied_to_you(&self, e: Entity) -> bool {
+        let (Some(rules), Some((me, ..))) = (self.rules.as_deref(), self.sight.viewer()) else { return false };
+        let (Ok(mine), Ok(theirs)) = (self.sides.get(me), self.sides.get(e)) else { return false };
+        rules.factions.relation(mine.0, theirs.0) == rl_rules::Relation::Allied
     }
 
     /// Whether `e` is a prop rather than something that was alive: a
@@ -795,14 +817,21 @@ pub fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witn
     for t in heard.travels.read() {
         // The player's own going is the game's to say, since what a way
         // is called is. Anyone else is told of by where the player was
-        // looking: one that came after the player stands in sight of it
-        // now, and one that left is told of by the cell it left.
+        // looking: one that left is told of by the cell it left, and one
+        // that came after the player came with them, and is told of where
+        // it stands now, seen and named. Not by the player's sight, which
+        // a journey the same pass as theirs has not yet cast on the map
+        // they arrived on, and which would judge a follower beside them by
+        // the map they left.
         if witness.is_you(t.actor) {
             continue;
         }
         let followed = t.after.is_some_and(|led| witness.is_you(led));
         let mut said = say(if followed { Phrase::FollowsYou } else { Phrase::Leaves }, Some(t.actor), None);
-        if !followed {
+        if followed {
+            said.seen = true;
+            said.who_seen = true;
+        } else {
             said.at = Some(t.left);
             said.seen = witness.sees(Some(t.left));
             said.who_seen = witness.shows_at(t.actor, t.left);
@@ -973,14 +1002,17 @@ pub fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witn
     for d in heard.deaths.read() {
         // A prop is broken, not killed: nothing dies that was never alive,
         // and a log that says a supply crate was killed reads as a bug.
+        // One of the player's own side is a loss, told in its own words
+        // and tone whoever is to blame.
         let thing = witness.is_a_prop(d.entity);
+        let ally = !d.was_player && !thing && witness.allied_to_you(d.entity);
         let mut said = match (d.was_player, d.credit, thing) {
             (true, _, _) => say(Phrase::YouDie, Some(d.entity), None),
-            (false, Some(by), false) if witness.is_you(by) => say(Phrase::YouKill, Some(by), Some(d.entity)),
+            (false, Some(by), false) if witness.is_you(by) => say(if ally { Phrase::YouKillAlly } else { Phrase::YouKill }, Some(by), Some(d.entity)),
             (false, Some(by), true) if witness.is_you(by) => say(Phrase::YouDestroy, Some(by), Some(d.entity)),
-            (false, Some(by), false) => say(Phrase::Kills, Some(by), Some(d.entity)),
+            (false, Some(by), false) => say(if ally { Phrase::KillsAlly } else { Phrase::Kills }, Some(by), Some(d.entity)),
             (false, Some(by), true) => say(Phrase::Destroys, Some(by), Some(d.entity)),
-            (false, None, false) => say(Phrase::Dies, Some(d.entity), None),
+            (false, None, false) => say(if ally { Phrase::AllyDies } else { Phrase::Dies }, Some(d.entity), None),
             (false, None, true) => say(Phrase::IsDestroyed, Some(d.entity), None),
         };
         // The dead have left their cell already; the event says where.
@@ -1076,7 +1108,7 @@ pub struct Phrasebook {
 impl Default for Phrasebook {
     fn default() -> Self {
         use Phrase::*;
-        let table: [(Phrase, &str, ToneId); 76] = [
+        let table: [(Phrase, &str, ToneId); 79] = [
             (YouHit, "You hit {whom} for {n}.", Tones::HIT),
             (YouHitNothing, "You hit {whom}, to no effect.", Tones::MUTED),
             (HitsYou, "{Who} hits you for {n}.", Tones::BAD),
@@ -1112,6 +1144,11 @@ impl Default for Phrasebook {
             (IsDestroyed, "{Who} is destroyed.", Tones::TEXT),
             (Kills, "{Who} kills {whom}.", Tones::TEXT),
             (Dies, "{Who} dies.", Tones::GOOD),
+            // One of the player's side is a loss, whoever dealt it, the
+            // player included: no `!` and no kill tone for that.
+            (AllyDies, "{Who} dies.", Tones::BAD),
+            (KillsAlly, "{Who} kills {whom}.", Tones::BAD),
+            (YouKillAlly, "You kill {whom}.", Tones::BAD),
             (YouDie, "You die.", Tones::BAD),
             (YouPickUp, "You pick up {what}.", Tones::TEXT),
             (PicksUp, "{Who} picks up {what}.", Tones::NOTICE),
@@ -1485,6 +1522,48 @@ mod tests {
         let said: Vec<String> = lines(&stage).into_iter().map(|(text, _)| text).collect();
         assert_eq!(said.iter().filter(|t| *t == "The rat leaves.").count(), 1, "the one seen going, and not the one unseen: {said:?}");
         assert!(said.contains(&"The rat follows you.".to_string()), "{said:?}");
+    }
+
+    /// One that came through after the player is told of as following them
+    /// wherever the player's sight, not yet cast on the map they arrived
+    /// on, says it stands: it came with them, so it is seen and named.
+    #[test]
+    fn a_follower_that_came_through_with_the_player_is_told_of_as_following_even_out_of_the_sight_left_behind() {
+        let mut stage = Stage::new(NarratorPlugin::default());
+        let (player, theirs) = (stage.player, stage.theirs);
+        let far = stage.at.offset(500, 0);
+        let rat = stage.app.world_mut().spawn((Actor, Blocks, Position(far), Health::full(1), Faction(theirs), Name::new("rat"))).id();
+        stage.tick();
+        stage.app.world_mut().write_message(Travelled { actor: rat, from: MapId::SURFACE, left: far, to: MapId(3), after: Some(player) });
+        stage.tick();
+        let said = lines(&stage);
+        assert!(said.contains(&("The rat follows you.".to_string(), Tones::NOTICE)), "told, and named: {said:?}");
+    }
+
+    /// A death on the player's own side is a loss, whoever dealt it: its
+    /// own phrase in the bad tone, the player's own blow included, where a
+    /// foe's death is good news; and a game rewords or silences it as any
+    /// phrase.
+    #[test]
+    fn a_death_on_the_players_side_is_told_as_a_loss_whoever_dealt_it() {
+        let mut stage = Stage::new(NarratorPlugin::default().phrase(Phrase::KillsAlly, "{Whom} falls to {who}.", Tones::BAD));
+        let (player, theirs) = (stage.player, stage.theirs);
+        let ours = stage.app.world().get::<Faction>(player).expect("a side").0;
+        let mut body = |name: &str, side| {
+            stage.app.world_mut().spawn((Actor, Position(stage.at.offset(1, 0)), Health::full(1), Faction(side), Name::new(name.to_string()))).id()
+        };
+        let (friend, squire, page, rat) = (body("friend", ours), body("squire", ours), body("page", ours), body("rat", theirs));
+        stage.tick();
+        let at = stage.at.offset(1, 0);
+        for (entity, credit) in [(friend, None), (squire, Some(rat)), (page, Some(player)), (rat, None)] {
+            stage.app.world_mut().write_message(DeathEvent { entity, at, credit, was_player: false });
+        }
+        stage.tick();
+        let said = lines(&stage);
+        for line in ["The friend dies.", "The squire falls to the rat.", "You kill the page."] {
+            assert!(said.contains(&(line.to_string(), Tones::BAD)), "{line:?} as a loss: {said:?}");
+        }
+        assert!(said.contains(&("The rat dies.".to_string(), Tones::GOOD)), "a foe's death is good news: {said:?}");
     }
 
     /// A kill by the player is its own phrase in the brightest tone, and a

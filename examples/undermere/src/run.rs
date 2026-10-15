@@ -235,7 +235,7 @@ pub fn stand_near(world: &mut World) {
     let stand = way.iter().rev().skip(steps.saturating_sub(1)).map(|p| map.to_world(*p)).find(|p| !taken.contains(p));
     if let Some(stand) = stand {
         info!("standing the adventurer at {stand:?}, short of the {near} at {target:?}");
-        world.write_message(WarpRequest { actor: me, to: Destination::Place { map: here, arrive: Arrive::At(stand) } });
+        world.write_message(WarpRequest { actor: me, to: Destination::Place { map: here, arrive: Arrive::At(stand) }, after: None });
     }
 }
 

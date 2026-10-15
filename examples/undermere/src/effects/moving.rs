@@ -357,7 +357,7 @@ pub fn land_sinking(
             continue;
         }
         let at = open[(sink.roll % open.len() as u64) as usize];
-        warps.write(WarpRequest { actor: who, to: Destination::Place { map: sink.to, arrive: Arrive::At(at) } });
+        warps.write(WarpRequest { actor: who, to: Destination::Place { map: sink.to, arrive: Arrive::At(at) }, after: None });
     }
 }
 

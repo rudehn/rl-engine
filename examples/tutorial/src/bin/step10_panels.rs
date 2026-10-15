@@ -770,7 +770,7 @@ mod tests {
         assert_eq!(app.world().resource::<WorldMap>().current(), map_of(1), "the run starts on floor one");
         for depth in 1..FLOORS {
             let down = app.world().resource::<WorldMap>().place(map_of(depth)).unwrap().exit.expect("a way down");
-            app.world_mut().write_message(WarpRequest { actor: player, to: Destination::Place { map: map_of(depth), arrive: Arrive::At(down) } });
+            app.world_mut().write_message(WarpRequest { actor: player, to: Destination::Place { map: map_of(depth), arrive: Arrive::At(down) }, after: None });
             app.update();
             act(&mut app, player, GoThrough);
             assert_eq!(app.world().resource::<WorldMap>().current(), map_of(depth + 1), "took the stairs from floor {depth}");

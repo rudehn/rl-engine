@@ -25,7 +25,8 @@ pub const FOLLOW_REACH: i32 = LEASH + 1;
 /// Sends after the adventurer, on their own [`Travelled`], every hired
 /// mercenary on the map they left that is not holding, stood within
 /// [`FOLLOW_REACH`] of the cell they left, and had a clear line to it:
-/// each by a [`WarpRequest`] to a free cell beside where they landed,
+/// each by a [`WarpRequest`] after them to a free cell beside where they
+/// landed, which the narrator tells as following them,
 /// answered in the next pass, the nearest of them first and then by
 /// entity, so who gets the cell beside them never depends on the order a
 /// query ran in. Every one of the party left on that map gets a line in
@@ -34,11 +35,12 @@ pub const FOLLOW_REACH: i32 = LEASH + 1;
 /// who learned it only from the rail on the next floor would have lost
 /// one without being told.
 ///
-/// The game's rather than the engine's [`Wits::TRAVELS`], which a
-/// mercenary never carries, since [`obey`](super::obey) takes it off: the
-/// engine's travel takes a travelling mind through whatever way it runs
-/// to, and a hurt one fleeing down a stair alone would be lost to the run
-/// for a reason the player never chose. This answers the stairs, the
+/// The game's rather than the engine's [`Wits::FOLLOWS_THROUGH`], which
+/// takes only whoever stood beside the adventurer through, the same pass,
+/// where the party follows from further and around the one who holds; and
+/// a mercenary never carries [`Wits::FLEES_THROUGH`], since
+/// [`obey`](super::obey) takes it off: a hurt one fleeing down a stair
+/// alone would be lost to the run for a reason the player never chose. This answers the stairs, the
 /// gate and a waystone's warp alike, since each writes the same
 /// `Travelled` from the cell the adventurer left. One left behind keeps
 /// its `Leader` and is frozen where it stands, as everything on a map
@@ -89,7 +91,7 @@ pub fn follow_through(
             match ground.beside(to, landed, stood - went.left, &taken) {
                 Some(cell) => {
                     taken.push(cell);
-                    warps.write(WarpRequest { actor: mercenary, to: Destination::Place { map: to, arrive: Arrive::At(cell) } });
+                    warps.write(WarpRequest::new(mercenary, Destination::Place { map: to, arrive: Arrive::At(cell) }).after(went.actor));
                 }
                 None => left.push((mercenary, format!("{} stays behind: there is no room beside you.", hired.name))),
             }
@@ -97,38 +99,6 @@ pub fn follow_through(
         left.sort_by_key(|(e, _)| *e);
         for (_, line) in left {
             tell.write(Tell::new(line, tone));
-        }
-    }
-}
-
-/// Says a mercenary sent after the adventurer follows them, where the
-/// engine's narrator would say it leaves.
-///
-/// The narrator hears a warp as a going of the traveller's own accord,
-/// since a [`WarpRequest`] names nobody it goes after, and it judges the
-/// going seen by the cell it left, in a sight not yet cast on the map the
-/// adventurer arrived on: so each of the party coming through beside them
-/// read "Mareth leaves." A mercenary told of as leaving that stands on
-/// the map being read, led by the adventurer, has come with them, which
-/// is the engine's own "follows you" line, said beside them where it now
-/// stands. In `ViewSet::Annotate`, where a game edits the rows before
-/// they are spoken.
-pub fn say_who_came(
-    mut narration: ResMut<NarrationView>,
-    map: Res<WorldMap>,
-    party: Query<(&Position, &OnMap, &Leader), With<Mercenary>>,
-    players: Query<(), With<Player>>,
-) {
-    for row in &mut narration.rows {
-        if row.words != Words::Phrase(Phrase::Leaves) {
-            continue;
-        }
-        let Some((at, on, leader)) = row.who.and_then(|who| party.get(who).ok()) else { continue };
-        if on.0 == map.current() && players.contains(leader.0) {
-            row.words = Words::Phrase(Phrase::FollowsYou);
-            row.at = Some(at.0);
-            row.seen = true;
-            row.who_seen = true;
         }
     }
 }
@@ -509,17 +479,21 @@ mod tests {
         }
     }
 
+    /// A mercenary never flees through a way, under any order and whatever
+    /// it was given; following through, the other half of `travels`, is
+    /// its kind's to have, and the kind's own row has neither.
     #[test]
-    fn a_mercenary_never_carries_the_wit_to_travel_under_any_order() {
+    fn a_mercenary_never_carries_the_wit_to_flee_through_a_way_under_any_order() {
         let (mut app, me, here) = crate::testing::arena(0);
         let row = crate::testing::monster(&mut app, crate::mercenaries::MERCENARY, here.offset(2, 0));
-        let travels = |app: &App, who: Entity| app.world().get::<Intelligence>(who).expect("a mind's wits").0.has(Wits::TRAVELS);
-        assert!(!travels(&app, row), "the kind's own row does not travel");
+        let wits = |app: &App, who: Entity| app.world().get::<Intelligence>(who).expect("a mind's wits").0;
+        assert!(!wits(&app, row).has(Wits::FOLLOWS_THROUGH) && !wits(&app, row).has(Wits::FLEES_THROUGH), "the kind's own row travels neither way");
         let brenna = hired(&mut app, me, here.offset(-2, 0), "Brenna");
         app.world_mut().get_mut::<Intelligence>(brenna).expect("wits").0 = Wits::SAPIENT.with(Wits::TRAVELS);
         for o in [Order::Follow, Order::Hold, Order::FightFreely, Order::Follow] {
             order(&mut app, brenna, o);
-            assert!(!travels(&app, brenna), "under {o:?} it does not travel, whatever it was given before");
+            assert!(!wits(&app, brenna).has(Wits::FLEES_THROUGH), "under {o:?} it does not flee through a way, whatever it was given before");
+            assert!(wits(&app, brenna).has(Wits::FOLLOWS_THROUGH), "under {o:?} what it was given of following is left alone");
         }
     }
 }

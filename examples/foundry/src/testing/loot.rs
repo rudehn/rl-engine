@@ -26,7 +26,11 @@ pub fn arrive_on(app: &mut App, deck: u32) {
     }
     if deck != 1 || already_playing {
         let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
-        app.world_mut().write_message(WarpRequest { actor: player, to: Destination::Place { map: crate::decks::map_of(deck), arrive: Arrive::Entry } });
+        app.world_mut().write_message(WarpRequest {
+            actor: player,
+            to: Destination::Place { map: crate::decks::map_of(deck), arrive: Arrive::Entry },
+            after: None,
+        });
         app.update();
         app.update();
     }

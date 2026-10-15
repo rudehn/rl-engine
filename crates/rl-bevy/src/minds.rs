@@ -38,7 +38,7 @@ use crate::ability::Use;
 use crate::combat::{Attack, CombatRules, Dead, Faction, Health};
 use crate::components::{Actor, Blocks, MyTurn, Player, Position, Viewshed};
 use crate::doors::Open;
-use crate::items::{EquipFromGround, PickUp, UseItem, UseItemAt};
+use crate::items::{Equip, EquipFromGround, PickUp, UseItem, UseItemAt};
 use crate::lighting::{DarkSight, Lighting};
 use crate::places::{GoThrough, MapId, OnMap, Transition};
 use crate::throwing::Throw;
@@ -91,8 +91,8 @@ pub struct Doing(pub Option<&'static str>);
 ///
 /// Read when one of them goes through a way to another map, which a mind
 /// standing next to it then takes too. Kept only for a mind with
-/// [`Wits::TRAVELS`] and empty for every other, so a monster that stays
-/// on its map pays nothing for those that do not. Not saved: it is
+/// [`Wits::FOLLOWS_THROUGH`] and empty for every other, so a monster that
+/// stays on its map pays nothing for those that do not. Not saved: it is
 /// rewritten on the mind's next turn.
 #[derive(Component, Debug, Clone, Default, PartialEq, Eq)]
 pub struct Trails(pub Vec<Entity>);
@@ -817,10 +817,12 @@ pub fn sense_leaders(mut thinking: ResMut<Thinking>, sight: Sight, led: Query<&L
 }
 
 /// Tells the mind holding the turn which ways to another map it can see,
-/// if it is one that travels: a mind that does not is never told, so no
-/// tactic of its brain can send it through one.
+/// if it is one that goes through of its own accord, [`Wits::FLEES_THROUGH`]:
+/// a mind that does not is never told, so no tactic of its brain can send
+/// it through one. One that only follows through is taken by whoever it
+/// follows, and needs to see no way for it.
 pub fn sense_ways(mut thinking: ResMut<Thinking>, sight: Sight, ways: Query<(&Position, Option<&OnMap>), With<Transition>>) {
-    if !thinking.snapshot().is_some_and(|snapshot| snapshot.wits.has(Wits::TRAVELS)) {
+    if !thinking.snapshot().is_some_and(|snapshot| snapshot.wits.has(Wits::FLEES_THROUGH)) {
         return;
     }
     let mut seen: Vec<Point> = ways.iter().filter(|(at, on)| sight.perceives(&thinking, at.0, *on)).map(|(at, _)| at.0).collect();
@@ -937,6 +939,7 @@ pub struct MindIntents<'w> {
     ways: MessageWriter<'w, Intent<GoThrough>>,
     pick_ups: MessageWriter<'w, Intent<PickUp>>,
     equips: MessageWriter<'w, Intent<EquipFromGround>>,
+    wears: MessageWriter<'w, Intent<Equip>>,
     throws: MessageWriter<'w, Intent<Throw>>,
     uses: MessageWriter<'w, Intent<UseItem>>,
     uses_at: MessageWriter<'w, Intent<UseItemAt>>,
@@ -1035,7 +1038,7 @@ pub fn decide_minds(
     }
     came_from.0 = None;
     doing.0 = which.map(|tactic| tactic.name());
-    if wits.has(Wits::TRAVELS) {
+    if wits.has(Wits::FOLLOWS_THROUGH) {
         let after = which.and_then(|tactic| tactic.keeps_with()) == Some(Station::Enemies);
         let beside = mind.0.keeps_with_allies();
         let enemies = snapshot.enemies.iter().filter(|_| after);
@@ -1081,6 +1084,9 @@ pub fn decide_minds(
         Decision::EquipFromGround(item) => {
             intents.equips.write(Intent::new(thinker, EquipFromGround(item)));
         }
+        Decision::Equip(item) => {
+            intents.wears.write(Intent::new(thinker, Equip(item)));
+        }
         Decision::Throw { item, at } => {
             intents.throws.write(Intent::new(thinker, Throw { item, at }));
         }
@@ -1118,8 +1124,8 @@ pub struct MindsPlugin;
 impl Plugin for MindsPlugin {
     fn build(&self, app: &mut App) {
         use crate::plugin::{DecideSet, PerceiveSet, ResetsOnNewRun, Turn};
-        // The minds may choose an ability, a pickup, a throw or a use of
-        // something carried, so the messages they would write them into
+        // The minds may choose an ability, a pickup, a throw, putting on or
+        // a use of something carried, so the messages they would write them into
         // exist whether or not the game added abilities, items or throwing.
         // Registering one twice is what `add_message` is built for.
         use crate::seed::AddStream;
@@ -1127,6 +1133,7 @@ impl Plugin for MindsPlugin {
             .add_message::<Intent<Use>>()
             .add_message::<Intent<PickUp>>()
             .add_message::<Intent<EquipFromGround>>()
+            .add_message::<Intent<Equip>>()
             .add_message::<Intent<Throw>>()
             .add_message::<Intent<UseItem>>()
             .add_message::<Intent<UseItemAt>>()

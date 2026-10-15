@@ -68,12 +68,11 @@
 //! The party goes where the adventurer goes, from beside them: on their
 //! own `Travelled`, through a stair, the gate or a waystone's call alike,
 //! [`follow_through`] sends after them each mercenary near the cell they
-//! left with a line to it, onto a free cell beside where they landed. One
-//! left behind, by distance, a wall or the hold order, waits frozen where
-//! it stood, still theirs. None travels of its own accord: [`obey`] keeps
-//! the engine's wit for it off every mercenary. [`say_who_came`] has the
-//! log say one that came through follows the adventurer, where the
-//! narrator, hearing a warp, would say it left.
+//! left with a line to it, onto a free cell beside where they landed, by a
+//! warp after them that the narrator tells as following. One left behind,
+//! by distance, a wall or the hold order, waits frozen where it stood,
+//! still theirs. None flees through a way of its own accord: [`obey`]
+//! keeps the engine's wit for it off every mercenary.
 //!
 //! The run's save keeps a [`Mercenary`] whole, a candidate's name and fee,
 //! whose kit is its own and the [`Tavern`]'s visits; the engine keeps who

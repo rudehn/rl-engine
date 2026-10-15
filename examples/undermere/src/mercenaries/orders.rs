@@ -6,8 +6,7 @@ use std::sync::Arc;
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_rules::ai::Standard;
-use rl_engine::rl_rules::ai::brain::Tactic;
-use rl_engine::rl_rules::ai::tactics::{Hunt, Keep, Led, Scavenge, Station, UseCarried};
+use rl_engine::rl_rules::ai::tactics::{Hunt, Keep, Leashed, OutOfSight, Scavenge, UseCarried};
 use serde::{Deserialize, Serialize};
 
 use super::{KIT_FACET, KitSeen, MERCENARY, Mercenary, PutOnBetter};
@@ -70,71 +69,6 @@ impl Order {
     }
 }
 
-/// The tactic it wraps, except a step that would leave the mercenary more
-/// than [`LEASH`] from the one it follows: then it leaves the turn to the
-/// tactics after it.
-///
-/// What keeps a follower's hunt and anyone's fetch at the adventurer's
-/// side. `Keep::leader` above them only closes a gap already open, so
-/// without this a hunt would step out to four, be called back to three,
-/// and step out again for as long as the foe stood there; with it, a foe
-/// beyond the leash is left alone. With the leader gone from the map it
-/// lets every step through, since there is nobody to keep within reach
-/// of.
-#[derive(Debug, Clone, Copy)]
-pub struct Leashed<T>(pub T);
-
-impl<T: Tactic<Entity>> Tactic<Entity> for Leashed<T> {
-    fn name(&self) -> &'static str {
-        self.0.name()
-    }
-
-    fn evaluate(&self, ctx: &mut TacticCtx<'_, Entity>) -> Option<Decision<Entity>> {
-        let decision = self.0.evaluate(ctx)?;
-        if let (Decision::Step(to), Some(led)) = (&decision, ctx.snapshot.sense::<Led>())
-            && geometry::chebyshev(*to, led.at) > LEASH
-        {
-            return None;
-        }
-        Some(decision)
-    }
-
-    fn keeps_with(&self) -> Option<Station> {
-        self.0.keeps_with()
-    }
-}
-
-/// Closing on the one it follows while it cannot see them, wherever the
-/// gap stands.
-///
-/// What keeps a follower from losing the adventurer round a corner.
-/// `Keep::leader` measures the gap on foot, so a follower sets off as soon
-/// as the walk to the adventurer is longer than the [`LEASH`], across a
-/// wall or round a corner as surely as in the open; but within the leash
-/// it stands, and three steps round a corner is out of sight, where the
-/// adventurer's next turn is one the follower cannot see coming. Out of
-/// sight, it closes to a step.
-#[derive(Debug, Clone, Copy)]
-pub struct Behind(pub Keep);
-
-impl Tactic<Entity> for Behind {
-    fn name(&self) -> &'static str {
-        Tactic::<Entity>::name(&self.0)
-    }
-
-    fn evaluate(&self, ctx: &mut TacticCtx<'_, Entity>) -> Option<Decision<Entity>> {
-        let led = ctx.snapshot.sense::<Led>()?;
-        if led.in_sight {
-            return None;
-        }
-        self.0.evaluate(ctx)
-    }
-
-    fn keeps_with(&self) -> Option<Station> {
-        Tactic::<Entity>::keeps_with(&self.0)
-    }
-}
-
 /// How often a mercenary throws on a turn a throw is there to be made:
 /// always, since what a hire carries to throw is carried to be spent on
 /// the adventurer's enemies, where a monster's half the time keeps it
@@ -145,7 +79,7 @@ const THROW_CHANCE_PCT: u32 = 100;
 /// standard chain at Undermere's numbers, running at the kind's own
 /// threshold, striking and throwing, with nothing to close it. Each order
 /// closes it its own way, by [`HOLD`], [`FIGHT_FREELY`], or on follow by
-/// the game's own leashed hunt.
+/// the engine's hunt held to the [`LEASH`].
 const HIRED: Standard = Standard { flee: true, melee: true, throw_chance: Some(THROW_CHANCE_PCT), ..Standard::NONE };
 
 /// The chain on hold: [`HIRED`]'s, closed by walking back to its post.
@@ -189,10 +123,12 @@ impl MercenaryBrains {
         let can = kind.parts.repertoire();
         let chain = |chain: Standard| chain.brain(can).before_attacks(UseCarried::default()).before_hunt(PutOnBetter);
         let keep = Keep::leader(LEASH, 1);
-        let behind = Behind(Keep::leader(1, 1));
-        let fetch = Leashed(Scavenge { reach: SCAVENGE_REACH });
+        let behind = OutOfSight(Keep::leader(1, 1));
+        let fetch = Leashed { inner: Scavenge { reach: SCAVENGE_REACH }, reach: LEASH };
         Self {
-            follow: Arc::new(chain(HIRED).before_hunt(keep).before_hunt(behind).instead_of_hunt(Leashed(Hunt)).before_wander(fetch).build()),
+            follow: Arc::new(
+                chain(HIRED).before_hunt(keep).before_hunt(behind).instead_of_hunt(Leashed { inner: Hunt, reach: LEASH }).before_wander(fetch).build(),
+            ),
             hold: Arc::new(chain(HOLD).build()),
             free: Arc::new(chain(FIGHT_FREELY).before_wander(keep).before_wander(behind).before_wander(fetch).build()),
         }
@@ -212,20 +148,22 @@ impl MercenaryBrains {
 /// [`Post`] at the cell it stands on, which any other order takes off.
 /// The order itself is the caller's to have written on its [`Mercenary`].
 ///
-/// Also takes [`Wits::TRAVELS`] off it, under every order: the party goes
-/// through a way only after the adventurer, by
-/// [`follow_through`](super::follow_through), and never by the engine's
-/// own travel, which would take one fleeing alone down a stair. Here
-/// rather than in the kind's row alone, since every way a mercenary is
-/// given a brain comes through this, and a trait added to the kind later
-/// would otherwise hand it the wit unnoticed.
+/// Also takes [`Wits::FLEES_THROUGH`] off it, under every order: the party
+/// goes through a way only after the adventurer, by
+/// [`follow_through`](super::follow_through), and never of its own accord,
+/// which would take one fleeing alone down a stair. Only the fleeing half:
+/// following through, a kind's to have or not, takes one only after the
+/// adventurer it stood beside. Here rather than in the kind's row alone,
+/// since every way a mercenary is given a brain comes through this, and a
+/// trait added to the kind later would otherwise hand it the wit
+/// unnoticed.
 pub fn obey(world: &mut World, mercenary: Entity, order: Order) {
     let mind = world.resource::<MercenaryBrains>().mind(order);
     let at = world.get::<Position>(mercenary).map(|p| p.0);
     let mut e = world.entity_mut(mercenary);
     e.insert(mind);
     if let Some(mut wits) = e.get_mut::<Intelligence>() {
-        wits.0 = wits.0.without(Wits::TRAVELS);
+        wits.0 = wits.0.without(Wits::FLEES_THROUGH);
     }
     match (order, at) {
         (Order::Hold, Some(at)) => {
@@ -285,9 +223,8 @@ pub fn order_party(mut key: OrderKey, mut commands: Commands, party: Query<(Enti
 }
 
 /// Says each mercenary's order, `holding`, on the look panel and on its
-/// row of the party panel; on the look panel that it is in the
-/// adventurer's pay, and what it holds as they know it; and takes every
-/// follower with a row of the party panel off the nearby rail.
+/// row of the party panel; and on the look panel that it is in the
+/// adventurer's pay, and what it holds as they know it.
 ///
 /// On the look panel the pay takes the place of its kind's own words, `a
 /// sword for hire`, which it no longer is; the engine forecasts no fight
@@ -298,15 +235,13 @@ pub fn order_party(mut key: OrderKey, mut commands: Commands, party: Query<(Enti
 /// panel it stands on every mercenary's row but one left on another
 /// floor, which the panel marks as left behind instead. The party panel
 /// is where a follower is read, a freed captive as much as a hired one,
-/// so listing it again under what is in sight spent a second row on it
-/// and clipped the copy; the engine's Tab steps only through what the
-/// rail still lists.
+/// so the binary leaves followers off the nearby rail, by the engine's
+/// `NearbyPanel::without_followers`.
 ///
 /// In `ViewSet::Annotate`, after the kind's own words, so they are there
 /// to take off.
 pub fn show_orders(
     look: Option<ResMut<InspectView>>,
-    rail: Option<ResMut<NearbyView>>,
     party: Option<ResMut<PartyView>>,
     hired: Query<&Mercenary>,
     kits: KitSeen,
@@ -325,10 +260,6 @@ pub fn show_orders(
         for (how, said) in kits.of(who) {
             view.facets.push(facets.facet(KIT_FACET, format!("{} {said}", how.verb())));
         }
-    }
-    if let (Some(mut view), Some(party)) = (rail, party.as_deref()) {
-        let followers: Vec<Entity> = party.rows.iter().map(|r| r.entity).collect();
-        view.actors.retain(|r| !followers.contains(&r.entity));
     }
     if let Some(mut view) = party {
         // One left on another floor waits where it was left whatever its

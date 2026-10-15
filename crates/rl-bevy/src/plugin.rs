@@ -979,7 +979,7 @@ mod tests {
         app.update();
         app.update();
         let to = start.offset(3, 0);
-        app.world_mut().write_message(crate::places::WarpRequest { actor: walker, to: crate::places::Destination::Surface(to) });
+        app.world_mut().write_message(crate::places::WarpRequest { actor: walker, to: crate::places::Destination::Surface(to), after: None });
         app.update();
         assert_eq!(app.world().get::<Position>(walker).unwrap().0, to, "the warp was resolved");
         assert!(app.world().resource::<Occupancy>().is_occupied(to), "and the index moved with it");

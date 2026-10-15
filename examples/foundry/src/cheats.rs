@@ -205,12 +205,12 @@ impl Acts<'_, '_> {
                 self.say(format!("Godmode {now}."));
             }
             Cheat::NextDeck if deck < DECKS => {
-                self.warps.write(WarpRequest { actor: me, to: Destination::Place { map: map_of(deck + 1), arrive: Arrive::Entry } });
+                self.warps.write(WarpRequest { actor: me, to: Destination::Place { map: map_of(deck + 1), arrive: Arrive::Entry }, after: None });
                 return true;
             }
             Cheat::NextDeck => self.say("There is no deck below the core."),
             Cheat::PreviousDeck if deck > 1 => {
-                self.warps.write(WarpRequest { actor: me, to: Destination::Place { map: map_of(deck - 1), arrive: Arrive::Exit } });
+                self.warps.write(WarpRequest { actor: me, to: Destination::Place { map: map_of(deck - 1), arrive: Arrive::Exit }, after: None });
                 return true;
             }
             Cheat::PreviousDeck => self.say("There is no deck above the first."),

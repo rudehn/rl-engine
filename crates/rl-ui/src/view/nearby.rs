@@ -89,16 +89,36 @@ impl NearbyView {
     }
 }
 
+/// Whether [`NearbyView`] lists the player's followers among the actors in
+/// sight, which [`collect_nearby`] reads.
+///
+/// Listed by default: a follower is in sight like anyone else, and a game
+/// with no party panel has nowhere else to show how it is doing. A game
+/// whose party panel already lists them, which is everyone the
+/// [`PartyView`](crate::view::PartyView) lists, leaves them out with
+/// [`NearbyPanel::without_followers`](crate::NearbyPanel::without_followers),
+/// or by inserting `NearbyFollowers::LeftOut` when it draws the view
+/// itself, so a row is not spent twice on one follower.
+#[derive(Resource, Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum NearbyFollowers {
+    /// Listed with everyone else in sight.
+    #[default]
+    Listed,
+    /// Left out: every living actor whose `Leader` is the player.
+    LeftOut,
+}
+
 /// Keeps [`NearbyView`] current, and walks its rows with the cursors'
 /// "next" key while nothing is open.
 ///
 /// Needs [`WorldMap`], to know which map the rows are on, and
-/// [`CombatRules`], for the relation each row carries.
+/// [`CombatRules`], for the relation each row carries. Lists the player's
+/// followers unless the game said otherwise with [`NearbyFollowers`].
 pub struct NearbyViewPlugin;
 
 impl Plugin for NearbyViewPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<NearbyView>().init_resource::<Focus>().init_resource::<crate::CursorKeys>();
+        app.init_resource::<NearbyView>().init_resource::<Focus>().init_resource::<crate::CursorKeys>().init_resource::<NearbyFollowers>();
         app.needs::<CombatRules>("NearbyViewPlugin", "`CombatRules::new(&sides)`, for the relation each row carries")
             // Before either cursor reads the same keys, so the key that puts
             // a cursor away is not read again as letting go of what it left
@@ -134,6 +154,23 @@ pub struct Around<'w, 's> {
     doing: Query<'w, 's, &'static rl_bevy::Doing>,
     bodies: Query<'w, 's, (), With<rl_bevy::Remains>>,
     props: Business<'w, 's>,
+    following: Following<'w, 's>,
+}
+
+/// Who follows whom, and whether the list leaves followers out.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Following<'w, 's> {
+    listing: Res<'w, NearbyFollowers>,
+    /// The living, as the party view counts them: a body keeps its
+    /// `Leader` and follows nobody.
+    led: Query<'w, 's, &'static Leader, (With<Actor>, Without<Dead>)>,
+}
+
+impl Following<'_, '_> {
+    /// Whether `entity` is left off the list as one of `me`'s followers.
+    fn left_out(&self, me: Entity, entity: Entity) -> bool {
+        *self.listing == NearbyFollowers::LeftOut && self.led.get(entity).is_ok_and(|l| l.0 == me)
+    }
 }
 
 /// Whether a prop in sight is worth a row: something to do with it or
@@ -158,7 +195,9 @@ impl Business<'_, '_> {
     }
 }
 
-/// Fills [`NearbyView`] from the player's viewshed, in [`InSight`]'s order.
+/// Fills [`NearbyView`] from the player's viewshed, in [`InSight`]'s order,
+/// with the player's followers or without them, as [`NearbyFollowers`]
+/// says.
 pub fn collect_nearby(mut view: ResMut<NearbyView>, around: Around) {
     view.actors.clear();
     view.things.clear();
@@ -170,6 +209,9 @@ pub fn collect_nearby(mut view: ResMut<NearbyView>, around: Around) {
     for sighting in list.iter().copied() {
         let Ok((name, glyph, health, faction)) = around.seen.get(sighting.entity) else { continue };
         if !sighting.actor && !around.props.listed(sighting.entity) {
+            continue;
+        }
+        if sighting.actor && around.following.left_out(me, sighting.entity) {
             continue;
         }
         let count = around.stacks.get(sighting.entity).map_or(1, |s| s.count);
@@ -223,6 +265,27 @@ mod tests {
         if let Some(row) = view.row_mut(noted.0) {
             row.facets.push(facets.facet("wielding", "a rusty blade"));
         }
+    }
+
+    /// A follower in sight is listed like anyone else unless the game
+    /// leaves followers out, and then only the follower goes: a stranger
+    /// stays, and so does one following somebody else.
+    #[test]
+    fn followers_are_listed_by_default_and_left_out_only_when_the_game_says() {
+        let actors = |listing: NearbyFollowers| {
+            let mut stage = Stage::new_with(NearbyViewPlugin, |app| {
+                app.insert_resource(listing);
+            });
+            let (me, follower) = (stage.player, stage.actor("follower", 'f', 2, 0));
+            let stranger = stage.actor("stranger", 's', 3, 0);
+            let theirs = stage.actor("another's", 'a', 4, 0);
+            stage.app.world_mut().entity_mut(follower).insert(Leader(me));
+            stage.app.world_mut().entity_mut(theirs).insert(Leader(stranger));
+            stage.tick();
+            stage.app.world().resource::<NearbyView>().actors.iter().map(|r| r.label.clone()).collect::<Vec<_>>()
+        };
+        assert_eq!(actors(NearbyFollowers::default()), ["follower", "stranger", "another's"], "listed by default");
+        assert_eq!(actors(NearbyFollowers::LeftOut), ["stranger", "another's"], "left out when the game says");
     }
 
     #[test]

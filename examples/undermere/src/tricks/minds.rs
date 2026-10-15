@@ -30,9 +30,10 @@ pub fn sense_stole(mut thinking: ResMut<Thinking>, stolen: Query<(), With<Stole>
 ///
 /// Outranks every other tactic in the brain that carries it, `stealing`'s
 /// own, above even `FleeWhenHurt`: the job is done, and nothing is worth
-/// trading a blow for now. `stealing` grants `Wits::TRAVELS` itself, so
-/// the `Ways` sense a mind without it never gets is always there to flee
-/// by once something has actually been taken.
+/// trading a blow for now. `stealing` grants `travels` itself, whose
+/// `Wits::FLEES_THROUGH` half is what brings the `Ways` sense a mind
+/// without it never gets, always there to flee by once something has
+/// actually been taken.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct FleeAfterStealing;
 

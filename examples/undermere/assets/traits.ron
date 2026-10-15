@@ -7,7 +7,8 @@
 //   says:       the examine panel's words for it
 //   wits:       "mindless" | "animal" | "sapient", or a list as in the engine's Wits:
 //               "flees" | "searches" | "opens_doors" | "picks_up" | "equips" | "throws" |
-//               "uses" | "travels" | "wary", which may name a preset too; a monster's wits are
+//               "uses" | "wary" | "follows_through" | "flees_through", or "travels" for
+//               both of the last two, which may name a preset too; a monster's wits are
 //               every wit its traits name together, and one whose traits name none is mindless
 //   speed:      percent of normal: 100 normal, 150 half as fast again, 70 slow;
 //               absent from all its traits, a monster moves at 100

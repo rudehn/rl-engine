@@ -44,11 +44,11 @@ impl Wits {
     pub const EQUIPS: Wits = Wits(1 << 4);
     /// Throws what it carries.
     pub const THROWS: Wits = Wits(1 << 5);
-    /// Goes through a way to another map: after whoever it is hunting or
-    /// keeping beside, and to get away when it runs. In no preset, because
-    /// a monster that leaves the map it was put on is something a game
-    /// says of a kind on purpose: content writes `["sapient", "travels"]`.
-    pub const TRAVELS: Wits = Wits(1 << 6);
+    /// Goes through a way to another map after whoever it is hunting or
+    /// keeping beside, when it stood next to them as they went. In no
+    /// preset, because a monster that leaves the map it was put on is
+    /// something a game says of a kind on purpose.
+    pub const FOLLOWS_THROUGH: Wits = Wits(1 << 6);
     /// Uses what it carries, by [`UseCarried`](crate::ai::tactics::UseCarried):
     /// on itself what mends once it is hurt, and what is pointed at what
     /// its aim wants.
@@ -63,6 +63,19 @@ impl Wits {
     /// can still go off is priced, whatever it does, a healing glyph as
     /// much as a dart plate, since what a trigger lands is the game's.
     pub const WARY: Wits = Wits(1 << 8);
+    /// Goes through a way to another map of its own accord: told of the
+    /// ways it can see, so [`FleeWhenHurt`](crate::ai::tactics::FleeWhenHurt)
+    /// runs for one to get away, and let through one it stands on. In no
+    /// preset, for the reason [`Wits::FOLLOWS_THROUGH`] is not.
+    ///
+    /// Apart from following, because a game may want one without the
+    /// other: a hireling that comes down the stairs behind the player and
+    /// never runs down them alone.
+    pub const FLEES_THROUGH: Wits = Wits(1 << 9);
+    /// Both ways of leaving a map, [`Wits::FOLLOWS_THROUGH`] and
+    /// [`Wits::FLEES_THROUGH`]: what content means by `travels`, so
+    /// `["sapient", "travels"]` is a kind that follows and flees through.
+    pub const TRAVELS: Wits = Wits(Self::FOLLOWS_THROUGH.0 | Self::FLEES_THROUGH.0);
 
     /// Nothing but what its brain does unconditionally: it strikes, hunts
     /// what it can perceive and wanders, and forgets you the moment it
@@ -74,7 +87,8 @@ impl Wits {
     /// Everything the engine knows how to ask about on the map it stands
     /// on: doors, picking up, wearing, throwing and using things, and
     /// stepping round a trap in plain sight. Leaving that map is
-    /// [`Wits::TRAVELS`], which no preset has.
+    /// [`Wits::FOLLOWS_THROUGH`] and [`Wits::FLEES_THROUGH`], which no
+    /// preset has.
     pub const SAPIENT: Wits = Wits(Self::ANIMAL.0 | Self::OPENS_DOORS.0 | Self::PICKS_UP.0 | Self::EQUIPS.0 | Self::THROWS.0 | Self::USES.0 | Self::WARY.0);
 
     /// Whether every capability in `wit` is here.
@@ -102,7 +116,7 @@ impl Wits {
 
     /// The wits or preset called `name` in content, if there is one.
     pub fn named(name: &str) -> Option<Wits> {
-        PRESETS.iter().chain(CAPABILITIES.iter()).find(|(n, _)| *n == name).map(|(_, w)| *w)
+        PRESETS.iter().chain(CAPABILITIES.iter()).chain(PAIRS.iter()).find(|(n, _)| *n == name).map(|(_, w)| *w)
     }
 
     /// The name of every capability here, in declaration order.
@@ -123,22 +137,29 @@ impl Default for Wits {
 const PRESETS: [(&str, Wits); 3] = [("mindless", Wits::MINDLESS), ("animal", Wits::ANIMAL), ("sapient", Wits::SAPIENT)];
 
 /// Each capability by the name content writes it with.
-const CAPABILITIES: [(&str, Wits); 9] = [
+const CAPABILITIES: [(&str, Wits); 10] = [
     ("flees", Wits::FLEES),
     ("searches", Wits::SEARCHES),
     ("opens_doors", Wits::OPENS_DOORS),
     ("picks_up", Wits::PICKS_UP),
     ("equips", Wits::EQUIPS),
     ("throws", Wits::THROWS),
-    ("travels", Wits::TRAVELS),
+    ("follows_through", Wits::FOLLOWS_THROUGH),
     ("uses", Wits::USES),
     ("wary", Wits::WARY),
+    ("flees_through", Wits::FLEES_THROUGH),
 ];
+
+/// Capabilities content names together under one word, read like any
+/// other and never written back, since the list of what they stand for
+/// says the same: `travels` is both ways of leaving a map, as it was when
+/// it was one wit.
+const PAIRS: [(&str, Wits); 1] = [("travels", Wits::TRAVELS)];
 
 /// Every name content may use, for a message that lists them.
 fn every_name() -> String {
     let presets: Vec<&str> = PRESETS.iter().map(|(n, _)| *n).collect();
-    let wits: Vec<&str> = CAPABILITIES.iter().map(|(n, _)| *n).collect();
+    let wits: Vec<&str> = CAPABILITIES.iter().chain(PAIRS.iter()).map(|(n, _)| *n).collect();
     format!("the presets are {} and the wits {}", presets.join(", "), wits.join(", "))
 }
 
@@ -197,7 +218,7 @@ mod tests {
         assert!(!Wits::ANIMAL.has(Wits::OPENS_DOORS));
         assert!(!Wits::MINDLESS.has(Wits::FLEES));
         assert!(Wits::SAPIENT.has(Wits::USES) && !Wits::ANIMAL.has(Wits::USES), "only a sapient mind uses what it carries");
-        assert!(!Wits::SAPIENT.has(Wits::TRAVELS), "and no preset leaves its map");
+        assert!(!Wits::SAPIENT.has(Wits::FOLLOWS_THROUGH) && !Wits::SAPIENT.has(Wits::FLEES_THROUGH), "and no preset leaves its map");
         assert!(Wits::SAPIENT.has(Wits::WARY) && !Wits::ANIMAL.has(Wits::WARY), "only a sapient mind steps round a trap it sees");
         assert_eq!(Wits::named("wary"), Some(Wits::WARY));
         assert_eq!(Wits::named("uses"), Some(Wits::USES));
@@ -216,6 +237,20 @@ mod tests {
         assert_eq!(odd, Wits::FLEES.with(Wits::OPENS_DOORS));
         assert_eq!(ron::from_str::<Wits>(&ron::to_string(&odd).unwrap()).unwrap(), odd, "and anything else as the list");
         assert_eq!(ron::from_str::<Wits>("[]").unwrap(), Wits::MINDLESS);
+    }
+
+    /// `travels`, written before leaving a map was two wits, still means
+    /// both, so nothing written with it changes meaning; and either half
+    /// may be written alone.
+    #[test]
+    fn travels_in_content_is_both_following_and_fleeing_through_and_each_half_reads_alone() {
+        let travels: Wits = ron::from_str(r#"["sapient", "travels"]"#).unwrap();
+        assert!(travels.has(Wits::FOLLOWS_THROUGH) && travels.has(Wits::FLEES_THROUGH), "both halves");
+        assert_eq!(travels, Wits::SAPIENT.with(Wits::TRAVELS));
+        let follows: Wits = ron::from_str(r#"["sapient", "follows_through"]"#).unwrap();
+        assert!(follows.has(Wits::FOLLOWS_THROUGH) && !follows.has(Wits::FLEES_THROUGH), "one half alone");
+        assert_eq!(ron::from_str::<Wits>(&ron::to_string(&travels).unwrap()).unwrap(), travels, "and written back as its halves");
+        assert_eq!(Wits::TRAVELS.without(Wits::FLEES_THROUGH), Wits::FOLLOWS_THROUGH, "taking one half off leaves the other");
     }
 
     #[test]

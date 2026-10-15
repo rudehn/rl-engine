@@ -170,9 +170,9 @@ pub use replay::ReplayPlugin;
 pub use tone::{AddTone, Palette, Tone, ToneId, Tones, readable};
 pub use view::{
     AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimRange, AimThrow, AimUse, Asking, Bar, ContainerView, ContainerViewPlugin, EndingSection,
-    EndingView, EndingViewPlugin, GearSlot, GearView, GearViewPlugin, InspectView, InspectViewPlugin, InventoryView, InventoryViewPlugin, ItemRow, NearbyView,
-    NearbyViewPlugin, OfferRow, OffersView, OffersViewPlugin, OpenContainer, PartyView, PartyViewPlugin, Row, Seems, SheetView, SheetViewPlugin, TargetView,
-    TargetViewPlugin, TradeRow, TradeView, TradeViewPlugin, VitalsView, VitalsViewPlugin, WorkRow, Workings, target_modal,
+    EndingView, EndingViewPlugin, GearSlot, GearView, GearViewPlugin, InspectView, InspectViewPlugin, InventoryView, InventoryViewPlugin, ItemRow,
+    NearbyFollowers, NearbyView, NearbyViewPlugin, OfferRow, OffersView, OffersViewPlugin, OpenContainer, PartyView, PartyViewPlugin, Row, Seems, SheetView,
+    SheetViewPlugin, TargetView, TargetViewPlugin, TradeRow, TradeView, TradeViewPlugin, VitalsView, VitalsViewPlugin, WorkRow, Workings, target_modal,
 };
 
 use bevy::prelude::*;
@@ -331,9 +331,9 @@ pub mod prelude {
     pub use crate::tone::{AddTone, Palette, ToneId, Tones, readable};
     pub use crate::view::{
         AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimRange, AimThrow, AimUse, Asking, Bar, ContainerView, ContainerViewPlugin, EndingSection,
-        EndingView, GearView, GearViewPlugin, InspectView, InspectViewPlugin, InventoryView, InventoryViewPlugin, ItemRow, NearbyView, NearbyViewPlugin,
-        OfferRow, OffersView, OffersViewPlugin, OpenContainer, PartyView, PartyViewPlugin, Row, Seems, SheetView, SheetViewPlugin, TargetView,
-        TargetViewPlugin, TradeRow, TradeView, TradeViewPlugin, VitalsView, VitalsViewPlugin, WorkRow, Workings, target_modal,
+        EndingView, GearView, GearViewPlugin, InspectView, InspectViewPlugin, InventoryView, InventoryViewPlugin, ItemRow, NearbyFollowers, NearbyView,
+        NearbyViewPlugin, OfferRow, OffersView, OffersViewPlugin, OpenContainer, PartyView, PartyViewPlugin, Row, Seems, SheetView, SheetViewPlugin,
+        TargetView, TargetViewPlugin, TradeRow, TradeView, TradeViewPlugin, VitalsView, VitalsViewPlugin, WorkRow, Workings, target_modal,
     };
     pub use crate::{UiPlugin, ViewSet};
 }

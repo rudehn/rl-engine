@@ -18,7 +18,7 @@ use crate::facet::{Facet, FacetId, Facets};
 use crate::modal::Modals;
 use crate::panel::{clear, clip, frame, section, wrap};
 use crate::tone::{Palette, ToneId, Tones};
-use crate::view::{Alert, NearbyView, NearbyViewPlugin, Row};
+use crate::view::{Alert, NearbyFollowers, NearbyView, NearbyViewPlugin, Row};
 
 /// Where the nearby rail is drawn and what the headings say.
 #[derive(Resource, Debug, Clone)]
@@ -126,23 +126,26 @@ impl ActivityWords {
 ///
 /// Adds [`NearbyViewPlugin`] if the game has not, because a panel with no
 /// view behind it can only draw nothing.
-pub struct NearbyPanel(NearbyLayout);
+pub struct NearbyPanel(NearbyLayout, NearbyFollowers);
 
 impl NearbyPanel {
     /// A rail in `rect`, with the engine's default headings: `In sight`
     /// over the actors and `Things in sight` over the things, which says
     /// what that list holds where a game has not said it in its own words.
     pub fn new(rect: Rect) -> Self {
-        Self(NearbyLayout {
-            rect,
-            title: "Nearby".into(),
-            actors: "In sight".into(),
-            things: "Things in sight".into(),
-            alerts: AlertWords::default(),
-            activities: ActivityWords::default(),
-            cursor: CursorStyle::glow(Tones::SELECT),
-            beneath: Vec::new(),
-        })
+        Self(
+            NearbyLayout {
+                rect,
+                title: "Nearby".into(),
+                actors: "In sight".into(),
+                things: "Things in sight".into(),
+                alerts: AlertWords::default(),
+                activities: ActivityWords::default(),
+                cursor: CursorStyle::glow(Tones::SELECT),
+                beneath: Vec::new(),
+            },
+            NearbyFollowers::Listed,
+        )
     }
 
     /// Replaces the title in the top border. Empty draws no frame, which
@@ -186,12 +189,25 @@ impl NearbyPanel {
         self.0.beneath.push(key.into());
         self
     }
+
+    /// Leaves the player's followers off the rail, for a game whose party
+    /// panel lists them: listed here too, each would spend a second row.
+    /// Followers are listed by default, as anyone in sight is, which is
+    /// what a game with no party panel wants. The view is what changes, as
+    /// [`NearbyFollowers::LeftOut`] says, so Tab steps past them too.
+    pub fn without_followers(mut self) -> Self {
+        self.1 = NearbyFollowers::LeftOut;
+        self
+    }
 }
 
 impl Plugin for NearbyPanel {
     fn build(&self, app: &mut App) {
         if !app.is_plugin_added::<NearbyViewPlugin>() {
             app.add_plugins(NearbyViewPlugin);
+        }
+        if self.1 == NearbyFollowers::LeftOut {
+            app.insert_resource(self.1);
         }
         app.insert_resource(self.0.clone()).add_systems(Update, draw_nearby.in_set(PresentSet::Chrome));
     }

@@ -146,21 +146,20 @@ pub fn strip_the_fallen(mut commands: Commands, mut deaths: MessageReader<DeathE
     }
 }
 
-/// Says a hired mercenary's death in the tone of the adventurer's own
-/// losses, and always, seen or not, as a blow on the adventurer is: the
-/// narrator would say `Brenna dies.` as good news, as it says any death
-/// nobody is credited with.
+/// Says a hired mercenary's death always, seen or not, as a blow on the
+/// adventurer is: a hireling lost on the far side of a wall is still one
+/// the adventurer has lost. The engine tells it as an ally's death,
+/// already in the tone of the adventurer's own losses.
 ///
 /// In `ViewSet::Annotate`, where a game edits the rows before they are
-/// spoken, over each death row [`Fell`] holds the dead of: its words kept,
-/// its tone made the bad news it is.
+/// spoken, over each ally's death row [`Fell`] holds the dead of: its
+/// words and tone kept, and spoken.
 pub fn say_who_fell(mut narration: ResMut<NarrationView>, mut fell: ResMut<Fell>) {
     for row in &mut narration.rows {
         let Words::Phrase(phrase) = &row.words else { continue };
-        let (dead, text) = match phrase {
-            Phrase::Dies => (row.who, "{Who} dies."),
-            Phrase::Kills => (row.whom, "{Who} kills {whom}."),
-            Phrase::YouKill => (row.whom, "You kill {whom}."),
+        let dead = match phrase {
+            Phrase::AllyDies => row.who,
+            Phrase::KillsAlly | Phrase::YouKillAlly => row.whom,
             _ => continue,
         };
         if !dead.is_some_and(|dead| fell.0.contains(&dead)) {
@@ -168,12 +167,11 @@ pub fn say_who_fell(mut narration: ResMut<NarrationView>, mut fell: ResMut<Fell>
         }
         // The fallen one is named whoever saw it fall; what killed it,
         // only if it was seen.
-        if *phrase == Phrase::Dies {
+        if *phrase == Phrase::AllyDies {
             row.who_seen = true;
         } else {
             row.whom_seen = true;
         }
-        row.words = Words::Own { text: text.to_string(), tone: Tones::BAD };
         row.seen = true;
     }
     fell.0.clear();

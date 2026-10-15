@@ -11,11 +11,12 @@
 //! A [`Transition`] is an entity standing on a cell; [`GoThrough`] on
 //! that cell takes an actor through it, and a [`WarpRequest`] does the
 //! same from anywhere, for portals. The map being read follows the player.
-//! Anyone else travels only when the game says its kind does, with
-//! [`Wits::TRAVELS`]: such a mind goes through after whoever it was
-//! hunting or keeping beside, when it stood next to them as they left,
-//! and takes a way out when it runs. It is frozen where it lands until
-//! the player comes, like everything else on a map nobody is reading.
+//! Anyone else travels only when the game says its kind does: a mind with
+//! [`Wits::FOLLOWS_THROUGH`] goes through after whoever it was hunting or
+//! keeping beside, when it stood next to them as they left, and one with
+//! [`Wits::FLEES_THROUGH`] takes a way out when it runs; content's
+//! `travels` is both. It is frozen where it lands until the player comes,
+//! like everything else on a map nobody is reading.
 //!
 //! A game whose places are floors one under another says so with a
 //! [`Ladder`], from [`PlaceRules::ladder`], and the engine lays the
@@ -375,8 +376,9 @@ pub struct PlaceRulesRes(pub Box<dyn PlaceRules>);
 /// Go through the [`Transition`] on the actor's cell. Refused off one,
 /// before the turn is claimed and so at no cost to the player, since the
 /// key a game binds it to may mean something else there. Refused to anyone
-/// but the player whose [`Intelligence`] lacks [`Wits::TRAVELS`]: a monster
-/// stays on the map it was put on unless the game says its kind does not.
+/// but the player whose [`Intelligence`] lacks [`Wits::FLEES_THROUGH`], the
+/// wit for going through of its own accord: a monster stays on the map it
+/// was put on unless the game says its kind does not.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GoThrough;
 impl Action for GoThrough {}
@@ -394,12 +396,29 @@ pub struct WarpRequest {
     pub actor: Entity,
     /// Where to.
     pub to: Destination,
+    /// Whom it goes after, when the game sends it after someone rather
+    /// than of its own accord: a party sent down the stairs behind the
+    /// player. Carried onto its [`Travelled`], so whatever tells of the
+    /// journey tells it as following, and the warp is skipped when the
+    /// one it follows was refused the same pass. `None` for a warp of
+    /// its own.
+    pub after: Option<Entity>,
 }
 
 impl WarpRequest {
+    /// `actor` to `to`, of its own accord.
+    pub fn new(actor: Entity, to: Destination) -> Self {
+        Self { actor, to, after: None }
+    }
+
     /// Into `map` at its entry: how a delve starts on its first floor.
     pub fn into_place(actor: Entity, map: MapId) -> Self {
-        Self { actor, to: Destination::Place { map, arrive: Arrive::Entry } }
+        Self::new(actor, Destination::Place { map, arrive: Arrive::Entry })
+    }
+
+    /// The same warp, going after `leader`.
+    pub fn after(self, leader: Entity) -> Self {
+        Self { after: Some(leader), ..self }
     }
 }
 
@@ -513,8 +532,10 @@ struct Trip {
 /// Whoever was beside an actor that went through, travels, and was after
 /// it or with it on its own last turn goes through behind it, in the same
 /// pass: [`Trails`] is the list a mind keeps of those, and it is empty
-/// for a mind without [`Wits::TRAVELS`]. A warp is never followed, since
-/// nobody saw where it went.
+/// for a mind without [`Wits::FOLLOWS_THROUGH`]. A warp is never followed,
+/// since nobody saw where it went; a warp the game sends after someone
+/// says so with [`WarpRequest::after`], and is skipped when that one went
+/// nowhere.
 pub fn resolve_warps(
     mut commands: Commands,
     mut intents: MessageReader<Intent<GoThrough>>,
@@ -529,7 +550,7 @@ pub fn resolve_warps(
     for intent in intents.read() {
         let found = travellers.get(intent.actor).ok().and_then(|(_, (pos, _, on, _, player, wits, ..))| {
             let (at, here) = (pos.0, on.map(|m| m.0).unwrap_or(MapId::SURFACE));
-            let travels = player || wits.is_some_and(|w| w.has(Wits::TRAVELS));
+            let travels = player || wits.is_some_and(|w| w.has(Wits::FLEES_THROUGH));
             transitions.iter().find(|(p, m, _)| p.0 == at && m.map(|m| m.0).unwrap_or(MapId::SURFACE) == here).map(|(_, _, t)| (at, here, t.to, travels))
         });
         // Nothing to go through is refused before the turn is claimed: a
@@ -556,7 +577,7 @@ pub fn resolve_warps(
                     && !dead
                     && on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here
                     && rl_core::geometry::chebyshev(pos.0, at) <= 1
-                    && wits.is_some_and(|w| w.has(Wits::TRAVELS))
+                    && wits.is_some_and(|w| w.has(Wits::FOLLOWS_THROUGH))
                     && trails.is_some_and(|t| t.0.contains(&intent.actor))
             })
             .map(|(e, (pos, ..))| (rl_core::geometry::chebyshev(pos.0, at), e))
@@ -567,7 +588,7 @@ pub fn resolve_warps(
     for req in requests.read() {
         debug!("warp request {req:?}");
         if travellers.get(req.actor).is_ok() {
-            trips.push(Trip { actor: req.actor, to: req.to, is_action: false, after: None });
+            trips.push(Trip { actor: req.actor, to: req.to, is_action: false, after: req.after });
         }
     }
     // Whoever a trip follows has to have got there: nobody goes through
@@ -875,7 +896,7 @@ mod tests {
         let coin = r.app.world_mut().spawn((Item, Position(entry))).id();
         r.app.update();
         assert_eq!(r.app.world().get::<OnMap>(coin).unwrap().0, cave);
-        r.app.world_mut().write_message(WarpRequest { actor: r.player, to: Destination::Surface(r.start) });
+        r.app.world_mut().write_message(WarpRequest { actor: r.player, to: Destination::Surface(r.start), after: None });
         r.app.update();
         assert_eq!(r.app.world().resource::<WorldMap>().current(), MapId::SURFACE);
         assert_eq!(r.app.world().get::<Position>(r.player).unwrap().0, r.start);
@@ -1016,6 +1037,29 @@ mod tests {
         intend(&mut r, GoThrough);
         assert_eq!(on(&r, friend), cave);
         assert_eq!(rl_core::geometry::chebyshev(at(&r, friend), at(&r, r.player)), 1);
+    }
+
+    /// A warp the game sends after someone says so on its journey, and
+    /// goes nowhere when the one it follows was refused the same pass.
+    #[test]
+    fn a_warp_sent_after_someone_is_told_as_following_them_and_stays_when_they_could_not_go() {
+        let (mut r, _) = crowd();
+        let cave = MapId(3);
+        let (player, friend) = (r.player, r.app.world_mut().spawn((Actor, Blocks, Position(r.start.offset(2, 0)))).id());
+        let into = |map: MapId| Destination::Place { map, arrive: Arrive::Entry };
+        // Nowhere on the surface is its entry, so the player's warp there
+        // is refused, and the one sent after them stays.
+        r.app.world_mut().write_message(WarpRequest::new(player, into(MapId::SURFACE)));
+        r.app.world_mut().write_message(WarpRequest::new(friend, into(cave)).after(player));
+        intend(&mut r, Wait);
+        assert_eq!(on(&r, friend), MapId::SURFACE, "the one it followed went nowhere, and nor did it");
+        r.app.world_mut().write_message(WarpRequest::into_place(player, cave));
+        r.app.world_mut().write_message(WarpRequest::new(friend, into(cave)).after(player));
+        intend(&mut r, Wait);
+        assert_eq!((on(&r, player), on(&r, friend)), (cave, cave), "both went");
+        let went = &r.app.world().resource::<Went>().0;
+        assert_eq!(went.iter().find(|t| t.actor == friend).map(|t| t.after), Some(Some(player)), "after the player: {went:?}");
+        assert_eq!(went.iter().find(|t| t.actor == player).map(|t| t.after), Some(None), "and the player of its own accord");
     }
 
     /// A hurt mind that travels runs for the way out and takes it. The
@@ -1281,7 +1325,7 @@ mod tests {
                     .find(|(_, on, s, _)| on.0 == map && s.climb == Climb::Down)
                     .map(|(p, _, _, n)| (p.0, n.as_str().to_string()));
                 assert_eq!(at, Some((exit, "stairs down".to_string())));
-                r.app.world_mut().write_message(WarpRequest { actor: player, to: Destination::Place { map, arrive: Arrive::At(exit) } });
+                r.app.world_mut().write_message(WarpRequest { actor: player, to: Destination::Place { map, arrive: Arrive::At(exit) }, after: None });
                 r.app.update();
                 intend(&mut r, GoThrough);
                 assert_eq!(r.app.world().resource::<WorldMap>().current(), MapId(map.0 + 1), "down the stairs from {map:?}");

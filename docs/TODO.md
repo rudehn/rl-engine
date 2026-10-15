@@ -29,7 +29,7 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 2 | What the save holds is stated where the save is | 7 | medium | medium |
 | 3 | `OverworldPlugin` declares one requirement and needs four | 3 | medium | low |
 | 4 | A searcher dithers where it lost the trail | 2 | medium | low |
-| 5 | No game fields a kind that travels | 3 | medium | medium |
+| 5 | What a kind that travels still cannot do | 3 | medium | medium |
 | 6 | Movement profiles that change costs | 3 | medium | high |
 | 7 | The narrator hears what registers itself | 7 | medium | high |
 | 8 | `Thinking` splits its context from its snapshot | 4 | low | low |
@@ -65,7 +65,7 @@ Why the order that is left, in four moves:
 1. **The middle band first, 1 to 5.**
    This is behaviour and consistency debt: what a second game hits, not a first.
    None of it is speculative, and none of it needs measuring first.
-   Item 5 is travel: built and tested in the engine, and no game's content asks for it, which is the shape of the failure `docs/PLAN.md` section 1 was written against.
+   Item 5 is travel: fielded now, and with three decisions left that a game taking it further will meet.
 2. **Then 6 and 7**, the high-effort ones, of which only the narrator's registry is structural.
    Neither is urgent.
 3. **Items 8 to 18 are cleanups** worth taking whenever their file is open for another reason rather than scheduling.
@@ -116,9 +116,10 @@ The five items that opened this section were built in the six stages of `docs/de
   Tiles already split the three, walkable, opaque and whether a shot passes, and Foundry's rooms want the same of a prop: a coolant tank or a full shelf blocks all three, a workbench or a lathe only the way, as `examples/foundry/DESIGN.md` sets out under Rooms.
   Sight goes through the veil that gas writes into and a bump to the map's `opacity_epoch`, which `docs/design/props.md` section 10 already names; a low prop letting a shot over it wants `shot` to tell an actor standing in a cell from a thing that only blocks walking.
 
-- **No game fields a kind that travels.**
-  `Wits::TRAVELS` is built and tested in the engine, a mind following through and a hurt one leaving by a way, and no example's content writes `travels`, so no game exercises it and no fingerprint would notice it break.
-  Three things want deciding when a game takes it up.
+- **What a kind that travels still cannot do.**
+  Travel is two wits since 2026-10-14, `Wits::FOLLOWS_THROUGH` and `Wits::FLEES_THROUGH`, and content's `travels` is both.
+  Undermere fields both: its monkey's `stealing` writes `travels` to flee down the stairs with what it took, a freed captive is given both to follow the adventurer, and its mercenaries are taken off the fleeing half and sent after the adventurer by the game's own warps, which say whom they follow with `WarpRequest::after`.
+  Three things want deciding when a game takes it further.
   Foundry's lifts are gated by the game for the commando, the core charged or not, and nothing asks that of a droid that travels.
   Following is only for a mind beside the one that left, as it left; a chase that arrives some turns later would need actors on a map nobody is reading to be dealt turns, which nothing does.
   And the narrator's `Leaves` cannot name the way, "leaves" rather than "takes the lift", because a transition has no name the engine reads.

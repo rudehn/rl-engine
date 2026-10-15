@@ -372,15 +372,12 @@ impl Plugin for UndermerePlugin {
         // it, and its death said as the adventurer's own loss.
         app.init_resource::<crate::mercenaries::Fell>();
         app.add_systems(Turn, crate::mercenaries::strip_the_fallen.in_set(ReactStep::Count).after(crate::tally::count_the_fighting));
-        app.add_systems(Update, (crate::mercenaries::say_who_fell, crate::mercenaries::say_who_came).chain().in_set(ViewSet::Annotate));
+        app.add_systems(Update, crate::mercenaries::say_who_fell.in_set(ViewSet::Annotate));
         // What a hired mercenary knows of what it carries and sees: its own
-        // kit whole, and anything else only as the adventurer knows it; a
-        // thing it is better off wearing put on by the engine's own rule;
-        // and what `give` chooses among, asked as the offer is taken up.
-        app.add_choice::<crate::mercenaries::PutOn>();
+        // kit whole, and anything else only as the adventurer knows it; and
+        // what `give` chooses among, asked as the offer is taken up.
         let among = app.register_system(crate::mercenaries::give_choices);
         app.insert_resource(crate::mercenaries::GiveAmong(among));
-        app.add_systems(Turn, crate::mercenaries::put_on.in_set(ResolveSet::Redirect));
         app.add_systems(Turn, crate::mercenaries::release_own_kit.in_set(CleanupSet::Requeue));
         // `hire` kept off while the party is full, counted at the start of
         // every pass.

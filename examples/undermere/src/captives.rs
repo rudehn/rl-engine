@@ -68,9 +68,10 @@ pub fn held_at(world: &World, captive: Entity) -> Option<Point> {
 /// `adventurer` by name: `Leader(adventurer)` and the kind's own
 /// [`crate::bestiary::MonsterDef::follow_mind`], over the ordinary ally
 /// mind's "whoever of my side is nearest". Also gives it
-/// [`Wits::TRAVELS`], so it goes down the stairs after the adventurer when
-/// it stood beside them as they left, the engine's own rule for anyone
-/// who travels: most of what a captive's own kind may be does not carry
+/// [`Wits::TRAVELS`], both halves, so it goes down the stairs after the
+/// adventurer when it stood beside them as they left, the engine's own
+/// rule for anyone who follows through, and runs down one when hurt as a
+/// kind that travels does: most of what a captive's own kind may be does not carry
 /// that wit by default, and a follower who could not leave the floor it
 /// was freed on would be no follower at all.
 pub fn free(world: &mut World, captive: Entity, adventurer: Entity) {
@@ -85,7 +86,8 @@ pub fn free(world: &mut World, captive: Entity, adventurer: Entity) {
 
 /// Shapes a freed captive to follow its `Leader` by name: its kind's own
 /// [`crate::bestiary::MonsterDef::follow_mind`] over the ordinary ally
-/// mind, and [`Wits::TRAVELS`]. The one account of a follower, shared by
+/// mind, and [`Wits::TRAVELS`], following and fleeing through. The one
+/// account of a follower, shared by
 /// [`free`] and the save's restore of one freed before the run was saved,
 /// since neither the mind nor the wit is the engine's to keep, and a
 /// follower restored with the mind and not the wit stayed behind on the
@@ -409,7 +411,7 @@ mod tests {
         assert_eq!(app.world().get::<Leader>(captive).map(|l| l.0), Some(me), "follows the adventurer by name");
         assert!(app.world().get::<Intelligence>(captive).is_some_and(|w| w.0.has(Wits::TRAVELS)), "can leave with them");
 
-        // Down the stairs beside them: the engine's own `Wits::TRAVELS`
+        // Down the stairs beside them: the engine's own `Wits::FOLLOWS_THROUGH`
         // and `Keep::leader`'s `keeps_with_allies` bring a follower
         // through a `GoThrough` it stood beside the leaving actor for,
         // decided its own last turn, as the engine's own

@@ -137,7 +137,11 @@ mod tests {
         app.world_mut().write_message(WarpRequest::into_place(player, crate::decks::map_of(2)));
         app.update();
         app.update();
-        app.world_mut().write_message(WarpRequest { actor: player, to: Destination::Place { map: crate::decks::map_of(1), arrive: Arrive::Entry } });
+        app.world_mut().write_message(WarpRequest {
+            actor: player,
+            to: Destination::Place { map: crate::decks::map_of(1), arrive: Arrive::Entry },
+            after: None,
+        });
         app.update();
         app.update();
         assert_eq!(count(&mut app), first, "a second arrival on deck one scattered nothing new");

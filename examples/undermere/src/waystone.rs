@@ -184,7 +184,7 @@ pub fn go_home(world: &mut World, who: Entity) {
     }
     set_mark(world, map, at);
     world.write_message(Tell::new("The Drowned Gate opens round you, and you step through it into Mereholt.", Tones::NOTICE));
-    world.write_message(WarpRequest { actor: who, to: Destination::Place { map: TOWN, arrive: Arrive::Exit } });
+    world.write_message(WarpRequest { actor: who, to: Destination::Place { map: TOWN, arrive: Arrive::Exit }, after: None });
 }
 
 /// Spends one waystone from `who`'s pack, as a spent charge is spent: one

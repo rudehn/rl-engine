@@ -183,3 +183,18 @@ A point between one attack and the next is still not needed by any game and is n
 Undermere's brains for an ally and a freed captive are the same builder over a second constant: run, ability, blow and shot as their kind, then `Keep::allies` or `Keep::leader` before the hunt, and nothing after it.
 A hired mercenary's three, one for each order, are the builder over a third constant that closes nothing, at its own throw chance of always, and each order closes it: hold by `KeepPost`, fight freely by `Hunt` with the leader kept and gear fetched after it, and follow by a hunt leashed to the adventurer in the hunt's place.
 Each game's chain, tactic by tactic and in order, is what it was before the builder, which the fingerprints hold.
+
+## 10. Following, leaving, and putting on
+
+Three pieces Undermere's party wrote for itself are the engine's since 2026-10-14, each without a rule number in it.
+
+`Leashed { inner, reach }` and `OutOfSight(inner)` wrap any tactic over the engine's own `Led` sense: the first lets through no step that ends further than `reach` from the leader, and lets every step through with no leader on the map; the second decides only while the leader is out of sight.
+Wrappers rather than fields on `Hunt` and `Keep`, because what is held in is any tactic, a hunt, a fetch or a game's own, and a field on each would be the same rule written in every tactic that steps.
+How far the leash reaches is the game's: Undermere's is its `LEASH` of three, and the engine has none.
+
+`Decision::Equip(item)` is putting on something carried, answered by the resolver that answers the player's `Equip`.
+It had been a game's own choice relayed to the engine's intent, which is a decision of the engine's under another name; when a mind arms, and with what, stays the game's, and no engine tactic decides it.
+
+Leaving a map is two wits, `Wits::FOLLOWS_THROUGH` and `Wits::FLEES_THROUGH`, where it was one.
+A hireling that comes down the stairs behind the player and never runs down them alone wanted one without the other, and taking the whole wit off it to stop the running took the following too.
+Content's `travels` reads as both, so nothing written before the split changed meaning, and `Wits::TRAVELS` names the pair.

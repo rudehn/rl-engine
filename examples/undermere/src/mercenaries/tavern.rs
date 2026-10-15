@@ -635,12 +635,14 @@ mod tests {
 
     /// On the rail, a candidate in sight says what it holds beneath its
     /// row, each thing as the adventurer knows it: an unknown potion by its
-    /// face. A hireling in the company says the same, and the rail does
+    /// face. A hireling in the company says the same, and the rail, left
+    /// without followers as the game draws it, does
     /// not list it, since the company does.
     #[test]
     fn the_rail_and_the_company_say_what_each_one_holds_naming_an_unknown_potion_by_its_face() {
         let (mut app, me) = in_mereholt(5);
         app.add_plugins((rl_engine::rl_ui::NearbyViewPlugin, rl_engine::rl_ui::view::PartyViewPlugin))
+            .insert_resource(NearbyFollowers::LeftOut)
             .add_systems(Update, (show_orders, show_kit).in_set(ViewSet::Annotate));
         let [candidate, hireling] = [waiting(&mut app)[0], waiting(&mut app)[1]];
         let kind = "potion of extra healing";

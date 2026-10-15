@@ -209,7 +209,7 @@ pub fn collapse_behind(
                 return false;
             }
             for (who, to) in under.into_iter().zip(clear) {
-                commands.write_message(WarpRequest { actor: who, to: Destination::Place { map: on.0, arrive: Arrive::At(to) } });
+                commands.write_message(WarpRequest { actor: who, to: Destination::Place { map: on.0, arrive: Arrive::At(to) }, after: None });
             }
             true
         });

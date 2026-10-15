@@ -6,7 +6,7 @@ use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_core::noun::{Countability, counted_as};
 use rl_engine::rl_rules::Equipment;
-use rl_engine::rl_rules::ai::brain::{Choice, Tactic};
+use rl_engine::rl_rules::ai::brain::Tactic;
 
 use super::{GIVE, Mercenary, TONE};
 use crate::armory::{Armory, ItemKind};
@@ -168,6 +168,10 @@ pub fn know_as_the_adventurer_does(
 /// on its next turn with nothing more pressing to do. Every brain asks it
 /// after striking and throwing, so one handed a sword mid-fight strikes
 /// with what it holds and arms once the fight lets it.
+///
+/// When to arm, and with what, is Undermere's, by [`SeenWorth`]; the
+/// putting on is the engine's `Decision::Equip`, so what is refused, worn
+/// or narrated is the engine's rule for every wearer.
 #[derive(Debug, Clone, Copy)]
 pub struct PutOnBetter;
 
@@ -178,33 +182,7 @@ impl Tactic<Entity> for PutOnBetter {
 
     fn evaluate(&self, ctx: &mut TacticCtx<'_, Entity>) -> Option<Decision<Entity>> {
         let better = ctx.snapshot.sense::<BetterInPack>()?;
-        Some(Decision::own(PutOn(better.0)))
-    }
-}
-
-/// A mind's choice to put on a thing it carries: the engine's `Equip` by
-/// another name, since a mind has no decision of the engine's for it and
-/// a game cannot make the engine's action its choice. [`put_on`] hands it
-/// to the engine's resolver.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PutOn(pub Entity);
-
-impl Action for PutOn {}
-
-impl Choice for PutOn {
-    fn name(&self) -> &'static str {
-        "put on"
-    }
-}
-
-/// Hands each [`PutOn`] to the engine as the `Equip` it is, so what is
-/// refused, worn or narrated is the engine's rule for every wearer.
-///
-/// In `ResolveSet::Redirect`, after the minds have chosen and before the
-/// engine's resolver reads its intents.
-pub fn put_on(mut chosen: MessageReader<Intent<PutOn>>, mut equips: MessageWriter<Intent<Equip>>) {
-    for intent in chosen.read() {
-        equips.write(Intent::new(intent.actor, Equip(intent.action.0)));
+        Some(Decision::Equip(better.0))
     }
 }
 

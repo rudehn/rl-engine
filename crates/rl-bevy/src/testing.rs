@@ -275,7 +275,7 @@ pub fn at(app: &App, who: Entity) -> Point {
 /// and lets the move settle.
 pub fn stand_on(app: &mut App, who: Entity, to: Point) {
     let here = here(app);
-    app.world_mut().write_message(WarpRequest { actor: who, to: Destination::Place { map: here, arrive: Arrive::At(to) } });
+    app.world_mut().write_message(WarpRequest { actor: who, to: Destination::Place { map: here, arrive: Arrive::At(to) }, after: None });
     settle(app);
 }
 

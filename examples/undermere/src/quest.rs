@@ -168,7 +168,7 @@ mod tests {
         lay_floor(&mut app, &[beside]);
         let knight = first_of(&mut app, "skeleton knight");
         let place = here(&app);
-        app.world_mut().write_message(WarpRequest { actor: knight, to: Destination::Place { map: place, arrive: Arrive::At(beside) } });
+        app.world_mut().write_message(WarpRequest { actor: knight, to: Destination::Place { map: place, arrive: Arrive::At(beside) }, after: None });
         settle(&mut app);
         let seen = Awareness::Alert { at: at(&app, me), stale_turns: 0 };
         app.world_mut().entity_mut(knight).insert(Aware([(me, seen)].into()));

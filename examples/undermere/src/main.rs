@@ -214,9 +214,12 @@ fn add_panels(app: &mut App, screen: &Screen) {
             // The things below are everything in sight that is not someone,
             // stairs and a gate mark as well as what lies about, so not "on
             // the ground". What each one holds is said beneath its row, since
-            // it does not fit beside a name.
+            // it does not fit beside a name. Who follows the adventurer is
+            // the company's to list, below, so the rail spends no second row
+            // on one.
             .set(
                 NearbyPanel::new(rail.nearby)
+                    .without_followers()
                     .beneath(undermere::mercenaries::KIT_FACET)
                     .titled("")
                     .headings("In sight", "Around you")
@@ -972,7 +975,11 @@ mod tests {
             );
 
             undermere::testing::arrive(&mut app, undermere::dungeon::map_of(3));
-            app.world_mut().write_message(WarpRequest { actor: me, to: Destination::Place { map: undermere::dungeon::map_of(2), arrive: Arrive::At(far) } });
+            app.world_mut().write_message(WarpRequest {
+                actor: me,
+                to: Destination::Place { map: undermere::dungeon::map_of(2), arrive: Arrive::At(far) },
+                after: None,
+            });
             undermere::testing::settle(&mut app);
             assert!(!sees(&mut app, stairs), "seed {s}");
             assert_eq!(tile_drawn(&app, stairs).map(|c| c.glyph), Some('<'), "seed {s}: down a floor and back up, the floor above remembers its stairs");

@@ -51,6 +51,11 @@ pub enum Decision<A: Copy> {
     PickUp,
     /// Take the item lying where it stands and put it on, in one action.
     EquipFromGround(A),
+    /// Put on an item it carries. One of the engine's own, answered by the
+    /// resolver that answers the player's, so the slot it goes in and
+    /// whatever it pushes off are the one rule for every wearer. When a
+    /// mind arms is the game's: no engine tactic decides it.
+    Equip(A),
     /// Throw a carried item at a cell.
     Throw {
         /// What.
@@ -95,6 +100,7 @@ impl<A: Copy + PartialEq> PartialEq for Decision<A> {
             (Decision::Ability { ability: a, aim: p }, Decision::Ability { ability: b, aim: q }) => a == b && p == q,
             (Decision::Wait, Decision::Wait) | (Decision::PickUp, Decision::PickUp) | (Decision::GoThrough, Decision::GoThrough) => true,
             (Decision::EquipFromGround(a), Decision::EquipFromGround(b)) => a == b,
+            (Decision::Equip(a), Decision::Equip(b)) => a == b,
             (Decision::Throw { item: a, at: p }, Decision::Throw { item: b, at: q }) => a == b && p == q,
             (Decision::UseItem(a), Decision::UseItem(b)) => a == b,
             (Decision::UseItemAt { item: a, at: p }, Decision::UseItemAt { item: b, at: q }) => a == b && p == q,
