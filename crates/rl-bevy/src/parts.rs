@@ -45,8 +45,8 @@ use crate::combat::{Armor, Faction, Health, MeleeAttack, RangedAttack, Resists, 
 use crate::components::Speed;
 use crate::consumable::{Attuned, Consumable};
 use crate::effects::{EffectBonus, MomentId, Moments, Triggers};
-use crate::items::{Bestows, Equipped, Item, Pulse, Stack, Tagged, Wearable};
-use crate::lighting::{DarkSight, LightSource};
+use crate::items::{Bestows, Equipped, HeldWhileWorn, Item, LitWhenWorn, Pulse, Stack, Tagged, Wearable};
+use crate::lighting::{DarkSight, LightSource, OwnDarkSight, WornDarkSight};
 use crate::loot::Drops;
 use crate::minds::{Intelligence, Mind, Perception};
 use crate::noise::Hearing;
@@ -130,10 +130,35 @@ pub struct ItemParts {
     /// The key copies merge under, for a thing that stacks; the game's,
     /// usually its definition's index.
     pub stack: Option<u64>,
-    /// The light it sheds where it lies and from whoever carries it.
+    /// The light it sheds, where it lies and from whoever carries it, or
+    /// only from whoever wears it, as [`light_when`](Self::light_when) says.
     pub light: Option<Glow>,
+    /// When `light` shines: [`LightWhen::Carried`], the default, wherever
+    /// it is, or [`LightWhen::Worn`] only while it is worn.
+    pub light_when: LightWhen,
+    /// Statuses held on the wearer, until cured, while this is worn. Empty
+    /// holds none.
+    pub holds: Vec<StatusId>,
+    /// Tiles the wearer sees without light while this is worn, at level
+    /// nought. `None` lends none.
+    pub dark_sight: Option<i32>,
     /// What one level adds, for a thing that takes levels.
     pub level: Option<Level>,
+}
+
+/// When a thing's light shines.
+///
+/// A choice of two rather than a flag, so what a part says reads as what
+/// it means: a torch lights the room from a pack or the floor, and a ring
+/// that glows only on the finger is lit by being put on.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum LightWhen {
+    /// Wherever it is: lying on the ground, or from whoever carries it.
+    #[default]
+    Carried,
+    /// Only while it is worn, from its wearer; dark on the ground and in a
+    /// pack.
+    Worn,
 }
 
 impl ItemParts {
@@ -170,6 +195,12 @@ impl ItemParts {
         if moment(Moments::PULSE) && self.wear.is_none() {
             wrong.push("a pulse trigger on a thing that is never worn never comes round".to_string());
         }
+        if self.wear.is_none() && (!self.holds.is_empty() || self.dark_sight.is_some() || self.light_when == LightWhen::Worn) {
+            wrong.push("lends its wearer a status, sight in the dark or a light, on a thing that is never worn".to_string());
+        }
+        if self.light_when == LightWhen::Worn && self.light.is_none() {
+            wrong.push("a light that shines while worn, on a thing that sheds none".to_string());
+        }
         if self.ammo.is_some() && self.attacks.ranged.is_none() {
             wrong.push("spends ammunition, on a thing that shoots nothing".to_string());
         }
@@ -182,6 +213,9 @@ impl ItemParts {
             }
             if level.charges.is_some() && self.charges.is_none() {
                 wrong.push("charges in the level, on a thing that holds none".to_string());
+            }
+            if level.dark_sight.is_some() && self.dark_sight.is_none() {
+                wrong.push("dark sight in the level, on a thing that lends none".to_string());
             }
         }
         wrong
@@ -245,6 +279,12 @@ impl ItemParts {
         Some((i64::from(every) + i64::from(self.per(level, |l| l.pulse))).max(1) as u32)
     }
 
+    /// The sight in the dark it lends at `level`, or `None` for a thing that
+    /// lends none.
+    pub fn dark_sight_at(&self, level: i32) -> Option<i32> {
+        self.dark_sight.map(|tiles| tiles + self.per(level, |l| l.dark_sight))
+    }
+
     /// What a fresh unit holds at `level`, or `None` for a thing with no
     /// charges: never fewer than one, since a thing with nothing to spend
     /// is spent before it is found.
@@ -275,7 +315,9 @@ pub struct ItemLevel(pub i32);
 /// [`Item`], [`MadeOf`], and where the parts say so, [`ItemLevel`],
 /// [`Tagged`], [`Triggers`], [`Pulse`], [`Consumable`] and [`Attuned`],
 /// [`Wearable`], [`Ammo`], [`Armor`], [`Resists`], the attacks,
-/// [`Bestows`], [`EffectBonus`], [`LightSource`] and a [`Stack`] of one.
+/// [`Bestows`], [`EffectBonus`], [`LightSource`], or [`LitWhenWorn`] for a
+/// light that shines only while worn, [`HeldWhileWorn`], [`WornDarkSight`]
+/// and a [`Stack`] of one.
 /// A name, a look and anything else the game keeps are the game's to add
 /// beside these.
 pub fn insert_parts(e: &mut EntityCommands, parts: &Arc<ItemParts>, level: i32) -> i32 {
@@ -313,8 +355,16 @@ pub fn insert_parts(e: &mut EntityCommands, parts: &Arc<ItemParts>, level: i32) 
     if parts.resists != Resistances::new() {
         e.insert(Resists(parts.resists.clone()));
     }
-    if let Some(light) = parts.light {
-        e.insert(LightSource(light));
+    match (parts.light, parts.light_when) {
+        (Some(light), LightWhen::Carried) => drop(e.insert(LightSource(light))),
+        (Some(light), LightWhen::Worn) => drop(e.insert(LitWhenWorn(LightSource(light)))),
+        (None, _) => {}
+    }
+    if !parts.holds.is_empty() {
+        e.insert(HeldWhileWorn(parts.holds.clone()));
+    }
+    if let Some(tiles) = parts.dark_sight_at(level) {
+        e.insert(WornDarkSight(tiles));
     }
     if let Some(key) = parts.stack {
         e.insert(Stack { key, count: 1 });
@@ -339,7 +389,8 @@ pub fn insert_parts(e: &mut EntityCommands, parts: &Arc<ItemParts>, level: i32) 
 /// within its level part's bounds, and fits every component the level
 /// decides to the new level from the parts it was made of: its armor, its
 /// attacks, what it bestows, what its effects land stronger by, its
-/// pulse's period and what a fresh unit holds. Returns the new level, or
+/// pulse's period, what a fresh unit holds and the sight in the dark it
+/// lends. Returns the new level, or
 /// `None` for a thing that takes none, which is left as it was.
 ///
 /// Fitted from the parts rather than from the thing as it stands, so a
@@ -387,6 +438,9 @@ pub fn level_up(world: &mut World, item: Entity, by: i32) -> Option<i32> {
         bonus if bonus == EffectBonus::default() => e.remove::<EffectBonus>(),
         bonus => e.insert(bonus),
     };
+    if let Some(tiles) = parts.dark_sight_at(level) {
+        e.insert(WornDarkSight(tiles));
+    }
     if let (Some(every), Some(mut pulse)) = (parts.pulse_at(level), e.get_mut::<Pulse>()) {
         pulse.every = every;
     }
@@ -447,7 +501,8 @@ pub struct ActorParts<I: Send + Sync + 'static> {
     pub notice: Option<NoticeStats>,
     /// How it hears.
     pub hearing: Option<HearingStats>,
-    /// Tiles it sees with no light at all.
+    /// Tiles it sees with no light at all, by itself: its [`OwnDarkSight`],
+    /// which what it wears is folded with into its [`DarkSight`].
     pub dark_sight: Option<i32>,
     /// Its blow and its shot, and what each costs.
     pub attacks: Attacks,
@@ -665,7 +720,7 @@ impl<I: Send + Sync + 'static> ActorParts<I> {
     /// Inserts on `e` every component these parts describe, each only
     /// where its part is written: [`Health`], full, [`Armor`],
     /// [`Faction`], [`Speed`], [`Perception`], [`Intelligence`],
-    /// [`Notice`], [`Hearing`], [`DarkSight`], the attacks,
+    /// [`Notice`], [`Hearing`], [`DarkSight`] with its [`OwnDarkSight`], the attacks,
     /// [`LightSource`], [`Grants`], what it holds for life in [`Afflicted`]
     /// and [`StatBlock`], [`WhileHolding`], [`Triggers`], [`Resists`], [`Drops`],
     /// [`LeavesRemains`] and [`Mind`]. `registries` holds the statuses it
@@ -704,7 +759,7 @@ impl<I: Send + Sync + 'static> ActorParts<I> {
             e.insert(Hearing(hearing));
         }
         if let Some(cells) = self.dark_sight {
-            e.insert(DarkSight(cells));
+            e.insert((DarkSight(cells), OwnDarkSight(cells)));
         }
         self.attacks.insert(e);
         if let Some(light) = self.light {
@@ -952,5 +1007,51 @@ mod tests {
             ActorParts { flee_at: Some(120), keep_away: Some(KeepAway { within: 2, no_closer: 4 }), leaves_remains: Some(true), ..ActorParts::default() };
         assert_eq!(parts.check().len(), 3, "{:?}", parts.check());
         assert!(ActorParts::<()> { hp: Some(4), leaves_remains: Some(true), ..ActorParts::default() }.check().is_empty());
+    }
+
+    /// A helmet that lends a status, a light while worn and sight in the
+    /// dark: six tiles, and one more a level, up to three.
+    fn helmet() -> Arc<ItemParts> {
+        Arc::new(ItemParts {
+            wear: Some(EquipShape::in_slot(rl_rules::SlotId::from_raw(0))),
+            dark_sight: Some(6),
+            holds: vec![StatusId::from_raw(0)],
+            light: Some(Glow::new(100, 3, rl_grid::Rgb::WHITE)),
+            light_when: LightWhen::Worn,
+            level: Some(Level { max: Some(3), dark_sight: Some(1), ..Level::default() }),
+            ..ItemParts::default()
+        })
+    }
+
+    /// What a thing lends its wearer goes on the thing as the components
+    /// the engine lends from, its sight at its level, and a level fitted
+    /// later fits the sight from the parts again.
+    #[test]
+    fn a_thing_that_lends_sight_a_status_and_a_light_while_worn_carries_each_and_a_level_grows_its_sight() {
+        let mut world = World::new();
+        let (e, level) = spawned(&mut world, &helmet(), 2);
+        assert_eq!(level, 2);
+        assert_eq!(world.get::<WornDarkSight>(e), Some(&WornDarkSight(8)), "six and two levels' one each");
+        assert_eq!(world.get::<HeldWhileWorn>(e).map(|h| h.0.clone()), Some(vec![StatusId::from_raw(0)]));
+        assert!(world.get::<LightSource>(e).is_none() && world.get::<LitWhenWorn>(e).is_some(), "lit only once worn");
+        level_up(&mut world, e, 1);
+        assert_eq!(world.get::<WornDarkSight>(e), Some(&WornDarkSight(9)), "fitted again from the parts");
+    }
+
+    /// What a thing lends a wearer, on a thing never worn, a light lit when
+    /// worn with no light, and dark sight in a level on a thing that lends
+    /// none are each named as what the engine would never play.
+    #[test]
+    fn what_a_thing_lends_that_nothing_would_play_is_named() {
+        let loose = ItemParts { dark_sight: Some(3), ..ItemParts::default() };
+        assert_eq!(loose.check().len(), 1, "{:?}", loose.check());
+        let dark = ItemParts {
+            wear: Some(EquipShape::in_slot(rl_rules::SlotId::from_raw(0))),
+            light_when: LightWhen::Worn,
+            level: Some(Level { dark_sight: Some(1), ..Level::default() }),
+            ..ItemParts::default()
+        };
+        assert_eq!(dark.check().len(), 2, "{:?}", dark.check());
+        assert!(helmet().check().is_empty(), "{:?}", helmet().check());
     }
 }

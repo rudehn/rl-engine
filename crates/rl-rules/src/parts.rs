@@ -255,6 +255,10 @@ pub struct Level {
     /// Charges a level adds to what a fresh unit holds.
     #[serde(default)]
     pub charges: Option<i32>,
+    /// Tiles of sight in the dark a level adds to what the thing lends its
+    /// wearer.
+    #[serde(default)]
+    pub dark_sight: Option<i32>,
     /// What a level adds to each named stat of its wearer's while it is
     /// worn.
     #[serde(default)]
@@ -282,6 +286,7 @@ impl Level {
             turns: self.turns.or(under.turns),
             pulse: self.pulse.or(under.pulse),
             charges: self.charges.or(under.charges),
+            dark_sight: self.dark_sight.or(under.dark_sight),
             stats,
         }
     }

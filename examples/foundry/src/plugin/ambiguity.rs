@@ -40,7 +40,6 @@ fn names() -> Vec<(&'static str, TypeId)> {
         ("droids::shout_alarm", id(droids::shout_alarm)),
         ("droids::unjam_sensors", id(droids::unjam_sensors)),
         ("droids::jam_sensors", id(droids::jam_sensors)),
-        ("droids::sync_dark_sight", id(droids::sync_dark_sight)),
         ("mission::start", id(mission::start)),
         ("mission::spawn_console_on_arrival", id(mission::spawn_console_on_arrival)),
         ("mission::answer_charge", id(mission::answer_charge)),

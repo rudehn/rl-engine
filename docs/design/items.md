@@ -127,7 +127,6 @@ A thing spent to nothing is marked `Spent` and kept, as the dead are, until the 
 ## 6. What is deliberately not here
 
 - **`on_equip` effects.** Effects are one-shot; wearing is a standing state. A worn thing's clock is the other half, and it exists: a [`Pulse`] reports the `pulse` moment every period its thing is worn, so a plate that knits wounds is a trigger, not a system. What a worn thing does is already declarative and needs no list: `Armor`, `Resists`, an attack, `Bestows` for the registered stats. A one-shot when something goes on, a cursed plate that bites, is a real case and a small one; it waits for a game that wants it, and would be one more moment.
-- **"Hold a status while worn."** The insulated suit that reads as arc-resistant from the moment it goes on. A status a trigger puts on can already be held by the thing (section 5); one held for as long as the thing is worn, with no trigger to land it, is still a game's own system, as Foundry's `WornDarkSight` and `sync_dark_sight` are. By the rule in `CLAUDE.md`, the second game to write it is the signal it belongs in the engine.
 - **An engine item schema.** No engine type is an item's definition, and no file's shape is the engine's; what is shared is the authored parts in section 6a, which a game's own fields are typed with, and the components they make.
 - **Items as offers.** A crate you open and a medkit you use are nearly the same shape, and props' offers already carry a verb, a time cost and a refusal reason in words. Only a use is chosen, though; a landing or a hit is not, so it would carry half of what an item does. The refusal reasons are the part worth taking later, onto the `use` trigger.
 
@@ -146,9 +145,9 @@ What moved is `rl_rules::parts`, a set of authored parts, each the type of one f
 | `Throw` | `range`, `effective`, `strike` | `Throwable` |
 | `Wear` | `slot`, `either`, `also` | `Wearable(EquipShape)`, the pair `either` reaches for read from the slot registry's `SlotDef::pair` |
 | `Charges` | `charges`, `when_empty`, `recharge`, `while_worn` | `Consumable`, its `Recharge` in hundredths of a step, and `Attuned` |
-| `Level` | `min`, `max`, `armor`, `damage`, `amount`, `turns`, `pulse`, `charges`, `stats` | what each level adds to all of the above, in section 7 |
+| `Level` | `min`, `max`, `armor`, `damage`, `amount`, `turns`, `pulse`, `charges`, `dark_sight`, `stats` | what each level adds to all of the above, in section 7 |
 
-The rest of what an item's line says for the engine is a plain list, its armor, its tags, its effects and triggers, its bestows and caps, its ammunition tag, whether it stacks and its `Glow`, needing no part of its own; `parts::resistances` reads the one list that adds up, a kind written twice resisting by both, as two worn things' resistances add on a wearer.
+The rest of what an item's line says for the engine is a plain list, its armor, its tags, its effects and triggers, its bestows and caps, its ammunition tag, whether it stacks, its `Glow` and when it shines, the statuses it holds on its wearer and the sight in the dark it lends, needing no part of its own; `parts::resistances` reads the one list that adds up, a kind written twice resisting by both, as two worn things' resistances add on a wearer.
 A game builds an `rl_bevy::ItemParts` from its own fields once at load, its triggers built and its wear resolved, and keeps it beside its definition; `insert_parts` spawns a thing of it at a level and `ItemParts::check` names what the engine would never play, a worn stack or a pulse on a thing never worn.
 `Attacks { melee, ranged, throw, cost }` is the attack half on its own, which a monster uses, since a blow is one thing whoever strikes it: Foundry's droids and Undermere's monsters write their attacks as the same parts their weapons do.
 
@@ -163,6 +162,26 @@ Parts cost a game one field per part in its own type and one struct literal at l
 
 The look stays with the games.
 A thing's glyph is `rl-render`'s and its mass noun `rl-ui`'s, neither of which `rl-rules` may see, and a helper in a crate that sees both would be a part that is not about simulation at all: a game drawing in tiles, or naming things with articles of its own, has a different look, and the engine has nothing to gain by choosing one.
+
+## 6b. What a worn thing lends beyond its stats
+
+Until 2026-10-15 two games each kept a wearer in step with what it wore by a system of their own.
+Foundry's `sync_dark_sight` folded a droid's `NativeDarkSight` and a helmet's `WornDarkSight` into `DarkSight`, unless an ion jam had it blinded; Undermere's `lend` did the same for the traits a ring lends, with a status held while worn and a light lit while worn beside it, and kept the wearer's own sight in an `OwnSight` to give back.
+That is the second game writing the same thing, which section 6 had named as the signal, so it is the engine's, and every piece of it is optional.
+
+`ItemParts` gains `holds`, the statuses held on the wearer until cured while the thing is worn; `dark_sight`, the tiles its wearer sees without light, grown by the `Level` part's own `dark_sight` as every level amount is; and `light_when`, `Carried`, today's behaviour and the default, or `Worn`, for a light dark on the ground and in a pack.
+They become `HeldWhileWorn`, `WornDarkSight` and `LitWhenWorn` on the thing, so a game that inserts components by hand gets the same as one that uses parts.
+`ActorParts::dark_sight` puts an `OwnDarkSight` beside the `DarkSight`, which is what a worn thing's sight is folded with rather than written over.
+
+`ItemsPlugin` keeps each every pass in `ReactSet::Lend`, read off what is worn now rather than answered as a thing goes on or comes off, which is the lesson Foundry's jam taught: a helmet swapped while its wearer was blinded kept the old helmet's radius the moment the jam cleared, because nothing had answered the swap while it was jammed.
+A held status is asked for through `Afflict`, held by the thing, and ended by `end_unworn_holds` as any held status is.
+A wearer's `DarkSight` is the best of its own and what it wears, or none while a game has put `DarkSightSuppressed` on it; what blinds is the game's, Foundry's ion jam, and the engine only keeps the folded sight from coming back meanwhile.
+An actor with no sight of its own and nothing worn lending any is never touched, so a `DarkSight` a game sets by hand stays; one whose sight was lent with nothing of its own beneath is marked `LentDarkSight`, so the sight goes with the thing.
+A game that sets an actor's sight by hand and also lets it wear dark sight writes its own as `OwnDarkSight`, since the fold cannot tell a sight a game set from one it lent.
+
+The set comes after `ReactSet::Settle`, so a slot changed in the pass is read as it stands, and a game that blinds in its own reactions orders that before it: Foundry's `jam_sensors` runs before it, as it ran before `sync_dark_sight`, so a fresh ion hit blinds within the pass it lands.
+Neither game's fingerprint moved.
+What stays each game's: Foundry's jam, its clock and its `sensors down` badge, and the pack's dark-sight facet in its own words; Undermere's traits and which of them an item lends, folded into the item's parts by its armory.
 
 ## 7. A level, and the one place a game writes what it does
 
@@ -182,7 +201,7 @@ How fast a staff refills at its level divides rather than adds, so it is not a l
 Foundry's is that armor and damage are inferred, +1 a level on a thing that has any, because that is what a reader expects of a `+2` plate or blade; every other key is nought unless written, because a reader cannot tell a plate's clock quickens unless the file says so.
 Balance is set by `max`, 3 for plain armor, 5 for a weapon and 9 for the two plates that do something worn, rather than by a slower rate, since the standard rate is the one a reader expects.
 Foundry refuses each key on a thing with nothing it adds to, `armor` and `damage` written even as nought included, `turns` on a thing with no `Inflict` among its effects and `amount` on one with no `Harm` or `Mend`, so a level rule in the wrong place is a load error naming the item rather than a plate that quietly does less; and it refuses a `pulse` that would quicken a clock past a turn by its `max`, the rule its runtime floor used to be, since a plate pulsing several times each time its wearer acts is a rule nobody wrote on purpose.
-Dark sight is Foundry's own component, so what a level adds to it is Foundry's own field, `dark_sight: (tiles:, per_level:)`.
+What a level adds to the sight in the dark a thing lends is the level part's `dark_sight`, since that sight is the engine's (section 6b); until 2026-10-15 it was Foundry's own `dark_sight: (tiles:, per_level:)`.
 
 The affix model this replaced, prefixes and suffixes with level-scaled grants and extra strikes, an enhance rule and weighted rolling, was never used by a game: both spawned `Enchanted` with no affixes and wrote their own level arithmetic beside it.
 It was removed rather than kept beside the level part, because two engine answers to what a level is would be one too many.

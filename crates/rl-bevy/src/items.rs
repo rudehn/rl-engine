@@ -32,18 +32,28 @@
 //! may be held by the thing, and [`end_unworn_holds`] cures it in the pass
 //! the thing is no longer worn.
 //!
+//! What else a worn thing lends is kept in
+//! [`ReactSet::Lend`](crate::plugin::ReactSet::Lend), read every pass off
+//! what is worn now: the statuses its [`HeldWhileWorn`] holds on its wearer
+//! ([`hold_worn_statuses`]), the sight in the dark its
+//! [`WornDarkSight`] lends, folded with the wearer's own
+//! [`OwnDarkSight`] into its [`DarkSight`] unless a game has it
+//! [`DarkSightSuppressed`] ([`lend_dark_sight`]), and a light that shines
+//! only while worn, its [`LitWhenWorn`] ([`light_worn_things`]).
+//!
 //! Throwing one is [`throwing`](crate::throwing), which needs combat as well.
 
 use bevy::prelude::*;
 use rl_core::Point;
 use rl_core::turn::BASE_ACTION_COST;
 use rl_rules::stats::{Modifier, Op, Source};
-use rl_rules::{EquipShape, Equipment, StatId};
+use rl_rules::{EquipShape, Equipment, StatId, StatusId};
 
 use crate::ability::{Aimed, Bystanders};
 use crate::combat::DeathEvent;
 use crate::components::{MyTurn, Player, Position, Viewshed};
 use crate::effects::Triggers;
+use crate::lighting::{DarkSight, DarkSightSuppressed, LightSource, OwnDarkSight, WornDarkSight};
 use crate::minds::{Sight, Thinking};
 use crate::places::{MapId, OnMap};
 use crate::status::{Afflicted, Cure, StatBlock};
@@ -839,6 +849,136 @@ pub fn end_unworn_holds(holders: Query<(Entity, &Afflicted, Option<&Equipped>)>,
     }
 }
 
+/// On an item: the statuses it holds on whoever wears it, until cured,
+/// for as long as it is worn, which [`hold_worn_statuses`] puts on and
+/// [`end_unworn_holds`] takes off. Put on by
+/// [`insert_parts`](crate::parts::insert_parts) from
+/// [`ItemParts::holds`](crate::parts::ItemParts::holds).
+#[derive(Component, Debug, Clone, Default, PartialEq, Eq)]
+pub struct HeldWhileWorn(pub Vec<StatusId>);
+
+/// On an item: the light it sheds only while it is worn, which
+/// [`light_worn_things`] puts on it as its [`LightSource`] while it is and
+/// takes off when it is not. Put on by
+/// [`insert_parts`](crate::parts::insert_parts) for a light that is
+/// [`LightWhen::Worn`](crate::parts::LightWhen::Worn).
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LitWhenWorn(pub LightSource);
+
+/// On an actor whose [`DarkSight`] [`lend_dark_sight`] set from what it
+/// wears with no [`OwnDarkSight`] of its own: what lets taking the last
+/// such thing off take the sight away again, while an actor the fold never
+/// touched keeps a `DarkSight` a game set by hand.
+#[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct LentDarkSight;
+
+/// Each worn thing once, though a two-hander fills two slots.
+fn worn_once(equipped: &Equipped) -> Vec<Entity> {
+    let mut worn: Vec<Entity> = Vec::new();
+    for (_, item) in equipped.0.worn() {
+        if !worn.contains(&item) {
+            worn.push(item);
+        }
+    }
+    worn
+}
+
+/// Puts each worn thing's [`HeldWhileWorn`] statuses on its wearer, held by
+/// the thing, [`UNTIL_CURED`](rl_rules::UNTIL_CURED), unless a thing it
+/// wears that holds them already does.
+///
+/// Asked for through [`Afflict`](crate::status::Afflict) every pass rather
+/// than when the thing goes on, so a thing worn however it came to be, put
+/// on, handed over or put back by a save, is read as it stands; what takes
+/// the status off again is [`end_unworn_holds`], the pass the thing is no
+/// longer worn. A wearer that holds no statuses at all is lent none.
+pub fn hold_worn_statuses(wearers: Query<(Entity, &Equipped, &Afflicted)>, holders: Query<&HeldWhileWorn>, mut afflict: MessageWriter<crate::status::Afflict>) {
+    for (wearer, equipped, afflicted) in &wearers {
+        let worn: Vec<(Entity, &HeldWhileWorn)> = worn_once(equipped).into_iter().filter_map(|item| Some((item, holders.get(item).ok()?))).collect();
+        let held_by_what_it_wears = |by: u64| worn.iter().any(|(holder, _)| holder.to_bits() == by);
+        for (item, held) in &worn {
+            for status in &held.0 {
+                if !afflicted.iter().any(|s| s.id == *status && s.held_by.is_some_and(held_by_what_it_wears)) {
+                    afflict.write(crate::status::Afflict { target: wearer, status: *status, turns: rl_rules::UNTIL_CURED, by: None, held_by: Some(*item) });
+                }
+            }
+        }
+    }
+}
+
+/// An actor [`lend_dark_sight`] keeps: its own sight, what it wears, the
+/// sight it reads now, whether a game has suppressed it, and whether the
+/// fold lent it what it reads.
+type Seer = (Entity, Option<&'static OwnDarkSight>, Option<&'static Equipped>, Option<&'static DarkSight>, Has<DarkSightSuppressed>, Has<LentDarkSight>);
+/// Anyone with sight of its own, something worn that might lend some, or
+/// sight the fold lent it to take back.
+type MaySee = Or<(With<OwnDarkSight>, With<Equipped>, With<LentDarkSight>)>;
+
+/// Keeps every actor's [`DarkSight`] at the best of its [`OwnDarkSight`]
+/// and the best [`WornDarkSight`] among what it wears, or none while it is
+/// [`DarkSightSuppressed`] or when that comes to nothing.
+///
+/// Derived every pass from what stands now rather than answered as a thing
+/// goes on or comes off, so a thing swapped while the sight was suppressed
+/// is read as it stands the pass the suppression ends. An actor with no
+/// sight of its own that wears nothing lending any, and was lent none, is
+/// never touched, so a game that sets `DarkSight` by hand keeps it.
+/// Idempotent: an actor already reading right is left alone, so nothing
+/// recasts for it.
+///
+/// In [`ReactSet::Lend`](crate::plugin::ReactSet::Lend), where a game that
+/// suppresses sight in its own reactions orders those before it, so the
+/// sight is folded as that pass leaves them.
+pub fn lend_dark_sight(mut commands: Commands, seers: Query<Seer, MaySee>, lending: Query<&WornDarkSight>) {
+    for (seer, own, equipped, now, suppressed, lent) in &seers {
+        let worn = equipped.and_then(|e| worn_once(e).into_iter().filter_map(|item| lending.get(item).ok()).map(|s| s.0).max());
+        if own.is_none() && worn.is_none() && !lent {
+            continue;
+        }
+        let best = if suppressed { None } else { own.map(|o| o.0).into_iter().chain(worn).max().filter(|tiles| *tiles > 0) };
+        let mut e = commands.entity(seer);
+        if now.map(|d| d.0) != best {
+            match best {
+                Some(tiles) => drop(e.insert(DarkSight(tiles))),
+                None => drop(e.remove::<DarkSight>()),
+            }
+        }
+        // Marked while what it wears is what it sees by, so the sight goes
+        // with the thing; an actor with sight of its own needs no mark, its
+        // own is always what is left.
+        let lends = own.is_none() && worn.is_some();
+        if lends != lent {
+            if lends {
+                e.insert(LentDarkSight);
+            } else {
+                e.remove::<LentDarkSight>();
+            }
+        }
+    }
+}
+
+/// Lights every [`LitWhenWorn`] thing while someone wears it, its light its
+/// [`LightSource`] shed from its wearer, and puts it out when nobody does.
+///
+/// A component put on and taken off rather than a rule in the cast, so the
+/// light is recast the way any light lit or put out is, and what lights a
+/// carried thing needs no second case. Leaves alone what already reads
+/// right.
+pub fn light_worn_things(mut commands: Commands, wearers: Query<&Equipped>, things: Query<(Entity, &LitWhenWorn, Option<&LightSource>)>) {
+    let mut worn: Vec<Entity> = Vec::new();
+    for equipped in &wearers {
+        worn.extend(equipped.0.worn().map(|(_, item)| item));
+    }
+    for (thing, lit, now) in &things {
+        match (worn.contains(&thing), now) {
+            (true, Some(now)) if *now == lit.0 => {}
+            (true, _) => drop(commands.entity(thing).insert(lit.0)),
+            (false, Some(_)) => drop(commands.entity(thing).remove::<LightSource>()),
+            (false, None) => {}
+        }
+    }
+}
+
 /// Drops despawned items from every bag and every slot.
 pub fn forget_removed_items(mut removed: RemovedComponents<Item>, mut carriers: Query<(&mut Inventory, Option<&mut Equipped>)>) {
     let gone: Vec<Entity> = removed.read().collect();
@@ -1042,6 +1182,9 @@ impl Plugin for ItemsPlugin {
             // In the pass the slots changed in, so gear counts from the
             // moment it is worn.
             .add_systems(Turn, fold_gear.in_set(crate::plugin::ReactSet::Settle))
+            // What else a worn thing lends, as what is worn stands once the
+            // pass's slots have settled.
+            .add_systems(Turn, (hold_worn_statuses, lend_dark_sight, light_worn_things).chain().in_set(crate::plugin::ReactSet::Lend))
             .add_systems(Turn, restart_pulses.in_set(TurnSet::React))
             .add_systems(Turn, drop_what_the_dead_carried.in_set(CleanupSet::Remove))
             .add_systems(Turn, forget_removed_items.in_set(CleanupSet::Requeue));
@@ -1332,6 +1475,97 @@ mod tests {
         act(&mut r, Equip(sword));
         let swapped = vec![ItemEvent::Unequipped { actor: r.player, item: sword }, ItemEvent::Equipped { actor: r.player, item: knife }];
         assert_eq!(act(&mut r, Equip(knife)), swapped, "the knife takes the sword's hand, not the shield's");
+    }
+
+    /// Waits one turn for the rig's player, so a pass runs.
+    fn wait(r: &mut Rig) {
+        act(r, crate::turn::Wait);
+    }
+
+    fn sight(r: &Rig, who: Entity) -> Option<i32> {
+        r.app.world().get::<DarkSight>(who).map(|d| d.0)
+    }
+
+    /// A thing in the rig's player's bag, worn in the main hand, with `extra`.
+    fn carried(r: &mut Rig, extra: impl Bundle) -> Entity {
+        let main = r.main;
+        let thing = r.app.world_mut().spawn((Item, Wearable(EquipShape::in_slot(main)), extra)).id();
+        r.app.world_mut().get_mut::<Inventory>(r.player).unwrap().items.push(thing);
+        thing
+    }
+
+    /// A wearer sees in the dark by the best of its own sight and what it
+    /// wears, by nothing while a game suppresses it, and by its own again
+    /// once the thing comes off.
+    #[test]
+    fn a_wearer_sees_in_the_dark_by_the_best_of_its_own_and_what_it_wears_and_by_nothing_while_suppressed() {
+        let mut r = rig();
+        r.app.world_mut().entity_mut(r.player).insert((OwnDarkSight(2), DarkSight(2)));
+        let goggles = carried(&mut r, WornDarkSight(5));
+        wait(&mut r);
+        assert_eq!(sight(&r, r.player), Some(2), "carried, its own");
+        act(&mut r, Equip(goggles));
+        assert_eq!(sight(&r, r.player), Some(5), "worn, the goggles' in the pass they go on");
+        r.app.world_mut().entity_mut(r.player).insert(DarkSightSuppressed);
+        wait(&mut r);
+        assert_eq!(sight(&r, r.player), None, "suppressed, none at all");
+        r.app.world_mut().entity_mut(r.player).remove::<DarkSightSuppressed>();
+        wait(&mut r);
+        assert_eq!(sight(&r, r.player), Some(5), "and the goggles' again");
+        act(&mut r, Unequip(goggles));
+        assert_eq!(sight(&r, r.player), Some(2), "taken off, its own");
+    }
+
+    /// A wearer with no sight of its own loses what it wore with the thing,
+    /// and an actor the fold never lent anything keeps a sight set by hand.
+    #[test]
+    fn sight_lent_by_a_worn_thing_goes_with_it_and_a_sight_set_by_hand_is_left_alone() {
+        let mut r = rig();
+        let rat = r.app.world_mut().spawn((Actor, Blocks, Position(r.start.offset(3, 0)), DarkSight(9))).id();
+        let goggles = carried(&mut r, WornDarkSight(5));
+        act(&mut r, Equip(goggles));
+        assert_eq!(sight(&r, r.player), Some(5));
+        act(&mut r, Unequip(goggles));
+        assert_eq!(sight(&r, r.player), None, "nothing of its own to fall back on");
+        wait(&mut r);
+        assert_eq!(sight(&r, rat), Some(9), "set by hand and never lent, it is kept");
+    }
+
+    /// A worn thing holds its statuses on its wearer, until cured, for as
+    /// long as it is worn, and the pass it comes off they end.
+    #[test]
+    fn a_worn_thing_holds_its_statuses_on_its_wearer_until_it_comes_off() {
+        let mut r = rig();
+        let statuses = Registry::from_defs(vec![rl_rules::StatusDef::new("warded")]).unwrap();
+        let warded = statuses.expect("warded");
+        r.app.insert_resource(crate::registries::Registries { statuses, ..Default::default() });
+        let charm = carried(&mut r, HeldWhileWorn(vec![warded]));
+        let held = |r: &Rig| r.app.world().get::<Afflicted>(r.player).unwrap().iter().find(|s| s.id == warded).map(|s| (s.turns, s.held_by));
+        wait(&mut r);
+        assert_eq!(held(&r), None, "carried, it holds nothing");
+        act(&mut r, Equip(charm));
+        wait(&mut r);
+        assert_eq!(held(&r), Some((rl_rules::UNTIL_CURED, Some(charm.to_bits()))), "worn, held by the charm until cured");
+        wait(&mut r);
+        assert_eq!(r.app.world().get::<Afflicted>(r.player).unwrap().iter().filter(|s| s.id == warded).count(), 1, "and asked for once");
+        act(&mut r, Unequip(charm));
+        wait(&mut r);
+        assert_eq!(held(&r), None, "taken off, it ended");
+    }
+
+    /// A light lit only while worn is dark in the bag, lit on the wearer,
+    /// and dark again once taken off.
+    #[test]
+    fn a_light_lit_while_worn_shines_only_while_it_is_worn() {
+        let mut r = rig();
+        let glow = crate::lighting::LightSource::new(200, 4, rl_grid::Rgb::WHITE);
+        let lamp = carried(&mut r, LitWhenWorn(glow));
+        wait(&mut r);
+        assert_eq!(r.app.world().get::<LightSource>(lamp), None, "dark in the bag");
+        act(&mut r, Equip(lamp));
+        assert_eq!(r.app.world().get::<LightSource>(lamp), Some(&glow), "lit, worn");
+        act(&mut r, Unequip(lamp));
+        assert_eq!(r.app.world().get::<LightSource>(lamp), None, "dark again");
     }
 }
 

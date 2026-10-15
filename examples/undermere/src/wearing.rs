@@ -4,24 +4,17 @@
 //! it, the same traits a monster is written as, so a ring of the
 //! salamander and a salamander are fire-blooded for the same reason. The
 //! [`Armory`](crate::armory::Armory) folds what each thing lends once, at
-//! load, and puts as much of it as it can where the engine already reads
-//! a worn thing: the armor and the resistances a thing lends join its own
-//! `Armor` and `Resists`, which the engine's `Loadout` counts for its
-//! wearer, and only while it is worn.
+//! load, into the thing's own parts, and the engine lends every one of
+//! them to whoever wears the thing and to nobody else:
 //!
-//! The rest the engine cannot read off a worn thing, and it is the
-//! thing's [`Lends`], which [`lend`] keeps its wearer in step with every
-//! pass, through the engine's own seams:
-//!
-//! - a status is held by the thing, put on for life with the engine's
-//!   hold, so the engine itself cures it the pass the thing comes off,
-//!   however it came off;
-//! - sight in the dark is the wearer's `DarkSight`, the better of its own
-//!   and the best any thing it wears lends, given back as it was once
-//!   nothing it wears lends any;
-//! - a light is the thing's own `LightSource`, which the engine sheds from
-//!   whoever carries it, lit while the thing is worn and put out when it
-//!   is not.
+//! - the armor and the resistances it lends join the thing's own `Armor`
+//!   and `Resists`, which the engine's `Loadout` counts for its wearer;
+//! - a status is one its parts hold, put on its wearer until cured and
+//!   held by the thing, so the engine itself cures it the pass the thing
+//!   comes off, however it came off;
+//! - sight in the dark is the thing's `WornDarkSight`, which the engine
+//!   folds with its wearer's own into the wearer's `DarkSight`;
+//! - a light is the thing's own, lit only while it is worn.
 //!
 //! Nothing a trait sets is a stat, so nothing a thing lends goes through
 //! the engine's `Bestows`, which folds a worn thing's changes to a stat:
@@ -29,142 +22,12 @@
 //! the engine's `Armor` instead. What a thing gives a stat it gives by
 //! its own `bestows` and its level's `stats`, which the engine writes as the
 //! engine's `Bestows`. What a worn thing cannot give at all, a mind's
-//! wits, a pace, how far a body sees, notices and hears, when it runs and
-//! what it knows how to do, is refused where the item is read.
-
-use bevy::prelude::*;
-use rl_engine::prelude::*;
-
-use crate::bestiary::FOR_LIFE;
-use crate::traits::Folded;
-
-/// What a worn thing gives its wearer that the engine cannot read off the
-/// thing itself, kept in step by [`lend`].
-///
-/// Put on the thing when it is made, from what it lends, folded; a thing
-/// lending only armor and resistances carries none, since those are its
-/// own `Armor` and `Resists`.
-#[derive(Component, Debug, Clone, PartialEq, Eq)]
-pub struct Lends {
-    /// Every status it holds on its wearer for as long as it is worn.
-    pub statuses: Vec<StatusId>,
-    /// Tiles its wearer sees with no light at all.
-    pub dark_sight: Option<i32>,
-    /// The light it sheds while it is worn.
-    pub light: Option<LightSource>,
-}
-
-impl Lends {
-    /// What `lent` gives a wearer that has to be put on the wearer, or
-    /// `None` when it gives nothing of the kind.
-    pub fn of(lent: &Folded) -> Option<Self> {
-        let lends = Self { statuses: lent.statuses.clone(), dark_sight: lent.dark_sight, light: lent.light };
-        (!lends.statuses.is_empty() || lends.dark_sight.is_some() || lends.light.is_some()).then_some(lends)
-    }
-}
-
-/// A wearer's own sight in the dark, kept while something it wears lends
-/// it more, so taking that off gives back what it had: `None` for a
-/// wearer that sees nothing without light.
-///
-/// Kept on the wearer rather than read off its kind, since an adventurer
-/// and a monster come by their own sight differently, and taken the first
-/// time a thing lends any, before anything has been lent.
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OwnSight(pub Option<i32>);
-
-/// A wearer: what it wears, the statuses it holds, if it can hold any, and
-/// its sight in the dark, its own and as it stands.
-type Wearer = (Entity, &'static Equipped, Option<&'static Afflicted>, Option<&'static DarkSight>, Option<&'static OwnSight>);
-
-/// Keeps every wearer in step with what the things it wears lend, and
-/// every lending thing's light with whether it is worn.
-///
-/// Run every pass in `TurnSet::React`, deriving what each wearer should
-/// have from what it wears now rather than answering each way a thing goes
-/// on or comes off, as Foundry's dark sight is kept: worn, dropped,
-/// displaced, taken by a goblin or restored from a save, the next pass
-/// reads it as it stands. Idempotent: what already reads right is left
-/// alone, so nothing is changed for the light or the sight to recast.
-///
-/// A status is asked for, through `Afflict`, only where no worn thing that
-/// lends it holds it, and held by the thing that asks; what takes it off
-/// again is the engine's own `end_unworn_holds`, the pass the thing is no
-/// longer worn.
-pub fn lend(mut commands: Commands, wearers: Query<Wearer>, lending: Query<(Entity, &Lends, Option<&LightSource>)>, mut afflict: MessageWriter<Afflict>) {
-    let mut lit: Vec<Entity> = Vec::new();
-    for (wearer, equipped, afflicted, sight, own) in &wearers {
-        // Each lending thing once, though a two-hander fills two slots.
-        let mut worn: Vec<(Entity, &Lends)> = Vec::new();
-        for (_, item) in equipped.0.worn() {
-            if let Ok((_, lends, _)) = lending.get(item)
-                && !worn.iter().any(|(seen, _)| *seen == item)
-            {
-                worn.push((item, lends));
-            }
-        }
-        // A wearer that holds no statuses at all is lent none.
-        if let Some(afflicted) = afflicted {
-            for (item, lends) in &worn {
-                for status in &lends.statuses {
-                    let held_by_what_it_wears = |by: u64| worn.iter().any(|(holder, _)| holder.to_bits() == by);
-                    if !afflicted.iter().any(|s| s.id == *status && s.held_by.is_some_and(held_by_what_it_wears)) {
-                        afflict.write(Afflict { target: wearer, status: *status, turns: FOR_LIFE, by: None, held_by: Some(*item) });
-                    }
-                }
-            }
-        }
-        see_in_the_dark(&mut commands, wearer, worn.iter().filter_map(|(_, lends)| lends.dark_sight).max(), sight.map(|s| s.0), own.copied());
-        lit.extend(worn.iter().filter(|(_, lends)| lends.light.is_some()).map(|(item, _)| *item));
-    }
-    for (item, lends, light) in &lending {
-        let Some(lent) = lends.light else { continue };
-        match (lit.contains(&item), light) {
-            (true, Some(now)) if *now == lent => {}
-            (true, _) => {
-                commands.entity(item).insert(lent);
-            }
-            (false, Some(_)) => {
-                commands.entity(item).remove::<LightSource>();
-            }
-            (false, None) => {}
-        }
-    }
-}
-
-/// Gives `wearer`, which sees `sight` in the dark now, the better of its
-/// own sight and the `lent` best of what it wears, or gives back its own
-/// once nothing it wears lends any. Its own is kept in an [`OwnSight`]
-/// from the first time anything is lent until nothing is.
-fn see_in_the_dark(commands: &mut Commands, wearer: Entity, lent: Option<i32>, sight: Option<i32>, own: Option<OwnSight>) {
-    match (lent, own) {
-        (Some(lent), _) => {
-            let mine = own.map_or(sight, |o| o.0);
-            let best = mine.map_or(lent, |m| m.max(lent));
-            let mut e = commands.entity(wearer);
-            if own.is_none() {
-                e.insert(OwnSight(mine));
-            }
-            if sight != Some(best) {
-                e.insert(DarkSight(best));
-            }
-        }
-        (None, Some(OwnSight(mine))) => {
-            let mut e = commands.entity(wearer);
-            match mine {
-                Some(cells) if sight != Some(cells) => {
-                    e.insert(DarkSight(cells));
-                }
-                Some(_) => {}
-                None => {
-                    e.remove::<DarkSight>();
-                }
-            }
-            e.remove::<OwnSight>();
-        }
-        (None, None) => {}
-    }
-}
+//! wits, a pace, how far a body moves, sees, notices and hears, when it
+//! runs, what it knows how to do and what its kind does while it holds a
+//! status, is refused where the item is read.
+//!
+//! No item `items.ron` ships lends a trait yet; the fixture below is what
+//! keeps the lending tested.
 
 #[cfg(test)]
 mod tests {
@@ -172,8 +35,11 @@ mod tests {
     use bevy::ecs::world::CommandQueue;
     use rl_engine::rl_core::{Rect, RunSeed};
 
-    use super::*;
+    use bevy::prelude::*;
+    use rl_engine::prelude::*;
+
     use crate::armory::Armory;
+    use crate::bestiary::FOR_LIFE;
     use crate::content::Library;
     use crate::dungeon::map_of;
     use crate::testing::{arrive, clear_monsters, equip, headless, pass_turns, unequip};

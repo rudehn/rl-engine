@@ -104,8 +104,35 @@ impl From<Glow> for LightSource {
 
 /// How far an actor sees with no light at all. Absent means only what it
 /// is touching.
+///
+/// Set by hand, it is left as set. An actor with an [`OwnDarkSight`], or
+/// wearing a thing with a [`WornDarkSight`], has it kept by
+/// [`ItemsPlugin`](crate::items::ItemsPlugin): the best of its own and the
+/// best worn, or none while it is [`DarkSightSuppressed`].
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct DarkSight(pub i32);
+
+/// On an actor: how far it sees in the dark by itself, before anything it
+/// wears. Put on beside its [`DarkSight`] by
+/// [`ActorParts::dark_sight`](crate::parts::ActorParts::dark_sight), so
+/// what a worn thing lends is folded with it rather than written over it,
+/// and taking the thing off gives it back.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OwnDarkSight(pub i32);
+
+/// On an item: how far it lets its wearer see in the dark while it is
+/// worn, its level applied. Put on by
+/// [`insert_parts`](crate::parts::insert_parts) from
+/// [`ItemParts::dark_sight`](crate::parts::ItemParts::dark_sight).
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WornDarkSight(pub i32);
+
+/// On an actor, put on by a game: no sight in the dark at all while it is
+/// on, whatever it has of its own or wears, and given back when the game
+/// takes it off. What blinds is the game's, a sensor jammed or a curse;
+/// the engine only keeps the sight it folds from being restored meanwhile.
+#[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DarkSightSuppressed;
 
 /// Turns of light left. Ticks down every whole turn while the entity
 /// sheds light; at zero the engine removes the [`LightSource`] and reports

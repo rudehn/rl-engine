@@ -213,7 +213,11 @@ impl Plugin for UndermerePlugin {
             // discordant side and a troll's halted mending, kept after the
             // answers and before what reads the stats they leave, which is
             // where Undermere's own systems kept them before the engine did.
-            .configure_sets(Turn, ReactSet::Statuses.after(ReactStep::Answer).before(ReactStep::Keep));
+            .configure_sets(Turn, ReactSet::Statuses.after(ReactStep::Answer).before(ReactStep::Keep))
+            // What a worn thing lends beyond its stats, a status, sight in
+            // the dark and a light, kept there too, before the lantern and
+            // the rest of what reads what the adventurer is.
+            .configure_sets(Turn, ReactSet::Lend.after(ReactStep::Answer).before(ReactStep::Keep));
         // The run's start, and a continued run after the fresh start has
         // stood aside.
         app.add_systems(NewRun, crate::run::start);
@@ -281,9 +285,9 @@ impl Plugin for UndermerePlugin {
         );
         // What the adventurer and those around them are, kept in step every
         // pass from the stats as they stand, after the engine has folded
-        // what is worn onto them and kept what each status held lends. First
-        // what puts a status or a stat on somebody: what a worn thing lends,
-        // a Choirmaster's choir, the Crown of Grubnak's aura.
+        // what is worn onto them and kept what each worn thing and each
+        // status held lends. First what puts a status or a stat on
+        // somebody: a Choirmaster's choir, the Crown of Grubnak's aura.
         // Then what reads the stats those leave: what too heavy a thing
         // costs, how far the lantern reaches, how sneaky the stealth stat
         // makes the adventurer, and what the rings give that the engine
@@ -293,7 +297,6 @@ impl Plugin for UndermerePlugin {
         app.add_systems(
             Turn,
             (
-                crate::wearing::lend,
                 crate::tricks::sing_choir,
                 crate::artifacts::crown_aura,
                 crate::strength::keep_strength,

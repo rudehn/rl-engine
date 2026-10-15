@@ -30,10 +30,11 @@
 //! `lends`: the traits a worn thing gives its wearer, the same traits a
 //! monster is written as, so a ring of the salamander and a salamander are
 //! fire-blooded for the same reason. The names resolve here, at load, and
-//! are folded once into what each thing lends: its armor and its
-//! resistances join the thing's own parts, which the engine counts for
-//! whoever wears it, and the rest is the thing's [`Lends`], which
-//! [`wearing`](crate::wearing) puts on its wearer and takes off again.
+//! are folded once into what each thing lends, all of it the thing's own
+//! parts: its armor and its resistances join the thing's own, which the
+//! engine counts for whoever wears it, and the statuses it holds, the
+//! sight in the dark it lends and a light lit while it is worn are the
+//! parts the engine lends a wearer, as [`wearing`](crate::wearing) says.
 //!
 //! What a level adds is a [`Level`] part, written by each line over the
 //! default its tag has here, [`level_defaults`]: a weapon a damage and five
@@ -52,7 +53,6 @@ use serde::Deserialize;
 
 use crate::lore::{CurseShown, Lore, Unfamiliar};
 use crate::traits::{Folded, TraitDef};
-use crate::wearing::Lends;
 
 /// The items file, compiled in so the binary runs from anywhere.
 const ITEMS_RON: &str = include_str!("../assets/items.ron");
@@ -190,13 +190,9 @@ pub struct Armory {
     /// floor's number: `item_spawns.ron`, through the engine's loader.
     pub table: LootTable<Id<ItemDef>>,
     /// Each definition's parts, built once and shared by every item spawned
-    /// from it: its triggers, its wear, what it lends of armor and
-    /// resistances folded into its own, and its level, its tag's default
-    /// written over by its line.
+    /// from it: its triggers, its wear, everything it lends folded into
+    /// them, and its level, its tag's default written over by its line.
     parts: Vec<Arc<ItemParts>>,
-    /// What each definition lends, its traits folded once, so a spawn
-    /// reads plain values.
-    lent: Vec<Folded>,
     /// Each definition's plain level, read once off its tags and its
     /// `found_at`: `None` for one that takes no levels.
     plain: Vec<Option<i32>>,
@@ -247,7 +243,7 @@ impl Armory {
     ) -> Result<Self, ContentError> {
         let names = registries.names();
         let defaults = level_defaults(registries);
-        let (mut parts, mut lent, mut errors) = (Vec::new(), Vec::new(), Vec::new());
+        let (mut parts, mut errors) = (Vec::new(), Vec::new());
         let plain = defs.iter().map(|(_, d)| plain_level(d, registries)).collect();
         let artifacts = defs.iter().map(|(_, d)| d.tags.iter().any(|t| registries.tags.name(t.id()) == "artifact")).collect();
         let shows_unstruck = defs.iter().map(|(_, d)| shows_unstruck(d)).collect();
@@ -270,12 +266,11 @@ impl Armory {
             wrong.extend(made.check());
             errors.extend(wrong.into_iter().map(|e| format!("{}: {e}", d.name)));
             parts.push(Arc::new(made));
-            lent.push(folded);
         }
         if !errors.is_empty() {
             return Err(ContentError::Invalid(errors));
         }
-        Ok(Self { defs, table, parts, lent, plain, artifacts, shows_unstruck, lands_seen })
+        Ok(Self { defs, table, parts, plain, artifacts, shows_unstruck, lands_seen })
     }
 
     /// The parts a thing of `def` is made of: what the engine spawns it
@@ -586,7 +581,9 @@ pub fn level_defaults(registries: &Registries) -> Vec<(TagId, Level)> {
 }
 
 /// The parts a thing of `d`, the definition `id`, is made of: its own,
-/// with the armor and the resistances `lent` folded into them, its
+/// with what `lent` folded into them, armor and resistances added to its
+/// own, the statuses it holds, its sight in the dark and a light lit
+/// while worn, its
 /// `triggers` as the armory built them, and for a thing that takes levels
 /// its line's level written over its tags' `defaults`. Every reason it
 /// cannot be, its wear on a slot of no pair among them.
@@ -619,7 +616,10 @@ fn parts_of(
         attacks: Attacks { melee: d.melee, ranged: d.ranged, throw: d.throw, cost: d.cost },
         ammo: d.ammo.map(|t| t.id()),
         stack: d.stack.then_some(id.index() as u64),
-        light: d.light,
+        light: d.light.or(lent.light.map(|light| light.0)),
+        light_when: if lent.light.is_some() { LightWhen::Worn } else { LightWhen::Carried },
+        holds: lent.statuses.clone(),
+        dark_sight: lent.dark_sight,
         level,
     })
 }
@@ -780,11 +780,9 @@ pub struct ItemKind(pub Id<ItemDef>);
 /// it strikes or shoots with. A stackable item spawns as a stack of one;
 /// the caller merges or grows it as it likes.
 ///
-/// What a worn thing lends goes where the engine already reads a worn
-/// thing, as far as it can: the armor and the resistances it lends join
-/// its own, and the engine counts them for whoever wears it and for
-/// nobody else. The rest, a status, sight in the dark and a light, is its
-/// [`Lends`], which [`wearing`](crate::wearing) gives its wearer.
+/// What a worn thing lends is in its parts, so the engine gives it to
+/// whoever wears it and to nobody else, as [`wearing`](crate::wearing)
+/// says.
 ///
 /// It is spawned under its own name and as it is: what the adventurer
 /// knows of it, and what it is called for that, is
@@ -829,9 +827,6 @@ pub fn spawn_item_at(commands: &mut Commands, armory: &Armory, def: Id<ItemDef>,
                 pace.every = every;
             }
         });
-    }
-    if let Some(lends) = Lends::of(&armory.lent[def.index()]) {
-        e.insert(lends);
     }
     e.id()
 }
@@ -1615,8 +1610,9 @@ mod tests {
         assert_eq!(world.get::<Armor>(made).map(|a| a.0), Some(5), "its own one and the four `armored` lends");
         let resists = &world.get::<Resists>(made).expect("resistances").0;
         assert_eq!((resists.get(kind("fire")), resists.get(kind("cold"))), (100, -40), "fire-blooded beside its own ten against cold");
-        let lends = world.get::<Lends>(made).expect("what it lends a wearer");
-        assert_eq!((lends.statuses.clone(), lends.dark_sight, lends.light), (vec![registries.statuses.expect("regenerating")], Some(6), None));
+        let held = world.get::<HeldWhileWorn>(made).map(|h| h.0.clone());
+        let (sight, lit) = (world.get::<WornDarkSight>(made).map(|d| d.0), world.get::<LitWhenWorn>(made).is_some());
+        assert_eq!((held, sight, lit), (Some(vec![registries.statuses.expect("regenerating")]), Some(6), false), "what it lends a wearer, and no light");
     }
 
     /// A weapon found rather than set out with reads `+?`, its level not

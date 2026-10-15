@@ -122,9 +122,10 @@ pub struct ItemDef {
     /// rather than on heat.
     #[serde(default)]
     pub ammo: Option<NameRef<TagDef>>,
-    /// Tiles seen without light while worn, and what a level adds to them.
+    /// Tiles seen without light while worn, at `+0`: the engine's worn
+    /// dark sight, which its `level` grows by its own `dark_sight`.
     #[serde(default)]
-    pub dark_sight: Option<DarkSightDef>,
+    pub dark_sight: Option<i32>,
     /// That it takes levels, how far, and what a level adds: the one place
     /// a reader looks to learn what a `+2` is. Absent, it is always plain.
     ///
@@ -141,22 +142,6 @@ pub struct ItemDef {
     /// each.
     #[serde(default)]
     pub stack: bool,
-}
-
-/// Sight in the dark a worn thing gives, as `items.ron` writes it:
-/// `(tiles: 6)`, with what each of its levels adds.
-///
-/// Foundry's rather than a level part's, since dark sight is Foundry's own
-/// [`WornDarkSight`] and not a component the engine plays; it grows by a
-/// level as the engine's parts do, linearly and only where written.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct DarkSightDef {
-    /// Tiles seen without light at `+0`.
-    pub tiles: i32,
-    /// Tiles each level adds; nought unless written.
-    #[serde(default)]
-    pub per_level: i32,
 }
 
 /// Whether `def` makes an attack roll of its own a level could add to: a
@@ -185,17 +170,6 @@ impl Named for ItemDef {
         &self.name
     }
 }
-
-/// Grants [`DarkSight`] while worn: the rangefinder helmet's sensor
-/// suite, and whatever else ever names one.
-///
-/// A component on the item rather than a field the game copies onto the
-/// wearer, so [`sync_dark_sight`](crate::droids::sync_dark_sight) can read
-/// it off whatever is currently equipped without tracking which slot it
-/// came from, and fold it together with a monster's own native radar and
-/// whether either is jammed.
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
-pub struct WornDarkSight(pub i32);
 
 /// Notes on each pack row what the engine's row cannot read off the
 /// thing: how far it sees in the dark, and the attack a weapon has put by
@@ -310,6 +284,9 @@ fn validate_level(d: &ItemDef, level: &Level) -> Result<(), String> {
     if level.charges.is_some() || !level.stats.is_empty() {
         return Err("charges or stats in the level: nothing here grows either".into());
     }
+    if level.dark_sight.is_some() && d.dark_sight.is_none() {
+        return Err("dark_sight in the level, on a thing that lends no dark sight".into());
+    }
     // A level never quickens a pulse past a turn, since a plate that pulsed
     // several times each time its wearer acts is a rule nobody wrote on
     // purpose; a period written below a turn is the thing at `+0`, and a
@@ -356,6 +333,7 @@ fn parts_of(d: &ItemDef, id: Id<ItemDef>, triggers: Triggers, registries: &Regis
         attacks: Attacks { melee: d.melee, ranged: d.ranged, throw: d.throw, cost: d.cost },
         ammo: d.ammo.map(|t| t.id()),
         stack: d.stack.then_some(id.index() as u64),
+        dark_sight: d.dark_sight,
         level: level_of(d),
         ..ItemParts::default()
     };
@@ -494,9 +472,8 @@ pub struct ItemKind(pub Id<ItemDef>);
 ///
 /// At `level`, which names it `cloak plate +2` and writes every number its
 /// level says a level changes with the level applied: its armor, its
-/// attack rolls, its clock and the [`EffectBonus`] its effects land with,
-/// by the engine's [`insert_parts`], and its dark sight, which is
-/// Foundry's. A thing that names no `level` is plain whatever `level`
+/// attack rolls, its clock, the [`EffectBonus`] its effects land with and
+/// the dark sight it lends, by the engine's [`insert_parts`]. A thing that names no `level` is plain whatever `level`
 /// says, and one that does is held between plain and its `max`, so a save
 /// written before the file lowered a `max` never brings back a thing the
 /// file no longer allows.
@@ -522,9 +499,6 @@ pub fn spawn_item_at(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, 
     }
     if let Some((per_shot, vent)) = d.heat {
         e.insert(Heat::new(per_shot, vent));
-    }
-    if let Some(sight) = d.dark_sight {
-        e.insert(WornDarkSight(sight.tiles + sight.per_level * level));
     }
     e.id()
 }
@@ -737,7 +711,7 @@ mod tests {
     /// `DarkSight` from gear alone fought over the same component the
     /// moment a jammed wearer took the helmet off, and the wearer kept
     /// radar for good with no helmet on. `DarkSight` derived fresh every
-    /// pass by `sync_dark_sight` has nothing left to fight over: with the
+    /// pass by the engine's fold has nothing left to fight over: with the
     /// helmet gone, there is nothing for it to read once the jam clears.
     #[test]
     fn a_jammed_wearer_who_takes_the_helmet_off_has_no_dark_sight_once_the_jam_clears() {
@@ -1126,7 +1100,7 @@ mod tests {
             (ItemDef { level: Some(Level { armor: Some(1), ..level_to(3) }), ..worn("paper shirt") }, "no armor of its own"),
             (ItemDef { level: Some(Level { armor: Some(0), ..level_to(3) }), ..worn("paper shirt that says so") }, "no armor of its own"),
             (ItemDef { level: Some(Level { pulse: Some(-200), ..level_to(9) }), triggers: nanite.triggers.clone(), ..worn("a racing clock") }, "past a turn"),
-            (ItemDef { dark_sight: Some(DarkSightDef { tiles: 6, per_level: 1 }), ..blank_def("loose sensor") }, "never worn"),
+            (ItemDef { dark_sight: Some(6), ..blank_def("loose sensor") }, "never worn"),
         ];
         for (d, says) in cases {
             let err = validate_def(&d, &armory.defs).expect_err(&d.name);
@@ -1156,8 +1130,10 @@ mod tests {
     }
 
     /// An item written the old way, a clock or an attunement at the top of
-    /// the item, an `enchant` block or a `dark_sight` in its level, fails
-    /// to load rather than loading plain and quietly doing less.
+    /// the item or an `enchant` block, fails to load rather than loading
+    /// plain and quietly doing less; and so does dark sight written the
+    /// old way, `(tiles:, per_level:)`, since a level's tiles are the
+    /// level's `dark_sight` now.
     #[test]
     fn an_item_with_its_level_rules_in_the_old_places_fails_to_load() {
         let r = crate::content::registries();
@@ -1165,10 +1141,10 @@ mod tests {
             ("pulse", r#"[(name: "x", glyph: '[', color: (0.0, 0.0, 0.0), wear: (slot: "torso"), pulse: (every: 1000, per_level: -100, fastest: 100))]"#),
             ("attuned", r#"[(name: "x", glyph: '[', color: (0.0, 0.0, 0.0), wear: (slot: "torso"), attuned: true)]"#),
             ("enchant", r#"[(name: "x", glyph: '[', color: (0.0, 0.0, 0.0), wear: (slot: "torso"), enchant: (max: 9))]"#),
-            ("dark_sight", r#"[(name: "x", glyph: '[', color: (0.0, 0.0, 0.0), wear: (slot: "torso"), level: (max: 3, dark_sight: 1))]"#),
+            ("integer", r#"[(name: "x", glyph: '[', color: (0.0, 0.0, 0.0), wear: (slot: "torso"), dark_sight: (tiles: 6, per_level: 1))]"#),
         ] {
             let err = r.names().load::<ItemDef>(item).map(|_| ()).expect_err(field);
-            assert!(err.to_string().contains(field), "{err} does not name {field:?}");
+            assert!(err.to_string().contains(field), "{err} does not say {field:?}");
         }
     }
 

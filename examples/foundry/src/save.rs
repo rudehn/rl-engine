@@ -553,7 +553,7 @@ mod tests {
         let world = continued.world();
         assert_eq!(world.get::<MeleeAttack>(axe).map(|m| m.dice.to_string()).as_deref(), Some("2d6+5"), "the axe's two levels of two");
         assert_eq!(world.get::<EffectBonus>(cloak).copied(), Some(EffectBonus { turns: 4, amount: 0 }), "the cloak's two levels of two turns");
-        assert_eq!(world.get::<crate::gear::WornDarkSight>(helmet).map(|d| d.0), Some(8));
+        assert_eq!(world.get::<WornDarkSight>(helmet).map(|d| d.0), Some(8));
         assert_eq!(world.get::<DarkSight>(me).map(|d| d.0), Some(8), "and the commando sees by it again");
     }
 

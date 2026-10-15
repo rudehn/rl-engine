@@ -71,9 +71,8 @@
 //   cost:      optional; what one blow or shot costs, in hundredths of a step; absent is 100
 //   heat:      optional; (per shot, vent per quiet turn); the weapon locks at 100 until it cools to 0
 //   ammo:      optional; the tag of what one shot spends, as "slug"
-//   dark_sight: optional; (tiles:, per_level:) tiles seen without light while worn, and
-//              per_level, optional, the tiles each level adds, 0 when left out
-//   level:     optional; (max:, armor:, damage:, pulse:, turns:, amount:) that it takes
+//   dark_sight: optional; tiles seen without light while worn, at +0
+//   level:     optional; (max:, armor:, damage:, pulse:, turns:, amount:, dark_sight:) that it takes
 //              levels, and everything a level changes. The rule: base numbers stay where they
 //              are, and are what it is at +0; everything a level changes lives here, as what
 //              one level adds. A worn thing that names it rolls a level from levels.ron at the
@@ -96,6 +95,8 @@
 //                amount:     optional; added per level to every Harm or Mend roll its
 //                            effects make; default 0, and only on a thing with a Harm or a
 //                            Mend among its effects, shared or a trigger's own
+//                dark_sight: optional; tiles of dark sight added per level; default 0, and
+//                            only on a thing with a dark_sight of its own
 //              the engine's level part, whose min, charges and stats nothing here writes, so
 //              each is refused; refused on a thing that is never worn or that stacks
 //   stack:     optional; whether copies merge into one counted entry
@@ -144,7 +145,7 @@
      triggers: [(on: "land", area: Burst(radius: 1), look: (glyph: '*', color: (r: 255, g: 110, b: 40)), effects: [(kind: "Harm", args: (kind: "thermal", roll: "2d4")), (kind: "Ignite", args: (turns: 4)), (kind: "Noise", args: (sound: "blast", loudness: 14))])]),
     // ANCHOR_END: grenades
     (name: "commando helmet", glyph: '[', color: (0.85, 0.85, 0.8), wear: (slot: "head"), tags: ["armor"], armor: 1, level: (max: 3)),
-    (name: "rangefinder helmet", glyph: '[', color: (0.6, 0.85, 0.7), wear: (slot: "head"), tags: ["armor"], armor: 1, dark_sight: (tiles: 6, per_level: 1), level: (max: 3)),
+    (name: "rangefinder helmet", glyph: '[', color: (0.6, 0.85, 0.7), wear: (slot: "head"), tags: ["armor"], armor: 1, dark_sight: 6, level: (max: 3, dark_sight: 1)),
     (name: "scrap plate", glyph: '[', color: (0.55, 0.5, 0.45), wear: (slot: "torso"), tags: ["armor"], armor: 1, level: (max: 3)),
     (name: "composite plate", glyph: '[', color: (0.9, 0.9, 0.85), wear: (slot: "torso"), tags: ["armor"], armor: 2, resists: [("energy", 10)], level: (max: 3)),
     (name: "combat gauntlets", mass: true, glyph: '[', color: (0.7, 0.7, 0.7), wear: (slot: "arms"), tags: ["armor"], armor: 1, level: (max: 3)),

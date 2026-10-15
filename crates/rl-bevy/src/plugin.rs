@@ -297,6 +297,7 @@ impl Plugin for CorePlugin {
             )
             .configure_sets(Turn, ReactSet::Settle.in_set(TurnSet::React))
             .configure_sets(Turn, ReactSet::Statuses.in_set(TurnSet::React).after(ReactSet::Settle))
+            .configure_sets(Turn, ReactSet::Lend.in_set(TurnSet::React).after(ReactSet::Settle))
             .configure_sets(
                 Turn,
                 (ResolveSet::Redirect, ResolveSet::Travel, ResolveSet::Act, ResolveSet::Triggers, ResolveSet::Fields, ResolveSet::Effects, ResolveSet::Damage)
@@ -630,6 +631,12 @@ pub enum PerceiveSet {
 pub enum ReactSet {
     /// What the pass changed about who is what, settled.
     Settle,
+    /// What worn things lend their wearers beyond their stats, kept in step
+    /// with what is worn now: statuses held, sight in the dark and a light
+    /// lit while worn. After [`Settle`](Self::Settle), so slots changed this
+    /// pass are read as they stand. A game that blinds a wearer in its own
+    /// reactions orders that before this set.
+    Lend,
     /// What the statuses held lend their holders, kept in step with what
     /// is held now: the side one names, what one resists, and what a
     /// kind's own stats do while it holds one. After [`Settle`](Self::Settle),

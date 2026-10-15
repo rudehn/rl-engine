@@ -11,7 +11,7 @@
 //! twice.
 //!
 //! Uplink's bonus is applied and removed, not derived fresh every pass the
-//! way `ammo::sync_ammo` and `droids::sensors::sync_dark_sight` compute
+//! way `ammo::sync_ammo` and the engine's worn dark sight compute
 //! theirs. Both of those exist because two different sources could
 //! legitimately disagree about one field on the same pass (a bag two
 //! weapons draw from, a jam and a helmet both claiming sight), so a system

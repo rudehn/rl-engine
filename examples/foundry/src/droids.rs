@@ -6,11 +6,10 @@
 //! anything in reach before ever closing to a punch.
 //!
 //! `alarm` holds a probe's radar reporting to the rest of the deck.
-//! `sensors` holds what an ion hit does to that same radar, and owns
-//! `DarkSight` as derived state: [`sensors::sync_dark_sight`] is the one
-//! system that ever sets or clears it, from a monster's own
-//! [`NativeDarkSight`] and whatever it wears, folded together with whether
-//! it is currently [`sensors::Jammed`]. `spawns` holds populating a deck
+//! `sensors` holds what an ion hit does to that same radar: a jam that
+//! suppresses the engine's dark sight, which the engine folds from a
+//! monster's own radar, its parts' `dark_sight`, and whatever it wears.
+//! `spawns` holds populating a deck
 //! the first time it is entered. Kept out of this file so it stays about
 //! the roster and the spawn, which is already most of a file's worth on
 //! its own.
@@ -33,7 +32,7 @@ use serde::Deserialize;
 
 pub use alarm::{ALARM_LOUDNESS, ALARM_SOUND, Alarm, NOISE, PULSE, Raised, SIGNALLING, SignalAlarm, lower_alarm, sense_alarm, shout_alarm, sound_alarm};
 pub use repair::{REPAIRING, RepairWrecks, Wrecks, rebuild_wrecks, sense_wrecks};
-pub use sensors::{Jammed, jam_sensors, sync_dark_sight, unjam_sensors};
+pub use sensors::{Jammed, jam_sensors, unjam_sensors};
 pub(crate) use spawns::MIN_DISTANCE_FROM_ENTRY;
 pub use spawns::populate_deck;
 
@@ -116,18 +115,6 @@ impl Named for MonsterDef {
         &self.name
     }
 }
-
-/// A monster's own radar, from `monsters.ron`'s `dark_sight`: the probe's
-/// is 4, and nothing else in this roster names one.
-///
-/// Never read as `DarkSight` itself and never removed once given:
-/// [`sensors::sync_dark_sight`] is the one place that folds it together
-/// with whatever an actor wears and whether it is jammed into the
-/// `DarkSight` everything else reads, so a monster's own radar and a
-/// helmet's sensor suite can never fight over which one last wrote the
-/// component.
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
-pub struct NativeDarkSight(i32);
 
 /// Marks a monster with the definition it was spawned from, for the drops
 /// a later task rolls on its death.
@@ -243,8 +230,8 @@ const DROID: Standard = Standard {
 
 /// `d`'s parts over [`defaults`], its brain still to be built from them:
 /// everything of it the engine plays, and nothing of what is Foundry's own. Its radar is
-/// not the engine's dark sight, which [`sensors::sync_dark_sight`] folds
-/// from it, its resistances are its profile's, and its alarm and its
+/// the engine's dark sight, its own beside whatever it wears, its
+/// resistances are its profile's, and its alarm and its
 /// repairs are Foundry's systems, so `spawn_monster` puts each on beside
 /// these.
 fn parts_of(d: &MonsterDef) -> ActorParts<ItemDef> {
@@ -258,6 +245,7 @@ fn parts_of(d: &MonsterDef) -> ActorParts<ItemDef> {
         wits: Some(d.wits),
         notice: d.notice,
         hearing: d.hearing,
+        dark_sight: d.dark_sight,
         attacks: Attacks { melee: d.melee, ranged: d.ranged, ..Attacks::default() },
         keep_away: d.keep_away,
         drops: parts::drops(&d.drops),
@@ -298,11 +286,9 @@ impl ActorMaker for Roster {
 /// Spawns `id` on `map` at `at`: an actor with its name and its look, the
 /// resistances its profile gives it, and everything of it its parts say,
 /// health, armor, perception, a mind, the notice every monster carries,
-/// remains, and its blow, its shot, its hearing and its drops for a kind
-/// that names them. `Alarm` is added only for a kind that names one, and a
-/// kind naming `dark_sight` gets [`NativeDarkSight`] rather than
-/// `DarkSight` itself, which [`sensors::sync_dark_sight`] sets from it the
-/// moment this pass's `Turn` schedule runs.
+/// remains, and its blow, its shot, its hearing, its radar and its drops
+/// for a kind that names them. `Alarm` is added only for a kind that names
+/// one.
 pub fn spawn_monster(commands: &mut Commands, roster: &Roster, id: Id<MonsterDef>, at: Point, map: MapId, registries: &Registries) -> Entity {
     // ANCHOR: spawn
     let d = roster.defs.get(id);
@@ -314,9 +300,6 @@ pub fn spawn_monster(commands: &mut Commands, roster: &Roster, id: Id<MonsterDef
     // remains: everything on a deck leaves something behind.
     roster.parts[id.index()].insert(&mut e, registries);
     // ANCHOR_END: spawn
-    if let Some(n) = d.dark_sight {
-        e.insert(NativeDarkSight(n));
-    }
     if let Some(signal) = d.alarm {
         e.insert(Alarm { signal });
     }
