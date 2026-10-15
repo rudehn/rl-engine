@@ -647,11 +647,11 @@ fn whoever_stands_under_the_lintel_leaps_clear_of_the_fall() {
     }
 }
 
-/// A flooding vault's far end never turns too deep to cross under
-/// somebody standing in it: their cell stays wading-deep until they leave
-/// it, and goes deep once they have.
+/// A flooding vault's far end never turns too deep to cross round
+/// somebody standing in it: all of it stays wading-deep until they leave
+/// it, so their way out is waded too, and goes deep once they have.
 #[test]
-fn deep_water_never_rises_under_somebody_standing_in_it() {
+fn deep_water_never_rises_round_somebody_standing_in_it() {
     let (mut app, me, map) = on_the_floor_of("The Flooding Vault");
     let (altar, there) = props_called(&mut app, map, FLOOD_ALTAR)[0];
     let grates: Vec<Point> = props_called(&mut app, map, GRATE).into_iter().map(|(_, p)| p).collect();
@@ -664,6 +664,9 @@ fn deep_water_never_rises_under_somebody_standing_in_it() {
     pass_turns(&mut app, FLOOD_TURNS + 2);
     assert_eq!(at(&app, wader), far, "the wader stands where it was put");
     assert_eq!(tile_at(&app, map, far), "flooded floor", "wading-deep under the wader");
+    for (p, _, deep) in &plan {
+        assert!(deep.is_none() || tile_at(&app, map, *p) == "flooded floor", "{p:?} of the far end wading-deep round the wader, an island otherwise");
+    }
     app.world_mut().despawn(wader);
     pass_turns(&mut app, 2);
     assert_eq!(tile_at(&app, map, far), "deep water", "and deep once it has gone");

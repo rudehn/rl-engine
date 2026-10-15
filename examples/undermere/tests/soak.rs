@@ -512,6 +512,11 @@ struct Memory {
     /// running and shooting would otherwise lead the adventurer round the
     /// floor for good.
     let_go: BTreeSet<Entity>,
+    /// Where the walls were searched on the floor being played, with no
+    /// way on in reach, and how many turns have been waited at the cell
+    /// being searched from.
+    searched: BTreeSet<Point>,
+    searching: u32,
 }
 
 /// How many blows or throws in a row that take nothing from a foe make
@@ -700,7 +705,43 @@ fn walk(world: &mut World, view: &Sight, memory: &mut Memory) -> Choice {
         return Choice::Through;
     }
     let goal = way_on.or_else(|| king(world, view.here));
-    goal.and_then(|goal| toward(world, view.at, &[goal], &memory.untouchable)).map_or(Choice::Wait, Choice::Bump)
+    match goal.and_then(|goal| toward(world, view.at, &[goal], &memory.untouchable)) {
+        Some(dir) => Choice::Bump(dir),
+        None => search(world, view, memory),
+    }
+}
+
+/// How many turns the adventurer waits at a wall searching it, a wait
+/// spotting at three times a step's chance.
+const SEARCH_TURNS: u32 = 6;
+
+/// With no way on in reach, the walls searched as a player would search
+/// them: the nearest cell beside a wall not yet searched from is walked
+/// to and waited at, and every cell within the spotting's whole reach of
+/// it is then taken as searched. A descent or a fall lands among the
+/// cells a found secret would open, and so in a hidden room whose walled
+/// door is still to be found; waiting where they landed, out of the
+/// spotting's reach of that door, held a delve there for good.
+fn search(world: &mut World, view: &Sight, memory: &mut Memory) -> Choice {
+    let reach = undermere::traps::SPOTTING.near as i32;
+    if !memory.searched.contains(&view.at) && beside_a_wall(world, view.at) {
+        memory.searching += 1;
+        if memory.searching < SEARCH_TURNS {
+            return Choice::Wait;
+        }
+        memory.searched.extend(geometry::square(view.at, reach));
+        memory.searching = 0;
+    }
+    let (map, here) = (world.resource::<WorldMap>(), view.here);
+    let walls: Vec<Point> =
+        geometry::square(view.at, 40).filter(|p| !memory.searched.contains(p) && map.is_walkable_on(here, *p)).filter(|p| beside_a_wall(world, *p)).collect();
+    toward(world, view.at, &walls, &memory.untouchable).map_or(Choice::Wait, Choice::Bump)
+}
+
+/// Whether `p` is beside a cell nobody walks on, one a secret could wall.
+fn beside_a_wall(world: &World, p: Point) -> bool {
+    let map = world.resource::<WorldMap>();
+    Direction::CARDINALS.iter().any(|d| map.tile(p + d.offset()).is_some_and(|t| !map.tables().passable[t.index()]))
 }
 
 /// Where the king stands on `here`, while he stands.
@@ -996,9 +1037,14 @@ fn delve(seed: u64, plan: Plan) -> Delve {
                 leg.left = (floor > 0).then(|| left_on(world, map_of(floor)));
             }
             legs.entry(now).or_default().health.0 = health;
-            (floor, arrived, memory.on_floor, memory.chasing) = (now, turn, 0, None);
+            (floor, arrived, memory.on_floor, memory.chasing, memory.searching) = (now, turn, 0, None, 0);
+            memory.searched.clear();
         }
-        if world.get::<MyTurn>(me).is_none() {
+        // Work the adventurer took up, freeing a captive, holds the turn
+        // while the engine spends it, and a choice written into it would
+        // leave the work off: the captive was left bound across the path
+        // and walked into for good.
+        if world.get::<MyTurn>(me).is_none() || world.get::<Working>(me).is_some() {
             app.update();
             watch.read(app.world(), me, legs.entry(floor).or_default());
             idle += 1;
@@ -1081,7 +1127,7 @@ fn delve(seed: u64, plan: Plan) -> Delve {
         for _ in 0..FRAMES_A_TURN {
             app.update();
             watch.read(app.world(), me, legs.entry(floor).or_default());
-            if app.world().contains_resource::<Ending>() || app.world().get::<MyTurn>(me).is_some() {
+            if app.world().contains_resource::<Ending>() || (app.world().get::<MyTurn>(me).is_some() && app.world().get::<Working>(me).is_none()) {
                 break;
             }
         }

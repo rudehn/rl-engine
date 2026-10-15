@@ -325,9 +325,14 @@ pub fn flood_plan(map: &WorldMap, altar: Point, grates: &[Point]) -> Vec<(Point,
 /// brought it, a turn at a time or all at once for a floor entered again,
 /// and forgets each once it has risen as far as it will.
 ///
-/// Water too deep to cross never rises under somebody standing in it: a
-/// cell they stand on stays wading-deep until they step off, so nobody is
-/// left standing in deep water, and the flood is kept until it is.
+/// Water too deep to cross never rises round somebody standing in it:
+/// while anyone stands in the far end, all of it stays wading-deep, and
+/// it goes deep once they have stepped out of it, so nobody is left
+/// standing in deep water or on a cell of shallows the deep water has
+/// cut off from the door, and the flood is kept until it is. Holding only
+/// the cell they stood on left an island: a delve that lingered by the
+/// far wall stood on it for good. Every cell short of the far end is
+/// nearer the door than any of it, so the way out never crosses it.
 ///
 /// In `TurnSet::React`.
 pub fn rise_floods(mut floods: ResMut<RisingFloods>, mut map: ResMut<WorldMap>, tiles: Res<VaultTiles>, turns: Res<Turns>, occupancy: Res<Occupancy>) {
@@ -337,13 +342,10 @@ pub fn rise_floods(mut floods: ResMut<RisingFloods>, mut map: ResMut<WorldMap>, 
             return true;
         }
         let since = now.saturating_sub(flood.began);
-        let mut held = false;
+        let held = flood.cells.iter().any(|(p, _, deep)| deep.is_some_and(|d| since >= d) && occupancy.is_occupied(*p));
         for (p, wet, deep) in &flood.cells {
             let want = match deep {
-                Some(d) if since >= *d && occupancy.is_occupied(*p) => {
-                    held = true;
-                    tiles.flooded
-                }
+                Some(d) if since >= *d && held => tiles.flooded,
                 Some(d) if since >= *d => tiles.deep,
                 _ if since >= *wet => tiles.flooded,
                 _ => continue,
