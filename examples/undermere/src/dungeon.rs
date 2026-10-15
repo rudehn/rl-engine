@@ -57,7 +57,7 @@ pub(crate) use biomes::{BiomeDraw, Decor, biomes_drawn};
 use lairs::ClearOfTheThrone;
 pub(crate) use lairs::{FINAL_BOSSES, MINI_BOSSES, final_boss, lairs};
 use pieces::{PieceLook, QuietWayIn};
-pub use strata::{STRATA, Stratum, crossed_into, name_the_stratum, stratum_of};
+pub use strata::{STRATA, Stratum, crossed_into, depth_line, name_the_stratum, stratum_of};
 
 /// How many floors the Undermere goes down. The tenth is the throne's, and
 /// has no way down.

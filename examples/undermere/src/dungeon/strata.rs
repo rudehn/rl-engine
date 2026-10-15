@@ -11,13 +11,14 @@
 //!
 //! The player meets them three ways. Crossing into one for the first time
 //! logs [`Stratum::crossing`] ahead of the floor's arrival line, the vitals
-//! name it beside the floor ([`name_the_stratum`]), and the innkeeper's
-//! rumours hint at what lies deeper and older (`assets/rumours.ron`).
+//! name it beside the floor on one row ([`depth_line`]), and the
+//! innkeeper's rumours hint at what lies deeper and older
+//! (`assets/rumours.ron`).
 
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 
-use super::{FLOORS, floor_of, map_of};
+use super::{FLOORS, TOWN, floor_of, map_of};
 
 /// One stratum: a name, the floors it spans, and the line said on first
 /// crossing into it.
@@ -88,20 +89,31 @@ pub(super) fn check_within(floors: (u32, u32)) -> Result<(), String> {
     }
 }
 
-/// The key the depth readout's facets are pushed under.
+/// The key the depth readout's facet is pushed under.
 const READOUT: &str = "stratum";
 
-/// Names the floor and its stratum on the vitals, `floor 3` and under it
-/// `The Palace and its Grounds`, in the muted tone of the other readings,
-/// so the depth is always on the screen and says what age it is. Nothing in
-/// Mereholt, which is no floor. In `ViewSet::Annotate`, after the engine's
-/// collector; absent vitals, as in a test that draws none, says nothing.
+/// What the vitals' depth row says on `map`: `3 · The Palace and its
+/// Grounds` on a floor, the floor and its stratum on one row, and
+/// `Mereholt` in the town, so the row is there wherever the adventurer is
+/// and what is under it never moves on going down the stair. `None` for a
+/// place that is neither.
+pub fn depth_line(map: MapId) -> Option<String> {
+    if map == TOWN {
+        return Some("Mereholt".to_string());
+    }
+    let floor = floor_of(map)?;
+    stratum_of(floor).map(|s| format!("{floor} · {}", s.name))
+}
+
+/// Says on the vitals where the adventurer is, by [`depth_line`], in the
+/// tone of the other readings, so the depth is always on the screen and
+/// says what age it is. In `ViewSet::Annotate`, after the engine's
+/// collector and ahead of the gold carried; absent vitals, as in a test
+/// that draws none, says nothing.
 pub fn name_the_stratum(vitals: Option<ResMut<VitalsView>>, map: Option<Res<WorldMap>>, mut facets: ResMut<Facets>) {
     let (Some(mut vitals), Some(world_map)) = (vitals, map) else { return };
-    let Some(floor) = floor_of(world_map.current()) else { return };
-    let Some(stratum) = stratum_of(floor) else { return };
-    vitals.facets.push(facets.facet(READOUT, format!("floor {floor}")).toned(Tones::NOTICE));
-    vitals.facets.push(facets.facet(READOUT, stratum.name).toned(Tones::MUTED));
+    let Some(line) = depth_line(world_map.current()) else { return };
+    vitals.facets.push(facets.facet(READOUT, line).toned(Tones::TEXT));
 }
 
 #[cfg(test)]
@@ -159,9 +171,10 @@ mod tests {
         assert!(!lines.iter().any(|l| l == STRATA[3].crossing), "floor seven is not reached: {lines:#?}");
     }
 
-    /// The vitals name the floor and its stratum, and say nothing in Mereholt.
+    /// The vitals name the floor and its stratum on one row, and Mereholt
+    /// in the town, so the row is always there.
     #[test]
-    fn the_vitals_name_the_floor_and_its_stratum_and_nothing_in_the_town() {
+    fn the_vitals_name_the_floor_and_its_stratum_on_one_row_and_mereholt_in_the_town() {
         let mut app = headless(RunSeed(1));
         app.add_plugins(VitalsViewPlugin);
         adventurer(&mut app);
@@ -170,11 +183,11 @@ mod tests {
             let key = app.world().resource::<Facets>().get(READOUT);
             app.world().resource::<VitalsView>().facets.iter().filter(|f| Some(f.key) == key).map(|f| f.text.clone()).collect()
         };
-        assert!(readout(&app).is_empty(), "no floor in Mereholt: {:?}", readout(&app));
-        for (floor, stratum) in [(1, "The Drowned Town"), (3, "The Palace and its Grounds"), (6, "Beneath the Kingdom")] {
+        assert_eq!(readout(&app), ["Mereholt"], "the town by its name");
+        for (floor, line) in [(1, "1 · The Drowned Town"), (3, "3 · The Palace and its Grounds"), (10, "10 · The Thrones")] {
             arrive(&mut app, map_of(floor));
             settle(&mut app);
-            assert_eq!(readout(&app), [format!("floor {floor}"), stratum.to_string()], "floor {floor}");
+            assert_eq!(readout(&app), [line], "floor {floor}");
         }
     }
 }

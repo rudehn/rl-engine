@@ -55,11 +55,12 @@ const RAIL: i32 = 34;
 /// is aimed, the range, the target, the chance, and up to four lines of it.
 const TARGET_ROWS: i32 = 10;
 /// Rows the rail gives to vitals: its heading with the rule under it, the
-/// name, health, armor, seen and lit, noise, the floor and its stratum
-/// on two rows of their own, and two rows for the badges and the gold
-/// carried, the badges first when there are any and the last row blank
-/// most turns, which sets what is worn off from the gauges.
-const VITALS_ROWS: i32 = 11;
+/// name, health, armor, seen and lit, noise, the depth, the gold carried,
+/// and a row for the badges under them, blank most turns, which sets what
+/// is worn off from the gauges. The depth is there in the town too, as
+/// `Mereholt`, and the badges come last, so the depth and the gold stand
+/// on the same rows wherever the adventurer is and whatever ails them.
+const VITALS_ROWS: i32 = 10;
 /// Rows the rail gives to what is worn: the heading and its rule, one
 /// apiece for the seven slots, a blank row setting the list off from what
 /// is nearby under it, the gap the badges' row leaves above, and two more
@@ -125,10 +126,11 @@ impl Screen {
             // on, where the eye learns to find it. A blank row over it.
             .party(PARTY_ROWS)
             .party_gap(1)
-            // The targeting box sits over the bottom of the nearby list while
-            // the cursor is up, where the eye already is when choosing what to
-            // aim at, and never over the map, where it would hide what is
-            // being aimed at; the rows above it stay readable.
+            // The targeting box sits over the nearby list's rows while the
+            // cursor is up, where the eye already is when choosing what to aim
+            // at, and never over the map, where it would hide what is being
+            // aimed at. Its frame takes the place of the list's rule, so the
+            // list's heading stays readable over it.
             .target(TARGET_ROWS)
             .cut();
         let map = rail.map;
@@ -204,8 +206,9 @@ fn add_panels(app: &mut App, screen: &Screen) {
             // A blow struck beside the adventurer is a thousand hundredths of
             // a step, half the gauge, so a fight next door reads in the bad
             // tone and a footstep in the next room barely stirs it. No turn
-            // and position: the strip's last row is the badges'.
-            .set(VitalsPanel::new(rail.vitals).bars(16).heading("Vitals").noise("noise", 2000).without_whereabouts())
+            // and position: the strip's last row is the badges', under the
+            // depth and the gold so neither moves when a status comes.
+            .set(VitalsPanel::new(rail.vitals).bars(16).heading("Vitals").noise("noise", 2000).without_whereabouts().badges_last())
             // A monster that knows of nothing is unaware, one walking to a
             // noise is searching, and one that has the adventurer is hunting:
             // not "sleeping" for the first, since a monster that truly sleeps
@@ -407,9 +410,9 @@ mod tests {
         assert_eq!(s.rail.gutter, r(124, 0, 2, 45), "gutter");
         assert_eq!(s.rail.edge, r(159, 0, 1, 45), "edge");
         assert_eq!(s.rail.log, r(0, 40, 124, 5), "log");
-        assert_eq!(s.rail.vitals, r(126, 0, 33, 11), "vitals");
-        assert_eq!(s.rail.gear, r(126, 11, 33, 12), "gear");
-        assert_eq!(s.rail.nearby, r(126, 23, 33, 10), "nearby");
+        assert_eq!(s.rail.vitals, r(126, 0, 33, 10), "vitals");
+        assert_eq!(s.rail.gear, r(126, 10, 33, 12), "gear");
+        assert_eq!(s.rail.nearby, r(126, 22, 33, 11), "nearby");
         assert_eq!(s.rail.party, r(126, 34, 33, 10), "party");
         assert_eq!(s.rail.party_gap, r(126, 33, 33, 1), "spacer");
         assert_eq!(s.rail.hint, r(126, 44, 33, 1), "hint");

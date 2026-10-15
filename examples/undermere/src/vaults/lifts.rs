@@ -231,9 +231,23 @@ pub struct Flood {
     pub map: u32,
     /// The turn it began.
     pub began: u32,
-    /// Each cell, the turns after `began` it is wading-deep, and the turns
-    /// after which it is too deep to cross, for a cell at the far end.
-    pub cells: Vec<(Point, u32, Option<u32>)>,
+    /// Each cell of the room and when the water reaches it.
+    pub cells: Vec<FloodCell>,
+}
+
+/// One cell of a flooding vault's room, and when the water reaches it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FloodCell {
+    /// Where it is.
+    pub at: Point,
+    /// The turns after the flood began that it is wading-deep.
+    pub wet: u32,
+    /// The turns after which it is too deep to cross, for a cell of the
+    /// far end; `None` nearer the door, which never goes deep.
+    pub deep: Option<u32>,
+    /// Its steps from the door, inside the room: the way out of the far
+    /// end is down these, a step at a time.
+    pub back: u32,
 }
 
 /// Every flooding vault still filling, saved with the run, so water
@@ -289,7 +303,7 @@ pub fn start_flood(
 /// until it is wading-deep, counted out from the nearest of `grates`, and
 /// for the third of the room farthest from its door, [`FLOOD_TURNS`]
 /// until it is too deep to cross.
-pub fn flood_plan(map: &WorldMap, altar: Point, grates: &[Point]) -> Vec<(Point, u32, Option<u32>)> {
+pub fn flood_plan(map: &WorldMap, altar: Point, grates: &[Point]) -> Vec<FloodCell> {
     let tables = map.tables();
     let door = |p: Point| map.tile(p).is_some_and(|t| tables.opens[t.index()].is_some() || tables.closes[t.index()].is_some());
     let floor = |p: Point| geometry::chebyshev(p, altar) <= REACH && map.tile(p).is_some_and(|t| tables.walkable[t.index()]) && !door(p);
@@ -315,8 +329,9 @@ pub fn flood_plan(map: &WorldMap, altar: Point, grates: &[Point]) -> Vec<(Point,
     let deepest = back.values().copied().max().unwrap_or(0);
     room.iter()
         .map(|p| {
-            let far = back.get(p).is_some_and(|d| deepest > 0 && d * 3 >= deepest * 2);
-            (*p, wet.get(p).copied().unwrap_or(0).min(FLOOD_TURNS - 1), far.then_some(FLOOD_TURNS))
+            let steps = back.get(p).copied().unwrap_or(0);
+            let far = deepest > 0 && steps * 3 >= deepest * 2;
+            FloodCell { at: *p, wet: wet.get(p).copied().unwrap_or(0).min(FLOOD_TURNS - 1), deep: far.then_some(FLOOD_TURNS), back: steps }
         })
         .collect()
 }
@@ -325,14 +340,16 @@ pub fn flood_plan(map: &WorldMap, altar: Point, grates: &[Point]) -> Vec<(Point,
 /// brought it, a turn at a time or all at once for a floor entered again,
 /// and forgets each once it has risen as far as it will.
 ///
-/// Water too deep to cross never rises round somebody standing in it:
-/// while anyone stands in the far end, all of it stays wading-deep, and
-/// it goes deep once they have stepped out of it, so nobody is left
-/// standing in deep water or on a cell of shallows the deep water has
-/// cut off from the door, and the flood is kept until it is. Holding only
-/// the cell they stood on left an island: a delve that lingered by the
-/// far wall stood on it for good. Every cell short of the far end is
-/// nearer the door than any of it, so the way out never crosses it.
+/// Water too deep to cross never rises round somebody standing in it: the
+/// cell they stand on stays wading-deep, and so does one channel from it
+/// to the near part of the room, each step of it a step nearer the door,
+/// so nobody is left in deep water or on an island of shallows, and the
+/// flood is kept until they are out. The rest of the far end goes deep as
+/// it would: holding all of it while anyone stood there let a taker who
+/// lingered by the far wall loot it dry, and a monster parked there hold
+/// the flood off for good. The near part never goes deep, and every cell
+/// of it is nearer the door than any of the far end, so the channel ends
+/// on a way out.
 ///
 /// In `TurnSet::React`.
 pub fn rise_floods(mut floods: ResMut<RisingFloods>, mut map: ResMut<WorldMap>, tiles: Res<VaultTiles>, turns: Res<Turns>, occupancy: Res<Occupancy>) {
@@ -342,18 +359,38 @@ pub fn rise_floods(mut floods: ResMut<RisingFloods>, mut map: ResMut<WorldMap>, 
             return true;
         }
         let since = now.saturating_sub(flood.began);
-        let held = flood.cells.iter().any(|(p, _, deep)| deep.is_some_and(|d| since >= d) && occupancy.is_occupied(*p));
-        for (p, wet, deep) in &flood.cells {
-            let want = match deep {
-                Some(d) if since >= *d && held => tiles.flooded,
-                Some(d) if since >= *d => tiles.deep,
-                _ if since >= *wet => tiles.flooded,
+        let held = channels(&flood.cells, since, &occupancy);
+        for cell in &flood.cells {
+            let want = match cell.deep {
+                Some(d) if since >= d && !held.contains(&cell.at) => tiles.deep,
+                Some(d) if since >= d => tiles.flooded,
+                _ if since >= cell.wet => tiles.flooded,
                 _ => continue,
             };
-            if map.tile(*p) != Some(want) {
-                map.set_tile(*p, want);
+            if map.tile(cell.at) != Some(want) {
+                map.set_tile(cell.at, want);
             }
         }
-        since < FLOOD_TURNS || held
+        since < FLOOD_TURNS || !held.is_empty()
     });
+}
+
+/// The cells of the far end `since` turns into a flood that are held
+/// wading-deep: each one somebody stands on, and from each, one way out
+/// of the far end, a step at a time to the neighbour a step nearer the
+/// door, the first such in [`Direction::CARDINALS`] order. Taking the same
+/// one every turn keeps the channel still, so a wader walking out along it
+/// walks the rest of the same channel.
+fn channels(cells: &[FloodCell], since: u32, occupancy: &Occupancy) -> BTreeSet<Point> {
+    let far: BTreeMap<Point, u32> = cells.iter().filter(|c| c.deep.is_some_and(|d| since >= d)).map(|c| (c.at, c.back)).collect();
+    let mut held = BTreeSet::new();
+    for (&start, &steps) in far.iter().filter(|(p, _)| occupancy.is_occupied(**p)) {
+        let (mut p, mut steps) = (start, steps);
+        held.insert(p);
+        while let Some(next) = Direction::CARDINALS.iter().map(|d| p + d.offset()).find(|n| far.get(n).is_some_and(|b| *b + 1 == steps)) {
+            held.insert(next);
+            (p, steps) = (next, steps - 1);
+        }
+    }
+    held
 }

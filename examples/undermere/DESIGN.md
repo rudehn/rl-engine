@@ -60,7 +60,7 @@ Near the top are the kingdom's streets and grounds, below them its tombs and fou
 The floors are grouped into **strata**, named ranges of floors kept in `src/dungeon/strata.rs`, and each floor draws its biome from its stratum's, so floor four is not always the same place and the two floors of a stratum may share one.
 Twelve biomes are in `assets/biomes.ron`, with three more on floor ten, one for each boss's throne, and each floor then draws a recipe of its biome from the twenty-nine in `assets/layout.ron`.
 
-The player sees the strata three ways: crossing into one for the first time logs a line of its own ahead of the floor's ("You pass beneath the kingdom."), the rail names the stratum under the floor's number, and the innkeeper's rumours hint at what is deeper and older.
+The player sees the strata three ways: crossing into one for the first time logs a line of its own ahead of the floor's ("You pass beneath the kingdom."), the rail names the floor and its stratum on one row (`3 · The Palace and its Grounds`, and `Mereholt` in the town), and the innkeeper's rumours hint at what is deeper and older.
 
 | Floors | Stratum | Biome | How it is grown | Light |
 | --- | --- | --- | --- | --- |

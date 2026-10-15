@@ -92,7 +92,7 @@ fn the_flood_reaches_deep_water_at_the_vaults_far_wall_within_its_turns() {
     let (altar, there) = props_called(&mut app, map, FLOOD_ALTAR)[0];
     let grates: Vec<Point> = props_called(&mut app, map, GRATE).into_iter().map(|(_, p)| p).collect();
     let plan = flood_plan(app.world().resource::<WorldMap>(), there, &grates);
-    let far = plan.iter().filter(|(_, _, deep)| deep.is_some()).map(|(p, ..)| *p).collect::<Vec<_>>();
+    let far = plan.iter().filter(|c| c.deep.is_some()).map(|c| c.at).collect::<Vec<_>>();
     assert!(!far.is_empty() && far.len() < plan.len(), "a far end and a near one");
     let next = beside(&app, there);
     stand_on(&mut app, me, next);
@@ -103,7 +103,7 @@ fn the_flood_reaches_deep_water_at_the_vaults_far_wall_within_its_turns() {
     for p in &far {
         assert_eq!(tile_at(&app, map, *p), "deep water", "{p:?}, at the far wall, is too deep to cross");
     }
-    let near: Vec<&Point> = plan.iter().filter(|(_, _, deep)| deep.is_none()).map(|(p, ..)| p).collect();
+    let near: Vec<&Point> = plan.iter().filter(|c| c.deep.is_none()).map(|c| &c.at).collect();
     assert!(near.iter().all(|p| tile_at(&app, map, **p) == "flooded floor"), "and the way back to the door is waded");
 }
 
@@ -322,7 +322,7 @@ fn a_flood_rising_and_a_key_carried_outlive_a_continued_run() {
     let (mut app, me, map) = on_the_floor_of("The Flooding Vault");
     let (altar, there) = props_called(&mut app, map, FLOOD_ALTAR)[0];
     let grates: Vec<Point> = props_called(&mut app, map, GRATE).into_iter().map(|(_, p)| p).collect();
-    let far: Vec<Point> = flood_plan(app.world().resource::<WorldMap>(), there, &grates).into_iter().filter(|(_, _, d)| d.is_some()).map(|(p, ..)| p).collect();
+    let far: Vec<Point> = flood_plan(app.world().resource::<WorldMap>(), there, &grates).into_iter().filter(|c| c.deep.is_some()).map(|c| c.at).collect();
     let next = beside(&app, there);
     stand_on(&mut app, me, next);
     open_and_take(&mut app, me, altar);
@@ -647,29 +647,66 @@ fn whoever_stands_under_the_lintel_leaps_clear_of_the_fall() {
     }
 }
 
-/// A flooding vault's far end never turns too deep to cross round
-/// somebody standing in it: all of it stays wading-deep until they leave
-/// it, so their way out is waded too, and goes deep once they have.
+/// The far end of `plan` held wading-deep on the floor now, with each
+/// cell's steps from the door.
+fn shallow_far_end(app: &App, map: MapId, plan: &[FloodCell]) -> Vec<(Point, u32)> {
+    plan.iter().filter(|c| c.deep.is_some() && tile_at(app, map, c.at) != "deep water").map(|c| (c.at, c.back)).collect()
+}
+
+/// A wader at the far wall of a flooding vault is never stranded: deep
+/// water never rises under it, and it keeps one wading-deep channel out
+/// to the near part of the room, a step nearer the door at every step,
+/// until it has gone.
 #[test]
-fn deep_water_never_rises_round_somebody_standing_in_it() {
+fn a_wader_at_the_far_wall_keeps_a_channel_out_of_the_flood() {
     let (mut app, me, map) = on_the_floor_of("The Flooding Vault");
     let (altar, there) = props_called(&mut app, map, FLOOD_ALTAR)[0];
     let grates: Vec<Point> = props_called(&mut app, map, GRATE).into_iter().map(|(_, p)| p).collect();
     let plan = flood_plan(app.world().resource::<WorldMap>(), there, &grates);
-    let far = plan.iter().find(|(p, _, deep)| deep.is_some() && !grates.contains(p)).map(|(p, ..)| *p).expect("a far end");
-    let wader = crate::testing::still(&mut app, "goblin", far);
+    let far = plan.iter().filter(|c| c.deep.is_some() && !grates.contains(&c.at)).max_by_key(|c| c.back).copied().expect("a far end");
+    let wader = crate::testing::still(&mut app, "goblin", far.at);
     let next = beside(&app, there);
     stand_on(&mut app, me, next);
     open_and_take(&mut app, me, altar);
     pass_turns(&mut app, FLOOD_TURNS + 2);
-    assert_eq!(at(&app, wader), far, "the wader stands where it was put");
-    assert_eq!(tile_at(&app, map, far), "flooded floor", "wading-deep under the wader");
-    for (p, _, deep) in &plan {
-        assert!(deep.is_none() || tile_at(&app, map, *p) == "flooded floor", "{p:?} of the far end wading-deep round the wader, an island otherwise");
+    assert_eq!(at(&app, wader), far.at, "the wader stands where it was put");
+    let mut channel = shallow_far_end(&app, map, &plan);
+    channel.sort_by_key(|(_, back)| *back);
+    assert_eq!(channel.last().map(|(p, _)| *p), Some(far.at), "wading-deep under the wader, and nothing of the far end farther out");
+    for pair in channel.windows(2) {
+        let ((a, near), (b, out)) = (pair[0], pair[1]);
+        assert!(out == near + 1 && geometry::manhattan(a, b) == 1, "{b:?} steps on to {a:?}, a step nearer the door: one channel, not a pool");
     }
+    let (mouth, steps) = channel[0];
+    let ashore = plan.iter().find(|c| c.deep.is_none() && c.back + 1 == steps && geometry::manhattan(c.at, mouth) == 1);
+    assert!(ashore.is_some_and(|c| tile_at(&app, map, c.at) == "flooded floor"), "the channel comes out on the waded near part");
     app.world_mut().despawn(wader);
     pass_turns(&mut app, 2);
-    assert_eq!(tile_at(&app, map, far), "deep water", "and deep once it has gone");
+    assert!(shallow_far_end(&app, map, &plan).is_empty(), "and all of the far end is deep once it has gone");
+}
+
+/// The water a wader holds back is its one channel out: every other cell
+/// of a flooding vault's far end goes too deep to cross on time, so
+/// lingering by the far wall saves nothing lying there, and a monster
+/// standing in the far end does not hold the flood off.
+#[test]
+fn deep_water_rises_everywhere_off_a_waders_channel() {
+    let (mut app, me, map) = on_the_floor_of("The Flooding Vault");
+    let (altar, there) = props_called(&mut app, map, FLOOD_ALTAR)[0];
+    let grates: Vec<Point> = props_called(&mut app, map, GRATE).into_iter().map(|(_, p)| p).collect();
+    let plan = flood_plan(app.world().resource::<WorldMap>(), there, &grates);
+    let far = plan.iter().filter(|c| c.deep.is_some() && !grates.contains(&c.at)).max_by_key(|c| c.back).copied().expect("a far end");
+    let edge = plan.iter().filter(|c| c.deep.is_some()).map(|c| c.back).min().expect("a far end");
+    let wader = crate::testing::still(&mut app, "goblin", far.at);
+    let next = beside(&app, there);
+    stand_on(&mut app, me, next);
+    open_and_take(&mut app, me, altar);
+    pass_turns(&mut app, FLOOD_TURNS + 2);
+    assert_eq!(at(&app, wader), far.at, "the wader stands where it was put");
+    let held = shallow_far_end(&app, map, &plan);
+    let room = plan.iter().filter(|c| c.deep.is_some()).count();
+    assert_eq!(held.len() as u32, far.back - edge + 1, "one cell a step held, of the far end's {room}");
+    assert!(held.len() < room, "the rest of the far end is deep");
 }
 
 /// The prop `name` of `map`, and where it stands; the first, in row order.

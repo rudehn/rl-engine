@@ -36,6 +36,11 @@ pub struct VitalsLayout {
     /// A heading with a rule under it, over everything else. Empty draws
     /// none, which is what a one-row strip wants.
     pub heading: String,
+    /// Whether the badges come under the game's facets rather than over
+    /// them, on a panel of more than one row. Over them is the default,
+    /// next to the gauges they qualify; under them keeps a facet the game
+    /// pushes every turn on one row while a badge comes and goes.
+    pub badges_last: bool,
 }
 
 /// Draws [`VitalsView`].
@@ -46,7 +51,7 @@ pub struct VitalsPanel(VitalsLayout);
 impl VitalsPanel {
     /// Vitals in `rect`.
     pub fn new(rect: Rect) -> Self {
-        Self(VitalsLayout { rect, hints: String::new(), bar_width: 10, show_whereabouts: true, heading: String::new(), noise: "noise".into(), loudest: 1000 })
+        Self(VitalsLayout { rect, hints: String::new(), bar_width: 10, show_whereabouts: true, heading: String::new(), noise: "noise".into(), loudest: 1000, badges_last: false })
     }
 
     /// Sets the key hints at the right of the last row.
@@ -74,6 +79,14 @@ impl VitalsPanel {
     /// reads as part of a rail with one and as floating text without.
     pub fn heading(mut self, heading: impl Into<String>) -> Self {
         self.0.heading = heading.into();
+        self
+    }
+
+    /// Draws the badges under the game's facets rather than over them, so
+    /// a facet pushed every turn, a depth or a purse, never moves when a
+    /// status comes or goes. A one-row strip is unchanged.
+    pub fn badges_last(mut self) -> Self {
+        self.0.badges_last = true;
         self
     }
 
@@ -169,10 +182,15 @@ pub fn draw_vitals(mut terminal: ResMut<Terminal>, layout: Res<VitalsLayout>, vi
         }
         y += 1;
     }
-    if !view.badges.is_empty() && y < bottom {
-        let badges: String = view.badges.iter().map(|b| b.text.as_str()).collect();
-        terminal.print_on(rect.x, y, &clip(&badges, rect.width as usize), palette.get(Tones::NOTICE), bg);
-        y += 1;
+    let badges = |terminal: &mut Terminal, y: &mut i32| {
+        if !view.badges.is_empty() && *y < bottom {
+            let badges: String = view.badges.iter().map(|b| b.text.as_str()).collect();
+            terminal.print_on(rect.x, *y, &clip(&badges, rect.width as usize), palette.get(Tones::NOTICE), bg);
+            *y += 1;
+        }
+    };
+    if !layout.badges_last {
+        badges(&mut terminal, &mut y);
     }
     for facet in &view.facets {
         if y >= bottom {
@@ -180,6 +198,9 @@ pub fn draw_vitals(mut terminal: ResMut<Terminal>, layout: Res<VitalsLayout>, vi
         }
         terminal.print_on(rect.x, y, &clip(&facet.text, rect.width as usize), palette.get(facet.tone), bg);
         y += 1;
+    }
+    if layout.badges_last {
+        badges(&mut terminal, &mut y);
     }
     if layout.show_whereabouts && y < bottom {
         let where_ = format!("turn {}  ({}, {})", view.turn, view.position.x, view.position.y);
@@ -457,6 +478,35 @@ mod tests {
         let cell = stage.app.world().resource::<rl_render::Terminal>().get(0, 3).unwrap();
         let palette = stage.app.world().resource::<Palette>();
         assert_eq!(cell.fg, palette.get(crate::Tones::NOTICE), "in the tone the game asked for");
+    }
+
+    /// With the badges last, a facet a game pushes every turn keeps its
+    /// row whether or not a badge is showing, and the badges come under
+    /// it; by default they come over it, pushing it down a row.
+    #[test]
+    fn badges_last_keep_a_games_facets_on_their_rows_as_a_badge_comes_and_goes() {
+        let rows_of = |panel: VitalsPanel, badged: bool| {
+            let mut stage = Stage::new(panel).screen(24, 6);
+            stage.app.add_systems(
+                Update,
+                (move |mut view: ResMut<VitalsView>, mut facets: ResMut<crate::Facets>| {
+                    if badged {
+                        view.badges.push(facets.facet("badge", "v").toned(crate::Tones::NOTICE));
+                    }
+                    view.facets.push(facets.facet("here", "gold 50"));
+                })
+                .in_set(crate::ViewSet::Annotate),
+            );
+            stage.tick();
+            stage.rows()
+        };
+        let rect = Rect::new(0, 0, 24, 6);
+        let (bare, badged) = (rows_of(VitalsPanel::new(rect).badges_last(), false), rows_of(VitalsPanel::new(rect).badges_last(), true));
+        let row = |rows: &[String], text: &str| rows.iter().position(|r| r == text);
+        assert_eq!(row(&bare, "gold 50"), row(&badged, "gold 50"), "the facet's row is its own: {bare:?} {badged:?}");
+        assert_eq!(row(&badged, "v"), row(&badged, "gold 50").map(|r| r + 1), "and the badges under it: {badged:?}");
+        let first = rows_of(VitalsPanel::new(rect), true);
+        assert_eq!(row(&first, "gold 50"), row(&first, "v").map(|r| r + 1), "by default the badges come first: {first:?}");
     }
 
     /// A game's annotate system pushing a second bar, the way the view's
