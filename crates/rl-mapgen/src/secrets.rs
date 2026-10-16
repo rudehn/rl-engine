@@ -131,7 +131,11 @@ impl Walks {
             }
             (cells, exit.and_then(|e| walk.value(e)))
         };
-        let ((shut, to_exit), (open, _)) = (reached(true), reached(false));
+        let (shut, to_exit) = reached(true);
+        // With nothing locked or sealed the two walks are one walk. A
+        // place is walked for every opening it tries to hide, and walking
+        // it twice each time was a fifth of what growing one cost.
+        let open = if crate::dungeon::lock_cells(ctx).is_clear() { shut.clone() } else { reached(false).0 };
         Self { shut, open, to_exit }
     }
 }
