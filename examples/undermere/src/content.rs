@@ -516,6 +516,7 @@ impl Library {
         let traits = crate::traits::load_defs(&registries, abilities.defs());
         let armory = Armory::load(&registries, &traits, kinds, moments);
         let bestiary = Bestiary::load(&registries, &traits, &armory.defs, kinds, moments);
+        crate::effects::bodies::check_calls(abilities.defs(), &bestiary.defs).unwrap_or_else(|e| panic!("assets/abilities.ron: {e}"));
         let faces = crate::lore::Faces::load(&registries, &armory.defs);
         let wares = crate::shops::Wares::load(&registries, &armory);
         let mercenaries = crate::mercenaries::Mercenaries::load(&registries, &armory);

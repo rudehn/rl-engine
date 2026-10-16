@@ -51,7 +51,16 @@ pub struct VitalsPanel(VitalsLayout);
 impl VitalsPanel {
     /// Vitals in `rect`.
     pub fn new(rect: Rect) -> Self {
-        Self(VitalsLayout { rect, hints: String::new(), bar_width: 10, show_whereabouts: true, heading: String::new(), noise: "noise".into(), loudest: 1000, badges_last: false })
+        Self(VitalsLayout {
+            rect,
+            hints: String::new(),
+            bar_width: 10,
+            show_whereabouts: true,
+            heading: String::new(),
+            noise: "noise".into(),
+            loudest: 1000,
+            badges_last: false,
+        })
     }
 
     /// Sets the key hints at the right of the last row.

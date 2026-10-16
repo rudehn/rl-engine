@@ -1018,3 +1018,53 @@ fn weakened_stops_stacking_at_three_however_many_touches_land() {
     let stacks = app.world().get::<Afflicted>(me).map_or(0, |a| a.0.iter().filter(|s| s.id == weakened).count());
     assert_eq!(stacks, crate::content::WEAKENED_MAX_STACKS as usize);
 }
+
+/// Every call of the drowned among the shipped abilities raises a kind
+/// the bestiary has, and a call naming one it lacks is refused naming the
+/// ability and the kind, rather than loading as a call that raises
+/// nothing.
+#[test]
+fn every_call_of_the_drowned_raises_a_kind_of_the_bestiary_and_a_misspelt_kind_is_refused() {
+    use crate::effects::bodies::check_calls;
+    let library = library();
+    assert_eq!(check_calls(library.abilities.defs(), &library.bestiary.defs), Ok(()));
+    let text = r#"[(
+        name: "call the drowned", description: "Calls them.", aim: SelfOnly, mode: Own, cooldown: 2000,
+        effects: [(kind: "CallDrowned", args: (count: 1, range: 6, monster: "drowned pilgrm"))],
+    )]"#;
+    let misspelt = rl_engine::rl_bevy::Abilities::load(text, &crate::content::effect_kinds(), &library.registries.names()).expect("it reads as an ability");
+    let refused = check_calls(misspelt.defs(), &library.bestiary.defs).expect_err("a kind the bestiary lacks");
+    assert!(refused.contains("call the drowned") && refused.contains("drowned pilgrm"), "names the ability and the kind: {refused}");
+}
+
+/// The Drowned Abbess's call stands up drowned pilgrims, her own
+/// congregation, out of the water round her: played, not read off her
+/// file, so a call that raised nothing would fail here.
+#[test]
+fn the_drowned_abbess_calls_drowned_pilgrims_up_out_of_the_water() {
+    use crate::testing::{arena_on, monster, pass_turns};
+    let (mut app, _, here) = arena_on(1, 3);
+    let abbess_at = here.offset(3, 0);
+    let flooded = {
+        let names = &app.world().resource::<WorldMap>().tables().names;
+        TileId(names.iter().position(|n| n == "flooded floor").expect("flooded floor is a tile") as u16)
+    };
+    let water: Vec<Point> = geometry::square(abbess_at, 2).filter(|p| *p != abbess_at && *p != here).collect();
+    rl_engine::testing::lay_tile(&mut app, &water, flooded);
+    monster(&mut app, "the Drowned Abbess", abbess_at);
+    let pilgrim = app.world().resource::<Bestiary>().defs.expect("drowned pilgrim");
+    let risen = |app: &mut App| {
+        let world = app.world_mut();
+        world.query::<(&Kind, &Position)>().iter(world).filter(|(k, _)| k.0 == pilgrim).map(|(_, p)| p.0).collect::<Vec<Point>>()
+    };
+    assert!(risen(&mut app).is_empty(), "no pilgrim before she calls");
+    for _ in 0..60 {
+        pass_turns(&mut app, 1);
+        if !risen(&mut app).is_empty() {
+            break;
+        }
+    }
+    let up = risen(&mut app);
+    assert!(!up.is_empty(), "the Abbess called no pilgrim up in sixty turns");
+    assert!(up.iter().all(|p| water.contains(p)), "each rose out of the water: {up:?}");
+}

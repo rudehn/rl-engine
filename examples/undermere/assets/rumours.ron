@@ -39,6 +39,9 @@
         (of: "the Forgemaster", say: "Somebody's working a forge under the lake. You can hear the hammer from the jetty."),
         // The biomes of floors one to nine, each told once a run draws it
         // from more than one, and each placed in its stratum: depth is time.
+        // The Underlake has none while it stands alone on floors seven and
+        // eight, since a run never draws it from more than one; the rumour of
+        // its stratum, before the kingdom, tells of its lake instead.
         (of: "the Upper Halls", say: "Just past the gate it's the old king's halls. Broken stone and long corridors."),
         (of: "the Cellars", say: "Just past the gate it's cellars this season. Casks, damp, and rats the size of dogs."),
         (of: "the Watch Barracks", say: "The old watch kept its barracks just past the gate. Kobolds sleep in the bunks now."),
@@ -48,7 +51,6 @@
         (of: "the Old Mines", say: "Beneath the kingdom they dug for ore, and the props are older than I am. Mind what you lean on."),
         (of: "the Fungal Deeps", say: "Under the palace the rock opens into caves lit by mushrooms. Don't breathe what the big ones puff."),
         (of: "the Spider Warrens", say: "Under the palace it's webs, whole galleries of them. Burn what you can't cut."),
-        (of: "the Underlake", say: "Older than the kingdom, there's a lake under the lake, and things in it that never saw the sun."),
         (of: "the Forge of Embers", say: "Near the bottom the rock runs hot. Somebody forged there before the kingdom had a name."),
         (of: "the Ashen Galleries", say: "Near the bottom it's all ash and cinders, and imps that light themselves for fun."),
         // The strata of the Undermere, told once each after the biomes, so a

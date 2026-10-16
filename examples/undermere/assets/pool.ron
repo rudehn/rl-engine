@@ -374,11 +374,12 @@
     (
         name: "The Goblin Stockade", kind: "risk_reward", floors: (2, 6), weight: "common",
         per_run: 2,
-        // A goblin camp stands where goblins hold the ground: the halls,
-        // cellars and barracks they took, and the mines they dug. The
-        // crypt grid and the library's stacks have no room a palisade
-        // stands in either, and no goblin keeps a camp among the dead.
-        where: ["Upper Halls", "Cellars", "Watch Barracks", "Old Mines"],
+        // A goblin camp stands wherever goblins raid, the drowned town and
+        // everything beneath the kingdom, but not in the palace's holy
+        // places or among the dead: the crypt grid and the library's
+        // stacks have no room a palisade stands in, and no goblin keeps a
+        // camp in the cathedral or the catacombs.
+        not: ["Catacombs", "Sunken Library", "Drowned Cathedral"],
         piece: "The Goblin Stockade", placed: Inside([]),
     ),
     (

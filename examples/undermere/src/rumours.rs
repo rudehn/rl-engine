@@ -176,9 +176,10 @@ mod tests {
     }
 
     /// The shipped file reads, with a rumour of each of the three floor
-    /// ten bosses, the five mini-bosses, the twelve biomes floors one to
-    /// nine may draw and the four strata with a hint of their own, twenty-four in
-    /// all, and the design's last line.
+    /// ten bosses, the five mini-bosses, the eleven biomes of floors one to
+    /// nine a run may draw from more than one, the Underlake alone on its
+    /// floors having none, and the four strata with a hint of their own,
+    /// twenty-three in all, and the design's last line.
     #[test]
     fn the_rumours_file_reads_with_a_rumour_of_every_boss_mini_boss_and_biome_of_the_design() {
         let rumours = library().rumours;
@@ -192,7 +193,6 @@ mod tests {
             "the Old Mines",
             "the Fungal Deeps",
             "the Spider Warrens",
-            "the Underlake",
             "the Forge of Embers",
             "the Ashen Galleries",
         ];

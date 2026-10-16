@@ -13,7 +13,7 @@ use bevy::prelude::*;
 use rand::Rng;
 use rl_engine::prelude::*;
 use rl_engine::rl_bevy::EffectRng;
-use rl_engine::rl_rules::ability::{RawValue, read_args};
+use rl_engine::rl_rules::ability::{AbilityDef, RawValue, read_args};
 
 use super::moving::no_args;
 use super::{free_cells_near, the};
@@ -738,6 +738,26 @@ impl FromArgs for CallDrowned {
         let a: Args = read_args(args)?;
         Ok(Self { count: a.count, range: a.range, monster: a.monster.unwrap_or_else(|| DROWNED_THRALL.to_string()) })
     }
+}
+
+/// Checks that every [`CallDrowned`] among `abilities` raises a kind of
+/// `monsters`, its own `monster` or [`DROWNED_THRALL`] when it names
+/// none. Run once the bestiary is read, since the abilities are read
+/// first and a monster names its abilities rather than the other way
+/// round, so a call cannot resolve its kind when it is built; unchecked, a
+/// misspelt kind is a call that silently raises nothing. Returns every
+/// ability whose call names a kind the bestiary lacks.
+pub fn check_calls(abilities: &Registry<AbilityDef>, monsters: &Registry<MonsterDef>) -> Result<(), String> {
+    let mut wrong = Vec::new();
+    for (_, ability) in abilities.iter() {
+        for spec in ability.effects.iter().filter(|e| e.kind == CallDrowned::KIND) {
+            let call = CallDrowned::from_args(&spec.args, &Names::new()).map_err(|e| format!("{:?}: {e}", ability.name))?;
+            if monsters.id(&call.monster).is_none() {
+                wrong.push(format!("{:?} calls {:?}, which monsters.ron has no kind called", ability.name, call.monster));
+            }
+        }
+    }
+    if wrong.is_empty() { Ok(()) } else { Err(wrong.join("; ")) }
 }
 
 /// `name` as a plural, for the kinds a call of the drowned raises: they all

@@ -59,9 +59,12 @@
     // The spiders moved down with the Spider Warrens, to floors five and six:
     // the giant spider is the stronger form the deeper floors ask, and the
     // spiderlings the swarm round it, a bite apiece and gone at the first blow.
+    // Three spiders on one floor, and the Widow over them, read apart at a
+    // glance: the giant an `S`, the cave spider a violet `s`, the Widow a red
+    // one, and the spiderling a pale `x`, smaller than any of them.
     (name: "giant spider", glyph: 'S', color: (0.6, 0.5, 0.7), hp: 16, attack: (roll: "1d6", kind: "pierce"), faction: "beasts",
      traits: ["animal", "sees in the dark", "venomous", "webbing"]),
-    (name: "spiderling", glyph: 's', color: (0.75, 0.68, 0.8), hp: 3, attack: (roll: "1d3", kind: "pierce"), faction: "beasts", traits: ["animal", "sees in the dark", "swift", "packing"]),
+    (name: "spiderling", glyph: 'x', color: (0.85, 0.8, 0.66), hp: 3, attack: (roll: "1d3", kind: "pierce"), faction: "beasts", traits: ["animal", "sees in the dark", "swift", "packing"]),
     (name: "goblin archer", glyph: 'a', color: (0.6, 0.8, 0.38), hp: 8, attack: (roll: "1d3", kind: "slash"), ranged: (range: 6, roll: "1d6", kind: "pierce"), faction: "goblins", traits: ["sapient", "cowardly", "led"],
      drops: [("gold coin", 40), ("bow", 8)]),
     (name: "goblin conjurer", glyph: 'c', color: (0.6, 0.4, 0.85), hp: 10, attack: (roll: "1d3", kind: "slash"), faction: "goblins", traits: ["sapient", "cowardly", "blinking", "conjuring", "led"]),

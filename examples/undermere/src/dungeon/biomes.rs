@@ -3,12 +3,13 @@
 //! plain handful every system that reads a floor's look or growth keeps
 //! instead of the whole of [`Undermere`].
 //!
-//! Twelve biomes stand one to four to a stratum ([`super::strata`]), floors
-//! one to nine, drawn by weight from a stream of the floor alone, so a run's biomes are a
-//! pure function of its seed and any floor may be grown first. The three
-//! throne biomes stand on floor ten, one to a boss, never drawn by
-//! weight: [`throne`] reads off [`FinalBoss::biome`](super::lairs::FinalBoss)
-//! instead, so the two draws can never disagree. A floor's recipe is drawn
+//! Twelve biomes stand one to four to a stratum ([`super::strata`]),
+//! floors one to nine, drawn by weight from a stream of the floor alone,
+//! so a run's biomes are a pure function of its seed and any floor may be
+//! grown first. The three throne biomes stand on floor ten, one to a boss,
+//! never drawn by weight: [`throne`] reads off
+//! [`FinalBoss::biome`](super::lairs::FinalBoss) instead, so the two draws
+//! can never disagree. A floor's recipe is drawn
 //! from its biome's list by weight on a stream of its own, so adding a
 //! recipe to a biome moves no other floor's biome.
 //!

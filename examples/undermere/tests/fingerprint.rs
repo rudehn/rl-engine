@@ -235,11 +235,13 @@ const TURNS: usize = 400;
 /// same run, and these runs come to these numbers. Re-baseline
 /// deliberately, saying why in the commit.
 ///
-/// Seed one twice and two and three once, each an app of its own, so the
-/// four play side by side.
+/// Seed one twice and four and three once, each an app of its own, so the
+/// four play side by side. Seed four stands where seed two did: once the
+/// strata were reviewed, seed two's script came to floor six in its four
+/// hundred turns without a kill, which is a walk and not a delve.
 #[test]
 fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_every_time_on_three_seeds() {
-    let seeds = [1, 2, 3, 1];
+    let seeds = [1, 4, 3, 1];
     let runs: Vec<(u64, Tally)> = std::thread::scope(|scope| {
         let playing: Vec<_> = seeds.map(|seed| scope.spawn(move || run(seed, TURNS))).into_iter().collect();
         playing.into_iter().map(|run| run.join().expect("the run played to its end")).collect()
@@ -253,9 +255,11 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [5_312_980_596_804_645_239, 799_751_898_187_304_310, 17_774_122_699_582_489_185],
+        [5_932_408_158_373_631_327, 5_273_674_215_525_864_124, 15_476_734_345_038_933_050],
         "fingerprint tripwire: re-baselined once for the strata, the biomes on other floors and the bestiary moved with them \
          and the palace floors retuned, and for the script striking only a foe, so seed one's captive, shackled beside its \
-         path on floor one, is walked past rather than struck at for good"
+         path on floor one, is walked past rather than struck at for good; and once more for the strata's review, the war \
+         band and the ogre's feeding ground back on floors five and six, the floors four to six retuned and the flooding \
+         vault holding one channel, with seed four for seed two"
     );
 }

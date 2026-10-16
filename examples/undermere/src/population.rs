@@ -222,19 +222,17 @@ struct Band {
     followers: &'static [&'static str],
     /// How many of `followers` come, besides the leader.
     count: usize,
-    /// Whether the band comes only where the floor's drawn biome favors its
-    /// leader: a war band keeps to the goblins' own ground, the mines, and
-    /// not to a library or a warren, while the dar trio comes to every floor
-    /// of its range.
-    themed: bool,
 }
 
 /// The dar trio, floors eight and nine, the blademaster leading; a goblin
-/// war band, floors five and six where the mines are drawn, a goblin leading two of archer,
-/// conjurer or mystic, so a war band never doubles one kind.
+/// war band, floors five and six, a goblin leading two of archer,
+/// conjurer or mystic, so a war band never doubles one kind. The war band
+/// comes beneath the kingdom whatever was drawn there: goblins raid out
+/// of the mines into the tombs and the warrens, and a floor of them is
+/// one of the floors five and six are dangerous for.
 const BANDS: &[Band] = &[
-    Band { floors: (5, 6), leader: "goblin", followers: &["goblin archer", "goblin conjurer", "goblin mystic"], count: 2, themed: true },
-    Band { floors: (8, 9), leader: "dar blademaster", followers: &["dar priestess", "dar battlemage"], count: 2, themed: false },
+    Band { floors: (5, 6), leader: "goblin", followers: &["goblin archer", "goblin conjurer", "goblin mystic"], count: 2 },
+    Band { floors: (8, 9), leader: "dar blademaster", followers: &["dar priestess", "dar battlemage"], count: 2 },
 ];
 
 /// A beast that feeds on another kind's remains, one feeding ground to a
@@ -254,16 +252,36 @@ struct Feeder {
     prey: &'static str,
 }
 
-/// Jackals over a rat on the upper halls, a ghoul, which the sheet already
-/// has eating the dead, over a skeleton in the crypts and the drowned
-/// halls, a troll over a fire imp at the forge: one feeder a floor's band
-/// may draw, chosen by hand for what already stands there. The palace
+/// Jackals over a rat on the upper halls, an ogre over a goblin beneath
+/// the kingdom, a ghoul, which the sheet already has eating the dead, over
+/// a skeleton in the tombs and the drowned halls, a troll over a fire imp
+/// at the forge: the feeders a floor's band may draw, chosen by hand for
+/// what already stands there, one to a floor by [`feeder_for`]. The palace
 /// floors have none, for the dead there are too new to be eaten.
 const FEEDERS: &[Feeder] = &[
     Feeder { floors: (1, 2), beast: "jackal", prey: "rat" },
+    Feeder { floors: (5, 6), beast: "ogre", prey: "goblin" },
     Feeder { floors: (5, 7), beast: "ghoul", prey: "skeleton" },
     Feeder { floors: (8, 9), beast: "troll", prey: "fire imp" },
 ];
+
+/// The feeder `floor` draws, if it draws one: of the [`FEEDERS`] of its
+/// band, the ones whose beast or prey the floor's drawn biome favors, so
+/// the mines show the ogre over a goblin and the tombs the ghoul over a
+/// skeleton, or every one of them when the biome favors none, drawn
+/// evenly; each only [`FEEDING_GROUND_PCT`] of the time. Not the first
+/// row that fits, which gave two feeders of one band the first's floors
+/// alone. `rng` is drawn from only on a floor with a feeder at all, and
+/// for which one only where there is a choice.
+fn feeder_for(floor: u32, favored: &[String], rng: &mut impl Rng) -> Option<&'static Feeder> {
+    let band: Vec<&'static Feeder> = FEEDERS.iter().filter(|f| (f.floors.0..=f.floors.1).contains(&floor)).collect();
+    let fitting: Vec<&'static Feeder> = band.iter().copied().filter(|f| favored.iter().any(|k| k == f.beast || k == f.prey)).collect();
+    let pool = if fitting.is_empty() { band } else { fitting };
+    if pool.is_empty() || !rng.random_ratio(FEEDING_GROUND_PCT, 100) {
+        return None;
+    }
+    Some(if pool.len() == 1 { pool[0] } else { pool[rng.random_range(0..pool.len())] })
+}
 
 /// The percent chance a floor whose band has a [`Feeder`] draws one at
 /// all: not every floor of a band shows the same scene twice, which is
@@ -538,8 +556,7 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
         // one of them was added or tuned.
         let mut band_rng = seed.stream(b"undermere.population.bands", u64::from(floor));
         let mut scenes = 0;
-        let here = draws.of(floor);
-        for band in BANDS.iter().filter(|b| (b.floors.0..=b.floors.1).contains(&floor)).filter(|b| !b.themed || here.favored.iter().any(|f| f == b.leader)) {
+        for band in BANDS.iter().filter(|b| (b.floors.0..=b.floors.1).contains(&floor)) {
             // Half the time a goblin war band is placed at all, it comes
             // together as a camp round its own fire instead of standing
             // in the open: the share of war bands a camp is.
@@ -558,9 +575,7 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
                 marked.extend(used);
             }
         }
-        if let Some(feeder) = FEEDERS.iter().find(|f| (f.floors.0..=f.floors.1).contains(&floor))
-            && rng.random_ratio(FEEDING_GROUND_PCT, 100)
-        {
+        if let Some(feeder) = feeder_for(floor, &draws.of(floor).favored, &mut rng) {
             let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p) && outside(p);
             if let Some(used) = place_feeding_ground(&mut commands, &stocked, &site, feeder, turns.now(), &mut free, &mut rng) {
                 scenes += 1;
@@ -858,13 +873,16 @@ mod tests {
     }
 
     /// A floor's population favors its own biome's kinds: over a span of
-    /// seeds of floor five, each of its four biomes' favored kinds make
+    /// seeds of floor three, each of its two biomes' favored kinds make
     /// up a larger share of the floor's monsters where that biome was
     /// drawn than where another was, so the population is handed the
-    /// drawn biome's list and not some other floor's or none.
+    /// drawn biome's list and not some other floor's or none. Floor three
+    /// draws no war band and no feeding ground, whose goblins and ogres
+    /// come whatever biome floors five and six drew and would blur the
+    /// share the favoring alone makes.
     #[test]
     fn a_floor_is_populated_with_more_of_its_own_biomes_favored_kinds() {
-        let floor = 5;
+        let floor = 3;
         // Every biome of the band, by the seeds' own draws of it.
         let mut band: Vec<crate::dungeon::BiomeDraw> = Vec::new();
         for s in 0..20 {
@@ -1067,14 +1085,14 @@ mod tests {
     /// `Leader`, whatever else the ordinary spawn table also drew.
     #[test]
     fn a_goblin_war_band_is_placed_together_a_goblin_leading_two_of_its_own_kinds_over_a_span_of_seeds() {
-        let mut played = 0;
-        for s in 0..40u64 {
-            let Some(floor) = mines_floor(s) else { continue };
+        let mut biomes = std::collections::BTreeSet::new();
+        for s in 0..6u64 {
             let mut app = headless(RunSeed(s));
             let me = adventurer(&mut app);
             sturdy(&mut app, me);
+            let floor = map_of(5);
             arrive(&mut app, floor);
-            played += 1;
+            biomes.insert(crate::dungeon::Undermere::new(RunSeed(s)).biome_of(5).name.clone());
             let (goblin_id, band) = {
                 let bestiary = app.world().resource::<Bestiary>();
                 (
@@ -1092,48 +1110,8 @@ mod tests {
             let leader = led[0].1;
             assert!(led.iter().all(|(_, l)| *l == leader), "seed {s}: both led by the same goblin");
             assert_eq!(app.world().get::<Kind>(leader).map(|k| k.0), Some(goblin_id), "seed {s}: led by a goblin");
-            if played == 6 {
-                break;
-            }
         }
-        assert_eq!(played, 6, "six runs drew the Old Mines on a floor of beneath the kingdom");
-    }
-
-    /// The map of the Old Mines on floor five or six when this run drew
-    /// them there: the only floors a goblin war band comes together on,
-    /// since it keeps to the biome that favors its leader.
-    fn mines_floor(seed: u64) -> Option<MapId> {
-        let undermere = crate::dungeon::Undermere::new(RunSeed(seed));
-        [5, 6].into_iter().find(|f| undermere.biome_of(*f).name == "the Old Mines").map(map_of)
-    }
-
-    /// A goblin war band comes only where the biome drawn favors its leader:
-    /// on no floor of the Fungal Deeps, the Spider Warrens or the Catacombs.
-    #[test]
-    fn a_goblin_war_band_keeps_to_the_mines_and_comes_to_no_other_floor_of_beneath_the_kingdom() {
-        let mut checked = 0;
-        for s in 0..40u64 {
-            let undermere = crate::dungeon::Undermere::new(RunSeed(s));
-            let Some(floor) = [5, 6].into_iter().find(|f| undermere.biome_of(*f).name != "the Old Mines").map(map_of) else { continue };
-            let mut app = headless(RunSeed(s));
-            let me = adventurer(&mut app);
-            sturdy(&mut app, me);
-            arrive(&mut app, floor);
-            let (goblin_id, band) = {
-                let bestiary = app.world().resource::<Bestiary>();
-                (
-                    bestiary.defs.expect("goblin"),
-                    [bestiary.defs.expect("goblin archer"), bestiary.defs.expect("goblin conjurer"), bestiary.defs.expect("goblin mystic")],
-                )
-            };
-            let led: Vec<(Entity, Entity)> = led_among(app.world_mut(), floor, &band)
-                .into_iter()
-                .filter(|(_, leader)| app.world().get::<Kind>(*leader).map(|k| k.0) == Some(goblin_id))
-                .collect();
-            assert!(led.is_empty(), "seed {s}: a war band on a floor of {}: {led:?}", undermere.biome_of(floor.0).name);
-            checked += 1;
-        }
-        assert!(checked > 0, "some seed drew another biome than the mines on floors five and six");
+        assert!(biomes.len() > 1, "a war band comes whatever floor five drew, not the mines alone: {biomes:?}");
     }
 
     /// A mini-boss's lair: whichever lair a floor draws holds its boss, found
@@ -1224,10 +1202,10 @@ mod tests {
     fn a_goblin_camp_holds_a_fire_its_followers_asleep_and_its_leader_keeping_the_watch_over_a_span_of_seeds() {
         let camps = std::sync::atomic::AtomicUsize::new(0);
         par_seeds(seeds(0..40), |s| {
-            let Some(map) = mines_floor(s) else { return };
             let mut app = headless(RunSeed(s));
             let me = adventurer(&mut app);
             sturdy(&mut app, me);
+            let map = map_of(5);
             arrive(&mut app, map);
             let fire_id = app.world().resource::<Registries>().props.expect("fire");
             // A camp's own fire, which the population stands where no piece
@@ -1298,5 +1276,37 @@ mod tests {
             found += 1;
         }
         assert!(found > 0, "some seed over the span drew a feeding ground on floor one");
+    }
+
+    /// A floor's feeder fits its drawn biome: beneath the kingdom the mines
+    /// draw the ogre over a goblin and the tombs the ghoul over a
+    /// skeleton, a biome that favors neither draws either, the palace
+    /// floors none, and a floor draws one about [`FEEDING_GROUND_PCT`] of
+    /// the time, over a span of seeds.
+    #[test]
+    fn a_feeder_fits_the_drawn_biome_and_beneath_the_kingdom_either_comes_where_neither_is_favored_over_a_span_of_seeds() {
+        let favored = |names: &[&str]| -> Vec<String> { names.iter().map(|n| n.to_string()).collect() };
+        let mines = favored(&["goblin", "goblin archer", "kobold"]);
+        let tombs = favored(&["skeleton", "ghoul", "necromancer"]);
+        let warrens = favored(&["cave spider", "giant spider", "spiderling"]);
+        let palace = favored(&["drowned acolyte", "drowned pilgrim", "vampire bat"]);
+        let (mut drawn, mut either) = (0, std::collections::BTreeSet::new());
+        for s in 0..400u64 {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(s);
+            let floor = 5 + (s % 2) as u32;
+            if let Some(f) = feeder_for(floor, &mines, &mut rng) {
+                assert_eq!(f.beast, "ogre", "seed {s}: the mines' feeder");
+                drawn += 1;
+            }
+            if let Some(f) = feeder_for(floor, &tombs, &mut rng) {
+                assert_eq!(f.beast, "ghoul", "seed {s}: the tombs' feeder");
+            }
+            if let Some(f) = feeder_for(floor, &warrens, &mut rng) {
+                either.insert(f.beast);
+            }
+            assert!(feeder_for(3 + (s % 2) as u32, &palace, &mut rng).is_none(), "seed {s}: none on the palace floors");
+        }
+        assert_eq!(either, ["ghoul", "ogre"].into_iter().collect(), "either feeder where neither is favored");
+        assert!((150..250).contains(&drawn), "about {FEEDING_GROUND_PCT} in a hundred floors draw one: {drawn} of 400");
     }
 }

@@ -236,6 +236,11 @@ struct Foe {
     health: (i32, i32),
     /// Whether it shoots from afar.
     shoots: bool,
+    /// Whether a shot from where the adventurer stands reaches it, by the
+    /// engine's own line of fire: a foe seen round a corner a bolt cannot
+    /// turn is seen and not shot, and shooting at it anyway was a delve
+    /// throwing darts into a wall at a sleeping wight for good.
+    clear: bool,
 }
 
 /// A thing the adventurer carries, as they know it.
@@ -304,10 +309,14 @@ fn look(world: &mut World, me: Entity) -> Sight {
         .map(|(e, p, _, h, f, k)| (e, p.0, (h.current, h.max), f.0, *k))
         .collect();
     let (rules, bestiary) = (world.resource::<CombatRules>(), world.resource::<Bestiary>());
+    let (map, occupancy) = (world.resource::<WorldMap>(), world.resource::<Occupancy>());
     let mut foes: Vec<Foe> = everyone
         .into_iter()
         .filter(|(_, p, _, f, _)| rules.factions.is_hostile(side, *f) && sees.as_ref().is_some_and(|v| v.can_see(*p)))
-        .map(|(who, p, health, _, kind)| Foe { who, at: p, far: geometry::chebyshev(at, p), health, shoots: bestiary.defs.get(kind.0).ranged.is_some() })
+        .map(|(who, p, health, _, kind)| {
+            let far = geometry::chebyshev(at, p);
+            Foe { who, at: p, far, health, shoots: bestiary.defs.get(kind.0).ranged.is_some(), clear: line_of_fire(map, occupancy, at, p, far) }
+        })
         .collect();
     foes.sort_by_key(|f| (f.far, f.who.index()));
     let free = match world.get::<Equipped>(me) {
@@ -596,13 +605,14 @@ fn strike(view: &Sight, memory: &Memory) -> Option<Choice> {
     Direction::between(view.at, foe.at).map(|dir| Choice::Strike(dir, foe.who))
 }
 
-/// A staff or wand at the nearest foe two to seven steps off: one known to
-/// strike, a wand of teleport other when they are hurt, one of domination
-/// at a foe half beaten, and one not yet known, to know it; or a dart or a
-/// javelin at a foe five steps off or nearer. A staff used where it stands
-/// rather than aimed is used, once a foe is near.
+/// A staff or wand at the nearest foe two to seven steps off with a clear
+/// line of fire to it: one known to strike, a wand of teleport other when
+/// they are hurt, one of domination at a foe half beaten, and one not yet
+/// known, to know it; or a dart or a javelin at a foe five steps off or
+/// nearer. A staff used where it stands rather than aimed is used, once a
+/// foe is near.
 fn from_afar(view: &Sight, things: &[&Thing], armory: &Armory, memory: &Memory) -> Option<Choice> {
-    let foe = view.foes.iter().find(|f| (2..=7).contains(&f.far) && !memory.untouchable.contains(&f.who))?;
+    let foe = view.foes.iter().find(|f| (2..=7).contains(&f.far) && f.clear && !memory.untouchable.contains(&f.who))?;
     for t in things.iter().filter(|t| matches!(t.kind, Some("staff" | "wand")) && t.left != Some(0)) {
         let wanted = match t.known.as_deref() {
             None => true,
