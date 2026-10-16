@@ -35,3 +35,10 @@ criterion.workspace = true
 [[bench]]
 name = "frame"
 harness = false
+
+# Tests and benches link Bevy as one shared library, so each test binary links
+# in seconds rather than copying all of Bevy in. A dev-dependency never reaches
+# a game built on this crate, which links Bevy however it chooses; wasm has no
+# shared libraries.
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+bevy = { workspace = true, features = ["dynamic_linking"] }

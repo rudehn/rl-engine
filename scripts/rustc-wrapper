@@ -1,0 +1,46 @@
+#!/usr/bin/perl
+# The rustc wrapper `.cargo/config.toml` names, so every compile in every
+# checkout of this workspace goes through it. It runs the compile inside one of
+# the machine's slots (scripts/slot says why), and hands a plain rustc compile
+# to sccache when sccache is installed, so a dependency built once, in any
+# worktree, is a cache hit in every other one.
+#
+# sccache keys a compile by its arguments, and they name the checkout's target
+# directory, so each checkout strips its own root (SCCACHE_BASEDIRS) and talks
+# to an sccache server of its own, on a port drawn from its path: a server's
+# base directories are fixed when it starts, and worktrees come and go. Every
+# server shares the one cache directory. Two checkouts whose ports collide
+# share a server stripping only one root, which costs the other its hits and
+# never gives it a wrong one. Clippy and rustc's own probes go straight
+# through: neither is worth caching.
+#
+#   RL_NO_SCCACHE   set to anything to compile without sccache
+use strict;
+use warnings;
+use Cwd qw(abs_path);
+use File::Basename qw(basename dirname);
+
+my ($tool, @args) = @ARGV;
+die "rustc-wrapper: cargo passes the compiler as the first argument\n" unless defined $tool;
+
+# A probe asks the compiler about itself and compiles nothing, so it neither
+# waits for a slot nor goes to the cache.
+if (grep { $_ eq '-vV' || $_ eq '-' || /^--print/ } @args) {
+    exec $tool, @args or die "rustc-wrapper: cannot run $tool: $!\n";
+}
+
+my $scripts = dirname(abs_path($0));
+my @command = ($tool, @args);
+if (!$ENV{RL_NO_SCCACHE} && basename($tool) =~ /^rustc/) {
+    my ($sccache) = grep { -x } map { "$_/sccache" } split /:/, $ENV{PATH} // '';
+    if ($sccache) {
+        my $root = dirname($scripts);
+        $ENV{SCCACHE_BASEDIRS} = "$root/";
+        $ENV{SCCACHE_SERVER_PORT} //= 4300 + unpack('%32C*', $root) % 1000;
+        # Bevy's dependencies alone are several gigabytes per profile, and the
+        # default ten would evict them between one worktree and the next.
+        $ENV{SCCACHE_CACHE_SIZE} //= '60G';
+        @command = ($sccache, @command);
+    }
+}
+exec "$scripts/slot", @command or die "rustc-wrapper: cannot run $scripts/slot: $!\n";

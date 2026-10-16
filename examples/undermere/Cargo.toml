@@ -23,3 +23,11 @@ ron.workspace = true
 # Reads the typeface's character map, so the tests hold every glyph the game
 # draws to the face it is drawn in.
 ttf-parser.workspace = true
+
+# Links Bevy as one shared library on the desktop, so a change rebuilds and
+# links this game, its tests included, in seconds rather than copying all of
+# Bevy in. Nothing here is shipped as a native binary, only the tutorial's
+# wasm demos, which have no shared libraries. A binary so linked runs through
+# `cargo run`, which tells the loader where Bevy's library is.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+bevy = { workspace = true, features = ["dynamic_linking"] }

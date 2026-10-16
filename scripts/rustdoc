@@ -1,0 +1,42 @@
+#!/usr/bin/perl
+# The rustdoc `.cargo/config.toml` names. It runs the toolchain's own rustdoc,
+# and for a doc-test build bakes into each test where its shared libraries are.
+#
+# Bevy is linked as a shared library on the desktop (the crates' Cargo.toml
+# say why), and with it the standard library, so a doc-test, like any test,
+# has to find both when it runs. For a unit test cargo and nextest put their
+# directories on the loader's path. For a doc-test cargo puts its own build
+# directories there but not the standard library's, and rustdoc runs every
+# doc-test it built with that path, so each one stopped at its first line. An
+# rpath written into the test at link time needs no loader path at all, which
+# matters twice on macOS: it strips every DYLD_ variable from a protected
+# binary's environment, and this script runs on one, /usr/bin/perl, so the
+# path cargo set would not survive this script either.
+#
+# So a doc-test build gets an rpath to the standard library's directory and to
+# every directory cargo names with -L, which holds what the test links against.
+use strict;
+use warnings;
+
+my @args = @ARGV;
+chomp(my $sysroot = `rustc --print sysroot`);
+my $rustdoc = "$sysroot/bin/rustdoc";
+
+if (grep { $_ eq '--test' } @args) {
+    chomp(my $libdir = `rustc --print target-libdir`);
+    my @dirs = ($libdir);
+    for my $i (0 .. $#args) {
+        my $path;
+        if ($args[$i] eq '-L' && $i < $#args) {
+            $path = $args[$i + 1];
+        } elsif ($args[$i] =~ /^-L(.+)/) {
+            $path = $1;
+        }
+        next unless defined $path;
+        $path =~ s/^(?:dependency|crate|native|framework|all)=//;
+        push @dirs, $path;
+    }
+    my %seen;
+    push @args, map { ('-C', "link-arg=-Wl,-rpath,$_") } grep { !$seen{$_}++ } @dirs;
+}
+exec $rustdoc, @args or die "rustdoc: cannot run $rustdoc: $!\n";

@@ -1,0 +1,72 @@
+#!/usr/bin/perl
+# Runs a command while holding one of a fixed number of machine-wide slots:
+#
+#   scripts/slot <command> [args...]
+#
+# Every compile (through scripts/rustc-wrapper) and every test process
+# (through .config/nextest.toml) of every checkout of this workspace runs
+# inside one, so however many agents build and test at once, the machine runs
+# about one of them per core. Each cargo and each nextest sizes itself to the
+# cores as if it had the machine alone, and several agents at once ran three or
+# four times as many processes as there are cores and swapped.
+#
+# A slot is an exclusive lock on one of the files in /tmp/rl-build-slots, held
+# by this process while it waits on the command, so the kernel releases it
+# however either ends. A shared jobserver was refused for exactly that: a token
+# taken by a cargo that is killed mid-build, which a timed-out tool call does,
+# is never given back. The command does not inherit the lock either, since an
+# sccache server a compile starts outlives the compile and would hold the slot
+# for as long as it runs.
+#
+#   RL_BUILD_SLOTS  how many commands may run at once; the core count if unset
+use strict;
+use warnings;
+use Fcntl qw(:flock O_RDWR O_CREAT);
+use POSIX qw(WIFSIGNALED WTERMSIG WEXITSTATUS);
+use Time::HiRes qw(usleep);
+
+die "slot: usage: scripts/slot <command> [args...]\n" unless @ARGV;
+
+my $slots = $ENV{RL_BUILD_SLOTS} || `getconf _NPROCESSORS_ONLN 2>/dev/null` || 8;
+chomp $slots;
+my $dir = '/tmp/rl-build-slots';
+mkdir $dir;
+my $held;
+until ($held) {
+    for my $i (0 .. $slots - 1) {
+        sysopen(my $fh, "$dir/$i", O_RDWR | O_CREAT) or next;
+        if (flock($fh, LOCK_EX | LOCK_NB)) {
+            $held = $fh;
+            last;
+        }
+        close $fh;
+    }
+    usleep(50_000) unless $held;
+}
+
+# macOS strips every DYLD_ variable from a protected binary's environment, and
+# /usr/bin/perl is one, so the loader paths nextest sets for a test, which find
+# the standard library and Bevy now that both are shared libraries, never
+# reach this script. nextest sets each again under a NEXTEST_ prefix for
+# exactly such a wrapper; the test, which is not protected, gets them back.
+for my $name (grep { /^NEXTEST_(DYLD_|LD_)/ } keys %ENV) {
+    (my $original = $name) =~ s/^NEXTEST_//;
+    $ENV{$original} //= $ENV{$name};
+}
+
+# Perl opens every handle close-on-exec, so the command never sees the lock.
+my $pid = fork() // die "slot: cannot fork: $!\n";
+if ($pid == 0) {
+    exec @ARGV or die "slot: cannot run $ARGV[0]: $!\n";
+}
+# A build or a test run is stopped by signalling its whole group, the command
+# included; this process only has to outlive it and then say how it ended.
+$SIG{$_} = 'IGNORE' for qw(INT TERM HUP);
+waitpid($pid, 0);
+my $status = $?;
+close $held;
+if (WIFSIGNALED($status)) {
+    $SIG{$_} = 'DEFAULT' for qw(INT TERM HUP);
+    kill WTERMSIG($status), $$;
+}
+exit WEXITSTATUS($status);

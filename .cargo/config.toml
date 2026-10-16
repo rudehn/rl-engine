@@ -1,0 +1,11 @@
+# Every compile goes through scripts/rustc-wrapper: it keeps the machine's
+# compiles, across every checkout and agent at once, to one per core, and hands
+# them to sccache when it is installed. The paths are relative to this file's
+# parent, the workspace root.
+#
+# Doc-tests link Bevy and the standard library as shared libraries, and
+# scripts/rustdoc bakes in where each lives, which cargo does not tell a
+# doc-test. Every other rustdoc run passes straight through.
+[build]
+rustc-wrapper = "scripts/rustc-wrapper"
+rustdoc = "scripts/rustdoc"

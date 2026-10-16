@@ -29,3 +29,10 @@ rl-ui.workspace = true
 # `RoguelikePlugins` opens the window, so the facade names Bevy's own
 # defaults. Every crate it gathers already depends on Bevy.
 bevy.workspace = true
+
+# Tests and benches link Bevy as one shared library, so each test binary links
+# in seconds rather than copying all of Bevy in. A dev-dependency never reaches
+# a game built on this crate, which links Bevy however it chooses; wasm has no
+# shared libraries.
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+bevy = { workspace = true, features = ["dynamic_linking"] }

@@ -1,3 +1,13 @@
+# Every test process runs inside one of the machine's slots, the same ones
+# every compile takes (scripts/slot says why), so two agents' test runs share
+# the cores rather than each taking all of them. Wrapper scripts are still an
+# experimental feature of nextest; a version that changes them fails here, at
+# parse, rather than running tests unthrottled.
+experimental = ["wrapper-scripts"]
+
+[scripts.wrapper.slot]
+command = { command-line = "scripts/slot", relative-to = "workspace-root" }
+
 # nextest pools every test of the workspace, so the wall time of a run is set
 # by its longest tests: a test that runs past the slow period is named while
 # the run is still going, and is the next one to make faster.
@@ -8,3 +18,11 @@ slow-timeout = { period = "30s" }
 [profile.ci]
 fail-fast = false
 slow-timeout = { period = "30s" }
+
+[[profile.default.scripts]]
+filter = "all()"
+run-wrapper = "slot"
+
+[[profile.ci.scripts]]
+filter = "all()"
+run-wrapper = "slot"
