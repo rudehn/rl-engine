@@ -558,7 +558,7 @@ mod tests {
 
     use super::*;
     use crate::dungeon::{Undermere, map_of};
-    use crate::testing::{arena_on, arrive, clear_monsters, here, monster, par_seeds, pass_turns, said, settle, stand_on, sturdy};
+    use crate::testing::{arena_on, arrive, clear_monsters, here, monster, par_seeds, pass_turns, said, seeds, settle, stand_on, sturdy};
     use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
     /// How many openings of each kind `built` hid: its secret doors and its
@@ -584,7 +584,7 @@ mod tests {
     #[test]
     fn secret_doors_and_hidden_rooms_by_depth_over_seeds() {
         let (floors, with_doors) = (AtomicUsize::new(0), AtomicUsize::new(0));
-        par_seeds(0..24, |s| {
+        par_seeds(seeds(0..24), |s| {
             let undermere = Undermere::new(RunSeed(s));
             let tables = undermere.tiles().tables();
             for floor in 1..=FLOORS {
@@ -656,7 +656,7 @@ mod tests {
         let hiding = Hiding::load();
         let flagstone = hiding.flagstones.prop.as_str();
         let (short, floors) = (AtomicUsize::new(0), AtomicUsize::new(0));
-        par_seeds(0..24, |s| {
+        par_seeds(seeds(0..24), |s| {
             let undermere = Undermere::new(RunSeed(s));
             for floor in 1..=FLOORS {
                 let built = undermere.build(map_of(floor), None).unwrap();
@@ -690,7 +690,7 @@ mod tests {
     #[test]
     fn every_trap_is_on_a_walkable_cell_off_the_stairs_and_every_hidden_thing_is_reached_once_the_secrets_are_found() {
         let hiding = Hiding::load();
-        par_seeds(0..24, |s| {
+        par_seeds(seeds(0..24), |s| {
             let undermere = Undermere::new(RunSeed(s));
             let tables = undermere.tiles().tables();
             for floor in 1..FLOORS {
@@ -885,7 +885,7 @@ mod tests {
         let hiding = Hiding::load();
         let (door, room) = (hiding.secret_doors.spot, hiding.hidden_rooms.spot);
         let told = std::sync::Mutex::new(BTreeSet::new());
-        par_seeds(0..24, |s| {
+        par_seeds(seeds(0..24), |s| {
             let undermere = Undermere::new(RunSeed(s));
             for floor in 1..FLOORS {
                 let built = undermere.build(map_of(floor), None).unwrap();

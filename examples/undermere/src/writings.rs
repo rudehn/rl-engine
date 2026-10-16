@@ -272,7 +272,7 @@ mod tests {
     /// same line, across as many floors as the seed range gives one.
     #[test]
     fn a_remains_reads_the_same_line_twice_and_no_two_remains_in_a_run_share_one() {
-        par_seeds(0..24, |s| {
+        par_seeds(seeds(0..24), |s| {
             let mut app = headless(RunSeed(s));
             let me = adventurer(&mut app);
             let mut lines_this_run = Vec::new();

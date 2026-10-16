@@ -286,7 +286,7 @@ mod tests {
 
     use super::*;
     use crate::mercenaries::fixtures::hired;
-    use crate::testing::{arena, arena_with, at, clear_floor, here, par_seeds, pass_turns, said, stand_on, still};
+    use crate::testing::{arena, arena_with, at, clear_floor, here, par_seeds, pass_turns, said, seeds, stand_on, still};
 
     /// Whether `who` thinks with the brain for `order`.
     fn thinks(app: &App, who: Entity, order: Order) -> bool {
@@ -371,7 +371,7 @@ mod tests {
     /// catching up after.
     #[test]
     fn a_follower_keeps_within_three_of_the_adventurer_across_a_floor_with_nothing_to_fight_over_a_span_of_seeds() {
-        par_seeds(0..12, |seed| {
+        par_seeds(seeds(0..12), |seed| {
             let (mut app, me, here) = arena(seed);
             clear_floor(&mut app);
             let brenna = hired(&mut app, me, here.offset(-1, 0), "Brenna");

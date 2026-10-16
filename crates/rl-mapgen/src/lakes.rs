@@ -744,7 +744,7 @@ mod tests {
     use crate::context::BaseContext;
     use crate::dungeon::Rooms;
     use crate::loops::OpenLoops;
-    use crate::testing::{par_seeds, seeds};
+    use crate::testing::{first_seeds, par_seeds, seeds};
     use rl_core::{Rect, RunSeed};
     use rl_grid::{Terrain, TileProps, TileRegistry};
     use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
@@ -1139,7 +1139,10 @@ mod tests {
         let r = rig_with_water();
         let passable = r.tiles.tables().passable;
         let locked_away = AtomicUsize::new(0);
-        par_seeds(seeds(0..80), |s| {
+        // Thirty seeds every day, not `seeds`' eight: one place in three
+        // or so locks an area away, and ten of them are asked for below.
+        let span = first_seeds(0..80, 30);
+        par_seeds(span.clone(), |s| {
             let chain = Chain::new().then(vaulted()).then(OpenLoops { door: r.door, min_detour: 20, max: 6 }).then(Record).then(islands(&r)).then(bridges(&r));
             let ctx = chain.run_retrying(|| BaseContext::blank(84, 48, r.tiles.clone(), r.wall), RunSeed(s), 40).unwrap_or_else(|e| panic!("seed {s}: {e}"));
             let before = &ctx.outputs().first::<Before>().unwrap().0;
@@ -1183,7 +1186,7 @@ mod tests {
             assert!(walked.iter().all(|p| reached.contains(*p)), "seed {s}: floor once walked to is reached only through a lock");
         });
         let locked_away = locked_away.into_inner();
-        assert!(locked_away >= 10, "only {locked_away} of 80 places have an area drawn cell by cell behind a lock");
+        assert!(locked_away >= 10, "only {locked_away} of {} places have an area drawn cell by cell behind a lock", span.end - span.start);
     }
 
     #[test]

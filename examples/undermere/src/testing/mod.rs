@@ -25,7 +25,8 @@ use crate::dungeon::floor_of;
 /// The adventurer, the run begun first if it has not been.
 pub use rl_engine::testing::player as adventurer;
 pub use rl_engine::testing::{
-    QUICK, at, equip, give, go_through, here, lay, name_of, pack, par_seeds, pass_turns, put_down, said, seeds, settle, stand_on, take_up, unequip, wall_off,
+    QUICK, at, equip, first_seeds, give, go_through, here, lay, name_of, pack, par_seeds, pass_turns, put_down, said, seeds, settle, stand_on, take_up,
+    unequip, wall_off,
 };
 
 /// A run with no window, seeded, begun on the first update.

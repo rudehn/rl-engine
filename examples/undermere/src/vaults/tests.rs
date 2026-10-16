@@ -487,7 +487,7 @@ fn a_fall_never_lands_inside_a_locked_vault() {
 #[test]
 fn no_fall_or_far_step_lands_behind_a_lock_or_a_seal_over_a_span_of_seeds() {
     use crate::dungeon::{FLOORS, Undermere};
-    use crate::effects::moving::{far_choices, landing_cells};
+    use crate::effects::moving::{far_choices_among, landing_cells};
     use crate::testing::{par_seeds, seeds};
     use rl_engine::rl_bevy::places::PlaceRules;
     let floors = std::sync::atomic::AtomicUsize::new(0);
@@ -518,8 +518,11 @@ fn no_fall_or_far_step_lands_behind_a_lock_or_a_seal_over_a_span_of_seeds() {
             if let Some(p) = landings.iter().find(|p| behind.contains(p)) {
                 panic!("floor {floor}, seed {s}: a fall may land at {p:?}, behind a lock");
             }
+            // The floor walked once for every far step asked of it, as
+            // `far_choices` walks it once for each.
+            let reached = crate::vaults::open_to_the_way_in(place, tables);
             for from in shut.keys().copied().filter(|p| walkable(*p)).step_by(17) {
-                if let Some(p) = far_choices(&world, from, walkable).iter().find(|p| behind.contains(p)) {
+                if let Some(p) = far_choices_among(&world, from, walkable, Some(&reached)).iter().find(|p| behind.contains(p)) {
                     panic!("floor {floor}, seed {s}: a far step from {from:?} may land at {p:?}, behind a lock");
                 }
             }

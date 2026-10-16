@@ -10,19 +10,36 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// How many seeds of a range an everyday run plays.
-pub const QUICK: u64 = 30;
+/// How many seeds of a range an everyday run plays: one a core on an
+/// eight-core machine, so [`par_seeds`] plays them all at once.
+pub const QUICK: u64 = 8;
 
 /// The seeds a generation test plays: the first [`QUICK`] of `full`, or all
 /// of `full` when the environment sets `RL_FULL_SEEDS`, as CI does.
 ///
 /// Every seed is a whole run generated from scratch, and a property that
-/// holds on thirty of them is as good a tripwire for a change as one that
-/// holds on five hundred. The wide range is for the release and for CI,
-/// where it catches the rare seed. A test about something rare, such as an
-/// entry being drawn at least once, keeps its own range and says why.
+/// holds on eight of them is as good a tripwire for a change as one that
+/// holds on five hundred: a change that breaks a floor breaks it on most
+/// seeds. The wide range is for CI, where it catches the rare seed. It was
+/// thirty until 2026-10-16, when the generation tests were most of the
+/// suite's time and thirty seeds of a whole run each was most of theirs.
+/// A test about something rare, such as an entry being drawn at least
+/// once, or about a rate, keeps its own range and says why.
 pub fn seeds(full: Range<u64>) -> Range<u64> {
-    if std::env::var_os("RL_FULL_SEEDS").is_some() { full } else { full.start..full.end.min(full.start + QUICK) }
+    first_seeds(full, QUICK)
+}
+
+/// The first `quick` seeds of `full`, or all of `full` when the
+/// environment sets `RL_FULL_SEEDS`: [`seeds`] for a test whose everyday
+/// count is not [`QUICK`].
+///
+/// More, for a test that counts something over its span, a rate or a
+/// least number of times a rare thing turned up, and needs that many seeds
+/// before the count says anything; it says so beside the call. Fewer, for
+/// a test whose every seed is already many floors, such as every piece
+/// grown in every biome it may stand in.
+pub fn first_seeds(full: Range<u64>, quick: u64) -> Range<u64> {
+    if std::env::var_os("RL_FULL_SEEDS").is_some() { full } else { full.start..full.end.min(full.start + quick) }
 }
 
 /// Runs `check` on every seed of `seeds`, spread over as many threads as

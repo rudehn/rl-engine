@@ -217,8 +217,9 @@ impl Undermere {
 /// that floor: for a test of what a piece does where a run lays it.
 #[cfg(test)]
 pub(crate) fn drawn(name: &str) -> (RunSeed, u32) {
+    let loaded = Undermere::new(RunSeed(0));
     for s in 0..400 {
-        let undermere = Undermere::new(RunSeed(s));
+        let undermere = loaded.reseeded(RunSeed(s));
         if let Some(floor) = (1..FLOORS).find(|f| undermere.plan_of(*f).iter().any(|p| undermere.pool.entries[p.entry].name == name)) {
             return (RunSeed(s), floor);
         }
@@ -386,6 +387,7 @@ pub(crate) fn registry() -> TileRegistry {
 /// Undermere's tiles, its pieces, how each of its places is built, and
 /// every floor's own biome, drawn once here and handed out by
 /// `biome_of`.
+#[derive(Clone)]
 pub struct Undermere {
     tiles: TileRegistry,
     prefabs: Prefabs<MonsterDef>,
@@ -425,14 +427,34 @@ impl Undermere {
         let defs = biomes::load(&tiles, &layout);
         biomes::check_favored(&defs, &bestiary);
         biomes::check_pieces(&defs, &prefabs);
+        let districts = biomes::district_dressings(&defs, &layout);
+        dressing::check_districts(&districts, prefabs.dressings(), &layout).unwrap_or_else(|e| panic!("assets/biomes.ron: {e}"));
+        let hiding = crate::traps::Hiding::load();
+        let mut undermere = Self { tiles, prefabs, seed, layout, defs, biomes: BTreeMap::new(), districts, pool, plan: BTreeMap::new(), hiding };
+        undermere.draw(seed);
+        undermere
+    }
+
+    /// The same content drawn for `seed`: what `Undermere::new(seed)`
+    /// comes to, without reading and checking every file again, which is
+    /// most of what `new` costs. For a test over hundreds of runs' draws.
+    #[cfg(test)]
+    pub(crate) fn reseeded(&self, seed: RunSeed) -> Self {
+        let mut again = self.clone();
+        again.draw(seed);
+        again
+    }
+
+    /// Draws everything `seed` decides before a floor is built: every
+    /// floor's biome, the throne's by the boss the seed draws, and the
+    /// whole run's picks.
+    fn draw(&mut self, seed: RunSeed) {
         let boss = final_boss(seed);
         let mut biomes = BTreeMap::new();
         for floor in 1..FLOORS {
-            biomes.insert(floor, biomes::draw(&defs, floor, seed, &tiles));
+            biomes.insert(floor, biomes::draw(&self.defs, floor, seed, &self.tiles));
         }
-        biomes.insert(FLOORS, biomes::throne(&defs, boss.biome, seed, &tiles));
-        let districts = biomes::district_dressings(&defs, &layout);
-        dressing::check_districts(&districts, prefabs.dressings(), &layout).unwrap_or_else(|e| panic!("assets/biomes.ron: {e}"));
+        biomes.insert(FLOORS, biomes::throne(&self.defs, boss.biome, seed, &self.tiles));
         // The whole run's places, in floor order, each tagged with the
         // bare name of the biome it draws, so the pool's `where` and
         // `not` read the same name `assets/biomes.ron` and
@@ -446,9 +468,9 @@ impl Undermere {
             })
             .collect();
         let mut rng = seed.rng(SeedDomain::new(b"undermere.pool"), 0);
-        let plan = (1..=FLOORS).zip(pool.plan_run(&mut rng, &places)).collect();
-        let hiding = crate::traps::Hiding::load();
-        Self { tiles, prefabs, seed, layout, defs, biomes, districts, pool, plan, hiding }
+        self.plan = (1..=FLOORS).zip(self.pool.plan_run(&mut rng, &places)).collect();
+        self.biomes = biomes;
+        self.seed = seed;
     }
 
     /// The picks `floor` was drawn, in [`Undermere::new`]: pure over
@@ -1404,8 +1426,9 @@ mod tests {
     #[test]
     fn the_floor_ten_boss_is_drawn_from_three_stably_and_all_three_drawn_over_a_span_of_seeds() {
         let mut seen = BTreeSet::new();
+        let loaded = Undermere::new(RunSeed(0));
         for s in 0..60 {
-            let undermere = Undermere::new(RunSeed(s));
+            let undermere = loaded.reseeded(RunSeed(s));
             let first = undermere.final_boss().piece;
             assert_eq!(undermere.final_boss().piece, first, "seed {s}: two calls disagree");
             seen.insert(first);
@@ -1443,7 +1466,7 @@ mod tests {
 
     #[test]
     fn each_floor_draws_its_own_wall_and_floor_and_shows_nothing_its_biome_and_its_lairs_do_not_lay() {
-        par_seeds(0..20, |s| {
+        par_seeds(seeds(0..20), |s| {
             let undermere = Undermere::new(RunSeed(s));
             for floor in 1..=FLOORS {
                 let drawn = undermere.biome_of(floor);
@@ -1487,8 +1510,9 @@ mod tests {
     /// draw never hands a floor a biome from another band.
     #[test]
     fn each_floor_draws_a_biome_whose_band_includes_it() {
+        let loaded = Undermere::new(RunSeed(0));
         for s in 0..40 {
-            let undermere = Undermere::new(RunSeed(s));
+            let undermere = loaded.reseeded(RunSeed(s));
             let defs = &undermere.defs;
             for floor in 1..=FLOORS {
                 let drawn = undermere.biome_of(floor);
@@ -1531,6 +1555,25 @@ mod tests {
         });
     }
 
+    /// A run reseeded from content already read draws what a new run of
+    /// that seed draws, biome, picks and floor, so a test over hundreds
+    /// of seeds' draws may read the content once.
+    #[test]
+    fn a_reseeded_run_draws_what_a_new_run_of_its_seed_draws() {
+        let loaded = Undermere::new(RunSeed(0));
+        for s in [1, 7] {
+            let (again, new) = (loaded.reseeded(RunSeed(s)), Undermere::new(RunSeed(s)));
+            assert_eq!(again.final_boss().piece, new.final_boss().piece, "seed {s}: the boss");
+            assert_eq!(again.lairs(), new.lairs(), "seed {s}: the lairs");
+            for floor in 1..=FLOORS {
+                assert_eq!(again.biome_of(floor).name, new.biome_of(floor).name, "seed {s}, floor {floor}: the biome");
+                assert_eq!(again.plan_of(floor), new.plan_of(floor), "seed {s}, floor {floor}: the picks");
+            }
+            let (a, b) = (again.build(map_of(3), None).unwrap(), new.build(map_of(3), None).unwrap());
+            assert!((a.terrain, a.entry, a.exit) == (b.terrain, b.entry, b.exit), "seed {s}: floor three");
+        }
+    }
+
     /// Over a span of seeds: no entry is ever drawn past its own `per_run`
     /// limit, every entry is drawn on some run, and a typical run sees
     /// under half the flavor pool, the design's fifth pillar.
@@ -1554,9 +1597,10 @@ mod tests {
         let seen: std::sync::Mutex<Vec<usize>> = std::sync::Mutex::new(Vec::new());
         // Always the whole range: "every entry is drawn on some run" is a
         // property of rare draws, and this reads each run's plan, not its floors,
-        // so five hundred seeds are cheap.
+        // so five hundred seeds are cheap once the content is read only once.
+        let loaded = Undermere::new(RunSeed(0));
         par_seeds(0..500, |s| {
-            let undermere = Undermere::new(RunSeed(s));
+            let undermere = loaded.reseeded(RunSeed(s));
             let mut run_counts: BTreeMap<usize, u32> = BTreeMap::new();
             let mut flavor_this_run: BTreeSet<usize> = BTreeSet::new();
             for floor in 1..=FLOORS {
@@ -1791,8 +1835,9 @@ mod tests {
     #[test]
     fn two_lairs_a_run_never_the_same_boss_twice_and_all_five_drawn_over_a_span_of_seeds() {
         let mut seen = BTreeSet::new();
+        let loaded = Undermere::new(RunSeed(0));
         for s in 0..60 {
-            let undermere = Undermere::new(RunSeed(s));
+            let undermere = loaded.reseeded(RunSeed(s));
             let lairs = undermere.lairs();
             assert_ne!(lairs[0].0, lairs[1].0, "seed {s}: the same boss drawn twice: {lairs:?}");
             for (boss, floor) in lairs {
@@ -2066,9 +2111,13 @@ mod tests {
     /// recipe it may stand in, alone among a floor's picks, within the
     /// attempts a floor is given, over a few seeds: a required pick that
     /// fits nowhere fails every attempt of its floor, and the floor with it.
+    ///
+    /// One seed every day and two under `RL_FULL_SEEDS`: each seed is
+    /// seven hundred and sixty floors, and a piece that fits nowhere fails
+    /// all forty of the first seed's attempts as surely as the second's.
     #[test]
     fn each_piece_grows_in_every_biome_and_recipe_it_may_stand_in_over_a_few_seeds() {
-        every_piece_grows_where_it_may_stand(0..2);
+        every_piece_grows_where_it_may_stand(crate::testing::first_seeds(0..2, 1));
     }
 
     /// As [`each_piece_grows_in_every_biome_and_recipe_it_may_stand_in_over_a_few_seeds`],

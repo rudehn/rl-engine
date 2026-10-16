@@ -11,6 +11,8 @@
 //! right; a descent goes by the engine's warp, which builds the floor
 //! below if nobody has been there.
 
+use std::collections::BTreeSet;
+
 use bevy::prelude::*;
 use rand::Rng;
 use rl_engine::prelude::*;
@@ -41,7 +43,14 @@ pub fn far_cell(world: &mut EffectWorld<'_, '_>, from: Point) -> Option<Point> {
 /// far as any is. Empty with nowhere free at all.
 pub fn far_choices(map: &WorldMap, from: Point, free: impl Fn(Point) -> bool) -> Vec<Point> {
     let reached = map.place(map.current()).map(|place| open_to_the_way_in(place, map.tables()));
-    let open: Vec<Point> = map.window_tiles().cells().filter(|p| *p != from && free(*p) && reached.as_ref().is_none_or(|r| r.contains(p))).collect();
+    far_choices_among(map, from, free, reached.as_ref())
+}
+
+/// [`far_choices`] with the cells open to the way in already walked, or
+/// `None` off a place: a test asking from hundreds of cells of one floor
+/// walks the floor once rather than once a cell.
+pub(crate) fn far_choices_among(map: &WorldMap, from: Point, free: impl Fn(Point) -> bool, reached: Option<&BTreeSet<Point>>) -> Vec<Point> {
+    let open: Vec<Point> = map.window_tiles().cells().filter(|p| *p != from && free(*p) && reached.is_none_or(|r| r.contains(p))).collect();
     let Some(furthest) = open.iter().map(|p| geometry::chebyshev(*p, from)).max() else { return open };
     let far = FAR.min(furthest);
     open.into_iter().filter(|p| geometry::chebyshev(*p, from) >= far).collect()

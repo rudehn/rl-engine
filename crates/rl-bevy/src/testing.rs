@@ -16,7 +16,7 @@
 //! [`lay`], [`lay_tile`] and [`wall_off`] set a scene up the way the
 //! engine's own intents and warps would, and [`name_of`] and [`pack`] read
 //! it back. None names a game's content: a kind of harm or a tile is the
-//! test's to name. [`seeds`] and [`par_seeds`] play a generation test over
+//! test's to name. [`seeds`], [`first_seeds`] and [`par_seeds`] play a generation test over
 //! a range of seeds on every core. [`ambiguity`] is the other thing every
 //! game's tests want and none should write twice: the check that a game's
 //! systems touching the same data are ordered, or allowed unordered for a
@@ -44,7 +44,7 @@ use crate::world::{ChunkRulesRes, WorldMap, WorldRes};
 
 /// The seed range a generation test plays, and the cores it plays them on:
 /// the same helpers the generator's own tests use, for a game's.
-pub use rl_mapgen::testing::{QUICK, par_seeds, seeds};
+pub use rl_mapgen::testing::{QUICK, first_seeds, par_seeds, seeds};
 
 /// The seed every test world and stream is built from, so a test that
 /// fails fails the same way twice.

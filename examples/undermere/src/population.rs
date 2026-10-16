@@ -686,7 +686,7 @@ mod tests {
 
     use super::*;
     use crate::dungeon::{TOWN, map_of};
-    use crate::testing::{adventurer, arrive, headless, par_seeds, seeds, sturdy};
+    use crate::testing::{adventurer, arrive, first_seeds, headless, par_seeds, seeds, sturdy};
 
     /// Whatever a floor's population stands that blocks, a camp's fire
     /// first among them, never stands between the way in and the way
@@ -894,7 +894,10 @@ mod tests {
         // For each, its favored kinds' monsters and every monster where it
         // was drawn, and the same where another was.
         let tally: std::sync::Mutex<std::collections::BTreeMap<String, [(u32, u32); 2]>> = std::sync::Mutex::new(std::collections::BTreeMap::new());
-        par_seeds(seeds(0..36), |s| {
+        // Thirty seeds every day, not `seeds`' eight: a share is a rate,
+        // and eight floors split over the band's biomes are too few to
+        // read one from.
+        par_seeds(first_seeds(0..36, 30), |s| {
             let mut app = headless(RunSeed(s));
             watch(&mut app);
             arrive(&mut app, map_of(floor));

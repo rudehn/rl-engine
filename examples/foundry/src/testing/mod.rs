@@ -25,7 +25,7 @@ pub use droids::*;
 pub use gear::*;
 pub use loot::*;
 pub use mission::*;
-pub use rl_engine::testing::{QUICK, par_seeds, pass_turns, seeds, settle};
+pub use rl_engine::testing::{QUICK, first_seeds, par_seeds, pass_turns, seeds, settle};
 
 use bevy::prelude::*;
 use rl_engine::rl_bevy::prelude::*;
