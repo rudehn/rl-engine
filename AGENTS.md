@@ -11,7 +11,7 @@ The plan was written against four code reviews in `docs/reviews/`; when a decisi
 
 - Every workspace member declares `tier` under `[package.metadata.rl-engine]` in its `Cargo.toml`. Tier 0 and 1 crates must not depend on Bevy, and no crate depends on a higher tier. `scripts/check-tiers.sh` reads the tiers from `cargo metadata` and checks both; CI runs it.
 - `#![deny(missing_docs)]` on every crate. Doc-tests compile and run; never fence an example as `ignore`.
-- **The documentation is paid once, at a release.** Not in every commit and not at every branch's end: re-reading and re-blessing pages per commit was measured at 195 of 197 page edits changing nothing but the fingerprint, and a pass per branch still cost every feature its own hours of reading, so the docs are brought up to the code once, before a version is tagged. A commit runs the fast gate, `scripts/gate.sh`: `cargo fmt --all --check`, clippy and the tests of what it touched (while iterating, `cargo test -p <crate> <filter>`; a whole suite runs with `cargo nextest run` plus `cargo test --doc`, which nextest skips, and tests are never timed while other builds compile; the everyday run plays the first 30 seeds of a generation test and `RL_FULL_SEEDS=1` plays the full range, as CI does), and writes its `CHANGELOG.md` line while the migration is fresh; that line is the record the release's documentation pass works from, so it is never skipped. Finishing a branch runs the code half of CI, everything but the documentation checks, which is `scripts/gate.sh --all`. CI on `main` and on pull requests leaves the documentation checks off, so `main` stays green while the pages lag the code; the release workflow, on a `v*` tag, runs CI with them on (`docs: true`) before it publishes the release page, and the guide is published at the same tag. So a release is: the documentation pass below over everything since the last tag, the version bumped, then the tag pushed. Five files, and which of them depends on what changed since the last release:
+- **The documentation is paid once, at a release.** Not in every commit and not at every branch's end: re-reading and re-blessing pages per commit was measured at 195 of 197 page edits changing nothing but the fingerprint, and a pass per branch still cost every feature its own hours of reading, so the docs are brought up to the code once, before a version is tagged. A commit runs the fast gate, `scripts/gate.sh`: `cargo fmt --all --check`, clippy and the fast tier of the tests of what it touched (while iterating, `cargo test -p <crate> <filter>`; a whole suite runs with `cargo nextest run` plus `cargo test --doc`, which nextest skips, and tests are never timed while other builds compile; the everyday run plays the first 8 seeds of a generation test and `RL_FULL_SEEDS=1` plays the full range, as CI does; "Writing fast tests" below holds the suite to its budget), and writes its `CHANGELOG.md` line while the migration is fresh; that line is the record the release's documentation pass works from, so it is never skipped. Finishing a branch runs the code half of CI, everything but the documentation checks and with the slow tier of the tests, which is `scripts/gate.sh --all`. CI on `main` and on pull requests leaves the documentation checks off, so `main` stays green while the pages lag the code; the release workflow, on a `v*` tag, runs CI with them on (`docs: true`) before it publishes the release page, and the guide is published at the same tag. So a release is: the documentation pass below over everything since the last tag, the version bumped, then the tag pushed. Five files, and which of them depends on what changed since the last release:
   - `docs/guide/src/systems/<system>.md`, always. It is the page a game author reads to use the system, and it carries a `documents:` manifest naming the plugins and the source files it covers. `scripts/check-systems.py` fails when one of those files has changed since the page was confirmed, and prints the `git diff` of what moved; read that diff against the page, fix what it made untrue, then `scripts/check-systems.py --bless <system>`. It fails the same way when a plugin in `crates/` has no page naming it at all; write the page.
   - `docs/OVERVIEW.md`, always. It is the inventory of what the engine has, and the plugin table in its `rl-bevy` section and the presenter table in its `rl-ui` section are part of it, not a summary of it.
   - `CHANGELOG.md`, under `Unreleased`, whenever a game on the previous release would have to change a line or would want to. That is the only place a game author reads what moved.
@@ -33,6 +33,39 @@ Branch work happens in a worktree made with `scripts/worktree.sh <name>`, never 
 Every compile and every test process takes one of the machine's slots (`scripts/slot`), so builds queue rather than swap; a build that waits is not hung.
 Bevy is linked as a shared library on the desktop, so run a game with `cargo run -p <game>`, which tells the loader where it is, not by the binary's path.
 A gate builds the whole workspace, as `scripts/gate.sh` does; `-p <crate>` is for iterating, since a build narrowed to one crate may unify a dependency's features differently and compile a second copy of it.
+
+## Writing fast tests
+
+nextest pools every test, so on a quiet machine the suite's wall time is the processor time of all its tests over the cores, and a test that plays its seeds on every core still costs the suite all of that time.
+So the suite is held to a budget of processor time, which a busy machine barely inflates, where it can triple the wall time.
+
+The tests come in two tiers, and nextest knows which is which:
+
+- **The fast tier** is unit tests, properties tested without an `App`, small `App` tests and the fingerprints. It is nextest's default profile, so `cargo nextest run` and the scoped `scripts/gate.sh` that every commit runs play it and nothing else.
+- **The slow tier** is the full-game play-throughs, the whole-run and every-floor sweeps, and any test past two seconds of processor time. `.config/nextest.toml` names each of them by package and path in the default profile's `default-filter`. It runs once, at a branch's end and before it merges, in `scripts/gate.sh --all` (`--profile full`), and in CI (`--profile ci`); both profiles run both tiers.
+- **The fingerprints stay in the fast tier at any cost.** They are the early warning that a change moved play, and Undermere's four scripted delves are its dearest test, about 60 s of processor time and 17 s alone.
+- **A new test that builds a full game `App` and plays turns or floors goes in the slow tier unless it is cheap.** The check names any fast-tier test past two seconds as one to make cheaper or move there.
+- **While working on an area**, run its slow tests by filter, with `--profile full` or `--ignore-default-filter` so the default filter does not drop them: `cargo nextest run --workspace --profile full -E 'package(undermere) & test(/traps::/)'`. `cargo test -p <crate> <filter>` runs every test the filter names, slow or not.
+
+`scripts/slot` records each test's processor time beside the wall time nextest records, and `scripts/test-times.py` reads both after every gate:
+
+- processor time over the budget fails the gate: both tiers of the workspace over 1,250 s, its fast tier over 540 s, Undermere's fast tier alone over 330 s;
+- any one test over 120 s of processor time fails it, and one over 20 s, or 30 s of wall time, is named;
+- wall time over its budget only warns, since a busy machine explains it: 200 s for both tiers, 120 s for the fast tier, 60 s for Undermere's;
+- CI plays every seed on another machine, so it reports against numbers of its own and only warns.
+
+When the check speaks, the slowest tests it lists are the ones to fix, by the cheapest of these that keeps the test proving what it proved:
+
+- **A property of generation is tested without an `App`.** Build the place (`Undermere::build`, an `rl-mapgen` chain) and read it; arriving through a headless game populates, lights and saves it as well. A rule that needs no world goes to `rl-rules` and is tested there.
+- **A property over seeds plays `seeds(full)`.** It is the first `QUICK` seeds, eight, on every run, and all of `full` under `RL_FULL_SEEDS=1`, which CI sets, so the rare seed is still caught. A property never plays a bare range.
+- **A rate or a count of rare things plays `first_seeds(full, n)`**, with the reason beside it: such a test needs `n` seeds before its count says anything.
+- **A test waiting for a rare thing stops at the first one.** Build floors until the thing turns up, and no further, rather than every floor of every seed (`a_blood_trail_turns_up_on_some_floors_but_never_the_throne_over_a_span_of_seeds`).
+- **What does not change per seed is made once.** Content is read once and reseeded (`Undermere::reseeded`); a floor walked for every cell a check asks from is walked once and handed in (`far_choices_among`).
+- **State is set up, not played to.** Stand someone where the test needs them, give them the thing, clear the monsters: the helpers in `rl_engine::testing` and a game's own `testing` module do it in a frame; turns are played only when the turns are the property.
+- **A fingerprint is never sped up by changing what it plays**; it is a tripwire, and a faster one that moves is a different run.
+- **`#[ignore]` is for a by-hand span or a tuning aid**, its reason in the attribute, never for an everyday test that grew slow; the slow tier is where a slow everyday test goes.
+
+A budget is raised only on purpose, saying why in the commit, as a fingerprint is re-baselined.
 
 ## Rules that only review enforces
 
@@ -73,7 +106,8 @@ scripts/check-systems-style.sh  the mechanical half of a system page's review
 scripts/gate.sh                 a commit's gate, scoped to what the branch touched; --all for a branch's end
 scripts/worktree.sh             a worktree for a new branch, its build cloned warm from the main checkout's
 scripts/rustc-wrapper           every compile, through sccache, inside a machine-wide slot
-scripts/slot                    the slots: one compile or test process per core, across every agent
+scripts/slot                    the slots: one compile or test process per core, across every agent; records each test's processor time
+scripts/test-times.py           the slowest tests of the last run, and the suite held to its budget
 ```
 
 The subsystems with no design doc yet are the turn loop with its cues and holds, combat and `Loadout`, equipment and what a worn thing lends, places and streaming, saving and the end of a run, the title and its hold on a run's start, registries and content loading, and the controls, modals and cursors.
