@@ -69,6 +69,87 @@ pub fn map_of(deck: u32) -> MapId {
     MapId(deck)
 }
 
+/// Every piece a deck's chain stamps in a room, by name, with whether it
+/// may be turned: the two armories and the two stores on every deck, the
+/// guard post on two, four, five, seven and eight, a reactor on three, six
+/// and nine and the core on ten, both stamped fixed, as
+/// [`Foundry::generate`] lays them.
+fn stamped_on(deck: u32) -> Vec<(&'static str, bool)> {
+    let mut pieces = vec![("armory wide", true), ("armory tall", true), ("store wide", true), ("store tall", true)];
+    if matches!(deck, 2 | 4 | 5 | 7 | 8) {
+        pieces.push(("guard post", true));
+    }
+    match deck {
+        3 | 6 | 9 => pieces.push(("reactor", false)),
+        DECKS => pieces.push(("core", false)),
+        _ => {}
+    }
+    pieces
+}
+
+/// The pieces a room nothing else took may be furnished as, by name: the
+/// maintenance closet and each room, small and large, as
+/// [`Foundry::rooms`](Foundry) draws them.
+const FURNISHINGS: [&str; 15] = [
+    "maintenance closet",
+    "machine shop",
+    "machine shop large",
+    "charging bay",
+    "charging bay large",
+    "parts store",
+    "parts store large",
+    "pump room",
+    "pump room large",
+    "control room",
+    "control room large",
+    "scrap sorting",
+    "scrap sorting large",
+    "loading dock",
+    "loading dock large",
+];
+
+/// Every piece some deck lays, by name: what [`stamped_on`] stamps on any
+/// deck and every one of [`FURNISHINGS`]. A piece named nowhere here is one
+/// no run ever lays.
+#[cfg(test)]
+pub(crate) fn laid_pieces() -> std::collections::BTreeSet<&'static str> {
+    (1..=DECKS).flat_map(stamped_on).map(|(name, _)| name).chain(FURNISHINGS).collect()
+}
+
+/// Why some piece could never be laid where a deck asks for it, read from
+/// the files with no deck grown: a piece a deck stamps that no room its
+/// recipe grows holds with a cell all round it, at the largest the room
+/// is drawn, in any facing the stamp may give it, so the deck fails every
+/// attempt; and a furnishing no room of any deck's recipe could hold, so
+/// it is never laid. [`ShapeKind::could_hold`](rl_engine::rl_rules::layout::ShapeKind::could_hold)
+/// is the rule, the one `rl_mapgen` stamps by.
+fn fit_problems(layout: &LayoutDef, prefabs: &Prefabs<MonsterDef>) -> Vec<String> {
+    let size = |name: &str| -> Option<(i32, i32)> {
+        let def = prefabs.defs().get(prefabs.defs().id(name)?);
+        let rows = def.rows();
+        Some((rows.iter().map(|r| r.chars().count()).max().unwrap_or(0) as i32, rows.len() as i32))
+    };
+    let holds = |recipe: &str, name: &str, turned: bool| {
+        let Some((w, h)) = size(name) else { return false };
+        let recipe = layout.recipe(recipe).expect("every deck's recipe is in the layout");
+        layout.shapes_of(recipe).iter().any(|s| s.kind.could_hold(w, h) || (turned && s.kind.could_hold(h, w)))
+    };
+    let mut wrong = Vec::new();
+    for deck in 1..=DECKS {
+        for (name, turned) in stamped_on(deck) {
+            if !holds(recipe_of(deck), name, turned) {
+                wrong.push(format!("{name}: deck {deck} stamps it, and no room {} grows holds it with a cell all round", recipe_of(deck)));
+            }
+        }
+    }
+    for name in FURNISHINGS {
+        if !(1..=DECKS).any(|deck| holds(recipe_of(deck), name, true)) {
+            wrong.push(format!("{name}: no room of any deck holds it with a cell all round, so it is never laid"));
+        }
+    }
+    wrong
+}
+
 /// The foundry's tiles, its pieces, and how each of its decks is built.
 pub struct Foundry {
     tiles: TileRegistry,
@@ -108,6 +189,8 @@ impl Foundry {
         // After the tiles, which the pieces paint by name.
         let prefabs = crate::prefabs::load(&tiles);
         let layout = layout::load(LAYOUT_RON).unwrap_or_else(|e| panic!("assets/layout.ron: {e}"));
+        let misfits = fit_problems(&layout, &prefabs);
+        assert!(misfits.is_empty(), "assets/prefabs: {misfits:#?}");
         Self { tiles, hull, deck, hatch, layout, prefabs, seed }
     }
 
@@ -152,13 +235,21 @@ impl Foundry {
     /// take or anyone to fight, so furnishing a deck changes what it looks
     /// like and where things stand, never what it is worth.
     fn rooms(&self) -> Result<Vec<(Prefab, u32)>, BuildError> {
-        let mut rooms = vec![(self.prefabs.piece("maintenance closet")?, 1)];
-        for name in ["machine shop", "charging bay", "parts store", "pump room", "control room", "scrap sorting", "loading dock"] {
-            rooms.push((self.prefabs.piece(name)?, 2));
-            let large = format!("{name} large");
-            rooms.push((self.prefabs.piece(&large)?, 3));
-        }
-        Ok(rooms)
+        FURNISHINGS
+            .iter()
+            .map(|name| {
+                // The closet a variety's weight, a large room the weight a
+                // hall that takes it usually gives it, a small one between.
+                let weight = if *name == "maintenance closet" {
+                    1
+                } else if name.ends_with(" large") {
+                    3
+                } else {
+                    2
+                };
+                Ok((self.prefabs.piece(name)?, weight))
+            })
+            .collect()
     }
 
     // ANCHOR: grow
@@ -272,133 +363,226 @@ impl PlaceRules for Foundry {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
-    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
-    use rl_engine::rl_core::Rect;
+    use rl_engine::rl_core::{Grid2D, Rect};
+    use rl_engine::rl_grid::TileTables;
     use rl_engine::rl_mapgen::BuildContext;
     use rl_engine::rl_mapgen::prefab::Stamped;
 
     use super::*;
     use crate::testing::{par_seeds, seeds};
 
+    /// The run's backstop: every deck of a run grown once a seed over a
+    /// span of seeds, and held to every promise the generator makes of a
+    /// deck with the real content in it. Each promise has a pass that owns
+    /// it, tested on a made-up map in that pass's own suite; this is what
+    /// catches two passes that keep their own promises and break each
+    /// other's, so it grows each deck once and asks everything of it rather
+    /// than growing every deck again for each question. Each check below is
+    /// named for its promise, and says which deck and seed broke it.
     #[test]
-    fn every_deck_builds_over_a_span_of_seeds_with_an_entry_and_an_exit() {
-        par_seeds(seeds(0..300), |s| {
+    fn every_deck_of_a_run_keeps_every_promise_the_generator_makes_over_a_span_of_seeds() {
+        let registries = crate::content::registries();
+        let armory = crate::testing::armory(&registries);
+        par_seeds(seeds(0..100), |s| {
             let foundry = Foundry::new(RunSeed(s));
+            let tables = foundry.tiles().tables();
+            let mut maps = Vec::new();
             for deck in 1..=DECKS {
-                let built = foundry.build(map_of(deck), None).unwrap_or_else(|e| panic!("deck {deck}, seed {s}: {e}"));
-                assert_ne!(Some(built.entry), built.exit, "deck {deck}, seed {s}: the way in is the way out");
+                let at = format!("deck {deck}, seed {s}");
+                let ctx = foundry.generate(map_of(deck)).unwrap_or_else(|e| panic!("{at}: {e}"));
+                meets_what_its_recipe_requires(&ctx, &at);
+                no_two_pieces_overlap_and_every_mark_sits_on_a_floor_tile(&ctx, &tables, &at);
+                no_room_is_left_empty(&ctx, &at);
+                let post = foundry.prefabs().defs().expect("guard post").raw();
+                let post_stamp = ctx.outputs().iter::<Stamped>().find(|st| st.prefab == Some(post)).cloned();
+                let built = PlaceBuild::from_context(ctx).unwrap_or_else(|e| panic!("{at}: {e}"));
+                assert_ne!(Some(built.entry), built.exit, "{at}: the way in is the way out");
+                holds_its_own_reactor_and_guard_post_and_no_other(deck, &built, &at);
+                no_guard_stands_near_the_way_in(&foundry, &built, &at);
+                if let Some(stamp) = post_stamp {
+                    every_cell_of_the_guard_post_is_walked_to_with_its_guards_home(&foundry, &stamp, &built, &tables, &at);
+                }
+                every_open_cell_is_walked_to_with_everything_standing(&foundry, &registries, &built, &tables, &at);
+                every_mark_and_the_way_down_is_walked_to(&built, &tables, &at);
+                scatters_walkable_items_beside_their_own_marks(&armory, deck, s, &built, &tables, &at);
+                maps.push(built.terrain);
+            }
+            for i in 0..maps.len() {
+                for j in i + 1..maps.len() {
+                    assert!(maps[i] != maps[j], "seed {s}: decks {} and {} are the same map", i + 1, j + 1);
+                }
             }
         });
+        assert_ne!(recipe_of(1), recipe_of(5), "the upper and the lower decks name different recipes");
     }
 
-    /// The charge decks, and only they, hold a reactor: three, six and
-    /// nine, and the core on ten. One each, since two consoles on a deck
-    /// would let one run set the same charge twice.
-    #[test]
-    fn only_the_charge_decks_hold_a_reactor_and_each_holds_exactly_one() {
-        par_seeds(0..20, |s| {
-            let foundry = Foundry::new(RunSeed(s));
-            for deck in 1..=DECKS {
-                let built = foundry.build(map_of(deck), None).unwrap();
-                let reactors = built.spots.iter().filter(|s| s.tag == 'R' as u32).count();
-                assert_eq!(reactors, usize::from(matches!(deck, 3 | 6 | 9 | 10)), "deck {deck}, seed {s}");
-            }
-        });
+    /// A deck is grown, surveyed and held to its recipe, within the
+    /// attempts a deck is given.
+    fn meets_what_its_recipe_requires(ctx: &BaseContext, at: &str) {
+        use rl_engine::rl_mapgen::{Area, Surveyed};
+        let surveyed = ctx.outputs().first::<Surveyed>().unwrap_or_else(|| panic!("{at}: not surveyed"));
+        assert!(surveyed.loops >= 2, "{at}: {} loops", surveyed.loops);
+        assert_eq!(surveyed.areas.len(), ctx.outputs().iter::<Area>().count(), "{at}");
     }
 
-    /// The guard post decks, and only they, hold one: two, four, five,
-    /// seven and eight. One each, counted by the brute at its mouth,
-    /// which every post has exactly one of.
-    #[test]
-    fn only_the_guard_post_decks_hold_one_and_each_holds_exactly_one() {
-        par_seeds(0..20, |s| {
-            let foundry = Foundry::new(RunSeed(s));
-            for deck in 1..=DECKS {
-                let built = foundry.build(map_of(deck), None).unwrap();
-                let posts = built.spots.iter().filter(|s| s.tag == 'b' as u32).count();
-                assert_eq!(posts, usize::from(matches!(deck, 2 | 4 | 5 | 7 | 8)), "deck {deck}, seed {s}");
+    /// No two stamped pieces overlap, and every mark a player or the
+    /// engine fills sits on a floor tile: `Placement::AnyRoom` once drew a
+    /// room an earlier stamp had used, and drew over it while its mark was
+    /// still reported.
+    fn no_two_pieces_overlap_and_every_mark_sits_on_a_floor_tile(ctx: &BaseContext, tables: &TileTables, at: &str) {
+        let bounds: Vec<Rect> = ctx.outputs().iter::<Stamped>().map(|st| st.bounds).collect();
+        for i in 0..bounds.len() {
+            for j in (i + 1)..bounds.len() {
+                assert!(bounds[i].intersection(&bounds[j]).is_none(), "{at}: pieces {i} and {j} overlap: {:?} and {:?}", bounds[i], bounds[j]);
             }
-        });
+        }
+        for st in ctx.outputs().iter::<Stamped>() {
+            for (c, p) in st.marks.iter().filter(|(c, _)| matches!(c, 'A' | 'L' | 'R' | 's' | 'w' | 'b')) {
+                let tile = ctx.terrain().get(*p).unwrap_or_else(|| panic!("{at}: mark {c} at {p:?} is off the map"));
+                assert!(tables.walkable[tile.index()], "{at}: mark {c} at {p:?} sits on a wall");
+            }
+        }
+    }
+
+    /// No room is left empty: the armory, the store and the charge pieces
+    /// take theirs, and every other room is furnished as what it was for.
+    fn no_room_is_left_empty(ctx: &BaseContext, at: &str) {
+        use rl_engine::rl_mapgen::dungeon::Room;
+        let stamps: Vec<Rect> = ctx.outputs().iter::<Stamped>().map(|st| st.bounds).collect();
+        for room in ctx.outputs().iter::<Room>() {
+            assert!(stamps.iter().any(|b| room.0.intersection(b).is_some()), "{at}: room {:?} is empty", room.0);
+        }
+    }
+
+    /// The charge decks, and only they, hold a reactor, one each, since two
+    /// consoles on a deck would let one run set the same charge twice; the
+    /// guard post decks, and only they, hold one post, counted by the brute
+    /// at its mouth.
+    fn holds_its_own_reactor_and_guard_post_and_no_other(deck: u32, built: &PlaceBuild, at: &str) {
+        let count = |glyph: char| built.spots.iter().filter(|s| s.tag == glyph as u32).count();
+        assert_eq!(count('R'), usize::from(matches!(deck, 3 | 6 | 9 | 10)), "{at}: reactors");
+        assert_eq!(count('b'), usize::from(matches!(deck, 2 | 4 | 5 | 7 | 8)), "{at}: guard posts");
     }
 
     /// No guard post stands a guard within the distance the deck's own
-    /// population keeps from the way in, over a span of seeds: the start
-    /// is drawn clear of every stamped piece. It used to be drawn from
-    /// anywhere in the first room, which `Placement::AnyRoom` sometimes
-    /// stamped the post into, and about one guard post deck in sixteen put
-    /// a guard within two cells of the arrival.
-    #[test]
-    fn no_guard_stands_within_the_populations_distance_of_the_entry_over_a_span_of_seeds() {
+    /// population keeps from the way in: the start is drawn clear of every
+    /// stamped piece, where it once came from anywhere in the first room.
+    fn no_guard_stands_near_the_way_in(foundry: &Foundry, built: &PlaceBuild, at: &str) {
         use rl_engine::rl_core::geometry::chebyshev;
         use rl_engine::rl_rules::prefab::Slot;
-        let min = crate::droids::MIN_DISTANCE_FROM_ENTRY;
-        let guards = AtomicUsize::new(0);
-        par_seeds(seeds(0..100), |s| {
-            let foundry = Foundry::new(RunSeed(s));
-            for deck in [2, 4, 5, 7, 8] {
-                let built = foundry.build(map_of(deck), None).unwrap();
-                for spot in &built.spots {
-                    let slot = spot.prefab.zip(char::from_u32(spot.tag)).and_then(|(key, c)| foundry.prefabs().slot(key, c));
-                    if matches!(slot, Some(Slot::Monster { .. })) {
-                        let d = chebyshev(spot.at, built.entry);
-                        assert!(d >= min, "deck {deck}, seed {s}: a guard's slot at {:?} is {d} from the entry at {:?}", spot.at, built.entry);
-                        guards.fetch_add(1, Relaxed);
-                    }
+        for spot in &built.spots {
+            let slot = spot.prefab.zip(char::from_u32(spot.tag)).and_then(|(key, c)| foundry.prefabs().slot(key, c));
+            if matches!(slot, Some(Slot::Monster { .. })) {
+                let d = chebyshev(spot.at, built.entry);
+                assert!(d >= crate::droids::MIN_DISTANCE_FROM_ENTRY, "{at}: a guard's slot at {:?} is {d} from the entry at {:?}", spot.at, built.entry);
+            }
+        }
+    }
+
+    /// Every cell reachable from `from` one orthogonal step at a time
+    /// through cells `open` admits: the strictest reading of the engine's
+    /// rule that a diagonal never squeezes between two walls.
+    fn walked(from: rl_engine::rl_core::Point, open: impl Fn(rl_engine::rl_core::Point) -> bool) -> BTreeSet<(i32, i32)> {
+        let mut seen = BTreeSet::from([(from.x, from.y)]);
+        let mut queue = vec![from];
+        while let Some(p) = queue.pop() {
+            for n in [p.offset(1, 0), p.offset(-1, 0), p.offset(0, 1), p.offset(0, -1)] {
+                if open(n) && seen.insert((n.x, n.y)) {
+                    queue.push(n);
                 }
             }
-        });
-        assert!(guards.into_inner() > 0, "some guard's slot was measured");
+        }
+        seen
     }
 
     /// With every guard on its post and the locker standing, every floor
-    /// cell of a stamped guard post can still be walked to from the deck's
-    /// entry, one orthogonal step at a time. A guard's post is where it
-    /// goes home to: a piece whose guard stands in its only way in shuts
-    /// the post to every other guard that ever steps out, which is how a
+    /// cell of the guard post can still be walked to from the entry: a
     /// brute in a one-cell door once kept both sentries out for good.
-    #[test]
-    fn with_every_guard_home_every_floor_cell_of_a_guard_post_can_be_walked_to_from_the_entry() {
+    fn every_cell_of_the_guard_post_is_walked_to_with_its_guards_home(foundry: &Foundry, st: &Stamped, built: &PlaceBuild, tables: &TileTables, at: &str) {
         use rl_engine::rl_rules::prefab::Slot;
-        let tables = Foundry::new(RunSeed(0)).tiles().tables();
-        let checked = AtomicUsize::new(0);
-        par_seeds(seeds(0..60), |s| {
-            let foundry = Foundry::new(RunSeed(s));
-            let post = foundry.prefabs().defs().expect("guard post").raw();
-            for deck in [2, 4, 5, 7, 8] {
-                let ctx = foundry.generate(map_of(deck)).unwrap();
-                let st = ctx.outputs().iter::<Stamped>().find(|st| st.prefab == Some(post)).expect("a guard post deck holds one").clone();
-                let built = PlaceBuild::from_context(ctx).unwrap();
-                // What stands on the post's cells once it is filled: every
-                // guard at home, and the locker.
-                let standing: Vec<rl_engine::rl_core::Point> = st
-                    .marks
-                    .iter()
-                    .filter(|(c, p)| *p != built.entry && matches!(foundry.prefabs().slot(post, *c), Some(Slot::Monster { .. } | Slot::Prop(_))))
-                    .map(|(_, p)| *p)
-                    .collect();
-                let open = |p: rl_engine::rl_core::Point| built.terrain.get(p).is_some_and(|t| tables.walkable[t.index()]) && !standing.contains(&p);
-                let mut seen = BTreeSet::from([(built.entry.x, built.entry.y)]);
-                let mut queue = vec![built.entry];
-                while let Some(p) = queue.pop() {
-                    for n in [p.offset(1, 0), p.offset(-1, 0), p.offset(0, 1), p.offset(0, -1)] {
-                        if open(n) && seen.insert((n.x, n.y)) {
-                            queue.push(n);
-                        }
-                    }
-                }
-                for y in st.bounds.y..st.bounds.bottom() {
-                    for x in st.bounds.x..st.bounds.right() {
-                        let p = rl_engine::rl_core::Point::new(x, y);
-                        if open(p) {
-                            assert!(seen.contains(&(x, y)), "deck {deck}, seed {s}: {p:?} in the guard post cannot be walked to with its guards home");
-                            checked.fetch_add(1, Relaxed);
-                        }
-                    }
-                }
-            }
-        });
-        assert!(checked.into_inner() > 0, "some guard post cell was checked");
+        let post = st.prefab.expect("the guard post's own stamp");
+        let standing: Vec<rl_engine::rl_core::Point> = st
+            .marks
+            .iter()
+            .filter(|(c, p)| *p != built.entry && matches!(foundry.prefabs().slot(post, *c), Some(Slot::Monster { .. } | Slot::Prop(_))))
+            .map(|(_, p)| *p)
+            .collect();
+        let open = |p: rl_engine::rl_core::Point| built.terrain.get(p).is_some_and(|t| tables.walkable[t.index()]) && !standing.contains(&p);
+        let seen = walked(built.entry, open);
+        for p in st.bounds.cells().filter(|p| open(*p)) {
+            assert!(seen.contains(&(p.x, p.y)), "{at}: {p:?} in the guard post cannot be walked to with its guards home");
+        }
+    }
+
+    /// With every prop that stands in the way and every guard at its post,
+    /// every open cell of a deck can still be walked to from the entry: a
+    /// piece that walled a cell in, or a corridor off, is a deck with a
+    /// place nobody reaches.
+    fn every_open_cell_is_walked_to_with_everything_standing(foundry: &Foundry, registries: &Registries, built: &PlaceBuild, tables: &TileTables, at: &str) {
+        use rl_engine::rl_core::Grid2D;
+        use rl_engine::rl_rules::prefab::Slot;
+        let standing: BTreeSet<(i32, i32)> = built
+            .spots
+            .iter()
+            .filter(|spot| spot.at != built.entry)
+            .filter(|spot| match spot.prefab.zip(char::from_u32(spot.tag)).and_then(|(key, c)| foundry.prefabs().slot(key, c)) {
+                Some(Slot::Prop(id)) => registries.props.get(*id).blocks,
+                Some(Slot::Monster { .. }) => true,
+                _ => false,
+            })
+            .map(|spot| (spot.at.x, spot.at.y))
+            .collect();
+        let open = |p: rl_engine::rl_core::Point| built.terrain.get(p).is_some_and(|t| tables.walkable[t.index()]) && !standing.contains(&(p.x, p.y));
+        let seen = walked(built.entry, open);
+        if let Some(p) = built.terrain.bounds().cells().find(|p| open(*p) && !seen.contains(&(p.x, p.y))) {
+            panic!("{at}: {p:?} cannot be walked to with everything standing");
+        }
+    }
+
+    /// Every mark a player must reach, and the way down, can be walked to
+    /// from the entry: the reactor chamber once put its console square in
+    /// the hatch's way, and the mission could not be finished on any seed.
+    fn every_mark_and_the_way_down_is_walked_to(built: &PlaceBuild, tables: &TileTables, at: &str) {
+        let seen = walked(built.entry, |p| built.terrain.get(p).is_some_and(|t| tables.walkable[t.index()]));
+        let reached = |p: rl_engine::rl_core::Point| seen.contains(&(p.x, p.y));
+        for spot in built.spots.iter().filter(|s| matches!(char::from_u32(s.tag), Some('A' | 'L' | 'R' | 's' | 'w' | 'b'))) {
+            assert!(reached(spot.at), "{at}: mark {:?} at {:?} cannot be walked to", char::from_u32(spot.tag), spot.at);
+        }
+        if let Some(exit) = built.exit {
+            assert!(reached(exit), "{at}: the way down at {exit:?} cannot be walked to");
+        }
+    }
+
+    /// The engine's scatter on the real deck's own marks, which sit closer
+    /// together than any made-up layout: every item on walkable ground off
+    /// every mark, no two on one cell, and what each armory and store mark
+    /// is owed laid beside it.
+    fn scatters_walkable_items_beside_their_own_marks(armory: &crate::gear::Armory, deck: u32, s: u64, built: &PlaceBuild, tables: &TileTables, at: &str) {
+        use rand::SeedableRng;
+        use rl_engine::rl_rules::{Layout, plan_scatter};
+        let rules = crate::loot::scatter_rules();
+        let marks: Vec<(u32, rl_engine::rl_core::Point)> = built.spots.iter().map(|sp| (sp.tag, sp.at)).collect();
+        let on_marks: Vec<rl_engine::rl_core::Point> = marks.iter().map(|(_, p)| *p).collect();
+        let mut free = |p: rl_engine::rl_core::Point| built.terrain.get(p).is_some_and(|t| tables.walkable[t.index()]) && !on_marks.contains(&p);
+        let mut rng = rand::rngs::StdRng::seed_from_u64(s);
+        let loose = rules.loose_count(deck as i32, &mut rng);
+        let plan = plan_scatter(&armory.table, deck as i32, &rules, Layout { marks: &marks, bounds: built.terrain.bounds() }, loose, &mut free, &mut rng);
+        let mut seen = Vec::new();
+        for p in &plan {
+            assert!(free(p.at), "{at}: an item at {:?} on a wall or a mark", p.at);
+            assert!(!seen.contains(&p.at), "{at}: two items on {:?}", p.at);
+            seen.push(p.at);
+        }
+        let owed: Vec<rl_engine::rl_core::Point> = rules
+            .spots
+            .iter()
+            .flat_map(|&(tag, n)| marks.iter().filter(move |(t, _)| *t == tag).flat_map(move |(_, p)| std::iter::repeat_n(*p, n as usize)))
+            .collect();
+        assert!(plan.len() >= owed.len(), "{at}: {} placed, {} owed to marks", plan.len(), owed.len());
+        for (placed, mark) in plan.iter().zip(&owed) {
+            assert_eq!(rl_engine::rl_core::geometry::chebyshev(placed.at, *mark), 1, "{at}: an item owed to the mark at {mark:?} lies at {:?}", placed.at);
+        }
     }
 
     /// The armory's mark, measured from its stamp's corner, is its facing.
@@ -417,175 +601,6 @@ mod tests {
             })
             .collect();
         assert!(facings.len() > 1, "forty seeds laid the armory exactly one way");
-    }
-
-    /// Fix round 1: `Placement::AnyRoom` used to draw from every room that
-    /// fit, with no exclusion, so a second `AnyRoom` stamp could land in a
-    /// room an earlier one already used and draw over its tiles while its
-    /// mark was still reported. Measured on the pre-fix engine over the
-    /// same span this test now runs: deck 3's `A` sat on a wall in 4.2% of
-    /// seeds and `L` in 7.6%; deck 1's `A` in 2.2% and `L` in 5%.
-    #[test]
-    fn no_two_vaults_overlap_and_every_guaranteed_mark_sits_on_a_floor_tile() {
-        let tables = Foundry::new(RunSeed(0)).tiles().tables();
-        par_seeds(seeds(0..200), |s| {
-            let foundry = Foundry::new(RunSeed(s));
-            for deck in 1..=DECKS {
-                let ctx = foundry.generate(map_of(deck)).unwrap_or_else(|e| panic!("deck {deck}, seed {s}: {e}"));
-                let bounds: Vec<Rect> = ctx.outputs().iter::<Stamped>().map(|st| st.bounds).collect();
-                for i in 0..bounds.len() {
-                    for j in (i + 1)..bounds.len() {
-                        assert!(
-                            bounds[i].intersection(&bounds[j]).is_none(),
-                            "deck {deck}, seed {s}: vaults {i} and {j} overlap: {:?} and {:?}",
-                            bounds[i],
-                            bounds[j]
-                        );
-                    }
-                }
-                for st in ctx.outputs().iter::<Stamped>() {
-                    for (c, p) in &st.marks {
-                        if matches!(c, 'A' | 'L' | 'R' | 's' | 'w' | 'b') {
-                            let tile = ctx.terrain().get(*p).unwrap_or_else(|| panic!("deck {deck}, seed {s}: mark {c} at {p:?} is off the map"));
-                            assert!(tables.walkable[tile.index()], "deck {deck}, seed {s}: mark {c} at {p:?} sits on a wall");
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    /// No room on any deck is left empty: the armory, the store and the
-    /// charge pieces take theirs, and every other room is furnished as what
-    /// it was for. A blank room is the thing furnishing exists to stop.
-    #[test]
-    fn no_room_on_any_deck_is_left_empty_over_a_span_of_seeds() {
-        use rl_engine::rl_mapgen::dungeon::Room;
-        par_seeds(seeds(0..100), |s| {
-            let foundry = Foundry::new(RunSeed(s));
-            for deck in 1..=DECKS {
-                let ctx = foundry.generate(map_of(deck)).unwrap();
-                let stamps: Vec<Rect> = ctx.outputs().iter::<Stamped>().map(|st| st.bounds).collect();
-                for room in ctx.outputs().iter::<Room>() {
-                    assert!(stamps.iter().any(|b| room.0.intersection(b).is_some()), "deck {deck}, seed {s}: room {:?} is empty", room.0);
-                }
-            }
-        });
-    }
-
-    /// With every prop that stands in the way and every guard at its post,
-    /// every open cell of a deck can still be walked to from the entry,
-    /// one orthogonal step at a time. A room piece stands machinery about
-    /// a room a corridor may cross anywhere, so a piece that walled a cell
-    /// in, or a corridor off, would be a deck with a place nobody reaches.
-    #[test]
-    fn with_everything_standing_every_open_cell_of_a_deck_can_be_walked_to_from_the_entry() {
-        use rl_engine::rl_core::Grid2D;
-        use rl_engine::rl_rules::prefab::Slot;
-        let registries = crate::content::registries();
-        let tables = Foundry::new(RunSeed(0)).tiles().tables();
-        par_seeds(seeds(0..60), |s| {
-            let foundry = Foundry::new(RunSeed(s));
-            for deck in 1..=DECKS {
-                let built = foundry.build(map_of(deck), None).unwrap();
-                let standing: BTreeSet<(i32, i32)> = built
-                    .spots
-                    .iter()
-                    .filter(|spot| spot.at != built.entry)
-                    .filter(|spot| {
-                        let slot = spot.prefab.zip(char::from_u32(spot.tag)).and_then(|(key, c)| foundry.prefabs().slot(key, c));
-                        match slot {
-                            Some(Slot::Prop(id)) => registries.props.get(*id).blocks,
-                            Some(Slot::Monster { .. }) => true,
-                            _ => false,
-                        }
-                    })
-                    .map(|spot| (spot.at.x, spot.at.y))
-                    .collect();
-                let open = |p: rl_engine::rl_core::Point| built.terrain.get(p).is_some_and(|t| tables.walkable[t.index()]) && !standing.contains(&(p.x, p.y));
-                let mut seen = BTreeSet::from([(built.entry.x, built.entry.y)]);
-                let mut queue = vec![built.entry];
-                while let Some(p) = queue.pop() {
-                    for n in [p.offset(1, 0), p.offset(-1, 0), p.offset(0, 1), p.offset(0, -1)] {
-                        if open(n) && seen.insert((n.x, n.y)) {
-                            queue.push(n);
-                        }
-                    }
-                }
-                let bounds = built.terrain.bounds();
-                for p in bounds.cells().filter(|p| open(*p)) {
-                    assert!(seen.contains(&(p.x, p.y)), "deck {deck}, seed {s}: {p:?} cannot be walked to with everything standing");
-                }
-            }
-        });
-    }
-
-    /// Every mark a player must reach, and the way down, can be walked to
-    /// from the deck's entry one orthogonal step at a time, the strictest
-    /// reading of the engine's rule that a diagonal never squeezes between
-    /// two walls. The reactor chamber once put its console square in the
-    /// hatch's way, and the whole chamber could only be entered diagonally
-    /// between two walls, which the engine refuses: the mission could not
-    /// be finished on any seed.
-    #[test]
-    fn every_mark_and_the_way_down_can_be_walked_to_from_the_entry_over_a_span_of_seeds() {
-        let tables = Foundry::new(RunSeed(0)).tiles().tables();
-        par_seeds(seeds(0..60), |s| {
-            let foundry = Foundry::new(RunSeed(s));
-            for deck in 1..=DECKS {
-                let built = foundry.build(map_of(deck), None).unwrap();
-                let walkable = |p: rl_engine::rl_core::Point| built.terrain.get(p).is_some_and(|t| tables.walkable[t.index()]);
-                let mut seen = BTreeSet::from([(built.entry.x, built.entry.y)]);
-                let mut queue = vec![built.entry];
-                while let Some(p) = queue.pop() {
-                    for n in [p.offset(1, 0), p.offset(-1, 0), p.offset(0, 1), p.offset(0, -1)] {
-                        if walkable(n) && seen.insert((n.x, n.y)) {
-                            queue.push(n);
-                        }
-                    }
-                }
-                let reached = |p: rl_engine::rl_core::Point| seen.contains(&(p.x, p.y));
-                for spot in built.spots.iter().filter(|s| matches!(char::from_u32(s.tag), Some('A' | 'L' | 'R' | 's' | 'w' | 'b'))) {
-                    assert!(reached(spot.at), "deck {deck}, seed {s}: mark {:?} at {:?} cannot be walked to", char::from_u32(spot.tag), spot.at);
-                }
-                if let Some(exit) = built.exit {
-                    assert!(reached(exit), "deck {deck}, seed {s}: the way down at {exit:?} cannot be walked to");
-                }
-            }
-        });
-    }
-
-    /// Every deck is grown, surveyed and held to its recipe, and builds
-    /// within the attempts a deck is given on every seed of the span.
-    #[test]
-    fn every_deck_meets_what_its_recipe_requires_over_a_span_of_seeds() {
-        use rl_engine::rl_mapgen::{Area, Surveyed};
-        par_seeds(seeds(0..150), |s| {
-            let foundry = Foundry::new(RunSeed(s));
-            for deck in 1..=DECKS {
-                let ctx = foundry.generate(map_of(deck)).unwrap_or_else(|e| panic!("deck {deck}, seed {s}: {e}"));
-                let surveyed = ctx.outputs().first::<Surveyed>().unwrap_or_else(|| panic!("deck {deck}, seed {s}: not surveyed"));
-                assert!(surveyed.loops >= 2, "deck {deck}, seed {s}: {} loops", surveyed.loops);
-                assert_eq!(surveyed.areas.len(), ctx.outputs().iter::<Area>().count());
-            }
-        });
-    }
-
-    /// Two decks of one run are not grown to one plan: over a span of
-    /// seeds no two decks of a run are the same map, and the upper and the
-    /// lower decks name different recipes.
-    #[test]
-    fn the_decks_of_a_run_differ_from_each_other() {
-        par_seeds(0..20, |s| {
-            let foundry = Foundry::new(RunSeed(s));
-            let maps: Vec<String> = (1..=DECKS).map(|d| foundry.render(map_of(d)).unwrap()).collect();
-            for i in 0..maps.len() {
-                for j in i + 1..maps.len() {
-                    assert_ne!(maps[i], maps[j], "seed {s}: decks {} and {} are the same map", i + 1, j + 1);
-                }
-            }
-        });
-        assert_ne!(recipe_of(1), recipe_of(5), "the upper and the lower decks name different recipes");
     }
 
     #[test]

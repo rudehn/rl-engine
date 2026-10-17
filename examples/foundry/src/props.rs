@@ -57,7 +57,7 @@ fn room_floor(map: &WorldMap, p: Point) -> bool {
 /// a diagonal that cuts a corner.
 ///
 /// A `BTreeSet`, as everything that walks a map here is.
-fn reachable(map: &WorldMap, from: Point, blocked: &[Point]) -> BTreeSet<Point> {
+pub(crate) fn reachable(map: &WorldMap, from: Point, blocked: &[Point]) -> BTreeSet<Point> {
     let mut seen = BTreeSet::new();
     let mut queue = vec![from];
     while let Some(p) = queue.pop() {
@@ -278,77 +278,56 @@ pub fn wreck_the_dead(mut commands: Commands, mut left: MessageReader<RemainsLef
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::par_seeds;
     use rl_engine::rl_core::RunSeed;
 
-    /// A crate in a doorway is a room sealed shut and everything in it
-    /// lost for the run. Over a span of seeds and every deck, the core on
-    /// ten included: what the commando could reach before the props were
-    /// put down, it can reach after. Every deck, because the pieces differ
-    /// by deck: when this stopped at three, the core's console stood where
-    /// it shut off the two cells beside it and nothing noticed.
+    /// Crates put down one at a time, each only where
+    /// [`keeps_the_way_open`] lets it stand, never shut away anything a
+    /// walker reached before the first was put down, on a deck made for it
+    /// over a span of seeds: two rooms joined by a one-cell doorway, which
+    /// is refused outright, and a store whose one way in is a single cell
+    /// between two walls, which no diagonal slips past by the corner rule. The
+    /// run's backstop asks the same of every real deck.
     #[test]
-    fn a_prop_that_blocks_never_seals_off_anything_the_deck_could_reach_over_a_span_of_seeds() {
-        par_seeds(1..7, |seed| {
-            let mut app = crate::testing::headless(RunSeed(seed));
-            for deck in 1..=crate::decks::DECKS {
-                crate::testing::arrive_on(&mut app, deck);
-                let here = crate::decks::map_of(deck);
-                let blockers: Vec<Point> = {
-                    let world = app.world_mut();
-                    let mut q = world.query_filtered::<(&Position, Option<&OnMap>), (With<Prop>, With<Blocks>)>();
-                    q.iter(world).filter(|(_, on)| on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here).map(|(at, _)| at.0).collect()
-                };
-                let from = {
-                    let world = app.world_mut();
-                    let mut q = world.query_filtered::<&Position, With<Player>>();
-                    q.single(world).expect("the commando stands somewhere").0
-                };
-                let map = app.world().resource::<WorldMap>();
-                // The same flood the game places by, which is the one the
-                // move resolver walks by: a diagonal that cuts a corner is
-                // no way past a crate.
-                let open = reachable(map, from, &[]);
-                let with_props = reachable(map, from, &blockers);
-                let lost: Vec<Point> = open.difference(&with_props).filter(|p| !blockers.contains(p)).copied().collect();
-                assert!(lost.is_empty(), "seed {seed}, deck {deck}: props cut off {} cells, first {:?}", lost.len(), lost.first());
-            }
-        });
-    }
-
-    /// Every prop slot on every deck, an armory's `A`, a store's two `L`s
-    /// and a guard post's locker, holds the prop its piece names, over a
-    /// span of seeds. A slot skips its prop only on the arrival cell, on a
-    /// cell walled over or on one already filled, and none of those is
-    /// ever meant to happen on a deck: a locker missing from an armory is
-    /// a deck with nothing to find in it.
-    #[test]
-    fn every_prop_slot_on_every_deck_holds_its_prop_over_a_span_of_seeds() {
-        use rl_engine::rl_rules::prefab::Slot;
-        let checked = std::sync::atomic::AtomicUsize::new(0);
-        par_seeds(1..7, |seed| {
-            let mut app = crate::testing::headless(RunSeed(seed));
-            for deck in 1..=crate::decks::DECKS {
-                crate::testing::arrive_on(&mut app, deck);
-                let here = crate::decks::map_of(deck);
-                let standing: Vec<(Point, PropId)> = {
-                    let world = app.world_mut();
-                    let mut q = world.query::<(&PropKind, &Position, Option<&OnMap>)>();
-                    q.iter(world).filter(|(.., on)| on.map_or(MapId::SURFACE, |m| m.0) == here).map(|(kind, at, _)| (at.0, kind.0)).collect()
-                };
-                let prefabs = app.world().resource::<Prefabs<crate::droids::MonsterDef>>();
-                let place = app.world().resource::<WorldMap>().place(here).expect("the deck is built");
-                for spot in &place.spots {
-                    let slot = spot.prefab.zip(char::from_u32(spot.tag)).and_then(|(key, c)| prefabs.slot(key, c));
-                    let Some(Slot::Prop(kind)) = slot else { continue };
-                    let glyph = char::from_u32(spot.tag).unwrap_or('?');
-                    assert!(standing.contains(&(spot.at, *kind)), "seed {seed}, deck {deck}: '{glyph}' at {:?} holds no prop of its kind", spot.at);
-                    checked.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    fn crates_put_down_where_the_way_stays_open_never_shut_anything_away() {
+        use rand::{Rng, SeedableRng};
+        let foundry = crate::decks::Foundry::new(RunSeed(0));
+        let tiles = foundry.tiles();
+        let (hull, deck) = (tiles.expect("hull"), tiles.expect("deck"));
+        let rows =
+            ["##############", "#.....#......#", "#.....#......#", "#............#", "#.....#......#", "#.....####.###", "#.....#......#", "##############"];
+        let terrain = rl_engine::rl_grid::Terrain::from_fn(14, 8, |p| if rows[p.y as usize].as_bytes()[p.x as usize] == b'#' { hull } else { deck });
+        let entry = Point::new(1, 1);
+        let built = rl_engine::rl_bevy::places::PlaceBuild {
+            terrain,
+            entry,
+            exit: None,
+            spots: Vec::new(),
+            locks: Vec::new(),
+            secrets: Vec::new(),
+            ambient: rl_engine::rl_grid::Light::DARK,
+            peaceful: false,
+        };
+        let here = crate::decks::map_of(2);
+        let mut map = WorldMap::new(tiles.tables());
+        map.install_place(here, built);
+        map.switch_to(here);
+        assert!(!keeps_the_way_open(&map, entry, &[], Point::new(6, 3)), "the doorway between the rooms is the one way through");
+        assert!(!keeps_the_way_open(&map, entry, &[], Point::new(10, 5)), "and the store's mouth, the one way in");
+        let open = reachable(&map, entry, &[]);
+        for s in crate::testing::seeds(0..40) {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(s);
+            let mut blocked: Vec<Point> = Vec::new();
+            for _ in 0..200 {
+                let p = Point::new(rng.random_range(1..13), rng.random_range(1..7));
+                if room_floor(&map, p) && !blocked.contains(&p) && keeps_the_way_open(&map, entry, &blocked, p) {
+                    blocked.push(p);
                 }
             }
-        });
-        let checked = checked.into_inner();
-        assert!(checked >= 6 * 10 * 3, "every deck's armory and two store crates were checked, not {checked}");
+            assert!(blocked.len() > 5, "seed {s}: crates found room to stand");
+            let after = reachable(&map, entry, &blocked);
+            let lost: Vec<&Point> = open.iter().filter(|p| !blocked.contains(p) && !after.contains(p)).collect();
+            assert!(lost.is_empty(), "seed {s}: {} crates shut {lost:?} away", blocked.len());
+        }
     }
 
     /// A live cable is electricity, and plate is no insulation: a commando

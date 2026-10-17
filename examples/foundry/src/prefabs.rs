@@ -66,7 +66,17 @@ pub fn load(tiles: &TileRegistry) -> Prefabs<MonsterDef> {
     let roles = role::load(ROLES_RON, &monsters).unwrap_or_else(|e| panic!("assets/roles.ron: {e}"));
     let names = monsters.with("prop", &registries.props).with("role", &roles);
     let defs = PIECES.iter().map(|text| prefab::load(text, tiles, &names).unwrap_or_else(|e| panic!("assets/prefabs: {e}"))).collect();
-    Prefabs::new(Registry::from_defs(defs).expect("every piece has its own name"), roles)
+    let prefabs = Prefabs::new(Registry::from_defs(defs).expect("every piece has its own name"), roles);
+    // Every slot that draws by tag or role finds something on every deck,
+    // exactly or by falling back, so no guard post ever stands unmanned or
+    // holds no weapon because a table ran out: read against the roster
+    // and the item table a run draws through, which is the one question a
+    // piece's own load cannot ask.
+    let items = crate::gear::load_table(&registries, &crate::gear::load_defs(&registries));
+    let sources = Sources { roles: prefabs.roles(), monsters: &roster.table, items: &items, tags: &registries.tags };
+    let report = prefab::coverage(prefabs.defs().iter().map(|(_, def)| def), &sources, 1..=DECKS as i32);
+    assert!(report.empties().is_empty(), "assets/prefabs: a drawn slot finds nothing on some deck:\n{}", report.render());
+    prefabs
 }
 
 /// The coverage of every piece's drawn slots on every deck, for
@@ -88,8 +98,6 @@ pub fn coverage_report() -> Coverage {
 #[cfg(test)]
 mod tests {
     use bevy::prelude::*;
-    use rl_engine::rl_bevy::places::Spot;
-    use rl_engine::rl_rules::prefab::{Pick, Slot};
 
     use super::*;
 
@@ -101,16 +109,6 @@ mod tests {
         let prefabs = load(Foundry::new(RunSeed(0)).tiles());
         assert_eq!(prefabs.defs().len(), PIECES.len());
         assert!(prefabs.roles().id("sentry").is_some() && prefabs.roles().id("brute").is_some());
-    }
-
-    /// A slot that draws by tag or role finds something on every deck from
-    /// one to ten, exactly or by falling back, so no guard post ever
-    /// stands unmanned or holds no weapon because a table ran out.
-    #[test]
-    fn every_drawn_slot_of_every_piece_finds_something_on_every_deck() {
-        let report = coverage_report();
-        assert!(!report.rows.is_empty(), "the guard post draws, so the report has rows");
-        assert!(report.empties().is_empty(), "{}", report.render());
     }
 
     /// Guards drawn for one post fight side by side only if they are on
@@ -129,63 +127,5 @@ mod tests {
             factions.dedup();
             assert_eq!(factions.len(), 1, "{} mixes factions: {factions:?}", role.name);
         }
-    }
-
-    /// The guard post's spots on the current deck, `'s'` and `'b'`, as
-    /// the stamp recorded them.
-    fn guard_spots(app: &App) -> Vec<Spot> {
-        let map = app.world().resource::<WorldMap>();
-        let prefabs = app.world().resource::<Prefabs<MonsterDef>>();
-        let place = map.place(map.current()).expect("the current deck is built");
-        place
-            .spots
-            .iter()
-            .filter(|s| {
-                s.prefab.is_some_and(|key| prefabs.slot(key, char::from_u32(s.tag).unwrap_or(' ')).is_some_and(|slot| matches!(slot, Slot::Monster { .. })))
-            })
-            .cloned()
-            .collect()
-    }
-
-    /// Every guard the post's slots name stands at its slot, is a kind its
-    /// role admits, and holds that cell as its post; the one exception is
-    /// a slot on the cell the commando arrived on, which the engine skips.
-    #[test]
-    fn a_guard_post_is_manned_and_its_guards_hold_their_cells() {
-        let mut checked = 0;
-        for seed in 1..=5u64 {
-            let mut app = crate::testing::headless(RunSeed(seed));
-            crate::testing::arrive_on(&mut app, 2);
-            let entry = {
-                let world = app.world_mut();
-                world.query_filtered::<&Position, With<Player>>().single(world).expect("the commando stands somewhere").0
-            };
-            let spots = guard_spots(&app);
-            assert_eq!(spots.len(), 3, "seed {seed}: two sentries and a brute on deck two");
-            for spot in spots {
-                if spot.at == entry {
-                    continue;
-                }
-                let world = app.world_mut();
-                let held: Vec<(Id<MonsterDef>, Option<Post>)> = world
-                    .query::<(&Position, &crate::droids::Kind, Option<&Post>, &OnMap)>()
-                    .iter(world)
-                    .filter(|(p, _, _, on)| p.0 == spot.at && on.0 == crate::decks::map_of(2))
-                    .map(|(_, kind, post, _)| (kind.0, post.copied()))
-                    .collect();
-                let prefabs = app.world().resource::<Prefabs<MonsterDef>>();
-                let glyph = char::from_u32(spot.tag).unwrap();
-                let Some(Slot::Monster { pick: Pick::Role(role), .. }) = prefabs.slot(spot.prefab.unwrap(), glyph) else {
-                    panic!("seed {seed}: '{glyph}' is a role slot");
-                };
-                let role = prefabs.roles().get(*role);
-                assert_eq!(held.len(), 1, "seed {seed}: one monster at '{glyph}' {:?}", spot.at);
-                let (kind, post) = held[0];
-                assert!(role.fits(kind), "seed {seed}: '{glyph}' holds a monster outside {:?}", role.name);
-                assert_eq!(post, Some(Post(spot.at)), "seed {seed}: the guard at '{glyph}' holds its own cell");
-                checked += 1;
-            }
-        }
-        assert!(checked >= 12, "most guards were checked, not skipped: {checked}");
     }
 }

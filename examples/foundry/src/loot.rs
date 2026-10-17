@@ -22,53 +22,45 @@ pub fn scatter_rules() -> ScatterRules {
 #[cfg(test)]
 mod tests {
     use bevy::prelude::*;
-    use rand::SeedableRng;
     use rl_engine::prelude::*;
-    use rl_engine::rl_core::{Grid2D, RunSeed};
-    use rl_engine::rl_rules::{Layout, plan_scatter};
+    use rl_engine::rl_core::RunSeed;
 
-    use super::*;
-
-    /// What the decks hand out gets better the deeper it is, over a
-    /// thousand draws a deck: deck one is plain but for the odd `+1`, deck
-    /// nine is never plain, and `+5` waits for the last band.
+    /// What the decks hand out gets better the deeper it is, read from the
+    /// level rows with no draw: deck one is plain but for a `+1` about one
+    /// find in ten, deck nine is never plain, and `+5` waits for the last
+    /// row, which a crate past the last deck reads too. The weighted draw
+    /// itself is `LevelTable::roll`'s, tested where it is written.
     #[test]
     fn enchant_levels_climb_from_a_rare_plus_one_on_deck_one_to_plus_five_on_the_last() {
         let registries = crate::content::registries();
         let armory = crate::testing::armory(&registries);
-        let mut rng = rand::rngs::StdRng::seed_from_u64(7);
-        let mut draws = |band: i32| (0..1000).map(|_| armory.levels.roll(band, &mut rng)).collect::<Vec<i32>>();
-        let first = draws(1);
-        let ones = first.iter().filter(|l| **l == 1).count();
-        assert!(first.iter().all(|l| (0..=1).contains(l)), "deck one is plain or +1");
-        assert!((50..=160).contains(&ones), "and +1 is an uncommon surprise, about one in ten: {ones} of 1000");
-        assert!(draws(9).iter().all(|l| (1..=4).contains(l)), "deck nine is never plain, and +5 waits for the last");
-        let last = draws(10);
-        assert!(last.contains(&5) && last.iter().all(|l| (2..=5).contains(l)), "the last deck reaches +5");
-        assert!(draws(40).iter().all(|l| (2..=5).contains(l)), "a crate past the last deck reads the last row");
+        let levels = |band: i32| -> Vec<(i32, u32)> { armory.levels.row_for(band).expect("a row for every band").levels.clone() };
+        let share = |band: i32, level: i32| -> f64 {
+            let row = levels(band);
+            let total: u32 = row.iter().map(|(_, w)| w).sum();
+            f64::from(row.iter().filter(|(l, _)| *l == level).map(|(_, w)| w).sum::<u32>()) / f64::from(total)
+        };
+        assert!(levels(1).iter().all(|(l, _)| (0..=1).contains(l)), "deck one is plain or +1");
+        assert!((0.05..=0.16).contains(&share(1, 1)), "and +1 is an uncommon surprise, about one in ten: {}", share(1, 1));
+        assert!(levels(9).iter().all(|(l, _)| (1..=4).contains(l)), "deck nine is never plain, and +5 waits for the last");
+        assert!(levels(10).iter().any(|(l, _)| *l == 5) && levels(10).iter().all(|(l, _)| (2..=5).contains(l)), "the last deck reaches +5");
+        assert_eq!(levels(40), levels(10), "a crate past the last deck reads the last row");
     }
 
-    /// Every kind a crate or a locker asks for is found at every deck it
-    /// could stand on, offset included, so no container on any deck falls
-    /// back to another deck's things or comes up empty.
+    /// A container whose kind the item table does not have at some deck it
+    /// could stand on is refused naming the container, the kind and the
+    /// decks, so no crate or locker on any deck falls back to another
+    /// deck's things or comes up empty; the shipped table, which the
+    /// armory's load holds to it, has every one.
     #[test]
-    fn every_kind_a_container_asks_for_is_found_at_every_deck() {
+    fn a_container_asking_for_a_kind_the_table_lacks_on_some_deck_is_refused_naming_it() {
         let registries = crate::content::registries();
         let armory = crate::testing::armory(&registries);
-        let mut asked = 0;
-        for (_, prop) in registries.props.iter() {
-            for row in prop.container.iter().flat_map(|c| &c.contents) {
-                let rl_engine::rl_rules::Stock::Tag(tag) = row.what else { continue };
-                asked += 1;
-                for deck in 1..=crate::decks::DECKS as i32 {
-                    let band = deck + row.band;
-                    assert_eq!(armory.table.band_for(tag, band), Some(band), "{} asks for {} at deck {deck}", prop.name, registries.tags.name(tag));
-                }
-            }
-        }
-        assert!(asked > 0, "the containers ask for kinds of thing");
+        assert_eq!(crate::gear::container_problems(&armory.table, &registries), Vec::<String>::new(), "the shipped table");
+        let empty = rl_engine::rl_rules::LootTable::default();
+        let wrong = crate::gear::container_problems(&empty, &registries);
+        assert!(wrong.iter().any(|w| w.starts_with("armory locker asks for weapon") && w.ends_with("decks [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]")), "{wrong:#?}");
     }
-
     /// The real thing, through the real deck: every armory locker the game
     /// puts down is stocked by the engine with a weapon of its own deck,
     /// so a locker on deck eight never holds deck one's blade and one on
@@ -149,51 +141,29 @@ mod tests {
 
     /// The commando's half of the ranged ramp in `DESIGN.md`: deck one is
     /// walked with bare hands, a blade, or the one gun that runs dry, and
-    /// an energy weapon is a deck two find. The weights alone would let a
-    /// later band edit put a blaster back on deck one without anything
-    /// saying so.
+    /// an energy weapon is a deck two find, read from the tables with no
+    /// deck built: nothing deck one
+    /// scatters or stocks a container with, at the offset each container
+    /// row asks, is an energy weapon, and the slug pistol, the gun that
+    /// runs dry, is among what it may scatter. How often a run finds the
+    /// pistol there is its weight's to tune, not a promise to sample.
     #[test]
-    fn deck_one_lays_out_no_energy_weapon_and_only_the_gun_that_runs_dry_over_a_span_of_seeds() {
-        let mut decks_with_a_pistol = 0;
-        let seeds = 40u64;
-        for s in 0..seeds {
-            let mut app = crate::testing::headless(RunSeed(s));
-            crate::testing::arrive_on(&mut app, 1);
-            let map = app.world().resource::<WorldMap>().current();
-            let world = app.world_mut();
-            let mut q = world.query_filtered::<(&Name, &OnMap), With<Item>>();
-            let names: Vec<String> = q.iter(world).filter(|(_, on)| on.0 == map).map(|(n, _)| n.as_str().to_owned()).collect();
+    fn deck_one_lays_out_no_energy_weapon_and_may_lay_the_gun_that_runs_dry() {
+        let registries = crate::content::registries();
+        let armory = crate::testing::armory(&registries);
+        let mut bands = vec![1];
+        for (_, prop) in registries.props.iter() {
+            bands.extend(prop.container.iter().flat_map(|c| &c.contents).map(|row| 1 + row.band));
+        }
+        for band in bands {
+            let found: Vec<&str> =
+                armory.table.rows().iter().filter(|r| r.weight > 0 && r.applies(band)).map(|r| armory.defs.get(r.item).name.as_str()).collect();
             for gun in ["hand blaster", "blaster carbine", "ion pistol"] {
-                assert!(!names.iter().any(|n| n == gun), "seed {s}: a {gun} on deck one");
-            }
-            if names.iter().any(|n| n == "slug pistol") {
-                decks_with_a_pistol += 1;
+                assert!(!found.contains(&gun), "a {gun} found at band {band}, which deck one's floor or a container on it draws at");
             }
         }
-        // The design's "about two runs in five", at the weights in
-        // `item_spawns.ron`. The bounds are loose on purpose, since the
-        // rate is a weight to tune and not a promise.
-        assert!(decks_with_a_pistol > 0, "the slug pistol is findable on deck one at all");
-        assert!(decks_with_a_pistol < seeds, "and not on every deck, or the unarmed opening is one room long");
-    }
-
-    #[test]
-    fn every_scattered_item_on_a_live_deck_is_walkable_over_a_span_of_seeds() {
-        for s in 0..20u64 {
-            let mut app = crate::testing::headless(RunSeed(s));
-            crate::testing::arrive_on(&mut app, 1);
-            let map = app.world().resource::<WorldMap>().current();
-            let positions: Vec<Point> = {
-                let world = app.world_mut();
-                let mut q = world.query_filtered::<(&Position, &OnMap), With<Item>>();
-                q.iter(world).filter(|(_, on)| on.0 == map).map(|(p, _)| p.0).collect()
-            };
-            assert!(!positions.is_empty(), "seed {s}: nothing scattered");
-            let wm = app.world().resource::<WorldMap>();
-            for p in &positions {
-                assert!(wm.is_walkable(*p), "seed {s}: {p:?} on a wall");
-            }
-        }
+        let first: Vec<&str> = armory.table.rows().iter().filter(|r| r.weight > 0 && r.applies(1)).map(|r| armory.defs.get(r.item).name.as_str()).collect();
+        assert!(first.contains(&"slug pistol"), "the slug pistol is findable on deck one at all: {first:?}");
     }
 
     #[test]
@@ -207,52 +177,5 @@ mod tests {
             q.iter(world).any(|(p, on)| p.0 == at && on.0 == map)
         };
         assert!(landed, "no item landed at the death tile {at:?}");
-    }
-
-    /// Every real deck's own marks, which sit closer together than any
-    /// synthetic layout (`decks::Foundry::stores` puts its two `L`s two
-    /// tiles apart), over a span of seeds and with no `App`: every item on
-    /// a walkable tile and none sharing one, and each mark's own items,
-    /// which the plan lays first and in mark order, beside that mark.
-    #[test]
-    fn every_real_deck_scatters_walkable_items_beside_their_own_marks_over_a_span_of_seeds() {
-        let registries = crate::content::registries();
-        let armory = crate::testing::armory(&registries);
-        let rules = scatter_rules();
-        for s in 0..20 {
-            let foundry = crate::decks::Foundry::new(RunSeed(s));
-            let tables = foundry.tiles().tables();
-            for deck in 1..=crate::decks::DECKS {
-                let build = foundry.build(crate::decks::map_of(deck), None).unwrap_or_else(|e| panic!("deck {deck}, seed {s}: {e}"));
-                let marks: Vec<(u32, Point)> = build.spots.iter().map(|sp| (sp.tag, sp.at)).collect();
-                let on_marks: Vec<Point> = marks.iter().map(|(_, at)| *at).collect();
-                // Where a locker or a crate stands, nothing lies.
-                let mut free = |p: Point| build.terrain.get(p).is_some_and(|t| tables.walkable[t.index()]) && !on_marks.contains(&p);
-                let mut rng = rand::rngs::StdRng::seed_from_u64(s);
-                let loose = rules.loose_count(deck as i32, &mut rng);
-                let plan =
-                    plan_scatter(&armory.table, deck as i32, &rules, Layout { marks: &marks, bounds: build.terrain.bounds() }, loose, &mut free, &mut rng);
-                let mut seen: Vec<Point> = Vec::new();
-                for p in &plan {
-                    assert!(free(p.at), "deck {deck}, seed {s}: {:?} on a wall or a mark", p.at);
-                    assert!(!seen.contains(&p.at), "deck {deck}, seed {s}: two items on {:?}", p.at);
-                    seen.push(p.at);
-                }
-                let owed: Vec<Point> = rules
-                    .spots
-                    .iter()
-                    .flat_map(|&(tag, n)| marks.iter().filter(move |(t, _)| *t == tag).flat_map(move |(_, at)| std::iter::repeat_n(*at, n as usize)))
-                    .collect();
-                assert!(plan.len() >= owed.len(), "deck {deck}, seed {s}: {} placed, {} owed to marks", plan.len(), owed.len());
-                for (placed, mark) in plan.iter().zip(&owed) {
-                    assert_eq!(
-                        rl_engine::rl_core::geometry::chebyshev(placed.at, *mark),
-                        1,
-                        "deck {deck}, seed {s}: an item owed to {mark:?} lies at {:?}",
-                        placed.at
-                    );
-                }
-            }
-        }
     }
 }

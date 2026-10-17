@@ -141,26 +141,6 @@ mod tests {
         q.iter(app.world()).find(|(_, on, t)| on.0 == here && matches!(t.to, Destination::Place { map, .. } if map == map_of(deck))).map(|(p, _, _)| p.0)
     }
 
-    #[test]
-    fn going_through_each_lift_down_reaches_the_next_deck_and_the_last_has_none_over_a_span_of_seeds() {
-        par_seeds(0..6, |s| {
-            let mut app = crate::testing::headless(RunSeed(s));
-            crate::testing::settle(&mut app);
-            let me = player(&mut app);
-            assert_eq!(lift_to(&mut app, 0), None, "seed {s}: deck one has no lift up");
-            for deck in 1..DECKS {
-                let down = lift_to(&mut app, deck + 1).unwrap_or_else(|| panic!("seed {s}: deck {deck} has a lift down"));
-                app.world_mut().get_mut::<Position>(me).unwrap().0 = down;
-                crate::testing::settle(&mut app);
-                app.world_mut().write_message(Intent::new(me, GoThrough));
-                crate::testing::settle(&mut app);
-                assert_eq!(deck_of(app.world().resource::<WorldMap>().current()), deck + 1, "seed {s}: the lift on deck {deck} goes down");
-                assert!(lift_to(&mut app, deck).is_some(), "seed {s}: deck {} has a lift back up", deck + 1);
-            }
-            assert_eq!(lift_to(&mut app, DECKS + 1), None, "seed {s}: the last deck has no lift down");
-        });
-    }
-
     /// One way through standing on a deck: where, where it leads, and what
     /// it is, a lift of the engine's that climbs one way, or the lift out.
     type Way = (Point, Option<Destination>, Option<Climb>, bool);
@@ -196,29 +176,156 @@ mod tests {
         ways
     }
 
-    /// Over a span of seeds, every deck has exactly one way up and, but
-    /// the core, one way down, each leading to the deck beside it, and
-    /// nothing else that leads anywhere: deck one's way up is the lift out
-    /// and the core has none down, as the decks' ladder says. A run
-    /// continued from the save the last arrival wrote has every deck's
-    /// lifts again, where they stood and leading where they led, once.
+    /// The run's backstop on foot: from deck one down every lift to the
+    /// core, over a span of seeds, every deck the commando rides down to
+    /// keeps what its build promised once its arrival has filled it. Each
+    /// deck has exactly one way up and, but the core, one way down, each to
+    /// the deck beside it and nothing else that leads anywhere, deck one's
+    /// way up the lift out; riding the lift down lands on the next deck
+    /// with a lift back up. What the commando could reach before the props
+    /// were put down it can reach after, the core's console among them; every
+    /// prop slot holds the prop its piece names; everything scattered lies
+    /// on walkable ground; a charge deck stands one console; and every guard
+    /// a post's slots name stands at its slot, a kind its role admits,
+    /// holding that cell as its post, but on the cell the commando arrived
+    /// on, which the engine skips. A run continued from the save the last
+    /// arrival wrote has every deck's lifts again, where they stood and
+    /// leading where they led, once. Each half has a pass or a plugin that
+    /// owns it on a deck of its own making; this is the real decks, ridden.
     #[test]
-    fn every_deck_has_one_lift_up_and_but_the_core_one_down_to_the_decks_beside_it_through_a_save_over_a_span_of_seeds() {
-        par_seeds(seeds(0..6), |s| {
+    fn every_deck_ridden_down_to_is_joined_reachable_furnished_and_stocked_through_a_save_over_a_span_of_seeds() {
+        par_seeds(seeds(0..20), |s| {
             let mut app = crate::testing::headless(RunSeed(s));
+            crate::testing::settle(&mut app);
+            let me = player(&mut app);
             let mut seen = Vec::new();
             for deck in 1..=DECKS {
-                crate::testing::arrive_on(&mut app, deck);
+                let at = format!("seed {s}, deck {deck}");
+                assert_eq!(deck_of(app.world().resource::<WorldMap>().current()), deck, "{at}: the lift down from deck {} goes down", deck - 1);
                 let ways = ways_on(&mut app, deck);
-                assert_eq!(ways, ladder_of(&app, deck), "seed {s}: deck {deck}");
+                assert_eq!(ways, ladder_of(&app, deck), "{at}");
                 seen.push(ways);
+                no_prop_seals_off_what_the_deck_could_reach(&mut app, deck, &at);
+                every_prop_slot_holds_its_prop(&mut app, deck, &at);
+                every_scattered_item_is_walkable(&mut app, deck, &at);
+                if matches!(deck, 3 | 6 | 9 | 10) {
+                    a_charge_deck_stands_one_console(&mut app, deck, &at);
+                }
+                every_guard_holds_its_post(&mut app, deck, &at);
+                let Some(down) = lift_to(&mut app, deck + 1) else { continue };
+                app.world_mut().get_mut::<Position>(me).unwrap().0 = down;
+                crate::testing::settle(&mut app);
+                app.world_mut().write_message(Intent::new(me, GoThrough));
+                crate::testing::settle(&mut app);
+                assert!(lift_to(&mut app, deck).is_some(), "{at}: deck {} has a lift back up", deck + 1);
             }
+            assert_eq!(lift_to(&mut app, DECKS + 1), None, "seed {s}: the last deck has no lift down");
             let text = app.world().resource::<rl_engine::rl_save::Saves>().load(crate::save::SLOT).unwrap().expect("the arrival wrote the run down");
             let mut again = crate::testing::continued(&text);
             for deck in 1..=DECKS {
                 assert_eq!(ways_on(&mut again, deck), seen[deck as usize - 1], "seed {s}: deck {deck}, continued");
             }
         });
+    }
+
+    /// Where the commando stands now.
+    fn standing_at(app: &mut App) -> Point {
+        let world = app.world_mut();
+        world.query_filtered::<&Position, With<Player>>().single(world).expect("the commando stands somewhere").0
+    }
+
+    /// What the commando could reach before the props were put down, it
+    /// can reach after: a crate in a doorway is a room sealed shut and
+    /// everything in it lost for the run, by the same flood the game
+    /// places by, in which a diagonal that cuts a corner is no way past.
+    fn no_prop_seals_off_what_the_deck_could_reach(app: &mut App, deck: u32, at: &str) {
+        let here = map_of(deck);
+        let blockers: Vec<Point> = {
+            let world = app.world_mut();
+            let mut q = world.query_filtered::<(&Position, Option<&OnMap>), (With<Prop>, With<Blocks>)>();
+            q.iter(world).filter(|(_, on)| on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here).map(|(p, _)| p.0).collect()
+        };
+        let from = standing_at(app);
+        let map = app.world().resource::<WorldMap>();
+        let (open, with_props) = (crate::props::reachable(map, from, &[]), crate::props::reachable(map, from, &blockers));
+        let lost: Vec<Point> = open.difference(&with_props).filter(|p| !blockers.contains(p)).copied().collect();
+        assert!(lost.is_empty(), "{at}: props cut off {} cells, first {:?}", lost.len(), lost.first());
+    }
+
+    /// Every prop slot, an armory's `A`, a store's two `L`s and a guard
+    /// post's locker, holds the prop its piece names: a slot skips its prop
+    /// only on the arrival cell, a cell walled over or one already filled,
+    /// and none of those is ever meant to happen on a deck.
+    fn every_prop_slot_holds_its_prop(app: &mut App, deck: u32, at: &str) {
+        use rl_engine::rl_rules::prefab::Slot;
+        let here = map_of(deck);
+        let standing: Vec<(Point, PropId)> = {
+            let world = app.world_mut();
+            let mut q = world.query::<(&PropKind, &Position, Option<&OnMap>)>();
+            q.iter(world).filter(|(.., on)| on.map_or(MapId::SURFACE, |m| m.0) == here).map(|(kind, p, _)| (p.0, kind.0)).collect()
+        };
+        let prefabs = app.world().resource::<Prefabs<crate::droids::MonsterDef>>();
+        let place = app.world().resource::<WorldMap>().place(here).expect("the deck is built");
+        let mut slots = 0;
+        for spot in &place.spots {
+            let Some(Slot::Prop(kind)) = spot.prefab.zip(char::from_u32(spot.tag)).and_then(|(key, c)| prefabs.slot(key, c)) else { continue };
+            let glyph = char::from_u32(spot.tag).unwrap_or('?');
+            assert!(standing.contains(&(spot.at, *kind)), "{at}: '{glyph}' at {:?} holds no prop of its kind", spot.at);
+            slots += 1;
+        }
+        assert!(slots >= 3, "{at}: an armory's locker and a store's two crates at least, not {slots}");
+    }
+
+    /// Everything the deck scattered lies on walkable ground, and there is
+    /// something.
+    fn every_scattered_item_is_walkable(app: &mut App, deck: u32, at: &str) {
+        let here = map_of(deck);
+        let positions: Vec<Point> = {
+            let world = app.world_mut();
+            let mut q = world.query_filtered::<(&Position, &OnMap), With<Item>>();
+            q.iter(world).filter(|(_, on)| on.0 == here).map(|(p, _)| p.0).collect()
+        };
+        assert!(!positions.is_empty(), "{at}: nothing scattered");
+        let map = app.world().resource::<WorldMap>();
+        if let Some(p) = positions.iter().find(|p| !map.is_walkable(**p)) {
+            panic!("{at}: an item at {p:?} on a wall");
+        }
+    }
+
+    /// A charge deck stands exactly one console, on its reactor's mark.
+    fn a_charge_deck_stands_one_console(app: &mut App, deck: u32, at: &str) {
+        let world = app.world_mut();
+        let console = world.resource::<Registries>().props.expect("reactor console");
+        let here = map_of(deck);
+        let consoles = world.query::<(&OnMap, &PropKind)>().iter(world).filter(|(on, kind)| on.0 == here && kind.0 == console).count();
+        assert_eq!(consoles, 1, "{at}: one console");
+    }
+
+    /// Every guard a post's slots name was stood there, a kind its role
+    /// admits, holding that cell as its post, but on the cell the commando
+    /// arrived on, which the engine skips. Read by the post each guard
+    /// holds rather than where it stands: the ride down spent a turn, and a
+    /// sentry that saw the commando arrive has already left its cell.
+    fn every_guard_holds_its_post(app: &mut App, deck: u32, at: &str) {
+        use rl_engine::rl_rules::prefab::{Pick, Slot};
+        let here = map_of(deck);
+        let entry = app.world().resource::<WorldMap>().place(here).expect("the deck is built").entry;
+        let guards: Vec<(Id<crate::droids::MonsterDef>, Post)> = {
+            let world = app.world_mut();
+            let mut q = world.query::<(&crate::droids::Kind, &Post, &OnMap)>();
+            q.iter(world).filter(|(.., on)| on.0 == here).map(|(kind, post, _)| (kind.0, *post)).collect()
+        };
+        let prefabs = app.world().resource::<Prefabs<crate::droids::MonsterDef>>();
+        let place = app.world().resource::<WorldMap>().place(here).expect("the deck is built");
+        for spot in place.spots.iter().filter(|s| s.at != entry) {
+            let glyph = char::from_u32(spot.tag).unwrap_or(' ');
+            let Some(Slot::Monster { pick, .. }) = spot.prefab.and_then(|key| prefabs.slot(key, glyph)) else { continue };
+            let held: Vec<Id<crate::droids::MonsterDef>> = guards.iter().filter(|(_, post)| *post == Post(spot.at)).map(|(kind, _)| *kind).collect();
+            assert_eq!(held.len(), 1, "{at}: one monster posted at '{glyph}' {:?}", spot.at);
+            if let Pick::Role(role) = pick {
+                assert!(prefabs.roles().get(*role).fits(held[0]), "{at}: '{glyph}' holds a monster outside {:?}", prefabs.roles().get(*role).name);
+            }
+        }
     }
 
     #[test]

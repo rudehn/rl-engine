@@ -148,8 +148,15 @@ impl Roster {
     /// Loads `monsters.ron` and `monster_spawns.ron` against `registries`.
     /// Panics with every problem either file has, since a broken roster is a
     /// game that cannot start.
+    ///
+    /// The shipped spawn table must have something to draw on every deck,
+    /// or a deck is populated by nothing; a test's own roster, through
+    /// `from_ron`, is held to nothing of the kind.
     pub fn load(registries: &Registries) -> Self {
-        Self::from_ron(MONSTERS_RON, MONSTER_SPAWNS_RON, registries)
+        let roster = Self::from_ron(MONSTERS_RON, MONSTER_SPAWNS_RON, registries);
+        let gaps = roster.table.gaps(1..=crate::decks::DECKS as i32);
+        assert!(gaps.is_empty(), "assets/monster_spawns.ron: nothing to draw on decks {gaps:?}");
+        roster
     }
 
     /// As [`load`](Self::load), but from `ron` and `spawns` rather than the
@@ -314,12 +321,6 @@ mod tests {
     use rl_engine::rl_core::RunSeed;
 
     use super::*;
-
-    #[test]
-    fn every_deck_of_the_run_has_something_to_spawn() {
-        let roster = Roster::load(&crate::content::registries());
-        assert!(roster.table.gaps(1..=crate::decks::DECKS as i32).is_empty());
-    }
 
     #[test]
     fn line_droids_come_alone_or_in_pairs_on_deck_one_and_never_more() {

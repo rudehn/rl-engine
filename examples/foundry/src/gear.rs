@@ -358,9 +358,7 @@ impl Armory {
     pub fn load(registries: &Registries, kinds: &EffectKinds, moments: &Moments, sounds: &Sounds) -> Self {
         let names = registries.names().sounds(sounds);
         let defs = load_defs(registries);
-        let table =
-            rl_engine::rl_rules::loot::load(ITEM_SPAWNS_RON, &names.clone().with("item", &defs), &defs, |d: &ItemDef| d.tags.iter().map(|t| t.id()).collect())
-                .unwrap_or_else(|e| panic!("assets/item_spawns.ron: {e}"));
+        let table = load_table(registries, &defs);
         let levels = rl_engine::rl_rules::loot::load_levels(LEVELS_RON).unwrap_or_else(|e| panic!("assets/levels.ron: {e}"));
         // ANCHOR: triggers
         // Each definition's parts, its triggers built once against the
@@ -394,6 +392,37 @@ pub fn load_defs(registries: &Registries) -> Registry<ItemDef> {
     let defs: Registry<ItemDef> = registries.names().load(ITEMS_RON).unwrap_or_else(|e| panic!("assets/items.ron: {e}"));
     defs.validate(validate_def).unwrap_or_else(|e| panic!("assets/items.ron: {e}"));
     defs
+}
+
+/// `item_spawns.ron` against `defs`, and every container in `props.ron`
+/// held to it: each kind a crate or a locker asks for is found at every
+/// deck it could stand on, its own offset counted, so no container on any
+/// deck falls back to another deck's things or comes up empty. Panics with
+/// every problem at once, since a container with nothing of its own to
+/// hold is content that moved without its table.
+pub fn load_table(registries: &Registries, defs: &Registry<ItemDef>) -> LootTable<Id<ItemDef>> {
+    let table =
+        rl_engine::rl_rules::loot::load(ITEM_SPAWNS_RON, &registries.names().with("item", defs), defs, |d: &ItemDef| d.tags.iter().map(|t| t.id()).collect())
+            .unwrap_or_else(|e| panic!("assets/item_spawns.ron: {e}"));
+    let wrong = container_problems(&table, registries);
+    assert!(wrong.is_empty(), "assets/item_spawns.ron: {wrong:#?}");
+    table
+}
+
+/// Every kind a container of `registries` asks for that `table` does not
+/// have at some deck it could stand on, offset counted, by name.
+pub(crate) fn container_problems(table: &LootTable<Id<ItemDef>>, registries: &Registries) -> Vec<String> {
+    let mut wrong = Vec::new();
+    for (_, prop) in registries.props.iter() {
+        for row in prop.container.iter().flat_map(|c| &c.contents) {
+            let rl_engine::rl_rules::Stock::Tag(tag) = row.what else { continue };
+            let short: Vec<i32> = (1..=crate::decks::DECKS as i32).filter(|deck| table.band_for(tag, deck + row.band) != Some(deck + row.band)).collect();
+            if !short.is_empty() {
+                wrong.push(format!("{} asks for {} at band {:+}, which nothing is on decks {short:?}", prop.name, registries.tags.name(tag), row.band));
+            }
+        }
+    }
+    wrong
 }
 
 /// The effect kinds a Foundry app has, for loading an [`Armory`] where no

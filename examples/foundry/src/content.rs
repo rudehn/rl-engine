@@ -145,6 +145,103 @@ pub fn registries() -> Registries {
 mod tests {
     use super::*;
 
+    /// Every quoted string in Foundry's own files and code but the tests,
+    /// the pieces, and `read`, the files the check reads for itself: what a
+    /// name is looked for in when no table or piece reaches it, so a kind a
+    /// system stands by name, a wreck or a console, is not taken for one
+    /// nothing names, and a row of a table on no deck, or a slot of a piece
+    /// no deck lays, is not taken for one something does.
+    fn quoted_elsewhere(read: &[&str]) -> std::collections::BTreeSet<String> {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut files: Vec<std::path::PathBuf> = Vec::new();
+        let mut dirs = vec![root.join("assets"), root.join("src")];
+        while let Some(dir) = dirs.pop() {
+            for entry in std::fs::read_dir(&dir).expect("a directory of the game's own").flatten() {
+                let path = entry.path();
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default().to_string();
+                if path.is_dir() && name != "testing" && name != "prefabs" {
+                    dirs.push(path);
+                } else if path.extension().is_some_and(|e| e == "ron" || e == "rs") && name != "tests.rs" && !read.contains(&name.as_str()) {
+                    files.push(path);
+                }
+            }
+        }
+        let mut quoted = std::collections::BTreeSet::new();
+        for path in files {
+            let text = std::fs::read_to_string(&path).expect("readable");
+            // A file's own tests name content to test it, not to lay it:
+            // the module of them inline, never a `mod tests;` naming a
+            // file of its own, which the walk above leaves out by name.
+            let text = text.split("#[cfg(test)]\nmod tests {").next().unwrap_or_default();
+            let mut parts = text.split('"');
+            parts.next();
+            while let Some(inside) = parts.next() {
+                quoted.insert(inside.to_string());
+                parts.next();
+            }
+        }
+        quoted
+    }
+
+    /// Nothing in the content is orphaned: every monster, item and prop is
+    /// reached by something a run draws, on a deck that something can
+    /// actually draw it on, read from the files with no deck grown. A
+    /// monster by a row of the spawn table on a deck of the ten, a piece a
+    /// deck lays, or a role such a piece draws for; an item by a row of the
+    /// item table on a deck of the ten, which a deck's scatter draws from
+    /// whole, or one a container, a slot or a drop names; a prop by a piece
+    /// a deck lays. What none of those reaches is looked for, by its quoted
+    /// name, in every other file and line of code but the tests, for a
+    /// system that stands it itself; what is named nowhere at all is content
+    /// no run ever meets.
+    #[test]
+    fn nothing_in_the_content_is_orphaned() {
+        use rl_engine::rl_rules::prefab::Reached;
+        let registries = registries();
+        let roster = crate::droids::Roster::load(&registries);
+        let armory = crate::testing::armory(&registries);
+        let foundry = crate::decks::Foundry::new(rl_engine::rl_core::RunSeed(0));
+        let prefabs = foundry.prefabs();
+        let laid = crate::decks::laid_pieces();
+        let reached: Reached<crate::droids::MonsterDef> =
+            Reached::by(laid.iter().filter_map(|p| prefabs.defs().id(p)).map(|id| prefabs.defs().get(id)), &registries.props);
+        let decks = 1..=crate::decks::DECKS as i32;
+        let on_a_deck = |(lo, hi): (i32, i32)| lo <= *decks.end() && hi >= *decks.start();
+
+        let mut monsters: std::collections::BTreeSet<String> = roster
+            .table
+            .entries()
+            .iter()
+            .filter(|r| r.weight > 0 && on_a_deck((r.min_band, r.max_band)))
+            .map(|r| roster.defs.get(r.item).name.clone())
+            .collect();
+        monsters.extend(reached.monsters.iter().map(|id| roster.defs.get(*id).name.clone()));
+        monsters.extend(reached.roles.iter().flat_map(|r| prefabs.roles().get(*r).members.iter().map(|m| roster.defs.get(*m).name.clone())));
+
+        let mut items: std::collections::BTreeSet<String> =
+            armory.table.rows().iter().filter(|r| r.weight > 0 && on_a_deck(r.bands)).map(|r| armory.defs.get(r.item).name.clone()).collect();
+        items.extend(reached.items.iter().cloned());
+        for (_, def) in roster.defs.iter().filter(|(_, d)| monsters.contains(&d.name)) {
+            items.extend(def.drops.iter().map(|(item, _)| armory.defs.get(item.id()).name.clone()));
+        }
+
+        let props: std::collections::BTreeSet<String> = reached.props.iter().map(|id| registries.props.get(*id).name.clone()).collect();
+
+        let read = ["monsters.ron", "monster_spawns.ron", "roles.ron", "items.ron", "item_spawns.ron", "props.ron"];
+        let quoted = quoted_elsewhere(&read);
+        let mut orphans = Vec::new();
+        for (unreached, what) in [
+            (roster.defs.iter().map(|(_, d)| d.name.clone()).filter(|n| !monsters.contains(n)).collect::<Vec<_>>(), "monster"),
+            (armory.defs.iter().map(|(_, d)| d.name.clone()).filter(|n| !items.contains(n)).collect(), "item"),
+            (registries.props.iter().map(|(_, d)| d.name.clone()).filter(|n| !props.contains(n)).collect(), "prop"),
+        ] {
+            orphans.extend(unreached.into_iter().filter(|n| !quoted.contains(n)).map(|n| format!("{what} {n:?}")));
+        }
+        let pieces: Vec<&str> = prefabs.defs().iter().map(|(_, d)| d.name.as_str()).filter(|n| !laid.contains(n)).collect();
+        orphans.extend(pieces.into_iter().map(|n| format!("piece {n:?}")));
+        assert!(orphans.is_empty(), "reached by nothing a run draws and named nowhere else: {orphans:#?}");
+    }
+
     #[test]
     fn the_damage_table_is_the_designs_to_the_percent() {
         // Spec section 5: a droid shrugs off half of a slug and takes double

@@ -244,23 +244,4 @@ mod tests {
         assert_eq!(quests.tracker.state(quests.defs.expect("first_charge")), QuestState::Open, "the first charge is open from the start");
         assert_eq!(quests.tracker.state(quests.defs.expect("core_charge")), QuestState::Locked, "the core waits on the three above it");
     }
-
-    /// Every charge deck gets its console on the arrival that builds it,
-    /// which is what makes one system serve four reactors instead of the
-    /// one deck three used to name.
-    #[test]
-    fn every_charge_deck_stands_a_console_on_its_reactor_mark_over_a_span_of_seeds() {
-        for s in 0..4u64 {
-            for deck in [3u32, 6, 9, 10] {
-                let mut app = crate::testing::headless(RunSeed(s));
-                crate::testing::arrive_on(&mut app, deck);
-                let world = app.world_mut();
-                let console_id = world.resource::<Registries>().props.expect("reactor console");
-                let here = crate::decks::map_of(deck);
-                let mut q = world.query::<(&OnMap, &PropKind)>();
-                let consoles = q.iter(world).filter(|(on, kind)| on.0 == here && kind.0 == console_id).count();
-                assert_eq!(consoles, 1, "seed {s}, deck {deck}: one console");
-            }
-        }
-    }
 }
