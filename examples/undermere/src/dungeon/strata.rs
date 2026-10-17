@@ -41,7 +41,7 @@ impl Stratum {
 }
 
 /// The strata, shallowest first, covering floors one to ten with no gap
-/// and no overlap, which [`check`] holds.
+/// and no overlap, which `check` holds.
 pub const STRATA: [Stratum; 6] = [
     Stratum { name: "The Drowned Town", floors: (1, 2), crossing: "You pass through the gate, into the drowned town." },
     Stratum { name: "The Palace and its Grounds", floors: (3, 4), crossing: "You come among the palace and its grounds, sunk whole." },

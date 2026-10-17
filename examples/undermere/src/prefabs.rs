@@ -13,7 +13,7 @@
 //! [`Prefabs::piece`], and on the arrival that built a place the engine's
 //! `PrefabPlugin` puts down what every slot names: a prop from
 //! `props.ron`, or a monster from the bestiary, made by
-//! [`Bestiary`](crate::bestiary::Bestiary) exactly as a floor's own
+//! [`Bestiary`] exactly as a floor's own
 //! population would make it. The marks Undermere gives a meaning to
 //! itself are the town's `@`, where a run arrives, and a vault piece's,
 //! which [`vaults`](crate::vaults) fills.
