@@ -69,6 +69,13 @@ jobs:
         run: cargo nextest run --workspace --profile ci
         env:
           RL_FULL_SEEDS: 1
+      # The slowest tests and the run's processor time against CI's own
+      # budget, which warns rather than fails: the runner is not the
+      # machine the everyday budget was measured on, and it plays every
+      # seed. The everyday budget fails in scripts/gate.sh.
+      - name: test times
+        if: success() || failure()
+        run: python3 scripts/test-times.py --profile ci --check full --top 20
       - name: doc-tests
         run: cargo test --workspace --doc
       - name: the starter template generates and builds

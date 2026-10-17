@@ -8,21 +8,168 @@ experimental = ["wrapper-scripts"]
 [scripts.wrapper.slot]
 command = { command-line = "scripts/slot", relative-to = "workspace-root" }
 
-# nextest pools every test of the workspace, so the wall time of a run is set
-# by its longest tests: a test that runs past the slow period is named while
-# the run is still going, and is the next one to make faster.
+# nextest pools every test of the workspace, so on a quiet machine the wall
+# time of a run is the processor time of all its tests over the cores, and
+# a long test that starts late adds itself on the end. A test that runs past
+# the slow period is named while the run is still going. Every test's wall
+# time goes to junit.xml and scripts/slot adds its processor time beside it,
+# which scripts/test-times.py reads and holds to the suite's budget.
 [profile.default]
 slow-timeout = { period = "30s" }
+# The fast tier: everything but the slow tier, which is every test that took
+# two seconds of processor time or more when the tiers were drawn on
+# 2026-10-16: Undermere's and Foundry's play-throughs, the whole-run and
+# every-floor sweeps and the long rate checks, named below by package and
+# full path. A scoped gate runs this; `--profile full`, the gate's `--all`,
+# and CI run both tiers. The fingerprints stay in the fast tier on purpose,
+# as the early warning that a change moved play. scripts/test-times.py
+# names a fast-tier test past two seconds as one to move here or make
+# cheaper. AGENTS.md, "Writing fast tests", says when each tier runs and
+# how to run one area's slow tests while working on it.
+default-filter = """
+not (
+    package(foundry) & (
+        test(=decks::tests::only_the_charge_decks_hold_a_reactor_and_each_holds_exactly_one)
+      | test(=decks::tests::only_the_guard_post_decks_hold_one_and_each_holds_exactly_one)
+      | test(=decks::tests::the_decks_of_a_run_differ_from_each_other)
+      | test(=droids::alarm::tests::a_probe_beside_an_idle_player_backs_off_and_never_comes_nearer_than_three_again_over_a_range_of_seeds)
+      | test(=lifts::tests::every_deck_has_one_lift_up_and_but_the_core_one_down_to_the_decks_beside_it_through_a_save_over_a_span_of_seeds)
+      | test(=lifts::tests::going_through_each_lift_down_reaches_the_next_deck_and_the_last_has_none_over_a_span_of_seeds)
+      | test(=loot::tests::deck_one_lays_out_no_energy_weapon_and_only_the_gun_that_runs_dry_over_a_span_of_seeds)
+      | test(=loot::tests::every_real_deck_scatters_walkable_items_beside_their_own_marks_over_a_span_of_seeds)
+      | test(=mission::tests::every_charge_deck_stands_a_console_on_its_reactor_mark_over_a_span_of_seeds)
+      | test(=props::tests::a_prop_that_blocks_never_seals_off_anything_the_deck_could_reach_over_a_span_of_seeds)
+      | test(=props::tests::every_prop_slot_on_every_deck_holds_its_prop_over_a_span_of_seeds)
+    )
+    |
+    package(rl-mapgen) & (
+        test(=accrete::tests::the_walk_to_the_far_side_of_a_barrier_is_on_average_longer_than_without_it)
+      | test(=dress::tests::nothing_stands_beside_an_opening_and_every_area_stays_one_region)
+      | test(=lakes::tests::a_lake_that_may_cut_leaves_islands_and_the_bridges_join_every_one)
+      | test(=lakes::tests::a_place_left_in_parts_is_grown_again)
+      | test(=lakes::tests::no_lake_or_bridge_reaches_past_a_lock_on_a_piece_drawn_cell_by_cell)
+    )
+    |
+    package(rl-rules) & (
+        test(=pool::tests::an_entry_is_never_drawn_outside_its_floors_or_its_tags)
+      | test(=pool::tests::every_budget_is_met_whenever_the_pool_can_meet_it)
+      | test(=pool::tests::every_entry_is_drawn_somewhere_over_the_seeds)
+      | test(=pool::tests::no_limit_is_exceeded_and_no_group_shares_a_floor)
+    )
+    |
+    package(undermere) & (
+        test(=armory::draughts::confusion_turns_every_step_a_random_way_for_the_adventurer_and_a_monster_alike_over_a_span_of_seeds)
+      | test(=armory::draughts::every_potion_is_found_unknown_under_its_face_and_known_once_drunk)
+      | test(=armory::magic::a_ring_of_regeneration_gives_ten_health_back_a_hundred_turns_a_level_and_a_cursed_one_halves_every_heal)
+      | test(=armory::magic::a_ring_of_wisdom_quickens_a_staffs_recharge_and_a_ring_of_reapings_blows_shorten_it)
+      | test(=armory::magic::a_staff_of_blinking_reaches_exactly_as_far_as_its_aim_at_every_level)
+      | test(=armory::magic::a_staff_of_firebolt_zapped_at_a_goblin_burns_it_and_spends_a_charge_that_comes_back_over_its_recharge)
+      | test(=armory::magic::every_staff_and_wand_is_found_unknown_under_its_face_and_known_once_zapped_at_a_goblin)
+      | test(=armory::magic::the_choirmasters_staff_lets_its_holder_regenerate_nothing_over_any_length_of_time)
+      | test(=armory::magic::the_choirmasters_staff_raises_a_body_for_thirty_turns_then_fades)
+      | test(=armory::play::a_dagger_kills_the_unaware_in_one_blow_far_more_often_than_a_sword_over_a_span_of_seeds)
+      | test(=armory::scrolls::every_scroll_is_found_unknown_under_its_title_and_known_once_read_where_it_is_plain)
+      | test(=armory::tests::knowing_a_level_raises_worth_a_hundred_a_level)
+      | test(=bestiary::tests::a_necromancer_with_no_body_in_reach_never_reaches_for_raise_dead)
+      | test(=captives::tests::exactly_one_floor_a_run_draws_holds_one_shackled_captive_offering_to_be_freed_over_a_span_of_seeds)
+      | test(=dungeon::tests::each_floor_draws_its_own_wall_and_floor_and_shows_nothing_its_biome_and_its_lairs_do_not_lay)
+      | test(=dungeon::tests::each_piece_grows_in_every_biome_and_recipe_it_may_stand_in_over_a_few_seeds)
+      | test(=dungeon::tests::every_floor_and_the_town_build_over_a_span_of_seeds_with_an_entry_and_a_way_on)
+      | test(=dungeon::tests::every_floor_is_the_same_whichever_floor_is_built_first)
+      | test(=dungeon::tests::every_lair_and_the_throne_is_entered_only_through_its_entries)
+      | test(=dungeon::tests::every_open_cell_of_every_floor_can_be_walked_to_from_its_entry_with_everything_standing)
+      | test(=dungeon::tests::every_prize_is_reached_once_its_key_lever_or_secret_is_found_over_forty_seeds)
+      | test(=dungeon::tests::every_recipe_grows_within_forty_attempts_and_meets_itself_over_a_few_seeds)
+      | test(=dungeon::tests::floor_ten_holds_whichever_boss_this_seed_draws_alone_at_its_own_throne)
+      | test(=dungeon::tests::no_monster_a_piece_stands_is_within_the_populations_distance_of_the_way_in)
+      | test(=dungeon::tests::over_a_span_of_seeds_no_run_exceeds_a_limit_every_entry_is_drawn_and_a_typical_run_picks_under_half_the_flavor_pool)
+      | test(=finds::tests::about_four_potions_of_strength_turn_up_over_a_run_over_a_span_of_seeds)
+      | test(=finds::tests::every_floor_holds_a_scroll_of_enchanting_and_its_things_besides_gold_over_a_span_of_seeds)
+      | test(=light::tests::a_camps_fire_lights_the_ground_round_it_and_still_does_once_the_run_is_continued_over_a_span_of_seeds)
+      | test(=light::tests::a_floor_drawn_as_the_spider_warrens_lays_nothing_that_glows)
+      | test(=light::tests::beyond_every_light_a_floor_is_seen_dimly_but_the_spider_warrens_truly_dark)
+      | test(=light::tests::every_biomes_ambient_falls_in_the_dim_band_but_the_spider_warrens_own_truly_dark_and_no_band_reads_brighter_than_the_one_above_it)
+      | test(=light::tests::every_place_is_lit_on_arrival_by_exactly_what_its_tiles_and_props_write)
+      | test(=light::tests::the_lantern_dims_as_the_adventurer_descends)
+      | test(=lore::tests::armor_found_is_called_unidentified_until_it_has_been_worn_two_hundred_turns)
+      | test(=mercenaries::knowing::tests::it_drinks_its_own_potion_when_hurt_unknown_or_not_and_the_adventurer_learns_the_kind_in_sight_and_not_out_of_it_over_a_span_of_seeds)
+      | test(=mercenaries::knowing::tests::it_puts_on_a_better_weapon_lying_in_sight_and_passes_over_an_unknown_one_counted_at_plain_numbers_over_a_span_of_seeds)
+      | test(=mercenaries::orders::tests::a_follower_keeps_within_three_of_the_adventurer_across_a_floor_with_nothing_to_fight_over_a_span_of_seeds)
+      | test(=mercenaries::orders::tests::fighting_freely_it_chases_a_foe_in_sight_and_comes_back_when_none_is_left_where_a_follower_lets_it_be_over_a_span_of_seeds)
+      | test(=mercenaries::orders::tests::on_hold_it_keeps_its_post_while_a_foe_is_in_sight_beyond_reach_over_a_span_of_seeds)
+      | test(=mercenaries::travel::tests::two_mercenaries_land_on_distinct_cells_beside_the_adventurer_the_nearer_placed_first_then_by_entity)
+      | test(=population::tests::a_feeding_ground_stands_a_beast_over_its_preys_own_engine_remains_over_a_span_of_seeds)
+      | test(=population::tests::a_floor_is_populated_on_first_arrival_away_from_the_entry)
+      | test(=population::tests::a_floor_is_populated_with_more_of_its_own_biomes_favored_kinds)
+      | test(=population::tests::every_favored_kind_spawns_on_every_floor_its_biome_stands_on)
+      | test(=population::tests::nothing_the_population_stands_cuts_the_way_in_off_from_the_way_down_over_a_span_of_seeds)
+      | test(=population::tests::the_dar_trio_is_placed_together_the_blademaster_leading_over_a_span_of_seeds)
+      | test(=population::tests::whichever_lair_a_floor_draws_holds_its_boss_and_every_monster_its_own_slots_stood_follows_it)
+      | test(=rumours::tests::the_innkeeper_tells_what_this_runs_floors_hold_boss_first_then_each_lair_each_biome_each_stratum_then_the_last_line_again)
+      | test(=run::tests::a_run_started_by_a_person_who_keeps_a_post_stands_beside_them_in_mereholt)
+      | test(=run::tests::a_run_started_on_a_floor_begins_on_that_floor)
+      | test(=seeming::tests::a_worn_thing_not_yet_known_reads_its_kinds_plain_armor_marked_until_it_is_familiar)
+      | test(=seeming::tests::an_unknown_worn_thing_reads_what_a_plain_one_of_its_kind_reads_whatever_its_level)
+      | test(=seeming::tests::what_the_pack_says_of_a_thing_whose_level_is_not_known_is_the_same_at_every_level)
+      | test(=stairs::tests::every_floor_has_one_way_up_and_but_the_last_one_down_to_the_floors_beside_it_through_a_save_over_a_span_of_seeds)
+      | test(=stairs::tests::every_way_down_leads_to_the_next_floor_and_every_way_up_back_to_the_last)
+      | test(=stairs::tests::taking_every_way_down_reaches_floor_ten)
+      | test(=tests::a_found_chain_mail_is_unidentified_and_says_how_long_until_its_level_is_known)
+      | test(=townsfolk::tests::the_wanderers_keep_to_mereholt_the_child_to_the_square_and_the_lamplighter_to_the_lamps_over_many_turns)
+      | test(=traps::tests::beside_a_secret_door_a_waiting_adventurer_finds_it_within_twenty_turns_on_nine_seeds_in_ten)
+      | test(=traps::tests::each_secret_is_told_by_what_finding_it_opens_over_seeds)
+      | test(=traps::tests::every_trap_is_on_a_walkable_cell_off_the_stairs_and_every_hidden_thing_is_reached_once_the_secrets_are_found)
+      | test(=traps::tests::secret_doors_and_hidden_rooms_by_depth_over_seeds)
+      | test(=traps::tests::traps_and_flagstones_by_depth_over_seeds)
+      | test(=vaults::tests::no_fall_or_far_step_lands_behind_a_lock_or_a_seal_over_a_span_of_seeds)
+      | test(=writings::tests::a_floor_with_a_feeling_piece_says_it_on_arrival_and_one_without_says_none)
+      | test(=writings::tests::a_remains_reads_the_same_line_twice_and_no_two_remains_in_a_run_share_one)
+    )
+)
+"""
 
-# CI reports every failure of a run, not only the first.
+[profile.default.junit]
+path = "junit.xml"
+
+# Both tiers, for a branch's end: `scripts/gate.sh --all`.
+[profile.full]
+default-filter = "all()"
+
+[profile.full.junit]
+path = "junit.xml"
+
+# CI runs both tiers and reports every failure of a run, not only the first.
 [profile.ci]
+default-filter = "all()"
 fail-fast = false
 slow-timeout = { period = "30s" }
 
+[profile.ci.junit]
+path = "junit.xml"
+
 [[profile.default.scripts]]
+filter = "all()"
+run-wrapper = "slot"
+
+[[profile.full.scripts]]
 filter = "all()"
 run-wrapper = "slot"
 
 [[profile.ci.scripts]]
 filter = "all()"
 run-wrapper = "slot"
+
+# The fingerprints first: each is one long scripted run in a binary of its
+# own, which nextest schedules after the libraries, so Undermere's otherwise
+# began once nearly everything else was done and played on alone at the end.
+[[profile.default.overrides]]
+filter = "binary(fingerprint)"
+priority = 100
+
+[[profile.ci.overrides]]
+filter = "binary(fingerprint)"
+priority = 100
+
+[[profile.full.overrides]]
+filter = "binary(fingerprint)"
+priority = 100

@@ -2,9 +2,14 @@
 # The gate a commit runs before it is made, scoped to what it can break.
 #
 #   scripts/gate.sh          the packages the branch touched and every package
-#                            that depends on one
-#   scripts/gate.sh --all    the code half of CI: the whole workspace, the tier
-#                            boundary and the wasm build, for a branch's end
+#                            that depends on one, their fast tests only
+#   scripts/gate.sh --all    the code half of CI: the whole workspace with its
+#                            slow tests, the tier boundary and the wasm build,
+#                            for a branch's end and before it merges
+#
+# The fast tier is nextest's default profile, everything but the slow tier
+# that .config/nextest.toml names: the play-throughs and whole-run sweeps,
+# which a commit of a feature does not need and a branch's end runs once.
 #
 # What the branch touched is every file changed since it left local `main`,
 # committed or not, and untracked files beside them. A file in a package's
@@ -22,6 +27,12 @@
 # crate that has not changed. Doc-tests are compiled afresh on every run, so
 # they are run only for the touched packages and their dependents.
 #
+# After the tests, scripts/test-times.py names the slowest and holds the run
+# to its budget: the whole workspace's with both tiers for `--all`, the fast
+# tier's for a commit that touched every package, Undermere's fast tier's for
+# one that touched only Undermere, and the per-test limits for any other set
+# (AGENTS.md, "Writing fast tests").
+#
 # RL_FULL_SEEDS=1 is passed through, for the generation tests' full range.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
@@ -34,7 +45,8 @@ step() {
 if [ "${1:-}" = "--all" ]; then
     step cargo fmt --all --check
     step cargo clippy --workspace --all-targets -- -D warnings
-    step cargo nextest run --workspace
+    step cargo nextest run --workspace --profile full
+    step scripts/test-times.py --profile full --check full --top 10
     step cargo test --doc --workspace
     step scripts/check-tiers.sh
     step scripts/check-tiers.sh --wasm
@@ -99,5 +111,9 @@ fi
 echo "gate: testing $packages"
 filter=$(printf ' | package(%s)' $packages)
 step cargo nextest run --workspace -E "${filter# | }"
+scope=tests
+[ "$packages" = undermere ] && scope=undermere
+[ "$packages" = "$(cargo metadata --format-version 1 --no-deps | python3 -c 'import json, sys; print(" ".join(sorted(p["name"] for p in json.load(sys.stdin)["packages"])))')" ] && scope=fast
+step scripts/test-times.py --check "$scope" --top 10
 step cargo test --doc $(printf -- ' -p %s' $packages)
 echo "gate: passed"
