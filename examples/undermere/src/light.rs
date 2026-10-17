@@ -145,20 +145,15 @@ mod tests {
         let band = |light: Light| LightBand::of(light.intensity, threshold, bright);
         assert_eq!(band(Undermere::new(RunSeed(0)).ambient_of(TOWN)), LightBand::Dim, "Mereholt at dusk");
 
-        // Every one of the nine floors' biomes, over a span of seeds, by
-        // the band its own floors fall in: (1, 2), (3, 4), (5, 6), (7, 8)
-        // or (9, 9), so a band's biomes never read brighter than the
-        // band above it, whichever of them a seed draws.
+        // Every one of the nine floors' biomes, read from the file rather
+        // than drawn, by the band its own floors fall in: (1, 2), (3, 4),
+        // (5, 6), (7, 8) or (9, 9), so a band's biomes never read brighter
+        // than the band above it, whichever of them a seed draws.
         let mut by_band: std::collections::BTreeMap<(u32, u32), Vec<Light>> = std::collections::BTreeMap::new();
-        for s in 0..60u64 {
-            let undermere = Undermere::new(RunSeed(s));
-            for floor in 1..FLOORS {
-                let drawn = undermere.biome_of(floor);
-                let key = (drawn.first, drawn.last);
-                let seen = by_band.entry(key).or_default();
-                if !seen.contains(&drawn.ambient) {
-                    seen.push(drawn.ambient);
-                }
+        for drawn in Undermere::new(RunSeed(0)).every_draw().into_iter().filter(|d| d.last < FLOORS) {
+            let seen = by_band.entry((drawn.first, drawn.last)).or_default();
+            if !seen.contains(&drawn.ambient) {
+                seen.push(drawn.ambient);
             }
         }
         let bands: Vec<((u32, u32), Vec<Light>)> = by_band.into_iter().collect();
@@ -327,46 +322,41 @@ mod tests {
         }
     }
 
-    /// The Spider Warrens are truly dark, so nothing their own decor lays
-    /// sheds light: no glowing tile on any floor drawn as the warrens, and
-    /// none of the pieces it furnishes with stands a lit prop. What else
-    /// lights a warren is a risk-and-reward piece's own, a camp's fire or
-    /// the lantern, each a light somebody put there.
+    /// The Spider Warrens are truly dark, so nothing a floor of them may
+    /// show sheds light, read from the files with no floor grown: their
+    /// ambient is nought, no tile their floors may show glows, whatever
+    /// recipe they are grown by and on every floor they stand on, and none
+    /// of the pieces they furnish with stands a lit prop. What else lights a
+    /// warren is a risk-and-reward piece's own prop, a camp's fire or the
+    /// lantern, each a light somebody put there. That a grown floor shows
+    /// no tile beyond those is the run's backstop's to hold.
     #[test]
     fn a_floor_drawn_as_the_spider_warrens_lays_nothing_that_glows() {
         let registries = crate::content::registries();
-        let mut checked = 0;
-        for s in 0..30 {
-            let undermere = Undermere::new(RunSeed(s));
-            let glows = |tile: TileId| undermere.tiles().get(tile).light.is_some();
-            for floor in 1..FLOORS {
-                let drawn = undermere.biome_of(floor);
-                if drawn.name != "the Spider Warrens" {
-                    continue;
+        let undermere = Undermere::new(RunSeed(0));
+        let warrens: Vec<crate::dungeon::BiomeDraw> = undermere.every_draw().into_iter().filter(|d| d.name == "the Spider Warrens").collect();
+        assert!(!warrens.is_empty(), "the Spider Warrens are a biome");
+        for drawn in &warrens {
+            assert_eq!(drawn.ambient, Light::DARK, "the warrens' ambient is nought");
+            for floor in drawn.first..=drawn.last {
+                let glowing: Vec<String> = undermere
+                    .tiles_a_floor_may_show(floor, drawn)
+                    .into_iter()
+                    .filter(|name| undermere.tiles().get(undermere.tiles().expect(name)).light.is_some())
+                    .collect();
+                assert!(glowing.is_empty(), "floor {floor} of the warrens grown as {} may show {glowing:?}, which glows", drawn.recipe);
+            }
+            for decor in &drawn.decor {
+                if let crate::dungeon::Decor::Furnish { piece, .. } = decor {
+                    let defs = undermere.prefabs().defs();
+                    let lit = defs.get(defs.expect(piece)).slots().any(|(_, slot)| match slot {
+                        Slot::Prop(id) => registries.props.get(*id).light.is_some(),
+                        _ => false,
+                    });
+                    assert!(!lit, "the warrens furnish with {piece:?}, which sheds light");
                 }
-                assert_eq!(drawn.ambient, Light::DARK, "the warrens' ambient is nought");
-                for decor in &drawn.decor {
-                    match decor {
-                        crate::dungeon::Decor::Patches { tile, .. } => {
-                            assert!(!glows(*tile), "the warrens strew {:?}, which glows", undermere.tiles().get(*tile).name);
-                        }
-                        crate::dungeon::Decor::Furnish { piece, .. } => {
-                            let defs = undermere.prefabs().defs();
-                            let lit = defs.get(defs.expect(piece)).slots().any(|(_, slot)| match slot {
-                                Slot::Prop(id) => registries.props.get(*id).light.is_some(),
-                                _ => false,
-                            });
-                            assert!(!lit, "the warrens furnish with {piece:?}, which sheds light");
-                        }
-                    }
-                }
-                let built = undermere.build(map_of(floor), None).unwrap();
-                let glowing: Vec<Point> = built.terrain.iter().filter(|(_, t)| glows(*t)).map(|(p, _)| p).collect();
-                assert!(glowing.is_empty(), "seed {s}, floor {floor}: the warrens glow at {glowing:?}");
-                checked += 1;
             }
         }
-        assert!(checked > 0, "some seed drew the Spider Warrens");
     }
 
     /// On the first arrival in Mereholt every one of its lights is lit, the

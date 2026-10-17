@@ -243,6 +243,50 @@ fn walk_from(from: Point, open: impl Fn(Point) -> bool) -> BTreeMap<Point, u32> 
     seen
 }
 
+/// On a floor `built` that lays a lock or a seal, no cell a fall or a
+/// potion of descent may land on, and none a scroll of teleportation may
+/// send its reader to from anywhere on the floor, lies behind one: among
+/// the cells a walk from the way in reaches with every lock opened and
+/// does not with them all shut. For the run's backstop over every floor of
+/// a span of seeds; [`open_to_the_way_in`] is the one rule both draws keep,
+/// and its own tests hold it on a floor made for them. Whether the floor
+/// laid any lock comes back, so the span can be held to having checked
+/// some. `at` names the floor and seed.
+#[cfg(test)]
+pub(crate) fn nothing_lands_behind_a_lock(tables: &TileTables, built: PlaceBuild, map: MapId, at: &str) -> bool {
+    use crate::effects::moving::{far_choices_among, landing_cells};
+    if built.locks.is_empty() {
+        return false;
+    }
+    let mut world = WorldMap::new(tables.clone());
+    world.install_place(map, built);
+    world.switch_to(map);
+    let place = world.place(map).expect("installed");
+    let tables = world.tables();
+    let tile = |p: Point| place.secrets.iter().find(|x| x.at == p).map(|x| x.is).or_else(|| place.terrain.get(p));
+    let passable = |p: Point| tile(p).is_some_and(|t| tables.passable[t.index()]);
+    let locked = |p: Point| place.locks.iter().any(|l| l.at == p);
+    let opened = walk_from(place.entry, passable);
+    let shut = walk_from(place.entry, |p| !locked(p) && passable(p));
+    let behind: BTreeSet<Point> = opened.keys().copied().filter(|p| !shut.contains_key(p) && !locked(*p)).collect();
+    assert!(!behind.is_empty(), "{at}: a lock with nothing behind it");
+    let walkable = |p: Point| world.is_walkable_on(map, p);
+    let landings = landing_cells(&world, map, |_| true);
+    assert!(!landings.is_empty(), "{at}: somewhere to land");
+    if let Some(p) = landings.iter().find(|p| behind.contains(p)) {
+        panic!("{at}: a fall may land at {p:?}, behind a lock");
+    }
+    // The floor walked once for every far step asked of it, as
+    // `far_choices` walks it once for each.
+    let reached = open_to_the_way_in(place, tables);
+    for from in shut.keys().copied().filter(|p| walkable(*p)).step_by(17) {
+        if let Some(p) = far_choices_among(&world, from, walkable, Some(&reached)).iter().find(|p| behind.contains(p)) {
+            panic!("{at}: a far step from {from:?} may land at {p:?}, behind a lock");
+        }
+    }
+    true
+}
+
 /// Every cell of `place` walked to from its way in with each lock and seal
 /// still shut taken for a wall and each cell a secret hides taken for what
 /// it really is: everywhere a body put down could walk back from. A fall

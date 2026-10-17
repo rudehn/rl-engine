@@ -515,6 +515,8 @@ impl Library {
         let abilities = abilities(&registries, kinds);
         let traits = crate::traits::load_defs(&registries, abilities.defs());
         let armory = Armory::load(&registries, &traits, kinds, moments);
+        let laid = crate::finds::problems(&armory, &registries);
+        assert!(laid.is_empty(), "assets/item_spawns.ron: {laid:#?}");
         let bestiary = Bestiary::load(&registries, &traits, &armory.defs, kinds, moments);
         crate::effects::bodies::check_calls(abilities.defs(), &bestiary.defs).unwrap_or_else(|e| panic!("assets/abilities.ron: {e}"));
         let faces = crate::lore::Faces::load(&registries, &armory.defs);
@@ -550,6 +552,124 @@ mod tests {
         assert!(!library.bestiary.spawns.entries().is_empty(), "monster_spawns.ron has rows");
     }
 
+    /// Every quoted string in Undermere's own files and code but the tests,
+    /// the pieces and the dressings, and `read`, the files the check reads
+    /// for itself: what a name is looked for in when no table, piece or
+    /// list the check reads reaches it, so a kind a shop, a kit, a rite or
+    /// a line of code names is not taken for one nothing names, and a row
+    /// of a table on no floor of the ten, or a slot of a piece no run lays,
+    /// is not taken for one something does.
+    fn quoted_elsewhere(read: &[&str]) -> std::collections::BTreeSet<String> {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut files: Vec<std::path::PathBuf> = Vec::new();
+        let mut dirs = vec![root.join("assets"), root.join("src")];
+        while let Some(dir) = dirs.pop() {
+            for entry in std::fs::read_dir(&dir).expect("a directory of the game's own").flatten() {
+                let path = entry.path();
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default().to_string();
+                if path.is_dir() && name != "testing" && name != "prefabs" {
+                    dirs.push(path);
+                } else if path.extension().is_some_and(|e| e == "ron" || e == "rs")
+                    && name != "tests.rs"
+                    && name != "dressings.ron"
+                    && !read.contains(&name.as_str())
+                {
+                    files.push(path);
+                }
+            }
+        }
+        let mut quoted = std::collections::BTreeSet::new();
+        for path in files {
+            let text = std::fs::read_to_string(&path).expect("readable");
+            // A file's own tests name content to test it, not to lay it:
+            // the module of them inline, never a `mod tests;` naming a
+            // file of its own, which the walk above leaves out by name.
+            let text = text.split("#[cfg(test)]\nmod tests {").next().unwrap_or_default();
+            let mut parts = text.split('"');
+            parts.next();
+            while let Some(inside) = parts.next() {
+                quoted.insert(inside.to_string());
+                parts.next();
+            }
+        }
+        quoted
+    }
+
+    /// Nothing in the content is orphaned: every monster, item and prop is
+    /// reached by something a run draws, at a floor that something can
+    /// actually draw it on, read from the files with no floor grown. A
+    /// monster by a row of the spawn table on a floor of the ten, a piece
+    /// or a dressing a run lays, a role such a piece draws for, or a boss's
+    /// throne or lair; an item by a row a floor's things draw by kind, the
+    /// scroll and the gold every floor lays, or one a container, a slot or
+    /// a drop asks for by name or tag at a band of the ten; a prop by a
+    /// piece or a dressing a run lays, or `assets/hidden.ron`. What none of
+    /// those reaches is looked for, by its quoted name, in every other file
+    /// and line of code but the tests, for a band, a feeding ground, a call
+    /// of the drowned, a shop, a kit, a rite or a system that names it;
+    /// what is named nowhere at all is content no run ever meets.
+    #[test]
+    fn nothing_in_the_content_is_orphaned() {
+        use rl_engine::rl_rules::prefab::Reached;
+        let library = Library::load(&effect_kinds(), &Moments::default());
+        let (registries, armory, bestiary) = (&library.registries, &library.armory, &library.bestiary);
+        let undermere = crate::dungeon::Undermere::new(rl_engine::rl_core::RunSeed(0));
+        let prefabs = undermere.prefabs();
+        let (pieces, dressings) = undermere.laid_files();
+        let mut reached: Reached<crate::bestiary::MonsterDef> =
+            Reached::by(pieces.iter().filter_map(|p| prefabs.defs().id(p)).map(|id| prefabs.defs().get(id)), &registries.props);
+        let laid_dressings = Reached::by(dressings.iter().filter_map(|d| prefabs.dressings().id(d)).map(|id| prefabs.dressings().get(id)), &registries.props);
+        reached.props.extend(laid_dressings.props);
+        reached.monsters.extend(laid_dressings.monsters);
+        reached.roles.extend(laid_dressings.roles);
+        reached.items.extend(laid_dressings.items);
+        reached.tags.extend(laid_dressings.tags);
+        let hiding = crate::traps::Hiding::load();
+        for name in hiding.props() {
+            reached.prop(registries.props.expect(name), &registries.props);
+        }
+        let floors = 1..=crate::dungeon::FLOORS as i32;
+        let on_a_floor = |(lo, hi): (i32, i32)| lo <= *floors.end() && hi >= *floors.start();
+
+        let mut monsters: std::collections::BTreeSet<String> = bestiary
+            .spawns
+            .entries()
+            .iter()
+            .filter(|r| r.weight > 0 && on_a_floor((r.min_band, r.max_band)))
+            .map(|r| bestiary.defs.get(r.item).name.clone())
+            .collect();
+        monsters.extend(reached.monsters.iter().map(|id| bestiary.defs.get(*id).name.clone()));
+        monsters.extend(reached.roles.iter().flat_map(|r| prefabs.roles().get(*r).members.iter().map(|m| bestiary.defs.get(*m).name.clone())));
+        monsters.extend(crate::dungeon::FINAL_BOSSES.iter().map(|b| b.name.to_string()).chain(crate::dungeon::MINI_BOSSES.iter().map(|b| b.name.to_string())));
+
+        let kinds: Vec<_> = crate::finds::KINDS.iter().filter(|(_, w)| *w > 0).filter_map(|(name, _)| registries.tags.id(name)).collect();
+        let mut items: std::collections::BTreeSet<String> = armory
+            .table
+            .rows()
+            .iter()
+            .filter(|r| r.weight > 0 && on_a_floor(r.bands) && r.tags.iter().any(|t| kinds.contains(t) || reached.tags.contains(t)))
+            .map(|r| armory.defs.get(r.item).name.clone())
+            .collect();
+        items.extend(reached.items.iter().cloned());
+        items.extend([crate::finds::LAID, crate::finds::GOLD].map(String::from));
+        for (_, def) in bestiary.defs.iter().filter(|(_, d)| monsters.contains(&d.name)) {
+            items.extend(def.parts.drops.0.iter().map(|row| armory.defs.get(row.item).name.clone()));
+        }
+
+        let props: std::collections::BTreeSet<String> = reached.props.iter().map(|id| registries.props.get(*id).name.clone()).collect();
+
+        let mut orphans = Vec::new();
+        let read = ["monsters.ron", "monster_spawns.ron", "roles.ron", "biomes.ron", "pool.ron", "items.ron", "item_spawns.ron", "props.ron", "hidden.ron"];
+        let quoted = quoted_elsewhere(&read);
+        for (unreached, what) in [
+            (bestiary.defs.iter().map(|(_, d)| d.name.clone()).filter(|n| !monsters.contains(n)).collect::<Vec<_>>(), "monster"),
+            (armory.defs.iter().map(|(_, d)| d.name.clone()).filter(|n| !items.contains(n)).collect(), "item"),
+            (registries.props.iter().map(|(_, d)| d.name.clone()).filter(|n| !props.contains(n)).collect(), "prop"),
+        ] {
+            orphans.extend(unreached.into_iter().filter(|n| !quoted.contains(n)).map(|n| format!("{what} {n:?}")));
+        }
+        assert!(orphans.is_empty(), "reached by nothing a run draws and named nowhere else: {orphans:#?}");
+    }
     /// The registries hold every side, kind, status, slot and tag the
     /// files write, so a file naming one of them reads.
     #[test]

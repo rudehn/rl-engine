@@ -1294,66 +1294,57 @@ mod tests {
         assert_eq!(world.get::<Consumable>(rod).map(|c| (c.left, c.max)), Some((2, 4)), "one more held, one more left");
     }
 
-    /// A ring is found at one to three, or cursed at minus one to minus
-    /// three about three times in ten, however deep, over a span of seeds;
-    /// a potion takes no levels and draws nothing from the stream, so
-    /// finding one deals the floor's loot as it was dealt before levels
-    /// were found.
+    /// A ring is found at one to three, cursed below nought or not, however
+    /// deep, over a span of seeds; a potion takes no levels and draws
+    /// nothing from the stream, so finding one deals the floor's loot as it
+    /// was dealt before levels were found. How often a ring is cursed is
+    /// [`CURSED_RINGS_IN_TEN`], read where it is written rather than
+    /// counted off a thousand draws.
     #[test]
-    fn a_ring_is_found_at_one_to_three_or_cursed_about_three_times_in_ten_and_a_potion_draws_nothing() {
+    fn a_ring_is_found_at_one_to_three_cursed_or_not_and_a_potion_draws_nothing() {
         use rand::RngCore;
         let library = library();
         let (ring, potion) = (library.armory.defs.expect("ring of light"), library.armory.defs.expect("potion of healing"));
-        let mut cursed = 0;
-        for seed in 0..1000 {
+        let mut cursed = std::collections::BTreeSet::new();
+        for seed in 0..100 {
             let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
             let level = library.armory.found_level(ring, 1 + (seed % 10) as i32, &library.registries, &mut rng);
             assert!(RING_LEVELS.contains(&level.abs()), "seed {seed}: {level}");
-            cursed += u32::from(level < 0);
+            cursed.insert(level < 0);
             let (mut drew, mut fresh) = (rand::rngs::StdRng::seed_from_u64(seed), rand::rngs::StdRng::seed_from_u64(seed));
             assert_eq!(library.armory.found_level(potion, 10, &library.registries, &mut drew), 0);
             assert_eq!(drew.next_u64(), fresh.next_u64(), "seed {seed}: a potion draws nothing");
         }
-        assert!((240..=360).contains(&cursed), "{cursed} in a thousand");
+        assert_eq!(cursed.len(), 2, "rings are found both cursed and not");
     }
 
-    /// How many of two thousand `name`s found on floor `floor` came at each
-    /// level from minus three to plus two.
-    fn found_on(library: &Library, name: &str, floor: i32) -> [u32; 6] {
-        let def = library.armory.defs.expect(name);
-        let mut at = [0; 6];
-        for seed in 0..2000 {
-            let level = library.armory.found_level(def, floor, &library.registries, &mut rand::rngs::StdRng::seed_from_u64(seed));
-            assert!((-3..=2).contains(&level), "{name} on floor {floor}, seed {seed}: {level}");
-            at[(level + 3) as usize] += 1;
-        }
-        at
-    }
-
-    /// A weapon or a piece of armor is cursed one time in five, at minus
-    /// one to minus three, however deep it is found; otherwise it is at
-    /// least one better ten times in a hundred for every floor down, and
-    /// from floor four two better five times in a hundred for every floor,
-    /// over a span of seeds: on floor one a tenth of what is not cursed is
-    /// better, on floor four two fifths and half of that two better, and
-    /// on floor ten all of it, half two better.
+    /// A weapon or a piece of armor found uncursed is better by exactly
+    /// the shares [`better_by`] gives, counted over every roll of a hundred
+    /// rather than sampled: on floor one a tenth of it is one better, on
+    /// floor four two fifths and half of that two better, and on floor ten
+    /// all of it, half two better. One cursed is one to three below nought,
+    /// and everything found lies between minus three and plus two, over a
+    /// span of seeds; how often one is cursed is [`CURSED_GEAR_IN_FIVE`].
     #[test]
-    fn a_weapon_or_armor_found_deeper_is_more_often_better_and_one_in_five_is_cursed_over_a_span_of_seeds() {
+    fn a_weapon_or_armor_found_deeper_is_more_often_better_by_the_shares_better_by_gives() {
+        for (floor, one, two) in [(1, 10, 0), (4, 20, 20), (10, 50, 50)] {
+            let count = |level: i32| (0..100).filter(|pct| better_by(floor, *pct) == level).count();
+            assert_eq!((count(1), count(2)), (one, two), "floor {floor}: of a hundred uncursed, how many one and two better");
+        }
         let library = library();
-        // Of the uncursed, the percent at +1 and at +2, each within five.
-        let near = |got: u32, of: u32, pct: u32| (got * 100).abs_diff(of * pct) <= of * 5;
         for name in ["sword", "chain mail"] {
-            for (floor, one, two) in [(1, 10, 0), (4, 20, 20), (10, 50, 50)] {
-                let at = found_on(&library, name, floor);
-                let cursed: u32 = at[..3].iter().sum();
-                assert!((340..=460).contains(&cursed), "{name} on floor {floor}: {cursed} of 2000 cursed, {at:?}");
-                assert!(at[..3].iter().all(|n| n * 3 * 10 >= cursed * 8), "{name} on floor {floor}: each of minus one to three alike, {at:?}");
-                let whole = 2000 - cursed;
-                assert!(near(at[4], whole, one) && near(at[5], whole, two), "{name} on floor {floor}: {at:?}");
+            let def = library.armory.defs.expect(name);
+            let mut cursed = std::collections::BTreeSet::new();
+            for seed in 0..200 {
+                let level = library.armory.found_level(def, 1 + (seed % 10) as i32, &library.registries, &mut rand::rngs::StdRng::seed_from_u64(seed));
+                assert!((-3..=2).contains(&level), "{name}, seed {seed}: {level}");
+                if level < 0 {
+                    cursed.insert(level);
+                }
             }
+            assert_eq!(cursed, std::collections::BTreeSet::from([-3, -2, -1]), "{name}: each of one to three below nought when cursed");
         }
     }
-
     /// A thing found that takes levels and is worn is not known to be any
     /// level yet; one found that is not worn, or that takes none, is.
     #[test]

@@ -245,40 +245,61 @@ mod tests {
         assert_eq!(looks(&mut carried_on), expected, "continued");
     }
 
-    /// Over a span of seeds, every floor has exactly one way up and, but
-    /// the tenth, one way down, and nothing else that leads anywhere: the
-    /// way up of every floor below the first is a stair to the floor
-    /// above's way down, floor one's is the gate onto Mereholt's, as the
-    /// ladder leaves it to Undermere, and every way down is a stair to the
-    /// floor below's way in. Mereholt's one way is the gate to floor one.
-    /// A run continued from the save the last arrival wrote has every
-    /// floor's ways again, where they stood and leading where they led,
-    /// once.
+    /// The run's backstop on foot: from Mereholt's gate down every stair to
+    /// the throne, over a span of seeds, every floor is joined to the next
+    /// as the ladder says and is never cut off by what its arrival stood
+    /// on it. Mereholt's one way is the gate to floor one; every floor has
+    /// exactly one way up and, but the tenth, one way down, and nothing
+    /// else that leads anywhere, floor one's way up the gate onto
+    /// Mereholt's; the way down stands free to land on, and taking it lands
+    /// on the next floor's way in, with a way back up underfoot. Whatever
+    /// the arrival stood that blocks, a camp's fire first among them, never
+    /// stands between the way in and the way down, doors opened: seed 49's
+    /// fire, lit in a corridor on floor five, once held every delve of it
+    /// there for good. A run continued from the save the last arrival wrote
+    /// has every floor's ways again, where they stood and leading where
+    /// they led, once. The ladder and the population each own their half on
+    /// a map of their own; this is the real floors, walked.
     #[test]
-    fn every_floor_has_one_way_up_and_but_the_last_one_down_to_the_floors_beside_it_through_a_save_over_a_span_of_seeds() {
-        crate::testing::par_seeds(crate::testing::seeds(0..3), |s| {
+    fn every_floor_walked_down_to_is_joined_to_the_next_and_never_cut_off_by_what_stands_on_it_through_a_save_over_a_span_of_seeds() {
+        // Four seeds a day rather than `seeds`' eight: the ladder is the
+        // engine's, tested on a ladder of its own, the one thing the
+        // population stands in the way is a camp's fire, whose cell
+        // `camp_fire_cell` keeps in the open on made-up ground, and the
+        // run's grown backstop already walks every floor with everything
+        // a piece stands. Every seed of the span under `RL_FULL_SEEDS`.
+        crate::testing::par_seeds(crate::testing::first_seeds(0..50, 4), |s| {
             let mut app = headless(RunSeed(s));
             let me = arrive(&mut app, TOWN);
             crate::testing::sturdy(&mut app, me);
+            let gate = app.world().resource::<WorldMap>().place(TOWN).expect("Mereholt").exit.expect("the gate's cell");
+            assert_eq!(ways_on(&mut app, TOWN), [(gate, Destination::Place { map: map_of(1), arrive: Arrive::Entry }, Way::Gate)], "seed {s}: Mereholt");
+            stand_on(&mut app, me, gate);
+            go_through(&mut app, me);
             let mut seen = Vec::new();
-            let town = app.world().resource::<WorldMap>().place(TOWN).expect("Mereholt").exit.expect("the gate's cell");
-            assert_eq!(ways_on(&mut app, TOWN), [(town, Destination::Place { map: map_of(1), arrive: Arrive::Entry }, Way::Gate)], "seed {s}: Mereholt");
             for floor in 1..=FLOORS {
-                arrive(&mut app, map_of(floor));
+                assert_eq!(here(&app), map_of(floor), "seed {s}: the way down from floor {}", floor - 1);
                 let place = app.world().resource::<WorldMap>().place(map_of(floor)).expect("built");
+                assert_eq!(at(&app, me), place.entry, "seed {s}, floor {floor}: arrived at its way in");
                 let up = match floor {
                     1 => (place.entry, Destination::Place { map: TOWN, arrive: Arrive::Exit }, Way::Gate),
                     _ => (place.entry, Destination::Place { map: map_of(floor - 1), arrive: Arrive::Exit }, Way::Up),
                 };
                 let mut expected = vec![up];
+                let down = place.exit;
                 if floor < FLOORS {
-                    let exit = place.exit.expect("a floor above the throne has a way on");
+                    let exit = down.unwrap_or_else(|| panic!("seed {s}, floor {floor}: a floor above the throne has a way on"));
                     expected.push((exit, Destination::Place { map: map_of(floor + 1), arrive: Arrive::Entry }, Way::Down));
                 }
                 expected.sort_by_key(|(p, _, _)| *p);
                 let ways = ways_on(&mut app, map_of(floor));
                 assert_eq!(ways, expected, "seed {s}, floor {floor}");
                 seen.push(ways);
+                let Some(down) = down else { continue };
+                nothing_standing_cuts_the_way_in_off_from_the_way_down(&mut app, map_of(floor), down, &format!("seed {s}, floor {floor}"));
+                stand_on(&mut app, me, down);
+                assert_eq!(at(&app, me), down, "seed {s}, floor {floor}: the way down stood free to land on");
+                go_through(&mut app, me);
             }
             let text = app.world().resource::<rl_engine::rl_save::Saves>().load(crate::save::SLOT).expect("reads").expect("saved on arrival");
             let mut again = crate::testing::continued(&text);
@@ -287,6 +308,27 @@ mod tests {
             }
             assert_eq!(ways_on(&mut again, TOWN).len(), 1, "seed {s}: Mereholt's gate, continued");
         });
+    }
+
+    /// The way down at `down` on `map` is reached from the way in round
+    /// every prop that blocks, doors opened.
+    fn nothing_standing_cuts_the_way_in_off_from_the_way_down(app: &mut App, map: MapId, down: Point, at: &str) {
+        let world = app.world_mut();
+        let blocked: Vec<Point> =
+            world.query_filtered::<(&Position, &OnMap), (With<Prop>, With<Blocks>)>().iter(world).filter(|(_, on)| on.0 == map).map(|(p, _)| p.0).collect();
+        let world_map = app.world().resource::<WorldMap>();
+        let entry = world_map.place(map).expect("built").entry;
+        let mut reached = vec![entry];
+        let mut seen: std::collections::BTreeSet<Point> = reached.iter().copied().collect();
+        while let Some(p) = reached.pop() {
+            for next in geometry::square(p, 1) {
+                let door = world_map.tile(next).is_some_and(|t| world_map.tables().names[t.index()] == "door");
+                if (world_map.is_walkable_on(map, next) || door) && !blocked.contains(&next) && seen.insert(next) {
+                    reached.push(next);
+                }
+            }
+        }
+        assert!(seen.contains(&down), "{at}: the way down at {down:?} is cut off from the way in at {entry:?}");
     }
 
     #[test]
@@ -301,32 +343,6 @@ mod tests {
                 [(entry, Destination::Place { map: map_of(FLOORS - 1), arrive: Arrive::Exit }, Way::Up)],
                 "seed {s}: the last floor's one way is back up"
             );
-        }
-    }
-
-    /// Down every stair from the town to the throne: each floor's way down
-    /// leads to the next floor's way in, and each floor below the first has
-    /// a way up to the one above's way down.
-    #[test]
-    fn every_way_down_leads_to_the_next_floor_and_every_way_up_back_to_the_last() {
-        for s in 0..2 {
-            let mut app = headless(RunSeed(s));
-            let me = arrive(&mut app, TOWN);
-            let gate = ways_here(&mut app)[0].0;
-            stand_on(&mut app, me, gate);
-            go_through(&mut app, me);
-            for floor in 1..FLOORS {
-                let down =
-                    ways_here(&mut app).into_iter().find(|(_, _, w)| *w == Way::Down).unwrap_or_else(|| panic!("seed {s}: floor {floor} has a way down"));
-                assert_eq!(down.1, Destination::Place { map: map_of(floor + 1), arrive: Arrive::Entry }, "seed {s}, floor {floor}");
-                stand_on(&mut app, me, down.0);
-                assert_eq!(at(&app, me), down.0, "seed {s}, floor {floor}: the way down stood free to land on");
-                go_through(&mut app, me);
-                assert_eq!(here(&app), map_of(floor + 1), "seed {s}: the way down from floor {floor}");
-                let up =
-                    ways_here(&mut app).into_iter().find(|(_, _, w)| *w == Way::Up).unwrap_or_else(|| panic!("seed {s}: floor {} has a way up", floor + 1));
-                assert_eq!((up.0, up.1), (at(&app, me), Destination::Place { map: map_of(floor), arrive: Arrive::Exit }), "seed {s}, floor {}", floor + 1);
-            }
         }
     }
 
@@ -346,29 +362,6 @@ mod tests {
             assert_eq!(here(&app), map_of(1), "seed {s}: through the gate is floor one");
             let entry = app.world().resource::<WorldMap>().place(map_of(1)).unwrap().entry;
             assert_eq!(at(&app, me), entry, "seed {s}: at its way in");
-        }
-    }
-
-    /// Down every way from Mereholt to the throne, stood on each as
-    /// Foundry's lift tests stand on a lift: the gate to floor one, and
-    /// every floor's way down to the next, until the tenth.
-    #[test]
-    fn taking_every_way_down_reaches_floor_ten() {
-        for s in 0..3 {
-            let mut app = headless(RunSeed(s));
-            let me = crate::testing::adventurer(&mut app);
-            crate::testing::sturdy(&mut app, me);
-            let gate = ways_here(&mut app).into_iter().find(|(_, _, w)| *w == Way::Gate).expect("Mereholt's gate").0;
-            stand_on(&mut app, me, gate);
-            go_through(&mut app, me);
-            for floor in 1..FLOORS {
-                assert_eq!(here(&app), map_of(floor), "seed {s}");
-                let down =
-                    ways_here(&mut app).into_iter().find(|(_, _, w)| *w == Way::Down).unwrap_or_else(|| panic!("seed {s}: floor {floor} has a way down")).0;
-                stand_on(&mut app, me, down);
-                go_through(&mut app, me);
-            }
-            assert_eq!(here(&app), map_of(FLOORS), "seed {s}: the last way down reaches the throne's floor");
         }
     }
 

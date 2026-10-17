@@ -227,23 +227,34 @@ fn a_monster_lists_each_trait_once() {
     assert_eq!(errors, ["rat: lists `regenerates` twice"]);
 }
 
-/// Every floor of the ten has something to draw, and the Drowned King
-/// and his knights are drawn on none of them: the throne's piece stands
-/// them on floor ten, at its slots, and a table that could draw them
-/// would put a second king on a floor, or his court out walking it.
+/// The Drowned King's knights are the throne's alone: its piece stands
+/// them on floor ten, at its slots, and a table that could draw one would
+/// put his court out walking a floor. That every floor has something to
+/// draw and no row draws a boss is the bestiary's load, which
+/// [`spawn_problems`] holds it to.
 #[test]
-fn every_band_of_the_spawn_table_can_draw_a_monster_and_only_floor_ten_has_the_king() {
+fn the_court_is_drawn_on_no_floor_of_the_spawn_table() {
     let library = library();
     let bestiary = &library.bestiary;
-    assert_eq!(bestiary.spawns.gaps(1..=DEEPEST), Vec::<i32>::new(), "a floor with nothing to draw");
-    let king = bestiary.defs.expect("the Drowned King");
-    assert!(bestiary.defs.get(king).boss);
-    for floor in 1..=DEEPEST {
-        assert!(bestiary.spawns.at(floor).all(|row| row.item != king), "the king drawn on floor {floor}");
-        assert!(bestiary.spawns.at(floor).all(|row| !bestiary.defs.get(row.item).boss), "a boss drawn on floor {floor}");
-    }
     let court = bestiary.defs.expect("skeleton knight");
     assert!((1..=DEEPEST).all(|floor| bestiary.spawns.at(floor).all(|row| row.item != court)), "the court is the throne's alone, drawn on no floor");
+}
+
+/// A floor with nothing to draw and a row drawing a boss are each refused
+/// by name, and a boss row past the floors, or of nought weight, is not.
+#[test]
+fn a_spawn_table_with_a_floor_left_empty_or_a_boss_drawn_on_a_floor_is_refused_naming_each() {
+    let library = library();
+    let defs = &library.bestiary.defs;
+    let (king, rat) = (defs.expect("the Drowned King"), defs.expect("rat"));
+    let table = BandedTable::new(vec![
+        BandedEntry::new(rat).bands(1, 9),
+        BandedEntry::new(king).bands(4, 4).weight(1),
+        BandedEntry::new(king).bands(11, 12).weight(1),
+        BandedEntry::new(king).bands(1, 10).weight(0),
+    ]);
+    assert_eq!(spawn_problems(defs, &table), ["floor 10 has nothing to draw", "the Drowned King is a boss, and drawn on floors 4 to 4"]);
+    assert_eq!(spawn_problems(defs, &library.bestiary.spawns), Vec::<String>::new(), "the shipped table");
 }
 
 #[test]

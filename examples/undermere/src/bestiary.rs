@@ -255,6 +255,8 @@ impl Bestiary {
         let defs = read(MONSTERS_RON, registries, traits, items, kinds, moments).unwrap_or_else(|e| panic!("assets/monsters.ron: {e}"));
         let spawns =
             load_spawns(MONSTER_SPAWNS_RON, &registries.names().with("monster", &defs), &defs).unwrap_or_else(|e| panic!("assets/monster_spawns.ron: {e}"));
+        let wrong = spawn_problems(&defs, &spawns);
+        assert!(wrong.is_empty(), "assets/monster_spawns.ron: {wrong:#?}");
         Self { defs, spawns }
     }
 
@@ -271,6 +273,20 @@ impl Bestiary {
         let wildlife = registries.factions.id(crate::content::WILDLIFE);
         self.spawns.pick_where(floor as i32, |id| Some(self.defs.get(*id).faction) != wildlife, rng).map(|e| e.item)
     }
+}
+
+/// Why the spawn table cannot stand as it is, all at once: a floor of the
+/// ten with nothing of a weight more than nought to draw, which the
+/// population would come to nothing on, or a row drawing a boss, which
+/// would stand a second throne's master out on a floor besides the one
+/// its own piece posts.
+pub(crate) fn spawn_problems(defs: &Registry<MonsterDef>, spawns: &BandedTable<Id<MonsterDef>>) -> Vec<String> {
+    let deepest = crate::dungeon::FLOORS as i32;
+    let mut wrong: Vec<String> = spawns.gaps(1..=deepest).into_iter().map(|f| format!("floor {f} has nothing to draw")).collect();
+    for row in spawns.entries().iter().filter(|r| r.weight > 0 && defs.get(r.item).boss && r.min_band <= deepest && r.max_band >= 1) {
+        wrong.push(format!("{} is a boss, and drawn on floors {} to {}", defs.get(row.item).name, row.min_band.max(1), row.max_band.min(deepest)));
+    }
+    wrong
 }
 
 /// One monster as `monsters.ron` writes it, before its attack is read and

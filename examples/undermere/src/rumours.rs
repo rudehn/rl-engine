@@ -255,16 +255,18 @@ mod tests {
         assert_eq!(errors.len(), expected.len(), "{errors:#?}");
     }
 
-    /// Every biome a run draws on a floor that could have drawn another
-    /// has a rumour, over a span of seeds, so telling a run's rumours never
-    /// finds a biome it has nothing to say of.
+    /// Every biome a run may draw on a floor that could have drawn another
+    /// has a rumour, read from the files with no seed drawn, so telling a
+    /// run's rumours never finds a biome it has nothing to say of. That the
+    /// rumours a run tells are of the biomes it draws is the draw's own
+    /// test, beside it.
     #[test]
-    fn every_biome_a_run_draws_from_more_than_one_has_a_rumour_over_a_span_of_seeds() {
+    fn every_biome_a_run_may_draw_from_more_than_one_has_a_rumour() {
         let rumours = library().rumours;
-        for s in 0..200 {
-            for biome in biomes_drawn(RunSeed(s)) {
-                assert!(rumours.of(&biome).is_some(), "seed {s}: {biome} drawn, with no rumour");
-            }
+        let told = crate::dungeon::biomes_told_of();
+        assert!(!told.is_empty(), "some floor stands more than one biome");
+        for biome in told {
+            assert!(rumours.of(&biome).is_some(), "{biome} may be drawn, with no rumour");
         }
     }
 

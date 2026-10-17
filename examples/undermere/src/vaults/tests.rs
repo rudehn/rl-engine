@@ -479,57 +479,53 @@ fn a_fall_never_lands_inside_a_locked_vault() {
     }
 }
 
-/// Over a span of seeds, on every floor a run lays a lock or a seal on:
-/// no cell a fall or a potion of descent may land on, and none a scroll
-/// of teleportation may send its reader to from anywhere on the floor,
-/// lies behind one, that is among the cells a walk from the way in
-/// reaches with every lock opened and does not with them all shut.
+/// On a floor made for it, a hall and a vault shut behind a locked door:
+/// the way in reaches every cell of the hall and none of the vault, and no
+/// fall and no far step from anywhere in the hall lands in the vault, the
+/// one rule [`open_to_the_way_in`] keeps for both draws. The run's
+/// backstop asks the same of every real floor that lays a lock.
 #[test]
-fn no_fall_or_far_step_lands_behind_a_lock_or_a_seal_over_a_span_of_seeds() {
-    use crate::dungeon::{FLOORS, Undermere};
-    use crate::effects::moving::{far_choices_among, landing_cells};
-    use crate::testing::{par_seeds, seeds};
-    use rl_engine::rl_bevy::places::PlaceRules;
-    let floors = std::sync::atomic::AtomicUsize::new(0);
-    par_seeds(seeds(0..40), |s| {
-        let undermere = Undermere::new(RunSeed(s));
-        for floor in 1..FLOORS {
-            let map = map_of(floor);
-            let built = undermere.build(map, None).unwrap_or_else(|e| panic!("floor {floor}, seed {s}: {e}"));
-            if built.locks.is_empty() {
-                continue;
-            }
-            floors.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let mut world = WorldMap::new(undermere.tiles().tables().clone());
-            world.install_place(map, built);
-            world.switch_to(map);
-            let place = world.place(map).expect("installed");
-            let tables = world.tables();
-            let tile = |p: Point| place.secrets.iter().find(|x| x.at == p).map(|x| x.is).or_else(|| place.terrain.get(p));
-            let passable = |p: Point| tile(p).is_some_and(|t| tables.passable[t.index()]);
-            let locked = |p: Point| place.locks.iter().any(|l| l.at == p);
-            let opened = walk_from(place.entry, passable);
-            let shut = walk_from(place.entry, |p| !locked(p) && passable(p));
-            let behind: BTreeSet<Point> = opened.keys().copied().filter(|p| !shut.contains_key(p) && !locked(*p)).collect();
-            assert!(!behind.is_empty(), "floor {floor}, seed {s}: a lock with nothing behind it");
-            let walkable = |p: Point| world.is_walkable_on(map, p);
-            let landings = landing_cells(&world, map, |_| true);
-            assert!(!landings.is_empty(), "floor {floor}, seed {s}: somewhere to land");
-            if let Some(p) = landings.iter().find(|p| behind.contains(p)) {
-                panic!("floor {floor}, seed {s}: a fall may land at {p:?}, behind a lock");
-            }
-            // The floor walked once for every far step asked of it, as
-            // `far_choices` walks it once for each.
-            let reached = crate::vaults::open_to_the_way_in(place, tables);
-            for from in shut.keys().copied().filter(|p| walkable(*p)).step_by(17) {
-                if let Some(p) = far_choices_among(&world, from, walkable, Some(&reached)).iter().find(|p| behind.contains(p)) {
-                    panic!("floor {floor}, seed {s}: a far step from {from:?} may land at {p:?}, behind a lock");
-                }
-            }
-        }
+fn nothing_lands_behind_a_lock_on_a_floor_made_for_it() {
+    use rl_engine::rl_bevy::places::Lock;
+    let tiles = crate::dungeon::registry();
+    let (wall, floor, door) = (tiles.expect("stone wall"), tiles.expect("hall floor"), tiles.expect("vault door"));
+    let terrain = rl_engine::rl_grid::Terrain::from_fn(16, 7, |p| match (p.x, p.y) {
+        (0 | 15, _) | (_, 0 | 6) => wall,
+        (10, 3) => door,
+        (10, _) => wall,
+        _ => floor,
     });
-    let floors = floors.into_inner();
-    assert!(floors >= 5, "only {floors} floors over the span lay a lock or a seal");
+    let lock = Point::new(10, 3);
+    let built = PlaceBuild {
+        terrain,
+        entry: Point::new(1, 1),
+        exit: None,
+        spots: Vec::new(),
+        locks: vec![Lock { at: lock, key: None }],
+        secrets: Vec::new(),
+        ambient: rl_engine::rl_grid::Light::DARK,
+        peaceful: false,
+    };
+    let map = map_of(3);
+    let tables = tiles.tables();
+    let mut world = WorldMap::new(tables.clone());
+    world.install_place(map, built);
+    let place = world.place(map).expect("installed");
+    let open = open_to_the_way_in(place, &tables);
+    for p in place.terrain.bounds().cells().filter(|p| world.is_walkable_on(map, *p) && *p != lock) {
+        assert_eq!(open.contains(&p), p.x < 10, "{p:?}: open to the way in only on the hall's side");
+    }
+    let built = PlaceBuild {
+        terrain: place.terrain.clone(),
+        entry: place.entry,
+        exit: None,
+        spots: Vec::new(),
+        locks: vec![Lock { at: lock, key: None }],
+        secrets: Vec::new(),
+        ambient: rl_engine::rl_grid::Light::DARK,
+        peaceful: false,
+    };
+    assert!(nothing_lands_behind_a_lock(&tables, built, map, "the made-up floor"), "it lays a lock");
 }
 
 /// On every floor, over many draws, whoever is cast in a part, a vault's

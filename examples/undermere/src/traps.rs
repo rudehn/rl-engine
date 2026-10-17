@@ -549,26 +549,93 @@ pub fn tell_spotted(
     }
 }
 
+/// What a floor `built` hides keeps the promises [`Hiding::openings`] and
+/// [`LayHidden`] make with the shipped file, for the run's backstop over
+/// every floor of a span of seeds: no secret door on floor one and none
+/// past three, no more than two hidden rooms, nothing hidden on the
+/// throne's floor; no more traps than the floor's band, each of a kind laid
+/// on the floor, no trapdoor on floor nine, no more flagstones than the
+/// file's most; every trap on walkable ground, off the stairs and past the
+/// population's distance from the way in, and every trap and flagstone on a
+/// cell walked to once the secrets are found; and every secret told by what
+/// finding it opens, a door with the secret doors' chance and a room with
+/// the hidden rooms'. Hands back what each secret was told as, so the
+/// span can be held to having told both. `at` names the floor and seed.
+#[cfg(test)]
+pub(crate) fn hidden_keeps_its_promises(
+    hiding: &Hiding,
+    built: &rl_engine::rl_bevy::places::PlaceBuild,
+    floor: u32,
+    tables: &TileTables,
+    at: &str,
+) -> Vec<SecretKind> {
+    let secrets: Vec<(Point, TileId, u32)> = built.secrets.iter().map(|x| (x.at, x.is, x.group)).collect();
+    let kinds = secret_kinds(&built.terrain, built.entry, &secrets, tables);
+    let count = |kind: SecretKind| kinds.values().filter(|k| **k == kind).count();
+    let things: Vec<(&str, Point)> = built.spots.iter().filter(|s| s.prefab.is_none()).filter_map(|s| hiding.prop_of(s.tag).map(|name| (name, s.at))).collect();
+    if floor == FLOORS {
+        assert!(built.secrets.is_empty() && things.is_empty(), "{at}: something hidden on the throne's floor");
+        return Vec::new();
+    }
+    assert!(count(SecretKind::Room) <= 2, "{at}: {} hidden rooms", count(SecretKind::Room));
+    let doors = count(SecretKind::Door);
+    assert!(doors <= 3 && (floor > 1 || doors == 0), "{at}: {doors} secret doors");
+    let flagstone = hiding.flagstones.prop.as_str();
+    let traps: Vec<&str> = things.iter().filter(|(name, _)| *name != flagstone).map(|(name, _)| *name).collect();
+    let band = hiding.traps.counts.iter().find(|c| (c.floors.0..=c.floors.1).contains(&floor)).expect("every floor has a band of traps");
+    assert!(traps.len() as u32 <= band.count.1, "{at}: {} traps", traps.len());
+    for name in &traps {
+        let kind = hiding.traps.kinds.iter().find(|k| k.prop == *name).expect("a kind the file names");
+        assert!(kind.on(floor), "{at}: a {name} laid outside its floors");
+    }
+    assert!(floor != 9 || !traps.contains(&"trapdoor"), "{at}: a trapdoor on floor nine");
+    assert!((things.len() - traps.len()) as u32 <= hiding.flagstones.count.1, "{at}: {} flagstones", things.len() - traps.len());
+    let mut found = built.terrain.clone();
+    for secret in &built.secrets {
+        found.set(secret.at, secret.is);
+    }
+    let mut reached = BTreeSet::from([built.entry]);
+    let mut frontier = vec![built.entry];
+    while let Some(p) = frontier.pop() {
+        for d in Direction::CARDINALS {
+            let n = p + d.offset();
+            if found.get(n).is_some_and(|t| tables.passable[t.index()]) && reached.insert(n) {
+                frontier.push(n);
+            }
+        }
+    }
+    for (name, cell) in &things {
+        assert!(reached.contains(cell), "{at}: the {name} at {cell:?} is not reached");
+        if *name == flagstone {
+            continue;
+        }
+        let tile = built.terrain.get(*cell).expect("on the map");
+        assert!(tables.walkable[tile.index()], "{at}: the {name} at {cell:?} is not on walkable ground");
+        assert!(*cell != built.entry && Some(*cell) != built.exit, "{at}: the {name} is on the stairs");
+        assert!(geometry::chebyshev(*cell, built.entry) > MIN_DISTANCE_FROM_ENTRY, "{at}: the {name} is by the way in");
+    }
+    let (door, room) = (hiding.secret_doors.spot, hiding.hidden_rooms.spot);
+    for (group, kind) in &kinds {
+        let spot = built.secrets.iter().find(|x| x.group == *group).expect("a cell of it").spot;
+        let want = match kind {
+            SecretKind::Door => door,
+            SecretKind::Room => room,
+            SecretKind::Causeway => crate::vaults::CAUSEWAY_SPOT,
+        };
+        assert!(door == room || spot == want, "{at}: group {group} told as a {kind:?}");
+    }
+    kinds.into_values().collect()
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
 
-    use rl_engine::rl_bevy::places::PlaceRules;
     use rl_engine::rl_core::RunSeed;
 
     use super::*;
-    use crate::dungeon::{Undermere, map_of};
-    use crate::testing::{arena_on, arrive, clear_monsters, here, monster, par_seeds, pass_turns, said, seeds, settle, stand_on, sturdy};
-    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
-
-    /// How many openings of each kind `built` hid: its secret doors and its
-    /// hidden rooms, told by what each opens.
-    fn doors_and_rooms(built: &rl_engine::rl_bevy::places::PlaceBuild, tables: &TileTables) -> (usize, usize) {
-        let secrets: Vec<(Point, TileId, u32)> = built.secrets.iter().map(|x| (x.at, x.is, x.group)).collect();
-        let kinds = secret_kinds(&built.terrain, built.entry, &secrets, tables);
-        let count = |kind: SecretKind| kinds.values().filter(|k| **k == kind).count();
-        (count(SecretKind::Door), count(SecretKind::Room))
-    }
+    use crate::dungeon::map_of;
+    use crate::testing::{arena_on, arrive, clear_monsters, here, monster, pass_turns, said, seeds, settle, stand_on, sturdy};
 
     /// The secret doors hidden on the place `on`, as play keeps them.
     fn secret_doors(map: &WorldMap, on: MapId) -> Vec<rl_engine::rl_bevy::secrets::Secret> {
@@ -578,32 +645,88 @@ mod tests {
         place.secrets.iter().filter(|x| kinds.get(&x.group) == Some(&SecretKind::Door)).copied().collect()
     }
 
-    /// Over a span of seeds: no secret door on floor one, never more than
-    /// three on any floor, and one or more on most floors from two; never
-    /// more hidden rooms than two; nothing hidden on the throne's floor.
+    /// What `assets/hidden.ron` asks of each floor, read with no floor
+    /// built: no secret door before floor two and at least one asked for on
+    /// every floor from there, never more than three; never more than two
+    /// hidden rooms; a band of traps on every floor above the throne, never
+    /// emptier than nothing on the floors past the first; no trapdoor laid
+    /// on floor nine, above the throne nothing falls into; and every trap
+    /// kind laid on some floor. What the passes then lay within those
+    /// numbers is theirs and their tests', and the run's backstop holds the
+    /// floors to them.
     #[test]
-    fn secret_doors_and_hidden_rooms_by_depth_over_seeds() {
-        let (floors, with_doors) = (AtomicUsize::new(0), AtomicUsize::new(0));
-        par_seeds(seeds(0..24), |s| {
-            let undermere = Undermere::new(RunSeed(s));
-            let tables = undermere.tiles().tables();
-            for floor in 1..=FLOORS {
-                let built = undermere.build(map_of(floor), None).unwrap();
-                let (doors, rooms) = doors_and_rooms(&built, &tables);
-                assert!(rooms <= 2, "floor {floor}, seed {s}: {rooms} hidden rooms");
-                match floor {
-                    1 => assert_eq!(doors, 0, "seed {s}: a secret door on floor one"),
-                    FLOORS => assert!(built.secrets.is_empty(), "seed {s}: something hidden on the throne's floor"),
-                    _ => {
-                        assert!(doors <= 3, "floor {floor}, seed {s}: {doors} secret doors");
-                        floors.fetch_add(1, Relaxed);
-                        with_doors.fetch_add(usize::from(doors > 0), Relaxed);
-                    }
-                }
+    fn the_hidden_file_asks_each_floor_for_what_its_depth_should_hide() {
+        let hiding = Hiding::load();
+        let (doors, rooms) = (hiding.secret_doors, hiding.hidden_rooms);
+        assert!(doors.from >= 2 && doors.count.0 >= 1 && doors.count.1 <= 3, "secret doors from floor {} at {:?}", doors.from, doors.count);
+        assert!(rooms.count.1 <= 2, "hidden rooms at {:?}", rooms.count);
+        for floor in 1..FLOORS {
+            let band = hiding.traps.counts.iter().find(|c| (c.floors.0..=c.floors.1).contains(&floor));
+            let band = band.unwrap_or_else(|| panic!("floor {floor} has no band of traps"));
+            assert!(floor == 1 || band.count.1 > 0, "floor {floor} lays no trap");
+            assert!(hiding.traps.kinds.iter().any(|k| k.on(floor)) || band.count.1 == 0, "floor {floor} asks for traps of no kind");
+        }
+        let trapdoor = hiding.traps.kinds.iter().find(|k| k.prop == "trapdoor").expect("a trapdoor kind");
+        assert!(!trapdoor.on(FLOORS - 1), "a trapdoor on floor nine drops a body onto the throne's floor");
+        for kind in &hiding.traps.kinds {
+            assert!((1..FLOORS).any(|f| kind.on(f)), "{} is laid on no floor", kind.prop);
+        }
+    }
+
+    /// [`LayHidden`] on a made-up floor, two caves and the corridor between
+    /// them, over a span of seeds: never more traps than its most, each of
+    /// a kind it was handed, on plain walkable ground in the corridor or a
+    /// doorway, off the way in by more than the population's distance, off
+    /// the way down and the cells beside it, and no two within
+    /// [`TRAP_SPACING`] of each other; never more flagstones than its most,
+    /// each on a cell no trap took.
+    #[test]
+    fn lay_hidden_never_lays_more_than_asked_and_only_where_a_trap_may_stand() {
+        use rl_engine::rl_mapgen::{AreaFacts, BaseContext, BuildContext, Chain, Phase};
+        let tiles = crate::dungeon::registry();
+        let ground = tiles.expect("hall floor");
+        let passages = BTreeSet::from(["corridor".to_string()]);
+        let (entry, exit) = (Point::new(1, 2), Point::new(58, 9));
+        let kinds = vec![glyph(0), glyph(2)];
+        let flagstone = glyph(5);
+        for s in seeds(0..40) {
+            let mut ctx = BaseContext::blank(60, 12, tiles.clone(), ground);
+            let block = |x0: i32, x1: i32| -> Vec<Point> { (x0..x1).flat_map(|x| (1..11).map(move |y| Point::new(x, y))).collect() };
+            let area = |index: usize, shape: &str, cells: Vec<Point>| {
+                let (x0, x1) = (cells.iter().map(|p| p.x).min().unwrap_or(0), cells.iter().map(|p| p.x).max().unwrap_or(0));
+                let bounds = Rect::new(x0, 1, x1 - x0 + 1, 10);
+                Area { index, shape: shape.into(), district: "d".into(), cells, bounds, inner: bounds, entries: None }
+            };
+            let corridor: Vec<Point> = (15..45).map(|x| Point::new(x, 5)).collect();
+            ctx.emit(area(0, "cave", block(0, 15)));
+            ctx.emit(area(1, "corridor", corridor.clone()));
+            ctx.emit(area(2, "cave", block(45, 60)));
+            ctx.emit(Room(Rect::new(0, 1, 15, 10)));
+            ctx.emit(Room(Rect::new(45, 1, 15, 10)));
+            ctx.emit(Opening { cells: vec![Point::new(14, 5)], facing: Direction::East, areas: (0, 1), join: Join::Arch });
+            ctx.emit(Opening { cells: vec![Point::new(45, 5)], facing: Direction::East, areas: (1, 2), join: Join::Arch });
+            let facts = |dead_end: bool| AreaFacts { openings: 1, dead_end, chokepoint: false, junction: false, seclusion: 0 };
+            ctx.emit(Surveyed { areas: vec![facts(true), facts(false), facts(true)], loops: 0, open_pct: 100, route: None });
+            ctx.emit(StartPoint(entry));
+            ctx.emit(ExitPoint(exit));
+            let pass = LayHidden { traps: (2, 5), kinds: kinds.clone(), flagstones: (1, 3), flagstone, passages: passages.clone() };
+            assert_eq!(<LayHidden as Pass<BaseContext>>::phase(&pass), Phase::Finish);
+            Chain::new().then(pass).run(&mut ctx, RunSeed(s)).expect("it lays");
+            let laid: Vec<(char, Point)> = ctx.outputs().iter::<Stamped>().flat_map(|st| st.marks.clone()).collect();
+            let traps: Vec<Point> = laid.iter().filter(|(c, _)| *c != flagstone).map(|(_, p)| *p).collect();
+            let stones: Vec<Point> = laid.iter().filter(|(c, _)| *c == flagstone).map(|(_, p)| *p).collect();
+            assert!(traps.len() <= 5 && stones.len() <= 3, "seed {s}: {} traps and {} flagstones", traps.len(), stones.len());
+            for (c, p) in laid.iter().filter(|(c, _)| *c != flagstone) {
+                assert!(kinds.contains(c), "seed {s}: a trap of a kind it was not handed");
+                let beside_a_mouth = [Point::new(14, 5), Point::new(45, 5)].iter().any(|m| geometry::chebyshev(*m, *p) <= 1);
+                assert!(corridor.contains(p) || beside_a_mouth, "seed {s}: a trap at {p:?}, in a cave");
+                assert!(geometry::chebyshev(*p, entry) > MIN_DISTANCE_FROM_ENTRY && geometry::chebyshev(*p, exit) > 1, "seed {s}: a trap at {p:?} by a way");
             }
-        });
-        let (floors, with_doors) = (floors.into_inner(), with_doors.into_inner());
-        assert!(with_doors * 10 >= floors * 8, "only {with_doors} of {floors} floors from two on have a secret door");
+            for (i, a) in traps.iter().enumerate() {
+                assert!(traps[i + 1..].iter().all(|b| geometry::chebyshev(*a, *b) >= TRAP_SPACING), "seed {s}: two traps within {TRAP_SPACING}");
+            }
+            assert!(stones.iter().all(|p| !traps.contains(p)), "seed {s}: a flagstone under a trap");
+        }
     }
 
     /// Standing beside a secret door and waiting, at the base chances with
@@ -640,88 +763,6 @@ mod tests {
             }
         }
         assert!(found >= 9, "found on only {found} seeds in ten");
-    }
-
-    /// Every trap and flagstone `built` laid, by the prop it stands up.
-    fn hidden_things<'a>(hiding: &'a Hiding, built: &rl_engine::rl_bevy::places::PlaceBuild) -> Vec<(&'a str, Point)> {
-        built.spots.iter().filter(|s| s.prefab.is_none()).filter_map(|s| hiding.prop_of(s.tag).map(|name| (name, s.at))).collect()
-    }
-
-    /// Over a span of seeds: each floor's traps number what its band says,
-    /// a kind is never laid above the floor it is unlocked on, and there is
-    /// no trapdoor on floor nine or anything hidden on the throne's floor;
-    /// a floor's flagstones number what the file says.
-    #[test]
-    fn traps_and_flagstones_by_depth_over_seeds() {
-        let hiding = Hiding::load();
-        let flagstone = hiding.flagstones.prop.as_str();
-        let (short, floors) = (AtomicUsize::new(0), AtomicUsize::new(0));
-        par_seeds(seeds(0..24), |s| {
-            let undermere = Undermere::new(RunSeed(s));
-            for floor in 1..=FLOORS {
-                let built = undermere.build(map_of(floor), None).unwrap();
-                let things = hidden_things(&hiding, &built);
-                let traps: Vec<&str> = things.iter().filter(|(name, _)| *name != flagstone).map(|(name, _)| *name).collect();
-                let stones = things.len() - traps.len();
-                if floor == FLOORS {
-                    assert!(things.is_empty(), "seed {s}: something hidden on the throne's floor");
-                    continue;
-                }
-                let band = hiding.traps.counts.iter().find(|c| (c.floors.0..=c.floors.1).contains(&floor)).expect("every floor has a band");
-                assert!(traps.len() as u32 <= band.count.1, "floor {floor}, seed {s}: {} traps", traps.len());
-                floors.fetch_add(1, Relaxed);
-                short.fetch_add(usize::from((traps.len() as u32) < band.count.0), Relaxed);
-                for name in &traps {
-                    let kind = hiding.traps.kinds.iter().find(|k| k.prop == *name).expect("a kind the file names");
-                    assert!(kind.on(floor), "floor {floor}, seed {s}: a {name} laid outside its floors");
-                }
-                assert!(floor != 9 || !traps.contains(&"trapdoor"), "seed {s}: a trapdoor on floor nine");
-                assert!(stones as u32 <= hiding.flagstones.count.1, "floor {floor}, seed {s}: {stones} flagstones");
-            }
-        });
-        let (short, floors) = (short.into_inner(), floors.into_inner());
-        assert!(short * 10 <= floors, "{short} of {floors} floors had fewer traps than their band's fewest");
-    }
-
-    /// Over a span of seeds: every trap stands on a cell a body can walk
-    /// on, off the stairs and farther than six cells from the way in, and
-    /// every trap and flagstone on a cell walked to from the way in once
-    /// the floor's secrets are found.
-    #[test]
-    fn every_trap_is_on_a_walkable_cell_off_the_stairs_and_every_hidden_thing_is_reached_once_the_secrets_are_found() {
-        let hiding = Hiding::load();
-        par_seeds(seeds(0..24), |s| {
-            let undermere = Undermere::new(RunSeed(s));
-            let tables = undermere.tiles().tables();
-            for floor in 1..FLOORS {
-                let built = undermere.build(map_of(floor), None).unwrap();
-                let mut found = built.terrain.clone();
-                for secret in &built.secrets {
-                    found.set(secret.at, secret.is);
-                }
-                let open = |p: Point| found.get(p).is_some_and(|t| tables.passable[t.index()]);
-                let mut reached = BTreeSet::from([built.entry]);
-                let mut frontier = vec![built.entry];
-                while let Some(p) = frontier.pop() {
-                    for d in Direction::CARDINALS {
-                        let n = p + d.offset();
-                        if open(n) && reached.insert(n) {
-                            frontier.push(n);
-                        }
-                    }
-                }
-                for (name, at) in hidden_things(&hiding, &built) {
-                    assert!(reached.contains(&at), "floor {floor}, seed {s}: the {name} at {at:?} is not reached");
-                    if name == hiding.flagstones.prop {
-                        continue;
-                    }
-                    let tile = built.terrain.get(at).expect("on the map");
-                    assert!(tables.walkable[tile.index()], "floor {floor}, seed {s}: the {name} at {at:?} is not on walkable ground");
-                    assert!(at != built.entry && Some(at) != built.exit, "floor {floor}, seed {s}: the {name} is on the stairs");
-                    assert!(geometry::chebyshev(at, built.entry) > MIN_DISTANCE_FROM_ENTRY, "floor {floor}, seed {s}: the {name} is by the way in");
-                }
-            }
-        });
     }
 
     /// Stands a `name` at `at` on the place being read, hidden so no roll
@@ -873,38 +914,5 @@ mod tests {
             let beside_a_mouth = mouths.iter().any(|m| m == p || Direction::CARDINALS.iter().any(|d| *m + d.offset() == *p));
             assert!(corridor.contains(p) || beside_a_mouth, "a trap may stand at {p:?}, inside a cave");
         }
-    }
-
-    /// Over a span of seeds, each secret is told for what it is by what
-    /// finding it opens: every group called a door has the secret doors'
-    /// chance, every one called a room the hidden rooms', and every one
-    /// called a causeway the causeway's. The chances are read only to
-    /// check the telling, and only while the file keeps them apart.
-    #[test]
-    fn each_secret_is_told_by_what_finding_it_opens_over_seeds() {
-        let hiding = Hiding::load();
-        let (door, room) = (hiding.secret_doors.spot, hiding.hidden_rooms.spot);
-        let told = std::sync::Mutex::new(BTreeSet::new());
-        par_seeds(seeds(0..24), |s| {
-            let undermere = Undermere::new(RunSeed(s));
-            for floor in 1..FLOORS {
-                let built = undermere.build(map_of(floor), None).unwrap();
-                let secrets: Vec<(Point, TileId, u32)> = built.secrets.iter().map(|x| (x.at, x.is, x.group)).collect();
-                for (group, kind) in secret_kinds(&built.terrain, built.entry, &secrets, &undermere.tiles().tables()) {
-                    let spot = built.secrets.iter().find(|x| x.group == group).expect("a cell of it").spot;
-                    let want = match kind {
-                        SecretKind::Door => door,
-                        SecretKind::Room => room,
-                        SecretKind::Causeway => crate::vaults::CAUSEWAY_SPOT,
-                    };
-                    if door != room {
-                        assert_eq!(spot, want, "floor {floor}, seed {s}: group {group} told as a {kind:?}");
-                    }
-                    told.lock().unwrap().insert(kind);
-                }
-            }
-        });
-        let told = told.into_inner().unwrap();
-        assert!(told.contains(&SecretKind::Door) && told.contains(&SecretKind::Room), "both doors and rooms over the span: {told:?}");
     }
 }

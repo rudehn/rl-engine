@@ -56,6 +56,26 @@ pub const LAID: &str = "scroll of enchanting";
 /// times the floor.
 pub const GOLD: &str = "gold coin";
 
+/// Why the armory cannot stand for what a floor lays, every problem at
+/// once: the [`LAID`] scroll and the [`GOLD`] a floor holds are named here
+/// and must be items of it, and every kind of [`KINDS`] must be a tag with
+/// something to find on some floor, or its weight is a share of every
+/// floor's draw given to nothing.
+pub fn problems(armory: &Armory, registries: &Registries) -> Vec<String> {
+    let mut wrong: Vec<String> =
+        [LAID, GOLD].into_iter().filter(|name| armory.defs.id(name).is_none()).map(|name| format!("{name:?}, which every floor lays, is no item")).collect();
+    for (name, _) in KINDS {
+        let Some(tag) = registries.tags.id(name) else {
+            wrong.push(format!("kind {name:?} is no tag"));
+            continue;
+        };
+        if !armory.table.rows().iter().any(|r| r.weight > 0 && r.tags.contains(&tag) && r.bands.0 <= crate::dungeon::FLOORS as i32 && r.bands.1 >= 1) {
+            wrong.push(format!("kind {name:?} has nothing to find on any floor"));
+        }
+    }
+    wrong
+}
+
 /// How many piles of gold a floor holds besides its things: one in the
 /// middle, as the table that drew gold among everything else used to come
 /// to, and none or two as often.
@@ -180,15 +200,10 @@ pub fn lay(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, gro
 #[cfg(test)]
 mod tests {
     use rand::SeedableRng;
-    use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
-
-    use rl_engine::rl_core::RunSeed;
 
     use super::*;
-    use crate::bestiary::Kind;
     use crate::content::Library;
-    use crate::dungeon::{FLOORS, map_of};
-    use crate::testing::{adventurer, arrive, headless, par_seeds, sturdy};
+    use crate::dungeon::FLOORS;
 
     fn library() -> Library {
         Library::load(&crate::content::effect_kinds(), &Moments::default())
@@ -201,96 +216,39 @@ mod tests {
         assert_eq!((1..=FLOORS).map(things_on).collect::<Vec<_>>(), [6, 7, 7, 8, 8, 9, 9, 10, 10, 11]);
     }
 
-    /// What a floor's things are drawn as: a kind by its weight among the
-    /// kinds with anything to find at the floor's depth, potions and
-    /// scrolls three times as often as weapons or armor, then one of its
-    /// members as the spawn table weights them there, each found at that
-    /// depth and as many together as its row says, over a span of seeds.
+    /// What a floor's things are drawn as, on made-up kinds: a kind by its
+    /// weight among the kinds with anything to find at the band, three
+    /// times as often for a kind weighed three times another, never a kind
+    /// with nothing at the band or of nought weight, then one of its
+    /// members found at the band, as many together as its row says, over a
+    /// span of seeds. That the shipped [`KINDS`] weigh potions and scrolls
+    /// at three times weapons is their own numbers, read where they are
+    /// written.
     #[test]
-    fn a_floors_things_are_drawn_by_kind_potions_and_scrolls_three_times_as_often_as_weapons_over_a_span_of_seeds() {
-        let library = library();
-        let (armory, registries) = (&library.armory, &library.registries);
-        let kinds = Kinds::of(armory, registries);
-        let tag = |name: &str| registries.tags.expect(name);
-        let open: Vec<(&str, u32)> =
-            KINDS.into_iter().filter(|(name, _)| armory.table.rows().iter().any(|r| r.tags.contains(&tag(name)) && r.applies(5))).collect();
-        let total: u32 = open.iter().map(|(_, w)| w).sum();
-        let mut drawn = vec![0u32; open.len()];
+    fn a_floors_things_are_drawn_by_kind_each_as_often_as_its_weight_says_over_a_span_of_seeds() {
+        let item = Id::<ItemDef>::from_raw;
+        let table = |rows: Vec<LootRow<Id<ItemDef>>>| LootTable::new(rows, |id| format!("{}", id.index()));
+        let kinds = Kinds(vec![
+            (30, table(vec![LootRow::new(item(0)).bands(1, 9).group(2, 3), LootRow::new(item(1)).bands(1, 9)])),
+            (10, table(vec![LootRow::new(item(2)).bands(1, 9)])),
+            (50, table(vec![LootRow::new(item(3)).bands(7, 9)])),
+            (0, table(vec![LootRow::new(item(4)).bands(1, 9)])),
+        ]);
+        let mut drawn = [0u32; 5];
         for seed in 0..400 {
             let things = plan(&kinds, 5, 10, &mut rand::rngs::StdRng::seed_from_u64(seed));
             assert_eq!(things.len(), 10, "seed {seed}: as many as asked for");
             for (def, count) in things {
-                let rows: Vec<_> = armory.table.rows().iter().filter(|r| r.item == def && r.applies(5)).collect();
-                assert!(!rows.is_empty(), "seed {seed}: {} is found on floor five", armory.defs.get(def).name);
-                assert!(rows.iter().any(|r| (r.group.0..=r.group.1).contains(&count)), "seed {seed}: {count} together");
-                let at = open.iter().position(|(name, _)| armory.defs.get(def).tags.iter().any(|t| t.id() == tag(name)));
-                drawn[at.expect("of a kind that is drawn")] += 1;
+                let together = if def == item(0) { 2..=3 } else { 1..=1 };
+                assert!(together.contains(&count), "seed {seed}: {count} of item {} together", def.index());
+                drawn[def.index()] += 1;
             }
         }
-        // Within a fifth of its share of four thousand.
-        for ((name, weight), got) in open.iter().zip(&drawn) {
-            let share = 4000 * weight / total;
-            assert!(got.abs_diff(share) * 5 <= share, "{name}: {got} drawn where {share} was its share, {drawn:?}");
-        }
-        assert!(open.iter().any(|(name, _)| *name == "potion") && open.iter().any(|(name, _)| *name == "weapon"), "{open:?}");
+        assert_eq!((drawn[3], drawn[4]), (0, 0), "nothing of a kind empty at the band or weighed nought");
+        let (first, second) = (drawn[0] + drawn[1], drawn[2]);
+        assert!((first * 10).abs_diff(second * 30) * 5 <= second * 30, "a kind three times the weight is drawn about three times as often: {drawn:?}");
+        assert!(plan(&Kinds(vec![(10, table(vec![LootRow::new(item(0)).bands(1, 1)]))]), 5, 10, &mut rand::rngs::StdRng::seed_from_u64(0)).is_empty());
     }
-
-    /// A world where nobody fights, so nothing a floor holds is a thing the
-    /// dead left on it.
-    fn at_peace(app: &mut App) {
-        let rules = CombatRules::new(&app.world().resource::<Registries>().factions);
-        app.insert_resource(rules);
-    }
-
-    /// The names of the things on `floor`, its gold or everything but its
-    /// gold as `gold` says, lying on it or carried by whoever stands on it,
-    /// and none in a chest: what the floor laid.
-    fn on_floor(app: &mut App, floor: u32, gold: bool) -> Vec<String> {
-        let map = map_of(floor);
-        let world = app.world_mut();
-        let armory = world.resource::<Armory>().clone();
-        let mut things: Vec<Entity> =
-            world.query_filtered::<(Entity, &OnMap), (With<Item>, With<Position>)>().iter(world).filter(|(_, on)| on.0 == map).map(|(e, _)| e).collect();
-        let carried: Vec<Entity> = world
-            .query_filtered::<(&Inventory, &OnMap), With<Kind>>()
-            .iter(world)
-            .filter(|(_, on)| on.0 == map)
-            .flat_map(|(bag, _)| bag.items.clone())
-            .collect();
-        things.extend(carried);
-        let gold_tag = world.resource::<Registries>().tags.expect("gold");
-        let def = |e: Entity| world.get::<crate::armory::ItemKind>(e).map(|k| armory.defs.get(k.0));
-        things.iter().filter_map(|e| def(*e)).filter(|d| d.tags.iter().any(|t| t.id() == gold_tag) == gold).map(|d| d.name.clone()).collect()
-    }
-
-    /// Every floor holds at least its things and a scroll of enchanting
-    /// besides, and at most a generous few piles of gold, the first time
-    /// it is entered, over a span of seeds. At least rather than exactly:
-    /// the reward pool may dress a floor with items of its own (Armory,
-    /// Apothecary's Shelves, Scriptorium, Quartermaster's Store) besides
-    /// this budget, a source this test does not try to predict the count
-    /// of, and the risk-and-reward and reward pools' own pieces (Treasure
-    /// Room, the Guarded Hoard, the Locked Vault, Overturned Wagon, the
-    /// Goblin Stockade) may each add one more pile besides `GOLD_PILES`'s
-    /// own, up to a few of a floor's picks.
-    #[test]
-    fn every_floor_holds_a_scroll_of_enchanting_and_its_things_besides_gold_over_a_span_of_seeds() {
-        par_seeds(0..3, |seed| {
-            let mut app = headless(RunSeed(seed));
-            let me = adventurer(&mut app);
-            sturdy(&mut app, me);
-            at_peace(&mut app);
-            for floor in 1..=FLOORS {
-                arrive(&mut app, map_of(floor));
-                let things = on_floor(&mut app, floor, false);
-                assert!(things.len() as u32 > things_on(floor), "seed {seed}, floor {floor}: {things:?}");
-                assert!(things.iter().any(|t| t == LAID), "seed {seed}, floor {floor}: no scroll of enchanting in {things:?}");
-                let gold = on_floor(&mut app, floor, true);
-                assert!(gold.len() as u32 <= *GOLD_PILES.end() + 6, "seed {seed}, floor {floor}: {} piles of gold", gold.len());
-            }
-        });
-    }
-
     /// A floor with room for one thing holds its scroll of enchanting and
     /// nothing of its budget; one with room for all of it holds the scroll,
     /// its things and its gold, each on a cell of its own, over a span of
@@ -316,26 +274,51 @@ mod tests {
         }
     }
 
-    /// About four potions of strength turn up over a whole run, lying about
-    /// or in a chest, over a span of seeds: enough that what heavy gear
-    /// asks for can be come by, and few enough that it is still asked.
+    /// About four potions of strength a run, read from the weights with no
+    /// floor built and no seed drawn: on every floor, its [`things_on`],
+    /// each a potion as often as [`KINDS`] weighs potions among the kinds
+    /// open there and then a potion of strength as often as its row weighs
+    /// among the floor's potions, as many together as its row's mean; and
+    /// on every floor but the throne's, its [`CHESTS`](crate::dungeon::CHESTS),
+    /// each holding the potions `assets/props.ron` stocks a chest with,
+    /// drawn the same way one at a time. Enough that what heavy gear asks
+    /// for can be come by, and few enough that it is still asked. What a
+    /// piece lays or the dead drop comes on top, and is a share too small
+    /// and too rare to count.
     #[test]
-    fn about_four_potions_of_strength_turn_up_over_a_run_over_a_span_of_seeds() {
-        let runs = 24u64;
-        let found = AtomicU32::new(0);
-        par_seeds(0..runs, |seed| {
-            let mut app = headless(RunSeed(seed));
-            let me = adventurer(&mut app);
-            sturdy(&mut app, me);
-            for floor in 1..=FLOORS {
-                arrive(&mut app, map_of(floor));
+    fn about_four_potions_of_strength_are_laid_over_a_run_by_the_weights() {
+        let library = library();
+        let (armory, registries) = (&library.armory, &library.registries);
+        let tag = |name: &str| registries.tags.expect(name);
+        let strength = armory.defs.expect("potion of strength");
+        let rows = |t: TagId, band: i32| armory.table.rows().iter().filter(move |r| r.weight > 0 && r.tags.contains(&t) && r.applies(band));
+        // Potions of strength for one draw of a potion at `band`, its row's
+        // mean group counted or each draw one alone.
+        let per_potion = |band: i32, grouped: bool| -> f64 {
+            let total: u32 = rows(tag("potion"), band).map(|r| r.weight).sum();
+            let found = rows(tag("potion"), band).filter(|r| r.item == strength);
+            let weighted: f64 = found.map(|r| f64::from(r.weight) * if grouped { f64::from(r.group.0 + r.group.1) / 2.0 } else { 1.0 }).sum();
+            if total == 0 { 0.0 } else { weighted / f64::from(total) }
+        };
+        let chest = registries.props.get(registries.props.expect("chest"));
+        let potions_a_chest: f64 = chest
+            .container
+            .iter()
+            .flat_map(|c| &c.contents)
+            .filter(|row| row.what == rl_engine::rl_rules::Stock::Tag(tag("potion")))
+            .map(|row| f64::from(row.min + row.max) / 2.0)
+            .sum();
+        let chests = f64::from(crate::dungeon::CHESTS.0 + crate::dungeon::CHESTS.1) / 2.0;
+        let mut expected = 0.0;
+        for floor in 1..=FLOORS {
+            let band = floor as i32;
+            let open: u32 = KINDS.iter().filter(|(name, _)| rows(tag(name), band).next().is_some()).map(|(_, w)| w).sum();
+            let potion = KINDS.iter().find(|(name, _)| *name == "potion").map_or(0, |(_, w)| *w);
+            expected += f64::from(things_on(floor)) * f64::from(potion) / f64::from(open) * per_potion(band, true);
+            if floor < FLOORS {
+                expected += chests * potions_a_chest * per_potion(band, false);
             }
-            let world = app.world_mut();
-            let strength = world.resource::<Armory>().defs.expect("potion of strength");
-            let mut things = world.query::<(&crate::armory::ItemKind, Option<&Stack>)>();
-            found.fetch_add(things.iter(world).filter(|(kind, _)| kind.0 == strength).map(|(_, stack)| stack.map_or(1, |s| s.count)).sum::<u32>(), Relaxed);
-        });
-        let found = found.into_inner();
-        assert!((3 * runs as u32..=5 * runs as u32).contains(&found), "{found} over {runs} runs");
+        }
+        assert!((3.0..=5.0).contains(&expected), "{expected:.2} potions of strength a run");
     }
 }

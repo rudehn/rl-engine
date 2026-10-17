@@ -342,10 +342,11 @@ fn check(def: &BiomeDef, tiles: &TileRegistry, layout: &LayoutDef) -> Result<(),
     Ok(())
 }
 
-/// Loads and checks every biome against `tiles` and `layout`, and that
-/// every recipe of `layout` is named by some biome. Panics with every
-/// problem at once, since a broken biome is a run that cannot grow a
-/// floor.
+/// Loads and checks every biome against `tiles` and `layout`, that every
+/// recipe of `layout` is named by some biome, that every floor has a biome
+/// to draw, and that every throne biome is some floor ten boss's, so none
+/// stands in the file never drawn. Panics with every problem at once,
+/// since a broken biome is a run that cannot grow a floor.
 pub(crate) fn load(tiles: &TileRegistry, layout: &LayoutDef) -> Registry<BiomeDef> {
     super::strata::check();
     let defs: Registry<BiomeDef> = Registry::from_ron_str(BIOMES_RON).unwrap_or_else(|e| panic!("assets/biomes.ron: {e}"));
@@ -353,7 +354,24 @@ pub(crate) fn load(tiles: &TileRegistry, layout: &LayoutDef) -> Registry<BiomeDe
     let unnamed: Vec<&str> =
         layout.recipes.iter().map(|r| r.name.as_str()).filter(|r| !defs.iter().any(|(_, d)| d.recipes.iter().any(|w| w.name == *r))).collect();
     assert!(unnamed.is_empty(), "assets/layout.ron: no biome grows {unnamed:?}");
+    let drawn = drawn_problems(&defs);
+    assert!(drawn.is_empty(), "assets/biomes.ron: {drawn:#?}");
     defs
+}
+
+/// Why some floor or biome of `defs` could never be drawn: a floor one to
+/// nine no biome stands on, or a throne biome no floor ten boss names, and
+/// so one no run ever grows. A biome or recipe of nought weight is already
+/// refused by [`check`], so a biome standing on a floor is drawn there
+/// some of the time.
+fn drawn_problems(defs: &Registry<BiomeDef>) -> Vec<String> {
+    let mut problems: Vec<String> = (1..FLOORS).filter(|f| band(defs, *f).is_empty()).map(|f| format!("no biome stands on floor {f}")).collect();
+    for def in band(defs, FLOORS) {
+        if !super::lairs::FINAL_BOSSES.iter().any(|b| b.biome == def.name) {
+            problems.push(format!("{}: stands on floor ten, and no floor ten boss names it, so it is never drawn", def.name));
+        }
+    }
+    problems
 }
 
 /// How many favored kinds a biome of floors one to nine must have able to
@@ -362,30 +380,108 @@ pub(crate) fn load(tiles: &TileRegistry, layout: &LayoutDef) -> Registry<BiomeDe
 /// by its walls.
 pub(crate) const FAVORED_AT_LEAST: usize = 3;
 
-/// Checks that every biome of floors one to nine has at least
-/// [`FAVORED_AT_LEAST`] favored kinds able to spawn on each floor of its
-/// window, by the bestiary's spawn table, and that every name it favors is a
-/// kind the bestiary carries. A throne biome favors nothing: its floor is the
-/// boss's. Panics with every shortfall at once, since a biome told by nothing
-/// is content that moved without its monsters.
+/// Checks that every name a biome of floors one to nine favors is a kind
+/// the bestiary carries and spawns, by the bestiary's spawn table, on every
+/// floor of the biome's window, and that at least [`FAVORED_AT_LEAST`] of
+/// them do on each. A favored kind with no row on one of its biome's floors
+/// is favored for nothing there, and the biome is told by what lives in it
+/// on the rest of its floors only. A throne biome favors nothing: its floor
+/// is the boss's. Panics with every shortfall at once, since a biome told
+/// by nothing is content that moved without its monsters.
 pub(crate) fn check_favored(defs: &Registry<BiomeDef>, bestiary: &Bestiary) {
     let mut errors = Vec::new();
     for (_, def) in defs.iter().filter(|(_, d)| d.floors.1 < FLOORS) {
         let mut ids = Vec::new();
         for name in &def.favored {
             match bestiary.defs.id(name) {
-                Some(id) => ids.push(id),
+                Some(id) => ids.push((name, id)),
                 None => errors.push(format!("{}: favors {name:?}, which monsters.ron does not carry", def.name)),
             }
         }
         for floor in def.floors.0..=def.floors.1 {
-            let able = ids.iter().filter(|id| bestiary.spawns.at(floor as i32).any(|e| e.item == **id && e.weight > 0)).count();
+            let spawns = |id: Id<MonsterDef>| bestiary.spawns.at(floor as i32).any(|e| e.item == id && e.weight > 0);
+            for (name, _) in ids.iter().filter(|(_, id)| !spawns(*id)) {
+                errors.push(format!("{}: favors {name:?}, which monster_spawns.ron spawns on none of floor {floor}", def.name));
+            }
+            let able = ids.iter().filter(|(_, id)| spawns(*id)).count();
             if able < FAVORED_AT_LEAST {
                 errors.push(format!("{}: {able} favored kinds can spawn on floor {floor}, and a biome needs {FAVORED_AT_LEAST}", def.name));
             }
         }
     }
     assert!(errors.is_empty(), "assets/biomes.ron: {errors:#?}");
+}
+
+/// Checks every entry of the run's pool against the biomes it may stand
+/// in, from the files alone: an entry of a weight more than nought must
+/// have some floor where a budget of its kind gives picks and a biome it
+/// may stand in is drawn, or it is never drawn at all; and on each such
+/// floor and biome it must fit every recipe the biome grows when its kind
+/// is required there, since a floor owing a pick it cannot lay fails every
+/// attempt, or some recipe of some biome it may stand in when it is not,
+/// since a pick that fits nowhere is only ever dropped. A landmark the
+/// throne's floor may draw must leave its stairs free, since that floor
+/// has no way down. What fits is
+/// [`misfit`](rl_engine::rl_rules::pool::misfit)'s, the same rule
+/// `rl_mapgen` lays by. Panics with every problem at once.
+pub(crate) fn check_pool(defs: &Registry<BiomeDef>, pool: &Pool, layout: &LayoutDef, pieces: &Registry<rl_engine::rl_rules::prefab::PrefabDef<MonsterDef>>) {
+    let errors = pool_problems(defs, pool, layout, pieces);
+    assert!(errors.is_empty(), "assets/pool.ron: {errors:#?}");
+}
+
+/// [`check_pool`]'s problems, each naming the entry, for a test to read.
+fn pool_problems(
+    defs: &Registry<BiomeDef>,
+    pool: &Pool,
+    layout: &LayoutDef,
+    pieces: &Registry<rl_engine::rl_rules::prefab::PrefabDef<MonsterDef>>,
+) -> Vec<String> {
+    use rl_engine::rl_rules::pool::{Placed, Stairs, misfit};
+    let mut errors = Vec::new();
+    for entry in pool.entries.iter().filter(|e| e.weight > 0) {
+        // Every floor and biome it may be drawn for, and whether its kind
+        // is required there.
+        let mut ways: Vec<(u32, &BiomeDef, bool)> = Vec::new();
+        for floor in 1..=FLOORS {
+            let Some(budget) = pool.budget(entry.kind, floor as i32).filter(|b| b.count.1 > 0) else { continue };
+            for def in band(defs, floor) {
+                if entry.fits(floor as i32, std::slice::from_ref(&def.name)) {
+                    ways.push((floor, def, budget.required));
+                }
+            }
+        }
+        if ways.is_empty() {
+            errors.push(format!("{}: no floor where a budget of its kind gives picks stands a biome it may stand in, so it is never drawn", entry.name));
+            continue;
+        }
+        if let Placed::Seeded { stairs, .. } = &entry.placed
+            && *stairs != Stairs::Free
+            && ways.iter().any(|(floor, ..)| *floor == FLOORS)
+        {
+            errors.push(format!("{}: may be the throne's landmark, and asks its stairs {stairs:?} on a floor with no way down", entry.name));
+        }
+        let mut fits_somewhere = false;
+        let mut owed: Vec<String> = Vec::new();
+        for (_, def, required) in &ways {
+            for recipe in def.recipes.iter().filter_map(|r| layout.recipe(&r.name)) {
+                match misfit(entry, recipe, layout, pieces) {
+                    None => fits_somewhere = true,
+                    Some(why) if *required => {
+                        let line = format!("{why}, on a floor of the {} that owes it", def.name);
+                        if !owed.contains(&line) {
+                            owed.push(line);
+                        }
+                    }
+                    Some(_) => {}
+                }
+            }
+        }
+        errors.extend(owed);
+        if !fits_somewhere {
+            errors.push(format!("{}: fits no recipe of any biome it may stand in, so it is never laid", entry.name));
+        }
+    }
+    errors
 }
 
 /// Every district of `layout` that some biome of `defs` grows, each
@@ -479,6 +575,19 @@ pub(crate) fn biomes_drawn(seed: RunSeed) -> Vec<String> {
     drawn_names(&load(&registry(), &layout()), seed)
 }
 
+/// Every biome [`biomes_drawn`] may ever name, read from the file with no
+/// seed drawn: each one standing on a floor below the throne's beside
+/// another, by the name the log gives it, in the file's order.
+#[cfg(test)]
+pub(crate) fn biomes_told_of() -> Vec<String> {
+    let defs = load(&registry(), &layout());
+    defs.iter()
+        .map(|(_, d)| d)
+        .filter(|d| (d.floors.0..=d.floors.1.min(FLOORS - 1)).any(|f| band(&defs, f).len() > 1))
+        .map(|d| format!("the {}", d.name))
+        .collect()
+}
+
 /// [`biomes_drawn`] over `defs` already loaded.
 fn drawn_names(defs: &Registry<BiomeDef>, seed: RunSeed) -> Vec<String> {
     let mut names: Vec<String> = Vec::new();
@@ -570,6 +679,22 @@ mod tests {
         );
     }
 
+    /// A favored kind that spawns on none of one of its biome's floors is
+    /// refused naming the kind and the floor, though the biome still has
+    /// its three others there: favored for nothing on that floor.
+    #[test]
+    #[should_panic(expected = "myconid\\\", which monster_spawns.ron spawns on none of floor 1")]
+    fn a_favored_kind_that_spawns_on_none_of_its_biomes_floors_is_refused_naming_the_floor() {
+        check_favored(
+            &edited(|d| {
+                if d.name == "Cellars" {
+                    d.favored.push("myconid".to_string());
+                }
+            }),
+            &bestiary(),
+        );
+    }
+
     /// A name the bestiary does not carry is refused rather than dropped.
     #[test]
     #[should_panic(expected = "which monsters.ron does not carry")]
@@ -582,17 +707,6 @@ mod tests {
             }),
             &bestiary(),
         );
-    }
-
-    /// Every floor one to ten has at least one biome that stands on it,
-    /// so [`draw`] and [`throne`] never run out of candidates.
-    #[test]
-    fn every_floor_has_a_biome_of_its_own() {
-        let defs = defs();
-        for floor in 1..=FLOORS {
-            let total: u32 = defs.iter().map(|(_, d)| d).filter(|d| (d.floors.0..=d.floors.1).contains(&floor)).map(|d| d.weight).sum();
-            assert!(total > 0, "floor {floor} has no biome");
-        }
     }
 
     /// The three throne biomes are the only ones on floor ten, and
@@ -625,68 +739,94 @@ mod tests {
         }
     }
 
-    /// Over a span of seeds, every biome of a band is drawn somewhere on
-    /// it, and none takes more than two thirds of its band's floors.
+    /// The shares a design keeps, read from the weights with no draw: no
+    /// biome takes more than two thirds of any floor it shares with
+    /// another, and no recipe more than two thirds of its biome's floors,
+    /// the throne biomes' single recipes and a stratum's lone biome aside.
+    /// That every biome and recipe is drawn at all is the load's: a weight
+    /// of nought is refused, and so is a floor with no biome or a throne
+    /// biome no boss names.
     #[test]
-    fn every_biome_is_drawn_and_none_takes_more_than_two_thirds_of_its_bands_floors() {
+    fn no_biome_takes_more_than_two_thirds_of_a_floor_it_shares_and_no_recipe_more_than_two_thirds_of_its_biomes() {
         let defs = defs();
-        let tiles = registry();
-        let bands: [(u32, u32); 5] = [(1, 2), (3, 4), (5, 6), (7, 8), (9, 9)];
-        for band in bands {
-            let members: Vec<&str> = defs.iter().map(|(_, d)| d).filter(|d| (d.floors.0..=d.floors.1) == (band.0..=band.1)).map(|d| d.name.as_str()).collect();
-            let mut counts: std::collections::BTreeMap<&str, u32> = members.iter().map(|m| (*m, 0)).collect();
-            let mut total = 0u32;
-            for s in 0..200u64 {
-                for floor in band.0..=band.1 {
-                    let drawn = draw(&defs, floor, RunSeed(s), &tiles);
-                    let bare = drawn.name.trim_start_matches("the ").to_string();
-                    if let Some(c) = counts.get_mut(bare.as_str()) {
-                        *c += 1;
-                    }
-                    total += 1;
-                }
+        for floor in 1..FLOORS {
+            let band = band(&defs, floor);
+            let total: u32 = band.iter().map(|d| d.weight).sum();
+            for def in band.iter().filter(|_| band.len() > 1) {
+                assert!(def.weight * 3 <= total * 2, "floor {floor}: {} weighs {} of {total}", def.name, def.weight);
             }
-            for (name, count) in &counts {
-                assert!(*count > 0, "band {band:?}: {name} is never drawn");
-                // A stratum with a single biome so far, the Underlake's,
-                // takes all of its floors by definition.
-                assert!(members.len() == 1 || u64::from(*count) * 3 <= u64::from(total) * 2, "band {band:?}: {name} takes {count} of {total}");
+        }
+        for (_, def) in defs.iter().filter(|(_, d)| d.recipes.len() > 1) {
+            let total: u32 = def.recipes.iter().map(|r| r.weight).sum();
+            for r in &def.recipes {
+                assert!(r.weight * 3 <= total * 2, "{}: {} weighs {} of {total}", def.name, r.name, r.weight);
             }
         }
     }
 
-    /// Over seeds 0 to 200, every recipe of every biome is drawn on some
-    /// floor, and none takes more than two thirds of its biome's floors,
-    /// the throne biomes' single recipes aside.
+    /// A floor no biome stands on, and a throne biome no floor ten boss
+    /// names, are each refused by name: the one a run that cannot draw its
+    /// floor, the other a biome no run ever grows.
     #[test]
-    fn every_recipe_of_every_biome_is_drawn_and_none_takes_more_than_two_thirds_of_its_biomes_floors() {
-        let defs = defs();
-        let tiles = registry();
-        let mut counts: std::collections::BTreeMap<(String, String), u32> = std::collections::BTreeMap::new();
-        for (_, def) in defs.iter() {
-            for r in &def.recipes {
-                counts.insert((def.name.clone(), r.name.clone()), 0);
+    fn a_floor_with_no_biome_and_a_throne_biome_no_boss_names_are_each_refused_by_name() {
+        assert_eq!(drawn_problems(&defs()), Vec::<String>::new(), "the shipped biomes");
+        let moved = edited(|d| {
+            if d.floors == (1, 2) {
+                d.floors = (2, 2);
+                d.moods.truncate(1);
             }
-        }
-        for s in 0..200u64 {
-            for floor in 1..FLOORS {
-                let drawn = draw(&defs, floor, RunSeed(s), &tiles);
-                let biome = drawn.name.trim_start_matches("the ").to_string();
-                *counts.get_mut(&(biome, drawn.recipe.clone())).expect("a recipe of its own biome") += 1;
+            if d.name == "Brood Hollow" {
+                d.name = "Brood Pit".to_string();
             }
-            let boss = lairs::final_boss(RunSeed(s));
-            let drawn = throne(&defs, boss.biome, RunSeed(s), &tiles);
-            let biome = drawn.name.trim_start_matches("the ").to_string();
-            *counts.get_mut(&(biome, drawn.recipe.clone())).expect("the throne's own recipe") += 1;
+        });
+        assert_eq!(
+            drawn_problems(&moved),
+            ["no biome stands on floor 1", "Brood Pit: stands on floor ten, and no floor ten boss names it, so it is never drawn"]
+        );
+    }
+
+    /// Every shipped pool entry is drawn on some floor of some biome, fits
+    /// every recipe of every biome that owes it, and fits somewhere it is
+    /// only offered: what `Undermere::new` holds at load.
+    #[test]
+    fn every_pool_entry_is_drawn_somewhere_and_fits_every_recipe_that_owes_it() {
+        let (prefabs, pool, _) = crate::prefabs::load(&registry(), &layout());
+        assert_eq!(pool_problems(&defs(), &pool, &layout(), prefabs.defs()), Vec::<String>::new());
+    }
+
+    /// An entry no biome it may stand in is drawn with, and a required
+    /// piece too large for every room it may stand in, are each refused
+    /// naming the entry and why: the one never drawn, the other a floor
+    /// that fails every attempt.
+    #[test]
+    fn an_entry_drawn_nowhere_and_a_required_piece_too_large_for_any_room_are_each_refused_by_name() {
+        use rl_engine::rl_rules::pool::Placed;
+        let (prefabs, mut pool, _) = crate::prefabs::load(&registry(), &layout());
+        let nowhere = pool.entries.iter().position(|e| e.weight > 0).expect("an entry in play");
+        pool.entries[nowhere].within = vec!["Drowned Throne".to_string()];
+        pool.entries[nowhere].floors = (1, 2);
+        let owed = pool
+            .entries
+            .iter()
+            .enumerate()
+            .position(|(i, e)| {
+                i != nowhere
+                    && matches!(e.placed, Placed::Inside { .. })
+                    && e.weight > 0
+                    && pool.budgets.iter().filter(|b| b.kind == e.kind).all(|b| b.required)
+            })
+            .expect("a required inside piece");
+        if let Placed::Inside { piece, .. } = &mut pool.entries[owed].placed {
+            *piece = "Mereholt".to_string();
         }
-        for (_, def) in defs.iter() {
-            let of_biome: u32 = def.recipes.iter().map(|r| counts[&(def.name.clone(), r.name.clone())]).sum();
-            for r in &def.recipes {
-                let n = counts[&(def.name.clone(), r.name.clone())];
-                assert!(n > 0, "{}: {} is never drawn", def.name, r.name);
-                assert!(def.recipes.len() == 1 || n * 3 <= of_biome * 2, "{}: {} takes {n} of {of_biome}", def.name, r.name);
-            }
-        }
+        let errors = pool_problems(&defs(), &pool, &layout(), prefabs.defs());
+        let (a, b) = (pool.entries[nowhere].name.clone(), pool.entries[owed].name.clone());
+        assert!(
+            errors.iter().any(|e| *e == format!("{a}: no floor where a budget of its kind gives picks stands a biome it may stand in, so it is never drawn")),
+            "{errors:#?}"
+        );
+        assert!(errors.iter().any(|e| e.starts_with(&format!("{b}: \"Mereholt\" is 64 by 36")) && e.contains("that owes it")), "{errors:#?}");
+        assert!(errors.iter().any(|e| *e == format!("{b}: fits no recipe of any biome it may stand in, so it is never laid")), "{errors:#?}");
     }
 
     /// The biomes the innkeeper's rumours are told from are the floors'

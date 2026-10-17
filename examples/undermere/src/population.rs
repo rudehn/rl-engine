@@ -688,49 +688,6 @@ mod tests {
     use crate::dungeon::{TOWN, map_of};
     use crate::testing::{adventurer, arrive, first_seeds, headless, par_seeds, seeds, sturdy};
 
-    /// Whatever a floor's population stands that blocks, a camp's fire
-    /// first among them, never stands between the way in and the way
-    /// down: on every floor a goblin camp may be lit, over a span of seeds,
-    /// the stairs down are reached from where the floor is entered round
-    /// every prop in the way, doors opened. Seed 49's fire, lit in a
-    /// corridor on floor five, held every delve of it there for good.
-    #[test]
-    fn nothing_the_population_stands_cuts_the_way_in_off_from_the_way_down_over_a_span_of_seeds() {
-        par_seeds(seeds(0..50), |s| {
-            let mut app = headless(RunSeed(s));
-            let me = adventurer(&mut app);
-            sturdy(&mut app, me);
-            for floor in 3..=6 {
-                let map = map_of(floor);
-                arrive(&mut app, map);
-                let world = app.world_mut();
-                let blocked: Vec<Point> = world
-                    .query_filtered::<(&Position, &OnMap), (With<Prop>, With<Blocks>)>()
-                    .iter(world)
-                    .filter(|(_, on)| on.0 == map)
-                    .map(|(p, _)| p.0)
-                    .collect();
-                let down =
-                    world.query::<(&Position, &OnMap, &Stair)>().iter(world).find(|(_, on, way)| on.0 == map && way.climb == Climb::Down).map(|(p, ..)| p.0);
-                let down = down.expect("a way down");
-                let world_map = app.world().resource::<WorldMap>();
-                let entry = world_map.place(map).expect("built").entry;
-                let mut reached = vec![entry];
-                let mut seen: std::collections::BTreeSet<Point> = reached.iter().copied().collect();
-                while let Some(at) = reached.pop() {
-                    for next in geometry::square(at, 1) {
-                        let door = world_map.tile(next).is_some_and(|t| world_map.tables().names[t.index()] == "door");
-                        let open = world_map.is_walkable_on(map, next) || door;
-                        if open && !blocked.contains(&next) && seen.insert(next) {
-                            reached.push(next);
-                        }
-                    }
-                }
-                assert!(seen.contains(&down), "seed {s}, floor {floor}: the way down at {down:?} is cut off from the way in at {entry:?}");
-            }
-        });
-    }
-
     /// A floor's worth of open ground, larger than any floor, with nothing
     /// in the way: what `plan` does with no map to fall short on.
     fn open_ground() -> (Rect, Point) {
@@ -817,59 +774,34 @@ mod tests {
     }
 
     /// [`pick_group_favoring`]'s own mechanism, isolated from `plan`'s
-    /// geometry: a favored row is drawn about [`FAVORED_WEIGHT`] times as
-    /// often as an unfavored row that starts at the same plain weight, over
-    /// a span of seeds. Band 5 carries three rows of weight 20 each, the
-    /// goblin archer, conjurer and mystic (`assets/monster_spawns.ron`), so
-    /// favoring one against another of the same weight needs no table of
-    /// its own.
+    /// geometry and from the shipped bestiary: on a made-up band of three
+    /// kinds of one weight, a favored one is drawn about
+    /// [`FAVORED_WEIGHT`] times as often as either of the others, a kind of
+    /// another band never, though it is favored too, and a drawn row keeps
+    /// its own group. Which kinds a biome favors, and that each spawns on
+    /// its floors, is the biomes' load to hold, not a draw's.
     #[test]
     fn a_favored_kind_is_drawn_about_favored_weight_times_as_often_as_an_equal_weight_row_over_a_span_of_seeds() {
-        let bestiary = bestiary();
-        let band = 5;
-        let archer = bestiary.defs.expect("goblin archer");
-        let conjurer = bestiary.defs.expect("goblin conjurer");
-        let rows: Vec<&BandedEntry<Id<MonsterDef>>> = bestiary.spawns.at(band).collect();
-        let weight_of = |id| rows.iter().find(|e| e.item == id).map(|e| e.weight);
-        assert_eq!(weight_of(archer), weight_of(conjurer), "the two rows this test favors by must start equal");
-        let favor = [archer];
-        let (mut favored_count, mut plain_count) = (0u32, 0u32);
+        let kind = Id::<MonsterDef>::from_raw;
+        let table = BandedTable::new(vec![
+            BandedEntry::new(kind(0)).bands(5, 5).weight(20),
+            BandedEntry::new(kind(1)).bands(5, 5).weight(20),
+            BandedEntry::new(kind(2)).bands(5, 5).weight(20).group(2, 3),
+            BandedEntry::new(kind(3)).bands(6, 6).weight(20),
+        ]);
+        let favor = [kind(0), kind(3)];
+        let mut drawn = [0u32; 4];
         for s in 0..4000u64 {
             let mut rng = rand::rngs::StdRng::seed_from_u64(s);
-            let Some((id, _)) = pick_group_favoring(&Spawns { table: &bestiary.spawns, band, favor: &favor }, &mut rng) else { continue };
-            if id == archer {
-                favored_count += 1;
-            } else if id == conjurer {
-                plain_count += 1;
-            }
+            let (id, n) = pick_group_favoring(&Spawns { table: &table, band: 5, favor: &favor }, &mut rng).expect("the band has rows");
+            assert!(id != kind(2) || (2..=3).contains(&n), "seed {s}: a drawn row keeps its own group");
+            drawn[id.index()] += 1;
         }
-        assert!(plain_count > 0, "the unfavored row was never drawn");
-        let ratio = f64::from(favored_count) / f64::from(plain_count);
-        assert!((2.0..4.0).contains(&ratio), "favored {favored_count}, plain {plain_count}, ratio {ratio}");
-    }
-
-    /// No biome favors a kind for nothing: every kind a biome of
-    /// `assets/biomes.ron` favors is in the bestiary and spawns on every
-    /// floor that biome may stand on, so a biome is told by what lives in
-    /// it on each of its floors rather than one of them. Read off the
-    /// draws over a span of seeds, which reaches every biome on every one
-    /// of its floors.
-    #[test]
-    fn every_favored_kind_spawns_on_every_floor_its_biome_stands_on() {
-        let bestiary = bestiary();
-        let mut seen = std::collections::BTreeSet::new();
-        for s in 0..80 {
-            let undermere = crate::dungeon::Undermere::new(RunSeed(s));
-            for floor in 1..=FLOORS {
-                let drawn = undermere.biome_of(floor);
-                for name in &drawn.favored {
-                    let id = bestiary.defs.id(name).unwrap_or_else(|| panic!("{}: {name} is no monster", drawn.name));
-                    assert!(bestiary.spawns.at(floor as i32).any(|e| e.item == id), "{} on floor {floor}: {name} never spawns there", drawn.name);
-                }
-                seen.insert((drawn.name.clone(), floor));
-            }
+        assert_eq!(drawn[3], 0, "a kind of another band is never drawn");
+        for plain in [1, 2] {
+            let ratio = f64::from(drawn[0]) / f64::from(drawn[plain]);
+            assert!((2.5..3.5).contains(&ratio), "favored {} against {} plain: {ratio}", drawn[0], drawn[plain]);
         }
-        assert!(seen.len() >= 25, "every biome on each of its floors, about: {}", seen.len());
     }
 
     /// A floor's population favors its own biome's kinds: over a span of
@@ -1157,6 +1089,35 @@ mod tests {
         assert!(checked > 0, "some lair was drawn and checked over the span");
     }
 
+    /// [`camp_fire_cell`] on made-up ground over a span of seeds: a camp's
+    /// fire stands only in the open, every cell round it walkable, never on
+    /// a cell of its band or one the caller refused, and only where no such
+    /// cell lies within two of the band's first, so a fire is never lit in a
+    /// corridor or a doorway to cut a floor in two; a band in a corridor one
+    /// cell wide lights none. The run's backstop walks real floors past
+    /// what the population stood.
+    #[test]
+    fn a_camps_fire_stands_only_in_the_open_off_its_band_and_lights_none_in_a_corridor() {
+        let corridor = |p: Point| p.y == 5;
+        let band = [Point::new(4, 5), Point::new(5, 5), Point::new(6, 5)];
+        assert_eq!(camp_fire_cell(&band, &mut |_| true, corridor), None, "no fire in a corridor one cell wide");
+        for s in 0..200u64 {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(s);
+            let rock: Vec<Point> = (0..30).map(|_| Point::new(rng.random_range(0..12), rng.random_range(0..12))).collect();
+            let refused: Vec<Point> = (0..10).map(|_| Point::new(rng.random_range(0..12), rng.random_range(0..12))).collect();
+            let open = |p: Point| (0..12).contains(&p.x) && (0..12).contains(&p.y) && !rock.contains(&p);
+            let cells: Vec<Point> = [Point::new(6, 6), Point::new(7, 6)].into_iter().filter(|p| open(*p)).collect();
+            if cells.is_empty() {
+                continue;
+            }
+            let fits = |p: Point| !cells.contains(&p) && !refused.contains(&p) && geometry::square(p, 1).all(open);
+            match camp_fire_cell(&cells, &mut |p| !refused.contains(&p), open) {
+                Some(p) => assert!(fits(p) && geometry::chebyshev(p, cells[0]) <= 2, "seed {s}: a fire at {p:?}, not in the open off its band"),
+                None => assert!(!geometry::square(cells[0], 2).any(fits), "seed {s}: no fire, with room for one in the open"),
+            }
+        }
+    }
+
     /// [`sleep_chance`]'s own hand-written numbers: half on floor one,
     /// about a sixth by floor nine, doubled and capped at a hundred for a
     /// sleepy kind, and nought for a wakeful one whatever the floor.
@@ -1173,27 +1134,6 @@ mod tests {
             );
             assert_eq!(sleep_chance(floor, false, true), 0, "floor {floor}: wakeful never sleeps");
             assert_eq!(sleep_chance(floor, true, true), 0, "floor {floor}: wakeful outranks sleepy");
-        }
-    }
-
-    /// Rolled against [`sleep_chance`]'s own percent over a span of seeds,
-    /// a plain kind's own share of sleepers lands within a few points of
-    /// what the floor's own number says, on three floors spread across the
-    /// span the controller's numbers cover.
-    #[test]
-    fn a_plain_kinds_own_share_of_sleepers_matches_sleep_chance_over_a_span_of_seeds() {
-        for floor in [1u32, 5, 9] {
-            let pct = sleep_chance(floor, false, false);
-            let trials: u32 = 4000;
-            let mut asleep: u32 = 0;
-            let mut rng = rand::rngs::StdRng::seed_from_u64(u64::from(floor));
-            for _ in 0..trials {
-                if rng.random_ratio(pct, 100) {
-                    asleep += 1;
-                }
-            }
-            let share = asleep * 100 / trials;
-            assert!(share.abs_diff(pct) <= 4, "floor {floor}: rolled {share}%, wanted about {pct}%");
         }
     }
 

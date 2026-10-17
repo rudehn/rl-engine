@@ -53,6 +53,8 @@ mod lairs;
 mod pieces;
 mod strata;
 
+#[cfg(test)]
+pub(crate) use biomes::biomes_told_of;
 pub(crate) use biomes::{BiomeDraw, Decor, biomes_drawn};
 use lairs::ClearOfTheThrone;
 pub(crate) use lairs::{FINAL_BOSSES, MINI_BOSSES, final_boss, lairs};
@@ -89,6 +91,11 @@ const EXIT_AMONG_PCT: u32 = 33;
 /// How far the way down keeps from every piece stamped before it, so it
 /// is never inside a lair nor in its doorway.
 const EXIT_CLEAR: i32 = 2;
+
+/// How many chests every floor but the throne's is furnished with, the
+/// fewest and the most: one or two, each what `assets/props.ron` stocks a
+/// chest with.
+pub(crate) const CHESTS: (u32, u32) = (1, 2);
 
 /// How every tile looks, compiled in so the binary runs from anywhere.
 const TILES_RON: &str = include_str!("../assets/tiles.ron");
@@ -210,6 +217,67 @@ impl Undermere {
     pub(crate) fn vault_pieces(&self) -> Vec<String> {
         let kinds: Vec<usize> = ["risk_reward", "reward"].iter().filter_map(|k| self.pool.kinds.iter().position(|n| n == k)).collect();
         self.pool.entries.iter().filter(|e| kinds.contains(&e.kind)).map(|e| e.name.clone()).collect()
+    }
+
+    /// Every piece and every dressing a run may lay, by name: the town, the
+    /// three thrones and the five lairs, what the lived-in dungeon and the
+    /// chests lay on every floor, every biome's decor and dressings, and
+    /// every pool entry in play. A file named nowhere here is one no run
+    /// ever lays, and what it names is reached by nothing through it.
+    #[cfg(test)]
+    pub(crate) fn laid_files(&self) -> (BTreeSet<String>, BTreeSet<String>) {
+        let mut pieces: BTreeSet<String> = ["Mereholt", "fallen body", "wall inscription", "chest"].map(String::from).into();
+        pieces.extend(FINAL_BOSSES.iter().map(|b| b.piece.to_string()).chain(MINI_BOSSES.iter().map(|b| b.name.to_string())));
+        let mut dressings = BTreeSet::new();
+        for (_, def) in self.defs.iter() {
+            pieces.extend(def.decor.iter().filter_map(|d| match d {
+                biomes::DecorDef::Furnish { piece, .. } => Some(piece.clone()),
+                biomes::DecorDef::Patches { .. } => None,
+            }));
+            dressings.extend(def.dressings.iter().cloned());
+        }
+        for entry in self.pool.entries.iter().filter(|e| e.weight > 0) {
+            match &entry.placed {
+                rl_engine::rl_rules::pool::Placed::Dressed { dressing } => dressings.insert(dressing.clone()),
+                _ => pieces.insert(entry.piece().expect("a piece for any but a dressing").to_string()),
+            };
+        }
+        (pieces, dressings)
+    }
+
+    /// Every biome drawn with each of its recipes, every way a floor may
+    /// be grown, for a test that reads what a biome lays without drawing
+    /// seeds until each turns up.
+    #[cfg(test)]
+    pub(crate) fn every_draw(&self) -> Vec<BiomeDraw> {
+        self.defs.iter().flat_map(|(_, def)| (0..def.recipes.len()).map(move |r| biomes::to_draw(def, r, &self.tiles))).collect()
+    }
+
+    /// Every tile floor `floor` grown as `drawn` may show, by name: its
+    /// wall and floor, floor ten's the drawn boss's own; what its biome
+    /// paints and strews, its lakes, their shore and their bridges; the
+    /// tiles [`shared_tiles`] gives the floor; a risk-and-reward or reward
+    /// piece's own on any floor above the throne's; and the gate's other
+    /// side on floor one.
+    #[cfg(test)]
+    pub(crate) fn tiles_a_floor_may_show(&self, floor: u32, drawn: &BiomeDraw) -> BTreeSet<String> {
+        let name = |t: TileId| self.tiles.get(t).name.clone();
+        let (wall, floor_tile) = if floor == FLOORS {
+            let boss = self.final_boss();
+            (boss.wall.to_string(), boss.floor.to_string())
+        } else {
+            (name(drawn.wall), name(drawn.floor))
+        };
+        let strewn = drawn.decor.iter().filter_map(|d| match d {
+            Decor::Patches { tile, .. } => Some(*tile),
+            Decor::Furnish { .. } => None,
+        });
+        let painted = drawn.paint.iter().map(|(_, t)| *t).chain(strewn).map(name);
+        let lakes = drawn.lakes.iter().flat_map(|(l, b)| [Some(l.tile), l.wreath.map(|(t, _)| t), b.map(|b| b.tile)]).flatten().map(name);
+        let pieces = (floor < FLOORS).then_some(PIECE_TILES).into_iter().flatten().map(|t| t.to_string());
+        let shared = shared_tiles(floor).iter().map(|t| t.to_string());
+        let gate = (floor == 1).then(|| "gate".to_string());
+        shared.chain([wall, floor_tile]).chain(painted).chain(lakes).chain(pieces).chain(gate).collect()
     }
 }
 
@@ -427,6 +495,7 @@ impl Undermere {
         let defs = biomes::load(&tiles, &layout);
         biomes::check_favored(&defs, &bestiary);
         biomes::check_pieces(&defs, &prefabs);
+        biomes::check_pool(&defs, &pool, &layout, prefabs.defs());
         let districts = biomes::district_dressings(&defs, &layout);
         dressing::check_districts(&districts, prefabs.dressings(), &layout).unwrap_or_else(|e| panic!("assets/biomes.ron: {e}"));
         let hiding = crate::traps::Hiding::load();
@@ -722,7 +791,7 @@ impl Undermere {
                 })
                 .then(crate::decor::WallInscriptions { name: "wall inscription", piece: self.prefabs.piece("wall inscription")?, chance_pct: 25 })
         };
-        Ok(if floor == FLOORS { chain } else { chain.then(Furnish { name: "chests", piece: self.prefabs.piece("chest")?, count: (1, 2) }) })
+        Ok(if floor == FLOORS { chain } else { chain.then(Furnish { name: "chests", piece: self.prefabs.piece("chest")?, count: CHESTS }) })
     }
 
     /// Floor `floor` as rows of glyphs, for `undermere --floor N --seed S`
@@ -1227,11 +1296,6 @@ mod tests {
     use super::*;
     use crate::testing::{par_seeds, seeds};
 
-    /// Every place a run walks through: the town, then the floors in order.
-    fn places() -> impl Iterator<Item = MapId> {
-        std::iter::once(TOWN).chain((1..=FLOORS).map(map_of))
-    }
-
     /// What a piece's slot at `spot` holds, if the spot is a slot.
     fn slot<'a>(undermere: &'a Undermere, spot: &Spot) -> Option<&'a Slot<MonsterDef>> {
         spot.prefab.zip(char::from_u32(spot.tag)).and_then(|(key, glyph)| undermere.prefabs().slot(key, glyph))
@@ -1271,66 +1335,235 @@ mod tests {
         seen
     }
 
-    /// A floor that fails to build is a run that crashes on its stairs, so
-    /// every place is built over three hundred seeds.
+    /// The run's backstop: every place of a run, the town and the ten
+    /// floors, grown once a seed over a span of seeds, and held to every
+    /// promise the generator makes of a floor with the real content in it.
+    /// Each promise has a pass that owns it, tested on a made-up map in
+    /// that pass's own suite; this is what catches two passes that keep
+    /// their own promises and break each other's, so it grows each floor
+    /// once and asks everything of it rather than growing every floor again
+    /// for each question. Each check below is named for its promise, and
+    /// says which floor and seed broke it.
     #[test]
-    fn every_floor_and_the_town_build_over_a_span_of_seeds_with_an_entry_and_a_way_on() {
-        par_seeds(seeds(0..300), |s| {
-            let undermere = Undermere::new(RunSeed(s));
-            let tables = undermere.tiles().tables();
-            for map in places() {
-                let built = undermere.build(map, None).unwrap_or_else(|e| panic!("{map:?}, seed {s}: {e}"));
-                let walkable = |p: Point| built.terrain.get(p).is_some_and(|t| tables.walkable[t.index()]);
-                assert!(walkable(built.entry), "{map:?}, seed {s}: the way in at {:?} is in a wall", built.entry);
-                if floor_of(map) == Some(FLOORS) {
-                    assert_eq!(built.exit, None, "seed {s}: the last floor has no way down");
-                } else {
-                    let on = built.exit.unwrap_or_else(|| panic!("{map:?}, seed {s}: no way on"));
-                    assert!(walkable(on), "{map:?}, seed {s}: the way on at {on:?} is in a wall");
-                    assert_ne!(on, built.entry, "{map:?}, seed {s}: the way in is the way on");
-                }
-            }
-        });
-    }
-
-    /// With every prop that stands in the way and every monster a piece
-    /// stands at its post, every cell a body may cross on every floor can
-    /// still be walked to from the floor's way in, doors opened, every
-    /// secret found and every lock and seal opened, and the way down with
-    /// none of them: a floor
-    /// with a cell nobody reaches is a floor with a chest, a stair or a
-    /// king nobody can get to, and water, lava and the furniture are each
-    /// laid so they never cut one off.
-    #[test]
-    fn every_open_cell_of_every_floor_can_be_walked_to_from_its_entry_with_everything_standing() {
+    fn every_place_of_a_run_keeps_every_promise_the_generator_makes_over_a_span_of_seeds() {
         let registries = crate::content::registries();
+        let library = crate::content::Library::load(&crate::content::effect_kinds(), &Moments::default());
+        let hiding = crate::traps::Hiding::load();
+        let (told, locked) = (std::sync::Mutex::new(BTreeSet::new()), AtomicUsize::new(0));
         par_seeds(seeds(0..60), |s| {
             let undermere = Undermere::new(RunSeed(s));
             let tables = undermere.tiles().tables();
+            let town = undermere.build(TOWN, None).unwrap_or_else(|e| panic!("Mereholt, seed {s}: {e}"));
+            builds_with_a_way_in_and_a_way_on(&town, &tables, false, &format!("Mereholt, seed {s}"));
+            no_post_is_near_the_way_in(&undermere, &town, &format!("Mereholt, seed {s}"));
             for floor in 1..=FLOORS {
-                let built = undermere.build(map_of(floor), None).unwrap();
-                let standing = standing(&undermere, &registries, &built);
-                // Every secret found, laid as what it really is; every lock
-                // and seal opened, which their tiles already let a walk
-                // through.
-                let mut found = built.terrain.clone();
-                for secret in &built.secrets {
-                    found.set(secret.at, secret.is);
+                let at = format!("floor {floor}, seed {s}");
+                let map = map_of(floor);
+                let ctx = undermere.generate(map).unwrap_or_else(|e| panic!("{at}: {e}"));
+                every_lair_is_entered_only_through_its_entries(&ctx, &tables, &at);
+                let stamped: Vec<Stamped> = ctx.outputs().iter::<Stamped>().cloned().collect();
+                let mut built = PlaceBuild::from_context(ctx).unwrap_or_else(|e| panic!("{at}: {e}"));
+                crate::vaults::place_vault_fixtures(&mut built, undermere.tiles(), undermere.prefabs(), RunSeed(s), map);
+                builds_with_a_way_in_and_a_way_on(&built, &tables, floor == FLOORS, &at);
+                every_open_cell_is_walked_to_with_everything_standing(&undermere, &registries, &built, &tables, &at);
+                shows_only_what_its_biome_and_its_lairs_lay(&undermere, floor, &built, &at);
+                no_post_is_near_the_way_in(&undermere, &built, &at);
+                if floor == FLOORS {
+                    the_throne_holds_the_drawn_boss_alone_and_far_from_the_way_in(&undermere, &library, &stamped, &built, &at);
+                } else {
+                    every_prize_is_reached_once_its_key_lever_or_secret_is_found(&undermere, &registries, &built, &tables, &at);
                 }
-                let open = |p: Point| found.get(p).is_some_and(|t| tables.passable[t.index()]) && !standing.contains(&p);
-                let seen = walked(built.entry, open);
-                for p in found.bounds().cells().filter(|p| open(*p)) {
-                    assert!(seen.contains(&p), "floor {floor}, seed {s}: {p:?} cannot be walked to with everything standing");
-                }
-                // The way down with none of them: every secret still hidden
-                // and every lock and seal shut.
-                let shut: BTreeSet<Point> = built.locks.iter().map(|l| l.at).collect();
-                let plain = |p: Point| built.terrain.get(p).is_some_and(|t| tables.passable[t.index()]) && !standing.contains(&p) && !shut.contains(&p);
-                if let Some(exit) = built.exit {
-                    assert!(walked(built.entry, plain).contains(&exit), "floor {floor}, seed {s}: the way down at {exit:?} is shut off");
+                told.lock().expect("one writer at a time").extend(crate::traps::hidden_keeps_its_promises(&hiding, &built, floor, &tables, &at));
+                if crate::vaults::nothing_lands_behind_a_lock(&tables, built, map, &at) {
+                    locked.fetch_add(1, Relaxed);
                 }
             }
         });
+        let told = told.into_inner().expect("every writer done");
+        assert!(
+            told.contains(&crate::traps::SecretKind::Door) && told.contains(&crate::traps::SecretKind::Room),
+            "both doors and rooms over the span: {told:?}"
+        );
+        assert!(locked.into_inner() >= 3, "some floors over the span lay a lock or a seal");
+    }
+
+    /// A place builds with its way in on walkable ground, and, but the
+    /// throne's, a way on of its own on walkable ground: a floor that
+    /// fails to build is a run that crashes on its stairs.
+    fn builds_with_a_way_in_and_a_way_on(built: &PlaceBuild, tables: &TileTables, last: bool, at: &str) {
+        let walkable = |p: Point| built.terrain.get(p).is_some_and(|t| tables.walkable[t.index()]);
+        assert!(walkable(built.entry), "{at}: the way in at {:?} is in a wall", built.entry);
+        if last {
+            assert_eq!(built.exit, None, "{at}: the last floor has no way down");
+        } else {
+            let on = built.exit.unwrap_or_else(|| panic!("{at}: no way on"));
+            assert!(walkable(on) && on != built.entry, "{at}: the way on at {on:?} is in a wall or the way in");
+        }
+    }
+
+    /// With every prop that stands in the way and every monster a piece
+    /// stands at its post, every cell a body may cross can still be walked
+    /// to from the way in, doors opened, every secret found and every lock
+    /// and seal opened, and the way down with none of them: a cell nobody
+    /// reaches is a chest, a stair or a king nobody can get to, and water,
+    /// lava and the furniture are each laid so they never cut one off.
+    fn every_open_cell_is_walked_to_with_everything_standing(
+        undermere: &Undermere,
+        registries: &Registries,
+        built: &PlaceBuild,
+        tables: &TileTables,
+        at: &str,
+    ) {
+        let standing = standing(undermere, registries, built);
+        let mut found = built.terrain.clone();
+        for secret in &built.secrets {
+            found.set(secret.at, secret.is);
+        }
+        let open = |p: Point| found.get(p).is_some_and(|t| tables.passable[t.index()]) && !standing.contains(&p);
+        let seen = walked(built.entry, open);
+        if let Some(p) = found.bounds().cells().find(|p| open(*p) && !seen.contains(p)) {
+            panic!("{at}: {p:?} cannot be walked to with everything standing");
+        }
+        let shut: BTreeSet<Point> = built.locks.iter().map(|l| l.at).collect();
+        let plain = |p: Point| built.terrain.get(p).is_some_and(|t| tables.passable[t.index()]) && !standing.contains(&p) && !shut.contains(&p);
+        if let Some(exit) = built.exit {
+            assert!(walked(built.entry, plain).contains(&exit), "{at}: the way down at {exit:?} is shut off");
+        }
+    }
+
+    /// A floor shows its own wall and floor, and nothing its biome, its
+    /// lairs, its pieces and its floor's shared tiles do not lay.
+    fn shows_only_what_its_biome_and_its_lairs_lay(undermere: &Undermere, floor: u32, built: &PlaceBuild, at: &str) {
+        let drawn = undermere.biome_of(floor);
+        let shown: BTreeSet<String> = built.terrain.iter().map(|(_, t)| undermere.tiles().get(t).name.clone()).collect();
+        let allowed = undermere.tiles_a_floor_may_show(floor, drawn);
+        let (wall, floor_tile) = if floor == FLOORS {
+            let boss = undermere.final_boss();
+            (boss.wall.to_string(), boss.floor.to_string())
+        } else {
+            (undermere.tiles().get(drawn.wall).name.clone(), undermere.tiles().get(drawn.floor).name.clone())
+        };
+        assert!(shown.contains(&wall) && shown.contains(&floor_tile), "{at}: {shown:?}");
+        let strays: Vec<&String> = shown.difference(&allowed).collect();
+        assert!(strays.is_empty(), "{at}: {strays:?} on a floor of {}", drawn.name);
+    }
+
+    /// Nothing a piece stands at its post is nearer the way in than the
+    /// population keeps: the way in is drawn clear of every piece stamped
+    /// before it, and on the last floor as far from the throne as the
+    /// floor allows.
+    fn no_post_is_near_the_way_in(undermere: &Undermere, built: &PlaceBuild, at: &str) {
+        for spot in built.spots.iter().filter(|spot| matches!(slot(undermere, spot), Some(Slot::Monster { .. }))) {
+            let d = geometry::chebyshev(spot.at, built.entry);
+            assert!(d >= MIN_DISTANCE_FROM_ENTRY, "{at}: a monster's post at {:?} is {d} from the way in", spot.at);
+        }
+    }
+
+    /// Every lair and the throne, grown as `Accrete`'s pieces are, is
+    /// entered only through the one entry its own prefab file marks: no
+    /// other cell of its own wall ever opens onto something a body can
+    /// walk through.
+    fn every_lair_is_entered_only_through_its_entries(ctx: &BaseContext, tables: &TileTables, at: &str) {
+        for area in ctx.outputs().iter::<Area>().filter(|a| a.entries.is_some()) {
+            let entries = area.entries.as_ref().expect("filtered on it");
+            for c in &area.cells {
+                for d in Direction::CARDINALS {
+                    let n = *c + d.offset();
+                    if !area.cells.contains(&n) && walkable(ctx, tables, n) {
+                        assert!(entries.contains(&n), "{at}: {n:?} opens into {} and is no entry", area.shape);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Floor ten holds whichever of the three `FINAL_BOSSES` this seed
+    /// draws, alone at its own throne but for the Drowned King's own five
+    /// knights and his braziers, every slot of the throne inside it, and
+    /// the way in held at least half the floor's longer side from it,
+    /// walking.
+    fn the_throne_holds_the_drawn_boss_alone_and_far_from_the_way_in(
+        undermere: &Undermere,
+        library: &crate::content::Library,
+        stamped: &[Stamped],
+        built: &PlaceBuild,
+        at: &str,
+    ) {
+        let boss = undermere.final_boss();
+        let key = undermere.prefabs().defs().expect(boss.piece).raw();
+        let throne: Vec<Rect> = stamped.iter().filter(|st| st.prefab == Some(key)).map(|st| st.bounds).collect();
+        assert_eq!(throne.len(), 1, "{at}: one {} on floor ten", boss.piece);
+        let throne = throne[0];
+        let (mut monsters, mut props): (Vec<&str>, Vec<&str>) = (Vec::new(), Vec::new());
+        for spot in built.spots.iter().filter(|s| s.prefab == Some(key)) {
+            match slot(undermere, spot) {
+                Some(Slot::Monster { pick: Pick::Kind(id), .. }) => monsters.push(&library.bestiary.defs.get(*id).name),
+                Some(Slot::Prop(id)) => props.push(&library.registries.props.get(*id).name),
+                _ => {}
+            }
+            assert!(throne.contains(spot.at), "{at}: a slot at {:?} outside the {}", spot.at, boss.piece);
+        }
+        monsters.sort_unstable();
+        props.sort_unstable();
+        // The Drowned King's piece keeps its part 1 name, `"the throne"`,
+        // rather than his own; the other two's is named as their monster.
+        let (expected_monsters, expected_props): (Vec<&str>, Vec<&str>) = if boss.piece == "the throne" {
+            (
+                ["skeleton knight"; 5].into_iter().chain(["the Drowned King"]).collect(),
+                vec!["cold brazier", "cold brazier", "cold brazier", "cold brazier", "throne"],
+            )
+        } else {
+            (vec![boss.piece], vec![])
+        };
+        assert_eq!((monsters.clone(), props), (expected_monsters, expected_props), "{at}: {}", boss.piece);
+        assert!(monsters.contains(&boss.name), "{at}: the boss stood is the one {:?} names, as its rumour is told", boss.name);
+        let view = built.terrain.view(undermere.tiles());
+        let mut walk = DijkstraMap::covering(&view);
+        walk.build(&view, [built.entry], PathRules::default());
+        let clear = throne.cells().filter_map(|p| walk.value(p)).min().unwrap_or_else(|| panic!("{at}: the throne can be walked to"));
+        let side = built.terrain.bounds().width.max(built.terrain.bounds().height);
+        assert!(clear >= side / 2, "{at}: the way in is {clear} steps from the throne, nearer than half the {side} side");
+    }
+
+    /// Every prize of every risk-and-reward and reward piece can be reached
+    /// from the way in once the floor's secrets are found and its locks and
+    /// seals opened, with everything standing: an item on a cell walked to,
+    /// a container beside one; and every vault's key and lever lies where
+    /// the way in reaches with every lock shut and every secret hidden, so
+    /// what opens a vault is never behind it, and every vault has its
+    /// opener on its floor.
+    fn every_prize_is_reached_once_its_key_lever_or_secret_is_found(
+        undermere: &Undermere,
+        registries: &Registries,
+        built: &PlaceBuild,
+        tables: &TileTables,
+        at: &str,
+    ) {
+        let pieces: BTreeSet<u32> = undermere.vault_pieces().iter().filter_map(|name| undermere.prefabs.defs().id(name)).map(|id| id.raw()).collect();
+        let standing = standing(undermere, registries, built);
+        let mut found = built.terrain.clone();
+        for secret in &built.secrets {
+            found.set(secret.at, secret.is);
+        }
+        let reached = walked(built.entry, |p| found.get(p).is_some_and(|t| tables.passable[t.index()]) && !standing.contains(&p));
+        let near = |p: Point| reached.contains(&p) || Direction::ALL.iter().any(|d| reached.contains(&(p + d.offset())));
+        for spot in built.spots.iter().filter(|s| s.prefab.is_some_and(|k| pieces.contains(&k))) {
+            let prize = match slot(undermere, spot) {
+                Some(Slot::Item { .. }) => true,
+                Some(Slot::Prop(id)) => registries.props.get(*id).container.is_some(),
+                _ => false,
+            };
+            assert!(!prize || near(spot.at), "{at}: a prize at {:?} cannot be reached", spot.at);
+        }
+        let shut: BTreeSet<Point> = built.locks.iter().map(|l| l.at).collect();
+        let plain = walked(built.entry, |p| built.terrain.get(p).is_some_and(|t| tables.passable[t.index()]) && !standing.contains(&p) && !shut.contains(&p));
+        for spot in built.spots.iter().filter(|s| [crate::vaults::KEY_TAG, crate::vaults::LEVER_TAG].contains(&s.tag)) {
+            assert!(plain.contains(&spot.at), "{at}: a vault's key or lever at {:?} is shut away", spot.at);
+        }
+        for lock in &built.locks {
+            let tag = if lock.key.is_some() { crate::vaults::KEY_TAG } else { crate::vaults::LEVER_TAG };
+            assert!(built.spots.iter().any(|s| s.tag == tag), "{at}: a vault at {:?} with nothing on its floor to open it", lock.at);
+        }
     }
 
     /// Mereholt is drawn by hand, so the grass the tree line and the backs
@@ -1358,66 +1591,6 @@ mod tests {
         assert_eq!(doors.len(), 8, "every building has a door");
         assert!(doors.iter().all(|d| seen.contains(d)), "and every door can be walked to");
         assert!(built.exit.is_some_and(|gate| seen.contains(&gate)), "and so can the gate");
-    }
-
-    /// Floor ten holds whichever of the three `FINAL_BOSSES` this seed
-    /// draws, alone at its own throne but for the Drowned King's own
-    /// five knights, and the way in is held at least half the floor's
-    /// longer side from it, walking, for every one of the three floor
-    /// ten bosses.
-    #[test]
-    fn floor_ten_holds_whichever_boss_this_seed_draws_alone_at_its_own_throne() {
-        let library = crate::content::Library::load(&crate::content::effect_kinds(), &Moments::default());
-        for s in 0..40 {
-            let undermere = Undermere::new(RunSeed(s));
-            let boss = undermere.final_boss();
-            let key = undermere.prefabs().defs().expect(boss.piece).raw();
-            let ctx = undermere.generate(map_of(FLOORS)).unwrap();
-            let throne: Vec<Rect> = ctx.outputs().iter::<Stamped>().filter(|st| st.prefab == Some(key)).map(|st| st.bounds).collect();
-            assert_eq!(throne.len(), 1, "seed {s}: one {} on floor ten", boss.piece);
-            let throne = throne[0];
-            let built = PlaceBuild::from_context(ctx).unwrap();
-            let mut monsters: Vec<&str> = Vec::new();
-            let mut props: Vec<&str> = Vec::new();
-            // Only the throne piece's own slots: floor ten's flavor
-            // budget may now dress or stamp a pick of its own elsewhere
-            // on the floor, outside the throne, which neither this
-            // count nor the bounds check below is about.
-            for spot in built.spots.iter().filter(|s| s.prefab == Some(key)) {
-                match slot(&undermere, spot) {
-                    Some(Slot::Monster { pick: Pick::Kind(id), .. }) => monsters.push(&library.bestiary.defs.get(*id).name),
-                    Some(Slot::Prop(id)) => props.push(&library.registries.props.get(*id).name),
-                    _ => {}
-                }
-                assert!(throne.contains(spot.at), "seed {s}: a slot at {:?} outside the {}", spot.at, boss.piece);
-            }
-            monsters.sort_unstable();
-            props.sort_unstable();
-            // The Drowned King's piece keeps its part 1 name, `"the
-            // throne"`, rather than his own, `"the Drowned King"`; the
-            // other two's piece is named exactly as their own monster.
-            let (expected_monsters, expected_props): (Vec<&str>, Vec<&str>) = if boss.piece == "the throne" {
-                (
-                    ["skeleton knight"; 5].into_iter().chain(["the Drowned King"]).collect(),
-                    vec!["cold brazier", "cold brazier", "cold brazier", "cold brazier", "throne"],
-                )
-            } else {
-                (vec![boss.piece], vec![])
-            };
-            assert_eq!(monsters, expected_monsters, "seed {s}: {}", boss.piece);
-            assert!(monsters.contains(&boss.name), "seed {s}: the boss stood is the one {:?} names, as its rumour is told", boss.name);
-            assert_eq!(props, expected_props, "seed {s}: {}", boss.piece);
-            // The way in is held at least half the floor's longer side
-            // from the throne, walking, as `ClearOfTheThrone` asks: the
-            // throne is grown now, so its mouth may face any way.
-            let view = built.terrain.view(undermere.tiles());
-            let mut walk = DijkstraMap::covering(&view);
-            walk.build(&view, [built.entry], PathRules::default());
-            let clear = throne.cells().filter_map(|p| walk.value(p)).min().expect("seed {s}: the throne can be walked to");
-            let bounds = built.terrain.bounds();
-            let need = bounds.width.max(bounds.height) / 2;
-            assert!(clear >= need, "seed {s}: the way in is {clear} steps from the throne, nearer than half the {} side", bounds.width.max(bounds.height));
-        }
     }
 
     /// The floor ten boss is drawn from the three `FINAL_BOSSES`, stable
@@ -1462,48 +1635,6 @@ mod tests {
             let again = Undermere::new(RunSeed(s)).build(TOWN, None).unwrap();
             assert_eq!((again.terrain, again.entry, again.exit), (built.terrain.clone(), built.entry, built.exit), "seed {s} drew another town");
         }
-    }
-
-    #[test]
-    fn each_floor_draws_its_own_wall_and_floor_and_shows_nothing_its_biome_and_its_lairs_do_not_lay() {
-        par_seeds(seeds(0..20), |s| {
-            let undermere = Undermere::new(RunSeed(s));
-            for floor in 1..=FLOORS {
-                let drawn = undermere.biome_of(floor);
-                let built = undermere.build(map_of(floor), None).unwrap();
-                let shown: BTreeSet<&str> = built.terrain.iter().map(|(_, t)| undermere.tiles().get(t).name.as_str()).collect();
-                // Floor ten's own wall and floor are whichever of the
-                // three `FINAL_BOSSES` this seed draws, never the drawn
-                // throne biome's own, which stands beside the Drowned
-                // King's own as a schema the other two bosses share.
-                let (wall, floor_tile) = if floor == FLOORS {
-                    let boss = undermere.final_boss();
-                    (boss.wall, boss.floor)
-                } else {
-                    (undermere.tiles().get(drawn.wall).name.as_str(), undermere.tiles().get(drawn.floor).name.as_str())
-                };
-                assert!(shown.contains(wall) && shown.contains(floor_tile), "floor {floor}, seed {s}: {shown:?}");
-                // The gate lets out on floor one: its other side. Beyond
-                // what any floor of its own may show, a floor shows what its
-                // biome paints and strews, its lakes, their shore and their
-                // bridges.
-                let shared = shared_tiles(floor);
-                let name = |t: TileId| undermere.tiles().get(t).name.as_str();
-                let strewn = drawn.decor.iter().filter_map(|d| match d {
-                    Decor::Patches { tile, .. } => Some(*tile),
-                    Decor::Furnish { .. } => None,
-                });
-                let painted = drawn.paint.iter().map(|(_, t)| *t).chain(strewn).map(name);
-                let lakes = drawn.lakes.iter().flat_map(|(l, b)| [Some(l.tile), l.wreath.map(|(t, _)| t), b.map(|b| b.tile)]).flatten().map(name);
-                // A risk-and-reward or reward piece's own tiles, on any
-                // floor it may stand on.
-                let pieces = (floor < FLOORS).then_some(PIECE_TILES).into_iter().flatten();
-                let allowed: BTreeSet<&str> =
-                    shared.iter().copied().chain([wall, floor_tile]).chain(painted).chain(lakes).chain(pieces).chain((floor == 1).then_some("gate")).collect();
-                let strays: Vec<&&str> = shown.difference(&allowed).collect();
-                assert!(strays.is_empty(), "floor {floor}, seed {s}: {strays:?} on a floor of {}", drawn.name);
-            }
-        });
     }
 
     /// Every floor's drawn biome stands on a band that includes it: the
@@ -1571,61 +1702,6 @@ mod tests {
             }
             let (a, b) = (again.build(map_of(3), None).unwrap(), new.build(map_of(3), None).unwrap());
             assert!((a.terrain, a.entry, a.exit) == (b.terrain, b.entry, b.exit), "seed {s}: floor three");
-        }
-    }
-
-    /// Over a span of seeds: no entry is ever drawn past its own `per_run`
-    /// limit, every entry is drawn on some run, and a typical run sees
-    /// under half the flavor pool, the design's fifth pillar.
-    ///
-    /// Picks, not everything a player meets: twenty-four of the flavor
-    /// entries are also a biome's own dressings, which `Dress` lays in
-    /// areas nothing took whether or not the pool picked them, and those
-    /// are the biome's look rather than the pool's draw, so they are not
-    /// counted here. The run is the median one. A heavy run, every floor drawing the
-    /// most its budget allows and few of them repeating one of the ten
-    /// entries a run may draw twice, can pass half, and is bounded at
-    /// twenty-five, past every seed seen and short of where losing the
-    /// per-run cap takes it. Measured over the 500 seeds below when the
-    /// budgets were last tuned: median 18 of 43, ninetieth percentile 21,
-    /// most 23, from about twenty-seven picks a run.
-    #[test]
-    fn over_a_span_of_seeds_no_run_exceeds_a_limit_every_entry_is_drawn_and_a_typical_run_picks_under_half_the_flavor_pool() {
-        let pool = crate::prefabs::load(&registry(), &layout()).1;
-        let flavor_pool = pool.entries.iter().filter(|e| pool.kinds[e.kind] == "flavor").count();
-        let ever_drawn: std::sync::Mutex<BTreeSet<String>> = std::sync::Mutex::new(BTreeSet::new());
-        let seen: std::sync::Mutex<Vec<usize>> = std::sync::Mutex::new(Vec::new());
-        // Always the whole range: "every entry is drawn on some run" is a
-        // property of rare draws, and this reads each run's plan, not its floors,
-        // so five hundred seeds are cheap once the content is read only once.
-        let loaded = Undermere::new(RunSeed(0));
-        par_seeds(0..500, |s| {
-            let undermere = loaded.reseeded(RunSeed(s));
-            let mut run_counts: BTreeMap<usize, u32> = BTreeMap::new();
-            let mut flavor_this_run: BTreeSet<usize> = BTreeSet::new();
-            for floor in 1..=FLOORS {
-                for pick in undermere.plan_of(floor) {
-                    *run_counts.entry(pick.entry).or_default() += 1;
-                    let entry = &undermere.pool.entries[pick.entry];
-                    ever_drawn.lock().unwrap().insert(entry.name.clone());
-                    if undermere.pool.kinds[entry.kind] == "flavor" {
-                        flavor_this_run.insert(pick.entry);
-                    }
-                }
-            }
-            for (&entry, &count) in &run_counts {
-                let per_run = undermere.pool.entries[entry].per_run;
-                assert!(count <= per_run, "seed {s}: {:?} drawn {count} times in one run, past its per_run of {per_run}", undermere.pool.entries[entry].name);
-            }
-            assert!(flavor_this_run.len() <= 25, "seed {s}: {} of {flavor_pool} flavor entries in one run", flavor_this_run.len());
-            seen.lock().unwrap().push(flavor_this_run.len());
-        });
-        let (ever_drawn, mut seen) = (ever_drawn.into_inner().unwrap(), seen.into_inner().unwrap());
-        seen.sort_unstable();
-        let typical = seen[seen.len() / 2];
-        assert!(typical * 2 < flavor_pool, "the median run sees {typical} of {flavor_pool} flavor entries, not under half");
-        for entry in &pool.entries {
-            assert!(ever_drawn.contains(&entry.name), "{:?} was never drawn over seeds 0..500", entry.name);
         }
     }
 
@@ -1752,27 +1828,6 @@ mod tests {
         }
     }
 
-    /// Nothing a piece stands at its post is nearer the way in than the
-    /// population keeps, over a span of seeds: the way in is drawn clear of
-    /// every piece stamped before it, and on the last floor as far from the
-    /// throne as the floor allows.
-    #[test]
-    fn no_monster_a_piece_stands_is_within_the_populations_distance_of_the_way_in() {
-        let measured = AtomicUsize::new(0);
-        par_seeds(seeds(0..60), |s| {
-            let undermere = Undermere::new(RunSeed(s));
-            for map in places() {
-                let built = undermere.build(map, None).unwrap();
-                for spot in built.spots.iter().filter(|spot| matches!(slot(&undermere, spot), Some(Slot::Monster { .. }))) {
-                    let d = geometry::chebyshev(spot.at, built.entry);
-                    assert!(d >= MIN_DISTANCE_FROM_ENTRY, "{map:?}, seed {s}: a monster's post at {:?} is {d} from the way in", spot.at);
-                    measured.fetch_add(1, Relaxed);
-                }
-            }
-        });
-        assert!(measured.into_inner() > 0, "some monster's post was measured");
-    }
-
     /// A throne or a lair too large for the floor it is asked to grow on
     /// is refused by name, for `run_retrying` to try again rather than
     /// lay it shut away from the rest of the floor for the walk test to
@@ -1850,35 +1905,6 @@ mod tests {
         assert_eq!(seen.len(), MINI_BOSSES.len(), "every mini-boss drawn somewhere over the span: {seen:?}");
     }
 
-    /// Every lair and the throne, grown as `Accrete`'s pieces are, is
-    /// entered only through the one entry its own prefab file marks: no
-    /// other cell of its own wall ever opens onto something a body can
-    /// walk through.
-    #[test]
-    fn every_lair_and_the_throne_is_entered_only_through_its_entries() {
-        let measured = AtomicUsize::new(0);
-        par_seeds(seeds(0..40), |s| {
-            let undermere = Undermere::new(RunSeed(s));
-            let tables = undermere.tiles().tables();
-            for floor in 1..=FLOORS {
-                let ctx = undermere.generate(map_of(floor)).unwrap();
-                for area in ctx.outputs().iter::<Area>().filter(|a| a.entries.is_some()) {
-                    let entries = area.entries.as_ref().expect("filtered on it");
-                    for c in &area.cells {
-                        for d in Direction::CARDINALS {
-                            let n = *c + d.offset();
-                            if !area.cells.contains(&n) && walkable(&ctx, &tables, n) {
-                                assert!(entries.contains(&n), "seed {s} floor {floor}: {n:?} opens into {} and is no entry", area.shape);
-                            }
-                        }
-                    }
-                    measured.fetch_add(1, Relaxed);
-                }
-            }
-        });
-        assert!(measured.into_inner() > 0, "some lair or the throne was measured");
-    }
-
     /// A floor of a biome that grows `recipe`, the `pick`th of those it
     /// may stand on round and round, so a span of picks reaches both floors
     /// of a band; and that biome drawn with it.
@@ -1949,12 +1975,13 @@ mod tests {
         }
     }
 
-    /// [`every_recipe_meets_itself_on`] over a few seeds, so the suite
-    /// stays quick; the span the design asks for is the ignored test
-    /// beside it.
+    /// [`every_recipe_meets_itself_on`] over a span of seeds, a backstop
+    /// beside the run's: the run grows the recipes its seeds draw, and this
+    /// grows every one of them on each seed. The span the design asks for
+    /// is the ignored test beside it.
     #[test]
     fn every_recipe_grows_within_forty_attempts_and_meets_itself_over_a_few_seeds() {
-        par_seeds(0..6, |s| {
+        par_seeds(seeds(0..40), |s| {
             every_recipe_meets_itself_on(s);
         });
     }
@@ -2039,159 +2066,6 @@ mod tests {
                 eprintln!("    {n:>4}  {reason}");
             }
         }
-    }
-
-    /// Every way a risk-and-reward or reward piece may be drawn for a
-    /// floor: the entry, by its index in the pool, each biome it may stand
-    /// in and each of that biome's recipes, and the floors where its own
-    /// range and the biome's meet.
-    fn pieces_in_biomes(undermere: &Undermere) -> Vec<(usize, BiomeDraw, Vec<u32>)> {
-        let kinds: Vec<usize> = ["risk_reward", "reward"].iter().filter_map(|k| undermere.pool.kinds.iter().position(|n| n == k)).collect();
-        let mut ways = Vec::new();
-        for (e, entry) in undermere.pool.entries.iter().enumerate().filter(|(_, e)| kinds.contains(&e.kind) && e.weight > 0) {
-            for (_, def) in undermere.defs.iter() {
-                let tags = [def.name.trim_start_matches("the ").to_string()];
-                let floors: Vec<u32> = (def.floors.0..=def.floors.1.min(FLOORS - 1)).filter(|f| entry.fits(*f as i32, &tags)).collect();
-                if floors.is_empty() {
-                    continue;
-                }
-                for r in 0..def.recipes.len() {
-                    ways.push((e, biomes::to_draw(def, r, undermere.tiles()), floors.clone()));
-                }
-            }
-        }
-        ways
-    }
-
-    /// Grows each piece alone among a floor's picks, in every biome and
-    /// recipe it may stand in, on each floor they share, over `seeds`, and
-    /// names every one that does not grow within a floor's attempts.
-    ///
-    /// Every way is a floor grown whole for every seed, seven hundred and
-    /// sixty ways of it, so over two hundred seeds it is a hundred and fifty
-    /// thousand floors: the ways are handed out over every core, the next
-    /// to whichever worker is free, all reading the one Undermere, since a
-    /// floor is grown from the picks it is handed and the floors are
-    /// independent, and one thread took hours. Handed out rather than dealt in turn, because a
-    /// lake biome's ways cost several times a hall's and dealt ones left
-    /// most cores idle while one ground through its share.
-    fn every_piece_grows_where_it_may_stand(seeds: std::ops::Range<u64>) {
-        let undermere = Undermere::new(RunSeed(0));
-        let ways = pieces_in_biomes(&undermere);
-        let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
-        let next = std::sync::atomic::AtomicUsize::new(0);
-        let mut failed: Vec<String> = std::thread::scope(|scope| {
-            let (undermere, ways, next) = (&undermere, &ways, &next);
-            let workers: Vec<_> = (0..threads)
-                .map(|_| {
-                    let seeds = seeds.clone();
-                    scope.spawn(move || {
-                        let mut failed = Vec::new();
-                        while let Some((e, drawn, floors)) = ways.get(next.fetch_add(1, std::sync::atomic::Ordering::Relaxed)) {
-                            for s in seeds.clone() {
-                                let floor = floors[s as usize % floors.len()];
-                                let alone = [rl_engine::rl_rules::pool::Pick { entry: *e, required: true }];
-                                if let Err(err) = undermere.grow(floor, drawn, &alone, RunSeed(s), ATTEMPTS) {
-                                    let name = &undermere.pool.entries[*e].name;
-                                    failed.push(format!("{name} on floor {floor}, {}, {}, seed {s}: {err}", drawn.name, drawn.recipe));
-                                }
-                            }
-                        }
-                        failed
-                    })
-                })
-                .collect();
-            workers.into_iter().flat_map(|w| w.join().expect("a worker grew its share")).collect()
-        });
-        failed.sort();
-        assert!(failed.is_empty(), "{} failed:\n{}", failed.len(), failed.join("\n"));
-    }
-
-    /// Each risk-and-reward and reward piece grows in every biome and
-    /// recipe it may stand in, alone among a floor's picks, within the
-    /// attempts a floor is given, over a few seeds: a required pick that
-    /// fits nowhere fails every attempt of its floor, and the floor with it.
-    ///
-    /// One seed every day and two under `RL_FULL_SEEDS`: each seed is
-    /// seven hundred and sixty floors, and a piece that fits nowhere fails
-    /// all forty of the first seed's attempts as surely as the second's.
-    #[test]
-    fn each_piece_grows_in_every_biome_and_recipe_it_may_stand_in_over_a_few_seeds() {
-        every_piece_grows_where_it_may_stand(crate::testing::first_seeds(0..2, 1));
-    }
-
-    /// As [`each_piece_grows_in_every_biome_and_recipe_it_may_stand_in_over_a_few_seeds`],
-    /// over seeds 0 to 200: run by hand when a piece or the layout changes.
-    #[test]
-    #[ignore = "every piece in every biome over seeds 0 to 200 is 152,000 floors, half an hour over eight cores; run by hand when a piece or the layout changes"]
-    fn each_piece_grows_in_every_biome_and_recipe_it_may_stand_in_over_seeds_0_to_200() {
-        every_piece_grows_where_it_may_stand(0..200);
-    }
-
-    /// Every prize of every risk-and-reward and reward piece over `seeds`
-    /// can be reached from the way in once the floor's secrets are found
-    /// and its locks and seals opened, with everything standing: an item on
-    /// a cell walked to, a container beside one; and every vault's key and
-    /// lever lies where the way in reaches with every lock shut and every
-    /// secret hidden, so what opens a vault is never behind it.
-    fn every_prize_is_reached_once_its_key_lever_or_secret_is_found(seeds: std::ops::Range<u64>) {
-        let registries = crate::content::registries();
-        par_seeds(seeds, |s| {
-            let undermere = Undermere::new(RunSeed(s));
-            let tables = undermere.tiles().tables();
-            let kinds: Vec<usize> = ["risk_reward", "reward"].iter().filter_map(|k| undermere.pool.kinds.iter().position(|n| n == k)).collect();
-            let pieces: BTreeSet<u32> = undermere
-                .pool
-                .entries
-                .iter()
-                .filter(|e| kinds.contains(&e.kind))
-                .filter_map(|e| undermere.prefabs.defs().id(&e.name))
-                .map(|id| id.raw())
-                .collect();
-            for floor in 1..FLOORS {
-                let built = undermere.build(map_of(floor), None).unwrap();
-                let standing = standing(&undermere, &registries, &built);
-                let mut found = built.terrain.clone();
-                for secret in &built.secrets {
-                    found.set(secret.at, secret.is);
-                }
-                let reached = walked(built.entry, |p| found.get(p).is_some_and(|t| tables.passable[t.index()]) && !standing.contains(&p));
-                let near = |p: Point| reached.contains(&p) || Direction::ALL.iter().any(|d| reached.contains(&(p + d.offset())));
-                for spot in built.spots.iter().filter(|s| s.prefab.is_some_and(|k| pieces.contains(&k))) {
-                    let prize = match slot(&undermere, spot) {
-                        Some(Slot::Item { .. }) => true,
-                        Some(Slot::Prop(id)) => registries.props.get(*id).container.is_some(),
-                        _ => false,
-                    };
-                    assert!(!prize || near(spot.at), "floor {floor}, seed {s}: a prize at {:?} cannot be reached", spot.at);
-                }
-                let shut: BTreeSet<Point> = built.locks.iter().map(|l| l.at).collect();
-                let plain =
-                    walked(built.entry, |p| built.terrain.get(p).is_some_and(|t| tables.passable[t.index()]) && !standing.contains(&p) && !shut.contains(&p));
-                for spot in built.spots.iter().filter(|s| [crate::vaults::KEY_TAG, crate::vaults::LEVER_TAG].contains(&s.tag)) {
-                    assert!(plain.contains(&spot.at), "floor {floor}, seed {s}: a vault's key or lever at {:?} is shut away", spot.at);
-                }
-                for lock in &built.locks {
-                    let tag = if lock.key.is_some() { crate::vaults::KEY_TAG } else { crate::vaults::LEVER_TAG };
-                    assert!(built.spots.iter().any(|s| s.tag == tag), "floor {floor}, seed {s}: a vault at {:?} with nothing on its floor to open it", lock.at);
-                }
-            }
-        });
-    }
-
-    /// [`every_prize_is_reached_once_its_key_lever_or_secret_is_found`]
-    /// over forty seeds, as every build is checked.
-    #[test]
-    fn every_prize_is_reached_once_its_key_lever_or_secret_is_found_over_forty_seeds() {
-        every_prize_is_reached_once_its_key_lever_or_secret_is_found(seeds(0..40));
-    }
-
-    /// The same over seeds 0 to 200: run by hand when a piece or a fixture
-    /// changes.
-    #[test]
-    #[ignore = "every floor of seeds 0 to 200 takes minutes; run by hand when a piece or a fixture changes"]
-    fn every_prize_is_reached_once_its_key_lever_or_secret_is_found_over_seeds_0_to_200() {
-        every_prize_is_reached_once_its_key_lever_or_secret_is_found(0..200);
     }
 
     #[test]
