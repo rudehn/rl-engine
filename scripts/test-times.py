@@ -43,16 +43,18 @@ from pathlib import Path
 
 # Processor and wall seconds for a run, by what it ran. The processor
 # budgets are what the branch that set them measured on the 8-core
-# development machine on 2026-10-16, both tiers 950 s, the fast tier 413 s
-# and Undermere's fast tier alone 251 s, with three tenths more for the
+# development machine on 2026-10-16, once content was validated from its
+# files rather than played over seeds: both tiers 686 s, the fast tier 377 s
+# and Undermere's fast tier alone 238 s, with three tenths more for the
 # processor time a heavily loaded machine adds and for the suite to grow
-# into. The wall budgets warn only: both tiers took 178 s on a quiet
-# machine, and the fast tiers are set in proportion. Raise one only on
-# purpose, saying why in the commit, as a fingerprint is re-baselined.
+# into. The wall budgets warn only, and are the last quiet measure, 178 s
+# for both tiers at 950 s of processor time, scaled to the processor time
+# now and given the same three tenths. Raise one only on purpose, saying
+# why in the commit, as a fingerprint is re-baselined.
 BUDGETS = {
-    "full": {"cpu": 1250, "wall": 200},
-    "fast": {"cpu": 540, "wall": 120},
-    "undermere": {"cpu": 330, "wall": 60},
+    "full": {"cpu": 900, "wall": 170},
+    "fast": {"cpu": 490, "wall": 110},
+    "undermere": {"cpu": 310, "wall": 60},
 }
 # CI's runner, playing every seed of both tiers: about 2,000 s of processor
 # time on the development machine, doubled for a slower runner. Unmeasured

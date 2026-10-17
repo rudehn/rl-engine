@@ -42,16 +42,27 @@ So the suite is held to a budget of processor time, which a busy machine barely 
 The tests come in two tiers, and nextest knows which is which:
 
 - **The fast tier** is unit tests, properties tested without an `App`, small `App` tests and the fingerprints. It is nextest's default profile, so `cargo nextest run` and the scoped `scripts/gate.sh` that every commit runs play it and nothing else.
-- **The slow tier** is the full-game play-throughs, the whole-run and every-floor sweeps, and any test past two seconds of processor time. `.config/nextest.toml` names each of them by package and path in the default profile's `default-filter`. It runs once, at a branch's end and before it merges, in `scripts/gate.sh --all` (`--profile full`), and in CI (`--profile ci`); both profiles run both tiers.
+- **The slow tier** is the full-game play-throughs, each game's backstops over the whole generator, and any test past two seconds of processor time. `.config/nextest.toml` names each of them by package and path in the default profile's `default-filter`. It runs once, at a branch's end and before it merges, in `scripts/gate.sh --all` (`--profile full`), and in CI (`--profile ci`); both profiles run both tiers.
 - **The fingerprints stay in the fast tier at any cost.** They are the early warning that a change moved play, and Undermere's four scripted delves are its dearest test, about 60 s of processor time and 17 s alone.
 - **A new test that builds a full game `App` and plays turns or floors goes in the slow tier unless it is cheap.** The check names any fast-tier test past two seconds as one to make cheaper or move there.
 - **While working on an area**, run its slow tests by filter, with `--profile full` or `--ignore-default-filter` so the default filter does not drop them: `cargo nextest run --workspace --profile full -E 'package(undermere) & test(/traps::/)'`. `cargo test -p <crate> <filter>` runs every test the filter names, slow or not.
 
+Every test asks one of four kinds of question, and each kind is answered its own way:
+
+| Kind | The question | How it is tested |
+|---|---|---|
+| Code | Does a pass, a draw or a rule do what it says? | A unit or property test on made-up data, in the crate the code lives in. |
+| Content presence | Can every entry of a file show up? | Validated statically: the loader refuses a file with every problem at once, naming the entry and why it could never appear, and what no loader can ask is a fast test that reads the content and grows no place. |
+| Content spread | Does content come up as often as the design says? | It follows from the weights: a share worth guarding is computed from the file with no draw, as a static check, and otherwise it is not tested. |
+| Generator promises | Does the whole chain keep its promises with real content? | One backstop per game in the slow tier, each place grown once a seed at `seeds(full)` and asked every promise, beside a property test of the pass that owns each promise on a made-up map. |
+
+So generation is never played over many seeds to see whether content turns up or how often: the code is tested, the content is validated, and the two together say it turns up.
+
 `scripts/slot` records each test's processor time beside the wall time nextest records, and `scripts/test-times.py` reads both after every gate:
 
-- processor time over the budget fails the gate: both tiers of the workspace over 1,250 s, its fast tier over 540 s, Undermere's fast tier alone over 330 s;
+- processor time over the budget fails the gate: both tiers of the workspace over 900 s, its fast tier over 490 s, Undermere's fast tier alone over 310 s;
 - any one test over 120 s of processor time fails it, and one over 20 s, or 30 s of wall time, is named;
-- wall time over its budget only warns, since a busy machine explains it: 200 s for both tiers, 120 s for the fast tier, 60 s for Undermere's;
+- wall time over its budget only warns, since a busy machine explains it: 170 s for both tiers, 110 s for the fast tier, 60 s for Undermere's;
 - CI plays every seed on another machine, so it reports against numbers of its own and only warns.
 
 When the check speaks, the slowest tests it lists are the ones to fix, by the cheapest of these that keeps the test proving what it proved:
