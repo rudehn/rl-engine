@@ -27,6 +27,11 @@
 //! keeps a run from seeing one twice, and a floor whose tags fit no
 //! seeded entry has none and grows as it would have.
 //!
+//! [`misfit`] says, from the files alone, why an entry could never be
+//! laid on a place grown by a given recipe: a piece too large for every
+//! room the recipe grows that it may stand in, say. Which recipes a place
+//! is grown by is the game's, so the game asks it of each.
+//!
 //! What this module does not hold is the laying. Growing a piece is
 //! `rl-mapgen`'s `Accrete` and stamping one inside an area its
 //! `StampPicks`; `rl-bevy` turns a place's picks into both. This crate
@@ -137,9 +142,9 @@ use serde::Deserialize;
 
 use crate::content::{ContentError, Registry};
 use crate::dressing::DressingDef;
-use crate::layout::LayoutDef;
+use crate::layout::{LayoutDef, RecipeDef};
 use crate::names::Names;
-use crate::prefab::{Coverage, Legended, PrefabDef, Slot, Sources};
+use crate::prefab::{Coverage, Legended, PrefabDef, Slot, Sources, Turn};
 use crate::tag::TagId;
 
 /// How a grown piece is joined to what it is attached to: a layout
@@ -619,6 +624,61 @@ pub fn load<M>(text: &str, layout: &LayoutDef, pieces: &Registry<PrefabDef<M>>, 
     if errors.is_empty() { Ok(Pool { kinds, budgets, entries }) } else { Err(ContentError::Invalid(errors)) }
 }
 
+/// Why `entry` could never be laid on a place grown by `recipe` of
+/// `layout`, or `None` when the recipe's own ranges allow it somewhere.
+///
+/// Read from the files alone, with no place grown: an inside piece fits
+/// inside, with a cell of floor all round it, the largest area of some
+/// shape the recipe grows that the entry allows and that is a room, in any
+/// facing its prefab may be turned to; a dressing has some room among the
+/// recipe's shapes to be laid over; a grown or seeded piece fits inside the
+/// map with a cell of rock all round it. Each is what the laying itself
+/// asks, so an answer here is certain: a piece that fits no area at the
+/// largest its shapes are drawn fits none ever grown, and a place owing
+/// it fails every attempt. A `None` only says the ranges allow it, not
+/// that a given place will find the room, which is the generator's to
+/// keep and its tests' to hold.
+///
+/// For a game to ask of every recipe an entry may be grown on, the floors
+/// and the place tags being the game's own: which recipes a place of a
+/// given floor and tag is grown by is nothing a pool knows.
+pub fn misfit<M>(entry: &Entry, recipe: &RecipeDef, layout: &LayoutDef, pieces: &Registry<PrefabDef<M>>) -> Option<String> {
+    let shapes = layout.shapes_of(recipe);
+    let rooms = || shapes.iter().filter(|s| !s.kind.largest_rooms().is_empty());
+    let name = &entry.name;
+    let size = |piece: &str| {
+        let def = pieces.get(pieces.id(piece)?);
+        let rows = def.rows();
+        let (w, h) = (rows.iter().map(|r| r.chars().count()).max().unwrap_or(0) as i32, rows.len() as i32);
+        // A quarter-turn lays it on its side; any lesser turn keeps its
+        // width a width.
+        Some(if def.turn == Turn::Quarter { vec![(w, h), (h, w)] } else { vec![(w, h)] })
+    };
+    match &entry.placed {
+        Placed::Inside { piece, shapes: allowed } => {
+            let facings = size(piece)?;
+            let open: Vec<_> = rooms().filter(|s| allowed.is_empty() || allowed.contains(&s.name)).collect();
+            if open.is_empty() {
+                return Some(format!("{name}: {} grows no room of the shapes it may stand in, {allowed:?}", recipe.name));
+            }
+            let fits = open.iter().any(|s| facings.iter().any(|(w, h)| s.kind.could_hold(*w, *h)));
+            let (w, h) = facings[0];
+            (!fits).then(|| {
+                let largest: Vec<String> = open.iter().map(|s| format!("{} at {:?}", s.name, s.kind.largest_rooms())).collect();
+                format!("{name}: {piece:?} is {w} by {h}, and no room {} grows holds it with a cell all round: {}", recipe.name, largest.join(", "))
+            })
+        }
+        Placed::Dressed { .. } => rooms().next().is_none().then(|| format!("{name}: {} grows no room to dress", recipe.name)),
+        Placed::Grown { piece, .. } | Placed::Seeded { piece, .. } => {
+            let facings = size(piece)?;
+            let (mw, mh) = recipe.size;
+            let fits = facings.iter().any(|(w, h)| w + 2 <= mw && h + 2 <= mh);
+            let (w, h) = facings[0];
+            (!fits).then(|| format!("{name}: {piece:?} is {w} by {h}, and {} is {mw} by {mh}, too small to hold it with rock all round", recipe.name))
+        }
+    }
+}
+
 /// [`prefab::coverage`](crate::prefab::coverage) over every piece the pool
 /// lays, each at the floors its entries may stand on and no others, so a
 /// slot is never reported empty on a floor its piece is never laid on.
@@ -1042,6 +1102,68 @@ mod tests {
         let tags = |t: &[&str]| t.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         assert!(stash.fits(3, &tags(&["dry"])) && !stash.fits(3, &tags(&["wet", "dry"])) && !stash.fits(1, &tags(&[])));
         assert!(puddles.fits(1, &tags(&["wet"])) && !puddles.fits(1, &tags(&["dry"])));
+    }
+
+    /// An entry misfits a recipe exactly when the recipe's own ranges
+    /// could never lay it: an inside piece too large for every room it may
+    /// stand in at that room's largest, or with no such room at all; a
+    /// dressing on a recipe of passages alone; a grown piece past the map.
+    /// Each says which entry, which recipe and why.
+    #[test]
+    fn an_entry_misfits_a_recipe_only_where_its_ranges_could_never_lay_it() {
+        let w = world();
+        let layout = crate::layout::load(
+            r#"(
+                shapes: [
+                    (name: "room", kind: Rectangle(w: (5, 9), h: (5, 8)), join: Door),
+                    (name: "closet", kind: Rectangle(w: (3, 5), h: (3, 5)), join: Door),
+                    (name: "run", kind: Passage(width: (1, 2), length: (4, 12), bend_pct: 30), join: Arch),
+                ],
+                districts: [
+                    (name: "rooms", shapes: [("room", 4), ("run", 1)]),
+                    (name: "closets", shapes: [("closet", 1)]),
+                    (name: "runs", shapes: [("run", 1)]),
+                ],
+                recipes: [
+                    (name: "roomy", size: (40, 30), open_pct: 30, patience: 10, districts_per_10k: 5, districts: [("rooms", 1)],
+                     loops: (min_detour: 10, max: 1), require: (open_pct: (1, 100), areas: [], loops: 0, dead_end_pct: 100, route: 1)),
+                    (name: "cramped", size: (40, 30), open_pct: 30, patience: 10, districts_per_10k: 5, districts: [("closets", 1)],
+                     loops: (min_detour: 10, max: 1), require: (open_pct: (1, 100), areas: [], loops: 0, dead_end_pct: 100, route: 1)),
+                    (name: "tunnels", size: (6, 5), open_pct: 30, patience: 10, districts_per_10k: 5, districts: [("runs", 1)],
+                     loops: (min_detour: 10, max: 1), require: (open_pct: (1, 100), areas: [], loops: 0, dead_end_pct: 100, route: 1)),
+                ],
+            )"#,
+        )
+        .unwrap();
+        let entry = |placed: Placed| Entry {
+            name: "it".into(),
+            kind: 0,
+            floors: (1, 1),
+            within: Vec::new(),
+            not: Vec::new(),
+            weight: 1,
+            per_place: 1,
+            per_run: 1,
+            group: None,
+            placed,
+            prefer: Prefer::Anywhere,
+        };
+        let on = |e: &Entry, recipe: &str| misfit(e, layout.recipe(recipe).unwrap(), &layout, &w.pieces);
+        let inside = |piece: &str, shapes: &[&str]| entry(Placed::Inside { piece: piece.into(), shapes: shapes.iter().map(|s| s.to_string()).collect() });
+        assert_eq!(on(&inside("store", &[]), "roomy"), None, "a five by four store in a room of up to nine by eight");
+        let squeezed = on(&inside("store", &[]), "cramped").expect("no closet holds the store");
+        assert!(squeezed.contains("it: \"store\" is 5 by 4") && squeezed.contains("cramped") && squeezed.contains("closet"), "{squeezed}");
+        assert_eq!(on(&inside("stash", &[]), "cramped"), None, "a closet holds a three by one stash");
+        let passages = on(&inside("stash", &[]), "tunnels").expect("a passage is no room");
+        assert!(passages.contains("tunnels grows no room"), "{passages}");
+        let elsewhere = on(&inside("stash", &["room"]), "cramped").expect("the stash may stand only in rooms, which cramped never grows");
+        assert!(elsewhere.contains("[\"room\"]"), "{elsewhere}");
+        let dressed = entry(Placed::Dressed { dressing: "puddles".into() });
+        assert_eq!(on(&dressed, "roomy"), None);
+        assert!(on(&dressed, "tunnels").is_some_and(|why| why.contains("no room to dress")));
+        let grown = entry(Placed::Grown { piece: "store".into(), join: Joined::Door });
+        assert_eq!(on(&grown, "roomy"), None);
+        assert!(on(&grown, "tunnels").is_some_and(|why| why.contains("tunnels is 6 by 5, too small")));
     }
 
     #[test]

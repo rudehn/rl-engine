@@ -33,6 +33,10 @@
 //! only knows where its door must meet a corridor. Neither is required,
 //! and a prefab that says nothing may be laid any way its stamp allows.
 //!
+//! [`Reached`] gathers everything a set of prefabs or dressings names
+//! through its slots, with the contents of every prop it stands: what a
+//! game reads, beside its own sources, to find the content nothing lays.
+//!
 //! What this module does not hold is the terrain half. Turning [`rows`
 //! ](PrefabDef::rows), [`tile`](PrefabDef::tile) and [`slot`
 //! ](PrefabDef::slot) into a grid of tiles and entities, with rotation and
@@ -124,7 +128,7 @@ use crate::loot::LootTable;
 use crate::names::Names;
 use crate::prop::{ContentRoll, CountRon, PropDef, PropId, Stock, read_stock};
 use crate::role::{self, RoleDef, RoleId};
-use crate::tag::TagDef;
+use crate::tag::{TagDef, TagId};
 
 /// Which monster a slot holds: that one, or one drawn for a role.
 pub enum Pick<M> {
@@ -743,6 +747,80 @@ pub fn coverage<'p, M: 'p, I: Copy, D: Legended<M> + 'p>(
     Coverage { bands, rows }
 }
 
+/// Everything a set of files with legends names through its slots and its
+/// props' contents: the props it stands, the monsters it names and the
+/// roles it draws for, and the items it asks for by name and by tag. What
+/// a game reads to say which of its content nothing lays, its orphans,
+/// with its own sources beside it: a spawn table, a shop, a kit, a list in
+/// its code. A slot drawing for a role reaches the role, not its members,
+/// since which members a draw finds is the game's spawn table's to say.
+pub struct Reached<M> {
+    /// Every prop a slot stands.
+    pub props: BTreeSet<PropId>,
+    /// Every monster a slot names.
+    pub monsters: BTreeSet<Id<M>>,
+    /// Every role a slot draws for.
+    pub roles: BTreeSet<RoleId<M>>,
+    /// Every item a slot or a stood prop's contents names, by the name the
+    /// game's own items answer to.
+    pub items: BTreeSet<String>,
+    /// Every tag a slot or a stood prop's contents draws by.
+    pub tags: BTreeSet<TagId>,
+}
+
+impl<M> Default for Reached<M> {
+    fn default() -> Self {
+        Self { props: BTreeSet::new(), monsters: BTreeSet::new(), roles: BTreeSet::new(), items: BTreeSet::new(), tags: BTreeSet::new() }
+    }
+}
+
+impl<M> Reached<M> {
+    /// What every one of `files` reaches, a prefab or a dressing alike,
+    /// each prop's contents read from `props`.
+    pub fn by<'p, D: Legended<M> + 'p>(files: impl IntoIterator<Item = &'p D>, props: &Registry<PropDef>) -> Self
+    where
+        M: 'p,
+    {
+        let mut reached = Self::default();
+        for def in files {
+            for (_, slot) in def.legend().slots() {
+                match slot {
+                    Slot::Prop(id) => reached.prop(*id, props),
+                    Slot::Item(roll) => reached.stock(&roll.what),
+                    Slot::Monster { pick: Pick::Kind(id), .. } => {
+                        reached.monsters.insert(*id);
+                    }
+                    Slot::Monster { pick: Pick::Role(id), .. } => {
+                        reached.roles.insert(*id);
+                    }
+                    Slot::Mark => {}
+                }
+            }
+        }
+        reached
+    }
+
+    /// `id` stood, and everything its contents name.
+    pub fn prop(&mut self, id: PropId, props: &Registry<PropDef>) {
+        self.props.insert(id);
+        for row in props.get(id).container.iter().flat_map(|c| &c.contents) {
+            self.stock(&row.what);
+        }
+    }
+
+    /// What one container row or item slot names.
+    fn stock(&mut self, what: &Stock) {
+        match what {
+            Stock::Item(name) => {
+                self.items.insert(name.clone());
+            }
+            Stock::Tag(tag) => {
+                self.tags.insert(*tag);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -809,6 +887,29 @@ mod tests {
         assert!(matches!(def.slot('W'), Some(Slot::Monster { pick: Pick::Kind(k), band: 0 }) if *k == w.beasts.expect("warden")));
         assert!(matches!(def.slot('m'), Some(Slot::Mark)));
         assert_eq!(def.rows(), vec!["#####", "#bLw#", "##W##", "##m##"]);
+    }
+
+    /// What a piece reaches is every prop it stands, with what each holds,
+    /// every monster it names, every role it draws for and every item and
+    /// tag it asks for, and nothing of a mark or a tile.
+    #[test]
+    fn a_piece_reaches_its_props_and_their_contents_its_monsters_its_roles_and_its_items() {
+        let w = world();
+        let props = crate::prop::load(
+            r#"#![enable(implicit_some)]
+            [(name: "locker", glyph: 'L', color: (r: 255, g: 255, b: 255), blocks: true,
+                 container: (contents: [(item: "knife", count: 1), (tag: "weapon", count: (0, 1))]), offers: [(verb: "open", time: 100)])]"#,
+            &Names::new().tags(&w.tags),
+        )
+        .unwrap();
+        let names = Names::new().tags(&w.tags).with("prop", &props).with("monster", &w.beasts).with("role", &w.roles);
+        let def = load::<Beast>(GUARDED, &w.tiles, &names).unwrap();
+        let reached = Reached::by([&def], &props);
+        assert_eq!(reached.props, BTreeSet::from([props.expect("locker")]));
+        assert_eq!(reached.monsters, BTreeSet::from([w.beasts.expect("warden")]));
+        assert_eq!(reached.roles, BTreeSet::from([w.roles.expect("brute")]));
+        assert_eq!(reached.items, BTreeSet::from(["knife".to_string()]));
+        assert_eq!(reached.tags, BTreeSet::from([w.tags.expect("weapon")]));
     }
 
     #[test]

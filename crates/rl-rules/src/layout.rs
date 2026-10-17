@@ -173,6 +173,30 @@ impl ShapeKind {
         }
     }
 
+    /// The largest rectangles of floor a piece of this kind can offer what
+    /// is stamped inside it, each `(wide, tall)`: a rectangle's largest
+    /// sides, a cross's longest bar lying and standing, and a cave's
+    /// largest box. A cave never fills its box, so that one is a bound
+    /// rather than a promise. None for a passage, which is no room and has
+    /// nothing stamped in it.
+    pub fn largest_rooms(self) -> Vec<(i32, i32)> {
+        match self {
+            ShapeKind::Rectangle { w, h } | ShapeKind::Cave { w, h, .. } => vec![(w.1, h.1)],
+            ShapeKind::Cross { long, short } => vec![(long.1, short.1), (short.1, long.1)],
+            ShapeKind::Passage { .. } => Vec::new(),
+        }
+    }
+
+    /// Whether some piece of this kind could hold a stamp `wide` by `tall`
+    /// with a cell of its floor all round it, the margin `rl-mapgen` keeps
+    /// round anything stamped inside a room. Read from the ranges alone, so
+    /// a `false` is certain and a `true` only says the ranges allow it: a
+    /// stamp that fits no piece of the shape at its largest fits none of
+    /// it ever drawn, which a load can say before any place is grown.
+    pub fn could_hold(self, wide: i32, tall: i32) -> bool {
+        self.largest_rooms().into_iter().any(|(w, h)| wide + 2 <= w && tall + 2 <= h)
+    }
+
     /// Each range by the name the file gives it.
     fn ranges(self) -> Vec<(&'static str, (i32, i32))> {
         match self {
@@ -328,6 +352,16 @@ impl LayoutDef {
     /// The recipe called `name`.
     pub fn recipe(&self, name: &str) -> Option<&RecipeDef> {
         self.recipes.iter().find(|r| r.name == name)
+    }
+
+    /// Every shape `recipe` may grow: each one some district it scatters
+    /// at a weight more than nought draws at a weight more than nought,
+    /// once each, in the file's order. A shape no such district draws is
+    /// never an area of a place grown by `recipe`, however the file
+    /// otherwise names it.
+    pub fn shapes_of(&self, recipe: &RecipeDef) -> Vec<&ShapeDef> {
+        let drawn = |s: usize| recipe.districts.iter().filter(|(_, w)| *w > 0).any(|(d, _)| self.districts[*d].shapes.iter().any(|(i, w)| *i == s && *w > 0));
+        self.shapes.iter().enumerate().filter(|(i, _)| drawn(*i)).map(|(_, s)| s).collect()
     }
 }
 
@@ -595,6 +629,38 @@ mod tests {
         assert_eq!(recipe.districts, vec![(0, 2), (1, 1)]);
         assert_eq!(recipe.require.areas, vec![(1, 1)]);
         assert!(def.recipe("lower").is_none());
+    }
+
+    /// A recipe grows the shapes its districts draw, and none a district
+    /// it scatters at nought, or one drawn at nought, adds: the cave is
+    /// named by no district at all, and a district weighted nought drops
+    /// the cross it alone drew.
+    #[test]
+    fn a_recipe_grows_every_shape_its_weighted_districts_draw_and_no_other() {
+        let def = load(GOOD).unwrap();
+        let names = |def: &LayoutDef| -> Vec<String> { def.shapes_of(def.recipe("upper").unwrap()).iter().map(|s| s.name.clone()).collect() };
+        assert_eq!(names(&def), ["cell", "big", "cross", "run"]);
+        let mut quiet = def.clone();
+        quiet.recipes[0].districts[1].1 = 0;
+        assert_eq!(names(&quiet), ["cell", "big", "run"], "the tight district scattered at nought adds nothing");
+        let mut unweighted = def;
+        unweighted.districts[1].shapes[1].1 = 0;
+        assert_eq!(names(&unweighted), ["cell", "big", "run"], "the cross drawn at nought is never grown");
+    }
+
+    /// A shape holds a stamp with a cell of floor all round it at its
+    /// largest: a 10 by 9 room a 8 by 7 stamp and no larger, a cross either
+    /// of its bars, a cave its box at most, and a passage nothing.
+    #[test]
+    fn a_shape_could_hold_a_stamp_only_with_a_cell_of_its_largest_floor_all_round() {
+        let room = ShapeKind::Rectangle { w: (7, 10), h: (7, 9) };
+        assert!(room.could_hold(8, 7) && !room.could_hold(9, 7) && !room.could_hold(8, 8));
+        let cross = ShapeKind::Cross { long: (11, 15), short: (5, 7) };
+        assert!(cross.could_hold(13, 5) && cross.could_hold(5, 13) && !cross.could_hold(13, 6));
+        let cave = ShapeKind::Cave { w: (10, 16), h: (8, 12), fill_pct: 55, visits_pct: 100 };
+        assert!(cave.could_hold(14, 10) && !cave.could_hold(15, 10));
+        let run = ShapeKind::Passage { width: (1, 2), length: (5, 12), bend_pct: 30 };
+        assert!(!run.could_hold(1, 1), "a passage is no room");
     }
 
     #[test]
