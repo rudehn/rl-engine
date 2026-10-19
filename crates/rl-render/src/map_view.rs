@@ -467,7 +467,7 @@ pub fn remember_still_things(map: Res<WorldMap>, mut knowledge: ResMut<Knowledge
     let here = map.current();
     let mut top: BTreeMap<Point, (i32, Recalled)> = BTreeMap::new();
     for (pos, glyph, on) in &still {
-        if on.map_or(MapId::SURFACE, |m| m.0) != here {
+        if on.map_or(MapId::ZERO, |m| m.0) != here {
             continue;
         }
         let look = (glyph.layer, Recalled { glyph: glyph.ch, color: rgb(glyph.fg) });
@@ -668,9 +668,9 @@ mod tests {
     fn drawn_for(sight: Viewshed) -> [char; 3] {
         use rl_bevy::components::RevealsMap;
         let mut app = rl_bevy::plugin::headless_app();
-        app.add_plugins((FovPlugin, rl_bevy::world::StreamingPlugin, MapViewPlugin::new(Rect::new(0, 0, 40, 20))));
+        app.add_plugins((FovPlugin, MapViewPlugin::new(Rect::new(0, 0, 40, 20))));
         app.insert_resource(Terminal::new(40, 20, Vec2::ONE));
-        let start = rl_bevy::testing::surface(&mut app);
+        let start = rl_bevy::testing::ground(&mut app);
         let tiles = rl_grid::TileRegistry::standard();
         let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
         let mut look = TileAppearance::new();
@@ -715,9 +715,9 @@ mod tests {
     fn open_ground() -> (App, Point, Entity) {
         use rl_bevy::components::RevealsMap;
         let mut app = rl_bevy::plugin::headless_app();
-        app.add_plugins((FovPlugin, rl_bevy::world::StreamingPlugin, MapViewPlugin::new(Rect::new(0, 0, 60, 30))));
+        app.add_plugins((FovPlugin, MapViewPlugin::new(Rect::new(0, 0, 60, 30))));
         app.insert_resource(Terminal::new(60, 30, Vec2::ONE));
-        let start = rl_bevy::testing::surface(&mut app);
+        let start = rl_bevy::testing::ground(&mut app);
         let tiles = rl_grid::TileRegistry::standard();
         let mut look = TileAppearance::new();
         look.set(tiles.expect("wall"), Cell::new('#', Color::WHITE));

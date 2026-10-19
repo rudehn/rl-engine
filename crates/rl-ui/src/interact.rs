@@ -93,7 +93,7 @@ impl WayAsked<'_, '_> {
             asked |= Some(intent.actor) == player;
         }
         let Some((at, on)) = player.and_then(|p| self.standing.get(p).ok()) else { return false };
-        let map = |on: Option<&OnMap>| on.map(|m| m.0).unwrap_or(MapId::SURFACE);
+        let map = |on: Option<&OnMap>| on.map(|m| m.0).unwrap_or(MapId::ZERO);
         asked && self.ways.iter().any(|(way, way_on)| way.0 == at.0 && map(way_on) == map(on))
     }
 }
@@ -197,7 +197,7 @@ mod tests {
             let (wreck, bench) = (props.expect("droid wreck"), props.expect("workbench"));
             let at = stage.at;
             let mut commands = stage.app.world_mut().commands();
-            (spawn_prop(&mut commands, &registries, wreck, at, MapId::SURFACE), spawn_prop(&mut commands, &registries, bench, at.offset(3, 0), MapId::SURFACE))
+            (spawn_prop(&mut commands, &registries, wreck, at, MapId::ZERO), spawn_prop(&mut commands, &registries, bench, at.offset(3, 0), MapId::ZERO))
         };
         stage.app.world_mut().flush();
         stage.app.world_mut().entity_mut(under).insert(Stocked);
@@ -272,7 +272,7 @@ mod tests {
 
     /// A way on `from` down to `to`, on the same ground for brevity.
     fn way(stage: &mut Stage, from: Point, to: Point) {
-        stage.app.world_mut().spawn((Position(from), Transition { to: Destination::Surface(to) }));
+        stage.app.world_mut().spawn((Position(from), Transition { to: Destination::Place { map: MapId::ZERO, arrive: Arrive::At(to) } }));
         stage.tick();
     }
 
@@ -291,7 +291,7 @@ mod tests {
         let registries = stage.app.world().resource::<Registries>().clone();
         let kind = registries.props.expect("workbench");
         let mut commands = stage.app.world_mut().commands();
-        spawn_prop(&mut commands, &registries, kind, landing.offset(-1, 0), MapId::SURFACE);
+        spawn_prop(&mut commands, &registries, kind, landing.offset(-1, 0), MapId::ZERO);
         stage.app.world_mut().flush();
         way(&mut stage, from, landing);
 

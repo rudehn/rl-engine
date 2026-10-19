@@ -296,7 +296,7 @@ mod tests {
     /// A wounded player holding the first turn, with one thing in the bag
     /// carrying `triggers`, and `consumable` and a stack of `stack` if given.
     ///
-    /// On a real streamed surface with the state set to playing, because a
+    /// On open ground with the state set to playing, because a
     /// use is an action and an action wants a turn to be dealt.
     fn rig(consumable: Option<Consumable>, stack: Option<u32>, triggers: &str) -> (App, Entity, Entity) {
         rig_with(consumable, stack, triggers, |_| {})
@@ -307,7 +307,7 @@ mod tests {
     /// test can add a plugin and the content its triggers name.
     fn rig_with(consumable: Option<Consumable>, stack: Option<u32>, triggers: &str, extra: impl FnOnce(&mut App)) -> (App, Entity, Entity) {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin, crate::combat::CombatPlugin, ItemsPlugin, crate::effects::EffectsPlugin));
+        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin, ItemsPlugin, crate::effects::EffectsPlugin));
         app.add_engine_effects();
         let kinds = Registry::from_defs(vec![DamageKind::new("kinetic")]).expect("one kind");
         let sides = Registry::from_defs(vec![rl_rules::faction::FactionDef::new("ours")]).expect("one side");
@@ -315,7 +315,7 @@ mod tests {
         app.insert_resource(Registries { damage_kinds: kinds, factions: sides, ..Registries::default() });
         app.insert_resource(Seed(TEST_SEED));
         extra(&mut app);
-        let start = crate::testing::surface(&mut app);
+        let start = crate::testing::ground(&mut app);
         let triggers = {
             let specs: Vec<rl_rules::TriggerSpec> =
                 ron::Options::default().with_default_extension(ron::extensions::Extensions::IMPLICIT_SOME).from_str(triggers).expect("the triggers parse");

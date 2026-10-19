@@ -628,7 +628,7 @@ mod tests {
     fn whereabouts(app: &mut App) -> (u32, Point, u32) {
         let me = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).expect("one commando");
         let world = app.world();
-        let deck = foundry::decks::deck_of(world.get::<OnMap>(me).map_or(MapId::SURFACE, |m| m.0));
+        let deck = foundry::decks::deck_of(world.get::<OnMap>(me).map_or(MapId::ZERO, |m| m.0));
         (deck, world.get::<Position>(me).expect("standing somewhere").0, world.resource::<Turns>().now())
     }
 

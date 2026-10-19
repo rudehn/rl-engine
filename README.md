@@ -15,7 +15,6 @@ The core algorithms have no Bevy dependency, so map generation, pathfinding and 
 
 - **Procedural map generation**: a chain of seeded passes with rooms and corridors, BSP, cellular automata caves, doors, largest-region cleanup and ASCII prefabs.
 - **Places grown by accretion**: rooms, halls and passages attached piece by piece so they share walls, districts that differ across one map, loops cut through the longest detours, a survey of every area (dead end, chokepoint, junction, how far off the direct route), and recipes in RON that a place is held to and rebuilt until it meets.
-- **Procedural world generation**: FBM noise, elevation, priority-flood hydrology with rivers and lakes, climate, site placement, road routing and seamless infinite chunk streaming.
 - **Field of view**: symmetric shadowcasting over any `OpacitySource`, plus line of fire and targeting shapes for bolts, balls, beams and cones.
 - **Pathfinding**: A* with reusable scratch buffers, region-bounded Dijkstra maps, flee maps and flow fields per movement profile.
 - **Monster AI**: tactic-priority brains with hunt, melee, flee-when-hurt, wander, using what is carried, following a leader and exploring by a chart of what has been seen that a party shares and can hand on, reading snapshots of what each actor can see; a monster can answer its own moments too, a bite that poisons, a death that bursts, an aura that spares its bearer.
@@ -25,7 +24,7 @@ The core algorithms have no Bevy dependency, so map generation, pathfinding and 
 - **RPG rules**: stats and modifiers, a staged damage pipeline with resistances, status effects that tick by the turn, hold an actor's turns, change its speed or hold it asleep until harm, a noise or a noticed foe wakes it, factions, equipment slots, item levels written as authored parts a game types its own items with, blows that sweep round the wielder or pierce through the target, sneak attacks on whoever has not noticed the attacker, and a to-hit roll shaped by range and light whose model is the game's to choose.
 - **Items that do things**: the ground, bags and slots with stacks and tags, one `Loadout` summed from what an actor is and wears so nothing is copied onto a wearer, gear that grants stats, triggers that say in RON what a thing does when it is used, lands, fires or hits, a use aimed by the abilities' own cursor and rule or made on another thing chosen from the bag, charges that are spent and can refill, ammunition a shot spends from the bag, and throwing with the flight the resolver and the preview both read.
 - **Identification and curses**: a thing not yet known shows its name and nothing it is worth on every screen while it does what it does, and a cursed thing refuses every way of coming off, each a marker the game puts on and takes off by its own rules.
-- **Loot the engine places**: a floor scattered when a place is first built or a region first streams in, drops rolled where the dead fall, and containers that ask for a kind of thing by tag and draw it at the band they stand on, so one locker holds better gear deeper; every draw from a stream of its own, and every item made by the game through one trait, since what an item is stays the game's.
+- **Loot the engine places**: a floor scattered when a place is first built, drops rolled where the dead fall, and containers that ask for a kind of thing by tag and draw it at the band they stand on, so one locker holds better gear deeper; every draw from a stream of its own, and every item made by the game through one trait, since what an item is stays the game's.
 - **Prefabs as data**: a piece of a place written in RON as rows of glyphs and a legend, one thing to a cell, with slots for props, for items named or drawn by tag and for monsters named or drawn by role from the game's own spawn table, each drawn at the depth of the place it was stamped in from a stream of its own cell, and a monster put at a slot holding it as its post, walking back when it has nothing better to do; a coverage report says, for every drawn slot at every depth, whether it finds something.
 - **Abilities and targeting**: what an actor can spend a turn on as data in RON, with costs against a pool, health or a tagged item, requirements over statuses, slots and stats, cooldowns on the turn clock, effects as types a game extends, and one cursor that previews through the call the resolver lands with.
 - **Stealth and awareness**: a roll to notice by sight and light, memory of who has noticed whom, waking on a blow, and minds that act only on what they have noticed and search where they last saw it, and statuses that make their holder unseen until it strikes.
@@ -38,7 +37,7 @@ The core algorithms have no Bevy dependency, so map generation, pathfinding and 
 - **Save and load**: file, memory and browser storage backends, a versioned save schema and entity remapping.
 - **Lighting**: point sources cast through the same shadows as sight, one component for props, actors and items, fuel that burns down, dark sight, a viewshed cut to what is lit, and three bands, dark, dim and lit, that stealth and the to-hit roll read; opt-in per game, with ambient a value the game writes.
 - **Glyphs or pictures**: a diffed glyph grid renderer, drawn in a font the game ships so it looks the same on every platform and in a browser, and a tileset that draws a picture in place of any glyph it names with nothing else changing, so one game is letters or sprites at the flick of a setting; a map view where every cell is its own shade of its tile, light colours the background as well as the glyph, flames flicker and water shimmers, and memory, the stairs and things last seen as well as the ground, fades to a cold blue; animations played from what the turns cued, with the turns held so a bolt is seen to arrive before it hurts; which cell and which map tile the mouse is over, in a window of any size; and a capture tool that plays keys and photographs the window.
-- **UI you can take apart**: seventeen panels, each a view of plain data, a collector that refills it and a presenter you may replace or drop, with colours named as roles in a palette rather than written into a widget, a narrator that says what a turn did through a phrasebook a game rewords, a controls screen built from the registry every key is declared in, and an overworld map screen.
+- **UI you can take apart**: seventeen panels, each a view of plain data, a collector that refills it and a presenter you may replace or drop, with colours named as roles in a palette rather than written into a widget, a narrator that says what a turn did through a phrasebook a game rewords, and a controls screen built from the registry every key is declared in.
 - **Settings a player keeps**: a registry a game adds its own choices to, a screen that lists them, and a file that remembers them between launches, with fullscreen declared by the engine and a glyph grid that is laid out for its window, so text is sharp windowed, maximized or filling the screen.
 - **A title screen**: the engine's menu over a game's own picture, holding the first run back until the player picks Continue, New Game, Records, Settings or Exit, asking before a saved run is given up, and offered again from the pause and end menus, with a run left there written down to be continued.
 - **Records of every run**: a run ends in a record in the game's own words, a score, a line and its sections, filed best first and a hundred deep, kept between launches, and shown on the screen the run ends on and on a records screen the title opens.
@@ -143,7 +142,7 @@ let path = AStar::new().find(&view, start, exit, PathRules::default()).expect("r
 println!("{} cells in sight, the exit is {} steps away", seen.count(), path.steps.len());
 ```
 
-The two example games below are what to read once you know which subsystem you are looking for, and every mechanic the engine has is in one of them but the overworld and the streamed surface, which no example game uses yet.
+The two example games below are what to read once you know which subsystem you are looking for, and every mechanic the engine has is in one of them.
 `examples/foundry/src/decks.rs` grows every deck of a run in one file.
 
 ## If the build fails
@@ -167,11 +166,9 @@ Each crate declares its tier in its `Cargo.toml`, and `scripts/check-tiers.sh` f
 | 0 | `rl-core` | grid, geometry, seeds and streams, dice, typed ids, the turn queue |
 | 1 | `rl-grid` | tile registry, terrain, FOV, A*, Dijkstra maps, spatial index, regions |
 | 1 | `rl-mapgen` | the pass pipeline and the builders that run in it |
-| 1 | `rl-world` | world graph, hydrology, sites, roads, chunk generation |
 | 1 | `rl-rules` | registries and banded tables from RON, stats, damage, statuses, factions, equipment, authored item parts, monster AI, facts and quests, balance scoring |
-| 2 | `rl-bevy` | plugins, components, system sets, the turn loop, chunk streaming, items, places |
+| 2 | `rl-bevy` | plugins, components, system sets, the turn loop, items, places |
 | 2 | `rl-render` | the glyph grid renderer and the world view |
-| 2 | `rl-overworld` | opt-in overworld screen with a portal picker |
 | 2 | `rl-save` | save backends, the versioned schema policy, entity remapping, the engine's state as a save |
 | 2 | `rl-ui` | theme tokens, widgets, key hints, the log view |
 | 3 | `rl-engine` | facade and prelude |

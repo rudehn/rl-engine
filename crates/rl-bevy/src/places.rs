@@ -1,6 +1,6 @@
-//! Places: bounded maps entered from the surface and from each other.
+//! Places: bounded maps, entered from each other.
 //!
-//! The surface is the streamed world. A place is a bounded map built once
+//! A place is a bounded map built once
 //! by the game's [`PlaceRules`] the first time something enters it and
 //! kept whole after that, actors and items included: leaving a place
 //! freezes what is in it, returning finds it as it was. Every entity with
@@ -37,31 +37,25 @@ use rl_core::turn::BASE_ACTION_COST;
 use rl_grid::Terrain;
 use rl_mapgen::BuildError;
 use rl_rules::Wits;
-use rl_world::WorldGraph;
 
 use crate::combat::Dead;
 use crate::components::{Blocks, Player, Position, Viewshed};
 use crate::knowledge::Knowledge;
 use crate::minds::{FlowFields, Intelligence, Post, Trails};
 use crate::turn::{Action, Intent, Occupancy, Resolution};
-use crate::world::{WorldMap, WorldRes};
+use crate::world::WorldMap;
 
-/// Which map an entity is on. Zero is the surface; a game numbers its
-/// places however it likes above that.
+/// Which map an entity is on. A game numbers its places however it
+/// likes; zero is where an entity with no [`OnMap`] stands.
 #[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
 pub struct MapId(pub u32);
 
 impl MapId {
-    /// The streamed world.
-    pub const SURFACE: MapId = MapId(0);
-
-    /// Whether this is the surface.
-    pub const fn is_surface(self) -> bool {
-        self.0 == 0
-    }
+    /// Map zero, where an entity with no [`OnMap`] stands.
+    pub const ZERO: MapId = MapId(0);
 }
 
-/// The map an entity with a position is on. Missing means the surface;
+/// The map an entity with a position is on. Missing means map zero;
 /// the engine fills it in for anything that gains a position.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Deref, serde::Serialize, serde::Deserialize)]
 pub struct OnMap(pub MapId);
@@ -80,8 +74,6 @@ pub enum Arrive {
 /// The far side of a transition.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Destination {
-    /// A cell of the surface.
-    Surface(Point),
     /// A place, built on first arrival.
     Place {
         /// Which.
@@ -213,10 +205,8 @@ impl PlaceBuild {
 
 /// How the game builds a place the first time it is entered.
 pub trait PlaceRules: Send + Sync {
-    /// Builds `map`. The world, when the game has one, is there for the
-    /// seed and for whatever the place is under; a delve with no surface
-    /// gets `None` and seeds itself.
-    fn build(&self, map: MapId, world: Option<&WorldGraph>) -> Result<PlaceBuild, BuildError>;
+    /// Builds `map`.
+    fn build(&self, map: MapId) -> Result<PlaceBuild, BuildError>;
 
     /// The floors this game's places stand in one under another, if they
     /// do, for the engine to lay the stairs between them. `None`, the
@@ -478,7 +468,6 @@ pub struct Maps<'w> {
     occupancy: ResMut<'w, Occupancy>,
     knowledge: ResMut<'w, Knowledge>,
     fields: ResMut<'w, FlowFields>,
-    world: Option<Res<'w, WorldRes>>,
     rules: Option<Res<'w, PlaceRulesRes>>,
 }
 
@@ -549,9 +538,9 @@ pub fn resolve_warps(
     let mut trips: Vec<Trip> = Vec::new();
     for intent in intents.read() {
         let found = travellers.get(intent.actor).ok().and_then(|(_, (pos, _, on, _, player, wits, ..))| {
-            let (at, here) = (pos.0, on.map(|m| m.0).unwrap_or(MapId::SURFACE));
+            let (at, here) = (pos.0, on.map(|m| m.0).unwrap_or(MapId::ZERO));
             let travels = player || wits.is_some_and(|w| w.has(Wits::FLEES_THROUGH));
-            transitions.iter().find(|(p, m, _)| p.0 == at && m.map(|m| m.0).unwrap_or(MapId::SURFACE) == here).map(|(_, _, t)| (at, here, t.to, travels))
+            transitions.iter().find(|(p, m, _)| p.0 == at && m.map(|m| m.0).unwrap_or(MapId::ZERO) == here).map(|(_, _, t)| (at, here, t.to, travels))
         });
         // Nothing to go through is refused before the turn is claimed: a
         // game may bind its way to a key that means something else off
@@ -575,7 +564,7 @@ pub fn resolve_warps(
             .filter(|(e, (pos, _, on, _, _, wits, trails, dead))| {
                 *e != intent.actor
                     && !dead
-                    && on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here
+                    && on.map(|m| m.0).unwrap_or(MapId::ZERO) == here
                     && rl_core::geometry::chebyshev(pos.0, at) <= 1
                     && wits.is_some_and(|w| w.has(Wits::FOLLOWS_THROUGH))
                     && trails.is_some_and(|t| t.0.contains(&intent.actor))
@@ -626,8 +615,7 @@ const LANDING_REACH: usize = 25;
 /// walked to from it.
 ///
 /// `want` is taken on trust, as it always was: it is where the builder or
-/// the game said arrivals stand, and on the surface it may not be loaded
-/// yet. Only the cells searched round it are asked whether they are floor,
+/// the game said arrivals stand. Only the cells searched round it are asked whether they are floor,
 /// so the second through a way lands beside the first rather than on it or
 /// in a wall.
 fn landing(maps: &Maps, map: MapId, want: Point) -> Option<Point> {
@@ -662,13 +650,10 @@ fn warp(
     to: Destination,
     after: Option<Entity>,
 ) -> Result<(), BuildError> {
-    let (target_map, arrive) = match to {
-        Destination::Surface(p) => (MapId::SURFACE, Arrive::At(p)),
-        Destination::Place { map, arrive } => (map, arrive),
-    };
-    if !target_map.is_surface() && !maps.map.has_place(target_map) {
+    let Destination::Place { map: target_map, arrive } = to;
+    if !maps.map.has_place(target_map) {
         let rules = maps.rules.as_ref().ok_or_else(|| BuildError::new("warp", "no PlaceRulesRes to build a place with"))?;
-        let build = rules.0.build(target_map, maps.world.as_deref().map(|w| &w.0))?;
+        let build = rules.0.build(target_map)?;
         let stairs = rules.0.ladder().map(|ladder| ladder.stairs(target_map, build.entry, build.exit)).unwrap_or_default();
         maps.map.install_place(target_map, build);
         // Laid with the build, by whoever's arrival built it, so a floor
@@ -681,12 +666,12 @@ fn warp(
     let Ok((_, (mut pos, viewshed, on, blocks, player, ..))) = travellers.get_mut(actor) else {
         return Err(BuildError::new("warp", "the traveller has no position"));
     };
-    let from = on.map(|m| m.0).unwrap_or(MapId::SURFACE);
+    let from = on.map(|m| m.0).unwrap_or(MapId::ZERO);
     let want = match (arrive, maps.map.place(target_map)) {
         (Arrive::At(p), _) => p,
         (Arrive::Entry, Some(place)) => place.entry,
         (Arrive::Exit, Some(place)) => place.exit.unwrap_or(place.entry),
-        (_, None) => return Err(BuildError::new("warp", "the surface has no entry or exit")),
+        (_, None) => return Err(BuildError::new("warp", "a place built but not kept")),
     };
     // Found before anything is switched, so a refused arrival leaves the
     // traveller and the maps exactly as they were.
@@ -761,15 +746,14 @@ mod tests {
 
     struct Caves(TileRegistry);
     impl PlaceRules for Caves {
-        fn build(&self, map: MapId, world: Option<&WorldGraph>) -> Result<PlaceBuild, BuildError> {
+        fn build(&self, map: MapId) -> Result<PlaceBuild, BuildError> {
             let (wall, floor) = (self.0.expect("wall"), self.0.expect("floor"));
             let mut ctx = BaseContext::blank(40, 30, self.0.clone(), wall);
-            let world = world.expect("the test has a world");
             Chain::new()
                 .then(Rooms { floor, ..Default::default() })
                 .then(RandomStart)
                 .then(FarthestExit)
-                .run(&mut ctx, RunSeed(world.seed().0 ^ map.0 as u64))?;
+                .run(&mut ctx, RunSeed(crate::testing::TEST_SEED.0 ^ map.0 as u64))?;
             let entry = ctx.outputs().first::<StartPoint>().unwrap().0;
             let exit = ctx.outputs().first::<rl_mapgen::dungeon::ExitPoint>().map(|e| e.0);
             let (terrain, _) = ctx.finish();
@@ -794,8 +778,8 @@ mod tests {
 
     fn rig() -> Rig {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, crate::items::ItemsPlugin, crate::world::StreamingPlugin));
-        let start = crate::testing::surface(&mut app);
+        app.add_plugins((crate::fov::FovPlugin, crate::items::ItemsPlugin));
+        let start = crate::testing::ground(&mut app);
         app.insert_resource(PlaceRulesRes(Box::new(Caves(TileRegistry::standard()))));
         let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap, Inventory::default())).id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
@@ -824,8 +808,8 @@ mod tests {
     #[test]
     fn the_map_being_read_follows_an_onlooker_into_a_place() {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin));
-        let start = crate::testing::surface(&mut app);
+        app.add_plugins(crate::fov::FovPlugin);
+        let start = crate::testing::ground(&mut app);
         app.insert_resource(PlaceRulesRes(Box::new(Caves(TileRegistry::standard())))).init_resource::<Entered>().add_systems(PostUpdate, record_entered);
         let onlooker = app.world_mut().spawn((Player, Position(start), Viewshed::everywhere(), RevealsMap)).id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
@@ -862,7 +846,7 @@ mod tests {
         r.app.world_mut().spawn((Position(r.start), Transition { to: Destination::Place { map: cave, arrive: Arrive::Entry } }));
         let watcher = r.app.world_mut().spawn((Actor, Blocks, Position(r.start.offset(2, 0)))).id();
         r.app.update();
-        assert_eq!(r.app.world().get::<OnMap>(watcher).map(|m| m.0), Some(MapId::SURFACE), "tagged on arrival");
+        assert_eq!(r.app.world().get::<OnMap>(watcher).map(|m| m.0), Some(MapId::ZERO), "tagged on arrival");
 
         intend(&mut r, GoThrough);
         {
@@ -875,14 +859,12 @@ mod tests {
             assert!(map.is_walkable(place.entry));
             assert_eq!(map.window_tiles(), Rect::new(0, 0, 40, 30), "the place is the whole window");
             assert!(w.resource::<Occupancy>().is_occupied(place.entry));
-            assert!(!w.resource::<Occupancy>().is_occupied(r.start.offset(2, 0)), "the surface watcher is not on this map's index");
+            assert!(!w.resource::<Occupancy>().is_occupied(r.start.offset(2, 0)), "the watcher on map zero is not on this map's index");
             assert_eq!(w.resource::<Entered>().0, vec![PlaceEntered { map: cave, first: true, entry: place.entry, exit: place.exit }]);
             assert_eq!(place.spots, vec![Spot { tag: 7, at: place.entry, prefab: None }]);
             let v = w.get::<Viewshed>(r.player).unwrap();
             assert!(!v.dirty && v.can_see(place.entry), "sight was recomputed in the place");
             assert!(w.resource::<Knowledge>().is_explored(place.entry));
-            let surface_region = w.resource::<WorldRes>().region_of_tile(r.start);
-            assert!(w.resource::<Knowledge>().region_touched(surface_region), "the overworld's fog of the surface survives going underground");
         }
         // Time passes below; the watcher above is frozen, not dealt a turn.
         let before = r.app.world().resource::<Turns>().now();
@@ -896,12 +878,12 @@ mod tests {
         let coin = r.app.world_mut().spawn((Item, Position(entry))).id();
         r.app.update();
         assert_eq!(r.app.world().get::<OnMap>(coin).unwrap().0, cave);
-        r.app.world_mut().write_message(WarpRequest { actor: r.player, to: Destination::Surface(r.start), after: None });
+        r.app.world_mut().write_message(WarpRequest { actor: r.player, to: Destination::Place { map: MapId::ZERO, arrive: Arrive::At(r.start) }, after: None });
         r.app.update();
-        assert_eq!(r.app.world().resource::<WorldMap>().current(), MapId::SURFACE);
+        assert_eq!(r.app.world().resource::<WorldMap>().current(), MapId::ZERO);
         assert_eq!(r.app.world().get::<Position>(r.player).unwrap().0, r.start);
-        assert!(r.app.world().resource::<WorldMap>().is_loaded(r.start), "the surface window is back");
-        assert!(r.app.world().resource::<Knowledge>().is_explored(r.start), "surface knowledge survived the trip");
+        assert!(r.app.world().resource::<WorldMap>().is_loaded(r.start), "map zero is back");
+        assert!(r.app.world().resource::<Knowledge>().is_explored(r.start), "what was seen of map zero survived the trip");
         assert!(r.app.world().resource::<Occupancy>().is_occupied(r.start.offset(2, 0)), "the watcher is indexed again");
         intend(&mut r, GoThrough);
         {
@@ -923,14 +905,8 @@ mod tests {
     /// A rig with two sides and minds, for whoever else travels.
     fn crowd() -> (Rig, crate::testing::Sides) {
         let mut app = headless_app();
-        app.add_plugins((
-            crate::fov::FovPlugin,
-            crate::items::ItemsPlugin,
-            crate::world::StreamingPlugin,
-            crate::combat::CombatPlugin,
-            crate::minds::MindsPlugin,
-        ));
-        let start = crate::testing::surface(&mut app);
+        app.add_plugins((crate::fov::FovPlugin, crate::items::ItemsPlugin, crate::combat::CombatPlugin, crate::minds::MindsPlugin));
+        let start = crate::testing::ground(&mut app);
         let sides = crate::testing::two_sides(&mut app);
         app.insert_resource(PlaceRulesRes(Box::new(Caves(TileRegistry::standard()))));
         app.init_resource::<Went>().add_systems(PostUpdate, record_travels);
@@ -972,7 +948,7 @@ mod tests {
     }
 
     fn on(r: &Rig, e: Entity) -> MapId {
-        r.app.world().get::<OnMap>(e).map_or(MapId::SURFACE, |m| m.0)
+        r.app.world().get::<OnMap>(e).map_or(MapId::ZERO, |m| m.0)
     }
 
     fn at(r: &Rig, e: Entity) -> Point {
@@ -1005,13 +981,13 @@ mod tests {
         assert_eq!(on(&r, follower), cave, "the one beside it came through");
         assert_eq!(rl_core::geometry::chebyshev(at(&r, follower), entry), 1, "and stands beside it, not on it");
         assert!(r.app.world().resource::<Occupancy>().is_occupied(at(&r, follower)), "indexed where it landed");
-        assert_eq!((on(&r, homebody), at(&r, homebody)), (MapId::SURFACE, stays), "its kind does not travel");
-        assert_eq!(on(&r, straggler), MapId::SURFACE, "it was not beside the player");
+        assert_eq!((on(&r, homebody), at(&r, homebody)), (MapId::ZERO, stays), "its kind does not travel");
+        assert_eq!(on(&r, straggler), MapId::ZERO, "it was not beside the player");
         assert_eq!(
             r.app.world().resource::<Went>().0,
             vec![
-                Travelled { actor: r.player, from: MapId::SURFACE, left: r.start, to: cave, after: None },
-                Travelled { actor: follower, from: MapId::SURFACE, left: beside, to: cave, after: Some(r.player) },
+                Travelled { actor: r.player, from: MapId::ZERO, left: r.start, to: cave, after: None },
+                Travelled { actor: follower, from: MapId::ZERO, left: beside, to: cave, after: Some(r.player) },
             ]
         );
 
@@ -1047,12 +1023,18 @@ mod tests {
         let cave = MapId(3);
         let (player, friend) = (r.player, r.app.world_mut().spawn((Actor, Blocks, Position(r.start.offset(2, 0)))).id());
         let into = |map: MapId| Destination::Place { map, arrive: Arrive::Entry };
-        // Nowhere on the surface is its entry, so the player's warp there
-        // is refused, and the one sent after them stays.
-        r.app.world_mut().write_message(WarpRequest::new(player, into(MapId::SURFACE)));
+        // A cell taken and walled in on every side leaves nowhere to land,
+        // so the player's warp there is refused, and the one sent after
+        // them stays.
+        let pen = r.start.offset(-5, -5);
+        r.app.world_mut().spawn((Actor, Blocks, Position(pen)));
+        let ring: Vec<Point> = rl_core::Direction::ALL.iter().map(|d| pen + d.offset()).collect();
+        crate::testing::wall_off(&mut r.app, &ring);
+        r.app.update();
+        r.app.world_mut().write_message(WarpRequest::new(player, Destination::Place { map: MapId::ZERO, arrive: Arrive::At(pen) }));
         r.app.world_mut().write_message(WarpRequest::new(friend, into(cave)).after(player));
         intend(&mut r, Wait);
-        assert_eq!(on(&r, friend), MapId::SURFACE, "the one it followed went nowhere, and nor did it");
+        assert_eq!(on(&r, friend), MapId::ZERO, "the one it followed went nowhere, and nor did it");
         r.app.world_mut().write_message(WarpRequest::into_place(player, cave));
         r.app.world_mut().write_message(WarpRequest::new(friend, into(cave)).after(player));
         intend(&mut r, Wait);
@@ -1080,13 +1062,13 @@ mod tests {
         r.app.world_mut().get_mut::<crate::combat::Health>(runner).unwrap().current = 2;
         r.app.world_mut().entity_mut(runner).insert(Post(way));
         intend(&mut r, Wait);
-        assert_eq!((on(&r, runner), at(&r, runner)), (MapId::SURFACE, way), "onto the way first");
+        assert_eq!((on(&r, runner), at(&r, runner)), (MapId::ZERO, way), "onto the way first");
         intend(&mut r, Wait);
         assert_eq!(on(&r, runner), cave, "then through it");
         {
             let w = r.app.world();
             let map = w.resource::<WorldMap>();
-            assert_eq!(map.current(), MapId::SURFACE, "the map being read stays with the player");
+            assert_eq!(map.current(), MapId::ZERO, "the map being read stays with the player");
             let place = map.place(cave).expect("built for the one that arrived");
             assert!(!place.visited);
             assert_eq!(at(&r, runner), place.entry);
@@ -1125,7 +1107,7 @@ mod tests {
         let stuck = mind(&mut r, way, sides.theirs, sides.kind, Wits::SAPIENT, rl_rules::Brain::new().then(Through));
         intend(&mut r, Wait);
         intend(&mut r, Wait);
-        assert_eq!((on(&r, stuck), at(&r, stuck)), (MapId::SURFACE, way));
+        assert_eq!((on(&r, stuck), at(&r, stuck)), (MapId::ZERO, way));
         assert!(!r.app.world().resource::<WorldMap>().has_place(cave), "and nothing was built for it");
 
         r.app.world_mut().get_mut::<Intelligence>(stuck).unwrap().0 = Wits::SAPIENT.with(Wits::TRAVELS);
@@ -1226,7 +1208,7 @@ mod tests {
         intend(&mut r, GoThrough);
         assert_eq!(r.app.world().resource::<Turns>().now(), before);
         assert!(r.app.world().get::<MyTurn>(r.player).is_some());
-        assert_eq!(r.app.world().resource::<WorldMap>().current(), MapId::SURFACE);
+        assert_eq!(r.app.world().resource::<WorldMap>().current(), MapId::ZERO);
         assert_eq!(r.app.world().get::<Position>(r.player).map(|p| p.0), Some(r.start));
         assert_eq!(r.app.world().resource::<Went>().0, 0, "and nobody travelled");
         assert_eq!(r.app.world().resource::<Went>().1, 1, "refused once, not again by the sweep for an ask nothing claimed");
@@ -1252,8 +1234,8 @@ mod tests {
     struct LadderCaves(Caves);
 
     impl PlaceRules for LadderCaves {
-        fn build(&self, map: MapId, world: Option<&WorldGraph>) -> Result<PlaceBuild, BuildError> {
-            self.0.build(map, world)
+        fn build(&self, map: MapId) -> Result<PlaceBuild, BuildError> {
+            self.0.build(map)
         }
 
         fn ladder(&self) -> Option<Ladder> {
@@ -1289,7 +1271,7 @@ mod tests {
         assert_eq!((ladder.top, ladder.bottom), (LadderEnd::Nothing, LadderEnd::Nothing), "nothing past either end unless the game says");
     }
 
-    /// Down a ladder of three floors from the surface: every floor has one
+    /// Down a ladder of three floors from map zero: every floor has one
     /// stair up at its entry to the floor above's exit, but the top, whose
     /// way up is the game's and which the engine leaves alone, and one
     /// stair down at its exit to the floor below's entry, but the bottom.

@@ -29,7 +29,7 @@ The trait sits on a resource the game already has, its armory, rather than on a 
 
 Every draw comes from a stream the engine derives from the run's seed, and which stream is the point:
 
-- A place's floor is scattered from a stream derived for that place alone, a region's for that region, and a container's for its cell. What lies on deck four never depends on how many kills happened on deck three, and a region streamed in second draws what it would have drawn first.
+- A place's floor is scattered from a stream derived for that place alone, and a container's for its cell. What lies on deck four never depends on how many kills happened on deck three.
 - What the dead leave comes from `LootRng`, one stream kept from kill to kill, so the second kill rolls on from where the first left off. It is never combat's stream, so a kill's loot never shifts a blow that has not been struck.
 - Whatever the game rolls on the thing it makes, a quality or an enchant, comes from the stream the engine hands `make`, so it is as deterministic as the rest, and at the band the engine hands it, in `Provenance` beside why it is being made, so a crate two bands down stocks better-enchanted things than one on the floor above it.
 

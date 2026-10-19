@@ -540,7 +540,7 @@ pub fn resolve_items(
     let ItemWorld { mut carriers, ground, stacks, wearables, consumables, map, triggers, occupancy, bystanders, stuck, tagged, unknown, players, mut fired_on } =
         world;
     let this_map = map.current();
-    let lies_at = |item: Entity, at: Point| ground.get(item).is_ok_and(|(_, p, on)| p.0 == at && on.map(|m| m.0).unwrap_or(MapId::SURFACE) == this_map);
+    let lies_at = |item: Entity, at: Point| ground.get(item).is_ok_and(|(_, p, on)| p.0 == at && on.map(|m| m.0).unwrap_or(MapId::ZERO) == this_map);
     // Whether `actor` does not know `item`, which only the player ever
     // does: `Unknown` is the player's ignorance, so a mind using what it
     // carries is refused for everything the thing truly is.
@@ -565,7 +565,7 @@ pub fn resolve_items(
                 Which::PickUp => {
                     let Ok((pos, mut bag, _, _)) = carriers.get_mut(actor) else { break 'attempt false };
                     let here: Vec<Entity> =
-                        ground.iter().filter(|(_, p, on)| p.0 == pos.0 && on.map(|m| m.0).unwrap_or(MapId::SURFACE) == this_map).map(|(e, _, _)| e).collect();
+                        ground.iter().filter(|(_, p, on)| p.0 == pos.0 && on.map(|m| m.0).unwrap_or(MapId::ZERO) == this_map).map(|(e, _, _)| e).collect();
                     for item in &here {
                         commands.entity(*item).remove::<(Position, OnMap)>();
                         let merged_into = stacks.get(*item).ok().and_then(|s| bag.items.iter().copied().find(|c| stacks.get(*c).is_ok_and(|t| t.key == s.key)));
@@ -784,7 +784,7 @@ pub fn pulse_worn(
     }
     let here = map.current();
     for (wearer, pos, on, worn) in &wearers {
-        if on.map_or(MapId::SURFACE, |m| m.0) != here {
+        if on.map_or(MapId::ZERO, |m| m.0) != here {
             continue;
         }
         for (_, item) in worn.0.worn() {
@@ -1117,7 +1117,7 @@ pub fn perceive_belongings(mut thinking: ResMut<Thinking>, sight: Sight, belongi
     let mut items = Vec::new();
     if wits.has(rl_rules::Wits::PICKS_UP) || wits.has(rl_rules::Wits::EQUIPS) {
         for (item, pos, on, throwable, wearable, score) in belongings.lying.iter() {
-            let underfoot = pos.0 == thinking.at() && on.map(|m| m.0).unwrap_or(MapId::SURFACE) == sight.current_map();
+            let underfoot = pos.0 == thinking.at() && on.map(|m| m.0).unwrap_or(MapId::ZERO) == sight.current_map();
             if !underfoot && !sight.perceives(&thinking, pos.0, on) {
                 continue;
             }
@@ -1216,8 +1216,8 @@ mod tests {
 
     fn rig() -> Rig {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, ItemsPlugin, crate::world::StreamingPlugin));
-        let start = crate::testing::surface(&mut app);
+        app.add_plugins((crate::fov::FovPlugin, ItemsPlugin));
+        let start = crate::testing::ground(&mut app);
         let slots = Registry::from_defs(vec![SlotDef::new("main"), SlotDef::new("off")]).unwrap();
         let (main, off) = (slots.expect("main"), slots.expect("off"));
         let player = app
@@ -1353,8 +1353,8 @@ mod tests {
         use rl_rules::stats::Op;
         use rl_rules::{StatDef, StatusDef};
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin, ItemsPlugin, crate::world::StreamingPlugin));
-        let start = crate::testing::surface(&mut app);
+        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin, ItemsPlugin));
+        let start = crate::testing::ground(&mut app);
         let sides = crate::testing::two_sides(&mut app);
         let stats = Registry::from_defs(vec![StatDef::new("might", 10)]).unwrap();
         let might = stats.expect("might");
@@ -1599,9 +1599,9 @@ mod aimed {
     impl Rig {
         fn new() -> Self {
             let mut app = headless_app();
-            app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin, CombatPlugin, ItemsPlugin, crate::effects::EffectsPlugin));
+            app.add_plugins((crate::fov::FovPlugin, CombatPlugin, ItemsPlugin, crate::effects::EffectsPlugin));
             app.add_engine_effects();
-            let start = crate::testing::surface(&mut app);
+            let start = crate::testing::ground(&mut app);
             let sides = crate::testing::two_sides(&mut app);
             let player = app
                 .world_mut()
@@ -1991,11 +1991,11 @@ mod chosen {
     impl Rig {
         fn new() -> Self {
             let mut app = headless_app();
-            app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin, ItemsPlugin, crate::effects::EffectsPlugin));
+            app.add_plugins((crate::fov::FovPlugin, ItemsPlugin, crate::effects::EffectsPlugin));
             app.add_engine_effects();
             app.add_effect::<Polish>().init_resource::<Registries>().insert_resource(crate::seed::Seed(crate::testing::TEST_SEED));
             app.world_mut().resource_mut::<Registries>().tags = rl_rules::Registry::from_defs(vec![rl_rules::TagDef::new("kit")]).unwrap();
-            let start = crate::testing::surface(&mut app);
+            let start = crate::testing::ground(&mut app);
             let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), RevealsMap, Inventory::default())).id();
             app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
             app.update();

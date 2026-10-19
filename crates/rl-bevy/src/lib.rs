@@ -1,7 +1,7 @@
 //! The Bevy layer: the loops the engine owns.
 //!
 //! Everything below tier 2 is data and algorithms. This crate is where they
-//! run: the turn loop, chunk streaming, field of view, occupancy. A game
+//! run: the turn loop, field of view, occupancy. A game
 //! adds these plugins, spawns actors with the components here, and writes
 //! its own systems into the named [`EngineSet`]s and [`TurnSet`]s.
 //!
@@ -94,7 +94,7 @@ pub use lighting::{
     Concealed, DarkSight, DarkSightSuppressed, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, OwnDarkSight, PlayerSight, WornDarkSight, band_at,
     conceals,
 };
-pub use loot::{ContainersAnswered, Drops, Found, ItemMaker, LootArea, LootPlugin, LootRng, LootSet, Provenance, Scattered};
+pub use loot::{ContainersAnswered, Drops, Found, ItemMaker, LootArea, LootPlugin, LootRng, LootSet, Provenance};
 pub use minds::{
     AddChoice, CameFrom, DEFAULT_PERCEPTION, Doing, FlowFields, Intelligence, Joined, Leader, Mind, MindChose, MindRng, MindsPlugin, Perception, Post, Profile,
     Sight, Thinking, Trails, a_mind_holds_the_turn,
@@ -135,7 +135,7 @@ pub use turn::{
     Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Pace, Resolution, Speeds, Step, Stepped, TurnEnd, TurnRules, Turns, Wait,
 };
 pub use work::{AddWork, BeginWork, BreakReason, StopWork, Toil, WorkBegan, WorkBroken, WorkDone, WorkKinds, WorkPace, Working, Works};
-pub use world::{ChunkLoaded, ChunkRulesRes, PlaceMap, PlaceSave, StreamingPlugin, WindowView, WorldMap, WorldMapSave, WorldRes, WorldSettings};
+pub use world::{PlaceMap, PlaceSave, WindowView, WorldMap, WorldMapSave};
 
 /// The names a game writes.
 ///
@@ -175,7 +175,7 @@ pub mod prelude {
         Concealed, DarkSight, DarkSightSuppressed, Fuel, LightEvent, LightSource, Lighting, LightingPlugin, OwnDarkSight, PlayerSight, WornDarkSight, band_at,
         conceals,
     };
-    pub use crate::loot::{Drops, Found, ItemMaker, LootArea, LootPlugin, LootSet, Provenance, Scattered};
+    pub use crate::loot::{Drops, Found, ItemMaker, LootArea, LootPlugin, LootSet, Provenance};
     pub use crate::minds::{AddChoice, Doing, Intelligence, Joined, Leader, Mind, MindChose, MindsPlugin, Perception, Post, Profile, Thinking};
     pub use crate::noise::{AddSound, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, SoundId, SoundNames, Sounds};
     pub use crate::parts::{ActorParts, Attacks, ItemLevel, ItemParts, LightWhen, MadeOf, held_for_life, insert_parts};
@@ -207,6 +207,6 @@ pub mod prelude {
         Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Pace, Resolution, Speeds, Step, Stepped, TurnEnd, TurnRules, Turns, Wait,
     };
     pub use crate::work::{AddWork, StopWork, WorkDone, WorkKinds, WorkPace, Working};
-    pub use crate::world::{ChunkLoaded, ChunkRulesRes, StreamingPlugin, WorldMap, WorldRes, WorldSettings};
+    pub use crate::world::WorldMap;
     pub use rl_grid::LightBand;
 }

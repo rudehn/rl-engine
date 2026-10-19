@@ -241,7 +241,7 @@ impl Watchers<'_, '_> {
             return !self.unseen.contains(subject) && self.remembers(watcher, subject);
         }
         let here = map.current();
-        if on.map(|m| m.0).unwrap_or(MapId::SURFACE) != here || subject_on.map(|m| m.0).unwrap_or(MapId::SURFACE) != here {
+        if on.map(|m| m.0).unwrap_or(MapId::ZERO) != here || subject_on.map(|m| m.0).unwrap_or(MapId::ZERO) != here {
             return false;
         }
         awareness::within_reach(pos.0, at.0, perception.map(|p| p.0).unwrap_or(DEFAULT_PERCEPTION)) && sight.is_some_and(|s| s.can_see(at.0))
@@ -466,7 +466,7 @@ pub fn update_awareness(mut watch: Watch, mut noticed: MessageWriter<Noticed>) {
         if !at_odds(rules, faction, theirs) {
             continue;
         }
-        let on_this_map = on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here;
+        let on_this_map = on.map(|m| m.0).unwrap_or(MapId::ZERO) == here;
         let in_view = !hidden && on_this_map && awareness::within_reach(pos.0, at.0, reach) && sight.is_some_and(|s| s.can_see(at.0));
         let mut state = aware.of(subject);
         if in_view && state.is_alert() {
@@ -565,7 +565,6 @@ mod tests {
     use crate::plugin::headless_app;
     use crate::state::EngineState;
     use crate::turn::{Intent, Wait};
-    use crate::world::StreamingPlugin;
     use rl_core::DiceRoll;
     use rl_rules::ai::tactics::{Hunt, MeleeAdjacent, SearchLastKnown, Wander};
     use rl_rules::{Brain, Hit};
@@ -589,7 +588,7 @@ mod tests {
         /// plugins are added and before anything is spawned or updated.
         fn build(notice: NoticeStats, gap: i32, reach: i32, plugin: bool, light: Option<u8>, extra: impl FnOnce(&mut App)) -> Field {
             let mut app = headless_app();
-            app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, StreamingPlugin));
+            app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin));
             if plugin {
                 app.add_plugins(StealthPlugin);
             }
@@ -597,7 +596,7 @@ mod tests {
                 app.add_plugins(crate::lighting::LightingPlugin);
             }
             extra(&mut app);
-            let start = crate::testing::surface(&mut app);
+            let start = crate::testing::ground(&mut app);
             let crate::testing::Sides { ours: you, theirs: them, kind } = crate::testing::two_sides(&mut app);
             let player = app
                 .world_mut()
@@ -1264,10 +1263,10 @@ mod tests {
         }
 
         let mut app = headless_app();
-        app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, StealthPlugin, StreamingPlugin))
+        app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, StealthPlugin))
             .init_resource::<Told>()
             .add_systems(Turn, record.in_set(PerceiveSet::Filter).after(filter_unnoticed));
-        let start = crate::testing::surface(&mut app);
+        let start = crate::testing::ground(&mut app);
         let sides = crate::testing::two_sides(&mut app);
 
         // The player only needs to wait so the watcher, standing close

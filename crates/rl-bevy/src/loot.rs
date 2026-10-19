@@ -12,9 +12,6 @@
 //!   loose, each drawn from the game's [`LootTable`] at the place's band,
 //!   from a stream derived for that place alone, so what lies on a deck
 //!   never depends on how many kills came before it.
-//! - **A region of the streamed surface**, the first time it loads, the
-//!   same way, remembered in [`Scattered`] so a region streamed out and
-//!   back in is not scattered twice.
 //! - **The dead**: an actor carrying [`Drops`] leaves what its table rolls
 //!   where it died, from [`LootRng`], the engine's own stream for it, so a
 //!   kill's loot never shifts a blow that has not been struck.
@@ -34,7 +31,6 @@
 //! same way; `docs/design/loot.md` has the reasoning.
 
 use std::collections::BTreeMap;
-use std::collections::BTreeSet;
 use std::marker::PhantomData;
 
 use bevy::prelude::*;
@@ -51,15 +47,13 @@ use crate::places::{MapId, OnMap, PlaceEntered};
 use crate::props::{FillContainer, Prop};
 use crate::registries::Registries;
 use crate::seed::Seed;
-use crate::world::{ChunkLoaded, WorldMap, WorldRes};
+use crate::world::WorldMap;
 
-/// Where a band is asked for: a place, or a region of the streamed surface.
+/// Where a band is asked for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LootArea {
     /// A place built on its own, a deck or a cave.
     Place(MapId),
-    /// A region of the streamed surface, by region coordinates.
-    Region(Point),
 }
 
 /// Why something is being made, for a game that makes it differently
@@ -179,15 +173,6 @@ impl crate::seed::Stream for LootRng {
     }
 }
 
-/// The regions of the streamed surface already scattered, so one streamed
-/// out and back in is not scattered again. A place needs no such record:
-/// it is scattered on the arrival that built it, which it already knows.
-///
-/// Saved by `rl-save`: a game that streams its surface adds
-/// `save_state::<Scattered>()`.
-#[derive(Resource, Debug, Clone, Default, PartialEq, Eq)]
-pub struct Scattered(pub BTreeSet<Point>);
-
 /// Where loot is put down in a turn, inside
 /// [`TurnSet::React`](crate::plugin::TurnSet::React).
 ///
@@ -212,7 +197,7 @@ pub(crate) fn stream_for(seed: &Seed, domain: &[u8], index: u64) -> StdRng {
 /// The cells props stand on in `map`, where nothing is put down: an item
 /// under a crate is one nothing can pick up.
 fn standing(props: &Query<(&Position, Option<&OnMap>), With<Prop>>, map: MapId) -> Vec<Point> {
-    props.iter().filter(|(_, on)| on.map_or(MapId::SURFACE, |m| m.0) == map).map(|(at, _)| at.0).collect()
+    props.iter().filter(|(_, on)| on.map_or(MapId::ZERO, |m| m.0) == map).map(|(at, _)| at.0).collect()
 }
 
 /// Makes what a plan or a slot put down, found as `from`, and lays it on
@@ -230,7 +215,7 @@ pub(crate) fn lay<M: ItemMaker>(
     for item in maker.make(commands, registries, def, count, from, rng) {
         let mut e = commands.entity(item);
         e.insert(Position(at));
-        if map != MapId::SURFACE {
+        if map != MapId::ZERO {
             e.insert(OnMap(map));
         }
     }
@@ -267,42 +252,6 @@ pub fn scatter_places<M: ItemMaker>(mut commands: Commands, mut entered: Message
     }
 }
 
-/// Scatters a region of the streamed surface the first time it loads, the
-/// way a place is scattered, with no marks: only loose items, as many as
-/// the rules and the game say.
-pub fn scatter_regions<M: ItemMaker>(
-    mut commands: Commands,
-    mut loaded: MessageReader<ChunkLoaded>,
-    mut scattered: ResMut<Scattered>,
-    world: Option<Res<WorldRes>>,
-    floor: Floor<M>,
-) {
-    let Some(world) = world else { return };
-    let Floor { maker, registries, map, seed, props } = &floor;
-    for ev in loaded.read() {
-        if !scattered.0.insert(ev.region) {
-            continue;
-        }
-        let area = LootArea::Region(ev.region);
-        let (band, rules) = (maker.band(area), maker.scatter());
-        let mut rng = stream_for(seed, b"loot.region", position_hash(0, ev.region.x, ev.region.y));
-        let standing = standing(props, MapId::SURFACE);
-        let mut free = |p: Point| map.is_walkable(p) && !standing.contains(&p);
-        let loose = maker.loose(area, rules.loose_count(band, &mut rng));
-        for placed in plan_scatter(maker.table(), band, &rules, Layout { marks: &[], bounds: world.0.region_tiles(ev.region) }, loose, &mut free, &mut rng) {
-            lay(
-                &mut commands,
-                &**maker,
-                registries,
-                (placed.item, placed.count, placed.at),
-                MapId::SURFACE,
-                Provenance { found: Found::Scatter, band },
-                &mut rng,
-            );
-        }
-    }
-}
-
 /// Leaves what each dead actor's [`Drops`] rolls where it died, on its own
 /// map, from [`LootRng`].
 ///
@@ -314,14 +263,13 @@ pub fn drop_on_death<M: ItemMaker>(
     maker: Res<M>,
     registries: Res<Registries>,
     rng: Option<ResMut<LootRng>>,
-    world: Option<Res<WorldRes>>,
     carriers: Query<(&Drops<M::Def>, Option<&OnMap>)>,
 ) {
     let Some(mut rng) = rng else { return };
     for death in deaths.read() {
         let Ok((drops, on)) = carriers.get(death.entity) else { continue };
-        let map = on.map_or(MapId::SURFACE, |m| m.0);
-        let band = maker.band(area_of(map, death.at, world.as_deref()));
+        let map = on.map_or(MapId::ZERO, |m| m.0);
+        let band = maker.band(LootArea::Place(map));
         for (def, count) in drops.0.roll(&mut rng.0) {
             for item in maker.make(&mut commands, &registries, def, count, Provenance { found: Found::Drop, band }, &mut rng.0) {
                 let mut e = commands.entity(item);
@@ -339,18 +287,8 @@ pub fn drop_on_death<M: ItemMaker>(
 pub struct Stocking<'w, 's> {
     registries: Res<'w, Registries>,
     seed: Res<'w, Seed>,
-    world: Option<Res<'w, WorldRes>>,
     places: Query<'w, 's, (&'static Position, Option<&'static OnMap>)>,
     bags: Query<'w, 's, &'static mut Inventory>,
-}
-
-/// The area a cell of `map` is in: its place, or its region on a streamed
-/// surface.
-fn area_of(map: MapId, at: Point, world: Option<&WorldRes>) -> LootArea {
-    match world {
-        Some(world) if map == MapId::SURFACE => LootArea::Region(world.0.region_of_tile(at)),
-        _ => LootArea::Place(map),
-    }
 }
 
 /// What `count` of `what` comes to at `band`: a fixed item in that count,
@@ -392,12 +330,12 @@ pub(crate) fn draw_stock<M: ItemMaker>(maker: &M, what: &Stock, count: u32, band
 /// drew one kind six times is one stack of six rather than six stacks of
 /// one.
 pub fn fill_containers<M: ItemMaker>(mut commands: Commands, mut asks: MessageReader<FillContainer>, maker: Res<M>, stocking: Stocking) {
-    let Stocking { registries, seed, world, places, mut bags } = stocking;
+    let Stocking { registries, seed, places, mut bags } = stocking;
     for ask in asks.read() {
         let Ok((at, on)) = places.get(ask.prop) else { continue };
-        let map = on.map_or(MapId::SURFACE, |m| m.0);
+        let map = on.map_or(MapId::ZERO, |m| m.0);
         let mut rng = stream_for(&seed, b"loot.container", position_hash(u64::from(map.0), at.0.x, at.0.y));
-        let band = maker.band(area_of(map, at.0, world.as_deref())) + ask.band;
+        let band = maker.band(LootArea::Place(map)) + ask.band;
         let mut made = Vec::new();
         for (def, count) in draw_stock(&*maker, &ask.what, ask.count, band, &mut rng) {
             made.extend(maker.make(&mut commands, &registries, def, count, Provenance { found: Found::Container, band }, &mut rng));
@@ -434,9 +372,8 @@ fn check_containers<M: ItemMaker>(maker: Res<M>, registries: Res<Registries>) {
 #[derive(Resource, Debug, Default)]
 pub struct ContainersAnswered;
 
-/// Loot: a place's floor on the arrival that built it, the streamed
-/// surface region by region, what the dead leave, and what containers
-/// hold, all made through the game's [`ItemMaker`] `M`.
+/// Loot: a place's floor on the arrival that built it, what the dead
+/// leave, and what containers hold, all made through the game's [`ItemMaker`] `M`.
 ///
 /// Opt-in, and for one maker: a game adds it once, for the resource that
 /// holds its items. Needs `M` itself, which it asks for with a hint, and
@@ -452,25 +389,21 @@ impl<M> Default for LootPlugin<M> {
 
 impl<M: ItemMaker> Plugin for LootPlugin<M> {
     fn build(&self, app: &mut App) {
-        use crate::plugin::{EngineSet, Needs, Reads, TurnSet};
+        use crate::plugin::{Needs, Reads, TurnSet};
         use crate::props::PropSet;
         use crate::seed::AddStream;
         app.needs::<M>("LootPlugin", "the resource holding the game's items, implementing `ItemMaker`, inserted before play begins")
             .needs::<Registries>("LootPlugin", "`Registries`, whose props say what containers hold")
             .add_stream::<LootRng>("LootPlugin")
-            .init_resource::<Scattered>()
             .init_resource::<ContainersAnswered>()
             .add_message::<FillContainer>()
-            .add_message::<ChunkLoaded>()
             .add_message::<PlaceEntered>()
             .reads::<DeathEvent>()
             .configure_sets(crate::plugin::Turn, (LootSet::Scatter, LootSet::Drop).in_set(TurnSet::React))
             .add_systems(crate::plugin::Turn, scatter_places::<M>.in_set(LootSet::Scatter))
             .add_systems(crate::plugin::Turn, drop_on_death::<M>.in_set(LootSet::Drop))
-            // A region is scattered as it streams in, which is outside any
-            // turn, and a container is filled in the stage the engine keeps
-            // for answering what props asked.
-            .add_systems(Update, scatter_regions::<M>.in_set(EngineSet::Stream).after(crate::world::stream_chunks))
+            // A container is filled in the stage the engine keeps for
+            // answering what props asked.
             .add_systems(Update, fill_containers::<M>.in_set(PropSet::Fill))
             .add_systems(OnEnter(crate::state::EngineState::Playing), check_containers::<M>);
     }
@@ -513,7 +446,7 @@ pub(crate) mod tests {
 
     /// A test game's item registry: blades that improve with the band,
     /// plate from band two, and slugs in handfuls. The band of a place is
-    /// its map number, and of a region its x.
+    /// its map number.
     #[derive(Resource)]
     pub(crate) struct Toys {
         defs: Registry<Toy>,
@@ -555,10 +488,8 @@ pub(crate) mod tests {
         }
 
         fn band(&self, area: LootArea) -> i32 {
-            match area {
-                LootArea::Place(map) => map.0 as i32,
-                LootArea::Region(region) => region.x,
-            }
+            let LootArea::Place(map) = area;
+            map.0 as i32
         }
     }
 
@@ -607,7 +538,7 @@ pub(crate) mod tests {
         let world = app.world_mut();
         let mut q = world.query_filtered::<(&Name, &Position, Option<&OnMap>, Option<&Stack>), With<Item>>();
         q.iter(world)
-            .filter(|(.., on, _)| on.map_or(MapId::SURFACE, |m| m.0) == map)
+            .filter(|(.., on, _)| on.map_or(MapId::ZERO, |m| m.0) == map)
             .map(|(n, at, _, s)| (n.as_str().to_string(), at.0, s.map_or(1, |s| s.count)))
             .collect()
     }
@@ -715,29 +646,6 @@ pub(crate) mod tests {
             "at band three the weapon is drawn at five, a saber, never a blade"
         );
         assert!(contents(MapId(9)).contains(&("lance".to_string(), 1)), "at nine plus two, past the table, the deepest weapon there is");
-    }
-
-    /// A streamed surface is scattered region by region as it loads, and a
-    /// region loaded again is remembered and not scattered twice.
-    #[test]
-    fn a_region_is_scattered_the_first_time_it_loads_and_remembered() {
-        let mut app = app(ScatterRules::new().loose(1, 1));
-        app.add_plugins(crate::world::StreamingPlugin);
-        let start = crate::testing::surface(&mut app);
-        app.world_mut().spawn((crate::components::Actor, crate::components::Player, Position(start), crate::components::Viewshed::new(4)));
-        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
-        for _ in 0..3 {
-            app.update();
-        }
-        let scattered = app.world().resource::<Scattered>().0.clone();
-        assert!(!scattered.is_empty(), "the regions around the player were scattered as they loaded");
-        let laid = floor(&mut app, MapId::SURFACE).len();
-        assert!(laid > 0 && laid <= scattered.len(), "at most one loose item a region: {laid} over {}", scattered.len());
-
-        let again = *scattered.iter().next().unwrap();
-        app.world_mut().write_message(ChunkLoaded { region: again });
-        app.update();
-        assert_eq!(floor(&mut app, MapId::SURFACE).len(), laid, "a region loaded again is not scattered again");
     }
 
     /// A container naming an item the game never heard of is refused when

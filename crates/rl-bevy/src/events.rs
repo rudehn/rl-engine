@@ -295,10 +295,9 @@ mod tests {
     #[test]
     fn a_run_won_in_one_pass_stays_won_though_a_later_pass_of_the_frame_would_lose_it() {
         let (mut app, killed, _) = tracking();
-        app.add_plugins(crate::world::StreamingPlugin);
         app.insert_resource(Killed(killed)).init_resource::<Blow>();
         app.add_systems(crate::plugin::Turn, (strike_back, fell_the_boss).chain().in_set(crate::plugin::TurnSet::React));
-        let start = crate::testing::surface(&mut app);
+        let start = crate::testing::ground(&mut app);
         use crate::components::{Actor, Blocks, MyTurn, Player, Position, Speed};
         let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start))).id();
         app.world_mut().spawn((Actor, Blocks, Position(start.offset(2, 0)), Speed(200)));

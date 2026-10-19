@@ -1,6 +1,6 @@
 //! What the player has seen.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use bevy::prelude::*;
 use rl_core::Point;
@@ -12,9 +12,7 @@ use crate::places::MapId;
 /// where something was seen, so knowledge never costs more than what was
 /// actually looked at.
 ///
-/// A storage detail and nothing else: a delve has no regions, and the
-/// overworld's fog is kept apart, in the regions the world graph names.
-/// It is part of the save shape, so a game bumps its save version if this
+/// A storage detail and nothing else. It is part of the save shape, so a game bumps its save version if this
 /// ever changes.
 const BUCKET: i32 = 64;
 
@@ -111,18 +109,12 @@ struct Seen {
     learned: TileSet,
 }
 
-/// Explored tiles and the still things last seen on them, the surface
-/// regions the player has been in sight of, and the sites discovered.
+/// Explored tiles and the still things last seen on them.
 ///
-/// Explored tiles and what stood on them are per map: the current map's
-/// are read, the others' kept aside. The regions and the sites are the
-/// surface's alone, so going down a staircase never hides the overworld's
-/// fog.
+/// Both are per map: the current map's are read, the others' kept aside.
 #[derive(Resource, Debug, Default)]
 pub struct Knowledge {
     here: Seen,
-    touched: BTreeSet<Point>,
-    sites: BTreeSet<usize>,
     current: MapId,
     stash: BTreeMap<MapId, Seen>,
 }
@@ -192,33 +184,6 @@ impl Knowledge {
         self.here.things.extend(standing.into_iter().filter(|(p, _)| seen(*p)));
     }
 
-    /// Records that a surface region has been in sight. The caller names
-    /// the region, because the world graph is what knows how big one is.
-    pub fn touch_region(&mut self, region: Point) -> bool {
-        self.touched.insert(region)
-    }
-
-    /// Whether any tile of a surface region has been seen, wherever the
-    /// player happens to be standing now.
-    pub fn region_touched(&self, region: Point) -> bool {
-        self.touched.contains(&region)
-    }
-
-    /// Records that the site at index `site` has been discovered.
-    pub fn discover_site(&mut self, site: usize) -> bool {
-        self.sites.insert(site)
-    }
-
-    /// Whether the site at index `site` has been discovered.
-    pub fn site_discovered(&self, site: usize) -> bool {
-        self.sites.contains(&site)
-    }
-
-    /// Every discovered site index, ascending.
-    pub fn discovered_sites(&self) -> impl Iterator<Item = usize> + '_ {
-        self.sites.iter().copied()
-    }
-
     /// Explored tiles of the current map.
     pub fn explored_count(&self) -> usize {
         self.here.explored.count()
@@ -230,16 +195,12 @@ impl Knowledge {
         KnowledgeSave {
             current: self.current,
             explored: maps.iter().map(|(m, s)| (*m, s.explored.export())).collect(),
-            touched: self.touched.iter().copied().collect(),
-            sites: self.sites.iter().copied().collect(),
             recalled: maps.iter().filter(|(_, s)| !s.things.is_empty()).map(|(m, s)| (*m, s.things.iter().map(|(p, r)| (*p, *r)).collect())).collect(),
         }
     }
 
     /// Replaces everything known with a save.
     pub fn import(&mut self, save: KnowledgeSave) {
-        self.touched = save.touched.into_iter().collect();
-        self.sites = save.sites.into_iter().collect();
         self.stash = BTreeMap::new();
         for (m, e) in save.explored {
             self.stash.entry(m).or_default().explored = TileSet::import(e);
@@ -259,10 +220,6 @@ pub struct KnowledgeSave {
     pub current: MapId,
     /// Explored tiles per map, in buckets.
     pub explored: Vec<(MapId, Vec<(Point, BitGrid)>)>,
-    /// Surface regions that have been in sight.
-    pub touched: Vec<Point>,
-    /// Discovered site indexes.
-    pub sites: Vec<usize>,
     /// What stood still where, as last seen, per map. Empty in a save
     /// written before still things were remembered, which a run continues
     /// as though none had been seen yet.
@@ -283,9 +240,6 @@ mod tests {
         assert!(k.is_explored(Point::new(-1, -1)));
         assert!(!k.is_explored(Point::new(BUCKET + 2, 3)));
         assert_eq!(k.explored_count(), 2);
-        assert!(k.discover_site(3));
-        assert!(!k.discover_site(3));
-        assert!(k.site_discovered(3));
     }
 
     #[test]
@@ -310,22 +264,9 @@ mod tests {
     }
 
     #[test]
-    fn the_surface_fog_is_not_the_map_being_read() {
-        let mut k = Knowledge::default();
-        k.touch_region(Point::new(4, 2));
-        k.mark(Point::new(9, 9));
-        k.switch(MapId(3));
-        assert!(k.region_touched(Point::new(4, 2)), "a place does not hide what the surface saw");
-        assert!(!k.region_touched(Point::new(0, 0)));
-        assert!(!k.is_explored(Point::new(9, 9)), "but its tiles are its own");
-    }
-
-    #[test]
-    fn a_save_keeps_every_map_apart_and_remembers_the_surface() {
+    fn a_save_keeps_every_map_apart() {
         let mut k = Knowledge::default();
         k.mark(Point::new(3, 3));
-        k.touch_region(Point::new(1, 0));
-        k.discover_site(2);
         k.switch(MapId(4));
         k.mark(Point::new(5, 5));
 
@@ -334,10 +275,8 @@ mod tests {
         assert_eq!(back.current(), MapId(4));
         assert!(back.is_explored(Point::new(5, 5)));
         assert!(!back.is_explored(Point::new(3, 3)));
-        back.switch(MapId::SURFACE);
+        back.switch(MapId::ZERO);
         assert!(back.is_explored(Point::new(3, 3)));
-        assert!(back.region_touched(Point::new(1, 0)));
-        assert!(back.site_discovered(2));
     }
 
     fn look(glyph: char) -> Recalled {
@@ -381,12 +320,12 @@ mod tests {
         k.switch(MapId(2));
         assert_eq!(k.recalled(p), None, "another map remembers nothing there");
         k.see_still(|_| true, [(p, look('<'))]);
-        k.switch(MapId::SURFACE);
+        k.switch(MapId::ZERO);
         assert_eq!(k.recalled(p), Some(look('>')), "and coming back remembers the first");
 
         let mut back = Knowledge::default();
         back.import(k.export());
-        assert_eq!((back.current(), back.recalled(p)), (MapId::SURFACE, Some(look('>'))));
+        assert_eq!((back.current(), back.recalled(p)), (MapId::ZERO, Some(look('>'))));
         back.switch(MapId(2));
         assert_eq!(back.recalled(p), Some(look('<')), "every map's memory is saved");
     }

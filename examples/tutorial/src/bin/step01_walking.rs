@@ -15,8 +15,7 @@ use rl_engine::prelude::*;
 const COLS: i32 = 80;
 const ROWS: i32 = 40;
 
-/// Map zero is the streamed surface. The warren has no surface, so its
-/// one floor is map one.
+/// The warren's one floor is map one.
 const WARREN: MapId = MapId(1);
 
 // ANCHOR: main
@@ -65,7 +64,7 @@ impl Warren {
 /// How a floor is built. The engine calls this once, the first time
 /// something enters the map, and keeps what comes back.
 impl PlaceRules for Warren {
-    fn build(&self, _: MapId, _: Option<&WorldGraph>) -> Result<PlaceBuild, BuildError> {
+    fn build(&self, _: MapId) -> Result<PlaceBuild, BuildError> {
         let (wall, floor) = (self.tiles.expect("earth"), self.tiles.expect("dirt"));
         let mut ctx = BaseContext::blank(84, 42, self.tiles.clone(), wall);
         Chain::new()

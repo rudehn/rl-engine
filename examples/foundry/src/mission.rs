@@ -144,7 +144,7 @@ pub fn answer_charge(
             continue;
         }
         let Ok((_, on)) = consoles.get(ev.target) else { continue };
-        let deck = crate::decks::deck_of(on.map(|m| m.0).unwrap_or(MapId::SURFACE));
+        let deck = crate::decks::deck_of(on.map(|m| m.0).unwrap_or(MapId::ZERO));
         // The glyph comes off with the kind, so the renderer dresses it
         // again from the definition of a console already used.
         commands.entity(ev.target).remove::<Glyph>().insert(PropKind(spent));

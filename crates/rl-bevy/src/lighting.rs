@@ -46,11 +46,8 @@
 //! which its builder chose and its save keeps, and the plugin takes it into
 //! [`Lighting::ambient`] whenever the current map changes or a run is
 //! restored, before anybody decides or anything is drawn by the light: in
-//! the pass the stairs land, and in the frame. The surface is the game's:
-//! the plugin writes nothing there but the ambient that stood when the
-//! player first went into a place, given back when they come out, so a
-//! surface lit once at start stays lit and one with nights is lit by the
-//! game's own system. The engine has no clock hook and no notion of a day.
+//! the pass the stairs land, and in the frame. A game with nights writes
+//! the ambient itself; the engine has no clock hook and no notion of a day.
 
 use bevy::prelude::*;
 use rl_core::{Grid2D, Point, Rect, geometry};
@@ -164,7 +161,7 @@ pub const DEFAULT_BRIGHT: u8 = 64;
 pub struct Lighting {
     /// Light everywhere on the current map, blended in last. In a place,
     /// the place's own ambient, taken by the plugin the first pass the
-    /// place is current; on the surface, the game's. A game may still
+    /// place is current. A game may still
     /// write it, and what it writes stands until the current map changes.
     pub ambient: Light,
     /// The intensity at or above which a tile is seen.
@@ -188,11 +185,8 @@ pub struct Lighting {
     glow_moved: bool,
     /// The place whose ambient was last taken, and the map's generation
     /// then, which a switch of maps and a restored run both move. `None`
-    /// on the surface.
+    /// while no place is current.
     followed: Option<(MapId, u64)>,
-    /// The ambient that stood on the surface when the player went into a
-    /// place, given back when they come out.
-    surface_ambient: Option<Light>,
 }
 
 impl Lighting {
@@ -213,10 +207,9 @@ impl Lighting {
             generation: None,
             epoch: 0,
             static_dirty: true,
-            glow: (MapId::SURFACE, Vec::new()),
+            glow: (MapId::ZERO, Vec::new()),
             glow_moved: false,
             followed: None,
-            surface_ambient: None,
         }
     }
 
@@ -264,24 +257,16 @@ impl Lighting {
     /// or the map's generation differs from the last one taken, which is
     /// a switch of maps or a restored run, and never otherwise, so an
     /// ambient a game writes in the middle of a place stands until the
-    /// player leaves it. On the surface it gives back the ambient that
-    /// stood there before the first place was entered.
+    /// player leaves it.
     fn follow_place(&mut self, map: &WorldMap) {
         let here = map.current();
-        let Some(place) = map.place(here).filter(|_| !here.is_surface()) else {
-            if self.followed.take().is_some()
-                && let Some(ambient) = self.surface_ambient.take()
-            {
-                self.ambient = ambient;
-            }
+        let Some(place) = map.place(here) else {
+            self.followed = None;
             return;
         };
         let key = (here, map.generation());
         if self.followed == Some(key) {
             return;
-        }
-        if self.followed.is_none() {
-            self.surface_ambient = Some(self.ambient);
         }
         self.followed = Some(key);
         self.ambient = place.ambient;
@@ -451,7 +436,7 @@ pub fn relight(map: Res<WorldMap>, lighting: Option<ResMut<Lighting>>, mut moves
 /// The one cast both the frame and the pass go through.
 fn recast(map: &WorldMap, lighting: &mut Lighting, sources: &Sources, viewsheds: &mut Query<Lit>) {
     let here = map.current();
-    let on_map = |on: Option<&OnMap>| on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here;
+    let on_map = |on: Option<&OnMap>| on.map(|m| m.0).unwrap_or(MapId::ZERO) == here;
     let mut recast_all = lighting.fit(map);
     lighting.glow_moved = false;
     if lighting.epoch != map.opacity_epoch() {
@@ -622,7 +607,7 @@ impl PlayerSight<'_, '_> {
     /// [`Concealed`] when `concealed`.
     pub fn shows(&self, at: Point, on: Option<&OnMap>, concealed: bool) -> bool {
         let Some((_, from, sight)) = self.viewer() else { return false };
-        on.map_or(MapId::SURFACE, |m| m.0) == self.map.current() && sight.can_see(at) && !(concealed && conceals(self.lighting.as_deref(), from, at))
+        on.map_or(MapId::ZERO, |m| m.0) == self.map.current() && sight.can_see(at) && !(concealed && conceals(self.lighting.as_deref(), from, at))
     }
 }
 
@@ -657,9 +642,7 @@ pub fn tick_fuel(
 /// for every place it restores. Lit when built rather than when first
 /// entered, since a fixture on a map nobody reads is never cast. A tile
 /// that changes later keeps the fixture it was given: what a game does to
-/// the map after it is built is the game's to light. Places only: the
-/// streamed surface comes and goes with the window, and a game lighting
-/// its surface lights it as it streams.
+/// the map after it is built is the game's to light.
 pub fn light_places(mut commands: Commands, map: Option<ResMut<WorldMap>>) {
     let Some(mut map) = map else { return };
     // Asked through a shared borrow first, so a pass with nothing to light
@@ -738,7 +721,6 @@ mod tests {
     use bevy::ecs::system::RunSystemOnce;
     use rl_grid::{Terrain, TileId, TileRegistry};
     use rl_mapgen::BuildError;
-    use rl_world::WorldGraph;
 
     const ROOM: [&str; 9] = [
         "####################",
@@ -757,7 +739,7 @@ mod tests {
     struct Room(TileRegistry, Vec<Light>);
 
     impl PlaceRules for Room {
-        fn build(&self, map: MapId, _: Option<&WorldGraph>) -> Result<PlaceBuild, BuildError> {
+        fn build(&self, map: MapId) -> Result<PlaceBuild, BuildError> {
             let (wall, floor) = (self.0.expect("wall"), self.0.expect("floor"));
             let terrain = Terrain::from_fn(20, 9, |p| if ROOM[p.y as usize].as_bytes()[p.x as usize] == b'#' { wall } else { floor });
             let ambient = self.1.get((map.0 as usize).wrapping_sub(1)).copied().unwrap_or(Light::DARK);
@@ -896,8 +878,8 @@ mod tests {
     struct LampRoom(TileRegistry);
 
     impl PlaceRules for LampRoom {
-        fn build(&self, map: MapId, world: Option<&WorldGraph>) -> Result<PlaceBuild, BuildError> {
-            let mut build = Room(self.0.clone(), Vec::new()).build(map, world)?;
+        fn build(&self, map: MapId) -> Result<PlaceBuild, BuildError> {
+            let mut build = Room(self.0.clone(), Vec::new()).build(map)?;
             build.terrain.set(Point::new(10, 0), self.0.expect("lamp"));
             Ok(build)
         }
@@ -1130,8 +1112,8 @@ mod tests {
     #[test]
     fn a_light_that_moved_marks_only_the_viewsheds_it_could_have_changed() {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin, LightingPlugin));
-        let start = crate::testing::surface(&mut app);
+        app.add_plugins((crate::fov::FovPlugin, LightingPlugin));
+        let start = crate::testing::ground(&mut app);
         app.insert_resource(crate::seed::Seed(crate::testing::TEST_SEED));
         let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), RevealsMap)).id();
         let near = app.world_mut().spawn((Actor, Position(start.offset(6, 0)), Viewshed::new(8))).id();

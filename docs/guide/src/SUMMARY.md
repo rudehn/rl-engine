@@ -25,7 +25,7 @@
   - [Map generation](systems/mapgen.md)
   - [Layout](systems/layout.md)
   - [Prefabs](systems/prefabs.md)
-  - [Places and streaming](systems/places.md)
+  - [Places](systems/places.md)
   - [Props](systems/props.md)
 - [What acts]()
   - [Effects and triggers](systems/effects.md)
@@ -55,4 +55,3 @@
 - [What persists]()
   - [Saving and the ending screen](systems/saving.md)
   - [Run records](systems/records.md)
-  - [The overworld](systems/overworld.md)

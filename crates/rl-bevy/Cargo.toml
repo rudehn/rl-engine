@@ -18,7 +18,6 @@ tier = 2
 rl-core.workspace = true
 rl-grid.workspace = true
 rl-mapgen.workspace = true
-rl-world.workspace = true
 rl-rules.workspace = true
 serde.workspace = true
 ron.workspace = true

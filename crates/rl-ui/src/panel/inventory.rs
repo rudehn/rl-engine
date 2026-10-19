@@ -1666,7 +1666,7 @@ mod tests {
         stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![stone, keepsake, polish] });
         let offers = Offers(vec![Offering::new(give, 200).choosing("Hand over which?", among)]);
         let beside = stage.at.offset(1, 0);
-        let mirela = stage.app.world_mut().spawn((Actor, Blocks, Position(beside), OnMap(MapId::SURFACE), Name::new("Mirela"), offers)).id();
+        let mirela = stage.app.world_mut().spawn((Actor, Blocks, Position(beside), OnMap(MapId::ZERO), Name::new("Mirela"), offers)).id();
         stage.tick();
         stage.tick();
         (stage, mirela, stone, polish)

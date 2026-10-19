@@ -50,7 +50,7 @@ fn body(world: &mut World, who: Entity) -> Option<Body> {
     }
     let health = *world.get::<Health>(who)?;
     let at = world.get::<Position>(who)?.0;
-    let map = world.get::<OnMap>(who).map_or(MapId::SURFACE, |m| m.0);
+    let map = world.get::<OnMap>(who).map_or(MapId::ZERO, |m| m.0);
     Some(Body { kind, health, at, map, ally: world.get::<Ally>(who).is_some(), name })
 }
 
@@ -228,7 +228,7 @@ impl FromArgs for Summon {
 /// them, as [`Summon`] says, and says so. Returns how many came.
 pub fn summon(world: &mut World, reader: Entity, count: u32) -> usize {
     let Some(at) = world.get::<Position>(reader).map(|p| p.0) else { return 0 };
-    let map = world.get::<OnMap>(reader).map_or(MapId::SURFACE, |m| m.0);
+    let map = world.get::<OnMap>(reader).map_or(MapId::ZERO, |m| m.0);
     let band = map.0 as i32;
     let cells = free_cells_near(world.resource::<WorldMap>(), world.resource::<Occupancy>(), at, count as usize, super::NEAR);
     let mut came = Vec::new();
@@ -354,7 +354,7 @@ pub fn conjure(world: &mut World, user: Entity, count: u32, sharper: i32, turns:
     let Some(blade) = world.resource::<Bestiary>().defs.id(SPECTRAL_BLADE) else { return };
     let Some(side) = world.get::<Faction>(user).copied() else { return };
     let Some(at) = world.get::<Position>(user).map(|p| p.0) else { return };
-    let map = world.get::<OnMap>(user).map_or(MapId::SURFACE, |m| m.0);
+    let map = world.get::<OnMap>(user).map_or(MapId::ZERO, |m| m.0);
     let fades = Fades { at: world.resource::<Turns>().now() + turns * BASE_ACTION_COST };
     let cells = free_cells_near(world.resource::<WorldMap>(), world.resource::<Occupancy>(), at, count as usize, super::NEAR);
     for cell in &cells {
@@ -470,12 +470,12 @@ pub fn forget_its_life(world: &mut World, body: Entity) {
 /// spent as well as when the turn lands.
 fn nearest_body(world: &World, raiser: Entity) -> Option<(Entity, Point)> {
     let at = world.get::<Position>(raiser)?.0;
-    let map = world.get::<OnMap>(raiser).map_or(MapId::SURFACE, |m| m.0);
+    let map = world.get::<OnMap>(raiser).map_or(MapId::ZERO, |m| m.0);
     let sight = world.get::<Viewshed>(raiser)?;
     let mut remains = world.try_query_filtered::<(Entity, &Position, Option<&OnMap>), With<Remains>>()?;
     let mut bodies: Vec<(Entity, Point)> = remains
         .iter(world)
-        .filter(|(_, pos, on)| on.map_or(MapId::SURFACE, |m| m.0) == map && geometry::chebyshev(pos.0, at) <= RAISE_REACH && sight.can_see(pos.0))
+        .filter(|(_, pos, on)| on.map_or(MapId::ZERO, |m| m.0) == map && geometry::chebyshev(pos.0, at) <= RAISE_REACH && sight.can_see(pos.0))
         .map(|(e, pos, _)| (e, pos.0))
         .collect();
     bodies.sort_by_key(|(e, pos)| (geometry::chebyshev(*pos, at), pos.y, pos.x, e.index()));
@@ -561,11 +561,11 @@ impl FromArgs for RaiseAlly {
 /// takes it back out of play once its time runs out, since nothing kills
 /// it a second time. Returns whether a body stood at `at` to raise.
 pub fn raise_ally(world: &mut World, raiser: Entity, at: Point, turns: u32) -> bool {
-    let map = world.get::<OnMap>(raiser).map_or(MapId::SURFACE, |m| m.0);
+    let map = world.get::<OnMap>(raiser).map_or(MapId::ZERO, |m| m.0);
     let body = world
         .query_filtered::<(Entity, &Position, Option<&OnMap>), With<Remains>>()
         .iter(world)
-        .find(|(_, pos, on)| pos.0 == at && on.map_or(MapId::SURFACE, |m| m.0) == map)
+        .find(|(_, pos, on)| pos.0 == at && on.map_or(MapId::ZERO, |m| m.0) == map)
         .map(|(e, ..)| e);
     let Some(body) = body else { return false };
     let twin = world.get::<EngineLife>(body).map(|life| life.0);
@@ -658,7 +658,7 @@ impl FromArgs for Rally {
 /// own, nor with no sight to rally by.
 pub fn rally(world: &mut World, user: Entity, turns: u32) {
     let Some(hasted) = world.resource::<Registries>().statuses.id(crate::content::HASTED) else { return };
-    let map = world.get::<OnMap>(user).map_or(MapId::SURFACE, |m| m.0);
+    let map = world.get::<OnMap>(user).map_or(MapId::ZERO, |m| m.0);
     let Some(sight) = world.get::<Viewshed>(user).cloned() else { return };
     let side = world.get::<Faction>(user).copied();
     // Collected before `CombatRules` is borrowed, so the query's own
@@ -667,7 +667,7 @@ pub fn rally(world: &mut World, user: Entity, turns: u32) {
     let seen: Vec<(Entity, Option<Faction>)> = world
         .query_filtered::<(Entity, &Position, Option<&OnMap>, Option<&Faction>), With<Actor>>()
         .iter(world)
-        .filter(|(_, pos, on, _)| on.map_or(MapId::SURFACE, |m| m.0) == map && sight.can_see(pos.0))
+        .filter(|(_, pos, on, _)| on.map_or(MapId::ZERO, |m| m.0) == map && sight.can_see(pos.0))
         .map(|(e, _, _, theirs)| (e, theirs.copied()))
         .collect();
     let rules = world.get_resource::<CombatRules>();
@@ -788,7 +788,7 @@ pub fn call_drowned(world: &mut World, caller: Entity, count: u32, range: i32) -
 pub fn call_drowned_of(world: &mut World, caller: Entity, monster: &str, count: u32, range: i32) -> (usize, bool) {
     let Some(thrall) = world.resource::<Bestiary>().defs.id(monster) else { return (0, false) };
     let Some(at) = world.get::<Position>(caller).map(|p| p.0) else { return (0, false) };
-    let map = world.get::<OnMap>(caller).map_or(MapId::SURFACE, |m| m.0);
+    let map = world.get::<OnMap>(caller).map_or(MapId::ZERO, |m| m.0);
     let worldmap = world.resource::<WorldMap>();
     let tables = worldmap.tables();
     let occupancy = world.resource::<Occupancy>();

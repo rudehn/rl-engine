@@ -178,7 +178,7 @@ pub const SHRIEK: i32 = 200;
 /// aware of them there, as [`Aggravate`] says.
 pub fn aggravate(world: &mut World, reader: Entity) {
     let Some(at) = world.get::<Position>(reader).map(|p| p.0) else { return };
-    let here = world.get::<OnMap>(reader).map_or(MapId::SURFACE, |m| m.0);
+    let here = world.get::<OnMap>(reader).map_or(MapId::ZERO, |m| m.0);
     let mut woken = world.query_filtered::<(&OnMap, &mut Aware), With<Kind>>();
     for (on, mut aware) in woken.iter_mut(world) {
         if on.0 != here {
@@ -298,7 +298,7 @@ impl FromArgs for Rouse {
 /// roused is told by nothing but its sleepers stirring.
 pub fn wake(world: &mut World, who: Entity, radius: Option<i32>) {
     let Some(at) = world.get::<Position>(who).map(|p| p.0) else { return };
-    let here = world.get::<OnMap>(who).map_or(MapId::SURFACE, |m| m.0);
+    let here = world.get::<OnMap>(who).map_or(MapId::ZERO, |m| m.0);
     let near = |p: Point| radius.is_none_or(|r| rl_engine::rl_core::geometry::chebyshev(p, at) <= r);
     let woken: Vec<Entity> = {
         let mut q = world.query_filtered::<(Entity, &OnMap, &Position), With<Kind>>();
@@ -350,7 +350,7 @@ fn is_drowned(name: &str) -> bool {
 /// by how far a sound carries.
 pub fn alert_drowned(world: &mut World, reader: Entity) {
     let Some(at) = world.get::<Position>(reader).map(|p| p.0) else { return };
-    let here = world.get::<OnMap>(reader).map_or(MapId::SURFACE, |m| m.0);
+    let here = world.get::<OnMap>(reader).map_or(MapId::ZERO, |m| m.0);
     let drowned: std::collections::BTreeSet<_> = world.resource::<Bestiary>().defs.iter().filter(|(_, def)| is_drowned(&def.name)).map(|(id, _)| id).collect();
     if drowned.is_empty() {
         return;

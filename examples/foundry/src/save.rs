@@ -265,7 +265,7 @@ mod tests {
     fn looks(app: &mut App) -> Looks {
         let me = player(app);
         let world = app.world();
-        let deck = crate::decks::deck_of(world.get::<OnMap>(me).map(|m| m.0).unwrap_or(MapId::SURFACE));
+        let deck = crate::decks::deck_of(world.get::<OnMap>(me).map(|m| m.0).unwrap_or(MapId::ZERO));
         let bag = world.get::<Inventory>(me).unwrap().items.clone();
         let mut pack: Vec<(String, u32)> =
             bag.iter().map(|i| (world.get::<Name>(*i).unwrap().as_str().to_string(), world.get::<Stack>(*i).map_or(1, |s| s.count))).collect();

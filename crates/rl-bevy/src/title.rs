@@ -153,8 +153,8 @@ mod tests {
     /// A run standing on the test surface, a player in it, played.
     fn playing() -> App {
         let mut app = counted();
-        app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin));
-        let start = crate::testing::surface(&mut app);
+        app.add_plugins(crate::fov::FovPlugin);
+        let start = crate::testing::ground(&mut app);
         app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap));
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();

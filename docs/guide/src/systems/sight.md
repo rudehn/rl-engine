@@ -87,7 +87,7 @@ fn tend_lantern(
 ## The line
 
 Whether a thing glows is the game's call, made by inserting or removing a `LightSource`: the engine reads what is there and lights nothing on its own.
-`ambient` is a plain field the game writes, once at startup for a dungeon and from a system of its own for a surface with nights.
+`ambient` is a plain field the game writes, once at startup for a dungeon and from a system of its own for a game with nights.
 There is no clock hook and no notion of a day in the engine, so a game without a day cycle carries none of that machinery.
 `flicker` is presentation: it reaches the renderer as the `waver` channel of a tile's light, and gameplay reads the steady `intensity`, so a guttering torch never changes what is seen and never changes a replay.
 The engine puts a light out when `Fuel` reaches zero and reports it; what becomes of that entity, refilled or dropped or despawned, is the game's answer.

@@ -20,7 +20,7 @@ use rl_bevy::prelude::*;
 use rl_bevy::testing;
 use rl_core::DiceRoll;
 
-/// An app with the engine's loops, a real streamed surface, and `crowd`
+/// An app with the engine's loops, open ground, and `crowd`
 /// hunters awake around the player.
 ///
 /// The hunters are spread over a disc around the player rather than in a
@@ -31,14 +31,8 @@ use rl_core::DiceRoll;
 /// with the crowd.
 fn awake(crowd: usize) -> (App, Entity) {
     let mut app = rl_bevy::plugin::headless_app();
-    app.add_plugins((
-        rl_bevy::fov::FovPlugin,
-        rl_bevy::world::StreamingPlugin,
-        rl_bevy::combat::CombatPlugin,
-        rl_bevy::minds::MindsPlugin,
-        rl_bevy::items::ItemsPlugin,
-    ));
-    let start = testing::surface(&mut app);
+    app.add_plugins((rl_bevy::fov::FovPlugin, rl_bevy::combat::CombatPlugin, rl_bevy::minds::MindsPlugin, rl_bevy::items::ItemsPlugin));
+    let start = testing::ground(&mut app);
     let sides = testing::two_sides(&mut app);
 
     let player = app
@@ -84,7 +78,7 @@ fn awake(crowd: usize) -> (App, Entity) {
     }
 
     app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
-    // Let the window stream in and everyone be admitted and dealt a first
+    // Let everyone be admitted and dealt a first
     // turn, so the measured frames are steady-state frames.
     for _ in 0..8 {
         if app.world().get::<MyTurn>(player).is_some() {
@@ -171,20 +165,14 @@ fn smoke(c: &mut Criterion) {
     fn built(air: Air, lit: bool) -> (App, Entity) {
         let crowd = 32;
         let mut app = rl_bevy::plugin::headless_app();
-        app.add_plugins((
-            rl_bevy::fov::FovPlugin,
-            rl_bevy::world::StreamingPlugin,
-            rl_bevy::combat::CombatPlugin,
-            rl_bevy::minds::MindsPlugin,
-            rl_bevy::items::ItemsPlugin,
-        ));
+        app.add_plugins((rl_bevy::fov::FovPlugin, rl_bevy::combat::CombatPlugin, rl_bevy::minds::MindsPlugin, rl_bevy::items::ItemsPlugin));
         if lit {
             app.add_plugins(rl_bevy::lighting::LightingPlugin);
         }
         if air != Air::None {
             app.add_plugins(rl_bevy::gas::GasPlugin);
         }
-        let start = testing::surface(&mut app);
+        let start = testing::ground(&mut app);
         let sides = testing::two_sides(&mut app);
         let def = match air {
             Air::Thick => GasDef::new("smoke").spread(60).fade(1),

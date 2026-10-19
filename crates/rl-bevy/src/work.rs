@@ -272,7 +272,7 @@ pub fn break_work(
             reasons.push((actor, reason));
         }
     }
-    let map_of = |on: Option<&OnMap>| on.map(|m| m.0).unwrap_or(MapId::SURFACE);
+    let map_of = |on: Option<&OnMap>| on.map(|m| m.0).unwrap_or(MapId::ZERO);
     let mut reasons: Vec<(Entity, BreakReason)> = Vec::new();
     for death in deaths.read() {
         note(&mut reasons, death.entity, BreakReason::Died);
@@ -611,10 +611,10 @@ mod tests {
     /// the word the work is called by.
     fn arena() -> (App, Point, Entity, WorkKindId) {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin, crate::combat::CombatPlugin, MindsPlugin, crate::remains::RemainsPlugin));
+        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin, MindsPlugin, crate::remains::RemainsPlugin));
         app.add_work("mending");
         let kind = app.world().resource::<WorkKinds>().get("mending").expect("declared");
-        let start = crate::testing::surface(&mut app);
+        let start = crate::testing::ground(&mut app);
         let sides = crate::testing::two_sides(&mut app);
         app.insert_resource(TheSides(sides));
         let player =

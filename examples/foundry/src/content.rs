@@ -293,7 +293,7 @@ mod tests {
         let mut commands = Commands::new(&mut queue, app.world_mut());
         let mut spawned: Vec<(String, Entity)> =
             armory.defs.iter().map(|(id, d)| (d.name.clone(), crate::gear::spawn_item(&mut commands, &armory, id))).collect();
-        let map = MapId::SURFACE;
+        let map = MapId::ZERO;
         spawned.extend(
             roster.defs.iter().map(|(id, d)| (d.name.clone(), crate::droids::spawn_monster(&mut commands, &roster, id, Point::ZERO, map, &registries))),
         );

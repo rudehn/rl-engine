@@ -198,7 +198,7 @@ pub fn tick_statuses(
     }
     let here = map.current();
     for (entity, mut statuses, mut stats, on) in &mut actors {
-        if on.map(|m| m.0).unwrap_or(MapId::SURFACE) != here {
+        if on.map(|m| m.0).unwrap_or(MapId::ZERO) != here {
             continue;
         }
         for _ in 0..turns {
@@ -387,11 +387,11 @@ pub fn wake_on_sight(
         if statuses.sleeping(&registries.statuses).is_none() {
             continue;
         }
-        let map = on.map(|m| m.0).unwrap_or(MapId::SURFACE);
+        let map = on.map(|m| m.0).unwrap_or(MapId::ZERO);
         let stirs = others.iter().any(|(other, at, theirs, other_on, hides, unseen)| {
             let close = other != sleeper
                 && !unseen
-                && other_on.map(|m| m.0).unwrap_or(MapId::SURFACE) == map
+                && other_on.map(|m| m.0).unwrap_or(MapId::ZERO) == map
                 && rl_core::geometry::chebyshev(pos.0, at.0) <= rl_rules::SLEEPER_REACH
                 && rules.factions.is_hostile(mine.0, theirs.0)
                 && sight.can_see(at.0);
@@ -659,8 +659,8 @@ mod tests {
     #[test]
     fn a_status_ticks_damage_each_turn_modifies_stats_and_expires() {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin, crate::world::StreamingPlugin));
-        let start = crate::testing::surface(&mut app);
+        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin));
+        let start = crate::testing::ground(&mut app);
         let kinds = Registry::from_defs(vec![DamageKind::new("venom")]).unwrap();
         let venom_kind = kinds.expect("venom");
         let facs = Registry::from_defs(vec![FactionDef::new("us")]).unwrap();
@@ -731,8 +731,8 @@ mod tests {
     #[test]
     fn a_status_begun_is_applied_one_kept_up_is_renewed_and_one_that_changed_nothing_is_neither() {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin, crate::world::StreamingPlugin));
-        let start = crate::testing::surface(&mut app);
+        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin));
+        let start = crate::testing::ground(&mut app);
         crate::testing::two_sides(&mut app);
         let defs = Registry::from_defs(vec![StatusDef::new("dazed"), StatusDef::new("bleeding").stacking(Stacking::Extend)]).unwrap();
         let (dazed, bleeding) = (defs.expect("dazed"), defs.expect("bleeding"));
@@ -766,8 +766,8 @@ mod tests {
     #[test]
     fn a_status_that_mends_restores_health_each_turn_and_stops_at_the_most() {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin, crate::world::StreamingPlugin));
-        let start = crate::testing::surface(&mut app);
+        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin));
+        let start = crate::testing::ground(&mut app);
         let facs = Registry::from_defs(vec![FactionDef::new("us")]).unwrap();
         let defs = Registry::from_defs(vec![StatusDef::new("mending").mends(4).boon()]).unwrap();
         let mending = defs.expect("mending");
@@ -797,9 +797,9 @@ mod tests {
     /// first runs; and a player to pass the turns, holding the first.
     fn held_arena(extra: impl FnOnce(&mut App)) -> (App, Point, Entity, StatusId) {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin, crate::combat::CombatPlugin, crate::minds::MindsPlugin));
+        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin, crate::minds::MindsPlugin));
         extra(&mut app);
-        let start = crate::testing::surface(&mut app);
+        let start = crate::testing::ground(&mut app);
         crate::testing::two_sides(&mut app);
         let statuses = Registry::from_defs(vec![StatusDef::new("snared").holds()]).unwrap();
         let snared = statuses.expect("snared");
@@ -952,9 +952,9 @@ mod tests {
 
     fn bedroom(extra: impl FnOnce(&mut App)) -> Bedroom {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin, crate::combat::CombatPlugin, crate::minds::MindsPlugin));
+        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin, crate::minds::MindsPlugin));
         extra(&mut app);
-        let start = crate::testing::surface(&mut app);
+        let start = crate::testing::ground(&mut app);
         let sides = crate::testing::two_sides(&mut app);
         app.world_mut().resource_mut::<CombatRules>().unaware = Some(300);
         let defs = vec![StatusDef::new("asleep").sleeps(), StatusDef::new("snared").holds(), StatusDef::new("drowsing").sleeps().ticks(sides.kind, 1)];
@@ -1178,8 +1178,8 @@ mod tests {
     /// the statuses, play begun.
     fn field(defs: Vec<StatusDef>) -> (App, crate::testing::Sides, Entity, Point) {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin, crate::world::StreamingPlugin));
-        let start = crate::testing::surface(&mut app);
+        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin));
+        let start = crate::testing::ground(&mut app);
         let sides = crate::testing::two_sides(&mut app);
         app.world_mut().resource_mut::<Registries>().statuses = Registry::from_defs(defs).unwrap();
         let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap, Faction(sides.ours))).id();
@@ -1318,8 +1318,8 @@ mod tests {
     #[should_panic(expected = "a status that stumbles draws from")]
     fn a_game_with_a_status_that_stumbles_and_no_seed_is_told_so_when_play_begins() {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin));
-        let start = crate::testing::surface(&mut app);
+        app.add_plugins(crate::fov::FovPlugin);
+        let start = crate::testing::ground(&mut app);
         app.insert_resource(Registries { statuses: Registry::from_defs(vec![StatusDef::new("reeling").stumbles(100)]).unwrap(), ..Default::default() });
         app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap));
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
@@ -1330,8 +1330,8 @@ mod tests {
     #[test]
     fn a_game_whose_statuses_never_stumble_plays_with_no_seed() {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin));
-        let start = crate::testing::surface(&mut app);
+        app.add_plugins(crate::fov::FovPlugin);
+        let start = crate::testing::ground(&mut app);
         app.insert_resource(Registries { statuses: Registry::from_defs(vec![StatusDef::new("dazed")]).unwrap(), ..Default::default() });
         app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap));
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);

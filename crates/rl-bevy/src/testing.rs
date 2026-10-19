@@ -27,20 +27,18 @@ pub mod ambiguity;
 use bevy::input::InputSystems;
 use bevy::prelude::*;
 use rl_core::{Point, RunSeed};
-use rl_grid::{TileId, TileRegistry};
-use rl_mapgen::Chain;
-use rl_mapgen::passes::Fill;
+use rl_grid::{Terrain, TileId, TileRegistry};
 use rl_rules::damage::{DamageKind, DamageKindId, SubtractArmor};
 use rl_rules::faction::FactionDef;
 use rl_rules::{FactionId, Registry};
-use rl_world::{BandId, CellFacts, ChunkContext, ChunkRules, Layers, Site, SiteKindId, Surroundings, WorldConfig, WorldGraph, WorldRules};
 
 use crate::combat::{CombatRules, DamageStages};
 use crate::prelude::{
-    Arrive, DamageEvent, Destination, DropItem, Equip, GoThrough, Intent, Inventory, MapId, OnMap, PickUp, Player, Position, Stack, Unequip, Wait, WarpRequest,
+    Arrive, DamageEvent, Destination, DropItem, Equip, GoThrough, Intent, Inventory, MapId, OnMap, PickUp, PlaceBuild, Player, Position, Stack, Unequip, Wait,
+    WarpRequest,
 };
 use crate::registries::Registries;
-use crate::world::{ChunkRulesRes, WorldMap, WorldRes};
+use crate::world::WorldMap;
 
 /// The seed range a generation test plays, and the cores it plays them on:
 /// the same helpers the generator's own tests use, for a game's.
@@ -50,83 +48,47 @@ pub use rl_mapgen::testing::{QUICK, first_seeds, par_seeds, seeds};
 /// fails fails the same way twice.
 pub const TEST_SEED: RunSeed = RunSeed(5);
 
-/// A small surface for tests: twelve by ten regions of sixteen tiles, land
-/// wherever the generator did not make sea, and one town on the first land
-/// region so discovery has something to find.
+/// How many tiles a side [`ground`] is, its walled edge included.
+const GROUND: i32 = 48;
+
+/// Installs open ground over the standard tiles as map zero, makes it the
+/// map being read, and returns where to stand: its middle, with floor for
+/// twenty-three tiles every way, so sight reaches as far as its range and a
+/// test's actors stand wherever it puts them. Its edge is wall, so a step
+/// off it is something a test can bump into.
 ///
-/// Land chunks are floor throughout, so sight reaches as far as its range
-/// and a test's actors stand wherever it puts them. Sea chunks are wall, so
-/// a step off the land is something a test can bump into.
-pub struct TestWorld {
-    tiles: TileRegistry,
+/// Map zero because an entity with no [`OnMap`] stands there, so a test
+/// spawns its actors with a [`Position`] and nothing else. Inserts the
+/// [`WorldMap`].
+pub fn ground(app: &mut App) -> Point {
+    ground_with(app, TileRegistry::standard())
 }
 
-impl TestWorld {
-    /// The world over the standard wall and floor tiles.
-    pub fn new() -> Self {
-        Self::with_tiles(TileRegistry::standard())
+/// [`ground`] over `tiles`, which must hold a `wall` and a `floor`, for a
+/// test that registers a tile of its own.
+pub fn ground_with(app: &mut App, tiles: TileRegistry) -> Point {
+    let mut terrain = Terrain::filled(GROUND, GROUND, tiles.expect("floor"));
+    let wall = tiles.expect("wall");
+    for i in 0..GROUND {
+        for p in [Point::new(i, 0), Point::new(i, GROUND - 1), Point::new(0, i), Point::new(GROUND - 1, i)] {
+            terrain.set(p, wall);
+        }
     }
-
-    /// The world over `tiles`, which must hold a `wall` and a `floor`, for a
-    /// test that registers a tile of its own.
-    pub fn with_tiles(tiles: TileRegistry) -> Self {
-        Self { tiles }
-    }
-}
-
-impl Default for TestWorld {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl WorldRules for TestWorld {
-    fn classify(&self, f: &CellFacts) -> BandId {
-        BandId(if f.is_sea { 0 } else { 1 })
-    }
-
-    fn road_friction(&self, band: BandId, _: &CellFacts) -> Option<f32> {
-        (band.0 == 1).then_some(0.0)
-    }
-
-    fn settlements(&self, layers: &Layers, _: u64) -> Vec<Site> {
-        layers.bands.iter().find(|(_, b)| b.0 == 1).map(|(p, _)| vec![Site { kind: SiteKindId(1), position: p }]).unwrap_or_default()
-    }
-}
-
-impl ChunkRules for TestWorld {
-    fn tiles(&self) -> &TileRegistry {
-        &self.tiles
-    }
-
-    fn fill(&self, _: &Surroundings) -> TileId {
-        self.tiles.expect("floor")
-    }
-
-    fn chain(&self, _: &WorldGraph, around: &Surroundings) -> Chain<ChunkContext> {
-        let tile = if around.here.band.0 == 0 { self.tiles.expect("wall") } else { self.tiles.expect("floor") };
-        Chain::new().then(Fill { tile })
-    }
-}
-
-/// Installs a [`TestWorld`] over the standard tiles and returns where to
-/// stand: eight tiles into the first land region, far enough from its edges
-/// that anything a test puts within seven tiles is on land too.
-///
-/// Inserts the [`WorldMap`], [`WorldRes`] and [`ChunkRulesRes`], so the app
-/// wants [`StreamingPlugin`](crate::world::StreamingPlugin) to load the
-/// window around the player.
-pub fn surface(app: &mut App) -> Point {
-    surface_with(app, TileRegistry::standard())
-}
-
-/// [`surface`] over `tiles`.
-pub fn surface_with(app: &mut App, tiles: TileRegistry) -> Point {
-    let rules = TestWorld::with_tiles(tiles.clone());
-    let world = WorldGraph::generate(TEST_SEED, WorldConfig { region_size: 16, ..WorldConfig::regions(12, 10) }, &rules);
-    let (region, _) = world.layers().bands.iter().find(|(_, b)| b.0 == 1).expect("a test world has land");
-    let start = world.tile_origin(region).offset(8, 8);
-    app.insert_resource(WorldMap::new(tiles.tables())).insert_resource(WorldRes(world)).insert_resource(ChunkRulesRes(Box::new(rules)));
+    let start = Point::new(GROUND / 2, GROUND / 2);
+    let build = PlaceBuild {
+        terrain,
+        entry: start,
+        exit: None,
+        spots: Vec::new(),
+        locks: Vec::new(),
+        secrets: Vec::new(),
+        ambient: rl_grid::Light::DARK,
+        peaceful: false,
+    };
+    let mut map = WorldMap::new(tiles.tables());
+    map.install_place(MapId::ZERO, build);
+    map.switch_to(MapId::ZERO);
+    app.insert_resource(map);
     start
 }
 
@@ -387,13 +349,13 @@ mod tests {
     use crate::plugin::headless_app;
     use crate::state::EngineState;
 
-    /// The start `surface` hands back is land, with land for seven tiles
+    /// The start `ground` hands back is floor, with floor for seven tiles
     /// every way, and the player stood there is dealt a turn.
     #[test]
-    fn the_surface_stands_a_player_on_open_ground() {
+    fn the_ground_stands_a_player_on_open_floor() {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin));
-        let start = surface(&mut app);
+        app.add_plugins(crate::fov::FovPlugin);
+        let start = ground(&mut app);
         let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap)).id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
@@ -402,7 +364,7 @@ mod tests {
         let map = app.world().resource::<WorldMap>();
         for dy in -7..=7 {
             for dx in -7..=7 {
-                assert!(map.is_walkable(start.offset(dx, dy)), "({dx}, {dy}) from the start is land");
+                assert!(map.is_walkable(start.offset(dx, dy)), "({dx}, {dy}) from the start is floor");
             }
         }
     }

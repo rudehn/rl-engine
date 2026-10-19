@@ -150,7 +150,7 @@ impl Saveable for PropKind {
         };
         let prop = {
             let mut commands = world.commands();
-            rl_bevy::spawn_prop(&mut commands, &registries, id, Point::ZERO, MapId::SURFACE)
+            rl_bevy::spawn_prop(&mut commands, &registries, id, Point::ZERO, MapId::ZERO)
         };
         world.flush();
         // Its own firings wait for its triggers, which are armed from its
@@ -217,22 +217,6 @@ impl Saveable for Stair {
 
     fn restore(world: &mut World, saved: &Stair) -> Entity {
         world.spawn((saved.clone(), Name::new(saved.look.name.clone()))).id()
-    }
-}
-
-/// Which regions of the streamed surface have had their loot put down is
-/// the engine's, so its saving is too: a game with a streamed surface and a
-/// [`LootPlugin`](rl_bevy::LootPlugin) adds `save_state::<Scattered>()`,
-/// and a region scattered before the save is not scattered again after it.
-impl SaveableState for rl_bevy::Scattered {
-    type Saved = Vec<Point>;
-
-    fn capture(&self) -> Vec<Point> {
-        self.0.iter().copied().collect()
-    }
-
-    fn restore(&mut self, saved: Vec<Point>) {
-        self.0 = saved.into_iter().collect();
     }
 }
 
@@ -400,7 +384,7 @@ fn restore_actor<K: SaveableActor>(world: &mut World, saved: &RawValue) -> Resul
         let world: &World = world;
         let mut commands = Commands::new(&mut queue, world);
         // Nowhere and on no place: the engine puts it back where it was.
-        world.resource::<K::Maker>().make_at(&mut commands, world.resource::<Registries>(), def, Point::ZERO, MapId::SURFACE)
+        world.resource::<K::Maker>().make_at(&mut commands, world.resource::<Registries>(), def, Point::ZERO, MapId::ZERO)
     };
     queue.apply(world);
     K::restore_extra(world, actor, &saved.extra);
@@ -665,7 +649,7 @@ impl EntityState {
     fn of(world: &World, entity: Entity, remap: &mut EntityRemap) -> Self {
         let e = world.entity(entity);
         let registries = world.get_resource::<Registries>();
-        let at = e.get::<Position>().map(|p| (p.0, e.get::<OnMap>().map(|m| m.0).unwrap_or(MapId::SURFACE)));
+        let at = e.get::<Position>().map(|p| (p.0, e.get::<OnMap>().map(|m| m.0).unwrap_or(MapId::ZERO)));
         let health = e.get::<Health>().map(|h| (h.current, h.max));
         let bag = e.get::<Inventory>().map(|b| b.items.iter().map(|i| remap.save_id(*i)).collect()).unwrap_or_default();
         let worn = e.get::<Equipped>().map(|w| {
@@ -1264,7 +1248,7 @@ mod tests {
     use super::*;
     use crate::backend::{MemoryBackend, SaveBackend};
     use rl_bevy::prelude::*;
-    use rl_bevy::{FovPlugin, ItemsPlugin, StreamingPlugin};
+    use rl_bevy::{FovPlugin, ItemsPlugin};
     use rl_core::RunSeed;
     use rl_rules::{EquipShape, SlotDef, StatusDef};
 
@@ -1337,9 +1321,9 @@ mod tests {
 
     fn game_with(saves: Saves, plugin: SavePlugin) -> (App, Point) {
         let mut app = rl_bevy::plugin::headless_app();
-        app.add_plugins((FovPlugin, StreamingPlugin, CombatPlugin, ItemsPlugin, RemainsPlugin, rl_bevy::PropsPlugin));
+        app.add_plugins((FovPlugin, CombatPlugin, ItemsPlugin, RemainsPlugin, rl_bevy::PropsPlugin));
         rl_bevy::AddWork::add_work(&mut app, "mending");
-        let start = rl_bevy::testing::surface(&mut app);
+        let start = rl_bevy::testing::ground(&mut app);
         rl_bevy::testing::two_sides(&mut app);
         {
             let mut registries = app.world_mut().resource_mut::<Registries>();
@@ -1457,7 +1441,7 @@ mod tests {
             let world = app.world();
             let mut commands = Commands::new(&mut queue, world);
             let made = world.resource::<Blades>().make_at(&mut commands, &Registries::default(), sabre, 2);
-            commands.entity(made).insert((Position(start.offset(1, 0)), OnMap(MapId::SURFACE), Notched { notches: 3, put_back_at: None }));
+            commands.entity(made).insert((Position(start.offset(1, 0)), OnMap(MapId::ZERO), Notched { notches: 3, put_back_at: None }));
             queue.apply(app.world_mut());
             made
         };
@@ -1569,7 +1553,7 @@ mod tests {
             let mut queue = bevy::ecs::world::CommandQueue::default();
             let world = app.world();
             let mut commands = Commands::new(&mut queue, world);
-            let made = world.resource::<Beasts>().make_at(&mut commands, world.resource::<Registries>(), crow, start.offset(3, 0), MapId::SURFACE);
+            let made = world.resource::<Beasts>().make_at(&mut commands, world.resource::<Registries>(), crow, start.offset(3, 0), MapId::ZERO);
             commands.entity(made).insert(Turned { to: 7, was: None });
             queue.apply(app.world_mut());
             made
@@ -1618,8 +1602,8 @@ mod tests {
         let (chest, plate) = {
             let mut commands = app.world_mut().commands();
             (
-                rl_bevy::spawn_prop(&mut commands, &registries, crate_id, start.offset(1, 0), MapId::SURFACE),
-                rl_bevy::spawn_prop(&mut commands, &registries, plate_id, start.offset(0, 1), MapId::SURFACE),
+                rl_bevy::spawn_prop(&mut commands, &registries, crate_id, start.offset(1, 0), MapId::ZERO),
+                rl_bevy::spawn_prop(&mut commands, &registries, plate_id, start.offset(0, 1), MapId::ZERO),
             )
         };
         app.world_mut().flush();
@@ -2156,7 +2140,7 @@ mod tests {
 
     /// An arrival somewhere while playing, as a warp into a place reports it.
     fn arrive(app: &mut App, at: Point) {
-        app.world_mut().write_message(rl_bevy::PlaceEntered { map: rl_bevy::MapId::SURFACE, first: true, entry: at, exit: None });
+        app.world_mut().write_message(rl_bevy::PlaceEntered { map: rl_bevy::MapId::ZERO, first: true, entry: at, exit: None });
         app.update();
     }
 

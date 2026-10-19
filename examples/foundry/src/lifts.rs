@@ -115,8 +115,8 @@ pub fn ride_out(
         if !asked.contains(&me) {
             continue;
         }
-        let map = on.map(|m| m.0).unwrap_or(MapId::SURFACE);
-        if outs.iter().any(|(p, m)| p.0 == at.0 && m.map(|m| m.0).unwrap_or(MapId::SURFACE) == map) {
+        let map = on.map(|m| m.0).unwrap_or(MapId::ZERO);
+        if outs.iter().any(|(p, m)| p.0 == at.0 && m.map(|m| m.0).unwrap_or(MapId::ZERO) == map) {
             mission.answer();
         }
     }
@@ -243,7 +243,7 @@ mod tests {
         let blockers: Vec<Point> = {
             let world = app.world_mut();
             let mut q = world.query_filtered::<(&Position, Option<&OnMap>), (With<Prop>, With<Blocks>)>();
-            q.iter(world).filter(|(_, on)| on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here).map(|(p, _)| p.0).collect()
+            q.iter(world).filter(|(_, on)| on.map(|m| m.0).unwrap_or(MapId::ZERO) == here).map(|(p, _)| p.0).collect()
         };
         let from = standing_at(app);
         let map = app.world().resource::<WorldMap>();
@@ -262,7 +262,7 @@ mod tests {
         let standing: Vec<(Point, PropId)> = {
             let world = app.world_mut();
             let mut q = world.query::<(&PropKind, &Position, Option<&OnMap>)>();
-            q.iter(world).filter(|(.., on)| on.map_or(MapId::SURFACE, |m| m.0) == here).map(|(kind, p, _)| (p.0, kind.0)).collect()
+            q.iter(world).filter(|(.., on)| on.map_or(MapId::ZERO, |m| m.0) == here).map(|(kind, p, _)| (p.0, kind.0)).collect()
         };
         let prefabs = app.world().resource::<Prefabs<crate::droids::MonsterDef>>();
         let place = app.world().resource::<WorldMap>().place(here).expect("the deck is built");

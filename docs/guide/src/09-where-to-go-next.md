@@ -100,15 +100,6 @@ The Systems pages are the reference for the rest, one per system, and each tease
   A line of your own told from inside a turn is a `Tell`, written in `TurnSet::React`, and the narrator speaks it after what it answers and before whatever the next actor does.
 - **Reference** [Narration](systems/narration.md).
 
-## A world above the dungeon
-
-- **Add** `StreamingPlugin`, and `rl-overworld` for a map screen.
-- **You supply** the world's parameters.
-- **You get** FBM noise, elevation banding, priority-flood hydrology, climate, scored site placement and a road router, streamed around the player with a seam hash so chunk edges agree, keeping your edits across unload and reload.
-  `rl-overworld` draws it with a portal picker.
-- **Worked example** none yet: no example game streams a surface.
-- **Reference** [Places and streaming](systems/places.md) for the two kinds of map and the streaming, and [The overworld](systems/overworld.md) for the screen over them.
-
 ## Balance
 
 `rl-rules::balance` scores threat and prints a band report over the `BandedTable` from [chapter 7](07-content-in-files.md).
@@ -148,7 +139,7 @@ Two `update` calls start a run and deal the player its first turn; after that it
 Writing an intent is how the game plays itself, and a suite like Warren's runs in about forty milliseconds.
 
 - `KeyScriptPlugin` and `press(&mut app, key)` play a key the way a keyboard does, so a test drives your real input system instead of writing intents by hand.
-- `surface(&mut app)` stands an open test world up for a test that needs a map and not the game's own.
+- `ground(&mut app)` stands walled open ground up for a test that needs a map and not the game's own.
 - `two_sides(&mut app)` inserts combat rules for two sides at war.
 - `rl_engine::testing` is the same kit with the headless game beside it: `headless(seed, narrator, game)` builds the app above with your narrator and your plugin and saves kept in memory, `settle`, `pass_turns`, `stand_on`, `equip` and their kin drive it as the engine's own intents would, and `row`, `written` and `said` read the screen and the log back.
 
@@ -164,8 +155,8 @@ The test module of `step10_panels.rs` is the worked example.
 | Tier | Crates | Bevy |
 |---|---|---|
 | 0 | `rl-core` | no |
-| 1 | `rl-grid`, `rl-mapgen`, `rl-world`, `rl-rules` | no |
-| 2 | `rl-bevy`, `rl-render`, `rl-ui`, `rl-overworld`, `rl-save` | yes |
+| 1 | `rl-grid`, `rl-mapgen`, `rl-rules` | no |
+| 2 | `rl-bevy`, `rl-render`, `rl-ui`, `rl-save` | yes |
 | 3 | `rl-engine` | facade |
 
 Map generation, field of view, pathfinding, the damage pipeline and the AI brains are tier 1.

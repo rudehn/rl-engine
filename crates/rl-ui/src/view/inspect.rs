@@ -346,7 +346,7 @@ pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
     if duelists.props.contains(entity) {
         return;
     }
-    if relation == Some(Relation::Allied) || duelists.map.is_peaceful(on.map_or(MapId::SURFACE, |m| m.0)) {
+    if relation == Some(Relation::Allied) || duelists.map.is_peaceful(on.map_or(MapId::ZERO, |m| m.0)) {
         return;
     }
     let Some((subject, _)) = theirs else { return };

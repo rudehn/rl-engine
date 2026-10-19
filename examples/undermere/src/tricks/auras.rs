@@ -54,7 +54,7 @@ pub fn sing_choir(
     mut bodies: Query<SingingTo, With<Actor>>,
 ) {
     let Some(status) = registries.statuses.id("regenerating") else { return };
-    let map_of = |on: Option<&OnMap>| on.map_or(MapId::SURFACE, |m| m.0);
+    let map_of = |on: Option<&OnMap>| on.map_or(MapId::ZERO, |m| m.0);
     for (e, pos, on, side, mut held, mut stats, sung) in &mut bodies {
         let sung_to =
             choir.iter().any(|(at, singer_on, theirs)| theirs.0 == side.0 && map_of(singer_on) == map_of(on) && geometry::chebyshev(at.0, pos.0) <= SING_RANGE);

@@ -125,78 +125,6 @@ impl Direction {
     }
 }
 
-/// A set of directions, held as one byte.
-///
-/// What a cell records about the roads through it: not "is there a road
-/// here" but "which ways does it leave by". Two neighbouring cells agree
-/// when each holds the [`Direction::opposite`] of the other's entry, which
-/// makes a seam a checkable property.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct DirectionSet(u8);
-
-impl DirectionSet {
-    /// The empty set.
-    pub const NONE: DirectionSet = DirectionSet(0);
-
-    /// Every direction.
-    pub const ALL: DirectionSet = DirectionSet(u8::MAX);
-
-    /// A set holding one direction.
-    pub const fn only(direction: Direction) -> Self {
-        DirectionSet(1 << direction.index())
-    }
-
-    /// A set from raw bits.
-    pub const fn from_bits(bits: u8) -> Self {
-        DirectionSet(bits)
-    }
-
-    /// Adds a direction.
-    pub fn insert(&mut self, direction: Direction) {
-        self.0 |= 1 << direction.index();
-    }
-
-    /// Removes a direction.
-    pub fn remove(&mut self, direction: Direction) {
-        self.0 &= !(1 << direction.index());
-    }
-
-    /// Whether the set holds a direction.
-    pub const fn contains(self, direction: Direction) -> bool {
-        self.0 & (1 << direction.index()) != 0
-    }
-
-    /// Whether the set is empty.
-    pub const fn is_empty(self) -> bool {
-        self.0 == 0
-    }
-
-    /// How many directions the set holds.
-    pub const fn len(self) -> u32 {
-        self.0.count_ones()
-    }
-
-    /// The directions held, clockwise from north.
-    pub fn iter(self) -> impl Iterator<Item = Direction> {
-        Direction::ALL.into_iter().filter(move |d| self.contains(*d))
-    }
-
-    /// The raw bits.
-    pub const fn bits(self) -> u8 {
-        self.0
-    }
-}
-
-impl FromIterator<Direction> for DirectionSet {
-    fn from_iter<I: IntoIterator<Item = Direction>>(directions: I) -> Self {
-        let mut set = DirectionSet::NONE;
-        for d in directions {
-            set.insert(d);
-        }
-        set
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -284,29 +212,5 @@ mod tests {
             }
         }
         assert_eq!(Direction::North.perpendicular(), [Direction::West, Direction::East]);
-    }
-
-    #[test]
-    fn a_set_holds_exactly_what_was_put_in_it() {
-        for d in Direction::ALL {
-            let set = DirectionSet::only(d);
-            assert_eq!(set.len(), 1);
-            assert_eq!(set.iter().collect::<Vec<_>>(), vec![d]);
-            for other in Direction::ALL {
-                assert_eq!(set.contains(other), other == d);
-            }
-        }
-        let mut set = DirectionSet::only(Direction::North);
-        set.insert(Direction::North);
-        assert_eq!(set.len(), 1);
-        set.remove(Direction::North);
-        assert!(set.is_empty());
-    }
-
-    #[test]
-    fn a_set_iterates_clockwise_from_north() {
-        let set: DirectionSet = [Direction::West, Direction::North, Direction::SouthEast].into_iter().collect();
-        assert_eq!(set.iter().collect::<Vec<_>>(), vec![Direction::North, Direction::SouthEast, Direction::West]);
-        assert_eq!(DirectionSet::ALL.len(), 8);
     }
 }

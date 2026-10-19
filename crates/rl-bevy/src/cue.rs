@@ -335,8 +335,8 @@ mod tests {
     #[test]
     fn the_turns_wait_on_each_cue_in_turn_the_ones_at_the_player_included() {
         let mut app = crate::plugin::headless_app();
-        app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin));
-        let start = crate::testing::surface(&mut app);
+        app.add_plugins(crate::fov::FovPlugin);
+        let start = crate::testing::ground(&mut app);
         app.add_systems(crate::plugin::Turn, cue_own_turn.in_set(crate::plugin::ResolveSet::Act));
         let me = app.world_mut().spawn((Actor, Player, Blocks, Position(start), crate::components::Viewshed::new(8), crate::components::RevealsMap)).id();
         let near = app.world_mut().spawn((Actor, Blocks, Position(start.offset(1, 0)))).id();

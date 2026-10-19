@@ -682,7 +682,7 @@ impl Sight<'_, '_> {
     /// Whether the thinker in `thinking` sees `at` on the map `on`: the
     /// same map, within its reach, and in its sight.
     pub fn perceives(&self, thinking: &Thinking, at: Point, on: Option<&OnMap>) -> bool {
-        if on.map(|m| m.0).unwrap_or(MapId::SURFACE) != self.map.current() || !thinking.within_reach(at) {
+        if on.map(|m| m.0).unwrap_or(MapId::ZERO) != self.map.current() || !thinking.within_reach(at) {
             return false;
         }
         thinking.actor().and_then(|actor| self.viewsheds.get(actor).ok()).is_some_and(|sight| sight.can_see(at))
@@ -807,7 +807,7 @@ pub fn sense_leaders(mut thinking: ResMut<Thinking>, sight: Sight, led: Query<&L
     let Some(thinker) = thinking.actor() else { return };
     let Ok(Leader(leader)) = led.get(thinker).copied() else { return };
     let Ok((_, at, _, _, on)) = actors.get(leader) else { return };
-    if leader == thinker || on.map(|m| m.0).unwrap_or(MapId::SURFACE) != sight.current_map() {
+    if leader == thinker || on.map(|m| m.0).unwrap_or(MapId::ZERO) != sight.current_map() {
         return;
     }
     let in_sight = sight.perceives(&thinking, at.0, on);
@@ -982,7 +982,7 @@ pub fn decide_minds(
     let here = world.map.current();
     let live = |t: &crate::effects::Trigger| t.on == crate::effects::Moments::ENTERED && t.fires != Some(0);
     let traps =
-        world.traps.iter().filter(|(_, on, triggers)| on.map_or(MapId::SURFACE, |m| m.0) == here && triggers.0.iter().any(live)).map(|(at, ..)| at.0).collect();
+        world.traps.iter().filter(|(_, on, triggers)| on.map_or(MapId::ZERO, |m| m.0) == here && triggers.0.iter().any(live)).map(|(at, ..)| at.0).collect();
     world.fields.see_traps(traps);
     let Some((thinker, mut snapshot)) = thinking.close() else { return };
     let Ok((mind, my_pos, profile, intelligence, mut came_from, mut doing, mut trails)) = minds.get_mut(thinker) else { return };
@@ -1193,8 +1193,8 @@ mod tests {
 
     fn arena() -> (App, Point, DamageKindId) {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, MindsPlugin, crate::world::StreamingPlugin));
-        let start = crate::testing::surface(&mut app);
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, MindsPlugin));
+        let start = crate::testing::ground(&mut app);
         let sides = crate::testing::two_sides(&mut app);
         (app, start, sides.kind)
     }
@@ -1648,11 +1648,11 @@ mod tests {
     /// be seen through, and a monster of `wits` outside it hunting.
     fn behind_a_gate(wits: Wits) -> (App, Entity, Entity, Point, rl_grid::TileRegistry) {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, MindsPlugin, crate::world::StreamingPlugin));
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, MindsPlugin));
         let mut tiles = rl_grid::TileRegistry::standard();
         tiles.register(rl_grid::TileProps::named("gate").passable(true).opens_to("gate_open")).unwrap();
         tiles.register(rl_grid::TileProps::floor("gate_open").closes_to("gate")).unwrap();
-        let start = crate::testing::surface_with(&mut app, tiles.clone());
+        let start = crate::testing::ground_with(&mut app, tiles.clone());
         let sides = crate::testing::two_sides(&mut app);
         let player = app
             .world_mut()
@@ -1824,8 +1824,8 @@ mod tests {
         use crate::combat::RangedAttack;
         use rl_rules::ai::tactics::ShootAtRange;
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, MindsPlugin, crate::world::StreamingPlugin));
-        let start = crate::testing::surface(&mut app);
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, MindsPlugin));
+        let start = crate::testing::ground(&mut app);
         let sides = crate::testing::two_sides(&mut app);
         let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(sides.ours))).id();
         // Built with its gun, and nothing in its brain but shooting: without
@@ -1855,15 +1855,8 @@ mod tests {
     fn with_a_knife_in_reach(wits: Wits) -> (App, Entity, Entity) {
         use rl_rules::ai::tactics::{Scavenge, ThrowAtRange};
         let mut app = headless_app();
-        app.add_plugins((
-            crate::fov::FovPlugin,
-            CombatPlugin,
-            MindsPlugin,
-            crate::items::ItemsPlugin,
-            crate::throwing::ThrowingPlugin,
-            crate::world::StreamingPlugin,
-        ));
-        let start = crate::testing::surface(&mut app);
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, MindsPlugin, crate::items::ItemsPlugin, crate::throwing::ThrowingPlugin));
+        let start = crate::testing::ground(&mut app);
         let sides = crate::testing::two_sides(&mut app);
         let player = app
             .world_mut()
@@ -2607,8 +2600,8 @@ mod tests {
     fn a_mind_in_a_game_without_combat_drifts_and_gives_way_to_a_bystander() {
         use rl_rules::ai::tactics::{GiveWay, Wander};
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, MindsPlugin, crate::world::StreamingPlugin));
-        let start = crate::testing::surface(&mut app);
+        app.add_plugins((crate::fov::FovPlugin, MindsPlugin));
+        let start = crate::testing::ground(&mut app);
         // No sides, so no `two_sides` to insert the seed the minds roll from.
         app.insert_resource(crate::seed::Seed(rl_core::RunSeed(3)));
         let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8))).id();
@@ -2642,8 +2635,8 @@ mod tests {
     #[test]
     fn two_monsters_at_war_fight_out_of_the_players_sight() {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, MindsPlugin, crate::world::StreamingPlugin));
-        let start = crate::testing::surface(&mut app);
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, MindsPlugin));
+        let start = crate::testing::ground(&mut app);
         let sides = crate::testing::two_sides(&mut app);
         // The player looks at nothing: a viewshed of one cell.
         let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(1), Health::full(30), Faction(sides.ours))).id();

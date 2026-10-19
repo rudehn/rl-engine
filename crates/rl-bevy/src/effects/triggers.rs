@@ -719,12 +719,11 @@ mod tests {
     /// and one damage kind, `kinetic`, as combat's own tests build it.
     fn floor() -> (App, Point) {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::world::StreamingPlugin, crate::effects::EffectsPlugin));
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::effects::EffectsPlugin));
         app.add_engine_effects();
-        let start = crate::testing::surface(&mut app);
+        let start = crate::testing::ground(&mut app);
         crate::testing::two_sides(&mut app);
-        // The window streams in around the player, so one stands a few
-        // cells off, with no health, which no burst in these tests reaches.
+        // A turn wants a player, so one stands a few cells off, with no health, which no burst in these tests reaches.
         app.world_mut().spawn((Actor, crate::components::Player, Position(start.offset(0, -6))));
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();

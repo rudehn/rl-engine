@@ -29,7 +29,6 @@ rl-render.workspace = true
 # them. The targeting cursor itself resolves nothing: it asks the resolver's
 # own `Bystanders::land`.
 rl-mapgen.workspace = true
-rl-world.workspace = true
 criterion.workspace = true
 
 [[bench]]

@@ -856,7 +856,7 @@ impl Undermere {
 }
 
 impl PlaceRules for Undermere {
-    fn build(&self, map: MapId, _: Option<&WorldGraph>) -> Result<PlaceBuild, BuildError> {
+    fn build(&self, map: MapId) -> Result<PlaceBuild, BuildError> {
         let mut built = PlaceBuild::from_context(self.generate(map)?)?;
         crate::vaults::place_vault_fixtures(&mut built, &self.tiles, &self.prefabs, self.seed, map);
         built.ambient = self.ambient_of(map);
@@ -1353,7 +1353,7 @@ mod tests {
         par_seeds(seeds(0..60), |s| {
             let undermere = Undermere::new(RunSeed(s));
             let tables = undermere.tiles().tables();
-            let town = undermere.build(TOWN, None).unwrap_or_else(|e| panic!("Mereholt, seed {s}: {e}"));
+            let town = undermere.build(TOWN).unwrap_or_else(|e| panic!("Mereholt, seed {s}: {e}"));
             builds_with_a_way_in_and_a_way_on(&town, &tables, false, &format!("Mereholt, seed {s}"));
             no_post_is_near_the_way_in(&undermere, &town, &format!("Mereholt, seed {s}"));
             for floor in 1..=FLOORS {
@@ -1576,7 +1576,7 @@ mod tests {
         let registries = crate::content::registries();
         let undermere = Undermere::new(RunSeed(0));
         let tables = undermere.tiles().tables();
-        let built = undermere.build(TOWN, None).unwrap();
+        let built = undermere.build(TOWN).unwrap();
         let standing = standing(&undermere, &registries, &built);
         let open = |p: Point| built.terrain.get(p).is_some_and(|t| tables.passable[t.index()]) && !standing.contains(&p);
         let seen = walked(built.entry, open);
@@ -1617,13 +1617,13 @@ mod tests {
         let town = undermere.prefabs().piece("Mereholt").unwrap();
         let marked: Vec<Point> = town.marks().iter().filter(|(c, _)| *c == '@').map(|(_, p)| *p).collect();
         assert_eq!(marked.len(), 1, "the town marks one way in");
-        assert_eq!(undermere.build(TOWN, None).unwrap().entry, marked[0]);
+        assert_eq!(undermere.build(TOWN).unwrap().entry, marked[0]);
     }
 
     #[test]
     fn the_town_has_one_gate_and_the_arrival_is_not_on_it() {
         let undermere = Undermere::new(RunSeed(0));
-        let built = undermere.build(TOWN, None).unwrap();
+        let built = undermere.build(TOWN).unwrap();
         let gate = undermere.tiles().expect("gate");
         let gates: Vec<Point> = built.terrain.iter().filter(|(_, t)| *t == gate).map(|(p, _)| p).collect();
         assert_eq!(gates.len(), 1, "one gate: {gates:?}");
@@ -1632,7 +1632,7 @@ mod tests {
         assert_eq!(built.terrain.get(built.entry), Some(undermere.tiles().expect("cobbles")), "it arrives on the square's cobbles");
         // Hand-drawn: every run comes to the same town.
         for s in 1..4 {
-            let again = Undermere::new(RunSeed(s)).build(TOWN, None).unwrap();
+            let again = Undermere::new(RunSeed(s)).build(TOWN).unwrap();
             assert_eq!((again.terrain, again.entry, again.exit), (built.terrain.clone(), built.entry, built.exit), "seed {s} drew another town");
         }
     }
@@ -1667,7 +1667,7 @@ mod tests {
             floors
                 .iter()
                 .map(|f| {
-                    let b = undermere.build(map_of(*f), None).unwrap();
+                    let b = undermere.build(map_of(*f)).unwrap();
                     (*f, (b.terrain, b.entry, b.exit, b.spots, b.secrets))
                 })
                 .collect()
@@ -1700,7 +1700,7 @@ mod tests {
                 assert_eq!(again.biome_of(floor).name, new.biome_of(floor).name, "seed {s}, floor {floor}: the biome");
                 assert_eq!(again.plan_of(floor), new.plan_of(floor), "seed {s}, floor {floor}: the picks");
             }
-            let (a, b) = (again.build(map_of(3), None).unwrap(), new.build(map_of(3), None).unwrap());
+            let (a, b) = (again.build(map_of(3)).unwrap(), new.build(map_of(3)).unwrap());
             assert!((a.terrain, a.entry, a.exit) == (b.terrain, b.entry, b.exit), "seed {s}: floor three");
         }
     }
@@ -1813,7 +1813,7 @@ mod tests {
         // so it wants a seed that draws him.
         let undermere = Undermere::new(RunSeed(1));
         let name = |built: &PlaceBuild, p: Point| undermere.tiles().get(built.terrain.get(p).expect("on the map")).name.clone();
-        let town = undermere.build(TOWN, None).unwrap();
+        let town = undermere.build(TOWN).unwrap();
         let under = |x: i32, y: i32| name(&town, Point::new(x, y));
         assert_eq!(under(25, 4), "planks", "a table in the tavern");
         assert_eq!(under(20, 3), "planks", "a counter among counters and barrels");
@@ -1821,7 +1821,7 @@ mod tests {
         assert_eq!(under(35, 12), "cobbles", "the well in the square");
         assert_eq!(under(40, 7), "grass", "a lamp post on the verge");
         assert_eq!(name(&town, town.entry), "cobbles", "where a run arrives");
-        let throne = undermere.build(map_of(FLOORS), None).unwrap();
+        let throne = undermere.build(map_of(FLOORS)).unwrap();
         for glyph in ['K', 'T'] {
             let spot = throne.spots.iter().find(|s| s.tag == glyph as u32).unwrap_or_else(|| panic!("the throne marks a '{glyph}'"));
             assert_eq!(name(&throne, spot.at), "dais", "'{glyph}' stands on the dais");
@@ -2001,7 +2001,7 @@ mod tests {
     /// alike.
     #[test]
     fn floor_ones_layout_differs_between_any_two_of_twenty_seeds() {
-        let floors: Vec<Terrain> = (0..20).map(|s| Undermere::new(RunSeed(s)).build(map_of(1), None).unwrap().terrain).collect();
+        let floors: Vec<Terrain> = (0..20).map(|s| Undermere::new(RunSeed(s)).build(map_of(1)).unwrap().terrain).collect();
         for i in 0..floors.len() {
             for j in i + 1..floors.len() {
                 assert_ne!(floors[i], floors[j], "seeds {i} and {j} lay floor one out alike");

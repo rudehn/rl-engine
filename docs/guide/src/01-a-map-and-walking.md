@@ -85,7 +85,7 @@ Both colours are authored because light multiplies them channel by channel and m
 /// How a floor is built. The engine calls this once, the first time
 /// something enters the map, and keeps what comes back.
 impl PlaceRules for Warren {
-    fn build(&self, _: MapId, _: Option<&WorldGraph>) -> Result<PlaceBuild, BuildError> {
+    fn build(&self, _: MapId) -> Result<PlaceBuild, BuildError> {
         let (wall, floor) = (self.tiles.expect("earth"), self.tiles.expect("dirt"));
         let mut ctx = BaseContext::blank(84, 42, self.tiles.clone(), wall);
         Chain::new()
@@ -123,7 +123,6 @@ fn start(mut commands: Commands, seed: Res<Seed>, mut warps: MessageWriter<WarpR
 ```
 
 `WorldMap::new` takes the tile tables alone.
-No world graph, no region size, no surface: a game with an overworld adds those, a delve never names them.
 
 The player is components, not a class.
 `Actor` takes turns, `Player` is the one the loop waits on for input, `Blocks` puts it in the occupancy index, `RevealsMap` marks whose sight fills in the explored map.

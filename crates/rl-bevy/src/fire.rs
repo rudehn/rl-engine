@@ -207,7 +207,7 @@ pub fn keep_alight(mut fire: ResMut<Fire>, map: Res<WorldMap>, lit: Query<(&Posi
     fire.flames.follow(&map);
     let here = map.current();
     for (pos, burning, on) in &lit {
-        if on.map_or(MapId::SURFACE, |m| m.0) == here && burning.turns != Some(0) {
+        if on.map_or(MapId::ZERO, |m| m.0) == here && burning.turns != Some(0) {
             fire.flames.update(pos.0, |t| t.max(2));
         }
     }
@@ -261,7 +261,7 @@ pub fn step_fire(mut ends: MessageReader<TurnEnd>, mut fire: ResMut<Fire>, blaze
         gases.fit(registries.gases.len(), &map);
     }
     let here = map.current();
-    let on_here = |on: Option<&OnMap>| on.map_or(MapId::SURFACE, |m| m.0) == here;
+    let on_here = |on: Option<&OnMap>| on.map_or(MapId::ZERO, |m| m.0) == here;
     let vapours: Vec<GasId> = registries.gases.iter().filter(|(_, def)| def.burns).map(|(id, _)| id).collect();
     // What caught in an earlier step of this call, whose `Burning` is still
     // queued, so it does not catch again.
@@ -448,7 +448,7 @@ mod tests {
         /// whoever stands in it, and, `with_gas`, smoke and a vapour that burns.
         fn new(with_gas: bool) -> Self {
             let mut app = headless_app();
-            app.add_plugins((crate::fov::FovPlugin, CombatPlugin, LightingPlugin, FirePlugin, crate::world::StreamingPlugin));
+            app.add_plugins((crate::fov::FovPlugin, CombatPlugin, LightingPlugin, FirePlugin));
             if with_gas {
                 app.add_plugins(GasPlugin);
             }
@@ -456,7 +456,7 @@ mod tests {
             let mut tiles = TileRegistry::standard();
             tiles.register(TileProps::floor("ash")).unwrap();
             tiles.register(TileProps::floor("grass").burns(100, 2, "ash")).unwrap();
-            let start = crate::testing::surface_with(&mut app, tiles.clone());
+            let start = crate::testing::ground_with(&mut app, tiles.clone());
             crate::testing::two_sides(&mut app);
             let statuses = Registry::from_defs(vec![StatusDef::new("burning")]).unwrap();
             let burning = statuses.expect("burning");
@@ -579,8 +579,8 @@ mod tests {
         use rl_rules::ai::tactics::Hunt;
         use std::sync::Arc;
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, MindsPlugin, FirePlugin, crate::world::StreamingPlugin));
-        let start = crate::testing::surface(&mut app);
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, MindsPlugin, FirePlugin));
+        let start = crate::testing::ground(&mut app);
         let sides = crate::testing::two_sides(&mut app);
         app.insert_resource(FireRules::new());
         let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(10), Health::full(30), Faction(sides.ours))).id();

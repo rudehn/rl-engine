@@ -494,7 +494,7 @@ impl Saveable for Townsperson {
         // back where they were with what they had.
         spawned(world, |commands, world| {
             let person = crate::townsfolk::spawn_person(commands, &Kit::of(world), &role, &saved.name);
-            commands.entity(person).insert((Position(Point::ZERO), OnMap(MapId::SURFACE)));
+            commands.entity(person).insert((Position(Point::ZERO), OnMap(MapId::ZERO)));
             person
         })
     }

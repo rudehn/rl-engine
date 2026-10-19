@@ -452,11 +452,11 @@ pub fn offer_here(
     offered.offers.clear();
     let Ok((actor, pos, on, bag, side)) = reacher.single() else { return };
     offered.actor = Some(actor);
-    let here = on.map(|m| m.0).unwrap_or(MapId::SURFACE);
+    let here = on.map(|m| m.0).unwrap_or(MapId::ZERO);
     // What it stands on and what stands beside it: a body underfoot is as
     // reachable as a crate in the next cell.
     let in_reach =
-        |at: &Position, there: Option<&OnMap>| there.map(|m| m.0).unwrap_or(MapId::SURFACE) == here && (at.0 == pos.0 || geometry::is_adjacent(pos.0, at.0));
+        |at: &Position, there: Option<&OnMap>| there.map(|m| m.0).unwrap_or(MapId::ZERO) == here && (at.0 == pos.0 || geometry::is_adjacent(pos.0, at.0));
     // Counted by the trade slice's own rule, so an offer and a deal never
     // disagree over what the actor can pay. With no currency there is
     // nothing to pay with: `check_priced_offers` has already stopped play
@@ -1001,7 +1001,7 @@ pub fn report_entered(
     let entered: Vec<(Entity, Point)> = steps.read().map(|step| (step.actor, step.to)).chain(swapped).collect();
     for (who, to) in entered {
         for (prop, at, on) in &props {
-            if at.0 == to && on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here {
+            if at.0 == to && on.map(|m| m.0).unwrap_or(MapId::ZERO) == here {
                 fired.write(Fired { on: prop, moment: Moments::ENTERED, by: Some(who), at: to });
             }
         }
@@ -1242,14 +1242,14 @@ pub fn spot_hidden_props(
         return;
     }
     let still = stillness.take();
-    let here = on.map(|m| m.0).unwrap_or(MapId::SURFACE);
+    let here = on.map(|m| m.0).unwrap_or(MapId::ZERO);
     if here != map.current() {
         return;
     }
     let keen = keen.map_or(0, |k| k.0);
     let from = stands.0;
     for (prop, at, prop_on, secret) in &hidden {
-        if prop_on.map(|m| m.0).unwrap_or(MapId::SURFACE) != here || !sight.can_see(at.0) {
+        if prop_on.map(|m| m.0).unwrap_or(MapId::ZERO) != here || !sight.can_see(at.0) {
             continue;
         }
         if !dice.roll(secret.spot, keen, geometry::chebyshev(from, at.0), still) {
@@ -1493,8 +1493,8 @@ mod tests {
 
     fn arena() -> (App, Point) {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, PropsPlugin, crate::world::StreamingPlugin));
-        let start = crate::testing::surface(&mut app);
+        app.add_plugins((crate::fov::FovPlugin, PropsPlugin));
+        let start = crate::testing::ground(&mut app);
         let registries = Registries { props: rl_rules::prop::load(PROPS, &Names::new()).expect("the props load"), ..Default::default() };
         app.insert_resource(registries);
         app.insert_resource(crate::seed::Seed(crate::testing::TEST_SEED));
@@ -1511,8 +1511,8 @@ mod tests {
         let (supply, plate) = {
             let mut commands = app.world_mut().commands();
             (
-                spawn_prop(&mut commands, &registries, crate_id, start.offset(1, 0), MapId::SURFACE),
-                spawn_prop(&mut commands, &registries, plate_id, start.offset(2, 0), MapId::SURFACE),
+                spawn_prop(&mut commands, &registries, crate_id, start.offset(1, 0), MapId::ZERO),
+                spawn_prop(&mut commands, &registries, plate_id, start.offset(2, 0), MapId::ZERO),
             )
         };
         app.update();
@@ -1535,7 +1535,7 @@ mod tests {
         let registries = app.world().resource::<Registries>().clone();
         let id = registries.props.expect("supply crate");
         let at = start.offset(1, 0);
-        let supply = spawn_prop(&mut app.world_mut().commands(), &registries, id, at, MapId::SURFACE);
+        let supply = spawn_prop(&mut app.world_mut().commands(), &registries, id, at, MapId::ZERO);
         app.world_mut().resource_mut::<NextState<crate::state::EngineState>>().set(crate::state::EngineState::Playing);
         app.update();
         app.update();
@@ -1549,9 +1549,9 @@ mod tests {
     fn a_props_trigger_naming_a_declared_sound_builds_when_the_game_has_noise() {
         let mut app = headless_app();
         let rules = crate::noise::NoiseRules { step: 0, strike: 0, door: 0, landing: 0, door_muffle: 0 };
-        app.add_plugins((crate::fov::FovPlugin, PropsPlugin, crate::world::StreamingPlugin, crate::noise::NoisePlugin::new(rules)));
+        app.add_plugins((crate::fov::FovPlugin, PropsPlugin, crate::noise::NoisePlugin::new(rules)));
         crate::noise::AddSound::add_sound(&mut app, "chime");
-        crate::testing::surface(&mut app);
+        crate::testing::ground(&mut app);
         let text = r#"#![enable(implicit_some)] [(name: "alarm plate", glyph: '^', color: (r: 1, g: 2, b: 3),
             triggers: [(on: "entered", effects: [(kind: "Noise", args: (sound: "chime", loudness: 9))])])]"#;
         let props = rl_rules::prop::load(text, &Names::new()).expect("the props load");
@@ -1606,9 +1606,9 @@ mod offers {
     fn arena() -> (App, Point) {
         let mut app = headless_app();
         // Bump is CorePlugin's, which `headless_app` already added.
-        app.add_plugins((crate::fov::FovPlugin, PropsPlugin, crate::items::ItemsPlugin, crate::world::StreamingPlugin));
+        app.add_plugins((crate::fov::FovPlugin, PropsPlugin, crate::items::ItemsPlugin));
         app.add_verb("charge");
-        let start = crate::testing::surface(&mut app);
+        let start = crate::testing::ground(&mut app);
         let tags = Registry::from_defs(vec![TagDef::new("cutter")]).expect("one tag");
         let props = rl_rules::prop::load(PROPS, &Names::new().tags(&tags)).expect("the props load");
         app.insert_resource(Registries { props, tags, ..Default::default() });
@@ -1617,7 +1617,7 @@ mod offers {
     }
 
     fn player_at(app: &mut App, at: Point) -> Entity {
-        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(at), Viewshed::new(8), OnMap(MapId::SURFACE))).id();
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(at), Viewshed::new(8), OnMap(MapId::ZERO))).id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
         app.update();
@@ -1627,7 +1627,7 @@ mod offers {
     fn put(app: &mut App, name: &str, at: Point) -> Entity {
         let registries = app.world().resource::<Registries>().clone();
         let id = registries.props.expect(name);
-        let prop = spawn_prop(&mut app.world_mut().commands(), &registries, id, at, MapId::SURFACE);
+        let prop = spawn_prop(&mut app.world_mut().commands(), &registries, id, at, MapId::ZERO);
         app.update();
         prop
     }
@@ -1847,9 +1847,9 @@ mod actor_offers {
     /// currency.
     fn arena() -> (App, Point, VerbId, TagId) {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, PropsPlugin, crate::items::ItemsPlugin, crate::world::StreamingPlugin));
+        app.add_plugins((crate::fov::FovPlugin, PropsPlugin, crate::items::ItemsPlugin));
         app.add_verb("free");
-        let start = crate::testing::surface(&mut app);
+        let start = crate::testing::ground(&mut app);
         let tags = Registry::from_defs(vec![TagDef::new("key"), TagDef::new("scrip")]).expect("two tags");
         let key = tags.expect("key");
         app.insert_resource(Registries { tags, ..Default::default() });
@@ -1859,11 +1859,11 @@ mod actor_offers {
     }
 
     fn someone(app: &mut App, at: Point, offers: Offers) -> Entity {
-        app.world_mut().spawn((Actor, Blocks, Position(at), OnMap(MapId::SURFACE), Name::new("captive"), offers)).id()
+        app.world_mut().spawn((Actor, Blocks, Position(at), OnMap(MapId::ZERO), Name::new("captive"), offers)).id()
     }
 
     fn player_at(app: &mut App, at: Point, offers: Offers) -> Entity {
-        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(at), Viewshed::new(8), OnMap(MapId::SURFACE), offers)).id();
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(at), Viewshed::new(8), OnMap(MapId::ZERO), offers)).id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
         app.update();
@@ -2142,9 +2142,9 @@ mod actor_offers {
     fn work_begun_from_an_actors_offer_is_broken_off_by_a_blow_on_the_worker() {
         use crate::work::{AddWork, BreakReason, WorkKinds, Working};
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, PropsPlugin, crate::world::StreamingPlugin, crate::combat::CombatPlugin));
+        app.add_plugins((crate::fov::FovPlugin, PropsPlugin, crate::combat::CombatPlugin));
         app.add_verb("free").add_work("freeing");
-        let start = crate::testing::surface(&mut app);
+        let start = crate::testing::ground(&mut app);
         let sides = crate::testing::two_sides(&mut app);
         let free = app.world().resource::<Verbs>().get("free").expect("declared");
         let kind = app.world().resource::<WorkKinds>().get("freeing").expect("declared");
@@ -2209,8 +2209,8 @@ mod containers {
     /// the game was asked for.
     fn chest(name: &str) -> Chest {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, PropsPlugin, crate::items::ItemsPlugin, crate::world::StreamingPlugin));
-        let start = crate::testing::surface(&mut app);
+        app.add_plugins((crate::fov::FovPlugin, PropsPlugin, crate::items::ItemsPlugin));
+        let start = crate::testing::ground(&mut app);
         let props = rl_rules::prop::load(PROPS, &Names::new()).expect("the props load");
         app.insert_resource(Registries { props, ..Default::default() });
         app.insert_resource(crate::seed::Seed(crate::testing::TEST_SEED));
@@ -2220,8 +2220,8 @@ mod containers {
 
         let registries = app.world().resource::<Registries>().clone();
         let id = registries.props.expect(name);
-        let prop = spawn_prop(&mut app.world_mut().commands(), &registries, id, start.offset(1, 0), MapId::SURFACE);
-        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), OnMap(MapId::SURFACE), Inventory::default())).id();
+        let prop = spawn_prop(&mut app.world_mut().commands(), &registries, id, start.offset(1, 0), MapId::ZERO);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), OnMap(MapId::ZERO), Inventory::default())).id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         for _ in 0..3 {
             app.update();
@@ -2266,7 +2266,7 @@ mod containers {
         )
         .unwrap();
         app.insert_resource(Registries { tags, props, ..Default::default() }).insert_resource(crate::seed::Seed(crate::testing::TEST_SEED));
-        crate::testing::surface(&mut app);
+        crate::testing::ground(&mut app);
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
         app.update();
@@ -2357,7 +2357,7 @@ mod containers {
         }
         let Ok(at) = start.single() else { return };
         let id = registries.props.expect("supply crate");
-        raised.0 = Some(spawn_prop(&mut commands, &registries, id, at.0.offset(0, 1), MapId::SURFACE));
+        raised.0 = Some(spawn_prop(&mut commands, &registries, id, at.0.offset(0, 1), MapId::ZERO));
     }
 
     /// A container put down mid-turn holds nothing until the next frame
@@ -2427,9 +2427,9 @@ mod traps {
         // No `AbilitiesPlugin`: a game may have traps and no abilities at
         // all, and this proves it. The effects a trap lands are registered
         // on their own, and props ask for the stream they roll from.
-        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, PropsPlugin, crate::world::StreamingPlugin));
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, PropsPlugin));
         app.add_engine_effects();
-        let at = crate::testing::surface(&mut app);
+        let at = crate::testing::ground(&mut app);
         let sides = crate::testing::two_sides(&mut app);
         let props = {
             let registries = app.world().resource::<Registries>().clone();
@@ -2438,7 +2438,7 @@ mod traps {
         app.world_mut().resource_mut::<Registries>().props = props;
         let player = app
             .world_mut()
-            .spawn((Actor, Player, Blocks, Position(at), Viewshed::new(8), OnMap(MapId::SURFACE), Health::full(20), crate::combat::Faction(sides.ours)))
+            .spawn((Actor, Player, Blocks, Position(at), Viewshed::new(8), OnMap(MapId::ZERO), Health::full(20), crate::combat::Faction(sides.ours)))
             .id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
@@ -2449,7 +2449,7 @@ mod traps {
     fn put(deck: &mut Deck, name: &str, at: Point) -> Entity {
         let registries = deck.app.world().resource::<Registries>().clone();
         let id = registries.props.expect(name);
-        let prop = spawn_prop(&mut deck.app.world_mut().commands(), &registries, id, at, MapId::SURFACE);
+        let prop = spawn_prop(&mut deck.app.world_mut().commands(), &registries, id, at, MapId::ZERO);
         deck.app.update();
         prop
     }
@@ -2686,7 +2686,7 @@ mod traps {
         let under_me = put(&mut deck, "pressure plate", mine);
         let under_them = put(&mut deck, "pressure plate", theirs);
         let us = deck.app.world().get::<crate::combat::Faction>(deck.player).copied().expect("a side");
-        let other = deck.app.world_mut().spawn((Actor, Blocks, Position(theirs), OnMap(MapId::SURFACE), Health::full(20), us)).id();
+        let other = deck.app.world_mut().spawn((Actor, Blocks, Position(theirs), OnMap(MapId::ZERO), Health::full(20), us)).id();
         deck.app.init_resource::<Reports>().add_systems(bevy::app::PostUpdate, keep);
         for _ in 0..8 {
             if deck.app.world().get::<Position>(deck.player).map(|p| p.0) == Some(theirs) {
@@ -2746,9 +2746,9 @@ mod traps {
     fn effects_added_by_hand_after_props_is_harmless_and_a_trap_lands_once() {
         let mut deck = {
             let mut app = headless_app();
-            app.add_plugins((crate::fov::FovPlugin, CombatPlugin, PropsPlugin, crate::effects::EffectsPlugin, crate::world::StreamingPlugin));
+            app.add_plugins((crate::fov::FovPlugin, CombatPlugin, PropsPlugin, crate::effects::EffectsPlugin));
             app.add_engine_effects();
-            let at = crate::testing::surface(&mut app);
+            let at = crate::testing::ground(&mut app);
             let sides = crate::testing::two_sides(&mut app);
             let props = {
                 let registries = app.world().resource::<Registries>().clone();
@@ -2757,7 +2757,7 @@ mod traps {
             app.world_mut().resource_mut::<Registries>().props = props;
             let player = app
                 .world_mut()
-                .spawn((Actor, Player, Blocks, Position(at), Viewshed::new(8), OnMap(MapId::SURFACE), Health::full(20), crate::combat::Faction(sides.ours)))
+                .spawn((Actor, Player, Blocks, Position(at), Viewshed::new(8), OnMap(MapId::ZERO), Health::full(20), crate::combat::Faction(sides.ours)))
                 .id();
             app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
             app.update();

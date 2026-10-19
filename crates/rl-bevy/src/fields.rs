@@ -3,9 +3,7 @@
 //! A field covers the map readers read, in window-local cells, and every
 //! other map's field is set aside and taken back up on return, the way a
 //! place keeps its actors: leave while smoke hangs in a corridor and it hangs
-//! there when you come back. On the streamed surface a field covers the
-//! loaded window and moves with it, and what leaves the window is dropped,
-//! since a fire nobody can see is not worth stepping or remembering.
+//! there when you come back.
 
 use std::collections::BTreeMap;
 

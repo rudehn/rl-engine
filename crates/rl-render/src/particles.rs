@@ -673,8 +673,8 @@ mod tests {
         let mut particles = Particles::default();
         let (flight, burst) = (Beat::Trail(trail()), Beat::Burst(blast(2)));
         let (flown, burned) = (flight.duration(), burst.duration());
-        particles.play(Animation { map: MapId::SURFACE, steps: vec![flight, burst], holds: true });
-        let fronts = particles.wavefronts(2.0, MapId::SURFACE, &fixed);
+        particles.play(Animation { map: MapId::ZERO, steps: vec![flight, burst], holds: true });
+        let fronts = particles.wavefronts(2.0, MapId::ZERO, &fixed);
         assert_eq!(fronts.len(), 1);
         let front = fronts[0];
         assert_eq!(front.from, Point::new(0, 0));
@@ -686,7 +686,7 @@ mod tests {
     #[test]
     fn steps_play_one_after_another_and_a_finished_animation_is_dropped() {
         let burst = Burst { on: vec![Anchor::cell(Point::new(4, 0))], glyphs: vec!['*'], color: Color::WHITE, secs: 0.2, from: None, ring_secs: 0.0 };
-        let animation = Animation { map: MapId::SURFACE, steps: vec![Beat::Trail(trail()), Beat::Burst(burst)], holds: true };
+        let animation = Animation { map: MapId::ZERO, steps: vec![Beat::Trail(trail()), Beat::Burst(burst)], holds: true };
         assert_eq!(animation.duration(), 0.6);
         assert_eq!(animation.frame(0.35, &fixed)[0].glyph, '*');
         assert_eq!(animation.frame(0.45, &fixed).len(), 1, "the burst, once the trail has flown");
@@ -695,9 +695,9 @@ mod tests {
         let mut particles = Particles::default();
         particles.play(animation);
         assert!(particles.is_playing() && particles.is_holding());
-        assert_eq!(particles.frame(10.0, MapId::SURFACE, &fixed).len(), 1, "began on the first frame drawn");
-        assert_eq!(particles.frame(10.45, MapId::SURFACE, &fixed).len(), 1, "the burst");
-        assert!(particles.frame(10.7, MapId::SURFACE, &fixed).is_empty());
+        assert_eq!(particles.frame(10.0, MapId::ZERO, &fixed).len(), 1, "began on the first frame drawn");
+        assert_eq!(particles.frame(10.45, MapId::ZERO, &fixed).len(), 1, "the burst");
+        assert!(particles.frame(10.7, MapId::ZERO, &fixed).is_empty());
         assert!(!particles.is_playing() && !particles.is_holding(), "and it is gone, and holds nothing");
     }
 
@@ -719,7 +719,7 @@ mod tests {
         app.add_plugins((crate::map_view::MapViewPlugin::new(Rect::new(0, 0, 40, 20)), ParticlesPlugin));
         app.insert_resource(Terminal::new(40, 20, Vec2::ONE));
         app.insert_resource(ParticleStyle { cell_secs: 0.01, burst_secs: 0.05, ..ParticleStyle::default() });
-        let start = rl_bevy::testing::surface(&mut app);
+        let start = rl_bevy::testing::ground(&mut app);
         let me = app.world_mut().spawn((Actor, Player, Position(start), Viewshed::new(8), RevealsMap)).id();
         let (eel, crab) =
             (app.world_mut().spawn((Actor, Position(start.offset(3, 0)))).id(), app.world_mut().spawn((Actor, Position(start.offset(-3, 0)))).id());
@@ -759,7 +759,7 @@ mod tests {
         app.add_plugins((crate::map_view::MapViewPlugin::new(Rect::new(0, 0, 40, 20)), ParticlesPlugin, rl_bevy::testing::KeyScriptPlugin));
         app.insert_resource(Terminal::new(40, 20, Vec2::ONE));
         app.insert_resource(ParticleStyle { cell_secs: 1.0, burst_secs: 1.0, ..ParticleStyle::default() });
-        let start = rl_bevy::testing::surface(&mut app);
+        let start = rl_bevy::testing::ground(&mut app);
         app.world_mut().spawn((Actor, Player, Position(start), Viewshed::new(8), RevealsMap));
         let eel = app.world_mut().spawn((Actor, Position(start.offset(3, 0)))).id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
@@ -784,7 +784,7 @@ mod tests {
         app.add_plugins((crate::map_view::MapViewPlugin::new(Rect::new(0, 0, 40, 20)), ParticlesPlugin));
         app.insert_resource(Terminal::new(40, 20, Vec2::ONE));
         app.insert_resource(ParticleStyle { cell_secs: 1.0, burst_secs: 1.0, ..ParticleStyle::default() });
-        let start = rl_bevy::testing::surface(&mut app);
+        let start = rl_bevy::testing::ground(&mut app);
         app.world_mut().spawn((Actor, Player, Position(start), Viewshed::new(8), RevealsMap));
         let eel = app.world_mut().spawn((Actor, Position(start.offset(3, 0)))).id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
@@ -821,10 +821,10 @@ mod tests {
         use rl_rules::ai::{Brain, tactics::ShootAtRange};
         let mut app = rl_bevy::plugin::headless_app();
         app.add_plugins((crate::map_view::MapViewPlugin::new(Rect::new(0, 0, 40, 20)), ParticlesPlugin, rl_bevy::testing::KeyScriptPlugin));
-        app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, rl_bevy::world::StreamingPlugin));
+        app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin));
         app.insert_resource(Terminal::new(40, 20, Vec2::ONE));
         app.insert_resource(ParticleStyle { cell_secs: 1.0, burst_secs: 1.0, ..ParticleStyle::default() });
-        let start = rl_bevy::testing::surface(&mut app);
+        let start = rl_bevy::testing::ground(&mut app);
         let sides = rl_bevy::testing::two_sides(&mut app);
         let me = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), RevealsMap, Health::full(30), Faction(sides.ours))).id();
         let look = rl_rules::ability::Look { glyph: '*', color: rl_grid::Rgb::new(255, 80, 40) };
@@ -886,11 +886,11 @@ mod tests {
         for seed in 0..40 {
             let mut app = rl_bevy::plugin::headless_app();
             app.add_plugins((crate::map_view::MapViewPlugin::new(Rect::new(0, 0, 40, 20)), ParticlesPlugin));
-            app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, rl_bevy::world::StreamingPlugin, AbilitiesPlugin));
+            app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, AbilitiesPlugin));
             app.add_engine_effects();
             app.insert_resource(Terminal::new(40, 20, Vec2::ONE));
             app.insert_resource(ParticleStyle { cell_secs: 0.01, burst_secs: 0.05, ..ParticleStyle::default() });
-            let start = rl_bevy::testing::surface(&mut app);
+            let start = rl_bevy::testing::ground(&mut app);
             let sides = rl_bevy::testing::two_sides(&mut app);
             app.insert_resource(rl_bevy::Seed(RunSeed(seed)));
             let kinds = rl_rules::Registry::from_defs(vec![rl_rules::DamageKind::new("kinetic")]).unwrap();

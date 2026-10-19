@@ -382,7 +382,7 @@ mod tests {
         // up before that call returns. Running the real `Turn` schedule
         // exactly once isolates the guarantee `AmmoPlugin`'s chain is for.
         let mut app = headless_app();
-        crate::testing::surface(&mut app);
+        crate::testing::ground(&mut app);
         app.add_plugins(AmmoPlugin);
         let tag = TagId::from_raw(0);
         let (actor, first) = wielder_with(&mut app, tag, &[1]);
@@ -404,7 +404,7 @@ mod tests {
     #[test]
     fn ammo_plugin_needs_no_player_and_no_turn_queue() {
         let mut app = headless_app();
-        crate::testing::surface(&mut app);
+        crate::testing::ground(&mut app);
         app.add_plugins(AmmoPlugin);
         let tag = TagId::from_raw(0);
         let (actor, weapon) = wielder_with(&mut app, tag, &[]);

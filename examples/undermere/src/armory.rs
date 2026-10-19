@@ -1026,7 +1026,7 @@ impl ItemMaker for Armory {
     fn band(&self, area: LootArea) -> i32 {
         match area {
             LootArea::Place(map) if self.table.gaps(map.0 as i32..=map.0 as i32).is_empty() => map.0 as i32,
-            LootArea::Place(_) | LootArea::Region(_) => 0,
+            LootArea::Place(_) => 0,
         }
     }
 }

@@ -442,10 +442,10 @@ pub struct TurnEnd {
 }
 
 /// Whether an actor at `pos` on `on` stands where play is: on the current
-/// map, inside its loaded window. Anywhere else it can neither act nor be
-/// seen, and an unset [`OnMap`] is the surface.
+/// map, inside its bounds. Anywhere else it can neither act nor be seen,
+/// and an unset [`OnMap`] is map zero.
 fn where_play_is(map: &WorldMap, pos: Point, on: Option<&OnMap>) -> bool {
-    on.map(|m| m.0).unwrap_or(MapId::SURFACE) == map.current() && map.is_loaded(pos)
+    on.map(|m| m.0).unwrap_or(MapId::ZERO) == map.current() && map.is_loaded(pos)
 }
 
 /// What stops a turn being dealt though the queue has one due.
@@ -840,8 +840,8 @@ mod tests {
     /// `rules` says so; and a player to pass the turns, holding the first.
     fn quick_arena(rules: bool) -> (App, Point, Entity, [StatusId; 2]) {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin, crate::combat::CombatPlugin));
-        let start = crate::testing::surface(&mut app);
+        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin));
+        let start = crate::testing::ground(&mut app);
         crate::testing::two_sides(&mut app);
         let stats = Registry::from_defs(vec![StatDef::new("quickness", 0)]).unwrap();
         let quickness = stats.expect("quickness");

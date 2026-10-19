@@ -552,7 +552,7 @@ pub fn spawn_items(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, co
 // ANCHOR: maker
 /// The engine's loot is made here: what lies on a deck when it is first
 /// entered, what a kill leaves, and what a crate or a locker holds. A
-/// deck's band is its number, and Foundry has no streamed surface. The
+/// deck's band is its number. The
 /// armory makes each thing, rolling a level from `levels.ron` at the band
 /// it is found at for a thing that names a `level`.
 impl ItemMaker for Armory {
@@ -593,10 +593,8 @@ impl ItemMaker for Armory {
     }
 
     fn band(&self, area: LootArea) -> i32 {
-        match area {
-            LootArea::Place(map) => crate::decks::deck_of(map) as i32,
-            LootArea::Region(_) => 0,
-        }
+        let LootArea::Place(map) = area;
+        crate::decks::deck_of(map) as i32
     }
 }
 // ANCHOR_END: maker

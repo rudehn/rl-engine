@@ -1,7 +1,6 @@
 //! The generation pipeline: a chain of named, phased passes over a context.
 //!
-//! Every generated thing in the engine, a dungeon floor or a chunk of the
-//! open world, is built by running a [`Chain`] of [`Pass`]es over a
+//! Every generated thing in the engine, a dungeon floor or a cave, is built by running a [`Chain`] of [`Pass`]es over a
 //! [`BuildContext`]. Three rules make the chain composable:
 //!
 //! - **A pass's name keys its random stream.** Inserting, removing or

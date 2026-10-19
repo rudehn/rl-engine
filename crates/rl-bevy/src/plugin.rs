@@ -10,7 +10,7 @@ use crate::knowledge::Knowledge;
 use crate::state::{EngineState, Restart, RunOver};
 use crate::title::{HoldStart, LeaveRun, begin_run};
 use crate::turn::{Acting, ActionDone, ActionRefused, AddAction, Occupancy, Pace, TurnEnd, Turns};
-use crate::world::{WorldMap, WorldSettings};
+use crate::world::WorldMap;
 use crate::{places, turn};
 
 /// The stages of a frame while playing, in order. All in `Update`.
@@ -18,13 +18,13 @@ use crate::{places, turn};
 /// Games read the player's keys in `Input` and draw in `Present`. The
 /// engine never names a game system; games slot into these.
 ///
-/// Streaming runs first so the window is loaded around wherever the player
-/// ended the previous frame before anyone is dealt a turn on it. Input runs
+/// The world is brought in first, so a map is stocked before anyone is
+/// dealt a turn on it. Input runs
 /// once per frame, before the turns, so a key pressed this frame becomes
 /// one [`Intent`](crate::turn::Intent) however many passes the turn loop takes.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EngineSet {
-    /// Step the loaded window with the player.
+    /// Bring the world in: stock a map before anyone is dealt a turn on it.
     Stream,
     /// Read the player's input, if the player holds [`MyTurn`].
     Input,
@@ -70,7 +70,7 @@ pub enum PresentSet {
     Map,
     /// The status line and the log over it.
     Chrome,
-    /// Whatever covers the map: the overworld screen, menus, modals.
+    /// Whatever covers the map: menus, modals.
     Overlay,
 }
 
@@ -230,7 +230,6 @@ impl Plugin for CorePlugin {
             .init_resource::<Occupancy>()
             .init_resource::<Acting>()
             .init_resource::<Pace>()
-            .init_resource::<WorldSettings>()
             .init_resource::<Knowledge>()
             .init_resource::<crate::minds::FlowFields>()
             .init_resource::<crate::minds::Thinking>()
@@ -885,10 +884,10 @@ mod tests {
 
     fn app_with_world() -> (App, Point) {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin));
+        app.add_plugins(crate::fov::FovPlugin);
         let mut tiles = TileRegistry::standard();
         tiles.register(TileProps::floor("mud").move_cost(200)).unwrap();
-        let start = crate::testing::surface_with(&mut app, tiles);
+        let start = crate::testing::ground_with(&mut app, tiles);
         (app, start)
     }
 
@@ -1028,7 +1027,11 @@ mod tests {
         app.update();
         app.update();
         let to = start.offset(3, 0);
-        app.world_mut().write_message(crate::places::WarpRequest { actor: walker, to: crate::places::Destination::Surface(to), after: None });
+        app.world_mut().write_message(crate::places::WarpRequest {
+            actor: walker,
+            to: crate::places::Destination::Place { map: crate::places::MapId::ZERO, arrive: crate::places::Arrive::At(to) },
+            after: None,
+        });
         app.update();
         assert_eq!(app.world().get::<Position>(walker).unwrap().0, to, "the warp was resolved");
         assert!(app.world().resource::<Occupancy>().is_occupied(to), "and the index moved with it");
@@ -1204,42 +1207,6 @@ mod tests {
     }
 
     #[test]
-    fn walking_across_a_region_boundary_streams_the_window_and_keeps_edits() {
-        let (mut app, start) = app_with_world();
-        let player = spawn_player(&mut app, start);
-        app.update();
-        app.update();
-        let first_window = app.world().resource::<WorldMap>().window();
-        let edited = start.offset(0, 1);
-        assert!(app.world_mut().resource_mut::<WorldMap>().set_tile(edited, TileId(1)));
-        // Walk 16 tiles east, one region over.
-        for _ in 0..16 {
-            intend(&mut app, player, Step(Direction::East));
-            app.update();
-            app.update();
-        }
-        let map = app.world().resource::<WorldMap>();
-        assert_ne!(map.window(), first_window, "the window followed the player");
-        assert!(map.is_loaded(app.world().get::<Position>(player).unwrap().0));
-        // Walk back far enough that the edited region unloads, then return.
-        for _ in 0..32 {
-            intend(&mut app, player, Step(Direction::East));
-            app.update();
-            app.update();
-        }
-        let map = app.world().resource::<WorldMap>();
-        assert!(!map.is_loaded(edited), "the edited region left the window");
-        assert_eq!(map.stored_deltas(), 1);
-        for _ in 0..48 {
-            intend(&mut app, player, Step(Direction::West));
-            app.update();
-            app.update();
-        }
-        let map = app.world().resource::<WorldMap>();
-        assert_eq!(map.tile(edited), Some(TileId(1)), "the edit was replayed on reload");
-    }
-
-    #[test]
     fn sight_is_computed_and_reveals_the_map() {
         let (mut app, start) = app_with_world();
         let player = spawn_player(&mut app, start);
@@ -1259,7 +1226,7 @@ mod tests {
     struct Hall(TileRegistry);
 
     impl crate::places::PlaceRules for Hall {
-        fn build(&self, _: crate::places::MapId, _: Option<&rl_world::WorldGraph>) -> Result<crate::places::PlaceBuild, rl_mapgen::BuildError> {
+        fn build(&self, _: crate::places::MapId) -> Result<crate::places::PlaceBuild, rl_mapgen::BuildError> {
             let (wall, floor) = (self.0.expect("wall"), self.0.expect("floor"));
             let terrain = rl_grid::Terrain::from_fn(12, 8, |p| if p.x == 0 || p.y == 0 || p.x == 11 || p.y == 7 { wall } else { floor });
             Ok(crate::places::PlaceBuild {

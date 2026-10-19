@@ -261,7 +261,7 @@ pub struct Sinking {
 /// [`Descend`] says, or marks the use as having shown nothing.
 pub fn descend(world: &mut World, landing: &Landing, roll: u64) {
     let user = landing.user;
-    let here = world.get::<OnMap>(user).map_or(MapId::SURFACE, |m| m.0);
+    let here = world.get::<OnMap>(user).map_or(MapId::ZERO, |m| m.0);
     let Some(below) = floor_below(here) else {
         super::showed_nothing(world, landing);
         return;
@@ -327,7 +327,7 @@ impl FromArgs for Fall {
 /// is no floor. The one fall, which [`Fall`] lands and a rotten floor's
 /// own collapse calls.
 pub fn fall_through(world: &mut World, who: Entity, roll: u64) -> bool {
-    let here = world.get::<OnMap>(who).map_or(MapId::SURFACE, |m| m.0);
+    let here = world.get::<OnMap>(who).map_or(MapId::ZERO, |m| m.0);
     let Some(below) = floor_below(here).filter(|_| here != crate::dungeon::TOWN) else { return false };
     world.entity_mut(who).insert(Sinking { to: below, roll });
     world.write_message(WarpRequest::into_place(who, below));

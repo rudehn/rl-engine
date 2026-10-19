@@ -15,7 +15,7 @@ use crate::components::{Position, RevealsMap, Viewshed};
 use crate::knowledge::Knowledge;
 use crate::lighting::{DarkSight, Lighting, gate};
 use crate::minds::Perception;
-use crate::world::{WorldMap, WorldRes};
+use crate::world::WorldMap;
 
 /// A viewer: where it stands, what it sees, how far it sees unlit, how far
 /// it sees at all when it is a mind, and whether its sight fills in the map.
@@ -68,13 +68,7 @@ pub fn cast(map: &WorldMap, lighting: Option<&Lighting>, at: Point, dark_sight: 
 }
 
 /// Recomputes every stale viewshed and fills in what a revealer saw.
-pub fn update_viewsheds(
-    map: Res<WorldMap>,
-    world: Option<Res<WorldRes>>,
-    lighting: Option<Res<Lighting>>,
-    mut knowledge: ResMut<Knowledge>,
-    mut viewers: Query<ViewerData>,
-) {
+pub fn update_viewsheds(map: Res<WorldMap>, lighting: Option<Res<Lighting>>, mut knowledge: ResMut<Knowledge>, mut viewers: Query<ViewerData>) {
     for (pos, mut viewshed, dark, perception, reveals) in &mut viewers {
         if !is_stale(&viewshed, &map) {
             continue;
@@ -83,17 +77,6 @@ pub fn update_viewsheds(
         if reveals {
             for p in viewshed.iter() {
                 knowledge.mark(p);
-                // Regions and sites are the surface's, and the world
-                // graph is the only thing that knows either.
-                if let Some(world) = &world
-                    && map.current().is_surface()
-                {
-                    let region = world.region_of_tile(p);
-                    knowledge.touch_region(region);
-                    if let Some(site) = world.site_index_at(region) {
-                        knowledge.discover_site(site);
-                    }
-                }
             }
         }
     }
@@ -125,8 +108,8 @@ mod tests {
     #[test]
     fn a_viewshed_that_sees_everywhere_sees_the_whole_window_through_every_wall() {
         let mut app = headless_app();
-        app.add_plugins((FovPlugin, crate::world::StreamingPlugin));
-        let start = crate::testing::surface(&mut app);
+        app.add_plugins(FovPlugin);
+        let start = crate::testing::ground(&mut app);
         let wall = rl_grid::TileRegistry::standard().expect("wall");
         let onlooker = app.world_mut().spawn((Player, Position(start), Viewshed::everywhere(), RevealsMap)).id();
         let walker = app.world_mut().spawn((Position(start), Viewshed::new(6))).id();

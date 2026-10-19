@@ -220,7 +220,7 @@ pub fn resume(world: &mut World) {
             error!("the waiting pick could not be offered again: {e}");
         }
     }
-    let deck = crate::decks::deck_of(world.get::<OnMap>(player).map_or(MapId::SURFACE, |m| m.0));
+    let deck = crate::decks::deck_of(world.get::<OnMap>(player).map_or(MapId::ZERO, |m| m.0));
     world.resource_mut::<MessageLog>().notice(format!("Continuing on deck {deck}."), saved.turn());
     world.resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
 }

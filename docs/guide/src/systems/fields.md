@@ -35,7 +35,7 @@ Both reset on a new run, and both declare `depends_on::<CorePlugin>`.
 
 `TileField<T>` is the field: `step` asks a rule for every cell's next value through an `Around` that reads the grid as it stood, and then the buffers swap.
 Nothing a step changes can move again within the same step, so a fire cannot run across a map in one turn and a cloud spreads the same way whichever order its cells were visited in; the second buffer is kept, so a step allocates nothing.
-`MapFields<T>` holds one per map, follows the map readers read, sets a field aside when play crosses to another and takes it up again on return, and on the streamed surface reframes with the window and drops what leaves it.
+`MapFields<T>` holds one per map, follows the map readers read, sets a field aside when play crosses to another and takes it up again on return.
 `Fire` is a `MapFields<u8>` of turns left, read through `is_burning`, `turns_at` and `burning`.
 `Kindle { at, turns }` asks for fire on a cell; a cell with nothing to burn still burns that long and goes out, which is a fireball scorching bare stone, and a tile that both refuses a thrown thing and does not burn refuses it.
 `Flammable { catch_pct, turns }` is what a game puts on a crate or a corpse, and `Burning` is what is alight, `Burning::forever` for a brazier that keeps its own cell burning for good.

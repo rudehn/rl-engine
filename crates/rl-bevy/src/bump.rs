@@ -394,14 +394,14 @@ mod tests {
         /// The rig, with minds in play when `minds` is.
         fn built(minds: bool) -> Self {
             let mut app = headless_app();
-            app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::props::PropsPlugin, crate::world::StreamingPlugin));
+            app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::props::PropsPlugin));
             if minds {
                 app.add_plugins(crate::minds::MindsPlugin);
             }
             crate::props::AddVerb::add_verb(&mut app, "free");
             crate::props::AddVerb::add_verb(&mut app, "talk");
             app.init_resource::<Heard>().add_systems(PostUpdate, hear);
-            let start = crate::testing::surface(&mut app);
+            let start = crate::testing::ground(&mut app);
             let sides = crate::testing::two_sides(&mut app);
             let tiles = TileRegistry::standard();
             let player = app
@@ -504,8 +504,8 @@ mod tests {
     #[test]
     fn with_no_sides_a_bump_into_anyone_is_a_refusal() {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin));
-        let start = crate::testing::surface(&mut app);
+        app.add_plugins(crate::fov::FovPlugin);
+        let start = crate::testing::ground(&mut app);
         let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8))).id();
         let other = app.world_mut().spawn((Actor, Blocks, Position(start.offset(1, 0)), Health::full(5))).id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);

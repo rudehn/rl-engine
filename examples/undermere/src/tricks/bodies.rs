@@ -56,7 +56,7 @@ fn try_split(world: &mut World, target: Entity) -> bool {
     }
     let Some(kind) = world.get::<Kind>(target).map(|k| k.0) else { return false };
     let Some(at) = world.get::<Position>(target).map(|p| p.0) else { return false };
-    let map = world.get::<OnMap>(target).map_or(MapId::SURFACE, |m| m.0);
+    let map = world.get::<OnMap>(target).map_or(MapId::ZERO, |m| m.0);
     let beside = free_cells_near(world.resource::<WorldMap>(), world.resource::<Occupancy>(), at, 1, 1);
     let Some(second_at) = beside.first().copied() else { return false };
     let half = health.current / 2;

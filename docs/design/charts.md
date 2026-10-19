@@ -29,7 +29,6 @@ Declined: a chart per entity, as a component.
 It dies with the entity, and the point of a leaked map is that it outlives whoever drew it.
 
 `Knowledge` and `Charts` hold the same thing, a `TileSet`, the bucketed bit grids `Knowledge` always kept, factored out so the two cannot drift.
-`Knowledge` keeps its regions and sites, which are the surface's and the player's alone.
 
 ### 3.2 Written on the mind's own turn
 

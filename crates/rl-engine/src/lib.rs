@@ -1,17 +1,17 @@
 //! A roguelike engine for Rust and Bevy, re-exported from one crate.
 //!
 //! rl-engine is a workspace of small crates for turn-based grid
-//! roguelikes: procedural dungeon and world generation, field of view, A*
+//! roguelikes: procedural dungeon generation, field of view, A*
 //! and Dijkstra-map pathfinding, monster AI, combat, items, quests, saves
 //! and an ASCII glyph renderer. This facade re-exports every one of them,
 //! so a game depends on this crate and imports `rl_engine::prelude::*`.
 //!
 //! The tier 0 and 1 crates ([`rl_core`], [`rl_grid`], [`rl_mapgen`],
-//! [`rl_world`], [`rl_rules`]) never
+//! [`rl_rules`]) never
 //! depend on Bevy. A tool, a server or a test that needs no window can
 //! depend on one of them directly and skip compiling Bevy altogether.
 //! The tier-2 crates ([`rl_bevy`], [`rl_render`], [`rl_ui`],
-//! [`rl_overworld`], [`rl_save`]) are the Bevy plugins that run the loops.
+//! [`rl_save`]) are the Bevy plugins that run the loops.
 //!
 //! The repository README walks through a headless example, and the
 //! `foundry` and `undermere` example games show the Bevy side end to end.
@@ -38,12 +38,10 @@ pub use rl_bevy;
 pub use rl_core;
 pub use rl_grid;
 pub use rl_mapgen;
-pub use rl_overworld;
 pub use rl_render;
 pub use rl_rules;
 pub use rl_save;
 pub use rl_ui;
-pub use rl_world;
 
 /// What every game on the glyph terminal adds before its own plugins, in
 /// one group.
@@ -197,13 +195,13 @@ impl PluginGroup for RoguelikePlugins {
 ///
 /// // One name from each crate the prelude covers, named rather than
 /// // glob-imported, so a future collision with Bevy fails here.
-/// fn takes(_: Point, _: Direction, _: TileId, _: Terrain, _: Chain<BaseContext>, _: WorldGraph) {}
+/// fn takes(_: Point, _: Direction, _: TileId, _: Terrain, _: Chain<BaseContext>) {}
 /// fn rules(_: Registry<StatDef>, _: NameRef<StatDef>, _: Names, _: Brain<Entity>, _: Ledger, _: MovementProfile) {}
 /// fn bevy_side(_: Position, _: Player, _: Health, _: Intent<Step>, _: MapId, _: EngineSet, _: PresentSet) {}
 /// fn title(_: HoldStart, _: SavedRun, _: ContinueRun, _: AbandonRun, _: LeaveRun) {}
 /// let _begin: fn(&mut World) = begin_run;
 /// fn records(_: RunRecord, _: RunRecords, _: RecordOutcome, _: RecordSection, _: RecordRun, _: RecordsPlugin, _: RecordsPanel) {}
-/// fn drawn(_: Glyph, _: Cell, _: Terminal, _: MapView, _: Palette, _: MessageLog, _: OverworldPlugin, _: Saves) {}
+/// fn drawn(_: Glyph, _: Cell, _: Terminal, _: MapView, _: Palette, _: MessageLog, _: Saves) {}
 /// // Bevy's own names a game uses beside the engine's: the shape a mesh
 /// // is made from, which a grown place's shapes must not shadow.
 /// fn bevy_own(_: Rectangle, _: Circle) {}
@@ -216,17 +214,14 @@ pub mod prelude {
     // Core, minus `Rect`: see the note above.
     pub use rl_bevy::prelude::*;
     pub use rl_core::prelude::{
-        BASE_ACTION_COST, DequeueOutcome, DiceRoll, Direction, DirectionSet, DisjointSet, Grid, Grid2D, Id, Interner, Point, RunSeed, SeedDomain, Steps,
-        TurnQueue, geometry,
+        BASE_ACTION_COST, DequeueOutcome, DiceRoll, Direction, Grid, Grid2D, Id, Interner, Point, RunSeed, SeedDomain, Steps, TurnQueue, geometry,
     };
     pub use rl_grid::prelude::*;
     pub use rl_mapgen::prelude::*;
-    pub use rl_overworld::prelude::*;
     pub use rl_render::prelude::*;
     pub use rl_rules::prelude::*;
     pub use rl_save::prelude::*;
     pub use rl_ui::prelude::*;
-    pub use rl_world::prelude::*;
 }
 
 /// The README's code samples, compiled and run as doc-tests so the

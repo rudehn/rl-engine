@@ -92,7 +92,7 @@ pub fn dim_the_lantern(
             (Some(light), Some(stats)) => stats.0.value(light, &registries.stats),
             _ => 0,
         };
-        let radius = (lantern_radius(floor_of(on.map_or(MapId::SURFACE, |m| m.0))) + brighter).max(1);
+        let radius = (lantern_radius(floor_of(on.map_or(MapId::ZERO, |m| m.0))) + brighter).max(1);
         let out = shrouded.zip(held).is_some_and(|(status, held)| held.0.has(status));
         let intensity = if out { 0 } else { crate::content::LIGHT_INTENSITY };
         for item in &bag.items {

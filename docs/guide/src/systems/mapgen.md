@@ -6,13 +6,12 @@
             crates/rl-mapgen/src/dungeon.rs
             crates/rl-mapgen/src/prefab.rs
             crates/rl-core/src/seed.rs
-            crates/rl-world/src/chunk.rs
             crates/rl-bevy/src/places.rs
      fingerprint: ba3994c8 -->
 
 # Map generation
 
-Every generated thing in the engine, a dungeon floor or a chunk of open world, is a chain of named passes run over a context.
+Every generated thing in the engine, a dungeon floor or a cave, is a chain of named passes run over a context.
 A pass reads and writes the context's terrain, draws from a stream keyed by its own name, and either does its work or says why it could not.
 The chain checks at assembly that its passes go forward through the phases and that no two share a name, and panics on either, because both are mistakes in how the chain was written rather than conditions to survive.
 What a pass has to tell the rest of generation, a room it carved, a start it chose, a vault it stamped, it publishes as a typed output the later passes and the caller read back.
@@ -21,7 +20,7 @@ What a pass has to tell the rest of generation, a room it carved, a start it cho
 
 There is no plugin and no system: `rl-mapgen` is tier 1, has no Bevy in it, and nothing in it runs unless a game calls `Chain::run`.
 A game builds a `BaseContext` over a blank terrain, assembles a `Chain` with `then`, and runs it with a `RunSeed`.
-Where that happens is the game's business, and in practice it is inside the `PlaceRules::build` the engine calls the first time a place is entered, or inside the `ChunkRules::chain` the streamer calls for a region.
+Where that happens is the game's business, and in practice it is inside the `PlaceRules::build` the engine calls the first time a place is entered.
 `Chain::run` stops at the first failure and hands back the `BuildError` naming the pass, so a caller that asked for six rooms on a map with space for four retries rather than shipping a map its game does not expect.
 `Chain::run_retrying` is that retry: it takes a function that makes a fresh `BaseContext`, since a pass that fails may already have written part of its work, as `Rooms` does, and runs the chain again from the next attempt until one succeeds or the attempts are spent.
 
@@ -33,11 +32,10 @@ Where that happens is the game's business, and in practice it is inside the `Pla
 `Chain::run` installs `seed.rng(SeedDomain::new(name), 0)` on the context before each `apply`, then takes a snapshot, and `names` and `len` let a caller report what a chain is; an attempt of `run_retrying` is the same with the attempt's number in place of the nought.
 `BuildContext` is the boundary an engine pass sees: `terrain` and `terrain_mut`, `tiles`, `rng` and `set_rng`, `emit` and `outputs`, and a `take_snapshot` that defaults to doing nothing.
 Every engine pass is generic over `C: BuildContext`, which is the whole extension mechanism: a game wraps `BaseContext` in a struct carrying its own fields, implements the trait by delegation, and the engine's passes still run over it unchanged.
-`rl-world`'s `ChunkContext` is the engine's own instance of that, a `BaseContext` with a region's neighbourhood, per-tile heights and per-tile facts alongside it.
 `BaseContext` is a terrain, a `TileRegistry`, a stream, `Outputs` and optional snapshots; `with_snapshots` records the terrain after every pass, for a tool that wants to watch a map being built, and `finish` takes the terrain and the outputs apart.
 `Outputs` is typed rather than keyed: `emit` pushes any `Any + Send` value, and `iter::<T>`, `first::<T>` and `take::<T>` read back only the ones of that type, so two passes publishing different things never collide.
 `passes` holds what needs nothing but a terrain and a registry: `Fill` and `Border` in `Ground`, `Scatter` and `ScatterBy` in `Growth`, `CellularCave` in `Ground`, `KeepLargestRegion` in `Connect`, and `CentralStart` in `Exits`.
-`Scatter` and `ScatterBy` carry their own `name` field because two scatters in one chain must draw different streams, and `ScatterBy` takes a `ChanceFn<C>` so a chance can follow moisture or slope rather than being one number.
+`Scatter` and `ScatterBy` carry their own `name` field because two scatters in one chain must draw different streams, and `ScatterBy` takes a `ChanceFn<C>` so a chance can follow anything the context carries rather than being one number.
 A place grown piece by piece, `Accrete` and the passes that survey it and hold it to a recipe, is [the layout page](layout.md)'s.
 `dungeon` holds the bounded-map passes: `Rooms` and `Bsp` in `Structures`, `Doors` behind them, and `RandomStart` and `FarthestExit` in `Exits`.
 `Rooms` scatters non-overlapping rectangles and joins each to the one before it with an L-shaped corridor, failing below `min_rooms`; `Bsp` splits the map into a tree of leaves, carves a room per leaf and joins siblings, so the layout fills the map evenly.
@@ -64,7 +62,7 @@ A game's generation is a chain assembled for the map being built, run with a see
 /// How a floor is built. The engine calls this once, the first time
 /// something enters the map, and keeps what comes back.
 impl PlaceRules for Warren {
-    fn build(&self, map: MapId, _: Option<&WorldGraph>) -> Result<PlaceBuild, BuildError> {
+    fn build(&self, map: MapId) -> Result<PlaceBuild, BuildError> {
         let depth = floor_of(map);
         let (wall, open, roots) = (self.tiles.expect("earth"), self.tiles.expect("dirt"), self.tiles.expect("roots"));
         let mut ctx = BaseContext::blank(84, 42, self.tiles.clone(), wall);

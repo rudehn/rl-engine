@@ -444,7 +444,7 @@ mod tests {
             let id = registries.props.expect("workbench");
             let at = stage.at.offset(1, 0);
             let mut commands = stage.app.world_mut().commands();
-            spawn_prop(&mut commands, &registries, id, at, MapId::SURFACE)
+            spawn_prop(&mut commands, &registries, id, at, MapId::ZERO)
         };
         stage.app.world_mut().flush();
         stage.app.world_mut().entity_mut(bench).insert(Stocked);
@@ -478,7 +478,7 @@ mod tests {
         let verbs = stage.app.world().resource::<Verbs>();
         let offers = Offers(vec![Offering::new(verbs.get("strip").expect("declared"), 100), Offering::new(verbs.get("tip").expect("declared"), 200)]);
         let at = stage.at.offset(1, 0);
-        stage.app.world_mut().spawn((Actor, Blocks, Position(at), OnMap(MapId::SURFACE), Name::new("Mirela"), offers));
+        stage.app.world_mut().spawn((Actor, Blocks, Position(at), OnMap(MapId::ZERO), Name::new("Mirela"), offers));
         stage.tick();
 
         let player = stage.player;
@@ -518,7 +518,7 @@ mod tests {
             let id = registries.props.expect("armory locker");
             let at = stage.at.offset(1, 0);
             let mut commands = stage.app.world_mut().commands();
-            spawn_prop(&mut commands, &registries, id, at, MapId::SURFACE)
+            spawn_prop(&mut commands, &registries, id, at, MapId::ZERO)
         };
         stage.app.world_mut().flush();
         stage.app.world_mut().entity_mut(locker).insert(Stocked);
@@ -553,7 +553,7 @@ mod tests {
         let (at, player) = (stage.at.offset(1, 0), stage.player);
         let coins = stage.app.world_mut().spawn((Item, Name::new("scrip"), Tagged(vec![scrip]), Stack { key: 1, count: 30 })).id();
         stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![coins] });
-        stage.app.world_mut().spawn((Actor, Blocks, Position(at), OnMap(MapId::SURFACE), Name::new("Mirela"), offers));
+        stage.app.world_mut().spawn((Actor, Blocks, Position(at), OnMap(MapId::ZERO), Name::new("Mirela"), offers));
         stage.tick();
         stage.app.world_mut().write_message(Intent::new(player, Bump(Direction::East)));
         stage.tick();
@@ -577,14 +577,7 @@ mod tests {
         let (at, player) = (stage.at.offset(1, 0), stage.player);
         let coins = stage.app.world_mut().spawn((Item, Name::new("scrip"), Tagged(vec![scrip]), Stack { key: 1, count: 80 })).id();
         stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![coins] });
-        stage.app.world_mut().spawn((
-            Actor,
-            Blocks,
-            Position(at),
-            OnMap(MapId::SURFACE),
-            Name::new("Mirela"),
-            Offers(vec![Offering::new(strip, 100).priced(20)]),
-        ));
+        stage.app.world_mut().spawn((Actor, Blocks, Position(at), OnMap(MapId::ZERO), Name::new("Mirela"), Offers(vec![Offering::new(strip, 100).priced(20)])));
         stage.tick();
         stage.app.world_mut().write_message(Intent::new(player, Bump(Direction::East)));
         stage.tick();
@@ -669,7 +662,7 @@ mod tests {
         let tip = stage.app.world().resource::<Verbs>().get("tip").expect("declared");
         let at = stage.at.offset(1, 0);
         let offers = Offers(vec![Offering::new(tip, 200).asking("Tip it over for good?")]);
-        let mirela = stage.app.world_mut().spawn((Actor, Blocks, Position(at), OnMap(MapId::SURFACE), Name::new("Mirela"), offers)).id();
+        let mirela = stage.app.world_mut().spawn((Actor, Blocks, Position(at), OnMap(MapId::ZERO), Name::new("Mirela"), offers)).id();
         stage.tick();
         stage.tick();
         (stage, mirela)
@@ -692,7 +685,7 @@ mod tests {
         let tip = stage.app.world().resource::<Verbs>().get("tip").expect("declared");
         let at = stage.at.offset(1, 0);
         let offers = Offers(vec![Offering::new(tip, 200).asking("Tip it over?")]);
-        stage.app.world_mut().spawn((Actor, Blocks, Position(at), OnMap(MapId::SURFACE), Name::new("Mirela"), offers));
+        stage.app.world_mut().spawn((Actor, Blocks, Position(at), OnMap(MapId::ZERO), Name::new("Mirela"), offers));
         stage.tick();
         stage.tick();
         let map = stage.app.world().resource::<MapView>();

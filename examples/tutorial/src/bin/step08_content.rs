@@ -34,8 +34,8 @@ const TILES_RON: &str = include_str!("../../assets/tiles.ron");
 /// How deep the warren goes.
 const FLOORS: u32 = 4;
 
-/// Map zero is the streamed surface, which the warren has none of, so its
-/// floors are maps one upward.
+/// The warren's floors are maps one upward, so a floor's number is its
+/// map's.
 fn map_of(floor: u32) -> MapId {
     MapId(floor)
 }
@@ -124,7 +124,7 @@ impl Warren {
 /// How a floor is built. The engine calls this once, the first time
 /// something enters the map, and keeps what comes back.
 impl PlaceRules for Warren {
-    fn build(&self, map: MapId, _: Option<&WorldGraph>) -> Result<PlaceBuild, BuildError> {
+    fn build(&self, map: MapId) -> Result<PlaceBuild, BuildError> {
         let depth = floor_of(map);
         let (wall, open, roots) = (self.tiles.expect("earth"), self.tiles.expect("dirt"), self.tiles.expect("roots"));
         let mut ctx = BaseContext::blank(84, 42, self.tiles.clone(), wall);

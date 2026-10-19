@@ -160,7 +160,7 @@ mod tests {
     fn records_are_never_deleted_with_the_run() {
         let backend = Arc::new(MemoryBackend::default());
         let mut app = rl_bevy::plugin::headless_app();
-        rl_bevy::testing::surface(&mut app);
+        rl_bevy::testing::ground(&mut app);
         app.insert_resource(Saves(backend.clone()));
         app.insert_resource(Seed(RunSeed(3)));
         app.add_plugins((crate::run::SavePlugin::new("run"), RecordsPlugin));

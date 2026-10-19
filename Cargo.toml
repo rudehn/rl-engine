@@ -16,13 +16,11 @@ rust-version = "1.88"
 rl-core = { path = "crates/rl-core" }
 rl-grid = { path = "crates/rl-grid" }
 rl-mapgen = { path = "crates/rl-mapgen" }
-rl-world = { path = "crates/rl-world" }
 rl-rules = { path = "crates/rl-rules" }
 rl-save = { path = "crates/rl-save" }
 rl-engine = { path = "crates/rl-engine" }
 rl-bevy = { path = "crates/rl-bevy" }
 rl-render = { path = "crates/rl-render" }
-rl-overworld = { path = "crates/rl-overworld" }
 rl-ui = { path = "crates/rl-ui" }
 
 # Default features off: they include OS entropy through getrandom, which
@@ -31,7 +29,6 @@ rl-ui = { path = "crates/rl-ui" }
 rand = { version = "0.9", default-features = false }
 serde = { version = "1", features = ["derive"] }
 ron = "0.10"
-noise = "0.9"
 # `system_font_discovery` lets the terminal ask for a generic monospace family
 # when a game ships no typeface of its own; Bevy's built-in font lacks
 # box-drawing glyphs.

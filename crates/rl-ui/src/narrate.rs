@@ -1512,7 +1512,7 @@ mod tests {
         let beside = stage.at.offset(1, 0);
         let rat = stage.app.world_mut().spawn((Actor, Blocks, Position(beside), Health::full(1), Faction(theirs), Name::new("rat"))).id();
         stage.tick();
-        let went = |left: Point, after: Option<Entity>| Travelled { actor: rat, from: MapId::SURFACE, left, to: MapId(3), after };
+        let went = |left: Point, after: Option<Entity>| Travelled { actor: rat, from: MapId::ZERO, left, to: MapId(3), after };
         stage.app.world_mut().write_message(went(beside, None));
         stage.tick();
         stage.app.world_mut().write_message(went(stage.at.offset(500, 0), None));
@@ -1534,7 +1534,7 @@ mod tests {
         let far = stage.at.offset(500, 0);
         let rat = stage.app.world_mut().spawn((Actor, Blocks, Position(far), Health::full(1), Faction(theirs), Name::new("rat"))).id();
         stage.tick();
-        stage.app.world_mut().write_message(Travelled { actor: rat, from: MapId::SURFACE, left: far, to: MapId(3), after: Some(player) });
+        stage.app.world_mut().write_message(Travelled { actor: rat, from: MapId::ZERO, left: far, to: MapId(3), after: Some(player) });
         stage.tick();
         let said = lines(&stage);
         assert!(said.contains(&("The rat follows you.".to_string(), Tones::NOTICE)), "told, and named: {said:?}");
@@ -2337,7 +2337,7 @@ mod tests {
         world.write_message(DamageEvent::new(rat, rl_rules::Hit::by(goblin, kind, 3)));
         stage.tick();
         let left = stage.at.offset(4, 0);
-        stage.app.world_mut().write_message(Travelled { actor: goblin, from: MapId::SURFACE, left, to: MapId(3), after: None });
+        stage.app.world_mut().write_message(Travelled { actor: goblin, from: MapId::ZERO, left, to: MapId(3), after: None });
         stage.tick();
         let said = spoken(&stage, &["Something", "You", "The goblin"]);
         assert_eq!(
@@ -2378,7 +2378,7 @@ mod tests {
         let (player, at) = (stage.player, stage.at);
         let strip = stage.app.world().resource::<Verbs>().get("strip").expect("declared");
         let mut spawn = |name: &'static str, p: Point, offers: Vec<Offering>| {
-            stage.app.world_mut().spawn((Actor, Blocks, Position(p), OnMap(MapId::SURFACE), Health::full(5), Name::new(name), Offers(offers))).id()
+            stage.app.world_mut().spawn((Actor, Blocks, Position(p), OnMap(MapId::ZERO), Health::full(5), Name::new(name), Offers(offers))).id()
         };
         spawn("clerk", at.offset(1, 0), vec![Offering::new(strip, 100).priced(20)]);
         spawn("loiterer", at.offset(-1, 0), Vec::new());

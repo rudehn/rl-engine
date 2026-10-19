@@ -118,7 +118,7 @@ Ambient is data the game writes, not a rule the engine runs: a constant for a de
   2. `rebuild_dynamic_light` whenever a turn progressed: every `LightSource` on an `Actor`, plus every carried item with a `LightSource`, shed from the carrier's tile.
      The item layer owns `Inventory`, so the engine can follow item to carrier; the fantasy-rogue plan could not.
   3. `compose_light` with the map's ambient.
-- Static dirtying is by change detection, not by hand: `Added`/`Changed<Position>` and `RemovedComponents<LightSource>` on non-actors, `ChunkLoaded`, `MapChanged`, and the opacity epoch below.
+- Static dirtying is by change detection, not by hand: `Added`/`Changed<Position>` and `RemovedComponents<LightSource>` on non-actors, `MapChanged`, and the opacity epoch below.
 
 ### rl-bevy: the opacity epoch
 

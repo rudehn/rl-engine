@@ -34,8 +34,7 @@ const COLS: i32 = 80;
 const ROWS: i32 = 40;
 /// Rows along the bottom of the terminal given to the message log.
 const LOG_ROWS: i32 = 5;
-/// The one floor. Map zero is the streamed overworld, which this game has
-/// none of.
+/// The one floor.
 const FLOOR: MapId = MapId(1);
 
 /// How many braziers light the floor, and how many goblins walk it.
@@ -128,7 +127,7 @@ impl Dungeon {
 /// How the floor is built. The engine calls this the first time something
 /// enters the map, and keeps what comes back.
 impl PlaceRules for Dungeon {
-    fn build(&self, _: MapId, _: Option<&WorldGraph>) -> Result<PlaceBuild, BuildError> {
+    fn build(&self, _: MapId) -> Result<PlaceBuild, BuildError> {
         let (wall, floor) = (self.tiles.expect("stone"), self.tiles.expect("flagstone"));
         let mut ctx = BaseContext::blank(84, 42, self.tiles.clone(), wall);
         Chain::new()
@@ -471,7 +470,7 @@ mod tests {
             let dungeon = Dungeon::new(RunSeed(seed));
             let tables = dungeon.tiles.tables();
             let built = dungeon
-                .build(FLOOR, None)
+                .build(FLOOR)
                 .unwrap_or_else(|e| panic!("seed {seed}: {e}"));
             let walkable = |t: TileId| tables.walkable[t.index()];
             assert!(

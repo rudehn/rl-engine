@@ -272,7 +272,7 @@ pub struct TradeRefused {
 /// Where an actor stands and on which map, if it stands anywhere.
 fn whereabouts(world: &World, who: Entity) -> Option<(rl_core::Point, MapId)> {
     let at = world.get::<Position>(who)?.0;
-    Some((at, world.get::<OnMap>(who).map(|m| m.0).unwrap_or(MapId::SURFACE)))
+    Some((at, world.get::<OnMap>(who).map(|m| m.0).unwrap_or(MapId::ZERO)))
 }
 
 /// Whether two actors can reach each other to trade: on one map, on one
@@ -487,7 +487,7 @@ pub fn open_trades(
 /// closes it before the player is next shown it.
 pub fn close_trades(mut trading: ResMut<Trading>, places: Query<(&Position, Option<&OnMap>), Without<Dead>>, traders: Query<(), With<Trader>>) {
     let Some(Parties { customer, trader }) = trading.open() else { return };
-    let at = |who: Entity| places.get(who).ok().map(|(p, on)| (p.0, on.map(|m| m.0).unwrap_or(MapId::SURFACE)));
+    let at = |who: Entity| places.get(who).ok().map(|(p, on)| (p.0, on.map(|m| m.0).unwrap_or(MapId::ZERO)));
     if !traders.contains(trader) || !within_reach(at(customer), at(trader)) {
         trading.close();
     }
@@ -560,8 +560,8 @@ mod tests {
         /// at a quarter of their worth and offers `trade`.
         fn new() -> Self {
             let mut app = headless_app();
-            app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin, ItemsPlugin, PropsPlugin, TradePlugin));
-            let start = crate::testing::surface(&mut app);
+            app.add_plugins((crate::fov::FovPlugin, ItemsPlugin, PropsPlugin, TradePlugin));
+            let start = crate::testing::ground(&mut app);
             let tags = Registry::from_defs(vec![TagDef::new("scrip"), TagDef::new("tool"), TagDef::new("trinket")]).expect("three tags");
             let (currency, tool, trinket) = (tags.expect("scrip"), tags.expect("tool"), tags.expect("trinket"));
             app.insert_resource(Registries { tags, ..Default::default() })

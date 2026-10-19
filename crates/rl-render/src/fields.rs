@@ -229,16 +229,16 @@ mod tests {
     fn a_cell_blends_from_what_it_showed_to_what_its_fields_hold() {
         let mut shown = ShownFields::default();
         let p = Point::new(3, 3);
-        shown.track(MapId::SURFACE, [(p, smoke(200))], 10.0, &[]);
+        shown.track(MapId::ZERO, [(p, smoke(200))], 10.0, &[]);
         assert_eq!(shown.at(p, 10.0), FieldLook::default(), "nothing yet, the moment it arrived");
         assert_eq!(shown.at(p, 10.0 + BLEND_SECS / 2.0), smoke(100), "half of it halfway");
         assert_eq!(shown.at(p, 10.0 + BLEND_SECS), smoke(200), "all of it once blended");
 
-        shown.track(MapId::SURFACE, [(p, smoke(100))], 11.0, &[]);
+        shown.track(MapId::ZERO, [(p, smoke(100))], 11.0, &[]);
         assert_eq!(shown.at(p, 11.0 + BLEND_SECS / 2.0), smoke(150), "thinning toward the next turn's");
-        shown.track(MapId::SURFACE, [(p, FieldLook::default())], 11.0 + BLEND_SECS / 2.0, &[]);
+        shown.track(MapId::ZERO, [(p, FieldLook::default())], 11.0 + BLEND_SECS / 2.0, &[]);
         assert_eq!(shown.at(p, 11.0 + BLEND_SECS / 2.0), smoke(150), "and a change halfway through picks up from where it had got to");
-        shown.track(MapId::SURFACE, [(p, FieldLook::default())], 13.0, &[]);
+        shown.track(MapId::ZERO, [(p, FieldLook::default())], 13.0, &[]);
         assert!(shown.cells.is_empty(), "a cell that has cleared is forgotten");
     }
 
@@ -249,7 +249,7 @@ mod tests {
         let mut shown = ShownFields::default();
         let front = Wavefront { from: Point::new(0, 0), begins: 5.0, ring_secs: 0.1, ends: 5.5 };
         let (near, far, beyond) = (Point::new(1, 0), Point::new(3, 0), Point::new(20, 0));
-        shown.track(MapId::SURFACE, [(near, smoke(255)), (far, smoke(255)), (beyond, smoke(255))], 5.0, &[front]);
+        shown.track(MapId::ZERO, [(near, smoke(255)), (far, smoke(255)), (beyond, smoke(255))], 5.0, &[front]);
         let reached = |p: Point| front.reaches(p);
         assert!(reached(near) < reached(far), "the nearer first");
         let before = reached(far) - 0.01;
@@ -259,7 +259,7 @@ mod tests {
         assert_eq!(reached(beyond), front.ends, "past its reach it waits for the blast to end, and no longer");
 
         let over = Wavefront { begins: 1.0, ends: 1.5, ..front };
-        shown.track(MapId::SURFACE, [(Point::new(9, 9), smoke(255))], 5.0, &[over]);
+        shown.track(MapId::ZERO, [(Point::new(9, 9), smoke(255))], 5.0, &[over]);
         assert_eq!(shown.at(Point::new(9, 9), 5.0 + BLEND_SECS), smoke(255), "a blast already over holds nothing back");
     }
 
@@ -277,7 +277,7 @@ mod tests {
     fn a_new_map_starts_from_nothing() {
         let mut shown = ShownFields::default();
         let p = Point::new(1, 1);
-        shown.track(MapId::SURFACE, [(p, smoke(255))], 0.0, &[]);
+        shown.track(MapId::ZERO, [(p, smoke(255))], 0.0, &[]);
         shown.track(MapId(2), [(p, smoke(255))], 5.0, &[]);
         assert_eq!(shown.at(p, 5.0), FieldLook::default(), "blending in afresh, not carried over from the last map");
     }
@@ -290,7 +290,7 @@ mod tests {
         let mut shown = ShownFields::default();
         let near = (0..4).map(|x| (Point::new(x, 0), smoke(255)));
         let apart = (7..9).map(|x| (Point::new(x, 0), smoke(255)));
-        shown.track(MapId::SURFACE, near.chain(apart), 0.0, &[]);
+        shown.track(MapId::ZERO, near.chain(apart), 0.0, &[]);
         let t = BLEND_SECS;
         let cells = (0..10).map(|x| Point::new(x, 0));
         let sees = |p: Point| p.x == 0;

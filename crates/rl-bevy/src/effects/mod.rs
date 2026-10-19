@@ -306,7 +306,7 @@ impl EffectWorld<'_, '_> {
     /// onto a floor's own stairs, is the game's own to allow or refuse.
     pub fn is_transition(&self, p: Point) -> bool {
         let here = self.map.current();
-        self.transitions.iter().any(|(pos, on)| pos.0 == p && on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here)
+        self.transitions.iter().any(|(pos, on)| pos.0 == p && on.map(|m| m.0).unwrap_or(MapId::ZERO) == here)
     }
 
     /// Whether `p` is somewhere an actor could stand right now.

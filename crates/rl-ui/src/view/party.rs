@@ -98,7 +98,7 @@ pub fn collect_party(mut view: ResMut<PartyView>, player: Query<Here, With<Playe
     view.rows.clear();
     view.elsewhere.clear();
     let Ok((me, at, on)) = player.single() else { return };
-    let here = on.map_or(MapId::SURFACE, |m| m.0);
+    let here = on.map_or(MapId::ZERO, |m| m.0);
     let mut party: Vec<_> = followers.iter().filter(|f| f.1.0 == me).collect();
     party.sort_by_key(|f| (f.7.map_or(u64::MAX, |j| j.0), f.0));
     for (entity, _, name, glyph, health, pos, map, _) in party {
@@ -106,7 +106,7 @@ pub fn collect_party(mut view: ResMut<PartyView>, player: Query<Here, With<Playe
         // A killing blow can carry health below zero for the rest of its
         // frame; the row reads empty rather than a negative count.
         row.health = health.map(|h| (h.current.max(0), h.max));
-        if map.map_or(MapId::SURFACE, |m| m.0) != here {
+        if map.map_or(MapId::ZERO, |m| m.0) != here {
             view.elsewhere.push(entity);
         } else if let (Some(from), Some(to)) = (at, pos) {
             row.distance = rl_core::geometry::chebyshev(from.0, to.0);

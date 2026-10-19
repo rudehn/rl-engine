@@ -251,7 +251,7 @@ pub fn revive(world: &mut World, body: Entity, health: i32) -> bool {
 fn standing_room(world: &World, body: Entity) -> Option<Point> {
     let at = world.get::<Position>(body)?.0;
     let occupancy = world.resource::<Occupancy>();
-    let on = world.get::<OnMap>(body).map(|m| m.0).unwrap_or(MapId::SURFACE);
+    let on = world.get::<OnMap>(body).map(|m| m.0).unwrap_or(MapId::ZERO);
     if on != occupancy.current() || !occupancy.is_occupied(at) {
         return Some(at);
     }
@@ -269,7 +269,7 @@ fn standing_room(world: &World, body: Entity) -> Option<Point> {
 /// revival never destroys an item.
 fn spill(world: &mut World, body: Entity, at: Point) {
     let items = world.get::<Inventory>(body).map(|b| b.items.clone()).unwrap_or_default();
-    let map = world.get::<OnMap>(body).map(|m| m.0).unwrap_or(MapId::SURFACE);
+    let map = world.get::<OnMap>(body).map(|m| m.0).unwrap_or(MapId::ZERO);
     for item in items {
         if let Ok(mut thing) = world.get_entity_mut(item) {
             thing.insert((Position(at), OnMap(map)));
@@ -556,8 +556,8 @@ mod tests {
     /// An arena with combat and remains, and a world to stand in.
     fn arena() -> (App, Point, Sides) {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, RemainsPlugin, crate::world::StreamingPlugin));
-        let start = testing::surface(&mut app);
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, RemainsPlugin));
+        let start = testing::ground(&mut app);
         let sides = testing::two_sides(&mut app);
         (app, start, sides)
     }
@@ -1069,8 +1069,8 @@ mod tests {
         use crate::items::{Bestows, Equipped, Inventory, Item, ItemsPlugin};
         use crate::status::StatBlock;
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, RemainsPlugin, crate::world::StreamingPlugin, ItemsPlugin));
-        let start = testing::surface(&mut app);
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, RemainsPlugin, ItemsPlugin));
+        let start = testing::ground(&mut app);
         let sides = testing::two_sides(&mut app);
         let player = watcher(&mut app, start, sides);
         let stat = rl_rules::StatId::from_raw(0);

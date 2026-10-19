@@ -117,7 +117,6 @@ A game decides what burning does to what burns:
 ## 5. Where it lives
 
 One field per map, as places are kept: leaving a place freezes its smoke where it hangs.
-On the streamed surface a field covers the loaded window and moves with it; what leaves the window is dropped, since a fire or a cloud nobody can see is not worth remembering.
 
 Fire and gas are two plugins, each opt-in, because a game may want smoke and no fire or the reverse.
 Both run in `ResolveSet::Fields`, after the turn's actions and before its ticks, so a status fire or gas puts on whoever stands in it lands and bites on the turn they stood there.

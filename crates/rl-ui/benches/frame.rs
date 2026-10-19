@@ -55,13 +55,7 @@ fn drawing(crowd: usize, lit: bool, panels: Panels) -> (App, Entity) {
 /// on the light's invalidation can save is exactly the difference.
 fn drawing_spread(crowd: usize, lit: bool, panels: Panels, spread: bool) -> (App, Entity) {
     let mut app = rl_bevy::plugin::headless_app();
-    app.add_plugins((
-        rl_bevy::fov::FovPlugin,
-        rl_bevy::world::StreamingPlugin,
-        rl_bevy::combat::CombatPlugin,
-        rl_bevy::minds::MindsPlugin,
-        rl_bevy::items::ItemsPlugin,
-    ));
+    app.add_plugins((rl_bevy::fov::FovPlugin, rl_bevy::combat::CombatPlugin, rl_bevy::minds::MindsPlugin, rl_bevy::items::ItemsPlugin));
     if lit {
         app.add_plugins(rl_bevy::lighting::LightingPlugin);
     }
@@ -83,7 +77,7 @@ fn drawing_spread(crowd: usize, lit: bool, panels: Panels, spread: bool) -> (App
     }
     app.insert_resource(Terminal::new(SCREEN.width, SCREEN.height, Vec2::ONE));
 
-    let start = rl_bevy::testing::surface(&mut app);
+    let start = rl_bevy::testing::ground(&mut app);
     let sides = rl_bevy::testing::two_sides(&mut app);
 
     let mut player = app.world_mut().spawn((

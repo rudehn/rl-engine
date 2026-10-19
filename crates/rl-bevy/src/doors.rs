@@ -150,7 +150,7 @@ pub fn resolve_closes(
             continue;
         };
         let at = pos.0 + intent.action.0.offset();
-        let in_the_way = occupancy.is_occupied(at) || lying.iter().any(|(p, on)| p.0 == at && on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here);
+        let in_the_way = occupancy.is_occupied(at) || lying.iter().any(|(p, on)| p.0 == at && on.map(|m| m.0).unwrap_or(MapId::ZERO) == here);
         match map.closes(at) {
             Some(shut) if works_doors(intelligence) && !in_the_way => {
                 map.set_tile(at, shut);
@@ -191,9 +191,9 @@ mod tests {
         /// A player on open ground with the door east of it set to `door`.
         fn new(door: &str) -> Self {
             let mut app = headless_app();
-            app.add_plugins((crate::fov::FovPlugin, crate::world::StreamingPlugin));
+            app.add_plugins(crate::fov::FovPlugin);
             app.init_resource::<Heard>().add_systems(PostUpdate, hear);
-            let start = crate::testing::surface(&mut app);
+            let start = crate::testing::ground(&mut app);
             let tiles = TileRegistry::standard();
             let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), RevealsMap)).id();
             app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);

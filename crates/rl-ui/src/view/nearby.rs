@@ -389,7 +389,7 @@ mod tests {
     fn prop(stage: &mut Stage, name: &str, dx: i32) -> Entity {
         let registries = stage.app.world().resource::<Registries>().clone();
         let at = stage.at.offset(dx, 0);
-        let prop = rl_bevy::props::spawn_prop(&mut stage.app.world_mut().commands(), &registries, registries.props.expect(name), at, MapId::SURFACE);
+        let prop = rl_bevy::props::spawn_prop(&mut stage.app.world_mut().commands(), &registries, registries.props.expect(name), at, MapId::ZERO);
         stage.app.world_mut().flush();
         stage.app.world_mut().entity_mut(prop).insert(Glyph::new(name.chars().next().unwrap_or('?'), Color::WHITE));
         prop

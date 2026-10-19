@@ -27,31 +27,30 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 |---|------|---------|--------|--------|
 | 1 | `OnMap` as a required component | 4 | medium | medium |
 | 2 | What the save holds is stated where the save is | 7 | medium | medium |
-| 3 | `OverworldPlugin` declares one requirement and needs four | 3 | medium | low |
-| 4 | A searcher dithers where it lost the trail | 2 | medium | low |
-| 5 | What a kind that travels still cannot do | 3 | medium | medium |
-| 6 | Movement profiles that change costs | 3 | medium | high |
-| 7 | The narrator hears what registers itself | 7 | medium | high |
-| 8 | `Thinking` splits its context from its snapshot | 4 | low | low |
-| 9 | `TargetView` holds the enum it keeps reconstructing | 4 | low | low |
-| 10 | `WorldMap::tile` walks a `BTreeMap` per call | 8 | low | low |
-| 11 | Admission scans its waiting actors linearly | 4 | low | low |
-| 12 | One allowlist entry in Foundry's ambiguity test | 4 | low | low |
-| 13 | `Rooms` can run out of attempts on a small map | 3 | low | low |
-| 14 | The `Doors` pass hangs two doors back to back | 3 | low | low |
-| 15 | `HalveIfBlocked` can never fire | 3 | low | low |
-| 16 | Two engine types are named for a theme word | 4 | low | low |
-| 17 | A light that moved costs a second cast, unmeasured | 8 | low | low |
-| 18 | Split `crates/rl-bevy/src/ability.rs` | 4 | low | medium |
-| 19 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
-| 20 | The resolvers in `ResolveSet::Act` are unordered | 4 | low | medium |
-| 21 | A prop cannot block sight, or block the way and let a shot past | 3 | medium | medium |
-| 22 | `offer_abilities` declares `&mut Stack` it only reads | 4 | low | low |
-| 23 | A piece stamped where no wall rings it can cut the floor | 1 | low | medium |
-| 24 | Entity order still breaks ties in four places | 4 | low | low |
-| 25 | Undermere's ordering check misses what only its binary adds | 3 | low | low |
-| 26 | The pages still name the eight folded plugins | 5 | low | low |
-| 27 | `UseCarried` decides by default when a mind mends | 4 | low | low |
+| 3 | A searcher dithers where it lost the trail | 2 | medium | low |
+| 4 | What a kind that travels still cannot do | 3 | medium | medium |
+| 5 | Movement profiles that change costs | 3 | medium | high |
+| 6 | The narrator hears what registers itself | 7 | medium | high |
+| 7 | `Thinking` splits its context from its snapshot | 4 | low | low |
+| 8 | `TargetView` holds the enum it keeps reconstructing | 4 | low | low |
+| 9 | `WorldMap::tile` walks a `BTreeMap` per call | 8 | low | low |
+| 10 | Admission scans its waiting actors linearly | 4 | low | low |
+| 11 | One allowlist entry in Foundry's ambiguity test | 4 | low | low |
+| 12 | `Rooms` can run out of attempts on a small map | 3 | low | low |
+| 13 | The `Doors` pass hangs two doors back to back | 3 | low | low |
+| 14 | `HalveIfBlocked` can never fire | 3 | low | low |
+| 15 | Two engine types are named for a theme word | 4 | low | low |
+| 16 | A light that moved costs a second cast, unmeasured | 8 | low | low |
+| 17 | Split `crates/rl-bevy/src/ability.rs` | 4 | low | medium |
+| 18 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
+| 19 | The resolvers in `ResolveSet::Act` are unordered | 4 | low | medium |
+| 20 | A prop cannot block sight, or block the way and let a shot past | 3 | medium | medium |
+| 21 | `offer_abilities` declares `&mut Stack` it only reads | 4 | low | low |
+| 22 | A piece stamped where no wall rings it can cut the floor | 1 | low | medium |
+| 23 | Entity order still breaks ties in four places | 4 | low | low |
+| 24 | Undermere's ordering check misses what only its binary adds | 3 | low | low |
+| 25 | The pages still name the eight folded plugins | 5 | low | low |
+| 26 | `UseCarried` decides by default when a mind mends | 4 | low | low |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
@@ -149,12 +148,6 @@ The five items that opened this section were built in the six stages of `docs/de
   `docs/guide/src/systems/combat.md` says that out loud and gives the workaround, rolling the block inside a stage of the game's own, which is correct and is why this is an engine gap rather than a documentation one.
   Either the stage goes, or `Defender` gains a way to be filled: a component `apply_damage` reads, or a seam that lets one stage set the flag for a later one.
   Found on 2026-09-22 while writing that page.
-- **`OverworldPlugin` declares one requirement and needs four.**
-  It calls `needs::<OverworldLayout>` and nothing else (`crates/rl-overworld/src/lib.rs`), but `draw_overworld`'s `Whereabouts` takes `Res<WorldRes>`, `Res<WorldMap>` and `Res<Knowledge>` without an `Option` between them, and `handle_keys` takes `Res<Knowledge>` and `ResMut<Modals>` the same way.
-  A game that adds the screen without `StreamingPlugin`, and so without a `WorldRes`, gets a system Bevy skips rather than the combined, loud report at the start of play that `AGENTS.md` promises and that `check_requirements` exists to give.
-  Three `needs::<_>` calls with hints, `WorldRes` naming `StreamingPlugin` as where one comes from, would put the screen back under the house rule.
-  The same gap read from the other side is the module doc at `crates/rl-overworld/src/lib.rs:4-5`, which says the screen "reads the [`WorldRes`] and [`Knowledge`] and writes a [`PortalRequest`]" and leaves out `WorldMap`, the player's `Position` and `Modals`; it should list what the systems actually take once the declarations do.
-  Found on 2026-09-22 while writing `docs/guide/src/systems/overworld.md`.
 - **Two engine types are named for a theme word.**
   `crates/rl-ui/src/narrate.rs:376` declares `type Weapons<'w, 's>`, the query for items that strike or shoot when wielded, which the collector reads to tell a wield from a wearing; `crates/rl-bevy/src/combat.rs:510` declares `struct Weapon`, the attack one blow is made with as `Loadout` chose it.
   `crates/rl-ui/src/lib.rs` states the rule the first one breaks two files away in the same crate, under "Rules": "No engine type, doc or constant says weapon, spell or monster", and `AGENTS.md` forbids the vocabulary outright.
@@ -182,7 +175,7 @@ The five items that opened this section were built in the six stages of `docs/de
   `ability`, `throwing` and `firing` are three fields for one sum type, and `Pointing::of` rebuilds it every frame (`crates/rl-ui/src/view/target.rs`).
   Store `Option<Pointing>`, and open `Pointing` so a game can aim something of its own through the shared cursor: a direction to dig, someone to talk to.
 - **`OnMap` as a required component.**
-  `on.map(|m| m.0).unwrap_or(MapId::SURFACE)` is written in turn, items, minds, places, status and both games, and tutorial step 1 has to explain why a delve's first floor is map one.
+  `on.map(|m| m.0).unwrap_or(MapId::ZERO)` is written in turn, items, minds, places, status and both games, and tutorial step 1 has to explain why a delve's first floor is map one.
   Require `OnMap` on `Position` and the `Option` disappears everywhere.
 
 - **Admission scans its waiting actors linearly.**
@@ -217,7 +210,7 @@ The plugin table landed on 2026-09-21, with `scripts/check-overview.sh` behind i
 The design docs still owed, and which files a slice owes, are in `AGENTS.md`.
 
 - **Guide chapters for the second half.**
-  Lighting, stealth, abilities, statuses, saving and streaming each get one paragraph in `docs/guide/src/09-where-to-go-next.md`, and the alternative is reading Undermere or Foundry whole.
+  Lighting, stealth, abilities, statuses and saving each get one paragraph in `docs/guide/src/09-where-to-go-next.md`, and the alternative is reading Undermere or Foundry whole.
   Four chapters in the guide's style: lights out, being noticed, an ability in RON, saving the run.
 - **One picture of the frame.**
   `EngineSet`, the `Turn` passes and their sets are described in prose in `crates/rl-bevy/src/plugin.rs`; a diagram on one page of the guide would replace what readers reverse-engineer today.

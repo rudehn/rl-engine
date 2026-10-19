@@ -19,8 +19,8 @@ Stairs between two floors, a second floor built a different way, and daylight th
 /// How deep the warren goes before it lets you out again.
 const FLOORS: u32 = 2;
 
-/// Map zero is the streamed surface, which the warren has none of, so its
-/// floors are maps one upward.
+/// The warren's floors are maps one upward, so a floor's number is its
+/// map's.
 fn map_of(floor: u32) -> MapId {
     MapId(floor)
 }
@@ -39,9 +39,9 @@ fn name_of(floor: u32) -> &'static str {
 }
 ```
 
-Map zero is the streamed surface, which the warren has none of, so its floors are maps one upward.
+The warren's floors are maps one upward, so a floor's number is its map's.
 
-Everything above zero is a *place*: built the first time it is entered, then kept.
+Each is a *place*: built the first time it is entered, then kept.
 Leaving freezes the actors and items where they stand, so the rat you ran from is still in the corridor at the health you left it.
 Actors on other maps are skipped by the scheduler instead of simulated, so a deep run costs no more per turn than a shallow one.
 
@@ -52,7 +52,7 @@ Actors on other maps are skipped by the scheduler instead of simulated, so a dee
 /// How a floor is built. The engine calls this once, the first time
 /// something enters the map, and keeps what comes back.
 impl PlaceRules for Warren {
-    fn build(&self, map: MapId, _: Option<&WorldGraph>) -> Result<PlaceBuild, BuildError> {
+    fn build(&self, map: MapId) -> Result<PlaceBuild, BuildError> {
         let depth = floor_of(map);
         let (wall, open, roots) = (self.tiles.expect("earth"), self.tiles.expect("dirt"), self.tiles.expect("roots"));
         let mut ctx = BaseContext::blank(84, 42, self.tiles.clone(), wall);

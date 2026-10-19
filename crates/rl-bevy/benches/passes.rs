@@ -49,7 +49,7 @@ fn wait_for_holder(mut waits: MessageWriter<Intent<Wait>>, holding: Query<Entity
     }
 }
 
-/// An app with `crowd` actors on a real streamed surface and no player, so
+/// An app with `crowd` actors on open ground and no player, so
 /// every pass is dealt to one of the crowd.
 ///
 /// No player on purpose: with one, the loop stops the moment it holds a
@@ -57,11 +57,10 @@ fn wait_for_holder(mut waits: MessageWriter<Intent<Wait>>, holding: Query<Entity
 /// a typical one.
 fn passes(crowd: usize, build: Build) -> App {
     let mut app = rl_bevy::plugin::headless_app();
-    app.add_plugins(rl_bevy::world::StreamingPlugin);
     if build != Build::Bare {
         app.add_plugins((rl_bevy::fov::FovPlugin, rl_bevy::combat::CombatPlugin, rl_bevy::minds::MindsPlugin, rl_bevy::items::ItemsPlugin));
     }
-    let start = testing::surface(&mut app);
+    let start = testing::ground(&mut app);
     let sides = testing::two_sides(&mut app);
     // In `Decide`, where a mind would decide, and claiming nothing: the
     // minds claim first when they are there, so this only picks up the
@@ -143,8 +142,8 @@ fn schedule_size(c: &mut Criterion) {
 /// cost is one `cast` per actor; which half it is decides the fix.
 fn sight_cost(c: &mut Criterion) {
     let mut app = rl_bevy::plugin::headless_app();
-    app.add_plugins((rl_bevy::fov::FovPlugin, rl_bevy::world::StreamingPlugin, rl_bevy::lighting::LightingPlugin));
-    let start = testing::surface(&mut app);
+    app.add_plugins((rl_bevy::fov::FovPlugin, rl_bevy::lighting::LightingPlugin));
+    let start = testing::ground(&mut app);
     app.insert_resource(rl_bevy::seed::Seed(testing::TEST_SEED));
     let player = app
         .world_mut()

@@ -188,11 +188,11 @@ mod tests {
     /// game names one, and asked with `shift` on it.
     fn asked(gap: i32, rules: Option<HitRules>, lighting: Option<u8>, accuracy: Option<i32>, shift: i32) -> App {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::world::StreamingPlugin));
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin));
         if lighting.is_some() {
             app.add_plugins(crate::lighting::LightingPlugin);
         }
-        let start = crate::testing::surface(&mut app);
+        let start = crate::testing::ground(&mut app);
         let sides = crate::testing::two_sides(&mut app);
         if let Some(rules) = rules {
             app.insert_resource(rules);

@@ -34,14 +34,14 @@ impl Stage {
     /// asserts on a resource the game is meant to have inserted by then.
     pub fn new_with<M>(plugins: impl bevy::app::Plugins<M>, setup: impl FnOnce(&mut App)) -> Stage {
         let mut app = rl_bevy::plugin::headless_app();
-        app.add_plugins((FovPlugin, CombatPlugin, ItemsPlugin, StreamingPlugin));
+        app.add_plugins((FovPlugin, CombatPlugin, ItemsPlugin));
         app.add_plugins((rl_bevy::testing::KeyScriptPlugin, crate::UiPlugin));
         app.add_plugins(plugins);
         // A panel draws into a terminal, so there is always one; `screen`
         // replaces it when a test wants a particular size.
         app.insert_resource(rl_render::Terminal::new(100, 40, Vec2::ONE));
 
-        let at = rl_bevy::testing::surface(&mut app);
+        let at = rl_bevy::testing::ground(&mut app);
         let rl_bevy::testing::Sides { ours, theirs, kind } = rl_bevy::testing::two_sides(&mut app);
 
         let player = app

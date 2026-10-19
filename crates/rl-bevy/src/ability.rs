@@ -1056,7 +1056,7 @@ mod tests {
     use crate::cue::{Anchor, Cue};
     use crate::effects::{AddEffect, AddEngineEffects, Effect, FromArgs};
     use crate::items::Item;
-    use crate::places::{Destination, Transition};
+    use crate::places::{Arrive, Destination, MapId, Transition};
     use rl_core::{Direction, RunSeed};
     use rl_grid::TileId;
     use rl_rules::ability::RawValue;
@@ -1248,14 +1248,7 @@ mod tests {
 
     fn app() -> (App, Point) {
         let mut app = crate::plugin::headless_app();
-        app.add_plugins((
-            crate::fov::FovPlugin,
-            crate::world::StreamingPlugin,
-            crate::combat::CombatPlugin,
-            crate::minds::MindsPlugin,
-            crate::items::ItemsPlugin,
-            AbilitiesPlugin,
-        ));
+        app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin, crate::minds::MindsPlugin, crate::items::ItemsPlugin, AbilitiesPlugin));
         app.add_engine_effects().add_effect::<Mark>().add_effect::<Probe>().add_effect::<Paint>();
 
         let content = Content::new();
@@ -1263,7 +1256,7 @@ mod tests {
 
         let combat = CombatRules::new(&content.factions).hostile(content.factions.expect("us"), content.factions.expect("them"));
 
-        let start = crate::testing::surface(&mut app);
+        let start = crate::testing::ground(&mut app);
         app.insert_resource(combat);
         app.insert_resource(crate::seed::Seed(RunSeed(5)));
         app.insert_resource(Registries {
@@ -1757,7 +1750,7 @@ mod tests {
     fn is_transition_is_true_only_at_a_transitions_own_cell() {
         let (mut app, start) = app();
         let there = start.offset(2, 0);
-        app.world_mut().spawn((Position(there), Transition { to: Destination::Surface(Point::ZERO) }));
+        app.world_mut().spawn((Position(there), Transition { to: Destination::Place { map: MapId::ZERO, arrive: Arrive::At(Point::ZERO) } }));
         let probe = ability(&app, "probe");
         let me = caster(&mut app, start, 20, &[probe]);
         settle(&mut app);

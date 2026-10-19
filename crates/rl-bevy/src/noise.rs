@@ -393,7 +393,7 @@ pub fn resolve_noise(
         return;
     }
     let here = map.current();
-    let mut near: Vec<_> = listeners.iter_mut().filter(|(.., on, _)| on.map(|m| m.0).unwrap_or(MapId::SURFACE) == here).collect();
+    let mut near: Vec<_> = listeners.iter_mut().filter(|(.., on, _)| on.map(|m| m.0).unwrap_or(MapId::ZERO) == here).collect();
     // What each hears is written in the order of where they stand, not
     // in the order of their entities' numbers, which Bevy reuses as it
     // likes; the number settles only two on one cell.
@@ -483,7 +483,6 @@ mod tests {
     use crate::plugin::headless_app;
     use crate::state::EngineState;
     use crate::turn::{Intent, Wait};
-    use crate::world::StreamingPlugin;
     use rl_rules::Brain;
     use rl_rules::ai::tactics::{SearchLastKnown, Wander};
 
@@ -506,12 +505,12 @@ mod tests {
         /// else `setup` adds before it first runs.
         fn with(rules: Option<NoiseRules>, setup: impl FnOnce(&mut App)) -> Field {
             let mut app = headless_app();
-            app.add_plugins((FovPlugin, MindsPlugin, StreamingPlugin));
+            app.add_plugins((FovPlugin, MindsPlugin));
             if let Some(rules) = rules {
                 app.add_plugins(NoisePlugin::new(rules));
             }
             setup(&mut app);
-            let start = crate::testing::surface(&mut app);
+            let start = crate::testing::ground(&mut app);
             app.insert_resource(crate::seed::Seed(crate::testing::TEST_SEED));
             let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(16), RevealsMap)).id();
             app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);

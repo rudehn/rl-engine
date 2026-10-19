@@ -135,7 +135,7 @@ pub fn spawn_young(mut done: MessageReader<ActionDone>, mut spawners: Query<&mut
 fn spawn_one_young(world: &mut World, spawner: Entity) {
     let Some(young) = world.resource::<Bestiary>().defs.id(SPAWNLING) else { return };
     let Some(at) = world.get::<Position>(spawner).map(|p| p.0) else { return };
-    let map = world.get::<OnMap>(spawner).map_or(MapId::SURFACE, |m| m.0);
+    let map = world.get::<OnMap>(spawner).map_or(MapId::ZERO, |m| m.0);
     let Some(view) = world.get::<Viewshed>(spawner).cloned() else { return };
     let cell = {
         let worldmap = world.resource::<WorldMap>();

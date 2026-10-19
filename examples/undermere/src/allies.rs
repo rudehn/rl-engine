@@ -72,7 +72,7 @@ pub fn befriend(world: &mut World, monster: Entity) {
 /// with it into nothing.
 pub fn vanish(world: &mut World, actor: Entity) {
     let Some(at) = world.get::<Position>(actor).map(|p| p.0) else { return };
-    let map = world.get::<OnMap>(actor).map_or(MapId::SURFACE, |m| m.0);
+    let map = world.get::<OnMap>(actor).map_or(MapId::ZERO, |m| m.0);
     if world.get::<Blocks>(actor).is_some() {
         world.resource_mut::<Occupancy>().remove(at, actor);
     }

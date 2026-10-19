@@ -1,7 +1,6 @@
 //! The engine's own state as a save.
 //!
-//! The scheduler's clock and queue, the surface's edits and every built
-//! place, what the player knows, and what each saved entity had to spend on
+//! The scheduler's clock and queue, every built place, what the player knows, and what each saved entity had to spend on
 //! abilities. Entities are written as [`SaveId`]s, so capture the game's
 //! entities first and restore them first: the queue and the ability state
 //! only keep entries whose ids were bound.
@@ -224,7 +223,7 @@ impl EngineSave {
         occupancy.switch(current);
         let mut standing = world.query_filtered::<(Entity, &rl_bevy::Position, Option<&rl_bevy::OnMap>), With<rl_bevy::Blocks>>();
         for (e, pos, on) in standing.iter(world) {
-            occupancy.insert_on(on.map(|m| m.0).unwrap_or(rl_bevy::MapId::SURFACE), pos.0, e);
+            occupancy.insert_on(on.map(|m| m.0).unwrap_or(rl_bevy::MapId::ZERO), pos.0, e);
         }
         world.insert_resource(occupancy);
         world.resource_mut::<rl_bevy::FlowFields>().invalidate();
@@ -241,8 +240,8 @@ mod tests {
 
     fn fresh() -> (App, Point) {
         let mut app = rl_bevy::plugin::headless_app();
-        app.add_plugins((rl_bevy::FovPlugin, rl_bevy::StreamingPlugin));
-        let start = rl_bevy::testing::surface(&mut app);
+        app.add_plugins(rl_bevy::FovPlugin);
+        let start = rl_bevy::testing::ground(&mut app);
         (app, start)
     }
 
@@ -258,7 +257,6 @@ mod tests {
         app.update();
         let edited = start.offset(0, 2);
         assert!(app.world_mut().resource_mut::<WorldMap>().set_tile(edited, TileId(1)));
-        app.world_mut().resource_mut::<Knowledge>().discover_site(4);
 
         // Capture: the game numbers its entities, then the engine.
         let mut remap = EntityRemap::new();
@@ -284,8 +282,7 @@ mod tests {
         app2.update();
         let w = app2.world();
         assert_eq!(w.resource::<Turns>().now(), save.now);
-        assert_eq!(w.resource::<WorldMap>().tile(edited), Some(TileId(1)), "the edit was replayed onto the streamed chunk");
-        assert!(w.resource::<Knowledge>().site_discovered(4));
+        assert_eq!(w.resource::<WorldMap>().tile(edited), Some(TileId(1)), "the edit came back with its place");
         assert!(w.resource::<Knowledge>().is_explored(start), "explored tiles came back");
         assert!(w.resource::<Occupancy>().is_occupied(start.offset(3, 0)), "the index was rebuilt");
         assert!(w.resource::<Turns>().contains(other2) || w.get::<MyTurn>(other2).is_some(), "the other actor is scheduled");

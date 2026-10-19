@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use bevy::prelude::*;
 use rl_bevy::prelude::*;
-use rl_bevy::testing::{Sides, surface, two_sides};
+use rl_bevy::testing::{Sides, ground, two_sides};
 use rl_core::{DiceRoll, RunSeed, geometry};
 use rl_rules::Brain;
 use rl_rules::ai::awareness::{NoticeStats, StealthStats};
@@ -56,8 +56,8 @@ fn fingerprint(app: &mut App) -> u64 {
 /// field of hunters that notice, flee, search and drift.
 fn run(seed: u64, turns: usize) -> u64 {
     let mut app = rl_bevy::plugin::headless_app();
-    app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, StealthPlugin, ItemsPlugin, StreamingPlugin));
-    let start = surface(&mut app);
+    app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, StealthPlugin, ItemsPlugin));
+    let start = ground(&mut app);
     let Sides { ours, theirs, kind } = two_sides(&mut app);
     app.insert_resource(Seed(RunSeed(seed)));
     let player = app

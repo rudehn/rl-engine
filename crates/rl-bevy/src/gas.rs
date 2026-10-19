@@ -143,8 +143,8 @@ fn swirl_salt(seed: &Seed, turn: u32) -> u64 {
     seed.0.derive(SeedDomain::new(b"gas swirl"), u64::from(turn))
 }
 
-/// A cell's roll under `salt`, by its world coordinates, so a cloud on the
-/// streamed surface swirls alike wherever the window stands.
+/// A cell's roll under `salt`, by its coordinates, so a cloud swirls alike
+/// however it came to be there.
 fn roll(salt: u64, p: Point) -> u32 {
     position_hash(salt, p.x, p.y) as u32
 }
@@ -191,7 +191,7 @@ pub fn step_gases(mut ends: MessageReader<TurnEnd>, mut gases: ResMut<Gases>, ai
     let Air { registries, mut map, seed, clock, vents, breathers, mut afflict, mut breathed } = air;
     gases.fit(registries.gases.len(), &map);
     let here = map.current();
-    let on_here = |on: Option<&OnMap>| on.map_or(MapId::SURFACE, |m| m.0) == here;
+    let on_here = |on: Option<&OnMap>| on.map_or(MapId::ZERO, |m| m.0) == here;
     for step in 0..passed {
         let turn = clock.turn_number() + 1 - passed + step;
         let spill = spill_salt(&seed, turn);
@@ -292,8 +292,8 @@ mod tests {
         /// that choke whoever breathes enough of them.
         fn new() -> Self {
             let mut app = headless_app();
-            app.add_plugins((crate::fov::FovPlugin, CombatPlugin, GasPlugin, crate::world::StreamingPlugin));
-            let start = crate::testing::surface(&mut app);
+            app.add_plugins((crate::fov::FovPlugin, CombatPlugin, GasPlugin));
+            let start = crate::testing::ground(&mut app);
             crate::testing::two_sides(&mut app);
             let statuses = Registry::from_defs(vec![StatusDef::new("choking")]).unwrap();
             let choking = statuses.expect("choking");

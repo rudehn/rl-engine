@@ -1341,7 +1341,7 @@ pub fn apply_damage(
         if health.current <= 0 {
             continue;
         }
-        let amount = mitigation.lands(&ev.hit, ev.target, invulnerable, on.map_or(MapId::SURFACE, |m| m.0));
+        let amount = mitigation.lands(&ev.hit, ev.target, invulnerable, on.map_or(MapId::ZERO, |m| m.0));
         let before = health.current;
         health.current = (health.current - amount).min(health.max);
         // A hit absorbed reports what it restored, which at full health is
@@ -1497,8 +1497,8 @@ mod tests {
 
     fn arena() -> (App, Point, DamageKindId) {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::world::StreamingPlugin));
-        let start = crate::testing::surface(&mut app);
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin));
+        let start = crate::testing::ground(&mut app);
         let sides = crate::testing::two_sides(&mut app);
         (app, start, sides.kind)
     }
@@ -1918,8 +1918,8 @@ mod tests {
         use rl_rules::stats::Op;
         use rl_rules::{EquipShape, Equipment, SlotId, StatDef, StatusDef};
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::items::ItemsPlugin, crate::world::StreamingPlugin));
-        let start = crate::testing::surface(&mut app);
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::items::ItemsPlugin));
+        let start = crate::testing::ground(&mut app);
         let sides = crate::testing::two_sides(&mut app);
         let stats = Registry::from_defs(vec![StatDef::new("armor", 0)]).unwrap();
         let armor_stat = stats.expect("armor");
@@ -1986,8 +1986,8 @@ mod tests {
     fn a_worn_blade_replaces_the_fist_and_worn_strikes_add_up() {
         use rl_rules::{EquipShape, Equipment, SlotId, StatDef};
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::items::ItemsPlugin, crate::world::StreamingPlugin));
-        let start = crate::testing::surface(&mut app);
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::items::ItemsPlugin));
+        let start = crate::testing::ground(&mut app);
         let sides = crate::testing::two_sides(&mut app);
         let stats = Registry::from_defs(vec![StatDef::new("attack", 2)]).unwrap();
         let attack_stat = stats.expect("attack");
@@ -2067,8 +2067,8 @@ mod tests {
     /// reaches it.
     fn melee_turn_cost(cost: Option<u32>) -> u32 {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::world::StreamingPlugin));
-        let start = crate::testing::surface(&mut app);
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin));
+        let start = crate::testing::ground(&mut app);
         let sides = crate::testing::two_sides(&mut app);
         let player = app
             .world_mut()
@@ -2100,8 +2100,8 @@ mod tests {
     fn a_weapons_cost_and_the_actors_speed_compose_by_scaling_the_cost_once() {
         use crate::components::Speed;
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::world::StreamingPlugin));
-        let start = crate::testing::surface(&mut app);
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin));
+        let start = crate::testing::ground(&mut app);
         let sides = crate::testing::two_sides(&mut app);
         let player = app
             .world_mut()
@@ -2147,8 +2147,8 @@ mod tests {
     /// been charged, the clock reads exactly what the shooter's turn cost.
     fn shot_turn_cost(cost: Option<u32>, range: i32, offset: i32) -> u32 {
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::world::StreamingPlugin));
-        let start = crate::testing::surface(&mut app);
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin));
+        let start = crate::testing::ground(&mut app);
         let sides = crate::testing::two_sides(&mut app);
         let player = app
             .world_mut()
@@ -2201,9 +2201,9 @@ mod tests {
     fn gunman(roll: i32, consumable: Option<crate::consumable::Consumable>, triggers: Option<&str>) -> (App, Entity, Entity, Entity) {
         use rl_rules::{EquipShape, Equipment, SlotId};
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::items::ItemsPlugin, crate::effects::EffectsPlugin, crate::world::StreamingPlugin));
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::items::ItemsPlugin, crate::effects::EffectsPlugin));
         crate::effects::AddEngineEffects::add_engine_effects(&mut app);
-        let start = crate::testing::surface(&mut app);
+        let start = crate::testing::ground(&mut app);
         let sides = crate::testing::two_sides(&mut app);
         let hand = SlotId::from_raw(0);
         let gun = app
@@ -2317,9 +2317,9 @@ mod tests {
     fn struck_by_melee(worn: bool) -> Struck {
         use rl_rules::{EquipShape, Equipment, SlotId};
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::items::ItemsPlugin, crate::world::StreamingPlugin));
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::items::ItemsPlugin));
         app.init_resource::<Heard>().add_systems(PostUpdate, hear);
-        let start = crate::testing::surface(&mut app);
+        let start = crate::testing::ground(&mut app);
         let sides = crate::testing::two_sides(&mut app);
         let mut player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(sides.ours)));
         if !worn {
@@ -2353,9 +2353,9 @@ mod tests {
     fn struck_by_two_guns() -> (Struck, Entity, Entity) {
         use rl_rules::{EquipShape, Equipment, SlotId};
         let mut app = headless_app();
-        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::items::ItemsPlugin, crate::world::StreamingPlugin));
+        app.add_plugins((crate::fov::FovPlugin, CombatPlugin, crate::items::ItemsPlugin));
         app.init_resource::<Heard>().add_systems(PostUpdate, hear);
-        let start = crate::testing::surface(&mut app);
+        let start = crate::testing::ground(&mut app);
         let sides = crate::testing::two_sides(&mut app);
         let (first_slot, second_slot) = (SlotId::from_raw(0), SlotId::from_raw(1));
         let first = app

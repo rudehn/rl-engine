@@ -182,7 +182,7 @@ mod tests {
 
     struct Halls(TileRegistry);
     impl PlaceRules for Halls {
-        fn build(&self, _: MapId, _: Option<&rl_world::WorldGraph>) -> Result<PlaceBuild, rl_mapgen::BuildError> {
+        fn build(&self, _: MapId) -> Result<PlaceBuild, rl_mapgen::BuildError> {
             let (wall, floor) = (self.0.expect("wall"), self.0.expect("floor"));
             let terrain =
                 Terrain::from_fn(

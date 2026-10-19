@@ -23,7 +23,6 @@ use rl_engine::rl_mapgen::prefab::{Orient, Placement, Prefab, StampEachRoom, Sta
 use rl_engine::rl_mapgen::{BaseContext, BuildError, Chain, Survey};
 use rl_engine::rl_render::TileAppearance;
 use rl_engine::rl_rules::layout::{self, LayoutDef};
-use rl_engine::rl_world::WorldGraph;
 
 use crate::droids::MonsterDef;
 
@@ -314,7 +313,7 @@ impl Foundry {
     /// `.` what can, `+` a hatch, `<` the way in and `>` the way down.
     pub fn render(&self, map: MapId) -> Result<String, BuildError> {
         use rl_engine::rl_core::Grid2D;
-        let built = self.build(map, None)?;
+        let built = self.build(map)?;
         let tables = self.tiles.tables();
         let bounds = built.terrain.bounds();
         let mut out = String::new();
@@ -341,7 +340,7 @@ impl Foundry {
 }
 
 impl PlaceRules for Foundry {
-    fn build(&self, map: MapId, _: Option<&WorldGraph>) -> Result<PlaceBuild, BuildError> {
+    fn build(&self, map: MapId) -> Result<PlaceBuild, BuildError> {
         let mut built = PlaceBuild::from_context(self.generate(map)?)?;
         built.ambient = ambient_of(deck_of(map));
         Ok(built)
@@ -606,7 +605,7 @@ mod tests {
     #[test]
     fn a_deck_is_the_size_its_recipe_says() {
         use rl_engine::rl_core::Grid2D;
-        let built = Foundry::new(RunSeed(1)).build(map_of(1), None).unwrap();
+        let built = Foundry::new(RunSeed(1)).build(map_of(1)).unwrap();
         assert_eq!((built.terrain.bounds().width, built.terrain.bounds().height), (84, 48));
     }
 }

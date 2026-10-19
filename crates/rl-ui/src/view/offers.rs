@@ -170,8 +170,8 @@ mod tests {
         let at = stage.at;
         {
             let mut commands = stage.app.world_mut().commands();
-            spawn_prop(&mut commands, &registries, crate_id, at.offset(1, 0), MapId::SURFACE);
-            spawn_prop(&mut commands, &registries, cache_id, at.offset(0, 1), MapId::SURFACE);
+            spawn_prop(&mut commands, &registries, crate_id, at.offset(1, 0), MapId::ZERO);
+            spawn_prop(&mut commands, &registries, cache_id, at.offset(0, 1), MapId::ZERO);
         }
         stage.app.world_mut().flush();
         let mut props = stage.app.world_mut().query_filtered::<Entity, With<Prop>>();
@@ -209,10 +209,9 @@ mod tests {
         let w = stage.app.world_mut();
         let coins = w.spawn((Item, Name::new("scrip"), Tagged(vec![scrip]), Stack { key: 1, count: 30 })).id();
         w.entity_mut(player).insert(Inventory { items: vec![coins] });
-        let cheap =
-            w.spawn((Actor, Position(at.offset(1, 0)), OnMap(MapId::SURFACE), Name::new("Odda"), Offers(vec![Offering::new(bless, 100).priced(20)]))).id();
+        let cheap = w.spawn((Actor, Position(at.offset(1, 0)), OnMap(MapId::ZERO), Name::new("Odda"), Offers(vec![Offering::new(bless, 100).priced(20)]))).id();
         let dear =
-            w.spawn((Actor, Position(at.offset(-1, 0)), OnMap(MapId::SURFACE), Name::new("Mirela"), Offers(vec![Offering::new(bless, 100).priced(50)]))).id();
+            w.spawn((Actor, Position(at.offset(-1, 0)), OnMap(MapId::ZERO), Name::new("Mirela"), Offers(vec![Offering::new(bless, 100).priced(50)]))).id();
         stage.tick();
         stage.tick();
 
@@ -233,8 +232,7 @@ mod tests {
         });
         let free = stage.app.world().resource::<Verbs>().get("free").expect("declared");
         let at = stage.at.offset(1, 0);
-        let captive =
-            stage.app.world_mut().spawn((Actor, Position(at), OnMap(MapId::SURFACE), Name::new("Mirela"), Offers(vec![Offering::new(free, 300)]))).id();
+        let captive = stage.app.world_mut().spawn((Actor, Position(at), OnMap(MapId::ZERO), Name::new("Mirela"), Offers(vec![Offering::new(free, 300)]))).id();
         stage.tick();
         stage.tick();
 
