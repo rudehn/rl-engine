@@ -30,7 +30,7 @@ pub struct RoleDef<M> {
 }
 
 /// A role, by id.
-pub type RoleId<M> = Id<RoleDef<M>>;
+pub(crate) type RoleId<M> = Id<RoleDef<M>>;
 
 impl<M> Named for RoleDef<M> {
     fn name(&self) -> &str {

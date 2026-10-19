@@ -138,7 +138,7 @@ impl MeleeAttack {
 
     /// The blow `part` describes, costing `cost` hundredths of a step, or
     /// an ordinary turn for `None`: the authored blow made a component.
-    pub fn from_part(part: &Melee, cost: Option<u32>) -> Self {
+    pub(crate) fn from_part(part: &Melee, cost: Option<u32>) -> Self {
         Self { cost, look: part.look, shape: part.shape, unaware: part.unaware, ..Self::new(part.kind.id(), part.roll) }
     }
 
@@ -211,7 +211,7 @@ impl RangedAttack {
 
     /// The shot `part` describes, costing `cost` hundredths of a step, or
     /// an ordinary turn for `None`.
-    pub fn from_part(part: &Ranged, cost: Option<u32>) -> Self {
+    pub(crate) fn from_part(part: &Ranged, cost: Option<u32>) -> Self {
         Self { cost, look: part.look, effective: part.effective, ..Self::new(part.kind.id(), part.roll, part.range) }
     }
 
@@ -475,7 +475,7 @@ impl DamageEvent {
 /// which one the loadout would have chosen, which is the engine's decision
 /// and would be copied, and drift, in every game that needed it.
 ///
-/// Not the `struck` [moment](crate::effects::Moments::STRUCK), which is
+/// Not the `struck` moment, which is
 /// what the one struck answers, once for each blow that lands on it and
 /// never for a miss.
 #[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
@@ -668,7 +668,7 @@ pub enum Stowed {
 /// place of a fist; armor, resistances and extra strikes add up.
 ///
 /// The one answer to the question. The attack resolver strikes with it,
-/// [`apply_damage`] defends with it, and the inspect forecast and the
+/// `apply_damage` defends with it, and the inspect forecast and the
 /// character sheet read it, so what a panel says a fight will cost is
 /// what the fight costs. A game never copies a worn item's numbers onto
 /// its wearer, which is the fold every game with gear used to write and
@@ -747,7 +747,7 @@ impl Loadout<'_, '_> {
 
     /// What `who` resists: its own [`Resists`], every worn item's and what
     /// the statuses on it lend, its
-    /// [`StatusResists`](crate::status::StatusResists), added kind by kind,
+    /// `StatusResists`, added kind by kind,
     /// so a suit that resists a tenth of a bolt resists it for whoever
     /// wears it, and stops the moment it is taken off.
     pub fn resistances(&self, who: Entity) -> Resistances {
@@ -797,7 +797,7 @@ impl Loadout<'_, '_> {
 
     /// The extra rolls every hit by `who` carries: its own, then each worn
     /// item's in slot order.
-    pub fn strikes(&self, who: Entity) -> Vec<(DamageKindId, DiceRoll)> {
+    pub(crate) fn strikes(&self, who: Entity) -> Vec<(DamageKindId, DiceRoll)> {
         let mut all: Vec<(DamageKindId, DiceRoll)> = self.own.get(who).ok().and_then(|(_, _, _, s)| s).map(|s| s.0.clone()).unwrap_or_default();
         for (_, _, _, _, strikes) in self.worn(who) {
             all.extend(strikes.map(|s| s.0.iter().copied()).into_iter().flatten());
@@ -1159,7 +1159,12 @@ pub struct Arriving<'w, 's> {
 /// against it. Nothing in the air is taken for in a game without
 /// [`EffectsPlugin`](crate::effects::EffectsPlugin), where no shooter
 /// answers a moment.
-pub fn keep_shooters(mut commands: Commands, mut airborne: ResMut<Airborne<ShotLanding>>, keeps: Option<Res<crate::effects::RemnantKeeps>>, there: Query<()>) {
+pub(crate) fn keep_shooters(
+    mut commands: Commands,
+    mut airborne: ResMut<Airborne<ShotLanding>>,
+    keeps: Option<Res<crate::effects::RemnantKeeps>>,
+    there: Query<()>,
+) {
     let Some(keeps) = keeps else { return };
     for shot in airborne.in_air_mut() {
         if shot.stand_in.is_some() || shot.own.is_none() || shot.missed || !there.contains(shot.attacker) {
@@ -1293,7 +1298,7 @@ pub fn line_of_fire(map: &WorldMap, occupancy: &Occupancy, from: Point, to: Poin
 /// they read, what the target wears, and whether the place it stands in
 /// is peaceful.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Mitigation<'w, 's> {
+pub(crate) struct Mitigation<'w, 's> {
     registries: Res<'w, Registries>,
     stages: Res<'w, DamageStages>,
     map: Res<'w, WorldMap>,
@@ -1329,7 +1334,7 @@ impl Mitigation<'_, '_> {
 /// so that no stage before it has to be taught to let the place alone.
 /// A heal still heals there, and a status the same blow afflicts still
 /// lands, since neither is a hit.
-pub fn apply_damage(
+pub(crate) fn apply_damage(
     mut events: MessageReader<DamageEvent>,
     mut dealt: MessageWriter<DamageDealt>,
     mut deaths: MessageWriter<DeathEvent>,
@@ -1360,7 +1365,7 @@ pub fn apply_damage(
 ///
 /// After [`apply_damage`] in the same pass, so a mend never stands between
 /// an actor and the blow that killed it: the dead are not mended.
-pub fn apply_healing(mut heals: MessageReader<Heal>, mut healed: MessageWriter<Healed>, loadout: Loadout, mut targets: Query<&mut Health>) {
+pub(crate) fn apply_healing(mut heals: MessageReader<Heal>, mut healed: MessageWriter<Healed>, loadout: Loadout, mut targets: Query<&mut Health>) {
     for heal in heals.read() {
         let Ok(mut health) = targets.get_mut(heal.target) else { continue };
         if health.current <= 0 {
@@ -1379,7 +1384,7 @@ pub struct Dead;
 
 /// Takes dead non-players out of the world, the queue and the index, and
 /// marks them [`Dead`] for [`bury_the_dead`].
-pub fn process_deaths(
+pub(crate) fn process_deaths(
     mut commands: Commands,
     mut deaths: MessageReader<DeathEvent>,
     mut turns: ResMut<Turns>,
@@ -1404,7 +1409,7 @@ pub fn process_deaths(
 ///
 /// Inside the turn, so the run is over before the next actor acts: the
 /// monster that would have struck the corpse never gets the turn.
-pub fn end_run_on_player_death(mut deaths: MessageReader<DeathEvent>, rules: Res<CombatRules>, mut over: MessageWriter<crate::state::RunOver>) {
+pub(crate) fn end_run_on_player_death(mut deaths: MessageReader<DeathEvent>, rules: Res<CombatRules>, mut over: MessageWriter<crate::state::RunOver>) {
     for death in deaths.read() {
         if death.was_player && rules.death_ends_run {
             over.write(crate::state::RunOver::died(death.credit));

@@ -23,7 +23,7 @@ type ViewerData = (&'static Position, &'static mut Viewshed, Option<&'static Dar
 
 /// Whether `viewshed` needs casting again: it was marked, or what blocks
 /// sight changed since it was cast.
-pub fn is_stale(viewshed: &Viewshed, map: &WorldMap) -> bool {
+pub(crate) fn is_stale(viewshed: &Viewshed, map: &WorldMap) -> bool {
     viewshed.dirty || viewshed.epoch != map.opacity_epoch()
 }
 
@@ -68,7 +68,7 @@ pub fn cast(map: &WorldMap, lighting: Option<&Lighting>, at: Point, dark_sight: 
 }
 
 /// Recomputes every stale viewshed and fills in what a revealer saw.
-pub fn update_viewsheds(map: Res<WorldMap>, lighting: Option<Res<Lighting>>, mut knowledge: ResMut<Knowledge>, mut viewers: Query<ViewerData>) {
+pub(crate) fn update_viewsheds(map: Res<WorldMap>, lighting: Option<Res<Lighting>>, mut knowledge: ResMut<Knowledge>, mut viewers: Query<ViewerData>) {
     for (pos, mut viewshed, dark, perception, reveals) in &mut viewers {
         if !is_stale(&viewshed, &map) {
             continue;

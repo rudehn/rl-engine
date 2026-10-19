@@ -31,7 +31,7 @@
 //! every cell, and wherever the cursor goes the [`Focus`] follows.
 //!
 //! What an aim was confirmed at is remembered apart from the focus, as
-//! [`LastAimed`], and the next aim opens on it when nothing is picked out.
+//! `LastAimed`, and the next aim opens on it when nothing is picked out.
 //! The two are kept apart because they answer different questions: the
 //! focus is what the nearby list shows picked out, and an aim that has been
 //! fired or put away leaves nothing picked out, so the list is not left
@@ -42,7 +42,7 @@
 //! gates its movement keys on [`no_modal`](crate::no_modal) and gets the
 //! exclusion from the bag and the look cursor for free.
 //!
-//! A game opens it by writing [`AimAt`] for an ability, [`AimUse`] for a
+//! A game opens it by writing [`AimAt`] for an ability, `AimUse` for a
 //! thing used at somewhere, [`AimThrow`] for something carried, or
 //! [`AimFire`] for a shot, which is all the code the key needs: the engine
 //! picks the first target, runs the cursor, and spends the turn. Nothing
@@ -64,7 +64,7 @@ use crate::modal::{ModalId, Modals};
 use crate::view::Row;
 
 /// The name the targeting cursor's modal is declared under.
-pub const TARGET_MODAL: &str = "target";
+pub(crate) const TARGET_MODAL: &str = "target";
 
 /// Open the targeting cursor on an ability.
 ///
@@ -314,7 +314,7 @@ impl Pointing {
 /// a stale one reads as none. A cancelled aim leaves it as it was, since
 /// only a thing actually thrown or shot at is worth coming back to.
 #[derive(Resource, Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct LastAimed(pub Option<Entity>);
+pub(crate) struct LastAimed(pub Option<Entity>);
 
 /// Everything the cursor steers by.
 #[derive(bevy::ecs::system::SystemParam)]
@@ -418,7 +418,7 @@ impl Aiming<'_, '_> {
 
 /// What the cursor may be asked to open on this frame.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct AimRequests<'w, 's> {
+pub(crate) struct AimRequests<'w, 's> {
     abilities: MessageReader<'w, 's, AimAt>,
     uses: MessageReader<'w, 's, AimUse>,
     throws: MessageReader<'w, 's, AimThrow>,
@@ -437,7 +437,7 @@ pub struct AimIntents<'w> {
 }
 
 /// Opens, steps, cycles, confirms and cancels the cursor.
-pub fn aim_cursor(mut view: ResMut<TargetView>, mut modals: ResMut<Modals>, mut requests: AimRequests, mut intents: AimIntents, mut aiming: Aiming) {
+pub(crate) fn aim_cursor(mut view: ResMut<TargetView>, mut modals: ResMut<Modals>, mut requests: AimRequests, mut intents: AimIntents, mut aiming: Aiming) {
     let modal = target_modal(&modals);
 
     // The last request of a frame is the one aimed, and the cursor opens
@@ -656,7 +656,7 @@ impl Reach<'_, '_> {
 /// act on, so the cells lit on the map, the names in the box and whether it
 /// reads as refused are what will happen when the player confirms. A
 /// preview computed any other way is a preview that drifts.
-pub fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, reach: Reach) {
+pub(crate) fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, reach: Reach) {
     // The screen is the one truth about whether the cursor is up. Closed
     // by anything but its own key, a game's action that closes every
     // screen or the close key answered by the stack, the aim is forgotten
@@ -833,7 +833,7 @@ fn preview(view: &mut TargetView, reach: &Reach, aimed: Aimed, gate: &[Blocked])
 /// The cells `mode` would cover if it landed at `aim`: a disc for a ball,
 /// the cell for anything that lands on one, nothing for a shape that
 /// covers ground on the way rather than at the end.
-pub fn shape_at(mode: TargetMode, aim: Point) -> Vec<Point> {
+pub(crate) fn shape_at(mode: TargetMode, aim: Point) -> Vec<Point> {
     match mode {
         TargetMode::Ball { radius, .. } => rl_core::geometry::disc(aim, radius).collect(),
         TargetMode::Bolt { .. } | TargetMode::Adjacent => vec![aim],

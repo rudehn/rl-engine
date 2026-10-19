@@ -12,7 +12,7 @@ use crate::view::{GearView, GearViewPlugin};
 
 /// Where the gear list is drawn.
 #[derive(Resource, Debug, Clone)]
-pub struct GearLayout {
+pub(crate) struct GearLayout {
     /// The terminal cells it occupies, border included.
     pub rect: Rect,
     /// The title in the top border. Empty draws no frame.
@@ -64,7 +64,7 @@ impl Plugin for GearPanel {
 
 /// What the rail says of a worn thing that will not come off, in the bad
 /// tone: the bag's words for it, so one mark means one thing everywhere.
-pub const STUCK_WORDS: &str = "will not come off";
+pub(crate) const STUCK_WORDS: &str = "will not come off";
 
 /// Paints the gear list.
 ///
@@ -72,7 +72,7 @@ pub const STUCK_WORDS: &str = "will not come off";
 /// panel has to spare, slot by slot from the top, and never so many that a
 /// slot below it is pushed out of the panel: what is not worn is as much
 /// the list as what is.
-pub fn draw_gear(mut terminal: ResMut<Terminal>, layout: Res<GearLayout>, view: Res<GearView>, palette: Res<Palette>) {
+pub(crate) fn draw_gear(mut terminal: ResMut<Terminal>, layout: Res<GearLayout>, view: Res<GearView>, palette: Res<Palette>) {
     let rect = layout.rect;
     if rect.width < 8 || rect.height < 2 {
         return;

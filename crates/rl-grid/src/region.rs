@@ -62,7 +62,7 @@ impl Regions {
     }
 
     /// Cells in region `label`.
-    pub fn size(&self, label: u32) -> usize {
+    pub(crate) fn size(&self, label: u32) -> usize {
         self.sizes[label as usize - 1]
     }
 
@@ -77,7 +77,8 @@ impl Regions {
     }
 
     /// Whether `a` and `b` are passable and in the same region.
-    pub fn connected(&self, a: Point, b: Point) -> bool {
+    #[cfg(test)]
+    pub(crate) fn connected(&self, a: Point, b: Point) -> bool {
         matches!((self.label(a), self.label(b)), (Some(x), Some(y)) if x == y)
     }
 }

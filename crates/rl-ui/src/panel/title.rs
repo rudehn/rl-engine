@@ -47,7 +47,7 @@ pub enum TitleRow {
 
 impl TitleRow {
     /// Every row, in the order they are drawn.
-    pub const ALL: [TitleRow; 5] = [TitleRow::Continue, TitleRow::NewGame, TitleRow::Records, TitleRow::Settings, TitleRow::Exit];
+    pub(crate) const ALL: [TitleRow; 5] = [TitleRow::Continue, TitleRow::NewGame, TitleRow::Records, TitleRow::Settings, TitleRow::Exit];
 
     /// What the row says, in the game's `words`.
     fn label(self, words: &TitleWords) -> &str {
@@ -105,7 +105,7 @@ impl Default for TitleWords {
 /// The menu as it stands: the row picked out, the question while it is
 /// asked, and whether a screen stands over it.
 ///
-/// Refilled by [`title_keys`] once a frame while the title is up, before
+/// Refilled by `title_keys` once a frame while the title is up, before
 /// anything draws, so the rows a key takes are the rows drawn.
 #[derive(Resource, Debug, Default)]
 pub struct TitleMenu {
@@ -137,7 +137,8 @@ impl TitleMenu {
     /// Read-only, since the keys refill it every frame and a row a game
     /// added would be a row no key could take. Empty until the title's
     /// first frame.
-    pub fn drawn(&self) -> &[(TitleRow, bool)] {
+    #[cfg(test)]
+    pub(crate) fn drawn(&self) -> &[(TitleRow, bool)] {
         &self.drawn
     }
 }
@@ -246,7 +247,7 @@ impl Plugin for TitlePanel {
 /// holds, if the game keeps one, the settings declared, and the records
 /// kept.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct TitleReads<'w> {
+pub(crate) struct TitleReads<'w> {
     saved: Option<Res<'w, SavedRun>>,
     settings: Option<Res<'w, Settings>>,
     records: Option<Res<'w, RunRecords>>,
@@ -294,7 +295,7 @@ impl TitleReads<'_> {
 /// the rows the keys read. An ordinary system rather than an exclusive one:
 /// beginning a run runs the `NewRun` schedule, which wants the whole world,
 /// so it is queued as a command, applied before anything draws.
-pub fn title_keys(
+pub(crate) fn title_keys(
     keys: ControlInput,
     reads: TitleReads,
     mut menu: ResMut<TitleMenu>,

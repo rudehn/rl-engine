@@ -11,7 +11,7 @@ use crate::tone::{Palette, Tones};
 
 /// Where the log is drawn.
 #[derive(Resource, Debug, Clone)]
-pub struct LogLayout {
+pub(crate) struct LogLayout {
     /// The terminal cells it occupies.
     pub rect: Rect,
     /// Newest line at the bottom, which is where a player's eye rests
@@ -42,7 +42,7 @@ impl Plugin for LogPanel {
 }
 
 /// Paints the log.
-pub fn draw_log(mut terminal: ResMut<Terminal>, layout: Res<LogLayout>, log: Res<MessageLog>, palette: Res<Palette>) {
+pub(crate) fn draw_log(mut terminal: ResMut<Terminal>, layout: Res<LogLayout>, log: Res<MessageLog>, palette: Res<Palette>) {
     let rect = layout.rect;
     if rect.width < 4 || rect.height < 1 {
         return;

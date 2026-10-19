@@ -20,12 +20,12 @@ use rl_core::{Id, Interner};
 
 use crate::tone::ToneId;
 
-/// The type [`FacetId`] indexes. Never constructed.
+/// The type `FacetId` indexes. Never constructed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FacetKey;
 
 /// A registered facet key.
-pub type FacetId = Id<FacetKey>;
+pub(crate) type FacetId = Id<FacetKey>;
 
 /// The facet keys a game has named.
 ///
@@ -51,16 +51,6 @@ impl Facets {
     /// Panics if `key` did not come from this registry.
     pub fn name(&self, key: FacetId) -> &str {
         self.0.name(key)
-    }
-
-    /// How many keys exist.
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    /// Whether nothing has been declared.
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
     }
 
     /// Every key, with its name.

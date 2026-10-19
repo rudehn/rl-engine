@@ -88,6 +88,7 @@ pub fn ground_with(app: &mut App, tiles: TileRegistry) -> Point {
     let mut map = WorldMap::new(tiles.tables());
     map.install_place(MapId::ZERO, build);
     map.switch_to(MapId::ZERO);
+    map.visit(MapId::ZERO);
     app.insert_resource(map);
     start
 }

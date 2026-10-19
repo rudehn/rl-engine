@@ -4,7 +4,7 @@
 //! never in clock time, so a worker twice as fast finishes in half the
 //! clock without this module knowing speed exists. [`Work::advance`]
 //! counts a turn and answers with [`Progress`]. [`in_reach`] is the one
-//! test of whether work can still be done: a worker within [`REACH`] of
+//! test of whether work can still be done: a worker within `REACH` of
 //! its target, asked of where both are now rather than how they got
 //! there. What a kind of work is called is a [`WorkKindId`], interned from
 //! the word a panel shows, typed by [`WorkKind`], so there is no list of
@@ -22,7 +22,7 @@ pub type WorkKindId = Id<WorkKind>;
 
 /// How far from its target work can be done, in cells, Chebyshev: beside
 /// it or on it. Nothing asks for work from further off.
-pub const REACH: i32 = 1;
+pub(crate) const REACH: i32 = 1;
 
 /// Whether a worker at `worker` can work on a target at `target`.
 pub fn in_reach(worker: Point, target: Point) -> bool {
@@ -44,7 +44,7 @@ pub struct Work<A> {
     /// What kind of work, which is also what a panel calls it.
     pub kind: WorkKindId,
     /// What it is done to, if anything: work on a target breaks when the
-    /// target is gone or out of [`REACH`].
+    /// target is gone or out of `REACH`.
     pub target: Option<A>,
     /// Turns worked so far.
     pub done: u16,

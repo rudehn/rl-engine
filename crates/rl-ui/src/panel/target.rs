@@ -3,7 +3,7 @@
 //!
 //! The footprint is not framed like the other panels. An aim is about the
 //! map, so this reads back the cells
-//! [`draw_map`](rl_render::map_view::draw_map) wrote and repaints their
+//! `draw_map` wrote and repaints their
 //! backgrounds, keeping every glyph where it is: the monster under the
 //! cursor stays the monster, lit differently.
 //!
@@ -37,7 +37,7 @@ use crate::view::target::{TargetView, TargetViewPlugin};
 
 /// Where the aim is described in words.
 #[derive(Resource, Debug, Clone)]
-pub struct TargetLayout {
+pub(crate) struct TargetLayout {
     /// The box the aim is described in. Under three rows tall draws none,
     /// leaving only the footprint.
     pub rect: Rect,
@@ -94,19 +94,26 @@ const PULSE_DEPTH: f32 = 0.45;
 
 /// How bright the `index`th cell of a line is at time `t`, from 0 at a
 /// trough to 1 at a crest, the crests moving up the line as `t` grows.
-pub fn pulse(index: usize, t: f32) -> f32 {
+pub(crate) fn pulse(index: usize, t: f32) -> f32 {
     let phase = (t * PULSE_SPEED - index as f32) * std::f32::consts::TAU / PULSE_LENGTH;
     phase.sin() * 0.5 + 0.5
 }
 
 /// The colour a cell of a line takes: `tone`, dimmed towards the surface
 /// by how far from a crest it is.
-pub fn pulsed(tone: ToneId, index: usize, t: f32, palette: &Palette) -> Color {
+pub(crate) fn pulsed(tone: ToneId, index: usize, t: f32, palette: &Palette) -> Color {
     palette.get(tone).mix(&palette.get(Tones::SURFACE), PULSE_DEPTH * (1.0 - pulse(index, t)))
 }
 
 /// Paints the footprint and the box.
-pub fn draw_target(mut terminal: ResMut<Terminal>, layout: Res<TargetLayout>, view: Res<TargetView>, map: CursorMap, time: Res<Time>, palette: Res<Palette>) {
+pub(crate) fn draw_target(
+    mut terminal: ResMut<Terminal>,
+    layout: Res<TargetLayout>,
+    view: Res<TargetView>,
+    map: CursorMap,
+    time: Res<Time>,
+    palette: Res<Palette>,
+) {
     if !view.aiming() {
         return;
     }

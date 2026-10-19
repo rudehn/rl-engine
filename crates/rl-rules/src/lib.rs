@@ -105,7 +105,7 @@ pub mod tag;
 pub mod work;
 
 pub use ability::{AbilityDef, AbilityId, Aim, Area, Asks, Blocked, Cost, EffectSpec, Gates, Purse, Requirement, Targeting, TriggerSpec, blocked, read_args};
-pub use accuracy::{Certain, Delivery, HitModel, Line, Odds, Percent, PercentLabels, Shot, range_penalty};
+pub use accuracy::{Certain, Delivery, HitModel, Line, Odds, Percent, PercentLabels, Shot};
 pub use ai::{
     ActorView, Awareness, Brain, Carried, Choice, Decision, Fields, HearingStats, ItemView, Missile, MovementProfile, NoFields, NoticeStats, Repertoire, Sense,
     Snapshot, Standard, StandardBrain, StealthStats, Tactic, TacticCtx, Vitals, Wits, notices,
@@ -114,20 +114,20 @@ pub use balance::{BandRow, Report, ThreatSubject, threat};
 pub use content::{BandedEntry, BandedTable, ContentError, Named, Registry, load_spawns};
 pub use damage::{DamageKind, DamageStage, Hit, Resistances, resolve};
 pub use dressing::{DistrictDressings, DressingDef};
-pub use equip::{EquipError, EquipShape, Equipment, SlotDef, SlotId, pair_of};
+pub use equip::{EquipError, EquipShape, Equipment, SlotDef, SlotId};
 pub use events::{Change, CounterDef, CounterId, Fact, FactDef, FactKind, Ledger, Matcher, Need, Objective, QuestDef, QuestId, QuestState, Tally, Tracker};
 pub use faction::{FactionId, Factions, Relation};
 pub use fire::Tinder;
-pub use forecast::{Combatant, Duel, Outlook, blows_to_fell, duel, expected_damage, turns_for};
+pub use forecast::{Combatant, Duel, Outlook, duel};
 pub use gas::{Breath, GasDef, GasId};
 pub use layout::LayoutDef;
 pub use loot::{DropRow, DropTable, Layout, LevelRow, LevelTable, LootRow, LootTable, Placed, ScatterRules, plan_scatter};
-pub use namegen::{NameBook, NameCase, NameSet};
+pub use namegen::{NameBook, NameSet};
 pub use names::{NameRef, Names};
 pub use parts::{AttackShape, KeepAway, WhenEmpty};
 pub use prefab::{Coverage, CoverageRow, Legend, Legended, Pick, PrefabDef, Reach, Slot};
 pub use prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, Stock};
-pub use role::{RoleDef, RoleId};
+pub use role::RoleDef;
 pub use stats::{Modifier, Op, Source, StatDef, StatId, Stats};
 pub use status::{ActiveStatus, Mended, SLEEPER_REACH, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport, UNTIL_CURED};
 pub use tag::{TagDef, TagId};
@@ -152,10 +152,12 @@ pub mod prelude {
     };
     pub use crate::faction::{FactionId, Factions, Relation};
     pub use crate::fire::Tinder;
-    pub use crate::forecast::{Combatant, Duel, Outlook, blows_to_fell, duel, expected_damage, turns_for};
+    pub use crate::forecast::{Combatant, Duel, Outlook, duel};
+
     pub use crate::gas::{Breath, GasDef, GasId};
     pub use crate::loot::{DropRow, DropTable, Layout, LevelRow, LevelTable, LootRow, LootTable, Placed, ScatterRules, plan_scatter};
-    pub use crate::namegen::{NameBook, NameCase, NameSet};
+    pub use crate::namegen::{NameBook, NameSet};
+
     pub use crate::names::{NameRef, Names};
     pub use crate::prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, Stock};
     pub use crate::stats::{Modifier, Op, Source, StatDef, StatId, Stats};

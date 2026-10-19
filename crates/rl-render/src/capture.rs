@@ -42,15 +42,15 @@ use bevy::window::WindowLevel;
 /// scripted run.
 pub use rl_bevy::replay::CAPTURE_VAR;
 /// The environment variable naming the earliest frame to shoot on.
-pub const FRAMES_VAR: &str = "RL_CAPTURE_FRAMES";
+pub(crate) const FRAMES_VAR: &str = "RL_CAPTURE_FRAMES";
 /// The environment variable naming keys to press first.
-pub const KEYS_VAR: &str = "RL_CAPTURE_KEYS";
+pub(crate) const KEYS_VAR: &str = "RL_CAPTURE_KEYS";
 /// The environment variable naming when to shoot: unset for once the keys
 /// have settled, or `hold` for the first moment the turns are held for
 /// something to be seen, a tenth of a second in, so the shot catches the
 /// flight or the burst the keys caused rather than what it left behind.
 /// `hold:0.3` names its own moment, in seconds after the hold began.
-pub const AT_VAR: &str = "RL_CAPTURE_AT";
+pub(crate) const AT_VAR: &str = "RL_CAPTURE_AT";
 
 /// The frame the first scripted key is pressed on, counted from the end of
 /// the warm-up, so what the keys cause is drawn by a renderer that is
@@ -91,7 +91,7 @@ fn at(value: Option<String>) -> Result<At, String> {
 pub struct CapturePlugin;
 
 /// Whether this run is a capture.
-pub fn requested() -> bool {
+pub(crate) fn requested() -> bool {
     std::env::var_os(CAPTURE_VAR).is_some()
 }
 
@@ -136,7 +136,7 @@ impl Plugin for CapturePlugin {
 }
 
 /// Parses a key script; see the module docs.
-pub fn parse_keys(script: &str) -> Result<Vec<Vec<KeyCode>>, String> {
+pub(crate) fn parse_keys(script: &str) -> Result<Vec<Vec<KeyCode>>, String> {
     let mut out = Vec::new();
     for word in script.split_whitespace() {
         let (key, times) = match word.rsplit_once('*') {

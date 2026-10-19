@@ -370,7 +370,7 @@ fn check_containers<M: ItemMaker>(maker: Res<M>, registries: Res<Registries>) {
 /// [`PropsPlugin`](crate::props::PropsPlugin) checks for before it lets a
 /// container that asks for a tag into play.
 #[derive(Resource, Debug, Default)]
-pub struct ContainersAnswered;
+pub(crate) struct ContainersAnswered;
 
 /// Loot: a place's floor on the arrival that built it, what the dead
 /// leave, and what containers hold, all made through the game's [`ItemMaker`] `M`.

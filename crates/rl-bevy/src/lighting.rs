@@ -19,13 +19,13 @@
 //! Except for what is lit by definition. The light is a [`Glow`], the one
 //! light type, and a tile kind and a prop kind may carry one in their
 //! definitions: the plugin puts up a fixture on every cell of a glowing
-//! tile in every place built or restored, [`light_places`], and gives
+//! tile in every place built or restored, `light_places`, and gives
 //! every prop of a glowing kind its source the moment it is given its
-//! kind, [`light_prop`]. So a lamp in a data file is lit wherever it
+//! kind, `light_prop`. So a lamp in a data file is lit wherever it
 //! stands and however it got there, and a game writes no light of its own
 //! for it.
 //!
-//! A source may take light away instead: [`LightSource::darkness`], a light
+//! A source may take light away instead: `LightSource::darkness`, a light
 //! of negative intensity, is a pool of true darkness cast like any other
 //! source, from a fixture, an actor, a carried thing or a cell's glow. It
 //! takes a share of every light and the ambient in its reach, so what it
@@ -33,7 +33,7 @@
 //! and it can never light or reveal a cell.
 //!
 //! What is seen falls in one of three [`LightBand`]s, which
-//! [`Lighting::band`] names and [`band_at`] names with no lighting read as
+//! [`Lighting::band`] names and `band_at` names with no lighting read as
 //! lit: dark below `threshold`, dim up to `bright`, and lit above it. Sight
 //! reads only whether a tile is dark; stealth's light bonus reads the lit
 //! band, and a to-hit model may read either.
@@ -154,7 +154,7 @@ pub const DEFAULT_THRESHOLD: u8 = 16;
 /// dim, unless the game says otherwise. With the lamps the example games
 /// carry, it leaves a ring of one or two tiles of dim light at a lamp's
 /// edge, which is where a sneak stands and where a shot goes wide.
-pub const DEFAULT_BRIGHT: u8 = 64;
+pub(crate) const DEFAULT_BRIGHT: u8 = 64;
 
 /// The light over the loaded window. Inserting it turns lighting on.
 #[derive(Resource, Debug, Clone)]
@@ -233,21 +233,11 @@ impl Lighting {
         LightBand::of(self.at(p).intensity, self.threshold, self.bright)
     }
 
-    /// The world tile at the field's top-left.
-    pub fn origin(&self) -> Point {
-        self.origin
-    }
-
-    /// Forces the fixtures to be recast on the next update.
-    pub fn mark_static_dirty(&mut self) {
-        self.static_dirty = true;
-    }
-
     /// Light shed by cells of `map` rather than by entities, replacing what
     /// was set before: a fire's burning cells, which come and go every turn
     /// and so are cast with the sources that move. Nothing is shed while
     /// another map is current.
-    pub fn set_glow(&mut self, map: MapId, glow: Vec<(Point, LightSource)>) {
+    pub(crate) fn set_glow(&mut self, map: MapId, glow: Vec<(Point, LightSource)>) {
         let glow = (map, glow);
         self.glow_moved |= self.glow != glow;
         self.glow = glow;
@@ -309,7 +299,7 @@ type CarrierData = (&'static Position, &'static Inventory, Option<&'static OnMap
 
 /// Everything that sheds light.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Sources<'w, 's> {
+pub(crate) struct Sources<'w, 's> {
     placed: Query<'w, 's, SourceData>,
     carriers: Query<'w, 's, CarrierData, With<Actor>>,
     carried: Query<'w, 's, &'static LightSource, (With<Item>, Without<Position>)>,
@@ -377,7 +367,7 @@ type Lit = (Option<&'static Position>, &'static mut Viewshed);
 /// moved, which in a lit game is every frame the player walks: measured at
 /// 11 microseconds per actor per frame by `crates/rl-ui/benches/frame.rs`,
 /// or a frame three times over at sixty-four of them.
-pub fn update_lighting(map: Res<WorldMap>, lighting: Option<ResMut<Lighting>>, sources: Sources, mut viewsheds: Query<Lit>) {
+pub(crate) fn update_lighting(map: Res<WorldMap>, lighting: Option<ResMut<Lighting>>, sources: Sources, mut viewsheds: Query<Lit>) {
     let Some(mut lighting) = lighting else { return };
     lighting.follow_place(&map);
     recast(&map, &mut lighting, &sources, &mut viewsheds);
@@ -390,7 +380,7 @@ pub fn update_lighting(map: Res<WorldMap>, lighting: Option<ResMut<Lighting>>, s
 /// asks only what changed since the last one: a source lit, altered, moved
 /// or put out, or a carrier of one that stepped or whose bag changed.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct LightMoves<'w, 's> {
+pub(crate) struct LightMoves<'w, 's> {
     sources: Query<'w, 's, (), (With<LightSource>, Stirred)>,
     carriers: Query<'w, 's, &'static Inventory, (With<Actor>, Bearing)>,
     carried: Query<'w, 's, (), InABag>,
@@ -425,7 +415,7 @@ impl LightMoves<'_, '_> {
 /// [`sense`](crate::minds::sense) recasts the one about to decide. A place
 /// arrived on in the pass before is lit by its own ambient here, so the
 /// first mind to decide on it sees by that light, not the last map's.
-pub fn relight(map: Res<WorldMap>, lighting: Option<ResMut<Lighting>>, mut moves: LightMoves, sources: Sources, mut viewsheds: Query<Lit>) {
+pub(crate) fn relight(map: Res<WorldMap>, lighting: Option<ResMut<Lighting>>, mut moves: LightMoves, sources: Sources, mut viewsheds: Query<Lit>) {
     let Some(mut lighting) = lighting else { return };
     lighting.follow_place(&map);
     if moves.any() || lighting.is_behind(&map) {
@@ -543,14 +533,15 @@ pub fn gate(lighting: &Lighting, at: Point, dark_sight: i32, viewshed: &mut View
 
 /// Whether `observer` at `from`, with `dark_sight`, perceives a target at
 /// `to` that it has a line to. With no lighting, always.
-pub fn perceives(lighting: Option<&Lighting>, from: Point, dark_sight: i32, to: Point) -> bool {
+#[cfg(test)]
+pub(crate) fn perceives(lighting: Option<&Lighting>, from: Point, dark_sight: i32, to: Point) -> bool {
     lighting.is_none_or(|l| l.is_lit(to) || geometry::chebyshev(from, to) <= dark_sight.max(1))
 }
 
 /// The band `p` is in, with no lighting read as lit: a game without
 /// [`LightingPlugin`] is a world seen everywhere, and nothing in it is
 /// harder to hit or easier to hide in for want of light.
-pub fn band_at(lighting: Option<&Lighting>, p: Point) -> LightBand {
+pub(crate) fn band_at(lighting: Option<&Lighting>, p: Point) -> LightBand {
     lighting.map_or(LightBand::Lit, |l| l.band(p))
 }
 
@@ -577,7 +568,7 @@ pub struct Concealed;
 /// Whether a [`Concealed`] thing at `at` goes unseen by a viewer at
 /// `from`: true while `at` is not lit and the two are not beside each
 /// other.
-pub fn conceals(lighting: Option<&Lighting>, from: Point, at: Point) -> bool {
+pub(crate) fn conceals(lighting: Option<&Lighting>, from: Point, at: Point) -> bool {
     band_at(lighting, at) != LightBand::Lit && geometry::chebyshev(from, at) > 1
 }
 
@@ -612,7 +603,7 @@ impl PlayerSight<'_, '_> {
 }
 
 /// Burns fuel every whole turn and puts out what runs dry.
-pub fn tick_fuel(
+pub(crate) fn tick_fuel(
     mut commands: Commands,
     mut ends: MessageReader<TurnEnd>,
     mut burning: Query<(Entity, &mut Fuel), With<LightSource>>,
@@ -643,7 +634,7 @@ pub fn tick_fuel(
 /// entered, since a fixture on a map nobody reads is never cast. A tile
 /// that changes later keeps the fixture it was given: what a game does to
 /// the map after it is built is the game's to light.
-pub fn light_places(mut commands: Commands, map: Option<ResMut<WorldMap>>) {
+pub(crate) fn light_places(mut commands: Commands, map: Option<ResMut<WorldMap>>) {
     let Some(mut map) = map else { return };
     // Asked through a shared borrow first, so a pass with nothing to light
     // never marks the map changed.
@@ -673,7 +664,7 @@ pub fn light_places(mut commands: Commands, map: Option<ResMut<WorldMap>>) {
 /// does and goes out when it is destroyed. A kind with no light leaves
 /// whatever light the entity already has: a game that lit something
 /// itself and then dressed it as a prop keeps its own light.
-pub fn light_prop(insert: On<Insert, PropKind>, mut commands: Commands, registries: Option<Res<Registries>>, kinds: Query<&PropKind>) {
+pub(crate) fn light_prop(insert: On<Insert, PropKind>, mut commands: Commands, registries: Option<Res<Registries>>, kinds: Query<&PropKind>) {
     let Some(registries) = registries else { return };
     let Ok(kind) = kinds.get(insert.entity) else { return };
     let Some(def) = registries.props.try_get(kind.0) else { return };

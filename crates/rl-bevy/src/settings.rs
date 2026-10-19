@@ -88,7 +88,7 @@ impl Settings {
     /// Panics if the name is already declared, or if it has no choices or
     /// a default past the end of them: each is a mistake in a game's
     /// setup, not something to carry on from.
-    pub fn add(&mut self, setting: Setting) -> SettingId {
+    pub(crate) fn add(&mut self, setting: Setting) -> SettingId {
         assert!(self.find(&setting.name).is_none(), "the setting `{}` is declared twice", setting.name);
         assert!(!setting.choices.is_empty(), "the setting `{}` has no choices", setting.name);
         assert!(setting.default < setting.choices.len(), "the setting `{}` defaults to a choice it does not have", setting.name);
@@ -168,7 +168,7 @@ impl Settings {
 
 /// Declaring settings while the app is built.
 pub trait AddSettings {
-    /// Declares a setting and returns its id. See [`Settings::add`].
+    /// Declares a setting and returns its id. See `Settings::add`.
     fn add_setting(&mut self, setting: Setting) -> SettingId;
 }
 

@@ -107,13 +107,13 @@ impl TileAppearance {
     }
 
     /// `id` as seen at `p` at time `t`, before light: jittered per cell.
-    pub fn seen(&self, id: TileId, p: Point, t: f32) -> Cell {
+    pub(crate) fn seen(&self, id: TileId, p: Point, t: f32) -> Cell {
         let (cell, vary) = self.look(id);
         Cell { glyph: cell.glyph, fg: self.shading.vary(cell.fg, vary, p, t), bg: self.shading.vary(cell.bg, vary, p, t) }
     }
 
     /// `id` as remembered at `p`: jittered as it was seen, then faded.
-    pub fn remembered(&self, id: TileId, p: Point) -> Cell {
+    pub(crate) fn remembered(&self, id: TileId, p: Point) -> Cell {
         let (cell, vary) = self.look(id);
         let still = Vary { shimmer: 0.0, ..vary };
         let fade = |c| self.memory.recall(self.shading.vary(c, still, p, 0.0));
@@ -122,13 +122,13 @@ impl TileAppearance {
 
     /// `ground`, a remembered tile, with `thing` drawn on it in the colours
     /// of memory, the way the tile's own glyph is.
-    pub fn recalled(&self, ground: Cell, thing: Recalled) -> Cell {
+    pub(crate) fn recalled(&self, ground: Cell, thing: Recalled) -> Cell {
         let Rgb { r, g, b } = thing.color;
         Cell { glyph: thing.glyph, fg: self.memory.recall(Color::srgb_u8(r, g, b)), bg: ground.bg }
     }
 
     /// `cell` under `light` at `p` at time `t`: both colours coloured by it.
-    pub fn under(&self, cell: Cell, light: Light, p: Point, t: f32) -> Cell {
+    pub(crate) fn under(&self, cell: Cell, light: Light, p: Point, t: f32) -> Cell {
         Cell { glyph: cell.glyph, fg: self.shading.light(cell.fg, light, p, t), bg: self.shading.light(cell.bg, light, p, t) }
     }
 }
@@ -177,14 +177,14 @@ impl FieldAppearance {
     }
 
     /// The tint of `gas`, grey for a gas nobody coloured.
-    pub fn gas(&self, gas: GasId) -> Color {
+    pub(crate) fn gas(&self, gas: GasId) -> Color {
         self.gases.get(gas.index()).copied().flatten().unwrap_or(Color::srgb(0.62, 0.62, 0.6))
     }
 
     /// `cell` as `amount` of a gas tinted `tint` over it; `hides` when it is
     /// thick enough to hide what is behind it, and then drawn in the haze
     /// its thickness picks, the heaviest only near full.
-    pub fn under_gas(&self, mut cell: Cell, tint: Color, amount: u8, hides: bool) -> Cell {
+    pub(crate) fn under_gas(&self, mut cell: Cell, tint: Color, amount: u8, hides: bool) -> Cell {
         let share = f32::from(amount) / 255.0;
         cell.bg = cell.bg.mix(&tint, 0.15 + share * 0.6);
         if hides && !self.haze.is_empty() {
@@ -197,7 +197,7 @@ impl FieldAppearance {
 
     /// `cell`, over a burning one, at `p` at time `t`: now and then an
     /// ember rising through it, a few cells in a dozen at any moment.
-    pub fn over_flame(&self, mut cell: Cell, p: Point, t: f32) -> Cell {
+    pub(crate) fn over_flame(&self, mut cell: Cell, p: Point, t: f32) -> Cell {
         if rl_core::seed::position_hash((t * 8.0) as u64, p.x, p.y).is_multiple_of(9) {
             cell.glyph = self.ember;
             cell.fg = self.flare;
@@ -206,7 +206,7 @@ impl FieldAppearance {
     }
 
     /// A burning cell at `p` at time `t`, flickering cell by cell.
-    pub fn burning(&self, p: Point, t: f32) -> Cell {
+    pub(crate) fn burning(&self, p: Point, t: f32) -> Cell {
         let beat = rl_core::seed::position_hash((t * 12.0) as u64, p.x, p.y) % 100;
         Cell { glyph: self.flame.glyph, fg: self.flame.fg.mix(&self.flare, beat as f32 / 160.0), bg: self.flame.bg }
     }
@@ -244,18 +244,19 @@ impl MapView {
     }
 
     /// How many cells across one tile is drawn.
-    pub fn tile_width(&self) -> i32 {
+    #[cfg(test)]
+    pub(crate) fn tile_width(&self) -> i32 {
         self.across
     }
 
     /// How many tiles the viewport is wide. Cells left over at its right
     /// edge, too few for a whole tile, show nothing.
-    pub fn tiles_wide(&self) -> i32 {
+    pub(crate) fn tiles_wide(&self) -> i32 {
         self.viewport.width / self.across
     }
 
     /// Centres the view on `p`.
-    pub fn center_on(&mut self, p: Point) {
+    pub(crate) fn center_on(&mut self, p: Point) {
         self.origin = Point::new(p.x - self.tiles_wide() / 2, p.y - self.viewport.height / 2);
     }
 
@@ -266,7 +267,7 @@ impl MapView {
     /// viewport: standing near an edge puts the map's rim mid-screen and
     /// spends the rest on nothing. A map smaller than the viewport is
     /// centred in it instead, since there is nothing to scroll.
-    pub fn clamp_to(&mut self, bounds: Rect) {
+    pub(crate) fn clamp_to(&mut self, bounds: Rect) {
         let slack = Point::new(bounds.width - self.tiles_wide(), bounds.height - self.viewport.height);
         self.origin.x = if slack.x <= 0 { bounds.x + slack.x / 2 } else { self.origin.x.clamp(bounds.x, bounds.x + slack.x) };
         self.origin.y = if slack.y <= 0 { bounds.y + slack.y / 2 } else { self.origin.y.clamp(bounds.y, bounds.y + slack.y) };
@@ -281,7 +282,7 @@ impl MapView {
     }
 
     /// The world tile drawn at a terminal cell, if inside the viewport.
-    pub fn to_world(&self, s: Point) -> Option<Point> {
+    pub(crate) fn to_world(self, s: Point) -> Option<Point> {
         let local = s - self.viewport.origin();
         let tile = Point::new(local.x.div_euclid(self.across), local.y);
         (self.viewport.contains(s) && tile.x < self.tiles_wide()).then(|| tile + self.origin)
@@ -393,7 +394,7 @@ type JustEmptied<'w, 's> = Query<'w, 's, (Entity, &'static PropKind), Added<Empt
 
 /// Gives an emptied container the look its definition keeps for one that
 /// is done, so a crate already gone through reads as done at a glance.
-pub fn redress_emptied(mut commands: Commands, registries: Option<Res<Registries>>, emptied: JustEmptied) {
+pub(crate) fn redress_emptied(mut commands: Commands, registries: Option<Res<Registries>>, emptied: JustEmptied) {
     let Some(registries) = registries else { return };
     for (entity, kind) in &emptied {
         let Some(look) = registries.props.get(kind.0).container.as_ref().and_then(|c| c.opened) else { continue };
@@ -412,7 +413,7 @@ pub fn redress_emptied(mut commands: Commands, registries: Option<Res<Registries
 /// A prop a game dressed itself keeps what it was given: the query asks
 /// for those with no glyph, so a game that wants one crate to look
 /// different says so and is not overruled.
-pub fn dress_props(mut commands: Commands, registries: Option<Res<Registries>>, bare: Undressed) {
+pub(crate) fn dress_props(mut commands: Commands, registries: Option<Res<Registries>>, bare: Undressed) {
     let Some(registries) = registries else { return };
     for (entity, kind) in &bare {
         let look = registries.props.get(kind.0).look;
@@ -425,13 +426,13 @@ type UndrawnStairs<'w, 's> = Query<'w, 's, (Entity, &'static Stair), (Added<Stai
 
 /// The layer a stair is drawn on: over the floor and under whatever is
 /// dropped on it or stands on it, as a prop is by default.
-pub const STAIR_LAYER: i32 = 1;
+pub(crate) const STAIR_LAYER: i32 = 1;
 
 /// Gives a stair the engine laid the glyph its look asks for, as
 /// [`dress_props`] gives a prop its definition's, so the engine that lays
 /// it names no `Color`. A stair a game drew itself keeps what it was
 /// given.
-pub fn dress_stairs(mut commands: Commands, bare: UndrawnStairs) {
+pub(crate) fn dress_stairs(mut commands: Commands, bare: UndrawnStairs) {
     for (entity, stair) in &bare {
         let c = stair.look.color;
         commands.entity(entity).insert(Glyph { ch: stair.look.glyph, fg: Color::srgb_u8(c.r, c.g, c.b), layer: STAIR_LAYER });
@@ -485,7 +486,7 @@ pub fn remember_still_things(map: Res<WorldMap>, mut knowledge: ResMut<Knowledge
 }
 
 /// Keeps the view centred on the player, and inside the map.
-pub fn follow_player(mut view: ResMut<MapView>, map: Res<WorldMap>, player: Query<&Position, With<Player>>) {
+pub(crate) fn follow_player(mut view: ResMut<MapView>, map: Res<WorldMap>, player: Query<&Position, With<Player>>) {
     let Ok(pos) = player.single() else { return };
     view.center_on(pos.0);
     if let Some(place) = map.place(map.current()) {
@@ -506,7 +507,7 @@ const ANIMATION_RATE: f32 = 12.0;
 type Drawn = (&'static Position, &'static Glyph, Option<&'static OnMap>, Has<Concealed>, Has<Actor>);
 
 /// The tiles the map drew someone on this frame: every actor the player
-/// sees, the player among them, refilled by [`draw_map`].
+/// sees, the player among them, refilled by `draw_map`.
 ///
 /// What a mark drawn over the map after it asks so as not to cover
 /// anyone, a cursor's ticks above all: a tick standing on the player's
@@ -551,7 +552,7 @@ pub struct Scene<'w, 's> {
 }
 
 /// Paints the viewport: lit where the player sees, dim where remembered.
-pub fn draw_map(mut terminal: ResMut<Terminal>, mut actors: ResMut<DrawnActors>, scene: Scene) {
+pub(crate) fn draw_map(mut terminal: ResMut<Terminal>, mut actors: ResMut<DrawnActors>, scene: Scene) {
     let Scene { time, view, map, look, knowledge, lighting, overlay, player, glyphs, sight, fields, shown, registries } = &scene;
     let now = time.elapsed_secs();
     let t = (now * ANIMATION_RATE).floor() / ANIMATION_RATE;

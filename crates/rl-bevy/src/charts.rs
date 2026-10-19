@@ -3,13 +3,13 @@
 //! [`Knowledge`](crate::knowledge::Knowledge) is what the player has seen,
 //! and the map view draws from it. A chart is the same record kept for
 //! whoever a game says: one scout, a party, a whole side. A mind carrying
-//! [`Charting`] writes what it sees into its chart on each of its turns,
+//! `Charting` writes what it sees into its chart on each of its turns,
 //! and is told, as the [`Uncharted`] sense, the ground the chart does not
 //! hold yet and could be walked onto, which is what the
 //! [`Explore`](rl_rules::ai::tactics::Explore) tactic walks to. Minds that
 //! name one chart share it: what one has seen none of them goes to look at.
 //!
-//! A chart outlives whoever filled it, and [`Charts::copy`] hands what one
+//! A chart outlives whoever filled it, and `Charts::copy` hands what one
 //! holds to another, so what a scout saw can be given to those who come
 //! after. What a chart means is the game's: the engine keeps tiles and
 //! never asks whose side an id is.
@@ -58,7 +58,7 @@ impl Charts {
     }
 
     /// What `chart` holds of `map`, if anything.
-    pub fn of(&self, chart: ChartId, map: MapId) -> Option<&TileSet> {
+    pub(crate) fn of(&self, chart: ChartId, map: MapId) -> Option<&TileSet> {
         self.0.get(&(chart, map))
     }
 
@@ -117,7 +117,7 @@ type Charter = (With<Mind>, With<MyTurn>, Without<Player>);
 ///
 /// After its sight is recast for the turn, so the chart holds what it sees
 /// from where it now stands before it is told what the chart lacks.
-pub fn chart_sight(map: Res<WorldMap>, mut charts: ResMut<Charts>, viewers: Query<(&Viewshed, &Charting), Charter>) {
+pub(crate) fn chart_sight(map: Res<WorldMap>, mut charts: ResMut<Charts>, viewers: Query<(&Viewshed, &Charting), Charter>) {
     let Ok((sight, charting)) = viewers.single() else { return };
     let seen = charts.0.entry((charting.0, map.current())).or_default();
     for p in sight.iter() {
@@ -134,7 +134,7 @@ pub fn chart_sight(map: Res<WorldMap>, mut charts: ResMut<Charts>, viewers: Quer
 /// ground to stand on, since a mind that works doors walks through one.
 /// Nothing is pushed for a mind with no [`Charting`], and an empty list
 /// when its chart is whole.
-pub fn sense_uncharted(mut thinking: ResMut<Thinking>, map: Res<WorldMap>, charts: Res<Charts>, charting: Query<&Charting>) {
+pub(crate) fn sense_uncharted(mut thinking: ResMut<Thinking>, map: Res<WorldMap>, charts: Res<Charts>, charting: Query<&Charting>) {
     let Some(chart) = thinking.actor().and_then(|actor| charting.get(actor).ok()).map(|c| c.0) else { return };
     let Some(snapshot) = thinking.snapshot_mut() else { return };
     let here = map.current();

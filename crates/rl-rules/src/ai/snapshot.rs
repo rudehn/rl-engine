@@ -19,7 +19,7 @@ pub struct Vitals {
 
 impl Vitals {
     /// Health as a percentage.
-    pub fn pct(&self) -> i32 {
+    pub(crate) fn pct(&self) -> i32 {
         if self.max <= 0 { 0 } else { (self.current as i64 * 100 / self.max as i64) as i32 }
     }
 }
@@ -48,13 +48,13 @@ impl<A: Copy> ActorView<A> {
     }
 
     /// Health as a percentage, when it has health.
-    pub fn hp_pct(&self) -> Option<i32> {
+    pub(crate) fn hp_pct(&self) -> Option<i32> {
         self.health.map(|h| h.pct())
     }
 
     /// Whether it is below full health. False when its health is unknown,
     /// so a mind mends nothing it cannot see the wounds of.
-    pub fn is_hurt(&self) -> bool {
+    pub(crate) fn is_hurt(&self) -> bool {
         self.health.is_some_and(|h| h.current < h.max)
     }
 }
@@ -251,7 +251,7 @@ impl<A: Copy> Snapshot<A> {
     }
 
     /// The nearest visible enemy.
-    pub fn nearest_enemy(&self) -> Option<&ActorView<A>> {
+    pub(crate) fn nearest_enemy(&self) -> Option<&ActorView<A>> {
         self.enemies.first()
     }
 

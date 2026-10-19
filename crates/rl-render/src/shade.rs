@@ -41,7 +41,7 @@ pub struct Vary {
 
 impl Vary {
     /// The authored colour everywhere, always.
-    pub const NONE: Self = Self { brightness: 0.0, hue: 0.0, shimmer: 0.0 };
+    pub(crate) const NONE: Self = Self { brightness: 0.0, hue: 0.0, shimmer: 0.0 };
 
     /// A cell-to-cell spread in brightness and hue.
     pub const fn new(brightness: f32, hue: f32) -> Self {
@@ -120,7 +120,7 @@ fn scale(c: Color, r: f32, g: f32, b: f32) -> Color {
 
 /// Smooth value noise in `[0, 1]` over the plane and time: cells a tile
 /// or two apart move together, so a flame ripples rather than strobes.
-pub fn wave(seed: u64, p: Point, t: f32) -> f32 {
+pub(crate) fn wave(seed: u64, p: Point, t: f32) -> f32 {
     let (x, y) = (p.x as f32 * 0.45, p.y as f32 * 0.45);
     let (x0, y0, t0) = (x.floor(), y.floor(), t.floor());
     let (fx, fy, ft) = (x - x0, y - y0, t - t0);
@@ -138,7 +138,7 @@ pub fn wave(seed: u64, p: Point, t: f32) -> f32 {
 impl Shading {
     /// `c` as it is drawn at `p`: jittered per cell, drifting if `vary`
     /// shimmers, at time `t` seconds.
-    pub fn vary(&self, c: Color, vary: Vary, p: Point, t: f32) -> Color {
+    pub(crate) fn vary(&self, c: Color, vary: Vary, p: Point, t: f32) -> Color {
         if vary == Vary::NONE {
             return c;
         }

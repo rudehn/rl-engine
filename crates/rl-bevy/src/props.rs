@@ -142,14 +142,12 @@ pub struct Verbs(Interner<Verb>);
 impl Verbs {
     /// Open what holds something.
     pub const OPEN: VerbId = VerbId::from_raw(0);
-    /// Go through what is left of something.
-    pub const SEARCH: VerbId = VerbId::from_raw(1);
 
     /// The engine's verbs, in the order their ids are handed out.
     pub const BUILT_IN: [&'static str; 2] = [rl_rules::prop::OPEN, rl_rules::prop::SEARCH];
 
     /// The id for `name`, assigning a new one if it is unseen.
-    pub fn declare(&mut self, name: &str) -> VerbId {
+    pub(crate) fn declare(&mut self, name: &str) -> VerbId {
         self.0.intern(name)
     }
 
@@ -1133,7 +1131,7 @@ impl SpotRules {
     /// then halved past [`near`](Self::near), then multiplied for
     /// stillness and held to certainty again. A ratio rather than a
     /// rounded percent, so half of a five is two and a half and not two.
-    pub fn chance(&self, spot: u8, keen: u8, distance: u32, waited: bool) -> Option<(u32, u32)> {
+    pub(crate) fn chance(&self, spot: u8, keen: u8, distance: u32, waited: bool) -> Option<(u32, u32)> {
         debug_assert!(self.far >= self.near, "SpotRules far {} is less than near {}: the half band ends before it begins", self.far, self.near);
         let out_of = if distance <= self.near {
             100
@@ -1212,7 +1210,7 @@ type Finder<'w, 's> = Query<
 /// faster the longer a player looked at the screen and the more monsters
 /// were awake.
 ///
-/// Each roll is a chance from [`SpotRules::chance`]: the thing's own
+/// Each roll is a chance from `SpotRules::chance`: the thing's own
 /// percent with the player's [`Keen`] added, weighed by the distance to it
 /// and multiplied when the player's last turn was a [`Wait`]. A secret is
 /// rolled for once for its whole group, while any cell of it is in sight,

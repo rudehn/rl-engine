@@ -26,7 +26,7 @@ pub const BASE_ACTION_COST: u32 = 100;
 ///
 /// Saturating rather than wrapping: a wrapped clock puts an actor in the
 /// past and silently reorders everyone else, a saturated one stops visibly.
-pub const fn reschedule_at(now: u32, cost: u32) -> u32 {
+pub(crate) const fn reschedule_at(now: u32, cost: u32) -> u32 {
     now.saturating_add(cost)
 }
 
@@ -86,7 +86,7 @@ impl<Id> Default for TurnQueue<Id> {
     }
 }
 
-/// Who acts next, from [`TurnQueue::dequeue_batch`].
+/// Who acts next, from `TurnQueue::dequeue_batch`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DequeueOutcome<Id> {
     /// The player is next and must be waited on for input.
@@ -172,7 +172,7 @@ impl<Id: Copy + Eq> TurnQueue<Id> {
     /// `pop_due` with the same liveness answer pops exactly this actor. A
     /// loop that must stop short of dealing a turn, without changing the
     /// order of anyone tied with the head, looks here first.
-    pub fn peek_due(&mut self, is_alive: impl Fn(Id) -> bool) -> Option<Id> {
+    pub(crate) fn peek_due(&mut self, is_alive: impl Fn(Id) -> bool) -> Option<Id> {
         loop {
             match self.entries.peek() {
                 Some(Reverse(head)) if head.time > self.now => return None,
@@ -191,7 +191,8 @@ impl<Id: Copy + Eq> TurnQueue<Id> {
     /// Strict schedule order. A batch stops when it reaches the player, and
     /// the player is returned alone on the next call; a player at the head
     /// is returned at once. Dead entries are discarded.
-    pub fn dequeue_batch(&mut self, is_player: impl Fn(Id) -> bool, is_alive: impl Fn(Id) -> bool, max_batch: usize) -> DequeueOutcome<Id> {
+    #[cfg(test)]
+    pub(crate) fn dequeue_batch(&mut self, is_player: impl Fn(Id) -> bool, is_alive: impl Fn(Id) -> bool, max_batch: usize) -> DequeueOutcome<Id> {
         let mut batch = Vec::new();
         while let Some(Reverse(head)) = self.entries.peek() {
             if head.time > self.now {
@@ -224,12 +225,14 @@ impl<Id: Copy + Eq> TurnQueue<Id> {
     }
 
     /// How many entries are waiting.
-    pub fn len(&self) -> usize {
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
         self.entries.len()
     }
 
     /// Whether nobody is waiting.
-    pub fn is_empty(&self) -> bool {
+    #[cfg(test)]
+    pub(crate) fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
@@ -251,7 +254,8 @@ impl<Id: Copy + Eq> TurnQueue<Id> {
     ///
     /// Leaving a map tears down the actors standing in it, not the hour of
     /// the day.
-    pub fn clear_entries(&mut self) {
+    #[cfg(test)]
+    pub(crate) fn clear_entries(&mut self) {
         self.entries.clear();
     }
 }

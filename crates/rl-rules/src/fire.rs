@@ -42,7 +42,7 @@ impl Tinder {
 /// The percent chance a cell catches with `burning` neighbours alight, each
 /// passing it on with `catch_pct` percent: one minus the chance that every one
 /// of them fails.
-pub fn catch_chance(catch_pct: u8, burning: u32) -> u32 {
+pub(crate) fn catch_chance(catch_pct: u8, burning: u32) -> u32 {
     let pct = u32::from(catch_pct.min(100));
     100 - (0..burning).fold(100, |missed, _| missed * (100 - pct) / 100)
 }
@@ -51,7 +51,7 @@ pub fn catch_chance(catch_pct: u8, burning: u32) -> u32 {
 ///
 /// A burning cell burns down one turn. A cell that is not burning catches when
 /// `tinder` says it has something to burn and `roll` for it, taken below a
-/// hundred, falls under [`catch_chance`] for its burning neighbours, all eight
+/// hundred, falls under `catch_chance` for its burning neighbours, all eight
 /// of them counted; it then burns for its tinder's turns.
 pub fn spread(flames: &mut TileField<u8>, tinder: impl Fn(Point) -> Option<Tinder>, roll: impl Fn(Point) -> u32) -> Vec<Point> {
     let mut out = Vec::new();

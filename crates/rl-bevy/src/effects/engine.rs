@@ -41,7 +41,7 @@ pub struct Harm {
 
 impl Harm {
     /// The roll with `bonus`'s amount added.
-    pub fn roll_with(&self, bonus: EffectBonus) -> DiceRoll {
+    pub(crate) fn roll_with(&self, bonus: EffectBonus) -> DiceRoll {
         DiceRoll { bonus: self.roll.bonus + bonus.amount, ..self.roll }
     }
 }
@@ -92,7 +92,7 @@ pub struct Mend {
 
 impl Mend {
     /// The roll with `bonus`'s amount added.
-    pub fn roll_with(&self, bonus: EffectBonus) -> DiceRoll {
+    pub(crate) fn roll_with(&self, bonus: EffectBonus) -> DiceRoll {
         DiceRoll { bonus: self.roll.bonus + bonus.amount, ..self.roll }
     }
 }
@@ -165,7 +165,7 @@ pub struct Inflict {
 
 impl Inflict {
     /// The turns with `bonus`'s turns added.
-    pub fn turns_with(&self, bonus: EffectBonus) -> u32 {
+    pub(crate) fn turns_with(&self, bonus: EffectBonus) -> u32 {
         self.turns + bonus.turns
     }
 }
@@ -316,7 +316,7 @@ impl FromArgs for Pull {
 /// blink that lands you inside a wall is worse than a blink that fizzles,
 /// and the turn is spent either way.
 #[derive(Debug, Clone, Copy, Default)]
-pub struct Teleport;
+pub(crate) struct Teleport;
 
 impl Effect for Teleport {
     fn describe(&self, _: &Registries, _: EffectBonus) -> String {

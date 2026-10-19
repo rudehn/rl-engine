@@ -7,7 +7,7 @@
 //! the run's seed and turn and the sections [`RecordsPlugin`] filed for
 //! it, as the ending screen shows them. Confirm opens the detail; close
 //! goes back a level from it, and closes the screen from the list.
-//! [`RecordsScreen`] is which of the two is showing, not two resources,
+//! `RecordsScreen` is which of the two is showing, not two resources,
 //! because only one is ever on screen at once.
 //!
 //! The list is drawn in whatever rectangle the game gave it and scrolled
@@ -37,11 +37,11 @@ use crate::tone::{Palette, ToneId, Tones};
 /// The name the records screen's modal is declared under. [`TitlePanel`](crate::TitlePanel)
 /// looks for a modal of this same name to decide whether to offer a
 /// Records row at all.
-pub const RECORDS_MODAL: &str = "records";
+pub(crate) const RECORDS_MODAL: &str = "records";
 
 /// Where the screen is drawn and what it says.
 #[derive(Resource, Debug, Clone)]
-pub struct RecordsLayout {
+pub(crate) struct RecordsLayout {
     /// The terminal cells it occupies, border included. Fixed rather than
     /// shrunk to the records there are: the list can run to a hundred
     /// entries, so it scrolls inside this rectangle rather than growing to
@@ -60,7 +60,7 @@ pub struct RecordsLayout {
 /// both halves of the screen rather than two, because only one is ever
 /// drawn: `open` says which.
 #[derive(Resource, Debug, Default)]
-pub struct RecordsScreen {
+pub(crate) struct RecordsScreen {
     /// The row picked out in the list, indexing [`RunRecords::records`]
     /// best score first. Clamped to the records there are when the keys
     /// or the drawing read it.
@@ -130,7 +130,7 @@ pub fn records_modal(modals: &Modals) -> Option<ModalId> {
 /// ran before the open (and so saw nothing on top yet) or after it (and so
 /// sees [`Modals::just_opened`]). Either way the key that opened the
 /// screen is never also its first move.
-pub fn records_keys(
+pub(crate) fn records_keys(
     keys: ControlInput,
     records: Option<Res<RunRecords>>,
     layout: Res<RecordsLayout>,

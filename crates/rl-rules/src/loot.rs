@@ -312,11 +312,6 @@ impl<K: Copy> DropTable<K> {
         }
         left
     }
-
-    /// Whether it leaves nothing, ever.
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
 }
 
 /// One row of a level table: the bands it covers, both included, and the
@@ -383,7 +378,8 @@ impl LevelTable {
     }
 
     /// The rows, shallowest first.
-    pub fn rows(&self) -> &[LevelRow] {
+    #[cfg(test)]
+    pub(crate) fn rows(&self) -> &[LevelRow] {
         &self.rows
     }
 

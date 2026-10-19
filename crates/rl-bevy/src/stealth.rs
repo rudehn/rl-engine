@@ -50,7 +50,7 @@ pub struct Stealth(pub StealthStats);
 
 /// Nothing sees this actor: it holds a status registered as `unseen`.
 ///
-/// Kept by [`mark_unseen`] from the statuses, never inserted by hand in a
+/// Kept by `mark_unseen` from the statuses, never inserted by hand in a
 /// game, so it lasts exactly as long as the status and a continued run
 /// gets it back from the statuses it saved. While it is on, no mind
 /// perceives its holder at any distance and no observer notices it. That
@@ -106,7 +106,7 @@ pub struct Noticed {
 /// instead of the old see-on-sight behaviour the opt-in promises. The
 /// plugin's own message is the proof it was added.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct StealthRunning<'w> {
+pub(crate) struct StealthRunning<'w> {
     noticed: Option<Res<'w, Messages<Noticed>>>,
 }
 
@@ -261,7 +261,7 @@ fn at_odds(rules: Option<&CombatRules>, mine: Option<&Faction>, theirs: Option<&
 /// Stealth's own stream for the notice roll, so a tactic added to the
 /// minds or a blow struck elsewhere cannot change who gets noticed.
 #[derive(Resource, Debug)]
-pub struct StealthRng(pub rand::rngs::StdRng);
+pub(crate) struct StealthRng(pub rand::rngs::StdRng);
 
 impl crate::seed::Stream for StealthRng {
     fn for_run(seed: rl_core::RunSeed) -> Self {
@@ -308,7 +308,7 @@ impl Plugin for StealthPlugin {
 /// statuses are applied, ticked and cured, so the pass the status goes on
 /// is the pass its holder vanishes, and the pass a blow ends it is the pass
 /// it is seen again.
-pub fn mark_unseen(mut commands: Commands, registries: Option<Res<Registries>>, actors: Query<(Entity, &Afflicted, Has<Unseen>), Changed<Afflicted>>) {
+pub(crate) fn mark_unseen(mut commands: Commands, registries: Option<Res<Registries>>, actors: Query<(Entity, &Afflicted, Has<Unseen>), Changed<Afflicted>>) {
     let Some(registries) = registries else { return };
     for (actor, afflicted, marked) in &actors {
         let unseen = afflicted.0.iter().any(|s| registries.statuses.get(s.id).unseen);
@@ -342,7 +342,7 @@ pub fn mark_unseen(mut commands: Commands, registries: Option<Res<Registries>>, 
 /// Before the statuses resolve in the same pass, so the cure lands before
 /// the damage does and the one struck wakes to an attacker it can see.
 /// Being hurt is not here: a grenade in the dark does not light you up.
-pub fn reveal_attackers(
+pub(crate) fn reveal_attackers(
     mut struck: MessageReader<crate::combat::Struck>,
     mut items: MessageReader<crate::items::ItemEvent>,
     mut aimed: MessageReader<crate::ability::LandedOn>,
@@ -375,7 +375,7 @@ pub fn reveal_attackers(
 /// just vanished is offered the trail to where it last saw it, as for
 /// anything else out of sight. Every mind, noticing or not: a monster that
 /// sees on sight sees nothing here either.
-pub fn filter_unseen(mut thinking: ResMut<Thinking>, unseen: Query<(), With<Unseen>>) {
+pub(crate) fn filter_unseen(mut thinking: ResMut<Thinking>, unseen: Query<(), With<Unseen>>) {
     let Some(snapshot) = thinking.snapshot_mut() else { return };
     snapshot.enemies.retain(|e| !unseen.contains(e.id));
     snapshot.allies.retain(|e| !unseen.contains(e.id));
@@ -415,7 +415,7 @@ type Hiding<'a> = (Entity, &'a Position, &'a Stealth, Option<&'a Faction>, Optio
 
 /// Everything noticing reads.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Watch<'w, 's> {
+pub(crate) struct Watch<'w, 's> {
     observers: Query<'w, 's, Observer, (With<MyTurn>, Without<Player>)>,
     subjects: Query<'w, 's, Subject>,
     lighting: Option<Res<'w, crate::lighting::Lighting>>,
@@ -440,7 +440,7 @@ pub struct Watch<'w, 's> {
 /// alone: its certain radius is what it picks out with its eyes open, and
 /// were it to apply, nobody could stand over a sleeper to strike it. What
 /// it notices wakes it, in [`wake_on_sight`](crate::status::wake_on_sight).
-pub fn update_awareness(mut watch: Watch, mut noticed: MessageWriter<Noticed>) {
+pub(crate) fn update_awareness(mut watch: Watch, mut noticed: MessageWriter<Noticed>) {
     let here = watch.map.current();
     let lighting = watch.lighting.as_deref();
     let rules = watch.rules.as_deref();
@@ -505,7 +505,7 @@ pub fn update_awareness(mut watch: Watch, mut noticed: MessageWriter<Noticed>) {
 /// a turn's consequences land, and inside the pass, so the monster that was
 /// struck already knows where from when it next decides.
 ///
-/// Not by an attacker still [`Unseen`]: every attack [`reveal_attackers`]
+/// Not by an attacker still [`Unseen`]: every attack `reveal_attackers`
 /// reads has ended that before the damage lands, so harm credited to one
 /// still unseen came from something that is not on its list, a thing it
 /// used where it stood whose `use` trigger hurt those around it, a worn

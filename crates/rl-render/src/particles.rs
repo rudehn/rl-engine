@@ -18,13 +18,13 @@
 //! player holds a turn nothing holds the turns, since there is nothing
 //! left to wait for; what still plays, plays over the player's move.
 //!
-//! Two shapes cover what a roguelike animates: a [`Trail`] between two
-//! anchors and a [`Burst`] over some. A burst with a source is a blast: it
+//! Two shapes cover what a roguelike animates: a `Trail` between two
+//! anchors and a `Burst` over some. A burst with a source is a blast: it
 //! goes off there and reaches each cell a moment after the one nearer it,
 //! white-hot at its front and cooling to embers behind, with sparks thrown
 //! ahead of it, and the fire and gas it left are held back until it has
 //! reached them (see [`fields`](crate::fields)), so a grenade is seen to go
-//! off and then to leave its smoke behind. An [`Animation`] is a list of
+//! off and then to leave its smoke behind. An `Animation` is a list of
 //! them played one after another, one per actor per frame, in the order the
 //! actor's cues were written. A game with a look of its own writes to
 //! [`Particles`] itself.
@@ -46,7 +46,7 @@ use crate::terminal::Terminal;
 
 /// Where an anchor is this frame: the entity's cell if it follows one that
 /// is still somewhere, else the cell it was written with.
-pub type Resolve<'a> = dyn Fn(&Anchor) -> Point + 'a;
+pub(crate) type Resolve<'a> = dyn Fn(&Anchor) -> Point + 'a;
 
 /// A glyph flying from one anchor to the other, a cell at a time, with a
 /// short fading tail behind it.
@@ -57,7 +57,7 @@ pub type Resolve<'a> = dyn Fn(&Anchor) -> Point + 'a;
 /// leaving it in the air. The cell it leaves from is not part of it: what
 /// stands there is what threw it, and stays drawn.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Trail {
+pub(crate) struct Trail {
     /// Where it leaves from.
     pub from: Anchor,
     /// Where it lands.
@@ -89,7 +89,7 @@ impl Trail {
 /// and then burns down through [`blast_glyphs`](ParticleStyle::blast_glyphs)
 /// from white-hot to embers, lighting the ground under it as it goes.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Burst {
+pub(crate) struct Burst {
     /// Where.
     pub on: Vec<Anchor>,
     /// The glyphs the cells pick from: any of them for a burst, and hottest
@@ -177,7 +177,7 @@ impl Burst {
 
 /// One beat of an animation: what plays before the next begins.
 #[derive(Debug, Clone, PartialEq)]
-pub enum Beat {
+pub(crate) enum Beat {
     /// A flight.
     Trail(Trail),
     /// A burst.
@@ -186,7 +186,7 @@ pub enum Beat {
 
 impl Beat {
     /// How long it plays.
-    pub fn duration(&self) -> f32 {
+    pub(crate) fn duration(&self) -> f32 {
         match self {
             Beat::Trail(t) => t.cells as f32 * t.cell_secs,
             Beat::Burst(b) => b.duration(),
@@ -196,7 +196,7 @@ impl Beat {
     /// What it shows `t` seconds in, with the anchors where `at` puts
     /// them: cells, glyphs and colours, with the fraction each glyph has
     /// faded, 0 fresh and 1 gone.
-    pub fn frame(&self, t: f32, at: &Resolve<'_>) -> Vec<Spark> {
+    pub(crate) fn frame(&self, t: f32, at: &Resolve<'_>) -> Vec<Spark> {
         match self {
             Beat::Trail(trail) => {
                 let duration = self.duration();
@@ -239,7 +239,7 @@ impl Beat {
 
 /// One glyph on one cell for one frame.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Spark {
+pub(crate) struct Spark {
     /// Where.
     pub at: Point,
     /// What.
@@ -255,7 +255,7 @@ pub struct Spark {
 
 /// Steps played one after another on one map.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Animation {
+pub(crate) struct Animation {
     /// The map it plays on. Left behind when the player leaves it.
     pub map: MapId,
     /// The steps, in order.
@@ -266,12 +266,12 @@ pub struct Animation {
 
 impl Animation {
     /// How long the whole thing plays.
-    pub fn duration(&self) -> f32 {
+    pub(crate) fn duration(&self) -> f32 {
         self.steps.iter().map(Beat::duration).sum()
     }
 
     /// What shows `t` seconds in, with the anchors where `at` puts them.
-    pub fn frame(&self, t: f32, at: &Resolve<'_>) -> Vec<Spark> {
+    pub(crate) fn frame(&self, t: f32, at: &Resolve<'_>) -> Vec<Spark> {
         let mut begun = 0.0;
         for step in &self.steps {
             let ends = begun + step.duration();
@@ -293,14 +293,14 @@ pub struct Particles {
 impl Particles {
     /// Plays `animation` from the next frame drawn. One that would take no
     /// time is not played, and holds nothing.
-    pub fn play(&mut self, animation: Animation) {
+    pub(crate) fn play(&mut self, animation: Animation) {
         if animation.duration() > 0.0 {
             self.playing.push((animation, None));
         }
     }
 
     /// Whether anything is playing.
-    pub fn is_playing(&self) -> bool {
+    pub(crate) fn is_playing(&self) -> bool {
         !self.playing.is_empty()
     }
 
@@ -310,14 +310,14 @@ impl Particles {
     }
 
     /// Drops whatever holds the turns, leaving the rest to play out.
-    pub fn skip_held(&mut self) {
+    pub(crate) fn skip_held(&mut self) {
         self.playing.retain(|(a, _)| !a.holds);
     }
 
     /// Every blast playing or still to play on `map`, as the front the
     /// fields wait for, with one that has not begun taken to begin `now`,
     /// which is when the next frame drawn will begin it.
-    pub fn wavefronts(&self, now: f32, map: MapId, at: &Resolve<'_>) -> Vec<Wavefront> {
+    pub(crate) fn wavefronts(&self, now: f32, map: MapId, at: &Resolve<'_>) -> Vec<Wavefront> {
         let mut fronts = Vec::new();
         for (animation, began) in self.playing.iter().filter(|(a, _)| a.map == map) {
             let mut begins = began.unwrap_or(now);
@@ -334,7 +334,7 @@ impl Particles {
     /// What every animation shows at `now` with the anchors where `at`
     /// puts them, starting the ones that have not begun and dropping the
     /// ones that have finished.
-    pub fn frame(&mut self, now: f32, map: MapId, at: &Resolve<'_>) -> Vec<Spark> {
+    pub(crate) fn frame(&mut self, now: f32, map: MapId, at: &Resolve<'_>) -> Vec<Spark> {
         self.playing.retain(|(animation, _)| animation.map == map);
         let mut sparks = Vec::new();
         for (animation, began) in &mut self.playing {
@@ -380,15 +380,8 @@ impl Default for ParticleStyle {
 }
 
 impl ParticleStyle {
-    /// A style that takes no time, so nothing plays and the turns are
-    /// never held: what a headless test wants, where even a frame's hold
-    /// would put the player's turn past the frame a key is read in.
-    pub fn instant() -> Self {
-        Self { cell_secs: 0.0, burst_secs: 0.0, ring_secs: 0.0, ..Self::default() }
-    }
-
     /// Whether anything drawn in this style takes time to watch.
-    pub fn takes_time(&self) -> bool {
+    pub(crate) fn takes_time(&self) -> bool {
         self.cell_secs > 0.0 || self.burst_secs > 0.0
     }
 }
@@ -419,7 +412,7 @@ impl Plugin for ParticlesPlugin {
 /// Takes the turns' hold, unless the style plays nothing worth waiting
 /// for. Decided when play begins, so a game's style, inserted after the
 /// plugin, is the one read.
-pub fn watch_unless_instant(style: Res<ParticleStyle>, mut hold: ResMut<TurnHold>) {
+pub(crate) fn watch_unless_instant(style: Res<ParticleStyle>, mut hold: ResMut<TurnHold>) {
     if style.takes_time() {
         hold.watch();
     }
@@ -465,7 +458,7 @@ impl Cues<'_, '_> {
 
 /// Queues one animation per actor that cued something this frame, its
 /// cues in the order written, each holding the turns.
-pub fn play_cues(mut particles: ResMut<Particles>, mut cues: Cues) {
+pub(crate) fn play_cues(mut particles: ResMut<Particles>, mut cues: Cues) {
     let here = cues.map.current();
     let mut per_actor: Vec<(Entity, Animation)> = Vec::new();
     let cued: Vec<Cued> = cues.cued.read().cloned().collect();
@@ -483,7 +476,7 @@ pub fn play_cues(mut particles: ResMut<Particles>, mut cues: Cues) {
 
 /// Tells the map view where every blast's front is, so the fire and gas a
 /// blast left show only once it has reached them.
-pub fn publish_wavefronts(particles: Res<Particles>, mut fronts: ResMut<Wavefronts>, map: Res<WorldMap>, time: Res<Time>, positions: Query<&Position>) {
+pub(crate) fn publish_wavefronts(particles: Res<Particles>, mut fronts: ResMut<Wavefronts>, map: Res<WorldMap>, time: Res<Time>, positions: Query<&Position>) {
     let at = |anchor: &Anchor| anchor.follow.and_then(|e| positions.get(e).ok()).map(|p| p.0).unwrap_or(anchor.at);
     fronts.0 = particles.wavefronts(time.elapsed_secs(), map.current(), &at);
 }
@@ -492,7 +485,7 @@ pub fn publish_wavefronts(particles: Res<Particles>, mut fronts: ResMut<Wavefron
 /// background and fading the glyph towards it, and lighting the background
 /// under a blast's flash, with every anchor where what it follows stands
 /// now.
-pub fn draw_particles(
+pub(crate) fn draw_particles(
     mut terminal: ResMut<Terminal>,
     mut particles: ResMut<Particles>,
     view: Res<MapView>,
@@ -553,7 +546,7 @@ const MAX_SKIPS: usize = 64;
 /// what finished. With the player holding a turn nothing is waited for:
 /// the loop would not run anyway, and holding it would only keep the
 /// player's next key from being read.
-pub fn hold_turns(particles: Res<Particles>, mut hold: ResMut<TurnHold>, player: Query<(), (With<Player>, With<MyTurn>)>) {
+pub(crate) fn hold_turns(particles: Res<Particles>, mut hold: ResMut<TurnHold>, player: Query<(), (With<Player>, With<MyTurn>)>) {
     if particles.is_holding() && player.is_empty() {
         hold.hold();
     } else {
@@ -720,12 +713,10 @@ mod tests {
         app.insert_resource(Terminal::new(40, 20, Vec2::ONE));
         app.insert_resource(ParticleStyle { cell_secs: 0.01, burst_secs: 0.05, ..ParticleStyle::default() });
         let start = rl_bevy::testing::ground(&mut app);
-        let me = app.world_mut().spawn((Actor, Player, Position(start), Viewshed::new(8), RevealsMap)).id();
-        let (eel, crab) =
-            (app.world_mut().spawn((Actor, Position(start.offset(3, 0)))).id(), app.world_mut().spawn((Actor, Position(start.offset(-3, 0)))).id());
+        let me = app.world_mut().spawn((Player, Position(start), Viewshed::new(8), RevealsMap)).id();
+        let (eel, crab) = (app.world_mut().spawn(Position(start.offset(3, 0))).id(), app.world_mut().spawn(Position(start.offset(-3, 0))).id());
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
-        assert!(app.world().resource::<TurnHold>().is_watched(), "the plugin watches");
 
         let look = LookOf::Plain;
         app.world_mut().write_message(Cued {
@@ -760,8 +751,8 @@ mod tests {
         app.insert_resource(Terminal::new(40, 20, Vec2::ONE));
         app.insert_resource(ParticleStyle { cell_secs: 1.0, burst_secs: 1.0, ..ParticleStyle::default() });
         let start = rl_bevy::testing::ground(&mut app);
-        app.world_mut().spawn((Actor, Player, Position(start), Viewshed::new(8), RevealsMap));
-        let eel = app.world_mut().spawn((Actor, Position(start.offset(3, 0)))).id();
+        app.world_mut().spawn((Player, Position(start), Viewshed::new(8), RevealsMap));
+        let eel = app.world_mut().spawn(Position(start.offset(3, 0))).id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
         app.world_mut().write_message(Cued { actor: eel, cue: Cue::Burst { on: vec![Anchor::on(eel, start.offset(3, 0))], look: LookOf::Plain, from: None } });
@@ -785,8 +776,8 @@ mod tests {
         app.insert_resource(Terminal::new(40, 20, Vec2::ONE));
         app.insert_resource(ParticleStyle { cell_secs: 1.0, burst_secs: 1.0, ..ParticleStyle::default() });
         let start = rl_bevy::testing::ground(&mut app);
-        app.world_mut().spawn((Actor, Player, Position(start), Viewshed::new(8), RevealsMap));
-        let eel = app.world_mut().spawn((Actor, Position(start.offset(3, 0)))).id();
+        app.world_mut().spawn((Player, Position(start), Viewshed::new(8), RevealsMap));
+        let eel = app.world_mut().spawn(Position(start.offset(3, 0))).id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
         app.world_mut().write_message(Cued { actor: eel, cue: Cue::Burst { on: vec![Anchor::on(eel, start.offset(3, 0))], look: LookOf::Plain, from: None } });

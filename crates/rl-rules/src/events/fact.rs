@@ -100,7 +100,7 @@ impl Matcher {
     }
 
     /// Whether `fact` is one of these.
-    pub fn matches(&self, fact: &Fact) -> bool {
+    pub(crate) fn matches(&self, fact: &Fact) -> bool {
         fact.kind == self.kind && self.subject.is_none_or(|s| fact.subject == Some(s)) && self.object.is_none_or(|o| fact.object == Some(o))
     }
 }

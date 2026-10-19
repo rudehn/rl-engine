@@ -49,7 +49,8 @@ impl Direction {
     pub const CARDINALS: [Direction; 4] = [Direction::North, Direction::East, Direction::South, Direction::West];
 
     /// The four diagonals, clockwise from north-east.
-    pub const DIAGONALS: [Direction; 4] = [Direction::NorthEast, Direction::SouthEast, Direction::SouthWest, Direction::NorthWest];
+    #[cfg(test)]
+    pub(crate) const DIAGONALS: [Direction; 4] = [Direction::NorthEast, Direction::SouthEast, Direction::SouthWest, Direction::NorthWest];
 
     /// The one-cell step this direction represents.
     pub const fn delta(self) -> (i32, i32) {

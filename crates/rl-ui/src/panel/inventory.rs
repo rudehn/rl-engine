@@ -16,12 +16,12 @@
 //! through [`AimThrow`], the way a game's throw key would. A game binds
 //! nothing. Using an item with a `use` trigger uses it where it stands, and
 //! using one whose use is aimed opens the targeting cursor through
-//! [`AimUse`], as throwing does, and puts it away again for nothing. Using
+//! `AimUse`, as throwing does, and puts it away again for nothing. Using
 //! one whose use asks for another of the player's things turns the bag to
 //! choosing, titled with the use's own prompt and listing only what it may
 //! be made on, lettered in its own order: a letter or confirm writes
 //! [`UseOn`] for the thing picked out, and putting the bag away spends
-//! nothing; a game's own use key writing [`AimUse`] for such a thing opens
+//! nothing; a game's own use key writing `AimUse` for such a thing opens
 //! the bag choosing the same way. An offer that chooses first,
 //! [`Offering::choosing`], taken up on the offers screen or by the interact
 //! key, opens the bag choosing the same way, under the offer's prompt among
@@ -70,7 +70,7 @@ use crate::view::sheet::Strike;
 use crate::view::target::{AimThrow, AimUse};
 
 /// The name the bag's modal is declared under.
-pub const INVENTORY_MODAL: &str = "inventory";
+pub(crate) const INVENTORY_MODAL: &str = "inventory";
 
 /// The keys the bag answers to. Walking the rows and closing use the
 /// direction and cursor keys every other screen uses, and the cursors'
@@ -108,7 +108,7 @@ impl Default for InventoryKeys {
 
 /// Where the bag is drawn, and what it is called.
 #[derive(Resource, Debug, Clone)]
-pub struct InventoryLayout {
+pub(crate) struct InventoryLayout {
     /// The terminal cells it occupies.
     pub rect: Rect,
     /// Drawn in the top border. The engine has no word for a sea chest.
@@ -162,7 +162,7 @@ impl InventoryMenu {
 
     /// Moves the cursor `by` rows over `rows` of them, wrapping at either
     /// end.
-    pub fn move_by(&mut self, by: i32, rows: usize) {
+    pub(crate) fn move_by(&mut self, by: i32, rows: usize) {
         self.selected = stepped(self.selected, by, rows);
     }
 
@@ -357,7 +357,7 @@ pub struct BagIntents<'w> {
 /// Its own system because the bag's keys write `AimUse` for an aimed
 /// thing, and one system may not read the messages it writes. Only with no
 /// screen up, as a game's key opens nothing over another.
-pub fn choose_when_asked(mut asked: MessageReader<AimUse>, view: Res<InventoryView>, mut menu: ResMut<InventoryMenu>, mut modals: ResMut<Modals>) {
+pub(crate) fn choose_when_asked(mut asked: MessageReader<AimUse>, view: Res<InventoryView>, mut menu: ResMut<InventoryMenu>, mut modals: ResMut<Modals>) {
     let modal = inventory_modal(&modals);
     for asked in asked.read() {
         let wants_a_thing = view.rows.iter().any(|r| r.entity == asked.item && r.asks.is_some() && r.usable());
@@ -406,7 +406,7 @@ pub(crate) fn choose_for_offer(commands: &mut Commands, taker: Entity, target: E
 /// it on the thing picked out, and putting the bag away spends nothing. An
 /// offer that chooses first chooses the same way, and confirm takes it up
 /// with the thing picked out.
-pub fn inventory_keys(
+pub(crate) fn inventory_keys(
     keys: ControlInput,
     binds: Res<InventoryKeys>,
     view: Res<InventoryView>,
@@ -727,7 +727,7 @@ fn describe(row: &ItemRow, width: usize) -> Vec<(String, ToneId)> {
 
 /// What the bag is drawn from.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct BagScreen<'w> {
+pub(crate) struct BagScreen<'w> {
     layout: Res<'w, InventoryLayout>,
     view: Res<'w, InventoryView>,
     binds: Res<'w, InventoryKeys>,
@@ -741,7 +741,7 @@ pub struct BagScreen<'w> {
 /// titled with the use's prompt and lists only what it may be made on.
 /// Rows past the list's room are counted on the frame above it and the
 /// rule below, since a bag cut short without a word reads as a short bag.
-pub fn draw_inventory(mut terminal: ResMut<Terminal>, mut menu: ResMut<InventoryMenu>, screen: BagScreen, mut top: Local<usize>) {
+pub(crate) fn draw_inventory(mut terminal: ResMut<Terminal>, mut menu: ResMut<InventoryMenu>, screen: BagScreen, mut top: Local<usize>) {
     let BagScreen { layout, view, binds, keys, modals, palette } = &screen;
     if !modals.is_open(inventory_modal(modals)) {
         return;

@@ -13,8 +13,8 @@
 //! through [`SaveableState`], and [`EngineSave`], the scheduler, the
 //! world's edits and places, and what the player knows. Around it: a
 //! [`SaveBackend`] with a file and a memory implementation (and a
-//! `localStorage` one on wasm), a [`Versioned`] envelope whose version
-//! must match exactly or the save is refused whole, an [`EntityRemap`]
+//! `localStorage` one on wasm), a `Versioned` envelope whose version
+//! must match exactly or the save is refused whole, an `EntityRemap`
 //! that turns entity ids into stable [`SaveId`]s and back, and
 //! [`SavePlugin`], which inserts the backend, in memory for a scripted
 //! run, keeps the [`Stash`] a turn behind the run and writes it when the
@@ -22,7 +22,7 @@
 //! and keeps a title told what the slot holds.
 //!
 //! Apart from all of that, `SavePlugin` remembers what a player chose in
-//! the [`settings`] slot, [`SETTINGS_SLOT`], which no run's ending
+//! the [`settings`] slot, `SETTINGS_SLOT`, which no run's ending
 //! forgets, and in a game that keeps records every run's [record](records)
 //! the same way, in [`RECORDS_SLOT`].
 
@@ -41,21 +41,21 @@ pub mod versioned;
 pub use backend::{FileBackend, MemoryBackend, SaveBackend, SaveError, Saves};
 pub use engine::EngineSave;
 pub use records::RECORDS_SLOT;
-pub use remap::{EntityRemap, SaveId};
+pub use remap::SaveId;
 pub use run::{
-    AddSaveable, EntityState, KindSave, RunSave, SavePlugin, SaveRegistry, SaveSlot, Saveable, SaveableActor, SaveableItem, SaveableState, SavedActor,
-    SavedBurning, SavedItem, forget_save, load_run, save_on_arrival, save_on_leaving, save_run,
+    AddSaveable, EntityState, KindSave, RunSave, SavePlugin, SaveSlot, Saveable, SaveableActor, SaveableItem, SaveableState, SavedBurning, forget_save,
+    load_run, save_on_arrival, save_run,
 };
-pub use settings::SETTINGS_SLOT;
 pub use unload::Stash;
-pub use versioned::{Versioned, decode, encode};
 
 /// The names most callers want in scope.
 pub mod prelude {
     pub use crate::backend::{FileBackend, MemoryBackend, SaveBackend, SaveError, Saves};
+
     pub use crate::engine::EngineSave;
-    pub use crate::remap::{EntityRemap, SaveId};
-    pub use crate::run::{AddSaveable, RunSave, SavePlugin, Saveable, SaveableActor, SaveableItem, SaveableState, SavedActor, SavedItem, load_run, save_run};
+    pub use crate::remap::SaveId;
+
+    pub use crate::run::{AddSaveable, RunSave, SavePlugin, Saveable, SaveableActor, SaveableItem, SaveableState, load_run, save_run};
+
     pub use crate::unload::Stash;
-    pub use crate::versioned::{Versioned, decode, encode};
 }

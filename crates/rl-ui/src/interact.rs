@@ -87,7 +87,7 @@ impl WayAsked<'_, '_> {
     ///
     /// Reads every ask written since the last call, with a player or
     /// without one, so none is left over to be mistaken for a later press's.
-    pub fn by(&mut self, player: Option<Entity>) -> bool {
+    pub(crate) fn by(&mut self, player: Option<Entity>) -> bool {
         let mut asked = false;
         for intent in self.asked.read() {
             asked |= Some(intent.actor) == player;

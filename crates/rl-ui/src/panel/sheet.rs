@@ -21,7 +21,7 @@ use crate::tone::{Palette, Tones};
 use crate::view::sheet::{SheetView, SheetViewPlugin, StatLine};
 
 /// The name the sheet's modal is declared under.
-pub const SHEET_MODAL: &str = "sheet";
+pub(crate) const SHEET_MODAL: &str = "sheet";
 
 /// The keys the sheet answers to.
 #[derive(Resource, Debug, Clone)]
@@ -40,7 +40,7 @@ impl Default for SheetKeys {
 
 /// Where the sheet is drawn and what its borders say.
 #[derive(Resource, Debug, Clone)]
-pub struct SheetLayout {
+pub(crate) struct SheetLayout {
     /// The terminal cells it occupies, border included.
     pub rect: Rect,
     /// The title in the top border.
@@ -100,7 +100,7 @@ pub fn sheet_modal(modals: &Modals) -> ModalId {
 }
 
 /// Opens and closes the sheet.
-pub fn sheet_keys(keys: ControlInput, binds: Res<SheetKeys>, mut modals: ResMut<Modals>) {
+pub(crate) fn sheet_keys(keys: ControlInput, binds: Res<SheetKeys>, mut modals: ResMut<Modals>) {
     let modal = sheet_modal(&modals);
     if binds.toggle.just_pressed(keys.input()) && (modals.is_top(modal) || !modals.any_open()) {
         modals.toggle(modal);
@@ -133,7 +133,7 @@ fn stat_line(line: &StatLine, width: usize) -> String {
 }
 
 /// Paints the sheet, while it is open.
-pub fn draw_sheet(
+pub(crate) fn draw_sheet(
     mut terminal: ResMut<Terminal>,
     layout: Res<SheetLayout>,
     view: Res<SheetView>,

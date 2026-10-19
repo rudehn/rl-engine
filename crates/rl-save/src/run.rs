@@ -39,7 +39,7 @@
 //! What a title needs of the slot is kept here too, in `rl-bevy`'s words so
 //! the screen need not depend on this crate: [`SavedRun`] says what the
 //! slot holds from before the first frame, a run left with [`LeaveRun`] is
-//! written down by [`save_on_leaving`] rather than forgotten with its
+//! written down by `save_on_leaving` rather than forgotten with its
 //! teardown, and [`AbandonRun`] forgets the slot the moment it is triggered.
 
 use bevy::ecs::world::CommandQueue;
@@ -283,7 +283,7 @@ pub trait SaveableItem: Component + Sized {
 /// An item, as the save writes it through its [`SaveableItem`]: which
 /// definition, by name, at which level, and the game's own extra.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SavedItem<E> {
+pub(crate) struct SavedItem<E> {
     /// The definition's name, as its maker names it.
     pub def: String,
     /// Its level; nought for a thing that takes none.
@@ -360,7 +360,7 @@ pub trait SaveableActor: Component + Sized {
 /// An actor, as the save writes it through its [`SaveableActor`]: which
 /// definition, by name, and the game's own extra.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SavedActor<E> {
+pub(crate) struct SavedActor<E> {
     /// The definition's name, as its maker names it.
     pub def: String,
     /// What else the game kept of it.
@@ -461,7 +461,7 @@ fn short_name<T>() -> &'static str {
 
 /// Every kind and resource a game registered.
 #[derive(Resource, Default)]
-pub struct SaveRegistry {
+pub(crate) struct SaveRegistry {
     kinds: Vec<KindEntry>,
     states: Vec<StateEntry>,
 }
@@ -839,7 +839,7 @@ pub struct KindSave {
 ///
 /// The `format` is this shape's own version, checked on top of the game's:
 /// a game bumps its [`SavePlugin::version`] when its kinds change shape,
-/// and the engine bumps [`RunSave::FORMAT`] when this does.
+/// and the engine bumps `RunSave::FORMAT` when this does.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RunSave {
     /// The shape this was written in.
@@ -857,11 +857,11 @@ pub struct RunSave {
 impl RunSave {
     /// The shape of this struct. Bump it when an old save would parse
     /// wrongly into the new one.
-    pub const FORMAT: u32 = 1;
+    pub(crate) const FORMAT: u32 = 1;
 
     /// Writes the run down: every registered kind and resource, the
     /// engine's state on each entity, then the engine's own.
-    pub fn capture(world: &mut World) -> Result<Self, SaveError> {
+    pub(crate) fn capture(world: &mut World) -> Result<Self, SaveError> {
         let registry = world.remove_resource::<SaveRegistry>().unwrap_or_default();
         let result = Self::capture_with(world, &registry);
         world.insert_resource(registry);
@@ -944,14 +944,16 @@ impl RunSave {
     /// What was saved of the resource `R`, read before restoring, for the
     /// part of a game's start that comes before the world exists: the
     /// world's size, say.
-    pub fn state<R: SaveableState>(&self) -> Option<R::Saved> {
+    #[cfg(test)]
+    pub(crate) fn state<R: SaveableState>(&self) -> Option<R::Saved> {
         let label = short_name::<R>();
         self.state.iter().find(|(l, _)| l == label).and_then(|(_, raw)| raw.into_rust().ok())
     }
 
     /// How many of `kind`, a [`Saveable`] or a [`SaveableItem`], were
     /// saved, for a line in the log.
-    pub fn count_of<K: Component>(&self) -> usize {
+    #[cfg(test)]
+    pub(crate) fn count_of<K: Component>(&self) -> usize {
         let label = short_name::<K>();
         self.kinds.iter().find(|k| k.kind == label).map_or(0, |k| k.entries.len())
     }
@@ -1125,7 +1127,7 @@ fn note_leaving(mut left: MessageReader<LeaveRun>, state: Res<State<EngineState>
 /// no time, would be lost between leaving and continuing. Stashed as well,
 /// by [`save_run`], so a window closed at the title writes the same run
 /// back. A save that fails is logged, and the slot keeps what it held.
-pub fn save_on_leaving(world: &mut World) {
+pub(crate) fn save_on_leaving(world: &mut World) {
     if !world.resource::<Leaving>().0 {
         return;
     }

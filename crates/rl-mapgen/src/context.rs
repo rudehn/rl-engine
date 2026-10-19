@@ -4,6 +4,7 @@ use std::any::Any;
 
 use rand::SeedableRng;
 use rand::rngs::StdRng;
+#[cfg(test)]
 use rl_core::Grid2D;
 use rl_grid::{Terrain, TileRegistry};
 
@@ -68,7 +69,7 @@ impl Outputs {
     /// Every value of type `T`, mutably, in emission order: for a pass
     /// that changes what an earlier one published, as a lake takes the
     /// floor it covers out of its area, without moving it in the order.
-    pub fn iter_mut<T: Any>(&mut self) -> impl Iterator<Item = &mut T> {
+    pub(crate) fn iter_mut<T: Any>(&mut self) -> impl Iterator<Item = &mut T> {
         self.items.iter_mut().filter_map(|b| b.downcast_mut::<T>())
     }
 
@@ -76,12 +77,13 @@ impl Outputs {
     /// rest, leaving every other value and the order as they were: for a
     /// pass that undoes what an earlier one published, as a lake that
     /// covers a room whole leaves no room there.
-    pub fn retain<T: Any>(&mut self, mut keep: impl FnMut(&T) -> bool) {
+    pub(crate) fn retain<T: Any>(&mut self, mut keep: impl FnMut(&T) -> bool) {
         self.items.retain(|b| b.downcast_ref::<T>().is_none_or(&mut keep));
     }
 
     /// Removes and returns every value of type `T`, in emission order.
-    pub fn take<T: Any>(&mut self) -> Vec<T> {
+    #[cfg(test)]
+    pub(crate) fn take<T: Any>(&mut self) -> Vec<T> {
         let mut taken = Vec::new();
         let mut kept = Vec::new();
         for item in self.items.drain(..) {
@@ -100,13 +102,9 @@ impl Outputs {
     }
 
     /// Number of values of any type.
-    pub fn len(&self) -> usize {
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
         self.items.len()
-    }
-
-    /// Whether nothing has been emitted.
-    pub fn is_empty(&self) -> bool {
-        self.items.is_empty()
     }
 }
 
@@ -140,7 +138,8 @@ impl BaseContext {
     }
 
     /// The snapshots captured, if capture was on.
-    pub fn snapshots(&self) -> &[Terrain] {
+    #[cfg(test)]
+    pub(crate) fn snapshots(&self) -> &[Terrain] {
         self.snapshots.as_deref().unwrap_or(&[])
     }
 
@@ -150,13 +149,9 @@ impl BaseContext {
     }
 
     /// The terrain's width.
-    pub fn width(&self) -> i32 {
+    #[cfg(test)]
+    pub(crate) fn width(&self) -> i32 {
         self.terrain.width()
-    }
-
-    /// The terrain's height.
-    pub fn height(&self) -> i32 {
-        self.terrain.height()
     }
 }
 

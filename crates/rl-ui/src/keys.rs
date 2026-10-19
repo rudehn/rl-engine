@@ -46,7 +46,8 @@ impl Default for DirectionKeys {
 
 impl DirectionKeys {
     /// A binding of nothing, to build up from.
-    pub fn none() -> Self {
+    #[cfg(test)]
+    pub(crate) fn none() -> Self {
         Self(Vec::new())
     }
 
@@ -59,12 +60,6 @@ impl DirectionKeys {
     /// The direction of the first bound key pressed this frame, if any.
     pub fn just_pressed(&self, keys: &ButtonInput<KeyCode>) -> Option<Direction> {
         self.0.iter().find(|(key, _)| keys.just_pressed(*key)).map(|(_, dir)| *dir)
-    }
-
-    /// The direction of the first bound key held down, if any. For a
-    /// cursor a game wants to repeat.
-    pub fn pressed(&self, keys: &ButtonInput<KeyCode>) -> Option<Direction> {
-        self.0.iter().find(|(key, _)| keys.pressed(*key)).map(|(_, dir)| *dir)
     }
 }
 

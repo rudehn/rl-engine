@@ -85,7 +85,7 @@ pub enum Source {
 
 impl Landing {
     /// The ability that landed this, when an ability did.
-    pub fn ability(&self) -> Option<AbilityId> {
+    pub(crate) fn ability(&self) -> Option<AbilityId> {
         match self.source {
             Source::Ability(id) => Some(id),
             _ => None,
@@ -95,7 +95,7 @@ impl Landing {
     /// How harm this lands reaches its targets, for the narrator to name
     /// what did it: by the ability, or by the thing whose trigger it was
     /// when that thing is not its own user, as a prop's trap is.
-    pub fn reach(&self) -> crate::combat::Reach {
+    pub(crate) fn reach(&self) -> crate::combat::Reach {
         match self.source {
             Source::Ability(id) => crate::combat::Reach::Ability(id),
             Source::Trigger { on, .. } if on != self.user => crate::combat::Reach::Thing(on),
@@ -110,7 +110,7 @@ impl Landing {
     /// moves the footprint onto the user for, and the one that is seen to
     /// fly back. A burst that one body in a crowd turned its share of
     /// still goes off where it was aimed.
-    pub fn turned_back(&self) -> bool {
+    pub(crate) fn turned_back(&self) -> bool {
         !self.turned_by.is_empty() && self.targets.iter().all(|t| *t == self.user)
     }
 
@@ -218,7 +218,7 @@ pub struct Landing {
     /// thing is made better or known by is the game's.
     pub on: Option<Entity>,
     /// Every body that turned its share back on the user, by
-    /// [`Bystanders::reflect`](crate::ability::Bystanders::reflect), in the
+    /// `Bystanders::reflect`, in the
     /// order it met them; empty for a landing nothing turned. Kept beside
     /// `targets` rather than read back from the [`Reflected`](crate::ability::Reflected)
     /// messages, since the landing may wait in the air for passes after
@@ -273,7 +273,7 @@ impl EffectWorld<'_, '_> {
     }
 
     /// Who stands where, for working out who is under a footprint.
-    pub fn occupancy(&self) -> &Occupancy {
+    pub(crate) fn occupancy(&self) -> &Occupancy {
         &self.occupancy
     }
 
@@ -293,7 +293,7 @@ impl EffectWorld<'_, '_> {
     /// Asked here rather than through a query of its own because this one
     /// already holds every viewshed, and two queries over the same
     /// component, one of them writing, is a system Bevy refuses to run.
-    pub fn sight_of(&self, who: Entity, p: Point) -> Option<bool> {
+    pub(crate) fn sight_of(&self, who: Entity, p: Point) -> Option<bool> {
         let (_, viewshed, _) = self.actors.get(who).ok()?;
         Some(viewshed?.can_see(p))
     }
@@ -438,13 +438,8 @@ impl EffectKinds {
         self.0.insert(E::KIND.to_string(), |args, names| E::from_args(args, names).map(|e| Box::new(e) as Box<dyn Effect>));
     }
 
-    /// Whether `kind` is registered.
-    pub fn has(&self, kind: &str) -> bool {
-        self.0.contains_key(kind)
-    }
-
     /// Every registered name, in order, for an error that lists them.
-    pub fn names(&self) -> impl Iterator<Item = &str> {
+    pub(crate) fn names(&self) -> impl Iterator<Item = &str> {
         self.0.keys().map(|s| s.as_str())
     }
 
@@ -521,15 +516,9 @@ impl Effects {
         if errors.is_empty() { Ok(Self(built)) } else { Err(errors) }
     }
 
-    /// Whether it does nothing at all, which is what content that named no
-    /// effects builds to.
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
     /// Whether any of these mends whoever it lands on, by [`Effect::mends`],
     /// whatever its chance: what a mind is told of a thing it carries.
-    pub fn mends(&self) -> bool {
+    pub(crate) fn mends(&self) -> bool {
         self.0.iter().any(|b| b.effect.mends())
     }
 
@@ -537,7 +526,7 @@ impl Effects {
     /// [`Effect::would_act`]: when any of them would, and when there are
     /// none, since a list with no effects is one a game answers itself,
     /// from the [`AbilityEvent`](crate::ability::AbilityEvent) it writes.
-    pub fn would_act(&self, landing: &Landing, world: &World) -> bool {
+    pub(crate) fn would_act(&self, landing: &Landing, world: &World) -> bool {
         self.0.is_empty() || self.0.iter().any(|b| b.effect.would_act(landing, world))
     }
 
@@ -546,7 +535,7 @@ impl Effects {
     /// The roll comes from the ability stream, whoever is landing: a trap
     /// and a potion are dealt from the same deck as a spell, so a subsystem
     /// cannot shift another's dice by landing something of its own.
-    pub fn land(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+    pub(crate) fn land(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
         use rand::Rng;
         for built in &self.0 {
             if built.chance < 100 && !world.rng.random_ratio(u32::from(built.chance), 100) {

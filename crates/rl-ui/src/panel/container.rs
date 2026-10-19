@@ -28,7 +28,7 @@ use crate::tone::{Palette, Tones};
 use crate::view::container::{ContainerView, ContainerViewPlugin, OpenContainer};
 
 /// The name the container's modal is declared under.
-pub const CONTAINER_MODAL: &str = "container";
+pub(crate) const CONTAINER_MODAL: &str = "container";
 
 /// The keys the container screen answers to, beside the direction keys
 /// that walk the rows and the cursors' keys that take and close.
@@ -39,7 +39,7 @@ pub const CONTAINER_MODAL: &str = "container";
 /// getting something, and because the engine's other screens already
 /// spoke for `a`, `c`, `i` and `p`.
 #[derive(Resource, Debug, Clone)]
-pub struct ContainerKeys {
+pub(crate) struct ContainerKeys {
     /// Takes everything.
     pub take_all: Chord,
 }
@@ -52,7 +52,7 @@ impl Default for ContainerKeys {
 
 /// Where the container screen is drawn, and what it says.
 #[derive(Resource, Debug, Clone)]
-pub struct ContainerLayout {
+pub(crate) struct ContainerLayout {
     /// The terminal cells it occupies.
     pub rect: Rect,
     /// Shown in place of rows when there are none.
@@ -70,7 +70,7 @@ pub struct ContainerMenu {
 impl ContainerMenu {
     /// Moves the cursor `by` rows over `rows` of them, wrapping at either
     /// end.
-    pub fn move_by(&mut self, by: i32, rows: usize) {
+    pub(crate) fn move_by(&mut self, by: i32, rows: usize) {
         if rows == 0 {
             self.selected = 0;
             return;
@@ -212,7 +212,7 @@ pub fn container_keys(keys: ControlInput, mut screen: ChestKeys, mut takes: Mess
 
 /// Everything the container screen draws from.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct ChestScreen<'w> {
+pub(crate) struct ChestScreen<'w> {
     layout: Res<'w, ContainerLayout>,
     view: Res<'w, ContainerView>,
     binds: Res<'w, ContainerKeys>,
@@ -223,7 +223,7 @@ pub struct ChestScreen<'w> {
 
 /// Draws the open container: what it is called, what is in it, and the
 /// keys that do something.
-pub fn draw_container(mut terminal: ResMut<Terminal>, mut menu: ResMut<ContainerMenu>, screen: ChestScreen) {
+pub(crate) fn draw_container(mut terminal: ResMut<Terminal>, mut menu: ResMut<ContainerMenu>, screen: ChestScreen) {
     let ChestScreen { layout, view, binds, keys, modals, palette } = &screen;
     if !modals.is_open(container_modal(modals)) {
         return;

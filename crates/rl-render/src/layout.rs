@@ -17,7 +17,7 @@ use bevy::math::{UVec2, Vec2};
 /// on the display's own pixel grid: a cell of a fractional width leaves a
 /// seam between two backgrounds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Fit {
+pub(crate) struct Fit {
     /// One cell's width and height.
     pub cell: UVec2,
     /// The blank border to the left of and above the grid.
@@ -37,7 +37,7 @@ const ROUNDING: f32 = 1e-3;
 /// Width and height are floored separately, so a cell's shape drifts from
 /// the declared one by at most a pixel. A cell is never under one pixel,
 /// which is what a window of no size at all, a minimized one, gets.
-pub fn fit(cols: i32, rows: i32, base_cell: Vec2, window: UVec2, scale_factor: f32) -> Fit {
+pub(crate) fn fit(cols: i32, rows: i32, base_cell: Vec2, window: UVec2, scale_factor: f32) -> Fit {
     let (cols, rows) = (cols.max(1) as f32, rows.max(1) as f32);
     let native = Vec2::new(cols * base_cell.x, rows * base_cell.y) * scale_factor;
     let zoom = (window.x as f32 / native.x).min(window.y as f32 / native.y);
@@ -48,13 +48,13 @@ pub fn fit(cols: i32, rows: i32, base_cell: Vec2, window: UVec2, scale_factor: f
 
 impl Fit {
     /// A cell's size in logical pixels, the unit sprites are sized in.
-    pub fn cell_logical(&self, scale_factor: f32) -> Vec2 {
+    pub(crate) fn cell_logical(&self, scale_factor: f32) -> Vec2 {
         self.cell.as_vec2() / scale_factor
     }
 
     /// The centre of cell `(x, y)` in world space: logical pixels, the
     /// window's centre at the origin, row 0 at the top.
-    pub fn center(&self, x: i32, y: i32, window: UVec2, scale_factor: f32) -> Vec2 {
+    pub(crate) fn center(&self, x: i32, y: i32, window: UVec2, scale_factor: f32) -> Vec2 {
         let half = window.as_vec2() * 0.5;
         let cell = self.cell.as_vec2();
         let px = Vec2::new(-half.x + self.margin.x as f32 + (x as f32 + 0.5) * cell.x, half.y - self.margin.y as f32 - (y as f32 + 0.5) * cell.y);
@@ -65,7 +65,7 @@ impl Fit {
     /// [`center`](Self::center) run backwards. `at` is in physical pixels
     /// from the window's top-left, the way a cursor is reported. `None` in
     /// the margin round the grid and anywhere outside the window.
-    pub fn cell_at(&self, at: Vec2, cols: i32, rows: i32) -> Option<(i32, i32)> {
+    pub(crate) fn cell_at(&self, at: Vec2, cols: i32, rows: i32) -> Option<(i32, i32)> {
         let inside = at - self.margin.as_vec2();
         if inside.x < 0.0 || inside.y < 0.0 {
             return None;
@@ -77,7 +77,7 @@ impl Fit {
 
     /// The font size for these cells, in logical pixels: the declared one
     /// scaled as the cell's height was.
-    pub fn font(&self, base_font: f32, base_cell: Vec2, scale_factor: f32) -> f32 {
+    pub(crate) fn font(&self, base_font: f32, base_cell: Vec2, scale_factor: f32) -> f32 {
         base_font * self.cell.y as f32 / (base_cell.y * scale_factor)
     }
 }

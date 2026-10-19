@@ -74,7 +74,7 @@ pub struct VitalsView {
     /// How loud it is where the player stands: the loudest noise that
     /// reached them this turn, in hundredths of a step of loudness still
     /// on it when it arrived, falling away over the turns after by
-    /// [`NoiseFade`], and zero once it has faded to nothing. `None` in a game without noise,
+    /// `NoiseFade`, and zero once it has faded to nothing. `None` in a game without noise,
     /// or for a player with no `Hearing`, since a deaf player is told
     /// nothing rather than told silence.
     ///
@@ -96,7 +96,7 @@ impl VitalsView {
 /// One rule, so a panel needs no thresholds of its own and every panel that
 /// draws a health bar, the player's or a follower's, agrees on when it is
 /// bad.
-pub fn health_tone(current: i32, max: i32) -> crate::tone::ToneId {
+pub(crate) fn health_tone(current: i32, max: i32) -> crate::tone::ToneId {
     match current * 4 {
         n if n <= max => Tones::BAD,
         n if n <= max * 2 => Tones::NOTICE,
@@ -116,7 +116,7 @@ pub fn health_tone(current: i32, max: i32) -> crate::tone::ToneId {
 /// turns. Whatever arrives in a turn outranks what is left of the last
 /// one: a fresh shout fills the bar however faded the old one was.
 #[derive(Resource, Debug, Clone, Copy)]
-pub struct NoiseFade(pub f32);
+pub(crate) struct NoiseFade(pub f32);
 
 impl Default for NoiseFade {
     fn default() -> Self {
@@ -185,7 +185,7 @@ pub struct Me<'w, 's> {
 }
 
 /// Fills [`VitalsView`] from the player.
-pub fn collect_vitals(mut view: ResMut<VitalsView>, mut me: Me) {
+pub(crate) fn collect_vitals(mut view: ResMut<VitalsView>, mut me: Me) {
     view.bars.clear();
     view.badges.clear();
     view.facets.clear();

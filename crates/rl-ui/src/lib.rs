@@ -90,7 +90,7 @@
 //!    No `Color`, no [`Rect`](rl_core::Rect), no string the game did not
 //!    supply. Anything a game might phrase differently is a [`Facet`].
 //!    What an actor is working at is a [`WorkRow`] on its row, read by any
-//!    collector through [`Workings`].
+//!    collector through `Workings`.
 //! 2. A collector system in [`ViewSet::Collect`], and a plugin that adds
 //!    it and declares what it needs with [`Needs::needs`](rl_bevy::Needs::needs),
 //!    saying how a game makes each piece.
@@ -143,14 +143,11 @@ pub mod testing;
 pub mod tone;
 pub mod view;
 
-pub use controls::{
-    AddControls, Bindings, Chord, Control, ControlId, ControlInput, Controls, ControlsKeys, EngineKey, Keys, RepeatPace, Repeats, STOP_ACTION, STOP_GROUP,
-    any_key, key_name,
-};
-pub use cursor::{CursorKeys, CursorMap, CursorStyle, Steer, mark};
-pub use facet::{Facet, FacetId, FacetKey, Facets};
-pub use focus::{Focus, InSight, Sighted, Sighting};
-pub use game_menu::{GAME_MENU_MODAL, GameMenu, GameMenuPanel, MenuItem, MenuKeys, describe_sheet, game_menu_modal};
+pub use controls::{AddControls, Bindings, Chord, Control, ControlId, ControlInput, Controls, ControlsKeys, EngineKey, Keys, RepeatPace, Repeats};
+pub use cursor::{CursorKeys, CursorMap, CursorStyle, mark};
+pub use facet::{Facet, FacetKey, Facets};
+pub use focus::{Focus, Sighted, Sighting};
+pub use game_menu::{GameMenuPanel, MenuKeys, game_menu_modal};
 pub use interact::InteractKeys;
 pub use keys::DirectionKeys;
 pub use layout::{RailLayout, RailPanels, RailScreen};
@@ -159,21 +156,19 @@ pub use menu::{ListMenu, MenuRow, draw_menu};
 pub use modal::{AddModal, Modal, ModalId, Modals, modal_is, modal_open, no_modal};
 pub use narrate::{Called, MassNoun, NarrationView, NarrationViewPlugin, NarratorPlugin, Phrase, Phrasebook, Said, Tell, Words};
 pub use panel::{
-    AbilityKeys, AbilityMenu, AbilityPanel, ActivityWords, AlertWords, CONTAINER_MODAL, Choosing, ChoosingFor, Confirming, ContainerKeys, ContainerPanel,
-    ControlsPanel, GearPanel, INVENTORY_MODAL, InspectPanel, InventoryKeys, InventoryMenu, InventoryPanel, LogPanel, NearbyPanel, OFFERS_MODAL, OfferChoice,
-    OffersPanel, PartyPanel, RECORDS_MODAL, RecordsPanel, SETTINGS_MODAL, Scrollback, ScrollbackKeys, ScrollbackPanel, SettingsPanel, SheetKeys, SheetPanel,
-    TRADE_MODAL, TargetPanel, TitleMenu, TitlePanel, TitleRow, TitleSet, TitleWords, TradeKeys, TradePanel, TradeSide, TradeWords, VitalsPanel, ability_modal,
-    container_modal, controls_modal, inventory_modal, offers_modal, records_modal, settings_modal, sheet_modal, title_is_up, trade_modal,
+    AbilityKeys, AbilityPanel, ActivityWords, AlertWords, Choosing, ChoosingFor, Confirming, ContainerPanel, ControlsPanel, GearPanel, InspectPanel,
+    InventoryKeys, InventoryMenu, InventoryPanel, LogPanel, NearbyPanel, OfferChoice, OffersPanel, PartyPanel, RecordsPanel, ScrollbackKeys, ScrollbackPanel,
+    SettingsPanel, SheetKeys, SheetPanel, TargetPanel, TitleMenu, TitlePanel, TitleRow, TitleSet, TitleWords, TradePanel, TradeSide, TradeWords, VitalsPanel,
+    ability_modal, container_modal, controls_modal, inventory_modal, offers_modal, records_modal, settings_modal, sheet_modal, title_is_up, trade_modal,
 };
-pub use player_keys::{Declined, Otherwise, PlayerKeys, PlayerKeysPlugin, PlayerKeysSet, PlayerVerb};
+pub use player_keys::{Declined, Otherwise, PlayerKeysPlugin, PlayerKeysSet, PlayerVerb};
 pub use replay::ReplayPlugin;
 pub use tone::{AddTone, Palette, Tone, ToneId, Tones, readable};
 pub use view::{
     AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimRange, AimThrow, AimUse, Asking, Bar, ContainerView, ContainerViewPlugin, EndingSection,
     EndingView, EndingViewPlugin, GearSlot, GearView, GearViewPlugin, InspectView, InspectViewPlugin, InventoryView, InventoryViewPlugin, ItemRow,
     NearbyFollowers, NearbyStatuses, NearbyView, NearbyViewPlugin, OfferRow, OffersView, OffersViewPlugin, OpenContainer, PartyView, PartyViewPlugin, Row,
-    Seems, SheetView, SheetViewPlugin, TargetView, TargetViewPlugin, TradeRow, TradeView, TradeViewPlugin, VitalsView, VitalsViewPlugin, WorkRow, Workings,
-    target_modal,
+    Seems, SheetView, SheetViewPlugin, TargetView, TargetViewPlugin, TradeRow, TradeView, TradeViewPlugin, VitalsView, VitalsViewPlugin, WorkRow, target_modal,
 };
 
 use bevy::prelude::*;
@@ -306,9 +301,12 @@ fn forget_run(mut log: ResMut<MessageLog>, mut modals: ResMut<Modals>) {
 /// The names most callers want in scope.
 pub mod prelude {
     pub use crate::controls::{AddControls, Chord, ControlId, ControlInput, Controls, ControlsKeys, EngineKey, Keys, RepeatPace, Repeats};
+
     pub use crate::cursor::{CursorKeys, CursorStyle};
-    pub use crate::facet::{Facet, FacetId, Facets};
-    pub use crate::focus::{Focus, InSight, Sighted, Sighting};
+    pub use crate::facet::{Facet, Facets};
+
+    pub use crate::focus::{Focus, Sighted, Sighting};
+
     pub use crate::game_menu::{GameMenuPanel, MenuKeys, game_menu_modal};
     pub use crate::interact::InteractKeys;
     pub use crate::keys::DirectionKeys;
@@ -316,25 +314,29 @@ pub mod prelude {
     pub use crate::log::{LogEntry, MessageLog, Span};
     pub use crate::menu::{ListMenu, MenuRow, draw_menu};
     pub use crate::modal::{AddModal, ModalId, Modals, modal_is, modal_open, no_modal};
+
     pub use crate::narrate::{MassNoun, NarrationView, NarratorPlugin, Phrase, Phrasebook, Said, Tell, Words};
-    pub use crate::player_keys::{Declined, Otherwise, PlayerKeys, PlayerKeysPlugin, PlayerKeysSet, PlayerVerb};
+    pub use crate::player_keys::{Declined, Otherwise, PlayerKeysPlugin, PlayerKeysSet, PlayerVerb};
+
     pub use crate::replay::ReplayPlugin;
     // The module itself, for `panel::split_right` and the drawing
     // helpers a game writing its own presenter reaches for.
     pub use crate::panel;
     pub use crate::panel::{
-        AbilityKeys, AbilityMenu, AbilityPanel, ActivityWords, AlertWords, CONTAINER_MODAL, Choosing, ChoosingFor, Confirming, ContainerKeys, ContainerPanel,
-        ControlsPanel, GearPanel, INVENTORY_MODAL, InspectPanel, InventoryKeys, InventoryMenu, InventoryPanel, LogPanel, NearbyPanel, OFFERS_MODAL,
-        OfferChoice, OffersPanel, PartyPanel, RecordsPanel, Scrollback, ScrollbackKeys, ScrollbackPanel, SettingsPanel, SheetKeys, SheetPanel, TargetPanel,
-        TitleMenu, TitlePanel, TitleRow, TitleSet, TitleWords, TradeKeys, TradePanel, TradeWords, VitalsPanel, ability_modal, container_modal, controls_modal,
-        inventory_modal, offers_modal, records_modal, settings_modal, sheet_modal, title_is_up, trade_modal,
+        AbilityKeys, AbilityPanel, ActivityWords, AlertWords, Choosing, ChoosingFor, Confirming, ContainerPanel, ControlsPanel, GearPanel, InspectPanel,
+        InventoryKeys, InventoryMenu, InventoryPanel, LogPanel, NearbyPanel, OfferChoice, OffersPanel, PartyPanel, RecordsPanel, ScrollbackKeys,
+        ScrollbackPanel, SettingsPanel, SheetKeys, SheetPanel, TargetPanel, TitleMenu, TitlePanel, TitleRow, TitleSet, TitleWords, TradePanel, TradeWords,
+        VitalsPanel, ability_modal, container_modal, controls_modal, inventory_modal, offers_modal, records_modal, settings_modal, sheet_modal, title_is_up,
+        trade_modal,
     };
+
     pub use crate::tone::{AddTone, Palette, ToneId, Tones, readable};
     pub use crate::view::{
         AbilityRow, AbilityView, AbilityViewPlugin, AimAt, AimFire, AimRange, AimThrow, AimUse, Asking, Bar, ContainerView, ContainerViewPlugin, EndingSection,
         EndingView, GearView, GearViewPlugin, InspectView, InspectViewPlugin, InventoryView, InventoryViewPlugin, ItemRow, NearbyFollowers, NearbyStatuses,
         NearbyView, NearbyViewPlugin, OfferRow, OffersView, OffersViewPlugin, OpenContainer, PartyView, PartyViewPlugin, Row, Seems, SheetView,
-        SheetViewPlugin, TargetView, TargetViewPlugin, TradeRow, TradeView, TradeViewPlugin, VitalsView, VitalsViewPlugin, WorkRow, Workings, target_modal,
+        SheetViewPlugin, TargetView, TargetViewPlugin, TradeRow, TradeView, TradeViewPlugin, VitalsView, VitalsViewPlugin, WorkRow, target_modal,
     };
+
     pub use crate::{UiPlugin, ViewSet};
 }

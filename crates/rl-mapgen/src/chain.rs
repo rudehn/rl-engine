@@ -105,18 +105,9 @@ impl<C: BuildContext> Chain<C> {
     }
 
     /// The names of the passes, in order.
-    pub fn names(&self) -> impl Iterator<Item = &'static str> + '_ {
+    #[cfg(test)]
+    pub(crate) fn names(&self) -> impl Iterator<Item = &'static str> + '_ {
         self.passes.iter().map(|p| p.name())
-    }
-
-    /// Number of passes.
-    pub fn len(&self) -> usize {
-        self.passes.len()
-    }
-
-    /// Whether the chain has no passes.
-    pub fn is_empty(&self) -> bool {
-        self.passes.is_empty()
     }
 
     /// Runs every pass over `ctx`.

@@ -51,12 +51,14 @@ impl ReplayPlugin {
     }
 
     /// Writes the run to `path` as it is played.
-    pub fn record_to(path: impl Into<PathBuf>) -> Self {
+    #[cfg(test)]
+    pub(crate) fn record_to(path: impl Into<PathBuf>) -> Self {
         Self { record_to: Some(path.into()), ..Self::default() }
     }
 
     /// Plays `recording` from the first frame of play.
-    pub fn play(recording: Recording) -> Self {
+    #[cfg(test)]
+    pub(crate) fn play(recording: Recording) -> Self {
         Self { play: Some(recording), ..Self::default() }
     }
 }
@@ -81,23 +83,18 @@ impl Plugin for ReplayPlugin {
 
 /// The run so far, and where it is written.
 #[derive(Resource, Debug)]
-pub struct Recorder {
+pub(crate) struct Recorder {
     // Written only where there is a filesystem to write to.
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     path: PathBuf,
     recording: Recording,
 }
 
-impl Recorder {
-    /// What has been recorded so far.
-    pub fn recording(&self) -> &Recording {
-        &self.recording
-    }
-}
+impl Recorder {}
 
 /// What the recorder reads each frame.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Frame<'w> {
+pub(crate) struct Frame<'w> {
     input: Res<'w, ButtonInput<KeyCode>>,
     repeats: Res<'w, Repeats>,
     directions: Res<'w, DirectionKeys>,
@@ -107,7 +104,7 @@ pub struct Frame<'w> {
 
 /// Writes down this frame's keys, if any, at the turn clock the game
 /// reads them at, and the file with them.
-pub fn record(frame: Frame, mut recorder: ResMut<Recorder>) {
+pub(crate) fn record(frame: Frame, mut recorder: ResMut<Recorder>) {
     let mut keys: Vec<KeyCode> = frame.input.get_just_pressed().copied().collect();
     let mut shift = shifted(&frame.input);
     // A repeat is a press the game never saw as one: written as the key
@@ -136,7 +133,7 @@ pub fn record(frame: Frame, mut recorder: ResMut<Recorder>) {
 
 /// The keys still to press, and the ones down this frame.
 #[derive(Resource, Debug)]
-pub struct Replay {
+pub(crate) struct Replay {
     keys: VecDeque<Pressed>,
     held: Vec<KeyCode>,
     played: usize,
@@ -144,12 +141,14 @@ pub struct Replay {
 
 impl Replay {
     /// Whether every key has been pressed.
-    pub fn is_done(&self) -> bool {
+    #[cfg(test)]
+    pub(crate) fn is_done(&self) -> bool {
         self.keys.is_empty()
     }
 
     /// How many have been pressed.
-    pub fn played(&self) -> usize {
+    #[cfg(test)]
+    pub(crate) fn played(&self) -> usize {
         self.played
     }
 }
@@ -161,7 +160,7 @@ impl Replay {
 /// Only while the player holds a turn: that is when a key was read, and a
 /// frame the world is still being built in, a monster's pass, or a hold
 /// on the turns is a frame the key would fall on the floor.
-pub fn play_back(
+pub(crate) fn play_back(
     mut replay: ResMut<Replay>,
     mut input: ResMut<ButtonInput<KeyCode>>,
     turns: Res<Turns>,

@@ -62,7 +62,8 @@ impl<T: Copy + Default + PartialEq> TileField<T> {
     }
 
     /// Holds nothing anywhere.
-    pub fn clear(&mut self) {
+    #[cfg(test)]
+    pub(crate) fn clear(&mut self) {
         self.now.fill(T::default());
     }
 
@@ -122,18 +123,14 @@ pub struct Around<'a, T> {
 }
 
 impl<'a, T: Copy + Default> Around<'a, T> {
-    /// Where this cell is.
-    pub fn point(&self) -> Point {
-        self.at
-    }
-
     /// This cell's value.
     pub fn here(&self) -> T {
         self.value(self.at)
     }
 
     /// The value one step in `direction`, and nothing past the edge.
-    pub fn toward(&self, direction: Direction) -> T {
+    #[cfg(test)]
+    pub(crate) fn toward(&self, direction: Direction) -> T {
         self.value(self.at + direction.offset())
     }
 

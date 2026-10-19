@@ -66,7 +66,7 @@ impl EndingView {
 /// time and the end screen and a records screen cannot disagree about
 /// what the run came to. A game with no `RecordsPlugin` at all reads
 /// `records` as `None` and gets exactly the old behaviour.
-pub fn collect_ending(mut view: ResMut<EndingView>, ending: Option<Res<Ending>>, records: Option<Res<RunRecords>>) {
+pub(crate) fn collect_ending(mut view: ResMut<EndingView>, ending: Option<Res<Ending>>, records: Option<Res<RunRecords>>) {
     view.summary.clear();
     view.sections.clear();
     // Nothing to say while the run is still going: a game that pushes

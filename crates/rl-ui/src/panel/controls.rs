@@ -22,7 +22,7 @@ use crate::panel::{clear, clip, frame};
 use crate::tone::{Palette, Tones};
 
 /// The name the controls screen's modal is declared under.
-pub const CONTROLS_MODAL: &str = "controls";
+pub(crate) const CONTROLS_MODAL: &str = "controls";
 
 /// Cells between two columns of controls.
 const GUTTER: i32 = 3;
@@ -34,14 +34,14 @@ const KEYS_WIDTH_CAP: usize = 24;
 
 /// Which page of the screen is showing.
 #[derive(Resource, Debug, Default)]
-pub struct ControlsScreen {
+pub(crate) struct ControlsScreen {
     /// Zero-based.
     pub page: usize,
 }
 
 /// Where the screen and its hint are drawn.
 #[derive(Resource, Debug, Clone)]
-pub struct ControlsLayout {
+pub(crate) struct ControlsLayout {
     /// The terminal cells the screen occupies, border included.
     pub rect: Rect,
     /// The title in the top border.
@@ -108,7 +108,7 @@ pub fn controls_modal(modals: &Modals) -> ModalId {
 }
 
 /// Opens, closes and pages the screen.
-pub fn controls_keys(keys: ControlInput, layout: Res<ControlsLayout>, mut screen: ResMut<ControlsScreen>, mut modals: ResMut<Modals>) {
+pub(crate) fn controls_keys(keys: ControlInput, layout: Res<ControlsLayout>, mut screen: ResMut<ControlsScreen>, mut modals: ResMut<Modals>) {
     let modal = controls_modal(&modals);
     let binds = keys.bindings();
     if binds.help.toggle.just_pressed(keys.input()) && (modals.is_top(modal) || !modals.any_open()) {
@@ -225,7 +225,7 @@ fn inner_of(rect: Rect) -> Rect {
 ///
 /// The row is cleared every frame either way, since a hint painted once
 /// would stay under whatever screen opened over it.
-pub fn draw_hint(mut terminal: ResMut<Terminal>, layout: Res<ControlsLayout>, keys: Res<ControlsKeys>, palette: Res<Palette>, modals: Res<Modals>) {
+pub(crate) fn draw_hint(mut terminal: ResMut<Terminal>, layout: Res<ControlsLayout>, keys: Res<ControlsKeys>, palette: Res<Palette>, modals: Res<Modals>) {
     let Some(rect) = layout.hint else { return };
     if rect.height < 1 {
         return;
@@ -241,7 +241,7 @@ pub fn draw_hint(mut terminal: ResMut<Terminal>, layout: Res<ControlsLayout>, ke
 }
 
 /// Paints the screen, while it is open.
-pub fn draw_controls(
+pub(crate) fn draw_controls(
     mut terminal: ResMut<Terminal>,
     layout: Res<ControlsLayout>,
     keys: ControlInput,

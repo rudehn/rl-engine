@@ -324,7 +324,7 @@ fn describe_uses(triggers: &Triggers, registries: &Registries, moments: Option<&
 }
 
 /// Fills [`InventoryView`] from the player's bag.
-pub fn collect_inventory(
+pub(crate) fn collect_inventory(
     mut view: ResMut<InventoryView>,
     registries: Option<Res<Registries>>,
     moments: Option<Res<Moments>>,

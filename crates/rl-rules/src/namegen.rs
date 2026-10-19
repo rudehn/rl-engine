@@ -4,7 +4,7 @@
 //! [`load`]. A set is pools of syllables, each named by the set, and
 //! patterns that say which pools a name is put together from, drawn by
 //! weight. A drawn name that reads badly is thrown away and drawn again,
-//! up to [`ATTEMPTS`] times, so a set never loops however strict it is.
+//! up to `ATTEMPTS` times, so a set never loops however strict it is.
 //!
 //! The lineage is libtcod's `namegen`: named sets in one file, syllable
 //! pools, parts with a chance, and rejection with a redraw, by libtcod's
@@ -78,11 +78,11 @@ use crate::content::ContentError;
 /// How many names a draw puts together before it gives up on a set whose
 /// rejections refuse them all. A draw that gives up returns `None` rather
 /// than looping, so the strictest set costs a bounded number of tries.
-pub const ATTEMPTS: u32 = 100;
+pub(crate) const ATTEMPTS: u32 = 100;
 
 /// How a set's names are cased once put together.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
-pub enum NameCase {
+pub(crate) enum NameCase {
     /// The first letter of every word, after a space or a hyphen, upper,
     /// and the rest lower: a person's name.
     #[default]
@@ -154,12 +154,12 @@ pub struct NameSet {
 }
 
 impl NameSet {
-    /// A name, or `None` when [`ATTEMPTS`] in a row were refused.
+    /// A name, or `None` when `ATTEMPTS` in a row were refused.
     pub fn draw(&self, rng: &mut impl Rng) -> Option<String> {
         self.draw_distinct(rng, |_| false)
     }
 
-    /// A name `taken` does not claim, or `None` when [`ATTEMPTS`] in a row
+    /// A name `taken` does not claim, or `None` when `ATTEMPTS` in a row
     /// were refused or taken: how a run never gives two people one name.
     /// A taken name is drawn again like a refused one, so the draw is
     /// bounded however few names are left.
@@ -269,7 +269,8 @@ impl NameBook {
     }
 
     /// Every set with its name, in name order.
-    pub fn sets(&self) -> impl Iterator<Item = (&str, &NameSet)> {
+    #[cfg(test)]
+    pub(crate) fn sets(&self) -> impl Iterator<Item = (&str, &NameSet)> {
         self.sets.iter().map(|(name, set)| (name.as_str(), set))
     }
 }

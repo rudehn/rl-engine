@@ -12,7 +12,7 @@
 //! carries the status, and a worn item's carries the item, which the sheet
 //! names by its [`Name`]. A source of the game's own is the game's to name,
 //! in [`ViewSet::Annotate`](crate::ViewSet) through
-//! [`SheetView::name_source`], and one nobody named is shown by its effect
+//! `SheetView::name_source`, and one nobody named is shown by its effect
 //! alone.
 
 use bevy::prelude::*;
@@ -189,7 +189,7 @@ type Armed = (Option<&'static Afflicted>, Option<&'static Equipped>);
 /// so the sheet shows what a worn blade adds without the game copying it
 /// anywhere, and the speed from [`Speeds`], so it is the speed the turns
 /// are dealt by, haste and all.
-pub fn collect_sheet(
+pub(crate) fn collect_sheet(
     mut view: ResMut<SheetView>,
     registries: Res<Registries>,
     loadout: Loadout,

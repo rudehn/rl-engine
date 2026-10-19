@@ -2,12 +2,12 @@
 //!
 //! [`RunRecords`] is plain data, filled by `rl-bevy`'s `RecordsPlugin`
 //! without knowing where, or whether, it is kept. This is a third slot,
-//! apart from [`SETTINGS_SLOT`](crate::SETTINGS_SLOT) and a game's own
+//! apart from `SETTINGS_SLOT` and a game's own
 //! run: read once before the first frame, and written whenever a record
 //! is filed.
 //!
 //! Not the versioned envelope `rl-save` otherwise writes a run through:
-//! [`Versioned`](crate::Versioned) refuses a save whole when its version
+//! `Versioned` refuses a save whole when its version
 //! differs, which suits a run's entities, saved by their own
 //! game-specific shapes that cannot be read piecemeal. A list of records
 //! is different: every [`RunRecord`] field is `#[serde(default)]`, so a

@@ -3,7 +3,7 @@
 //! An inspect panel that says "Deadly" has to have got that word from
 //! somewhere, and the somewhere is arithmetic over the same mitigation
 //! pipeline a real blow goes through. Putting it here rather than in the UI
-//! means the forecast cannot drift from the fight: [`expected_damage`]
+//! means the forecast cannot drift from the fight: `expected_damage`
 //! calls [`resolve`] with the average roll in place
 //! of a real one, through the game's own damage stages.
 //!
@@ -22,10 +22,10 @@
 //! what each of them can really do.
 //!
 //! The distance is the caller's to supply, since only the caller knows
-//! where the two stand. [`Combatant::armed`] is the constructor that takes
+//! where the two stand. `Combatant::armed` is the constructor that takes
 //! [`Arms`] and a distance; [`Combatant`] itself still holds one set of
 //! rolls and one cost, already chosen. [`Combatant::closing`] and
-//! [`Arms::closing`] are the same fight as the two would have it once in
+//! `Arms::closing` are the same fight as the two would have it once in
 //! reach, for a panel that still wants numbers when nothing reaches yet: a
 //! brawler across the room says how many blows it needs rather than never.
 //!
@@ -92,7 +92,7 @@ impl Combatant<'_> {
     ///
     /// For a panel that wants numbers for a fight the two are not yet in:
     /// a brawler across the room still says how many blows it needs. See
-    /// [`Arms::closing`]; [`armed`](Self::armed) is the fight as it stands.
+    /// `Arms::closing`; `armed` is the fight as it stands.
     pub fn closing<'a>(health: i32, armor: i32, speed: u32, resists: &'a Resistances, arms: &Arms<'a>, distance: i32) -> Combatant<'a> {
         let (strikes, blow_cost) = arms.closing(distance);
         Combatant { health, armor, speed, blow_cost, resists, strikes, chance_pct: 100 }
@@ -130,7 +130,8 @@ pub struct Arms<'a> {
 
 impl<'a> Arms<'a> {
     /// Nothing: an actor that cannot attack at any distance.
-    pub fn none() -> Arms<'a> {
+    #[cfg(test)]
+    pub(crate) fn none() -> Arms<'a> {
         Arms::default()
     }
 
@@ -164,7 +165,7 @@ impl<'a> Arms<'a> {
     /// Beside the target nothing changes: an actor with no blow of its own
     /// cannot hurt what stands next to it, and saying otherwise would be a
     /// forecast of a fight the resolver never fights.
-    pub fn closing(&self, distance: i32) -> (&'a [(DamageKindId, DiceRoll)], Option<u32>) {
+    pub(crate) fn closing(&self, distance: i32) -> (&'a [(DamageKindId, DiceRoll)], Option<u32>) {
         let reach = self.at(distance);
         if !reach.0.is_empty() || distance <= 1 {
             reach
@@ -183,7 +184,12 @@ impl<'a> Arms<'a> {
 /// and rounding that to 1 or 2 before it is multiplied out is how a
 /// forecast comes to be a blow wrong. Never negative, since a blow that
 /// heals is not a blow the forecast can count.
-pub fn expected_damage<A: Copy>(attacker: &Combatant<'_>, defender: &Combatant<'_>, kinds: &Registry<DamageKind>, stages: &[&dyn DamageStage<A>]) -> f32 {
+pub(crate) fn expected_damage<A: Copy>(
+    attacker: &Combatant<'_>,
+    defender: &Combatant<'_>,
+    kinds: &Registry<DamageKind>,
+    stages: &[&dyn DamageStage<A>],
+) -> f32 {
     let shield = Defender { armor: defender.armor, blocked: false };
     attacker
         .strikes
@@ -207,7 +213,12 @@ pub fn expected_damage<A: Copy>(attacker: &Combatant<'_>, defender: &Combatant<'
 
 /// How many blows `attacker` needs to fell `defender`, or `None` when it
 /// never will because nothing it throws gets through.
-pub fn blows_to_fell<A: Copy>(attacker: &Combatant<'_>, defender: &Combatant<'_>, kinds: &Registry<DamageKind>, stages: &[&dyn DamageStage<A>]) -> Option<u32> {
+pub(crate) fn blows_to_fell<A: Copy>(
+    attacker: &Combatant<'_>,
+    defender: &Combatant<'_>,
+    kinds: &Registry<DamageKind>,
+    stages: &[&dyn DamageStage<A>],
+) -> Option<u32> {
     let per_blow = expected_damage(attacker, defender, kinds, stages);
     if per_blow <= 0.0 || defender.health <= 0 {
         return None;
@@ -223,7 +234,7 @@ pub fn blows_to_fell<A: Copy>(attacker: &Combatant<'_>, defender: &Combatant<'_>
 /// same span. Multiplying blows by cost before dividing by speed, rather
 /// than rounding a single blow's turns and multiplying that out, is what
 /// keeps a weapon's price from being rounded away one blow at a time.
-pub fn turns_for(blows: u32, speed: u32, cost: Option<u32>) -> u32 {
+pub(crate) fn turns_for(blows: u32, speed: u32, cost: Option<u32>) -> u32 {
     if speed == 0 {
         return u32::MAX;
     }

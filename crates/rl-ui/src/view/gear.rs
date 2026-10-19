@@ -101,7 +101,7 @@ type Worn = (Option<&'static Name>, Option<&'static Glyph>, Option<&'static Stac
 /// A thing not yet known shows its name, its look, how many and where it
 /// is worn, as its bag row does, and nothing of what it is worth, so the
 /// rail never says what the bag keeps back.
-pub fn collect_gear(mut view: ResMut<GearView>, registries: Res<Registries>, player: Query<&Equipped, With<Player>>, items: Query<Worn>) {
+pub(crate) fn collect_gear(mut view: ResMut<GearView>, registries: Res<Registries>, player: Query<&Equipped, With<Player>>, items: Query<Worn>) {
     view.slots.clear();
     let worn = player.single().ok();
     for (slot, def) in registries.slots.iter() {

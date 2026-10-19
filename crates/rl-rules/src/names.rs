@@ -179,7 +179,7 @@ impl<'a> Names<'a> {
     }
 
     /// The stat named `name`, or why there is none.
-    pub fn stat(&self, name: &str) -> Result<StatId, String> {
+    pub(crate) fn stat(&self, name: &str) -> Result<StatId, String> {
         self.find(TypeId::of::<StatDef>(), "stat", name).map(Id::from_raw)
     }
 
@@ -194,7 +194,7 @@ impl<'a> Names<'a> {
     }
 
     /// The slot named `name`, or why there is none.
-    pub fn slot(&self, name: &str) -> Result<SlotId, String> {
+    pub(crate) fn slot(&self, name: &str) -> Result<SlotId, String> {
         self.find(TypeId::of::<SlotDef>(), "slot", name).map(Id::from_raw)
     }
 

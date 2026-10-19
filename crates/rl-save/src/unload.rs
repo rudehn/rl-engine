@@ -39,25 +39,25 @@ pub struct Stash(Arc<Mutex<Option<(String, String)>>>);
 impl Stash {
     /// Keeps `text` as the save to write to `slot`, replacing what was
     /// stashed before.
-    pub fn stash(&self, slot: &str, text: &str) {
+    pub(crate) fn stash(&self, slot: &str, text: &str) {
         *self.0.lock().expect("the stash") = Some((slot.to_string(), text.to_string()));
     }
 
     /// Forgets what was stashed, so nothing is written on the way out. For
     /// the moment a save is deleted: a death, a run given up.
-    pub fn clear(&self) {
+    pub(crate) fn clear(&self) {
         *self.0.lock().expect("the stash") = None;
     }
 
     /// The slot a save is waiting for, if one is.
-    pub fn pending(&self) -> Option<String> {
+    pub(crate) fn pending(&self) -> Option<String> {
         self.0.lock().expect("the stash").as_ref().map(|(slot, _)| slot.clone())
     }
 
     /// Writes what is stashed through `backend`. `Ok(false)` when there was
     /// nothing to write. The stash is kept, since the two unload events a
     /// browser sends may both arrive and writing twice is harmless.
-    pub fn flush(&self, backend: &dyn SaveBackend) -> Result<bool, SaveError> {
+    pub(crate) fn flush(&self, backend: &dyn SaveBackend) -> Result<bool, SaveError> {
         let pending = self.0.lock().expect("the stash").clone();
         match pending {
             Some((slot, text)) => backend.persist(&slot, &text).map(|()| true),

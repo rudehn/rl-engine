@@ -13,7 +13,7 @@
 //! promised across engine versions.
 //!
 //! Where iteration order could leak into a draw, use [`position_hash`] or
-//! [`pair_hash`] instead of a stream: they depend only on their inputs, so
+//! `pair_hash` instead of a stream: they depend only on their inputs, so
 //! visiting cells in a different order cannot reroll them.
 
 use rand::SeedableRng;
@@ -66,7 +66,7 @@ impl RunSeed {
 
     /// A run seed from a raw entropy reading, avalanched so neighbouring
     /// readings give unrelated runs.
-    pub const fn from_entropy(entropy: u64) -> Self {
+    pub(crate) const fn from_entropy(entropy: u64) -> Self {
         RunSeed(mix64(entropy))
     }
 
@@ -76,7 +76,7 @@ impl RunSeed {
     /// repeats between two quick restarts, and a counter alone repeats across
     /// processes. Together they do not. Not compiled on wasm, which has no
     /// `SystemTime`: a game there reads whatever clock its host offers and
-    /// passes the reading to [`RunSeed::from_entropy`]. That is why the
+    /// passes the reading to `RunSeed::from_entropy`. That is why the
     /// constructor takes a reading rather than taking one itself, and it is
     /// the same reason no engine crate seeds a generator from entropy.
     #[cfg(not(target_arch = "wasm32"))]
@@ -107,7 +107,7 @@ impl SeedDomain {
     }
 
     /// The salt mixed into every seed derived under this domain.
-    pub const fn salt(self) -> u64 {
+    pub(crate) const fn salt(self) -> u64 {
         self.0
     }
 }
@@ -136,7 +136,8 @@ pub const fn pair_hash(seed: u64, a: (i32, i32), b: (i32, i32)) -> u64 {
 
 /// `hash` reduced to `[0, bound)` without modulo bias worth caring about at
 /// the bounds worldgen uses.
-pub const fn hash_below(hash: u64, bound: u32) -> u32 {
+#[cfg(test)]
+pub(crate) const fn hash_below(hash: u64, bound: u32) -> u32 {
     (((hash >> 32) * bound as u64) >> 32) as u32
 }
 

@@ -135,7 +135,7 @@ pub struct Launch<'w, 's> {
 /// A throw that has left the hand and not yet come down: what it will do
 /// when it does.
 #[derive(Debug, Clone)]
-pub struct ThrowLanding {
+pub(crate) struct ThrowLanding {
     actor: Entity,
     item: Entity,
     rests: Point,

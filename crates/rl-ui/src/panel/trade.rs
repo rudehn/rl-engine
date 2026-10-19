@@ -32,7 +32,7 @@ use crate::tone::{Palette, Tones};
 use crate::view::trade::{TradeRow, TradeView, TradeViewPlugin};
 
 /// The name the trade screen's modal is declared under.
-pub const TRADE_MODAL: &str = "trade";
+pub(crate) const TRADE_MODAL: &str = "trade";
 
 /// The keys the trade screen answers to, beside the direction keys that
 /// walk the rows and cross the sides and the cursors' keys that deal one
@@ -42,7 +42,7 @@ pub const TRADE_MODAL: &str = "trade";
 /// `TradeKeys`. `a` because it is the container screen's key for all of
 /// it, and on this screen all of it is the whole of a stack.
 #[derive(Resource, Debug, Clone)]
-pub struct TradeKeys {
+pub(crate) struct TradeKeys {
     /// Deals the whole of the row picked out.
     pub whole: Chord,
 }
@@ -127,7 +127,7 @@ impl TradeWords {
 
 /// Where the trade screen is drawn, and what it says.
 #[derive(Resource, Debug, Clone)]
-pub struct TradeLayout {
+pub(crate) struct TradeLayout {
     /// The terminal cells it occupies.
     pub rect: Rect,
     /// Its words.
@@ -159,7 +159,7 @@ pub struct TradeMenu {
 
 impl TradeMenu {
     /// The row picked out on the side picked out.
-    pub fn selected(&self) -> usize {
+    pub(crate) fn selected(&self) -> usize {
         match self.side {
             TradeSide::Wares => self.wares,
             TradeSide::Pack => self.pack,
@@ -168,7 +168,7 @@ impl TradeMenu {
 
     /// Moves the cursor `by` rows over `rows` of them on the side picked
     /// out, wrapping at either end.
-    pub fn move_by(&mut self, by: i32, rows: usize) {
+    pub(crate) fn move_by(&mut self, by: i32, rows: usize) {
         let at = match self.side {
             TradeSide::Wares => &mut self.wares,
             TradeSide::Pack => &mut self.pack,
@@ -258,7 +258,7 @@ pub struct Counter<'w> {
 ///
 /// A deal is written whether or not the row says it would be refused, so
 /// the engine's resolver stays the one judge of it: a refused one is
-/// answered with [`TradeRefused`], for a game that wants a line saying
+/// answered with `TradeRefused`, for a game that wants a line saying
 /// why, over the row the screen already greys.
 pub fn trade_keys(keys: ControlInput, mut screen: Counter, mut buys: MessageWriter<Buy>, mut sells: MessageWriter<Sell>) {
     let Counter { binds, view, menu, modals, trading } = &mut screen;
@@ -305,7 +305,7 @@ pub fn trade_keys(keys: ControlInput, mut screen: Counter, mut buys: MessageWrit
 
 /// Everything the trade screen draws from.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct ShopScreen<'w> {
+pub(crate) struct ShopScreen<'w> {
     layout: Res<'w, TradeLayout>,
     view: Res<'w, TradeView>,
     binds: Res<'w, TradeKeys>,
@@ -317,7 +317,7 @@ pub struct ShopScreen<'w> {
 /// Draws the open trade: the trader's name and the game's line under it,
 /// the two sides with a price on each row, each side's currency at its
 /// foot, and the keys that do something.
-pub fn draw_trade(mut terminal: ResMut<Terminal>, mut menu: ResMut<TradeMenu>, screen: ShopScreen) {
+pub(crate) fn draw_trade(mut terminal: ResMut<Terminal>, mut menu: ResMut<TradeMenu>, screen: ShopScreen) {
     let ShopScreen { layout, view, binds, keys, modals, palette } = &screen;
     if !modals.is_open(trade_modal(modals)) {
         return;

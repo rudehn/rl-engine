@@ -95,7 +95,7 @@ pub struct Doing(pub Option<&'static str>);
 /// stays on its map pays nothing for those that do not. Not saved: it is
 /// rewritten on the mind's next turn.
 #[derive(Component, Debug, Clone, Default, PartialEq, Eq)]
-pub struct Trails(pub Vec<Entity>);
+pub(crate) struct Trails(pub Vec<Entity>);
 
 /// What an actor is able to do, whatever its brain would like: whether it
 /// runs, searches, and works doors.
@@ -121,7 +121,7 @@ pub struct CameFrom(pub Option<Point>);
 /// Where an actor was set to stand and walks back to when it has nothing
 /// better to do: a monster placed at a prefab's slot. Read by the
 /// [`KeepPost`](rl_rules::ai::tactics::KeepPost) tactic through the
-/// [`Posted`](rl_rules::ai::tactics::Posted) sense [`sense_posts`] pushes,
+/// [`Posted`](rl_rules::ai::tactics::Posted) sense `sense_posts` pushes,
 /// so a kind's shared brain posts only the ones given a post. Saved by
 /// `rl-save` with the actor.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
@@ -129,7 +129,7 @@ pub struct Post(pub Point);
 
 /// The one actor a mind follows: a band's chief, a hireling's employer.
 /// Read by [`Keep::leader`](rl_rules::ai::tactics::Keep::leader) through
-/// the [`Led`](rl_rules::ai::tactics::Led) sense [`sense_leaders`]
+/// the [`Led`](rl_rules::ai::tactics::Led) sense `sense_leaders`
 /// pushes, so a kind's shared brain follows whoever each one was given.
 ///
 /// On the follower rather than in its brain because a brain is a kind's
@@ -432,12 +432,14 @@ impl FlowFields {
 
     /// How many fields are built right now, for a test that a shared goal
     /// is one flood.
-    pub fn len(&self) -> usize {
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
         self.fields.entries.len()
     }
 
     /// Whether nothing is built.
-    pub fn is_empty(&self) -> bool {
+    #[cfg(test)]
+    pub(crate) fn is_empty(&self) -> bool {
         self.fields.entries.is_empty()
     }
 
@@ -594,13 +596,8 @@ impl Thinking {
         self.at
     }
 
-    /// How far it notices things.
-    pub fn reach(&self) -> i32 {
-        self.reach
-    }
-
     /// Whether `p` is within its reach.
-    pub fn within_reach(&self, p: Point) -> bool {
+    pub(crate) fn within_reach(&self, p: Point) -> bool {
         geometry::chebyshev(self.at, p) <= self.reach
     }
 
@@ -611,17 +608,17 @@ impl Thinking {
 
     /// The snapshot as it stands, for a contributor that reads before it
     /// writes.
-    pub fn snapshot(&self) -> Option<&Snapshot<Entity>> {
+    pub(crate) fn snapshot(&self) -> Option<&Snapshot<Entity>> {
         self.snapshot.as_ref()
     }
 
     /// Marks the world cell `p` as somewhere no mind will step this pass.
-    pub fn mark_hazard(&mut self, p: Point) {
+    pub(crate) fn mark_hazard(&mut self, p: Point) {
         self.hazards.insert(p - self.origin);
     }
 
     /// Whether `p` was marked.
-    pub fn is_hazard(&self, p: Point) -> bool {
+    pub(crate) fn is_hazard(&self, p: Point) -> bool {
         self.hazards.contains(p - self.origin)
     }
 
@@ -629,7 +626,7 @@ impl Thinking {
     /// `at`, `stale_turns` ago. The freshest offered, ties to the lower
     /// cell, becomes [`Snapshot::last_known`], so which contributor offered
     /// first cannot reach a tactic.
-    pub fn offer_trail(&mut self, at: Point, stale_turns: u32) {
+    pub(crate) fn offer_trail(&mut self, at: Point, stale_turns: u32) {
         let offer = (stale_turns, at);
         if self.trail.is_none_or(|held| offer < held) {
             self.trail = Some(offer);
@@ -675,7 +672,7 @@ pub struct Sight<'w, 's> {
 
 impl Sight<'_, '_> {
     /// The map every thinker this pass stands on.
-    pub fn current_map(&self) -> MapId {
+    pub(crate) fn current_map(&self) -> MapId {
         self.map.current()
     }
 
@@ -722,7 +719,7 @@ type Thinker = (
 /// Whether a mind holds the turn, which is when the perceive stage has
 /// anything to do. A run condition on the whole stage, so a pass for the
 /// player costs no contributor a dispatch.
-pub fn a_mind_holds_the_turn(minds: Query<(), MindsTurn>) -> bool {
+pub(crate) fn a_mind_holds_the_turn(minds: Query<(), MindsTurn>) -> bool {
     !minds.is_empty()
 }
 
@@ -788,7 +785,7 @@ pub fn perceive_roster(mut thinking: ResMut<Thinking>, sight: Sight, rules: Opti
 }
 
 /// Tells the mind holding the turn where its post is, if it has one.
-pub fn sense_posts(mut thinking: ResMut<Thinking>, posts: Query<&Post>) {
+pub(crate) fn sense_posts(mut thinking: ResMut<Thinking>, posts: Query<&Post>) {
     let Some(post) = thinking.actor().and_then(|actor| posts.get(actor).ok()).copied() else { return };
     if let Some(snapshot) = thinking.snapshot_mut() {
         snapshot.add_sense(rl_rules::ai::tactics::Posted(post.0));
@@ -803,7 +800,7 @@ pub fn sense_posts(mut thinking: ResMut<Thinking>, posts: Query<&Post>) {
 /// remembers an ally that left. A leader dead, on another map or
 /// despawned is not told at all, which is what turns the follower back to
 /// its allies until the leader is back.
-pub fn sense_leaders(mut thinking: ResMut<Thinking>, sight: Sight, led: Query<&Leader>, actors: Query<Seen, (With<Actor>, Without<Dead>)>) {
+pub(crate) fn sense_leaders(mut thinking: ResMut<Thinking>, sight: Sight, led: Query<&Leader>, actors: Query<Seen, (With<Actor>, Without<Dead>)>) {
     let Some(thinker) = thinking.actor() else { return };
     let Ok(Leader(leader)) = led.get(thinker).copied() else { return };
     let Ok((_, at, _, _, on)) = actors.get(leader) else { return };
@@ -821,7 +818,7 @@ pub fn sense_leaders(mut thinking: ResMut<Thinking>, sight: Sight, led: Query<&L
 /// a mind that does not is never told, so no tactic of its brain can send
 /// it through one. One that only follows through is taken by whoever it
 /// follows, and needs to see no way for it.
-pub fn sense_ways(mut thinking: ResMut<Thinking>, sight: Sight, ways: Query<(&Position, Option<&OnMap>), With<Transition>>) {
+pub(crate) fn sense_ways(mut thinking: ResMut<Thinking>, sight: Sight, ways: Query<(&Position, Option<&OnMap>), With<Transition>>) {
     if !thinking.snapshot().is_some_and(|snapshot| snapshot.wits.has(Wits::FLEES_THROUGH)) {
         return;
     }
@@ -839,7 +836,7 @@ pub fn sense_ways(mut thinking: ResMut<Thinking>, sight: Sight, ways: Query<(&Po
 /// The minds' own stream, so adding a tactic cannot shift combat's rolls
 /// and a game with no combat still has one to draw from.
 #[derive(Resource, Debug)]
-pub struct MindRng(pub StdRng);
+pub(crate) struct MindRng(pub StdRng);
 
 impl crate::seed::Stream for MindRng {
     fn for_run(seed: rl_core::RunSeed) -> Self {
@@ -853,7 +850,7 @@ type Shown = (&'static Position, Option<&'static OnMap>, &'static crate::effects
 
 /// The shared state a mind reads and the stream it draws from.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct MindWorld<'w, 's> {
+pub(crate) struct MindWorld<'w, 's> {
     fields: ResMut<'w, FlowFields>,
     rng: ResMut<'w, MindRng>,
     map: Res<'w, WorldMap>,
@@ -889,7 +886,7 @@ pub struct MindChose {
 
 impl MindChose {
     /// The choice, if it is an `A`.
-    pub fn as_choice<A: Choice>(&self) -> Option<&A> {
+    pub(crate) fn as_choice<A: Choice>(&self) -> Option<&A> {
         let any: &dyn std::any::Any = &*self.choice;
         any.downcast_ref::<A>()
     }
@@ -898,7 +895,7 @@ impl MindChose {
 /// Lets a mind choose an action of the game's own.
 pub trait AddChoice {
     /// Registers `A` as an action, with its sweeper, and routes every
-    /// [`MindChose`] carrying an `A` to an `Intent<A>` in
+    /// `MindChose` carrying an `A` to an `Intent<A>` in
     /// [`DecideSet::Game`](crate::plugin::DecideSet::Game).
     ///
     /// A game writes the action type, the resolver and the tactic, the
@@ -930,7 +927,7 @@ fn route_choice<A: Action + Choice + Clone>(mut chose: MessageReader<MindChose>,
 
 /// What a mind writes when it decides.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct MindIntents<'w> {
+pub(crate) struct MindIntents<'w> {
     moves: MessageWriter<'w, Intent<Step>>,
     opens: MessageWriter<'w, Intent<Open>>,
     abilities: MessageWriter<'w, Intent<Use>>,
@@ -959,7 +956,7 @@ type Deciding =
 /// contributors ran in cannot reach a tactic. A game that decides for an
 /// actor itself claims it in [`TurnSet::Decide`](crate::plugin::TurnSet::Decide),
 /// and the stage never opens for that actor.
-pub fn decide_minds(
+pub(crate) fn decide_minds(
     mut thinking: ResMut<Thinking>,
     mut intents: MindIntents,
     mut acting: ResMut<Acting>,

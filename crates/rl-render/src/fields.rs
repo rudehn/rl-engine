@@ -7,9 +7,9 @@
 //! is on the floor before its blast has gone off. [`ShownFields`] is the
 //! view's memory of what it last showed on each cell. When a cell's fields
 //! change it blends from what was showing to what is there now over
-//! [`BLEND_SECS`], starting when the last [`Wavefront`] still playing
+//! `BLEND_SECS`, starting when the last [`Wavefront`] still playing
 //! reaches the cell, so smoke rolls out behind the blast that left it and
-//! fire catches where the blast has been. [`churn`] stirs how thick a cloud
+//! fire catches where the blast has been. `churn` stirs how thick a cloud
 //! looks, cell by cell and moment by moment, so smoke that hangs between
 //! turns still moves.
 //!
@@ -29,7 +29,7 @@ use rl_rules::GasId;
 use crate::map_view::MapView;
 
 /// Seconds a cell takes to go from what it showed to what its fields hold.
-pub const BLEND_SECS: f32 = 0.35;
+pub(crate) const BLEND_SECS: f32 = 0.35;
 
 /// A blast's front going out from where it went off.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -49,7 +49,7 @@ impl Wavefront {
     /// When it reaches `cell`: at once where it went off, then a ring a
     /// cell, and up to half a ring more by the cell's position so the front
     /// is ragged, and never after it ends.
-    pub fn reaches(&self, cell: Point) -> f32 {
+    pub(crate) fn reaches(&self, cell: Point) -> f32 {
         let out = chebyshev(self.from, cell);
         let rings = if out == 0 { 0.0 } else { out as f32 + (position_hash(0, cell.x, cell.y) % 100) as f32 / 200.0 };
         (self.begins + rings * self.ring_secs).min(self.ends)
@@ -127,7 +127,7 @@ impl ShownFields {
     /// what it showed at `t`, starting once the last of `fronts` still
     /// playing reaches it. A cell that has not changed carries on as it
     /// was, and one on another map than last time starts from nothing.
-    pub fn track(&mut self, map: MapId, now: impl IntoIterator<Item = (Point, FieldLook)>, t: f32, fronts: &[Wavefront]) {
+    pub(crate) fn track(&mut self, map: MapId, now: impl IntoIterator<Item = (Point, FieldLook)>, t: f32, fronts: &[Wavefront]) {
         if self.map != Some(map) {
             self.cells.clear();
             self.map = Some(map);
@@ -157,7 +157,7 @@ impl ShownFields {
     /// hide behind hides its own far side, and reads as a wall with bare
     /// floor behind it. Only over known ground, so a cloud never shows the
     /// shape of a room nobody has seen.
-    pub fn clouds_in_sight(
+    pub(crate) fn clouds_in_sight(
         &self,
         cells: impl IntoIterator<Item = Point>,
         t: f32,
@@ -183,7 +183,7 @@ impl ShownFields {
 /// from -1 to 1: noise over the map two cells to a lattice step and over
 /// time a step every second and a bit, smoothly between, so a cloud swells
 /// and thins in patches rather than flickering cell by cell.
-pub fn churn(p: Point, t: f32) -> f32 {
+pub(crate) fn churn(p: Point, t: f32) -> f32 {
     let (x, y, z) = (p.x as f32 / 2.0, p.y as f32 / 2.0, t / 1.3);
     let (x0, y0, z0) = (x.floor(), y.floor(), z.floor());
     let smooth = |f: f32| f * f * (3.0 - 2.0 * f);

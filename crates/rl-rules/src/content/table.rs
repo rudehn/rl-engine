@@ -67,7 +67,7 @@ impl<T> BandedEntry<T> {
     }
 
     /// Whether the row applies at `band`.
-    pub fn applies(&self, band: i32) -> bool {
+    pub(crate) fn applies(&self, band: i32) -> bool {
         (self.min_band..=self.max_band).contains(&band)
     }
 }
@@ -113,7 +113,7 @@ impl<T> BandedTable<T> {
 
     /// Draws one row at `band` by weight among those `keep` accepts, or
     /// `None` if none applies there. No fallback: ask
-    /// [`band_where`](Self::band_where) first for the band to draw at.
+    /// `band_where` first for the band to draw at.
     pub fn pick_where(&self, band: i32, keep: impl Fn(&T) -> bool, rng: &mut impl Rng) -> Option<&BandedEntry<T>> {
         let kept = || self.at(band).filter(|e| keep(&e.item));
         let total: u64 = kept().map(|e| e.weight as u64).sum();
@@ -135,7 +135,7 @@ impl<T> BandedTable<T> {
     /// with weight applies there, else the deepest band shallower than it
     /// that one covers, so a request past the table's end gets its deepest,
     /// else the shallowest band deeper. `None` when no kept row has weight.
-    pub fn band_where(&self, band: i32, keep: impl Fn(&T) -> bool) -> Option<i32> {
+    pub(crate) fn band_where(&self, band: i32, keep: impl Fn(&T) -> bool) -> Option<i32> {
         let kept: Vec<&BandedEntry<T>> = self.entries.iter().filter(|e| e.weight > 0 && keep(&e.item)).collect();
         if kept.is_empty() {
             return None;

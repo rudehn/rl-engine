@@ -26,7 +26,7 @@ use crate::view::{PartyView, PartyViewPlugin, Row};
 
 /// Where the party rail is drawn and what it says.
 #[derive(Resource, Debug, Clone)]
-pub struct PartyLayout {
+pub(crate) struct PartyLayout {
     /// The terminal cells it occupies.
     pub rect: Rect,
     /// The heading over the rows, drawn only while someone follows. Empty
@@ -90,7 +90,7 @@ impl Plugin for PartyPanel {
 }
 
 /// Paints the party rail.
-pub fn draw_party(mut terminal: ResMut<Terminal>, layout: Res<PartyLayout>, view: Res<PartyView>, palette: Res<Palette>, facets: Res<Facets>) {
+pub(crate) fn draw_party(mut terminal: ResMut<Terminal>, layout: Res<PartyLayout>, view: Res<PartyView>, palette: Res<Palette>, facets: Res<Facets>) {
     let rect = layout.rect;
     if rect.width < 6 || rect.height < 1 {
         return;

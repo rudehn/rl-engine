@@ -22,7 +22,7 @@ use crate::view::{Alert, NearbyFollowers, NearbyStatuses, NearbyView, NearbyView
 
 /// Where the nearby rail is drawn and what the headings say.
 #[derive(Resource, Debug, Clone)]
-pub struct NearbyLayout {
+pub(crate) struct NearbyLayout {
     /// The terminal cells it occupies, border included.
     pub rect: Rect,
     /// The title in the top border. Empty draws no frame.
@@ -228,7 +228,7 @@ impl Plugin for NearbyPanel {
 
 /// The tone a row reads in: what it is to the player, or plain text when
 /// it takes no side.
-pub fn relation_tone(relation: Option<Relation>) -> ToneId {
+pub(crate) fn relation_tone(relation: Option<Relation>) -> ToneId {
     match relation {
         Some(Relation::Hostile) => Tones::BAD,
         Some(Relation::Allied) => Tones::GOOD,
@@ -239,14 +239,14 @@ pub fn relation_tone(relation: Option<Relation>) -> ToneId {
 /// What the rail draws: its layout, its view, and the facet keys the
 /// layout names, so the system that paints it reads them as one.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Rail<'w> {
+pub(crate) struct Rail<'w> {
     layout: Res<'w, NearbyLayout>,
     view: Res<'w, NearbyView>,
     facets: Res<'w, Facets>,
 }
 
 /// Paints the rail, and the tile of the row picked out.
-pub fn draw_nearby(mut terminal: ResMut<Terminal>, rail: Rail, palette: Res<Palette>, modals: Res<Modals>, map: CursorMap, time: Res<Time>) {
+pub(crate) fn draw_nearby(mut terminal: ResMut<Terminal>, rail: Rail, palette: Res<Palette>, modals: Res<Modals>, map: CursorMap, time: Res<Time>) {
     let (layout, view) = (&*rail.layout, &*rail.view);
     if let Some(focused) = view.picked()
         && !modals.any_open()

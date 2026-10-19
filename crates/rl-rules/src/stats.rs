@@ -93,11 +93,6 @@ pub enum Source {
 }
 
 impl Source {
-    /// Whether a status put this on.
-    pub const fn is_status(self) -> bool {
-        matches!(self, Source::Status { .. })
-    }
-
     /// Whether a worn item put this on.
     pub const fn is_item(self) -> bool {
         matches!(self, Source::Item(_))

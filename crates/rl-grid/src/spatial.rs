@@ -7,7 +7,9 @@
 
 use std::collections::BTreeMap;
 
-use rl_core::{Point, Rect, geometry};
+use rl_core::Point;
+#[cfg(test)]
+use rl_core::{Rect, geometry};
 
 /// Entities indexed by cell.
 #[derive(Debug, Clone)]
@@ -72,18 +74,21 @@ impl<E: Copy + Eq> SpatialGrid<E> {
     }
 
     /// Everything inside `rect`, row-major.
-    pub fn in_rect(&self, rect: Rect) -> impl Iterator<Item = (Point, E)> + '_ {
+    #[cfg(test)]
+    pub(crate) fn in_rect(&self, rect: Rect) -> impl Iterator<Item = (Point, E)> + '_ {
         (rect.y..rect.bottom())
             .flat_map(move |y| self.cells.range(Point::new(rect.x, y)..Point::new(rect.right(), y)).flat_map(|(p, list)| list.iter().map(move |e| (*p, *e))))
     }
 
     /// Everything within Chebyshev `radius` of `center`, row-major.
-    pub fn in_square(&self, center: Point, radius: i32) -> impl Iterator<Item = (Point, E)> + '_ {
+    #[cfg(test)]
+    pub(crate) fn in_square(&self, center: Point, radius: i32) -> impl Iterator<Item = (Point, E)> + '_ {
         self.in_rect(Rect::new(center.x - radius, center.y - radius, 2 * radius + 1, 2 * radius + 1))
     }
 
     /// Everything within Euclidean `radius` of `center`, row-major.
-    pub fn in_disc(&self, center: Point, radius: i32) -> impl Iterator<Item = (Point, E)> + '_ {
+    #[cfg(test)]
+    pub(crate) fn in_disc(&self, center: Point, radius: i32) -> impl Iterator<Item = (Point, E)> + '_ {
         self.in_square(center, radius).filter(move |(p, _)| geometry::within_disc(center, *p, radius))
     }
 
@@ -93,17 +98,20 @@ impl<E: Copy + Eq> SpatialGrid<E> {
     }
 
     /// Number of entries.
-    pub fn len(&self) -> usize {
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
         self.count
     }
 
     /// Whether nothing is recorded.
-    pub fn is_empty(&self) -> bool {
+    #[cfg(test)]
+    pub(crate) fn is_empty(&self) -> bool {
         self.count == 0
     }
 
     /// Forgets everything.
-    pub fn clear(&mut self) {
+    #[cfg(test)]
+    pub(crate) fn clear(&mut self) {
         self.cells.clear();
         self.count = 0;
     }

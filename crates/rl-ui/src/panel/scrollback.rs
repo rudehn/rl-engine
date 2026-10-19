@@ -8,7 +8,7 @@
 //! That is the whole point of the split made concrete. [`LogPanel`] and
 //! this draw the same resource two ways, and neither knows the other
 //! exists. What this one adds is state of its own - where the cursor is
-//! and what it is filtered to - and that lives in [`Scrollback`], not in
+//! and what it is filtered to - and that lives in `Scrollback`, not in
 //! the log.
 //!
 //! Lines are wrapped rather than clipped here. On the strip a cut line is
@@ -30,14 +30,14 @@ use crate::panel::{clear, frame};
 use crate::tone::{Palette, ToneId, Tones};
 
 /// The name the scrollback's modal is declared under.
-pub const SCROLLBACK_MODAL: &str = "scrollback";
+pub(crate) const SCROLLBACK_MODAL: &str = "scrollback";
 
 /// Where the reader is in the history, and what they are reading.
 ///
 /// `offset` counts lines up from the newest, so zero is the bottom and
 /// opening the screen always shows what just happened.
 #[derive(Resource, Debug, Default)]
-pub struct Scrollback {
+pub(crate) struct Scrollback {
     /// Lines scrolled up from the newest.
     pub offset: usize,
     /// Show only this tone. `None` shows everything.
@@ -79,7 +79,7 @@ impl Default for ScrollbackKeys {
 
 /// Where the scrollback is drawn and what its borders say.
 #[derive(Resource, Debug, Clone)]
-pub struct ScrollbackLayout {
+pub(crate) struct ScrollbackLayout {
     /// The terminal cells it occupies, border included.
     pub rect: Rect,
     /// The title in the top border. The filter's name is appended to it
@@ -170,7 +170,7 @@ enum Line {
 }
 
 /// Opens, closes, scrolls and filters.
-pub fn scrollback_keys(
+pub(crate) fn scrollback_keys(
     keys: Res<ButtonInput<KeyCode>>,
     binds: Res<ScrollbackKeys>,
     layout: Res<ScrollbackLayout>,
@@ -260,7 +260,7 @@ fn lines_of(log: &MessageLog, scrollback: &Scrollback, turn_rules: bool, width: 
 }
 
 /// Paints the scrollback, while it is open.
-pub fn draw_scrollback(
+pub(crate) fn draw_scrollback(
     mut terminal: ResMut<Terminal>,
     layout: Res<ScrollbackLayout>,
     log: Res<MessageLog>,

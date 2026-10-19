@@ -52,7 +52,7 @@ impl Turns {
     /// For a resolver whose work lands a pass later than the turn that
     /// started it: see [`Airborne`](crate::cue::Airborne), whose landings
     /// are the only ones in the engine.
-    pub fn made_progress(&mut self) {
+    pub(crate) fn made_progress(&mut self) {
         self.progress = true;
     }
 
@@ -93,7 +93,7 @@ impl Turns {
 /// intent is answered in the frame it was written, and a warp or a
 /// reaction asked for while the turns are stopped is still answered.
 #[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Pace {
+pub(crate) struct Pace {
     /// Hundredths of a step per second, or `None` for as fast as the loop
     /// runs.
     rate: Option<u32>,
@@ -109,29 +109,22 @@ impl Pace {
 
     /// As fast as the loop runs, which is the default and what a game
     /// somebody plays wants.
-    pub const fn unpaced() -> Self {
+    #[cfg(test)]
+    pub(crate) const fn unpaced() -> Self {
         Self { rate: None, credit: 0 }
     }
 
     /// `hundredths` of a step of game time for each second watched: 100 is
     /// one ordinary step a second.
-    pub const fn per_second(hundredths: u32) -> Self {
+    #[cfg(test)]
+    pub(crate) const fn per_second(hundredths: u32) -> Self {
         Self { rate: Some(hundredths), credit: 0 }
     }
 
     /// No turn is dealt until the pace is changed.
-    pub const fn stopped() -> Self {
+    #[cfg(test)]
+    pub(crate) const fn stopped() -> Self {
         Self::per_second(0)
-    }
-
-    /// Hundredths of a step per second, or `None` when unpaced.
-    pub fn rate(&self) -> Option<u32> {
-        self.rate
-    }
-
-    /// Whether no turn is dealt at all.
-    pub fn is_stopped(&self) -> bool {
-        self.rate == Some(0)
     }
 
     /// Earns what `elapsed` of the wall clock allows.
@@ -183,7 +176,7 @@ impl Occupancy {
     }
 
     /// Takes `e` off `p` on `map`, whether or not that is the current map.
-    pub fn remove_on(&mut self, map: MapId, p: Point, e: Entity) {
+    pub(crate) fn remove_on(&mut self, map: MapId, p: Point, e: Entity) {
         if map == self.current {
             self.grid.remove(p, e);
         } else if let Some(grid) = self.stash.get_mut(&map) {
@@ -214,7 +207,7 @@ impl Occupancy {
 /// The engine ships the actions every roguelike needs, each owned by the
 /// module that owns the mechanic: [`Step`] and [`Wait`] here,
 /// [`Attack`](crate::combat::Attack) in combat, the item actions in
-/// items, [`Open`](crate::doors::Open) and [`Close`](crate::doors::Close)
+/// items, [`Open`](crate::doors::Open) and `Close`
 /// in doors, [`GoThrough`](crate::places::GoThrough) in places. A game
 /// adds its own by implementing this on a type of its own, registering it
 /// with [`AddAction::add_action`], and resolving it in
@@ -279,22 +272,22 @@ pub struct Acting {
 impl Acting {
     /// Claims the right to choose for `actor` this pass. False if
     /// something already chose.
-    pub fn claim_decision(&mut self, actor: Entity) -> bool {
+    pub(crate) fn claim_decision(&mut self, actor: Entity) -> bool {
         Self::mark(&mut self.decided, actor)
     }
 
     /// Whether something has already chosen for `actor` this pass.
-    pub fn has_decided(&self, actor: Entity) -> bool {
+    pub(crate) fn has_decided(&self, actor: Entity) -> bool {
         self.decided.contains(&actor)
     }
 
     /// Claims the actor's turn for resolution. False if it already acted.
-    pub fn claim_action(&mut self, actor: Entity) -> bool {
+    pub(crate) fn claim_action(&mut self, actor: Entity) -> bool {
         Self::mark(&mut self.acted, actor)
     }
 
     /// Whether `actor` has already acted this pass.
-    pub fn has_acted(&self, actor: Entity) -> bool {
+    pub(crate) fn has_acted(&self, actor: Entity) -> bool {
         self.acted.contains(&actor)
     }
 
@@ -302,7 +295,7 @@ impl Acting {
     /// refused by [`Resolution::refuse`]: answered without its turn being
     /// spent, so [`has_acted`](Self::has_acted) does not see it, though
     /// the player did ask.
-    pub fn was_refused(&self, actor: Entity) -> bool {
+    pub(crate) fn was_refused(&self, actor: Entity) -> bool {
         self.refused.contains(&actor)
     }
 
@@ -350,7 +343,7 @@ impl Resolution<'_, '_> {
     /// Anyone else is claimed and charged as by [`failed`](Self::failed),
     /// so a monster's refusal is never a second action beside another of
     /// the same pass.
-    pub fn refuse(&mut self, actor: Entity, cost: u32) {
+    pub(crate) fn refuse(&mut self, actor: Entity, cost: u32) {
         if !self.holding.contains(actor) || self.acting.has_acted(actor) {
             return;
         }
@@ -364,7 +357,7 @@ impl Resolution<'_, '_> {
     }
 
     /// Whether something already spent `actor`'s turn this pass.
-    pub fn spent(&self, actor: Entity) -> bool {
+    pub(crate) fn spent(&self, actor: Entity) -> bool {
         self.acting.has_acted(actor)
     }
 
@@ -393,7 +386,7 @@ impl Resolution<'_, '_> {
 }
 
 /// Forgets the pass that just ended. First thing in every pass.
-pub fn start_pass(mut acting: ResMut<Acting>) {
+pub(crate) fn start_pass(mut acting: ResMut<Acting>) {
     acting.decided.clear();
     acting.acted.clear();
     acting.refused.clear();
@@ -450,7 +443,7 @@ fn where_play_is(map: &WorldMap, pos: Point, on: Option<&OnMap>) -> bool {
 
 /// What stops a turn being dealt though the queue has one due.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Brakes<'w> {
+pub(crate) struct Brakes<'w> {
     hold: Res<'w, TurnHold>,
     pace: Res<'w, Pace>,
 }
@@ -478,7 +471,7 @@ impl Brakes<'_> {
 /// The clock advances at most once per pass, so a queue holding only
 /// frozen actors moves time forward one step at a time rather than racing
 /// ahead inside the loop.
-pub fn schedule(
+pub(crate) fn schedule(
     mut commands: Commands,
     mut turns: ResMut<Turns>,
     mut ends: MessageWriter<TurnEnd>,
@@ -547,7 +540,7 @@ type Arrivals<'w, 's> = Query<'w, 's, (Has<Player>, Option<&'static Position>, O
 /// renumber every monster after it; the first turn of a run must depend on
 /// neither. Two that block never share a cell, and the number settles only
 /// two that do not, admitted together where they stand together.
-pub fn admit_new_actors(
+pub(crate) fn admit_new_actors(
     mut turns: ResMut<Turns>,
     mut occupancy: ResMut<Occupancy>,
     map: Res<WorldMap>,
@@ -593,7 +586,7 @@ type Holding<'w, 's> = Query<'w, 's, (Entity, Has<Player>), With<MyTurn>>;
 /// monster from retrying forever. A shut door is unwalkable: opening one
 /// is [`Open`](crate::doors::Open), which a [`Bump`](crate::bump::Bump)
 /// comes to when that is what is in the way.
-pub fn resolve_moves(
+pub(crate) fn resolve_moves(
     mut intents: MessageReader<Intent<Step>>,
     mut resolution: Resolution,
     map: Res<WorldMap>,
@@ -642,7 +635,7 @@ pub(crate) fn corner_ok(map: &WorldMap, from: Point, dir: Direction) -> bool {
 }
 
 /// Resolves a wait: the turn passes and nothing else happens.
-pub fn resolve_waits(mut intents: MessageReader<Intent<Wait>>, mut resolution: Resolution) {
+pub(crate) fn resolve_waits(mut intents: MessageReader<Intent<Wait>>, mut resolution: Resolution) {
     for intent in intents.read() {
         if resolution.claim(intent.actor) {
             resolution.done(intent.actor, BASE_ACTION_COST);
@@ -656,7 +649,7 @@ pub fn resolve_waits(mut intents: MessageReader<Intent<Wait>>, mut resolution: R
 /// it a game that registers an action and forgets its resolver leaves the
 /// player holding a turn nothing will ever spend, which reads as a frozen
 /// game rather than a mistake.
-pub fn sweep_unclaimed<A: Action>(mut intents: MessageReader<Intent<A>>, mut resolution: Resolution) {
+pub(crate) fn sweep_unclaimed<A: Action>(mut intents: MessageReader<Intent<A>>, mut resolution: Resolution) {
     for intent in intents.read() {
         if resolution.answered(intent.actor) {
             continue;
@@ -747,7 +740,7 @@ fn quickened(speed: u32, percent: i32) -> u32 {
 /// holder cannot put it in the queue twice. Every cost is scaled by the
 /// actor's speed as [`Speeds`] reads it, so a stat [`TurnRules`] names
 /// counts wherever a turn is put back.
-pub fn cleanup_turns(
+pub(crate) fn cleanup_turns(
     mut commands: Commands,
     mut turns: ResMut<Turns>,
     mut done: MessageReader<ActionDone>,
@@ -788,7 +781,7 @@ pub fn cleanup_turns(
 }
 
 /// Drops despawned actors from the occupancy index.
-pub fn forget_removed_blockers(mut occupancy: ResMut<Occupancy>, mut removed: RemovedComponents<Blocks>) {
+pub(crate) fn forget_removed_blockers(mut occupancy: ResMut<Occupancy>, mut removed: RemovedComponents<Blocks>) {
     let gone: Vec<Entity> = removed.read().collect();
     if gone.is_empty() {
         return;

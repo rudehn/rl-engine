@@ -80,7 +80,8 @@ impl Factions {
     }
 
     /// Whether `a` helps `b`.
-    pub fn is_allied(&self, a: FactionId, b: FactionId) -> bool {
+    #[cfg(test)]
+    pub(crate) fn is_allied(&self, a: FactionId, b: FactionId) -> bool {
         self.relation(a, b) == Relation::Allied
     }
 }

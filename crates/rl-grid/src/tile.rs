@@ -190,12 +190,12 @@ impl TileProps {
     }
 
     /// Whether a route may go through it, defaulting to `walkable`.
-    pub fn is_passable(&self) -> bool {
+    pub(crate) fn is_passable(&self) -> bool {
         self.passable.unwrap_or(self.walkable)
     }
 
     /// The effective entry cost, never zero.
-    pub fn effective_move_cost(&self) -> u32 {
+    pub(crate) fn effective_move_cost(&self) -> u32 {
         if self.move_cost == 0 { NORMAL_MOVE_COST as u32 } else { self.move_cost as u32 }
     }
 }
@@ -277,11 +277,6 @@ impl TileRegistry {
     /// Panics if `id` was not issued by this registry.
     pub fn get(&self, id: TileId) -> &TileProps {
         &self.props[id.index()]
-    }
-
-    /// The properties of `id`, if it exists.
-    pub fn try_get(&self, id: TileId) -> Option<&TileProps> {
-        self.props.get(id.index())
     }
 
     /// The id registered under `name`.

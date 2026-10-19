@@ -18,7 +18,7 @@ pub struct SaveId(pub u32);
 /// Entities to save ids while capturing; save ids to entities while
 /// restoring.
 #[derive(Debug, Default)]
-pub struct EntityRemap {
+pub(crate) struct EntityRemap {
     to_save: HashMap<Entity, SaveId>,
     to_entity: Vec<Option<Entity>>,
 }
@@ -30,7 +30,7 @@ impl EntityRemap {
     }
 
     /// The save id of `entity`, allocated on first sight.
-    pub fn save_id(&mut self, entity: Entity) -> SaveId {
+    pub(crate) fn save_id(&mut self, entity: Entity) -> SaveId {
         if let Some(id) = self.to_save.get(&entity) {
             return *id;
         }
@@ -41,12 +41,12 @@ impl EntityRemap {
     }
 
     /// The save id of `entity`, if it was captured.
-    pub fn saved(&self, entity: Entity) -> Option<SaveId> {
+    pub(crate) fn saved(&self, entity: Entity) -> Option<SaveId> {
         self.to_save.get(&entity).copied()
     }
 
     /// Binds a save id to the entity restored for it.
-    pub fn bind(&mut self, id: SaveId, entity: Entity) {
+    pub(crate) fn bind(&mut self, id: SaveId, entity: Entity) {
         let i = id.0 as usize;
         if self.to_entity.len() <= i {
             self.to_entity.resize(i + 1, None);
@@ -64,18 +64,8 @@ impl EntityRemap {
     ///
     /// In id order rather than the order of the hash map beside it, so a
     /// save written from this is the same bytes for the same run.
-    pub fn bound(&self) -> impl Iterator<Item = (SaveId, Entity)> + '_ {
+    pub(crate) fn bound(&self) -> impl Iterator<Item = (SaveId, Entity)> + '_ {
         self.to_entity.iter().enumerate().filter_map(|(i, e)| e.map(|e| (SaveId(i as u32), e)))
-    }
-
-    /// How many ids have been handed out or bound.
-    pub fn len(&self) -> usize {
-        self.to_entity.len()
-    }
-
-    /// Whether nothing was mapped.
-    pub fn is_empty(&self) -> bool {
-        self.to_entity.is_empty()
     }
 }
 

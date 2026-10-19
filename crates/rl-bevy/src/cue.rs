@@ -24,7 +24,7 @@
 //!
 //! A flight lands when it has been seen. A resolver that cued one, with
 //! something watching, puts what the flight does aside and tells the hold
-//! it has [`launched`](TurnHold::launch); no turn is dealt while anything
+//! it has `launched`; no turn is dealt while anything
 //! is in the air, and the first pass after the hold lets go lands it,
 //! which is when the fire starts and the blow falls, and cues the burst
 //! that is then waited on in turn. Without a watcher nothing is put
@@ -110,7 +110,7 @@ pub struct Cued {
 ///
 /// Held only while something watches: a plugin that plays cues calls
 /// [`watch`](Self::watch) once, and the loop is then stopped by
-/// [`hold_for_cues`] after a pass that cued something and freed by the
+/// `hold_for_cues` after a pass that cued something and freed by the
 /// plugin when the last of it has played. A game with no such plugin never
 /// waits.
 #[derive(Resource, Debug, Default, Clone, Copy)]
@@ -126,7 +126,7 @@ pub struct TurnHold {
 impl TurnHold {
     /// Lets go of everything for a new run, keeping whether anything
     /// watches: what was in the air belonged to the run that ended.
-    pub fn reset(&mut self) {
+    pub(crate) fn reset(&mut self) {
         self.held = false;
         self.in_flight = 0;
         self.skip_asked = false;
@@ -138,7 +138,7 @@ impl TurnHold {
     }
 
     /// Whether anything watches.
-    pub fn is_watched(&self) -> bool {
+    pub(crate) fn is_watched(&self) -> bool {
         self.watched
     }
 
@@ -158,12 +158,12 @@ impl TurnHold {
     }
 
     /// Something has been cued to fly whose landing waits on being seen.
-    pub fn launch(&mut self) {
+    pub(crate) fn launch(&mut self) {
         self.in_flight += 1;
     }
 
     /// One of them has landed.
-    pub fn land(&mut self) {
+    pub(crate) fn land(&mut self) {
         self.in_flight = self.in_flight.saturating_sub(1);
     }
 
@@ -232,7 +232,7 @@ impl<L: Lands> Airborne<L> {
     /// wrote the two halves itself had to remember the `launch` as well
     /// as the push.
     #[must_use = "a landing handed back has not flown, and the caller lands it now"]
-    pub fn launched(&mut self, hold: &mut TurnHold, landing: L) -> Option<L> {
+    pub(crate) fn launched(&mut self, hold: &mut TurnHold, landing: L) -> Option<L> {
         if !hold.is_watched() {
             return Some(landing);
         }
@@ -246,7 +246,7 @@ impl<L: Lands> Airborne<L> {
     /// Frees the hold for each and marks the pass as having done
     /// something, so the loop goes on to deal the next turn rather than
     /// reading a landing pass as an idle one.
-    pub fn landing(&mut self, hold: &mut TurnHold, turns: &mut crate::turn::Turns) -> Vec<L> {
+    pub(crate) fn landing(&mut self, hold: &mut TurnHold, turns: &mut crate::turn::Turns) -> Vec<L> {
         let landing = std::mem::take(&mut self.0);
         for _ in &landing {
             hold.land();
@@ -284,7 +284,7 @@ impl AddAirborne for App {
 /// Stops the turns after a pass that cued something, so the next actor
 /// waits until it has been seen. Runs in the pass's cleanup, and does
 /// nothing unless something watches.
-pub fn hold_for_cues(mut cues: MessageReader<Cued>, mut hold: ResMut<TurnHold>) {
+pub(crate) fn hold_for_cues(mut cues: MessageReader<Cued>, mut hold: ResMut<TurnHold>) {
     if cues.read().next().is_some() && hold.is_watched() {
         hold.hold();
     }

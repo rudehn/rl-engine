@@ -40,7 +40,8 @@ pub use party::{PartyView, PartyViewPlugin};
 pub use sheet::{Change, ResistLine, SheetView, SheetViewPlugin, StatLine, StatusLine, Strike, WornLine};
 pub use target::{AimAt, AimFire, AimRange, AimThrow, AimUse, TargetView, TargetViewPlugin, target_modal};
 pub use trade::{TradeRow, TradeView, TradeViewPlugin};
-pub use vitals::{VitalsView, VitalsViewPlugin, health_tone};
+pub(crate) use vitals::health_tone;
+pub use vitals::{VitalsView, VitalsViewPlugin};
 
 use bevy::prelude::*;
 use rl_render::Glyph;
@@ -81,7 +82,7 @@ pub struct Seems {
 
 impl Seems {
     /// Whether nothing is taken off: the numbers shown are the true ones.
-    pub fn is_true(&self) -> bool {
+    pub(crate) fn is_true(&self) -> bool {
         *self == Self::default()
     }
 }
@@ -195,7 +196,7 @@ pub struct WorkRow {
 /// Empty in a game without work: no `Working` is ever put on anything, and
 /// without `WorkKinds` there is no word to show.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Workings<'w, 's> {
+pub(crate) struct Workings<'w, 's> {
     working: Query<'w, 's, &'static rl_bevy::Working>,
     kinds: Option<Res<'w, rl_bevy::WorkKinds>>,
     names: Query<'w, 's, &'static Name>,
@@ -203,7 +204,7 @@ pub struct Workings<'w, 's> {
 
 impl Workings<'_, '_> {
     /// What `entity` is working at, if anything.
-    pub fn row(&self, entity: Entity) -> Option<WorkRow> {
+    pub(crate) fn row(&self, entity: Entity) -> Option<WorkRow> {
         let work = self.working.get(entity).ok()?.0;
         let kinds = self.kinds.as_deref()?;
         let target = work.target.and_then(|t| self.names.get(t).ok()).map(|n| n.as_str().to_string());
@@ -264,10 +265,3 @@ impl Bar {
         if self.max <= 0 { 0.0 } else { (self.value.max(0) as f32 / self.max as f32).clamp(0.0, 1.0) }
     }
 }
-
-/// What every collector needs to name an entity: its label and its glyph.
-///
-/// An entity without both is skipped rather than drawn as a blank, because
-/// a nameless row is a spawn that forgot its [`Name`] and a silent blank
-/// row is the hardest kind of that to notice.
-pub type Named<'a> = (&'a Name, &'a Glyph);

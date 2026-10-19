@@ -16,7 +16,7 @@
 //! wall is, and reported as [`Bumped`] for the narrator.
 //!
 //! A bump into an ally is a free refusal unless the game says otherwise:
-//! [`BumpRules`] with [`OnAlly::Swap`] makes it a [`Swap`], the two
+//! [`BumpRules`] with [`OnAlly::Swap`] makes it a `Swap`, the two
 //! changing places for the cost of the step, which is what every game with
 //! a companion wants of its walk key. A bump into a neutral is refused the
 //! same way, unless its side is one [`BumpRules::give_way`] names: the small
@@ -56,7 +56,7 @@ impl Action for Bump {}
 /// directly by a game whose swap key has its own rules about whom; the
 /// resolver only asks that the two stand a step apart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Swap(pub Entity);
+pub(crate) struct Swap(pub Entity);
 impl Action for Swap {}
 
 /// An actor bumped into someone it will not strike, or something it
@@ -117,7 +117,7 @@ pub struct BumpRules {
     pub give_way: Vec<FactionId>,
     /// Whether a mind steps past one that gives way too, rather than being
     /// held behind it in a corridor one cell wide: its step into the cell
-    /// is a [`Swap`]. One that gives way never pushes past another that
+    /// is a `Swap`. One that gives way never pushes past another that
     /// does, so two of them do not shuffle round each other. A swap sets
     /// off what each of the two is put onto, as a step would, so stepping
     /// past one is no way over the plate it stood on.
@@ -151,14 +151,14 @@ impl BumpRules {
     }
 
     /// Whether one of `side` gives way.
-    pub fn gives_way(&self, side: Option<FactionId>) -> bool {
+    pub(crate) fn gives_way(&self, side: Option<FactionId>) -> bool {
         side.is_some_and(|side| self.give_way.contains(&side))
     }
 }
 
 /// Who stands where, and how they stand to one another.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Way<'w, 's> {
+pub(crate) struct Way<'w, 's> {
     map: Res<'w, WorldMap>,
     occupancy: Res<'w, Occupancy>,
     rules: Option<Res<'w, CombatRules>>,
@@ -173,7 +173,7 @@ pub struct Way<'w, 's> {
 
 /// What a bump writes.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Alternates<'w> {
+pub(crate) struct Alternates<'w> {
     steps: MessageWriter<'w, Intent<Step>>,
     opens: MessageWriter<'w, Intent<Open>>,
     attacks: MessageWriter<'w, Intent<Attack>>,
@@ -190,7 +190,7 @@ pub struct Alternates<'w> {
 /// spends one before anything resolves, comes to nothing at all: no
 /// resolver would take what it wrote, and the question a prop offering
 /// several things raises would open a screen for a turn that is gone.
-pub fn redirect_bumps(mut intents: MessageReader<Intent<Bump>>, mut resolution: Resolution, way: Way, mut out: Alternates) {
+pub(crate) fn redirect_bumps(mut intents: MessageReader<Intent<Bump>>, mut resolution: Resolution, way: Way, mut out: Alternates) {
     for intent in intents.read() {
         let actor = intent.actor;
         if resolution.spent(actor) {
@@ -310,7 +310,7 @@ type Movers<'w, 's> = Query<'w, 's, (&'static mut Position, Option<&'static mut 
 /// Refused, for free to the player, when the other is not a step away,
 /// which is also what stops a swap through a corner a step could not cut.
 /// The other keeps its place in the queue; it was moved, not spent.
-pub fn resolve_swaps(
+pub(crate) fn resolve_swaps(
     mut intents: MessageReader<Intent<Swap>>,
     mut resolution: Resolution,
     map: Res<WorldMap>,

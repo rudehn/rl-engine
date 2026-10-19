@@ -4,7 +4,7 @@
 //! what it can see exactly as it always has. With it, every noise made in a
 //! pass floods once from where it was made, walls stop it and a closed door
 //! muffles it, and every listener it reaches with enough left goes to look,
-//! waking first if it was asleep ([`wake_on_noise`](crate::status::wake_on_noise)).
+//! waking first if it was asleep (`wake_on_noise`).
 //!
 //! A listener hears a place, never a who. Who made a sound decides nothing
 //! but that its maker does not hear it, because a monster behind a wall
@@ -70,9 +70,9 @@ impl Sounds {
     /// Someone struck a blow, with whatever it was struck with.
     pub const STRIKE: SoundId = SoundId::from_raw(1);
     /// A door opened or closed.
-    pub const DOOR: SoundId = SoundId::from_raw(2);
+    pub(crate) const DOOR: SoundId = SoundId::from_raw(2);
     /// A thrown thing came to rest.
-    pub const LANDING: SoundId = SoundId::from_raw(3);
+    pub(crate) const LANDING: SoundId = SoundId::from_raw(3);
 
     /// The engine's sounds, in the order their ids are handed out.
     pub const BUILT_IN: [&'static str; 4] = ["step", "strike", "door", "landing"];
@@ -226,7 +226,7 @@ pub struct Footfall(pub i32);
 /// that read what was heard.
 ///
 /// Asked of the plugin rather than of the components, as
-/// [`StealthRunning`](crate::stealth::StealthRunning) is, because
+/// `StealthRunning` is, because
 /// [`Hearing`] brings a [`Heard`] with it whether or not anything will ever
 /// fill it. The plugin's own message is the proof it was added.
 #[derive(bevy::ecs::system::SystemParam)]
@@ -244,7 +244,7 @@ impl NoiseRunning<'_> {
 /// The flood every noise reuses, so hearing allocates nothing once it has
 /// grown to the loudest sound in play.
 #[derive(Resource, Debug)]
-pub struct Earshot(DijkstraMap);
+pub(crate) struct Earshot(DijkstraMap);
 
 impl Default for Earshot {
     fn default() -> Self {
@@ -327,7 +327,7 @@ impl Plugin for NoisePlugin {
 
 /// What the engine's own actions did this pass, as its noise reads them.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Sources<'w, 's> {
+pub(crate) struct Sources<'w, 's> {
     stepped: MessageReader<'w, 's, Stepped>,
     blows: MessageReader<'w, 's, DamageEvent>,
     doors: MessageReader<'w, 's, DoorEvent>,
@@ -344,7 +344,7 @@ pub struct Sources<'w, 's> {
 /// flurry is not heard as four. Damage over time has no attacker and so
 /// makes no sound, and a mend is not a hit at all. How loud each is comes from
 /// [`NoiseRules`], and a stepper's own [`Footfall`] in place of the rule.
-pub fn make_engine_noise(mut sources: Sources, rules: Res<NoiseRules>, mut noise: MessageWriter<MakeNoise>) {
+pub(crate) fn make_engine_noise(mut sources: Sources, rules: Res<NoiseRules>, mut noise: MessageWriter<MakeNoise>) {
     for step in sources.stepped.read() {
         let loudness = sources.footfalls.get(step.actor).map_or(rules.step, |f| f.0);
         noise.write(MakeNoise { at: step.to, loudness, sound: Sounds::STEP, maker: Some(step.actor) });
@@ -380,7 +380,7 @@ type Listener = (Entity, &'static Position, &'static Hearing, &'static mut Heard
 /// to the lower cell, so the order they were written in cannot change where
 /// it goes. A noise with no listener within its loudness in a straight
 /// line is skipped before any flood, since no flood carries further.
-pub fn resolve_noise(
+pub(crate) fn resolve_noise(
     mut made: MessageReader<MakeNoise>,
     map: Res<WorldMap>,
     rules: Res<NoiseRules>,
@@ -447,7 +447,7 @@ type HoldingTheTurn = (With<MyTurn>, Without<Player>);
 /// In [`DecideSet::Notice`](crate::plugin::DecideSet::Notice), beside
 /// stealth's own aging, so a sound and a sighting grow stale at the same
 /// point in a turn.
-pub fn age_heard(mut listeners: Query<(&Hearing, &mut Heard), HoldingTheTurn>) {
+pub(crate) fn age_heard(mut listeners: Query<(&Hearing, &mut Heard), HoldingTheTurn>) {
     let Ok((ear, mut heard)) = listeners.single_mut() else { return };
     if heard.0.is_alert() {
         heard.0.lost(ear.memory);
@@ -460,7 +460,7 @@ pub fn age_heard(mut listeners: Query<(&Hearing, &mut Heard), HoldingTheTurn>) {
 /// Seeing the cell is having looked: anyone there is already in its
 /// snapshot, or hiding and up to the notice roll. This is what ends a
 /// search that arrived.
-pub fn follow_heard(mut thinking: ResMut<Thinking>, sight: Sight, mut listeners: Query<(&mut Heard, Option<&OnMap>)>) {
+pub(crate) fn follow_heard(mut thinking: ResMut<Thinking>, sight: Sight, mut listeners: Query<(&mut Heard, Option<&OnMap>)>) {
     let Some(thinker) = thinking.actor() else { return };
     let Ok((mut heard, on)) = listeners.get_mut(thinker) else { return };
     let Awareness::Alert { at, stale_turns } = heard.0 else { return };

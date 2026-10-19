@@ -16,7 +16,7 @@ use crate::world::WorldMap;
 
 /// A field for every map, the current one fitted to the loaded window.
 #[derive(Debug, Clone)]
-pub struct MapFields<T> {
+pub(crate) struct MapFields<T> {
     /// The map the field covers, `None` until it first follows one.
     map: Option<MapId>,
     window: Rect,
@@ -44,7 +44,7 @@ impl<T: Copy + Default + PartialEq> MapFields<T> {
     /// Follows the map readers read: sets the field aside and takes up the
     /// next map's when the current map changes, and moves it with the window
     /// when the window moves.
-    pub fn follow(&mut self, map: &WorldMap) {
+    pub(crate) fn follow(&mut self, map: &WorldMap) {
         let (here, window) = (map.current(), map.window_tiles());
         if self.map != Some(here) {
             if let Some(left) = self.map {
@@ -85,23 +85,18 @@ impl<T: Copy + Default + PartialEq> MapFields<T> {
         self.field.set_cells().map(move |(p, v)| (p + origin, v))
     }
 
-    /// Whether the current map's field holds nothing.
-    pub fn is_clear(&self) -> bool {
-        self.field.is_clear()
-    }
-
     /// The world cell at the field's top-left.
-    pub fn origin(&self) -> Point {
+    pub(crate) fn origin(&self) -> Point {
         self.window.origin()
     }
 
     /// The current map's field, in window-local cells, for a rule to step.
-    pub fn field_mut(&mut self) -> &mut TileField<T> {
+    pub(crate) fn field_mut(&mut self) -> &mut TileField<T> {
         &mut self.field
     }
 
     /// Every map's cells that hold something, the current map's included.
-    pub fn export(&self) -> Vec<SavedField<T>> {
+    pub(crate) fn export(&self) -> Vec<SavedField<T>> {
         let current = self.map.map(|map| SavedField { map, cells: self.cells().collect() });
         let aside = self.aside.iter().map(|(map, cells)| SavedField { map: *map, cells: cells.clone() });
         current.into_iter().chain(aside).filter(|s| !s.cells.is_empty()).collect()
@@ -109,7 +104,7 @@ impl<T: Copy + Default + PartialEq> MapFields<T> {
 
     /// Replaces everything with `saved`. Each map's field is laid out when
     /// the map is next followed, over whatever window it has then.
-    pub fn import(&mut self, saved: impl IntoIterator<Item = SavedField<T>>) {
+    pub(crate) fn import(&mut self, saved: impl IntoIterator<Item = SavedField<T>>) {
         *self = Self::default();
         for s in saved {
             self.aside.insert(s.map, s.cells);

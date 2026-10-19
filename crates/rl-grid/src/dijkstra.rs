@@ -67,11 +67,6 @@ impl DijkstraMap {
         Self::new(grid.bounds())
     }
 
-    /// The region this map covers.
-    pub fn region(&self) -> Rect {
-        self.region
-    }
-
     /// Moves the map to a new region, resizing if needed. Values are reset.
     pub fn reset(&mut self, region: Rect) {
         self.region = region;
@@ -105,7 +100,7 @@ impl DijkstraMap {
 
     /// Floods from `goals`, each starting at its own value, so a more
     /// attractive goal can start lower.
-    pub fn build_weighted(&mut self, source: &impl CostSource, goals: impl IntoIterator<Item = (Point, i32)>, rules: PathRules) {
+    pub(crate) fn build_weighted(&mut self, source: &impl CostSource, goals: impl IntoIterator<Item = (Point, i32)>, rules: PathRules) {
         self.values.iter_mut().for_each(|v| *v = UNREACHED);
         self.heap.clear();
         self.rules = rules;
@@ -213,7 +208,8 @@ impl DijkstraMap {
     }
 
     /// The neighbour with the highest value strictly above `p`'s own.
-    pub fn ascend(&self, p: Point) -> Option<Point> {
+    #[cfg(test)]
+    pub(crate) fn ascend(&self, p: Point) -> Option<Point> {
         self.best_neighbour(p, |a, b| a > b)
     }
 
@@ -268,18 +264,6 @@ impl DijkstraMap {
         let (dx, dy) = dir.delta();
         let past = |q: Point| self.local(q).is_some_and(|i| self.past[i]);
         self.rules.cut_corners || (past(p.offset(dx, 0)) && past(p.offset(0, dy)))
-    }
-
-    /// Copies the values of a map of the same shape, whatever its region
-    /// is, so a map can be re-addressed in another coordinate space.
-    ///
-    /// # Panics
-    /// Panics if the shapes differ.
-    pub fn copy_values_from(&mut self, other: &DijkstraMap) {
-        assert_eq!(self.values.len(), other.values.len(), "maps differ in shape");
-        self.values.copy_from_slice(&other.values);
-        self.past.copy_from_slice(&other.past);
-        self.rules = other.rules;
     }
 
     /// Lowers every cell to `other`'s value where that is the lower, and

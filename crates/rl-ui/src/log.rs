@@ -34,7 +34,7 @@ pub struct Span {
 
 impl Span {
     /// Whether the character at `index` is inside.
-    pub fn covers(&self, index: usize) -> bool {
+    pub(crate) fn covers(&self, index: usize) -> bool {
         index >= self.start && index < self.start + self.len
     }
 }
@@ -57,7 +57,7 @@ pub struct LogEntry {
 
 impl LogEntry {
     /// The line as it should be shown: with its count when it repeated.
-    pub fn display(&self) -> String {
+    pub(crate) fn display(&self) -> String {
         if self.count > 1 { format!("{} (x{})", self.text, self.count) } else { self.text.clone() }
     }
 }
@@ -77,7 +77,7 @@ impl Default for MessageLog {
 
 impl MessageLog {
     /// A log that keeps the last `capacity` entries.
-    pub fn with_capacity(capacity: usize) -> Self {
+    pub(crate) fn with_capacity(capacity: usize) -> Self {
         Self { entries: VecDeque::with_capacity(capacity), capacity }
     }
 
@@ -93,7 +93,7 @@ impl MessageLog {
 
     /// Appends a message with runs of its text in colours of their own,
     /// folding as [`push`](Self::push) does.
-    pub fn push_spans(&mut self, text: impl Into<String>, spans: Vec<Span>, tone: ToneId, turn: u32) {
+    pub(crate) fn push_spans(&mut self, text: impl Into<String>, spans: Vec<Span>, tone: ToneId, turn: u32) {
         let text = text.into();
         if let Some(last) = self.entries.back_mut()
             && last.text == text
@@ -119,13 +119,9 @@ impl MessageLog {
         self.push(text, Tones::MUTED, turn);
     }
 
-    /// Appends good news.
-    pub fn good(&mut self, text: impl Into<String>, turn: u32) {
-        self.push(text, Tones::GOOD, turn);
-    }
-
     /// Appends bad news.
-    pub fn bad(&mut self, text: impl Into<String>, turn: u32) {
+    #[cfg(test)]
+    pub(crate) fn bad(&mut self, text: impl Into<String>, turn: u32) {
         self.push(text, Tones::BAD, turn);
     }
 
@@ -135,7 +131,7 @@ impl MessageLog {
     }
 
     /// The last `n` entries, newest first.
-    pub fn recent(&self, n: usize) -> impl Iterator<Item = &LogEntry> {
+    pub(crate) fn recent(&self, n: usize) -> impl Iterator<Item = &LogEntry> {
         self.entries.iter().rev().take(n)
     }
 
@@ -146,22 +142,25 @@ impl MessageLog {
 
     /// Every entry in `tone`, oldest first. What a filtered history screen
     /// reads.
-    pub fn in_tone(&self, tone: ToneId) -> impl Iterator<Item = &LogEntry> {
+    #[cfg(test)]
+    pub(crate) fn in_tone(&self, tone: ToneId) -> impl Iterator<Item = &LogEntry> {
         self.entries.iter().filter(move |e| e.tone == tone)
     }
 
     /// Number of entries kept.
-    pub fn len(&self) -> usize {
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
         self.entries.len()
     }
 
     /// Whether the log is empty.
-    pub fn is_empty(&self) -> bool {
+    #[cfg(test)]
+    pub(crate) fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
     /// Forgets everything. What starting a new run does.
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.entries.clear();
     }
 }

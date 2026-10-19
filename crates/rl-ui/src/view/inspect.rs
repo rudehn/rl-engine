@@ -30,7 +30,7 @@ use crate::modal::{ModalId, Modals};
 use crate::view::{Row, Seems};
 
 /// The name the inspect cursor's modal is declared under.
-pub const INSPECT_MODAL: &str = "inspect";
+pub(crate) const INSPECT_MODAL: &str = "inspect";
 
 /// Where the cursor is and what is under it.
 #[derive(Resource, Debug, Default)]
@@ -132,7 +132,7 @@ type NotYou = (Without<Dead>, Without<Player>, Without<Hidden>);
 
 /// Everything the cursor steers by.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Look<'w, 's> {
+pub(crate) struct Look<'w, 's> {
     input: CursorInput<'w>,
     map: Res<'w, WorldMap>,
     sight: InSight<'w, 's>,
@@ -146,7 +146,7 @@ pub struct Look<'w, 's> {
 /// top of the nearby list otherwise: the nearest actor, or the nearest thing
 /// when nobody is about. Cycling walks that same list in the same order,
 /// things as well as actors, and the [`Focus`] moves with the cursor.
-pub fn move_cursor(mut view: ResMut<InspectView>, mut modals: ResMut<Modals>, mut look: Look) {
+pub(crate) fn move_cursor(mut view: ResMut<InspectView>, mut modals: ResMut<Modals>, mut look: Look) {
     let modal = inspect_modal(&modals);
     let Some((_, origin)) = look.sight.viewer() else { return };
 
@@ -291,7 +291,7 @@ type Fighter = Option<&'static Health>;
 /// the odds of a fight that cannot happen are nothing a player is asking.
 /// A neutral subject is forecast as a hostile one is, since a rat that
 /// ignores the player can still be fought.
-pub fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
+pub(crate) fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
     view.subject = None;
     view.duel = None;
     view.odds = None;

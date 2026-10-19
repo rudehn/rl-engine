@@ -4,29 +4,29 @@
 //! which becomes a [`BeginWork`] intent; anything else begins it through
 //! [`Works::begin`]. Either way the turn it is begun on is its first, and
 //! the actor carries [`Working`] until it is done. On every turn after,
-//! [`continue_work`] claims the actor's decision before any mind is asked
-//! and writes a [`Toil`], so a busy actor never thinks, and
-//! [`resolve_toil`] spends the turn as a wait costs and counts it. On the
+//! `continue_work` claims the actor's decision before any mind is asked
+//! and writes a `Toil`, so a busy actor never thinks, and
+//! `resolve_toil` spends the turn as a wait costs and counts it. On the
 //! last it writes [`WorkDone`], which is where a game says what finishing
-//! means; [`resolve_begins`] is what turns a mind's decision into work.
-//! [`WorkBegan`] is written when work starts. [`break_work`] breaks it off
+//! means; `resolve_begins` is what turns a mind's decision into work.
+//! [`WorkBegan`] is written when work starts. `break_work` breaks it off
 //! with a [`WorkBroken`] and its [`BreakReason`] when the worker is hurt or
 //! dies, when its target is gone or out of reach, or when another worker
-//! finishes the same target; a game stops it with [`Works::stop`], or by
-//! writing a [`StopWork`], which [`answer_stops`] reads at the head of
+//! finishes the same target; a game stops it with `Works::stop`, or by
+//! writing a `StopWork`, which `answer_stops` reads at the head of
 //! every pass. What a kind of work is called is interned by [`WorkKinds`]
 //! from the word a panel shows, through [`AddWork::add_work`].
 //!
 //! The player works by the same [`Working`], begun by [`Works::begin`]
-//! from whatever the player did, and [`work_for_player`] spends its turns
-//! for it, at most one each [`WorkPace`], as [`pace_player_work`] allows,
+//! from whatever the player did, and `work_for_player` spends its turns
+//! for it, at most one each [`WorkPace`], as `pace_player_work` allows,
 //! so they pass without a key and slowly enough to be watched. Spending
 //! one of them on anything else leaves the work off, as
 //! [`BreakReason::LeftOff`]; so does a key, which is `rl-ui`'s to read
 //! and which it answers with [`Works::leave_off`], all but a direction
 //! key toward the work's own target, which presses on with it. A foe
 //! coming into the player's sight breaks it as [`BreakReason::FoeSighted`]
-//! before another turn of it is spent, and [`PlayerAtWork`] keeps who was
+//! before another turn of it is spent, and `PlayerAtWork` keeps who was
 //! already in sight.
 //!
 //! Part of [`CorePlugin`](crate::plugin::CorePlugin): what work a game has
@@ -58,7 +58,7 @@ pub struct WorkKinds(Interner<WorkKind>);
 
 impl WorkKinds {
     /// The id for `name`, assigning a new one if it is unseen.
-    pub fn declare(&mut self, name: &str) -> WorkKindId {
+    pub(crate) fn declare(&mut self, name: &str) -> WorkKindId {
         self.0.intern(name)
     }
 
@@ -101,7 +101,7 @@ impl Action for BeginWork {}
 /// Spend a turn on the work in hand. Written by [`continue_work`] and
 /// never by a game.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Toil;
+pub(crate) struct Toil;
 impl Action for Toil {}
 
 /// Work was begun, this pass.
@@ -129,7 +129,7 @@ pub struct WorkDone {
 /// Why work was broken off.
 ///
 /// Closed, because each is a thing the engine itself detects; a rule of
-/// a game's own stops work with [`Works::stop`] and reads as `Stopped`.
+/// a game's own stops work with `Works::stop` and reads as `Stopped`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BreakReason {
     /// The worker was harmed: any damage that landed, even a hit healed in
@@ -138,11 +138,11 @@ pub enum BreakReason {
     /// The worker died. A killing blow is harm too, and reads as this.
     Died,
     /// The target is gone, or it and the worker are further apart than
-    /// [`REACH`](rl_rules::work::REACH).
+    /// `REACH`.
     OutOfReach,
     /// Another worker finished work on the same target.
     DoneByAnother,
-    /// The game stopped it, with [`Works::stop`] or a [`StopWork`].
+    /// The game stopped it, with `Works::stop` or a `StopWork`.
     Stopped,
     /// A foe came into the player's sight: one the faction matrix sets at
     /// odds with the player either way round, since whichever side would
@@ -201,7 +201,7 @@ impl Works<'_, '_> {
     /// At once, so a stop written before the turns run this frame is
     /// answered before another turn of the work is spent. A [`StopWork`]
     /// says the same from anywhere a message can be written.
-    pub fn stop(&mut self, actor: Entity) {
+    pub(crate) fn stop(&mut self, actor: Entity) {
         self.break_off(actor, BreakReason::Stopped);
     }
 
@@ -229,14 +229,14 @@ impl Works<'_, '_> {
 /// `TurnSet::React` or in a frame's drawing is answered before the next
 /// turn of the work. [`Works::stop`] is the same, at once.
 #[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
-pub struct StopWork(pub Entity);
+pub(crate) struct StopWork(pub Entity);
 
 /// Breaks off the work of everyone a [`StopWork`] names.
 ///
 /// At the head of [`DecideSet::Sense`], before [`continue_work`] claims a
 /// mind's turn for it and long before [`work_for_player`] spends the
 /// player's, so a stop is never a turn late.
-pub fn answer_stops(mut stops: MessageReader<StopWork>, mut works: Works) {
+pub(crate) fn answer_stops(mut stops: MessageReader<StopWork>, mut works: Works) {
     // Once each: the work comes off when the commands run, so a second
     // stop for the same worker in one read would find it still there.
     let mut stopped: Vec<Entity> = Vec::new();
@@ -258,7 +258,7 @@ pub fn answer_stops(mut stops: MessageReader<StopWork>, mut works: Works) {
 /// watched for; reach is asked of where things are now, so every way of
 /// moving a worker or its target is covered by one question, and it is
 /// asked every pass so a panel never shows work that can no longer be done.
-pub fn break_work(
+pub(crate) fn break_work(
     mut commands: Commands,
     mut hurt: MessageReader<DamageDealt>,
     mut deaths: MessageReader<DeathEvent>,
@@ -307,7 +307,7 @@ type AtWork<'w, 's> = Query<'w, 's, Entity, (With<Working>, With<MyTurn>, Withou
 ///
 /// Not the player's: [`work_for_player`] spends those, later in the pass,
 /// so that whatever the player asked for this frame is resolved first.
-pub fn continue_work(mut acting: ResMut<Acting>, mut toil: MessageWriter<Intent<Toil>>, working: AtWork) {
+pub(crate) fn continue_work(mut acting: ResMut<Acting>, mut toil: MessageWriter<Intent<Toil>>, working: AtWork) {
     for actor in &working {
         if acting.claim_decision(actor) {
             toil.write(Intent::new(actor, Toil));
@@ -358,7 +358,7 @@ impl Default for WorkPace {
 /// in sight on its first turn breaks it, since nobody can say whether
 /// that foe came into sight before the save or after the work began.
 #[derive(Resource, Debug, Default)]
-pub struct PlayerAtWork {
+pub(crate) struct PlayerAtWork {
     /// The player whose work the rest is about.
     worker: Option<Entity>,
     /// Wall-clock time waited since the last turn of it.
@@ -377,7 +377,7 @@ pub struct PlayerAtWork {
 /// rather than in it, so a game's own input systems, an exclusive one
 /// among them, need no order against it. With nobody at work it
 /// forgets everything, so the next work begins from nothing.
-pub fn pace_player_work(time: Res<Time>, pace: Res<WorkPace>, mut hand: ResMut<PlayerAtWork>, workers: Query<(), (With<Player>, With<Working>)>) {
+pub(crate) fn pace_player_work(time: Res<Time>, pace: Res<WorkPace>, mut hand: ResMut<PlayerAtWork>, workers: Query<(), (With<Player>, With<Working>)>) {
     if workers.is_empty() {
         *hand = PlayerAtWork::default();
         return;
@@ -395,7 +395,7 @@ type Bystanders<'w, 's> =
 /// What the player at work looks up to see: its own side, what it sees,
 /// the sides' rules and whoever stands about.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Lookout<'w, 's> {
+pub(crate) struct Lookout<'w, 's> {
     sides: Query<'w, 's, Option<&'static Faction>, With<Player>>,
     sight: PlayerSight<'w, 's>,
     rules: Option<Res<'w, CombatRules>>,
@@ -434,7 +434,7 @@ type PlayerWorking<'w, 's> = Query<'w, 's, (Entity, &'static mut Working, Has<My
 
 /// What [`work_for_player`] spends a turn with or breaks the work off by.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct PlayerToil<'w, 's> {
+pub(crate) struct PlayerToil<'w, 's> {
     commands: Commands<'w, 's>,
     acting: ResMut<'w, Acting>,
     spent: MessageWriter<'w, ActionDone>,
@@ -469,7 +469,7 @@ impl PlayerToil<'_, '_> {
 /// [`WorkDone`] is written, as [`resolve_toil`] does for a mind; until
 /// then the player holds the turn and the frame ends, so the world is
 /// drawn between every two turns of the work.
-pub fn work_for_player(
+pub(crate) fn work_for_player(
     mut hand: ResMut<PlayerAtWork>,
     mut began: MessageReader<WorkBegan>,
     mut hurt: MessageReader<DamageDealt>,
@@ -533,7 +533,7 @@ pub fn work_for_player(
 }
 
 /// Begins the work a mind decided on, spending the turn as a wait does.
-pub fn resolve_begins(mut intents: MessageReader<Intent<BeginWork>>, mut resolution: Resolution, mut works: Works) {
+pub(crate) fn resolve_begins(mut intents: MessageReader<Intent<BeginWork>>, mut resolution: Resolution, mut works: Works) {
     for intent in intents.read() {
         if resolution.claim(intent.actor) {
             works.begin(intent.actor, intent.action.0);
@@ -544,7 +544,7 @@ pub fn resolve_begins(mut intents: MessageReader<Intent<BeginWork>>, mut resolut
 
 /// Spends a turn on the work in hand, as a wait costs, and finishes it on
 /// its last.
-pub fn resolve_toil(
+pub(crate) fn resolve_toil(
     mut commands: Commands,
     mut intents: MessageReader<Intent<Toil>>,
     mut resolution: Resolution,

@@ -29,7 +29,7 @@ use crate::view::ability::{AbilityRow, AbilityView, AbilityViewPlugin, turns};
 use crate::view::target::AimAt;
 
 /// The name the ability menu's modal is declared under.
-pub const ABILITY_MODAL: &str = "abilities";
+pub(crate) const ABILITY_MODAL: &str = "abilities";
 
 /// The keys the menu answers to. Walking the rows, confirming one and
 /// closing use the direction and cursor keys every other screen uses.
@@ -47,7 +47,7 @@ impl Default for AbilityKeys {
 
 /// Where the menu is drawn, and what it is called.
 #[derive(Resource, Debug, Clone)]
-pub struct AbilityLayout {
+pub(crate) struct AbilityLayout {
     /// The terminal cells it occupies.
     pub rect: Rect,
     /// Drawn in the top border. The engine has no word for a spellbook.
@@ -60,7 +60,7 @@ pub struct AbilityLayout {
 /// Which row the cursor is on. The menu's own state, since a view holds
 /// no cursor.
 #[derive(Resource, Debug, Default)]
-pub struct AbilityMenu {
+pub(crate) struct AbilityMenu {
     /// The row picked out, clamped to the rows there are when drawn.
     pub selected: usize,
 }
@@ -68,7 +68,7 @@ pub struct AbilityMenu {
 impl AbilityMenu {
     /// Moves the cursor `by` rows over `rows` of them, wrapping at either
     /// end.
-    pub fn move_by(&mut self, by: i32, rows: usize) {
+    pub(crate) fn move_by(&mut self, by: i32, rows: usize) {
         if rows == 0 {
             self.selected = 0;
             return;
@@ -132,7 +132,7 @@ pub fn ability_modal(modals: &Modals) -> ModalId {
 }
 
 /// Opens, closes and walks the menu, and aims the row confirmed.
-pub fn ability_keys(
+pub(crate) fn ability_keys(
     keys: ControlInput,
     binds: Res<AbilityKeys>,
     view: Res<AbilityView>,
@@ -171,7 +171,7 @@ pub fn ability_keys(
 
 /// What an aim and a shape come to, in one phrase: `at a foe, a burst of
 /// 2 around a point up to 8 away`.
-pub fn reach(aim: Aim, mode: TargetMode) -> String {
+pub(crate) fn reach(aim: Aim, mode: TargetMode) -> String {
     let at = match aim {
         Aim::SelfOnly => "on yourself",
         Aim::Foe => "at a foe",
@@ -233,7 +233,7 @@ fn describe(row: &AbilityRow, width: usize) -> Vec<(String, crate::tone::ToneId)
 
 /// Paints the menu while its modal is open: the rows, a rule, and the row
 /// picked out described under it.
-pub fn draw_abilities(
+pub(crate) fn draw_abilities(
     mut terminal: ResMut<Terminal>,
     mut menu: ResMut<AbilityMenu>,
     layout: Res<AbilityLayout>,

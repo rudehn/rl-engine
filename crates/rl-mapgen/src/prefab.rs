@@ -2,8 +2,8 @@
 //!
 //! A [`Prefab`] is rows of characters and a legend from character to tile.
 //! A character the legend does not know is transparent: the generated map
-//! shows through, so a prefab can be an irregular shape. [`Prefab::rotated`]
-//! and [`Prefab::flipped`] carry a piece's marks with its tiles, since a
+//! shows through, so a prefab can be an irregular shape. `Prefab::rotated`
+//! and `Prefab::flipped` carry a piece's marks with its tiles, since a
 //! mark is a position in the piece, not on the map, and a vault's chest
 //! stays in its alcove however the vault is laid down.
 //!
@@ -14,7 +14,7 @@
 //! declares the [`Turn`] and the [`Mirror`] it tolerates, because only it
 //! knows that an inscription reads backwards mirrored; the stamp's
 //! `Orient` is a ceiling, because only the place knows that a corridor has
-//! to meet the door. A piece lands in a [`Facing`] both allow, and a piece
+//! to meet the door. A piece lands in a `Facing` both allow, and a piece
 //! that declares nothing allows all eight, so the stamp alone decides, as
 //! it did before drawings could say. [`StampOneOf`] is the
 //! same pass with a weighted choice of pieces in front of it, for a chain
@@ -23,7 +23,7 @@
 //! fails the chain rather than generating a map its game does not expect.
 //! [`StampEachRoom`] is the pass that keeps rooms from being left empty: a
 //! weighted piece in every room nothing was stamped in, each in a facing
-//! [`Orient::facings`] allows and that fits, off the way in and out.
+//! `Orient::facings` allows and that fits, off the way in and out.
 //! A piece's legend maps a character to a [`Cell`], so a mark can paint the
 //! tile under it instead of leaving whatever the map had there. A piece
 //! [`Prefab::keyed`] carries that key through every stamp as
@@ -90,7 +90,7 @@ pub enum Turn {
 pub enum Mirror {
     /// Never: an inscription reads backwards mirrored.
     None,
-    /// Left to right, what [`Prefab::flipped`] does.
+    /// Left to right, what `Prefab::flipped` does.
     LeftRight,
     /// Top to bottom, which is a left-right mirror and a half-turn.
     UpDown,
@@ -108,7 +108,7 @@ pub enum Mirror {
 /// only by [`new`](Self::new), which keeps the quarters to nought to
 /// three, so two values that lay a piece the same way are equal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Facing {
+pub(crate) struct Facing {
     /// Quarter-turns clockwise, after any mirror; nought to three.
     quarters: u8,
     /// Whether it is mirrored left to right first.
@@ -117,7 +117,7 @@ pub struct Facing {
 
 impl Facing {
     /// As drawn, which every drawing allows.
-    pub const AS_DRAWN: Facing = Facing { quarters: 0, mirrored: false };
+    pub(crate) const AS_DRAWN: Facing = Facing { quarters: 0, mirrored: false };
 
     /// Mirrored left to right first or not, then turned `quarters`
     /// quarter-turns clockwise; four is as drawn, so any number is read
@@ -127,18 +127,14 @@ impl Facing {
     }
 
     /// Quarter-turns clockwise, after any mirror; nought to three.
-    pub fn quarters(self) -> u8 {
+    #[cfg(test)]
+    pub(crate) fn quarters(self) -> u8 {
         self.quarters
-    }
-
-    /// Whether it is mirrored left to right before it is turned.
-    pub fn mirrored(self) -> bool {
-        self.mirrored
     }
 
     /// All eight, the four turns as drawn and then the four of the mirror
     /// image, the order [`Orient::facings`] lists them in.
-    pub const ALL: [Facing; 8] = [
+    pub(crate) const ALL: [Facing; 8] = [
         Facing { quarters: 0, mirrored: false },
         Facing { quarters: 1, mirrored: false },
         Facing { quarters: 2, mirrored: false },
@@ -163,7 +159,7 @@ impl Facing {
     }
 
     /// `prefab` laid this way, marks, entries and all.
-    pub fn lay(self, prefab: &Prefab) -> Prefab {
+    pub(crate) fn lay(self, prefab: &Prefab) -> Prefab {
         if self.mirrored { prefab.flipped().rotated(self.quarters) } else { prefab.rotated(self.quarters) }
     }
 
@@ -172,7 +168,7 @@ impl Facing {
     /// edge a piece laid this way may stand against. A left-right mirror
     /// keeps the bottom row at the bottom; each clockwise quarter-turn
     /// carries it on, south to west to north to east.
-    pub fn back(self) -> Direction {
+    pub(crate) fn back(self) -> Direction {
         [Direction::South, Direction::West, Direction::North, Direction::East][usize::from(self.quarters)]
     }
 }
@@ -316,11 +312,6 @@ impl Prefab {
         self.turn
     }
 
-    /// How its drawing may be mirrored.
-    pub fn mirror(&self) -> Mirror {
-        self.mirror
-    }
-
     /// Every facing its declaration allows.
     fn declared(&self) -> Facings {
         Facings::declared(self.turn, self.mirror)
@@ -337,7 +328,7 @@ impl Prefab {
     }
 
     /// The tile at prefab-local `p`, if the prefab paints there.
-    pub fn tile(&self, p: Point) -> Option<TileId> {
+    pub(crate) fn tile(&self, p: Point) -> Option<TileId> {
         self.cells.get(p).copied().flatten()
     }
 
@@ -348,7 +339,7 @@ impl Prefab {
 
     /// Every cell drawn as an entry, prefab-local. They turn and mirror
     /// with the piece, as its marks do.
-    pub fn entries(&self) -> &[Point] {
+    pub(crate) fn entries(&self) -> &[Point] {
         &self.entries
     }
 
@@ -358,7 +349,7 @@ impl Prefab {
     /// Marks turn with the tiles because a mark is a position in the
     /// piece, not on the map: a vault's chest stays in its alcove however
     /// the vault is laid down.
-    pub fn rotated(&self, quarters: u8) -> Self {
+    pub(crate) fn rotated(&self, quarters: u8) -> Self {
         let mut out = self.clone();
         for _ in 0..(quarters % 4) {
             out = out.turned();
@@ -371,7 +362,7 @@ impl Prefab {
     /// A hand-drawn piece with an opening on one side reads as a
     /// different piece once mirrored, without a second drawing to keep
     /// in sync with the first.
-    pub fn flipped(&self) -> Self {
+    pub(crate) fn flipped(&self) -> Self {
         let (w, h) = (self.width(), self.height());
         let mut cells: Grid<Option<TileId>> = Grid::new(w, h);
         for y in 0..h {
@@ -450,7 +441,7 @@ pub enum Placement {
     /// inside the border, along it at a random point kept a margin from
     /// the corners. A piece meant for an edge is drawn with its back to the
     /// south, so the side is drawn from those a facing it may land in
-    /// turns its back to ([`Facing::back`]): laid on the north edge it is
+    /// turns its back to (`Facing::back`): laid on the north edge it is
     /// turned a half-turn, on the east or west a quarter-turn, and an edge
     /// no facing it allows backs onto is never drawn for it. Every piece
     /// may stand as drawn, so every piece has the south edge.
@@ -579,7 +570,7 @@ impl Orient {
     /// Every facing `prefab` may land in under this ceiling: those its
     /// declaration and this both allow, as drawn always among them, in
     /// the order of [`Facing::ALL`].
-    pub fn allowed(self, prefab: &Prefab) -> Vec<Facing> {
+    pub(crate) fn allowed(self, prefab: &Prefab) -> Vec<Facing> {
         Facings(self.ceiling().0 & prefab.declared().0).list()
     }
 
@@ -588,7 +579,7 @@ impl Orient {
     /// whichever of them its drawing declares. A symmetric piece repeats
     /// itself in the list, which leaves each distinct facing equally
     /// likely to a uniform pick among them.
-    pub fn facings(self, prefab: &Prefab) -> Vec<Prefab> {
+    pub(crate) fn facings(self, prefab: &Prefab) -> Vec<Prefab> {
         self.allowed(prefab).into_iter().map(|f| f.lay(prefab)).collect()
     }
 
@@ -601,7 +592,7 @@ impl Orient {
     /// a stamp did before drawings declared anything, so declaring what a
     /// piece's stamps already allowed moves no map; one that narrows the
     /// ceiling draws evenly among what is left.
-    pub fn apply(self, prefab: &Prefab, rng: &mut impl Rng) -> Prefab {
+    pub(crate) fn apply(self, prefab: &Prefab, rng: &mut impl Rng) -> Prefab {
         let allowed = Facings(self.ceiling().0 & prefab.declared().0);
         if allowed != self.ceiling() {
             let list = allowed.list();

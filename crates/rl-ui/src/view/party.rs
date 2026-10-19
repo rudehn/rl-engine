@@ -94,7 +94,7 @@ type Here = (Entity, Option<&'static Position>, Option<&'static OnMap>);
 /// A living actor, because remains keep the `Leader` the actor had and a
 /// body is not following anyone. One without a [`Joined`] yet, taken on
 /// this very frame, goes last, which is where its stamp will put it.
-pub fn collect_party(mut view: ResMut<PartyView>, player: Query<Here, With<Player>>, followers: Query<Follower, (With<Actor>, Without<Dead>)>) {
+pub(crate) fn collect_party(mut view: ResMut<PartyView>, player: Query<Here, With<Player>>, followers: Query<Follower, (With<Actor>, Without<Dead>)>) {
     view.rows.clear();
     view.elsewhere.clear();
     let Ok((me, at, on)) = player.single() else { return };

@@ -5,7 +5,7 @@
 //! either. This is the third part: one slot, read once before the first
 //! frame and written whenever a setting changes.
 //!
-//! Not a [`Versioned`](crate::Versioned) envelope. That refuses a save
+//! Not a `Versioned` envelope. That refuses a save
 //! whole when its version differs, which is right for a run and wrong for
 //! a preference: a player who chose fullscreen should still have it after
 //! an upgrade. So the file is a map of names to the words of their
@@ -22,7 +22,7 @@ use rl_bevy::settings::Settings;
 use crate::backend::{SaveBackend, Saves};
 
 /// The slot settings are remembered in.
-pub const SETTINGS_SLOT: &str = "settings";
+pub(crate) const SETTINGS_SLOT: &str = "settings";
 
 /// What the slot is known to hold, so a frame that changed nothing, and
 /// the load itself, write nothing.

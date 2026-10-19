@@ -39,10 +39,10 @@ use crate::modal::{ModalId, Modals};
 use crate::panel::title::TitleMenu;
 use crate::panel::{clear, clip, frame, wrap};
 use crate::tone::{Palette, ToneId, Tones};
-use crate::view::{EndingView, SheetView};
+use crate::view::EndingView;
 
 /// The name the menu's modal is declared under.
-pub const GAME_MENU_MODAL: &str = "menu";
+pub(crate) const GAME_MENU_MODAL: &str = "menu";
 
 /// The key that opens and closes the menu while playing.
 #[derive(Resource, Debug, Clone)]
@@ -59,7 +59,7 @@ impl Default for MenuKeys {
 
 /// Where the menu is drawn and what it says.
 #[derive(Resource, Debug, Clone)]
-pub struct MenuLayout {
+pub(crate) struct MenuLayout {
     /// The most of the terminal it may occupy; it is drawn from the
     /// top-left down only as far as its rows need.
     pub rect: Rect,
@@ -75,14 +75,14 @@ pub struct MenuLayout {
 
 /// Which row the cursor is on.
 #[derive(Resource, Debug, Default)]
-pub struct GameMenu {
+pub(crate) struct GameMenu {
     /// The row picked out.
     pub selected: usize,
 }
 
 /// One thing the menu offers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MenuItem {
+pub(crate) enum MenuItem {
     /// Back into the run.
     Resume,
     /// A new run on a fresh seed.
@@ -103,7 +103,7 @@ impl MenuItem {
     /// What is offered while `playing`, or once the run is over, with the
     /// settings screen when there is one with a row on it, and the way back
     /// to the `title` when the game has one.
-    pub fn offered(playing: bool, settings: bool, title: bool) -> Vec<MenuItem> {
+    pub(crate) fn offered(playing: bool, settings: bool, title: bool) -> Vec<MenuItem> {
         let mut items = Vec::new();
         if playing {
             items.push(MenuItem::Resume);
@@ -201,7 +201,7 @@ pub(crate) fn settings_offered(modals: &Modals, settings: Option<&Settings>) -> 
 
 /// What the menu writes when a row is chosen.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Choices<'w> {
+pub(crate) struct Choices<'w> {
     restarts: MessageWriter<'w, Restart>,
     leaves: MessageWriter<'w, LeaveRun>,
     exits: MessageWriter<'w, AppExit>,
@@ -212,7 +212,7 @@ pub struct Choices<'w> {
 /// before it opens the menu. And what decides the rows it offers once it
 /// is open: a settings screen with a row on it, and a title to go back to.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Opening<'w> {
+pub(crate) struct Opening<'w> {
     binds: Res<'w, MenuKeys>,
     focus: Option<Res<'w, crate::focus::Focus>>,
     sighted: Option<Res<'w, crate::focus::Sighted>>,
@@ -233,7 +233,7 @@ impl Opening<'_> {
 /// the nearby list's, which lets go of it: a player who pressed Tab to look
 /// down the list backs out of it the way they back out of a cursor, and a
 /// second press, with nothing picked out, opens the menu.
-pub fn menu_keys(
+pub(crate) fn menu_keys(
     keys: ControlInput,
     opening: Opening,
     state: Res<State<EngineState>>,
@@ -297,54 +297,11 @@ pub fn menu_keys(
 /// Composing and filing an obituary used to happen here too. It does not
 /// any more: what a game wants said goes on [`EndingView`] and is drawn,
 /// which is a presenter's business, and nothing is written to disk.
-pub fn run_ended(mut modals: ResMut<Modals>, mut menu: ResMut<GameMenu>) {
+pub(crate) fn run_ended(mut modals: ResMut<Modals>, mut menu: ResMut<GameMenu>) {
     let modal = game_menu_modal(&modals);
     modals.close_all();
     modals.open(modal);
     menu.selected = 0;
-}
-
-/// The sheet as lines of text: what the player was made of.
-///
-/// The ending screen no longer adds this by itself, because a game that
-/// wants it can say so and one that does not should not pay for it. A game
-/// that does pushes it as a section:
-///
-/// ```
-/// # use bevy::prelude::*;
-/// # use rl_ui::{EndingView, SheetView, describe_sheet};
-/// fn what_you_were(mut ending: ResMut<EndingView>, sheet: Option<Res<SheetView>>) {
-///     if let Some(sheet) = sheet {
-///         ending.section("Character", describe_sheet(&sheet));
-///     }
-/// }
-/// ```
-pub fn describe_sheet(sheet: &SheetView) -> String {
-    let mut lines = Vec::new();
-    if !sheet.label.is_empty() {
-        lines.push(sheet.label.clone());
-    }
-    if let Some((hp, max)) = sheet.health {
-        lines.push(format!("health {hp}/{max}"));
-    }
-    if let Some(armor) = sheet.armor {
-        lines.push(format!("armor {armor}"));
-    }
-    for stat in &sheet.stats {
-        lines.push(format!("{} {}", stat.name, stat.value));
-    }
-    for strike in &sheet.strikes {
-        lines.push(match strike.range {
-            Some(range) => format!("shoots {} {} to {range}", strike.dice, strike.kind),
-            None => format!("strikes {} {}", strike.dice, strike.kind),
-        });
-    }
-    for worn in &sheet.worn {
-        if let Some(item) = &worn.item {
-            lines.push(format!("{}: {item}", worn.name));
-        }
-    }
-    lines.join("\n")
 }
 
 /// Lines for `sections`, each under its own heading: a blank line, the
@@ -368,7 +325,7 @@ pub(crate) fn section_lines<'a>(sections: impl Iterator<Item = (&'a str, &'a str
 
 /// What the screen is drawn from.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct MenuScreen<'w> {
+pub(crate) struct MenuScreen<'w> {
     layout: Res<'w, MenuLayout>,
     menu: Res<'w, GameMenu>,
     modals: Res<'w, Modals>,
@@ -383,7 +340,7 @@ pub struct MenuScreen<'w> {
 
 /// Paints the menu while it is open: the ending, if there is one, and the
 /// choices under it.
-pub fn draw_game_menu(mut terminal: ResMut<Terminal>, screen: MenuScreen) {
+pub(crate) fn draw_game_menu(mut terminal: ResMut<Terminal>, screen: MenuScreen) {
     let MenuScreen { layout, menu, modals, state, ending, view, settings, title_menu, keys, palette } = &screen;
     if !modals.is_open(game_menu_modal(modals)) {
         return;

@@ -115,12 +115,12 @@ impl Wits {
     }
 
     /// The wits or preset called `name` in content, if there is one.
-    pub fn named(name: &str) -> Option<Wits> {
+    pub(crate) fn named(name: &str) -> Option<Wits> {
         PRESETS.iter().chain(CAPABILITIES.iter()).chain(PAIRS.iter()).find(|(n, _)| *n == name).map(|(_, w)| *w)
     }
 
     /// The name of every capability here, in declaration order.
-    pub fn names(self) -> impl Iterator<Item = &'static str> {
+    pub(crate) fn names(self) -> impl Iterator<Item = &'static str> {
         CAPABILITIES.into_iter().filter(move |(_, w)| self.has(*w)).map(|(n, _)| n)
     }
 }

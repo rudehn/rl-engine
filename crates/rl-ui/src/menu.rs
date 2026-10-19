@@ -95,7 +95,7 @@ impl ListMenu {
     }
 
     /// The row under the cursor.
-    pub fn selected_row(&self) -> Option<&MenuRow> {
+    pub(crate) fn selected_row(&self) -> Option<&MenuRow> {
         self.rows.get(self.selected)
     }
 

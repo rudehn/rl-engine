@@ -92,7 +92,7 @@ impl Modals {
 
     /// Closes everything and gives input back to the world. What an action
     /// that ends a turn does, since the turn loop assumes no screen is up.
-    pub fn close_all(&mut self) {
+    pub(crate) fn close_all(&mut self) {
         self.closing = true;
         self.stack.clear();
     }
@@ -104,24 +104,24 @@ impl Modals {
     }
 
     /// Forgets that a screen opened or closed. The first thing in every frame.
-    pub fn begin_frame(&mut self) {
+    pub(crate) fn begin_frame(&mut self) {
         self.closing = false;
         self.opened = false;
     }
 
     /// Whether a screen closed this frame.
-    pub fn closing(&self) -> bool {
+    pub(crate) fn closing(&self) -> bool {
         self.closing
     }
 
     /// Whether a screen opened this frame.
-    pub fn just_opened(&self) -> bool {
+    pub(crate) fn just_opened(&self) -> bool {
         self.opened
     }
 
     /// Opens `modal` if it is closed, closes it if it is open. What a
     /// toggle key does.
-    pub fn toggle(&mut self, modal: ModalId) {
+    pub(crate) fn toggle(&mut self, modal: ModalId) {
         if self.is_open(modal) {
             self.close_one(modal);
         } else {
@@ -158,7 +158,8 @@ impl Modals {
     }
 
     /// The stack, outermost first. Panels draw in this order.
-    pub fn stack(&self) -> &[ModalId] {
+    #[cfg(test)]
+    pub(crate) fn stack(&self) -> &[ModalId] {
         &self.stack
     }
 }
@@ -202,7 +203,7 @@ pub fn modal_open(modal: ModalId) -> impl Fn(Res<Modals>) -> bool + Clone {
 /// promise for the ones a game writes and forgets to: the key always
 /// puts a screen away. A screen that closed this frame has answered, so
 /// the same press never closes the one under it as well.
-pub fn close_on_escape(input: Res<ButtonInput<KeyCode>>, keys: Res<crate::cursor::CursorKeys>, mut modals: ResMut<Modals>) {
+pub(crate) fn close_on_escape(input: Res<ButtonInput<KeyCode>>, keys: Res<crate::cursor::CursorKeys>, mut modals: ResMut<Modals>) {
     if input.just_pressed(keys.close) && !modals.closing() && !modals.just_opened() && modals.top().is_some() {
         modals.close();
     }

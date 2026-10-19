@@ -22,11 +22,11 @@ use crate::panel::{clear, clip, frame};
 use crate::tone::{Palette, Tones};
 
 /// The name the settings screen's modal is declared under.
-pub const SETTINGS_MODAL: &str = "settings";
+pub(crate) const SETTINGS_MODAL: &str = "settings";
 
 /// Where the screen is drawn.
 #[derive(Resource, Debug, Clone)]
-pub struct SettingsLayout {
+pub(crate) struct SettingsLayout {
     /// The most of the terminal it may occupy; drawn only as far down as
     /// its rows need.
     pub rect: Rect,
@@ -34,7 +34,7 @@ pub struct SettingsLayout {
 
 /// Which row is picked out, counting settings and not headings.
 #[derive(Resource, Debug, Default)]
-pub struct SettingsScreen {
+pub(crate) struct SettingsScreen {
     /// The row picked out.
     pub selected: usize,
 }
@@ -42,7 +42,7 @@ pub struct SettingsScreen {
 /// The control each keyed setting was declared as, so the controls screen
 /// lists the key and this screen reads it through the registry.
 #[derive(Resource, Debug, Default)]
-pub struct SettingKeys(Vec<(SettingId, ControlId)>);
+pub(crate) struct SettingKeys(Vec<(SettingId, ControlId)>);
 
 /// The settings screen.
 pub struct SettingsPanel(SettingsLayout);
@@ -114,7 +114,7 @@ pub(crate) fn rows_drawn(settings: &Settings) -> i32 {
 ///
 /// A frame that opened the screen reads nothing more: the key that opened
 /// it is the confirm key, still down, and it would change the first row.
-pub fn settings_keys(
+pub(crate) fn settings_keys(
     keys: ControlInput,
     bound: Res<SettingKeys>,
     mut screen: ResMut<SettingsScreen>,
@@ -318,7 +318,7 @@ mod tests {
     #[test]
     fn a_settings_key_does_nothing_while_another_screen_is_on_top() {
         let mut stage = staged();
-        let bag = stage.app.world().resource::<Modals>().get(crate::INVENTORY_MODAL).unwrap();
+        let bag = stage.app.world().resource::<Modals>().get(crate::panel::INVENTORY_MODAL).unwrap();
         stage.app.world_mut().resource_mut::<Modals>().open(bag);
         stage.tick();
         stage.press(KeyCode::F11);

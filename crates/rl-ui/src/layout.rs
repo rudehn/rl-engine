@@ -161,7 +161,7 @@ impl RailLayout {
 
 /// The bottom `rows` of `rect`, for a box drawn over the foot of another
 /// while it is up.
-pub fn over_bottom(rect: Rect, rows: i32) -> Rect {
+pub(crate) fn over_bottom(rect: Rect, rows: i32) -> Rect {
     panel::split_bottom(rect, rows).1
 }
 
@@ -210,11 +210,11 @@ impl RailScreen {
 
     /// The cuts that belong to no panel: the gutter, the gap above the
     /// company and the edge.
-    pub fn blanks(&self) -> [Rect; 3] {
+    pub(crate) fn blanks(&self) -> [Rect; 3] {
         [self.gutter, self.party_gap, self.edge]
     }
 
-    /// Paints [`blanks`](Self::blanks) clear with the chrome each frame,
+    /// Paints `blanks` clear with the chrome each frame,
     /// since nothing else would ever paint them again.
     pub fn clear_blanks(&self, app: &mut App) {
         let blank = self.blanks();

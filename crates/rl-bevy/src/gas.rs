@@ -55,14 +55,14 @@ impl Gases {
     /// the cell has room for stays, and the rest spills to the nearest cells
     /// `map` lets gas into, as [`gas::release`] says. `salt` is what the
     /// ragged edge is hashed from; [`spill_salt`] is the turn's.
-    pub fn release(&mut self, gas: GasId, p: Point, amount: u16, map: &WorldMap, salt: u64) {
+    pub(crate) fn release(&mut self, gas: GasId, p: Point, amount: u16, map: &WorldMap, salt: u64) {
         let Some(layer) = self.layers.get_mut(gas.index()) else { return };
         let origin = layer.origin();
         gas::release(layer.field_mut(), p - origin, amount, |q| !map.blocks_projectiles(q + origin), |q| roll(salt, q + origin));
     }
 
     /// Takes every bit of `gas` out of `p`.
-    pub fn clear_at(&mut self, gas: GasId, p: Point) {
+    pub(crate) fn clear_at(&mut self, gas: GasId, p: Point) {
         if let Some(layer) = self.layers.get_mut(gas.index()) {
             layer.update(p, |_| 0);
         }
@@ -70,7 +70,7 @@ impl Gases {
 
     /// Makes a field for each of `kinds` gases and fits them all to the map
     /// readers read.
-    pub fn fit(&mut self, kinds: usize, map: &WorldMap) {
+    pub(crate) fn fit(&mut self, kinds: usize, map: &WorldMap) {
         if self.layers.len() < kinds {
             self.layers.resize_with(kinds, MapFields::default);
         }
@@ -106,7 +106,7 @@ pub struct Release {
     pub gas: GasId,
     /// Where.
     pub at: Point,
-    /// How much, a full cell being [`gas::FULL`]: what the cell has no room
+    /// How much, a full cell being `gas::FULL`: what the cell has no room
     /// for spills to the nearest cells, so a grenade's worth is a cloud.
     pub amount: u16,
 }
@@ -117,7 +117,7 @@ pub struct Release {
 pub struct Vents {
     /// Which gas.
     pub gas: GasId,
-    /// How much a turn, a full cell being [`gas::FULL`].
+    /// How much a turn, a full cell being `gas::FULL`.
     pub amount: u16,
 }
 
@@ -134,7 +134,7 @@ pub struct Breathed {
 
 /// What a spill on `turn` is hashed from: which of two nearly as near cells
 /// it fills first.
-pub fn spill_salt(seed: &Seed, turn: u32) -> u64 {
+pub(crate) fn spill_salt(seed: &Seed, turn: u32) -> u64 {
     seed.0.derive(SeedDomain::new(b"gas spill"), u64::from(turn))
 }
 
@@ -150,7 +150,7 @@ fn roll(salt: u64, p: Point) -> u32 {
 }
 
 /// Gives off what was asked for this pass.
-pub fn release_gas(
+pub(crate) fn release_gas(
     mut requests: MessageReader<Release>,
     mut gases: ResMut<Gases>,
     registries: Res<Registries>,
@@ -167,7 +167,7 @@ pub fn release_gas(
 
 /// What stepping gas reads and writes besides the gases themselves.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Air<'w, 's> {
+pub(crate) struct Air<'w, 's> {
     registries: Res<'w, Registries>,
     map: ResMut<'w, WorldMap>,
     seed: Res<'w, Seed>,
@@ -183,7 +183,7 @@ pub struct Air<'w, 's> {
 ///
 /// A tile that stops a thrown thing stops gas too, so walls and closed doors
 /// hold a cloud back and open water does not.
-pub fn step_gases(mut ends: MessageReader<TurnEnd>, mut gases: ResMut<Gases>, air: Air) {
+pub(crate) fn step_gases(mut ends: MessageReader<TurnEnd>, mut gases: ResMut<Gases>, air: Air) {
     let passed = ends.read().count() as u32;
     if passed == 0 {
         return;

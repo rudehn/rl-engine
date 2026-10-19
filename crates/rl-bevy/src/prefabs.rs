@@ -8,7 +8,7 @@
 //! place's [`Spot`](crate::places::Spot)s, or grown as an area of its own
 //! from [`Prefabs::grown`], whose stamp arrives the same way. A dressing
 //! ([`rl_rules::dressing`]) is a prefab's legend laid by rules rather
-//! than rows, by [`Dress`](rl_mapgen::Dress) from [`Prefabs::dressing`],
+//! than rows, by [`Dress`](rl_mapgen::Dress) from `Prefabs::dressing`,
 //! and its slots arrive and fill the same way again. What is here is the
 //! other half, the loop every game wrote by hand at its marks:
 //!
@@ -196,7 +196,7 @@ impl<M: Send + Sync + 'static> Prefabs<M> {
     /// each glyph of a rule a tile when its legend paints one and a slot
     /// otherwise, keyed so the slots it emits find their meaning again. An
     /// error naming it when there is none, so a chain can `?` it.
-    pub fn dressing(&self, name: &str) -> Result<Dressing, BuildError> {
+    pub(crate) fn dressing(&self, name: &str) -> Result<Dressing, BuildError> {
         let id = self.dressings().id(name).ok_or_else(|| BuildError::new("dressing", format!("no dressing is called {name:?}")))?;
         let def = self.dressings().get(id);
         let things = def
@@ -244,7 +244,7 @@ pub enum PrefabSet {
 
 /// What filling slots reads.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Filling<'w, A, I>
+pub(crate) struct Filling<'w, A, I>
 where
     A: ActorMaker,
     I: ItemMaker,
@@ -272,7 +272,7 @@ enum Drawn<A, I> {
 /// whether to spawn: on the arrival cell, on a cell no longer walkable,
 /// or on one this pass already filled, it spawns nothing. An item slot
 /// whose count rolls nought lays nothing and leaves its cell unfilled.
-pub fn fill_prefabs<A, I>(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, fill: Filling<A, I>)
+pub(crate) fn fill_prefabs<A, I>(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, fill: Filling<A, I>)
 where
     A: ActorMaker,
     I: ItemMaker,

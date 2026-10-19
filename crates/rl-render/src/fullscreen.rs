@@ -13,7 +13,7 @@ use bevy::window::{MonitorSelection, PrimaryWindow, WindowMode};
 use rl_bevy::settings::{AddSettings, Setting, Settings};
 
 /// The name the fullscreen setting is declared and remembered under.
-pub const FULLSCREEN: &str = "fullscreen";
+pub(crate) const FULLSCREEN: &str = "fullscreen";
 
 /// Declares the fullscreen setting and keeps the primary window in the
 /// mode it asks for.

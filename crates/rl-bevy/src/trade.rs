@@ -7,7 +7,7 @@
 //! opens a trade the player's screen reads from [`Trading`]. Inside it,
 //! a [`Buy`] or a [`Sell`] is resolved at once and takes no turn, since a
 //! trade is a screen and not a place, and nothing that could act on the
-//! time is in it. Each is answered with [`Traded`] or [`TradeRefused`].
+//! time is in it. Each is answered with [`Traded`] or `TradeRefused`.
 //!
 //! What is for sale is what the trader carries: its [`Inventory`] is its
 //! stock, so the stock is saved with the run the way any actor's pack is,
@@ -72,7 +72,7 @@ impl Trader {
     ///
     /// Per one rather than per handful, so selling a stack whole pays what
     /// selling it one at a time would.
-    pub fn pays(&self, worth: u32) -> u32 {
+    pub(crate) fn pays(&self, worth: u32) -> u32 {
         (u64::from(worth) * u64::from(self.pays_pct) / 100).min(u64::from(u32::MAX)) as u32
     }
 
@@ -94,7 +94,7 @@ impl Trader {
     /// What `count` of `ware` would come to going the way `deal` says, or
     /// why it would be refused, when whoever pays carries `purse`.
     ///
-    /// The rule [`resolve_trades`] strikes every deal by, public so a
+    /// The rule `resolve_trades` strikes every deal by, public so a
     /// screen greys the rows the resolver would refuse and says why
     /// without a second copy of the rule that could drift from this one.
     pub fn quote(&self, deal: Deal, ware: Ware, count: u32, purse: u32) -> Result<u32, TradeRefusal> {
@@ -256,7 +256,7 @@ pub enum TradeRefusal {
 
 /// A deal refused, with the reason, and nothing changed hands.
 #[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TradeRefused {
+pub(crate) struct TradeRefused {
     /// Who came to trade.
     pub customer: Entity,
     /// Who carries the [`Trader`].
@@ -430,7 +430,7 @@ fn strike(world: &mut World, asked: Asked, currency: Currency) -> Option<Result<
 /// before the next is counted: two buys in one frame pay out of what the
 /// first left, and a stack split off by one is there to merge into for the
 /// next. Buys before sells, each in the order asked.
-pub fn resolve_trades(world: &mut World, mut buys: Local<MessageCursor<Buy>>, mut sells: Local<MessageCursor<Sell>>) {
+pub(crate) fn resolve_trades(world: &mut World, mut buys: Local<MessageCursor<Buy>>, mut sells: Local<MessageCursor<Sell>>) {
     let mut asked: Vec<Asked> = Vec::new();
     if let Some(messages) = world.get_resource::<Messages<Buy>>() {
         asked.extend(buys.read(messages).map(|b| Asked {
@@ -464,7 +464,7 @@ pub fn resolve_trades(world: &mut World, mut buys: Local<MessageCursor<Buy>>, mu
 /// answer to an [`Interacted`] is: the offer's time is already spent. An
 /// offer of `trade` from something that is no [`Trader`] is left to the
 /// game, which may answer it itself.
-pub fn open_trades(
+pub(crate) fn open_trades(
     mut done: MessageReader<Interacted>,
     verbs: Res<Verbs>,
     traders: Query<(), With<Trader>>,
@@ -485,7 +485,7 @@ pub fn open_trades(
 /// In [`TurnSet::React`](crate::plugin::TurnSet::React) after
 /// [`open_trades`], every pass, so a shove, a warp or a death in any pass
 /// closes it before the player is next shown it.
-pub fn close_trades(mut trading: ResMut<Trading>, places: Query<(&Position, Option<&OnMap>), Without<Dead>>, traders: Query<(), With<Trader>>) {
+pub(crate) fn close_trades(mut trading: ResMut<Trading>, places: Query<(&Position, Option<&OnMap>), Without<Dead>>, traders: Query<(), With<Trader>>) {
     let Some(Parties { customer, trader }) = trading.open() else { return };
     let at = |who: Entity| places.get(who).ok().map(|(p, on)| (p.0, on.map(|m| m.0).unwrap_or(MapId::ZERO)));
     if !traders.contains(trader) || !within_reach(at(customer), at(trader)) {

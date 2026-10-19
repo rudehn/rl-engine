@@ -15,7 +15,7 @@ use crate::view::{VitalsView, VitalsViewPlugin};
 
 /// Where the vitals are drawn.
 #[derive(Resource, Debug, Clone)]
-pub struct VitalsLayout {
+pub(crate) struct VitalsLayout {
     /// The terminal cells it occupies.
     pub rect: Rect,
     /// Key hints printed at the right of the last row. The game's, since
@@ -117,7 +117,7 @@ impl Plugin for VitalsPanel {
 }
 
 /// Paints the vitals.
-pub fn draw_vitals(mut terminal: ResMut<Terminal>, layout: Res<VitalsLayout>, view: Res<VitalsView>, palette: Res<Palette>) {
+pub(crate) fn draw_vitals(mut terminal: ResMut<Terminal>, layout: Res<VitalsLayout>, view: Res<VitalsView>, palette: Res<Palette>) {
     let rect = layout.rect;
     if rect.width < 8 || rect.height < 1 {
         return;

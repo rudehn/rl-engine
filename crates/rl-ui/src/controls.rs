@@ -89,7 +89,8 @@ impl Chord {
     }
 
     /// Whether this is held down, Shift matched the same way.
-    pub fn pressed(&self, input: &ButtonInput<KeyCode>) -> bool {
+    #[cfg(test)]
+    pub(crate) fn pressed(&self, input: &ButtonInput<KeyCode>) -> bool {
         input.pressed(self.key) && shifted(input) == self.shift
     }
 
@@ -118,7 +119,7 @@ impl From<KeyCode> for Chord {
 /// The name of a key as a player reads it on a keycap, short enough for a
 /// column: letters and digits as themselves, arrows as arrows, `num5` for
 /// the numpad and `pgup` for Page Up.
-pub fn key_name(key: KeyCode) -> String {
+pub(crate) fn key_name(key: KeyCode) -> String {
     use KeyCode::*;
     if let Some(c) = letter(key).or_else(|| digit(key)) {
         return c.to_string();
@@ -186,13 +187,13 @@ fn letter(key: KeyCode) -> Option<char> {
 /// The letter a lettered list draws beside its row at `index`: `a` for the
 /// first, `z` for the twenty-sixth, and none past that, for a row a player
 /// reaches with the cursor instead.
-pub fn row_letter(index: usize) -> Option<char> {
+pub(crate) fn row_letter(index: usize) -> Option<char> {
     (index < LETTERS.len()).then(|| (b'a' + index as u8) as char)
 }
 
 /// The row of a lettered list whose letter went down this frame, `0` for
 /// `a`. Without Shift only, since a capital is another chord.
-pub fn lettered_row(input: &ButtonInput<KeyCode>) -> Option<usize> {
+pub(crate) fn lettered_row(input: &ButtonInput<KeyCode>) -> Option<usize> {
     if shifted(input) {
         return None;
     }
@@ -201,7 +202,7 @@ pub fn lettered_row(input: &ButtonInput<KeyCode>) -> Option<usize> {
 
 /// Whether `key` types a letter, and so is a row's on a lettered list
 /// before it is anything else.
-pub fn is_letter(key: KeyCode) -> bool {
+pub(crate) fn is_letter(key: KeyCode) -> bool {
     letter(key).is_some()
 }
 
@@ -381,7 +382,7 @@ impl Default for ControlsKeys {
 /// Both ways, not only on regaining focus: what is released elsewhere is
 /// released, and whatever was held when the window went away should not
 /// still be held when it comes back.
-pub fn forget_keys_on_focus_change(
+pub(crate) fn forget_keys_on_focus_change(
     mut focus: MessageReader<bevy::window::WindowFocused>,
     mut keys: ResMut<ButtonInput<KeyCode>>,
     mut repeats: ResMut<Repeats>,
@@ -418,7 +419,7 @@ pub struct Bindings<'a> {
 
 impl Bindings<'_> {
     /// Every chord `keys` answers to, in order.
-    pub fn chords(&self, keys: &Keys) -> Vec<Chord> {
+    pub(crate) fn chords(&self, keys: &Keys) -> Vec<Chord> {
         match keys {
             Keys::Chords(chords) => chords.clone(),
             Keys::Directions { shift } => self.directions.0.iter().map(|(key, _)| Chord { key: *key, shift: *shift }).collect(),
@@ -450,7 +451,7 @@ impl Bindings<'_> {
     /// more digits as a range, and the direction keys as the families they
     /// come in, `arrows hjklyubn numpad`, so a walk is one row rather
     /// than eight.
-    pub fn label(&self, keys: &Keys) -> String {
+    pub(crate) fn label(&self, keys: &Keys) -> String {
         if let Keys::Directions { shift } = keys {
             return direction_families(self.directions, *shift);
         }
@@ -533,7 +534,7 @@ impl Controls {
     /// The same control declared twice, the same words over the same keys,
     /// is one control with one id, so two plugins that read the same cursor
     /// key list it once.
-    pub fn add(&mut self, group: impl Into<String>, action: impl Into<String>, keys: impl Into<Keys>) -> ControlId {
+    pub(crate) fn add(&mut self, group: impl Into<String>, action: impl Into<String>, keys: impl Into<Keys>) -> ControlId {
         let control = Control { group: group.into(), action: action.into(), keys: keys.into() };
         if let Some(i) = self.controls.iter().position(|c| *c == control) {
             return ControlId(i as u16);
@@ -557,12 +558,14 @@ impl Controls {
     }
 
     /// Rewords what `id` does.
-    pub fn rename(&mut self, id: ControlId, action: impl Into<String>) {
+    #[cfg(test)]
+    pub(crate) fn rename(&mut self, id: ControlId, action: impl Into<String>) {
         self.controls[id.0 as usize].action = action.into();
     }
 
     /// Lists `id` under another heading.
-    pub fn regroup(&mut self, id: ControlId, group: impl Into<String>) {
+    #[cfg(test)]
+    pub(crate) fn regroup(&mut self, id: ControlId, group: impl Into<String>) {
         self.controls[id.0 as usize].group = group.into();
     }
 
@@ -582,14 +585,6 @@ impl Controls {
         bindings.chords(&self.get(id).keys).iter().position(|chord| chord.just_pressed(input))
     }
 
-    /// Whether any of `id`'s chords is held down.
-    pub fn pressed(&self, id: ControlId, input: &ButtonInput<KeyCode>, bindings: &Bindings) -> bool {
-        if self.get(id).keys == Keys::Any {
-            return input.get_pressed().any(|key| !MODIFIERS.contains(key));
-        }
-        bindings.chords(&self.get(id).keys).iter().any(|chord| chord.pressed(input))
-    }
-
     /// The direction `id` asked for this frame, for a control over
     /// [`Keys::Directions`]: the direction of the first of its keys that
     /// went down. `None` for any other control.
@@ -600,13 +595,15 @@ impl Controls {
 
     /// The direction `id` is holding down, for a game that repeats a walk
     /// while the key is held.
-    pub fn direction_held(&self, id: ControlId, input: &ButtonInput<KeyCode>, bindings: &Bindings) -> Option<Direction> {
+    #[cfg(test)]
+    pub(crate) fn direction_held(&self, id: ControlId, input: &ButtonInput<KeyCode>, bindings: &Bindings) -> Option<Direction> {
         let Keys::Directions { shift } = self.get(id).keys else { return None };
         bindings.directions.0.iter().find(|(key, _)| Chord { key: *key, shift }.pressed(input)).map(|(_, d)| *d)
     }
 
     /// `id`'s keys as a player reads them. Empty when nothing binds it.
-    pub fn label(&self, id: ControlId, bindings: &Bindings) -> String {
+    #[cfg(test)]
+    pub(crate) fn label(&self, id: ControlId, bindings: &Bindings) -> String {
         bindings.label(&self.get(id).keys)
     }
 }
@@ -627,14 +624,14 @@ const MODIFIERS: [KeyCode; 8] = [
 /// Whether a key went down this frame that is not a modifier alone, as
 /// [`Keys::Any`] reads it: Shift reached for on the way to a capital is
 /// not a key pressed.
-pub fn any_key(input: &ButtonInput<KeyCode>) -> bool {
+pub(crate) fn any_key(input: &ButtonInput<KeyCode>) -> bool {
     input.get_just_pressed().any(|key| !MODIFIERS.contains(key))
 }
 
 /// The heading the stop key is listed under, beside a game's own acts.
-pub const STOP_GROUP: &str = "Act";
+pub(crate) const STOP_GROUP: &str = "Act";
 /// What the stop key is listed as doing.
-pub const STOP_ACTION: &str = "stop what you are doing";
+pub(crate) const STOP_ACTION: &str = "stop what you are doing";
 
 /// Stops the player's long action the moment any key goes down, a held
 /// direction repeating included, or while a screen is up.
@@ -660,7 +657,7 @@ pub const STOP_ACTION: &str = "stop what you are doing";
 /// before the particle skipper, which runs the turns at a key: so the
 /// work is off before the frame could spend a turn of it, and the key
 /// lands on the player's own turn. Added by [`UiPlugin`](crate::UiPlugin).
-pub fn stop_work_on_key(
+pub(crate) fn stop_work_on_key(
     mut input: ResMut<ButtonInput<KeyCode>>,
     mut repeats: ResMut<Repeats>,
     directions: Res<DirectionKeys>,
@@ -711,7 +708,7 @@ fn pressing_toward(input: &ButtonInput<KeyCode>, repeats: &Repeats, directions: 
 /// Declaring controls while the app is built.
 pub trait AddControls {
     /// Declares a control under `group` and returns its id. See
-    /// [`Controls::add`].
+    /// `Controls::add`.
     fn add_control(&mut self, group: &str, action: &str, keys: impl Into<Keys>) -> ControlId;
 }
 
@@ -742,7 +739,7 @@ pub struct ControlInput<'w> {
 
 impl ControlInput<'_> {
     /// The binding resources, borrowed together.
-    pub fn bindings(&self) -> Bindings<'_> {
+    pub(crate) fn bindings(&self) -> Bindings<'_> {
         Bindings {
             directions: &self.directions,
             cursor: &self.cursor,
@@ -756,7 +753,7 @@ impl ControlInput<'_> {
     }
 
     /// The registry.
-    pub fn controls(&self) -> &Controls {
+    pub(crate) fn controls(&self) -> &Controls {
         &self.controls
     }
 
@@ -770,13 +767,8 @@ impl ControlInput<'_> {
         self.controls.which(id, &self.input, &self.bindings())
     }
 
-    /// Whether `id` is held down.
-    pub fn pressed(&self, id: ControlId) -> bool {
-        self.controls.pressed(id, &self.input, &self.bindings())
-    }
-
     /// The direction `id` asked for this frame: a key just pressed, or a
-    /// key held long enough to repeat, at [`RepeatPace`]. See
+    /// key held long enough to repeat, at `RepeatPace`. See
     /// [`Controls::direction`] and [`Repeats`].
     pub fn direction(&self, id: ControlId) -> Option<Direction> {
         self.controls.direction(id, &self.input, &self.bindings()).or_else(|| {
@@ -785,25 +777,14 @@ impl ControlInput<'_> {
         })
     }
 
-    /// The direction `id` is holding down. See
-    /// [`Controls::direction_held`].
-    pub fn direction_held(&self, id: ControlId) -> Option<Direction> {
-        self.controls.direction_held(id, &self.input, &self.bindings())
-    }
-
-    /// `id`'s keys as a player reads them.
-    pub fn label(&self, id: ControlId) -> String {
-        self.controls.label(id, &self.bindings())
-    }
-
     /// The raw keys, for the rare reading the registry has no word for.
-    pub fn input(&self) -> &ButtonInput<KeyCode> {
+    pub(crate) fn input(&self) -> &ButtonInput<KeyCode> {
         &self.input
     }
 
     /// What the held direction key is doing this frame, for a screen that
     /// walks a list by the direction keys rather than by a control.
-    pub fn repeats(&self) -> &Repeats {
+    pub(crate) fn repeats(&self) -> &Repeats {
         &self.repeats
     }
 }
@@ -829,7 +810,7 @@ impl Default for RepeatPace {
 
 /// What the held direction key is doing this frame.
 ///
-/// A held key repeats its direction at [`RepeatPace`], and every
+/// A held key repeats its direction at `RepeatPace`, and every
 /// direction control reads the repeat through [`ControlInput::direction`]
 /// as if the key had been pressed again. That is what a player holding a
 /// key means in every roguelike, so it is the engine's to do and no
@@ -854,7 +835,7 @@ impl Repeats {
     /// key down this frame and whether Shift is with it, and `fresh`
     /// whether that key went down this frame. A fresh press restarts the
     /// hold and fires nothing, since the press itself is read as a press.
-    pub fn advance(&mut self, held: Option<(Direction, bool)>, fresh: bool, pace: &RepeatPace, delta: f32) {
+    pub(crate) fn advance(&mut self, held: Option<(Direction, bool)>, fresh: bool, pace: &RepeatPace, delta: f32) {
         self.firing = None;
         let Some(held) = held else {
             *self = Self::default();
@@ -874,7 +855,7 @@ impl Repeats {
 
     /// The direction repeating this frame for a control whose chords use
     /// Shift as `shift` says.
-    pub fn firing(&self, shift: bool) -> Option<Direction> {
+    pub(crate) fn firing(&self, shift: bool) -> Option<Direction> {
         self.firing.filter(|(_, with_shift)| *with_shift == shift).map(|(d, _)| d)
     }
 
@@ -887,13 +868,13 @@ impl Repeats {
     /// Takes this frame's repeat, so nothing reads it as a press: what a
     /// held key spent on something else comes to, as a direction pressing
     /// on with the player's work is.
-    pub fn swallow(&mut self) {
+    pub(crate) fn swallow(&mut self) {
         self.firing = None;
     }
 }
 
 /// Moves [`Repeats`] on by this frame. Runs before any input is read.
-pub fn advance_repeats(
+pub(crate) fn advance_repeats(
     input: Res<ButtonInput<KeyCode>>,
     directions: Res<DirectionKeys>,
     pace: Res<RepeatPace>,

@@ -4,7 +4,7 @@
 //! worth pointing at, step with the direction keys, cycle through what is
 //! in sight, stay inside the loaded window, and close on the same key. That
 //! is one behaviour, so it is written once: [`CursorKeys`] is the one set of
-//! bindings both answer to, and [`steer`] is the one reading of a frame's
+//! bindings both answer to, and `steer` is the one reading of a frame's
 //! keys, so a player who learns one cursor has learned the other and a fix
 //! to either is a fix to both.
 //!
@@ -15,7 +15,7 @@
 //! either cursor away leaves nothing picked out, since a row still lit and
 //! ticks still round a cell read as a cursor that did not close; the aim
 //! keeps what it was fired at to itself, as
-//! [`LastAimed`](crate::view::target::LastAimed).
+//! `LastAimed`.
 //!
 //! Where each cursor is stays with it, because the two remember different
 //! things: one a cell, the other a cell and what is being aimed. Only what
@@ -42,7 +42,7 @@ const PULSE_SECS: f32 = 0.9;
 
 /// How bright a pulse is at time `t`, from 0 to 1 and back, so a cursor
 /// breathes rather than blinks.
-pub fn pulse(t: f32) -> f32 {
+pub(crate) fn pulse(t: f32) -> f32 {
     (t * std::f32::consts::TAU / PULSE_SECS).sin() * 0.5 + 0.5
 }
 
@@ -217,7 +217,7 @@ impl Default for CursorKeys {
 
 /// What a frame's keys did to a cursor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Steer {
+pub(crate) enum Steer {
     /// Nothing: no key it answers to, or a move with nowhere to go.
     Stay,
     /// It moved, by a step or to the next candidate.
@@ -229,7 +229,7 @@ pub enum Steer {
 }
 
 /// Whether Shift is held, which turns "next" into "previous".
-pub fn shifted(input: &ButtonInput<KeyCode>) -> bool {
+pub(crate) fn shifted(input: &ButtonInput<KeyCode>) -> bool {
     input.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight])
 }
 
@@ -247,7 +247,7 @@ pub fn shifted(input: &ButtonInput<KeyCode>) -> bool {
 ///
 /// A direction key held down steps again at the pace `repeats` says, the
 /// same pace a held key walks at.
-pub fn steer(at: &mut Point, focus: &mut Focus, keyed: &Keyed<'_>, bounds: Rect, candidates: impl FnOnce() -> Vec<Sighting>) -> Steer {
+pub(crate) fn steer(at: &mut Point, focus: &mut Focus, keyed: &Keyed<'_>, bounds: Rect, candidates: impl FnOnce() -> Vec<Sighting>) -> Steer {
     let Keyed { input, keys, steps, repeats } = *keyed;
     if input.just_pressed(keys.close) {
         return Steer::Close;
@@ -279,7 +279,7 @@ pub fn steer(at: &mut Point, focus: &mut Focus, keyed: &Keyed<'_>, bounds: Rect,
 /// One frame's keys and the bindings they are read against, borrowed
 /// together for [`steer`].
 #[derive(Clone, Copy)]
-pub struct Keyed<'a> {
+pub(crate) struct Keyed<'a> {
     /// What is down.
     pub input: &'a ButtonInput<KeyCode>,
     /// The cursor's own keys.
@@ -292,7 +292,7 @@ pub struct Keyed<'a> {
 
 /// The keys a cursor system reads, borrowed together.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct CursorInput<'w> {
+pub(crate) struct CursorInput<'w> {
     input: Res<'w, ButtonInput<KeyCode>>,
     keys: Res<'w, CursorKeys>,
     steps: Res<'w, DirectionKeys>,
@@ -311,12 +311,12 @@ impl CursorInput<'_> {
     }
 
     /// Whether Shift is held, which turns "next" into "previous".
-    pub fn back(&self) -> bool {
+    pub(crate) fn back(&self) -> bool {
         shifted(&self.input)
     }
 
     /// [`steer`], over this frame's keys.
-    pub fn steer(&self, at: &mut Point, focus: &mut Focus, bounds: Rect, candidates: impl FnOnce() -> Vec<Sighting>) -> Steer {
+    pub(crate) fn steer(&self, at: &mut Point, focus: &mut Focus, bounds: Rect, candidates: impl FnOnce() -> Vec<Sighting>) -> Steer {
         steer(at, focus, &Keyed { input: &self.input, keys: &self.keys, steps: &self.steps, repeats: &self.repeats }, bounds, candidates)
     }
 }
@@ -325,7 +325,7 @@ impl CursorInput<'_> {
 ///
 /// Stopping rather than clamping: a cursor at the edge that slides along
 /// it when pushed outwards reads as the cursor moving on its own.
-pub fn stepped(at: Point, step: Direction, bounds: Rect) -> Point {
+pub(crate) fn stepped(at: Point, step: Direction, bounds: Rect) -> Point {
     let moved = at + step.offset();
     if bounds.contains(moved) { moved } else { at }
 }

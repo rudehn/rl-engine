@@ -29,17 +29,17 @@
 //! wearer's [`StatBlock`] by [`fold_gear`] the moment its slots change.
 //! Nothing is copied onto the wearer and nothing has to be remembered
 //! when it comes off. A status a worn thing's trigger put on its wearer
-//! may be held by the thing, and [`end_unworn_holds`] cures it in the pass
+//! may be held by the thing, and `end_unworn_holds` cures it in the pass
 //! the thing is no longer worn.
 //!
 //! What else a worn thing lends is kept in
 //! [`ReactSet::Lend`](crate::plugin::ReactSet::Lend), read every pass off
 //! what is worn now: the statuses its [`HeldWhileWorn`] holds on its wearer
-//! ([`hold_worn_statuses`]), the sight in the dark its
+//! (`hold_worn_statuses`), the sight in the dark its
 //! [`WornDarkSight`] lends, folded with the wearer's own
 //! [`OwnDarkSight`] into its [`DarkSight`] unless a game has it
-//! [`DarkSightSuppressed`] ([`lend_dark_sight`]), and a light that shines
-//! only while worn, its [`LitWhenWorn`] ([`light_worn_things`]).
+//! [`DarkSightSuppressed`] (`lend_dark_sight`), and a light that shines
+//! only while worn, its [`LitWhenWorn`] (`light_worn_things`).
 //!
 //! Throwing one is [`throwing`](crate::throwing), which needs combat as well.
 
@@ -346,7 +346,7 @@ impl Action for Equip {}
 
 /// Take an item lying on the actor's cell and put it on, in one action.
 ///
-/// It costs [`EQUIP_FROM_GROUND_COST`], half as much again as picking up or
+/// It costs `EQUIP_FROM_GROUND_COST`, half as much again as picking up or
 /// putting on alone: quicker than doing both, dearer than either, so taking
 /// up a sword in the middle of a fight is a real choice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -354,7 +354,7 @@ pub struct EquipFromGround(pub Entity);
 impl Action for EquipFromGround {}
 
 /// What [`EquipFromGround`] costs, in hundredths of a step.
-pub const EQUIP_FROM_GROUND_COST: u32 = BASE_ACTION_COST * 3 / 2;
+pub(crate) const EQUIP_FROM_GROUND_COST: u32 = BASE_ACTION_COST * 3 / 2;
 
 /// Take a worn item off.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -768,7 +768,7 @@ pub fn fold_gear(mut wearers: Query<(&Equipped, &mut StatBlock), Changed<Equippe
 /// clock that went backwards, a new run, counts as no time. Only wearers on
 /// the current map: a moment lands on whoever stands on its cell here, and
 /// a wearer on another map would mend a stranger at the same coordinates.
-pub fn pulse_worn(
+pub(crate) fn pulse_worn(
     turns: Res<Turns>,
     mut last: Local<Option<u32>>,
     map: Res<WorldMap>,
@@ -804,7 +804,7 @@ pub fn pulse_worn(
 /// In [`TurnSet::React`](crate::plugin::TurnSet::React), after the pass
 /// counted whatever time it counted, so the thing's first period is a whole
 /// one from the pass it went on in.
-pub fn restart_pulses(mut events: MessageReader<ItemEvent>, mut pulses: Query<&mut Pulse>) {
+pub(crate) fn restart_pulses(mut events: MessageReader<ItemEvent>, mut pulses: Query<&mut Pulse>) {
     for ev in events.read() {
         let ItemEvent::Equipped { item, .. } = *ev else { continue };
         if let Ok(mut pulse) = pulses.get_mut(item) {
@@ -836,7 +836,7 @@ pub fn restart_pulses(mut events: MessageReader<ItemEvent>, mut pulses: Query<&m
 /// wearing is this plugin's to know; statuses never learn what an item
 /// is. A game with items and no statuses has no [`Afflicted`] to look at
 /// and the queue it writes stays empty.
-pub fn end_unworn_holds(holders: Query<(Entity, &Afflicted, Option<&Equipped>)>, items: Query<(), With<Item>>, mut cure: MessageWriter<Cure>) {
+pub(crate) fn end_unworn_holds(holders: Query<(Entity, &Afflicted, Option<&Equipped>)>, items: Query<(), With<Item>>, mut cure: MessageWriter<Cure>) {
     for (who, afflicted, worn) in &holders {
         for status in afflicted.iter() {
             let Some(bits) = status.held_by else { continue };
@@ -850,15 +850,15 @@ pub fn end_unworn_holds(holders: Query<(Entity, &Afflicted, Option<&Equipped>)>,
 }
 
 /// On an item: the statuses it holds on whoever wears it, until cured,
-/// for as long as it is worn, which [`hold_worn_statuses`] puts on and
-/// [`end_unworn_holds`] takes off. Put on by
+/// for as long as it is worn, which `hold_worn_statuses` puts on and
+/// `end_unworn_holds` takes off. Put on by
 /// [`insert_parts`](crate::parts::insert_parts) from
 /// [`ItemParts::holds`](crate::parts::ItemParts::holds).
 #[derive(Component, Debug, Clone, Default, PartialEq, Eq)]
 pub struct HeldWhileWorn(pub Vec<StatusId>);
 
 /// On an item: the light it sheds only while it is worn, which
-/// [`light_worn_things`] puts on it as its [`LightSource`] while it is and
+/// `light_worn_things` puts on it as its [`LightSource`] while it is and
 /// takes off when it is not. Put on by
 /// [`insert_parts`](crate::parts::insert_parts) for a light that is
 /// [`LightWhen::Worn`](crate::parts::LightWhen::Worn).
@@ -870,7 +870,7 @@ pub struct LitWhenWorn(pub LightSource);
 /// such thing off take the sight away again, while an actor the fold never
 /// touched keeps a `DarkSight` a game set by hand.
 #[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct LentDarkSight;
+pub(crate) struct LentDarkSight;
 
 /// Each worn thing once, though a two-hander fills two slots.
 fn worn_once(equipped: &Equipped) -> Vec<Entity> {
@@ -892,7 +892,11 @@ fn worn_once(equipped: &Equipped) -> Vec<Entity> {
 /// on, handed over or put back by a save, is read as it stands; what takes
 /// the status off again is [`end_unworn_holds`], the pass the thing is no
 /// longer worn. A wearer that holds no statuses at all is lent none.
-pub fn hold_worn_statuses(wearers: Query<(Entity, &Equipped, &Afflicted)>, holders: Query<&HeldWhileWorn>, mut afflict: MessageWriter<crate::status::Afflict>) {
+pub(crate) fn hold_worn_statuses(
+    wearers: Query<(Entity, &Equipped, &Afflicted)>,
+    holders: Query<&HeldWhileWorn>,
+    mut afflict: MessageWriter<crate::status::Afflict>,
+) {
     for (wearer, equipped, afflicted) in &wearers {
         let worn: Vec<(Entity, &HeldWhileWorn)> = worn_once(equipped).into_iter().filter_map(|item| Some((item, holders.get(item).ok()?))).collect();
         let held_by_what_it_wears = |by: u64| worn.iter().any(|(holder, _)| holder.to_bits() == by);
@@ -929,7 +933,7 @@ type MaySee = Or<(With<OwnDarkSight>, With<Equipped>, With<LentDarkSight>)>;
 /// In [`ReactSet::Lend`](crate::plugin::ReactSet::Lend), where a game that
 /// suppresses sight in its own reactions orders those before it, so the
 /// sight is folded as that pass leaves them.
-pub fn lend_dark_sight(mut commands: Commands, seers: Query<Seer, MaySee>, lending: Query<&WornDarkSight>) {
+pub(crate) fn lend_dark_sight(mut commands: Commands, seers: Query<Seer, MaySee>, lending: Query<&WornDarkSight>) {
     for (seer, own, equipped, now, suppressed, lent) in &seers {
         let worn = equipped.and_then(|e| worn_once(e).into_iter().filter_map(|item| lending.get(item).ok()).map(|s| s.0).max());
         if own.is_none() && worn.is_none() && !lent {
@@ -964,7 +968,7 @@ pub fn lend_dark_sight(mut commands: Commands, seers: Query<Seer, MaySee>, lendi
 /// light is recast the way any light lit or put out is, and what lights a
 /// carried thing needs no second case. Leaves alone what already reads
 /// right.
-pub fn light_worn_things(mut commands: Commands, wearers: Query<&Equipped>, things: Query<(Entity, &LitWhenWorn, Option<&LightSource>)>) {
+pub(crate) fn light_worn_things(mut commands: Commands, wearers: Query<&Equipped>, things: Query<(Entity, &LitWhenWorn, Option<&LightSource>)>) {
     let mut worn: Vec<Entity> = Vec::new();
     for equipped in &wearers {
         worn.extend(equipped.0.worn().map(|(_, item)| item));
@@ -980,7 +984,7 @@ pub fn light_worn_things(mut commands: Commands, wearers: Query<&Equipped>, thin
 }
 
 /// Drops despawned items from every bag and every slot.
-pub fn forget_removed_items(mut removed: RemovedComponents<Item>, mut carriers: Query<(&mut Inventory, Option<&mut Equipped>)>) {
+pub(crate) fn forget_removed_items(mut removed: RemovedComponents<Item>, mut carriers: Query<(&mut Inventory, Option<&mut Equipped>)>) {
     let gone: Vec<Entity> = removed.read().collect();
     if gone.is_empty() {
         return;
@@ -1000,7 +1004,7 @@ pub fn forget_removed_items(mut removed: RemovedComponents<Item>, mut carriers: 
 /// Otherwise a monster that picked up a knife takes it out of the world
 /// with it, since the dead are despawned and a carried item has no place of
 /// its own. The player is left to the game, which may yet revive it.
-pub fn drop_what_the_dead_carried(
+pub(crate) fn drop_what_the_dead_carried(
     mut commands: Commands,
     mut deaths: MessageReader<DeathEvent>,
     map: Res<WorldMap>,
@@ -1141,7 +1145,7 @@ pub fn perceive_belongings(mut thinking: ResMut<Thinking>, sight: Sight, belongi
 ///
 /// A worn [`Pulse`] reports its `pulse` moment on its own clock, and a
 /// status a worn thing holds ends when it is no longer worn, in
-/// [`end_unworn_holds`]. What a use costs the thing used, its
+/// `end_unworn_holds`. What a use costs the thing used, its
 /// [`Consumable`](crate::consumable::Consumable) charges, is part of it
 /// too: see [`consumable`](crate::consumable).
 pub struct ItemsPlugin;

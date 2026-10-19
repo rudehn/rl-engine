@@ -36,23 +36,25 @@ pub mod title;
 pub mod trade;
 pub mod vitals;
 
-pub use ability::{AbilityKeys, AbilityLayout, AbilityMenu, AbilityPanel, ability_modal, reach};
-pub use container::{CONTAINER_MODAL, ContainerKeys, ContainerLayout, ContainerMenu, ContainerPanel, container_modal};
-pub use controls::{CONTROLS_MODAL, ControlsLayout, ControlsPanel, ControlsScreen, controls_modal};
+pub use ability::{AbilityKeys, AbilityPanel, ability_modal};
+pub use container::{ContainerMenu, ContainerPanel, container_modal};
+pub use controls::{ControlsPanel, controls_modal};
 pub use gear::GearPanel;
 pub use inspect::InspectPanel;
-pub use inventory::{Choosing, ChoosingFor, INVENTORY_MODAL, InventoryKeys, InventoryLayout, InventoryMenu, InventoryPanel, OfferChoice, inventory_modal};
+#[cfg(test)]
+pub(crate) use inventory::INVENTORY_MODAL;
+pub use inventory::{Choosing, ChoosingFor, InventoryKeys, InventoryMenu, InventoryPanel, OfferChoice, inventory_modal};
 pub use log::LogPanel;
 pub use nearby::{ActivityWords, AlertWords, NearbyPanel};
-pub use offers::{Confirming, OFFERS_MODAL, OffersLayout, OffersMenu, OffersPanel, offers_modal};
-pub use party::{PartyLayout, PartyPanel};
-pub use records::{RECORDS_MODAL, RecordsLayout, RecordsPanel, RecordsScreen, records_modal};
-pub use scrollback::{SCROLLBACK_MODAL, Scrollback, ScrollbackKeys, ScrollbackPanel, scrollback_modal};
-pub use settings::{SETTINGS_MODAL, SettingsLayout, SettingsPanel, SettingsScreen, settings_modal};
-pub use sheet::{SHEET_MODAL, SheetKeys, SheetLayout, SheetPanel, plain_op, sheet_modal};
-pub use target::{TargetLayout, TargetPanel};
+pub use offers::{Confirming, OffersMenu, OffersPanel, offers_modal};
+pub use party::PartyPanel;
+pub use records::{RecordsPanel, records_modal};
+pub use scrollback::{ScrollbackKeys, ScrollbackPanel, scrollback_modal};
+pub use settings::{SettingsPanel, settings_modal};
+pub use sheet::{SheetKeys, SheetPanel, plain_op, sheet_modal};
+pub use target::TargetPanel;
 pub use title::{TitleMenu, TitlePanel, TitleRow, TitleSet, TitleWords, title_is_up};
-pub use trade::{TRADE_MODAL, TradeKeys, TradeLayout, TradeMenu, TradePanel, TradeSide, TradeWords, trade_modal};
+pub use trade::{TradeMenu, TradePanel, TradeSide, TradeWords, trade_modal};
 pub use vitals::VitalsPanel;
 
 use bevy::prelude::Color;

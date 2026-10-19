@@ -10,7 +10,7 @@
 //! grid when a bigger terminal is wanted. Nothing above this module will
 //! notice the change.
 //!
-//! [`Pointer`] is the cell the mouse is over, read off the same layout the
+//! `Pointer` is the cell the mouse is over, read off the same layout the
 //! grid is drawn with, and through a [`MapView`] the map tile drawn there.
 
 #![deny(missing_docs)]
@@ -29,11 +29,9 @@ pub mod terminal;
 pub mod tileset;
 
 pub use capture::CapturePlugin;
-pub use fullscreen::{FULLSCREEN, FullscreenPlugin};
-pub use layout::{Fit, fit};
+pub use fullscreen::FullscreenPlugin;
 pub use map_view::{DrawnActors, Glyph, LightOverlay, MapView, MapViewPlugin, TileAppearance};
-pub use particles::{Animation, Beat, Burst, ParticleStyle, Particles, ParticlesPlugin, Spark, Trail};
-pub use pointer::Pointer;
+pub use particles::{ParticleStyle, Particles, ParticlesPlugin};
 pub use shade::{Memory, Shading, Vary};
 pub use terminal::{Cell, Terminal, TerminalPlugin};
 pub use tileset::Tileset;
@@ -43,8 +41,9 @@ pub mod prelude {
     pub use crate::capture::CapturePlugin;
     pub use crate::fullscreen::FullscreenPlugin;
     pub use crate::map_view::{DrawnActors, Glyph, LightOverlay, MapView, MapViewPlugin, TileAppearance};
-    pub use crate::particles::{Animation, Beat, Burst, ParticleStyle, Particles, ParticlesPlugin, Trail};
-    pub use crate::pointer::Pointer;
+
+    pub use crate::particles::{ParticleStyle, Particles, ParticlesPlugin};
+
     pub use crate::shade::{Memory, Shading, Vary};
     pub use crate::terminal::{Cell, Terminal, TerminalPlugin};
     pub use crate::tileset::Tileset;

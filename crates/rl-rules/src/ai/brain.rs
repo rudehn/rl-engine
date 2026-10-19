@@ -297,7 +297,8 @@ impl<A: Copy> Brain<A> {
     }
 
     /// The tactic names in priority order.
-    pub fn names(&self) -> impl Iterator<Item = &'static str> + '_ {
+    #[cfg(test)]
+    pub(crate) fn names(&self) -> impl Iterator<Item = &'static str> + '_ {
         self.tactics.iter().map(|t| t.name())
     }
 }

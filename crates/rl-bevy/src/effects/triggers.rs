@@ -59,22 +59,22 @@ impl Moments {
     /// Somebody stepped onto a prop's cell.
     pub const ENTERED: MomentId = MomentId::from_raw(4);
     /// A prop was broken.
-    pub const DESTROYED: MomentId = MomentId::from_raw(5);
+    pub(crate) const DESTROYED: MomentId = MomentId::from_raw(5);
     /// A worn thing's own clock came round: see
     /// [`Pulse`](crate::items::Pulse).
     pub const PULSE: MomentId = MomentId::from_raw(6);
     /// An attack landed on an actor: reported on the one it landed on, as
     /// [`HIT`](Self::HIT) is on what struck it.
-    pub const STRUCK: MomentId = MomentId::from_raw(7);
+    pub(crate) const STRUCK: MomentId = MomentId::from_raw(7);
     /// An actor died: reported a pass later, from a [`Remnant`], since the
     /// actor itself is out of the world by then.
-    pub const DIED: MomentId = MomentId::from_raw(8);
+    pub(crate) const DIED: MomentId = MomentId::from_raw(8);
 
     /// The engine's moments, in the order their ids are handed out.
-    pub const BUILT_IN: [&'static str; 9] = ["use", "land", "fire", "hit", "entered", "destroyed", "pulse", "struck", "died"];
+    pub(crate) const BUILT_IN: [&'static str; 9] = ["use", "land", "fire", "hit", "entered", "destroyed", "pulse", "struck", "died"];
 
     /// The id for `name`, assigning a new one if it is unseen.
-    pub fn declare(&mut self, name: &str) -> MomentId {
+    pub(crate) fn declare(&mut self, name: &str) -> MomentId {
         self.0.intern(name)
     }
 
@@ -283,7 +283,7 @@ impl Triggers {
     /// [`Pulse`](crate::items::Pulse) from its carrier's own triggers rather
     /// than keeping a second copy of the number. `None` when the carrier has
     /// no pulse trigger at all.
-    pub fn pulse_every(&self) -> Option<u32> {
+    pub(crate) fn pulse_every(&self) -> Option<u32> {
         self.0.iter().find(|t| t.on == Moments::PULSE).and_then(|t| t.every)
     }
 }
@@ -366,11 +366,11 @@ pub struct LandsAsItself;
 /// The moment is written on the carrier rather than sent as a message,
 /// because it lands a pass later and a pass may be a long time coming:
 /// the loop holds while something is shown, and a message nobody reads for
-/// two frames is gone, where an entity stays. [`report_remnants`] reports
+/// two frames is gone, where an entity stays. `report_remnants` reports
 /// it in the pass that lands it, and [`land_triggers`] takes its triggers
 /// once it has.
 ///
-/// It then stays, with nothing left to land, until [`bury_remnants`]
+/// It then stays, with nothing left to land, until `bury_remnants`
 /// despawns it at the end of the frame, as the dead are, rather than at
 /// once: a remnant that lands as itself is credited with what it did, and
 /// whatever reads that later in the pass, the log saying who hurt whom or
@@ -390,7 +390,7 @@ pub struct Remnant {
 /// In [`ResolveSet::Triggers`](crate::plugin::ResolveSet::Triggers) ahead
 /// of [`land_triggers`], so the report and the landing are one pass
 /// however long the remnant waited for it.
-pub fn report_remnants(remnants: Query<(Entity, &Remnant), With<Triggers>>, mut fired: MessageWriter<Fired>) {
+pub(crate) fn report_remnants(remnants: Query<(Entity, &Remnant), With<Triggers>>, mut fired: MessageWriter<Fired>) {
     for (on, remnant) in &remnants {
         fired.write(Fired { on, moment: remnant.moment, by: remnant.by, at: remnant.at });
     }
@@ -398,7 +398,7 @@ pub fn report_remnants(remnants: Query<(Entity, &Remnant), With<Triggers>>, mut 
 
 /// Despawns every [`Remnant`] that has landed, once every system has read
 /// this frame's landings: in `Last`, beside the dead.
-pub fn bury_remnants(mut commands: Commands, landed: Query<Entity, (With<Remnant>, Without<Triggers>)>) {
+pub(crate) fn bury_remnants(mut commands: Commands, landed: Query<Entity, (With<Remnant>, Without<Triggers>)>) {
     for remnant in &landed {
         commands.entity(remnant).despawn();
     }
@@ -419,7 +419,7 @@ pub fn bury_remnants(mut commands: Commands, landed: Query<Entity, (With<Remnant
 ///
 /// Once per actor however many deaths are reported for it in a pass, and
 /// never for one that answers nothing on dying.
-pub fn report_died(
+pub(crate) fn report_died(
     mut commands: Commands,
     mut deaths: MessageReader<crate::combat::DeathEvent>,
     actors: Query<&Triggers, With<crate::components::Actor>>,
@@ -456,7 +456,7 @@ impl Default for RemnantKeeps {
 
 impl RemnantKeeps {
     /// Adds `C` to what a remnant takes, once however often it is asked.
-    pub fn keep<C: Component + Clone>(&mut self) {
+    pub(crate) fn keep<C: Component + Clone>(&mut self) {
         let id = std::any::TypeId::of::<C>();
         if !self.0.contains(&id) {
             self.0.push(id);
@@ -465,7 +465,7 @@ impl RemnantKeeps {
 
     /// Queues the copy of whichever of these `from` has onto `to`, at the
     /// next sync point, while `from` is still there to copy.
-    pub fn copy(&self, commands: &mut Commands, from: Entity, to: Entity) {
+    pub(crate) fn copy(&self, commands: &mut Commands, from: Entity, to: Entity) {
         let ids = self.0.clone();
         commands.entity(from).clone_with_opt_in(to, move |builder| {
             builder.allow_by_ids(ids);
@@ -587,7 +587,7 @@ impl AimedUses<'_, '_> {
 /// In [`ResolveSet::Triggers`](crate::plugin::ResolveSet::Triggers), where
 /// triggers land, ahead of [`land_triggers`]: no turn is dealt while
 /// anything flies, so nothing new is used in the pass that lands it.
-pub fn land_aimed_uses(
+pub(crate) fn land_aimed_uses(
     mut hold: ResMut<TurnHold>,
     mut airborne: ResMut<Airborne<UseLanding>>,
     mut turns: ResMut<Turns>,
@@ -618,7 +618,7 @@ pub fn land_aimed_uses(
 /// ability is, by [`Bystanders::land`]: from where its user stands to the
 /// cell it was pointed at, on whoever its aim wants under its shape. With
 /// a look it is seen to fly there first, and with something watching it
-/// waits in the air for [`land_aimed_uses`] until it has been.
+/// waits in the air for `land_aimed_uses` until it has been.
 ///
 /// A use made on one of its user's things lands where its user stands,
 /// with the thing its [`FiredOn`] names as the landing's

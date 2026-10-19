@@ -156,15 +156,6 @@ impl<T> Grid<T> {
         Self { width, height, cells }
     }
 
-    /// A grid over an existing row-major vector.
-    ///
-    /// # Panics
-    /// Panics if `cells.len() != width * height`.
-    pub fn from_vec(width: i32, height: i32, cells: Vec<T>) -> Self {
-        assert_eq!(cells.len(), (width.max(0) as usize) * (height.max(0) as usize), "cell count must match the dimensions");
-        Self { width, height, cells }
-    }
-
     /// Borrows the cell at `p`, or `None` if out of bounds.
     pub fn get(&self, p: Point) -> Option<&T> {
         self.checked_idx(p).map(|i| &self.cells[i])
@@ -194,11 +185,6 @@ impl<T> Grid<T> {
     /// All cells, row-major, mutably.
     pub fn cells_mut(&mut self) -> &mut [T] {
         &mut self.cells
-    }
-
-    /// Consumes the grid, returning its cells.
-    pub fn into_cells(self) -> Vec<T> {
-        self.cells
     }
 
     /// Iterates `(point, &cell)` row-major without a division per cell.

@@ -153,7 +153,7 @@ pub fn collect_abilities(
 }
 
 /// A cost, with the registry's name for what it is a cost in.
-pub fn phrase_cost(cost: &Cost, registries: &Registries) -> String {
+pub(crate) fn phrase_cost(cost: &Cost, registries: &Registries) -> String {
     match cost {
         Cost::Pool { stat, amount } => format!("{amount} {}", registries.stats.name(*stat)),
         Cost::Health { amount } => format!("{amount} health"),
@@ -162,7 +162,7 @@ pub fn phrase_cost(cost: &Cost, registries: &Registries) -> String {
 }
 
 /// A requirement, with the registry's names.
-pub fn phrase_requirement(requirement: &Requirement, registries: &Registries) -> String {
+pub(crate) fn phrase_requirement(requirement: &Requirement, registries: &Registries) -> String {
     match requirement {
         Requirement::Has(status) => format!("{} on you", registries.statuses.name(*status)),
         Requirement::Lacks(status) => format!("not {}", registries.statuses.name(*status)),
@@ -174,7 +174,7 @@ pub fn phrase_requirement(requirement: &Requirement, registries: &Registries) ->
 
 /// A reason, in words a player can act on. `cooling` is the hundredths
 /// left, for the one reason that is a wait.
-pub fn phrase_blocked(reason: &Blocked, cooling: u32, registries: &Registries) -> String {
+pub(crate) fn phrase_blocked(reason: &Blocked, cooling: u32, registries: &Registries) -> String {
     match reason {
         Blocked::Cooling { .. } => format!("ready in {}", turns(cooling)),
         Blocked::Cannot(cost) => format!("needs {}", phrase_cost(cost, registries)),

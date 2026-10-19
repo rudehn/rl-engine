@@ -106,7 +106,7 @@ pub fn replaying() -> Option<Recording> {
 
 /// Nothing to replay from: a browser has no environment.
 #[cfg(target_arch = "wasm32")]
-pub fn replaying() -> Option<Recording> {
+pub(crate) fn replaying() -> Option<Recording> {
     None
 }
 
@@ -128,13 +128,13 @@ pub fn seed() -> Option<RunSeed> {
 
 /// The command line, the program's name left off.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn own_args() -> Vec<String> {
+pub(crate) fn own_args() -> Vec<String> {
     std::env::args().skip(1).collect()
 }
 
 /// A browser has no command line.
 #[cfg(target_arch = "wasm32")]
-pub fn own_args() -> Vec<String> {
+pub(crate) fn own_args() -> Vec<String> {
     Vec::new()
 }
 

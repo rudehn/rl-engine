@@ -132,7 +132,7 @@ impl Plugin for TerminalPlugin {
 /// The back buffer game code draws into. Writes are clipped to the grid.
 ///
 /// A cell is drawn on its own, a character to a cell, unless it was
-/// written as part of a wide one: [`set_wide`](Self::set_wide) writes one
+/// written as part of a wide one: `set_wide` writes one
 /// glyph across a run of cells, drawn centred across them all, which is how
 /// a map of tiles wider than a cell is drawn. A run lasts until something
 /// else is written into it. Text, a cell set whole, a fill or a clear makes
@@ -140,7 +140,7 @@ impl Plugin for TerminalPlugin {
 /// it, so a screen drawn over the map draws a letter to a cell whatever the
 /// map drew under it. A glyph [`put`](Self::put) on a run's first cell is
 /// the run's, which is how a thing standing on a wide tile is drawn on it,
-/// and a background repainted with [`set_bg`](Self::set_bg) leaves the run
+/// and a background repainted with `set_bg` leaves the run
 /// whole, which is how a tile is highlighted.
 ///
 /// The runs are the buffer's because only what was written knows: the
@@ -180,7 +180,7 @@ impl Terminal {
 
     /// The size of one cell as declared, in logical pixels: what the grid
     /// is laid out from, not what a window of another size shows it at.
-    pub fn cell_size(&self) -> Vec2 {
+    pub(crate) fn cell_size(&self) -> Vec2 {
         self.cell_size
     }
 
@@ -190,7 +190,7 @@ impl Terminal {
     }
 
     /// Size of the grid in pixels.
-    pub fn pixel_size(&self) -> Vec2 {
+    pub(crate) fn pixel_size(&self) -> Vec2 {
         Vec2::new(self.width as f32 * self.cell_size.x, self.height as f32 * self.cell_size.y)
     }
 
@@ -225,7 +225,7 @@ impl Terminal {
     /// that would leave its row is written as cells of their own, the glyph
     /// in the first, since a glyph centred on a run cut short would stand
     /// half off the screen.
-    pub fn set_wide(&mut self, x: i32, y: i32, span: i32, cell: Cell) {
+    pub(crate) fn set_wide(&mut self, x: i32, y: i32, span: i32, cell: Cell) {
         let blank = Cell { glyph: ' ', ..cell };
         let fits = (2..=i32::from(u8::MAX)).contains(&span) && x >= 0 && x + span <= self.width && (0..self.height).contains(&y);
         if !fits {
@@ -260,7 +260,7 @@ impl Terminal {
 
     /// Repaints a cell's background, keeping its glyph and the wide cell it
     /// is part of, if any: how a tile is highlighted without being broken.
-    pub fn set_bg(&mut self, x: i32, y: i32, bg: Color) {
+    pub(crate) fn set_bg(&mut self, x: i32, y: i32, bg: Color) {
         if let Some(i) = self.index(x, y) {
             self.cells[i].bg = bg;
         }

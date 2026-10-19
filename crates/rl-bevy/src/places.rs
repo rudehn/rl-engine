@@ -326,18 +326,19 @@ impl Ladder {
     }
 
     /// Which floor `map` is, counting from one at the top, if it is one.
-    pub fn floor_of(&self, map: MapId) -> Option<usize> {
+    #[cfg(test)]
+    pub(crate) fn floor_of(&self, map: MapId) -> Option<usize> {
         self.floors.iter().position(|m| *m == map).map(|i| i + 1)
     }
 
     /// The floor above `map`, if `map` is a floor and not the top.
-    pub fn above(&self, map: MapId) -> Option<MapId> {
+    pub(crate) fn above(&self, map: MapId) -> Option<MapId> {
         let i = self.floors.iter().position(|m| *m == map)?;
         i.checked_sub(1).map(|i| self.floors[i])
     }
 
     /// The floor below `map`, if `map` is a floor and not the bottom.
-    pub fn below(&self, map: MapId) -> Option<MapId> {
+    pub(crate) fn below(&self, map: MapId) -> Option<MapId> {
         let i = self.floors.iter().position(|m| *m == map)?;
         self.floors.get(i + 1).copied()
     }
@@ -345,7 +346,7 @@ impl Ladder {
     /// The stairs floor `map` gets, built with `entry` and `exit`: where
     /// each stands, and what it is and leads to. Empty for a map that is
     /// no floor of the ladder.
-    pub fn stairs(&self, map: MapId, entry: Point, exit: Option<Point>) -> Vec<(Point, Stair, Transition)> {
+    pub(crate) fn stairs(&self, map: MapId, entry: Point, exit: Option<Point>) -> Vec<(Point, Stair, Transition)> {
         let mut stairs = Vec::new();
         if let Some(above) = self.above(map) {
             let to = Destination::Place { map: above, arrive: Arrive::Exit };
@@ -463,7 +464,7 @@ pub struct PlaceEntered {
 
 /// The maps and indexes a warp rewrites.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Maps<'w> {
+pub(crate) struct Maps<'w> {
     map: ResMut<'w, WorldMap>,
     occupancy: ResMut<'w, Occupancy>,
     knowledge: ResMut<'w, Knowledge>,
@@ -473,7 +474,7 @@ pub struct Maps<'w> {
 
 /// What a warp reports.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct WarpReport<'w> {
+pub(crate) struct WarpReport<'w> {
     changed: MessageWriter<'w, MapChanged>,
     entered: MessageWriter<'w, PlaceEntered>,
     travelled: MessageWriter<'w, Travelled>,
@@ -501,7 +502,7 @@ type Transitions<'w, 's> = Query<'w, 's, (&'static Position, Option<&'static OnM
 
 /// Who travels and what they travel through.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Travel<'w, 's> {
+pub(crate) struct Travel<'w, 's> {
     travellers: Traveller<'w, 's>,
     transitions: Transitions<'w, 's>,
 }
@@ -525,7 +526,7 @@ struct Trip {
 /// since nobody saw where it went; a warp the game sends after someone
 /// says so with [`WarpRequest::after`], and is skipped when that one went
 /// nowhere.
-pub fn resolve_warps(
+pub(crate) fn resolve_warps(
     mut commands: Commands,
     mut intents: MessageReader<Intent<GoThrough>>,
     mut requests: MessageReader<WarpRequest>,
@@ -723,7 +724,7 @@ fn warp(
 
 /// Puts anything that just gained a position on the current map, unless
 /// it says otherwise.
-pub fn tag_new_positions(mut commands: Commands, map: Res<WorldMap>, fresh: Query<Entity, (Added<Position>, Without<OnMap>)>) {
+pub(crate) fn tag_new_positions(mut commands: Commands, map: Res<WorldMap>, fresh: Query<Entity, (Added<Position>, Without<OnMap>)>) {
     for e in &fresh {
         commands.entity(e).insert(OnMap(map.current()));
     }
@@ -890,8 +891,9 @@ mod tests {
             let w = r.app.world();
             assert_eq!(w.resource::<WorldMap>().current(), cave);
             let entered = &w.resource::<Entered>().0;
-            assert_eq!(entered.len(), 2, "entered twice: {entered:?}");
-            assert!(!entered[1].first, "built once: {entered:?}");
+            assert_eq!(entered.len(), 3, "into the cave, back to map zero, and into the cave again: {entered:?}");
+            assert_eq!((entered[1].map, entered[1].first), (MapId::ZERO, false), "map zero was where the player began: {entered:?}");
+            assert!(!entered[2].first, "built once: {entered:?}");
             assert!(w.resource::<Knowledge>().is_explored(entry), "place knowledge survived too");
             assert_eq!(w.get::<Position>(coin).unwrap().0, entry);
         }

@@ -107,7 +107,7 @@ impl Default for SpendingMoments {
 
 impl SpendingMoments {
     /// Whether `moment` spends.
-    pub fn spends(&self, moment: MomentId) -> bool {
+    pub(crate) fn spends(&self, moment: MomentId) -> bool {
         self.0.contains(&moment)
     }
 }
@@ -135,7 +135,7 @@ impl AddSpending for App {
 /// last charge did has landed before the thing is gone. A moment with no
 /// triggers on the thing still spends, which is how a plain wand's ordinary
 /// shot costs a charge. A thing spent to nothing is marked [`Spent`]:
-/// [`remove_spent`] takes it out of play at the end of the pass and
+/// `remove_spent` takes it out of play at the end of the pass and
 /// [`bury_spent`] despawns it at the end of the frame.
 pub fn spend_charges(
     mut commands: Commands,
@@ -183,7 +183,7 @@ pub struct Spent;
 /// pass has been written down: no longer an [`Item`](crate::items::Item),
 /// so every bag and slot forgets it, and off the map, so nothing draws it
 /// or picks it up. What it is called and how it looks stay for the log.
-pub fn remove_spent(mut commands: Commands, spent: Query<Entity, (With<Spent>, With<crate::items::Item>)>) {
+pub(crate) fn remove_spent(mut commands: Commands, spent: Query<Entity, (With<Spent>, With<crate::items::Item>)>) {
     for e in &spent {
         commands.entity(e).remove::<(crate::items::Item, crate::components::Position, crate::places::OnMap)>();
     }
@@ -244,7 +244,7 @@ pub fn recharge_charges(
 ///
 /// After [`recharge_charges`] in the same set, so the pass it went on in
 /// counts nothing towards it.
-pub fn attune(mut events: MessageReader<crate::items::ItemEvent>, mut things: Query<&mut Consumable, With<Attuned>>) {
+pub(crate) fn attune(mut events: MessageReader<crate::items::ItemEvent>, mut things: Query<&mut Consumable, With<Attuned>>) {
     for ev in events.read() {
         let crate::items::ItemEvent::Equipped { item, .. } = *ev else { continue };
         let Ok(mut c) = things.get_mut(item) else { continue };

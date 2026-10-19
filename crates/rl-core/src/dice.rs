@@ -37,7 +37,8 @@ impl DiceRoll {
     }
 
     /// Lowest possible result.
-    pub const fn min(self) -> i32 {
+    #[cfg(test)]
+    pub(crate) const fn min(self) -> i32 {
         self.num as i32 + self.bonus
     }
 

@@ -7,23 +7,23 @@
 //! and an [`Afflicted`] list, resolves [`Afflict`] requests, and on every
 //! whole turn ticks the statuses of the actors on the current map,
 //! sending their damage through the same pipeline a blow goes through.
-//! A status that holds takes its holder's turns: [`pass_held_turns`]
+//! A status that holds takes its holder's turns: `pass_held_turns`
 //! spends each as a wait before its mind or its player is asked. A status
 //! that sleeps holds as well, and ends the moment its holder is woken:
-//! by harm landing on it ([`wake_on_harm`]), by a noise it hears
-//! ([`wake_on_noise`]), or by a foe close by that it notices
-//! ([`wake_on_sight`]). [`Sleepers`] answers who is asleep, which a blow
+//! by harm landing on it (`wake_on_harm`), by a noise it hears
+//! (`wake_on_noise`), or by a foe close by that it notices
+//! (`wake_on_sight`). `Sleepers` answers who is asleep, which a blow
 //! asks before it lands, since a sleeper is unaware of whoever strikes it.
 //!
 //! What a status lends its holder while it lasts is kept in
 //! [`ReactSet::Statuses`](crate::plugin::ReactSet::Statuses), read off
 //! what it holds every pass so a status put back by a save does it again
-//! with nothing else saved: the side it names ([`keep_sides`], with
+//! with nothing else saved: the side it names (`keep_sides`, with
 //! [`SideWas`] the side to go back to), what it resists
-//! ([`keep_status_resists`], into [`StatusResists`]), and what the
-//! holder's own kind changes while it holds one ([`keep_while_holding`],
-//! from [`WhileHolding`]). A status that stumbles turns its holder's
-//! chosen step a random open way ([`stumble`], on [`StumbleRng`]).
+//! (`keep_status_resists`, into `StatusResists`), and what the
+//! holder's own kind changes while it holds one (`keep_while_holding`,
+//! from `WhileHolding`). A status that stumbles turns its holder's
+//! chosen step a random open way (`stumble`, on `StumbleRng`).
 //! Part of [`CorePlugin`](crate::plugin::CorePlugin): the statuses
 //! themselves are content, in [`Registries`], and a game that registers
 //! none has nothing to tick, so there is nothing to turn on. Without
@@ -69,7 +69,7 @@ pub struct Afflict {
     ///
     /// Held, it ends through the ordinary [`Cure`] in the pass its holder
     /// is not wearing that thing, however that came about; see
-    /// [`end_unworn_holds`](crate::items::end_unworn_holds). One landed on
+    /// `end_unworn_holds`. One landed on
     /// somebody who is not wearing the thing, as an area use reaching a
     /// bystander, ends in the pass after it goes on. A refresh or an
     /// extension by a held request is held by the new thing, and one by an
@@ -182,7 +182,7 @@ pub fn resolve_afflictions(
 /// damage over time becomes [`DamageEvent`]s credited to whoever applied
 /// the status, a status that mends becomes [`Heal`]s, and what ran out is
 /// reported.
-pub fn tick_statuses(
+pub(crate) fn tick_statuses(
     mut ends: MessageReader<TurnEnd>,
     mut damage: MessageWriter<DamageEvent>,
     mut heals: MessageWriter<Heal>,
@@ -239,7 +239,7 @@ pub fn tick_statuses(
 /// notices there, or a foe that does not hide in its sight there, wakes it
 /// ([`wake_on_sight`]). It hears what anyone hears, and a noise it hears
 /// wakes it; harm landing on it wakes it whenever it lands.
-pub fn pass_held_turns(
+pub(crate) fn pass_held_turns(
     mut acting: ResMut<Acting>,
     mut spent: MessageWriter<ActionDone>,
     registries: Option<Res<Registries>>,
@@ -264,14 +264,14 @@ pub fn pass_held_turns(
 /// awake to the blow of the next, whichever stage of a pass asks. Nobody is
 /// asleep in a game with no [`Registries`].
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Sleepers<'w, 's> {
+pub(crate) struct Sleepers<'w, 's> {
     registries: Option<Res<'w, Registries>>,
     statuses: Query<'w, 's, &'static Afflicted>,
 }
 
 impl Sleepers<'_, '_> {
     /// Whether `actor` is asleep.
-    pub fn asleep(&self, actor: Entity) -> bool {
+    pub(crate) fn asleep(&self, actor: Entity) -> bool {
         let Some(registries) = self.registries.as_deref() else { return false };
         self.statuses.get(actor).is_ok_and(|s| s.sleeping(&registries.statuses).is_some())
     }
@@ -301,7 +301,7 @@ fn wake(target: Entity, statuses: &mut Statuses, stats: &mut Stats, registries: 
 /// sleep is one landing, its sleep resolved before its harm, and woken by
 /// its own wound it never slept at all. Who was put to sleep this pass is
 /// [`FellAsleep`], taken here so the next pass starts it empty.
-pub fn wake_on_harm(
+pub(crate) fn wake_on_harm(
     mut dealt: MessageReader<DamageDealt>,
     mut fell: ResMut<FellAsleep>,
     mut events: MessageWriter<StatusEvent>,
@@ -330,7 +330,7 @@ pub fn wake_on_harm(
 /// [`TurnSet::Listen`](crate::plugin::TurnSet::Listen) after the noise is
 /// heard; cured directly for the reason [`wake_on_harm`] is. Nobody is
 /// asleep in a game with noise and no statuses.
-pub fn wake_on_noise(
+pub(crate) fn wake_on_noise(
     mut heard: MessageReader<crate::noise::NoiseHeard>,
     mut events: MessageWriter<StatusEvent>,
     registries: Option<Res<Registries>>,
@@ -373,7 +373,7 @@ type Stirring = (Entity, &'static Position, &'static Faction, Option<&'static On
 /// noticing, on the sleeper's own turn, which
 /// [`pass_held_turns`] has already spent: waking takes the turn it happens
 /// in, and the next is its own.
-pub fn wake_on_sight(
+pub(crate) fn wake_on_sight(
     mut sleepers: Query<Sleeper, With<MyTurn>>,
     others: Query<Stirring, (With<Actor>, Without<Dead>)>,
     rules: Option<Res<CombatRules>>,
@@ -428,7 +428,7 @@ pub struct SideWas(pub Faction);
 /// side is the whole of it; who is hostile to whom stays the game's. A
 /// holder put back by a save, its status asked for again, is turned again
 /// here from whatever side it was given back.
-pub fn keep_sides(mut commands: Commands, registries: Option<Res<Registries>>, mut bodies: Query<(Entity, &Afflicted, &mut Faction, Option<&SideWas>)>) {
+pub(crate) fn keep_sides(mut commands: Commands, registries: Option<Res<Registries>>, mut bodies: Query<(Entity, &Afflicted, &mut Faction, Option<&SideWas>)>) {
     let Some(registries) = registries.as_deref() else { return };
     for (body, held, mut faction, was) in &mut bodies {
         match (held.side(&registries.statuses), was) {
@@ -457,12 +457,12 @@ pub fn keep_sides(mut commands: Commands, registries: Option<Res<Registries>>, m
 /// one pass are weighed as things stood before it, and the last tick of a
 /// burn is resisted by a ward running out in the same pass.
 #[derive(Component, Debug, Clone, Default, PartialEq)]
-pub struct StatusResists(pub Resistances);
+pub(crate) struct StatusResists(pub Resistances);
 
 /// Keeps every holder's [`StatusResists`] at what its statuses
 /// [`resist`](rl_rules::StatusDef::resists), and takes it off once they
 /// resist nothing. Leaves alone what already reads right.
-pub fn keep_status_resists(mut commands: Commands, registries: Option<Res<Registries>>, bodies: Query<(Entity, &Afflicted, Option<&StatusResists>)>) {
+pub(crate) fn keep_status_resists(mut commands: Commands, registries: Option<Res<Registries>>, bodies: Query<(Entity, &Afflicted, Option<&StatusResists>)>) {
     let Some(registries) = registries.as_deref() else { return };
     for (body, held, kept) in &bodies {
         let lent = held.resistances(&registries.statuses);
@@ -485,7 +485,7 @@ pub fn keep_status_resists(mut commands: Commands, registries: Option<Res<Regist
 /// [`ActorParts::while_holding`](crate::parts::ActorParts::while_holding),
 /// or by hand.
 #[derive(Component, Debug, Clone, Default, PartialEq)]
-pub struct WhileHolding(pub Vec<(StatusId, Vec<(StatId, Op)>)>);
+pub(crate) struct WhileHolding(pub Vec<(StatusId, Vec<(StatId, Op)>)>);
 
 /// Puts each [`WhileHolding`] change on its actor's stats while it holds
 /// the status, under [`Source::Holding`], and takes them off the pass it
@@ -494,7 +494,7 @@ pub struct WhileHolding(pub Vec<(StatusId, Vec<(StatId, Op)>)>);
 /// Read off the stats as they stand rather than a marker beside them, so
 /// a status put back by a save puts its changes back with nothing else
 /// saved. Only the living: a body that keeps its kind's rule is not kept.
-pub fn keep_while_holding(mut bodies: Query<(&WhileHolding, &Afflicted, &mut StatBlock), With<Actor>>) {
+pub(crate) fn keep_while_holding(mut bodies: Query<(&WhileHolding, &Afflicted, &mut StatBlock), With<Actor>>) {
     for (rule, held, mut stats) in &mut bodies {
         for (status, changes) in &rule.0 {
             let source = Source::Holding(*status);
@@ -515,7 +515,7 @@ pub fn keep_while_holding(mut bodies: Query<(&WhileHolding, &Afflicted, &mut Sta
 /// The draws a stumbling holder's steps are turned by: a stream of the
 /// run's own, so a stumble never shifts a blow's roll or a cloud's spread.
 #[derive(Resource)]
-pub struct StumbleRng(pub rand::rngs::StdRng);
+pub(crate) struct StumbleRng(pub rand::rngs::StdRng);
 
 impl crate::seed::Stream for StumbleRng {
     fn for_run(seed: RunSeed) -> Self {
@@ -540,7 +540,7 @@ impl crate::seed::Stream for StumbleRng {
 /// by rewriting the intent where it stands rather than replacing it, so
 /// nothing else that reads it reads the old way. A game whose statuses
 /// never stumble draws nothing.
-pub fn stumble(
+pub(crate) fn stumble(
     mut steps: MessageMutator<Intent<Step>>,
     mut walks: MessageMutator<Intent<crate::bump::Bump>>,
     bodies: Query<(&Afflicted, &Position)>,

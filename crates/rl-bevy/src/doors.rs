@@ -3,7 +3,7 @@
 //! A door is any tile whose [`TileProps`](rl_grid::TileProps) names what it
 //! opens or closes into; the standard registry's `door_closed` and
 //! `door_open` are one such pair and a game registers as many as it likes.
-//! [`Open`] and [`Close`] are actions of their own, spent where the actor
+//! [`Open`] and `Close` are actions of their own, spent where the actor
 //! stands, because working a door is not stepping: what blocks sight
 //! changes, so light and every viewshed are recast, and a step into a shut
 //! door is a step into a wall. A walk key that should open the door in its
@@ -71,7 +71,7 @@ pub enum DoorEvent {
 
 /// Whether an actor with `intelligence` may open and close doors: when it
 /// has the wits, or carries none.
-pub fn works_doors(intelligence: Option<&Intelligence>) -> bool {
+pub(crate) fn works_doors(intelligence: Option<&Intelligence>) -> bool {
     intelligence.is_none_or(|i| i.0.has(Wits::OPENS_DOORS))
 }
 
@@ -94,7 +94,7 @@ type Openers<'w, 's> = Query<'w, 's, (&'static Position, Option<&'static Intelli
 /// carrying its tag, and spends the lock when it does; a seal opens for
 /// nobody. Refused, either is the free refusal any door that will not
 /// open is, so the player is not charged for trying a key it lacks.
-pub fn resolve_opens(
+pub(crate) fn resolve_opens(
     mut intents: MessageReader<Intent<Open>>,
     mut resolution: Resolution,
     mut map: ResMut<WorldMap>,
@@ -130,7 +130,7 @@ pub fn resolve_opens(
 }
 
 /// Resolves [`Close`] for the actor holding the turn.
-pub fn resolve_closes(
+pub(crate) fn resolve_closes(
     mut intents: MessageReader<Intent<Close>>,
     mut resolution: Resolution,
     mut map: ResMut<WorldMap>,

@@ -47,7 +47,8 @@ impl Objective {
     }
 
     /// An objective needing a matching fact of amount at least `n`.
-    pub fn reach(text: impl Into<String>, on: Matcher, n: i64) -> Self {
+    #[cfg(test)]
+    pub(crate) fn reach(text: impl Into<String>, on: Matcher, n: i64) -> Self {
         Self { text: text.into(), on, need: Need::Latest(n) }
     }
 
@@ -158,13 +159,14 @@ impl Tracker {
     }
 
     /// Whether an objective is finished.
-    pub fn objective_done(&self, quest: QuestId, objective: usize, quests: &Registry<QuestDef>) -> bool {
+    pub(crate) fn objective_done(&self, quest: QuestId, objective: usize, quests: &Registry<QuestDef>) -> bool {
         let (have, need) = self.progress(quest, objective, quests);
         have >= need
     }
 
     /// Every quest in `state`, in definition order.
-    pub fn in_state(&self, state: QuestState) -> impl Iterator<Item = QuestId> + '_ {
+    #[cfg(test)]
+    pub(crate) fn in_state(&self, state: QuestState) -> impl Iterator<Item = QuestId> + '_ {
         self.states.iter().enumerate().filter(move |(_, s)| **s == state).map(|(i, _)| QuestId::from_raw(i as u32))
     }
 

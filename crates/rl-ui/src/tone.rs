@@ -56,14 +56,14 @@ impl Tones {
 
     /// The engine's tones, in the order their ids are handed out. The
     /// constants above are the indices into this.
-    pub const BUILT_IN: [&'static str; 11] = ["text", "muted", "good", "bad", "notice", "title", "frame", "surface", "select", "hit", "kill"];
+    pub(crate) const BUILT_IN: [&'static str; 11] = ["text", "muted", "good", "bad", "notice", "title", "frame", "surface", "select", "hit", "kill"];
 
     /// The id for `name`, assigning a new one if it is unseen.
     ///
     /// Call it while the app is being built, keep the id, and pass it to
     /// whatever needs it. Interning during play works and is stable, but a
     /// tone first seen mid-run has no colour until something sets one.
-    pub fn declare(&mut self, name: &str) -> ToneId {
+    pub(crate) fn declare(&mut self, name: &str) -> ToneId {
         self.0.intern(name)
     }
 
@@ -81,14 +81,9 @@ impl Tones {
     }
 
     /// How many tones exist.
-    pub fn len(&self) -> usize {
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
         self.0.len()
-    }
-
-    /// Whether no tone has been declared, which never happens after
-    /// [`Default`] has run.
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
     }
 
     /// Every tone, with its name.
@@ -125,7 +120,7 @@ impl Palette {
     /// none.
     ///
     /// Falls back rather than panicking because a missing colour is a
-    /// styling mistake and not a reason to end a run; [`unset`](Self::unset)
+    /// styling mistake and not a reason to end a run; `unset`
     /// reports it at startup instead, once, by name.
     pub fn get(&self, tone: ToneId) -> Color {
         self.0.get(tone.index()).copied().flatten().or_else(|| self.0.first().copied().flatten()).unwrap_or(Color::srgb(1.0, 0.0, 1.0))
@@ -141,7 +136,7 @@ impl Palette {
     }
 
     /// Every declared tone that has no colour, by name.
-    pub fn unset<'a>(&self, tones: &'a Tones) -> Vec<&'a str> {
+    pub(crate) fn unset<'a>(&self, tones: &'a Tones) -> Vec<&'a str> {
         tones.iter().filter(|(id, _)| self.0.get(id.index()).copied().flatten().is_none()).map(|(_, name)| name).collect()
     }
 }
@@ -208,7 +203,7 @@ impl AddTone for App {
 ///
 /// A game that declares a tone and forgets the colour would otherwise see
 /// its rows silently in the text colour and wonder why; this names them.
-pub fn report_unset_tones(tones: Res<Tones>, palette: Res<Palette>) {
+pub(crate) fn report_unset_tones(tones: Res<Tones>, palette: Res<Palette>) {
     let missing = palette.unset(&tones);
     if !missing.is_empty() {
         warn!("these tones have no colour and will draw as text: {}", missing.join(", "));

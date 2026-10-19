@@ -73,24 +73,18 @@ impl FileBackend {
     }
 
     /// Saves next to the running executable.
-    pub fn beside_executable() -> Self {
+    pub(crate) fn beside_executable() -> Self {
         Self::new(Self::dir_beside_executable())
     }
 
     /// The directory the running executable is in, or the working
     /// directory when that cannot be found.
-    pub fn dir_beside_executable() -> std::path::PathBuf {
+    pub(crate) fn dir_beside_executable() -> std::path::PathBuf {
         std::env::current_exe().ok().and_then(|exe| exe.parent().map(|d| d.to_path_buf())).unwrap_or_else(|| std::path::PathBuf::from("."))
     }
 
-    /// Files ending in `.extension` rather than `.save.ron`.
-    pub fn with_extension(mut self, extension: impl Into<String>) -> Self {
-        self.extension = extension.into();
-        self
-    }
-
     /// Where `slot` is written.
-    pub fn path(&self, slot: &str) -> std::path::PathBuf {
+    pub(crate) fn path(&self, slot: &str) -> std::path::PathBuf {
         self.dir.join(format!("{slot}.{}", self.extension))
     }
 }

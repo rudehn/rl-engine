@@ -179,7 +179,7 @@ impl ShapeKind {
     /// largest box. A cave never fills its box, so that one is a bound
     /// rather than a promise. None for a passage, which is no room and has
     /// nothing stamped in it.
-    pub fn largest_rooms(self) -> Vec<(i32, i32)> {
+    pub(crate) fn largest_rooms(self) -> Vec<(i32, i32)> {
         match self {
             ShapeKind::Rectangle { w, h } | ShapeKind::Cave { w, h, .. } => vec![(w.1, h.1)],
             ShapeKind::Cross { long, short } => vec![(long.1, short.1), (short.1, long.1)],

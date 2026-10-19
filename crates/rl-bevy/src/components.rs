@@ -33,7 +33,7 @@ pub struct Actor;
 /// Almost always an [`Actor`] too, and then the one actor the game waits on
 /// for input. One that is not an actor is an onlooker: it is never dealt a
 /// turn, so the loop waits on nobody and runs at its
-/// [`Pace`](crate::turn::Pace), while everything that asks what the player
+/// `Pace`, while everything that asks what the player
 /// sees asks the onlooker. A run somebody watches and nobody plays is that.
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct Player;
@@ -115,7 +115,7 @@ impl Viewshed {
     }
 
     /// Whether this is one that [sees everywhere](Self::everywhere).
-    pub fn sees_everywhere(&self) -> bool {
+    pub(crate) fn sees_everywhere(&self) -> bool {
         self.everywhere
     }
 

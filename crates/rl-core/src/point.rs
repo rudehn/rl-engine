@@ -33,11 +33,6 @@ impl Point {
     pub const fn offset(self, dx: i32, dy: i32) -> Self {
         Self { x: self.x + dx, y: self.y + dy }
     }
-
-    /// `(x, y)` as a tuple.
-    pub const fn tuple(self) -> (i32, i32) {
-        (self.x, self.y)
-    }
 }
 
 impl PartialOrd for Point {
@@ -148,7 +143,7 @@ impl Rect {
     }
 
     /// Whether the rectangle covers no cells.
-    pub const fn is_empty(&self) -> bool {
+    pub(crate) const fn is_empty(&self) -> bool {
         self.width == 0 || self.height == 0
     }
 
@@ -218,7 +213,8 @@ impl Rect {
     }
 
     /// Every cell strictly inside the border ring, row-major.
-    pub fn interior(self) -> impl Iterator<Item = Point> {
+    #[cfg(test)]
+    pub(crate) fn interior(self) -> impl Iterator<Item = Point> {
         self.inflate(-1).cells()
     }
 

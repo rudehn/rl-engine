@@ -81,7 +81,7 @@ impl Piece {
     /// drawn hundreds of times as a floor accretes, and asking the list of
     /// every cell beside every cell was a tenth of what growing a floor of
     /// caves cost.
-    pub fn from_cells(mut cells: Vec<Point>) -> Self {
+    pub(crate) fn from_cells(mut cells: Vec<Point>) -> Self {
         cells.sort_by_key(|p| (p.y, p.x));
         cells.dedup();
         let bounds = bounds_of(&cells);
@@ -331,7 +331,7 @@ pub struct Opening {
 /// The cell a share of a side of `side` cells falls on, rounded: nought is
 /// the first cell and a hundred the last, so a share names the same part
 /// of a map at any size.
-pub fn cell_at_share(pct: u32, side: i32) -> i32 {
+pub(crate) fn cell_at_share(pct: u32, side: i32) -> i32 {
     ((i64::from(pct) * i64::from(side - 1) + 50) / 100) as i32
 }
 

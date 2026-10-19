@@ -70,12 +70,12 @@ impl Known {
     }
 
     /// Records `ability`.
-    pub fn learn(&mut self, ability: AbilityId) {
+    pub(crate) fn learn(&mut self, ability: AbilityId) {
         self.0.insert(ability);
     }
 
     /// Forgets everything.
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.0.clear();
     }
 
@@ -89,13 +89,9 @@ impl Known {
         self.0.iter().copied()
     }
 
-    /// How many.
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
     /// Whether nothing is known.
-    pub fn is_empty(&self) -> bool {
+    #[cfg(test)]
+    pub(crate) fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 }
@@ -125,15 +121,8 @@ impl Pools {
         self.0.insert(stat, value);
     }
 
-    /// Adds `amount`, never above `max`, and returns the new value.
-    pub fn fill(&mut self, stat: StatId, amount: i32, max: i32) -> i32 {
-        let now = (self.get(stat) + amount).min(max);
-        self.set(stat, now);
-        now
-    }
-
     /// Takes `amount` off, never below zero.
-    pub fn spend(&mut self, stat: StatId, amount: i32) {
+    pub(crate) fn spend(&mut self, stat: StatId, amount: i32) {
         let now = (self.get(stat) - amount).max(0);
         self.set(stat, now);
     }
@@ -349,7 +338,7 @@ pub struct Landed {
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct Reflects;
 
-/// Written each time [`Bystanders::reflect`] turns a landing back: the
+/// Written each time `Bystanders::reflect` turns a landing back: the
 /// body [`Reflects`] marked, and whoever aimed the use, now the one it
 /// lands on instead.
 ///
@@ -382,7 +371,7 @@ pub struct Reflected {
 /// is written when the use is made and the landing is worked out later,
 /// when its trigger lands.
 #[derive(Message, Debug, Clone, PartialEq, Eq)]
-pub struct LandedOn {
+pub(crate) struct LandedOn {
     /// Who aimed it.
     pub user: Entity,
     /// What it was: an ability, or the `use` trigger of the thing used.
@@ -397,7 +386,7 @@ pub struct LandedOn {
 
 impl LandedOn {
     /// What `landing` reports as it comes down.
-    pub fn of(landing: &Landing) -> Self {
+    pub(crate) fn of(landing: &Landing) -> Self {
         Self { user: landing.user, source: landing.source, targets: landing.targets.clone(), turned_by: landing.turned_by.clone() }
     }
 
@@ -406,7 +395,7 @@ impl LandedOn {
     ///
     /// A body that turned it back was aimed at as surely as one it landed
     /// on, so a bolt reflected onto its own caster still counts.
-    pub fn reached_another(&self) -> bool {
+    pub(crate) fn reached_another(&self) -> bool {
         !self.turned_by.is_empty() || self.targets.iter().any(|t| *t != self.user)
     }
 }
@@ -415,7 +404,7 @@ impl LandedOn {
 /// reflecting body never shifts a single roll combat or an effect already
 /// drew: the same reasoning [`crate::minds::MindRng`] is kept apart for.
 #[derive(Resource, Debug)]
-pub struct ReflectRng(pub rand::rngs::StdRng);
+pub(crate) struct ReflectRng(pub rand::rngs::StdRng);
 
 impl crate::seed::Stream for ReflectRng {
     fn for_run(seed: RunSeed) -> Self {
@@ -476,7 +465,7 @@ impl Bystanders<'_, '_> {
     /// landing adds nothing to what it lands, and a thing that lands its
     /// effects stronger sets its own bonus on it.
     ///
-    /// Never reflects: [`Self::reflect`] is a second, explicit step, since
+    /// Never reflects: `Self::reflect` is a second, explicit step, since
     /// this same call also answers the targeting cursor's preview and a
     /// refused aim, where nothing should be spent or decided yet, and a
     /// landing only one of the resolvers actually carries out.
@@ -562,7 +551,7 @@ impl Bystanders<'_, '_> {
     ///
     /// Writes a [`Reflected`] for every target it turns back; a target
     /// left standing where it was aimed writes none.
-    pub fn reflect(&mut self, landing: &mut Landing, targeting: Targeting, map: &WorldMap) {
+    pub(crate) fn reflect(&mut self, landing: &mut Landing, targeting: Targeting, map: &WorldMap) {
         let user = landing.user;
         let source = landing.source;
         let mut landed: Vec<Entity> = Vec::with_capacity(landing.targets.len());
@@ -844,7 +833,7 @@ fn spend_tagged(carried: &[Entity], tag: TagId, count: u16, state: &mut UserStat
 /// learn how an ability is paid for, and a menu, which wants `refused` as
 /// well so it can grey a row and say why.
 ///
-/// Read through [`usable_by`](Self::usable_by) and [`why_for`](Self::why_for),
+/// Read through `usable_by` and [`why_for`](Self::why_for),
 /// which answer only for the actor it was worked out for: it is rebuilt
 /// every pass, so a reader holding last pass's actor would otherwise act
 /// on someone else's abilities.
@@ -860,14 +849,9 @@ pub struct Offered {
 }
 
 impl Offered {
-    /// Who holds the turn it was worked out for, if anyone does.
-    pub fn actor(&self) -> Option<Entity> {
-        self.actor
-    }
-
     /// What `actor` can use now, empty when it was worked out for someone
     /// else.
-    pub fn usable_by(&self, actor: Entity) -> &[Usable] {
+    pub(crate) fn usable_by(&self, actor: Entity) -> &[Usable] {
         if self.actor == Some(actor) { &self.usable } else { &[] }
     }
 
@@ -888,7 +872,13 @@ impl Offered {
 /// offered an ability that would be refused, which is what keeps a
 /// monster from spending its turn on something it cannot pay for, and a
 /// menu never greys a row the resolver would have accepted.
-pub fn offer_abilities(mut offered: ResMut<Offered>, abilities: Res<Abilities>, turns: Res<Turns>, state: UserState, holding: Query<Entity, With<MyTurn>>) {
+pub(crate) fn offer_abilities(
+    mut offered: ResMut<Offered>,
+    abilities: Res<Abilities>,
+    turns: Res<Turns>,
+    state: UserState,
+    holding: Query<Entity, With<MyTurn>>,
+) {
     offered.actor = None;
     offered.usable.clear();
     offered.refused.clear();
@@ -910,7 +900,7 @@ pub fn offer_abilities(mut offered: ResMut<Offered>, abilities: Res<Abilities>, 
 /// Tells the mind holding the turn what it may use: what the gate offered
 /// it, in [`PerceiveSet::Annotate`](crate::plugin::PerceiveSet::Annotate),
 /// so a tactic is never offered an ability the resolver would refuse.
-pub fn perceive_abilities(mut thinking: ResMut<crate::minds::Thinking>, offered: Res<Offered>) {
+pub(crate) fn perceive_abilities(mut thinking: ResMut<crate::minds::Thinking>, offered: Res<Offered>) {
     let Some(thinker) = thinking.actor() else { return };
     let usable = offered.usable_by(thinker).to_vec();
     if let Some(snapshot) = thinking.snapshot_mut() {
@@ -933,7 +923,7 @@ pub fn perceive_abilities(mut thinking: ResMut<crate::minds::Thinking>, offered:
 /// that flies, which aimed at its own user goes nowhere, and an effect
 /// asked reads the targets instead. What the menu offers the player is untouched: the
 /// player is offered what they can afford and judges what it is worth.
-pub fn weigh_self_abilities(world: &mut World) {
+pub(crate) fn weigh_self_abilities(world: &mut World) {
     let Some(thinking) = world.get_resource::<crate::minds::Thinking>() else { return };
     let (Some(thinker), Some(usable)) = (thinking.actor(), thinking.snapshot().map(|s| s.usable.clone())) else { return };
     if !usable.iter().any(|u| u.aim == Aim::SelfOnly) {

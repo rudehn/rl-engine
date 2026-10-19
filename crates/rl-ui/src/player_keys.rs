@@ -81,7 +81,7 @@ impl PlayerVerb {
     /// roguelike the engine has carried chose: Enter, `>` and `<` for the
     /// way underfoot, `.` and the numpad's middle for a wait, `g` and `,`
     /// to pick up, `f` to fire.
-    pub fn default_keys(self) -> Keys {
+    pub(crate) fn default_keys(self) -> Keys {
         use KeyCode::*;
         match self {
             PlayerVerb::Walk => Keys::Directions { shift: false },
@@ -116,11 +116,6 @@ impl Otherwise {
     /// what the turns did.
     pub fn say(text: impl Into<String>) -> Self {
         Otherwise::Say { text: text.into(), tone: Tones::MUTED }
-    }
-
-    /// The line, in `tone`.
-    pub fn say_in(text: impl Into<String>, tone: ToneId) -> Self {
-        Otherwise::Say { text: text.into(), tone }
     }
 }
 
@@ -217,7 +212,7 @@ impl PlayerKeysPlugin {
         self.with(PlayerVerb::Throw, group, action, otherwise)
     }
 
-    /// Binds `verb` to `keys` in place of its [default](PlayerVerb::default_keys).
+    /// Binds `verb` to `keys` in place of its default.
     ///
     /// # Panics
     /// Panics when `verb` was not named first: a key for a verb nobody
@@ -261,18 +256,12 @@ impl Plugin for PlayerKeysPlugin {
 /// The verbs [`PlayerKeysPlugin`] declared, and what each says with
 /// nothing to act on.
 #[derive(Resource, Debug, Clone)]
-pub struct PlayerKeys {
+pub(crate) struct PlayerKeys {
     verbs: Vec<(PlayerVerb, ControlId, Otherwise)>,
     thrown_first: Option<String>,
 }
 
-impl PlayerKeys {
-    /// The control `verb` was declared as, if the game named it: for a
-    /// hint or a system of the game's that reads the same key.
-    pub fn control(&self, verb: PlayerVerb) -> Option<ControlId> {
-        self.verbs.iter().find(|(v, ..)| *v == verb).map(|(_, id, _)| *id)
-    }
-}
+impl PlayerKeys {}
 
 /// The player while it holds the turn.
 type PlayerTurn<'w, 's> = Query<'w, 's, Entity, (With<Player>, With<MyTurn>)>;

@@ -3,7 +3,7 @@
 //! A game names a thing once, singular, as it would say one of them:
 //! `pebble`, `throwing knife`, `bottle of water`. Everything that shows a
 //! name asks here how to say it: [`listed`] for a row in a list, `5
-//! pebbles`; [`counted`] for a sentence, `a pebble` or `5 pebbles`.
+//! pebbles`; `counted` for a sentence, `a pebble` or `5 pebbles`.
 //! Storing a second name for the plural was the alternative, and it is a
 //! second string on every stackable thing to keep in step with the first.
 //!

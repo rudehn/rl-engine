@@ -63,7 +63,7 @@ pub enum Aim {
 impl Aim {
     /// Whether an actor at `relation` to the user is what this ability is
     /// looking for. `None` is a cell with nobody on it.
-    pub fn wants(self, relation: Option<Relation>) -> bool {
+    pub(crate) fn wants(self, relation: Option<Relation>) -> bool {
         match (self, relation) {
             (Aim::Ground, _) => true,
             (Aim::SelfOnly, _) => false,

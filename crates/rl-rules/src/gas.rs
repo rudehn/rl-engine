@@ -194,7 +194,7 @@ pub const FULL: u8 = u8::MAX;
 /// Puts `amount` of gas at `p`, in a cell `holds` says gas can be in.
 ///
 /// What the cell has room for stays there. The rest spills outward at once,
-/// nearest cell first, filling each to [`FULL`] and passing through the ones
+/// nearest cell first, filling each to `FULL` and passing through the ones
 /// already full, so a second release over a cloud makes it wider rather than
 /// denser, and walls shape it: the same amount is a round cloud in the open
 /// and a long one down a corridor. `roll`, a number per cell, nudges which of
@@ -269,7 +269,7 @@ const SWIRL_PATCH: i32 = 3;
 ///   forever.
 ///
 /// The densest cell therefore loses at least one unit every turn, and a
-/// cloud is gone within [`FULL`] turns at the very longest.
+/// cloud is gone within `FULL` turns at the very longest.
 pub fn diffuse(field: &mut TileField<u8>, def: &GasDef, holds: impl Fn(Point) -> bool, roll: impl Fn(Point) -> u32) {
     if field.is_clear() {
         return;

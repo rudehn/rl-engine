@@ -71,7 +71,7 @@ pub struct FactSet;
 /// and the one after the frame's turns, so neither feeds a fact the other
 /// already has.
 #[derive(Resource, Default)]
-pub struct FactsRead(MessageCursor<Happened>);
+pub(crate) struct FactsRead(MessageCursor<Happened>);
 
 /// Feeds every fact not yet fed to the tracker and the ledger, and ends
 /// the run won when one finishes a quest marked `victory`, saying the
@@ -83,7 +83,7 @@ pub struct FactsRead(MessageCursor<Happened>);
 /// after it. Again in `PostUpdate`, for a fact written outside the turns,
 /// where no pass would feed it until the next one ran, which a held turn
 /// may put off for longer than a message is kept.
-pub fn track_facts(
+pub(crate) fn track_facts(
     facts: Res<Messages<Happened>>,
     mut read: ResMut<FactsRead>,
     quests: Option<ResMut<Quests>>,
@@ -106,11 +106,6 @@ pub fn track_facts(
             c.0.feed(&fact.0);
         }
     }
-}
-
-/// Whether a game inserted anything that listens to facts.
-pub fn anyone_listening(quests: Option<Res<Quests>>, counters: Option<Res<Counters>>) -> bool {
-    quests.is_some() || counters.is_some()
 }
 
 /// Forgets what the run that is ending fed: every counter back at nought

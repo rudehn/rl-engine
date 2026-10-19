@@ -15,15 +15,15 @@
 //! never blocks a doorway and can never be struck a second time.
 //!
 //! Beside the body the engine keeps a twin of the actor as it lived, for a
-//! game that stands bodies back up. [`keep_life`] takes it the moment the
-//! actor dies, through [`take_twin`], which copies every component onto an
-//! entity no ordinary query sees and names, through [`uncopied`], any it
+//! game that stands bodies back up. `keep_life` takes it the moment the
+//! actor dies, through `take_twin`, which copies every component onto an
+//! entity no ordinary query sees and names, through `uncopied`, any it
 //! could not. [`Life`] links the two, and the twin lasts exactly as long
 //! as the body is remains. [`lay_down`] is the one lay-down a death and a
 //! continued save both go through. [`revive`], or
 //! [`ReviveCommands::revive`] from a system, stands a body back up from
 //! its twin, on its own cell or the nearest free one within
-//! [`STANDING_ROOM`], and writes [`Revived`].
+//! `STANDING_ROOM`, and writes [`Revived`].
 //!
 //! What the engine will not say is what remains *are*. There is no name,
 //! no glyph, no rot timer, no loot, and no answer to whether they can be
@@ -110,7 +110,7 @@ fn end_life(mut world: DeferredWorld, ctx: HookContext) {
 /// Bevy copies a component only if it is `Clone` and skips one that is
 /// not without a word, which would leave a revived actor quietly short of
 /// something. Named rather than counted, so the report says what to fix.
-pub fn uncopied(world: &World, from: Entity, to: Entity) -> Vec<String> {
+pub(crate) fn uncopied(world: &World, from: Entity, to: Entity) -> Vec<String> {
     let copied: Vec<ComponentId> = world.entity(to).archetype().components().to_vec();
     world
         .entity(from)
@@ -131,7 +131,7 @@ pub fn uncopied(world: &World, from: Entity, to: Entity) -> Vec<String> {
 /// remembering to list it. A second call on a body that already has a twin
 /// does nothing: a death takes one, and laying the body down afterwards
 /// must not take a second of what is by then a body.
-pub fn take_twin(world: &mut World, entity: Entity) {
+pub(crate) fn take_twin(world: &mut World, entity: Entity) {
     if world.get_entity(entity).is_err() || world.get::<Life>(entity).is_some() {
         return;
     }
@@ -152,7 +152,7 @@ pub fn take_twin(world: &mut World, entity: Entity) {
 /// `CleanupSet::Remove`, where the engine takes the actor out of the world.
 /// The same test as [`leave_remains`] decides who, so every body has a
 /// twin and nothing else does.
-pub fn keep_life(mut commands: Commands, mut deaths: MessageReader<DeathEvent>, leaves: Query<(), With<LeavesRemains>>) {
+pub(crate) fn keep_life(mut commands: Commands, mut deaths: MessageReader<DeathEvent>, leaves: Query<(), With<LeavesRemains>>) {
     for death in deaths.read() {
         if death.was_player || leaves.get(death.entity).is_err() {
             continue;
@@ -175,7 +175,7 @@ pub struct Revived {
 /// How far from its body a revived actor may stand when something stands
 /// on the body: far enough to find room in a crowd, near enough that it
 /// is plainly the same one getting up.
-pub const STANDING_ROOM: i32 = 2;
+pub(crate) const STANDING_ROOM: i32 = 2;
 
 /// Stands `body` back up with `health`, and says whether it could.
 ///
@@ -199,7 +199,7 @@ pub const STANDING_ROOM: i32 = 2;
 ///
 /// Refused, with a warning, for anything that is not remains with a twin,
 /// and for a body with someone on it and no free cell within
-/// [`STANDING_ROOM`].
+/// `STANDING_ROOM`.
 pub fn revive(world: &mut World, body: Entity, health: i32) -> bool {
     // `Life` goes on in the pass an actor dies and `Remains` only once it is
     // laid down, so an actor still dying has a twin and is not yet a body:
@@ -384,7 +384,7 @@ impl RemainsNaming {
 /// Used twice: when an actor becomes remains, and when a save lays one
 /// back down, because a game's record of a monster says what it was and
 /// not what became of it.
-pub fn name_as_remains(world: &mut World, entity: Entity) {
+pub(crate) fn name_as_remains(world: &mut World, entity: Entity) {
     let naming = world.get_resource::<RemainsNaming>().cloned().unwrap_or_default();
     let Some(was) = world.get::<Name>(entity).map(|n| n.as_str().to_string()) else { return };
     let becomes = naming.name_for(&was);
@@ -421,7 +421,7 @@ pub fn name_as_remains(world: &mut World, entity: Entity) {
 /// stands up offering and answering what the living actor did; a game
 /// that wants a body to offer something puts that on it at
 /// [`RemainsLeft`].
-pub type WasLiving = (
+pub(crate) type WasLiving = (
     Dead,
     Actor,
     Blocks,
@@ -441,7 +441,7 @@ pub type WasLiving = (
 /// Keeps the dead that leave remains, and takes the life off them.
 ///
 /// In [`CleanupSet::Remove`](crate::plugin::CleanupSet::Remove) after
-/// [`process_deaths`](crate::combat::process_deaths), which is where an
+/// `process_deaths`, which is where an
 /// actor loses its turn, its cell in the index and its [`Position`]: the
 /// position is put back here, at the cell it died on, because remains lie
 /// where the actor fell rather than where a game would have to remember

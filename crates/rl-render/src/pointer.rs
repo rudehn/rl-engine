@@ -1,10 +1,10 @@
 //! Where the mouse is, in cells.
 //!
-//! The grid is laid out for its window by [`fit`], so which cell a pixel
+//! The grid is laid out for its window by `fit`, so which cell a pixel
 //! falls in is that arithmetic run backwards, and nothing here asks the
-//! camera or a sprite. [`Pointer`] is the answer kept current once a frame:
+//! camera or a sprite. `Pointer` is the answer kept current once a frame:
 //! the terminal cell under the cursor, and through a
-//! [`MapView`] the map tile drawn there. What a click on a
+//! `MapView` the map tile drawn there. What a click on a
 //! cell means is the game's; the buttons are Bevy's own
 //! `ButtonInput<MouseButton>`.
 

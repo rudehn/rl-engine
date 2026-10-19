@@ -33,7 +33,7 @@ pub enum EngineState {
 
 impl EngineState {
     /// Whether there is a world worth drawing.
-    pub const fn shows_world(self) -> bool {
+    pub(crate) const fn shows_world(self) -> bool {
         matches!(self, EngineState::Playing | EngineState::Over)
     }
 }
@@ -130,7 +130,7 @@ impl Restart {
 
 /// Ends the run for the first [`RunOver`] of the frame: keeps the
 /// [`Ending`] and leaves [`EngineState::Playing`].
-pub fn end_runs(
+pub(crate) fn end_runs(
     mut overs: MessageReader<RunOver>,
     seed: Option<Res<crate::seed::Seed>>,
     turns: Res<crate::turn::Turns>,

@@ -33,7 +33,7 @@ use crate::view::{InspectView, InspectViewPlugin, WorkRow};
 
 /// Where the inspect panel is drawn.
 #[derive(Resource, Debug, Clone)]
-pub struct InspectLayout {
+pub(crate) struct InspectLayout {
     /// The terminal cells it occupies, border included.
     pub rect: Rect,
     /// Where it goes while the cursor is under `rect`. `None` mirrors
@@ -144,7 +144,7 @@ impl Plugin for InspectPanel {
 /// A game that wants a fifth colour for its worst tier declares a tone and
 /// writes its own panel; this is the honest four-way reading of two blow
 /// counts.
-pub fn outlook_tone(outlook: Outlook) -> ToneId {
+pub(crate) fn outlook_tone(outlook: Outlook) -> ToneId {
     match outlook {
         Outlook::Easy => Tones::GOOD,
         Outlook::Favorable => Tones::GOOD,
@@ -163,7 +163,7 @@ pub struct InspectPlacement(pub Option<Rect>);
 ///
 /// Without a [`MapView`] there is no cursor on screen to keep clear, so
 /// the panel stays where the game put it.
-pub fn place_inspect(
+pub(crate) fn place_inspect(
     layout: Res<InspectLayout>,
     view: Res<InspectView>,
     modals: Res<Modals>,
@@ -189,7 +189,7 @@ pub fn place_inspect(
 }
 
 /// One line saying what someone is working at, from a template.
-pub fn working_line(template: &str, work: &WorkRow) -> String {
+pub(crate) fn working_line(template: &str, work: &WorkRow) -> String {
     let left = if work.left == 1 { "1 turn".to_string() } else { format!("{} {}", work.left, rl_core::noun::plural("turn")) };
     let line = template
         .replace("{doing}", &work.doing)
@@ -204,7 +204,7 @@ pub fn working_line(template: &str, work: &WorkRow) -> String {
 }
 
 /// Paints the cursor and the panel, while the cursor is open.
-pub fn draw_inspect(
+pub(crate) fn draw_inspect(
     mut terminal: ResMut<Terminal>,
     layout: Res<InspectLayout>,
     placed: Res<InspectPlacement>,

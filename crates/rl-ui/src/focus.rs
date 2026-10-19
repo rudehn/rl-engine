@@ -4,7 +4,7 @@
 //! Three things point at something in sight: the nearby list, the look
 //! cursor and the targeting cursor. A player who presses Tab in one expects
 //! the order it steps in and the thing it lands on to be the order and the
-//! thing in the others, so both are written once. [`InSight`] is the list,
+//! thing in the others, so both are written once. `InSight` is the list,
 //! actors nearest first and then things nearest first, which is the order
 //! [`NearbyView`](crate::NearbyView) prints; [`Focus`] is the one entity
 //! picked out of it, which the nearby panel highlights, the look cursor
@@ -12,7 +12,7 @@
 //!
 //! Focus is held by entity rather than by cell, so two things on one tile
 //! are two stops. A focus on something that has since left sight is not an
-//! error: every reader checks it against the list with [`Focus::within`]
+//! error: every reader checks it against the list with `Focus::within`
 //! and treats a stale one as none.
 
 use bevy::prelude::*;
@@ -25,9 +25,9 @@ use crate::cursor::CursorInput;
 use crate::modal::Modals;
 
 /// The heading the cursors' keys are listed under on the controls screen.
-pub const CURSOR_GROUP: &str = "Look and aim";
+pub(crate) const CURSOR_GROUP: &str = "Look and aim";
 /// The heading the keys that open and close screens are listed under.
-pub const SCREENS_GROUP: &str = "Screens";
+pub(crate) const SCREENS_GROUP: &str = "Screens";
 
 /// Declares the keys that step the [`Focus`], in the words every plugin
 /// that reads them uses, so the controls screen lists them once however
@@ -75,14 +75,14 @@ type Sightable = (Without<Dead>, With<Glyph>, Without<Hidden>, Without<Scenery>)
 /// [`PlayerSight::shows`], the question the map asks too, so a thing
 /// [`Concealed`] in the dark is neither drawn nor listed.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct InSight<'w, 's> {
+pub(crate) struct InSight<'w, 's> {
     sight: PlayerSight<'w, 's>,
     seen: Query<'w, 's, Seen, Sightable>,
 }
 
 impl InSight<'_, '_> {
     /// The player and the cell it stands on, when there is exactly one.
-    pub fn viewer(&self) -> Option<(Entity, Point)> {
+    pub(crate) fn viewer(&self) -> Option<(Entity, Point)> {
         self.sight.viewer().map(|(entity, at, _)| (entity, at))
     }
 
@@ -92,7 +92,7 @@ impl InSight<'_, '_> {
     /// Ties go by name and then by entity, so two things at one distance do
     /// not trade places from one frame to the next, and Tab pressed twice
     /// from one place lands on the same second thing in two runs of a seed.
-    pub fn list(&self) -> Vec<Sighting> {
+    pub(crate) fn list(&self) -> Vec<Sighting> {
         let Some((me, origin)) = self.viewer() else { return Vec::new() };
         let mut found: Vec<(Sighting, &str)> = self
             .seen
@@ -107,7 +107,7 @@ impl InSight<'_, '_> {
 
 /// What the player can see, in list order, collected once a phase.
 ///
-/// [`InSight::list`] is a full scan, two allocations and a sort, and five
+/// `InSight::list` is a full scan, two allocations and a sort, and five
 /// systems used to ask for it: `browse` and each cursor while the keys are
 /// read, and each view's collector while the frame is drawn. Nothing moves
 /// within either phase, so one collection at the head of each serves every
@@ -128,7 +128,7 @@ impl Sighted {
 
 /// Refills [`Sighted`]. Runs at the head of the input phase and again at
 /// the head of [`ViewSet::Collect`](crate::ViewSet::Collect).
-pub fn collect_sighted(mut sighted: ResMut<Sighted>, sight: InSight) {
+pub(crate) fn collect_sighted(mut sighted: ResMut<Sighted>, sight: InSight) {
     sighted.0 = sight.list();
 }
 
@@ -137,7 +137,7 @@ pub fn collect_sighted(mut sighted: ResMut<Sighted>, sight: InSight) {
 /// Stepped by Tab in the nearby list and by either cursor, and read by all
 /// three, so a thing picked out in one is the thing the next one opens on.
 /// It may name something that has since left sight: read it through
-/// [`Focus::within`] rather than bare.
+/// `Focus::within` rather than bare.
 #[derive(Resource, Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Focus(Option<Entity>);
 
@@ -153,18 +153,18 @@ impl Focus {
     }
 
     /// Lets go of whatever was picked out.
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.0 = None;
     }
 
     /// The picked-out sighting, if it is one of `list`.
-    pub fn within<'a>(&self, list: &'a [Sighting]) -> Option<&'a Sighting> {
+    pub(crate) fn within<'a>(&self, list: &'a [Sighting]) -> Option<&'a Sighting> {
         self.0.and_then(|entity| list.iter().find(|s| s.entity == entity))
     }
 
     /// Picks out the next of `list`, or the previous when `back`, and
     /// returns it. See [`cycle`] for where a step from nothing lands.
-    pub fn step(&mut self, list: &[Sighting], back: bool) -> Option<Sighting> {
+    pub(crate) fn step(&mut self, list: &[Sighting], back: bool) -> Option<Sighting> {
         let next = cycle(list, self.0, back).copied();
         self.0 = next.map(|s| s.entity);
         next
@@ -177,7 +177,7 @@ impl Focus {
 /// The first, or the last going back, when `from` is none of them: where a
 /// fresh press should land, and where a cursor nudged off its target should
 /// snap back to. `None` only when there is nothing to step through.
-pub fn cycle(list: &[Sighting], from: Option<Entity>, back: bool) -> Option<&Sighting> {
+pub(crate) fn cycle(list: &[Sighting], from: Option<Entity>, back: bool) -> Option<&Sighting> {
     let n = list.len();
     if n == 0 {
         return None;
@@ -202,7 +202,7 @@ pub fn cycle(list: &[Sighting], from: Option<Entity>, back: bool) -> Option<&Sig
 /// which is what the player sees as they press. Only with nothing open:
 /// inside a cursor the same keys move the cursor, which moves the focus
 /// with it, through everything in sight.
-pub fn browse(input: CursorInput, modals: Res<Modals>, sighted: Res<Sighted>, rail: Res<crate::NearbyView>, mut focus: ResMut<Focus>) {
+pub(crate) fn browse(input: CursorInput, modals: Res<Modals>, sighted: Res<Sighted>, rail: Res<crate::NearbyView>, mut focus: ResMut<Focus>) {
     if modals.any_open() {
         return;
     }

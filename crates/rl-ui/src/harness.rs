@@ -10,7 +10,7 @@ use rl_core::Point;
 
 /// A world, a player standing in it, and the ids a test needs to spawn
 /// something the player can see.
-pub struct Stage {
+pub(crate) struct Stage {
     /// The app, already updated into `EngineState::Playing`.
     pub app: App,
     /// The player entity.
@@ -32,7 +32,7 @@ impl Stage {
 
     /// The same, with `setup` run before play begins, for a plugin that
     /// asserts on a resource the game is meant to have inserted by then.
-    pub fn new_with<M>(plugins: impl bevy::app::Plugins<M>, setup: impl FnOnce(&mut App)) -> Stage {
+    pub(crate) fn new_with<M>(plugins: impl bevy::app::Plugins<M>, setup: impl FnOnce(&mut App)) -> Stage {
         let mut app = rl_bevy::plugin::headless_app();
         app.add_plugins((FovPlugin, CombatPlugin, ItemsPlugin));
         app.add_plugins((rl_bevy::testing::KeyScriptPlugin, crate::UiPlugin));
@@ -73,7 +73,7 @@ impl Stage {
     }
 
     /// Spawns an actor `dx, dy` from the player, hostile by default.
-    pub fn actor(&mut self, name: &str, glyph: char, dx: i32, dy: i32) -> Entity {
+    pub(crate) fn actor(&mut self, name: &str, glyph: char, dx: i32, dy: i32) -> Entity {
         let at = self.at.offset(dx, dy);
         let (kind, theirs) = (self.kind, self.theirs);
         self.app
@@ -93,30 +93,30 @@ impl Stage {
     }
 
     /// Spawns a thing on the ground `dx, dy` from the player.
-    pub fn thing(&mut self, name: &str, glyph: char, dx: i32, dy: i32) -> Entity {
+    pub(crate) fn thing(&mut self, name: &str, glyph: char, dx: i32, dy: i32) -> Entity {
         let at = self.at.offset(dx, dy);
         self.app.world_mut().spawn((Item, Position(at), Name::new(name.to_string()), rl_render::Glyph::new(glyph, Color::WHITE).on_layer(2))).id()
     }
 
     /// Runs a frame.
-    pub fn tick(&mut self) {
+    pub(crate) fn tick(&mut self) {
         self.app.update();
     }
 
     /// Resizes the terminal, for a panel test that asserts on whole rows.
-    pub fn screen(mut self, width: i32, height: i32) -> Stage {
+    pub(crate) fn screen(mut self, width: i32, height: i32) -> Stage {
         self.app.insert_resource(rl_render::Terminal::new(width, height, Vec2::ONE));
         self.app.update();
         self
     }
 
     /// One row of the terminal as text, trailing blanks trimmed.
-    pub fn row(&self, y: i32) -> String {
+    pub(crate) fn row(&self, y: i32) -> String {
         crate::testing::row(&self.app, y).trim_end().to_string()
     }
 
     /// Every row of the terminal, for an assertion over the whole panel.
-    pub fn rows(&self) -> Vec<String> {
+    pub(crate) fn rows(&self) -> Vec<String> {
         let height = self.app.world().resource::<rl_render::Terminal>().height();
         (0..height).map(|y| self.row(y)).collect()
     }
@@ -132,7 +132,7 @@ impl Stage {
 
     /// Presses every key in `keys` together for one frame, for a chord such
     /// as Shift with a letter.
-    pub fn chord(&mut self, keys: &[KeyCode]) {
+    pub(crate) fn chord(&mut self, keys: &[KeyCode]) {
         for key in keys {
             self.app.world_mut().resource_mut::<rl_bevy::testing::KeyScript>().press(*key);
         }

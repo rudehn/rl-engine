@@ -161,7 +161,7 @@ impl EngineSave {
     /// Captures the engine's state from `world`, the run's [`Seed`] included.
     /// Every actor in the queue is given a save id through `remap`, so call
     /// this after the game captured its own entities.
-    pub fn capture(world: &mut World, remap: &mut EntityRemap) -> Self {
+    pub(crate) fn capture(world: &mut World, remap: &mut EntityRemap) -> Self {
         let seed = world.resource::<Seed>().0;
         // The game's own entities, read before the queue hands ids to actors
         // the game never saved and so could never restore.
@@ -194,7 +194,7 @@ impl EngineSave {
     /// be spawned and bound in `remap` already; queue entries for ids
     /// not bound are dropped, and the occupancy index is rebuilt from
     /// whatever blocks stand on the current map.
-    pub fn restore(&self, world: &mut World, remap: &EntityRemap) {
+    pub(crate) fn restore(&self, world: &mut World, remap: &EntityRemap) {
         world.resource_mut::<WorldMap>().import(self.map.clone());
         world.resource_mut::<Knowledge>().import(self.knowledge.clone());
         if let Some(mut charts) = world.get_resource_mut::<rl_bevy::Charts>() {
@@ -265,8 +265,8 @@ mod tests {
             app.insert_resource(Seed(RunSeed(5)));
             EngineSave::capture(app.world_mut(), &mut remap)
         };
-        let text = crate::encode(1, &save).unwrap();
-        let back: EngineSave = crate::decode(1, &text).unwrap();
+        let text = crate::versioned::encode(1, &save).unwrap();
+        let back: EngineSave = crate::versioned::decode(1, &text).unwrap();
         assert_eq!(back.now, save.now);
         assert!(back.queue.iter().any(|(id, _)| *id == p_id), "the player is in the saved queue");
 
@@ -326,7 +326,7 @@ mod tests {
         }
         app.insert_resource(Seed(RunSeed(5)));
         let save = EngineSave::capture(app.world_mut(), &mut EntityRemap::new());
-        let back: EngineSave = crate::decode(1, &crate::encode(1, &save).unwrap()).unwrap();
+        let back: EngineSave = crate::versioned::decode(1, &crate::versioned::encode(1, &save).unwrap()).unwrap();
 
         let (mut app2, _) = fresh();
         back.restore(app2.world_mut(), &EntityRemap::new());
@@ -364,8 +364,8 @@ mod tests {
         }
         app.insert_resource(Seed(RunSeed(5)));
         let save = EngineSave::capture(app.world_mut(), &mut EntityRemap::new());
-        let text = crate::encode(1, &save).unwrap();
-        let back: EngineSave = crate::decode(1, &text).unwrap();
+        let text = crate::versioned::encode(1, &save).unwrap();
+        let back: EngineSave = crate::versioned::decode(1, &text).unwrap();
 
         let (mut app2, _) = fresh();
         app2.add_plugins(rl_bevy::LightingPlugin);
@@ -380,7 +380,10 @@ mod tests {
 
         // A save written before places had an ambient has no word on it.
         let text = ron::to_string(&save.map).unwrap();
-        let old = text.replace(&format!(",ambient:{}", ron::to_string(&dim).unwrap()), "").replace(&format!(",ambient:{}", ron::to_string(&lit).unwrap()), "");
+        let old = text
+            .replace(&format!(",ambient:{}", ron::to_string(&dim).unwrap()), "")
+            .replace(&format!(",ambient:{}", ron::to_string(&lit).unwrap()), "")
+            .replace(&format!(",ambient:{}", ron::to_string(&rl_grid::Light::DARK).unwrap()), "");
         assert!(!old.contains("ambient"), "{old}");
         let older: rl_bevy::WorldMapSave = ron::from_str(&old).unwrap();
         assert!(older.places.iter().all(|(_, p)| p.ambient == rl_grid::Light::DARK), "it loads, with every place dark");
@@ -397,15 +400,15 @@ mod tests {
         app.world_mut().resource_mut::<Knowledge>().see_still(|_| true, [(stairs, look)]);
         app.insert_resource(Seed(RunSeed(5)));
         let save = EngineSave::capture(app.world_mut(), &mut EntityRemap::new());
-        let text = crate::encode(1, &save).unwrap();
+        let text = crate::versioned::encode(1, &save).unwrap();
 
         let (mut app2, _) = fresh();
-        let back: EngineSave = crate::decode(1, &text).unwrap();
+        let back: EngineSave = crate::versioned::decode(1, &text).unwrap();
         back.restore(app2.world_mut(), &EntityRemap::new());
         assert_eq!(app2.world().resource::<Knowledge>().recalled(stairs), Some(look));
 
         let older = text.replace("recalled:", "ignored:");
-        let back: EngineSave = crate::decode(1, &older).expect("a save with no memory of things still reads");
+        let back: EngineSave = crate::versioned::decode(1, &older).expect("a save with no memory of things still reads");
         assert!(back.knowledge.recalled.is_empty());
     }
 
@@ -436,7 +439,7 @@ mod tests {
         let player_id = remap.save_id(player);
         let save = EngineSave::capture(app.world_mut(), &mut remap);
         assert!(!save.fields.fire.is_empty() && !save.fields.gases.is_empty(), "captured: {:?}", save.fields);
-        let back: EngineSave = crate::decode(1, &crate::encode(1, &save).unwrap()).unwrap();
+        let back: EngineSave = crate::versioned::decode(1, &crate::versioned::encode(1, &save).unwrap()).unwrap();
 
         let (mut app2, _) = fresh();
         burning(&mut app2);
@@ -474,7 +477,7 @@ mod tests {
             app.insert_resource(Seed(RunSeed(5)));
             EngineSave::capture(app.world_mut(), &mut remap)
         };
-        let back: EngineSave = crate::decode(1, &crate::encode(1, &save).unwrap()).unwrap();
+        let back: EngineSave = crate::versioned::decode(1, &crate::versioned::encode(1, &save).unwrap()).unwrap();
 
         let (mut app2, _) = fresh();
         let player2 = app2.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap)).id();
@@ -526,7 +529,7 @@ mod tests {
             app.insert_resource(Seed(RunSeed(5)));
             EngineSave::capture(app.world_mut(), &mut remap)
         };
-        let back: EngineSave = crate::decode(1, &crate::encode(1, &save).unwrap()).unwrap();
+        let back: EngineSave = crate::versioned::decode(1, &crate::versioned::encode(1, &save).unwrap()).unwrap();
 
         let (mut app2, _) = fresh();
         // What the game respawns from the wand's definition: full, with a
@@ -556,7 +559,7 @@ mod tests {
             app.insert_resource(Seed(RunSeed(5)));
             EngineSave::capture(app.world_mut(), &mut remap)
         };
-        let back: EngineSave = crate::decode(1, &crate::encode(1, &save).unwrap()).unwrap();
+        let back: EngineSave = crate::versioned::decode(1, &crate::versioned::encode(1, &save).unwrap()).unwrap();
 
         let (mut app2, _) = fresh();
         let plate2 = app2.world_mut().spawn(Pulse::every(800)).id();

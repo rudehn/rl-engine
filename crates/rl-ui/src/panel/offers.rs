@@ -54,11 +54,11 @@ use crate::tone::{Palette, Tones};
 use crate::view::offers::{OffersView, OffersViewPlugin};
 
 /// The name the offers modal is declared under.
-pub const OFFERS_MODAL: &str = "offers";
+pub(crate) const OFFERS_MODAL: &str = "offers";
 
 /// Where the screen is drawn, and what it says.
 #[derive(Resource, Debug, Clone)]
-pub struct OffersLayout {
+pub(crate) struct OffersLayout {
     /// The terminal cells it occupies.
     pub rect: Rect,
     /// Where it goes while the one choosing, or what offers a row, stands
@@ -102,7 +102,7 @@ pub struct OffersMenu {
 impl OffersMenu {
     /// Moves the cursor `by` rows over `rows` of them, wrapping at either
     /// end.
-    pub fn move_by(&mut self, by: i32, rows: usize) {
+    pub(crate) fn move_by(&mut self, by: i32, rows: usize) {
         if rows == 0 {
             self.selected = 0;
             return;
@@ -184,7 +184,7 @@ pub fn offers_modal(modals: &Modals) -> ModalId {
 /// One that offered one thing and did it is not here at all, because the bump
 /// became the interaction, and nor is an ally offering something, which
 /// the engine bumps as an ally and reports without `offers`.
-pub fn open_on_crowded_bump(mut bumped: MessageReader<Bumped>, view: Res<OffersView>, mut menu: ResMut<OffersMenu>, mut modals: ResMut<Modals>) {
+pub(crate) fn open_on_crowded_bump(mut bumped: MessageReader<Bumped>, view: Res<OffersView>, mut menu: ResMut<OffersMenu>, mut modals: ResMut<Modals>) {
     let modal = offers_modal(&modals);
     for ev in bumped.read() {
         if !ev.offers {
@@ -303,7 +303,7 @@ fn question(row: &crate::view::offers::OfferRow) -> Option<&str> {
 
 /// What the offers screen draws from.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct HereScreen<'w, 's> {
+pub(crate) struct HereScreen<'w, 's> {
     layout: Res<'w, OffersLayout>,
     view: Res<'w, OffersView>,
     keys: ControlInput<'w>,
@@ -342,7 +342,7 @@ fn cost(time: u32) -> String {
 
 /// Draws what is on offer here, the row picked out, and why a row cannot
 /// be taken up.
-pub fn draw_offers(mut terminal: ResMut<Terminal>, mut menu: ResMut<OffersMenu>, screen: HereScreen) {
+pub(crate) fn draw_offers(mut terminal: ResMut<Terminal>, mut menu: ResMut<OffersMenu>, screen: HereScreen) {
     let HereScreen { layout, view, keys, modals, palette, .. } = &screen;
     if !modals.is_open(offers_modal(modals)) {
         return;

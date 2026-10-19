@@ -4,7 +4,7 @@
 //! burns. Three things feed it. A tile burns when its
 //! [`TileProps`](rl_grid::TileProps) says how, and leaves the tile it names.
 //! Anything else a game wants to burn, a crate, a corpse, a haystack, carries
-//! [`Flammable`]. And a gas that burns catches too, and is used up.
+//! `Flammable`. And a gas that burns catches too, and is used up.
 //!
 //! Every whole turn the fire steps: what burnt out of the ground is replaced,
 //! whoever stands in the flames is reported and given
@@ -13,7 +13,7 @@
 //!
 //! What burning means to a crate, a corpse or a scroll is the game's. The
 //! engine says [`FireEvent::Caught`] and [`FireEvent::BurntOut`], and takes
-//! [`Flammable`] off whatever burnt out, since it has burnt; a game despawns,
+//! `Flammable` off whatever burnt out, since it has burnt; a game despawns,
 //! chars or loots it in answer.
 
 use std::collections::BTreeMap;
@@ -47,11 +47,6 @@ impl Fire {
     /// Whether world cell `p` on the current map is alight.
     pub fn is_burning(&self, p: Point) -> bool {
         self.flames.get(p) > 0
-    }
-
-    /// Turns of burning left at `p`, zero when it is not alight.
-    pub fn turns_at(&self, p: Point) -> u8 {
-        self.flames.get(p)
     }
 
     /// Every burning cell on the current map, in world coordinates.
@@ -125,7 +120,7 @@ pub struct FireRules {
 }
 
 /// What a burning cell sheds, unless a game says otherwise.
-pub const FIRE_GLOW: LightSource = LightSource::new(180, 3, Rgb::new(255, 130, 50)).flickering(150);
+pub(crate) const FIRE_GLOW: LightSource = LightSource::new(180, 3, Rgb::new(255, 130, 50)).flickering(150);
 
 impl FireRules {
     /// Fire that glows and does nothing else to what stands in it.
@@ -168,7 +163,7 @@ pub enum FireEvent {
         /// Where.
         at: Point,
     },
-    /// Something [`Flammable`] caught.
+    /// Something `Flammable` caught.
     Caught {
         /// What.
         entity: Entity,
@@ -190,7 +185,7 @@ pub enum FireEvent {
 }
 
 /// Sets alight what was asked for this pass.
-pub fn kindle(mut requests: MessageReader<Kindle>, mut fire: ResMut<Fire>, map: Res<WorldMap>) {
+pub(crate) fn kindle(mut requests: MessageReader<Kindle>, mut fire: ResMut<Fire>, map: Res<WorldMap>) {
     fire.flames.follow(&map);
     for request in requests.read() {
         let takes = map.tile(request.at).is_some_and(|t| map.tables().burns[t.index()].is_some() || !map.tables().blocks_projectiles[t.index()]);
@@ -203,7 +198,7 @@ pub fn kindle(mut requests: MessageReader<Kindle>, mut fire: ResMut<Fire>, map: 
 /// Keeps the cell of everything [`Burning`] alight, at the start of every
 /// pass, so a brazier spawned this frame is fire before anyone decides where
 /// to step, rather than once the first turn has passed.
-pub fn keep_alight(mut fire: ResMut<Fire>, map: Res<WorldMap>, lit: Query<(&Position, &Burning, Option<&OnMap>)>) {
+pub(crate) fn keep_alight(mut fire: ResMut<Fire>, map: Res<WorldMap>, lit: Query<(&Position, &Burning, Option<&OnMap>)>) {
     fire.flames.follow(&map);
     let here = map.current();
     for (pos, burning, on) in &lit {
@@ -215,7 +210,7 @@ pub fn keep_alight(mut fire: ResMut<Fire>, map: Res<WorldMap>, lit: Query<(&Posi
 
 /// What stepping fire reads and changes besides the fire itself.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Blaze<'w> {
+pub(crate) struct Blaze<'w> {
     map: ResMut<'w, WorldMap>,
     rules: Res<'w, FireRules>,
     seed: Res<'w, Seed>,
@@ -232,7 +227,7 @@ type Lit = (Entity, &'static Position, &'static mut Burning, Option<&'static OnM
 
 /// Everything that might be in the flames.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct InTheFire<'w, 's> {
+pub(crate) struct InTheFire<'w, 's> {
     commands: Commands<'w, 's>,
     unlit: Query<'w, 's, Unlit, Without<Burning>>,
     lit: Query<'w, 's, Lit>,
@@ -249,7 +244,7 @@ pub struct InTheFire<'w, 's> {
 /// The rolls are hashed from the run's seed, the turn and the cell, so the
 /// fire spreads the same whichever order it is stepped in and a save holds no
 /// generator for it.
-pub fn step_fire(mut ends: MessageReader<TurnEnd>, mut fire: ResMut<Fire>, blaze: Blaze, things: InTheFire) {
+pub(crate) fn step_fire(mut ends: MessageReader<TurnEnd>, mut fire: ResMut<Fire>, blaze: Blaze, things: InTheFire) {
     let passed = ends.read().count() as u32;
     if passed == 0 {
         return;
@@ -367,7 +362,7 @@ fn check_fire_rules(rules: Option<Res<FireRules>>, gases: Option<Res<Gases>>) {
 
 /// Marks every burning cell as somewhere the mind holding the turn will
 /// not step, in [`PerceiveSet::Annotate`](crate::plugin::PerceiveSet::Annotate).
-pub fn perceive_fire(mut thinking: ResMut<crate::minds::Thinking>, fire: Res<Fire>) {
+pub(crate) fn perceive_fire(mut thinking: ResMut<crate::minds::Thinking>, fire: Res<Fire>) {
     if thinking.actor().is_none() {
         return;
     }
@@ -377,7 +372,7 @@ pub fn perceive_fire(mut thinking: ResMut<crate::minds::Thinking>, fire: Res<Fir
 }
 
 /// Fire: [`Fire`], set alight by [`Kindle`] and by what is [`Burning`],
-/// spread through burning tiles, [`Flammable`] things and burning gas every
+/// spread through burning tiles, `Flammable` things and burning gas every
 /// whole turn, glowing and smoking as [`FireRules`] says.
 ///
 /// Needs [`FireRules`], [`Registries`] for which gases burn, and the run's

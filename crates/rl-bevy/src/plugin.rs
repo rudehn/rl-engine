@@ -166,13 +166,13 @@ const MAX_PASSES: usize = 512;
 /// Earns the frame's share of the [`Pace`], once a frame and ahead of the
 /// loop, so a loop run again inside the frame, as skipping a cue does, is
 /// not paid twice for one stretch of the wall clock.
-pub fn earn_pace(time: Res<Time>, mut pace: ResMut<Pace>) {
+pub(crate) fn earn_pace(time: Res<Time>, mut pace: ResMut<Pace>) {
     pace.earn(time.delta());
 }
 
 /// Runs [`Turn`] passes until the player holds a turn, a pass changes
 /// nothing, a pass cued something worth waiting for, or the
-/// [`Pace`] has no more game time to give this frame.
+/// `Pace` has no more game time to give this frame.
 ///
 /// The player holding a turn means the game's input system gets the next
 /// frame; a pass that neither dealt, advanced nor requeued means the queue
@@ -183,7 +183,7 @@ pub fn earn_pace(time: Res<Time>, mut pace: ResMut<Pace>) {
 /// since the act that raised it was the last one dealt, so nothing a
 /// player presses meanwhile could have been resolved anyway.
 ///
-/// A spent [`Pace`] stops turns being dealt, not passes being run: the
+/// A spent `Pace` stops turns being dealt, not passes being run: the
 /// scheduler deals nobody a turn while it is spent, so the pass that finds
 /// it spent changes nothing and ends the loop as an idle one does. A turn
 /// already dealt is therefore always resolved, a player's intent is
@@ -220,7 +220,7 @@ pub fn run_turns(world: &mut World) {
 /// resource happens to exist.
 ///
 /// Needs a [`WorldMap`] before play begins, and checks what every other
-/// plugin said it needs at the same moment, through [`Requirements`].
+/// plugin said it needs at the same moment, through `Requirements`.
 pub struct CorePlugin;
 
 impl Plugin for CorePlugin {
@@ -497,7 +497,7 @@ pub fn clear_run(world: &mut World) {
 /// and a plugin nobody added leaves nothing to put back. Filled through
 /// [`ResetsOnNewRun`].
 #[derive(Resource, Default)]
-pub struct RunResets(Vec<RunReset>);
+pub(crate) struct RunResets(Vec<RunReset>);
 
 /// One resource a run's teardown puts back.
 struct RunReset {
@@ -774,7 +774,7 @@ impl Reads for App {
 /// crash at a time. A missing rule table is a mistake in the setup, and
 /// saying so beats a subsystem quietly doing nothing all run.
 #[derive(Resource, Default)]
-pub struct Requirements(Vec<Requirement>);
+pub(crate) struct Requirements(Vec<Requirement>);
 
 /// One thing one plugin needs.
 struct Requirement {
@@ -790,7 +790,7 @@ struct Requirement {
 impl Requirements {
     /// Every requirement `world` does not meet, one line each: who needs
     /// what, and how to make it.
-    pub fn missing(&self, world: &World) -> Vec<String> {
+    pub(crate) fn missing(&self, world: &World) -> Vec<String> {
         self.0.iter().filter(|r| (r.when)(world) && !(r.present)(world)).map(|r| format!("{} needs {}: {}", r.plugin, r.resource, r.hint)).collect()
     }
 }
@@ -836,7 +836,7 @@ fn always(_: &World) -> bool {
 }
 
 /// Panics once, listing every requirement the game's setup left unmet.
-pub fn check_requirements(world: &World) {
+pub(crate) fn check_requirements(world: &World) {
     let Some(requirements) = world.get_resource::<Requirements>() else { return };
     let missing = requirements.missing(world);
     if !missing.is_empty() {

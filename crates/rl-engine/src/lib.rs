@@ -228,4 +228,4 @@ pub mod prelude {
 /// front page of the repository cannot drift from the API.
 #[cfg(doctest)]
 #[doc = include_str!("../../../README.md")]
-pub struct ReadmeDoctests;
+pub(crate) struct ReadmeDoctests;

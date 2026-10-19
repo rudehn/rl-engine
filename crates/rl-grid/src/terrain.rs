@@ -57,11 +57,6 @@ impl Terrain {
         &self.tiles
     }
 
-    /// The underlying grid, mutably.
-    pub fn grid_mut(&mut self) -> &mut Grid<TileId> {
-        &mut self.tiles
-    }
-
     /// Iterates `(point, tile)` row-major.
     pub fn iter(&self) -> impl Iterator<Item = (Point, TileId)> + '_ {
         self.tiles.iter().map(|(p, t)| (p, *t))
@@ -196,11 +191,6 @@ impl<'a> TerrainView<'a> {
     /// Whether `p` is walkable now; out of bounds is not.
     pub fn is_walkable(&self, p: Point) -> bool {
         self.checked_idx(p).is_some_and(|i| self.is_walkable_idx(i))
-    }
-
-    /// Whether the cell at `idx` is passable eventually.
-    pub fn is_passable_eventually_idx(&self, idx: usize) -> bool {
-        self.tables.passable[self.terrain.get_idx(idx).index()]
     }
 
     /// Whether the cell at `idx` stops projectiles.

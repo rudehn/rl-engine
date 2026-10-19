@@ -318,7 +318,7 @@ pub struct Said {
     /// [`PlayerSight::shows`], the question the map and every list of what
     /// is in sight ask, so the log never names a thing the map left out:
     /// one out of sight, and one [`Concealed`] in the dark though its cell
-    /// is in sight. [`speak`] is what turns it into `something`, and only
+    /// is in sight. `speak` is what turns it into `something`, and only
     /// while [`Phrasebook::speak_unseen`] is off, since a game that asked
     /// for the unseen to be narrated asked for it named.
     ///
@@ -346,7 +346,7 @@ impl Said {
     }
 
     /// The row a game's [`Tell`] makes, on `turn`.
-    pub fn told(tell: &Tell, turn: u32) -> Self {
+    pub(crate) fn told(tell: &Tell, turn: u32) -> Self {
         let mut said = Self::worded(Words::Own { text: tell.text.clone(), tone: tell.tone }, turn);
         said.who = tell.who;
         said.whom = tell.whom;
@@ -374,7 +374,7 @@ impl Said {
     }
 
     /// The engine phrase, when the row is one.
-    pub fn phrase(&self) -> Option<Phrase> {
+    pub(crate) fn phrase(&self) -> Option<Phrase> {
         match self.words {
             Words::Phrase(phrase) => Some(phrase),
             Words::Own { .. } => None,
@@ -398,12 +398,12 @@ pub struct Called {
 
 impl Called {
     /// As a sentence says it: `a sword`, `5 arrows`, `chain mail`.
-    pub fn counted(&self) -> String {
+    pub(crate) fn counted(&self) -> String {
         rl_core::noun::counted_as(&self.name, self.count, self.countability)
     }
 
     /// As the player's own: `your sword`, `your 5 arrows`.
-    pub fn yours(&self) -> String {
+    pub(crate) fn yours(&self) -> String {
         rl_core::noun::owned("your", &self.name, self.count, self.countability)
     }
 }
@@ -552,7 +552,7 @@ type Weapons<'w, 's> = Query<'w, 's, (), (With<Item>, Or<(With<MeleeAttack>, Wit
 
 /// What the collector reads about the world to fill a row.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Witness<'w, 's> {
+pub(crate) struct Witness<'w, 's> {
     turns: Res<'w, Turns>,
     registries: Option<Res<'w, Registries>>,
     abilities: Option<Res<'w, Abilities>>,
@@ -731,7 +731,7 @@ impl Witness<'_, '_> {
 /// held the turn is read first, since it was rolled as that actor looked
 /// round, before it did anything; a notice by anyone else came of what the
 /// turn did, a blow that woke it, and keeps its place after the blows.
-pub fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witness: Witness) {
+pub(crate) fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witness: Witness) {
     let turn = witness.turns.turn_number();
     let say = |phrase: Phrase, who: Option<Entity>, whom: Option<Entity>| {
         let at = who.and_then(|e| witness.at(e)).or_else(|| whom.and_then(|e| witness.at(e)));
@@ -1212,7 +1212,7 @@ impl Phrasebook {
     }
 
     /// Never speaks `phrase`.
-    pub fn silence(&mut self, phrase: Phrase) -> &mut Self {
+    pub(crate) fn silence(&mut self, phrase: Phrase) -> &mut Self {
         self.entries.insert(phrase, None);
         self
     }
@@ -1243,7 +1243,7 @@ impl Named {
 
 /// What the presenter reads to put names to entities.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Names<'w, 's> {
+pub(crate) struct Names<'w, 's> {
     player: Query<'w, 's, (), With<Player>>,
     names: Query<'w, 's, (Option<&'static Name>, Option<&'static Glyph>)>,
     stacks: Query<'w, 's, &'static Stack>,
@@ -1292,7 +1292,7 @@ impl Names<'_, '_> {
 /// One word in one place. A game that wants another rewords the phrases
 /// that can name an unseen doer, since a template is the level a game
 /// already edits.
-pub const UNSEEN: &str = "something";
+pub(crate) const UNSEEN: &str = "something";
 
 /// Fills `template` for `said`: the text, and a span for each name that
 /// has a colour.
@@ -1302,7 +1302,7 @@ pub const UNSEEN: &str = "something";
 /// [`UNSEEN`] unless `speak_unseen`. The caller passes it, because whether
 /// the unseen are named is [`Phrasebook::speak_unseen`], the presenter's
 /// setting and not the row's business.
-pub fn render(template: &str, said: &Said, names: &Names<'_, '_>, speak_unseen: bool) -> (String, Vec<Span>) {
+pub(crate) fn render(template: &str, said: &Said, names: &Names<'_, '_>, speak_unseen: bool) -> (String, Vec<Span>) {
     let mut out = String::new();
     let mut spans = Vec::new();
     let mut rest = template;
@@ -1360,7 +1360,7 @@ fn capitalised(s: &str) -> String {
 }
 
 /// Speaks every row of the view into the log, and clears the view.
-pub fn speak(mut view: ResMut<NarrationView>, book: Res<Phrasebook>, names: Names, mut log: ResMut<MessageLog>) {
+pub(crate) fn speak(mut view: ResMut<NarrationView>, book: Res<Phrasebook>, names: Names, mut log: ResMut<MessageLog>) {
     for said in view.rows.drain(..) {
         if !said.seen && !book.speak_unseen {
             continue;

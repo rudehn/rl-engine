@@ -43,7 +43,7 @@ impl SlotDef {
 
 /// The other slot of the pair `slot` is one of in `slots`, whichever of the
 /// two names the other, or `None` for a slot that goes alone.
-pub fn pair_of(slots: &Registry<SlotDef>, slot: SlotId) -> Option<SlotId> {
+pub(crate) fn pair_of(slots: &Registry<SlotDef>, slot: SlotId) -> Option<SlotId> {
     let own = slots.get(slot).pair.as_deref().and_then(|other| slots.id(other));
     own.or_else(|| slots.iter().find(|(_, def)| def.pair.as_deref() == Some(slots.name(slot))).map(|(id, _)| id))
 }

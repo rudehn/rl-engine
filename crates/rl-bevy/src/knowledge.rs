@@ -22,7 +22,7 @@ const BUCKET: i32 = 64;
 /// [`Charts`](crate::charts::Charts) chart keeps for whoever fills it.
 /// Ordered, so two runs of a seed walk it in one order.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct TileSet(BTreeMap<Point, BitGrid>);
+pub(crate) struct TileSet(BTreeMap<Point, BitGrid>);
 
 impl TileSet {
     fn split(p: Point) -> (Point, Point) {
@@ -49,17 +49,19 @@ impl TileSet {
     }
 
     /// Whether the set holds nothing.
-    pub fn is_empty(&self) -> bool {
+    #[cfg(test)]
+    pub(crate) fn is_empty(&self) -> bool {
         self.0.values().all(|g| g.is_clear())
     }
 
     /// Every tile in the set, bucket by bucket, each row-major.
+    #[cfg(test)]
     pub fn iter(&self) -> impl Iterator<Item = Point> + '_ {
         self.0.iter().flat_map(|(bucket, grid)| grid.iter().map(move |local| Point::new(bucket.x * BUCKET + local.x, bucket.y * BUCKET + local.y)))
     }
 
     /// Adds every tile of `other`.
-    pub fn union_with(&mut self, other: &TileSet) {
+    pub(crate) fn union_with(&mut self, other: &TileSet) {
         for (bucket, grid) in &other.0 {
             match self.0.get_mut(bucket) {
                 Some(mine) => mine.union_with(grid),
@@ -71,12 +73,12 @@ impl TileSet {
     }
 
     /// The set as a save holds it: its buckets and the bits of each.
-    pub fn export(&self) -> Vec<(Point, BitGrid)> {
+    pub(crate) fn export(&self) -> Vec<(Point, BitGrid)> {
         self.0.iter().map(|(p, g)| (*p, g.clone())).collect()
     }
 
     /// A set from what [`export`](Self::export) produced.
-    pub fn import(buckets: Vec<(Point, BitGrid)>) -> Self {
+    pub(crate) fn import(buckets: Vec<(Point, BitGrid)>) -> Self {
         Self(buckets.into_iter().collect())
     }
 }

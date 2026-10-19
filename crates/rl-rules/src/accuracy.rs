@@ -11,7 +11,7 @@
 //!
 //! [`Certain`] is the default and never rolls, so a game that has not
 //! chosen accuracy draws nothing and plays as it did. [`Percent`] is the
-//! one the engine ships: accuracy less evasion, less [`range_penalty`] past
+//! one the engine ships: accuracy less evasion, less `range_penalty` past
 //! the weapon's effective range, less a penalty for dim or dark light at
 //! the target, with [`PercentLabels`] for what each line is called. No
 //! floor and no ceiling beyond 0 and 100: a game that wants "never
@@ -105,7 +105,7 @@ pub trait HitModel: Send + Sync {
 
 /// What range costs: nothing at or inside `effective`, and `per_tile` for
 /// every tile past it.
-pub fn range_penalty(distance: i32, effective: i32, per_tile: i32) -> i32 {
+pub(crate) fn range_penalty(distance: i32, effective: i32, per_tile: i32) -> i32 {
     (distance - effective).max(0) * per_tile
 }
 
@@ -121,7 +121,7 @@ impl HitModel for Certain {
 }
 
 /// What [`Percent`] calls each of its lines. English by default, as the
-/// narrator's phrasebook is; a game says its own with [`Percent::labelled`].
+/// narrator's phrasebook is; a game says its own with `Percent::labelled`.
 /// Short, because a line is printed after its value in a box that sits in a
 /// rail two dozen cells wide.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -145,7 +145,7 @@ impl Default for PercentLabels {
 }
 
 /// A percent roll: accuracy (100 when the game names no stat) less
-/// evasion (0 when it names none), less [`range_penalty`], less `dim` or
+/// evasion (0 when it names none), less `range_penalty`, less `dim` or
 /// `dark` for the light at the target, clamped to 0..=100. A blow reads
 /// neither range nor light.
 #[derive(Debug, Clone, PartialEq, Eq)]

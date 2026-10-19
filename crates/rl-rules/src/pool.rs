@@ -319,7 +319,7 @@ impl Pool {
     }
 
     /// Every dressing an entry names, for the dressings' load to check.
-    pub fn dressings(&self) -> impl Iterator<Item = &str> {
+    pub(crate) fn dressings(&self) -> impl Iterator<Item = &str> {
         self.entries.iter().filter_map(|e| match &e.placed {
             Placed::Dressed { dressing } => Some(dressing.as_str()),
             _ => None,

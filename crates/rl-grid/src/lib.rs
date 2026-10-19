@@ -55,7 +55,7 @@ pub mod prelude {
     pub use crate::field::{Around, TileField};
     pub use crate::fov;
     pub use crate::light::{Emitter, Glow, Light, LightBand, LightField, Rgb};
-    pub use crate::region;
+
     pub use crate::spatial::SpatialGrid;
     pub use crate::targeting::{Footprint, TargetMode, burst, clear_shot, footprint};
     pub use crate::terrain::{CostSource, OpacitySource, Terrain, TerrainView};

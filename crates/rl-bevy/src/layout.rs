@@ -190,7 +190,7 @@ pub fn picked<M: Send + Sync + 'static>(pool: &Pool, picks: &[Pick], prefabs: &P
 }
 
 /// The pass that dresses a place: every dressing in `prefabs`, cut from
-/// it by [`Prefabs::dressing`](crate::prefabs::Prefabs::dressing) so its
+/// it by `Prefabs::dressing` so its
 /// slots fill as a stamp's, laid where a pick's
 /// [`DressAt`](rl_mapgen::DressAt) says and in every room nothing took by
 /// its district's list in `lists`, repainting only `floor`. For the chain

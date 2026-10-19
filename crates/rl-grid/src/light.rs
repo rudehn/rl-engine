@@ -28,7 +28,9 @@
 //! opacity and emitter placement, and emitters are sorted before they are
 //! cast so the order they arrived in cannot leak into the result.
 
-use rl_core::{Grid, Grid2D, Point, Rect};
+#[cfg(test)]
+use rl_core::Rect;
+use rl_core::{Grid, Grid2D, Point};
 
 use crate::bitgrid::BitGrid;
 use crate::fov;
@@ -222,7 +224,7 @@ pub struct Emitter {
 
 impl Emitter {
     /// The light this emitter lands on a tile `d` away, before shadows.
-    pub fn light_at(&self, d: i32) -> Light {
+    pub(crate) fn light_at(&self, d: i32) -> Light {
         let g = &self.glow;
         Light::new(falloff(g.intensity, g.radius, d), g.color).flickering(g.flicker)
     }
@@ -233,7 +235,7 @@ impl Emitter {
 /// Two lights are brighter than either and never exceed 255; `max` fails
 /// the first, saturating addition the second.
 #[inline]
-pub fn screen(a: u8, b: u8) -> u8 {
+pub(crate) fn screen(a: u8, b: u8) -> u8 {
     (255 - (((255 - a as u32) * (255 - b as u32)) / 255)) as u8
 }
 
@@ -272,7 +274,7 @@ impl LightBand {
 /// Brightness of a source of `intensity` and `radius` at distance `d`:
 /// full within a third of the radius, then linear to exactly zero at the
 /// rim, so the lit edge has nothing to alias against.
-pub fn falloff(intensity: u8, radius: i32, d: i32) -> u8 {
+pub(crate) fn falloff(intensity: u8, radius: i32, d: i32) -> u8 {
     if d < 0 || d > radius {
         return 0;
     }
@@ -331,7 +333,7 @@ impl LightField {
     }
 
     /// The light at an in-bounds index, less what darkness takes.
-    pub fn get_idx(&self, idx: usize) -> Light {
+    pub(crate) fn get_idx(&self, idx: usize) -> Light {
         let light = self.cells.cells()[idx];
         if self.shaded { light.darkened(self.shade.cells()[idx]) } else { light }
     }
@@ -343,12 +345,12 @@ impl LightField {
     }
 
     /// The share of light darkness takes from each cell, row-major, out of 255.
-    pub fn shade(&self) -> &[u8] {
+    pub(crate) fn shade(&self) -> &[u8] {
         self.shade.cells()
     }
 
     /// Adds `light` to `p`, screen-blended with what is there.
-    pub fn add(&mut self, p: Point, light: Light) {
+    pub(crate) fn add(&mut self, p: Point, light: Light) {
         if let Some(cell) = self.cells.get_mut(p) {
             *cell = cell.screen(light);
         }
@@ -357,7 +359,7 @@ impl LightField {
     /// Takes `shade / 255` of the light at `p` away, blended with any
     /// darkness already there as two lights blend, so two half shades
     /// leave a quarter of the light rather than none.
-    pub fn darken(&mut self, p: Point, shade: u8) {
+    pub(crate) fn darken(&mut self, p: Point, shade: u8) {
         if let Some(cell) = self.shade.get_mut(p) {
             *cell = screen(*cell, shade);
             self.shaded |= shade > 0;
@@ -367,7 +369,7 @@ impl LightField {
     /// Casts one emitter through `source`'s opacity into this field.
     /// `scratch` is the caller's viewshed buffer, reused across casts;
     /// it must match the field's shape.
-    pub fn cast(&mut self, source: &impl OpacitySource, emitter: &Emitter, scratch: &mut BitGrid) {
+    pub(crate) fn cast(&mut self, source: &impl OpacitySource, emitter: &Emitter, scratch: &mut BitGrid) {
         debug_assert_eq!((scratch.width(), scratch.height()), (self.width(), self.height()));
         let glow = &emitter.glow;
         if glow.intensity == 0 || !self.in_bounds(emitter.origin) {
@@ -400,7 +402,8 @@ impl LightField {
     /// Lights every cell of `area` with `light` directly, no shadows: for
     /// a lake of something glowing, where casting from every tile would
     /// cost a shadowcast each for no visible difference.
-    pub fn flood(&mut self, area: Rect, light: Light) {
+    #[cfg(test)]
+    pub(crate) fn flood(&mut self, area: Rect, light: Light) {
         for p in area.cells() {
             self.add(p, light);
         }

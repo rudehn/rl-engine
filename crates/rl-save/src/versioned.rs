@@ -14,7 +14,7 @@ use crate::backend::SaveError;
 /// A save with its version on the outside, so the version can be read
 /// before the rest is trusted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Versioned<T> {
+pub(crate) struct Versioned<T> {
     /// The schema version the data was written under.
     pub version: u32,
     /// The save.
@@ -28,14 +28,14 @@ struct Header {
 }
 
 /// Writes `data` as RON under `version`.
-pub fn encode<T: Serialize>(version: u32, data: &T) -> Result<String, SaveError> {
+pub(crate) fn encode<T: Serialize>(version: u32, data: &T) -> Result<String, SaveError> {
     let wrapped = Versioned { version, data };
     ron::ser::to_string_pretty(&wrapped, ron::ser::PrettyConfig::default()).map_err(|e| SaveError::Encode(e.to_string()))
 }
 
 /// Reads a save written by [`encode`], refusing any version but
 /// `expected` and any text that does not parse.
-pub fn decode<T: DeserializeOwned>(expected: u32, text: &str) -> Result<T, SaveError> {
+pub(crate) fn decode<T: DeserializeOwned>(expected: u32, text: &str) -> Result<T, SaveError> {
     let header: Header = ron::from_str(text).map_err(|e| SaveError::Decode(e.to_string()))?;
     if header.version != expected {
         return Err(SaveError::Version { found: header.version, expected });

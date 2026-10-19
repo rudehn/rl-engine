@@ -82,7 +82,7 @@ impl WorldMap {
     /// so every viewshed and the light are recast without anyone moving. The
     /// veil is lifted whenever the current map changes, until
     /// whatever set it sets it again.
-    pub fn set_veil(&mut self, cells: impl IntoIterator<Item = Point>) {
+    pub(crate) fn set_veil(&mut self, cells: impl IntoIterator<Item = Point>) {
         let window = self.window_tiles();
         let mut veil = BitGrid::new(window.width, window.height);
         for p in cells {
@@ -121,7 +121,7 @@ impl WorldMap {
     }
 
     /// Whether `map` has been built.
-    pub fn has_place(&self, map: MapId) -> bool {
+    pub(crate) fn has_place(&self, map: MapId) -> bool {
         self.places.contains_key(&map)
     }
 
@@ -228,7 +228,7 @@ impl WorldMap {
 
     /// Marks `map` as somewhere the player has arrived, and answers
     /// whether this was the first time.
-    pub fn visit(&mut self, map: MapId) -> bool {
+    pub(crate) fn visit(&mut self, map: MapId) -> bool {
         self.places.get_mut(&map).is_some_and(|place| !std::mem::replace(&mut place.visited, true))
     }
 
@@ -260,18 +260,18 @@ impl WorldMap {
     }
 
     /// Changes whenever the current map changes.
-    pub fn generation(&self) -> u64 {
+    pub(crate) fn generation(&self) -> u64 {
         self.generation
     }
 
     /// Changes whenever an edit changes what blocks sight.
-    pub fn opacity_epoch(&self) -> u64 {
+    pub(crate) fn opacity_epoch(&self) -> u64 {
         self.opacity_epoch
     }
 
     /// Changes whenever an edit changes where an actor may walk or what a
     /// step costs.
-    pub fn cost_epoch(&self) -> u64 {
+    pub(crate) fn cost_epoch(&self) -> u64 {
         self.cost_epoch
     }
 
@@ -318,7 +318,7 @@ impl WorldMap {
     /// on it; asked whether a diagonal slips past the door's corner, it
     /// answers as the move resolver will, or a mind plans a step it is
     /// refused every turn and never moves.
-    pub fn lets_diagonal_past(&self, p: Point) -> bool {
+    pub(crate) fn lets_diagonal_past(&self, p: Point) -> bool {
         self.is_walkable(p)
     }
 
@@ -334,17 +334,17 @@ impl WorldMap {
 
     /// Whether `p` blocks sight: its tile does, or the veil over it. Unloaded
     /// tiles do.
-    pub fn is_opaque(&self, p: Point) -> bool {
+    pub(crate) fn is_opaque(&self, p: Point) -> bool {
         self.tile(p).is_none_or(|t| self.tables.opaque[t.index()]) || self.veil.1.contains(p - self.veil.0)
     }
 
     /// Whether `p` stops a projectile. Unloaded tiles do.
-    pub fn blocks_projectiles(&self, p: Point) -> bool {
+    pub(crate) fn blocks_projectiles(&self, p: Point) -> bool {
         self.tile(p).is_none_or(|t| self.tables.blocks_projectiles[t.index()])
     }
 
     /// Entry cost of `p`, or `None` if not walkable or not loaded.
-    pub fn cost(&self, p: Point) -> Option<u32> {
+    pub(crate) fn cost(&self, p: Point) -> Option<u32> {
         let t = self.tile(p)?;
         self.tables.walkable[t.index()].then(|| self.tables.move_cost[t.index()])
     }

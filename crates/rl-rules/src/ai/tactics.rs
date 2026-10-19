@@ -144,7 +144,7 @@ impl<A: Copy> Tactic<A> for Hunt {
 /// On the remembered tile it returns `None`, so the next tactic mills about
 /// there until the memory runs out.
 ///
-/// Only for a mind with [`Wits::SEARCHES`]: a mindless thing forgets what it
+/// Only for a mind with `Wits::SEARCHES`: a mindless thing forgets what it
 /// cannot perceive.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SearchLastKnown;
@@ -232,7 +232,7 @@ pub struct Led {
 /// [`Hover`] under it for the band it leaves alone.
 ///
 /// With nobody in sight it keeps station on where an enemy was last seen,
-/// for a mind with [`Wits::SEARCHES`]: backing round a corner loses sight of
+/// for a mind with `Wits::SEARCHES`: backing round a corner loses sight of
 /// the enemy, and without this a [`SearchLastKnown`] below it would walk
 /// straight back to the spot it just backed away from. It closes only to
 /// `keep_within` of the spot, so it looks round the corner rather than
@@ -545,7 +545,7 @@ impl<A: Copy, T: Tactic<A>> Tactic<A> for OutOfSight<T> {
 }
 
 /// Hold still while there is something to keep an eye on: an enemy in
-/// sight, or where one was last seen for a mind with [`Wits::SEARCHES`].
+/// sight, or where one was last seen for a mind with `Wits::SEARCHES`.
 ///
 /// What a spotter does in the band [`Keep`] leaves to the next tactic:
 /// below it and above anything that closes in or drifts, so the turns at
@@ -940,7 +940,7 @@ impl<A: Copy> Tactic<A> for UseCarried {
 /// Throw something carried at the nearest enemy it reaches down a clear
 /// line, when that enemy is not already at its elbow.
 ///
-/// Only for a mind with [`Wits::THROWS`] carrying something to throw. It
+/// Only for a mind with `Wits::THROWS` carrying something to throw. It
 /// leaves an adjacent enemy to [`MeleeAdjacent`], which belongs above it: a
 /// blow in reach beats a knife that has to be fetched back. The line is
 /// judged by `blocks_shot`, the predicate a throw flies by, so a mind never
@@ -1050,7 +1050,7 @@ impl<A: Copy> Tactic<A> for ShootAtRange {
 /// [`Decision::PickUp`] for something to throw. Otherwise it walks toward
 /// the nearest such thing no more than `reach` away, by the shortest walk
 /// round whatever is in the way. Gear takes [`Wits::EQUIPS`]; something to
-/// throw takes [`Wits::PICKS_UP`] and [`Wits::THROWS`], since a knife it
+/// throw takes [`Wits::PICKS_UP`] and `Wits::THROWS`, since a knife it
 /// will never throw is not worth the walk.
 ///
 /// Where it sits in a brain says when it is worth the detour: above

@@ -77,7 +77,7 @@ pub struct RunRecord {
 /// The most records [`RunRecords::file`] keeps. Long enough that filling
 /// it is something to be proud of, short enough that the list stays a
 /// screen or two.
-pub const MAX_RECORDS: usize = 100;
+pub(crate) const MAX_RECORDS: usize = 100;
 
 /// Every run that has ended, best score first, and the one just filed for
 /// the run now ending.
@@ -99,7 +99,7 @@ pub struct RunRecords {
 impl RunRecords {
     /// Files `record`, best score first; a tie keeps the newer record,
     /// this one, ahead of whatever already matched it. Drops whatever
-    /// falls past [`MAX_RECORDS`].
+    /// falls past `MAX_RECORDS`.
     pub fn file(&mut self, record: RunRecord) {
         let position = self.records.iter().position(|kept| record.score >= kept.score).unwrap_or(self.records.len());
         self.records.insert(position, record);

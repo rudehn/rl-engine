@@ -267,28 +267,28 @@ impl ItemParts {
 
     /// What its effects land stronger by at `level`. Turns below nought are
     /// none, since a status cannot be inflicted for less than nothing.
-    pub fn bonus_at(&self, level: i32) -> EffectBonus {
+    pub(crate) fn bonus_at(&self, level: i32) -> EffectBonus {
         EffectBonus { amount: self.per(level, |l| l.amount), turns: self.per(level, |l| l.turns).max(0) as u32 }
     }
 
     /// Its pulse's period at `level`, or `None` for a thing with no pulse
     /// trigger: never under one hundredth, since a clock of nothing would
     /// come round forever in one pass.
-    pub fn pulse_at(&self, level: i32) -> Option<u32> {
+    pub(crate) fn pulse_at(&self, level: i32) -> Option<u32> {
         let every = self.triggers.pulse_every()?;
         Some((i64::from(every) + i64::from(self.per(level, |l| l.pulse))).max(1) as u32)
     }
 
     /// The sight in the dark it lends at `level`, or `None` for a thing that
     /// lends none.
-    pub fn dark_sight_at(&self, level: i32) -> Option<i32> {
+    pub(crate) fn dark_sight_at(&self, level: i32) -> Option<i32> {
         self.dark_sight.map(|tiles| tiles + self.per(level, |l| l.dark_sight))
     }
 
     /// What a fresh unit holds at `level`, or `None` for a thing with no
     /// charges: never fewer than one, since a thing with nothing to spend
     /// is spent before it is found.
-    pub fn charges_at(&self, level: i32) -> Option<u16> {
+    pub(crate) fn charges_at(&self, level: i32) -> Option<u16> {
         let c = self.charges?;
         Some((i32::from(c.charges) + self.per(level, |l| l.charges)).clamp(1, i32::from(u16::MAX)) as u16)
     }
@@ -297,7 +297,7 @@ impl ItemParts {
 /// What made an item: the parts it was spawned from, shared by every copy
 /// of its kind, which [`level_up`] fits it again from.
 #[derive(Component, Clone, Deref)]
-pub struct MadeOf(pub Arc<ItemParts>);
+pub(crate) struct MadeOf(pub Arc<ItemParts>);
 
 /// An item's level: `+N`, or below nought.
 ///
@@ -312,7 +312,7 @@ pub struct ItemLevel(pub i32);
 /// returns the level it is at: `level` within the level part's bounds, or
 /// nought for a thing that takes none, whatever `level` says.
 ///
-/// [`Item`], [`MadeOf`], and where the parts say so, [`ItemLevel`],
+/// [`Item`], `MadeOf`, and where the parts say so, [`ItemLevel`],
 /// [`Tagged`], [`Triggers`], [`Pulse`], [`Consumable`] and [`Attuned`],
 /// [`Wearable`], [`Ammo`], [`Armor`], [`Resists`], the attacks,
 /// [`Bestows`], [`EffectBonus`], [`LightSource`], or [`LitWhenWorn`] for a
@@ -722,7 +722,7 @@ impl<I: Send + Sync + 'static> ActorParts<I> {
     /// [`Faction`], [`Speed`], [`Perception`], [`Intelligence`],
     /// [`Notice`], [`Hearing`], [`DarkSight`] with its [`OwnDarkSight`], the attacks,
     /// [`LightSource`], [`Grants`], what it holds for life in [`Afflicted`]
-    /// and [`StatBlock`], [`WhileHolding`], [`Triggers`], [`Resists`], [`Drops`],
+    /// and [`StatBlock`], `WhileHolding`, [`Triggers`], [`Resists`], [`Drops`],
     /// [`LeavesRemains`] and [`Mind`]. `registries` holds the statuses it
     /// holds.
     ///

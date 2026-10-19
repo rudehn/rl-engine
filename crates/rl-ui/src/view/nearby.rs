@@ -8,9 +8,9 @@
 //! is not engine work is the weapon in a hand or the state of a mind, and
 //! that arrives as a facet.
 //!
-//! The rows come in [`InSight`]'s order, the order the look and targeting
+//! The rows come in `InSight`'s order, the order the look and targeting
 //! cursors step through, and the row picked out is the [`Focus`] those
-//! cursors move. With nothing open, [`browse`] steps the same focus down
+//! cursors move. With nothing open, `browse` steps the same focus down
 //! the rows on the cursors' "next" key, so the list can be walked without
 //! opening a cursor at all, and a cursor opened afterwards opens on the row
 //! that was picked out.
@@ -90,7 +90,7 @@ impl NearbyView {
 }
 
 /// Whether [`NearbyView`] lists the player's followers among the actors in
-/// sight, which [`collect_nearby`] reads.
+/// sight, which `collect_nearby` reads.
 ///
 /// Listed by default: a follower is in sight like anyone else, and a game
 /// with no party panel has nowhere else to show how it is doing. A game
@@ -109,7 +109,7 @@ pub enum NearbyFollowers {
 }
 
 /// Whether [`NearbyView`]'s actor rows say what holds each actor, which
-/// [`note_statuses`] reads, and in which of the game's words.
+/// `note_statuses` reads, and in which of the game's words.
 ///
 /// Off unless a game opts in, with
 /// [`NearbyPanel::statuses`](crate::NearbyPanel::statuses) or by inserting
@@ -142,7 +142,7 @@ pub struct NearbyStatuses {
 /// In [`ViewSet::Annotate`](crate::ViewSet::Annotate), while a game has
 /// inserted [`NearbyStatuses`]; nothing is said in a game with no
 /// [`Registries`].
-pub fn note_statuses(
+pub(crate) fn note_statuses(
     mut nearby: ResMut<NearbyView>,
     mut facets: ResMut<crate::facet::Facets>,
     says: Res<NearbyStatuses>,
@@ -197,7 +197,7 @@ type Seen = (&'static Name, &'static Glyph, Option<&'static Health>, Option<&'st
 
 /// Who is looking, and at what.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Around<'w, 's> {
+pub(crate) struct Around<'w, 's> {
     rules: Res<'w, CombatRules>,
     focus: Res<'w, Focus>,
     sight: InSight<'w, 's>,
@@ -217,7 +217,7 @@ pub struct Around<'w, 's> {
 
 /// Who follows whom, and whether the list leaves followers out.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Following<'w, 's> {
+pub(crate) struct Following<'w, 's> {
     listing: Res<'w, NearbyFollowers>,
     /// The living, as the party view counts them: a body keeps its
     /// `Leader` and follows nobody.
@@ -235,7 +235,7 @@ impl Following<'_, '_> {
 /// about it, by [`has_business`](rl_bevy::props::has_business) on its
 /// definition or an [`Offers`] the game hung on it.
 ///
-/// Read here rather than in [`InSight`], because a barrel that can only be
+/// Read here rather than in `InSight`, because a barrel that can only be
 /// broken is still something a cursor steps onto to aim at; it is only
 /// beside what can be acted on that it is one row too many. A thing that
 /// is no prop of a known kind, an item or a body, is always listed.
@@ -256,7 +256,7 @@ impl Business<'_, '_> {
 /// Fills [`NearbyView`] from the player's viewshed, in [`InSight`]'s order,
 /// with the player's followers or without them, as [`NearbyFollowers`]
 /// says.
-pub fn collect_nearby(mut view: ResMut<NearbyView>, around: Around) {
+pub(crate) fn collect_nearby(mut view: ResMut<NearbyView>, around: Around) {
     view.actors.clear();
     view.things.clear();
     view.focused = None;
