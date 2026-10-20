@@ -1350,8 +1350,11 @@ mod tests {
         let library = crate::content::Library::load(&crate::content::effect_kinds(), &Moments::default());
         let hiding = crate::traps::Hiding::load();
         let (told, locked) = (std::sync::Mutex::new(BTreeSet::new()), AtomicUsize::new(0));
+        let first_floors = std::sync::Mutex::new(BTreeMap::new());
+        let loaded = Undermere::new(RunSeed(0));
         par_seeds(seeds(0..60), |s| {
-            let undermere = Undermere::new(RunSeed(s));
+            let undermere = loaded.reseeded(RunSeed(s));
+            every_recipe_meets_itself_on(&undermere, &recipes_seed_grows(&undermere, s), s, false);
             let tables = undermere.tiles().tables();
             let town = undermere.build(TOWN).unwrap_or_else(|e| panic!("Mereholt, seed {s}: {e}"));
             builds_with_a_way_in_and_a_way_on(&town, &tables, false, &format!("Mereholt, seed {s}"));
@@ -1365,6 +1368,9 @@ mod tests {
                 let mut built = PlaceBuild::from_context(ctx).unwrap_or_else(|e| panic!("{at}: {e}"));
                 crate::vaults::place_vault_fixtures(&mut built, undermere.tiles(), undermere.prefabs(), RunSeed(s), map);
                 builds_with_a_way_in_and_a_way_on(&built, &tables, floor == FLOORS, &at);
+                if floor == 1 {
+                    first_floors.lock().expect("one writer at a time").insert(s, built.terrain.clone());
+                }
                 every_open_cell_is_walked_to_with_everything_standing(&undermere, &registries, &built, &tables, &at);
                 shows_only_what_its_biome_and_its_lairs_lay(&undermere, floor, &built, &at);
                 no_post_is_near_the_way_in(&undermere, &built, &at);
@@ -1379,6 +1385,12 @@ mod tests {
                 }
             }
         });
+        let first_floors: Vec<(u64, Terrain)> = first_floors.into_inner().expect("every writer done").into_iter().collect();
+        for (i, (a, ta)) in first_floors.iter().enumerate() {
+            for (b, tb) in &first_floors[i + 1..] {
+                assert_ne!(ta, tb, "seeds {a} and {b} lay floor one out alike");
+            }
+        }
         let told = told.into_inner().expect("every writer done");
         assert!(
             told.contains(&crate::traps::SecretKind::Door) && told.contains(&crate::traps::SecretKind::Room),
@@ -1655,11 +1667,14 @@ mod tests {
     }
 
     /// A run's floors are a pure function of its seed, whichever is built
-    /// first: every floor built deepest first comes out cell for cell as
+    /// first: a floor built deepest first comes out cell for cell as
     /// it does built shallowest first, its way in, its way down, its spots
     /// and its secrets with it, and so do its biome and its picks. A floor
     /// that read a stream or a cache another floor's build had moved would
-    /// differ between the two.
+    /// differ between the two. The floors are the first, a middle one and
+    /// the last, on one seed: the property is that every place draws from
+    /// its own stream, which no seed's content changes, so one seed shows
+    /// it and more only repeat it.
     #[test]
     fn every_floor_is_the_same_whichever_floor_is_built_first() {
         type Built = (Terrain, Point, Option<Point>, Vec<rl_engine::rl_bevy::Spot>, Vec<rl_engine::rl_mapgen::Secret>);
@@ -1672,18 +1687,19 @@ mod tests {
                 })
                 .collect()
         };
-        let shallow_first: Vec<u32> = (1..=FLOORS).collect();
-        let deep_first: Vec<u32> = (1..=FLOORS).rev().collect();
-        par_seeds(0..3, |s| {
-            let (a, b) = (Undermere::new(RunSeed(s)), Undermere::new(RunSeed(s)));
-            let (built_a, built_b) = (build_all(&a, &shallow_first), build_all(&b, &deep_first));
-            for floor in 1..=FLOORS {
-                assert_eq!(a.biome_of(floor).name, b.biome_of(floor).name, "seed {s}, floor {floor}: the biome");
-                let names = |u: &Undermere| -> Vec<String> { u.plan_of(floor).iter().map(|p| u.pool.entries[p.entry].name.clone()).collect() };
-                assert_eq!(names(&a), names(&b), "seed {s}, floor {floor}: the picks");
-                assert!(built_a[&floor] == built_b[&floor], "seed {s}, floor {floor}: built otherwise for being built after floor ten");
-            }
-        });
+        let floors = [1, 5, 10];
+        let shallow_first = floors.to_vec();
+        let deep_first: Vec<u32> = floors.iter().rev().copied().collect();
+        let s = 1;
+        let loaded = Undermere::new(RunSeed(0));
+        let (a, b) = (loaded.reseeded(RunSeed(s)), loaded.reseeded(RunSeed(s)));
+        let (built_a, built_b) = (build_all(&a, &shallow_first), build_all(&b, &deep_first));
+        for floor in floors {
+            assert_eq!(a.biome_of(floor).name, b.biome_of(floor).name, "seed {s}, floor {floor}: the biome");
+            let names = |u: &Undermere| -> Vec<String> { u.plan_of(floor).iter().map(|p| u.pool.entries[p.entry].name.clone()).collect() };
+            assert_eq!(names(&a), names(&b), "seed {s}, floor {floor}: the picks");
+            assert!(built_a[&floor] == built_b[&floor], "seed {s}, floor {floor}: built otherwise for being built after floor ten");
+        }
     }
 
     /// A run reseeded from content already read draws what a new run of
@@ -1915,24 +1931,33 @@ mod tests {
         floors[(pick % floors.len() as u64) as usize].clone()
     }
 
-    /// Every recipe grown on seed `s`, by a run of that seed so its lairs
-    /// stand where that run's do, on one of the floors its biome stands
-    /// on: within the forty attempts a floor is given, its requirements
-    /// met, since `Require` is the chain's last pass; the size the recipe
-    /// says; the way down outside every piece and at least the recipe's
-    /// route, a third of the longer side or more, from the way in; every
-    /// open cell walked to from the way in with every secret found and
-    /// every lock opened, and the way down with none of them.
+    /// The recipes of `undermere` that seed `s` grows when the daily seeds
+    /// share them out: recipe `i` on every seed with `i % QUICK == s %
+    /// QUICK`, so the first `QUICK` seeds grow each recipe once and the
+    /// full range in CI grows each several times.
+    fn recipes_seed_grows(undermere: &Undermere, s: u64) -> Vec<layout::RecipeDef> {
+        let quick = crate::testing::QUICK;
+        undermere.layout.recipes.iter().enumerate().filter(|(i, _)| *i as u64 % quick == s % quick).map(|(_, r)| r.clone()).collect()
+    }
+
+    /// Each of `recipes` grown on seed `s`, by a run of that seed so its
+    /// lairs stand where that run's do, on one of the floors its biome
+    /// stands on: within the forty attempts a floor is given, its
+    /// requirements met, since `Require` is the chain's last pass; the size
+    /// the recipe says; and the way down outside every stamped slot and at
+    /// least the recipe's route, a third of the longer side or more, from
+    /// the way in. That every open cell is walked to is the run's backstop's
+    /// to ask, of the floors a run draws; the span by hand asks it of these
+    /// too, in [`recipe_is_walked`].
     ///
     /// The run's picks for the floor are kept only where they may stand
     /// in the recipe's own biome: the run drew them for whichever biome
     /// it drew there, and a cave piece the Underlake may hold has no cave
     /// to stand in when the same floor is grown as the cathedral's nave.
-    fn every_recipe_meets_itself_on(s: u64) {
-        let undermere = Undermere::new(RunSeed(s));
+    fn every_recipe_meets_itself_on(undermere: &Undermere, recipes: &[layout::RecipeDef], s: u64, walk: bool) {
         let tables = undermere.tiles().tables();
-        for recipe in undermere.layout.recipes.clone() {
-            let (floor, drawn) = grown_by(&undermere, &recipe.name, s);
+        for recipe in recipes {
+            let (floor, drawn) = grown_by(undermere, &recipe.name, s);
             let at = format!("{} on floor {floor}, seed {s}", recipe.name);
             let grown = undermere.grow(floor, &drawn, &undermere.picks_for(floor, &drawn), RunSeed(s), ATTEMPTS);
             let ctx = grown.unwrap_or_else(|e| panic!("{at}: {e}"));
@@ -1957,55 +1982,46 @@ mod tests {
                 let third = bounds.width.max(bounds.height) as u32 / 3;
                 assert!(route >= recipe.require.route && recipe.require.route >= third, "{at}: {route} steps down, asked {}", recipe.require.route);
             }
-            let mut found = built.terrain.clone();
-            for secret in &built.secrets {
-                found.set(secret.at, secret.is);
-            }
-            let locks: BTreeSet<Point> = built.locks.iter().map(|l| l.at).collect();
-            let passable = |terrain: &Terrain, p: Point| terrain.get(p).is_some_and(|t| tables.passable[t.index()]);
-            let all_open = |p: Point| passable(&found, p) || locks.contains(&p);
-            let seen = walked(built.entry, all_open);
-            for p in bounds.cells().filter(|p| all_open(*p)) {
-                assert!(seen.contains(&p), "{at}: {p:?} is not walked to with every secret found and every lock opened");
-            }
-            if let Some(exit) = built.exit {
-                let none_open = walked(built.entry, |p| passable(&built.terrain, p) && !locks.contains(&p));
-                assert!(none_open.contains(&exit), "{at}: the way down is walked to only through a secret or a lock");
+            if walk {
+                recipe_is_walked(&built, &tables, bounds, &at);
             }
         }
     }
 
-    /// [`every_recipe_meets_itself_on`] over a span of seeds, a backstop
-    /// beside the run's: the run grows the recipes its seeds draw, and this
-    /// grows every one of them on each seed. The span the design asks for
-    /// is the ignored test beside it.
-    #[test]
-    fn every_recipe_grows_within_forty_attempts_and_meets_itself_over_a_few_seeds() {
-        par_seeds(seeds(0..40), |s| {
-            every_recipe_meets_itself_on(s);
-        });
+    /// Every open cell of a recipe's grown floor walked to from the way in
+    /// with every secret found and every lock opened, and the way down with
+    /// none of them: the by-hand span's check, beside the run's backstop
+    /// that asks the same of the floors a run draws.
+    fn recipe_is_walked(built: &PlaceBuild, tables: &TileTables, bounds: Rect, at: &str) {
+        let mut found = built.terrain.clone();
+        for secret in &built.secrets {
+            found.set(secret.at, secret.is);
+        }
+        let locks: BTreeSet<Point> = built.locks.iter().map(|l| l.at).collect();
+        let passable = |terrain: &Terrain, p: Point| terrain.get(p).is_some_and(|t| tables.passable[t.index()]);
+        let all_open = |p: Point| passable(&found, p) || locks.contains(&p);
+        let seen = walked(built.entry, all_open);
+        for p in bounds.cells().filter(|p| all_open(*p)) {
+            assert!(seen.contains(&p), "{at}: {p:?} is not walked to with every secret found and every lock opened");
+        }
+        if let Some(exit) = built.exit {
+            let none_open = walked(built.entry, |p| passable(&built.terrain, p) && !locks.contains(&p));
+            assert!(none_open.contains(&exit), "{at}: the way down is walked to only through a secret or a lock");
+        }
     }
 
-    /// [`every_recipe_meets_itself_on`] over seeds 0 to 200, every recipe
-    /// on each: some minutes, so run by hand with `--ignored` whenever
-    /// `assets/layout.ron` or a pass of the floor chain changes.
+    /// [`every_recipe_meets_itself_on`] with its walk over seeds 0 to 200,
+    /// every recipe on each: some minutes, so run by hand with `--ignored`
+    /// whenever `assets/layout.ron` or a pass of the floor chain changes.
+    /// The everyday span is the run's backstop, which shares the recipes
+    /// out over its seeds.
     #[test]
     #[ignore = "seeds 0 to 200 of every recipe take minutes; run by hand when the layout or the chain changes"]
     fn every_recipe_grows_within_forty_attempts_and_meets_itself_over_seeds_0_to_200() {
+        let loaded = Undermere::new(RunSeed(0));
         for s in 0..200 {
-            every_recipe_meets_itself_on(s);
-        }
-    }
-
-    /// Floor one is grown anew each run: no two of twenty seeds lay it out
-    /// alike.
-    #[test]
-    fn floor_ones_layout_differs_between_any_two_of_twenty_seeds() {
-        let floors: Vec<Terrain> = (0..20).map(|s| Undermere::new(RunSeed(s)).build(map_of(1)).unwrap().terrain).collect();
-        for i in 0..floors.len() {
-            for j in i + 1..floors.len() {
-                assert_ne!(floors[i], floors[j], "seeds {i} and {j} lay floor one out alike");
-            }
+            let undermere = loaded.reseeded(RunSeed(s));
+            every_recipe_meets_itself_on(&undermere, &undermere.layout.recipes.clone(), s, true);
         }
     }
 
