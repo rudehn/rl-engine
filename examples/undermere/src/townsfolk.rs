@@ -944,38 +944,73 @@ mod tests {
         }
     }
 
+    /// A round stands beside each stop, on the cell that lies nearest the
+    /// stops' middle, so the lamplighter walks the street side of a lamp
+    /// post, takes the stops in order round that middle, so the round is a
+    /// loop, and leaves out a stop with no open cell beside it. Made-up
+    /// stops, so no run is built to read it.
+    #[test]
+    fn a_round_stands_beside_each_stop_nearest_the_middle_in_order_round_it_and_skips_a_walled_in_stop() {
+        let stops = [Point::new(10, 10), Point::new(30, 10), Point::new(30, 30), Point::new(10, 30), Point::new(20, 4)];
+        let middle = Point::new(20, 16);
+        let open = |p: Point| !stops.contains(&p);
+        let round = rounds(&stops, open);
+        assert_eq!(round.len(), stops.len(), "a waypoint for every stop");
+        for stop in stops {
+            let beside: Vec<&Point> = round.iter().filter(|w| geometry::chebyshev(**w, stop) == 1).collect();
+            assert_eq!(beside.len(), 1, "exactly one waypoint beside the stop at {stop:?}: {round:?}");
+            let toward = Point::new(stop.x + (middle.x - stop.x).signum(), stop.y + (middle.y - stop.y).signum());
+            assert_eq!(*beside[0], toward, "the cell beside {stop:?} nearest the middle");
+        }
+        assert!(round.iter().all(|w| open(*w)), "every waypoint is open ground");
+        let angle = |p: &Point| f64::from(p.y - middle.y).atan2(f64::from(p.x - middle.x));
+        assert!(round.windows(2).all(|pair| angle(&pair[0]) <= angle(&pair[1])), "in angular order round the middle: {round:?}");
+
+        let walled = Point::new(20, 4);
+        let shut = |p: Point| open(p) && geometry::chebyshev(p, walled) > 1;
+        let round = rounds(&stops, shut);
+        assert_eq!(round.len(), stops.len() - 1, "the walled-in stop is left out: {round:?}");
+        assert!(round.iter().all(|w| geometry::chebyshev(*w, walled) > 1));
+        assert!(rounds(&[], |_| true).is_empty(), "no stops, no round");
+    }
+
     /// The child never steps off the square's cobbles and the lamplighter
     /// walks from lamp post to lamp post, neither ever leaving Mereholt,
-    /// over many turns and a span of seeds.
+    /// until the child has wandered and the lamplighter has come by every
+    /// lamp. Mereholt is drawn by hand, the same on every seed, so one
+    /// run is played; `rounds` is held by its own test above and the
+    /// stepping by the engine's wander tests.
     #[test]
     fn the_wanderers_keep_to_mereholt_the_child_to_the_square_and_the_lamplighter_to_the_lamps_over_many_turns() {
-        for s in 0..3 {
-            let (mut app, _) = in_mereholt(s);
-            let (child, lighter) = (person(&mut app, "child"), person(&mut app, "lamplighter"));
-            let cobbles = app.world().resource::<WorldMap>().tables().names.iter().position(|n| n == "cobbles").expect("a tile");
-            let lamps: Vec<Point> = {
-                let world = app.world_mut();
-                let props = world.resource::<Registries>().props.clone();
-                world.query::<(&Position, &PropKind)>().iter(world).filter(|(_, k)| props.get(k.0).name == "lamp post").map(|(p, _)| p.0).collect()
-            };
-            let mut squares: BTreeSet<(i32, i32)> = BTreeSet::new();
-            let mut lit: BTreeSet<(i32, i32)> = BTreeSet::new();
-            for turn in 0..300 {
-                pass_turns(&mut app, 1);
-                let world = app.world();
-                for who in [child, lighter] {
-                    assert_eq!(world.get::<OnMap>(who).map(|m| m.0), Some(TOWN), "seed {s}, turn {turn}: in Mereholt");
-                }
-                let here = at(&app, child);
-                let tile = world.resource::<WorldMap>().tile(here).map(|t| t.index());
-                assert_eq!(tile, Some(cobbles), "seed {s}, turn {turn}: the child on the cobbles at {here:?}");
-                squares.insert((here.x, here.y));
-                let walker = at(&app, lighter);
-                lit.extend(lamps.iter().filter(|l| rl_engine::rl_core::geometry::chebyshev(**l, walker) <= 1).map(|l| (l.x, l.y)));
+        let (mut app, _) = in_mereholt(0);
+        let (child, lighter) = (person(&mut app, "child"), person(&mut app, "lamplighter"));
+        let cobbles = app.world().resource::<WorldMap>().tables().names.iter().position(|n| n == "cobbles").expect("a tile");
+        let lamps: Vec<Point> = {
+            let world = app.world_mut();
+            let props = world.resource::<Registries>().props.clone();
+            world.query::<(&Position, &PropKind)>().iter(world).filter(|(_, k)| props.get(k.0).name == "lamp post").map(|(p, _)| p.0).collect()
+        };
+        let mut squares: BTreeSet<(i32, i32)> = BTreeSet::new();
+        let mut lit: BTreeSet<(i32, i32)> = BTreeSet::new();
+        // The bound is far past the turns a round takes; the loop stops at
+        // the first turn the whole round and the child's wander are seen.
+        for turn in 0..300 {
+            pass_turns(&mut app, 1);
+            let world = app.world();
+            for who in [child, lighter] {
+                assert_eq!(world.get::<OnMap>(who).map(|m| m.0), Some(TOWN), "turn {turn}: in Mereholt");
             }
-            assert!(squares.len() > 5, "seed {s}: the child wandered: {squares:?}");
-            assert_eq!(lit.len(), lamps.len(), "seed {s}: the lamplighter came by every lamp post: {lit:?} of {lamps:?}");
+            let here = at(&app, child);
+            let tile = world.resource::<WorldMap>().tile(here).map(|t| t.index());
+            assert_eq!(tile, Some(cobbles), "turn {turn}: the child on the cobbles at {here:?}");
+            squares.insert((here.x, here.y));
+            let walker = at(&app, lighter);
+            lit.extend(lamps.iter().filter(|l| rl_engine::rl_core::geometry::chebyshev(**l, walker) <= 1).map(|l| (l.x, l.y)));
+            if squares.len() > 5 && lit.len() == lamps.len() {
+                return;
+            }
         }
+        panic!("in 300 turns the child wandered {} squares and the lamplighter came by {} of {} lamp posts", squares.len(), lit.len(), lamps.len());
     }
 
     /// A run saved in Mereholt and continued has the same people by the

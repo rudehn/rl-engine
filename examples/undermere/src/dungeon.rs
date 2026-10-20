@@ -607,6 +607,13 @@ impl Undermere {
         TileAppearance::load(TILES_RON, &self.tiles).unwrap_or_else(|e| panic!("assets/tiles.ron: {e}"))
     }
 
+    /// Every entry of the run's pool, for a test that reads where a piece
+    /// may stand off the file, with no floor grown.
+    #[cfg(test)]
+    pub(crate) fn pool_entries(&self) -> &[rl_engine::rl_rules::pool::Entry] {
+        &self.pool.entries
+    }
+
     /// Every piece, the same ones the chains stamp from: the engine's
     /// `PrefabPlugin` fills the slots of what was stamped by the key each
     /// stamp carries, which names a piece in this very set.

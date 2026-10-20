@@ -117,7 +117,6 @@ mod tests {
 
     use super::*;
     use crate::dungeon::{FLOORS, TOWN, map_of};
-    use crate::testing::{par_seeds, seeds};
 
     #[test]
     fn the_lantern_dims_by_a_tile_every_third_floor() {
@@ -181,54 +180,58 @@ mod tests {
         assert_eq!(distinct.len(), total, "each biome and the town have their own ambient: {bands:?}");
     }
 
-    /// On every floor, whatever the adventurer has a line to beyond every
+    /// On a floor, whatever the adventurer has a line to beyond every
     /// light is seen, and seen dimly: the floor's shape reads past the
     /// lantern's pool, and a body standing out there with no light of its
     /// own is in the dim band, which stealth reads as harder to pick out
     /// than the lit one. The Spider Warrens are the one exception: truly
-    /// dark, so nothing beyond the lantern there is seen at all. Over two
-    /// seeds, every band, by its biomes' own floors, and the throne's floor
-    /// have such cells in sight on one of their floors' arrivals.
+    /// dark, so nothing beyond the lantern there is seen at all. Each
+    /// biome's ambient is held to its band by the static check above, so
+    /// this arrives at the two kinds of floor there are, the first floor
+    /// found that is dim and the first that is a warren, each found through
+    /// the pure biome draw with no run built to look.
     #[test]
     fn beyond_every_light_a_floor_is_seen_dimly_but_the_spider_warrens_truly_dark() {
-        let mut checked = BTreeSet::new();
-        for s in 0..2 {
+        let loaded = Undermere::new(RunSeed(0));
+        let find = |warren: bool| -> (u64, u32) {
+            (0..200u64)
+                .find_map(|s| {
+                    let drawn = loaded.reseeded(RunSeed(s));
+                    (1..FLOORS).find(|f| (drawn.biome_of(*f).name == "the Spider Warrens") == warren).map(|f| (s, f))
+                })
+                .expect("some seed over 200 draws each kind of floor")
+        };
+        for (truly_dark, (s, floor)) in [(false, find(false)), (true, find(true))] {
             let mut app = crate::testing::headless(RunSeed(s));
             let me = crate::testing::adventurer(&mut app);
             crate::testing::sturdy(&mut app, me);
-            for floor in 1..=FLOORS {
-                crate::testing::arrive(&mut app, map_of(floor));
-                let truly_dark = floor_of(map_of(floor)).is_some_and(|f| app.world().resource::<BiomeDraws>().of(f).name == "the Spider Warrens");
-                let world = app.world_mut();
-                // Every light on the floor: what stands or lies with one, and
-                // what anyone carries, the adventurer's lantern among them,
-                // which sheds from where its carrier stands.
-                let mut lights: Vec<(Point, i32)> = Vec::new();
-                let mut q = world.query::<(&Position, &OnMap, Option<&LightSource>, Option<&Inventory>)>();
-                for (p, _, light, bag) in q.iter(world).filter(|(_, on, _, _)| on.0 == map_of(floor)) {
-                    lights.extend(light.map(|l| (p.0, l.radius)));
-                    let carried = bag.map_or(&[][..], |b| &b.items[..]).iter().filter_map(|item| world.get::<LightSource>(*item));
-                    lights.extend(carried.map(|l| (p.0, l.radius)));
-                }
-                let (sight, lighting) = (world.get::<Viewshed>(me).expect("eyes"), world.resource::<Lighting>());
-                let unlit = |p: &Point| lights.iter().all(|(light, radius)| geometry::chebyshev(*p, *light) > *radius);
-                let beyond: Vec<Point> = sight.line.iter().map(|p| p + sight.origin).filter(unlit).collect();
-                if truly_dark {
-                    let seen: Vec<&Point> = beyond.iter().filter(|p| sight.can_see(**p)).collect();
-                    assert!(seen.is_empty(), "seed {s}, floor {floor}: the Spider Warrens show something beyond every light: {seen:?}");
-                } else {
-                    let unseen: Vec<&Point> = beyond.iter().filter(|p| !sight.can_see(**p)).collect();
-                    assert!(unseen.is_empty(), "seed {s}, floor {floor}: in sight beyond every light, yet unseen: {unseen:?}");
-                    let bright: Vec<(Point, LightBand)> = beyond.iter().map(|p| (*p, lighting.band(*p))).filter(|(_, band)| *band != LightBand::Dim).collect();
-                    assert!(bright.is_empty(), "seed {s}, floor {floor}: beyond every light is dim, not {bright:?}");
-                }
-                if !beyond.is_empty() {
-                    let drawn = app.world().resource::<BiomeDraws>().of(floor);
-                    checked.insert((drawn.first, drawn.last));
-                }
+            crate::testing::arrive(&mut app, map_of(floor));
+            assert_eq!(app.world().resource::<BiomeDraws>().of(floor).name == "the Spider Warrens", truly_dark, "seed {s}, floor {floor}");
+            let world = app.world_mut();
+            // Every light on the floor: what stands or lies with one, and
+            // what anyone carries, the adventurer's lantern among them,
+            // which sheds from where its carrier stands.
+            let mut lights: Vec<(Point, i32)> = Vec::new();
+            let mut q = world.query::<(&Position, &OnMap, Option<&LightSource>, Option<&Inventory>)>();
+            for (p, _, light, bag) in q.iter(world).filter(|(_, on, _, _)| on.0 == map_of(floor)) {
+                lights.extend(light.map(|l| (p.0, l.radius)));
+                let carried = bag.map_or(&[][..], |b| &b.items[..]).iter().filter_map(|item| world.get::<LightSource>(*item));
+                lights.extend(carried.map(|l| (p.0, l.radius)));
+            }
+            let (sight, lighting) = (world.get::<Viewshed>(me).expect("eyes"), world.resource::<Lighting>());
+            let unlit = |p: &Point| lights.iter().all(|(light, radius)| geometry::chebyshev(*p, *light) > *radius);
+            let beyond: Vec<Point> = sight.line.iter().map(|p| p + sight.origin).filter(unlit).collect();
+            assert!(!beyond.is_empty(), "seed {s}, floor {floor}: something in line beyond every light, or nothing is proved");
+            if truly_dark {
+                let seen: Vec<&Point> = beyond.iter().filter(|p| sight.can_see(**p)).collect();
+                assert!(seen.is_empty(), "seed {s}, floor {floor}: the Spider Warrens show something beyond every light: {seen:?}");
+            } else {
+                let unseen: Vec<&Point> = beyond.iter().filter(|p| !sight.can_see(**p)).collect();
+                assert!(unseen.is_empty(), "seed {s}, floor {floor}: in sight beyond every light, yet unseen: {unseen:?}");
+                let bright: Vec<(Point, LightBand)> = beyond.iter().map(|p| (*p, lighting.band(*p))).filter(|(_, band)| *band != LightBand::Dim).collect();
+                assert!(bright.is_empty(), "seed {s}, floor {floor}: beyond every light is dim, not {bright:?}");
             }
         }
-        assert_eq!(checked.len(), 6, "every band and the throne's floor had something in sight beyond its lights: {checked:?}");
     }
 
     /// One light standing on a map: where, the prop it is on if it is on
@@ -294,30 +297,78 @@ mod tests {
         assert_ne!(warm.light, cold.light, "burning another flame");
     }
 
-    /// Every place, the town and every floor, is lit on its first arrival
-    /// by exactly what its definitions write, and by nothing else that
-    /// stands: a fixture on every glowing cell, and every lit prop's own
-    /// light on the prop. Before the throne every brazier burns cold, and
-    /// nowhere else does one.
+    /// No lit prop is laid where its flame is wrong, read off the files with
+    /// no floor grown: a piece holding a cold brazier is laid on the
+    /// throne's floor alone, and one holding a warm brazier on a floor above
+    /// it, whether the pool lays it or a biome furnishes with it. What the
+    /// throne's own floor is grown from is held by the run's backstop.
+    #[test]
+    fn a_cold_brazier_is_laid_only_on_the_throne_floor_and_a_warm_one_only_above_it() {
+        let undermere = Undermere::new(RunSeed(0));
+        let registries = crate::content::registries();
+        let (warm, cold) = (registries.props.expect("brazier"), registries.props.expect("cold brazier"));
+        let defs = undermere.prefabs().defs();
+        let holds = |piece: &str, prop: PropId| defs.get(defs.expect(piece)).slots().any(|(_, slot)| matches!(slot, Slot::Prop(id) if *id == prop));
+        let mut checked = 0;
+        for entry in undermere.pool_entries().iter().filter(|e| e.weight > 0) {
+            let Some(piece) = entry.piece() else { continue };
+            assert!(
+                !holds(piece, cold) || entry.floors.0 >= FLOORS as i32,
+                "{:?} holds a cold brazier above the throne's floor: {:?}",
+                entry.name,
+                entry.floors
+            );
+            assert!(!holds(piece, warm) || entry.floors.1 < FLOORS as i32, "{:?} holds a warm brazier on the throne's floor: {:?}", entry.name, entry.floors);
+            checked += holds(piece, warm) as usize;
+        }
+        for drawn in undermere.every_draw() {
+            for decor in &drawn.decor {
+                if let crate::dungeon::Decor::Furnish { piece, .. } = decor {
+                    assert!(!holds(piece, cold) || drawn.first >= FLOORS, "{} furnishes with a cold brazier above the throne's floor", drawn.name);
+                    assert!(!holds(piece, warm) || drawn.last < FLOORS, "{} furnishes with a warm brazier on the throne's floor", drawn.name);
+                    checked += holds(piece, warm) as usize;
+                }
+            }
+        }
+        assert!(checked > 0, "some piece holds a warm brazier, or the check proved nothing");
+    }
+
+    /// A floor is lit on its first arrival by exactly what its definitions
+    /// write, and by nothing else that stands: a fixture on every glowing
+    /// cell, and every lit prop's own light on the prop. What may glow and
+    /// what may burn where is held statically above and over the files,
+    /// and the town's lights by Mereholt's own test below, so this plays
+    /// one floor whose biome may show a glowing tile, found through the
+    /// pure biome draw, and the throne's floor, which no warm brazier stands on.
     #[test]
     fn every_place_is_lit_on_arrival_by_exactly_what_its_tiles_and_props_write() {
-        for s in 0..2 {
-            let mut app = crate::testing::headless(RunSeed(s));
-            let me = crate::testing::adventurer(&mut app);
-            crate::testing::sturdy(&mut app, me);
-            let registries = app.world().resource::<Registries>().clone();
-            let (brazier, cold) = (registries.props.expect("brazier"), registries.props.expect("cold brazier"));
-            for map in std::iter::once(TOWN).chain((1..=FLOORS).map(map_of)) {
-                crate::testing::arrive(&mut app, map);
-                let planned = planned(&mut app, map);
-                assert!(!planned.is_empty() || floor_of(map).is_some(), "seed {s}: Mereholt is lit");
-                assert_eq!(standing(&mut app, map), planned, "seed {s}, {map:?}");
-                let kinds: Vec<PropId> = planned.iter().filter_map(|(_, k, _)| *k).collect();
-                if map == map_of(FLOORS) {
-                    assert!(!kinds.contains(&brazier), "seed {s}: a warm brazier before the throne");
-                } else {
-                    assert!(!kinds.contains(&cold), "seed {s}: a cold brazier on {map:?}");
-                }
+        let loaded = Undermere::new(RunSeed(0));
+        let (s, glowing) = (0..200u64)
+            .find_map(|s| {
+                let undermere = loaded.reseeded(RunSeed(s));
+                (1..FLOORS)
+                    .find(|f| {
+                        let tiles = undermere.tiles();
+                        undermere.tiles_a_floor_may_show(*f, undermere.biome_of(*f)).iter().any(|name| tiles.get(tiles.expect(name)).light.is_some())
+                    })
+                    .map(|f| (s, f))
+            })
+            .expect("some seed over 200 draws a floor that may show a glowing tile");
+        let mut app = crate::testing::headless(RunSeed(s));
+        let me = crate::testing::adventurer(&mut app);
+        crate::testing::sturdy(&mut app, me);
+        let registries = app.world().resource::<Registries>().clone();
+        let (brazier, cold) = (registries.props.expect("brazier"), registries.props.expect("cold brazier"));
+        for floor in [glowing, FLOORS] {
+            let map = map_of(floor);
+            crate::testing::arrive(&mut app, map);
+            let planned = planned(&mut app, map);
+            assert_eq!(standing(&mut app, map), planned, "seed {s}, floor {floor}");
+            let kinds: Vec<PropId> = planned.iter().filter_map(|(_, k, _)| *k).collect();
+            if floor == FLOORS {
+                assert!(!kinds.contains(&brazier), "seed {s}: a warm brazier before the throne");
+            } else {
+                assert!(!kinds.contains(&cold), "seed {s}: a cold brazier on floor {floor}");
             }
         }
     }
@@ -388,48 +439,6 @@ mod tests {
         assert_eq!(standing(&mut again, TOWN), placed, "continued, the town is lit by the same lights, once each");
     }
 
-    /// A goblin camp's fire, stood by the population with no slot to read
-    /// it off, sheds its own light on the floor it is first seen on and
-    /// again on the same floor continued from the save its arrival wrote,
-    /// found somewhere over a span of seeds since a camp is a coin flip.
-    #[test]
-    fn a_camps_fire_lights_the_ground_round_it_and_still_does_once_the_run_is_continued_over_a_span_of_seeds() {
-        let lit_fires = |app: &mut App, map: MapId| -> Vec<(Point, Option<LightSource>)> {
-            let fire = app.world().resource::<Registries>().props.expect("fire");
-            let world = app.world_mut();
-            let mut q = world.query::<(&Position, &OnMap, &PropKind, Option<&LightSource>)>();
-            q.iter(world).filter(|(_, on, kind, _)| on.0 == map && kind.0 == fire).map(|(p, _, _, light)| (p.0, light.copied())).collect()
-        };
-        let campfire = {
-            let registries = crate::content::registries();
-            registries.props.get(registries.props.expect("fire")).light.map(LightSource)
-        };
-        assert!(campfire.is_some(), "a camp's fire is written with a light");
-        let camps = std::sync::atomic::AtomicUsize::new(0);
-        par_seeds(seeds(0..40), |s| {
-            let mut app = crate::testing::headless(RunSeed(s));
-            let me = crate::testing::adventurer(&mut app);
-            crate::testing::sturdy(&mut app, me);
-            let map = map_of(5);
-            crate::testing::arrive(&mut app, map);
-            crate::testing::settle(&mut app);
-            let fires = lit_fires(&mut app, map);
-            let Some((at, light)) = fires.first().copied() else { return };
-            assert_eq!(light, campfire, "seed {s}: the camp's fire carries its own light");
-            let me_at = crate::testing::at(&app, me);
-            let (world_map, lighting) = (app.world().resource::<WorldMap>(), app.world().resource::<Lighting>());
-            let beyond = geometry::square(at, 1).filter(|p| world_map.is_walkable(*p) && geometry::chebyshev(*p, me_at) > lantern_radius(Some(5)) + 1);
-            for p in beyond {
-                assert_eq!(lighting.band(p), LightBand::Lit, "seed {s}: the ground at {p:?} beside the fire is lit, the lantern far off");
-            }
-            let text = app.world().resource::<Saves>().load(crate::save::SLOT).expect("the slot reads").expect("the arrival wrote the run down");
-            let mut again = crate::testing::continued(&text);
-            assert_eq!(lit_fires(&mut again, map), fires, "seed {s}: every fire is lit again once the run is continued");
-            camps.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        });
-        assert!(camps.into_inner() > 0, "some seed over the span stood a camp's fire on floor five");
-    }
-
     /// The lantern the adventurer carries reaches as far as the floor they
     /// stand on allows, all the way down, and as far as ever back in town.
     #[test]
@@ -444,7 +453,10 @@ mod tests {
         };
         let reach = |app: &App| app.world().get::<LightSource>(lantern).map(|l| l.radius);
         assert_eq!(reach(&app), Some(lantern_radius(None)), "in Mereholt");
-        for floor in 1..=FLOORS {
+        // The dimming is `lantern_radius`'s, unit-tested above on every
+        // floor; this holds that the lantern is kept to it on the way down,
+        // at a floor the radius has fallen on and at the deepest.
+        for floor in [4, FLOORS] {
             crate::testing::arrive(&mut app, map_of(floor));
             assert_eq!(reach(&app), Some(lantern_radius(Some(floor))), "on floor {floor}");
         }

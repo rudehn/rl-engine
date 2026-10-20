@@ -635,15 +635,7 @@ mod tests {
 
     use super::*;
     use crate::dungeon::map_of;
-    use crate::testing::{arena_on, arrive, clear_monsters, here, monster, pass_turns, said, seeds, settle, stand_on, sturdy};
-
-    /// The secret doors hidden on the place `on`, as play keeps them.
-    fn secret_doors(map: &WorldMap, on: MapId) -> Vec<rl_engine::rl_bevy::secrets::Secret> {
-        let place = map.place(on).expect("a place");
-        let secrets: Vec<(Point, TileId, u32)> = place.secrets.iter().map(|x| (x.at, x.is, x.group)).collect();
-        let kinds = secret_kinds(&place.terrain, place.entry, &secrets, map.tables());
-        place.secrets.iter().filter(|x| kinds.get(&x.group) == Some(&SecretKind::Door)).copied().collect()
-    }
+    use crate::testing::{arena_on, here, monster, pass_turns, said, seeds, settle};
 
     /// What `assets/hidden.ron` asks of each floor, read with no floor
     /// built: no secret door before floor two and at least one asked for on
@@ -731,38 +723,22 @@ mod tests {
 
     /// Standing beside a secret door and waiting, at the base chances with
     /// no ring, the adventurer finds it within twenty turns on at least
-    /// nine seeds in ten: waiting is searching, and a wall suspected is a
-    /// wall found.
+    /// nine runs in ten: waiting is searching, and a wall suspected is a
+    /// wall found. Worked from the numbers the game plays by rather than
+    /// sampled: the door's spot percent from `hidden.ron`, weighed by
+    /// [`SPOTTING`] for a finder one cell off who waits, with no keenness,
+    /// and compounded over twenty turns. That the engine rolls that chance
+    /// once a turn, once for a door's whole group, and that waiting
+    /// multiplies it, is `rl-bevy`'s `props` tests: the secret in sight
+    /// found at its chance, the waited turn that multiplies it, and the
+    /// group found as one.
     #[test]
-    fn beside_a_secret_door_a_waiting_adventurer_finds_it_within_twenty_turns_on_nine_seeds_in_ten() {
-        let mut found = 0;
-        for s in 0..10 {
-            let mut app = crate::testing::headless(RunSeed(s));
-            let me = (2..FLOORS)
-                .find_map(|floor| {
-                    let me = arrive(&mut app, map_of(floor));
-                    (!secret_doors(app.world().resource::<WorldMap>(), here(&app)).is_empty()).then_some(me)
-                })
-                .unwrap_or_else(|| panic!("seed {s}: no floor with a secret door"));
-            let map = app.world().resource::<WorldMap>();
-            let (on, secret) = (here(&app), secret_doors(map, here(&app))[0]);
-            let beside = Direction::CARDINALS
-                .iter()
-                .map(|d| secret.at + d.offset())
-                .find(|p| map.is_walkable_on(on, *p))
-                .unwrap_or_else(|| panic!("seed {s}: nothing to stand on beside {:?}", secret.at));
-            sturdy(&mut app, me);
-            clear_monsters(&mut app);
-            stand_on(&mut app, me, beside);
-            for _ in 0..20 {
-                pass_turns(&mut app, 1);
-                if !app.world().resource::<WorldMap>().secrets(on).iter().any(|x| x.group == secret.group) {
-                    found += 1;
-                    break;
-                }
-            }
-        }
-        assert!(found >= 9, "found on only {found} seeds in ten");
+    fn beside_a_secret_door_a_waiting_adventurer_finds_it_within_twenty_turns_on_nine_runs_in_ten() {
+        let hiding = Hiding::load();
+        let (chance, out_of) = SPOTTING.chance(hiding.secret_doors.spot, 0, 1, true).expect("a door beside the finder can be spotted");
+        let (chance, out_of) = (f64::from(chance), f64::from(out_of));
+        let found_within_twenty = 1.0 - (1.0 - chance / out_of).powi(20);
+        assert!(found_within_twenty >= 0.9, "a waiting adventurer finds a door beside them in twenty turns {found_within_twenty:.3} of the time");
     }
 
     /// Stands a `name` at `at` on the place being read, hidden so no roll

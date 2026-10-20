@@ -582,12 +582,13 @@ mod tests {
         assert_eq!(app.world().get::<Stack>(bag[bag.len() - 1]).map(|s| s.count), Some(2));
     }
 
-    /// A run started on a floor begins on that floor, at its way in, for
-    /// every floor there is: what a photograph of a deeper floor starts
-    /// from.
+    /// A run started on a floor begins on that floor, at its way in:
+    /// what a photograph of a deeper floor starts from. The ask is a floor
+    /// number read the same way for every floor, so the first and the
+    /// deepest are the ends of what it can be given.
     #[test]
     fn a_run_started_on_a_floor_begins_on_that_floor() {
-        for floor in 1..=FLOORS {
+        for floor in [1, FLOORS] {
             let mut app = headless(RunSeed(7));
             app.insert_resource(StartFloor(floor));
             let me = adventurer(&mut app);
@@ -694,27 +695,32 @@ mod tests {
 
     /// A photograph's ask to start by one of Mereholt's people who keeps
     /// a post stands the adventurer beside them, one step from their shop
-    /// or their talk, for every one of them and every seed tried.
+    /// or their talk, for every one of them. Mereholt is drawn by hand and
+    /// is the same on every seed, so one run is asked for each of them in
+    /// turn, the stand answered by `stand_near` itself.
     #[test]
     fn a_run_started_by_a_person_who_keeps_a_post_stands_beside_them_in_mereholt() {
         use crate::testing::settle;
         use crate::townsfolk::Moves;
         let townsfolk = crate::content::Library::load(&crate::content::effect_kinds(), &Moments::default()).townsfolk;
-        for s in [0, 1, 7] {
-            for role in townsfolk.roles().filter(|r| r.moves == Moves::Keeps) {
-                let mut app = headless(RunSeed(s));
-                app.insert_resource(StartNear(role.role.clone()));
-                let me = adventurer(&mut app);
-                settle(&mut app);
-                let person = {
-                    let world = app.world_mut();
-                    let mut q = world.query::<(&Position, &Townsperson)>();
-                    q.iter(world).find(|(_, p)| p.0 == role.role).map(|(p, _)| p.0).expect("the person stands")
-                };
-                assert_eq!(geometry::chebyshev(at(&app, me), person), 1, "seed {s}: beside the {} at {person:?}, stood at {:?}", role.role, at(&app, me));
-                assert!(app.world().get_resource::<StartNear>().is_none(), "seed {s}: the ask is forgotten once answered");
-            }
+        let mut app = headless(RunSeed(0));
+        let me = adventurer(&mut app);
+        settle(&mut app);
+        let mut asked = 0;
+        for role in townsfolk.roles().filter(|r| r.moves == Moves::Keeps) {
+            app.insert_resource(StartNear(role.role.clone()));
+            stand_near(app.world_mut());
+            settle(&mut app);
+            let person = {
+                let world = app.world_mut();
+                let mut q = world.query::<(&Position, &Townsperson)>();
+                q.iter(world).find(|(_, p)| p.0 == role.role).map(|(p, _)| p.0).expect("the person stands")
+            };
+            assert_eq!(geometry::chebyshev(at(&app, me), person), 1, "beside the {} at {person:?}, stood at {:?}", role.role, at(&app, me));
+            assert!(app.world().get_resource::<StartNear>().is_none(), "the ask is forgotten once answered");
+            asked += 1;
         }
+        assert!(asked > 0, "some of Mereholt's people keep a post");
     }
 
     /// A run begun after another in the same launch has been nowhere and

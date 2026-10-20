@@ -694,7 +694,7 @@ mod tests {
 
     use super::*;
     use crate::dungeon::{TOWN, map_of};
-    use crate::testing::{adventurer, arrive, first_seeds, headless, par_seeds, seeds, sturdy};
+    use crate::testing::{adventurer, arrive, first_seeds, headless, seeds, sturdy};
 
     /// A floor's worth of open ground, larger than any floor, with nothing
     /// in the way: what `plan` does with no map to fall short on.
@@ -1202,12 +1202,17 @@ mod tests {
 
     /// A goblin camp: half the floors a goblin war band is placed on
     /// floors five and six dress it round a fire, every follower asleep
-    /// and the leader alone keeping the watch, found somewhere over a
-    /// span of seeds since the dressing itself is a coin flip.
+    /// and the leader alone keeping the watch, found at the first seed of
+    /// a span that dresses one since the dressing itself is a coin flip.
+    /// The camp's fire sheds its own light, the ground round it is lit
+    /// with the lantern far off, and it is lit again on the same floor
+    /// continued from the save the arrival wrote.
     #[test]
     fn a_goblin_camp_holds_a_fire_its_followers_asleep_and_its_leader_keeping_the_watch_over_a_span_of_seeds() {
-        let camps = std::sync::atomic::AtomicUsize::new(0);
-        par_seeds(seeds(0..40), |s| {
+        // Stops at the first seed that dresses a camp: each is an arrival,
+        // and the property is of the one found. `expect` fails the test if
+        // no seed does, so a camp that stopped being dressed is no pass.
+        let found = (0..40u64).find(|&s| {
             let mut app = headless(RunSeed(s));
             let me = adventurer(&mut app);
             sturdy(&mut app, me);
@@ -1218,11 +1223,9 @@ mod tests {
             // laid anything: a goblin stockade's fire is its piece's.
             let laid: Vec<Point> = app.world().resource::<WorldMap>().place(map).expect("built").spots.iter().map(|s| s.at).collect();
             let world = app.world_mut();
-            let has_fire =
-                world.query::<(&PropKind, &OnMap, &Position)>().iter(world).any(|(k, on, at)| k.0 == fire_id && on.0 == map && !laid.contains(&at.0));
-            if !has_fire {
-                return;
-            }
+            let fires: Vec<Point> =
+                world.query::<(&PropKind, &OnMap, &Position)>().iter(world).filter(|(k, on, _)| k.0 == fire_id && on.0 == map).map(|(_, _, at)| at.0).collect();
+            let Some(&fire_at) = fires.iter().find(|at| !laid.contains(at)) else { return false };
             let (goblin_id, band) = {
                 let bestiary = app.world().resource::<Bestiary>();
                 (
@@ -1247,9 +1250,34 @@ mod tests {
                 assert!(sleeps(*follower), "seed {s}: a camp's own follower sleeps");
             }
             assert!(!sleeps(leader), "seed {s}: the leader keeps the watch, awake");
-            camps.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+            // The fire lights the ground round it, with the lantern far off
+            // and the run continued alike.
+            crate::testing::settle(&mut app);
+            let lit_fires = |app: &mut App| -> Vec<(Point, Option<LightSource>)> {
+                let world = app.world_mut();
+                let mut q = world.query::<(&Position, &OnMap, &PropKind, Option<&LightSource>)>();
+                q.iter(world).filter(|(_, on, kind, _)| on.0 == map && kind.0 == fire_id).map(|(p, _, _, light)| (p.0, light.copied())).collect()
+            };
+            let campfire = {
+                let registries = crate::content::registries();
+                registries.props.get(registries.props.expect("fire")).light.map(LightSource)
+            };
+            assert!(campfire.is_some(), "a camp's fire is written with a light");
+            let fires = lit_fires(&mut app);
+            assert_eq!(fires.iter().find(|(p, _)| *p == fire_at).map(|(_, l)| *l), Some(campfire), "seed {s}: the camp's fire carries its own light");
+            let me_at = crate::testing::at(&app, me);
+            let (world_map, lighting) = (app.world().resource::<WorldMap>(), app.world().resource::<Lighting>());
+            let far = crate::light::lantern_radius(Some(5)) + 1;
+            for p in geometry::square(fire_at, 1).filter(|p| world_map.is_walkable(*p) && geometry::chebyshev(*p, me_at) > far) {
+                assert_eq!(lighting.band(p), LightBand::Lit, "seed {s}: the ground at {p:?} beside the fire is lit, the lantern far off");
+            }
+            let text = app.world().resource::<Saves>().load(crate::save::SLOT).expect("the slot reads").expect("the arrival wrote the run down");
+            let mut again = crate::testing::continued(&text);
+            assert_eq!(lit_fires(&mut again), fires, "seed {s}: every fire is lit again once the run is continued");
+            true
         });
-        assert!(camps.into_inner() > 0, "some seed over the span dressed its goblin band as a camp");
+        found.expect("some seed over the span dressed its goblin band as a camp");
     }
 
     /// A feeding ground: a beast stands over its prey's own

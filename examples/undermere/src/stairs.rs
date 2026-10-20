@@ -262,13 +262,16 @@ mod tests {
     /// a map of their own; this is the real floors, walked.
     #[test]
     fn every_floor_walked_down_to_is_joined_to_the_next_and_never_cut_off_by_what_stands_on_it_through_a_save_over_a_span_of_seeds() {
-        // Four seeds a day rather than `seeds`' eight: the ladder is the
-        // engine's, tested on a ladder of its own, the one thing the
+        // One seed a day rather than `seeds`' eight: every seed is a walk
+        // down all ten floors, the longest play in the suite. The ladder is
+        // the engine's, tested on a ladder of its own, the one thing the
         // population stands in the way is a camp's fire, whose cell
         // `camp_fire_cell` keeps in the open on made-up ground, and the
-        // run's grown backstop already walks every floor with everything
-        // a piece stands. Every seed of the span under `RL_FULL_SEEDS`.
-        crate::testing::par_seeds(crate::testing::first_seeds(0..50, 4), |s| {
+        // run's grown backstop already walks every floor of every daily
+        // seed with everything a piece stands, so this walk adds what only
+        // a walk shows: the stairs taken and the save continued. Every seed
+        // of the span under `RL_FULL_SEEDS`.
+        crate::testing::par_seeds(crate::testing::first_seeds(0..50, 1), |s| {
             let mut app = headless(RunSeed(s));
             let me = arrive(&mut app, TOWN);
             crate::testing::sturdy(&mut app, me);
