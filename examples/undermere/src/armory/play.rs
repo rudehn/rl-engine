@@ -12,6 +12,7 @@ use rl_engine::prelude::*;
 use rl_engine::rl_rules::ai::hearing::HearingStats;
 
 use crate::armory::Armory;
+use crate::content::Library;
 use crate::testing::{arena, equip, give, lost, make, monster, pass_turns, settle, still};
 
 /// `me` attacks `foe`, a blow beside them or a shot at one further off,
@@ -107,19 +108,57 @@ fn killed_unaware(weapon: &str, victim: &str, seeds: std::ops::Range<u64>, each:
     (killed, struck)
 }
 
+/// Every total `dice` can roll, one entry per equally likely combination
+/// of faces, so a share of them is a share of rolls.
+fn outcomes(dice: DiceRoll) -> Vec<i32> {
+    let mut totals = vec![dice.bonus];
+    for _ in 0..dice.num {
+        totals = totals.iter().flat_map(|t| (1..=dice.sides as i32).map(move |face| t + face)).collect();
+    }
+    totals
+}
+
 /// The dagger's own five times on the unaware outranks the house's three:
 /// a rat that has not noticed the adventurer dies of one stab every time,
 /// and so does a goblin, which a sword's blow on the unaware leaves
-/// standing about one time in four, over a span of seeds.
+/// standing a little over one time in four. Read from the content with no
+/// draw: every roll of the dagger, scaled as the blow scales it, fells
+/// both, and the sword's rolls that leave a goblin standing are counted.
+/// A goblin wears nothing and an unaware blow cannot miss (Undermere sets
+/// no hit model, so `Certain` rolls no odds), so the roll scaled is the
+/// health lost; the engine's `an_unaware_target_takes_the_multiplied_blow`
+/// in `combat.rs` and `a_weapons_numbers_reach_its_attack` in `armory.rs`
+/// prove the scaling is wired to the blow and the dagger's percent, and
+/// one real stab on each victim below proves the content plays so.
 #[test]
-fn a_dagger_kills_the_unaware_in_one_blow_far_more_often_than_a_sword_over_a_span_of_seeds() {
-    let (rats, stabbed) = killed_unaware("dagger", "rat", 0..2, 8);
+fn a_dagger_kills_the_unaware_in_one_blow_far_more_often_than_a_sword() {
+    let library = Library::load(&crate::content::effect_kinds(), &Moments::default());
+    let (armory, bestiary) = (&library.armory, &library.bestiary);
+    let house = crate::content::combat_rules(&library.registries).unaware.expect("the house has a percent for the unaware");
+    let blow = |name: &str| armory.defs.get(armory.defs.expect(name)).melee.expect("a weapon with a blow");
+    let (dagger, sword) = (blow("dagger"), blow("sword"));
+    let (dagger_pct, sword_pct) = (dagger.unaware.unwrap_or(house), sword.unaware.unwrap_or(house));
+    assert!(dagger_pct > sword_pct, "the dagger's own percent {dagger_pct} outranks the house's {sword_pct}");
+    let health = |name: &str| {
+        let parts = &bestiary.defs.get(bestiary.defs.expect(name)).parts;
+        assert_eq!(parts.armor.unwrap_or(0), 0, "a {name} wears no armor, so a blow takes all its roll");
+        parts.hp.expect("a health")
+    };
+    let (rat, goblin) = (health("rat"), health("goblin"));
+    let dagger_rolls = outcomes(dagger.roll);
+    for (victim, hp) in [("rat", rat), ("goblin", goblin)] {
+        let least = dagger_rolls.iter().map(|r| rl_engine::rl_rules::arms::scale_unaware(*r, dagger_pct)).min().expect("a roll");
+        assert!(least >= hp, "every unaware dagger stab fells a {victim}: its least is {least} against {hp}");
+    }
+    let sword_rolls = outcomes(sword.roll);
+    let standing = sword_rolls.iter().filter(|r| rl_engine::rl_rules::arms::scale_unaware(**r, sword_pct) < goblin).count();
+    let total = sword_rolls.len();
+    assert!((total / 8..=total / 2).contains(&standing), "a sword's blow on the unaware leaves about one goblin in four standing: {standing} of {total}");
+
+    let (rats, stabbed) = killed_unaware("dagger", "rat", 0..1, 3);
     assert_eq!(rats, stabbed, "every rat stabbed unaware dies of it");
-    let (goblins, stabbed) = killed_unaware("dagger", "goblin", 0..4, 10);
+    let (goblins, stabbed) = killed_unaware("dagger", "goblin", 0..1, 3);
     assert_eq!(goblins, stabbed, "and every goblin");
-    let (goblins, cut) = killed_unaware("sword", "goblin", 0..4, 10);
-    let standing = cut - goblins;
-    assert!((cut / 8..=cut / 2).contains(&standing), "a sword's blow on the unaware leaves about one goblin in four standing: {standing} of {cut}");
 }
 
 /// What the steps made in a pass carried, and who heard them.

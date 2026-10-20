@@ -1093,6 +1093,7 @@ mod tests {
     /// pack's own frame.
     #[test]
     fn a_found_chain_mail_is_unidentified_and_says_how_long_until_its_level_is_known() {
+        use undermere::lore::{FAMILIAR_AFTER, Unfamiliar};
         use undermere::testing::{equip, find, give, name_of, pass_turns, said, unequip};
         let mut app = on_screen(RunSeed(3));
         let me = undermere::testing::adventurer(&mut app);
@@ -1118,9 +1119,12 @@ mod tests {
         let worn_for = |app: &App| said(app).iter().filter(|l| *l == "You will know its level once you have worn it 200 turns.").count();
         equip(&mut app, me, mail);
         assert_eq!(worn_for(&app), 1, "put on, the log says how long: {:#?}", said(&app));
-        pass_turns(&mut app, 60);
+        // Sixty turns and the turn it went on, set rather than played: the
+        // count is a number the pack reads, and that two hundred turns of
+        // wear make a thing familiar is proved by
+        // `lore::tests::armor_found_is_called_unidentified_until_it_has_been_worn_two_hundred_turns`.
+        app.world_mut().get_mut::<Unfamiliar>(mail).expect("unfamiliar while worn").worn = 61;
         let (_, detail) = pack_on(&mut app, mail);
-        // Sixty turns, and the turn it went on.
         assert_eq!(
             detail,
             ["numbers shown at +0", "level known in 139 more turns worn", "armor +3", "footfall +1", "regeneration +1 a level", short, "worn on the body"]
@@ -1131,7 +1135,11 @@ mod tests {
         equip(&mut app, me, mail);
         assert_eq!(worn_for(&app), 1, "and put on again, the log says nothing more");
 
-        pass_turns(&mut app, 140);
+        // One turn short of known, and the one more turn it takes.
+        app.world_mut().get_mut::<Unfamiliar>(mail).expect("still unfamiliar").worn = FAMILIAR_AFTER - 1;
+        app.update();
+        assert_eq!(name_of(&app, mail), "unidentified chain mail", "one turn short of known");
+        pass_turns(&mut app, 1);
         assert_eq!(name_of(&app, mail), "+2 chain mail");
         let (listed, detail) = pack_on(&mut app, mail);
         assert!(listed.starts_with("[ +2 chain mail"), "{listed:?}");
