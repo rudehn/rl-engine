@@ -39,7 +39,8 @@
 use bevy::prelude::*;
 use rl_core::{Id, Interner, Point, geometry};
 use rl_rules::TagId;
-use rl_rules::prop::PropId;
+pub use rl_rules::prop::SpotRules;
+use rl_rules::prop::{PropId, refusal};
 
 use crate::combat::{CombatRules, Faction, Health};
 use crate::components::{Blocks, MyTurn, Position};
@@ -211,15 +212,7 @@ pub struct Offer {
     pub refused: Option<Refused>,
 }
 
-/// Why an offer cannot be taken up.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Refused {
-    /// It wants something the actor is not carrying.
-    Needs(TagId),
-    /// It has a price, and the actor carries less currency than this, the
-    /// price it wants.
-    Short(u32),
-}
+pub use rl_rules::prop::Refused;
 
 /// What an actor offers whoever stands beside it: a captive to be freed,
 /// a person to be talked to.
@@ -463,7 +456,8 @@ pub fn offer_here(
     // What it lacks first, then what it cannot pay: a key it does not
     // carry is the refusal no purse answers.
     let refused = |wants: Option<TagId>, price: Option<u32>| {
-        wants.filter(|tag| !carries(bag, &pieces, *tag)).map(Refused::Needs).or_else(|| price.filter(|p| purse < *p).map(Refused::Short))
+        let carried = wants.is_none_or(|tag| carries(bag, &pieces, tag));
+        refusal(wants, carried, price, purse)
     };
     for (prop, kind, at, prop_on) in props {
         if !in_reach(at, prop_on) {
@@ -1088,63 +1082,13 @@ pub struct Hidden {
 #[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Keen(pub u8);
 
-/// How the spotting roll weighs a chance: by how near the hidden thing is,
-/// and by whether the turn was spent standing still.
+/// The [`SpotRules`] in force, as a resource.
 ///
-/// Set with [`PropsPlugin::spotting`], or replaced as a resource. The
-/// default is the roll with neither, whole at any distance in sight and
-/// the same whatever the turn was spent on, so a game that never asks
-/// spots exactly as it always did.
-///
-/// Nearness is what makes a secret found by being near it, not by
-/// glancing down a hall at it. Stillness is the lever a player who
-/// suspects a wall has: there is no search action, since pressing a key at
-/// every wall is a chore, and walking past still rolls, but the wait key
-/// they already rest with searches harder.
-#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SpotRules {
-    /// Within this many cells, Chebyshev, the chance is whole.
-    pub near: u32,
-    /// Past [`near`](Self::near) and out to this many cells it is half;
-    /// beyond, there is none. Never less than `near`, which a debug build
-    /// asserts on the first roll: a band that ends before it begins is a
-    /// typo, read as no half band at all.
-    pub far: u32,
-    /// What a turn the finder spent waiting multiplies the chance by.
-    pub still: u32,
-}
-
-impl Default for SpotRules {
-    fn default() -> Self {
-        Self { near: u32::MAX, far: u32::MAX, still: 1 }
-    }
-}
-
-impl SpotRules {
-    /// The chance, as `(in, out of)`, of spotting something of `spot`
-    /// percent from `distance` cells away, by a finder `keen` points
-    /// keener, on a turn it `waited` or did anything else; `None` when
-    /// there is none at all.
-    ///
-    /// The percent and the keenness are summed and held to certainty
-    /// first, so a keen eye never makes half a chance more than half;
-    /// then halved past [`near`](Self::near), then multiplied for
-    /// stillness and held to certainty again. A ratio rather than a
-    /// rounded percent, so half of a five is two and a half and not two.
-    pub(crate) fn chance(&self, spot: u8, keen: u8, distance: u32, waited: bool) -> Option<(u32, u32)> {
-        debug_assert!(self.far >= self.near, "SpotRules far {} is less than near {}: the half band ends before it begins", self.far, self.near);
-        let out_of = if distance <= self.near {
-            100
-        } else if distance <= self.far {
-            200
-        } else {
-            return None;
-        };
-        let percent = (u32::from(spot) + u32::from(keen)).min(100);
-        let chance = percent.saturating_mul(if waited { self.still } else { 1 }).min(out_of);
-        (chance > 0).then_some((chance, out_of))
-    }
-}
+/// Inserted by [`PropsPlugin::spotting`] and read by the spotting roll;
+/// the rule itself lives in `rl-rules` so its chance is tested without an
+/// `App`.
+#[derive(Resource, Debug, Clone, Copy, Default)]
+pub(crate) struct Spotting(pub(crate) SpotRules);
 
 /// Something hidden was spotted: a prop, or a place's secret.
 ///
@@ -1271,7 +1215,7 @@ pub fn spot_hidden_props(
 /// [`PropRng`].
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct SpotDice<'w> {
-    rules: Res<'w, SpotRules>,
+    rules: Res<'w, Spotting>,
     rng: ResMut<'w, PropRng>,
 }
 
@@ -1283,7 +1227,7 @@ impl SpotDice<'_> {
     fn roll(&mut self, spot: u8, keen: u8, distance: i32, waited: bool) -> bool {
         use rand::Rng;
         let distance = u32::try_from(distance).unwrap_or(0);
-        self.rules.chance(spot, keen, distance, waited).is_some_and(|(chance, out_of)| self.rng.0.random_ratio(chance, out_of))
+        self.rules.0.chance(spot, keen, distance, waited).is_some_and(|(chance, out_of)| self.rng.0.random_ratio(chance, out_of))
     }
 }
 
@@ -1397,10 +1341,9 @@ impl PropsPlugin {
     /// [`PropsPlugin`] keeps [`SpotRules::default`], whole at any distance
     /// in sight and the same whatever the turn was spent on.
     ///
-    /// Inserted as [`SpotRules`], so a game may also replace it later.
     pub fn spotting(rules: SpotRules) -> impl Plugin {
         move |app: &mut App| {
-            app.insert_resource(rules);
+            app.insert_resource(Spotting(rules));
             app.add_plugins(PropsPlugin);
         }
     }
@@ -1419,7 +1362,7 @@ impl Plugin for PropsPlugin {
             .add_action::<Interact>()
             .add_message::<FillContainer>()
             .add_message::<Spotted>()
-            .init_resource::<SpotRules>()
+            .init_resource::<Spotting>()
             // What props read that belongs to plugins a game may have left
             // out: taking out of a container says so in items' own words,
             // and a prop that bursts hears its own death. A game may have
@@ -2886,22 +2829,6 @@ mod spotting {
     }
 
     #[test]
-    fn the_chance_is_whole_near_half_out_to_far_and_none_beyond_with_keen_added_and_stillness_multiplying() {
-        let rules = SpotRules { near: 2, far: 7, still: 3 };
-        assert_eq!(rules.chance(6, 0, 2, false), Some((6, 100)), "whole within near");
-        assert_eq!(rules.chance(5, 0, 3, false), Some((5, 200)), "half past it, two and a half and not two");
-        assert_eq!(rules.chance(6, 0, 7, false), Some((6, 200)), "half out to far");
-        assert_eq!(rules.chance(100, 50, 8, true), None, "and none beyond, however keen and still");
-        assert_eq!(rules.chance(6, 15, 1, false), Some((21, 100)), "keenness adds");
-        assert_eq!(rules.chance(0, 15, 1, false), Some((15, 100)), "even to nought");
-        assert_eq!(rules.chance(0, 0, 1, true), None, "and nought with none is never");
-        assert_eq!(rules.chance(90, 30, 5, false), Some((100, 200)), "held to certainty before it is halved");
-        assert_eq!(rules.chance(6, 0, 1, true), Some((18, 100)), "a waited turn triples");
-        assert_eq!(rules.chance(50, 0, 1, true), Some((100, 100)), "to certainty and no further");
-        assert_eq!(SpotRules::default().chance(6, 0, 900, true), Some((6, 100)), "and the default weighs neither");
-    }
-
-    #[test]
     fn a_secret_in_sight_is_found_at_its_chance_and_becomes_its_tile_and_one_out_of_sight_never() {
         let pillar = Point::new(6, 3);
         let mut rig = rig(1, SpotRules::default(), &[(pillar, 100, 0), (BEYOND, 100, 1)]);
@@ -3019,12 +2946,5 @@ mod spotting {
         let found = groups_in_sight(&near_unseen, &sight, START);
         assert_eq!(found.iter().map(|s| (s.group, s.at.x)).collect::<Vec<_>>(), [(0, 6), (1, 9)]);
         assert!(groups_in_sight(&[secret(3, 2)], &sight, START).is_empty(), "a group with no cell in sight is not rolled for");
-    }
-
-    #[test]
-    #[should_panic(expected = "less than near")]
-    #[cfg(debug_assertions)]
-    fn spot_rules_whose_far_is_nearer_than_near_are_refused() {
-        SpotRules { near: 7, far: 2, still: 1 }.chance(10, 0, 1, false);
     }
 }

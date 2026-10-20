@@ -401,6 +401,83 @@ fn nothing() -> Box<RawValue> {
     parse_args("()").expect("the unit is valid ron")
 }
 
+/// Why an offer cannot be taken up.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Refused {
+    /// It wants something the actor is not carrying.
+    Needs(TagId),
+    /// It has a price, and the actor carries less currency than this, the
+    /// price it wants.
+    Short(u32),
+}
+
+/// Why an offer is refused, if it is: what it lacks first, then what it
+/// cannot pay.
+///
+/// A key not carried is the refusal no purse answers, so it is named even
+/// when the purse is short too. `carries` is whether the actor carries
+/// what `needs` names, and is read only when something is needed.
+pub fn refusal(needs: Option<TagId>, carries: bool, price: Option<u32>, purse: u32) -> Option<Refused> {
+    needs.filter(|_| !carries).map(Refused::Needs).or_else(|| price.filter(|p| purse < *p).map(Refused::Short))
+}
+
+/// How the spotting roll weighs a chance: by how near the hidden thing is,
+/// and by whether the turn was spent standing still.
+///
+/// The default is the roll with neither, whole at any distance in sight and
+/// the same whatever the turn was spent on, so a game that never asks
+/// spots exactly as it always did.
+///
+/// Nearness is what makes a secret found by being near it, not by
+/// glancing down a hall at it. Stillness is the lever a player who
+/// suspects a wall has: there is no search action, since pressing a key at
+/// every wall is a chore, and walking past still rolls, but the wait key
+/// they already rest with searches harder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpotRules {
+    /// Within this many cells, Chebyshev, the chance is whole.
+    pub near: u32,
+    /// Past [`near`](Self::near) and out to this many cells it is half;
+    /// beyond, there is none. Never less than `near`, which a debug build
+    /// asserts on the first roll: a band that ends before it begins is a
+    /// typo, read as no half band at all.
+    pub far: u32,
+    /// What a turn the finder spent waiting multiplies the chance by.
+    pub still: u32,
+}
+
+impl Default for SpotRules {
+    fn default() -> Self {
+        Self { near: u32::MAX, far: u32::MAX, still: 1 }
+    }
+}
+
+impl SpotRules {
+    /// The chance, as `(in, out of)`, of spotting something of `spot`
+    /// percent from `distance` cells away, by a finder `keen` points
+    /// keener, on a turn it `waited` or did anything else; `None` when
+    /// there is none at all.
+    ///
+    /// The percent and the keenness are summed and held to certainty
+    /// first, so a keen eye never makes half a chance more than half;
+    /// then halved past [`near`](Self::near), then multiplied for
+    /// stillness and held to certainty again. A ratio rather than a
+    /// rounded percent, so half of a five is two and a half and not two.
+    pub fn chance(&self, spot: u8, keen: u8, distance: u32, waited: bool) -> Option<(u32, u32)> {
+        debug_assert!(self.far >= self.near, "SpotRules far {} is less than near {}: the half band ends before it begins", self.far, self.near);
+        let out_of = if distance <= self.near {
+            100
+        } else if distance <= self.far {
+            200
+        } else {
+            return None;
+        };
+        let percent = (u32::from(spot) + u32::from(keen)).min(100);
+        let chance = percent.saturating_mul(if waited { self.still } else { 1 }).min(out_of);
+        (chance > 0).then_some((chance, out_of))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -611,5 +688,39 @@ mod tests {
         ] {
             assert!(said.contains(want), "every problem is named at once, and {want:?} is missing from: {said}");
         }
+    }
+
+    #[test]
+    fn a_missing_need_is_refused_before_a_short_purse_and_a_need_met_leaves_only_the_purse() {
+        let key = TagId::from_raw(3);
+        assert_eq!(refusal(Some(key), false, Some(50), 0), Some(Refused::Needs(key)), "a key no purse answers comes first");
+        assert_eq!(refusal(Some(key), true, Some(50), 30), Some(Refused::Short(50)));
+        assert_eq!(refusal(Some(key), true, Some(50), 50), None, "a purse that meets the price is enough");
+        assert_eq!(refusal(None, false, None, 0), None, "an offer asking for nothing is never refused");
+        assert_eq!(refusal(None, false, Some(5), 4), Some(Refused::Short(5)), "carrying is read only when something is needed");
+        assert_eq!(refusal(Some(key), true, None, 0), None);
+    }
+
+    #[test]
+    fn the_spotting_chance_is_whole_near_half_out_to_far_and_none_beyond_with_keen_added_and_stillness_multiplying() {
+        let rules = SpotRules { near: 2, far: 7, still: 3 };
+        assert_eq!(rules.chance(6, 0, 2, false), Some((6, 100)), "whole within near");
+        assert_eq!(rules.chance(5, 0, 3, false), Some((5, 200)), "half past it, two and a half and not two");
+        assert_eq!(rules.chance(6, 0, 7, false), Some((6, 200)), "half out to far");
+        assert_eq!(rules.chance(100, 50, 8, true), None, "and none beyond, however keen and still");
+        assert_eq!(rules.chance(6, 15, 1, false), Some((21, 100)), "keenness adds");
+        assert_eq!(rules.chance(0, 15, 1, false), Some((15, 100)), "even to nought");
+        assert_eq!(rules.chance(0, 0, 1, true), None, "and nought with none is never");
+        assert_eq!(rules.chance(90, 30, 5, false), Some((100, 200)), "held to certainty before it is halved");
+        assert_eq!(rules.chance(6, 0, 1, true), Some((18, 100)), "a waited turn triples");
+        assert_eq!(rules.chance(50, 0, 1, true), Some((100, 100)), "to certainty and no further");
+        assert_eq!(SpotRules::default().chance(6, 0, 900, true), Some((6, 100)), "and the default weighs neither");
+    }
+
+    #[test]
+    #[should_panic(expected = "less than near")]
+    #[cfg(debug_assertions)]
+    fn spot_rules_whose_far_is_nearer_than_near_are_refused() {
+        SpotRules { near: 7, far: 2, still: 1 }.chance(10, 0, 1, false);
     }
 }

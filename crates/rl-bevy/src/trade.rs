@@ -25,6 +25,8 @@
 use bevy::ecs::message::MessageCursor;
 use bevy::prelude::*;
 use rl_rules::TagId;
+pub use rl_rules::trade::{Deal, TradeRefusal};
+use rl_rules::trade::{Piece, draw_down};
 
 use crate::combat::Dead;
 use crate::components::{Player, Position};
@@ -68,14 +70,6 @@ impl Trader {
         tags.iter().any(|t| self.buys.contains(t))
     }
 
-    /// What it pays for one of a thing worth `worth`, rounded down.
-    ///
-    /// Per one rather than per handful, so selling a stack whole pays what
-    /// selling it one at a time would.
-    pub(crate) fn pays(&self, worth: u32) -> u32 {
-        (u64::from(worth) * u64::from(self.pays_pct) / 100).min(u64::from(u32::MAX)) as u32
-    }
-
     /// What one of `ware` changes hands for going the way `deal` says: its
     /// [`Worth`] bought, this trader's share of it sold. `None` for a thing
     /// with no worth, or sold and of a kind this trader does not buy, which
@@ -84,11 +78,7 @@ impl Trader {
     /// Whether it is worn does not enter into it: a worn thing still has a
     /// price, it is only not dealt until it comes off.
     pub fn each(&self, deal: Deal, ware: Ware) -> Option<u32> {
-        let Worth(worth) = ware.worth?;
-        match deal {
-            Deal::Bought => Some(worth),
-            Deal::Sold => self.buys(ware.tags).then(|| self.pays(worth)),
-        }
+        rl_rules::trade::each(deal, self.pays_pct, self.piece(ware))
     }
 
     /// What `count` of `ware` would come to going the way `deal` says, or
@@ -98,15 +88,13 @@ impl Trader {
     /// screen greys the rows the resolver would refuse and says why
     /// without a second copy of the rule that could drift from this one.
     pub fn quote(&self, deal: Deal, ware: Ware, count: u32, purse: u32) -> Result<u32, TradeRefusal> {
-        if ware.worn {
-            return Err(TradeRefusal::Worn);
-        }
-        if deal == Deal::Sold && !self.buys(ware.tags) {
-            return Err(TradeRefusal::NotBought);
-        }
-        let Some(each) = self.each(deal, ware) else { return Err(TradeRefusal::NoWorth) };
-        let price = each.saturating_mul(count);
-        if purse < price { Err(TradeRefusal::Short) } else { Ok(price) }
+        rl_rules::trade::quote(deal, self.pays_pct, self.piece(ware), count, purse)
+    }
+
+    /// `ware` as the rule reads it: its worth, and whether this trader buys
+    /// its kind.
+    fn piece(&self, ware: Ware) -> Piece {
+        Piece { worth: ware.worth.map(|Worth(w)| w), bought: self.buys(ware.tags), worn: ware.worn }
     }
 }
 
@@ -212,15 +200,6 @@ pub struct Sell {
     pub count: u32,
 }
 
-/// Which way a deal went, from the customer's side.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Deal {
-    /// The customer bought from the trader.
-    Bought,
-    /// The customer sold to the trader.
-    Sold,
-}
-
 /// A deal done, for the log and for whatever the game makes of it, such as
 /// knowing the kind of a thing bought.
 #[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
@@ -238,20 +217,6 @@ pub struct Traded {
     pub count: u32,
     /// What was paid for all of them.
     pub price: u32,
-}
-
-/// Why a deal was refused, for a screen to say.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TradeRefusal {
-    /// Whoever pays carries less currency than the price: the customer
-    /// buying, the trader buying back.
-    Short,
-    /// The trader does not buy a thing of this kind.
-    NotBought,
-    /// It has no [`Worth`], so it is neither sold nor bought.
-    NoWorth,
-    /// It is worn, and comes off before it changes hands.
-    Worn,
 }
 
 /// A deal refused, with the reason, and nothing changed hands.
@@ -370,16 +335,13 @@ pub fn pay(world: &mut World, payer: Entity, payee: Entity, amount: u32, currenc
     }
     let pieces: Vec<Entity> =
         world.get::<Inventory>(payer).map(|b| b.items.iter().copied().filter(|i| currency.is(world.get::<Tagged>(*i))).collect()).unwrap_or_default();
-    let mut left = amount;
-    for piece in pieces {
-        if left == 0 {
-            break;
-        }
-        let take = left.min(world.get::<Stack>(piece).map_or(1, |s| s.count));
+    let held: Vec<(Entity, u32)> = pieces.iter().map(|&p| (p, world.get::<Stack>(p).map_or(1, |s| s.count))).collect();
+    let mut paid = 0;
+    for (piece, take) in draw_down(&held, amount) {
         hand_over(world, payer, payee, piece, take);
-        left -= take;
+        paid += take;
     }
-    amount - left
+    paid
 }
 
 /// One deal asked for, a [`Buy`] or a [`Sell`] in one shape.
@@ -721,13 +683,13 @@ mod tests {
         assert_eq!(rig.holds(rig.player), vec![(Some(SCRIP), 53)], "and gone from the seller's pack");
     }
 
-    /// Each refusal is a refusal, says why, and moves nothing: the buyer
-    /// short of the price, the trader short of its share, a kind the
-    /// trader does not buy, a thing of no worth, and a thing worn.
+    /// A refusal reaches the log with its reason and moves nothing: the
+    /// buyer short of the price, and a thing worn, which only the system
+    /// can see. The order of every reason is `rl_rules::trade`'s to test.
     #[test]
     fn short_currency_a_kind_not_bought_no_worth_and_a_worn_thing_are_each_refused_and_say_which() {
         let mut rig = Rig::new();
-        let (tool, trinket) = (rig.tool, rig.trinket);
+        let tool = rig.tool;
         let refusal = |(done, refused): (Vec<Traded>, Vec<TradeRefused>)| {
             assert!(done.is_empty(), "nothing traded");
             refused.iter().map(|r| r.why).collect::<Vec<_>>()
@@ -735,13 +697,6 @@ mod tests {
         let charm = rig.bag(rig.trader)[2];
         rig.app.world_mut().get_mut::<Worth>(charm).unwrap().0 = 60;
         assert_eq!(refusal(rig.buy(charm, 1)), vec![TradeRefusal::Short], "60 asked of 50");
-
-        let trinket_of_mine = rig.carried(rig.player, (Tagged(vec![trinket]), Worth(30)));
-        assert_eq!(refusal(rig.sell(trinket_of_mine, 1)), vec![TradeRefusal::NotBought]);
-        let worthless = rig.carried(rig.player, Tagged(vec![tool]));
-        assert_eq!(refusal(rig.sell(worthless, 1)), vec![TradeRefusal::NoWorth]);
-        let dear = rig.carried(rig.player, (Tagged(vec![tool]), Worth(1000)));
-        assert_eq!(refusal(rig.sell(dear, 1)), vec![TradeRefusal::Short], "250 asked of a trader with 100");
 
         let slots = Registry::from_defs(vec![rl_rules::SlotDef::new("hand")]).unwrap();
         let hand = slots.expect("hand");
@@ -752,7 +707,7 @@ mod tests {
         assert_eq!(refusal(rig.sell(held, 1)), vec![TradeRefusal::Worn]);
 
         assert_eq!((rig.purse(rig.player), rig.purse(rig.trader)), (50, 100), "no currency moved");
-        assert_eq!(rig.bag(rig.player).len(), 5, "and every thing stayed where it was");
+        assert_eq!(rig.bag(rig.player).len(), 2, "and every thing stayed where it was");
         assert_eq!(rig.bag(rig.trader).len(), 3);
     }
 

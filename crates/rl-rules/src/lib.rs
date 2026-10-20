@@ -108,6 +108,7 @@ pub mod role;
 pub mod stats;
 pub mod status;
 pub mod tag;
+pub mod trade;
 pub mod travel;
 pub mod work;
 
@@ -137,13 +138,14 @@ pub use namegen::{NameBook, NameSet};
 pub use names::{NameRef, Names};
 pub use parts::{AttackShape, KeepAway, WhenEmpty};
 pub use prefab::{Coverage, CoverageRow, Legend, Legended, Pick, PrefabDef, Reach, Slot};
-pub use prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, Stock};
+pub use prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, Refused, SpotRules, Stock, refusal};
 pub use role::RoleDef;
 pub use stats::{Modifier, Op, Source, StatDef, StatId, Stats};
 pub use status::{
     ActiveStatus, Mended, SLEEPER_REACH, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport, UNTIL_CURED, side_change, stumble, wakes_from_harm,
 };
 pub use tag::{TagDef, TagId};
+pub use trade::{Deal, Piece, TradeRefusal, draw_down, each, quote};
 pub use travel::followers;
 pub use work::{BreakReason, Work, WorkKind, WorkKindId};
 
