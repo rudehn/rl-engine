@@ -106,7 +106,7 @@ pub fn replaying() -> Option<Recording> {
 
 /// Nothing to replay from: a browser has no environment.
 #[cfg(target_arch = "wasm32")]
-pub(crate) fn replaying() -> Option<Recording> {
+pub fn replaying() -> Option<Recording> {
     None
 }
 

@@ -66,7 +66,7 @@ impl RunSeed {
 
     /// A run seed from a raw entropy reading, avalanched so neighbouring
     /// readings give unrelated runs.
-    pub(crate) const fn from_entropy(entropy: u64) -> Self {
+    pub const fn from_entropy(entropy: u64) -> Self {
         RunSeed(mix64(entropy))
     }
 

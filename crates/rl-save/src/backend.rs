@@ -73,12 +73,14 @@ impl FileBackend {
     }
 
     /// Saves next to the running executable.
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn beside_executable() -> Self {
         Self::new(Self::dir_beside_executable())
     }
 
     /// The directory the running executable is in, or the working
     /// directory when that cannot be found.
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn dir_beside_executable() -> std::path::PathBuf {
         std::env::current_exe().ok().and_then(|exe| exe.parent().map(|d| d.to_path_buf())).unwrap_or_else(|| std::path::PathBuf::from("."))
     }
