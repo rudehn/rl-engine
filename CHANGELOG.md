@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `rl_rules::{apply_hit, heal, mitigate, Applied}` are what a hit and a heal do to health: a hit's new health with what it dealt, what was lost and whether it died, a heal scaled by mending and stopped at the most, and what lands after an invulnerable target or a peaceful place; `apply_damage` and `apply_healing` ask them.
+  To change: nothing.
+
 - `rl_rules::stance(factions, a, b)` is the one answer to how one side regards another, `None` when there is no faction table or either side takes none; the seven copies of it in stealth, bumping, the minds, work, props and sleep each kept their own fallback and now ask it.
   To change: nothing.
 

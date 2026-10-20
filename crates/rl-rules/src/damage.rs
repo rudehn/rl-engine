@@ -7,6 +7,7 @@
 //! run in order; the engine ships the common ones and a game inserts its
 //! own anywhere in the list.
 
+use crate::ai::Vitals;
 use crate::content::{Named, Registry};
 use crate::status::StatusId;
 use rl_core::Id;
@@ -201,6 +202,53 @@ pub fn resolve<A: Copy>(hit: &Hit<A>, defender: &Defender, resistances: &Resista
     amount
 }
 
+/// What a hit left of the one it landed on.
+///
+/// `dealt` and `lost` differ on purpose: a blow past the last health is
+/// all dealt, for the log and for on-hit riders, but only what was there
+/// is lost.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Applied {
+    /// The health after the hit, below nought for a blow past the last.
+    pub current: i32,
+    /// What the hit did: its whole amount when it harms, and what it
+    /// restored (negative, nothing at full health) when it was absorbed.
+    pub dealt: i32,
+    /// Health actually gone: what was there, never the overkill.
+    pub lost: i32,
+    /// Whether health is spent.
+    pub died: bool,
+}
+
+/// Applies a mitigated `amount` to `health`: negative is a hit absorbed,
+/// which restores up to the most and no further.
+pub fn apply_hit(health: Vitals, amount: i32) -> Applied {
+    let current = (health.current - amount).min(health.max);
+    let dealt = if amount < 0 { health.current - current } else { amount };
+    Applied { current, dealt, lost: health.current - current.max(0), died: current <= 0 }
+}
+
+/// The health after a heal of `amount`, scaled by `mending_pct` percent
+/// (100 is as asked), stopped at the most, and never below what it was:
+/// a heal does not take health away, however it is scaled.
+pub fn heal(health: Vitals, amount: i32, mending_pct: i32) -> i32 {
+    let offered = (i64::from(amount.max(0)) * i64::from(mending_pct) / 100) as i32;
+    health.current.saturating_add(offered).min(health.max).max(health.current)
+}
+
+/// What of `amount` lands after the target's standing and the place it is
+/// in: nothing in a `peaceful` place either way, nothing that harms an
+/// `invulnerable` one but what it absorbs (negative) is kept.
+pub fn mitigate(amount: i32, invulnerable: bool, peaceful: bool) -> i32 {
+    if peaceful {
+        0
+    } else if invulnerable {
+        amount.min(0)
+    } else {
+        amount
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -275,5 +323,39 @@ mod tests {
         let r: Registry<DamageKind> = Registry::from_ron_str(r#"[(name: "slash"), (name: "radiation", armored: false)]"#).unwrap();
         assert!(r.get(r.expect("slash")).armored);
         assert!(!r.get(r.expect("radiation")).armored);
+    }
+
+    #[test]
+    fn a_hit_takes_health_and_a_blow_past_the_last_reports_all_of_it_dealt_and_only_what_was_left_lost() {
+        let v = |current| Vitals { current, max: 10 };
+        assert_eq!(apply_hit(v(10), 4), Applied { current: 6, dealt: 4, lost: 4, died: false });
+        assert_eq!(apply_hit(v(3), 8), Applied { current: -5, dealt: 8, lost: 3, died: true });
+    }
+
+    #[test]
+    fn an_absorbed_hit_restores_up_to_full_and_reports_what_it_restored() {
+        let v = |current| Vitals { current, max: 10 };
+        assert_eq!(apply_hit(v(10), -5), Applied { current: 10, dealt: 0, lost: 0, died: false });
+        assert_eq!(apply_hit(v(6), -3), Applied { current: 9, dealt: -3, lost: -3, died: false });
+    }
+
+    #[test]
+    fn a_heal_is_scaled_by_mending_stopped_at_full_and_never_takes_health_away() {
+        let v = |current| Vitals { current, max: 10 };
+        assert_eq!(heal(v(5), 4, 100), 9);
+        assert_eq!(heal(v(9), 4, 100), 10);
+        assert_eq!(heal(v(5), 4, 50), 7);
+        assert_eq!(heal(v(5), 4, 0), 5);
+        assert_eq!(heal(v(5), -4, 100), 5);
+        assert_eq!(heal(Vitals { current: i32::MAX - 1, max: i32::MAX }, i32::MAX, 100), i32::MAX);
+    }
+
+    #[test]
+    fn an_invulnerable_target_keeps_what_it_absorbs_and_a_peaceful_place_takes_nothing_either_way() {
+        assert_eq!(mitigate(7, false, false), 7);
+        assert_eq!(mitigate(7, true, false), 0);
+        assert_eq!(mitigate(-3, true, false), -3);
+        assert_eq!(mitigate(7, false, true), 0);
+        assert_eq!(mitigate(-3, false, true), 0);
     }
 }

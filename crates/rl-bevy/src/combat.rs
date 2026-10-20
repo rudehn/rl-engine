@@ -1314,8 +1314,7 @@ impl Mitigation<'_, '_> {
         let resists = self.loadout.resistances(target);
         let stages: Vec<&dyn DamageStage<Entity>> = self.stages.0.iter().map(|s| s.as_ref() as &dyn DamageStage<Entity>).collect();
         let amount = rl_rules::resolve(hit, &defender, &resists, &self.registries.damage_kinds, &stages);
-        let amount = if invulnerable { amount.min(0) } else { amount };
-        if self.map.is_peaceful(map) { 0 } else { amount }
+        rl_rules::mitigate(amount, invulnerable, self.map.is_peaceful(map))
     }
 }
 
@@ -1347,14 +1346,10 @@ pub(crate) fn apply_damage(
             continue;
         }
         let amount = mitigation.lands(&ev.hit, ev.target, invulnerable, on.map_or(MapId::ZERO, |m| m.0));
-        let before = health.current;
-        health.current = (health.current - amount).min(health.max);
-        // A hit absorbed reports what it restored, which at full health is
-        // nothing; health below nought was never there to lose.
-        let reported = if amount < 0 { before - health.current } else { amount };
-        let lost = before - health.current.max(0);
-        dealt.write(DamageDealt { target: ev.target, hit: ev.hit, dealt: reported, lost, reach: ev.reach });
-        if health.current <= 0 {
+        let hit = rl_rules::apply_hit(rl_rules::Vitals { current: health.current, max: health.max }, amount);
+        health.current = hit.current;
+        dealt.write(DamageDealt { target: ev.target, hit: ev.hit, dealt: hit.dealt, lost: hit.lost, reach: ev.reach });
+        if hit.died {
             deaths.write(DeathEvent { entity: ev.target, at: pos.0, credit: ev.hit.credit, was_player: is_player });
         }
     }
@@ -1371,9 +1366,8 @@ pub(crate) fn apply_healing(mut heals: MessageReader<Heal>, mut healed: MessageW
         if health.current <= 0 {
             continue;
         }
-        let offered = (i64::from(heal.amount.max(0)) * i64::from(loadout.mending(heal.target)) / 100) as i32;
         let before = health.current;
-        health.current = health.current.saturating_add(offered).min(health.max).max(before);
+        health.current = rl_rules::heal(rl_rules::Vitals { current: before, max: health.max }, heal.amount, loadout.mending(heal.target));
         healed.write(Healed { target: heal.target, restored: health.current - before, by: heal.by, status: heal.status });
     }
 }
@@ -1833,52 +1827,6 @@ mod tests {
         app.update();
         assert!(app.world().resource::<Seen>().cues.is_empty());
         assert_eq!(hp(&app, target), 16);
-    }
-
-    /// A heal says what it restored rather than what it offered: two to
-    /// bring twenty-eight back to thirty, and then nought, so a wearer who
-    /// is whole is not told every few turns that they mended. It is not a
-    /// hit, so nothing is reported as dealt and no armor is asked.
-    #[test]
-    fn a_heal_reports_what_it_restored_and_nothing_at_full_health() {
-        let (mut app, _, player, _) = duel(4, false, |kind| MeleeAttack::new(kind, DiceRoll::flat(1)));
-        app.world_mut().entity_mut(player).insert(Armor(50));
-        app.world_mut().get_mut::<Health>(player).unwrap().current = 28;
-        app.world_mut().write_message(Heal::new(player, 5));
-        app.update();
-        app.world_mut().write_message(Heal::new(player, 5).by(player));
-        app.update();
-        let healed: Vec<Healed> = app.world_mut().resource_mut::<Messages<Healed>>().drain().collect();
-        assert_eq!(healed.iter().map(|h| (h.restored, h.by)).collect::<Vec<_>>(), vec![(2, None), (0, Some(player))], "two to reach thirty, then nothing");
-        assert!(app.world().resource::<Seen>().dealt.is_empty(), "a mend is not damage dealt");
-        assert_eq!(hp(&app, player), 30);
-    }
-
-    /// How well an actor mends is a stat the game names: minus a hundred
-    /// on it and nothing patches the thing up, minus fifty and half does,
-    /// with no kind of damage invented to resist.
-    #[test]
-    fn the_mending_stat_scales_what_a_heal_restores_down_to_nothing() {
-        use rl_rules::{Modifier, Op, StatDef};
-        let (mut app, _, player, _) = duel(4, false, |kind| MeleeAttack::new(kind, DiceRoll::flat(1)));
-        let stats = rl_rules::Registry::from_defs(vec![StatDef::new("mending", 0)]).unwrap();
-        let mending = stats.expect("mending");
-        app.world_mut().resource_mut::<Registries>().stats = stats;
-        app.world_mut().resource_mut::<CombatRules>().mending = Some(mending);
-        let heal_at = |app: &mut App, by: i32| {
-            let mut block = StatBlock::default();
-            block.0.add(Modifier::new(mending, Op::Add(by), rl_rules::stats::Source::Game(7)));
-            app.world_mut().entity_mut(player).insert(block);
-            app.world_mut().get_mut::<Health>(player).unwrap().current = 10;
-            app.world_mut().write_message(Heal::new(player, 8));
-            app.update();
-            hp(app, player)
-        };
-        assert_eq!(heal_at(&mut app, 0), 18, "whole, with nothing on the stat");
-        assert_eq!(heal_at(&mut app, -50), 14, "half");
-        assert_eq!(heal_at(&mut app, -100), 10, "none");
-        assert_eq!(heal_at(&mut app, -250), 10, "and never a mend that hurts");
-        assert_eq!(heal_at(&mut app, 50), 22, "or half again");
     }
 
     /// The dead are not mended: a heal in the pass a blow killed in comes
@@ -2420,20 +2368,6 @@ mod tests {
         assert_eq!(struck.with, Some(first));
     }
 
-    /// A killing blow past the target's last health is reported as the
-    /// blow it was, and as only the health the target had left to lose.
-    #[test]
-    fn a_blow_past_the_last_health_reports_the_whole_blow_dealt_and_only_what_was_left_as_lost() {
-        let (mut app, start, blunt) = arena();
-        let who = app.world_mut().spawn((Actor, Blocks, Position(start), Health { current: 5, max: 30 })).id();
-        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
-        app.update();
-        app.world_mut().write_message(DamageEvent::new(who, rl_rules::Hit::from_source(None, blunt, 30)));
-        app.update();
-        let dealt: Vec<(i32, i32)> = app.world_mut().resource_mut::<Messages<DamageDealt>>().drain().map(|d| (d.dealt, d.lost)).collect();
-        assert_eq!(dealt, vec![(30, 5)], "the whole blow dealt, and the five that were left lost");
-    }
-
     /// An invulnerable actor is hit and takes nothing, and the hit is still
     /// reported, with nothing dealt, so a log says it had no effect; a heal
     /// still heals, since what it stops is harm.
@@ -2455,59 +2389,6 @@ mod tests {
         app.world_mut().write_message(DamageEvent::new(who, rl_rules::Hit::from_source(None, blunt, 4)));
         app.update();
         assert_eq!(app.world().get::<Health>(who).unwrap().current, 11, "and without it, a hit hurts again");
-    }
-
-    /// Every hit on anyone standing in a peaceful place lands as nothing,
-    /// a killing blow and an absorbed one alike, and is still reported with
-    /// nothing dealt; the same hits on someone in a place that is not
-    /// peaceful land as ever.
-    #[test]
-    fn nothing_standing_in_a_peaceful_place_is_harmed_and_elsewhere_the_same_hits_land() {
-        let (mut app, _, blunt) = arena();
-        let floor = rl_grid::TileRegistry::standard().expect("floor");
-        let build = |peaceful| crate::places::PlaceBuild {
-            terrain: rl_grid::Terrain::filled(6, 6, floor),
-            entry: Point::new(1, 1),
-            exit: None,
-            spots: Vec::new(),
-            locks: Vec::new(),
-            secrets: Vec::new(),
-            ambient: rl_grid::Light::DARK,
-            peaceful,
-        };
-        {
-            let mut map = app.world_mut().resource_mut::<WorldMap>();
-            map.install_place(MapId(1), build(true));
-            map.install_place(MapId(2), build(false));
-        }
-        let at = Point::new(2, 2);
-        let spawn = |app: &mut App, map| app.world_mut().spawn((Actor, Blocks, Position(at), OnMap(map), Health { current: 10, max: 30 })).id();
-        let (calm, rough) = (spawn(&mut app, MapId(1)), spawn(&mut app, MapId(2)));
-        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
-        app.update();
-        let health = |app: &App, who| app.world().get::<Health>(who).map(|h| h.current);
-        let hit = |app: &mut App, who, amount| {
-            app.world_mut().write_message(DamageEvent::new(who, rl_rules::Hit::from_source(None, blunt, amount)));
-            app.update();
-        };
-        hit(&mut app, calm, 999);
-        assert_eq!(health(&app, calm), Some(10), "a killing blow in the peaceful place takes nothing");
-        // Half again resistant, so a hit of ten is five absorbed.
-        app.insert_resource(DamageStages(vec![Box::new(rl_rules::damage::ApplyResistance), Box::new(SubtractArmor)]));
-        let mut absorbs = Resistances::new();
-        absorbs.set(blunt, 150);
-        for who in [calm, rough] {
-            app.world_mut().entity_mut(who).insert(Resists(absorbs.clone()));
-        }
-        hit(&mut app, calm, 10);
-        assert_eq!(health(&app, calm), Some(10), "and an absorbed one restores nothing");
-        let dealt: Vec<(i32, i32)> = app.world_mut().resource_mut::<Messages<DamageDealt>>().drain().map(|d| (d.dealt, d.lost)).collect();
-        assert_eq!(dealt, vec![(0, 0), (0, 0)], "each is reported, with nothing dealt");
-        hit(&mut app, rough, 10);
-        assert_eq!(health(&app, rough), Some(15), "elsewhere the absorbed hit restores");
-        app.world_mut().entity_mut(rough).remove::<Resists>();
-        hit(&mut app, rough, 999);
-        assert!(health(&app, rough).is_none_or(|h| h <= 0), "and the killing blow kills");
     }
 
     #[test]

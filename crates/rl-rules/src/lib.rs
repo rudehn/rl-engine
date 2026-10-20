@@ -112,7 +112,7 @@ pub use ai::{
 };
 pub use balance::{BandRow, Report, ThreatSubject, threat};
 pub use content::{BandedEntry, BandedTable, ContentError, Named, Registry, load_spawns};
-pub use damage::{DamageKind, DamageStage, Hit, Resistances, resolve};
+pub use damage::{Applied, DamageKind, DamageStage, Hit, Resistances, apply_hit, heal, mitigate, resolve};
 pub use dressing::{DistrictDressings, DressingDef};
 pub use equip::{EquipError, EquipShape, Equipment, SlotDef, SlotId};
 pub use events::{Change, CounterDef, CounterId, Fact, FactDef, FactKind, Ledger, Matcher, Need, Objective, QuestDef, QuestId, QuestState, Tally, Tracker};
