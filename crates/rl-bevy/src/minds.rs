@@ -22,16 +22,17 @@
 //! struck it and abilities resolve a use whoever chose it; only a mind has to
 //! know that both exist, so neither of them has to know about the other.
 
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use bevy::ecs::lifecycle::HookContext;
 use bevy::ecs::world::DeferredWorld;
 use bevy::prelude::*;
 use rand::rngs::StdRng;
-use rl_core::{Direction, Grid2D, Point, geometry};
+use rl_core::{Grid2D, Point, geometry};
 use rl_grid::{BitGrid, DijkstraMap, PathRules};
+use rl_rules::ai::recent::Recent;
 use rl_rules::ai::tactics::{Station, Ways};
+use rl_rules::ai::{StepAs, Trail, sort_roster, step_as};
 use rl_rules::{ActorView, Brain, Choice, Decision, MovementProfile, Snapshot, TacticCtx, Wits};
 
 use crate::ability::Use;
@@ -214,11 +215,6 @@ type FloodKey = (Point, MovementProfile, bool, bool);
 /// for good, a follower above all, whose leader walked over it.
 const WARY_OF_A_TRAP: u32 = 10 * rl_core::turn::BASE_ACTION_COST;
 
-/// How many fields, and how many floods, are kept. A moving goal is a new
-/// key every turn, so without a bound either would grow for as long as
-/// nothing changed the map.
-const FIELD_CACHE: usize = 32;
-
 /// The largest roster a field is composed for from one flood per goal; a
 /// larger one is flooded once from all of its goals together. Composing is
 /// what lets two minds that see different enemies share work, and it costs
@@ -226,57 +222,6 @@ const FIELD_CACHE: usize = 32;
 /// player and a companion or two. A companion looking at thirty monsters
 /// that all moved is thirty floods composed and one flooded whole.
 const COMPOSED_UP_TO: usize = 4;
-
-/// A bounded cache that forgets what was asked for longest ago.
-///
-/// Starting over when full, which this replaced, threw away the field
-/// every hunter was reading along with the thirty-one nobody was, once a
-/// turn in a busy fight.
-struct Recent<K, V> {
-    /// Counts every ask, so each entry knows how lately it was wanted.
-    asked: u64,
-    entries: BTreeMap<K, (u64, V)>,
-}
-
-impl<K, V> Default for Recent<K, V> {
-    fn default() -> Self {
-        Self { asked: 0, entries: BTreeMap::new() }
-    }
-}
-
-impl<K: Ord + Clone, V> Recent<K, V> {
-    /// Whether `key` is held, marking it as just asked for if so.
-    fn touch(&mut self, key: &K) -> bool {
-        self.asked += 1;
-        match self.entries.get_mut(key) {
-            Some((asked, _)) => {
-                *asked = self.asked;
-                true
-            }
-            None => false,
-        }
-    }
-
-    /// Keeps `value`, in place of the entry asked for longest ago when
-    /// there is no room.
-    fn insert(&mut self, key: K, value: V) {
-        if self.entries.len() >= FIELD_CACHE
-            && let Some(oldest) = self.entries.iter().min_by_key(|(_, (asked, _))| *asked).map(|(k, _)| k.clone())
-        {
-            self.entries.remove(&oldest);
-        }
-        self.asked += 1;
-        self.entries.insert(key, (self.asked, value));
-    }
-
-    fn get(&self, key: &K) -> Option<&V> {
-        self.entries.get(key).map(|(_, v)| v)
-    }
-
-    fn clear(&mut self) {
-        self.entries.clear();
-    }
-}
 
 /// Flow fields toward or away from any cells, built on demand and shared.
 ///
@@ -576,12 +521,12 @@ pub struct Thinking {
     reach: i32,
     hazards: BitGrid,
     origin: Point,
-    trail: Option<(u32, Point)>,
+    trail: Trail,
 }
 
 impl Default for Thinking {
     fn default() -> Self {
-        Self { actor: None, snapshot: None, at: Point::ZERO, reach: 0, hazards: BitGrid::new(0, 0), origin: Point::ZERO, trail: None }
+        Self { actor: None, snapshot: None, at: Point::ZERO, reach: 0, hazards: BitGrid::new(0, 0), origin: Point::ZERO, trail: Trail::default() }
     }
 }
 
@@ -627,10 +572,7 @@ impl Thinking {
     /// cell, becomes [`Snapshot::last_known`], so which contributor offered
     /// first cannot reach a tactic.
     pub(crate) fn offer_trail(&mut self, at: Point, stale_turns: u32) {
-        let offer = (stale_turns, at);
-        if self.trail.is_none_or(|held| offer < held) {
-            self.trail = Some(offer);
-        }
+        self.trail.offer(at, stale_turns);
     }
 
     fn open(&mut self, actor: Entity, snapshot: Snapshot<Entity>, at: Point, reach: i32, map: &WorldMap) {
@@ -645,13 +587,13 @@ impl Thinking {
         self.snapshot = Some(snapshot);
         self.at = at;
         self.reach = reach;
-        self.trail = None;
+        self.trail.clear();
     }
 
     fn close(&mut self) -> Option<(Entity, Snapshot<Entity>)> {
         let actor = self.actor.take()?;
         let mut snapshot = self.snapshot.take()?;
-        if let Some((_, at)) = self.trail.take() {
+        if let Some(at) = self.trail.take() {
             snapshot.last_known = Some(at);
         }
         Some((actor, snapshot))
@@ -761,18 +703,12 @@ type Seen = (Entity, &'static Position, Option<&'static Health>, Option<&'static
 pub fn perceive_roster(mut thinking: ResMut<Thinking>, sight: Sight, rules: Option<Res<CombatRules>>, actors: Query<Seen, (With<Actor>, Without<Dead>)>) {
     let Some(thinker) = thinking.actor() else { return };
     let Some(mine) = thinking.snapshot().map(|s| s.me.faction) else { return };
-    let (mut enemies, mut allies, mut others) = (Vec::new(), Vec::new(), Vec::new());
-    for (e, pos, health, faction, on) in &actors {
-        if e == thinker || !sight.perceives(&thinking, pos.0, on) {
-            continue;
-        }
+    let factions = rules.as_deref().map(|r| &r.factions);
+    let seen = actors.iter().filter(|(e, pos, _, _, on)| *e != thinker && sight.perceives(&thinking, pos.0, *on)).map(|(e, pos, health, faction, _)| {
         let view = ActorView { id: e, pos: pos.0, health: health.map(vitals), faction: faction.map(|f| f.0) };
-        match rl_rules::stance(rules.as_deref().map(|r| &r.factions), mine, faction.map(|f| f.0)) {
-            Some(rl_rules::Relation::Hostile) => enemies.push(view),
-            Some(rl_rules::Relation::Allied) => allies.push(view),
-            _ => others.push(view),
-        }
-    }
+        (view, rl_rules::stance(factions, mine, faction.map(|f| f.0)))
+    });
+    let (enemies, allies, others) = sort_roster(seen);
     if let Some(snapshot) = thinking.snapshot_mut() {
         snapshot.enemies.extend(enemies);
         snapshot.allies.extend(allies);
@@ -1038,21 +974,20 @@ pub(crate) fn decide_minds(
     match decision {
         // A step onto a shut door is the turn spent opening it: the door is
         // its own action, and the mind knows what it is walking into.
-        Decision::Step(to) => match Direction::between(my_pos.0, to) {
-            // A step into one who gives way is the two changing places.
-            Some(_) if gives_way(to) => {
+        Decision::Step(to) => match step_as(my_pos.0, to, gives_way(to), map.opens(to).is_some()) {
+            StepAs::Swap => {
                 came_from.0 = Some(my_pos.0);
                 let other = occupancy.at(to)[0];
                 intents.swaps.write(Intent::new(thinker, crate::bump::Swap(other)));
             }
-            Some(d) if map.opens(to).is_some() => {
+            StepAs::Open(d) => {
                 intents.opens.write(Intent::new(thinker, Open(d)));
             }
-            Some(d) => {
+            StepAs::Step(d) => {
                 came_from.0 = Some(my_pos.0);
                 intents.moves.write(Intent::new(thinker, Step(d)));
             }
-            None => {
+            StepAs::Wait => {
                 intents.waits.write(Intent::new(thinker, Wait));
             }
         },
@@ -1177,7 +1112,8 @@ mod tests {
     use crate::throwing::Throwable;
     use crate::turn::Resolution;
     use crate::turn::Turns;
-    use rl_core::DiceRoll;
+    use rl_core::{DiceRoll, Direction};
+    use rl_rules::ai::recent::FIELD_CACHE;
     use rl_rules::ai::tactics::{Hunt, MeleeAdjacent, UseCarried};
     use rl_rules::damage::DamageKindId;
 
@@ -2470,11 +2406,11 @@ mod tests {
         assert!(whole.iter().eq(composed.iter()), "cell for cell what one flood from both gives");
     }
 
-    /// A full cache gives up the field asked for longest ago and keeps the
-    /// one in use: the field every hunter reads each pass outlives any
-    /// number of one-off questions asked around it.
+    /// The flow fields are kept in the bounded cache: the bound is the
+    /// cache's and tested in `rl-rules`; what is proved here is that the
+    /// fields and the one asked for every time are the ones held.
     #[test]
-    fn a_full_cache_forgets_the_field_asked_for_longest_ago_and_keeps_the_one_in_use() {
+    fn the_flow_fields_are_held_in_the_bounded_cache_and_keep_the_one_in_use() {
         let (mut app, start, _) = arena();
         app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30)));
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
@@ -2491,8 +2427,6 @@ mod tests {
         }
         assert_eq!(fields.len(), FIELD_CACHE, "never more than the bound");
         assert!(fields.fields.entries.contains_key(&key(0)), "the one asked for every time is still held");
-        assert!(!fields.fields.entries.contains_key(&key(1)), "the one asked for once, longest ago, went first");
-        assert!(fields.fields.entries.contains_key(&key(FIELD_CACHE as i32 + 8)), "and the newest is held");
     }
 
     /// A companion keeps up with the player and gives way when it is

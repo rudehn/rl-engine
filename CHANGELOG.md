@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `rl_rules::ai::{step_as, StepAs, sort_roster, Trail}` and `rl_rules::ai::recent::{Recent, FIELD_CACHE}` answer what a mind's decision to step becomes (a swap with one who gives way, a door opened, a step, or a wait), who a mind sees sorted into enemies, allies and the others, which trail a search follows (the freshest offered, a tie to the lower cell) and the bounded cache the flow fields are kept in; the minds' system had its own copy of each.
+  To change: nothing.
+
 - `rl_rules::{resolve_bump, classify_offers, BumpOutcome, Offered}` answer what walking into a cell comes to (a step, a door opened, a blow, a swap, the one plain thing offered taken up, or a question for a screen) and `rl_core::step_cost` what a step onto a tile costs, a diagonal's 1.414 times; the bump redirect, the swap resolver and the step resolver each had their own copy and now ask one.
   To change: nothing.
 
