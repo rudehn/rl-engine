@@ -499,9 +499,8 @@ pub fn may_use(
     wearable: bool,
     unknown: bool,
 ) -> bool {
-    let empty = !unknown && consumable.is_some_and(|c| c.is_empty());
-    let off_the_body = wearable && !worn.is_some_and(|w| w.slot_of(item).is_some());
-    bag.contains(item) && !empty && !off_the_body
+    let known_empty = !unknown && consumable.is_some_and(|c| c.is_empty());
+    rl_rules::equip::may_use(bag.contains(item), known_empty, wearable, worn.is_some_and(|w| w.slot_of(item).is_some()))
 }
 
 /// Whether `item`'s use, which `asks` for one of its user's things, may be
@@ -938,7 +937,7 @@ pub(crate) fn lend_dark_sight(mut commands: Commands, seers: Query<Seer, MaySee>
         if own.is_none() && worn.is_none() && !lent {
             continue;
         }
-        let best = if suppressed { None } else { own.map(|o| o.0).into_iter().chain(worn).max().filter(|tiles| *tiles > 0) };
+        let best = rl_rules::equip::dark_sight(own.map(|o| o.0), worn, suppressed);
         let mut e = commands.entity(seer);
         if now.map(|d| d.0) != best {
             match best {
@@ -1085,19 +1084,17 @@ impl Belongings<'_, '_> {
     /// thing, which the resolver would refuse.
     fn gain(&self, thinker: Entity, item: Entity, shape: &Wearable, score: &GearScore) -> Option<i32> {
         let Ok((_, Some(worn))) = self.bags.get(thinker) else { return None };
-        // Tried on a copy, by the rule the resolver equips by: what the
-        // real equip would displace, and nothing moved.
-        let mut after = worn.0.clone();
-        let displaced = after.equip_keeping(item, &shape.0, |other| self.stuck.contains(other)).ok()?;
-        let given_up: i32 = displaced.iter().map(|d| self.scores.get(*d).map_or(0, |s| s.0)).sum();
-        // What it strikes with is the first worn thing with a blow, as
-        // `Loadout` reads it, and its own only while it wears none.
-        let strikes_with = |worn: &rl_rules::Equipment<Entity>| worn.worn().map(|(_, thing)| thing).find(|thing| self.blows.contains(*thing));
-        let own = match (strikes_with(&worn.0), strikes_with(&after)) {
-            (None, Some(blow)) if blow == item => self.own.get(thinker).map_or(0, |o| o.0),
-            _ => 0,
-        };
-        Some(score.0 - given_up - own)
+        let own_blow = self.own.get(thinker).map_or(0, |o| o.0);
+        rl_rules::equip::gain(
+            &worn.0,
+            item,
+            &shape.0,
+            |other| self.stuck.contains(other),
+            score.0,
+            |other| self.scores.get(other).map_or(0, |s| s.0),
+            |thing| self.blows.contains(thing),
+            own_blow,
+        )
     }
 }
 

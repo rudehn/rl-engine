@@ -239,6 +239,68 @@ impl<I: Copy + Eq> Equipment<I> {
     }
 }
 
+/// How much better a wearer would be for putting `item` on in `shape`,
+/// scored `score`, than for what that displaces and, for a thing whose blow
+/// it would then strike with where it strikes with its own now, than for
+/// that `own_blow`; `None` when `item` cannot go on at all, since the shape
+/// names no slot or every slot it may take holds something that `stays`.
+///
+/// Tried on a copy by [`Equipment::equip_keeping`], the rule the resolver
+/// equips by, so a mind never counts a gain the real equip would refuse.
+/// What a wearer strikes with is the first worn thing with a blow, in slot
+/// order, as a loadout reads it, and its own blow only while it wears none:
+/// the own blow is given up only when `item` becomes the first. A displaced
+/// thing `score_of` has no score for is worth nothing.
+// The eight arguments are the eight things a caller must gather; a struct of
+// them would only be built to be taken apart again.
+#[allow(clippy::too_many_arguments)]
+pub fn gain<I: Copy + Eq>(
+    worn: &Equipment<I>,
+    item: I,
+    shape: &EquipShape,
+    stays: impl Fn(I) -> bool,
+    score: i32,
+    score_of: impl Fn(I) -> i32,
+    has_blow: impl Fn(I) -> bool,
+    own_blow: i32,
+) -> Option<i32> {
+    let mut after = worn.clone();
+    let displaced = after.equip_keeping(item, shape, stays).ok()?;
+    let given_up: i32 = displaced.iter().map(|d| score_of(*d)).sum();
+    let strikes_with = |worn: &Equipment<I>| worn.worn().map(|(_, thing)| thing).find(|thing| has_blow(*thing));
+    let own = match (strikes_with(worn), strikes_with(&after)) {
+        (None, Some(blow)) if blow == item => own_blow,
+        _ => 0,
+    };
+    Some(score - given_up - own)
+}
+
+/// Whether a thing may be used now: carried (`in_bag`), not known to be
+/// empty, and, when it can be worn, worn.
+///
+/// `known_empty` is what its user knows, not what is true: a thing the
+/// player has not learnt is empty is used empty, since a refusal for
+/// nothing would tell the player it was. A wearable is used by wearing it,
+/// known or not, since where it goes is shown; one used from the bottom of
+/// the bag would let a wearer keep one plate on and spend another's charge.
+pub fn may_use(in_bag: bool, known_empty: bool, wearable: bool, worn: bool) -> bool {
+    in_bag && !known_empty && !(wearable && !worn)
+}
+
+/// The sight in the dark a wearer reads now: the best of its `own` and of
+/// what it `worn` lends, none while `suppressed` and none when that comes
+/// to nothing, since sight of no tiles is no sight.
+///
+/// Derived from what stands rather than answered as things go on and off,
+/// so a thing swapped while the sight was suppressed is read as it stands
+/// the pass the suppression ends.
+pub fn dark_sight(own: Option<i32>, worn: impl IntoIterator<Item = i32>, suppressed: bool) -> Option<i32> {
+    if suppressed {
+        return None;
+    }
+    own.into_iter().chain(worn).max().filter(|tiles| *tiles > 0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -337,5 +399,101 @@ mod tests {
         let bogus = SlotId::from_raw(9);
         assert_eq!(eq.equip(2, &EquipShape::in_slot(main).and_claims(bogus)), Err(EquipError::UnknownSlot(bogus)));
         assert_eq!(eq.in_slot(main), Some(1), "the refused equip touched nothing");
+    }
+
+    /// A hand slot and a ring slot, items by number, each worth its own number
+    /// unless a test says otherwise.
+    fn one_hand() -> (EquipShape, Equipment<u32>) {
+        let hand = EquipShape::in_slot(SlotId::from_raw(0));
+        let mut worn = Equipment::with_slot_count(1);
+        worn.equip(1, &hand).unwrap();
+        (hand, worn)
+    }
+
+    #[test]
+    fn a_better_thing_gains_by_how_much_it_beats_what_it_displaces() {
+        let (hand, worn) = one_hand();
+        let score_of = |i: u32| if i == 1 { 1 } else { 0 };
+        assert_eq!(gain(&worn, 2, &hand, |_| false, 3, score_of, |_| false, 0), Some(2));
+        assert_eq!(gain(&worn, 2, &hand, |_| false, 0, score_of, |_| false, 0), Some(-1), "a worse thing gains less than nothing");
+    }
+
+    #[test]
+    fn a_thing_with_no_score_for_what_it_displaces_counts_it_as_worth_nothing() {
+        let (hand, worn) = one_hand();
+        assert_eq!(gain(&worn, 2, &hand, |_| false, 3, |_| 0, |_| false, 0), Some(3));
+    }
+
+    #[test]
+    fn a_thing_that_would_push_off_one_that_stays_gains_nothing_to_weigh() {
+        let (hand, worn) = one_hand();
+        assert_eq!(gain(&worn, 2, &hand, |i| i == 1, 3, |_| 1, |_| false, 0), None);
+    }
+
+    #[test]
+    fn a_thing_for_a_shape_naming_no_slot_gains_nothing_to_weigh() {
+        let (_, worn) = one_hand();
+        let none = EquipShape { any_of: Vec::new(), also: Vec::new() };
+        assert_eq!(gain(&worn, 2, &none, |_| false, 3, |_| 1, |_| false, 0), None);
+    }
+
+    #[test]
+    fn a_blow_taking_the_place_of_the_own_blow_gives_it_up() {
+        let (hand, worn) = one_hand();
+        // Nothing worn strikes, so the actor strikes with its own; the new
+        // thing's blow would replace it.
+        assert_eq!(gain(&worn, 2, &hand, |_| false, 8, |_| 0, |i| i == 2, 5), Some(3));
+        assert_eq!(gain(&worn, 2, &hand, |_| false, 3, |_| 0, |i| i == 2, 5), Some(-2), "so a blow worth three does not beat the own five");
+    }
+
+    #[test]
+    fn a_blow_gives_up_no_own_blow_when_one_is_worn_already_or_the_thing_has_none() {
+        let (hand, worn) = one_hand();
+        assert_eq!(gain(&worn, 2, &hand, |_| false, 8, |_| 0, |i| i == 1 || i == 2, 5), Some(8), "already striking with a worn blow");
+        assert_eq!(gain(&worn, 2, &hand, |_| false, 8, |_| 0, |_| false, 5), Some(8), "no blow on the new thing");
+    }
+
+    #[test]
+    fn a_blow_gives_up_the_own_blow_only_by_being_the_first_worn_blow_in_slot_order() {
+        let hands = EquipShape::in_any([SlotId::from_raw(0), SlotId::from_raw(1)]);
+        let mut worn = Equipment::with_slot_count(2);
+        worn.equip(1, &EquipShape::in_slot(SlotId::from_raw(1))).unwrap();
+        // The new thing takes the free first slot, ahead of a worn thing with
+        // no blow, so it is the first to strike with.
+        assert_eq!(gain(&worn, 2, &hands, |_| false, 8, |_| 0, |i| i == 2, 5), Some(3));
+        // Behind a worn blow in slot order it never strikes.
+        let mut behind = Equipment::with_slot_count(2);
+        behind.equip(1, &EquipShape::in_slot(SlotId::from_raw(0))).unwrap();
+        assert_eq!(gain(&behind, 2, &hands, |_| false, 8, |_| 0, |i| i == 1 || i == 2, 5), Some(8));
+    }
+
+    #[test]
+    fn a_thing_may_be_used_only_from_the_bag_and_unless_known_empty() {
+        assert!(may_use(true, false, false, false));
+        assert!(!may_use(false, false, false, false), "not carried");
+        assert!(!may_use(true, true, false, false), "known to be empty");
+    }
+
+    #[test]
+    fn a_thing_that_can_be_worn_is_used_only_while_it_is_worn() {
+        assert!(!may_use(true, false, true, false));
+        assert!(may_use(true, false, true, true));
+        assert!(!may_use(true, true, true, true), "worn but known empty");
+    }
+
+    #[test]
+    fn dark_sight_is_the_best_of_the_own_and_what_is_worn() {
+        assert_eq!(dark_sight(Some(2), [5, 3], false), Some(5));
+        assert_eq!(dark_sight(Some(7), [5], false), Some(7));
+        assert_eq!(dark_sight(None, [4, 5], false), Some(5));
+        assert_eq!(dark_sight(Some(2), [], false), Some(2));
+    }
+
+    #[test]
+    fn dark_sight_is_none_when_suppressed_or_when_it_comes_to_nothing() {
+        assert_eq!(dark_sight(Some(2), [5], true), None);
+        assert_eq!(dark_sight(None, [], false), None);
+        assert_eq!(dark_sight(Some(0), [0], false), None);
+        assert_eq!(dark_sight(Some(-1), [], false), None);
     }
 }

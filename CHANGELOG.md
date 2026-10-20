@@ -6,6 +6,8 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `rl_rules::equip::{gain, may_use, dark_sight}` answer how much better a wearer would be for putting a thing on (against what it displaces and, for a blow that would replace the wearer's own, against that blow), whether a thing may be used now (carried, not known empty, and worn when it is wearable) and the sight in the dark a wearer reads (the best of its own and what it wears, none while suppressed); the items systems had all three inline, and `rl_bevy::may_use` keeps its signature as a gatherer over the same rule.
+  To change: nothing.
 - `rl_rules::followers` and `rl_grid::landing` answer who travels behind whoever went through a way (those that follow, nearest first and a tie to the lower id) and where an arrival that takes up its cell stands (the wanted cell when free, otherwise the nearest free walkable cell by a breadth-first search capped at `reach` cells); the place systems had both inline.
   To change: nothing.
 - `rl_rules::work::{break_reason, newly_sighted}` answer why work breaks off (death, then harm, then another worker finishing the target, then the target out of reach) and whether a foe is newly in sight; `BreakReason` now lives in `rl_rules::work` and `rl-bevy` re-exports it from the same paths, so nothing else moves.
