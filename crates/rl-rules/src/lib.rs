@@ -108,6 +108,7 @@ pub mod role;
 pub mod stats;
 pub mod status;
 pub mod tag;
+pub mod travel;
 pub mod work;
 
 pub use ability::{AbilityDef, AbilityId, Aim, Area, Asks, Blocked, Cost, EffectSpec, Gates, Purse, Requirement, Targeting, TriggerSpec, blocked, read_args};
@@ -143,6 +144,7 @@ pub use status::{
     ActiveStatus, Mended, SLEEPER_REACH, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport, UNTIL_CURED, side_change, stumble, wakes_from_harm,
 };
 pub use tag::{TagDef, TagId};
+pub use travel::followers;
 pub use work::{BreakReason, Work, WorkKind, WorkKindId};
 
 /// The names most callers want in scope.

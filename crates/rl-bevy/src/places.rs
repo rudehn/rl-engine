@@ -558,22 +558,20 @@ pub(crate) fn resolve_warps(
             continue;
         }
         trips.push(Trip { actor: intent.actor, to, is_action: true, after: None });
-        // Nearest first, then by entity, so who gets the cell beside the
-        // landing never depends on the order a query happened to run in.
-        let mut behind: Vec<(i32, Entity)> = travellers
-            .iter()
-            .filter(|(e, (pos, _, on, _, _, wits, trails, dead))| {
-                *e != intent.actor
-                    && !dead
-                    && on.map(|m| m.0).unwrap_or(MapId::ZERO) == here
-                    && rl_core::geometry::chebyshev(pos.0, at) <= 1
-                    && wits.is_some_and(|w| w.has(Wits::FOLLOWS_THROUGH))
-                    && trails.is_some_and(|t| t.0.contains(&intent.actor))
-            })
-            .map(|(e, (pos, ..))| (rl_core::geometry::chebyshev(pos.0, at), e))
-            .collect();
-        behind.sort();
-        trips.extend(behind.into_iter().map(|(_, e)| Trip { actor: e, to, is_action: false, after: Some(intent.actor) }));
+        // Who is beside the traveller, travels and was after it; the rule
+        // orders them, so who gets the cell beside the landing never
+        // depends on the order a query happened to run in.
+        let candidates = travellers.iter().map(|(e, (pos, _, on, _, _, wits, trails, dead))| {
+            let follows = e != intent.actor
+                && !dead
+                && on.map(|m| m.0).unwrap_or(MapId::ZERO) == here
+                && rl_core::geometry::chebyshev(pos.0, at) <= 1
+                && wits.is_some_and(|w| w.has(Wits::FOLLOWS_THROUGH))
+                && trails.is_some_and(|t| t.0.contains(&intent.actor));
+            (e, pos.0, follows)
+        });
+        let behind = rl_rules::followers(candidates, at);
+        trips.extend(behind.into_iter().map(|e| Trip { actor: e, to, is_action: false, after: Some(intent.actor) }));
     }
     for req in requests.read() {
         debug!("warp request {req:?}");
@@ -611,37 +609,6 @@ pub(crate) fn resolve_warps(
 /// refused: the landing's neighbours and theirs.
 const LANDING_REACH: usize = 25;
 
-/// Where an arrival on `map` that takes up its cell stands: `want` when
-/// nothing stands there, and otherwise the nearest free cell that can be
-/// walked to from it.
-///
-/// `want` is taken on trust, as it always was: it is where the builder or
-/// the game said arrivals stand. Only the cells searched round it are asked whether they are floor,
-/// so the second through a way lands beside the first rather than on it or
-/// in a wall.
-fn landing(maps: &Maps, map: MapId, want: Point) -> Option<Point> {
-    if !maps.occupancy.is_occupied_on(map, want) {
-        return Some(want);
-    }
-    let mut seen = vec![want];
-    let mut next = 0;
-    while next < seen.len() && seen.len() < LANDING_REACH {
-        let from = seen[next];
-        next += 1;
-        for dir in rl_core::Direction::ALL {
-            let p = from + dir.offset();
-            if seen.contains(&p) || !maps.map.is_walkable_on(map, p) {
-                continue;
-            }
-            if !maps.occupancy.is_occupied_on(map, p) {
-                return Some(p);
-            }
-            seen.push(p);
-        }
-    }
-    None
-}
-
 fn warp(
     commands: &mut Commands,
     maps: &mut Maps,
@@ -678,7 +645,7 @@ fn warp(
     // traveller and the maps exactly as they were.
     let landing = if blocks {
         maps.occupancy.remove_on(from, pos.0, actor);
-        match landing(maps, target_map, want) {
+        match rl_grid::landing(want, |p| !maps.occupancy.is_occupied_on(target_map, p), |p| maps.map.is_walkable_on(target_map, p), LANDING_REACH) {
             Some(landing) => landing,
             None => {
                 maps.occupancy.insert_on(from, pos.0, actor);
