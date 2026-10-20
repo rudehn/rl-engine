@@ -2391,6 +2391,53 @@ mod tests {
         assert_eq!(app.world().get::<Health>(who).unwrap().current, 11, "and without it, a hit hurts again");
     }
 
+    /// `apply_healing` hands the heal the target's own mending stat, not a
+    /// constant: at minus fifty on it a heal of eight restores four.
+    #[test]
+    fn a_heal_restores_what_the_targets_own_mending_stat_allows() {
+        use rl_rules::{Modifier, Op, StatDef};
+        let (mut app, _, player, _) = duel(4, false, |kind| MeleeAttack::new(kind, DiceRoll::flat(1)));
+        let stats = rl_rules::Registry::from_defs(vec![StatDef::new("mending", 0)]).unwrap();
+        let mending = stats.expect("mending");
+        app.world_mut().resource_mut::<Registries>().stats = stats;
+        app.world_mut().resource_mut::<CombatRules>().mending = Some(mending);
+        let mut block = StatBlock::default();
+        block.0.add(Modifier::new(mending, Op::Add(-50), rl_rules::stats::Source::Game(7)));
+        app.world_mut().entity_mut(player).insert(block);
+        app.world_mut().get_mut::<Health>(player).unwrap().current = 10;
+        app.world_mut().write_message(Heal::new(player, 8));
+        app.update();
+        assert_eq!(hp(&app, player), 14);
+    }
+
+    /// `Mitigation::lands` asks about the map the target stands on: a hit
+    /// on an actor in a peaceful place is reported with nothing dealt and
+    /// takes nothing.
+    #[test]
+    fn a_hit_on_an_actor_standing_in_a_peaceful_place_deals_nothing() {
+        let (mut app, _, blunt) = arena();
+        let floor = rl_grid::TileRegistry::standard().expect("floor");
+        let place = crate::places::PlaceBuild {
+            terrain: rl_grid::Terrain::filled(6, 6, floor),
+            entry: Point::new(1, 1),
+            exit: None,
+            spots: Vec::new(),
+            locks: Vec::new(),
+            secrets: Vec::new(),
+            ambient: rl_grid::Light::DARK,
+            peaceful: true,
+        };
+        app.world_mut().resource_mut::<WorldMap>().install_place(MapId(1), place);
+        let who = app.world_mut().spawn((Actor, Blocks, Position(Point::new(2, 2)), OnMap(MapId(1)), Health { current: 10, max: 30 })).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.world_mut().write_message(DamageEvent::new(who, rl_rules::Hit::from_source(None, blunt, 999)));
+        app.update();
+        assert_eq!(app.world().get::<Health>(who).unwrap().current, 10);
+        let dealt: Vec<i32> = app.world_mut().resource_mut::<Messages<DamageDealt>>().drain().map(|d| d.dealt).collect();
+        assert_eq!(dealt, vec![0]);
+    }
+
     #[test]
     fn the_damage_pipeline_subtracts_armor_unless_the_game_said_otherwise() {
         // A game that names no pipeline gets the one every game wrote by
