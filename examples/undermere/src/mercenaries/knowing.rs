@@ -5,11 +5,11 @@
 use bevy::prelude::*;
 use rl_engine::prelude::*;
 use rl_engine::rl_core::noun::{Countability, counted_as};
-use rl_engine::rl_rules::Equipment;
 use rl_engine::rl_rules::ai::brain::Tactic;
+use rl_engine::rl_rules::equip;
 
 use super::{GIVE, Mercenary, TONE};
-use crate::armory::{Armory, ItemKind};
+use crate::armory::{Armory, ItemDef, ItemKind};
 use crate::lore::Lore;
 use crate::run::Adventurer;
 
@@ -93,11 +93,7 @@ impl SeenWorth<'_, '_> {
     /// worn or of a kind not known.
     pub fn score(&self, thing: Entity) -> Option<i32> {
         let (kind, score, unknown, own) = self.things.get(thing).ok()?;
-        if !unknown || own {
-            return score.map(|s| s.0);
-        }
-        let kind = kind?.0;
-        self.lore.knows(&self.armory.defs.get(kind).name).then(|| self.armory.score_at(kind, 0)).flatten()
+        seen_score(&self.armory, kind.map(|k| k.0), score.map(|s| s.0), !unknown || own, |name| self.lore.knows(name))
     }
 
     /// How much better `wearer` seems to be for putting `thing` on than
@@ -111,16 +107,23 @@ impl SeenWorth<'_, '_> {
         let worn = self.worn.get(wearer).ok()?;
         let shape = self.wearables.get(thing).ok()?;
         let score = self.score(thing)?;
-        let mut after = worn.0.clone();
-        let displaced = after.equip_keeping(thing, &shape.0, |other| self.stuck.contains(other)).ok()?;
-        let given_up: i32 = displaced.iter().map(|d| self.score(*d).unwrap_or(0)).sum();
-        let strikes_with = |worn: &Equipment<Entity>| worn.worn().map(|(_, t)| t).find(|t| self.blows.contains(*t));
-        let own = match (strikes_with(&worn.0), strikes_with(&after)) {
-            (None, Some(blow)) if blow == thing => self.own.get(wearer).map_or(0, |o| o.0),
-            _ => 0,
-        };
-        Some(score - given_up - own)
+        let look = |worn: Entity| (self.score(worn).unwrap_or(0), self.blows.contains(worn));
+        equip::gain(&worn.0, thing, &shape.0, |other| self.stuck.contains(other), score, look, self.own.get(wearer).map_or(0, |o| o.0))
     }
+}
+
+/// What a thing seems worth worn to the adventurer's eye: `score` when
+/// `known` (it is known, or the wearer's own), the plain score of its kind
+/// at level nought when only its level is unknown, and nothing when its
+/// kind is not known to `knows`, since a ring of a kind nobody knows could
+/// be any ring. Apart from the world so the rule is tested on the content
+/// itself.
+fn seen_score(armory: &Armory, kind: Option<Id<ItemDef>>, score: Option<i32>, known: bool, knows: impl Fn(&str) -> bool) -> Option<i32> {
+    if known {
+        return score;
+    }
+    let kind = kind?;
+    knows(&armory.defs.get(kind).name).then(|| armory.score_at(kind, 0)).flatten()
 }
 
 /// The thing in a mercenary's pack it would be best off putting on, worth
@@ -351,7 +354,7 @@ mod tests {
 
     use super::*;
     use crate::mercenaries::fixtures::{hired, take_with};
-    use crate::testing::{arena, arena_with, at, clear_floor, find, give, kill, lay, make, name_of, pass_turns, said, settle, wall_off, wear};
+    use crate::testing::{arena, arena_with, at, clear_floor, find, give, kill, lay, lay_floor, make, name_of, pass_turns, said, settle, wall_off, wear};
 
     /// The potion a mercenary mends with that the adventurer does not know
     /// at the start of a run, as they know the healing they set out with.
@@ -406,32 +409,37 @@ mod tests {
     /// A mercenary drinks its own potion when hurt whether or not the
     /// adventurer knows the kind; one drunk where they see it teaches them
     /// the kind as their own drinking would, and one drunk behind a wall
-    /// teaches them nothing, and the log names nothing.
+    /// teaches them nothing, and the log names nothing. One run plays the
+    /// three cases in turn, the walled-off one first, before anything has
+    /// taught the kind; the town is staged, so no seed changes the play.
     #[test]
-    fn it_drinks_its_own_potion_when_hurt_unknown_or_not_and_the_adventurer_learns_the_kind_in_sight_and_not_out_of_it_over_a_span_of_seeds() {
-        for seed in 0..4 {
-            for (kind, seen) in [(UNKNOWN_MENDING, true), (UNKNOWN_MENDING, false), ("potion of healing", true)] {
-                let (mut app, me, here) = arena(seed);
-                assert_eq!(knows(&app, kind), kind != UNKNOWN_MENDING, "seed {seed}: {kind} known only when set out with");
-                if !seen {
-                    let ring: Vec<Point> = (0..8).map(|i| here + Direction::from_index(i).offset()).collect();
-                    wall_off(&mut app, &ring);
-                }
-                let brenna = hired(&mut app, me, here.offset(2, 0), "Brenna");
-                let potion = make(&mut app, kind);
-                own(&mut app, brenna, potion);
-                hurt(&mut app, brenna);
-                pass_turns(&mut app, 2);
-                assert!(!carries(&app, brenna, potion), "seed {seed}: {kind}, seen {seen}: drunk");
-                let told = said(&app).iter().any(|line| line.contains(&format!("That was a {kind}.")));
-                assert_eq!(
-                    (knows(&app, kind), told),
-                    (seen || kind != UNKNOWN_MENDING, seen && kind == UNKNOWN_MENDING),
-                    "seed {seed}: {kind}, seen {seen}: {:?}",
-                    said(&app)
-                );
-            }
-        }
+    fn it_drinks_its_own_potion_when_hurt_unknown_or_not_and_the_adventurer_learns_the_kind_in_sight_and_not_out_of_it() {
+        let (mut app, me, here) = arena(0);
+        assert!(!knows(&app, UNKNOWN_MENDING) && knows(&app, "potion of healing"), "only the healing is set out with");
+        let ring: Vec<Point> = (0..8).map(|i| here + Direction::from_index(i).offset()).collect();
+        wall_off(&mut app, &ring);
+        let behind_a_wall = hired(&mut app, me, here.offset(2, 0), "Brenna");
+        let potion = make(&mut app, UNKNOWN_MENDING);
+        own(&mut app, behind_a_wall, potion);
+        hurt(&mut app, behind_a_wall);
+        pass_turns(&mut app, 2);
+        assert!(!carries(&app, behind_a_wall, potion), "drunk out of sight");
+        assert!(!knows(&app, UNKNOWN_MENDING) && said(&app).iter().all(|line| !line.contains("That was a")), "and nothing learned: {:?}", said(&app));
+
+        lay_floor(&mut app, &ring);
+        let seen = hired(&mut app, me, here.offset(2, 1), "Tolvar");
+        let unknown = make(&mut app, UNKNOWN_MENDING);
+        own(&mut app, seen, unknown);
+        hurt(&mut app, seen);
+        let healing = hired(&mut app, me, here.offset(2, -1), "Corwin");
+        let known = make(&mut app, "potion of healing");
+        own(&mut app, healing, known);
+        hurt(&mut app, healing);
+        pass_turns(&mut app, 2);
+        assert!(!carries(&app, seen, unknown) && !carries(&app, healing, known), "both drunk in sight");
+        let told = |kind: &str| said(&app).iter().any(|line| line.contains(&format!("That was a {kind}.")));
+        assert!(knows(&app, UNKNOWN_MENDING) && told(UNKNOWN_MENDING), "the kind drunk in sight is learned and told: {:?}", said(&app));
+        assert!(!told("potion of healing"), "a kind already known is told of nothing: {:?}", said(&app));
     }
 
     /// A potion it found or was handed is drunk only once the adventurer
@@ -454,30 +462,55 @@ mod tests {
     }
 
     /// Gear lying in sight is weighed as the adventurer would weigh it: a
-    /// mace two levels better than the one it wields, told, is fetched and
-    /// put on in its place, and the same mace found, its level unknown,
-    /// counts as a plain one and is passed over, so nothing it does says it
-    /// is better. A mace, since it fills the one hand, where a second sword
-    /// would go to the free one beside the first.
+    /// mace two levels better than the one it wields, found, its level
+    /// unknown, counts as a plain one and is passed over, so nothing it
+    /// does says it is better; the same mace told is fetched and put on
+    /// in its place. A mace, since it fills the one hand, where a second
+    /// sword would go to the free one beside the first. One run plays the
+    /// unknown one first and the told one after; the staging is the same
+    /// whatever the seed.
     #[test]
-    fn it_puts_on_a_better_weapon_lying_in_sight_and_passes_over_an_unknown_one_counted_at_plain_numbers_over_a_span_of_seeds() {
-        for seed in 0..4 {
-            for known in [true, false] {
-                let (mut app, me, here) = arena(seed);
-                clear_floor(&mut app);
-                let brenna = hired(&mut app, me, here.offset(1, 0), "Brenna");
-                let mine = told(&mut app, "mace", 1);
-                app.world_mut().entity_mut(mine).insert(OwnKit);
-                wear(&mut app, brenna, mine);
-                let better = if known { told(&mut app, "mace", 3) } else { find(&mut app, "mace", 3) };
-                lay(&mut app, better, here.offset(2, 1));
-                settle(&mut app);
-                pass_turns(&mut app, 6);
-                let took = wears(&app, brenna, better);
-                assert_eq!((took, wears(&app, brenna, mine)), (known, !known), "seed {seed}, known {known}: what it wields");
-                assert_eq!(app.world().get::<Position>(better).is_some(), !known, "seed {seed}, known {known}: what lies there still");
-            }
-        }
+    fn it_puts_on_a_better_weapon_lying_in_sight_and_passes_over_an_unknown_one_counted_at_plain_numbers() {
+        let (mut app, me, here) = arena(0);
+        clear_floor(&mut app);
+        let brenna = hired(&mut app, me, here.offset(1, 0), "Brenna");
+        let mine = told(&mut app, "mace", 1);
+        app.world_mut().entity_mut(mine).insert(OwnKit);
+        wear(&mut app, brenna, mine);
+        let unknown = find(&mut app, "mace", 3);
+        lay(&mut app, unknown, here.offset(2, 1));
+        settle(&mut app);
+        pass_turns(&mut app, 6);
+        assert!(wears(&app, brenna, mine) && !wears(&app, brenna, unknown), "an unknown one is passed over");
+        assert!(app.world().get::<Position>(unknown).is_some(), "and still lies there");
+
+        let better = told(&mut app, "mace", 3);
+        lay(&mut app, better, here.offset(2, -1));
+        settle(&mut app);
+        pass_turns(&mut app, 6);
+        assert!(wears(&app, brenna, better) && !wears(&app, brenna, mine), "a told one is put on in its place");
+        assert!(app.world().get::<Position>(better).is_none(), "and no longer lies there");
+        assert!(app.world().get::<Position>(unknown).is_some(), "while the unknown one lies untouched");
+    }
+
+    /// What a thing of unknown level seems worth to a mercenary, read off
+    /// the content itself: its true score when known or its own, its
+    /// kind's plain score at level nought when only the level is unknown,
+    /// nothing when the kind is unknown too or wears for nothing.
+    #[test]
+    fn a_thing_of_unknown_level_seems_worth_its_kinds_plain_score_and_a_thing_of_unknown_kind_nothing() {
+        let library = crate::content::Library::load(&crate::content::effect_kinds(), &Moments::default());
+        let armory = &library.armory;
+        let (mace, potion) = (armory.defs.expect("mace"), armory.defs.expect("potion of healing"));
+        let (plain, deep) = (armory.score_at(mace, 0).expect("a mace is worth wearing"), armory.score_at(mace, 3).expect("and at depth"));
+        assert!(deep > plain, "a level makes it worth more, {plain} to {deep}");
+        let name = armory.defs.get(mace).name.clone();
+        assert_eq!(seen_score(armory, Some(mace), Some(deep), true, |_| false), Some(deep), "known or its own: the true score, even of an unknown kind");
+        assert_eq!(seen_score(armory, Some(mace), Some(deep), false, |n| n == name), Some(plain), "known kind, unknown level: the plain score");
+        assert_eq!(seen_score(armory, Some(mace), Some(deep), false, |_| false), None, "unknown kind: nothing");
+        assert_eq!(seen_score(armory, None, Some(deep), false, |_| true), None, "no kind: nothing");
+        assert_eq!(seen_score(armory, Some(potion), None, false, |_| true), None, "a thing nobody wears is worth nothing worn");
+        assert_eq!(seen_score(armory, Some(potion), None, true, |_| true), None, "and known has no score to give");
     }
 
     /// Each pass's actor, and whether Brenna carries and wears the sword

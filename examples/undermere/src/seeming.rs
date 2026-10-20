@@ -395,15 +395,6 @@ mod tests {
         thing
     }
 
-    /// The vitals with `name` at `level` put on, known or not.
-    fn vitals_wearing(name: &str, level: i32, known: bool) -> (Option<i32>, bool) {
-        let (mut app, me, _) = arena_with(21, VitalsViewPlugin);
-        let worn = thing(&mut app, name, level, known);
-        equip(&mut app, me, worn);
-        settle(&mut app);
-        vitals(&app)
-    }
-
     /// Leather is armor 1, so `+2 leather armor` not yet known reads what
     /// any leather gives, marked, and not the `armor 3?` that told its level
     /// on the first turn; worn two hundred turns, it is known, and reads its
@@ -467,13 +458,26 @@ mod tests {
     /// Over armor of every weight and level, cursed and too heavy to wear
     /// well included, a worn thing not yet known reads exactly what a plain
     /// one of its kind reads, what a short wearer pays for it counted as the
-    /// plain one's, and only the unknown one is marked.
+    /// plain one's, and only the unknown one is marked. One wearer puts on
+    /// each pair in turn and takes it off again, the one that clings last.
     #[test]
     fn an_unknown_worn_thing_reads_what_a_plain_one_of_its_kind_reads_whatever_its_level() {
-        for (name, level) in [("leather armor", 2), ("plate armor", 2), ("scale mail", -2), ("shield", 1), ("chain mail", 3)] {
-            let (unknown, plain) = (vitals_wearing(name, level, false), vitals_wearing(name, 0, true));
+        let (mut app, me, _) = arena_with(21, VitalsViewPlugin);
+        for (name, level) in [("leather armor", 2), ("plate armor", 2), ("shield", 1), ("chain mail", 3), ("scale mail", -2)] {
+            let plain_thing = thing(&mut app, name, 0, true);
+            equip(&mut app, me, plain_thing);
+            settle(&mut app);
+            let plain = vitals(&app);
+            crate::testing::unequip(&mut app, me, plain_thing);
+            let unknown_thing = thing(&mut app, name, level, false);
+            equip(&mut app, me, unknown_thing);
+            settle(&mut app);
+            let unknown = vitals(&app);
             assert_eq!(unknown, (plain.0, true), "{name} at {level:+}, not yet known, reads as a plain one, marked");
             assert!(!plain.1, "{name}, known, is not marked");
+            if level >= 0 {
+                crate::testing::unequip(&mut app, me, unknown_thing);
+            }
         }
     }
 
@@ -482,42 +486,57 @@ mod tests {
     /// game added.
     type Said = (Vec<String>, i32, Option<String>, Option<String>, Vec<(String, Op)>, Vec<String>);
 
-    /// What the pack's row for `name` at `level`, found and carried, its
-    /// kind known, says it is.
-    fn pack_row(name: &str, level: i32) -> Said {
-        let (mut app, me, _) = arena_with(25, InventoryViewPlugin);
-        app.world_mut().resource_mut::<crate::lore::Lore>().learn(name);
-        let found = find(&mut app, name, level);
-        crate::testing::give(&mut app, me, found);
-        settle(&mut app);
+    /// What the pack's rows say of each of `things`, found and carried, its
+    /// kind known: what the row for each says it is, in the order given.
+    fn pack_rows(app: &mut App, me: Entity, things: &[(&str, i32)]) -> Vec<Said> {
+        let mut found = Vec::new();
+        for (name, level) in things {
+            app.world_mut().resource_mut::<crate::lore::Lore>().learn(name);
+            let thing = find(app, name, *level);
+            crate::testing::give(app, me, thing);
+            found.push(thing);
+        }
+        settle(app);
         let view = app.world().resource::<InventoryView>();
-        let row = view.rows.iter().find(|r| r.entity == found).expect("in the pack");
         let strike = |s: &Option<Strike>| s.as_ref().map(|s| format!("{} {}", s.dice, s.kind));
         let texts = |facets: &[Facet]| facets.iter().map(|f| f.text.clone()).collect::<Vec<_>>();
-        (texts(&row.seems), row.armor, strike(&row.blow), strike(&row.shot), row.bestows.clone(), texts(&row.facets))
+        found
+            .iter()
+            .map(|thing| {
+                let row = view.rows.iter().find(|r| r.entity == *thing).expect("in the pack");
+                (texts(&row.seems), row.armor, strike(&row.blow), strike(&row.shot), row.bestows.clone(), texts(&row.facets))
+            })
+            .collect()
     }
 
     /// Over every kind whose level is learned by wearing it, what the pack
     /// says of one found is the same at every level it could be, cursed or
     /// better, so nothing in it tells the level; and it is what a +0 one of
-    /// the kind gives, which is what a known +0 one reads.
+    /// the kind gives, which is what a known +0 one reads. One pack holds
+    /// every thing at once and the rows are read together; the kinds that
+    /// are learned by wearing come from the app's own armory.
     #[test]
     fn what_the_pack_says_of_a_thing_whose_level_is_not_known_is_the_same_at_every_level() {
-        let library = crate::content::Library::load(&crate::content::effect_kinds(), &Moments::default());
-        let armory = &library.armory;
+        const KINDS: [&str; 5] = ["chain mail", "sword", "bow", "shield", "ring of regeneration"];
+        const LEVELS: [i32; 5] = [0, -3, -1, 2, 3];
+        let things: Vec<(&str, i32)> = KINDS.iter().flat_map(|name| LEVELS.iter().map(move |level| (*name, *level))).collect();
+        let (mut app, me, _) = arena_with(25, InventoryViewPlugin);
+        let rows = pack_rows(&mut app, me, &things);
+        let armory = app.world().resource::<Armory>();
         let kinds: Vec<&str> = armory.defs.iter().filter(|(id, _)| armory.learned_by_wear(*id)).map(|(_, d)| d.name.as_str()).collect();
-        for name in ["chain mail", "sword", "bow", "shield", "ring of regeneration"] {
-            assert!(kinds.contains(&name), "{name} is learned by wearing it");
-            let plain = pack_row(name, 0);
+        for (n, name) in KINDS.iter().enumerate() {
+            assert!(kinds.contains(name), "{name} is learned by wearing it");
+            let own_rows = &rows[n * LEVELS.len()..(n + 1) * LEVELS.len()];
+            let plain = &own_rows[0];
             assert!(plain.0.last().is_some_and(|l| l.starts_with("wearing it")), "{name}: {:?}", plain.0);
-            for level in [-3, -1, 2, 3] {
-                assert_eq!(pack_row(name, level), plain, "{name} at {level:+} reads as it does at nought");
+            for (level, row) in LEVELS.iter().zip(own_rows).skip(1) {
+                assert_eq!(row, plain, "{name} at {level:+} reads as it does at nought");
             }
         }
-        let (_, armor, ..) = pack_row("chain mail", 2);
-        assert_eq!(armor, 3, "chain mail at nought");
-        let (.., per_level) = pack_row("ring of regeneration", 2);
-        assert_eq!(per_level, ["regeneration +10 a level", "mending +25 a level"], "what each level of a ring gives");
+        let chain_at_two = things.iter().position(|t| *t == ("chain mail", 2)).expect("chain mail at two is in the pack");
+        assert_eq!(rows[chain_at_two].1, 3, "chain mail at two gives three");
+        let ring_at_two = things.iter().position(|t| *t == ("ring of regeneration", 2)).expect("the ring at two is in the pack");
+        assert_eq!(rows[ring_at_two].5, ["regeneration +10 a level", "mending +25 a level"], "what each level of a ring gives");
     }
 
     /// The forecast of a fight with a goblin, the chance to hit it, and what

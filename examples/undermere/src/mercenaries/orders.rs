@@ -286,7 +286,7 @@ mod tests {
 
     use super::*;
     use crate::mercenaries::fixtures::hired;
-    use crate::testing::{arena, arena_with, at, clear_floor, here, par_seeds, pass_turns, said, seeds, stand_on, still};
+    use crate::testing::{arena, arena_with, at, clear_floor, here, pass_turns, said, stand_on, still};
 
     /// Whether `who` thinks with the brain for `order`.
     fn thinks(app: &App, who: Entity, order: Order) -> bool {
@@ -362,95 +362,92 @@ mod tests {
     }
 
     /// A hired follower keeps within three of the adventurer across a
-    /// floor with nothing on it to fight, over a span of seeds: every
-    /// turn of the long way across, through whatever rooms, corridors,
-    /// corners and doors it takes, and every time they stop. Walking at
-    /// their own pace it cannot gain on them, so it holds three only by
-    /// setting off as soon as the walk to them is longer than three, as
-    /// the engine's `Keep::leader` does by measuring on foot, and never by
-    /// catching up after.
+    /// floor with nothing on it to fight: every turn of the long way
+    /// across, through whatever rooms, corridors, corners and doors it
+    /// takes, and every time they stop. Walking at their own pace it cannot
+    /// gain on them, so it holds three only by setting off as soon as the
+    /// walk to them is longer than three, as the engine's `Keep::leader`
+    /// does by measuring on foot, and never by catching up after.
+    ///
+    /// One floor is enough: the gap rule is unit-tested in `rl-rules` on
+    /// made-up walls, and what is asked here is that the game wires that
+    /// rule to a hired follower on a real floor's corners and doors.
     #[test]
-    fn a_follower_keeps_within_three_of_the_adventurer_across_a_floor_with_nothing_to_fight_over_a_span_of_seeds() {
-        par_seeds(seeds(0..12), |seed| {
-            let (mut app, me, here) = arena(seed);
-            clear_floor(&mut app);
-            let brenna = hired(&mut app, me, here.offset(-1, 0), "Brenna");
-            let way = the_long_way(&mut app, here, 60);
-            assert!(way.len() >= 30, "seed {seed}: a long way to walk, {} cells", way.len());
-            for stretch in way.chunks(6) {
-                let mut widest = 0;
-                walk(&mut app, me, stretch, |app| widest = widest.max(gap(app, me, brenna)));
-                assert!(widest <= LEASH, "seed {seed}: it fell {widest} behind on the way to {:?}", stretch.last());
-                pass_turns(&mut app, 2);
-                assert!(gap(&app, me, brenna) <= LEASH, "seed {seed}: {} away where they stopped, {:?}", gap(&app, me, brenna), at(&app, me));
-            }
-        });
+    fn a_follower_keeps_within_three_of_the_adventurer_across_a_floor_with_nothing_to_fight() {
+        let (mut app, me, here) = arena(0);
+        clear_floor(&mut app);
+        let brenna = hired(&mut app, me, here.offset(-1, 0), "Brenna");
+        let way = the_long_way(&mut app, here, 60);
+        assert!(way.len() >= 30, "a long way to walk, {} cells", way.len());
+        for stretch in way.chunks(6) {
+            let mut widest = 0;
+            walk(&mut app, me, stretch, |app| widest = widest.max(gap(app, me, brenna)));
+            assert!(widest <= LEASH, "it fell {widest} behind on the way to {:?}", stretch.last());
+            pass_turns(&mut app, 2);
+            assert!(gap(&app, me, brenna) <= LEASH, "{} away where they stopped, {:?}", gap(&app, me, brenna), at(&app, me));
+        }
     }
 
     /// On hold a mercenary keeps the cell it was ordered on while a foe
-    /// stands in sight out of its reach, over a span of seeds; a follower
-    /// in its place goes for the same foe, which is what holding stops.
+    /// stands in sight out of its reach; the same mercenary set to follow
+    /// goes for the same foe, which is what holding stops. The foe is
+    /// staged and mindless, so no seed changes the play.
     #[test]
-    fn on_hold_it_keeps_its_post_while_a_foe_is_in_sight_beyond_reach_over_a_span_of_seeds() {
-        for seed in 0..4 {
-            for held in [true, false] {
-                let (mut app, me, here) = arena(seed);
-                let brenna = hired(&mut app, me, here.offset(-2, 0), "Brenna");
-                let post = at(&app, brenna);
-                if held {
-                    order(&mut app, brenna, Order::Hold);
-                }
-                let goblin = still(&mut app, "goblin", here.offset(2, 0));
-                pass_turns(&mut app, 1);
-                let sees = app.world().get::<Viewshed>(brenna).is_some_and(|v| v.can_see(at(&app, goblin)));
-                assert!(sees, "seed {seed}: the goblin is in its sight");
-                let mut moved = false;
-                for _ in 0..6 {
-                    pass_turns(&mut app, 1);
-                    moved |= at(&app, brenna) != post;
-                }
-                if held {
-                    assert!(!moved, "seed {seed}: held at its post");
-                    assert_eq!(app.world().get::<Post>(brenna), Some(&Post(post)), "seed {seed}: posted where it was ordered");
-                } else {
-                    assert!(moved, "seed {seed}: a follower goes for it");
-                }
+    fn on_hold_it_keeps_its_post_while_a_foe_is_in_sight_beyond_reach() {
+        let (mut app, me, here) = arena(0);
+        let brenna = hired(&mut app, me, here.offset(-2, 0), "Brenna");
+        let post = at(&app, brenna);
+        order(&mut app, brenna, Order::Hold);
+        let goblin = still(&mut app, "goblin", here.offset(2, 0));
+        pass_turns(&mut app, 1);
+        let sees = app.world().get::<Viewshed>(brenna).is_some_and(|v| v.can_see(at(&app, goblin)));
+        assert!(sees, "the goblin is in its sight");
+        for _ in 0..6 {
+            pass_turns(&mut app, 1);
+            assert_eq!(at(&app, brenna), post, "held at its post");
+        }
+        assert_eq!(app.world().get::<Post>(brenna), Some(&Post(post)), "posted where it was ordered");
+        order(&mut app, brenna, Order::Follow);
+        let mut moved = false;
+        for _ in 0..6 {
+            pass_turns(&mut app, 1);
+            if at(&app, brenna) != post {
+                moved = true;
+                break;
             }
         }
+        assert!(moved, "a follower goes for it");
     }
 
     /// A follower leaves a foe beyond its leash alone, never more than
-    /// three from the adventurer; fighting freely it chases the same foe
-    /// past the leash, strikes it down, and comes back within three once
-    /// nothing is left, over a span of seeds.
+    /// three from the adventurer; set to fight freely the same mercenary
+    /// chases the same foe past the leash, strikes it down, and comes back
+    /// within three once nothing is left. The foe is staged and mindless,
+    /// so no seed changes the play.
     #[test]
-    fn fighting_freely_it_chases_a_foe_in_sight_and_comes_back_when_none_is_left_where_a_follower_lets_it_be_over_a_span_of_seeds() {
-        for seed in 0..4 {
-            for free in [true, false] {
-                let (mut app, me, here) = arena(seed);
-                let brenna = hired(&mut app, me, here.offset(-1, 0), "Brenna");
-                if free {
-                    order(&mut app, brenna, Order::FightFreely);
-                }
-                let goblin = still(&mut app, "goblin", here.offset(5, 0));
-                app.world_mut().entity_mut(goblin).insert(Health::full(1));
-                let (mut widest, mut down_at) = (0, None);
-                for turn in 0..30 {
-                    pass_turns(&mut app, 1);
-                    widest = widest.max(gap(&app, me, brenna));
-                    if app.world().get::<Health>(goblin).is_none_or(|h| h.current <= 0) {
-                        down_at.get_or_insert(turn);
-                    }
-                }
-                if free {
-                    assert!(widest > LEASH, "seed {seed}: it chased past the leash, {widest}");
-                    assert!(down_at.is_some_and(|t| t < 20), "seed {seed}: and struck the goblin down, at {down_at:?}");
-                    assert!(gap(&app, me, brenna) <= LEASH, "seed {seed}: and came back, {} away", gap(&app, me, brenna));
-                } else {
-                    assert!(widest <= LEASH && down_at.is_none(), "seed {seed}: a follower stays within {LEASH}, at {widest}, and lets it be");
-                }
-            }
+    fn fighting_freely_it_chases_a_foe_in_sight_and_comes_back_when_none_is_left_where_a_follower_lets_it_be() {
+        let (mut app, me, here) = arena(0);
+        let brenna = hired(&mut app, me, here.offset(-1, 0), "Brenna");
+        let goblin = still(&mut app, "goblin", here.offset(5, 0));
+        app.world_mut().entity_mut(goblin).insert(Health::full(1));
+        let down = |app: &App| app.world().get::<Health>(goblin).is_none_or(|h| h.current <= 0);
+        for _ in 0..12 {
+            pass_turns(&mut app, 1);
+            assert!(gap(&app, me, brenna) <= LEASH, "a follower stays within {LEASH}, at {}", gap(&app, me, brenna));
+            assert!(!down(&app), "and lets it be");
         }
+        order(&mut app, brenna, Order::FightFreely);
+        let mut widest = 0;
+        let mut turns = 0;
+        while !down(&app) {
+            assert!(turns < 20, "it strikes the goblin down within twenty turns");
+            pass_turns(&mut app, 1);
+            widest = widest.max(gap(&app, me, brenna));
+            turns += 1;
+        }
+        assert!(widest > LEASH, "it chased past the leash, {widest}");
+        pass_turns(&mut app, 10);
+        assert!(gap(&app, me, brenna) <= LEASH, "and came back, {} away", gap(&app, me, brenna));
     }
 
     /// `o` cycles every mercenary's order at once, follow to hold to fight
