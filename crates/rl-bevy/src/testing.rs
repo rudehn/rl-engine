@@ -10,7 +10,8 @@
 //!
 //! [`headless_app`](crate::plugin::headless_app) is the app itself; this
 //! module is what goes into it, and what a test does with it once it runs:
-//! [`settle`] and [`pass_turns`] move it on, [`player`], [`here`] and
+//! [`settle`] and [`pass_turns`] move it on, [`let_time_pass`] jumps its
+//! clock where only the clock is the question, [`player`], [`here`] and
 //! [`at`] find where things stand, [`stand_on`], [`go_through`],
 //! [`take_up`], [`put_down`], [`give`], [`equip`], [`unequip`], [`kill`],
 //! [`lay`], [`lay_tile`] and [`wall_off`] set a scene up the way the
@@ -26,7 +27,8 @@ pub mod ambiguity;
 
 use bevy::input::InputSystems;
 use bevy::prelude::*;
-use rl_core::{Point, RunSeed};
+use rl_core::turn::BASE_ACTION_COST;
+use rl_core::{Point, RunSeed, TurnQueue};
 use rl_grid::{Terrain, TileId, TileRegistry};
 use rl_rules::damage::{DamageKind, DamageKindId, SubtractArmor};
 use rl_rules::faction::FactionDef;
@@ -38,6 +40,7 @@ use crate::prelude::{
     WarpRequest,
 };
 use crate::registries::Registries;
+use crate::turn::Turns;
 use crate::world::WorldMap;
 
 /// The seed range a generation test plays, and the cores it plays them on:
@@ -220,6 +223,60 @@ pub fn pass_turns(app: &mut App, n: u32) {
     }
 }
 
+/// Lets `turns` whole turns of the clock pass at once, then runs one
+/// frame, so what is written in elapsed time sees the span without the
+/// turns being played.
+///
+/// For a test whose property is a clock: a refill, a regeneration, a
+/// conjured thing's end, anything counted by comparing [`Turns::now`] or
+/// [`Turns::turn_number`] against a reading kept from before. Playing
+/// those turns instead deals every one of them to every actor, which is
+/// the cost this exists to skip.
+///
+/// What moves: the clock, by `turns` times [`BASE_ACTION_COST`], and every
+/// queued actor's due time by the same span, so nobody gains or loses a
+/// turn on anyone else and ties keep the order they were queued in. An
+/// actor holding the turn is out of the queue and still holds it, now at
+/// the later reading. The one frame is what lets a system that reads the
+/// clock see it: the engine's charge refill, and a game's own.
+///
+/// What does not: nothing counted per whole turn or per action. No
+/// [`TurnEnd`](crate::TurnEnd) is sent for the span, so statuses, fire,
+/// gases and the light stand as they were; nobody is dealt a turn in it,
+/// so no mind decides, no one moves and no work is done. A test of those
+/// plays its turns with [`pass_turns`]. A system that keeps its own last
+/// reading counts from the first frame it ran, so the app must have run a
+/// frame in play before the jump for it to count the whole span. And the
+/// frame after is an ordinary one: when nobody holds the turn, the queue
+/// deals at the new reading as it would at any.
+pub fn let_time_pass(app: &mut App, turns: u32) {
+    let span = turns * BASE_ACTION_COST;
+    let mut clock = app.world_mut().resource_mut::<Turns>();
+    let later: Vec<(Entity, u32)> = in_schedule_order(&clock).into_iter().map(|(who, due)| (who, due + span)).collect();
+    // Requeued in the order the scheduler would deal them, which is what
+    // keeps a tie as it was: `import` breaks ties by the order it is given,
+    // and `export` gives the heap's order, not the schedule's. Importing
+    // also tells the clock the turns are already counted, which is why no
+    // `TurnEnd` is sent for them.
+    let now = clock.now() + span;
+    clock.import(now, later);
+    app.update();
+}
+
+/// Every entry of `queue`, earliest first and ties in the order they were
+/// queued, read from a copy dealt to the end.
+fn in_schedule_order(queue: &TurnQueue<Entity>) -> Vec<(Entity, u32)> {
+    let mut queue = queue.clone();
+    let mut order = Vec::new();
+    while let Some(due) = queue.peek_time() {
+        // An overdue entry is due before the reading; the clock only runs
+        // forward, so it is left where it is for that one.
+        queue.set_now(due.max(queue.now()));
+        order.push((queue.pop_due(|_| true).expect("the head is due once the clock reads its time"), due));
+    }
+    order
+}
+
 /// The place being read, which is the one the player stands in.
 pub fn here(app: &App) -> MapId {
     app.world().resource::<WorldMap>().current()
@@ -347,8 +404,10 @@ pub fn wall_off(app: &mut App, cells: &[Point]) {
 mod tests {
     use super::*;
     use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Viewshed};
-    use crate::plugin::headless_app;
+    use crate::consumable::{Consumable, WhenEmpty};
+    use crate::plugin::{Turn, headless_app};
     use crate::state::EngineState;
+    use crate::turn::TurnEnd;
 
     /// The start `ground` hands back is floor, with floor for seven tiles
     /// every way, and the player stood there is dealt a turn.
@@ -368,6 +427,82 @@ mod tests {
                 assert!(map.is_walkable(start.offset(dx, dy)), "({dx}, {dy}) from the start is floor");
             }
         }
+    }
+
+    /// A player on [`ground`] holding the first turn, play begun, and
+    /// `plugins` added before it began.
+    fn holding_the_turn<M>(plugins: impl bevy::app::Plugins<M>) -> (App, Entity) {
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, plugins));
+        two_sides(&mut app);
+        let start = ground(&mut app);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap)).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        settle(&mut app);
+        assert!(app.world().get::<MyTurn>(player).is_some(), "the player holds the turn");
+        (app, player)
+    }
+
+    /// Every queued entry, earliest first and ties in the order they were
+    /// queued: the order the scheduler deals them in.
+    fn queued(app: &App) -> Vec<(Entity, u32)> {
+        in_schedule_order(app.world().resource::<Turns>())
+    }
+
+    #[test]
+    fn letting_time_pass_moves_the_clock_and_every_queued_actor_by_the_same_span() {
+        let (mut app, player) = holding_the_turn(());
+        let start = at(&app, player);
+        let [a, b, c] = [1, 2, 3].map(|dx| app.world_mut().spawn((Actor, Position(start.offset(dx, 2)))).id());
+        let now = app.world().resource::<Turns>().now();
+        // `b` before `c` at the same time, so the tie is the order they
+        // were queued in, and `a` queued last but due first, which leaves
+        // the heap holding `c` ahead of `b`: a jump that requeued them in
+        // the heap's order would swap the tie.
+        app.world_mut().resource_mut::<Turns>().import(now, [(b, now + 70), (c, now + 70), (a, now + 30)]);
+        let before = queued(&app);
+        assert_eq!(before, vec![(a, now + 30), (b, now + 70), (c, now + 70)]);
+
+        let_time_pass(&mut app, 50);
+
+        assert_eq!(app.world().resource::<Turns>().now(), now + 5000, "the clock is fifty turns on");
+        assert_eq!(queued(&app), vec![(a, now + 5030), (b, now + 5070), (c, now + 5070)], "everyone is due fifty turns on, in the same order");
+        assert!(app.world().get::<MyTurn>(player).is_some(), "the player still holds the turn it held");
+    }
+
+    #[test]
+    fn letting_time_pass_recharges_what_recharges_by_the_clock() {
+        for (turns, full) in [(25, true), (24, false)] {
+            let (mut app, _) = holding_the_turn(crate::items::ItemsPlugin);
+            let mut wand = Consumable::new(3, WhenEmpty::Kept).recharging(2500);
+            wand.left = 2;
+            let wand = app.world_mut().spawn(wand).id();
+            settle(&mut app);
+
+            let_time_pass(&mut app, turns);
+
+            let left = app.world().get::<Consumable>(wand).expect("still there").left;
+            assert_eq!(left == 3, full, "after {turns} turns a charge a 2500 refill had {left} of 3");
+        }
+    }
+
+    #[test]
+    fn letting_time_pass_ends_no_whole_turn_so_what_ticks_per_turn_stands_still() {
+        #[derive(Resource, Default)]
+        struct Ended(usize);
+        fn count(mut ends: MessageReader<TurnEnd>, mut ended: ResMut<Ended>) {
+            ended.0 += ends.read().count();
+        }
+        let (mut app, _) = holding_the_turn(());
+        app.init_resource::<Ended>().add_systems(Turn, count);
+        let turn = app.world().resource::<Turns>().turn_number();
+
+        let_time_pass(&mut app, 50);
+
+        assert_eq!(app.world().resource::<Turns>().turn_number(), turn + 50);
+        assert_eq!(app.world().resource::<Ended>().0, 0, "no turn ended for the span let pass");
+        pass_turns(&mut app, 1);
+        assert_eq!(app.world().resource::<Ended>().0, 1, "the next turn played ends as any turn does");
     }
 
     /// A scripted key reads as just pressed to a system in `Update`, once.

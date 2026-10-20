@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `rl_engine::testing::let_time_pass(app, turns)` jumps the turn clock and every queued actor's due time by `turns` whole turns at once and runs one frame, so a test of what is written in elapsed time (a refill, a regeneration, an end at a reading) sees the span without playing it; no `TurnEnd` is sent and nobody is dealt a turn in it, so statuses, fields and minds stand as they were.
+  To change: nothing; a game's tests may call it where only the clock is the question, in place of `pass_turns`.
+
 - `examples/terminal`, a walk through generated rooms in a terminal that depends on `rl-core`, `rl-grid` and `rl-mapgen` alone and owns its loop with `crossterm`, with `terminal::{generate, step, look, render, direction_of}` as the tested rules and a `main.rs` that only maps keys to steps.
   To change: nothing.
 
