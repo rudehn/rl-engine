@@ -30,6 +30,17 @@ pub(crate) const fn reschedule_at(now: u32, cost: u32) -> u32 {
     now.saturating_add(cost)
 }
 
+/// What a step onto a tile costs: the tile's own cost, and a diagonal's
+/// 1.414 times that.
+///
+/// One rule for the walk and the swap, so changing places is never a
+/// cheaper way across than stepping. Integer throughout and truncated,
+/// since a cost is a whole number of hundredths and every clock in the
+/// engine agrees on the same rounding.
+pub const fn step_cost(tile: u32, diagonal: bool) -> u32 {
+    if diagonal { tile * 1414 / 1000 } else { tile }
+}
+
 /// The cost of an action at a given speed, where `speed_percent` of 100 is
 /// normal, 200 is twice as fast (half the cost) and 50 is half speed.
 ///
@@ -263,6 +274,15 @@ impl<Id: Copy + Eq> TurnQueue<Id> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_diagonal_step_costs_a_little_over_four_tenths_more_than_an_orthogonal_one() {
+        assert_eq!(step_cost(100, false), 100);
+        assert_eq!(step_cost(100, true), 141);
+        assert_eq!(step_cost(200, true), 282);
+        assert_eq!(step_cost(0, true), 0);
+        assert_eq!(step_cost(150, true), 212, "truncated, not rounded");
+    }
 
     type Q = TurnQueue<u32>;
 

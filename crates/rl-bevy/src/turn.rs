@@ -13,7 +13,7 @@
 //! and slowness statuses.
 
 use bevy::prelude::*;
-use rl_core::turn::{BASE_ACTION_COST, scaled_cost};
+use rl_core::turn::{BASE_ACTION_COST, scaled_cost, step_cost};
 use rl_core::{Direction, Point, TurnQueue};
 use rl_grid::SpatialGrid;
 use rl_rules::StatId;
@@ -609,8 +609,7 @@ pub(crate) fn resolve_moves(
             resolution.failed(intent.actor, BASE_ACTION_COST);
             continue;
         }
-        let cost = map.cost(target).unwrap_or(BASE_ACTION_COST);
-        let cost = if dir.is_diagonal() { cost * 1414 / 1000 } else { cost };
+        let cost = step_cost(map.cost(target).unwrap_or(BASE_ACTION_COST), dir.is_diagonal());
         if blocks {
             occupancy.relocate(intent.actor, pos.0, target);
         }

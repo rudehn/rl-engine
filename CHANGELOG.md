@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `rl_rules::{resolve_bump, classify_offers, BumpOutcome, Offered}` answer what walking into a cell comes to (a step, a door opened, a blow, a swap, the one plain thing offered taken up, or a question for a screen) and `rl_core::step_cost` what a step onto a tile costs, a diagonal's 1.414 times; the bump redirect, the swap resolver and the step resolver each had their own copy and now ask one.
+  To change: nothing.
+
 - `rl_rules::arms::{choose_reach, first_charged, armor_total, mending_pct, scale_unaware, Reach}` answer which weapon an attack is made with (the blow beside the target, the shot down a clear line further off), the first worn weapon that has a charge, the armor a blow meets, how much of a heal arrives and what a blow on the unaware is worth; the resolver, the hit odds and the forecast's `Arms::at` each had their own copy of the weapon choice and now ask one.
   To change: nothing.
 

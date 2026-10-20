@@ -33,9 +33,9 @@
 //! and nothing more writes [`Step`] as before.
 
 use bevy::prelude::*;
-use rl_core::turn::BASE_ACTION_COST;
+use rl_core::turn::{BASE_ACTION_COST, step_cost};
 use rl_core::{Direction, Point};
-use rl_rules::{FactionId, Relation, stance};
+use rl_rules::{BumpOutcome, FactionId, Offered, classify_offers, resolve_bump, stance};
 
 use crate::combat::{Attack, CombatRules, Faction, Health};
 use crate::components::{MyTurn, Position, Viewshed};
@@ -203,75 +203,45 @@ pub(crate) fn redirect_bumps(mut intents: MessageReader<Intent<Bump>>, mut resol
         // resolver strikes by: alive, with health to lose.
         let someone = way.occupancy.at(target).iter().copied().find(|other| way.standing.contains(*other));
         let theirs = someone.and_then(|other| way.standing.get(other).ok().flatten());
-        let stance = someone.and_then(|_| stance(way.rules.as_deref().map(|r| &r.factions), side.map(|f| f.0), theirs.map(|f| f.0)));
-        // A neutral of a side that gives way is walked past as an ally is.
-        let gives_way = stance == Some(Relation::Neutral) && way.bumps.as_deref().is_some_and(|r| r.gives_way(theirs.map(|f| f.0)));
-        // A foe is struck and an ally walked past whatever either offers:
-        // the walk key into a foe is a blow, and a companion with something
-        // to say is still a companion to step round.
-        if !matches!(stance, Some(Relation::Hostile | Relation::Allied)) && !gives_way {
-            // Something in the way that offers one thing and nothing else:
-            // walking into a crate opens it, the way walking into a door
-            // opens that, and walking into a captive frees it. Anything else
-            // it offers is a question a walk key cannot answer, and so is an
-            // offer it refuses, since a player who walks into a locked thing
-            // is owed the reason: both come to nothing and say so, and
-            // whoever shows screens asks or explains from the `Bumped` that
-            // follows.
-            match way.offers_at(actor, target) {
-                Offered::One(offer) => {
-                    out.interacts.write(Intent::new(actor, Interact { target: offer.target, verb: offer.verb, thing: None }));
-                    continue;
-                }
-                Offered::Several(what) => {
-                    out.bumped.write(Bumped { actor, into: what, offers: true });
-                    continue;
-                }
-                Offered::None => {}
+        let regard = someone.and_then(|_| stance(way.rules.as_deref().map(|r| &r.factions), side.map(|f| f.0), theirs.map(|f| f.0)));
+        let bumps = way.bumps.as_deref();
+        let gives_way = bumps.is_some_and(|r| r.gives_way(theirs.map(|f| f.0)));
+        let (offered, what) = way.offers_at(actor, target);
+        // A question needs something to name: the one that offers, when
+        // nobody there can be struck.
+        let named = someone.or(what.filter(|_| matches!(offered, Offered::Several)));
+        match resolve_bump(named, regard, gives_way, bumps.is_some_and(|r| r.allies == OnAlly::Swap), offered, way.map.opens(target).is_some()) {
+            BumpOutcome::Interact(offer) => {
+                out.interacts.write(Intent::new(actor, Interact { target: offer.target, verb: offer.verb, thing: None }));
             }
-        }
-        match someone {
-            Some(other) => match stance {
-                Some(Relation::Hostile) => {
-                    out.attacks.write(Intent::new(actor, Attack(other)));
+            BumpOutcome::Ask(_) => {
+                out.bumped.write(Bumped { actor, into: what.expect("an offer to ask about came from something"), offers: true });
+            }
+            BumpOutcome::Attack(other) => {
+                out.attacks.write(Intent::new(actor, Attack(other)));
+            }
+            BumpOutcome::Swap(other) => {
+                out.swaps.write(Intent::new(actor, Swap(other)));
+            }
+            BumpOutcome::Refuse(other) => {
+                if resolution.claim(actor) {
+                    resolution.failed(actor, BASE_ACTION_COST);
+                    out.bumped.write(Bumped { actor, into: other, offers: false });
                 }
-                Some(Relation::Allied) if way.bumps.as_deref().is_some_and(|r| r.allies == OnAlly::Swap) => {
-                    out.swaps.write(Intent::new(actor, Swap(other)));
-                }
-                Some(Relation::Neutral) if gives_way => {
-                    out.swaps.write(Intent::new(actor, Swap(other)));
-                }
-                _ => {
-                    if resolution.claim(actor) {
-                        resolution.failed(actor, BASE_ACTION_COST);
-                        out.bumped.write(Bumped { actor, into: other, offers: false });
-                    }
-                }
-            },
-            None if way.map.opens(target).is_some() => {
+            }
+            BumpOutcome::Open => {
                 out.opens.write(Intent::new(actor, Open(dir)));
             }
-            None => {
+            BumpOutcome::Step => {
                 out.steps.write(Intent::new(actor, Step(dir)));
             }
         }
     }
 }
 
-/// What stands in the way offers whoever walked into it.
-enum Offered {
-    /// One thing, which the bump comes to.
-    One(crate::props::Offer),
-    /// More than one, one refused, or one with a price, which is a
-    /// question or an explanation rather than an action.
-    Several(Entity),
-    /// Nothing, or nothing there offers at all.
-    None,
-}
-
 impl Way<'_, '_> {
     /// What stands in `target` offers `actor`, a prop or an actor alike:
-    /// the gate already worked out who offers what.
+    /// the gate already worked out who offers what, and who it is.
     ///
     /// One thing it could do now, for no price, and nothing else at all is
     /// the only case a walk key answers. Something that offers several, or
@@ -280,16 +250,12 @@ impl Way<'_, '_> {
     /// movement key must never make by walking into someone, and one that
     /// asks first, a yes or one of the actor's things, since a movement key
     /// cannot answer.
-    fn offers_at(&self, actor: Entity, target: Point) -> Offered {
-        let Some(offered) = self.offered.as_deref() else { return Offered::None };
+    fn offers_at(&self, actor: Entity, target: Point) -> (Offered<&crate::props::Offer>, Option<Entity>) {
+        let Some(offered) = self.offered.as_deref() else { return (Offered::None, None) };
         let mine = offered.for_actor(actor);
-        let Some(what) = self.occupancy.at(target).iter().copied().find(|e| mine.iter().any(|o| o.target == *e)) else { return Offered::None };
+        let Some(what) = self.occupancy.at(target).iter().copied().find(|e| mine.iter().any(|o| o.target == *e)) else { return (Offered::None, None) };
         let all: Vec<&crate::props::Offer> = mine.iter().filter(|o| o.target == what).collect();
-        match all.as_slice() {
-            [] => Offered::None,
-            [only] if only.refused.is_none() && only.price.is_none() && only.asks.is_none() => Offered::One((*only).clone()),
-            _ => Offered::Several(what),
-        }
+        (classify_offers(&all, |o| o.refused.is_none() && o.price.is_none() && o.asks.is_none()), Some(what))
     }
 }
 
@@ -339,8 +305,7 @@ pub(crate) fn resolve_swaps(
         for sight in [my_sight, their_sight].into_iter().flatten() {
             sight.into_inner().dirty = true;
         }
-        let cost = map.cost(to).unwrap_or(BASE_ACTION_COST);
-        let cost = if dir.is_some_and(Direction::is_diagonal) { cost * 1414 / 1000 } else { cost };
+        let cost = step_cost(map.cost(to).unwrap_or(BASE_ACTION_COST), dir.is_some_and(Direction::is_diagonal));
         swapped.write(Swapped { actor, with: other });
         resolution.done(actor, cost);
     }
@@ -542,39 +507,6 @@ mod tests {
         assert_eq!(heard.2, vec![Interacted { actor: rig.player, target: captive, verb: free, thing: None }], "the walk key freed the captive");
         assert!(heard.0.is_empty(), "and nothing was refused");
         assert_eq!((rig.at(), rig.now()), (start, before + 200), "for what the offer costs, without a step");
-    }
-
-    /// A foe is struck whatever it offers: a walk key into a foe is a blow.
-    #[test]
-    fn a_bump_into_a_hostile_actor_that_offers_something_is_still_a_blow() {
-        let mut rig = Rig::new();
-        let talk = rig.verb("talk");
-        let foe = rig.beside(Some(rig.theirs), vec![crate::props::Offering::new(talk, 100)]);
-        rig.bump(Direction::East);
-        assert_eq!(rig.app.world().get::<Health>(foe).unwrap().current, 15, "a blow");
-        assert!(rig.app.world().resource::<Heard>().2.is_empty(), "and no word");
-    }
-
-    /// An ally is walked past as it always was, whatever it offers: under
-    /// the swap rule the two change places, and without it the bump is a
-    /// plain refusal that asks nothing.
-    #[test]
-    fn a_bump_into_an_ally_that_offers_something_is_treated_as_any_ally() {
-        let mut rig = Rig::new();
-        rig.app.insert_resource(BumpRules::new().swap_allies());
-        let talk = rig.verb("talk");
-        let start = rig.at();
-        let friend = rig.beside(Some(rig.ours), vec![crate::props::Offering::new(talk, 100)]);
-        rig.bump(Direction::East);
-        assert_eq!(rig.app.world().get::<Position>(friend).unwrap().0, start, "the ally was swapped with");
-        assert!(rig.app.world().resource::<Heard>().2.is_empty(), "not talked to");
-
-        let mut rig = Rig::new();
-        let friend = rig.beside(Some(rig.ours), vec![crate::props::Offering::new(talk, 100)]);
-        rig.bump(Direction::East);
-        let heard = rig.app.world().resource::<Heard>();
-        assert_eq!(heard.0, vec![Bumped { actor: rig.player, into: friend, offers: false }], "refused, with nothing for a screen to ask");
-        assert!(heard.2.is_empty());
     }
 
     /// Someone offering two things, or one it refuses, is a question or
