@@ -45,6 +45,43 @@ The core algorithms have no Bevy dependency, so map generation, pathfinding and 
 - **Deterministic seeds**: one run seed, named random streams per domain and per pass, and no hash containers in gameplay code, so a seed replays the same map.
 - **Balance tooling**: threat scoring and a spawn-band report over a game's own spawn table.
 
+## Two ways to use it
+
+The engine is split so you can take the rules without taking the loop.
+
+### The toolkit
+
+`rl-core`, `rl-grid`, `rl-mapgen` and `rl-rules` contain no Bevy and build for the browser.
+They play the part bracket-lib plays: grids, field of view, light, pathfinding, chains of map generation passes, content registries from RON, and the rules a roguelike runs on, which are combat, statuses, charges and AI tactics.
+Each is a plain function a game calls from a loop it owns, and each is tested with no `App`.
+A few of them: `rl_rules::damage::{apply_hit, heal, mitigate}`, `rl_rules::faction::stance`, `rl_rules::arms::choose_reach`, `rl_rules::bump::resolve_bump`, `rl_rules::charges::spend`, `rl_rules::trade::quote`, `rl_rules::ai::awareness::observe`, `rl_grid::landing::landing`, `rl_grid::slide::slide` and `rl_core::step_cost`.
+
+Depend on those four crates and Bevy is never compiled.
+
+`examples/terminal` is a walk through generated rooms in a terminal, built on `rl-core`, `rl-grid` and `rl-mapgen` alone, with `crossterm` for the keys and the screen.
+Its `main.rs` only maps keys to steps, and the loop is the game's.
+
+```sh
+cargo run -p terminal   # arrows or hjklyubn to move, q, Esc or Ctrl-C to quit
+```
+
+### The framework
+
+`rl-bevy`, `rl-render`, `rl-ui` and `rl-save`, behind the `rl-engine` facade, own the loop: the turn order, the systems in a fixed sequence, the plugins, the panels and the saves.
+A game adds `RoguelikePlugins` and then the subsystems it wants by name.
+The tutorial, Undermere and Foundry are the worked examples.
+
+### How the two meet
+
+A framework system gathers what it needs from the world, calls a toolkit function, and applies the result.
+So a rule behaves the same in either, and a game can start on the framework and drop to the toolkit wherever it wants different wiring.
+To change the framework without forking it, leave out a plugin, join a system set, replace a presenter, or insert a resource of your own.
+
+### What it does not do
+
+It does not abstract over the ECS: the framework is Bevy's.
+A terminal or SSH front end for the framework is planned, and until then the toolkit example is the terminal path.
+
 ## Getting started
 
 The quickest start is the template: one file that runs on the first build.
