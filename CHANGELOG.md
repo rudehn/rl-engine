@@ -6,8 +6,7 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
-- `rl_rules::{stumble, wakes_from_harm, side_change}` answer which way a stumbling holder is turned (the percent rolled first, then one open way picked, and nothing drawn for a holder that never stumbles or is walled in), whether a blow wakes the sleeper it lands on, and what side a status-turned holder moves to and keeps; the status systems each decided these inline.
-  A status with `stumbles(0)` now draws nothing where it once spent a roll to learn it never stumbles.
+- `rl_rules::{stumble, wakes_from_harm, side_change}` answer which way a stumbling holder is turned (the percent rolled first, then one open way picked, and nothing drawn for a holder walled in), whether a blow wakes the sleeper it lands on, and what side a status-turned holder moves to and keeps; the status systems each decided these inline.
   To change: nothing.
 - `rl_rules::{spend, recharge, periods}` and `rl_rules::charges::Spent` answer what spending a charge leaves a thing as (charges still held, the next unit of a stack, gone, or empty and kept), how many charges a refill has earned and the progress it carries, and how many periods of a clock have run; the consumables' spend and recharge systems and the worn pulse each counted these themselves.
   `Spent` is reached through `rl_rules::charges` because `rl_bevy::Spent` is the marker component.

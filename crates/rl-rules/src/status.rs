@@ -650,13 +650,13 @@ impl Statuses {
 /// The way a stumbling holder is turned, if it is, among the `open` ways it
 /// may go: the percent is rolled first, then one open way is picked.
 ///
-/// Draws only in the order the run's stream has always been spent in, so
-/// a seed replays the same: nothing for a holder that never stumbles
-/// (`None`), never does (`Some(0)`) or has no open way, one draw for the
-/// percent when it is under a hundred, and one for the pick. A holder that
-/// always stumbles therefore spends a single draw a step.
+/// The draws are the run's stream spent in the order a seed has always
+/// replayed: nothing for a holder that never stumbles (`None`) or has no
+/// open way; otherwise one for the percent when it is under a hundred
+/// (zero included, which then never passes), and one for the pick when the
+/// percent passed or was a hundred.
 pub fn stumble(pct: Option<u32>, open: &[Direction], rng: &mut impl Rng) -> Option<Direction> {
-    let pct = pct.filter(|p| *p > 0)?;
+    let pct = pct?;
     if open.is_empty() {
         return None;
     }
@@ -1089,11 +1089,20 @@ mod tests {
         use rand::{SeedableRng, rngs::StdRng};
         let open = [Direction::North, Direction::East];
         let (mut a, mut b) = (StdRng::seed_from_u64(7), StdRng::seed_from_u64(7));
-        assert_eq!(stumble(Some(0), &open, &mut a), None, "never");
         assert_eq!(stumble(None, &open, &mut a), None, "no status stumbles");
         assert_eq!(stumble(Some(100), &[], &mut a), None, "certain, but walled in");
         assert_eq!(stumble(Some(50), &[], &mut a), None, "walled in before the percent is rolled");
         assert_eq!(a.random::<u64>(), b.random::<u64>());
+    }
+
+    #[test]
+    fn a_stumble_that_never_happens_still_spends_the_one_draw_that_says_so() {
+        use rand::{SeedableRng, rngs::StdRng};
+        let open = [Direction::North, Direction::East];
+        let (mut a, mut b) = (StdRng::seed_from_u64(9), StdRng::seed_from_u64(9));
+        assert_eq!(stumble(Some(0), &open, &mut a), None);
+        b.random_range(0..100);
+        assert_eq!(a.random::<u64>(), b.random::<u64>(), "exactly the percent's draw");
     }
 
     #[test]

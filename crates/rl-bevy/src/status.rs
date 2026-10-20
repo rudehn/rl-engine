@@ -547,6 +547,9 @@ pub(crate) fn stumble(
         let (held, at) = bodies.get(who).ok()?;
         let pct = held.stumbles(&registries.statuses)?;
         let open: Vec<Direction> = Direction::ALL.into_iter().filter(|d| map.is_walkable(at.0 + d.offset())).collect();
+        if open.is_empty() {
+            return None;
+        }
         let rng = &mut rng.as_deref_mut().expect("a status that stumbles draws from the run's seed, which CorePlugin asks for").0;
         rl_rules::stumble(Some(pct), &open, rng)
     };
