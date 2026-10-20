@@ -26,8 +26,9 @@ use std::collections::BTreeMap;
 use bevy::prelude::*;
 use rand::Rng;
 use rl_core::Point;
+use rl_rules::Relation;
 use rl_rules::ai::awareness::{self, Awareness, NoticeStats, StealthStats};
-use rl_rules::{Relation, stance};
+use rl_rules::faction::stance;
 
 use crate::combat::{CombatRules, DamageDealt, Dead, Faction};
 use crate::components::{MyTurn, Player, Position, Viewshed};

@@ -8,37 +8,47 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 - `examples/terminal`, a walk through generated rooms in a terminal that depends on `rl-core`, `rl-grid` and `rl-mapgen` alone and owns its loop with `crossterm`, with `terminal::{generate, step, look, render, direction_of}` as the tested rules and a `main.rs` that only maps keys to steps.
   To change: nothing.
+
 - `rl_rules::ai::hearing::loudest`, `rl_rules::effects::landing_user` and `rl_grid::slide::slide` answer which of the sounds that reached one listener it goes to look for (the most left, a tie to the earlier cell in row-major order), who a landing is done by (the carrier when the thing is used as itself or answers as an actor, otherwise whoever used it, otherwise the carrier) and where a push or pull along a straight line ends (up to the distance, stopping before the first cell that is not free); the noise and effects systems had all three inline, and `EffectWorld::slide` keeps its signature as a gatherer over the same walk.
   To change: nothing.
+
 - `rl_rules::trade::{each, quote, draw_down}` with `Deal`, `TradeRefusal` and `Piece`, and `rl_rules::prop::refusal` answer what one of a thing changes hands for (its worth bought, the trader's share sold), why a deal is refused (worn, then not bought, then no worth, then a short purse, the price saturating), which pieces a purse is drawn down by and how much of each, and why an offer is refused (a missing need before a short purse); `Refused` and `SpotRules` now live in `rl_rules::prop` and `Deal` and `TradeRefusal` in `rl_rules::trade`, and `rl-bevy` re-exports all four from the same paths, so `Trader::each` and `Trader::quote` keep their signatures.
-  To change: a game that replaced the `SpotRules` resource after setup passes it to `PropsPlugin::spotting` instead, since the resource is now the engine's own wrapper of it.
+  To change: nothing.
+
+- `SpotRules` is no longer a Bevy `Resource`, since it lives in the Bevy-free `rl-rules`; the engine keeps it in a wrapper of its own that `PropsPlugin::spotting(rules)` sets.
+  To change: a game that inserted or replaced `SpotRules` as a resource after setup passes it to `PropsPlugin::spotting` instead, and a system that read `Res<SpotRules>` stops, since there is no such resource to read.
+
 - `rl_rules::equip::{gain, may_use, dark_sight}` answer how much better a wearer would be for putting a thing on (against what it displaces and, for a blow that would replace the wearer's own, against that blow), whether a thing may be used now (carried, not known empty, and worn when it is wearable) and the sight in the dark a wearer reads (the best of its own and what it wears, none while suppressed); the items systems had all three inline, and `rl_bevy::may_use` keeps its signature as a gatherer over the same rule.
   To change: nothing.
-- `rl_rules::followers` and `rl_grid::landing` answer who travels behind whoever went through a way (those that follow, nearest first and a tie to the lower id) and where an arrival that takes up its cell stands (the wanted cell when free, otherwise the nearest free walkable cell by a breadth-first search capped at `reach` cells); the place systems had both inline.
+
+- `rl_rules::travel::followers` and `rl_grid::landing::landing` answer who travels behind whoever went through a way (those that follow, nearest first and a tie to the lower id) and where an arrival that takes up its cell stands (the wanted cell when free, otherwise the nearest free walkable cell by a breadth-first search capped at `reach` cells); the place systems had both inline.
   To change: nothing.
+
 - `rl_rules::work::{break_reason, newly_sighted}` answer why work breaks off (death, then harm, then another worker finishing the target, then the target out of reach) and whether a foe is newly in sight; `BreakReason` now lives in `rl_rules::work` and `rl-bevy` re-exports it from the same paths, so nothing else moves.
   To change: nothing.
+
 - `rl_rules::ai::awareness::{observe, unaware}` answer what one observer's turn with one subject leaves it knowing and whether that is news (the notice roll asked only of an unaware observer in view, an alert one in view kept without it, and an alert one out of view aging toward forgetting), and whether a watcher is unaware of a subject (a sleeper always, otherwise a hider at odds that nothing remembers); the stealth systems each decided these inline.
   To change: nothing.
-- `rl_rules::{stumble, wakes_from_harm, side_change}` answer which way a stumbling holder is turned (the percent rolled first, then one open way picked, and nothing drawn for a holder walled in), whether a blow wakes the sleeper it lands on, and what side a status-turned holder moves to and keeps; the status systems each decided these inline.
+
+- `rl_rules::status::{stumble, wakes_from_harm, side_change}` answer which way a stumbling holder is turned (the percent rolled first, then one open way picked, and nothing drawn for a holder walled in), whether a blow wakes the sleeper it lands on, and what side a status-turned holder moves to and keeps; the status systems each decided these inline.
   To change: nothing.
-- `rl_rules::{spend, recharge, periods}` and `rl_rules::charges::Spent` answer what spending a charge leaves a thing as (charges still held, the next unit of a stack, gone, or empty and kept), how many charges a refill has earned and the progress it carries, and how many periods of a clock have run; the consumables' spend and recharge systems and the worn pulse each counted these themselves.
-  `Spent` is reached through `rl_rules::charges` because `rl_bevy::Spent` is the marker component.
+
+- `rl_rules::charges::{spend, recharge, periods, Spent}` answer what spending a charge leaves a thing as (charges still held, the next unit of a stack, gone, or empty and kept), how many charges a refill has earned and the progress it carries, and how many periods of a clock have run; the consumables' spend and recharge systems and the worn pulse each counted these themselves.
   To change: nothing.
 
 - `rl_rules::ai::{step_as, StepAs, sort_roster, Trail}` and `rl_rules::ai::recent::Recent` answer what a mind's decision to step becomes (a swap with one who gives way, a door opened, a step, or a wait), who a mind sees sorted into enemies, allies and the others, which trail a search follows (the freshest offered, a tie to the lower cell) and the bounded cache the flow fields are kept in; the minds' system had its own copy of each.
   To change: nothing.
 
-- `rl_rules::{resolve_bump, classify_offers, BumpOutcome, Offered}` answer what walking into a cell comes to (a step, a door opened, a blow, a swap, the one plain thing offered taken up, or a question for a screen) and `rl_core::step_cost` what a step onto a tile costs, a diagonal's 1.414 times; the bump redirect, the swap resolver and the step resolver each had their own copy and now ask one.
+- `rl_rules::bump::{resolve_bump, classify_offers, BumpOutcome, Offered}` answer what walking into a cell comes to (a step, a door opened, a blow, a swap, the one plain thing offered taken up, or a question for a screen) and `rl_core::turn::step_cost` what a step onto a tile costs, a diagonal's 1.414 times; the bump redirect, the swap resolver and the step resolver each had their own copy and now ask one.
   To change: nothing.
 
 - `rl_rules::arms::{choose_reach, first_charged, armor_total, mending_pct, scale_unaware, Reach}` answer which weapon an attack is made with (the blow beside the target, the shot down a clear line further off), the first worn weapon that has a charge, the armor a blow meets, how much of a heal arrives and what a blow on the unaware is worth; the resolver, the hit odds and the forecast's `Arms::at` each had their own copy of the weapon choice and now ask one.
   To change: nothing.
 
-- `rl_rules::{apply_hit, heal, mitigate, Applied}` are what a hit and a heal do to health: a hit's new health with what it dealt, what was lost and whether it died, a heal scaled by mending and stopped at the most, and what lands after an invulnerable target or a peaceful place; `apply_damage` and `apply_healing` ask them.
+- `rl_rules::damage::{apply_hit, heal, mitigate, Applied}` are what a hit and a heal do to health: a hit's new health with what it dealt, what was lost and whether it died, a heal scaled by mending and stopped at the most, and what lands after an invulnerable target or a peaceful place; `apply_damage` and `apply_healing` ask them.
   To change: nothing.
 
-- `rl_rules::stance(factions, a, b)` is the one answer to how one side regards another, `None` when there is no faction table or either side takes none; the seven copies of it in stealth, bumping, the minds, work, props and sleep each kept their own fallback and now ask it.
+- `rl_rules::faction::stance(factions, a, b)` is the one answer to how one side regards another, `None` when there is no faction table or either side takes none; the seven copies of it in stealth, bumping, the minds, work, props and sleep each kept their own fallback and now ask it.
   To change: nothing.
 
 - The engine's public surface is what a game uses or plugs into, and nothing kept public for a test. About 660 items that only their own crate used are crate-private now: the plugins' systems, their `SystemParam`s, random streams, caches, layouts and helpers. About 60 that nothing used are gone, and code only tests call is compiled for tests alone. What stays public is what a game or another crate uses, plus the hooks the design hands to games: every view with its plugin and accessors, the shipped panels and their builders, the drawing helpers, the extension traits, the system sets, the mapgen passes, the content loaders, and the components, actions, messages and constants the guide tells a game to use.

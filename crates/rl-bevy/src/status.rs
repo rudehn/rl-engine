@@ -32,8 +32,9 @@
 use bevy::prelude::*;
 use rl_core::turn::BASE_ACTION_COST;
 use rl_core::{Direction, RunSeed, SeedDomain};
+use rl_rules::faction::stance;
 use rl_rules::stats::{Modifier, Op, Source};
-use rl_rules::{Hit, Relation, Resistances, StatId, Stats, StatusId, Statuses, stance};
+use rl_rules::{Hit, Relation, Resistances, StatId, Stats, StatusId, Statuses};
 
 use crate::combat::{CombatRules, DamageDealt, DamageEvent, Dead, Faction, Heal};
 use crate::components::{Actor, MyTurn, Position, Viewshed};
@@ -311,7 +312,7 @@ pub(crate) fn wake_on_harm(
     let Some(registries) = registries.as_deref() else { return };
     let sleeps = |status: StatusId| registries.statuses.get(status).sleeps;
     for d in dealt.read() {
-        if !rl_rules::wakes_from_harm(d.hit.status.is_some_and(sleeps), fresh.contains(&d.target)) {
+        if !rl_rules::status::wakes_from_harm(d.hit.status.is_some_and(sleeps), fresh.contains(&d.target)) {
             continue;
         }
         let Ok((mut statuses, mut stats)) = actors.get_mut(d.target) else { continue };
@@ -430,7 +431,7 @@ pub struct SideWas(pub Faction);
 pub(crate) fn keep_sides(mut commands: Commands, registries: Option<Res<Registries>>, mut bodies: Query<(Entity, &Afflicted, &mut Faction, Option<&SideWas>)>) {
     let Some(registries) = registries.as_deref() else { return };
     for (body, held, mut faction, was) in &mut bodies {
-        let Some((side, kept)) = rl_rules::side_change(held.side(&registries.statuses), faction.0, was.map(|w| w.0.0)) else { continue };
+        let Some((side, kept)) = rl_rules::status::side_change(held.side(&registries.statuses), faction.0, was.map(|w| w.0.0)) else { continue };
         *faction = Faction(side);
         match kept {
             Some(kept) => commands.entity(body).insert(SideWas(Faction(kept))),
@@ -551,7 +552,7 @@ pub(crate) fn stumble(
             return None;
         }
         let rng = &mut rng.as_deref_mut().expect("a status that stumbles draws from the run's seed, which CorePlugin asks for").0;
-        rl_rules::stumble(Some(pct), &open, rng)
+        rl_rules::status::stumble(Some(pct), &open, rng)
     };
     for step in steps.read() {
         if let Some(turned) = way(step.actor) {

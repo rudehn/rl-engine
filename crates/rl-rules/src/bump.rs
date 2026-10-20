@@ -35,7 +35,7 @@ pub enum BumpOutcome<A, O> {
     /// Take up the one thing they offer.
     Interact(O),
     /// Report an offer a screen must ask or explain; the turn is kept.
-    Ask(A),
+    Ask,
     /// Refuse: the cell holds someone the walker will not strike or pass.
     Refuse(A),
 }
@@ -64,9 +64,8 @@ pub fn classify_offers<O: Copy>(offers: &[O], plain: impl Fn(&O) -> bool) -> Off
 /// A foe is struck and an ally walked past whatever either offers: the walk
 /// key into a foe is a blow, and a companion with something to say is still
 /// a companion to step round. Anyone else who offers is taken up or asked
-/// about before they are refused. A question needs a name to carry, so a
-/// caller whose cell holds something that offers but nobody to strike
-/// passes that thing as `someone`, with a `stance` of `None`.
+/// about before they are refused. The question carries no name: the caller
+/// that raises it knows who offered.
 pub fn resolve_bump<A: Copy, O>(
     someone: Option<A>,
     stance: Option<Relation>,
@@ -77,10 +76,10 @@ pub fn resolve_bump<A: Copy, O>(
 ) -> BumpOutcome<A, O> {
     let gives_way = gives_way && stance == Some(Relation::Neutral);
     if !matches!(stance, Some(Relation::Hostile | Relation::Allied)) && !gives_way {
-        match (offered, someone) {
-            (Offered::One(offer), _) => return BumpOutcome::Interact(offer),
-            (Offered::Several, Some(what)) => return BumpOutcome::Ask(what),
-            _ => {}
+        match offered {
+            Offered::One(offer) => return BumpOutcome::Interact(offer),
+            Offered::Several => return BumpOutcome::Ask,
+            Offered::None => {}
         }
     }
     match someone {
@@ -155,13 +154,24 @@ mod tests {
     #[test]
     fn one_plain_offer_from_a_non_foe_is_taken_up_and_several_is_asked_about() {
         assert_eq!(bump(Some(7), Some(Neutral), false, false, Offered::One('x'), false), BumpOutcome::Interact('x'));
-        assert_eq!(bump(Some(7), Some(Neutral), false, false, Offered::Several, false), BumpOutcome::Ask(7));
-        assert_eq!(bump(Some(7), None, false, false, Offered::Several, false), BumpOutcome::Ask(7));
+        assert_eq!(bump(Some(7), Some(Neutral), false, false, Offered::Several, false), BumpOutcome::Ask);
+        assert_eq!(bump(Some(7), None, false, false, Offered::Several, false), BumpOutcome::Ask);
     }
 
     #[test]
     fn something_that_offers_with_no_one_to_strike_is_taken_up_or_asked_about_before_a_step_or_a_door() {
         assert_eq!(bump(None, None, false, false, Offered::One('x'), true), BumpOutcome::Interact('x'));
         assert_eq!(bump(None, None, false, false, Offered::One('x'), false), BumpOutcome::Interact('x'));
+        assert_eq!(bump(None, None, false, false, Offered::Several, true), BumpOutcome::Ask, "a question is asked with nobody to name");
+    }
+
+    #[test]
+    fn an_ally_who_is_not_swapped_with_is_refused_even_when_the_game_says_they_give_way() {
+        assert_eq!(bump(Some(7), Some(Allied), true, false, Offered::None, false), BumpOutcome::Refuse(7), "giving way counts only for a neutral");
+    }
+
+    #[test]
+    fn a_neutral_who_gives_way_is_swapped_with_even_when_they_offer_several_things() {
+        assert_eq!(bump(Some(7), Some(Neutral), true, false, Offered::Several, false), BumpOutcome::Swap(7));
     }
 }

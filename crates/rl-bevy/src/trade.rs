@@ -684,8 +684,8 @@ mod tests {
     }
 
     /// A refusal reaches the log with its reason and moves nothing: the
-    /// buyer short of the price, and a thing worn, which only the system
-    /// can see. The order of every reason is `rl_rules::trade`'s to test.
+    /// buyer short of the price, the trader short of its share, and a thing
+    /// worn, which only the system can see. The order of every reason is `rl_rules::trade`'s to test.
     #[test]
     fn short_currency_a_kind_not_bought_no_worth_and_a_worn_thing_are_each_refused_and_say_which() {
         let mut rig = Rig::new();
@@ -698,6 +698,10 @@ mod tests {
         rig.app.world_mut().get_mut::<Worth>(charm).unwrap().0 = 60;
         assert_eq!(refusal(rig.buy(charm, 1)), vec![TradeRefusal::Short], "60 asked of 50");
 
+        // The trader's purse bounds a sale, so it is the trader's that is passed.
+        let dear = rig.carried(rig.player, (Tagged(vec![tool]), Worth(1000)));
+        assert_eq!(refusal(rig.sell(dear, 1)), vec![TradeRefusal::Short], "250 asked of a trader with 100");
+
         let slots = Registry::from_defs(vec![rl_rules::SlotDef::new("hand")]).unwrap();
         let hand = slots.expect("hand");
         let mut worn = rl_rules::Equipment::for_slots(&slots);
@@ -707,7 +711,7 @@ mod tests {
         assert_eq!(refusal(rig.sell(held, 1)), vec![TradeRefusal::Worn]);
 
         assert_eq!((rig.purse(rig.player), rig.purse(rig.trader)), (50, 100), "no currency moved");
-        assert_eq!(rig.bag(rig.player).len(), 2, "and every thing stayed where it was");
+        assert_eq!(rig.bag(rig.player).len(), 3, "and every thing stayed where it was");
         assert_eq!(rig.bag(rig.trader).len(), 3);
     }
 

@@ -693,7 +693,7 @@ pub fn perceive_roster(mut thinking: ResMut<Thinking>, sight: Sight, rules: Opti
     let factions = rules.as_deref().map(|r| &r.factions);
     let seen = actors.iter().filter(|(e, pos, _, _, on)| *e != thinker && sight.perceives(&thinking, pos.0, *on)).map(|(e, pos, health, faction, _)| {
         let view = ActorView { id: e, pos: pos.0, health: health.map(vitals), faction: faction.map(|f| f.0) };
-        (view, rl_rules::stance(factions, mine, faction.map(|f| f.0)))
+        (view, rl_rules::faction::stance(factions, mine, faction.map(|f| f.0)))
     });
     let (enemies, allies, others) = sort_roster(seen);
     if let Some(snapshot) = thinking.snapshot_mut() {
@@ -911,7 +911,7 @@ pub(crate) fn decide_minds(
     let side_of = |e: Entity| sides.get(e).ok().map(|f| f.0);
     let mine = side_of(thinker);
     let passing = bumps.as_deref().filter(|r| r.minds_too && !r.gives_way(mine));
-    let neutral = |e: Entity| rl_rules::stance(rules.as_deref().map(|r| &r.factions), mine, side_of(e)) == Some(rl_rules::Relation::Neutral);
+    let neutral = |e: Entity| rl_rules::faction::stance(rules.as_deref().map(|r| &r.factions), mine, side_of(e)) == Some(rl_rules::Relation::Neutral);
     let gives_way = |p: Point| {
         let here = occupancy.at(p);
         passing.is_some_and(|r| !here.is_empty() && here.iter().all(|e| r.gives_way(side_of(*e)) && neutral(*e)))

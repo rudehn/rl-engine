@@ -38,9 +38,10 @@ use std::time::Duration;
 use bevy::prelude::*;
 use rl_core::Interner;
 use rl_core::turn::BASE_ACTION_COST;
+use rl_rules::Relation;
+use rl_rules::faction::stance;
 pub use rl_rules::work::BreakReason;
 use rl_rules::work::{Progress, Work, WorkKind, WorkKindId, break_reason, in_reach, newly_sighted};
-use rl_rules::{Relation, stance};
 
 use crate::combat::{CombatRules, DamageDealt, Dead, DeathEvent, Faction};
 use crate::components::{Actor, MyTurn, Player, Position};

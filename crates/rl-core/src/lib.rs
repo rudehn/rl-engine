@@ -38,7 +38,7 @@ pub use grid::{Grid, Grid2D, Steps};
 pub use id::{Id, Interner};
 pub use point::{Point, Rect};
 pub use seed::{RunSeed, SeedDomain};
-pub use turn::{DequeueOutcome, TurnQueue, step_cost};
+pub use turn::{DequeueOutcome, TurnQueue};
 
 /// The names most callers want in scope.
 pub mod prelude {
@@ -49,5 +49,5 @@ pub mod prelude {
     pub use crate::id::{Id, Interner};
     pub use crate::point::{Point, Rect};
     pub use crate::seed::{RunSeed, SeedDomain};
-    pub use crate::turn::{BASE_ACTION_COST, DequeueOutcome, TurnQueue, step_cost};
+    pub use crate::turn::{BASE_ACTION_COST, DequeueOutcome, TurnQueue};
 }

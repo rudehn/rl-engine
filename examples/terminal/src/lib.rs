@@ -176,9 +176,8 @@ mod tests {
         let view_is_floor = |walk: &Walk, p: Point| walk.terrain.view(&walk.tiles).is_walkable(p);
         for i in 0..400 {
             step(&mut walk, Direction::ALL[(i / 5) % 8]);
-            let remembered = (0..WIDTH * HEIGHT)
-                .map(|n| Point::new(n % WIDTH, n / WIDTH))
-                .find(|p| walk.explored.contains(*p) && !walk.seen.contains(*p) && *p != walk.at);
+            let remembered =
+                (0..WIDTH * HEIGHT).map(|n| Point::new(n % WIDTH, n / WIDTH)).find(|p| walk.explored.contains(*p) && !walk.seen.contains(*p) && *p != walk.at);
             if let Some(p) = remembered {
                 let glyph = render(&walk)[p.y as usize].chars().nth(p.x as usize);
                 assert_eq!(glyph, Some(if view_is_floor(&walk, p) { '.' } else { '#' }));

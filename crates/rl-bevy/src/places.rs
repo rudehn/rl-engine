@@ -570,7 +570,7 @@ pub(crate) fn resolve_warps(
                 && trails.is_some_and(|t| t.0.contains(&intent.actor));
             (e, pos.0, follows)
         });
-        let behind = rl_rules::followers(candidates, at);
+        let behind = rl_rules::travel::followers(candidates, at);
         trips.extend(behind.into_iter().map(|e| Trip { actor: e, to, is_action: false, after: Some(intent.actor) }));
     }
     for req in requests.read() {
@@ -645,7 +645,7 @@ fn warp(
     // traveller and the maps exactly as they were.
     let landing = if blocks {
         maps.occupancy.remove_on(from, pos.0, actor);
-        match rl_grid::landing(want, |p| !maps.occupancy.is_occupied_on(target_map, p), |p| maps.map.is_walkable_on(target_map, p), LANDING_REACH) {
+        match rl_grid::landing::landing(want, |p| !maps.occupancy.is_occupied_on(target_map, p), |p| maps.map.is_walkable_on(target_map, p), LANDING_REACH) {
             Some(landing) => landing,
             None => {
                 maps.occupancy.insert_on(from, pos.0, actor);

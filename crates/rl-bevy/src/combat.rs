@@ -1002,6 +1002,7 @@ pub fn resolve_attacks(
         let adjacent = geometry::is_adjacent(pos.0, target_pos.0);
         let gun = if adjacent { None } else { loadout.ranged_with(actor).filter(|(_, r)| line_of_fire(map, occupancy, pos.0, target_pos.0, r.range)) };
         let melee = if adjacent { loadout.melee_with(actor) } else { None };
+        // `gun` is already filtered by line of fire, so it stands for both facts.
         let weapon = match rl_rules::arms::choose_reach(adjacent, gun.is_some(), melee.is_some(), gun.is_some()) {
             Some(rl_rules::arms::Reach::Melee) => melee.map(|(from, m)| Weapon {
                 from,
@@ -1316,7 +1317,7 @@ impl Mitigation<'_, '_> {
         let resists = self.loadout.resistances(target);
         let stages: Vec<&dyn DamageStage<Entity>> = self.stages.0.iter().map(|s| s.as_ref() as &dyn DamageStage<Entity>).collect();
         let amount = rl_rules::resolve(hit, &defender, &resists, &self.registries.damage_kinds, &stages);
-        rl_rules::mitigate(amount, invulnerable, self.map.is_peaceful(map))
+        rl_rules::damage::mitigate(amount, invulnerable, self.map.is_peaceful(map))
     }
 }
 
@@ -1348,7 +1349,7 @@ pub(crate) fn apply_damage(
             continue;
         }
         let amount = mitigation.lands(&ev.hit, ev.target, invulnerable, on.map_or(MapId::ZERO, |m| m.0));
-        let hit = rl_rules::apply_hit(rl_rules::Vitals { current: health.current, max: health.max }, amount);
+        let hit = rl_rules::damage::apply_hit(rl_rules::Vitals { current: health.current, max: health.max }, amount);
         health.current = hit.current;
         dealt.write(DamageDealt { target: ev.target, hit: ev.hit, dealt: hit.dealt, lost: hit.lost, reach: ev.reach });
         if hit.died {
@@ -1369,7 +1370,7 @@ pub(crate) fn apply_healing(mut heals: MessageReader<Heal>, mut healed: MessageW
             continue;
         }
         let before = health.current;
-        health.current = rl_rules::heal(rl_rules::Vitals { current: before, max: health.max }, heal.amount, loadout.mending(heal.target));
+        health.current = rl_rules::damage::heal(rl_rules::Vitals { current: before, max: health.max }, heal.amount, loadout.mending(heal.target));
         healed.write(Healed { target: heal.target, restored: health.current - before, by: heal.by, status: heal.status });
     }
 }

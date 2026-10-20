@@ -54,7 +54,7 @@ The engine is split so you can take the rules without taking the loop.
 `rl-core`, `rl-grid`, `rl-mapgen` and `rl-rules` contain no Bevy and build for the browser.
 They play the part bracket-lib plays: grids, field of view, light, pathfinding, chains of map generation passes, content registries from RON, and the rules a roguelike runs on, which are combat, statuses, charges and AI tactics.
 Each is a plain function a game calls from a loop it owns, and each is tested with no `App`.
-A few of them: `rl_rules::damage::{apply_hit, heal, mitigate}`, `rl_rules::faction::stance`, `rl_rules::arms::choose_reach`, `rl_rules::bump::resolve_bump`, `rl_rules::charges::spend`, `rl_rules::trade::quote`, `rl_rules::ai::awareness::observe`, `rl_grid::landing::landing`, `rl_grid::slide::slide` and `rl_core::step_cost`.
+A few of them: `rl_rules::damage::{apply_hit, heal, mitigate}`, `rl_rules::faction::stance`, `rl_rules::arms::choose_reach`, `rl_rules::bump::resolve_bump`, `rl_rules::charges::spend`, `rl_rules::trade::quote`, `rl_rules::ai::awareness::observe`, `rl_grid::landing::landing`, `rl_grid::slide::slide` and `rl_core::turn::step_cost`.
 
 Depend on those four crates and Bevy is never compiled.
 
@@ -211,6 +211,15 @@ Each crate declares its tier in its `Cargo.toml`, and `scripts/check-tiers.sh` f
 | 3 | `rl-engine` | facade and prelude |
 
 ## Example games
+
+### Terminal, a walk through generated rooms
+
+`examples/terminal` is the toolkit used alone: a walk through generated rooms on `rl-core`, `rl-grid` and `rl-mapgen`, with `crossterm` for the keys and a `main.rs` that only maps keys to steps.
+Its tested functions are `terminal::{generate, step, look, render, direction_of}`.
+
+```sh
+cargo run -p terminal
+```
 
 ### Foundry, a fight down a droid foundry
 

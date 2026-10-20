@@ -485,7 +485,7 @@ pub fn offer_here(
     // and the bump all agree.
     let hostile = |other: Entity| {
         let theirs = sides.get(other).ok().map(|f| f.0);
-        rl_rules::stance(rules.as_deref().map(|r| &r.factions), theirs, side.map(|f| f.0)) == Some(rl_rules::Relation::Hostile)
+        rl_rules::faction::stance(rules.as_deref().map(|r| &r.factions), theirs, side.map(|f| f.0)) == Some(rl_rules::Relation::Hostile)
     };
     for (other, offers, at, other_on) in others {
         if other == actor || !in_reach(at, other_on) || hostile(other) {
@@ -1340,7 +1340,6 @@ impl PropsPlugin {
     /// thing must be, and what a turn spent waiting is worth. Plain
     /// [`PropsPlugin`] keeps [`SpotRules::default`], whole at any distance
     /// in sight and the same whatever the turn was spent on.
-    ///
     pub fn spotting(rules: SpotRules) -> impl Plugin {
         move |app: &mut App| {
             app.insert_resource(Spotting(rules));

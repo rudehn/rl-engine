@@ -35,7 +35,9 @@
 use bevy::prelude::*;
 use rl_core::turn::{BASE_ACTION_COST, step_cost};
 use rl_core::{Direction, Point};
-use rl_rules::{BumpOutcome, FactionId, Offered, classify_offers, resolve_bump, stance};
+use rl_rules::FactionId;
+use rl_rules::bump::{BumpOutcome, Offered, classify_offers, resolve_bump};
+use rl_rules::faction::stance;
 
 use crate::combat::{Attack, CombatRules, Faction, Health};
 use crate::components::{MyTurn, Position, Viewshed};
@@ -207,14 +209,11 @@ pub(crate) fn redirect_bumps(mut intents: MessageReader<Intent<Bump>>, mut resol
         let bumps = way.bumps.as_deref();
         let gives_way = bumps.is_some_and(|r| r.gives_way(theirs.map(|f| f.0)));
         let (offered, what) = way.offers_at(actor, target);
-        // A question needs something to name: the one that offers, when
-        // nobody there can be struck.
-        let named = someone.or(what.filter(|_| matches!(offered, Offered::Several)));
-        match resolve_bump(named, regard, gives_way, bumps.is_some_and(|r| r.allies == OnAlly::Swap), offered, way.map.opens(target).is_some()) {
+        match resolve_bump(someone, regard, gives_way, bumps.is_some_and(|r| r.allies == OnAlly::Swap), offered, way.map.opens(target).is_some()) {
             BumpOutcome::Interact(offer) => {
                 out.interacts.write(Intent::new(actor, Interact { target: offer.target, verb: offer.verb, thing: None }));
             }
-            BumpOutcome::Ask(_) => {
+            BumpOutcome::Ask => {
                 out.bumped.write(Bumped { actor, into: what.expect("an offer to ask about came from something"), offers: true });
             }
             BumpOutcome::Attack(other) => {

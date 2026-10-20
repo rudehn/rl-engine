@@ -33,7 +33,7 @@ pub fn choose_reach(adjacent: bool, line_of_fire: bool, has_melee: bool, has_ran
 /// and carries one, in slot order, else the actor's `own`.
 ///
 /// `worn` is each worn item in slot order with the weapon it carries, if
-/// any, and whether it has a charge to attack with. An empty wand is
+/// any, and whether it has a charge to attack with. An empty one is
 /// skipped rather than ending the search, so the item after it is still
 /// offered. The first of the pair is the item the weapon comes from, `None`
 /// when it is the actor's own.

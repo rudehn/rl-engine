@@ -20,6 +20,8 @@
 //! - [`AStar`]: point-to-point search with reusable scratch buffers.
 //! - [`DijkstraMap`]: one flood, any number of consumers.
 //! - [`SpatialGrid`]: who is standing where.
+//! - [`landing`]: where a thing that is pushed or thrown comes to rest.
+//! - [`slide`]: where a push or pull along a line ends.
 //! - [`region`]: flood fill and connected-component labelling.
 
 #![deny(missing_docs)]
@@ -43,7 +45,6 @@ pub use astar::{AStar, PathRules};
 pub use bitgrid::BitGrid;
 pub use dijkstra::DijkstraMap;
 pub use field::{Around, TileField};
-pub use landing::landing;
 pub use light::{Emitter, Glow, Light, LightBand, LightField, Rgb};
 pub use spatial::SpatialGrid;
 pub use targeting::{Footprint, TargetMode, burst, clear_shot, footprint};

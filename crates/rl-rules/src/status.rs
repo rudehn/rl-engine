@@ -1085,7 +1085,7 @@ mod tests {
     }
 
     #[test]
-    fn a_stumble_draws_nothing_when_it_is_certain_impossible_or_walled_in() {
+    fn a_stumble_draws_nothing_when_no_status_stumbles_or_there_is_nowhere_to_go() {
         use rand::{SeedableRng, rngs::StdRng};
         let open = [Direction::North, Direction::East];
         let (mut a, mut b) = (StdRng::seed_from_u64(7), StdRng::seed_from_u64(7));

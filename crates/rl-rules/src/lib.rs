@@ -66,13 +66,24 @@
 //! - [`arms`]: which weapon an attack is made with, the first worn weapon
 //!   that has a charge, the armor a blow meets, how much of a heal
 //!   arrives and what a blow on the unaware is worth.
+//! - [`bump`]: what walking into a cell comes to, a step, a door, a blow, a
+//!   swap, a thing taken up or a question, chosen on plain values.
+//! - [`charges`]: what spending a charge and counting a refill period come
+//!   to, as arithmetic on counts and hundredths.
+//! - [`effects`]: who an effect is done by when a thing lands.
+//! - [`trade`]: what a deal comes to, why it is refused and which pieces a
+//!   purse is drawn down by.
+//! - [`travel`]: who goes through a way behind whoever took it.
 //! - [`accuracy`]: whether an attack lands, as a [`HitModel`] the game
 //!   chooses turning plain facts into [`Odds`] and the lines behind them.
 //!
 //! One crate rather than five, because crate boundaries are drawn on
 //! dependency weight and these all weigh the same: core, grid, serde and
-//! ron. The modules keep the seams the crates had, and every item is also
-//! re-exported at the root.
+//! ron. The modules keep the seams the crates had. The older items are also
+//! re-exported at the root; the rule functions of [`arms`], [`bump`],
+//! [`charges`], [`effects`], [`trade`] and [`travel`], and the free
+//! functions the other modules gained with them, are reached through their
+//! module path.
 //!
 //! Everything is pure. The Bevy layer turns these into components and
 //! systems; a balance tool or a test runs them on plain values.
@@ -119,17 +130,13 @@ pub use ai::{
     ActorView, Awareness, Brain, Carried, Choice, Decision, Fields, HearingStats, ItemView, Missile, MovementProfile, NoFields, NoticeStats, Repertoire, Sense,
     Snapshot, Standard, StandardBrain, StealthStats, Tactic, TacticCtx, Vitals, Wits, notices,
 };
-pub use arms::{armor_total, choose_reach, first_charged, mending_pct, scale_unaware};
 pub use balance::{BandRow, Report, ThreatSubject, threat};
-pub use bump::{BumpOutcome, Offered, classify_offers, resolve_bump};
-// `charges::Spent` stays behind its module: rl-bevy has a `Spent` component of its own.
-pub use charges::{periods, recharge, spend};
 pub use content::{BandedEntry, BandedTable, ContentError, Named, Registry, load_spawns};
-pub use damage::{Applied, DamageKind, DamageStage, Hit, Resistances, apply_hit, heal, mitigate, resolve};
+pub use damage::{DamageKind, DamageStage, Hit, Resistances, resolve};
 pub use dressing::{DistrictDressings, DressingDef};
 pub use equip::{EquipError, EquipShape, Equipment, SlotDef, SlotId};
 pub use events::{Change, CounterDef, CounterId, Fact, FactDef, FactKind, Ledger, Matcher, Need, Objective, QuestDef, QuestId, QuestState, Tally, Tracker};
-pub use faction::{FactionId, Factions, Relation, stance};
+pub use faction::{FactionId, Factions, Relation};
 pub use fire::Tinder;
 pub use forecast::{Combatant, Duel, Outlook, duel};
 pub use gas::{Breath, GasDef, GasId};
@@ -139,15 +146,11 @@ pub use namegen::{NameBook, NameSet};
 pub use names::{NameRef, Names};
 pub use parts::{AttackShape, KeepAway, WhenEmpty};
 pub use prefab::{Coverage, CoverageRow, Legend, Legended, Pick, PrefabDef, Reach, Slot};
-pub use prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, Refused, SpotRules, Stock, refusal};
+pub use prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, Stock};
 pub use role::RoleDef;
 pub use stats::{Modifier, Op, Source, StatDef, StatId, Stats};
-pub use status::{
-    ActiveStatus, Mended, SLEEPER_REACH, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport, UNTIL_CURED, side_change, stumble, wakes_from_harm,
-};
+pub use status::{ActiveStatus, Mended, SLEEPER_REACH, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport, UNTIL_CURED};
 pub use tag::{TagDef, TagId};
-pub use trade::{Deal, Piece, TradeRefusal, draw_down, each, quote};
-pub use travel::followers;
 pub use work::{BreakReason, Work, WorkKind, WorkKindId};
 
 /// The names most callers want in scope.
@@ -167,7 +170,7 @@ pub mod prelude {
     pub use crate::events::{
         Change, CounterDef, CounterId, Fact, FactDef, FactKind, Ledger, Matcher, Need, Objective, QuestDef, QuestId, QuestState, Tally, Tracker,
     };
-    pub use crate::faction::{FactionId, Factions, Relation, stance};
+    pub use crate::faction::{FactionId, Factions, Relation};
     pub use crate::fire::Tinder;
     pub use crate::forecast::{Combatant, Duel, Outlook, duel};
 
