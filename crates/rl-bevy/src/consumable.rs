@@ -148,7 +148,7 @@ pub fn spend_charges(
             continue;
         }
         let Ok((mut c, stack)) = things.get_mut(f.on) else { continue };
-        match rl_rules::charges::spend(c.left, c.max, stack.as_ref().map(|s| s.count), c.when_empty) {
+        match rl_rules::charges::spend(c.left, stack.as_ref().map(|s| s.count), c.when_empty) {
             rl_rules::charges::Spent::Left(left) => c.left = left,
             rl_rules::charges::Spent::NextUnit => {
                 c.left = c.max;
