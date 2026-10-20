@@ -789,10 +789,9 @@ pub(crate) fn pulse_worn(
         }
         for (_, item) in worn.0.worn() {
             let Ok(mut pulse) = pulses.get_mut(item) else { continue };
-            let every = pulse.every.max(1);
-            pulse.progress += passed;
-            while pulse.progress >= every {
-                pulse.progress -= every;
+            let (times, rest) = rl_rules::charges::periods(pulse.progress, pulse.every, passed);
+            pulse.progress = rest;
+            for _ in 0..times {
                 fired.write(crate::effects::Fired { on: item, moment: crate::effects::Moments::PULSE, by: Some(wearer), at: pos.0 });
             }
         }

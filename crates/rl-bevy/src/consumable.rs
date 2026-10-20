@@ -148,19 +148,19 @@ pub fn spend_charges(
             continue;
         }
         let Ok((mut c, stack)) = things.get_mut(f.on) else { continue };
-        c.left = c.left.saturating_sub(1);
-        if c.left > 0 {
-            continue;
-        }
-        match stack {
-            Some(mut s) if s.count > 1 => {
-                s.count -= 1;
+        match rl_rules::charges::spend(c.left, c.max, stack.as_ref().map(|s| s.count), c.when_empty) {
+            rl_rules::charges::Spent::Left(left) => c.left = left,
+            rl_rules::charges::Spent::NextUnit => {
                 c.left = c.max;
+                if let Some(mut s) = stack {
+                    s.count -= 1;
+                }
             }
-            _ if c.when_empty == WhenEmpty::Destroyed => {
+            rl_rules::charges::Spent::Destroyed => {
+                c.left = 0;
                 commands.entity(f.on).insert(Spent);
             }
-            _ => {}
+            rl_rules::charges::Spent::Empty => c.left = 0,
         }
     }
 }
@@ -223,19 +223,9 @@ pub fn recharge_charges(
         }
         let (left, max) = (c.left, c.max);
         let Some(r) = c.recharge.as_mut() else { continue };
-        if left >= max {
-            r.progress = 0;
-            continue;
-        }
-        let every = r.every.max(1);
-        r.progress += passed;
-        let gained = (r.progress / every).min(u32::from(max - left)) as u16;
-        r.progress %= every;
-        let full = left + gained >= max;
-        if full {
-            r.progress = 0;
-        }
-        c.left = (left + gained).min(max);
+        let (now, progress) = rl_rules::charges::recharge(left, max, r.progress, r.every, passed);
+        r.progress = progress;
+        c.left = now;
     }
 }
 

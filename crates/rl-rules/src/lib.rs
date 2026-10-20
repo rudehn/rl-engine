@@ -86,6 +86,7 @@ pub mod ai;
 pub mod arms;
 pub mod balance;
 pub mod bump;
+pub mod charges;
 pub mod content;
 pub mod damage;
 pub mod dressing;
@@ -118,6 +119,8 @@ pub use ai::{
 pub use arms::{armor_total, choose_reach, first_charged, mending_pct, scale_unaware};
 pub use balance::{BandRow, Report, ThreatSubject, threat};
 pub use bump::{BumpOutcome, Offered, classify_offers, resolve_bump};
+// `charges::Spent` stays behind its module: rl-bevy has a `Spent` component of its own.
+pub use charges::{periods, recharge, spend};
 pub use content::{BandedEntry, BandedTable, ContentError, Named, Registry, load_spawns};
 pub use damage::{Applied, DamageKind, DamageStage, Hit, Resistances, apply_hit, heal, mitigate, resolve};
 pub use dressing::{DistrictDressings, DressingDef};

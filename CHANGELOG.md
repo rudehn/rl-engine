@@ -6,6 +6,10 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `rl_rules::{spend, recharge, periods}` and `rl_rules::charges::Spent` answer what spending a charge leaves a thing as (charges still held, the next unit of a stack, gone, or empty and kept), how many charges a refill has earned and the progress it carries, and how many periods of a clock have run; the consumables' spend and recharge systems and the worn pulse each counted these themselves.
+  `Spent` is reached through `rl_rules::charges` because `rl_bevy::Spent` is the marker component.
+  To change: nothing.
+
 - `rl_rules::ai::{step_as, StepAs, sort_roster, Trail}` and `rl_rules::ai::recent::Recent` answer what a mind's decision to step becomes (a swap with one who gives way, a door opened, a step, or a wait), who a mind sees sorted into enemies, allies and the others, which trail a search follows (the freshest offered, a tie to the lower cell) and the bounded cache the flow fields are kept in; the minds' system had its own copy of each.
   To change: nothing.
 
