@@ -6,6 +6,8 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `examples/terminal`, a walk through generated rooms in a terminal that depends on `rl-core`, `rl-grid` and `rl-mapgen` alone and owns its loop with `crossterm`, with `terminal::{generate, step, look, render, direction_of}` as the tested rules and a `main.rs` that only maps keys to steps.
+  To change: nothing.
 - `rl_rules::ai::hearing::loudest`, `rl_rules::effects::landing_user` and `rl_grid::slide::slide` answer which of the sounds that reached one listener it goes to look for (the most left, a tie to the earlier cell in row-major order), who a landing is done by (the carrier when the thing is used as itself or answers as an actor, otherwise whoever used it, otherwise the carrier) and where a push or pull along a straight line ends (up to the distance, stopping before the first cell that is not free); the noise and effects systems had all three inline, and `EffectWorld::slide` keeps its signature as a gatherer over the same walk.
   To change: nothing.
 - `rl_rules::trade::{each, quote, draw_down}` with `Deal`, `TradeRefusal` and `Piece`, and `rl_rules::prop::refusal` answer what one of a thing changes hands for (its worth bought, the trader's share sold), why a deal is refused (worn, then not bought, then no worth, then a short purse, the price saturating), which pieces a purse is drawn down by and how much of each, and why an offer is refused (a missing need before a short purse); `Refused` and `SpotRules` now live in `rl_rules::prop` and `Deal` and `TradeRefusal` in `rl_rules::trade`, and `rl-bevy` re-exports all four from the same paths, so `Trader::each` and `Trader::quote` keep their signatures.

@@ -168,6 +168,7 @@ A tool that needs only one of them can depend on that crate alone and never comp
 | Example | What it shows |
 |---|---|
 | `foundry` | Ten decks of a droid foundry; combat depth, with guns that run hot or dry, droids that shoot back, and a probe that shouts for them |
+| `terminal` | A walk through generated rooms in a terminal on the Bevy-free crates alone, the way a toolkit is used when the game owns its loop |
 | `undermere` | A delve from a lakeside town down ten floors to a drowned king, written as a whole game; the engine's title and records, monsters written as traits, and square tiles |
 
 ## Reading further

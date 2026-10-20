@@ -337,6 +337,10 @@ A deck is grown, not scattered: `assets/layout.ron` holds its shapes, three dist
 A run is saved on the way out, by the engine's stash when the window closes or the menu quits, by the engine again when the menu leaves the run for the title, and on every deck arrival through `SavePlugin::on_arrival()`; `save.rs` names the commando, droids, items with their heat, and lifts, and the upgrades taken and the deepest deck, and `run::resume` builds the foundry again from the saved seed and restores the run into it. A replay, a recording or a capture saves in memory, so a scripted run neither starts on the player's save nor writes over it. Death and a win delete it, and so does New Game over it, through the engine's `AbandonRun`. The upgrades taken and the deepest deck are the run's, put back with `reset_on_new_run` when it ends, so a run begun after another in the same launch inherits neither.
 It is a library with a thin binary, so every system is in one `FoundryPlugin` that the window and the headless tests both add, and `tests/fingerprint.rs` pins a scripted run.
 
+## The toolkit alone: Terminal
+
+A walk through generated rooms in a terminal, with no Bevy: `examples/terminal` depends on `rl-core`, `rl-grid` and `rl-mapgen` only, owns its loop with `crossterm`, grows the map with `Rooms` and `RandomStart`, sees with `rl_grid::fov::compute`, and keeps its rules as plain functions (`generate`, `step`, `look`, `render`) tested without a terminal.
+
 ## The game: Undermere
 
 A delve from a lakeside town through a ring of standing stones, down ten floors of a sunken kingdom to the thing that drowned it: `examples/undermere`, the first example written to be a whole game rather than the worked example of one system.
