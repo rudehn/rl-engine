@@ -35,6 +35,7 @@ use rl_rules::faction::FactionDef;
 use rl_rules::{FactionId, Registry};
 
 use crate::combat::{CombatRules, DamageStages};
+use crate::cue::TurnHold;
 use crate::prelude::{
     Arrive, DamageEvent, Destination, DropItem, Equip, GoThrough, Intent, Inventory, MapId, OnMap, PickUp, PlaceBuild, Player, Position, Stack, Unequip, Wait,
     WarpRequest,
@@ -249,7 +250,12 @@ pub fn pass_turns(app: &mut App, n: u32) {
 /// frame in play before the jump for it to count the whole span. And the
 /// frame after is an ordinary one: when nobody holds the turn, the queue
 /// deals at the new reading as it would at any.
+///
+/// # Panics
+/// Panics when a [`TurnHold`] is up: no pass runs while it is, so the one
+/// frame would show the jump to nothing that reads the clock.
 pub fn let_time_pass(app: &mut App, turns: u32) {
+    assert!(!app.world().resource::<TurnHold>().is_held(), "a turn hold is up, so no pass would run to see the time let pass");
     let span = turns * BASE_ACTION_COST;
     let mut clock = app.world_mut().resource_mut::<Turns>();
     let later: Vec<(Entity, u32)> = in_schedule_order(&clock).into_iter().map(|(who, due)| (who, due + span)).collect();
@@ -482,7 +488,7 @@ mod tests {
             let_time_pass(&mut app, turns);
 
             let left = app.world().get::<Consumable>(wand).expect("still there").left;
-            assert_eq!(left == 3, full, "after {turns} turns a charge a 2500 refill had {left} of 3");
+            assert_eq!(left == 3, full, "after {turns} turns of a refill every 2500, {left} of 3 charges");
         }
     }
 
@@ -503,6 +509,16 @@ mod tests {
         assert_eq!(app.world().resource::<Ended>().0, 0, "no turn ended for the span let pass");
         pass_turns(&mut app, 1);
         assert_eq!(app.world().resource::<Ended>().0, 1, "the next turn played ends as any turn does");
+    }
+
+    #[test]
+    #[should_panic(expected = "a turn hold is up")]
+    fn letting_time_pass_while_a_turn_hold_is_up_is_refused() {
+        let (mut app, _) = holding_the_turn(());
+        let mut hold = app.world_mut().resource_mut::<TurnHold>();
+        hold.watch();
+        hold.hold();
+        let_time_pass(&mut app, 1);
     }
 
     /// A scripted key reads as just pressed to a system in `Update`, once.

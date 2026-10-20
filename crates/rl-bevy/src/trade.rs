@@ -698,7 +698,7 @@ mod tests {
         rig.app.world_mut().get_mut::<Worth>(charm).unwrap().0 = 60;
         assert_eq!(refusal(rig.buy(charm, 1)), vec![TradeRefusal::Short], "60 asked of 50");
 
-        // The trader's purse bounds a sale, so it is the trader's that is passed.
+        // Short against either purse; which purse a sale reads is the next test's.
         let dear = rig.carried(rig.player, (Tagged(vec![tool]), Worth(1000)));
         assert_eq!(refusal(rig.sell(dear, 1)), vec![TradeRefusal::Short], "250 asked of a trader with 100");
 
@@ -713,6 +713,20 @@ mod tests {
         assert_eq!((rig.purse(rig.player), rig.purse(rig.trader)), (50, 100), "no currency moved");
         assert_eq!(rig.bag(rig.player).len(), 3, "and every thing stayed where it was");
         assert_eq!(rig.bag(rig.trader).len(), 3);
+    }
+
+    /// A sale is weighed against the trader's purse, not the customer's: a
+    /// share of 80 is more than the seller's 50 and within the trader's 100,
+    /// so it goes through, where weighing the wrong purse would refuse it.
+    #[test]
+    fn a_sale_dearer_than_the_sellers_purse_goes_through_when_the_trader_can_pay_it() {
+        let mut rig = Rig::new();
+        let tool = rig.tool;
+        let pricey = rig.carried(rig.player, (Tagged(vec![tool]), Worth(320)));
+        let (done, refused) = rig.sell(pricey, 1);
+        assert!(refused.is_empty(), "refused: {refused:?}");
+        assert_eq!(done.iter().map(|d| d.price).collect::<Vec<_>>(), vec![80], "a quarter of 320");
+        assert_eq!((rig.purse(rig.player), rig.purse(rig.trader)), (130, 20), "80 moved from the trader's purse to the seller's");
     }
 
     /// The price of one is the one a deal is struck at, asked of the trader
