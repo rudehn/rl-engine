@@ -735,14 +735,14 @@ impl Loadout<'_, '_> {
     /// and the armor stat.
     pub fn armor(&self, who: Entity) -> i32 {
         let own = self.own.get(who).ok().and_then(|(armor, ..)| armor).map_or(0, |a| a.0);
-        let worn: i32 = self.worn(who).filter_map(|(_, armor, ..)| armor).map(|a| a.0).sum();
-        own + worn + self.stat(who, |r| r.armor)
+        let worn = self.worn(who).filter_map(|(_, armor, ..)| armor).map(|a| a.0);
+        rl_rules::arms::armor_total(own, worn, self.stat(who, |r| r.armor))
     }
 
     /// How much of a [`Heal`] reaches `who`, in percent: a hundred and the
     /// mending stat, never below nothing.
     pub fn mending(&self, who: Entity) -> i32 {
-        (100 + self.stat(who, |r| r.mending)).max(0)
+        rl_rules::arms::mending_pct(self.stat(who, |r| r.mending))
     }
 
     /// What `who` resists: its own [`Resists`], every worn item's and what
@@ -766,8 +766,9 @@ impl Loadout<'_, '_> {
     /// The blow `who` strikes, as [`Loadout::melee`], with the worn item it
     /// comes from, or `None` when it is `who`'s own.
     pub fn melee_with(&self, who: Entity) -> Option<(Option<Entity>, MeleeAttack)> {
-        let wielded = self.worn(who).filter(|(item, ..)| self.charged(*item)).find_map(|(item, _, melee, ..)| melee.copied().map(|m| (Some(item), m)));
-        let (from, base) = wielded.or_else(|| self.own.get(who).ok().and_then(|(_, melee, ..)| melee.copied()).map(|m| (None, m)))?;
+        let worn = self.worn(who).map(|(item, _, melee, ..)| (item, melee.copied(), self.charged(item)));
+        let own = self.own.get(who).ok().and_then(|(_, melee, ..)| melee.copied());
+        let (from, base) = rl_rules::arms::first_charged(worn, own)?;
         let bonus = self.stat(who, |r| r.attack);
         Some((from, MeleeAttack { dice: DiceRoll { bonus: base.dice.bonus + bonus, ..base.dice }, ..base }))
     }
@@ -782,8 +783,9 @@ impl Loadout<'_, '_> {
     /// The shot `who` fires, as [`Loadout::ranged`], with the worn item it
     /// comes from, or `None` when it is `who`'s own.
     pub fn ranged_with(&self, who: Entity) -> Option<(Option<Entity>, RangedAttack)> {
-        let wielded = self.worn(who).filter(|(item, ..)| self.charged(*item)).find_map(|(item, _, _, ranged, _)| ranged.copied().map(|r| (Some(item), r)));
-        let (from, base) = wielded.or_else(|| self.own.get(who).ok().and_then(|(_, _, ranged, _)| ranged.copied()).map(|r| (None, r)))?;
+        let worn = self.worn(who).map(|(item, _, _, ranged, _)| (item, ranged.copied(), self.charged(item)));
+        let own = self.own.get(who).ok().and_then(|(_, _, ranged, _)| ranged.copied());
+        let (from, base) = rl_rules::arms::first_charged(worn, own)?;
         let bonus = self.stat(who, |r| r.attack);
         Some((from, RangedAttack { dice: DiceRoll { bonus: base.dice.bonus + bonus, ..base.dice }, ..base }))
     }
@@ -997,13 +999,11 @@ pub fn resolve_attacks(
         };
         // The gun is kept beside the weapon it became, so the odds can read
         // its reach.
-        let gun = if geometry::is_adjacent(pos.0, target_pos.0) {
-            None
-        } else {
-            loadout.ranged_with(actor).filter(|(_, r)| line_of_fire(map, occupancy, pos.0, target_pos.0, r.range))
-        };
-        let weapon = if geometry::is_adjacent(pos.0, target_pos.0) {
-            loadout.melee_with(actor).map(|(from, m)| Weapon {
+        let adjacent = geometry::is_adjacent(pos.0, target_pos.0);
+        let gun = if adjacent { None } else { loadout.ranged_with(actor).filter(|(_, r)| line_of_fire(map, occupancy, pos.0, target_pos.0, r.range)) };
+        let melee = if adjacent { loadout.melee_with(actor) } else { None };
+        let weapon = match rl_rules::arms::choose_reach(adjacent, gun.is_some(), melee.is_some(), gun.is_some()) {
+            Some(rl_rules::arms::Reach::Melee) => melee.map(|(from, m)| Weapon {
                 from,
                 ranged: false,
                 kind: m.kind,
@@ -1012,9 +1012,11 @@ pub fn resolve_attacks(
                 look: m.look,
                 shape: m.shape,
                 unaware: m.unaware.or(house),
-            })
-        } else {
-            gun.map(|(from, r)| Weapon { from, ranged: true, kind: r.kind, dice: r.dice, cost: r.cost, look: r.look, shape: r.shape, unaware: None })
+            }),
+            Some(rl_rules::arms::Reach::Ranged) => {
+                gun.map(|(from, r)| Weapon { from, ranged: true, kind: r.kind, dice: r.dice, cost: r.cost, look: r.look, shape: r.shape, unaware: None })
+            }
+            None => None,
         };
         let Some(Weapon { from, ranged, kind, dice, cost, look, shape, unaware }) = weapon else {
             resolution.done(actor, rl_core::turn::BASE_ACTION_COST);
@@ -1060,7 +1062,7 @@ pub fn resolve_attacks(
                 hits.push(Hit::by(actor, kind, dice.roll_at_least(&mut **rng, 0)));
                 hits.extend(strikes.iter().map(|(kind, dice)| Hit::by(actor, *kind, dice.roll_at_least(&mut **rng, 0))));
                 for hit in &mut hits {
-                    hit.amount = (i64::from(hit.amount) * i64::from(worth) / 100).try_into().unwrap_or(i32::MAX);
+                    hit.amount = rl_rules::arms::scale_unaware(hit.amount, worth);
                 }
             }
             let shot =

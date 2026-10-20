@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `rl_rules::arms::{choose_reach, first_charged, armor_total, mending_pct, scale_unaware, Reach}` answer which weapon an attack is made with (the blow beside the target, the shot down a clear line further off), the first worn weapon that has a charge, the armor a blow meets, how much of a heal arrives and what a blow on the unaware is worth; the resolver, the hit odds and the forecast's `Arms::at` each had their own copy of the weapon choice and now ask one.
+  To change: nothing.
+
 - `rl_rules::{apply_hit, heal, mitigate, Applied}` are what a hit and a heal do to health: a hit's new health with what it dealt, what was lost and whether it died, a heal scaled by mending and stopped at the most, and what lands after an invulnerable target or a peaceful place; `apply_damage` and `apply_healing` ask them.
   To change: nothing.
 

@@ -123,12 +123,12 @@ impl Marksmanship<'_, '_> {
     pub fn at_distance(&self, loadout: &Loadout, attacker: Entity, target: Entity, shift: i32) -> Option<Odds> {
         let (from, to) = (self.positions.get(attacker).ok()?.0, self.positions.get(target).ok()?.0);
         let distance = geometry::chebyshev(from, to);
-        if distance <= 1 {
-            loadout.melee(attacker)?;
-            return self.odds(attacker, target, Attempt::Blow, shift);
+        let (melee, gun) = (loadout.melee(attacker), loadout.ranged(attacker));
+        let in_range = gun.is_some_and(|g| distance <= g.range);
+        match rl_rules::arms::choose_reach(distance <= 1, in_range, melee.is_some(), gun.is_some())? {
+            rl_rules::arms::Reach::Melee => self.odds(attacker, target, Attempt::Blow, shift),
+            rl_rules::arms::Reach::Ranged => self.odds(attacker, target, Attempt::Shot(&gun?), shift),
         }
-        let gun = loadout.ranged(attacker).filter(|g| distance <= g.range)?;
-        self.odds(attacker, target, Attempt::Shot(&gun), shift)
     }
 
     /// The odds of `user` firing `gun` at `target` with the aim on `cursor`,

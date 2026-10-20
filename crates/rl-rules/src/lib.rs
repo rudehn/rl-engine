@@ -63,6 +63,9 @@
 //!   checked from the command line.
 //! - [`forecast`]: what a fight is likely to cost, run through the same
 //!   mitigation a real blow goes through, for an inspect panel to print.
+//! - [`arms`]: which weapon an attack is made with, the first worn weapon
+//!   that has a charge, the armor a blow meets, how much of a heal
+//!   arrives and what a blow on the unaware is worth.
 //! - [`accuracy`]: whether an attack lands, as a [`HitModel`] the game
 //!   chooses turning plain facts into [`Odds`] and the lines behind them.
 //!
@@ -80,6 +83,7 @@
 pub mod ability;
 pub mod accuracy;
 pub mod ai;
+pub mod arms;
 pub mod balance;
 pub mod content;
 pub mod damage;
@@ -110,6 +114,7 @@ pub use ai::{
     ActorView, Awareness, Brain, Carried, Choice, Decision, Fields, HearingStats, ItemView, Missile, MovementProfile, NoFields, NoticeStats, Repertoire, Sense,
     Snapshot, Standard, StandardBrain, StealthStats, Tactic, TacticCtx, Vitals, Wits, notices,
 };
+pub use arms::{armor_total, choose_reach, first_charged, mending_pct, scale_unaware};
 pub use balance::{BandRow, Report, ThreatSubject, threat};
 pub use content::{BandedEntry, BandedTable, ContentError, Named, Registry, load_spawns};
 pub use damage::{Applied, DamageKind, DamageStage, Hit, Resistances, apply_hit, heal, mitigate, resolve};

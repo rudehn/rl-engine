@@ -148,12 +148,12 @@ impl<'a> Arms<'a> {
     /// map, and a forecast that a wall may yet block is still the right
     /// forecast for the fight the two would have.
     pub fn at(&self, distance: i32) -> (&'a [(DamageKindId, DiceRoll)], Option<u32>) {
-        if distance <= 1 {
-            (self.melee, self.melee_cost)
-        } else if distance <= self.range {
-            (self.ranged, self.ranged_cost)
-        } else {
-            (&[], None)
+        // The slices carry their own emptiness, so both weapons count as
+        // held here and an empty one is the answer, not a missing one.
+        match crate::arms::choose_reach(distance <= 1, distance <= self.range, true, true) {
+            Some(crate::arms::Reach::Melee) => (self.melee, self.melee_cost),
+            Some(crate::arms::Reach::Ranged) => (self.ranged, self.ranged_cost),
+            None => (&[], None),
         }
     }
 
