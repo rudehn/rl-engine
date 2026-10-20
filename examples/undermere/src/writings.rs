@@ -25,7 +25,7 @@ use bevy::prelude::*;
 use rand::Rng;
 use rl_engine::prelude::*;
 use rl_engine::rl_bevy::PlaceMap;
-use rl_engine::rl_bevy::places::PlaceEntered;
+use rl_engine::rl_bevy::places::{PlaceEntered, Spot};
 use rl_engine::rl_bevy::prefabs::Prefabs;
 use rl_engine::rl_rules::prefab::Slot;
 use serde::{Deserialize, Serialize};
@@ -157,17 +157,28 @@ pub fn assign_writings(
             continue;
         }
         let mut rng = seed.stream(b"undermere.writings", u64::from(ev.map.0));
-        for (at, is_last_words) in spots {
-            let key = (ev.map.0, at.x, at.y);
-            if is_last_words {
-                if !progress.last_words.contains_key(&key) {
-                    let line = draw(&mut rng, &mut progress.last_words_used, content.last_words.len());
-                    progress.last_words.insert(key, line);
-                }
-            } else if !progress.inscriptions.contains_key(&key) {
-                let line = draw(&mut rng, &mut progress.inscriptions_used, content.inscriptions.len());
-                progress.inscriptions.insert(key, line);
+        assign(&mut rng, ev.map.0, &spots, (content.last_words.len(), content.inscriptions.len()), &mut progress);
+    }
+}
+
+/// Gives each of a map's readable `spots` a line, `(position, is last
+/// words)` as [`readable_spots`] reports them, from pools of `pools`
+/// lines (last words, then inscriptions): skipping a position that has
+/// one already, so a rebuilt floor keeps what it had, and drawing the rest
+/// in the spots' order so one stream gives the same lines every time.
+/// Lifted out of [`assign_writings`] so the rule is tested on made-up
+/// spots, with no world to build.
+fn assign(rng: &mut impl Rng, map: u32, spots: &[(Point, bool)], pools: (usize, usize), progress: &mut WritingsProgress) {
+    for &(at, is_last_words) in spots {
+        let key = (map, at.x, at.y);
+        if is_last_words {
+            if !progress.last_words.contains_key(&key) {
+                let line = draw(rng, &mut progress.last_words_used, pools.0);
+                progress.last_words.insert(key, line);
             }
+        } else if !progress.inscriptions.contains_key(&key) {
+            let line = draw(rng, &mut progress.inscriptions_used, pools.1);
+            progress.inscriptions.insert(key, line);
         }
     }
 }
@@ -225,16 +236,27 @@ pub fn tell_floor_feeling(
 ) {
     for ev in entered.read().filter(|ev| ev.first) {
         let Some(place) = map.place(ev.map) else { continue };
-        for spot in &place.spots {
-            let Some((key, glyph)) = spot.prefab.zip(char::from_u32(spot.tag)) else { continue };
-            let Some(Slot::Prop(id)) = prefabs.slot(key, glyph) else { continue };
-            let name = registries.props.name(*id);
-            if let Some(feeling) = content.feelings.iter().find(|f| f.prop == name) {
-                tell.write(Tell::new(feeling.says.as_str(), Tones::NOTICE));
-                break;
+        let prop_name = |spot: &Spot| {
+            let (key, glyph) = spot.prefab.zip(char::from_u32(spot.tag))?;
+            match prefabs.slot(key, glyph)? {
+                Slot::Prop(id) => Some(registries.props.name(*id)),
+                _ => None,
             }
+        };
+        if let Some(says) = feeling_of(&place.spots, prop_name, &content.feelings) {
+            tell.write(Tell::new(says, Tones::NOTICE));
         }
     }
+}
+
+/// What a floor's own feeling says, if a spot of it stands a prop that
+/// `feelings` names: the first such spot's, in the spots' order, since a
+/// floor is never written to hold two. `prop_name` answers what prop a spot stands, `None` for a spot
+/// that stands none, as a trap `traps.rs` laid does not (it is hidden, so
+/// a floor never tells of it). Lifted out of [`tell_floor_feeling`] so the
+/// rule is tested on made-up spots.
+fn feeling_of<'a, 'n>(spots: &[Spot], prop_name: impl Fn(&Spot) -> Option<&'n str>, feelings: &'a [Feeling]) -> Option<&'a str> {
+    spots.iter().filter_map(prop_name).find_map(|name| feelings.iter().find(|f| f.prop == name)).map(|f| f.says.as_str())
 }
 
 #[cfg(test)]
@@ -243,8 +265,7 @@ mod tests {
 
     use super::*;
     use crate::dungeon::{FLOORS, map_of};
-    use crate::testing::{adventurer, arrive, headless, par_seeds, said, seeds};
-    use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
+    use crate::testing::{adventurer, arrive, first_floor_holding, headless, said};
 
     /// A line is never drawn twice while the pool holds an unused one,
     /// and a pool of one line is read from forever after its one line is
@@ -267,91 +288,164 @@ mod tests {
         assert!(sixth < 5, "a spent pool still returns a real index: {sixth}");
     }
 
-    /// Every "scratched words" prop a run's floors turn up, read once
-    /// each: the same line read twice running, and no two of them the
-    /// same line, across as many floors as the seed range gives one.
+    /// Made-up readable spots: `(position, is last words)` along a row.
+    fn row(kinds: &[bool]) -> Vec<(Point, bool)> {
+        kinds.iter().enumerate().map(|(i, k)| (Point::new(i as i32, 0), *k)).collect()
+    }
+
+    /// No two places are given one line while the pool lasts, across the
+    /// floors of a run that share one `progress`, and the two pools are
+    /// spent apart: a remains takes nothing from the inscriptions.
     #[test]
-    fn a_remains_reads_the_same_line_twice_and_no_two_remains_in_a_run_share_one() {
-        par_seeds(seeds(0..24), |s| {
-            let mut app = headless(RunSeed(s));
+    fn no_two_places_in_a_run_are_given_one_line_while_the_pool_lasts() {
+        let mut rng = RunSeed(7).rng(rl_engine::rl_core::SeedDomain::new(b"test"), 0);
+        let mut progress = WritingsProgress::default();
+        for map in 1..=4 {
+            assign(&mut rng, map, &row(&[true, false, true]), (8, 8), &mut progress);
+        }
+        let last_words: BTreeSet<usize> = progress.last_words.values().copied().collect();
+        let inscriptions: BTreeSet<usize> = progress.inscriptions.values().copied().collect();
+        assert_eq!((progress.last_words.len(), last_words.len()), (8, 8), "eight remains, eight lines of eight: {:?}", progress.last_words);
+        assert_eq!((progress.inscriptions.len(), inscriptions.len()), (4, 4), "four inscriptions, four distinct lines: {:?}", progress.inscriptions);
+    }
+
+    /// A place that has a line keeps it when its floor is assigned again,
+    /// and takes no further line from the pool, so a floor rebuilt from a
+    /// save reads what it read before.
+    #[test]
+    fn a_place_keeps_its_line_when_its_floor_is_assigned_again() {
+        let mut rng = RunSeed(7).rng(rl_engine::rl_core::SeedDomain::new(b"test"), 0);
+        let mut progress = WritingsProgress::default();
+        let spots = row(&[true, false]);
+        assign(&mut rng, 3, &spots, (5, 5), &mut progress);
+        let given = progress.clone();
+        assign(&mut rng, 3, &spots, (5, 5), &mut progress);
+        assert_eq!(progress, given, "a second assignment of the same floor changed what it was given");
+    }
+
+    /// A made-up floor's spots: tag 1 stands a prop named for a feeling,
+    /// tag 2 a prop with none, tag 3 a laid trap, which stands no piece's
+    /// prop, and any other tag nothing.
+    fn feeling_spots(tags: &[u32]) -> Vec<Spot> {
+        tags.iter().enumerate().map(|(i, tag)| Spot { tag: *tag, at: Point::new(i as i32, 0), prefab: (*tag != 3).then_some(0) }).collect()
+    }
+
+    fn name_of_tag(spot: &Spot) -> Option<&'static str> {
+        match spot.tag {
+            1 => Some("brazier"),
+            2 => Some("urn"),
+            _ => None,
+        }
+    }
+
+    fn feelings() -> Vec<Feeling> {
+        vec![Feeling { prop: "brazier".into(), says: "smoke".into() }]
+    }
+
+    /// A floor with a spot standing a feeling prop says it; one standing
+    /// only other props, a trap of the feeling prop's kind that is no
+    /// piece, or nothing, says none.
+    #[test]
+    fn a_floor_says_its_feeling_only_for_a_spot_that_stands_a_feeling_piece() {
+        let feelings = feelings();
+        assert_eq!(feeling_of(&feeling_spots(&[2, 1]), name_of_tag, &feelings), Some("smoke"));
+        assert_eq!(feeling_of(&feeling_spots(&[2, 4]), name_of_tag, &feelings), None, "a prop the file names no feeling for");
+        assert_eq!(feeling_of(&feeling_spots(&[3]), name_of_tag, &feelings), None, "a laid trap is no piece, whatever it is");
+        assert_eq!(feeling_of(&[], name_of_tag, &feelings), None);
+    }
+
+    /// A floor that stands two feeling props says the one its first spot
+    /// stands, and the file's order breaks no tie between spots.
+    #[test]
+    fn a_floor_with_two_feeling_pieces_says_the_first_spots() {
+        let two = vec![Feeling { prop: "urn".into(), says: "dust".into() }, Feeling { prop: "brazier".into(), says: "smoke".into() }];
+        assert_eq!(feeling_of(&feeling_spots(&[1, 2]), name_of_tag, &two), Some("smoke"));
+        assert_eq!(feeling_of(&feeling_spots(&[2, 1]), name_of_tag, &two), Some("dust"));
+    }
+
+    /// Every "scratched words" prop one floor turns up, read once each: the
+    /// same line read twice running, and no two of them the same line, on
+    /// a floor of each piece that writes. One floor each is enough here:
+    /// the reading is the test, and that no two places across a run share a
+    /// line is the rule `assign` is tested for above.
+    #[test]
+    fn a_remains_reads_the_same_line_twice_and_no_two_remains_on_a_floor_share_one() {
+        for piece in ["A Fallen Adventurer", "Last Words"] {
+            let (seed, f) = first_floor_holding(piece);
+            let mut app = headless(seed);
             let me = adventurer(&mut app);
-            let mut lines_this_run = Vec::new();
-            for f in 1..FLOORS {
-                arrive(&mut app, map_of(f));
-                let scratched = app.world().resource::<Registries>().props.expect("scratched words");
-                let read = app.world().resource::<Verbs>().get(READ_VERB).expect("declared");
-                let found: Vec<Entity> = {
-                    let world = app.world_mut();
-                    let here = world.resource::<WorldMap>().current();
-                    world.query::<(Entity, &PropKind, &OnMap)>().iter(world).filter(|(_, k, on)| k.0 == scratched && on.0 == here).map(|(e, ..)| e).collect()
-                };
-                for target in found {
-                    let before_first = said(&app).len();
-                    app.world_mut().write_message(Interacted { actor: me, target, verb: read, thing: None });
-                    app.update();
-                    let first_read = said(&app)[before_first..].to_vec();
-                    assert_eq!(first_read.len(), 1, "seed {s}, floor {f}: reading told something other than one line: {first_read:?}");
-                    let before_second = said(&app).len();
-                    app.world_mut().write_message(Interacted { actor: me, target, verb: read, thing: None });
-                    app.update();
-                    let second_read = said(&app)[before_second..].to_vec();
-                    // The log folds a line said twice running into the one,
-                    // so a second read adds a new line or none, never another.
-                    assert!(second_read.is_empty() || first_read == second_read, "seed {s}, floor {f}: the same remains read twice");
-                    lines_this_run.push(first_read.into_iter().next().expect("checked above"));
-                }
+            arrive(&mut app, map_of(f));
+            let scratched = app.world().resource::<Registries>().props.expect("scratched words");
+            let read = app.world().resource::<Verbs>().get(READ_VERB).expect("declared");
+            let found: Vec<Entity> = {
+                let world = app.world_mut();
+                let here = world.resource::<WorldMap>().current();
+                world.query::<(Entity, &PropKind, &OnMap)>().iter(world).filter(|(_, k, on)| k.0 == scratched && on.0 == here).map(|(e, ..)| e).collect()
+            };
+            assert!(!found.is_empty(), "{piece} on seed {seed:?}, floor {f}: no remains stand where it was drawn");
+            let mut lines_this_floor = Vec::new();
+            for target in found {
+                let before_first = said(&app).len();
+                app.world_mut().write_message(Interacted { actor: me, target, verb: read, thing: None });
+                app.update();
+                let first_read = said(&app)[before_first..].to_vec();
+                assert_eq!(first_read.len(), 1, "{piece}: reading told something other than one line: {first_read:?}");
+                let before_second = said(&app).len();
+                app.world_mut().write_message(Interacted { actor: me, target, verb: read, thing: None });
+                app.update();
+                let second_read = said(&app)[before_second..].to_vec();
+                // The log folds a line said twice running into the one,
+                // so a second read adds a new line or none, never another.
+                assert!(second_read.is_empty() || first_read == second_read, "{piece}: the same remains read twice");
+                lines_this_floor.push(first_read.into_iter().next().expect("checked above"));
             }
-            let distinct: BTreeSet<&String> = lines_this_run.iter().collect();
-            assert_eq!(distinct.len(), lines_this_run.len(), "seed {s}: a line given to two remains in one run: {lines_this_run:?}");
-        });
+            let distinct: BTreeSet<&String> = lines_this_floor.iter().collect();
+            assert_eq!(distinct.len(), lines_this_floor.len(), "{piece}: a line given to two remains on one floor: {lines_this_floor:?}");
+        }
+    }
+
+    /// Whether the floor the adventurer stands on says a feeling on
+    /// arrival, and whether a feeling piece (not a laid trap) stands on it.
+    fn feeling_said_and_held(app: &mut App, f: u32) -> (bool, bool) {
+        let before = said(app).len();
+        arrive(app, map_of(f));
+        let new_lines = said(app)[before..].to_vec();
+        let feeling_lines: Vec<String> = app.world().resource::<Writings>().feelings.iter().map(|f| f.says.clone()).collect();
+        let said_a_feeling = new_lines.iter().any(|line| feeling_lines.iter().any(|f| f == line));
+        let registries = app.world().resource::<Registries>().clone();
+        let feeling_ids: Vec<PropId> = app.world().resource::<Writings>().feelings.iter().filter_map(|f| registries.props.id(&f.prop)).collect();
+        let world = app.world_mut();
+        let here = world.resource::<WorldMap>().current();
+        // A trap `traps.rs` lays is a prop of the same kind but no piece:
+        // it is hidden, so a floor never tells of it.
+        let laid: Vec<Point> =
+            world.resource::<WorldMap>().place(here).expect("built").spots.iter().filter(|s| crate::traps::is_hidden_tag(s.tag)).map(|s| s.at).collect();
+        let holds = world
+            .query::<(&PropKind, &Position, &OnMap)>()
+            .iter(world)
+            .filter(|(_, at, on)| on.0 == here && !laid.contains(&at.0))
+            .any(|(k, ..)| feeling_ids.contains(&k.0));
+        (said_a_feeling, holds)
     }
 
     /// A floor holding a piece `Writings::feelings` names says it on
-    /// arrival; one holding none of them says none of those lines. A hidden
-    /// trap of the same kind is no piece, and a floor does not give it away.
+    /// arrival; one holding none of them says none of those lines. One
+    /// run is enough: the first floor drawing "The Tinder Room" is staged,
+    /// then the same run's other floors are searched for the first without
+    /// a feeling piece, and the search fails loudly when there is none.
     #[test]
     fn a_floor_with_a_feeling_piece_says_it_on_arrival_and_one_without_says_none() {
-        let (told_one, told_none) = (AtomicBool::new(false), AtomicBool::new(false));
-        par_seeds(seeds(0..40), |s| {
-            let mut app = headless(RunSeed(s));
-            adventurer(&mut app);
-            for f in 1..FLOORS {
-                let before = said(&app).len();
-                arrive(&mut app, map_of(f));
-                let after = said(&app);
-                let new_lines = &after[before..];
-                let feeling_lines: Vec<String> = app.world().resource::<Writings>().feelings.iter().map(|f| f.says.clone()).collect();
-                let said_a_feeling = new_lines.iter().any(|line| feeling_lines.iter().any(|f| f == line));
-                let registries = app.world().resource::<Registries>().clone();
-                let feeling_ids: Vec<PropId> = app.world().resource::<Writings>().feelings.iter().filter_map(|f| registries.props.id(&f.prop)).collect();
-                let world = app.world_mut();
-                let here = world.resource::<WorldMap>().current();
-                // A trap `traps.rs` lays is a prop of the same kind but no
-                // piece: it is hidden, so a floor never tells of it.
-                let laid: Vec<Point> = world
-                    .resource::<WorldMap>()
-                    .place(here)
-                    .expect("built")
-                    .spots
-                    .iter()
-                    .filter(|s| crate::traps::is_hidden_tag(s.tag))
-                    .map(|s| s.at)
-                    .collect();
-                let holds_a_feeling_prop = world
-                    .query::<(&PropKind, &Position, &OnMap)>()
-                    .iter(world)
-                    .filter(|(_, at, on)| on.0 == here && !laid.contains(&at.0))
-                    .any(|(k, ..)| feeling_ids.contains(&k.0));
-                if holds_a_feeling_prop {
-                    assert!(said_a_feeling, "seed {s}, floor {f}: a feeling piece stands here, unannounced");
-                    told_one.store(true, Relaxed);
-                } else {
-                    assert!(!said_a_feeling, "seed {s}, floor {f}: a feeling said with no feeling piece here");
-                    told_none.store(true, Relaxed);
-                }
-            }
+        let (seed, f) = first_floor_holding("The Tinder Room");
+        let mut app = headless(seed);
+        adventurer(&mut app);
+        let (said_a_feeling, holds) = feeling_said_and_held(&mut app, f);
+        assert!(holds, "seed {seed:?}, floor {f}: The Tinder Room was drawn but no feeling piece stands here");
+        assert!(said_a_feeling, "seed {seed:?}, floor {f}: a feeling piece stands here, unannounced");
+        let bare = (1..FLOORS).filter(|g| *g != f).find(|g| {
+            let (said_a_feeling, holds) = feeling_said_and_held(&mut app, *g);
+            assert_eq!(said_a_feeling, holds, "seed {seed:?}, floor {g}: a feeling said with no feeling piece here, or none said with one");
+            !holds
         });
-        assert!(told_one.into_inner(), "no seed in the range held a feeling piece at all");
-        assert!(told_none.into_inner(), "no seed in the range held a floor with none");
+        assert!(bare.is_some(), "seed {seed:?}: every floor of the run held a feeling piece, so none was left to say none");
     }
 }

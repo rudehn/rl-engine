@@ -20,7 +20,10 @@ use rl_engine::rl_core::RunSeed;
 
 use crate::armory::{Armory, ItemKind};
 use crate::bestiary::Bestiary;
-use crate::dungeon::floor_of;
+use crate::bestiary::MonsterDef;
+use crate::dungeon::{Undermere, floor_of};
+use rl_engine::rl_bevy::places::Spot;
+use rl_engine::rl_rules::prefab::Slot;
 
 /// The adventurer, the run begun first if it has not been.
 pub use rl_engine::testing::player as adventurer;
@@ -56,6 +59,22 @@ pub fn headless_without_undermere(seed: RunSeed) -> App {
 /// asks for it, and the first frames run so the continued run stands.
 pub fn continued(text: &str) -> App {
     rl_engine::testing::continued(headless(RunSeed(0)), crate::save::SLOT, text)
+}
+
+/// What a piece's slot at `spot` holds, if the spot is a slot: the lookup
+/// a test of a placed piece does for every spot of a built floor, here once
+/// so none keeps its own.
+pub fn slot_of<'a>(undermere: &'a Undermere, spot: &Spot) -> Option<&'a Slot<MonsterDef>> {
+    spot.prefab.zip(char::from_u32(spot.tag)).and_then(|(key, glyph)| undermere.prefabs().slot(key, glyph))
+}
+
+/// The first seed and floor whose run draws the pool piece `piece`, for a
+/// test that stages one arrival where the piece stands instead of playing
+/// seeds to find it. Panics when no run draws it, so a renamed piece fails
+/// the test instead of leaving it to pass over nothing.
+#[cfg(test)]
+pub(crate) fn first_floor_holding(piece: &str) -> (RunSeed, u32) {
+    crate::dungeon::drawn(piece)
 }
 
 /// Warps the adventurer to `map`'s way in, the way the stairs would, and

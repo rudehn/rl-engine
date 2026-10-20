@@ -282,7 +282,9 @@ impl Undermere {
 }
 
 /// The first seed whose run draws the pool entry `name` for a floor, and
-/// that floor: for a test of what a piece does where a run lays it.
+/// that floor: for a test of what a piece does where a run lays it. Panics
+/// when no run over 400 seeds draws it, so a renamed piece fails the test
+/// rather than leaving it to pass over nothing.
 #[cfg(test)]
 pub(crate) fn drawn(name: &str) -> (RunSeed, u32) {
     let loaded = Undermere::new(RunSeed(0));
@@ -1294,12 +1296,7 @@ mod tests {
     use rl_engine::rl_rules::prefab::{Pick, Slot};
 
     use super::*;
-    use crate::testing::{par_seeds, seeds};
-
-    /// What a piece's slot at `spot` holds, if the spot is a slot.
-    fn slot<'a>(undermere: &'a Undermere, spot: &Spot) -> Option<&'a Slot<MonsterDef>> {
-        spot.prefab.zip(char::from_u32(spot.tag)).and_then(|(key, glyph)| undermere.prefabs().slot(key, glyph))
-    }
+    use crate::testing::{par_seeds, seeds, slot_of as slot};
 
     /// The cells something stands in the way on once `built` is filled: a
     /// prop that blocks, or a monster, at a piece's slot. Never the entry,
