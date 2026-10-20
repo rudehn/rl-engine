@@ -30,7 +30,6 @@
 //! `Registries` at all nobody is afflicted.
 
 use bevy::prelude::*;
-use rand::Rng;
 use rl_core::turn::BASE_ACTION_COST;
 use rl_core::{Direction, RunSeed, SeedDomain};
 use rl_rules::stats::{Modifier, Op, Source};
@@ -312,7 +311,7 @@ pub(crate) fn wake_on_harm(
     let Some(registries) = registries.as_deref() else { return };
     let sleeps = |status: StatusId| registries.statuses.get(status).sleeps;
     for d in dealt.read() {
-        if d.hit.status.is_some_and(sleeps) || fresh.contains(&d.target) {
+        if !rl_rules::wakes_from_harm(d.hit.status.is_some_and(sleeps), fresh.contains(&d.target)) {
             continue;
         }
         let Ok((mut statuses, mut stats)) = actors.get_mut(d.target) else { continue };
@@ -431,17 +430,12 @@ pub struct SideWas(pub Faction);
 pub(crate) fn keep_sides(mut commands: Commands, registries: Option<Res<Registries>>, mut bodies: Query<(Entity, &Afflicted, &mut Faction, Option<&SideWas>)>) {
     let Some(registries) = registries.as_deref() else { return };
     for (body, held, mut faction, was) in &mut bodies {
-        match (held.side(&registries.statuses), was) {
-            (Some(side), None) => {
-                commands.entity(body).insert(SideWas(*faction));
-                *faction = Faction(side);
-            }
-            (None, Some(was)) => {
-                *faction = was.0;
-                commands.entity(body).remove::<SideWas>();
-            }
-            _ => {}
-        }
+        let Some((side, kept)) = rl_rules::side_change(held.side(&registries.statuses), faction.0, was.map(|w| w.0.0)) else { continue };
+        *faction = Faction(side);
+        match kept {
+            Some(kept) => commands.entity(body).insert(SideWas(Faction(kept))),
+            None => commands.entity(body).remove::<SideWas>(),
+        };
     }
 }
 
@@ -553,14 +547,8 @@ pub(crate) fn stumble(
         let (held, at) = bodies.get(who).ok()?;
         let pct = held.stumbles(&registries.statuses)?;
         let open: Vec<Direction> = Direction::ALL.into_iter().filter(|d| map.is_walkable(at.0 + d.offset())).collect();
-        if open.is_empty() {
-            return None;
-        }
         let rng = &mut rng.as_deref_mut().expect("a status that stumbles draws from the run's seed, which CorePlugin asks for").0;
-        if pct < 100 && rng.random_range(0..100) >= pct {
-            return None;
-        }
-        Some(open[rng.random_range(0..open.len())])
+        rl_rules::stumble(Some(pct), &open, rng)
     };
     for step in steps.read() {
         if let Some(turned) = way(step.actor) {
@@ -1282,34 +1270,6 @@ mod tests {
         app.world_mut().write_message(Intent::new(player, Step(Direction::West)));
         app.update();
         assert_eq!(app.world().get::<Position>(player).unwrap().0, start.offset(1, 0), "walled in, it went nowhere");
-    }
-
-    /// A holder that stumbles a share of the time goes astray on some
-    /// steps and straight on others; one whose statuses never stumble
-    /// always goes straight.
-    #[test]
-    fn a_holder_that_stumbles_some_of_the_time_goes_astray_on_some_steps_and_straight_on_others() {
-        let (mut app, _, player, _) = field(vec![StatusDef::new("dizzy").stumbles(50)]);
-        let dizzy = status(&app, "dizzy");
-        let walk = |app: &mut App| {
-            let (mut straight, mut astray) = (0, 0);
-            for _ in 0..20 {
-                let from = app.world().get::<Position>(player).unwrap().0;
-                app.world_mut().write_message(Intent::new(player, Step(Direction::East)));
-                app.update();
-                if app.world().get::<Position>(player).unwrap().0 == from + Direction::East.offset() {
-                    straight += 1;
-                } else {
-                    astray += 1;
-                }
-            }
-            (straight, astray)
-        };
-        assert_eq!(walk(&mut app), (20, 0), "nothing held, nothing turned");
-        app.world_mut().write_message(Afflict { target: player, status: dizzy, turns: UNTIL_CURED, by: None, held_by: None });
-        app.update();
-        let (straight, astray) = walk(&mut app);
-        assert!(straight > 0 && astray > 0, "{straight} straight and {astray} astray");
     }
 
     /// The run's seed is asked for by the statuses only where one of them

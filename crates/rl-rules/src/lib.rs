@@ -139,7 +139,9 @@ pub use prefab::{Coverage, CoverageRow, Legend, Legended, Pick, PrefabDef, Reach
 pub use prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, Stock};
 pub use role::RoleDef;
 pub use stats::{Modifier, Op, Source, StatDef, StatId, Stats};
-pub use status::{ActiveStatus, Mended, SLEEPER_REACH, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport, UNTIL_CURED};
+pub use status::{
+    ActiveStatus, Mended, SLEEPER_REACH, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport, UNTIL_CURED, side_change, stumble, wakes_from_harm,
+};
 pub use tag::{TagDef, TagId};
 pub use work::{Work, WorkKind, WorkKindId};
 

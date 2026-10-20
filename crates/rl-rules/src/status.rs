@@ -17,7 +17,8 @@
 //! own.
 
 use crate::content::{ContentError, Named, Registry};
-use rl_core::Id;
+use rand::Rng;
+use rl_core::{Direction, Id};
 use serde::{Deserialize, Serialize};
 
 use crate::damage::{DamageKindId, Resistances};
@@ -646,6 +647,50 @@ impl Statuses {
     }
 }
 
+/// The way a stumbling holder is turned, if it is, among the `open` ways it
+/// may go: the percent is rolled first, then one open way is picked.
+///
+/// Draws only in the order the run's stream has always been spent in, so
+/// a seed replays the same: nothing for a holder that never stumbles
+/// (`None`), never does (`Some(0)`) or has no open way, one draw for the
+/// percent when it is under a hundred, and one for the pick. A holder that
+/// always stumbles therefore spends a single draw a step.
+pub fn stumble(pct: Option<u32>, open: &[Direction], rng: &mut impl Rng) -> Option<Direction> {
+    let pct = pct.filter(|p| *p > 0)?;
+    if open.is_empty() {
+        return None;
+    }
+    if pct < 100 && rng.random_range(0..100) >= pct {
+        return None;
+    }
+    Some(open[rng.random_range(0..open.len())])
+}
+
+/// Whether a blow wakes the sleeper it lands on.
+///
+/// Two harms wake nobody: a sleeping status's own tick, which would cure a
+/// sleep that also bites the first turn it bit, and harm landing in the
+/// pass the sleep was put on, since a dart that wounds and sends to sleep
+/// is one landing and a sleeper woken by its own wound never slept.
+pub fn wakes_from_harm(ticked_by_its_own_sleep: bool, fell_asleep_this_pass: bool) -> bool {
+    !ticked_by_its_own_sleep && !fell_asleep_this_pass
+}
+
+/// What a holder's side becomes this pass, as `(side now, side to give
+/// back)`, or `None` to leave it be.
+///
+/// `held` is the side its statuses name, `now` the side it is on and `was`
+/// the side it kept when it was turned. Turned once, when the first such
+/// status comes on, so a holder some other rule moves meanwhile stays
+/// where that rule put it; given back the pass the last ends.
+pub fn side_change(held: Option<FactionId>, now: FactionId, was: Option<FactionId>) -> Option<(FactionId, Option<FactionId>)> {
+    match (held, was) {
+        (Some(side), None) => Some((side, Some(now))),
+        (None, Some(was)) => Some((was, None)),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1037,5 +1082,60 @@ mod tests {
         assert_eq!(errs.len(), 3, "{errs:#?}");
         assert!(errs.contains(&"cursed: unknown stat \"luck\"".to_string()), "{errs:#?}");
         assert!(errs.contains(&"burning: unknown damage kind \"fire\"".to_string()), "{errs:#?}");
+    }
+
+    #[test]
+    fn a_stumble_draws_nothing_when_it_is_certain_impossible_or_walled_in() {
+        use rand::{SeedableRng, rngs::StdRng};
+        let open = [Direction::North, Direction::East];
+        let (mut a, mut b) = (StdRng::seed_from_u64(7), StdRng::seed_from_u64(7));
+        assert_eq!(stumble(Some(0), &open, &mut a), None, "never");
+        assert_eq!(stumble(None, &open, &mut a), None, "no status stumbles");
+        assert_eq!(stumble(Some(100), &[], &mut a), None, "certain, but walled in");
+        assert_eq!(stumble(Some(50), &[], &mut a), None, "walled in before the percent is rolled");
+        assert_eq!(a.random::<u64>(), b.random::<u64>());
+    }
+
+    #[test]
+    fn a_certain_stumble_spends_one_draw_on_the_pick_and_a_chancy_one_rolls_the_percent_first() {
+        use rand::{SeedableRng, rngs::StdRng};
+        let open = [Direction::North, Direction::East, Direction::South];
+        let (mut a, mut b) = (StdRng::seed_from_u64(3), StdRng::seed_from_u64(3));
+        assert_eq!(stumble(Some(100), &open, &mut a), Some(open[b.random_range(0..3)]));
+        assert_eq!(a.random::<u64>(), b.random::<u64>(), "one draw, for the pick");
+        for seed in 0..40 {
+            let (mut a, mut b) = (StdRng::seed_from_u64(seed), StdRng::seed_from_u64(seed));
+            let gate = b.random_range(0..100) >= 50;
+            let want = if gate { None } else { Some(open[b.random_range(0..3)]) };
+            assert_eq!(stumble(Some(50), &open, &mut a), want);
+            assert_eq!(a.random::<u64>(), b.random::<u64>());
+        }
+    }
+
+    #[test]
+    fn a_stumble_that_goes_astray_only_some_of_the_time_does_so_on_some_steps_and_not_others() {
+        use rand::{SeedableRng, rngs::StdRng};
+        let open = [Direction::North, Direction::East];
+        let mut rng = StdRng::seed_from_u64(1);
+        let astray = (0..200).filter(|_| stumble(Some(50), &open, &mut rng).is_some()).count();
+        assert!(astray > 0 && astray < 200, "{astray} of 200");
+    }
+
+    #[test]
+    fn harm_wakes_a_sleeper_unless_it_is_its_own_sleeps_tick_or_landed_the_pass_it_fell_asleep() {
+        assert!(wakes_from_harm(false, false));
+        assert!(!wakes_from_harm(true, false), "a sleep that bites does not wake its holder");
+        assert!(!wakes_from_harm(false, true), "a wound and a sleep landed together leave it asleep");
+        assert!(!wakes_from_harm(true, true));
+    }
+
+    #[test]
+    fn a_holder_is_turned_once_and_given_its_own_side_back_when_the_last_status_ends() {
+        let (ours, theirs, other) = (FactionId::from_raw(0), FactionId::from_raw(1), FactionId::from_raw(2));
+        assert_eq!(side_change(Some(theirs), ours, None), Some((theirs, Some(ours))), "turned, its side kept");
+        assert_eq!(side_change(Some(theirs), theirs, Some(ours)), None, "turned only once");
+        assert_eq!(side_change(Some(theirs), other, Some(ours)), None, "moved by another rule, left where it is");
+        assert_eq!(side_change(None, theirs, Some(ours)), Some((ours, None)), "given back");
+        assert_eq!(side_change(None, ours, None), None, "nothing held, nothing kept");
     }
 }
