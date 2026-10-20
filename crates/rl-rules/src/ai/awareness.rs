@@ -154,6 +154,43 @@ impl Awareness {
     }
 }
 
+/// One observer's turn with one subject: what it knows afterward, and
+/// whether that is news (it flipped from unaware).
+///
+/// An alert observer in view keeps its subject whatever a roll would say,
+/// and only an unaware one in view asks `spots`, so a monster in plain view
+/// does not lose you to a bad roll and a draw is spent exactly when one
+/// was before. `spots` is a closure so the caller's stream is untouched on
+/// every other path. Out of view an alert observer ages its memory by a
+/// turn, forgetting past `memory`, and an unaware one stays so.
+pub fn observe(state: Awareness, in_view: bool, spots: impl FnOnce() -> bool, at: Point, memory: u32) -> (Awareness, bool) {
+    let mut state = state;
+    let news = if in_view && state.is_alert() {
+        state.saw(at)
+    } else if in_view {
+        spots() && state.saw(at)
+    } else {
+        state.lost(memory);
+        false
+    };
+    (state, news)
+}
+
+/// Whether a watcher has not noticed a subject at all, which a blow from
+/// the subject asks before it lands harder for it.
+///
+/// A sleeper is unaware of everyone, hiding or not: it noticed nothing, and
+/// the blow that wakes it is still a blow on a sleeper. Otherwise only where
+/// stealth could have hidden the one from the other: `running` is whether
+/// stealth applies to this pair at all (the plugin is on, the watcher keeps
+/// a memory and is not the subject), `hides` whether the subject can hide,
+/// `at_odds` whether they are on opposite sides, and `knows` whether the
+/// watcher remembers the subject, so one searching a lost trail is not
+/// caught unaware.
+pub fn unaware(asleep: bool, running: bool, hides: bool, at_odds: bool, knows: bool) -> bool {
+    asleep || (running && hides && at_odds && !knows)
+}
+
 /// Whether `from` is within `reach` of `to`. The perception cap every
 /// caller applies before asking [`notices`], here so the two agree on the
 /// metric.
@@ -253,5 +290,63 @@ mod tests {
     fn notice_stats_read_from_ron_with_light_and_memory_left_out() {
         let n: NoticeStats = ron::from_str("(certain: 2, chance_pct: 15)").unwrap();
         assert_eq!(n, NoticeStats { certain: 2, chance_pct: 15, lit_bonus: 0, memory: 6 });
+    }
+
+    fn calls_of(state: Awareness, in_view: bool, spots: bool, at: Point, memory: u32) -> (Awareness, bool, u32) {
+        let mut calls = 0;
+        let (next, news) = observe(
+            state,
+            in_view,
+            || {
+                calls += 1;
+                spots
+            },
+            at,
+            memory,
+        );
+        (next, news, calls)
+    }
+
+    #[test]
+    fn an_unaware_observer_in_view_rolls_once_and_is_news_only_when_it_spots() {
+        let at = Point::new(5, 5);
+        let (state, news, calls) = calls_of(Awareness::Unaware, true, true, at, 3);
+        assert_eq!((state, news, calls), (Awareness::Alert { at, stale_turns: 0 }, true, 1));
+        let (state, news, calls) = calls_of(Awareness::Unaware, true, false, at, 3);
+        assert_eq!((state, news, calls), (Awareness::Unaware, false, 1), "a miss leaves it unaware, having rolled");
+    }
+
+    #[test]
+    fn an_alert_observer_in_view_keeps_its_subject_without_rolling() {
+        let old = Awareness::Alert { at: Point::new(1, 1), stale_turns: 2 };
+        let at = Point::new(6, 2);
+        let (state, news, calls) = calls_of(old, true, false, at, 3);
+        assert_eq!((state, news, calls), (Awareness::Alert { at, stale_turns: 0 }, false, 0), "moved up to date, no roll to lose it to, not news");
+    }
+
+    #[test]
+    fn an_observer_out_of_view_never_rolls_and_ages_what_it_knew_until_memory_runs_out() {
+        let at = Point::new(2, 2);
+        let (state, news, calls) = calls_of(Awareness::Unaware, false, true, at, 3);
+        assert_eq!((state, news, calls), (Awareness::Unaware, false, 0));
+        let mut state = Awareness::Alert { at, stale_turns: 0 };
+        for turn in 1..=3 {
+            let (next, news, calls) = calls_of(state, false, true, Point::new(9, 9), 3);
+            assert_eq!((news, calls), (false, 0));
+            assert_eq!(next, Awareness::Alert { at, stale_turns: turn }, "still searching where it last knew");
+            state = next;
+        }
+        assert_eq!(calls_of(state, false, true, at, 3).0, Awareness::Unaware, "forgotten one turn past its memory");
+    }
+
+    #[test]
+    fn a_sleeper_a_hider_and_an_ally_are_each_unaware_and_a_remembered_subject_is_not() {
+        // asleep, running, hides, at_odds, knows
+        assert!(unaware(true, false, false, false, true), "a sleeper is unaware of everyone, hiding or not");
+        assert!(unaware(false, true, true, true, false), "a hider at odds that nothing remembers");
+        assert!(!unaware(false, true, true, true, true), "one that lost the trail still remembers");
+        assert!(!unaware(false, false, true, true, false), "no stealth running hides nothing");
+        assert!(!unaware(false, true, false, true, false), "a subject that does not hide is always seen");
+        assert!(!unaware(false, true, true, false, false), "an ally is not caught unaware by a friend");
     }
 }

@@ -214,12 +214,19 @@ impl Watchers<'_, '_> {
     /// it noticed nothing, and the blow that wakes it is still a blow on a
     /// sleeper.
     pub fn unaware(&self, watcher: Entity, subject: Entity) -> bool {
-        if watcher != subject && self.sleepers.asleep(watcher) {
-            return true;
-        }
-        let Ok((_, _, faction, _, _, Some(aware), _)) = self.watchers.get(watcher) else { return false };
+        let asleep = watcher != subject && self.sleepers.asleep(watcher);
+        let aware = self.watchers.get(watcher).ok().and_then(|(_, _, _, _, _, aware, _)| aware);
+        let faction = self.watchers.get(watcher).ok().and_then(|(_, _, f, _, _, _, _)| f);
         let theirs = self.subjects.get(subject).ok().and_then(|(_, f, _)| f);
-        self.running() && watcher != subject && self.hiders.contains(subject) && at_odds(self.rules.as_deref(), faction, theirs) && !aware.knows(subject)
+        // A watcher with no `Aware` sees on sight, so stealth hides nothing from it.
+        let running = self.running() && watcher != subject && aware.is_some();
+        awareness::unaware(
+            asleep,
+            running,
+            self.hiders.contains(subject),
+            at_odds(self.rules.as_deref(), faction, theirs),
+            aware.is_some_and(|a| a.knows(subject)),
+        )
     }
 
     fn judge(&self, (watcher, pos, faction, perception, sight, aware, on): Watcher<'_>, subject: Entity) -> bool {
@@ -466,22 +473,18 @@ pub(crate) fn update_awareness(mut watch: Watch, mut noticed: MessageWriter<Noti
         }
         let on_this_map = on.map(|m| m.0).unwrap_or(MapId::ZERO) == here;
         let in_view = !hidden && on_this_map && awareness::within_reach(pos.0, at.0, reach) && sight.is_some_and(|s| s.can_see(at.0));
-        let mut state = aware.of(subject);
-        if in_view && state.is_alert() {
-            state.saw(at.0);
-        } else if in_view {
-            // Lit means the lit band, not merely seen: a subject in a
-            // lamp's dim ring is seen, and is harder to pick out there.
-            let lit = crate::lighting::band_at(lighting, at.0) == rl_grid::LightBand::Lit;
-            let roll = watch.rng.0.random_range(0..100);
-            let distance = rl_core::geometry::chebyshev(pos.0, at.0);
-            let spots =
-                if asleep { roll < awareness::notice_chance(&notice.0, &stealth.0) } else { awareness::notices(distance, &notice.0, &stealth.0, lit, roll) };
-            if spots && state.saw(at.0) {
-                noticed.write(Noticed { observer, subject, at: at.0 });
-            }
-        } else {
-            state.lost(notice.memory);
+        // Lit means the lit band, not merely seen: a subject in a lamp's
+        // dim ring is seen, and is harder to pick out there.
+        let lit = crate::lighting::band_at(lighting, at.0) == rl_grid::LightBand::Lit;
+        let distance = rl_core::geometry::chebyshev(pos.0, at.0);
+        let rng = &mut watch.rng.0;
+        let spots = || {
+            let roll = rng.random_range(0..100);
+            if asleep { roll < awareness::notice_chance(&notice.0, &stealth.0) } else { awareness::notices(distance, &notice.0, &stealth.0, lit, roll) }
+        };
+        let (state, news) = awareness::observe(aware.of(subject), in_view, spots, at.0, notice.memory);
+        if news {
+            noticed.write(Noticed { observer, subject, at: at.0 });
         }
         seen.push(subject);
         if state.is_alert() {
@@ -819,17 +822,6 @@ mod tests {
         heard.0 += noticed.read().count();
     }
 
-    #[test]
-    fn noticed_is_written_once_on_the_flip_and_not_while_the_awareness_holds() {
-        let mut field = Field::new(keen(), 6, 10, true, None);
-        field.app.init_resource::<Heard>().add_systems(Update, listen);
-        for _ in 0..5 {
-            field.wait();
-        }
-        assert!(field.aware().knows(field.player), "still aware after five turns");
-        assert_eq!(field.app.world().resource::<Heard>().0, 1, "one flip, one message");
-    }
-
     /// How many blows have been swung at the player, counted as they are
     /// written, since the watcher's blow is `flat(0)` and health cannot
     /// show one.
@@ -860,7 +852,9 @@ mod tests {
     /// searches where it last saw it, then forgets.
     #[test]
     fn a_watcher_that_knew_loses_the_unseen_and_forgets_after_its_memory() {
-        let mut field = Field::new(keen(), 4, 10, true, None);
+        let mut field = Field::build(keen(), 4, 10, true, None, |app| {
+            app.init_resource::<Heard>().add_systems(Update, listen);
+        });
         field.wait();
         assert!(field.aware().knows(field.player), "noticed first");
         let player = field.player;
@@ -869,6 +863,7 @@ mod tests {
             field.wait();
         }
         assert!(!field.aware().knows(player), "a memory of three turns, and it forgot");
+        assert_eq!(field.app.world().resource::<Heard>().0, 1, "and noticing was said once, on the flip, not again while it held");
     }
 
     /// A watcher alert to the player that loses it to the unseen does not

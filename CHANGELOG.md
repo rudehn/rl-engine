@@ -6,6 +6,8 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `rl_rules::ai::awareness::{observe, unaware}` answer what one observer's turn with one subject leaves it knowing and whether that is news (the notice roll asked only of an unaware observer in view, an alert one in view kept without it, and an alert one out of view aging toward forgetting), and whether a watcher is unaware of a subject (a sleeper always, otherwise a hider at odds that nothing remembers); the stealth systems each decided these inline.
+  To change: nothing.
 - `rl_rules::{stumble, wakes_from_harm, side_change}` answer which way a stumbling holder is turned (the percent rolled first, then one open way picked, and nothing drawn for a holder walled in), whether a blow wakes the sleeper it lands on, and what side a status-turned holder moves to and keeps; the status systems each decided these inline.
   To change: nothing.
 - `rl_rules::{spend, recharge, periods}` and `rl_rules::charges::Spent` answer what spending a charge leaves a thing as (charges still held, the next unit of a stack, gone, or empty and kept), how many charges a refill has earned and the progress it carries, and how many periods of a clock have run; the consumables' spend and recharge systems and the worn pulse each counted these themselves.
