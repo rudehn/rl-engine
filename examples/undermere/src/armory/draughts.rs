@@ -12,7 +12,7 @@ use rl_engine::prelude::*;
 use crate::content::{CONFUSED, DARKNESS, FIREPROOF, HASTED, PARALYSED, SHROUDED, SPEED, STEALTH};
 use crate::dungeon::map_of;
 use crate::lore::Lore;
-use crate::testing::{adventurer, arena, arrive, at, find, give, headless, here, monster, pass_turns, said, settle, sturdy, use_thing, wall_off};
+use crate::testing::{adventurer, arena, arrive, at, find, give, headless, here, monster, pass_turns, said, settle, stand_on, sturdy, use_thing, wall_off};
 
 /// `name` found and put in `me`'s pack.
 fn carried(app: &mut App, me: Entity, name: &str) -> Entity {
@@ -66,46 +66,49 @@ fn afflict(app: &mut App, who: Entity, status: &str, turns: u32) {
 }
 
 /// Confused, the adventurer's every walk east goes a random way, and so
-/// does a goblin's every step towards them: over a span of seeds, eight
-/// walks east never come to eight steps east and go more than one way, and
+/// does a goblin's every step towards them: eight walks east never come
+/// to eight steps east and go more than one way, and
 /// a goblin six steps off, which unconfused closes in with every step it
 /// takes, takes one that does not. Six rather than three, so a goblin whose
 /// first two stumbles happened to close in is not then beside the
 /// adventurer striking, which no stumble turns, for the rest of the span.
 #[test]
-fn confusion_turns_every_step_a_random_way_for_the_adventurer_and_a_monster_alike_over_a_span_of_seeds() {
-    for seed in 0..4 {
-        let (mut app, me, here) = arena(30 + seed);
-        afflict(&mut app, me, CONFUSED, 40);
-        let mut ways = Vec::new();
-        for _ in 0..8 {
-            let before = at(&app, me);
-            app.world_mut().write_message(Intent::new(me, Bump(Direction::East)));
-            settle(&mut app);
-            ways.push(Direction::between(before, at(&app, me)));
-        }
-        assert_ne!(at(&app, me), here.offset(8, 0), "seed {seed}: eight walks east never went eight steps east: {ways:?}");
-        assert!(ways.iter().all(Option::is_some), "seed {seed}: and every one went somewhere, never into a wall: {ways:?}");
-        let mut taken: Vec<_> = ways.iter().flatten().copied().collect();
-        taken.sort_by_key(|d| d.index());
-        taken.dedup();
-        assert!(taken.len() > 1, "seed {seed}: the steps went more than one way: {ways:?}");
-
-        let (mut app, me, here) = arena(40 + seed);
-        let goblin = monster(&mut app, "goblin", here.offset(-6, 0));
-        afflict(&mut app, goblin, CONFUSED, 40);
-        let mut astray = 0;
-        for _ in 0..8 {
-            let gap = geometry::chebyshev(at(&app, goblin), at(&app, me));
-            let from = at(&app, goblin);
-            pass_turns(&mut app, 1);
-            let moved = at(&app, goblin) != from;
-            if moved && geometry::chebyshev(at(&app, goblin), at(&app, me)) >= gap {
-                astray += 1;
-            }
-        }
-        assert!(astray > 0, "seed {seed}: the goblin took a step that did not close on the adventurer");
+fn confusion_turns_every_step_a_random_way_for_the_adventurer_and_a_monster_alike() {
+    // One run is enough: the stumble itself, its odds and its pick of an open
+    // way are the engine's `stumble`, tested over made-up odds in `rl-rules`,
+    // so what is asked here is that the game's two kinds of walker are turned
+    // by it. The goblin is put in after the adventurer's walks, so its
+    // stumbling cannot stand in their way.
+    let (mut app, me, here) = arena(30);
+    afflict(&mut app, me, CONFUSED, 40);
+    let mut ways = Vec::new();
+    for _ in 0..8 {
+        let before = at(&app, me);
+        app.world_mut().write_message(Intent::new(me, Bump(Direction::East)));
+        settle(&mut app);
+        ways.push(Direction::between(before, at(&app, me)));
     }
+    assert_ne!(at(&app, me), here.offset(8, 0), "eight walks east never went eight steps east: {ways:?}");
+    assert!(ways.iter().all(Option::is_some), "and every one went somewhere, never into a wall: {ways:?}");
+    let mut taken: Vec<_> = ways.iter().flatten().copied().collect();
+    taken.sort_by_key(|d| d.index());
+    taken.dedup();
+    assert!(taken.len() > 1, "the steps went more than one way: {ways:?}");
+
+    stand_on(&mut app, me, here);
+    let goblin = monster(&mut app, "goblin", here.offset(-6, 0));
+    afflict(&mut app, goblin, CONFUSED, 40);
+    let mut astray = 0;
+    for _ in 0..8 {
+        let gap = geometry::chebyshev(at(&app, goblin), at(&app, me));
+        let from = at(&app, goblin);
+        pass_turns(&mut app, 1);
+        let moved = at(&app, goblin) != from;
+        if moved && geometry::chebyshev(at(&app, goblin), at(&app, me)) >= gap {
+            astray += 1;
+        }
+    }
+    assert!(astray > 0, "the goblin took a step that did not close on the adventurer");
 }
 
 /// A confused adventurer with one way open walks that way every time, and
@@ -291,11 +294,23 @@ const POTIONS: [&str; 11] = [
 /// name.
 #[test]
 fn every_potion_is_found_unknown_under_its_face_and_known_once_drunk() {
-    for name in POTIONS.into_iter().filter(|n| *n != "potion of healing") {
-        let mut app = headless(rl_engine::rl_core::RunSeed(9));
-        let me = adventurer(&mut app);
-        sturdy(&mut app, me);
-        arrive(&mut app, map_of(1));
+    // One run for them all. Paralysis is drunk late and waited off, and descent
+    // last, since it moves the drinker to the floor below.
+    let mut app = headless(rl_engine::rl_core::RunSeed(9));
+    let me = adventurer(&mut app);
+    sturdy(&mut app, me);
+    arrive(&mut app, map_of(1));
+    let late = ["potion of paralysis", "potion of descent"];
+    let drunk = POTIONS.into_iter().filter(|n| *n != "potion of healing" && !late.contains(n)).chain(late);
+    for name in drunk {
+        // Whatever the last one left on the drinker is waited off.
+        for _ in 0..40 {
+            if !holds(&app, me, PARALYSED) {
+                break;
+            }
+            pass_turns(&mut app, 1);
+        }
+        assert!(!holds(&app, me, PARALYSED), "{name}: the drinker is free to act");
         let potion = carried(&mut app, me, name);
         settle(&mut app);
         let face = app.world().resource::<Lore>().face(name).unwrap_or_else(|| panic!("{name} wears a face")).called.clone();

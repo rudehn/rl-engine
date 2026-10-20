@@ -776,20 +776,39 @@ fn a_necromancer_left_to_its_own_mind_raises_the_body_behind_it_over_a_span_of_s
     }
 }
 
-/// And the other half: a necromancer with no body in reach never spends
+/// And the other half: a necromancer with no body in reach would not spend
 /// a turn on raise dead, which it once cast whenever it saw a foe and
-/// raised nothing with, over the same span of seeds and turns.
+/// raised nothing with, and with a body lying in reach it would. The mind
+/// asks `would_act` before it picks an ability, so the rule is asked of
+/// the effect itself in one arena, with the positive case played out above.
 #[test]
 fn a_necromancer_with_no_body_in_reach_never_reaches_for_raise_dead() {
-    use crate::testing::{arena, monster, pass_turns, said};
-    for s in 0..6 {
-        let (mut app, me, here) = arena(40 + s);
-        monster(&mut app, "necromancer", here.offset(REACH_OF_RAISING - 1, 0));
-        app.world_mut().entity_mut(me).insert(Health::full(1000));
-        pass_turns(&mut app, 40);
-        let lines = said(&app);
-        assert!(!lines.iter().any(|l| l.contains("raise dead")), "seed {s}: raised nothing, and never tried: {lines:#?}");
-    }
+    use crate::effects::bodies::RaiseDead;
+    use crate::testing::{arena, kill, monster, settle};
+    use rl_engine::rl_bevy::effects::{Effect, Landing, Source};
+    let (mut app, me, here) = arena(40);
+    let necromancer = monster(&mut app, "necromancer", here.offset(REACH_OF_RAISING - 1, 0));
+    // A pass so the necromancer's own sight is cast before it is asked.
+    settle(&mut app);
+    // Its source is not read by the rule, which asks only about the world.
+    let landing = Landing {
+        user: necromancer,
+        source: Source::Offer(necromancer),
+        origin: here.offset(REACH_OF_RAISING - 1, 0),
+        aim: here,
+        cells: Vec::new(),
+        path: Vec::new(),
+        landed_at: None,
+        targets: vec![me],
+        bonus: Default::default(),
+        on: None,
+        turned_by: Vec::new(),
+    };
+    assert!(!RaiseDead.would_act(&landing, app.world()), "no body in reach, so it does something else with its turn");
+    let rat = monster(&mut app, "rat", here.offset(REACH_OF_RAISING, 0));
+    kill(&mut app, rat, Some(me));
+    settle(&mut app);
+    assert!(RaiseDead.would_act(&landing, app.world()), "a body lying in reach, so it would raise it");
 }
 
 /// How far from the adventurer the body a necromancer is left to raise

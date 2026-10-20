@@ -14,7 +14,9 @@ use rl_engine::prelude::*;
 use crate::allies::{Ally, Fades};
 use crate::bestiary::Kind;
 use crate::lore::Lore;
-use crate::testing::{arena, at, equip, find, give, kill, lost, make, monster, name_of, pass_turns, said, settle, still, use_thing};
+use crate::testing::{
+    arena, at, clear_monsters, equip, find, give, kill, let_time_pass, lost, make, monster, name_of, pass_turns, said, settle, stand_on, still, use_thing,
+};
 
 /// `me` zaps `thing`, out of their pack, at `cell`, as the cursor's
 /// confirm does, and the turns run until they may act again.
@@ -36,6 +38,16 @@ fn carried(app: &mut App, me: Entity, name: &str, level: i32) -> Entity {
     thing
 }
 
+/// Draws the run's lore afresh, as if the adventurer had set out knowing
+/// no kind: a thing known is refused a cell past its reach, where an
+/// unknown one is used and stops at it, so a test about that second case
+/// that goes on after the first is made to forget.
+fn forget_what_is_known(app: &mut App) {
+    let world = app.world();
+    let lore = Lore::draw(world.resource::<crate::lore::Faces>(), &world.resource::<crate::armory::Armory>().defs, world.resource::<Seed>());
+    app.world_mut().insert_resource(lore);
+}
+
 /// A staff of firebolt zapped at a goblin burns it and the ground under
 /// it, and spends one of its two charges; the charge comes back once its
 /// recharge, five hundred turns over its level of two, has gone by, and
@@ -50,9 +62,9 @@ fn a_staff_of_firebolt_zapped_at_a_goblin_burns_it_and_spends_a_charge_that_come
     assert!(lost(&app, goblin) > 0, "the bolt burns the goblin");
     assert!(app.world().resource::<Fire>().is_burning(here.offset(3, 0)), "and the ground under it");
     assert_eq!(charges(&app, staff), (1, 2), "one charge spent");
-    pass_turns(&mut app, 240);
+    let_time_pass(&mut app, 240);
     assert_eq!(charges(&app, staff), (1, 2), "not back after two hundred and forty turns");
-    pass_turns(&mut app, 12);
+    let_time_pass(&mut app, 12);
     assert_eq!(charges(&app, staff), (2, 2), "back after two hundred and fifty");
 }
 
@@ -174,15 +186,17 @@ fn plenty_on_an_ally_gives_a_second_ally_and_on_a_foe_a_second_foe_each_at_half_
 /// the cursor offers no cell the blink will not reach.
 #[test]
 fn a_staff_of_blinking_reaches_exactly_as_far_as_its_aim_at_every_level() {
+    let (mut app, me, here) = arena(4);
     for level in 1..=3 {
         // Aimed, and where the adventurer is set down.
         for ((x, y), (lands_x, lands_y)) in [((5, 0), (5, 0)), ((5, -3), (5, -3)), ((6, 0), (5, 0))] {
-            let (mut app, me, here) = arena(4);
+            stand_on(&mut app, me, here);
+            forget_what_is_known(&mut app);
             let staff = carried(&mut app, me, "staff of blinking", level);
             let aimed = app.world().get::<Triggers>(staff).and_then(|t| t.0.iter().find_map(|t| t.targeting.as_ref())).map(|t| t.mode);
             assert_eq!(aimed, Some(rl_engine::rl_grid::TargetMode::Bolt { range: 5 }), "level {level}: the cursor offers five cells");
             zap(&mut app, me, staff, here.offset(x, y));
-            assert_eq!(at(&app, me), here.offset(lands_x, lands_y), "level {level}, aimed at ({x}, {y})");
+            assert_eq!(at(&app, me), here.offset(lands_x, lands_y), "level {level}, aimed at ({x}, {y}) {:#?}", said(&app));
         }
     }
 }
@@ -250,8 +264,12 @@ const ZAPPED: [(&str, bool); 11] = [
 /// to whoever it moves. Each says so in the log in its true name.
 #[test]
 fn every_staff_and_wand_is_found_unknown_under_its_face_and_known_once_zapped_at_a_goblin() {
-    for (name, aimed) in ZAPPED {
-        let (mut app, me, here) = arena(7);
+    // One run for them all, a fresh goblin held before each; blinking is last,
+    // since it moves the adventurer off the spot the rest are zapped from.
+    let (mut app, me, here) = arena(7);
+    let blinking = "staff of blinking";
+    for (name, aimed) in ZAPPED.into_iter().filter(|(n, _)| *n != blinking).chain(ZAPPED.into_iter().filter(|(n, _)| *n == blinking)) {
+        clear_monsters(&mut app);
         let thing = carried(&mut app, me, name, 2);
         settle(&mut app);
         let face = app.world().resource::<Lore>().face(name).unwrap_or_else(|| panic!("{name} wears a face")).called.clone();
@@ -259,7 +277,7 @@ fn every_staff_and_wand_is_found_unknown_under_its_face_and_known_once_zapped_at
         assert!(app.world().get::<Unknown>(thing).is_some(), "{name} reads as unknown");
         held(&mut app, "goblin", here.offset(3, 0), 10);
         match aimed {
-            true => zap(&mut app, me, thing, here.offset(if name == "staff of blinking" { -3 } else { 3 }, 0)),
+            true => zap(&mut app, me, thing, here.offset(if name == blinking { -3 } else { 3 }, 0)),
             false => use_thing(&mut app, me, thing),
         }
         assert!(app.world().resource::<Lore>().knows(name), "{name} is known once used: {:#?}", said(&app));
@@ -484,7 +502,9 @@ fn a_ring_of_wisdom_quickens_a_staffs_recharge_and_a_ring_of_reapings_blows_shor
     zap(&mut app, me, staff, here.offset(3, 0));
     let wisdom = worn(&mut app, me, "ring of wisdom", 1);
     assert_eq!(pace(&app, staff), 25_000 * 100 / 130, "three tenths faster");
-    pass_turns(&mut app, 195);
+    let_time_pass(&mut app, 190);
+    assert_eq!(charges(&app, staff), (1, 2), "not yet at a hundred and ninety, the pace being a hundred and ninety-two and a bit");
+    let_time_pass(&mut app, 5);
     assert_eq!(charges(&app, staff), (2, 2), "back inside two hundred turns");
     crate::testing::unequip(&mut app, me, wisdom);
     pass_turns(&mut app, 1);
@@ -537,16 +557,42 @@ fn a_ring_of_reaping_counts_a_sweep_through_three_foes_as_one_blow() {
 /// two below nought gives back none, and takes half off every heal.
 #[test]
 fn a_ring_of_regeneration_gives_ten_health_back_a_hundred_turns_a_level_and_a_cursed_one_halves_every_heal() {
-    for (level, turns, back) in [(1, 100, 10), (3, 50, 15), (-2, 100, 0)] {
-        let (mut app, me, _) = arena(13);
-        worn(&mut app, me, "ring of regeneration", level);
+    // One run, the ring taken off between cases and the clock let pass: what
+    // the ring gives is read off the turn clock, so no turn need be played.
+    // The span heals in one lump, which the ring's own mending scales whole
+    // where a point a tick would round each down, so what is asked is the
+    // points the stat is worth over the span, scaled as the engine scales a
+    // heal.
+    let (mut app, me, _) = arena(13);
+    let registries = app.world().resource::<Registries>().clone();
+    for (level, turns, points) in [(1, 100, 10), (3, 50, 15), (-2, 100, 0)] {
+        let ring = worn(&mut app, me, "ring of regeneration", level);
+        // A turn in play first, so the regenerating pass has read the clock
+        // with the ring on and counts the jump from there.
+        pass_turns(&mut app, 1);
         app.world_mut().entity_mut(me).insert(Health { current: 10, max: 40 });
-        pass_turns(&mut app, turns);
+        let (rate, mending) = {
+            let block = &app.world().get::<StatBlock>(me).expect("stats").0;
+            (
+                block.value(registries.stats.expect(crate::content::REGENERATION), &registries.stats),
+                block.value(registries.stats.expect(crate::content::MENDING), &registries.stats),
+            )
+        };
+        assert_eq!(rate, 10 * level, "a {level:+} ring: ten a level, and nothing heals at or below nought");
+        let_time_pass(&mut app, turns);
+        // The heal the pass wrote lands on the frame after it.
+        app.update();
         let now = app.world().get::<Health>(me).expect("health").current;
-        assert!((10 + back - 1..=10 + back).contains(&now), "a {level:+} ring, {turns} turns: {now} of 40");
+        let want =
+            rl_engine::rl_rules::damage::heal(rl_engine::rl_rules::Vitals { current: 10, max: 40 }, points, rl_engine::rl_rules::arms::mending_pct(mending))
+                .max(10);
+        assert!((want..=want + 1).contains(&now), "a {level:+} ring, {turns} turns: {points} points, {now} of 40 and {want} wanted");
+        // The cursed ring, last, stays on: it cannot be taken off, and its
+        // halving is the next thing asked.
+        if level > 0 {
+            crate::testing::unequip(&mut app, me, ring);
+        }
     }
-    let (mut app, me, _) = arena(14);
-    worn(&mut app, me, "ring of regeneration", -2);
     app.world_mut().entity_mut(me).insert(Health { current: 10, max: 40 });
     app.world_mut().write_message(Heal::new(me, 20));
     settle(&mut app);
@@ -581,9 +627,16 @@ fn the_choirmasters_staff_raises_a_body_for_thirty_turns_then_fades() {
     assert!(app.world().get::<Actor>(rat).is_some(), "the rat rises again");
     assert_eq!(app.world().get::<Faction>(rat).map(|f| f.0), app.world().get::<Faction>(me).map(|f| f.0), "fighting for its raiser");
     assert_eq!(charges(&app, staff), (1, 2), "one of its two charges spent");
-    pass_turns(&mut app, 31);
+    // The zap's own turn has gone by by now, so its thirty turns have
+    // twenty-nine left, and the staff's three hundred as many.
+    let_time_pass(&mut app, 28);
+    assert!(app.world().get::<Position>(rat).is_some(), "it stands for its thirty turns");
+    let_time_pass(&mut app, 3);
     assert!(app.world().get::<Position>(rat).is_none(), "it fades once its thirty turns are up");
-    pass_turns(&mut app, 270);
+    assert_eq!(charges(&app, staff), (1, 2), "the charge not back yet");
+    let_time_pass(&mut app, 266);
+    assert_eq!(charges(&app, staff), (1, 2), "nor after two hundred and ninety-eight turns");
+    let_time_pass(&mut app, 4);
     assert_eq!(charges(&app, staff), (2, 2), "the charge back after its own three hundred turns");
 }
 
@@ -604,10 +657,12 @@ fn the_choirmasters_staff_lets_its_holder_regenerate_nothing_over_any_length_of_
     app.world_mut().get_mut::<Health>(me).expect("health").current = 1;
     settle(&mut app);
     assert_eq!(app.world().get::<StatBlock>(me).unwrap().0.value(regeneration, &registries.stats), 0, "held at nought, whatever the ring adds");
-    pass_turns(&mut app, 100);
+    let_time_pass(&mut app, 100);
+    app.update();
     assert_eq!(app.world().get::<Health>(me).map(|h| h.current), Some(1), "a hundred turns, and nothing regenerated");
     crate::testing::unequip(&mut app, me, staff);
-    pass_turns(&mut app, 100);
+    let_time_pass(&mut app, 100);
+    app.update();
     assert!(app.world().get::<Health>(me).is_some_and(|h| h.current > 1), "the staff put down, the ring heals again");
 }
 

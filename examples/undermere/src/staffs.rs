@@ -109,3 +109,29 @@ pub fn reap(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The arithmetic of a staff's pace, asked of made-up numbers: wisdom
+    /// is that many percent faster, so a ring of wisdom's three tenths
+    /// refills in a hundred over a hundred and thirty of the staff's own
+    /// time, and what is carried with no wisdom keeps its own pace.
+    #[test]
+    fn wisdom_quickens_a_staffs_pace_by_that_many_percent() {
+        assert_eq!(paced(25_000, 0), 25_000, "no wisdom, its own pace");
+        assert_eq!(paced(25_000, 30), 25_000 * 100 / 130, "three tenths faster");
+        assert_eq!(paced(25_000, 100), 12_500, "twice as fast at a hundred");
+    }
+
+    /// A curse on wisdom slows a staff only so far, to the slowest pace and
+    /// no further, and a pace is never nought however fast, which would
+    /// make a charge come back in no time at all.
+    #[test]
+    fn a_staffs_pace_never_slows_past_the_slowest_nor_falls_to_nothing() {
+        assert_eq!(paced(10_000, -75), 10_000 * 100 / 25, "at the slowest pace");
+        assert_eq!(paced(10_000, -500), paced(10_000, -75), "no slower for a heavier curse");
+        assert_eq!(paced(1, 900), 1, "never nought");
+    }
+}
