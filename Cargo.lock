@@ -4732,7 +4732,6 @@ name = "terminal"
 version = "0.3.0"
 dependencies = [
  "crossterm",
- "rand 0.9.5",
  "rl-core",
  "rl-grid",
  "rl-mapgen",

@@ -118,9 +118,7 @@ pub fn direction_of(key: char) -> Option<Direction> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rl_core::Direction;
-
-    fn walkable(walk: &Walk, p: rl_core::Point) -> bool {
+    fn walkable(walk: &Walk, p: Point) -> bool {
         walk.terrain.view(&walk.tiles).is_walkable(p)
     }
 
@@ -170,6 +168,24 @@ mod tests {
         let blank = (0..(WIDTH * HEIGHT) as usize).find(|i| !walk.explored.get_idx(*i)).expect("sight of eight does not cover the map");
         let (x, y) = (blank % WIDTH as usize, blank / WIDTH as usize);
         assert_eq!(rows[y].chars().nth(x), Some(' '));
+    }
+
+    #[test]
+    fn a_remembered_cell_out_of_sight_is_drawn_as_its_terrain_and_not_as_blank() {
+        let mut walk = generate(1);
+        let view_is_floor = |walk: &Walk, p: Point| walk.terrain.view(&walk.tiles).is_walkable(p);
+        for i in 0..400 {
+            step(&mut walk, Direction::ALL[(i / 5) % 8]);
+            let remembered = (0..WIDTH * HEIGHT)
+                .map(|n| Point::new(n % WIDTH, n / WIDTH))
+                .find(|p| walk.explored.contains(*p) && !walk.seen.contains(*p) && *p != walk.at);
+            if let Some(p) = remembered {
+                let glyph = render(&walk)[p.y as usize].chars().nth(p.x as usize);
+                assert_eq!(glyph, Some(if view_is_floor(&walk, p) { '.' } else { '#' }));
+                return;
+            }
+        }
+        panic!("a long walk never left a seen cell behind");
     }
 
     #[test]
