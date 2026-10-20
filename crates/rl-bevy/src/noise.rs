@@ -29,8 +29,6 @@
 //! sound; [`SoundNames`] puts the sounds in scope where effects are built,
 //! so a sound nobody declared fails the load rather than a throw.
 
-use std::cmp::Reverse;
-
 use bevy::prelude::*;
 use rl_core::{Grid2D, Id, Interner, Point, Rect, geometry};
 use rl_grid::{CostSource, DijkstraMap, PathRules};
@@ -399,7 +397,7 @@ pub(crate) fn resolve_noise(
     // likes; the number settles only two on one cell.
     near.sort_by_key(|(e, pos, ..)| (pos.0.y, pos.0.x, *e));
     let view = SoundView { map: &map, muffle: rules.door_muffle };
-    let mut loudest: Vec<Option<(i32, Reverse<Point>)>> = vec![None; near.len()];
+    let mut arrivals: Vec<Vec<(i32, Point)>> = vec![Vec::new(); near.len()];
     for noise in &noises {
         let reach = noise.loudness;
         if !near.iter().any(|(_, pos, ..)| geometry::chebyshev(pos.0, noise.at) <= reach) {
@@ -423,15 +421,12 @@ pub(crate) fn resolve_noise(
                 continue;
             }
             heard.write(NoiseHeard { listener: *listener, at: noise.at, sound: noise.sound, maker: noise.maker, left });
-            let arrived = (left, Reverse(noise.at));
-            if loudest[i].is_none_or(|held| arrived > held) {
-                loudest[i] = Some(arrived);
-            }
+            arrivals[i].push((left, noise.at));
         }
     }
-    for ((.., memory, _, player), arrived) in near.iter_mut().zip(loudest) {
+    for ((.., memory, _, player), arrived) in near.iter_mut().zip(arrivals) {
         // The player is told, and decides for themselves what to do about it.
-        if let (Some((_, Reverse(at))), false) = (arrived, *player) {
+        if let (Some(at), false) = (hearing::loudest(arrived), *player) {
             memory.0.alerted_to(at);
         }
     }

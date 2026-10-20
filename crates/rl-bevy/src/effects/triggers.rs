@@ -643,7 +643,7 @@ pub fn land_triggers(
         // not made on the first one's thing.
         let on = made_on.iter().position(|m| m.carrier == f.on && m.moment == f.moment).map(|i| made_on.remove(i).on);
         let Ok((mut triggers, remnant, (itself, actor), bonus, held)) = carriers.get_mut(f.on) else { continue };
-        let user = if itself || actor { f.on } else { f.by.unwrap_or(f.on) };
+        let user = rl_rules::effects::landing_user(itself, actor, f.on, f.by);
         let bonus = bonus.copied().unwrap_or_default();
         // Read before the charge this use spends is taken off, which comes
         // after the landing: empty now is empty when it was used.

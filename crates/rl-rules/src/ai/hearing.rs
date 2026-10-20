@@ -15,6 +15,9 @@
 //! is "heard something there, this many turns ago", and it is forgotten
 //! the way a lost trail is.
 
+use std::cmp::Reverse;
+
+use rl_core::Point;
 use rl_core::turn::BASE_ACTION_COST;
 use serde::{Deserialize, Serialize};
 
@@ -70,6 +73,17 @@ pub fn heard(left: i32, threshold: i32) -> bool {
     left >= threshold.saturating_mul(BASE_ACTION_COST as i32)
 }
 
+/// Of the sounds that reached one listener in a pass, as how much of each
+/// was left and where it was made, the place it goes to look: the one with
+/// the most left.
+///
+/// Equally loud arrivals go to the cell earliest in row-major order (the
+/// order [`Point`] sorts in), so which place a listener follows never
+/// depends on the order the sounds were written in.
+pub fn loudest(arrivals: impl IntoIterator<Item = (i32, Point)>) -> Option<Point> {
+    arrivals.into_iter().max_by_key(|&(left, at)| (left, Reverse(at))).map(|(_, at)| at)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -112,6 +126,26 @@ mod tests {
         let threshold = 3;
         assert!(heard(left_after(8, 5 * STEP), threshold), "eight carries five steps to a threshold of three");
         assert!(!heard(left_after(8, 5 * STEP + 1), threshold), "and not a hundredth further");
+    }
+
+    #[test]
+    fn of_several_arrivals_the_one_with_the_most_left_wins_whatever_the_order() {
+        let (near, far) = ((500, Point::new(0, 2)), (400, Point::new(6, 6)));
+        assert_eq!(loudest([near, far]), Some(near.1));
+        assert_eq!(loudest([far, near]), Some(near.1));
+    }
+
+    #[test]
+    fn of_two_arrivals_equally_loud_the_earlier_cell_in_row_major_order_wins_whatever_the_order() {
+        let (above, beside, below) = (Point::new(9, 1), Point::new(2, 1), Point::new(0, 3));
+        assert_eq!(loudest([(300, below), (300, above), (300, beside)]), Some(beside));
+        assert_eq!(loudest([(300, beside), (300, above), (300, below)]), Some(beside));
+        assert_eq!(loudest([(300, above), (300, below)]), Some(above), "a lower row beats a lower column");
+    }
+
+    #[test]
+    fn no_arrivals_leave_nothing_to_follow() {
+        assert_eq!(loudest([]), None);
     }
 
     #[test]

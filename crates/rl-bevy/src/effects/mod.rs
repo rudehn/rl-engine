@@ -341,18 +341,7 @@ impl EffectWorld<'_, '_> {
     /// A push and a pull are the same walk with the ends swapped, so both
     /// stop at a wall rather than through it.
     pub fn slide(&mut self, e: Entity, from: Point, to: Point, cells: i32) -> Point {
-        let (dx, dy) = ((to.x - from.x).signum(), (to.y - from.y).signum());
-        if dx == 0 && dy == 0 {
-            return from;
-        }
-        let mut at = from;
-        for _ in 0..cells.max(0) {
-            let next = at.offset(dx, dy);
-            if !self.is_free(next) {
-                break;
-            }
-            at = next;
-        }
+        let at = rl_grid::slide::slide(from, to, cells, |p| self.is_free(p));
         if at != from {
             self.place(e, at);
         }

@@ -90,6 +90,7 @@ pub mod charges;
 pub mod content;
 pub mod damage;
 pub mod dressing;
+pub mod effects;
 pub mod equip;
 pub mod events;
 pub mod faction;

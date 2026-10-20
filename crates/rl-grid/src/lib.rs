@@ -33,6 +33,7 @@ pub mod fov;
 pub mod landing;
 pub mod light;
 pub mod region;
+pub mod slide;
 pub mod spatial;
 pub mod targeting;
 pub mod terrain;
