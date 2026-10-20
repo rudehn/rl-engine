@@ -500,7 +500,8 @@ pub fn may_use(
     unknown: bool,
 ) -> bool {
     let known_empty = !unknown && consumable.is_some_and(|c| c.is_empty());
-    rl_rules::equip::may_use(bag.contains(item), known_empty, wearable, worn.is_some_and(|w| w.slot_of(item).is_some()))
+    let on_the_body = worn.is_some_and(|w| w.slot_of(item).is_some());
+    rl_rules::equip::may_use(bag.contains(item), known_empty, wearable, on_the_body)
 }
 
 /// Whether `item`'s use, which `asks` for one of its user's things, may be
@@ -1091,8 +1092,7 @@ impl Belongings<'_, '_> {
             &shape.0,
             |other| self.stuck.contains(other),
             score.0,
-            |other| self.scores.get(other).map_or(0, |s| s.0),
-            |thing| self.blows.contains(thing),
+            |other| (self.scores.get(other).map_or(0, |s| s.0), self.blows.contains(other)),
             own_blow,
         )
     }

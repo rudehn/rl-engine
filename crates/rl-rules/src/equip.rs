@@ -249,25 +249,21 @@ impl<I: Copy + Eq> Equipment<I> {
 /// equips by, so a mind never counts a gain the real equip would refuse.
 /// What a wearer strikes with is the first worn thing with a blow, in slot
 /// order, as a loadout reads it, and its own blow only while it wears none:
-/// the own blow is given up only when `item` becomes the first. A displaced
-/// thing `score_of` has no score for is worth nothing.
-// The eight arguments are the eight things a caller must gather; a struct of
-// them would only be built to be taken apart again.
-#[allow(clippy::too_many_arguments)]
+/// the own blow is given up only when `item` becomes the first. `look` reads a worn thing as its score and whether it has a blow; a
+/// displaced thing with no score is worth nothing, so a caller answers 0.
 pub fn gain<I: Copy + Eq>(
     worn: &Equipment<I>,
     item: I,
     shape: &EquipShape,
     stays: impl Fn(I) -> bool,
     score: i32,
-    score_of: impl Fn(I) -> i32,
-    has_blow: impl Fn(I) -> bool,
+    look: impl Fn(I) -> (i32, bool),
     own_blow: i32,
 ) -> Option<i32> {
     let mut after = worn.clone();
     let displaced = after.equip_keeping(item, shape, stays).ok()?;
-    let given_up: i32 = displaced.iter().map(|d| score_of(*d)).sum();
-    let strikes_with = |worn: &Equipment<I>| worn.worn().map(|(_, thing)| thing).find(|thing| has_blow(*thing));
+    let given_up: i32 = displaced.iter().map(|d| look(*d).0).sum();
+    let strikes_with = |worn: &Equipment<I>| worn.worn().map(|(_, thing)| thing).find(|thing| look(*thing).1);
     let own = match (strikes_with(worn), strikes_with(&after)) {
         (None, Some(blow)) if blow == item => own_blow,
         _ => 0,
@@ -414,27 +410,27 @@ mod tests {
     fn a_better_thing_gains_by_how_much_it_beats_what_it_displaces() {
         let (hand, worn) = one_hand();
         let score_of = |i: u32| if i == 1 { 1 } else { 0 };
-        assert_eq!(gain(&worn, 2, &hand, |_| false, 3, score_of, |_| false, 0), Some(2));
-        assert_eq!(gain(&worn, 2, &hand, |_| false, 0, score_of, |_| false, 0), Some(-1), "a worse thing gains less than nothing");
+        assert_eq!(gain(&worn, 2, &hand, |_| false, 3, |i| (score_of(i), false), 0), Some(2));
+        assert_eq!(gain(&worn, 2, &hand, |_| false, 0, |i| (score_of(i), false), 0), Some(-1), "a worse thing gains less than nothing");
     }
 
     #[test]
     fn a_thing_with_no_score_for_what_it_displaces_counts_it_as_worth_nothing() {
         let (hand, worn) = one_hand();
-        assert_eq!(gain(&worn, 2, &hand, |_| false, 3, |_| 0, |_| false, 0), Some(3));
+        assert_eq!(gain(&worn, 2, &hand, |_| false, 3, |_| (0, false), 0), Some(3));
     }
 
     #[test]
     fn a_thing_that_would_push_off_one_that_stays_gains_nothing_to_weigh() {
         let (hand, worn) = one_hand();
-        assert_eq!(gain(&worn, 2, &hand, |i| i == 1, 3, |_| 1, |_| false, 0), None);
+        assert_eq!(gain(&worn, 2, &hand, |i| i == 1, 3, |_| (1, false), 0), None);
     }
 
     #[test]
     fn a_thing_for_a_shape_naming_no_slot_gains_nothing_to_weigh() {
         let (_, worn) = one_hand();
         let none = EquipShape { any_of: Vec::new(), also: Vec::new() };
-        assert_eq!(gain(&worn, 2, &none, |_| false, 3, |_| 1, |_| false, 0), None);
+        assert_eq!(gain(&worn, 2, &none, |_| false, 3, |_| (1, false), 0), None);
     }
 
     #[test]
@@ -442,15 +438,15 @@ mod tests {
         let (hand, worn) = one_hand();
         // Nothing worn strikes, so the actor strikes with its own; the new
         // thing's blow would replace it.
-        assert_eq!(gain(&worn, 2, &hand, |_| false, 8, |_| 0, |i| i == 2, 5), Some(3));
-        assert_eq!(gain(&worn, 2, &hand, |_| false, 3, |_| 0, |i| i == 2, 5), Some(-2), "so a blow worth three does not beat the own five");
+        assert_eq!(gain(&worn, 2, &hand, |_| false, 8, |i| (0, i == 2), 5), Some(3));
+        assert_eq!(gain(&worn, 2, &hand, |_| false, 3, |i| (0, i == 2), 5), Some(-2), "so a blow worth three does not beat the own five");
     }
 
     #[test]
     fn a_blow_gives_up_no_own_blow_when_one_is_worn_already_or_the_thing_has_none() {
         let (hand, worn) = one_hand();
-        assert_eq!(gain(&worn, 2, &hand, |_| false, 8, |_| 0, |i| i == 1 || i == 2, 5), Some(8), "already striking with a worn blow");
-        assert_eq!(gain(&worn, 2, &hand, |_| false, 8, |_| 0, |_| false, 5), Some(8), "no blow on the new thing");
+        assert_eq!(gain(&worn, 2, &hand, |_| false, 8, |i| (0, i == 1 || i == 2), 5), Some(8), "already striking with a worn blow");
+        assert_eq!(gain(&worn, 2, &hand, |_| false, 8, |_| (0, false), 5), Some(8), "no blow on the new thing");
     }
 
     #[test]
@@ -460,11 +456,11 @@ mod tests {
         worn.equip(1, &EquipShape::in_slot(SlotId::from_raw(1))).unwrap();
         // The new thing takes the free first slot, ahead of a worn thing with
         // no blow, so it is the first to strike with.
-        assert_eq!(gain(&worn, 2, &hands, |_| false, 8, |_| 0, |i| i == 2, 5), Some(3));
+        assert_eq!(gain(&worn, 2, &hands, |_| false, 8, |i| (0, i == 2), 5), Some(3));
         // Behind a worn blow in slot order it never strikes.
         let mut behind = Equipment::with_slot_count(2);
         behind.equip(1, &EquipShape::in_slot(SlotId::from_raw(0))).unwrap();
-        assert_eq!(gain(&behind, 2, &hands, |_| false, 8, |_| 0, |i| i == 1 || i == 2, 5), Some(8));
+        assert_eq!(gain(&behind, 2, &hands, |_| false, 8, |i| (0, i == 1 || i == 2), 5), Some(8));
     }
 
     #[test]
