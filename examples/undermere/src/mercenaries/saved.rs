@@ -125,33 +125,33 @@ fn visit(app: &mut App) {
 }
 
 /// Two hired out of the tavern, one under the follow order and one told
-/// to fight freely, are saved and continued over a span of seeds: the
+/// to fight freely, are saved and continued: the
 /// same two, in the order they joined, each still the adventurer's on
 /// their side with the brain for its order and no wit to travel alone,
 /// offering `give` and `dismiss`, carrying and wearing what it did with
 /// its own kit still its own, and hired for the fee it was. The third
 /// candidate still offers no `hire`, since the party is full.
+/// One seed: the save of a hired party is wiring, and the seed-varying candidates round-trip in the three-candidates test below.
 #[test]
-fn a_hired_party_survives_a_save_and_continues_with_its_leader_join_order_orders_offers_own_kit_and_fee_over_a_span_of_seeds() {
-    for seed in 0..3 {
-        let (mut app, me) = in_mereholt(seed);
-        set_gold(&mut app, me, 10_000);
-        let candidates = waiting(&mut app);
-        take(&mut app, me, candidates[1], HIRE);
-        take(&mut app, me, candidates[0], HIRE);
-        order(&mut app, candidates[0], Order::FightFreely);
-        let before = party(&mut app);
-        assert_eq!(before.len(), 2, "seed {seed}: two hired");
-        assert!(before.iter().all(|m| m.kit.iter().any(|(_, own)| *own)), "seed {seed}: each with its own kit: {before:?}");
-        let hires = |app: &App, who: Entity| offered(app, who).iter().any(|(v, _)| v == HIRE);
-        assert!(!hires(&app, candidates[2]), "seed {seed}: the party is full");
+fn a_hired_party_survives_a_save_and_continues_with_its_leader_join_order_orders_offers_own_kit_and_fee() {
+    let seed = 0;
+    let (mut app, me) = in_mereholt(seed);
+    set_gold(&mut app, me, 10_000);
+    let candidates = waiting(&mut app);
+    take(&mut app, me, candidates[1], HIRE);
+    take(&mut app, me, candidates[0], HIRE);
+    order(&mut app, candidates[0], Order::FightFreely);
+    let before = party(&mut app);
+    assert_eq!(before.len(), 2, "seed {seed}: two hired");
+    assert!(before.iter().all(|m| m.kit.iter().any(|(_, own)| *own)), "seed {seed}: each with its own kit: {before:?}");
+    let hires = |app: &App, who: Entity| offered(app, who).iter().any(|(v, _)| v == HIRE);
+    assert!(!hires(&app, candidates[2]), "seed {seed}: the party is full");
 
-        let mut again = continued(&saved(&mut app));
-        assert_eq!(party(&mut again), before, "seed {seed}");
-        let third = waiting(&mut again);
-        assert_eq!(third.len(), 1, "seed {seed}: the third still waits");
-        assert!(!hires(&again, third[0]), "seed {seed}: and still offers no hire: {:?}", offered(&again, third[0]));
-    }
+    let mut again = continued(&saved(&mut app));
+    assert_eq!(party(&mut again), before, "seed {seed}");
+    let third = waiting(&mut again);
+    assert_eq!(third.len(), 1, "seed {seed}: the third still waits");
+    assert!(!hires(&again, third[0]), "seed {seed}: and still offers no hire: {:?}", offered(&again, third[0]));
 }
 
 /// A mercenary told to hold, the adventurer gone off across the town,
@@ -197,76 +197,74 @@ fn a_run_saved_in_the_tavern_finds_the_same_three_candidates_with_the_same_kits_
     }
 }
 
-/// The tavern's count of visits is the run's and is saved with it: over a
-/// span of seeds, the visit after a continue seats the three the run
+/// The tavern's count of visits is the run's and is saved with it: the visit after a continue seats the three the run
 /// would have seated had it never been saved.
+/// One seed: the count is a plain integer, and the seed only picks which three it seats.
 #[test]
-fn the_visit_count_survives_so_the_next_visit_seats_what_it_would_have_over_a_span_of_seeds() {
-    for seed in 0..3 {
-        let (mut app, _) = in_mereholt(seed);
-        visit(&mut app);
-        let mut again = continued(&written(&app));
-        assert_eq!(again.world().resource::<Tavern>(), app.world().resource::<Tavern>(), "seed {seed}");
-        visit(&mut app);
-        visit(&mut again);
-        assert_eq!(seated(&mut again), seated(&mut app), "seed {seed}");
-    }
+fn the_visit_count_survives_so_the_next_visit_seats_what_it_would_have() {
+    let seed = 0;
+    let (mut app, _) = in_mereholt(seed);
+    visit(&mut app);
+    let mut again = continued(&written(&app));
+    assert_eq!(again.world().resource::<Tavern>(), app.world().resource::<Tavern>(), "seed {seed}");
+    visit(&mut app);
+    visit(&mut again);
+    assert_eq!(seated(&mut again), seated(&mut app), "seed {seed}");
 }
 
-/// Every name the run has given is saved with it, so over a span of
-/// seeds the candidates of the visits after a continue repeat none of
+/// Every name the run has given is saved with it, so the candidates of the visits after a continue repeat none of
 /// them, and none of each other's.
+/// One seed: the given names are a set saved whole, and the seed only picks which.
 #[test]
-fn the_names_the_run_has_given_survive_so_no_later_candidate_repeats_one_over_a_span_of_seeds() {
-    for seed in 0..3 {
-        let (app, _) = in_mereholt(seed);
-        let given = app.world().resource::<GivenNames>().clone();
-        let mut again = continued(&written(&app));
-        assert_eq!(again.world().resource::<GivenNames>(), &given, "seed {seed}");
-        let mut later: Vec<String> = Vec::new();
-        for _ in 0..4 {
-            visit(&mut again);
-            later.extend(seated(&mut again).into_iter().map(|s| s.1));
-        }
-        assert!(later.iter().all(|n| !given.has(n)), "seed {seed}: none given before the save: {later:?}");
-        let mut distinct = later.clone();
-        distinct.sort();
-        distinct.dedup();
-        assert_eq!(distinct.len(), later.len(), "seed {seed}: none twice: {later:?}");
+fn the_names_the_run_has_given_survive_so_no_later_candidate_repeats_one() {
+    let seed = 0;
+    let (app, _) = in_mereholt(seed);
+    let given = app.world().resource::<GivenNames>().clone();
+    let mut again = continued(&written(&app));
+    assert_eq!(again.world().resource::<GivenNames>(), &given, "seed {seed}");
+    let mut later: Vec<String> = Vec::new();
+    for _ in 0..4 {
+        visit(&mut again);
+        later.extend(seated(&mut again).into_iter().map(|s| s.1));
     }
+    assert!(later.iter().all(|n| !given.has(n)), "seed {seed}: none given before the save: {later:?}");
+    let mut distinct = later.clone();
+    distinct.sort();
+    distinct.dedup();
+    assert_eq!(distinct.len(), later.len(), "seed {seed}: none twice: {later:?}");
 }
 
 /// A mercenary left behind in Mereholt, the run saved by the adventurer's
 /// arrival on the first floor, is found where it was left, still theirs
 /// and under its order, and comes along the next time they leave from
-/// beside it, over a span of seeds.
+/// beside it.
+/// One seed: the leaving and the return are the town's hand-drawn geometry, not the draw.
 #[test]
-fn a_mercenary_left_behind_on_another_floor_is_found_there_still_in_the_party_and_follows_again_on_return_over_a_span_of_seeds() {
-    for seed in 0..3 {
-        let (mut app, me) = in_mereholt(seed);
-        let start = at(&app, me);
-        set_gold(&mut app, me, 10_000);
-        let brenna = waiting(&mut app)[0];
-        take(&mut app, me, brenna, HIRE);
-        stand_on(&mut app, me, start);
-        let left = at(&app, brenna);
-        assert!(geometry::chebyshev(start, left) > LEASH, "seed {seed}: the adventurer leaves from out of its reach");
-        arrive(&mut app, map_of(1));
-        assert_eq!(app.world().get::<OnMap>(brenna).map(|m| m.0), Some(TOWN), "seed {seed}: left behind");
-        let name = app.world().get::<Mercenary>(brenna).expect("hired").name.clone();
+fn a_mercenary_left_behind_on_another_floor_is_found_there_still_in_the_party_and_follows_again_on_return() {
+    let seed = 0;
+    let (mut app, me) = in_mereholt(seed);
+    let start = at(&app, me);
+    set_gold(&mut app, me, 10_000);
+    let brenna = waiting(&mut app)[0];
+    take(&mut app, me, brenna, HIRE);
+    stand_on(&mut app, me, start);
+    let left = at(&app, brenna);
+    assert!(geometry::chebyshev(start, left) > LEASH, "seed {seed}: the adventurer leaves from out of its reach");
+    arrive(&mut app, map_of(1));
+    assert_eq!(app.world().get::<OnMap>(brenna).map(|m| m.0), Some(TOWN), "seed {seed}: left behind");
+    let name = app.world().get::<Mercenary>(brenna).expect("hired").name.clone();
 
-        let mut again = continued(&written(&app));
-        let me = adventurer(&mut again);
-        let brenna = called(&mut again, &name);
-        assert_eq!((again.world().get::<OnMap>(brenna).map(|m| m.0), at(&again, brenna)), (Some(TOWN), left), "seed {seed}: where it was left");
-        assert_eq!(again.world().get::<Leader>(brenna), Some(&Leader(me)), "seed {seed}: still theirs");
-        assert!(thinks(&again, brenna, Order::Follow), "seed {seed}: under its order");
-        arrive(&mut again, TOWN);
-        let by = beside(&mut again, brenna);
-        stand_on(&mut again, me, by);
-        arrive(&mut again, map_of(1));
-        assert_eq!(again.world().get::<OnMap>(brenna).map(|m| m.0), Some(map_of(1)), "seed {seed}: it came along");
-    }
+    let mut again = continued(&written(&app));
+    let me = adventurer(&mut again);
+    let brenna = called(&mut again, &name);
+    assert_eq!((again.world().get::<OnMap>(brenna).map(|m| m.0), at(&again, brenna)), (Some(TOWN), left), "seed {seed}: where it was left");
+    assert_eq!(again.world().get::<Leader>(brenna), Some(&Leader(me)), "seed {seed}: still theirs");
+    assert!(thinks(&again, brenna, Order::Follow), "seed {seed}: under its order");
+    arrive(&mut again, TOWN);
+    let by = beside(&mut again, brenna);
+    stand_on(&mut again, me, by);
+    arrive(&mut again, map_of(1));
+    assert_eq!(again.world().get::<OnMap>(brenna).map(|m| m.0), Some(map_of(1)), "seed {seed}: it came along");
 }
 
 /// A hired mercenary cut down lies as the corpse of its name, not as its

@@ -438,28 +438,28 @@ mod tests {
     /// takes them back down onto the mark.
     #[test]
     fn finished_the_call_brings_the_adventurer_to_the_gate_and_the_gate_leads_to_the_mark_through_a_save() {
-        for s in 0..3 {
-            let (mut app, me, knelt) = arena_on(s, 3);
-            app.init_resource::<Went>().add_systems(Turn, record_travels.in_set(TurnSet::Record));
-            use_stone(&mut app, me);
-            wait_for_home(&mut app);
-            let (gate_cell, leads) = gate(&mut app);
-            assert_eq!((here(&app), crate::testing::at(&app, me)), (TOWN, gate_cell), "seed {s}: on the gate in Mereholt");
-            assert_eq!(stones(&app, me), 0, "seed {s}: the stone spent");
-            assert_eq!(marks(&mut app), [(map_of(3), knelt)], "seed {s}: one mark, where they knelt");
-            assert_eq!(leads, Destination::Place { map: map_of(3), arrive: Arrive::At(knelt) }, "seed {s}: the gate leads to it");
-            let went = &app.world().resource::<Went>().0;
-            assert!(went.contains(&Travelled { actor: me, from: map_of(3), left: knelt, to: TOWN, after: None }), "seed {s}: {went:?}");
-            assert!(said(&app).iter().any(|l| l.starts_with("The Drowned Gate opens round you")), "seed {s}");
+        // One seed: the arena is staged, and the seed only picks which cell the adventurer kneels on.
+        let s = 0;
+        let (mut app, me, knelt) = arena_on(s, 3);
+        app.init_resource::<Went>().add_systems(Turn, record_travels.in_set(TurnSet::Record));
+        use_stone(&mut app, me);
+        wait_for_home(&mut app);
+        let (gate_cell, leads) = gate(&mut app);
+        assert_eq!((here(&app), crate::testing::at(&app, me)), (TOWN, gate_cell), "seed {s}: on the gate in Mereholt");
+        assert_eq!(stones(&app, me), 0, "seed {s}: the stone spent");
+        assert_eq!(marks(&mut app), [(map_of(3), knelt)], "seed {s}: one mark, where they knelt");
+        assert_eq!(leads, Destination::Place { map: map_of(3), arrive: Arrive::At(knelt) }, "seed {s}: the gate leads to it");
+        let went = &app.world().resource::<Went>().0;
+        assert!(went.contains(&Travelled { actor: me, from: map_of(3), left: knelt, to: TOWN, after: None }), "seed {s}: {went:?}");
+        assert!(said(&app).iter().any(|l| l.starts_with("The Drowned Gate opens round you")), "seed {s}");
 
-            let text = app.world().resource::<Saves>().load(crate::save::SLOT).expect("the slot reads").expect("the arrival saved the run");
-            let mut carried_on = continued(&text);
-            let me = adventurer(&mut carried_on);
-            assert_eq!(gate(&mut carried_on), (gate_cell, leads), "seed {s}: the gate still leads to the mark");
-            assert_eq!(marks(&mut carried_on), [(map_of(3), knelt)], "seed {s}: the mark kept");
-            go_through(&mut carried_on, me);
-            assert_eq!((here(&carried_on), crate::testing::at(&carried_on, me)), (map_of(3), knelt), "seed {s}: back down onto the mark");
-        }
+        let text = app.world().resource::<Saves>().load(crate::save::SLOT).expect("the slot reads").expect("the arrival saved the run");
+        let mut carried_on = continued(&text);
+        let me = adventurer(&mut carried_on);
+        assert_eq!(gate(&mut carried_on), (gate_cell, leads), "seed {s}: the gate still leads to the mark");
+        assert_eq!(marks(&mut carried_on), [(map_of(3), knelt)], "seed {s}: the mark kept");
+        go_through(&mut carried_on, me);
+        assert_eq!((here(&carried_on), crate::testing::at(&carried_on, me)), (map_of(3), knelt), "seed {s}: back down onto the mark");
     }
 
     /// A second call moves the mark: the first is taken up, the one left

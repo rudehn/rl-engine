@@ -201,15 +201,23 @@ mod tests {
 
     /// Killing whichever of the three floor ten bosses this
     /// seed drew wins the run just as the king's own death does, since
-    /// `report_bosses` reads `MonsterDef::boss` rather than a name. Over a
-    /// span of seeds, so every one of the three is drawn and slain.
+    /// `report_bosses` reads `MonsterDef::boss` rather than a name. One
+    /// seed for each of the three, found by the pure draw of the final
+    /// boss, so every one is drawn and slain without an `App` for the
+    /// seeds that draw a boss already played.
     #[test]
     fn killing_whichever_boss_was_drawn_wins_the_run_over_a_span_of_seeds() {
         use rl_engine::rl_core::RunSeed;
 
         use crate::dungeon::map_of;
         use crate::testing::{arrive, headless, sturdy};
-        for s in 0..12 {
+        let loaded = crate::dungeon::Undermere::new(RunSeed(0));
+        let mut firsts = std::collections::BTreeMap::new();
+        for s in 0..60 {
+            firsts.entry(loaded.reseeded(RunSeed(s)).final_boss().piece).or_insert(s);
+        }
+        assert_eq!(firsts.len(), 3, "a seed for each of the three final bosses within 60: {firsts:?}");
+        for &s in firsts.values() {
             let mut app = headless(RunSeed(s));
             let me = arrive(&mut app, map_of(10));
             sturdy(&mut app, me);
