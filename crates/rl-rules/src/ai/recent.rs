@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 /// How many fields, and how many floods, are kept. A moving goal is a new
 /// key every turn, so without a bound either would grow for as long as
 /// nothing changed the map.
-pub const FIELD_CACHE: usize = 32;
+const FIELD_CACHE: usize = 32;
 
 /// A bounded cache that forgets what was asked for longest ago.
 ///
@@ -16,7 +16,7 @@ pub struct Recent<K, V> {
     /// Counts every ask, so each entry knows how lately it was wanted.
     asked: u64,
     /// The entries, each with the ask it was last wanted at.
-    pub entries: BTreeMap<K, (u64, V)>,
+    entries: BTreeMap<K, (u64, V)>,
 }
 
 impl<K, V> Default for Recent<K, V> {
@@ -53,6 +53,21 @@ impl<K: Ord + Clone, V> Recent<K, V> {
     /// The value held for `key`, without marking it asked for.
     pub fn get(&self, key: &K) -> Option<&V> {
         self.entries.get(key).map(|(_, v)| v)
+    }
+
+    /// How many entries are held.
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Whether nothing is held.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Whether `key` is held, without marking it asked for.
+    pub fn contains(&self, key: &K) -> bool {
+        self.entries.contains_key(key)
     }
 
     /// Forgets everything.

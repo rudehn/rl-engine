@@ -11,7 +11,7 @@
 //! - [`hearing`]: [`HearingStats`], and how far a sound carries: [`carries`](hearing::carries), [`left_after`](hearing::left_after) and [`heard`](hearing::heard).
 //! - [`brain`]: [`Brain`], [`Tactic`], [`TacticCtx`], [`Decision`], [`Choice`], a decision of the game's own, and [`Fields`], the way toward or away from any cells.
 //! - [`profile`]: [`MovementProfile`], the movement class flow fields are shared by.
-//! - [`recent`]: [`Recent`], a bounded cache that forgets what was asked for longest ago.
+//! - [`recent`]: [`Recent`](recent::Recent), a bounded cache that forgets what was asked for longest ago.
 //! - [`roster`]: [`sort_roster`], who a mind sees by how it regards them, and the [`Trail`] it follows.
 //! - [`step`]: [`StepAs`] and [`step_as`], what a decision to step becomes.
 //! - [`snapshot`]: [`Snapshot`], [`ActorView`], what it carries and sees lying about, [`Missile`], [`Carried`], [`ItemView`] and [`PropView`], and a game's own [`Sense`].
@@ -42,7 +42,6 @@ pub use awareness::{Awareness, NoticeStats, StealthStats, notices};
 pub use brain::{Brain, Choice, Decision, Fields, NoFields, Tactic, TacticCtx};
 pub use hearing::HearingStats;
 pub use profile::MovementProfile;
-pub use recent::Recent;
 pub use roster::{Trail, sort_roster};
 pub use snapshot::{ActorView, Carried, ItemView, Missile, PropView, Sense, Snapshot, Vitals};
 pub use standard::{Repertoire, Standard, StandardBrain};

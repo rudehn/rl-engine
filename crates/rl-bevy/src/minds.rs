@@ -379,13 +379,13 @@ impl FlowFields {
     /// is one flood.
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
-        self.fields.entries.len()
+        self.fields.len()
     }
 
     /// Whether nothing is built.
     #[cfg(test)]
     pub(crate) fn is_empty(&self) -> bool {
-        self.fields.entries.is_empty()
+        self.fields.is_empty()
     }
 
     /// Forgets every map, so the next mind rebuilds them: the player
@@ -1113,7 +1113,6 @@ mod tests {
     use crate::turn::Resolution;
     use crate::turn::Turns;
     use rl_core::{DiceRoll, Direction};
-    use rl_rules::ai::recent::FIELD_CACHE;
     use rl_rules::ai::tactics::{Hunt, MeleeAdjacent, UseCarried};
     use rl_rules::damage::DamageKindId;
 
@@ -2395,9 +2394,9 @@ mod tests {
         let mut fields = FlowFields::default();
         assert!(fields.ensure((vec![a, b], walker, false, false, false), map).is_some());
         assert!(fields.ensure((vec![a], walker, false, false, false), map).is_some());
-        assert_eq!((fields.len(), fields.floods.entries.len()), (2, 2), "two fields, and no flood the first did not already make");
+        assert_eq!((fields.len(), fields.floods.len()), (2, 2), "two fields, and no flood the first did not already make");
         assert!(fields.ensure((vec![a, c], walker, false, false, false), map).is_some());
-        assert_eq!((fields.len(), fields.floods.entries.len()), (3, 3), "a third field, for the one goal that is new");
+        assert_eq!((fields.len(), fields.floods.len()), (3, 3), "a third field, for the one goal that is new");
         // A composed field is the flood from all of its goals together.
         let view = map.view();
         let mut whole = DijkstraMap::covering(&view);
@@ -2421,12 +2420,12 @@ mod tests {
         let key = |i: i32| (vec![start.offset(i % 8, i / 8)], walker, false, false, false);
         let mut fields = FlowFields::default();
         fields.ensure(key(0), map);
-        for i in 1..=(FIELD_CACHE as i32 + 8) {
+        for i in 1..=40 {
             fields.ensure(key(i), map);
             fields.ensure(key(0), map);
         }
-        assert_eq!(fields.len(), FIELD_CACHE, "never more than the bound");
-        assert!(fields.fields.entries.contains_key(&key(0)), "the one asked for every time is still held");
+        assert_eq!(fields.len(), 32, "never more than the bound");
+        assert!(fields.fields.contains(&key(0)), "the one asked for every time is still held");
     }
 
     /// A companion keeps up with the player and gives way when it is
