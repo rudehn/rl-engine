@@ -29,6 +29,64 @@ pub fn in_reach(worker: Point, target: Point) -> bool {
     geometry::chebyshev(worker, target) <= REACH
 }
 
+/// Why work was broken off.
+///
+/// Closed, because each is a thing the engine itself detects; a rule of
+/// a game's own stops work with `Works::stop` and reads as `Stopped`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BreakReason {
+    /// The worker was harmed: any damage that landed, even a hit healed in
+    /// the same pass, since the hit is what breaks concentration.
+    Hurt,
+    /// The worker died. A killing blow is harm too, and reads as this.
+    Died,
+    /// The target is gone, or it and the worker are further apart than
+    /// `REACH`.
+    OutOfReach,
+    /// Another worker finished work on the same target.
+    DoneByAnother,
+    /// The game stopped it, with `Works::stop` or a `StopWork`.
+    Stopped,
+    /// A foe came into the player's sight: one the faction matrix sets at
+    /// odds with the player either way round, since whichever side would
+    /// start the fight, it is the player's to look up for. Only the
+    /// player's work breaks so, because only the player chose to work
+    /// rather than watch; a mind is asked again once it is done.
+    FoeSighted,
+    /// The worker left off of its own accord: the player pressed a key, or
+    /// spent a turn of the work on something else.
+    LeftOff,
+}
+
+/// Why a worker's work breaks this pass, if it does: the first that
+/// applies of death, harm, another worker finishing the same target, and
+/// the target being out of reach. Death outranks harm because a killing
+/// blow is harm too; another finishing outranks reach because the target
+/// is then as good as gone, and the reach is not even asked.
+/// `reachable` is true for work with no target, which nothing can take
+/// out of reach.
+pub fn break_reason(died: bool, hurt: bool, done_by_another: bool, reachable: bool) -> Option<BreakReason> {
+    if died {
+        Some(BreakReason::Died)
+    } else if hurt {
+        Some(BreakReason::Hurt)
+    } else if done_by_another {
+        Some(BreakReason::DoneByAnother)
+    } else if !reachable {
+        Some(BreakReason::OutOfReach)
+    } else {
+        None
+    }
+}
+
+/// Whether anything in `now` is missing from `seen`: a foe came into
+/// sight since last looked. One leaving, or the same ones in another
+/// order, is not news, so only the player's look-up is broken by what is
+/// new and not by what changed.
+pub fn newly_sighted<A: PartialEq>(seen: &[A], now: &[A]) -> bool {
+    now.iter().any(|a| !seen.contains(a))
+}
+
 /// Where a piece of work stands after a turn of it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Progress {
@@ -110,5 +168,33 @@ mod tests {
         }
         assert!(!in_reach(c, c.offset(2, 0)));
         assert!(!in_reach(c, c.offset(2, 2)));
+    }
+
+    #[test]
+    fn work_breaks_for_the_first_reason_in_order_death_harm_another_finishing_then_reach() {
+        use BreakReason::*;
+        // (died, hurt, done_by_another, reachable)
+        assert_eq!(break_reason(true, true, true, false), Some(Died));
+        assert_eq!(break_reason(false, true, true, false), Some(Hurt));
+        assert_eq!(break_reason(false, false, true, false), Some(DoneByAnother));
+        assert_eq!(break_reason(false, false, false, false), Some(OutOfReach));
+        assert_eq!(break_reason(true, false, false, true), Some(Died));
+        assert_eq!(break_reason(false, true, false, true), Some(Hurt));
+        assert_eq!(break_reason(false, false, true, true), Some(DoneByAnother));
+    }
+
+    #[test]
+    fn work_that_is_unharmed_unfinished_by_others_and_within_reach_does_not_break() {
+        assert_eq!(break_reason(false, false, false, true), None);
+    }
+
+    #[test]
+    fn only_a_foe_not_seen_before_counts_as_newly_sighted() {
+        assert!(!newly_sighted::<u8>(&[], &[]), "nobody in sight is no news");
+        assert!(newly_sighted(&[], &[1]), "a first foe is news");
+        assert!(!newly_sighted(&[1, 2], &[2, 1]), "the same foes in another order are not");
+        assert!(!newly_sighted(&[1, 2], &[2]), "a foe leaving is not");
+        assert!(newly_sighted(&[1], &[1, 3]), "one more among the old is");
+        assert!(newly_sighted(&[1], &[3]), "a swap is");
     }
 }

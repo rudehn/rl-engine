@@ -143,7 +143,7 @@ pub use status::{
     ActiveStatus, Mended, SLEEPER_REACH, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport, UNTIL_CURED, side_change, stumble, wakes_from_harm,
 };
 pub use tag::{TagDef, TagId};
-pub use work::{Work, WorkKind, WorkKindId};
+pub use work::{BreakReason, Work, WorkKind, WorkKindId};
 
 /// The names most callers want in scope.
 pub mod prelude {

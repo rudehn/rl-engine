@@ -6,6 +6,8 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `rl_rules::work::{break_reason, newly_sighted}` answer why work breaks off (death, then harm, then another worker finishing the target, then the target out of reach) and whether a foe is newly in sight; `BreakReason` now lives in `rl_rules::work` and `rl-bevy` re-exports it from the same paths, so nothing else moves.
+  To change: nothing.
 - `rl_rules::ai::awareness::{observe, unaware}` answer what one observer's turn with one subject leaves it knowing and whether that is news (the notice roll asked only of an unaware observer in view, an alert one in view kept without it, and an alert one out of view aging toward forgetting), and whether a watcher is unaware of a subject (a sleeper always, otherwise a hider at odds that nothing remembers); the stealth systems each decided these inline.
   To change: nothing.
 - `rl_rules::{stumble, wakes_from_harm, side_change}` answer which way a stumbling holder is turned (the percent rolled first, then one open way picked, and nothing drawn for a holder walled in), whether a blow wakes the sleeper it lands on, and what side a status-turned holder moves to and keeps; the status systems each decided these inline.

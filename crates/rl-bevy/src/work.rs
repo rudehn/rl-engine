@@ -38,7 +38,8 @@ use std::time::Duration;
 use bevy::prelude::*;
 use rl_core::Interner;
 use rl_core::turn::BASE_ACTION_COST;
-use rl_rules::work::{Progress, Work, WorkKind, WorkKindId, in_reach};
+pub use rl_rules::work::BreakReason;
+use rl_rules::work::{Progress, Work, WorkKind, WorkKindId, break_reason, in_reach, newly_sighted};
 use rl_rules::{Relation, stance};
 
 use crate::combat::{CombatRules, DamageDealt, Dead, DeathEvent, Faction};
@@ -125,35 +126,6 @@ pub struct WorkDone {
     pub kind: WorkKindId,
     /// On what, if anything.
     pub target: Option<Entity>,
-}
-
-/// Why work was broken off.
-///
-/// Closed, because each is a thing the engine itself detects; a rule of
-/// a game's own stops work with `Works::stop` and reads as `Stopped`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BreakReason {
-    /// The worker was harmed: any damage that landed, even a hit healed in
-    /// the same pass, since the hit is what breaks concentration.
-    Hurt,
-    /// The worker died. A killing blow is harm too, and reads as this.
-    Died,
-    /// The target is gone, or it and the worker are further apart than
-    /// `REACH`.
-    OutOfReach,
-    /// Another worker finished work on the same target.
-    DoneByAnother,
-    /// The game stopped it, with `Works::stop` or a `StopWork`.
-    Stopped,
-    /// A foe came into the player's sight: one the faction matrix sets at
-    /// odds with the player either way round, since whichever side would
-    /// start the fight, it is the player's to look up for. Only the
-    /// player's work breaks so, because only the player chose to work
-    /// rather than watch; a mind is asked again once it is done.
-    FoeSighted,
-    /// The worker left off of its own accord: the player pressed a key, or
-    /// spent a turn of the work on something else.
-    LeftOff,
 }
 
 /// Work was broken off, this pass, and everything done on it is lost.
@@ -268,29 +240,30 @@ pub(crate) fn break_work(
     working: Query<(Entity, &Working, &Position, Option<&OnMap>)>,
     places: Query<(&Position, Option<&OnMap>)>,
 ) {
-    fn note(reasons: &mut Vec<(Entity, BreakReason)>, actor: Entity, reason: BreakReason) {
-        if !reasons.iter().any(|(a, _)| *a == actor) {
-            reasons.push((actor, reason));
-        }
-    }
     let map_of = |on: Option<&OnMap>| on.map(|m| m.0).unwrap_or(MapId::ZERO);
-    let mut reasons: Vec<(Entity, BreakReason)> = Vec::new();
-    for death in deaths.read() {
-        note(&mut reasons, death.entity, BreakReason::Died);
-    }
-    for harm in hurt.read().filter(|h| h.dealt > 0) {
-        note(&mut reasons, harm.target, BreakReason::Hurt);
-    }
+    let died: Vec<Entity> = deaths.read().map(|d| d.entity).collect();
+    let harmed: Vec<Entity> = hurt.read().filter(|h| h.dealt > 0).map(|h| h.target).collect();
     let done: Vec<(Entity, Option<Entity>)> = finished.read().map(|d| (d.actor, d.target)).collect();
-    for (actor, work, pos, on) in &working {
-        let Some(target) = work.0.target else { continue };
-        if done.iter().any(|(finisher, t)| *finisher != actor && *t == Some(target)) {
-            note(&mut reasons, actor, BreakReason::DoneByAnother);
-            continue;
+    // Broken in the order death, harm, then the workers' own, so the
+    // messages read the same as they always have.
+    let mut actors: Vec<Entity> = Vec::new();
+    for actor in died.iter().chain(&harmed).copied().chain(working.iter().map(|w| w.0)) {
+        if !actors.contains(&actor) {
+            actors.push(actor);
         }
-        let reachable = places.get(target).is_ok_and(|(there, target_on)| map_of(target_on) == map_of(on) && in_reach(pos.0, there.0));
-        if !reachable {
-            note(&mut reasons, actor, BreakReason::OutOfReach);
+    }
+    let mut reasons: Vec<(Entity, BreakReason)> = Vec::new();
+    for actor in actors {
+        let Ok((_, work, pos, on)) = working.get(actor) else { continue };
+        let (done_by_another, reachable) = match work.0.target {
+            None => (false, true),
+            Some(target) => (
+                done.iter().any(|(finisher, t)| *finisher != actor && *t == Some(target)),
+                places.get(target).is_ok_and(|(there, target_on)| map_of(target_on) == map_of(on) && in_reach(pos.0, there.0)),
+            ),
+        };
+        if let Some(reason) = break_reason(died.contains(&actor), harmed.contains(&actor), done_by_another, reachable) {
+            reasons.push((actor, reason));
         }
     }
     for (actor, reason) in reasons {
@@ -511,7 +484,7 @@ pub(crate) fn work_for_player(
             continue;
         }
         let now = lookout.foes(me).unwrap_or_default();
-        let sighted = now.iter().any(|foe| !hand.seen.contains(foe));
+        let sighted = newly_sighted(&hand.seen, &now);
         hand.seen = now;
         if sighted {
             toil.break_off(me, &work.0, BreakReason::FoeSighted);
