@@ -375,19 +375,6 @@ impl FlowFields {
         }
     }
 
-    /// How many fields are built right now, for a test that a shared goal
-    /// is one flood.
-    #[cfg(test)]
-    pub(crate) fn len(&self) -> usize {
-        self.fields.len()
-    }
-
-    /// Whether nothing is built.
-    #[cfg(test)]
-    pub(crate) fn is_empty(&self) -> bool {
-        self.fields.is_empty()
-    }
-
     /// Forgets every map, so the next mind rebuilds them: the player
     /// changed maps, or the terrain changed under everyone.
     pub fn invalidate(&mut self) {
@@ -1564,9 +1551,10 @@ mod tests {
         fields.see_standing(vec![Point::new(3, 3)]);
         fields.fields.insert((vec![Point::ZERO], MovementProfile::default(), false, false, false), DijkstraMap::new(rl_core::Rect::new(0, 0, 1, 1)));
         fields.see_standing(vec![Point::new(3, 3)]);
-        assert_eq!(fields.len(), 1, "the same cells stand: the field is kept");
+        let held = (vec![Point::ZERO], MovementProfile::default(), false, false, false);
+        assert!(fields.fields.get(&held).is_some(), "the same cells stand: the field is kept");
         fields.see_standing(Vec::new());
-        assert!(fields.is_empty(), "what stood is gone: the field is thrown away");
+        assert!(fields.fields.get(&held).is_none(), "what stood is gone: the field is thrown away");
     }
 
     /// The player behind a ring of wall with one gate in it, a gate that can
@@ -2329,10 +2317,18 @@ mod tests {
         app.update();
         app.world_mut().write_message(Intent::new(player, Wait));
         app.update();
-        assert_eq!(app.world().resource::<FlowFields>().len(), 1, "five hunters, one goal, one field");
+        let held = |app: &App| {
+            let fields = app.world().resource::<FlowFields>();
+            // Whatever the hunters' wits, the one field is toward the player's cell.
+            [(false, false), (false, true), (true, false), (true, true)]
+                .into_iter()
+                .filter(|(doors, wary)| fields.fields.get(&(vec![start], MovementProfile::default(), *doors, *wary, false)).is_some())
+                .count()
+        };
+        assert_eq!(held(&app), 1, "five hunters, one goal, one field they all read");
         app.world_mut().write_message(Intent::new(player, Wait));
         app.update();
-        assert_eq!(app.world().resource::<FlowFields>().len(), 1, "and the same one the next turn, since nothing moved the goal");
+        assert_eq!(held(&app), 1, "and the same one the next turn, since nothing moved the goal");
     }
 
     /// A mind sees by the light as it is when its turn comes, not as it was
@@ -2394,9 +2390,12 @@ mod tests {
         let mut fields = FlowFields::default();
         assert!(fields.ensure((vec![a, b], walker, false, false, false), map).is_some());
         assert!(fields.ensure((vec![a], walker, false, false, false), map).is_some());
-        assert_eq!((fields.len(), fields.floods.len()), (2, 2), "two fields, and no flood the first did not already make");
+        let flood = |g: Point| fields.floods.get(&(g, walker, false, false)).is_some();
+        assert!(flood(a) && flood(b) && !flood(c), "a flood for each goal either field has, and none for the goal not yet asked");
+        assert!(fields.fields.get(&(vec![a], walker, false, false, false)).is_some(), "and both fields");
         assert!(fields.ensure((vec![a, c], walker, false, false, false), map).is_some());
-        assert_eq!((fields.len(), fields.floods.len()), (3, 3), "a third field, for the one goal that is new");
+        let flood = |g: Point| fields.floods.get(&(g, walker, false, false)).is_some();
+        assert!(flood(a) && flood(b) && flood(c), "one flood more, for the one goal that is new");
         // A composed field is the flood from all of its goals together.
         let view = map.view();
         let mut whole = DijkstraMap::covering(&view);
@@ -2424,8 +2423,9 @@ mod tests {
             fields.ensure(key(i), map);
             fields.ensure(key(0), map);
         }
-        assert_eq!(fields.len(), 32, "never more than the bound");
-        assert!(fields.fields.contains(&key(0)), "the one asked for every time is still held");
+        assert!(fields.fields.get(&key(1)).is_none(), "the one asked for once, longest ago, went first");
+        assert!(fields.fields.get(&key(40)).is_some(), "and the newest is held");
+        assert!(fields.fields.get(&key(0)).is_some(), "the one asked for every time is still held");
     }
 
     /// A companion keeps up with the player and gives way when it is

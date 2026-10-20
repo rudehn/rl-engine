@@ -55,21 +55,6 @@ impl<K: Ord + Clone, V> Recent<K, V> {
         self.entries.get(key).map(|(_, v)| v)
     }
 
-    /// How many entries are held.
-    pub fn len(&self) -> usize {
-        self.entries.len()
-    }
-
-    /// Whether nothing is held.
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
-
-    /// Whether `key` is held, without marking it asked for.
-    pub fn contains(&self, key: &K) -> bool {
-        self.entries.contains_key(key)
-    }
-
     /// Forgets everything.
     pub fn clear(&mut self) {
         self.entries.clear();
