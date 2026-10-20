@@ -489,9 +489,9 @@ pub fn offer_here(
     // captor is not offered to free it, and a hostile trader does not
     // trade. Decided here, once, so the interact key, the offers screen
     // and the bump all agree.
-    let hostile = |other: Entity| match (rules.as_deref(), side, sides.get(other).ok()) {
-        (Some(rules), Some(mine), Some(theirs)) => rules.factions.relation(theirs.0, mine.0) == rl_rules::Relation::Hostile,
-        _ => false,
+    let hostile = |other: Entity| {
+        let theirs = sides.get(other).ok().map(|f| f.0);
+        rl_rules::stance(rules.as_deref().map(|r| &r.factions), theirs, side.map(|f| f.0)) == Some(rl_rules::Relation::Hostile)
     };
     for (other, offers, at, other_on) in others {
         if other == actor || !in_reach(at, other_on) || hostile(other) {

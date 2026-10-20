@@ -86,6 +86,20 @@ impl Factions {
     }
 }
 
+/// How side `a` regards side `b`, or `None` when there is nothing to ask.
+///
+/// A game with no faction table, or an actor that takes no side, has no
+/// stance at all, and what that means differs by question (stealth reads
+/// it as at odds, a swap as no objection), so the caller keeps its own
+/// fallback rather than this picking one. Not symmetric: `a` to `b` and
+/// `b` to `a` are two entries of the table.
+pub fn stance(factions: Option<&Factions>, a: Option<FactionId>, b: Option<FactionId>) -> Option<Relation> {
+    match (factions, a, b) {
+        (Some(factions), Some(a), Some(b)) => Some(factions.relation(a, b)),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,5 +119,26 @@ mod tests {
         let text = ron::to_string(&f).unwrap();
         let back: Factions = ron::from_str(&text).unwrap();
         assert_eq!(f, back);
+    }
+
+    #[test]
+    fn stance_is_none_when_the_rules_or_either_side_is_missing() {
+        let defs = Registry::from_defs(vec![FactionDef::new("a"), FactionDef::new("b")]).unwrap();
+        let (a, b) = (defs.expect("a"), defs.expect("b"));
+        let f = Factions::new(&defs);
+        assert_eq!(stance(None, Some(a), Some(b)), None);
+        assert_eq!(stance(Some(&f), None, Some(b)), None);
+        assert_eq!(stance(Some(&f), Some(a), None), None);
+    }
+
+    #[test]
+    fn stance_reads_the_table_from_the_first_side_to_the_second() {
+        let defs = Registry::from_defs(vec![FactionDef::new("a"), FactionDef::new("b")]).unwrap();
+        let (a, b) = (defs.expect("a"), defs.expect("b"));
+        let mut f = Factions::new(&defs);
+        f.set(a, b, Relation::Hostile);
+        f.set(b, a, Relation::Neutral);
+        assert_eq!(stance(Some(&f), Some(a), Some(b)), Some(Relation::Hostile));
+        assert_eq!(stance(Some(&f), Some(b), Some(a)), Some(Relation::Neutral));
     }
 }

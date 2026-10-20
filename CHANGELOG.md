@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `rl_rules::stance(factions, a, b)` is the one answer to how one side regards another, `None` when there is no faction table or either side takes none; the seven copies of it in stealth, bumping, the minds, work, props and sleep each kept their own fallback and now ask it.
+  To change: nothing.
+
 - The engine's public surface is what a game uses or plugs into, and nothing kept public for a test. About 660 items that only their own crate used are crate-private now: the plugins' systems, their `SystemParam`s, random streams, caches, layouts and helpers. About 60 that nothing used are gone, and code only tests call is compiled for tests alone. What stays public is what a game or another crate uses, plus the hooks the design hands to games: every view with its plugin and accessors, the shipped panels and their builders, the drawing helpers, the extension traits, the system sets, the mapgen passes, the content loaders, and the components, actions, messages and constants the guide tells a game to use.
   To change: nothing in the example games. A game that named a now-private item, most likely a system function to order against, orders against its system set instead, as `AGENTS.md` asks.
 

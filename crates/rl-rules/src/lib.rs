@@ -116,7 +116,7 @@ pub use damage::{DamageKind, DamageStage, Hit, Resistances, resolve};
 pub use dressing::{DistrictDressings, DressingDef};
 pub use equip::{EquipError, EquipShape, Equipment, SlotDef, SlotId};
 pub use events::{Change, CounterDef, CounterId, Fact, FactDef, FactKind, Ledger, Matcher, Need, Objective, QuestDef, QuestId, QuestState, Tally, Tracker};
-pub use faction::{FactionId, Factions, Relation};
+pub use faction::{FactionId, Factions, Relation, stance};
 pub use fire::Tinder;
 pub use forecast::{Combatant, Duel, Outlook, duel};
 pub use gas::{Breath, GasDef, GasId};
@@ -150,7 +150,7 @@ pub mod prelude {
     pub use crate::events::{
         Change, CounterDef, CounterId, Fact, FactDef, FactKind, Ledger, Matcher, Need, Objective, QuestDef, QuestId, QuestState, Tally, Tracker,
     };
-    pub use crate::faction::{FactionId, Factions, Relation};
+    pub use crate::faction::{FactionId, Factions, Relation, stance};
     pub use crate::fire::Tinder;
     pub use crate::forecast::{Combatant, Duel, Outlook, duel};
 

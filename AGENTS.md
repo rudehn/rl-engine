@@ -68,6 +68,7 @@ So generation is never played over many seeds to see whether content turns up or
 When the check speaks, the slowest tests it lists are the ones to fix, by the cheapest of these that keeps the test proving what it proved:
 
 - **A property of generation is tested without an `App`.** Build the place (`Undermere::build`, an `rl-mapgen` chain) and read it; arriving through a headless game populates, lights and saves it as well. A rule that needs no world goes to `rl-rules` and is tested there.
+- **A rule inside a system is a rule only an `App` can test.** So a system gathers, calls a function in `rl-rules`, and applies the result; the `App` test that is left proves the call, and the rule's cases are unit tests (`rl_rules::stance` is the model).
 - **A property over seeds plays `seeds(full)`.** It is the first `QUICK` seeds, eight, on every run, and all of `full` under `RL_FULL_SEEDS=1`, which CI sets, so the rare seed is still caught. A property never plays a bare range.
 - **A rate or a count of rare things plays `first_seeds(full, n)`**, with the reason beside it: such a test needs `n` seeds before its count says anything.
 - **A test waiting for a rare thing stops at the first one.** Build floors until the thing turns up, and no further, rather than every floor of every seed (`a_blood_trail_turns_up_on_some_floors_but_never_the_throne_over_a_span_of_seeds`).

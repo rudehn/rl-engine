@@ -39,6 +39,7 @@ use bevy::prelude::*;
 use rl_core::Interner;
 use rl_core::turn::BASE_ACTION_COST;
 use rl_rules::work::{Progress, Work, WorkKind, WorkKindId, in_reach};
+use rl_rules::{Relation, stance};
 
 use crate::combat::{CombatRules, DamageDealt, Dead, DeathEvent, Faction};
 use crate::components::{Actor, MyTurn, Player, Position};
@@ -416,10 +417,9 @@ impl Lookout<'_, '_> {
             .bystanders
             .iter()
             .filter(|(other, at, on, theirs, concealed)| {
-                let odds = match (rules, mine, *theirs) {
-                    (Some(rules), Some(mine), Some(theirs)) => rules.factions.is_hostile(mine.0, theirs.0) || rules.factions.is_hostile(theirs.0, mine.0),
-                    _ => true,
-                };
+                let (factions, mine, theirs) = (rules.map(|r| &r.factions), mine.map(|f| f.0), theirs.map(|f| f.0));
+                let odds =
+                    stance(factions, mine, theirs).zip(stance(factions, theirs, mine)).is_none_or(|(x, y)| x == Relation::Hostile || y == Relation::Hostile);
                 *other != me && odds && self.sight.shows(at.0, *on, *concealed)
             })
             .map(|(other, ..)| other)

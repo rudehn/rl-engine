@@ -27,6 +27,7 @@ use bevy::prelude::*;
 use rand::Rng;
 use rl_core::Point;
 use rl_rules::ai::awareness::{self, Awareness, NoticeStats, StealthStats};
+use rl_rules::{Relation, stance};
 
 use crate::combat::{CombatRules, DamageDealt, Dead, Faction};
 use crate::components::{MyTurn, Player, Position, Viewshed};
@@ -252,10 +253,7 @@ impl Watchers<'_, '_> {
 /// when there are rules and both take a side, and otherwise yes, since a
 /// game with no sides has nobody to be friends with.
 fn at_odds(rules: Option<&CombatRules>, mine: Option<&Faction>, theirs: Option<&Faction>) -> bool {
-    match (rules, mine, theirs) {
-        (Some(rules), Some(mine), Some(theirs)) => rules.factions.is_hostile(mine.0, theirs.0),
-        _ => true,
-    }
+    stance(rules.map(|r| &r.factions), mine.map(|f| f.0), theirs.map(|f| f.0)).is_none_or(|r| r == Relation::Hostile)
 }
 
 /// Stealth's own stream for the notice roll, so a tactic added to the

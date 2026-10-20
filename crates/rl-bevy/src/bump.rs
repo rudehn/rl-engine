@@ -35,7 +35,7 @@
 use bevy::prelude::*;
 use rl_core::turn::BASE_ACTION_COST;
 use rl_core::{Direction, Point};
-use rl_rules::{FactionId, Relation};
+use rl_rules::{FactionId, Relation, stance};
 
 use crate::combat::{Attack, CombatRules, Faction, Health};
 use crate::components::{MyTurn, Position, Viewshed};
@@ -203,7 +203,7 @@ pub(crate) fn redirect_bumps(mut intents: MessageReader<Intent<Bump>>, mut resol
         // resolver strikes by: alive, with health to lose.
         let someone = way.occupancy.at(target).iter().copied().find(|other| way.standing.contains(*other));
         let theirs = someone.and_then(|other| way.standing.get(other).ok().flatten());
-        let stance = someone.and_then(|_| relation(way.rules.as_deref(), side, theirs));
+        let stance = someone.and_then(|_| stance(way.rules.as_deref().map(|r| &r.factions), side.map(|f| f.0), theirs.map(|f| f.0)));
         // A neutral of a side that gives way is walked past as an ally is.
         let gives_way = stance == Some(Relation::Neutral) && way.bumps.as_deref().is_some_and(|r| r.gives_way(theirs.map(|f| f.0)));
         // A foe is struck and an ally walked past whatever either offers:
@@ -290,14 +290,6 @@ impl Way<'_, '_> {
             [only] if only.refused.is_none() && only.price.is_none() && only.asks.is_none() => Offered::One((*only).clone()),
             _ => Offered::Several(what),
         }
-    }
-}
-
-/// How `other` stands to `me`, when there are rules and both take a side.
-fn relation(rules: Option<&CombatRules>, me: Option<&Faction>, other: Option<&Faction>) -> Option<Relation> {
-    match (rules, me, other) {
-        (Some(rules), Some(me), Some(other)) => Some(rules.factions.relation(me.0, other.0)),
-        _ => None,
     }
 }
 

@@ -34,7 +34,7 @@ use rand::Rng;
 use rl_core::turn::BASE_ACTION_COST;
 use rl_core::{Direction, RunSeed, SeedDomain};
 use rl_rules::stats::{Modifier, Op, Source};
-use rl_rules::{Hit, Resistances, StatId, Stats, StatusId, Statuses};
+use rl_rules::{Hit, Relation, Resistances, StatId, Stats, StatusId, Statuses, stance};
 
 use crate::combat::{CombatRules, DamageDealt, DamageEvent, Dead, Faction, Heal};
 use crate::components::{Actor, MyTurn, Position, Viewshed};
@@ -393,7 +393,7 @@ pub(crate) fn wake_on_sight(
                 && !unseen
                 && other_on.map(|m| m.0).unwrap_or(MapId::ZERO) == map
                 && rl_core::geometry::chebyshev(pos.0, at.0) <= rl_rules::SLEEPER_REACH
-                && rules.factions.is_hostile(mine.0, theirs.0)
+                && stance(Some(&rules.factions), Some(mine.0), Some(theirs.0)) == Some(Relation::Hostile)
                 && sight.can_see(at.0);
             let noticed = match aware {
                 Some(aware) if hides && stealth.get() => aware.knows(other),
