@@ -173,7 +173,7 @@ mod tests {
 
     use super::*;
     use crate::dungeon::{captive_floor, floor_of, map_of};
-    use crate::testing::{adventurer, arrive, headless, par_seeds, sturdy};
+    use crate::testing::{adventurer, arrive, headless, sturdy};
 
     /// The arena on floor two with a goblin shackled beside the
     /// adventurer, as `population::place_captive` stands the run's own.
@@ -262,42 +262,6 @@ mod tests {
             assert_eq!(app.world().get::<Leader>(captive).map(|l| l.0), Some(me), "seed {s}: following the adventurer");
             assert_eq!(app.world().get::<Faction>(captive).map(|f| f.0), app.world().get::<Faction>(me).map(|f| f.0), "seed {s}: on their side");
         }
-    }
-
-    /// Every floor the run's captive did not draw holds none, and the one
-    /// it drew holds exactly one, neutral to the adventurer, shackled in
-    /// place and offering to be freed.
-    #[test]
-    fn exactly_one_floor_a_run_draws_holds_one_shackled_captive_offering_to_be_freed_over_a_span_of_seeds() {
-        par_seeds(0..8, |s| {
-            let mut app = headless(RunSeed(s));
-            let me = adventurer(&mut app);
-            sturdy(&mut app, me);
-            let floor = captive_floor(RunSeed(s));
-            let mut seen = 0;
-            for f in 1..crate::dungeon::FLOORS {
-                arrive(&mut app, map_of(f));
-                let free_verb = app.world().resource::<Verbs>().get(FREE_VERB).expect("declared");
-                // Never a piece's own captive, Captives in Chains', shackled
-                // the same way on a mark of its piece: the run's own is the
-                // population's, apart from any piece.
-                let marked: Vec<Point> =
-                    app.world().resource::<WorldMap>().place(map_of(f)).expect("built").spots.iter().filter(|s| s.prefab.is_some()).map(|s| s.at).collect();
-                let world = app.world_mut();
-                let count = world
-                    .query::<(&OnMap, &Position, &Offers)>()
-                    .iter(world)
-                    .filter(|(on, at, offers)| on.0 == map_of(f) && !marked.contains(&at.0) && offers.0.iter().any(|o| o.verb == free_verb))
-                    .count();
-                if f == floor {
-                    assert_eq!(count, 1, "seed {s}, floor {f}: the run's own captive");
-                    seen += 1;
-                } else {
-                    assert_eq!(count, 0, "seed {s}, floor {f}: no captive drawn here");
-                }
-            }
-            assert_eq!(seen, 1, "seed {s}: the one floor the run drew");
-        });
     }
 
     /// A run continued on the floor whose captive is still shackled finds

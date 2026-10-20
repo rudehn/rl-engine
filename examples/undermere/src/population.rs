@@ -508,6 +508,14 @@ fn camp_fire_cell(cells: &[Point], free: &mut impl FnMut(Point) -> bool, open: i
     [1, 2].into_iter().find_map(|radius| geometry::square(anchor, radius).find(|p| !cells.contains(p) && in_the_open(*p) && free(*p)))
 }
 
+/// The kinds `floor`'s drawn biome favors, as ids: what `plan` weights up,
+/// so the population is handed the drawn biome's list and not another
+/// floor's. A name the bestiary cannot resolve is left out, the tolerance
+/// [`Spawns::favor`] documents.
+fn favored_on(draws: &BiomeDraws, bestiary: &Bestiary, floor: u32) -> Vec<Id<MonsterDef>> {
+    draws.of(floor).favored.iter().filter_map(|name| bestiary.defs.id(name)).collect()
+}
+
 /// Populates every floor on the arrival that built it: a band of its own,
 /// the dar trio or a goblin war band wherever `BANDS` names its floor,
 /// then [`groups_on`]'s number of ordinary groups less one for each band,
@@ -612,7 +620,7 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
         // floor with its scenes and every group as well was a floor more
         // crowded than its depth, the soak's first read of part 3 dying
         // on floors three to five three runs in five.
-        let favored: Vec<Id<MonsterDef>> = draws.of(floor).favored.iter().filter_map(|name| bestiary.defs.id(name)).collect();
+        let favored = favored_on(draws, bestiary, floor);
         let groups = plan(
             Spawns { table: &bestiary.spawns, band: floor as i32, favor: &favored },
             bounds,
@@ -804,58 +812,28 @@ mod tests {
         }
     }
 
-    /// A floor's population favors its own biome's kinds: over a span of
-    /// seeds of floor three, each of its two biomes' favored kinds make
-    /// up a larger share of the floor's monsters where that biome was
-    /// drawn than where another was, so the population is handed the
-    /// drawn biome's list and not some other floor's or none. Floor three
-    /// draws no war band and no feeding ground, whose goblins and ogres
-    /// come whatever biome floors five and six drew and would blur the
-    /// share the favoring alone makes.
+    /// A floor is handed its own drawn biome's favored kinds: every floor
+    /// of the nine below the throne gets its drawn biome's list as ids, and
+    /// floor three, which stands two biomes, gets different lists for
+    /// different draws, so it is not some other floor's list or none. How
+    /// much a favored kind is weighted up is `plan`'s, tested above on made-up
+    /// tables; how often a floor then shows them is a spread of the weights,
+    /// which is not played.
     #[test]
-    fn a_floor_is_populated_with_more_of_its_own_biomes_favored_kinds() {
-        let floor = 3;
-        // Every biome of the band, by the seeds' own draws of it.
-        let mut band: Vec<crate::dungeon::BiomeDraw> = Vec::new();
-        for s in 0..20 {
-            let drawn = crate::dungeon::Undermere::new(RunSeed(s)).biome_of(floor).clone();
-            if !band.iter().any(|b| b.name == drawn.name) {
-                band.push(drawn);
+    fn a_floor_is_handed_its_own_drawn_biomes_favored_kinds_over_a_span_of_seeds() {
+        let bestiary = bestiary();
+        let loaded = crate::dungeon::Undermere::new(RunSeed(0));
+        let mut on_three = std::collections::BTreeSet::new();
+        for s in seeds(0..30) {
+            let draws = BiomeDraws::new(&loaded.reseeded(RunSeed(s)));
+            for floor in 1..FLOORS {
+                let handed: Vec<&str> = favored_on(&draws, &bestiary, floor).iter().map(|id| bestiary.defs.get(*id).name.as_str()).collect();
+                assert_eq!(handed, draws.of(floor).favored, "seed {s}, floor {floor}: the drawn biome's favored kinds, in its order");
+                assert!(!handed.is_empty(), "seed {s}, floor {floor}: a biome of these floors favors something");
             }
+            on_three.insert(draws.of(3).name.clone());
         }
-        // For each, its favored kinds' monsters and every monster where it
-        // was drawn, and the same where another was.
-        let tally: std::sync::Mutex<std::collections::BTreeMap<String, [(u32, u32); 2]>> = std::sync::Mutex::new(std::collections::BTreeMap::new());
-        // Thirty seeds every day, not `seeds`' eight: a share is a rate,
-        // and eight floors split over the band's biomes are too few to
-        // read one from.
-        par_seeds(first_seeds(0..36, 30), |s| {
-            let mut app = headless(RunSeed(s));
-            watch(&mut app);
-            arrive(&mut app, map_of(floor));
-            let drawn = app.world().resource::<BiomeDraws>().of(floor).name.clone();
-            let bestiary = app.world().resource::<Bestiary>();
-            let made: Vec<&str> = app
-                .world()
-                .resource::<Spawned>()
-                .0
-                .iter()
-                .filter(|(on, _, _)| *on == map_of(floor))
-                .map(|(_, _, k)| bestiary.defs.get(*k).name.as_str())
-                .collect();
-            for biome in &band {
-                let ours = made.iter().filter(|m| biome.favored.iter().any(|f| f == *m)).count() as u32;
-                let mut tally = tally.lock().unwrap();
-                let side = &mut tally.entry(biome.name.clone()).or_default()[usize::from(biome.name != drawn)];
-                *side = (side.0 + ours, side.1 + made.len() as u32);
-            }
-        });
-        let tally = tally.into_inner().unwrap();
-        for (biome, [(here, of_here), (there, of_there)]) in &tally {
-            assert!(*of_here > 0 && *of_there > 0, "{biome}: drawn and not drawn over the span: {tally:?}");
-            let (share_here, share_there) = (f64::from(*here) / f64::from(*of_here), f64::from(*there) / f64::from(*of_there));
-            assert!(share_here > share_there * 1.5, "{biome}: its own kinds are {share_here:.2} of its floors and {share_there:.2} of others': {tally:?}");
-        }
+        assert!(on_three.len() > 1, "floor three draws more than one biome over the span, so the lists differ: {on_three:?}");
     }
 
     /// Where every monster stood the moment it was made, by place, and
@@ -884,19 +862,54 @@ mod tests {
         made.map_or_else(String::new, |kind| bestiary.defs.get(kind).name.clone())
     }
 
+    /// How many captives of the run's own are shackled on `floor`, offering
+    /// to be freed: never a piece's own captive, Captives in Chains', shackled
+    /// the same way on a mark of its piece, so those standing on a piece's
+    /// spot are left out.
+    fn shackled_captives_on(app: &mut App, floor: u32) -> usize {
+        let map = map_of(floor);
+        let free_verb = app.world().resource::<Verbs>().get(crate::captives::FREE_VERB).expect("declared");
+        let marked: Vec<Point> =
+            app.world().resource::<WorldMap>().place(map).expect("built").spots.iter().filter(|s| s.prefab.is_some()).map(|s| s.at).collect();
+        let world = app.world_mut();
+        world
+            .query::<(&OnMap, &Position, &Offers)>()
+            .iter(world)
+            .filter(|(on, at, offers)| on.0 == map && !marked.contains(&at.0) && offers.0.iter().any(|o| o.verb == free_verb))
+            .count()
+    }
+
     /// Every floor, on the arrival that built it, has its people: as many
     /// groups as [`groups_on`] says, every monster at least the distance
     /// from the way in, none on a cell a piece marked, and on floor ten the
     /// throne's court at its own posts besides, with no knight of it among
     /// the floor's own people. A floor entered again gets nobody new.
+    ///
+    /// One run, arrived at floor one, a lair floor, floor ten and the floor
+    /// holding the run's captive, since the rest is `plan`'s, tested on made-up
+    /// ground above: what is left to play is the arrival's wiring of it. The
+    /// walk also holds the captive's count: exactly one shackled captive
+    /// offering to be freed on the floor `captive_floor` names and none on
+    /// the others it arrives at, the arrival drawing it only where
+    /// `populate` finds `floor == captive_floor(seed)`.
     #[test]
     fn a_floor_is_populated_on_first_arrival_away_from_the_entry() {
-        for s in 0..3 {
+        // A seed whose lair is not on the captive's floor, found by the pure
+        // draws, so the walk arrives at four different floors.
+        let s = (0..64u64)
+            .find(|s| crate::dungeon::lairs(RunSeed(*s))[0].1 != crate::dungeon::captive_floor(RunSeed(*s)))
+            .expect("some seed over 64 draws its lair off the captive's floor");
+        let (lair, captive) = (crate::dungeon::lairs(RunSeed(s))[0].1, crate::dungeon::captive_floor(RunSeed(s)));
+        {
             let mut app = headless(RunSeed(s));
             watch(&mut app);
             let me = adventurer(&mut app);
             sturdy(&mut app, me);
-            for floor in 1..=FLOORS {
+            let mut walked = vec![1, lair, FLOORS];
+            if !walked.contains(&captive) {
+                walked.push(captive);
+            }
+            for floor in walked {
                 arrive(&mut app, map_of(floor));
                 let world = app.world();
                 let place = world.resource::<WorldMap>().place(map_of(floor)).expect("built on arrival");
@@ -945,6 +958,12 @@ mod tests {
                 }
                 let knights = people.iter().filter(|p| made_at(&app, map_of(floor), **p) == "skeleton knight").count();
                 assert_eq!(knights, 0, "seed {s}, floor {floor}: a knight of the court out among the floor's own people");
+                let shackled = shackled_captives_on(&mut app, floor);
+                assert_eq!(
+                    shackled,
+                    usize::from(floor == captive),
+                    "seed {s}, floor {floor}: the run's own captive on its floor only (it draws floor {captive})"
+                );
             }
             let before = spawned_on(&app, map_of(1)).len();
             arrive(&mut app, map_of(1));
@@ -997,7 +1016,10 @@ mod tests {
     /// spawn table also drew of any of the three.
     #[test]
     fn the_dar_trio_is_placed_together_the_blademaster_leading_over_a_span_of_seeds() {
-        for s in 0..6u64 {
+        // Two seeds every day, the six in CI: the band is a `BANDS` row with
+        // no roll before it, so floor eight always draws the trio and the
+        // seed moves only where it stands.
+        for s in first_seeds(0..6, 2) {
             let mut app = headless(RunSeed(s));
             let me = adventurer(&mut app);
             sturdy(&mut app, me);
@@ -1049,44 +1071,85 @@ mod tests {
         assert!(biomes.len() > 1, "a war band comes whatever floor five drew, not the mines alone: {biomes:?}");
     }
 
+    /// Every mini-boss's lair piece stands a monster slot for its boss, found
+    /// by name, and between one and four others for its entourage, counted
+    /// by the cells of its rows; the Widow's has none, her entourage being
+    /// egg sacs, which are props. Read from the files with no seed drawn, so
+    /// the App test below needs to play only one lair of each kind and the
+    /// follower count is the file's to hold.
+    #[test]
+    fn each_mini_bosss_lair_stands_its_boss_and_between_one_and_four_followers_but_the_widows_none() {
+        let undermere = crate::dungeon::Undermere::new(RunSeed(0));
+        let bestiary = bestiary();
+        for boss in &crate::dungeon::MINI_BOSSES {
+            let piece = undermere.prefabs().defs().get(undermere.prefabs().defs().expect(boss.name));
+            let rows = piece.rows();
+            let (mut bosses, mut followers) = (0, 0);
+            for (glyph, slot) in piece.slots() {
+                let Slot::Monster { pick, .. } = slot else { continue };
+                let cells = rows.iter().map(|row| row.chars().filter(|c| *c == glyph).count()).sum::<usize>();
+                match pick {
+                    rl_engine::rl_rules::prefab::Pick::Kind(id) if bestiary.defs.get(*id).name == boss.name => bosses += cells,
+                    _ => followers += cells,
+                }
+            }
+            assert_eq!(bosses, 1, "{}: one slot standing the boss", boss.name);
+            if boss.name == "the Widow" {
+                assert_eq!(followers, 0, "{}: her entourage is egg sacs, never monsters", boss.name);
+            } else {
+                assert!((1..=4).contains(&followers), "{}: {followers} followers", boss.name);
+            }
+        }
+    }
+
     /// A mini-boss's lair: whichever lair a floor draws holds its boss, found
     /// by `MonsterDef::miniboss` rather than by name, and every other
     /// monster the lair's own slots stood is led by it, `lead_lair_bands`
     /// run the moment the arrival filled them. The Widow's own entourage
     /// is egg sacs, props rather than monsters, so she alone is let
-    /// stand with none `Leader`'d to her.
+    /// stand with none `Leader`'d to her. How many followers a lair stands is
+    /// its file's, held by the static check above, so this plays two
+    /// arrivals: the first seed's ordinary lair, and the Widow's, found by
+    /// the pure `lairs(seed)` with no run built to look.
     #[test]
     fn whichever_lair_a_floor_draws_holds_its_boss_and_every_monster_its_own_slots_stood_follows_it() {
-        let mut checked = 0;
-        for s in 0..20u64 {
-            let undermere = crate::dungeon::Undermere::new(RunSeed(s));
+        let widow = crate::dungeon::MINI_BOSSES.iter().position(|b| b.name == "the Widow").expect("the Widow is a mini-boss");
+        let (mut ordinary, mut widows) = (None, None);
+        for s in 0..200u64 {
+            for (boss, floor) in crate::dungeon::lairs(RunSeed(s)) {
+                let found = if boss == widow { &mut widows } else { &mut ordinary };
+                found.get_or_insert((s, boss, floor));
+            }
+            if ordinary.is_some() && widows.is_some() {
+                break;
+            }
+        }
+        let lairs = [ordinary, widows].map(|found| found.expect("some seed over 200 draws each kind of lair"));
+        for (s, boss, floor) in lairs {
             let mut app = headless(RunSeed(s));
             let me = adventurer(&mut app);
             sturdy(&mut app, me);
-            for (boss, floor) in undermere.lairs() {
-                let name = crate::dungeon::MINI_BOSSES[boss].name;
-                let map = map_of(floor);
-                arrive(&mut app, map);
-                let world = app.world_mut();
-                let present: Vec<(Entity, Id<MonsterDef>)> =
-                    world.query::<(Entity, &Kind, &OnMap)>().iter(world).filter(|(_, _, on)| on.0 == map).map(|(e, k, _)| (e, k.0)).collect();
-                let led: Vec<(Entity, Entity)> =
-                    world.query::<(Entity, &Leader, &OnMap)>().iter(world).filter(|(_, _, on)| on.0 == map).map(|(e, l, _)| (e, l.0)).collect();
-                let bestiary = world.resource::<Bestiary>();
-                let Some((boss_entity, kind)) = present.iter().find(|(_, k)| bestiary.defs.get(*k).miniboss) else {
-                    continue;
-                };
-                assert_eq!(bestiary.defs.get(*kind).name, name, "seed {s}, floor {floor}: the lair's own boss by name");
-                let followers: Vec<Entity> = led.iter().filter(|(_, leader)| leader == boss_entity).map(|(e, _)| *e).collect();
-                if name == "the Widow" {
-                    assert!(followers.is_empty(), "seed {s}: the Widow's own entourage is egg sacs, never led monsters: {followers:?}");
-                } else {
-                    assert!(!followers.is_empty() && followers.len() <= 4, "seed {s}, floor {floor}: {} followers of {name}", followers.len());
-                }
-                checked += 1;
+            let name = crate::dungeon::MINI_BOSSES[boss].name;
+            let map = map_of(floor);
+            arrive(&mut app, map);
+            let world = app.world_mut();
+            let present: Vec<(Entity, Id<MonsterDef>)> =
+                world.query::<(Entity, &Kind, &OnMap)>().iter(world).filter(|(_, _, on)| on.0 == map).map(|(e, k, _)| (e, k.0)).collect();
+            let led: Vec<(Entity, Entity)> =
+                world.query::<(Entity, &Leader, &OnMap)>().iter(world).filter(|(_, _, on)| on.0 == map).map(|(e, l, _)| (e, l.0)).collect();
+            let bestiary = world.resource::<Bestiary>();
+            let (boss_entity, kind) = present
+                .iter()
+                .find(|(_, k)| bestiary.defs.get(*k).miniboss)
+                .unwrap_or_else(|| panic!("seed {s}, floor {floor}: {name}'s lair stands its boss"));
+            assert_eq!(bestiary.defs.get(*kind).name, name, "seed {s}, floor {floor}: the lair's own boss by name");
+            let followers: Vec<Entity> = led.iter().filter(|(_, leader)| leader == boss_entity).map(|(e, _)| *e).collect();
+            if name == "the Widow" {
+                assert!(followers.is_empty(), "seed {s}: the Widow's own entourage is egg sacs, never led monsters: {followers:?}");
+            } else {
+                assert!(!followers.is_empty() && followers.len() <= 4, "seed {s}, floor {floor}: {} followers of {name}", followers.len());
             }
         }
-        assert!(checked > 0, "some lair was drawn and checked over the span");
     }
 
     /// [`camp_fire_cell`] on made-up ground over a span of seeds: a camp's
@@ -1195,8 +1258,10 @@ mod tests {
     /// a floor draws one only [`FEEDING_GROUND_PCT`] of the time.
     #[test]
     fn a_feeding_ground_stands_a_beast_over_its_preys_own_engine_remains_over_a_span_of_seeds() {
-        let mut found = 0;
-        for s in 0..40u64 {
+        // Stops at the first seed that draws one: each is an arrival, and
+        // the property is of the one found. `expect` fails the test if no
+        // seed does, so a feeding ground that stopped being drawn is no pass.
+        let found = (0..40u64).find(|&s| {
             let mut app = headless(RunSeed(s));
             let me = adventurer(&mut app);
             sturdy(&mut app, me);
@@ -1209,16 +1274,16 @@ mod tests {
             let world = app.world_mut();
             let beasts: Vec<Entity> =
                 world.query::<(Entity, &Kind, &OnMap)>().iter(world).filter(|(_, k, on)| k.0 == jackal && on.0 == map).map(|(e, ..)| e).collect();
-            let Some(&beast) = beasts.iter().find(|e| world.get::<crate::tricks::PatrolRoute>(**e).is_some()) else { continue };
+            let Some(&beast) = beasts.iter().find(|e| world.get::<crate::tricks::PatrolRoute>(**e).is_some()) else { return false };
             let rats: Vec<Entity> =
                 world.query::<(Entity, &Kind, &OnMap)>().iter(world).filter(|(_, k, on)| k.0 == rat && on.0 == map).map(|(e, ..)| e).collect();
             let remains = rats.into_iter().find(|e| world.get::<Remains>(*e).is_some());
-            let Some(remains) = remains else { continue };
+            let Some(remains) = remains else { return false };
             assert!(world.get::<Actor>(remains).is_none(), "seed {s}: remains are not an actor any more");
             assert!(world.get::<crate::tricks::PatrolRoute>(beast).is_some(), "seed {s}: the beast keeps its own cell over its meal");
-            found += 1;
-        }
-        assert!(found > 0, "some seed over the span drew a feeding ground on floor one");
+            true
+        });
+        found.expect("some seed over the span drew a feeding ground on floor one");
     }
 
     /// A floor's feeder fits its drawn biome: beneath the kingdom the mines

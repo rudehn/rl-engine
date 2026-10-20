@@ -1918,6 +1918,17 @@ mod tests {
         assert_eq!(seen.len(), MINI_BOSSES.len(), "every mini-boss drawn somewhere over the span: {seen:?}");
     }
 
+    /// The run's one captive stands on a floor of the nine above the throne,
+    /// never floor ten: `populate` places it where `floor == captive_floor`,
+    /// so this range is the whole of where it can stand.
+    #[test]
+    fn the_floor_a_run_draws_its_captive_on_is_one_of_the_nine_above_the_throne_over_a_span_of_seeds() {
+        for s in seeds(0..200) {
+            let floor = captive_floor(RunSeed(s));
+            assert!((1..FLOORS).contains(&floor), "seed {s}: the captive on floor {floor}, outside 1..{FLOORS}");
+        }
+    }
+
     /// A floor of a biome that grows `recipe`, the `pick`th of those it
     /// may stand on round and round, so a span of picks reaches both floors
     /// of a band; and that biome drawn with it.

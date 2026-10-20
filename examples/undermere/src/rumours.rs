@@ -145,13 +145,10 @@ fn names_a_boss(text: &str) -> Option<&'static str> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-
     use super::*;
-    use crate::bestiary::{Bestiary, Kind};
     use crate::content::Library;
-    use crate::dungeon::{FLOORS, TOWN, map_of};
-    use crate::testing::{adventurer, arrive, continued, headless, sturdy, talk_to};
+    use crate::dungeon::{TOWN, map_of};
+    use crate::testing::{adventurer, arrive, continued, headless, talk_to};
     use crate::townsfolk::Folk;
 
     fn library() -> Library {
@@ -270,55 +267,54 @@ mod tests {
         }
     }
 
-    /// Talking to the innkeeper tells the boss floor ten holds, then each
-    /// mini-boss the floors hold, shallowest first, each found by going
-    /// down and looking, then each biome the floors above ten are grown
-    /// as, shallowest first and each once, then each stratum's hint of
-    /// what is deeper and older, then the last line, and the
-    /// last line again on every talk after, over a span of seeds that
-    /// draws each boss.
+    /// A run's rumours come in the order they are told: the floor ten boss
+    /// it drew, then its lairs shallowest first, then the biomes it drew,
+    /// then each stratum with a rumour, then the last line. Read off the
+    /// pure draws with no `App`, since [`Rumours::told`] asks only the seed:
+    /// that the floors then hold what is told is the generator backstop's
+    /// (`the_throne_holds_the_drawn_boss...` in `dungeon.rs`, and the lairs
+    /// by `whichever_lair_a_floor_draws_holds_its_boss...` in
+    /// `population.rs`), and that the biomes are the ones the floors draw
+    /// is `the_biomes_a_rumour_is_told_of_are_the_ones_the_floors_draw...`.
     #[test]
-    fn the_innkeeper_tells_what_this_runs_floors_hold_boss_first_then_each_lair_each_biome_each_stratum_then_the_last_line_again() {
-        for seed in seeds() {
-            let mut app = headless(seed);
-            let me = adventurer(&mut app);
-            let mut biomes: Vec<String> = Vec::new();
-            // Floors seven and eight can draw only the Underlake until a later
-            // wave adds to them, so no biome's rumour is told of them: the
-            // stratum's is.
-            for floor in (1..FLOORS).filter(|f| !(7..=8).contains(f)) {
-                let name = app.world().resource::<crate::light::BiomeDraws>().of(floor).name.clone();
-                if !biomes.contains(&name) {
-                    biomes.push(name);
-                }
-            }
-            let strata: Vec<&str> = STRATA.iter().map(|s| s.name).filter(|n| app.world().resource::<Rumours>().of(n).is_some()).collect();
-            let talks = 3 + biomes.len() + strata.len() + 2;
-            let told: Vec<String> = (0..talks).map(|_| words(&talk_to(&mut app, me, "innkeeper")).to_string()).collect();
-            sturdy(&mut app, me);
-            let mut held: BTreeMap<u32, String> = BTreeMap::new();
-            for floor in 3..=FLOORS {
-                let map = map_of(floor);
-                arrive(&mut app, map);
-                let world = app.world_mut();
-                let kinds: Vec<Kind> = world.query::<(&Kind, &OnMap)>().iter(world).filter(|(_, on)| on.0 == map).map(|(k, _)| *k).collect();
-                let bestiary = world.resource::<Bestiary>();
-                let drawable = |name: &str| FINAL_BOSSES.iter().any(|b| b.name == name) || MINI_BOSSES.iter().any(|b| b.name == name);
-                for name in kinds.iter().map(|k| bestiary.defs.get(k.0).name.clone()).filter(|n| drawable(n)) {
-                    assert!(held.insert(floor, name).is_none(), "{seed:?}: one boss a floor at most, floor {floor}");
-                }
-            }
-            assert_eq!(held.len(), 3, "{seed:?}: two lairs and a throne held: {held:?}");
-            let (throne, boss) = held.pop_last().expect("three held");
-            assert_eq!(throne, FLOORS, "{seed:?}: the boss on floor ten, the lairs above it: {held:?}");
-            let rumours = app.world().resource::<Rumours>();
-            let folk = app.world().resource::<Folk>();
-            let of = |name: &String| folk.say(rumours.of(name).unwrap_or_else(|| panic!("a rumour of {name}")));
-            let last = rumours.last().to_string();
-            let strata: Vec<String> = strata.iter().map(|s| s.to_string()).collect();
-            let expected: Vec<String> = once(&boss).chain(held.values()).chain(&biomes).chain(&strata).map(of).chain([last.clone(), last]).collect();
-            assert_eq!(told, expected, "{seed:?}: what the floors hold, {boss} below {held:?}");
+    fn the_rumours_are_told_boss_first_then_each_lair_each_biome_each_stratum_then_the_last_line_over_a_span_of_seeds() {
+        let rumours = library().rumours;
+        for seed in seeds().into_iter().chain(crate::testing::seeds(0..200).map(RunSeed)) {
+            let mut lairs = lairs(seed);
+            lairs.sort_by_key(|(_, floor)| *floor);
+            let lair_names: Vec<&str> = lairs.iter().map(|(boss, _)| MINI_BOSSES[*boss].name).collect();
+            assert!(lairs[0].1 < lairs[1].1, "{seed:?}: two lairs on floors of their own: {lairs:?}");
+            let biomes = biomes_drawn(seed);
+            let strata: Vec<&str> = STRATA.iter().map(|s| s.name).filter(|n| rumours.of(n).is_some()).collect();
+            let said =
+                |names: &[&str]| -> Vec<String> { names.iter().map(|n| rumours.of(n).unwrap_or_else(|| panic!("a rumour of {n}")).to_string()).collect() };
+            let expected: Vec<String> = said(&[final_boss(seed).name])
+                .into_iter()
+                .chain(said(&lair_names))
+                .chain(said(&biomes.iter().map(String::as_str).collect::<Vec<_>>()))
+                .chain(said(&strata))
+                .chain([rumours.last().to_string()])
+                .collect();
+            let told: Vec<String> = rumours.told(seed).into_iter().map(|line| line.say).collect();
+            assert_eq!(told, expected, "{seed:?}: boss {}, lairs {lair_names:?}, biomes {biomes:?}", final_boss(seed).name);
         }
+    }
+
+    /// Talking to the innkeeper says each rumour in turn and then the last
+    /// line again on every talk after: one run, no floor arrived at, since
+    /// which line is next is kept in `Folk` and not drawn from the floors.
+    #[test]
+    fn the_innkeeper_tells_each_rumour_in_turn_and_the_last_line_again_on_every_talk_after() {
+        let seed = RunSeed(0);
+        let mut app = headless(seed);
+        let me = adventurer(&mut app);
+        let told = app.world().resource::<Rumours>().told(seed);
+        let said: Vec<String> = (0..told.len() + 1).map(|_| words(&talk_to(&mut app, me, "innkeeper")).to_string()).collect();
+        let folk = app.world().resource::<Folk>();
+        let last = &told.last().expect("the last line is always told").say;
+        let expected: Vec<String> = told.iter().map(|line| folk.say(&line.say)).chain([folk.say(last)]).collect();
+        assert_eq!(said, expected, "every rumour in turn, then the last line again");
+        assert_eq!(said[said.len() - 2], said[said.len() - 1], "the last line twice running");
     }
 
     /// Which rumours the innkeeper has told survive a save: a run saved in
