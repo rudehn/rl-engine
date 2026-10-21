@@ -10,7 +10,7 @@
 //! - [`stats`], [`damage`], [`status`], [`faction`], [`equip`] and
 //!   [`tag`]: the modifier accumulator, the mitigation pipeline, the tick
 //!   and expiry machinery, the relation matrix, the slot graph and its
-//!   pairs, and what a thing counts as.
+//!   pairs, and what a thing counts as and who carries it.
 //! - [`gas`] and [`fire`]: the rules a turn steps a gas and a fire by over a
 //!   tile field; which gases there are is content, and what burns is the
 //!   caller's to say.

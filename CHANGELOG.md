@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- An actor tagged itself with what an offer needs (`Offering::needing`, or a container's `locked` key) now carries it, as one tagged with a lock's key always opened that lock: both ask `rl_rules::tag::carries`, its own tags or a thing it holds, where an offer used to look in the bag alone and refuse a warden a person or a chest would have let through the door beside them.
+  To change: nothing, unless a game relied on a self-tagged actor being refused an offer; give such an actor a different tag.
+
 - `NoiseRunning` and the stealth checks ask whether `NoisePlugin` and `StealthPlugin` were added by a marker only each plugin inserts, no longer by whether `NoiseHeard` or `Noticed` is registered, which the vitals and narration views register themselves; a game with those views and without stealth had its sleepers wait on a notice nothing rolls rather than waking on sight, and its vitals panel show a noise meter and a seen-or-hidden line that nothing would fill.
   To change: nothing.
 

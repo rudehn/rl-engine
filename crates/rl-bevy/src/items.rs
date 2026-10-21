@@ -144,6 +144,14 @@ pub struct Bestows(pub Vec<(StatId, Op)>);
 #[derive(Component, Debug, Clone, Default, Deref, DerefMut)]
 pub struct Tagged(pub Vec<rl_rules::TagId>);
 
+/// Whether an actor carries `tag`, by [`rl_rules::tag::carries`]: its own
+/// tags, `own`, or a thing in its `bag` that `tags_of` reads as tagged with
+/// it. `tags_of` reads through whatever query the caller already holds.
+pub(crate) fn carries_tag<'a>(tag: rl_rules::TagId, own: Option<&Tagged>, bag: Option<&Inventory>, tags_of: impl Fn(Entity) -> Option<&'a Tagged>) -> bool {
+    let held = bag.into_iter().flat_map(|bag| &bag.items).filter_map(|item| tags_of(*item)).map(|t| t.0.as_slice());
+    rl_rules::tag::carries(tag, own.map_or(&[][..], |t| t.0.as_slice()), held)
+}
+
 /// A countable item: picking one up merges it into a carried item with the
 /// same key instead of adding an entry. The key is the game's, usually
 /// the definition id.

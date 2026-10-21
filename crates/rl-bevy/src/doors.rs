@@ -24,10 +24,10 @@
 use bevy::prelude::*;
 use rl_core::turn::BASE_ACTION_COST;
 use rl_core::{Direction, Point};
-use rl_rules::{TagId, Wits};
+use rl_rules::Wits;
 
 use crate::components::{MyTurn, Position};
-use crate::items::{Inventory, Tagged};
+use crate::items::{Inventory, Tagged, carries_tag};
 use crate::minds::Intelligence;
 use crate::places::{MapId, OnMap};
 use crate::turn::{Action, Intent, Occupancy, Resolution};
@@ -78,22 +78,16 @@ pub(crate) fn works_doors(intelligence: Option<&Intelligence>) -> bool {
 /// Anything with a position, for asking whether a doorway is clear.
 type Lying<'w, 's> = Query<'w, 's, (&'static Position, Option<&'static OnMap>)>;
 
-/// Whether `tag` is carried by an opener: tagged with it itself, or
-/// holding an item tagged with it. The rule a [`Lock`](crate::places::Lock)
-/// is opened by.
-fn carries(tag: TagId, own: Option<&Tagged>, bag: Option<&Inventory>, tagged: &Query<&Tagged>) -> bool {
-    own.is_some_and(|t| t.0.contains(&tag)) || bag.is_some_and(|bag| bag.items.iter().any(|item| tagged.get(*item).is_ok_and(|t| t.0.contains(&tag))))
-}
-
 /// Who may be opening a door, and what they carry.
 type Openers<'w, 's> = Query<'w, 's, (&'static Position, Option<&'static Intelligence>, Option<&'static Tagged>, Option<&'static Inventory>), With<MyTurn>>;
 
 /// Resolves [`Open`] for the actor holding the turn.
 ///
 /// A door under a [`Lock`](crate::places::Lock) opens only for an opener
-/// carrying its tag, and spends the lock when it does; a seal opens for
-/// nobody. Refused, either is the free refusal any door that will not
-/// open is, so the player is not charged for trying a key it lacks.
+/// carrying its tag, by the rule an offer's need is asked by too, and
+/// spends the lock when it does; a seal opens for nobody. Refused, either
+/// is the free refusal any door that will not open is, so the player is
+/// not charged for trying a key it lacks.
 pub(crate) fn resolve_opens(
     mut intents: MessageReader<Intent<Open>>,
     mut resolution: Resolution,
@@ -113,7 +107,7 @@ pub(crate) fn resolve_opens(
         };
         let at = pos.0 + intent.action.0.offset();
         let lock = map.lock(at);
-        let unlocked = lock.is_none_or(|l| l.key.is_some_and(|key| carries(key, own, bag, &tagged)));
+        let unlocked = lock.is_none_or(|l| l.key.is_some_and(|key| carries_tag(key, own, bag, |item| tagged.get(item).ok())));
         match map.opens(at) {
             Some(open) if works_doors(intelligence) && unlocked => {
                 if lock.is_some() {
@@ -170,6 +164,7 @@ mod tests {
     use crate::state::EngineState;
     use crate::turn::{Step, Turns};
     use rl_grid::TileRegistry;
+    use rl_rules::TagId;
 
     /// Every door event, recorded by a reader: when a headless app swaps its
     /// message buffers depends on wall time, so a peek can miss one.

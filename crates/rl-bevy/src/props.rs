@@ -45,7 +45,7 @@ use rl_rules::prop::{PropId, refusal};
 use crate::combat::{CombatRules, Faction, Health};
 use crate::components::{Blocks, MyTurn, Position};
 use crate::effects::{Effects, Fired, LandsAsItself, Moments, Remnant, Triggers};
-use crate::items::{Inventory, Stack, Tagged};
+use crate::items::{Inventory, Stack, Tagged, carries_tag};
 use crate::places::{MapId, OnMap};
 use crate::registries::Registries;
 use crate::trade::Currency;
@@ -360,7 +360,8 @@ impl Offering {
         self
     }
 
-    /// Refused to anyone not carrying something tagged `tag`.
+    /// Refused to anyone not carrying `tag`, itself or on a thing it holds,
+    /// the rule a [`Lock`](crate::places::Lock) opens by.
     pub fn needing(mut self, tag: TagId) -> Self {
         self.needs = Some(tag);
         self
@@ -404,7 +405,12 @@ impl OfferedHere {
 }
 
 /// Whoever holds the turn, what it carries, and whose side it is on.
-type Reacher<'w, 's> = Query<'w, 's, (Entity, &'static Position, Option<&'static OnMap>, Option<&'static Inventory>, Option<&'static Faction>), With<MyTurn>>;
+type Reacher<'w, 's> = Query<
+    'w,
+    's,
+    (Entity, &'static Position, Option<&'static OnMap>, Option<&'static Tagged>, Option<&'static Inventory>, Option<&'static Faction>),
+    With<MyTurn>,
+>;
 
 /// Everything that could offer something, as the gate reads it: a prop by
 /// its definition, and anything carrying [`Offers`] by its own.
@@ -441,7 +447,7 @@ pub fn offer_here(
     let Offerers { props, others, emptied, rules, sides } = &offerers;
     offered.actor = None;
     offered.offers.clear();
-    let Ok((actor, pos, on, bag, side)) = reacher.single() else { return };
+    let Ok((actor, pos, on, own, bag, side)) = reacher.single() else { return };
     offered.actor = Some(actor);
     let here = on.map(|m| m.0).unwrap_or(MapId::ZERO);
     // What it stands on and what stands beside it: a body underfoot is as
@@ -454,9 +460,10 @@ pub fn offer_here(
     // if anything here has a price.
     let purse = bag.zip(currency.as_deref()).map_or(0, |(bag, currency)| currency.count(bag, |i| pieces.get(i).unwrap_or((None, None))));
     // What it lacks first, then what it cannot pay: a key it does not
-    // carry is the refusal no purse answers.
+    // carry is the refusal no purse answers. Carried by the rule a locked
+    // door opens by, so its own tags count as well as its bag's.
     let refused = |wants: Option<TagId>, price: Option<u32>| {
-        let carried = wants.is_none_or(|tag| carries(bag, &pieces, tag));
+        let carried = wants.is_none_or(|tag| carries_tag(tag, own, bag, |item| pieces.get(item).ok().and_then(|(t, _)| t)));
         refusal(wants, carried, price, purse)
     };
     for (prop, kind, at, prop_on) in props {
@@ -496,11 +503,6 @@ pub fn offer_here(
             offered.offers.push(Offer { target: other, verb: offer.verb, time: offer.time, price: offer.price, asks: offer.asks.clone(), refused });
         }
     }
-}
-
-/// Whether the actor carries anything tagged `tag`.
-fn carries(bag: Option<&Inventory>, pieces: &Query<(Option<&Tagged>, Option<&Stack>)>, tag: TagId) -> bool {
-    bag.is_some_and(|bag| bag.items.iter().any(|item| pieces.get(*item).is_ok_and(|(t, _)| t.is_some_and(|t| t.0.contains(&tag)))))
 }
 
 /// Stops play when something offers at a price and the game has no
@@ -1886,6 +1888,25 @@ mod actor_offers {
         app.update();
         assert_eq!(app.world().resource::<Turns>().now(), before + 200, "carried, it costs what the offer said");
         assert_eq!(app.world().resource::<Seen>().0, vec![Interacted { actor: player, target: captive, verb: free, thing: None }], "and the game is told");
+    }
+
+    /// A taker tagged with what an offer needs carries it, as an opener
+    /// tagged with a lock's key does: a game that tags whoever should pass
+    /// is answered the same by a door and by a person.
+    #[test]
+    fn an_offer_needing_a_tag_is_taken_up_by_a_taker_tagged_with_it_as_a_lock_is_opened() {
+        let (mut app, start, free, key) = arena();
+        let captive = someone(&mut app, start.offset(1, 0), Offers(vec![Offering::new(free, 200).needing(key)]));
+        let player = player_at(&mut app, start, Offers::default());
+        app.world_mut().entity_mut(player).insert(Tagged(vec![key]));
+        app.update();
+        let refused = app.world().resource::<OfferedHere>().find(player, captive, free).expect("listed").refused;
+        assert_eq!(refused, None, "tagged itself, with an empty bag, the taker carries the need");
+
+        let before = app.world().resource::<Turns>().now();
+        app.world_mut().write_message(Intent::new(player, Interact { target: captive, verb: free, thing: None }));
+        app.update();
+        assert_eq!(app.world().resource::<Turns>().now(), before + 200, "and taking it up costs what the offer said");
     }
 
     /// An offer that chooses first is taken up only with a thing the taker
