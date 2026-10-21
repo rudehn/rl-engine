@@ -230,7 +230,7 @@ fn add_panels(app: &mut App, screen: &Screen) {
                     .beneath(undermere::mercenaries::KIT_FACET)
                     .titled("")
                     .headings("In sight", "Around you")
-                    .cursor(CursorStyle::ticks())
+                    .cursor(CursorStyle::glow(Tones::SELECT))
                     .alerts(AlertWords::new("unaware", "searching", "hunting"))
                     .activities(
                         ActivityWords::new()
@@ -251,8 +251,8 @@ fn add_panels(app: &mut App, screen: &Screen) {
     // What is drawn only while it is up: the look panel, the targeting box
     // over the foot of what is in sight, and the screens over the map.
     app.add_plugins((
-        InspectPanel::new(screen.inspect).hints("move \u{2022} tab next \u{2022} esc close").cursor(CursorStyle::ticks()),
-        TargetPanel::new(rail.target).hints("[tab/shift-tab] cycle").cursor(CursorStyle::ticks()),
+        InspectPanel::new(screen.inspect).hints("move \u{2022} tab next \u{2022} esc close").cursor(CursorStyle::glow(Tones::SELECT)),
+        TargetPanel::new(rail.target).hints("[tab/shift-tab] cycle").cursor(CursorStyle::glow(Tones::SELECT)),
         InventoryPanel::new(screen.pack).title("Pack").called("pack").empty("Nothing but lint."),
         // What is in a chest, opened by walking into it.
         ContainerPanel::new(screen.chest).empty("Empty."),
