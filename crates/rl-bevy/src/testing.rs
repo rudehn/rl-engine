@@ -229,10 +229,10 @@ pub fn pass_turns(app: &mut App, n: u32) {
 /// turns being played.
 ///
 /// For a test whose property is a clock: a refill, a regeneration, a
-/// conjured thing's end, anything counted by comparing [`Turns::now`] or
-/// [`Turns::turn_number`] against a reading kept from before. Playing
-/// those turns instead deals every one of them to every actor, which is
-/// the cost this exists to skip.
+/// conjured thing's end, anything counted by comparing
+/// [`Turns::now`](TurnQueue::now) or [`Turns::turn_number`] against a
+/// reading kept from before. Playing those turns instead deals every one
+/// of them to every actor, which is the cost this exists to skip.
 ///
 /// What moves: the clock, by `turns` times [`BASE_ACTION_COST`], and every
 /// queued actor's due time by the same span, so nobody gains or loses a

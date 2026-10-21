@@ -881,9 +881,10 @@ mod tests {
 
     /// Every floor, on the arrival that built it, has its people: as many
     /// groups as [`groups_on`] says, every monster at least the distance
-    /// from the way in, none on a cell a piece marked, and on floor ten the
-    /// throne's court at its own posts besides, with no knight of it among
-    /// the floor's own people. A floor entered again gets nobody new.
+    /// from the way in and none on the way down, none on a cell a piece
+    /// marked, and on floor ten the throne's court at its own posts
+    /// besides, with no knight of it among the floor's own people. A floor
+    /// entered again gets nobody new.
     ///
     /// One run, arrived at floor one, a lair floor, floor ten and the floor
     /// holding the run's captive, since the rest is `plan`'s, tested on made-up
@@ -938,6 +939,7 @@ mod tests {
                 let spawned = spawned_on(&app, map_of(floor));
                 for p in &spawned {
                     assert!(geometry::chebyshev(*p, place.entry) >= MIN_DISTANCE_FROM_ENTRY, "seed {s}, floor {floor}: one made at {p:?}, by the way in");
+                    assert_ne!(Some(*p), place.exit, "seed {s}, floor {floor}: one made on the way down");
                 }
                 let people: Vec<Point> = spawned.iter().copied().filter(|p| !posts.contains(p)).collect();
                 assert!(people.iter().all(|p| !marked.contains(p)), "seed {s}, floor {floor}: one of the people on a piece's mark");

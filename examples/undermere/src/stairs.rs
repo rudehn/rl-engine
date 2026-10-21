@@ -251,28 +251,27 @@ mod tests {
     /// on it. Mereholt's one way is the gate to floor one; every floor has
     /// exactly one way up and, but the tenth, one way down, and nothing
     /// else that leads anywhere, floor one's way up the gate onto
-    /// Mereholt's; the way down stands free to land on, and taking it lands
-    /// on the next floor's way in, with a way back up underfoot. Whatever
-    /// the arrival stood that blocks, a camp's fire first among them, never
-    /// stands between the way in and the way down, doors opened: seed 49's
-    /// fire, lit in a corridor on floor five, once held every delve of it
-    /// there for good. A run continued from the save the last arrival wrote
-    /// has every floor's ways again, where they stood and leading where
-    /// they led, once. The ladder and the population each own their half on
-    /// a map of their own; this is the real floors, walked.
+    /// Mereholt's; nobody is made on either way, the way down stands free
+    /// to land on once whoever walked onto it since is gone, and taking it
+    /// lands on the next floor's way in, with a way back up underfoot.
+    /// Whatever the arrival stood that blocks, a camp's fire first among
+    /// them, never stands between the way in and the way down, doors
+    /// opened: seed 49's fire, lit in a corridor on floor five, once held
+    /// every delve of it there for good. A run continued from the save the
+    /// last arrival wrote has every floor's ways again, where they stood
+    /// and leading where they led, once. The ladder and the population
+    /// each own their half on a map of their own; this is the real floors,
+    /// walked.
     #[test]
     fn every_floor_walked_down_to_is_joined_to_the_next_and_never_cut_off_by_what_stands_on_it_through_a_save_over_a_span_of_seeds() {
-        // One seed a day rather than `seeds`' eight: every seed is a walk
-        // down all ten floors, the longest play in the suite. The ladder is
-        // the engine's, tested on a ladder of its own, the one thing the
-        // population stands in the way is a camp's fire, whose cell
-        // `camp_fire_cell` keeps in the open on made-up ground, and the
-        // run's grown backstop already walks every floor of every daily
-        // seed with everything a piece stands, so this walk adds what only
-        // a walk shows: the stairs taken and the save continued. Every seed
-        // of the span under `RL_FULL_SEEDS`.
-        crate::testing::par_seeds(crate::testing::first_seeds(0..50, 1), |s| {
+        crate::testing::par_seeds(crate::testing::seeds(0..50), |s| {
             let mut app = headless(RunSeed(s));
+            app.init_resource::<Made>();
+            app.add_observer(|add: On<Add, crate::bestiary::Kind>, monsters: Query<(&Position, &OnMap)>, mut made: ResMut<Made>| {
+                if let Ok((at, on)) = monsters.get(add.entity) {
+                    made.0.push((on.0, at.0));
+                }
+            });
             let me = arrive(&mut app, TOWN);
             crate::testing::sturdy(&mut app, me);
             let gate = app.world().resource::<WorldMap>().place(TOWN).expect("Mereholt").exit.expect("the gate's cell");
@@ -283,10 +282,11 @@ mod tests {
             for floor in 1..=FLOORS {
                 assert_eq!(here(&app), map_of(floor), "seed {s}: the way down from floor {}", floor - 1);
                 let place = app.world().resource::<WorldMap>().place(map_of(floor)).expect("built");
-                assert_eq!(at(&app, me), place.entry, "seed {s}, floor {floor}: arrived at its way in");
+                let entry = place.entry;
+                assert_eq!(at(&app, me), entry, "seed {s}, floor {floor}: arrived at its way in");
                 let up = match floor {
-                    1 => (place.entry, Destination::Place { map: TOWN, arrive: Arrive::Exit }, Way::Gate),
-                    _ => (place.entry, Destination::Place { map: map_of(floor - 1), arrive: Arrive::Exit }, Way::Up),
+                    1 => (entry, Destination::Place { map: TOWN, arrive: Arrive::Exit }, Way::Gate),
+                    _ => (entry, Destination::Place { map: map_of(floor - 1), arrive: Arrive::Exit }, Way::Up),
                 };
                 let mut expected = vec![up];
                 let down = place.exit;
@@ -300,6 +300,13 @@ mod tests {
                 seen.push(ways);
                 let Some(down) = down else { continue };
                 nothing_standing_cuts_the_way_in_off_from_the_way_down(&mut app, map_of(floor), down, &format!("seed {s}, floor {floor}"));
+                let made_on_a_way = app.world().resource::<Made>().0.iter().any(|(on, p)| *on == map_of(floor) && (*p == entry || *p == down));
+                assert!(!made_on_a_way, "seed {s}, floor {floor}: one made on a way");
+                // A monster that walked onto the stairs since is play, one
+                // the adventurer would fight there: seed 19's ogre wandered
+                // onto floor seven's way down on the arrival's own turn.
+                // Taken off, so what the landing finds is the way itself.
+                step_off(&mut app, me, map_of(floor), down);
                 stand_on(&mut app, me, down);
                 assert_eq!(at(&app, me), down, "seed {s}, floor {floor}: the way down stood free to land on");
                 go_through(&mut app, me);
@@ -311,6 +318,26 @@ mod tests {
             }
             assert_eq!(ways_on(&mut again, TOWN).len(), 1, "seed {s}: Mereholt's gate, continued");
         });
+    }
+
+    /// Where every monster was made, before anybody took a step.
+    #[derive(Resource, Default)]
+    struct Made(Vec<(MapId, Point)>);
+
+    /// Takes every actor but `me` off `cell` on `map`, and runs a frame so
+    /// the turn's cleanup drops them from who stands where.
+    fn step_off(app: &mut App, me: Entity, map: MapId, cell: Point) {
+        let world = app.world_mut();
+        let there: Vec<Entity> = world
+            .query_filtered::<(Entity, &Position, &OnMap), With<Actor>>()
+            .iter(world)
+            .filter(|(e, p, on)| *e != me && on.0 == map && p.0 == cell)
+            .map(|(e, ..)| e)
+            .collect();
+        for e in there {
+            world.despawn(e);
+        }
+        app.update();
     }
 
     /// The way down at `down` on `map` is reached from the way in round
