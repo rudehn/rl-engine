@@ -1151,6 +1151,23 @@ mod tests {
         assert!(!room.app.world().get::<Aware>(far).unwrap().knows(room.player), "and knowing nothing of it");
     }
 
+    /// Without `StealthPlugin` a sleeper that keeps an `Aware` still sees
+    /// a hider on sight, though something else registered the message the
+    /// plugin writes, as a narration view does: the `Aware` nothing fills
+    /// is not read as the sleeper knowing nothing.
+    #[test]
+    fn without_stealth_a_sleeper_with_an_aware_wakes_to_a_hider_on_sight_though_its_message_is_registered() {
+        let mut room = bedroom(|app| {
+            app.add_message::<crate::stealth::Noticed>();
+        });
+        room.app.world_mut().entity_mut(room.player).insert(Stealth::default());
+        let (sleeper, _) = room.sleeper(2);
+        room.app.world_mut().entity_mut(sleeper).insert(Notice(NoticeStats { certain: 0, chance_pct: 0, lit_bonus: 0, memory: 6 }));
+        pass(&mut room.app, room.player);
+        pass(&mut room.app, room.player);
+        assert!(!room.asleep(sleeper), "it saw the hider two cells off, as it would with no stealth at all");
+    }
+
     /// A status with no `sleeps` behaves as it did: a noise heard and a
     /// blow taken leave a snare on, and the snared is struck as anyone.
     #[test]

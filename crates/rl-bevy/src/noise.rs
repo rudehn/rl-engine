@@ -226,18 +226,24 @@ pub struct Footfall(pub i32);
 /// Asked of the plugin rather than of the components, as
 /// `StealthRunning` is, because
 /// [`Hearing`] brings a [`Heard`] with it whether or not anything will ever
-/// fill it. The plugin's own message is the proof it was added.
+/// fill it. Nor of [`NoiseHeard`]: a view that reads it registers it too,
+/// so a game with the view and not the plugin would read as hearing.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct NoiseRunning<'w> {
-    heard: Option<Res<'w, Messages<NoiseHeard>>>,
+    added: Option<Res<'w, NoiseAdded>>,
 }
 
 impl NoiseRunning<'_> {
     /// Whether noise is running.
     pub fn get(&self) -> bool {
-        self.heard.is_some()
+        self.added.is_some()
     }
 }
+
+/// Present once [`NoisePlugin`] was added, and inserted by nothing else:
+/// the proof [`NoiseRunning`] reads.
+#[derive(Resource)]
+struct NoiseAdded;
 
 /// The flood every noise reuses, so hearing allocates nothing once it has
 /// grown to the loudest sound in play.
@@ -303,6 +309,7 @@ impl Plugin for NoisePlugin {
         // added combat or items; registering one twice is what
         // `add_message` is built for.
         app.insert_resource(self.rules)
+            .insert_resource(NoiseAdded)
             .init_resource::<Sounds>()
             .init_resource::<Earshot>()
             .add_message::<MakeNoise>()

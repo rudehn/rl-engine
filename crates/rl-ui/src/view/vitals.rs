@@ -276,6 +276,21 @@ mod tests {
         assert_eq!(read(&stage), (Some(3), true), "less what seems not to be there");
     }
 
+    /// A game with these views and neither `NoisePlugin` nor
+    /// `StealthPlugin` shows no noise and no seen-or-hidden, though the
+    /// views themselves register the messages those plugins write: what
+    /// a view reads is no proof the plugin that fills it was added.
+    #[test]
+    fn a_game_without_noise_or_stealth_shows_neither_though_its_views_read_their_messages() {
+        let mut stage = Stage::new((VitalsViewPlugin, crate::narrate::NarrationViewPlugin));
+        let player = stage.player;
+        stage.app.world_mut().entity_mut(player).insert((rl_bevy::Hearing(rl_rules::HearingStats { threshold: 0, memory: 6 }), Stealth::default()));
+        stage.tick();
+        let view = stage.app.world().resource::<VitalsView>();
+        assert_eq!(view.noise, None, "no noise plugin, so nothing is heard and no meter is shown");
+        assert_eq!(view.seen, None, "no stealth plugin, so nothing is hidden and nobody is said to see");
+    }
+
     /// A noise is a moment, but the reading of it is not: it falls away
     /// over the turns after rather than snapping to nothing, which is
     /// what made a probe's alarm flicker between full and empty.

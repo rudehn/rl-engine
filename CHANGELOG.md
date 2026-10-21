@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `NoiseRunning` and the stealth checks ask whether `NoisePlugin` and `StealthPlugin` were added by a marker only each plugin inserts, no longer by whether `NoiseHeard` or `Noticed` is registered, which the vitals and narration views register themselves; a game with those views and without stealth had its sleepers wait on a notice nothing rolls rather than waking on sight, and its vitals panel show a noise meter and a seen-or-hidden line that nothing would fill.
+  To change: nothing.
+
 - The sheet, the scrollback and the controls screen close on `CursorKeys::close`, the key every other screen closes on, so a game that rebinds it moves all of them; each had a close key of its own that the rebinding missed, leaving those three closing on Escape.
   The scrollback's bottom border now names its keys from `ScrollbackKeys` and `CursorKeys::close` unless `ScrollbackPanel::hints` set words of its own, and the controls screen's border names `CursorKeys::close`.
   To change: `SheetKeys::close`, `ScrollbackKeys::close` and `ControlsKeys::close` are gone; a game that set one sets `CursorKeys::close` instead (`app.world_mut().resource_mut::<CursorKeys>().close = KeyCode::KeyQ`), and drops the field from any `SheetKeys { .. }`, `ScrollbackKeys { .. }` or `ControlsKeys { .. }` it builds.

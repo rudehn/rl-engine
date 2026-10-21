@@ -105,19 +105,26 @@ pub struct Noticed {
 /// Asked of the plugin rather than of the components, because [`Notice`]
 /// brings an [`Aware`] with it: a game that authors observers and never adds
 /// the plugin would otherwise get monsters that notice nothing, forever,
-/// instead of the old see-on-sight behaviour the opt-in promises. The
-/// plugin's own message is the proof it was added.
+/// instead of the old see-on-sight behaviour the opt-in promises. Nor of
+/// [`Noticed`]: a view that reads it registers it too, so a game with the
+/// view and not the plugin would read as running, and its sleepers would
+/// wait on a notice nothing rolls.
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct StealthRunning<'w> {
-    noticed: Option<Res<'w, Messages<Noticed>>>,
+    added: Option<Res<'w, StealthAdded>>,
 }
 
 impl StealthRunning<'_> {
     /// Whether stealth is running.
     pub fn get(&self) -> bool {
-        self.noticed.is_some()
+        self.added.is_some()
     }
 }
+
+/// Present once [`StealthPlugin`] was added, and inserted by nothing else:
+/// the proof [`StealthRunning`] reads.
+#[derive(Resource)]
+struct StealthAdded;
 
 /// Anything that can notice a subject: a mind, or an authored observer.
 type WatcherData = (
@@ -284,7 +291,8 @@ impl Plugin for StealthPlugin {
         use crate::seed::AddStream;
         // The blows it wakes on, registered here as well so a game with
         // stealth and no combat has nothing to wake on rather than a panic.
-        app.add_message::<Noticed>()
+        app.insert_resource(StealthAdded)
+            .add_message::<Noticed>()
             .add_message::<DamageDealt>()
             .add_message::<crate::accuracy::Missed>()
             // What ending the unseen reads and writes, registered here so a
