@@ -97,11 +97,14 @@ pub const POINT: u32 = 100 * BASE_ACTION_COST;
 /// by itself under the lake.
 ///
 /// Read off the clock rather than counted in passes, so a long action
-/// heals for every turn it took. Each point is the engine's [`Heal`], so
-/// its holder's mending scales it as it scales every heal, and as a tick of
-/// `regenerating`, which the narrator says nothing of, as it says nothing
-/// of a troll's: a line every ten turns would bury the log. In
-/// `TurnSet::React`.
+/// heals for every turn it took. Each point is the engine's [`Heal`] of
+/// its own, so its holder's mending scales it as it scales every heal, and
+/// a span of turns heals what the same turns one at a time would: one heal
+/// of the span's several points would be scaled whole, and a quarter more
+/// mending would round ten points up to twelve where ten single points
+/// each stay one. As a tick of `regenerating`, which the narrator says
+/// nothing of, as it says nothing of a troll's: a line every ten turns
+/// would bury the log. In `TurnSet::React`.
 pub fn regenerate(
     mut commands: Commands,
     turns: Res<Turns>,
@@ -130,8 +133,8 @@ pub fn regenerate(
                 commands.entity(body).insert(Regrowth(counted % POINT));
             }
         }
-        if points > 0 {
-            heals.write(Heal::new(body, points as i32).of_status(tick));
+        for _ in 0..points {
+            heals.write(Heal::new(body, 1).of_status(tick));
         }
     }
 }
@@ -235,6 +238,36 @@ mod tests {
         assert_eq!(speed(&mut app), 75, "chilled");
         change(&mut app, me, MENDING, Op::Add(-100));
         assert_eq!(mending(&mut app), 0, "a mending of minus a hundred mends nothing");
+    }
+
+    /// Regeneration heals the same however the clock is chunked: a hundred
+    /// turns let pass one at a time and the same hundred in one span, as a
+    /// long action takes them, give a wearer mended a quarter better the
+    /// ten points a regeneration of ten is worth, each point its own heal
+    /// that the mending scales, rather than the one span's ten scaled whole
+    /// into twelve.
+    #[test]
+    fn regeneration_heals_alike_whether_a_hundred_turns_pass_one_at_a_time_or_in_one_span() {
+        let mut app = headless(RunSeed(1));
+        let me = adventurer(&mut app);
+        clear_monsters(&mut app);
+        change(&mut app, me, crate::content::REGENERATION, Op::Add(10));
+        change(&mut app, me, MENDING, Op::Add(25));
+        let mut healed = |spans: &[u32]| {
+            // A turn in play first, so the pass has read the clock, then
+            // nothing counted towards a point, so each case starts level.
+            pass_turns(&mut app, 1);
+            app.world_mut().entity_mut(me).insert((Health { current: 10, max: 100 }, Regrowth(0)));
+            for span in spans {
+                rl_engine::testing::let_time_pass(&mut app, *span);
+            }
+            // The heal the last pass wrote lands on the frame after it.
+            app.update();
+            app.world().get::<Health>(me).expect("health").current - 10
+        };
+        let one_at_a_time = healed(&[1; 100]);
+        let at_once = healed(&[100]);
+        assert_eq!((one_at_a_time, at_once), (10, 10), "a hundred turns of regeneration ten, a turn at a time and in one span");
     }
 
     /// Accuracy is a hundred and evasion nothing for everyone, so a blow

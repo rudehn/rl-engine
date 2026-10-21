@@ -559,34 +559,25 @@ fn a_ring_of_reaping_counts_a_sweep_through_three_foes_as_one_blow() {
 fn a_ring_of_regeneration_gives_ten_health_back_a_hundred_turns_a_level_and_a_cursed_one_halves_every_heal() {
     // One run, the ring taken off between cases and the clock let pass: what
     // the ring gives is read off the turn clock, so no turn need be played.
-    // The span heals in one lump, which the ring's own mending scales whole
-    // where a point a tick would round each down, so what is asked is the
-    // points the stat is worth over the span, scaled as the engine scales a
-    // heal.
+    // Each point regenerated is a heal of its own, which the ring's own
+    // mending leaves at one, so the span gives back the ten a level the
+    // ring is worth and no more, as the same turns one at a time would.
     let (mut app, me, _) = arena(13);
-    let registries = app.world().resource::<Registries>().clone();
-    for (level, turns, points) in [(1, 100, 10), (3, 50, 15), (-2, 100, 0)] {
+    let regeneration = app.world().resource::<Registries>().stats.expect(crate::content::REGENERATION);
+    for level in [1, 3, -2] {
         let ring = worn(&mut app, me, "ring of regeneration", level);
         // A turn in play first, so the regenerating pass has read the clock
-        // with the ring on and counts the jump from there.
+        // with the ring on and counts the jump from there; then nothing
+        // counted towards a point, so each case starts level.
         pass_turns(&mut app, 1);
-        app.world_mut().entity_mut(me).insert(Health { current: 10, max: 40 });
-        let (rate, mending) = {
-            let block = &app.world().get::<StatBlock>(me).expect("stats").0;
-            (
-                block.value(registries.stats.expect(crate::content::REGENERATION), &registries.stats),
-                block.value(registries.stats.expect(crate::content::MENDING), &registries.stats),
-            )
-        };
-        assert_eq!(rate, 10 * level, "a {level:+} ring: ten a level, and nothing heals at or below nought");
-        let_time_pass(&mut app, turns);
+        app.world_mut().entity_mut(me).insert((Health { current: 10, max: 100 }, crate::stats::Regrowth(0)));
+        let rate = app.world().get::<StatBlock>(me).expect("stats").0.value(regeneration, &app.world().resource::<Registries>().stats);
+        assert_eq!(rate, 10 * level, "a {level:+} ring: ten a level");
+        let_time_pass(&mut app, 100);
         // The heal the pass wrote lands on the frame after it.
         app.update();
         let now = app.world().get::<Health>(me).expect("health").current;
-        let want =
-            rl_engine::rl_rules::damage::heal(rl_engine::rl_rules::Vitals { current: 10, max: 40 }, points, rl_engine::rl_rules::arms::mending_pct(mending))
-                .max(10);
-        assert!((want..=want + 1).contains(&now), "a {level:+} ring, {turns} turns: {points} points, {now} of 40 and {want} wanted");
+        assert_eq!(now, 10 + 10 * level.max(0), "a {level:+} ring, a hundred turns: ten back a level, and none at or below nought");
         // The cursed ring, last, stays on: it cannot be taken off, and its
         // halving is the next thing asked.
         if level > 0 {
