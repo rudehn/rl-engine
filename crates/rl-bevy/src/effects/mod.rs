@@ -198,7 +198,8 @@ pub struct Landing {
     pub cells: Vec<Point>,
     /// The cells a projectile flew through, landing included.
     pub path: Vec<Point>,
-    /// Where a projectile stopped, if the shape had one.
+    /// Where a projectile came to rest, if the shape had one: never inside
+    /// a wall, so an effect placing something there finds open ground.
     pub landed_at: Option<Point>,
     /// Everyone under the footprint the [`Aim`](rl_rules::ability::Aim)
     /// of an ability or an aimed use wanted there, and every living actor

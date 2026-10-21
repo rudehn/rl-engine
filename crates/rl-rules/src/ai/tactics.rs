@@ -813,7 +813,7 @@ fn best_aim<A: Copy>(aim: Aim, mode: TargetMode, ctx: &TacticCtx<'_, A>) -> Opti
     let mut best: Option<(i32, Point)> = None;
     for at in worth_pointing_at.map(|(actor, _, _)| actor.pos) {
         let shape = footprint(mode, me, at, ctx.bounds, |p| p != me && (ctx.blocks_shot)(p), ctx.blocks_burst);
-        if aim.needs_cursor() && shape.landing.is_some_and(|landed| landed != at) {
+        if aim.needs_cursor() && shape.reached.is_some_and(|got| got != at) {
             continue;
         }
         let score = footprint_worth(aim, &shape.cells, ctx.snapshot);

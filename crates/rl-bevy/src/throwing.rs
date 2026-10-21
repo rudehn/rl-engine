@@ -15,7 +15,7 @@
 use bevy::prelude::*;
 use rl_core::turn::BASE_ACTION_COST;
 use rl_core::{DiceRoll, Point};
-use rl_grid::{Footprint, TargetMode, footprint};
+use rl_grid::{Footprint, TargetMode};
 use rl_rules::Hit;
 use rl_rules::damage::DamageKindId;
 
@@ -93,7 +93,7 @@ impl Action for Throw {}
 /// Where a throw goes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Flight {
-    /// The cells it flies through, the last one included.
+    /// The cells it flies through, the one it comes to rest in last.
     pub path: Vec<Point>,
     /// Whoever it meets first, if it meets anyone.
     pub struck: Option<Entity>,
@@ -102,18 +102,14 @@ pub struct Flight {
     pub rests: Point,
 }
 
-/// Where an item thrown from `from` at `at`, reaching `range`, goes: a
-/// projectile that stops at the first wall or body in its way, which is the
-/// flight a bolt takes, so a knife and a spell agree about what is in the
-/// way.
+/// Where an item thrown from `from` at `at`, reaching `range`, goes: the
+/// flight a bolt takes, as [`shot`](crate::combat::shot) answers it, so a
+/// thrown thing and a spell agree about what is in the way and where they
+/// come to rest.
 pub fn flight(map: &WorldMap, occupancy: &Occupancy, from: Point, at: Point, range: i32) -> Flight {
-    let stops = |p: Point| p != from && (map.blocks_projectiles(p) || occupancy.is_occupied(p));
-    let Footprint { path, landing, .. } = footprint(TargetMode::Bolt { range }, from, at, map.window_tiles(), stops, |_| false);
-    let Some(end) = landing else { return Flight { path, struck: None, rests: from } };
-    let struck = occupancy.first_at(end);
-    // A wall is not somewhere to lie: it falls in the last open cell.
-    let rests = if map.blocks_projectiles(end) { path.iter().rev().nth(1).copied().unwrap_or(from) } else { end };
-    Flight { path, struck, rests }
+    let Footprint { path, reached, landing, .. } = crate::combat::projectile(map, occupancy, TargetMode::Bolt { range }, from, at);
+    let struck = reached.and_then(|end| occupancy.first_at(end));
+    Flight { path, struck, rests: landing.unwrap_or(from) }
 }
 
 /// What a throw reads and moves.

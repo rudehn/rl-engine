@@ -20,6 +20,10 @@ Pushing a tag publishes its release page from its section here, through `scripts
 - The combat forecast reads a speed of 0 as 1, as the turn loop does, and charges each blow through `scaled_cost` as the loop does, so an actor at speed 0 is forecast the long fight it will fight rather than `u32::MAX` turns, and a duel whose count reaches `u32::MAX` no longer overflows while it reads the outlook (a panic in a debug build, a wrong outlook in a release one).
   To change: nothing.
 
+- A shot, a throw, a bolt, a ball and a beam sent at a wall now all come to rest in the open cell in front of it, as a throw and a ball already did: `rl_grid::Footprint` gains `reached`, the farthest cell the flight got to and possibly the wall, and `landing` is now where it rests, never a wall, with a bolt's or a ball's `path` ending there rather than inside the wall; a bolt stopped by a wall beside its sender rests at their feet and covers nobody.
+  `rl_bevy::shot`, `throwing::flight` and an ability's landing are one gathering over `footprint`, so the targeting preview of a shot no longer marks the wall where a throw marks the cell before it, and an effect placing something at `Landing::landed_at`, such as a teleport, finds open ground.
+  To change: code that asks whether a flight got where it was aimed compares `reached`, not `landing`, with the aim (`landing` falls short of an aimed-at wall); a `Footprint` written as a literal or destructured whole names `reached`.
+
 - `rl_engine::testing::let_time_pass(app, turns)` jumps the turn clock and every queued actor's due time by `turns` whole turns at once and runs one frame, so a test of what is written in elapsed time (a refill, a regeneration, an end at a reading) sees the span without playing it; no `TurnEnd` is sent and nobody is dealt a turn in it, so statuses, fields and minds stand as they were.
   To change: nothing; a game's tests may call it where only the clock is the question, in place of `pass_turns`.
 

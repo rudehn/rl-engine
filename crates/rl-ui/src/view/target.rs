@@ -693,7 +693,9 @@ pub(crate) fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, 
         // Point blank is a blow, struck with whatever the user fights with
         // in hand; anything further needs a clear line to the target.
         let point_blank = rl_core::geometry::is_adjacent(from, view.cursor);
-        let arrives = point_blank || flies.landing == Some(view.cursor);
+        // Reaching the cursor is the question, not resting on it: a shot
+        // aimed at a wall gets there, and rests in front of it.
+        let arrives = point_blank || flies.reached == Some(view.cursor);
         // The shooter's own cell, where the cursor opens with nothing in
         // sight, is nobody to shoot rather than somewhere too far.
         if view.cursor == from || (arrives && (target.is_none() || (point_blank && !has_melee))) {
@@ -743,7 +745,10 @@ pub(crate) fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, 
             (Some(_), Some(end)) => *end,
             _ => thrown.rests,
         };
-        if thrown.path.is_empty() {
+        // Refused only at the thrower's own feet, as the resolver refuses
+        // it: one thrown into the wall beside them flies nowhere and is
+        // still thrown, coming to rest where they stand.
+        if view.cursor == from {
             view.why.push(Blocked::NoTarget);
         }
         view.legal = view.why.is_empty() && bag.is_some_and(|b| b.contains(item));
@@ -1099,6 +1104,47 @@ mod tests {
         assert_eq!(view.targets.len(), 1);
         assert_eq!(view.targets[0].label, "them");
         assert!(view.legal);
+    }
+
+    /// A shot, a throw and a bolt are one projectile, so sent at the same
+    /// wall all three come to rest on the same cell, the open one in front
+    /// of it, and none flies into it: what each preview marks is what its
+    /// resolver lands, through the one call all three are answered by.
+    #[test]
+    fn a_shot_a_throw_and_a_bolt_aimed_at_a_wall_all_come_to_rest_short_of_it() {
+        let mut stage = staged();
+        let (bolt, _, _) = arm(&mut stage);
+        let (user, kind, at) = (stage.player, stage.kind, stage.at);
+        let knife = stage.app.world_mut().spawn((Item, Name::new("knife"), Throwable::new(6, Some((kind, rl_core::DiceRoll::flat(2)))))).id();
+        stage.app.world_mut().get_mut::<Inventory>(user).expect("a bag").items.push(knife);
+        stage.app.world_mut().entity_mut(user).insert(RangedAttack::new(kind, rl_core::DiceRoll::flat(2), 6));
+        let wall = at.offset(3, 0);
+        rl_bevy::testing::wall_off(&mut stage.app, &[wall]);
+        stage.tick();
+        let mut at_the_wall = |open: &dyn Fn(&mut World)| {
+            open(stage.app.world_mut());
+            stage.tick();
+            stage.app.world_mut().resource_mut::<TargetView>().cursor = wall;
+            stage.tick();
+            let view = stage.app.world().resource::<TargetView>();
+            let seen = (view.landing, view.path.clone());
+            stage.press(KeyCode::Escape);
+            seen
+        };
+        let shot = at_the_wall(&|world| {
+            world.write_message(AimFire { user });
+        });
+        let thrown = at_the_wall(&|world| {
+            world.write_message(AimThrow { user, item: knife });
+        });
+        let bolted = at_the_wall(&|world| {
+            world.write_message(AimAt { user, ability: bolt });
+        });
+        let short = at.offset(2, 0);
+        let rests = (Some(short), vec![at.offset(1, 0), short]);
+        assert_eq!(shot, rests, "a shot rests in front of the wall");
+        assert_eq!(thrown, rests, "a throw rests where the shot does");
+        assert_eq!(bolted, rests, "and so does a bolt");
     }
 
     /// An aim the resolver would refuse says so before the turn is spent,

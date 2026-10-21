@@ -1273,28 +1273,36 @@ fn land(
     fired.write(crate::effects::Fired { on: target, moment: crate::effects::Moments::STRUCK, by, at });
 }
 
-/// Where a shot from `from` at `to` flies within `range`: the cells it
-/// passes through, landing included, and the cell it stops in.
+/// Where `mode`, sent from `from` at `aim`, goes on this map: a shot, a
+/// throw, an ability and a thing's aimed use all ask this, so they agree
+/// about what is in the way and where they come to rest.
 ///
-/// It stops at `to`, or short of it at the first thing that stops
-/// projectiles or anyone standing in between. [`line_of_fire`] is this
-/// landing on `to`, and a targeting preview draws this same call, so what
-/// the player is shown and what the resolver decides cannot disagree.
+/// Anyone standing in the way stops a flight, and so does anything that
+/// stops projectiles; only the second is a wall, which
+/// [`footprint`](rl_grid::footprint) brings nothing to rest inside. One
+/// gathering rather than one per resolver because the copies drifted
+/// apart: a shot came to rest inside the wall a throw stopped short of.
+pub(crate) fn projectile(map: &WorldMap, occupancy: &Occupancy, mode: rl_grid::TargetMode, from: Point, aim: Point) -> rl_grid::Footprint {
+    let walls = |p: Point| map.blocks_projectiles(p);
+    rl_grid::footprint(mode, from, aim, map.window_tiles(), |p| walls(p) || occupancy.is_occupied(p), walls)
+}
+
+/// Where a shot from `from` at `to` flies within `range`: a bolt's flight,
+/// the one a throw and a bolt ability take too.
+///
+/// It reaches `to`, or stops short of it at the first thing that stops
+/// projectiles or anyone standing in between, and comes to rest in front
+/// of a wall rather than inside it. [`line_of_fire`] is this reaching
+/// `to`, and a targeting preview draws this same call, so what the player
+/// is shown and what the resolver decides cannot disagree.
 pub fn shot(map: &WorldMap, occupancy: &Occupancy, from: Point, to: Point, range: i32) -> rl_grid::Footprint {
-    rl_grid::footprint(
-        rl_grid::TargetMode::Bolt { range },
-        from,
-        to,
-        map.window_tiles(),
-        |p| p != to && (map.blocks_projectiles(p) || occupancy.is_occupied(p)),
-        |_| false,
-    )
+    projectile(map, occupancy, rl_grid::TargetMode::Bolt { range }, from, to)
 }
 
 /// Whether a shot from `from` reaches `to` within `range`: nothing that
 /// stops projectiles and nobody standing in between.
 pub fn line_of_fire(map: &WorldMap, occupancy: &Occupancy, from: Point, to: Point, range: i32) -> bool {
-    shot(map, occupancy, from, to, range).landing == Some(to)
+    shot(map, occupancy, from, to, range).reached == Some(to)
 }
 
 /// Everything that decides how much of a hit lands: the stages, the kinds

@@ -6,6 +6,12 @@
 //! ball's burst up to the walls. Blocking is a closure so walls, closed
 //! doors and standing actors are all the caller's to name.
 //! Nothing here knows what an ability does with the cells.
+//!
+//! Where a projectile comes to rest is decided here once, for every
+//! flight: on whatever stopped it, at the aim or the end of its range, and
+//! in front of a wall, never inside one. A bolt, a ball, a shot and a
+//! thrown thing all fly this one way, so none of them lands where another
+//! would not.
 
 use rl_core::{Point, Rect, geometry};
 use serde::{Deserialize, Serialize};
@@ -48,41 +54,61 @@ pub enum TargetMode {
 pub struct Footprint {
     /// The cells affected, in no particular order, without duplicates.
     pub cells: Vec<Point>,
-    /// The cells a projectile passed through before landing, origin
-    /// excluded, landing included. Empty for shapes without flight.
+    /// The cells a projectile passed through, origin excluded and the
+    /// cell it comes to rest in included: a bolt or a ball never enters a
+    /// wall it stopped against, and a beam's path is every cell it covers,
+    /// the wall it ends on included. Empty for shapes without flight.
     pub path: Vec<Point>,
-    /// Where a projectile landed: the aim, or the blocker it hit.
+    /// The farthest cell a projectile reached: the aim, the end of its
+    /// range, or the first cell that stopped it, which may be a wall. What
+    /// a resolver compares with the aim to ask whether it got there, so a
+    /// shape aimed at a wall reaches what it was aimed at, as one aimed at
+    /// a body does.
+    pub reached: Option<Point>,
+    /// Where a projectile comes to rest: where it was [`reached`], unless
+    /// that is a wall, and then the last cell it flew through before it,
+    /// or the origin when the wall was the first cell. A ball bursts here,
+    /// and a shot, a bolt and a thrown thing all lie here.
+    ///
+    /// Apart from `reached` because the two answer different questions: a
+    /// spell sent at a wall did get where it was pointed, and still has
+    /// nowhere inside the wall to land its effects.
+    ///
+    /// [`reached`]: Self::reached
     pub landing: Option<Point>,
 }
 
 /// Resolves `mode` from `origin` towards `aim` within `bounds`, with
 /// `blocks(p)` saying which cells stop a projectile and `walls(p)` which
-/// stop a burst. A blocker is where a bolt lands and is included; the cell
-/// past it is not.
+/// are walls. A blocker is what a projectile reaches and the cell past it
+/// is not; a projectile comes to rest on a blocker that is not a wall, and
+/// in front of one that is.
 ///
-/// Two predicates because the two stop at different things: a projectile
+/// Two predicates because the two stop different things: a projectile
 /// stops on whoever stands in its way, and a burst goes round them and
-/// stops only at a wall. See [`burst`].
+/// stops only at a wall, which is also the one thing nothing comes to rest
+/// inside. See [`burst`].
 pub fn footprint(mode: TargetMode, origin: Point, aim: Point, bounds: Rect, blocks: impl Fn(Point) -> bool, walls: impl Fn(Point) -> bool) -> Footprint {
     let inside = |p: Point| bounds.contains(p);
     match mode {
-        TargetMode::Own => Footprint { cells: vec![origin], path: Vec::new(), landing: Some(origin) },
+        TargetMode::Own => Footprint { cells: vec![origin], path: Vec::new(), reached: Some(origin), landing: Some(origin) },
         TargetMode::Adjacent => {
             let cell = if geometry::is_adjacent(origin, aim) { aim } else { step_towards(origin, aim) };
-            Footprint { cells: vec![cell], path: vec![cell], landing: Some(cell) }
+            Footprint { cells: vec![cell], path: vec![cell], reached: Some(cell), landing: Some(cell) }
         }
         TargetMode::Bolt { range } => {
-            let (path, landing) = fly(origin, aim, range, &inside, &blocks);
-            Footprint { cells: landing.into_iter().collect(), path, landing }
+            let Flown { path, reached, landing } = fly(origin, aim, range, &inside, &blocks, &walls);
+            // A bolt that fell at its sender's feet went nowhere and covers
+            // nothing, rather than the one who sent it.
+            Footprint { cells: landing.filter(|l| *l != origin).into_iter().collect(), path, reached, landing }
         }
         TargetMode::Ball { range, radius } => {
-            let (path, landing) = fly(origin, aim, range, &inside, &blocks);
-            // A ball that hit a wall bursts on the near side, in the cell it
-            // flew through last, rather than inside the wall and out of both
-            // faces of it.
-            let center = landing.map(|l| if walls(l) { path.iter().rev().nth(1).copied().unwrap_or(origin) } else { l });
-            let cells = center.map(|c| burst(c, radius, bounds, &walls)).unwrap_or_default();
-            Footprint { cells, path, landing }
+            // A ball that hit a wall bursts where it came to rest, on the
+            // near side, rather than inside the wall and out of both faces
+            // of it; one that never left its sender bursts on them.
+            let Flown { path, reached, landing } = fly(origin, aim, range, &inside, &blocks, &walls);
+            let cells = landing.map(|c| burst(c, radius, bounds, &walls)).unwrap_or_default();
+            Footprint { cells, path, reached, landing }
         }
         TargetMode::Beam { range } => {
             let far = extend(origin, aim, range);
@@ -96,12 +122,16 @@ pub fn footprint(mode: TargetMode, origin: Point, aim: Point, bounds: Rect, bloc
                     break;
                 }
             }
-            let landing = path.last().copied();
-            Footprint { cells: path.clone(), path, landing }
+            // A beam covers the blocker it ends on, wall or body, but like
+            // any flight comes to rest in front of a wall, so whatever is
+            // placed where it landed is placed on open ground.
+            let reached = path.last().copied();
+            let landing = reached.map(|end| if walls(end) { path.iter().rev().nth(1).copied().unwrap_or(origin) } else { end });
+            Footprint { cells: path.clone(), path, reached, landing }
         }
         TargetMode::Cone { length } => {
             let cells: Vec<Point> = geometry::cone(origin, aim, length).filter(|p| inside(*p) && *p != origin).collect();
-            Footprint { cells, path: Vec::new(), landing: None }
+            Footprint { cells, path: Vec::new(), reached: None, landing: None }
         }
     }
 }
@@ -122,12 +152,23 @@ pub fn burst(center: Point, radius: i32, bounds: Rect, walls: impl Fn(Point) -> 
     geometry::disc(center, radius).filter(|p| bounds.contains(*p) && geometry::line(center, *p).skip(1).all(|c| !walls(c))).collect()
 }
 
+/// Where a projectile flew: the [`Footprint`] fields a flight answers.
+struct Flown {
+    path: Vec<Point>,
+    reached: Option<Point>,
+    landing: Option<Point>,
+}
+
 /// Flies a projectile from `origin` towards `aim`, up to `range`, stopping
-/// at the first blocker. Returns the cells flown through and where it
-/// landed.
-fn fly(origin: Point, aim: Point, range: i32, inside: &impl Fn(Point) -> bool, blocks: &impl Fn(Point) -> bool) -> (Vec<Point>, Option<Point>) {
+/// at the first blocker, and brings it to rest: on what it reached, or in
+/// front of it when that is a wall.
+///
+/// The origin is never asked whether it blocks, since the flight leaves it
+/// before anything is looked at, so a caller's `blocks` need not spare the
+/// one who sent it.
+fn fly(origin: Point, aim: Point, range: i32, inside: &impl Fn(Point) -> bool, blocks: &impl Fn(Point) -> bool, walls: &impl Fn(Point) -> bool) -> Flown {
     if aim == origin {
-        return (Vec::new(), None);
+        return Flown { path: Vec::new(), reached: None, landing: None };
     }
     let far = extend(origin, aim, range);
     let mut path = Vec::new();
@@ -140,8 +181,14 @@ fn fly(origin: Point, aim: Point, range: i32, inside: &impl Fn(Point) -> bool, b
             break;
         }
     }
-    let landing = path.last().copied();
-    (path, landing)
+    let reached = path.last().copied();
+    // A wall is not somewhere to come to rest, nor a cell the projectile
+    // flew through: it falls in the last open cell, or at its sender's feet.
+    if reached.is_some_and(walls) {
+        path.pop();
+    }
+    let landing = reached.map(|_| path.last().copied().unwrap_or(origin));
+    Flown { path, reached, landing }
 }
 
 /// The point `range` cells past `origin` along the ray through `aim`.
@@ -166,7 +213,7 @@ fn step_towards(from: Point, to: Point) -> Point {
 /// block: a standing actor is what a bolt is for.
 pub fn clear_shot(origin: Point, target: Point, range: i32, bounds: Rect, blocks: impl Fn(Point) -> bool) -> bool {
     let fp = footprint(TargetMode::Bolt { range }, origin, target, bounds, blocks, |_| false);
-    fp.landing == Some(target)
+    fp.reached == Some(target)
 }
 
 #[cfg(test)]
@@ -206,6 +253,10 @@ mod tests {
         assert_eq!(beam.landing, Some(Point::new(8, 2)));
         let edge = footprint(TargetMode::Beam { range: 30 }, o, Point::new(3, 2), bounds(), |_| false, |_| false);
         assert_eq!(edge.landing, Some(Point::new(19, 2)), "clipped at the bounds");
+        let wall = |p: Point| p == Point::new(5, 2);
+        let walled = footprint(TargetMode::Beam { range: 6 }, o, Point::new(4, 2), bounds(), wall, wall);
+        assert_eq!(walled.cells.last(), Some(&Point::new(5, 2)), "a beam covers the wall it ends on");
+        assert_eq!((walled.reached, walled.landing), (Some(Point::new(5, 2)), Some(Point::new(4, 2))), "and comes to rest in front of it");
     }
 
     /// A burst stops at walls: a cell behind one, with no straight line
@@ -231,9 +282,31 @@ mod tests {
         let o = Point::new(2, 5);
         let wall = |p: Point| p.x == 7;
         let ball = footprint(TargetMode::Ball { range: 10, radius: 1 }, o, Point::new(9, 5), bounds(), wall, wall);
-        assert_eq!(ball.landing, Some(Point::new(7, 5)), "it stopped on the wall");
-        assert!(ball.cells.contains(&Point::new(6, 5)), "and burst in front of it");
+        assert_eq!(ball.reached, Some(Point::new(7, 5)), "it stopped on the wall");
+        assert_eq!(ball.landing, Some(Point::new(6, 5)), "and came to rest in front of it");
+        assert!(ball.cells.contains(&Point::new(6, 5)), "where it burst");
         assert!(ball.cells.iter().all(|p| p.x < 7), "nowhere in or past the wall: {:?}", ball.cells);
+    }
+
+    /// A bolt comes to rest where a ball would burst: on a body it
+    /// reached, and in front of a wall it reached, which is no cell it
+    /// flew through; one stopped by a wall beside its sender falls at
+    /// their feet and covers nobody.
+    #[test]
+    fn a_bolt_rests_on_a_body_and_in_front_of_a_wall() {
+        let o = Point::new(2, 5);
+        let wall = |p: Point| p.x == 7;
+        let body = |p: Point| p == Point::new(5, 5);
+        let walled = footprint(TargetMode::Bolt { range: 10 }, o, Point::new(9, 5), bounds(), wall, wall);
+        assert_eq!((walled.reached, walled.landing), (Some(Point::new(7, 5)), Some(Point::new(6, 5))));
+        assert_eq!(walled.path.last(), Some(&Point::new(6, 5)), "the flight ends where it rests");
+        assert_eq!(walled.cells, vec![Point::new(6, 5)]);
+        let aimed = footprint(TargetMode::Bolt { range: 10 }, o, Point::new(7, 5), bounds(), wall, wall);
+        assert_eq!((aimed.reached, aimed.landing), (Some(Point::new(7, 5)), Some(Point::new(6, 5))), "aimed at the wall, it reaches it");
+        let struck = footprint(TargetMode::Bolt { range: 10 }, o, Point::new(9, 5), bounds(), |p| wall(p) || body(p), wall);
+        assert_eq!((struck.reached, struck.landing), (Some(Point::new(5, 5)), Some(Point::new(5, 5))), "on the body");
+        let close = footprint(TargetMode::Bolt { range: 10 }, Point::new(6, 5), Point::new(9, 5), bounds(), wall, wall);
+        assert_eq!((close.landing, close.path.len(), close.cells.len()), (Some(Point::new(6, 5)), 0, 0), "at its sender's feet");
     }
 
     #[test]

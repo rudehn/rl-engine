@@ -24,7 +24,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use bevy::prelude::*;
 use rand::Rng;
 use rl_core::{Point, RunSeed, SeedDomain};
-use rl_grid::{Footprint, TargetMode, burst, footprint};
+use rl_grid::{Footprint, TargetMode, burst};
 use rl_rules::ability::{AbilityDef, AbilityId, Aim, Blocked, Cost, Gates, Purse, Targeting, Usable, aim_blocked, blocked};
 use rl_rules::{Names, Registry, Relation, StatId, Statuses, TagId};
 
@@ -471,13 +471,13 @@ impl Bystanders<'_, '_> {
     /// landing only one of the resolvers actually carries out.
     pub fn land(&self, aimed: Aimed, map: &WorldMap, occupancy: &Occupancy) -> Landed {
         let Aimed { user, source, targeting, origin, aim, sees_aim } = aimed;
-        let stops = |p: Point| p != origin && (map.blocks_projectiles(p) || occupancy.is_occupied(p));
-        let Footprint { cells, path, landing } = footprint(targeting.mode, origin, aim, map.window_tiles(), stops, |p| map.blocks_projectiles(p));
+        let Footprint { cells, path, reached, landing } = crate::combat::projectile(map, occupancy, targeting.mode, origin, aim);
         let mut refused = aim_blocked(targeting, &cells, sees_aim);
         // A projectile that stopped short of where it was pointed, at its
         // range or on whatever stood in the way, is refused rather than
-        // landed where it stopped: nobody chose that spot.
-        if targeting.aim.needs_cursor() && landing.is_some_and(|landed| landed != aim) {
+        // landed where it stopped: nobody chose that spot. One that reached
+        // a wall it was aimed at did get there, and lands in front of it.
+        if targeting.aim.needs_cursor() && reached.is_some_and(|got| got != aim) {
             // First among the reasons: an aim that stops short has no
             // target under it either, and out of reach is the one to act on.
             refused.insert(0, Blocked::OutOfReach);
@@ -937,14 +937,13 @@ pub(crate) fn weigh_self_abilities(world: &mut World) {
         else {
             return;
         };
-        let stops = |p: Point| p != origin && (map.blocks_projectiles(p) || occupancy.is_occupied(p));
         usable
             .into_iter()
             .filter(|u| {
                 if u.aim != Aim::SelfOnly {
                     return true;
                 }
-                let cells = footprint(u.mode, origin, origin, map.window_tiles(), stops, |p| map.blocks_projectiles(p)).cells;
+                let cells = crate::combat::projectile(map, occupancy, u.mode, origin, origin).cells;
                 let source = Source::Ability(u.ability);
                 let landing = Landing {
                     user: thinker,
