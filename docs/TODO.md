@@ -51,6 +51,15 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 24 | Undermere's ordering check misses what only its binary adds | 3 | low | low |
 | 25 | The pages still name the eight folded plugins | 5 | low | low |
 | 26 | `UseCarried` decides by default when a mind mends | 4 | low | low |
+| 27 | One type per concept across the tier 1 crates | 10 | medium | medium |
+| 28 | Ambiguity tests through the schedule's interface, and engine systems private | 10 | medium | medium |
+| 29 | The patterns written four times | 10 | medium | high |
+| 30 | Continuing a run is the engine's | 10 | medium | medium |
+| 31 | Saved kinds keyed by a name the type states | 10 | medium | low |
+| 32 | The helpers a game copies because they are private | 10 | low | low |
+| 33 | One root-and-prelude rule per crate | 10 | low | low |
+| 34 | The rule numbers, closed lists and English the engine still holds | 10 | low | medium |
+| 35 | The API review's renames | 10 | low | high |
 | - | Everything in 5 and 6 | 5, 6 | gated | gated |
 
 The first eight items of the order this file opened with were built on 2026-09-22, and the plan's progress log says how.
@@ -59,7 +68,7 @@ The one that mattered most was the bench, which disproved the item that had been
 Six more were built on 2026-09-30, healing at their head: healing as its own path to health, the light recast inside the turn, the flow field cache, every game's lines inside a turn through `Tell`, anyone travelling when its wits say so, and a `Burning` thing saved.
 The table was renumbered that day, again on 2026-10-04 for two gaps Undermere's floors found, again on 2026-10-10 when the three furnishing items were built, again on 2026-10-11 when the coloured light and the player's long action were built, and again on 2026-10-12 when the two items that were only about the Corsair, Delve and Heist examples went with the games, so a number here is a place in the order as it stands and not the one an older note may cite.
 
-Why the order that is left, in four moves:
+Why the order that is left, in five moves:
 
 1. **The middle band first, 1 to 5.**
    This is behaviour and consistency debt: what a second game hits, not a first.
@@ -74,6 +83,10 @@ Why the order that is left, in four moves:
    Item 19 waits on a game that actually wants the tactics it would add, and item 20 on a second game asking for it.
    Item 21 was raised on 2026-09-28 when Foundry's rooms were first furnished, and is what the furnished rooms most visibly lack; the three furnishing items raised beside it were built on 2026-10-10.
    Item 23 is what furnishing left on 2026-10-10, and waits on a game that stamps into a map `Accrete` did not grow.
+
+5. **Items 27 to 35 are the API review of 2026-10-16**, in `docs/reviews/engine_api.md`, filed on 2026-10-20 with only what still held on `main` after its own surface review and the rules lifted into `rl-rules`.
+   27 and 28 come first: the mirrored enums are where an added variant is edited in three places, and the ambiguity tests are why the engine systems Foundry names are still public.
+   35 goes last and batched by crate, so each game migrates once.
 
 Section 5 is documentation and section 6 is the release, and both are gated on the API settling rather than on this list.
 Section 9 is low priority and deliberately outside the order.
@@ -384,6 +397,32 @@ None is scheduled: take one when its file is open.
 - **A game's log line always lands after the engine's lines of the same pass.**
   The narrator reads a game's `Tell` after the pass's own events, so a game cannot say a cause before the effect the engine narrates: Undermere words a trap's line in the past tense, "You stepped on a hidden dart plate!", to read right under "The dart plate hits you for 4.".
   Found while photographing Undermere's traps.
+
+## 10. The API review's debt
+
+`docs/reviews/engine_api.md` holds the findings, with paths, and a note of which were stale on 2026-10-20; these are its sections B to F grouped into slices, each one branch.
+
+- **One type per concept across the tier 1 crates.**
+  rl-rules and rl-mapgen each name `Prefer`, `Stairs`, `Placement`, `Mirror` and the district dressings, and rl-bevy's `layout.rs` and `prefabs.rs` translate them arm by arm; one crate names the other, or the plain enums move to rl-grid, and the Bevy-free RON adapters move to tier 1 with them.
+  `Reach` is now the same pair, `rl_rules::arms::Reach` beside rl-bevy's `combat::Reach`.
+  Beside it: loot as a `BandedTable<K>` with tags, one actor handle where statuses use a bare `u64`, and one `Secret`.
+- **Ambiguity tests through the schedule's interface, and engine systems private.**
+  Foundry's ambiguity test names about forty engine system functions, which is why those stayed public when the rest went crate-private, and why it breaks when one is renamed.
+  The engine checks its own systems in its own tests; a game allows a pair by its own system and the data shared; the engine's systems become `pub(crate)`.
+- **The patterns written four times.**
+  The faction relation where `rl_rules::faction::stance` is not yet called (rl-ui's narrator, inspect and nearby views, three Undermere files, `Bystanders::relation`), the interners, the list cursor, key binding, moving an entity, the place struct, the per-map stash, stack split and merge, breadth-first steps, the lingering markers.
+- **Continuing a run is the engine's.**
+  Foundry's and Undermere's `run.rs` hold the same load, fall back, reseed, prepare and restore behind the `ContinueRun` flag; the game supplies the steps and the engine owns the order.
+- **Saved kinds keyed by a name the type states.**
+  `rl-save/src/run.rs` keys a saved component by its short `type_name`, so a rename orphans old saves silently; a `const KEY` on the `Saveable` traits, defaulting to today's names so no save moves.
+- **The helpers a game copies because they are private.**
+  `walk_through_doors`, the cut check, `Opening::joins`, `Spot::glyph`, `Afflict::new`, `Stack::of`, `Places::new`.
+- **One root-and-prelude rule per crate.**
+  The root re-exports every type a game names and the prelude is a subset; Undermere still writes `rl_ui::view::inspect::inspect_modal`, and rl-save's prelude still carries `EngineSave`, `SaveId` and `Stash`.
+- **The rule numbers, closed lists and English the engine still holds.**
+  `EQUIP_FROM_GROUND_COST`, the reflect chance, a third of range, `STANDING_ROOM`, `SLEEPER_REACH`, the notice and hearing defaults; `WasLiving`; `MenuItem`'s labels and the inspect and sheet lines; `CorePlugin`'s minds and intents, and the effects Fire, Gas and Noise register by themselves.
+- **The API review's renames.**
+  Section D of the review, batched by crate.
 
 ## Tracked elsewhere
 
