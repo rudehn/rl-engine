@@ -1,7 +1,8 @@
 //! The character sheet, on a screen of its own.
 //!
 //! A modal, since a player reading their numbers is not walking. Opened
-//! and closed by [`SheetKeys`], which the controls screen lists, and drawn
+//! by [`SheetKeys`], which the controls screen lists, closed on
+//! [`CursorKeys::close`] as every screen is, and drawn
 //! from [`SheetView`] a section at a time: who, the stats with what moved
 //! them, what is resisted, the blows, the statuses, what is worn, and
 //! whatever the game added. A section with nothing in it is left out, and
@@ -15,6 +16,7 @@ use rl_render::Terminal;
 use rl_rules::stats::Op;
 
 use crate::controls::{AddControls, Chord, ControlInput, EngineKey, key_name};
+use crate::cursor::CursorKeys;
 use crate::modal::{ModalId, Modals};
 use crate::panel::{clear, clip, frame, section};
 use crate::tone::{Palette, Tones};
@@ -24,17 +26,18 @@ use crate::view::sheet::{SheetView, SheetViewPlugin, StatLine};
 pub(crate) const SHEET_MODAL: &str = "sheet";
 
 /// The keys the sheet answers to.
+///
+/// No close key of its own: the sheet closes on [`CursorKeys::close`], the
+/// one every screen closes on, so a game that rebinds it moves them all.
 #[derive(Resource, Debug, Clone)]
 pub struct SheetKeys {
     /// Opens and closes the sheet.
     pub toggle: Chord,
-    /// Closes it.
-    pub close: KeyCode,
 }
 
 impl Default for SheetKeys {
     fn default() -> Self {
-        Self { toggle: Chord::key(KeyCode::KeyC), close: KeyCode::Escape }
+        Self { toggle: Chord::key(KeyCode::KeyC) }
     }
 }
 
@@ -53,7 +56,7 @@ pub(crate) struct SheetLayout {
 /// Draws [`SheetView`] as a screen.
 ///
 /// Adds [`SheetViewPlugin`] if the game has not, declares the `sheet`
-/// modal, and opens and closes it on [`SheetKeys`].
+/// modal, opens it on [`SheetKeys`] and closes it on [`CursorKeys::close`].
 pub struct SheetPanel(SheetLayout);
 
 impl SheetPanel {
@@ -106,7 +109,7 @@ pub(crate) fn sheet_keys(keys: ControlInput, binds: Res<SheetKeys>, mut modals: 
         modals.toggle(modal);
         return;
     }
-    if modals.is_top(modal) && keys.input().just_pressed(binds.close) {
+    if modals.is_top(modal) && keys.input().just_pressed(keys.bindings().cursor.close) {
         modals.close_one(modal);
     }
 }
@@ -137,7 +140,7 @@ pub(crate) fn draw_sheet(
     mut terminal: ResMut<Terminal>,
     layout: Res<SheetLayout>,
     view: Res<SheetView>,
-    keys: Res<SheetKeys>,
+    keys: Res<CursorKeys>,
     palette: Res<Palette>,
     modals: Res<Modals>,
 ) {
@@ -316,6 +319,21 @@ mod tests {
 
         stage.press(KeyCode::Escape);
         assert!(!stage.app.world().resource::<Modals>().any_open());
+    }
+
+    /// The sheet closes on the cursors' close key, as every other screen
+    /// does, so a game that rebinds it moves this screen with the rest and
+    /// the border names the key that works.
+    #[test]
+    fn a_rebound_close_key_closes_the_sheet_and_the_old_one_no_longer_does() {
+        let mut stage = stage();
+        stage.app.world_mut().resource_mut::<crate::cursor::CursorKeys>().close = KeyCode::KeyQ;
+        stage.press(KeyCode::KeyC);
+        assert!(stage.rows()[19].contains("q close"), "the border names the rebound key: {:?}", stage.rows()[19]);
+        stage.press(KeyCode::Escape);
+        assert!(stage.app.world().resource::<Modals>().any_open(), "escape is no longer the close key");
+        stage.press(KeyCode::KeyQ);
+        assert!(!stage.app.world().resource::<Modals>().any_open(), "the rebound key puts it away");
     }
 
     /// A status that never runs out has no turns to count, and the

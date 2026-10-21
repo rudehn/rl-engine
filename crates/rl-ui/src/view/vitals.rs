@@ -246,6 +246,17 @@ mod tests {
     use super::*;
     use crate::harness::Stage;
 
+    /// The edges are inclusive: a quarter exactly is already bad, half
+    /// exactly already worth noticing, and one point more is the next tone.
+    #[test]
+    fn health_is_bad_at_a_quarter_or_less_worth_noticing_at_half_or_less_and_good_above() {
+        for (current, tone) in
+            [(-3, Tones::BAD), (0, Tones::BAD), (25, Tones::BAD), (26, Tones::NOTICE), (50, Tones::NOTICE), (51, Tones::GOOD), (100, Tones::GOOD)]
+        {
+            assert_eq!(health_tone(current, 100), tone, "{current} of 100");
+        }
+    }
+
     /// The figure is the true total, and a game that hides some of a worn
     /// thing's armor keeps a `Seems` on the player: the figure is then the
     /// total less it, and says it is seeming.

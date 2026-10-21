@@ -254,7 +254,7 @@ pub(crate) fn draw_inspect(
         terminal.print_on(inner.x, y, &clip(&reading, width), palette.get(Tones::TEXT), bg);
         let x = inner.x + reading.chars().count() as i32 + 1;
         if x + 10 < inner.right() {
-            bar(&mut terminal, x, y, 10, subject.health_fraction(), Tones::GOOD, &palette);
+            bar(&mut terminal, x, y, 10, subject.health_fraction(), crate::view::health_tone(hp, max), &palette);
         }
         y += 1;
     }
@@ -641,6 +641,27 @@ mod tests {
         assert_eq!([inner(22), inner(23), inner(24), inner(25)], ["! vial", "2 tiles away, on floor", "strength not yet known", "holds a draught"]);
         let palette = stage.app.world().resource::<Palette>();
         assert_eq!(stage.app.world().resource::<Terminal>().get(2, 24).map(|c| c.fg), Some(palette.get(Tones::BAD)), "in its own tone");
+    }
+
+    /// The bar beside a looked-at monster's health reads in the tone the
+    /// vitals, the nearby rail and the party rail give the same health, so
+    /// a crab at a fifth is bad here as it is everywhere else.
+    #[test]
+    fn a_looked_at_monsters_health_bar_reads_in_the_tone_every_other_rail_gives_the_same_health() {
+        let mut stage = staged();
+        let palette = stage.app.world().resource::<Palette>().clone();
+        let crab = stage.actor("crab", 'c', 2, 0);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        for (hp, tone) in [(10, Tones::GOOD), (5, Tones::NOTICE), (2, Tones::BAD)] {
+            stage.app.world_mut().get_mut::<rl_bevy::Health>(crab).unwrap().current = hp;
+            stage.tick();
+            let reading = format!("health {hp}/10");
+            let y = stage.rows().iter().position(|r| r.contains(&reading)).unwrap_or_else(|| panic!("{reading} drawn: {:#?}", stage.rows())) as i32;
+            let terminal = stage.app.world().resource::<Terminal>();
+            let filled = (0..40).find_map(|x| terminal.get(x, y).filter(|c| c.glyph == '\u{2588}')).expect("a filled bar cell");
+            assert_eq!(filled.fg, palette.get(tone), "at {hp} of 10");
+        }
     }
 
     #[test]

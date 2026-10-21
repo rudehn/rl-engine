@@ -119,7 +119,7 @@ pub(crate) fn controls_keys(keys: ControlInput, layout: Res<ControlsLayout>, mut
     if !modals.is_top(modal) {
         return;
     }
-    if keys.input().just_pressed(binds.help.close) {
+    if keys.input().just_pressed(binds.cursor.close) {
         modals.close_one(modal);
         return;
     }
@@ -262,9 +262,9 @@ pub(crate) fn draw_controls(
     let page = screen.page.min(pages.len().saturating_sub(1));
     let title = if pages.len() > 1 { format!("{} {}/{}", layout.title, page + 1, pages.len()) } else { layout.title.clone() };
     let hints = if pages.len() > 1 {
-        format!("{} {} page \u{2022} {} close", key_name(binds.help.prev_page), key_name(binds.help.next_page), key_name(binds.help.close))
+        format!("{} {} page \u{2022} {} close", key_name(binds.help.prev_page), key_name(binds.help.next_page), key_name(binds.cursor.close))
     } else {
-        format!("{} close", key_name(binds.help.close))
+        format!("{} close", key_name(binds.cursor.close))
     };
     clear(&mut terminal, rect, &palette);
     frame(&mut terminal, rect, &title, &hints, &palette);
@@ -323,6 +323,21 @@ mod tests {
         stage.press(KeyCode::Escape);
         assert!(!stage.app.world().resource::<Modals>().any_open());
         assert!(stage.row(39).ends_with("? controls"));
+    }
+
+    /// The controls screen closes on the cursors' close key, as every
+    /// other screen does, so a game that rebinds it moves this screen with
+    /// the rest and the border names the key that works.
+    #[test]
+    fn a_rebound_close_key_closes_the_controls_screen_and_the_old_one_no_longer_does() {
+        let mut stage = stage(Rect::new(0, 0, 40, 30));
+        stage.app.world_mut().resource_mut::<crate::cursor::CursorKeys>().close = KeyCode::KeyQ;
+        open(&mut stage);
+        assert!(stage.row(29).contains("q close"), "the border names the rebound key: {:?}", stage.row(29));
+        stage.press(KeyCode::Escape);
+        assert!(stage.app.world().resource::<Modals>().any_open(), "escape is no longer the close key");
+        stage.press(KeyCode::KeyQ);
+        assert!(!stage.app.world().resource::<Modals>().any_open(), "the rebound key puts it away");
     }
 
     /// The row inside the frame that says `action`, its border and margin

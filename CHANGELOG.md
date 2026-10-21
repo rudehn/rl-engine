@@ -6,6 +6,14 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The sheet, the scrollback and the controls screen close on `CursorKeys::close`, the key every other screen closes on, so a game that rebinds it moves all of them; each had a close key of its own that the rebinding missed, leaving those three closing on Escape.
+  The scrollback's bottom border now names its keys from `ScrollbackKeys` and `CursorKeys::close` unless `ScrollbackPanel::hints` set words of its own, and the controls screen's border names `CursorKeys::close`.
+  To change: `SheetKeys::close`, `ScrollbackKeys::close` and `ControlsKeys::close` are gone; a game that set one sets `CursorKeys::close` instead (`app.world_mut().resource_mut::<CursorKeys>().close = KeyCode::KeyQ`), and drops the field from any `SheetKeys { .. }`, `ScrollbackKeys { .. }` or `ControlsKeys { .. }` it builds.
+  A game that passed `ScrollbackPanel::hints` only to name a rebound key may drop the call.
+
+- The inspect panel's health bar reads in the tone the vitals and nearby rails give the same health, bad at a quarter or less and worth noticing at half or less, where it was always the good tone.
+  To change: nothing.
+
 - `BaseContext` holds no stream until one is installed, and a pass that draws from it before then panics, naming the fix, instead of drawing the same numbers every run from a placeholder seeded with 0; a `Chain` installs each pass's own stream as before.
   To change: a test or tool that applies a pass by hand, outside a `Chain`, hands its context a stream first with `set_rng(RunSeed(seed).rng(domain, index))`.
 

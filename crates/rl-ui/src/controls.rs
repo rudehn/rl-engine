@@ -352,12 +352,13 @@ pub struct Control {
 }
 
 /// The keys the controls screen answers to.
+///
+/// No close key of its own: the screen closes on [`CursorKeys::close`], the
+/// one every screen closes on, so a game that rebinds it moves them all.
 #[derive(Resource, Debug, Clone)]
 pub struct ControlsKeys {
     /// Opens and closes the screen, and is what the hint names.
     pub toggle: Chord,
-    /// Closes it.
-    pub close: KeyCode,
     /// The page before, when the controls run to more than one.
     pub prev_page: KeyCode,
     /// The page after.
@@ -366,7 +367,7 @@ pub struct ControlsKeys {
 
 impl Default for ControlsKeys {
     fn default() -> Self {
-        Self { toggle: Chord::shift(KeyCode::Slash), close: KeyCode::Escape, prev_page: KeyCode::ArrowLeft, next_page: KeyCode::ArrowRight }
+        Self { toggle: Chord::shift(KeyCode::Slash), prev_page: KeyCode::ArrowLeft, next_page: KeyCode::ArrowRight }
     }
 }
 

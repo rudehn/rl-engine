@@ -17,7 +17,8 @@
 //!
 //! [`LogPanel`]: crate::panel::LogPanel
 
-use crate::controls::{AddControls, EngineKey};
+use crate::controls::{AddControls, ControlInput, EngineKey, key_name};
+use crate::cursor::CursorKeys;
 use crate::modal::AddModal;
 use bevy::prelude::*;
 use rl_bevy::{EngineSet, PresentSet};
@@ -45,12 +46,13 @@ pub(crate) struct Scrollback {
 }
 
 /// Keys the scrollback answers to.
+///
+/// No close key of its own: the screen closes on [`CursorKeys::close`], the
+/// one every screen closes on, so a game that rebinds it moves them all.
 #[derive(Resource, Debug, Clone)]
 pub struct ScrollbackKeys {
     /// Opens and closes the screen.
     pub toggle: KeyCode,
-    /// Closes it.
-    pub close: KeyCode,
     /// One line back.
     pub up: KeyCode,
     /// One line on.
@@ -67,7 +69,6 @@ impl Default for ScrollbackKeys {
     fn default() -> Self {
         Self {
             toggle: KeyCode::KeyP,
-            close: KeyCode::Escape,
             up: KeyCode::ArrowUp,
             down: KeyCode::ArrowDown,
             page_up: KeyCode::PageUp,
@@ -85,8 +86,10 @@ pub(crate) struct ScrollbackLayout {
     /// The title in the top border. The filter's name is appended to it
     /// while one is on, so the reader can see why lines are missing.
     pub title: String,
-    /// The key hints in the bottom border.
-    pub hints: String,
+    /// The key hints in the bottom border, or `None` to name the keys
+    /// [`ScrollbackKeys`] and [`CursorKeys::close`] bind, so a rebound key
+    /// is the key the border names.
+    pub hints: Option<String>,
     /// Shown when the log, or the filter, has nothing to show.
     pub empty: String,
     /// Whether to rule off each turn with its number.
@@ -102,13 +105,7 @@ pub struct ScrollbackPanel(ScrollbackLayout);
 impl ScrollbackPanel {
     /// A scrollback in `rect`.
     pub fn new(rect: Rect) -> Self {
-        Self(ScrollbackLayout {
-            rect,
-            title: "Messages".into(),
-            hints: "\u{2191}\u{2193} pgup/pgdn \u{2022} tab filter \u{2022} esc close".into(),
-            empty: "Nothing has happened yet.".into(),
-            turn_rules: true,
-        })
+        Self(ScrollbackLayout { rect, title: "Messages".into(), hints: None, empty: "Nothing has happened yet.".into(), turn_rules: true })
     }
 
     /// Sets the title in the top border.
@@ -117,9 +114,11 @@ impl ScrollbackPanel {
         self
     }
 
-    /// Sets the key hints in the bottom border.
+    /// Sets the key hints in the bottom border, in place of the ones named
+    /// from the bindings, which follow a rebound key where these words
+    /// cannot.
     pub fn hints(mut self, hints: impl Into<String>) -> Self {
-        self.0.hints = hints.into();
+        self.0.hints = Some(hints.into());
         self
     }
 
@@ -141,7 +140,9 @@ impl Plugin for ScrollbackPanel {
     fn build(&self, app: &mut App) {
         app.init_resource::<Scrollback>().init_resource::<ScrollbackKeys>().insert_resource(self.0.clone());
         app.add_modal(SCROLLBACK_MODAL);
-        app.add_systems(Update, scrollback_keys.in_set(EngineSet::Input)).add_systems(Update, draw_scrollback.in_set(PresentSet::Overlay));
+        let modal = scrollback_modal(app.world().resource::<Modals>());
+        app.add_systems(Update, scrollback_keys.in_set(EngineSet::Input))
+            .add_systems(Update, draw_scrollback.in_set(PresentSet::Overlay).run_if(crate::modal::modal_open(modal)));
     }
 
     fn finish(&self, app: &mut App) {
@@ -173,6 +174,7 @@ enum Line {
 pub(crate) fn scrollback_keys(
     keys: Res<ButtonInput<KeyCode>>,
     binds: Res<ScrollbackKeys>,
+    cursor: Res<CursorKeys>,
     layout: Res<ScrollbackLayout>,
     log: Res<MessageLog>,
     mut scrollback: ResMut<Scrollback>,
@@ -189,7 +191,7 @@ pub(crate) fn scrollback_keys(
     if !modals.is_top(modal) {
         return;
     }
-    if keys.just_pressed(binds.close) {
+    if keys.just_pressed(cursor.close) {
         modals.close_one(modal);
         return;
     }
@@ -259,19 +261,31 @@ fn lines_of(log: &MessageLog, scrollback: &Scrollback, turn_rules: bool, width: 
     lines
 }
 
-/// Paints the scrollback, while it is open.
+/// The hints the bindings name: scrolling, the filter and the close key,
+/// `↑↓ pgup/pgdn • tab filter • esc close` as shipped.
+fn hints_for(keys: &ScrollbackKeys, cursor: &CursorKeys) -> String {
+    format!(
+        "{}{} {}/{} \u{2022} {} filter \u{2022} {} close",
+        key_name(keys.up),
+        key_name(keys.down),
+        key_name(keys.page_up),
+        key_name(keys.page_down),
+        key_name(keys.filter),
+        key_name(cursor.close)
+    )
+}
+
+/// Paints the scrollback, while it is open: the plugin's run condition
+/// sees to that, so a closed screen costs a frame nothing.
 pub(crate) fn draw_scrollback(
     mut terminal: ResMut<Terminal>,
     layout: Res<ScrollbackLayout>,
+    keys: ControlInput,
     log: Res<MessageLog>,
     scrollback: Res<Scrollback>,
     tones: Res<Tones>,
     palette: Res<Palette>,
-    modals: Res<Modals>,
 ) {
-    if !modals.is_open(scrollback_modal(&modals)) {
-        return;
-    }
     let rect = layout.rect;
     if rect.width < 8 || rect.height < 4 {
         return;
@@ -281,7 +295,9 @@ pub(crate) fn draw_scrollback(
         Some(tone) => format!("{} \u{2022} {}", layout.title, tones.name(tone)),
         None => layout.title.clone(),
     };
-    frame(&mut terminal, rect, &title, &layout.hints, &palette);
+    let binds = keys.bindings();
+    let hints = layout.hints.clone().unwrap_or_else(|| binds.log.map(|log| hints_for(log, binds.cursor)).unwrap_or_default());
+    frame(&mut terminal, rect, &title, &hints, &palette);
 
     let inner = Rect::new(rect.x + 2, rect.y + 1, rect.width - 4, rect.height - 2);
     let bg = palette.get(Tones::SURFACE);
@@ -357,6 +373,22 @@ mod tests {
         assert_eq!(rows.last().unwrap(), "line 19", "the bottom row is the newest line");
         assert_eq!(rows.first().unwrap(), "line 14", "six rows of it");
         assert!(stage.row(0).contains(" Messages "), "titled: {:?}", stage.row(0));
+    }
+
+    /// The scrollback closes on the cursors' close key, as every other
+    /// screen does, so a game that rebinds it moves this screen with the
+    /// rest and the border names the key that works.
+    #[test]
+    fn a_rebound_close_key_closes_the_scrollback_and_the_old_one_no_longer_does() {
+        let mut stage = stage(3);
+        stage.app.world_mut().resource_mut::<crate::cursor::CursorKeys>().close = KeyCode::KeyQ;
+        open(&mut stage);
+        let bottom = stage.row(7);
+        assert!(bottom.contains("q close") && !bottom.contains("esc"), "the border names the rebound key: {bottom:?}");
+        stage.press(KeyCode::Escape);
+        assert!(stage.app.world().resource::<Modals>().any_open(), "escape is no longer the close key");
+        stage.press(KeyCode::KeyQ);
+        assert!(!stage.app.world().resource::<Modals>().any_open(), "the rebound key puts it away");
     }
 
     #[test]
