@@ -40,7 +40,7 @@
 //! asker who opens from hiding does one blow better than it is told.
 
 use rl_core::DiceRoll;
-use rl_core::turn::BASE_ACTION_COST;
+use rl_core::turn::{BASE_ACTION_COST, scaled_cost};
 
 use crate::content::Registry;
 use crate::damage::{DamageKind, DamageKindId, DamageStage, Defender, Hit, Resistances, resolve};
@@ -55,7 +55,9 @@ pub struct Combatant<'a> {
     pub health: i32,
     /// Flat armor, the same number [`Defender`] takes.
     pub armor: i32,
-    /// Speed as a percentage of normal.
+    /// Speed as a percentage of normal. 0 reads as 1, as the turn loop
+    /// reads it: an actor that is not to act at all is held by a status,
+    /// not slowed to nothing.
     pub speed: u32,
     /// What one of its blows costs, in hundredths of a step: the same unit
     /// and the same convention as `MeleeAttack::cost`. `None` is
@@ -231,19 +233,19 @@ pub(crate) fn blows_to_fell<A: Copy>(
 ///
 /// A turn is what an actor of speed 100 gets for one blow at the ordinary
 /// cost, so a faster actor or a cheaper blow both fit more of them into the
-/// same span. Multiplying blows by cost before dividing by speed, rather
-/// than rounding a single blow's turns and multiplying that out, is what
-/// keeps a weapon's price from being rounded away one blow at a time.
+/// same span. Each blow is charged what the turn loop charges it,
+/// [`scaled_cost`], and only the total is rounded to whole turns, so the
+/// forecast cannot drift from play: a speed of 0 reads as 1 here because
+/// it does there, and a blow that costs a hundredth more than it looks at
+/// an awkward speed costs that hundredth here too. Rounding the total once
+/// rather than each blow's turns is what keeps a weapon's price from being
+/// rounded away one blow at a time.
 pub(crate) fn turns_for(blows: u32, speed: u32, cost: Option<u32>) -> u32 {
-    if speed == 0 {
-        return u32::MAX;
-    }
-    let cost = cost.unwrap_or(BASE_ACTION_COST) as u64;
+    let per_blow = u64::from(scaled_cost(cost.unwrap_or(BASE_ACTION_COST), speed));
     // Saturating rather than truncating: an enormous cost on a very slow
-    // actor must read as "never" (`u32::MAX`, the forecast's own sentinel
-    // for that), not as whatever the low 32 bits of the true count happen
-    // to be.
-    (blows as u64 * cost).div_ceil(speed as u64).try_into().unwrap_or(u32::MAX)
+    // actor must read as the longest count there is (`u32::MAX`), not as
+    // whatever the low 32 bits of the true count happen to be.
+    (u64::from(blows) * per_blow).div_ceil(u64::from(BASE_ACTION_COST)).try_into().unwrap_or(u32::MAX)
 }
 
 /// How a duel is likely to go for the side asking.
@@ -303,13 +305,17 @@ pub fn duel<A: Copy>(asker: &Combatant<'_>, subject: &Combatant<'_>, kinds: &Reg
         (Some(_), None) => Outlook::Easy,
         (None, Some(_)) => Outlook::Deadly,
         (Some(fell), Some(fall)) => {
-            if fell * 3 <= fall {
+            // Widened: a count saturated to `u32::MAX` is the slowest fight
+            // there is, and tripling it must neither overflow nor, clamped,
+            // read two such fights as anything but even.
+            let (fell3, fall3) = (u64::from(fell) * 3, u64::from(fall) * 3);
+            if fell3 <= u64::from(fall) {
                 Outlook::Easy
             } else if fell < fall {
                 Outlook::Favorable
             } else if fell == fall {
                 Outlook::Even
-            } else if fall * 3 <= fell {
+            } else if fall3 <= u64::from(fell) {
                 Outlook::Deadly
             } else {
                 Outlook::Grim
@@ -323,6 +329,7 @@ pub fn duel<A: Copy>(asker: &Combatant<'_>, subject: &Combatant<'_>, kinds: &Reg
 mod tests {
     use super::*;
     use crate::damage::SubtractArmor;
+    use rl_core::turn::TurnQueue;
 
     fn kinds() -> Registry<DamageKind> {
         Registry::from_defs(vec![DamageKind::new("kinetic")]).unwrap()
@@ -390,14 +397,34 @@ mod tests {
         assert_eq!(turns_for(4, 200, None), 2);
         assert_eq!(turns_for(3, 200, None), 2, "one and a half turns is two");
         assert_eq!(turns_for(1, 50, None), 2);
-        assert_eq!(turns_for(1, 0, None), u32::MAX, "an actor that never acts never arrives");
+        assert_eq!(turns_for(1, 0, None), turns_for(1, 1, None), "a speed of nought is the slowest the loop deals, not never");
     }
 
     #[test]
-    fn a_turn_count_too_large_for_a_u32_saturates_to_the_never_sentinel_instead_of_wrapping() {
+    fn the_forecast_counts_the_same_turns_the_turn_loop_charges_at_every_speed_including_nought() {
+        // The turn loop's own queue, played blow by blow: each blow puts
+        // the actor back what the loop charges it, and a turn is an
+        // ordinary action's worth of that clock, a part of one counting
+        // whole.
+        for speed in (0..=400).chain([533, 1000]) {
+            for cost in [None, Some(1), Some(33), Some(70), Some(100), Some(150), Some(250)] {
+                let mut queue = TurnQueue::new();
+                queue.insert_now(());
+                for blows in 1..=12 {
+                    queue.pop_due(|_| true).expect("the one actor is due");
+                    queue.insert_after((), scaled_cost(cost.unwrap_or(BASE_ACTION_COST), speed));
+                    queue.advance_to_next();
+                    assert_eq!(turns_for(blows, speed, cost), queue.now().div_ceil(BASE_ACTION_COST), "blows={blows} speed={speed} cost={cost:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_turn_count_too_large_for_a_u32_saturates_to_the_longest_count_instead_of_wrapping() {
         // u32::MAX blows at the ordinary cost and a speed of 1 is far past
         // what a u32 holds; a truncating cast would wrap it down to some
-        // small number instead of the "never" it should read as.
+        // small number instead of the longest count it should read as.
         assert_eq!(turns_for(u32::MAX, 1, None), u32::MAX);
     }
 
@@ -437,6 +464,23 @@ mod tests {
         assert_eq!(duel::<u32>(&strong, &weak, &kinds, &stages).outlook, Outlook::Easy);
         assert_eq!(duel::<u32>(&weak, &strong, &kinds, &stages).outlook, Outlook::Deadly);
         assert_eq!(duel::<u32>(&strong, &strong, &kinds, &stages).outlook, Outlook::Even);
+    }
+
+    #[test]
+    fn a_duel_with_a_speed_of_nought_reads_as_one_at_a_speed_of_one_and_two_saturated_counts_read_even() {
+        let kinds = kinds();
+        let boxed = armor_only();
+        let stages = stage_refs(&boxed);
+        let none = Resistances::new();
+        let strikes = [(kinds.expect("kinetic"), DiceRoll::flat(1))];
+        let at = |speed, blow_cost| Combatant { health: 1000, armor: 0, speed, blow_cost, resists: &none, strikes: &strikes, chance_pct: 100 };
+        let stopped = duel::<u32>(&at(0, None), &at(100, None), &kinds, &stages);
+        assert_eq!(stopped, duel::<u32>(&at(1, None), &at(100, None), &kinds, &stages));
+        assert_eq!(stopped.turns_to_fell, Some(100_000), "a thousand blows at a hundred times the ordinary cost");
+        let endless = at(1, Some(u32::MAX));
+        let both = duel::<u32>(&endless, &endless, &kinds, &stages);
+        assert_eq!(both.turns_to_fell, Some(u32::MAX));
+        assert_eq!(both.outlook, Outlook::Even, "the same fight both ways is even however long it is");
     }
 
     /// The rule a fight is fought by, without an `App`: a blow when you are

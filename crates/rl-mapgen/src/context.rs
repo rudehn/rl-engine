@@ -2,7 +2,6 @@
 
 use std::any::Any;
 
-use rand::SeedableRng;
 use rand::rngs::StdRng;
 #[cfg(test)]
 use rl_core::Grid2D;
@@ -24,6 +23,10 @@ pub trait BuildContext {
     fn tiles(&self) -> &TileRegistry;
 
     /// This pass's own random stream. Replaced by the chain before each pass.
+    ///
+    /// # Panics
+    /// [`BaseContext`] panics when nothing has installed a stream yet, and a
+    /// game's context that delegates to one inherits that.
     fn rng(&mut self) -> &mut StdRng;
 
     /// Installs the stream for the pass about to run.
@@ -110,20 +113,29 @@ impl Outputs {
 
 /// The engine's own context: a terrain, a registry, a stream, outputs, and
 /// optional snapshots.
+///
+/// It holds no stream until one is installed, by a [`Chain`](crate::Chain)
+/// before each pass or by [`set_rng`](BuildContext::set_rng) for a pass
+/// applied by hand, and a pass that draws before then panics. A placeholder
+/// stream made from a constant would let a pass run outside a chain and
+/// draw the same numbers for every run, quietly, which is the one thing a
+/// seeded generator must never do; taking a stream in [`new`](Self::new)
+/// instead would make every caller that hands the context to a chain, the
+/// common case, invent a seed the chain then throws away.
 #[derive(Debug)]
 pub struct BaseContext {
     terrain: Terrain,
     tiles: TileRegistry,
-    rng: StdRng,
+    rng: Option<StdRng>,
     outputs: Outputs,
     snapshots: Option<Vec<Terrain>>,
 }
 
 impl BaseContext {
-    /// A context over `terrain`. The stream is a placeholder until the chain
-    /// installs a pass's own.
+    /// A context over `terrain`, with no stream until a chain installs a
+    /// pass's own.
     pub fn new(terrain: Terrain, tiles: TileRegistry) -> Self {
-        Self { terrain, tiles, rng: StdRng::seed_from_u64(0), outputs: Outputs::default(), snapshots: None }
+        Self { terrain, tiles, rng: None, outputs: Outputs::default(), snapshots: None }
     }
 
     /// A blank terrain of the given size filled with `fill`.
@@ -169,11 +181,11 @@ impl BuildContext for BaseContext {
     }
 
     fn rng(&mut self) -> &mut StdRng {
-        &mut self.rng
+        self.rng.as_mut().expect("a pass drew from its context before a stream was installed: run it in a Chain, or hand it one with set_rng from RunSeed::rng")
     }
 
     fn set_rng(&mut self, rng: StdRng) {
-        self.rng = rng;
+        self.rng = Some(rng);
     }
 
     fn emit<T: Any + Send>(&mut self, value: T) {
@@ -198,6 +210,30 @@ impl BuildContext for BaseContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::Rng;
+    use rl_core::{RunSeed, SeedDomain};
+
+    fn blank() -> BaseContext {
+        let tiles = TileRegistry::standard();
+        let floor = tiles.expect("floor");
+        BaseContext::blank(4, 4, tiles, floor)
+    }
+
+    #[test]
+    #[should_panic(expected = "before a stream was installed")]
+    fn a_pass_that_draws_before_any_stream_is_installed_is_stopped_rather_than_handed_a_constant_one() {
+        let _: u32 = blank().rng().random();
+    }
+
+    #[test]
+    fn a_context_draws_exactly_the_stream_it_was_handed() {
+        let stream = || RunSeed(7).rng(SeedDomain::new(b"test"), 0);
+        let mut ctx = blank();
+        ctx.set_rng(stream());
+        let drawn: [u32; 4] = std::array::from_fn(|_| ctx.rng().random());
+        let mut expected = stream();
+        assert_eq!(drawn, std::array::from_fn(|_| expected.random()));
+    }
 
     #[test]
     fn retain_drops_only_the_values_of_its_type_it_is_told_to_and_keeps_every_order() {

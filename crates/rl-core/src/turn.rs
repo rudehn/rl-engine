@@ -45,7 +45,10 @@ pub const fn step_cost(tile: u32, diagonal: bool) -> u32 {
 /// normal, 200 is twice as fast (half the cost) and 50 is half speed.
 ///
 /// Integer throughout; a speed of 0 is treated as 1 so nothing divides by
-/// zero or waits forever.
+/// zero or waits forever. Never acting is a status's to say, not a speed's,
+/// so the slowest an actor can be is a speed of 1. This is the one place
+/// that rule lives: the combat forecast charges each blow through this
+/// function too, so what a panel predicts is what the loop then charges.
 pub const fn scaled_cost(base: u32, speed_percent: u32) -> u32 {
     let speed = if speed_percent == 0 { 1 } else { speed_percent } as u64;
     let cost = (base as u64 * 100).div_ceil(speed);

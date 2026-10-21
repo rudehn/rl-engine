@@ -6,6 +6,12 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `BaseContext` holds no stream until one is installed, and a pass that draws from it before then panics, naming the fix, instead of drawing the same numbers every run from a placeholder seeded with 0; a `Chain` installs each pass's own stream as before.
+  To change: a test or tool that applies a pass by hand, outside a `Chain`, hands its context a stream first with `set_rng(RunSeed(seed).rng(domain, index))`.
+
+- The combat forecast reads a speed of 0 as 1, as the turn loop does, and charges each blow through `scaled_cost` as the loop does, so an actor at speed 0 is forecast the long fight it will fight rather than `u32::MAX` turns, and a duel whose count reaches `u32::MAX` no longer overflows while it reads the outlook (a panic in a debug build, a wrong outlook in a release one).
+  To change: nothing.
+
 - `rl_engine::testing::let_time_pass(app, turns)` jumps the turn clock and every queued actor's due time by `turns` whole turns at once and runs one frame, so a test of what is written in elapsed time (a refill, a regeneration, an end at a reading) sees the span without playing it; no `TurnEnd` is sent and nobody is dealt a turn in it, so statuses, fields and minds stand as they were.
   To change: nothing; a game's tests may call it where only the clock is the question, in place of `pass_turns`.
 
