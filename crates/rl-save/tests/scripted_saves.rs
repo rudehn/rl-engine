@@ -46,4 +46,8 @@ fn a_scripted_run_saves_in_memory_and_a_played_one_where_the_players_saves_are_k
     unsafe { std::env::remove_var(REPLAY_VAR) };
     assert!(scripted, "a replay is a scripted run");
     assert_eq!(platform.load(&name).unwrap(), None, "and the player's slot never saw it");
+    // The played run made the game's directory beside the test binary;
+    // empty now, so it goes too.
+    let beside = std::env::current_exe().expect("the test binary").parent().expect("its directory").to_path_buf();
+    let _ = std::fs::remove_dir(beside.join("saves").join(&name));
 }

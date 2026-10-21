@@ -977,8 +977,8 @@ pub struct SaveSlot {
 /// between launches, owned by the engine.
 ///
 /// Inserts [`Saves`], the backend, unless the game inserted its own: the
-/// platform's default under the game's name, files beside the executable
-/// or browser storage, or memory when the run is
+/// platform's default under the game's name, files in a directory of the
+/// game's own beside the executable or browser storage, or memory when the run is
 /// [`scripted`](rl_bevy::replay::scripted), a replay, a recording or a
 /// capture, which plays keys against a seed of its own and so must neither
 /// start on the player's save nor write over it. Keeps the [`Stash`] a
@@ -1009,9 +1009,27 @@ pub struct SavePlugin {
 impl SavePlugin {
     /// Saves the game called `name`: its run to the slot `name`, at
     /// version one, in the player's saves of that name, which name its
-    /// browser storage.
+    /// directory on the desktop and its browser storage on the web.
+    ///
+    /// # Panics
+    ///
+    /// When `name` is not a plain name, ASCII letters, digits, `-` and
+    /// `_`, since it names the run's slot and the game's save directory;
+    /// or when it is `settings` or [`RECORDS_SLOT`](crate::RECORDS_SLOT),
+    /// the slots the run shares its saves with, so a game named like one
+    /// would write its run over them. A game's name is a constant, so
+    /// either is the game's setup gone wrong, said here rather than at the
+    /// first save.
     pub fn new(name: impl Into<String>) -> Self {
-        Self { slot: name.into(), version: 1, on_arrival: false }
+        let slot = name.into();
+        if let Err(e) = crate::backend::check_slot(&slot) {
+            panic!("a game's saves are named by a plain name: {e}");
+        }
+        assert!(
+            slot != crate::settings::SETTINGS_SLOT && slot != crate::RECORDS_SLOT,
+            "a game cannot be called {slot:?}: its run would be saved over the engine's own slot of that name"
+        );
+        Self { slot, version: 1, on_arrival: false }
     }
 
     /// Where a run that is, or is not, `scripted` saves, when the game
@@ -2332,6 +2350,29 @@ mod tests {
         app.insert_resource(Saves(backend.clone())).add_plugins(SavePlugin::new("warren"));
         app.world().resource::<Saves>().persist("warren", "kept").unwrap();
         assert_eq!(backend.load("warren").unwrap().as_deref(), Some("kept"));
+    }
+
+    /// A game's run is saved to the slot of its name, beside the settings
+    /// and the records in the same saves, so a game named like either
+    /// would write its run over them, and is refused when it is made.
+    #[test]
+    #[should_panic(expected = "the engine's own")]
+    fn a_game_named_like_the_settings_slot_is_refused() {
+        let _ = SavePlugin::new(crate::settings::SETTINGS_SLOT);
+    }
+
+    /// As with the settings, so with the records.
+    #[test]
+    #[should_panic(expected = "the engine's own")]
+    fn a_game_named_like_the_records_slot_is_refused() {
+        let _ = SavePlugin::new(crate::RECORDS_SLOT);
+    }
+
+    /// A game's name is its run's slot, so it is a plain name too.
+    #[test]
+    #[should_panic(expected = "plain name")]
+    fn a_game_named_with_a_path_is_refused() {
+        let _ = SavePlugin::new("../escape");
     }
 
     /// A scripted run's saves are in memory, of their own: what it writes

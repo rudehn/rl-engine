@@ -14,6 +14,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 - The inspect panel's health bar reads in the tone the vitals and nearby rails give the same health, bad at a quarter or less and worth noticing at half or less, where it was always the good tone.
   To change: nothing.
 
+- Each desktop game saves in a directory of its own, `saves/<name>` beside the executable, named by its `SavePlugin` (`Saves::platform_default(name)`), so games built into one directory, as every example is in `target/debug`, no longer share one `settings.save.ron` and `records.save.ron` and wipe each other's settings. The first time a game runs with its directory, the run, settings and records an earlier build left directly beside the executable move into it, so a player who updates keeps them. The browser already kept each game under its own name and is unchanged. A slot is now a plain name, ASCII letters, digits, `-` and `_`: every backend refuses any other with the new `SaveError::Slot`, so no slot reaches outside the save directory, and `SavePlugin::new` and `Saves::platform_default` panic on a name that is not one, or, for `SavePlugin::new`, on `settings` or `records`, which the run would be written over.
+  To change: a game whose `SavePlugin` name or own slots hold anything but letters, digits, `-` and `_` renames them; a `match` on `SaveError` adds a `Slot` arm. A tool or a player's guide that looks for saves beside the executable looks in `saves/<name>`.
+
 - `BaseContext` holds no stream until one is installed, and a pass that draws from it before then panics, naming the fix, instead of drawing the same numbers every run from a placeholder seeded with 0; a `Chain` installs each pass's own stream as before.
   To change: a test or tool that applies a pass by hand, outside a `Chain`, hands its context a stream first with `set_rng(RunSeed(seed).rng(domain, index))`.
 
