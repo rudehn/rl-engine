@@ -281,20 +281,22 @@ impl Undermere {
     }
 }
 
-/// The first seed whose run draws the pool entry `name` for a floor, and
-/// that floor: for a test of what a piece does where a run lays it. Panics
-/// when no run over 400 seeds draws it, so a renamed piece fails the test
-/// rather than leaving it to pass over nothing.
+/// The first seed whose run draws every pool entry of `names` for one
+/// floor, and that floor: for a test of what pieces do where a run lays
+/// them. Panics when no run over 400 seeds draws them together, so a
+/// renamed piece fails the test rather than leaving it to pass over
+/// nothing.
 #[cfg(test)]
-pub(crate) fn drawn(name: &str) -> (RunSeed, u32) {
+pub(crate) fn drawn(names: &[&str]) -> (RunSeed, u32) {
     let loaded = Undermere::new(RunSeed(0));
     for s in 0..400 {
         let undermere = loaded.reseeded(RunSeed(s));
-        if let Some(floor) = (1..FLOORS).find(|f| undermere.plan_of(*f).iter().any(|p| undermere.pool.entries[p.entry].name == name)) {
+        let holds = |f: u32, name: &str| undermere.plan_of(f).iter().any(|p| undermere.pool.entries[p.entry].name == name);
+        if let Some(floor) = (1..FLOORS).find(|f| names.iter().all(|name| holds(*f, name))) {
             return (RunSeed(s), floor);
         }
     }
-    panic!("no run over 400 seeds draws {name}")
+    panic!("no run over 400 seeds draws {names:?} on one floor")
 }
 
 /// What a risk-and-reward or reward piece draws in a tile of its own, on
@@ -1356,7 +1358,7 @@ mod tests {
         let (told, locked) = (std::sync::Mutex::new(BTreeSet::new()), AtomicUsize::new(0));
         let first_floors = std::sync::Mutex::new(BTreeMap::new());
         let loaded = Undermere::new(RunSeed(0));
-        par_seeds(seeds(0..60), |s| {
+        par_seeds(seeds(BACKSTOP_SEEDS), |s| {
             let undermere = loaded.reseeded(RunSeed(s));
             every_recipe_meets_itself_on(&undermere, &recipes_seed_grows(&undermere, s), s, false);
             let tables = undermere.tiles().tables();
@@ -1946,33 +1948,65 @@ mod tests {
         floors[(pick % floors.len() as u64) as usize].clone()
     }
 
+    /// The seeds the run's backstop plays in full, as CI does: the first
+    /// `QUICK` of them every day.
+    const BACKSTOP_SEEDS: std::ops::Range<u64> = 0..60;
+
     /// The recipes of `undermere` that seed `s` grows when the daily seeds
-    /// share them out: recipe `i` on every seed with `i % QUICK == s %
-    /// QUICK`, so the first `QUICK` seeds grow each recipe once and the
-    /// full range in CI grows each several times.
-    fn recipes_seed_grows(undermere: &Undermere, s: u64) -> Vec<layout::RecipeDef> {
+    /// share them out, each with the pick [`grown_by`] grows it on: recipe
+    /// `i` on every seed with `i % QUICK == s % QUICK`, so the first
+    /// `QUICK` seeds grow each recipe once and the full range in CI grows
+    /// each several times, and on the pick of the seed's round, `s /
+    /// QUICK`, so the seeds that share a recipe walk every floor it may
+    /// stand on. Picking by the seed itself would not: with two floors to
+    /// a band, `s % 2` is `i % 2` on every seed that grows recipe `i`. The
+    /// round is counted on from the recipe's own, `i / QUICK`, so the daily
+    /// seeds, all of the first round, still grow some recipes on a band's
+    /// second floor.
+    fn recipes_seed_grows(undermere: &Undermere, s: u64) -> Vec<(layout::RecipeDef, u64)> {
         let quick = crate::testing::QUICK;
-        undermere.layout.recipes.iter().enumerate().filter(|(i, _)| *i as u64 % quick == s % quick).map(|(_, r)| r.clone()).collect()
+        let shared = undermere.layout.recipes.iter().enumerate().filter(|(i, _)| *i as u64 % quick == s % quick);
+        shared.map(|(i, r)| (r.clone(), s / quick + i as u64 / quick)).collect()
+    }
+
+    /// The backstop's sharing of the recipes grows every recipe on every
+    /// floor it may stand on over the backstop's full span of seeds, so
+    /// CI asks each recipe's promises of each of its floors and not of the
+    /// one a seed's residue would fix.
+    #[test]
+    fn the_backstop_grows_every_recipe_on_every_floor_it_may_stand_on_over_its_full_span() {
+        let undermere = Undermere::new(RunSeed(0));
+        let mut reached: BTreeMap<String, BTreeSet<u32>> = BTreeMap::new();
+        for s in BACKSTOP_SEEDS {
+            for (recipe, pick) in recipes_seed_grows(&undermere, s) {
+                reached.entry(recipe.name.clone()).or_default().insert(grown_by(&undermere, &recipe.name, pick).0);
+            }
+        }
+        for recipe in &undermere.layout.recipes {
+            let all: BTreeSet<u32> =
+                (1..=FLOORS).filter(|floor| biomes::with_recipe(&undermere.defs, *floor, &recipe.name, undermere.tiles()).is_some()).collect();
+            assert_eq!(reached.get(&recipe.name), Some(&all), "{}: the floors grown against every floor it may stand on", recipe.name);
+        }
     }
 
     /// Each of `recipes` grown on seed `s`, by a run of that seed so its
-    /// lairs stand where that run's do, on one of the floors its biome
-    /// stands on: within the forty attempts a floor is given, its
-    /// requirements met, since `Require` is the chain's last pass; the size
-    /// the recipe says; and the way down outside every stamped slot and at
-    /// least the recipe's route, a third of the longer side or more, from
-    /// the way in. That every open cell is walked to is the run's backstop's
-    /// to ask, of the floors a run draws; the span by hand asks it of these
-    /// too, in [`recipe_is_walked`].
+    /// lairs stand where that run's do, on the floor its pick names of
+    /// those its biome stands on, by [`grown_by`]: within the forty
+    /// attempts a floor is given, its requirements met, since `Require` is
+    /// the chain's last pass; the size the recipe says; and the way down
+    /// outside every stamped slot and at least the recipe's route, a third
+    /// of the longer side or more, from the way in. That every open cell is
+    /// walked to is the run's backstop's to ask, of the floors a run draws;
+    /// the span by hand asks it of these too, in [`recipe_is_walked`].
     ///
     /// The run's picks for the floor are kept only where they may stand
     /// in the recipe's own biome: the run drew them for whichever biome
     /// it drew there, and a cave piece the Underlake may hold has no cave
     /// to stand in when the same floor is grown as the cathedral's nave.
-    fn every_recipe_meets_itself_on(undermere: &Undermere, recipes: &[layout::RecipeDef], s: u64, walk: bool) {
+    fn every_recipe_meets_itself_on(undermere: &Undermere, recipes: &[(layout::RecipeDef, u64)], s: u64, walk: bool) {
         let tables = undermere.tiles().tables();
-        for recipe in recipes {
-            let (floor, drawn) = grown_by(undermere, &recipe.name, s);
+        for (recipe, pick) in recipes {
+            let (floor, drawn) = grown_by(undermere, &recipe.name, *pick);
             let at = format!("{} on floor {floor}, seed {s}", recipe.name);
             let grown = undermere.grow(floor, &drawn, &undermere.picks_for(floor, &drawn), RunSeed(s), ATTEMPTS);
             let ctx = grown.unwrap_or_else(|e| panic!("{at}: {e}"));
@@ -2036,7 +2070,8 @@ mod tests {
         let loaded = Undermere::new(RunSeed(0));
         for s in 0..200 {
             let undermere = loaded.reseeded(RunSeed(s));
-            every_recipe_meets_itself_on(&undermere, &undermere.layout.recipes.clone(), s, true);
+            let every: Vec<(layout::RecipeDef, u64)> = undermere.layout.recipes.iter().map(|r| (r.clone(), s)).collect();
+            every_recipe_meets_itself_on(&undermere, &every, s, true);
         }
     }
 

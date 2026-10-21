@@ -74,7 +74,15 @@ pub fn slot_of<'a>(undermere: &'a Undermere, spot: &Spot) -> Option<&'a Slot<Mon
 /// the test instead of leaving it to pass over nothing.
 #[cfg(test)]
 pub(crate) fn first_floor_holding(piece: &str) -> (RunSeed, u32) {
-    crate::dungeon::drawn(piece)
+    crate::dungeon::drawn(&[piece])
+}
+
+/// The first seed and floor whose run draws every one of the pool pieces
+/// `pieces` on that one floor, for a test that asks something of them side
+/// by side. Panics as [`first_floor_holding`] does.
+#[cfg(test)]
+pub(crate) fn first_floor_holding_all(pieces: &[&str]) -> (RunSeed, u32) {
+    crate::dungeon::drawn(pieces)
 }
 
 /// Warps the adventurer to `map`'s way in, the way the stairs would, and

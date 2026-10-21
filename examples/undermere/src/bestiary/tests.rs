@@ -240,20 +240,26 @@ fn the_court_is_drawn_on_no_floor_of_the_spawn_table() {
     assert!((1..=DEEPEST).all(|floor| bestiary.spawns.at(floor).all(|row| row.item != court)), "the court is the throne's alone, drawn on no floor");
 }
 
-/// A floor with nothing to draw and a row drawing a boss are each refused
-/// by name, and a boss row past the floors, or of nought weight, is not.
+/// A floor with nothing to draw, a row drawing a boss and a row drawing a
+/// mini-boss are each refused by name, and a boss row past the floors, or
+/// of nought weight, is not: a mini-boss stands only on its own lair, and
+/// a boss only on the throne.
 #[test]
-fn a_spawn_table_with_a_floor_left_empty_or_a_boss_drawn_on_a_floor_is_refused_naming_each() {
+fn a_spawn_table_with_a_floor_left_empty_or_a_boss_or_mini_boss_drawn_on_a_floor_is_refused_naming_each() {
     let library = library();
     let defs = &library.bestiary.defs;
-    let (king, rat) = (defs.expect("the Drowned King"), defs.expect("rat"));
+    let (king, widow, rat) = (defs.expect("the Drowned King"), defs.expect("the Widow"), defs.expect("rat"));
     let table = BandedTable::new(vec![
         BandedEntry::new(rat).bands(1, 9),
         BandedEntry::new(king).bands(4, 4).weight(1),
         BandedEntry::new(king).bands(11, 12).weight(1),
         BandedEntry::new(king).bands(1, 10).weight(0),
+        BandedEntry::new(widow).bands(0, 3).weight(1),
     ]);
-    assert_eq!(spawn_problems(defs, &table), ["floor 10 has nothing to draw", "the Drowned King is a boss, and drawn on floors 4 to 4"]);
+    assert_eq!(
+        spawn_problems(defs, &table),
+        ["floor 10 has nothing to draw", "the Drowned King is a boss, and drawn on floors 4 to 4", "the Widow is a mini-boss, and drawn on floors 1 to 3"]
+    );
     assert_eq!(spawn_problems(defs, &library.bestiary.spawns), Vec::<String>::new(), "the shipped table");
 }
 
@@ -781,12 +787,17 @@ fn a_necromancer_left_to_its_own_mind_raises_the_body_behind_it_over_a_span_of_s
 /// raised nothing with, and with a body lying in reach it would. The mind
 /// asks `would_act` before it picks an ability, so the rule is asked of
 /// the effect itself in one arena, with the positive case played out above.
+/// That holds because raise dead is aimed at its caster alone: nothing
+/// the mind points it at reaches the rule, which finds its body itself.
 #[test]
 fn a_necromancer_with_no_body_in_reach_never_reaches_for_raise_dead() {
     use crate::effects::bodies::RaiseDead;
     use crate::testing::{arena, kill, monster, settle};
     use rl_engine::rl_bevy::effects::{Effect, Landing, Source};
     let (mut app, me, here) = arena(40);
+    let abilities = app.world().resource::<Abilities>();
+    let raise = abilities.get(abilities.id("raise dead").expect("raise dead is loaded"));
+    assert_eq!(raise.aim, Aim::SelfOnly, "raise dead takes no aim from its caster's mind");
     let necromancer = monster(&mut app, "necromancer", here.offset(REACH_OF_RAISING - 1, 0));
     // A pass so the necromancer's own sight is cast before it is asked.
     settle(&mut app);

@@ -66,7 +66,7 @@ pub fn follow_through(
         let Ok((landed, on)) = places.get(went.actor) else { continue };
         let (landed, to) = (landed.0, on.0);
         let tone = tones.get(TONE).unwrap_or(Tones::TEXT);
-        let mut near: Vec<(i32, Entity, Point)> = Vec::new();
+        let mut near: Vec<(i32, Entity, Point, &str)> = Vec::new();
         let mut left: Vec<(Entity, String)> = Vec::new();
         for (e, hired, leader, pos, on) in &party {
             if leader.0 != went.actor || on.0 != went.from {
@@ -80,20 +80,17 @@ pub fn follow_through(
             } else if !ground.in_line(went.from, went.left, pos.0) {
                 "did not see where you went, and stays behind"
             } else {
-                near.push((d, e, pos.0));
+                near.push((d, e, pos.0, hired.name.as_str()));
                 continue;
             };
             left.push((e, format!("{} {why}.", hired.name)));
         }
-        for (mercenary, cell) in land_beside(near, landed, went.left, |p| ground.is_free(to, p)) {
+        for (mercenary, name, cell) in land_beside(near, landed, went.left, |p| ground.is_free(to, p)) {
             match cell {
                 Some(cell) => {
                     warps.write(WarpRequest::new(mercenary, Destination::Place { map: to, arrive: Arrive::At(cell) }).after(went.actor));
                 }
-                None => {
-                    let name = party.get(mercenary).map_or("", |(_, hired, ..)| hired.name.as_str());
-                    left.push((mercenary, format!("{name} stays behind: there is no room beside you.")));
-                }
+                None => left.push((mercenary, format!("{name} stays behind: there is no room beside you."))),
             }
         }
         left.sort_by_key(|(e, _)| *e);
@@ -107,17 +104,18 @@ pub fn follow_through(
 /// cell `left` first and then by entity, so who gets the cell beside the
 /// adventurer never depends on the order a query ran in; `None` for one
 /// every cell is gone for. Each of `near` is how far it stood from `left`,
-/// who it is and where it stood. A pure function, so the order and the
-/// distinctness are tested without a world: `free` says whether a cell is
-/// open ground nobody stands on.
-fn land_beside(mut near: Vec<(i32, Entity, Point)>, landed: Point, left: Point, free: impl Fn(Point) -> bool) -> Vec<(Entity, Option<Point>)> {
-    near.sort_by_key(|(d, e, _)| (*d, *e));
+/// who it is, where it stood and what it carries through to its answer,
+/// its name for the line that says it stayed. A pure function, so the
+/// order and the distinctness are tested without a world: `free` says
+/// whether a cell is open ground nobody stands on.
+fn land_beside<T>(mut near: Vec<(i32, Entity, Point, T)>, landed: Point, left: Point, free: impl Fn(Point) -> bool) -> Vec<(Entity, T, Option<Point>)> {
+    near.sort_by_key(|(d, e, ..)| (*d, *e));
     let mut taken: Vec<Point> = Vec::new();
     near.into_iter()
-        .map(|(_, mercenary, stood)| {
+        .map(|(_, mercenary, stood, carried)| {
             let cell = cell_beside(landed, stood - left, &taken, &free);
             taken.extend(cell);
-            (mercenary, cell)
+            (mercenary, carried, cell)
         })
         .collect()
 }
@@ -472,38 +470,52 @@ mod tests {
         move |p| open.contains(&p)
     }
 
+    /// Two mercenaries with the whole ring beside the landing free each
+    /// land beside the adventurer, on a cell of their own.
     #[test]
     fn two_mercenaries_land_on_distinct_cells_beside_the_adventurer() {
         let (landed, left) = (Point::new(20, 20), Point::new(5, 5));
         let everywhere = |p: Point| geometry::chebyshev(p, landed) == 1;
-        let placed = land_beside(vec![(1, entity(1), left + Point::new(1, 0)), (2, entity(2), left + Point::new(2, 0))], landed, left, everywhere);
-        let cells: Vec<Point> = placed.iter().map(|(_, c)| c.expect("a cell beside the landing")).collect();
+        let near = vec![(1, entity(1), left + Point::new(1, 0), "Brenna"), (2, entity(2), left + Point::new(2, 0), "Corwin")];
+        let placed = land_beside(near, landed, left, everywhere);
+        let cells: Vec<Point> = placed.iter().map(|(.., c)| c.expect("a cell beside the landing")).collect();
         assert_ne!(cells[0], cells[1], "on cells of their own");
         assert!(cells.iter().all(|c| geometry::chebyshev(*c, landed) == 1), "both beside the adventurer");
     }
 
+    /// With one cell left beside the landing, the one that stood nearer
+    /// the way takes it though it was listed, and hired, second, and the
+    /// farther gets none, its name carried through for the line that says
+    /// it stayed.
     #[test]
     fn with_one_cell_left_beside_the_landing_the_nearer_takes_it_even_listed_second_and_the_farther_gets_none() {
         let (landed, left) = (Point::new(20, 20), Point::new(5, 5));
         let free = only(landed, &[Point::new(1, 0)]);
-        let far = (2, entity(1), left + Point::new(2, 0));
-        let near = (1, entity(2), left + Point::new(1, 0));
+        let far = (2, entity(1), left + Point::new(2, 0), "Corwin");
+        let near = (1, entity(2), left + Point::new(1, 0), "Brenna");
         let placed = land_beside(vec![far, near], landed, left, free);
-        assert_eq!(placed, vec![(entity(2), Some(landed + Point::new(1, 0))), (entity(1), None)]);
+        assert_eq!(placed, vec![(entity(2), "Brenna", Some(landed + Point::new(1, 0))), (entity(1), "Corwin", None)]);
     }
 
+    /// Two that stood as near the way as each other: the lower entity
+    /// takes the one cell left, whichever order they are listed in, so who
+    /// lands never depends on the order a query ran in.
     #[test]
     fn as_near_as_each_other_the_lower_entity_takes_the_one_cell_left() {
         let (landed, left) = (Point::new(20, 20), Point::new(5, 5));
         let free = only(landed, &[Point::new(1, 0)]);
         let (low, high) = if entity(3) < entity(7) { (entity(3), entity(7)) } else { (entity(7), entity(3)) };
-        let (a, b) = ((2, high, left + Point::new(2, 0)), (2, low, left + Point::new(0, 2)));
+        let (a, b) = ((2, high, left + Point::new(2, 0), ()), (2, low, left + Point::new(0, 2), ()));
         for order in [vec![a, b], vec![b, a]] {
             let placed = land_beside(order, landed, left, &free);
-            assert_eq!(placed, vec![(low, Some(landed + Point::new(1, 0))), (high, None)], "whatever order the query ran in");
+            assert_eq!(placed, vec![(low, (), Some(landed + Point::new(1, 0))), (high, (), None)], "whatever order the query ran in");
         }
     }
 
+    /// A mercenary lands on the cell beside the adventurer on the side it
+    /// stood on when that cell is free, on the free cell nearest it when it
+    /// is not, never on one already given in the same arrival, and nowhere
+    /// when every cell beside the landing is taken.
     #[test]
     fn a_mercenary_lands_on_its_own_side_of_the_adventurer_when_that_cell_is_free_and_on_the_nearest_otherwise() {
         let landed = Point::new(20, 20);

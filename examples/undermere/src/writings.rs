@@ -236,16 +236,24 @@ pub fn tell_floor_feeling(
 ) {
     for ev in entered.read().filter(|ev| ev.first) {
         let Some(place) = map.place(ev.map) else { continue };
-        let prop_name = |spot: &Spot| {
-            let (key, glyph) = spot.prefab.zip(char::from_u32(spot.tag))?;
-            match prefabs.slot(key, glyph)? {
-                Slot::Prop(id) => Some(registries.props.name(*id)),
-                _ => None,
-            }
-        };
-        if let Some(says) = feeling_of(&place.spots, prop_name, &content.feelings) {
+        if let Some(says) = feeling_of(&place.spots, |spot| piece_prop_at(spot, &prefabs, &registries), &content.feelings) {
             tell.write(Tell::new(says, Tones::NOTICE));
         }
+    }
+}
+
+/// The name of the prop a piece stands at `spot`: the slot its mark is in
+/// the piece or dressing its key names, when that slot is a prop. `None`
+/// for a spot with no key, as a trap `traps.rs` laid has none (it is
+/// hidden, so a floor never tells of it), whatever its mark would read as
+/// in a piece, and for a slot that stands something else. Lifted out of
+/// [`tell_floor_feeling`] so what a laid trap reads as is tested on the
+/// real pieces.
+fn piece_prop_at<'r>(spot: &Spot, prefabs: &Prefabs<MonsterDef>, registries: &'r Registries) -> Option<&'r str> {
+    let (key, glyph) = spot.prefab.zip(char::from_u32(spot.tag))?;
+    match prefabs.slot(key, glyph)? {
+        Slot::Prop(id) => Some(registries.props.name(*id)),
+        _ => None,
     }
 }
 
@@ -265,7 +273,7 @@ mod tests {
 
     use super::*;
     use crate::dungeon::{FLOORS, map_of};
-    use crate::testing::{adventurer, arrive, first_floor_holding, headless, said};
+    use crate::testing::{adventurer, arrive, first_floor_holding, first_floor_holding_all, headless, said};
 
     /// A line is never drawn twice while the pool holds an unused one,
     /// and a pool of one line is read from forever after its one line is
@@ -324,10 +332,9 @@ mod tests {
     }
 
     /// A made-up floor's spots: tag 1 stands a prop named for a feeling,
-    /// tag 2 a prop with none, tag 3 a laid trap, which stands no piece's
-    /// prop, and any other tag nothing.
+    /// tag 2 a prop with none, and any other tag nothing.
     fn feeling_spots(tags: &[u32]) -> Vec<Spot> {
-        tags.iter().enumerate().map(|(i, tag)| Spot { tag: *tag, at: Point::new(i as i32, 0), prefab: (*tag != 3).then_some(0) }).collect()
+        tags.iter().enumerate().map(|(i, tag)| Spot { tag: *tag, at: Point::new(i as i32, 0), prefab: Some(0) }).collect()
     }
 
     fn name_of_tag(spot: &Spot) -> Option<&'static str> {
@@ -343,15 +350,31 @@ mod tests {
     }
 
     /// A floor with a spot standing a feeling prop says it; one standing
-    /// only other props, a trap of the feeling prop's kind that is no
-    /// piece, or nothing, says none.
+    /// only other props, or nothing, says none.
     #[test]
     fn a_floor_says_its_feeling_only_for_a_spot_that_stands_a_feeling_piece() {
         let feelings = feelings();
         assert_eq!(feeling_of(&feeling_spots(&[2, 1]), name_of_tag, &feelings), Some("smoke"));
         assert_eq!(feeling_of(&feeling_spots(&[2, 4]), name_of_tag, &feelings), None, "a prop the file names no feeling for");
-        assert_eq!(feeling_of(&feeling_spots(&[3]), name_of_tag, &feelings), None, "a laid trap is no piece, whatever it is");
         assert_eq!(feeling_of(&[], name_of_tag, &feelings), None);
+    }
+
+    /// A trap `traps.rs` laid stands no piece's prop, so a floor never
+    /// tells a feeling for it: its spot carries no key, and reads as
+    /// nothing even where its mark is the very glyph a piece stands a
+    /// feeling prop at, or the private-use mark the trap laying gives it.
+    /// The same glyph keyed to the piece reads as that prop.
+    #[test]
+    fn a_laid_trap_stands_no_pieces_prop_whatever_its_mark_is() {
+        let (prefabs, ..) = crate::prefabs::load(&crate::dungeon::registry(), &crate::dungeon::layout());
+        let registries = crate::content::registries();
+        let vestibule = prefabs.defs().id("The Paralysis Vestibule").expect("the vestibule is a piece").raw();
+        let spot = |tag: u32, prefab: Option<u32>| Spot { tag, at: Point::new(0, 0), prefab };
+        assert_eq!(piece_prop_at(&spot('v' as u32, Some(vestibule)), &prefabs, &registries), Some("paralysis vent"), "the piece's own vent");
+        assert_eq!(piece_prop_at(&spot('v' as u32, None), &prefabs, &registries), None, "the vent's glyph with no piece");
+        assert_eq!(piece_prop_at(&spot(crate::traps::FIRST_TAG, None), &prefabs, &registries), None, "a laid trap's own mark");
+        let vent = vec![Feeling { prop: "paralysis vent".into(), says: "still".into() }];
+        assert_eq!(feeling_of(&[spot('v' as u32, None)], |s| piece_prop_at(s, &prefabs, &registries), &vent), None, "no feeling for a laid trap");
     }
 
     /// A floor that stands two feeling props says the one its first spot
@@ -365,43 +388,44 @@ mod tests {
 
     /// Every "scratched words" prop one floor turns up, read once each: the
     /// same line read twice running, and no two of them the same line, on
-    /// a floor of each piece that writes. One floor each is enough here:
-    /// the reading is the test, and that no two places across a run share a
-    /// line is the rule `assign` is tested for above.
+    /// one floor that holds both pieces that write, so at least two remains
+    /// are asked to differ. One floor is enough here: the reading is the
+    /// test, and that no two places across a run share a line is the rule
+    /// `assign` is tested for above.
     #[test]
     fn a_remains_reads_the_same_line_twice_and_no_two_remains_on_a_floor_share_one() {
-        for piece in ["A Fallen Adventurer", "Last Words"] {
-            let (seed, f) = first_floor_holding(piece);
-            let mut app = headless(seed);
-            let me = adventurer(&mut app);
-            arrive(&mut app, map_of(f));
-            let scratched = app.world().resource::<Registries>().props.expect("scratched words");
-            let read = app.world().resource::<Verbs>().get(READ_VERB).expect("declared");
-            let found: Vec<Entity> = {
-                let world = app.world_mut();
-                let here = world.resource::<WorldMap>().current();
-                world.query::<(Entity, &PropKind, &OnMap)>().iter(world).filter(|(_, k, on)| k.0 == scratched && on.0 == here).map(|(e, ..)| e).collect()
-            };
-            assert!(!found.is_empty(), "{piece} on seed {seed:?}, floor {f}: no remains stand where it was drawn");
-            let mut lines_this_floor = Vec::new();
-            for target in found {
-                let before_first = said(&app).len();
-                app.world_mut().write_message(Interacted { actor: me, target, verb: read, thing: None });
-                app.update();
-                let first_read = said(&app)[before_first..].to_vec();
-                assert_eq!(first_read.len(), 1, "{piece}: reading told something other than one line: {first_read:?}");
-                let before_second = said(&app).len();
-                app.world_mut().write_message(Interacted { actor: me, target, verb: read, thing: None });
-                app.update();
-                let second_read = said(&app)[before_second..].to_vec();
-                // The log folds a line said twice running into the one,
-                // so a second read adds a new line or none, never another.
-                assert!(second_read.is_empty() || first_read == second_read, "{piece}: the same remains read twice");
-                lines_this_floor.push(first_read.into_iter().next().expect("checked above"));
-            }
-            let distinct: BTreeSet<&String> = lines_this_floor.iter().collect();
-            assert_eq!(distinct.len(), lines_this_floor.len(), "{piece}: a line given to two remains on one floor: {lines_this_floor:?}");
+        let pieces = ["A Fallen Adventurer", "Last Words"];
+        let (seed, f) = first_floor_holding_all(&pieces);
+        let at = format!("{pieces:?} on seed {seed:?}, floor {f}");
+        let mut app = headless(seed);
+        let me = adventurer(&mut app);
+        arrive(&mut app, map_of(f));
+        let scratched = app.world().resource::<Registries>().props.expect("scratched words");
+        let read = app.world().resource::<Verbs>().get(READ_VERB).expect("declared");
+        let found: Vec<Entity> = {
+            let world = app.world_mut();
+            let here = world.resource::<WorldMap>().current();
+            world.query::<(Entity, &PropKind, &OnMap)>().iter(world).filter(|(_, k, on)| k.0 == scratched && on.0 == here).map(|(e, ..)| e).collect()
+        };
+        assert!(found.len() >= 2, "{at}: a remains for each piece, {} found", found.len());
+        let mut lines_this_floor = Vec::new();
+        for target in found {
+            let before_first = said(&app).len();
+            app.world_mut().write_message(Interacted { actor: me, target, verb: read, thing: None });
+            app.update();
+            let first_read = said(&app)[before_first..].to_vec();
+            assert_eq!(first_read.len(), 1, "{at}: reading told something other than one line: {first_read:?}");
+            let before_second = said(&app).len();
+            app.world_mut().write_message(Interacted { actor: me, target, verb: read, thing: None });
+            app.update();
+            let second_read = said(&app)[before_second..].to_vec();
+            // The log folds a line said twice running into the one,
+            // so a second read adds a new line or none, never another.
+            assert!(second_read.is_empty() || first_read == second_read, "{at}: the same remains read twice");
+            lines_this_floor.push(first_read.into_iter().next().expect("checked above"));
         }
+        let distinct: BTreeSet<&String> = lines_this_floor.iter().collect();
+        assert_eq!(distinct.len(), lines_this_floor.len(), "{at}: a line given to two remains on one floor: {lines_this_floor:?}");
     }
 
     /// Whether the floor the adventurer stands on says a feeling on

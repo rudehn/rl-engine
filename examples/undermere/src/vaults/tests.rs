@@ -9,7 +9,7 @@ use crate::testing::{adventurer, arrive, at, clear_monsters, give, headless, mak
 /// it, sturdy and alone: the floor's own monsters cleared, so what a test
 /// reads is what the piece did.
 fn on_the_floor_of(piece: &str) -> (App, Entity, MapId) {
-    let (seed, floor) = drawn(piece);
+    let (seed, floor) = drawn(&[piece]);
     let mut app = headless(seed);
     let me = adventurer(&mut app);
     sturdy(&mut app, me);
@@ -350,7 +350,7 @@ fn a_flood_rising_and_a_key_carried_outlive_a_continued_run() {
 #[test]
 fn a_pieces_sleepers_sleep_at_their_posts_and_its_captives_are_shackled() {
     for piece in ["The Guarded Hoard", "Captives in Chains"] {
-        let (seed, floor) = drawn(piece);
+        let (seed, floor) = drawn(&[piece]);
         let mut app = headless(seed);
         let me = adventurer(&mut app);
         sturdy(&mut app, me);
@@ -445,7 +445,7 @@ fn the_sunken_causeway_is_found_whole_from_beside_one_cell_of_it() {
 /// every free cell off the stairs was a landing.
 #[test]
 fn a_fall_never_lands_inside_a_locked_vault() {
-    let (seed, floor) = drawn("The Locked Vault");
+    let (seed, floor) = drawn(&["The Locked Vault"]);
     assert!(floor >= 2, "a floor above it to fall from");
     let mut app = crate::testing::headless(seed);
     let me = adventurer(&mut app);
@@ -575,7 +575,7 @@ fn the_rat_traps_vermin_pour_from_every_hole_when_its_prize_is_taken() {
 #[test]
 fn the_paralysis_vestibules_vent_rouses_the_sleepers_beyond_it() {
     let piece = "The Paralysis Vestibule";
-    let (seed, floor) = drawn(piece);
+    let (seed, floor) = drawn(&[piece]);
     let mut app = headless(seed);
     let me = adventurer(&mut app);
     sturdy(&mut app, me);

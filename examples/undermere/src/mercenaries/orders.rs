@@ -379,6 +379,11 @@ mod tests {
         let brenna = hired(&mut app, me, here.offset(-1, 0), "Brenna");
         let way = the_long_way(&mut app, here, 60);
         assert!(way.len() >= 30, "a long way to walk, {} cells", way.len());
+        // The one floor's way has the corner and the door the walk is for.
+        let map = app.world().resource::<WorldMap>();
+        assert!(way.iter().any(|cell| map.opens(*cell).is_some()), "the way crosses a door: {way:?}");
+        let corner = way.windows(3).any(|w| Direction::between(w[0], w[1]) != Direction::between(w[1], w[2]));
+        assert!(corner, "the way turns a corner: {way:?}");
         for stretch in way.chunks(6) {
             let mut widest = 0;
             walk(&mut app, me, stretch, |app| widest = widest.max(gap(app, me, brenna)));

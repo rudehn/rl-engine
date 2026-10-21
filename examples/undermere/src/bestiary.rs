@@ -277,14 +277,21 @@ impl Bestiary {
 
 /// Why the spawn table cannot stand as it is, all at once: a floor of the
 /// ten with nothing of a weight more than nought to draw, which the
-/// population would come to nothing on, or a row drawing a boss, which
-/// would stand a second throne's master out on a floor besides the one
-/// its own piece posts.
+/// population would come to nothing on, or a row drawing a boss or a
+/// mini-boss, which would stand a second throne's master out on a floor
+/// besides the one its own piece posts, or a lair's keeper off its lair
+/// and drawn a second time in a run that drew it once.
 pub(crate) fn spawn_problems(defs: &Registry<MonsterDef>, spawns: &BandedTable<Id<MonsterDef>>) -> Vec<String> {
     let deepest = crate::dungeon::FLOORS as i32;
     let mut wrong: Vec<String> = spawns.gaps(1..=deepest).into_iter().map(|f| format!("floor {f} has nothing to draw")).collect();
-    for row in spawns.entries().iter().filter(|r| r.weight > 0 && defs.get(r.item).boss && r.min_band <= deepest && r.max_band >= 1) {
-        wrong.push(format!("{} is a boss, and drawn on floors {} to {}", defs.get(row.item).name, row.min_band.max(1), row.max_band.min(deepest)));
+    for row in spawns.entries().iter().filter(|r| r.weight > 0 && r.min_band <= deepest && r.max_band >= 1) {
+        let def = defs.get(row.item);
+        let kind = match (def.boss, def.miniboss) {
+            (true, _) => "a boss",
+            (_, true) => "a mini-boss",
+            _ => continue,
+        };
+        wrong.push(format!("{} is {kind}, and drawn on floors {} to {}", def.name, row.min_band.max(1), row.max_band.min(deepest)));
     }
     wrong
 }

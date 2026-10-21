@@ -534,7 +534,7 @@ mod tests {
             }
         }
         let chain_at_two = things.iter().position(|t| *t == ("chain mail", 2)).expect("chain mail at two is in the pack");
-        assert_eq!(rows[chain_at_two].1, 3, "chain mail at two gives three");
+        assert_eq!(rows[chain_at_two].1, 3, "chain mail at two reads the plain three");
         let ring_at_two = things.iter().position(|t| *t == ("ring of regeneration", 2)).expect("the ring at two is in the pack");
         assert_eq!(rows[ring_at_two].5, ["regeneration +10 a level", "mending +25 a level"], "what each level of a ring gives");
     }
