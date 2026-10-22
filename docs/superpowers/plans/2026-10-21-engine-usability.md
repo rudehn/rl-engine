@@ -2,7 +2,7 @@
 
 > **For agentic workers:** this is the index. Each branch has its own plan, executable alone; read the branch's plan and this page's "Rules for every branch".
 
-**Goal:** Act on every recommendation in `docs/reviews/engine_usability.md`, "Ranked recommendations", in seventeen small branches that each keep `main` green.
+**Goal:** Act on every recommendation in `docs/reviews/engine_usability.md`, "Ranked recommendations", and give each game the public API it stands on, in eighteen small branches that each keep `main` green.
 
 **Spec:** `docs/reviews/engine_usability.md` at `919f6f82`.
 It replaces `2026-10-20-engine-usability.md`, which is removed; the review's "The plan" section says where that one was wrong.
@@ -44,7 +44,8 @@ It replaces `2026-10-20-engine-usability.md`, which is removed; the review's "Th
 | 14 | `toolkit-fight` | 15 | S | 11 | [14](2026-10-21-usability-14-toolkit-fight.md) |
 | 15 | `names` | 11 | M | 13, 14 | [15](2026-10-21-usability-15-names.md) |
 | 16 | `place-model` | 16 | M | 15 | [16](2026-10-21-usability-16-place-model.md) |
-| 17 | `prelude` | 12, 18 | M | 16 | [17](2026-10-21-usability-17-prelude.md) |
+| 18 | `game-seams` | public API | M | 15 | [18](2026-10-21-usability-18-game-seams.md) |
+| 17 | `prelude` | 12, 18 | M | 16, 18 | [17](2026-10-21-usability-17-prelude.md) |
 
 ## Why this order
 
@@ -56,6 +57,7 @@ It replaces `2026-10-20-engine-usability.md`, which is removed; the review's "Th
 - The tier-1 content move (10) comes before removing `BuildContext` (11), which rewrites the same `layout.rs`, and before the renames (15), since it leaves seven of the 26 duplicated names declared once.
 - The renames (15) run alone because they touch every crate and both games.
 - The place model (16) moves to `rl-mapgen` after the renames, so it moves final names; it needs only the serde that branch 10 gives `rl-mapgen`.
+- The game seams (18) follow the renames (15) and the private systems (13), and come before the prelude, which exports their `PrepareRun`, `RunResumed` and `LaunchArgs`.
 - The prelude (17) is last, so it exports final names from final homes.
 
 ## What runs in parallel
@@ -73,7 +75,7 @@ The second of a row to merge resolves the conflict in its rebase.
 | 6 | 11, 12 | `crates/rl-bevy/src/lib.rs` (11 removes the `Charts` exports, 12 adds `ItemRules` and `RevivalRules`) |
 | 7 | 13, 14 | - |
 | 8 | 15 | - |
-| 9 | 16 | - |
+| 9 | 16, 18 | `crates/rl-bevy/src/lib.rs` (16 re-exports the place model, 18 the new schedules and `LaunchArgs`) |
 | 10 | 17 | - |
 
 ## `docs/TODO.md` items closed
@@ -87,6 +89,7 @@ A branch that closes an item removes it in the commit that finishes it and moves
 | 15, two engine types named for a theme word | 15 |
 | 27, one type per concept | 10 (the mirrored enums), 15 (`Reach`, `Secret`); loot as `BandedTable<K>` and one actor handle stay open |
 | 28, ambiguity tests through the schedule's interface | 13 |
+| 30, continuing a run is the engine's | 18 |
 | 33, one root-and-prelude rule per crate | 17, for `rl-engine`; the per-crate preludes stay open |
 | 34, rule numbers in the engine | 02 (reflect chance), 12 (`EQUIP_FROM_GROUND_COST`, `STANDING_ROOM`); the rest stays open |
 | 35, the API review's renames | 15 strikes whatever of section D it did |
@@ -144,9 +147,7 @@ Flagged by the public-API scan, 2026-10-21:
 
 - Fixed: Foundry's allow list named about 45 engine system functions (13); rl-bevy's own ambiguity test no longer copies the games' plugin lists (13); `rl_bevy::plugin::headless_app` moves to `rl_bevy::testing` and the tutorial's tests use `rl_engine::testing` (06, 13).
 - Fixed: `Reflects::ALWAYS` and `NEVER` (02) and `TtyPlugin::to_writer` (08) are described as API a game uses, not test hooks.
-- Open: both games' `resume` call `rl_bevy::plugin::clear_run` and reload, reseed and restore by hand, which TODO 30 (continuing a run is the engine's) removes; no branch here closes it.
-- Open: `rl_engine::testing` and `rl_bevy::testing` become semver-stable once the games leave the workspace, so their helpers are API to curate, not a test convenience.
-- Open: both games' `main` read `rl_bevy::replay::seed()` and `args()` beside their own argument parsing; a public `Seed::from_args` that takes the game's extra arguments would cover it.
+- Closed by branch 18: the games' hand-written `resume` and `clear_run`, their reads of `replay::seed` and `args`, and an unstated testing surface.
 - Step 1 on the standard tiles (06) stands; the release's guide pass covers chapter 1's look.
 - The log (09) stays as planned: `info`, `muted` and `notice` on `Log`, and `MessageLog` keeps only `push_at`.
 - The tutorial and the template (07) draw per place from the place's own seed, `seed.place(map).rng(DOMAIN, 0)`, as Undermere does.
