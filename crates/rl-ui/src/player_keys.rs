@@ -250,6 +250,9 @@ impl Plugin for PlayerKeysPlugin {
 
     fn finish(&self, app: &mut App) {
         rl_bevy::depends_on::<crate::UiPlugin>(app, "PlayerKeysPlugin");
+        if self.wanted.iter().any(|w| w.verb == PlayerVerb::PickUp) {
+            rl_bevy::depends_on::<ItemsPlugin>(app, "PlayerKeysPlugin's pick_up");
+        }
     }
 }
 
@@ -283,7 +286,9 @@ pub struct Asks<'w> {
     bumps: MessageWriter<'w, Intent<Bump>>,
     waits: MessageWriter<'w, Intent<Wait>>,
     transits: MessageWriter<'w, Intent<GoThrough>>,
-    pick_ups: MessageWriter<'w, Intent<PickUp>>,
+    /// Absent from a game with no items, whose keys never pick up; one
+    /// that names the pick-up is held to adding `ItemsPlugin`.
+    pick_ups: Option<MessageWriter<'w, Intent<PickUp>>>,
     fires: MessageWriter<'w, AimFire>,
     declined: MessageWriter<'w, Declined>,
 }
@@ -328,7 +333,9 @@ pub fn player_keys(mut kb: Keyboard, loadout: Loadout, mut pack: Pack, mut asks:
             false
         }
         PlayerVerb::PickUp => {
-            asks.pick_ups.write(Intent::new(me, PickUp));
+            if let Some(pick_ups) = asks.pick_ups.as_mut() {
+                pick_ups.write(Intent::new(me, PickUp));
+            }
             false
         }
         PlayerVerb::Fire => {
@@ -382,6 +389,25 @@ mod tests {
             .pick_up("Act", "pick up")
             .fire("Act", "fire", Otherwise::say("Nothing to fire."))
             .throw("Act", "throw", Otherwise::Nothing)
+    }
+
+    /// The smallest game there is: the engine's core, sight and the UI base,
+    /// and only walking and waiting. No items, so nothing ever registered
+    /// a pick-up for the keys to ask for.
+    #[test]
+    fn a_game_with_nothing_to_pick_up_walks_on_the_standard_keys() {
+        let mut app = rl_bevy::plugin::headless_app();
+        app.add_plugins((FovPlugin, rl_bevy::testing::KeyScriptPlugin, crate::UiPlugin))
+            .add_plugins(PlayerKeysPlugin::new().walk("Move", "walk").wait("Act", "wait"));
+        let at = rl_bevy::testing::ground(&mut app);
+        let me = app.world_mut().spawn((Actor, Player, Blocks, Position(at), Viewshed::new(6), RevealsMap)).id();
+        app.finish();
+        app.cleanup();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        rl_bevy::testing::settle(&mut app);
+        rl_bevy::testing::press(&mut app, KeyCode::KeyL);
+        app.update();
+        assert_eq!(app.world().get::<Position>(me).unwrap().0, at.offset(1, 0), "a step east");
     }
 
     #[test]

@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `PlayerKeysPlugin` runs in a game with no `ItemsPlugin`, where it used to stop the app on its first frame for want of a pick-up message nobody registered; naming `pick_up` without `ItemsPlugin` is now refused by name when the app is finished.
+  To change: nothing.
+
 - The five tiles of `TileRegistry::standard()`, `void`, `wall`, `floor`, `door_closed` and `door_open`, are drawn in a standard look when the game's `TileAppearance` gives them none, filled by `TileAppearance::fill_standard` when a run's world comes up; a look the game set is never replaced.
   To change: nothing; a game that drew the standard tiles only to see them may drop those looks.
 
