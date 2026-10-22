@@ -18,8 +18,10 @@ use rl_core::RunSeed;
 /// The turns, the input, the streaming, the light and the sight run only
 /// while [`Playing`](Self::Playing). Drawing runs while playing and while
 /// [`Over`](Self::Over), so the last frame of a run stays on screen under
-/// whatever the game or the engine's menu draws over it. The game owns any
-/// finer state machine and drives this one from it.
+/// whatever the game or the engine's menu draws over it. A run's start
+/// leaves [`Idle`](Self::Idle) for `Playing` on its own once it has built
+/// the world. The game owns any finer state machine and drives this one
+/// from it.
 #[derive(States, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum EngineState {
     /// No world; nothing runs.

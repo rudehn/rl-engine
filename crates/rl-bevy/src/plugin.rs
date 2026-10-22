@@ -91,8 +91,9 @@ pub struct Turn;
 /// after every [`Restart`], with the previous run torn down and the
 /// [`Seed`](crate::seed::Seed) set for the next, as it is set for the run
 /// a title begins after one was left. A game puts here what it
-/// used to put in `Startup`: the rules, the map, the player, the warp in
-/// and the flip to [`EngineState::Playing`]. Nothing of the old run is
+/// used to put in `Startup`: the rules, the map, the player and the warp
+/// in. Play begins on its own once the schedule has run, if it built a
+/// [`WorldMap`] and nothing holds the start. Nothing of the old run is
 /// left when it runs, so the same system starts the first run and the
 /// tenth.
 #[derive(ScheduleLabel, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -841,15 +842,16 @@ pub(crate) fn check_requirements(world: &World) {
     let missing = requirements.missing(world);
     if !missing.is_empty() {
         let pieces = if missing.len() == 1 { "one piece is" } else { "some pieces are" };
-        panic!("play cannot begin: {pieces} missing.\n  {}\nInsert each before setting EngineState::Playing.", missing.join("\n  "));
+        panic!("play cannot begin: {pieces} missing.\n  {}\nInsert each before play begins.", missing.join("\n  "));
     }
 }
 
 /// Warns once when a world has been built and play never began.
 ///
-/// Every engine system waits on [`EngineState::Playing`], so a game that
-/// built its map and forgot to set the state gets a still window and no
-/// other sign of what is wrong.
+/// Every engine system waits on [`EngineState::Playing`], which a run's
+/// start begins on its own once it has built a map in [`NewRun`]. A game
+/// that built its map anywhere else and never set the state gets a still
+/// window and no other sign of what is wrong.
 fn warn_if_play_never_began(mut frames: Local<u32>, state: Res<State<EngineState>>, map: Option<Res<WorldMap>>) {
     if *state.get() != EngineState::Idle || map.is_none() {
         *frames = 0;
@@ -857,7 +859,7 @@ fn warn_if_play_never_began(mut frames: Local<u32>, state: Res<State<EngineState
     }
     *frames += 1;
     if *frames == 120 {
-        warn!("a WorldMap was inserted but EngineState is still Idle after 120 frames; nothing runs until the game sets EngineState::Playing");
+        warn!("a WorldMap was inserted outside NewRun and EngineState is still Idle after 120 frames; play begins on its own only after a run's start");
     }
 }
 

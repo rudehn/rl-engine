@@ -19,6 +19,8 @@
 use bevy::prelude::*;
 
 use crate::plugin::NewRun;
+use crate::state::EngineState;
+use crate::world::WorldMap;
 
 /// Holds the run back while a title screen stands.
 ///
@@ -31,8 +33,9 @@ use crate::plugin::NewRun;
 #[derive(Resource, Default)]
 pub struct HoldStart;
 
-/// Begins a run: lowers the [`HoldStart`], if a title raised one, and runs
-/// the game's [`NewRun`].
+/// Begins a run: lowers the [`HoldStart`], if a title raised one, runs the
+/// game's [`NewRun`], and begins play once the start has built a
+/// [`WorldMap`].
 ///
 /// The one door a title uses, and the one the engine uses itself at
 /// startup and after a restart. `NewRun` rather than a
@@ -41,9 +44,19 @@ pub struct HoldStart;
 /// [`Seed`](crate::seed::Seed) stands, the game's own at launch or the
 /// fresh one [`LeaveRun`] set, so it has no seed to choose. Exclusive, so
 /// a screen that reads its keys in a system queues it as a command.
+///
+/// Play begins here rather than in each game's start because every start
+/// set it on the same line, and one that forgot got a still window. A
+/// start that built no world has nothing to play, and one that raised
+/// `HoldStart` again wants nothing begun, so both leave the state
+/// [`Idle`](EngineState::Idle). A start may still set
+/// [`EngineState::Playing`] itself; setting it twice changes nothing.
 pub fn begin_run(world: &mut World) {
     world.remove_resource::<HoldStart>();
     world.run_schedule(NewRun);
+    if world.contains_resource::<WorldMap>() && !world.contains_resource::<HoldStart>() {
+        world.resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+    }
 }
 
 /// What the run's save slot holds, read by a title: whether Continue can
@@ -115,8 +128,7 @@ mod tests {
     use crate::components::{Actor, Blocks, Player, Position, RevealsMap, Viewshed};
     use crate::plugin::{EndRun, headless_app};
     use crate::seed::Seed;
-    use crate::state::{EngineState, Restart};
-    use crate::world::WorldMap;
+    use crate::state::Restart;
     use rl_core::RunSeed;
 
     /// How many runs the game's start has begun and its end has forgotten,
@@ -184,6 +196,72 @@ mod tests {
         app.update();
         app.update();
         assert_eq!(runs(&app).0, 1);
+    }
+
+    /// A start that builds the world a run is played on, and nothing else:
+    /// no state set by hand.
+    fn build_a_world(mut commands: Commands) {
+        commands.insert_resource(WorldMap::new(rl_grid::TileRegistry::standard().tables()));
+    }
+
+    /// An engine app whose start builds a world and leaves the state alone.
+    fn building() -> App {
+        let mut app = counted();
+        app.add_systems(NewRun, build_a_world);
+        app
+    }
+
+    #[test]
+    fn a_run_whose_start_builds_a_world_begins_play_on_its_own() {
+        let mut app = building();
+        app.update();
+        app.update();
+        assert_eq!(state(&app), EngineState::Playing);
+    }
+
+    #[test]
+    fn a_start_that_builds_no_world_leaves_play_idle() {
+        let mut app = counted();
+        app.update();
+        app.update();
+        assert_eq!(runs(&app).0, 1, "the start ran");
+        assert_eq!(state(&app), EngineState::Idle, "and with no world there is nothing to play");
+    }
+
+    #[test]
+    fn a_held_start_keeps_play_from_beginning_until_the_title_begins_the_run() {
+        let mut app = building();
+        app.init_resource::<HoldStart>();
+        app.update();
+        app.update();
+        assert_eq!(state(&app), EngineState::Idle, "nothing begun while the title stands");
+        begin_run(app.world_mut());
+        app.update();
+        app.update();
+        assert_eq!(state(&app), EngineState::Playing, "the title's door begins play as well as the run");
+    }
+
+    #[test]
+    fn a_start_that_holds_the_start_again_keeps_play_idle() {
+        let mut app = building();
+        app.add_systems(NewRun, |mut commands: Commands| commands.init_resource::<HoldStart>());
+        app.update();
+        app.update();
+        assert_eq!(state(&app), EngineState::Idle);
+    }
+
+    #[test]
+    fn a_restart_begins_play_again_on_its_own() {
+        let mut app = building();
+        app.update();
+        app.update();
+        assert_eq!(state(&app), EngineState::Playing, "play begun");
+        app.world_mut().write_message(Restart::fresh());
+        app.update();
+        app.update();
+        app.update();
+        assert_eq!(runs(&app), (2, 1), "the run was torn down and another begun");
+        assert_eq!(state(&app), EngineState::Playing, "and play begun again");
     }
 
     #[test]

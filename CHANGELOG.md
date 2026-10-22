@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- Play begins on its own once a run's start, in `NewRun`, has built a `WorldMap` and no `HoldStart` holds it: `begin_run`, the door the first run, a title's New Game and every restart come through, sets `EngineState::Playing` in the frame a start used to set it.
+  To change: nothing; a start may delete its `next.set(EngineState::Playing)` and the `NextState` parameter, and setting it by hand still works.
+
 - The tutorial's binaries are numbered as the guide's chapters: `step07_content`, `step08_shove`, `step09_panels`.
   To change: a script that runs one by name uses the new name.
 
