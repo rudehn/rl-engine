@@ -2765,6 +2765,10 @@ mod spotting {
     const START: Point = Point::new(1, 3);
     /// A cell past the wall across the hall, which the player never sees.
     const BEYOND: Point = Point::new(20, 3);
+    /// A seed whose first roll misses a certainty past near, which past
+    /// near is a half: chosen, as a fingerprint's seed is, and moved only
+    /// with the stream.
+    const PAST_NEAR_MISSES: u64 = 0;
 
     struct Rig {
         app: App,
@@ -2837,15 +2841,12 @@ mod spotting {
         }
     }
 
-    /// How many of `seeds` find `at`, hidden at `spot`, on the first turn.
-    fn found_at_once(seeds: std::ops::Range<u64>, rules: SpotRules, at: Point, spot: u8) -> usize {
-        seeds
-            .filter(|&seed| {
-                let mut rig = rig(seed, rules, &[(at, spot, 0)]);
-                rig.wait();
-                rig.found(at)
-            })
-            .count()
+    /// Whether `at`, hidden at `spot`, is found on the first turn, a
+    /// waited one, on `seed`.
+    fn found_at_once(seed: u64, rules: SpotRules, at: Point, spot: u8) -> bool {
+        let mut rig = rig(seed, rules, &[(at, spot, 0)]);
+        rig.wait();
+        rig.found(at)
     }
 
     #[test]
@@ -2863,18 +2864,18 @@ mod spotting {
             rig.wait();
         }
         assert!(!rig.found(BEYOND), "a certainty out of sight is never found");
-
-        // At a half: found on the first turn on about half the seeds.
-        let found = found_at_once(0..60, SpotRules::default(), pillar, 50);
-        assert!((15..=45).contains(&found), "{found} of 60 at a half");
+        // A chance between nought and a certainty is the rule's own
+        // arithmetic, `SpotRules::chance`, unit-tested in `rl-rules`.
     }
 
     #[test]
     fn past_near_a_secret_is_found_at_half_its_chance_and_past_far_never() {
+        // How much past near takes off is `SpotRules::chance`'s, unit-tested
+        // in `rl-rules`; here, that the distance reaches it: whole within
+        // near, less than whole past it, none past far.
         let rules = SpotRules { near: 2, far: 7, still: 1 };
-        assert_eq!(found_at_once(0..10, rules, START.offset(2, 0), 100), 10, "within near, a certainty is certain");
-        let half = found_at_once(0..60, rules, START.offset(5, 0), 100);
-        assert!((15..=45).contains(&half), "{half} of 60 past near");
+        assert!(found_at_once(0, rules, START.offset(2, 0), 100), "within near, a certainty is certain");
+        assert!(!found_at_once(PAST_NEAR_MISSES, rules, START.offset(5, 0), 100), "past near, a certainty can be missed");
         let mut far = rig(0, rules, &[(START.offset(8, 0), 100, 0)]);
         assert_eq!(far.turns_to_find(START.offset(8, 0), 10), None, "past far, ten turns of certainty find nothing");
     }
@@ -2894,22 +2895,22 @@ mod spotting {
     fn a_waited_turn_multiplies_the_chance_and_a_moved_turn_does_not() {
         let rules = SpotRules { still: 100, ..SpotRules::default() };
         let pillar = Point::new(8, 3);
-        assert_eq!(found_at_once(0..20, rules, pillar, 1), 20, "a one in a hundred, waited on a hundredfold, is certain");
-        let moved = (0..20)
-            .filter(|&seed| {
-                let mut rig = rig(seed, rules, &[(pillar, 1, 0)]);
-                rig.step(Direction::East);
-                rig.found(pillar)
-            })
-            .count();
-        assert!(moved <= 3, "walked past, it is one in a hundred: {moved} of 20");
+        assert!(found_at_once(0, rules, pillar, 1), "a one in a hundred, waited on a hundredfold, is certain");
+        // A step read as a wait would make it certain on every seed, so
+        // one seed on which it is missed is enough.
+        let mut rig = rig(0, rules, &[(pillar, 1, 0)]);
+        rig.step(Direction::East);
+        assert!(!rig.found(pillar), "walked past, it is one in a hundred and missed");
     }
 
     #[test]
     fn one_cell_of_a_group_found_finds_it_all_and_a_wide_mouth_is_found_no_faster_than_a_door() {
         let rules = SpotRules { near: 2, far: 7, still: 3 };
         let mouth = [Point::new(5, 2), Point::new(5, 3), Point::new(5, 4)];
-        for seed in 0..20 {
+        // A few seeds rather than one: a second roll for the group shows on
+        // any seed unless both rolls happen to agree, and a certainty would
+        // hide it, so each seed more makes that coincidence rarer.
+        for seed in rl_mapgen::testing::first_seeds(0..20, 4) {
             let mut door = rig(seed, rules, &[(mouth[1], 20, 0)]);
             let mut wide = rig(seed, rules, &mouth.map(|at| (at, 20, 0)));
             let (one, three) = (door.turns_to_find(mouth[1], 40), wide.turns_to_find(mouth[1], 40));
