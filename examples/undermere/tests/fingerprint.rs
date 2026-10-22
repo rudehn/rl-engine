@@ -255,7 +255,7 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [10_875_309_400_412_365_779, 13_176_894_592_211_726_175, 2_377_502_485_482_917_857],
+        [15_360_318_729_038_689_052, 16_657_937_832_188_263_724, 12_473_779_272_419_982_085],
         "fingerprint tripwire: re-baselined once for the strata, the biomes on other floors and the bestiary moved with them \
          and the palace floors retuned, and for the script striking only a foe, so seed one's captive, shackled beside its \
          path on floor one, is walked past rather than struck at for good; and once more for the strata's review, the war \
@@ -264,6 +264,8 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
          and the traits a worn thing lends, through which the palace floors' withering dead now play; and once more for the \
          palace grounds' first wave, the royal wood and the palace gardens drawn on floors three and four beside the library \
          and the cathedral with their beasts in the spawn table and their landmarks the floor is grown round, and the pool \
-         and the population drawing from a larger file"
+         and the population drawing from a larger file; and once more for the drowned town's first wave, the old town and \
+         the harbour drawn beside the halls, the cellars and the barracks on floors one and two, the barracks grown round the \
+         gatehouse and the harbour round the sunken ship, and the harbour crab in the spawn table"
     );
 }

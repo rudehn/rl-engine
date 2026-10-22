@@ -203,4 +203,19 @@ Every addition to a shared list (biomes, layout, tiles and the tile registry, po
 - More mends the new floors one and two showed up, each a test that read the old floors' layout as a promise:
   the arena a test stages its fights in is stood twelve cells in from every edge of the floor, where an arrival against an edge had a firebolt aimed past the map's edge and spent on nothing;
   the confused goblin is stood on ground laid for it, since six cells off is past the arena's own and whatever the floor drew there could leave it only ways that close in;
-  and the stairs walk opens a piece's carved door as it does a plain one, since the gatehouse's gate, joined by growth, is carved and was read as a wall cutting the way in off from the way down.
+  the stairs walk opens a piece's carved door as it does a plain one, since the gatehouse's gate, joined by growth, is carved and was read as a wall cutting the way in off from the way down;
+  and the captive tests ask every captive on the floor, the run's own and any a piece holds, since seed zero's captive floor came to hold a piece of captives beside the run's own once both waves were in.
+
+The soak, 150 delves a span of fifty seeds, against main at `c1cf867e` and the palace grounds as merged:
+
+| | seeds | won | died on floors 3, 4, 5, 6, 7, 8, 9, 10 | stalled |
+| --- | --- | --- | --- | --- |
+| main | 1-50 | 72 (48%) | 3, 4, 9, 1, 6, 7, 22, 24 | 0 |
+| palace grounds | 1-50 | 70 (47%) | 5, 3, 10, 5, 6, 10, 12, 29 | 0 |
+| drowned town alone | 1-50 | 52 (35%) | 2, 11, 7, 6, 9, 13, 21, 29 | 0 |
+| drowned town alone | 51-100 | 64 (43%) | 6, 7, 10, 5, 6, 3, 19, 28 | 0 |
+| both halves | 1-50 | 62 (41%) | 2, 15, 6, 5, 9, 4, 13, 34 | 0 |
+
+Nothing was retuned.
+The town's floors kill nobody, as floors one and two should not, and the census of what every floor holds barely moved, so what changed is which runs the seeds deal rather than how hard a floor is: the town wave alone won 52 on the first fifty seeds and 64 on the next fifty, where the strata as tuned won 68 and 62, and over a hundred seeds that is 58 against 65, inside the spread one span of fifty seeds has shown against another.
+Floor four is the one to watch: the palace floors' dead killed fifteen with both halves in, against main's four on the same seeds, though the strata's own tuning had them at ten and a half over a hundred seeds, so a retune of the acolytes waits on a soak that shows it again.
