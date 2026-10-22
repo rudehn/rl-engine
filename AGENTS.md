@@ -79,6 +79,15 @@ When the check speaks, the slowest tests it lists are the ones to fix, by the ch
 
 A budget is raised only on purpose, saying why in the commit, as a fingerprint is re-baselined.
 
+### Soaks
+
+A soak (`examples/undermere/tests/soak.rs`) is a by-hand tuning aid of about ten minutes on a quiet machine, not a test.
+
+- **Soak only what changed.** `examples/undermere/SOAK.md` records each soak's numbers beside the commit they were measured at. A baseline is that latest row; re-soak it only when `git diff --quiet <commit> HEAD -- crates examples/undermere/src examples/undermere/assets` says game code changed.
+- **One soak at a time on the machine.** It already uses every core, so two at once each take twice as long; check `pgrep -f 'test soak'` first and wait.
+- **Run it on the dev profile.** Dependencies are already optimized, and a release build costs a second full build and drops the overflow checks a soak should catch.
+- **Record the result** as a row of `SOAK.md` in the commit that tuned against it.
+
 ## Rules that only review enforces
 
 - **Own the loop or leave it out.** The previous engine shipped data structures and left the behaviour in the game, and the game copied the data structures instead of depending on it.
