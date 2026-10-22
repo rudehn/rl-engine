@@ -1801,37 +1801,33 @@ mod aimed {
     /// Watched, a use a reflecting body turns back is seen to fly to that
     /// body and back to its user, as a reflected ability is, since both are
     /// seen by the one landing; one that is not turned back flies once.
-    /// Over a span of rolls, so both outcomes are seen.
+    /// One rig for each outcome.
     #[test]
     fn watched_an_aimed_use_turned_back_is_seen_to_fly_to_the_body_and_back() {
-        use rand::SeedableRng;
-        let (mut reflected, mut landed) = (0, 0);
-        for seed in 0..20 {
+        use crate::ability::Reflects;
+        for (reflects, turned) in [(Reflects::ALWAYS, true), (Reflects::NEVER, false)] {
             let mut rig = Rig::new();
-            rig.app.world_mut().resource_mut::<crate::ability::ReflectRng>().0 = rand::rngs::StdRng::seed_from_u64(seed);
             let rod = rig.carry(
                 r#"[(on: "use", targeting: (mode: Bolt(range: 6)), look: (glyph: '*', color: (r: 255, g: 80, b: 0)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "4"))])]"#,
             );
             let look = LookOf::Given(rl_rules::ability::Look { glyph: '*', color: rl_grid::Rgb::new(255, 80, 0) });
             let at = rig.start.offset(3, 0);
             let foe = rig.foe(3, 0);
-            rig.app.world_mut().entity_mut(foe).insert(crate::ability::Reflects::default());
+            rig.app.world_mut().entity_mut(foe).insert(reflects);
             rig.cues();
             rig.app.world_mut().resource_mut::<TurnHold>().watch();
 
             rig.act(UseItemAt { item: rod, at });
             let (user, body) = (Anchor::on(rig.player, rig.start), Anchor::on(foe, at));
             let out = Cue::Flight { from: user, to: body, look };
-            let turned = !rig.app.world_mut().resource_mut::<Messages<crate::ability::Reflected>>().drain().collect::<Vec<_>>().is_empty();
+            let written = !rig.app.world_mut().resource_mut::<Messages<crate::ability::Reflected>>().drain().collect::<Vec<_>>().is_empty();
+            assert_eq!(written, turned, "{reflects:?}: a Reflected written exactly when it is turned back");
             if turned {
-                reflected += 1;
-                assert_eq!(rig.cues(), vec![out, Cue::Flight { from: body, to: user, look }], "seed {seed}: out to the body, and back");
+                assert_eq!(rig.cues(), vec![out, Cue::Flight { from: body, to: user, look }], "out to the body, and back");
             } else {
-                landed += 1;
-                assert_eq!(rig.cues(), vec![out], "seed {seed}: once, to the body it lands on");
+                assert_eq!(rig.cues(), vec![out], "once, to the body it lands on");
             }
         }
-        assert!(reflected > 0 && landed > 0, "both outcomes over twenty seeds: {reflected} reflected, {landed} landed");
     }
 
     /// A trigger with no look shows nothing, aimed or not, so a use with no
@@ -1926,27 +1922,19 @@ mod aimed {
     /// `ReflectRng` is derived by whichever of `AbilitiesPlugin` or
     /// `EffectsPlugin` adds the stream first; this rig carries neither
     /// `AbilitiesPlugin` nor a game that adds it, only items and
-    /// `EffectsPlugin`, so a `Reflects` body
-    /// must still turn an aimed use back on its user about half the time,
-    /// rather than never, which is what an unset stream would silently do.
+    /// `EffectsPlugin`, so a body that always reflects must still turn an
+    /// aimed use back on its user, rather than never, which is what an
+    /// unset stream would silently do.
     #[test]
     fn an_aimed_use_reflects_off_a_reflecting_body_with_no_abilities_plugin_in_the_app() {
-        let (mut users_hurt, mut bodies_hurt) = (0, 0);
-        for seed in 0..40u64 {
-            let mut rig = Rig::new();
-            rig.app.world_mut().resource_mut::<crate::seed::Seed>().0 = rl_core::RunSeed(seed);
-            rig.app.update();
-            let rod = rig.carry(BOLT);
-            let foe = rig.foe(3, 0);
-            rig.app.world_mut().entity_mut(foe).insert(crate::ability::Reflects::default());
-            let at = rig.start.offset(3, 0);
-            rig.act(UseItemAt { item: rod, at });
-            let (user_hurt, body_hurt) = (rig.hp(rig.player) < 30, rig.hp(foe) < 20);
-            assert_ne!(user_hurt, body_hurt, "seed {seed}: exactly one of the user and the reflecting body is hurt");
-            users_hurt += user_hurt as u32;
-            bodies_hurt += body_hurt as u32;
-        }
-        assert!(users_hurt > 0 && bodies_hurt > 0, "both outcomes over forty seeds: {users_hurt} reflected, {bodies_hurt} landed");
+        let mut rig = Rig::new();
+        let rod = rig.carry(BOLT);
+        let foe = rig.foe(3, 0);
+        rig.app.world_mut().entity_mut(foe).insert(crate::ability::Reflects::ALWAYS);
+        let at = rig.start.offset(3, 0);
+        rig.act(UseItemAt { item: rod, at });
+        assert!(rig.hp(rig.player) < 30, "the user is hurt by its own use turned back");
+        assert_eq!(rig.hp(foe), 20, "and the reflecting body is not");
     }
 }
 

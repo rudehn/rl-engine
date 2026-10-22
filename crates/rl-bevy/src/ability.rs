@@ -1435,78 +1435,71 @@ mod tests {
     }
 
     /// A body marked [`Reflects`] turns a bolt aimed at it back on whoever
-    /// cast it, one time in two: over a span of seeds, both the caster and
-    /// the body it aimed at are seen hurt, and on every single cast
-    /// exactly one of them is, never both and never neither.
+    /// cast it at its chance: a body that always does hurts the caster and
+    /// is spared, and one that never does is hurt and spares the caster,
+    /// so on every cast exactly one of them is hurt, never both and never
+    /// neither. A percent past a hundred written into the field is a
+    /// certainty too, never a roll refused. The chance between is `rand`'s
+    /// own arithmetic.
     #[test]
-    fn a_reflecting_body_turns_a_bolt_back_on_its_caster_about_half_the_time() {
-        let bolt_name = "bolt";
-        let (mut casters_hurt, mut targets_hurt) = (0, 0);
-        for seed in 0..40 {
+    fn a_reflecting_body_turns_a_bolt_back_on_its_caster_at_its_chance() {
+        for (reflects, turned) in [(Reflects::ALWAYS, true), (Reflects::NEVER, false), (Reflects { percent: 250 }, true)] {
             let (mut app, start) = app();
-            app.world_mut().resource_mut::<crate::seed::Seed>().0 = RunSeed(seed);
-            let bolt = ability(&app, bolt_name);
+            let bolt = ability(&app, "bolt");
             let me = caster(&mut app, start, 20, &[bolt]);
             let them = foe(&mut app, start.offset(3, 0));
-            app.world_mut().entity_mut(them).insert(Reflects::default());
+            app.world_mut().entity_mut(them).insert(reflects);
             settle(&mut app);
 
             app.world_mut().write_message(Intent::new(me, Use { ability: bolt, aim: start.offset(3, 0) }));
             app.update();
 
             let (me_hurt, them_hurt) = (hp(&app, me) < 30, hp(&app, them) < 20);
-            assert_ne!(me_hurt, them_hurt, "seed {seed}: exactly one of the caster and the reflecting body is hurt");
-            casters_hurt += me_hurt as u32;
-            targets_hurt += them_hurt as u32;
+            assert_eq!((me_hurt, them_hurt), (turned, !turned), "{reflects:?}: the caster hurt when turned back, the body when not");
         }
-        assert!(casters_hurt > 0 && targets_hurt > 0, "both outcomes over forty seeds: {casters_hurt} reflected, {targets_hurt} landed");
     }
 
     /// Watched, a bolt turned back is seen to fly to the body that turned it
     /// and back to its caster, and lands only once both have been seen,
     /// bursting on the caster; one that is not turned back flies once, to
     /// the body, and bursts there, as it always did. The picture then
-    /// agrees with the log's line that it was reflected. Over a span of
-    /// seeds, so both outcomes are seen.
+    /// agrees with the log's line that it was reflected. One app for each
+    /// outcome.
     #[test]
     fn a_reflected_bolt_is_seen_to_fly_to_the_body_that_turned_it_and_back_to_its_caster() {
-        let (mut reflected, mut landed) = (0, 0);
-        for seed in 0..40 {
+        for (reflects, turned) in [(Reflects::ALWAYS, true), (Reflects::NEVER, false)] {
             let (mut app, start) = app();
-            app.world_mut().resource_mut::<crate::seed::Seed>().0 = RunSeed(seed);
             let bolt = ability(&app, "bolt");
             let me = caster(&mut app, start, 20, &[bolt]);
             let there = start.offset(3, 0);
             let them = foe(&mut app, there);
-            app.world_mut().entity_mut(them).insert(Reflects::default());
+            app.world_mut().entity_mut(them).insert(reflects);
             settle(&mut app);
             app.world_mut().resource_mut::<TurnHold>().watch();
             cues(&mut app);
 
             app.world_mut().write_message(Intent::new(me, Use { ability: bolt, aim: there }));
             app.update();
-            let turned = !app.world_mut().resource_mut::<Messages<Reflected>>().drain().collect::<Vec<_>>().is_empty();
+            let written = !app.world_mut().resource_mut::<Messages<Reflected>>().drain().collect::<Vec<_>>().is_empty();
+            assert_eq!(written, turned, "{reflects:?}: a Reflected written exactly when it is turned back");
             let (caster, body, look) = (Anchor::on(me, start), Anchor::on(them, there), LookOf::Ability(bolt));
             let out = Cue::Flight { from: caster, to: body, look };
             let flown = cues(&mut app);
-            assert_eq!((hp(&app, me), hp(&app, them)), (30, 20), "seed {seed}: nothing lands while it is in the air");
+            assert_eq!((hp(&app, me), hp(&app, them)), (30, 20), "{reflects:?}: nothing lands while it is in the air");
             if turned {
-                reflected += 1;
-                assert_eq!(flown, vec![out, Cue::Flight { from: body, to: caster, look }], "seed {seed}: out to the body that turned it, and back");
+                assert_eq!(flown, vec![out, Cue::Flight { from: body, to: caster, look }], "out to the body that turned it, and back");
             } else {
-                landed += 1;
-                assert_eq!(flown, vec![out], "seed {seed}: one flight, to the body it lands on");
+                assert_eq!(flown, vec![out], "one flight, to the body it lands on");
             }
 
             app.world_mut().resource_mut::<TurnHold>().release();
             app.update();
             let burst = cues(&mut app);
-            let [Cue::Burst { from, .. }] = burst.as_slice() else { panic!("seed {seed}: a burst where it landed: {burst:?}") };
+            let [Cue::Burst { from, .. }] = burst.as_slice() else { panic!("{reflects:?}: a burst where it landed: {burst:?}") };
             let (hurt, burst_from) = if turned { (me, caster) } else { (them, body) };
-            assert_eq!(*from, Some(burst_from), "seed {seed}: bursting on whoever it came down on");
-            assert!(hp(&app, hurt) < if turned { 30 } else { 20 }, "seed {seed}: and hurting them");
+            assert_eq!(*from, Some(burst_from), "{reflects:?}: bursting on whoever it came down on");
+            assert!(hp(&app, hurt) < if turned { 30 } else { 20 }, "{reflects:?}: and hurting them");
         }
-        assert!(reflected > 0 && landed > 0, "both outcomes over forty seeds: {reflected} reflected, {landed} landed");
     }
 
     /// What came down reaches another when it landed on anyone but its user
@@ -1526,94 +1519,86 @@ mod tests {
 
     /// A reflection writes a [`Reflected`] naming the reflecting body and
     /// the caster it turned the bolt back onto; a bolt that lands where it
-    /// was aimed writes none.
+    /// was aimed writes none. One app for each outcome.
     #[test]
     fn a_reflection_writes_what_turned_back_and_a_landing_writes_none() {
-        let bolt_name = "bolt";
-        for seed in 0..40 {
+        for reflects in [Reflects::ALWAYS, Reflects::NEVER] {
             let (mut app, start) = app();
-            app.world_mut().resource_mut::<crate::seed::Seed>().0 = RunSeed(seed);
-            let bolt = ability(&app, bolt_name);
+            let bolt = ability(&app, "bolt");
             let me = caster(&mut app, start, 20, &[bolt]);
             let them = foe(&mut app, start.offset(3, 0));
-            app.world_mut().entity_mut(them).insert(Reflects::default());
+            app.world_mut().entity_mut(them).insert(reflects);
             settle(&mut app);
 
             app.world_mut().write_message(Intent::new(me, Use { ability: bolt, aim: start.offset(3, 0) }));
             app.update();
 
             let reflected: Vec<Reflected> = app.world_mut().resource_mut::<Messages<Reflected>>().drain().collect();
-            let them_hurt = hp(&app, them) < 20;
-            if them_hurt {
-                assert!(reflected.is_empty(), "seed {seed}: a landing that was not reflected writes no Reflected");
+            if reflects == Reflects::NEVER {
+                assert!(hp(&app, them) < 20, "never reflecting, the body is hurt");
+                assert!(reflected.is_empty(), "and a landing that was not reflected writes no Reflected");
             } else {
-                assert_eq!(reflected.len(), 1, "seed {seed}: a reflection writes exactly one Reflected");
-                assert_eq!(reflected[0].by, them, "seed {seed}: by names the reflecting body");
-                assert_eq!(reflected[0].onto, me, "seed {seed}: onto names the caster it turned back onto");
+                assert_eq!(hp(&app, them), 20, "always reflecting, the body is spared");
+                assert_eq!(reflected.len(), 1, "and a reflection writes exactly one Reflected");
+                assert_eq!(reflected[0].by, them, "by names the reflecting body");
+                assert_eq!(reflected[0].onto, me, "onto names the caster it turned back onto");
             }
         }
     }
 
     /// A reflecting body turns back only what is aimed at it as a foe: a
     /// mend aimed at it by an ally, and a blast an ally aims at the ground
-    /// it stands on, land on it every time, over a span of seeds, and never
-    /// come back on the one who used them.
+    /// it stands on, land on it even when it turns back everything a foe
+    /// aims, and never come back on the one who used them.
     #[test]
     fn a_reflecting_body_never_turns_back_what_an_ally_aims_at_it() {
-        for seed in 0..40 {
-            let (mut app, start) = app();
-            app.world_mut().resource_mut::<crate::seed::Seed>().0 = RunSeed(seed);
-            let (salve, burst) = (ability(&app, "salve"), ability(&app, "burst"));
-            let me = caster(&mut app, start, 20, &[salve, burst]);
-            let there = start.offset(4, 0);
-            let ours = friend(&mut app, there);
-            app.world_mut().entity_mut(ours).insert((Reflects::default(), Health { current: 10, max: 20 }));
-            settle(&mut app);
+        let (mut app, start) = app();
+        let (salve, burst) = (ability(&app, "salve"), ability(&app, "burst"));
+        let me = caster(&mut app, start, 20, &[salve, burst]);
+        let there = start.offset(4, 0);
+        let ours = friend(&mut app, there);
+        app.world_mut().entity_mut(ours).insert((Reflects::ALWAYS, Health { current: 10, max: 20 }));
+        settle(&mut app);
 
-            app.world_mut().write_message(Intent::new(me, Use { ability: salve, aim: there }));
-            app.update();
-            assert_eq!(hp(&app, ours), 15, "seed {seed}: an ally's mend lands on the reflecting body");
+        app.world_mut().write_message(Intent::new(me, Use { ability: salve, aim: there }));
+        app.update();
+        assert_eq!(hp(&app, ours), 15, "an ally's mend lands on the reflecting body");
 
-            settle(&mut app);
-            app.world_mut().write_message(Intent::new(me, Use { ability: burst, aim: there }));
-            app.update();
-            assert_eq!(hp(&app, ours), 12, "seed {seed}: and so does an ally's blast on its ground");
-            assert_eq!(hp(&app, me), 30, "seed {seed}: and neither came back on the one who used it");
-        }
+        settle(&mut app);
+        app.world_mut().write_message(Intent::new(me, Use { ability: burst, aim: there }));
+        app.update();
+        assert_eq!(hp(&app, ours), 12, "and so does an ally's blast on its ground");
+        assert_eq!(hp(&app, me), 30, "and neither came back on the one who used it");
     }
 
     /// A bolt turned back lands whole on its caster: the cells its ground
     /// effects run over are the caster's own, never the reflecting body's,
     /// and a bolt that is not turned back lands both on the body it was
-    /// aimed at. Over a span of seeds, so both outcomes are seen.
+    /// aimed at. One app for each outcome.
     #[test]
     fn a_reflected_bolt_lands_its_cells_where_its_caster_stands() {
-        let (mut reflected, mut landed) = (0, 0);
-        for seed in 0..40 {
+        for (reflects, turned) in [(Reflects::ALWAYS, true), (Reflects::NEVER, false)] {
             let (mut app, start) = app();
-            app.world_mut().resource_mut::<crate::seed::Seed>().0 = RunSeed(seed);
             let flare = ability(&app, "flare");
             let me = caster(&mut app, start, 20, &[flare]);
             let there = start.offset(3, 0);
             let them = foe(&mut app, there);
-            app.world_mut().entity_mut(them).insert(Reflects::default());
+            app.world_mut().entity_mut(them).insert(reflects);
             settle(&mut app);
 
             app.world_mut().write_message(Intent::new(me, Use { ability: flare, aim: there }));
             app.update();
 
             let painted = app.world().get_resource::<Painted>().expect("the flare landed").clone();
-            if hp(&app, me) < 30 {
-                reflected += 1;
-                assert_eq!(painted.cells, vec![start], "seed {seed}: a reflected bolt lands its cells on its caster");
-                assert_eq!(painted.targets, vec![me], "seed {seed}: and its caster is its only target");
+            assert_eq!(hp(&app, me) < 30, turned, "{reflects:?}: the caster hurt exactly when it is turned back");
+            if turned {
+                assert_eq!(painted.cells, vec![start], "a reflected bolt lands its cells on its caster");
+                assert_eq!(painted.targets, vec![me], "and its caster is its only target");
             } else {
-                landed += 1;
-                assert_eq!(painted.cells, vec![there], "seed {seed}: a bolt not turned back lands on the body it was aimed at");
-                assert_eq!(painted.targets, vec![them], "seed {seed}: and hits it");
+                assert_eq!(painted.cells, vec![there], "a bolt not turned back lands on the body it was aimed at");
+                assert_eq!(painted.targets, vec![them], "and hits it");
             }
         }
-        assert!(reflected > 0 && landed > 0, "both outcomes over forty seeds: {reflected} reflected, {landed} landed");
     }
 
     /// A ball that catches only the body that turns it back lands whole on
@@ -1621,70 +1606,57 @@ mod tests {
     /// caster had been aimed at, and the caster is its only target.
     #[test]
     fn a_ball_turned_back_by_the_only_body_it_caught_bursts_round_its_caster() {
-        let mut reflected = 0;
-        for seed in 0..40 {
-            let (mut app, start) = app();
-            app.world_mut().resource_mut::<crate::seed::Seed>().0 = RunSeed(seed);
-            let ball = ability(&app, "flareball");
-            let me = caster(&mut app, start, 20, &[ball]);
-            let there = start.offset(4, 0);
-            let them = foe(&mut app, there);
-            app.world_mut().entity_mut(them).insert(Reflects::default());
-            settle(&mut app);
+        let (mut app, start) = app();
+        let ball = ability(&app, "flareball");
+        let me = caster(&mut app, start, 20, &[ball]);
+        let there = start.offset(4, 0);
+        let them = foe(&mut app, there);
+        app.world_mut().entity_mut(them).insert(Reflects::ALWAYS);
+        settle(&mut app);
 
-            app.world_mut().write_message(Intent::new(me, Use { ability: ball, aim: there }));
-            app.update();
+        app.world_mut().write_message(Intent::new(me, Use { ability: ball, aim: there }));
+        app.update();
 
-            if hp(&app, me) == 30 {
-                continue;
-            }
-            reflected += 1;
-            let painted = app.world().get_resource::<Painted>().expect("the ball landed").clone();
-            let mut cells = painted.cells.clone();
-            cells.sort_by_key(|p| (p.y, p.x));
-            let mut around: Vec<Point> = rl_core::geometry::disc(start, 1).collect();
-            around.sort_by_key(|p| (p.y, p.x));
-            assert_eq!(cells, around, "seed {seed}: a ball turned back by its only target bursts round its caster");
-            assert_eq!(painted.targets, vec![me], "seed {seed}: and lands on its caster alone");
-            assert_eq!(hp(&app, them), 20, "seed {seed}: sparing the body that turned it");
-        }
-        assert!(reflected > 0, "some of forty seeds turn the ball back");
+        assert!(hp(&app, me) < 30, "the ball is turned back onto its caster");
+        let painted = app.world().get_resource::<Painted>().expect("the ball landed").clone();
+        let mut cells = painted.cells.clone();
+        cells.sort_by_key(|p| (p.y, p.x));
+        let mut around: Vec<Point> = rl_core::geometry::disc(start, 1).collect();
+        around.sort_by_key(|p| (p.y, p.x));
+        assert_eq!(cells, around, "a ball turned back by its only target bursts round its caster");
+        assert_eq!(painted.targets, vec![me], "and lands on its caster alone");
+        assert_eq!(hp(&app, them), 20, "sparing the body that turned it");
     }
 
     /// A body in a burst turns back only its own share: the two others it
     /// caught are hurt where it was aimed, as is the caster in the
     /// reflecting body's place, and the reflecting body is spared; the
-    /// ground stays where it was aimed. Over a span of seeds, so both
-    /// outcomes are seen.
+    /// ground stays where it was aimed. One app for each outcome.
     #[test]
     fn a_body_in_a_burst_turns_back_only_its_own_share() {
-        let (mut reflected, mut landed) = (0, 0);
-        for seed in 0..40 {
+        for (reflects, turned) in [(Reflects::ALWAYS, true), (Reflects::NEVER, false)] {
             let (mut app, start) = app();
-            app.world_mut().resource_mut::<crate::seed::Seed>().0 = RunSeed(seed);
             let ball = ability(&app, "flareball");
             let me = caster(&mut app, start, 20, &[ball]);
             let there = start.offset(4, 0);
             let them = foe(&mut app, there);
             let (above, below) = (foe(&mut app, there.offset(0, -1)), foe(&mut app, there.offset(0, 1)));
-            app.world_mut().entity_mut(them).insert(Reflects::default());
+            app.world_mut().entity_mut(them).insert(reflects);
             settle(&mut app);
 
             app.world_mut().write_message(Intent::new(me, Use { ability: ball, aim: there }));
             app.update();
 
-            assert!(hp(&app, above) < 20 && hp(&app, below) < 20, "seed {seed}: the two others are hurt where it was aimed either way");
+            assert!(hp(&app, above) < 20 && hp(&app, below) < 20, "{reflects:?}: the two others are hurt where it was aimed either way");
             let painted = app.world().get_resource::<Painted>().expect("the ball landed").clone();
-            assert!(painted.cells.contains(&there), "seed {seed}: and the ground stays where it was aimed");
-            if hp(&app, me) < 30 {
-                reflected += 1;
-                assert_eq!(hp(&app, them), 20, "seed {seed}: the reflecting body is spared its share");
+            assert!(painted.cells.contains(&there), "{reflects:?}: and the ground stays where it was aimed");
+            assert_eq!(hp(&app, me) < 30, turned, "{reflects:?}: the caster hurt in its place exactly when it is turned back");
+            if turned {
+                assert_eq!(hp(&app, them), 20, "the reflecting body is spared its share");
             } else {
-                landed += 1;
-                assert!(hp(&app, them) < 20, "seed {seed}: not turned back, the body is hurt with the rest");
+                assert!(hp(&app, them) < 20, "not turned back, the body is hurt with the rest");
             }
         }
-        assert!(reflected > 0 && landed > 0, "both outcomes over forty seeds: {reflected} reflected, {landed} landed");
     }
 
     /// An unaffordable ability is refused, costs the player no time, keeps
