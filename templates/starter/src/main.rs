@@ -198,7 +198,6 @@ fn start(
     seed: Res<Seed>,
     mut warps: MessageWriter<WarpRequest>,
     mut log: ResMut<MessageLog>,
-    mut next: ResMut<NextState<EngineState>>,
 ) {
     let dungeon = Dungeon::new(seed.0);
 
@@ -273,7 +272,6 @@ fn start(
         Tones::NOTICE,
         0,
     );
-    next.set(EngineState::Playing);
 }
 
 /// What the player's keys can ask for.

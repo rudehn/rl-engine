@@ -78,7 +78,7 @@ impl PlaceRules for Warren {
 
 // ANCHOR: start
 /// Hands the engine the map rules and the player, then warps the player in.
-fn start(mut commands: Commands, seed: Res<Seed>, mut warps: MessageWriter<WarpRequest>, mut next: ResMut<NextState<EngineState>>) {
+fn start(mut commands: Commands, seed: Res<Seed>, mut warps: MessageWriter<WarpRequest>) {
     let warren = Warren::new(seed.0);
     commands.insert_resource(warren.appearance());
     commands.insert_resource(WorldMap::new(warren.tiles.tables()));
@@ -87,7 +87,6 @@ fn start(mut commands: Commands, seed: Res<Seed>, mut warps: MessageWriter<WarpR
     let player =
         commands.spawn(((Actor, Player, Blocks, Position(Point::ZERO)), (Viewshed::new(9), RevealsMap, Glyph::new('@', Color::WHITE).on_layer(10)))).id();
     warps.write(WarpRequest::into_place(player, WARREN));
-    next.set(EngineState::Playing);
 }
 // ANCHOR_END: start
 

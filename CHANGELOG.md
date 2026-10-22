@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The tutorial's steps, the template, Undermere and Foundry no longer set `EngineState::Playing` in their starts, their own or a continued run's, and leave it to the engine.
+  To change: nothing; a game made from the template may delete the same line and the `NextState` parameter.
+
 - Play begins on its own once a run's start, in `NewRun`, has built a `WorldMap` and no `HoldStart` holds it: `begin_run`, the door the first run, a title's New Game and every restart come through, sets `EngineState::Playing` in the frame a start used to set it.
   To change: nothing; a start may delete its `next.set(EngineState::Playing)` and the `NextState` parameter, and setting it by hand still works.
 

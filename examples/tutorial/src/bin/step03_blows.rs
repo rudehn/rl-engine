@@ -108,13 +108,7 @@ impl PlaceRules for Warren {
 
 // ANCHOR: start
 /// Hands the engine the map rules and the player, then warps the player in.
-fn start(
-    mut commands: Commands,
-    seed: Res<Seed>,
-    mut warps: MessageWriter<WarpRequest>,
-    mut log: ResMut<MessageLog>,
-    mut next: ResMut<NextState<EngineState>>,
-) {
+fn start(mut commands: Commands, seed: Res<Seed>, mut warps: MessageWriter<WarpRequest>, mut log: ResMut<MessageLog>) {
     let warren = Warren::new(seed.0);
 
     // ANCHOR: combat
@@ -148,7 +142,6 @@ fn start(
     warps.write(WarpRequest::into_place(player, WARREN));
     log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE, 0);
     log.push("Something is scratching in the dark.", Tones::MUTED, 0);
-    next.set(EngineState::Playing);
 }
 // ANCHOR_END: start
 

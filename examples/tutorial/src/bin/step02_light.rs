@@ -96,13 +96,7 @@ impl PlaceRules for Warren {
 
 // ANCHOR: start
 /// Hands the engine the map rules and the player, then warps the player in.
-fn start(
-    mut commands: Commands,
-    seed: Res<Seed>,
-    mut warps: MessageWriter<WarpRequest>,
-    mut log: ResMut<MessageLog>,
-    mut next: ResMut<NextState<EngineState>>,
-) {
+fn start(mut commands: Commands, seed: Res<Seed>, mut warps: MessageWriter<WarpRequest>, mut log: ResMut<MessageLog>) {
     let warren = Warren::new(seed.0);
     commands.insert_resource(warren.appearance());
     commands.insert_resource(WorldMap::new(warren.tiles.tables()));
@@ -114,7 +108,6 @@ fn start(
     warps.write(WarpRequest::into_place(player, WARREN));
     log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE, 0);
     log.push("Walk with the arrows, hjklyubn or the numpad. t tends the lantern, . waits, q quits.", Tones::MUTED, 0);
-    next.set(EngineState::Playing);
 }
 // ANCHOR_END: start
 

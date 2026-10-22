@@ -423,7 +423,6 @@ pub fn start(
         floor => map_of(floor),
     };
     begin.warps.write(WarpRequest::into_place(adventurer, place));
-    begin.next.set(EngineState::Playing);
 }
 // ANCHOR_END: start
 
@@ -471,7 +470,6 @@ pub fn resume(world: &mut World) {
         None => "Continuing in Mereholt.".to_string(),
     };
     world.resource_mut::<MessageLog>().notice(line, saved.turn());
-    world.resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
 }
 
 /// Begins a fresh run where a continued one could not be.
@@ -494,11 +492,11 @@ pub struct Content<'w> {
 }
 
 /// What starting a run writes beyond the world itself: the log's first
-/// line, the warp into Mereholt, and the state that begins play.
+/// line and the warp into Mereholt; play begins on its own once the start
+/// has built the world.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Begin<'w> {
     warps: MessageWriter<'w, WarpRequest>,
-    next: ResMut<'w, NextState<EngineState>>,
     log: ResMut<'w, MessageLog>,
 }
 

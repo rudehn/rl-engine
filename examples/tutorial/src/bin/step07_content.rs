@@ -244,13 +244,7 @@ impl Bestiary {
 
 // ANCHOR: start
 /// Hands the engine the map rules and the player, then warps the player in.
-fn start(
-    mut commands: Commands,
-    seed: Res<Seed>,
-    mut warps: MessageWriter<WarpRequest>,
-    mut log: ResMut<MessageLog>,
-    mut next: ResMut<NextState<EngineState>>,
-) {
+fn start(mut commands: Commands, seed: Res<Seed>, mut warps: MessageWriter<WarpRequest>, mut log: ResMut<MessageLog>) {
     let warren = Warren::new(seed.0);
 
     // The two registries combat reads: what damage can be, and who hates
@@ -279,7 +273,6 @@ fn start(
         .id();
     warps.write(WarpRequest::into_place(player, map_of(1)));
     log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE, 0);
-    next.set(EngineState::Playing);
 }
 // ANCHOR_END: start
 

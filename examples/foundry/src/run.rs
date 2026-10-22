@@ -147,7 +147,6 @@ pub fn start(
     let deck = first.map_or(1, |f| f.0.clamp(1, crate::decks::DECKS));
     begin.log.notice(format!("Seed {}. The drop ship is gone. The first reactor is on deck three.", seed.0.0), 0);
     begin.warps.write(WarpRequest::into_place(player, map_of(deck)));
-    begin.next.set(EngineState::Playing);
 }
 
 /// Continues the saved run, when the title's Continue asked for it with
@@ -222,15 +221,14 @@ pub fn resume(world: &mut World) {
     }
     let deck = crate::decks::deck_of(world.get::<OnMap>(player).map_or(MapId::ZERO, |m| m.0));
     world.resource_mut::<MessageLog>().notice(format!("Continuing on deck {deck}."), saved.turn());
-    world.resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
 }
 
 /// What starting a run writes beyond the world itself: the log's first
-/// line, the warp onto the first deck, and the state that begins play.
+/// line and the warp onto the first deck; play begins on its own once the
+/// start has built the world.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Begin<'w> {
     warps: MessageWriter<'w, WarpRequest>,
-    next: ResMut<'w, NextState<EngineState>>,
     log: ResMut<'w, MessageLog>,
 }
 
