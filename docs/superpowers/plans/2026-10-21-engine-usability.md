@@ -19,6 +19,7 @@ It replaces `2026-10-20-engine-usability.md`, which is removed; the review's "Th
 - The fingerprints are the `fingerprint` test binaries of rl-bevy, Undermere and Foundry: filter them with `-E 'binary(fingerprint)'`, never `test(/fingerprint/)`, which misses rl-bevy's.
 - `scripts/gate.sh` runs the fast tier of every package the branch touched and of every package depending on one, fingerprints included.
   A step that runs a package's tests or the fingerprints before the gate is for iterating; skip it when the gate follows at once, since Undermere's fast tier alone is about 260 s of processor time.
+- A game (Undermere, Foundry, the tutorial, the template) uses only the engine's public, stable API: its own systems, the engine's system sets, component, resource and message types, plugins, and `rl_engine::testing`; it never names an engine system function or a private path, and nothing in the engine is public only so a game's test can reach it.
 - Commit messages are one long lowercase sentence saying what is now true, with no attribution lines.
 - Where a plan's description of the code disagrees with the code, the code wins; the branch's final report says where.
 - A worktree is removed and its branch deleted once merged.
@@ -85,7 +86,7 @@ A branch that closes an item removes it in the commit that finishes it and moves
 | 11, allowlist entry in Foundry's ambiguity test | 13 |
 | 15, two engine types named for a theme word | 15 |
 | 27, one type per concept | 10 (the mirrored enums), 15 (`Reach`, `Secret`); loot as `BandedTable<K>` and one actor handle stay open |
-| 28, ambiguity tests through the schedule's interface | 13, allowing a pair with an engine system by its Bevy name rather than by data alone, so each allowance stays one pair |
+| 28, ambiguity tests through the schedule's interface | 13 |
 | 33, one root-and-prelude rule per crate | 17, for `rl-engine`; the per-crate preludes stay open |
 | 34, rule numbers in the engine | 02 (reflect chance), 12 (`EQUIP_FROM_GROUND_COST`, `STANDING_ROOM`); the rest stays open |
 | 35, the API review's renames | 15 strikes whatever of section D it did |
@@ -97,7 +98,7 @@ A branch that closes an item removes it in the commit that finishes it and moves
   Branch 08 plays in a terminal with the GPU crates compiled but never added.
   Splitting `rl-render`'s cell buffer from its window drawing, then leaning the features, is one follow-up; branch 05 adds it to `docs/TODO.md`.
 - **4.6, one test app per engine module.** Not in the ranked table; the review says leave it.
-- **Engine-wide ambiguity.** Branch 13 adds an rl-bevy test over every rl-bevy plugin; the same over `rl-ui` and `rl-save` is left to TODO 28's successor if their systems ever conflict.
+- **Engine-wide ambiguity.** Branch 13 adds an rl-bevy test over every rl-bevy plugin, and the same in `rl-save` or `rl-ui` only for the pairs Foundry's list held with their systems; a full sweep of those crates waits until their systems conflict.
 
 ## Review claims found wrong or incomplete
 
@@ -137,7 +138,15 @@ Changed:
 Decided by the author, 2026-10-21:
 
 - The place model (16) goes to `rl-mapgen`, not `rl-rules`, with `Lock::key` as the raw tag id `Join::Locked` carries.
-- Ambiguity allowances (13) stay exact: a game names an engine system by its Bevy name with `Allowed::named`, and an unmatched name fails as unused.
+- A game's ambiguity allowances (13) use only `Allowed::with_any(ours, data)` or `Allowed::among(sets)`; engine-against-engine pairs stay exact, by `TypeId`, in the engine's own tests.
+
+Flagged by the public-API scan, 2026-10-21:
+
+- Fixed: Foundry's allow list named about 45 engine system functions (13); rl-bevy's own ambiguity test no longer copies the games' plugin lists (13); `rl_bevy::plugin::headless_app` moves to `rl_bevy::testing` and the tutorial's tests use `rl_engine::testing` (06, 13).
+- Fixed: `Reflects::ALWAYS` and `NEVER` (02) and `TtyPlugin::to_writer` (08) are described as API a game uses, not test hooks.
+- Open: both games' `resume` call `rl_bevy::plugin::clear_run` and reload, reseed and restore by hand, which TODO 30 (continuing a run is the engine's) removes; no branch here closes it.
+- Open: `rl_engine::testing` and `rl_bevy::testing` become semver-stable once the games leave the workspace, so their helpers are API to curate, not a test convenience.
+- Open: both games' `main` read `rl_bevy::replay::seed()` and `args()` beside their own argument parsing; a public `Seed::from_args` that takes the game's extra arguments would cover it.
 - Step 1 on the standard tiles (06) stands; the release's guide pass covers chapter 1's look.
 - The log (09) stays as planned: `info`, `muted` and `notice` on `Log`, and `MessageLog` keeps only `push_at`.
 - The tutorial and the template (07) draw per place from the place's own seed, `seed.place(map).rng(DOMAIN, 0)`, as Undermere does.

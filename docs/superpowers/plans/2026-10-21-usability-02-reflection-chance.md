@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** `Reflects` carries its chance, so a test sets it to always or never, and the reflection and spotting tests stop counting outcomes over seeds.
+**Goal:** `Reflects` carries its chance, a rule value a game sets and a test sets to always or never, and the reflection and spotting tests stop counting outcomes over seeds.
 
 **Architecture:** `Reflects` becomes a component with a `percent` field defaulting to 50, rolled with the same `random_bool(0.5)` at the default so no draw moves.
 The rate tests become one app per outcome; the arithmetic they sampled is already unit-tested in tier 1 (`SpotRules::chance`) or is `rand`'s own.
@@ -51,7 +51,7 @@ The rate tests become one app per outcome; the arithmetic they sampled is alread
 - [ ] **Step 4:** Run the two tests, then `scripts/gate.sh`, which plays the three fingerprints.
   Expected: PASS, fingerprints unchanged.
 - [ ] **Step 5:** Commit.
-  CHANGELOG: "`Reflects` carries the chance it turns a use back, `Reflects { percent }`, 50 by default, with `Reflects::ALWAYS` and `Reflects::NEVER` for a test. To change: `insert(Reflects)` becomes `insert(Reflects::default())`."
+  CHANGELOG: "`Reflects` carries the chance it turns a use back, `Reflects { percent }`, 50 by default, with `Reflects::ALWAYS` and `Reflects::NEVER` for a body that always or never does. To change: `insert(Reflects)` becomes `insert(Reflects::default())`."
 
 ### Task 2: The reflection tests set the outcome instead of counting it
 

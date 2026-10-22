@@ -81,7 +81,7 @@ The GPU crates are still compiled (index, "Deferred"); they are never added.
 - Test: same file
 
 **Interfaces:**
-- Produces: `pub struct TtyPlugin`, `TtyPlugin::new(cols: i32, rows: i32)` for stdout in raw mode, and `TtyPlugin::to_writer(cols, rows, out: impl Write + Send + Sync + 'static)` for tests, with no raw mode and no polling.
+- Produces: `pub struct TtyPlugin`, `TtyPlugin::new(cols: i32, rows: i32)` for stdout in raw mode, and `TtyPlugin::to_writer(cols, rows, out: impl Write + Send + Sync + 'static)` for any other writer, an SSH channel or a test's buffer, with no raw mode and no polling.
 - `build` inserts `Terminal::new(cols, rows, Vec2::ONE)`, `rl_render::pointer::Pointer::default()`, and adds: in `Startup`, raw mode, the alternate screen and a hidden cursor behind a guard resource that restores on drop; in `PreUpdate` after Bevy's input systems, release last frame's keys, then poll crossterm with a zero timeout and press each `key_code`; in `PostUpdate`, write `changes` with `MoveTo`, colours and `shown`, then flush.
 
 - [ ] **Step 1: Write the failing tests** with `to_writer` over a shared `Vec<u8>`: `a_frame_writes_only_the_cells_that_changed_since_the_last`, `after_a_resize_every_cell_is_written_again` (send the resize through the plugin's event seam), `a_key_pressed_is_released_the_frame_after`, `the_guard_restores_the_terminal_when_dropped`.
