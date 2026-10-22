@@ -3,8 +3,8 @@
 Written 2026-10-20 at `49c4549a`; refined 2026-10-21 at `fbbbbe5c` with every number re-measured.
 Counts are from the source; timings are from two Undermere fast-tier runs on 2026-10-21.
 No workspace-wide timing record exists, so engine-crate tests are counted, not timed.
-The plan written from the first version is `docs/superpowers/plans/2026-10-20-engine-usability.md`; "The plan" below lists where this review disagrees.
-Nothing here is scheduled.
+The plan written from the first version, `docs/superpowers/plans/2026-10-20-engine-usability.md`, is replaced; "The plan" below lists where this review disagreed with it.
+The branches that act on this review are indexed in `docs/superpowers/plans/2026-10-21-engine-usability.md`.
 
 ## The four goals
 
