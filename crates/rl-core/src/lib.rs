@@ -12,7 +12,7 @@
 //! - [`geometry`]: distances, Bresenham lines, discs, cones, squares.
 //! - [`RunSeed`] and [`SeedDomain`]: every random stream in a run derives
 //!   from one root seed through a named domain, so subsystems cannot
-//!   reshuffle one another.
+//!   reshuffle one another; [`PlaceSeed`] is one place's share of it.
 //! - [`DiceRoll`]: `NdS+B` notation parsed once at load.
 //! - [`Id<T>`] and [`Interner<T>`]: cheap typed ids for content.
 //! - [`noun`]: a thing's name said of one or of several, `a pebble` or
@@ -37,7 +37,7 @@ pub use direction::Direction;
 pub use grid::{Grid, Grid2D, Steps};
 pub use id::{Id, Interner};
 pub use point::{Point, Rect};
-pub use seed::{RunSeed, SeedDomain};
+pub use seed::{PlaceSeed, RunSeed, SeedDomain};
 pub use turn::{DequeueOutcome, TurnQueue};
 
 /// The names most callers want in scope.
@@ -48,6 +48,6 @@ pub mod prelude {
     pub use crate::grid::{Grid, Grid2D, Steps};
     pub use crate::id::{Id, Interner};
     pub use crate::point::{Point, Rect};
-    pub use crate::seed::{RunSeed, SeedDomain};
+    pub use crate::seed::{PlaceSeed, RunSeed, SeedDomain};
     pub use crate::turn::{BASE_ACTION_COST, DequeueOutcome, TurnQueue};
 }

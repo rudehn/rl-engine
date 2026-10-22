@@ -114,9 +114,10 @@ impl<C: BuildContext> Chain<C> {
     ///
     /// Each pass is handed a stream derived from `seed` and its own name, so
     /// adding, removing or reordering a pass cannot change what any other
-    /// pass draws. Stops at the first failure and reports it.
-    pub fn run(&self, ctx: &mut C, seed: RunSeed) -> Result<(), BuildError> {
-        self.run_attempt(ctx, seed, 0)
+    /// pass draws. Stops at the first failure and reports it. `seed` is a
+    /// place's [`PlaceSeed`](rl_core::PlaceSeed) or any other root.
+    pub fn run(&self, ctx: &mut C, seed: impl Into<RunSeed>) -> Result<(), BuildError> {
+        self.run_attempt(ctx, seed.into(), 0)
     }
 
     /// One attempt: every pass's stream is derived at `attempt`, so two
@@ -145,8 +146,9 @@ impl<C: BuildContext> Chain<C> {
     /// # Panics
     /// Panics if `attempts` is nought: a chain that may not run has no
     /// place and no error to hand back.
-    pub fn run_retrying(&self, make: impl Fn() -> C, seed: RunSeed, attempts: u32) -> Result<C, BuildError> {
+    pub fn run_retrying(&self, make: impl Fn() -> C, seed: impl Into<RunSeed>, attempts: u32) -> Result<C, BuildError> {
         assert!(attempts > 0, "a chain needs at least one attempt");
+        let seed = seed.into();
         let mut last = None;
         for attempt in 0..attempts {
             let mut ctx = make();

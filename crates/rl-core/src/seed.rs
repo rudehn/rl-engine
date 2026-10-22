@@ -12,6 +12,9 @@
 //! invariant within one build of a game, for replays and tests. It is not
 //! promised across engine versions.
 //!
+//! A place's own streams come from its [`PlaceSeed`], derived from the run's
+//! seed and the place's number, so places can be built in any order.
+//!
 //! Where iteration order could leak into a draw, use [`position_hash`] or
 //! `pair_hash` instead of a stream: they depend only on their inputs, so
 //! visiting cells in a different order cannot reroll them.
@@ -86,6 +89,40 @@ impl RunSeed {
         let nth = RUNS_THIS_PROCESS.fetch_add(1, Ordering::Relaxed);
         let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0);
         RunSeed::from_entropy(nanos ^ mix64(nth))
+    }
+}
+
+/// The seed of one place in a run: a floor, a level, a map.
+///
+/// Derived from the run's seed and the place's number alone, so building
+/// floor 2 before floor 1 cannot change floor 1, and a game never mixes a
+/// depth into its seed by hand. It is a seed in its own right rather than
+/// the run's seed and an index carried together, so a generator handed one
+/// cannot reach the run's other streams by mistake.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct PlaceSeed(RunSeed);
+
+impl PlaceSeed {
+    /// The seed of place `map` in the run seeded by `run`.
+    pub const fn of(run: RunSeed, map: u32) -> PlaceSeed {
+        PlaceSeed(RunSeed(run.derive(SeedDomain::new(b"rl.place"), map as u64)))
+    }
+
+    /// A generator for one domain at one index, inside this place.
+    pub fn rng(self, domain: SeedDomain, index: u64) -> StdRng {
+        self.0.rng(domain, index)
+    }
+
+    /// The place's seed as a root other derivations start from, such as a
+    /// generation chain's.
+    pub const fn run_seed(self) -> RunSeed {
+        self.0
+    }
+}
+
+impl From<PlaceSeed> for RunSeed {
+    fn from(place: PlaceSeed) -> RunSeed {
+        place.0
     }
 }
 
@@ -241,6 +278,30 @@ mod tests {
         assert_eq!(pair_hash(9, (3, 4), (3, 5)), pair_hash(9, (3, 5), (3, 4)));
         assert_ne!(pair_hash(9, (3, 4), (3, 5)), pair_hash(9, (3, 4), (4, 4)));
         assert_ne!(pair_hash(9, (3, 4), (3, 5)), pair_hash(10, (3, 4), (3, 5)));
+    }
+
+    #[test]
+    fn two_places_of_one_run_draw_unrelated_streams() {
+        let run = RunSeed(4242);
+        let first = PlaceSeed::of(run, 1).rng(DOMAINS[0], 0).random::<u64>();
+        let second = PlaceSeed::of(run, 2).rng(DOMAINS[0], 0).random::<u64>();
+        assert_ne!(first, second);
+    }
+
+    #[test]
+    fn one_place_draws_the_same_stream_every_time_it_is_asked() {
+        let mut a = PlaceSeed::of(RunSeed(4242), 3).rng(DOMAINS[1], 5);
+        let mut b = PlaceSeed::of(RunSeed(4242), 3).rng(DOMAINS[1], 5);
+        for _ in 0..10 {
+            assert_eq!(a.random::<u64>(), b.random::<u64>());
+        }
+    }
+
+    #[test]
+    fn a_place_seed_is_not_its_run_seed() {
+        let run = RunSeed(4242);
+        assert_ne!(PlaceSeed::of(run, 0).run_seed(), run);
+        assert_eq!(RunSeed::from(PlaceSeed::of(run, 0)), PlaceSeed::of(run, 0).run_seed());
     }
 
     #[test]

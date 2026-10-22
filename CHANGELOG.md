@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `PlaceSeed`, one seed per place derived from the run's seed and the place's number, and `Chain::run` and `Chain::run_retrying` take it or a `RunSeed`.
+  To change: nothing.
+
 - `light_tiles` moved from `rl_render::looks` to `rl_rules::tiles`, so a game reads its tiles' light from its tiles file without a renderer; it reads only each line's `tile` and `light`, and `TileAppearance::load` still loads a line that writes a light and passes the light over.
   To change: `rl_render::looks::light_tiles` becomes `rl_rules::tiles::light_tiles` (`rl_engine::rl_rules::tiles::light_tiles` through the facade).
 
