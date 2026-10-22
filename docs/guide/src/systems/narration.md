@@ -65,7 +65,7 @@ A `Span` is a run of a line's characters in a colour of its own, which is how a 
 
 The engine's words are one plugin, and changing any of them is one call on it.
 
-<!-- include: ../../../../examples/tutorial/src/bin/step10_panels.rs:narrator -->
+<!-- include: ../../../../examples/tutorial/src/bin/step09_panels.rs:narrator -->
 ```rust,no_run
         // The engine narrates blows, deaths and pickups into the log, naming
         // things in their own colours. Warren changes one phrase: what a rat

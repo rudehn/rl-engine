@@ -5,7 +5,7 @@
 //! [`Id`] per entry; a [`BandedTable`] says which of them belong at which
 //! depth, and in what numbers.
 //!
-//! `cargo run -p tutorial --bin step08_content`
+//! `cargo run -p tutorial --bin step07_content`
 //!
 //! Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `q` to quit.
 

@@ -31,8 +31,8 @@ rl-engine/
 │   │   └── assets/                  # RON: bestiary, armory, abilities, tasks
 │   ├── delve/                    # five-floor dungeon delve, no surface
 │   ├── heist/                    # three-floor stealth heist
-│   └── tutorial/                 # ten guide-chapter binaries + a browser harness
-│       ├── src/bin/                 # step01_walking.rs ... step10_panels.rs
+│   └── tutorial/                 # nine guide-chapter binaries + a browser harness
+│       ├── src/bin/                 # step01_walking.rs ... step09_panels.rs
 │       └── dist/                    # wasm build output for the browser demos
 ├── templates/starter/          # the `cargo generate` template: one file, plays on first build
 ├── docs/
@@ -143,7 +143,7 @@ rl-engine/
 - A crate that used to be a standalone workspace member and became a module keeps a subdirectory of its old name: `rl-rules/src/ai/`, `content/`, `events/`.
 
 **Tests and tutorials:**
-- Tutorial binaries are `stepNN_<name>.rs` under `examples/tutorial/src/bin/`, but the numbering is not contiguous: there is no `step07_*.rs` (guide chapter `07-content-in-files.md` quotes `step08_content.rs`). Do not assume `stepNN` corresponds to guide chapter `NN` when adding a new step - check `docs/guide/src/SUMMARY.md` and the chapter's `<!-- include: -->` line for the actual binary it names.
+- Tutorial binaries are `stepNN_<name>.rs` under `examples/tutorial/src/bin/`, and `stepNN` is the binary guide chapter `NN` runs; a new step takes the next number and its chapter's.
 
 ## Where to Add New Code
 

@@ -102,7 +102,7 @@ CI generates and builds the template on every change to the engine, so it does n
 
 ## Follow the guide
 
-The guide builds a small roguelike called Warren, six steps that each add one thing, and every step is playable in the browser without installing anything.
+The guide builds a small roguelike called Warren, nine steps that each add one thing, the first six playable in the browser without installing anything.
 
 ```sh
 git clone https://github.com/rudehn/rl-engine

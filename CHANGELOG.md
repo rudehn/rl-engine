@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The tutorial's binaries are numbered as the guide's chapters: `step07_content`, `step08_shove`, `step09_panels`.
+  To change: a script that runs one by name uses the new name.
+
 - The tutorial and the template no longer insert `DamageStages`, whose default is already `[SubtractArmor]`.
   To change: nothing; a game may delete the same line.
 

@@ -41,7 +41,7 @@ Nothing here is a plugin, a system or a schedule; a registry is data a game hand
 
 The tutorial's start fills the two registries combat reads, loads its own bestiary against them, and hands the resource to the engine.
 
-<!-- include: ../../../../examples/tutorial/src/bin/step08_content.rs:start -->
+<!-- include: ../../../../examples/tutorial/src/bin/step07_content.rs:start -->
 ```rust,no_run
 /// Hands the engine the map rules and the player, then warps the player in.
 fn start(

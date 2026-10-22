@@ -181,10 +181,9 @@ Every panel is authored in three layers, in this order (`crates/rl-ui/src/lib.rs
 - Exercises: the stealth/`Sense`/`Aware` model, a game-owned `Tactic` reading an engine-pushed `Sense`, and a game-owned `Choice` the engine routes through - the clearest existing proof that a game can extend AI without the engine knowing its vocabulary.
 - Structure: `main.rs` (1076 lines - the largest single game-layer file in the repo), `floors.rs`.
 
-**`examples/tutorial` (the guide's ten runnable steps):**
-- Location: `examples/tutorial/src/bin/step01_walking.rs` … `step10_panels.rs`
+**`examples/tutorial` (the guide's nine runnable steps):**
+- Location: `examples/tutorial/src/bin/step01_walking.rs` … `step09_panels.rs`
 - Exercises: one engine capability at a time, each binary quoted verbatim by a `docs/guide/src/NN-*.md` chapter via `<!-- include: -->` markers, checked by `scripts/check-guide.sh`.
-- Note: filenames are not sequential - there is no `step07_*.rs`; guide chapter `07-content-in-files.md` quotes `step08_content.rs` and chapter `08-an-action-of-your-own.md` quotes `step09_shove.rs`. Intentional (chapters and step numbers were decoupled at some point) but worth knowing before assuming a 1:1 mapping.
 
 **`templates/starter` (the `cargo generate` template):**
 - Location: `templates/starter/src/main.rs` (562 lines - one file, per the README's "it plays from the first build")

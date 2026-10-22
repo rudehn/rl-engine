@@ -1,8 +1,8 @@
 # Content in files
 
-> Run it: `cargo run -p tutorial --bin step08_content`
+> Run it: `cargo run -p tutorial --bin step07_content`
 >
-> Source: [`step08_content.rs`](https://github.com/rudehn/rl-engine/blob/main/examples/tutorial/src/bin/step08_content.rs)
+> Source: [`step07_content.rs`](https://github.com/rudehn/rl-engine/blob/main/examples/tutorial/src/bin/step07_content.rs)
 
 Warren has one kind of rat because a `spawn` call was hard-coded.
 Move the bestiary into a file and the game stops needing a recompile to gain a monster.
@@ -43,7 +43,7 @@ Every RON schema in this repository lists its full option space at the top, beca
 
 ## The struct
 
-<!-- include: ../../../examples/tutorial/src/bin/step08_content.rs:def -->
+<!-- include: ../../../examples/tutorial/src/bin/step07_content.rs:def -->
 ```rust,no_run
 /// One kind of vermin, exactly as `assets/rats.ron` writes it. Serde
 /// parses the file; [`Named`] is how the registry knows what to key it by,
@@ -80,7 +80,7 @@ struct Kind(Id<RatDef>);
 
 ## Names become ids at load
 
-<!-- include: ../../../examples/tutorial/src/bin/step08_content.rs:bestiary -->
+<!-- include: ../../../examples/tutorial/src/bin/step07_content.rs:bestiary -->
 ```rust,no_run
 /// Warren's chain, the engine's standard one with only what a rat does:
 /// it bites what is beside it, runs once it is hurt enough, hunts what it
@@ -201,7 +201,7 @@ Colour is content as well, so it goes in a file of the same shape:
 ]
 ```
 
-<!-- include: ../../../examples/tutorial/src/bin/step08_content.rs:looks -->
+<!-- include: ../../../examples/tutorial/src/bin/step07_content.rs:looks -->
 ```rust,no_run
     /// Both colours of every tile, and how much each cell strays from its
     /// neighbours, read from `assets/tiles.ron` against the tiles registered

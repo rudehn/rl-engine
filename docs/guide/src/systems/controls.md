@@ -69,7 +69,7 @@ With nothing open and something in sight picked out, the close key lets go of it
 
 A game names the standard verbs it wants to `PlayerKeysPlugin`, and declares its own keys once beside them, under the headings the controls screen groups them by, keeping the ids.
 
-<!-- include: ../../../../examples/tutorial/src/bin/step10_panels.rs:keys -->
+<!-- include: ../../../../examples/tutorial/src/bin/step09_panels.rs:keys -->
 ```rust,no_run
 /// Warren's own keys, by name.
 ///
@@ -111,7 +111,7 @@ fn declare_controls(app: &mut App) {
 
 The other half is one run condition, which is the whole of what a game has to remember about screens it has not written yet.
 
-<!-- include: ../../../../examples/tutorial/src/bin/step10_panels.rs:gate -->
+<!-- include: ../../../../examples/tutorial/src/bin/step09_panels.rs:gate -->
 ```rust,no_run
         // One gate for every screen there is and every screen added later:
         // the stack is empty, or the world does not have the keys.

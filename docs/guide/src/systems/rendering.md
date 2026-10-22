@@ -105,7 +105,7 @@ A game drawn in its own face hands the group the bytes of its font file, compile
 
 What the engine cannot supply is the look of a tile, which is a table the game fills or a file it loads.
 
-<!-- include: ../../../../examples/tutorial/src/bin/step08_content.rs:looks -->
+<!-- include: ../../../../examples/tutorial/src/bin/step07_content.rs:looks -->
 ```rust,no_run
     /// Both colours of every tile, and how much each cell strays from its
     /// neighbours, read from `assets/tiles.ron` against the tiles registered

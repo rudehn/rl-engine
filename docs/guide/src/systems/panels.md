@@ -105,7 +105,7 @@ A strip clips a long line and a screen wraps it, because on a strip a cut line i
 
 Adding panels is the whole of the cheapest way in: each plugin holds its rectangle, reads a view the engine keeps current, and draws itself.
 
-<!-- include: ../../../../examples/tutorial/src/bin/step10_panels.rs:panels -->
+<!-- include: ../../../../examples/tutorial/src/bin/step09_panels.rs:panels -->
 ```rust,no_run
         // Five panels. Each holds its own rectangle, reads a view the engine
         // keeps current, and draws itself: none of them needs a system here.
@@ -130,7 +130,7 @@ Adding panels is the whole of the cheapest way in: each plugin holds its rectang
 
 What the engine cannot know arrives the other way, as a facet pushed onto a row in `ViewSet::Annotate`.
 
-<!-- include: ../../../../examples/tutorial/src/bin/step10_panels.rs:annotate -->
+<!-- include: ../../../../examples/tutorial/src/bin/step09_panels.rs:annotate -->
 ```rust,no_run
 /// What a rat is up to, on the row the engine built for it.
 ///

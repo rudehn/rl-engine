@@ -1,15 +1,15 @@
 # An action of your own
 
-> Run it: `cargo run -p tutorial --bin step09_shove`
+> Run it: `cargo run -p tutorial --bin step08_shove`
 >
-> Source: [`step09_shove.rs`](https://github.com/rudehn/rl-engine/blob/main/examples/tutorial/src/bin/step09_shove.rs)
+> Source: [`step08_shove.rs`](https://github.com/rudehn/rl-engine/blob/main/examples/tutorial/src/bin/step08_shove.rs)
 
 Everything so far used actions the engine ships.
 This one it has never heard of: shove a rat back a cell, for half a turn.
 
 ## An action is a type
 
-<!-- include: ../../../examples/tutorial/src/bin/step09_shove.rs:action -->
+<!-- include: ../../../examples/tutorial/src/bin/step08_shove.rs:action -->
 ```rust,no_run
 /// Shove whoever stands one cell away in this direction back another cell.
 ///
@@ -49,7 +49,7 @@ Forget the resolver and you get a warning naming the type, not a frozen game wit
 
 ## What a resolver owes
 
-<!-- include: ../../../examples/tutorial/src/bin/step09_shove.rs:resolver -->
+<!-- include: ../../../examples/tutorial/src/bin/step08_shove.rs:resolver -->
 ```rust,no_run
 /// What the shove costs. A shove is quicker than a swing.
 const SHOVE_COST: u32 = BASE_ACTION_COST / 2;
@@ -115,7 +115,7 @@ Reporting through a `Shoved` message instead of logging from inside the resolver
 
 The hog shoves too, and it takes three lines more than the player did.
 
-<!-- include: ../../../examples/tutorial/src/bin/step09_shove.rs:tactic -->
+<!-- include: ../../../examples/tutorial/src/bin/step08_shove.rs:tactic -->
 ```rust,no_run
 /// The hog's move: shove whoever stands beside it instead of biting. A
 /// tactic of Warren's own, in the brain beside the engine's, that decides

@@ -127,7 +127,7 @@ That gives five places to stop, and you can stop at any of them: add the panel a
 - **The forecast** in the look cursor is not the panel's arithmetic. `rl_rules::forecast` runs the average roll through the same mitigation pipeline a real blow goes through, so it cannot drift from the fight.
 - **The screen** is cut once, and `RailLayout` cuts the usual one, a map with the log under it and a rail down the right, from a few numbers; its `RailScreen` hands back every rectangle, and `panels()` the rail's panels as a group you edit.
 
-`examples/tutorial/src/bin/step10_panels.rs` is the worked example, with the rail, the look cursor, tones and a controls screen, and [`docs/design/ui.md`](https://github.com/rudehn/rl-engine/blob/main/docs/design/ui.md) is why it is shaped that way.
+`examples/tutorial/src/bin/step09_panels.rs` is the worked example, with the rail, the look cursor, tones and a controls screen, and [`docs/design/ui.md`](https://github.com/rudehn/rl-engine/blob/main/docs/design/ui.md) is why it is shaped that way.
 [Panels](systems/panels.md) is the reference for the split and for every view the engine ships, and [Controls, modals and cursors](systems/controls.md) for the declaration, the stack and the cursor.
 
 ## Testing without a window
@@ -147,7 +147,7 @@ Where a property exists, assert it over a range of seeds: that every generated f
 Where no property exists, use a fingerprint test and say so in its name, so a change reads as a change rather than a failure.
 Test the refusal as well as the action: a wrong refusal crashes nothing, it silently eats a turn or freezes the loop.
 
-The test module of `step10_panels.rs` is the worked example.
+The test module of `step09_panels.rs` is the worked example.
 
 
 ## The crates

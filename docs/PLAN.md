@@ -92,7 +92,7 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
   `rl-rules` gains `forecast`: expected damage with the average roll put through the game's own mitigation, blows and turns to fell either side, and an `Outlook` read off the two counts, so an inspect panel's numbers cannot drift from the fight.
   `rl-bevy` gains `Slots`; `Theme`, `LogCategory`, `ChromePlugin`, `ChromeLayout` and `StatusLine` are gone, and `rl-overworld` moved its open flag onto the shared stack so it and a game's screens cannot both own the arrow keys.
   Corsair takes the full set with a rail down the right and a facet for what an enemy wields; the delve and Lamplight take vitals and a log and nothing else, which is the point.
-  The guide gains `10-panels.md` and `examples/tutorial/src/bin/step10_panels.rs`; testing and where-to-go-next renumber to 11 and 12.
+  The guide gains `10-panels.md` and `examples/tutorial/src/bin/step09_panels.rs`; testing and where-to-go-next renumber to 11 and 12.
   Found on the way: `VitalsViewPlugin` asserted on `StatusRules`, so a game with no statuses had to insert an empty registry to get a health bar; and the look cursor settled on the player when nothing else was in sight, so the panel forecast a duel with yourself. Both fixed, both tested.
   Phase G in the same slice: the scrollback, a second presenter over the same `MessageLog` the strip draws, with its own cursor and filter, lines wrapped rather than clipped, each turn ruled off with its number, and a filter that cycles only the tones the log holds. Two screens over one view, neither aware of the other, is the split proving itself.
   Deferred: Bevy UI presenters over the same views (phase H), which waits for a game that asks for wrapping, hover or sub-cell bars.
