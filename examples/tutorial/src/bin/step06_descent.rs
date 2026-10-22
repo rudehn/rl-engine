@@ -20,7 +20,6 @@ use rl_engine::rl_rules::TagDef;
 use rl_engine::rl_rules::Wits;
 use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
 use rl_engine::rl_rules::ai::tactics::{Scavenge, ThrowAtRange, UseAbility};
-use rl_engine::rl_rules::damage::SubtractArmor;
 use rl_engine::rl_rules::faction::FactionDef;
 use std::sync::Arc;
 
@@ -186,9 +185,6 @@ fn start(
     commands.insert_resource(Knacks { screech });
     commands.insert_resource(knacks);
     commands.insert_resource(registries);
-    // What a hit passes through on its way to the target. One stage here;
-    // resistances, a shield, a critical rule would each be another.
-    commands.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
     commands.insert_resource(Rats {
         bread,
         gnaw,

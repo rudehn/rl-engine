@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The tutorial and the template no longer insert `DamageStages`, whose default is already `[SubtractArmor]`.
+  To change: nothing; a game may delete the same line.
+
 - `Reflects` carries the chance it turns a use back, `Reflects { percent }`, 50 by default, with `Reflects::ALWAYS` and `Reflects::NEVER` for a body that always or never does, and `Reflects::percent(n)` held to 100; a percent past 100 written into the field is read as 100. At the default a body rolls exactly as the unit `Reflects` did, so no run moves.
   To change: `insert(Reflects)` becomes `insert(Reflects::default())`.
 

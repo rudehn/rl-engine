@@ -14,7 +14,6 @@ use rand::Rng;
 use rl_engine::prelude::*;
 use rl_engine::rl_core::Rect;
 use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
-use rl_engine::rl_rules::damage::SubtractArmor;
 use rl_engine::rl_rules::faction::FactionDef;
 use std::sync::Arc;
 
@@ -126,9 +125,6 @@ fn start(
     let (you, vermin) = (sides.expect("you"), sides.expect("vermin"));
     commands.insert_resource(CombatRules::new(&sides).hostile(you, vermin));
     commands.insert_resource(Registries { damage_kinds: kinds.clone(), factions: sides, ..default() });
-    // What a hit passes through on its way to the target. One stage here;
-    // resistances, a shield, a critical rule would each be another.
-    commands.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
     // ANCHOR_END: combat
     commands.insert_resource(Rats {
         // Asked in order, first that answers wins: bite what is next to

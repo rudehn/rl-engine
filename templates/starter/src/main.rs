@@ -24,7 +24,7 @@ use rand::Rng;
 use rl_engine::prelude::*;
 use rl_engine::rl_core::Rect;
 use rl_engine::rl_rules::ai::tactics::{Hunt, MeleeAdjacent, SearchLastKnown, Wander};
-use rl_engine::rl_rules::damage::{DamageKindId, SubtractArmor};
+use rl_engine::rl_rules::damage::DamageKindId;
 use rl_engine::rl_rules::faction::FactionDef;
 
 /// The window's title.
@@ -215,8 +215,6 @@ fn start(
         factions: sides,
         ..default()
     });
-    // What a blow passes through on its way in; armor, here.
-    commands.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
     commands.insert_resource(Goblins {
         // Asked in order, and the first that answers wins: strike what is
         // adjacent, chase what it has noticed, search where it last saw you,
