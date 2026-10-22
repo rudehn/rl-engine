@@ -54,7 +54,7 @@ It replaces `2026-10-20-engine-usability.md`, which is removed; the review's "Th
 - Branch 06 hands every place a `PlaceSeed`, but Undermere and Foundry keep their own derivations until 07, so 06 moves no fingerprint.
 - The tier-1 content move (10) comes before removing `BuildContext` (11), which rewrites the same `layout.rs`, and before the renames (15), since it leaves seven of the 26 duplicated names declared once.
 - The renames (15) run alone because they touch every crate and both games.
-- The place model (16) moves after the renames, so it moves final names.
+- The place model (16) moves to `rl-mapgen` after the renames, so it moves final names; it needs only the serde that branch 10 gives `rl-mapgen`.
 - The prelude (17) is last, so it exports final names from final homes.
 
 ## What runs in parallel
@@ -85,7 +85,7 @@ A branch that closes an item removes it in the commit that finishes it and moves
 | 11, allowlist entry in Foundry's ambiguity test | 13 |
 | 15, two engine types named for a theme word | 15 |
 | 27, one type per concept | 10 (the mirrored enums), 15 (`Reach`, `Secret`); loot as `BandedTable<K>` and one actor handle stay open |
-| 28, ambiguity tests through the schedule's interface | 13 |
+| 28, ambiguity tests through the schedule's interface | 13, allowing a pair with an engine system by its Bevy name rather than by data alone, so each allowance stays one pair |
 | 33, one root-and-prelude rule per crate | 17, for `rl-engine`; the per-crate preludes stay open |
 | 34, rule numbers in the engine | 02 (reflect chance), 12 (`EQUIP_FROM_GROUND_COST`, `STANDING_ROOM`); the rest stays open |
 | 35, the API review's renames | 15 strikes whatever of section D it did |
@@ -134,10 +134,10 @@ Changed:
 - Branch 17 also makes `depends_on` an `EngineApp` method, review 3.7, which no branch planned.
 - Branch 01 keeps the two engine `DamageStages` test inserts, searches hidden files for step names (`.planning/`), and keeps test timings off the CI profile.
 
-Left for the author:
+Decided by the author, 2026-10-21:
 
-- Branch 16 puts the place model in `rl-rules`; `rl-mapgen` may be the better home, since `PlaceBuild::from_context` reads only mapgen and a map-only user would get places without the rules crate.
-- Branch 13 turns each `pair(ours, engine_fn)` into `with_any(ours, data)` as TODO 28 says, which widens it to any system on that data; naming the engine system by its Bevy path string would keep it exact without `pub`.
-- Branch 06 moves step 1 to the standard tiles and looks, so chapter 1's screenshots change and chapter 2 introduces custom tiles; the release's guide pass must say so.
-- Branch 09 drops `MessageLog::info`, `muted` and `notice`, so an exclusive system writes `push_at(text, Tones::NOTICE, turn)`; keeping the shorthands with a turn is the alternative.
-- Branch 07 keeps the tutorial's `seed.rng(RATS, map)` rather than the place's seed, so the tutorial and Undermere key per-place draws two ways.
+- The place model (16) goes to `rl-mapgen`, not `rl-rules`, with `Lock::key` as the raw tag id `Join::Locked` carries.
+- Ambiguity allowances (13) stay exact: a game names an engine system by its Bevy name with `Allowed::named`, and an unmatched name fails as unused.
+- Step 1 on the standard tiles (06) stands; the release's guide pass covers chapter 1's look.
+- The log (09) stays as planned: `info`, `muted` and `notice` on `Log`, and `MessageLog` keeps only `push_at`.
+- The tutorial and the template (07) draw per place from the place's own seed, `seed.place(map).rng(DOMAIN, 0)`, as Undermere does.

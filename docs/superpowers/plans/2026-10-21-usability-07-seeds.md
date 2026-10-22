@@ -72,7 +72,7 @@ This is the only branch of the usability series that moves play.
 - Produces: in each `seeds.rs`, one `pub const NAME: SeedDomain = SeedDomain::new(b"<game>.<name>");` per domain, with today's bytes (`LORE` keeps `b"lore"` until Task 3), and `pub const ALL: &[(&str, SeedDomain)]`.
 
 - [ ] **Step 1: Write the failing test** `every_seed_domain_the_game_draws_from_is_distinct` in each `seeds.rs`: names and domains pairwise distinct, and none equal to an entry of `ENGINE_DOMAINS`.
-- [ ] **Step 2:** Move every site to a constant; `rg 'SeedDomain::new' examples/*/src` outside `seeds.rs` and test modules finds none.
+- [ ] **Step 2:** Move every site to a constant; `rg 'SeedDomain::new' examples/*/src` outside `seeds.rs`, the tutorial's one `const` per binary and test modules finds none.
 - [ ] **Step 3:** Fingerprints and `scripts/gate.sh`.
   Expected: PASS, unchanged.
 - [ ] **Step 4:** Commit.
@@ -81,12 +81,17 @@ This is the only branch of the usability series that moves play.
 ### Task 3: The streams move, once
 
 **Files:**
-- Modify: `crates/rl-bevy/src/seed.rs` (`ENGINE_DOMAINS` names), the eight markers, `fire.rs:295`, `gas.rs:138,143`, `plugin.rs:457`
+- Modify: `crates/rl-bevy/src/seed.rs` (`ENGINE_DOMAINS` names, `Seed::place`), the eight markers, `fire.rs:295`, `gas.rs:138,143`, `plugin.rs:457`
 - Modify: `examples/undermere/src/seeds.rs`, `dungeon.rs:565-571` (`place_seed` goes; `generate` takes `seed: PlaceSeed`), its callers (`build`, `--recipe` in `main.rs`, tests), `vaults.rs`, `writings.rs`, `finds.rs`, `population.rs`
 - Modify: `examples/foundry/src/decks.rs:262` (the XOR goes), `examples/foundry/src/props.rs:154`
+- Modify: the tutorial's rats in `step03` to `step09` (`seed.stream(b"warren.rats", ev.map.0)` today) and the template's `starter.populate` (`templates/starter/src/main.rs:377`)
 - Modify: `crates/rl-bevy/tests/fingerprint.rs`, `examples/undermere/tests/fingerprint.rs`, `examples/foundry/tests/fingerprint.rs`
 
 The keying rule: a draw about one place comes from its `PlaceSeed`; a draw about the run's shape, made before or apart from building a place, comes from `Seed` indexed by depth.
+The tutorial and the template follow it too, so the guide teaches the one way Undermere draws.
+
+**Interfaces:**
+- Produces: `pub fn Seed::place(&self, map: MapId) -> PlaceSeed`, which is `PlaceSeed::of(self.0, map.0)`: the spelling a system uses for a place's draws, `seed.place(ev.map).rng(RATS, 0)`.
 
 | Domain | Keyed by |
 |---|---|
@@ -95,15 +100,17 @@ The keying rule: a draw about one place comes from its `PlaceSeed`; a draw about
 | Undermere `vaults.fixtures`, `vaults.marks`, `writings`, `finds`, `population` (indices 0, 1, 2 for the plan, the bands and the rest) | the place's `PlaceSeed` |
 | Undermere's chain | the handed `PlaceSeed` |
 | Foundry's chain, `foundry.props` | the place's `PlaceSeed` |
+| the tutorial's `warren.rats`, the template's `starter.populate` | the place's `PlaceSeed`, index 0 |
 
-- [ ] **Step 1:** Make the changes in the table; `PlaceSeed::of(seed.0, map.0)` wherever a system needs a place's seed outside `build`.
-- [ ] **Step 2:** Run `cargo nextest run --workspace --profile full`.
+- [ ] **Step 1: Write the failing test** `a_seed_s_place_is_the_place_seed_of_its_run_and_map` in `crates/rl-bevy/src/seed.rs`, a plain test with no `App`: `Seed(r).place(MapId(3)) == PlaceSeed::of(r, 3)`.
+- [ ] **Step 2:** Make the changes in the table; `seed.place(map)` wherever a system needs a place's seed outside `build`.
+- [ ] **Step 3:** Run `cargo nextest run --workspace --profile full` and `scripts/check-template.sh`.
   Expected: the three fingerprints FAIL; list every other failure.
-- [ ] **Step 3:** For each other failure: a test pinned to a seed gets the first seed that shows its case, found with `first_seeds`; anything else is a bug in this task.
+- [ ] **Step 4:** For each other failure, the tutorial's and the template's included: a test pinned to a seed gets the first seed that shows its case, found with `first_seeds`; anything else is a bug in this task.
   Never widen an assertion.
-- [ ] **Step 4:** Re-baseline the three fingerprints.
-- [ ] **Step 5:** `scripts/gate.sh`, commit with the message saying it is the seed branch's one re-baseline.
-  CHANGELOG: "The engine's streams are named under `rl.`, and every place draws from its own `PlaceSeed`, so every seed plays differently from the last release. To change: nothing in code; a recorded seed or replay from before plays another run, and a continued save builds the floors it had not reached differently."
+- [ ] **Step 5:** Re-baseline the three fingerprints.
+- [ ] **Step 6:** `scripts/gate.sh`, commit with the message saying it is the seed branch's one re-baseline.
+  CHANGELOG: "The engine's streams are named under `rl.`, and every place draws from its own `PlaceSeed`, so every seed plays differently from the last release. To change: nothing in code, though a game's own per-place draws may follow, `seed.place(map).rng(DOMAIN, i)`; a recorded seed or replay from before plays another run, and a continued save builds the floors it had not reached differently."
 
 ### Task 4: Branch end
 

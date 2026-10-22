@@ -151,6 +151,7 @@ Undermere and Foundry take the new parameter but keep their own derivations unti
 - [ ] **Step 1:** Step 1 becomes the review's target: `main` adds `RoguelikePlugins` and a `Warren` plugin and inserts `Seed(RunSeed(7))`; `Warren` adds `PlayerKeysPlugin::new().walk("Move", "walk").wait("Act", "wait a turn")`, `places(Floors(TileRegistry::standard()))` and a `NewRun` system calling `spawn_player(MapId::FIRST, (Viewshed::new(9), RevealsMap, Glyph::new('@', Color::WHITE).on_layer(10)))`.
   If `UiPlugin`'s game menu offers no quit, keep a `quit` control as step 9 declares one (`step09_panels.rs`, `declare_controls`).
   The `input` anchor moves to the `PlayerKeysPlugin` line; the hand-written version is what chapter 8 already teaches.
+  Step 1 takes the standard tiles and looks, so chapter 1's look and screenshots change; the release's guide pass covers them, and this branch edits no guide page.
 - [ ] **Step 2:** Add `the_player_arrives_standing_on_floor` to step 1: `rl_engine::testing::headless(RunSeed(1), (), Warren)`, then `player` and `at` from `rl_engine::testing`, asserting the cell is walkable.
 - [ ] **Step 3:** Steps 2 to 9 use `places` and `spawn_player` and drop their `WorldMap` insert and warp; steps 2 to 6 replace their copied `player_input` with `PlayerKeysPlugin` for what it covers, keeping only their own verbs (the lantern, eating) by hand.
 - [ ] **Step 4:** The template becomes `struct Starter; impl Plugin for Starter`, used by `main` and by the test module's `headless`, which becomes `rl_engine::testing::headless(RunSeed(seed), (), (Starter, KeyScriptPlugin))`; its `PlayerIntents`, `Binds`, `declare_controls` and `player_input` (`main.rs:283-356`) give way to `PlayerKeysPlugin` for what it covers.
@@ -159,7 +160,7 @@ Undermere and Foundry take the new parameter but keep their own derivations unti
   Walk and wait by hand in `step01_walking`.
 - [ ] **Step 6:** Count step 1's code lines (no blank, comment or doc lines) and its distinct engine names, and put both in the commit message beside the review's 83 and 34.
 - [ ] **Step 7:** `scripts/gate.sh`, commit.
-  CHANGELOG: "The template is one `Starter` plugin that `main` and its tests both add. To change: nothing for a game; a game made from the template may do the same."
+  CHANGELOG: "The template is one `Starter` plugin that `main` and its tests both add, and tutorial step 1 is built on the standard tiles and looks, so the guide's chapter 1 and its screenshots change at the release. To change: nothing for a game; a game made from the template may do the same."
 
 ### Task 7: Branch end
 

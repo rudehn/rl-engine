@@ -44,7 +44,7 @@ The review's other half, lean Bevy features, is deferred with the split of `rl-r
 - [ ] **Step 2:** Move the function; the two games call `rl_engine::rl_rules::tiles::light_tiles`.
 - [ ] **Step 3:** Run `cargo test -p rl-rules tiles` and `cargo test -p rl-render looks`.
   Expected: PASS.
-- [ ] **Step 4:** Add to `docs/TODO.md` section 9: "Lean Bevy features and the window half of `rl-render`: `terminal.rs` draws with sprites and text, so `rl-ui`, `rl-engine` and any terminal front end compile the GPU stack. Split the cell buffer from the window drawing into its own crate, then let `rl-bevy`, `rl-save` and the cell-buffer crate declare only the Bevy features they use; until then lean features free no build and make a `-p rl-bevy` build compile a second Bevy."
+- [ ] **Step 4:** Add to `docs/TODO.md` section 9: "Lean Bevy features and the window half of `rl-render`: `terminal.rs` draws with sprites and text, so `rl-ui`, `rl-engine` and any terminal front end compile the GPU stack. Split the cell buffer from the window drawing into its own crate, then let `rl-bevy`, `rl-save` and the cell-buffer crate declare only the Bevy features they use; until then lean features free no build and make a `-p rl-bevy` build compile a second Bevy. Keep Bevy's `debug` feature either way: the ambiguity tests match engine systems by the names it gives them."
 - [ ] **Step 5:** `scripts/gate.sh`, commit.
   CHANGELOG: "`light_tiles` moved from `rl_render::looks` to `rl_rules::tiles`, so a game reads its tiles' light without a renderer. To change: the path."
 

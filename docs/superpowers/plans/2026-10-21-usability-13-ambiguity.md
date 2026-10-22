@@ -6,6 +6,7 @@
 
 **Architecture:** Foundry already compares apps with and without its plugin (`ambiguity::added`); what still names about 45 engine systems is its allow list and a `headless_without_foundry` that leaves out engine plugins `FoundryPlugin` adds itself.
 Those plugins move to a `plugin::add_engine` that `FoundryPlugin::build` and `headless_without_foundry` both call, as Undermere's do (`examples/undermere/src/plugin.rs:63,108`), and the engine-against-engine allowances move to an rl-bevy test.
+A game's allowance against an engine system names that system by the name Bevy's schedule gives it, so it stays one exact pair while the function becomes `pub(crate)`.
 
 **Tech Stack:** Rust 2024, Bevy 0.19.
 
@@ -27,11 +28,13 @@ Those plugins move to a `plugin::add_engine` that `FoundryPlugin::build` and `he
 2.
   Moving `FoundryPlugin`'s engine plugins into `add_engine` must keep the binary's plugins: `FoundryPlugin::build` calls `add_engine(app)` first, so `main.rs` does not change.
 3.
-  An allowance that matched nothing after the move: `assert_ordered` already fails on an unused entry.
+  An allowance that matched nothing after the move, or a named engine system renamed later: `assert_ordered` fails on an unused entry (`testing/ambiguity.rs`, the `stale` assertion), and the pair it covered fails as unexplained.
 4.
   A system made `pub(crate)` that the guide quotes by path: `scripts/check-guide.sh` still passes.
 5.
   The `Acting` allowance admitting any pair: narrowed to systems in `TurnSet::Resolve` and `TurnSet::Sweep`, pinned by `an_allowance_among_sets_admits_no_pair_outside_them`.
+6.
+  A build without Bevy's `debug` feature names every system `<Enable the debug feature to see the name>` (`bevy_utils` `DebugName`), so no named allowance could match: `assert_ordered` panics saying so when it meets that placeholder.
 
 ---
 
@@ -48,7 +51,25 @@ Those plugins move to a `plugin::add_engine` that `FoundryPlugin::build` and `he
   Expected: PASS.
   `scripts/gate.sh`, commit.
 
-### Task 2: Foundry names only its own systems
+### Task 2: Allowances by engine name and among sets
+
+**Files:**
+- Modify: `crates/rl-bevy/src/testing/ambiguity.rs:96-139`
+
+**Interfaces:**
+- Produces: `pub fn Allowed::named(ours: TypeId, theirs: &'static str, on: Vec<ComponentId>, why: &'static str) -> Allowed`: one exact pair, `ours` by its function's type and the other by `System::name()`, which with Bevy's `debug` feature (on in the workspace's `bevy` line) is the function's `std::any::type_name`, such as `"rl_bevy::stealth::wake_on_damage"` or `"rl_bevy::loot::scatter_places<foundry::gear::Armory>"`, the defining crate's path and not `rl_engine::`'s re-export.
+- Produces: `pub fn Allowed::among(sets: Vec<InternedSystemSet>, on: Vec<ComponentId>, why: &'static str) -> Allowed`: a pair is admitted only when both systems sit in one of `sets`.
+- Changes: `assert_ordered` matches a named allowance by exact string equality and panics on the `debug` placeholder name; the module docs' claim that the workspace builds without `debug` (`ambiguity.rs:19-21`) is corrected.
+
+- [ ] **Step 1: Write the failing tests** `an_allowance_by_name_admits_only_the_system_of_that_name`, `an_allowance_by_a_name_no_system_has_fails_as_unused`, `an_allowance_among_sets_admits_a_pair_inside_them` and `an_allowance_among_sets_admits_no_pair_outside_them`, each on a small app of two test systems.
+- [ ] **Step 2:** Implement: names from `schedule.systems()`, sets from the schedule graph's set membership.
+- [ ] **Step 3:** The `Acting` entries in Foundry's and Undermere's tests and the engine's become `Allowed::among(vec![TurnSet::Resolve.intern(), TurnSet::Sweep.intern()], ..)`.
+- [ ] **Step 4:** `cargo nextest run -p rl-bevy -p foundry -p undermere -E 'test(/ambigu|conflicting/)'`, `scripts/gate.sh`.
+  Expected: PASS.
+  Commit.
+  CHANGELOG: "`Allowed::named` allows a pair with an engine system by the name Bevy gives it, and `Allowed::among` admits a pair only inside the named system sets. To change: nothing."
+
+### Task 3: Foundry names only its own systems
 
 **Files:**
 - Modify: `examples/foundry/src/plugin.rs:55,64,69,107` (the engine plugins, `PropsPlugin`, `RemainsPlugin`, `LootPlugin`, `PrefabPlugin` and `AmmoPlugin`, move to `pub fn add_engine(app: &mut App)`, which `FoundryPlugin::build` calls first)
@@ -57,27 +78,11 @@ Those plugins move to a `plugin::add_engine` that `FoundryPlugin::build` and `he
 
 - [ ] **Step 1:** Move the plugins; run the Foundry ordering test.
   Expected: FAIL on the entries that no longer match.
-- [ ] **Step 2:** `names()` lists only Foundry's systems; each `pair(ours, engine_fn, ..)` becomes `Allowed::with_any(ours, on(..), reason)`; the engine-against-engine ones are gone (Task 1 holds them).
-- [ ] **Step 3:** `rg -n 'rl_bevy::|rl_ui::|rl_save::' examples/foundry/src/plugin/ambiguity.rs` names no system function.
-- [ ] **Step 4:** `cargo nextest run -p foundry`, fingerprints, `scripts/gate.sh`.
+- [ ] **Step 2:** `names()` lists only Foundry's systems, since Bevy's names print for the rest; each `pair(ours, engine_fn, ..)` becomes `Allowed::named(ours, "rl_bevy::<module>::<fn>", on(..), reason)` with its reason unchanged; the engine-against-engine ones are gone (Task 1 holds them).
+- [ ] **Step 3:** `rg -n 'id\(rl_engine' examples/foundry/src/plugin/ambiguity.rs` finds nothing: no engine function is named as a path.
+- [ ] **Step 4:** `scripts/gate.sh`, which plays Foundry's tests and fingerprint.
   Expected: PASS, unchanged.
   Commit.
-
-### Task 3: An allowance among sets
-
-**Files:**
-- Modify: `crates/rl-bevy/src/testing/ambiguity.rs:96-139`
-
-**Interfaces:**
-- Produces: `pub fn Allowed::among(sets: Vec<InternedSystemSet>, on: Vec<ComponentId>, why: &'static str) -> Allowed`: a pair is admitted only when both systems sit in one of `sets`.
-
-- [ ] **Step 1: Write the failing tests** `an_allowance_among_sets_admits_a_pair_inside_them` and `an_allowance_among_sets_admits_no_pair_outside_them`.
-- [ ] **Step 2:** Implement from the schedule graph's set membership.
-- [ ] **Step 3:** The `Acting` entries in Foundry's and Undermere's tests and the engine's become `Allowed::among(vec![TurnSet::Resolve.intern(), TurnSet::Sweep.intern()], ..)`.
-- [ ] **Step 4:** `cargo nextest run -p rl-bevy -p foundry -p undermere -E 'test(/ambigu|conflicting/)'`, `scripts/gate.sh`.
-  Expected: PASS.
-  Commit.
-  CHANGELOG: "`Allowed::among` admits a conflicting pair only inside the named system sets. To change: nothing."
 
 ### Task 4: Engine systems are crate-private
 
@@ -89,9 +94,9 @@ Those plugins move to a `plugin::add_engine` that `FoundryPlugin::build` and `he
 - [ ] **Step 3:** `scripts/check-guide.sh`, `cargo test --doc --workspace`, `scripts/gate.sh`.
   Expected: PASS.
 - [ ] **Step 4:** Commit with the count made private.
-  CHANGELOG: "Engine systems are no longer public; a game orders its systems by the engine's sets, never by an engine function. To change: a game that named an engine system function, in an ordering or a test, names the set it runs in or the data it shares."
+  CHANGELOG: "Engine systems are no longer public; a game orders its systems by the engine's sets, never by an engine function. To change: a game that named an engine system function orders by the set it runs in, and an ambiguity allowance names it with `Allowed::named` and its Bevy name."
 
 ### Task 5: Branch end
 
-- [ ] Remove TODO 11 and 28 from `docs/TODO.md`; a line each in `docs/PLAN.md`'s progress log.
+- [ ] Remove TODO 11 and 28 from `docs/TODO.md`; a line each in `docs/PLAN.md`'s progress log, the one for 28 saying a game allows a pair with an engine system by that system's Bevy name, not by the data alone as the TODO proposed, so each allowance stays one pair.
 - [ ] `scripts/gate.sh --all`, rebase, re-gate, merge.
