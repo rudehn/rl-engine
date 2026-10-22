@@ -98,8 +98,8 @@ pub use minds::{
 pub use noise::{AddSound, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, NoiseRunning, Sound, SoundId, SoundNames, Sounds};
 pub use parts::{ActorParts, Attacks, ItemLevel, ItemParts, LightWhen, held_for_life, insert_parts};
 pub use places::{
-    Arrive, Climb, Destination, GoThrough, Ladder, LadderEnd, Lock, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot, Stair,
-    StairLook, Transition, Travelled, WarpRequest,
+    AddPlaces, Arrive, Climb, Destination, GoThrough, Ladder, LadderEnd, Lock, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes,
+    Spot, Stair, StairLook, Transition, Travelled, WarpRequest,
 };
 pub use plugin::{
     CleanupSet, CorePlugin, DecideSet, EndOfFrame, EndRun, EngineSet, FieldSet, LandSet, Needs, NewRun, PerceiveSet, PresentSet, ReactSet, Reads,
@@ -180,8 +180,8 @@ pub mod prelude {
     pub use crate::parts::{ActorParts, Attacks, ItemLevel, ItemParts, LightWhen, held_for_life, insert_parts};
 
     pub use crate::places::{
-        Arrive, Climb, Destination, GoThrough, Ladder, LadderEnd, Lock, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes, Spot,
-        Stair, StairLook, Transition, Travelled, WarpRequest,
+        AddPlaces, Arrive, Climb, Destination, GoThrough, Ladder, LadderEnd, Lock, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules,
+        PlaceRulesRes, Spot, Stair, StairLook, Transition, Travelled, WarpRequest,
     };
     pub use crate::plugin::{
         CleanupSet, CorePlugin, DecideSet, EndOfFrame, EndRun, EngineSet, FieldSet, LandSet, Needs, NewRun, PerceiveSet, PresentSet, ReactSet, Reads,

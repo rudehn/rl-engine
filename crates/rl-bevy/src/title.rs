@@ -18,6 +18,7 @@
 
 use bevy::prelude::*;
 
+use crate::places::PlaceRulesRes;
 use crate::plugin::NewRun;
 use crate::state::EngineState;
 use crate::world::WorldMap;
@@ -51,10 +52,24 @@ pub struct HoldStart;
 /// `HoldStart` again wants nothing begun, so both leave the state
 /// [`Idle`](EngineState::Idle). A start may still set
 /// [`EngineState::Playing`] itself; setting it twice changes nothing.
+///
+/// A game that named its places with
+/// [`places`](crate::places::AddPlaces::places) and whose start made no
+/// world gets one here, built over the places' tiles, since that world is
+/// the same in every such game. A start that made its own, from a save
+/// or over other tiles, keeps it.
 pub fn begin_run(world: &mut World) {
     world.remove_resource::<HoldStart>();
     world.run_schedule(NewRun);
-    if world.contains_resource::<WorldMap>() && !world.contains_resource::<HoldStart>() {
+    if world.contains_resource::<HoldStart>() {
+        return;
+    }
+    if !world.contains_resource::<WorldMap>()
+        && let Some(tiles) = world.get_resource::<PlaceRulesRes>().map(|rules| rules.0.tiles())
+    {
+        world.insert_resource(WorldMap::new(tiles));
+    }
+    if world.contains_resource::<WorldMap>() {
         world.resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
     }
 }
@@ -126,6 +141,7 @@ pub struct LeaveRun;
 mod tests {
     use super::*;
     use crate::components::{Actor, Blocks, Player, Position, RevealsMap, Viewshed};
+    use crate::places::AddPlaces;
     use crate::plugin::{EndRun, headless_app};
     use crate::seed::Seed;
     use crate::state::Restart;
@@ -226,6 +242,52 @@ mod tests {
         app.update();
         assert_eq!(runs(&app).0, 1, "the start ran");
         assert_eq!(state(&app), EngineState::Idle, "and with no world there is nothing to play");
+    }
+
+    /// Rules over the standard tiles and moss, which no start's world in
+    /// these tests has, so a world built from them is told apart.
+    struct Mossy(rl_grid::TileRegistry);
+
+    impl Mossy {
+        fn new() -> Self {
+            let mut tiles = rl_grid::TileRegistry::standard();
+            tiles.register(rl_grid::TileProps::floor("moss")).unwrap();
+            Self(tiles)
+        }
+    }
+
+    impl crate::places::PlaceRules for Mossy {
+        fn build(&self, _: crate::places::MapId, _: rl_core::PlaceSeed) -> Result<crate::places::PlaceBuild, rl_mapgen::BuildError> {
+            Err(rl_mapgen::BuildError::new("mossy", "never entered in these tests"))
+        }
+
+        fn tiles(&self) -> rl_grid::TileTables {
+            self.0.tables()
+        }
+    }
+
+    fn world_tiles(app: &App) -> Vec<String> {
+        app.world().resource::<WorldMap>().tables().names.clone()
+    }
+
+    #[test]
+    fn a_game_that_names_its_places_gets_a_world_built_from_their_tiles() {
+        let mut app = counted();
+        app.places(Mossy::new());
+        app.update();
+        app.update();
+        assert_eq!(world_tiles(&app), Mossy::new().0.tables().names, "the world is built of the places' tiles");
+        assert_eq!(state(&app), EngineState::Playing, "and play has begun on it");
+    }
+
+    #[test]
+    fn a_start_that_makes_its_own_world_keeps_it() {
+        let mut app = building();
+        app.places(Mossy::new());
+        app.update();
+        app.update();
+        assert_eq!(world_tiles(&app), rl_grid::TileRegistry::standard().tables().names, "the start's own world, not one of moss");
+        assert_eq!(state(&app), EngineState::Playing);
     }
 
     #[test]

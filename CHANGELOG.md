@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `app.places(rules)` hands the engine a game's place rules once, where the game is put together, and says the game needs a `Seed`; a run whose start makes no `WorldMap` gets one built over `PlaceRules::tiles`, and a start that makes its own keeps it.
+  To change: nothing; a start may drop its `insert_resource(WorldMap::new(..))` and its `PlaceRulesRes`, and add `places(rules)` where the game adds its plugins.
+
 - `PlaceRules::build` takes the place's `PlaceSeed`, derived from the run's `Seed` and the map's number alone, and `PlaceRules::tiles` names the tile tables places are built of; `MapId::FIRST` is map one. A warp into a place not yet built, in a game with no `Seed`, builds nothing and fails naming the missing seed.
   To change: add `seed: PlaceSeed` to `build` and run the chain on it in place of a seed kept in the rules or mixed with the depth by hand; add `fn tiles(&self) -> TileTables { self.tiles.tables() }`.
 
