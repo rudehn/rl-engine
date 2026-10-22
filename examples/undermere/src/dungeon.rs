@@ -2348,4 +2348,46 @@ mod tests {
         assert!(!view.is_walkable(Point::new(3, 2)), "a body does not pass the glass");
         assert!(view.blocks_projectiles_idx(2 * 7 + 3), "a shot stops at it");
     }
+
+    /// The median of five timings of `f`, in seconds.
+    fn median_of_five(mut f: impl FnMut()) -> f64 {
+        let mut times: Vec<f64> = (0..5)
+            .map(|_| {
+                let begun = std::time::Instant::now();
+                f();
+                begun.elapsed().as_secs_f64()
+            })
+            .collect();
+        times.sort_by(f64::total_cmp);
+        times[2]
+    }
+
+    /// What every test `App` pays to read and check Undermere's content,
+    /// so whether the cross-file checks are worth checking once rather
+    /// than in every app is a measurement rather than a guess.
+    #[test]
+    #[ignore = "by hand: times what each test app spends loading and checking content"]
+    fn what_loading_and_checking_the_content_costs_each_test_app() {
+        let registries = median_of_five(|| drop(crate::content::registries()));
+        let new = median_of_five(|| drop(Undermere::new(RunSeed(0))));
+        let tiles = registry();
+        let layout = layout();
+        let (prefabs, pool, bestiary) = crate::prefabs::load(&tiles, &layout);
+        let defs = biomes::load(&tiles, &layout);
+        let favored = median_of_five(|| biomes::check_favored(&defs, &bestiary));
+        let pieces = median_of_five(|| biomes::check_pieces(&defs, &prefabs));
+        let pooled = median_of_five(|| biomes::check_pool(&defs, &pool, &layout, prefabs.defs()));
+        let districts = biomes::district_dressings(&defs, &layout);
+        let dressed = median_of_five(|| dressing::check_districts(&districts, prefabs.dressings(), &layout).expect("the shipped districts check"));
+        let app = median_of_five(|| crate::testing::headless(RunSeed(0)).update());
+        let checks = favored + pieces + pooled + dressed;
+        println!("content::registries()        {registries:.4} s");
+        println!("Undermere::new(RunSeed(0))   {new:.4} s");
+        println!("  check_favored              {favored:.4} s");
+        println!("  check_pieces               {pieces:.4} s");
+        println!("  check_pool                 {pooled:.4} s");
+        println!("  check_districts            {dressed:.4} s");
+        println!("  the four checks            {checks:.4} s");
+        println!("headless + first update()    {app:.4} s");
+    }
 }
