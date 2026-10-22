@@ -599,7 +599,15 @@ const ALLY: Standard = Standard { flee: true, ability_chance: Some(ABILITY_CHANC
 /// [`crate::tricks::Patrol`], so one brain serves a kind whether a piece
 /// placed it, a floor's population put it on a patrol, or neither.
 fn brain(can: Repertoire, tricks: Tricks) -> Brain<Entity> {
-    let mut brain = MONSTER.brain(can);
+    // Fetching is laid by hand rather than by the chain, at the very place
+    // the chain lays it, first before the hunt, so it can be anchored: a
+    // shackled goblin walked off its chain to take up a sword lying three
+    // steps away, and the freeing broke off with the captive out of reach.
+    let takes_things = can.wits.takes_things();
+    let mut brain = Standard { scavenge_reach: None, ..MONSTER }.brain(can);
+    if takes_things {
+        brain = brain.before_hunt(crate::tricks::Unanchored(rl_engine::rl_rules::ai::tactics::Scavenge { reach: SCAVENGE_REACH }));
+    }
     if tricks.steals {
         brain = brain.first(crate::tricks::FleeAfterStealing);
     }

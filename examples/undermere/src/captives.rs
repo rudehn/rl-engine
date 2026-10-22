@@ -243,6 +243,24 @@ mod tests {
         }
     }
 
+    /// A shackled captive that takes things up stays on its chain with a
+    /// blade lying three steps off: a goblin on seed 2's floor two walked off
+    /// it to fetch the sword the adventurer set down, and the freeing broke
+    /// off with the captive out of reach.
+    #[test]
+    fn a_shackled_captive_never_leaves_its_chain_to_fetch_what_lies_near() {
+        for s in 0..3 {
+            let (mut app, _me, captive) = beside_a_captive(s);
+            let held = crate::testing::at(&app, captive);
+            let blade = crate::testing::make(&mut app, "sword");
+            let lying = held.offset(0, 2);
+            crate::testing::lay_floor(&mut app, &[lying, held.offset(0, 1)]);
+            crate::testing::lay(&mut app, blade, lying);
+            crate::testing::pass_turns(&mut app, 10);
+            assert_eq!(crate::testing::at(&app, captive), held, "seed {s}: still on its chain");
+        }
+    }
+
     /// Taken up in a quiet room, freeing a captive takes the adventurer
     /// three turns, the offer's own the first, as the single long action it
     /// once was did, and then the captive follows them on their side and

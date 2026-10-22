@@ -69,9 +69,11 @@ fn afflict(app: &mut App, who: Entity, status: &str, turns: u32) {
 /// does a goblin's every step towards them: eight walks east never come
 /// to eight steps east and go more than one way, and
 /// a goblin six steps off, which unconfused closes in with every step it
-/// takes, takes one that does not. Six rather than three, so a goblin whose
-/// first two stumbles happened to close in is not then beside the
-/// adventurer striking, which no stumble turns, for the rest of the span.
+/// takes, takes one that does not. The goblin is stood six steps off again
+/// before each of its turns, so a run of stumbles that happened to close in
+/// never leaves it beside the adventurer striking, which no stumble turns,
+/// and the turns stop at the first step astray: how many it takes is the
+/// draw's, which any change to what the run's streams hold moves.
 #[test]
 fn confusion_turns_every_step_a_random_way_for_the_adventurer_and_a_monster_alike() {
     // One run is enough: the stumble itself, its odds and its pick of an open
@@ -98,17 +100,14 @@ fn confusion_turns_every_step_a_random_way_for_the_adventurer_and_a_monster_alik
     stand_on(&mut app, me, here);
     let goblin = monster(&mut app, "goblin", here.offset(-6, 0));
     afflict(&mut app, goblin, CONFUSED, 40);
-    let mut astray = 0;
-    for _ in 0..8 {
-        let gap = geometry::chebyshev(at(&app, goblin), at(&app, me));
-        let from = at(&app, goblin);
+    let from = here.offset(-6, 0);
+    let astray = (0..30).any(|_| {
+        stand_on(&mut app, goblin, from);
         pass_turns(&mut app, 1);
-        let moved = at(&app, goblin) != from;
-        if moved && geometry::chebyshev(at(&app, goblin), at(&app, me)) >= gap {
-            astray += 1;
-        }
-    }
-    assert!(astray > 0, "the goblin took a step that did not close on the adventurer");
+        let to = at(&app, goblin);
+        to != from && geometry::chebyshev(to, here) >= 6
+    });
+    assert!(astray, "the goblin took a step that did not close on the adventurer");
 }
 
 /// A confused adventurer with one way open walks that way every time, and

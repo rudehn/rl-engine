@@ -208,12 +208,16 @@ mod tests {
     use crate::testing::{arena_on, continued};
 
     /// Two doors beside the adventurer, east and south, both seen, and a
-    /// third far to the north, out of sight, that is not.
+    /// third far to the north, walled in, so it is out of sight whatever
+    /// the floor round it is: on open ground a door twelve steps off is in
+    /// sight, as it came to be when the floor's layout moved.
     fn doors_about() -> (App, Point, [Point; 3]) {
         let (mut app, _me, here) = arena_on(5, 1);
         app.add_plugins(KeyScriptPlugin);
         let cells = [here.offset(1, 0), here.offset(0, 1), here.offset(0, -12)];
         crate::testing::lay_floor(&mut app, &cells);
+        let walled: Vec<Point> = rl_engine::rl_core::geometry::square(cells[2], 1).filter(|p| *p != cells[2]).collect();
+        crate::testing::wall_off(&mut app, &walled);
         let shut = app.world().resource::<DoorTiles>().shut;
         let mut map = app.world_mut().resource_mut::<WorldMap>();
         for cell in cells {
