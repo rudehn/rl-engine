@@ -37,7 +37,9 @@
 // of them once a run through its budget; a biome's own list in
 // `dungeon/biomes.rs` draws the same names far more often, for every room
 // the pool did not take); four are the reward pool's "dressed" entries
-// (Armory, Apothecary's Shelves, Scriptorium, Quartermaster's Store).
+// (Armory, Apothecary's Shelves, Scriptorium, Quartermaster's Store); and
+// four are the Drowned Town's first wave's own, the Old Town's and the
+// Harbour's, laid only by their biomes' lists.
 #![enable(implicit_some)]
 [
     // Shared flavor dressings: any biome, any floor unless noted.
@@ -288,5 +290,31 @@
         legend: { 'c': Prop("broken cage") },
         place: [(glyph: 'c', at: Walls, density_pct: 40)],
         repaint: ("straw", 30),
+    ),
+    // The Drowned Town's first wave. The Old Town's houses, left as their
+    // people left them, a cask in the corner and a table, and nothing in
+    // it a lane or a square would not hold as well, since a biome's
+    // dressings fall on any of its areas; its market's stalls in rows; the Harbour's net
+    // lofts and its cargo, stacked on the quays for a ship that never came.
+    (
+        name: "Empty House",
+        legend: { 't': Prop("table"), 'r': Prop("barrel"), 's': Prop("sack") },
+        place: [(glyph: 'r', at: Corners, density_pct: 40), (glyph: 't', at: Center, density_pct: 10), (glyph: 's', at: Scatter, density_pct: 3)],
+    ),
+    (
+        name: "Market Stalls",
+        legend: { 's': Prop("market stall"), 'c': Prop("spilled crate") },
+        place: [(glyph: 's', at: Rows(aisle: 2), density_pct: 35), (glyph: 'c', at: Scatter, density_pct: 4)],
+    ),
+    (
+        name: "Net Loft",
+        legend: { 'n': Prop("fishing net"), 'c': Prop("creel"), 'r': Prop("barrel") },
+        place: [(glyph: 'n', at: Walls, density_pct: 40), (glyph: 'c', at: Scatter, density_pct: 8), (glyph: 'r', at: Corners, density_pct: 50)],
+    ),
+    (
+        name: "Cargo Stacks",
+        legend: { 's': Prop("stacked crates"), 'r': Prop("barrel") },
+        place: [(glyph: 's', at: Rows(aisle: 1), density_pct: 30), (glyph: 'r', at: Scatter, density_pct: 5)],
+        repaint: ("wrack", 10),
     ),
 ]

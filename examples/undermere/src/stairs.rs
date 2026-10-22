@@ -341,7 +341,8 @@ mod tests {
     }
 
     /// The way down at `down` on `map` is reached from the way in round
-    /// every prop that blocks, doors opened.
+    /// every prop that blocks, doors opened, a piece's carved ones among
+    /// them.
     fn nothing_standing_cuts_the_way_in_off_from_the_way_down(app: &mut App, map: MapId, down: Point, at: &str) {
         let world = app.world_mut();
         let blocked: Vec<Point> =
@@ -352,7 +353,10 @@ mod tests {
         let mut seen: std::collections::BTreeSet<Point> = reached.iter().copied().collect();
         while let Some(p) = reached.pop() {
             for next in geometry::square(p, 1) {
-                let door = world_map.tile(next).is_some_and(|t| world_map.tables().names[t.index()] == "door");
+                // A carved door is a piece's own, the gatehouse's gate
+                // among them, opened by hand as a plain one is; a vault's
+                // door is a lock, and stays shut.
+                let door = world_map.tile(next).is_some_and(|t| ["door", "carved door"].contains(&world_map.tables().names[t.index()].as_str()));
                 if (world_map.is_walkable_on(map, next) || door) && !blocked.contains(&next) && seen.insert(next) {
                     reached.push(next);
                 }

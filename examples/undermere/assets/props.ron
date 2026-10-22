@@ -348,4 +348,27 @@
     (name: "topiary",       glyph: '♣', color: (r: 90, g: 200, b: 100), blocks: true),
     (name: "fountain",      glyph: '¤', color: (r: 120, g: 200, b: 255), blocks: true),
     (name: "broken cage",   glyph: '‖', color: (r: 190, g: 105, b: 115), blocks: true),
+
+    // The Drowned Town's first wave. The Old Town's street lamps, lit an age
+    // under the lake and burning still, a pale drowned gold, cooler than
+    // Mereholt's own and reaching as far; the Harbour's lanterns, sea-green
+    // glass on a post, nearer in, so a quay is lit in pools between dark
+    // water. A market's stalls, the quays' and the ship's clutter, and the
+    // lanterns and stores the two landmarks hold.
+    (name: "street lamp", glyph: '|', color: (r: 226, g: 228, b: 168), blocks: true,
+     light: (intensity: 200, radius: 5, color: (r: 214, g: 224, b: 150), flicker: 20)),
+    (name: "harbour lantern", glyph: 'i', color: (r: 150, g: 235, b: 205),
+     light: (intensity: 200, radius: 4, color: (r: 120, g: 235, b: 200), flicker: 33)),
+    (name: "market stall", glyph: '╥', color: (r: 205, g: 160, b: 105), blocks: true),
+    (name: "stacked crates", glyph: '■', color: (r: 190, g: 150, b: 100), blocks: true),
+    (name: "upturned boat", glyph: '∩', color: (r: 140, g: 78, b: 52), blocks: true),
+    (name: "anchor",        glyph: '⚓', color: (r: 190, g: 95, b: 60)),
+    (name: "bollard",       glyph: 'o', color: (r: 200, g: 190, b: 170), blocks: true),
+    (name: "broken mast",   glyph: '|', color: (r: 205, g: 185, b: 145), blocks: true),
+    (name: "bucket",        glyph: 'u', color: (r: 190, g: 160, b: 120)),
+    // A ship's hold, still shut: what a trader carried down with her.
+    (name: "sea chest", glyph: '=', color: (r: 210, g: 150, b: 60), blocks: true,
+     container: (contents: [(item: "gold coin", count: (3, 6)), (tag: "potion", count: (0, 1)), (tag: "scroll", count: (0, 1))],
+                 opened: (glyph: '=', color: (r: 80, g: 100, b: 92))),
+     offers: [(verb: "open", time: 100)]),
 ]

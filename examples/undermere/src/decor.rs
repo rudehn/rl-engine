@@ -19,6 +19,10 @@
 //! inscription are both scenery, and the blood and the wall inscription
 //! are both read off the floor they lie on, exactly as rubble and
 //! bones already are.
+//!
+//! [`Moor`] is a biome's own decor rather than the lived-in dungeon's,
+//! laid where `assets/biomes.ron` asks for it: the Harbour's boats, tied
+//! up along the quays on the water the recipe's lakes laid.
 
 use std::collections::BTreeMap;
 
@@ -27,7 +31,7 @@ use rand::seq::SliceRandom;
 use rl_engine::prelude::*;
 use rl_engine::rl_mapgen::{Area, Opening};
 
-use crate::dungeon::{pieces, slots, walkable, ways};
+use crate::dungeon::{pieces, slots, under_pieces, walkable, ways};
 
 /// A body a dead end took, and the blood that still marks the doorway to
 /// it: one dead end a floor's survey rated, reached by one opening,
@@ -186,6 +190,78 @@ impl Pass<BaseContext> for WallInscriptions {
         spots.shuffle(ctx.rng());
         let Some(at) = spots.into_iter().next() else { return Ok(()) };
         StampPrefab { name: self.name, prefab: self.piece.clone(), at: Placement::At(at), orient: Orient::Fixed }.apply(ctx)
+    }
+}
+
+/// Boats tied up along the floor's edge of the water: `count` of them,
+/// each a cell of `on` straight beside a cell a body stands on, and a
+/// second cell of it along the shore where that one lies beside the floor
+/// as well, so most boats lie alongside the quay they are tied to.
+///
+/// A boat stops a body as the water under it already did, so mooring one
+/// never shuts a way and needs no flood to prove it. Never on a piece or
+/// the ring round it, whose water is its own drawing, and never beside
+/// another boat, so a quay's boats read as boats and not as a raft.
+pub struct Moor {
+    /// A stable name, so two moorings in one chain draw different streams.
+    pub name: &'static str,
+    /// What a boat is.
+    pub tile: TileId,
+    /// The water it lies on.
+    pub on: TileId,
+    /// The fewest and the most.
+    pub count: (u32, u32),
+}
+
+impl Pass<BaseContext> for Moor {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    fn phase(&self) -> Phase {
+        Phase::Finish
+    }
+
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
+        let tables = ctx.tiles().tables();
+        let count = ctx.rng().random_range(self.count.0..=self.count.1);
+        let under = under_pieces(ctx);
+        let water = |ctx: &BaseContext, p: Point| ctx.terrain().get(p) == Some(self.on);
+        let shore = |ctx: &BaseContext, p: Point| Direction::CARDINALS.iter().find(|d| walkable(ctx, &tables, p + d.offset())).copied();
+        let mut spots: Vec<Point> = ctx
+            .terrain()
+            .bounds()
+            .cells()
+            .filter(|p| water(ctx, *p) && shore(ctx, *p).is_some() && geometry::square(*p, 1).all(|q| !under.contains(q)))
+            .collect();
+        spots.shuffle(ctx.rng());
+        let mut moored: Vec<Point> = Vec::new();
+        let mut boats = 0;
+        for at in spots {
+            if boats >= count {
+                break;
+            }
+            if moored.iter().any(|b| geometry::chebyshev(*b, at) <= 2) {
+                continue;
+            }
+            let Some(toward) = shore(ctx, at).map(Direction::offset) else { continue };
+            // Along the shore: a step at a right angle to the way ashore.
+            let along: Vec<Point> = Direction::CARDINALS
+                .iter()
+                .map(|d| d.offset())
+                .filter(|o| o.x * toward.x + o.y * toward.y == 0)
+                .map(|o| at + o)
+                .filter(|q| water(ctx, *q) && shore(ctx, *q).is_some() && !under.contains(*q))
+                .collect();
+            ctx.terrain_mut().set(at, self.tile);
+            moored.push(at);
+            boats += 1;
+            if let Some(stern) = along.first() {
+                ctx.terrain_mut().set(*stern, self.tile);
+                moored.push(*stern);
+            }
+        }
+        Ok(())
     }
 }
 

@@ -169,6 +169,8 @@ pub fn note_captives(mut nearby: ResMut<NearbyView>, verbs: Res<Verbs>, offers: 
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use rl_engine::rl_core::RunSeed;
 
     use super::*;
@@ -284,7 +286,10 @@ mod tests {
 
     /// A run continued on the floor whose captive is still shackled finds
     /// it still shackled where it was held: neutral, anchored, and offering
-    /// to be freed, rather than an ordinary monster of its kind.
+    /// to be freed, rather than an ordinary monster of its kind. Every
+    /// captive is asked it, the run's own and any a piece on the floor
+    /// holds, so a floor that draws a piece of captives beside the run's
+    /// own is no different.
     #[test]
     fn a_captive_left_shackled_is_still_shackled_once_the_run_is_continued() {
         let s = 0u64;
@@ -293,23 +298,32 @@ mod tests {
         sturdy(&mut app, me);
         let floor = captive_floor(RunSeed(s));
         arrive(&mut app, map_of(floor));
+        let before = shackled_on(&mut app);
+        assert!(!before.is_empty(), "the run's own captive, shackled on its floor");
         let text = app.world().resource::<Saves>().load(crate::save::SLOT).expect("the slot reads").expect("the arrival wrote the run down");
         let mut again = crate::testing::continued(&text);
         let captive_side = again.world().resource::<Registries>().factions.expect(crate::content::CAPTIVE);
-        let world = again.world_mut();
-        let held: Vec<(Entity, Point)> = world.query::<(Entity, &Position)>().iter(world).map(|(e, p)| (e, p.0)).collect();
-        let shackled: Vec<(Point, Option<Point>, Option<FactionId>)> = held
-            .iter()
-            .filter_map(|(e, at)| held_at(again.world(), *e).map(|anchor| (*at, Some(anchor), again.world().get::<Faction>(*e).map(|f| f.0))))
-            .collect();
-        assert_eq!(shackled.len(), 1, "the one captive, still offering to be freed: {shackled:?}");
-        let (at, anchor, side) = shackled[0];
-        assert_eq!((Some(at), side), (anchor, Some(captive_side)), "held where it stood, and neither friend nor foe");
+        let after = shackled_on(&mut again);
+        assert_eq!(after.keys().collect::<Vec<_>>(), before.keys().collect::<Vec<_>>(), "every captive, still offering to be freed");
+        for (at, (anchor, side)) in after {
+            assert_eq!((Some(at), side), (anchor, Some(captive_side)), "held where it stood, and neither friend nor foe");
+        }
+    }
+
+    /// Every captive still offering to be freed, by where it stands: the
+    /// cell it is held at and its side.
+    fn shackled_on(app: &mut App) -> BTreeMap<Point, (Option<Point>, Option<FactionId>)> {
+        let world = app.world_mut();
+        let standing: Vec<(Entity, Point)> = world.query::<(Entity, &Position)>().iter(world).map(|(e, p)| (e, p.0)).collect();
+        standing
+            .into_iter()
+            .filter_map(|(e, at)| held_at(app.world(), e).map(|anchor| (at, (Some(anchor), app.world().get::<Faction>(e).map(|f| f.0)))))
+            .collect()
     }
 
     /// A captive killed in its shackles offers nothing from its body, and
-    /// a run continued after holds no captive at all, rather than one
-    /// shackled again over a corpse.
+    /// a run continued after holds no captive where it was held, rather
+    /// than one shackled again over a corpse.
     #[test]
     fn a_captive_killed_in_its_shackles_offers_nothing_and_is_not_shackled_again_on_a_continue() {
         use crate::testing::kill;
@@ -324,14 +338,15 @@ mod tests {
             all.iter(app.world()).collect::<Vec<_>>()
         };
         let captive = everyone(&mut app).into_iter().find(|e| held_at(app.world(), *e).is_some()).expect("the run's own captive");
+        let held = held_at(app.world(), captive).expect("shackled");
         kill(&mut app, captive, Some(me));
         assert!(app.world().get::<Remains>(captive).is_some(), "its body lies where it was held");
         assert_eq!(held_at(app.world(), captive), None, "and offers to be freed no longer");
         rl_engine::rl_save::save_run(app.world_mut()).expect("the run is written down");
         let text = app.world().resource::<Saves>().load(crate::save::SLOT).expect("the slot reads").expect("a save");
         let mut again = crate::testing::continued(&text);
-        let shackled: Vec<Entity> = everyone(&mut again).into_iter().filter(|e| held_at(again.world(), *e).is_some()).collect();
-        assert!(shackled.is_empty(), "nothing shackled again in the run continued: {shackled:?}");
+        let shackled: Vec<Point> = everyone(&mut again).into_iter().filter_map(|e| held_at(again.world(), e)).collect();
+        assert!(!shackled.contains(&held), "nothing shackled again where it was killed in the run continued: {shackled:?}");
     }
 
     /// The rail says the captive is shackled, in plain text, until it is

@@ -12,7 +12,9 @@ use rl_engine::prelude::*;
 use crate::content::{CONFUSED, DARKNESS, FIREPROOF, HASTED, PARALYSED, SHROUDED, SPEED, STEALTH};
 use crate::dungeon::map_of;
 use crate::lore::Lore;
-use crate::testing::{adventurer, arena, arrive, at, find, give, headless, here, monster, pass_turns, said, settle, stand_on, sturdy, use_thing, wall_off};
+use crate::testing::{
+    adventurer, arena, arrive, at, find, give, headless, here, lay_floor, monster, pass_turns, said, settle, stand_on, sturdy, use_thing, wall_off,
+};
 
 /// `name` found and put in `me`'s pack.
 fn carried(app: &mut App, me: Entity, name: &str) -> Entity {
@@ -98,6 +100,10 @@ fn confusion_turns_every_step_a_random_way_for_the_adventurer_and_a_monster_alik
     assert!(taken.len() > 1, "the steps went more than one way: {ways:?}");
 
     stand_on(&mut app, me, here);
+    // The arena lays open ground only five round the adventurer, and six
+    // off is whatever the floor drew there: a wall on every side but the
+    // arena's would leave the goblin only ways that close in.
+    lay_floor(&mut app, &geometry::square(here, 8).collect::<Vec<_>>());
     let goblin = monster(&mut app, "goblin", here.offset(-6, 0));
     afflict(&mut app, goblin, CONFUSED, 40);
     let from = here.offset(-6, 0);

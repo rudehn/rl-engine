@@ -193,4 +193,26 @@
      light: (intensity: 200, radius: 1, color: (r: 150, g: 210, b: 240), flicker: 20)),
     // A cage's bars: seen and shot through, never walked through.
     (tile: "cage bars",      glyph: '║',  fg: (0.62, 0.62, 0.66), bg: (0.12, 0.12, 0.12), vary: (0.08, 0.02)),
+
+    // The Drowned Town's first wave, floors one and two: the Old Town's
+    // lanes and houses, the Harbour's quays and water, and the two
+    // landmarks' own. What stops a body is drawn `≈` and what is waded `~`,
+    // as everywhere; a moored boat and a ship's hull stop a body and are
+    // seen over, so they are dark tarred wood on the water's own fill.
+    (tile: "house wall",     glyph: '#',  fg: (0.68, 0.7, 0.62),  bg: (0.43, 0.45, 0.39), vary: (0.1, 0.03)),
+    (tile: "lane cobbles",   glyph: '.',  fg: (0.58, 0.6, 0.53),  bg: (0.2, 0.21, 0.18),  vary: (0.14, 0.03)),
+    (tile: "rotted boards",  glyph: '.',  fg: (0.56, 0.45, 0.32), bg: (0.21, 0.16, 0.11), vary: (0.14, 0.03)),
+    (tile: "quay wall",      glyph: '#',  fg: (0.58, 0.66, 0.64), bg: (0.36, 0.43, 0.42), vary: (0.1, 0.03)),
+    (tile: "quay",           glyph: '.',  fg: (0.36, 0.42, 0.38), bg: (0.16, 0.2, 0.2),   vary: (0.12, 0.03)),
+    // Weed and wrack left on the quays, strewn: the quay's own fill.
+    (tile: "wrack",          glyph: ',',  fg: (0.36, 0.52, 0.3),  bg: (0.16, 0.2, 0.2),   vary: (0.16, 0.05)),
+    (tile: "harbour water",  glyph: '≈',  fg: (0.28, 0.5, 0.56),  bg: (0.03, 0.1, 0.13),  vary: (0.1, 0.03),  shimmer: 0.25),
+    (tile: "harbour shallows", glyph: '~', fg: (0.3, 0.62, 0.66), bg: (0.1, 0.2, 0.21),  vary: (0.1, 0.03),  shimmer: 0.2),
+    (tile: "moored boat",    glyph: '∪',  fg: (0.62, 0.42, 0.24), bg: (0.03, 0.1, 0.13),  vary: (0.1, 0.03)),
+    (tile: "hull",           glyph: '#',  fg: (0.6, 0.42, 0.26),  bg: (0.24, 0.15, 0.09), vary: (0.12, 0.03)),
+    // A deck gone under: planks seen through a hand of water, waded.
+    (tile: "sunken deck",    glyph: '~',  fg: (0.44, 0.4, 0.3),   bg: (0.15, 0.16, 0.13), vary: (0.1, 0.03),  shimmer: 0.2),
+    // The gatehouse's curtain: great pale blocks, older and finer than the
+    // barracks it stands among.
+    (tile: "curtain wall",   glyph: '#',  fg: (0.84, 0.8, 0.7),   bg: (0.58, 0.54, 0.46), vary: (0.06, 0.02)),
 ]

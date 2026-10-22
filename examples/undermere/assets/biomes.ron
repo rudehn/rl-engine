@@ -1,4 +1,4 @@
-// Undermere's biomes: twelve drawn one to four to a stratum, and the three
+// Undermere's biomes: sixteen drawn one to five to a stratum, and the three
 // throne floors drawn one to a boss. `dungeon::biomes` loads this against
 // the registered tiles. The strata (`src/dungeon/strata.rs`) are the
 // ranges of floors the rows below are grouped by, shallowest first: the
@@ -63,7 +63,8 @@
 //   paint:    optional, none if left out; [(on:, tile:)], an area whose
 //             shape or district is named `on` floored with `tile` in place
 //             of `floor`, the first rule that names either winning
-//   decor:    [Patches(tile:, count:, size:) | Furnish(piece:, count:)],
+//   decor:    [Patches(tile:, count:, size:) | Furnish(piece:, count:, within:, by_walls:) |
+//             Moor(tile:, on:, count:)],
 //             what a floor of it is strewn with once its ways are known, in
 //             order, at most four rows; none if empty, as the throne floors
 //             are. What lights a floor beyond its ambient is mostly this,
@@ -76,11 +77,24 @@
 //                        (fewest, most) cells each, fewest at least one
 //               Furnish: `piece`, a one-cell piece of `assets/prefabs/`,
 //                        stood on open floor where it shuts nothing off;
-//                        count (fewest, most)
+//                        count (fewest, most); within optional, any area
+//                        if left out: [name], the shapes and districts of
+//                        `assets/layout.ron` whose areas it may stand in;
+//                        by_walls optional, false if left out: true stands
+//                        it against a wall, never beside a way through,
+//                        rather than with open floor all round it
+//               Moor:    boats of `tile` laid on the water `on`, each a
+//                        cell or two of it straight beside the floor and
+//                        along it; both tiles stop a body, and `on` is
+//                        seen across, a lake's own; count (fewest, most)
 //   dressings: named dressings of `assets/dressings.ron`, this biome's own
 //             rather than any floor's, weighed in every district it grows;
 //             the pool's own flavor entries name the biomes they stand in
 //             by `where` in `assets/pool.ron`
+//   dressings_within: optional, none if left out; [(dressing, [district])],
+//             a dressing of `dressings` kept to the named districts of
+//             `assets/layout.ron`, each one a recipe of the biome grows;
+//             a dressing not named here falls in every district
 //   favored:  names from `monsters.ron`, three or more for a biome of
 //             floors one to nine, each with a spawn row somewhere on the
 //             biome's floors, none for a throne; they count three times
@@ -126,6 +140,70 @@
         decor: [Furnish(piece: "brazier", count: (3, 5))],
         dressings: ["Bunk Room", "Mess Hall", "Drill Yard"],
         favored: ["kobold", "goblin", "jackal"],
+    ),
+
+    // The Drowned Town's first wave: the kingdom's streets and its harbour,
+    // just under the gate. The Harbour's water is deep, and stops a body;
+    // its shallows are waded, at twice a step; a floor of it is grown round
+    // the sunken ship, as a floor of the Watch Barracks is round the
+    // gatehouse, both seeded by `assets/pool.ron`.
+    (
+        name: "Old Town", floors: (1, 2), weight: 1,
+        moods: ["Lamps still burn along the empty lanes.", "The lanes go on, between doors nobody shut."],
+        wall: "house wall", floor: "lane cobbles",
+        ambient: (25, (165, 180, 150)),
+        recipes: [(name: "lanes", weight: 1), (name: "market", weight: 1)],
+        // Boards in the houses, flags in the market square, and rubble
+        // where a row of houses fell in.
+        paint: [
+            (on: "house", tile: "rotted boards"),
+            (on: "townhouse", tile: "rotted boards"),
+            (on: "square", tile: "flagstones"),
+            (on: "fallen houses", tile: "rubble"),
+        ],
+        // Street lamps still lit in the lanes and the square, a pale
+        // drowned gold, never in a house; and fallen masonry.
+        decor: [
+            Furnish(piece: "street lamp", count: (6, 9), within: ["lane", "alley", "square"], by_walls: true),
+            Patches(tile: "rubble", count: (3, 6), size: (2, 5)),
+        ],
+        // Stalls in the market square, and the houses left as their
+        // people left them in the streets of houses.
+        dressings: ["Empty House", "Market Stalls"],
+        dressings_within: [("Market Stalls", ["market"]), ("Empty House", ["lanes", "fallen houses"])],
+        favored: ["rat", "goblin", "kobold"],
+    ),
+    (
+        name: "Harbour", floors: (1, 2), weight: 1,
+        moods: ["Boats lie at their moorings in still black water.", "The quays go on, and the water off them goes down a long way."],
+        wall: "quay wall", floor: "quay",
+        ambient: (23, (120, 170, 175)),
+        recipes: [
+            // Water standing in the basins, shallows round it, and piers
+            // across where walking round is long.
+            (name: "quays", weight: 1, lakes: Some((
+                tile: "harbour water", count: (3, 5), size: (30, 90), wreath: Some(("harbour shallows", 70)), cut: false,
+                within: ["basin"],
+                bridges: Some((tile: "bridge", longest: 8, detour: 30)),
+            ))),
+            // More and smaller: boats' slips in the basins and off the quays.
+            (name: "moorings", weight: 1, lakes: Some((
+                tile: "harbour water", count: (5, 8), size: (16, 50), wreath: Some(("harbour shallows", 60)), cut: false,
+                within: ["basin", "quay"],
+                bridges: Some((tile: "bridge", longest: 6, detour: 24)),
+            ))),
+        ],
+        paint: [(on: "warehouse", tile: "rotted boards")],
+        // Green lanterns on their posts by the water, never in a
+        // warehouse, boats tied up along the quays, and
+        // wrack where the water left it.
+        decor: [
+            Furnish(piece: "harbour lantern", count: (5, 7), within: ["quay", "wharf", "basin"]),
+            Moor(tile: "moored boat", on: "harbour water", count: (4, 8)),
+            Patches(tile: "wrack", count: (4, 7), size: (2, 5)),
+        ],
+        dressings: ["Net Loft", "Cargo Stacks"],
+        favored: ["harbour crab", "rat", "kobold"],
     ),
 
     // Floors three and four: the Palace and its Grounds.

@@ -270,8 +270,8 @@ mod tests {
     /// shallows, the Royal Wood's glowing moss and the Palace Gardens' pale
     /// blooms and fountain basins; the lamp posts, the forge and the hearth, the altar and
     /// the candelabras, the hanging lanterns, the witchlights, the
-    /// braziers warm and cold, a camp's fire and the gate mark. Nothing
-    /// else.
+    /// braziers warm and cold, a camp's fire and the gate mark, the Old
+    /// Town's street lamps and the Harbour's lanterns. Nothing else.
     #[test]
     fn exactly_the_tiles_and_props_the_design_lights_write_a_light() {
         let undermere = Undermere::new(RunSeed(0));
@@ -294,6 +294,8 @@ mod tests {
             "cold brazier",
             "fire",
             crate::waystone::GATE_MARK,
+            "street lamp",
+            "harbour lantern",
         ];
         assert_eq!(lit, BTreeSet::from(expected));
         let (warm, cold) = (registries.props.get(registries.props.expect("brazier")), registries.props.get(registries.props.expect("cold brazier")));

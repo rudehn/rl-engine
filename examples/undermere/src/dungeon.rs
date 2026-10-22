@@ -147,7 +147,29 @@ fn shared_tiles(floor: u32) -> &'static [&'static str] {
     // biome" rows; "blood" is `decor::BloodTrail`'s, the same "any floor"
     // reach. Every floor but the throne's carries all six.
     match floor {
-        ..=2 => &["door", "open door", "rubble", "blood", "hall wall", "hall floor", "web", "bones", "flooded floor", "moss"],
+        ..=2 => &[
+            "door",
+            "open door",
+            "rubble",
+            "blood",
+            "hall wall",
+            "hall floor",
+            "web",
+            "bones",
+            "flooded floor",
+            "moss",
+            // The Drowned Town's first wave's landmarks: the gatehouse's
+            // curtain and its gate's flags, and the sunken ship's water,
+            // gangplank, hull and decks.
+            "curtain wall",
+            "flagstones",
+            "harbour water",
+            "harbour shallows",
+            "bridge",
+            "hull",
+            "planks",
+            "sunken deck",
+        ],
         // The Drowned Abbess's chapel stands on 3 and 4 in her cathedral's
         // wall, and `Fallen Bell`, the cathedral's own fixed piece, in flagstones.
         // The Palace grounds' first wave: the hunting lodge's timber, planks
@@ -252,7 +274,7 @@ impl Undermere {
         for (_, def) in self.defs.iter() {
             pieces.extend(def.decor.iter().filter_map(|d| match d {
                 biomes::DecorDef::Furnish { piece, .. } => Some(piece.clone()),
-                biomes::DecorDef::Patches { .. } => None,
+                biomes::DecorDef::Patches { .. } | biomes::DecorDef::Moor { .. } => None,
             }));
             dressings.extend(def.dressings.iter().cloned());
         }
@@ -289,7 +311,7 @@ impl Undermere {
             (name(drawn.wall), name(drawn.floor))
         };
         let strewn = drawn.decor.iter().filter_map(|d| match d {
-            Decor::Patches { tile, .. } => Some(*tile),
+            Decor::Patches { tile, .. } | Decor::Moor { tile, .. } => Some(*tile),
             Decor::Furnish { .. } => None,
         });
         let painted = drawn.paint.iter().map(|(_, t)| *t).chain(strewn).map(name);
@@ -308,15 +330,22 @@ impl Undermere {
 /// nothing.
 #[cfg(test)]
 pub(crate) fn drawn(names: &[&str]) -> (RunSeed, u32) {
+    drawn_from(names, 1)
+}
+
+/// [`drawn`], for a floor no shallower than `from`: for a test that needs
+/// a floor above the piece, so the order of the seeds never decides it.
+#[cfg(test)]
+pub(crate) fn drawn_from(names: &[&str], from: u32) -> (RunSeed, u32) {
     let loaded = Undermere::new(RunSeed(0));
     for s in 0..400 {
         let undermere = loaded.reseeded(RunSeed(s));
         let holds = |f: u32, name: &str| undermere.plan_of(f).iter().any(|p| undermere.pool.entries[p.entry].name == name);
-        if let Some(floor) = (1..FLOORS).find(|f| names.iter().all(|name| holds(*f, name))) {
+        if let Some(floor) = (from..FLOORS).find(|f| names.iter().all(|name| holds(*f, name))) {
             return (RunSeed(s), floor);
         }
     }
-    panic!("no run over 400 seeds draws {names:?} on one floor")
+    panic!("no run over 400 seeds draws {names:?} on one floor from floor {from} down")
 }
 
 /// What a risk-and-reward or reward piece draws in a tile of its own, on
@@ -487,6 +516,23 @@ pub(crate) fn registry() -> TileRegistry {
             TileProps::floor("night blooms"),
             wading("basin"),
             TileProps::named("cage bars"),
+            // The Drowned Town's first wave: the Old Town's houses and
+            // lanes, the Harbour's quays and its water, deep and shallow,
+            // and the two landmarks'. A moored boat and a ship's hull stop
+            // a body as the water under them does, and are seen and shot
+            // over; the curtain is a wall.
+            TileProps::wall("house wall"),
+            TileProps::floor("lane cobbles"),
+            TileProps::floor("rotted boards"),
+            TileProps::wall("quay wall"),
+            TileProps::floor("quay"),
+            TileProps::floor("wrack"),
+            TileProps::named("harbour water"),
+            wading("harbour shallows"),
+            TileProps::named("moored boat"),
+            TileProps::named("hull"),
+            wading("sunken deck"),
+            TileProps::wall("curtain wall"),
         ])
         .expect("every tile has a name of its own");
     // What glows by itself, the town's lit windows and the gate, the
@@ -824,7 +870,10 @@ impl Undermere {
         for (decor, name) in drawn.decor.iter().zip(biomes::DECOR_PASSES) {
             chain = match decor {
                 Decor::Patches { tile, count, size } => chain.then(Patches { name, tile: *tile, on: drawn.floor, count: *count, size: *size }),
-                Decor::Furnish { piece, count } => chain.then(Furnish { name, piece: self.prefabs.piece(piece)?, count: *count }),
+                Decor::Furnish { piece, count, within, by_walls } => {
+                    chain.then(Furnish { name, piece: self.prefabs.piece(piece)?, count: *count, within: within.clone(), by_walls: *by_walls })
+                }
+                Decor::Moor { tile, on, count } => chain.then(crate::decor::Moor { name, tile: *tile, on: *on, count: *count }),
             };
         }
         // The lived-in dungeon's own, on any floor but the throne's: a
@@ -843,7 +892,11 @@ impl Undermere {
                 })
                 .then(crate::decor::WallInscriptions { name: "wall inscription", piece: self.prefabs.piece("wall inscription")?, chance_pct: 25 })
         };
-        Ok(if floor == FLOORS { chain } else { chain.then(Furnish { name: "chests", piece: self.prefabs.piece("chest")?, count: CHESTS }) })
+        Ok(if floor == FLOORS {
+            chain
+        } else {
+            chain.then(Furnish { name: "chests", piece: self.prefabs.piece("chest")?, count: CHESTS, within: Vec::new(), by_walls: false })
+        })
     }
 
     /// Floor `floor` as rows of glyphs, for `undermere --floor N --seed S`
@@ -1217,6 +1270,14 @@ struct Furnish {
     piece: Prefab,
     /// The fewest and the most.
     count: (u32, u32),
+    /// The shapes and districts of the areas it may stand in; any area
+    /// when empty.
+    within: Vec<String>,
+    /// Whether it stands against a wall, as a lamp at a lane's side,
+    /// rather than with open floor all round it: a lane two wide has no
+    /// cell with floor all round. Never beside an opening either way, so
+    /// it never stands in a doorway's mouth.
+    by_walls: bool,
 }
 
 impl Pass<BaseContext> for Furnish {
@@ -1234,11 +1295,21 @@ impl Pass<BaseContext> for Furnish {
         }
         let tables = ctx.tiles().tables();
         let count = ctx.rng().random_range(self.count.0..=self.count.1);
+        let allowed: Option<BTreeSet<Point>> = (!self.within.is_empty()).then(|| {
+            let named = |a: &&Area| self.within.iter().any(|n| *n == a.shape || *n == a.district);
+            ctx.outputs().iter::<Area>().filter(named).flat_map(|a| a.cells.iter().copied()).collect()
+        });
+        let openings: BTreeSet<Point> = ctx.outputs().iter::<Opening>().flat_map(|o| o.cells.iter().copied()).collect();
+        let by_wall = |ctx: &BaseContext, p: Point| {
+            Direction::CARDINALS.iter().any(|d| !walkable(ctx, &tables, p + d.offset()))
+                && geometry::square(p, 1).all(|q| !openings.contains(&q) && ctx.terrain().get(q).is_some_and(|t| tables.opens[t.index()].is_none()))
+        };
         for _ in 0..count {
             let (kept, under, blocked) = (ways(ctx), under_pieces(ctx), slots(ctx));
             let clear = |p: Point| {
-                kept.iter().all(|w| geometry::chebyshev(p, *w) > 1)
-                    && open_all_round(ctx, &tables, p)
+                allowed.as_ref().is_none_or(|cells| cells.contains(&p))
+                    && kept.iter().all(|w| geometry::chebyshev(p, *w) > 1)
+                    && if self.by_walls { by_wall(ctx, p) } else { open_all_round(ctx, &tables, p) }
                     && walkable(ctx, &tables, p)
                     && geometry::square(p, 1).all(|q| !under.contains(q))
             };
@@ -1342,7 +1413,9 @@ mod tests {
 
     use rl_engine::rl_core::Rect;
     use rl_engine::rl_mapgen::Join;
+    use rl_engine::rl_mapgen::accrete::Landmark;
     use rl_engine::rl_mapgen::prefab::Stamped;
+    use rl_engine::rl_rules::pool::{Placed, Stairs as Wanted};
     use rl_engine::rl_rules::prefab::{Pick, Slot};
 
     use super::*;
@@ -1412,7 +1485,19 @@ mod tests {
                 let ctx = undermere.generate(map).unwrap_or_else(|e| panic!("{at}: {e}"));
                 every_lair_is_entered_only_through_its_entries(&ctx, &tables, &at);
                 let stamped: Vec<Stamped> = ctx.outputs().iter::<Stamped>().cloned().collect();
+                let landmark = ctx.outputs().first::<Landmark>().cloned();
                 let mut built = PlaceBuild::from_context(ctx).unwrap_or_else(|e| panic!("{at}: {e}"));
+                if floor < FLOORS {
+                    a_landmark_stands_with_its_stairs_where_its_rule_says(
+                        &undermere,
+                        floor,
+                        undermere.biome_of(floor),
+                        landmark.as_ref(),
+                        &stamped,
+                        &built,
+                        &at,
+                    );
+                }
                 crate::vaults::place_vault_fixtures(&mut built, undermere.tiles(), undermere.prefabs(), RunSeed(s), map);
                 builds_with_a_way_in_and_a_way_on(&built, &tables, floor == FLOORS, &at);
                 if floor == 1 {
@@ -1444,6 +1529,50 @@ mod tests {
             "both doors and rooms over the span: {told:?}"
         );
         assert!(locked.into_inner() >= 3, "some floors over the span lay a lock or a seal");
+    }
+
+    /// A floor of a biome the pool seeds a landmark in is grown round it,
+    /// and its stairs stand where the landmark's rule says: the way in and
+    /// the way down on opposite sides of it for `Beyond`, the way down on
+    /// its mark for `Within`. A floor of a biome with none lays none. Read
+    /// off the pool, so a landmark added to `assets/pool.ron` is asked
+    /// this by being added.
+    fn a_landmark_stands_with_its_stairs_where_its_rule_says(
+        undermere: &Undermere,
+        floor: u32,
+        drawn: &BiomeDraw,
+        landmark: Option<&Landmark>,
+        stamped: &[Stamped],
+        built: &PlaceBuild,
+        at: &str,
+    ) {
+        let tags = [place_tag(drawn)];
+        let seeded: Vec<&rl_engine::rl_rules::pool::Entry> =
+            undermere.pool.entries.iter().filter(|e| e.weight > 0 && matches!(e.placed, Placed::Seeded { .. }) && e.fits(floor as i32, &tags)).collect();
+        let Some(landmark) = landmark else {
+            assert!(seeded.is_empty(), "{at}: a floor of {} lays none of its landmarks", drawn.name);
+            return;
+        };
+        let entry = seeded.iter().find(|e| e.piece() == Some(landmark.name.as_str()));
+        let Some(Placed::Seeded { stairs, .. }) = entry.map(|e| &e.placed) else { panic!("{at}: {} is no landmark of {}", landmark.name, drawn.name) };
+        let exit = built.exit.unwrap_or_else(|| panic!("{at}: no way down"));
+        match stairs {
+            Wanted::Free => {}
+            Wanted::Beyond => {
+                let (into, down) = (landmark.side(built.entry), landmark.side(exit));
+                assert!(
+                    into.is_some() && down == into.map(|side| side.other()),
+                    "{at}: the way in at {:?} ({into:?}) and the way down at {exit:?} ({down:?}) are not either side of {} at {:?}",
+                    built.entry,
+                    landmark.name,
+                    landmark.bounds
+                );
+            }
+            Wanted::Within(mark) => {
+                let marks = stamped.iter().find(|st| st.bounds == landmark.bounds).map(|st| st.marks.as_slice()).unwrap_or_default();
+                assert!(marks.contains(&(*mark, exit)), "{at}: the way down at {exit:?} is not {}'s {mark:?}", landmark.name);
+            }
+        }
     }
 
     /// A place builds with its way in on walkable ground, and, but the
@@ -1804,7 +1933,8 @@ mod tests {
             assert!(unit(look.fg) && unit(look.bg), "{}: a colour out of 0..=1", look.tile);
             assert!(look.vary.0 > 0.0 && look.vary.1 >= 0.0, "{}: every cell its own shade", look.tile);
             assert!(!look.glyph.is_whitespace(), "{}: a glyph to see", look.tile);
-            let moving = ["shallows", "lake", "flooded floor", "deep water", "black pool", "lava", "gate"].contains(&look.tile.as_str());
+            // Whatever is drawn as water, waded or not, moves, and the gate.
+            let moving = ['~', '≈'].contains(&look.glyph) || look.tile == "gate";
             assert!(!moving || look.shimmer > 0.0, "{} shimmers", look.tile);
         }
     }
@@ -1902,7 +2032,7 @@ mod tests {
     /// rather than grown with its stairs ignored.
     #[test]
     fn a_landmark_on_the_throne_floor_asking_its_stairs_placed_is_refused_by_name() {
-        use rl_engine::rl_rules::pool::{Placed, Placement, Stairs as Wanted};
+        use rl_engine::rl_rules::pool::Placement;
         let mut undermere = Undermere::new(RunSeed(0));
         let grown = undermere.pool.entries.iter().find(|e| matches!(e.placed, Placed::Grown { .. })).expect("a grown piece").clone();
         let piece = grown.piece().expect("it lays a piece").to_string();
@@ -2049,16 +2179,17 @@ mod tests {
         for (recipe, pick) in recipes {
             let (floor, drawn) = grown_by(undermere, &recipe.name, *pick);
             let at = format!("{} on floor {floor}, seed {s}", recipe.name);
-            let picks = undermere.picks_for(floor, &drawn);
+            let picks = with_its_landmark(undermere, floor, &drawn);
             // A landmark whose way down is `Within` its drawing stands the
             // stairs on its own mark, which the pool's load holds to a bare
             // slot nothing fills; every other slot keeps clear of them.
             let within = picks.iter().find_map(|p| match undermere.pool.entries[p.entry].placed {
-                rl_engine::rl_rules::pool::Placed::Seeded { stairs: rl_engine::rl_rules::pool::Stairs::Within(c), .. } => Some(c),
+                Placed::Seeded { stairs: Wanted::Within(c), .. } => Some(c),
                 _ => None,
             });
             let grown = undermere.grow(floor, &drawn, &picks, RunSeed(s), ATTEMPTS);
             let ctx = grown.unwrap_or_else(|e| panic!("{at}: {e}"));
+            let (landmark, stamped) = (ctx.outputs().first::<Landmark>().cloned(), ctx.outputs().iter::<Stamped>().cloned().collect::<Vec<_>>());
             let bounds = ctx.terrain().bounds();
             assert_eq!((bounds.width, bounds.height), recipe.size, "{at}");
             let route = ctx.outputs().first::<rl_engine::rl_mapgen::Surveyed>().unwrap_or_else(|| panic!("{at}: not surveyed")).route;
@@ -2071,25 +2202,39 @@ mod tests {
             // onto the exit's own cell.
             let marks: BTreeSet<Point> =
                 ctx.outputs().iter::<Stamped>().flat_map(|st| st.marks.iter()).filter(|(c, _)| Some(*c) != within).map(|(_, p)| *p).collect();
-            let landmark_marks: BTreeSet<Point> =
-                ctx.outputs().iter::<Stamped>().flat_map(|st| st.marks.iter()).filter(|(c, _)| Some(*c) == within).map(|(_, p)| *p).collect();
             let built = PlaceBuild::from_context(ctx).unwrap_or_else(|e| panic!("{at}: {e}"));
             if floor == FLOORS {
                 assert_eq!(built.exit, None, "{at}: the throne's floor has no way down");
             } else {
                 let exit = built.exit.unwrap_or_else(|| panic!("{at}: no way down"));
                 assert!(!marks.contains(&exit), "{at}: the way down at {exit:?} is a stamped slot");
-                if within.is_some() {
-                    assert!(landmark_marks.contains(&exit), "{at}: the way down at {exit:?} is not on its landmark's mark");
-                }
                 let route = route.unwrap_or_else(|| panic!("{at}: no route"));
                 let third = bounds.width.max(bounds.height) as u32 / 3;
                 assert!(route >= recipe.require.route && recipe.require.route >= third, "{at}: {route} steps down, asked {}", recipe.require.route);
+            }
+            if floor < FLOORS {
+                a_landmark_stands_with_its_stairs_where_its_rule_says(undermere, floor, &drawn, landmark.as_ref(), &stamped, &built, &at);
             }
             if walk {
                 recipe_is_walked(&built, &tables, bounds, &at);
             }
         }
+    }
+
+    /// The run's picks for `floor` that may stand in `drawn`, and the
+    /// landmark the pool seeds in `drawn` when the run drew another biome
+    /// there and so planned none: every floor of a biome with a landmark
+    /// is grown round it, so a recipe of that biome is grown round it too.
+    fn with_its_landmark(undermere: &Undermere, floor: u32, drawn: &BiomeDraw) -> Vec<rl_engine::rl_rules::pool::Pick> {
+        let mut picks = undermere.picks_for(floor, drawn);
+        let seeded = |e: usize| matches!(undermere.pool.entries[e].placed, Placed::Seeded { .. });
+        if !picks.iter().any(|p| seeded(p.entry)) {
+            let tags = [place_tag(drawn)];
+            let own = (0..undermere.pool.entries.len())
+                .find(|e| seeded(*e) && undermere.pool.entries[*e].weight > 0 && undermere.pool.entries[*e].fits(floor as i32, &tags));
+            picks.extend(own.map(|entry| rl_engine::rl_rules::pool::Pick { entry, required: true }));
+        }
+        picks
     }
 
     /// Every open cell of a recipe's grown floor walked to from the way in

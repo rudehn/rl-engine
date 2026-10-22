@@ -1,5 +1,5 @@
 // How a floor of the Undermere is grown: the shapes it is built from, the
-// districts that favor some of them, and the twenty-nine recipes the
+// districts that favor some of them, and the thirty-seven recipes the
 // biomes in `assets/biomes.ron` name, two or three to a biome and one to
 // each throne. A piece's body is carved from the drawn biome's floor, and
 // a Door opens as a "door"; `dungeon.rs` paints an area's floor again by
@@ -118,6 +118,21 @@
         (name: "parterre", kind: Rectangle(w: (14, 20), h: (9, 12)), join: Mouth(2)),
         (name: "walk", kind: Passage(width: (2, 2), length: (8, 16), bend_pct: 15), join: Arch),
         (name: "pen", kind: Rectangle(w: (4, 6), h: (3, 5)), join: Arch),
+
+        // The Drowned Town's first wave. The Old Town's houses behind their
+        // doors, its lanes two wide and its alleys one, winding, and its
+        // market square opening by a wide mouth; the Harbour's basins,
+        // where its water stands, the quays along them, the wharves
+        // between, and the warehouses behind.
+        (name: "house", kind: Rectangle(w: (5, 8), h: (4, 6)), join: Door),
+        (name: "townhouse", kind: Rectangle(w: (8, 11), h: (6, 8)), join: Door),
+        (name: "lane", kind: Passage(width: (2, 2), length: (8, 18), bend_pct: 35), join: Arch),
+        (name: "alley", kind: Passage(width: (1, 1), length: (4, 10), bend_pct: 45), join: Arch),
+        (name: "square", kind: Rectangle(w: (16, 22), h: (11, 15)), join: Mouth(3)),
+        (name: "basin", kind: Rectangle(w: (16, 24), h: (10, 14)), join: Mouth(3)),
+        (name: "quay", kind: Rectangle(w: (14, 22), h: (5, 7)), join: Mouth(2)),
+        (name: "wharf", kind: Passage(width: (2, 2), length: (8, 16), bend_pct: 15), join: Arch),
+        (name: "warehouse", kind: Rectangle(w: (7, 11), h: (6, 8)), join: Door),
     ],
     districts: [
         // The Upper Halls.
@@ -190,6 +205,16 @@
         (name: "parterres", shapes: [("parterre", 2), ("lawn", 4), ("walk", 3)]),
         (name: "menagerie", shapes: [("pen", 6), ("walk", 3), ("lawn", 1)]),
         (name: "garden breach", shapes: [("glade", 3), ("pocket", 2), ("game trail", 1)]),
+
+        // The Drowned Town's first wave. The Old Town: houses on lanes, a
+        // market of squares and the lanes between them, and houses fallen
+        // to rubble. The Harbour: the
+        // quayside round its basins, and the warehouses behind it.
+        (name: "lanes", shapes: [("house", 5), ("lane", 4), ("alley", 2), ("townhouse", 1)]),
+        (name: "market", shapes: [("square", 2), ("lane", 3)]),
+        (name: "fallen houses", shapes: [("rubble cave", 3), ("house", 1), ("alley", 1)]),
+        (name: "quayside", shapes: [("basin", 3), ("quay", 3), ("wharf", 3), ("warehouse", 1)]),
+        (name: "warehouses", shapes: [("warehouse", 4), ("wharf", 2), ("alley", 1)]),
     ],
     recipes: [
         // The Upper Halls: halls by mouths; wings split by two barriers
@@ -447,6 +472,35 @@
             districts: [("menagerie", 3), ("parterres", 2), ("garden breach", 1)],
             loops: (min_detour: 20, max: 8),
             require: (open_pct: (28, 62), areas: [("pen", 8)], loops: 2, dead_end_pct: 70, route: 32),
+        ),
+        // The Drowned Town's first wave. The Old Town: houses on winding
+        // lanes, a fallen street among them; or a market square with lanes
+        // round it. The Harbour: basins of standing water with quays and
+        // wharves round them; or moorings, more and smaller basins among
+        // the warehouses.
+        (
+            name: "lanes", size: (96, 54), open_pct: 40, patience: 300, districts_per_10k: 8,
+            districts: [("lanes", 5), ("fallen houses", 1)],
+            loops: (min_detour: 20, max: 8),
+            require: (open_pct: (28, 60), areas: [("house", 8), ("lane", 4)], loops: 2, dead_end_pct: 65, route: 32),
+        ),
+        (
+            name: "market", size: (100, 56), open_pct: 42, patience: 300, districts_per_10k: 7,
+            districts: [("market", 2), ("lanes", 3), ("fallen houses", 1)],
+            loops: (min_detour: 20, max: 8),
+            require: (open_pct: (30, 60), areas: [("square", 1), ("house", 6)], loops: 2, dead_end_pct: 65, route: 34),
+        ),
+        (
+            name: "quays", size: (100, 56), open_pct: 44, patience: 300, districts_per_10k: 7,
+            districts: [("quayside", 4), ("warehouses", 1)],
+            loops: (min_detour: 24, max: 6),
+            require: (open_pct: (24, 62), areas: [("basin", 2)], loops: 2, dead_end_pct: 60, route: 34),
+        ),
+        (
+            name: "moorings", size: (104, 58), open_pct: 42, patience: 300, districts_per_10k: 8,
+            districts: [("quayside", 3), ("warehouses", 2)],
+            loops: (min_detour: 24, max: 6),
+            require: (open_pct: (24, 62), areas: [("basin", 2), ("warehouse", 3)], loops: 2, dead_end_pct: 60, route: 35),
         ),
     ],
 )

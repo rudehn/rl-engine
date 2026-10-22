@@ -1,0 +1,17 @@
+// A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
+// stands for; see `hanging_lantern.ron` for the full field list.
+//
+// A lantern on a post by the Harbour's water, stood on open floor by
+// `dungeon::Furnish` as `assets/biomes.ron`'s decor asks.
+(
+    name: "harbour lantern",
+    ground: "quay",
+    turn: None,
+    mirror: None,
+    rows: [
+        "i",
+    ],
+    legend: {
+        'i': Prop("harbour lantern"),
+    },
+)

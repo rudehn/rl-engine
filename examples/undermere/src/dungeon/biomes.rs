@@ -79,8 +79,19 @@ pub(crate) struct BridgesDef {
 pub(crate) enum DecorDef {
     /// Patches of `tile` grown over the biome's floor.
     Patches { tile: String, count: (u32, u32), size: (u32, u32) },
-    /// A one-cell piece of `assets/prefabs/` stood on open floor.
-    Furnish { piece: String, count: (u32, u32) },
+    /// A one-cell piece of `assets/prefabs/` stood on open floor, only in
+    /// areas whose shape or district `within` names when it names any, and
+    /// against a wall rather than clear of one when `by_walls`.
+    Furnish {
+        piece: String,
+        count: (u32, u32),
+        #[serde(default)]
+        within: Vec<String>,
+        #[serde(default)]
+        by_walls: bool,
+    },
+    /// Boats of `tile` moored on the water `on`, beside the floor.
+    Moor { tile: String, on: String, count: (u32, u32) },
 }
 
 /// [`DecorDef`] resolved against the tiles, for the chain: a piece stays a
@@ -91,8 +102,12 @@ pub(crate) enum Decor {
     /// Patches of `tile` over the floor, `count` of them, each of `size`
     /// cells.
     Patches { tile: TileId, count: (u32, u32), size: (u32, u32) },
-    /// `count` of the one-cell piece `piece`.
-    Furnish { piece: String, count: (u32, u32) },
+    /// `count` of the one-cell piece `piece`, in the areas `within`
+    /// names, or any when it names none, against a wall when `by_walls`.
+    Furnish { piece: String, count: (u32, u32), within: Vec<String>, by_walls: bool },
+    /// `count` boats of `tile`, each a cell or two of the water `on`
+    /// straight beside the floor.
+    Moor { tile: TileId, on: TileId, count: (u32, u32) },
 }
 
 /// The pass name each of a biome's decor rows runs under, in its order: a
@@ -133,6 +148,11 @@ pub(crate) struct BiomeDef {
     /// than any floor's; [`district_dressings`] weighs each at
     /// [`DRESSING_WEIGHT`] in every district this biome grows.
     pub(crate) dressings: Vec<String>,
+    /// The districts a dressing of `dressings` is kept to, by its name: a
+    /// market's stalls in the market, not in every house of the town. A
+    /// dressing not named here falls in every district the biome grows.
+    #[serde(default)]
+    pub(crate) dressings_within: Vec<(String, Vec<String>)>,
     pub(crate) favored: Vec<String>,
 }
 
@@ -235,7 +255,10 @@ pub(super) fn to_draw(def: &BiomeDef, recipe: usize, tiles: &TileRegistry) -> Bi
             .iter()
             .map(|d| match d {
                 DecorDef::Patches { tile, count, size } => Decor::Patches { tile: tiles.expect(tile), count: *count, size: *size },
-                DecorDef::Furnish { piece, count } => Decor::Furnish { piece: piece.clone(), count: *count },
+                DecorDef::Furnish { piece, count, within, by_walls } => {
+                    Decor::Furnish { piece: piece.clone(), count: *count, within: within.clone(), by_walls: *by_walls }
+                }
+                DecorDef::Moor { tile, on, count } => Decor::Moor { tile: tiles.expect(tile), on: tiles.expect(on), count: *count },
             })
             .collect(),
     }
@@ -292,7 +315,23 @@ fn check_decor(def: &BiomeDef, tiles: &TileRegistry) -> Result<(), String> {
                 }
                 (tile, count)
             }
-            DecorDef::Furnish { piece, count } => (piece, count),
+            DecorDef::Furnish { piece, count, .. } => (piece, count),
+            // A boat lies on water and stops a body as the water does, so
+            // mooring one never shuts a way: both must stop a body, and the
+            // water must be seen across, as a lake is.
+            DecorDef::Moor { tile, on, count } => {
+                let tables = tiles.tables();
+                for name in [tile, on] {
+                    let id = tiles.id(name).ok_or_else(|| format!("decor {name:?} is not a registered tile"))?;
+                    if tables.passable[id.index()] {
+                        return Err(format!("decor {name:?} is crossed by a body, and a boat and its water stop one"));
+                    }
+                }
+                if tables.opaque[tiles.expect(on).index()] {
+                    return Err(format!("decor {on:?} is not seen across, so it is no water to moor on"));
+                }
+                (tile, count)
+            }
         };
         if count.0 > count.1 {
             return Err(format!("decor {what:?} has its fewest past its most"));
@@ -342,6 +381,27 @@ fn check(def: &BiomeDef, tiles: &TileRegistry, layout: &LayoutDef) -> Result<(),
         return Err(format!("door {name:?} stops a body, so a floor hung with it is in pieces"));
     }
     check_decor(def, tiles)?;
+    // A shape or district no recipe of the layout draws is a name that
+    // would quietly keep a piece off every floor.
+    for d in &def.decor {
+        if let DecorDef::Furnish { piece, within, .. } = d
+            && let Some(name) = within.iter().find(|n| !layout.shapes.iter().any(|s| &s.name == *n) && !layout.districts.iter().any(|ds| &ds.name == *n))
+        {
+            return Err(format!("decor {piece:?} is kept within {name:?}, which is no shape or district of assets/layout.ron"));
+        }
+    }
+    // A dressing kept to districts it is not among, or to a district none
+    // of the biome's recipes grows, is a dressing that never falls.
+    let grown: Vec<&str> =
+        def.recipes.iter().filter_map(|r| layout.recipe(&r.name)).flat_map(|r| r.districts.iter().map(|&(i, _)| layout.districts[i].name.as_str())).collect();
+    for (dressing, districts) in &def.dressings_within {
+        if !def.dressings.contains(dressing) {
+            return Err(format!("dressings_within keeps {dressing:?}, which is not among its dressings"));
+        }
+        if let Some(d) = districts.iter().find(|d| !grown.contains(&d.as_str())) {
+            return Err(format!("dressings_within keeps {dressing:?} to {d:?}, a district none of its recipes grows"));
+        }
+    }
     if def.recipes.is_empty() {
         return Err("no recipe to grow a floor by".to_string());
     }
@@ -544,7 +604,8 @@ fn landmark_problems(defs: &Registry<BiomeDef>, pool: &Pool) -> Vec<String> {
 }
 
 /// Every district of `layout` that some biome of `defs` grows, each
-/// weighted with that biome's own `dressings` at [`DRESSING_WEIGHT`] and
+/// weighted with that biome's own `dressings` that may fall there, by its
+/// `dressings_within`, at [`DRESSING_WEIGHT`] and
 /// leaving the area bare at [`NOTHING_WEIGHT`], for the pass that dresses
 /// every area the pool's picks left untaken. A district two of a biome's
 /// recipes both grow is named once; `Undermere::new` checks the result
@@ -566,7 +627,12 @@ pub(crate) fn district_dressings(defs: &Registry<BiomeDef>, layout: &LayoutDef) 
             out.push(DistrictDressings {
                 district: district.to_string(),
                 nothing: NOTHING_WEIGHT,
-                dressings: def.dressings.iter().map(|d| (d.clone(), DRESSING_WEIGHT)).collect(),
+                dressings: def
+                    .dressings
+                    .iter()
+                    .filter(|d| def.dressings_within.iter().find(|(kept, _)| kept == *d).is_none_or(|(_, within)| within.iter().any(|w| w == district)))
+                    .map(|d| (d.clone(), DRESSING_WEIGHT))
+                    .collect(),
             });
         }
     }

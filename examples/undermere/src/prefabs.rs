@@ -112,6 +112,20 @@ const PIECES: [&str; 66] = [
     include_str!("../assets/prefabs/landmark/the_hedge_maze.ron"),
 ];
 
+/// The Drowned Town's first wave's pieces, compiled in beside the rest and
+/// kept in a list of their own, so a later wave's pieces land in theirs:
+/// the Old Town's and the Harbour's lights, their two flavor pieces, and
+/// the two landmarks of floors one and two, the Watch Barracks' gatehouse
+/// and the Harbour's sunken ship, which `assets/pool.ron` seeds.
+const TOWN_WAVE: [&str; 6] = [
+    include_str!("../assets/prefabs/street_lamp.ron"),
+    include_str!("../assets/prefabs/harbour_lantern.ron"),
+    include_str!("../assets/prefabs/flavor/town_well.ron"),
+    include_str!("../assets/prefabs/flavor/upturned_boat.ron"),
+    include_str!("../assets/prefabs/landmark/the_gatehouse.ron"),
+    include_str!("../assets/prefabs/landmark/the_sunken_ship.ron"),
+];
+
 /// Every role a prefab's slot may draw for, compiled in the same way.
 const ROLES: &str = include_str!("../assets/roles.ron");
 
@@ -139,8 +153,10 @@ pub fn load(tiles: &TileRegistry, layout: &LayoutDef) -> (Prefabs<MonsterDef>, P
     // slot and need it in `names` to resolve against.
     let roles = role::load::<MonsterDef>(ROLES, &names).unwrap_or_else(|e| panic!("assets/roles.ron: {e}"));
     let names = names.with("role", &roles);
-    let defs = Registry::from_defs(PIECES.iter().map(|text| prefab::load(text, tiles, &names).unwrap_or_else(|e| panic!("assets/prefabs: {e}"))).collect())
-        .expect("every piece has a name of its own");
+    let defs = Registry::from_defs(
+        PIECES.iter().chain(&TOWN_WAVE).map(|text| prefab::load(text, tiles, &names).unwrap_or_else(|e| panic!("assets/prefabs: {e}"))).collect(),
+    )
+    .expect("every piece has a name of its own");
     let dressings = dressing::load::<MonsterDef>(DRESSINGS_RON, tiles, &names).unwrap_or_else(|e| panic!("assets/dressings.ron: {e}"));
     let pool = pool::load(POOL_RON, layout, &defs, &names).unwrap_or_else(|e| panic!("assets/pool.ron: {e}"));
     dressing::check_pool(&pool, &dressings).unwrap_or_else(|e| panic!("assets/pool.ron: {e}"));
@@ -161,7 +177,7 @@ mod tests {
     fn every_piece_loads_against_the_tiles_the_props_and_the_bestiary() {
         let undermere = Undermere::new(RunSeed(0));
         let (prefabs, _pool, _) = load(undermere.tiles(), &crate::dungeon::layout());
-        assert_eq!(prefabs.defs().len(), PIECES.len());
+        assert_eq!(prefabs.defs().len(), PIECES.len() + TOWN_WAVE.len());
         for name in [
             "Mereholt",
             "the throne",

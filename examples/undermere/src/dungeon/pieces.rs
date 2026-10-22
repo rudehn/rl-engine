@@ -83,9 +83,26 @@ impl Pass<BaseContext> for PieceLook {
         let grown: Vec<&Area> = ctx.outputs().iter::<Area>().filter(|a| a.entries.is_some() && !bosses.contains(&a.shape.as_str())).collect();
         let (pieces, entries): (Vec<Rect>, Vec<Point>) =
             (grown.iter().map(|a| a.bounds).collect(), grown.iter().flat_map(|a| a.entries.iter().flatten().copied()).collect());
+        let tables = ctx.tiles().tables();
         for at in entries {
-            if ctx.terrain().get(at) == Some(self.door) {
-                ctx.terrain_mut().set(at, self.carved);
+            match ctx.terrain().get(at) {
+                Some(t) if t == self.door => {
+                    ctx.terrain_mut().set(at, self.carved);
+                }
+                // An entry growth never joined is the rock it was drawn
+                // over, which a piece walled in a stone of its own, as the
+                // gatehouse's curtain is, shows as a patch of the floor's
+                // own wall in its face: it takes the wall beside it.
+                Some(t) if t == self.wall => {
+                    let own = Direction::CARDINALS
+                        .iter()
+                        .filter_map(|d| ctx.terrain().get(at + d.offset()))
+                        .find(|n| *n != self.wall && *n != self.piece_wall && !tables.passable[n.index()] && tables.opaque[n.index()]);
+                    if let Some(own) = own {
+                        ctx.terrain_mut().set(at, own);
+                    }
+                }
+                _ => {}
             }
         }
         for b in pieces {

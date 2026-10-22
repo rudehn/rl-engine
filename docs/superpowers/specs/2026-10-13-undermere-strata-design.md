@@ -1,6 +1,6 @@
 # Undermere: the strata and the first landmarks
 
-Status: written 2026-10-13, from a design interview with the user; step 1, the strata, built on the branch `strata` (see "As built"); the first wave not yet built.
+Status: written 2026-10-13, from a design interview with the user; step 1, the strata, built on the branch `strata` (see "As built"); the first wave built on `wave-palace` (floors 3-4) and `wave-town` (floors 1-2), see "As built".
 The game design is `examples/undermere/DESIGN.md`, section "Floors", which this changes; the engine work it stands on is `2026-10-13-landmarks-design.md`.
 
 ## Goal
@@ -169,3 +169,38 @@ The soak, 150 delves over seeds 1 to 50 against main at `c1cf867e` (no game code
 The curve held, so nothing was retuned.
 Floors 3-4 kill eight against seven, but three of the eight are one seed whose adventurer turned a floor-three monster into a golem with an unknown wand of polymorph, which draws from the whole bestiary; without them the palace floors are a little softer, by the acolytes coming less often where the wood or the gardens is drawn, and still the acolytes and the pale scribe are what kill there.
 The new beasts killed nobody.
+
+### The first wave: the drowned town
+
+The town half of the first wave, built on the `wave-town` branch and rebased onto the palace half once it had merged.
+Every addition to a shared list (biomes, layout, tiles and the tile registry, pool, dressings, props, rumours, monsters and their spawns, the pieces in `src/prefabs.rs`) sits in a block of its own headed by a comment naming the Drowned Town's first wave, so the two branches merge as two blocks.
+
+- **Old Town**: walls of green-grey silted stone, lanes of old cobbles; houses and townhouses behind doors on lanes two wide and alleys one wide, both winding, with a fallen row of houses as rubble caves; recipes `lanes` (houses on lanes) and `market` (a market square of flags with lanes round it).
+  Houses are floored in rotted boards.
+  Its light is the street lamps still burning, a pale drowned gold, six to nine a floor, stood against the walls of the lanes, the alleys and the square and never in a house: `Furnish` gained `within`, the shapes and districts a piece may stand in, and `by_walls`, standing it against a wall rather than with floor all round, since a lane two wide has no cell with floor all round it.
+  Dressings: Empty House (casks in the corners, a table) in the streets of houses and Market Stalls in the market, each kept to its districts by a biome's new `dressings_within`, since a biome's dressings otherwise fall in every room it grows and the first captures showed a house full of stalls; the market district is squares and the lanes between them, its houses coming from the streets round it.
+  Flavor: the Town Well; the Overturned Wagon may stand here too.
+  Favored: rat, goblin, kobold.
+- **Harbour**: quay walls and wet quay stone; basins, quays, wharves and warehouses; recipes `quays` (harbour water standing in the basins, shallows round it, piers across) and `moorings` (more and smaller pools in the basins and off the quays, more warehouses).
+  Harbour water is deep and stops a body, as a lake does; harbour shallows are waded at twice a step.
+  Its light is green harbour lanterns on the quays, wharves and basins, never in a warehouse, and the water's shimmer.
+  Boats lie tied up along the quays: a new decor, `Moor(tile, on, count)`, lays a boat of a cell or two of the `moored boat` tile on the water beside the floor, never on a piece; a boat stops a body as the water under it did, so it shuts no way.
+  Dressings: Net Loft and Cargo Stacks; flavor: the Upturned Boat.
+  Favored: the harbour crab, rat, kobold.
+- **The harbour crab** is the one new kind: a core and plain traits, slow and thick-hided, `c` in red-brown, with a spawn row on floors 1-2 at a low weight, so it is seldom met but on the quays that favor it.
+  It shares its glyph with the goblin conjurer, who is never on its floors.
+- **The gatehouse** (Watch Barracks, `Span`, `Beyond`) is drawn 85 by 11: a curtain wall of its own pale stone across the floor, a tower at each end and the gatehouse at its heart, the gate passage three wide on flags between two guardrooms whose braziers light it through arches, a wall walk from tower to tower, and a postern in each face, far apart.
+  It may only lie along the map, a half-turn and its mirrors, since a barracks floor is not tall enough to stand it on end.
+  An entry growth never opens takes the wall beside it (`PieceLook`), so the curtain shows no patch of barracks wall in its face.
+- **The sunken ship** (Harbour, `Edge`, `Beyond`) is drawn 46 by 15 with its back to the south: a quay along the face the floor grows from, its bollards and two lanterns, and off it a trader gone down at her moorings, bow aground on a shoal and still dry, her stern under the water, a gangplank to her deck, her mast broken off, her bow lantern lit and a sea chest in the bow with a little gold and maybe a potion or a scroll.
+  It may face any edge and be mirrored along it, never across.
+- **One landmark to every floor of its biome**: the budget `(floors: (1, 2), kind: "landmark", count: (1, 1), required: true)`, and both landmarks `per_run: 2`, so a run that draws the biome on both floors meets it on both rather than leaving the second floor without one, as the spec asks; a run seeing the same gatehouse twice in a row was judged the smaller loss.
+- **The sweep the landmarks spec deferred** is a promise of the run's backstop, `dungeon::tests::every_place_of_a_run_keeps_every_promise_the_generator_makes_over_a_span_of_seeds`, rather than a sweep of its own, since main had gathered every generator promise into that one test by the time this branch was rebased.
+  Every floor a run grows is asked it: a floor of a biome the pool seeds a landmark in is grown round it, a floor of any other lays none, and the stairs stand where the landmark's rule says, either side of it for `Beyond`, on its mark for `Within`.
+  The backstop's recipes are asked it too, each grown round its biome's landmark where the run drew another biome on that floor and so planned none, so every recipe of the Watch Barracks and the Harbour is grown round its landmark on every floor it may stand on over the backstop's span.
+  It is read off the pool, so a landmark added to `assets/pool.ron` is asked it by being added.
+- Small mends on the way: the tile test's list of what must shimmer is now every tile drawn as water, `~` or `≈`, and the gate, so a new water tile cannot be added still; and the test that a fall never lands in a locked vault asks `dungeon::drawn_from` for a run drawing the vault on floor two or deeper, where it had taken the first run drawing it and asserted that run's floor was not the first, which the new biomes made false.
+- More mends the new floors one and two showed up, each a test that read the old floors' layout as a promise:
+  the arena a test stages its fights in is stood twelve cells in from every edge of the floor, where an arrival against an edge had a firebolt aimed past the map's edge and spent on nothing;
+  the confused goblin is stood on ground laid for it, since six cells off is past the arena's own and whatever the floor drew there could leave it only ways that close in;
+  and the stairs walk opens a piece's carved door as it does a plain one, since the gatehouse's gate, joined by growth, is carved and was read as a wall cutting the way in off from the way down.

@@ -299,6 +299,26 @@ pub fn arena_on(seed: u64, floor: u32) -> (App, Entity, Point) {
     (app, me, here)
 }
 
+/// How far in from every edge of the place the [`arena`] is staged: a
+/// test aims and stands things up to twelve cells off, and a cell past the
+/// edge of the map is nothing a bolt reaches or a step lands on.
+const ROOM: i32 = 12;
+
+/// Stands `me` [`ROOM`] in from every edge of the place, on ground laid
+/// for them, when they arrived nearer one than that, as a way in against
+/// an edge does; and says where they stand, which is where the warp set
+/// them down.
+fn in_from_the_edge(app: &mut App, me: Entity) -> Point {
+    let p = at(app, me);
+    let b = app.world().resource::<WorldMap>().window_tiles();
+    let room = Point::new(p.x.clamp(b.x + ROOM, b.right() - 1 - ROOM), p.y.clamp(b.y + ROOM, b.bottom() - 1 - ROOM));
+    if room != p {
+        lay_floor(app, &geometry::square(room, REACH).collect::<Vec<_>>());
+        stand_on(app, me, room);
+    }
+    at(app, me)
+}
+
 /// Makes the [`arena`] round `me` where they stand, and says where that is.
 fn stage(app: &mut App, me: Entity) -> Point {
     sturdy(app, me);
@@ -306,7 +326,7 @@ fn stage(app: &mut App, me: Entity) -> Point {
     let hand = app.world().resource::<Registries>().slots.expect("main hand");
     let sword = app.world().get::<Equipped>(me).and_then(|worn| worn.in_slot(hand)).expect("the sword they set out with");
     unequip(app, me, sword);
-    let here = at(app, me);
+    let here = in_from_the_edge(app, me);
     let ground: Vec<Point> = geometry::square(here, REACH).collect();
     lay_floor(app, &ground);
     let world = app.world_mut();

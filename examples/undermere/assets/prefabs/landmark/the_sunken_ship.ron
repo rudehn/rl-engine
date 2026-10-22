@@ -1,0 +1,58 @@
+// A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
+// stands for; see `../reward/treasure_room.ron` for the full field list.
+//
+// A landmark: the Harbour's sunken ship, the first piece a floor of the
+// harbour is grown round (`assets/pool.ron`, seeded `Edge`, its stairs
+// `Beyond`). Drawn with its back to the south, so it lies against an edge
+// of the floor: a quay along the face the floor grows from, bollards and
+// two green lanterns on it, and off the quay a trader gone down at her
+// moorings, bow aground on a shoal and still dry, stern under the harbour
+// water. A gangplank goes out to her deck amidships, and the shoal lets a
+// wader round to the bow; her mast is broken off, her bow lantern still
+// burns, and a sea chest in the bow was never unloaded.
+//
+// The way in is drawn on one side of her along the edge and the way down
+// on the other, so the quay is walked past her. Turned to any edge, and
+// mirrored along it; never mirrored the other way, which would stand her
+// out in the floor with the quay behind. The quay's own wall and floor
+// are drawn in hall wall and hall floor, and the floor's own are laid over
+// them; the water, the hull and the deck are hers.
+(
+    name: "The Sunken Ship",
+    ground: "planks",
+    turn: Quarter,
+    mirror: LeftRight,
+    rows: [
+        "########EE############EE##############EE######",
+        "#.....o....l....o.........o....l....o........#",
+        "E............................................E",
+        "#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#",
+        "#~~~~~wwwwwwwwwwwww=wwwwwwwwwwwwwwwwwwwwwwwww#",
+        "#~~~~~wwwwwwHHHHHHH=HHHHHHHHHHHHHHHwwwwwwwwww#",
+        "#~~~~~~wwHHHddddddddddddddsssasssswwHHHwwwwww#",
+        "#~~~~~~HHdddcddddddddddddssssssssswwwwHHwwwww#",
+        "#~~~~~sddldddddddMdddddddssssssssswwwwwwwwwww#",
+        "#~~~~~wHHddddddddddddddddsssssssswwwwwHHwwwww#",
+        "#wwwwwwwwHHHddddddddddddddsssssssswwHHHwwwwww#",
+        "#wwwwwwwwwwwHHHHHHHHHHHHHHHHHHHHHHHwwwwwwwwww#",
+        "#wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww#",
+        "#wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww#",
+        "##############################################",
+    ],
+    legend: {
+        '#': Tile("hall wall"),
+        '.': Tile("hall floor"),
+        '~': Tile("harbour shallows"),
+        'w': Tile("harbour water"),
+        '=': Tile("bridge"),
+        'H': Tile("hull"),
+        'd': Tile("planks"),
+        's': Tile("sunken deck"),
+        'o': Prop("bollard"),
+        'l': Prop("harbour lantern"),
+        'M': Prop("broken mast"),
+        'a': Prop("anchor"),
+        'c': Prop("sea chest"),
+        'E': Entry,
+    },
+)

@@ -28,6 +28,9 @@
     (monster: "kobold",          bands: (1, 2),   weight: 50, group: (1, 2)),
     (monster: "goblin",          bands: (1, 2),   weight: 40, group: (1, 1)),
     (monster: "monkey",          bands: (2, 4),   weight: 30, group: (1, 2)),
+    // The Drowned Town's first wave: the Harbour's crabs, few anywhere but
+    // its quays, which favor them.
+    (monster: "harbour crab",    bands: (1, 2),   weight: 12, group: (1, 2)),
     // The Palace and its Grounds: the cathedral's drowned and the library's
     // dead, each the early form of a kind that lives deeper, and the guard
     // drowned at its posts, the palace floors' brute. The acolytes are the

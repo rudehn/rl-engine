@@ -82,6 +82,8 @@
         "Catacombs", "Sunken Library", "Drowned Cathedral", "Underlake", "Forge of Embers", "Ashen Galleries",
         // The Palace grounds' first wave.
         "Royal Wood", "Palace Gardens",
+        // The Drowned Town's first wave.
+        "Old Town", "Harbour",
     ],
     // Flavor sits a pick under the spec's table on floors one to nine,
     // so a typical run sees under half the flavor pool: at the table's
@@ -103,6 +105,11 @@
         // whose biome has a landmark holds exactly one, and one whose biome
         // has none, the library's or the cathedral's, holds none.
         (floors: (3, 4), kind: "landmark", count: (1, 1), required: true),
+
+        // The Drowned Town's first wave: one landmark on every floor of
+        // floors one and two whose biome has one, the Watch Barracks' and
+        // the Harbour's, and none on a floor of a biome with none.
+        (floors: (1, 2), kind: "landmark", count: (1, 1), required: true),
     ],
     entries: [
     (
@@ -525,7 +532,7 @@
     ),
     (
         name: "Overturned Wagon", kind: "reward", floors: (1, 6), weight: "uncommon",
-        where: ["Upper Halls", "Cellars", "Watch Barracks", "Old Mines"],
+        where: ["Upper Halls", "Cellars", "Watch Barracks", "Old Mines", "Old Town"],
         piece: "Overturned Wagon", placed: Inside([]),
     ),
     (
@@ -557,6 +564,30 @@
         per_place: 1, per_run: 2,
         where: ["Palace Gardens"],
         piece: "The Hedge Maze", placed: Seeded([Center], Within('>')),
+    ),
+    // The Drowned Town's first wave: the Old Town's and the Harbour's own
+    // flavor, and the two landmarks of floors one and two, each the first
+    // piece of every floor of its biome, two to a run so a run that draws
+    // its biome on both floors meets it on both.
+    (
+        name: "Town Well", kind: "flavor", floors: (1, 2), weight: "common",
+        where: ["Old Town"],
+        piece: "Town Well", placed: Inside([]),
+    ),
+    (
+        name: "Upturned Boat", kind: "flavor", floors: (1, 2), weight: "common",
+        where: ["Harbour"],
+        piece: "Upturned Boat", placed: Inside([]),
+    ),
+    (
+        name: "The Gatehouse", kind: "landmark", floors: (1, 2), weight: "common",
+        where: ["Watch Barracks"], per_run: 2,
+        piece: "The Gatehouse", placed: Seeded([Span], Beyond),
+    ),
+    (
+        name: "The Sunken Ship", kind: "landmark", floors: (1, 2), weight: "common",
+        where: ["Harbour"], per_run: 2,
+        piece: "The Sunken Ship", placed: Seeded([Edge], Beyond),
     ),
     ],
 )

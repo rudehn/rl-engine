@@ -173,10 +173,10 @@ mod tests {
     }
 
     /// The shipped file reads, with a rumour of each of the three floor
-    /// ten bosses, the five mini-bosses, the thirteen biomes of floors one to
+    /// ten bosses, the five mini-bosses, the fifteen biomes of floors one to
     /// nine a run may draw from more than one, the Underlake alone on its
     /// floors having none, and the four strata with a hint of their own,
-    /// twenty-five in all, and the design's last line.
+    /// twenty-seven in all, and the design's last line.
     #[test]
     fn the_rumours_file_reads_with_a_rumour_of_every_boss_mini_boss_and_biome_of_the_design() {
         let rumours = library().rumours;
@@ -184,6 +184,9 @@ mod tests {
             "the Upper Halls",
             "the Cellars",
             "the Watch Barracks",
+            // The Drowned Town's first wave.
+            "the Old Town",
+            "the Harbour",
             "the Sunken Library",
             "the Drowned Cathedral",
             "the Catacombs",

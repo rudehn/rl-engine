@@ -2,7 +2,7 @@
 
 use super::lifts::*;
 use super::*;
-use crate::dungeon::{drawn, map_of};
+use crate::dungeon::{drawn, drawn_from, map_of};
 use crate::testing::{adventurer, arrive, at, clear_monsters, give, headless, make, pass_turns, settle, stand_on, sturdy, take_up};
 
 /// A run that draws `piece`, its adventurer standing on the floor it lays
@@ -445,8 +445,7 @@ fn the_sunken_causeway_is_found_whole_from_beside_one_cell_of_it() {
 /// every free cell off the stairs was a landing.
 #[test]
 fn a_fall_never_lands_inside_a_locked_vault() {
-    let (seed, floor) = drawn(&["The Locked Vault"]);
-    assert!(floor >= 2, "a floor above it to fall from");
+    let (seed, floor) = drawn_from(&["The Locked Vault"], 2);
     let mut app = crate::testing::headless(seed);
     let me = adventurer(&mut app);
     sturdy(&mut app, me);

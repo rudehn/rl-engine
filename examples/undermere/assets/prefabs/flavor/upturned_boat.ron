@@ -1,0 +1,20 @@
+// A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
+// stands for; see `../reward/treasure_room.ron` for the full field list.
+//
+// The Harbour's: a rowing boat hauled out and turned over for caulking, and
+// never put back in, its nets beside it.
+(
+    name: "Upturned Boat",
+    ground: "quay",
+    turn: Quarter,
+    mirror: Both,
+    rows: [
+        "nbb",
+        " c ",
+    ],
+    legend: {
+        'b': Prop("upturned boat"),
+        'n': Prop("fishing net"),
+        'c': Prop("creel"),
+    },
+)

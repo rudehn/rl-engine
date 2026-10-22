@@ -45,6 +45,9 @@
         (of: "the Upper Halls", say: "Just past the gate it's the old king's halls. Broken stone and long corridors."),
         (of: "the Cellars", say: "Just past the gate it's cellars this season. Casks, damp, and rats the size of dogs."),
         (of: "the Watch Barracks", say: "The old watch kept its barracks just past the gate. Kobolds sleep in the bunks now."),
+        // The Drowned Town's first wave.
+        (of: "the Old Town", say: "Just past the gate there's streets, a whole town under ours. The lamps are lit and every door is open."),
+        (of: "the Harbour", say: "Just past the gate it's the old harbour, boats still tied up. And a ship that never sailed."),
         (of: "the Sunken Library", say: "Past the town there's a library in the palace grounds, half full of water. Scholars went in. Pages came out."),
         (of: "the Drowned Cathedral", say: "The palace had a cathedral, and it's still standing in the water. Mind the bridges; the water's colder than it looks."),
         (of: "the Catacombs", say: "Beneath the kingdom you walk through the dead. They were buried. It didn't take."),

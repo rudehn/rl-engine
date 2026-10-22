@@ -78,6 +78,7 @@ fn every_monster_of_the_bestiary_is_in_the_file_and_the_floor_ten_boss_is_one_of
         "kobold",
         "goblin",
         "monkey",
+        "harbour crab",
         "cave spider",
         "giant spider",
         "spiderling",

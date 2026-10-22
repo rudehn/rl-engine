@@ -931,6 +931,19 @@ mod tests {
             ("topiary", true),
             ("fountain", true),
             ("broken cage", true),
+            // The Drowned Town's first wave: the Old Town's and the
+            // Harbour's lights, a market's stalls, the quays' clutter, and
+            // what the sunken ship holds.
+            ("street lamp", true),
+            ("harbour lantern", false),
+            ("market stall", true),
+            ("stacked crates", true),
+            ("upturned boat", true),
+            ("anchor", false),
+            ("bollard", true),
+            ("broken mast", true),
+            ("bucket", false),
+            ("sea chest", true),
         ];
         // Every prop that holds something, sets something off, hides or
         // offers to be worked answers for itself, so a room of them is
@@ -974,6 +987,7 @@ mod tests {
             "loose flagstone",
             "concealed lever",
             "offering altar",
+            "sea chest",
         ];
         assert_eq!(r.props.len(), props.len(), "a prop this list does not name");
         for (name, blocks) in props {

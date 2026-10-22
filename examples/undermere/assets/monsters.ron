@@ -48,6 +48,9 @@
     (name: "goblin", glyph: 'g', color: (0.42, 0.75, 0.3), hp: 10, attack: (roll: "1d5", kind: "slash"), faction: "goblins", traits: ["sapient", "led"],
      drops: [("gold coin", 40), ("sword", 8)]),
     (name: "monkey", glyph: 'm', color: (0.7, 0.55, 0.35), hp: 8, attack: (roll: "1d3", kind: "crush"), faction: "beasts", traits: ["animal", "swift", "stealing"]),
+    // The Drowned Town's first wave: the Harbour's crab, come up out of the
+    // water onto the quays, slow and hard in the shell.
+    (name: "harbour crab", glyph: 'c', color: (0.82, 0.4, 0.26), hp: 7, attack: (roll: "1d4", kind: "crush"), faction: "beasts", traits: ["animal", "thick-hided", "slow"]),
     // The caves and the crypts under them. From the ogre down, a blow that
     // armor turns is two dice: armor turns a point of every blow, and
     // enchanted armor turned every blow of one die down here to nothing,
