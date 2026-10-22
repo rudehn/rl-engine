@@ -1375,10 +1375,16 @@ mod tests {
         assert_eq!(undermere::testing::at(&app, me), from, "and nobody stepped");
     }
 
-    /// The look cursor on a candidate frames it without hiding the
-    /// adventurer beside it, from whichever side they stand: the tick that
-    /// would stand on their cell is left off, and the one across from them
-    /// is drawn.
+    /// The look cursor on a candidate marks it without hiding the
+    /// adventurer beside it, from whichever side they stand, nor the
+    /// candidate under it: it glows in the select tone over the one cell,
+    /// so both are still drawn as they were.
+    /// What the map draws at `p`.
+    fn view_glyph(app: &App, p: Point) -> Option<char> {
+        let view = *app.world().resource::<MapView>();
+        view.get(app.world().resource::<Terminal>(), p).map(|c| c.glyph)
+    }
+
     #[test]
     fn the_look_cursor_beside_the_adventurer_never_hides_them() {
         let mut app = on_screen(RunSeed(7));
@@ -1400,15 +1406,14 @@ mod tests {
         assert!(!sides.is_empty(), "a side of the candidate to stand on");
         for (dx, dy) in sides {
             undermere::testing::stand_on(&mut app, me, at.offset(dx, dy));
+            app.update();
+            let them = view_glyph(&app, at);
             press(&mut app, KeyCode::KeyX);
             app.world_mut().resource_mut::<InspectView>().cursor = at;
             app.update();
             app.update();
-            let view = *app.world().resource::<MapView>();
-            let glyph = |p: Point| view.get(app.world().resource::<Terminal>(), p).map(|c| c.glyph);
-            assert_eq!(glyph(at.offset(dx, dy)), Some('@'), "the adventurer, standing at ({dx}, {dy}) from it, is still drawn");
-            let across = glyph(at.offset(-dx, -dy));
-            assert!(matches!(across, Some('-' | '|')), "the tick across from them is drawn: {across:?}");
+            assert_eq!(view_glyph(&app, at.offset(dx, dy)), Some('@'), "the adventurer, standing at ({dx}, {dy}) from it, is still drawn");
+            assert_eq!(view_glyph(&app, at), them, "and the candidate under the cursor is still drawn");
             press(&mut app, KeyCode::Escape);
         }
     }
