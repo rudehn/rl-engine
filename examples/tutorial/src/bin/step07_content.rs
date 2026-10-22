@@ -85,6 +85,10 @@ fn main() -> AppExit {
         // and a crust eaten heals before the next rat gets its bite in.
         .add_systems(Turn, (populate, eat).in_set(TurnSet::React))
         .add_systems(Update, narrate.in_set(PresentSet::Narrate));
+    // The floors, handed over once: the engine builds each the first time
+    // something enters it, from that floor's own seed.
+    let warren = Warren::new();
+    app.insert_resource(warren.appearance()).places(warren);
     app.run()
 }
 // ANCHOR_END: main
@@ -245,10 +249,9 @@ impl Bestiary {
 // ANCHOR_END: bestiary
 
 // ANCHOR: start
-/// Hands the engine the map rules and the player, then warps the player in.
-fn start(mut commands: Commands, seed: Res<Seed>, mut warps: MessageWriter<WarpRequest>, mut log: ResMut<MessageLog>) {
-    let warren = Warren::new();
-
+/// Hands the engine what combat reads, then spawns the player into the
+/// warren, at the first floor's entry.
+fn start(mut commands: Commands, seed: Res<Seed>, mut log: ResMut<MessageLog>) {
     // The two registries combat reads: what damage can be, and who hates
     // whom. Both are the game's content, named nowhere in the engine.
     let kinds = Registry::from_defs(vec![DamageKind::new("bite"), DamageKind::new("venom"), DamageKind::new("kick")]).unwrap();
@@ -261,19 +264,14 @@ fn start(mut commands: Commands, seed: Res<Seed>, mut warps: MessageWriter<WarpR
     commands.insert_resource(Bestiary::load(&registries.names(), vermin));
     commands.insert_resource(registries);
 
-    commands.insert_resource(warren.appearance());
-    commands.insert_resource(WorldMap::new(warren.tiles.tables()));
-    commands.insert_resource(PlaceRulesRes(Box::new(warren)));
-
-    let player = commands
-        .spawn((
-            (Actor, Player, Blocks, Position(Point::ZERO)),
+    commands.spawn_player(
+        map_of(1),
+        (
             (Viewshed::new(9), RevealsMap, Faction(you), Glyph::new('@', Color::WHITE).on_layer(10)),
             (Health::full(24), Armor(1), MeleeAttack::new(kinds.expect("kick"), DiceRoll::new(1, 6))),
             (Inventory::default(),),
-        ))
-        .id();
-    warps.write(WarpRequest::into_place(player, map_of(1)));
+        ),
+    );
     log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE, 0);
 }
 // ANCHOR_END: start

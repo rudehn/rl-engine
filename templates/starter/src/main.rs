@@ -50,10 +50,8 @@ fn main() -> AppExit {
     // between the status row and the log, and the base every panel needs.
     let map = Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS);
     app.add_plugins(RoguelikePlugins::new(TITLE, COLS, ROWS).map(map))
-        // Every subsystem is a plugin you name. Combat resolves blows, minds
-        // decide the monsters' turns, lighting decides what can be seen, and
-        // stealth decides what has been noticed.
-        .add_plugins((CombatPlugin, MindsPlugin, LightingPlugin, StealthPlugin))
+        // The game itself, the same plugin the tests add.
+        .add_plugins(Starter)
         // The panels draw themselves from views the engine keeps current.
         // The controls screen lists every key declared below, and prints the
         // one hint that opens it at the right of the status row.
@@ -77,19 +75,38 @@ fn main() -> AppExit {
             )),
         ))
         // `--seed 7` replays a run; without it every run is new.
-        .insert_resource(Seed::from_args())
-        .add_systems(NewRun, start)
-        // Keys become intents once a frame, and only while no screen, such as
-        // the look cursor, has them.
-        .add_systems(
-            Update,
-            player_input.in_set(EngineSet::Input).run_if(no_modal),
-        )
-        // Inside the turn: the floor fills the moment it is first entered.
-        .add_systems(Turn, populate.in_set(TurnSet::React));
-    // The keys, once, for the input system and the `?` screen alike.
-    declare_controls(&mut app);
+        .insert_resource(Seed::from_args());
     app.run()
+}
+
+/// The game: its subsystems, its floor, its keys and its turns. What is
+/// drawn is added in `main`; the tests add this alone, so they play the
+/// game the player plays.
+struct Starter;
+
+impl Plugin for Starter {
+    fn build(&self, app: &mut App) {
+        let dungeon = Dungeon::new();
+        // Every subsystem is a plugin you name. Combat resolves blows, minds
+        // decide the monsters' turns, lighting decides what can be seen, and
+        // stealth decides what has been noticed.
+        app.add_plugins((CombatPlugin, MindsPlugin, LightingPlugin, StealthPlugin))
+            // How the floor looks, and how it is built: the engine builds it
+            // the first time something enters it, from its own seed.
+            .insert_resource(dungeon.appearance())
+            .places(dungeon)
+            .add_systems(NewRun, start)
+            // Keys become intents once a frame, and only while no screen,
+            // such as the look cursor, has them.
+            .add_systems(
+                Update,
+                player_input.in_set(EngineSet::Input).run_if(no_modal),
+            )
+            // Inside the turn: the floor fills the moment it is first entered.
+            .add_systems(Turn, populate.in_set(TurnSet::React));
+        // The keys, once, for the input system and the `?` screen alike.
+        declare_controls(app);
+    }
 }
 
 /// The floor's tiles, and how each looks in full light. The renderer works
@@ -194,16 +211,9 @@ impl Goblins {
     }
 }
 
-/// Hands the engine the rules, the map and the player, then sends the
-/// player down.
-fn start(
-    mut commands: Commands,
-    seed: Res<Seed>,
-    mut warps: MessageWriter<WarpRequest>,
-    mut log: ResMut<MessageLog>,
-) {
-    let dungeon = Dungeon::new();
-
+/// Hands the engine the rules, then sends the player down to the floor's
+/// entry.
+fn start(mut commands: Commands, seed: Res<Seed>, mut log: ResMut<MessageLog>) {
     // What damage can be, and who is at war with whom. Both are registries
     // the game fills, so the engine never names a goblin.
     let kinds =
@@ -232,19 +242,10 @@ fn start(
         side: goblins,
     });
 
-    commands.insert_resource(dungeon.appearance());
-    commands.insert_resource(WorldMap::new(dungeon.tiles.tables()));
-    commands.insert_resource(PlaceRulesRes(Box::new(dungeon)));
-
-    let player = commands
-        .spawn((
-            (
-                Actor,
-                Player,
-                Blocks,
-                Position(Point::ZERO),
-                Name::new("you"),
-            ),
+    commands.spawn_player(
+        FLOOR,
+        (
+            Name::new("you"),
             (
                 Viewshed::new(12),
                 RevealsMap,
@@ -264,9 +265,8 @@ fn start(
                 quiet: 1,
                 subtlety: 10,
             }),
-        ))
-        .id();
-    warps.write(WarpRequest::into_place(player, FLOOR));
+        ),
+    );
     log.push(
         format!(
             "Seed {}. You light your torch and climb down into the dark.",
@@ -277,53 +277,47 @@ fn start(
     );
 }
 
-/// What the player's keys can ask for.
-#[derive(bevy::ecs::system::SystemParam)]
-struct PlayerIntents<'w> {
-    bumps: MessageWriter<'w, Intent<Bump>>,
-    waits: MessageWriter<'w, Intent<Wait>>,
-}
-
 /// The player, only while it holds the turn, and whether its torch is lit.
-type PlayerTurn<'w, 's> =
-    Query<'w, 's, (Entity, &'static Position, Has<LightSource>), (With<Player>, With<MyTurn>)>;
+type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, Has<LightSource>), (With<Player>, With<MyTurn>)>;
 
-/// Every key the game answers to, by name.
+/// The game's own keys, by name.
 ///
 /// Declared once in [`declare_controls`], so the `?` screen and the input
 /// system read the same list. To add a key, add a field here, declare it
 /// there, and check it in [`player_input`].
 #[derive(Resource, Clone, Copy)]
 struct Binds {
-    walk: ControlId,
-    wait: ControlId,
     torch: ControlId,
     quit: ControlId,
 }
 
 /// Declares the keys, under the headings the `?` screen groups them by.
-/// The engine adds its own alongside: the look cursor's, and `?` itself.
+///
+/// Walking and waiting are the same in every roguelike, so they are the
+/// engine's `PlayerKeysPlugin`, named here in the game's words: a walk is a
+/// step, a blow at whoever hostile stands there, or the door in the way
+/// opened, and the engine decides which. The engine adds its own keys
+/// alongside: the look cursor's, and `?` itself.
 fn declare_controls(app: &mut App) {
+    app.add_plugins(
+        PlayerKeysPlugin::new()
+            .walk("Move", "walk, or strike whoever is there")
+            .wait("Act", "wait a turn"),
+    );
     let binds = Binds {
-        walk: app.add_control(
-            "Move",
-            "walk, or strike whoever is there",
-            Keys::Directions { shift: false },
-        ),
-        wait: app.add_control("Act", "wait a turn", [KeyCode::Period, KeyCode::Numpad5]),
         torch: app.add_control("Act", "put the torch out, or light it", KeyCode::KeyT),
         quit: app.add_control("Game", "quit", KeyCode::KeyQ),
     };
     app.insert_resource(binds);
 }
 
-/// Keys to intents. Writing an intent is all it takes to act: the engine
-/// spends the turn, and refuses what cannot be done.
+/// The game's own keys to intents. Writing an intent is all it takes to
+/// act: the engine spends the turn, and refuses what cannot be done.
 fn player_input(
     keys: ControlInput,
     binds: Res<Binds>,
     player: PlayerTurn,
-    mut intents: PlayerIntents,
+    mut waits: MessageWriter<Intent<Wait>>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
 ) {
@@ -332,14 +326,10 @@ fn player_input(
         return;
     }
     // No turn in hand means it is somebody else's move.
-    let Ok((me, _, lit)) = player.single() else {
+    let Ok((me, lit)) = player.single() else {
         return;
     };
-    if let Some(dir) = keys.direction(binds.walk) {
-        // A bump is a step, a blow at whoever hostile stands there, or the
-        // door in the way opened: the engine decides which.
-        intents.bumps.write(Intent::new(me, Bump(dir)));
-    } else if keys.just_pressed(binds.torch) {
+    if keys.just_pressed(binds.torch) {
         // Dark, you are hidden from anything that needs light to see you,
         // and as blind as it is. Either way it takes the turn.
         if lit {
@@ -347,9 +337,7 @@ fn player_input(
         } else {
             commands.entity(me).insert(TORCH);
         }
-        intents.waits.write(Intent::new(me, Wait));
-    } else if keys.just_pressed(binds.wait) {
-        intents.waits.write(Intent::new(me, Wait));
+        waits.write(Intent::new(me, Wait));
     }
 }
 
@@ -425,26 +413,12 @@ fn open_cell(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rl_engine::rl_bevy::testing::{KeyScriptPlugin, press};
+    use rl_engine::testing::{KeyScriptPlugin, press};
 
-    /// The game with no window: what `main` adds, minus what draws.
+    /// The game with no window: the same `Starter` plugin `main` adds, and
+    /// keys played the way a keyboard plays them.
     fn headless(seed: u64) -> App {
-        let mut app = rl_engine::rl_bevy::plugin::headless_app();
-        app.add_plugins((
-            FovPlugin,
-            CombatPlugin,
-            MindsPlugin,
-            LightingPlugin,
-            StealthPlugin,
-            KeyScriptPlugin,
-        ))
-        .add_plugins(UiPlugin)
-        .insert_resource(Seed(RunSeed(seed)))
-        .add_systems(NewRun, start)
-        .add_systems(Update, player_input.in_set(EngineSet::Input))
-        .add_systems(Turn, populate.in_set(TurnSet::React));
-        declare_controls(&mut app);
-        app
+        rl_engine::testing::headless(RunSeed(seed), (), (Starter, KeyScriptPlugin))
     }
 
     /// A run with the player holding its first turn: one frame builds the

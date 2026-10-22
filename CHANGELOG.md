@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The template is one `Starter` plugin that `main` and its tests both add, its walk and wait are `PlayerKeysPlugin`'s, and tutorial step 1 is one `Warren` plugin built on the standard tiles and looks, `places`, `spawn_player` and `PlayerKeysPlugin`, with a test that adds the same plugin; steps 2 to 9 hand their floors over with `places`, spawn the player with `spawn_player`, and steps 2 to 6 read the standard keys through `PlayerKeysPlugin`, keeping only their own by hand. The guide's chapters and chapter 1's screenshots change at the release.
+  To change: nothing for a game; a game made from the template may do the same.
+
 - `PlayerKeysPlugin` runs in a game with no `ItemsPlugin`, where it used to stop the app on its first frame for want of a pick-up message nobody registered; naming `pick_up` without `ItemsPlugin` is now refused by name when the app is finished.
   To change: nothing.
 

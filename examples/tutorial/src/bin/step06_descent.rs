@@ -82,10 +82,16 @@ fn main() -> AppExit {
         .add_systems(Turn, (populate, eat, leave).in_set(TurnSet::React))
         .add_systems(Update, note_bag.in_set(ViewSet::Annotate))
         .add_systems(Update, narrate.in_set(PresentSet::Narrate))
-        // Once a frame, before the turns: whatever the player pressed becomes
-        // at most one intent, however many passes the turn loop then runs.
+        // Once a frame, before the turns: whatever the player pressed of
+        // Warren's own keys becomes at most one intent, beside the standard
+        // keys, however many passes the turn loop then runs.
         .add_systems(Update, (player_input, tend_lantern).in_set(EngineSet::Input))
         .add_systems(Update, note_explored.in_set(ViewSet::Annotate));
+    // The floors, handed over once: the engine builds each the first time
+    // something enters it, from that floor's own seed.
+    let warren = Warren::new();
+    app.insert_resource(warren.appearance()).places(warren);
+    declare_controls(&mut app);
     app.run()
 }
 // ANCHOR_END: main
@@ -159,10 +165,9 @@ impl PlaceRules for Warren {
 // ANCHOR_END: rules
 
 // ANCHOR: start
-/// Hands the engine the map rules and the player, then warps the player in.
-fn start(mut commands: Commands, seed: Res<Seed>, effect_kinds: Res<EffectKinds>, mut warps: MessageWriter<WarpRequest>, mut log: ResMut<MessageLog>) {
-    let warren = Warren::new();
-
+/// Hands the engine what combat and the knacks read, then spawns the
+/// player into the warren, at the first floor's entry.
+fn start(mut commands: Commands, seed: Res<Seed>, effect_kinds: Res<EffectKinds>, mut log: ResMut<MessageLog>) {
     // The two registries combat reads: what damage can be, and who hates
     // whom. Both are the game's content, named nowhere in the engine.
     let kinds = Registry::from_defs(vec![DamageKind::new("bite"), DamageKind::new("kick"), DamageKind::new("din")]).unwrap();
@@ -204,18 +209,13 @@ fn start(mut commands: Commands, seed: Res<Seed>, effect_kinds: Res<EffectKinds>
         faction: vermin,
     });
 
-    commands.insert_resource(warren.appearance());
-    commands.insert_resource(WorldMap::new(warren.tiles.tables()));
-    commands.insert_resource(PlaceRulesRes(Box::new(warren)));
-
-    let player = commands
-        .spawn((
-            (Actor, Player, Blocks, Position(Point::ZERO)),
+    commands.spawn_player(
+        map_of(1),
+        (
             (Viewshed::new(9), RevealsMap, LANTERN, Faction(you), Grants(vec![screech]), Glyph::new('@', Color::WHITE).on_layer(10)),
             (Health::full(24), Armor(1), MeleeAttack::new(kinds.expect("kick"), DiceRoll::new(1, 6)), Inventory::default()),
-        ))
-        .id();
-    warps.write(WarpRequest::into_place(player, map_of(1)));
+        ),
+    );
     log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE, 0);
     log.push("Something is scratching in the dark.", Tones::MUTED, 0);
 }
@@ -225,35 +225,35 @@ fn start(mut commands: Commands, seed: Res<Seed>, effect_kinds: Res<EffectKinds>
 /// The player, but only while it is holding the turn, and what it carries.
 type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, Option<&'static Inventory>), (With<Player>, With<MyTurn>)>;
 
-/// Keys to intents. Writing an intent is the whole of asking to act: the
-/// engine claims the turn, charges it, and refuses what cannot be done.
+/// The standard keys. Walking, the stairs, picking up and waiting are the
+/// same in every roguelike, so they are the engine's `PlayerKeysPlugin`. A
+/// walk key writes a [`Bump`], which the engine resolves to a step, a blow
+/// at a foe, or opening a door, whichever is in the way; Enter, `>` or `<`
+/// take the stairs underfoot.
+fn declare_controls(app: &mut App) {
+    app.add_plugins(
+        PlayerKeysPlugin::new()
+            .walk("Move", "walk, or strike whoever is there")
+            .go_through("Move", "take the stairs")
+            .pick_up("Act", "pick up what is here")
+            .wait("Act", "wait a turn"),
+    );
+}
+
+/// Warren's own keys to intents. Writing an intent is the whole of asking
+/// to act: the engine claims the turn, charges it, and refuses what cannot
+/// be done.
 ///
-/// The walk keys write a [`Bump`], which the engine resolves to a step, a
-/// blow at a foe, or opening a door, whichever is in the way. `r` writes no
-/// intent at all: it opens the engine's aiming cursor, and the throw is
-/// written when the cursor is committed.
-fn player_input(
-    keys: Res<ButtonInput<KeyCode>>,
-    dirs: Res<DirectionKeys>,
-    repeats: Res<Repeats>,
-    player: PlayerTurn,
-    carried: Carried,
-    mut intents: PlayerIntents,
-    knacks: Res<Knacks>,
-) {
+/// `r` writes no intent at all: it opens the engine's aiming cursor, and
+/// the throw is written when the cursor is committed.
+fn player_input(keys: Res<ButtonInput<KeyCode>>, player: PlayerTurn, carried: Carried, mut intents: PlayerIntents, knacks: Res<Knacks>) {
     if keys.just_pressed(KeyCode::KeyQ) {
         intents.exit.write(AppExit::Success);
         return;
     }
     // No turn in hand means it is somebody else's move; the key is dropped.
     let Ok((entity, bag)) = player.single() else { return };
-    // A press walks, and a key held down keeps walking: `Repeats` is the
-    // engine's hold, already advanced before input is read.
-    if let Some(dir) = dirs.just_pressed(&keys).or_else(|| repeats.firing_any().map(|(d, _)| d)) {
-        intents.bumps.write(Intent::new(entity, Bump(dir)));
-    } else if keys.just_pressed(KeyCode::KeyG) {
-        intents.pick_ups.write(Intent::new(entity, PickUp));
-    } else if keys.just_pressed(KeyCode::KeyE) {
+    if keys.just_pressed(KeyCode::KeyE) {
         if let Some(crust) = bag.into_iter().flat_map(|b| b.items.iter().copied()).find(|i| carried.crusts.contains(*i)) {
             intents.uses.write(Intent::new(entity, UseItem(crust)));
         }
@@ -261,14 +261,10 @@ fn player_input(
         // The key writes an aim and stops. The cursor, the preview of what
         // the burst would cover, and the spending of the turn are engine.
         intents.aim_ability.write(AimAt { user: entity, ability: knacks.screech });
-    } else if keys.just_pressed(KeyCode::KeyR) {
-        if let Some(rock) = bag.into_iter().flat_map(|b| b.items.iter().copied()).find(|i| carried.rocks.contains(*i)) {
-            intents.aims.write(AimThrow { user: entity, item: rock });
-        }
-    } else if keys.just_pressed(KeyCode::Enter) || (keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]) && keys.just_pressed(KeyCode::Period)) {
-        intents.stairs.write(Intent::new(entity, GoThrough));
-    } else if keys.just_pressed(KeyCode::Period) || keys.just_pressed(KeyCode::Numpad5) {
-        intents.waits.write(Intent::new(entity, Wait));
+    } else if keys.just_pressed(KeyCode::KeyR)
+        && let Some(rock) = bag.into_iter().flat_map(|b| b.items.iter().copied()).find(|i| carried.rocks.contains(*i))
+    {
+        intents.aims.write(AimThrow { user: entity, item: rock });
     }
 }
 // ANCHOR_END: input
@@ -425,14 +421,10 @@ struct Crust(i32);
 /// as many actions as the game grows.
 #[derive(bevy::ecs::system::SystemParam)]
 struct PlayerIntents<'w> {
-    bumps: MessageWriter<'w, Intent<Bump>>,
-    waits: MessageWriter<'w, Intent<Wait>>,
-    pick_ups: MessageWriter<'w, Intent<PickUp>>,
     uses: MessageWriter<'w, Intent<UseItem>>,
     aims: MessageWriter<'w, AimThrow>,
     aim_ability: MessageWriter<'w, AimAt>,
     exit: MessageWriter<'w, AppExit>,
-    stairs: MessageWriter<'w, Intent<GoThrough>>,
 }
 
 /// What the bag might hold, so the keys can tell one thing from another.
@@ -536,15 +528,16 @@ mod tests {
 
     /// The warren with no window, wired as `main` wires it, input included.
     fn started(seed: u64) -> (App, Entity) {
-        let mut app = rl_engine::rl_bevy::plugin::headless_app();
-        app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, LightingPlugin, ItemsPlugin, ThrowingPlugin, AbilitiesPlugin));
-        app.add_plugins(UiPlugin).add_plugins(TargetViewPlugin).add_plugins(rl_engine::rl_bevy::testing::KeyScriptPlugin);
+        let mut app = rl_engine::testing::windowless(RunSeed(seed));
+        app.add_plugins((CombatPlugin, MindsPlugin, LightingPlugin, ItemsPlugin, ThrowingPlugin, AbilitiesPlugin));
+        app.add_plugins(UiPlugin).add_plugins(TargetViewPlugin).add_plugins(rl_engine::testing::KeyScriptPlugin);
         app.add_engine_effects();
         app.insert_resource(Lighting::dark())
-            .insert_resource(Seed(RunSeed(seed)))
             .add_systems(NewRun, start)
             .add_systems(Turn, (populate, eat, leave).in_set(TurnSet::React))
-            .add_systems(Update, (player_input, tend_lantern).in_set(EngineSet::Input));
+            .add_systems(Update, (player_input, tend_lantern).in_set(EngineSet::Input))
+            .places(Warren::new());
+        declare_controls(&mut app);
         app.update();
         app.update();
         let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
@@ -561,7 +554,7 @@ mod tests {
         let mut moved = false;
         for key in [KeyCode::ArrowRight, KeyCode::ArrowLeft, KeyCode::ArrowUp, KeyCode::ArrowDown] {
             let before = (app.world().get::<Position>(player).unwrap().0, app.world().resource::<Turns>().now());
-            rl_engine::rl_bevy::testing::press(&mut app, key);
+            rl_engine::testing::press(&mut app, key);
             for _ in 0..3 {
                 app.update();
             }

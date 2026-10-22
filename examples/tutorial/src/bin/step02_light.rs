@@ -38,10 +38,15 @@ fn main() -> AppExit {
         .add_plugins(VitalsPanel::new(Rect::new(0, 0, COLS, 1)).hints("[t]orch  [.]wait  [q]uit"))
         .add_plugins(LogPanel::new(Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)))
         .add_systems(NewRun, start)
-        // Once a frame, before the turns: whatever the player pressed becomes
-        // at most one intent, however many passes the turn loop then runs.
-        .add_systems(Update, (player_input, tend_lantern).in_set(EngineSet::Input))
+        // Once a frame, before the turns: the lantern is a key of Warren's
+        // own, read beside the standard ones.
+        .add_systems(Update, tend_lantern.in_set(EngineSet::Input))
         .add_systems(Update, note_explored.in_set(ViewSet::Annotate));
+    // The floors, handed over once: the engine builds each the first time
+    // something enters it, from that floor's own seed.
+    let warren = Warren::new();
+    app.insert_resource(warren.appearance()).places(warren);
+    declare_controls(&mut app);
     app.run()
 }
 // ANCHOR_END: main
@@ -98,50 +103,27 @@ impl PlaceRules for Warren {
 // ANCHOR_END: rules
 
 // ANCHOR: start
-/// Hands the engine the map rules and the player, then warps the player in.
-fn start(mut commands: Commands, seed: Res<Seed>, mut warps: MessageWriter<WarpRequest>, mut log: ResMut<MessageLog>) {
-    let warren = Warren::new();
-    commands.insert_resource(warren.appearance());
-    commands.insert_resource(WorldMap::new(warren.tiles.tables()));
-    commands.insert_resource(PlaceRulesRes(Box::new(warren)));
-
-    let player = commands
-        .spawn(((Actor, Player, Blocks, Position(Point::ZERO)), (Viewshed::new(9), RevealsMap, LANTERN, Glyph::new('@', Color::WHITE).on_layer(10))))
-        .id();
-    warps.write(WarpRequest::into_place(player, WARREN));
+/// Spawns the player into the warren, at the first floor's entry.
+fn start(mut commands: Commands, seed: Res<Seed>, mut log: ResMut<MessageLog>) {
+    commands.spawn_player(WARREN, (Viewshed::new(9), RevealsMap, LANTERN, Glyph::new('@', Color::WHITE).on_layer(10)));
     log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE, 0);
     log.push("Walk with the arrows, hjklyubn or the numpad. t tends the lantern, . waits, q quits.", Tones::MUTED, 0);
 }
 // ANCHOR_END: start
 
 // ANCHOR: input
-/// The player, but only while it is holding the turn.
-type PlayerTurn<'w, 's> = Query<'w, 's, Entity, (With<Player>, With<MyTurn>)>;
-
-/// Keys to intents. Writing an intent is the whole of asking to act: the
-/// engine claims the turn, charges it, and refuses what cannot be done.
-fn player_input(
-    keys: Res<ButtonInput<KeyCode>>,
-    dirs: Res<DirectionKeys>,
-    repeats: Res<Repeats>,
-    player: PlayerTurn,
-    mut steps: MessageWriter<Intent<Step>>,
-    mut waits: MessageWriter<Intent<Wait>>,
-    mut exit: MessageWriter<AppExit>,
-) {
-    if keys.just_pressed(KeyCode::KeyQ) {
-        exit.write(AppExit::Success);
-        return;
-    }
-    // No turn in hand means it is somebody else's move; the key is dropped.
-    let Ok(entity) = player.single() else { return };
-    // A press walks, and a key held down keeps walking: `Repeats` is the
-    // engine's hold, already advanced before input is read.
-    if let Some(dir) = dirs.just_pressed(&keys).or_else(|| repeats.firing_any().map(|(d, _)| d)) {
-        steps.write(Intent::new(entity, Step(dir)));
-    } else if keys.just_pressed(KeyCode::Period) || keys.just_pressed(KeyCode::Numpad5) {
-        waits.write(Intent::new(entity, Wait));
-    }
+/// The keys. Walking and waiting are the same in every roguelike, so they
+/// are the engine's `PlayerKeysPlugin`: each press becomes an intent, and
+/// the engine claims the turn, charges it, and refuses what cannot be done.
+/// Quitting is Warren's own.
+fn declare_controls(app: &mut App) {
+    app.add_plugins(PlayerKeysPlugin::new().walk("Move", "walk").wait("Act", "wait a turn"));
+    let quit = app.add_control("Game", "quit", KeyCode::KeyQ);
+    app.add_systems(Update, move |keys: ControlInput, mut exit: MessageWriter<AppExit>| {
+        if keys.just_pressed(quit) {
+            exit.write(AppExit::Success);
+        }
+    });
 }
 // ANCHOR_END: input
 

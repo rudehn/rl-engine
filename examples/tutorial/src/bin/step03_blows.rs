@@ -50,10 +50,15 @@ fn main() -> AppExit {
         .add_systems(NewRun, start)
         // A floor fills the first time it is entered, inside the turn.
         .add_systems(Turn, populate.in_set(TurnSet::React))
-        // Once a frame, before the turns: whatever the player pressed becomes
-        // at most one intent, however many passes the turn loop then runs.
-        .add_systems(Update, (player_input, tend_lantern).in_set(EngineSet::Input))
+        // Once a frame, before the turns: the lantern is a key of Warren's
+        // own, read beside the standard ones.
+        .add_systems(Update, tend_lantern.in_set(EngineSet::Input))
         .add_systems(Update, note_explored.in_set(ViewSet::Annotate));
+    // The floors, handed over once: the engine builds each the first time
+    // something enters it, from that floor's own seed.
+    let warren = Warren::new();
+    app.insert_resource(warren.appearance()).places(warren);
+    declare_controls(&mut app);
     app.run()
 }
 // ANCHOR_END: main
@@ -110,10 +115,9 @@ impl PlaceRules for Warren {
 // ANCHOR_END: rules
 
 // ANCHOR: start
-/// Hands the engine the map rules and the player, then warps the player in.
-fn start(mut commands: Commands, seed: Res<Seed>, mut warps: MessageWriter<WarpRequest>, mut log: ResMut<MessageLog>) {
-    let warren = Warren::new();
-
+/// Hands the engine what combat reads, then spawns the player into the
+/// warren, at the first floor's entry.
+fn start(mut commands: Commands, seed: Res<Seed>, mut log: ResMut<MessageLog>) {
     // ANCHOR: combat
     // The two registries combat reads: what damage can be, and who hates
     // whom. Both are the game's content, named nowhere in the engine.
@@ -131,54 +135,34 @@ fn start(mut commands: Commands, seed: Res<Seed>, mut warps: MessageWriter<WarpR
         faction: vermin,
     });
 
-    commands.insert_resource(warren.appearance());
-    commands.insert_resource(WorldMap::new(warren.tiles.tables()));
-    commands.insert_resource(PlaceRulesRes(Box::new(warren)));
-
-    let player = commands
-        .spawn((
-            (Actor, Player, Blocks, Position(Point::ZERO)),
+    commands.spawn_player(
+        WARREN,
+        (
             (Viewshed::new(9), RevealsMap, LANTERN, Faction(you), Glyph::new('@', Color::WHITE).on_layer(10)),
             (Health::full(24), Armor(1), MeleeAttack::new(kinds.expect("kick"), DiceRoll::new(1, 6))),
-        ))
-        .id();
-    warps.write(WarpRequest::into_place(player, WARREN));
+        ),
+    );
     log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE, 0);
     log.push("Something is scratching in the dark.", Tones::MUTED, 0);
 }
 // ANCHOR_END: start
 
 // ANCHOR: input
-/// The player, but only while it is holding the turn.
-type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, &'static Position), (With<Player>, With<MyTurn>)>;
-
-/// Keys to intents. Writing an intent is the whole of asking to act: the
-/// engine claims the turn, charges it, and refuses what cannot be done.
+/// The keys. Walking and waiting are the same in every roguelike, so they
+/// are the engine's `PlayerKeysPlugin`: each press becomes an intent, and
+/// the engine claims the turn, charges it, and refuses what cannot be done.
+/// Quitting is Warren's own.
 ///
-/// The walk keys write a [`Bump`], which the engine resolves to a step, a
+/// A walk key writes a [`Bump`], which the engine resolves to a step, a
 /// blow at a foe, or opening a door, whichever is in the way.
-fn player_input(
-    keys: Res<ButtonInput<KeyCode>>,
-    dirs: Res<DirectionKeys>,
-    repeats: Res<Repeats>,
-    player: PlayerTurn,
-    mut bumps: MessageWriter<Intent<Bump>>,
-    mut waits: MessageWriter<Intent<Wait>>,
-    mut exit: MessageWriter<AppExit>,
-) {
-    if keys.just_pressed(KeyCode::KeyQ) {
-        exit.write(AppExit::Success);
-        return;
-    }
-    // No turn in hand means it is somebody else's move; the key is dropped.
-    let Ok((entity, _)) = player.single() else { return };
-    // A press walks, and a key held down keeps walking: `Repeats` is the
-    // engine's hold, already advanced before input is read.
-    if let Some(dir) = dirs.just_pressed(&keys).or_else(|| repeats.firing_any().map(|(d, _)| d)) {
-        bumps.write(Intent::new(entity, Bump(dir)));
-    } else if keys.just_pressed(KeyCode::Period) || keys.just_pressed(KeyCode::Numpad5) {
-        waits.write(Intent::new(entity, Wait));
-    }
+fn declare_controls(app: &mut App) {
+    app.add_plugins(PlayerKeysPlugin::new().walk("Move", "walk, or strike whoever is there").wait("Act", "wait a turn"));
+    let quit = app.add_control("Game", "quit", KeyCode::KeyQ);
+    app.add_systems(Update, move |keys: ControlInput, mut exit: MessageWriter<AppExit>| {
+        if keys.just_pressed(quit) {
+            exit.write(AppExit::Success);
+        }
+    });
 }
 // ANCHOR_END: input
 
