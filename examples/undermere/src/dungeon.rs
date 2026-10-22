@@ -150,7 +150,27 @@ fn shared_tiles(floor: u32) -> &'static [&'static str] {
         ..=2 => &["door", "open door", "rubble", "blood", "hall wall", "hall floor", "web", "bones", "flooded floor", "moss"],
         // The Drowned Abbess's chapel stands on 3 and 4 in her cathedral's
         // wall, and `Fallen Bell`, the cathedral's own fixed piece, in flagstones.
-        3 | 4 => &["door", "open door", "cathedral wall", "flagstones", "web", "hall wall", "hall floor", "rubble", "blood", "bones", "flooded floor", "moss"],
+        // The Palace grounds' first wave: the hunting lodge's timber, planks
+        // and kennel bars, and the gardens' fountain basins, which a
+        // dressing lays where its recipe laid none.
+        3 | 4 => &[
+            "door",
+            "open door",
+            "cathedral wall",
+            "flagstones",
+            "web",
+            "hall wall",
+            "hall floor",
+            "rubble",
+            "blood",
+            "bones",
+            "flooded floor",
+            "moss",
+            "timber wall",
+            "planks",
+            "cage bars",
+            "basin",
+        ],
         // Grubnak's hall, the Widow's cave and moss and the Choirmaster's
         // crypt nave, the beneath-the-kingdom lairs.
         5 | 6 => &[
@@ -446,6 +466,27 @@ pub(crate) fn registry() -> TileRegistry {
             wading("sunken causeway"),
             // A collapsing gallery's way back, fallen in.
             TileProps::wall("fallen rock"),
+            // The Palace grounds' first wave. The Royal Wood: its trees are
+            // its walls, and its undergrowth is walked into at half a step
+            // more and seen into but not past, so a hound in it is a
+            // rustle until it is beside you; it burns, back to the bare
+            // floor of the wood.
+            TileProps::wall("black tree"),
+            TileProps::floor("forest floor"),
+            TileProps::floor("pale grass"),
+            TileProps::floor("game trail"),
+            TileProps::floor("undergrowth").opaque(true).move_cost(150).burns(60, 3, "forest floor"),
+            TileProps::floor("glowmoss"),
+            // The Palace Gardens: hedges are its walls, never burnt through,
+            // since they are the fill of the whole floor; a fountain's basin
+            // is waded; a cage's bars are seen and shot through and
+            // walked through by nobody.
+            TileProps::wall("hedge"),
+            TileProps::floor("lawn"),
+            TileProps::floor("gravel"),
+            TileProps::floor("night blooms"),
+            wading("basin"),
+            TileProps::named("cage bars"),
         ])
         .expect("every tile has a name of its own");
     // What glows by itself, the town's lit windows and the gate, the
@@ -688,7 +729,7 @@ impl Undermere {
         } else {
             (drawn.wall, drawn.floor)
         };
-        let door = if throne { floor_tile } else { self.tile("door") };
+        let door = if throne { floor_tile } else { drawn.door };
         // A vault's own door and gate, which the pool's locked and sealed
         // pieces are joined by.
         let tiles = LayoutTiles { floor: floor_tile, door, locked: self.tile("vault door"), sealed: self.tile("stone gate") };
@@ -2008,7 +2049,15 @@ mod tests {
         for (recipe, pick) in recipes {
             let (floor, drawn) = grown_by(undermere, &recipe.name, *pick);
             let at = format!("{} on floor {floor}, seed {s}", recipe.name);
-            let grown = undermere.grow(floor, &drawn, &undermere.picks_for(floor, &drawn), RunSeed(s), ATTEMPTS);
+            let picks = undermere.picks_for(floor, &drawn);
+            // A landmark whose way down is `Within` its drawing stands the
+            // stairs on its own mark, which the pool's load holds to a bare
+            // slot nothing fills; every other slot keeps clear of them.
+            let within = picks.iter().find_map(|p| match undermere.pool.entries[p.entry].placed {
+                rl_engine::rl_rules::pool::Placed::Seeded { stairs: rl_engine::rl_rules::pool::Stairs::Within(c), .. } => Some(c),
+                _ => None,
+            });
+            let grown = undermere.grow(floor, &drawn, &picks, RunSeed(s), ATTEMPTS);
             let ctx = grown.unwrap_or_else(|e| panic!("{at}: {e}"));
             let bounds = ctx.terrain().bounds();
             assert_eq!((bounds.width, bounds.height), recipe.size, "{at}");
@@ -2020,13 +2069,19 @@ mod tests {
             // down read as "inside" its bounds while painting nothing
             // there. What actually matters is that nothing was stamped
             // onto the exit's own cell.
-            let marks = slots(&ctx);
+            let marks: BTreeSet<Point> =
+                ctx.outputs().iter::<Stamped>().flat_map(|st| st.marks.iter()).filter(|(c, _)| Some(*c) != within).map(|(_, p)| *p).collect();
+            let landmark_marks: BTreeSet<Point> =
+                ctx.outputs().iter::<Stamped>().flat_map(|st| st.marks.iter()).filter(|(c, _)| Some(*c) == within).map(|(_, p)| *p).collect();
             let built = PlaceBuild::from_context(ctx).unwrap_or_else(|e| panic!("{at}: {e}"));
             if floor == FLOORS {
                 assert_eq!(built.exit, None, "{at}: the throne's floor has no way down");
             } else {
                 let exit = built.exit.unwrap_or_else(|| panic!("{at}: no way down"));
                 assert!(!marks.contains(&exit), "{at}: the way down at {exit:?} is a stamped slot");
+                if within.is_some() {
+                    assert!(landmark_marks.contains(&exit), "{at}: the way down at {exit:?} is not on its landmark's mark");
+                }
                 let route = route.unwrap_or_else(|| panic!("{at}: no route"));
                 let third = bounds.width.max(bounds.height) as u32 / 3;
                 assert!(route >= recipe.require.route && recipe.require.route >= third, "{at}: {route} steps down, asked {}", recipe.require.route);

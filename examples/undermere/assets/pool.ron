@@ -14,10 +14,10 @@
 //            mechanism exists (`rl_rules::pool::load`'s own error for a
 //            limit of nought says so); nothing is withheld now
 //   tags:    every place tag an entry may name in `where` or `not`: the
-//            twelve biomes, by the bare name `dungeon/biomes.rs` draws
+//            biomes of floors one to nine, by the bare name `dungeon/biomes.rs` draws
 //   budgets: how many picks of a kind a floor gets, one row a band
 //     floors:   (first, last), the floors it covers
-//     kind:     "flavor" | "risk_reward" | "reward"
+//     kind:     "flavor" | "risk_reward" | "reward" | "landmark"
 //     count:    (fewest, most), drawn evenly for each floor
 //     required: optional, false if left out; true fails a place that
 //               cannot fit a pick of this kind, false drops the pick.
@@ -26,7 +26,7 @@
 //               (a run never quietly loses a vault)
 //   entries: what a place may be given
 //     name:      the entry's name, from the spec's own tables
-//     kind:      "flavor" | "risk_reward" | "reward"
+//     kind:      "flavor" | "risk_reward" | "reward" | "landmark"
 //     piece:     the prefab it lays, for Grown and Inside
 //     dressing:  the dressing it lays, for Dressed; one of piece and
 //                dressing, never both
@@ -59,8 +59,8 @@
 //                         on its Mark slot 'c', the way in far from it);
 //                         every seeded entry is of one kind, required, at
 //                         most one to a floor, and none on floor ten, the
-//                         throne's, unless its stairs are Free. No entry
-//                         is seeded yet
+//                         throne's, unless its stairs are Free; the
+//                         landmarks are, kind "landmark"
 //       Inside([shape])   stamped inside an area of one of the named
 //                         shapes; any area if the list is empty
 //       Dressed           a dressing laid over an area of any size
@@ -80,6 +80,8 @@
     tags: [
         "Upper Halls", "Cellars", "Watch Barracks", "Fungal Deeps", "Spider Warrens", "Old Mines",
         "Catacombs", "Sunken Library", "Drowned Cathedral", "Underlake", "Forge of Embers", "Ashen Galleries",
+        // The Palace grounds' first wave.
+        "Royal Wood", "Palace Gardens",
     ],
     // Flavor sits a pick under the spec's table on floors one to nine,
     // so a typical run sees under half the flavor pool: at the table's
@@ -97,6 +99,10 @@
         (floors: (1, 2), kind: "reward", count: (1, 2), required: true),
         (floors: (3, 6), kind: "reward", count: (1, 2), required: true),
         (floors: (7, 9), kind: "reward", count: (1, 1), required: true),
+        // The Palace grounds' first wave: a floor of floors three and four
+        // whose biome has a landmark holds exactly one, and one whose biome
+        // has none, the library's or the cathedral's, holds none.
+        (floors: (3, 4), kind: "landmark", count: (1, 1), required: true),
     ],
     entries: [
     (
@@ -315,6 +321,34 @@
         dressing: "Cinder Drifts", placed: Dressed,
     ),
 
+    // The Palace grounds' first wave: the Royal Wood's and the Palace
+    // Gardens' own flavor, the dressings their biomes also lay.
+    (
+        name: "Deadfall", kind: "flavor", floors: (3, 4), weight: "common",
+        where: ["Royal Wood"],
+        dressing: "Deadfall", placed: Dressed,
+    ),
+    (
+        name: "Hunters' Camp", kind: "flavor", floors: (3, 4), weight: "uncommon",
+        where: ["Royal Wood"],
+        dressing: "Hunters' Camp", placed: Dressed,
+    ),
+    (
+        name: "Topiary Walk", kind: "flavor", floors: (3, 4), weight: "common",
+        where: ["Palace Gardens"],
+        dressing: "Topiary Walk", placed: Dressed,
+    ),
+    (
+        name: "Fountain Court", kind: "flavor", floors: (3, 4), weight: "common",
+        where: ["Palace Gardens"],
+        dressing: "Fountain Court", placed: Dressed,
+    ),
+    (
+        name: "Broken Cages", kind: "flavor", floors: (3, 4), weight: "uncommon",
+        where: ["Palace Gardens"],
+        dressing: "Broken Cages", placed: Dressed,
+    ),
+
     // Risk and reward: 22.
     (
         name: "Caged Altars", kind: "risk_reward", floors: (2, 9), weight: "uncommon",
@@ -506,6 +540,23 @@
     (
         name: "Moonwell", kind: "reward", floors: (5, 9), weight: "rare",
         piece: "Moonwell", placed: Inside([]),
+    ),
+
+    // The Palace grounds' first wave's landmarks, what a floor of the wood or
+    // the gardens is remembered by: the floor's first piece, grown round.
+    // Two to a run, so a run that draws one biome on both its floors meets
+    // its landmark on each, as every floor of a biome with one holds one.
+    (
+        name: "The Hunting Lodge", kind: "landmark", floors: (3, 4), weight: "common",
+        per_place: 1, per_run: 2,
+        where: ["Royal Wood"],
+        piece: "The Hunting Lodge", placed: Seeded([Anywhere], Free),
+    ),
+    (
+        name: "The Hedge Maze", kind: "landmark", floors: (3, 4), weight: "common",
+        per_place: 1, per_run: 2,
+        where: ["Palace Gardens"],
+        piece: "The Hedge Maze", placed: Seeded([Center], Within('>')),
     ),
     ],
 )

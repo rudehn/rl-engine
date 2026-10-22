@@ -158,4 +158,39 @@
     (tile: "hole",              glyph: ':', fg: (0.22, 0.2, 0.22),  bg: (0.0, 0.0, 0.0),     vary: (0.1, 0.02)),
     (tile: "sunken causeway",   glyph: '~', fg: (0.5, 0.66, 0.74),  bg: (0.12, 0.2, 0.26),   vary: (0.1, 0.03),  shimmer: 0.2),
     (tile: "fallen rock",       glyph: '∴', fg: (0.72, 0.68, 0.62), bg: (0.4, 0.37, 0.33),   vary: (0.14, 0.03)),
+
+    // The Palace grounds' first wave: the Royal Wood and the Palace Gardens,
+    // floors three and four beside the library and the cathedral.
+    //
+    // The Royal Wood: the kings' hunting forest, an age under the lake. Its
+    // trees are black and their leaves have gone pale, so a tree is drawn as
+    // its black limbs over the pale mass of its leaves, lighter than the black
+    // loam under it as any wall is. Undergrowth is seen into but not through,
+    // and the moss on the fallen wood glows.
+    (tile: "black tree",     glyph: '♣',  fg: (0.07, 0.08, 0.08), bg: (0.34, 0.38, 0.34), vary: (0.1, 0.03)),
+    (tile: "forest floor",   glyph: '.',  fg: (0.36, 0.38, 0.32), bg: (0.06, 0.07, 0.06), vary: (0.16, 0.04)),
+    (tile: "pale grass",     glyph: '"',  fg: (0.62, 0.68, 0.58), bg: (0.08, 0.1, 0.08),  vary: (0.16, 0.04)),
+    (tile: "game trail",     glyph: '.',  fg: (0.46, 0.4, 0.3),   bg: (0.11, 0.09, 0.06), vary: (0.14, 0.03)),
+    (tile: "undergrowth",    glyph: '♠',  fg: (0.56, 0.72, 0.5),   bg: (0.07, 0.09, 0.07), vary: (0.18, 0.05)),
+    // A pale green-white, a step or so round it: a log furred with it is a
+    // pool of cold light among the trees.
+    (tile: "glowmoss",       glyph: ',',  fg: (0.78, 1.0, 0.84),  bg: (0.1, 0.24, 0.16),  vary: (0.12, 0.04), shimmer: 0.12,
+     light: (intensity: 200, radius: 2, color: (r: 190, g: 255, b: 210))),
+
+    // The Palace Gardens: hedges grown wild round lawns and gravel walks, the
+    // beds gone to pale flowers that glow, fountains still full, and the
+    // menagerie's cages broken open. A hedge is a wall of leaves, green and
+    // lighter than the lawn it bounds.
+    (tile: "hedge",          glyph: '#',  fg: (0.42, 0.6, 0.36),  bg: (0.24, 0.34, 0.22), vary: (0.12, 0.04)),
+    (tile: "lawn",           glyph: '"',  fg: (0.3, 0.42, 0.28),  bg: (0.07, 0.1, 0.06),  vary: (0.16, 0.05)),
+    (tile: "gravel",         glyph: '.',  fg: (0.58, 0.57, 0.52), bg: (0.12, 0.12, 0.1),  vary: (0.12, 0.02)),
+    // Pale rose, a little way round each bloom: a bed of them is the
+    // light a garden is seen by.
+    (tile: "night blooms",   glyph: '✿',  fg: (1.0, 0.82, 0.92),   bg: (0.17, 0.11, 0.14),  vary: (0.1, 0.04), shimmer: 0.1,
+     light: (intensity: 200, radius: 2, color: (r: 255, g: 205, b: 232))),
+    // A fountain's water, waded, and lit faintly from the basin's floor.
+    (tile: "basin",          glyph: '~',  fg: (0.45, 0.85, 0.8),    bg: (0.1, 0.22, 0.3),   vary: (0.1, 0.03), shimmer: 0.25,
+     light: (intensity: 200, radius: 1, color: (r: 150, g: 210, b: 240), flicker: 20)),
+    // A cage's bars: seen and shot through, never walked through.
+    (tile: "cage bars",      glyph: '║',  fg: (0.62, 0.62, 0.66), bg: (0.12, 0.12, 0.12), vary: (0.08, 0.02)),
 ]

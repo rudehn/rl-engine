@@ -337,4 +337,15 @@
     // bring the adventurer back.
     (name: "gate mark", glyph: '◊', color: (r: 205, g: 150, b: 255),
      light: (intensity: 200, radius: 4, color: (r: 191, g: 107, b: 255), flicker: 38)),
+
+    // The Palace grounds' first wave. The Royal Wood's: a black tree fallen
+    // and gone pale, the hunt's rotted tents, and the antlers its lodge kept.
+    // The Palace Gardens': clipped trees grown out of their shapes, a
+    // fountain still running, and the menagerie's cages, their bars bent and rusted red.
+    (name: "fallen log",    glyph: '/', color: (r: 200, g: 190, b: 165), blocks: true),
+    (name: "rotted tent",   glyph: 'Δ', color: (r: 205, g: 140, b: 80), blocks: true),
+    (name: "antlers",       glyph: 'Ψ', color: (r: 235, g: 200, b: 150)),
+    (name: "topiary",       glyph: '♣', color: (r: 90, g: 200, b: 100), blocks: true),
+    (name: "fountain",      glyph: '¤', color: (r: 120, g: 200, b: 255), blocks: true),
+    (name: "broken cage",   glyph: '‖', color: (r: 190, g: 105, b: 115), blocks: true),
 ]

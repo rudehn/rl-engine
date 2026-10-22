@@ -41,6 +41,17 @@
     (monster: "pale scribe",     bands: (3, 4),   weight: 40, group: (1, 1)),
     (monster: "will-o'-wisp",    bands: (3, 4),   weight: 25, group: (1, 1)),
     (monster: "drowned guard",   bands: (4, 4),   weight: 30, group: (1, 1)),
+    // The Palace grounds' first wave: the wood's hounds and its hart, the
+    // gardens' adders and the menagerie's apes. Each comes rarely on its own
+    // and three times as often where its own biome favors it, so the library
+    // and the cathedral keep their dead; the hounds run in bigger packs and
+    // the apes come oftener on floor four, the harder of the two.
+    (monster: "pale hound",      bands: (3, 3),   weight: 15, group: (2, 3)),
+    (monster: "pale hound",      bands: (4, 4),   weight: 20, group: (2, 4)),
+    (monster: "white hart",      bands: (3, 4),   weight: 10, group: (1, 1)),
+    (monster: "hedge adder",     bands: (3, 4),   weight: 15, group: (1, 2)),
+    (monster: "pale ape",        bands: (3, 3),   weight: 8,  group: (1, 1)),
+    (monster: "pale ape",        bands: (4, 4),   weight: 15, group: (1, 1)),
     // Beneath the Kingdom: the mines' goblins, the fungal caves, the warrens
     // and the crypts. The goblins' casters keep their old weight, now two
     // floors down with the mines they serve; the plain goblin, the spiders

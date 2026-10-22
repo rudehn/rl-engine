@@ -255,4 +255,38 @@
             (glyph: 'b', at: Scatter, density_pct: 4),
         ],
     ),
+
+    // The Palace grounds' first wave. The Royal Wood: black trees fallen and
+    // gone pale, moss glowing on them; and where the hunt once camped.
+    (
+        name: "Deadfall",
+        legend: { 'l': Prop("fallen log") },
+        place: [(glyph: 'l', at: Scatter, density_pct: 6)],
+        repaint: ("glowmoss", 12),
+    ),
+    (
+        name: "Hunters' Camp",
+        legend: { 't': Prop("rotted tent"), 'f': Prop("cold firepit") },
+        place: [(glyph: 'f', at: Center, density_pct: 10), (glyph: 't', at: Walls, density_pct: 12)],
+    ),
+    // The Palace Gardens: clipped trees in rows along a lawn, a fountain at
+    // a lawn's middle with its water spilt round it, and the menagerie's
+    // broken cages along the walls, the straw in them long rotted.
+    (
+        name: "Topiary Walk",
+        legend: { 't': Prop("topiary") },
+        place: [(glyph: 't', at: Rows(aisle: 2), density_pct: 30)],
+    ),
+    (
+        name: "Fountain Court",
+        legend: { 'f': Prop("fountain") },
+        place: [(glyph: 'f', at: Center, density_pct: 20)],
+        repaint: ("basin", 12),
+    ),
+    (
+        name: "Broken Cages",
+        legend: { 'c': Prop("broken cage") },
+        place: [(glyph: 'c', at: Walls, density_pct: 40)],
+        repaint: ("straw", 30),
+    ),
 ]

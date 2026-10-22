@@ -1,0 +1,43 @@
+// A landmark: the Royal Wood's hunting lodge, the floor's first piece, laid
+// anywhere a margin from the map's edges before anything grows
+// (`assets/pool.ron`'s `Seeded([Anywhere], Free)`), the wood grown out from
+// its three doorways. A timber hall the kings hunted from: antlers along its
+// north wall, the long table and its benches, moss glowing in the corners
+// where the lake got in; the kennels to the west, their bars bent apart and
+// the straw rotted in all three; a bedroom, and a gear room
+// whose racks still hold a weapon and arrows.
+//
+// A prefab: see `assets/prefabs/reward/treasure_room.ron` for every field.
+// Nothing in it has a right way up, so it may land in any facing.
+(
+    name: "The Hunting Lodge",
+    ground: "planks",
+    turn: Quarter,
+    mirror: Both,
+    rows: [
+        "################E##########",
+        "#ss#ss#ss#Ψ...Ψ...Ψ..Ψ#B.B#",
+        "#ss#ss#ss#............+...#",
+        "#║.#.║#..#..nnnnnnnn..#####",
+        "#........+..tttttttt..#RwR#",
+        "E........#..nnnnnnnn..+.a.#",
+        "#g......g#g..........g#R.R#",
+        "#############E#############",
+    ],
+    legend: {
+        '#': Tile("timber wall"),
+        '.': Tile("planks"),
+        's': Tile("straw"),
+        '║': Tile("cage bars"),
+        'g': Tile("glowmoss"),
+        '+': Tile("door"),
+        'Ψ': Prop("antlers"),
+        't': Prop("table"),
+        'n': Prop("bench"),
+        'B': Prop("bed"),
+        'R': Prop("rack"),
+        'w': Item(tag: "weapon", count: 1, band: 1),
+        'a': Item(item: "arrow", count: (6, 10)),
+        'E': Entry,
+    },
+)

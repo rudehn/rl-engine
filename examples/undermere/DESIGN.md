@@ -58,7 +58,7 @@ Deeper monsters simply list more traits.
 Depth is time.
 Near the top are the kingdom's streets and grounds, below them its tombs and foundations, deeper still the places that were there before the first stone, and at the bottom the oldest thing of all, which drowned it.
 The floors are grouped into **strata**, named ranges of floors kept in `src/dungeon/strata.rs`, and each floor draws its biome from its stratum's, so floor four is not always the same place and the two floors of a stratum may share one.
-Twelve biomes are in `assets/biomes.ron`, with three more on floor ten, one for each boss's throne, and each floor then draws a recipe of its biome from the twenty-nine in `assets/layout.ron`.
+Fourteen biomes are in `assets/biomes.ron`, with three more on floor ten, one for each boss's throne, and each floor then draws a recipe of its biome from the thirty-three in `assets/layout.ron`.
 
 The player sees the strata three ways: crossing into one for the first time logs a line of its own ahead of the floor's ("You pass beneath the kingdom."), the rail names the floor and its stratum on one row (`3 · The Palace and its Grounds`, and `Mereholt` in the town), and the innkeeper's rumours hint at what is deeper and older.
 
@@ -69,6 +69,8 @@ The player sees the strata three ways: crossing into one for the first time logs
 | 1-2 | The Drowned Town | The Watch Barracks: the garrison | uniform cells behind doors, cross-shaped mess halls, a parade hall | torch sconces and braziers |
 | 3-4 | The Palace and its Grounds | The Sunken Library: halls of shelves | long stacks, cross-shaped atria, reading rooms, seeping pools | pale violet witchlight, water shimmer |
 | 3-4 | The Palace and its Grounds | The Drowned Cathedral: flooded halls | naves in deep water joined by bridges, chapels, cloister passages | moonlight shafts, water shimmer |
+| 3-4 | The Palace and its Grounds | The Royal Wood: the kings' hunting forest, black trees with pale leaves; its landmark the hunting lodge | clearings and glades among the trees on wandering game trails, undergrowth that hides what stands in it, black pools in the deep wood | glowing moss on the fallen wood, cold green-white |
+| 3-4 | The Palace and its Grounds | The Palace Gardens: hedged lawns and the broken menagerie; its landmark the hedge maze, the way down at its heart | lawns and parterres cut into the hedges on gravel walks, fountains in the parterres, or the menagerie's pens | beds of pale blooms that glow rose, and the fountains |
 | 5-6 | Beneath the Kingdom | The Catacombs: crypts and ossuaries | small crypts on long one-wide galleries, ossuary halls | candles, cold blue |
 | 5-6 | Beneath the Kingdom | The Old Mines: dug galleries | chambers among cave pockets on straight two-wide galleries | goblin lanterns, glinting ore |
 | 5-6 | Beneath the Kingdom | The Fungal Deeps: caves | large and medium caves joined by mouths, a long cave the floor follows | glowing fungus, teal and green |
@@ -85,14 +87,15 @@ A floor grows between 90 by 52 and 104 by 58 cells, about one and a half views a
 A biome's favored monsters count three times in its floors' spawn tables, so a biome is told by what lives in it as well as by how it is built, and a load check holds every biome of floors one to nine to at least three favored kinds able to spawn on each of its floors.
 
 Generation mixes techniques per biome: accretion halls, cellular caves, crypt grids, lakes with bridges, lava rivers, and districts of one inside another.
-Prefabs come in three kinds, each drawn from its own pool in `assets/pool.ron`, with weights, bands, limits per floor and per run, and a budget per band.
+Prefabs come in four kinds, each drawn from its own pool in `assets/pool.ron`, with weights, bands, limits per floor and per run, and a budget per band.
 A run draws all its picks once, at its start, so a floor grown again after a failed attempt is a different layout holding the same pieces, and no limit is ever passed whichever floor is built first.
 
-- **Flavor**, 43 entries: scenery that says what a place was, a library, a shrine, a goblin camp, a collapsed hall. Nothing to take. Thirteen are pieces stamped inside a room and thirty are dressings laid over any area, caves included.
+- **Flavor**, 48 entries: scenery that says what a place was, a library, a shrine, a goblin camp, a collapsed hall. Nothing to take. Thirteen are pieces stamped inside a room and thirty-five are dressings laid over any area, caves included.
 - **Risk and reward**, 22 entries: an altar vault where taking one caged item locks the others, a key on the floor opening a door elsewhere, a guarded hoard, a trapped corridor, a plinth that drops the floor when lifted, a flooding altar. Grown as rooms of their own behind a lock, a seal or a secret door, or stamped inside a room.
 - **Reward**, 16 entries: a treasure room, an armory, a spring, an anvil, a moonwell. Ten are stamped inside a room, two grown as rooms of their own and four dressings.
+- **Landmarks**, one to a biome that has one, what a floor is remembered by: the floor's first piece, laid where its pool entry says before anything grows, the floor grown out from its entries, and the stairs set by a rule relative to it. The Royal Wood's hunting lodge stands anywhere, its stairs free; the Palace Gardens' hedge maze stands at the centre, the way down at its heart. Every floor of a biome with a landmark holds one, two to a run, so a run drawing the biome on both floors of its stratum meets it on each.
 
-A typical run sees 18 of the 43 flavor entries and no run more than 25, which is the fifth pillar held by the numbers.
+A typical run sees 18 of the 48 flavor entries and no run more than 25, which is the fifth pillar held by the numbers.
 
 The dungeon feels lived in: monsters asleep, on patrol, at a fire or feeding, goblins and their ogre together, the remains of earlier adventurers with what they carried and a line of what they wrote, inscriptions, bones, blood, cobwebs, and small life that is only scenery.
 
@@ -104,7 +107,7 @@ A kind moved up to the palace floors comes as a weaker early form, a kind moved 
 Tricks by depth, as planned for part 3 and carried by the strata:
 
 - **Floors 1-2, one trick:** rat (packs, flees when hurt), jackal (packs, fast), kobold (throws darts, cowardly), goblin (picks up and wears what it finds), monkey (steals and runs).
-- **Floors 3-4, the palace and its grounds, one to three tricks:** drowned pilgrim (slow, deathless, the cathedral's congregation), drowned acolyte (deathless, lit by a cold light, a venomous touch that can freeze; the early form of the wight and the palace floors' killer), pale scribe (unseen in the dark, a word that slows; the early form of the wraith), drowned guard (armored and heavy-handed, on floor four; the early form of the throne's knights), will-o'-wisp (glows, lures, blinks), vampire bat (erratic, drains), pink jelly (splits when struck), and the monkey still, up from the town.
+- **Floors 3-4, the palace and its grounds, one to three tricks:** drowned pilgrim (slow, deathless, the cathedral's congregation), drowned acolyte (deathless, lit by a cold light, a venomous touch that can freeze; the early form of the wight and the palace floors' killer), pale scribe (unseen in the dark, a word that slows; the early form of the wraith), drowned guard (armored and heavy-handed, on floor four; the early form of the throne's knights), will-o'-wisp (glows, lures, blinks), vampire bat (erratic, drains), pink jelly (splits when struck), and the monkey still, up from the town; in the grounds, the pale hound (packs, fast, hard to sneak past) and the white hart it was bred to hunt (fast, runs when hurt) in the Royal Wood, and the hedge adder (venomous, unseen out of the light) and the pale ape (heavy blows, sleeps deeply) in the Palace Gardens, the menagerie's escaped.
 - **Floors 5-6, beneath the kingdom, two or three tricks:** skeleton (knits back together unless burned or crushed), necromancer (raises the dead, blinks, cowardly), ghoul (paralysing claws), goblin and kobold with the conjurer (spectral blades, blinks), mystic (shields allies) and archer, myconid (slow, bursts into spores on death) and the myconid elder, cave spider, giant spider (webs, venom) and the spiderling swarm, pink jelly (splits when struck), ogre (heavy blows, slow), wraith (unseen in the dark, drains).
 - **Floors 7-8, before the kingdom, three tricks:** drowned thrall and wight (the drowned dead of the deep water, the stronger forms of the palace floors' pilgrim and acolyte), will-o'-wisps over the black water, troll (regenerates, strong), ghoul and wraith still walk here; naga (venom, fast in water) is unbuilt.
 - **Floors 8-9, four tricks:** salamander (fire breath, fire-blooded, burning trail, glows), troll, golem (vast health, slow, reflects magic), fire imp, the dar trio (blademaster, priestess, battlemage).

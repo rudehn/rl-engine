@@ -173,10 +173,10 @@ mod tests {
     }
 
     /// The shipped file reads, with a rumour of each of the three floor
-    /// ten bosses, the five mini-bosses, the eleven biomes of floors one to
+    /// ten bosses, the five mini-bosses, the thirteen biomes of floors one to
     /// nine a run may draw from more than one, the Underlake alone on its
     /// floors having none, and the four strata with a hint of their own,
-    /// twenty-three in all, and the design's last line.
+    /// twenty-five in all, and the design's last line.
     #[test]
     fn the_rumours_file_reads_with_a_rumour_of_every_boss_mini_boss_and_biome_of_the_design() {
         let rumours = library().rumours;
@@ -192,6 +192,9 @@ mod tests {
             "the Spider Warrens",
             "the Forge of Embers",
             "the Ashen Galleries",
+            // The Palace grounds' first wave.
+            "the Royal Wood",
+            "the Palace Gardens",
         ];
         let strata = ["The Palace and its Grounds", "Beneath the Kingdom", "Before the Kingdom", "The Oldest Deep"];
         let drawable: Vec<&str> = FINAL_BOSSES.iter().map(|b| b.name).chain(MINI_BOSSES.iter().map(|b| b.name)).chain(biomes).chain(strata).collect();

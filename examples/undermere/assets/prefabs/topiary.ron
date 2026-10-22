@@ -1,0 +1,15 @@
+// A clipped tree in the Palace Gardens, grown out of the shape it was cut
+// to an age ago, stood on open lawn by `dungeon::Furnish` as
+// `assets/biomes.ron`'s decor asks, a few to a floor.
+(
+    name: "topiary",
+    ground: "lawn",
+    turn: None,
+    mirror: None,
+    rows: [
+        "t",
+    ],
+    legend: {
+        't': Prop("topiary"),
+    },
+)

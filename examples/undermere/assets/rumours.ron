@@ -53,6 +53,9 @@
         (of: "the Spider Warrens", say: "Under the palace it's webs, whole galleries of them. Burn what you can't cut."),
         (of: "the Forge of Embers", say: "Near the bottom the rock runs hot. Somebody forged there before the kingdom had a name."),
         (of: "the Ashen Galleries", say: "Near the bottom it's all ash and cinders, and imps that light themselves for fun."),
+        // The Palace grounds' first wave.
+        (of: "the Royal Wood", say: "The old king's hunting wood went down with the palace. The hounds are still running in it, and they've gone white."),
+        (of: "the Palace Gardens", say: "The palace gardens are down there too, hedges and fountains and all. The king kept beasts in cages. The cages are empty now."),
         // The strata of the Undermere, told once each after the biomes, so a
         // run's hints of what lies deeper and older come in the order the
         // adventurer would walk them. The first and the last have none: the

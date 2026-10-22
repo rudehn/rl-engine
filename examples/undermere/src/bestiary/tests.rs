@@ -98,6 +98,11 @@ fn every_monster_of_the_bestiary_is_in_the_file_and_the_floor_ten_boss_is_one_of
         "drowned acolyte",
         "pale scribe",
         "drowned guard",
+        // The Palace grounds' first wave.
+        "pale hound",
+        "white hart",
+        "hedge adder",
+        "pale ape",
         "drowned thrall",
         "wight",
         "troll",

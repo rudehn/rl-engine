@@ -255,12 +255,15 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [17_102_594_948_347_075_405, 5_273_674_215_525_864_124, 10_889_974_980_829_590_105],
+        [10_875_309_400_412_365_779, 13_176_894_592_211_726_175, 2_377_502_485_482_917_857],
         "fingerprint tripwire: re-baselined once for the strata, the biomes on other floors and the bestiary moved with them \
          and the palace floors retuned, and for the script striking only a foe, so seed one's captive, shackled beside its \
          path on floor one, is walked past rather than struck at for good; and once more for the strata's review, the war \
          band and the ogre's feeding ground back on floors five and six, the floors four to six retuned and the flooding \
          vault holding one channel, with seed four for seed two; and once more on meeting main's statuses written on the status \
-         and the traits a worn thing lends, through which the palace floors' withering dead now play"
+         and the traits a worn thing lends, through which the palace floors' withering dead now play; and once more for the \
+         palace grounds' first wave, the royal wood and the palace gardens drawn on floors three and four beside the library \
+         and the cathedral with their beasts in the spawn table and their landmarks the floor is grown round, and the pool \
+         and the population drawing from a larger file"
     );
 }

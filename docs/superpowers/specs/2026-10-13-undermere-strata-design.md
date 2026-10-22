@@ -139,3 +139,33 @@ Main's three left were the soak waiting with nothing in reach, the stall the sea
 The win rate held, and so did the shape: floors 3-4 kill again, by the acolytes where it was the cave spider's venom, and floor 9 is back under its old share.
 After the review's retune floor four is again the deadliest of the early floors; floor five's twelve on the first fifty seeds was mostly noise, five on the next fifty, so over a hundred seeds the retuned curve is, per hundred and fifty delves, 65 won and 3, 10.5, 8.5, 3, 7, 5, 16, 32 died on floors three to ten, against main's 68 and 6, 14, 6, 1, 7, 5, 16, 24.
 More delves reach the thrones than on main, and more die there; the thrones are unchanged.
+
+### The first wave: the palace grounds
+
+The palace half of the first wave, built on the `wave-palace` branch beside the town half on `wave-town`.
+Where it deviates from or extends the spec above:
+
+- **Two biomes on floors 3-4**, beside the library and the cathedral at weight one each, so a palace floor draws one of four.
+  The **Royal Wood** grows caves among black trees on wandering one-wide game trails, by `hunting grounds` (clearings) or `deep wood` (glades round black pools, a ridge of fallen trees the wood bends round); its light is glowing moss, and its undergrowth is walked into at half a step more and seen into but not past.
+  The **Palace Gardens** grow rectangles cut into hedges on two-wide gravel walks, by `parterres` (fountains standing in the parterres) or `menagerie` (small pens on the walks); its light is beds of pale blooms and the fountains' basins.
+  Each has two moods, a rumour, two or three flavor dressings of its own in the pool and its decor.
+- **A biome's own door**: a new optional `door` field in `assets/biomes.ron`, `door` if left out, which the wood hangs as undergrowth, so its trees have no doors in them; the load refuses a door no body can pass.
+- **Favored kinds**: the wood favors the pale hound (packs, fast, keen-nosed), the white hart (fast, flees when hurt) and the will-o'-wisp; the gardens the hedge adder (venomous, unseen out of the light), the pale ape (heavy blows, sleeps deeply) and the monkey.
+  The beasts come rarely outside their biomes, and the acolytes stay the palace floors' killer, favored in the library and the cathedral.
+- **Landmarks**: the hunting lodge, `Seeded([Anywhere], Free)`, a timber hall with its kennels, bedroom and gear room grown out from three doorways; the hedge maze, `Seeded([Center], Within('>'))`, the way down at its heart and a dead end holding the remains of one who never found it.
+  The pool gives floors 3-4 a required `landmark` budget of one and each landmark two to a run, so a run that draws one biome on both floors meets its landmark on each; a library or cathedral floor has none and grows as before.
+  A load check, `biomes::landmark_problems`, holds every biome with a landmark to one on every floor of its window and enough to a run for all of them; the generator backstop asserts a `Within` landmark's way down stands on its mark.
+- The potion of strength's weight drops from nine to eight: the new floors' finds put a run at five and a half against the four `finds.rs` holds it to.
+- **Two tests that passed by how the streams fell**, found when the new content moved them: the confused goblin is set six steps off before each turn and stops at its first step astray, and the far door of the doors test is walled in.
+- **A shackled captive** that takes things up no longer walks off its chain to fetch a blade lying near: its fetching is laid by hand before the hunt and anchored, as a pack's keeping and a flitter's flitting already were.
+
+The soak, 150 delves over seeds 1 to 50 against main at `c1cf867e` (no game code changed since `fbbbbe5c`):
+
+| | won | died on floors 3, 4, 5, 6, 7, 8, 9, 10 | stalled |
+| --- | --- | --- | --- |
+| main | 72 (48%) | 3, 4, 9, 1, 6, 7, 22, 24 | 0 |
+| palace grounds | 70 (47%) | 5, 3, 10, 5, 6, 10, 12, 29 | 0 |
+
+The curve held, so nothing was retuned.
+Floors 3-4 kill eight against seven, but three of the eight are one seed whose adventurer turned a floor-three monster into a golem with an unknown wand of polymorph, which draws from the whole bestiary; without them the palace floors are a little softer, by the acolytes coming less often where the wood or the gardens is drawn, and still the acolytes and the pale scribe are what kill there.
+The new beasts killed nobody.

@@ -923,6 +923,14 @@ mod tests {
             ("guardian statue", true),
             // Where the Drowned Gate brings the adventurer back.
             ("gate mark", false),
+            // The Palace grounds' first wave: the wood's and the gardens'
+            // furniture blocks, the lodge's antlers on its wall do not.
+            ("fallen log", true),
+            ("rotted tent", true),
+            ("antlers", false),
+            ("topiary", true),
+            ("fountain", true),
+            ("broken cage", true),
         ];
         // Every prop that holds something, sets something off, hides or
         // offers to be worked answers for itself, so a room of them is

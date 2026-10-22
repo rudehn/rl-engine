@@ -267,7 +267,8 @@ mod tests {
     /// The tiles and the props that glow are the ones the design lights,
     /// written in the files: the town's lit windows and the gate, the
     /// glowcaps, the lava, the shafts of light and the Underlake's lit
-    /// shallows; the lamp posts, the forge and the hearth, the altar and
+    /// shallows, the Royal Wood's glowing moss and the Palace Gardens' pale
+    /// blooms and fountain basins; the lamp posts, the forge and the hearth, the altar and
     /// the candelabras, the hanging lanterns, the witchlights, the
     /// braziers warm and cold, a camp's fire and the gate mark. Nothing
     /// else.
@@ -275,7 +276,10 @@ mod tests {
     fn exactly_the_tiles_and_props_the_design_lights_write_a_light() {
         let undermere = Undermere::new(RunSeed(0));
         let glowing: BTreeSet<&str> = undermere.tiles().iter().filter(|(_, t)| t.light.is_some()).map(|(_, t)| t.name.as_str()).collect();
-        assert_eq!(glowing, BTreeSet::from(["lit window", "gate", "glowcaps", "lava", "moonlit marble", "glowing shallows"]));
+        assert_eq!(
+            glowing,
+            BTreeSet::from(["lit window", "gate", "glowcaps", "lava", "moonlit marble", "glowing shallows", "glowmoss", "night blooms", "basin"])
+        );
         let registries = crate::content::registries();
         let lit: BTreeSet<&str> = registries.props.iter().filter(|(_, p)| p.light.is_some()).map(|(_, p)| p.name.as_str()).collect();
         let expected = [

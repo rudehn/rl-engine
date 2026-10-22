@@ -105,6 +105,19 @@
         (name: "cave", kind: Cave(w: (11, 17), h: (8, 12), fill_pct: 50, visits_pct: 200), join: Mouth(2)),
         (name: "large cave", kind: Cave(w: (16, 24), h: (11, 16), fill_pct: 50, visits_pct: 300), join: Mouth(3)),
         (name: "long cave", kind: Cave(w: (20, 30), h: (6, 9), fill_pct: 48, visits_pct: 200), join: Mouth(2)),
+
+        // The Palace grounds' first wave. The Royal Wood's clearings and
+        // glades are caves among the black trees, joined by game trails
+        // that wander one wide; the Palace Gardens' lawns and parterres are
+        // rectangles cut into the hedges, joined by gravel walks two wide,
+        // and the menagerie's pens are small, open where their gates were.
+        (name: "clearing", kind: Cave(w: (12, 18), h: (9, 13), fill_pct: 47, visits_pct: 200), join: Mouth(2)),
+        (name: "glade", kind: Cave(w: (7, 11), h: (6, 9), fill_pct: 46, visits_pct: 150), join: Mouth(1)),
+        (name: "game trail", kind: Passage(width: (1, 1), length: (6, 14), bend_pct: 55), join: Arch),
+        (name: "lawn", kind: Rectangle(w: (7, 12), h: (5, 8)), join: Arch),
+        (name: "parterre", kind: Rectangle(w: (14, 20), h: (9, 12)), join: Mouth(2)),
+        (name: "walk", kind: Passage(width: (2, 2), length: (8, 16), bend_pct: 15), join: Arch),
+        (name: "pen", kind: Rectangle(w: (4, 6), h: (3, 5)), join: Arch),
     ],
     districts: [
         // The Upper Halls.
@@ -165,6 +178,18 @@
         (name: "throne halls", shapes: [("hall", 3), ("room", 2), ("corridor", 2)]),
         (name: "hollow", shapes: [("cave", 3), ("large cave", 2), ("small cave", 2)]),
         (name: "pillared", shapes: [("hall", 3), ("cross", 2), ("passage", 2)]),
+
+        // The Palace grounds' first wave. The Royal Wood: open wood of
+        // clearings, deep wood of glades, and thickets of small hollows,
+        // never a square room, since nothing in it was built but the lodge. The Palace Gardens: the parterres and their lawns, the
+        // menagerie's pens along its walks, and where the garden went back
+        // to wood. One breach of each to a biome, as the rest are.
+        (name: "wood", shapes: [("clearing", 3), ("glade", 3), ("game trail", 3)]),
+        (name: "deep wood", shapes: [("glade", 4), ("pocket", 2), ("game trail", 4)]),
+        (name: "thicket", shapes: [("pocket", 3), ("glade", 1), ("game trail", 2)]),
+        (name: "parterres", shapes: [("parterre", 2), ("lawn", 4), ("walk", 3)]),
+        (name: "menagerie", shapes: [("pen", 6), ("walk", 3), ("lawn", 1)]),
+        (name: "garden breach", shapes: [("glade", 3), ("pocket", 2), ("game trail", 1)]),
     ],
     recipes: [
         // The Upper Halls: halls by mouths; wings split by two barriers
@@ -390,6 +415,38 @@
             districts: [("pillared", 1)],
             loops: (min_detour: 20, max: 4),
             require: (open_pct: (26, 62), areas: [("hall", 2)], loops: 1, dead_end_pct: 60, route: 0),
+        ),
+
+        // The Palace grounds' first wave. The Royal Wood: hunting grounds of
+        // clearings joined by game trails; or deep wood, glades thick on
+        // the trails and a ridge of fallen trees the wood bends round. The
+        // Palace Gardens: parterres and lawns along the walks, fountains
+        // standing in the parterres; or the menagerie, its pens on the
+        // walks among what is left of the lawns.
+        (
+            name: "hunting grounds", size: (100, 56), open_pct: 40, patience: 300, districts_per_10k: 7,
+            districts: [("wood", 4), ("thicket", 1)],
+            loops: (min_detour: 20, max: 8),
+            require: (open_pct: (30, 62), areas: [("clearing", 3)], loops: 2, dead_end_pct: 55, route: 34),
+        ),
+        (
+            name: "deep wood", size: (96, 54), open_pct: 36, patience: 300, districts_per_10k: 8,
+            districts: [("deep wood", 4), ("wood", 1), ("thicket", 1)],
+            barriers: [(from: (50, 0), to: (50, 60), chance_pct: 70, jitter_pct: 10)],
+            loops: (min_detour: 16, max: 10),
+            require: (open_pct: (26, 60), areas: [("glade", 6)], loops: 3, dead_end_pct: 55, route: 32),
+        ),
+        (
+            name: "parterres", size: (100, 56), open_pct: 46, patience: 300, districts_per_10k: 7,
+            districts: [("parterres", 4), ("garden breach", 1)],
+            loops: (min_detour: 20, max: 8),
+            require: (open_pct: (32, 64), areas: [("parterre", 2), ("lawn", 4)], loops: 3, dead_end_pct: 50, route: 34),
+        ),
+        (
+            name: "menagerie", size: (96, 54), open_pct: 40, patience: 300, districts_per_10k: 8,
+            districts: [("menagerie", 3), ("parterres", 2), ("garden breach", 1)],
+            loops: (min_detour: 20, max: 8),
+            require: (open_pct: (28, 62), areas: [("pen", 8)], loops: 2, dead_end_pct: 70, route: 32),
         ),
     ],
 )

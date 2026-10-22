@@ -30,6 +30,9 @@
 //             with before anything is carved
 //   floor:    a tile from `dungeon::registry`, what its rooms or caves are
 //             carved as
+//   door:     optional, "door" if left out or None; Some(tile), a tile from `dungeon::registry`
+//             that a body can pass, what its doors and the loops cut through
+//             its walls are hung as, so a wood has no doors in its trees
 //   ambient:  (intensity, (r, g, b)), `rl_grid::Light::new`'s own two
 //             arguments: how this floor reads before anything lights it
 //   recipes:  [(name:, weight:, lakes:)], the recipes of
@@ -166,6 +169,62 @@
         ],
         dressings: ["Choir Stalls"],
         favored: ["drowned acolyte", "drowned pilgrim", "vampire bat"],
+    ),
+
+    // The Palace grounds' first wave: the grounds round the palace, its
+    // hunting wood and its gardens, on floors three and four beside the
+    // library and the cathedral.
+    (
+        name: "Royal Wood", floors: (3, 4), weight: 1,
+        moods: ["Black trees stand close together, and their pale leaves never fall.", "The wood goes on under the lake, and something in it is still being hunted."],
+        wall: "black tree", floor: "forest floor",
+        // Where a hall would hang a door, the trees close and the gap
+        // between them is grown over: seen into, not through.
+        door: Some("undergrowth"),
+        ambient: (20, (150, 175, 165)),
+        recipes: [
+            (name: "hunting grounds", weight: 1),
+            // Black pools among the glades of the deep wood.
+            (name: "deep wood", weight: 1, lakes: Some((
+                tile: "flooded floor", count: (2, 4), size: (5, 12), wreath: None, cut: false,
+                within: ["glade", "clearing"],
+            ))),
+        ],
+        // The clearings are pale grass, the trails trodden earth.
+        paint: [(on: "clearing", tile: "pale grass"), (on: "game trail", tile: "game trail")],
+        // Undergrowth that hides what stands in it, and glowing moss on the
+        // fallen wood, the cold light the wood is seen by.
+        decor: [
+            Patches(tile: "undergrowth", count: (10, 16), size: (3, 8)),
+            Patches(tile: "glowmoss", count: (6, 10), size: (1, 4)),
+        ],
+        dressings: ["Deadfall", "Hunters' Camp"],
+        favored: ["pale hound", "white hart", "will-o'-wisp"],
+    ),
+    (
+        name: "Palace Gardens", floors: (3, 4), weight: 1,
+        moods: ["The hedges have grown wild over the palace walks, and the fountains still run.", "The menagerie's cages stand open among the flowerbeds."],
+        wall: "hedge", floor: "lawn",
+        ambient: (23, (165, 175, 205)),
+        recipes: [
+            // Fountains standing in the parterres, never in a lawn.
+            (name: "parterres", weight: 1, lakes: Some((
+                tile: "basin", count: (2, 4), size: (4, 9), wreath: None, cut: false,
+                within: ["parterre"],
+            ))),
+            (name: "menagerie", weight: 1),
+        ],
+        // Gravel on the walks and in the pens; where the garden went back to
+        // wood, the wood's own pale grass.
+        paint: [(on: "walk", tile: "gravel"), (on: "pen", tile: "gravel"), (on: "garden breach", tile: "pale grass")],
+        // Beds of pale blooms that glow, the gardens' light, and clipped trees
+        // grown out of their shapes.
+        decor: [
+            Patches(tile: "night blooms", count: (8, 12), size: (1, 4)),
+            Furnish(piece: "topiary", count: (4, 7)),
+        ],
+        dressings: ["Topiary Walk", "Broken Cages", "Fountain Court"],
+        favored: ["monkey", "hedge adder", "pale ape"],
     ),
 
     // Floors five and six: Beneath the Kingdom.

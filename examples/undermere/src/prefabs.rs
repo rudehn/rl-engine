@@ -2,11 +2,11 @@
 //! the floor ten boss's own throne, one of three a run draws between
 //! (`dungeon::FinalBoss`), and the five mini-bosses' lairs; the one-cell
 //! pieces a floor is furnished with, a chest, and the brazier, candelabra,
-//! hanging lantern and witchlight a biome's decor in `assets/biomes.ron`
-//! names, the body `decor::BloodTrail` stands at the end of its own trail
+//! hanging lantern, witchlight and topiary a biome's decor in
+//! `assets/biomes.ron` names, the body `decor::BloodTrail` stands at the end of its own trail
 //! and the wall `decor::WallInscriptions` carves a line into; and the
-//! pool's pieces, flavor, risk and reward, under `assets/prefabs/flavor/`,
-//! `risk/` and `reward/`. Each is a file under `assets/prefabs/`, and the
+//! pool's pieces, flavor, risk, reward and landmark, under
+//! `assets/prefabs/flavor/`, `risk/`, `reward/` and `landmark/`. Each is a file under `assets/prefabs/`, and the
 //! pool's dressings and the pool itself are loaded beside them.
 //!
 //! The engine fills them. `dungeon` stamps each piece by name through
@@ -34,7 +34,7 @@ use crate::bestiary::{Bestiary, MonsterDef};
 use crate::content::Library;
 
 /// Every piece, compiled in so the binary runs from anywhere.
-const PIECES: [&str; 63] = [
+const PIECES: [&str; 66] = [
     include_str!("../assets/prefabs/mereholt.ron"),
     include_str!("../assets/prefabs/throne.ron"),
     include_str!("../assets/prefabs/chest.ron"),
@@ -42,6 +42,7 @@ const PIECES: [&str; 63] = [
     include_str!("../assets/prefabs/candelabra.ron"),
     include_str!("../assets/prefabs/hanging_lantern.ron"),
     include_str!("../assets/prefabs/witchlight.ron"),
+    include_str!("../assets/prefabs/topiary.ron"),
     include_str!("../assets/prefabs/fallen_body.ron"),
     include_str!("../assets/prefabs/wall_inscription.ron"),
     include_str!("../assets/prefabs/grubnak.ron"),
@@ -105,12 +106,16 @@ const PIECES: [&str; 63] = [
     include_str!("../assets/prefabs/reward/overturned_wagon.ron"),
     include_str!("../assets/prefabs/reward/library_nook.ron"),
     include_str!("../assets/prefabs/reward/moonwell.ron"),
+    // The landmarks, each a floor's first piece that the floor is grown
+    // round, one to a biome that has one.
+    include_str!("../assets/prefabs/landmark/the_hunting_lodge.ron"),
+    include_str!("../assets/prefabs/landmark/the_hedge_maze.ron"),
 ];
 
 /// Every role a prefab's slot may draw for, compiled in the same way.
 const ROLES: &str = include_str!("../assets/roles.ron");
 
-/// Every dressing, compiled in beside the pieces: thirty of the flavor
+/// Every dressing, compiled in beside the pieces: thirty-five of the flavor
 /// pool's own, laid by the biome lists `dungeon/biomes.rs` builds from
 /// `assets/biomes.ron`'s own `dressings`, and four of the reward pool's.
 const DRESSINGS_RON: &str = include_str!("../assets/dressings.ron");

@@ -101,6 +101,20 @@
     // through, and the early form of the throne's skeleton knights.
     (name: "drowned guard", glyph: 'H', color: (0.5, 0.62, 0.68), hp: 22, attack: (roll: "2d5", kind: "slash"), armor: 2, faction: "undead",
      traits: ["mindless", "deathless"]),
+    // The Palace grounds' first wave: what lives in the grounds now. The
+    // kings' hounds, bred blind and pale in the dark wood for an age and
+    // still running in packs; the white hart they were bred to hunt, which
+    // runs when it is hurt and gores what corners it; a small green adder
+    // unseen in the hedges until the light is on it; and the menagerie's
+    // apes, gone white, which sleep in the pens they broke out of.
+    (name: "pale hound", glyph: 'C', color: (0.86, 0.85, 0.78), hp: 9, attack: (roll: "1d4", kind: "pierce"), faction: "beasts",
+     traits: ["animal", "swift", "packing", "keen-nosed"]),
+    (name: "white hart", glyph: 'Y', color: (0.96, 0.96, 0.9), hp: 18, attack: (roll: "1d6+1", kind: "pierce"), faction: "beasts",
+     traits: ["animal", "swift", "cowardly"]),
+    (name: "hedge adder", glyph: 'v', color: (0.52, 0.76, 0.34), hp: 6, attack: (roll: "1d3", kind: "pierce"), faction: "beasts",
+     traits: ["animal", "venomous", "shrouded"]),
+    (name: "pale ape", glyph: 'A', color: (0.9, 0.88, 0.82), hp: 22, attack: (roll: "2d4", kind: "crush"), faction: "beasts",
+     traits: ["animal", "sleepy"]),
     // Floors seven to nine: the drowned dead of the deep, the forge's fire, and the
     // first of the deep culture at the bottom. A wight's touch is the cold
     // of the deep water, which armor does not turn, as it does not turn

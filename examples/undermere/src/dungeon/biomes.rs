@@ -119,6 +119,9 @@ pub(crate) struct BiomeDef {
     pub(crate) moods: Vec<String>,
     pub(crate) wall: String,
     pub(crate) floor: String,
+    /// What a door of its floors is hung as, `door` if left out.
+    #[serde(default)]
+    pub(crate) door: Option<String>,
     pub(crate) ambient: (u8, (u8, u8, u8)),
     pub(crate) recipes: Vec<RecipeWeight>,
     #[serde(default)]
@@ -161,6 +164,10 @@ pub(crate) struct BiomeDraw {
     pub(crate) wall: TileId,
     /// What its rooms or caves are carved as.
     pub(crate) floor: TileId,
+    /// What its doors, and the loops cut through its walls, are hung as:
+    /// the shared `door` everywhere but where a door would be wrong, the
+    /// Royal Wood's gaps grown over with undergrowth.
+    pub(crate) door: TileId,
     /// How the floor reads before anything lights it.
     pub(crate) ambient: Light,
     /// Names from `monsters.ron`, tripled in [`population`](crate::population)'s
@@ -217,6 +224,7 @@ pub(super) fn to_draw(def: &BiomeDef, recipe: usize, tiles: &TileRegistry) -> Bi
         last: def.floors.1,
         wall: tiles.expect(&def.wall),
         floor: tiles.expect(&def.floor),
+        door: tiles.expect(def.door.as_deref().unwrap_or(DOOR)),
         ambient: Light::new(intensity, Rgb::new(r, g, b)),
         favored: def.favored.clone(),
         recipe: r_def.name.clone(),
@@ -232,6 +240,9 @@ pub(super) fn to_draw(def: &BiomeDef, recipe: usize, tiles: &TileRegistry) -> Bi
             .collect(),
     }
 }
+
+/// The door a biome hangs when it names none of its own.
+const DOOR: &str = "door";
 
 /// Every biome, compiled in so the binary runs from anywhere.
 const BIOMES_RON: &str = include_str!("../../assets/biomes.ron");
@@ -319,10 +330,16 @@ fn check(def: &BiomeDef, tiles: &TileRegistry, layout: &LayoutDef) -> Result<(),
     if def.weight == 0 {
         return Err("a weight of nought is never drawn".to_string());
     }
-    for name in [&def.wall, &def.floor].into_iter().chain(def.paint.iter().map(|p| &p.tile)) {
+    for name in [&def.wall, &def.floor].into_iter().chain(def.door.as_ref()).chain(def.paint.iter().map(|p| &p.tile)) {
         if tiles.id(name).is_none() {
             return Err(format!("{name:?} is not a registered tile"));
         }
+    }
+    if let Some(name) = def.door.as_deref()
+        && let Some(door) = tiles.id(name)
+        && !tiles.tables().passable[door.index()]
+    {
+        return Err(format!("door {name:?} stops a body, so a floor hung with it is in pieces"));
     }
     check_decor(def, tiles)?;
     if def.recipes.is_empty() {
@@ -479,6 +496,48 @@ fn pool_problems(
         errors.extend(owed);
         if !fits_somewhere {
             errors.push(format!("{}: fits no recipe of any biome it may stand in, so it is never laid", entry.name));
+        }
+    }
+    errors.extend(landmark_problems(defs, pool));
+    errors
+}
+
+/// A biome with a landmark has one on every floor it stands on, and enough
+/// of them to a run to lay one on each: the design promises a theme's
+/// landmark to every floor of it, and the pool draws a run's landmarks
+/// once, so a landmark given out on another floor first, or one floor of
+/// the biome's window no landmark fits, would leave a floor of the theme
+/// grown without it with nothing saying so.
+fn landmark_problems(defs: &Registry<BiomeDef>, pool: &Pool) -> Vec<String> {
+    use rl_engine::rl_rules::pool::Placed;
+    let seeded: Vec<&rl_engine::rl_rules::pool::Entry> = pool.entries.iter().filter(|e| e.weight > 0 && matches!(e.placed, Placed::Seeded { .. })).collect();
+    // The floors each landmark may be drawn on, over every biome it fits.
+    let drawn_on = |entry: &rl_engine::rl_rules::pool::Entry| -> u32 {
+        let given = |floor: u32| pool.budget(entry.kind, floor as i32).is_some_and(|b| b.count.1 > 0);
+        (1..FLOORS).filter(|f| given(*f) && band(defs, *f).iter().any(|d| entry.fits(*f as i32, std::slice::from_ref(&d.name)))).count() as u32
+    };
+    let mut errors = Vec::new();
+    for (_, def) in defs.iter().filter(|(_, d)| d.floors.0 < FLOORS) {
+        let window = def.floors.0..=def.floors.1;
+        let fitting = |floor: u32| -> Vec<&rl_engine::rl_rules::pool::Entry> {
+            let given = |e: &&&rl_engine::rl_rules::pool::Entry| pool.budget(e.kind, floor as i32).is_some_and(|b| b.count.0 > 0 && b.required);
+            seeded.iter().filter(given).filter(|e| e.fits(floor as i32, std::slice::from_ref(&def.name))).copied().collect()
+        };
+        let ours: Vec<&rl_engine::rl_rules::pool::Entry> = window.clone().flat_map(fitting).collect();
+        if ours.is_empty() {
+            continue;
+        }
+        for floor in window.clone().filter(|f| fitting(*f).is_empty()) {
+            errors.push(format!("{}: has a landmark on some of its floors and is promised none on floor {floor}", def.name));
+        }
+        let ours: BTreeMap<&str, &rl_engine::rl_rules::pool::Entry> = ours.into_iter().map(|e| (e.name.as_str(), e)).collect();
+        let per_run: u32 = ours.values().map(|e| e.per_run).sum();
+        let wanted = ours.values().map(|e| drawn_on(e)).max().unwrap_or(0);
+        if per_run < wanted {
+            errors.push(format!(
+                "{}: its landmarks may be drawn on {wanted} floors of a run and are {per_run} to a run, so a floor of it may go without",
+                def.name
+            ));
         }
     }
     errors
@@ -827,6 +886,36 @@ mod tests {
         );
         assert!(errors.iter().any(|e| e.starts_with(&format!("{b}: \"Mereholt\" is 64 by 36")) && e.contains("that owes it")), "{errors:#?}");
         assert!(errors.iter().any(|e| *e == format!("{b}: fits no recipe of any biome it may stand in, so it is never laid")), "{errors:#?}");
+    }
+
+    /// A biome's own door that no body can pass, which would leave its
+    /// floor in pieces, is refused naming the tile, and one that is no
+    /// tile at all is refused as every other unregistered name is.
+    #[test]
+    fn a_biome_door_that_stops_a_body_or_is_no_tile_is_refused() {
+        let wood = defs().iter().map(|(_, d)| d.clone()).find(|d| d.name == "Royal Wood").expect("the shipped wood");
+        assert_eq!(check(&wood, &registry(), &layout()), Ok(()));
+        let walled = BiomeDef { door: Some("hedge".to_string()), ..wood.clone() };
+        assert_eq!(check(&walled, &registry(), &layout()), Err("door \"hedge\" stops a body, so a floor hung with it is in pieces".to_string()));
+        let unknown = BiomeDef { door: Some("bramble".to_string()), ..wood };
+        assert_eq!(check(&unknown, &registry(), &layout()), Err("\"bramble\" is not a registered tile".to_string()));
+    }
+
+    /// A landmark one to a run on a theme of two floors, and one that fits
+    /// only the first floor of its theme, are each refused naming the
+    /// biome: either leaves a floor of the theme grown without it.
+    #[test]
+    fn a_landmark_too_few_to_a_run_or_missing_from_a_floor_of_its_theme_is_refused_by_name() {
+        let (prefabs, pool, _) = crate::prefabs::load(&registry(), &layout());
+        let at = |name: &str| pool.entries.iter().position(|e| e.name == name).expect("a shipped landmark");
+        let mut once = pool.clone();
+        once.entries[at("The Hunting Lodge")].per_run = 1;
+        let errors = pool_problems(&defs(), &once, &layout(), prefabs.defs());
+        assert_eq!(errors, vec!["Royal Wood: its landmarks may be drawn on 2 floors of a run and are 1 to a run, so a floor of it may go without"]);
+        let mut short = pool.clone();
+        short.entries[at("The Hedge Maze")].floors = (3, 3);
+        let errors = pool_problems(&defs(), &short, &layout(), prefabs.defs());
+        assert_eq!(errors, vec!["Palace Gardens: has a landmark on some of its floors and is promised none on floor 4"]);
     }
 
     /// The biomes the innkeeper's rumours are told from are the floors'
