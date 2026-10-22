@@ -398,6 +398,12 @@ None is scheduled: take one when its file is open.
   The narrator reads a game's `Tell` after the pass's own events, so a game cannot say a cause before the effect the engine narrates: Undermere words a trap's line in the past tense, "You stepped on a hidden dart plate!", to read right under "The dart plate hits you for 4.".
   Found while photographing Undermere's traps.
 
+Left over from the engine usability review on 2026-10-21, its item 2.4, deferred by the plan's index.
+
+- **Lean Bevy features and the window half of `rl-render`.**
+  `terminal.rs` draws with sprites and text, so `rl-ui`, `rl-engine` and any terminal front end compile the GPU stack.
+  Split the cell buffer from the window drawing into its own crate, then let `rl-bevy`, `rl-save` and the cell-buffer crate declare only the Bevy features they use; until then lean features free no build and make a `-p rl-bevy` build compile a second Bevy.
+
 ## 10. The API review's debt
 
 `docs/reviews/engine_api.md` holds the findings, with paths, and a note of which were stale on 2026-10-20; these are its sections B to F grouped into slices, each one branch.

@@ -34,6 +34,9 @@
 //! - [`namegen`]: names drawn from syllables, a set of pools and weighted
 //!   patterns per kind of name in one RON file, every drawn name checked
 //!   against rejections and drawn again a bounded number of times.
+//! - [`tiles`]: the light a tile sheds, read from the line of the tiles
+//!   file that also gives its look, so a game lights its tiles without a
+//!   renderer.
 //! - [`prop`]: what stands on a map that is neither an actor nor an item,
 //!   as data: a look, what it offers, what it holds, what sets it off and
 //!   how hard it is to spot.
@@ -81,9 +84,9 @@
 //! dependency weight and these all weigh the same: core, grid, serde and
 //! ron. The modules keep the seams the crates had. The older items are also
 //! re-exported at the root; the rule functions of [`arms`], [`bump`],
-//! [`charges`], [`effects`], [`trade`] and [`travel`], and the free
-//! functions the other modules gained with them, are reached through their
-//! module path.
+//! [`charges`], [`effects`], [`tiles`], [`trade`] and [`travel`], and the
+//! free functions the other modules gained with them, are reached through
+//! their module path.
 //!
 //! Everything is pure. The Bevy layer turns these into components and
 //! systems; a balance tool or a test runs them on plain values.
@@ -120,6 +123,7 @@ pub mod role;
 pub mod stats;
 pub mod status;
 pub mod tag;
+pub mod tiles;
 pub mod trade;
 pub mod travel;
 pub mod work;

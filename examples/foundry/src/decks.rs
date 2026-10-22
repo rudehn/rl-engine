@@ -184,7 +184,7 @@ impl Foundry {
         // A wall lamp sheds its light by itself, as `assets/tiles.ron`
         // writes it beside its look, and the engine hangs that light on
         // every lamp of every deck built or restored.
-        rl_engine::rl_render::looks::light_tiles(TILES_RON, &mut tiles).unwrap_or_else(|e| panic!("assets/tiles.ron: {e}"));
+        rl_engine::rl_rules::tiles::light_tiles(TILES_RON, &mut tiles).unwrap_or_else(|e| panic!("assets/tiles.ron: {e}"));
         // After the tiles, which the pieces paint by name.
         let prefabs = crate::prefabs::load(&tiles);
         let layout = layout::load(LAYOUT_RON).unwrap_or_else(|e| panic!("assets/layout.ron: {e}"));

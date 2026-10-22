@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `light_tiles` moved from `rl_render::looks` to `rl_rules::tiles`, so a game reads its tiles' light from its tiles file without a renderer; it reads only each line's `tile` and `light`, and `TileAppearance::load` still loads a line that writes a light and passes the light over.
+  To change: `rl_render::looks::light_tiles` becomes `rl_rules::tiles::light_tiles` (`rl_engine::rl_rules::tiles::light_tiles` through the facade).
+
 - The tutorial's steps, the template, Undermere and Foundry no longer set `EngineState::Playing` in their starts, their own or a continued run's, and leave it to the engine.
   To change: nothing; a game made from the template may delete the same line and the `NextState` parameter.
 

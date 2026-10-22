@@ -539,7 +539,7 @@ pub(crate) fn registry() -> TileRegistry {
     // glowcaps, the shafts of light on the cathedral's marble, the
     // Underlake's shallows and lava, says so beside its look, and the
     // engine hangs that light on every cell of it.
-    rl_engine::rl_render::looks::light_tiles(TILES_RON, &mut tiles).unwrap_or_else(|e| panic!("assets/tiles.ron: {e}"));
+    rl_engine::rl_rules::tiles::light_tiles(TILES_RON, &mut tiles).unwrap_or_else(|e| panic!("assets/tiles.ron: {e}"));
     tiles
 }
 
