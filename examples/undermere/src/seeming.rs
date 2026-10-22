@@ -374,8 +374,8 @@ pub fn seem_looked_at(view: Option<ResMut<InspectView>>, mut unsettled: Unsettle
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lore::{FAMILIAR_AFTER, identify};
-    use crate::testing::{arena_with, equip, find, pass_turns, settle, still};
+    use crate::lore::identify;
+    use crate::testing::{arena_with, equip, familiar, find, settle, still};
     use rl_engine::rl_rules::accuracy::Odds;
     use rl_engine::rl_rules::forecast::Duel;
 
@@ -406,7 +406,7 @@ mod tests {
         equip(&mut app, me, leather);
         settle(&mut app);
         assert_eq!(vitals(&app), (Some(1), true), "what any leather gives, and marked");
-        pass_turns(&mut app, FAMILIAR_AFTER);
+        familiar(&mut app, leather);
         settle(&mut app);
         assert_eq!(vitals(&app), (Some(3), false), "familiar, its own, unmarked");
     }

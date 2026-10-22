@@ -187,7 +187,7 @@ mod tests {
     use super::*;
     use crate::dungeon::map_of;
     use crate::save::SLOT;
-    use crate::testing::{adventurer, arrive, continued, equip, find, give, headless, make, name_of, read_on, said, unequip, worn};
+    use crate::testing::{adventurer, arrive, continued, equip, familiar, find, give, headless, make, name_of, read_on, said, unequip, worn};
 
     /// What `who`'s blows and armor come to, as the engine reads them when
     /// a blow is struck or met.
@@ -308,7 +308,8 @@ mod tests {
         let shown = |app: &App, ring: Entity| app.world().get::<CurseShown>(ring).is_some();
         assert_eq!((name_of(&app, cursed), shown(&app, cursed)), ("unidentified ring of light".to_string(), true), "{:#?}", said(&app));
         assert_eq!((name_of(&app, plain), shown(&app, plain)), ("unidentified ring of stealth".to_string(), false));
-        crate::testing::pass_turns(&mut app, crate::lore::FAMILIAR_AFTER);
+        familiar(&mut app, cursed);
+        familiar(&mut app, plain);
         assert_eq!(name_of(&app, cursed), "-2 ring of light", "worn long enough, how deep is known too");
         assert_eq!(name_of(&app, plain), "+2 ring of stealth");
 

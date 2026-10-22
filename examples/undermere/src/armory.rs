@@ -1048,8 +1048,7 @@ mod tests {
 
     use super::*;
     use crate::content::Library;
-    use crate::lore::FAMILIAR_AFTER;
-    use crate::testing::{adventurer, equip, find, headless, make, name_of, pass_turns, said, settle};
+    use crate::testing::{adventurer, equip, familiar, find, headless, make, name_of, said, settle};
 
     fn library() -> Library {
         Library::load(&crate::content::effect_kinds(), &Moments::default())
@@ -1650,7 +1649,7 @@ mod tests {
         let sword = find(&mut app, "sword", 3);
         equip(&mut app, me, sword);
         assert_eq!(app.world().get::<Worth>(sword).copied(), Some(Worth(60)), "not yet known, counted at nought");
-        pass_turns(&mut app, FAMILIAR_AFTER);
+        familiar(&mut app, sword);
         assert_eq!(name_of(&app, sword), "+3 sword", "{:#?}", said(&app));
         assert_eq!(app.world().get::<Worth>(sword).copied(), Some(Worth(60 + 300)), "known, three levels of a hundred each");
     }

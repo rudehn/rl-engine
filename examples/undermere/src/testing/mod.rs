@@ -217,6 +217,27 @@ pub fn wear(app: &mut App, who: Entity, thing: Entity) {
     app.world_mut().get_mut::<Equipped>(who).expect("slots").0.equip(thing, &shape).expect("it fits");
 }
 
+/// Makes `thing`, which the adventurer wears, known by wear: counted one
+/// turn short of [`FAMILIAR_AFTER`](crate::lore::FAMILIAR_AFTER) and worn
+/// the one turn more, so the count that makes it known and the line that
+/// says so are the game's own rather than this helper's, without the
+/// two hundred turns played.
+///
+/// Panics, naming the thing, if it is already known or not worn, or if
+/// that turn did not make it known.
+pub fn familiar(app: &mut App, thing: Entity) {
+    use crate::lore::{FAMILIAR_AFTER, Unfamiliar};
+    let name = name_of(app, thing);
+    let me = adventurer(app);
+    assert!(app.world().get::<Equipped>(me).is_some_and(|worn| worn.contains(thing)), "{name} is not worn, so wearing it longer makes nothing known");
+    app.world_mut().get_mut::<Unfamiliar>(thing).unwrap_or_else(|| panic!("{name} is already known")).worn = FAMILIAR_AFTER - 1;
+    // A frame for the count to note the turn it counts on from, as one
+    // made on putting it on would.
+    app.update();
+    pass_turns(app, 1);
+    assert!(app.world().get::<Unfamiliar>(thing).is_none(), "{name} was worn the last turn and is still not known");
+}
+
 /// Spawns the monster `name` at `at` on the place being read, made as a
 /// floor's own are.
 pub fn monster(app: &mut App, name: &str, at: Point) -> Entity {
