@@ -5,7 +5,7 @@
 **Goal:** Foundry's ordering test names only Foundry's systems, the engine checks its own systems' conflicts in its own test, and engine system functions no game calls become `pub(crate)`.
 
 **Architecture:** Foundry already compares apps with and without its plugin (`ambiguity::added`); what still names about 45 engine systems is its allow list and a `headless_without_foundry` that leaves out engine plugins `FoundryPlugin` adds itself.
-Those plugins move to a `plugin::add_engine` both the binary and the test call, as Undermere's do, and the engine-against-engine allowances move to an rl-bevy test.
+Those plugins move to a `plugin::add_engine` that `FoundryPlugin::build` and `headless_without_foundry` both call, as Undermere's do (`examples/undermere/src/plugin.rs:63,108`), and the engine-against-engine allowances move to an rl-bevy test.
 
 **Tech Stack:** Rust 2024, Bevy 0.19.
 
@@ -16,7 +16,8 @@ Those plugins move to a `plugin::add_engine` both the binary and the test call, 
 - The index's "Rules for every branch" bind this branch: worktree `scripts/worktree.sh usability-13-ambiguity`, after branch 12 merges.
 - Every allowance keeps a reason; none is widened beyond what its reason covers.
 - A system function a game or another engine crate calls outside tests stays `pub`.
-- No fingerprint moves: the plugins Foundry adds and their order do not change, only where the call sits.
+- No fingerprint moves: the plugins Foundry adds do not change, only where the call sits.
+  If moving them moves Foundry's fingerprint, some unordered pair depends on the order systems were added: order that pair, never re-baseline.
 - Plain dash, never an em dash.
 
 ## Review Focus
@@ -24,7 +25,7 @@ Those plugins move to a `plugin::add_engine` both the binary and the test call, 
 1.
   An engine-against-engine conflict that Foundry's test used to catch must still be caught: each such allowance moves to the rl-bevy test, pinned by that test failing when one is deleted.
 2.
-  Moving `FoundryPlugin`'s engine plugins into `add_engine` must keep the binary's plugin order: `main.rs` calls `add_engine` where the plugin used to add them.
+  Moving `FoundryPlugin`'s engine plugins into `add_engine` must keep the binary's plugins: `FoundryPlugin::build` calls `add_engine(app)` first, so `main.rs` does not change.
 3.
   An allowance that matched nothing after the move: `assert_ordered` already fails on an unused entry.
 4.
@@ -50,7 +51,7 @@ Those plugins move to a `plugin::add_engine` both the binary and the test call, 
 ### Task 2: Foundry names only its own systems
 
 **Files:**
-- Modify: `examples/foundry/src/plugin.rs:55,64,69,107` (the engine plugins move to `pub fn add_engine(app: &mut App)`), `examples/foundry/src/main.rs`
+- Modify: `examples/foundry/src/plugin.rs:55,64,69,107` (the engine plugins, `PropsPlugin`, `RemainsPlugin`, `LootPlugin`, `PrefabPlugin` and `AmmoPlugin`, move to `pub fn add_engine(app: &mut App)`, which `FoundryPlugin::build` calls first)
 - Modify: `examples/foundry/src/testing/mod.rs:66` (`headless_without_foundry` calls `add_engine`)
 - Modify: `examples/foundry/src/plugin/ambiguity.rs`
 

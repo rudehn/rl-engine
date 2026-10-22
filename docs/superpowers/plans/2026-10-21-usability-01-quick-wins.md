@@ -19,7 +19,7 @@
 ## Review Focus
 
 1.
-  A `DamageStages` removed from an app with no `CombatPlugin` leaves no stages at all: keep the insert where `CombatPlugin` is not added (`crates/rl-bevy/src/testing.rs:122` inside `two_sides`, `crates/rl-bevy/src/status.rs:668`), and remove it only where `CombatPlugin::build` runs `init_resource::<DamageStages>()`.
+  A `DamageStages` removed from an app with no `CombatPlugin` leaves no stages at all: only games that add `CombatPlugin` lose the line; the two engine test inserts (`crates/rl-bevy/src/testing.rs:122` in `two_sides`, `crates/rl-bevy/src/status.rs:668`) stay, since `two_sides` serves apps with and without it.
 2.
   A renamed tutorial binary breaks a guide include silently until the release: the same commit fixes every path, and `scripts/check-guide.sh` runs on it.
 3.
@@ -39,7 +39,7 @@
 - Modify: `CHANGELOG.md`
 
 - [ ] **Step 1:** Delete each `commands.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));` above, and any import it leaves unused.
-- [ ] **Step 2:** Leave `crates/rl-bevy/src/testing.rs:122` and `crates/rl-bevy/src/status.rs:668` if their app has no `CombatPlugin`; delete them if it has.
+- [ ] **Step 2:** Leave Undermere's and Foundry's lists, which differ from the default, and the two engine test inserts.
 - [ ] **Step 3:** Run `cargo nextest run -p tutorial` and `scripts/check-template.sh`.
   Expected: PASS.
 - [ ] **Step 4:** Commit with the CHANGELOG line: "The tutorial and the template no longer insert `DamageStages`, whose default is already `[SubtractArmor]`. To change: nothing; a game may delete the same line."
@@ -48,13 +48,13 @@
 
 **Files:**
 - Rename: `examples/tutorial/src/bin/step08_content.rs` to `step07_content.rs`, `step09_shove.rs` to `step08_shove.rs`, `step10_panels.rs` to `step09_panels.rs`
-- Modify: every file `rg -l 'step0[89]_|step10_' -g '!docs/superpowers/**' -g '!docs/reviews/**'` names: guide chapters 07 to 09, `docs/guide/src/systems/{controls,rendering,narration,panels,registries}.md`, `docs/PLAN.md`, `AGENTS.md`, and the three binaries' own `cargo run` lines
+- Modify: every file `rg -l --hidden -g '!.git' 'step0[89]_|step10_' -g '!docs/superpowers/**' -g '!docs/reviews/**'` names: guide chapters 07 to 09, `docs/guide/src/systems/{controls,rendering,narration,panels,registries}.md`, `docs/PLAN.md`, `AGENTS.md`, `.planning/codebase/{STRUCTURE,ARCHITECTURE}.md`, and the three binaries' own `cargo run` lines
 - Modify: `README.md:105`
 
 - [ ] **Step 1:** `git mv` the three files, highest first, so no name is taken twice.
 - [ ] **Step 2:** Replace `step10_panels` with `step09_panels`, then `step09_shove` with `step08_shove`, then `step08_content` with `step07_content`, in that order, in every file listed.
 - [ ] **Step 3:** `README.md:105` reads "nine steps that each add one thing, the first six playable in the browser".
-- [ ] **Step 4:** Run `scripts/check-guide.sh` and `rg 'step0[89]_content|step09_shove|step10_' -g '!docs/superpowers/**' -g '!docs/reviews/**'`.
+- [ ] **Step 4:** Run `scripts/check-guide.sh` and `rg --hidden -g '!.git' 'step0[89]_content|step09_shove|step10_' -g '!docs/superpowers/**' -g '!docs/reviews/**'`.
   Expected: the check passes and the search finds nothing.
 - [ ] **Step 5:** Run `scripts/gate.sh` and commit.
   CHANGELOG: "The tutorial's binaries are numbered as the guide's chapters: `step07_content`, `step08_shove`, `step09_panels`. To change: a script that runs one by name uses the new name."
@@ -80,14 +80,14 @@
 ### Task 4: Test timings outlive the worktree
 
 **Files:**
-- Modify: `scripts/test-times.py` (`main`, after the per-package totals at about line 140)
+- Modify: `scripts/test-times.py` (`main`: the per-package totals at lines 138-143 move out of `if args.top:` so they exist on every run)
 - Modify: `AGENTS.md`, "Writing fast tests", one sentence naming the file
 
 **Interfaces:**
 - Produces: `$(git rev-parse --git-common-dir)/rl-test-times.tsv`, tab-separated, header `when\tbranch\tcommit\tprofile\tpackage\ttests\tcpu_s\twall_s`, one line per package per run, appended in one write.
 
 - [ ] **Step 1:** Add `def keep(rows, profile)` writing the header when the file is new and appending the rows; `when` is UTC ISO 8601 to the second; branch and commit come from `git rev-parse --abbrev-ref HEAD` and `git rev-parse --short HEAD`.
-- [ ] **Step 2:** Call it after the report on every run that read a junit file; a failure to write warns and never fails the check.
+- [ ] **Step 2:** Call it after the report on every run that read a junit file, except `--profile ci`, whose checkout is thrown away; a failure to write warns and never fails the check.
 - [ ] **Step 3:** Run `scripts/gate.sh` twice.
   Expected: the file gains one set of package lines per run, and its path resolves to the main checkout's `.git`.
 - [ ] **Step 4:** Commit.

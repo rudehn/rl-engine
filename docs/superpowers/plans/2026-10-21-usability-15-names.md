@@ -80,12 +80,13 @@ Branch 10 left one declaration of seven of the 26 duplicated names and one fewer
 |---|---|
 | `TurnHold` (`rl-bevy/src/cue.rs:117`) | `CueWait` |
 | `HoldStart` | kept: the one "hold" left |
-| `StatusDef::holds()` (`rl-rules/src/status.rs:185`) and its field | `skips_turns()` |
+| `StatusDef::holds()` (`rl-rules/src/status.rs:185`) and its field (`:88`) | `skips_turns()`; the status file's `holds:` key (`Authored`, `status.rs:252`) stays, since no RON spelling changes |
+| `holds` on rl-bevy's part (`rl-bevy/src/parts.rs:141`), statuses held while worn | `worn_statuses`, keeping any RON key with `#[serde(rename = "holds")]` |
 | `HeldWhileWorn` (`rl-bevy/src/items.rs:865`) | `WornStatuses` |
 | `held_for_life` (`rl-bevy/src/parts.rs:801`) | `innate_statuses` |
 
 - [ ] **Step 1:** Rename; key repeat's "the engine's hold" in docs becomes "key repeat".
-- [ ] **Step 2:** `rg -n 'hold' crates --type rust -i` reads only `HoldStart`, "holds" as plain English, and key words for holding a key.
+- [ ] **Step 2:** `rg -n 'hold' crates --type rust -i` reads only `HoldStart`, the RON keys kept above, "holds" as plain English, and key words for holding a key.
 - [ ] **Step 3:** `scripts/gate.sh`, commit with the CHANGELOG line.
 
 ### Task 4: The names that mislead, and the theme words
@@ -101,8 +102,8 @@ Branch 10 left one declaration of seven of the 26 duplicated names and one fewer
 | `Stowed` | `Unusable` |
 | `Life` | `RevivalTwin` |
 | `Doing` | `CurrentTactic` |
-| `Weapons` (`rl-ui/src/narrate.rs:376`, private) | `Wielded` |
-| `Weapon` (`rl-bevy/src/combat.rs:510`, private) | `ChosenAttack` |
+| `Weapons` (`rl-ui/src/narrate.rs:551`, a private type alias) | `Wielded` |
+| `Weapon` (`rl-bevy/src/combat.rs:937`, private) | `ChosenAttack` |
 
 Kept, each a defined term for the glossary: `Loadout`, `Facet`, `Cue`, `Bestows`, `Provenance`, and the place words.
 

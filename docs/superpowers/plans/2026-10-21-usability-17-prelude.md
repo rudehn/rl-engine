@@ -10,7 +10,7 @@ The grid `Rect` is renamed `GridRect`, so it can enter the prelude beside Bevy's
 
 **Tech Stack:** Rust 2024, Python 3 for the check.
 
-**Spec:** `docs/reviews/engine_usability.md` sections 3.1, 3.5, 3.8 and "Features with one user"; `docs/TODO.md` item 33; index `docs/superpowers/plans/2026-10-21-engine-usability.md`.
+**Spec:** `docs/reviews/engine_usability.md` sections 3.1, 3.5, 3.7, 3.8 and "Features with one user"; `docs/TODO.md` item 33; index `docs/superpowers/plans/2026-10-21-engine-usability.md`.
 
 ## Global Constraints
 
@@ -46,6 +46,7 @@ The grid `Rect` is renamed `GridRect`, so it can enter the prelude beside Bevy's
 - Produces: `pub trait EngineApp` in `rl_bevy::app`, holding the methods of `AddStream`, `AddWork`, `AddEngineEffects`, `AddChoice`, `AddEffect`, `AddSpending`, `AddTriggerKind`, `KeepOnRemnant`, `AddAction`, `AddSettings`, `AddVerb`, `AddAirborne`, `ResetsOnNewRun`, `Reads`, `Needs`, `AddSound` and `AddPlaces`, each keeping its doc comment; a method no game calls stays `pub(crate)` through a crate-private trait.
 - Produces: `pub trait UiApp` (`AddModal`, `AddControls`, `AddTone`) and `pub trait SaveApp` (`AddSaveable`).
 - `SpawnPlayer`, on `Commands`, stays its own trait.
+- Changes: the free function `rl_bevy::plugin::depends_on::<P>(app, plugin)` (`plugin.rs:865`) becomes `EngineApp::depends_on::<P>(&self, plugin)`, as `needs` and `reads` are methods (review 3.7).
 
 - [ ] **Step 1:** Merge; the old traits go.
 - [ ] **Step 2:** `scripts/gate.sh`.

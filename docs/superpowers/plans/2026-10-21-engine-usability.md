@@ -16,6 +16,9 @@ It replaces `2026-10-20-engine-usability.md`, which is removed; the review's "Th
   The one exception is a file the guide includes by path that a branch renames, whose include is fixed in the same commit.
 - A fingerprint moves only in branch 07.
   A fingerprint that moves anywhere else is a bug in that branch, never a re-baseline.
+- The fingerprints are the `fingerprint` test binaries of rl-bevy, Undermere and Foundry: filter them with `-E 'binary(fingerprint)'`, never `test(/fingerprint/)`, which misses rl-bevy's.
+- `scripts/gate.sh` runs the fast tier of every package the branch touched and of every package depending on one, fingerprints included.
+  A step that runs a package's tests or the fingerprints before the gate is for iterating; skip it when the gate follows at once, since Undermere's fast tier alone is about 260 s of processor time.
 - Commit messages are one long lowercase sentence saying what is now true, with no attribution lines.
 - Where a plan's description of the code disagrees with the code, the code wins; the branch's final report says where.
 - A worktree is removed and its branch deleted once merged.
@@ -28,11 +31,11 @@ It replaces `2026-10-20-engine-usability.md`, which is removed; the review's "Th
 | 02 | `reflection-chance` | 3 | S | - | [02](2026-10-21-usability-02-reflection-chance.md) |
 | 03 | `content-load` | 10 | S | - | [03](2026-10-21-usability-03-content-load.md) |
 | 04 | `play-begins` | 2 | S | 01 | [04](2026-10-21-usability-04-play-begins.md) |
-| 05 | `lean-bevy` | 13 | S | - | [05](2026-10-21-usability-05-lean-bevy.md) |
+| 05 | `tile-light` | 13, half | XS | - | [05](2026-10-21-usability-05-tile-light.md) |
 | 06 | `hello-world` | 4 | M | 04 | [06](2026-10-21-usability-06-hello-world.md) |
 | 07 | `seeds` | 5 | M | 06 | [07](2026-10-21-usability-07-seeds.md) |
-| 08 | `tty` | 14 | M | 05, 06 | [08](2026-10-21-usability-08-tty.md) |
-| 09 | `first-steps` | 6 | S | 07 | [09](2026-10-21-usability-09-first-steps.md) |
+| 08 | `tty` | 14 | M | 06 | [08](2026-10-21-usability-08-tty.md) |
+| 09 | `log-and-factions` | 6, two thirds | S | 07 | [09](2026-10-21-usability-09-log-and-factions.md) |
 | 10 | `content-tier1` | 7 | M | 07 | [10](2026-10-21-usability-10-content-tier1.md) |
 | 11 | `one-user-generics` | 9 | M | 10 | [11](2026-10-21-usability-11-one-user-generics.md) |
 | 12 | `rules-out-of-systems` | 17 | M | 09 | [12](2026-10-21-usability-12-rules-out-of-systems.md) |
@@ -45,7 +48,8 @@ It replaces `2026-10-20-engine-usability.md`, which is removed; the review's "Th
 ## Why this order
 
 - The review's items 1 to 3 and 10 are independent and cheap, so they go first.
-- The hello world (06) comes before the seeds (07), so the 17 `PlaceRules` impls change signature once.
+- The hello world (06) comes before the seeds (07), so the 18 `PlaceRules` impls (12 in games, 6 in engine tests) change signature once.
+- The hello world (06) also moves step 1 and the template to `PlayerKeysPlugin`, since it rewrites those very lines.
 - Branch 07 is the one branch that moves play, so it re-baselines Undermere's, Foundry's and rl-bevy's fingerprints once, in one commit.
 - Branch 06 hands every place a `PlaceSeed`, but Undermere and Foundry keep their own derivations until 07, so 06 moves no fingerprint.
 - The tier-1 content move (10) comes before removing `BuildContext` (11), which rewrites the same `layout.rs`, and before the renames (15), since it leaves seven of the 26 duplicated names declared once.
@@ -55,7 +59,7 @@ It replaces `2026-10-20-engine-usability.md`, which is removed; the review's "Th
 
 ## What runs in parallel
 
-Branches in one row touch no common file except `CHANGELOG.md`, whose conflicts are two added lines, and the file named beside them, where each adds or edits lines the other does not.
+Branches in one row touch no common file except `CHANGELOG.md`, `docs/PLAN.md`'s progress log and `docs/TODO.md`, whose conflicts are added lines, and the file named beside them, where each adds or edits lines the other does not.
 The second of a row to merge resolves the conflict in its rebase.
 
 | Wave | Branches | Shared file to watch |
@@ -88,9 +92,10 @@ A branch that closes an item removes it in the commit that finishes it and moves
 
 ## Deferred or changed from the review
 
-- **The window half of `rl-render` (new, deferred).** `rl-ui` depends on `rl-render`, whose `terminal.rs` draws with sprites and text, so branch 05 cannot keep the GPU stack out of a terminal build.
-  Branch 08 plays in a terminal with those crates compiled but never added.
-  Splitting the window half into its own crate is a follow-up once branch 08 shows the compile time matters; 05 adds it to `docs/TODO.md`.
+- **Lean Bevy features, review 2.4 (deferred).** `rl-ui` depends on `rl-render`, whose `terminal.rs` draws with sprites and text, and `TtyRoguelikePlugins` lives in `rl-engine`, which needs the window set; so lean features in `rl-bevy` and `rl-save` free no terminal build.
+  They would also make `cargo test -p rl-bevy` resolve Bevy's features differently from the workspace, compiling a second Bevy for every agent iterating on the busiest crate.
+  Branch 08 plays in a terminal with the GPU crates compiled but never added.
+  Splitting `rl-render`'s cell buffer from its window drawing, then leaning the features, is one follow-up; branch 05 adds it to `docs/TODO.md`.
 - **4.6, one test app per engine module.** Not in the ranked table; the review says leave it.
 - **Engine-wide ambiguity.** Branch 13 adds an rl-bevy test over every rl-bevy plugin; the same over `rl-ui` and `rl-save` is left to TODO 28's successor if their systems ever conflict.
 
@@ -104,7 +109,35 @@ A branch that closes an item removes it in the commit that finishes it and moves
 - **1.4:** `TileAppearance` is in `rl-render`, which `rl-bevy` cannot name, so `places` cannot insert it.
   Branch 06 has `MapViewPlugin` fill the standard tiles' looks by name.
 - **1.5:** 10 sites write the default `DamageStages`, not 13; Undermere's and Foundry's lists differ from the default and one test inserts an empty list on purpose.
-- **2.4:** lean features alone do not free a terminal build (see above).
+- **2.4:** lean features alone do not free a terminal build, and cost this workspace a second Bevy build (see above).
 - **3.2:** eight twins collapse with 2.1, but `Turn` is also the rl-bevy schedule, so 19 names need renaming, not 18.
 - **3.6:** the facet filter is near `crates/rl-ui/src/view/nearby.rs:147`; line 415 is test content.
 - **The hello world:** the engine also needs the tile tables to build `WorldMap`, so branch 06 adds `PlaceRules::tiles`.
+
+## Review
+
+Reviewed 2026-10-21 against the code at `ba4229c5`; the planner's six corrections of the review (3.4, 1.6, 1.4, 1.5, 3.2, 2.4) all hold.
+
+Changed:
+
+- Every plan filtered fingerprints with `test(/fingerprint/)`, which misses rl-bevy's (`a_seeded_run_of_minds_combat_and_stealth_...`); now `binary(fingerprint)`.
+- Steps that ran Undermere's tests or the fingerprints and then `scripts/gate.sh` ran them twice; the gate already covers dependents, so those steps now run the gate alone.
+- Branch 05 is cut to tile light: lean Bevy features free no terminal build while `rl-engine` and `rl-render` need the window, and would compile a second Bevy for every `-p rl-bevy` build; deferred with the `rl-render` split.
+- Branch 08 no longer waits on 05; `Saves::per_user` returns a `Result`, since a user name is input, and `SavePlugin::for_user` is dropped as redundant.
+- Step 1's `PlayerKeysPlugin` moved from 09 to 06, which rewrites the same lines; 09 is now `log-and-factions`.
+- Branch 06 missed the sixth engine `PlaceRules` impl (`plugin.rs:1228`) and the engine test rigs that warp with no `Seed`; `places` now declares `needs::<Seed>`.
+- Branch 06 had step 1 call `Seed::from_args()`, which does not exist on wasm, where step 1 is a demo; it keeps `Seed(RunSeed(7))`.
+- Branch 02 missed `Reflects` in `rl-render/src/particles.rs:901`; the walked-past spotting test becomes one seed and the group test four, not twenty.
+- Branch 12 keeps `Which` and `ItemAsk` one concept, and `RevivalRules::standing_room` an `i32` as `STANDING_ROOM` is.
+- Branch 13 had Foundry's `main.rs` call `add_engine`; in Undermere's form `FoundryPlugin::build` calls it, and a fingerprint that moves means a pair to order.
+- Branch 15 renamed the `holds` field the status file reads, which would change RON; the file key stays, and rl-bevy's part `holds` field and the stale `Weapons`/`Weapon` lines are fixed.
+- Branch 17 also makes `depends_on` an `EngineApp` method, review 3.7, which no branch planned.
+- Branch 01 keeps the two engine `DamageStages` test inserts, searches hidden files for step names (`.planning/`), and keeps test timings off the CI profile.
+
+Left for the author:
+
+- Branch 16 puts the place model in `rl-rules`; `rl-mapgen` may be the better home, since `PlaceBuild::from_context` reads only mapgen and a map-only user would get places without the rules crate.
+- Branch 13 turns each `pair(ours, engine_fn)` into `with_any(ours, data)` as TODO 28 says, which widens it to any system on that data; naming the engine system by its Bevy path string would keep it exact without `pub`.
+- Branch 06 moves step 1 to the standard tiles and looks, so chapter 1's screenshots change and chapter 2 introduces custom tiles; the release's guide pass must say so.
+- Branch 09 drops `MessageLog::info`, `muted` and `notice`, so an exclusive system writes `push_at(text, Tones::NOTICE, turn)`; keeping the shorthands with a turn is the alternative.
+- Branch 07 keeps the tutorial's `seed.rng(RATS, map)` rather than the place's seed, so the tutorial and Undermere key per-place draws two ways.

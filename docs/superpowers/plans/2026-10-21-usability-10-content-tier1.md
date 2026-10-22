@@ -66,9 +66,9 @@
 
 - [ ] **Step 1: Write the failing test** `a_pool_entry_placed_where_a_pool_cannot_place_is_refused_by_name` in `pool.rs`.
 - [ ] **Step 2:** Delete the eight twins; the file types name the `rl_mapgen` types; the pool loader refuses `At`, `InRoom` and `AnyRoom`.
-- [ ] **Step 3:** `cargo nextest run --workspace -E 'package(rl-rules) | package(rl-bevy) | package(undermere) | package(foundry) | test(/fingerprint/)'`, `scripts/check-template.sh`.
+- [ ] **Step 3:** `scripts/check-template.sh` and `scripts/gate.sh`, which plays both games' content tests and the fingerprints.
   Expected: PASS, fingerprints unchanged.
-- [ ] **Step 4:** `scripts/gate.sh`, commit.
+- [ ] **Step 4:** Commit.
   CHANGELOG: "`rl-rules` reads prefab, pool and dressing files straight into `rl-mapgen`'s `Turn`, `Mirror`, `Prefer`, `Placement`, `Stairs`, `Spread`, `Thing` and `DistrictDressings`; the copies `rl-rules` declared are gone. To change: an import of one from `rl_rules` names `rl_mapgen` instead; files are unchanged."
 
 ### Task 3: The layout translation and the prefab library move to tier 1

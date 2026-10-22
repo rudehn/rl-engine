@@ -58,7 +58,7 @@ The rule's cases become unit tests; the `App` tests that remain prove the call.
 
 **Interfaces:**
 - Produces: `#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)] pub struct ItemRules { pub equip_from_ground: u32 }`, `Default` gives `BASE_ACTION_COST * 3 / 2`; `ItemsPlugin` runs `init_resource::<ItemRules>()`.
-- Produces: `#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)] pub struct RevivalRules { pub standing_room: u32 }`, `Default` gives 2; the plugin that adds revival inits it, and `revive` reads it.
+- Produces: `#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)] pub struct RevivalRules { pub standing_room: i32 }` (an `i32` as `STANDING_ROOM` is), `Default` gives 2; `RemainsPlugin` inits it, and `revive`, a free function a game may call on a world without that plugin, reads it or its default.
 
 - [ ] **Step 1: Write the failing tests** `equipping_from_the_ground_costs_what_the_item_rules_say` (set 250, assert the actor's next turn is 250 later) and `a_body_is_revived_no_further_off_than_the_revival_rules_allow` (room 1, the ring at 2 free and the ring at 1 full: refused).
 - [ ] **Step 2:** Run them.
@@ -72,12 +72,12 @@ The rule's cases become unit tests; the `App` tests that remain prove the call.
 ### Task 3: `resolve_items` is gather, `resolve_item`, apply
 
 **Files:**
-- Create: `crates/rl-rules/src/items.rs` (and its `lib.rs` entry and module-map line)
+- Create: `crates/rl-rules/src/items.rs` (and its `lib.rs` entry and module-map line); `may_use`, which it calls, stays in `rl_rules::equip`
 - Modify: `crates/rl-bevy/src/items.rs:540-757` (`resolve_items`)
 - Test: `crates/rl-rules/src/items.rs`; `crates/rl-bevy/src/items.rs` test module (29 tests)
 
 **Interfaces:**
-- Produces: `pub enum ItemAsk<I> { PickUp, Drop(I), Equip(I), EquipFromGround(I), Unequip(I), Use(I), UseAt(I, Point), UseOn(I, I) }`.
+- Produces: `pub enum ItemAsk<I> { PickUp, Drop(I), Equip(I), EquipFromGround(I), Unequip(I), Use(I), UseAt(I, Point), UseOn(I, I) }`, the arms of rl-bevy's private `Which` (`items.rs:437-446`); `Which` becomes `type Which = ItemAsk<Entity>` or goes, so the concept is declared once, and `Which::cost` becomes a function of `ItemAsk` and `ItemRules`.
 - Produces: `pub struct ItemFacts<I>`: plain facts the system gathers for one ask, such as what lies under the actor for `PickUp`, whether the actor carries the thing, whether it lies under them, whether it is stuck, whether it may be used (`may_use`), whether an aim was refused, the wearable shape, and which worn things may come off.
   The exact fields are whatever the 217 lines read; nothing in it is an `Entity` query.
 - Produces: `pub enum ItemOutcome<I> { PickedUp(I), Dropped(I), Equipped(I), Unequipped(I), WouldNotComeOff(I), Used(I), Refused(ItemRefusal) }` with `ItemRefusal` naming each reason the system refuses today.

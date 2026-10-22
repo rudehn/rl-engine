@@ -14,7 +14,7 @@ The GPU crates are still compiled (index, "Deferred"); they are never added.
 
 ## Global Constraints
 
-- The index's "Rules for every branch" bind this branch: worktree `scripts/worktree.sh usability-08-tty`, after branches 05 and 06 merge.
+- The index's "Rules for every branch" bind this branch: worktree `scripts/worktree.sh usability-08-tty`, after branch 06 merges.
 - `rl-tty` declares `tier = 2` and `#![deny(missing_docs)]`; no theme words.
 - `rl-engine` depends on `rl-tty` only off wasm (`[target.'cfg(not(target_arch = "wasm32"))'.dependencies]`), so the wasm demos still build.
 - Pure logic is a plain function tested without an `App`; the plugin's `App` test proves the calls.
@@ -32,7 +32,7 @@ The GPU crates are still compiled (index, "Deferred"); they are never added.
 4.
   A resize: the next frame redraws every cell; pinned by `after_a_resize_every_cell_is_written_again`.
 5.
-  A user name with a separator or `..` over SSH must not reach outside the save directory: refused like a slot; pinned by `a_user_name_that_is_not_a_plain_name_is_refused`.
+  A user name with a separator or `..` over SSH must not reach outside the save directory: refused like a slot, as an error rather than a panic, since a user name is input and not the game's constant; pinned by `a_user_name_that_is_not_a_plain_name_is_refused`.
 
 ---
 
@@ -40,20 +40,19 @@ The GPU crates are still compiled (index, "Deferred"); they are never added.
 
 **Files:**
 - Modify: `crates/rl-save/src/backend.rs:249` (beside `Saves::platform_default`)
-- Modify: `crates/rl-save/src/run.rs:1023` (`SavePlugin`)
 
 **Interfaces:**
-- Produces: `#[cfg(not(target_arch = "wasm32"))] pub fn Saves::per_user(name: &str, user: &str) -> Saves`, saving in `saves/<name>/users/<user>` beside the executable; panics, as `platform_default` does, when either is not a plain name.
-- Produces: `pub fn SavePlugin::for_user(self, user: impl Into<String>) -> Self`.
+- Produces: `#[cfg(not(target_arch = "wasm32"))] pub fn Saves::per_user(name: &str, user: &str) -> Result<Saves, SaveError>`, saving in `saves/<name>/users/<user>` beside the executable; `SaveError::Slot` when either is not a plain name (`check_slot`).
+- A game inserts what it returns before adding `SavePlugin`, which keeps a `Saves` it finds (`run.rs`, `SavePlugin::build`); no `SavePlugin` method is added.
 
 - [ ] **Step 1: Write the failing tests** `each_user_saves_in_a_directory_of_their_own` and `a_user_name_that_is_not_a_plain_name_is_refused`, with a temporary directory as `backend.rs:428` does.
-- [ ] **Step 2:** `cargo test -p rl-save per_user user_name`.
+- [ ] **Step 2:** `cargo test -p rl-save user`.
   Expected: FAIL to compile.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** Run them.
   Expected: PASS.
   `scripts/gate.sh`, commit.
-  CHANGELOG: "`SavePlugin::for_user(user)` keeps each user's saves apart, for a game many people play over SSH. To change: nothing."
+  CHANGELOG: "`Saves::per_user(name, user)` keeps each user's saves apart, for a game many people play over SSH: insert it before `SavePlugin`. To change: nothing."
 
 ### Task 2: The terminal's pure parts
 

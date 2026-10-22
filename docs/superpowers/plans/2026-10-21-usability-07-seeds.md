@@ -56,7 +56,7 @@ This is the only branch of the usability series that moves play.
 - [ ] **Step 2:** `cargo test -p rl-core seed` and `cargo test -p rl-bevy seed`.
   Expected: FAIL.
 - [ ] **Step 3:** Implement with today's names: `SeedDomain::new(b"combat")` and so on, so no stream moves; `PlaceSeed::of` uses `SeedDomain::engine(b"place")`.
-- [ ] **Step 4:** `cargo nextest run --workspace -E 'test(/fingerprint/)'` and `scripts/gate.sh`.
+- [ ] **Step 4:** `scripts/gate.sh`, which plays the fingerprints.
   Expected: PASS, fingerprints unchanged.
 - [ ] **Step 5:** Commit.
   CHANGELOG: "One spelling for a draw: `seed.rng(DOMAIN, index)`. `Seed::stream` and `RunSeed::stream` are gone, and a game's `SeedDomain::new` refuses a name starting `rl.`, which is the engine's. To change: `seed.stream(b\"name\", i)` becomes `seed.rng(NAME, i)` with `const NAME: SeedDomain = SeedDomain::new(b\"name\")`."

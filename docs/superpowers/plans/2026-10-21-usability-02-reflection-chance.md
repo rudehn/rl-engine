@@ -37,7 +37,7 @@ The rate tests become one app per outcome; the arithmetic they sampled is alread
 
 **Files:**
 - Modify: `crates/rl-bevy/src/ability.rs:338-339` (the type), `:427` (the query), `:565` (the roll)
-- Modify: `examples/undermere/src/bestiary.rs:780`
+- Modify: every `insert(Reflects)` and `spawn((.., Reflects))`: `examples/undermere/src/bestiary.rs:780`, `crates/rl-render/src/particles.rs:901`, `crates/rl-bevy/src/items.rs:1818,1941` (`rg -nw 'Reflects\)' crates examples`)
 - Test: `crates/rl-bevy/src/ability.rs` test module
 
 **Interfaces:**
@@ -47,8 +47,8 @@ The rate tests become one app per outcome; the arithmetic they sampled is alread
 - [ ] **Step 1: Write the failing tests** `the_default_reflection_chance_is_one_half` (`Reflects::default().percent == 50`) and `a_percent_past_a_hundred_is_held_to_a_hundred` (`Reflects::percent(250) == Reflects::ALWAYS`).
 - [ ] **Step 2:** Run `cargo test -p rl-bevy reflection_chance`.
   Expected: FAIL to compile.
-- [ ] **Step 3:** Implement; Undermere inserts `Reflects::default()`.
-- [ ] **Step 4:** Run the two tests and the three fingerprints: `cargo nextest run --workspace -E 'test(/fingerprint/) | test(/reflection_chance|percent_past/)'`.
+- [ ] **Step 3:** Implement; Undermere and the particles test insert `Reflects::default()`.
+- [ ] **Step 4:** Run the two tests, then `scripts/gate.sh`, which plays the three fingerprints.
   Expected: PASS, fingerprints unchanged.
 - [ ] **Step 5:** Commit.
   CHANGELOG: "`Reflects` carries the chance it turns a use back, `Reflects { percent }`, 50 by default, with `Reflects::ALWAYS` and `Reflects::NEVER` for a test. To change: `insert(Reflects)` becomes `insert(Reflects::default())`."
@@ -94,8 +94,8 @@ Each test below builds one app with `Reflects::ALWAYS` for the turned-back asser
 | within near, a certainty found on 10 of 10 seeds | one seed |
 | past near, found on 15 to 45 of 60 seeds | dropped for the same unit test; the past-far case already shows the distance reaches the rule |
 | waited on a hundredfold, found on 20 of 20 seeds | one seed |
-| walked past, found on at most 3 of 20 seeds | kept: no setting makes the moved case certain |
-| a group found in one roll, over 20 seeds | kept: certainty would hide a second roll |
+| walked past, found on at most 3 of 20 seeds | one seed on which a 1 in 100, `still: 100`, is not found after a step: a `waited` passed wrongly would make it certain on every seed |
+| a group found in one roll, over 20 seeds | kept over 4 seeds, not 20, with the reason beside it: any one seed shows a second roll unless both rolls agree; certainty would hide it |
 
 - [ ] **Step 1:** Rewrite as the table says; `found_at_once` takes a single seed or goes if unused.
 - [ ] **Step 2:** Run `cargo nextest run -p rl-bevy -E 'test(/secret|spot|keen|waited|group/)'`.

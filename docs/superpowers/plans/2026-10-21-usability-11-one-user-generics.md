@@ -43,7 +43,7 @@
 - Changes: `pub trait Pass: Send + Sync { fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError>; .. }` with the rest of today's methods; `pub struct Chain`; `Chain::run(&self, ctx: &mut BaseContext, seed: impl Into<RunSeed>)`.
 
 - [ ] **Step 1:** Delete the trait and the parameter; follow the compiler.
-- [ ] **Step 2:** `cargo test -p rl-engine --doc`, `cargo nextest run --workspace -E 'test(/fingerprint/)'`, `scripts/gate.sh`.
+- [ ] **Step 2:** `cargo test -p rl-engine --doc`, `scripts/gate.sh`, which plays the fingerprints.
   Expected: PASS, unchanged.
 - [ ] **Step 3:** Commit.
   CHANGELOG: "`BuildContext` is gone: `Pass` and `Chain` work on `BaseContext`, its one implementation. To change: `impl Pass<BaseContext> for X` becomes `impl Pass for X`, `Chain<BaseContext>` becomes `Chain`, and an import of `BuildContext` goes."

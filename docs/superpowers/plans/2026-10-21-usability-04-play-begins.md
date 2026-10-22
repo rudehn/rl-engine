@@ -46,7 +46,7 @@ After it runs `NewRun`, it sets `NextState(Playing)` when a `WorldMap` exists an
 - [ ] **Step 1: Write the failing tests:**
   - `a_run_whose_start_builds_a_world_begins_play_on_its_own`: a `NewRun` system inserts `WorldMap::new(TileRegistry::standard().tables())` and nothing else; after two updates the state is `Playing`.
   - `a_start_that_builds_no_world_leaves_play_idle`: an empty `NewRun`; after two updates the state is `Idle`.
-  - `a_held_start_keeps_play_from_beginning_until_the_title_begins_the_run`: `HoldStart` inserted; two updates leave `Idle`; `begin_run` through `World::run_system_once` or a queued command, two updates, `Playing`.
+  - `a_held_start_keeps_play_from_beginning_until_the_title_begins_the_run`: `HoldStart` inserted; two updates leave `Idle`; `begin_run(app.world_mut())`, as `title.rs:176` does, two updates, `Playing`.
   - `a_start_that_holds_the_start_again_keeps_play_idle`: `NewRun` inserts a `WorldMap` and `HoldStart`; `Idle`.
   - `a_restart_begins_play_again_on_its_own`: play begun, a `Restart` written, three updates, `Playing` again.
 - [ ] **Step 2:** Run `cargo test -p rl-bevy title`.
@@ -60,13 +60,13 @@ After it runs `NewRun`, it sets `NextState(Playing)` when a `WorldMap` exists an
 ### Task 2: The starts stop setting the state
 
 **Files:**
-- Modify: the start system of every tutorial binary (`examples/tutorial/src/bin/step0*.rs`), `templates/starter/src/main.rs:196`, `examples/foundry/src/run.rs:150,225`, `examples/undermere/src/run.rs:426,474`
+- Modify: the start system of every tutorial binary (`examples/tutorial/src/bin/step0*.rs`, nine sites), `templates/starter/src/main.rs:278`, `examples/foundry/src/run.rs:150,225`, `examples/undermere/src/run.rs:426,474`
 
 - [ ] **Step 1:** Delete each `set(EngineState::Playing)` and the `NextState` parameter or `Begin` field it leaves unused.
-- [ ] **Step 2:** Run `cargo nextest run --workspace -E 'package(tutorial) | package(undermere) | package(foundry) | test(/fingerprint/)'` and `scripts/check-template.sh`.
+- [ ] **Step 2:** `rg -n 'set\(EngineState::Playing\)' examples templates` finds only tests.
+- [ ] **Step 3:** `scripts/check-template.sh` and `scripts/gate.sh`, which plays the games' tests and the fingerprints.
   Expected: PASS, fingerprints unchanged.
-- [ ] **Step 3:** `rg -n 'set\(EngineState::Playing\)' examples templates` finds only tests.
-- [ ] **Step 4:** `scripts/gate.sh`, commit.
+- [ ] **Step 4:** Commit.
   CHANGELOG: "Play begins on its own once a run's start, in `NewRun`, has built a `WorldMap` and no `HoldStart` holds it. To change: nothing; a start may delete its `next.set(EngineState::Playing)` and the `NextState` parameter, and setting it by hand still works."
 
 ### Task 3: Branch end
