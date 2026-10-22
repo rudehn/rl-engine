@@ -6,7 +6,8 @@
 //! creature is never remembered, since where one stood says nothing of
 //! where it is. What a tile looks like is the game's
 //! business: it fills a [`TileAppearance`] table keyed by [`TileId`], with
-//! a glyph, both colours, and how the tile varies from cell to cell. With
+//! a glyph, both colours, and how the tile varies from cell to cell; the
+//! standard tiles it leaves out are drawn in the engine's plain look. With
 //! lighting turned on, a visible tile's glyph and background and whatever
 //! stands on it are coloured by the light that lands there; see
 //! [`shade`](crate::shade) for how.
@@ -66,7 +67,9 @@ impl Glyph {
 /// how light and memory change it.
 ///
 /// Filled from a file by [`load`](Self::load), or by hand with
-/// [`set_varied`](Self::set_varied) for a game whose tiles are few.
+/// [`set_varied`](Self::set_varied) for a game whose tiles are few. The
+/// standard tiles a game gives no look are drawn in the engine's, by
+/// [`fill_standard`](Self::fill_standard).
 #[derive(Resource, Debug, Clone, Default)]
 pub struct TileAppearance {
     looks: Vec<Option<(Cell, Vary)>>,
@@ -94,6 +97,24 @@ impl TileAppearance {
             self.looks.resize(i + 1, None);
         }
         self.looks[i] = Some((cell, vary));
+    }
+
+    /// Gives each of [`TileRegistry::standard`](rl_grid::TileRegistry::standard)'s
+    /// five tiles among `names`, a world's tile names indexed by id, the
+    /// engine's standard look, unless the game gave it one.
+    ///
+    /// So a game built on the standard tiles draws without describing them,
+    /// and one that named a tile `wall` and drew it its own way keeps its
+    /// way. Matched by name rather than by id, since a game's registry may
+    /// hold the standard names anywhere among its own. Any other name keeps
+    /// the missing look, which is how a gap shows.
+    pub fn fill_standard(&mut self, names: &[String]) {
+        for (i, name) in names.iter().enumerate() {
+            let has_look = self.looks.get(i).is_some_and(Option::is_some);
+            if let (false, Some(cell), Ok(raw)) = (has_look, standard_look(name), u16::try_from(i)) {
+                self.set(TileId(raw), cell);
+            }
+        }
     }
 
     /// The authored appearance of `id`; a magenta question mark for an id
@@ -131,6 +152,32 @@ impl TileAppearance {
     pub(crate) fn under(&self, cell: Cell, light: Light, p: Point, t: f32) -> Cell {
         Cell { glyph: cell.glyph, fg: self.shading.light(cell.fg, light, p, t), bg: self.shading.light(cell.bg, light, p, t) }
     }
+}
+
+/// The engine's look for a tile of [`TileRegistry::standard`](rl_grid::TileRegistry::standard),
+/// by its name: plain greys, so it reads as a placeholder a game replaces,
+/// and doors in a warm brown so a way through stands out.
+fn standard_look(name: &str) -> Option<Cell> {
+    let floor_bg = Color::srgb(0.05, 0.05, 0.05);
+    let door = Color::srgb(0.70, 0.50, 0.30);
+    Some(match name {
+        "void" => Cell::new(' ', Color::BLACK).on(Color::BLACK),
+        "wall" => Cell::new('#', Color::srgb(0.60, 0.60, 0.60)).on(Color::srgb(0.15, 0.15, 0.15)),
+        "floor" => Cell::new('.', Color::srgb(0.45, 0.45, 0.45)).on(floor_bg),
+        "door_closed" => Cell::new('+', door).on(floor_bg),
+        "door_open" => Cell::new('\'', door).on(floor_bg),
+        _ => return None,
+    })
+}
+
+/// Gives the standard tiles of a world just come up the standard look
+/// where the game gave them none.
+///
+/// When the world is added rather than every frame, since a run's tiles are
+/// fixed once its world stands; after a restart the new world is added
+/// again, and a game that set its looks anew in its start keeps them.
+pub(crate) fn fill_standard_looks(map: Res<WorldMap>, mut look: ResMut<TileAppearance>) {
+    look.fill_standard(&map.tables().names);
 }
 
 /// How fire and gas look over the tiles they are on.
@@ -369,7 +416,12 @@ impl Plugin for MapViewPlugin {
             .init_resource::<Wavefronts>()
             .init_resource::<DrawnActors>()
             .insert_resource(MapView::new(self.viewport).across(self.across))
-            .add_systems(Update, (follow_player, track_fields, remember_still_things, draw_map).chain().in_set(PresentSet::Map))
+            .add_systems(
+                Update,
+                (fill_standard_looks.run_if(resource_added::<WorldMap>), follow_player, track_fields, remember_still_things, draw_map)
+                    .chain()
+                    .in_set(PresentSet::Map),
+            )
             // In `Update` rather than in a play-only set, because props are
             // put down while a place is built and `Added` matches for one
             // frame only. After the turns, which put a place's props down
@@ -626,6 +678,56 @@ pub(crate) fn draw_map(mut terminal: ResMut<Terminal>, mut actors: ResMut<DrawnA
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn standard_names() -> Vec<String> {
+        rl_grid::TileRegistry::standard().tables().names
+    }
+
+    fn id(name: &str) -> TileId {
+        rl_grid::TileRegistry::standard().expect(name)
+    }
+
+    #[test]
+    fn a_standard_tile_the_game_gave_no_look_is_drawn_in_the_standard_look() {
+        let mut look = TileAppearance::new();
+        look.fill_standard(&standard_names());
+        assert_eq!(look.lit(id("wall")), Cell::new('#', Color::srgb(0.60, 0.60, 0.60)).on(Color::srgb(0.15, 0.15, 0.15)));
+        assert_eq!(look.lit(id("floor")), Cell::new('.', Color::srgb(0.45, 0.45, 0.45)).on(Color::srgb(0.05, 0.05, 0.05)));
+        assert_eq!(look.lit(id("door_closed")).glyph, '+');
+        assert_eq!(look.lit(id("door_open")).glyph, '\'');
+        assert_eq!(look.lit(id("void")), Cell::new(' ', Color::BLACK).on(Color::BLACK));
+    }
+
+    #[test]
+    fn a_look_the_game_set_is_never_replaced() {
+        let mut look = TileAppearance::new();
+        let mine = Cell::new('X', Color::srgb(0.1, 0.9, 0.1));
+        look.set(id("wall"), mine);
+        look.fill_standard(&standard_names());
+        assert_eq!(look.lit(id("wall")), mine, "the game's wall");
+        assert_eq!(look.lit(id("floor")).glyph, '.', "beside the standard floor it gave no look");
+    }
+
+    #[test]
+    fn a_tile_with_another_name_keeps_the_missing_look() {
+        let mut tiles = rl_grid::TileRegistry::standard();
+        let moss = tiles.register(rl_grid::TileProps::floor("moss")).unwrap();
+        let mut look = TileAppearance::new();
+        look.fill_standard(&tiles.tables().names);
+        assert_eq!(look.lit(moss), Cell::new('?', Color::srgb(1.0, 0.0, 1.0)), "a tile the engine has no look for still shows the gap");
+    }
+
+    #[test]
+    fn a_world_coming_up_fills_the_standard_looks_the_game_left() {
+        let mut app = App::new();
+        app.add_systems(Update, fill_standard_looks.run_if(resource_added::<WorldMap>));
+        let mut mine = TileAppearance::new();
+        mine.set(id("wall"), Cell::new('X', Color::WHITE));
+        app.insert_resource(mine).insert_resource(WorldMap::new(rl_grid::TileRegistry::standard().tables()));
+        app.update();
+        let look = app.world().resource::<TileAppearance>();
+        assert_eq!((look.lit(id("wall")).glyph, look.lit(id("floor")).glyph), ('X', '.'));
+    }
 
     /// A stair the engine laid is drawn as its look says, in bytes made a
     /// colour here, and a stair a game drew itself keeps its own glyph.

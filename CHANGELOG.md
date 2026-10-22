@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The five tiles of `TileRegistry::standard()`, `void`, `wall`, `floor`, `door_closed` and `door_open`, are drawn in a standard look when the game's `TileAppearance` gives them none, filled by `TileAppearance::fill_standard` when a run's world comes up; a look the game set is never replaced.
+  To change: nothing; a game that drew the standard tiles only to see them may drop those looks.
+
 - `commands.spawn_player(map, bundle)` spawns the player into a place: an actor that blocks, with the game's bundle, warped to the place's entry once the spawn is applied.
   To change: nothing; a start may replace its spawn at `Point::ZERO` and its `WarpRequest::into_place`.
 
