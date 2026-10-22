@@ -94,18 +94,17 @@ fn main() -> AppExit {
 /// file beside the bestiary.
 struct Warren {
     tiles: TileRegistry,
-    seed: RunSeed,
 }
 
 impl Warren {
-    fn new(seed: RunSeed) -> Self {
+    fn new() -> Self {
         let mut tiles = TileRegistry::new();
         tiles.register(TileProps::wall("earth")).unwrap();
         tiles.register(TileProps::floor("dirt")).unwrap();
         // Walkable and opaque: you can step through a curtain of roots,
         // but you cannot see past one until you do.
         tiles.register(TileProps::floor("roots").opaque(true)).unwrap();
-        Self { tiles, seed }
+        Self { tiles }
     }
 
     // ANCHOR: looks
@@ -123,13 +122,12 @@ impl Warren {
 /// How a floor is built. The engine calls this once, the first time
 /// something enters the map, and keeps what comes back.
 impl PlaceRules for Warren {
-    fn build(&self, map: MapId) -> Result<PlaceBuild, BuildError> {
+    fn build(&self, map: MapId, seed: PlaceSeed) -> Result<PlaceBuild, BuildError> {
         let depth = floor_of(map);
         let (wall, open, roots) = (self.tiles.expect("earth"), self.tiles.expect("dirt"), self.tiles.expect("roots"));
         let mut ctx = BaseContext::blank(84, 42, self.tiles.clone(), wall);
-        // A stream per floor, so floor three is the same whether or not
-        // you dawdled on floor one.
-        let seed = RunSeed(self.seed.0 ^ (depth as u64) << 32);
+        // `seed` is this floor's own, handed in by the engine, so floor
+        // three is the same whether or not you dawdled on floor one.
         let chain = match depth {
             // Dug rooms near the surface.
             1 | 2 => {
@@ -144,6 +142,10 @@ impl PlaceRules for Warren {
         // down on the upper floors, and where the king waits on the last.
         chain.then(dungeon::RandomStart).then(dungeon::FarthestExit).run(&mut ctx, seed)?;
         PlaceBuild::from_context(ctx)
+    }
+
+    fn tiles(&self) -> TileTables {
+        self.tiles.tables()
     }
 
     /// The floors, top first, and how their stairs look: the engine lays
@@ -245,7 +247,7 @@ impl Bestiary {
 // ANCHOR: start
 /// Hands the engine the map rules and the player, then warps the player in.
 fn start(mut commands: Commands, seed: Res<Seed>, mut warps: MessageWriter<WarpRequest>, mut log: ResMut<MessageLog>) {
-    let warren = Warren::new(seed.0);
+    let warren = Warren::new();
 
     // The two registries combat reads: what damage can be, and who hates
     // whom. Both are the game's content, named nowhere in the engine.

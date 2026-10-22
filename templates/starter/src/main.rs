@@ -96,15 +96,14 @@ fn main() -> AppExit {
 /// out darkness and remembered tiles from these colours.
 struct Dungeon {
     tiles: TileRegistry,
-    seed: RunSeed,
 }
 
 impl Dungeon {
-    fn new(seed: RunSeed) -> Self {
+    fn new() -> Self {
         let mut tiles = TileRegistry::new();
         tiles.register(TileProps::wall("stone")).unwrap();
         tiles.register(TileProps::floor("flagstone")).unwrap();
-        Self { tiles, seed }
+        Self { tiles }
     }
 
     fn appearance(&self) -> TileAppearance {
@@ -127,7 +126,7 @@ impl Dungeon {
 /// How the floor is built. The engine calls this the first time something
 /// enters the map, and keeps what comes back.
 impl PlaceRules for Dungeon {
-    fn build(&self, _: MapId) -> Result<PlaceBuild, BuildError> {
+    fn build(&self, _: MapId, seed: PlaceSeed) -> Result<PlaceBuild, BuildError> {
         let (wall, floor) = (self.tiles.expect("stone"), self.tiles.expect("flagstone"));
         let mut ctx = BaseContext::blank(84, 42, self.tiles.clone(), wall);
         Chain::new()
@@ -139,8 +138,12 @@ impl PlaceRules for Dungeon {
                 min_rooms: 8,
             })
             .then(dungeon::RandomStart)
-            .run(&mut ctx, self.seed)?;
+            .run(&mut ctx, seed)?;
         PlaceBuild::from_context(ctx)
+    }
+
+    fn tiles(&self) -> TileTables {
+        self.tiles.tables()
     }
 }
 
@@ -199,7 +202,7 @@ fn start(
     mut warps: MessageWriter<WarpRequest>,
     mut log: ResMut<MessageLog>,
 ) {
-    let dungeon = Dungeon::new(seed.0);
+    let dungeon = Dungeon::new();
 
     // What damage can be, and who is at war with whom. Both are registries
     // the game fills, so the engine never names a goblin.
@@ -463,10 +466,10 @@ mod tests {
     #[test]
     fn every_seed_builds_a_floor_you_can_stand_on() {
         for seed in 0u64..48 {
-            let dungeon = Dungeon::new(RunSeed(seed));
+            let dungeon = Dungeon::new();
             let tables = dungeon.tiles.tables();
             let built = dungeon
-                .build(FLOOR)
+                .build(FLOOR, PlaceSeed::of(RunSeed(seed), FLOOR.0))
                 .unwrap_or_else(|e| panic!("seed {seed}: {e}"));
             let walkable = |t: TileId| tables.walkable[t.index()];
             assert!(

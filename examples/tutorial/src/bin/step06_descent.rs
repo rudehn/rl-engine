@@ -94,18 +94,17 @@ fn main() -> AppExit {
 /// The warren's tiles, and how each one looks in full light.
 struct Warren {
     tiles: TileRegistry,
-    seed: RunSeed,
 }
 
 impl Warren {
-    fn new(seed: RunSeed) -> Self {
+    fn new() -> Self {
         let mut tiles = TileRegistry::new();
         tiles.register(TileProps::wall("earth")).unwrap();
         tiles.register(TileProps::floor("dirt")).unwrap();
         // Walkable and opaque: you can step through a curtain of roots,
         // but you cannot see past one until you do.
         tiles.register(TileProps::floor("roots").opaque(true)).unwrap();
-        Self { tiles, seed }
+        Self { tiles }
     }
 
     /// Both colours of every tile, and how much each cell jitters from
@@ -125,13 +124,12 @@ impl Warren {
 /// How a floor is built. The engine calls this once, the first time
 /// something enters the map, and keeps what comes back.
 impl PlaceRules for Warren {
-    fn build(&self, map: MapId) -> Result<PlaceBuild, BuildError> {
+    fn build(&self, map: MapId, seed: PlaceSeed) -> Result<PlaceBuild, BuildError> {
         let depth = floor_of(map);
         let (wall, open, roots) = (self.tiles.expect("earth"), self.tiles.expect("dirt"), self.tiles.expect("roots"));
         let mut ctx = BaseContext::blank(84, 42, self.tiles.clone(), wall);
-        // A stream per floor, so the second floor is the same whether or
-        // not you dawdled on the first.
-        let seed = RunSeed(self.seed.0 ^ (depth as u64) << 32);
+        // `seed` is this floor's own, handed in by the engine, so the second
+        // floor is the same whether or not you dawdled on the first.
         let chain = match depth {
             // Dug rooms near the surface.
             1 => Chain::new().then(dungeon::Rooms { floor: open, attempts: 40, min_size: 5, max_size: 10, min_rooms: 6 }).then(dungeon::Doors { door: roots }),
@@ -142,6 +140,10 @@ impl PlaceRules for Warren {
         // allows: the stairs down on the first, the way out on the second.
         chain.then(dungeon::RandomStart).then(dungeon::FarthestExit).run(&mut ctx, seed)?;
         PlaceBuild::from_context(ctx)
+    }
+
+    fn tiles(&self) -> TileTables {
+        self.tiles.tables()
     }
 
     /// The floors, top first, and how their stairs look. The engine lays a
@@ -159,7 +161,7 @@ impl PlaceRules for Warren {
 // ANCHOR: start
 /// Hands the engine the map rules and the player, then warps the player in.
 fn start(mut commands: Commands, seed: Res<Seed>, effect_kinds: Res<EffectKinds>, mut warps: MessageWriter<WarpRequest>, mut log: ResMut<MessageLog>) {
-    let warren = Warren::new(seed.0);
+    let warren = Warren::new();
 
     // The two registries combat reads: what damage can be, and who hates
     // whom. Both are the game's content, named nowhere in the engine.

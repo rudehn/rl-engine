@@ -32,9 +32,9 @@
 //! walled over, each something else once found.
 
 use bevy::prelude::*;
-use rl_core::Point;
 use rl_core::turn::BASE_ACTION_COST;
-use rl_grid::Terrain;
+use rl_core::{PlaceSeed, Point};
+use rl_grid::{Terrain, TileTables};
 use rl_mapgen::BuildError;
 use rl_rules::Wits;
 
@@ -53,6 +53,10 @@ pub struct MapId(pub u32);
 impl MapId {
     /// Map zero, where an entity with no [`OnMap`] stands.
     pub const ZERO: MapId = MapId(0);
+
+    /// Map one, the first place a game that numbers its places from one
+    /// builds, so a game with one place need not number it at all.
+    pub const FIRST: MapId = MapId(1);
 }
 
 /// The map an entity with a position is on. Missing means map zero;
@@ -205,8 +209,18 @@ impl PlaceBuild {
 
 /// How the game builds a place the first time it is entered.
 pub trait PlaceRules: Send + Sync {
-    /// Builds `map`.
-    fn build(&self, map: MapId) -> Result<PlaceBuild, BuildError>;
+    /// Builds `map` from `seed`, the place's own share of the run's seed.
+    ///
+    /// Handed in rather than kept in the rules, so the rules are made once
+    /// with the game and not again for every run, and derived from the run
+    /// and the map alone, so the order places are built in changes none of
+    /// them. A warp in a game with no [`Seed`](crate::seed::Seed) builds
+    /// nothing and fails with a [`BuildError`] naming it.
+    fn build(&self, map: MapId, seed: PlaceSeed) -> Result<PlaceBuild, BuildError>;
+
+    /// The tile tables every place of the game is built of. The engine
+    /// makes the run's [`WorldMap`] over them when a start makes none.
+    fn tiles(&self) -> TileTables;
 
     /// The floors this game's places stand in one under another, if they
     /// do, for the engine to lay the stairs between them. `None`, the
@@ -470,6 +484,7 @@ pub(crate) struct Maps<'w> {
     knowledge: ResMut<'w, Knowledge>,
     fields: ResMut<'w, FlowFields>,
     rules: Option<Res<'w, PlaceRulesRes>>,
+    seed: Option<Res<'w, crate::seed::Seed>>,
 }
 
 /// What a warp reports.
@@ -621,7 +636,8 @@ fn warp(
     let Destination::Place { map: target_map, arrive } = to;
     if !maps.map.has_place(target_map) {
         let rules = maps.rules.as_ref().ok_or_else(|| BuildError::new("warp", "no PlaceRulesRes to build a place with"))?;
-        let build = rules.0.build(target_map)?;
+        let seed = maps.seed.as_ref().ok_or_else(|| BuildError::new("warp", "no Seed to build a place from"))?;
+        let build = rules.0.build(target_map, PlaceSeed::of(seed.0, target_map.0))?;
         let stairs = rules.0.ladder().map(|ladder| ladder.stairs(target_map, build.entry, build.exit)).unwrap_or_default();
         maps.map.install_place(target_map, build);
         // Laid with the build, by whoever's arrival built it, so a floor
@@ -706,7 +722,7 @@ mod tests {
     use crate::state::EngineState;
     use crate::turn::Wait;
     use crate::turn::{ActionRefused, Turns};
-    use rl_core::{Rect, RunSeed};
+    use rl_core::Rect;
     use rl_grid::TileRegistry;
     use rl_mapgen::dungeon::{FarthestExit, RandomStart, Rooms};
     use rl_mapgen::passes::StartPoint;
@@ -714,14 +730,10 @@ mod tests {
 
     struct Caves(TileRegistry);
     impl PlaceRules for Caves {
-        fn build(&self, map: MapId) -> Result<PlaceBuild, BuildError> {
+        fn build(&self, _: MapId, seed: PlaceSeed) -> Result<PlaceBuild, BuildError> {
             let (wall, floor) = (self.0.expect("wall"), self.0.expect("floor"));
             let mut ctx = BaseContext::blank(40, 30, self.0.clone(), wall);
-            Chain::new()
-                .then(Rooms { floor, ..Default::default() })
-                .then(RandomStart)
-                .then(FarthestExit)
-                .run(&mut ctx, RunSeed(crate::testing::TEST_SEED.0 ^ map.0 as u64))?;
+            Chain::new().then(Rooms { floor, ..Default::default() }).then(RandomStart).then(FarthestExit).run(&mut ctx, seed)?;
             let entry = ctx.outputs().first::<StartPoint>().unwrap().0;
             let exit = ctx.outputs().first::<rl_mapgen::dungeon::ExitPoint>().map(|e| e.0);
             let (terrain, _) = ctx.finish();
@@ -736,6 +748,10 @@ mod tests {
                 peaceful: false,
             })
         }
+
+        fn tiles(&self) -> TileTables {
+            self.0.tables()
+        }
     }
 
     struct Rig {
@@ -748,7 +764,7 @@ mod tests {
         let mut app = headless_app();
         app.add_plugins((crate::fov::FovPlugin, crate::items::ItemsPlugin));
         let start = crate::testing::ground(&mut app);
-        app.insert_resource(PlaceRulesRes(Box::new(Caves(TileRegistry::standard()))));
+        app.insert_resource(PlaceRulesRes(Box::new(Caves(TileRegistry::standard())))).insert_resource(crate::seed::Seed(crate::testing::TEST_SEED));
         let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap, Inventory::default())).id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
@@ -778,7 +794,10 @@ mod tests {
         let mut app = headless_app();
         app.add_plugins(crate::fov::FovPlugin);
         let start = crate::testing::ground(&mut app);
-        app.insert_resource(PlaceRulesRes(Box::new(Caves(TileRegistry::standard())))).init_resource::<Entered>().add_systems(PostUpdate, record_entered);
+        app.insert_resource(PlaceRulesRes(Box::new(Caves(TileRegistry::standard()))))
+            .insert_resource(crate::seed::Seed(crate::testing::TEST_SEED))
+            .init_resource::<Entered>()
+            .add_systems(PostUpdate, record_entered);
         let onlooker = app.world_mut().spawn((Player, Position(start), Viewshed::everywhere(), RevealsMap)).id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
@@ -1198,13 +1217,54 @@ mod tests {
         assert!(r.app.world().resource::<Turns>().now() > before, "and spent the turn on it");
     }
 
+    /// The caves, noting the seed each place was handed.
+    struct Recording(Caves, std::sync::Arc<std::sync::Mutex<Vec<(MapId, PlaceSeed)>>>);
+
+    impl PlaceRules for Recording {
+        fn build(&self, map: MapId, seed: PlaceSeed) -> Result<PlaceBuild, BuildError> {
+            self.1.lock().unwrap().push((map, seed));
+            self.0.build(map, seed)
+        }
+
+        fn tiles(&self) -> TileTables {
+            self.0.tiles()
+        }
+    }
+
+    #[test]
+    fn a_place_is_built_from_its_own_seed() {
+        let mut r = rig();
+        let handed = std::sync::Arc::default();
+        r.app.insert_resource(PlaceRulesRes(Box::new(Recording(Caves(TileRegistry::standard()), std::sync::Arc::clone(&handed)))));
+        for map in [MapId(3), MapId(2)] {
+            r.app.world_mut().write_message(WarpRequest::into_place(r.player, map));
+            r.app.update();
+        }
+        let run = crate::testing::TEST_SEED;
+        assert_eq!(*handed.lock().unwrap(), vec![(MapId(3), PlaceSeed::of(run, 3)), (MapId(2), PlaceSeed::of(run, 2))], "each from the run and its own number");
+    }
+
+    #[test]
+    fn a_warp_in_a_game_with_no_seed_builds_nothing() {
+        let mut r = rig();
+        r.app.world_mut().remove_resource::<crate::seed::Seed>();
+        r.app.world_mut().write_message(WarpRequest::into_place(r.player, MapId(3)));
+        r.app.update();
+        assert!(r.app.world().resource::<WorldMap>().place(MapId(3)).is_none(), "no place is built from a seed nobody gave");
+        assert_eq!(r.app.world().get::<Position>(r.player).unwrap().0, r.start, "and the traveller stays");
+    }
+
     /// The caves again, as the floors of a ladder: maps three, four and
     /// five, top first, with a way of the game's own past the top.
     struct LadderCaves(Caves);
 
     impl PlaceRules for LadderCaves {
-        fn build(&self, map: MapId) -> Result<PlaceBuild, BuildError> {
-            self.0.build(map)
+        fn build(&self, map: MapId, seed: PlaceSeed) -> Result<PlaceBuild, BuildError> {
+            self.0.build(map, seed)
+        }
+
+        fn tiles(&self) -> TileTables {
+            self.0.tiles()
         }
 
         fn ladder(&self) -> Option<Ladder> {

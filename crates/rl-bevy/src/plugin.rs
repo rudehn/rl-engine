@@ -1228,7 +1228,7 @@ mod tests {
     struct Hall(TileRegistry);
 
     impl crate::places::PlaceRules for Hall {
-        fn build(&self, _: crate::places::MapId) -> Result<crate::places::PlaceBuild, rl_mapgen::BuildError> {
+        fn build(&self, _: crate::places::MapId, _: rl_core::PlaceSeed) -> Result<crate::places::PlaceBuild, rl_mapgen::BuildError> {
             let (wall, floor) = (self.0.expect("wall"), self.0.expect("floor"));
             let terrain = rl_grid::Terrain::from_fn(12, 8, |p| if p.x == 0 || p.y == 0 || p.x == 11 || p.y == 7 { wall } else { floor });
             Ok(crate::places::PlaceBuild {
@@ -1241,6 +1241,10 @@ mod tests {
                 ambient: rl_grid::Light::DARK,
                 peaceful: false,
             })
+        }
+
+        fn tiles(&self) -> rl_grid::TileTables {
+            self.0.tables()
         }
     }
 
@@ -1268,7 +1272,7 @@ mod tests {
         let mut app = headless_app();
         let tiles = TileRegistry::standard();
         app.insert_resource(crate::world::WorldMap::new(tiles.tables()));
-        app.insert_resource(crate::places::PlaceRulesRes(Box::new(Hall(tiles))));
+        app.insert_resource(crate::places::PlaceRulesRes(Box::new(Hall(tiles)))).insert_resource(crate::seed::Seed(crate::testing::TEST_SEED));
         app.init_resource::<Dealt>();
         app.add_systems(Turn, (populate.in_set(TurnSet::React), record_deals.in_set(TurnSet::Decide)));
         // Spawned the way a game starts a run: an actor at the origin of a

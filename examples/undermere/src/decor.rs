@@ -269,7 +269,6 @@ impl Pass<BaseContext> for Moor {
 mod tests {
     use rl_engine::rl_core::RunSeed;
 
-    use super::*;
     use crate::dungeon::{FLOORS, Undermere, map_of};
     use crate::testing::{par_seeds, seeds};
 
@@ -285,14 +284,14 @@ mod tests {
         let blood = |undermere: &Undermere| undermere.tiles().id("blood").expect("blood is a registered tile");
         par_seeds(seeds(0..60), |s| {
             let undermere = Undermere::new(RunSeed(s));
-            let throne = undermere.build(map_of(FLOORS)).expect("the throne still builds");
+            let throne = undermere.built(map_of(FLOORS)).expect("the throne still builds");
             assert!(!throne.terrain.iter().any(|(_, t)| t == blood(&undermere)), "seed {s}: the throne shows a blood trail");
         });
         let (mut with_blood, mut without) = (false, false);
         'span: for s in 0..60 {
             let undermere = Undermere::new(RunSeed(s));
             for f in 1..FLOORS {
-                let built = undermere.build(map_of(f)).expect("a floor still builds with its own decor");
+                let built = undermere.built(map_of(f)).expect("a floor still builds with its own decor");
                 if built.terrain.iter().any(|(_, t)| t == blood(&undermere)) {
                     with_blood = true;
                 } else {

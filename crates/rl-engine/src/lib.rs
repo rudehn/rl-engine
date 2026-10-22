@@ -214,7 +214,7 @@ pub mod prelude {
     // Core, minus `Rect`: see the note above.
     pub use rl_bevy::prelude::*;
     pub use rl_core::prelude::{
-        BASE_ACTION_COST, DequeueOutcome, DiceRoll, Direction, Grid, Grid2D, Id, Interner, Point, RunSeed, SeedDomain, Steps, TurnQueue, geometry,
+        BASE_ACTION_COST, DequeueOutcome, DiceRoll, Direction, Grid, Grid2D, Id, Interner, PlaceSeed, Point, RunSeed, SeedDomain, Steps, TurnQueue, geometry,
     };
     pub use rl_grid::prelude::*;
     pub use rl_mapgen::prelude::*;

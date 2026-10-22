@@ -710,7 +710,8 @@ mod tests {
     use crate::turn::{Action, Intent};
     use crate::turn::{Step, Wait};
     use bevy::ecs::system::RunSystemOnce;
-    use rl_grid::{Terrain, TileId, TileRegistry};
+    use rl_core::PlaceSeed;
+    use rl_grid::{Terrain, TileId, TileRegistry, TileTables};
     use rl_mapgen::BuildError;
 
     const ROOM: [&str; 9] = [
@@ -730,11 +731,15 @@ mod tests {
     struct Room(TileRegistry, Vec<Light>);
 
     impl PlaceRules for Room {
-        fn build(&self, map: MapId) -> Result<PlaceBuild, BuildError> {
+        fn build(&self, map: MapId, _: PlaceSeed) -> Result<PlaceBuild, BuildError> {
             let (wall, floor) = (self.0.expect("wall"), self.0.expect("floor"));
             let terrain = Terrain::from_fn(20, 9, |p| if ROOM[p.y as usize].as_bytes()[p.x as usize] == b'#' { wall } else { floor });
             let ambient = self.1.get((map.0 as usize).wrapping_sub(1)).copied().unwrap_or(Light::DARK);
             Ok(PlaceBuild { terrain, entry: Point::new(5, 4), exit: None, spots: Vec::new(), locks: Vec::new(), secrets: Vec::new(), ambient, peaceful: false })
+        }
+
+        fn tiles(&self) -> TileTables {
+            self.0.tables()
         }
     }
 
@@ -764,7 +769,8 @@ mod tests {
             if ambients.is_some() {
                 app.add_plugins(LightingPlugin);
             }
-            app.insert_resource(PlaceRulesRes(Box::new(Room(tiles, ambients.unwrap_or_default()))));
+            app.insert_resource(PlaceRulesRes(Box::new(Room(tiles, ambients.unwrap_or_default()))))
+                .insert_resource(crate::seed::Seed(crate::testing::TEST_SEED));
             let mut player = app.world_mut().spawn((Actor, Player, Blocks, Position(Point::ZERO), Viewshed::new(12), RevealsMap, Inventory::default()));
             if let Some(d) = dark_sight {
                 player.insert(DarkSight(d));
@@ -869,10 +875,14 @@ mod tests {
     struct LampRoom(TileRegistry);
 
     impl PlaceRules for LampRoom {
-        fn build(&self, map: MapId) -> Result<PlaceBuild, BuildError> {
-            let mut build = Room(self.0.clone(), Vec::new()).build(map)?;
+        fn build(&self, map: MapId, seed: PlaceSeed) -> Result<PlaceBuild, BuildError> {
+            let mut build = Room(self.0.clone(), Vec::new()).build(map, seed)?;
             build.terrain.set(Point::new(10, 0), self.0.expect("lamp"));
             Ok(build)
+        }
+
+        fn tiles(&self) -> TileTables {
+            self.0.tables()
         }
     }
 
@@ -888,7 +898,7 @@ mod tests {
         let mut tiles = TileRegistry::standard();
         tiles.register(rl_grid::TileProps::wall("lamp").light(lamp())).unwrap();
         app.insert_resource(WorldMap::new(tiles.tables()));
-        app.insert_resource(PlaceRulesRes(Box::new(LampRoom(tiles))));
+        app.insert_resource(PlaceRulesRes(Box::new(LampRoom(tiles)))).insert_resource(crate::seed::Seed(crate::testing::TEST_SEED));
         let props = rl_rules::prop::load(
             r#"#![enable(implicit_some)]
             [

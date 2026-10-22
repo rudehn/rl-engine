@@ -16,8 +16,8 @@
 
 use rl_engine::rl_bevy::layout::LayoutTiles;
 use rl_engine::rl_bevy::prelude::*;
-use rl_engine::rl_core::RunSeed;
-use rl_engine::rl_grid::{Light, Rgb, TileId, TileProps, TileRegistry};
+use rl_engine::rl_core::{PlaceSeed, RunSeed};
+use rl_engine::rl_grid::{Light, Rgb, TileId, TileProps, TileRegistry, TileTables};
 use rl_engine::rl_mapgen::dungeon::{FarthestExit, RandomStart};
 use rl_engine::rl_mapgen::prefab::{Orient, Placement, Prefab, StampEachRoom, StampOneOf, StampPrefab};
 use rl_engine::rl_mapgen::{BaseContext, BuildError, Chain, Survey};
@@ -313,7 +313,7 @@ impl Foundry {
     /// `.` what can, `+` a hatch, `<` the way in and `>` the way down.
     pub fn render(&self, map: MapId) -> Result<String, BuildError> {
         use rl_engine::rl_core::Grid2D;
-        let built = self.build(map)?;
+        let built = self.build(map, PlaceSeed::of(self.seed, map.0))?;
         let tables = self.tiles.tables();
         let bounds = built.terrain.bounds();
         let mut out = String::new();
@@ -340,7 +340,9 @@ impl Foundry {
 }
 
 impl PlaceRules for Foundry {
-    fn build(&self, map: MapId) -> Result<PlaceBuild, BuildError> {
+    /// Built from the game's own per-floor seed, not the one handed in,
+    /// until the game moves to it.
+    fn build(&self, map: MapId, _seed: PlaceSeed) -> Result<PlaceBuild, BuildError> {
         let mut built = PlaceBuild::from_context(self.generate(map)?)?;
         built.ambient = ambient_of(deck_of(map));
         Ok(built)
@@ -352,6 +354,10 @@ impl PlaceRules for Foundry {
     /// so the way on is as far from where the commando arrived as the
     /// deck allows. Deck one's way up is the lift out, which the game
     /// lays, and the core has nothing below it.
+    fn tiles(&self) -> TileTables {
+        self.tiles.tables()
+    }
+
     fn ladder(&self) -> Option<Ladder> {
         let (up, down) = (StairLook::new('<', crate::lifts::LIFT, "lift up"), StairLook::new('>', crate::lifts::LIFT, "lift down"));
         Some(Ladder::new((1..=DECKS).map(map_of), up, down).top(LadderEnd::Game))
@@ -605,7 +611,7 @@ mod tests {
     #[test]
     fn a_deck_is_the_size_its_recipe_says() {
         use rl_engine::rl_core::Grid2D;
-        let built = Foundry::new(RunSeed(1)).build(map_of(1)).unwrap();
+        let built = Foundry::new(RunSeed(1)).build(map_of(1), PlaceSeed::of(RunSeed(1), 1)).unwrap();
         assert_eq!((built.terrain.bounds().width, built.terrain.bounds().height), (84, 48));
     }
 }

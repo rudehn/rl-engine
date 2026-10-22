@@ -182,7 +182,7 @@ mod tests {
 
     struct Halls(TileRegistry);
     impl PlaceRules for Halls {
-        fn build(&self, _: MapId) -> Result<PlaceBuild, rl_mapgen::BuildError> {
+        fn build(&self, _: MapId, _: rl_core::PlaceSeed) -> Result<PlaceBuild, rl_mapgen::BuildError> {
             let (wall, floor) = (self.0.expect("wall"), self.0.expect("floor"));
             let terrain =
                 Terrain::from_fn(
@@ -200,6 +200,10 @@ mod tests {
                 ambient: rl_grid::Light::DARK,
                 peaceful: false,
             })
+        }
+
+        fn tiles(&self) -> rl_grid::TileTables {
+            self.0.tables()
         }
     }
 
