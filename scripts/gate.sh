@@ -115,5 +115,18 @@ scope=tests
 [ "$packages" = undermere ] && scope=undermere
 [ "$packages" = "$(cargo metadata --format-version 1 --no-deps | python3 -c 'import json, sys; print(" ".join(sorted(p["name"] for p in json.load(sys.stdin)["packages"])))')" ] && scope=fast
 step scripts/test-times.py --check "$scope" --top 10
-step cargo test --doc $(printf -- ' -p %s' $packages)
+# Only a library has doc-tests, and `cargo test --doc` refuses a package
+# with none, such as the tutorial, whose steps are all binaries.
+libraries=$(cargo metadata --format-version 1 --no-deps | python3 -c '
+import json, sys
+want = set(sys.argv[1:])
+kinds = {"lib", "rlib", "proc-macro"}
+print(" ".join(sorted(p["name"] for p in json.load(sys.stdin)["packages"]
+                      if p["name"] in want and any(kinds & set(t["kind"]) for t in p["targets"]))))
+' $packages)
+if [ -n "$libraries" ]; then
+    step cargo test --doc $(printf -- ' -p %s' $libraries)
+else
+    echo "gate: none of $packages is a library, so there are no doc tests"
+fi
 echo "gate: passed"
