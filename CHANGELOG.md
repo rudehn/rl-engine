@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `commands.spawn_player(map, bundle)` spawns the player into a place: an actor that blocks, with the game's bundle, warped to the place's entry once the spawn is applied.
+  To change: nothing; a start may replace its spawn at `Point::ZERO` and its `WarpRequest::into_place`.
+
 - `app.places(rules)` hands the engine a game's place rules once, where the game is put together, and says the game needs a `Seed`; a run whose start makes no `WorldMap` gets one built over `PlaceRules::tiles`, and a start that makes its own keeps it.
   To change: nothing; a start may drop its `insert_resource(WorldMap::new(..))` and its `PlaceRulesRes`, and add `places(rules)` where the game adds its plugins.
 

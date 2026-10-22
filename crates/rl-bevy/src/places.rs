@@ -10,7 +10,8 @@
 //!
 //! A game hands its rules over once with [`AddPlaces::places`], and each
 //! place is built from its own [`PlaceSeed`], so the order places are
-//! built in changes none of them.
+//! built in changes none of them. [`SpawnPlayer::spawn_player`] puts the
+//! player at a place's entry in one call.
 //!
 //! A [`Transition`] is an entity standing on a cell; [`GoThrough`] on
 //! that cell takes an actor through it, and a [`WarpRequest`] does the
@@ -43,7 +44,7 @@ use rl_mapgen::BuildError;
 use rl_rules::Wits;
 
 use crate::combat::Dead;
-use crate::components::{Blocks, Player, Position, Viewshed};
+use crate::components::{Actor, Blocks, Player, Position, Viewshed};
 use crate::knowledge::Knowledge;
 use crate::minds::{FlowFields, Intelligence, Post, Trails};
 use crate::turn::{Action, Intent, Occupancy, Resolution};
@@ -408,6 +409,29 @@ impl AddPlaces for App {
     }
 }
 
+/// Spawns the player into a place.
+pub trait SpawnPlayer {
+    /// Spawns the player, an [`Actor`] that [`Blocks`], with `bundle`, and
+    /// warps it to the entry of `map`, building the place if nobody has.
+    ///
+    /// The warp is written when the spawn is applied, so the player is
+    /// never warped before it exists, and the place's entry is where the
+    /// game's [`PlaceRules`] put it. `bundle` holds what the game's player
+    /// has besides: sight, a glyph, health. It must hold no [`Position`],
+    /// [`Player`], [`Actor`] or [`Blocks`], which this gives it already.
+    fn spawn_player(&mut self, map: MapId, bundle: impl Bundle) -> EntityCommands<'_>;
+}
+
+impl SpawnPlayer for Commands<'_, '_> {
+    fn spawn_player(&mut self, map: MapId, bundle: impl Bundle) -> EntityCommands<'_> {
+        let player = self.spawn((Actor, Player, Blocks, Position(Point::ZERO), bundle)).id();
+        self.queue(move |world: &mut World| {
+            world.write_message(WarpRequest::into_place(player, map));
+        });
+        self.entity(player)
+    }
+}
+
 /// Go through the [`Transition`] on the actor's cell. Refused off one,
 /// before the turn is claimed and so at no cost to the player, since the
 /// key a game binds it to may mean something else there. Refused to anyone
@@ -746,7 +770,7 @@ pub(crate) fn tag_new_positions(mut commands: Commands, map: Res<WorldMap>, fres
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::components::{Actor, MyTurn, RevealsMap};
+    use crate::components::{MyTurn, RevealsMap};
     use crate::items::{DropItem, Inventory, Item, ItemEvent, PickUp};
     use crate::plugin::headless_app;
     use crate::state::EngineState;
@@ -1245,6 +1269,33 @@ mod tests {
         intend(&mut r, PickUp);
         assert!(r.app.world().get::<Inventory>(r.player).unwrap().contains(coin), "the same press picked the coin up");
         assert!(r.app.world().resource::<Turns>().now() > before, "and spent the turn on it");
+    }
+
+    #[test]
+    fn a_player_spawned_into_a_place_stands_on_its_entry() {
+        use bevy::ecs::system::RunSystemOnce;
+        let mut app = headless_app();
+        app.add_plugins(crate::fov::FovPlugin);
+        crate::testing::ground(&mut app);
+        app.places(Caves(TileRegistry::standard())).insert_resource(crate::seed::Seed(crate::testing::TEST_SEED));
+        let cave = MapId(3);
+        let player = app
+            .world_mut()
+            .run_system_once(move |mut commands: Commands| commands.spawn_player(cave, (Viewshed::new(6), RevealsMap)).id())
+            .expect("the spawn ran");
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+
+        let w = app.world();
+        let entry = w.resource::<WorldMap>().place(cave).expect("the place was built").entry;
+        assert_eq!(w.get::<Position>(player).map(|p| p.0), Some(entry), "the player stands on the entry");
+        assert_eq!(w.get::<OnMap>(player), Some(&OnMap(cave)), "of the place it was spawned into");
+        assert_eq!(w.resource::<WorldMap>().current(), cave, "which is the map being read");
+        assert!(
+            w.get::<Actor>(player).is_some() && w.get::<Blocks>(player).is_some() && w.get::<RevealsMap>(player).is_some(),
+            "an actor that blocks, with its bundle"
+        );
     }
 
     /// The caves, noting the seed each place was handed.
