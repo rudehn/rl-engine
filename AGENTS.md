@@ -65,6 +65,8 @@ So generation is never played over many seeds to see whether content turns up or
 - wall time over its budget only warns, since a busy machine explains it: 170 s for both tiers, 110 s for the fast tier, 60 s for Undermere's;
 - CI plays every seed on another machine, so it reports against numbers of its own and only warns.
 
+Each run's totals by package are kept in `rl-test-times.tsv` in the main checkout's `.git` (`git rev-parse --git-common-dir`), one line a package a run with its branch and commit, so a branch's times outlive its worktree.
+
 When the check speaks, the slowest tests it lists are the ones to fix, by the cheapest of these that keeps the test proving what it proved:
 
 - **A property of generation is tested without an `App`.** Build the place (`Undermere::build`, an `rl-mapgen` chain) and read it; arriving through a headless game populates, lights and saves it as well. A rule that needs no world goes to `rl-rules` and is tested there.

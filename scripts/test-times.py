@@ -9,6 +9,12 @@ nextest writes every test's wall time to target/nextest/<profile>/junit.xml
 inside, appends every test's processor time to target/nextest/cpu/<run>.tsv.
 The report lists the slowest tests by both and each package's totals.
 
+Each package's totals are also kept, a line a package a run, in
+rl-test-times.tsv in the git common directory, the main checkout's .git
+that every worktree shares, so the times of a branch outlive its worktree
+and a test's cost can be followed across branches. A run read twice is
+kept once, and CI's run is not kept, since its checkout is thrown away.
+
 Processor time is the budget, not wall time. A test's wall time grows with
 whatever else the machine is running: other agents' builds and tests, and
 the suite's own tests, each of which plays its seeds on every core. Its
@@ -37,7 +43,9 @@ when the check speaks.
 
 import argparse
 import os
+import subprocess
 import sys
+from datetime import datetime, timezone
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -112,6 +120,43 @@ def read_cpu(target, run, tests):
     return True
 
 
+KEPT_HEADER = "when\tbranch\tcommit\tprofile\tpackage\ttests\tcpu_s\twall_s\trun\n"
+
+
+def git(*args):
+    return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
+
+
+def keep(run, packages, have_cpu, profile):
+    """Appends each package's totals for the run to the timing file every
+    worktree shares. Never fails the check: a run whose times could not be
+    kept is still a run that passed or failed on its own."""
+    try:
+        path = (ROOT / git("rev-parse", "--git-common-dir")).resolve() / "rl-test-times.tsv"
+        new = not path.exists() or path.stat().st_size == 0
+        if not new and run and any(line.rsplit("\t", 1)[-1] == run for line in path.read_text().splitlines()):
+            return
+        when = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        branch, commit = git("rev-parse", "--abbrev-ref", "HEAD"), git("rev-parse", "--short", "HEAD")
+        # A run under RL_FULL_SEEDS plays every seed, so it is not the
+        # everyday run of its profile and is not compared with one.
+        if os.environ.get("RL_FULL_SEEDS"):
+            profile += "+full-seeds"
+        lines = [
+            f"{when}\t{branch}\t{commit}\t{profile}\t{package}\t{count}\t{f'{c:.2f}' if have_cpu else ''}\t{w:.2f}\t{run or ''}\n"
+            for package, (count, c, w) in sorted(packages.items())
+        ]
+        # One write of whole lines to a file opened for appending, so two
+        # gates finishing at once never interleave within a line.
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+        try:
+            os.write(fd, ((KEPT_HEADER if new else "") + "".join(lines)).encode())
+        finally:
+            os.close(fd)
+    except (OSError, subprocess.CalledProcessError) as error:
+        print(f"test-times: warning: the run's times were not kept: {error}")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--profile", default="default")
@@ -135,15 +180,18 @@ def main():
         for (_, name), t in ranked[: args.top]:
             c = f"{t['cpu']:7.1f}" if t["cpu"] is not None else "      -"
             print(f"  {c} {t['wall']:8.1f}  {t['suite']}  {name}")
-        packages = {}
-        for t in tests.values():
-            p = packages.setdefault(t["package"], [0, 0.0, 0.0])
-            p[0] += 1
-            p[1] += t["cpu"] or 0
-            p[2] += t["wall"]
+    packages = {}
+    for t in tests.values():
+        p = packages.setdefault(t["package"], [0, 0.0, 0.0])
+        p[0] += 1
+        p[1] += t["cpu"] or 0
+        p[2] += t["wall"]
+    if args.top:
         print("\nby package:      tests      cpu     wall")
         for package, (count, c, w) in sorted(packages.items(), key=lambda kv: -kv[1][1 if have_cpu else 2]):
             print(f"  {package:14} {count:5} {c:8.1f} {w:8.1f}")
+    if args.profile != "ci":
+        keep(run, packages, have_cpu, args.profile)
 
     if not args.check:
         return
