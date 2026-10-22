@@ -420,7 +420,7 @@ None is scheduled: take one when its file is open.
 - **One root-and-prelude rule per crate.**
   The root re-exports every type a game names and the prelude is a subset; Undermere still writes `rl_ui::view::inspect::inspect_modal`, and rl-save's prelude still carries `EngineSave`, `SaveId` and `Stash`.
 - **The rule numbers, closed lists and English the engine still holds.**
-  `EQUIP_FROM_GROUND_COST`, the reflect chance, a third of range, `STANDING_ROOM`, `SLEEPER_REACH`, the notice and hearing defaults; `WasLiving`; `MenuItem`'s labels and the inspect and sheet lines; `CorePlugin`'s minds and intents, and the effects Fire, Gas and Noise register by themselves.
+  `EQUIP_FROM_GROUND_COST`, a third of range, `STANDING_ROOM`, `SLEEPER_REACH`, the notice and hearing defaults; `WasLiving`; `MenuItem`'s labels and the inspect and sheet lines; `CorePlugin`'s minds and intents, and the effects Fire, Gas and Noise register by themselves.
 - **The API review's renames.**
   Section D of the review, batched by crate.
 

@@ -391,6 +391,7 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
 - 2026-10-08: names drawn from syllables, `rl_rules::namegen`, ahead of Undermere's fifth and sixth parts, which name the town's people and the tavern's mercenaries each run.
   libtcod's generator is the reference and its rejections are kept whole; its string rule language became typed parts a load can check, its fixed syllable positions became pools a set names, and its retried chances became weights.
   A draw is bounded and may refuse names a run has given; `docs/design/names.md` is the reasoning.
+- 2026-10-22: `Reflects` carries its chance, `Reflects { percent }`, a rule value off `docs/TODO.md`'s rule numbers, and the reflection and spotting tests set the outcome they assert rather than counting outcomes over seeds (usability branch 02).
 - Next: the rest of the deferred pieces (nights on Corsair's surface, scripted encounters, and phase H of `docs/design/ui.md`: Bevy UI presenters over the panel views, deferred until a game wants wrapping, hover or sub-cell bars), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
   The work found by the 2026-09-15 architecture review and not yet started is listed in `docs/TODO.md`.
