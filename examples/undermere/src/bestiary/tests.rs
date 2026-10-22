@@ -912,14 +912,14 @@ fn a_fire_trail_kind_ignites_the_cell_it_steps_off() {
 
 /// Reflecting: a golem carries the engine's own `Reflects` the moment
 /// it is spawned, so an aimed use or an ability that lands on it
-/// turns back on whoever aimed it, one time in two, exactly as
-/// `rl-bevy`'s own test of `Reflects` says.
+/// turns back on whoever aimed it at the engine's default chance, one
+/// time in two, exactly as `rl-bevy`'s own test of `Reflects` says.
 #[test]
 fn a_golem_carries_the_engines_own_reflects() {
     let library = library();
     let golem = library.bestiary.defs.get(library.bestiary.defs.expect("golem"));
     let (world, e) = spawn(&library, golem);
-    assert!(world.get::<Reflects>(e).is_some(), "turns magic back");
+    assert_eq!(world.get::<Reflects>(e), Some(&Reflects::default()), "turns magic back one time in two");
 }
 
 /// Packing: a rat too far from its own kind, with nothing else in

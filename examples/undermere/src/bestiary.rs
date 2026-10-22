@@ -785,7 +785,7 @@ pub fn spawn_monster(commands: &mut Commands, def: &MonsterDef, at: Point, map: 
             e.insert(crate::tricks::FireTrail);
         }
         if def.tricks.reflects {
-            e.insert(Reflects);
+            e.insert(Reflects::default());
         }
         if def.tricks.drains {
             e.insert(crate::tricks::Drains);

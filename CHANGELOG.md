@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `Reflects` carries the chance it turns a use back, `Reflects { percent }`, 50 by default, with `Reflects::ALWAYS` and `Reflects::NEVER` for a body that always or never does, and `Reflects::percent(n)` held to 100; a percent past 100 written into the field is read as 100. At the default a body rolls exactly as the unit `Reflects` did, so no run moves.
+  To change: `insert(Reflects)` becomes `insert(Reflects::default())`.
+
 - An actor tagged itself with what an offer needs (`Offering::needing`, or a container's `locked` key) now carries it, as one tagged with a lock's key always opened that lock: both ask `rl_rules::tag::carries`, its own tags or a thing it holds, where an offer used to look in the bag alone and refuse a warden a person or a chest would have let through the door beside them.
   To change: nothing, unless a game relied on a self-tagged actor being refused an offer; give such an actor a different tag.
 

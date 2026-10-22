@@ -323,9 +323,9 @@ pub struct Landed {
     pub refused: Vec<Blocked>,
 }
 
-/// Turns an aimed use or an ability back on whoever aimed it, one time in
-/// two: a body too dense or too strange for either to bite, and a trick
-/// any game can give a body of its own.
+/// Turns an aimed use or an ability back on whoever aimed it, `percent`
+/// times in a hundred: a body too dense or too strange for either to
+/// bite, and a trick any game can give a body of its own.
 ///
 /// Read by [`Bystanders::land`] rather than by a game reacting afterwards,
 /// because nothing fires between a use being pointed and its effects
@@ -335,8 +335,40 @@ pub struct Landed {
 /// alternative, letting every effect ask whether its own target reflects,
 /// would be answered differently by every effect a game or the engine
 /// ever writes.
-#[derive(Component, Debug, Clone, Copy, Default)]
-pub struct Reflects;
+///
+/// The chance is the body's own, a rule value the game sets rather than a
+/// number the engine fixes: one golem may turn half of what is thrown at
+/// it and another every bolt. [`Reflects::ALWAYS`] and [`Reflects::NEVER`]
+/// are also how a test asks for one outcome instead of counting both
+/// over a span of seeds.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Reflects {
+    /// The chance in a hundred that a use aimed at this body is turned
+    /// back. Past 100 it is read as 100, a certainty, rather than refused.
+    pub percent: u8,
+}
+
+impl Reflects {
+    /// Turns back everything aimed at it as a foe.
+    pub const ALWAYS: Reflects = Reflects { percent: 100 };
+    /// Turns back nothing: the component stays, so whatever reads it as a
+    /// trait of the body still does, but no roll ever comes up.
+    pub const NEVER: Reflects = Reflects { percent: 0 };
+
+    /// A body that turns a use back `percent` times in a hundred, held to
+    /// a hundred.
+    pub fn percent(percent: u8) -> Reflects {
+        Reflects { percent: percent.min(100) }
+    }
+}
+
+impl Default for Reflects {
+    /// One time in two, the chance every reflecting body had before the
+    /// chance was its own.
+    fn default() -> Self {
+        Reflects { percent: 50 }
+    }
+}
 
 /// Written each time `Bystanders::reflect` turns a landing back: the
 /// body [`Reflects`] marked, and whoever aimed the use, now the one it
@@ -424,7 +456,7 @@ pub struct Bystanders<'w, 's> {
     factions: Query<'w, 's, &'static Faction>,
     alive: Query<'w, 's, (), (With<Health>, Without<Dead>)>,
     rules: Option<Res<'w, CombatRules>>,
-    reflects: Query<'w, 's, (), With<Reflects>>,
+    reflects: Query<'w, 's, &'static Reflects>,
     // `Option`: nothing here needs the stream derived until a body
     // actually carries `Reflects`, so a game that has added neither
     // `AbilitiesPlugin` nor `EffectsPlugin`'s own `add_stream` for it, and
@@ -513,8 +545,8 @@ impl Bystanders<'_, '_> {
         }
     }
 
-    /// Turns back, one time in two each, every target of `landing` but its
-    /// own user that carries [`Reflects`]: the body that turns it is
+    /// Turns back, each at its own chance, every target of `landing` but
+    /// its own user that carries [`Reflects`]: the body that turns it is
     /// spared, and its share lands on the user instead, never listing the
     /// user twice.
     ///
@@ -562,7 +594,11 @@ impl Bystanders<'_, '_> {
                 Aim::Ground | Aim::Anyone => self.relation(user, target) == Some(Relation::Hostile),
                 Aim::Ally | Aim::SelfOnly => false,
             };
-            let reflected = target != user && thrown && self.reflects.contains(target) && self.rng.as_mut().is_some_and(|rng| rng.0.random_bool(0.5));
+            // At the default chance the roll is `random_bool(0.5)` exactly,
+            // so a body inserted as `Reflects::default()` draws as the unit
+            // marker did.
+            let chance = self.reflects.get(target).ok().map(|r| f64::from(r.percent.min(100)) / 100.0);
+            let reflected = target != user && thrown && chance.is_some_and(|p| self.rng.as_mut().is_some_and(|rng| rng.0.random_bool(p)));
             if reflected {
                 landing.turned_by.push(target);
                 if let Some(writer) = self.reflected.as_mut() {
@@ -1384,6 +1420,20 @@ mod tests {
         assert_eq!(hp(&app, ours), 17, "a bolt aimed at a foe passes an ally by");
     }
 
+    /// A body's chance to turn a use back is one in two unless the game
+    /// says otherwise.
+    #[test]
+    fn the_default_reflection_chance_is_one_half() {
+        assert_eq!(Reflects::default().percent, 50);
+    }
+
+    /// A percent no roll could mean is held to a certainty rather than
+    /// handed to the roll, which would refuse it.
+    #[test]
+    fn a_percent_past_a_hundred_is_held_to_a_hundred() {
+        assert_eq!(Reflects::percent(250), Reflects::ALWAYS);
+    }
+
     /// A body marked [`Reflects`] turns a bolt aimed at it back on whoever
     /// cast it, one time in two: over a span of seeds, both the caster and
     /// the body it aimed at are seen hurt, and on every single cast
@@ -1398,7 +1448,7 @@ mod tests {
             let bolt = ability(&app, bolt_name);
             let me = caster(&mut app, start, 20, &[bolt]);
             let them = foe(&mut app, start.offset(3, 0));
-            app.world_mut().entity_mut(them).insert(Reflects);
+            app.world_mut().entity_mut(them).insert(Reflects::default());
             settle(&mut app);
 
             app.world_mut().write_message(Intent::new(me, Use { ability: bolt, aim: start.offset(3, 0) }));
@@ -1428,7 +1478,7 @@ mod tests {
             let me = caster(&mut app, start, 20, &[bolt]);
             let there = start.offset(3, 0);
             let them = foe(&mut app, there);
-            app.world_mut().entity_mut(them).insert(Reflects);
+            app.world_mut().entity_mut(them).insert(Reflects::default());
             settle(&mut app);
             app.world_mut().resource_mut::<TurnHold>().watch();
             cues(&mut app);
@@ -1486,7 +1536,7 @@ mod tests {
             let bolt = ability(&app, bolt_name);
             let me = caster(&mut app, start, 20, &[bolt]);
             let them = foe(&mut app, start.offset(3, 0));
-            app.world_mut().entity_mut(them).insert(Reflects);
+            app.world_mut().entity_mut(them).insert(Reflects::default());
             settle(&mut app);
 
             app.world_mut().write_message(Intent::new(me, Use { ability: bolt, aim: start.offset(3, 0) }));
@@ -1517,7 +1567,7 @@ mod tests {
             let me = caster(&mut app, start, 20, &[salve, burst]);
             let there = start.offset(4, 0);
             let ours = friend(&mut app, there);
-            app.world_mut().entity_mut(ours).insert((Reflects, Health { current: 10, max: 20 }));
+            app.world_mut().entity_mut(ours).insert((Reflects::default(), Health { current: 10, max: 20 }));
             settle(&mut app);
 
             app.world_mut().write_message(Intent::new(me, Use { ability: salve, aim: there }));
@@ -1546,7 +1596,7 @@ mod tests {
             let me = caster(&mut app, start, 20, &[flare]);
             let there = start.offset(3, 0);
             let them = foe(&mut app, there);
-            app.world_mut().entity_mut(them).insert(Reflects);
+            app.world_mut().entity_mut(them).insert(Reflects::default());
             settle(&mut app);
 
             app.world_mut().write_message(Intent::new(me, Use { ability: flare, aim: there }));
@@ -1579,7 +1629,7 @@ mod tests {
             let me = caster(&mut app, start, 20, &[ball]);
             let there = start.offset(4, 0);
             let them = foe(&mut app, there);
-            app.world_mut().entity_mut(them).insert(Reflects);
+            app.world_mut().entity_mut(them).insert(Reflects::default());
             settle(&mut app);
 
             app.world_mut().write_message(Intent::new(me, Use { ability: ball, aim: there }));
@@ -1617,7 +1667,7 @@ mod tests {
             let there = start.offset(4, 0);
             let them = foe(&mut app, there);
             let (above, below) = (foe(&mut app, there.offset(0, -1)), foe(&mut app, there.offset(0, 1)));
-            app.world_mut().entity_mut(them).insert(Reflects);
+            app.world_mut().entity_mut(them).insert(Reflects::default());
             settle(&mut app);
 
             app.world_mut().write_message(Intent::new(me, Use { ability: ball, aim: there }));

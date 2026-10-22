@@ -898,7 +898,7 @@ mod tests {
                 .spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), RevealsMap, Health::full(30), Faction(sides.ours), Grants(vec![bolt])))
                 .id();
             let there = start.offset(3, 0);
-            app.world_mut().spawn((Actor, Blocks, Position(there), Health::full(30), Faction(sides.theirs), Reflects));
+            app.world_mut().spawn((Actor, Blocks, Position(there), Health::full(30), Faction(sides.theirs), Reflects::default()));
             app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
             app.update();
             app.update();

@@ -1815,7 +1815,7 @@ mod aimed {
             let look = LookOf::Given(rl_rules::ability::Look { glyph: '*', color: rl_grid::Rgb::new(255, 80, 0) });
             let at = rig.start.offset(3, 0);
             let foe = rig.foe(3, 0);
-            rig.app.world_mut().entity_mut(foe).insert(crate::ability::Reflects);
+            rig.app.world_mut().entity_mut(foe).insert(crate::ability::Reflects::default());
             rig.cues();
             rig.app.world_mut().resource_mut::<TurnHold>().watch();
 
@@ -1938,7 +1938,7 @@ mod aimed {
             rig.app.update();
             let rod = rig.carry(BOLT);
             let foe = rig.foe(3, 0);
-            rig.app.world_mut().entity_mut(foe).insert(crate::ability::Reflects);
+            rig.app.world_mut().entity_mut(foe).insert(crate::ability::Reflects::default());
             let at = rig.start.offset(3, 0);
             rig.act(UseItemAt { item: rod, at });
             let (user_hurt, body_hurt) = (rig.hp(rig.player) < 30, rig.hp(foe) < 20);
