@@ -948,8 +948,10 @@ mod stop_tests {
     /// The player two turns into ten of mending, a turn a frame, with the
     /// breaks and the game's sight of `q` recorded.
     fn at_work() -> Stage {
-        let mut stage = Stage::new(());
-        stage.app.add_work("mending").insert_resource(WorkPace::every_frame());
+        let mut stage = Stage::new_with((), |app| {
+            app.add_work("mending");
+        });
+        stage.app.insert_resource(WorkPace::every_frame());
         stage.app.init_resource::<Broken>().add_systems(Update, record.after(atglyph_bevy::EngineSet::Turns));
         stage.app.init_resource::<SawQ>().add_systems(Update, see_q.in_set(atglyph_bevy::EngineSet::Input));
         let kind = stage.app.world().resource::<WorkKinds>().get("mending").unwrap();
@@ -1059,8 +1061,7 @@ mod stop_tests {
         assert_eq!(reasons(&stage), vec![BreakReason::LeftOff]);
     }
 
-    /// Every game has work, so every game lists the stop, last under its
-    /// own acts.
+    /// A game with work lists the stop, last under its own acts.
     #[test]
     fn the_stop_is_listed_as_any_key() {
         let stage = at_work();
@@ -1071,6 +1072,14 @@ mod stop_tests {
         let (cursor, help) = (CursorKeys::default(), ControlsKeys::default());
         let bindings = Bindings { directions: &directions, cursor: &cursor, help: &help, log: None, sheet: None, abilities: None, inventory: None, menu: None };
         assert_eq!(controls.label(stop, &bindings), "any key");
+    }
+
+    /// A game that declares no kind of work gives the player no long
+    /// action, so it lists no key for stopping one.
+    #[test]
+    fn a_game_with_no_work_lists_no_stop() {
+        let stage = Stage::new(());
+        assert_eq!(stage.app.world().resource::<Controls>().find(STOP_GROUP, STOP_ACTION), None);
     }
 }
 

@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The controls screen lists `any key - stop what you are doing` only in a game that declares a kind of work with `add_work`, since work is the only long action a player has; a game with none, the template among them, no longer lists a row that describes nothing it can do. `WorkKinds::is_empty` says whether any kind is declared.
+  To change: nothing; a game that declares its kinds of work outside a plugin's `build` declares them there, so the stop is listed.
+
 - The controls screen lists two controls of one group on the same keys as one row, saying both in the order they were declared, so `esc` under Screens reads "open the menu, or close a cursor or screen" where it was listed twice. The same keys in another group stay a row of their own there.
   To change: nothing; a game that declared two meanings for one key in one group sees them on one row.
 

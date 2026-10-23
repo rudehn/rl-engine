@@ -74,6 +74,11 @@ impl WorkKinds {
     pub fn name(&self, id: WorkKindId) -> &str {
         self.0.name(id)
     }
+
+    /// Whether no kind has been declared, so nothing in the game can work.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
 /// Declares a kind of work while the app is being built.

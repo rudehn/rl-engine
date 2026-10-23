@@ -282,10 +282,19 @@ impl Plugin for UiPlugin {
         atglyph_bevy::depends_on::<atglyph_bevy::CorePlugin>(app, "UiPlugin");
         // The key that does what is here, in a game with props.
         interact::finish(app);
-        // The player's long action, which every game has. In `finish`
-        // rather than `build` so it is listed last under the game's own
-        // acts.
-        app.add_control(controls::STOP_GROUP, controls::STOP_ACTION, Keys::Any);
+        // The key that stops the player's long action, listed only in a
+        // game that has a kind of work, since work is the only long action
+        // there is and every one is of a kind declared with `add_work`: a
+        // game that declares none has nothing for the key to stop, and a
+        // row saying it would describe nothing the player can do. A kind
+        // does not say who does it, so a game whose work is all its
+        // monsters' lists it too. Declared in a plugin's `build`, as every
+        // kind is, so it is known here; in `finish` rather than `build` so
+        // it is listed last under the game's own acts. The stopping itself
+        // runs either way, and finds no work to stop.
+        if app.world().get_resource::<atglyph_bevy::WorkKinds>().is_some_and(|kinds| !kinds.is_empty()) {
+            app.add_control(controls::STOP_GROUP, controls::STOP_ACTION, Keys::Any);
+        }
         app.add_systems(
             Update,
             controls::stop_work_on_key
