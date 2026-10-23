@@ -223,7 +223,7 @@ impl Lore {
         for (i, family) in faces.families.iter().enumerate() {
             let mut kinds: Vec<&str> = defs.iter().filter(|(_, d)| d.tags.iter().any(|t| t.id() == family.tag.id())).map(|(_, d)| d.name.as_str()).collect();
             kinds.sort();
-            let mut rng = seed.rng(rl_engine::rl_core::SeedDomain::new(b"lore"), i as u64);
+            let mut rng = seed.rng(crate::seeds::LORE, i as u64);
             let called = |face: &str| family.called.replace("{}", face);
             match &family.titles {
                 Some(titles) => {

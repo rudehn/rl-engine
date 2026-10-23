@@ -151,7 +151,7 @@ pub fn place_on_arrival(
         }
         let Some(place) = map.place(ev.map) else { continue };
         let deck = deck_of(ev.map);
-        let mut rng = seed.rng(rl_engine::rl_core::SeedDomain::new(b"foundry.props"), deck as u64);
+        let mut rng = seed.rng(crate::seeds::PROPS, deck as u64);
         // Two lists, because they answer two questions. `taken` is every
         // cell spoken for, every spot a piece marked among them, so nothing
         // loose lands on a slot. `blocking` is what a walker cannot pass:

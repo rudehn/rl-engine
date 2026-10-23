@@ -63,10 +63,6 @@ pub const TOWNSFOLK_SET: &str = "townsfolk";
 /// The set in `names.ron` the swords for hire are named from.
 pub const MERCENARY_SET: &str = "mercenary";
 
-/// The stream the run's names are drawn from, apart from every other
-/// draw, so naming the town never moves what a floor holds.
-pub const NAMES_STREAM: &[u8] = b"undermere.names";
-
 /// The verb a person who has something to say offers.
 pub const TALK: &str = "talk";
 
@@ -386,11 +382,11 @@ pub fn next_line(lines: &[Line], said: &BTreeSet<usize>, holds: impl Fn(&When) -
 }
 
 /// Draws a name for every role in `townsfolk`, in the file's order, from
-/// the run's [`NAMES_STREAM`], each distinct from every name in `given`
+/// the run's [`NAMES`](crate::seeds::NAMES), each distinct from every name in `given`
 /// and given in turn. Panics when the set cannot find one, which a test
 /// over a span of seeds keeps from happening.
 pub fn name_everyone(townsfolk: &Townsfolk, names: &NameSets, seed: &Seed, given: &mut GivenNames) -> Folk {
-    let mut rng = seed.rng(rl_engine::rl_core::SeedDomain::new(NAMES_STREAM), 0);
+    let mut rng = seed.rng(crate::seeds::NAMES, 0);
     let set = names.townsfolk();
     let mut folk = Folk::default();
     for role in townsfolk.roles() {
@@ -760,7 +756,7 @@ mod tests {
         let names = NameSets::load();
         let set = names.townsfolk();
         for s in 0..200 {
-            let mut rng = Seed(RunSeed(s)).rng(rl_engine::rl_core::SeedDomain::new(NAMES_STREAM), 0);
+            let mut rng = Seed(RunSeed(s)).rng(crate::seeds::NAMES, 0);
             let mut drawn: BTreeSet<String> = BTreeSet::new();
             for n in 0..100 {
                 let name = set.draw_distinct(&mut rng, |taken| drawn.contains(taken)).unwrap_or_else(|| panic!("seed {s}: dry at name {n}"));

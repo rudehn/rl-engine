@@ -25,6 +25,7 @@ pub mod prefabs;
 pub mod props;
 pub mod run;
 pub mod save;
+pub mod seeds;
 pub mod testing;
 pub mod title;
 pub mod upgrades;

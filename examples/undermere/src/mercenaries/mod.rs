@@ -17,7 +17,7 @@
 //! and what a kit costs. [`make_kit`] makes a kit's things to be carried.
 //!
 //! [`seat_candidates`] seats three of them at the tavern's tables on every
-//! arrival in Mereholt, drawn from the run's [`TAVERN_STREAM`] at the
+//! arrival in Mereholt, drawn from the run's [`TAVERN`](crate::seeds::TAVERN) at the
 //! visit's number, which [`Tavern`] counts; the last visit's that nobody
 //! hired are gone first. Each is a [`Candidate`] made by
 //! [`spawn_candidate`]: the one kind on the townsfolk's side, with no mind,
@@ -117,11 +117,6 @@ use rl_engine::rl_rules::loot::LootTable;
 
 /// The one kind of hireling, by its name in `monsters.ron`.
 pub const MERCENARY: &str = "mercenary";
-
-/// The stream a visit's candidates are drawn from, the visit's number its
-/// index: apart from every other draw, so who waits in the tavern never
-/// moves what a floor holds or a shelf stocks.
-pub const TAVERN_STREAM: &[u8] = b"undermere.tavern";
 
 /// The glyph of the marks in `mereholt.ron` a candidate waits at, one
 /// beside each of the tavern's tables: as many candidates a visit as there

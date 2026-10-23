@@ -147,7 +147,7 @@ pub struct Drawing<'w> {
 /// last visit's that nobody hired, and everything they carried, are gone
 /// first, so a candidate passed over is not there to be hired later.
 ///
-/// Visit `n`'s are drawn from the run's [`TAVERN_STREAM`] at `n`, one
+/// Visit `n`'s are drawn from the run's [`TAVERN`](crate::seeds::TAVERN) at `n`, one
 /// [`TABLE`] mark at a time in the order the town lists them: a kit by
 /// [`Mercenaries::kit`] at the deepest floor the run has reached, a name
 /// from the `mercenary` set distinct from every name the run has given,
@@ -179,7 +179,7 @@ pub fn seat_candidates(
     let tables: Vec<Point> = place.spots.iter().filter(|s| s.tag == TABLE as u32).map(|s| s.at).collect();
     assert!(!tables.is_empty(), "mereholt.ron marks no '{TABLE}' for the candidates to wait at");
     let makers = Makers { bestiary: &drawing.bestiary, armory: &drawing.armory, registries: &drawing.registries, verbs: &drawing.verbs };
-    let mut rng = drawing.seed.rng(rl_engine::rl_core::SeedDomain::new(TAVERN_STREAM), visit);
+    let mut rng = drawing.seed.rng(crate::seeds::TAVERN, visit);
     for at in tables {
         let kit = drawing.mercenaries.kit(drawing.tally.deepest, &drawing.armory, &mut rng);
         let name = drawing.names.mercenary().draw_distinct(&mut rng, |n| given.has(n)).expect("the mercenaries' names never run dry");

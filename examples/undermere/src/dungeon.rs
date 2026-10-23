@@ -634,7 +634,7 @@ impl Undermere {
                 Place { band: floor as i32, tags: vec![place_tag(drawn)] }
             })
             .collect();
-        let mut rng = seed.rng(SeedDomain::new(b"undermere.pool"), 0);
+        let mut rng = seed.rng(crate::seeds::POOL, 0);
         self.plan = (1..=FLOORS).zip(self.pool.plan_run(&mut rng, &places)).collect();
         self.biomes = biomes;
         self.seed = seed;
@@ -661,7 +661,7 @@ impl Undermere {
     /// floor two first does not change floor one, and the printed floor is
     /// grown from the very stream the run's is.
     fn place_seed(&self, map: MapId) -> RunSeed {
-        RunSeed(self.seed.derive(SeedDomain::new(b"undermere.place"), u64::from(map.0)))
+        RunSeed(self.seed.derive(crate::seeds::PLACE, u64::from(map.0)))
     }
 
     /// The biome `floor` draws: pure over `self.seed`, so every call
@@ -1415,7 +1415,7 @@ impl Pass<BaseContext> for Underfoot {
 /// anywhere. Never the throne's own floor, which `FLOORS` is past: a run
 /// draws at most one captive, somewhere in the nine floors above it.
 pub(crate) fn captive_floor(seed: RunSeed) -> u32 {
-    let mut rng = seed.rng(SeedDomain::new(b"undermere.captive"), 0);
+    let mut rng = seed.rng(crate::seeds::CAPTIVE, 0);
     rng.random_range(1..FLOORS)
 }
 

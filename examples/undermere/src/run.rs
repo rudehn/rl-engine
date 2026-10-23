@@ -251,10 +251,6 @@ pub fn stand_near(world: &mut World) {
 #[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StartParty(pub usize);
 
-/// The run's stream a photograph's party is drawn from: its own, so asking
-/// for one moves no draw the run would make without it.
-pub const PARTY_STREAM: &[u8] = b"undermere.start-party";
-
 /// Hires [`StartParty`]'s hands on the cells beside the adventurer, once
 /// they stand somewhere and [`StartNear`] has stood them where it asked,
 /// and forgets the ask. Each is drawn as the tavern draws a candidate, a
@@ -274,7 +270,7 @@ pub fn hire_party(world: &mut World) {
     let cells: Vec<Point> =
         (0..8).map(|i| at + Direction::from_index(i).offset()).filter(|p| map.is_walkable_on(here, *p) && !taken.contains(p)).take(wanted.min(PARTY)).collect();
     let mut given = world.resource::<GivenNames>().clone();
-    let mut rng = world.resource::<Seed>().rng(rl_engine::rl_core::SeedDomain::new(PARTY_STREAM), 0);
+    let mut rng = world.resource::<Seed>().rng(crate::seeds::PARTY, 0);
     let mut queue = CommandQueue::default();
     let made: Vec<Entity> = {
         let mut commands = Commands::new(&mut queue, world);

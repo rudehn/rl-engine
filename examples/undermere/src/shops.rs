@@ -12,7 +12,7 @@
 //! [`Wares::stock`] is the pure half, tested without an `App`: one
 //! keeper's [`Stocking`] at a tier from whatever generator it is handed.
 //! [`Wares::stocking`] is every keeper's at once from
-//! `Seed::stream(b"undermere.wares", number)`, a stream for each stocking
+//! `seed.rng(WARES, number)`, a stream for each stocking
 //! of the run, so the same seed meets the same shelves however the run got
 //! there.
 //!
@@ -58,10 +58,6 @@ use crate::run::Adventurer;
 use crate::tally::Tally;
 
 const WARES_RON: &str = include_str!("../assets/wares.ron");
-
-/// The stream every stocking draws from, with the stocking's number as its
-/// index.
-pub const WARES_STREAM: &[u8] = b"undermere.wares";
 
 /// The tiers a stocking is drawn for: one for every two floors, so a run
 /// sees at most five stockings.
@@ -393,11 +389,11 @@ impl Wares {
     }
 
     /// Stocking number `number` of every keeper at `tier`, in the file's
-    /// order, all from `Seed::stream(WARES_STREAM, number)`: the same seed
+    /// order, all from `seed.rng(WARES, number)`: the same seed
     /// and number meet the same shelves, and no stocking's draws move
     /// another's.
     pub fn stocking(&self, seed: &Seed, number: u64, tier: u32) -> Vec<Stocking> {
-        let mut rng: StdRng = seed.rng(rl_engine::rl_core::SeedDomain::new(WARES_STREAM), number);
+        let mut rng: StdRng = seed.rng(crate::seeds::WARES, number);
         self.keepers.iter().map(|k| self.stock(&k.name, tier, &mut rng)).collect()
     }
 }
@@ -451,7 +447,7 @@ pub fn trader_tags(keeper: &Keeper, armory: &Armory) -> Vec<TagId> {
 /// adventurer goes home.
 #[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Shelves {
-    /// The stocking's number, its index in [`WARES_STREAM`]: nought for the
+    /// The stocking's number, its index in [`WARES`](crate::seeds::WARES): nought for the
     /// run's first, one more for each restock.
     pub stocking: u64,
     /// The tier it was drawn for, which a restock waits to be passed.

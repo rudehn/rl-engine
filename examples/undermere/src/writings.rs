@@ -156,7 +156,7 @@ pub fn assign_writings(
         if spots.is_empty() {
             continue;
         }
-        let mut rng = seed.rng(rl_engine::rl_core::SeedDomain::new(b"undermere.writings"), u64::from(ev.map.0));
+        let mut rng = seed.rng(crate::seeds::WRITINGS, u64::from(ev.map.0));
         assign(&mut rng, ev.map.0, &spots, (content.last_words.len(), content.inscriptions.len()), &mut progress);
     }
 }

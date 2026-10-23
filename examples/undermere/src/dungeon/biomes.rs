@@ -661,7 +661,7 @@ fn weighted(rng: &mut impl Rng, weights: impl Iterator<Item = u32> + Clone) -> u
 /// The recipe `def` grows `floor` by, as an index into its list, drawn by
 /// weight from the floor's own recipe stream.
 fn draw_recipe(def: &BiomeDef, floor: u32, seed: RunSeed) -> usize {
-    let mut rng = seed.rng(SeedDomain::new(b"undermere.recipe"), u64::from(floor));
+    let mut rng = seed.rng(crate::seeds::RECIPE, u64::from(floor));
     weighted(&mut rng, def.recipes.iter().map(|r| r.weight))
 }
 
@@ -684,7 +684,7 @@ fn band(defs: &Registry<BiomeDef>, floor: u32) -> Vec<&BiomeDef> {
 /// it can never disagree.
 fn drawn_def<'a>(band: &[&'a BiomeDef], floor: u32, seed: RunSeed) -> &'a BiomeDef {
     assert!(!band.is_empty(), "no biome stands on floor {floor}");
-    let mut rng = seed.rng(SeedDomain::new(b"undermere.biome"), u64::from(floor));
+    let mut rng = seed.rng(crate::seeds::BIOME, u64::from(floor));
     band[weighted(&mut rng, band.iter().map(|d| d.weight))]
 }
 

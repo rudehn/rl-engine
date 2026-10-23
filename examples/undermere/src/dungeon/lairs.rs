@@ -114,7 +114,7 @@ impl Undermere {
 /// innkeeper's rumour in Mereholt, told before floor ten is ever built,
 /// is of the boss floor ten will hold, since both ask this.
 pub(crate) fn final_boss(seed: RunSeed) -> &'static FinalBoss {
-    let mut rng = seed.rng(SeedDomain::new(b"undermere.final_boss"), 0);
+    let mut rng = seed.rng(crate::seeds::FINAL_BOSS, 0);
     &FINAL_BOSSES[rng.random_range(0..FINAL_BOSSES.len())]
 }
 
@@ -153,7 +153,7 @@ pub(crate) const MINI_BOSSES: [MiniBoss; 5] = [
 /// follows, and the innkeeper's rumours are of the lairs the floors will
 /// hold, since both ask this.
 pub(crate) fn lairs(seed: RunSeed) -> [(usize, u32); 2] {
-    let mut rng = seed.rng(SeedDomain::new(b"undermere.lairs"), 0);
+    let mut rng = seed.rng(crate::seeds::LAIRS, 0);
     let mut order: Vec<usize> = (0..MINI_BOSSES.len()).collect();
     for i in (1..order.len()).rev() {
         order.swap(i, rng.random_range(0..=i));

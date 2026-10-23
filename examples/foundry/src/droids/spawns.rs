@@ -89,8 +89,8 @@ pub struct Stock<'w> {
 /// and DCSS's Orb Run both make the way back the harder half: a deck one
 /// revisited after the core holds what the deepest deck holds.
 ///
-/// Draws from `Seed::stream(b"foundry.spawns", deck)` on a first arrival
-/// and `Seed::stream(b"foundry.climb", deck)` on a revisit, never a combat
+/// Draws from `seed.rng(SPAWNS, deck)` on a first arrival and
+/// `seed.rng(CLIMB, deck)` on a revisit, never a combat
 /// one: two decks drawing groups from the same stream would let deck
 /// two's population depend on how many rooms deck one happened to roll
 /// first, and a deck's climb population sharing its first-arrival stream
@@ -110,7 +110,7 @@ pub fn populate_deck(mut commands: Commands, mut entered: MessageReader<PlaceEnt
         // the way up is the harder half rather than a walk through decks
         // the commando already emptied.
         let band = if ev.first { deck } else { deepest.0 };
-        let mut rng = seed.rng(rl_engine::rl_core::SeedDomain::new(if ev.first { b"foundry.spawns" } else { b"foundry.climb" }), u64::from(deck));
+        let mut rng = seed.rng(if ev.first { crate::seeds::SPAWNS } else { crate::seeds::CLIMB }, u64::from(deck));
         let bounds = place.terrain.bounds();
         let target = BASE_GROUPS + band * GROUPS_PER_DECK;
         // Never on a spot a piece marked: a guard, a locker or the reactor

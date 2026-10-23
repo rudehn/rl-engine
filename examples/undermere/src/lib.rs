@@ -97,6 +97,7 @@ pub mod quest;
 pub mod rumours;
 pub mod run;
 pub mod save;
+pub mod seeds;
 pub mod seeming;
 pub mod shops;
 pub mod staffs;

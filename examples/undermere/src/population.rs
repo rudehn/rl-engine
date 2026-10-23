@@ -526,17 +526,17 @@ fn favored_on(draws: &BiomeDraws, bestiary: &Bestiary, floor: u32) -> Vec<Id<Mon
 /// a group never stands on the stairs themselves, and off a band's own
 /// cells, so neither ever lands on the other's.
 ///
-/// Draws from `Seed::stream(b"undermere.population", floor)`, a stream for
-/// each floor alone, so what stands on floor two never depends on how many
+/// Draws from `seed.rng(POPULATION, floor)`, a stream for each floor
+/// alone, so what stands on floor two never depends on how many
 /// draws floor one happened to make, or on whether it was entered first;
-/// the bands from `undermere.population.bands` and the ordinary groups
-/// from `undermere.population.plan`, each of the floor alone too, so a
+/// the bands from `POPULATION_BANDS` and the ordinary groups from
+/// `POPULATION_PLAN`, each of the floor alone too, so a
 /// roll added to one of the three never moves what the other two stand.
 pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, stock: Stock) {
     let Stock { bestiary, map, seed, registries, draws, ways, turns, verbs, posted } = &stock;
     for ev in entered.read().filter(|ev| ev.first) {
         let (Some(floor), Some(place)) = (floor_of(ev.map), map.place(ev.map)) else { continue };
-        let mut rng = seed.rng(rl_engine::rl_core::SeedDomain::new(b"undermere.population"), u64::from(floor));
+        let mut rng = seed.rng(crate::seeds::POPULATION, u64::from(floor));
         let mut marked: Vec<Point> = place.spots.iter().map(|spot| spot.at).collect();
         let halls: Vec<(Point, i32)> = posted
             .iter()
@@ -562,7 +562,7 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
         // feeding ground, the patrol and the captive all roll on `rng`,
         // and a band drawing from it would stand somewhere else whenever
         // one of them was added or tuned.
-        let mut band_rng = seed.rng(rl_engine::rl_core::SeedDomain::new(b"undermere.population.bands"), u64::from(floor));
+        let mut band_rng = seed.rng(crate::seeds::POPULATION_BANDS, u64::from(floor));
         let mut scenes = 0;
         for band in BANDS.iter().filter(|b| (b.floors.0..=b.floors.1).contains(&floor)) {
             // Half the time a goblin war band is placed at all, it comes
@@ -613,7 +613,7 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
         // ordinary people exactly who they were before any of that
         // existed, for whichever seed happens to land one.
         let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p) && outside(p);
-        let mut plan_rng = seed.rng(rl_engine::rl_core::SeedDomain::new(b"undermere.population.plan"), u64::from(floor));
+        let mut plan_rng = seed.rng(crate::seeds::POPULATION_PLAN, u64::from(floor));
         // A band, a feeding ground and a patrol each stand in for one of
         // the floor's ordinary groups rather than beside all of them:
         // three goblins round a fire are one of the floor's fights, and a

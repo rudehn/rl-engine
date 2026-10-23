@@ -220,6 +220,10 @@ struct Rats {
 // ANCHOR_END: creatures
 
 // ANCHOR: populate
+/// The stream the rats are placed from, named once: a spawner added later
+/// draws from a stream of its own and cannot shift what this one places.
+const RATS: SeedDomain = SeedDomain::new(b"warren.rats");
+
 /// Fills the floor the one time it is built. `PlaceEntered::first` is
 /// true only on that arrival, so coming back does not restock it.
 fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, rats: Res<Rats>, map: Res<WorldMap>, seed: Res<Seed>) {
@@ -229,9 +233,7 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ra
         }
         let Some(place) = map.place(ev.map) else { continue };
         let bounds = place.terrain.bounds();
-        // A stream of its own, keyed by name: adding another spawner later
-        // cannot shift the numbers this one draws.
-        let mut rng = seed.rng(rl_engine::rl_core::SeedDomain::new(b"warren.rats"), ev.map.0 as u64);
+        let mut rng = seed.rng(RATS, ev.map.0 as u64);
         let mut placed = 0;
         while placed < 16 {
             let p = Point::new(rng.random_range(bounds.x..bounds.right()), rng.random_range(bounds.y..bounds.bottom()));
