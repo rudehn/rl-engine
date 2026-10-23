@@ -70,8 +70,8 @@ if grep -n "cargo generate --git" README.md docs/guide/src/*.md crates/atglyph/s
 fi
 
 # And every dependency line the readme offers a project of its own names it.
-if grep -nE '^atglyph(-[a-z]+)? = ' README.md | grep -v "= \"$version\"\$"; then
-  echo "error: the readme lines above depend on an atglyph other than $version" >&2
+if grep -nE '^(//! )?atglyph(-[a-z]+)? = ' README.md crates/*/README.md crates/*/src/lib.rs | grep -v "= \"$version\"\$"; then
+  echo "error: the lines above depend on an atglyph other than $version" >&2
   exit 1
 fi
 

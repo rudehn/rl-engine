@@ -3,6 +3,14 @@
 //! Use this crate alone, or through `atglyph` as `atglyph::mapgen`.
 //! It builds places from a chain of seeded passes, builds with no Bevy, and builds for `wasm32-unknown-unknown`,
 //! so a tool, a server or a test can depend on `atglyph-mapgen` and skip compiling Bevy.
+//! Its example imports from the crates it builds on, so used alone it lists them at the same version:
+//!
+//! ```toml
+//! [dependencies]
+//! atglyph-core = "0.3.0"
+//! atglyph-grid = "0.3.0"
+//! atglyph-mapgen = "0.3.0"
+//! ```
 //!
 //! ```
 //! use atglyph_core::{PlaceSeed, RunSeed};

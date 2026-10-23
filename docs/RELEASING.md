@@ -4,7 +4,7 @@ A release is the steps below, in order.
 A step marked **Nate** needs his account, his credentials or his judgment; an agent stops there and says so.
 
 1. The documentation pass, as `AGENTS.md` describes it, over everything since the last tag.
-2. Bump the workspace version, the internal dependency versions, the template's pin, the readme's dependency lines and the `--tag` in the readme, the guide and the facade's front page together; `scripts/check-template.sh` names any one left behind.
+2. Bump the workspace version, the internal dependency versions, the template's pin, the dependency lines in the readme and in the Bevy-free crates' readmes and front pages, and the `--tag` in the readme, the guide and the facade's front page together; `scripts/check-template.sh` names any one left behind.
 3. Run `python3 scripts/publish.py --semver` and `scripts/check-publish.sh` by hand.
 4. **Nate**, the first release only: create the crates.io account, make an API token scoped to publishing new crates, and store it as the `CARGO_REGISTRY_TOKEN` repository secret.
 5. **Nate**, at `0.4.0`, before the tag: rename the repository to `rudehn/atglyph` in GitHub's settings, then run `python3 scripts/rename-to-atglyph.py --urls` and commit.
