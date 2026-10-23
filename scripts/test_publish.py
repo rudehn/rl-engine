@@ -16,6 +16,7 @@ publish_order = publish.publish_order
 plan_publish = publish.plan_publish
 semver_targets = publish.semver_targets
 retry_wait_seconds = publish.retry_wait_seconds
+run_publish = publish.run_publish
 
 
 def package(name, deps=(), publishable=True):
@@ -74,7 +75,28 @@ class Publish(unittest.TestCase):
         self.assertEqual(retry_wait_seconds(stderr, now=1792746000), 3605)
 
     def test_a_rate_limit_that_names_no_time_waits_ten_minutes(self):
-        self.assertEqual(retry_wait_seconds("429 Too Many Requests"), 600)
+        stderr = "status 429 Too Many Requests: You have published too many new crates"
+        self.assertEqual(retry_wait_seconds(stderr), 600)
+
+    def test_a_compile_error_on_line_429_is_not_a_rate_limit(self):
+        stderr = "error[E0308]: mismatched types\n --> src/lib.rs:429:5\nerror: could not compile `atglyph-bevy`"
+        self.assertIsNone(retry_wait_seconds(stderr))
+
+    def test_the_attempts_per_crate_are_capped(self):
+        class Result:
+            returncode = 101
+            stdout = ""
+            stderr = "status 429 Too Many Requests: you have published too many new crates"
+
+        calls = []
+
+        def run(*args, **kwargs):
+            calls.append(args)
+            return Result()
+
+        with self.assertRaises(SystemExit):
+            run_publish("atglyph-core", run=run, sleep=lambda s: None)
+        self.assertEqual(len(calls), publish.MAX_ATTEMPTS)
 
 
 if __name__ == "__main__":

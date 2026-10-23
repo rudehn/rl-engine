@@ -22,6 +22,10 @@ import urllib.request
 
 USER_AGENT = "atglyph-release (https://github.com/rudehn/rl-engine)"
 DEFAULT_WAIT_SECONDS = 600
+# crates.io's new-crate limit lets a burst through and then one crate every
+# ten minutes or so, so ten tries a crate is far past any real wait; a misread
+# failure stops there instead of retrying until the job's timeout.
+MAX_ATTEMPTS = 10
 
 
 def publish_order(metadata):
@@ -61,7 +65,10 @@ def retry_wait_seconds(stderr, now=None):
     crates.io names the time to retry after, as in "try again after Fri, 23 Oct
     2026 10:00:00 GMT"; when that cannot be read the wait is ten minutes.
     """
-    if "429" not in stderr and "too many requests" not in stderr.lower():
+    lower = stderr.lower()
+    # Both halves, since a bare "429" is also a line number in a compile error.
+    status = "status 429" in lower or "too many requests" in lower
+    if not (status and "published too many" in lower):
         return None
     match = re.search(r"try again (?:after|at) ([A-Za-z]{3}, \d+ [A-Za-z]{3} \d{4} [\d:]{8}) GMT", stderr)
     if match:
@@ -101,9 +108,9 @@ def workspace():
     return order, versions.pop()
 
 
-def run_publish(crate):
-    while True:
-        result = subprocess.run(["cargo", "publish", "-p", crate], capture_output=True, text=True)
+def run_publish(crate, run=subprocess.run, sleep=time.sleep):
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        result = run(["cargo", "publish", "-p", crate], capture_output=True, text=True)
         sys.stdout.write(result.stdout)
         sys.stderr.write(result.stderr)
         if result.returncode == 0:
@@ -111,8 +118,11 @@ def run_publish(crate):
         wait = retry_wait_seconds(result.stderr)
         if wait is None:
             sys.exit(f"error: cargo publish -p {crate} failed")
+        if attempt == MAX_ATTEMPTS:
+            break
         print(f"{crate}: crates.io's rate limit, retrying in {wait} s", flush=True)
-        time.sleep(wait)
+        sleep(wait)
+    sys.exit(f"error: {crate} is still rate limited after {MAX_ATTEMPTS} attempts; re-run the workflow")
 
 
 def main():
