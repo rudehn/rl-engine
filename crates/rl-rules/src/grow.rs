@@ -13,7 +13,7 @@ use crate::layout::{JoinDef, LayoutDef, ShapeKind};
 use crate::pool::{Joined, Pick, Placed, Pool};
 use crate::prefab::PrefabLibrary;
 use rl_grid::TileId;
-use rl_mapgen::accrete::{Accrete, Barrier, Cross, District, FirstPiece, Join, Passage, Rectangle, Shape};
+use rl_mapgen::accrete::{Accrete, Cross, District, FirstPiece, Join, Passage, Rectangle, Shape};
 use rl_mapgen::dungeon::Stairs;
 use rl_mapgen::prefab::Orient;
 use rl_mapgen::{BuildError, Cave, DistrictDressings, Dress, Lay, OpenLoops, PoolPick, Require, StampPicks};
@@ -122,7 +122,7 @@ pub fn passes(def: &LayoutDef, recipe: &str, tiles: &LayoutTiles) -> Result<Layo
             districts_per_10k: r.districts_per_10k,
             open_pct: r.open_pct,
             patience: r.patience,
-            barriers: r.barriers.iter().map(|b| Barrier { from: b.from, to: b.to, chance_pct: b.chance_pct, jitter_pct: b.jitter_pct }).collect(),
+            barriers: r.barriers.clone(),
             locked,
             sealed,
             pieces: Vec::new(),
@@ -227,7 +227,6 @@ pub fn dress<M>(prefabs: &PrefabLibrary<M>, floor: TileId, lists: &[DistrictDres
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layout::BarrierDef;
     use rl_core::RunSeed;
     use rl_grid::{TileProps, TileRegistry};
     use rl_mapgen::dungeon::{FarthestExit, RandomStart};
@@ -324,30 +323,6 @@ mod tests {
             let walkable = ctx.tiles().tables().walkable;
             assert!(laid[0].cells.iter().all(|c| !walkable[ctx.terrain().get(*c).unwrap().index()]), "seed {s}: no loop or door opens a barrier");
         }
-    }
-
-    /// `rl-rules` refuses a barrier at load and `rl-mapgen` again at
-    /// growth, each by its own copy of the arithmetic, since neither crate
-    /// names the other; this is where the two are held to one answer.
-    #[test]
-    fn the_file_and_the_pass_agree_on_which_barriers_may_reach_edge_to_edge() {
-        let shares = [0, 2, 5, 8, 50, 92, 95, 98, 100];
-        let mut refused = 0;
-        for (w, h) in [(84, 48), (30, 60), (12, 9)] {
-            for &(a, b) in &[(0, 100), (2, 98), (5, 95), (8, 92), (0, 50), (50, 100), (3, 97)] {
-                for &across in &shares {
-                    for jitter in [0, 3, 10, 40] {
-                        let file = BarrierDef { from: (a, across), to: (b, across), chance_pct: 100, jitter_pct: jitter };
-                        let pass = Barrier { from: file.from, to: file.to, chance_pct: 100, jitter_pct: jitter };
-                        assert_eq!(file.may_cut(w, h), pass.may_cut(w, h), "{w}x{h} {file:?}");
-                        let (file, pass) = (BarrierDef { from: (across, a), to: (across, b), ..file }, Barrier { from: (across, a), to: (across, b), ..pass });
-                        assert_eq!(file.may_cut(w, h), pass.may_cut(w, h), "{w}x{h} {file:?}");
-                        refused += usize::from(pass.may_cut(w, h));
-                    }
-                }
-            }
-        }
-        assert!(refused > 0 && refused < 3 * 7 * 9 * 4, "some cut and some do not: {refused}");
     }
 
     #[test]

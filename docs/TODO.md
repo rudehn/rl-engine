@@ -417,9 +417,9 @@ Left over from the terminal front end, usability branch 08, on 2026-10-22.
 `docs/reviews/engine_api.md` holds the findings, with paths, and a note of which were stale on 2026-10-20; these are its sections B to F grouped into slices, each one branch.
 
 - **One type per concept across the tier 1 crates.**
-  rl-rules and rl-mapgen each name `Prefer`, `Stairs`, `Placement`, `Mirror` and the district dressings, and rl-bevy's `layout.rs` and `prefabs.rs` translate them arm by arm; one crate names the other, or the plain enums move to rl-grid, and the Bevy-free RON adapters move to tier 1 with them.
-  `Reach` is now the same pair, `rl_rules::arms::Reach` beside rl-bevy's `combat::Reach`.
-  Beside it: loot as a `BandedTable<K>` with tags, one actor handle where statuses use a bare `u64`, and one `Secret`.
+  The content files' twins are gone (usability branch 10): `rl-rules` depends on `rl-mapgen` and reads its files straight into the mapgen types, and growing a place from them is `rl_rules::grow` with a `PrefabLibrary`.
+  Left: loot as a `BandedTable<K>` with tags, and one actor handle where statuses use a bare `u64`.
+  The same-named pairs, `Reach` (`rl_rules::arms::Reach` beside rl-bevy's `combat::Reach`) and `Secret`, are usability branch 15's renames.
 - **Ambiguity tests through the schedule's interface, and engine systems private.**
   Foundry's ambiguity test names about forty engine system functions, which is why those stayed public when the rest went crate-private, and why it breaks when one is renamed.
   The engine checks its own systems in its own tests; a game allows a pair by its own system and the data shared; the engine's systems become `pub(crate)`.

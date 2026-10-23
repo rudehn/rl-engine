@@ -41,8 +41,8 @@
 //!
 //! The values a content file writes, a [`Turn`](prefab::Turn), a
 //! [`Mirror`](prefab::Mirror), a [`Placement`](prefab::Placement), a
-//! [`Prefer`], a [`Stairs`](dungeon::Stairs), a [`Spread`](dress::Spread)
-//! and a [`DistrictDressings`], deserialize, so `rl-rules` reads its files
+//! [`Prefer`], a [`Stairs`](dungeon::Stairs), a [`Spread`](dress::Spread),
+//! a [`DistrictDressings`] and a [`Barrier`], deserialize, so `rl-rules` reads its files
 //! straight into them rather than into copies it would translate; this
 //! crate reads no file itself.
 //!
@@ -144,6 +144,9 @@ mod tests {
         let list: DistrictDressings = read(r#"(district: "halls", dressings: [("dust", 1)])"#);
         assert_eq!(list, DistrictDressings::new("halls", vec![("dust".into(), 1)]), "nothing is 0 when left out");
         assert!(ron::from_str::<DistrictDressings>(r#"(district: "halls", dressings: [], extra: 1)"#).is_err(), "an unknown field");
+        let barrier: Barrier = read("(from: (50, 0), to: (50, 70), chance_pct: 100, jitter_pct: 5)");
+        assert_eq!(barrier, Barrier { from: (50, 0), to: (50, 70), chance_pct: 100, jitter_pct: 5 });
+        assert!(ron::from_str::<Barrier>("(from: (50, 0), to: (50, 70), chance: 100, jitter_pct: 5)").is_err(), "an unknown field");
         assert!(ron::from_str::<Turn>("Sideways").is_err(), "a turn no file may write");
     }
 }

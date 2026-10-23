@@ -10,10 +10,11 @@
 //! the built place must meet or be built again.
 //!
 //! What this module does not hold is the growing. The passes are
-//! `rl-mapgen`'s, a tier 1 crate beside this one; this crate names no
-//! mapgen type and keeps no dependency on it, so a layout file loads and
-//! every one of its mistakes is reported with no map, no `App` and no grid
-//! anywhere in the test.
+//! `rl-mapgen`'s, a tier 1 crate this one depends on, and a recipe's
+//! barriers are its [`Barrier`]s read straight from the file;
+//! [`grow::passes`](crate::grow::passes) turns a recipe into the passes. A
+//! layout file loads and every one of its mistakes is reported with no map
+//! grown and no `App`.
 //!
 //! ```text
 //! // A layout: the shapes a place is grown from, the districts that favor
@@ -98,6 +99,7 @@
 //! )
 //! ```
 
+use rl_mapgen::Barrier;
 use serde::Deserialize;
 
 use crate::content::ContentError;
@@ -249,52 +251,6 @@ pub struct LoopsDef {
     pub max: u32,
 }
 
-/// A segment of rock growth goes round, in shares of the map, laid at a
-/// chance and shifted by a jitter.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct BarrierDef {
-    /// One end, as shares of the width and height, each 0 to 100.
-    pub from: (u32, u32),
-    /// The other end.
-    pub to: (u32, u32),
-    /// The chance in a hundred it is laid.
-    pub chance_pct: u32,
-    /// The furthest both ends are shifted together, as a share of the
-    /// width along a row and of the height along a column.
-    pub jitter_pct: u32,
-}
-
-/// The cell a share of a side of `side` cells falls on, rounded: nought
-/// the first and a hundred the last. `rl-mapgen`'s `cell_at_share` is its
-/// twin, which lays the barrier this checks.
-fn cell_at_share(pct: u32, side: i32) -> i32 {
-    ((i64::from(pct) * i64::from(side - 1) + 50) / 100) as i32
-}
-
-/// How near an edge a barrier's end may come and still leave a way round
-/// it: a cell inside the border, with a cell of clearance either side of
-/// a body, as `Accrete` grows. The twin of `rl-mapgen`'s own, tied to the
-/// margin growth keeps; `rl-bevy`'s test of the two `may_cut`s fails when
-/// one moves without the other.
-const REACH: i32 = 2;
-
-impl BarrierDef {
-    /// Whether some shift its jitter allows lays it from one edge of a `w`
-    /// by `h` map to the opposite one. The same arithmetic as
-    /// `rl_mapgen::accrete::Barrier::may_cut`, which refuses it again at
-    /// growth for a pass built without a file; `rl-bevy` holds the two
-    /// together in a test, since this crate names no mapgen type.
-    pub fn may_cut(&self, w: i32, h: i32) -> bool {
-        let across = |a: u32, b: u32, n: i32| {
-            let (lo, hi) = (cell_at_share(a.min(b), n), cell_at_share(a.max(b), n));
-            let jitter = cell_at_share(self.jitter_pct, n);
-            (-jitter).max(n - 1 - REACH - hi) <= jitter.min(REACH - lo)
-        };
-        across(self.from.0, self.to.0, w) || across(self.from.1, self.to.1, h)
-    }
-}
-
 /// What a built place must meet or be built again.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RequireDef {
@@ -329,8 +285,10 @@ pub struct RecipeDef {
     pub districts_per_10k: u32,
     /// Each an index into [`LayoutDef::districts`] and its weight.
     pub districts: Vec<(usize, u32)>,
-    /// The barriers growth goes round; none if the file names none.
-    pub barriers: Vec<BarrierDef>,
+    /// The barriers growth goes round; none if the file names none. Each is
+    /// the pass's own, read straight from the file, and refused at load by
+    /// its [`may_cut`](Barrier::may_cut) when it could reach edge to edge.
+    pub barriers: Vec<Barrier>,
     /// The detours to cut through.
     pub loops: LoopsDef,
     /// What the built place must meet.
@@ -395,7 +353,7 @@ struct RecipeRon {
     districts: Vec<(String, u32)>,
     // Optional, so a layout written before barriers loads unchanged.
     #[serde(default)]
-    barriers: Vec<BarrierDef>,
+    barriers: Vec<Barrier>,
     loops: LoopsDef,
     require: RequireRon,
 }
@@ -744,7 +702,7 @@ mod tests {
         );
         let barriers = load(&barred).unwrap().recipe("upper").unwrap().barriers.clone();
         assert_eq!(barriers.len(), 2);
-        assert_eq!(barriers[0], BarrierDef { from: (50, 0), to: (50, 70), chance_pct: 100, jitter_pct: 5 });
+        assert_eq!(barriers[0], Barrier { from: (50, 0), to: (50, 70), chance_pct: 100, jitter_pct: 5 });
         assert_eq!(barriers[1].chance_pct, 0, "a corner cut off is allowed, and nought is a chance like any other");
     }
 

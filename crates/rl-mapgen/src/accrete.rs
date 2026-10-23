@@ -353,7 +353,8 @@ pub(crate) fn cell_at_share(pct: u32, side: i32) -> i32 {
 /// than any the recipe draws could take: growth then stops at the
 /// barrier, and a [`Require`](crate::Require) on the open share or the
 /// route is what fails the place.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Barrier {
     /// One end, as shares of the map's width and height.
     pub from: (u32, u32),
@@ -371,9 +372,7 @@ pub struct Barrier {
 /// it there: a piece needs a cell inside the border, and its body and
 /// ring stand a cell clear of the barrier, so an end within this many
 /// cells of the edge leaves no way round. It is the margin growth keeps,
-/// the border and the ring, and `rl-rules` holds a twin of it to refuse a
-/// layout file's barrier by; widen either and the other goes with it,
-/// which `rl-bevy`'s test of the two `may_cut`s catches if forgotten.
+/// the border and the ring.
 const REACH: i32 = 2;
 
 impl Barrier {
@@ -386,7 +385,7 @@ impl Barrier {
     /// Whether some shift its jitter allows lays it from one edge of a `w`
     /// by `h` map to the opposite one, so that growth on one side could
     /// never cross to the other. `rl-rules` refuses such a barrier when it
-    /// loads a layout, by the same arithmetic.
+    /// loads a layout, by asking this.
     pub fn may_cut(&self, w: i32, h: i32) -> bool {
         let (a, b) = self.ends(w, h);
         // A shift `s` along a side of `n` cells lays the ends at `lo + s`

@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- A layout recipe's `barriers` are `rl_mapgen::Barrier`s, read straight from the file and refused at load by the pass's own `Barrier::may_cut`; `rl_rules::layout::BarrierDef` and its copy of the arithmetic are gone.
+  To change: `BarrierDef` becomes `rl_mapgen::Barrier`, with the same four fields; files are unchanged.
+
 - Growing a place from layout, pool and dressing files is tier 1: `rl_bevy::layout` is now `rl_rules::grow`, with the same `passes`, `picked`, `dress`, `LayoutPasses`, `LayoutTiles` and `Picked`, and what `Prefabs` held is `rl_rules::prefab::PrefabLibrary` (`rl_rules::PrefabLibrary`), with `new`, `with_dressings`, `defs`, `roles`, `dressings`, `piece`, `grown`, `dressing` and `slot`. `Prefabs` is the library as a resource, shared, and derefs to it; `Prefabs::from(library)` makes one.
   To change: `rl_bevy::layout::` becomes `rl_rules::grow::`; a `&Prefabs` still passes where `picked` and `dress` now take a `&PrefabLibrary`. A tool or a terminal game grows the same places without Bevy.
 
