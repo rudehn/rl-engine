@@ -6,7 +6,7 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 publish = false
-description = "A worked example: a walk through generated rooms in a terminal, on the Bevy-free crates alone."
+description = "A worked example: a walk through generated rooms and a fight with the rats in them, in a terminal, on the Bevy-free crates alone."
 
 [package.metadata.atglyph]
 # Read by scripts/check-tiers.sh: 0 core, 1 no Bevy, 2 the Bevy layer, 3 the facade and games.
@@ -16,4 +16,6 @@ tier = 3
 atglyph-core.workspace = true
 atglyph-grid.workspace = true
 atglyph-mapgen.workspace = true
+atglyph-rules.workspace = true
+rand = { workspace = true, features = ["alloc"] }
 crossterm.workspace = true

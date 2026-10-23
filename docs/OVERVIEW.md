@@ -339,7 +339,7 @@ It is a library with a thin binary, so every system is in one `FoundryPlugin` th
 
 ## The toolkit alone: Terminal
 
-A walk through generated rooms in a terminal, with no Bevy: `examples/terminal` depends on `atglyph-core`, `atglyph-grid` and `atglyph-mapgen` only, owns its loop with `crossterm`, grows the map with `Rooms` and `RandomStart`, sees with `atglyph_grid::fov::compute`, and keeps its rules as plain functions (`generate`, `step`, `look`, `render`) tested without a terminal.
+A walk through generated rooms and a fight with the rats in them, in a terminal, with no Bevy: `examples/terminal` depends on `atglyph-core`, `atglyph-grid`, `atglyph-mapgen` and `atglyph-rules` only, owns its loop with `crossterm`, grows the map with `Rooms` and `RandomStart`, sees with `atglyph_grid::fov::compute`, deals turns with `atglyph_core::TurnQueue`, decides each rat's turn with a `Brain` of `MeleeAdjacent` and `Hunt` over a `Snapshot` holding the walker only while the rat can see it, lands blows with `atglyph_rules::damage::apply_hit`, and keeps its rules as plain functions (`generate`, `step`, `wait`, `rats_act`, `look`, `render`) tested without a terminal.
 
 ## The game: Undermere
 

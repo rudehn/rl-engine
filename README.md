@@ -76,7 +76,7 @@ A few of them: `atglyph::rules::damage::{apply_hit, heal, mitigate}`, `atglyph::
 
 Depend on those four crates and Bevy is never compiled.
 
-`examples/terminal` is a walk through generated rooms in a terminal, built on `atglyph-core`, `atglyph-grid` and `atglyph-mapgen` alone, with `crossterm` for the keys and the screen.
+`examples/terminal` is a walk through generated rooms and a fight with the rats in them, in a terminal, built on `atglyph-core`, `atglyph-grid`, `atglyph-mapgen` and `atglyph-rules` alone, with `crossterm` for the keys and the screen.
 Its `main.rs` only maps keys to steps, and the loop is the game's.
 
 ```sh
@@ -214,7 +214,7 @@ Each crate declares its tier in its `Cargo.toml`, and `scripts/check-tiers.sh` f
 
 ### Terminal, a walk through generated rooms
 
-`examples/terminal` is the toolkit used alone: a walk through generated rooms on `atglyph-core`, `atglyph-grid` and `atglyph-mapgen`, with `crossterm` for the keys and a `main.rs` that only maps keys to steps.
+`examples/terminal` is the toolkit used alone: a walk through generated rooms and a fight with the rats in them on `atglyph-core`, `atglyph-grid`, `atglyph-mapgen` and `atglyph-rules`, with `crossterm` for the keys and a `main.rs` that only maps keys to turns.
 Its tested functions are `terminal::{generate, step, look, render, direction_of}`.
 
 ```sh
