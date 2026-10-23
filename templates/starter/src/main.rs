@@ -3,21 +3,23 @@
 //! One floor of rooms, dark except for the torch you carry and the braziers
 //! in its halls. Goblins wander it. They notice you when they can see you,
 //! sooner when you stand in light, and hunt where they last saw you. Walk
-//! into one to strike it.
+//! into one to strike it. Potions lie about the floor, and a dagger and a
+//! leather coat, to pick up, drink and wear.
 //!
 //! Everything is in this one file, in the order it happens: the screen, the
-//! map, the start of a run, the keys, filling the floor, and the words in
-//! the log. Change any of it; the tests at the bottom say what has to stay
+//! map, the start of a run, the keys, filling the floor, and what a potion
+//! does. Change any of it; the tests at the bottom say what has to stay
 //! true.
 //!
 //! `cargo run` opens a window; `cargo run -- --tty` plays in the terminal.
 //!
 //! Keys: arrows, `hjklyubn` or the numpad to walk, and walk into a goblin
-//! to attack it; `.` to wait; `t` to put your torch out or light it again;
-//! `x` to look around; Escape for the menu; `q` to quit; `?` lists them all. Each is declared
-//! once, in `declare_controls`, and read by name: that one list is what the
-//! `?` screen shows and what the input system checks, so the two cannot
-//! disagree.
+//! to attack it; `.` to wait; `g` to pick up what is here, `d` to drink a
+//! potion and `w` to put on what you carry; `t` to put your torch out or
+//! light it again; `x` to look around; Escape for the menu; `q` to quit;
+//! `?` lists them all. Each is declared once, in `declare_controls`, and
+//! read by name: that one list is what the `?` screen shows and what the
+//! input system checks, so the two cannot disagree.
 
 use std::sync::Arc;
 
@@ -42,6 +44,9 @@ const FLOOR: MapId = MapId(1);
 /// How many braziers light the floor, and how many goblins walk it.
 const BRAZIERS: usize = 5;
 const GOBLINS: usize = 10;
+/// How many potions lie on the floor, and how much health each mends.
+const POTIONS: usize = 3;
+const POTION_HEALS: i32 = 6;
 
 /// The random stream a floor is stocked from, by name, drawn from the
 /// floor's own seed: a spawner added later draws from a stream of its own
@@ -104,6 +109,9 @@ impl Plugin for Starter {
         // decide the monsters' turns, lighting decides what can be seen, and
         // stealth decides what has been noticed.
         app.add_plugins((CombatPlugin, MindsPlugin, LightingPlugin, StealthPlugin))
+            // Items lie on the floor, in a bag, or worn, and the engine moves
+            // them between the three and charges a turn for each move.
+            .add_plugins(ItemsPlugin)
             // How the floor looks, and how it is built: the engine builds it
             // the first time something enters it, from its own seed.
             .insert_resource(dungeon.appearance())
@@ -115,8 +123,9 @@ impl Plugin for Starter {
                 Update,
                 player_input.in_set(EngineSet::Input).run_if(no_modal),
             )
-            // Inside the turn: the floor fills the moment it is first entered.
-            .add_systems(Turn, populate.in_set(TurnSet::React));
+            // Inside the turn: the floor fills the moment it is first entered,
+            // and a potion mends the moment it is drunk.
+            .add_systems(Turn, (populate, drink).in_set(TurnSet::React));
         // The keys, once, for the input system and the `?` screen alike.
         declare_controls(app);
     }
@@ -224,21 +233,81 @@ impl Goblins {
     }
 }
 
+/// What lies about the floor to be found: potions, a dagger and a coat.
+/// An item is an entity like any other: on the floor it has a position,
+/// and picked up it is listed in a bag instead.
+#[derive(Resource)]
+struct Finds {
+    stab: DamageKindId,
+    main_hand: SlotId,
+    body: SlotId,
+}
+
+impl Finds {
+    /// A potion. The engine only knows that it was used; what drinking it
+    /// does is [`drink`], further down.
+    fn potion(&self) -> impl Bundle + use<> {
+        (
+            Item,
+            Potion(POTION_HEALS),
+            Name::new("potion"),
+            Glyph::new('!', Color::srgb(0.90, 0.35, 0.50)).on_layer(2),
+        )
+    }
+
+    /// A dagger. Wielded, its blow is the one you strike with, in place of
+    /// your fists.
+    fn dagger(&self) -> impl Bundle + use<> {
+        (
+            (Item, Name::new("dagger")),
+            (
+                Wearable(EquipShape::in_slot(self.main_hand)),
+                MeleeAttack::new(self.stab, DiceRoll::new(2, 4)),
+                // What it is worth beside other gear, to a monster that
+                // carries things: a goblin here carries nothing.
+                GearScore(3),
+            ),
+            Glyph::new(')', Color::srgb(0.75, 0.78, 0.85)).on_layer(2),
+        )
+    }
+
+    /// A leather coat. Worn, its armor is added to yours on every blow.
+    fn coat(&self) -> impl Bundle + use<> {
+        (
+            (Item, Name::new("leather coat")),
+            (
+                Wearable(EquipShape::in_slot(self.body)),
+                Armor(2),
+                GearScore(2),
+            ),
+            Glyph::new('[', Color::srgb(0.70, 0.50, 0.30)).on_layer(2),
+        )
+    }
+}
+
 /// Hands the engine the rules, then sends the player down to the floor's
 /// entry.
 fn start(mut commands: Commands, seed: Res<Seed>, mut log: Log) {
-    // What damage can be, and who is at war with whom. Both are registries
-    // the game fills, so the engine never names a goblin.
+    // What damage can be, who is at war with whom, and where things are
+    // worn. All are registries the game fills, so the engine never names a
+    // goblin or a coat.
     let kinds =
-        Registry::from_defs(vec![DamageKind::new("stab"), DamageKind::new("slash")]).unwrap();
+        Registry::from_defs(vec![DamageKind::new("stab"), DamageKind::new("punch")]).unwrap();
     let sides =
         Registry::from_defs(vec![FactionDef::new("you"), FactionDef::new("goblins")]).unwrap();
+    let slots = Registry::from_defs(vec![SlotDef::new("main hand"), SlotDef::new("body")]).unwrap();
     let (you, goblins) = (sides.expect("you"), sides.expect("goblins"));
     commands.insert_resource(CombatRules::new().hostile(you, goblins));
     commands.insert_resource(Registries {
         damage_kinds: kinds.clone(),
         factions: sides,
+        slots: slots.clone(),
         ..default()
+    });
+    commands.insert_resource(Finds {
+        stab: kinds.expect("stab"),
+        main_hand: slots.expect("main hand"),
+        body: slots.expect("body"),
     });
     commands.insert_resource(Goblins {
         // Asked in order, and the first that answers wins: strike what is
@@ -268,8 +337,11 @@ fn start(mut commands: Commands, seed: Res<Seed>, mut log: Log) {
             (
                 Health::full(30),
                 Armor(1),
-                MeleeAttack::new(kinds.expect("slash"), DiceRoll::new(1, 6)),
+                // Your fists, struck with while you wield nothing.
+                MeleeAttack::new(kinds.expect("punch"), DiceRoll::new(1, 6)),
             ),
+            // A bag to carry things in, and a slot for each place to wear one.
+            (Inventory::default(), Equipped(Equipment::for_slots(&slots))),
             // Lit, you see further and are noticed sooner.
             TORCH,
             // A goblin has to be a step closer to be sure of you, and rolls a
@@ -289,8 +361,19 @@ fn start(mut commands: Commands, seed: Res<Seed>, mut log: Log) {
     );
 }
 
-/// The player, only while it holds the turn, and whether its torch is lit.
-type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, Has<LightSource>), (With<Player>, With<MyTurn>)>;
+/// The player, only while it holds the turn: whether its torch is lit,
+/// what it carries, and what it wears.
+type PlayerTurn<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Entity,
+        Has<LightSource>,
+        &'static Inventory,
+        &'static Equipped,
+    ),
+    (With<Player>, With<MyTurn>),
+>;
 
 /// The game's own keys, by name.
 ///
@@ -300,27 +383,42 @@ type PlayerTurn<'w, 's> = Query<'w, 's, (Entity, Has<LightSource>), (With<Player
 #[derive(Resource, Clone, Copy)]
 struct Binds {
     torch: ControlId,
+    drink: ControlId,
+    wear: ControlId,
     quit: ControlId,
 }
 
 /// Declares the keys, under the headings the `?` screen groups them by.
 ///
-/// Walking and waiting are the same in every roguelike, so they are the
-/// engine's `PlayerKeysPlugin`, named here in the game's words: a walk is a
-/// step, a blow at whoever hostile stands there, or the door in the way
-/// opened, and the engine decides which. The engine adds its own keys
-/// alongside: the look cursor's, and `?` itself.
+/// Walking, picking up and waiting are the same in every roguelike, so they
+/// are the engine's `PlayerKeysPlugin`, named here in the game's words: a
+/// walk is a step, a blow at whoever hostile stands there, or the door in
+/// the way opened, and the engine decides which. The engine adds its own
+/// keys alongside: the look cursor's, and `?` itself.
 fn declare_controls(app: &mut App) {
     app.add_plugins(
         PlayerKeysPlugin::new()
             .walk("Move", "walk, or strike whoever is there")
+            .pick_up("Act", "pick up what is here")
             .wait("Act", "wait a turn"),
     );
     let binds = Binds {
+        drink: app.add_control("Act", "drink a potion", KeyCode::KeyD),
+        wear: app.add_control("Act", "wear what you carry", KeyCode::KeyW),
         torch: app.add_control("Act", "put the torch out, or light it", KeyCode::KeyT),
         quit: app.add_control("Game", "quit", KeyCode::KeyQ),
     };
     app.insert_resource(binds);
+}
+
+/// Every intent the game's own keys can write, as one parameter, so the
+/// input system has room for as many keys as the game grows.
+#[derive(bevy::ecs::system::SystemParam)]
+struct Intents<'w> {
+    waits: MessageWriter<'w, Intent<Wait>>,
+    uses: MessageWriter<'w, Intent<UseItem>>,
+    equips: MessageWriter<'w, Intent<Equip>>,
+    exit: MessageWriter<'w, AppExit>,
 }
 
 /// The game's own keys to intents. Writing an intent is all it takes to
@@ -329,16 +427,17 @@ fn player_input(
     keys: ControlInput,
     binds: Res<Binds>,
     player: PlayerTurn,
-    mut waits: MessageWriter<Intent<Wait>>,
+    things: Query<(Has<Potion>, Has<Wearable>)>,
+    mut intents: Intents,
     mut commands: Commands,
-    mut exit: MessageWriter<AppExit>,
+    mut log: Log,
 ) {
     if keys.just_pressed(binds.quit) {
-        exit.write(AppExit::Success);
+        intents.exit.write(AppExit::Success);
         return;
     }
     // No turn in hand means it is somebody else's move.
-    let Ok((me, lit)) = player.single() else {
+    let Ok((me, lit, bag, worn)) = player.single() else {
         return;
     };
     if keys.just_pressed(binds.torch) {
@@ -349,15 +448,39 @@ fn player_input(
         } else {
             commands.entity(me).insert(TORCH);
         }
-        waits.write(Intent::new(me, Wait));
+        intents.waits.write(Intent::new(me, Wait));
+    } else if keys.just_pressed(binds.drink) {
+        // The first potion in the bag. The engine spends the turn and
+        // reports the use, and `drink` says what it does.
+        let potion = bag
+            .items
+            .iter()
+            .find(|i| things.get(**i).is_ok_and(|(p, _)| p));
+        match potion {
+            Some(&potion) => {
+                intents.uses.write(Intent::new(me, UseItem(potion)));
+            }
+            None => log.muted("You have no potion to drink."),
+        }
+    } else if keys.just_pressed(binds.wear) {
+        // The first thing carried that can be worn and is not yet. The
+        // engine puts it in its slot and takes off whatever was there.
+        let wearable = |i: &&Entity| !worn.contains(**i) && things.get(**i).is_ok_and(|(_, w)| w);
+        match bag.items.iter().find(wearable) {
+            Some(&item) => {
+                intents.equips.write(Intent::new(me, Equip(item)));
+            }
+            None => log.muted("You carry nothing more to put on."),
+        }
     }
 }
 
-/// Braziers and goblins, the one time the floor is built.
+/// Braziers, goblins and things to find, the one time the floor is built.
 fn populate(
     mut commands: Commands,
     mut entered: MessageReader<PlaceEntered>,
     goblins: Res<Goblins>,
+    finds: Res<Finds>,
     map: Res<WorldMap>,
     seed: Res<Seed>,
 ) {
@@ -370,15 +493,11 @@ fn populate(
         let Some(place) = map.place(ev.map) else {
             continue;
         };
-        let bounds = place.terrain.bounds();
         let mut rng = seed.place(ev.map).rng(POPULATE, 0);
-        let mut taken = vec![ev.entry];
+        let walkable = |p| map.is_walkable(p);
+        let stock = stock(place.terrain.bounds(), ev.entry, walkable, &mut rng);
 
-        for _ in 0..BRAZIERS {
-            let Some(at) = open_cell(&map, bounds, ev.entry, 6, &taken, &mut rng) else {
-                break;
-            };
-            taken.push(at);
+        for at in stock.braziers {
             // A fixture: it never moves, so its light is cast once.
             commands.spawn((
                 Position(at),
@@ -387,21 +506,59 @@ fn populate(
                 Glyph::new('*', Color::srgb(1.0, 0.6, 0.25)).on_layer(1),
             ));
         }
-        for _ in 0..GOBLINS {
-            // Never close enough to strike on the first turn.
-            let Some(at) = open_cell(&map, bounds, ev.entry, 10, &taken, &mut rng) else {
-                break;
-            };
-            taken.push(at);
+        for at in stock.goblins {
             commands.spawn(goblins.goblin(at));
         }
+        for at in stock.potions {
+            commands.spawn((finds.potion(), Position(at)));
+        }
+        if let Some(at) = stock.dagger {
+            commands.spawn((finds.dagger(), Position(at)));
+        }
+        if let Some(at) = stock.coat {
+            commands.spawn((finds.coat(), Position(at)));
+        }
+    }
+}
+
+/// Where everything on a floor goes. Worked out from the floor alone, so
+/// the tests can ask it of every seed without running the game.
+struct Stock {
+    braziers: Vec<Point>,
+    goblins: Vec<Point>,
+    potions: Vec<Point>,
+    dagger: Option<Point>,
+    coat: Option<Point>,
+}
+
+/// A cell for each thing on a floor, no two on one cell and none on
+/// `entry`, where you arrive.
+fn stock(
+    bounds: Rect,
+    entry: Point,
+    walkable: impl Fn(Point) -> bool,
+    rng: &mut impl Rng,
+) -> Stock {
+    let mut taken = vec![entry];
+    let mut place = |away: i32| {
+        let at = open_cell(&walkable, bounds, entry, away, &taken, rng)?;
+        taken.push(at);
+        Some(at)
+    };
+    Stock {
+        braziers: (0..BRAZIERS).map_while(|_| place(6)).collect(),
+        // Never close enough to strike on the first turn.
+        goblins: (0..GOBLINS).map_while(|_| place(10)).collect(),
+        potions: (0..POTIONS).map_while(|_| place(3)).collect(),
+        dagger: place(3),
+        coat: place(3),
     }
 }
 
 /// A walkable cell at least `away` steps from `from` that nothing has taken,
 /// or `None` when a fair number of tries finds none.
 fn open_cell(
-    map: &WorldMap,
+    walkable: impl Fn(Point) -> bool,
     bounds: Rect,
     from: Point,
     away: i32,
@@ -415,9 +572,38 @@ fn open_cell(
                 rng.random_range(bounds.y..bounds.bottom()),
             )
         })
-        .find(|p| {
-            map.is_walkable(*p) && geometry::chebyshev(*p, from) >= away && !taken.contains(p)
-        })
+        .find(|p| walkable(*p) && geometry::chebyshev(*p, from) >= away && !taken.contains(p))
+}
+
+/// A potion, and how much health it mends.
+#[derive(Component, Clone, Copy)]
+struct Potion(i32);
+
+/// What drinking a potion means. The engine has already spent the turn on
+/// it; this is the part only the game knows. It runs inside the turn, so
+/// you are mended before the next goblin strikes.
+fn drink(
+    mut commands: Commands,
+    mut used: MessageReader<ItemEvent>,
+    potions: Query<&Potion>,
+    mut drinkers: Query<(&mut Health, Has<Player>)>,
+    mut log: Log,
+) {
+    for ev in used.read() {
+        let ItemEvent::Used { actor, item } = *ev else {
+            continue;
+        };
+        let (Ok(potion), Ok((mut health, you))) = (potions.get(item), drinkers.get_mut(actor))
+        else {
+            continue;
+        };
+        health.current = (health.current + potion.0).min(health.max);
+        // Drunk, it is gone, and the engine takes it out of the bag.
+        commands.entity(item).despawn();
+        if you {
+            log.push("You drink the potion. Your wounds close.", Tones::GOOD);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -462,7 +648,113 @@ mod tests {
             );
             let open = built.terrain.iter().filter(|(_, t)| walkable(*t)).count();
             assert!(open > 200, "seed {seed}: only {open} open cells");
+
+            // And everything `populate` lays out lands on a cell you can
+            // reach, the potions, the dagger and the coat all of them.
+            let on_floor = |p: Point| built.terrain.get(p).is_some_and(walkable);
+            let mut rng = PlaceSeed::of(RunSeed(seed), FLOOR.0).rng(POPULATE, 0);
+            let stock = stock(built.terrain.bounds(), built.entry, on_floor, &mut rng);
+            assert_eq!(stock.potions.len(), POTIONS, "seed {seed}: potions");
+            let things = stock.potions.iter().chain(&stock.dagger).chain(&stock.coat);
+            assert_eq!(
+                things.clone().count(),
+                POTIONS + 2,
+                "seed {seed}: the dagger or the coat is missing"
+            );
+            assert!(
+                things.copied().all(on_floor),
+                "seed {seed}: a thing lies in a wall"
+            );
         }
+    }
+
+    /// `d` drinks the first potion in the bag: it mends what it says, never
+    /// past full health, and is gone once drunk.
+    #[test]
+    fn drinking_a_potion_mends_your_wounds() {
+        let (mut app, me) = started(7);
+        let max = app.world().get::<Health>(me).unwrap().max;
+        app.world_mut().get_mut::<Health>(me).unwrap().current = max - 10;
+        let drink = |app: &mut App| {
+            let potion = app.world().resource::<Finds>().potion();
+            let potion = app.world_mut().spawn(potion).id();
+            app.world_mut()
+                .get_mut::<Inventory>(me)
+                .unwrap()
+                .items
+                .push(potion);
+            press(app, KeyCode::KeyD);
+            app.update();
+            potion
+        };
+        let health = |app: &App| app.world().get::<Health>(me).unwrap().current;
+
+        let potion = drink(&mut app);
+        assert_eq!(health(&app), max - 10 + POTION_HEALS, "the potion mended");
+        assert!(app.world().get_entity(potion).is_err(), "and was drunk");
+        assert!(
+            !app.world().get::<Inventory>(me).unwrap().contains(potion),
+            "and is gone from the bag"
+        );
+        drink(&mut app);
+        assert_eq!(health(&app), max, "a second mends only up to full");
+    }
+
+    /// `g` picks the coat up and `w` puts it on, and from then on its armor
+    /// is added to yours: the same goblin's same blow takes less.
+    #[test]
+    fn a_coat_picked_up_and_worn_takes_its_share_of_each_blow() {
+        let (mut bare, me) = started(7);
+        let unarmored = first_blow_taken(&mut bare, me);
+
+        let (mut app, me) = started(7);
+        let at = app.world().get::<Position>(me).unwrap().0;
+        let coat = app.world().resource::<Finds>().coat();
+        let coat = app.world_mut().spawn((coat, Position(at))).id();
+        app.update();
+        press(&mut app, KeyCode::KeyG);
+        app.update();
+        press(&mut app, KeyCode::KeyW);
+        app.update();
+        assert!(
+            app.world().get::<Equipped>(me).unwrap().contains(coat),
+            "the player wears the coat"
+        );
+        let armored = first_blow_taken(&mut app, me);
+        assert!(
+            armored < unarmored,
+            "the coat took its share: {armored} through it, {unarmored} without"
+        );
+    }
+
+    /// How much the first blow of a goblin stood beside the player takes,
+    /// its blow made the same every time so two runs can be compared.
+    fn first_blow_taken(app: &mut App, me: Entity) -> i32 {
+        let at = app.world().get::<Position>(me).unwrap().0;
+        let beside = Direction::ALL
+            .into_iter()
+            .map(|dir| at + dir.offset())
+            .find(|p| {
+                app.world().resource::<WorldMap>().is_walkable(*p)
+                    && !app.world().resource::<Occupancy>().is_occupied(*p)
+            })
+            .expect("room beside the player");
+        let goblins = app.world().resource::<Goblins>();
+        let (goblin, stab) = (goblins.goblin(beside), goblins.stab);
+        app.world_mut()
+            .spawn(goblin)
+            .insert(MeleeAttack::new(stab, DiceRoll::flat(4)));
+        app.update();
+        let health = |app: &App| app.world().get::<Health>(me).unwrap().current;
+        let before = health(app);
+        for _ in 0..5 {
+            press(app, KeyCode::Period);
+            app.update();
+            if health(app) < before {
+                return before - health(app);
+            }
+        }
+        panic!("the goblin beside the player never struck");
     }
 
     /// The keys go through the real input system, as a keyboard would press

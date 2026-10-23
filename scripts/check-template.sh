@@ -4,7 +4,7 @@
 #   scripts/check-template.sh   renders templates/starter into a scratch
 #                               directory with its placeholders filled and
 #                               the engine taken from this checkout rather
-#                               than from git, then checks formatting,
+#                               than from crates.io, then checks formatting,
 #                               clippy and the template's own tests
 #
 # cargo-generate is not needed: the template's only placeholders are
@@ -23,13 +23,26 @@ if find templates -name Cargo.toml | grep .; then
   exit 1
 fi
 
-# The template pins the engine to a release tag, and a tag is the workspace
-# version with a v in front. Bumping the version without the template, or
-# the template without the version, is a template that generates games
-# against an engine it was not written for.
+# The template pins the engine to the release it was written against, the
+# workspace version. Bumping the version without the template, or the
+# template without the version, is a template that generates games against
+# an engine it was not written for.
 version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
-if ! grep -q "tag = \"v$version\"" templates/starter/Cargo.toml.liquid; then
-  echo "error: templates/starter pins a tag other than v$version, the workspace version" >&2
+if ! grep -qx "atglyph = \"$version\"" templates/starter/Cargo.toml.liquid; then
+  echo "error: templates/starter pins an atglyph other than $version, the workspace version" >&2
+  exit 1
+fi
+
+# And the Bevy the engine is built on. A game on another Bevy builds two,
+# whose types do not match, and every engine call fails to compile with a
+# type mismatch far from its cause.
+bevy_in() {
+  sed -n "/^\[$1\]/,/^\[/s/^bevy = .*version = \"\([^\"]*\)\".*/\1/p" "$2"
+}
+engine_bevy=$(bevy_in workspace.dependencies Cargo.toml)
+template_bevy=$(bevy_in dependencies templates/starter/Cargo.toml.liquid)
+if [[ -z "$engine_bevy" || "$template_bevy" != "$engine_bevy" ]]; then
+  echo "error: templates/starter pins bevy ${template_bevy:-nothing}, but the engine is on bevy ${engine_bevy:-nothing}" >&2
   exit 1
 fi
 
@@ -52,6 +65,12 @@ fi
 # what the release the template pins does not have.
 if grep -n "cargo generate --git" README.md docs/guide/src/*.md | grep -v -- "--tag v$version"; then
   echo "error: the lines above generate a game without --tag v$version" >&2
+  exit 1
+fi
+
+# And every dependency line the readme offers a project of its own names it.
+if grep -nE '^atglyph(-[a-z]+)? = ' README.md | grep -v "= \"$version\"\$"; then
+  echo "error: the readme lines above depend on an atglyph other than $version" >&2
   exit 1
 fi
 

@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The template's first run has three potions to drink on `d`, a dagger and a leather coat to pick up on `g` and put on with `w`, and depends on `atglyph = "0.3.0"` from crates.io where it named a git tag; `scripts/check-template.sh` refuses a template whose `bevy` line is on another version than the engine's, and the release notes print the dependency by version.
+  To change: nothing for a game; a game made from the template may do the same.
+
 - Every crate packages for crates.io: each internal dependency carries the workspace version, each crate has its readme, and `scripts/check-publish.sh` packages and verifies the workspace in CI.
   To change: nothing.
 

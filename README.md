@@ -22,6 +22,11 @@ cd my-game
 cargo run
 ```
 
+The first run is a dark floor of rooms lit by your torch and a few braziers, goblins that notice you and hunt you, blows traded by walking into them, and potions, a dagger and a leather coat to pick up, drink and wear.
+It is one file, with a status row, a log, a look cursor, and tests that play it without a window.
+The template pins the engine to the release named by `--tag`, and takes the template from that release too; leave the tag off and the template comes from `main`, which may use something no release has yet.
+CI generates and builds the template on every change to the engine, so it does not rot.
+
 To try the engine first, the guide's first six steps run in the browser with nothing to install: [a map and walking](https://rudehn.github.io/rl-engine/01-a-map-and-walking.html), [sight and light](https://rudehn.github.io/rl-engine/02-sight-and-light.html), [blows and the log](https://rudehn.github.io/rl-engine/03-blows-and-the-log.html), [things and minds](https://rudehn.github.io/rl-engine/04-things-and-minds.html), [a knack](https://rudehn.github.io/rl-engine/05-a-knack.html) and [two floors](https://rudehn.github.io/rl-engine/06-two-floors.html).
 
 ## Features
@@ -95,24 +100,6 @@ To change the framework without forking it, leave out a plugin, join a system se
 It does not abstract over the ECS: the framework is Bevy's.
 It does not need a window, though: a framework game plays in a text terminal, locally or over SSH, with `TtyRoguelikePlugins` in place of `RoguelikePlugins`, and the template runs that way with `cargo run -- --tty`.
 
-## Getting started
-
-The quickest start is the template: one file that runs on the first build.
-
-```sh
-cargo install cargo-generate
-cargo generate --git https://github.com/rudehn/rl-engine --tag v0.3.0 templates/starter --name my-game
-cd my-game
-cargo run
-```
-
-It plays from the first build. The one file holds a floor of rooms, a torch and braziers in the dark, goblins that notice you by sight and hunt where they last saw you, walking into one to strike it, a status row, a log, a look cursor, and four tests that play it without a window.
-The guide below builds the same thing a step at a time.
-
-The template pins the engine to the release named by `--tag`, and takes the template from that release too.
-Leave the tag off and the template comes from `main`, which may use something no release has yet.
-CI generates and builds the template on every change to the engine, so it does not rot.
-
 ## Follow the guide
 
 The guide builds a small roguelike called Warren, nine steps that each add one thing, the first six playable in the browser without installing anything.
@@ -127,12 +114,12 @@ Read it at [rudehn.github.io/rl-engine](https://rudehn.github.io/rl-engine/), or
 
 ## Add it to a project you already have
 
-atglyph is not on crates.io yet, so depend on it from git.
+Depend on it by version, as the template does.
 The `atglyph` crate is the facade that re-exports every other crate, and `atglyph::prelude::*` brings in what a game reaches for, alongside `bevy::prelude::*`.
 
 ```toml
 [dependencies]
-atglyph = { git = "https://github.com/rudehn/rl-engine", tag = "v0.3.0" }
+atglyph = "0.3.0"
 bevy = "0.19"
 ```
 
@@ -156,7 +143,7 @@ A tool or a server that needs no window can depend on a single tier-1 crate, suc
 
 ```toml
 [dependencies]
-atglyph-grid = { git = "https://github.com/rudehn/rl-engine", tag = "v0.3.0" }
+atglyph-grid = "0.3.0"
 ```
 
 This builds a dungeon floor from a seed, computes what is visible from the start, and finds the path to the exit, all without Bevy.
