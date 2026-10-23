@@ -25,6 +25,7 @@ use bevy::prelude::*;
 
 use crate::cursor::{CursorMap, CursorStyle};
 use crate::modal::Modals;
+use crate::panel::inventory::strike;
 use crate::panel::nearby::relation_tone;
 use crate::panel::{bar, clear, clip, frame, hides, other_place, wrap};
 use crate::tone::{Palette, ToneId, Tones};
@@ -260,6 +261,20 @@ pub(crate) fn draw_inspect(
     }
     if y < inner.bottom() {
         terminal.print_on(inner.x, y, &clip(&whereabouts(subject.distance, &ground), width), palette.get(Tones::MUTED), bg);
+        y += 1;
+    }
+    // What an item is worth, in the bag's own words.
+    let numbers = view
+        .blow
+        .iter()
+        .map(|blow| format!("blow {}", strike(blow)))
+        .chain(view.shot.iter().map(|shot| format!("shoots {}", strike(shot))))
+        .chain((view.armor != 0).then(|| format!("armor {:+}", view.armor)));
+    for line in numbers {
+        if y >= inner.bottom() {
+            break;
+        }
+        terminal.print_on(inner.x, y, &clip(&line, width), palette.get(Tones::TEXT), bg);
         y += 1;
     }
     // A thing not yet known is no more than its name here, as in the bag,
@@ -557,6 +572,24 @@ mod tests {
         stage.press(CursorKeys::default().look);
         let inner = |y: i32| stage.row(y).trim_start_matches("\u{2502} ").trim_end_matches('\u{2502}').trim_end().to_string();
         assert_eq!([inner(22), inner(23), inner(24), inner(25)], ["! murky vial", "2 tiles away, on floor", "unknown", ""]);
+    }
+
+    /// An item says what it is worth under where it lies, in the bag's
+    /// words.
+    #[test]
+    fn an_item_says_its_blow_and_its_armor_under_where_it_lies() {
+        let mut stage = staged();
+        let kind = stage.kind;
+        let axe = stage.thing("axe", ')', 2, 0);
+        stage.app.world_mut().entity_mut(axe).insert((atglyph_bevy::MeleeAttack::new(kind, atglyph_core::DiceRoll::new(2, 4)), atglyph_bevy::Armor(1)));
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let inner = |y: i32| stage.row(y).trim_start_matches("\u{2502} ").trim_end_matches('\u{2502}').trim_end().to_string();
+        let kind = stage.app.world().resource::<atglyph_bevy::Registries>().damage_kinds.name(kind).to_string();
+        assert_eq!(
+            [inner(22), inner(23), inner(24), inner(25)],
+            [") axe".to_string(), "2 tiles away, on floor".into(), format!("blow 2d4 {kind}"), "armor +1".into()]
+        );
     }
 
     /// A stage looking at a crab the game says `facets` about, in a panel

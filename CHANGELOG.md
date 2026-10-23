@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The look cursor says what an item is worth, in the bag's own words: `InspectView` carries the `blow` an item under the cursor is swung with and the `shot` it fires, each a `Strike`, and the `armor` it lends, read from its `MeleeAttack`, `RangedAttack` and `Armor`, and `InspectPanel` prints them under where it lies, `blow 2d4 stab` or `armor +2`. A thing not yet known keeps them to itself.
+  To change: nothing; a game that pushed an item's blow or armor as a facet of its own may drop it.
+
 - The controls screen lists `any key - stop what you are doing` only in a game that declares a kind of work with `add_work`, since work is the only long action a player has; a game with none, the template among them, no longer lists a row that describes nothing it can do. `WorkKinds::is_empty` says whether any kind is declared.
   To change: nothing; a game that declares its kinds of work outside a plugin's `build` declares them there, so the stop is listed.
 

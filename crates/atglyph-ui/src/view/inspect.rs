@@ -27,7 +27,7 @@ use crate::cursor::{CursorInput, CursorKeys, Steer};
 use crate::facet::Facet;
 use crate::focus::{Focus, InSight};
 use crate::modal::{ModalId, Modals};
-use crate::view::{Row, Seems};
+use crate::view::{Row, Seems, Strike};
 
 /// The name the inspect cursor's modal is declared under.
 pub(crate) const INSPECT_MODAL: &str = "inspect";
@@ -65,6 +65,21 @@ pub struct InspectView {
     /// [`Seems`] says it seems rather than as it is, for a game that says
     /// why in its own words.
     pub seeming: bool,
+    /// The blow an item under the cursor is swung with, when wielding it
+    /// strikes: its [`MeleeAttack`], as the bag lists it.
+    pub blow: Option<Strike>,
+    /// The shot an item under the cursor fires, when wielding it shoots:
+    /// its [`RangedAttack`], with its reach.
+    pub shot: Option<Strike>,
+    /// The flat [`Armor`] an item under the cursor lends while worn, or
+    /// nought.
+    ///
+    /// These three are read for an [`Item`] alone, from the components
+    /// [`Loadout`] reads when a blow is struck, so a look at a thing on the
+    /// floor says what the bag would say of it once carried. A monster's
+    /// own are in the forecast instead, and a thing not yet known keeps
+    /// them to itself, as it does in the bag.
+    pub armor: i32,
     /// What the game added about the subject.
     pub facets: Vec<Facet>,
     /// Whether the subject is a thing not yet known, [`Unknown`]: a panel
@@ -223,6 +238,8 @@ pub struct Duelists<'w, 's> {
     work: crate::view::Workings<'w, 's>,
     /// What is not yet known.
     unknown: Query<'w, 's, (), With<Unknown>>,
+    /// What an item is worth, for the lines that say so.
+    items: Query<'w, 's, Worth, With<Item>>,
     /// What either side's numbers seem to be, where a game says.
     seems: Query<'w, 's, &'static Seems>,
 }
@@ -279,6 +296,10 @@ fn seeming(
     rolls
 }
 
+/// What an item is worth: the armor it lends and what wielding it strikes
+/// and shoots with.
+type Worth = (Option<&'static Armor>, Option<&'static MeleeAttack>, Option<&'static RangedAttack>);
+
 /// What a side of a duel is made of, apart from what its [`Loadout`] says
 /// and how fast [`Speeds`] says it is.
 type Fighter = Option<&'static Health>;
@@ -306,6 +327,9 @@ pub(crate) fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists)
     view.burning = false;
     view.gas = None;
     view.unknown = false;
+    view.blow = None;
+    view.shot = None;
+    view.armor = 0;
     if !duelists.modals.is_open(inspect_modal(&duelists.modals)) {
         return;
     }
@@ -342,6 +366,14 @@ pub(crate) fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists)
     let relation = row.relation;
     view.subject = Some(row);
     view.unknown = duelists.unknown.contains(entity);
+    if let Ok((armor, melee, ranged)) = duelists.items.get(entity)
+        && !view.unknown
+    {
+        let strike = |kind, dice, range| Strike { kind: duelists.registries.damage_kinds.name(kind).to_string(), dice, range };
+        view.blow = melee.map(|m| strike(m.kind, m.dice, None));
+        view.shot = ranged.map(|r| strike(r.kind, r.dice, Some(r.range)));
+        view.armor = armor.map_or(0, |a| a.0);
+    }
 
     // A prop is never duelled, whatever health it carries. A crate has
     // health so it can be broken, not so a panel can work out how many
@@ -570,6 +602,56 @@ mod tests {
         assert_eq!(view.subject.as_ref().map(|r| r.label.as_str()), Some("supply crate"), "named, and pointed at");
         assert_eq!(view.subject.as_ref().and_then(|r| r.health), Some((6, 6)), "with what it takes to break it");
         assert!(view.duel.is_none(), "and no forecast of a fight a crate cannot have");
+    }
+
+    /// An item under the cursor says what it is worth, as the bag says
+    /// it: the blow it is swung with, the shot it fires and the armor it
+    /// lends, each from its own component; a thing with none says none,
+    /// and a thing not yet known says nothing of its numbers.
+    #[test]
+    fn an_item_under_the_cursor_says_its_blow_its_shot_and_its_armor() {
+        let mut stage = stage();
+        let kind = stage.kind;
+        let glyph = atglyph_render::Glyph::new(')', Color::WHITE).on_layer(2);
+        let lay = |stage: &mut Stage, dx: i32, thing: (Name, Option<Armor>, Option<MeleeAttack>, Option<RangedAttack>)| {
+            let at = stage.at.offset(dx, 0);
+            let (name, armor, melee, ranged) = thing;
+            let mut item = stage.app.world_mut().spawn((Item, name, Position(at), glyph));
+            if let Some(armor) = armor {
+                item.insert(armor);
+            }
+            if let Some(melee) = melee {
+                item.insert(melee);
+            }
+            if let Some(ranged) = ranged {
+                item.insert(ranged);
+            }
+            item.id()
+        };
+        lay(&mut stage, 1, (Name::new("dagger"), None, Some(MeleeAttack::new(kind, atglyph_core::DiceRoll::new(2, 4))), None));
+        lay(&mut stage, -2, (Name::new("coat"), Some(Armor(2)), None, None));
+        lay(&mut stage, 3, (Name::new("sling"), None, None, Some(RangedAttack::new(kind, atglyph_core::DiceRoll::new(1, 6), 5))));
+        let ring = lay(&mut stage, -4, (Name::new("ring"), Some(Armor(1)), None, None));
+        stage.app.world_mut().entity_mut(ring).insert(Unknown);
+        lay(&mut stage, 5, (Name::new("pebble"), None, None, None));
+        stage.tick();
+        let numbers = |stage: &Stage| {
+            let view = stage.app.world().resource::<InspectView>();
+            let label = view.subject.as_ref().map(|r| r.label.clone()).unwrap_or_default();
+            (label, view.blow.as_ref().map(|s| s.dice), view.shot.as_ref().map(|s| (s.dice, s.range)), view.armor)
+        };
+        let kind_name = stage.app.world().resource::<Registries>().damage_kinds.name(kind).to_string();
+        stage.press(CursorKeys::default().look);
+        assert_eq!(numbers(&stage), ("dagger".into(), Some(atglyph_core::DiceRoll::new(2, 4)), None, 0), "a blade's blow");
+        assert_eq!(stage.app.world().resource::<InspectView>().blow.as_ref().map(|s| s.kind.clone()), Some(kind_name), "in its kind's name");
+        stage.press(CursorKeys::default().next);
+        assert_eq!(numbers(&stage), ("coat".into(), None, None, 2), "a coat's armor");
+        stage.press(CursorKeys::default().next);
+        assert_eq!(numbers(&stage), ("sling".into(), None, Some((atglyph_core::DiceRoll::new(1, 6), Some(5))), 0), "a sling's shot and its reach");
+        stage.press(CursorKeys::default().next);
+        assert_eq!(numbers(&stage), ("ring".into(), None, None, 0), "a thing not yet known keeps its numbers to itself");
+        stage.press(CursorKeys::default().next);
+        assert_eq!(numbers(&stage), ("pebble".into(), None, None, 0), "and a thing with none has none");
     }
 
     /// The ground is always something: the cursor names the tile it is

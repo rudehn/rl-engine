@@ -628,7 +628,9 @@ fn hints(view: &InventoryView, menu: &InventoryMenu, binds: &InventoryKeys, conf
 }
 
 /// A strike in words: `1d6 cutlass`, or `1d8 pistol to 6` with a reach.
-fn strike(s: &Strike) -> String {
+/// Shared with the look panel, so a thing reads the same on the floor as
+/// in the bag.
+pub(crate) fn strike(s: &Strike) -> String {
     match s.range {
         Some(range) => format!("{} {} to {range}", s.dice, s.kind),
         None => format!("{} {}", s.dice, s.kind),
