@@ -28,7 +28,7 @@ use rl_grid::{BitGrid, TileId};
 
 use crate::accrete::{Area, Join, Opening, bounds_of, largest_rect};
 use crate::chain::{BuildError, Pass, Phase};
-use crate::context::BuildContext;
+use crate::context::BaseContext;
 use crate::dungeon::{Room, lock_cells};
 use crate::prefab::Stamped;
 use crate::walk::{UNREACHED, steps_between, walks_under};
@@ -189,7 +189,7 @@ pub struct Bridge {
 }
 
 /// Every cell the registry marks passable, a shut door included.
-fn passable_cells<C: BuildContext>(ctx: &C) -> BitGrid {
+fn passable_cells(ctx: &BaseContext) -> BitGrid {
     let passable = ctx.tiles().tables().passable;
     let terrain = ctx.terrain();
     let mut cells = BitGrid::new(terrain.width(), terrain.height());
@@ -207,7 +207,7 @@ fn shuts(o: &Opening) -> bool {
 
 /// Every cell a walker who opens doors gets to: passable, and none of the
 /// [`lock_cells`] the exit's own rule never walks through.
-fn ways<C: BuildContext>(ctx: &C, passable: &BitGrid) -> BitGrid {
+fn ways(ctx: &BaseContext, passable: &BitGrid) -> BitGrid {
     let mut open = passable.clone();
     for c in lock_cells(ctx).iter() {
         open.set(c, false);
@@ -247,7 +247,7 @@ fn behind_locks(areas: usize, openings: &[&Opening]) -> Vec<bool> {
 /// The cells a bridge never lands on: every opening's cells, every cell
 /// of a painted piece with its entries, and every cell of an area behind
 /// a lock.
-fn landings_barred<C: BuildContext>(ctx: &C) -> BitGrid {
+fn landings_barred(ctx: &BaseContext) -> BitGrid {
     let mut barred = BitGrid::new(ctx.terrain().width(), ctx.terrain().height());
     let openings: Vec<&Opening> = ctx.outputs().iter::<Opening>().collect();
     for o in &openings {
@@ -270,7 +270,7 @@ fn landings_barred<C: BuildContext>(ctx: &C) -> BitGrid {
 
 /// What a lake keeps off: everything a bridge may not land on, the cells
 /// beside every opening, and every stamp with the ring round it.
-fn kept_dry<C: BuildContext>(ctx: &C) -> BitGrid {
+fn kept_dry(ctx: &BaseContext) -> BitGrid {
     let bounds = ctx.terrain().bounds();
     let mut kept = landings_barred(ctx);
     for o in ctx.outputs().iter::<Opening>() {
@@ -393,14 +393,14 @@ fn parts_are_roomy(after: &BitGrid, regions: &Regions) -> bool {
     (0..parts.count()).all(|part| !parted(part) || roomy[part])
 }
 
-impl<C: BuildContext> Pass<C> for Lakes {
+impl Pass for Lakes {
     fn name(&self) -> &'static str {
         self.name
     }
     fn phase(&self) -> Phase {
         Phase::Structures
     }
-    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let tables = ctx.tiles().tables();
         if self.cut && tables.passable[self.tile.index()] {
             return Err(BuildError::new(
@@ -609,14 +609,14 @@ impl Crossing {
     }
 }
 
-impl<C: BuildContext> Pass<C> for Bridges {
+impl Pass for Bridges {
     fn name(&self) -> &'static str {
         self.name
     }
     fn phase(&self) -> Phase {
         Phase::Connect
     }
-    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         if self.tile == self.across {
             return Err(BuildError::new(self.name, "a bridge laid as the liquid it crosses crosses nothing"));
         }
@@ -647,14 +647,14 @@ impl<C: BuildContext> Pass<C> for Bridges {
         // Drawn into an order first, so among crossings equally long the
         // stream picks and not the corner of the map they lie nearest.
         crossings.shuffle(ctx.rng());
-        let lay = |ctx: &mut C, c: Crossing| {
+        let lay = |ctx: &mut BaseContext, c: Crossing| {
             let cells: Vec<Point> = c.cells().collect();
             for p in &cells {
                 ctx.terrain_mut().set(*p, self.tile);
             }
             ctx.emit(Bridge { cells, facing: c.facing, detour: c.detour });
         };
-        let unbridged = |ctx: &C, c: &Crossing| c.cells().all(|p| ctx.terrain().get(p) == Some(self.across));
+        let unbridged = |ctx: &BaseContext, c: &Crossing| c.cells().all(|p| ctx.terrain().get(p) == Some(self.across));
 
         // No walk round is the longest walk of all, so what is apart is
         // joined first: a crossing between two regions, by the region
@@ -789,18 +789,12 @@ mod tests {
 
     /// A place grown with loops at `seed`, then whatever `more` adds; with
     /// `owed`, one piece painted from a prefab and joined locked.
-    fn grown(seed: u64, size: (i32, i32), owed: bool, more: impl FnOnce(Chain<BaseContext>, &Rig) -> Chain<BaseContext>) -> BaseContext {
+    fn grown(seed: u64, size: (i32, i32), owed: bool, more: impl FnOnce(Chain, &Rig) -> Chain) -> BaseContext {
         attempt(seed, size, owed, 20, more).unwrap_or_else(|e| panic!("seed {seed}: {e}"))
     }
 
     /// [`grown`], given `attempts` and handing back the failure.
-    fn attempt(
-        seed: u64,
-        (w, h): (i32, i32),
-        owed: bool,
-        attempts: u32,
-        more: impl FnOnce(Chain<BaseContext>, &Rig) -> Chain<BaseContext>,
-    ) -> Result<BaseContext, BuildError> {
+    fn attempt(seed: u64, (w, h): (i32, i32), owed: bool, attempts: u32, more: impl FnOnce(Chain, &Rig) -> Chain) -> Result<BaseContext, BuildError> {
         let r = rig_with_water();
         let growth = if owed { owing(&rig(), Join::Locked(7)) } else { accrete(&rig(), 3) };
         let chain = more(Chain::new().then(growth).then(OpenLoops { door: r.door, min_detour: 20, max: 6 }), &r);
@@ -954,7 +948,7 @@ mod tests {
     #[test]
     fn the_same_seed_lays_the_same_lakes_after_a_pass_is_added_to_the_chain() {
         struct Idle;
-        impl Pass<BaseContext> for Idle {
+        impl Pass for Idle {
             fn name(&self) -> &'static str {
                 "idle"
             }
@@ -1065,7 +1059,7 @@ mod tests {
     fn a_place_left_in_parts_is_grown_again() {
         let retried = AtomicUsize::new(0);
         par_seeds(0..30, |s| {
-            let short = |c: Chain<BaseContext>, r: &Rig| c.then(islands(r)).then(Bridges { longest: 2, ..bridges(r) });
+            let short = |c: Chain, r: &Rig| c.then(islands(r)).then(Bridges { longest: 2, ..bridges(r) });
             // Growth may fail a first attempt of its own; only the ones the
             // bridges failed are the case here.
             if let Err(e) = attempt(s, SIZES[0], false, 1, short)
@@ -1101,7 +1095,7 @@ mod tests {
 
     struct Record;
 
-    impl Pass<BaseContext> for Record {
+    impl Pass for Record {
         fn name(&self) -> &'static str {
             "record"
         }
@@ -1326,7 +1320,7 @@ mod tests {
 
     /// Small rooms and corridors with no areas at all, then `more`: a
     /// place where nothing but the rooms say where the floor is.
-    fn roomed(seed: u64, more: impl FnOnce(Chain<BaseContext>, &Rig) -> Chain<BaseContext>) -> Result<BaseContext, BuildError> {
+    fn roomed(seed: u64, more: impl FnOnce(Chain, &Rig) -> Chain) -> Result<BaseContext, BuildError> {
         let r = rig_with_water();
         let floor = rig().floor;
         let rooms = Rooms { floor, attempts: 60, min_size: 2, max_size: 4, min_rooms: 3 };

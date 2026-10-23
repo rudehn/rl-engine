@@ -186,7 +186,6 @@ impl PlaceBuild {
     /// [`ambient`](Self::ambient) or [`peaceful`](Self::peaceful) on what
     /// this returns.
     pub fn from_context(ctx: rl_mapgen::BaseContext) -> Result<Self, BuildError> {
-        use rl_mapgen::BuildContext;
         let entry = ctx.outputs().first::<rl_mapgen::passes::StartPoint>().ok_or_else(|| BuildError::new("place", "the chain emitted no start point"))?.0;
         let exit = ctx.outputs().first::<rl_mapgen::dungeon::ExitPoint>().map(|e| e.0);
         let stamps: Vec<&rl_mapgen::prefab::Stamped> = ctx.outputs().iter::<rl_mapgen::prefab::Stamped>().collect();
@@ -780,7 +779,7 @@ mod tests {
     use rl_grid::TileRegistry;
     use rl_mapgen::dungeon::{FarthestExit, RandomStart, Rooms};
     use rl_mapgen::passes::StartPoint;
-    use rl_mapgen::{BaseContext, BuildContext, Chain};
+    use rl_mapgen::{BaseContext, Chain};
 
     struct Caves(TileRegistry);
     impl PlaceRules for Caves {
@@ -1180,7 +1179,7 @@ mod tests {
     #[test]
     fn a_keyed_stamps_marks_become_spots_carrying_its_key() {
         use rl_mapgen::prefab::{Orient, Placement, Prefab, StampPrefab};
-        use rl_mapgen::{BaseContext, BuildContext, Chain};
+        use rl_mapgen::{BaseContext, Chain};
         let tiles = rl_grid::TileRegistry::standard();
         let wall = tiles.expect("wall");
         let piece = Prefab::parse(&["#A#"], |c| (c == '#').then_some(wall)).unwrap().keyed(3);
@@ -1196,7 +1195,7 @@ mod tests {
 
     #[test]
     fn a_build_carries_out_every_secret_its_chain_hid_as_it_was_published() {
-        use rl_mapgen::{BaseContext, BuildContext, Secret};
+        use rl_mapgen::{BaseContext, Secret};
         let tiles = rl_grid::TileRegistry::standard();
         let mut ctx = BaseContext::blank(10, 10, tiles.clone(), tiles.expect("floor"));
         let hid = [
@@ -1213,7 +1212,7 @@ mod tests {
     #[test]
     fn a_mark_under_a_later_stamp_is_dropped_and_the_piece_on_top_keeps_its_own() {
         use rl_mapgen::prefab::{Orient, Placement, Prefab, StampPrefab};
-        use rl_mapgen::{BaseContext, BuildContext, Chain};
+        use rl_mapgen::{BaseContext, Chain};
         let tiles = rl_grid::TileRegistry::standard();
         let wall = tiles.expect("wall");
         let under = Prefab::parse(&["A.B"], |c| (c == '.').then_some(wall)).unwrap().keyed(1);

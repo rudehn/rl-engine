@@ -1647,7 +1647,7 @@ mod tests {
     /// The player in a place, behind a ring of wall whose one gate a place
     /// joined `join`, and a door-working monster outside it hunting.
     fn behind_a_place_gate(join: rl_mapgen::Join) -> (App, Entity, Entity, Point, rl_grid::TileRegistry) {
-        use rl_mapgen::{BaseContext, BuildContext, Opening};
+        use rl_mapgen::{BaseContext, Opening};
         let mut app = headless_app();
         app.add_plugins((crate::fov::FovPlugin, CombatPlugin, MindsPlugin));
         app.init_resource::<Tried>().add_systems(PostUpdate, tried);

@@ -28,7 +28,7 @@ use rl_grid::TileId;
 
 use crate::accrete::{Area, Opening};
 use crate::chain::{BuildError, Pass, Phase};
-use crate::context::BuildContext;
+use crate::context::BaseContext;
 use crate::dungeon::{ExitPoint, Room};
 use crate::passes::StartPoint;
 use crate::pool::DressAt;
@@ -182,14 +182,14 @@ impl DistrictDressings {
     }
 }
 
-impl<C: BuildContext> Pass<C> for Dress {
+impl Pass for Dress {
     fn name(&self) -> &'static str {
         self.name
     }
     fn phase(&self) -> Phase {
         Phase::Finish
     }
-    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let err = |reason: String| BuildError::new(self.name, reason);
         let areas: Vec<Area> = ctx.outputs().iter::<Area>().cloned().collect();
         let rooms: Vec<Rect> = ctx.outputs().iter::<Room>().map(|r| r.0).collect();
@@ -338,9 +338,9 @@ impl Frame {
 /// stream, never on or beside a cell of `keep` or a way out of the area,
 /// and never one that leaves the area in more regions than before or that
 /// leaves a slot with no open cell straight beside it.
-fn dress_area<C: BuildContext>(ctx: &mut C, area: &Area, dressing: &Dressing, keep: &[Point], floor: TileId) -> Vec<(char, Point)> {
+fn dress_area(ctx: &mut BaseContext, area: &Area, dressing: &Dressing, keep: &[Point], floor: TileId) -> Vec<(char, Point)> {
     let walkable = ctx.tiles().tables().walkable;
-    let walk = |ctx: &C, p: Point| ctx.terrain().get(p).is_some_and(|t| walkable[t.index()]);
+    let walk = |ctx: &BaseContext, p: Point| ctx.terrain().get(p).is_some_and(|t| walkable[t.index()]);
     let rect = area.bounds.inflate(1);
     let size = (rect.width * rect.height) as usize;
     let mut frame = Frame { rect, own: vec![false; size], rim: vec![false; size] };

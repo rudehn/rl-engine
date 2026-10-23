@@ -10,7 +10,7 @@ use rl_core::{Direction, Grid2D, Point};
 
 use crate::accrete::{Area, Opening};
 use crate::chain::{BuildError, Pass, Phase};
-use crate::context::BuildContext;
+use crate::context::BaseContext;
 use crate::dungeon::{DoorWalk, ExitPoint};
 use crate::passes::StartPoint;
 use crate::walk::{UNREACHED, steps_from};
@@ -64,14 +64,14 @@ pub struct Surveyed {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Survey;
 
-impl<C: BuildContext> Pass<C> for Survey {
+impl Pass for Survey {
     fn name(&self) -> &'static str {
         "survey"
     }
     fn phase(&self) -> Phase {
         Phase::Exits
     }
-    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let err = |reason: &str| BuildError::new("survey", reason);
         let start = ctx.outputs().first::<StartPoint>().ok_or_else(|| err("no start point emitted before it"))?.0;
         let exit = ctx.outputs().first::<ExitPoint>().map(|e| e.0);
@@ -202,14 +202,14 @@ pub struct Require {
     pub route: u32,
 }
 
-impl<C: BuildContext> Pass<C> for Require {
+impl Pass for Require {
     fn name(&self) -> &'static str {
         "require"
     }
     fn phase(&self) -> Phase {
         Phase::Finish
     }
-    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let fail = |reason: String| Err(BuildError::new("require", reason));
         let Some(s) = ctx.outputs().first::<Surveyed>() else {
             return fail("no survey emitted before it".to_string());

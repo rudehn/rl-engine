@@ -153,7 +153,7 @@ use rl_engine::rl_core::RunSeed;
 use rl_engine::rl_grid::{AStar, BitGrid, PathRules, TileRegistry, fov};
 use rl_engine::rl_mapgen::dungeon::{ExitPoint, FarthestExit, RandomStart, Rooms};
 use rl_engine::rl_mapgen::passes::StartPoint;
-use rl_engine::rl_mapgen::{BaseContext, BuildContext, Chain};
+use rl_engine::rl_mapgen::{BaseContext, Chain};
 
 // A 60 by 40 map of solid wall, with the standard wall and floor tiles.
 let tiles = TileRegistry::standard();

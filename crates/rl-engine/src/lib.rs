@@ -280,7 +280,7 @@ impl PluginGroup for TtyRoguelikePlugins {
 ///
 /// // One name from each crate the prelude covers, named rather than
 /// // glob-imported, so a future collision with Bevy fails here.
-/// fn takes(_: Point, _: Direction, _: TileId, _: Terrain, _: Chain<BaseContext>) {}
+/// fn takes(_: Point, _: Direction, _: TileId, _: Terrain, _: Chain) {}
 /// fn rules(_: Registry<StatDef>, _: NameRef<StatDef>, _: Names, _: Brain<Entity>, _: Ledger, _: MovementProfile) {}
 /// fn bevy_side(_: Position, _: Player, _: Health, _: Intent<Step>, _: MapId, _: EngineSet, _: PresentSet) {}
 /// fn title(_: HoldStart, _: SavedRun, _: ContinueRun, _: AbandonRun, _: LeaveRun) {}

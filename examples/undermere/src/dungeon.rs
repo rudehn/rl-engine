@@ -741,7 +741,7 @@ impl Undermere {
     /// Mereholt: its piece stamped over a blank map of its own size, so the
     /// piece is the whole town. A run arrives at the piece's `@`, and the
     /// town's way on is its one gate tile.
-    fn town(&self) -> Result<(BaseContext, Chain<BaseContext>), BuildError> {
+    fn town(&self) -> Result<(BaseContext, Chain), BuildError> {
         let town = self.prefabs.piece("Mereholt")?;
         let ctx = BaseContext::blank(town.width(), town.height(), self.tiles.clone(), self.tile("grass"));
         let chain = Chain::new()
@@ -869,7 +869,7 @@ impl Undermere {
     /// Catacombs, webs and nothing that shines in the Spider Warrens; then
     /// the lived-in dungeon's own and a chest or two on every floor but the
     /// throne's.
-    fn decor(&self, chain: Chain<BaseContext>, floor: u32, drawn: &BiomeDraw) -> Result<Chain<BaseContext>, BuildError> {
+    fn decor(&self, chain: Chain, floor: u32, drawn: &BiomeDraw) -> Result<Chain, BuildError> {
         let t = |name: &str| self.tile(name);
         let mut chain = chain;
         for (decor, name) in drawn.decor.iter().zip(biomes::DECOR_PASSES) {
@@ -1093,7 +1093,7 @@ struct TileExit {
     tile: TileId,
 }
 
-impl Pass<BaseContext> for TileExit {
+impl Pass for TileExit {
     fn name(&self) -> &'static str {
         "tile_exit"
     }
@@ -1118,7 +1118,7 @@ struct GateBack {
     gate: TileId,
 }
 
-impl Pass<BaseContext> for GateBack {
+impl Pass for GateBack {
     fn name(&self) -> &'static str {
         "gate_back"
     }
@@ -1159,7 +1159,7 @@ impl Paint {
     }
 }
 
-impl Pass<BaseContext> for Paint {
+impl Pass for Paint {
     fn name(&self) -> &'static str {
         "paint"
     }
@@ -1223,7 +1223,7 @@ struct Patches {
     size: (u32, u32),
 }
 
-impl Pass<BaseContext> for Patches {
+impl Pass for Patches {
     fn name(&self) -> &'static str {
         self.name
     }
@@ -1290,7 +1290,7 @@ struct Furnish {
     by_walls: bool,
 }
 
-impl Pass<BaseContext> for Furnish {
+impl Pass for Furnish {
     fn name(&self) -> &'static str {
         self.name
     }
@@ -1385,7 +1385,7 @@ impl Underfoot {
     }
 }
 
-impl Pass<BaseContext> for Underfoot {
+impl Pass for Underfoot {
     fn name(&self) -> &'static str {
         "underfoot"
     }

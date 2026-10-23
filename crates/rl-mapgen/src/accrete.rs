@@ -22,7 +22,7 @@ use rl_core::{Direction, Grid, Grid2D, Point, Rect};
 use rl_grid::{BitGrid, Terrain, TileId};
 
 use crate::chain::{BuildError, Pass, Phase};
-use crate::context::BuildContext;
+use crate::context::BaseContext;
 use crate::dungeon::Room;
 use crate::prefab::{Facing, Orient, Placement, Prefab, Stamped, grown_facings, on_map, pick_weighted};
 
@@ -765,7 +765,7 @@ impl Accrete {
     /// Carves `piece` moved by `by`, or paints it when it was drawn, and
     /// records it as `laying` says, with every site but the one it was
     /// joined at added to the frontier. Returns its index.
-    fn lay<C: BuildContext>(&self, ctx: &mut C, grown: &mut Grown, piece: &Piece, by: Point, laying: Laying<'_>, joined: Option<Point>) -> usize {
+    fn lay(&self, ctx: &mut BaseContext, grown: &mut Grown, piece: &Piece, by: Point, laying: Laying<'_>, joined: Option<Point>) -> usize {
         let index = grown.areas.len();
         let body: Vec<Point> = piece.cells.iter().map(|c| *c + by).collect();
         let before: Vec<TileId> = body.iter().map(|c| ctx.terrain().get(*c).expect("a piece that fits is on the map")).collect();
@@ -829,7 +829,7 @@ impl Accrete {
     /// A passage holds nothing, so one with a single way in is a walk to a
     /// wall. Taking one away may leave the passage it hung from leading
     /// nowhere in its turn, so it repeats.
-    fn trim<C: BuildContext>(&self, ctx: &mut C, grown: &mut Grown) -> usize {
+    fn trim(&self, ctx: &mut BaseContext, grown: &mut Grown) -> usize {
         let mut gone = vec![false; grown.areas.len()];
         let mut left = gone.len();
         loop {
@@ -897,14 +897,14 @@ fn drop_gone<T>(list: &mut Vec<T>, gone: &[bool]) {
 /// last left standing, so a few are enough to refill what was lost.
 const ROUNDS: u32 = 8;
 
-impl<C: BuildContext> Pass<C> for Accrete {
+impl Pass for Accrete {
     fn name(&self) -> &'static str {
         "accrete"
     }
     fn phase(&self) -> Phase {
         Phase::Structures
     }
-    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let walkable = ctx.tiles().tables().walkable;
         let bounds = ctx.terrain().bounds();
         // The map first: on one with no inside, every barrier reaches

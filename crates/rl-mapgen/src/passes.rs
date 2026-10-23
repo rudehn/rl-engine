@@ -8,7 +8,7 @@ use rl_core::{Grid, Grid2D, Point, Steps};
 use rl_grid::TileId;
 
 use crate::chain::{BuildError, Pass, Phase};
-use crate::context::BuildContext;
+use crate::context::BaseContext;
 
 /// Sets every cell to one tile.
 #[derive(Debug, Clone, Copy)]
@@ -17,14 +17,14 @@ pub struct Fill {
     pub tile: TileId,
 }
 
-impl<C: BuildContext> Pass<C> for Fill {
+impl Pass for Fill {
     fn name(&self) -> &'static str {
         "fill"
     }
     fn phase(&self) -> Phase {
         Phase::Ground
     }
-    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         ctx.terrain_mut().fill(self.tile);
         Ok(())
     }
@@ -37,14 +37,14 @@ pub struct Border {
     pub tile: TileId,
 }
 
-impl<C: BuildContext> Pass<C> for Border {
+impl Pass for Border {
     fn name(&self) -> &'static str {
         "border"
     }
     fn phase(&self) -> Phase {
         Phase::Ground
     }
-    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let bounds = ctx.terrain().bounds();
         let t = ctx.terrain_mut();
         for p in bounds.border() {
@@ -67,14 +67,14 @@ pub struct Scatter {
     pub chance_pct: u32,
 }
 
-impl<C: BuildContext> Pass<C> for Scatter {
+impl Pass for Scatter {
     fn name(&self) -> &'static str {
         self.name
     }
     fn phase(&self) -> Phase {
         Phase::Growth
     }
-    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let cells = ctx.terrain().len();
         for idx in 0..cells {
             if ctx.terrain().get_idx(idx) == self.on && ctx.rng().random_range(0..100) < self.chance_pct {
@@ -88,7 +88,7 @@ impl<C: BuildContext> Pass<C> for Scatter {
 /// Replaces `on` cells with `tile` at a chance the caller computes per
 /// cell from the context: vegetation from moisture, boulders from slope,
 /// anything that should follow a field rather than a number.
-pub struct ScatterBy<C> {
+pub struct ScatterBy {
     /// A stable name, so two scatters in one chain draw different streams.
     pub name: &'static str,
     /// The tile to scatter.
@@ -96,20 +96,20 @@ pub struct ScatterBy<C> {
     /// Only cells currently holding this tile are candidates.
     pub on: TileId,
     /// The chance for a cell, in percent, from the context and the cell.
-    pub chance_pct: ChanceFn<C>,
+    pub chance_pct: ChanceFn,
 }
 
 /// A per-cell chance in percent, computed from the context.
-pub type ChanceFn<C> = Box<dyn Fn(&C, Point) -> u32 + Send + Sync>;
+pub type ChanceFn = Box<dyn Fn(&BaseContext, Point) -> u32 + Send + Sync>;
 
-impl<C: BuildContext> Pass<C> for ScatterBy<C> {
+impl Pass for ScatterBy {
     fn name(&self) -> &'static str {
         self.name
     }
     fn phase(&self) -> Phase {
         Phase::Growth
     }
-    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let cells = ctx.terrain().len();
         for idx in 0..cells {
             if ctx.terrain().get_idx(idx) != self.on {
@@ -164,14 +164,14 @@ pub(crate) fn walled(solid: &Grid<bool>, p: Point, threshold: u32) -> bool {
     walls >= threshold
 }
 
-impl<C: BuildContext> Pass<C> for CellularCave {
+impl Pass for CellularCave {
     fn name(&self) -> &'static str {
         "cellular_cave"
     }
     fn phase(&self) -> Phase {
         Phase::Ground
     }
-    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let (w, h) = (ctx.terrain().width(), ctx.terrain().height());
         let mut solid: Grid<bool> =
             Grid::from_fn(w, h, |p| p.x == 0 || p.y == 0 || p.x == w - 1 || p.y == h - 1 || ctx.rng().random_range(0..100) < self.fill_pct);
@@ -198,14 +198,14 @@ pub struct KeepLargestRegion {
     pub wall: TileId,
 }
 
-impl<C: BuildContext> Pass<C> for KeepLargestRegion {
+impl Pass for KeepLargestRegion {
     fn name(&self) -> &'static str {
         "keep_largest_region"
     }
     fn phase(&self) -> Phase {
         Phase::Connect
     }
-    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let tables = ctx.tiles().tables();
         let terrain = ctx.terrain();
         let regions = rl_grid::region::label_regions(terrain, |i| tables.walkable[terrain.get_idx(i).index()], Steps::Eight);
@@ -231,14 +231,14 @@ pub struct CentralStart;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StartPoint(pub Point);
 
-impl<C: BuildContext> Pass<C> for CentralStart {
+impl Pass for CentralStart {
     fn name(&self) -> &'static str {
         "central_start"
     }
     fn phase(&self) -> Phase {
         Phase::Exits
     }
-    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let tables = ctx.tiles().tables();
         let center = ctx.terrain().bounds().center();
         let found =

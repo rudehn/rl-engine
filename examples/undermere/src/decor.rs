@@ -53,7 +53,7 @@ pub struct BloodTrail {
     pub max_cells: u32,
 }
 
-impl Pass<BaseContext> for BloodTrail {
+impl Pass for BloodTrail {
     fn name(&self) -> &'static str {
         self.name
     }
@@ -167,7 +167,7 @@ pub struct WallInscriptions {
     pub chance_pct: u32,
 }
 
-impl Pass<BaseContext> for WallInscriptions {
+impl Pass for WallInscriptions {
     fn name(&self) -> &'static str {
         self.name
     }
@@ -213,7 +213,7 @@ pub struct Moor {
     pub count: (u32, u32),
 }
 
-impl Pass<BaseContext> for Moor {
+impl Pass for Moor {
     fn name(&self) -> &'static str {
         self.name
     }

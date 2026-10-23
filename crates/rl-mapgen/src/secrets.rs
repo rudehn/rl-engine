@@ -23,7 +23,7 @@ use rl_grid::{BitGrid, Terrain, TileId, TileTables};
 
 use crate::accrete::{Area, Join, Opening};
 use crate::chain::{BuildError, Pass, Phase};
-use crate::context::BuildContext;
+use crate::context::BaseContext;
 use crate::dungeon::{ExitPoint, Room, walk_through_doors};
 use crate::passes::StartPoint;
 use crate::survey::Surveyed;
@@ -121,7 +121,7 @@ struct Walks {
 }
 
 impl Walks {
-    fn of<C: BuildContext>(ctx: &C, start: Point, exit: Option<Point>) -> Self {
+    fn of(ctx: &BaseContext, start: Point, exit: Option<Point>) -> Self {
         let (w, h) = (ctx.terrain().width(), ctx.terrain().height());
         let reached = |locks_shut: bool| {
             let walk = walk_through_doors(ctx, start, locks_shut);
@@ -185,7 +185,7 @@ fn parts(count: usize, openings: &[Opening], gone: &[bool]) -> usize {
 }
 
 /// Walls `cells` over with `wall`, handing back what each was.
-fn wall_over<C: BuildContext>(ctx: &mut C, cells: &[Point], wall: TileId) -> Vec<TileId> {
+fn wall_over(ctx: &mut BaseContext, cells: &[Point], wall: TileId) -> Vec<TileId> {
     cells
         .iter()
         .map(|c| {
@@ -197,20 +197,20 @@ fn wall_over<C: BuildContext>(ctx: &mut C, cells: &[Point], wall: TileId) -> Vec
 }
 
 /// Lays back on `cells` the tiles [`wall_over`] handed back.
-fn lay_back<C: BuildContext>(ctx: &mut C, cells: &[Point], was: Vec<TileId>) {
+fn lay_back(ctx: &mut BaseContext, cells: &[Point], was: Vec<TileId>) {
     for (c, t) in cells.iter().zip(was) {
         ctx.terrain_mut().set(*c, t);
     }
 }
 
-impl<C: BuildContext> Pass<C> for HideOpenings {
+impl Pass for HideOpenings {
     fn name(&self) -> &'static str {
         "hide_openings"
     }
     fn phase(&self) -> Phase {
         Phase::Finish
     }
-    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let err = |reason: String| BuildError::new("hide_openings", reason);
         for (what, (lo, hi)) in [("loops", self.loops), ("rooms", self.rooms)] {
             if lo > hi {

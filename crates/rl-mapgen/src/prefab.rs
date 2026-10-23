@@ -43,7 +43,7 @@ use rl_grid::TileId;
 
 use crate::accrete::{Join, Piece, Shape, Sides};
 use crate::chain::{BuildError, Pass, Phase};
-use crate::context::BuildContext;
+use crate::context::BaseContext;
 use crate::dungeon::Room;
 
 /// What one character of a drawn piece stands for.
@@ -635,14 +635,14 @@ pub struct StampPrefab {
     pub orient: Orient,
 }
 
-impl<C: BuildContext> Pass<C> for StampPrefab {
+impl Pass for StampPrefab {
     fn name(&self) -> &'static str {
         self.name
     }
     fn phase(&self) -> Phase {
         Phase::Structures
     }
-    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let bounds = ctx.terrain().bounds();
         let (prefab, origin) = match self.at {
             // Where these go depends on which way the piece faces, so the
@@ -677,7 +677,7 @@ impl<C: BuildContext> Pass<C> for StampPrefab {
 impl StampPrefab {
     /// The corner `prefab`, already turned, is laid at for a placement on
     /// a point or in a room.
-    fn in_place<C: BuildContext>(&self, ctx: &mut C, prefab: &Prefab) -> Result<Point, BuildError> {
+    fn in_place(&self, ctx: &mut BaseContext, prefab: &Prefab) -> Result<Point, BuildError> {
         let (w, h) = (prefab.width(), prefab.height());
         let bounds = ctx.terrain().bounds();
         let centred = |r: Rect| Point::new(r.x + (r.width - w) / 2, r.y + (r.height - h) / 2);
@@ -734,14 +734,14 @@ pub struct StampOneOf {
     pub orient: Orient,
 }
 
-impl<C: BuildContext> Pass<C> for StampOneOf {
+impl Pass for StampOneOf {
     fn name(&self) -> &'static str {
         self.name
     }
     fn phase(&self) -> Phase {
         Phase::Structures
     }
-    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let mut total: u32 = 0;
         for (_, w) in &self.choices {
             total = total.checked_add(*w).ok_or_else(|| BuildError::new(self.name, "the choices' weights overflow a u32".to_string()))?;
@@ -791,14 +791,14 @@ pub struct StampEachRoom {
     pub orient: Orient,
 }
 
-impl<C: BuildContext> Pass<C> for StampEachRoom {
+impl Pass for StampEachRoom {
     fn name(&self) -> &'static str {
         self.name
     }
     fn phase(&self) -> Phase {
         Phase::Finish
     }
-    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         if self.choices.iter().try_fold(0u32, |sum, (_, w)| sum.checked_add(*w)).is_none_or(|total| total == 0) {
             return Err(BuildError::new(self.name, "no candidate carries weight, or the weights overflow a u32".to_string()));
         }

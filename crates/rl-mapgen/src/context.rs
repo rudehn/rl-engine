@@ -7,45 +7,6 @@ use rand::rngs::StdRng;
 use rl_core::Grid2D;
 use rl_grid::{Terrain, TileRegistry};
 
-/// The boundary between engine passes and a game's context.
-///
-/// Engine passes see only this trait. A game either uses [`BaseContext`]
-/// directly or wraps it in a struct that adds its own state and implements
-/// this trait by delegation.
-pub trait BuildContext {
-    /// The terrain being built.
-    fn terrain(&self) -> &Terrain;
-
-    /// The terrain being built, mutably.
-    fn terrain_mut(&mut self) -> &mut Terrain;
-
-    /// The tile registry the terrain's ids refer to.
-    fn tiles(&self) -> &TileRegistry;
-
-    /// This pass's own random stream. Replaced by the chain before each pass.
-    ///
-    /// # Panics
-    /// [`BaseContext`] panics when nothing has installed a stream yet, and a
-    /// game's context that delegates to one inherits that.
-    fn rng(&mut self) -> &mut StdRng;
-
-    /// Installs the stream for the pass about to run.
-    fn set_rng(&mut self, rng: StdRng);
-
-    /// Publishes a structured result (placed rooms, spawn points, the
-    /// entrance) for whatever runs after the chain to collect.
-    fn emit<T: Any + Send>(&mut self, value: T);
-
-    /// Everything emitted so far.
-    fn outputs(&self) -> &Outputs;
-
-    /// Everything emitted so far, for taking.
-    fn outputs_mut(&mut self) -> &mut Outputs;
-
-    /// Hook for snapshot capture between passes. Default no-op.
-    fn take_snapshot(&mut self) {}
-}
-
 /// Typed values passes publish, collected by type after the chain runs.
 #[derive(Default)]
 pub struct Outputs {
@@ -115,7 +76,7 @@ impl Outputs {
 /// optional snapshots.
 ///
 /// It holds no stream until one is installed, by a [`Chain`](crate::Chain)
-/// before each pass or by [`set_rng`](BuildContext::set_rng) for a pass
+/// before each pass or by [`set_rng`](Self::set_rng) for a pass
 /// applied by hand, and a pass that draws before then panics. A placeholder
 /// stream made from a constant would let a pass run outside a chain and
 /// draw the same numbers for every run, quietly, which is the one thing a
@@ -155,6 +116,58 @@ impl BaseContext {
         self.snapshots.as_deref().unwrap_or(&[])
     }
 
+    /// The terrain being built.
+    pub fn terrain(&self) -> &Terrain {
+        &self.terrain
+    }
+
+    /// The terrain being built, mutably.
+    pub fn terrain_mut(&mut self) -> &mut Terrain {
+        &mut self.terrain
+    }
+
+    /// The tile registry the terrain's ids refer to.
+    pub fn tiles(&self) -> &TileRegistry {
+        &self.tiles
+    }
+
+    /// This pass's own random stream. Replaced by the chain before each pass.
+    ///
+    /// # Panics
+    /// When nothing has installed a stream yet.
+    pub fn rng(&mut self) -> &mut StdRng {
+        self.rng.as_mut().expect("a pass drew from its context before a stream was installed: run it in a Chain, or hand it one with set_rng from RunSeed::rng")
+    }
+
+    /// Installs the stream for the pass about to run.
+    pub fn set_rng(&mut self, rng: StdRng) {
+        self.rng = Some(rng);
+    }
+
+    /// Publishes a structured result (placed rooms, spawn points, the
+    /// entrance) for whatever runs after the chain to collect.
+    pub fn emit<T: Any + Send>(&mut self, value: T) {
+        self.outputs.push(value);
+    }
+
+    /// Everything emitted so far.
+    pub fn outputs(&self) -> &Outputs {
+        &self.outputs
+    }
+
+    /// Everything emitted so far, for taking.
+    pub fn outputs_mut(&mut self) -> &mut Outputs {
+        &mut self.outputs
+    }
+
+    /// Copies the terrain into the snapshots, when capture is on: the chain
+    /// calls it after every pass.
+    pub(crate) fn take_snapshot(&mut self) {
+        if let Some(s) = &mut self.snapshots {
+            s.push(self.terrain.clone());
+        }
+    }
+
     /// Takes the finished terrain and outputs apart.
     pub fn finish(self) -> (Terrain, Outputs) {
         (self.terrain, self.outputs)
@@ -164,46 +177,6 @@ impl BaseContext {
     #[cfg(test)]
     pub(crate) fn width(&self) -> i32 {
         self.terrain.width()
-    }
-}
-
-impl BuildContext for BaseContext {
-    fn terrain(&self) -> &Terrain {
-        &self.terrain
-    }
-
-    fn terrain_mut(&mut self) -> &mut Terrain {
-        &mut self.terrain
-    }
-
-    fn tiles(&self) -> &TileRegistry {
-        &self.tiles
-    }
-
-    fn rng(&mut self) -> &mut StdRng {
-        self.rng.as_mut().expect("a pass drew from its context before a stream was installed: run it in a Chain, or hand it one with set_rng from RunSeed::rng")
-    }
-
-    fn set_rng(&mut self, rng: StdRng) {
-        self.rng = Some(rng);
-    }
-
-    fn emit<T: Any + Send>(&mut self, value: T) {
-        self.outputs.push(value);
-    }
-
-    fn outputs(&self) -> &Outputs {
-        &self.outputs
-    }
-
-    fn outputs_mut(&mut self) -> &mut Outputs {
-        &mut self.outputs
-    }
-
-    fn take_snapshot(&mut self) {
-        if let Some(s) = &mut self.snapshots {
-            s.push(self.terrain.clone());
-        }
     }
 }
 

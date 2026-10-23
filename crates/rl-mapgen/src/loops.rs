@@ -10,7 +10,7 @@ use rl_grid::{BitGrid, Terrain, TileId};
 
 use crate::accrete::{Area, Join, Opening};
 use crate::chain::{BuildError, Pass, Phase};
-use crate::context::BuildContext;
+use crate::context::BaseContext;
 use crate::dungeon::DoorWalk;
 use crate::walk::{UNREACHED, steps_between};
 
@@ -47,14 +47,14 @@ fn passable_at(terrain: &Terrain, passable: &[bool], p: Point) -> bool {
     terrain.get(p).is_some_and(|t| passable[t.index()])
 }
 
-impl<C: BuildContext> Pass<C> for OpenLoops {
+impl Pass for OpenLoops {
     fn name(&self) -> &'static str {
         "open_loops"
     }
     fn phase(&self) -> Phase {
         Phase::Structures
     }
-    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let passable = ctx.tiles().tables().passable;
         let bounds = ctx.terrain().bounds();
         let (w, h) = (bounds.width, bounds.height);

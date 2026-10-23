@@ -14,7 +14,7 @@ use rl_core::{Point, Rect};
 
 use crate::accrete::Area;
 use crate::chain::{BuildError, Pass, Phase};
-use crate::context::BuildContext;
+use crate::context::BaseContext;
 use crate::dungeon::{ExitPoint, Room, walk_through_doors};
 use crate::passes::StartPoint;
 use crate::prefab::{Orient, Prefab, Stamped, laid_in};
@@ -115,14 +115,14 @@ pub struct StampPicks {
     pub orient: Orient,
 }
 
-impl<C: BuildContext> Pass<C> for StampPicks {
+impl Pass for StampPicks {
     fn name(&self) -> &'static str {
         self.name
     }
     fn phase(&self) -> Phase {
         Phase::Finish
     }
-    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let err = |reason: String| BuildError::new(self.name, reason);
         let surveyed = ctx.outputs().first::<Surveyed>().ok_or_else(|| err("no survey emitted before it".into()))?.clone();
         let start = ctx.outputs().first::<StartPoint>().ok_or_else(|| err("no start point emitted before it".into()))?.0;

@@ -20,7 +20,7 @@ use rl_engine::rl_mapgen::Join;
 /// does not.
 pub(super) struct ClearOfTheThrone;
 
-impl Pass<BaseContext> for ClearOfTheThrone {
+impl Pass for ClearOfTheThrone {
     fn name(&self) -> &'static str {
         "clear_of_the_throne"
     }

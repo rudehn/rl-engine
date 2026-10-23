@@ -323,7 +323,7 @@ pub(crate) mod tests {
     use rl_core::{Point, RunSeed};
     use rl_grid::TileRegistry;
     use rl_mapgen::prefab::{Orient, Placement, Prefab, StampPrefab};
-    use rl_mapgen::{BaseContext, BuildContext, Chain};
+    use rl_mapgen::{BaseContext, Chain};
     use rl_rules::content::BandedEntry;
     use rl_rules::loot::ScatterRules;
     use rl_rules::{Named, Names, Registry, TagDef};

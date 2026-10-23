@@ -4,7 +4,7 @@ use std::fmt;
 
 use rl_core::{RunSeed, SeedDomain};
 
-use crate::context::BuildContext;
+use crate::context::BaseContext;
 
 /// When a pass runs, relative to the others. The order of the variants is
 /// the pipeline order.
@@ -49,7 +49,7 @@ impl fmt::Display for BuildError {
 impl std::error::Error for BuildError {}
 
 /// One step of generation.
-pub trait Pass<C: BuildContext>: Send + Sync {
+pub trait Pass: Send + Sync {
     /// A stable name. Keys this pass's random stream, so renaming a pass
     /// rerolls it and reordering the chain does not.
     fn name(&self) -> &'static str;
@@ -58,7 +58,7 @@ pub trait Pass<C: BuildContext>: Send + Sync {
     fn phase(&self) -> Phase;
 
     /// Does the work, or says why it could not.
-    fn apply(&self, ctx: &mut C) -> Result<(), BuildError>;
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError>;
 }
 
 /// An ordered sequence of passes.
@@ -66,23 +66,18 @@ pub trait Pass<C: BuildContext>: Send + Sync {
 /// Assembly checks phase order and name uniqueness and panics on either,
 /// because both are mistakes in how the chain was written rather than
 /// conditions to recover from.
-pub struct Chain<C: BuildContext> {
-    passes: Vec<Box<dyn Pass<C>>>,
+#[derive(Default)]
+pub struct Chain {
+    passes: Vec<Box<dyn Pass>>,
 }
 
-impl<C: BuildContext> Default for Chain<C> {
-    fn default() -> Self {
-        Self { passes: Vec::new() }
-    }
-}
-
-impl<C: BuildContext> fmt::Debug for Chain<C> {
+impl fmt::Debug for Chain {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list().entries(self.passes.iter().map(|p| p.name())).finish()
     }
 }
 
-impl<C: BuildContext> Chain<C> {
+impl Chain {
     /// An empty chain.
     pub fn new() -> Self {
         Self::default()
@@ -95,7 +90,7 @@ impl<C: BuildContext> Chain<C> {
     /// pass with the same name is already in the chain. A name keys a
     /// stream, so two passes sharing one would draw an identical sequence
     /// and lay the same pattern twice.
-    pub fn then(mut self, pass: impl Pass<C> + 'static) -> Self {
+    pub fn then(mut self, pass: impl Pass + 'static) -> Self {
         if let Some(last) = self.passes.last() {
             assert!(pass.phase() >= last.phase(), "pass `{}` is {:?} but follows `{}`, which is {:?}", pass.name(), pass.phase(), last.name(), last.phase());
         }
@@ -116,14 +111,14 @@ impl<C: BuildContext> Chain<C> {
     /// adding, removing or reordering a pass cannot change what any other
     /// pass draws. Stops at the first failure and reports it. `seed` is a
     /// place's [`PlaceSeed`](rl_core::PlaceSeed) or any other root.
-    pub fn run(&self, ctx: &mut C, seed: impl Into<RunSeed>) -> Result<(), BuildError> {
+    pub fn run(&self, ctx: &mut BaseContext, seed: impl Into<RunSeed>) -> Result<(), BuildError> {
         self.run_attempt(ctx, seed.into(), 0)
     }
 
     /// One attempt: every pass's stream is derived at `attempt`, so two
     /// attempts of one seed draw nothing in common and attempt nought is
     /// what [`run`](Self::run) builds.
-    fn run_attempt(&self, ctx: &mut C, seed: RunSeed, attempt: u32) -> Result<(), BuildError> {
+    fn run_attempt(&self, ctx: &mut BaseContext, seed: RunSeed, attempt: u32) -> Result<(), BuildError> {
         for pass in &self.passes {
             ctx.set_rng(seed.rng(SeedDomain::new(pass.name().as_bytes()), u64::from(attempt)));
             pass.apply(ctx)?;
@@ -146,7 +141,7 @@ impl<C: BuildContext> Chain<C> {
     /// # Panics
     /// Panics if `attempts` is nought: a chain that may not run has no
     /// place and no error to hand back.
-    pub fn run_retrying(&self, make: impl Fn() -> C, seed: impl Into<RunSeed>, attempts: u32) -> Result<C, BuildError> {
+    pub fn run_retrying(&self, make: impl Fn() -> BaseContext, seed: impl Into<RunSeed>, attempts: u32) -> Result<BaseContext, BuildError> {
         assert!(attempts > 0, "a chain needs at least one attempt");
         let seed = seed.into();
         let mut last = None;
@@ -176,7 +171,7 @@ mod tests {
         tile: TileId,
     }
 
-    impl Pass<BaseContext> for Marker {
+    impl Pass for Marker {
         fn name(&self) -> &'static str {
             self.name
         }
@@ -194,7 +189,7 @@ mod tests {
 
     struct Roll(&'static str, i32);
 
-    impl Pass<BaseContext> for Roll {
+    impl Pass for Roll {
         fn name(&self) -> &'static str {
             self.0
         }
@@ -210,7 +205,7 @@ mod tests {
 
     struct Fails;
 
-    impl Pass<BaseContext> for Fails {
+    impl Pass for Fails {
         fn name(&self) -> &'static str {
             "fails"
         }
@@ -303,7 +298,7 @@ mod tests {
     /// attempts.
     struct Picky;
 
-    impl Pass<BaseContext> for Picky {
+    impl Pass for Picky {
         fn name(&self) -> &'static str {
             "picky"
         }

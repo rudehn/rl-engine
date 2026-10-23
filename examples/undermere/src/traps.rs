@@ -317,7 +317,7 @@ pub struct LayHidden {
 /// The fewest cells, Chebyshev, between two traps.
 pub const TRAP_SPACING: i32 = 3;
 
-impl Pass<BaseContext> for LayHidden {
+impl Pass for LayHidden {
     fn name(&self) -> &'static str {
         "hidden things"
     }
@@ -674,7 +674,7 @@ mod tests {
     /// each on a cell no trap took.
     #[test]
     fn lay_hidden_never_lays_more_than_asked_and_only_where_a_trap_may_stand() {
-        use rl_engine::rl_mapgen::{AreaFacts, BaseContext, BuildContext, Chain, Phase};
+        use rl_engine::rl_mapgen::{AreaFacts, BaseContext, Chain, Phase};
         let tiles = crate::dungeon::registry();
         let ground = tiles.expect("hall floor");
         let passages = BTreeSet::from(["corridor".to_string()]);
@@ -702,7 +702,7 @@ mod tests {
             ctx.emit(StartPoint(entry));
             ctx.emit(ExitPoint(exit));
             let pass = LayHidden { traps: (2, 5), kinds: kinds.clone(), flagstones: (1, 3), flagstone, passages: passages.clone() };
-            assert_eq!(<LayHidden as Pass<BaseContext>>::phase(&pass), Phase::Finish);
+            assert_eq!(<LayHidden as Pass>::phase(&pass), Phase::Finish);
             Chain::new().then(pass).run(&mut ctx, RunSeed(s)).expect("it lays");
             let laid: Vec<(char, Point)> = ctx.outputs().iter::<Stamped>().flat_map(|st| st.marks.clone()).collect();
             let traps: Vec<Point> = laid.iter().filter(|(c, _)| *c != flagstone).map(|(_, p)| *p).collect();
@@ -859,7 +859,7 @@ mod tests {
     /// take traps in the corridor and at its two mouths and nowhere else.
     #[test]
     fn on_a_floor_of_caves_a_trap_stands_only_in_a_corridor_a_chokepoint_or_a_doorway() {
-        use rl_engine::rl_mapgen::{AreaFacts, BaseContext, BuildContext};
+        use rl_engine::rl_mapgen::{AreaFacts, BaseContext};
         let hiding = Hiding::load();
         assert!(
             hiding.passages.contains("corridor") && !hiding.passages.contains("cave"),

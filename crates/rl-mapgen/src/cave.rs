@@ -133,7 +133,7 @@ mod tests {
     use crate::accrete::tests::{Rig, build, rig, walkable};
     use crate::accrete::{Accrete, Area, District, Rectangle, bounds_of};
     use crate::chain::{BuildError, Chain};
-    use crate::context::{BaseContext, BuildContext};
+    use crate::context::BaseContext;
     use crate::dungeon::{FarthestExit, RandomStart};
     use crate::survey::{Survey, Surveyed};
     use crate::testing::{par_seeds, seeds};

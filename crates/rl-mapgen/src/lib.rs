@@ -1,7 +1,7 @@
 //! The generation pipeline: a chain of named, phased passes over a context.
 //!
 //! Every generated thing in the engine, a dungeon floor or a cave, is built by running a [`Chain`] of [`Pass`]es over a
-//! [`BuildContext`]. Three rules make the chain composable:
+//! [`BaseContext`]. Three rules make the chain composable:
 //!
 //! - **A pass's name keys its random stream.** Inserting, removing or
 //!   reordering a pass cannot change what any other pass draws.
@@ -46,8 +46,8 @@
 //! straight into them rather than into copies it would translate; this
 //! crate reads no file itself.
 //!
-//! Engine passes are generic over the context, so a game extends the
-//! context with its own state and engine passes still run on it.
+//! Every pass, the engine's and a game's, works on one [`BaseContext`];
+//! what a game's pass needs beyond it, it carries in its own fields.
 //!
 //! [`testing`] plays a generation test over a range of seeds on every
 //! core, for this crate's tests and a game's alike.
@@ -74,7 +74,7 @@ mod walk;
 pub use accrete::{Accrete, Area, Barrier, District, FirstPiece, Join, LaidBarrier, Landmark, Opening, Piece, Shape, Side, Sides};
 pub use cave::Cave;
 pub use chain::{BuildError, Chain, Pass, Phase};
-pub use context::{BaseContext, BuildContext, Outputs};
+pub use context::{BaseContext, Outputs};
 pub use dress::{DistrictDressings, Dress, Dressed, Dressing};
 pub use lakes::{Bridge, Bridges, Lake, Lakes};
 pub use loops::OpenLoops;
@@ -89,7 +89,7 @@ pub mod prelude {
     // `Rectangle` of its own, and `rl-rules` an `Area`.
     pub use crate::accrete::{Accrete, Shape};
     pub use crate::chain::{BuildError, Chain, Pass, Phase};
-    pub use crate::context::{BaseContext, BuildContext, Outputs};
+    pub use crate::context::{BaseContext, Outputs};
     pub use crate::dress::{DistrictDressings, Dress, Dressed, Dressing};
     pub use crate::dungeon;
     pub use crate::lakes::{Bridges, Lakes};

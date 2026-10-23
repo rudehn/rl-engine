@@ -22,7 +22,7 @@ use super::lairs::{FINAL_BOSSES, MINI_BOSSES};
 /// is grown again from the next attempt, with the same picks.
 pub(super) struct QuietWayIn;
 
-impl Pass<BaseContext> for QuietWayIn {
+impl Pass for QuietWayIn {
     fn name(&self) -> &'static str {
         "quiet_way_in"
     }
@@ -69,7 +69,7 @@ pub(super) struct PieceLook {
     pub(super) carved: TileId,
 }
 
-impl Pass<BaseContext> for PieceLook {
+impl Pass for PieceLook {
     fn name(&self) -> &'static str {
         "piece_look"
     }

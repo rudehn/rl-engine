@@ -18,7 +18,7 @@ use rl_grid::{BitGrid, CostSource, DijkstraMap, PathRules, Terrain, TileId};
 
 use crate::accrete::{Landmark, Side};
 use crate::chain::{BuildError, Pass, Phase};
-use crate::context::BuildContext;
+use crate::context::BaseContext;
 use crate::lakes::Bridge;
 pub use crate::passes::StartPoint;
 use crate::prefab::Stamped;
@@ -32,7 +32,7 @@ pub struct Room(pub Rect);
 pub struct ExitPoint(pub Point);
 
 /// Carves an L-shaped corridor of `floor` between two points.
-fn corridor(ctx: &mut impl BuildContext, from: Point, to: Point, floor: TileId, horizontal_first: bool) {
+fn corridor(ctx: &mut BaseContext, from: Point, to: Point, floor: TileId, horizontal_first: bool) {
     let mut cells = vec![from];
     let (mut x, mut y) = (from.x, from.y);
     let run_x = |x: &mut i32, y: i32, cells: &mut Vec<Point>| {
@@ -83,14 +83,14 @@ impl Default for Rooms {
     }
 }
 
-impl<C: BuildContext> Pass<C> for Rooms {
+impl Pass for Rooms {
     fn name(&self) -> &'static str {
         "rooms"
     }
     fn phase(&self) -> Phase {
         Phase::Structures
     }
-    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let bounds = ctx.terrain().bounds();
         let mut rooms: Vec<Rect> = Vec::new();
         for _ in 0..self.attempts {
@@ -144,7 +144,7 @@ impl Default for Bsp {
 }
 
 impl Bsp {
-    fn split(&self, ctx: &mut impl BuildContext, leaf: Rect, depth: u32) -> Option<Rect> {
+    fn split(&self, ctx: &mut BaseContext, leaf: Rect, depth: u32) -> Option<Rect> {
         let can_split_w = leaf.width >= 2 * self.min_leaf;
         let can_split_h = leaf.height >= 2 * self.min_leaf;
         if depth > 0 && (can_split_w || can_split_h) {
@@ -182,14 +182,14 @@ impl Bsp {
     }
 }
 
-impl<C: BuildContext> Pass<C> for Bsp {
+impl Pass for Bsp {
     fn name(&self) -> &'static str {
         "bsp"
     }
     fn phase(&self) -> Phase {
         Phase::Structures
     }
-    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let bounds = ctx.terrain().bounds();
         let area = Rect::new(1, 1, bounds.width - 2, bounds.height - 2);
         if self.split(ctx, area, 8).is_none() {
@@ -208,14 +208,14 @@ pub struct Doors {
     pub door: TileId,
 }
 
-impl<C: BuildContext> Pass<C> for Doors {
+impl Pass for Doors {
     fn name(&self) -> &'static str {
         "doors"
     }
     fn phase(&self) -> Phase {
         Phase::Structures
     }
-    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let tables = ctx.tiles().tables();
         let rooms: Vec<Rect> = ctx.outputs().iter::<Room>().map(|r| r.0).collect();
         let mut doors = Vec::new();
@@ -280,7 +280,7 @@ impl RandomStart {
 /// Every cell a [`Bridge`] was laid on. Neither way in nor way out
 /// stands on one: a bridge is a way over a lake, and a [`Room`] a lake
 /// was laid in still names the cells the bridge crosses.
-fn bridged<C: BuildContext>(ctx: &C) -> BitGrid {
+fn bridged(ctx: &BaseContext) -> BitGrid {
     let mut cells = BitGrid::new(ctx.terrain().width(), ctx.terrain().height());
     for p in ctx.outputs().iter::<Bridge>().flat_map(|b| b.cells.iter()) {
         cells.insert(*p);
@@ -289,20 +289,20 @@ fn bridged<C: BuildContext>(ctx: &C) -> BitGrid {
 }
 
 /// The open cells of `area`, never one of `bridged`.
-fn open_cells<C: BuildContext>(ctx: &C, walkable: &[bool], bridged: &BitGrid, area: Rect) -> Vec<Point> {
+fn open_cells(ctx: &BaseContext, walkable: &[bool], bridged: &BitGrid, area: Rect) -> Vec<Point> {
     area.cells().filter(|p| ctx.terrain().get(*p).is_some_and(|t| walkable[t.index()]) && !bridged.contains(*p)).collect()
 }
 
 /// The cells [`RandomStart`] draws from: the first room's open cells, or
 /// the whole map's when no room was emitted.
-fn start_cells<C: BuildContext>(ctx: &C, walkable: &[bool], bridged: &BitGrid) -> Vec<Point> {
+fn start_cells(ctx: &BaseContext, walkable: &[bool], bridged: &BitGrid) -> Vec<Point> {
     let area = ctx.outputs().first::<Room>().map(|r| r.0).unwrap_or_else(|| ctx.terrain().bounds());
     open_cells(ctx, walkable, bridged, area)
 }
 
 /// One of `cells`, drawn from the chain's stream for the start, as the
 /// [`StartPoint`].
-fn emit_start<C: BuildContext>(ctx: &mut C, cells: &[Point]) -> Result<(), BuildError> {
+fn emit_start(ctx: &mut BaseContext, cells: &[Point]) -> Result<(), BuildError> {
     if cells.is_empty() {
         return Err(BuildError::new("random_start", "no open cell"));
     }
@@ -311,14 +311,14 @@ fn emit_start<C: BuildContext>(ctx: &mut C, cells: &[Point]) -> Result<(), Build
     Ok(())
 }
 
-impl<C: BuildContext> Pass<C> for RandomStart {
+impl Pass for RandomStart {
     fn name(&self) -> &'static str {
         "random_start"
     }
     fn phase(&self) -> Phase {
         Phase::Exits
     }
-    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let cells = start_cells(ctx, &ctx.tiles().tables().walkable, &bridged(ctx));
         emit_start(ctx, &cells)
     }
@@ -370,7 +370,7 @@ impl ClearStart {
     /// walks from a start, and drawn among the farthest
     /// [`WITHIN_START_PCT`] of what it reaches, clear of every stamp where
     /// any such cell is.
-    fn far_from_mark<C: BuildContext>(&self, ctx: &mut C, landmark: &Landmark, mark: char, clear: &impl Fn(&Point) -> bool) -> Result<(), BuildError> {
+    fn far_from_mark(&self, ctx: &mut BaseContext, landmark: &Landmark, mark: char, clear: &impl Fn(&Point) -> bool) -> Result<(), BuildError> {
         let at = landmark_mark(ctx, landmark, mark, "random_start")?;
         let (walkable, bridged) = (ctx.tiles().tables().walkable, bridged(ctx));
         let map = walk_through_doors(ctx, at, true);
@@ -388,7 +388,7 @@ impl ClearStart {
     /// lying wholly on it with an open cell clear of every stamp, or every
     /// such cell of the side, or every open cell of the side however near
     /// a stamp it stands.
-    fn beyond_cells<C: BuildContext>(&self, ctx: &C, landmark: &Landmark, side: Side, clear: &impl Fn(&Point) -> bool) -> Vec<Point> {
+    fn beyond_cells(&self, ctx: &BaseContext, landmark: &Landmark, side: Side, clear: &impl Fn(&Point) -> bool) -> Vec<Point> {
         let (walkable, bridged) = (ctx.tiles().tables().walkable, bridged(ctx));
         let on = |p: &Point| landmark.side(*p) == Some(side);
         let rooms = ctx.outputs().iter::<Room>().map(|r| r.0).filter(|r| on(&r.origin()) && on(&Point::new(r.right() - 1, r.bottom() - 1)));
@@ -401,7 +401,7 @@ impl ClearStart {
     }
 }
 
-impl<C: BuildContext> Pass<C> for ClearStart {
+impl Pass for ClearStart {
     // The plain start's name, so both draw from one stream and the
     // fallback is exactly the plain pick.
     fn name(&self) -> &'static str {
@@ -410,7 +410,7 @@ impl<C: BuildContext> Pass<C> for ClearStart {
     fn phase(&self) -> Phase {
         Phase::Exits
     }
-    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let stamps: Vec<Rect> = ctx.outputs().iter::<Stamped>().map(|s| s.bounds).collect();
         let clear = |p: &Point| stamps.iter().all(|r| rl_core::geometry::chebyshev(*p, rl_core::geometry::clamp_to(*p, *r)) >= self.cells);
         let landmark = ctx.outputs().first::<Landmark>().cloned();
@@ -467,7 +467,7 @@ impl DoorWalk {
     /// The rule over `ctx` as it stands. With `locks_shut`, every lock and
     /// seal is shut; without it every one is taken as opened, for a pass
     /// asking what is reached once nothing is shut.
-    pub(crate) fn new<C: BuildContext>(ctx: &C, locks_shut: bool) -> Self {
+    pub(crate) fn new(ctx: &BaseContext, locks_shut: bool) -> Self {
         let locks = if locks_shut { lock_cells(ctx) } else { BitGrid::new(ctx.terrain().width(), ctx.terrain().height()) };
         DoorWalk { passable: ctx.tiles().tables().passable, locks }
     }
@@ -483,7 +483,7 @@ impl DoorWalk {
 /// Every cell of an [`Opening`](crate::accrete::Opening) joined locked or
 /// sealed: the cells [`DoorWalk`] never walks through, and the ones a
 /// pass taking the passable cells away from itself takes away.
-pub(crate) fn lock_cells<C: BuildContext>(ctx: &C) -> BitGrid {
+pub(crate) fn lock_cells(ctx: &BaseContext) -> BitGrid {
     use crate::accrete::{Join, Opening};
     let mut cells = BitGrid::new(ctx.terrain().width(), ctx.terrain().height());
     for o in ctx.outputs().iter::<Opening>().filter(|o| matches!(o.join, Join::Locked(_) | Join::Sealed)) {
@@ -520,7 +520,7 @@ impl CostSource for ThroughDoors<'_> {
 /// [`DoorWalk`]: doors opened on the way, and, with `locks_shut`, never
 /// through a lock or a seal. Without it every lock and seal is taken as
 /// opened, for a pass asking what is reached once nothing is shut.
-pub(crate) fn walk_through_doors<C: BuildContext>(ctx: &C, from: Point, locks_shut: bool) -> DijkstraMap {
+pub(crate) fn walk_through_doors(ctx: &BaseContext, from: Point, locks_shut: bool) -> DijkstraMap {
     let through_doors = ThroughDoors { terrain: ctx.terrain(), move_cost: ctx.tiles().tables().move_cost, rule: DoorWalk::new(ctx, locks_shut) };
     let mut map = DijkstraMap::covering(&through_doors);
     map.build(&through_doors, [from], PathRules::default());
@@ -612,19 +612,19 @@ impl FarExit {
     }
 }
 
-impl<C: BuildContext> Pass<C> for FarthestExit {
+impl Pass for FarthestExit {
     fn name(&self) -> &'static str {
         "farthest_exit"
     }
     fn phase(&self) -> Phase {
         Phase::Exits
     }
-    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         FarExit::default().apply(ctx)
     }
 }
 
-impl<C: BuildContext> Pass<C> for FarExit {
+impl Pass for FarExit {
     // The plain exit's name, so both draw from one stream.
     fn name(&self) -> &'static str {
         "farthest_exit"
@@ -632,7 +632,7 @@ impl<C: BuildContext> Pass<C> for FarExit {
     fn phase(&self) -> Phase {
         Phase::Exits
     }
-    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let err = |reason: String| BuildError::new("farthest_exit", reason);
         if self.among_pct.is_some_and(|pct| pct > 100) {
             return Err(err(format!("the farthest {}% is a share past a hundred", self.among_pct.unwrap_or(0))));
@@ -670,7 +670,7 @@ impl<C: BuildContext> Pass<C> for FarExit {
 /// `100 - among` in a hundred of the longest. `None` when there are no
 /// cells. The way down is drawn by it from the start, and a way in far
 /// from a way down within a landmark from the landmark's mark.
-fn draw_far<C: BuildContext>(ctx: &mut C, cells: &[(Point, i32)], among: Option<u32>) -> Option<Point> {
+fn draw_far(ctx: &mut BaseContext, cells: &[(Point, i32)], among: Option<u32>) -> Option<Point> {
     let far = cells.iter().map(|(_, v)| *v).max()?;
     Some(match among {
         None => cells.iter().max_by_key(|(p, v)| (*v, std::cmp::Reverse(*p))).expect("some cell is the farthest").0,
@@ -685,7 +685,7 @@ fn draw_far<C: BuildContext>(ctx: &mut C, cells: &[(Point, i32)], among: Option<
 /// earlier stamp drawing the same glyph: the stamp whose bounds are the
 /// landmark's. Fails naming the landmark and the glyph when its drawing
 /// marks none.
-fn landmark_mark<C: BuildContext>(ctx: &C, landmark: &Landmark, mark: char, pass: &'static str) -> Result<Point, BuildError> {
+fn landmark_mark(ctx: &BaseContext, landmark: &Landmark, mark: char, pass: &'static str) -> Result<Point, BuildError> {
     let stamp = ctx.outputs().iter::<Stamped>().find(|st| st.bounds == landmark.bounds);
     let at = stamp.and_then(|st| st.marks.iter().find(|(c, _)| *c == mark)).map(|(_, p)| *p);
     at.ok_or_else(|| BuildError::new(pass, format!("the landmark {} marks no '{mark}'", landmark.name)))
@@ -705,19 +705,19 @@ pub struct MarkedStart {
 }
 
 /// The cell the first stamp marking `mark` marks it at.
-fn marked<C: BuildContext>(ctx: &C, mark: char, pass: &'static str) -> Result<Point, BuildError> {
+fn marked(ctx: &BaseContext, mark: char, pass: &'static str) -> Result<Point, BuildError> {
     let at = ctx.outputs().iter::<Stamped>().flat_map(|st| st.marks.iter()).find(|(c, _)| *c == mark).map(|(_, p)| *p);
     at.ok_or_else(|| BuildError::new(pass, format!("no piece marks a '{mark}'")))
 }
 
-impl<C: BuildContext> Pass<C> for MarkedStart {
+impl Pass for MarkedStart {
     fn name(&self) -> &'static str {
         "marked_start"
     }
     fn phase(&self) -> Phase {
         Phase::Exits
     }
-    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let at = marked(ctx, self.mark, "marked_start")?;
         ctx.emit(StartPoint(at));
         Ok(())
@@ -738,14 +738,14 @@ pub struct MarkedExit {
     pub mark: char,
 }
 
-impl<C: BuildContext> Pass<C> for MarkedExit {
+impl Pass for MarkedExit {
     fn name(&self) -> &'static str {
         "marked_exit"
     }
     fn phase(&self) -> Phase {
         Phase::Exits
     }
-    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         let at = marked(ctx, self.mark, "marked_exit")?;
         ctx.emit(ExitPoint(at));
         Ok(())
@@ -812,17 +812,17 @@ pub enum WayDown {
     Within(char),
 }
 
-impl<C: BuildContext> Pass<C> for WayDown {
+impl Pass for WayDown {
     fn name(&self) -> &'static str {
         match self {
-            WayDown::Far(exit) => Pass::<C>::name(exit),
+            WayDown::Far(exit) => Pass::name(exit),
             WayDown::Within(_) => "marked_exit",
         }
     }
     fn phase(&self) -> Phase {
         Phase::Exits
     }
-    fn apply(&self, ctx: &mut C) -> Result<(), BuildError> {
+    fn apply(&self, ctx: &mut BaseContext) -> Result<(), BuildError> {
         match self {
             WayDown::Far(exit) => exit.apply(ctx),
             WayDown::Within(mark) => {
@@ -903,7 +903,7 @@ mod tests {
 
     /// Rooms with a three-by-three piece stamped in one of them, and then
     /// `start`, on `seed`: the start and the piece's bounds.
-    fn start_beside_a_stamp(start: impl Pass<BaseContext> + 'static, seed: u64) -> (Point, Rect, Vec<Rect>) {
+    fn start_beside_a_stamp(start: impl Pass + 'static, seed: u64) -> (Point, Rect, Vec<Rect>) {
         use crate::prefab::{Orient, Placement, Prefab, StampPrefab, Stamped};
         let (mut c, _, floor, _) = ctx();
         let piece = Prefab::parse(&["...", ".m.", "..."], |ch| (ch == '.').then_some(floor)).unwrap();
@@ -1014,7 +1014,7 @@ mod tests {
 
     /// A grown place owing a hall painted from a prefab, its way in drawn,
     /// and its way out by `exit`: the exit and the hall's stamp.
-    fn exit_beside_a_grown_piece(exit: impl Pass<BaseContext> + 'static, seed: u64) -> (Point, Rect) {
+    fn exit_beside_a_grown_piece(exit: impl Pass + 'static, seed: u64) -> (Point, Rect) {
         use crate::accrete::tests::{owing, rig};
         let rig = rig();
         let chain = Chain::new().then(owing(&rig, crate::Join::Door)).then(RandomStart).then(exit);
@@ -1036,7 +1036,7 @@ mod tests {
 
     /// The exit `exit` draws on a corridor from (1, 2) to (28, 2) with a
     /// stamp over its last five cells.
-    fn exit_on_a_corridor(exit: impl Pass<BaseContext> + 'static) -> Point {
+    fn exit_on_a_corridor(exit: impl Pass + 'static) -> Point {
         let (mut c, _, floor, _) = ctx();
         for x in 1..29 {
             c.terrain_mut().set(Point::new(x, 2), floor);
@@ -1172,7 +1172,7 @@ mod tests {
     /// on every floor and only the floors with a landmark change.
     #[test]
     fn beyond_with_no_landmark_laid_is_the_plain_start_and_exit() {
-        fn ways(start: impl Pass<BaseContext> + 'static, exit: FarExit, seed: u64) -> (Point, Point) {
+        fn ways(start: impl Pass + 'static, exit: FarExit, seed: u64) -> (Point, Point) {
             let (mut c, _, floor, door) = ctx();
             Chain::new().then(Rooms { floor, ..Default::default() }).then(Doors { door }).then(start).then(exit).run(&mut c, RunSeed(seed)).unwrap();
             (c.outputs().first::<StartPoint>().unwrap().0, c.outputs().first::<ExitPoint>().unwrap().0)

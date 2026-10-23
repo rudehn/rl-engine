@@ -322,7 +322,7 @@ mod tests {
 
     impl Vault {
         fn new(join: rl_mapgen::Join, carried: Option<u32>) -> Self {
-            use rl_mapgen::{BaseContext, BuildContext, Opening};
+            use rl_mapgen::{BaseContext, Opening};
             let mut app = headless_app();
             let mut tiles = TileRegistry::standard();
             tiles.register(rl_grid::TileProps::wall("vault door").opens_to("door_open")).unwrap();

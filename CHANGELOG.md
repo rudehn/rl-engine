@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `BuildContext` is gone: `Pass` and `Chain` work on `BaseContext`, its one implementation, whose `terrain`, `tiles`, `rng`, `emit` and `outputs` are now its own methods. `ScatterBy` and `ChanceFn` lose the parameter with it, a chance reading a `&BaseContext`.
+  To change: `impl Pass<BaseContext> for X` becomes `impl Pass for X`, `Chain<BaseContext>` becomes `Chain`, `ScatterBy<BaseContext>` becomes `ScatterBy`, and an import of `BuildContext` goes.
+
 - Engine systems are no longer public: 57 system functions of `rl-bevy`, `rl-ui` and `rl-save` are crate-private, and `rl_bevy::bury_spent`, `rl_bevy::land_triggers`, `rl_save::forget_save` and `rl_save::save_on_arrival` are no longer exported. A game orders its systems by the engine's sets, never by an engine function. The run conditions (`modal_is`, `modal_open`, `no_modal`, `title_is_up`) and `rl_bevy::plugin::run_turns` stay public.
   To change: a game that named an engine system function orders by the set it runs in, and an ambiguity allowance names its own system and the data with `Allowed::with_any`, or the engine's sets with `Allowed::among`; `rl_bevy::plugin::headless_app` is `rl_bevy::testing::headless_app`.
 

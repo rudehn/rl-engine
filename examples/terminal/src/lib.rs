@@ -11,7 +11,7 @@ use rl_core::{Direction, Point, RunSeed};
 use rl_grid::{BitGrid, Terrain, TileRegistry, fov};
 use rl_mapgen::dungeon::{RandomStart, Rooms};
 use rl_mapgen::passes::StartPoint;
-use rl_mapgen::{BaseContext, BuildContext, Chain};
+use rl_mapgen::{BaseContext, Chain};
 
 /// Map width in cells, one terminal column each.
 pub const WIDTH: i32 = 60;

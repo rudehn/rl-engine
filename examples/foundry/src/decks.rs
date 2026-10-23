@@ -370,7 +370,6 @@ mod tests {
 
     use rl_engine::rl_core::{Grid2D, Rect};
     use rl_engine::rl_grid::TileTables;
-    use rl_engine::rl_mapgen::BuildContext;
     use rl_engine::rl_mapgen::prefab::Stamped;
 
     use super::*;

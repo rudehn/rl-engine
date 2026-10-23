@@ -64,7 +64,7 @@ pub struct LayoutTiles {
 /// use rl_core::RunSeed;
 /// use rl_grid::{TileProps, TileRegistry};
 /// use rl_mapgen::dungeon::{FarthestExit, RandomStart};
-/// use rl_mapgen::{Area, BaseContext, BuildContext, Chain, Survey};
+/// use rl_mapgen::{Area, BaseContext, Chain, Survey};
 /// use rl_rules::grow::{LayoutTiles, passes};
 ///
 /// let layout = rl_rules::layout::load(
@@ -230,7 +230,7 @@ mod tests {
     use rl_core::RunSeed;
     use rl_grid::{TileProps, TileRegistry};
     use rl_mapgen::dungeon::{FarthestExit, RandomStart};
-    use rl_mapgen::{BaseContext, BuildContext, Chain, LaidBarrier, Survey, Surveyed};
+    use rl_mapgen::{BaseContext, Chain, LaidBarrier, Survey, Surveyed};
 
     const FILE: &str = r#"(
         shapes: [
