@@ -1,6 +1,7 @@
 //! A virtual glyph terminal drawn with Bevy.
 
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 
 use atglyph_core::{Point, Rect};
 use bevy::prelude::*;
@@ -132,7 +133,7 @@ impl Plugin for TerminalPlugin {
             // no order against them could be drawn a frame late.
             .add_systems(Startup, draw_art)
             .add_systems(PreUpdate, (relayout, redraw_art, crate::pointer::track_pointer).chain())
-            .add_systems(PostUpdate, (spawn_pictures, flush_terminal).chain());
+            .add_systems(PostUpdate, (spawn_pictures, draw_art_for_runs, flush_terminal).chain());
     }
 }
 
@@ -400,13 +401,20 @@ enum Shown {
 /// size a cell is shown in physical pixels, and drawn again whenever that
 /// changes, so a line is always exactly as wide as its cell.
 ///
+/// One sheet for a cell of its own and one for each length of wide run
+/// the terminal has shown, since a glyph across a run is drawn for the
+/// run, with one cell's strokes, rather than a cell's picture stretched,
+/// which would double a vertical stroke's width and not a horizontal's.
+///
 /// Absent from an app with no `Assets<Image>`, a headless one, whose cells
 /// show those characters as glyphs.
 #[derive(Resource)]
 struct Art {
-    image: Handle<Image>,
-    layout: Handle<TextureAtlasLayout>,
-    /// The cell size the sheet was drawn for, in physical pixels.
+    /// Each sheet and how it is cut up, by the length of run it is drawn
+    /// for. Ordered, though only ever looked up, for want of a reason to
+    /// use anything else.
+    sheets: BTreeMap<u8, (Handle<Image>, Handle<TextureAtlasLayout>)>,
+    /// The cell size the sheets were drawn for, in physical pixels.
     cell: UVec2,
 }
 
@@ -422,8 +430,8 @@ struct Sheets<'w> {
 fn draw_art(mut commands: Commands, terminal: Res<Terminal>, sheets: Sheets) {
     let (Some(mut images), Some(mut layouts)) = (sheets.images, sheets.layouts) else { return };
     let cell = terminal.cell_size.round().max(Vec2::ONE).as_uvec2();
-    let (image, layout) = cell_art::sheet(cell);
-    commands.insert_resource(Art { image: images.add(image), layout: layouts.add(layout), cell });
+    let (image, layout) = cell_art::sheet(cell, 1);
+    commands.insert_resource(Art { sheets: BTreeMap::from([(1, (images.add(image), layouts.add(layout)))]), cell });
 }
 
 /// Draws the [`Art`] again, in place, when the grid was laid out at
@@ -433,14 +441,33 @@ fn redraw_art(entities: Res<CellEntities>, art: Option<ResMut<Art>>, sheets: She
     if art.cell == pixels {
         return;
     }
-    let (image, layout) = cell_art::sheet(pixels);
-    if let Some(mut kept) = images.get_mut(&art.image) {
-        *kept = image;
-    }
-    if let Some(mut kept) = layouts.get_mut(&art.layout) {
-        *kept = layout;
+    for (span, (image_handle, layout_handle)) in &art.sheets {
+        let (image, layout) = cell_art::sheet(pixels, u32::from(*span));
+        if let Some(mut kept) = images.get_mut(image_handle) {
+            *kept = image;
+        }
+        if let Some(mut kept) = layouts.get_mut(layout_handle) {
+            *kept = layout;
+        }
     }
     art.cell = pixels;
+}
+
+/// Draws a sheet of the [`Art`] for each length of wide run the terminal
+/// holds and has none for yet: a map of tiles two cells wide draws its
+/// first one on its first frame, and never another.
+fn draw_art_for_runs(terminal: Res<Terminal>, art: Option<ResMut<Art>>, sheets: Sheets) {
+    let (Some(mut art), Some(mut images), Some(mut layouts)) = (art, sheets.images, sheets.layouts) else { return };
+    let mut wanted = [false; 256];
+    for &span in &terminal.spans {
+        wanted[usize::from(span)] = true;
+    }
+    let missing: Vec<u8> = (2..=u8::MAX).filter(|s| wanted[usize::from(*s)] && !art.sheets.contains_key(s)).collect();
+    for span in missing {
+        let (image, layout) = cell_art::sheet(art.cell, u32::from(span));
+        let handles = (images.add(image), layouts.add(layout));
+        art.sheets.insert(span, handles);
+    }
 }
 
 impl CellEntities {
@@ -569,7 +596,7 @@ fn relayout(
 fn spawn_pictures(mut commands: Commands, terminal: Res<Terminal>, tileset: Option<Res<Tileset>>, art: Option<Res<Art>>, mut entities: ResMut<CellEntities>) {
     let sheet = match (&tileset, &art) {
         (Some(tileset), _) => (tileset.image().clone(), tileset.layout().clone()),
-        (None, Some(art)) => (art.image.clone(), art.layout.clone()),
+        (None, Some(art)) => art.sheets.get(&1).cloned().expect("the art is drawn for a cell of its own first"),
         (None, None) => return,
     };
     if !entities.picture.is_empty() || entities.background.is_empty() {
@@ -617,7 +644,10 @@ fn flush_terminal(
     let art = art.as_deref().filter(|_| spawned);
     for i in 0..terminal.cells.len() {
         let span = terminal.spans[i];
-        if span != entities.spans[i] {
+        // A cell that became or stopped being the first of a run shows the
+        // art drawn for its new length, so it is drawn again even unchanged.
+        let respanned = span != entities.spans[i];
+        if respanned {
             let (centre, cell) = entities.place(&terminal, i);
             let (shift, size) = placing(span, cell);
             if let Ok((_, _, mut transform)) = glyphs.get_mut(entities.glyph[i]) {
@@ -631,11 +661,12 @@ fn flush_terminal(
         }
         let next = terminal.cells[i];
         let current = entities.displayed[i];
-        if next == current && !redraw {
+        if next == current && !redraw && !respanned {
             continue;
         }
         let cell = Point::new(i as i32 % terminal.width, i as i32 / terminal.width);
-        let picture = tileset.and_then(|t| t.picture(next.glyph, cell)).map(Shown::Tile).or_else(|| art.and(cell_art::index(next.glyph)).map(Shown::Art));
+        let art_sheet = art.and_then(|a| a.sheets.get(&span.max(1)));
+        let picture = tileset.and_then(|t| t.picture(next.glyph, cell)).map(Shown::Tile).or_else(|| art_sheet.and(cell_art::index(next.glyph)).map(Shown::Art));
         let was_pictured = entities.pictured.get(i).copied().flatten();
         if next.bg != current.bg
             && let Ok(mut sprite) = backgrounds.get_mut(entities.background[i])
@@ -656,7 +687,7 @@ fn flush_terminal(
         if let Some(Ok((mut sprite, mut visibility, _))) = entities.picture.get(i).map(|e| pictures.get_mut(*e)) {
             let sheet = match (picture, tileset, art) {
                 (Some(Shown::Tile(index)), Some(tileset), _) => Some((tileset.image(), tileset.layout(), index)),
-                (Some(Shown::Art(index)), _, Some(art)) => Some((&art.image, &art.layout, index)),
+                (Some(Shown::Art(index)), _, _) => art_sheet.map(|(image, layout)| (image, layout, index)),
                 _ => None,
             };
             match sheet {
@@ -972,7 +1003,7 @@ mod tests {
         assert_eq!(shows(&app, 1, 0), (" ".to_string(), Some((0x88, green))), "a full block, from the sheet");
         assert_eq!(shows(&app, 2, 0), ("#".to_string(), None), "anything else, a glyph");
         let art = app.world().resource::<Art>();
-        let sheet = app.world().resource::<Assets<Image>>().get(&art.image).expect("the sheet is kept");
+        let sheet = app.world().resource::<Assets<Image>>().get(&art.sheets[&1].0).expect("the sheet is kept");
         assert_eq!(sheet.width(), 16 * 10, "drawn for the declared cell before any window");
         let mut resolution = WindowResolution::new(160, 160);
         resolution.set_scale_factor_override(Some(1.0));
@@ -980,7 +1011,7 @@ mod tests {
         app.world_mut().spawn((Window { resolution, ..default() }, PrimaryWindow));
         app.update();
         let art = app.world().resource::<Art>();
-        let sheet = app.world().resource::<Assets<Image>>().get(&art.image).expect("the same sheet");
+        let sheet = app.world().resource::<Assets<Image>>().get(&art.sheets[&1].0).expect("the same sheet");
         assert_eq!((sheet.width(), sheet.height()), (16 * 20, 10 * 40), "and again, in place, at the size a window shows the cell");
 
         app.insert_resource(Tileset::new(Handle::default(), Handle::default()).with('\u{2500}', 3));
@@ -989,6 +1020,32 @@ mod tests {
         app.world_mut().remove_resource::<Tileset>();
         app.update();
         assert_eq!(shows(&app, 0, 0), (" ".to_string(), Some((0, green))), "and the terminal's own again without it");
+    }
+
+    /// A box-drawing character across a wide run is drawn from a sheet of
+    /// its own, drawn for the run, rather than a cell's picture stretched;
+    /// written over with text, the cell goes back to a cell's sheet.
+    #[test]
+    fn a_box_drawing_character_across_a_wide_run_is_drawn_for_the_run() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins).init_resource::<Assets<Image>>().init_resource::<Assets<TextureAtlasLayout>>();
+        app.add_plugins(TerminalPlugin::new(8, 4, Vec2::new(10.0, 20.0), 16.0));
+        app.update();
+        app.world_mut().resource_mut::<Terminal>().set_wide(2, 1, 2, Cell::new('\u{2551}', Color::WHITE));
+        app.update();
+        let shown = |app: &App| {
+            let entities = app.world().resource::<CellEntities>();
+            let sprite = app.world().get::<Sprite>(entities.picture[8 + 2]).unwrap();
+            (sprite.texture_atlas.as_ref().unwrap().layout.clone(), sprite.custom_size.unwrap())
+        };
+        let art = app.world().resource::<Art>();
+        let (one, two) = (art.sheets[&1].1.clone(), art.sheets.get(&2).expect("a sheet for runs of two").1.clone());
+        let layout = app.world().resource::<Assets<TextureAtlasLayout>>().get(&two).unwrap();
+        assert_eq!(layout.textures[0].size(), UVec2::new(20, 20), "drawn two cells wide");
+        assert_eq!(shown(&app), (two, Vec2::new(20.0, 20.0)), "the run's sheet, across the run");
+        app.world_mut().resource_mut::<Terminal>().put(3, 1, 'x', Color::WHITE);
+        app.update();
+        assert_eq!(shown(&app), (one, Vec2::new(10.0, 20.0)), "a cell of its own again, from a cell's sheet");
     }
 
     /// The first cell of a wide one draws its glyph and its picture centred

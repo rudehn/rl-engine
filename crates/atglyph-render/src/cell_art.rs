@@ -14,10 +14,24 @@
 //! All 160 of them rather than the few the engine's own panels use, since
 //! a game's title in box art or a tile drawn as a shade meets the same
 //! seams, and a font that lacks them, as the one Bevy embeds for the
-//! browser does, then no longer matters. A shade is the cell filled at a
-//! quarter, a half or three quarters of its colour rather than a stipple,
-//! which at a cell's size is a pattern of a few pixels that a neighbor's
-//! breaks; the other characters are what their names say.
+//! browser does, then no longer matters.
+//!
+//! A shade is a dot pattern, not a tint: gas thick enough to hide behind
+//! is drawn in `░` and `▒`, and a tint of the same colour reads as a lit
+//! or a bare tile rather than as haze. Its dots are about as wide as a
+//! light line, so the pattern reads at any cell size and any display
+//! scaling, on a grid of an even number of them each way, so a cell's
+//! dots carry on into its neighbor's as if the pattern were one: a
+//! quarter of the dots for `░`, every other one for `▒`, and all but a
+//! quarter for `▓`.
+//!
+//! A glyph drawn across a run of cells, a map tile two cells wide, is
+//! drawn once across the run with the strokes of one cell: a line keeps
+//! its weight rather than doubling in width, a horizontal line runs edge
+//! to edge so it meets the next tile's, a vertical one stands in the
+//! middle of the tile as a glyph centred on it would, and a block or a
+//! shade fills the tile as it fills a cell, since the run is one tile
+//! drawn as one cell.
 //!
 //! Pure arithmetic on pixels, with no `App`, so every shape is a test.
 
@@ -40,40 +54,41 @@ pub(crate) fn index(glyph: char) -> Option<usize> {
     (FIRST..FIRST + COUNT).contains(&code).then(|| (code - FIRST) as usize)
 }
 
-/// The sheet every character is drawn on, each in a cell of `cell` pixels,
-/// white where it is drawn so the sprite showing it takes the cell's
-/// colour, and how it is cut up.
+/// The sheet every character is drawn on for a run of `span` cells of
+/// `cell` pixels, white where it is drawn so the sprite showing it takes
+/// the cell's colour, and how it is cut up.
 ///
 /// Sampled nearest: the sheet is drawn at the size it is shown, so a
 /// filter would only blur a cell's edge into its neighbor's on the sheet.
-pub(crate) fn sheet(cell: UVec2) -> (Image, TextureAtlasLayout) {
+pub(crate) fn sheet(cell: UVec2, span: u32) -> (Image, TextureAtlasLayout) {
+    let tile = UVec2::new(cell.x * span.max(1), cell.y);
     let rows = COUNT.div_ceil(COLUMNS);
-    let (width, height) = (cell.x * COLUMNS, cell.y * rows);
+    let (width, height) = (tile.x * COLUMNS, tile.y * rows);
     let mut data = vec![0u8; (width * height * 4) as usize];
     for i in 0..COUNT {
         let glyph = char::from_u32(FIRST + i).expect("the two blocks are characters");
-        let alpha = coverage(glyph, cell).expect("every character of the two blocks is drawn");
-        let (left, top) = ((i % COLUMNS) * cell.x, (i / COLUMNS) * cell.y);
-        for y in 0..cell.y {
-            for x in 0..cell.x {
+        let alpha = coverage(glyph, cell, span).expect("every character of the two blocks is drawn");
+        let (left, top) = ((i % COLUMNS) * tile.x, (i / COLUMNS) * tile.y);
+        for y in 0..tile.y {
+            for x in 0..tile.x {
                 let at = (((top + y) * width + left + x) * 4) as usize;
-                data[at..at + 4].copy_from_slice(&[255, 255, 255, alpha[(y * cell.x + x) as usize]]);
+                data[at..at + 4].copy_from_slice(&[255, 255, 255, alpha[(y * tile.x + x) as usize]]);
             }
         }
     }
     let size = Extent3d { width, height, depth_or_array_layers: 1 };
     let mut image = Image::new(size, TextureDimension::D2, data, TextureFormat::Rgba8UnormSrgb, RenderAssetUsages::default());
     image.sampler = ImageSampler::nearest();
-    (image, TextureAtlasLayout::from_grid(cell, COLUMNS, rows, None, None))
+    (image, TextureAtlasLayout::from_grid(tile, COLUMNS, rows, None, None))
 }
 
-/// How much of each pixel of a cell `size` pixels across `glyph` covers,
-/// from 0 to 255, row by row from the top; `None` for a character drawn
-/// by the font.
-pub(crate) fn coverage(glyph: char, size: UVec2) -> Option<Vec<u8>> {
+/// How much of each pixel `glyph` covers across a run of `span` cells of
+/// `cell` pixels, from 0 to 255, row by row from the top; `None` for a
+/// character drawn by the font.
+pub(crate) fn coverage(glyph: char, cell: UVec2, span: u32) -> Option<Vec<u8>> {
     let code = u32::from(glyph);
     index(glyph)?;
-    let mut canvas = Canvas::new(size);
+    let mut canvas = Canvas::new(cell, span);
     match code {
         0x2580..=0x259F => canvas.block(code),
         0x2504..=0x250B | 0x254C..=0x254F => canvas.dashes(code),
@@ -180,17 +195,23 @@ struct Canvas {
     width: i32,
     height: i32,
     alpha: Vec<u8>,
-    /// A light line's width: about a ninth of the cell, so a line keeps
-    /// to the weight of a font's strokes at any cell size, and never under
-    /// a pixel.
+    /// A light line's width: about a ninth of one cell, however many the
+    /// run is, so a line keeps to the weight of a font's strokes at any
+    /// cell size, and never under a pixel.
     light: i32,
+    /// How many cells across the run is.
+    span: i32,
+    /// One cell's height and width, the unit a shade's dots are counted in.
+    cell: (i32, i32),
 }
 
 impl Canvas {
-    fn new(size: UVec2) -> Self {
-        let (width, height) = (size.x.max(1) as i32, size.y.max(1) as i32);
-        let light = ((width as f32 / 9.0).round() as i32).max(1);
-        Self { width, height, alpha: vec![0; (width * height) as usize], light }
+    fn new(cell: UVec2, span: u32) -> Self {
+        let span = span.max(1) as i32;
+        let (cell_width, height) = (cell.x.max(1) as i32, cell.y.max(1) as i32);
+        let width = cell_width * span;
+        let light = ((cell_width as f32 / 9.0).round() as i32).max(1);
+        Self { width, height, alpha: vec![0; (width * height) as usize], light, span, cell: (cell_width, height) }
     }
 
     /// How wide a line of `line` weight is: a heavy one twice a light one,
@@ -319,7 +340,8 @@ impl Canvas {
     }
 
     /// A dashed line, its dashes centred in equal parts of the cell so the
-    /// dashes of a row of cells are evenly spaced.
+    /// dashes of a row of cells are evenly spaced, and as many again for
+    /// each further cell of a run, so a dash keeps its length.
     fn dashes(&mut self, code: u32) {
         // How many dashes, how heavy, and whether they run across.
         let (count, line, across) = match code {
@@ -336,6 +358,7 @@ impl Canvas {
             0x254E => (2, Line::Light, false),
             _ => (2, Line::Heavy, false),
         };
+        let count = if across { count * self.span } else { count };
         let length = if across { self.width } else { self.height };
         let band = Span::centred(self.weight(line), if across { self.height } else { self.width });
         for i in 0..count {
@@ -390,6 +413,31 @@ impl Canvas {
         });
     }
 
+    /// A shade: dots about a light line wide, a whole even number of them
+    /// across each cell and down it, so a cell's pattern carries on into
+    /// its neighbors' on every side. A quarter of them for `░`, on a grid
+    /// two dots apart, every other one for `▒`, and all but that quarter
+    /// for `▓`.
+    fn shade(&mut self, code: u32) {
+        let (cell_width, height) = self.cell;
+        let per = |length: i32| 2 * (length / (2 * self.light)).max(1);
+        let (across, down) = (per(cell_width) * self.span, per(height));
+        for j in 0..down {
+            for i in 0..across {
+                let on = match code {
+                    0x2591 => i % 2 == 0 && j % 2 == 0,
+                    0x2592 => (i + j) % 2 == 0,
+                    _ => !(i % 2 == 1 && j % 2 == 1),
+                };
+                if on {
+                    let x = Span { start: i * self.width / across, end: (i + 1) * self.width / across };
+                    let y = Span { start: j * self.height / down, end: (j + 1) * self.height / down };
+                    self.fill(x, y, 255);
+                }
+            }
+        }
+    }
+
     /// U+2580 to U+259F: halves, eighths, quadrants and shades.
     fn block(&mut self, code: u32) {
         let (w, h) = (self.width, self.height);
@@ -409,10 +457,7 @@ impl Canvas {
                 self.fill(Span { start: 0, end: eighths_x(n) }, self.all_y(), 255);
             }
             0x2590 => self.fill(Span { start: half_x, end: w }, self.all_y(), 255),
-            0x2591..=0x2593 => {
-                let alpha = [64, 128, 191][(code - 0x2591) as usize];
-                self.fill(self.all_x(), self.all_y(), alpha);
-            }
+            0x2591..=0x2593 => self.shade(code),
             0x2594 => self.fill(self.all_x(), Span { start: 0, end: eighths_y(1) }, 255),
             0x2595 => self.fill(Span { start: w - eighths_x(1), end: w }, self.all_y(), 255),
             _ => {
@@ -440,12 +485,17 @@ mod tests {
     /// The rows of a drawn cell as text, `#` for a pixel covered more than
     /// half and `.` for one that is not, for an assertion to print.
     fn picture(glyph: char, size: UVec2) -> Vec<String> {
-        let alpha = coverage(glyph, size).unwrap();
+        let alpha = coverage(glyph, size, 1).unwrap();
         alpha.chunks(size.x as usize).map(|row| row.iter().map(|&a| if a > 127 { '#' } else { '.' }).collect()).collect()
     }
 
+    fn picture_across(glyph: char, cell: UVec2, span: u32) -> Vec<String> {
+        let alpha = coverage(glyph, cell, span).unwrap();
+        alpha.chunks((cell.x * span) as usize).map(|row| row.iter().map(|&a| if a > 127 { '#' } else { '.' }).collect()).collect()
+    }
+
     fn covered(glyph: char, size: UVec2, x: u32, y: u32) -> bool {
-        coverage(glyph, size).unwrap()[(y * size.x + x) as usize] > 127
+        coverage(glyph, size, 1).unwrap()[(y * size.x + x) as usize] > 127
     }
 
     /// The pixels a line covers along an edge of the cell, as spans.
@@ -465,11 +515,11 @@ mod tests {
         assert_eq!(index('\u{259F}'), Some(159));
         for outside in ['\u{24FF}', '\u{25A0}', '#', '@', ' '] {
             assert_eq!(index(outside), None, "{outside:?} is the font's");
-            assert_eq!(coverage(outside, CELL), None);
+            assert_eq!(coverage(outside, CELL, 1), None);
         }
         for code in 0x2500..=0x259F {
             let glyph = char::from_u32(code).unwrap();
-            let alpha = coverage(glyph, CELL).unwrap();
+            let alpha = coverage(glyph, CELL, 1).unwrap();
             assert_eq!(alpha.len(), (CELL.x * CELL.y) as usize);
             assert!(alpha.iter().any(|&a| a > 0), "{glyph} draws something");
         }
@@ -522,7 +572,7 @@ mod tests {
         let x = left_of('╠');
         assert!((0..CELL.y).all(|y| covered('╠', CELL, x, y)), "the outer stroke of ╠ is whole");
         // ╟ meets its single arm at the near stroke, not across the gap.
-        let gap_x = (CELL.x - Canvas::new(CELL).light as u32) / 2;
+        let gap_x = (CELL.x - Canvas::new(CELL, 1).light as u32) / 2;
         let y = CELL.y / 2;
         assert!(!covered('╟', CELL, gap_x, y), "╟'s arm stops at the near stroke");
         assert!(covered('╫', CELL, gap_x, y), "╫'s line crosses the gap");
@@ -531,8 +581,8 @@ mod tests {
     #[test]
     fn the_full_block_fills_its_cell_and_the_eighths_and_halves_tile_it() {
         for size in [UVec2::new(9, 19), CELL] {
-            assert!(coverage('█', size).unwrap().iter().all(|&a| a == 255), "{size}: █ covers every pixel");
-            let total = |glyph| coverage(glyph, size).unwrap().iter().filter(|&&a| a == 255).count();
+            assert!(coverage('█', size, 1).unwrap().iter().all(|&a| a == 255), "{size}: █ covers every pixel");
+            let total = |glyph| coverage(glyph, size, 1).unwrap().iter().filter(|&&a| a == 255).count();
             let cell = (size.x * size.y) as usize;
             assert_eq!(total('▀') + total('▄'), cell, "{size}: an upper and a lower half are the whole cell");
             assert_eq!(total('▌') + total('▐'), cell, "{size}: so are a left and a right half");
@@ -542,16 +592,68 @@ mod tests {
         }
     }
 
+    /// A shade is dots, covering about a quarter, a half and three
+    /// quarters of its cell, every one fully or not at all, at any size.
     #[test]
-    fn a_shade_covers_its_whole_cell_at_a_quarter_a_half_and_three_quarters() {
-        for (glyph, alpha) in [('░', 64), ('▒', 128), ('▓', 191)] {
-            assert!(coverage(glyph, CELL).unwrap().iter().all(|&a| a == alpha), "{glyph}");
+    fn a_shade_is_dots_covering_a_quarter_a_half_and_three_quarters() {
+        for size in [UVec2::new(9, 19), UVec2::new(10, 20), CELL, UVec2::new(40, 80)] {
+            for (glyph, share) in [('░', 0.25), ('▒', 0.5), ('▓', 0.75)] {
+                let alpha = coverage(glyph, size, 1).unwrap();
+                assert!(alpha.iter().all(|&a| a == 0 || a == 255), "{glyph} at {size}: dots, not a tint");
+                let covered = alpha.iter().filter(|&&a| a == 255).count() as f32 / alpha.len() as f32;
+                assert!((covered - share).abs() < 0.08, "{glyph} at {size}: {covered} of the cell, not about {share}");
+            }
         }
+        // About a light line wide: a cell twenty wide has ten dots across.
+        let row: String = picture('▒', CELL)[0].clone();
+        assert_eq!(row, "##..##..##..##..##..", "a light line's width a dot");
+    }
+
+    /// A shade's dots carry on into the next cell on every side: two cells
+    /// side by side are the pattern a run two cells wide draws, and a cell
+    /// over another alternates across the seam as it does inside.
+    #[test]
+    fn a_shade_tiles_into_its_neighbors_without_a_seam() {
+        for size in [UVec2::new(9, 19), UVec2::new(10, 20), CELL] {
+            for glyph in ['░', '▒', '▓'] {
+                let one = picture(glyph, size);
+                let two = picture_across(glyph, size, 2);
+                let beside: Vec<String> = one.iter().map(|row| format!("{row}{row}")).collect();
+                assert_eq!(two, beside, "{glyph} at {size}: two cells side by side are one pattern");
+            }
+            // Down the seam, the bottom dots of one cell and the top dots of
+            // the one under it are the two phases of the pattern, as any two
+            // rows of dots one above the other are.
+            let medium = picture('▒', size);
+            let (top, bottom) = (&medium[0], &medium[medium.len() - 1]);
+            assert!(top.chars().zip(bottom.chars()).all(|(a, b)| a != b), "▒ at {size}: {top} over {bottom}");
+            let light = picture('░', size);
+            assert!(light[light.len() - 1].chars().all(|c| c == '.') && light[0].contains('#'), "░ at {size}: a row of dots then a row without");
+        }
+    }
+
+    /// A glyph drawn across a run of two cells keeps one cell's strokes: a
+    /// horizontal line runs the width of the run at the weight of one
+    /// cell's, a vertical one stands in its middle no wider than in a cell,
+    /// a double one keeps its strokes a light line apart, and a block fills
+    /// the run.
+    #[test]
+    fn a_glyph_across_a_wide_run_keeps_the_strokes_of_one_cell() {
+        let widest = |rows: &[String]| rows.iter().map(|r| r.matches('#').count()).max().unwrap_or(0);
+        let two = picture_across('│', CELL, 2);
+        assert_eq!(widest(&two), widest(&picture('│', CELL)), "a vertical stroke as wide in a run as in a cell");
+        let mid = two[0].find('#').unwrap() as u32;
+        assert_eq!(mid, CELL.x - 1, "and in the middle of the run");
+        let rows_of = |rows: &[String]| rows.iter().filter(|r| r.contains('#')).count();
+        assert_eq!(rows_of(&picture_across('─', CELL, 2)), rows_of(&picture('─', CELL)), "a horizontal line as heavy");
+        assert!(picture_across('─', CELL, 2).iter().any(|r| r.chars().all(|c| c == '#')), "and edge to edge");
+        assert_eq!(picture_across('║', CELL, 2)[0], format!("{}##..##{}", ".".repeat(17), ".".repeat(17)), "double bars a light line apart");
+        assert!(coverage('█', CELL, 2).unwrap().iter().all(|&a| a == 255), "a block fills the run");
     }
 
     #[test]
     fn the_sheet_holds_every_character_at_its_index_in_white() {
-        let (image, layout) = sheet(UVec2::new(10, 20));
+        let (image, layout) = sheet(UVec2::new(10, 20), 1);
         assert_eq!((image.width(), image.height()), (160, 200));
         assert_eq!(layout.textures.len(), 160);
         let full = layout.textures[index('█').unwrap()];

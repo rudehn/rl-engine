@@ -288,10 +288,13 @@ impl Plugin for UiPlugin {
         // game that declares none has nothing for the key to stop, and a
         // row saying it would describe nothing the player can do. A kind
         // does not say who does it, so a game whose work is all its
-        // monsters' lists it too. Declared in a plugin's `build`, as every
-        // kind is, so it is known here; in `finish` rather than `build` so
-        // it is listed last under the game's own acts. The stopping itself
-        // runs either way, and finds no work to stop.
+        // monsters' lists it too. `finish` runs when the app starts, so a
+        // kind declared while the app is put together, in a plugin's
+        // `build` or in `main` before `run`, is known here; only one
+        // declared once the app is running, by a `Startup` system or later,
+        // is missed. In `finish` rather than `build` so the row is listed
+        // last under the game's own acts. The stopping itself runs either
+        // way, and finds no work to stop.
         if app.world().get_resource::<atglyph_bevy::WorkKinds>().is_some_and(|kinds| !kinds.is_empty()) {
             app.add_control(controls::STOP_GROUP, controls::STOP_ACTION, Keys::Any);
         }
