@@ -235,7 +235,7 @@ impl Plugin for TitlePanel {
                 .distributive_run_if(title_is_up),
         )
         .add_systems(Update, draw_title_menu.in_set(TitleSet::Menu))
-        .add_systems(NewRun, give_back_for_the_run);
+        .add_systems(PrepareRun, give_back_for_the_run);
     }
 
     fn finish(&self, app: &mut App) {
@@ -438,8 +438,8 @@ fn stand_settings_over_title(
 /// their own rectangles, and a cell none of them covers would show the
 /// title's picture for the whole run.
 ///
-/// In [`NewRun`], so however a run begins, from the title or a restart,
-/// it begins the same way.
+/// In [`PrepareRun`], so however a run begins, from the title or a
+/// restart, fresh or continued, it begins the same way.
 fn give_back_for_the_run(mut aside: ResMut<SettingsAside>, settings: Option<ResMut<SettingsLayout>>, terminal: Option<ResMut<Terminal>>) {
     if let (Some(rect), Some(mut settings)) = (aside.0.take(), settings) {
         settings.rect = rect;
@@ -540,6 +540,7 @@ mod tests {
     use crate::panel::records::RECORDS_MODAL;
     use crate::panel::settings::SettingsPanel;
     use crate::tone::ToneId;
+    use atglyph_bevy::ContinueSaved;
     use atglyph_bevy::testing::{KeyScript, press};
     use bevy::ecs::system::RunSystemOnce;
 
@@ -556,10 +557,17 @@ mod tests {
     }
 
     /// A game's start, as much of it as a title can tell apart.
-    fn start(mut seen: ResMut<Seen>, continuing: Option<Res<ContinueRun>>) {
+    fn start(mut seen: ResMut<Seen>) {
         seen.begun += 1;
-        seen.continued += u32::from(continuing.is_some());
         seen.abandoned_before_the_start = seen.abandoned;
+    }
+
+    /// The save crate's continuing, as much of it as a title can tell
+    /// apart: a run begun, from the save, and the ask taken away.
+    fn resume(mut commands: Commands, mut seen: ResMut<Seen>) {
+        commands.remove_resource::<ContinueRun>();
+        seen.begun += 1;
+        seen.continued += 1;
     }
 
     /// Whoever keeps the save slot, as much of it as a title can tell.
@@ -577,7 +585,7 @@ mod tests {
         if let Some(saved) = saved {
             app.insert_resource(saved);
         }
-        app.init_resource::<Seen>().add_systems(NewRun, start).add_observer(forget);
+        app.init_resource::<Seen>().add_systems(NewRun, start).add_systems(ContinueSaved, resume).add_observer(forget);
         setup(&mut app);
         app.finish();
         app.cleanup();
@@ -743,7 +751,7 @@ mod tests {
     fn continue_inserts_continue_run_and_begins_the_run() {
         let mut app = title_over(SavedRun::Readable, |_| {});
         press(&mut app, KeyCode::Enter);
-        assert_eq!((seen(&app).begun, seen(&app).continued), (1, 1), "one run begun, its start asked to continue the saved one");
+        assert_eq!((seen(&app).begun, seen(&app).continued), (1, 1), "one run begun, the saved one continued");
         assert!(!app.world().contains_resource::<HoldStart>(), "and the hold lowered, so the title is down");
     }
 

@@ -21,7 +21,7 @@
 //! first run back, so the binary adds it with the panels and a headless
 //! run, which has none, begins at startup.
 
-use atglyph::ecs::plugin::{CleanupSet, NewRun, ReactSet, ResetsOnNewRun, Turn, TurnSet};
+use atglyph::ecs::plugin::{CleanupSet, NewRun, PrepareRun, ReactSet, ResetsOnNewRun, RunResumed, Turn, TurnSet};
 use atglyph::ecs::{AmmoSet, FactSet, FirePlugin, LootPlugin, LootSet, NoiseRules, PrefabPlugin, PrefabSet, PropsPlugin};
 use atglyph::prelude::*;
 use bevy::prelude::*;
@@ -218,13 +218,14 @@ impl Plugin for UndermerePlugin {
             // the dark and a light, kept there too, before the lantern and
             // the rest of what reads what the adventurer is.
             .configure_sets(Turn, ReactSet::Lend.after(ReactStep::Answer).before(ReactStep::Keep));
-        // The run's start, and a continued run after the fresh start has
-        // stood aside.
+        // What every run stands on, the run's start, and what a continued
+        // run says once the engine has restored it.
+        app.add_systems(PrepareRun, crate::run::prepare);
         app.add_systems(NewRun, crate::run::start);
-        app.add_systems(NewRun, crate::run::resume.after(crate::run::start));
-        // A continued run lays its bodies back down in `resume`, with the
-        // glyph they lived with: drawn as corpses once it has.
-        app.add_systems(NewRun, crate::corpses::dress_the_dead.after(crate::run::resume));
+        app.add_systems(RunResumed, crate::run::say_where_it_goes_on);
+        // A continued run lays its bodies back down with the glyph they
+        // lived with: drawn as corpses once it has.
+        app.add_systems(RunResumed, crate::corpses::dress_the_dead);
         // The doors the adventurer has walked through, kept with the run,
         // noted among the answers, and the marks the key with the input
         // puts on the ones not yet, drawn over the map.

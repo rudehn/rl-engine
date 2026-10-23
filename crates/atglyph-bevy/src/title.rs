@@ -4,8 +4,8 @@
 //! The engine begins the first run at startup by running [`NewRun`]. A
 //! game with a title screen wants nothing begun until the player picks,
 //! so while [`HoldStart`] is present the engine begins nothing, and the
-//! screen begins the run through [`begin_run`], the same `NewRun` the
-//! engine runs at startup and after a restart: no game's start system asks
+//! screen begins the run through [`begin_run`], the same door the engine
+//! uses at startup and after a restart: no game's start system asks
 //! whether a title is up. [`LeaveRun`] tears a run down the way a restart
 //! does and holds the start again, which is the way back from a run to its
 //! title.
@@ -13,13 +13,13 @@
 //! What a title offers depends on what was saved, and saving is
 //! `atglyph-save`'s, which `atglyph-ui` may not depend on. So the words between them
 //! live here, in the crate both depend on, as settings do: [`SavedRun`] is
-//! what the slot holds, [`ContinueRun`] asks a game's start to restore the
-//! saved run, and [`AbandonRun`] asks whoever keeps the slot to forget it.
+//! what the slot holds, [`ContinueRun`] asks [`begin_run`] to continue the
+//! saved run rather than begin one, and [`AbandonRun`] asks whoever keeps the slot to forget it.
 
 use bevy::prelude::*;
 
 use crate::places::PlaceRulesRes;
-use crate::plugin::NewRun;
+use crate::plugin::{ContinueSaved, NewRun, PrepareRun};
 use crate::state::EngineState;
 use crate::world::WorldMap;
 
@@ -34,17 +34,24 @@ use crate::world::WorldMap;
 #[derive(Resource, Default)]
 pub struct HoldStart;
 
-/// Begins a run: lowers the [`HoldStart`], if a title raised one, runs the
-/// game's [`NewRun`], and begins play once the start has built a
-/// [`WorldMap`].
+/// Begins a run: lowers the [`HoldStart`], if a title raised one, begins
+/// the run afresh or continues the saved one, and begins play once the
+/// run stands in a [`WorldMap`].
 ///
 /// The one door a title uses, and the one the engine uses itself at
 /// startup and after a restart. `NewRun` rather than a
 /// [`Restart`](crate::state::Restart), since a restart tears a run down and
-/// at a title there is none. It begins on whatever
+/// at a title there is none. A fresh run begins on whatever
 /// [`Seed`](crate::seed::Seed) stands, the game's own at launch or the
-/// fresh one [`LeaveRun`] set, so it has no seed to choose. Exclusive, so
-/// a screen that reads its keys in a system queues it as a command.
+/// fresh one [`LeaveRun`] set, so it has no seed to choose; a continued
+/// one on the seed its save holds. Exclusive, so a screen that reads its
+/// keys in a system queues it as a command.
+///
+/// With [`ContinueRun`] standing it runs [`ContinueSaved`], which
+/// `atglyph-save`'s `SavePlugin` fills; a game with no plugin to continue
+/// a run is warned and begins afresh, through [`begin_afresh`]. Either way
+/// `ContinueRun` is gone afterwards, so the run after this one, a
+/// restart's, begins afresh.
 ///
 /// Play begins here rather than in each game's start because every start
 /// set it on the same line, and one that forgot got a still window. A
@@ -52,25 +59,56 @@ pub struct HoldStart;
 /// `HoldStart` again wants nothing begun, so both leave the state
 /// [`Idle`](EngineState::Idle). A start may still set
 /// [`EngineState::Playing`] itself; setting it twice changes nothing.
+pub fn begin_run(world: &mut World) {
+    world.remove_resource::<HoldStart>();
+    if world.contains_resource::<ContinueRun>() {
+        world.run_schedule(ContinueSaved);
+        if world.remove_resource::<ContinueRun>().is_some() {
+            warn!("ContinueRun asked for the saved run, and nothing continues one: add atglyph-save's SavePlugin; beginning a new run");
+            begin_afresh(world);
+        }
+    } else {
+        begin_afresh(world);
+    }
+    if world.contains_resource::<HoldStart>() {
+        return;
+    }
+    if world.contains_resource::<WorldMap>() {
+        world.resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+    }
+}
+
+/// Begins a fresh run on the [`Seed`](crate::seed::Seed) that stands: runs
+/// [`PrepareRun`], then the game's [`NewRun`], then gives the run a world
+/// if neither made one.
+///
+/// Public for the save crate, which begins a fresh run where a continued
+/// one could not be, the save unreadable or restored only in part; a game
+/// begins a run through [`begin_run`].
 ///
 /// A game that named its places with
 /// [`places`](crate::places::AddPlaces::places) and whose start made no
 /// world gets one here, built over the places' tiles, since that world is
-/// the same in every such game. A start that made its own, from a save
-/// or over other tiles, keeps it.
-pub fn begin_run(world: &mut World) {
-    world.remove_resource::<HoldStart>();
+/// the same in every such game. A start that made its own, from other
+/// tiles, keeps it. After `NewRun` rather than between the two schedules,
+/// so a start that inserts its places itself gets its world too.
+pub fn begin_afresh(world: &mut World) {
+    world.run_schedule(PrepareRun);
     world.run_schedule(NewRun);
-    if world.contains_resource::<HoldStart>() {
-        return;
-    }
+    build_world(world);
+}
+
+/// Builds the [`WorldMap`] over the places' tiles when none stands and the
+/// game named its places: the one step of a run's start the same in every
+/// game, shared by a fresh run and a continued one, whose restore writes
+/// into the world. Hidden: the save crate's, which continues a run, and no
+/// game's.
+#[doc(hidden)]
+pub fn build_world(world: &mut World) {
     if !world.contains_resource::<WorldMap>()
         && let Some(tiles) = world.get_resource::<PlaceRulesRes>().map(|rules| rules.0.tiles())
     {
         world.insert_resource(WorldMap::new(tiles));
-    }
-    if world.contains_resource::<WorldMap>() {
-        world.resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
     }
 }
 
@@ -99,9 +137,10 @@ pub enum SavedRun {
 /// Asks the next run's start to continue the saved run rather than begin
 /// afresh.
 ///
-/// A title inserts it before [`begin_run`]. A game's [`NewRun`] systems
-/// restore the saved run while it is present, and whichever restores it
-/// removes it, so the start after that, a restart's, begins afresh.
+/// A title inserts it before [`begin_run`], which runs [`ContinueSaved`]
+/// in place of [`NewRun`] while it stands, and takes it away either way,
+/// so the start after that, a restart's, begins afresh. A game writes no
+/// restore of its own: `atglyph-save`'s `SavePlugin` continues the run.
 #[derive(Resource, Default)]
 pub struct ContinueRun;
 
@@ -132,8 +171,8 @@ pub struct AbandonRun;
 /// The run's seed goes with it: the next run the title begins is on a
 /// fresh one, set as a restart without a seed sets it, since New Game on
 /// the seed just played would be that run again from its first turn.
-/// Continue is unaffected, since a game's restore builds the world again
-/// from the seed its save holds.
+/// Continue is unaffected, since a continued run is prepared again on the
+/// seed its save holds.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct LeaveRun;
 
@@ -302,6 +341,42 @@ mod tests {
         app.update();
         app.update();
         assert_eq!(state(&app), EngineState::Playing, "the title's door begins play as well as the run");
+    }
+
+    /// The order a run's schedules ran in, by name.
+    #[derive(Resource, Default)]
+    struct Ran(Vec<&'static str>);
+
+    /// [`counted`], noting when its preparation and its start run.
+    fn noted() -> App {
+        let mut app = building();
+        app.init_resource::<Ran>()
+            .add_systems(PrepareRun, |mut ran: ResMut<Ran>| ran.0.push("prepare"))
+            .add_systems(NewRun, |mut ran: ResMut<Ran>| ran.0.push("start"));
+        app
+    }
+
+    #[test]
+    fn a_fresh_run_prepares_before_it_starts() {
+        let mut app = noted();
+        app.update();
+        app.update();
+        assert_eq!(app.world().resource::<Ran>().0, vec!["prepare", "start"]);
+        assert_eq!(state(&app), EngineState::Playing);
+    }
+
+    /// A title's Continue in a game that keeps no save: nothing continues
+    /// the run, so it is begun afresh rather than left unbegun, and the
+    /// ask is gone, so a restart does not ask again.
+    #[test]
+    fn a_continue_with_nothing_to_continue_it_begins_afresh() {
+        let mut app = noted();
+        app.init_resource::<ContinueRun>();
+        app.update();
+        app.update();
+        assert_eq!(app.world().resource::<Ran>().0, vec!["prepare", "start"], "begun afresh");
+        assert!(!app.world().contains_resource::<ContinueRun>(), "and the ask taken away");
+        assert_eq!(state(&app), EngineState::Playing);
     }
 
     #[test]

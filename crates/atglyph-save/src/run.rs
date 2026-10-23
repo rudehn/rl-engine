@@ -30,8 +30,11 @@
 //! when the run ends, so nothing is resumed past its end, and, when asked
 //! with [`SavePlugin::on_arrival`], the slot written by `save_on_arrival`
 //! every time the player arrives somewhere. A game's save key calls
-//! [`save_run`], and its start, when [`ContinueRun`](atglyph_bevy::ContinueRun)
-//! asks, calls [`load_run`] and [`RunSave::restore`]. The engine's own
+//! [`save_run`]. A run a title asked to continue with
+//! [`ContinueRun`] is continued here too, in
+//! [`ContinueSaved`]: the save loaded, its seed set, the game's
+//! [`PrepareRun`] run, the run restored and the game's [`RunResumed`] run,
+//! so a game writes no restore of its own. The engine's own
 //! resources are saved by the engine: [`Quests`] and [`Counters`] each
 //! implement [`SaveableState`]. So are the stairs a ladder's floors are
 //! laid with, [`Stair`], the engine's own kind beside the props.
@@ -43,9 +46,10 @@
 //! teardown, and [`AbandonRun`] forgets the slot the moment it is triggered.
 
 use atglyph_bevy::{
-    AbandonRun, ActiveStatuses, ActorMaker, ApplyStatus, Burning, Counters, Dead, Emptied, EndOfFrame, EndRun, Ending, EngineState, Equipped, Faction, Health,
-    Hidden, Inventory, ItemLevel, ItemMaker, JoinStamp, Leader, LeaveRun, MapId, OnMap, PlaceEntered, Position, Post, PropKind, Quests, Reads, Registries,
-    Remains, SavedRun, SideWas, Stack, Stair, Stocked, Transition, Turns, Wearable, WorkKinds, Working,
+    AbandonRun, ActiveStatuses, ActorMaker, ApplyStatus, Burning, ContinueRun, ContinueSaved, Counters, Dead, Emptied, EndOfFrame, EndRun, Ending, EngineState,
+    Equipped, Faction, Health, Hidden, Inventory, ItemLevel, ItemMaker, JoinStamp, Leader, LeaveRun, MapId, OnMap, PlaceEntered, Player, Position, Post,
+    PrepareRun, PropKind, Quests, Reads, Registries, Remains, RunResumed, SavedRun, Seed, SideWas, Stack, Stair, Stocked, Transition, Turns, Wearable,
+    WorkKinds, Working,
 };
 use atglyph_core::{Id, Point};
 use atglyph_rules::{Equipment, Work};
@@ -990,6 +994,11 @@ pub struct SaveSlot {
 /// player arrives somewhere. Registers no key: a game's save key calls
 /// [`save_run`].
 ///
+/// Continues a run a title asked to continue with [`ContinueRun`], in
+/// [`ContinueSaved`]: the game's [`PrepareRun`] run on the save's seed,
+/// the run restored, then the game's [`RunResumed`]; a save that cannot
+/// be read or restored begins a fresh run instead.
+///
 /// For a title: inserts [`SavedRun`], which is how a title knows there is
 /// a slot to continue from at all, reads the slot into it before the first
 /// frame and keeps it current as the slot is written and deleted, writes a
@@ -1079,6 +1088,7 @@ impl Plugin for SavePlugin {
             // same reason; in the save stage, so the run is written down
             // before the restart stage tears it down.
             .add_systems(Last, (note_leaving, save_on_leaving.ambiguous_with_all()).chain().in_set(EndOfFrame::Save).before(refresh_stash))
+            .add_systems(ContinueSaved, continue_saved_run)
             .add_systems(EndRun, forget_save.run_if(given_up))
             .add_systems(OnEnter(EngineState::Over), forget_save)
             .add_observer(forget_abandoned);
@@ -1196,6 +1206,62 @@ pub(crate) fn save_on_arrival(world: &mut World) {
     if let Err(e) = save_run(world) {
         error!("the run could not be saved on arrival: {e}");
     }
+}
+
+/// Continues the saved run, as [`ContinueRun`] asked: the save loaded, the
+/// game's [`PrepareRun`] run on the seed it holds rather than the
+/// launch's, so the run stands in exactly the world it was saved in, the
+/// world built from the places' tiles if the game's preparation made none,
+/// the run restored into it, and the game's [`RunResumed`] run.
+///
+/// Takes `ContinueRun` away first, so the run after this one, a
+/// restart's, begins afresh. A save that cannot be read begins a fresh
+/// run instead: a title offers Continue only for a save it could read, so
+/// this is one that went bad in between. One that restores only in part is
+/// worse than none, the run it leaves neither the one saved nor a fresh
+/// one, so a restore that fails, or leaves other than one player, is torn
+/// down and a fresh run begun on the seed that stood before, as for a save
+/// that could not be read at all.
+pub(crate) fn continue_saved_run(world: &mut World) {
+    world.remove_resource::<ContinueRun>();
+    let saved = match load_run(world) {
+        Ok(Some(saved)) => saved,
+        Ok(None) => {
+            error!("there is no saved run to continue; beginning a new run");
+            atglyph_bevy::begin_afresh(world);
+            return;
+        }
+        Err(e) => {
+            error!("the saved run cannot be continued: {e}; beginning a new run");
+            atglyph_bevy::begin_afresh(world);
+            return;
+        }
+    };
+    let launched = world.get_resource::<Seed>().copied();
+    world.insert_resource(Seed(saved.engine.seed));
+    world.run_schedule(PrepareRun);
+    atglyph_bevy::title::build_world(world);
+    let restored = saved.restore(world);
+    let players = world.query_filtered::<(), With<Player>>().iter(world).count();
+    match (restored, players) {
+        (Ok(()), 1) => world.run_schedule(RunResumed),
+        (Ok(()), n) => begin_instead(world, launched, format!("it holds {n} players rather than one")),
+        (Err(e), _) => begin_instead(world, launched, e.to_string()),
+    }
+}
+
+/// Tears down a run restored only in part and begins a fresh one on
+/// `launched`, the seed that stood before the save's was set.
+fn begin_instead(world: &mut World, launched: Option<Seed>, why: String) {
+    error!("the saved run could not be restored, since {why}; beginning a new run");
+    atglyph_bevy::clear_run(world);
+    match launched {
+        Some(seed) => world.insert_resource(seed),
+        None => {
+            world.remove_resource::<Seed>();
+        }
+    }
+    atglyph_bevy::begin_afresh(world);
 }
 
 /// Writes the run to the slot, and stashes it for the bridge that writes
@@ -2430,5 +2496,116 @@ mod tests {
         back.world_mut().write_message(Intent::new(me, Wait));
         back.update();
         assert_eq!(back.world().get::<Faction>(them), Some(&Faction(ours)), "and back on it when the status ends");
+    }
+
+    /// What a run's schedules did, in order: each preparation with the
+    /// seed it saw, each fresh start, each resumption with how many
+    /// players stood when it ran.
+    #[derive(Resource, Default)]
+    struct Ran(Vec<String>);
+
+    /// The ground every run of [`launched`] stands on, laid again by each
+    /// run's preparation, and where on it a fresh run's player stands.
+    #[derive(Resource)]
+    struct Ground(atglyph_bevy::WorldMapSave, atglyph_grid::TileTables, Point);
+
+    fn prepare_ground(world: &mut World) {
+        let seed = world.resource::<Seed>().0.0;
+        world.resource_mut::<Ran>().0.push(format!("prepare on {seed}"));
+        let ground = world.resource::<Ground>();
+        let mut map = WorldMap::new(ground.1.clone());
+        map.import(ground.0.clone());
+        world.insert_resource(map);
+    }
+
+    fn spawn_you(mut commands: Commands, ground: Res<Ground>, mut ran: ResMut<Ran>) {
+        ran.0.push("start".into());
+        commands.spawn((Actor, Player, Blocks, You, Position(ground.2), Viewshed::new(6), RevealsMap, Health::full(30)));
+    }
+
+    fn note_resumed(players: Query<(), With<Player>>, mut ran: ResMut<Ran>) {
+        ran.0.push(format!("resumed with {} players", players.iter().count()));
+    }
+
+    /// A game launched on `seed` over `backend`, whose preparation lays the
+    /// ground, whose fresh start spawns its player, and whose resumption
+    /// only notes itself, with the title's Continue asked before the first
+    /// frame, and those frames run.
+    fn continued_from(backend: std::sync::Arc<MemoryBackend>, seed: u64) -> App {
+        let (mut app, start) = game(Saves(backend));
+        let map = app.world_mut().remove_resource::<WorldMap>().expect("the ground");
+        app.insert_resource(Ground(map.export(), map.tables().clone(), start)).insert_resource(Seed(RunSeed(seed))).init_resource::<Ran>();
+        app.add_systems(PrepareRun, prepare_ground).add_systems(NewRun, spawn_you).add_systems(RunResumed, note_resumed);
+        app.init_resource::<ContinueRun>();
+        app.update();
+        app.update();
+        app
+    }
+
+    /// A run saved on the seed [`game`] launches on, nine, with Ada in it
+    /// and, when `with_player`, a wounded player.
+    fn saved_run(with_player: bool) -> std::sync::Arc<MemoryBackend> {
+        let backend = std::sync::Arc::new(MemoryBackend::default());
+        let (mut app, start) = game(Saves(backend.clone()));
+        if with_player {
+            app.world_mut().spawn((Actor, Player, Blocks, You, Position(start), Viewshed::new(6), RevealsMap, Health { current: 17, max: 30 }));
+        }
+        app.world_mut().spawn((Actor, Blocks, Person("Ada".into()), Position(start.offset(0, 3)), Health::full(20)));
+        play(&mut app);
+        save_run(app.world_mut()).unwrap();
+        backend
+    }
+
+    fn ran(app: &App) -> Vec<String> {
+        app.world().resource::<Ran>().0.clone()
+    }
+
+    fn healths<F: bevy::ecs::query::QueryFilter>(app: &mut App) -> Vec<i32> {
+        let w = app.world_mut();
+        w.query_filtered::<&Health, F>().iter(w).map(|h| h.current).collect()
+    }
+
+    #[test]
+    fn a_continued_run_is_prepared_on_its_saved_seed_then_restored_then_resumed() {
+        let mut app = continued_from(saved_run(true), 1);
+        assert_eq!(ran(&app), vec!["prepare on 9", "resumed with 1 players"], "prepared on the save's seed, never started afresh");
+        assert_eq!(healths::<With<You>>(&mut app), vec![17], "the player restored as saved");
+        assert_eq!(healths::<With<Person>>(&mut app), vec![20], "and Ada with them");
+        assert!(!app.world().contains_resource::<ContinueRun>(), "the ask taken away");
+        assert_eq!(*app.world().resource::<State<EngineState>>().get(), EngineState::Playing);
+    }
+
+    #[test]
+    fn a_continue_with_no_readable_save_begins_a_fresh_run() {
+        let empty = continued_from(std::sync::Arc::new(MemoryBackend::default()), 1);
+        assert_eq!(ran(&empty), vec!["prepare on 1", "start"], "nothing saved: begun afresh on the launch's seed");
+        let garbled = std::sync::Arc::new(MemoryBackend::default());
+        garbled.persist("run", "not a run").unwrap();
+        let mut garbled = continued_from(garbled, 1);
+        assert_eq!(ran(&garbled), vec!["prepare on 1", "start"], "nothing readable: the same");
+        assert_eq!(healths::<With<You>>(&mut garbled), vec![30]);
+        assert_eq!(*garbled.world().resource::<State<EngineState>>().get(), EngineState::Playing);
+    }
+
+    #[test]
+    fn a_save_that_restores_without_one_player_is_torn_down_and_begun_afresh() {
+        let mut app = continued_from(saved_run(false), 1);
+        assert_eq!(ran(&app), vec!["prepare on 9", "prepare on 1", "start"], "prepared for the save, then begun afresh on the launch's seed");
+        assert!(healths::<With<Person>>(&mut app).is_empty(), "what the restore got to is torn down");
+        assert_eq!(healths::<With<You>>(&mut app), vec![30], "and a fresh player stands");
+        assert_eq!(*app.world().resource::<State<EngineState>>().get(), EngineState::Playing);
+    }
+
+    #[test]
+    fn a_restart_after_a_continued_run_begins_fresh() {
+        let mut app = continued_from(saved_run(true), 1);
+        app.world_mut().write_message(atglyph_bevy::Restart::fresh());
+        app.update();
+        app.update();
+        app.update();
+        let ran = ran(&app);
+        assert_eq!(ran.len(), 4, "{ran:?}");
+        assert!(ran[2].starts_with("prepare on ") && ran[3] == "start", "the restart's run begun afresh: {ran:?}");
+        assert_eq!(healths::<With<You>>(&mut app), vec![30]);
     }
 }

@@ -24,7 +24,9 @@
 //! window closes or the menu quits, by the engine again when the menu
 //! leaves the run for the title, and on every arrival, so a crash loses at
 //! most the floor in hand. There is no save key. Death and a win delete
-//! it. Continue reads it back through [`run::resume`](crate::run::resume).
+//! it. Continue reads it back through the engine's `SavePlugin`, into the
+//! Undermere [`run::prepare`](crate::run::prepare) builds again from the
+//! saved seed.
 //!
 //! The records of every run that has ended are kept apart, in a slot of
 //! their own that no run's end deletes, by the engine's `SavePlugin`,

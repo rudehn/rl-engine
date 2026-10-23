@@ -15,7 +15,7 @@
 //! The title is one of them, the engine's `TitlePanel` with Foundry's
 //! picture painted under it, so a headless run has none and begins at
 //! startup.
-use atglyph::ecs::plugin::{EngineSet, NewRun, PerceiveSet, ReactSet, ResetsOnNewRun, Turn, TurnSet};
+use atglyph::ecs::plugin::{EngineSet, NewRun, PerceiveSet, PrepareRun, ReactSet, ResetsOnNewRun, RunResumed, Turn, TurnSet};
 use atglyph::ecs::{AddSound, AddVerb, AddWork, AmmoPlugin, LootPlugin, LootSet, PrefabPlugin, PrefabSet, PropsPlugin, RemainsPlugin};
 use atglyph::ui::{AddModal, AimFire, AimThrow, NarrationViewPlugin, NarratorPlugin, Phrase, PlayerKeysSet, Tones, ViewSet};
 use bevy::prelude::*;
@@ -72,10 +72,13 @@ pub struct FoundryPlugin;
 impl Plugin for FoundryPlugin {
     fn build(&self, app: &mut App) {
         add_engine(app);
+        // What every run stands on, the run's start, and what a continued
+        // run gives back and says once the engine has restored it: the
+        // upgrades first, so a pick offered again is offered to the
+        // commando the upgrades made.
+        app.add_systems(PrepareRun, crate::run::prepare);
         app.add_systems(NewRun, crate::run::start);
-        // A continued run: after the fresh start stood aside and the
-        // mission was loaded, so what a restore writes into is there.
-        app.add_systems(NewRun, crate::run::resume.after(crate::run::start).after(crate::mission::start));
+        app.add_systems(RunResumed, (crate::run::give_upgrades_again, crate::run::offer_the_waiting_pick, crate::run::say_where_it_goes_on).chain());
         // What a run is saved as, and when: on the way out and on every
         // deck arrival.
         crate::save::register(app);
@@ -204,8 +207,9 @@ impl Plugin for FoundryPlugin {
         // this game: the engine's fold is its one owner.
         app.add_systems(Turn, (crate::droids::unjam_sensors, crate::droids::jam_sensors).chain().in_set(TurnSet::React).before(ReactSet::Lend));
         // The mission: loaded fresh every run, the way the roster and the
-        // armory are.
-        app.add_systems(NewRun, crate::mission::start);
+        // armory are, and before a continued run's restore, which writes
+        // its progress into it.
+        app.add_systems(PrepareRun, crate::mission::start);
         // The console is a prop, and its verb is Foundry's: declared once,
         // answered in `React` like every other reaction to a turn.
         app.add_verb(crate::mission::CHARGE);

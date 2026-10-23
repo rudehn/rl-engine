@@ -16,8 +16,9 @@
 //! window closes or the menu quits, by the engine again when the menu
 //! leaves the run for the title, and on every deck arrival, so a crash
 //! loses at most the deck in hand. There is no save key. Death and a win
-//! delete it. The title's Continue reads it back through
-//! [`run::resume`](crate::run::resume), and its New Game over a save gives
+//! delete it. The title's Continue reads it back through the engine's
+//! `SavePlugin`, into the foundry [`run::prepare`](crate::run::prepare)
+//! builds again from the saved seed, and its New Game over a save gives
 //! the save up through the engine's `AbandonRun`, which `SavePlugin`
 //! answers by deleting the slot.
 

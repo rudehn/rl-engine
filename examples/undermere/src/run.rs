@@ -9,7 +9,6 @@
 use atglyph::prelude::*;
 use atglyph::rules::ai::hearing::HearingStats;
 use atglyph::rules::damage::{ApplyResistance, SubtractArmor};
-use bevy::ecs::system::RunSystemOnce;
 use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
 
@@ -57,17 +56,19 @@ pub struct Adventurer;
 
 /// Everything a run stands on that is the same however it began: the
 /// places and how they look and are lit, who fights whom and how a blow is
-/// taken, the dark and the fire. Shared by [`start`] and [`resume`], so a
-/// continued run is built on exactly the Undermere a fresh one is.
-pub fn prepare(commands: &mut Commands, seed: &Seed, registries: &Registries) {
+/// taken, the dark and the fire. In [`PrepareRun`], which the engine runs
+/// before [`start`] on a fresh run and before the restore on a continued
+/// one, on the seed the save holds, so a continued run is built on exactly
+/// the Undermere a fresh one is.
+pub fn prepare(mut commands: Commands, seed: Res<Seed>, registries: Res<Registries>) {
     let undermere = Undermere::new(seed.0);
     commands.insert_resource(undermere.appearance());
     commands.insert_resource(WorldMap::new(undermere.tiles().tables()));
-    commands.insert_resource(crate::content::combat_rules(registries));
+    commands.insert_resource(crate::content::combat_rules(&registries));
     // Whether a blow lands is accuracy against evasion, and how fast a
     // body moves its speed with the speed stat on it.
     commands.insert_resource(crate::content::hit_rules());
-    commands.insert_resource(crate::content::turn_rules(registries));
+    commands.insert_resource(crate::content::turn_rules(&registries));
     // Resistance first, then armor: the traits' resistances are what make
     // fire nothing to a salamander and poison nothing to the dead, and the
     // engine's default list is armor alone, which would leave them written
@@ -379,25 +380,14 @@ pub fn equip_kit(commands: &mut Commands, adventurer: Entity, armory: &Armory, r
 }
 
 // ANCHOR: start
-/// Builds the Undermere, spawns the adventurer with their kit and warps
-/// them into Mereholt, or onto [`StartFloor`]'s floor. Runs in [`NewRun`],
-/// for every run but one the title asked to continue with `ContinueRun`,
-/// which is [`resume`]'s.
+/// Spawns the adventurer with their kit into the Undermere [`prepare`]
+/// built, and warps them into Mereholt, or onto [`StartFloor`]'s floor.
+/// Runs in [`NewRun`], for every run but one the title asked to continue,
+/// which the engine restores from its save instead.
 ///
 /// Asks nothing about a title: while one is up the engine runs no
 /// `NewRun` at all, and runs it once the player picks.
-pub fn start(
-    mut commands: Commands,
-    seed: Res<Seed>,
-    content: Content,
-    first: Option<Res<StartFloor>>,
-    continuing: Option<Res<ContinueRun>>,
-    mut begin: Begin,
-) {
-    if continuing.is_some() {
-        return;
-    }
-    prepare(&mut commands, &seed, &content.registries);
+pub fn start(mut commands: Commands, seed: Res<Seed>, content: Content, first: Option<Res<StartFloor>>, mut begin: Begin) {
     // The faces this run's things wear, and the kinds of what the
     // adventurer sets out with, which they know.
     let mut lore = Lore::draw(&content.faces, &content.armory.defs, &seed);
@@ -422,57 +412,15 @@ pub fn start(
 }
 // ANCHOR_END: start
 
-/// Continues the saved run, when the title's Continue asked for it with
-/// `ContinueRun`: the Undermere built again from the saved seed, the run
-/// restored into it, and every place it had built lit again. Takes the
-/// marker away, so the run after this one, a restart's, begins afresh.
-///
-/// After [`start`] in `NewRun`, so the resources a restore writes into
-/// exist. A save that cannot be read is logged and a fresh run begins
-/// instead: the title offers Continue only for a save it could read, so
-/// this is a save that went bad in between.
-pub fn resume(world: &mut World) {
-    if world.remove_resource::<ContinueRun>().is_none() {
-        return;
-    }
-    let saved = match atglyph::save::load_run(world) {
-        Ok(Some(saved)) => saved,
-        Ok(None) | Err(_) => {
-            error!("there is no save that can be continued; beginning a new run");
-            begin_afresh(world);
-            return;
-        }
-    };
-    let seed = Seed(saved.engine.seed);
-    world.insert_resource(seed);
-    let registries = world.resource::<Registries>().clone();
-    let mut queue = CommandQueue::default();
-    prepare(&mut Commands::new(&mut queue, world), &seed, &registries);
-    queue.apply(world);
-    // A save that restores only in part is worse than none: the run it
-    // leaves is neither the one saved nor a fresh one. So a failure tears
-    // down what it got to, and a new run begins, as for a save that could
-    // not be read at all.
-    let restored = saved.restore(world);
-    let adventurer = world.query_filtered::<Entity, With<Adventurer>>().single(world).ok();
-    let (Ok(()), Some(adventurer)) = (restored, adventurer) else {
-        error!("the save could not be restored; beginning a new run");
-        atglyph::ecs::plugin::clear_run(world);
-        begin_afresh(world);
-        return;
-    };
-    let line = match world.get::<OnMap>(adventurer).and_then(|on| floor_of(on.0)) {
+/// Says where a continued run goes on, once the engine has restored it:
+/// in [`RunResumed`], so the line is stamped with the turn the run was
+/// saved on.
+pub fn say_where_it_goes_on(adventurer: Query<Option<&OnMap>, With<Adventurer>>, mut log: Log) {
+    let line = match adventurer.single().ok().flatten().and_then(|on| floor_of(on.0)) {
         Some(floor) => format!("Continuing on floor {floor}."),
         None => "Continuing in Mereholt.".to_string(),
     };
-    world.resource_mut::<MessageLog>().push_at(line, Tones::NOTICE, saved.turn());
-}
-
-/// Begins a fresh run where a continued one could not be.
-fn begin_afresh(world: &mut World) {
-    if let Err(e) = world.run_system_once(start) {
-        error!("the new run could not begin: {e}");
-    }
+    log.notice(line);
 }
 
 /// The content a run is made from, loaded once before any run begins, and

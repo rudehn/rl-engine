@@ -106,8 +106,8 @@ pub use places::{
     PlaceRulesRes, SpawnPlayer, Spot, Stair, StairLook, Transition, Travelled, WarpRequest,
 };
 pub use plugin::{
-    CleanupSet, CorePlugin, DecideSet, EndOfFrame, EndRun, EngineSet, FieldSet, LandSet, Needs, NewRun, PerceiveSet, PresentSet, ReactSet, Reads,
-    ResetsOnNewRun, ResolveSet, Turn, TurnSet, clear_run, depends_on,
+    CleanupSet, ContinueSaved, CorePlugin, DecideSet, EndOfFrame, EndRun, EngineSet, FieldSet, LandSet, Needs, NewRun, PerceiveSet, PrepareRun, PresentSet,
+    ReactSet, Reads, ResetsOnNewRun, ResolveSet, RunResumed, Turn, TurnSet, clear_run, depends_on,
 };
 pub use prefabs::{ActorMaker, PrefabPlugin, PrefabSet, Prefabs};
 pub use props::{
@@ -126,7 +126,7 @@ pub use state::{Ending, EngineState, Outcome, Restart, RunOver, world_is_shown};
 pub use status::{ActiveStatuses, ApplyStatus, RemoveStatus, SideWas, StatBlock, StatusEvent};
 pub use stealth::{Aware, Notice, Noticed, Stealth, StealthPlugin, Unseen, Watchers};
 pub use throwing::{Flight, Throw, Throwable, ThrowingPlugin, flight};
-pub use title::{AbandonRun, ContinueRun, HoldStart, LeaveRun, SavedRun, begin_run};
+pub use title::{AbandonRun, ContinueRun, HoldStart, LeaveRun, SavedRun, begin_afresh, begin_run};
 pub use trade::{Buy, Currency, Deal, Parties, Sell, TRADE, TradePlugin, TradeRefusal, Traded, Trader, Trading, Ware, Worth, pay};
 pub use turn::{Acting, Action, ActionDone, ActionRefused, AddAction, Intent, Occupancy, Resolution, Speeds, Step, Stepped, TurnEnd, TurnRules, Turns, Wait};
 pub use work::{AddWork, BeginWork, BreakReason, WorkBegan, WorkBroken, WorkDone, WorkKinds, WorkPace, Working, Works};
@@ -185,8 +185,8 @@ pub mod prelude {
         PlaceRulesRes, SpawnPlayer, Spot, Stair, StairLook, Transition, Travelled, WarpRequest,
     };
     pub use crate::plugin::{
-        CleanupSet, CorePlugin, DecideSet, EndOfFrame, EndRun, EngineSet, FieldSet, LandSet, Needs, NewRun, PerceiveSet, PresentSet, ReactSet, Reads,
-        ResetsOnNewRun, ResolveSet, Turn, TurnSet, depends_on,
+        CleanupSet, CorePlugin, DecideSet, EndOfFrame, EndRun, EngineSet, FieldSet, LandSet, Needs, NewRun, PerceiveSet, PrepareRun, PresentSet, ReactSet,
+        Reads, ResetsOnNewRun, ResolveSet, RunResumed, Turn, TurnSet, depends_on,
     };
     pub use crate::prefabs::{ActorMaker, PrefabPlugin, PrefabSet, Prefabs};
     pub use crate::props::{

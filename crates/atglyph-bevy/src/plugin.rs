@@ -84,6 +84,20 @@ pub enum PresentSet {
 #[derive(ScheduleLabel, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Turn;
 
+/// What every run stands on, fresh or continued: the schedule a game's
+/// rules, its places and its world go in.
+///
+/// Run before [`NewRun`] on a fresh run, and before the restore on one a
+/// title continued with [`ContinueRun`](crate::title::ContinueRun), each
+/// time once the run's [`Seed`](crate::seed::Seed) is set: the launch's
+/// or a restart's for a fresh run, the save's for a continued one. So a
+/// continued run is built on exactly what a fresh one is, from the seed it
+/// was saved on, and nothing here may spawn what a save gives back, such
+/// as the player, which belongs in `NewRun`. A world that is not here once
+/// it has run is built from the places' tiles, as [`begin_run`] says.
+#[derive(ScheduleLabel, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PrepareRun;
+
 /// Where a game begins a run: the schedule its start system goes in.
 ///
 /// Run once at startup, unless a title holds the start with [`HoldStart`]
@@ -92,12 +106,37 @@ pub struct Turn;
 /// [`Seed`](crate::seed::Seed) set for the next, as it is set for the run
 /// a title begins after one was left. A game puts here what it
 /// used to put in `Startup`: the rules, the map, the player and the warp
-/// in. Play begins on its own once the schedule has run, if it built a
+/// in, or, when it saves, only what a fresh run has and a continued one
+/// gets from its save, the rest standing in [`PrepareRun`]. Play begins on
+/// its own once the schedule has run, if it built a
 /// [`WorldMap`] and nothing holds the start. Nothing of the old run is
 /// left when it runs, so the same system starts the first run and the
-/// tenth.
+/// tenth. A continued run never runs it.
 #[derive(ScheduleLabel, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NewRun;
+
+/// How a run a title asked to continue is continued: run by [`begin_run`]
+/// in place of [`NewRun`] while [`ContinueRun`](crate::title::ContinueRun)
+/// stands.
+///
+/// Filled by `atglyph-save`'s `SavePlugin`, which loads the save, sets its
+/// seed, runs [`PrepareRun`], restores the run and runs [`RunResumed`],
+/// or begins a fresh run when the save cannot be read or restored. A game
+/// never adds to it: a game's own steps after a restore go in
+/// `RunResumed`. A schedule rather than a call into the save crate, which
+/// depends on this one; empty without `SavePlugin`, and then the run
+/// begins afresh with a warning.
+#[derive(ScheduleLabel, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ContinueSaved;
+
+/// A game's own steps after a continued run is restored: a line in the log
+/// saying where the run goes on, what the game derives from what was
+/// saved rather than saving twice.
+///
+/// Run once the run stands again, the player back, and never on a fresh
+/// run, whose start is [`NewRun`].
+#[derive(ScheduleLabel, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct RunResumed;
 
 /// Where a game forgets a run: the schedule run before the engine tears one
 /// down for a [`Restart`] or a [`LeaveRun`].
@@ -253,7 +292,10 @@ impl Plugin for CorePlugin {
             // whether or not the game added combat; nothing resolves it then.
             .add_message::<turn::Intent<crate::combat::Attack>>()
             .init_schedule(Turn)
+            .init_schedule(PrepareRun)
             .init_schedule(NewRun)
+            .init_schedule(ContinueSaved)
+            .init_schedule(RunResumed)
             .init_schedule(EndRun)
             // The loops run only while playing; drawing runs while there is a
             // world to draw, which a run that is over still is.

@@ -67,7 +67,7 @@ fn tasks(text: &str, names: &Names, facts: &Facts) -> Result<Registry<QuestDef>,
     atglyph::rules::events::quest::load_winnable(text, names, |on: &On| on.matcher(facts))
 }
 
-/// Loads the mission fresh every run, the way `run::start` loads the
+/// Loads the mission fresh every run, the way `run::prepare` loads the
 /// roster and the armory: seed-independent, but a game resource all the
 /// same, so a second run never carries the first one's progress.
 pub fn start(mut commands: Commands, registries: Res<Registries>) {

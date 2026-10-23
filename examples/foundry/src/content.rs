@@ -100,7 +100,7 @@ pub fn registries() -> Registries {
     // rather than mending four a turn, so a pack of them is a longer
     // recovery and never a faster one.
     // Scorched is what standing in fire leaves on whoever stood there, a
-    // point a turn for as long as `run::start`'s `FireRules` says. Cloaked,
+    // point a turn for as long as `run::prepare`'s `FireRules` says. Cloaked,
     // last, ticks nothing: it hides whoever holds it and does no more.
     // Mending and cloaked are boons, so the log tells them as good news.
     // ANCHOR: statuses

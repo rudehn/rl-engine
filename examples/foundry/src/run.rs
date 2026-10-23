@@ -10,7 +10,6 @@ use atglyph::prelude::*;
 use atglyph::rules::Percent;
 use atglyph::rules::ai::hearing::HearingStats;
 use atglyph::rules::damage::{ApplyResistance, SubtractArmor};
-use bevy::ecs::system::RunSystemOnce;
 use bevy::prelude::*;
 
 use crate::content::{Profile, resistances};
@@ -33,10 +32,11 @@ pub struct Commando;
 
 /// Everything a run stands on that is the same however it began: the
 /// decks, the combat rules and the damage pipeline, the dark, the fire,
-/// the roster, the pieces, the loot stream. Shared by [`start`] and
-/// [`resume`], so a continued run is built on exactly the foundry a fresh
-/// one is.
-pub fn prepare(commands: &mut Commands, seed: &Seed, registries: &Registries) {
+/// the roster, the pieces, the loot stream. In [`PrepareRun`], which the
+/// engine runs before [`start`] on a fresh run and before the restore on a
+/// continued one, on the seed the save holds, so a continued run is built
+/// on exactly the foundry a fresh one is.
+pub fn prepare(mut commands: Commands, seed: Res<Seed>, registries: Res<Registries>) {
     let foundry = Foundry::new(seed.0);
     commands.insert_resource(foundry.appearance());
     commands.insert_resource(WorldMap::new(foundry.tiles().tables()));
@@ -62,7 +62,7 @@ pub fn prepare(commands: &mut Commands, seed: &Seed, registries: &Registries) {
     // is a fire and a screen at once.
     commands.insert_resource(FireRules::new().inflicts(registries.statuses.expect("scorched"), 3).smoke(registries.gases.expect("smoke"), 30));
     // ANCHOR_END: fire_rules
-    commands.insert_resource(Roster::load(registries));
+    commands.insert_resource(Roster::load(&registries));
     // The pieces the decks are stamped from, shared with the engine that
     // fills their slots, so a stamp's key names the same piece in both.
     commands.insert_resource(foundry.prefabs().clone());
@@ -121,9 +121,10 @@ pub fn fade_the_unseen(mut commando: Query<(&mut Glyph, Has<Unseen>), With<Comma
     }
 }
 
-/// Builds the foundry, spawns the commando and warps it onto deck one, or
-/// onto [`StartDeck`]'s. Runs in [`NewRun`], for every run but one the
-/// title asked to continue with `ContinueRun`, which is [`resume`]'s.
+/// Spawns the commando into the foundry [`prepare`] built and warps it
+/// onto deck one, or onto [`StartDeck`]'s. Runs in [`NewRun`], for every
+/// run but one the title asked to continue, which the engine restores
+/// from its save instead.
 ///
 /// Asks nothing about a title: while one is up the engine runs no
 /// `NewRun` at all, and runs it once the player picks.
@@ -131,96 +132,48 @@ pub fn fade_the_unseen(mut commando: Query<(&mut Glyph, Has<Unseen>), With<Comma
 /// Reads the registries from a resource rather than building them itself:
 /// `main.rs` inserts them before the run starts, the way its content is
 /// loaded before anything else runs.
-pub fn start(
-    mut commands: Commands,
-    seed: Res<Seed>,
-    registries: Res<Registries>,
-    first: Option<Res<StartDeck>>,
-    continuing: Option<Res<ContinueRun>>,
-    mut begin: Begin,
-) {
-    if continuing.is_some() {
-        return;
-    }
-    prepare(&mut commands, &seed, &registries);
+pub fn start(mut commands: Commands, seed: Res<Seed>, registries: Res<Registries>, first: Option<Res<StartDeck>>, mut begin: Begin) {
     let player = spawn_commando(&mut commands, &registries);
     let deck = first.map_or(1, |f| f.0.clamp(1, crate::decks::DECKS));
     begin.log.notice(format!("Seed {}. The drop ship is gone. The first reactor is on deck three.", seed.0.0));
     begin.warps.write(WarpRequest::into_place(player, map_of(deck)));
 }
 
-/// Continues the saved run, when the title's Continue asked for it with
-/// `ContinueRun`: the foundry built again from the saved seed, the run
-/// restored into it, and what the run did to the commando put back once
-/// the engine has given it back its gear. Takes the marker away, so the
-/// run after this one, a restart's, begins afresh.
-///
-/// After [`start`] and `mission::start` in `NewRun`, so the resources a
-/// restore writes into exist. A save that cannot be read is logged and a
-/// fresh run begins instead: the title offers Continue only for a save it
-/// could read, so this is a save that went bad in between.
-pub fn resume(world: &mut World) {
-    if world.remove_resource::<ContinueRun>().is_none() {
-        return;
-    }
-    let saved = match atglyph::save::load_run(world) {
-        Ok(Some(saved)) => saved,
-        Ok(None) | Err(_) => {
-            error!("there is no save that can be continued; beginning a new run");
-            if let Err(e) = world.run_system_once(start) {
-                error!("the new run could not begin: {e}");
-            }
-            return;
-        }
-    };
-    let seed = Seed(saved.engine.seed);
-    world.insert_resource(seed);
-    let registries = world.resource::<Registries>().clone();
-    let mut queue = bevy::ecs::world::CommandQueue::default();
-    prepare(&mut Commands::new(&mut queue, world), &seed, &registries);
-    queue.apply(world);
-    // A save that restores only in part is worse than none: the run it
-    // leaves is neither the one saved nor a fresh one. So a failure tears
-    // down what it got to, and a new run begins, as for a save that could
-    // not be read at all.
-    let restored = saved.restore(world);
-    let player = world.query_filtered::<Entity, With<Player>>().single(world).ok();
-    let (Ok(()), Some(player)) = (restored, player) else {
-        error!("the save could not be restored; beginning a new run");
-        atglyph::ecs::plugin::clear_run(world);
-        if let Err(e) = world.run_system_once(start) {
-            error!("the new run could not begin: {e}");
-        }
-        return;
-    };
-    // What the run did to the commando is its upgrades, given again to a
-    // commando that has none, now that its gear is back on: the uplink's
-    // tile of reach is given to the gun it wears the way it was the first
-    // time, rather than saved on the gun and given twice.
+/// What the run did to the commando, given again once the engine has
+/// restored it, in [`RunResumed`]: its upgrades, given to a commando that
+/// has none now that its gear is back on, so the uplink's tile of reach is
+/// given to the gun it wears the way it was the first time, rather than
+/// saved on the gun and given twice.
+pub fn give_upgrades_again(world: &mut World) {
+    let Ok(player) = world.query_filtered::<Entity, With<Player>>().single(world) else { return };
     let taken = world.resource::<crate::upgrades::Taken>().clone();
     for upgrade in taken.0.iter().copied() {
         crate::upgrades::apply(upgrade, player, world);
     }
-    // A charge set whose pick was still waiting when the run was saved:
-    // a pick is not a turn, so the save may have caught the charge and not
-    // the choice, and the choice is offered again rather than lost.
-    let quests = world.resource::<Quests>();
+}
+
+/// Offers again a pick that was waiting when the run was saved, in
+/// [`RunResumed`]: a pick is not a turn, so the save may have caught the
+/// charge and not the choice, and the choice is offered again rather than
+/// lost.
+pub fn offer_the_waiting_pick(
+    quests: Res<Quests>,
+    mut modals: ResMut<Modals>,
+    mut screen: ResMut<crate::upgrades::ChoiceScreen>,
+    mut choosing: ResMut<crate::upgrades::Choosing>,
+    taken: Res<crate::upgrades::Taken>,
+) {
     let charged = crate::mission::CHARGE_QUESTS.iter().filter(|name| quests.tracker.state(quests.defs.expect(name)) == QuestState::Done).count();
     if charged > taken.0.len() {
-        let offered = world.run_system_once(
-            |mut modals: ResMut<Modals>,
-             mut screen: ResMut<crate::upgrades::ChoiceScreen>,
-             mut choosing: ResMut<crate::upgrades::Choosing>,
-             taken: Res<crate::upgrades::Taken>| {
-                crate::upgrades::offer(&mut modals, &mut screen, &mut choosing, &taken);
-            },
-        );
-        if let Err(e) = offered {
-            error!("the waiting pick could not be offered again: {e}");
-        }
+        crate::upgrades::offer(&mut modals, &mut screen, &mut choosing, &taken);
     }
-    let deck = crate::decks::deck_of(world.get::<OnMap>(player).map_or(MapId::ZERO, |m| m.0));
-    world.resource_mut::<MessageLog>().push_at(format!("Continuing on deck {deck}."), Tones::NOTICE, saved.turn());
+}
+
+/// Says which deck a continued run goes on from, in [`RunResumed`], so
+/// the line is stamped with the turn the run was saved on.
+pub fn say_where_it_goes_on(player: Query<Option<&OnMap>, With<Player>>, mut log: Log) {
+    let deck = crate::decks::deck_of(player.single().ok().flatten().map_or(MapId::ZERO, |m| m.0));
+    log.notice(format!("Continuing on deck {deck}."));
 }
 
 /// What starting a run writes beyond the world itself: the log's first
