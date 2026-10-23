@@ -69,8 +69,8 @@ pub use ammo::{Ammo, AmmoChanged, AmmoPlugin, AmmoSet, Dry};
 pub use atglyph_grid::LightBand;
 pub use bump::{Bump, BumpRules, Bumped, OnAlly, Swapped};
 pub use combat::{
-    Armor, Attack, AttackShape, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageRoute, DamageStages, Dead, DeathEvent, Faction, Heal,
-    Healed, Health, Invulnerable, Loadout, MeleeAttack, RangedAttack, Resists, Stowed, Strikes, Struck, line_of_fire, shot,
+    Armor, Attack, AttackShape, BenchedAttack, BonusDamage, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageRoute, DamageStages, Dead,
+    DeathEvent, Faction, Heal, Healed, Health, Invulnerable, Loadout, MeleeAttack, RangedAttack, Resists, Struck, line_of_fire, shot,
 };
 pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
 pub use consumable::{AddSpending, Attuned, Consumable, Recharge, SpendingMoments, Spent, WhenEmpty};
@@ -88,7 +88,7 @@ pub use fov::FovPlugin;
 pub use gas::{Breathed, GasPlugin, Gases, Release, Vents};
 pub use items::{
     Bestows, DropItem, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemRules, ItemsPlugin, LitWhenWorn, OwnBlowScore, PickUp,
-    Pulse, Stack, Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable, WornStatuses, may_use, may_use_on,
+    Stack, Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable, WornStatuses, WornTimer, may_use, may_use_on,
 };
 pub use knowledge::{Knowledge, KnowledgeSave, Recalled};
 pub use lighting::{
@@ -146,8 +146,8 @@ pub mod prelude {
     pub use crate::bump::{Bump, BumpRules, Bumped, OnAlly, Swapped};
 
     pub use crate::combat::{
-        Armor, Attack, AttackShape, CombatPlugin, CombatRules, DamageDealt, DamageEvent, DamageRoute, DamageStages, Dead, DeathEvent, Faction, Heal, Healed,
-        Health, Invulnerable, Loadout, MeleeAttack, RangedAttack, Resists, Stowed, Strikes, Struck, line_of_fire, shot,
+        Armor, Attack, AttackShape, BenchedAttack, BonusDamage, CombatPlugin, CombatRules, DamageDealt, DamageEvent, DamageRoute, DamageStages, Dead,
+        DeathEvent, Faction, Heal, Healed, Health, Invulnerable, Loadout, MeleeAttack, RangedAttack, Resists, Struck, line_of_fire, shot,
     };
     pub use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
     pub use crate::consumable::{AddSpending, Attuned, Consumable, WhenEmpty};
@@ -166,7 +166,7 @@ pub mod prelude {
 
     pub use crate::items::{
         Bestows, DropItem, Equip, EquipFromGround, Equipped, GearScore, Inventory, Item, ItemEvent, ItemRules, ItemsPlugin, LitWhenWorn, OwnBlowScore, PickUp,
-        Pulse, Stack, Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable, WornStatuses,
+        Stack, Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable, WornStatuses, WornTimer,
     };
 
     pub use crate::knowledge::Knowledge;

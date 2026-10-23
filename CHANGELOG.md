@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- Three combat and item components say what they hold: the extra rolls every hit carries are `BonusDamage`, where they were `Strikes`; an attack a worn thing cannot make right now, put by, is a `BenchedAttack`, not the plan's `Unusable`, which `atglyph::rules::items::No::Unusable` already means for an item; and a worn thing's own clock is a `WornTimer`, where it was a `Pulse`, whose `pulse` trigger kind keeps its name. Two private engine names lose a theme word: the attack a blow is made with is `ChosenAttack` and the narrator's query for things wielded is `Wielded`.
+  To change: breaking: `atglyph::ecs::Strikes` becomes `atglyph::ecs::BonusDamage`, `atglyph::ecs::Stowed` becomes `atglyph::ecs::BenchedAttack` (with `BenchedAttack::Melee` and `BenchedAttack::Ranged`), and `atglyph::ecs::Pulse` becomes `atglyph::ecs::WornTimer` (with `WornTimer::every`).
+
 - The status types say what they do: the message that puts a status on an actor is `ApplyStatus`, where it was `Afflict`; the one that takes it off is `RemoveStatus`, where it was `Cure`; and the component holding an actor's statuses is `ActiveStatuses`, where it was `Afflicted`. Their fields are unchanged, and the effects content files name, `Inflict` and `Cleanse`, keep their names.
   To change: breaking: `atglyph::ecs::Afflict` becomes `atglyph::ecs::ApplyStatus`, `atglyph::ecs::Cure` becomes `atglyph::ecs::RemoveStatus`, and `atglyph::ecs::Afflicted` becomes `atglyph::ecs::ActiveStatuses`; a `MessageWriter<Afflict>` is a `MessageWriter<ApplyStatus>` and a `Query<&Afflicted>` a `Query<&ActiveStatuses>`.
 

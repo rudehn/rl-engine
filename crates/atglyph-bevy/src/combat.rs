@@ -260,7 +260,7 @@ pub use atglyph_rules::parts::AttackShape;
 /// On an actor or on a worn item; every worn item's are added to the
 /// wearer's own.
 #[derive(Component, Debug, Clone, Default, PartialEq, Eq)]
-pub struct Strikes(pub Vec<(DamageKindId, DiceRoll)>);
+pub struct BonusDamage(pub Vec<(DamageKindId, DiceRoll)>);
 
 /// Who is hostile to whom, and which stats a blow reads.
 ///
@@ -636,11 +636,11 @@ type DefenderData = (&'static mut Health, &'static Position, Has<Player>, Has<In
 
 /// The combat components an actor or an item may carry, as a query asks
 /// for them.
-type Gear = (Option<&'static Armor>, Option<&'static MeleeAttack>, Option<&'static RangedAttack>, Option<&'static Strikes>);
+type Gear = (Option<&'static Armor>, Option<&'static MeleeAttack>, Option<&'static RangedAttack>, Option<&'static BonusDamage>);
 
 /// A worn item's entity beside the same components, as [`Loadout::worn`]
 /// yields them.
-type WornRef<'a> = (Entity, Option<&'a Armor>, Option<&'a MeleeAttack>, Option<&'a RangedAttack>, Option<&'a Strikes>);
+type WornRef<'a> = (Entity, Option<&'a Armor>, Option<&'a MeleeAttack>, Option<&'a RangedAttack>, Option<&'a BonusDamage>);
 
 /// An attack a worn item cannot make right now, put by until whatever
 /// benched it lifts the ban.
@@ -656,7 +656,7 @@ type WornRef<'a> = (Entity, Option<&'a Armor>, Option<&'a MeleeAttack>, Option<&
 /// the same question a worn item's missing attack always asks: put by, or
 /// simply never had one.
 #[derive(Component, Debug, Clone, Copy)]
-pub enum Stowed {
+pub enum BenchedAttack {
     /// A blow, put by.
     Melee(MeleeAttack),
     /// A shot, put by.
@@ -666,7 +666,7 @@ pub enum Stowed {
 /// What an actor fights with, summed at the moment it matters.
 ///
 /// Three layers, added together: the actor's own [`Armor`], [`Resists`],
-/// [`MeleeAttack`], [`RangedAttack`] and [`Strikes`]; the same components
+/// [`MeleeAttack`], [`RangedAttack`] and [`BonusDamage`]; the same components
 /// on every item in its [`Equipped`] slots, in slot order; and the value of
 /// the stats [`CombatRules`] names, read off its [`StatBlock`]. A worn
 /// blow or shot replaces the actor's own, since a cutlass is swung in
@@ -719,7 +719,7 @@ impl Loadout<'_, '_> {
     /// nothing in its wielder's bag to feed it, the same "empty, not gone"
     /// standing as `charged`, above. [`melee_with`](Self::melee_with)
     /// and [`ranged_with`](Self::ranged_with) already skip it, because its
-    /// attack came off with the ammunition and was put by as [`Stowed`];
+    /// attack came off with the ammunition and was put by as [`BenchedAttack`];
     /// this is the one place the engine answers "can this worn item act at
     /// all right now" by name, rather than leaving every reader to
     /// rediscover it from what is merely absent.
@@ -938,8 +938,8 @@ pub struct ShotLanding {
 
 impl crate::cue::Lands for ShotLanding {}
 
-/// The weapon one attack is made with, as [`Loadout`] chose it.
-struct Weapon {
+/// The attack one blow or shot is made with, as [`Loadout`] chose it.
+struct ChosenAttack {
     from: Option<Entity>,
     ranged: bool,
     kind: DamageKindId,
@@ -1002,14 +1002,14 @@ pub(crate) fn resolve_attacks(
             resolution.done(actor, atglyph_core::turn::BASE_ACTION_COST);
             continue;
         };
-        // The gun is kept beside the weapon it became, so the odds can read
+        // The gun is kept beside the attack it became, so the odds can read
         // its reach.
         let adjacent = geometry::is_adjacent(pos.0, target_pos.0);
         let gun = if adjacent { None } else { loadout.ranged_with(actor).filter(|(_, r)| line_of_fire(map, occupancy, pos.0, target_pos.0, r.range)) };
         let melee = if adjacent { loadout.melee_with(actor) } else { None };
         // `gun` is already filtered by line of fire, so it stands for both facts.
-        let weapon = match atglyph_rules::arms::choose_reach(adjacent, gun.is_some(), melee.is_some(), gun.is_some()) {
-            Some(atglyph_rules::arms::Reach::Melee) => melee.map(|(from, m)| Weapon {
+        let chosen = match atglyph_rules::arms::choose_reach(adjacent, gun.is_some(), melee.is_some(), gun.is_some()) {
+            Some(atglyph_rules::arms::Reach::Melee) => melee.map(|(from, m)| ChosenAttack {
                 from,
                 ranged: false,
                 kind: m.kind,
@@ -1020,11 +1020,11 @@ pub(crate) fn resolve_attacks(
                 unaware: m.unaware.or(house),
             }),
             Some(atglyph_rules::arms::Reach::Ranged) => {
-                gun.map(|(from, r)| Weapon { from, ranged: true, kind: r.kind, dice: r.dice, cost: r.cost, look: r.look, shape: r.shape, unaware: None })
+                gun.map(|(from, r)| ChosenAttack { from, ranged: true, kind: r.kind, dice: r.dice, cost: r.cost, look: r.look, shape: r.shape, unaware: None })
             }
             None => None,
         };
-        let Some(Weapon { from, ranged, kind, dice, cost, look, shape, unaware }) = weapon else {
+        let Some(ChosenAttack { from, ranged, kind, dice, cost, look, shape, unaware }) = chosen else {
             resolution.done(actor, atglyph_core::turn::BASE_ACTION_COST);
             continue;
         };
@@ -1535,7 +1535,7 @@ mod tests {
                 Health::full(30),
                 Faction(us),
                 RangedAttack::new(blunt, DiceRoll::flat(3), 6),
-                Strikes(vec![(blunt, DiceRoll::flat(2))]),
+                BonusDamage(vec![(blunt, DiceRoll::flat(2))]),
             ))
             .id();
         // A target four cells east with no mind: it never moves.
@@ -1730,7 +1730,7 @@ mod tests {
     /// rather than its arrival. Without a watcher it all lands at once.
     #[test]
     fn a_watched_shot_hurts_when_its_flight_has_been_seen_and_an_unwatched_one_at_once() {
-        let arm = |kind| (RangedAttack::new(kind, DiceRoll::flat(3), 6).looking(LOOK), Strikes(vec![(kind, DiceRoll::flat(2))]));
+        let arm = |kind| (RangedAttack::new(kind, DiceRoll::flat(3), 6).looking(LOOK), BonusDamage(vec![(kind, DiceRoll::flat(2))]));
         let (mut app, _, player, target) = duel(4, true, arm);
         app.world_mut().write_message(Intent::new(player, Attack(target)));
         app.update();
@@ -1969,7 +1969,7 @@ mod tests {
             .spawn((
                 crate::items::Item,
                 MeleeAttack::new(sides.kind, DiceRoll::new(2, 6)),
-                Strikes(vec![(sides.kind, DiceRoll::flat(1))]),
+                BonusDamage(vec![(sides.kind, DiceRoll::flat(1))]),
                 crate::items::Wearable(EquipShape::in_slot(hand)),
             ))
             .id();
@@ -1978,7 +1978,7 @@ mod tests {
             .spawn((
                 crate::items::Item,
                 RangedAttack::new(sides.kind, DiceRoll::flat(4), 5),
-                Strikes(vec![(sides.kind, DiceRoll::flat(2))]),
+                BonusDamage(vec![(sides.kind, DiceRoll::flat(2))]),
                 crate::items::Wearable(EquipShape::in_slot(off)),
             ))
             .id();
@@ -1997,7 +1997,7 @@ mod tests {
                 Health::full(30),
                 Faction(sides.ours),
                 fist,
-                Strikes(vec![(sides.kind, DiceRoll::flat(3))]),
+                BonusDamage(vec![(sides.kind, DiceRoll::flat(3))]),
                 crate::items::Inventory { items: vec![blade, pistol] },
                 crate::items::Equipped(worn),
             ))

@@ -178,7 +178,7 @@ impl Named for ItemDef {
 ///
 /// The engine reads a row's blow and shot off `MeleeAttack` and
 /// `RangedAttack`, which a weapon that cannot fire has moved into the
-/// engine's own `Stowed` so the loadout finds nothing, and without this a
+/// engine's own `BenchedAttack` so the loadout finds nothing, and without this a
 /// slug rifle carried with no slugs, `+2` or not, reads as nothing but
 /// where it goes. Its numbers go back in the row's own `blow` or `shot`,
 /// so the pack says them in its own words, and the reason in a facet
@@ -194,7 +194,7 @@ pub fn note_the_pack(
     view: Option<ResMut<InventoryView>>,
     registries: Res<Registries>,
     loadout: Loadout,
-    things: Query<(Option<&WornDarkSight>, Option<&Stowed>)>,
+    things: Query<(Option<&WornDarkSight>, Option<&BenchedAttack>)>,
 ) {
     let Some(mut view) = view else { return };
     let kind = |kind| registries.damage_kinds.name(kind).to_string();
@@ -203,8 +203,8 @@ pub fn note_the_pack(
         let dry = loadout.dry(row.entity);
         if let Some(stowed) = stowed {
             match *stowed {
-                Stowed::Melee(a) => row.blow = Some(Strike { kind: kind(a.kind), dice: a.dice, range: None }),
-                Stowed::Ranged(a) => row.shot = Some(Strike { kind: kind(a.kind), dice: a.dice, range: Some(a.range) }),
+                BenchedAttack::Melee(a) => row.blow = Some(Strike { kind: kind(a.kind), dice: a.dice, range: None }),
+                BenchedAttack::Ranged(a) => row.shot = Some(Strike { kind: kind(a.kind), dice: a.dice, range: Some(a.range) }),
             }
             let why = if dry { Facet::new("ammo", "dry") } else { Facet::new("heat", "locked") };
             row.facets.push(why.toned(Tones::BAD));
@@ -1557,7 +1557,7 @@ mod tests {
             shot: world.get::<RangedAttack>(e).map(|r| r.dice.to_string()),
             thrown: world.get::<Throwable>(e).and_then(|t| t.strike).map(|(_, dice)| dice.to_string()),
             dark_sight: world.get::<WornDarkSight>(e).map(|d| d.0),
-            pulse: world.get::<Pulse>(e).map(|p| p.every),
+            pulse: world.get::<WornTimer>(e).map(|p| p.every),
             bonus: world.get::<EffectBonus>(e).copied(),
         }
     }

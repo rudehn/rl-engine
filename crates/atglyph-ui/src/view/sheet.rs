@@ -303,7 +303,7 @@ mod tests {
             ActiveStatuses::default(),
             Speed(120),
             RangedAttack::new(kind, DiceRoll::flat(3), 6),
-            Strikes(vec![(kind, DiceRoll::new(1, 4))]),
+            BonusDamage(vec![(kind, DiceRoll::new(1, 4))]),
         ));
         stage.tick();
         (stage, might)

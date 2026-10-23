@@ -538,7 +538,7 @@ impl Plugin for RemainsPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::combat::{CombatPlugin, DamageEvent, Faction, Health, Strikes};
+    use crate::combat::{BonusDamage, CombatPlugin, DamageEvent, Faction, Health};
     use crate::components::{Player, Viewshed};
     use crate::state::EngineState;
     use crate::testing::headless_app;
@@ -675,7 +675,7 @@ mod tests {
 
         let (mut app, start, sides) = arena();
         let dead = victim(&mut app, start.offset(2, 0), sides, true);
-        app.world_mut().entity_mut(dead).insert((Kind(7), Strikes(vec![(sides.kind, DiceRoll::flat(1))])));
+        app.world_mut().entity_mut(dead).insert((Kind(7), BonusDamage(vec![(sides.kind, DiceRoll::flat(1))])));
         kill(&mut app, dead, sides);
 
         assert_eq!(app.world().get::<Kind>(dead), Some(&Kind(7)), "the game's own component came through untouched");

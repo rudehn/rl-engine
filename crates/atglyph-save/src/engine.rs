@@ -6,7 +6,8 @@
 //! only keep entries whose ids were bound.
 
 use atglyph_bevy::{
-    Consumable, Cooldowns, Fire, Gases, Knowledge, KnowledgeSave, Occupancy, Pools, PropKind, Pulse, SavedField, Seed, Triggers, Turns, WorldMap, WorldMapSave,
+    Consumable, Cooldowns, Fire, Gases, Knowledge, KnowledgeSave, Occupancy, Pools, PropKind, SavedField, Seed, Triggers, Turns, WorldMap, WorldMapSave,
+    WornTimer,
 };
 use atglyph_core::RunSeed;
 use atglyph_rules::ability::AbilityId;
@@ -123,7 +124,7 @@ impl EffectState {
     /// consumable, no pulse, and no trigger that counts its firings.
     fn of(world: &World, entity: Entity) -> Option<Self> {
         let consumable = world.get::<Consumable>(entity).map(|c| (c.left, c.recharge.map_or(0, |r| r.progress)));
-        let pulse = world.get::<Pulse>(entity).map(|p| p.progress);
+        let pulse = world.get::<WornTimer>(entity).map(|p| p.progress);
         let fires: Vec<Option<u32>> = match (world.get::<Triggers>(entity), world.get::<PropKind>(entity)) {
             (Some(triggers), None) if triggers.0.iter().any(|t| t.fires.is_some()) => triggers.0.iter().map(|t| t.fires).collect(),
             _ => Vec::new(),
@@ -142,7 +143,7 @@ impl EffectState {
                 r.progress = progress;
             }
         }
-        if let (Some(progress), Some(mut p)) = (self.pulse, target.get_mut::<Pulse>()) {
+        if let (Some(progress), Some(mut p)) = (self.pulse, target.get_mut::<WornTimer>()) {
             p.progress = progress.min(p.every.saturating_sub(1));
         }
         if let Some(mut triggers) = target.get_mut::<Triggers>() {
@@ -550,7 +551,7 @@ mod tests {
     #[test]
     fn a_pulse_comes_back_with_its_progress() {
         let (mut app, _) = fresh();
-        let plate = app.world_mut().spawn(Pulse { every: 800, progress: 700 }).id();
+        let plate = app.world_mut().spawn(WornTimer { every: 800, progress: 700 }).id();
         let mut remap = EntityRemap::new();
         let p_id = remap.save_id(plate);
         let save = {
@@ -560,10 +561,10 @@ mod tests {
         let back: EngineSave = crate::versioned::decode(1, &crate::versioned::encode(1, &save).unwrap()).unwrap();
 
         let (mut app2, _) = fresh();
-        let plate2 = app2.world_mut().spawn(Pulse::every(800)).id();
+        let plate2 = app2.world_mut().spawn(WornTimer::every(800)).id();
         let mut remap2 = EntityRemap::new();
         remap2.bind(p_id, plate2);
         back.restore(app2.world_mut(), &remap2);
-        assert_eq!(app2.world().get::<Pulse>(plate2).map(|p| p.progress), Some(700));
+        assert_eq!(app2.world().get::<WornTimer>(plate2).map(|p| p.progress), Some(700));
     }
 }

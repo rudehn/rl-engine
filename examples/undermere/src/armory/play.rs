@@ -276,7 +276,7 @@ fn the_widows_fang_whispers_a_noise_as_loud_as_a_blow_every_sixty_turns() {
     // period, `pulse_worn`'s own "a wearer cannot wear it most of a
     // period, swap, and swap back for a pulse on the next turn"; cleared
     // to nothing so the sixty turns counted below are the Fang's alone.
-    app.world_mut().get_mut::<Pulse>(fang).expect("a pulse").progress = 0;
+    app.world_mut().get_mut::<WornTimer>(fang).expect("a pulse").progress = 0;
     *app.world_mut().resource_mut::<Noises>() = Noises::default();
     pass_turns(&mut app, 59);
     assert!(app.world().resource::<Noises>().made.iter().all(|n| n.maker != Some(me)), "not before sixty turns");

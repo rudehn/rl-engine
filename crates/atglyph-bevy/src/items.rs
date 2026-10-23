@@ -221,14 +221,14 @@ pub struct Stuck;
 /// next turn. `every` is written when the thing is spawned, with the
 /// thing's level already applied, as [`Bestows`] is.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Pulse {
+pub struct WornTimer {
     /// Hundredths of a step between pulses.
     pub every: u32,
     /// Hundredths counted towards the next.
     pub progress: u32,
 }
 
-impl Pulse {
+impl WornTimer {
     /// A clock coming round every `every` hundredths, with nothing counted yet.
     pub fn every(every: u32) -> Self {
         Self { every, progress: 0 }
@@ -776,7 +776,7 @@ pub(crate) fn fold_gear(mut wearers: Query<(&Equipped, &mut StatBlock), Changed<
     }
 }
 
-/// Counts each worn [`Pulse`] on by the time that passed since the last
+/// Counts each worn [`WornTimer`] on by the time that passed since the last
 /// pass, and reports its `pulse` moment for each full period, on the thing,
 /// by its wearer, at the wearer's cell.
 ///
@@ -791,7 +791,7 @@ pub(crate) fn pulse_worn(
     mut last: Local<Option<u32>>,
     map: Res<WorldMap>,
     wearers: Query<(Entity, &Position, Option<&OnMap>, &Equipped)>,
-    mut pulses: Query<&mut Pulse>,
+    mut pulses: Query<&mut WornTimer>,
     mut fired: MessageWriter<crate::effects::Fired>,
 ) {
     let now = turns.now();
@@ -816,12 +816,12 @@ pub(crate) fn pulse_worn(
     }
 }
 
-/// Starts a [`Pulse`] from nothing whenever its thing is put on.
+/// Starts a [`WornTimer`] from nothing whenever its thing is put on.
 ///
 /// In [`TurnSet::React`](crate::plugin::TurnSet::React), after the pass
 /// counted whatever time it counted, so the thing's first period is a whole
 /// one from the pass it went on in.
-pub(crate) fn restart_pulses(mut events: MessageReader<ItemEvent>, mut pulses: Query<&mut Pulse>) {
+pub(crate) fn restart_pulses(mut events: MessageReader<ItemEvent>, mut pulses: Query<&mut WornTimer>) {
     for ev in events.read() {
         let ItemEvent::Equipped { item, .. } = *ev else { continue };
         if let Ok(mut pulse) = pulses.get_mut(item) {
@@ -1167,7 +1167,7 @@ pub(crate) fn perceive_belongings(mut thinking: ResMut<Thinking>, sight: Sight, 
 /// [`Actor`](crate::components::Actor) is given as it is spawned, by
 /// [`CorePlugin`](crate::plugin::CorePlugin)'s statuses.
 ///
-/// A worn [`Pulse`] reports its `pulse` moment on its own clock, and a
+/// A worn [`WornTimer`] reports its `pulse` moment on its own clock, and a
 /// status a worn thing holds ends when it is no longer worn, in
 /// `end_unworn_statuses`. What a use costs the thing used, its
 /// [`Consumable`](crate::consumable::Consumable) charges, is part of it

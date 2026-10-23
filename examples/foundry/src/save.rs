@@ -181,9 +181,9 @@ impl SaveableItem for ItemKind {
         if saved.heat.is_some_and(|(_, locked)| locked) {
             let mut item = world.entity_mut(e);
             if let Some(attack) = item.take::<RangedAttack>() {
-                item.insert(Stowed::Ranged(attack));
+                item.insert(BenchedAttack::Ranged(attack));
             } else if let Some(attack) = item.take::<MeleeAttack>() {
-                item.insert(Stowed::Melee(attack));
+                item.insert(BenchedAttack::Melee(attack));
             }
         }
     }
@@ -507,7 +507,7 @@ mod tests {
         // Charged in the pack: an attuned thing keeps what it holds until
         // it goes on, and this one has never been on.
         app.world_mut().get_mut::<Consumable>(cloak).unwrap().left = 1;
-        let pulse = *app.world().get::<Pulse>(nanite).expect("a clock");
+        let pulse = *app.world().get::<WornTimer>(nanite).expect("a clock");
         assert_eq!(pulse.every, 700, "a +3 nanite plate comes round every seven turns");
         assert!(pulse.progress > 0 && pulse.progress < pulse.every, "part way round: {pulse:?}");
 
@@ -520,7 +520,7 @@ mod tests {
         let world = continued.world();
         assert_eq!(world.get::<Consumable>(cloak).map(|c| c.left), Some(1), "the cloak plate still charged");
         assert!(world.get::<Equipped>(me).is_some_and(|w| w.slot_of(nanite).is_some()), "the nanite plate still worn");
-        let back = world.get::<Pulse>(nanite).expect("a clock");
+        let back = world.get::<WornTimer>(nanite).expect("a clock");
         assert_eq!((back.every, back.progress), (pulse.every, pulse.progress), "the same period and as far round");
     }
 

@@ -461,7 +461,7 @@ mod tests {
     #[test]
     fn a_worn_pulse_lands_once_a_period_from_when_it_went_on_and_never_from_the_bag() {
         let (mut app, player, plate) = rig(None, None, MEND_ON_PULSE);
-        app.world_mut().entity_mut(plate).insert(crate::items::Pulse::every(800));
+        app.world_mut().entity_mut(plate).insert(crate::items::WornTimer::every(800));
         a_slot_for(&mut app, player, plate);
         wait_until(&mut app, player, 1000);
         assert_eq!(health(&app, player), 10, "ten turns in the bag and nothing");
@@ -480,7 +480,7 @@ mod tests {
     #[test]
     fn putting_a_pulsing_thing_back_on_starts_its_clock_again() {
         let (mut app, player, plate) = rig(None, None, MEND_ON_PULSE);
-        app.world_mut().entity_mut(plate).insert(crate::items::Pulse::every(800));
+        app.world_mut().entity_mut(plate).insert(crate::items::WornTimer::every(800));
         a_slot_for(&mut app, player, plate);
         let on = app.world().resource::<Turns>().now();
         put_on(&mut app, player, plate);
@@ -553,7 +553,7 @@ mod tests {
         let (mut app, player, _) = rig(None, None, MEND_ON_USE);
         let at = app.world().get::<Position>(player).unwrap().0;
         let pulsing = triggers_of(&app, MEND_ON_PULSE);
-        let plate = app.world_mut().spawn((Item, pulsing, crate::items::Pulse::every(100))).id();
+        let plate = app.world_mut().spawn((Item, pulsing, crate::items::WornTimer::every(100))).id();
         let slot = atglyph_rules::SlotId::from_raw(0);
         let mut worn = atglyph_rules::Equipment::with_slot_count(1);
         worn.equip(plate, &atglyph_rules::EquipShape::in_slot(slot)).unwrap();

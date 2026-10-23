@@ -41,11 +41,11 @@ use bevy::prelude::*;
 
 use crate::ability::Grants;
 use crate::ammo::Ammo;
-use crate::combat::{Armor, Faction, Health, MeleeAttack, RangedAttack, Resists, Stowed};
+use crate::combat::{Armor, BenchedAttack, Faction, Health, MeleeAttack, RangedAttack, Resists};
 use crate::components::Speed;
 use crate::consumable::{Attuned, Consumable};
 use crate::effects::{EffectBonus, TriggerKindId, TriggerKinds, Triggers};
-use crate::items::{Bestows, Equipped, Item, LitWhenWorn, Pulse, Stack, Tagged, Wearable, WornStatuses};
+use crate::items::{Bestows, Equipped, Item, LitWhenWorn, Stack, Tagged, Wearable, WornStatuses, WornTimer};
 use crate::lighting::{DarkSight, LightSource, OwnDarkSight, WornDarkSight};
 use crate::loot::Drops;
 use crate::minds::{Intelligence, Mind, Perception};
@@ -313,7 +313,7 @@ pub struct ItemLevel(pub i32);
 /// nought for a thing that takes none, whatever `level` says.
 ///
 /// [`Item`], `MadeOf`, and where the parts say so, [`ItemLevel`],
-/// [`Tagged`], [`Triggers`], [`Pulse`], [`Consumable`] and [`Attuned`],
+/// [`Tagged`], [`Triggers`], [`WornTimer`], [`Consumable`] and [`Attuned`],
 /// [`Wearable`], [`Ammo`], [`Armor`], [`Resists`], the attacks,
 /// [`Bestows`], [`EffectBonus`], [`LightSource`], or [`LitWhenWorn`] for a
 /// light that shines only while worn, [`WornStatuses`], [`WornDarkSight`]
@@ -334,7 +334,7 @@ pub fn insert_parts(e: &mut EntityCommands, parts: &Arc<ItemParts>, level: i32) 
         e.insert(parts.triggers.clone());
     }
     if let Some(every) = parts.pulse_at(level) {
-        e.insert(Pulse::every(every));
+        e.insert(WornTimer::every(every));
     }
     if let (Some(c), Some(max)) = (parts.charges, parts.charges_at(level)) {
         let held = Consumable::new(max, c.when_empty);
@@ -407,17 +407,17 @@ pub fn level_up(world: &mut World, item: Entity, by: i32) -> Option<i32> {
     let parts = world.get::<MadeOf>(item)?.0.clone();
     let was = world.get::<ItemLevel>(item).map_or(0, |l| l.0);
     let level = parts.level_at(was.saturating_add(by))?;
-    let stowed = world.get::<Stowed>(item).copied();
+    let stowed = world.get::<BenchedAttack>(item).copied();
     let attacks = parts.attacks_at(level);
     let mut e = world.entity_mut(item);
     e.insert(ItemLevel(level));
     match (attacks.melee.map(|m| MeleeAttack::from_part(&m, attacks.cost)), stowed) {
-        (Some(blow), Some(Stowed::Melee(_))) => e.insert(Stowed::Melee(blow)),
+        (Some(blow), Some(BenchedAttack::Melee(_))) => e.insert(BenchedAttack::Melee(blow)),
         (Some(blow), _) => e.insert(blow),
         (None, _) => e.remove::<MeleeAttack>(),
     };
     match (attacks.ranged.map(|r| RangedAttack::from_part(&r, attacks.cost)), stowed) {
-        (Some(shot), Some(Stowed::Ranged(_))) => e.insert(Stowed::Ranged(shot)),
+        (Some(shot), Some(BenchedAttack::Ranged(_))) => e.insert(BenchedAttack::Ranged(shot)),
         (Some(shot), _) => e.insert(shot),
         (None, _) => e.remove::<RangedAttack>(),
     };
@@ -441,7 +441,7 @@ pub fn level_up(world: &mut World, item: Entity, by: i32) -> Option<i32> {
     if let Some(tiles) = parts.dark_sight_at(level) {
         e.insert(WornDarkSight(tiles));
     }
-    if let (Some(every), Some(mut pulse)) = (parts.pulse_at(level), e.get_mut::<Pulse>()) {
+    if let (Some(every), Some(mut pulse)) = (parts.pulse_at(level), e.get_mut::<WornTimer>()) {
         pulse.every = every;
     }
     if let (Some(max), Some(mut held)) = (parts.charges_at(level), e.get_mut::<Consumable>()) {
@@ -869,8 +869,8 @@ mod tests {
 
     /// What a thing at a level carries, in one line to compare.
     fn read(world: &World, e: Entity) -> Fitted {
-        let blow = world.get::<MeleeAttack>(e).or_else(|| match world.get::<Stowed>(e) {
-            Some(Stowed::Melee(blow)) => Some(blow),
+        let blow = world.get::<MeleeAttack>(e).or_else(|| match world.get::<BenchedAttack>(e) {
+            Some(BenchedAttack::Melee(blow)) => Some(blow),
             _ => None,
         });
         (
@@ -912,7 +912,7 @@ mod tests {
         let (jumped, _) = spawned(&mut world, &blade(), 2);
         world.get_mut::<Consumable>(stepped).unwrap().left = 0;
         let blow = world.entity_mut(stepped).take::<MeleeAttack>().unwrap();
-        world.entity_mut(stepped).insert(Stowed::Melee(blow));
+        world.entity_mut(stepped).insert(BenchedAttack::Melee(blow));
         assert_eq!(level_up(&mut world, stepped, 1), Some(1));
         assert_eq!(level_up(&mut world, stepped, 1), Some(2));
         assert_eq!(read(&world, stepped), read(&world, jumped), "never a level on top of a level");

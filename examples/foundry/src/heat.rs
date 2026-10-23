@@ -4,7 +4,7 @@
 //! it has vented all the way back to zero, so emptying it is a commitment
 //! to cool it rather than a pause; it vents only on a turn it did not
 //! fire, which is what lets heat build on a fast weapon at all. Locking
-//! takes its attack off the item and stows it as [`Stowed`] rather than
+//! takes its attack off the item and stows it as [`BenchedAttack`] rather than
 //! marking it somehow unusable, which is what makes the engine's own
 //! [`Loadout`](atglyph::ecs::Loadout) fall through to the next
 //! worn item with no knowledge of heat at all: a dual-wielded pair of
@@ -15,7 +15,7 @@
 //! both reactions to messages the engine already writes: a [`Struck`]
 //! naming the item an attack came from, and a whole [`TurnEnd`].
 
-use atglyph::ecs::{Equipped, MeleeAttack, Player, RangedAttack, Stowed, Struck, TurnEnd};
+use atglyph::ecs::{BenchedAttack, Equipped, MeleeAttack, Player, RangedAttack, Struck, TurnEnd};
 use atglyph::ui::{Facet, GearView, Tell, Tones};
 use bevy::prelude::*;
 
@@ -105,9 +105,9 @@ pub fn heat_on_struck(
         let mut e = commands.entity(item);
         if let Ok((melee, ranged)) = weapons.get(item) {
             if let Some(attack) = melee {
-                e.remove::<MeleeAttack>().insert(Stowed::Melee(*attack));
+                e.remove::<MeleeAttack>().insert(BenchedAttack::Melee(*attack));
             } else if let Some(attack) = ranged {
-                e.remove::<RangedAttack>().insert(Stowed::Ranged(*attack));
+                e.remove::<RangedAttack>().insert(BenchedAttack::Ranged(*attack));
             }
         }
         if said.player.contains(ev.attacker) {
@@ -118,21 +118,21 @@ pub fn heat_on_struck(
 }
 
 /// Reacts to every whole [`TurnEnd`]: vents every [`Heat`], and for one
-/// that unlocks, takes its [`Stowed`] attack back off the shelf and gives
+/// that unlocks, takes its [`BenchedAttack`] attack back off the shelf and gives
 /// it back to the item. As with locking, only the player's own weapon
 /// says so in the log.
-pub fn vent_heat(mut commands: Commands, mut ends: MessageReader<TurnEnd>, mut heats: Query<(Entity, &mut Heat, Option<&Stowed>)>, mut said: HeatWords) {
+pub fn vent_heat(mut commands: Commands, mut ends: MessageReader<TurnEnd>, mut heats: Query<(Entity, &mut Heat, Option<&BenchedAttack>)>, mut said: HeatWords) {
     for _ in ends.read() {
         for (entity, mut heat, stowed) in &mut heats {
             if !heat.turn_end() {
                 continue;
             }
             match stowed {
-                Some(Stowed::Melee(attack)) => {
-                    commands.entity(entity).remove::<Stowed>().insert(*attack);
+                Some(BenchedAttack::Melee(attack)) => {
+                    commands.entity(entity).remove::<BenchedAttack>().insert(*attack);
                 }
-                Some(Stowed::Ranged(attack)) => {
-                    commands.entity(entity).remove::<Stowed>().insert(*attack);
+                Some(BenchedAttack::Ranged(attack)) => {
+                    commands.entity(entity).remove::<BenchedAttack>().insert(*attack);
                 }
                 None => {}
             }
@@ -364,10 +364,10 @@ mod tests {
         use bevy::ecs::system::RunSystemOnce;
 
         let mut app = crate::testing::headless(RunSeed(1));
-        let item = app.world_mut().spawn((Dry, Stowed::Ranged(RangedAttack::new(atglyph::primitives::Id::from_raw(0), Default::default(), 6)))).id();
+        let item = app.world_mut().spawn((Dry, BenchedAttack::Ranged(RangedAttack::new(atglyph::primitives::Id::from_raw(0), Default::default(), 6)))).id();
         app.world_mut().write_message(TurnEnd { turn: 1 });
         app.world_mut().run_system_once(vent_heat).unwrap();
         assert!(app.world().get::<RangedAttack>(item).is_none(), "still dry: vent_heat has nothing here to vent");
-        assert!(app.world().get::<Stowed>(item).is_some(), "still stowed");
+        assert!(app.world().get::<BenchedAttack>(item).is_some(), "still stowed");
     }
 }

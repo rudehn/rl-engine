@@ -77,7 +77,7 @@ fn ids(world: &World) -> Vec<(&'static str, ComponentId)> {
         ("Inventory", c.component_id::<Inventory>()),
         ("Position", c.component_id::<Position>()),
         ("RangedAttack", c.component_id::<RangedAttack>()),
-        ("Stowed", c.component_id::<atglyph::ecs::Stowed>()),
+        ("BenchedAttack", c.component_id::<atglyph::ecs::BenchedAttack>()),
         ("DarkSight", c.component_id::<DarkSight>()),
         ("Jammed", c.component_id::<crate::droids::Jammed>()),
         // What props, traps and the lines a pass leaves brought in.

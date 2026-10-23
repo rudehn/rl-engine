@@ -237,7 +237,7 @@ type Arms = (
     Option<&'static Resists>,
     Option<&'static MeleeAttack>,
     Option<&'static RangedAttack>,
-    Option<&'static Strikes>,
+    Option<&'static BonusDamage>,
     Option<&'static Bestows>,
 );
 /// What an item does at its moments, what a use costs it, its clock,
@@ -245,7 +245,7 @@ type Arms = (
 type Does = (
     Option<&'static Triggers>,
     Option<&'static Consumable>,
-    Option<&'static atglyph_bevy::Pulse>,
+    Option<&'static atglyph_bevy::WornTimer>,
     Has<atglyph_bevy::Attuned>,
     Option<&'static atglyph_bevy::EffectBonus>,
 );
@@ -255,7 +255,7 @@ type Marks = (Has<atglyph_bevy::Unknown>, Has<atglyph_bevy::Stuck>);
 /// How a trigger's lines are introduced on a bag's row: by what the player
 /// does to set it off, in the engine's own moments, and by the moment's
 /// name for one a game registered. A pulse says how often it comes round.
-fn lead_in(moment: TriggerKindId, moments: Option<&TriggerKinds>, pulse: Option<&atglyph_bevy::Pulse>) -> String {
+fn lead_in(moment: TriggerKindId, moments: Option<&TriggerKinds>, pulse: Option<&atglyph_bevy::WornTimer>) -> String {
     match moment {
         m if m == TriggerKinds::USE => "use".to_string(),
         // Not "thrown": the row already says how far it flies, and the
@@ -290,7 +290,7 @@ fn describe_uses(
     triggers: &Triggers,
     registries: &Registries,
     moments: Option<&TriggerKinds>,
-    pulse: Option<&atglyph_bevy::Pulse>,
+    pulse: Option<&atglyph_bevy::WornTimer>,
     bonus: EffectBonus,
 ) -> Vec<String> {
     let lines_of = |trigger: &atglyph_bevy::Trigger| -> Vec<String> {
@@ -457,7 +457,7 @@ mod tests {
                 Name::new("a blade"),
                 Wearable(EquipShape::in_slot(hand)),
                 MeleeAttack::new(kind, DiceRoll::new(1, 6)),
-                Strikes(vec![(kind, DiceRoll::flat(1))]),
+                BonusDamage(vec![(kind, DiceRoll::flat(1))]),
                 Bestows(vec![(might, Op::Add(2))]),
             ))
             .id();
@@ -527,14 +527,14 @@ mod tests {
     /// round.
     #[test]
     fn a_pulse_is_introduced_by_how_often_it_comes_round() {
-        assert_eq!(lead_in(TriggerKinds::PULSE, None, Some(&atglyph_bevy::Pulse::every(800))), "every 8 turns worn");
+        assert_eq!(lead_in(TriggerKinds::PULSE, None, Some(&atglyph_bevy::WornTimer::every(800))), "every 8 turns worn");
         assert_eq!(
-            lead_in(TriggerKinds::PULSE, None, Some(&atglyph_bevy::Pulse::every(750))),
+            lead_in(TriggerKinds::PULSE, None, Some(&atglyph_bevy::WornTimer::every(750))),
             "every 8 turns worn",
             "a part turn rounds up, never promising early"
         );
-        assert_eq!(lead_in(TriggerKinds::PULSE, None, Some(&atglyph_bevy::Pulse::every(100))), "every turn worn", "one turn is no count at all");
-        assert_eq!(lead_in(TriggerKinds::PULSE, None, Some(&atglyph_bevy::Pulse::every(50))), "every turn worn", "nor is less than one");
+        assert_eq!(lead_in(TriggerKinds::PULSE, None, Some(&atglyph_bevy::WornTimer::every(100))), "every turn worn", "one turn is no count at all");
+        assert_eq!(lead_in(TriggerKinds::PULSE, None, Some(&atglyph_bevy::WornTimer::every(50))), "every turn worn", "nor is less than one");
     }
 
     /// A row's effects are described with its item's own `EffectBonus`

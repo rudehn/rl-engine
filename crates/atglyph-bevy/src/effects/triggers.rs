@@ -61,7 +61,7 @@ impl TriggerKinds {
     /// A prop was broken.
     pub(crate) const DESTROYED: TriggerKindId = TriggerKindId::from_raw(5);
     /// A worn thing's own clock came round: see
-    /// [`Pulse`](crate::items::Pulse).
+    /// [`WornTimer`](crate::items::WornTimer).
     pub const PULSE: TriggerKindId = TriggerKindId::from_raw(6);
     /// An attack landed on an actor: reported on the one it landed on, as
     /// [`HIT`](Self::HIT) is on what struck it.
@@ -280,7 +280,7 @@ impl Triggers {
     }
 
     /// The first pulse trigger's period, for a game that builds a
-    /// [`Pulse`](crate::items::Pulse) from its carrier's own triggers rather
+    /// [`WornTimer`](crate::items::WornTimer) from its carrier's own triggers rather
     /// than keeping a second copy of the number. `None` when the carrier has
     /// no pulse trigger at all.
     pub(crate) fn pulse_every(&self) -> Option<u32> {

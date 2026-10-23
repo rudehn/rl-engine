@@ -26,7 +26,7 @@
 //! `gear::spawn_item`, which this pick does not touch. `heat::vent_heat`
 //! and the engine's own `sync_ammo` only ever relocate a weapon's whole
 //! `RangedAttack` between it and
-//! [`Stowed::Ranged`] wholesale; neither
+//! [`BenchedAttack::Ranged`] wholesale; neither
 //! reads or rewrites the number inside, so the bonus rides along through a
 //! lock or a dry spell for free.
 
@@ -122,7 +122,7 @@ pub fn apply(upgrade: Upgrade, player: Entity, world: &mut World) {
 }
 
 /// Raises `item`'s ranged reach by one tile, wherever its attack currently
-/// lives (worn, or [`Stowed::Ranged`] while locked or dry), and tags it
+/// lives (worn, or [`BenchedAttack::Ranged`] while locked or dry), and tags it
 /// [`Reached`]. Does nothing to an item already tagged, or one with no
 /// ranged attack to raise at all.
 fn raise(world: &mut World, item: Entity) {
@@ -132,13 +132,13 @@ fn raise(world: &mut World, item: Entity) {
     let raised = if let Some(mut attack) = world.get_mut::<RangedAttack>(item) {
         attack.range += 1;
         true
-    } else if let Some(mut stowed) = world.get_mut::<Stowed>(item) {
+    } else if let Some(mut stowed) = world.get_mut::<BenchedAttack>(item) {
         match &mut *stowed {
-            Stowed::Ranged(attack) => {
+            BenchedAttack::Ranged(attack) => {
                 attack.range += 1;
                 true
             }
-            Stowed::Melee(_) => false,
+            BenchedAttack::Melee(_) => false,
         }
     } else {
         false
@@ -158,7 +158,7 @@ fn raise(world: &mut World, item: Entity) {
 /// than share it with [`apply`]'s `World`-based version.
 ///
 /// Ordered after `heat`'s and `ammo`'s own `TurnSet::React` systems, which
-/// move a weapon's `RangedAttack` in and out of [`Stowed`] by command, a
+/// move a weapon's `RangedAttack` in and out of [`BenchedAttack`] by command, a
 /// copy of the attack taken as the command is written. Run before those
 /// commands apply, a raise would land on the copy being replaced and be
 /// lost with it, while [`Reached`] still said it was given: equipping an
@@ -170,7 +170,7 @@ pub fn react_uplink(
     uplinked: Query<(), With<Uplinked>>,
     reached: Query<(), With<Reached>>,
     mut rangeds: Query<&mut RangedAttack>,
-    mut stoweds: Query<&mut Stowed>,
+    mut stoweds: Query<&mut BenchedAttack>,
 ) {
     for ev in events.read() {
         match *ev {
@@ -182,11 +182,11 @@ pub fn react_uplink(
                     }
                     Err(_) => match stoweds.get_mut(item) {
                         Ok(mut stowed) => match &mut *stowed {
-                            Stowed::Ranged(attack) => {
+                            BenchedAttack::Ranged(attack) => {
                                 attack.range += 1;
                                 true
                             }
-                            Stowed::Melee(_) => false,
+                            BenchedAttack::Melee(_) => false,
                         },
                         Err(_) => false,
                     },
@@ -200,7 +200,7 @@ pub fn react_uplink(
                     Ok(mut attack) => attack.range -= 1,
                     Err(_) => {
                         if let Ok(mut stowed) = stoweds.get_mut(item)
-                            && let Stowed::Ranged(attack) = &mut *stowed
+                            && let BenchedAttack::Ranged(attack) = &mut *stowed
                         {
                             attack.range -= 1;
                         }
@@ -384,7 +384,7 @@ mod tests {
         crate::testing::fire_at_a_target(&mut app, player, 7);
         assert!(app.world().get::<RangedAttack>(first).is_none(), "locked: stowed");
         crate::testing::pick(&mut app, player, Upgrade::Uplink);
-        let Stowed::Ranged(attack) = app.world().get::<Stowed>(first).unwrap() else { panic!("still stowed as ranged") };
+        let BenchedAttack::Ranged(attack) = app.world().get::<BenchedAttack>(first).unwrap() else { panic!("still stowed as ranged") };
         assert_eq!(attack.range, 9, "raised while stowed");
         crate::testing::pass_turns(&mut app, 6);
         assert_eq!(app.world().get::<RangedAttack>(first).unwrap().range, 9, "cooled off with its extra reach");
@@ -396,7 +396,7 @@ mod tests {
         let (player, pistol) = crate::testing::slug_pistol_with(&mut app, 0);
         assert!(app.world().get::<RangedAttack>(pistol).is_none(), "dry from the start");
         crate::testing::pick(&mut app, player, Upgrade::Uplink);
-        let Stowed::Ranged(attack) = app.world().get::<Stowed>(pistol).unwrap() else { panic!("still stowed as ranged") };
+        let BenchedAttack::Ranged(attack) = app.world().get::<BenchedAttack>(pistol).unwrap() else { panic!("still stowed as ranged") };
         assert_eq!(attack.range, 10, "raised while dry");
         crate::testing::give_slugs(&mut app, player, 3);
         app.update();

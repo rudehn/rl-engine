@@ -8,7 +8,7 @@
 //! fact that actually decides it, the wielder's bag right now, so no way
 //! of changing that bag can leave a weapon's state stale. Going dry is the
 //! same shape as a worn item running hot or otherwise losing its attack:
-//! the attack comes off the item and is put by as [`Stowed`], so
+//! the attack comes off the item and is put by as [`BenchedAttack`], so
 //! [`Loadout`](crate::combat::Loadout) falls through to the next worn
 //! item exactly as it does for any other benched weapon, with no knowledge
 //! of ammunition at all; [`Loadout::dry`](crate::combat::Loadout::dry) is
@@ -35,7 +35,7 @@
 use atglyph_rules::TagId;
 use bevy::prelude::*;
 
-use crate::combat::{RangedAttack, Stowed};
+use crate::combat::{BenchedAttack, RangedAttack};
 use crate::items::{Inventory, Stack, Tagged};
 use crate::plugin::{Turn, TurnSet};
 
@@ -54,10 +54,10 @@ pub struct Ammo {
 }
 
 /// An ammunition-fed weapon `sync_ammo` most recently found nothing to
-/// feed it: its [`RangedAttack`] is off, stowed in [`Stowed`], and stays
+/// feed it: its [`RangedAttack`] is off, stowed in [`BenchedAttack`], and stays
 /// that way until the same check finds its wielder carrying the tag again.
 ///
-/// A marker rather than folded into [`Stowed`] itself, since a weapon
+/// A marker rather than folded into [`BenchedAttack`] itself, since a weapon
 /// stowed for want of ammunition and one a game stows for a reason of its
 /// own share that one holder and need telling apart: a game's own system
 /// for its own reason only ever queries what names its own cause, and
@@ -111,7 +111,7 @@ pub struct AmmoWorld<'w, 's> {
     ammos: Query<'w, 's, &'static Ammo>,
     dry: Query<'w, 's, (), With<Dry>>,
     rangeds: Query<'w, 's, &'static RangedAttack>,
-    stowed: Query<'w, 's, &'static Stowed>,
+    stowed: Query<'w, 's, &'static BenchedAttack>,
     inventories: Query<'w, 's, &'static mut Inventory>,
     tagged: Query<'w, 's, &'static Tagged>,
     stacks: Query<'w, 's, &'static mut Stack>,
@@ -179,11 +179,11 @@ pub(crate) fn sync_ammo(mut commands: Commands, world: AmmoWorld, mut changed: M
             let is_dry = world.dry.get(item).is_ok();
             if !has_ammo && !is_dry {
                 let Ok(attack) = world.rangeds.get(item) else { continue };
-                commands.entity(item).remove::<RangedAttack>().insert(Stowed::Ranged(*attack)).insert(Dry);
+                commands.entity(item).remove::<RangedAttack>().insert(BenchedAttack::Ranged(*attack)).insert(Dry);
                 changed.write(AmmoChanged { item, dry: true });
             } else if has_ammo && is_dry {
-                let Ok(Stowed::Ranged(attack)) = world.stowed.get(item) else { continue };
-                commands.entity(item).remove::<Stowed>().remove::<Dry>().insert(*attack);
+                let Ok(BenchedAttack::Ranged(attack)) = world.stowed.get(item) else { continue };
+                commands.entity(item).remove::<BenchedAttack>().remove::<Dry>().insert(*attack);
                 changed.write(AmmoChanged { item, dry: false });
             }
         }

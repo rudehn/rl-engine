@@ -548,7 +548,7 @@ pub struct NarratedEvents<'w, 's> {
 
 /// Items that strike or shoot when wielded, which are wielded rather than
 /// worn.
-type Weapons<'w, 's> = Query<'w, 's, (), (With<Item>, Or<(With<MeleeAttack>, With<RangedAttack>)>)>;
+type Wielded<'w, 's> = Query<'w, 's, (), (With<Item>, Or<(With<MeleeAttack>, With<RangedAttack>)>)>;
 
 /// What the collector reads about the world to fill a row.
 #[derive(bevy::ecs::system::SystemParam)]
@@ -567,7 +567,7 @@ pub(crate) struct Witness<'w, 's> {
     /// Where each remnant's moment happened, for a remnant that did
     /// something in its own name.
     remnants: Query<'w, 's, &'static atglyph_bevy::Remnant>,
-    weapons: Weapons<'w, 's>,
+    wieldable: Wielded<'w, 's>,
     holding: Query<'w, 's, (), With<MyTurn>>,
     props: Query<'w, 's, (), With<atglyph_bevy::Prop>>,
     /// What a thing does at its moments, to tell a use the engine landed
@@ -845,7 +845,7 @@ pub(crate) fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Narr
             }
             ItemEvent::Dropped { actor, item, .. } => (actor, item, if witness.is_you(actor) { Phrase::YouDrop } else { Phrase::Drops }),
             ItemEvent::Equipped { actor, item } => {
-                let wielded = witness.weapons.contains(item);
+                let wielded = witness.wieldable.contains(item);
                 let phrase = match (witness.is_you(actor), wielded) {
                     (true, true) => Phrase::YouWield,
                     (true, false) => Phrase::YouWear,
