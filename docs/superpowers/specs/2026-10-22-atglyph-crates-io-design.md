@@ -80,7 +80,7 @@ Three limits on the rename (Claude's calls):
 ### Paths through the facade
 
 `atglyph` re-exports each sub-crate under its short name, `atglyph::grid` rather than `atglyph::atglyph_grid` (Claude's call).
-Two short names would clash and take another plain word: `atglyph-core` is `atglyph::base`, since `core` is Rust's own crate, and `atglyph-bevy` is `atglyph::play`, the loops the engine runs, since `atglyph::bevy` is Bevy itself (Claude's call, while planning).
+Two short names would clash and take another plain word: `atglyph-core` is `atglyph::primitives`, since `core` is Rust's own crate, and `atglyph-bevy` is `atglyph::ecs`, since `atglyph::bevy` is Bevy itself (Nate's call).
 Games reach sub-crates through the facade about 760 times today as `rl_engine::rl_rules::...`, and these paths are public API every game and the `0.4.0` migration note carry, so they are settled once here.
 Short names are also what makes a later merge of two sub-crates invisible to games.
 

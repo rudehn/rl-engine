@@ -18,12 +18,12 @@ Then Bevy and `rand` are re-exported, each crate gets its publishing metadata an
   | Today | Crate | Directory | Facade path |
   |---|---|---|---|
   | `rl-engine` | `atglyph` | `crates/atglyph` | `atglyph` |
-  | `rl-core` | `atglyph-core` | `crates/atglyph-core` | `atglyph::base` |
+  | `rl-core` | `atglyph-core` | `crates/atglyph-core` | `atglyph::primitives` |
   | `rl-grid` | `atglyph-grid` | `crates/atglyph-grid` | `atglyph::grid` |
   | `rl-mapgen` | `atglyph-mapgen` | `crates/atglyph-mapgen` | `atglyph::mapgen` |
   | `rl-rules` | `atglyph-rules` | `crates/atglyph-rules` | `atglyph::rules` |
   | `rl-save` | `atglyph-save` | `crates/atglyph-save` | `atglyph::save` |
-  | `rl-bevy` | `atglyph-bevy` | `crates/atglyph-bevy` | `atglyph::play` |
+  | `rl-bevy` | `atglyph-bevy` | `crates/atglyph-bevy` | `atglyph::ecs` |
   | `rl-render` | `atglyph-render` | `crates/atglyph-render` | `atglyph::render` |
   | `rl-ui` | `atglyph-ui` | `crates/atglyph-ui` | `atglyph::ui` |
   | `rl-tty` | `atglyph-tty` | `crates/atglyph-tty` | `atglyph::tty` |
@@ -88,8 +88,8 @@ Everything else is `engine`, `examples/terminal` included, since it depends on t
 
 ```python
 def test_a_facade_path_takes_its_short_name(self):
-    self.assertEqual(rewrite("use rl_engine::rl_bevy::TurnSet;", facade_user=True), "use atglyph::play::TurnSet;")
-    self.assertEqual(rewrite("rl_engine::rl_core::Point", facade_user=False), "atglyph::base::Point")
+    self.assertEqual(rewrite("use rl_engine::rl_bevy::TurnSet;", facade_user=True), "use atglyph::ecs::TurnSet;")
+    self.assertEqual(rewrite("rl_engine::rl_core::Point", facade_user=False), "atglyph::primitives::Point")
 
 def test_a_bare_crate_path_in_a_game_goes_through_the_facade(self):
     self.assertEqual(rewrite("`rl_mapgen::Dress`", facade_user=True), "`atglyph::mapgen::Dress`")
@@ -148,7 +148,7 @@ Run: `python3 scripts/check-systems.py --current > "$TMPDIR/current-pages"` and 
 Run: `python3 scripts/rename-to-atglyph.py && python3 scripts/rename-to-atglyph.py --check && git status --short | wc -l`
 Expected: `--check` prints nothing and exits 0; several hundred paths changed.
 Add one line under `docs/PLAN.md`'s title by hand: "The engine was renamed `atglyph` at 0.4.0; this plan, written before, uses its old name."
-Read `crates/atglyph/src/lib.rs`: the sub-crates are `pub use atglyph_bevy as play;` and so on, and the prelude still globs each sub-crate's prelude.
+Read `crates/atglyph/src/lib.rs`: the sub-crates are `pub use atglyph_bevy as ecs;` and so on, and the prelude still globs each sub-crate's prelude.
 
 - [ ] **Step 7: Re-confirm the pages that were current**
 
@@ -176,7 +176,7 @@ CHANGELOG line: the engine is `atglyph`; `To change:` the dependency `rl-engine 
 
 ```bash
 git add -A
-git commit -m "the engine is atglyph: every crate, path, metadata key and environment variable renamed by scripts/rename-to-atglyph.py, re-runnable after a rebase, with the sub-crates under short facade names (atglyph::base, atglyph::play, atglyph::grid and the rest), history left as written, and every fingerprint unchanged"
+git commit -m "the engine is atglyph: every crate, path, metadata key and environment variable renamed by scripts/rename-to-atglyph.py, re-runnable after a rebase, with the sub-crates under short facade names (atglyph::primitives, atglyph::ecs, atglyph::grid and the rest), history left as written, and every fingerprint unchanged"
 ```
 
 On every later rebase onto `main` before merging: rebase, take `main`'s side of any conflict in a renamed file, run the script again, re-run Step 8.
