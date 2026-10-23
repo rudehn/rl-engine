@@ -1,18 +1,18 @@
 <!-- documents:
      plugins: PrefabPlugin
-     files: crates/rl-mapgen/src/prefab.rs
-            crates/rl-mapgen/src/dungeon.rs
-            crates/rl-rules/src/prefab.rs
-            crates/rl-rules/src/role.rs
-            crates/rl-rules/src/prop.rs
-            crates/rl-rules/src/content/table.rs
-            crates/rl-rules/src/ai/tactics.rs
-            crates/rl-bevy/src/prefabs.rs
-            crates/rl-bevy/src/places.rs
-            crates/rl-bevy/src/minds.rs
-            crates/rl-bevy/src/loot.rs
-            crates/rl-bevy/src/remains.rs
-            crates/rl-save/src/run.rs
+     files: crates/atglyph-mapgen/src/prefab.rs
+            crates/atglyph-mapgen/src/dungeon.rs
+            crates/atglyph-rules/src/prefab.rs
+            crates/atglyph-rules/src/role.rs
+            crates/atglyph-rules/src/prop.rs
+            crates/atglyph-rules/src/content/table.rs
+            crates/atglyph-rules/src/ai/tactics.rs
+            crates/atglyph-bevy/src/prefabs.rs
+            crates/atglyph-bevy/src/places.rs
+            crates/atglyph-bevy/src/minds.rs
+            crates/atglyph-bevy/src/loot.rs
+            crates/atglyph-bevy/src/remains.rs
+            crates/atglyph-save/src/run.rs
      fingerprint: 8d4e6b8f -->
 
 # Prefabs
@@ -31,13 +31,13 @@ Only a keyed piece has slots: the game's chain stamps what `Prefabs::piece` hand
 
 ## The model
 
-`rl_rules::prefab::load` reads one file into a `PrefabDef`: its `name`, which a chain asks for; its `ground`, painted under every slot and refused unless walkable whenever it is given; its rows; and a legend resolved to a tile or a `Slot` per glyph, one thing to a cell.
+`atglyph::rules::prefab::load` reads one file into a `PrefabDef`: its `name`, which a chain asks for; its `ground`, painted under every slot and refused unless walkable whenever it is given; its rows; and a legend resolved to a tile or a `Slot` per glyph, one thing to a cell.
 `Slot::Prop` is a prop by id, from `Prop("name")`.
 `Slot::Item` is a `ContentRoll`, the row a container's contents use: `Item(item: "name", count: ..)` is a fixed item, and `Item(tag: "tag", count: .., band: N)` is that many draws of the tag at the place's band plus `N`.
 `Slot::Monster` holds a `Pick` and an offset: `Pick::Kind` from `Monster(monster: "name")`, always that monster, or `Pick::Role` from `Monster(role: "role", band: N)`.
 `Slot::Mark`, from `Mark`, is a position left to the game.
 The loader resolves every tile, prop, tag, monster and role name and reports every mistake in the file at once; a fixed item's name is the one it leaves, since only the game's `ItemMaker` knows its items, and the plugin checks it when play begins.
-`rl_rules::role::load` reads a roles file, a map from a role's name to the monsters that fit it, into a `Registry` of `RoleDef`, refusing an empty role, an unknown monster and a member named twice.
+`atglyph::rules::role::load` reads a roles file, a map from a role's name to the monsters that fit it, into a `Registry` of `RoleDef`, refusing an empty role, an unknown monster and a member named twice.
 `role::draw` is the game's spawn table restricted to the role's members, with the rows' own weights, through `BandedTable::pick_where` at the band `role::band_for` answers with `BandedTable::band_where`: the band asked when a member applies there, else the deepest shallower band that has one, else the shallowest deeper.
 `prefab::coverage` runs every drawn slot against a game's `Sources`, its roles, spawn table, loot table and tags, at every band in a range; `Coverage::render` prints `✓`, `~N` for a fallback to band `N`, or `✗`, and `empties` lists the gaps for a test.
 `Prefabs` holds the loaded prefabs and roles behind one shared copy, so the game's place builder and the engine read the same files.
@@ -50,7 +50,7 @@ An item slot whose count rolls nought lays nothing, so a maker is never asked to
 A prop is spawned as any prop is, items are made through `ItemMaker` as `Provenance { found: Found::Placed, band }` at the slot's own band and laid on the cell, and a monster is made through `ActorMaker::make` and given `Post` on its cell.
 A `Mark`, and every spot of an unkeyed piece, is the game's, found among the place's spots by its glyph.
 `Post(Point)` is read by `KeepPost`, which walks a guard home when it has nothing better to do, waits when it stands beside its post and cannot step onto it, and passes for an actor with no post.
-`rl-save` saves the post with the actor, and it comes off the dead with `WasLiving`.
+`atglyph-save` saves the post with the actor, and it comes off the dead with `WasLiving`.
 
 ## Using it
 
@@ -132,6 +132,6 @@ Whether a role's members fight side by side is the game's too, since who fights 
 
 ## Where it lives
 
-`rl-rules` holds the file formats, the role draw and the coverage report, all tested with no `App` and no map: that every mistake in a file is reported together, that a role draw only ever returns a member of the role, and that a report names every slot that can draw nothing.
-`rl-mapgen` carries a piece's key through the stamp and knows nothing of slots, so a keyless piece stamps as it always has and it never learns what a monster is; `rl-rules` knows a monster only as the game's generic id, the `M` in `RoleDef<M>`.
-`rl-bevy` holds when, from which stream and what is skipped, the `Post` a placed monster keeps, `Prefabs::piece` handing a chain its keyed piece, and the check as play begins of what only the game's tables can answer, all over two traits a game implements on resources it already had; `rl-save` saves the post, the engine's record of where a guard belongs.
+`atglyph-rules` holds the file formats, the role draw and the coverage report, all tested with no `App` and no map: that every mistake in a file is reported together, that a role draw only ever returns a member of the role, and that a report names every slot that can draw nothing.
+`atglyph-mapgen` carries a piece's key through the stamp and knows nothing of slots, so a keyless piece stamps as it always has and it never learns what a monster is; `atglyph-rules` knows a monster only as the game's generic id, the `M` in `RoleDef<M>`.
+`atglyph-bevy` holds when, from which stream and what is skipped, the `Post` a placed monster keeps, `Prefabs::piece` handing a chain its keyed piece, and the check as play begins of what only the game's tables can answer, all over two traits a game implements on resources it already had; `atglyph-save` saves the post, the engine's record of where a guard belongs.

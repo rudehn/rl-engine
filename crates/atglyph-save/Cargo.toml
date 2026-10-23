@@ -1,0 +1,42 @@
+[package]
+name = "atglyph-save"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "atglyph tier 2: a save backend seam, a versioned schema policy, entity remapping, and the engine's own state captured and restored."
+homepage.workspace = true
+keywords = ["roguelike", "bevy", "save-game", "serialization", "persistence"]
+categories = ["game-development", "encoding"]
+
+[package.metadata.atglyph]
+# Read by scripts/check-tiers.sh: 0 core, 1 no Bevy, 2 the Bevy layer, 3 the facade and games.
+tier = 2
+
+[dependencies]
+atglyph-core.workspace = true
+atglyph-grid.workspace = true
+# The ids an ability's pools and cooldowns are keyed by, in the save.
+atglyph-rules.workspace = true
+atglyph-bevy.workspace = true
+bevy.workspace = true
+serde.workspace = true
+ron.workspace = true
+
+[dev-dependencies]
+atglyph-mapgen.workspace = true
+rand.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# `Storage` for the saves themselves; `Event` and `EventTarget` for the
+# unload bridge's listener, and `wasm-bindgen` for the closure it leaks.
+web-sys = { version = "0.3", features = ["Window", "Storage", "Event", "EventTarget"] }
+wasm-bindgen = "0.2"
+
+# Tests and benches link Bevy as one shared library, so each test binary links
+# in seconds rather than copying all of Bevy in. A dev-dependency never reaches
+# a game built on this crate, which links Bevy however it chooses; wasm has no
+# shared libraries.
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+bevy = { workspace = true, features = ["dynamic_linking"] }

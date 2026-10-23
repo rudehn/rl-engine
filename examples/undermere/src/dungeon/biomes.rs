@@ -20,9 +20,9 @@
 //! so most of what lights it: the Fungal Deeps' glowcaps, the Catacombs'
 //! candles, and nothing at all in the Spider Warrens, whose dark is the
 //! design's. [`district_dressings`] turns `dressings` into the weighted
-//! list `rl_mapgen::Dress` gives every area the pool's picks left bare.
+//! list `atglyph::mapgen::Dress` gives every area the pool's picks left bare.
 
-use rl_engine::rl_mapgen::DistrictDressings;
+use atglyph::mapgen::DistrictDressings;
 
 use super::*;
 use crate::bestiary::Bestiary;
@@ -49,7 +49,7 @@ pub(crate) struct RecipeWeight {
     pub(crate) lakes: Option<LakesDef>,
 }
 
-/// `rl_mapgen::Lakes`'s own fields, `tile` a name rather than a
+/// `atglyph::mapgen::Lakes`'s own fields, `tile` a name rather than a
 /// [`TileId`], and the bridges laid over what it lays.
 #[derive(Debug, Clone, serde::Deserialize)]
 pub(crate) struct LakesDef {
@@ -64,7 +64,7 @@ pub(crate) struct LakesDef {
     pub(crate) bridges: Option<BridgesDef>,
 }
 
-/// `rl_mapgen::Bridges`'s own fields, `tile` a name; what it crosses is
+/// `atglyph::mapgen::Bridges`'s own fields, `tile` a name; what it crosses is
 /// the lake's own tile.
 #[derive(Debug, Clone, serde::Deserialize)]
 pub(crate) struct BridgesDef {
@@ -499,22 +499,17 @@ pub(crate) fn check_favored(defs: &Registry<BiomeDef>, bestiary: &Bestiary) {
 /// since a pick that fits nowhere is only ever dropped. A landmark the
 /// throne's floor may draw must leave its stairs free, since that floor
 /// has no way down. What fits is
-/// [`misfit`](rl_engine::rl_rules::pool::misfit)'s, the same rule
-/// `rl_mapgen` lays by. Panics with every problem at once.
-pub(crate) fn check_pool(defs: &Registry<BiomeDef>, pool: &Pool, layout: &LayoutDef, pieces: &Registry<rl_engine::rl_rules::prefab::PrefabDef<MonsterDef>>) {
+/// [`misfit`](atglyph::rules::pool::misfit)'s, the same rule
+/// `atglyph::mapgen` lays by. Panics with every problem at once.
+pub(crate) fn check_pool(defs: &Registry<BiomeDef>, pool: &Pool, layout: &LayoutDef, pieces: &Registry<atglyph::rules::prefab::PrefabDef<MonsterDef>>) {
     let errors = pool_problems(defs, pool, layout, pieces);
     assert!(errors.is_empty(), "assets/pool.ron: {errors:#?}");
 }
 
 /// [`check_pool`]'s problems, each naming the entry, for a test to read.
-fn pool_problems(
-    defs: &Registry<BiomeDef>,
-    pool: &Pool,
-    layout: &LayoutDef,
-    pieces: &Registry<rl_engine::rl_rules::prefab::PrefabDef<MonsterDef>>,
-) -> Vec<String> {
-    use rl_engine::rl_mapgen::dungeon::Stairs;
-    use rl_engine::rl_rules::pool::{Placed, misfit};
+fn pool_problems(defs: &Registry<BiomeDef>, pool: &Pool, layout: &LayoutDef, pieces: &Registry<atglyph::rules::prefab::PrefabDef<MonsterDef>>) -> Vec<String> {
+    use atglyph::mapgen::dungeon::Stairs;
+    use atglyph::rules::pool::{Placed, misfit};
     let mut errors = Vec::new();
     for entry in pool.entries.iter().filter(|e| e.weight > 0) {
         // Every floor and biome it may be drawn for, and whether its kind
@@ -570,28 +565,28 @@ fn pool_problems(
 /// the biome's window no landmark fits, would leave a floor of the theme
 /// grown without it with nothing saying so.
 fn landmark_problems(defs: &Registry<BiomeDef>, pool: &Pool) -> Vec<String> {
-    use rl_engine::rl_rules::pool::Placed;
-    let seeded: Vec<&rl_engine::rl_rules::pool::Entry> = pool.entries.iter().filter(|e| e.weight > 0 && matches!(e.placed, Placed::Seeded { .. })).collect();
+    use atglyph::rules::pool::Placed;
+    let seeded: Vec<&atglyph::rules::pool::Entry> = pool.entries.iter().filter(|e| e.weight > 0 && matches!(e.placed, Placed::Seeded { .. })).collect();
     // The floors each landmark may be drawn on, over every biome it fits.
-    let drawn_on = |entry: &rl_engine::rl_rules::pool::Entry| -> u32 {
+    let drawn_on = |entry: &atglyph::rules::pool::Entry| -> u32 {
         let given = |floor: u32| pool.budget(entry.kind, floor as i32).is_some_and(|b| b.count.1 > 0);
         (1..FLOORS).filter(|f| given(*f) && band(defs, *f).iter().any(|d| entry.fits(*f as i32, std::slice::from_ref(&d.name)))).count() as u32
     };
     let mut errors = Vec::new();
     for (_, def) in defs.iter().filter(|(_, d)| d.floors.0 < FLOORS) {
         let window = def.floors.0..=def.floors.1;
-        let fitting = |floor: u32| -> Vec<&rl_engine::rl_rules::pool::Entry> {
-            let given = |e: &&&rl_engine::rl_rules::pool::Entry| pool.budget(e.kind, floor as i32).is_some_and(|b| b.count.0 > 0 && b.required);
+        let fitting = |floor: u32| -> Vec<&atglyph::rules::pool::Entry> {
+            let given = |e: &&&atglyph::rules::pool::Entry| pool.budget(e.kind, floor as i32).is_some_and(|b| b.count.0 > 0 && b.required);
             seeded.iter().filter(given).filter(|e| e.fits(floor as i32, std::slice::from_ref(&def.name))).copied().collect()
         };
-        let ours: Vec<&rl_engine::rl_rules::pool::Entry> = window.clone().flat_map(fitting).collect();
+        let ours: Vec<&atglyph::rules::pool::Entry> = window.clone().flat_map(fitting).collect();
         if ours.is_empty() {
             continue;
         }
         for floor in window.clone().filter(|f| fitting(*f).is_empty()) {
             errors.push(format!("{}: has a landmark on some of its floors and is promised none on floor {floor}", def.name));
         }
-        let ours: BTreeMap<&str, &rl_engine::rl_rules::pool::Entry> = ours.into_iter().map(|e| (e.name.as_str(), e)).collect();
+        let ours: BTreeMap<&str, &atglyph::rules::pool::Entry> = ours.into_iter().map(|e| (e.name.as_str(), e)).collect();
         let per_run: u32 = ours.values().map(|e| e.per_run).sum();
         let wanted = ours.values().map(|e| drawn_on(e)).max().unwrap_or(0);
         if per_run < wanted {
@@ -926,7 +921,7 @@ mod tests {
     /// that fails every attempt.
     #[test]
     fn an_entry_drawn_nowhere_and_a_required_piece_too_large_for_any_room_are_each_refused_by_name() {
-        use rl_engine::rl_rules::pool::Placed;
+        use atglyph::rules::pool::Placed;
         let (prefabs, mut pool, _) = crate::prefabs::load(&registry(), &layout());
         let nowhere = pool.entries.iter().position(|e| e.weight > 0).expect("an entry in play");
         pool.entries[nowhere].within = vec!["Drowned Throne".to_string()];

@@ -1,18 +1,18 @@
 <!-- documents:
      plugins: TitlePanel
-     files: crates/rl-ui/src/panel/title.rs
-            crates/rl-bevy/src/title.rs
-            crates/rl-bevy/src/plugin.rs
-            crates/rl-save/src/run.rs
-            crates/rl-save/src/unload.rs
-            crates/rl-ui/src/game_menu.rs
+     files: crates/atglyph-ui/src/panel/title.rs
+            crates/atglyph-bevy/src/title.rs
+            crates/atglyph-bevy/src/plugin.rs
+            crates/atglyph-save/src/run.rs
+            crates/atglyph-save/src/unload.rs
+            crates/atglyph-ui/src/game_menu.rs
      fingerprint: f8d6f414 -->
 
 # The title screen
 
 A title is the one screen before there is a world: the run is held back until the player picks Continue, New Game, Records, Settings or Exit.
 Every game with a title writes the same menu, and a second game would copy the first one's, so the menu is the engine's and the picture behind it is the game's.
-The menu knows nothing of storage: what the run's save slot holds, and the asking to continue it or forget it, are words in `rl-bevy` that the save crate answers, so the screen and the save never depend on each other.
+The menu knows nothing of storage: what the run's save slot holds, and the asking to continue it or forget it, are words in `atglyph-bevy` that the save crate answers, so the screen and the save never depend on each other.
 
 ## Turning it on
 
@@ -121,7 +121,7 @@ A headless test has no title unless it adds one, so its run begins at startup as
 
 ## Where it lives
 
-The words a title and a save share are plain data in `rl-bevy`, the one crate below both, which is what keeps `rl-ui` free of `rl-save`, the same split settings make.
-The hold and the door are `rl-bevy`'s because the run's life is: `begin_run` is the door the engine's own startup and its restarts go through, so a title is one more caller rather than a second way in.
+The words a title and a save share are plain data in `atglyph-bevy`, the one crate below both, which is what keeps `atglyph-ui` free of `atglyph-save`, the same split settings make.
+The hold and the door are `atglyph-bevy`'s because the run's life is: `begin_run` is the door the engine's own startup and its restarts go through, so a title is one more caller rather than a second way in.
 The menu is a presenter over state in a resource, so every row, the question and what each key does to them are tested by pressing keys at a headless app, with no window and no save behind it.
 Foundry's own title held all of this as some three hundred lines of menu over eight hundred of picture; the menu moved here, and the picture stayed with the game.

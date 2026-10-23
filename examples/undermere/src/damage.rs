@@ -9,12 +9,12 @@
 //! pipeline, after `SubtractArmor`, in the place the design names.
 //!
 //! Mereholt's peace is not a stage: the town's build marks it
-//! [`peaceful`](rl_engine::rl_bevy::PlaceBuild::peaceful), and the engine
+//! [`peaceful`](atglyph::ecs::PlaceBuild::peaceful), and the engine
 //! lands every hit on anyone standing in it as nothing, a blow, a shot, a
 //! tick of fire or of poison alike, after every stage here has answered.
 
-use rl_engine::prelude::*;
-use rl_engine::rl_rules::damage::{DamageKind, DamageStage, Defender, Hit, Resistances};
+use atglyph::prelude::*;
+use atglyph::rules::damage::{DamageKind, DamageStage, Defender, Hit, Resistances};
 
 /// Armor's floor against an armored kind: never more than half of the
 /// blow's own roll, rounded down, taken off by armor. A blow of 1 always
@@ -46,9 +46,9 @@ impl<A: Copy> DamageStage<A> for HalveArmor {
 
 #[cfg(test)]
 mod tests {
+    use atglyph::primitives::RunSeed;
+    use atglyph::rules::damage::{ApplyResistance, SubtractArmor, resolve};
     use bevy::prelude::App;
-    use rl_engine::rl_core::RunSeed;
-    use rl_engine::rl_rules::damage::{ApplyResistance, SubtractArmor, resolve};
 
     use super::*;
     use crate::dungeon::{TOWN, map_of};

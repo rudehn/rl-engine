@@ -28,9 +28,9 @@
 //! reads at every moment of the picture's motion. A glyph the face lacked
 //! would be drawn as an empty box in the night.
 
+use atglyph::primitives::{Point, Rect};
+use atglyph::render::{Cell, Terminal};
 use bevy::prelude::*;
-use rl_engine::rl_core::{Point, Rect};
-use rl_engine::rl_render::{Cell, Terminal};
 
 /// Where the engine's menu is drawn on a terminal `width` across: on the
 /// near water under the middle of the lake, which the picture leaves dark
@@ -828,7 +828,7 @@ mod art {
 
     /// The gate's doorway against the ring's middle column, where its
     /// glow is: between the two stones that hold the lintel.
-    pub const DOOR: rl_engine::rl_core::Rect = rl_engine::rl_core::Rect { x: -2, y: 17, width: 5, height: 8 };
+    pub const DOOR: atglyph::primitives::Rect = atglyph::primitives::Rect { x: -2, y: 17, width: 5, height: 8 };
 
     /// The ring as it is seen from Mereholt's shore: a ring of stones on
     /// the island seen from low across the water, so the far ones stand

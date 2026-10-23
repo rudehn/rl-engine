@@ -47,7 +47,7 @@ It knows a `MakeNoise`, a listener's `Hearing`, and what it last `Heard`.
 
 ## 2. The model
 
-### The pure half, in `rl-rules::ai::hearing` (tier 1)
+### The pure half, in `atglyph-rules::ai::hearing` (tier 1)
 
 ```rust
 /// How keenly a listener hears.
@@ -83,7 +83,7 @@ What a listener remembers is an `Awareness`, the type stealth already has.
 `Alert { at, stale_turns }` is exactly "heard something at this cell, this many turns ago", `alerted_to` is hearing it, and `lost(memory)` is forgetting it.
 A second type with the same two variants would be a second thing to keep true.
 
-### The Bevy half, in `rl-bevy::noise` (tier 2)
+### The Bevy half, in `atglyph-bevy::noise` (tier 2)
 
 ```rust
 /// A sound, made this turn.
@@ -227,7 +227,7 @@ The heist logs `NoiseHeard` for the player: a door, a landing, a shout, with a d
 ## 11. Phases
 
 - **A. The pure half.**
-  `HearingStats`, `carries`, `left_after` and `heard` in `rl-rules::ai::hearing`, with the tests of §12.
+  `HearingStats`, `carries`, `left_after` and `heard` in `atglyph-rules::ai::hearing`, with the tests of §12.
   Nothing behaves differently.
 - **B. The Bevy half.**
   `NoisePlugin`, `NoiseRules`, `MakeNoise`, `NoiseHeard`, `Sounds` and `add_sound`, `Hearing`, `Heard`, `TurnSet::Listen`, `resolve_noise`, aging and forgetting, and `Thinking::offer_trail` with stealth moved onto it.
@@ -240,13 +240,13 @@ The heist logs `NoiseHeard` for the player: a door, a landing, a shout, with a d
 
 ## 12. Tests
 
-Pure, in `rl-rules`:
+Pure, in `atglyph-rules`:
 
 - A wall carries nothing, however loud; a closed door carries at exactly `muffle` more than the same doorway open.
 - What is left never grows with distance.
 - A sound of loudness `n` over open ground reaches a threshold of zero at exactly `n` steps and not `n + 1`.
 
-Headless, in `rl-bevy`:
+Headless, in `atglyph-bevy`:
 
 - A listener hears a sound behind a door but not behind a wall.
 - A listener walks to a fight it cannot see, and forgets it once `memory` turns pass.

@@ -29,7 +29,7 @@ Every model reduces to that.
 A percent roll is 67 in 100.
 A d20 against a target number is 13 in 20.
 Two dice against each other are an exact count of outcomes.
-So a panel prints a chance and its reasons whatever the model is, and the resolver draws once whatever the model is; `rl-rules` proves the claim with a d20 model written in its tests.
+So a panel prints a chance and its reasons whatever the model is, and the resolver draws once whatever the model is; `atglyph-rules` proves the claim with a d20 model written in its tests.
 
 `Certain` is the default and answers `None`: nothing is rolled and nothing is drawn from `CombatRng`, so a game that never chose accuracy plays and replays exactly as it did.
 `Percent` is the model the engine ships: accuracy (100 without a stat) less evasion (0 without one), less a fixed number of points per tile past effective range, less a penalty for dim or dark light, clamped to 0..=100.
@@ -48,7 +48,7 @@ The one number on the weapon is `effective`, how far it reaches with no penalty,
 
 ## 4. Light bands
 
-`LightBand::of(intensity, threshold, bright)` is the one rule, in `rl-grid`, where `rl-rules` can read the same type.
+`LightBand::of(intensity, threshold, bright)` is the one rule, in `atglyph-grid`, where `atglyph-rules` can read the same type.
 Below `threshold` is `Dark` and unseen, from there to `bright` is `Dim`, and at or above `bright` is `Lit`.
 `bright` defaults to 64, which leaves a ring of one or two tiles of dim light at the edge of the lamps the example games carry.
 

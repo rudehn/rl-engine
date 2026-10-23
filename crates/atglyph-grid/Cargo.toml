@@ -1,0 +1,28 @@
+[package]
+name = "atglyph-grid"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "atglyph tier 1: tile registry, terrain, FOV, pathfinding, Dijkstra maps, spatial index. No Bevy."
+homepage.workspace = true
+keywords = ["roguelike", "fov", "pathfinding", "astar", "dijkstra"]
+categories = ["game-development", "algorithms"]
+
+[package.metadata.atglyph]
+# Read by scripts/check-tiers.sh: 0 core, 1 no Bevy, 2 the Bevy layer, 3 the facade and games.
+tier = 1
+
+[dependencies]
+atglyph-core.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+rand = { workspace = true, features = ["std", "std_rng"] }
+ron.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "grid"
+harness = false

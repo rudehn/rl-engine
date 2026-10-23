@@ -1,7 +1,7 @@
 //! What Foundry says when its own ammunition-fed weapon dries or reloads.
 //!
 //! The loop itself, what a shot spends, the tag searched for, the bag read
-//! fresh every pass, lives in the engine now (`rl_bevy::ammo`), lifted out
+//! fresh every pass, lives in the engine now (`atglyph::ecs::ammo`), lifted out
 //! of this game once a second game with a bow needed the same thing a
 //! commando's slug pistol already had. All that is left here is this
 //! game's own words for the moment it happens: [`narrate_ammo`] reacts to
@@ -9,9 +9,9 @@
 //! `heat`'s own pair says so in its own file for a weapon that locks or
 //! cools.
 
+use atglyph::ecs::{AmmoChanged, Equipped, Player};
+use atglyph::ui::{Tell, Tones};
 use bevy::prelude::*;
-use rl_engine::rl_bevy::{AmmoChanged, Equipped, Player};
-use rl_engine::rl_ui::{Tell, Tones};
 
 /// Tells the player when their own ammunition-fed weapon runs dry or is
 /// loaded again, the way `heat::heat_on_struck` and `heat::vent_heat` say
@@ -36,9 +36,9 @@ pub fn narrate_ammo(mut changed: MessageReader<AmmoChanged>, worn: Query<&Equipp
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_bevy::RangedAttack;
-    use rl_engine::rl_core::RunSeed;
-    use rl_engine::rl_ui::MessageLog;
+    use atglyph::ecs::RangedAttack;
+    use atglyph::primitives::RunSeed;
+    use atglyph::ui::MessageLog;
 
     use super::*;
 

@@ -1,0 +1,27 @@
+[package]
+name = "atglyph-tty"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "atglyph tier 2: a text terminal front end for Bevy - the glyph grid written to a terminal, locally or over SSH, and its keys read back."
+homepage.workspace = true
+keywords = ["roguelike", "bevy", "terminal", "tui", "gamedev"]
+categories = ["game-development", "command-line-interface"]
+
+[package.metadata.atglyph]
+# Read by scripts/check-tiers.sh: 0 core, 1 no Bevy, 2 the Bevy layer, 3 the facade and games.
+tier = 2
+
+[dependencies]
+bevy.workspace = true
+atglyph-render.workspace = true
+crossterm.workspace = true
+unicode-width.workspace = true
+
+# Tests link Bevy as one shared library, so each test binary links in seconds
+# rather than copying all of Bevy in. A dev-dependency never reaches a game
+# built on this crate, which links Bevy however it chooses.
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+bevy = { workspace = true, features = ["dynamic_linking"] }

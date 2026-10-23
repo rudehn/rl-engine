@@ -1,11 +1,11 @@
 //! What a deck scatters, and what a kill drops, for a test to arrange and
 //! then read back.
 
+use atglyph::ecs::prelude::*;
+use atglyph::primitives::{Point, RunSeed};
+use atglyph::rules::Hit;
 use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
-use rl_engine::rl_bevy::prelude::*;
-use rl_engine::rl_core::{Point, RunSeed};
-use rl_engine::rl_rules::Hit;
 
 /// Warps the player onto `deck`'s entry and lets the arrival, and
 /// whatever it seeds or scatters, resolve. Deck one needs nothing beyond
@@ -60,7 +60,7 @@ pub fn items_beside_marks(app: &mut App) -> (Vec<usize>, Vec<usize>) {
             .spots
             .iter()
             .filter(|s| s.tag == tag as u32)
-            .map(|s| positions.iter().filter(|p| rl_engine::rl_core::geometry::chebyshev(**p, s.at) == 1).count())
+            .map(|s| positions.iter().filter(|p| atglyph::primitives::geometry::chebyshev(**p, s.at) == 1).count())
             .collect()
     };
     (beside('A'), beside('L'))

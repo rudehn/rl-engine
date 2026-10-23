@@ -8,8 +8,8 @@
 //! made by the armory as a floor's own are, so a line in `items.ron` is
 //! held to what it does.
 
+use atglyph::prelude::*;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
 
 use crate::allies::{Ally, Fades};
 use crate::bestiary::Kind;
@@ -194,7 +194,7 @@ fn a_staff_of_blinking_reaches_exactly_as_far_as_its_aim_at_every_level() {
             forget_what_is_known(&mut app);
             let staff = carried(&mut app, me, "staff of blinking", level);
             let aimed = app.world().get::<Triggers>(staff).and_then(|t| t.0.iter().find_map(|t| t.targeting.as_ref())).map(|t| t.mode);
-            assert_eq!(aimed, Some(rl_engine::rl_grid::TargetMode::Bolt { range: 5 }), "level {level}: the cursor offers five cells");
+            assert_eq!(aimed, Some(atglyph::grid::TargetMode::Bolt { range: 5 }), "level {level}: the cursor offers five cells");
             zap(&mut app, me, staff, here.offset(x, y));
             assert_eq!(at(&app, me), here.offset(lands_x, lands_y), "level {level}, aimed at ({x}, {y}) {:#?}", said(&app));
         }
@@ -281,7 +281,7 @@ fn every_staff_and_wand_is_found_unknown_under_its_face_and_known_once_zapped_at
             false => use_thing(&mut app, me, thing),
         }
         assert!(app.world().resource::<Lore>().knows(name), "{name} is known once used: {:#?}", said(&app));
-        let line = format!("That was {}.", rl_engine::rl_core::noun::with_article(name));
+        let line = format!("That was {}.", atglyph::primitives::noun::with_article(name));
         assert!(said(&app).contains(&line), "{name}: {:#?}", said(&app));
     }
 }
@@ -409,7 +409,7 @@ fn the_games_own_effects_refuse_an_argument_they_do_not_name() {
     let kinds = crate::content::effect_kinds();
     let registries = crate::content::registries();
     let build = |kind: &str, args: &str| {
-        let args = rl_engine::rl_rules::ability::parse_args(args).expect("ron");
+        let args = atglyph::rules::ability::parse_args(args).expect("ron");
         kinds.build(kind, &args, &registries.names()).map(|_| ())
     };
     for kind in ["TeleportOther", "Beckon", "Polymorph", "Plenty", "Dominate"] {
@@ -469,7 +469,7 @@ fn every_ring_is_found_unknown_under_its_stone_and_known_once_put_on() {
         assert!(app.world().get::<Unknown>(ring).is_some(), "{name} reads as unknown");
         crate::testing::equip(&mut app, me, ring);
         assert!(app.world().resource::<Lore>().knows(name), "{name} is known once on: {:#?}", said(&app));
-        let line = format!("It is {}.", rl_engine::rl_core::noun::with_article(name));
+        let line = format!("It is {}.", atglyph::primitives::noun::with_article(name));
         assert!(said(&app).contains(&line), "{name}: {:#?}", said(&app));
     }
 }
@@ -707,7 +707,7 @@ fn a_body_raised_rises_awake_and_without_its_old_lifes_errands() {
     assert!(world.get::<Actor>(goblin).is_some(), "it rises");
     assert!(world.get::<Afflicted>(goblin).is_none_or(|a| !a.0.has(asleep)), "awake");
     assert!(world.get::<Leader>(goblin).is_none() && world.get::<crate::tricks::PatrolRoute>(goblin).is_none(), "its old errands forgotten");
-    assert!(world.get::<rl_engine::rl_bevy::Drops<crate::armory::ItemDef>>(goblin).is_none(), "and nothing left to drop");
+    assert!(world.get::<atglyph::ecs::Drops<crate::armory::ItemDef>>(goblin).is_none(), "and nothing left to drop");
 }
 
 /// The Abbess's Chalice heals fifteen and makes every drowned thing on

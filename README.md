@@ -1,11 +1,11 @@
-# rl-engine: a roguelike engine for Rust and Bevy
+# atglyph: a roguelike engine for Rust and Bevy
 
 [![CI](https://github.com/rudehn/rl-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/rudehn/rl-engine/actions/workflows/ci.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 [![Rust 1.88+](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org)
 [![Bevy 0.19](https://img.shields.io/badge/bevy-0.19-232326.svg)](https://bevyengine.org)
 
-**rl-engine** is an open source engine for turn-based, grid-based roguelike games, written in Rust on the Bevy game engine.
+**atglyph** is an open source engine for turn-based, grid-based roguelike games, written in Rust on the Bevy game engine.
 It gives you procedural dungeon and world generation, field of view, A* pathfinding, Dijkstra maps, monster AI, combat, items, quests and save games as small tested crates you depend on, not code you copy.
 The core algorithms have no Bevy dependency, so map generation, pathfinding and game rules run headless, test in milliseconds and build for WebAssembly.
 
@@ -51,14 +51,14 @@ The engine is split so you can take the rules without taking the loop.
 
 ### The toolkit
 
-`rl-core`, `rl-grid`, `rl-mapgen` and `rl-rules` contain no Bevy and build for the browser.
+`atglyph-core`, `atglyph-grid`, `atglyph-mapgen` and `atglyph-rules` contain no Bevy and build for the browser.
 They play the part bracket-lib plays: grids, field of view, light, pathfinding, chains of map generation passes, content registries from RON, and the rules a roguelike runs on, which are combat, statuses, charges and AI tactics.
 Each is a plain function a game calls from a loop it owns, and each is tested with no `App`.
-A few of them: `rl_rules::damage::{apply_hit, heal, mitigate}`, `rl_rules::faction::stance`, `rl_rules::arms::choose_reach`, `rl_rules::bump::resolve_bump`, `rl_rules::charges::spend`, `rl_rules::trade::quote`, `rl_rules::ai::awareness::observe`, `rl_grid::landing::landing`, `rl_grid::slide::slide` and `rl_core::turn::step_cost`.
+A few of them: `atglyph::rules::damage::{apply_hit, heal, mitigate}`, `atglyph::rules::faction::stance`, `atglyph::rules::arms::choose_reach`, `atglyph::rules::bump::resolve_bump`, `atglyph::rules::charges::spend`, `atglyph::rules::trade::quote`, `atglyph::rules::ai::awareness::observe`, `atglyph::grid::landing::landing`, `atglyph::grid::slide::slide` and `atglyph::primitives::turn::step_cost`.
 
 Depend on those four crates and Bevy is never compiled.
 
-`examples/terminal` is a walk through generated rooms in a terminal, built on `rl-core`, `rl-grid` and `rl-mapgen` alone, with `crossterm` for the keys and the screen.
+`examples/terminal` is a walk through generated rooms in a terminal, built on `atglyph-core`, `atglyph-grid` and `atglyph-mapgen` alone, with `crossterm` for the keys and the screen.
 Its `main.rs` only maps keys to steps, and the loop is the game's.
 
 ```sh
@@ -67,7 +67,7 @@ cargo run -p terminal   # arrows or hjklyubn to move, q, Esc or Ctrl-C to quit
 
 ### The framework
 
-`rl-bevy`, `rl-render`, `rl-ui` and `rl-save`, behind the `rl-engine` facade, own the loop: the turn order, the systems in a fixed sequence, the plugins, the panels and the saves.
+`atglyph-bevy`, `atglyph-render`, `atglyph-ui` and `atglyph-save`, behind the `atglyph` facade, own the loop: the turn order, the systems in a fixed sequence, the plugins, the panels and the saves.
 A game adds `RoguelikePlugins` and then the subsystems it wants by name.
 The tutorial, Undermere and Foundry are the worked examples.
 
@@ -106,7 +106,7 @@ The guide builds a small roguelike called Warren, nine steps that each add one t
 
 ```sh
 git clone https://github.com/rudehn/rl-engine
-cd rl-engine
+cd atglyph
 cargo run -p tutorial --bin step01_walking
 ```
 
@@ -114,12 +114,12 @@ Read it at [rudehn.github.io/rl-engine](https://rudehn.github.io/rl-engine/), or
 
 ## Add it to a project you already have
 
-rl-engine is not on crates.io yet, so depend on it from git.
-The `rl-engine` crate is the facade that re-exports every other crate, and `rl_engine::prelude::*` brings in what a game reaches for, alongside `bevy::prelude::*`.
+atglyph is not on crates.io yet, so depend on it from git.
+The `atglyph` crate is the facade that re-exports every other crate, and `atglyph::prelude::*` brings in what a game reaches for, alongside `bevy::prelude::*`.
 
 ```toml
 [dependencies]
-rl-engine = { git = "https://github.com/rudehn/rl-engine", tag = "v0.3.0" }
+atglyph = { git = "https://github.com/rudehn/rl-engine", tag = "v0.3.0" }
 bevy = "0.19"
 ```
 
@@ -128,7 +128,7 @@ Everything else is a plugin you name, so this is a game with combat and nothing 
 
 ```rust,no_run
 use bevy::prelude::*;
-use rl_engine::prelude::*;
+use atglyph::prelude::*;
 
 App::new()
     .add_plugins(RoguelikePlugins::new("My roguelike", 80, 40))
@@ -139,21 +139,21 @@ App::new()
 That compiles and opens a window, and then play refuses to begin until the game supplies a map, tile looks and a player, which the engine says at startup by listing everything missing at once.
 The template is the smallest version that actually plays, and [the guide's first chapter](docs/guide/src/01-a-map-and-walking.md) writes it out line by line.
 
-A tool or a server that needs no window can depend on a single tier-1 crate, such as `rl-grid` for field of view and pathfinding, and never compile Bevy.
+A tool or a server that needs no window can depend on a single tier-1 crate, such as `atglyph-grid` for field of view and pathfinding, and never compile Bevy.
 
 ```toml
 [dependencies]
-rl-grid = { git = "https://github.com/rudehn/rl-engine", tag = "v0.3.0" }
+atglyph-grid = { git = "https://github.com/rudehn/rl-engine", tag = "v0.3.0" }
 ```
 
 This builds a dungeon floor from a seed, computes what is visible from the start, and finds the path to the exit, all without Bevy.
 
 ```rust
-use rl_engine::rl_core::RunSeed;
-use rl_engine::rl_grid::{AStar, BitGrid, PathRules, TileRegistry, fov};
-use rl_engine::rl_mapgen::dungeon::{ExitPoint, FarthestExit, RandomStart, Rooms};
-use rl_engine::rl_mapgen::passes::StartPoint;
-use rl_engine::rl_mapgen::{BaseContext, Chain};
+use atglyph::primitives::RunSeed;
+use atglyph::grid::{AStar, BitGrid, PathRules, TileRegistry, fov};
+use atglyph::mapgen::dungeon::{ExitPoint, FarthestExit, RandomStart, Rooms};
+use atglyph::mapgen::passes::StartPoint;
+use atglyph::mapgen::{BaseContext, Chain};
 
 // A 60 by 40 map of solid wall, with the standard wall and floor tiles.
 let tiles = TileRegistry::standard();
@@ -200,21 +200,21 @@ Each crate declares its tier in its `Cargo.toml`, and `scripts/check-tiers.sh` f
 
 | Tier | Crate | What it holds |
 |---|---|---|
-| 0 | `rl-core` | grid, geometry, seeds and streams, dice, typed ids, the turn queue |
-| 1 | `rl-grid` | tile registry, terrain, FOV, A*, Dijkstra maps, spatial index, regions |
-| 1 | `rl-mapgen` | the pass pipeline and the builders that run in it |
-| 1 | `rl-rules` | registries and banded tables from RON, stats, damage, statuses, factions, equipment, authored item parts, monster AI, facts and quests, balance scoring |
-| 2 | `rl-bevy` | plugins, components, system sets, the turn loop, items, places |
-| 2 | `rl-render` | the glyph grid renderer and the world view |
-| 2 | `rl-save` | save backends, the versioned schema policy, entity remapping, the engine's state as a save |
-| 2 | `rl-ui` | theme tokens, widgets, key hints, the log view |
-| 3 | `rl-engine` | facade and prelude |
+| 0 | `atglyph-core` | grid, geometry, seeds and streams, dice, typed ids, the turn queue |
+| 1 | `atglyph-grid` | tile registry, terrain, FOV, A*, Dijkstra maps, spatial index, regions |
+| 1 | `atglyph-mapgen` | the pass pipeline and the builders that run in it |
+| 1 | `atglyph-rules` | registries and banded tables from RON, stats, damage, statuses, factions, equipment, authored item parts, monster AI, facts and quests, balance scoring |
+| 2 | `atglyph-bevy` | plugins, components, system sets, the turn loop, items, places |
+| 2 | `atglyph-render` | the glyph grid renderer and the world view |
+| 2 | `atglyph-save` | save backends, the versioned schema policy, entity remapping, the engine's state as a save |
+| 2 | `atglyph-ui` | theme tokens, widgets, key hints, the log view |
+| 3 | `atglyph` | facade and prelude |
 
 ## Example games
 
 ### Terminal, a walk through generated rooms
 
-`examples/terminal` is the toolkit used alone: a walk through generated rooms on `rl-core`, `rl-grid` and `rl-mapgen`, with `crossterm` for the keys and a `main.rs` that only maps keys to steps.
+`examples/terminal` is the toolkit used alone: a walk through generated rooms on `atglyph-core`, `atglyph-grid` and `atglyph-mapgen`, with `crossterm` for the keys and a `main.rs` that only maps keys to steps.
 Its tested functions are `terminal::{generate, step, look, render, direction_of}`.
 
 ```sh
@@ -252,18 +252,18 @@ Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `g` or `,` to pick 
 
 ### Abilities in any genre
 
-Abilities being data that serves any genre is proved by a test, not a game: `crates/rl-bevy/tests/genres.rs` loads a fantasy caster, a pirate, a marine, a man-at-arms and a thief into one registry from five RON files that differ in nothing but their words, and builds all eighteen against one set of effects.
+Abilities being data that serves any genre is proved by a test, not a game: `crates/atglyph-bevy/tests/genres.rs` loads a fantasy caster, a pirate, a marine, a man-at-arms and a thief into one registry from five RON files that differ in nothing but their words, and builds all eighteen against one set of effects.
 
 ### Pictures of your own
 
 Any of the games photographs its own window when asked, after playing a script of keys through the real input:
 
 ```sh
-RL_CAPTURE=shot.png RL_CAPTURE_KEYS="L j*4 l*6 ." cargo run -p foundry -- --seed 7
+ATGLYPH_CAPTURE=shot.png ATGLYPH_CAPTURE_KEYS="L j*4 l*6 ." cargo run -p foundry -- --seed 7
 
 # Write a run down as it is played, and play it back.
-RL_RECORD=run.ron cargo run -p foundry -- --seed 7
-RL_REPLAY=run.ron cargo run -p foundry
+ATGLYPH_RECORD=run.ron cargo run -p foundry -- --seed 7
+ATGLYPH_REPLAY=run.ron cargo run -p foundry
 ```
 
 The window opens above the others without taking focus, and the screen must be unlocked; a frame that comes back black is refused rather than saved.
@@ -287,15 +287,15 @@ The window opens above the others without taking focus, and the screen must be u
 - [**docs/PLAN.md**](docs/PLAN.md) is the design: what was decided, why, and which milestone each piece lands in.
 - [**docs/TODO.md**](docs/TODO.md) is the work that has been found and not started.
 - [**docs/reviews/**](docs/reviews/) holds the code reviews of the three repos the engine was extracted from, with `path:line` citations for every claim in the plan.
-- `cargo doc --open -p rl-engine` builds the API reference; every public item is documented and every doc example runs as a test.
+- `cargo doc --open -p atglyph` builds the API reference; every public item is documented and every doc example runs as a test.
 
 ## Building and testing
 
 ```sh
-cargo test -p rl-core -p rl-grid      # tier 0 and 1, seconds
-cargo bench -p rl-grid                # FOV, A*, Dijkstra, regions
+cargo test -p atglyph-core -p atglyph-grid      # tier 0 and 1, seconds
+cargo bench -p atglyph-grid                # FOV, A*, Dijkstra, regions
 scripts/check-tiers.sh                # the tier boundaries
-scripts/check-tiers.sh --wasm         # tiers 0 and 1, and rl-save, build for WebAssembly
+scripts/check-tiers.sh --wasm         # tiers 0 and 1, and atglyph-save, build for WebAssembly
 scripts/check-guide.sh                # the guide's links into the code
 mdbook serve docs/guide               # read the guide at localhost:3000
 cargo test --workspace                # everything, builds Bevy
@@ -303,7 +303,7 @@ cargo test --workspace                # everything, builds Bevy
 
 ## Status
 
-rl-engine is pre-1.0 and its API still moves.
+atglyph is pre-1.0 and its API still moves.
 Two complete example games and the guide's own run on it, and CI checks formatting, clippy, tests, docs and the WebAssembly build of every tier-1 crate.
 
 ## License

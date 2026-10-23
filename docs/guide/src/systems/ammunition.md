@@ -1,9 +1,9 @@
 <!-- documents:
      plugins: AmmoPlugin
-     files: crates/rl-bevy/src/ammo.rs
-            crates/rl-bevy/src/combat.rs
-            crates/rl-bevy/src/items.rs
-            crates/rl-ui/src/view/gear.rs
+     files: crates/atglyph-bevy/src/ammo.rs
+            crates/atglyph-bevy/src/combat.rs
+            crates/atglyph-bevy/src/items.rs
+            crates/atglyph-ui/src/view/gear.rs
      fingerprint: 5569a737 -->
 
 # Ammunition
@@ -58,6 +58,6 @@ What a row says of a dry weapon is a facet rather than a field of `Row`, because
 
 ## Where it lives
 
-`rl-bevy` is tier 2 and holds the economy in its own module, beside combat rather than inside it, since a game of cutlasses adds `CombatPlugin` and never this.
+`atglyph-bevy` is tier 2 and holds the economy in its own module, beside combat rather than inside it, since a game of cutlasses adds `CombatPlugin` and never this.
 `Stowed` and `Loadout::dry` are combat's, so a weapon benched for heat and one benched for want of arrows fall through the same way, and the plugin's own tests prove that a bag emptied by any means dries its weapon, with a bag filled by hand and no turn queue at all.
-`rl-ui` reads `Ammo` off the gear view's own entities, since it depends on `rl-bevy` and not the other way round, and a game drawing its own rail from `GearView` reads the same facet.
+`atglyph-ui` reads `Ammo` off the gear view's own entities, since it depends on `atglyph-bevy` and not the other way round, and a game drawing its own rail from `GearView` reads the same facet.

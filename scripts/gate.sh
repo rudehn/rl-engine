@@ -33,7 +33,7 @@
 # one that touched only Undermere, and the per-test limits for any other set
 # (AGENTS.md, "Writing fast tests").
 #
-# RL_FULL_SEEDS=1 is passed through, for the generation tests' full range.
+# ATGLYPH_FULL_SEEDS=1 is passed through, for the generation tests' full range.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 

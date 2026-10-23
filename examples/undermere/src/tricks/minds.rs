@@ -139,7 +139,7 @@ pub fn steal(world: &mut World, thief: Entity, victim: Entity) -> bool {
 /// letting every other tactic choose the rest of the time: a vampire
 /// bat's `flitting`, erratic rather than a beeline to its prey.
 ///
-/// The same roll-then-step shape as [`rl_engine::rl_rules::ai::tactics::Wander`],
+/// The same roll-then-step shape as [`atglyph::rules::ai::tactics::Wander`],
 /// without its "wait, there is nothing better to do": this lets the next
 /// tactic, `Hunt` wherever a brain puts it, decide both when the roll
 /// fails and when every step is blocked.
@@ -288,8 +288,8 @@ impl Tactic<Entity> for Patrol {
 
 #[cfg(test)]
 mod tests {
+    use atglyph::primitives::Rect;
     use rand::SeedableRng;
-    use rl_engine::rl_core::Rect;
 
     use super::*;
 

@@ -21,9 +21,9 @@
 //! [`turn_rules`] names the speed to the turn loop, and the rest are
 //! Undermere's own to read.
 
+use atglyph::prelude::*;
+use atglyph::rules::faction::FactionDef;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_rules::faction::FactionDef;
 
 use crate::armory::Armory;
 use crate::bestiary::Bestiary;
@@ -305,7 +305,7 @@ pub fn registries() -> Registries {
         .unwrap(),
         ..Registries::default()
     };
-    registries.props = rl_engine::rl_rules::prop::load(PROPS_RON, &registries.names()).unwrap_or_else(|e| panic!("assets/props.ron: {e}"));
+    registries.props = atglyph::rules::prop::load(PROPS_RON, &registries.names()).unwrap_or_else(|e| panic!("assets/props.ron: {e}"));
     registries
 }
 
@@ -380,7 +380,7 @@ pub fn turn_rules(registries: &Registries) -> TurnRules {
 /// for a dim one: every floor is dim beyond the lantern, so a cost for dim
 /// light would be a cost on nearly every shot, and true dark is rare.
 pub fn hit_rules() -> HitRules {
-    HitRules(Box::new(rl_engine::rl_rules::accuracy::Percent::new(10, 0, 30)))
+    HitRules(Box::new(atglyph::rules::accuracy::Percent::new(10, 0, 30)))
 }
 
 /// The tag a vault's lock asks for in `assets/pool.ron`, written
@@ -413,7 +413,7 @@ pub fn tags() -> Registry<TagDef> {
 /// list is the engine's own and never one kept beside it.
 pub fn effect_kinds() -> EffectKinds {
     let mut app = App::new();
-    app.add_effect::<rl_engine::rl_bevy::Ignite>().add_effect::<rl_engine::rl_bevy::Emit>();
+    app.add_effect::<atglyph::ecs::Ignite>().add_effect::<atglyph::ecs::Emit>();
     add_game_effects(&mut app);
     std::mem::take(&mut app.world_mut().resource_mut::<EffectKinds>())
 }
@@ -437,7 +437,7 @@ pub fn effect_kinds() -> EffectKinds {
 /// taking the first's place.
 pub fn add_game_effects(app: &mut App) {
     use crate::effects::{bodies, charges, mending, minds, moving, senses};
-    use rl_engine::rl_bevy::{Cleanse, Harm, Inflict, Mend, Pull, Shove};
+    use atglyph::ecs::{Cleanse, Harm, Inflict, Mend, Pull, Shove};
     app.add_effect::<Harm>().add_effect::<Mend>().add_effect::<Inflict>().add_effect::<Cleanse>().add_effect::<Shove>().add_effect::<Pull>();
     app.add_effect::<crate::enchant::Enchanting>()
         .add_effect::<crate::enchant::RemoveCurse>()
@@ -534,7 +534,7 @@ impl Library {
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_rules::Relation;
+    use atglyph::rules::Relation;
 
     use super::*;
 
@@ -610,10 +610,10 @@ mod tests {
     /// what is named nowhere at all is content no run ever meets.
     #[test]
     fn nothing_in_the_content_is_orphaned() {
-        use rl_engine::rl_rules::prefab::Reached;
+        use atglyph::rules::prefab::Reached;
         let library = Library::load(&effect_kinds(), &Moments::default());
         let (registries, armory, bestiary) = (&library.registries, &library.armory, &library.bestiary);
-        let undermere = crate::dungeon::Undermere::new(rl_engine::rl_core::RunSeed(0));
+        let undermere = crate::dungeon::Undermere::new(atglyph::primitives::RunSeed(0));
         let prefabs = undermere.prefabs();
         let (pieces, dressings) = undermere.laid_files();
         let mut reached: Reached<crate::bestiary::MonsterDef> =
@@ -795,7 +795,7 @@ mod tests {
             ("well", true),
             ("forge", true),
             // The furniture blocks, by hand in Mereholt and at a density
-            // in the dressed rooms, which `rl_mapgen::Dress` keeps whole:
+            // in the dressed rooms, which `atglyph::mapgen::Dress` keeps whole:
             // nothing it lays cuts a room or shuts in a slot laid before.
             ("anvil", true),
             ("shelf", true),
@@ -1108,7 +1108,7 @@ mod tests {
     /// is too close to, by thirty from a floor's glyph colour or forty-five
     /// from its fill, are returned by name.
     fn blenders(tint: [f32; 3], only: &[&str], standing: &[&str]) -> Vec<String> {
-        use rl_engine::rl_core::RunSeed;
+        use atglyph::primitives::RunSeed;
         let undermere = crate::dungeon::Undermere::new(RunSeed(7));
         let looks = undermere.appearance();
         let rgb = |c: Color| {

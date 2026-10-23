@@ -10,8 +10,8 @@
 //! regeneration health back over time, by [`regenerate`], and awareness
 //! how easily what is hidden is spotted, by [`keep_keen`].
 
+use atglyph::prelude::*;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
 
 use crate::content::{FOOTFALL, QUIET, STEALTH};
 use crate::run::Adventurer;
@@ -161,9 +161,9 @@ pub fn keep_keen(mut commands: Commands, registries: Res<Registries>, adventurer
 
 #[cfg(test)]
 mod tests {
+    use atglyph::primitives::RunSeed;
+    use atglyph::rules::stats::Source;
     use bevy::ecs::system::RunSystemOnce;
-    use rl_engine::rl_core::RunSeed;
-    use rl_engine::rl_rules::stats::Source;
 
     use super::*;
     use crate::content::{LIGHT, MENDING};
@@ -259,7 +259,7 @@ mod tests {
             pass_turns(&mut app, 1);
             app.world_mut().entity_mut(me).insert((Health { current: 10, max: 100 }, Regrowth(0)));
             for span in spans {
-                rl_engine::testing::let_time_pass(&mut app, *span);
+                atglyph::testing::let_time_pass(&mut app, *span);
             }
             // The heal the last pass wrote lands on the frame after it.
             app.update();

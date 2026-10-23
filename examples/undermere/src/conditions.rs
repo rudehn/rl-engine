@@ -22,9 +22,9 @@ pub const SLEEPING: &str = "asleep";
 
 #[cfg(test)]
 mod tests {
+    use atglyph::prelude::*;
+    use atglyph::ui::view::Alert;
     use bevy::prelude::*;
-    use rl_engine::prelude::*;
-    use rl_engine::rl_ui::view::Alert;
 
     use super::*;
     use crate::content::PARALYSED;

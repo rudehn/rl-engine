@@ -1,21 +1,21 @@
 <!-- documents:
      plugins: AbilitiesPlugin, ThrowingPlugin
-     files: crates/rl-rules/src/ability.rs
-            crates/rl-grid/src/targeting.rs
-            crates/rl-rules/src/ai/snapshot.rs
-            crates/rl-rules/src/ai/tactics.rs
-            crates/rl-bevy/src/ability.rs
-            crates/rl-bevy/src/effects/mod.rs
-            crates/rl-bevy/src/effects/engine.rs
-            crates/rl-bevy/src/throwing.rs
-            crates/rl-bevy/src/cue.rs
-            crates/rl-bevy/src/items.rs
-            crates/rl-bevy/src/props.rs
-            crates/rl-bevy/src/fire.rs
-            crates/rl-bevy/src/gas.rs
-            crates/rl-bevy/src/noise.rs
-            crates/rl-ui/src/view/target.rs
-            crates/rl-save/src/engine.rs
+     files: crates/atglyph-rules/src/ability.rs
+            crates/atglyph-grid/src/targeting.rs
+            crates/atglyph-rules/src/ai/snapshot.rs
+            crates/atglyph-rules/src/ai/tactics.rs
+            crates/atglyph-bevy/src/ability.rs
+            crates/atglyph-bevy/src/effects/mod.rs
+            crates/atglyph-bevy/src/effects/engine.rs
+            crates/atglyph-bevy/src/throwing.rs
+            crates/atglyph-bevy/src/cue.rs
+            crates/atglyph-bevy/src/items.rs
+            crates/atglyph-bevy/src/props.rs
+            crates/atglyph-bevy/src/fire.rs
+            crates/atglyph-bevy/src/gas.rs
+            crates/atglyph-bevy/src/noise.rs
+            crates/atglyph-ui/src/view/target.rs
+            crates/atglyph-save/src/engine.rs
      fingerprint: 8d795e51 -->
 
 # Abilities
@@ -52,7 +52,7 @@ A cooldown is an absolute time on the turn queue's clock rather than a countdown
 `Use { ability, aim }` is an `Action` like any other, aimed at a cell because most shapes land on ground; one whose aim needs no cursor is aimed at the user's own feet.
 `resolve_abilities` lands the aim first and then gates on the union of what the user cannot do and what the aim refuses, so one refusal carries both; then it pays, sets the cooldown and hands the ability's `Effects` the `Landing` to run over, and reports `AbilityEvent::Used` or `Refused`.
 A refusal costs the player nothing and keeps the turn, and costs anyone else the turn, which is what stops a monster retrying forever what it cannot pay for.
-A `Ball` flies as a bolt and bursts where it lands with `rl_grid::burst`, which stops at walls and not at whoever stands in the way, and bursts on the near side of a wall it flew into.
+A `Ball` flies as a bolt and bursts where it lands with `atglyph::grid::burst`, which stops at walls and not at whoever stands in the way, and bursts on the near side of a wall it flew into.
 `Bystanders::land` is the one answer to where a use goes, handed an `Aimed`: who, a `Source`, a `Targeting`, from where and at what, which `Aimed::ability` builds for an ability and the effects subsystem builds for a thing's aimed use, so nothing past it can tell the two apart.
 A body carrying `Reflects` turns an aimed use or an ability back on whoever aimed it, one time in two by `ReflectRng`, a stream of its own: `Bystanders::reflect(landing, mode, map)`, called by `land` itself once an aim is no longer refused and never by the cursor's preview, spares the reflecting body and lands its share on the user instead, writing a `Reflected { by, onto, source }` for each one turned.
 Only its own share turns: the rest of a burst still lands where it was aimed, on whoever else it caught, and the ground it covers stays there; when the turned-back share leaves nobody standing where it was aimed, as a bolt at one body does, the whole use lands on its user instead, its cells the shape `mode` draws on the user's own cell, a bolt lighting the user's cell and a ball bursting round them, from wherever the projectile stopped.
@@ -132,10 +132,10 @@ What an ability was called on for is never asked; a use is an `AbilityEvent`, an
 
 ## Where it lives
 
-`rl-rules` is tier 1 and has no Bevy in it: `ability.rs` decides and never acts, answering whether a use is permitted over borrowed views of the user, so the whole gate is tested against a `Gates` and a `Purse` filled by hand with no `App` anywhere.
+`atglyph-rules` is tier 1 and has no Bevy in it: `ability.rs` decides and never acts, answering whether a use is permitted over borrowed views of the user, so the whole gate is tested against a `Gates` and a `Purse` filled by hand with no `App` anywhere.
 `Aim`'s five predicates live there too, which is what lets the resolver, the cursor's preview and the scoring in `tactics.rs` share one rule rather than drifting four ways apart.
-`rl-bevy` is tier 2 and owns everything that touches the world: `ability.rs` is the action, the resolver and the state a use spends, and the effects module is the seam every effect is registered through, `Effects`, and the ten the engine ships through that seam.
+`atglyph-bevy` is tier 2 and owns everything that touches the world: `ability.rs` is the action, the resolver and the state a use spends, and the effects module is the seam every effect is registered through, `Effects`, and the ten the engine ships through that seam.
 The seam sits there rather than in `ability.rs` because an ability is not the only thing that lands a list: what an ability, a prop and an item share is how a list is built, rolled and described, never when it lands or on whom, and that much was written three times before it was written once.
 The effects sit in a module of their own rather than each in the subsystem it asks, because `Harm` in `combat.rs` would make combat depend on abilities to implement a trait, and the dependency is meant to run the other way.
 `throwing.rs` is beside them rather than inside items or combat, for that same reason in two directions at once.
-`rl-ui` owns the aiming and the menu and `rl-save` the save kind, so nothing below either has to know they exist.
+`atglyph-ui` owns the aiming and the menu and `atglyph-save` the save kind, so nothing below either has to know they exist.

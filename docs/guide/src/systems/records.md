@@ -1,11 +1,11 @@
 <!-- documents:
      plugins: RecordsPlugin, SavePlugin, RecordsPanel
-     files: crates/rl-bevy/src/records.rs
-            crates/rl-save/src/records.rs
-            crates/rl-ui/src/panel/records.rs
-            crates/rl-ui/src/view/ending.rs
-            crates/rl-ui/src/game_menu.rs
-            crates/rl-ui/src/panel/title.rs
+     files: crates/atglyph-bevy/src/records.rs
+            crates/atglyph-save/src/records.rs
+            crates/atglyph-ui/src/panel/records.rs
+            crates/atglyph-ui/src/view/ending.rs
+            crates/atglyph-ui/src/game_menu.rs
+            crates/atglyph-ui/src/panel/title.rs
      fingerprint: 6339c80d -->
 
 # Run records
@@ -18,7 +18,7 @@ The screen a run ends on reads the same record, so what it says of a run and wha
 
 `RecordsPlugin` is the record itself: it registers the `RecordRun` message, initialises `RunRecords`, completes and files each record in `Update` ahead of `EngineSet::Present`, so whatever draws a record has it the frame it is filed, and forgets which record is this run's, and any still waiting, in `EndRun`.
 A game writes one `RecordRun` when its run is over, and a game that never writes one keeps no records.
-`SavePlugin`, in `rl-save`, keeps the list between launches in a game with `RecordsPlugin`, which it learns in its `finish`, whichever was added first: it reads the `records` slot there, before the first frame, and writes it in `EndOfFrame::Save` on a frame the list changed.
+`SavePlugin`, in `atglyph-save`, keeps the list between launches in a game with `RecordsPlugin`, which it learns in its `finish`, whichever was added first: it reads the `records` slot there, before the first frame, and writes it in `EndOfFrame::Save` on a frame the list changed.
 In a game that saves nothing the list lasts as long as the process.
 `RecordsPanel::new(rect)` is the screen: it declares the `records` modal, checks for `UiPlugin` in its `finish`, reads its keys ahead of `EngineSet::Input` and draws after `EngineSet::Present`, outside the engine's sets, because a title opens it before there is a world.
 The screen a run ends on takes nothing more: the `EndingViewPlugin` that `GameMenuPanel` adds reads this run's record whenever there is a `RunRecords` to read it from.
@@ -118,7 +118,7 @@ A game may still push sections of its own onto `EndingView`, which the end scree
 
 ## Where it lives
 
-The record is plain data in `rl-bevy`, the crate the save and the screen both sit on, so `rl-save` keeps it and `rl-ui` shows it with no edge between the two, the split settings make.
+The record is plain data in `atglyph-bevy`, the crate the save and the screen both sit on, so `atglyph-save` keeps it and `atglyph-ui` shows it with no edge between the two, the split settings make.
 Ordering and the cap are `RunRecords::file` over a `Vec`, tested with no `App`, and completing a record is one system, tested on a headless app with no window.
 The slot is plain RON through a `Saves` backend, so a test round-trips a record through a `MemoryBackend` and writes a damaged slot as a string.
 The date on a row is a few lines of calendar arithmetic in the panel rather than a calendar dependency.

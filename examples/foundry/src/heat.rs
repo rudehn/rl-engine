@@ -6,7 +6,7 @@
 //! fire, which is what lets heat build on a fast weapon at all. Locking
 //! takes its attack off the item and stows it as [`Stowed`] rather than
 //! marking it somehow unusable, which is what makes the engine's own
-//! [`Loadout`](rl_engine::rl_bevy::Loadout) fall through to the next
+//! [`Loadout`](atglyph::ecs::Loadout) fall through to the next
 //! worn item with no knowledge of heat at all: a dual-wielded pair of
 //! blasters alternates because the locked one simply has nothing to
 //! shoot with.
@@ -15,9 +15,9 @@
 //! both reactions to messages the engine already writes: a [`Struck`]
 //! naming the item an attack came from, and a whole [`TurnEnd`].
 
+use atglyph::ecs::{Equipped, MeleeAttack, Player, RangedAttack, Stowed, Struck, TurnEnd};
+use atglyph::ui::{Facet, GearView, Tell, Tones};
 use bevy::prelude::*;
-use rl_engine::rl_bevy::{Equipped, MeleeAttack, Player, RangedAttack, Stowed, Struck, TurnEnd};
-use rl_engine::rl_ui::{Facet, GearView, Tell, Tones};
 
 /// How hot a weapon may run before it locks.
 pub const CAPACITY: u32 = 100;
@@ -185,9 +185,9 @@ pub fn note_heat(view: Option<ResMut<GearView>>, heats: Query<&Heat>) {
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_bevy::RangedAttack;
-    use rl_engine::rl_core::RunSeed;
-    use rl_engine::rl_ui::GearViewPlugin;
+    use atglyph::ecs::RangedAttack;
+    use atglyph::primitives::RunSeed;
+    use atglyph::ui::GearViewPlugin;
 
     use super::*;
 
@@ -294,7 +294,7 @@ mod tests {
         // is what `main.rs` and `testing::headless` both add, so if this
         // reads `Heat` correctly, the shipped game does too.
         //
-        // The engine's own `schedule` (crates/rl-bevy/src/turn.rs) can
+        // The engine's own `schedule` (crates/atglyph-bevy/src/turn.rs) can
         // write a `TurnEnd` and deal the next actor's turn in the same
         // pass, so `TurnSet::React` can read the ending turn's `TurnEnd`
         // together with the very next turn's `Struck`. Reproducing that
@@ -325,7 +325,7 @@ mod tests {
         let bystander = app.world_mut().spawn_empty().id();
         app.world_mut().write_message(TurnEnd { turn: 1 });
         app.world_mut().write_message(Struck { attacker: bystander, target: bystander, with: Some(item), ranged: true });
-        app.world_mut().run_schedule(rl_engine::rl_bevy::plugin::Turn);
+        app.world_mut().run_schedule(atglyph::ecs::plugin::Turn);
         assert_eq!(
             app.world().get::<Heat>(item).unwrap().now,
             15,
@@ -360,11 +360,11 @@ mod tests {
     /// query would be caught here rather than in play.
     #[test]
     fn vent_heat_never_touches_a_weapon_stowed_dry_for_want_of_ammunition() {
+        use atglyph::ecs::Dry;
         use bevy::ecs::system::RunSystemOnce;
-        use rl_engine::rl_bevy::Dry;
 
         let mut app = crate::testing::headless(RunSeed(1));
-        let item = app.world_mut().spawn((Dry, Stowed::Ranged(RangedAttack::new(rl_engine::rl_core::Id::from_raw(0), Default::default(), 6)))).id();
+        let item = app.world_mut().spawn((Dry, Stowed::Ranged(RangedAttack::new(atglyph::primitives::Id::from_raw(0), Default::default(), 6)))).id();
         app.world_mut().write_message(TurnEnd { turn: 1 });
         app.world_mut().run_system_once(vent_heat).unwrap();
         assert!(app.world().get::<RangedAttack>(item).is_none(), "still dry: vent_heat has nothing here to vent");

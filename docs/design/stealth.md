@@ -83,12 +83,12 @@ Keeping them apart means a game can give a monster long sight and poor attention
 
 ## 3. Where each piece lives
 
-### rl-rules: `ai/awareness.rs` (tier 1, no Bevy)
+### atglyph-rules: `ai/awareness.rs` (tier 1, no Bevy)
 
 `Notice`, `Stealth`, `notices`, and the [`Awareness`] state machine of section 4.
 Pure, so the roll is the caller's and two runs of the same seed agree.
 
-### rl-bevy: `stealth.rs` (tier 2)
+### atglyph-bevy: `stealth.rs` (tier 2)
 
 `Notice` and `Stealth` as components wrapping the tier-1 types.
 
@@ -103,7 +103,7 @@ It runs for the actor holding the turn, so awareness ticks once per actor-turn: 
 Without it there is no `Aware` component, `decide_minds` reads `Option<&Aware>` and finds none, and every game built so far behaves exactly as it does now.
 That is the same shape `Lighting` uses and the reason a delve that wants none of this pays nothing for it.
 
-### rl-bevy: `decide_minds`
+### atglyph-bevy: `decide_minds`
 
 One change: a candidate carrying `Stealth` enters `snapshot.enemies` only if the thinker is aware of it.
 Everything without a `Stealth` component is seen the way it is today.
@@ -141,7 +141,7 @@ Without that, a monster that has been chasing for longer than the leash gives up
 pub last_known: Option<Point>,
 ```
 
-And `rl-rules::ai::tactics` gains one tactic:
+And `atglyph-rules::ai::tactics` gains one tactic:
 
 ```rust
 /// Walk to where an enemy was last seen. Nothing to do when it is in
@@ -229,7 +229,7 @@ Noise wakes it too, through `wake_on_noise`, which `docs/design/noise.md` §16 h
 ## 10. Phases
 
 - **A. The pure half.** Built.
-  `Notice`, `Stealth`, `notices`, `Awareness` and its transitions, in `rl-rules::ai::awareness`, with the property tests of section 11.
+  `Notice`, `Stealth`, `notices`, `Awareness` and its transitions, in `atglyph-rules::ai::awareness`, with the property tests of section 11.
   Nothing behaves differently.
 - **B. The Bevy half.** Built.
   The components, `Aware`, `StealthPlugin`, `DecideSet::Notice`, `update_awareness`, `wake_on_damage`, `Noticed`, the `Snapshot::last_known` field and the `SearchLastKnown` tactic.
@@ -244,7 +244,7 @@ Noise wakes it too, through `wake_on_noise`, which `docs/design/noise.md` §16 h
 
 ## 11. Tests
 
-Pure, in `rl-rules`:
+Pure, in `atglyph-rules`:
 
 - Inside `certain` a subject is noticed whatever the roll, and outside `Perception` it is never noticed whatever the roll.
 - `lit_bonus` widens the certain radius by exactly itself and by nothing else.
@@ -252,7 +252,7 @@ Pure, in `rl-rules`:
 - Over a seed range: a subject sitting still at a distance with a non-zero chance is noticed within a bounded number of turns, and with a zero chance outside `certain` it is never noticed at all.
 - `lost` returns to `Unaware` exactly on the turn `forget_after` passes, and a sighting in between resets the count rather than only the position.
 
-Headless, in `rl-bevy`:
+Headless, in `atglyph-bevy`:
 
 - A monster with `Notice` and a player with `Stealth` in the dark does not hunt; light the tile and the next turn it does.
 - A monster that is hit wakes even when it could not possibly have seen the blow.
@@ -270,7 +270,7 @@ Nothing here runs per frame, and nothing here allocates per turn beyond the map'
 
 - **Two names per idea, one per tier.**
   The tier-1 data is `NoticeStats` and `StealthStats`; the components are `Notice` and `Stealth`.
-  One name for both would have put two types called `Notice` into the facade's prelude, which globs `rl-rules` and `rl-bevy` together.
+  One name for both would have put two types called `Notice` into the facade's prelude, which globs `atglyph-rules` and `atglyph-bevy` together.
 - **`memory` lives on `NoticeStats`.**
   Section 4 had `forget_after` as an argument.
   It is authored per kind of observer, so a salt ghost that searches for eight turns and a crab that gives up after three are data rather than code.
@@ -290,7 +290,7 @@ Found on the way, both fixed: a mind that had not noticed the player could still
 
 Found in play afterwards: Corsair's vitals strip read hidden while a surface cutthroat cut the player down.
 "Seen" asked only the observers that keep an `Aware`, and a monster with no `Notice` sees on sight without ever keeping one, so the observers that were actually attacking were the ones never asked.
-`Watchers` in `rl-bevy` now answers "who is watching whom" by the rule the minds act on - an observer that keeps track watches what it knows about, one that sees on sight watches what it can perceive - and both the vitals strip and the nearby rail read it.
+`Watchers` in `atglyph-bevy` now answers "who is watching whom" by the rule the minds act on - an observer that keeps track watches what it knows about, one that sees on sight watches what it can perceive - and both the vitals strip and the nearby rail read it.
 Reproduced first as a Corsair test through the real wiring, with a surface cutthroat at the player's elbow.
 
 ## 13. Risks

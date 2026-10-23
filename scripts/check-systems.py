@@ -3,6 +3,7 @@
 
     scripts/check-systems.py              fail if a page is behind its code
     scripts/check-systems.py --bless NAME confirm systems/NAME.md again
+    scripts/check-systems.py --current    name every page that is current, one a line
 
 Three checks, in the order a failure is cheapest to fix:
 
@@ -155,8 +156,27 @@ def bless(name: str) -> int:
     return 0
 
 
+def current() -> int:
+    """Print the name of every page whose fingerprint matches its files.
+
+    A change that moves many files at once, as a rename does, reads this
+    first and blesses the same pages after, so a page that was current
+    stays current and one that was stale stays stale for the release.
+    """
+    for page in pages():
+        try:
+            fields = manifest(page)
+        except Broken:
+            continue
+        if all(pathlib.Path(f).is_file() for f in fields["files"]) and fingerprint(fields["files"]) == fields["fingerprint"][0]:
+            print(page.stem)
+    return 0
+
+
 def main() -> int:
     argv = sys.argv[1:]
+    if "--current" in argv:
+        return current()
     if "--bless" in argv:
         rest = argv[argv.index("--bless") + 1 :]
         if not rest:

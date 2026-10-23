@@ -10,12 +10,12 @@
 //! rules has to be told. What a monster knows of the adventurer is
 //! stealth's [`Aware`], which a shriek fills in.
 
+use atglyph::ecs::EffectRng;
+use atglyph::prelude::*;
+use atglyph::rules::StatusId;
+use atglyph::rules::ability::RawValue;
 use bevy::prelude::*;
 use rand::Rng;
-use rl_engine::prelude::*;
-use rl_engine::rl_bevy::EffectRng;
-use rl_engine::rl_rules::StatusId;
-use rl_engine::rl_rules::ability::RawValue;
 
 use super::moving::no_args;
 use super::the;
@@ -126,7 +126,7 @@ impl FromArgs for Discord {
         struct Args {
             turns: u32,
         }
-        let a: Args = rl_engine::rl_rules::ability::read_args(args)?;
+        let a: Args = atglyph::rules::ability::read_args(args)?;
         Ok(Self { turns: a.turns, status: names.status(crate::content::DISCORDANT)? })
     }
 }
@@ -286,7 +286,7 @@ impl FromArgs for Rouse {
         struct Args {
             radius: i32,
         }
-        let a: Args = rl_engine::rl_rules::ability::read_args(args)?;
+        let a: Args = atglyph::rules::ability::read_args(args)?;
         Ok(Self { radius: a.radius })
     }
 }
@@ -299,7 +299,7 @@ impl FromArgs for Rouse {
 pub fn wake(world: &mut World, who: Entity, radius: Option<i32>) {
     let Some(at) = world.get::<Position>(who).map(|p| p.0) else { return };
     let here = world.get::<OnMap>(who).map_or(MapId::ZERO, |m| m.0);
-    let near = |p: Point| radius.is_none_or(|r| rl_engine::rl_core::geometry::chebyshev(p, at) <= r);
+    let near = |p: Point| radius.is_none_or(|r| atglyph::primitives::geometry::chebyshev(p, at) <= r);
     let woken: Vec<Entity> = {
         let mut q = world.query_filtered::<(Entity, &OnMap, &Position), With<Kind>>();
         q.iter(world).filter(|(_, on, p)| on.0 == here && near(p.0)).map(|(e, ..)| e).collect()

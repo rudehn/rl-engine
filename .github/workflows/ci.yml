@@ -46,6 +46,8 @@ jobs:
         run: cargo fmt --all --check
       - name: tier boundaries
         run: scripts/check-tiers.sh
+      - name: no old engine names are left
+        run: python3 scripts/rename-to-atglyph.py --check
       - name: the guide's links into the code
         if: inputs.docs
         run: scripts/check-guide.sh
@@ -68,7 +70,7 @@ jobs:
       - name: tests
         run: cargo nextest run --workspace --profile ci
         env:
-          RL_FULL_SEEDS: 1
+          ATGLYPH_FULL_SEEDS: 1
       # The slowest tests and the run's processor time against CI's own
       # budget, which warns rather than fails: the runner is not the
       # machine the everyday budget was measured on, and it plays every

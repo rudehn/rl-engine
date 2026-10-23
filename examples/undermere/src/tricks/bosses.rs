@@ -386,7 +386,7 @@ mod tests {
         use crate::bestiary::Bestiary;
         use crate::dungeon::{FLOORS, Undermere, map_of};
         use crate::testing::{adventurer, arrive, headless, pass_turns, sturdy};
-        use rl_engine::rl_core::RunSeed;
+        use atglyph::primitives::RunSeed;
         for (piece, young) in [("the Mother Below", SPAWNLING), ("the throne", "drowned thrall")] {
             let seed = (0..100).map(RunSeed).find(|s| Undermere::new(*s).final_boss().piece == piece).expect("some seed draws each boss");
             let mut app = headless(seed);

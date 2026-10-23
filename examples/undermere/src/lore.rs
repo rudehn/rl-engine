@@ -39,14 +39,14 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use atglyph::ecs::effects::UseLanding;
+use atglyph::ecs::{Aimed, Bystanders, area_cells};
+use atglyph::prelude::*;
+use atglyph::primitives::noun::{plural, with_article};
+use atglyph::rules::ability::RawValue;
 use bevy::prelude::*;
 use rand::Rng;
 use rand::seq::SliceRandom;
-use rl_engine::prelude::*;
-use rl_engine::rl_bevy::effects::UseLanding;
-use rl_engine::rl_bevy::{Aimed, Bystanders, area_cells};
-use rl_engine::rl_core::noun::{plural, with_article};
-use rl_engine::rl_rules::ability::RawValue;
 use serde::{Deserialize, Serialize};
 
 use crate::armory::{Armory, ItemDef, ItemKind};
@@ -572,7 +572,7 @@ pub fn weigh_landings(
             if armory.shows_unstruck(kind.0) {
                 continue;
             }
-            let source = rl_engine::rl_bevy::Source::Trigger { on: f.on, moment: Moments::USE };
+            let source = atglyph::ecs::Source::Trigger { on: f.on, moment: Moments::USE };
             let aimed = Aimed { user, source, targeting, origin: origin.0, aim: f.at, sees_aim: None };
             !ground.bystanders.land(aimed, &ground.map, &ground.occupancy).landing.targets.is_empty()
         } else {
@@ -797,7 +797,7 @@ pub fn name_worn(world: &mut World, wearer: Entity) {
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_core::RunSeed;
+    use atglyph::primitives::RunSeed;
 
     use super::*;
     use crate::content::Library;
@@ -952,7 +952,7 @@ mod tests {
     /// whether it reads as unknown, the cursor opened on it and put away
     /// again.
     fn looked_at(app: &mut App, cell: Point) -> Option<(String, bool)> {
-        let modal = rl_engine::rl_ui::view::inspect::inspect_modal(app.world().resource::<Modals>());
+        let modal = atglyph::ui::view::inspect::inspect_modal(app.world().resource::<Modals>());
         app.world_mut().resource_mut::<Modals>().open(modal);
         app.world_mut().resource_mut::<InspectView>().cursor = cell;
         app.update();

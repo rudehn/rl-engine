@@ -1,6 +1,6 @@
 //! A headless Undermere, for the tests this crate adds.
 //!
-//! The engine's windowless app, [`rl_engine::testing`], with
+//! The engine's windowless app, [`atglyph::testing`], with
 //! [`UndermerePlugin`](crate::plugin::UndermerePlugin): the same one the
 //! binary adds, so a test plays the game that ships rather than a harness
 //! that quietly fell behind it. The run begins at startup, as it does for
@@ -13,21 +13,21 @@
 //! below: things made by its armory, monsters by its bestiary, the town's
 //! people, its ways through, and the arena its fights are staged in.
 
+use atglyph::prelude::*;
+use atglyph::primitives::RunSeed;
 use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_core::RunSeed;
 
 use crate::armory::{Armory, ItemKind};
 use crate::bestiary::Bestiary;
 use crate::bestiary::MonsterDef;
 use crate::dungeon::{Undermere, floor_of};
-use rl_engine::rl_bevy::places::Spot;
-use rl_engine::rl_rules::prefab::Slot;
+use atglyph::ecs::places::Spot;
+use atglyph::rules::prefab::Slot;
 
 /// The adventurer, the run begun first if it has not been.
-pub use rl_engine::testing::player as adventurer;
-pub use rl_engine::testing::{
+pub use atglyph::testing::player as adventurer;
+pub use atglyph::testing::{
     QUICK, at, equip, first_seeds, give, go_through, here, lay, let_time_pass, name_of, pack, par_seeds, pass_turns, put_down, said, seeds, settle, stand_on,
     take_up, unequip, wall_off,
 };
@@ -38,7 +38,7 @@ pub use rl_engine::testing::{
 /// [`WorkPace`] of the wall clock, so a test, a fingerprint or a soak
 /// counts frames and never waits on time.
 pub fn headless(seed: RunSeed) -> App {
-    let mut app = rl_engine::testing::headless(seed, crate::plugin::narrator(), crate::plugin::UndermerePlugin);
+    let mut app = atglyph::testing::headless(seed, crate::plugin::narrator(), crate::plugin::UndermerePlugin);
     app.insert_resource(WorkPace::every_frame());
     app
 }
@@ -48,7 +48,7 @@ pub fn headless(seed: RunSeed) -> App {
 /// of its own systems, so the ordering test can tell the game's systems
 /// from the engine's by what the plugin adds beyond these.
 pub fn headless_without_undermere(seed: RunSeed) -> App {
-    rl_engine::testing::headless(seed, crate::plugin::narrator(), |app: &mut App| {
+    atglyph::testing::headless(seed, crate::plugin::narrator(), |app: &mut App| {
         crate::plugin::add_engine(app);
         crate::save::register(app);
     })
@@ -58,7 +58,7 @@ pub fn headless_without_undermere(seed: RunSeed) -> App {
 /// the memory backend, `ContinueRun` asked for as the title's Continue
 /// asks for it, and the first frames run so the continued run stands.
 pub fn continued(text: &str) -> App {
-    rl_engine::testing::continued(headless(RunSeed(0)), crate::save::SLOT, text)
+    atglyph::testing::continued(headless(RunSeed(0)), crate::save::SLOT, text)
 }
 
 /// What a piece's slot at `spot` holds, if the spot is a slot: the lookup
@@ -130,7 +130,7 @@ pub fn sturdy(app: &mut App, me: Entity) {
 /// to `by`, or to nobody, the way a burn or a fall would be, and lets the
 /// death settle.
 pub fn kill(app: &mut App, victim: Entity, by: Option<Entity>) {
-    rl_engine::testing::kill(app, victim, by, "crush");
+    atglyph::testing::kill(app, victim, by, "crush");
 }
 
 /// Takes every monster off every place, for a test about the adventurer's
@@ -166,7 +166,7 @@ pub fn lay_floor(app: &mut App, cells: &[Point]) {
             TileId(names.iter().position(|n| n == "cobbles").expect("cobbles is a tile") as u16)
         }
     };
-    rl_engine::testing::lay_tile(app, cells, floor);
+    atglyph::testing::lay_tile(app, cells, floor);
 }
 
 /// Makes `name` by the game's armory, placed nowhere.

@@ -13,16 +13,16 @@ homepage = "https://github.com/rudehn/rl-engine"
 rust-version = "1.88"
 
 [workspace.dependencies]
-rl-core = { path = "crates/rl-core" }
-rl-grid = { path = "crates/rl-grid" }
-rl-mapgen = { path = "crates/rl-mapgen" }
-rl-rules = { path = "crates/rl-rules" }
-rl-save = { path = "crates/rl-save" }
-rl-engine = { path = "crates/rl-engine" }
-rl-bevy = { path = "crates/rl-bevy" }
-rl-render = { path = "crates/rl-render" }
-rl-ui = { path = "crates/rl-ui" }
-rl-tty = { path = "crates/rl-tty" }
+atglyph-core = { path = "crates/atglyph-core" }
+atglyph-grid = { path = "crates/atglyph-grid" }
+atglyph-mapgen = { path = "crates/atglyph-mapgen" }
+atglyph-rules = { path = "crates/atglyph-rules" }
+atglyph-save = { path = "crates/atglyph-save" }
+atglyph = { path = "crates/atglyph" }
+atglyph-bevy = { path = "crates/atglyph-bevy" }
+atglyph-render = { path = "crates/atglyph-render" }
+atglyph-ui = { path = "crates/atglyph-ui" }
+atglyph-tty = { path = "crates/atglyph-tty" }
 
 # Default features off: they include OS entropy through getrandom, which
 # does not build for wasm32-unknown-unknown, and engine code never seeds
@@ -61,7 +61,7 @@ bevy = { version = "0.19", default-features = false, features = [
     "debug",
     "async_executor",
 ] }
-# The text terminal front end, `rl-tty`, and the toolkit's terminal example:
+# The text terminal front end, `atglyph-tty`, and the toolkit's terminal example:
 # raw mode, the alternate screen, colours and key events on every desktop
 # platform. `unicode-width` says which glyphs a terminal draws one column wide.
 crossterm = "0.29"

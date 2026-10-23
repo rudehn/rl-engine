@@ -5,10 +5,10 @@
 //! sees ids. The two resistance profiles are the design's damage table,
 //! kept in one place so a droid and a commando cannot drift from it.
 
-use rl_engine::rl_bevy::prelude::*;
-use rl_engine::rl_rules::faction::FactionDef;
-use rl_engine::rl_rules::gas::GasDef;
-use rl_engine::rl_rules::{DamageKind, Registry, Resistances, SlotDef, StatusDef, TagDef};
+use atglyph::ecs::prelude::*;
+use atglyph::rules::faction::FactionDef;
+use atglyph::rules::gas::GasDef;
+use atglyph::rules::{DamageKind, Registry, Resistances, SlotDef, StatusDef, TagDef};
 
 /// What one turn of `mending` gives back.
 ///
@@ -196,11 +196,11 @@ mod tests {
     /// no run ever meets.
     #[test]
     fn nothing_in_the_content_is_orphaned() {
-        use rl_engine::rl_rules::prefab::Reached;
+        use atglyph::rules::prefab::Reached;
         let registries = registries();
         let roster = crate::droids::Roster::load(&registries);
         let armory = crate::testing::armory(&registries);
-        let foundry = crate::decks::Foundry::new(rl_engine::rl_core::RunSeed(0));
+        let foundry = crate::decks::Foundry::new(atglyph::primitives::RunSeed(0));
         let prefabs = foundry.prefabs();
         let laid = crate::decks::laid_pieces();
         let reached: Reached<crate::droids::MonsterDef> =
@@ -266,10 +266,10 @@ mod tests {
     /// a blade or a bite given a look, fails it.
     #[test]
     fn every_attack_in_the_files_flies_the_look_the_design_gives_it_and_no_blow_bursts() {
+        use atglyph::grid::Rgb;
+        use atglyph::primitives::{Point, RunSeed};
         use bevy::ecs::world::CommandQueue;
         use bevy::prelude::*;
-        use rl_engine::rl_core::{Point, RunSeed};
-        use rl_engine::rl_grid::Rgb;
         let bolt = Some(('*', Rgb::new(255, 77, 38)));
         let slug = Some(('o', Rgb::new(242, 204, 115)));
         let table = [
@@ -310,9 +310,9 @@ mod tests {
     /// gun aims well most of the way.
     #[test]
     fn every_weapon_reaches_and_aims_as_far_as_the_design_says() {
+        use atglyph::primitives::RunSeed;
         use bevy::ecs::world::CommandQueue;
         use bevy::prelude::*;
-        use rl_engine::rl_core::RunSeed;
         let table =
             [("hand blaster", 3, 8), ("ion pistol", 3, 8), ("slug pistol", 3, 9), ("heavy repeater", 4, 10), ("blaster carbine", 6, 12), ("slug rifle", 7, 14)];
         let mut app = crate::testing::headless(RunSeed(1));

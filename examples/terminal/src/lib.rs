@@ -1,17 +1,17 @@
 //! A walk through generated rooms on the Bevy-free crates alone.
 //!
 //! The way bracket-lib is used: the game owns its loop and calls the toolkit for a map
-//! (`rl-mapgen`), a field of view (`rl-grid`) and the shared vocabulary (`rl-core`).
+//! (`atglyph-mapgen`), a field of view (`atglyph-grid`) and the shared vocabulary (`atglyph-core`).
 //! Nothing here touches a terminal, so every rule is tested as plain functions; `main.rs`
 //! is only the loop that reads keys and prints [`render`]'s rows.
 
 #![deny(missing_docs)]
 
-use rl_core::{Direction, Point, RunSeed};
-use rl_grid::{BitGrid, Terrain, TileRegistry, fov};
-use rl_mapgen::dungeon::{RandomStart, Rooms};
-use rl_mapgen::passes::StartPoint;
-use rl_mapgen::{BaseContext, Chain};
+use atglyph_core::{Direction, Point, RunSeed};
+use atglyph_grid::{BitGrid, Terrain, TileRegistry, fov};
+use atglyph_mapgen::dungeon::{RandomStart, Rooms};
+use atglyph_mapgen::passes::StartPoint;
+use atglyph_mapgen::{BaseContext, Chain};
 
 /// Map width in cells, one terminal column each.
 pub const WIDTH: i32 = 60;

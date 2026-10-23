@@ -33,8 +33,8 @@ pub mod minds;
 pub mod moving;
 pub mod senses;
 
+use atglyph::prelude::*;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
 
 /// The things whose use, this pass, showed nothing anybody could see: a
 /// potion of descent drunk on the deepest floor, a wand zapped at nobody.
@@ -48,7 +48,7 @@ pub struct ShowedNothing(pub Vec<Entity>);
 /// The thing a landing came from, when a thing's trigger landed it.
 pub fn carrier(landing: &Landing) -> Option<Entity> {
     match landing.source {
-        rl_engine::rl_bevy::Source::Trigger { on, .. } => Some(on),
+        atglyph::ecs::Source::Trigger { on, .. } => Some(on),
         _ => None,
     }
 }
@@ -74,7 +74,7 @@ pub fn shows_nothing(world: &mut EffectWorld<'_, '_>, landing: &Landing) {
 /// `name` as the subject of a line: `The goblin`, and a name that is said
 /// as written, `the Drowned King`, with its first letter raised.
 pub fn the(name: &str) -> String {
-    capital(&rl_engine::rl_core::noun::with_the(name))
+    capital(&atglyph::primitives::noun::with_the(name))
 }
 
 /// `words` with the first letter raised, to begin a line.

@@ -5,7 +5,7 @@
 //! guard's slot.
 //!
 //! The engine fills them. `decks` stamps each piece by name through
-//! [`PrefabLibrary::piece`](rl_engine::rl_rules::PrefabLibrary::piece), and on the arrival that built a deck the engine's
+//! [`PrefabLibrary::piece`](atglyph::rules::PrefabLibrary::piece), and on the arrival that built a deck the engine's
 //! `PrefabPlugin` puts down what every slot names: a locker or a crate, a
 //! weapon drawn by tag, a guard drawn by role, each at the deck's own band
 //! plus what the slot adds. What is left to Foundry is the one mark it
@@ -16,11 +16,11 @@
 //! slot finds anything on every deck, which no load can tell, printed by
 //! `foundry --prefabs`.
 
-use rl_engine::prelude::*;
-use rl_engine::rl_core::RunSeed;
-use rl_engine::rl_grid::TileRegistry;
-use rl_engine::rl_rules::prefab::{self, Coverage, Sources};
-use rl_engine::rl_rules::role;
+use atglyph::grid::TileRegistry;
+use atglyph::prelude::*;
+use atglyph::primitives::RunSeed;
+use atglyph::rules::prefab::{self, Coverage, Sources};
+use atglyph::rules::role;
 
 use crate::decks::{DECKS, Foundry};
 use crate::droids::{MonsterDef, Roster};

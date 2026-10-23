@@ -18,10 +18,10 @@
 //! is tiring to look at: the furnace breathes, its sparks rise, and the
 //! line carries chassis to the right.
 
+use atglyph::primitives::Rect;
+use atglyph::render::{Cell, Terminal};
+use atglyph::ui::{Palette, Tones};
 use bevy::prelude::*;
-use rl_engine::rl_core::Rect;
-use rl_engine::rl_render::{Cell, Terminal};
-use rl_engine::rl_ui::{Palette, Tones};
 
 /// Where the engine's menu is drawn on a terminal `width` by `height`: the
 /// rows under the gantry's rule, the whole width across, which the picture

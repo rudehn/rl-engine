@@ -10,10 +10,10 @@
 //! the real map at the deck's own band on the way down and at the run's
 //! deepest band on the way back up, and spawns what the plan says.
 
+use atglyph::prelude::*;
+use atglyph::primitives::Rect;
 use bevy::prelude::*;
 use rand::Rng;
-use rl_engine::prelude::*;
-use rl_engine::rl_core::Rect;
 
 use super::{MonsterDef, Roster, spawn_monster};
 
@@ -126,8 +126,8 @@ pub fn populate_deck(mut commands: Commands, mut entered: MessageReader<PlaceEnt
 
 #[cfg(test)]
 mod tests {
+    use atglyph::primitives::RunSeed;
     use rand::SeedableRng;
-    use rl_engine::rl_core::RunSeed;
 
     use super::*;
     use crate::droids::Kind;

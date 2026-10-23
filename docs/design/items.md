@@ -136,7 +136,7 @@ Until 2026-10-13 the engine shared the components and the authored effect and tr
 Undermere's `ItemDef` then opened with "Foundry's item schema trimmed", and it was: the same `MeleeDef`, `RangedDef`, `ThrowDef` and `ConsumableDef`, the same `slot`, `either` and `also`, the same validation, and a `spawn_item_at` of sixty lines that differed from Foundry's in a resist added rather than set and a hand pair named in code rather than read from the slots.
 By the rule in `CLAUDE.md` the second game writing a thing is the signal it belongs in the engine, and it did, but not as a schema.
 
-What moved is `rl_rules::parts`, a set of authored parts, each the type of one field and each describing only what the engine already simulates:
+What moved is `atglyph_rules::parts`, a set of authored parts, each the type of one field and each describing only what the engine already simulates:
 
 | Part | Fields | Makes |
 | --- | --- | --- |
@@ -148,7 +148,7 @@ What moved is `rl_rules::parts`, a set of authored parts, each the type of one f
 | `Level` | `min`, `max`, `armor`, `damage`, `amount`, `turns`, `pulse`, `charges`, `dark_sight`, `stats` | what each level adds to all of the above, in section 7 |
 
 The rest of what an item's line says for the engine is a plain list, its armor, its tags, its effects and triggers, its bestows and caps, its ammunition tag, whether it stacks, its `Glow` and when it shines, the statuses it holds on its wearer and the sight in the dark it lends, needing no part of its own; `parts::resistances` reads the one list that adds up, a kind written twice resisting by both, as two worn things' resistances add on a wearer.
-A game builds an `rl_bevy::ItemParts` from its own fields once at load, its triggers built and its wear resolved, and keeps it beside its definition; `insert_parts` spawns a thing of it at a level and `ItemParts::check` names what the engine would never play, a worn stack or a pulse on a thing never worn.
+A game builds an `atglyph_bevy::ItemParts` from its own fields once at load, its triggers built and its wear resolved, and keeps it beside its definition; `insert_parts` spawns a thing of it at a level and `ItemParts::check` names what the engine would never play, a worn stack or a pulse on a thing never worn.
 `Attacks { melee, ranged, throw, cost }` is the attack half on its own, which a monster uses, since a blow is one thing whoever strikes it: Foundry's droids and Undermere's monsters write their attacks as the same parts their weapons do.
 
 Every field past the essentials is optional, and absent means the engine's plain behaviour, never a mechanic switched on: a thing with no `Level` takes no level, a `Level` grows only the amounts it writes, and no part has a default the engine chose.
@@ -161,7 +161,7 @@ It would be the engine's item schema under another name, every game's file would
 Parts cost a game one field per part in its own type and one struct literal at load, and buy it its own file.
 
 The look stays with the games.
-A thing's glyph is `rl-render`'s and its mass noun `rl-ui`'s, neither of which `rl-rules` may see, and a helper in a crate that sees both would be a part that is not about simulation at all: a game drawing in tiles, or naming things with articles of its own, has a different look, and the engine has nothing to gain by choosing one.
+A thing's glyph is `atglyph-render`'s and its mass noun `atglyph-ui`'s, neither of which `atglyph-rules` may see, and a helper in a crate that sees both would be a part that is not about simulation at all: a game drawing in tiles, or naming things with articles of its own, has a different look, and the engine has nothing to gain by choosing one.
 
 ## 6b. What a worn thing lends beyond its stats
 
@@ -192,7 +192,7 @@ The only floors are what a component cannot hold: a pulse of under one hundredth
 `min` and `max` bound the level, nought and no ceiling where neither is written, so a negative level is something a line asks for rather than something every thing can fall to.
 The level a thing is at is `ItemLevel`, which no system of the engine's reads to play; it is what a game names and prices a thing by and what a save keeps.
 
-`rl_bevy::parts::level_up(world, item, by)` moves a thing's level and fits every component the level decides from the parts it was made of, never from the thing as it stands, so a level is never added to a number that already carries one; what it has left of its charges grows with what it holds, an attack put by while it cannot be made is changed where it is put by, and a wearer's stats are folded again.
+`atglyph_bevy::parts::level_up(world, item, by)` moves a thing's level and fits every component the level decides from the parts it was made of, never from the thing as it stands, so a level is never added to a number that already carries one; what it has left of its charges grows with what it holds, an attack put by while it cannot be made is changed where it is put by, and a wearer's stats are folded again.
 It never lifts `Stuck`: that a thing below nought will not come off is Undermere's curse and not the engine's level, so Undermere's own `level_up` calls the engine's and then frees a thing raised to nought.
 
 Each game writes its own rule over the part, where it reads the file.
@@ -211,7 +211,7 @@ Scaling written on the number where it is used, `turns: (base: 10, per_level: 2)
 
 ## 7a. Saving a thing made of parts
 
-`rl_save::SaveableItem`, registered with `save_items`, saves an item as which definition it is, by its maker's `name_of`, at which level, and the game's own extra beside them.
+`atglyph_save::SaveableItem`, registered with `save_items`, saves an item as which definition it is, by its maker's `name_of`, at which level, and the game's own extra beside them.
 It is restored through the game's `ItemMaker::make_at`, so the thing is made again exactly as it was made when found, the level applied once, and only then is the game's extra put back on it, since what a game keeps is often about the level: Undermere's curse and how long it has been worn towards knowing it, Foundry's heat.
 
 ## 8. Things not yet known, and things that will not come off
@@ -264,15 +264,15 @@ There is no magazine and no reload action: a game that wants either writes it as
 
 ## 10. Where the pieces are
 
-- `crates/rl-bevy/src/effects/`: `Effects`, the engine's effects, `EffectBonus`, `Moments`, `Triggers`, `Fired`, `FiredOn`, `land_triggers` and `land_aimed_uses`.
-- `crates/rl-bevy/src/consumable.rs`: `Consumable`, which moments spend, `spend_charges` and `recharge_charges`.
-- `crates/rl-bevy/src/items.rs`: the actions, `UseItemAt` and `UseOn` among them, `may_use` and `may_use_on`, `ItemEvent`, `Bestows`, the gear fold, `Unknown` and `Stuck`.
-- `crates/rl-bevy/src/ammo.rs`: `Ammo`, `Dry`, `AmmoChanged`, `spend_ammo` and `sync_ammo`; `Stowed` and `Loadout::dry` are in `combat.rs`.
-- `crates/rl-bevy/src/ability.rs`: `Grants` and `Known`, an actor's own, and `Aimed` and `Bystanders::land`, which an aimed use shares.
-- `crates/rl-rules/src/ability.rs`: `EffectSpec` and `TriggerSpec`, the authored forms any content file can read, and `Targeting` and `Asks`, a use's aim and its question.
-- `crates/rl-rules/src/equip.rs`: `Equipment::equip_keeping`, the slot rule a stuck thing needs, and `SlotDef::pair` with `pair_of`, which `either` reaches for.
-- `crates/rl-rules/src/parts.rs`: the authored parts, `Melee`, `Ranged`, `Throw`, `Wear`, `Charges` and `Level`, and `resistances`; tested on plain values, with no `App`.
-- `crates/rl-bevy/src/parts.rs`: `Attacks`, `ItemParts` and its check, `insert_parts`, `level_up`, `ItemLevel` and `MadeOf`.
-- `crates/rl-save/src/run.rs`: `SaveableItem`, `SavedItem` and `save_items`.
-- `crates/rl-ui/src/view/target.rs` and `crates/rl-ui/src/panel/inventory.rs`: `AimUse`, answered by the targeting cursor and by the bag choosing.
+- `crates/atglyph-bevy/src/effects/`: `Effects`, the engine's effects, `EffectBonus`, `Moments`, `Triggers`, `Fired`, `FiredOn`, `land_triggers` and `land_aimed_uses`.
+- `crates/atglyph-bevy/src/consumable.rs`: `Consumable`, which moments spend, `spend_charges` and `recharge_charges`.
+- `crates/atglyph-bevy/src/items.rs`: the actions, `UseItemAt` and `UseOn` among them, `may_use` and `may_use_on`, `ItemEvent`, `Bestows`, the gear fold, `Unknown` and `Stuck`.
+- `crates/atglyph-bevy/src/ammo.rs`: `Ammo`, `Dry`, `AmmoChanged`, `spend_ammo` and `sync_ammo`; `Stowed` and `Loadout::dry` are in `combat.rs`.
+- `crates/atglyph-bevy/src/ability.rs`: `Grants` and `Known`, an actor's own, and `Aimed` and `Bystanders::land`, which an aimed use shares.
+- `crates/atglyph-rules/src/ability.rs`: `EffectSpec` and `TriggerSpec`, the authored forms any content file can read, and `Targeting` and `Asks`, a use's aim and its question.
+- `crates/atglyph-rules/src/equip.rs`: `Equipment::equip_keeping`, the slot rule a stuck thing needs, and `SlotDef::pair` with `pair_of`, which `either` reaches for.
+- `crates/atglyph-rules/src/parts.rs`: the authored parts, `Melee`, `Ranged`, `Throw`, `Wear`, `Charges` and `Level`, and `resistances`; tested on plain values, with no `App`.
+- `crates/atglyph-bevy/src/parts.rs`: `Attacks`, `ItemParts` and its check, `insert_parts`, `level_up`, `ItemLevel` and `MadeOf`.
+- `crates/atglyph-save/src/run.rs`: `SaveableItem`, `SavedItem` and `save_items`.
+- `crates/atglyph-ui/src/view/target.rs` and `crates/atglyph-ui/src/panel/inventory.rs`: `AimUse`, answered by the targeting cursor and by the bag choosing.
 - `examples/foundry/src/gear.rs` and `examples/foundry/assets/items.ron`, and `examples/undermere/src/armory.rs` and `examples/undermere/assets/items.ron`: two games' own item files typed with the parts above, each with its own rules for a level beside them.

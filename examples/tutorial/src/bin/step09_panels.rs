@@ -15,12 +15,12 @@
 
 use std::sync::Arc;
 
+use atglyph::prelude::*;
+use atglyph::primitives::Rect;
+use atglyph::rules::ai::{Repertoire, Standard};
+use atglyph::rules::faction::FactionDef;
 use bevy::prelude::*;
 use rand::Rng;
-use rl_engine::prelude::*;
-use rl_engine::rl_core::Rect;
-use rl_engine::rl_rules::ai::{Repertoire, Standard};
-use rl_engine::rl_rules::faction::FactionDef;
 use serde::Deserialize;
 
 /// The terminal, in cells.
@@ -691,7 +691,7 @@ mod tests {
     fn headless(seed: u64) -> App {
         // Someone to read what `populate` tells, and the plugins `main` adds.
         let narrator = NarratorPlugin::default().phrase(Phrase::HitsYou, "{Who} bites you for {n}.", Tones::BAD);
-        let mut app = rl_engine::testing::headless(RunSeed(seed), narrator, (CombatPlugin, MindsPlugin, ItemsPlugin));
+        let mut app = atglyph::testing::headless(RunSeed(seed), narrator, (CombatPlugin, MindsPlugin, ItemsPlugin));
         app.places(Warren::new())
             .add_choice::<Shove>()
             .add_message::<Shoved>()

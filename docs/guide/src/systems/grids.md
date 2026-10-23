@@ -1,17 +1,17 @@
 <!-- documents:
      plugins: none
-     files: crates/rl-core/src/point.rs
-            crates/rl-core/src/grid.rs
-            crates/rl-core/src/direction.rs
-            crates/rl-core/src/geometry.rs
-            crates/rl-grid/src/tile.rs
-            crates/rl-grid/src/terrain.rs
-            crates/rl-grid/src/bitgrid.rs
-            crates/rl-grid/src/spatial.rs
-            crates/rl-grid/src/astar.rs
-            crates/rl-grid/src/dijkstra.rs
-            crates/rl-grid/src/region.rs
-            crates/rl-grid/src/targeting.rs
+     files: crates/atglyph-core/src/point.rs
+            crates/atglyph-core/src/grid.rs
+            crates/atglyph-core/src/direction.rs
+            crates/atglyph-core/src/geometry.rs
+            crates/atglyph-grid/src/tile.rs
+            crates/atglyph-grid/src/terrain.rs
+            crates/atglyph-grid/src/bitgrid.rs
+            crates/atglyph-grid/src/spatial.rs
+            crates/atglyph-grid/src/astar.rs
+            crates/atglyph-grid/src/dijkstra.rs
+            crates/atglyph-grid/src/region.rs
+            crates/atglyph-grid/src/targeting.rs
      fingerprint: 3e17b792 -->
 
 # Grids and tiles
@@ -23,7 +23,7 @@ This is the vocabulary every other system's page is written in.
 
 ## Turning it on
 
-There is no plugin here and no system, because there is nothing to run: `rl-core` and `rl-grid` are tier 1 and below, with no Bevy in them at all.
+There is no plugin here and no system, because there is nothing to run: `atglyph-core` and `atglyph-grid` are tier 1 and below, with no Bevy in them at all.
 A game turns them on by building a `TileRegistry`, calling `tables()` on it once, and handing the `TileTables` to whatever holds the map.
 `TileRegistry::standard` is the conventional starting set, `void`, `wall`, `floor`, `door_closed` and `door_open`, with `void` at id 0 so an unwritten cell is solid rather than an open field; `TileRegistry::new` is an empty one for a game that wants none of those names.
 A registration is refused with `RegisterError::Duplicate` if the name is taken, and `tables()` panics naming the tile if one opens, closes or burns into a name nobody registered.
@@ -98,8 +98,8 @@ Anything only the game cares about, a glyph, a colour, a line of flavour text, b
 
 ## Where it lives
 
-`rl-core` is tier 0: points, rectangles, directions, the `Grid2D` contract and the geometry, with no dependency on anything above it and none on Bevy, so the row-major arithmetic and the shape iterators are tested by value and proved by property over a range of inputs rather than by looking at a screenshot.
-`rl-grid` is tier 1 and adds what runs over a grid: tiles, terrain, the two source traits, the bit grid, the spatial index, the two pathfinders, regions and targeting shapes.
+`atglyph-core` is tier 0: points, rectangles, directions, the `Grid2D` contract and the geometry, with no dependency on anything above it and none on Bevy, so the row-major arithmetic and the shape iterators are tested by value and proved by property over a range of inputs rather than by looking at a screenshot.
+`atglyph-grid` is tier 1 and adds what runs over a grid: tiles, terrain, the two source traits, the bit grid, the spatial index, the two pathfinders, regions and targeting shapes.
 Both build for `wasm32-unknown-unknown`, which `scripts/check-tiers.sh --wasm` checks, so nothing in them may reach for `std::time::Instant`.
 The split that matters is the one between `Terrain` and `TileRegistry`: identity in the grid, meaning in the registry, joined only by a `TerrainView`.
 That is what lets the same terrain be read under a swimmer's costs, a smoke overlay or a viewer's knowledge at the same time, and what keeps a pathfinder from ever needing to know what a door is.

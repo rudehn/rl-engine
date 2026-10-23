@@ -1,23 +1,23 @@
 <!-- documents:
      plugins: MindsPlugin
-     files: crates/rl-rules/src/ai/brain.rs
-            crates/rl-rules/src/ai/snapshot.rs
-            crates/rl-rules/src/ai/tactics.rs
-            crates/rl-rules/src/ai/standard.rs
-            crates/rl-rules/src/ai/wits.rs
-            crates/rl-bevy/src/minds.rs
-            crates/rl-bevy/src/charts.rs
-            crates/rl-bevy/src/knowledge.rs
-            crates/rl-bevy/src/plugin.rs
-            crates/rl-bevy/src/fov.rs
-            crates/rl-bevy/src/combat.rs
-            crates/rl-bevy/src/stealth.rs
-            crates/rl-bevy/src/items.rs
-            crates/rl-bevy/src/ability.rs
-            crates/rl-bevy/src/props.rs
-            crates/rl-bevy/src/fire.rs
-            crates/rl-bevy/src/noise.rs
-            crates/rl-bevy/src/effects/mod.rs
+     files: crates/atglyph-rules/src/ai/brain.rs
+            crates/atglyph-rules/src/ai/snapshot.rs
+            crates/atglyph-rules/src/ai/tactics.rs
+            crates/atglyph-rules/src/ai/standard.rs
+            crates/atglyph-rules/src/ai/wits.rs
+            crates/atglyph-bevy/src/minds.rs
+            crates/atglyph-bevy/src/charts.rs
+            crates/atglyph-bevy/src/knowledge.rs
+            crates/atglyph-bevy/src/plugin.rs
+            crates/atglyph-bevy/src/fov.rs
+            crates/atglyph-bevy/src/combat.rs
+            crates/atglyph-bevy/src/stealth.rs
+            crates/atglyph-bevy/src/items.rs
+            crates/atglyph-bevy/src/ability.rs
+            crates/atglyph-bevy/src/props.rs
+            crates/atglyph-bevy/src/fire.rs
+            crates/atglyph-bevy/src/noise.rs
+            crates/atglyph-bevy/src/effects/mod.rs
      fingerprint: 67b3a1a2 -->
 
 # Minds
@@ -100,7 +100,7 @@ A post is the one such sense the engine pushes itself: the engine decides how a 
 
 ## Where it lives
 
-`rl-rules` is tier 1 and has no Bevy in it: `brain.rs` is `Brain`, `Tactic`, `Decision`, `Choice` and the `Fields` trait a tactic asks for the way through, `snapshot.rs` is what an actor knows, `tactics.rs` the shipped list and `wits.rs` the capabilities.
+`atglyph-rules` is tier 1 and has no Bevy in it: `brain.rs` is `Brain`, `Tactic`, `Decision`, `Choice` and the `Fields` trait a tactic asks for the way through, `snapshot.rs` is what an actor knows, `tactics.rs` the shipped list and `wits.rs` the capabilities.
 A tactic never sees a `DijkstraMap` or an `Entity`, only a `Snapshot` and a `Fields`, so one is tested against a snapshot built by hand and `NoFields` with no `App` anywhere, and the whole priority contract is arithmetic over ids made up on the spot.
-`rl-bevy` is tier 2 and owns the perceiving and the acting: `minds.rs` has the components, `Thinking`, `FlowFields`, `decide_minds` and `add_choice`, and `plugin.rs` fixes `DecideSet` and its four `PerceiveSet` phases, because the order the contributors run in is one decision and not six.
+`atglyph-bevy` is tier 2 and owns the perceiving and the acting: `minds.rs` has the components, `Thinking`, `FlowFields`, `decide_minds` and `add_choice`, and `plugin.rs` fixes `DecideSet` and its four `PerceiveSet` phases, because the order the contributors run in is one decision and not six.
 Each contributor lives with its own subsystem rather than here, so a subsystem added later adds a system to a phase and edits nothing in `minds.rs`.

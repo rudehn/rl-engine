@@ -33,7 +33,7 @@
 //   door:     optional, "door" if left out or None; Some(tile), a tile from `dungeon::registry`
 //             that a body can pass, what its doors and the loops cut through
 //             its walls are hung as, so a wood has no doors in its trees
-//   ambient:  (intensity, (r, g, b)), `rl_grid::Light::new`'s own two
+//   ambient:  (intensity, (r, g, b)), `atglyph::grid::Light::new`'s own two
 //             arguments: how this floor reads before anything lights it
 //   recipes:  [(name:, weight:, lakes:)], the recipes of
 //             `assets/layout.ron` a floor of this biome is grown by, drawn
@@ -42,7 +42,7 @@
 //             optional, none if left out, and None or Some((...)) when
 //             given: the lakes a floor grown by that recipe lays, so a
 //             cathedral's naves stand in deep water and its cloister
-//             stays dry. `rl_mapgen::Lakes`'s own fields, every tile a
+//             stays dry. `atglyph::mapgen::Lakes`'s own fields, every tile a
 //             name from `dungeon::registry`:
 //               tile:    what a lake is made of
 //               count:   (fewest, most) lakes tried for

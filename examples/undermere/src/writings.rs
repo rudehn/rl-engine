@@ -21,13 +21,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use atglyph::ecs::PlaceMap;
+use atglyph::ecs::places::{PlaceEntered, Spot};
+use atglyph::ecs::prefabs::Prefabs;
+use atglyph::prelude::*;
+use atglyph::rules::prefab::Slot;
 use bevy::prelude::*;
 use rand::Rng;
-use rl_engine::prelude::*;
-use rl_engine::rl_bevy::PlaceMap;
-use rl_engine::rl_bevy::places::{PlaceEntered, Spot};
-use rl_engine::rl_bevy::prefabs::Prefabs;
-use rl_engine::rl_rules::prefab::Slot;
 use serde::{Deserialize, Serialize};
 
 use crate::bestiary::MonsterDef;
@@ -269,7 +269,7 @@ fn feeling_of<'a, 'n>(spots: &[Spot], prop_name: impl Fn(&Spot) -> Option<&'n st
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_core::RunSeed;
+    use atglyph::primitives::RunSeed;
 
     use super::*;
     use crate::dungeon::{FLOORS, map_of};
@@ -281,7 +281,7 @@ mod tests {
     /// lines than the file holds repeats one instead of failing.
     #[test]
     fn a_line_is_never_drawn_twice_while_the_pool_holds_one_still_unused() {
-        let mut rng = RunSeed(0).rng(rl_engine::rl_core::SeedDomain::new(b"test"), 0);
+        let mut rng = RunSeed(0).rng(atglyph::primitives::SeedDomain::new(b"test"), 0);
         let mut used = BTreeSet::new();
         let mut drawn = Vec::new();
         for _ in 0..5 {
@@ -306,7 +306,7 @@ mod tests {
     /// spent apart: a remains takes nothing from the inscriptions.
     #[test]
     fn no_two_places_in_a_run_are_given_one_line_while_the_pool_lasts() {
-        let mut rng = RunSeed(7).rng(rl_engine::rl_core::SeedDomain::new(b"test"), 0);
+        let mut rng = RunSeed(7).rng(atglyph::primitives::SeedDomain::new(b"test"), 0);
         let mut progress = WritingsProgress::default();
         for map in 1..=4 {
             assign(&mut rng, map, &row(&[true, false, true]), (8, 8), &mut progress);
@@ -322,7 +322,7 @@ mod tests {
     /// save reads what it read before.
     #[test]
     fn a_place_keeps_its_line_when_its_floor_is_assigned_again() {
-        let mut rng = RunSeed(7).rng(rl_engine::rl_core::SeedDomain::new(b"test"), 0);
+        let mut rng = RunSeed(7).rng(atglyph::primitives::SeedDomain::new(b"test"), 0);
         let mut progress = WritingsProgress::default();
         let spots = row(&[true, false]);
         assign(&mut rng, 3, &spots, (5, 5), &mut progress);

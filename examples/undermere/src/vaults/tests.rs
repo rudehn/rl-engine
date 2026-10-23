@@ -184,7 +184,7 @@ fn the_lever_raises_its_floors_seal() {
     let (mut app, me, map) = on_the_floor_of("The Sealed Vault");
     let gate = app.world().resource::<WorldMap>().place(map).expect("built").locks.iter().find(|l| l.key.is_none()).expect("the vault's seal").at;
     let (lever, there) = props_called(&mut app, map, LEVER)[0];
-    app.world_mut().entity_mut(lever).remove::<rl_engine::rl_bevy::props::Hidden>();
+    app.world_mut().entity_mut(lever).remove::<atglyph::ecs::props::Hidden>();
     let next = beside(&app, there);
     stand_on(&mut app, me, next);
     let pull = app.world().resource::<Verbs>().get(PULL_VERB).expect("declared");
@@ -331,7 +331,7 @@ fn a_flood_rising_and_a_key_carried_outlive_a_continued_run() {
     app.world_mut().entity_mut(key).insert((VaultKey { floor: 3 }, tags));
     give(&mut app, me, key);
     pass_turns(&mut app, 1);
-    rl_engine::rl_save::save_run(app.world_mut()).expect("the run is written down");
+    atglyph::save::save_run(app.world_mut()).expect("the run is written down");
     let text = app.world().resource::<Saves>().load(crate::save::SLOT).expect("the slot reads").expect("written");
     let mut again = crate::testing::continued(&text);
     pass_turns(&mut again, FLOOD_TURNS + 1);
@@ -415,7 +415,7 @@ fn only_a_vault_piece_marks_a_sleeper_a_captive_or_a_causeway() {
 fn the_sunken_causeway_is_found_whole_from_beside_one_cell_of_it() {
     let (mut app, me, map) = on_the_floor_of("The Drowned Reliquary");
     let causeway = app.world().resource::<WorldMap>().tables().names.iter().position(|n| n == "sunken causeway").expect("a tile");
-    let cells: Vec<rl_engine::rl_bevy::Secret> = app.world().resource::<WorldMap>().secrets(map).iter().filter(|s| s.is.index() == causeway).copied().collect();
+    let cells: Vec<atglyph::ecs::Secret> = app.world().resource::<WorldMap>().secrets(map).iter().filter(|s| s.is.index() == causeway).copied().collect();
     assert!(cells.len() > 1, "a causeway of more than one cell");
     assert!(cells.iter().all(|s| s.group == cells[0].group), "one group");
     let world_map = app.world().resource::<WorldMap>();
@@ -485,10 +485,10 @@ fn a_fall_never_lands_inside_a_locked_vault() {
 /// backstop asks the same of every real floor that lays a lock.
 #[test]
 fn nothing_lands_behind_a_lock_on_a_floor_made_for_it() {
-    use rl_engine::rl_bevy::places::Lock;
+    use atglyph::ecs::places::Lock;
     let tiles = crate::dungeon::registry();
     let (wall, floor, door) = (tiles.expect("stone wall"), tiles.expect("hall floor"), tiles.expect("vault door"));
-    let terrain = rl_engine::rl_grid::Terrain::from_fn(16, 7, |p| match (p.x, p.y) {
+    let terrain = atglyph::grid::Terrain::from_fn(16, 7, |p| match (p.x, p.y) {
         (0 | 15, _) | (_, 0 | 6) => wall,
         (10, 3) => door,
         (10, _) => wall,
@@ -502,7 +502,7 @@ fn nothing_lands_behind_a_lock_on_a_floor_made_for_it() {
         spots: Vec::new(),
         locks: vec![Lock { at: lock, key: None }],
         secrets: Vec::new(),
-        ambient: rl_engine::rl_grid::Light::DARK,
+        ambient: atglyph::grid::Light::DARK,
         peaceful: false,
     };
     let map = map_of(3);
@@ -521,7 +521,7 @@ fn nothing_lands_behind_a_lock_on_a_floor_made_for_it() {
         spots: Vec::new(),
         locks: vec![Lock { at: lock, key: None }],
         secrets: Vec::new(),
-        ambient: rl_engine::rl_grid::Light::DARK,
+        ambient: atglyph::grid::Light::DARK,
         peaceful: false,
     };
     assert!(nothing_lands_behind_a_lock(&tables, built, map, "the made-up floor"), "it lays a lock");
@@ -619,7 +619,7 @@ fn the_tinder_rooms_ember_plate_sets_the_straw_alight() {
     let far: Vec<Point> = Direction::ALL.iter().map(|d| brazier + d.offset()).filter(|p| geometry::chebyshev(*p, plate) == 2).collect();
     assert!(far.iter().all(|p| tile_at(&app, map, *p) == "straw"), "straw beside the brazier");
     step_onto(&mut app, me, plate);
-    let burning = |app: &App, p: Point| app.world().resource::<rl_engine::rl_bevy::fire::Fire>().is_burning(p);
+    let burning = |app: &App, p: Point| app.world().resource::<atglyph::ecs::fire::Fire>().is_burning(p);
     let near: Vec<Point> = Direction::ALL.iter().map(|d| plate + d.offset()).filter(|p| tile_at(&app, map, *p) == "straw").collect();
     assert!(near.iter().any(|p| burning(&app, *p)), "the straw round the plate catches at once");
     let mut reached = false;
@@ -753,7 +753,7 @@ fn the_cold_forges_anvil_tempers_a_worn_weapon_once() {
     use super::wells::*;
     let (mut app, me, map) = on_the_floor_of("The Cold Forge");
     let (anvil, at) = the_one(&mut app, map, ANVIL);
-    assert!(app.world().get::<rl_engine::rl_bevy::props::Scenery>(anvil).is_none(), "listed with what can be acted on");
+    assert!(app.world().get::<atglyph::ecs::props::Scenery>(anvil).is_none(), "listed with what can be acted on");
     let hand = app.world().resource::<Registries>().slots.expect("main hand");
     let sword = app.world().get::<Equipped>(me).and_then(|worn| worn.in_slot(hand)).expect("the sword they set out with");
     let carried = make(&mut app, "potion of descent");

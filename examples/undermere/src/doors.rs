@@ -21,12 +21,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use atglyph::grid::TileId;
+use atglyph::prelude::*;
+use atglyph::primitives::Point;
+use atglyph::save::SaveableState;
+use atglyph::ui::{CursorMap, CursorStyle, Tones};
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_core::Point;
-use rl_engine::rl_grid::TileId;
-use rl_engine::rl_save::SaveableState;
-use rl_engine::rl_ui::{CursorMap, CursorStyle, Tones};
 
 use crate::input::Binds;
 
@@ -202,7 +202,7 @@ pub fn draw_door_marks(
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_bevy::testing::{KeyScriptPlugin, press};
+    use atglyph::ecs::testing::{KeyScriptPlugin, press};
 
     use super::*;
     use crate::testing::{arena_on, continued};
@@ -216,7 +216,7 @@ mod tests {
         app.add_plugins(KeyScriptPlugin);
         let cells = [here.offset(1, 0), here.offset(0, 1), here.offset(0, -12)];
         crate::testing::lay_floor(&mut app, &cells);
-        let walled: Vec<Point> = rl_engine::rl_core::geometry::square(cells[2], 1).filter(|p| *p != cells[2]).collect();
+        let walled: Vec<Point> = atglyph::primitives::geometry::square(cells[2], 1).filter(|p| *p != cells[2]).collect();
         crate::testing::wall_off(&mut app, &walled);
         let shut = app.world().resource::<DoorTiles>().shut;
         let mut map = app.world_mut().resource_mut::<WorldMap>();
@@ -252,7 +252,7 @@ mod tests {
         press(&mut app, KeyCode::KeyL);
         press(&mut app, KeyCode::KeyL);
         let map = here(&app);
-        rl_engine::rl_save::save_run(app.world_mut()).expect("the run is written down");
+        atglyph::save::save_run(app.world_mut()).expect("the run is written down");
         let text = app.world().resource::<Saves>().load(crate::save::SLOT).expect("the slot reads").expect("a save");
         let again = continued(&text);
         assert!(again.world().resource::<Passed>().has(map, east), "the record came back with the run");

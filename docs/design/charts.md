@@ -38,7 +38,7 @@ On its turn, not once a frame, because dozens of minds move within one frame and
 ### 3.3 What is lacking is a sense, and walking to it is a tactic
 
 `sense_uncharted` pushes `Uncharted`, the cells of the loaded window the chart does not hold that could be stood on, each beside a held cell that could be stood on.
-`Explore`, in `rl-rules`, asks the way toward all of them at once and takes a step, so the nearest by the way there wins, not the nearest by the crow.
+`Explore`, in `atglyph-rules`, asks the way toward all of them at once and takes a step, so the nearest by the way there wins, not the nearest by the crow.
 It gives the turn up when the list is empty, or when no cell of it can be reached, so an explorer with nothing left to find goes on to whatever its brain does next.
 
 The unseen cells are asked whether they can be stood on, which is a small thing the mind has not earned: it knows which dark cell beside known floor is floor.

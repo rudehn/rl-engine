@@ -8,12 +8,12 @@ rust-version.workspace = true
 publish = false
 description = "A worked example: a walk through generated rooms in a terminal, on the Bevy-free crates alone."
 
-[package.metadata.rl-engine]
+[package.metadata.atglyph]
 # Read by scripts/check-tiers.sh: 0 core, 1 no Bevy, 2 the Bevy layer, 3 the facade and games.
 tier = 3
 
 [dependencies]
-rl-core.workspace = true
-rl-grid.workspace = true
-rl-mapgen.workspace = true
+atglyph-core.workspace = true
+atglyph-grid.workspace = true
+atglyph-mapgen.workspace = true
 crossterm.workspace = true

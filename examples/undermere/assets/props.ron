@@ -52,7 +52,7 @@
      light: (intensity: 200, radius: 4, color: (r: 255, g: 128, b: 51), flicker: 89)),
     // The furniture blocks, in Mereholt's pieces and in the rooms
     // `assets/dressings.ron` dresses below, so a room is something to
-    // fight round: `rl_mapgen::Dress` takes back any thing that would cut
+    // fight round: `atglyph::mapgen::Dress` takes back any thing that would cut
     // a room or shut in a slot laid before it, so every cell a body can
     // stand on, and every item a dressing lays, stays reached.
     (name: "anvil",      glyph: 'n', color: (r: 212, g: 212, b: 254), blocks: true),
@@ -148,7 +148,7 @@
     (name: "fishing net",   glyph: '"', color: (r: 192, g: 179, b: 141)),
     (name: "creel",         glyph: 'o', color: (r: 186, g: 155, b: 105)),
 
-    // The flavor dressings' own scenery, laid by `rl_mapgen::Dress` rather
+    // The flavor dressings' own scenery, laid by `atglyph::mapgen::Dress` rather
     // than a fixed piece. The furniture among it blocks, as the town's
     // does: the drill yard's dummies and posts, a tomb row's sarcophagi, a
     // reading room's desks and a smithy's troughs. The rest is clutter on

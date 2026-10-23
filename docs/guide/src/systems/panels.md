@@ -3,39 +3,39 @@
               InspectPanel, InspectViewPlugin, LogPanel, NearbyPanel, NearbyViewPlugin,
               OffersPanel, OffersViewPlugin, ScrollbackPanel, SheetPanel, SheetViewPlugin,
               TargetPanel, TargetViewPlugin, VitalsPanel, VitalsViewPlugin
-     files: crates/rl-ui/src/lib.rs
-            crates/rl-ui/src/tone.rs
-            crates/rl-ui/src/facet.rs
-            crates/rl-ui/src/focus.rs
-            crates/rl-ui/src/modal.rs
-            crates/rl-ui/src/controls.rs
-            crates/rl-ui/src/menu.rs
-            crates/rl-ui/src/log.rs
-            crates/rl-ui/src/view/mod.rs
-            crates/rl-ui/src/view/vitals.rs
-            crates/rl-ui/src/view/gear.rs
-            crates/rl-ui/src/view/nearby.rs
-            crates/rl-ui/src/view/inspect.rs
-            crates/rl-ui/src/view/ability.rs
-            crates/rl-ui/src/view/target.rs
-            crates/rl-ui/src/view/offers.rs
-            crates/rl-ui/src/view/sheet.rs
-            crates/rl-ui/src/panel/mod.rs
-            crates/rl-ui/src/panel/vitals.rs
-            crates/rl-ui/src/panel/gear.rs
-            crates/rl-ui/src/panel/nearby.rs
-            crates/rl-ui/src/panel/inspect.rs
-            crates/rl-ui/src/panel/ability.rs
-            crates/rl-ui/src/panel/target.rs
-            crates/rl-ui/src/panel/offers.rs
-            crates/rl-ui/src/panel/sheet.rs
-            crates/rl-ui/src/panel/log.rs
-            crates/rl-ui/src/panel/scrollback.rs
-            crates/rl-rules/src/forecast.rs
-            crates/rl-bevy/src/plugin.rs
-            crates/rl-bevy/src/turn.rs
-            crates/rl-render/src/terminal.rs
-            crates/rl-render/src/map_view.rs
+     files: crates/atglyph-ui/src/lib.rs
+            crates/atglyph-ui/src/tone.rs
+            crates/atglyph-ui/src/facet.rs
+            crates/atglyph-ui/src/focus.rs
+            crates/atglyph-ui/src/modal.rs
+            crates/atglyph-ui/src/controls.rs
+            crates/atglyph-ui/src/menu.rs
+            crates/atglyph-ui/src/log.rs
+            crates/atglyph-ui/src/view/mod.rs
+            crates/atglyph-ui/src/view/vitals.rs
+            crates/atglyph-ui/src/view/gear.rs
+            crates/atglyph-ui/src/view/nearby.rs
+            crates/atglyph-ui/src/view/inspect.rs
+            crates/atglyph-ui/src/view/ability.rs
+            crates/atglyph-ui/src/view/target.rs
+            crates/atglyph-ui/src/view/offers.rs
+            crates/atglyph-ui/src/view/sheet.rs
+            crates/atglyph-ui/src/panel/mod.rs
+            crates/atglyph-ui/src/panel/vitals.rs
+            crates/atglyph-ui/src/panel/gear.rs
+            crates/atglyph-ui/src/panel/nearby.rs
+            crates/atglyph-ui/src/panel/inspect.rs
+            crates/atglyph-ui/src/panel/ability.rs
+            crates/atglyph-ui/src/panel/target.rs
+            crates/atglyph-ui/src/panel/offers.rs
+            crates/atglyph-ui/src/panel/sheet.rs
+            crates/atglyph-ui/src/panel/log.rs
+            crates/atglyph-ui/src/panel/scrollback.rs
+            crates/atglyph-rules/src/forecast.rs
+            crates/atglyph-bevy/src/plugin.rs
+            crates/atglyph-bevy/src/turn.rs
+            crates/atglyph-render/src/terminal.rs
+            crates/atglyph-render/src/map_view.rs
      fingerprint: c1f36be1 -->
 
 # Panels
@@ -161,7 +161,7 @@ Opt-in is per panel and not per crate, so a game with no equipment adds no gear 
 A widget takes a `ToneId` and never a `Color`, because a widget that took a colour is a widget every game forks; there are no literals in a presenter and no colour in a view.
 No engine type, doc or constant says weapon, spell or monster: a game's vocabulary reaches a panel as a `Name` on an entity or a `Facet` on a row, and nothing in between learns a word.
 The engine will not guess a name, so a game that renames a thing and forgets the `Name` shows a stale row, which is the honest cost of a component over a trait a game would have to implement to hand back one string.
-Arithmetic that is really about the rules is not a panel's: the inspect panel's forecast is `rl_rules::forecast`, resolved through the same mitigation pipeline a real blow goes through, so a duel that reads wrong is a rules bug with a test rather than a drawing bug.
+Arithmetic that is really about the rules is not a panel's: the inspect panel's forecast is `atglyph::rules::forecast`, resolved through the same mitigation pipeline a real blow goes through, so a duel that reads wrong is a rules bug with a test rather than a drawing bug.
 Which of the two attacks that forecast counts is the resolver's own rule, held in `Arms::at`: the panel hands over both sets of rolls and the gap the two stand at and picks nothing for itself.
 A game's annotate system names `ViewSet::Annotate` and never orders itself after a collector function, so the engine may split a collector in two without breaking it.
 Views are rebuilt every frame rather than on a turn boundary: a frame already rewrites every cell of the map, and a panel that is one turn stale is the kind of bug that survives to a release.
@@ -172,8 +172,8 @@ A view carries an `Entity`, which is why views are tier 2 and only their arithme
 
 ## Where it lives
 
-`rl-rules` is tier 1 and holds the derivations, so `expected_damage`, `blows_to_fell`, `turns_for` and `duel` are property-tested over plain numbers with no `App`, and are as usable by a balance report as by a screen.
-`rl-ui` is tier 2 and holds everything that names an `Entity`: `view/` is the data and the collectors, `panel/` is one terminal presenter each, and `tone.rs`, `facet.rs`, `modal.rs` and `focus.rs` are the four small registries they all share.
+`atglyph-rules` is tier 1 and holds the derivations, so `expected_damage`, `blows_to_fell`, `turns_for` and `duel` are property-tested over plain numbers with no `App`, and are as usable by a balance report as by a screen.
+`atglyph-ui` is tier 2 and holds everything that names an `Entity`: `view/` is the data and the collectors, `panel/` is one terminal presenter each, and `tone.rs`, `facet.rs`, `modal.rs` and `focus.rs` are the four small registries they all share.
 Keeping the presenters in a module of their own is what lets two of them draw one view, and what lets a game delete all of them and keep the data.
-`rl-render` sits below and owns the surface: a presenter writes `Cell`s into a `Terminal`, and one that paints over the map writes a tile through `MapView`, which knows where the tile sits and how many cells it spans.
-`rl-bevy` gains nothing from any of this; it fixes `PresentSet`, and the components a collector reads are the ones the engine already had.
+`atglyph-render` sits below and owns the surface: a presenter writes `Cell`s into a `Terminal`, and one that paints over the map writes a tile through `MapView`, which knows where the tile sits and how many cells it spans.
+`atglyph-bevy` gains nothing from any of this; it fixes `PresentSet`, and the components a collector reads are the ones the engine already had.

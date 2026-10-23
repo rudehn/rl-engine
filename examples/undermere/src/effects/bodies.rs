@@ -9,16 +9,16 @@
 //! King is the one thing none of them reaches: a run is won by killing
 //! him, not by making him a rat or two kings.
 
+use atglyph::ecs::EffectRng;
+use atglyph::prelude::*;
+use atglyph::rules::ability::{AbilityDef, RawValue, read_args};
 use bevy::prelude::*;
 use rand::Rng;
-use rl_engine::prelude::*;
-use rl_engine::rl_bevy::EffectRng;
-use rl_engine::rl_rules::ability::{AbilityDef, RawValue, read_args};
 
 use super::moving::no_args;
 use super::{free_cells_near, the};
-use rl_engine::rl_bevy::Life as EngineLife;
-use rl_engine::rl_bevy::revive;
+use atglyph::ecs::Life as EngineLife;
+use atglyph::ecs::revive;
 
 use crate::allies::{Ally, Fades, befriend, fight_for, vanish};
 use crate::bestiary::{Bestiary, Kind, MonsterDef, spawn_monster_now};
@@ -122,7 +122,7 @@ pub fn polymorph(world: &mut World, target: Entity) -> bool {
         befriend(world, made);
     }
     let now = world.resource::<Bestiary>().defs.get(kind).name.clone();
-    let line = format!("{} turns into {}!", the(&was.name), rl_engine::rl_core::noun::with_article(&now));
+    let line = format!("{} turns into {}!", the(&was.name), atglyph::primitives::noun::with_article(&now));
     world.write_message(Tell::new(line, Tones::NOTICE));
     true
 }
@@ -245,7 +245,7 @@ pub fn summon(world: &mut World, reader: Entity, count: u32) -> usize {
     }
     if !came.is_empty() && world.get::<Player>(reader).is_some() {
         let line = match came.as_slice() {
-            [one] => format!("{} appears beside you!", super::capital(&rl_engine::rl_core::noun::with_article(one))),
+            [one] => format!("{} appears beside you!", super::capital(&atglyph::primitives::noun::with_article(one))),
             _ => "Monsters appear all round you!".to_string(),
         };
         world.write_message(Tell::new(line, Tones::BAD));
@@ -444,7 +444,7 @@ pub struct Raised;
 /// gives back everything the actor died with, which is right for what it
 /// is and wrong for what it was doing.
 pub fn forget_its_life(world: &mut World, body: Entity) {
-    use rl_engine::rl_bevy::Drops;
+    use atglyph::ecs::Drops;
     world.entity_mut(body).remove::<(
         Drops<crate::armory::ItemDef>,
         crate::tricks::Stole,
@@ -914,7 +914,7 @@ impl Rise {
         let bodies: Vec<(Entity, Point)> = {
             let mut q = world.query::<(Entity, &PropKind, &Position, &OnMap)>();
             q.iter(world)
-                .filter(|(_, k, p, on)| k.0 == prop && on.0 == map && rl_engine::rl_core::geometry::chebyshev(p.0, at) <= self.radius)
+                .filter(|(_, k, p, on)| k.0 == prop && on.0 == map && atglyph::primitives::geometry::chebyshev(p.0, at) <= self.radius)
                 .map(|(e, _, p, _)| (e, p.0))
                 .collect()
         };

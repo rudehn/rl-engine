@@ -21,14 +21,14 @@
 
 use std::sync::Arc;
 
+use atglyph::ecs::{DEFAULT_PERCEPTION, Inflict, MomentId};
+use atglyph::prelude::*;
+use atglyph::rules::ability::EffectSpec;
+use atglyph::rules::ai::tactics::Keep;
+use atglyph::rules::ai::{Repertoire, Standard};
+use atglyph::rules::faction::FactionDef;
+use atglyph::rules::parts;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_bevy::{DEFAULT_PERCEPTION, Inflict, MomentId};
-use rl_engine::rl_rules::ability::EffectSpec;
-use rl_engine::rl_rules::ai::tactics::Keep;
-use rl_engine::rl_rules::ai::{Repertoire, Standard};
-use rl_engine::rl_rules::faction::FactionDef;
-use rl_engine::rl_rules::parts;
 
 use crate::armory::ItemDef;
 use crate::traits::{Folded, TraitDef};
@@ -606,7 +606,7 @@ fn brain(can: Repertoire, tricks: Tricks) -> Brain<Entity> {
     let takes_things = can.wits.takes_things();
     let mut brain = Standard { scavenge_reach: None, ..MONSTER }.brain(can);
     if takes_things {
-        brain = brain.before_hunt(crate::tricks::Unanchored(rl_engine::rl_rules::ai::tactics::Scavenge { reach: SCAVENGE_REACH }));
+        brain = brain.before_hunt(crate::tricks::Unanchored(atglyph::rules::ai::tactics::Scavenge { reach: SCAVENGE_REACH }));
     }
     if tricks.steals {
         brain = brain.first(crate::tricks::FleeAfterStealing);

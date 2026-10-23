@@ -1,9 +1,9 @@
 //! What the mercenaries' tests share: a run in Mereholt, its candidates,
 //! taking up an offer, and a mercenary hired on the spot.
 
+use atglyph::prelude::*;
+use atglyph::primitives::RunSeed;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_core::RunSeed;
 
 use super::*;
 use crate::testing::{adventurer, at, headless, monster, settle, stand_on};

@@ -12,8 +12,8 @@
 //! as [`vanish`] takes it: out of play without a death, since nothing
 //! killed it.
 
+use atglyph::prelude::*;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
 
 use crate::bestiary::{Bestiary, Kind};
 

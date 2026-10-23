@@ -158,7 +158,7 @@ It is in the engine because every game that places anything by where it is would
 
 It fails with the first bound the survey does not meet, naming the bound and both numbers.
 
-A loose generator is only safe if what it gets wrong is thrown away, and the module docs of `rl-mapgen` already say a caller retries a failed chain with a different index.
+A loose generator is only safe if what it gets wrong is thrown away, and the module docs of `atglyph-mapgen` already say a caller retries a failed chain with a different index.
 Nothing does: `Chain::run` draws every pass's stream at index nought, and every game propagates the error.
 So `Chain::run_retrying(make, seed, attempts)` is added: it builds a fresh context with `make`, runs the chain with every pass's stream derived at the attempt's index, and returns the first that succeeds, or the last error once the attempts are spent.
 The same seed therefore builds the same place however many attempts it took, and `Chain::run` is attempt nought.
@@ -166,7 +166,7 @@ The same seed therefore builds the same place however many attempts it took, and
 ## 6. The recipe file
 
 A recipe is data, and its file is the engine's, as a prefab's is.
-`rl-rules` owns the file and what is wrong with it, and names no mapgen type; `rl-bevy` turns a loaded recipe into the passes, the way `Prefabs::piece` turns a loaded prefab into a `rl_mapgen::Prefab`.
+`atglyph-rules` owns the file and what is wrong with it, and names no mapgen type; `atglyph-bevy` turns a loaded recipe into the passes, the way `Prefabs::piece` turns a loaded prefab into a `atglyph_mapgen::Prefab`.
 So a recipe loads, and every mistake in it is reported by name, with no map and no `App`.
 
 A layout file holds the shapes, the districts and the recipes:
@@ -198,7 +198,7 @@ One test that ran a script on a fixed seed moved to another seed, and the finger
 
 ## 8. Testing
 
-In `rl-mapgen`, with no `App`, over a range of seeds and at two sizes, 84 by 48 and 160 by 90:
+In `atglyph-mapgen`, with no `App`, over a range of seeds and at two sizes, 84 by 48 and 160 by 90:
 
 - every open cell of an accreted place can be walked to from every other;
 - no opening has rock on either side of the way through it;
@@ -211,11 +211,11 @@ In `rl-mapgen`, with no `App`, over a range of seeds and at two sizes, 84 by 48 
 
 For the survey, on small maps drawn by hand: a dead end, a chokepoint, a junction of three openings, the loop count and the seclusion of a room off the route are each what the drawing says.
 
-In `rl-rules`: the recipe file loads, and each mistake section 6 lists is refused by name.
+In `atglyph-rules`: the recipe file loads, and each mistake section 6 lists is refused by name.
 
 In foundry: every deck builds within the retry bound on every seed of the range and meets its requirements, and every deck test that was there before passes unchanged.
 
-In `rl-mapgen` again, since the trim: no passage of a grown place is left with one way in, and areas are numbered in the order they are emitted.
+In `atglyph-mapgen` again, since the trim: no passage of a grown place is left with one way in, and areas are numbered in the order they are emitted.
 
 A layout that meets every bound can still read badly, so sample decks are printed as text across seeds and looked at before the recipes are called done.
 

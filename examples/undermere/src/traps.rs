@@ -17,16 +17,16 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use atglyph::ecs::places::PlaceEntered;
+use atglyph::grid::{Terrain, TileId, TileTables};
+use atglyph::mapgen::dungeon::{ExitPoint, Room};
+use atglyph::mapgen::passes::StartPoint;
+use atglyph::mapgen::{Area, HideOpenings, Join, Opening, Secret, Surveyed};
+use atglyph::prelude::*;
+use atglyph::primitives::Rect;
 use bevy::prelude::*;
 use rand::Rng;
 use rand::seq::{IndexedRandom, SliceRandom};
-use rl_engine::prelude::*;
-use rl_engine::rl_bevy::places::PlaceEntered;
-use rl_engine::rl_core::Rect;
-use rl_engine::rl_grid::{Terrain, TileId, TileTables};
-use rl_engine::rl_mapgen::dungeon::{ExitPoint, Room};
-use rl_engine::rl_mapgen::passes::StartPoint;
-use rl_engine::rl_mapgen::{Area, HideOpenings, Join, Opening, Secret, Surveyed};
 
 use crate::dungeon::{FLOORS, MIN_DISTANCE_FROM_ENTRY};
 
@@ -143,7 +143,7 @@ impl Hiding {
         hiding.passages = crate::dungeon::layout()
             .shapes
             .into_iter()
-            .filter(|shape| matches!(shape.kind, rl_engine::rl_rules::layout::ShapeKind::Passage { .. }))
+            .filter(|shape| matches!(shape.kind, atglyph::rules::layout::ShapeKind::Passage { .. }))
             .map(|shape| shape.name)
             .collect();
         let mut ranges =
@@ -420,7 +420,7 @@ impl Ground {
         let rooms: Vec<Rect> = ctx.outputs().iter::<Room>().map(|r| r.0).collect();
         let areas: Vec<Area> = ctx.outputs().iter::<Area>().filter(|a| a.entries.is_none()).cloned().collect();
         let room = areas.iter().map(|a| a.cells.iter().any(|c| rooms.iter().any(|r| r.contains(*c)))).collect();
-        let facts = |a: &Area, read: fn(&rl_engine::rl_mapgen::AreaFacts) -> bool| survey.areas.get(a.index).is_some_and(read);
+        let facts = |a: &Area, read: fn(&atglyph::mapgen::AreaFacts) -> bool| survey.areas.get(a.index).is_some_and(read);
         let chokepoint = areas.iter().map(|a| facts(a, |f| f.chokepoint)).collect();
         let corridor = areas.iter().map(|a| passages.contains(&a.shape)).collect();
         let behind: BTreeSet<usize> = ctx.outputs().iter::<Secret>().flat_map(|s| [s.joins.0, s.joins.1]).collect();
@@ -509,10 +509,10 @@ pub fn show_sprung(
         let (Ok(kind), Some(by)) = (hidden.get(ev.on), ev.by) else { continue };
         let what = &registries.props.get(kind.0).name;
         let line = if by == me {
-            format!("You stepped on {}!", rl_engine::rl_core::noun::with_article(&format!("hidden {what}")))
+            format!("You stepped on {}!", atglyph::primitives::noun::with_article(&format!("hidden {what}")))
         } else if sight.can_see(ev.at) {
-            let who = names.get(by).map_or_else(|_| "something".to_string(), |n| rl_engine::rl_core::noun::with_the(n.as_str()));
-            format!("{} went off under {who}!", crate::effects::capital(&rl_engine::rl_core::noun::with_article(&format!("hidden {what}"))))
+            let who = names.get(by).map_or_else(|_| "something".to_string(), |n| atglyph::primitives::noun::with_the(n.as_str()));
+            format!("{} went off under {who}!", crate::effects::capital(&atglyph::primitives::noun::with_article(&format!("hidden {what}"))))
         } else {
             continue;
         };
@@ -537,7 +537,7 @@ pub fn tell_spotted(
         let line = match found.what {
             Finding::Prop(prop) => {
                 let Ok(kind) = kinds.get(prop) else { continue };
-                format!("You spot {}.", rl_engine::rl_core::noun::with_article(&registries.props.get(kind.0).name))
+                format!("You spot {}.", atglyph::primitives::noun::with_article(&registries.props.get(kind.0).name))
             }
             Finding::Secret { is, .. } => match map.tables().names[is.index()].as_str() {
                 crate::vaults::CAUSEWAY_TILE => "You make out a causeway just under the water.".to_string(),
@@ -564,7 +564,7 @@ pub fn tell_spotted(
 #[cfg(test)]
 pub(crate) fn hidden_keeps_its_promises(
     hiding: &Hiding,
-    built: &rl_engine::rl_bevy::places::PlaceBuild,
+    built: &atglyph::ecs::places::PlaceBuild,
     floor: u32,
     tables: &TileTables,
     at: &str,
@@ -631,7 +631,7 @@ pub(crate) fn hidden_keeps_its_promises(
 mod tests {
     use std::collections::BTreeSet;
 
-    use rl_engine::rl_core::RunSeed;
+    use atglyph::primitives::RunSeed;
 
     use super::*;
     use crate::dungeon::map_of;
@@ -674,7 +674,7 @@ mod tests {
     /// each on a cell no trap took.
     #[test]
     fn lay_hidden_never_lays_more_than_asked_and_only_where_a_trap_may_stand() {
-        use rl_engine::rl_mapgen::{AreaFacts, BaseContext, Chain, Phase};
+        use atglyph::mapgen::{AreaFacts, BaseContext, Chain, Phase};
         let tiles = crate::dungeon::registry();
         let ground = tiles.expect("hall floor");
         let passages = BTreeSet::from(["corridor".to_string()]);
@@ -729,7 +729,7 @@ mod tests {
     /// [`SPOTTING`] for a finder one cell off who waits, with no keenness,
     /// and compounded over twenty turns. That the engine rolls that chance
     /// once a turn, once for a door's whole group, and that waiting
-    /// multiplies it, is `rl-bevy`'s `props` tests: the secret in sight
+    /// multiplies it, is `atglyph-bevy`'s `props` tests: the secret in sight
     /// found at its chance, the waited turn that multiplies it, and the
     /// group found as one.
     #[test]
@@ -859,7 +859,7 @@ mod tests {
     /// take traps in the corridor and at its two mouths and nowhere else.
     #[test]
     fn on_a_floor_of_caves_a_trap_stands_only_in_a_corridor_a_chokepoint_or_a_doorway() {
-        use rl_engine::rl_mapgen::{AreaFacts, BaseContext};
+        use atglyph::mapgen::{AreaFacts, BaseContext};
         let hiding = Hiding::load();
         assert!(
             hiding.passages.contains("corridor") && !hiding.passages.contains("cave"),

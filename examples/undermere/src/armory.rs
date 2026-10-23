@@ -46,9 +46,9 @@
 
 use std::sync::Arc;
 
+use atglyph::prelude::*;
+use atglyph::rules::parts::{self, Level};
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_rules::parts::{self, Level};
 use serde::Deserialize;
 
 use crate::lore::{CurseShown, Lore, Unfamiliar};
@@ -217,7 +217,7 @@ impl Armory {
         let defs = load_defs(registries, traits);
         let names = registries.names();
         let tags = |d: &ItemDef| d.tags.iter().map(|t| t.id()).collect();
-        let table = rl_engine::rl_rules::loot::load(ITEM_SPAWNS_RON, &names.clone().with("item", &defs), &defs, tags)
+        let table = atglyph::rules::loot::load(ITEM_SPAWNS_RON, &names.clone().with("item", &defs), &defs, tags)
             .unwrap_or_else(|e| panic!("assets/item_spawns.ron: {e}"));
         Self::new(defs, table, registries, traits, kinds, moments).unwrap_or_else(|e| panic!("assets/items.ron: {e}"))
     }
@@ -531,7 +531,7 @@ pub const GROUND_EFFECTS: [&str; 3] = ["Ignite", "Emit", "Darkness"];
 /// landing an effect that changes the ground.
 fn shows_unstruck(d: &ItemDef) -> bool {
     d.triggers.iter().filter(|t| t.on == "use").any(|t| {
-        let at_ground = t.targeting.is_some_and(|targeting| targeting.aim == rl_engine::rl_rules::ability::Aim::Ground);
+        let at_ground = t.targeting.is_some_and(|targeting| targeting.aim == atglyph::rules::ability::Aim::Ground);
         let effects = t.effects.as_deref().unwrap_or(&d.effects);
         at_ground || effects.iter().any(|e| GROUND_EFFECTS.contains(&e.kind.as_str()))
     })
@@ -833,7 +833,7 @@ pub fn spawn_item_at(commands: &mut Commands, armory: &Armory, def: Id<ItemDef>,
 
 /// Raises `item`'s level by `by`, or lowers it for a `by` below nought,
 /// and fits it to the new level: the engine's
-/// [`level_up`](rl_engine::rl_bevy::parts::level_up) fits everything its
+/// [`level_up`](atglyph::ecs::parts::level_up) fits everything its
 /// parts say from the parts it was made of, so its armor, its blows and
 /// what it gives its wearer are its definition's at the new level and
 /// never the old numbers with a level added twice, and what it holds grows
@@ -845,7 +845,7 @@ pub fn spawn_item_at(commands: &mut Commands, armory: &Armory, def: Id<ItemDef>,
 /// `None` for a thing that takes no levels, which is left as it was.
 pub fn level_up(world: &mut World, item: Entity, by: i32) -> Option<i32> {
     let def = world.get::<ItemKind>(item)?.0;
-    let level = rl_engine::rl_bevy::parts::level_up(world, item, by)?;
+    let level = atglyph::ecs::parts::level_up(world, item, by)?;
     let armory = world.resource::<Armory>();
     let (score, pace) = (armory.score_at(def, level), armory.recharge_at(def, level));
     let mut e = world.entity_mut(item);
@@ -1042,9 +1042,9 @@ mod scrolls;
 
 #[cfg(test)]
 mod tests {
+    use atglyph::primitives::RunSeed;
     use bevy::ecs::world::CommandQueue;
     use rand::SeedableRng;
-    use rl_engine::rl_core::RunSeed;
 
     use super::*;
     use crate::content::Library;

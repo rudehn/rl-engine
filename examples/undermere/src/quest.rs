@@ -14,8 +14,8 @@
 //! run's progress when the run ends, so the next run's quest is open again
 //! without being read again.
 
+use atglyph::prelude::*;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
 
 use crate::bestiary::{Bestiary, Kind};
 
@@ -66,7 +66,7 @@ pub fn load(registries: &Registries) -> (Quests, Facts) {
 /// The quests in `text`, refused with every problem at once, and refused
 /// if no quest wins the run, since Undermere always has a way to win.
 fn read(text: &str, names: &Names, facts: &Facts) -> Result<Registry<QuestDef>, ContentError> {
-    rl_engine::rl_rules::events::quest::load_winnable(text, names, |on: &On| on.matcher(facts))
+    atglyph::rules::events::quest::load_winnable(text, names, |on: &On| on.matcher(facts))
 }
 
 /// Writes [`Facts::boss_slain`] for every monster marked `boss` that dies,
@@ -122,7 +122,7 @@ mod tests {
     /// them, could take the win away, and not a frame later.
     #[test]
     fn the_run_is_won_in_the_frame_the_king_dies() {
-        use rl_engine::rl_core::RunSeed;
+        use atglyph::primitives::RunSeed;
         let mut app = crate::testing::headless(RunSeed(9));
         let me = crate::testing::arrive(&mut app, crate::dungeon::map_of(10));
         crate::testing::sturdy(&mut app, me);
@@ -132,7 +132,7 @@ mod tests {
             world.query::<(Entity, &Kind)>().iter(world).find(|(_, k)| k.0 == king_id).map(|(e, _)| e).expect("the king on his throne")
         };
         let crush = app.world().resource::<Registries>().damage_kinds.expect("crush");
-        app.world_mut().write_message(DamageEvent::new(king, rl_engine::rl_rules::Hit::by(me, crush, 100_000)));
+        app.world_mut().write_message(DamageEvent::new(king, atglyph::rules::Hit::by(me, crush, 100_000)));
         app.update();
         assert_eq!(app.world().get_resource::<Ending>().map(|e| e.outcome), Some(Outcome::Won), "won in the frame of the blow");
     }
@@ -155,8 +155,8 @@ mod tests {
     /// only after the frame's turns would have lost the run to that blow.
     #[test]
     fn a_blow_from_the_court_in_the_frame_the_king_falls_does_not_take_the_win_away() {
-        use rl_engine::rl_core::RunSeed;
-        use rl_engine::rl_rules::Awareness;
+        use atglyph::primitives::RunSeed;
+        use atglyph::rules::Awareness;
 
         use crate::testing::{arrive, at, here, lay_floor, pass_turns, settle, sturdy};
         let mut app = crate::testing::headless(RunSeed(9));
@@ -189,7 +189,7 @@ mod tests {
         app.world_mut().entity_mut(me).insert(Health { current: 3, max: crate::run::HEALTH });
         app.world_mut().entity_mut(knight).insert(MeleeAttack::new(slash, DiceRoll::flat(30)));
         let king = first_of(&mut app, "the Drowned King");
-        app.world_mut().write_message(DamageEvent::new(king, rl_engine::rl_rules::Hit::by(me, crush, 100_000)));
+        app.world_mut().write_message(DamageEvent::new(king, atglyph::rules::Hit::by(me, crush, 100_000)));
         app.world_mut().write_message(Intent::new(me, Wait));
         app.update();
         assert!(health(&app) <= 0, "the knight's blow came in the frame the king fell: {}", health(&app));
@@ -207,7 +207,7 @@ mod tests {
     /// seeds that draw a boss already played.
     #[test]
     fn killing_whichever_boss_was_drawn_wins_the_run_over_a_span_of_seeds() {
-        use rl_engine::rl_core::RunSeed;
+        use atglyph::primitives::RunSeed;
 
         use crate::dungeon::map_of;
         use crate::testing::{arrive, headless, sturdy};
@@ -227,7 +227,7 @@ mod tests {
                 world.query::<(Entity, &Kind)>().iter(world).find(|(_, k)| boss_ids.contains(&k.0)).map(|(e, _)| e).expect("a boss on the throne")
             };
             let crush = app.world().resource::<Registries>().damage_kinds.expect("crush");
-            app.world_mut().write_message(DamageEvent::new(boss, rl_engine::rl_rules::Hit::by(me, crush, 100_000)));
+            app.world_mut().write_message(DamageEvent::new(boss, atglyph::rules::Hit::by(me, crush, 100_000)));
             app.update();
             assert_eq!(app.world().get_resource::<Ending>().map(|e| e.outcome), Some(Outcome::Won), "seed {s}: won");
         }

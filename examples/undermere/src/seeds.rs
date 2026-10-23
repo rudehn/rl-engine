@@ -5,7 +5,7 @@
 //! [`ALL`] checked for repeats and against the engine's own domains, means
 //! two draws can only share a stream by naming the same constant.
 
-use rl_engine::rl_core::SeedDomain;
+use atglyph::primitives::SeedDomain;
 
 /// The run's picks from the pool, every floor's at once.
 pub const POOL: SeedDomain = SeedDomain::new(b"undermere.pool");
@@ -69,7 +69,7 @@ pub const ALL: &[(&str, SeedDomain)] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rl_engine::rl_bevy::ENGINE_DOMAINS;
+    use atglyph::ecs::ENGINE_DOMAINS;
 
     #[test]
     fn every_seed_domain_the_game_draws_from_is_distinct() {

@@ -5,7 +5,7 @@ The reasoning is here; `docs/OVERVIEW.md` lists what exists.
 
 ## 1. One field type
 
-`rl_grid::TileField<T>` is a grid of values stepped whole: a rule reads the field as it stood and writes every cell's next value into a second buffer, and the buffers swap.
+`atglyph_grid::TileField<T>` is a grid of values stepped whole: a rule reads the field as it stood and writes every cell's next value into a second buffer, and the buffers swap.
 Nothing a step changes can spread again within the same step, so a fire cannot race across a map in one turn and a cloud cannot cross a room because its cells were visited left to right.
 The second buffer is kept, so a step allocates nothing.
 

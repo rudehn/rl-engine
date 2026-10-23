@@ -1,21 +1,21 @@
 <!-- documents:
      plugins: NoisePlugin
-     files: crates/rl-rules/src/ai/hearing.rs
-            crates/rl-rules/src/ai/awareness.rs
-            crates/rl-rules/src/ai/tactics.rs
-            crates/rl-bevy/src/noise.rs
-            crates/rl-bevy/src/plugin.rs
-            crates/rl-bevy/src/minds.rs
-            crates/rl-bevy/src/stealth.rs
-            crates/rl-bevy/src/turn.rs
-            crates/rl-bevy/src/combat.rs
-            crates/rl-bevy/src/doors.rs
-            crates/rl-bevy/src/items.rs
-            crates/rl-bevy/src/effects/engine.rs
-            crates/rl-bevy/src/props.rs
-            crates/rl-bevy/src/status.rs
-            crates/rl-ui/src/view/nearby.rs
-            crates/rl-ui/src/panel/nearby.rs
+     files: crates/atglyph-rules/src/ai/hearing.rs
+            crates/atglyph-rules/src/ai/awareness.rs
+            crates/atglyph-rules/src/ai/tactics.rs
+            crates/atglyph-bevy/src/noise.rs
+            crates/atglyph-bevy/src/plugin.rs
+            crates/atglyph-bevy/src/minds.rs
+            crates/atglyph-bevy/src/stealth.rs
+            crates/atglyph-bevy/src/turn.rs
+            crates/atglyph-bevy/src/combat.rs
+            crates/atglyph-bevy/src/doors.rs
+            crates/atglyph-bevy/src/items.rs
+            crates/atglyph-bevy/src/effects/engine.rs
+            crates/atglyph-bevy/src/props.rs
+            crates/atglyph-bevy/src/status.rs
+            crates/atglyph-ui/src/view/nearby.rs
+            crates/atglyph-ui/src/panel/nearby.rs
      fingerprint: 66ec16fc -->
 
 # Noise
@@ -137,7 +137,7 @@ Per-weapon loudness and per-tile deadening are not here: a knife and a pistol ar
 
 ## Where it lives
 
-`rl-rules` is tier 1 and has no Bevy in it: `ai/hearing.rs` is four items and no world, the stats, what a cell costs a sound, what is left after a walk and whether that reaches a threshold, so the property the whole subsystem rests on, that a sound of loudness `n` reaches a threshold of zero at exactly `n` steps and not one more, is proved as arithmetic with no `App` under it.
+`atglyph-rules` is tier 1 and has no Bevy in it: `ai/hearing.rs` is four items and no world, the stats, what a cell costs a sound, what is left after a walk and whether that reaches a threshold, so the property the whole subsystem rests on, that a sound of loudness `n` reaches a threshold of zero at exactly `n` steps and not one more, is proved as arithmetic with no `App` under it.
 `ai/awareness.rs` is where `Awareness` lives, shared with stealth, so a heard place and a lost subject go stale by one state machine and a panel reading either reads one type.
-`rl-bevy` is tier 2 and owns where a sound goes: `noise.rs` is the plugin, the components, the messages, the flood and the two systems that reach into a mind's turn, and it asks `hearing::carries` what each cell costs rather than deciding that itself.
+`atglyph-bevy` is tier 2 and owns where a sound goes: `noise.rs` is the plugin, the components, the messages, the flood and the two systems that reach into a mind's turn, and it asks `hearing::carries` what each cell costs rather than deciding that itself.
 `plugin.rs` fixes `TurnSet::Listen` between the pass's reactions and its record, which is the one ordering decision that makes a game's noises and the engine's indistinguishable in a replay.

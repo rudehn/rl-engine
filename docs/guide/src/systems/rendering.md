@@ -1,19 +1,19 @@
 <!-- documents:
      plugins: TerminalPlugin, ParticlesPlugin, MapViewPlugin, CapturePlugin
-     files: crates/rl-render/src/lib.rs
-            crates/rl-render/src/terminal.rs
-            crates/rl-render/src/layout.rs
-            crates/rl-render/src/pointer.rs
-            crates/rl-render/src/tileset.rs
-            crates/rl-render/src/map_view.rs
-            crates/rl-render/src/fields.rs
-            crates/rl-render/src/shade.rs
-            crates/rl-render/src/looks.rs
-            crates/rl-render/src/particles.rs
-            crates/rl-render/src/capture.rs
-            crates/rl-bevy/src/cue.rs
-            crates/rl-ui/src/tone.rs
-            crates/rl-engine/src/lib.rs
+     files: crates/atglyph-render/src/lib.rs
+            crates/atglyph-render/src/terminal.rs
+            crates/atglyph-render/src/layout.rs
+            crates/atglyph-render/src/pointer.rs
+            crates/atglyph-render/src/tileset.rs
+            crates/atglyph-render/src/map_view.rs
+            crates/atglyph-render/src/fields.rs
+            crates/atglyph-render/src/shade.rs
+            crates/atglyph-render/src/looks.rs
+            crates/atglyph-render/src/particles.rs
+            crates/atglyph-render/src/capture.rs
+            crates/atglyph-bevy/src/cue.rs
+            crates/atglyph-ui/src/tone.rs
+            crates/atglyph/src/lib.rs
      fingerprint: 5177f6ae -->
 
 # Rendering
@@ -34,7 +34,7 @@ Its `finish` declares `depends_on::<CorePlugin>` and `depends_on::<FovPlugin>`: 
 It chains `follow_player`, `track_fields`, `remember_still_things` and `draw_map` in `PresentSet::Map`, and puts `dress_props` in plain `Update` rather than in a play-only set, because a prop is put down while a place is built and `Added` matches for one frame only, and between `EngineSet::Turns` and `EngineSet::Present`, so a prop put down in a turn is never drawn or remembered bare.
 `ParticlesPlugin` declares `depends_on::<MapViewPlugin>` and draws after `draw_map`, so a burst shows through a targeting cursor and under a menu.
 It reads cues in `PresentSet::Narrate` and takes the turns' hold on entering `Playing`, but only if the style takes time, so a headless test with an instant style is never made to wait a frame for a fade.
-`CapturePlugin` does nothing unless `RL_CAPTURE` names a file, which is why it can sit in the group a game adds without asking.
+`CapturePlugin` does nothing unless `ATGLYPH_CAPTURE` names a file, which is why it can sit in the group a game adds without asking.
 
 ## The model
 
@@ -68,7 +68,7 @@ A `Burst` with a `from` is a blast: each anchor lights `ring_secs` later for eve
 `ParticleStyle::instant` takes no time at all, which is what a headless test wants, and `takes_time` is what the plugin asks before it watches the turns.
 `play_cues` turns the frame's `Cued` messages into one animation per actor, that actor's cues in the order they were written, each holding the turns, and `publish_wavefronts` tells the map where every blast's front is before the map is drawn.
 `hold_turns` keeps the loop stopped exactly while something that holds it is playing and the player does not already hold a turn, and `skip_on_key` lets a key pressed during the wait drop every hold in the way, run the turns on, and still be read with the player's turn in hand.
-`CapturePlugin` reads `RL_CAPTURE` for the path, `RL_CAPTURE_KEYS` for keys to press first, `RL_CAPTURE_FRAMES` for the earliest frame, and `RL_CAPTURE_AT=hold` to shoot a tenth of a second into the first hold rather than after it.
+`CapturePlugin` reads `ATGLYPH_CAPTURE` for the path, `ATGLYPH_CAPTURE_KEYS` for keys to press first, `ATGLYPH_CAPTURE_FRAMES` for the earliest frame, and `ATGLYPH_CAPTURE_AT=hold` to shoot a tenth of a second into the first hold rather than after it.
 `capture::prepare` puts the window above the others and unfocused, so a capture never takes the keyboard from whoever is at the machine, and a frame that comes back entirely black is refused with an error rather than saved.
 
 ## Using it
@@ -138,10 +138,10 @@ One sprite and one text entity per cell is fine at a hundred columns and would b
 
 ## Where it lives
 
-`rl-render` is tier 2 and sits below `rl-ui` and above `rl-bevy`, which is what lets a panel and the map write into one `Terminal` without either knowing the other.
+`atglyph-render` is tier 2 and sits below `atglyph-ui` and above `atglyph-bevy`, which is what lets a panel and the map write into one `Terminal` without either knowing the other.
 Keeping the shading in a module of its own makes it plain functions over a colour, a light level and a position, tested with no `App` and read by no rule.
 The loader is separate again, so a game's colours are a file beside its monsters and a new tile is a line rather than a recompile.
 The layout is the same again: `fit` is arithmetic over a grid, a window and a scale factor, so that it fits, is centred and is whole pixels are properties tested over a range of windows with no `App`.
 The particles' arithmetic is `Beat::frame` and `Animation::frame` over a time and a resolver, which is why what a flight shows at a given moment is a test rather than a screenshot, and `fields.rs` is the same for the map's side of a blast: when a cell's smoke shows and how thick is `ShownFields` over a time, with no `App`.
-`rl-bevy` owns the cue and the hold, not the drawing, so a headless game raises the same cues and waits for nothing.
+`atglyph-bevy` owns the cue and the hold, not the drawing, so a headless game raises the same cues and waits for nothing.
 `CapturePlugin` is its own plugin because it is the one thing here that is not about a player: a game disables it the way Bevy's groups allow, and a run without the environment variable never notices it.

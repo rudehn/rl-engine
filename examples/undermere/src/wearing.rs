@@ -31,12 +31,12 @@
 
 #[cfg(test)]
 mod tests {
+    use atglyph::primitives::{Rect, RunSeed};
     use bevy::ecs::system::RunSystemOnce;
     use bevy::ecs::world::CommandQueue;
-    use rl_engine::rl_core::{Rect, RunSeed};
 
+    use atglyph::prelude::*;
     use bevy::prelude::*;
-    use rl_engine::prelude::*;
 
     use crate::armory::Armory;
     use crate::bestiary::FOR_LIFE;
@@ -138,7 +138,7 @@ mod tests {
     /// turns, however many turns go by.
     #[test]
     fn a_status_held_for_life_shows_no_count_of_turns() {
-        use rl_engine::rl_bevy::testing::{KeyScriptPlugin, press};
+        use atglyph::ecs::testing::{KeyScriptPlugin, press};
         // Tall enough for every stat the run registers, the rings' among
         // them, with the statuses below.
         let (width, height) = (60, 40);

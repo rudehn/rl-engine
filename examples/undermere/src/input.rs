@@ -11,8 +11,8 @@
 //! Registered by [`UndermerePlugin`](crate::plugin::UndermerePlugin), not
 //! by the binary, so a test presses the same keys the player does.
 
+use atglyph::prelude::*;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
 
 /// Every key of Undermere's own, by name.
 #[derive(Resource, Clone, Copy)]
@@ -56,8 +56,8 @@ pub fn declare_controls(app: &mut App) {
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_bevy::testing::{KeyScriptPlugin, press};
-    use rl_engine::rl_core::RunSeed;
+    use atglyph::ecs::testing::{KeyScriptPlugin, press};
+    use atglyph::primitives::RunSeed;
 
     use super::*;
 

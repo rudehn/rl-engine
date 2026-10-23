@@ -4,8 +4,8 @@
 //! As `magic` and `draughts` do, these play the run that ships, the
 //! adventurer reading things made by the armory as a floor's own are.
 
+use atglyph::prelude::*;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
 
 use crate::content::DISCORDANT;
 use crate::effects::FAR;
@@ -211,7 +211,7 @@ fn every_scroll_is_found_unknown_under_its_title_and_known_once_read_where_it_is
             false => use_thing(&mut app, me, scroll),
         }
         assert!(app.world().resource::<Lore>().knows(name), "{name} is known once read: {:#?}", said(&app));
-        let line = format!("That was {}.", rl_engine::rl_core::noun::with_article(name));
+        let line = format!("That was {}.", atglyph::primitives::noun::with_article(name));
         assert!(said(&app).contains(&line), "{name}: {:#?}", said(&app));
     }
 }
@@ -232,5 +232,5 @@ fn two_scrolls_of_a_kind_share_a_row_of_the_pack_under_their_title() {
     let rows = crate::testing::pack(&app, me);
     let titled: Vec<&(String, u32)> = rows.iter().filter(|(name, _)| *name == face).collect();
     assert_eq!(titled, [&(face.clone(), 2)], "one row of two: {rows:?}");
-    assert_eq!(rl_engine::rl_core::noun::listed(&face, 2), format!("2 scrolls titled {title}"), "said as several under the title as written");
+    assert_eq!(atglyph::primitives::noun::listed(&face, 2), format!("2 scrolls titled {title}"), "said as several under the title as written");
 }

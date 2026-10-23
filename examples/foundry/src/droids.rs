@@ -21,13 +21,13 @@ mod spawns;
 
 use std::sync::Arc;
 
+use atglyph::prelude::*;
+use atglyph::rules::ai::Standard;
+use atglyph::rules::ai::hearing::HearingStats;
+use atglyph::rules::ai::tactics::{Hover, Keep};
+use atglyph::rules::faction::FactionDef;
+use atglyph::rules::parts::{self, KeepAway};
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_rules::ai::Standard;
-use rl_engine::rl_rules::ai::hearing::HearingStats;
-use rl_engine::rl_rules::ai::tactics::{Hover, Keep};
-use rl_engine::rl_rules::faction::FactionDef;
-use rl_engine::rl_rules::parts::{self, KeepAway};
 use serde::Deserialize;
 
 pub use alarm::{ALARM_LOUDNESS, ALARM_SOUND, Alarm, NOISE, PULSE, Raised, SIGNALLING, SignalAlarm, lower_alarm, sense_alarm, shout_alarm, sound_alarm};
@@ -36,7 +36,7 @@ pub use sensors::{Jammed, jam_sensors, unjam_sensors};
 pub(crate) use spawns::MIN_DISTANCE_FROM_ENTRY;
 pub use spawns::populate_deck;
 
-use rl_engine::rl_rules::parts::{Melee, Ranged};
+use atglyph::rules::parts::{Melee, Ranged};
 
 use crate::content::{Profile, resistances};
 use crate::gear::ItemDef;
@@ -317,8 +317,8 @@ pub fn spawn_monster(commands: &mut Commands, roster: &Roster, id: Id<MonsterDef
 mod tests {
     use std::collections::BTreeSet;
 
+    use atglyph::primitives::RunSeed;
     use rand::SeedableRng;
-    use rl_engine::rl_core::RunSeed;
 
     use super::*;
 
@@ -397,7 +397,7 @@ mod tests {
         let player = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
         let shooter = at(&app, player);
         let kind = app.world().resource::<Registries>().damage_kinds.expect("energy");
-        app.world_mut().write_message(DamageEvent::new(target, rl_engine::rl_rules::Hit::by(player, kind, 1)));
+        app.world_mut().write_message(DamageEvent::new(target, atglyph::rules::Hit::by(player, kind, 1)));
         app.update();
         assert_eq!(heard(&app, far), Some(shooter), "it heard the shot, where it was fired from");
     }
@@ -413,8 +413,8 @@ mod tests {
         let ion = app.world().resource::<Registries>().damage_kinds.expect("ion");
         let hp = |app: &App, e: Entity| app.world().get::<Health>(e).expect("it has health").current;
         let (droid_before, player_before) = (hp(&app, droid), hp(&app, player));
-        app.world_mut().write_message(DamageEvent::new(droid, rl_engine::rl_rules::Hit::by(player, ion, 4)));
-        app.world_mut().write_message(DamageEvent::new(player, rl_engine::rl_rules::Hit::by(droid, ion, 4)));
+        app.world_mut().write_message(DamageEvent::new(droid, atglyph::rules::Hit::by(player, ion, 4)));
+        app.world_mut().write_message(DamageEvent::new(player, atglyph::rules::Hit::by(droid, ion, 4)));
         app.update();
         assert_eq!(droid_before - hp(&app, droid), 8, "ion undoes a chassis");
         assert_eq!(player_before - hp(&app, player), 1, "and barely registers on flesh");
@@ -438,7 +438,7 @@ mod tests {
     /// careful commando can slip.
     #[test]
     fn a_lit_commando_is_noticed_at_once_within_eight_and_an_unlit_one_past_two_is_a_roll() {
-        use rl_engine::rl_rules::ai::awareness::{certain_radius, notice_chance};
+        use atglyph::rules::ai::awareness::{certain_radius, notice_chance};
         let roster = Roster::load(&crate::content::registries());
         let commando = StealthStats::default();
         for name in ["line droid", "probe droid", "trooper droid", "heavy droid"] {

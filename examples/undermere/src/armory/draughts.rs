@@ -6,8 +6,8 @@
 //! the armory as a floor's own are, drunk and thrown by the adventurer
 //! through the pack's own actions.
 
+use atglyph::prelude::*;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
 
 use crate::content::{CONFUSED, DARKNESS, FIREPROOF, HASTED, PARALYSED, SHROUDED, SPEED, STEALTH};
 use crate::dungeon::map_of;
@@ -79,7 +79,7 @@ fn afflict(app: &mut App, who: Entity, status: &str, turns: u32) {
 #[test]
 fn confusion_turns_every_step_a_random_way_for_the_adventurer_and_a_monster_alike() {
     // One run is enough: the stumble itself, its odds and its pick of an open
-    // way are the engine's `stumble`, tested over made-up odds in `rl-rules`,
+    // way are the engine's `stumble`, tested over made-up odds in `atglyph-rules`,
     // so what is asked here is that the game's two kinds of walker are turned
     // by it. The goblin is put in after the adventurer's walks, so its
     // stumbling cannot stand in their way.
@@ -136,7 +136,7 @@ fn a_confused_step_only_ever_goes_a_way_that_can_be_walked() {
 /// seemed to happen, and the potion is as unknown as it was.
 #[test]
 fn descent_sinks_the_drinker_to_the_floor_below_and_does_nothing_on_floor_ten() {
-    let mut app = headless(rl_engine::rl_core::RunSeed(5));
+    let mut app = headless(atglyph::primitives::RunSeed(5));
     let me = adventurer(&mut app);
     sturdy(&mut app, me);
     arrive(&mut app, map_of(3));
@@ -150,7 +150,7 @@ fn descent_sinks_the_drinker_to_the_floor_below_and_does_nothing_on_floor_ten() 
     assert_ne!(Some(at(&app, me)), up, "somewhere on it, not at the stairs the floor is come down by");
     assert!(app.world().resource::<Lore>().knows("potion of descent"), "and known by it");
 
-    let mut app = headless(rl_engine::rl_core::RunSeed(5));
+    let mut app = headless(atglyph::primitives::RunSeed(5));
     let me = adventurer(&mut app);
     sturdy(&mut app, me);
     arrive(&mut app, map_of(10));
@@ -183,7 +183,7 @@ fn haste_fire_immunity_darkness_and_life_do_to_their_drinker_what_their_lines_sa
     let burn = |app: &mut App| {
         let fire = app.world().resource::<Registries>().damage_kinds.expect("fire");
         let before = app.world().get::<Health>(me).expect("health").current;
-        app.world_mut().write_message(DamageEvent::new(me, rl_engine::rl_rules::Hit::from_source(None, fire, 10)));
+        app.world_mut().write_message(DamageEvent::new(me, atglyph::rules::Hit::from_source(None, fire, 10)));
         settle(app);
         before - app.world().get::<Health>(me).expect("health").current
     };
@@ -266,7 +266,7 @@ fn a_thrown_potion_that_breaks_on_nobody_teaches_nothing_and_one_that_breaks_on_
         app.world_mut().insert_resource(lore);
         let potion = carried(&mut app, me, name);
         throw(&mut app, me, potion, here.offset(3, 0));
-        let line = format!("That was {}.", rl_engine::rl_core::noun::with_article(name));
+        let line = format!("That was {}.", atglyph::primitives::noun::with_article(name));
         assert!(!app.world().resource::<Lore>().knows(name), "{name} broken on bare floor is not learned");
         assert!(!said(&app).contains(&line), "{name}: {:#?}", said(&app));
         let goblin = monster(&mut app, "goblin", here.offset(-3, 0));
@@ -301,7 +301,7 @@ const POTIONS: [&str; 11] = [
 fn every_potion_is_found_unknown_under_its_face_and_known_once_drunk() {
     // One run for them all. Paralysis is drunk late and waited off, and descent
     // last, since it moves the drinker to the floor below.
-    let mut app = headless(rl_engine::rl_core::RunSeed(9));
+    let mut app = headless(atglyph::primitives::RunSeed(9));
     let me = adventurer(&mut app);
     sturdy(&mut app, me);
     arrive(&mut app, map_of(1));
@@ -323,7 +323,7 @@ fn every_potion_is_found_unknown_under_its_face_and_known_once_drunk() {
         assert!(app.world().get::<Unknown>(potion).is_some(), "{name} reads as unknown");
         use_thing(&mut app, me, potion);
         assert!(app.world().resource::<Lore>().knows(name), "{name} is known once drunk: {:#?}", said(&app));
-        let line = format!("That was {}.", rl_engine::rl_core::noun::with_article(name));
+        let line = format!("That was {}.", atglyph::primitives::noun::with_article(name));
         assert!(said(&app).contains(&line), "{name}: {:#?}", said(&app));
     }
 }

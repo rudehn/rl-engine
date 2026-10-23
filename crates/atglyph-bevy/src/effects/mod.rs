@@ -1,0 +1,709 @@
+//! Effects: what every carrier of an effect list shares.
+//!
+//! Three things in the engine land a list of effects and none of them is
+//! the others: an ability an actor knows, a prop's offer, and a trigger,
+//! which is what a prop, a thing or an actor does at a moment it answers. What they
+//! share is here: [`Effects`], the list itself, built once from content and
+//! landed with its chances rolled; [`Landing`], where a list lands and on
+//! whom, with its [`Source`]; [`EffectWorld`], what an effect may change;
+//! the [`Effect`] trait and the [`EffectKinds`] registry a content file's
+//! names resolve against; and [`EffectRng`], the one stream every effect
+//! rolls from, so a trap cannot shift a spell's dice.
+//!
+//! `engine` holds the effects the engine ships, and `triggers` the moments,
+//! [`Triggers`] and the one system that lands them, with the uses aimed
+//! somewhere that wait in the air to be seen. [`Landing`] says how a
+//! landing is seen, its flight and its burst, so an ability and a thing's
+//! aimed use are seen the same way. [`EffectsPlugin`] is the
+//! whole of it, added by whichever of abilities, props or consumables a game
+//! adds first. A game's own effects sit beside the engine's through
+//! [`AddEffect::add_effect`], and nothing that lands them can tell the
+//! difference.
+
+mod engine;
+mod triggers;
+
+pub use engine::*;
+pub use triggers::*;
+
+use std::collections::BTreeMap;
+
+use atglyph_core::Point;
+use atglyph_rules::Names;
+use atglyph_rules::ability::AbilityId;
+use atglyph_rules::ability::RawValue;
+use bevy::prelude::*;
+
+use crate::combat::DamageEvent;
+use crate::components::{Blocks, Position, Viewshed};
+use crate::cue::{Anchor, Cue, Cued, LookOf};
+use crate::places::{MapId, OnMap, Transition};
+use crate::registries::Registries;
+use crate::status::{Afflict, Cure};
+use crate::turn::Occupancy;
+use crate::world::WorldMap;
+
+/// The stream every effect rolls from, whatever lands it.
+///
+/// Its own domain, so adding an effect does not shift the combat stream
+/// and change every monster's rolls in a run that was going fine, and one
+/// stream for every carrier, so a trap cannot shift a spell's dice by
+/// landing in a different pass. Derived from the run's
+/// [`Seed`](crate::seed::Seed) by [`EffectsPlugin`].
+pub type EffectRng = crate::seed::RunRng<EffectDomain>;
+
+/// The domain [`EffectRng`] draws under.
+pub struct EffectDomain;
+
+impl crate::seed::StreamDomain for EffectDomain {
+    const DOMAIN: atglyph_core::SeedDomain = crate::seed::EFFECTS;
+}
+
+/// What landed an effect list.
+///
+/// So an effect can tell a spell from a trap without the landing type
+/// assuming every list is an ability's, which is what `Option<AbilityId>`
+/// used to say by leaving it empty.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Source {
+    /// An ability resolved.
+    Ability(AbilityId),
+    /// A trigger went off on `on`, at `moment`.
+    Trigger {
+        /// What carried the trigger: a prop, a thing in a bag, a thrown
+        /// thing where it came down, a weapon.
+        on: Entity,
+        /// What set it off.
+        moment: MomentId,
+    },
+    /// A prop's offer was taken up.
+    Offer(Entity),
+}
+
+impl Landing {
+    /// The ability that landed this, when an ability did.
+    pub(crate) fn ability(&self) -> Option<AbilityId> {
+        match self.source {
+            Source::Ability(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    /// How harm this lands reaches its targets, for the narrator to name
+    /// what did it: by the ability, or by the thing whose trigger it was
+    /// when that thing is not its own user, as a prop's trap is.
+    pub(crate) fn reach(&self) -> crate::combat::Reach {
+        match self.source {
+            Source::Ability(id) => crate::combat::Reach::Ability(id),
+            Source::Trigger { on, .. } if on != self.user => crate::combat::Reach::Thing(on),
+            _ => crate::combat::Reach::Effect,
+        }
+    }
+
+    /// Whether the whole of it was turned back on its user: something
+    /// turned it, and nobody but the user is left under it.
+    ///
+    /// The case [`Bystanders::reflect`](crate::ability::Bystanders::reflect)
+    /// moves the footprint onto the user for, and the one that is seen to
+    /// fly back. A burst that one body in a crowd turned its share of
+    /// still goes off where it was aimed.
+    pub(crate) fn turned_back(&self) -> bool {
+        !self.turned_by.is_empty() && self.targets.iter().all(|t| *t == self.user)
+    }
+
+    /// Where a cue plays on `cell`: on the target standing there, so a
+    /// burst on someone knocked back goes with them and a bolt at someone
+    /// walking away still lands on them, or on a body that turned it back
+    /// standing there, or on the cell when nobody does.
+    fn anchor(&self, world: &EffectWorld<'_, '_>, cell: Point) -> Anchor {
+        self.targets.iter().chain(&self.turned_by).find(|t| world.position(**t) == Some(cell)).map(|t| Anchor::on(*t, cell)).unwrap_or(Anchor::cell(cell))
+    }
+
+    /// The flights to where a projectile stopped, drawn as `look`, for a
+    /// shape that has one: a bolt or a ball flies, a cone or a nova does
+    /// not. One answer for an ability and a thing's aimed use, so the two
+    /// are seen to fly the same way.
+    ///
+    /// One flight, or two when the whole of it was
+    /// [`turned_back`](Self::turned_back): out to the body that turned it,
+    /// and from there back to its user, so what is seen agrees with the
+    /// log's line that it was reflected and with the harm on the user
+    /// that follows. A single flight to the user's own cell would be no
+    /// flight at all, and one to the body alone showed the bolt strike a
+    /// body that then took nothing. Both are cued before the landing
+    /// waits in the air, so it lands only once the return has been seen.
+    pub(crate) fn flights(&self, world: &EffectWorld<'_, '_>, look: LookOf) -> Vec<Cue> {
+        let Some(stop) = self.landed_at.filter(|stop| *stop != self.origin) else { return Vec::new() };
+        let user = Anchor::on(self.user, self.origin);
+        let turned_at = self.anchor(world, stop);
+        let mut flights = vec![Cue::Flight { from: user, to: turned_at, look }];
+        if self.turned_back() {
+            flights.push(Cue::Flight { from: turned_at, to: user, look });
+        }
+        flights
+    }
+
+    /// The burst over the footprint, drawn as `look`, for a shape that
+    /// covers anything, spreading out from where a projectile stopped, or
+    /// else from the user: a ball goes off where it lands, and a nova, a
+    /// cone or a line goes out from whoever sent it. One turned back whole
+    /// goes off on its user, where its flight was seen to come back to.
+    pub(crate) fn burst(&self, world: &EffectWorld<'_, '_>, look: LookOf) -> Option<Cue> {
+        if self.cells.is_empty() {
+            return None;
+        }
+        let user = Anchor::on(self.user, self.origin);
+        let from = match self.landed_at {
+            Some(stop) if !self.turned_back() => self.anchor(world, stop),
+            _ => user,
+        };
+        Some(Cue::Burst { on: self.cells.iter().map(|c| self.anchor(world, *c)).collect(), look, from: Some(from) })
+    }
+}
+
+/// What a carrier's effects land stronger by: turns added to every status
+/// they inflict and an amount added to every harm or mend roll.
+///
+/// Written when the thing is spawned, whatever made it stronger (a level,
+/// a blessing) already applied, as
+/// [`Bestows`](crate::items::Bestows) and [`Armor`](crate::combat::Armor)
+/// are; the engine never learns why. A carrier with none is read as
+/// [`EffectBonus::default`], which adds nothing, so a plain thing behaves
+/// exactly as it did before this component existed.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct EffectBonus {
+    /// Whole turns added to every status an effect inflicts.
+    pub turns: u32,
+    /// Added to every harm or mend roll's bonus.
+    pub amount: i32,
+}
+
+/// One use, resolved: where it went and what was under it.
+#[derive(Debug, Clone)]
+pub struct Landing {
+    /// Who used it. A prop that sprang a trap is as much a user as an
+    /// actor that spent a turn.
+    pub user: Entity,
+    /// What landed it: an ability, a trigger, or a prop's offer. Only an
+    /// ability draws an ability's look.
+    pub source: Source,
+    /// Where the user stood.
+    pub origin: Point,
+    /// Where it was pointed.
+    pub aim: Point,
+    /// Every cell it covers.
+    pub cells: Vec<Point>,
+    /// The cells a projectile flew through, landing included.
+    pub path: Vec<Point>,
+    /// Where a projectile came to rest, if the shape had one: never inside
+    /// a wall, so an effect placing something there finds open ground.
+    pub landed_at: Option<Point>,
+    /// Everyone under the footprint the [`Aim`](atglyph_rules::ability::Aim)
+    /// of an ability or an aimed use wanted there, and every living actor
+    /// under any other trigger's. An effect that means to hit whoever is
+    /// standing in the fire reads this; one that means to change the ground
+    /// reads `cells`.
+    pub targets: Vec<Entity>,
+    /// What landed it grows its effects by: a worn or thrown thing's own
+    /// [`EffectBonus`], copied here, and the default, which adds nothing,
+    /// for an ability, an offer, or anything plain. An effect that grows
+    /// with it reads it here.
+    pub bonus: EffectBonus,
+    /// The thing a use was made on, for a use that asks its user for one of
+    /// their own things: what a polish was worked into. `None` for every
+    /// other landing. A game's own effect for such a use reads it here; the
+    /// engine's effects land on `targets` and never read it, since what a
+    /// thing is made better or known by is the game's.
+    pub on: Option<Entity>,
+    /// Every body that turned its share back on the user, by
+    /// `Bystanders::reflect`, in the
+    /// order it met them; empty for a landing nothing turned. Kept beside
+    /// `targets` rather than read back from the [`Reflected`](crate::ability::Reflected)
+    /// messages, since the landing may wait in the air for passes after
+    /// they were written, and how it is seen to fly and come back is
+    /// worked out from it.
+    pub turned_by: Vec<Entity>,
+}
+
+/// An actor an effect may move or look at: never a transition, which an
+/// effect never moves anyone onto and reads instead through
+/// [`EffectWorld::is_transition`].
+type Mover = (&'static mut Position, Option<&'static mut Viewshed>, Has<Blocks>);
+
+/// What an effect may do to the world.
+///
+/// Requests, not changes: an effect asks for damage, a status or a move,
+/// and the systems that already own those answer. That is what keeps an
+/// ability's damage going through the same mitigation a sword's does.
+/// `commands` is the escape hatch, and it is a real one: an effect a game
+/// writes can do anything a system can, including write its own messages.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct EffectWorld<'w, 's> {
+    /// Anything the engine did not think of.
+    pub commands: Commands<'w, 's>,
+    /// Damage, through the pipeline that mitigates it.
+    pub damage: MessageWriter<'w, crate::combat::DamageEvent>,
+    /// Health restored, which nothing mitigates.
+    pub heal: MessageWriter<'w, crate::combat::Heal>,
+    /// A status on.
+    pub afflict: MessageWriter<'w, Afflict>,
+    /// A status off.
+    pub cure: MessageWriter<'w, Cure>,
+    /// The effect stream, for an effect that rolls.
+    pub rng: ResMut<'w, EffectRng>,
+    /// What is worth seeing, for whatever draws. The flight and the burst
+    /// of the use itself are cued before any effect runs, so a cue an
+    /// effect adds plays after them.
+    pub cues: MessageWriter<'w, Cued>,
+    // `Without<Transition>` is load-bearing: it is what keeps this query
+    // disjoint from `transitions` below, since a transition is never a
+    // mover and the two would otherwise alias the same entity.
+    actors: Query<'w, 's, Mover, Without<Transition>>,
+    occupancy: ResMut<'w, Occupancy>,
+    map: Res<'w, WorldMap>,
+    transitions: Query<'w, 's, (&'static Position, Option<&'static OnMap>), With<Transition>>,
+}
+
+impl EffectWorld<'_, '_> {
+    /// The map the effects land on.
+    pub fn map(&self) -> &WorldMap {
+        &self.map
+    }
+
+    /// Who stands where, for working out who is under a footprint.
+    pub(crate) fn occupancy(&self) -> &Occupancy {
+        &self.occupancy
+    }
+
+    /// Where `e` is, if it is anywhere.
+    pub fn position(&self, e: Entity) -> Option<Point> {
+        self.actors.get(e).ok().map(|(p, _, _)| p.0)
+    }
+
+    /// Whether `who` can see the cell `p`, or `None` when it carries no
+    /// viewshed and the question cannot be asked of it.
+    ///
+    /// Most non-players carry none: the minds read the player's viewshed
+    /// as the oracle, since lines of sight are symmetric. So a monster is
+    /// not held to a sight requirement it has no way to answer, and the
+    /// tactic that chose the aim is trusted instead.
+    ///
+    /// Asked here rather than through a query of its own because this one
+    /// already holds every viewshed, and two queries over the same
+    /// component, one of them writing, is a system Bevy refuses to run.
+    pub(crate) fn sight_of(&self, who: Entity, p: Point) -> Option<bool> {
+        let (_, viewshed, _) = self.actors.get(who).ok()?;
+        Some(viewshed?.can_see(p))
+    }
+
+    /// Whether `p` leads somewhere: a way, a gate, a cave mouth. Not read
+    /// by [`is_free`](Self::is_free), which is silent on the question the
+    /// engine leaves to the game, since the engine's own warp is what
+    /// makes a transition's cell special and an ordinary move never asks
+    /// it; an effect that puts someone exactly there, blinking a monster
+    /// onto a floor's own stairs, is the game's own to allow or refuse.
+    pub fn is_transition(&self, p: Point) -> bool {
+        let here = self.map.current();
+        self.transitions.iter().any(|(pos, on)| pos.0 == p && on.map(|m| m.0).unwrap_or(MapId::ZERO) == here)
+    }
+
+    /// Whether `p` is somewhere an actor could stand right now.
+    pub fn is_free(&self, p: Point) -> bool {
+        self.map.is_walkable(p) && !self.occupancy.is_occupied(p)
+    }
+
+    /// Puts `e` on `p`, keeping the occupancy index and its sight
+    /// straight. False when the cell will not take it.
+    pub fn place(&mut self, e: Entity, p: Point) -> bool {
+        if !self.is_free(p) {
+            return false;
+        }
+        let Ok((mut pos, viewshed, blocks)) = self.actors.get_mut(e) else { return false };
+        let from = pos.0;
+        if from == p {
+            return true;
+        }
+        if blocks {
+            self.occupancy.relocate(e, from, p);
+        }
+        pos.0 = p;
+        if let Some(mut v) = viewshed {
+            v.dirty = true;
+        }
+        true
+    }
+
+    /// Slides `e` up to `cells` steps along the line from `from` to `to`,
+    /// stopping at the last cell it can stand on. Returns where it ended.
+    ///
+    /// A push and a pull are the same walk with the ends swapped, so both
+    /// stop at a wall rather than through it.
+    pub fn slide(&mut self, e: Entity, from: Point, to: Point, cells: i32) -> Point {
+        let at = atglyph_grid::slide::slide(from, to, cells, |p| self.is_free(p));
+        if at != from {
+            self.place(e, at);
+        }
+        at
+    }
+}
+
+/// One thing an ability does when it lands.
+///
+/// A type per effect, registered with [`AddEffect::add_effect`], parsing
+/// its own arguments out of the RON the ability named it with. The engine
+/// ships one per subsystem it owns; a game's own sit beside them and the
+/// resolver cannot tell the difference.
+pub trait Effect: Send + Sync + 'static {
+    /// What this does to `landing`.
+    fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>);
+
+    /// What this does with `bonus` added, in a few words for a menu, with
+    /// every id named through `registries`: `3d6 fire`, `scorched for 4
+    /// turns`. Empty means the menu says nothing about it, which is the
+    /// default so an effect a game writes in a hurry still loads.
+    fn describe(&self, registries: &crate::registries::Registries, bonus: EffectBonus) -> String {
+        let _ = (registries, bonus);
+        String::new()
+    }
+
+    /// Whether this restores health to whoever it lands on: what a mind
+    /// carrying a thing whose use lands it reaches for once it is hurt,
+    /// since the one thing it cannot weigh by a footprint is what a use on
+    /// itself is worth. False unless the effect says so, as the engine's
+    /// [`Mend`] does, so a game's own effect that heals says so too, and
+    /// one that merely sounds like healing is never used for it.
+    fn mends(&self) -> bool {
+        false
+    }
+
+    /// Whether landing this on `landing` now would act on anything, read
+    /// from `world` as it stands: what a mind is told before it spends a
+    /// turn on an ability aimed at its user alone, which leaves it no
+    /// footprint to weigh.
+    ///
+    /// True unless the effect says otherwise, so one that cannot tell is
+    /// cast as it always was. One that needs something there says so: the
+    /// engine's [`Mend`] needs someone hurt among its targets, and a game's
+    /// effect that stands the nearest body back up needs a body in reach.
+    /// The world is read, never changed, and nothing is rolled, so asking
+    /// cannot move the run. Read `landing.targets`, not `landing.cells`:
+    /// the landing asked about is the one the resolver lands, and a shape
+    /// that flies, a ball among them, aimed at its own user's cell covers
+    /// no cells at all.
+    fn would_act(&self, landing: &Landing, world: &World) -> bool {
+        let _ = (landing, world);
+        true
+    }
+}
+
+/// An effect that knows how to build itself out of an ability's RON.
+///
+/// Separate from [`Effect`] so the trait a game writes stays object-safe
+/// and the constructor can fail with a message naming what was wrong.
+pub trait FromArgs: Effect + Sized {
+    /// The name abilities call this effect by in RON.
+    const KIND: &'static str;
+
+    /// Builds one from the arguments, resolving any names through `names`.
+    fn from_args(args: &RawValue, names: &Names<'_>) -> Result<Self, String>;
+}
+
+/// How an effect is built, once its name has been matched.
+type Builder = fn(&RawValue, &Names<'_>) -> Result<Box<dyn Effect>, String>;
+
+/// Every effect kind a game has registered.
+///
+/// Filled while the app is built and read once, when abilities load, so an
+/// unknown effect name is a startup failure naming the ability rather than
+/// a surprise the first time someone presses the key.
+#[derive(Resource, Default)]
+pub struct EffectKinds(BTreeMap<String, Builder>);
+
+impl EffectKinds {
+    /// Registers `E` under its own name.
+    pub fn declare<E: FromArgs>(&mut self) {
+        self.0.insert(E::KIND.to_string(), |args, names| E::from_args(args, names).map(|e| Box::new(e) as Box<dyn Effect>));
+    }
+
+    /// Every registered name, in order, for an error that lists them.
+    pub(crate) fn names(&self) -> impl Iterator<Item = &str> {
+        self.0.keys().map(|s| s.as_str())
+    }
+
+    /// Builds the effect registered as `kind` from its own arguments.
+    ///
+    /// For whatever holds effects as content and is not an ability: a
+    /// prop's trigger, an offer it answers. The error names what was
+    /// wrong, or lists what is registered when the kind is not.
+    pub fn build(&self, kind: &str, args: &RawValue, names: &Names<'_>) -> Result<Box<dyn Effect>, String> {
+        match self.0.get(kind) {
+            Some(build) => build(args, names),
+            None => {
+                let known: Vec<&str> = self.names().collect();
+                Err(format!("no effect is registered as {kind:?}; registered: {}", known.join(", ")))
+            }
+        }
+    }
+}
+
+/// Registers an effect with the engine.
+pub trait AddEffect {
+    /// Registers `E` so abilities may name it in their RON.
+    fn add_effect<E: FromArgs>(&mut self) -> &mut Self;
+}
+
+impl AddEffect for App {
+    fn add_effect<E: FromArgs>(&mut self) -> &mut Self {
+        self.init_resource::<EffectKinds>();
+        self.world_mut().resource_mut::<EffectKinds>().declare::<E>();
+        self
+    }
+}
+
+/// One effect of a list, built, with the chance it lands.
+struct Built {
+    chance: u8,
+    effect: Box<dyn Effect>,
+}
+
+/// A list of effects, built once from content and landed together.
+///
+/// Three things in the engine own such a list and none of them is the
+/// others: an ability, a prop's trigger or one of its offers, and an item
+/// that does something when it is used. Each decides for itself what the
+/// list means and when it lands; what they share is reading the same
+/// `(kind, chance, args)` out of content, failing loudly on a name nobody
+/// registered, and rolling the ones that may miss. That sharing is here,
+/// because it was written three times before it was written once, and the
+/// prop's copy had already drifted from the ability's.
+///
+/// Not `Clone`, since an effect is a boxed trait object: a game that wants
+/// one list on many entities puts it behind an `Arc`, which is what
+/// [`Triggers`] does.
+#[derive(Default)]
+pub struct Effects(Vec<Built>);
+
+impl Effects {
+    /// Builds every spec, or reports every one that would not build.
+    ///
+    /// Every failure rather than the first, because content is fixed a
+    /// file at a time and a loader that stops at the first error hides the
+    /// other four. The caller says which thing the list belongs to when it
+    /// prints them: this cannot know whether it is reading an ability, a
+    /// trap or a medkit.
+    pub fn build(specs: &[atglyph_rules::EffectSpec], kinds: &EffectKinds, names: &Names<'_>) -> Result<Self, Vec<String>> {
+        let mut built = Vec::new();
+        let mut errors = Vec::new();
+        for spec in specs {
+            match kinds.build(&spec.kind, &spec.args, names) {
+                Ok(effect) => built.push(Built { chance: spec.chance, effect }),
+                Err(e) => errors.push(e),
+            }
+        }
+        if errors.is_empty() { Ok(Self(built)) } else { Err(errors) }
+    }
+
+    /// Whether any of these mends whoever it lands on, by [`Effect::mends`],
+    /// whatever its chance: what a mind is told of a thing it carries.
+    pub(crate) fn mends(&self) -> bool {
+        self.0.iter().any(|b| b.effect.mends())
+    }
+
+    /// Whether landing these on `landing` now would act on anything, by
+    /// [`Effect::would_act`]: when any of them would, and when there are
+    /// none, since a list with no effects is one a game answers itself,
+    /// from the [`AbilityEvent`](crate::ability::AbilityEvent) it writes.
+    pub(crate) fn would_act(&self, landing: &Landing, world: &World) -> bool {
+        self.0.is_empty() || self.0.iter().any(|b| b.effect.would_act(landing, world))
+    }
+
+    /// Lands every effect on `landing`, rolling each that may miss.
+    ///
+    /// The roll comes from the ability stream, whoever is landing: a trap
+    /// and a potion are dealt from the same deck as a spell, so a subsystem
+    /// cannot shift another's dice by landing something of its own.
+    pub(crate) fn land(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
+        use rand::Rng;
+        for built in &self.0 {
+            if built.chance < 100 && !world.rng.random_ratio(u32::from(built.chance), 100) {
+                continue;
+            }
+            built.effect.apply(landing, world);
+        }
+    }
+
+    /// What these do with `bonus` added, one line per effect that has
+    /// something to say, with its chance in front when it is not certain.
+    ///
+    /// What a menu lists under an ability, and what a screen could list
+    /// under a prop's offer or a thing in the bag: the list can say what it
+    /// is without anyone knowing what carries it.
+    pub fn describe(&self, registries: &Registries, bonus: EffectBonus) -> Vec<String> {
+        self.0
+            .iter()
+            .filter_map(|b| {
+                let what = b.effect.describe(registries, bonus);
+                match (what.is_empty(), b.chance >= 100) {
+                    (true, _) => None,
+                    (false, true) => Some(what),
+                    (false, false) => Some(format!("{}% chance of {what}", b.chance)),
+                }
+            })
+            .collect()
+    }
+
+    /// Lands every effect on one cell, as `user` setting them off there.
+    ///
+    /// The shape for everything that happens where it already is rather
+    /// than where it was aimed: a trap underfoot, a crate levered open, a
+    /// stim in the arm. No ability, so nothing draws an ability's look, and
+    /// one cell, so a footprint is not invented for something that never
+    /// flew.
+    pub fn land_on(&self, source: Source, user: Entity, at: Point, targets: Vec<Entity>, world: &mut EffectWorld<'_, '_>) {
+        let landing = Landing {
+            user,
+            source,
+            origin: at,
+            aim: at,
+            cells: vec![at],
+            path: Vec::new(),
+            landed_at: None,
+            targets,
+            bonus: EffectBonus::default(),
+            on: None,
+            turned_by: Vec::new(),
+        };
+        self.land(&landing, world);
+    }
+}
+
+/// Effects: what every carrier of an effect list shares.
+///
+/// The registry of effect kinds, the stream every effect rolls from, the
+/// messages an effect writes, and the uses aimed somewhere that are in the
+/// air, put back when a run ends. Added by whatever lands effects,
+/// abilities, props or consumables, when a game has not already added it,
+/// so a game names the subsystems it wants and this comes with them.
+pub struct EffectsPlugin;
+
+/// Marks that [`EffectsPlugin`] has built, so a second copy builds nothing.
+#[derive(Resource)]
+struct EffectsBuilt;
+
+impl Plugin for EffectsPlugin {
+    fn build(&self, app: &mut App) {
+        use crate::cue::AddAirborne;
+        use crate::plugin::Reads;
+        use crate::plugin::{ResolveSet, Turn};
+        use crate::seed::AddStream;
+        // Once, however many times it is added: every plugin that lands
+        // effects adds it when it is missing, and a game that also adds it
+        // by hand, after one of those, must not have its triggers landed
+        // twice or its plugin list refused.
+        if app.world().contains_resource::<EffectsBuilt>() {
+            return;
+        }
+        app.insert_resource(EffectsBuilt);
+        app.init_resource::<EffectKinds>()
+            .init_resource::<Moments>()
+            .add_message::<Fired>()
+            .add_message::<FiredOn>()
+            .add_stream::<EffectRng>("EffectsPlugin")
+            // `Bystanders::reflect` is called from `land_aimed_uses` below,
+            // not only from `AbilitiesPlugin`'s resolver, so a game with
+            // items and no abilities must still get a stream for a
+            // `Reflects` body to roll against; `add_stream` is a no-op once
+            // either plugin has already derived it.
+            .add_stream::<crate::ability::ReflectRng>("EffectsPlugin")
+            // `Bystanders::reflect` writes this from the same two call
+            // sites, so it is registered alongside the stream it rolls
+            // rather than only where `AbilitiesPlugin` happens to add it.
+            .add_message::<crate::ability::Reflected>()
+            // Written by `land_aimed_uses` and `land_triggers` for an aimed
+            // use as well as by `AbilitiesPlugin` for an ability, so here
+            // for the same reason.
+            .add_message::<crate::ability::LandedOn>()
+            // `EffectWorld` writes these, so they are this plugin's to
+            // register: a writer for a message nobody registered fails the
+            // system at startup, and a game with effects should not have to
+            // add the status or combat plugins to find that out. Registering
+            // one twice is harmless.
+            .add_message::<Afflict>()
+            .add_message::<Cure>()
+            .add_message::<DamageEvent>()
+            .add_message::<crate::combat::Heal>()
+            // Read for an actor's `died`; a game with effects and no combat
+            // simply never writes one.
+            .add_message::<crate::combat::DeathEvent>()
+            .init_resource::<RemnantKeeps>()
+            .reads::<Cued>()
+            .add_airborne::<UseLanding>()
+            // What came down this pass, then what was set off in it.
+            .add_systems(Turn, (report_remnants, land_aimed_uses, land_triggers).chain().in_set(ResolveSet::Triggers))
+            .add_systems(Turn, report_died.in_set(crate::plugin::TurnSet::React))
+            .add_systems(Last, bury_remnants.in_set(crate::plugin::EndOfFrame::Bury));
+    }
+
+    /// Not unique, so adding it after a plugin that already added it is
+    /// not an error; the build above makes the second copy a no-op.
+    fn is_unique(&self) -> bool {
+        false
+    }
+}
+
+/// Adds [`EffectsPlugin`] to `app` unless something already has: what every
+/// plugin that lands effects calls first, so the order a game lists its
+/// plugins in never matters and the subsystem is added exactly once.
+pub(crate) fn ensure(app: &mut App) {
+    if !app.is_plugin_added::<EffectsPlugin>() {
+        app.add_plugins(EffectsPlugin);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// What `EffectRng` drew first for seed 7 on the day the engine's
+    /// domains moved under `rl.` and it came to draw under `rl.effects`.
+    const FIRST_DRAW_FOR_SEED_SEVEN: u64 = 2_387_259_175_841_447_855;
+
+    /// Fingerprint tripwire: the effect stream draws under its own domain,
+    /// so renaming or folding it into another, which would re-deal every
+    /// seed's dice, is a red test rather than a quiet change.
+    #[test]
+    fn fingerprint_tripwire_the_effect_stream_draws_under_its_own_domain() {
+        use crate::seed::Stream;
+        use rand::RngCore;
+        let mut rng = EffectRng::for_run(atglyph_core::RunSeed(7));
+        assert_eq!(rng.next_u64(), FIRST_DRAW_FOR_SEED_SEVEN);
+    }
+
+    /// Harm arrives by what landed it, for the narrator to name: the
+    /// ability, or the thing whose trigger it was; a prop springing its own
+    /// trap is its own user, and its line names it as the doer already.
+    #[test]
+    fn a_landing_reaches_by_its_ability_or_by_a_thing_that_is_not_its_own_user() {
+        use crate::combat::Reach;
+        let mut world = World::new();
+        let (user, rod) = (world.spawn_empty().id(), world.spawn_empty().id());
+        let landing = |user: Entity, source: Source| Landing {
+            user,
+            source,
+            origin: Point::new(0, 0),
+            aim: Point::new(0, 0),
+            cells: Vec::new(),
+            path: Vec::new(),
+            landed_at: None,
+            targets: Vec::new(),
+            bonus: EffectBonus::default(),
+            on: None,
+            turned_by: Vec::new(),
+        };
+        let bolt = AbilityId::from_raw(0);
+        assert_eq!(landing(user, Source::Ability(bolt)).reach(), Reach::Ability(bolt));
+        assert_eq!(landing(user, Source::Trigger { on: rod, moment: Moments::USE }).reach(), Reach::Thing(rod));
+        assert_eq!(landing(rod, Source::Trigger { on: rod, moment: Moments::USE }).reach(), Reach::Effect, "a trap is its own user");
+        assert_eq!(landing(user, Source::Offer(rod)).reach(), Reach::Effect);
+    }
+}

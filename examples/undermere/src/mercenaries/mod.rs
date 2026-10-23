@@ -111,9 +111,9 @@ pub use travel::*;
 #[cfg(doc)]
 use crate::armory::Armory;
 #[cfg(doc)]
-use rl_engine::prelude::*;
+use atglyph::prelude::*;
 #[cfg(doc)]
-use rl_engine::rl_rules::loot::LootTable;
+use atglyph::rules::loot::LootTable;
 
 /// The one kind of hireling, by its name in `monsters.ron`.
 pub const MERCENARY: &str = "mercenary";

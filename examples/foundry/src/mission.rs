@@ -10,8 +10,8 @@
 //! reactor console on the `R` mark of any deck that reports one, beside the
 //! loot the engine scatters on the same arrival
 
+use atglyph::prelude::*;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
 
 const QUESTS_RON: &str = include_str!("../assets/quests.ron");
 
@@ -64,7 +64,7 @@ pub fn load(registries: &Registries) -> (Quests, Facts) {
 /// The tasks in `text`, refused with every problem at once, and refused
 /// if none wins the run, since a mission always ends somewhere.
 fn tasks(text: &str, names: &Names, facts: &Facts) -> Result<Registry<QuestDef>, ContentError> {
-    rl_engine::rl_rules::events::quest::load_winnable(text, names, |on: &On| on.matcher(facts))
+    atglyph::rules::events::quest::load_winnable(text, names, |on: &On| on.matcher(facts))
 }
 
 /// Loads the mission fresh every run, the way `run::start` loads the
@@ -187,7 +187,7 @@ pub fn offer_the_pick(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rl_engine::rl_core::RunSeed;
+    use atglyph::primitives::RunSeed;
 
     /// Whatever the console offers the player, and to whom.
     fn charge_offered(app: &App, player: Entity) -> Option<Offer> {

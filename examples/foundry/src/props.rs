@@ -15,10 +15,10 @@
 //! `mission`, because reporting a fact the quest tracker counts is the
 //! one thing no effect can say.
 
+use atglyph::prelude::*;
+use atglyph::primitives::{Direction, Point};
+use atglyph::rules::prefab::Slot;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_core::{Direction, Point};
-use rl_engine::rl_rules::prefab::Slot;
 use std::collections::BTreeSet;
 
 use crate::decks::deck_of;
@@ -30,7 +30,7 @@ const PROPS_RON: &str = include_str!("../assets/props.ron");
 /// tags a locked thing names. Panics listing every problem, since a
 /// broken content file is a game that cannot start.
 pub fn load(registries: &Registries) -> Registry<PropDef> {
-    rl_engine::rl_rules::prop::load(PROPS_RON, &registries.names()).expect("props.ron")
+    atglyph::rules::prop::load(PROPS_RON, &registries.names()).expect("props.ron")
 }
 
 /// How many supply crates a deck gets: one per store, and one more the
@@ -278,7 +278,7 @@ pub fn wreck_the_dead(mut commands: Commands, mut left: MessageReader<RemainsLef
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rl_engine::rl_core::RunSeed;
+    use atglyph::primitives::RunSeed;
 
     /// Crates put down one at a time, each only where
     /// [`keeps_the_way_open`] lets it stand, never shut away anything a
@@ -295,16 +295,16 @@ mod tests {
         let (hull, deck) = (tiles.expect("hull"), tiles.expect("deck"));
         let rows =
             ["##############", "#.....#......#", "#.....#......#", "#............#", "#.....#......#", "#.....####.###", "#.....#......#", "##############"];
-        let terrain = rl_engine::rl_grid::Terrain::from_fn(14, 8, |p| if rows[p.y as usize].as_bytes()[p.x as usize] == b'#' { hull } else { deck });
+        let terrain = atglyph::grid::Terrain::from_fn(14, 8, |p| if rows[p.y as usize].as_bytes()[p.x as usize] == b'#' { hull } else { deck });
         let entry = Point::new(1, 1);
-        let built = rl_engine::rl_bevy::places::PlaceBuild {
+        let built = atglyph::ecs::places::PlaceBuild {
             terrain,
             entry,
             exit: None,
             spots: Vec::new(),
             locks: Vec::new(),
             secrets: Vec::new(),
-            ambient: rl_engine::rl_grid::Light::DARK,
+            ambient: atglyph::grid::Light::DARK,
             peaceful: false,
         };
         let here = crate::decks::map_of(2);

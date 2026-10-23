@@ -124,7 +124,7 @@ A game never inserts a stream of its own.
 #[derive(Resource)]
 struct Rats {
     mind: Arc<Brain<Entity>>,
-    bite: rl_engine::rl_rules::damage::DamageKindId,
+    bite: atglyph::rules::damage::DamageKindId,
     faction: FactionId,
 }
 ```

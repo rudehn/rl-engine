@@ -1,8 +1,8 @@
 //! A candidate taken up: on the adventurer's side, following them, and
 //! offering what a hired hand offers.
 
+use atglyph::prelude::*;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use super::*;

@@ -12,8 +12,8 @@
 //! Registered by [`FoundryPlugin`](crate::plugin::FoundryPlugin), not by
 //! `main.rs`, so a test presses the same keys the player does.
 
+use atglyph::prelude::*;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
 
 use crate::heat::Heat;
 
@@ -96,9 +96,9 @@ fn why_not(worn: &[Entity], reach: &Reach) -> String {
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_bevy::Ending;
-    use rl_engine::rl_bevy::testing::{KeyScriptPlugin, press};
-    use rl_engine::rl_core::RunSeed;
+    use atglyph::ecs::Ending;
+    use atglyph::ecs::testing::{KeyScriptPlugin, press};
+    use atglyph::primitives::RunSeed;
 
     use super::*;
 

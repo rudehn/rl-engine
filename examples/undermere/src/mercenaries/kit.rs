@@ -1,10 +1,10 @@
 //! What a sword for hire carries and asks: `assets/mercenaries.ron` read
 //! against the armory, a kit rolled from it at a band, and its fee.
 
+use atglyph::prelude::*;
+use atglyph::rules::loot::{LootRow, LootTable};
 use bevy::prelude::*;
 use rand::Rng;
-use rl_engine::prelude::*;
-use rl_engine::rl_rules::loot::{LootRow, LootTable};
 use ron::extensions::Extensions;
 use ron::options::Options;
 use ron::value::RawValue;
@@ -229,11 +229,11 @@ struct AuthoredLevel {
 mod tests {
     use std::collections::BTreeSet;
 
+    use atglyph::primitives::RunSeed;
+    use atglyph::rules::prefab::{Pick, Slot};
     use bevy::ecs::world::CommandQueue;
     use rand::SeedableRng;
     use rand::rngs::StdRng;
-    use rl_engine::rl_core::RunSeed;
-    use rl_engine::rl_rules::prefab::{Pick, Slot};
 
     use super::*;
     use crate::content::Library;

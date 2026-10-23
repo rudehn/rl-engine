@@ -11,11 +11,11 @@ The reference page is `docs/guide/src/systems/settings.md`; this is why it is sh
 A game opened in a window sized to its grid and could not fill the screen from inside the game.
 Making the window bigger worked, because the camera scaled the grid to fit, but it scaled a picture drawn for the small size.
 Measured in Foundry at borderless fullscreen on a 2880 by 1800 display: glyphs rasterized at 14 pixels were stretched about 1.44 times with nearest-pixel sampling, and the stems of `T` and `e` came out uneven.
-Nothing a player chose was remembered; `rl-save` stored a run and nothing else.
+Nothing a player chose was remembered; `atglyph-save` stored a run and nothing else.
 
 ## The layout
 
-The grid is laid out for the window it is in, by one pure function, `rl_render::layout::fit`.
+The grid is laid out for the window it is in, by one pure function, `atglyph_render::layout::fit`.
 
 - **Fractional zoom, whole-pixel cells.**
   The zoom is the largest that fits the grid in the window, and each cell is then floored to whole physical pixels, width and height separately.
@@ -35,17 +35,17 @@ The grid is laid out for the window it is in, by one pure function, `rl_render::
 
 ## The registry
 
-`Settings` is plain data in `rl-bevy`: a name, a group, a label, the choices, a default and an optional key.
+`Settings` is plain data in `atglyph-bevy`: a name, a group, a label, the choices, a default and an optional key.
 
-- **Why `rl-bevy`.**
-  It is the one crate `rl-render`, `rl-ui` and `rl-save` all already depend on.
+- **Why `atglyph-bevy`.**
+  It is the one crate `atglyph-render`, `atglyph-ui` and `atglyph-save` all already depend on.
   The renderer declares and applies fullscreen, the UI lists and changes whatever is declared, and saving remembers names and words, with no new edge between them.
-  In particular `rl-ui` still does not depend on `rl-save`, an edge the game menu dropped on purpose when it stopped filing obituaries.
+  In particular `atglyph-ui` still does not depend on `atglyph-save`, an edge the game menu dropped on purpose when it stopped filing obituaries.
 - **Why not typed settings.**
   Each setting its own resource, reached through a trait by the screen and by saving, would hand game code a typed value.
   It would also need plumbing in three crates per setting, which one row does not justify, and a game's settings would be declared differently from the engine's.
-- **Why not in `rl-ui`.**
-  `rl-render` sits below `rl-ui` and could not read fullscreen, so window handling would move into the UI crate, and `rl-save` would implement a UI trait.
+- **Why not in `atglyph-ui`.**
+  `atglyph-render` sits below `atglyph-ui` and could not read fullscreen, so window handling would move into the UI crate, and `atglyph-save` would implement a UI trait.
 - **Why a choice among words.**
   One shape of row keeps the screen one presenter and the file one map.
   A slider, a rebound key and a line of text are different screens, and a game that wants one writes it.

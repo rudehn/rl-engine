@@ -15,10 +15,10 @@
 //! arrival that built it; the way back up is the way the adventurer came,
 //! and what is left on a floor is what they left.
 
+use atglyph::prelude::*;
+use atglyph::primitives::Rect;
 use bevy::prelude::*;
 use rand::Rng;
-use rl_engine::prelude::*;
-use rl_engine::rl_core::Rect;
 
 use crate::bestiary::{Bestiary, Kind, MonsterDef, spawn_monster};
 use crate::dungeon::{FLOORS, MIN_DISTANCE_FROM_ENTRY, floor_of};
@@ -314,7 +314,7 @@ fn place_feeding_ground(
     let remains_at = *open.get(rng.random_range(0..open.len().max(1)))?;
     let beast_at = geometry::square(remains_at, 1).find(|p| *p != remains_at && open.contains(p))?;
     let prey = spawn_monster(commands, bestiary.defs.get(prey_id), remains_at, site.map, registries, false);
-    commands.queue(move |world: &mut World| rl_engine::rl_bevy::remains::lay_down(world, prey, now, None));
+    commands.queue(move |world: &mut World| atglyph::ecs::remains::lay_down(world, prey, now, None));
     // Drawn as a corpse like every body, by `corpses::dress_the_dead`: the
     // engine keeps a body's glyph as it was in life, and the prey must read
     // as dead on sight rather than as an animal beside its own feeder.
@@ -696,9 +696,9 @@ pub fn lead_lair_bands(
 
 #[cfg(test)]
 mod tests {
+    use atglyph::primitives::RunSeed;
+    use atglyph::rules::prefab::Slot;
     use rand::SeedableRng;
-    use rl_engine::rl_core::RunSeed;
-    use rl_engine::rl_rules::prefab::Slot;
 
     use super::*;
     use crate::dungeon::{TOWN, map_of};
@@ -1099,7 +1099,7 @@ mod tests {
                 let Slot::Monster { pick, .. } = slot else { continue };
                 let cells = rows.iter().map(|row| row.chars().filter(|c| *c == glyph).count()).sum::<usize>();
                 match pick {
-                    rl_engine::rl_rules::prefab::Pick::Kind(id) if bestiary.defs.get(*id).name == boss.name => bosses += cells,
+                    atglyph::rules::prefab::Pick::Kind(id) if bestiary.defs.get(*id).name == boss.name => bosses += cells,
                     _ => followers += cells,
                 }
             }

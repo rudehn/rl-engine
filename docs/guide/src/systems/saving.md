@@ -1,18 +1,18 @@
 <!-- documents:
      plugins: SavePlugin, EndingViewPlugin
-     files: crates/rl-save/src/run.rs
-            crates/rl-save/src/engine.rs
-            crates/rl-save/src/backend.rs
-            crates/rl-save/src/unload.rs
-            crates/rl-save/src/versioned.rs
-            crates/rl-save/src/remap.rs
-            crates/rl-ui/src/view/ending.rs
-            crates/rl-ui/src/game_menu.rs
-            crates/rl-bevy/src/state.rs
-            crates/rl-bevy/src/world.rs
-            crates/rl-bevy/src/plugin.rs
-            crates/rl-bevy/src/cue.rs
-            crates/rl-bevy/src/minds.rs
+     files: crates/atglyph-save/src/run.rs
+            crates/atglyph-save/src/engine.rs
+            crates/atglyph-save/src/backend.rs
+            crates/atglyph-save/src/unload.rs
+            crates/atglyph-save/src/versioned.rs
+            crates/atglyph-save/src/remap.rs
+            crates/atglyph-ui/src/view/ending.rs
+            crates/atglyph-ui/src/game_menu.rs
+            crates/atglyph-bevy/src/state.rs
+            crates/atglyph-bevy/src/world.rs
+            crates/atglyph-bevy/src/plugin.rs
+            crates/atglyph-bevy/src/cue.rs
+            crates/atglyph-bevy/src/minds.rs
      fingerprint: aa6d8824 -->
 
 # Saving and the ending screen
@@ -25,7 +25,7 @@ What is saved reaches storage through one trait, so a game in a browser and a ga
 ## Turning it on
 
 `SavePlugin::new(slot)` is the loop around a save, and `.version(n)` is the number every save is matched against.
-It inserts `Saves`, the backend, unless the game inserted its own: `Saves::platform_default` under the name `SavePlugin::new` is given, or memory when `rl_bevy::replay::scripted` says the run is a replay, a recording or a capture, so a scripted run neither starts on the player's save nor writes over it; it registers `PropKind` as a saved kind itself, inserts `SaveSlot` and the `Stash`, refreshes the stash in `Last`'s `EndOfFrame::Save` stage, and deletes the slot on entering `EngineState::Over` and in the `EndRun` schedule, unless the run is being left for a title.
+It inserts `Saves`, the backend, unless the game inserted its own: `Saves::platform_default` under the name `SavePlugin::new` is given, or memory when `atglyph::ecs::replay::scripted` says the run is a replay, a recording or a capture, so a scripted run neither starts on the player's save nor writes over it; it registers `PropKind` as a saved kind itself, inserts `SaveSlot` and the `Stash`, refreshes the stash in `Last`'s `EndOfFrame::Save` stage, and deletes the slot on entering `EngineState::Over` and in the `EndRun` schedule, unless the run is being left for a title.
 For a title it does three things more: it inserts `SavedRun`, the title's sign that there is a slot to continue from, and reads the slot into it in its `finish`, before the first frame, forgets the slot the moment `AbandonRun` is triggered, and writes a run left with `LeaveRun` while still in play down through `save_on_leaving`, in the save stage ahead of the teardown; [The title screen](title.md) is the page for those.
 `.on_arrival()` also writes the slot through `save_on_arrival` on any frame the player arrived somewhere while playing, so each place entered is a save point; it runs in the same stage, which comes before the dead are buried and a restart or a leaving tears the run down, so it never writes a world with no run in it.
 It registers no key: saving reads the whole world, so a game's save key is its own exclusive system and calls `save_run`.
@@ -158,17 +158,17 @@ A save that does not fit is refused rather than repaired: either version failing
 The one thing the load repairs on its own is content that has gone missing, and only for what the engine makes again from a definition, a prop, or an item or an actor through its maker: one whose definition this build has lost comes back as an empty entity with a warning rather than failing the whole save.
 What is left of a run that cannot be continued is a screen, and a record in a slot of its own where a game keeps records: the run's slot is deleted when the run ends, and the ending is drawn for as long as the player looks at it.
 The outcome, the seed and the turn are the engine's, since it kept them; every heading and every body is the game's, because only the game knows whether a run is measured in coin, in decks cleared or in what the player was made of.
-Nothing in `rl-save` decides when a run is over, and nothing in `rl-ui` writes a byte to storage.
+Nothing in `atglyph-save` decides when a run is over, and nothing in `atglyph-ui` writes a byte to storage.
 When the stash is refreshed is the engine's, and so are when the slot is deleted and when a run left for a title is written down, because `SavePlugin` schedules `forget_save` and `save_on_leaving` itself; what a game decides is when else a run is written down: on arrival, by asking for it, and whenever the `save_run` behind a key of its own is pressed.
 So a game that clears the stash has cleared what the way out would have written, which is what makes a death final rather than a suggestion.
 
 ## Where it lives
 
-`rl-save` is tier 2 and sits on top of `rl-bevy` rather than beside it, because what a save is made of is the engine's own components: an `Inventory`, an `Equipped`, an `Afflicted`, a `Transition`, a `Remains`.
+`atglyph-save` is tier 2 and sits on top of `atglyph-bevy` rather than beside it, because what a save is made of is the engine's own components: an `Inventory`, an `Equipped`, an `Afflicted`, a `Transition`, a `Remains`.
 What that buys is that each game's save walk was deleted rather than shared out: what every game used to write by hand is `EntityState` and `EngineSave`, and a game's own save file is its kinds and nothing else.
 `backend.rs` is the only file that knows where bytes go, which is why a browser is one implementation of a four-method trait rather than a second path through the crate.
 `versioned.rs` and `remap.rs` are plain functions over plain data, `remap.rs`'s `Entity` aside, so the version policy and the density and stability of a `SaveId` are tested as properties with no `App` anywhere near them.
 This is also the one tier 2 crate `scripts/check-tiers.sh --wasm` builds, because the two wasm-only pieces are invisible to a native build and would otherwise rot unseen.
-The ending is in `rl-ui` because it is a view, a collector and a presenter like every other screen, and nowhere near `rl-save`.
+The ending is in `atglyph-ui` because it is a view, a collector and a presenter like every other screen, and nowhere near `atglyph-save`.
 It was a `Morgue` there until 2026-09-23: the same sections, rendered and written to a file that nothing read while the game ran, which is how a presenter came to do file I/O and how a UI crate came to depend on the save crate for one screen.
-Showing them instead of storing them cost the page a paragraph and `rl-ui` a dependency.
+Showing them instead of storing them cost the page a paragraph and `atglyph-ui` a dependency.

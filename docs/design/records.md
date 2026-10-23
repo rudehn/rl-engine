@@ -74,7 +74,7 @@ The date is a few lines of civil-calendar arithmetic in the panel, `YYYY-MM-DD` 
 
 ## Split three ways
 
-The record is plain data in `rl-bevy`, the slot is `rl-save`'s and the screen `rl-ui`'s, with no edge between the last two, the split settings and the title make.
+The record is plain data in `atglyph-bevy`, the slot is `atglyph-save`'s and the screen `atglyph-ui`'s, with no edge between the last two, the split settings and the title make.
 The title offers its Records row knowing only that a screen declared the `records` modal and that the list holds something.
 
 ## What waits
@@ -84,4 +84,4 @@ The title offers its Records row knowing only that a screen declared the `record
 - **The list is read one way.**
   No sorting by date or by outcome, no record deleted by the player, and no filter per game mode; each waits on a game that wants it.
 - **A record holds words, not a replay.**
-  The seed is kept, so a run can be played again on it, but the keys are not; a run written down with `RL_RECORD` is the replay, and a record does not point at one.
+  The seed is kept, so a run can be played again on it, but the keys are not; a run written down with `ATGLYPH_RECORD` is the replay, and a record does not point at one.

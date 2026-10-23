@@ -9,12 +9,12 @@
 //! Keys: arrows, `hjklyubn` or the numpad to walk or strike, `t` for the
 //! lantern, `.` to wait, `q` to quit.
 
+use atglyph::prelude::*;
+use atglyph::primitives::Rect;
+use atglyph::rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
+use atglyph::rules::faction::FactionDef;
 use bevy::prelude::*;
 use rand::Rng;
-use rl_engine::prelude::*;
-use rl_engine::rl_core::Rect;
-use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
-use rl_engine::rl_rules::faction::FactionDef;
 use std::sync::Arc;
 
 /// The terminal, in cells.
@@ -207,7 +207,7 @@ fn tend_lantern(keys: Res<ButtonInput<KeyCode>>, mut commands: Commands, player:
 #[derive(Resource)]
 struct Rats {
     mind: Arc<Brain<Entity>>,
-    bite: rl_engine::rl_rules::damage::DamageKindId,
+    bite: atglyph::rules::damage::DamageKindId,
     faction: FactionId,
 }
 // ANCHOR_END: creatures

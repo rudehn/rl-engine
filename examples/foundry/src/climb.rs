@@ -7,8 +7,8 @@
 //! the core is charged finishes the mission's last quest, and that wins
 //! the run.
 
+use atglyph::prelude::*;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
 
 /// The deepest deck this run has stood on, one at the start.
 ///
@@ -37,7 +37,7 @@ pub fn remember_depth(mut entered: MessageReader<PlaceEntered>, mut deepest: Res
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_core::RunSeed;
+    use atglyph::primitives::RunSeed;
 
     use super::*;
 

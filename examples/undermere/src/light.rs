@@ -20,8 +20,8 @@
 //! [`LIGHT_INTENSITY`](crate::content::LIGHT_INTENSITY): what tells a lamp
 //! from a glowcap is how far it reaches and its colour.
 
+use atglyph::prelude::*;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
 
 use std::collections::BTreeMap;
 
@@ -111,9 +111,9 @@ pub fn dim_the_lantern(
 mod tests {
     use std::collections::BTreeSet;
 
-    use rl_engine::rl_core::RunSeed;
-    use rl_engine::rl_rules::prefab::Slot;
-    use rl_engine::rl_rules::prop::PropId;
+    use atglyph::primitives::RunSeed;
+    use atglyph::rules::prefab::Slot;
+    use atglyph::rules::prop::PropId;
 
     use super::*;
     use crate::dungeon::{FLOORS, TOWN, map_of};

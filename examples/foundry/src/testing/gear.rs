@@ -1,8 +1,8 @@
 //! Weapons, armor and ammunition for a test to spawn and equip.
 
+use atglyph::ecs::prelude::*;
 use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
-use rl_engine::rl_bevy::prelude::*;
 
 /// Spawns two hand blasters, puts them in the player's bag and equips
 /// both one after the other through the engine's own `Equip` intent, so

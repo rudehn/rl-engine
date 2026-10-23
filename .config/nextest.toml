@@ -39,7 +39,7 @@ not (
       | test(=lifts::tests::every_deck_ridden_down_to_is_joined_reachable_furnished_and_stocked_through_a_save_over_a_span_of_seeds)
     )
     |
-    package(rl-mapgen) & (
+    package(atglyph-mapgen) & (
         test(=accrete::tests::the_walk_to_the_far_side_of_a_barrier_is_on_average_longer_than_without_it)
       | test(=dress::tests::nothing_stands_beside_an_opening_and_every_area_stays_one_region)
       | test(=lakes::tests::a_lake_that_may_cut_leaves_islands_and_the_bridges_join_every_one)
@@ -47,7 +47,7 @@ not (
       | test(=lakes::tests::no_lake_or_bridge_reaches_past_a_lock_on_a_piece_drawn_cell_by_cell)
     )
     |
-    package(rl-rules) & (
+    package(atglyph-rules) & (
         test(=pool::tests::an_entry_is_never_drawn_outside_its_floors_or_its_tags)
       | test(=pool::tests::every_budget_is_met_whenever_the_pool_can_meet_it)
       | test(=pool::tests::every_entry_is_drawn_somewhere_over_the_seeds)

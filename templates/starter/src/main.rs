@@ -1,4 +1,4 @@
-//! {{project-name}}: a roguelike started from rl-engine's starter template.
+//! {{project-name}}: a roguelike started from atglyph's starter template.
 //!
 //! One floor of rooms, dark except for the torch you carry and the braziers
 //! in its halls. Goblins wander it. They notice you when they can see you,
@@ -21,13 +21,13 @@
 
 use std::sync::Arc;
 
+use atglyph::prelude::*;
+use atglyph::primitives::Rect;
+use atglyph::rules::ai::tactics::{Hunt, MeleeAdjacent, SearchLastKnown, Wander};
+use atglyph::rules::damage::DamageKindId;
+use atglyph::rules::faction::FactionDef;
 use bevy::prelude::*;
 use rand::Rng;
-use rl_engine::prelude::*;
-use rl_engine::rl_core::Rect;
-use rl_engine::rl_rules::ai::tactics::{Hunt, MeleeAdjacent, SearchLastKnown, Wander};
-use rl_engine::rl_rules::damage::DamageKindId;
-use rl_engine::rl_rules::faction::FactionDef;
 
 /// The window's title.
 const TITLE: &str = "{{project-name}}";
@@ -423,12 +423,12 @@ fn open_cell(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rl_engine::testing::{KeyScriptPlugin, press};
+    use atglyph::testing::{KeyScriptPlugin, press};
 
     /// The game with no window: the same `Starter` plugin `main` adds, and
     /// keys played the way a keyboard plays them.
     fn headless(seed: u64) -> App {
-        rl_engine::testing::headless(RunSeed(seed), (), (Starter, KeyScriptPlugin))
+        atglyph::testing::headless(RunSeed(seed), (), (Starter, KeyScriptPlugin))
     }
 
     /// A run with the player holding its first turn: one frame builds the

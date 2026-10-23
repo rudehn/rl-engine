@@ -10,14 +10,14 @@
 //! Keys: arrows to walk or strike, `g` get, `e` eat, `r` throw a rock,
 //! `t` lantern, `.` wait, `q` quit.
 
+use atglyph::prelude::*;
+use atglyph::primitives::Rect;
+use atglyph::rules::Wits;
+use atglyph::rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
+use atglyph::rules::ai::tactics::{Scavenge, ThrowAtRange};
+use atglyph::rules::faction::FactionDef;
 use bevy::prelude::*;
 use rand::Rng;
-use rl_engine::prelude::*;
-use rl_engine::rl_core::Rect;
-use rl_engine::rl_rules::Wits;
-use rl_engine::rl_rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
-use rl_engine::rl_rules::ai::tactics::{Scavenge, ThrowAtRange};
-use rl_engine::rl_rules::faction::FactionDef;
 use std::sync::Arc;
 
 /// The terminal, in cells.
@@ -242,7 +242,7 @@ struct Rats {
     mind: Arc<Brain<Entity>>,
     /// The brain of something with hands.
     ratling: Arc<Brain<Entity>>,
-    bite: rl_engine::rl_rules::damage::DamageKindId,
+    bite: atglyph::rules::damage::DamageKindId,
     faction: FactionId,
 }
 // ANCHOR_END: creatures
@@ -398,9 +398,9 @@ mod tests {
 
     /// The warren with no window, wired as `main` wires it.
     fn started(seed: u64) -> (App, Entity) {
-        let mut app = rl_engine::testing::windowless(RunSeed(seed));
+        let mut app = atglyph::testing::windowless(RunSeed(seed));
         app.add_plugins((CombatPlugin, MindsPlugin, LightingPlugin, ItemsPlugin, ThrowingPlugin));
-        app.add_plugins(UiPlugin).add_plugins(TargetViewPlugin).add_plugins(rl_engine::testing::KeyScriptPlugin);
+        app.add_plugins(UiPlugin).add_plugins(TargetViewPlugin).add_plugins(atglyph::testing::KeyScriptPlugin);
         app.insert_resource(Lighting::dark())
             .add_systems(NewRun, start)
             .add_systems(Turn, (populate, eat).in_set(TurnSet::React))
@@ -438,7 +438,7 @@ mod tests {
         let mut moved = false;
         for key in arrows {
             let before = (app.world().get::<Position>(player).unwrap().0, app.world().resource::<Turns>().now());
-            rl_engine::testing::press(&mut app, key);
+            atglyph::testing::press(&mut app, key);
             for _ in 0..3 {
                 app.update();
             }

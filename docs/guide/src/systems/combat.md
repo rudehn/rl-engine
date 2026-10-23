@@ -1,21 +1,21 @@
 <!-- documents:
      plugins: CombatPlugin
-     files: crates/rl-bevy/src/combat.rs
-            crates/rl-bevy/src/bump.rs
-            crates/rl-bevy/src/cue.rs
-            crates/rl-bevy/src/plugin.rs
-            crates/rl-bevy/src/state.rs
-            crates/rl-bevy/src/turn.rs
-            crates/rl-rules/src/damage.rs
-            crates/rl-rules/src/faction.rs
-            crates/rl-rules/src/forecast.rs
-            crates/rl-rules/src/accuracy.rs
-            crates/rl-bevy/src/accuracy.rs
-            crates/rl-bevy/src/throwing.rs
-            crates/rl-bevy/src/stealth.rs
-            crates/rl-bevy/src/ammo.rs
-            crates/rl-bevy/src/effects/mod.rs
-            crates/rl-bevy/src/effects/engine.rs
+     files: crates/atglyph-bevy/src/combat.rs
+            crates/atglyph-bevy/src/bump.rs
+            crates/atglyph-bevy/src/cue.rs
+            crates/atglyph-bevy/src/plugin.rs
+            crates/atglyph-bevy/src/state.rs
+            crates/atglyph-bevy/src/turn.rs
+            crates/atglyph-rules/src/damage.rs
+            crates/atglyph-rules/src/faction.rs
+            crates/atglyph-rules/src/forecast.rs
+            crates/atglyph-rules/src/accuracy.rs
+            crates/atglyph-bevy/src/accuracy.rs
+            crates/atglyph-bevy/src/throwing.rs
+            crates/atglyph-bevy/src/stealth.rs
+            crates/atglyph-bevy/src/ammo.rs
+            crates/atglyph-bevy/src/effects/mod.rs
+            crates/atglyph-bevy/src/effects/engine.rs
      fingerprint: 82d43147 -->
 
 # Combat and loadout
@@ -121,15 +121,15 @@ Who is unaware is stealth's to say and what surprise is worth the game's percent
 Neither is in a forecast: a shape does to the one subject of a duel what the same blow does with none, and a blow from hiding lands once before the subject is awake for every blow after it.
 The player's death ends the run unless `death_is_not_the_end()` says otherwise, because a game that revives keeps the ending for itself.
 Experience, levels, kill credit beyond `Hit::credit`, wound locations and morale are each a game's rule over these messages, and the engine should not guess which of them a game wants.
-Arithmetic that is really about the rules lives in `rl-rules`, and what that buys is a test with no `App` in it: a game's own stage is proved against a `Hit` and a `Defender` filled by hand, and a panel's verdict about a fight is proved against the same call a real blow makes.
+Arithmetic that is really about the rules lives in `atglyph-rules`, and what that buys is a test with no `App` in it: a game's own stage is proved against a `Hit` and a `Defender` filled by hand, and a panel's verdict about a fight is proved against the same call a real blow makes.
 
 ## Where it lives
 
-`rl-rules` is tier 1 and has no Bevy in it: `damage.rs` is `Hit`, `Defender`, the `DamageStage` trait and a `resolve` that is a fold over stages, all of it tested against ids made out of thin air.
+`atglyph-rules` is tier 1 and has no Bevy in it: `damage.rs` is `Hit`, `Defender`, the `DamageStage` trait and a `resolve` that is a fold over stages, all of it tested against ids made out of thin air.
 `faction.rs` is the dense matrix, which is a table and an index rather than anything that needs a world.
 `forecast.rs` is where the split earns its keep: `expected_damage` calls the same `resolve` with the average roll in place of a real one and through the game's own stages, so a panel that says a fight is deadly got the word from the arithmetic the fight will use.
 A `Combatant` also carries the chance its attacks land, 100 unless a hit model says otherwise, and `expected_damage` counts the misses by it, so a fight that is deadly on paper and a coin toss at the trigger reads as the coin toss.
 `Arms` is what a fight fought at a distance costs it: both sets of rolls, both costs and the shot's reach, with `Arms::at` the one place the choice between them is made and `Combatant` still one set already chosen.
 The distance is an argument because only the caller knows where the two stand, and the one thing `Arms::at` will not check is whether the line of fire is clear, since a forecast a wall may yet block is still the right forecast for the fight the two would have.
-`rl-bevy` is tier 2 and owns everything that touches the world: `combat.rs` is the components, `Loadout`, the resolver, the pipeline runner and the deaths, in one file because a blow is one decision and not six.
+`atglyph-bevy` is tier 2 and owns everything that touches the world: `combat.rs` is the components, `Loadout`, the resolver, the pipeline runner and the deaths, in one file because a blow is one decision and not six.
 `bump.rs` is beside it rather than inside it, since a walk key that comes to a blow is the turn loop's redirection and works the same in a game with doors and no foes.

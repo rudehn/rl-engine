@@ -16,10 +16,10 @@
 
 use std::collections::BTreeMap;
 
+use atglyph::prelude::*;
+use atglyph::primitives::noun::with_article;
 use bevy::ecs::message::MessageCursor;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_core::noun::with_article;
 use serde::{Deserialize, Serialize};
 
 use crate::bestiary::{Bestiary, Kind};
@@ -544,8 +544,8 @@ pub fn record(ending: Option<Res<Ending>>, tally: Res<Tally>, map: Option<Res<Wo
 
 #[cfg(test)]
 mod tests {
+    use atglyph::primitives::RunSeed;
     use rand::{Rng, SeedableRng};
-    use rl_engine::rl_core::RunSeed;
 
     use super::*;
     use crate::dungeon::map_of;
@@ -853,7 +853,7 @@ mod tests {
             "{run:?}"
         );
         assert!(run[1].ends_with(" 3"), "floor three: {run:?}");
-        let kept = app.world().resource::<Saves>().load(rl_engine::rl_save::RECORDS_SLOT).expect("the slot reads").expect("the records were written down");
+        let kept = app.world().resource::<Saves>().load(atglyph::save::RECORDS_SLOT).expect("the slot reads").expect("the records were written down");
         assert!(kept.contains("Slain by a goblin on floor 3"), "kept beyond the run: {kept}");
     }
 
@@ -862,7 +862,7 @@ mod tests {
     /// before the burst landed and the record is written a frame later.
     #[test]
     fn a_death_by_a_dying_monsters_burst_is_recorded_in_its_name() {
-        use rl_engine::rl_bevy::{EffectKinds, Moments, Triggers};
+        use atglyph::ecs::{EffectKinds, Moments, Triggers};
         let mut app = headless(RunSeed(8));
         let me = arrive(&mut app, map_of(3));
         clear_monsters(&mut app);
@@ -870,7 +870,7 @@ mod tests {
         lay_floor(&mut app, &[beside]);
         let goblin = monster(&mut app, "goblin", beside);
         let burst = r#"[(on: "died", area: Burst(radius: 1), effects: [(kind: "Harm", args: (kind: "crush", roll: "100000"))])]"#;
-        let specs: Vec<rl_engine::rl_rules::TriggerSpec> = rl_engine::rl_rules::Names::new().load_list(burst).expect("the burst parses");
+        let specs: Vec<atglyph::rules::TriggerSpec> = atglyph::rules::Names::new().load_list(burst).expect("the burst parses");
         let built = {
             let world = app.world();
             Triggers::build(&specs, &[], world.resource::<Moments>(), world.resource::<EffectKinds>(), &world.resource::<Registries>().names())
@@ -967,7 +967,7 @@ mod tests {
         app.world_mut().entity_mut(me).insert((Health::full(10), Armor(0)));
         app.world_mut().entity_mut(me).remove::<Equipped>();
         let crush = app.world().resource::<Registries>().damage_kinds.expect("crush");
-        let hit = |amount| DamageEvent::new(me, rl_engine::rl_rules::Hit::from_source(None, crush, amount));
+        let hit = |amount| DamageEvent::new(me, atglyph::rules::Hit::from_source(None, crush, amount));
         app.world_mut().write_message(hit(6));
         app.world_mut().write_message(hit(6));
         settle(&mut app);

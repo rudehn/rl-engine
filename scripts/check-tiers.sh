@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # The tier boundaries, read from each workspace member's
-# `[package.metadata.rl-engine] tier`. Conventions did not hold these lines
-# in the repos rl-engine was extracted from; the build does.
+# `[package.metadata.atglyph] tier`. Conventions did not hold these lines
+# in the repos atglyph was extracted from; the build does.
 #
 #   scripts/check-tiers.sh          every member declares a tier, no crate
 #                                   depends on a higher tier, and tiers 0 and
 #                                   1 never reach Bevy
 #   scripts/check-tiers.sh --wasm   build tiers 0 and 1 for wasm32, and
-#                                   rl-save, whose browser storage and
+#                                   atglyph-save, whose browser storage and
 #                                   unload bridge exist only there
 #
 # Tiers: 0 core, 1 no Bevy, 2 the Bevy layer, 3 the facade and the games.
@@ -27,7 +27,7 @@ metadata=$(cargo metadata --format-version 1 --no-deps)
 # or not an integer from 0 to max_tier.
 members=$(jq -r --argjson max "$max_tier" '
   .packages[]
-  | (.metadata["rl-engine"].tier // null) as $t
+  | (.metadata["atglyph"].tier // null) as $t
   | "\(.name) \(if ($t | type) == "number" and $t == ($t | floor) and $t >= 0 and $t <= $max then $t else "-" end)"
 ' <<<"$metadata")
 
@@ -38,16 +38,16 @@ while read -r name tier; do
   fi
 done <<<"$members"
 if [[ ${#bevy_free[@]} -eq 0 ]]; then
-  echo "FAIL: no workspace member declares tier 0 or 1; is [package.metadata.rl-engine] tier set?" >&2
+  echo "FAIL: no workspace member declares tier 0 or 1; is [package.metadata.atglyph] tier set?" >&2
   exit 1
 fi
 
 if [[ "${1:-}" == "--wasm" ]]; then
   packages=()
   for crate in "${bevy_free[@]}"; do packages+=(-p "$crate"); done
-  # rl-save is tier 2, but its web backend and unload bridge are compiled
+  # atglyph-save is tier 2, but its web backend and unload bridge are compiled
   # only for wasm32, so a native build never sees a mistake in them.
-  exec cargo check "${packages[@]}" -p rl-save --target wasm32-unknown-unknown
+  exec cargo check "${packages[@]}" -p atglyph-save --target wasm32-unknown-unknown
 elif [[ $# -gt 0 ]]; then
   echo "usage: scripts/check-tiers.sh [--wasm]" >&2
   exit 2
@@ -57,7 +57,7 @@ status=0
 
 while read -r name tier; do
   if [[ "$tier" == "-" ]]; then
-    echo "FAIL: $name declares no tier; add [package.metadata.rl-engine] tier = 0 to $max_tier to its Cargo.toml" >&2
+    echo "FAIL: $name declares no tier; add [package.metadata.atglyph] tier = 0 to $max_tier to its Cargo.toml" >&2
     status=1
   fi
 done <<<"$members"
@@ -65,7 +65,7 @@ done <<<"$members"
 # Normal and build dependencies only: a dev-dependency never reaches a
 # consumer.
 upward=$(jq -r '
-  (.packages | map({key: .name, value: .metadata["rl-engine"].tier}) | from_entries) as $tier
+  (.packages | map({key: .name, value: .metadata["atglyph"].tier}) | from_entries) as $tier
   | .packages[]
   | .name as $crate
   | select(($tier[$crate] | type) == "number")

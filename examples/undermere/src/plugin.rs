@@ -21,10 +21,10 @@
 //! first run back, so the binary adds it with the panels and a headless
 //! run, which has none, begins at startup.
 
+use atglyph::ecs::plugin::{CleanupSet, NewRun, ReactSet, ResetsOnNewRun, Turn, TurnSet};
+use atglyph::ecs::{AmmoSet, FactSet, FirePlugin, LootPlugin, LootSet, NoiseRules, PrefabPlugin, PrefabSet, PropsPlugin};
+use atglyph::prelude::*;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_bevy::plugin::{CleanupSet, NewRun, ReactSet, ResetsOnNewRun, Turn, TurnSet};
-use rl_engine::rl_bevy::{AmmoSet, FactSet, FirePlugin, LootPlugin, LootSet, NoiseRules, PrefabPlugin, PrefabSet, PropsPlugin};
 
 use crate::armory::Armory;
 use crate::bestiary::Bestiary;
@@ -123,7 +123,7 @@ impl Plugin for UndermerePlugin {
             .add_work(crate::captives::FREEING);
         // Which kind a death's remnant stands for, so a burst of spores
         // where a myconid fell is learned as the myconid's.
-        rl_engine::rl_bevy::KeepOnRemnant::keep_on_remnant::<crate::bestiary::KindTag>(app);
+        atglyph::ecs::KeepOnRemnant::keep_on_remnant::<crate::bestiary::KindTag>(app);
         // The engine's effects Undermere names, for the potions, the staffs
         // and the breaths, beside the `Ignite` fire declares and the `Emit`
         // the clouds do; and Undermere's own, for the scrolls, the potions,
@@ -509,7 +509,7 @@ impl Plugin for UndermerePlugin {
     /// Every line Undermere says from inside a turn is a `Tell`, which
     /// only the engine's narrator collects and speaks.
     fn finish(&self, app: &mut App) {
-        rl_engine::rl_bevy::plugin::depends_on::<rl_engine::rl_ui::NarrationViewPlugin>(app, "UndermerePlugin");
+        atglyph::ecs::plugin::depends_on::<atglyph::ui::NarrationViewPlugin>(app, "UndermerePlugin");
     }
 }
 

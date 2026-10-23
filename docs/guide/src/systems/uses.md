@@ -1,20 +1,20 @@
 <!-- documents:
      plugins: ItemsPlugin
-     files: crates/rl-bevy/src/items.rs
-            crates/rl-bevy/src/consumable.rs
-            crates/rl-bevy/src/effects/mod.rs
-            crates/rl-bevy/src/effects/triggers.rs
-            crates/rl-bevy/src/effects/engine.rs
-            crates/rl-bevy/src/ability.rs
-            crates/rl-bevy/src/combat.rs
-            crates/rl-bevy/src/throwing.rs
-            crates/rl-bevy/src/status.rs
-            crates/rl-bevy/src/cue.rs
-            crates/rl-rules/src/ability.rs
-            crates/rl-ui/src/view/inventory.rs
-            crates/rl-ui/src/view/target.rs
-            crates/rl-ui/src/panel/inventory.rs
-            crates/rl-ui/src/narrate.rs
+     files: crates/atglyph-bevy/src/items.rs
+            crates/atglyph-bevy/src/consumable.rs
+            crates/atglyph-bevy/src/effects/mod.rs
+            crates/atglyph-bevy/src/effects/triggers.rs
+            crates/atglyph-bevy/src/effects/engine.rs
+            crates/atglyph-bevy/src/ability.rs
+            crates/atglyph-bevy/src/combat.rs
+            crates/atglyph-bevy/src/throwing.rs
+            crates/atglyph-bevy/src/status.rs
+            crates/atglyph-bevy/src/cue.rs
+            crates/atglyph-rules/src/ability.rs
+            crates/atglyph-ui/src/view/inventory.rs
+            crates/atglyph-ui/src/view/target.rs
+            crates/atglyph-ui/src/panel/inventory.rs
+            crates/atglyph-ui/src/narrate.rs
      fingerprint: 9f7676cd -->
 
 # Uses and charges
@@ -40,7 +40,7 @@ A thing with neither is used where its user stands with `UseItem`, and each of t
 An accepted use writes `Fired` for the `use` moment where its user stands, or at the cell an aimed one is made at, where it was pointed, and for a use made on a thing a `FiredOn` beside it, which the landing hands its effects as `Landing::on` for a game's own effect to read.
 A use aimed somewhere lands as an ability does, on its footprint from where its user stands to the cell it was pointed at, and with a look it is seen to fly there while the turns wait.
 A use that lands on a body carrying `Reflects` is turned back by the same `Bystanders::reflect` an ability is, one time in two: left standing alone where it was aimed, the whole of it lands on its user instead, as [Abilities](abilities.md) describes.
-A thing not yet known, `Unknown`, is refused for none of what its targeting says: `may_use` takes whether it is unknown and lets it be used empty, `land_triggers` lands no `use` of a thing with nothing left, and `UseItemAt` makes it where it may still be pointed, by `rl_rules::ability::made_at`, the farthest cell its user sees on the line when it wants its cell seen, so it lands by its true targeting where its flight stops.
+A thing not yet known, `Unknown`, is refused for none of what its targeting says: `may_use` takes whether it is unknown and lets it be used empty, `land_triggers` lands no `use` of a thing with nothing left, and `UseItemAt` makes it where it may still be pointed, by `atglyph::rules::ability::made_at`, the farthest cell its user sees on the line when it wants its cell seen, so it lands by its true targeting where its flight stops.
 Its aim is previewed as a plain line to the cursor and the cursor's cell, `TargetView::unknown`, with no footprint, reach, refusal or target, and cycles as `Aim::Anyone` would.
 `AimUse { user, item }` opens the targeting cursor on a thing whose use is aimed, as on an ability aimed the same way, and confirming writes the `UseItemAt` while putting it away spends nothing and passes no turn; a thing whose use lands on its user is used at once and opens nothing, one that asks opens the bag choosing for it, and one that cannot be used now opens nothing at all.
 The bag's use key writes `AimUse` for an aimed thing, turns the bag to choosing for one that asks, `InventoryMenu::choosing` holding a `ChoosingFor`, titled with the use's prompt and listing only what it may be made on, and otherwise uses the thing where the player stands.
@@ -99,7 +99,7 @@ A save taken while an aimed use is in the air keeps the charge it spent and lose
 
 ## Where it lives
 
-`rl-rules` is tier 1 and has no Bevy in it: `TriggerSpec`, `Targeting` and `Asks` are the authored forms, so a use's aim and its question are checked for their shape and their names without an `App`.
-`rl-bevy` is tier 2: the use and its refusals are the items resolver's, because a use is an item action and one turn spends one of them, the landing is the effects subsystem's, shared with props and abilities, and the aiming is `Bystanders::land`, the ability resolver's, so a thing and an ability are pointed by one rule.
+`atglyph-rules` is tier 1 and has no Bevy in it: `TriggerSpec`, `Targeting` and `Asks` are the authored forms, so a use's aim and its question are checked for their shape and their names without an `App`.
+`atglyph-bevy` is tier 2: the use and its refusals are the items resolver's, because a use is an item action and one turn spends one of them, the landing is the effects subsystem's, shared with props and abilities, and the aiming is `Bystanders::land`, the ability resolver's, so a thing and an ability are pointed by one rule.
 `consumable.rs` is beside items rather than inside it because a bag that works is not a bag that costs anything, and a game may want the first without the second; what the two share is one message, `Fired`.
-`rl-ui` does the asking: the targeting cursor answers `AimUse` for an aimed use and the bag answers it by choosing, each through the rule the resolver refuses by, `may_use` and `may_use_on`, public in `rl-bevy` for exactly that, so a screen never offers what the turn would refuse.
+`atglyph-ui` does the asking: the targeting cursor answers `AimUse` for an aimed use and the bag answers it by choosing, each through the rule the resolver refuses by, `may_use` and `may_use_on`, public in `atglyph-bevy` for exactly that, so a screen never offers what the turn would refuse.

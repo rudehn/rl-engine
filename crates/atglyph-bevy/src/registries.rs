@@ -1,0 +1,81 @@
+//! Every registry the engine's subsystems read, in one resource.
+//!
+//! Damage kinds, factions, stats, statuses, item tags, equipment slots,
+//! gases and props are content: a game fills them, and combat, statuses, abilities,
+//! items, gas and the panels read them. They live once, here, rather than in a
+//! resource per subsystem the game copies its own tables into, which is how
+//! two copies of one registry come to disagree about what an id means.
+//!
+//! [`Registries::names`] is the same tables as a [`Names`], so a game loads
+//! its statuses, abilities and its own definitions against exactly what the
+//! engine will read them with.
+
+use atglyph_rules::damage::DamageKind;
+use atglyph_rules::faction::FactionDef;
+use atglyph_rules::prop::PropDef;
+use atglyph_rules::{GasDef, Names, Registry, SlotDef, StatDef, StatusDef, TagDef};
+use bevy::prelude::*;
+
+/// Every registry the engine reads, filled by the game before play begins.
+///
+/// A registry a game has no use for stays empty, and an empty one means
+/// none: no statuses means no badges on a health bar, no slots means
+/// nothing is worn. A plugin that reads one says so with `needs`, so a
+/// game that forgot the whole resource is told when play begins.
+///
+/// Registries name each other, so a game fills them in order: the ones that
+/// name nothing first, then the ones loaded through [`names`](Self::names).
+///
+/// ```
+/// use atglyph_bevy::Registries;
+/// use atglyph_rules::{DamageKind, Registry, StatDef, status};
+///
+/// let mut registries = Registries {
+///     stats: Registry::from_defs(vec![StatDef::new("armor", 0)]).unwrap(),
+///     damage_kinds: Registry::from_defs(vec![DamageKind::new("venom")]).unwrap(),
+///     ..Default::default()
+/// };
+/// registries.statuses = status::load(r#"[(name: "poisoned", ticks: Some(("venom", 1)))]"#, &registries.names()).unwrap();
+/// assert!(registries.statuses.id("poisoned").is_some());
+/// ```
+#[derive(Resource, Debug, Clone, Default)]
+pub struct Registries {
+    /// What damage can be.
+    pub damage_kinds: Registry<DamageKind>,
+    /// The sides an actor can be on. Who is hostile to whom is
+    /// [`CombatRules`](crate::combat::CombatRules), which is a rule rather
+    /// than content.
+    pub factions: Registry<FactionDef>,
+    /// The stats every [`StatBlock`](crate::status::StatBlock) is read against.
+    pub stats: Registry<StatDef>,
+    /// The statuses an actor can carry.
+    pub statuses: Registry<StatusDef>,
+    /// The tags an item can carry.
+    pub tags: Registry<TagDef>,
+    /// The equipment slots, in the order a panel lists them.
+    pub slots: Registry<SlotDef>,
+    /// The gases that can hang in the air, which name statuses and so are
+    /// loaded after them.
+    pub gases: Registry<GasDef>,
+    /// The props that can stand on a map, which name tags and so are
+    /// loaded after them.
+    pub props: Registry<PropDef>,
+}
+
+impl Registries {
+    /// Every registry, to load content against.
+    ///
+    /// Not the sounds, which are declared while the app is built rather
+    /// than filled in here: a game whose effects make a noise chains
+    /// [`SoundNames::sounds`](crate::noise::SoundNames::sounds) onto these.
+    pub fn names(&self) -> Names<'_> {
+        Names::new()
+            .damage_kinds(&self.damage_kinds)
+            .with("faction", &self.factions)
+            .stats(&self.stats)
+            .statuses(&self.statuses)
+            .tags(&self.tags)
+            .slots(&self.slots)
+            .gases(&self.gases)
+    }
+}

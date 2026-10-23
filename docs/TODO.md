@@ -12,7 +12,7 @@ That review first filed what it read as a save data-loss bug, over `Fuel`, `Ligh
 It is not one.
 `docs/design/lighting.md` section 5 says fuel and a light source on an item are the game's to save with its item state, as `Enchant` already is, and `docs/design/noise.md` says `Heard` and `Aware` are lost on load on purpose, with the note that should either become worth saving the two go into `EngineSave` together.
 The item is struck, and the one line that was left of it, a `Burning` entity coming back unlit, was fixed on 2026-09-30 by saving it in `EntityState`.
-The reading it rested on is worth keeping as a caution: the save's coverage is legible only from three design docs, and nothing in `crates/rl-save/` states the rule it follows.
+The reading it rested on is worth keeping as a caution: the save's coverage is legible only from three design docs, and nothing in `crates/atglyph-save/` states the rule it follows.
 
 The sections below are thematic.
 "The order" is the order to work in, and every open item is in it.
@@ -40,7 +40,7 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 14 | `HalveIfBlocked` can never fire | 3 | low | low |
 | 15 | Two engine types are named for a theme word | 4 | low | low |
 | 16 | A light that moved costs a second cast, unmeasured | 8 | low | low |
-| 17 | Split `crates/rl-bevy/src/ability.rs` | 4 | low | medium |
+| 17 | Split `crates/atglyph-bevy/src/ability.rs` | 4 | low | medium |
 | 18 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
 | 19 | The resolvers in `ResolveSet::Act` are unordered | 4 | low | medium |
 | 20 | A prop cannot block sight, or block the way and let a shot past | 3 | medium | medium |
@@ -82,7 +82,7 @@ Why the order that is left, in five moves:
    Item 21 was raised on 2026-09-28 when Foundry's rooms were first furnished, and is what the furnished rooms most visibly lack; the three furnishing items raised beside it were built on 2026-10-10.
    Item 23 is what furnishing left on 2026-10-10, and waits on a game that stamps into a map `Accrete` did not grow.
 
-5. **Items 27 to 35 are the API review of 2026-10-16**, in `docs/reviews/engine_api.md`, filed on 2026-10-20 with only what still held on `main` after its own surface review and the rules lifted into `rl-rules`.
+5. **Items 27 to 35 are the API review of 2026-10-16**, in `docs/reviews/engine_api.md`, filed on 2026-10-20 with only what still held on `main` after its own surface review and the rules lifted into `atglyph-rules`.
    27 comes first: the mirrored enums are where an added variant is edited in three places.
    28, the ambiguity tests through the schedule's interface, was built on 2026-10-22, and so was 11.
    35 goes last and batched by crate, so each game migrates once.
@@ -95,8 +95,8 @@ The performance section is done for now: eight items opened there, the benches c
 
 Its three original items and the swap below were built on 2026-09-16, and the plan's progress log says how.
 Furnishing, the loop every game with rooms writes next, was opened on 2026-09-28 when `StampEachRoom` gave Foundry a piece in every room, and built on 2026-10-10 for Undermere's dungeon in two halves.
-A pool, `rl_rules::pool` with `StampPicks` and `rl_bevy::layout::picked`, says which pieces a run holds, by floor, weight, limit, group and budget, and places each in the area it prefers.
-A dressing, `rl_rules::dressing` with `Dress` and `rl_bevy::layout::dress`, fills every room the pool left from a weighted list by district, by a prefab's legend and rules for where each glyph goes rather than rows, so one dressing fills a closet, a hall and a cave, never beside an opening and never cutting an area in two.
+A pool, `atglyph_rules::pool` with `StampPicks` and `atglyph_bevy::layout::picked`, says which pieces a run holds, by floor, weight, limit, group and budget, and places each in the area it prefers.
+A dressing, `atglyph_rules::dressing` with `Dress` and `atglyph_bevy::layout::dress`, fills every room the pool left from a weighted list by district, by a prefab's legend and rules for where each glyph goes rather than rows, so one dressing fills a closet, a hall and a cave, never beside an opening and never cutting an area in two.
 Foundry still furnishes with `StampEachRoom`, and may adopt both.
 
 - **A piece stamped where no wall rings it can cut the floor.** `Dress` floods an area before and after each thing, but a stamp into a cave on a map `Accrete` did not grow has no area to flood, and the `Placement::Fits` the prefab design proposes, anywhere a piece's cells land on open floor, wants the same check and rollback.
@@ -108,7 +108,7 @@ The five items that opened this section were built in the six stages of `docs/de
 - **Tactics that are missing, and weights that are fixed.**
   No pack behaviour, no keep-at-range for a shooter, no patrol or idle routine, and no scent, though `DijkstraMap` is the right tool for it; noise is built, in `docs/design/noise.md`, and so is following a leader, in `docs/design/minds.md` section 7.
   A mind now shoots what it wields when there is a clear shot to take, with `ShootAtRange`, and holds a distance with `Shadow` above it; no game fields a skirmisher yet.
-  `UseAbility` scores a footprint at two for a hit and three against for harm, hardcoded in `crates/rl-rules/src/ai/tactics.rs`; make the weights fields.
+  `UseAbility` scores a footprint at two for a hit and three against for harm, hardcoded in `crates/atglyph-rules/src/ai/tactics.rs`; make the weights fields.
 - **A searcher dithers where it lost the trail.**
   `SearchLastKnown` walks to the remembered cell and, standing on it, gives the turn to the next tactic, but the memory stays until `NoticeStats::memory` turns have passed.
   So whatever comes next steps off the cell and the search walks straight back: a posted guard shuffles between the cell and one step toward its `Post`, and a wanderer between the cell and a random neighbour, until the memory runs out.
@@ -154,15 +154,15 @@ The five items that opened this section were built in the six stages of `docs/de
   It waits for a game that wants it.
 
 - **`HalveIfBlocked` can never fire.**
-  The engine builds a `Defender` in exactly two places and both hardcode the flag: `apply_damage` at `crates/rl-bevy/src/combat.rs:659` and `expected_damage` at `crates/rl-rules/src/forecast.rs:70`, each `blocked: false`.
-  Every other construction is a test in `crates/rl-rules/src/damage.rs`, so nothing outside the tests ever sets it true.
+  The engine builds a `Defender` in exactly two places and both hardcode the flag: `apply_damage` at `crates/atglyph-bevy/src/combat.rs:659` and `expected_damage` at `crates/atglyph-rules/src/forecast.rs:70`, each `blocked: false`.
+  Every other construction is a test in `crates/atglyph-rules/src/damage.rs`, so nothing outside the tests ever sets it true.
   `HalveIfBlocked` is a publicly exported `DamageStage` all the same, and a game that puts it in its `DamageStages` gets no block, no roll, no component to add and no warning that the stage is inert; it is reachable only by a caller driving `resolve` itself.
   `docs/guide/src/systems/combat.md` says that out loud and gives the workaround, rolling the block inside a stage of the game's own, which is correct and is why this is an engine gap rather than a documentation one.
   Either the stage goes, or `Defender` gains a way to be filled: a component `apply_damage` reads, or a seam that lets one stage set the flag for a later one.
   Found on 2026-09-22 while writing that page.
 - **Two engine types are named for a theme word.**
-  `crates/rl-ui/src/narrate.rs:376` declares `type Weapons<'w, 's>`, the query for items that strike or shoot when wielded, which the collector reads to tell a wield from a wearing; `crates/rl-bevy/src/combat.rs:510` declares `struct Weapon`, the attack one blow is made with as `Loadout` chose it.
-  `crates/rl-ui/src/lib.rs` states the rule the first one breaks two files away in the same crate, under "Rules": "No engine type, doc or constant says weapon, spell or monster", and `AGENTS.md` forbids the vocabulary outright.
+  `crates/atglyph-ui/src/narrate.rs:376` declares `type Weapons<'w, 's>`, the query for items that strike or shoot when wielded, which the collector reads to tell a wield from a wearing; `crates/atglyph-bevy/src/combat.rs:510` declares `struct Weapon`, the attack one blow is made with as `Loadout` chose it.
+  `crates/atglyph-ui/src/lib.rs` states the rule the first one breaks two files away in the same crate, under "Rules": "No engine type, doc or constant says weapon, spell or monster", and `AGENTS.md` forbids the vocabulary outright.
   Both are private and both behave correctly, so nothing is wrong at runtime; what is wrong is that the crate that states the rule is a crate that breaks it, and a reader who meets the type before the rule learns the wrong lesson.
   A sweep of `crates/` for declarations found these two and nothing else outside test modules, so it is two renames: the engine's own words are to hand, since the phrases either side of the narrator's call site are `YouWield` and `YouWear` and the local it fills is already `wielded`, and combat's struct is what `Loadout` returns.
   The same words do appear in doc comments across several crates, as illustration of what the engine refuses to model. That is settled practice rather than part of this item, and treating it as part of it would make the item the whole codebase.
@@ -171,38 +171,38 @@ The five items that opened this section were built in the six stages of `docs/de
 ## 4. Simplify
 
 - **`UseCarried` decides by default when a mind mends.**
-  `UseCarried::default()` in `crates/rl-rules/src/ai/tactics.rs` drinks to mend at half health, a rule number in the engine, which the rule that a game's numbers stay the game's (set 2026-10-13, when the standard chain was built) forbids.
+  `UseCarried::default()` in `crates/atglyph-rules/src/ai/tactics.rs` drinks to mend at half health, a rule number in the engine, which the rule that a game's numbers stay the game's (set 2026-10-13, when the standard chain was built) forbids.
   The other tactics' defaults are "whenever it can" or structural and are fine; this one wants no default, or a game's own threshold passed as the standard chain's numbers are, and Undermere's mercenaries and monsters writing theirs.
 - **Entity order still breaks ties in four places.**
   The fingerprints and the engine's turn admission, noticing and noise stopped reading Bevy's entity numbers as spawn order on 2026-10-13, since any unrelated spawn renumbers what follows it.
-  Four places still use the number as a tiebreak: Undermere's raising of the dead (`examples/undermere/src/effects/bodies.rs`), the order of a mercenary's "stays behind" lines (`examples/undermere/src/mercenaries/travel.rs`), a name pick in `crates/rl-ui/src/view/mod.rs`, and the engine's `Aware`, keyed by `Entity` in a `BTreeMap` whose iteration order anything walking it inherits.
+  Four places still use the number as a tiebreak: Undermere's raising of the dead (`examples/undermere/src/effects/bodies.rs`), the order of a mercenary's "stays behind" lines (`examples/undermere/src/mercenaries/travel.rs`), a name pick in `crates/atglyph-ui/src/view/mod.rs`, and the engine's `Aware`, keyed by `Entity` in a `BTreeMap` whose iteration order anything walking it inherits.
   None moved a fingerprint in the proof runs; each wants a tie broken by position or by value, as the rest now are.
 - **`Thinking` splits its context from its snapshot.**
-  `crates/rl-bevy/src/minds.rs` keeps the read-only context, `at`, `reach` and `origin`, in the same resource as the snapshot being filled, so every contributor builds an intermediate `Vec` and `extend`s it at the end purely to satisfy the borrow checker.
+  `crates/atglyph-bevy/src/minds.rs` keeps the read-only context, `at`, `reach` and `origin`, in the same resource as the snapshot being filled, so every contributor builds an intermediate `Vec` and `extend`s it at the end purely to satisfy the borrow checker.
   Splitting the two deletes that pattern from six call sites in five crates' worth of subsystems.
-- **Split `crates/rl-bevy/src/ability.rs`.**
+- **Split `crates/atglyph-bevy/src/ability.rs`.**
   At 1,562 lines it holds the state components, the effect registry, the gate, payment, `Offered`, the `Known` refresh, airborne landings and cue emission.
   State, registry and resolver submodules, and named `SystemParam`s in place of the four-tuple aliases `Spender` and `Bearing` that `gate` and `pay` destructure by position.
 - **`TargetView` holds the enum it keeps reconstructing.**
-  `ability`, `throwing` and `firing` are three fields for one sum type, and `Pointing::of` rebuilds it every frame (`crates/rl-ui/src/view/target.rs`).
+  `ability`, `throwing` and `firing` are three fields for one sum type, and `Pointing::of` rebuilds it every frame (`crates/atglyph-ui/src/view/target.rs`).
   Store `Option<Pointing>`, and open `Pointing` so a game can aim something of its own through the shared cursor: a direction to dig, someone to talk to.
 - **`OnMap` as a required component.**
   `on.map(|m| m.0).unwrap_or(MapId::ZERO)` is written in turn, items, minds, places, status and both games, and tutorial step 1 has to explain why a delve's first floor is map one.
   Require `OnMap` on `Position` and the `Option` disappears everywhere.
 
 - **Admission scans its waiting actors linearly.**
-  `admit_new_actors` (`crates/rl-bevy/src/turn.rs`) checks each waiting actor against the fresh list and the `arriving` list with a linear scan, so admission is quadratic in the number waiting, and it runs every pass.
+  `admit_new_actors` (`crates/atglyph-bevy/src/turn.rs`) checks each waiting actor against the fresh list and the `arriving` list with a linear scan, so admission is quadratic in the number waiting, and it runs every pass.
   Harmless while only the player ever waits, and briefly; a game that parks a crowd on maps nobody has visited would pay for it.
   A `BTreeSet` of what has been seen makes it linear.
 - **`offer_abilities` declares `&mut Stack` it only reads.**
-  The ability gate takes the resolver's `UserState` (`crates/rl-bevy/src/ability.rs`), whose `tagged` query is `Option<&mut Stack>` because paying an ability's cost spends from a stack, so the gate in `DecideSet::Offer` claims write access it never uses.
+  The ability gate takes the resolver's `UserState` (`crates/atglyph-bevy/src/ability.rs`), whose `tagged` query is `Option<&mut Stack>` because paying an ability's cost spends from a stack, so the gate in `DecideSet::Offer` claims write access it never uses.
   Since a price on an offer is counted from the taker's stacks, `offer_here` reads `Stack` beside it, and the pair is declared `ambiguous_with` in `PropsPlugin` to state that neither writes; without it every game's ambiguity test would report them.
   Give the gate a read-only param of its own, and the `ambiguous_with` goes.
 
 - **The resolvers in `ResolveSet::Act` are unordered, and every game's ambiguity test pays for it.**
   Nine systems resolve in that set and nearly all of them write `DamageEvent`, `Position`, `Stack`, `Occupancy` and the cue queue, with nothing declaring an order between them.
   It is safe: `Resolution::claim` spends one actor's one turn once a pass, so in the pass one resolver did something every other resolver found nobody to resolve for, and their relative order is unobservable.
-  What it costs is that the safety has to be restated per pair: most of the entries in rl-bevy's own ambiguity test, `crates/rl-bevy/src/ambiguity.rs`, say only that, and the count is quadratic in resolvers; a game no longer pays it, since its test answers only for its own systems.
+  What it costs is that the safety has to be restated per pair: most of the entries in atglyph-bevy's own ambiguity test, `crates/atglyph-bevy/src/ambiguity.rs`, say only that, and the count is quadratic in resolvers; a game no longer pays it, since its test answers only for its own systems.
   Note that the engine already ordered the part of that set where order *is* observable: `LandSet` chains abilities, throws and shots, because several landings can land in one pass and the first hit to take a target to nothing is credited with the kill.
   The fix is the same shape: an `ActSet` in `CorePlugin`, chained, one slot per resolver family and a `Game` slot at the end, as `DecideSet` already does, with each plugin putting its resolver in its own slot.
   It costs no parallelism now that the `Turn` schedule is single-threaded, and the order between mutually exclusive resolvers is arbitrary, which `LandSet`'s own doc already concedes for landings.
@@ -222,7 +222,7 @@ The design docs still owed, and which files a slice owes, are in `AGENTS.md`.
   Lighting, stealth, abilities, statuses and saving each get one paragraph in `docs/guide/src/09-where-to-go-next.md`, and the alternative is reading Undermere or Foundry whole.
   Four chapters in the guide's style: lights out, being noticed, an ability in RON, saving the run.
 - **One picture of the frame.**
-  `EngineSet`, the `Turn` passes and their sets are described in prose in `crates/rl-bevy/src/plugin.rs`; a diagram on one page of the guide would replace what readers reverse-engineer today.
+  `EngineSet`, the `Turn` passes and their sets are described in prose in `crates/atglyph-bevy/src/plugin.rs`; a diagram on one page of the guide would replace what readers reverse-engineer today.
 - **Doc comments at `turn.rs` density.**
   Many carry the history of how they came to be.
   That belongs in the plan's progress log; the comment says what and why-not.
@@ -238,21 +238,18 @@ The design docs still owed, and which files a slice owes, are in `AGENTS.md`.
   `docs/guide/src/systems/mapgen.md` spends four sentences of `The line` on a pass's stream coming from `RunSeed::derive`, which `AGENTS.md` names as the mechanism, and the snippet directly above it derives a floor's seed with `RunSeed(self.seed.0 ^ (depth as u64) << 32)` at `examples/tutorial/src/bin/step06_descent.rs:135`.
   It is still derived from the run's seed, so it does not break the rule about constants or entropy, and the choice of index is the caller's; what is wrong is that the example a reader copies is not the mechanism the page and the guide both name.
   Changing the line changes every map those seeds generate and may disturb fingerprint tests, so it is its own slice rather than a correction to the page.
-  Recorded in the same breath: A*'s insertion-order tie-break was documented at `crates/rl-grid/src/astar.rs:10` with no test behind it until 2026-09-22, when writing `systems/grids.md` turned up the claim that ties are pinned by tests and only the flood half was.
+  Recorded in the same breath: A*'s insertion-order tie-break was documented at `crates/atglyph-grid/src/astar.rs:10` with no test behind it until 2026-09-22, when writing `systems/grids.md` turned up the claim that ties are pinned by tests and only the flood half was.
   Other documented properties may be unpinned the same way, and a page that claims one is the occasion to check.
 
 ## 6. Publish it
 
-- **The name is taken.**
-  `rl-core` is a token-bucket rate limiter on crates.io at 1.22.0, so the foundation crate cannot keep its name, and the `rl-` family cannot keep its prefix without one odd crate out.
-  Checked as whole families, with the base name and `-core` and `-grid` all free: `roguelike`, `dungeoneer`, `torchlit`, `runedeep`, `vaults`, `morgue`; taken: `rogue`, `delver`, `warren`, `gloom`, `crawl`.
-  The shape to copy is bracket-lib's, where one word is both the facade crate and the prefix for the parts.
-  Renaming reaches 297 references across 153 files and the public path `rl_engine::rl_core::Rect` that the guide teaches, so it is a decision to make before the first release rather than after it.
-  Reserve the rest of the family the same day; nothing stops someone taking `rl-grid` tomorrow.
+- **The rename's script goes once the release has used it.**
+  `scripts/rename-to-atglyph.py` is run again after every rebase until `0.4.0` is released, and the release runs its `--urls` once the repository is renamed.
+  After that, remove the script, its test `scripts/test_rename_to_atglyph.py` and its CI step in `.github/workflows/ci.yml`.
 - **What blocks `cargo publish` is version requirements, not metadata.**
   Every publishable crate already carries a licence, description, repository, homepage, five keywords, categories and an MSRV, the examples and the tutorial are `publish = false`, and both licence files sit at the root.
   What stops a publish is 51 path dependencies with no version requirement, and they all flow through one `[workspace.dependencies]` table, so it is eleven lines.
-  Ten of the eleven crates have no readme, so their crates.io pages would render empty, and `rl-engine`'s `readme = "../../README.md"` points outside its own package, which `cargo package` refuses.
+  Ten of the eleven crates have no readme, so their crates.io pages would render empty, and `atglyph`'s `readme = "../../README.md"` points outside its own package, which `cargo package` refuses.
   Publish in tier order, waiting for the index between each, and dry-run every crate first; `cargo-release` or `release-plz` does the ordering and is worth adopting before the first release rather than after.
 - **Nothing should go out while the API moves this fast.**
   77 commits touched crate sources in the 30 days to 2026-09-17, changing about 2,100 lines of public declarations; `CHANGELOG.md` records them, but a release every few days is not a kindness to anyone depending on it.
@@ -260,29 +257,29 @@ The design docs still owed, and which files a slice owes, are in `AGENTS.md`.
 
 ## 7. Open the seams the subsystems have to reach through
 
-The minds' perceive stage is the engine's best seam: `crates/rl-bevy/src/minds.rs` says "a subsystem added later adds a contributor and edits nothing here", and it is true, with fire, stealth, items, props, abilities and noise each pushing in from their own module and `minds.rs` naming none of them.
+The minds' perceive stage is the engine's best seam: `crates/atglyph-bevy/src/minds.rs` says "a subsystem added later adds a contributor and edits nothing here", and it is true, with fire, stealth, items, props, abilities and noise each pushing in from their own module and `minds.rs` naming none of them.
 The engine's two other cross-cutting concerns work the opposite way.
 Each is a closed list in a crate the subsystem does not own, and each has to be edited by hand when anything new lands.
 The run's teardown was a third, and stopped being one on 2026-09-22, when `ResetsOnNewRun` turned `clear_run`'s hand-written list into a registry; that is the shape the two below would take.
 
 - **What the save holds is stated where the save is.**
-  `EntityState` in `crates/rl-save/src/run.rs` is a fixed field list, and `EngineSave` in `engine.rs` has grown one `#[serde(default)]` per subsystem, so the natural reading is that a subsystem is saved when somebody remembered to add it.
+  `EntityState` in `crates/atglyph-save/src/run.rs` is a fixed field list, and `EngineSave` in `engine.rs` has grown one `#[serde(default)]` per subsystem, so the natural reading is that a subsystem is saved when somebody remembered to add it.
   That reading is wrong, and the review that filed it fell for it: the engine draws a real line, per-instance state on content a *game* authors is the game's to save through `Saveable`, and the engine saves what it owns itself.
-  The line is written down in `docs/design/lighting.md` section 5 and `docs/design/noise.md`, two crates away from the code that follows it, and nowhere in `crates/rl-save/`.
-  The fix is a paragraph in `crates/rl-save/src/run.rs`'s module docs saying which side of the line a component falls on and why, and a line on `EntityState` saying it holds the engine's own state and not the game's.
-  A registry that let each plugin declare its own capture, the shape the minds' perceive stage uses, is the larger version of this and is not obviously worth its cost: it would buy `rl-save` out of depending on six subsystems, and it would buy nothing else, since nothing is actually falling through today.
+  The line is written down in `docs/design/lighting.md` section 5 and `docs/design/noise.md`, two crates away from the code that follows it, and nowhere in `crates/atglyph-save/`.
+  The fix is a paragraph in `crates/atglyph-save/src/run.rs`'s module docs saying which side of the line a component falls on and why, and a line on `EntityState` saying it holds the engine's own state and not the game's.
+  A registry that let each plugin declare its own capture, the shape the minds' perceive stage uses, is the larger version of this and is not obviously worth its cost: it would buy `atglyph-save` out of depending on six subsystems, and it would buy nothing else, since nothing is actually falling through today.
   Write the paragraph first and see whether the registry still looks necessary afterwards.
 - **The narrator hears what registers itself.**
-  `Heard` in `crates/rl-ui/src/narrate.rs` is a `SystemParam` holding twelve `MessageReader`s, one per engine subsystem, feeding a closed `Phrase` enum and a `Phrasebook` of defaults.
-  Adding a subsystem to `rl-bevy` therefore means editing `rl-ui`: a reader, a variant, a template.
+  `Heard` in `crates/atglyph-ui/src/narrate.rs` is a `SystemParam` holding twelve `MessageReader`s, one per engine subsystem, feeding a closed `Phrase` enum and a `Phrasebook` of defaults.
+  Adding a subsystem to `atglyph-bevy` therefore means editing `atglyph-ui`: a reader, a variant, a template.
   The enum being closed is defensible, since it enumerates the events the engine itself raises, but the *reading* need not be: a `app.narrates::<LightEvent>(..)` that turns one message kind into rows would let each subsystem carry its own phrases and its own defaults.
 - **A game cannot refuse an offer at the gate.**
-  `Refused` in `crates/rl-bevy/src/props.rs` says only `Needs` and `Short`, so an offer the game would judge pointless, such as Undermere's `mend` for an adventurer already whole, is taken up, spends its turn and its price, and is answered with the price handed back by `pay`.
+  `Refused` in `crates/atglyph-bevy/src/props.rs` says only `Needs` and `Short`, so an offer the game would judge pointless, such as Undermere's `mend` for an adventurer already whole, is taken up, spends its turn and its price, and is answered with the price handed back by `pay`.
   The seam is a game-supplied refusal read at the offer gate in `DecideSet::Offer`, greyed on the offers screen like a short purse, costing neither the turn nor the coins; `Interacted` carrying the price the engine took would let a refunding game read what was paid rather than repeat its own table.
 
 ## 8. Make the loops cheap, and know that they are
 
-Three benches now cover this section: `crates/rl-bevy/benches/turns.rs` on a player turn, `crates/rl-ui/benches/frame.rs` on a frame, and `crates/rl-bevy/benches/passes.rs` on where each of those goes.
+Three benches now cover this section: `crates/atglyph-bevy/benches/turns.rs` on a player turn, `crates/atglyph-ui/benches/frame.rs` on a frame, and `crates/atglyph-bevy/benches/passes.rs` on where each of those goes.
 Between them they have settled five items here and struck two, most of them against the reading that filed them.
 What is left below is measured unless it says otherwise.
 
@@ -297,7 +294,7 @@ What is left below is measured unless it says otherwise.
   What is left is the 10 microseconds per actor per turn that a lit game pays for every mind having sight, and that is the price of the feature.
   The bounded invalidation added the same day was the only real slack, and it was 10 per cent.
 - **Struck: an instanced terminal.**
-  Counted on 2026-09-22 by `cell_churn` in `crates/rl-ui/benches/frame.rs`, over Foundry's hundred by forty screen, four thousand cells.
+  Counted on 2026-09-22 by `cell_churn` in `crates/atglyph-ui/benches/frame.rs`, over Foundry's hundred by forty screen, four thousand cells.
   A still frame changes nothing at all.
   A frame the player stepped in changes 56 cells unlit and 47 lit, about 1 per cent.
   A flickering torch is the only thing that churns: 293 cells a frame standing still, 8 per cent, and it moves with the animation clock rather than with the player.
@@ -306,7 +303,7 @@ What is left below is measured unless it says otherwise.
   The diffed renderer is already doing the work instancing would have done.
   This should come off `docs/OVERVIEW.md`'s "Not built yet" list, or stay there with this number beside it so nobody argues for it again from the entity count.
 - **Closed: the veil's global epoch costs nothing.**
-  Measured on 2026-09-22 by `one_player_turn_in_smoke` in `crates/rl-bevy/benches/turns.rs`, thirty-two actors: no gas plugin 315 microseconds, the plugin with clear air 328, thick gas that never veils 387, and thick smoke that does veil 373.
+  Measured on 2026-09-22 by `one_player_turn_in_smoke` in `crates/atglyph-bevy/benches/turns.rs`, thirty-two actors: no gas plugin 315 microseconds, the plugin with clear air 328, thick gas that never veils 387, and thick smoke that does veil 373.
   The veiling case is the cheaper of the two thick ones, within noise of it, so the epoch bump is free and what gas costs is the diffusion itself, about 60 microseconds a turn.
   The reason is the item above: every viewshed is already recast every turn, because the player moves and carries a light, so an epoch bump that marks them all stale adds no casts to a frame that was going to do them anyway.
   It would only bite in a game whose viewsheds are otherwise still, and no game here is one.
@@ -316,7 +313,7 @@ What is left below is measured unless it says otherwise.
   One grenade's cloud on an eighty by fifty field costs less than the old step did, about 55 microseconds against 80, because whether a cell holds gas is now asked once a cell rather than by each of its neighbours; a field full of gas costs about 1.65 times as much, 134 against 81.
   The bench above has not been rerun on a quiet machine since.
 - **Struck: view collectors run for screens nobody opened.**
-  Measured on 2026-09-22 by `crates/rl-ui/benches/frame.rs`, at thirty-two actors in sight: the map alone is 265 microseconds a frame, the rail a game always shows takes it to 300, and adding the four screen-backed views whose screens nobody has opened takes it to 309.
+  Measured on 2026-09-22 by `crates/atglyph-ui/benches/frame.rs`, at thirty-two actors in sight: the map alone is 265 microseconds a frame, the rail a game always shows takes it to 300, and adding the four screen-backed views whose screens nobody has opened takes it to 309.
   Nine microseconds of a 309-microsecond frame, three per cent, against a change that breaks two of the five collectors it would gate: `open_on_crowded_bump` reads `OffersView` every frame to decide whether to open the offers screen, and the menu reads `SheetView` at the end of a run to write the obituary.
   Not worth it.
   `docs/design/ui.md`'s "every frame, not on a turn boundary" stands, and this is a second reason for it.
@@ -334,7 +331,7 @@ Left over from the item triggers slice on 2026-09-23, found by its review and ju
 None of them is in the order above and none is scheduled: take one when its file is open for another reason, or when a game runs into it.
 
 - **Refilling charges keep their clock in a `Local`.**
-  `recharge_charges` in `crates/rl-bevy/src/consumable.rs` remembers the last clock reading it saw, so loading a save with a later clock in the same process after some play credits the whole gap and refills every wand at once.
+  `recharge_charges` in `crates/atglyph-bevy/src/consumable.rs` remembers the last clock reading it saw, so loading a save with a later clock in the same process after some play credits the whole gap and refills every wand at once.
   Nothing uses `recharge` yet; the reference reading belongs to the run, reset when one starts or is loaded.
 - **An empty kept thing still lands its `land` trigger when thrown, and throwing a charged wand spends a charge.**
   Throwing reports `land` whatever the thing holds, and `land` spends.
@@ -358,7 +355,7 @@ None of them is in the order above and none is scheduled: take one when its file
 Left over from the worn gear and unseen slice on 2026-09-27, the same way.
 
 - **A use made where its user stands that harms others does not end the unseen.**
-  `reveal_attackers` in `crates/rl-bevy/src/stealth.rs` ends it on a blow or shot, a throw, and anything aimed, an ability or a thing's aimed use, that came down on another, read off `LandedOn` since 2026-10-10; a thing used where its user stands whose `use` trigger harms those around them is not on it, and `wake_on_damage` wakes nobody to an attacker still unseen.
+  `reveal_attackers` in `crates/atglyph-bevy/src/stealth.rs` ends it on a blow or shot, a throw, and anything aimed, an ability or a thing's aimed use, that came down on another, read off `LandedOn` since 2026-10-10; a thing used where its user stands whose `use` trigger harms those around them is not on it, and `wake_on_damage` wakes nobody to an attacker still unseen.
   A player who sets something off on a crowd while hidden would expect to be seen, and the rule would read the landing of such a `use` trigger the way it reads an aimed one's, which `land_triggers` would report as `LandedOn` too.
 
 Left over from the layout slice on 2026-10-01: the three pieces of work `docs/design/layout.md` section 0 says key on what it publishes.
@@ -374,11 +371,11 @@ None is scheduled: take one when its file is open.
 
 - **A higher `fill_pct` making a smaller cave is unpinned.**
   `Cave`'s docs say more rock to start means a smaller cave, and no test holds it, so a change to the automaton could reverse the claim unseen.
-  `crates/rl-mapgen/src/cave.rs`.
+  `crates/atglyph-mapgen/src/cave.rs`.
 - **A lake is measured before it is trimmed, and has no largest share.**
   `Lakes` counts a lake's size as drawn, then takes rock only where every way beside it goes under too, so a lake may end smaller than its range says, and nothing stops one covering most of an area.
   Its barred landings, the flank rule for a bridge and the `Stamped` ring are each untested.
-  `crates/rl-mapgen/src/lakes.rs`.
+  `crates/atglyph-mapgen/src/lakes.rs`.
 - **A non-cut pond can take the one-thick wall between two ponds,** leaving a window between two areas that were separate.
   `Crossing::flanked` is not measured again after a later lake changes the banks.
 - **An inverted range panics.**
@@ -396,14 +393,14 @@ None is scheduled: take one when its file is open.
 
 Left over from the engine usability review on 2026-10-21, its item 2.4, deferred by the plan's index.
 
-- **Lean Bevy features and the window half of `rl-render`.**
-  `terminal.rs` draws with sprites and text, so `rl-ui`, `rl-engine` and any terminal front end compile the GPU stack.
-  Split the cell buffer from the window drawing into its own crate, then let `rl-bevy`, `rl-save` and the cell-buffer crate declare only the Bevy features they use; until then lean features free no build and make a `-p rl-bevy` build compile a second Bevy.
+- **Lean Bevy features and the window half of `atglyph-render`.**
+  `terminal.rs` draws with sprites and text, so `atglyph-ui`, `atglyph` and any terminal front end compile the GPU stack.
+  Split the cell buffer from the window drawing into its own crate, then let `atglyph-bevy`, `atglyph-save` and the cell-buffer crate declare only the Bevy features they use; until then lean features free no build and make a `-p atglyph-bevy` build compile a second Bevy.
 
 Left over from the terminal front end, usability branch 08, on 2026-10-22.
 
 - **A dropped SSH connection loses the run.**
-  `rl-tty` catches Control-C but not the hang-up signal, so a session cut off mid-run exits without saving.
+  `atglyph-tty` catches Control-C but not the hang-up signal, so a session cut off mid-run exits without saving.
   Catch it and save as quitting does.
 - **Warnings in a terminal game go nowhere.**
   `TtyRoguelikePlugins` has no `LogPlugin`, since logging to the terminal would draw over the game; send it to a file or to stderr when that is not the terminal.
@@ -413,19 +410,19 @@ Left over from the terminal front end, usability branch 08, on 2026-10-22.
 `docs/reviews/engine_api.md` holds the findings, with paths, and a note of which were stale on 2026-10-20; these are its sections B to F grouped into slices, each one branch.
 
 - **One type per concept across the tier 1 crates.**
-  The content files' twins are gone (usability branch 10): `rl-rules` depends on `rl-mapgen` and reads its files straight into the mapgen types, and growing a place from them is `rl_rules::grow` with a `PrefabLibrary`.
+  The content files' twins are gone (usability branch 10): `atglyph-rules` depends on `atglyph-mapgen` and reads its files straight into the mapgen types, and growing a place from them is `atglyph_rules::grow` with a `PrefabLibrary`.
   Left: loot as a `BandedTable<K>` with tags, and one actor handle where statuses use a bare `u64`.
-  The same-named pairs, `Reach` (`rl_rules::arms::Reach` beside rl-bevy's `combat::Reach`) and `Secret`, are usability branch 15's renames.
+  The same-named pairs, `Reach` (`atglyph_rules::arms::Reach` beside atglyph-bevy's `combat::Reach`) and `Secret`, are usability branch 15's renames.
 - **The patterns written four times.**
-  The faction relation where `rl_rules::faction::stance` is not yet called (rl-ui's narrator, inspect and nearby views, three Undermere files, `Bystanders::relation`), the interners, the list cursor, key binding, moving an entity, the place struct, the per-map stash, stack split and merge, breadth-first steps, the lingering markers.
+  The faction relation where `atglyph_rules::faction::stance` is not yet called (atglyph-ui's narrator, inspect and nearby views, three Undermere files, `Bystanders::relation`), the interners, the list cursor, key binding, moving an entity, the place struct, the per-map stash, stack split and merge, breadth-first steps, the lingering markers.
 - **Continuing a run is the engine's.**
   Foundry's and Undermere's `run.rs` hold the same load, fall back, reseed, prepare and restore behind the `ContinueRun` flag; the game supplies the steps and the engine owns the order.
 - **Saved kinds keyed by a name the type states.**
-  `rl-save/src/run.rs` keys a saved component by its short `type_name`, so a rename orphans old saves silently; a `const KEY` on the `Saveable` traits, defaulting to today's names so no save moves.
+  `atglyph-save/src/run.rs` keys a saved component by its short `type_name`, so a rename orphans old saves silently; a `const KEY` on the `Saveable` traits, defaulting to today's names so no save moves.
 - **The helpers a game copies because they are private.**
   `walk_through_doors`, the cut check, `Opening::joins`, `Spot::glyph`, `Afflict::new`, `Stack::of`, `Places::new`.
 - **One root-and-prelude rule per crate.**
-  The root re-exports every type a game names and the prelude is a subset; Undermere still writes `rl_ui::view::inspect::inspect_modal`, and rl-save's prelude still carries `EngineSave`, `SaveId` and `Stash`.
+  The root re-exports every type a game names and the prelude is a subset; Undermere still writes `atglyph_ui::view::inspect::inspect_modal`, and atglyph-save's prelude still carries `EngineSave`, `SaveId` and `Stash`.
 - **The rule numbers, closed lists and English the engine still holds.**
   A third of range, `SLEEPER_REACH`, the notice and hearing defaults; `WasLiving`; `MenuItem`'s labels and the inspect and sheet lines; `CorePlugin`'s minds and intents, and the effects Fire, Gas and Noise register by themselves.
 - **The API review's renames.**

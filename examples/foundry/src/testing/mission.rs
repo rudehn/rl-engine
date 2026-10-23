@@ -1,10 +1,10 @@
 //! The reactor console and the upgrade pick, for a test to reach and read.
 
+use atglyph::ecs::prelude::*;
+use atglyph::primitives::geometry;
+use atglyph::rules::QuestState;
 use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
-use rl_engine::rl_bevy::prelude::*;
-use rl_engine::rl_core::geometry;
-use rl_engine::rl_rules::QuestState;
 
 use crate::upgrades::Upgrade;
 
@@ -48,8 +48,8 @@ pub fn key_toward_the_console(app: &App, player: Entity) -> bevy::prelude::KeyCo
         .find(|(_, kind)| kind.0 == console)
         .map(|(pos, _)| pos.0)
         .expect("deck three spawns a console on arrival");
-    let dir = rl_engine::rl_core::Direction::between(at, console_at).expect("the player stands beside it");
-    let keys = world.resource::<rl_engine::rl_ui::DirectionKeys>();
+    let dir = atglyph::primitives::Direction::between(at, console_at).expect("the player stands beside it");
+    let keys = world.resource::<atglyph::ui::DirectionKeys>();
     keys.0.iter().find(|(_, d)| *d == dir).map(|(k, _)| *k).expect("every direction has a key")
 }
 

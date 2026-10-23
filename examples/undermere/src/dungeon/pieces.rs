@@ -3,8 +3,8 @@
 //! in, and a grown one is walled and floored as the floor round it is.
 
 use super::*;
-use rl_engine::rl_core::geometry;
-use rl_engine::rl_mapgen::prefab::Stamped;
+use atglyph::mapgen::prefab::Stamped;
+use atglyph::primitives::geometry;
 
 use super::lairs::{FINAL_BOSSES, MINI_BOSSES};
 

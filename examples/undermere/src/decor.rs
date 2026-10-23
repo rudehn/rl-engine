@@ -4,15 +4,15 @@
 //! the halls, moss in the caves, cobwebs in corners and bones in the
 //! catacombs are `assets/dressings.ron`'s own "Collapsed Ceiling", "Moss
 //! Garden", "Web-Choked Corners" and "Bone Scatter", laid by
-//! `rl_mapgen::Dress` over whatever area the pool left for it, and ash
+//! `atglyph::mapgen::Dress` over whatever area the pool left for it, and ash
 //! is the Forge of Embers' and the Ashen Galleries' own floor tile
 //! besides. This module adds the two touches neither already gives a
 //! floor: [`BloodTrail`], a body a dead end took and the blood that
 //! still marks the doorway to it, and [`WallInscriptions`], a line of
 //! the drowned kingdom's history carved where a wall stands over it.
-//! Both read what [`rl_engine::rl_mapgen::Survey`] rated rather than any
+//! Both read what [`atglyph::mapgen::Survey`] rated rather than any
 //! piece of the pool, and both are laid in `Phase::Finish`, after
-//! `rl_mapgen::Dress`, from `dungeon::Undermere::decor`.
+//! `atglyph::mapgen::Dress`, from `dungeon::Undermere::decor`.
 //!
 //! Neither ever stands on the route or over a cell a piece or a
 //! dressing already claimed, and neither blocks: the body and the
@@ -26,10 +26,10 @@
 
 use std::collections::BTreeMap;
 
+use atglyph::mapgen::{Area, Opening};
+use atglyph::prelude::*;
 use rand::Rng;
 use rand::seq::SliceRandom;
-use rl_engine::prelude::*;
-use rl_engine::rl_mapgen::{Area, Opening};
 
 use crate::dungeon::{pieces, slots, under_pieces, walkable, ways};
 
@@ -69,7 +69,7 @@ impl Pass for BloodTrail {
         // Cloned out of `ctx.outputs()` rather than borrowed from it, so
         // the borrow is gone before `ctx.terrain_mut()` and `ctx.rng()`
         // are needed again below.
-        let Some(surveyed) = ctx.outputs().first::<rl_engine::rl_mapgen::Surveyed>().cloned() else { return Ok(()) };
+        let Some(surveyed) = ctx.outputs().first::<atglyph::mapgen::Surveyed>().cloned() else { return Ok(()) };
         let areas: Vec<Area> = ctx.outputs().iter::<Area>().cloned().collect();
         let openings: Vec<Opening> = ctx.outputs().iter::<Opening>().cloned().collect();
         let tables = ctx.tiles().tables();
@@ -267,7 +267,7 @@ impl Pass for Moor {
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_core::RunSeed;
+    use atglyph::primitives::RunSeed;
 
     use crate::dungeon::{FLOORS, Undermere, map_of};
     use crate::testing::{par_seeds, seeds};

@@ -25,8 +25,8 @@ The alternative was the one fantasy-rogue shipped: a tile grid, and beside it th
 Nothing tied a coordinate to what the grid held there, so a slot could be declared on a wall, two lists could name one cell, and a rotation had to be applied to four things that could each get it wrong.
 Fantasy-rogue caught the first only at spawn, by skipping a slot whose cell was not walkable, and the second not at all; here neither can be written.
 
-A slot's glyph is a mark to `rl-mapgen`, so it turns and mirrors with the tiles for nothing, and the stamp carries the prefab's key so each mark says which piece it came from.
-`rl-rules` owns the file and every draw, and names no mapgen type: `Prefabs::piece` in `rl-bevy` turns a loaded file into a keyed `rl_mapgen::Prefab`, so a prefab file loads and every one of its mistakes is reported with no map and no `App`.
+A slot's glyph is a mark to `atglyph-mapgen`, so it turns and mirrors with the tiles for nothing, and the stamp carries the prefab's key so each mark says which piece it came from.
+`atglyph-rules` owns the file and every draw, and names no mapgen type: `Prefabs::piece` in `atglyph-bevy` turns a loaded file into a keyed `atglyph_mapgen::Prefab`, so a prefab file loads and every one of its mistakes is reported with no map and no `App`.
 
 ## 2. Items: the container's row
 
@@ -87,7 +87,7 @@ It fights, flees and searches as it otherwise would, since `KeepPost` sits after
 A guard that has noticed no one has no enemy in its snapshot and nowhere to search, so `KeepPost` is the first tactic that answers, and it stands its post rather than wandering off before it has seen anyone.
 `KeepPost` passes for an actor with no post, so a kind shares one brain whether or not this one was posted, and waits beside its post when something else stands on it rather than wandering.
 
-The post is saved: `rl-save` writes it with the actor, and it comes off the dead with `WasLiving`, since a body walks back to nothing.
+The post is saved: `atglyph-save` writes it with the actor, and it comes off the dead with `WasLiving`, since a body walks back to nothing.
 Fantasy-rogue's guards lost their posts on a revisit because the patrol route was a component its save never wrote down.
 
 Only holding a post is built.

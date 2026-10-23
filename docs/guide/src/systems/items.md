@@ -1,23 +1,23 @@
 <!-- documents:
      plugins: ItemsPlugin, ContainerPanel, ContainerViewPlugin, InventoryPanel,
               InventoryViewPlugin
-     files: crates/rl-bevy/src/items.rs
-            crates/rl-bevy/src/combat.rs
-            crates/rl-bevy/src/throwing.rs
-            crates/rl-bevy/src/turn.rs
-            crates/rl-bevy/src/props.rs
-            crates/rl-rules/src/equip.rs
-            crates/rl-rules/src/affix.rs
-            crates/rl-rules/src/stats.rs
-            crates/rl-ui/src/view/inventory.rs
-            crates/rl-ui/src/view/container.rs
-            crates/rl-ui/src/view/inspect.rs
-            crates/rl-ui/src/view/target.rs
-            crates/rl-ui/src/view/gear.rs
-            crates/rl-ui/src/view/vitals.rs
-            crates/rl-ui/src/panel/inventory.rs
-            crates/rl-ui/src/panel/container.rs
-            crates/rl-ui/src/narrate.rs
+     files: crates/atglyph-bevy/src/items.rs
+            crates/atglyph-bevy/src/combat.rs
+            crates/atglyph-bevy/src/throwing.rs
+            crates/atglyph-bevy/src/turn.rs
+            crates/atglyph-bevy/src/props.rs
+            crates/atglyph-rules/src/equip.rs
+            crates/atglyph-rules/src/affix.rs
+            crates/atglyph-rules/src/stats.rs
+            crates/atglyph-ui/src/view/inventory.rs
+            crates/atglyph-ui/src/view/container.rs
+            crates/atglyph-ui/src/view/inspect.rs
+            crates/atglyph-ui/src/view/target.rs
+            crates/atglyph-ui/src/view/gear.rs
+            crates/atglyph-ui/src/view/vitals.rs
+            crates/atglyph-ui/src/panel/inventory.rs
+            crates/atglyph-ui/src/panel/container.rs
+            crates/atglyph-ui/src/narrate.rs
      fingerprint: 44821384 -->
 
 # Items and equipment
@@ -121,9 +121,9 @@ Weight, bulk, encumbrance, durability, prices, and what makes a thing known or l
 
 ## Where it lives
 
-`rl-rules` is tier 1 and has no Bevy in it: `equip.rs` is generic over the item handle, so the slot algebra, what a shape claims, what an equip displaces and which slot keeps what stays on, is proved with integers standing in for items and no `App` anywhere.
+`atglyph-rules` is tier 1 and has no Bevy in it: `equip.rs` is generic over the item handle, so the slot algebra, what a shape claims, what an equip displaces and which slot keeps what stays on, is proved with integers standing in for items and no `App` anywhere.
 `Equipped` is that same code at `Equipment<Entity>`, which is the whole of what the Bevy layer adds to it, and a tool that weighed a loadout of definition ids would add no more.
 `affix.rs` is the rolling and the naming, and it ends at `(StatId, Op)` and `(DamageKindId, DiceRoll)` rather than anything an item has to interpret.
-`rl-bevy` is tier 2 and owns the three states and the moves between them, in `items.rs`, which is also where the fold of what worn gear bestows lives, since only that layer knows what is worn right now, and where the two markers sit beside the resolver that honours them.
-`rl-ui` holds the two screens, each split the way every panel is: the view is plain data with no colour and no rectangle in it, the collector refills it in `ViewSet::Collect`, and the presenter takes its rectangle in its constructor and draws in `PresentSet::Overlay`.
+`atglyph-bevy` is tier 2 and owns the three states and the moves between them, in `items.rs`, which is also where the fold of what worn gear bestows lives, since only that layer knows what is worn right now, and where the two markers sit beside the resolver that honours them.
+`atglyph-ui` holds the two screens, each split the way every panel is: the view is plain data with no colour and no rectangle in it, the collector refills it in `ViewSet::Collect`, and the presenter takes its rectangle in its constructor and draws in `PresentSet::Overlay`.
 The split is what lets a game that wants a different bag screen keep the view and write its own presenter, and what lets the view be tested with a bag filled by hand.

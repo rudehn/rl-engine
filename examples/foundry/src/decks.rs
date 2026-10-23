@@ -14,15 +14,15 @@
 //! to read the entry, the exit and the pieces' marks back out. What stands at a mark is
 //! the engine's to put down, from what the piece's file says.
 
-use rl_engine::rl_bevy::prelude::*;
-use rl_engine::rl_core::{PlaceSeed, RunSeed};
-use rl_engine::rl_grid::{Light, Rgb, TileId, TileProps, TileRegistry, TileTables};
-use rl_engine::rl_mapgen::dungeon::{FarthestExit, RandomStart};
-use rl_engine::rl_mapgen::prefab::{Orient, Placement, Prefab, StampEachRoom, StampOneOf, StampPrefab};
-use rl_engine::rl_mapgen::{BaseContext, BuildError, Chain, Survey};
-use rl_engine::rl_render::TileAppearance;
-use rl_engine::rl_rules::grow::LayoutTiles;
-use rl_engine::rl_rules::layout::{self, LayoutDef};
+use atglyph::ecs::prelude::*;
+use atglyph::grid::{Light, Rgb, TileId, TileProps, TileRegistry, TileTables};
+use atglyph::mapgen::dungeon::{FarthestExit, RandomStart};
+use atglyph::mapgen::prefab::{Orient, Placement, Prefab, StampEachRoom, StampOneOf, StampPrefab};
+use atglyph::mapgen::{BaseContext, BuildError, Chain, Survey};
+use atglyph::primitives::{PlaceSeed, RunSeed};
+use atglyph::render::TileAppearance;
+use atglyph::rules::grow::LayoutTiles;
+use atglyph::rules::layout::{self, LayoutDef};
 
 use crate::droids::MonsterDef;
 
@@ -120,8 +120,8 @@ pub(crate) fn laid_pieces() -> std::collections::BTreeSet<&'static str> {
 /// recipe grows holds with a cell all round it, at the largest the room
 /// is drawn, in any facing the stamp may give it, so the deck fails every
 /// attempt; and a furnishing no room of any deck's recipe could hold, so
-/// it is never laid. [`ShapeKind::could_hold`](rl_engine::rl_rules::layout::ShapeKind::could_hold)
-/// is the rule, the one `rl_mapgen` stamps by.
+/// it is never laid. [`ShapeKind::could_hold`](atglyph::rules::layout::ShapeKind::could_hold)
+/// is the rule, the one `atglyph::mapgen` stamps by.
 fn fit_problems(layout: &LayoutDef, prefabs: &Prefabs<MonsterDef>) -> Vec<String> {
     let size = |name: &str| -> Option<(i32, i32)> {
         let def = prefabs.defs().get(prefabs.defs().id(name)?);
@@ -184,7 +184,7 @@ impl Foundry {
         // A wall lamp sheds its light by itself, as `assets/tiles.ron`
         // writes it beside its look, and the engine hangs that light on
         // every lamp of every deck built or restored.
-        rl_engine::rl_rules::tiles::light_tiles(TILES_RON, &mut tiles).unwrap_or_else(|e| panic!("assets/tiles.ron: {e}"));
+        atglyph::rules::tiles::light_tiles(TILES_RON, &mut tiles).unwrap_or_else(|e| panic!("assets/tiles.ron: {e}"));
         // After the tiles, which the pieces paint by name.
         let prefabs = crate::prefabs::load(&tiles);
         let layout = layout::load(LAYOUT_RON).unwrap_or_else(|e| panic!("assets/layout.ron: {e}"));
@@ -253,7 +253,7 @@ impl Foundry {
 
     // ANCHOR: grow
     /// Runs the deck's chain and hands back the context still open, so a
-    /// test can read a [`Stamped`](rl_engine::rl_mapgen::prefab::Stamped)
+    /// test can read a [`Stamped`](atglyph::mapgen::prefab::Stamped)
     /// pass emitted before [`PlaceBuild::from_context`] flattens every
     /// mark into a [`Spot`] and drops the stamp's own bounds.
     ///
@@ -263,7 +263,7 @@ impl Foundry {
         let deck = deck_of(map);
         // Foundry grows no locked or sealed piece, so its hatch stands for both.
         let tiles = LayoutTiles { floor: self.deck, door: self.hatch, locked: self.hatch, sealed: self.hatch };
-        let grown = rl_engine::rl_rules::grow::passes(&self.layout, recipe_of(deck), &tiles)?;
+        let grown = atglyph::rules::grow::passes(&self.layout, recipe_of(deck), &tiles)?;
         let (width, height) = grown.size;
         let mut chain = Chain::new()
             .then(grown.accrete)
@@ -313,14 +313,14 @@ impl Foundry {
     /// layout before calling a recipe done: `#` what cannot be walked on,
     /// `.` what can, `+` a hatch, `<` the way in and `>` the way down.
     pub fn render(&self, map: MapId) -> Result<String, BuildError> {
-        use rl_engine::rl_core::Grid2D;
+        use atglyph::primitives::Grid2D;
         let built = self.build(map, PlaceSeed::of(self.seed, map.0))?;
         let tables = self.tiles.tables();
         let bounds = built.terrain.bounds();
         let mut out = String::new();
         for y in 0..bounds.height {
             for x in 0..bounds.width {
-                let p = rl_engine::rl_core::Point::new(x, y);
+                let p = atglyph::primitives::Point::new(x, y);
                 let tile = built.terrain.get(p).expect("in bounds");
                 out.push(if p == built.entry {
                     '<'
@@ -368,9 +368,9 @@ impl PlaceRules for Foundry {
 mod tests {
     use std::collections::BTreeSet;
 
-    use rl_engine::rl_core::{Grid2D, Rect};
-    use rl_engine::rl_grid::TileTables;
-    use rl_engine::rl_mapgen::prefab::Stamped;
+    use atglyph::grid::TileTables;
+    use atglyph::mapgen::prefab::Stamped;
+    use atglyph::primitives::{Grid2D, Rect};
 
     use super::*;
     use crate::testing::{par_seeds, seeds};
@@ -423,7 +423,7 @@ mod tests {
     /// A deck is grown, surveyed and held to its recipe, within the
     /// attempts a deck is given.
     fn meets_what_its_recipe_requires(ctx: &BaseContext, at: &str) {
-        use rl_engine::rl_mapgen::{Area, Surveyed};
+        use atglyph::mapgen::{Area, Surveyed};
         let surveyed = ctx.outputs().first::<Surveyed>().unwrap_or_else(|| panic!("{at}: not surveyed"));
         assert!(surveyed.loops >= 2, "{at}: {} loops", surveyed.loops);
         assert_eq!(surveyed.areas.len(), ctx.outputs().iter::<Area>().count(), "{at}");
@@ -451,7 +451,7 @@ mod tests {
     /// No room is left empty: the armory, the store and the charge pieces
     /// take theirs, and every other room is furnished as what it was for.
     fn no_room_is_left_empty(ctx: &BaseContext, at: &str) {
-        use rl_engine::rl_mapgen::dungeon::Room;
+        use atglyph::mapgen::dungeon::Room;
         let stamps: Vec<Rect> = ctx.outputs().iter::<Stamped>().map(|st| st.bounds).collect();
         for room in ctx.outputs().iter::<Room>() {
             assert!(stamps.iter().any(|b| room.0.intersection(b).is_some()), "{at}: room {:?} is empty", room.0);
@@ -472,8 +472,8 @@ mod tests {
     /// population keeps from the way in: the start is drawn clear of every
     /// stamped piece, where it once came from anywhere in the first room.
     fn no_guard_stands_near_the_way_in(foundry: &Foundry, built: &PlaceBuild, at: &str) {
-        use rl_engine::rl_core::geometry::chebyshev;
-        use rl_engine::rl_rules::prefab::Slot;
+        use atglyph::primitives::geometry::chebyshev;
+        use atglyph::rules::prefab::Slot;
         for spot in &built.spots {
             let slot = spot.prefab.zip(char::from_u32(spot.tag)).and_then(|(key, c)| foundry.prefabs().slot(key, c));
             if matches!(slot, Some(Slot::Monster { .. })) {
@@ -486,7 +486,7 @@ mod tests {
     /// Every cell reachable from `from` one orthogonal step at a time
     /// through cells `open` admits: the strictest reading of the engine's
     /// rule that a diagonal never squeezes between two walls.
-    fn walked(from: rl_engine::rl_core::Point, open: impl Fn(rl_engine::rl_core::Point) -> bool) -> BTreeSet<(i32, i32)> {
+    fn walked(from: atglyph::primitives::Point, open: impl Fn(atglyph::primitives::Point) -> bool) -> BTreeSet<(i32, i32)> {
         let mut seen = BTreeSet::from([(from.x, from.y)]);
         let mut queue = vec![from];
         while let Some(p) = queue.pop() {
@@ -503,15 +503,15 @@ mod tests {
     /// cell of the guard post can still be walked to from the entry: a
     /// brute in a one-cell door once kept both sentries out for good.
     fn every_cell_of_the_guard_post_is_walked_to_with_its_guards_home(foundry: &Foundry, st: &Stamped, built: &PlaceBuild, tables: &TileTables, at: &str) {
-        use rl_engine::rl_rules::prefab::Slot;
+        use atglyph::rules::prefab::Slot;
         let post = st.prefab.expect("the guard post's own stamp");
-        let standing: Vec<rl_engine::rl_core::Point> = st
+        let standing: Vec<atglyph::primitives::Point> = st
             .marks
             .iter()
             .filter(|(c, p)| *p != built.entry && matches!(foundry.prefabs().slot(post, *c), Some(Slot::Monster { .. } | Slot::Prop(_))))
             .map(|(_, p)| *p)
             .collect();
-        let open = |p: rl_engine::rl_core::Point| built.terrain.get(p).is_some_and(|t| tables.walkable[t.index()]) && !standing.contains(&p);
+        let open = |p: atglyph::primitives::Point| built.terrain.get(p).is_some_and(|t| tables.walkable[t.index()]) && !standing.contains(&p);
         let seen = walked(built.entry, open);
         for p in st.bounds.cells().filter(|p| open(*p)) {
             assert!(seen.contains(&(p.x, p.y)), "{at}: {p:?} in the guard post cannot be walked to with its guards home");
@@ -523,8 +523,8 @@ mod tests {
     /// piece that walled a cell in, or a corridor off, is a deck with a
     /// place nobody reaches.
     fn every_open_cell_is_walked_to_with_everything_standing(foundry: &Foundry, registries: &Registries, built: &PlaceBuild, tables: &TileTables, at: &str) {
-        use rl_engine::rl_core::Grid2D;
-        use rl_engine::rl_rules::prefab::Slot;
+        use atglyph::primitives::Grid2D;
+        use atglyph::rules::prefab::Slot;
         let standing: BTreeSet<(i32, i32)> = built
             .spots
             .iter()
@@ -536,7 +536,7 @@ mod tests {
             })
             .map(|spot| (spot.at.x, spot.at.y))
             .collect();
-        let open = |p: rl_engine::rl_core::Point| built.terrain.get(p).is_some_and(|t| tables.walkable[t.index()]) && !standing.contains(&(p.x, p.y));
+        let open = |p: atglyph::primitives::Point| built.terrain.get(p).is_some_and(|t| tables.walkable[t.index()]) && !standing.contains(&(p.x, p.y));
         let seen = walked(built.entry, open);
         if let Some(p) = built.terrain.bounds().cells().find(|p| open(*p) && !seen.contains(&(p.x, p.y))) {
             panic!("{at}: {p:?} cannot be walked to with everything standing");
@@ -548,7 +548,7 @@ mod tests {
     /// the hatch's way, and the mission could not be finished on any seed.
     fn every_mark_and_the_way_down_is_walked_to(built: &PlaceBuild, tables: &TileTables, at: &str) {
         let seen = walked(built.entry, |p| built.terrain.get(p).is_some_and(|t| tables.walkable[t.index()]));
-        let reached = |p: rl_engine::rl_core::Point| seen.contains(&(p.x, p.y));
+        let reached = |p: atglyph::primitives::Point| seen.contains(&(p.x, p.y));
         for spot in built.spots.iter().filter(|s| matches!(char::from_u32(s.tag), Some('A' | 'L' | 'R' | 's' | 'w' | 'b'))) {
             assert!(reached(spot.at), "{at}: mark {:?} at {:?} cannot be walked to", char::from_u32(spot.tag), spot.at);
         }
@@ -562,12 +562,12 @@ mod tests {
     /// every mark, no two on one cell, and what each armory and store mark
     /// is owed laid beside it.
     fn scatters_walkable_items_beside_their_own_marks(armory: &crate::gear::Armory, deck: u32, s: u64, built: &PlaceBuild, tables: &TileTables, at: &str) {
+        use atglyph::rules::{Layout, plan_scatter};
         use rand::SeedableRng;
-        use rl_engine::rl_rules::{Layout, plan_scatter};
         let rules = crate::loot::scatter_rules();
-        let marks: Vec<(u32, rl_engine::rl_core::Point)> = built.spots.iter().map(|sp| (sp.tag, sp.at)).collect();
-        let on_marks: Vec<rl_engine::rl_core::Point> = marks.iter().map(|(_, p)| *p).collect();
-        let mut free = |p: rl_engine::rl_core::Point| built.terrain.get(p).is_some_and(|t| tables.walkable[t.index()]) && !on_marks.contains(&p);
+        let marks: Vec<(u32, atglyph::primitives::Point)> = built.spots.iter().map(|sp| (sp.tag, sp.at)).collect();
+        let on_marks: Vec<atglyph::primitives::Point> = marks.iter().map(|(_, p)| *p).collect();
+        let mut free = |p: atglyph::primitives::Point| built.terrain.get(p).is_some_and(|t| tables.walkable[t.index()]) && !on_marks.contains(&p);
         let mut rng = rand::rngs::StdRng::seed_from_u64(s);
         let loose = rules.loose_count(deck as i32, &mut rng);
         let plan = plan_scatter(&armory.table, deck as i32, &rules, Layout { marks: &marks, bounds: built.terrain.bounds() }, loose, &mut free, &mut rng);
@@ -577,14 +577,14 @@ mod tests {
             assert!(!seen.contains(&p.at), "{at}: two items on {:?}", p.at);
             seen.push(p.at);
         }
-        let owed: Vec<rl_engine::rl_core::Point> = rules
+        let owed: Vec<atglyph::primitives::Point> = rules
             .spots
             .iter()
             .flat_map(|&(tag, n)| marks.iter().filter(move |(t, _)| *t == tag).flat_map(move |(_, p)| std::iter::repeat_n(*p, n as usize)))
             .collect();
         assert!(plan.len() >= owed.len(), "{at}: {} placed, {} owed to marks", plan.len(), owed.len());
         for (placed, mark) in plan.iter().zip(&owed) {
-            assert_eq!(rl_engine::rl_core::geometry::chebyshev(placed.at, *mark), 1, "{at}: an item owed to the mark at {mark:?} lies at {:?}", placed.at);
+            assert_eq!(atglyph::primitives::geometry::chebyshev(placed.at, *mark), 1, "{at}: an item owed to the mark at {mark:?} lies at {:?}", placed.at);
         }
     }
 
@@ -608,7 +608,7 @@ mod tests {
 
     #[test]
     fn a_deck_is_the_size_its_recipe_says() {
-        use rl_engine::rl_core::Grid2D;
+        use atglyph::primitives::Grid2D;
         let built = Foundry::new(RunSeed(1)).build(map_of(1), PlaceSeed::of(RunSeed(1), 1)).unwrap();
         assert_eq!((built.terrain.bounds().width, built.terrain.bounds().height), (84, 48));
     }

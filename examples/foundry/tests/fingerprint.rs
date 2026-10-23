@@ -10,10 +10,10 @@
 //! change that means to move it re-baselines the number on purpose and
 //! says so in a `CHANGELOG.md` line.
 
+use atglyph::prelude::*;
+use atglyph::primitives::{Direction, RunSeed};
 use bevy::prelude::*;
 use foundry::heat::Heat;
-use rl_engine::prelude::*;
-use rl_engine::rl_core::{Direction, RunSeed};
 
 /// Folds one value into a running FNV-1a hash.
 fn fold(hash: &mut u64, value: i64) {

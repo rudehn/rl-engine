@@ -1,15 +1,15 @@
 <!-- documents:
      plugins: CorePlugin
-     files: crates/rl-bevy/src/work.rs
-            crates/rl-bevy/src/plugin.rs
-            crates/rl-rules/src/work.rs
-            crates/rl-rules/src/ai/brain.rs
-            crates/rl-bevy/src/minds.rs
-            crates/rl-bevy/src/status.rs
-            crates/rl-ui/src/view/mod.rs
-            crates/rl-ui/src/panel/nearby.rs
-            crates/rl-ui/src/panel/inspect.rs
-            crates/rl-save/src/run.rs
+     files: crates/atglyph-bevy/src/work.rs
+            crates/atglyph-bevy/src/plugin.rs
+            crates/atglyph-rules/src/work.rs
+            crates/atglyph-rules/src/ai/brain.rs
+            crates/atglyph-bevy/src/minds.rs
+            crates/atglyph-bevy/src/status.rs
+            crates/atglyph-ui/src/view/mod.rs
+            crates/atglyph-ui/src/panel/nearby.rs
+            crates/atglyph-ui/src/panel/inspect.rs
+            crates/atglyph-save/src/run.rs
      fingerprint: ea1f868e -->
 
 # Work
@@ -27,7 +27,7 @@ Harm and death are read from combat, and a game without combat has empty queues 
 
 ## The model
 
-`Work` is in `rl-rules`: a `kind`, an optional `target`, `done` and `needed`, counted in the worker's own turns and never in clock time, so a worker twice as fast finishes in half the clock without the model knowing speed exists.
+`Work` is in `atglyph-rules`: a `kind`, an optional `target`, `done` and `needed`, counted in the worker's own turns and never in clock time, so a worker twice as fast finishes in half the clock without the model knowing speed exists.
 `Work::new(kind, needed).on(target)` builds one, zero turns taken as one; `advance` counts a turn and answers `Progress::Left(n)` or `Progress::Finished`.
 `in_reach` is the one test of whether work can still be done: the worker within `REACH`, one cell Chebyshev, of its target, asked of where both are now.
 A mind begins work by deciding `Decision::Work(work)`, which becomes a `BeginWork` intent; anything else begins it through `Works::begin`.
@@ -108,6 +108,6 @@ An actor that shrugs off harm and keeps working is not here either, and when it 
 
 ## Where it lives
 
-`rl-rules` holds `Work`, `Progress`, `in_reach` and `Decision::Work`, with no Bevy in them, so how work counts and what it reaches are tested over a range of turns without an `App`.
-`rl-bevy` holds the loop: the intents, the claim on the decision, the resolvers and the one system that breaks work, which is what the two sides of a pass can only be asked about with an `App` running turns.
-`rl-ui` reads `Working` to fill a row, and `rl-save` keeps it, each without `rl-bevy` knowing either exists.
+`atglyph-rules` holds `Work`, `Progress`, `in_reach` and `Decision::Work`, with no Bevy in them, so how work counts and what it reaches are tested over a range of turns without an `App`.
+`atglyph-bevy` holds the loop: the intents, the claim on the decision, the resolvers and the one system that breaks work, which is what the two sides of a pass can only be asked about with an `App` running turns.
+`atglyph-ui` reads `Working` to fill a row, and `atglyph-save` keeps it, each without `atglyph-bevy` knowing either exists.

@@ -1,10 +1,10 @@
 //! Where the adventurer goes, the party goes: a hired mercenary near them
 //! as they leave a map is sent after them, and one that was not waits.
 
+use atglyph::grid::{OpacitySource, Terrain, fov};
+use atglyph::prelude::*;
+use atglyph::primitives::Grid2D;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_core::Grid2D;
-use rl_engine::rl_grid::{OpacitySource, Terrain, fov};
 
 use super::{LEASH, Mercenary, Order, TONE};
 
@@ -194,7 +194,7 @@ impl OpacitySource for Lines<'_> {
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_core::RunSeed;
+    use atglyph::primitives::RunSeed;
 
     use super::*;
     use crate::dungeon::{TOWN, map_of};

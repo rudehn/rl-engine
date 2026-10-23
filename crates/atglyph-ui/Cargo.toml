@@ -1,0 +1,43 @@
+[package]
+name = "atglyph-ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "atglyph tier 2: roguelike UI for Bevy - panel views, a tone palette, a modal stack, a message log and menus."
+homepage.workspace = true
+keywords = ["roguelike", "bevy", "ui", "message-log", "gamedev"]
+categories = ["game-development", "gui"]
+
+[package.metadata.atglyph]
+# Read by scripts/check-tiers.sh: 0 core, 1 no Bevy, 2 the Bevy layer, 3 the facade and games.
+tier = 2
+
+[dependencies]
+atglyph-core.workspace = true
+# For `TargetMode`, the shape an ability menu describes.
+atglyph-grid.workspace = true
+atglyph-bevy.workspace = true
+bevy.workspace = true
+atglyph-rules.workspace = true
+atglyph-render.workspace = true
+
+[dev-dependencies]
+# A view test needs a real map to see across, and a real map needs the
+# generation crates and the tiles. Dev-only, so nothing downstream pays for
+# them. The targeting cursor itself resolves nothing: it asks the resolver's
+# own `Bystanders::land`.
+atglyph-mapgen.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "frame"
+harness = false
+
+# Tests and benches link Bevy as one shared library, so each test binary links
+# in seconds rather than copying all of Bevy in. A dev-dependency never reaches
+# a game built on this crate, which links Bevy however it chooses; wasm has no
+# shared libraries.
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+bevy = { workspace = true, features = ["dynamic_linking"] }

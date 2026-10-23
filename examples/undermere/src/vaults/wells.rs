@@ -15,9 +15,9 @@
 //! Told apart by what a prop is, which the save keeps, so a continued run
 //! offers again what was not used and nothing that was.
 
+use atglyph::ecs::props::{Among, Chooser, Scenery, spawn_prop};
+use atglyph::prelude::*;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_bevy::props::{Among, Chooser, Scenery, spawn_prop};
 
 use crate::armory::{Armory, ItemKind};
 use crate::lore::{Lore, Unfamiliar};

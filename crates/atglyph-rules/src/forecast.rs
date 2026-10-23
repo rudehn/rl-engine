@@ -1,0 +1,558 @@
+//! What a fight is likely to cost, as numbers a panel can print.
+//!
+//! An inspect panel that says "Deadly" has to have got that word from
+//! somewhere, and the somewhere is arithmetic over the same mitigation
+//! pipeline a real blow goes through. Putting it here rather than in the UI
+//! means the forecast cannot drift from the fight: `expected_damage`
+//! calls [`resolve`] with the average roll in place
+//! of a real one, through the game's own damage stages.
+//!
+//! Nothing here rolls dice, so the same inputs always give the same
+//! forecast and a panel may recompute it as often as it likes. Nothing here
+//! knows what a combatant is called, either; the caller fills a
+//! [`Combatant`] from whatever its components are.
+//!
+//! A fight is fought at a distance, so the forecast is too. [`Arms`] holds
+//! both of what an actor can do with a turn, the melee rolls and the shot,
+//! and [`Arms::at`] picks between them by the same rule the resolver uses:
+//! adjacent is the melee weapon, anything further is the shot if it reaches
+//! that far, and nothing at all otherwise. So a combatant that only shoots
+//! forecasts its shot at range and nothing when you close on it, and one
+//! that only swings forecasts nothing until you are beside it, which is
+//! what each of them can really do.
+//!
+//! The distance is the caller's to supply, since only the caller knows
+//! where the two stand. `Combatant::armed` is the constructor that takes
+//! [`Arms`] and a distance; [`Combatant`] itself still holds one set of
+//! rolls and one cost, already chosen. [`Combatant::closing`] and
+//! `Arms::closing` are the same fight as the two would have it once in
+//! reach, for a panel that still wants numbers when nothing reaches yet: a
+//! brawler across the room says how many blows it needs rather than never.
+//!
+//! A shape on a blow or a shot, a sweep round the attacker or a pierce
+//! through the target, is not asked for and changes nothing here. It
+//! strikes each one it reaches with a roll of its own of the same rolls,
+//! so what it does to the one subject of a duel is exactly what the same
+//! blow with no shape does, and whoever else it reaches is in another fight,
+//! which this is not the forecast of. Nor is a blow on a subject that has
+//! not noticed the asker: it lands once, the subject is awake for every
+//! blow after it, and the duel counted here is the one fought then, so an
+//! asker who opens from hiding does one blow better than it is told.
+
+use atglyph_core::DiceRoll;
+use atglyph_core::turn::{BASE_ACTION_COST, scaled_cost};
+
+use crate::content::Registry;
+use crate::damage::{DamageKind, DamageKindId, DamageStage, Defender, Hit, Resistances, resolve};
+
+/// One side of a duel, as the forecast reads it.
+///
+/// `speed` is the engine's percentage: 100 is normal, 200 acts twice as
+/// often. Borrowed rather than owned because a caller builds one per frame
+/// from live components and throws it away.
+pub struct Combatant<'a> {
+    /// Health remaining.
+    pub health: i32,
+    /// Flat armor, the same number [`Defender`] takes.
+    pub armor: i32,
+    /// Speed as a percentage of normal. 0 reads as 1, as the turn loop
+    /// reads it: an actor that is not to act at all is held by a status,
+    /// not slowed to nothing.
+    pub speed: u32,
+    /// What one of its blows costs, in hundredths of a step: the same unit
+    /// and the same convention as `MeleeAttack::cost`. `None` is
+    /// [`BASE_ACTION_COST`], so a caller that has not read a weapon's cost,
+    /// or has none to read, forecasts the ordinary turn per blow.
+    pub blow_cost: Option<u32>,
+    /// What it resists.
+    pub resists: &'a Resistances,
+    /// Every roll one blow of its lands, the main one first.
+    pub strikes: &'a [(DamageKindId, DiceRoll)],
+    /// The chance, in whole percent, that one of its attacks lands at all:
+    /// 100 unless a hit model says otherwise, so a forecast built without
+    /// one reads as it always did.
+    pub chance_pct: u32,
+}
+
+impl Combatant<'_> {
+    /// A combatant that neither strikes nor resists anything.
+    pub fn unarmed(health: i32, armor: i32, speed: u32, resists: &Resistances) -> Combatant<'_> {
+        Combatant { health, armor, speed, blow_cost: None, resists, strikes: &[], chance_pct: 100 }
+    }
+
+    /// A combatant fighting whatever `arms` gives it at `distance`.
+    ///
+    /// The one place the melee-or-shot choice is made for a forecast, so a
+    /// panel cannot pick differently from the resolver.
+    pub fn armed<'a>(health: i32, armor: i32, speed: u32, resists: &'a Resistances, arms: &Arms<'a>, distance: i32) -> Combatant<'a> {
+        let (strikes, blow_cost) = arms.at(distance);
+        Combatant { health, armor, speed, blow_cost, resists, strikes, chance_pct: 100 }
+    }
+
+    /// A combatant fighting what `arms` gives it at `distance`, or, when
+    /// nothing reaches from there, what it would bring once it closed.
+    ///
+    /// For a panel that wants numbers for a fight the two are not yet in:
+    /// a brawler across the room still says how many blows it needs. See
+    /// `Arms::closing`; `armed` is the fight as it stands.
+    pub fn closing<'a>(health: i32, armor: i32, speed: u32, resists: &'a Resistances, arms: &Arms<'a>, distance: i32) -> Combatant<'a> {
+        let (strikes, blow_cost) = arms.closing(distance);
+        Combatant { health, armor, speed, blow_cost, resists, strikes, chance_pct: 100 }
+    }
+
+    /// The same combatant landing `chance_pct` percent of its attacks, so a
+    /// forecast counts the misses: half the hits is twice the blows.
+    pub fn hitting(mut self, chance_pct: u32) -> Self {
+        self.chance_pct = chance_pct.min(100);
+        self
+    }
+}
+
+/// Everything one actor can do to another with a turn, before the distance
+/// between them decides which of it applies.
+///
+/// Both halves are every roll one attack lands, the weapon's own first and
+/// then whatever else the actor strikes with, which is `Loadout::blows` and
+/// `Loadout::shots` in `atglyph-bevy`. Empty means it cannot attack that way at
+/// all, which is a real answer and not a missing one: most monsters have no
+/// shot and a turret has no swing.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Arms<'a> {
+    /// Every roll one melee blow lands.
+    pub melee: &'a [(DamageKindId, DiceRoll)],
+    /// What one melee blow costs, `None` for the ordinary turn.
+    pub melee_cost: Option<u32>,
+    /// Every roll one shot lands.
+    pub ranged: &'a [(DamageKindId, DiceRoll)],
+    /// What one shot costs, `None` for the ordinary turn.
+    pub ranged_cost: Option<u32>,
+    /// The furthest cell the shot reaches. Zero with no shot.
+    pub range: i32,
+}
+
+impl<'a> Arms<'a> {
+    /// Nothing: an actor that cannot attack at any distance.
+    #[cfg(test)]
+    pub(crate) fn none() -> Arms<'a> {
+        Arms::default()
+    }
+
+    /// What these arms fight with at `distance`, and what one of those
+    /// costs.
+    ///
+    /// The engine's own rule, from `resolve_attacks`: a target one cell
+    /// away in any of the eight directions is struck with the melee
+    /// weapon, and anything further is shot at if the shot reaches. A
+    /// distance of zero is an actor measuring itself, which nothing
+    /// attacks, so it reads as adjacent and gets the melee answer.
+    ///
+    /// Not checked here: whether the line of fire is clear. That needs the
+    /// map, and a forecast that a wall may yet block is still the right
+    /// forecast for the fight the two would have.
+    pub fn at(&self, distance: i32) -> (&'a [(DamageKindId, DiceRoll)], Option<u32>) {
+        // The slices carry their own emptiness, so both weapons count as
+        // held here and an empty one is the answer, not a missing one.
+        match crate::arms::choose_reach(distance <= 1, distance <= self.range, true, true) {
+            Some(crate::arms::Reach::Melee) => (self.melee, self.melee_cost),
+            Some(crate::arms::Reach::Ranged) => (self.ranged, self.ranged_cost),
+            None => (&[], None),
+        }
+    }
+
+    /// What these arms would fight with once in reach of a target at
+    /// `distance`: [`at`](Self::at) when something reaches from there, and
+    /// otherwise the shot if there is one, since it only has to close to
+    /// its range, or the blow if not.
+    ///
+    /// Beside the target nothing changes: an actor with no blow of its own
+    /// cannot hurt what stands next to it, and saying otherwise would be a
+    /// forecast of a fight the resolver never fights.
+    pub(crate) fn closing(&self, distance: i32) -> (&'a [(DamageKindId, DiceRoll)], Option<u32>) {
+        let reach = self.at(distance);
+        if !reach.0.is_empty() || distance <= 1 {
+            reach
+        } else if !self.ranged.is_empty() {
+            (self.ranged, self.ranged_cost)
+        } else {
+            (self.melee, self.melee_cost)
+        }
+    }
+}
+
+/// What one blow by `attacker` takes off `defender`, on average, after the
+/// game's own mitigation and counting the blows that miss.
+///
+/// Fractional because dice are: a d4 that armor takes 1 from averages 1.5,
+/// and rounding that to 1 or 2 before it is multiplied out is how a
+/// forecast comes to be a blow wrong. Never negative, since a blow that
+/// heals is not a blow the forecast can count.
+pub(crate) fn expected_damage<A: Copy>(
+    attacker: &Combatant<'_>,
+    defender: &Combatant<'_>,
+    kinds: &Registry<DamageKind>,
+    stages: &[&dyn DamageStage<A>],
+) -> f32 {
+    let shield = Defender { armor: defender.armor, blocked: false };
+    attacker
+        .strikes
+        .iter()
+        .map(|(kind, dice)| {
+            // resolve takes integers, so the average is split into the two
+            // rolls that bracket it and weighted by how often each comes up.
+            let avg = dice.avg();
+            let low = avg.floor() as i32;
+            let share = avg - low as f32;
+            let at = |amount: i32| {
+                let hit: Hit<A> = Hit { attacker: None, credit: None, kind: *kind, amount, critical: false, status: None };
+                resolve(&hit, &shield, defender.resists, kinds, stages).max(0) as f32
+            };
+            at(low) * (1.0 - share) + at(low + 1) * share
+        })
+        .sum::<f32>()
+        * attacker.chance_pct as f32
+        / 100.0
+}
+
+/// How many blows `attacker` needs to fell `defender`, or `None` when it
+/// never will because nothing it throws gets through.
+pub(crate) fn blows_to_fell<A: Copy>(
+    attacker: &Combatant<'_>,
+    defender: &Combatant<'_>,
+    kinds: &Registry<DamageKind>,
+    stages: &[&dyn DamageStage<A>],
+) -> Option<u32> {
+    let per_blow = expected_damage(attacker, defender, kinds, stages);
+    if per_blow <= 0.0 || defender.health <= 0 {
+        return None;
+    }
+    Some((defender.health as f32 / per_blow).ceil() as u32)
+}
+
+/// How many whole turns `blows` take an actor of `speed` swinging at `cost`
+/// each, rounded up. `None` is [`BASE_ACTION_COST`].
+///
+/// A turn is what an actor of speed 100 gets for one blow at the ordinary
+/// cost, so a faster actor or a cheaper blow both fit more of them into the
+/// same span. Each blow is charged what the turn loop charges it,
+/// [`scaled_cost`], and only the total is rounded to whole turns, so the
+/// forecast cannot drift from play: a speed of 0 reads as 1 here because
+/// it does there, and a blow that costs a hundredth more than it looks at
+/// an awkward speed costs that hundredth here too. Rounding the total once
+/// rather than each blow's turns is what keeps a weapon's price from being
+/// rounded away one blow at a time.
+pub(crate) fn turns_for(blows: u32, speed: u32, cost: Option<u32>) -> u32 {
+    let per_blow = u64::from(scaled_cost(cost.unwrap_or(BASE_ACTION_COST), speed));
+    // Saturating rather than truncating: an enormous cost on a very slow
+    // actor must read as the longest count there is (`u32::MAX`), not as
+    // whatever the low 32 bits of the true count happen to be.
+    (u64::from(blows) * per_blow).div_ceil(u64::from(BASE_ACTION_COST)).try_into().unwrap_or(u32::MAX)
+}
+
+/// How a duel is likely to go for the side asking.
+///
+/// Derived from the two blow counts and nothing else, so a game that gives
+/// its actors more health or better armor moves the boundaries without
+/// touching this. Not a difficulty setting: it says who runs out of health
+/// first at the current numbers, which is all a panel can honestly claim.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Outlook {
+    /// The subject falls in a third of the turns it needs, or cannot hurt
+    /// the asker at all.
+    Easy,
+    /// The subject falls first, but not comfortably.
+    Favorable,
+    /// Within a turn either way.
+    Even,
+    /// The asker falls first.
+    Grim,
+    /// The asker falls in a third of the turns it needs, or cannot hurt the
+    /// subject at all.
+    Deadly,
+}
+
+impl Outlook {
+    /// A one-word label. A game that wants its own words matches on the
+    /// variant instead; these exist so a default panel has something to
+    /// print.
+    pub fn label(self) -> &'static str {
+        match self {
+            Outlook::Easy => "easy",
+            Outlook::Favorable => "favorable",
+            Outlook::Even => "even",
+            Outlook::Grim => "grim",
+            Outlook::Deadly => "deadly",
+        }
+    }
+}
+
+/// Both directions of a duel between `asker` and `subject`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Duel {
+    /// Turns the asker needs to fell the subject, `None` if it never will.
+    pub turns_to_fell: Option<u32>,
+    /// Turns the subject needs to fell the asker, `None` if it never will.
+    pub turns_to_fall: Option<u32>,
+    /// How that reads.
+    pub outlook: Outlook,
+}
+
+/// Runs the duel both ways and reads the result.
+pub fn duel<A: Copy>(asker: &Combatant<'_>, subject: &Combatant<'_>, kinds: &Registry<DamageKind>, stages: &[&dyn DamageStage<A>]) -> Duel {
+    let to_fell = blows_to_fell(asker, subject, kinds, stages).map(|b| turns_for(b, asker.speed, asker.blow_cost));
+    let to_fall = blows_to_fell(subject, asker, kinds, stages).map(|b| turns_for(b, subject.speed, subject.blow_cost));
+    let outlook = match (to_fell, to_fall) {
+        (None, None) => Outlook::Even,
+        (Some(_), None) => Outlook::Easy,
+        (None, Some(_)) => Outlook::Deadly,
+        (Some(fell), Some(fall)) => {
+            // Widened: a count saturated to `u32::MAX` is the slowest fight
+            // there is, and tripling it must neither overflow nor, clamped,
+            // read two such fights as anything but even.
+            let (fell3, fall3) = (u64::from(fell) * 3, u64::from(fall) * 3);
+            if fell3 <= u64::from(fall) {
+                Outlook::Easy
+            } else if fell < fall {
+                Outlook::Favorable
+            } else if fell == fall {
+                Outlook::Even
+            } else if fall3 <= u64::from(fell) {
+                Outlook::Deadly
+            } else {
+                Outlook::Grim
+            }
+        }
+    };
+    Duel { turns_to_fell: to_fell, turns_to_fall: to_fall, outlook }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::damage::SubtractArmor;
+    use atglyph_core::turn::TurnQueue;
+
+    fn kinds() -> Registry<DamageKind> {
+        Registry::from_defs(vec![DamageKind::new("kinetic")]).unwrap()
+    }
+
+    fn armor_only() -> Vec<Box<dyn DamageStage<u32> + Send + Sync>> {
+        vec![Box::new(SubtractArmor)]
+    }
+
+    fn stage_refs(v: &[Box<dyn DamageStage<u32> + Send + Sync>]) -> Vec<&dyn DamageStage<u32>> {
+        v.iter().map(|s| s.as_ref() as &dyn DamageStage<u32>).collect()
+    }
+
+    #[test]
+    fn armor_moves_the_average_by_its_own_size_and_not_by_a_rounding_step() {
+        let kinds = kinds();
+        let boxed = armor_only();
+        let stages = stage_refs(&boxed);
+        let none = Resistances::new();
+        let strikes = [(kinds.expect("kinetic"), DiceRoll::new(1, 4))];
+        let attacker = Combatant { health: 10, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &strikes, chance_pct: 100 };
+        let bare = Combatant::unarmed(10, 0, 100, &none);
+        let armored = Combatant::unarmed(10, 1, 100, &none);
+        let open = expected_damage::<u32>(&attacker, &bare, &kinds, &stages);
+        let shielded = expected_damage::<u32>(&attacker, &armored, &kinds, &stages);
+        assert!((open - 2.5).abs() < 0.01, "1d4 averages 2.5, got {open}");
+        assert!((shielded - 1.5).abs() < 0.01, "one armor takes exactly one, got {shielded}");
+    }
+
+    #[test]
+    fn a_blow_that_lands_half_the_time_is_expected_to_do_half_the_damage() {
+        let kinds = kinds();
+        let boxed = armor_only();
+        let stages = stage_refs(&boxed);
+        let none = Resistances::new();
+        let strikes = [(kinds.expect("kinetic"), DiceRoll::flat(6))];
+        let sure = Combatant { strikes: &strikes, ..Combatant::unarmed(10, 0, 100, &none) };
+        let even = Combatant { strikes: &strikes, ..Combatant::unarmed(10, 0, 100, &none) }.hitting(50);
+        let target = Combatant::unarmed(30, 0, 100, &none);
+        assert_eq!(expected_damage::<u32>(&sure, &target, &kinds, &stages), 6.0);
+        assert_eq!(expected_damage::<u32>(&even, &target, &kinds, &stages), 3.0);
+        assert_eq!(blows_to_fell::<u32>(&even, &target, &kinds, &stages), Some(10), "twice the blows for half the hits");
+    }
+
+    #[test]
+    fn a_blow_that_never_lands_never_fells_and_a_stalemate_reads_as_even() {
+        let kinds = kinds();
+        let boxed = armor_only();
+        let stages = stage_refs(&boxed);
+        let none = Resistances::new();
+        let strikes = [(kinds.expect("kinetic"), DiceRoll::new(1, 2))];
+        let biter = Combatant { health: 30, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &strikes, chance_pct: 100 };
+        let plated = Combatant::unarmed(30, 10, 100, &none);
+        assert_eq!(blows_to_fell::<u32>(&biter, &plated, &kinds, &stages), None);
+        let stalemate = duel::<u32>(&plated, &biter, &kinds, &stages);
+        assert_eq!(stalemate.turns_to_fall, None, "the plated one is never felled");
+        assert_eq!(stalemate.outlook, Outlook::Even, "neither side can end it, which is even and not a win");
+        let armed = Combatant { health: 30, armor: 10, speed: 100, blow_cost: None, resists: &none, strikes: &strikes, chance_pct: 100 };
+        assert_eq!(duel::<u32>(&armed, &biter, &kinds, &stages).outlook, Outlook::Easy, "armor it cannot pierce and a blow that lands");
+    }
+
+    #[test]
+    fn speed_turns_blows_into_fewer_turns_and_never_rounds_one_away() {
+        assert_eq!(turns_for(3, 100, None), 3);
+        assert_eq!(turns_for(4, 200, None), 2);
+        assert_eq!(turns_for(3, 200, None), 2, "one and a half turns is two");
+        assert_eq!(turns_for(1, 50, None), 2);
+        assert_eq!(turns_for(1, 0, None), turns_for(1, 1, None), "a speed of nought is the slowest the loop deals, not never");
+    }
+
+    #[test]
+    fn the_forecast_counts_the_same_turns_the_turn_loop_charges_at_every_speed_including_nought() {
+        // The turn loop's own queue, played blow by blow: each blow puts
+        // the actor back what the loop charges it, and a turn is an
+        // ordinary action's worth of that clock, a part of one counting
+        // whole.
+        for speed in (0..=400).chain([533, 1000]) {
+            for cost in [None, Some(1), Some(33), Some(70), Some(100), Some(150), Some(250)] {
+                let mut queue = TurnQueue::new();
+                queue.insert_now(());
+                for blows in 1..=12 {
+                    queue.pop_due(|_| true).expect("the one actor is due");
+                    queue.insert_after((), scaled_cost(cost.unwrap_or(BASE_ACTION_COST), speed));
+                    queue.advance_to_next();
+                    assert_eq!(turns_for(blows, speed, cost), queue.now().div_ceil(BASE_ACTION_COST), "blows={blows} speed={speed} cost={cost:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_turn_count_too_large_for_a_u32_saturates_to_the_longest_count_instead_of_wrapping() {
+        // u32::MAX blows at the ordinary cost and a speed of 1 is far past
+        // what a u32 holds; a truncating cast would wrap it down to some
+        // small number instead of the longest count it should read as.
+        assert_eq!(turns_for(u32::MAX, 1, None), u32::MAX);
+    }
+
+    #[test]
+    fn a_cost_of_none_forecasts_the_same_turns_as_the_ordinary_cost_stated_outright() {
+        for (blows, speed) in [(3, 100), (4, 200), (3, 200), (1, 50), (7, 133)] {
+            assert_eq!(turns_for(blows, speed, None), turns_for(blows, speed, Some(BASE_ACTION_COST)), "blows={blows} speed={speed}");
+        }
+    }
+
+    #[test]
+    fn a_cheaper_blow_fells_the_same_target_in_fewer_turns_than_the_ordinary_cost() {
+        let kinds = kinds();
+        let boxed = armor_only();
+        let stages = stage_refs(&boxed);
+        let none = Resistances::new();
+        let strikes = [(kinds.expect("kinetic"), DiceRoll::new(1, 4))];
+        let target = Combatant::unarmed(30, 0, 100, &none);
+        let quick = Combatant { health: 10, armor: 0, speed: 100, blow_cost: Some(70), resists: &none, strikes: &strikes, chance_pct: 100 };
+        let ordinary = Combatant { health: 10, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &strikes, chance_pct: 100 };
+        let cheaper = duel::<u32>(&quick, &target, &kinds, &stages);
+        let plain = duel::<u32>(&ordinary, &target, &kinds, &stages);
+        assert!(cheaper.turns_to_fell.is_some() && plain.turns_to_fell.is_some(), "both land the same blows and fell the target");
+        assert!(cheaper.turns_to_fell < plain.turns_to_fell, "a 70-cost blow fells in fewer turns than a 100-cost one");
+    }
+
+    #[test]
+    fn the_outlook_reads_the_two_counts_and_not_the_health_bars() {
+        let kinds = kinds();
+        let boxed = armor_only();
+        let stages = stage_refs(&boxed);
+        let none = Resistances::new();
+        let hard = [(kinds.expect("kinetic"), DiceRoll { num: 1, sides: 8, bonus: 4 })];
+        let soft = [(kinds.expect("kinetic"), DiceRoll::new(1, 2))];
+        let strong = Combatant { health: 40, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &hard, chance_pct: 100 };
+        let weak = Combatant { health: 40, armor: 0, speed: 100, blow_cost: None, resists: &none, strikes: &soft, chance_pct: 100 };
+        assert_eq!(duel::<u32>(&strong, &weak, &kinds, &stages).outlook, Outlook::Easy);
+        assert_eq!(duel::<u32>(&weak, &strong, &kinds, &stages).outlook, Outlook::Deadly);
+        assert_eq!(duel::<u32>(&strong, &strong, &kinds, &stages).outlook, Outlook::Even);
+    }
+
+    #[test]
+    fn a_duel_with_a_speed_of_nought_reads_as_one_at_a_speed_of_one_and_two_saturated_counts_read_even() {
+        let kinds = kinds();
+        let boxed = armor_only();
+        let stages = stage_refs(&boxed);
+        let none = Resistances::new();
+        let strikes = [(kinds.expect("kinetic"), DiceRoll::flat(1))];
+        let at = |speed, blow_cost| Combatant { health: 1000, armor: 0, speed, blow_cost, resists: &none, strikes: &strikes, chance_pct: 100 };
+        let stopped = duel::<u32>(&at(0, None), &at(100, None), &kinds, &stages);
+        assert_eq!(stopped, duel::<u32>(&at(1, None), &at(100, None), &kinds, &stages));
+        assert_eq!(stopped.turns_to_fell, Some(100_000), "a thousand blows at a hundred times the ordinary cost");
+        let endless = at(1, Some(u32::MAX));
+        let both = duel::<u32>(&endless, &endless, &kinds, &stages);
+        assert_eq!(both.turns_to_fell, Some(u32::MAX));
+        assert_eq!(both.outlook, Outlook::Even, "the same fight both ways is even however long it is");
+    }
+
+    /// The rule a fight is fought by, without an `App`: a blow when you are
+    /// beside it, a shot when you are not, and nothing beyond its reach.
+    #[test]
+    fn arms_pick_the_blow_when_adjacent_the_shot_when_not_and_nothing_out_of_range() {
+        let kinds = Registry::from_defs(vec![DamageKind::new("kinetic")]).expect("one kind");
+        let kind = kinds.expect("kinetic");
+        let melee = [(kind, DiceRoll::flat(3))];
+        let ranged = [(kind, DiceRoll::flat(7))];
+        let arms = Arms { melee: &melee, melee_cost: Some(50), ranged: &ranged, ranged_cost: Some(200), range: 6 };
+
+        assert_eq!(arms.at(1), (&melee[..], Some(50)), "beside it, the blow");
+        assert_eq!(arms.at(0), (&melee[..], Some(50)), "and a thing measured against itself reads as adjacent");
+        assert_eq!(arms.at(2), (&ranged[..], Some(200)), "a step further, the shot");
+        assert_eq!(arms.at(6), (&ranged[..], Some(200)), "out to its reach");
+        assert_eq!(arms.at(7), (&[][..], None), "and past that, nothing");
+    }
+
+    /// A gunner and a brawler, forecast at both distances. The bug this
+    /// closes: the gunner read as unable to hurt anything at any distance,
+    /// because only the melee rolls were ever counted.
+    #[test]
+    fn a_combatant_that_only_shoots_is_forecast_at_range_and_a_brawler_only_up_close() {
+        let kinds = Registry::from_defs(vec![DamageKind::new("kinetic")]).expect("one kind");
+        let kind = kinds.expect("kinetic");
+        let none = Resistances::new();
+        let stages: [&dyn DamageStage<u32>; 0] = [];
+
+        let shot = [(kind, DiceRoll::flat(5))];
+        let gunner = Arms { melee: &[], melee_cost: None, ranged: &shot, ranged_cost: None, range: 8 };
+        let swing = [(kind, DiceRoll::flat(5))];
+        let brawler = Arms { melee: &swing, melee_cost: None, ranged: &[], ranged_cost: None, range: 0 };
+
+        fn at<'a>(arms: &Arms<'a>, none: &'a Resistances, d: i32) -> Combatant<'a> {
+            Combatant::armed(20, 0, 100, none, arms, d)
+        }
+
+        // Across the room: the gunner fells, the brawler never reaches.
+        let far = duel(&at(&gunner, &none, 5), &at(&brawler, &none, 5), &kinds, &stages);
+        assert_eq!(far.turns_to_fell, Some(4), "five a shot into twenty health");
+        assert_eq!(far.turns_to_fall, None, "the brawler cannot touch it from there");
+        assert_eq!(far.outlook, Outlook::Easy);
+
+        // Beside it, exactly the other way round.
+        let near = duel(&at(&gunner, &none, 1), &at(&brawler, &none, 1), &kinds, &stages);
+        assert_eq!(near.turns_to_fell, None, "adjacent, the gun is no use");
+        assert_eq!(near.turns_to_fall, Some(4), "and the brawler is swinging");
+        assert_eq!(near.outlook, Outlook::Deadly);
+    }
+
+    /// Out of reach, a panel still wants the numbers: a side is forecast
+    /// with what it would bring once it closed, its shot if it has one and
+    /// its blow if not, and only a side with no attack at all reads never.
+    #[test]
+    fn out_of_reach_a_side_is_forecast_with_what_it_would_bring_once_it_closed() {
+        let kinds = Registry::from_defs(vec![DamageKind::new("kinetic")]).expect("one kind");
+        let kind = kinds.expect("kinetic");
+        let none = Resistances::new();
+        let stages: [&dyn DamageStage<u32>; 0] = [];
+        let shot = [(kind, DiceRoll::flat(5))];
+        let gunner = Arms { melee: &[], melee_cost: None, ranged: &shot, ranged_cost: None, range: 8 };
+        let swing = [(kind, DiceRoll::flat(10))];
+        let brawler = Arms { melee: &swing, melee_cost: None, ranged: &[], ranged_cost: None, range: 0 };
+        let closing = |arms: &Arms<'_>, d: i32| {
+            duel(&Combatant::closing(20, 0, 100, &none, arms, d), &Combatant::unarmed(20, 0, 100, &none), &kinds, &stages).turns_to_fell
+        };
+
+        assert_eq!(closing(&brawler, 5), Some(2), "a brawler across the room still fells it in two blows once it is beside it");
+        assert_eq!(closing(&gunner, 12), Some(4), "a gunner past its reach, in four shots once it is in range");
+        assert_eq!(closing(&gunner, 5), Some(4), "within reach it is the same as armed");
+        assert_eq!(closing(&gunner, 1), None, "beside it with no blow of its own, it still cannot hurt it");
+        assert_eq!(closing(&Arms::none(), 5), None, "and a side with no attack at all never fells anything");
+    }
+}

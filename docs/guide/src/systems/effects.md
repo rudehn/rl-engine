@@ -1,23 +1,23 @@
 <!-- documents:
      plugins: EffectsPlugin
-     files: crates/rl-bevy/src/effects/mod.rs
-            crates/rl-bevy/src/effects/triggers.rs
-            crates/rl-bevy/src/effects/engine.rs
-            crates/rl-bevy/src/consumable.rs
-            crates/rl-bevy/src/plugin.rs
-            crates/rl-bevy/src/items.rs
-            crates/rl-bevy/src/throwing.rs
-            crates/rl-bevy/src/combat.rs
-            crates/rl-bevy/src/props.rs
-            crates/rl-bevy/src/fire.rs
-            crates/rl-bevy/src/gas.rs
-            crates/rl-bevy/src/noise.rs
-            crates/rl-bevy/src/registries.rs
-            crates/rl-rules/src/ability.rs
-            crates/rl-bevy/src/ability.rs
-            crates/rl-bevy/src/cue.rs
-            crates/rl-grid/src/targeting.rs
-            crates/rl-ui/src/narrate.rs
+     files: crates/atglyph-bevy/src/effects/mod.rs
+            crates/atglyph-bevy/src/effects/triggers.rs
+            crates/atglyph-bevy/src/effects/engine.rs
+            crates/atglyph-bevy/src/consumable.rs
+            crates/atglyph-bevy/src/plugin.rs
+            crates/atglyph-bevy/src/items.rs
+            crates/atglyph-bevy/src/throwing.rs
+            crates/atglyph-bevy/src/combat.rs
+            crates/atglyph-bevy/src/props.rs
+            crates/atglyph-bevy/src/fire.rs
+            crates/atglyph-bevy/src/gas.rs
+            crates/atglyph-bevy/src/noise.rs
+            crates/atglyph-bevy/src/registries.rs
+            crates/atglyph-rules/src/ability.rs
+            crates/atglyph-bevy/src/ability.rs
+            crates/atglyph-bevy/src/cue.rs
+            crates/atglyph-grid/src/targeting.rs
+            crates/atglyph-ui/src/narrate.rs
      fingerprint: 626bf1d0 -->
 
 # Effects
@@ -52,14 +52,14 @@ It describes itself with ` while worn` after the turns, so the bag says so under
 `EffectWorld` asks the subsystem that owns a thing to do it, damage, a heal, a status on or off, a cue, and moves an actor itself, since nothing else owns that.
 `Effects::land` rolls each entry against its own chance from `EffectRng`, which keeps the derivation domain `b"ability"` it had as `AbilityRng`, so a trap, a stim and a spell are dealt from one deck and every seed rolls what it rolled before.
 `Moments` interns the names of moments, the engine's `use`, `land`, `fire`, `hit`, `entered`, `destroyed` and `pulse` first so their ids are constants on the type.
-`TriggerSpec`, in `rl-rules` beside `EffectSpec`, is the authored form: `on`, a moment by name; `area`, `Here` or `Burst { radius }`; `fires`, how many times before it stops; `effects`, a list of its own; `look`, what shows over the cells it lands on and, for an aimed use, what flies there; `every`, the hundredths between pulses, which a `pulse` trigger must carry and no other may; `targeting`, a `Targeting` for a `use` pointed at somewhere, written in an ability's words; and `asks`, an `Asks` of a prompt and an optional tag, for a `use` made on another of its user's things.
+`TriggerSpec`, in `atglyph-rules` beside `EffectSpec`, is the authored form: `on`, a moment by name; `area`, `Here` or `Burst { radius }`; `fires`, how many times before it stops; `effects`, a list of its own; `look`, what shows over the cells it lands on and, for an aimed use, what flies there; `every`, the hundredths between pulses, which a `pulse` trigger must carry and no other may; `targeting`, a `Targeting` for a `use` pointed at somewhere, written in an ability's words; and `asks`, an `Asks` of a prompt and an optional tag, for a `use` made on another of its user's things.
 `Triggers::build(specs, shared, moments, kinds, names)` builds a definition's triggers once, sharing each list through an `Arc`, and fails on a moment nobody registered, a pulse with no `every` or an `every` of nought, an `every` on any other moment, a `targeting` or an `asks` on anything but a `use`, the two together, a targeting aimed at nobody but its user, and a second `use` trigger beside one that aims or asks, naming each.
 The built `Trigger` keeps its `every`, and `Triggers::pulse_every` reads a carrier's back, so a game building a worn thing's `Pulse` takes its period from the trigger rather than keeping a second copy, and `Triggers::targeting` and `Triggers::asks` read back how a carrier's use is pointed and what it asks for.
 A spec with no list takes the definition's `shared` one, and a spec with neither fails, since a trigger that does nothing is a typo.
 `Triggers` is the component, and each copy counts its own `fires`, so springing one cable spends nothing of another.
 `Fired { on, moment, by, at }` is how a subsystem reports a moment, and all it does: items report `use` on an accepted use, where its user stands or at the cell an aimed one was pointed at, and `pulse` for each worn `Pulse` whose period came round, throwing reports `land` where a throw comes to rest, combat reports `fire` for each attack made with a worn thing, `hit` at each struck actor's cell and the attacker's own `hit` beside it, and `struck` for the one struck, before its damage lands, and props and actors alike report `entered`, `destroyed` and `died`.
 An actor that carries `Triggers` answers its own `hit`, `struck` and `died`, credited to it directly rather than to whoever it names `by`, since an actor is the one a thing is used by rather than a thing used: a `struck` aura spares the actor it is on, unlike a prop's or a thing's area, which catches everyone standing in it.
-`land_triggers` reads each `Fired` in the order written, takes the entity's triggers for that moment in list order, skips any spent, cues a blast over the cells for one with a `look`, going out from the cell the moment happened on, lands the list over `area_cells`, the one cell or the burst `rl_grid::burst` works out inside the loaded window, with everyone in the area as a target, the one who set it off included, and counts `fires` down.
+`land_triggers` reads each `Fired` in the order written, takes the entity's triggers for that moment in list order, skips any spent, cues a blast over the cells for one with a `look`, going out from the cell the moment happened on, lands the list over `area_cells`, the one cell or the burst `atglyph::grid::burst` works out inside the loaded window, with everyone in the area as a target, the one who set it off included, and counts `fires` down.
 A `use` of a carrier whose `Consumable` has nothing left lands nothing at all, read before that use's charge is spent, since only a thing not yet known is let be used empty.
 The landing's user, who a hit is credited to, is `by`, or the carrier itself when it is `LandsAsItself`, which every armed prop is.
 A use made on one of its user's things is reported beside its `Fired` by a `FiredOn { carrier, moment, on }`, its own message so no other moment carries a field it never fills, and `land_triggers` pairs the two and lands the use where its user stands with the thing as `Landing::on`, for the game's own effect that reads it.
@@ -131,7 +131,7 @@ A carrier's `EffectBonus` is not saved either: the game's spawn writes it again 
 
 ## Where it lives
 
-`rl-rules` is tier 1 and has no Bevy in it: `EffectSpec` and `TriggerSpec` are the authored forms any game's own file can deserialize, so a content file is checked for shape without an `App`.
-`rl-bevy` is tier 2 and holds the rest in one module, because an effect needs the world to land: the machinery and the plugin, the engine's ten effects beside it, and the triggers with the moments they answer.
+`atglyph-rules` is tier 1 and has no Bevy in it: `EffectSpec` and `TriggerSpec` are the authored forms any game's own file can deserialize, so a content file is checked for shape without an `App`.
+`atglyph-bevy` is tier 2 and holds the rest in one module, because an effect needs the world to land: the machinery and the plugin, the engine's ten effects beside it, and the triggers with the moments they answer.
 The effects sit in their own module rather than each in the subsystem it asks, so combat, statuses, fire, gas and hearing never depend on the code that asks them, and abilities, props and items depend on effects rather than on each other.
 That split is what let a prop's trap stop reaching into abilities to land anything, and what lets a triggers test build a floor, report a moment by hand and read the damage without an ability, a prop or an item anywhere.

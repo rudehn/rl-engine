@@ -1,0 +1,706 @@
+//! Light over a grid: point sources cast through the same symmetric
+//! shadowcast as sight, blended into a field the field-of-view gate and
+//! the renderer both read.
+//!
+//! Two channels, deliberately separate. `intensity` is what gameplay
+//! reads: whether a tile is lit enough to be seen, how far a lit actor is
+//! noticed from. `color` is what the renderer reads, already scaled by
+//! the intensity so that two lights blend the way two lights do. Deriving
+//! brightness from colour would make a red light count as darkness, so
+//! nothing here ever does.
+//!
+//! A third channel, `waver`, says how much of a tile's intensity comes
+//! from flickering sources. It is for the renderer alone: gameplay reads
+//! the steady `intensity`, so a guttering torch never changes what is seen.
+//!
+//! A source may darken instead of lighting: a darkness. It is cast
+//! through the same shadowcast and falls off the same way, but it lands in
+//! a field's shade rather than its light, and the shade is applied last,
+//! after every light and the ambient, as a share taken from all of them.
+//! Taken rather than subtracted, so a pool of darkness dims a lantern and
+//! a dim corridor alike instead of erasing one and barely touching the
+//! other, and two darknesses blend among themselves as two lights do. A
+//! share of nothing is nothing, so a darkness can never make a cell
+//! brighter than it would be unlit, and it never shifts a colour, only
+//! lowers it.
+//!
+//! Everything is integer, so a field is a deterministic function of tile
+//! opacity and emitter placement, and emitters are sorted before they are
+//! cast so the order they arrived in cannot leak into the result.
+
+#[cfg(test)]
+use atglyph_core::Rect;
+use atglyph_core::{Grid, Grid2D, Point};
+
+use crate::bitgrid::BitGrid;
+use crate::fov;
+use crate::terrain::OpacitySource;
+
+/// A colour, 0 to 255 per channel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, serde::Serialize, serde::Deserialize)]
+pub struct Rgb {
+    /// Red.
+    pub r: u8,
+    /// Green.
+    pub g: u8,
+    /// Blue.
+    pub b: u8,
+}
+
+impl Rgb {
+    /// A colour.
+    pub const fn new(r: u8, g: u8, b: u8) -> Self {
+        Self { r, g, b }
+    }
+
+    /// Full white.
+    pub const WHITE: Self = Self::new(255, 255, 255);
+
+    /// This colour at `intensity / 255` of its strength.
+    pub fn scaled(self, intensity: u8) -> Self {
+        let s = |c: u8| ((c as u32 * intensity as u32) / 255) as u8;
+        Self { r: s(self.r), g: s(self.g), b: s(self.b) }
+    }
+
+    /// Screen blend: brighter than either, never past 255.
+    pub fn screen(self, other: Self) -> Self {
+        Self { r: screen(self.r, other.r), g: screen(self.g, other.g), b: screen(self.b, other.b) }
+    }
+}
+
+/// The light on one tile.
+///
+/// `color` is the colour as it lands: an emitter's hue already scaled by
+/// the intensity that reached the tile, so [`Light::DARK`] is black and a
+/// renderer multiplies pigment by it directly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize)]
+pub struct Light {
+    /// Brightness, 0 to 255. What gameplay reads.
+    pub intensity: u8,
+    /// The colour landing on the tile. What the renderer reads.
+    pub color: Rgb,
+    /// How much of `intensity` may dip when its flickering sources do,
+    /// never more than `intensity`. What the renderer reads, and nothing else.
+    pub waver: u8,
+}
+
+impl Light {
+    /// No light at all.
+    pub const DARK: Self = Self { intensity: 0, color: Rgb::new(0, 0, 0), waver: 0 };
+
+    /// Steady light of `intensity` in `color`, with the colour scaled to match.
+    pub fn new(intensity: u8, color: Rgb) -> Self {
+        Self { intensity, color: color.scaled(intensity), waver: 0 }
+    }
+
+    /// Uncoloured light: white at `intensity`.
+    pub fn white(intensity: u8) -> Self {
+        Self::new(intensity, Rgb::WHITE)
+    }
+
+    /// The same light with `flicker / 255` of it wavering.
+    pub fn flickering(mut self, flicker: u8) -> Self {
+        self.waver = ((self.intensity as u32 * flicker as u32) / 255) as u8;
+        self
+    }
+
+    /// This light with `shade / 255` of it taken away by a darkness.
+    ///
+    /// Every channel loses the same share, so the hue is kept and nothing
+    /// grows: the result is at most this light, channel by channel, and a
+    /// shade of 0 returns it unchanged. The waver is rounded up rather than
+    /// down, so the wavering part of what is left is never a smaller share
+    /// than it was and a darkened flame never looks steadier than the lit one.
+    pub fn darkened(self, shade: u8) -> Self {
+        let keep = 255 - shade as u32;
+        let take = |v: u8| ((v as u32 * keep) / 255) as u8;
+        let intensity = take(self.intensity);
+        let waver = (self.waver as u32 * keep).div_ceil(255).min(intensity as u32) as u8;
+        Self { intensity, color: Rgb { r: take(self.color.r), g: take(self.color.g), b: take(self.color.b) }, waver }
+    }
+
+    /// Both lights on one tile.
+    ///
+    /// The waver of the blend is exact at both ends: the blend of the two
+    /// at full strength, less the blend of their steady parts alone.
+    pub fn screen(self, other: Self) -> Self {
+        let intensity = screen(self.intensity, other.intensity);
+        let steady = screen(self.intensity - self.waver, other.intensity - other.waver);
+        Self { intensity, color: self.color.screen(other.color), waver: intensity - steady }
+    }
+}
+
+/// What a thing that glows sheds: how bright, how far, in what colour,
+/// how much it flickers, and whether it darkens instead.
+///
+/// One description for every light there is. A tile kind and a prop kind
+/// carry one in their definitions, a game's own content writes one for a
+/// lantern or a glowing trait, the Bevy layer's `LightSource` is this on
+/// an entity, and an [`Emitter`] is this at a cell, so a light written in
+/// a file is cast exactly as written, with nothing converting it on the
+/// way. Plain data and serde, so a content file and a save write it the
+/// same way:
+///
+/// ```
+/// use atglyph_grid::{Glow, Rgb};
+///
+/// let lamp: Glow = ron::from_str("(intensity: 200, radius: 5, color: (r: 255, g: 204, b: 133), flicker: 31)").unwrap();
+/// assert_eq!(lamp, Glow::new(200, 5, Rgb::new(255, 204, 133)).flickering(31));
+/// let pool: Glow = ron::from_str("(intensity: 255, radius: 3, darkens: true)").unwrap();
+/// assert_eq!(pool, Glow::darkness(255, 3));
+/// ```
+///
+/// The full option space a file writes: `intensity`, 0 to 255; `radius`,
+/// in tiles; `color`, `(r:, g:, b:)` in bytes, white when left out;
+/// `flicker`, 0 to 255, steady when left out; `darkens`, false when left
+/// out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+pub struct Glow {
+    /// Brightness at the source's own tile, 0 to 255; for a darkness, the
+    /// share of light it takes there, out of 255.
+    pub intensity: u8,
+    /// How far it reaches, in tiles; light is exactly zero at the rim.
+    pub radius: i32,
+    /// Its hue at full strength. White when a file leaves it out, which is
+    /// also all a darkness needs, since a darkness has no hue.
+    #[serde(default = "white")]
+    pub color: Rgb,
+    /// How far it flickers when drawn, 0 for steady to 255 for a flame
+    /// that can dip to nothing. Drawn, never played: gameplay reads the
+    /// steady intensity.
+    #[serde(default)]
+    pub flicker: u8,
+    /// Whether it takes light away rather than giving it: a light of
+    /// negative intensity. A flag beside the magnitude rather than a signed
+    /// intensity, so the range stays in the type and every reader of a
+    /// light's strength as a byte goes on reading it. A darkness takes
+    /// every channel alike and holds still, so its `color` and `flicker`
+    /// are not read.
+    #[serde(default)]
+    pub darkens: bool,
+}
+
+fn white() -> Rgb {
+    Rgb::WHITE
+}
+
+impl Glow {
+    /// A steady light of `intensity` reaching `radius` tiles in `color`.
+    pub const fn new(intensity: u8, radius: i32, color: Rgb) -> Self {
+        Self { intensity, radius, color, flicker: 0, darkens: false }
+    }
+
+    /// A darkness taking `intensity / 255` of the light at its own tile,
+    /// falling off to nothing at `radius` as a light does: at 255 its heart
+    /// is pitch black whatever shines on it.
+    pub const fn darkness(intensity: u8, radius: i32) -> Self {
+        Self { intensity, radius, color: Rgb::WHITE, flicker: 0, darkens: true }
+    }
+
+    /// The same light, flickering by `amount` when drawn.
+    pub const fn flickering(mut self, amount: u8) -> Self {
+        self.flicker = amount;
+        self
+    }
+
+    /// This glow shining from `origin`.
+    pub const fn at(self, origin: Point) -> Emitter {
+        Emitter { origin, glow: self }
+    }
+}
+
+/// A point source of light, or of darkness: a [`Glow`] at a cell.
+///
+/// Ordered by its origin and then its glow, which is the order
+/// [`LightField::cast_all`] casts in, so the order emitters were gathered
+/// in never reaches the field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Emitter {
+    /// Where it shines from.
+    pub origin: Point,
+    /// What it sheds.
+    pub glow: Glow,
+}
+
+impl Emitter {
+    /// The light this emitter lands on a tile `d` away, before shadows.
+    pub(crate) fn light_at(&self, d: i32) -> Light {
+        let g = &self.glow;
+        Light::new(falloff(g.intensity, g.radius, d), g.color).flickering(g.flicker)
+    }
+}
+
+/// Screen blend of two channels: `255 - (255 - a)(255 - b) / 255`.
+///
+/// Two lights are brighter than either and never exceed 255; `max` fails
+/// the first, saturating addition the second.
+#[inline]
+pub(crate) fn screen(a: u8, b: u8) -> u8 {
+    (255 - (((255 - a as u32) * (255 - b as u32)) / 255)) as u8
+}
+
+/// How lit a tile is, in the three steps gameplay reads.
+///
+/// Below the seen threshold a tile is dark and unseen; from there up to
+/// `bright` it is dim, seen but hard to hit and easy to hide in; at or
+/// above `bright` it is lit. Three steps rather than the intensity itself,
+/// because a rule a player can learn is a word on a panel, and a number
+/// that changes every step is not one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+pub enum LightBand {
+    /// Below the seen threshold.
+    Dark,
+    /// Seen, and short of bright.
+    Dim,
+    /// At or above bright.
+    Lit,
+}
+
+impl LightBand {
+    /// The band `intensity` falls in, with `threshold` the least that is
+    /// seen and `bright` the least that is lit. The one rule, so sight,
+    /// stealth and a to-hit roll cannot draw the lines differently.
+    pub fn of(intensity: u8, threshold: u8, bright: u8) -> LightBand {
+        if intensity < threshold {
+            LightBand::Dark
+        } else if intensity < bright {
+            LightBand::Dim
+        } else {
+            LightBand::Lit
+        }
+    }
+}
+
+/// Brightness of a source of `intensity` and `radius` at distance `d`:
+/// full within a third of the radius, then linear to exactly zero at the
+/// rim, so the lit edge has nothing to alias against.
+pub(crate) fn falloff(intensity: u8, radius: i32, d: i32) -> u8 {
+    if d < 0 || d > radius {
+        return 0;
+    }
+    let core = radius / 3;
+    if d <= core {
+        return intensity;
+    }
+    let span = (radius - core).max(1);
+    let remaining = radius - d;
+    ((intensity as i32 * remaining) / span) as u8
+}
+
+/// Rounded Euclidean distance, in whole tiles.
+fn distance(a: Point, b: Point) -> i32 {
+    let (dx, dy) = ((a.x - b.x) as i64, (a.y - b.y) as i64);
+    // Round rather than floor, so a tile just past a whole number of
+    // tiles counts as that number and the lit disc matches sight's.
+    let d2 = (dx * dx + dy * dy) as u64;
+    let root = d2.isqrt();
+    if (root + 1) * (root + 1) - d2 <= d2 - root * root { root as i32 + 1 } else { root as i32 }
+}
+
+/// Light over a window of tiles, and the darkness cast into it.
+///
+/// The two are kept apart until they are read, so a darkness cast before a
+/// light still takes its share of it, and a field is the same whatever
+/// order its sources came in.
+#[derive(Debug, Clone)]
+pub struct LightField {
+    cells: Grid<Light>,
+    /// The share of light each cell loses, out of 255.
+    shade: Grid<u8>,
+    /// Whether any darkness has been cast since the field was last cleared,
+    /// so a field with none skips applying it.
+    shaded: bool,
+}
+
+impl LightField {
+    /// A dark field of `width` by `height`.
+    pub fn new(width: i32, height: i32) -> Self {
+        Self { cells: Grid::filled(width, height, Light::DARK), shade: Grid::filled(width, height, 0), shaded: false }
+    }
+
+    /// Everything dark again, and no darkness cast.
+    pub fn clear(&mut self) {
+        self.cells.fill(Light::DARK);
+        if self.shaded {
+            self.shade.fill(0);
+            self.shaded = false;
+        }
+    }
+
+    /// The light at `p`, less what darkness takes; out of bounds is dark.
+    pub fn at(&self, p: Point) -> Light {
+        self.cells.checked_idx(p).map_or(Light::DARK, |idx| self.get_idx(idx))
+    }
+
+    /// The light at an in-bounds index, less what darkness takes.
+    pub(crate) fn get_idx(&self, idx: usize) -> Light {
+        let light = self.cells.cells()[idx];
+        if self.shaded { light.darkened(self.shade.cells()[idx]) } else { light }
+    }
+
+    /// The light each cell was given, row-major, before any darkness takes
+    /// its share: [`LightField::at`] is what a cell ends up with.
+    pub fn cells(&self) -> &[Light] {
+        self.cells.cells()
+    }
+
+    /// The share of light darkness takes from each cell, row-major, out of 255.
+    pub(crate) fn shade(&self) -> &[u8] {
+        self.shade.cells()
+    }
+
+    /// Adds `light` to `p`, screen-blended with what is there.
+    pub(crate) fn add(&mut self, p: Point, light: Light) {
+        if let Some(cell) = self.cells.get_mut(p) {
+            *cell = cell.screen(light);
+        }
+    }
+
+    /// Takes `shade / 255` of the light at `p` away, blended with any
+    /// darkness already there as two lights blend, so two half shades
+    /// leave a quarter of the light rather than none.
+    pub(crate) fn darken(&mut self, p: Point, shade: u8) {
+        if let Some(cell) = self.shade.get_mut(p) {
+            *cell = screen(*cell, shade);
+            self.shaded |= shade > 0;
+        }
+    }
+
+    /// Casts one emitter through `source`'s opacity into this field.
+    /// `scratch` is the caller's viewshed buffer, reused across casts;
+    /// it must match the field's shape.
+    pub(crate) fn cast(&mut self, source: &impl OpacitySource, emitter: &Emitter, scratch: &mut BitGrid) {
+        debug_assert_eq!((scratch.width(), scratch.height()), (self.width(), self.height()));
+        let glow = &emitter.glow;
+        if glow.intensity == 0 || !self.in_bounds(emitter.origin) {
+            return;
+        }
+        fov::compute(source, emitter.origin, glow.radius, scratch);
+        if glow.darkens {
+            for p in scratch.iter() {
+                self.darken(p, falloff(glow.intensity, glow.radius, distance(emitter.origin, p)));
+            }
+            return;
+        }
+        for p in scratch.iter() {
+            let light = emitter.light_at(distance(emitter.origin, p));
+            if light.intensity > 0 {
+                self.add(p, light);
+            }
+        }
+    }
+
+    /// Casts every emitter, in an order that does not depend on the order
+    /// given, so two runs over the same sources give the same field.
+    pub fn cast_all(&mut self, source: &impl OpacitySource, emitters: &mut [Emitter], scratch: &mut BitGrid) {
+        emitters.sort_unstable();
+        for e in emitters.iter() {
+            self.cast(source, e, scratch);
+        }
+    }
+
+    /// Lights every cell of `area` with `light` directly, no shadows: for
+    /// a lake of something glowing, where casting from every tile would
+    /// cost a shadowcast each for no visible difference.
+    #[cfg(test)]
+    pub(crate) fn flood(&mut self, area: Rect, light: Light) {
+        for p in area.cells() {
+            self.add(p, light);
+        }
+    }
+
+    /// Sets this field to `a` screened with `b` and then `ambient`, cell
+    /// by cell, less what the darkness cast into either takes. All three
+    /// fields must share a shape, and the result carries no darkness of its
+    /// own, since it is already applied.
+    ///
+    /// The darkness goes last so it takes from the ambient too: a pool of
+    /// it is dark on a sunlit surface as well as in a lit room.
+    pub fn compose(&mut self, a: &LightField, b: &LightField, ambient: Light) {
+        debug_assert_eq!((a.width(), a.height()), (self.width(), self.height()));
+        debug_assert_eq!((b.width(), b.height()), (self.width(), self.height()));
+        if self.shaded {
+            self.shade.fill(0);
+            self.shaded = false;
+        }
+        let lights = self.cells.cells_mut().iter_mut().zip(a.cells()).zip(b.cells());
+        if !(a.shaded || b.shaded) {
+            for ((out, x), y) in lights {
+                *out = x.screen(*y).screen(ambient);
+            }
+            return;
+        }
+        for ((((out, x), y), sa), sb) in lights.zip(a.shade()).zip(b.shade()) {
+            *out = x.screen(*y).screen(ambient).darkened(screen(*sa, *sb));
+        }
+    }
+}
+
+impl Grid2D for LightField {
+    fn width(&self) -> i32 {
+        self.cells.width()
+    }
+
+    fn height(&self) -> i32 {
+        self.cells.height()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::terrain::Terrain;
+    use crate::tile::TileRegistry;
+    use rand::seq::SliceRandom;
+    use rand::{Rng, SeedableRng, rngs::StdRng};
+
+    #[test]
+    fn falloff_is_full_in_the_core_and_exactly_zero_at_the_rim() {
+        assert_eq!(falloff(200, 9, 0), 200);
+        assert_eq!(falloff(200, 9, 3), 200);
+        assert!(falloff(200, 9, 4) < 200);
+        assert!(falloff(200, 9, 8) > 0);
+        assert_eq!(falloff(200, 9, 9), 0);
+        assert_eq!(falloff(200, 9, 10), 0);
+        assert_eq!(falloff(200, 0, 0), 200, "a radius of zero lights its own tile");
+        assert_eq!(falloff(200, 1, 1), 0);
+    }
+
+    #[test]
+    fn a_band_changes_exactly_at_the_threshold_and_at_bright() {
+        for (threshold, bright) in [(16u8, 64u8), (1, 2), (0, 255), (40, 40)] {
+            for intensity in 0..=255u8 {
+                let band = LightBand::of(intensity, threshold, bright);
+                let expected = if intensity < threshold {
+                    LightBand::Dark
+                } else if intensity < bright {
+                    LightBand::Dim
+                } else {
+                    LightBand::Lit
+                };
+                assert_eq!(band, expected, "intensity {intensity} with threshold {threshold} and bright {bright}");
+            }
+        }
+    }
+
+    #[test]
+    fn screen_is_commutative_and_bounded() {
+        for a in [0u8, 1, 100, 200, 255] {
+            for b in [0u8, 7, 128, 255] {
+                assert_eq!(screen(a, b), screen(b, a));
+                assert!(screen(a, b) >= a.max(b));
+            }
+        }
+        assert_eq!(screen(0, 0), 0);
+        assert_eq!(screen(255, 40), 255);
+        assert_eq!(screen(200, 200), 244);
+    }
+
+    #[test]
+    fn a_lights_colour_is_scaled_by_its_intensity() {
+        let l = Light::new(128, Rgb::new(255, 150, 40));
+        assert_eq!(l.intensity, 128);
+        assert_eq!(l.color, Rgb::new(128, 75, 20));
+        assert_eq!(Light::new(0, Rgb::WHITE), Light::DARK);
+    }
+
+    #[test]
+    fn two_colours_on_one_tile_blend_per_channel() {
+        let amber = Light::new(170, Rgb::new(255, 160, 50));
+        let blue = Light::new(110, Rgb::new(90, 170, 255));
+        let both = amber.screen(blue);
+        assert_eq!(both.color, Rgb::new(183, 149, 129));
+        assert!(both.color.r > amber.color.r && both.color.b > amber.color.b, "warmer and paler than either");
+        assert_eq!(both.intensity, screen(170, 110));
+    }
+
+    #[test]
+    fn waver_blends_exactly_at_both_ends() {
+        let steady = Light::white(200);
+        let flame = Light::white(200).flickering(255);
+        assert_eq!(flame.waver, 200);
+        let both = steady.screen(flame);
+        assert_eq!(both.intensity, screen(200, 200));
+        assert_eq!(both.intensity - both.waver, 200, "at its lowest the flame adds nothing to the steady light");
+        assert_eq!(steady.screen(steady).waver, 0);
+        assert_eq!(Light::DARK.screen(flame), flame);
+    }
+
+    #[test]
+    fn distance_rounds_to_whole_tiles() {
+        let o = Point::ZERO;
+        assert_eq!(distance(o, Point::new(3, 4)), 5);
+        assert_eq!(distance(o, Point::new(1, 1)), 1);
+        assert_eq!(distance(o, Point::new(2, 2)), 3);
+        assert_eq!(distance(o, Point::new(7, 0)), 7);
+    }
+
+    fn room(width: i32, height: i32) -> (Terrain, TileRegistry) {
+        let r = TileRegistry::standard();
+        let (wall, floor) = (r.expect("wall"), r.expect("floor"));
+        let t = Terrain::from_fn(width, height, |p| if p.x == 0 || p.y == 0 || p.x == width - 1 || p.y == height - 1 { wall } else { floor });
+        (t, r)
+    }
+
+    #[test]
+    fn a_wall_shadows_a_light_two_tiles_away() {
+        let (mut t, r) = room(20, 9);
+        let wall = r.expect("wall");
+        for y in 1..8 {
+            if y != 4 {
+                t.set(Point::new(10, y), wall);
+            }
+        }
+        // Wall at x=10 with a gap at y=4; light at (8,2) does not reach (12,2).
+        let mut field = LightField::new(20, 9);
+        let mut scratch = BitGrid::new(20, 9);
+        field.cast(&t.view(&r), &Glow::new(200, 8, Rgb::WHITE).at(Point::new(8, 2)), &mut scratch);
+        assert_eq!(field.at(Point::new(8, 2)).intensity, 200);
+        assert!(field.at(Point::new(9, 2)).intensity > 0);
+        assert_eq!(field.at(Point::new(12, 2)).intensity, 0, "behind the wall");
+        assert_eq!(field.at(Point::new(8, 2) + Point::new(8, 0)).intensity, 0, "the rim is dark");
+    }
+
+    #[test]
+    fn the_field_does_not_depend_on_emitter_order() {
+        let (t, r) = room(30, 20);
+        let view = t.view(&r);
+        let mut rng = StdRng::seed_from_u64(9);
+        let mut emitters: Vec<Emitter> = (0..12)
+            .map(|i| {
+                let glow = Glow { intensity: 120 + i as u8 * 10, radius: 6, color: Rgb::new(255, 150, 40), flicker: (i * 20) as u8, darkens: i % 3 == 0 };
+                glow.at(Point::new(2 + (i * 5) % 26, 2 + (i * 7) % 16))
+            })
+            .collect();
+        let mut scratch = BitGrid::new(30, 20);
+        let mut first = LightField::new(30, 20);
+        first.cast_all(&view, &mut emitters.clone(), &mut scratch);
+        for _ in 0..5 {
+            emitters.shuffle(&mut rng);
+            let mut again = LightField::new(30, 20);
+            again.cast_all(&view, &mut emitters.clone(), &mut scratch);
+            assert_eq!(first.cells(), again.cells());
+            assert_eq!(first.shade(), again.shade());
+        }
+    }
+
+    fn lamp(origin: Point, intensity: u8, radius: i32) -> Emitter {
+        Glow::new(intensity, radius, Rgb::new(255, 150, 40)).flickering(120).at(origin)
+    }
+
+    fn darkness(origin: Point, intensity: u8, radius: i32) -> Emitter {
+        Glow::darkness(intensity, radius).at(origin)
+    }
+
+    /// Every light over a span of shades: the darkness takes a share, the
+    /// same share of every channel, and never adds.
+    #[test]
+    fn a_darkened_light_is_never_brighter_in_any_channel_and_keeps_its_wavering_share() {
+        let mut rng = StdRng::seed_from_u64(27);
+        for _ in 0..2000 {
+            let color = Rgb::new(rng.random(), rng.random(), rng.random());
+            let light = Light::new(rng.random(), color).flickering(rng.random());
+            assert_eq!(light.darkened(0), light, "no shade, no change");
+            assert_eq!(light.darkened(255).intensity, 0, "a full shade leaves nothing");
+            let shade: u8 = rng.random();
+            let dark = light.darkened(shade);
+            assert!(dark.intensity <= light.intensity, "{light:?} under {shade}");
+            assert!(dark.color.r <= light.color.r && dark.color.g <= light.color.g && dark.color.b <= light.color.b, "{light:?} under {shade}");
+            assert!(dark.waver <= dark.intensity);
+            if dark.intensity > 0 && light.intensity > 0 {
+                assert!(
+                    dark.waver as u32 * light.intensity as u32 >= light.waver as u32 * dark.intensity as u32,
+                    "the wavering share holds: {light:?} under {shade}"
+                );
+            }
+        }
+        assert_eq!(Light::DARK.darkened(200), Light::DARK, "a share of nothing is nothing");
+    }
+
+    #[test]
+    fn a_darkness_lowers_the_light_it_reaches_and_nothing_else() {
+        let (mut t, r) = room(24, 9);
+        let wall = r.expect("wall");
+        for y in 1..8 {
+            t.set(Point::new(16, y), wall);
+        }
+        let view = t.view(&r);
+        let mut scratch = BitGrid::new(24, 9);
+        let mut lit = LightField::new(24, 9);
+        lit.cast(&view, &lamp(Point::new(10, 4), 220, 12), &mut scratch);
+        let mut shaded = lit.clone();
+        shaded.cast(&view, &darkness(Point::new(12, 4), 255, 4), &mut scratch);
+        for p in lit.bounds().cells() {
+            let (before, after) = (lit.at(p), shaded.at(p));
+            let d = distance(Point::new(12, 4), p);
+            if d < 4 && p.x < 16 {
+                assert!(after.intensity < before.intensity || before.intensity == 0, "{p:?} is in the pool");
+            } else {
+                assert_eq!(after, before, "{p:?} is beyond the pool's rim or behind the wall");
+            }
+            assert!(after.intensity <= before.intensity);
+        }
+        assert_eq!(shaded.at(Point::new(12, 4)).intensity, 0, "true darkness at its heart");
+        // A darkness where no light falls leaves the dark exactly as it was.
+        let mut dark = LightField::new(24, 9);
+        dark.cast(&view, &darkness(Point::new(12, 4), 255, 6), &mut scratch);
+        assert!(dark.bounds().cells().all(|p| dark.at(p) == Light::DARK));
+    }
+
+    #[test]
+    fn a_darkness_takes_the_same_from_a_light_cast_before_it_or_after_it() {
+        let (t, r) = room(20, 9);
+        let view = t.view(&r);
+        let mut scratch = BitGrid::new(20, 9);
+        let (light, dark) = (lamp(Point::new(8, 4), 200, 8), darkness(Point::new(10, 4), 180, 5));
+        let mut first = LightField::new(20, 9);
+        first.cast(&view, &dark, &mut scratch);
+        first.cast(&view, &light, &mut scratch);
+        let mut second = LightField::new(20, 9);
+        second.cast(&view, &light, &mut scratch);
+        second.cast(&view, &dark, &mut scratch);
+        assert!(first.bounds().cells().all(|p| first.at(p) == second.at(p)));
+        first.clear();
+        assert!(first.shade().iter().all(|s| *s == 0) && first.bounds().cells().all(|p| first.at(p) == Light::DARK), "cleared of both");
+    }
+
+    #[test]
+    fn two_half_darknesses_leave_a_quarter_and_compose_applies_both_layers_after_the_ambient() {
+        let mut statics = LightField::new(3, 1);
+        statics.add(Point::new(0, 0), Light::white(200));
+        statics.darken(Point::new(0, 0), 128);
+        statics.darken(Point::new(1, 0), 128);
+        let mut dynamics = LightField::new(3, 1);
+        dynamics.darken(Point::new(0, 0), 128);
+        let mut out = LightField::new(3, 1);
+        let ambient = Light::white(40);
+        out.compose(&statics, &dynamics, ambient);
+        let half = |v: u8| (v as u32 * 127 / 255) as u8;
+        assert_eq!(out.at(Point::new(0, 0)).intensity, (screen(200, 40) as u32 * 63 / 255) as u8, "a quarter of the lamp and the ambient");
+        assert_eq!(out.at(Point::new(1, 0)).intensity, half(40), "the ambient is darkened too");
+        assert_eq!(out.at(Point::new(2, 0)), ambient, "untouched");
+        assert!(out.shade().iter().all(|s| *s == 0), "the composed field carries the darkness applied, not pending");
+    }
+
+    #[test]
+    fn compose_screens_the_layers_then_the_ambient() {
+        let a = {
+            let mut f = LightField::new(3, 1);
+            f.add(Point::new(0, 0), Light::white(100));
+            f
+        };
+        let b = {
+            let mut f = LightField::new(3, 1);
+            f.add(Point::new(0, 0), Light::white(100));
+            f.add(Point::new(1, 0), Light::white(255));
+            f
+        };
+        let mut out = LightField::new(3, 1);
+        out.compose(&a, &b, Light::white(20));
+        assert_eq!(out.at(Point::new(0, 0)).intensity, screen(screen(100, 100), 20));
+        assert_eq!(out.at(Point::new(1, 0)).intensity, 255);
+        assert_eq!(out.at(Point::new(2, 0)).intensity, 20);
+        out.flood(Rect::new(0, 0, 3, 1), Light::white(255));
+        assert_eq!(out.at(Point::new(2, 0)).intensity, 255);
+    }
+}

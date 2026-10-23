@@ -3,7 +3,7 @@
 //! one writing it, is either ordered or allowed here with its reason.
 //!
 //! The check is the engine's,
-//! [`rl_bevy::testing::ambiguity`](rl_engine::rl_bevy::testing::ambiguity),
+//! [`atglyph::ecs::testing::ambiguity`](atglyph::ecs::testing::ambiguity),
 //! and Undermere's systems are whatever
 //! [`UndermerePlugin`](crate::plugin::UndermerePlugin) adds beyond the
 //! engine's plugins it plays with, so one added later is covered without
@@ -15,13 +15,13 @@
 
 use std::any::TypeId;
 
+use atglyph::ecs::minds::Thinking;
+use atglyph::ecs::plugin::TurnSet;
+use atglyph::ecs::testing::ambiguity::{self, Allowed, system_type as id};
+use atglyph::ecs::turn::{Acting, ActionDone, ActionRefused};
+use atglyph::primitives::RunSeed;
 use bevy::ecs::component::ComponentId;
 use bevy::prelude::*;
-use rl_engine::rl_bevy::minds::Thinking;
-use rl_engine::rl_bevy::plugin::TurnSet;
-use rl_engine::rl_bevy::testing::ambiguity::{self, Allowed, system_type as id};
-use rl_engine::rl_bevy::turn::{Acting, ActionDone, ActionRefused};
-use rl_engine::rl_core::RunSeed;
 
 /// A name for each system the allowances below name, for a failure to
 /// read by.

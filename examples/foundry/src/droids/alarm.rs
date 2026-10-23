@@ -26,19 +26,19 @@
 //! Nothing about the alarm is a `DarkSight` matter: a line droid with no
 //! radar at all still hears a probe's klaxon, since hearing is not seeing.
 
+use atglyph::ecs::{Thinking, WorkBegan, WorkDone, WorkKinds};
+use atglyph::prelude::*;
+use atglyph::rules::ability::Look;
+use atglyph::rules::ai::{Decision, Tactic, TacticCtx};
+use atglyph::rules::work::{Work, WorkKindId};
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_bevy::{Thinking, WorkBegan, WorkDone, WorkKinds};
-use rl_engine::rl_rules::ability::Look;
-use rl_engine::rl_rules::ai::{Decision, Tactic, TacticCtx};
-use rl_engine::rl_rules::work::{Work, WorkKindId};
 
 /// The kind of work a probe does before its alarm sounds, by the word its
 /// row shows.
 pub const SIGNALLING: &str = "signalling";
 
 /// The name the alarm's sound is declared under, with
-/// [`AddSound::add_sound`](rl_engine::rl_bevy::AddSound) in
+/// [`AddSound::add_sound`](atglyph::ecs::AddSound) in
 /// [`FoundryPlugin`](crate::plugin::FoundryPlugin).
 pub const ALARM_SOUND: &str = "alarm";
 
@@ -50,7 +50,7 @@ pub const ALARM_LOUDNESS: i32 = 80;
 /// What a shout looks like: a burst of red on the probe's own cell. A
 /// burst is drawn in its look's colour alone, so the glyph is never shown
 /// and says only what the pulse is.
-pub const PULSE: Look = Look { glyph: '!', color: rl_engine::rl_grid::Rgb::new(255, 51, 38) };
+pub const PULSE: Look = Look { glyph: '!', color: atglyph::grid::Rgb::new(255, 51, 38) };
 
 // ANCHOR: noise_rules
 /// How loud the engine's own actions are on a deck. A blow or a shot
@@ -65,7 +65,7 @@ pub const NOISE: NoiseRules = NoiseRules { step: 0, strike: 10, door: 0, landing
 /// commando is it signals for `signal` of its own turns, and then shouts
 /// for as long as it still knows, through [`shout_alarm`].
 ///
-/// Its own component rather than a field on [`Notice`](rl_engine::rl_bevy::prelude::Notice),
+/// Its own component rather than a field on [`Notice`](atglyph::ecs::prelude::Notice),
 /// since most of a deck's droids never carry it: only the probe's radar
 /// reports back.
 #[derive(Component, Debug, Clone, Copy)]
@@ -201,9 +201,9 @@ pub fn shout_alarm(
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_bevy::testing::KeyScriptPlugin;
-    use rl_engine::rl_core::{Point, Rect, RunSeed};
-    use rl_engine::rl_render::{MapViewPlugin, Particles, ParticlesPlugin, Terminal};
+    use atglyph::ecs::testing::KeyScriptPlugin;
+    use atglyph::primitives::{Point, Rect, RunSeed};
+    use atglyph::render::{MapViewPlugin, Particles, ParticlesPlugin, Terminal};
 
     use super::*;
 
@@ -227,7 +227,7 @@ mod tests {
     /// Real damage, through combat, so a hit is a hit and a death a death.
     fn strike(app: &mut App, target: Entity, amount: i32) {
         let kinetic = app.world().resource::<Registries>().damage_kinds.expect("kinetic");
-        app.world_mut().write_message(DamageEvent::new(target, rl_engine::rl_rules::Hit::from_source(None, kinetic, amount)));
+        app.world_mut().write_message(DamageEvent::new(target, atglyph::rules::Hit::from_source(None, kinetic, amount)));
     }
 
     fn shouts(app: &App, probe: Entity) -> usize {
@@ -392,7 +392,7 @@ mod tests {
             let (probe, me) = crate::testing::droid_down_a_lane(&mut app, "probe droid", from, 8);
             crate::testing::alert(&mut app, probe, me);
             crate::testing::pass_turns(&mut app, 6);
-            let gap = rl_engine::rl_core::geometry::chebyshev(at(&app, probe), at(&app, me));
+            let gap = atglyph::primitives::geometry::chebyshev(at(&app, probe), at(&app, me));
             assert!((3..=5).contains(&gap), "{why}, it came to rest {gap} off");
         }
     }
@@ -410,7 +410,7 @@ mod tests {
         (0..turns)
             .map(|_| {
                 crate::testing::pass_turns(&mut app, 1);
-                rl_engine::rl_core::geometry::chebyshev(at(&app, probe), at(&app, me))
+                atglyph::primitives::geometry::chebyshev(at(&app, probe), at(&app, me))
             })
             .collect()
     }
@@ -455,7 +455,7 @@ mod tests {
         assert!(held && app.world().resource::<Particles>().is_holding(), "the pulse holds the turns");
         let last = app.world().resource::<crate::testing::Alarms>().cues.last().cloned();
         assert!(matches!(last, Some(Cued { actor, cue: Cue::Burst { look: LookOf::Given(PULSE), .. } }) if actor == probe), "on the probe's pulse: {last:?}");
-        app.world_mut().resource_mut::<rl_engine::rl_bevy::testing::KeyScript>().press(KeyCode::F12);
+        app.world_mut().resource_mut::<atglyph::ecs::testing::KeyScript>().press(KeyCode::F12);
         app.update();
         assert!(!app.world().resource::<TurnHold>().is_held(), "the key let the turns go");
         assert!(app.world().get::<MyTurn>(me).is_some(), "and the commando holds its turn");

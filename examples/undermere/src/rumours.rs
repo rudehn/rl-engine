@@ -21,9 +21,9 @@
 
 use std::iter::once;
 
+use atglyph::prelude::*;
+use atglyph::primitives::RunSeed;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_core::RunSeed;
 use serde::Deserialize;
 
 use crate::dungeon::{FINAL_BOSSES, MINI_BOSSES, STRATA, biomes_drawn, final_boss, lairs};

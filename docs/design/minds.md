@@ -5,13 +5,13 @@ Section 3 describes the subsystem as it stands; sections 2 and 4 are its history
 
 ## 1. What a mind is
 
-A `Mind` is a shared `Brain`, a priority list of `Tactic`s from `rl-rules`.
+A `Mind` is a shared `Brain`, a priority list of `Tactic`s from `atglyph-rules`.
 On its turn the engine builds a `Snapshot`, the world from that actor's point of view, hands it to the brain with a `TacticCtx`, and turns the `Decision` that comes back into the intent of the action that answers it.
-`rl-rules` decides and never acts; `rl-bevy` perceives and acts and never decides.
+`atglyph-rules` decides and never acts; `atglyph-bevy` perceives and acts and never decides.
 
 ## 2. What was wrong
 
-`decide_minds` in `crates/rl-bevy/src/minds.rs` was one system of two hundred lines that knew about combat, items, throwing, abilities, lighting, stealth and fire.
+`decide_minds` in `crates/atglyph-bevy/src/minds.rs` was one system of two hundred lines that knew about combat, items, throwing, abilities, lighting, stealth and fire.
 Every new subsystem edited it, and a game had no way to put its own knowledge in front of its own tactic.
 
 - Every actor needed `Health` and `Faction` to be perceived at all, so a civilian was invisible to every mind and a game with no combat could not field one.
@@ -60,10 +60,10 @@ Typed and open, with no id to collide.
 
 ### 3.3 A typed choice, routed once
 
-`Decision::Own(Box<dyn Choice>)` replaces `Decision::Game(u32)`, with `Choice: Any + Send + Sync + Debug` and a `name` for the trace, in `rl-rules`.
+`Decision::Own(Box<dyn Choice>)` replaces `Decision::Game(u32)`, with `Choice: Any + Send + Sync + Debug` and a `name` for the trace, in `atglyph-rules`.
 `Decision` keeps `PartialEq`, by hand, comparing an `Own` by its name.
 
-The routing is written once, in `rl-bevy`: `app.add_choice::<A: Action + Choice + Clone>()` registers the action, its sweeper, and a system in `DecideSet::Game` that turns a `MindChose` carrying an `A` into an `Intent<A>`.
+The routing is written once, in `atglyph-bevy`: `app.add_choice::<A: Action + Choice + Clone>()` registers the action, its sweeper, and a system in `DecideSet::Game` that turns a `MindChose` carrying an `A` into an `Intent<A>`.
 A game writes the same code tutorial chapter 9 already teaches for a player action, plus one line, and a choice nobody routed is refused rather than lost.
 
 Declined: `Brain<A, C>` with the choice as a type parameter would be fully static, but every game with no choices of its own would write `MindsPlugin::<()>`, and the common case should not pay for the rare one.
@@ -129,7 +129,7 @@ Three slices landed on the seams section 3 opened, each a tactic or a perceive c
 - **Following a leader.** `Keep` gained a third roster, `Station::Leader`, beside the allies and enemies section 3.5 already kept station on.
   The leader is not in the brain, since brains are shared and a leader is not: it lives on the follower as `Leader(Entity)`, and the new `sense_leaders`, chained with `sense_posts` in `PerceiveSet::Annotate`, pushes where it stands as `Led { at, in_sight }`, seen or not, so a follower that loses sight of its chief at a corner does not lose it from its snapshot too.
   While the leader is dead, elsewhere or gone, `Keep::leader` keeps with the follower's allies instead, the way `Keep::allies` always has, so a band that loses its chief still holds together.
-  `rl-save` maps the follower's `Leader` across a continued run through the entity map, the same device every saved relationship between two actors uses.
+  `atglyph-save` maps the follower's `Leader` across a continued run through the entity map, the same device every saved relationship between two actors uses.
 - **Weighing a self-aimed ability.** `UseAbility` cast any ability aimed only at its own caster whenever a foe was in sight, a necromancer blinking with nowhere to go and a healer mending itself whole.
   The new `Effect::would_act(landing, world)`, read by `AbilitiesPlugin`'s `weigh_self_abilities` in `DecideSet::Perceive` after `PerceiveSet::Annotate`, asks each self-aimed ability's effects whether its landing, built on the caster's own cell exactly as the resolver would land it, would act on anything; `Snapshot::usable` keeps only the ones that would, or any with no effects to ask, since a game answers those itself.
   The question is asked of the landing's targets rather than its cells, since a self-aimed shape that flies, a teleport among them, covers no cells of its own in the landing the resolver lands; asking the cells first read a blink as never mending and never worth keeping.
@@ -141,7 +141,7 @@ None of the three touches `decide_minds`, `TacticCtx` or the sort at the head of
 Until 2026-10-14 each game spawned its monsters by hand: Undermere's `spawn_monster` and Foundry's put the same health, armor, side, sight, speed, mind, wits, notice, hearing, attacks and drops on an actor in two hand-written bundles, and each saved a monster as its definition's name and spawned it again from that name, and each read its spawn table row by row.
 Items had just stopped doing the same thing (`docs/design/items.md`, section 6a), and the reasoning carries over whole: what is shared is the shape of what the engine already simulates, never a schema, and the defaults are the game's.
 
-`rl_bevy::ActorParts<I>` is every part of one kind of actor, the actor's `ItemParts`, and a game fills one per definition at load from its own fields.
+`atglyph_bevy::ActorParts<I>` is every part of one kind of actor, the actor's `ItemParts`, and a game fills one per definition at load from its own fields.
 Each field maps onto a component the engine already plays, `hp` onto `Health`, `wits` onto `Intelligence`, `notice` onto `Notice`, `statuses` onto what `Afflicted` holds for life, `leaves_remains` onto `LeavesRemains`, `drops` onto `Drops<I>`, or onto a tactic the brain is built with, `flee_at` and `keep_away`.
 Every field is optional and absent means no mechanic: no notice is a mind that never notices what tries not to be seen, no remains is a death that leaves nothing, no hearing is deaf.
 A number written is inserted as written, so a game that writes no armor has no `Armor` and one that writes `Some(0)` has `Armor(0)`; the engine never decides that a nought is the same as nothing.
@@ -157,16 +157,16 @@ A kind whose wits take things up gets a pack, slots and the worth of its own blo
 Foundry's resist profile, its alarm, its repairs and its radar are Foundry's, and its radar is why `dark_sight` is a part Foundry leaves empty: `NativeDarkSight` is folded with what a droid wears and whether it is jammed before anything reads `DarkSight`.
 A shot, a blow, a light and the span a kind keeps from its enemies are parts both games type their fields with, Foundry's `keep_away` among them, and where in a brain a game keeps that span is its own, Foundry's in place of the hunt and beside `Hover`.
 
-A monster is saved the way an item is (`docs/design/items.md`, section 7a): `rl_save::SaveableActor`, registered with `save_actors`, writes which definition it is by its maker's `name_of` and the game's own extra beside it, and restores it through `ActorMaker::make_at`, nowhere and with nothing rolled, before the extra goes back on, since what a game keeps is a change to what it was made as: a side it was turned to, a mind it was given, a look a wreck lost.
+A monster is saved the way an item is (`docs/design/items.md`, section 7a): `atglyph_save::SaveableActor`, registered with `save_actors`, writes which definition it is by its maker's `name_of` and the game's own extra beside it, and restores it through `ActorMaker::make_at`, nowhere and with nothing rolled, before the extra goes back on, since what a game keeps is a change to what it was made as: a side it was turned to, a mind it was given, a look a wreck lost.
 `ActorMaker::make` calls `make_at` unless a game rolls something on a monster, so a game that rolls nothing writes one function.
 
-Where each kind turns up is one file shape in both games, read by `rl_rules::load_spawns`: `(monster, bands: (first, last), weight, group: (fewest, most))`, `group` optional, into the `BandedTable` a population and a prefab's role draw from.
+Where each kind turns up is one file shape in both games, read by `atglyph_rules::load_spawns`: `(monster, bands: (first, last), weight, group: (fewest, most))`, `group` optional, into the `BandedTable` a population and a prefab's role draw from.
 The band's name is the engine's, `bands` as the item spawn file's is, since a floor and a deck are both a band a maker answers for.
 
 ## 9. The standard chain
 
 Every game with monsters wrote one brain by hand, and wrote it the same way: run when hurt, keep a span, reach for an ability, strike, shoot, throw, fetch, hunt, search, walk back to a post and drift, each step guarded by whether the kind can.
-`rl_rules::ai::Standard` is that chain, in Undermere's order, the one the user chose as the default, and only the engine's own tactics are in it.
+`atglyph_rules::ai::Standard` is that chain, in Undermere's order, the one the user chose as the default, and only the engine's own tactics are in it.
 
 A game writes its chain once as a constant: which steps it holds, a `bool` for each step that needs no number, and every number a step does need, the chance of reaching for an ability, of throwing and of a wanderer's step, and how far a scavenger goes, as an `Option`.
 `Standard::NONE` holds nothing and the engine has no number of its own for any step, so a step whose number a game never gave is not in its chain, and which of `Hunt`, `SearchLastKnown`, `KeepPost` and `Wander` close the chain is the game's to say: the tutorial's rats neither search nor keep a post.

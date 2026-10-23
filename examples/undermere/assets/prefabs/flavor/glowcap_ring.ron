@@ -1,5 +1,5 @@
 // A prefab: a piece of a place, drawn as rows of glyphs, and what each glyph
-// stands for. The pool stamps it inside an area through `rl_mapgen::StampPicks`;
+// stands for. The pool stamps it inside an area through `atglyph::mapgen::StampPicks`;
 // the engine fills its slots on the arrival that built the place.
 //
 // Every field:

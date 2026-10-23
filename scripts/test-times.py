@@ -34,7 +34,7 @@ over the cores. So:
 `scripts/gate.sh --all` runs with `--profile full`; `--check fast` for the
 whole workspace's fast tier; `--check undermere` for Undermere's fast tier
 alone, which is what a gate on an Undermere branch runs; and `--check
-tests` holds any other run to the per-test numbers only. Under RL_FULL_SEEDS every seed is played, so only
+tests` holds any other run to the per-test numbers only. Under ATGLYPH_FULL_SEEDS every seed is played, so only
 the report is given. `--profile ci` reads CI's run against CI's own
 numbers: the runner is another machine and CI plays every seed, so there
 the check only ever warns. AGENTS.md, "Writing fast tests", says what to do
@@ -138,9 +138,9 @@ def keep(run, packages, have_cpu, profile):
             return
         when = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         branch, commit = git("rev-parse", "--abbrev-ref", "HEAD"), git("rev-parse", "--short", "HEAD")
-        # A run under RL_FULL_SEEDS plays every seed, so it is not the
+        # A run under ATGLYPH_FULL_SEEDS plays every seed, so it is not the
         # everyday run of its profile and is not compared with one.
-        if os.environ.get("RL_FULL_SEEDS"):
+        if os.environ.get("ATGLYPH_FULL_SEEDS"):
             profile += "+full-seeds"
         lines = [
             f"{when}\t{branch}\t{commit}\t{profile}\t{package}\t{count}\t{f'{c:.2f}' if have_cpu else ''}\t{w:.2f}\t{run or ''}\n"
@@ -196,9 +196,9 @@ def main():
     if not args.check:
         return
     ci = args.profile == "ci"
-    full = bool(os.environ.get("RL_FULL_SEEDS")) and not ci
+    full = bool(os.environ.get("ATGLYPH_FULL_SEEDS")) and not ci
     if full:
-        print("test-times: RL_FULL_SEEDS plays every seed, so the everyday budget is not checked")
+        print("test-times: ATGLYPH_FULL_SEEDS plays every seed, so the everyday budget is not checked")
         return
     budget = (CI_BUDGETS if ci else BUDGETS).get(args.check)
     warn = (lambda text: print(f"::warning::{text}")) if ci else (lambda text: print(f"test-times: warning: {text}"))

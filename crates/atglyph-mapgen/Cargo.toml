@@ -1,0 +1,24 @@
+[package]
+name = "atglyph-mapgen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "atglyph tier 1: procedural map generation as a chain of seeded passes, with rooms, BSP, cellular caves and prefabs. No Bevy."
+homepage.workspace = true
+keywords = ["roguelike", "procgen", "dungeon", "map-generation", "cellular-automata"]
+categories = ["game-development", "algorithms"]
+
+[package.metadata.atglyph]
+# Read by scripts/check-tiers.sh: 0 core, 1 no Bevy, 2 the Bevy layer, 3 the facade and games.
+tier = 1
+
+[dependencies]
+atglyph-core.workspace = true
+atglyph-grid.workspace = true
+rand = { workspace = true, features = ["std", "std_rng"] }
+serde.workspace = true
+
+[dev-dependencies]
+ron.workspace = true

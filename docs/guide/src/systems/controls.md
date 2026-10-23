@@ -1,17 +1,17 @@
 <!-- documents:
      plugins: ControlsPanel, GameMenuPanel, KeyScriptPlugin, ReplayPlugin
-     files: crates/rl-ui/src/lib.rs
-            crates/rl-ui/src/controls.rs
-            crates/rl-ui/src/keys.rs
-            crates/rl-ui/src/modal.rs
-            crates/rl-ui/src/cursor.rs
-            crates/rl-ui/src/panel/controls.rs
-            crates/rl-ui/src/game_menu.rs
-            crates/rl-ui/src/interact.rs
-            crates/rl-ui/src/replay.rs
-            crates/rl-bevy/src/replay.rs
-            crates/rl-bevy/src/seed.rs
-            crates/rl-bevy/src/testing.rs
+     files: crates/atglyph-ui/src/lib.rs
+            crates/atglyph-ui/src/controls.rs
+            crates/atglyph-ui/src/keys.rs
+            crates/atglyph-ui/src/modal.rs
+            crates/atglyph-ui/src/cursor.rs
+            crates/atglyph-ui/src/panel/controls.rs
+            crates/atglyph-ui/src/game_menu.rs
+            crates/atglyph-ui/src/interact.rs
+            crates/atglyph-ui/src/replay.rs
+            crates/atglyph-bevy/src/replay.rs
+            crates/atglyph-bevy/src/seed.rs
+            crates/atglyph-bevy/src/testing.rs
      fingerprint: 7d4654d1 -->
 
 # Controls, modals and cursors
@@ -32,8 +32,8 @@ Its `finish` declares `depends_on::<UiPlugin>` and adds its own control last, so
 Its keys run before `EngineSet::Input` and outside the engine's sets, because those sets stop once the run is over and the menu is the screen the run ends on; `OnEnter(EngineState::Over)` is where it opens itself, with no way back into the run.
 It adds the view that screen's words are drawn from behind it, the way any presenter adds its own, so a game has somewhere to push what it wants the ending to say; [Saving and the ending screen](saving.md) is the page for that.
 The interact key is `UiPlugin`'s in a game with props: its `finish` adds it when `PropsPlugin` was added, whichever came first, and declares it under the screens heading, so a game with no props has no such key.
-`ReplayPlugin` adds a recorder when it is given a path and a player when it is given a recording, and `ReplayPlugin::from_env` reads `RL_RECORD` and `RL_REPLAY` for both.
-`KeyScriptPlugin` is a test's keyboard and lives in `rl-bevy`: it presses in `PreUpdate` after Bevy's input has been cleared, and adds Bevy's `InputPlugin` if the app has none.
+`ReplayPlugin` adds a recorder when it is given a path and a player when it is given a recording, and `ReplayPlugin::from_env` reads `ATGLYPH_RECORD` and `ATGLYPH_REPLAY` for both.
+`KeyScriptPlugin` is a test's keyboard and lives in `atglyph-bevy`: it presses in `PreUpdate` after Bevy's input has been cleared, and adds Bevy's `InputPlugin` if the app has none.
 
 ## The model
 
@@ -131,8 +131,8 @@ The frame a screen closed on still counts as a frame with a screen up, which is 
 What is recorded is what the game reads, after the repeat has been turned into presses, each key stamped with the turn clock it was read at, so nothing in the file depends on how fast the frames came.
 A replay never presses while the turns are held for something to be seen, because a key then would skip it and what it skipped decides which clock the next key is read at.
 A recording whose clock the game has already passed is a run that drifted, and the replay stops and says which key it reached rather than pressing on into a world that is not the one recorded; that is determinism reporting itself, not enforcing itself.
-The half the plugin does not do is the seed: it presses keys and nothing else, so a game that sets `RL_REPLAY` and leaves its own seed alone replays a recorded run against a fresh world and drifts on the first key.
-Restoring it is the game's, because the seed is inserted before play begins and the plugin has no say in when that happens: `rl_bevy::replay::seed` answers with the recording's seed while one is being played, which is what Foundry and Undermere insert, and `Seed::from_args` is the one line that wraps it, asking the replay first and falling back to a `--seed` argument or a fresh seed.
+The half the plugin does not do is the seed: it presses keys and nothing else, so a game that sets `ATGLYPH_REPLAY` and leaves its own seed alone replays a recorded run against a fresh world and drifts on the first key.
+Restoring it is the game's, because the seed is inserted before play begins and the plugin has no say in when that happens: `atglyph::ecs::replay::seed` answers with the recording's seed while one is being played, which is what Foundry and Undermere insert, and `Seed::from_args` is the one line that wraps it, asking the replay first and falling back to a `--seed` argument or a fresh seed.
 `KeyScriptPlugin` is the same idea at the other end: a key pressed on `ButtonInput` from outside the schedule is wiped before any system sees it, so a test that wants to press one needs a plugin, and a test's keys then run the same path a player's do.
 What the engine does not get is a rebinding screen or text entry, because those belong to an application rather than to a roguelike, and nothing here reads a click: what one means is the game's.
 
@@ -141,6 +141,6 @@ What the engine does not get is a rebinding screen or text entry, because those 
 All of it is tier 2, because a `ModalId` gates systems and a control is read out of a Bevy resource, and none of it has arithmetic worth pulling down a tier.
 The split that matters is the one inside the crate: the registry, the stack and the cursor reading are each a module with no panel in them, so a game that draws its own controls screen or its own menu still declares its keys once and still gates on the same stack.
 `steer` is a free function over a point, a focus, a frame's keys and a bounds, which is why a cursor's behaviour at the edge of a map is a test rather than a playthrough.
-The recording's file lives in `rl-bevy` and the plugin that writes and reads it in `rl-ui`, because the file is a seed and a list of keys and the plugin is the one thing that knows what a held key means.
-That split is also what lets a game ask `rl_bevy::replay::seed` and `rl_bevy::replay::args` before there is an app, and so start a replay on the seed and the flags it was recorded with.
-`KeyScriptPlugin` is in `rl-bevy` rather than beside the tests that use it, because the engine's crates and a game's tests want the same keyboard and nine copies of one was how it started.
+The recording's file lives in `atglyph-bevy` and the plugin that writes and reads it in `atglyph-ui`, because the file is a seed and a list of keys and the plugin is the one thing that knows what a held key means.
+That split is also what lets a game ask `atglyph::ecs::replay::seed` and `atglyph::ecs::replay::args` before there is an app, and so start a replay on the seed and the flags it was recorded with.
+`KeyScriptPlugin` is in `atglyph-bevy` rather than beside the tests that use it, because the engine's crates and a game's tests want the same keyboard and nine copies of one was how it started.

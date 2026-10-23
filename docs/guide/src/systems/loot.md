@@ -1,9 +1,9 @@
 <!-- documents:
      plugins: LootPlugin
-     files: crates/rl-rules/src/loot.rs
-            crates/rl-rules/src/prop.rs
-            crates/rl-bevy/src/loot.rs
-            crates/rl-bevy/src/props.rs
+     files: crates/atglyph-rules/src/loot.rs
+            crates/atglyph-rules/src/prop.rs
+            crates/atglyph-bevy/src/loot.rs
+            crates/atglyph-bevy/src/props.rs
      fingerprint: 99e5ed39 -->
 
 # Loot
@@ -115,5 +115,5 @@ A band is the game's number and nothing else: a deck, a distance from home, a fl
 
 ## Where it lives
 
-`rl-rules` holds the tables, the planning and the loader, all generic over the game's item id and tested with no `App`: that the order rows are written in draws nothing, that a deeper request never draws from a shallower band than a shallower request would, and that a scatter never puts two things on one cell or one on a mark.
-`rl-bevy` holds the plugin, which is only when, where and which stream, over a trait a game implements on a resource it already had.
+`atglyph-rules` holds the tables, the planning and the loader, all generic over the game's item id and tested with no `App`: that the order rows are written in draws nothing, that a deeper request never draws from a shallower band than a shallower request would, and that a scatter never puts two things on one cell or one on a mark.
+`atglyph-bevy` holds the plugin, which is only when, where and which stream, over a trait a game implements on a resource it already had.

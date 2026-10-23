@@ -9,10 +9,10 @@
 //! of a floor is the engine's [`Knowledge`], the cells they have seen,
 //! which the map draws as remembered; magic mapping marks the rest.
 
+use atglyph::prelude::*;
+use atglyph::rules::GasId;
+use atglyph::rules::ability::{RawValue, read_args};
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_rules::GasId;
-use rl_engine::rl_rules::ability::{RawValue, read_args};
 
 use crate::content::{DARKNESS, SHROUDED};
 

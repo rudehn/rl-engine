@@ -88,15 +88,15 @@ Ambient is data the game writes, not a rule the engine runs: a constant for a de
 
 ## 3. Where each piece lives
 
-### rl-grid: `light.rs` (tier 1, no Bevy)
+### atglyph-grid: `light.rs` (tier 1, no Bevy)
 
 - `Light`, `Rgb`, `Emitter`, `falloff`, `screen`.
 - `LightField`: a `Grid<Light>` over the window with `clear`, `at`, `cast(&impl OpacitySource, &Emitter, scratch: &mut BitGrid)`, `flood(rect, light)` for contiguous hazards that must not shadowcast one by one, and `compose(&statics, &dynamics, ambient) -> &mut self`.
 - Nothing allocates per cast: the scratch `BitGrid` and the field are owned by the caller and reused.
-- A criterion bench at 20 sources on the realistic maps, alongside the FOV benches: `light/20_sources_radius_8` in `crates/rl-grid/benches/grid.rs`.
+- A criterion bench at 20 sources on the realistic maps, alongside the FOV benches: `light/20_sources_radius_8` in `crates/atglyph-grid/benches/grid.rs`.
   Measured 2026-09-15 on an M1: 70 µs to cast twenty sources of radius 8 over a 96x64 cave, and 52 µs to compose the statics, the dynamics and the ambient over the same field, so a frame that recasts everything spends an eighth of a millisecond on light.
 
-### rl-bevy: `lighting.rs` (tier 2)
+### atglyph-bevy: `lighting.rs` (tier 2)
 
 - `LightSource { intensity, radius, color }`, a component on anything with a `Position`.
   A game toggles a light by inserting or removing the component.
@@ -120,7 +120,7 @@ Ambient is data the game writes, not a rule the engine runs: a constant for a de
   3. `compose_light` with the map's ambient.
 - Static dirtying is by change detection, not by hand: `Added`/`Changed<Position>` and `RemovedComponents<LightSource>` on non-actors, `MapChanged`, and the opacity epoch below.
 
-### rl-bevy: the opacity epoch
+### atglyph-bevy: the opacity epoch
 
 `WorldMap::set_tile` records the edit but dirties nothing.
 A door opened by a future action would not refresh anyone's view until they moved.
@@ -128,7 +128,7 @@ A door opened by a future action would not refresh anyone's view until they move
 Viewsheds and the static layer both watch that epoch.
 This closes a gap that exists today, lighting or not, and lands in phase B regardless.
 
-### rl-bevy: the gate
+### atglyph-bevy: the gate
 
 `Viewshed` gains a second bitset: `line` is the geometric shadowcast, `visible` is what is actually seen.
 With no `Lighting` resource the two are the same buffer and nothing changes.
@@ -138,7 +138,7 @@ With one, `visible = line ∩ (lit ≥ threshold ∪ within DarkSight ∪ adjace
 Every mind carries a `Viewshed` of its own, cast and gated by the same code as the player's, so a monster sees what is lit, what is within its dark sight, and what is adjacent, and nothing else.
 That is what makes a dark-sighted hunter dangerous and a doused player hidden.
 
-### rl-render
+### atglyph-render
 
 Built in the manner of Brogue, after Nate pointed at a Brogue screenshot on 2026-09-11.
 A tile is authored with a glyph, both colours and a `Vary`: each cell is jittered by a hash of its position, and restless tiles shimmer over time.
@@ -185,9 +185,9 @@ The surface window is up to nine regions, so the compose pass is the number to m
 ## 7. Phases
 
 - **A. The field, invisible.**
-  `rl-grid::light`, its tests and bench.
-  `Lighting`, `LightSource`, the three layers and the opacity epoch in rl-bevy.
-  The heat-map overlay in rl-render.
+  `atglyph-grid::light`, its tests and bench.
+  `Lighting`, `LightSource`, the three layers and the opacity epoch in atglyph-bevy.
+  The heat-map overlay in atglyph-render.
   Nothing on screen changes for either existing example.
 - **B. The gate and the lamplight example.**
   `Viewshed::line`, the threshold, `DarkSight`, the adjacency floor, the mind rule, the render tint.

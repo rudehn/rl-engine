@@ -1,0 +1,569 @@
+//! The engine's own state as a save.
+//!
+//! The scheduler's clock and queue, every built place, what the player knows, and what each saved entity had to spend on
+//! abilities. Entities are written as [`SaveId`]s, so capture the game's
+//! entities first and restore them first: the queue and the ability state
+//! only keep entries whose ids were bound.
+
+use atglyph_bevy::{
+    Consumable, Cooldowns, Fire, Gases, Knowledge, KnowledgeSave, Occupancy, Pools, PropKind, Pulse, SavedField, Seed, Triggers, Turns, WorldMap, WorldMapSave,
+};
+use atglyph_core::RunSeed;
+use atglyph_rules::ability::AbilityId;
+use atglyph_rules::{GasId, StatId};
+use bevy::prelude::*;
+use serde::{Deserialize, Serialize};
+
+use crate::remap::{EntityRemap, SaveId};
+
+/// Everything the engine owns that a run needs back.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EngineSave {
+    /// The run's seed, so the world regenerates the same.
+    pub seed: RunSeed,
+    /// The clock.
+    pub now: u32,
+    /// Who is waiting to act, and when.
+    pub queue: Vec<(SaveId, u32)>,
+    /// The world's edits and places, and which map is current.
+    pub map: WorldMapSave,
+    /// What the player has seen.
+    pub knowledge: KnowledgeSave,
+    /// What each saved entity had to spend on abilities. Beside the clock
+    /// because a cooldown is an absolute time on it, so restoring the clock
+    /// and these together restores every cooldown with nothing to tick.
+    /// Empty in a save written before abilities were saved.
+    #[serde(default)]
+    pub abilities: Vec<(SaveId, AbilityState)>,
+    /// What each saved entity has left of its charges, the progress
+    /// towards a worn thing's next pulse, and its triggers' firings. Empty
+    /// in a save written before triggers were saved.
+    #[serde(default)]
+    pub effects: Vec<(SaveId, EffectState)>,
+    /// Every burning cell and every cell with gas in it, on every map.
+    /// Empty in a game with neither, and in a save written before either.
+    #[serde(default)]
+    pub fields: FieldsSave,
+}
+
+/// Fire and gas, as a save holds them.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct FieldsSave {
+    /// Turns of burning left, per map.
+    pub fire: Vec<SavedField<u8>>,
+    /// Concentration, per gas, per map.
+    pub gases: Vec<(GasId, Vec<SavedField<u8>>)>,
+}
+
+/// The ability state of one entity, as a save holds it.
+///
+/// Only what a use spends and sets. What an entity knows is rebuilt every
+/// turn from what it is, and what grants an ability is the game's content,
+/// so neither is here.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct AbilityState {
+    /// What was in each pool.
+    pub pools: Vec<(StatId, i32)>,
+    /// When each ability is ready again, on the saved clock.
+    pub cooldowns: Vec<(AbilityId, u32)>,
+}
+
+impl AbilityState {
+    /// What `entity` has, or `None` when it has nothing worth saving: an
+    /// actor with empty pools and nothing cooling needs no entry, since the
+    /// abilities plugin gives every actor those empty.
+    fn of(world: &World, entity: Entity) -> Option<Self> {
+        let pools: Vec<(StatId, i32)> = world.get::<Pools>(entity).map(|p| p.iter().collect()).unwrap_or_default();
+        let cooldowns: Vec<(AbilityId, u32)> = world.get::<Cooldowns>(entity).map(|c| c.iter().collect()).unwrap_or_default();
+        (!pools.is_empty() || !cooldowns.is_empty()).then_some(Self { pools, cooldowns })
+    }
+
+    /// Puts this back on `entity`.
+    fn restore(&self, world: &mut World, entity: Entity) {
+        let Ok(mut target) = world.get_entity_mut(entity) else { return };
+        if !self.pools.is_empty() {
+            let mut pools = Pools::new();
+            for (stat, amount) in &self.pools {
+                pools.set(*stat, *amount);
+            }
+            target.insert(pools);
+        }
+        if !self.cooldowns.is_empty() {
+            let mut cooldowns = Cooldowns::new();
+            for (ability, ready_at) in &self.cooldowns {
+                cooldowns.set(*ability, *ready_at);
+            }
+            target.insert(cooldowns);
+        }
+    }
+}
+
+/// What a thing's charges, triggers and pulse have left, as a save holds it.
+///
+/// Only what play changes: the charges left in the unit in hand and the
+/// progress towards the next, each trigger's firings left, and the
+/// progress towards a worn thing's next pulse. The most a thing holds, how
+/// it refills and what its triggers do are content, and come back from the
+/// definition the game respawns the thing from, so a save written before a
+/// file changed can never bring back a stale maximum. A prop's firings are
+/// saved with the prop itself, by its own kind.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct EffectState {
+    /// Charges left and progress to the next, for a consumable.
+    pub consumable: Option<(u16, u32)>,
+    /// Progress towards the next pulse, for a worn thing with a clock.
+    #[serde(default)]
+    pub pulse: Option<u32>,
+    /// Each trigger's firings left, in list order; `None` for every time.
+    pub fires: Vec<Option<u32>>,
+}
+
+impl EffectState {
+    /// What `entity` has, or `None` when it has nothing worth saving: no
+    /// consumable, no pulse, and no trigger that counts its firings.
+    fn of(world: &World, entity: Entity) -> Option<Self> {
+        let consumable = world.get::<Consumable>(entity).map(|c| (c.left, c.recharge.map_or(0, |r| r.progress)));
+        let pulse = world.get::<Pulse>(entity).map(|p| p.progress);
+        let fires: Vec<Option<u32>> = match (world.get::<Triggers>(entity), world.get::<PropKind>(entity)) {
+            (Some(triggers), None) if triggers.0.iter().any(|t| t.fires.is_some()) => triggers.0.iter().map(|t| t.fires).collect(),
+            _ => Vec::new(),
+        };
+        (consumable.is_some() || pulse.is_some() || !fires.is_empty()).then_some(Self { consumable, pulse, fires })
+    }
+
+    /// Puts this back onto the components the game respawned `entity`
+    /// with. A thing respawned with none has nothing to put it on, and
+    /// charges past a maximum the file has since lowered are cut to it.
+    fn restore(&self, world: &mut World, entity: Entity) {
+        let Ok(mut target) = world.get_entity_mut(entity) else { return };
+        if let (Some((left, progress)), Some(mut c)) = (self.consumable, target.get_mut::<Consumable>()) {
+            c.left = left.min(c.max);
+            if let Some(r) = c.recharge.as_mut() {
+                r.progress = progress;
+            }
+        }
+        if let (Some(progress), Some(mut p)) = (self.pulse, target.get_mut::<Pulse>()) {
+            p.progress = progress.min(p.every.saturating_sub(1));
+        }
+        if let Some(mut triggers) = target.get_mut::<Triggers>() {
+            for (trigger, fires) in triggers.0.iter_mut().zip(&self.fires) {
+                trigger.fires = *fires;
+            }
+        }
+    }
+}
+
+impl EngineSave {
+    /// Captures the engine's state from `world`, the run's [`Seed`] included.
+    /// Every actor in the queue is given a save id through `remap`, so call
+    /// this after the game captured its own entities.
+    pub(crate) fn capture(world: &mut World, remap: &mut EntityRemap) -> Self {
+        let seed = world.resource::<Seed>().0;
+        // The game's own entities, read before the queue hands ids to actors
+        // the game never saved and so could never restore.
+        let abilities: Vec<(SaveId, AbilityState)> = remap.bound().filter_map(|(id, e)| AbilityState::of(world, e).map(|s| (id, s))).collect();
+        let effects: Vec<(SaveId, EffectState)> = remap.bound().filter_map(|(id, e)| EffectState::of(world, e).map(|s| (id, s))).collect();
+        let (now, entries) = world.resource::<Turns>().export();
+        // Whoever holds the turn is out of the queue; it goes back at the
+        // front of the present so the restored run deals it first.
+        let holders: Vec<Entity> = world.query_filtered::<Entity, With<atglyph_bevy::MyTurn>>().iter(world).collect();
+        let queue = holders.into_iter().map(|e| (e, now)).chain(entries).map(|(e, t)| (remap.save_id(e), t)).collect();
+        let fields = FieldsSave {
+            fire: world.get_resource::<Fire>().map(Fire::export).unwrap_or_default(),
+            gases: world.get_resource::<Gases>().map(Gases::export).unwrap_or_default(),
+        };
+        Self { seed, now, queue, map: world.resource::<WorldMap>().export(), knowledge: world.resource::<Knowledge>().export(), abilities, effects, fields }
+    }
+
+    /// Restores the engine's state into `world`. The game's entities must
+    /// be spawned and bound in `remap` already; queue entries for ids
+    /// not bound are dropped, and the occupancy index is rebuilt from
+    /// whatever blocks stand on the current map.
+    pub(crate) fn restore(&self, world: &mut World, remap: &EntityRemap) {
+        world.resource_mut::<WorldMap>().import(self.map.clone());
+        world.resource_mut::<Knowledge>().import(self.knowledge.clone());
+        if let Some(mut fire) = world.get_resource_mut::<Fire>() {
+            fire.import(self.fields.fire.clone());
+        }
+        if let Some(mut gases) = world.get_resource_mut::<Gases>() {
+            gases.import(self.fields.gases.clone());
+        }
+        let entries = self.queue.iter().filter_map(|(id, t)| remap.entity(*id).map(|e| (e, *t)));
+        world.resource_mut::<Turns>().import(self.now, entries);
+        for (id, state) in &self.abilities {
+            if let Some(entity) = remap.entity(*id) {
+                state.restore(world, entity);
+            }
+        }
+        for (id, state) in &self.effects {
+            if let Some(entity) = remap.entity(*id) {
+                state.restore(world, entity);
+            }
+        }
+        let current = self.map.current;
+        let mut occupancy = Occupancy::default();
+        occupancy.switch(current);
+        let mut standing = world.query_filtered::<(Entity, &atglyph_bevy::Position, Option<&atglyph_bevy::OnMap>), With<atglyph_bevy::Blocks>>();
+        for (e, pos, on) in standing.iter(world) {
+            occupancy.insert_on(on.map(|m| m.0).unwrap_or(atglyph_bevy::MapId::ZERO), pos.0, e);
+        }
+        world.insert_resource(occupancy);
+        world.resource_mut::<atglyph_bevy::FlowFields>().invalidate();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use atglyph_bevy::Recharge;
+    use atglyph_bevy::prelude::*;
+    use atglyph_core::{Direction, Point};
+    use atglyph_grid::TileId;
+
+    fn fresh() -> (App, Point) {
+        let mut app = atglyph_bevy::testing::headless_app();
+        app.add_plugins(atglyph_bevy::FovPlugin);
+        let start = atglyph_bevy::testing::ground(&mut app);
+        (app, start)
+    }
+
+    #[test]
+    fn the_engine_state_survives_a_round_trip_into_a_fresh_world() {
+        let (mut app, start) = fresh();
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap)).id();
+        let other = app.world_mut().spawn((Actor, Blocks, Position(start.offset(3, 0)), Speed(200))).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        app.world_mut().write_message(Intent::new(player, Step(Direction::East)));
+        app.update();
+        let edited = start.offset(0, 2);
+        assert!(app.world_mut().resource_mut::<WorldMap>().set_tile(edited, TileId(1)));
+
+        // Capture: the game numbers its entities, then the engine.
+        let mut remap = EntityRemap::new();
+        let (p_id, o_id) = (remap.save_id(player), remap.save_id(other));
+        let save = {
+            app.insert_resource(Seed(RunSeed(5)));
+            EngineSave::capture(app.world_mut(), &mut remap)
+        };
+        let text = crate::versioned::encode(1, &save).unwrap();
+        let back: EngineSave = crate::versioned::decode(1, &text).unwrap();
+        assert_eq!(back.now, save.now);
+        assert!(back.queue.iter().any(|(id, _)| *id == p_id), "the player is in the saved queue");
+
+        // Restore into a fresh app with fresh entities.
+        let (mut app2, _) = fresh();
+        let player2 = app2.world_mut().spawn((Actor, Player, Blocks, Position(start.offset(1, 0)), Viewshed::new(6), RevealsMap)).id();
+        let other2 = app2.world_mut().spawn((Actor, Blocks, Position(start.offset(3, 0)), Speed(200))).id();
+        let mut remap2 = EntityRemap::new();
+        remap2.bind(p_id, player2);
+        remap2.bind(o_id, other2);
+        back.restore(app2.world_mut(), &remap2);
+        app2.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app2.update();
+        let w = app2.world();
+        assert_eq!(w.resource::<Turns>().now(), save.now);
+        assert_eq!(w.resource::<WorldMap>().tile(edited), Some(TileId(1)), "the edit came back with its place");
+        assert!(w.resource::<Knowledge>().is_explored(start), "explored tiles came back");
+        assert!(w.resource::<Occupancy>().is_occupied(start.offset(3, 0)), "the index was rebuilt");
+        assert!(w.resource::<Turns>().contains(other2) || w.get::<MyTurn>(other2).is_some(), "the other actor is scheduled");
+        assert!(w.get::<MyTurn>(player2).is_some(), "the player, who held the turn when saved, holds it again");
+    }
+
+    /// A place's secrets are kept with its terrain, so a continued run
+    /// finds what was found still found and what was hidden still hidden,
+    /// and still there to find.
+    #[test]
+    fn a_found_secret_stays_found_and_a_hidden_one_hidden_through_a_save() {
+        let place = atglyph_bevy::MapId(1);
+        let tiles = atglyph_grid::TileRegistry::standard();
+        let (wall, floor, door) = (tiles.expect("wall"), tiles.expect("floor"), tiles.expect("door_closed"));
+        let (shut, open) = (Point::new(3, 1), Point::new(5, 1));
+        let mut terrain = atglyph_grid::Terrain::filled(8, 3, floor);
+        terrain.set(shut, wall);
+        terrain.set(open, wall);
+        let secrets = vec![
+            atglyph_mapgen::Secret { at: shut, is: door, spot: 6, group: 0, joins: (0, 1) },
+            atglyph_mapgen::Secret { at: open, is: floor, spot: 6, group: 1, joins: (1, 2) },
+        ];
+        let (mut app, _) = fresh();
+        {
+            let mut map = app.world_mut().resource_mut::<WorldMap>();
+            map.install_place(
+                place,
+                atglyph_bevy::PlaceBuild {
+                    terrain,
+                    entry: Point::new(1, 1),
+                    exit: None,
+                    spots: Vec::new(),
+                    locks: Vec::new(),
+                    secrets,
+                    ambient: atglyph_grid::Light::DARK,
+                    peaceful: false,
+                },
+            );
+            map.switch_to(place);
+            map.find_secret(place, open);
+        }
+        app.insert_resource(Seed(RunSeed(5)));
+        let save = EngineSave::capture(app.world_mut(), &mut EntityRemap::new());
+        let back: EngineSave = crate::versioned::decode(1, &crate::versioned::encode(1, &save).unwrap()).unwrap();
+
+        let (mut app2, _) = fresh();
+        back.restore(app2.world_mut(), &EntityRemap::new());
+        let mut map = app2.world_mut().resource_mut::<WorldMap>();
+        assert_eq!((map.tile(shut), map.tile(open)), (Some(wall), Some(floor)), "the hidden one is wall and the found one open");
+        assert_eq!(map.secrets(place), [atglyph_bevy::Secret { at: shut, is: door, shows: wall, spot: 6, group: 0 }]);
+        map.find_secret(place, shut);
+        assert_eq!(map.tile(shut), Some(door), "and the hidden one is still there to find");
+    }
+
+    /// A place keeps the ambient its builder gave it through a save, and a
+    /// continued run onto it is lit by it from its first frame, with
+    /// nothing of the game's writing the light; a save written before
+    /// places carried one loads them dark.
+    #[test]
+    fn a_place_s_ambient_survives_a_save_and_lights_the_continued_run_from_its_first_frame() {
+        let (lit, dim) = (atglyph_grid::Light::white(40), atglyph_grid::Light::new(20, atglyph_grid::Rgb::new(90, 110, 200)));
+        let floor = atglyph_grid::TileRegistry::standard().expect("floor");
+        let build = |ambient| atglyph_bevy::PlaceBuild {
+            terrain: atglyph_grid::Terrain::filled(8, 5, floor),
+            entry: Point::new(1, 1),
+            exit: None,
+            spots: Vec::new(),
+            locks: Vec::new(),
+            secrets: Vec::new(),
+            ambient,
+            peaceful: false,
+        };
+        let (mut app, _) = fresh();
+        {
+            let mut map = app.world_mut().resource_mut::<WorldMap>();
+            map.install_place(atglyph_bevy::MapId(1), build(lit));
+            map.install_place(atglyph_bevy::MapId(2), build(dim));
+            map.switch_to(atglyph_bevy::MapId(2));
+        }
+        app.insert_resource(Seed(RunSeed(5)));
+        let save = EngineSave::capture(app.world_mut(), &mut EntityRemap::new());
+        let text = crate::versioned::encode(1, &save).unwrap();
+        let back: EngineSave = crate::versioned::decode(1, &text).unwrap();
+
+        let (mut app2, _) = fresh();
+        app2.add_plugins(atglyph_bevy::LightingPlugin);
+        app2.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app2.update();
+        assert_eq!(app2.world().resource::<atglyph_bevy::Lighting>().ambient, atglyph_grid::Light::DARK, "dark before the continue");
+        back.restore(app2.world_mut(), &EntityRemap::new());
+        app2.update();
+        assert_eq!(app2.world().resource::<atglyph_bevy::Lighting>().ambient, dim, "the place the run was saved on, in its own light");
+        let map = app2.world().resource::<WorldMap>();
+        assert_eq!(map.place(atglyph_bevy::MapId(1)).map(|p| p.ambient), Some(lit), "and the other place keeps its own");
+
+        // A save written before places had an ambient has no word on it.
+        let text = ron::to_string(&save.map).unwrap();
+        let old = text
+            .replace(&format!(",ambient:{}", ron::to_string(&dim).unwrap()), "")
+            .replace(&format!(",ambient:{}", ron::to_string(&lit).unwrap()), "")
+            .replace(&format!(",ambient:{}", ron::to_string(&atglyph_grid::Light::DARK).unwrap()), "");
+        assert!(!old.contains("ambient"), "{old}");
+        let older: atglyph_bevy::WorldMapSave = ron::from_str(&old).unwrap();
+        assert!(older.places.iter().all(|(_, p)| p.ambient == atglyph_grid::Light::DARK), "it loads, with every place dark");
+    }
+
+    /// The stairs the player saw are part of what the player knows, so a
+    /// continued run still draws them out of sight; and a save written
+    /// before things were remembered still reads, remembering none.
+    #[test]
+    fn what_stood_where_survives_a_round_trip_and_an_older_save_remembers_nothing() {
+        let (mut app, start) = fresh();
+        let stairs = start.offset(2, 0);
+        let look = atglyph_bevy::Recalled { glyph: '>', color: atglyph_grid::Rgb::new(235, 220, 160) };
+        app.world_mut().resource_mut::<Knowledge>().see_still(|_| true, [(stairs, look)]);
+        app.insert_resource(Seed(RunSeed(5)));
+        let save = EngineSave::capture(app.world_mut(), &mut EntityRemap::new());
+        let text = crate::versioned::encode(1, &save).unwrap();
+
+        let (mut app2, _) = fresh();
+        let back: EngineSave = crate::versioned::decode(1, &text).unwrap();
+        back.restore(app2.world_mut(), &EntityRemap::new());
+        assert_eq!(app2.world().resource::<Knowledge>().recalled(stairs), Some(look));
+
+        let older = text.replace("recalled:", "ignored:");
+        let back: EngineSave = crate::versioned::decode(1, &older).expect("a save with no memory of things still reads");
+        assert!(back.knowledge.recalled.is_empty());
+    }
+
+    /// The engine once kept a chart of what each side had seen and saved
+    /// it beside the knowledge; a run saved then still continues, the
+    /// chart it carries passed over.
+    #[test]
+    fn a_save_that_still_carries_charts_loads() {
+        let (mut app, _) = fresh();
+        app.insert_resource(Seed(RunSeed(5)));
+        let save = EngineSave::capture(app.world_mut(), &mut EntityRemap::new());
+        let text = crate::versioned::encode(1, &save).unwrap();
+        let without: Vec<&str> = text.lines().filter(|line| !line.trim_start().starts_with("charts:")).collect();
+        let older = without.join("\n").replacen("knowledge:", "charts: ([(chart: (1), map: (0), tiles: [])]), knowledge:", 1);
+        assert!(older.contains("charts: ([(chart"), "the older save carries a chart");
+        let back: EngineSave = crate::versioned::decode(1, &older).expect("a save with a chart in it still reads");
+        assert_eq!((back.seed, back.now, back.queue), (save.seed, save.now, save.queue));
+    }
+
+    /// A fire and a cloud of gas are the engine's, so a run saved while
+    /// something burns is continued with it still burning, on the map it
+    /// was burning on.
+    #[test]
+    fn fire_and_gas_survive_a_round_trip() {
+        let burning = |app: &mut App| {
+            app.add_plugins((atglyph_bevy::FirePlugin, atglyph_bevy::GasPlugin));
+            let gases = atglyph_rules::Registry::from_defs(vec![atglyph_rules::GasDef::new("smoke")]).unwrap();
+            app.insert_resource(atglyph_bevy::Registries { gases, ..Default::default() });
+            app.insert_resource(atglyph_bevy::FireRules::new().glow(None));
+            app.insert_resource(Seed(RunSeed(5)));
+        };
+        let (mut app, start) = fresh();
+        burning(&mut app);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap)).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        let smoke = atglyph_core::Id::from_raw(0);
+        app.world_mut().write_message(atglyph_bevy::Kindle { at: start.offset(2, 0), turns: 9 });
+        app.world_mut().write_message(atglyph_bevy::Release { gas: smoke, at: start.offset(0, 2), amount: 200 });
+        app.world_mut().write_message(Intent::new(player, Wait));
+        app.update();
+        let mut remap = EntityRemap::new();
+        let player_id = remap.save_id(player);
+        let save = EngineSave::capture(app.world_mut(), &mut remap);
+        assert!(!save.fields.fire.is_empty() && !save.fields.gases.is_empty(), "captured: {:?}", save.fields);
+        let back: EngineSave = crate::versioned::decode(1, &crate::versioned::encode(1, &save).unwrap()).unwrap();
+
+        let (mut app2, _) = fresh();
+        burning(&mut app2);
+        let player2 = app2.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap)).id();
+        let mut remap2 = EntityRemap::new();
+        remap2.bind(player_id, player2);
+        back.restore(app2.world_mut(), &remap2);
+        app2.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app2.update();
+        app2.update();
+        let w = app2.world();
+        assert!(w.resource::<atglyph_bevy::Fire>().is_burning(start.offset(2, 0)), "still burning where it burned");
+        assert!(w.resource::<atglyph_bevy::Gases>().at(smoke, start.offset(0, 2)) > 0, "and the smoke still hangs");
+    }
+
+    /// What abilities spend is engine state, and the design promised it a
+    /// place in the save beside the clock: pools keep what is in them, and a
+    /// cooldown set before saving is still live at the same clock after
+    /// loading.
+    #[test]
+    fn ability_pools_and_cooldowns_survive_a_round_trip() {
+        let (mut app, start) = fresh();
+        let mut pools = Pools::new();
+        pools.set(atglyph_core::Id::from_raw(0), 12);
+        let mut cooldowns = Cooldowns::new();
+        cooldowns.set(atglyph_core::Id::from_raw(1), 700);
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap, pools, cooldowns)).id();
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+
+        let mut remap = EntityRemap::new();
+        let p_id = remap.save_id(player);
+        let save = {
+            app.insert_resource(Seed(RunSeed(5)));
+            EngineSave::capture(app.world_mut(), &mut remap)
+        };
+        let back: EngineSave = crate::versioned::decode(1, &crate::versioned::encode(1, &save).unwrap()).unwrap();
+
+        let (mut app2, _) = fresh();
+        let player2 = app2.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(6), RevealsMap)).id();
+        let mut remap2 = EntityRemap::new();
+        remap2.bind(p_id, player2);
+        back.restore(app2.world_mut(), &remap2);
+
+        let w = app2.world();
+        let now = w.resource::<Turns>().now();
+        assert_eq!(w.get::<Pools>(player2).map(|p| p.get(atglyph_core::Id::from_raw(0))), Some(12), "the pool kept what was in it");
+        let ready = w.get::<Cooldowns>(player2).map(|c| c.ready_at(atglyph_core::Id::from_raw(1)));
+        assert_eq!(ready, Some(700), "the cooldown kept its absolute time");
+        assert!(ready.is_some_and(|t| t > now), "and is still live at the restored clock, {now}");
+    }
+
+    /// Two triggers, the first limited to three firings and the second to
+    /// none, landing nothing: the shape a save has to carry, whatever they do.
+    fn two_triggers() -> Triggers {
+        let nothing = std::sync::Arc::new(atglyph_bevy::Effects::default());
+        let one = |fires| atglyph_bevy::Trigger {
+            on: Moments::USE,
+            area: atglyph_rules::Area::Here,
+            fires,
+            effects: nothing.clone(),
+            look: None,
+            every: None,
+            targeting: None,
+            asks: None,
+        };
+        Triggers(vec![one(Some(3)), one(None)])
+    }
+
+    /// A half-recharged wand with a trigger that has fired twice comes back
+    /// as it was. Its maximum and its period come from what the game
+    /// respawned from its definition, never from the save, so a save
+    /// written before the definition changed cannot hold a stale maximum.
+    #[test]
+    fn a_wand_mid_recharge_and_its_spent_firings_come_back_as_they_were() {
+        let (mut app, _) = fresh();
+        let mut triggers = two_triggers();
+        triggers.0[0].fires = Some(1);
+        let wand = app
+            .world_mut()
+            .spawn((Consumable { left: 2, max: 5, when_empty: WhenEmpty::Kept, recharge: Some(Recharge { every: 400, progress: 130 }) }, triggers))
+            .id();
+        let mut remap = EntityRemap::new();
+        let w_id = remap.save_id(wand);
+        let save = {
+            app.insert_resource(Seed(RunSeed(5)));
+            EngineSave::capture(app.world_mut(), &mut remap)
+        };
+        let back: EngineSave = crate::versioned::decode(1, &crate::versioned::encode(1, &save).unwrap()).unwrap();
+
+        let (mut app2, _) = fresh();
+        // What the game respawns from the wand's definition: full, with a
+        // maximum of six now, since the file changed between runs.
+        let wand2 = app2.world_mut().spawn((Consumable::new(6, WhenEmpty::Kept).recharging(400), two_triggers())).id();
+        let mut remap2 = EntityRemap::new();
+        remap2.bind(w_id, wand2);
+        back.restore(app2.world_mut(), &remap2);
+
+        let w = app2.world();
+        let c = w.get::<Consumable>(wand2).copied().expect("still a wand");
+        assert_eq!((c.left, c.max, c.recharge.map(|r| r.progress)), (2, 6, Some(130)), "what was spent and counted, over what the definition says");
+        let fires: Vec<Option<u32>> = w.get::<Triggers>(wand2).expect("its triggers").0.iter().map(|t| t.fires).collect();
+        assert_eq!(fires, vec![Some(1), None], "the limited trigger kept its one firing left");
+    }
+
+    /// A worn thing's pulse comes back with the progress it had, since
+    /// seven eighths of a mend is seven turns a player already spent. Its
+    /// period comes from what the game respawned, as a wand's maximum does.
+    #[test]
+    fn a_pulse_comes_back_with_its_progress() {
+        let (mut app, _) = fresh();
+        let plate = app.world_mut().spawn(Pulse { every: 800, progress: 700 }).id();
+        let mut remap = EntityRemap::new();
+        let p_id = remap.save_id(plate);
+        let save = {
+            app.insert_resource(Seed(RunSeed(5)));
+            EngineSave::capture(app.world_mut(), &mut remap)
+        };
+        let back: EngineSave = crate::versioned::decode(1, &crate::versioned::encode(1, &save).unwrap()).unwrap();
+
+        let (mut app2, _) = fresh();
+        let plate2 = app2.world_mut().spawn(Pulse::every(800)).id();
+        let mut remap2 = EntityRemap::new();
+        remap2.bind(p_id, plate2);
+        back.restore(app2.world_mut(), &remap2);
+        assert_eq!(app2.world().get::<Pulse>(plate2).map(|p| p.progress), Some(700));
+    }
+}

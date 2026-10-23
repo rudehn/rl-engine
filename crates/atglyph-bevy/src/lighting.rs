@@ -1,0 +1,1241 @@
+//! Light over the loaded window, and the gate it puts on sight.
+//!
+//! Opt-in by adding [`LightingPlugin`], which inserts a dark [`Lighting`]
+//! for the game to write its ambient into. The field is then rebuilt
+//! whenever a source moves, changes or burns out, inside the turn loop as
+//! well as once a frame, so nobody decides by light that has gone, and
+//! every viewshed is cut down to what is lit, within an actor's [`DarkSight`], or adjacent.
+//! A game that leaves the plugin out sees exactly what it saw before, at
+//! no cost.
+//!
+//! One component, [`LightSource`], serves every kind of thing that glows.
+//! On an entity that takes no turns it is a fixture and lives in the
+//! static layer, rebuilt only when a fixture or the map changes. On an
+//! actor it moves with the actor. On an item it lights the floor where the
+//! item lies and, once carried, sheds from the carrier's tile. Whether a
+//! thing is lit is the game's call, made by inserting or removing the
+//! component; the engine reads only what is there.
+//!
+//! Except for what is lit by definition. The light is a [`Glow`], the one
+//! light type, and a tile kind and a prop kind may carry one in their
+//! definitions: the plugin puts up a fixture on every cell of a glowing
+//! tile in every place built or restored, `light_places`, and gives
+//! every prop of a glowing kind its source the moment it is given its
+//! kind, `light_prop`. So a lamp in a data file is lit wherever it
+//! stands and however it got there, and a game writes no light of its own
+//! for it.
+//!
+//! A source may take light away instead: `LightSource::darkness`, a light
+//! of negative intensity, is a pool of true darkness cast like any other
+//! source, from a fixture, an actor, a carried thing or a cell's glow. It
+//! takes a share of every light and the ambient in its reach, so what it
+//! covers reads darker in every band below, sight and stealth included,
+//! and it can never light or reveal a cell.
+//!
+//! What is seen falls in one of three [`LightBand`]s, which
+//! [`Lighting::band`] names and `band_at` names with no lighting read as
+//! lit: dark below `threshold`, dim up to `bright`, and lit above it. Sight
+//! reads only whether a tile is dark; stealth's light bonus reads the lit
+//! band, and a to-hit model may read either.
+//!
+//! What the player sees of a thing is one question, [`PlayerSight::shows`]:
+//! on this map, in its viewshed, and not [`Concealed`] out of the light.
+//!
+//! Ambient is the light everywhere on the current map, blended in last.
+//! A place carries its own, [`PlaceBuild::ambient`](crate::places::PlaceBuild::ambient),
+//! which its builder chose and its save keeps, and the plugin takes it into
+//! [`Lighting::ambient`] whenever the current map changes or a run is
+//! restored, before anybody decides or anything is drawn by the light: in
+//! the pass the stairs land, and in the frame. A game with nights writes
+//! the ambient itself; the engine has no clock hook and no notion of a day.
+
+use atglyph_core::{Grid2D, Point, Rect, geometry};
+use atglyph_grid::{BitGrid, Emitter, Glow, Light, LightBand, LightField, Rgb};
+use bevy::prelude::*;
+
+use crate::components::{Actor, Player, Position, Viewshed};
+use crate::items::{Inventory, Item};
+use crate::places::{MapId, OnMap};
+use crate::props::PropKind;
+use crate::registries::Registries;
+use crate::turn::TurnEnd;
+use crate::world::WorldMap;
+
+/// Sheds light from wherever its entity is, or with `darkens`, takes it
+/// away: a [`Glow`] on an entity.
+///
+/// The glow is the one light type, so what a tile's or a prop's definition
+/// writes, what a game's content writes and what is cast are the same
+/// value; this only puts it on an entity. Saved as the glow alone, so a
+/// save written when this carried the glow's fields itself reads
+/// unchanged, and its fields read and write through it as they always
+/// did: `source.radius = 4`.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Deref, DerefMut, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct LightSource(pub Glow);
+
+impl LightSource {
+    /// A steady source of `intensity` reaching `radius` tiles in `color`.
+    pub const fn new(intensity: u8, radius: i32, color: Rgb) -> Self {
+        Self(Glow::new(intensity, radius, color))
+    }
+
+    /// A darkness taking `intensity / 255` of the light at its own tile,
+    /// falling off to nothing at `radius` as a light does: at 255 its heart
+    /// is pitch black whatever shines on it.
+    pub const fn darkness(intensity: u8, radius: i32) -> Self {
+        Self(Glow::darkness(intensity, radius))
+    }
+
+    /// The same source, flickering by `amount` when drawn.
+    pub const fn flickering(self, amount: u8) -> Self {
+        Self(self.0.flickering(amount))
+    }
+}
+
+impl From<Glow> for LightSource {
+    fn from(glow: Glow) -> Self {
+        Self(glow)
+    }
+}
+
+/// How far an actor sees with no light at all. Absent means only what it
+/// is touching.
+///
+/// Set by hand, it is left as set. An actor with an [`OwnDarkSight`], or
+/// wearing a thing with a [`WornDarkSight`], has it kept by
+/// [`ItemsPlugin`](crate::items::ItemsPlugin): the best of its own and the
+/// best worn, or none while it is [`DarkSightSuppressed`].
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct DarkSight(pub i32);
+
+/// On an actor: how far it sees in the dark by itself, before anything it
+/// wears. Put on beside its [`DarkSight`] by
+/// [`ActorParts::dark_sight`](crate::parts::ActorParts::dark_sight), so
+/// what a worn thing lends is folded with it rather than written over it,
+/// and taking the thing off gives it back.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OwnDarkSight(pub i32);
+
+/// On an item: how far it lets its wearer see in the dark while it is
+/// worn, its level applied. Put on by
+/// [`insert_parts`](crate::parts::insert_parts) from
+/// [`ItemParts::dark_sight`](crate::parts::ItemParts::dark_sight).
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WornDarkSight(pub i32);
+
+/// On an actor, put on by a game: no sight in the dark at all while it is
+/// on, whatever it has of its own or wears, and given back when the game
+/// takes it off. What blinds is the game's, a sensor jammed or a curse;
+/// the engine only keeps the sight it folds from being restored meanwhile.
+#[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DarkSightSuppressed;
+
+/// Turns of light left. Ticks down every whole turn while the entity
+/// sheds light; at zero the engine removes the [`LightSource`] and reports
+/// it. The game decides what, if anything, happens to the entity then.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Fuel(pub u32);
+
+/// What the lighting systems report.
+#[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LightEvent {
+    /// A source ran out of fuel and went dark.
+    BurntOut {
+        /// The entity that was shedding light.
+        entity: Entity,
+    },
+}
+
+/// The intensity a tile needs to count as lit, unless the game says otherwise.
+pub const DEFAULT_THRESHOLD: u8 = 16;
+
+/// The intensity at or above which a seen tile counts as lit rather than
+/// dim, unless the game says otherwise. With the lamps the example games
+/// carry, it leaves a ring of one or two tiles of dim light at a lamp's
+/// edge, which is where a sneak stands and where a shot goes wide.
+pub(crate) const DEFAULT_BRIGHT: u8 = 64;
+
+/// The light over the loaded window. Inserting it turns lighting on.
+#[derive(Resource, Debug, Clone)]
+pub struct Lighting {
+    /// Light everywhere on the current map, blended in last. In a place,
+    /// the place's own ambient, taken by the plugin the first pass the
+    /// place is current. A game may still
+    /// write it, and what it writes stands until the current map changes.
+    pub ambient: Light,
+    /// The intensity at or above which a tile is seen.
+    pub threshold: u8,
+    /// The intensity at or above which a seen tile is lit rather than dim.
+    pub bright: u8,
+    origin: Point,
+    statics: LightField,
+    dynamics: LightField,
+    combined: LightField,
+    scratch: BitGrid,
+    static_emitters: Vec<Emitter>,
+    dynamic_emitters: Vec<Emitter>,
+    composed_with: Light,
+    generation: Option<u64>,
+    epoch: u64,
+    static_dirty: bool,
+    /// Light shed by cells rather than entities, and the map it is on.
+    glow: (MapId, Vec<(Point, LightSource)>),
+    /// Whether the glow was replaced by a different one since the last cast.
+    glow_moved: bool,
+    /// The place whose ambient was last taken, and the map's generation
+    /// then, which a switch of maps and a restored run both move. `None`
+    /// while no place is current.
+    followed: Option<(MapId, u64)>,
+}
+
+impl Lighting {
+    /// Lighting with `ambient` everywhere and nothing cast yet.
+    pub fn new(ambient: Light) -> Self {
+        Self {
+            ambient,
+            threshold: DEFAULT_THRESHOLD,
+            bright: DEFAULT_BRIGHT,
+            origin: Point::ZERO,
+            statics: LightField::new(0, 0),
+            dynamics: LightField::new(0, 0),
+            combined: LightField::new(0, 0),
+            scratch: BitGrid::new(0, 0),
+            static_emitters: Vec::new(),
+            dynamic_emitters: Vec::new(),
+            composed_with: Light::DARK,
+            generation: None,
+            epoch: 0,
+            static_dirty: true,
+            glow: (MapId::ZERO, Vec::new()),
+            glow_moved: false,
+            followed: None,
+        }
+    }
+
+    /// Pitch black until something is lit.
+    pub fn dark() -> Self {
+        Self::new(Light::DARK)
+    }
+
+    /// The light on world tile `p`; dark outside the window.
+    pub fn at(&self, p: Point) -> Light {
+        self.combined.at(p - self.origin)
+    }
+
+    /// Whether world tile `p` is lit enough to be seen.
+    pub fn is_lit(&self, p: Point) -> bool {
+        self.at(p).intensity >= self.threshold
+    }
+
+    /// The band world tile `p` is in, by `threshold` and `bright`.
+    pub fn band(&self, p: Point) -> LightBand {
+        LightBand::of(self.at(p).intensity, self.threshold, self.bright)
+    }
+
+    /// Light shed by cells of `map` rather than by entities, replacing what
+    /// was set before: a fire's burning cells, which come and go every turn
+    /// and so are cast with the sources that move. Nothing is shed while
+    /// another map is current.
+    pub(crate) fn set_glow(&mut self, map: MapId, glow: Vec<(Point, LightSource)>) {
+        let glow = (map, glow);
+        self.glow_moved |= self.glow != glow;
+        self.glow = glow;
+    }
+
+    /// Takes the current place's ambient, once per arrival: when the place
+    /// or the map's generation differs from the last one taken, which is
+    /// a switch of maps or a restored run, and never otherwise, so an
+    /// ambient a game writes in the middle of a place stands until the
+    /// player leaves it.
+    fn follow_place(&mut self, map: &WorldMap) {
+        let here = map.current();
+        let Some(place) = map.place(here) else {
+            self.followed = None;
+            return;
+        };
+        let key = (here, map.generation());
+        if self.followed == Some(key) {
+            return;
+        }
+        self.followed = Some(key);
+        self.ambient = place.ambient;
+    }
+
+    /// Whether something only this resource and the map know of has changed
+    /// since the last cast: the window, what blocks light, the fixtures
+    /// marked dirty, the ambient, or the glow.
+    fn is_behind(&self, map: &WorldMap) -> bool {
+        self.generation != Some(map.generation())
+            || self.epoch != map.opacity_epoch()
+            || self.static_dirty
+            || self.glow_moved
+            || self.composed_with != self.ambient
+    }
+
+    /// Matches the fields to the window. Returns whether they were remade.
+    fn fit(&mut self, map: &WorldMap) -> bool {
+        if self.generation == Some(map.generation()) {
+            return false;
+        }
+        let tiles = map.window_tiles();
+        self.generation = Some(map.generation());
+        self.origin = tiles.origin();
+        if self.combined.width() != tiles.width || self.combined.height() != tiles.height {
+            self.statics = LightField::new(tiles.width, tiles.height);
+            self.dynamics = LightField::new(tiles.width, tiles.height);
+            self.combined = LightField::new(tiles.width, tiles.height);
+            self.scratch = BitGrid::new(tiles.width, tiles.height);
+        }
+        self.static_dirty = true;
+        true
+    }
+}
+
+/// A source and where it stands.
+type SourceData = (&'static Position, &'static LightSource, Has<Actor>, Option<&'static OnMap>);
+/// Someone who might be carrying a light.
+type CarrierData = (&'static Position, &'static Inventory, Option<&'static OnMap>);
+
+/// Everything that sheds light.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct Sources<'w, 's> {
+    placed: Query<'w, 's, SourceData>,
+    carriers: Query<'w, 's, CarrierData, With<Actor>>,
+    carried: Query<'w, 's, &'static LightSource, (With<Item>, Without<Position>)>,
+}
+
+/// The cells whose light may differ between two emitter lists: the discs
+/// of every emitter in one and not the other.
+///
+/// Both lists are sorted, so this is a merge. `None` means the lists are
+/// the same and nothing moved.
+fn changed_area(was: &[Emitter], now: &[Emitter]) -> Option<Rect> {
+    let mut area: Option<Rect> = None;
+    let mut cover = |e: &Emitter| {
+        // The rim, where light reaches exactly zero, is still a cell whose
+        // value can change, so the disc is taken inclusive of it.
+        let r = e.glow.radius;
+        let disc = Rect::from_corners(e.origin.offset(-r, -r), e.origin.offset(r, r));
+        area = Some(match area {
+            Some(a) => a.union(&disc),
+            None => disc,
+        });
+    };
+    let (mut i, mut j) = (0, 0);
+    while i < was.len() || j < now.len() {
+        match (was.get(i), now.get(j)) {
+            (Some(a), Some(b)) if a == b => {
+                i += 1;
+                j += 1;
+            }
+            (Some(a), Some(b)) if a < b => {
+                cover(a);
+                i += 1;
+            }
+            (Some(_), Some(b)) => {
+                cover(b);
+                j += 1;
+            }
+            (Some(a), None) => {
+                cover(a);
+                i += 1;
+            }
+            (None, Some(b)) => {
+                cover(b);
+                j += 1;
+            }
+            (None, None) => break,
+        }
+    }
+    area
+}
+
+/// A viewer whose sight the light may have cut differently: where it
+/// stands and how far it sees.
+type Lit = (Option<&'static Position>, &'static mut Viewshed);
+
+/// Recasts whatever changed and marks stale the viewsheds the change could
+/// reach. Runs after the turns and before sight, and takes a place's
+/// ambient first, so a run restored onto a place is drawn in that place's
+/// light from its first frame.
+///
+/// Only those it could reach: a viewshed is cut down to what is lit inside
+/// its own range, so a lamp that moved at the far end of the window cannot
+/// change what a mind twenty tiles away sees. Marking every viewshed
+/// instead cost a shadowcast per actor on every frame in which any light
+/// moved, which in a lit game is every frame the player walks: measured at
+/// 11 microseconds per actor per frame by `crates/atglyph-ui/benches/frame.rs`,
+/// or a frame three times over at sixty-four of them.
+pub(crate) fn update_lighting(map: Res<WorldMap>, lighting: Option<ResMut<Lighting>>, sources: Sources, mut viewsheds: Query<Lit>) {
+    let Some(mut lighting) = lighting else { return };
+    lighting.follow_place(&map);
+    recast(&map, &mut lighting, &sources, &mut viewsheds);
+}
+
+/// What tells the turn loop a light may have moved, without gathering every
+/// emitter to find out.
+///
+/// A pass is a few microseconds and a frame may hold hundreds, so the pass
+/// asks only what changed since the last one: a source lit, altered, moved
+/// or put out, or a carrier of one that stepped or whose bag changed.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct LightMoves<'w, 's> {
+    sources: Query<'w, 's, (), (With<LightSource>, Stirred)>,
+    carriers: Query<'w, 's, &'static Inventory, (With<Actor>, Bearing)>,
+    carried: Query<'w, 's, (), InABag>,
+    put_out: RemovedComponents<'w, 's, LightSource>,
+}
+
+/// A source that was lit, altered or moved since the last pass.
+type Stirred = Or<(Changed<LightSource>, Changed<Position>, Changed<OnMap>)>;
+/// Someone who moved, or whose bag changed, since the last pass.
+type Bearing = Or<(Changed<Position>, Changed<Inventory>, Changed<OnMap>)>;
+/// A source that is carried rather than lying somewhere.
+type InABag = (With<LightSource>, With<Item>, Without<Position>);
+
+impl LightMoves<'_, '_> {
+    fn any(&mut self) -> bool {
+        // Read to the end whatever the answer, so one removal is not
+        // counted again on the next pass.
+        let put_out = self.put_out.read().count() > 0;
+        put_out || !self.sources.is_empty() || self.carriers.iter().any(|bag| bag.items.iter().any(|item| self.carried.contains(*item)))
+    }
+}
+
+/// Recasts inside the turn loop, at the head of every pass in which a
+/// light may have moved, so whoever decides next sees by the light as it
+/// is now.
+///
+/// [`update_lighting`] runs once a frame, after every pass the frame ran.
+/// With only that, a lamp the player switched off still lit the player for
+/// every mind that acted in the same frame, and a lamp carried a step lit
+/// the cell it had left: one turn of sight by light that was gone. The
+/// viewsheds a change reaches are marked stale here exactly as there, and
+/// `sense` recasts the one about to decide. A place
+/// arrived on in the pass before is lit by its own ambient here, so the
+/// first mind to decide on it sees by that light, not the last map's.
+pub(crate) fn relight(map: Res<WorldMap>, lighting: Option<ResMut<Lighting>>, mut moves: LightMoves, sources: Sources, mut viewsheds: Query<Lit>) {
+    let Some(mut lighting) = lighting else { return };
+    lighting.follow_place(&map);
+    if moves.any() || lighting.is_behind(&map) {
+        recast(&map, &mut lighting, &sources, &mut viewsheds);
+    }
+}
+
+/// The one cast both the frame and the pass go through.
+fn recast(map: &WorldMap, lighting: &mut Lighting, sources: &Sources, viewsheds: &mut Query<Lit>) {
+    let here = map.current();
+    let on_map = |on: Option<&OnMap>| on.map(|m| m.0).unwrap_or(MapId::ZERO) == here;
+    let mut recast_all = lighting.fit(map);
+    lighting.glow_moved = false;
+    if lighting.epoch != map.opacity_epoch() {
+        lighting.epoch = map.opacity_epoch();
+        recast_all = true;
+    }
+    if lighting.combined.width() == 0 || lighting.combined.height() == 0 {
+        return;
+    }
+    let origin = lighting.origin;
+    let local = |p: Point| p - origin;
+
+    let mut statics = Vec::new();
+    let mut dynamics = Vec::new();
+    for (pos, source, is_actor, on) in &sources.placed {
+        if !on_map(on) {
+            continue;
+        }
+        if is_actor { &mut dynamics } else { &mut statics }.push(source.0.at(local(pos.0)));
+    }
+    for (pos, bag, on) in &sources.carriers {
+        if !on_map(on) {
+            continue;
+        }
+        for item in &bag.items {
+            if let Ok(source) = sources.carried.get(*item) {
+                dynamics.push(source.0.at(local(pos.0)));
+            }
+        }
+    }
+    if lighting.glow.0 == here {
+        dynamics.extend(lighting.glow.1.iter().map(|(p, source)| source.0.at(local(*p))));
+    }
+    statics.sort_unstable();
+    dynamics.sort_unstable();
+
+    // What moved, before the lists are replaced. `None` where the whole
+    // field is being rebuilt anyway, which is every viewshed's business.
+    let mut changed = false;
+    let mut touched: Option<Rect> = None;
+    let mut everywhere = recast_all;
+    let view = map.view();
+    if recast_all || lighting.static_dirty || statics != lighting.static_emitters {
+        touched = union(touched, changed_area(&lighting.static_emitters, &statics));
+        // A dirty flag says the map changed under the fixtures rather than
+        // that a fixture moved, so the area it touches is not knowable.
+        everywhere |= lighting.static_dirty;
+        lighting.statics.clear();
+        lighting.statics.cast_all(&view, &mut statics, &mut lighting.scratch);
+        lighting.static_emitters = statics;
+        lighting.static_dirty = false;
+        changed = true;
+    }
+    if recast_all || dynamics != lighting.dynamic_emitters {
+        touched = union(touched, changed_area(&lighting.dynamic_emitters, &dynamics));
+        lighting.dynamics.clear();
+        lighting.dynamics.cast_all(&view, &mut dynamics, &mut lighting.scratch);
+        lighting.dynamic_emitters = dynamics;
+        changed = true;
+    }
+    if changed || lighting.composed_with != lighting.ambient {
+        // Ambient lands on every cell, so a change to it reaches everyone.
+        everywhere |= lighting.composed_with != lighting.ambient;
+        lighting.combined.compose(&lighting.statics, &lighting.dynamics, lighting.ambient);
+        lighting.composed_with = lighting.ambient;
+        for (pos, mut v) in viewsheds.iter_mut() {
+            v.dirty |= everywhere || reaches(touched, pos.map(|p| local(p.0)), v.range);
+        }
+    }
+}
+
+/// The smaller rectangle covering both, where there are two.
+fn union(a: Option<Rect>, b: Option<Rect>) -> Option<Rect> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(a.union(&b)),
+        (a, b) => a.or(b),
+    }
+}
+
+/// Whether a viewer at `at` seeing `range` tiles could have had its sight
+/// cut differently by a change over `touched`.
+///
+/// A viewer whose cell nobody knows is taken as reachable: it is one
+/// entity, and guessing wrong the other way is sight that never updates.
+fn reaches(touched: Option<Rect>, at: Option<Point>, range: i32) -> bool {
+    let (Some(touched), Some(at)) = (touched, at) else { return true };
+    Rect::from_corners(at.offset(-range, -range), at.offset(range, range)).intersects(&touched)
+}
+
+/// Cuts a computed line of sight down to what light, dark sight or touch
+/// lets `viewer` at `at` actually see.
+pub fn gate(lighting: &Lighting, at: Point, dark_sight: i32, viewshed: &mut Viewshed) {
+    let reach = dark_sight.max(1);
+    let origin = viewshed.origin;
+    let (visible, line) = (&mut viewshed.visible, &viewshed.line);
+    visible.clear();
+    for idx in line.iter_indices() {
+        let p = line.idx_point(idx) + origin;
+        if lighting.is_lit(p) || geometry::chebyshev(at, p) <= reach {
+            visible.insert_idx(idx);
+        }
+    }
+}
+
+/// Whether `observer` at `from`, with `dark_sight`, perceives a target at
+/// `to` that it has a line to. With no lighting, always.
+#[cfg(test)]
+pub(crate) fn perceives(lighting: Option<&Lighting>, from: Point, dark_sight: i32, to: Point) -> bool {
+    lighting.is_none_or(|l| l.is_lit(to) || geometry::chebyshev(from, to) <= dark_sight.max(1))
+}
+
+/// The band `p` is in, with no lighting read as lit: a game without
+/// [`LightingPlugin`] is a world seen everywhere, and nothing in it is
+/// harder to hit or easier to hide in for want of light.
+pub(crate) fn band_at(lighting: Option<&Lighting>, p: Point) -> LightBand {
+    lighting.map_or(LightBand::Lit, |l| l.band(p))
+}
+
+/// An actor the player does not see while it stands outside the light,
+/// unless it is beside the player.
+///
+/// Stealth decides what a mind notices, and the player is not a mind: a
+/// subject hard to see in the dark was hidden from every monster and drawn
+/// plainly for the player, who sees by its [`Viewshed`] alone. This is
+/// the player's half. What the player sees of things is decided once, by
+/// [`PlayerSight::shows`], which the map, the list of what is in sight and
+/// so every panel and cursor built on it all ask, so none of them draws or
+/// names a thing another left out.
+///
+/// Outside the light means out of the lit band: a dim fringe is not a
+/// pool of light, and a game whose deep ambient is dim, seen but never
+/// lit, wants the dim to hide what this marks. With no [`Lighting`] every
+/// cell is lit, so the marker hides nothing. Beside the player it is
+/// always seen, as touch reaches what light does not. A game adds and
+/// removes it; the engine reads only whether it is there.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Concealed;
+
+/// Whether a [`Concealed`] thing at `at` goes unseen by a viewer at
+/// `from`: true while `at` is not lit and the two are not beside each
+/// other.
+pub(crate) fn conceals(lighting: Option<&Lighting>, from: Point, at: Point) -> bool {
+    band_at(lighting, at) != LightBand::Lit && geometry::chebyshev(from, at) > 1
+}
+
+/// What the player sees of the things on the map, asked by everything that
+/// shows one.
+///
+/// A thing is shown when it is on the current map, in the player's
+/// viewshed, and not [`Concealed`] from where the player stands. Whether
+/// it is a prop nobody has spotted stays its readers' query filter, since
+/// that is a fact about the thing and never about where the player is.
+/// With no player, nothing is shown.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct PlayerSight<'w, 's> {
+    map: Res<'w, WorldMap>,
+    lighting: Option<Res<'w, Lighting>>,
+    player: Query<'w, 's, (Entity, &'static Position, &'static Viewshed), With<Player>>,
+}
+
+impl PlayerSight<'_, '_> {
+    /// The player, where it stands and what its sight reaches, when there
+    /// is exactly one.
+    pub fn viewer(&self) -> Option<(Entity, Point, &Viewshed)> {
+        self.player.single().ok().map(|(entity, pos, sight)| (entity, pos.0, sight))
+    }
+
+    /// Whether the player sees a thing at `at` on `on`, which is
+    /// [`Concealed`] when `concealed`.
+    pub fn shows(&self, at: Point, on: Option<&OnMap>, concealed: bool) -> bool {
+        let Some((_, from, sight)) = self.viewer() else { return false };
+        on.map_or(MapId::ZERO, |m| m.0) == self.map.current() && sight.can_see(at) && !(concealed && conceals(self.lighting.as_deref(), from, at))
+    }
+}
+
+/// Burns fuel every whole turn and puts out what runs dry.
+pub(crate) fn tick_fuel(
+    mut commands: Commands,
+    mut ends: MessageReader<TurnEnd>,
+    mut burning: Query<(Entity, &mut Fuel), With<LightSource>>,
+    mut events: MessageWriter<LightEvent>,
+) {
+    let turns = ends.read().count() as u32;
+    if turns == 0 {
+        return;
+    }
+    for (entity, mut fuel) in &mut burning {
+        fuel.0 = fuel.0.saturating_sub(turns);
+        if fuel.0 == 0 {
+            commands.entity(entity).remove::<LightSource>();
+            events.write(LightEvent::BurntOut { entity });
+        }
+    }
+}
+
+/// Puts up the light every glowing tile of a place sheds, once for each
+/// place built and once more for each place a continued run restored: a
+/// fixture, a [`LightSource`] with a position and no turns, on every cell
+/// whose tile's definition carries a [`Glow`].
+///
+/// Read off the place's own terrain rather than kept or saved, so a
+/// restored place is lit exactly as its building lit it and the two can
+/// never disagree; the map notes which places are lit and forgets it
+/// for every place it restores. Lit when built rather than when first
+/// entered, since a fixture on a map nobody reads is never cast. A tile
+/// that changes later keeps the fixture it was given: what a game does to
+/// the map after it is built is the game's to light.
+pub(crate) fn light_places(mut commands: Commands, map: Option<ResMut<WorldMap>>) {
+    let Some(mut map) = map else { return };
+    // Asked through a shared borrow first, so a pass with nothing to light
+    // never marks the map changed.
+    if map.unlit_places().next().is_none() {
+        return;
+    }
+    let unlit: Vec<MapId> = map.unlit_places().collect();
+    for id in unlit {
+        if let Some(place) = map.place(id) {
+            let lights = &map.tables().lights;
+            for (p, tile) in place.terrain.iter() {
+                if let Some(glow) = lights.get(tile.index()).copied().flatten() {
+                    commands.spawn((Position(p), OnMap(id), LightSource(glow)));
+                }
+            }
+        }
+        map.mark_lit(id);
+    }
+}
+
+/// Gives a prop the light its definition says it sheds, the moment it is
+/// given its kind: by a piece's slot, by a game standing it loose, by an
+/// effect, or by a save putting it back. One rule at the one place every
+/// prop passes through, so no way of spawning one can forget it.
+///
+/// On the prop rather than beside it, so the light goes where the prop
+/// does and goes out when it is destroyed. A kind with no light leaves
+/// whatever light the entity already has: a game that lit something
+/// itself and then dressed it as a prop keeps its own light.
+pub(crate) fn light_prop(insert: On<Insert, PropKind>, mut commands: Commands, registries: Option<Res<Registries>>, kinds: Query<&PropKind>) {
+    let Some(registries) = registries else { return };
+    let Ok(kind) = kinds.get(insert.entity) else { return };
+    let Some(def) = registries.props.try_get(kind.0) else { return };
+    if let Some(glow) = def.light {
+        commands.entity(insert.entity).insert(LightSource(glow));
+    }
+}
+
+/// Lighting: what each source sheds, what fuel costs, the gate that
+/// decides what a viewshed actually sees, and each place lit by its own
+/// ambient and by whatever its tiles' and props' definitions say they
+/// shed. Dark until a game or a place's build says otherwise.
+pub struct LightingPlugin;
+
+impl Plugin for LightingPlugin {
+    fn build(&self, app: &mut App) {
+        use crate::plugin::{DecideSet, EngineSet, ResetsOnNewRun, ResolveSet, Turn};
+        app.add_message::<LightEvent>()
+            .insert_resource(Lighting::dark())
+            // Dark rather than the ambient the game chose: a new run writes
+            // its own ambient in `NewRun`, as the first one did.
+            .reset_on_new_run_with::<Lighting>(Lighting::dark)
+            .add_systems(Update, (light_places, update_lighting).chain().in_set(EngineSet::Light))
+            .add_systems(Turn, (light_places, relight).chain().in_set(DecideSet::Light))
+            .add_observer(light_prop)
+            .add_systems(Turn, tick_fuel.in_set(ResolveSet::Effects));
+    }
+
+    fn finish(&self, app: &mut App) {
+        crate::plugin::depends_on::<crate::plugin::CorePlugin>(app, "LightingPlugin");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::components::{Blocks, MyTurn, Player, RevealsMap};
+    use crate::items::{DropItem, PickUp};
+    use crate::knowledge::Knowledge;
+    use crate::places::{PlaceBuild, PlaceRules, PlaceRulesRes, WarpRequest};
+    use crate::state::EngineState;
+    use crate::testing::headless_app;
+    use crate::turn::{Action, Intent};
+    use crate::turn::{Step, Wait};
+    use atglyph_core::PlaceSeed;
+    use atglyph_grid::{Terrain, TileId, TileRegistry, TileTables};
+    use atglyph_mapgen::BuildError;
+    use bevy::ecs::system::RunSystemOnce;
+
+    const ROOM: [&str; 9] = [
+        "####################",
+        "#..................#",
+        "#..................#",
+        "#..................#",
+        "#..................#",
+        "#..................#",
+        "#..................#",
+        "#..................#",
+        "####################",
+    ];
+
+    /// One room, whatever map is asked for: map `n` under the `n`th
+    /// ambient listed, and dark past the end of the list.
+    struct Room(TileRegistry, Vec<Light>);
+
+    impl PlaceRules for Room {
+        fn build(&self, map: MapId, _: PlaceSeed) -> Result<PlaceBuild, BuildError> {
+            let (wall, floor) = (self.0.expect("wall"), self.0.expect("floor"));
+            let terrain = Terrain::from_fn(20, 9, |p| if ROOM[p.y as usize].as_bytes()[p.x as usize] == b'#' { wall } else { floor });
+            let ambient = self.1.get((map.0 as usize).wrapping_sub(1)).copied().unwrap_or(Light::DARK);
+            Ok(PlaceBuild { terrain, entry: Point::new(5, 4), exit: None, spots: Vec::new(), locks: Vec::new(), secrets: Vec::new(), ambient, peaceful: false })
+        }
+
+        fn tiles(&self) -> TileTables {
+            self.0.tables()
+        }
+    }
+
+    struct Rig {
+        app: App,
+        player: Entity,
+        wall: TileId,
+    }
+
+    impl Rig {
+        /// The player in a room on map 1, lit when `ambient` is given by
+        /// that ambient, the room's own.
+        fn new(ambient: Option<Light>, dark_sight: Option<i32>) -> Self {
+            Self::rooms(ambient.map(|a| vec![a]), dark_sight)
+        }
+
+        /// The player in a room on map 1, lit when `ambients` is given,
+        /// map `n` by its `n`th.
+        fn rooms(ambients: Option<Vec<Light>>, dark_sight: Option<i32>) -> Self {
+            let mut app = headless_app();
+            app.add_plugins((crate::fov::FovPlugin, crate::items::ItemsPlugin));
+            let tiles = TileRegistry::standard();
+            let wall = tiles.expect("wall");
+            app.insert_resource(WorldMap::new(tiles.tables()));
+            // Lighting is a plugin: without it there is no gate at all,
+            // which is what a game that never lights anything gets.
+            if ambients.is_some() {
+                app.add_plugins(LightingPlugin);
+            }
+            app.insert_resource(PlaceRulesRes(Box::new(Room(tiles, ambients.unwrap_or_default()))))
+                .insert_resource(crate::seed::Seed(crate::testing::TEST_SEED));
+            let mut player = app.world_mut().spawn((Actor, Player, Blocks, Position(Point::ZERO), Viewshed::new(12), RevealsMap, Inventory::default()));
+            if let Some(d) = dark_sight {
+                player.insert(DarkSight(d));
+            }
+            let player = player.id();
+            app.world_mut().write_message(WarpRequest::into_place(player, MapId(1)));
+            app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+            app.update();
+            app.update();
+            assert!(app.world().get::<MyTurn>(player).is_some());
+            Self { app, player, wall }
+        }
+
+        fn act<A: Action>(&mut self, action: A) {
+            self.app.world_mut().write_message(Intent { actor: self.player, action });
+            self.app.update();
+        }
+
+        fn sees(&self, p: Point) -> bool {
+            self.app.world().get::<Viewshed>(self.player).unwrap().can_see(p)
+        }
+
+        fn seen_count(&self) -> usize {
+            self.app.world().get::<Viewshed>(self.player).unwrap().visible.count()
+        }
+
+        fn in_line(&self, p: Point) -> bool {
+            self.app.world().get::<Viewshed>(self.player).unwrap().in_line(p)
+        }
+    }
+
+    fn amber() -> Rgb {
+        Rgb::new(255, 150, 40)
+    }
+
+    #[test]
+    fn without_lighting_everything_in_line_is_seen() {
+        let rig = Rig::new(None, None);
+        let v = rig.app.world().get::<Viewshed>(rig.player).unwrap();
+        assert!(v.line.count() > 9);
+        assert_eq!(v.visible.count(), v.line.count());
+    }
+
+    #[test]
+    fn in_the_dark_the_player_sees_only_what_it_touches() {
+        let rig = Rig::new(Some(Light::DARK), None);
+        assert_eq!(rig.seen_count(), 9, "itself and its eight neighbours");
+        assert!(rig.in_line(Point::new(15, 4)) && !rig.sees(Point::new(15, 4)));
+        assert!(!rig.app.world().resource::<Knowledge>().is_explored(Point::new(15, 4)), "not remembered until lit");
+    }
+
+    #[test]
+    fn dark_sight_reaches_further_than_touch() {
+        let rig = Rig::new(Some(Light::DARK), Some(4));
+        assert!(rig.sees(Point::new(9, 4)));
+        assert!(!rig.sees(Point::new(10, 4)));
+    }
+
+    #[test]
+    fn ambient_lights_the_whole_room() {
+        let rig = Rig::new(Some(Light::white(40)), None);
+        let v = rig.app.world().get::<Viewshed>(rig.player).unwrap();
+        assert_eq!(v.visible.count(), v.line.count());
+    }
+
+    /// Each place is lit by its own ambient from the frame the player
+    /// arrives, with nothing of a game's writing it; an ambient written in
+    /// the middle of a place stands until the player leaves it, and
+    /// coming back is lit as the place's builder said.
+    #[test]
+    fn a_place_is_lit_by_its_own_ambient_from_the_frame_it_is_arrived_on() {
+        let lit = Light::white(40);
+        let mut rig = Rig::rooms(Some(vec![Light::DARK, lit]), None);
+        let ambient = |rig: &Rig| rig.app.world().resource::<Lighting>().ambient;
+        let whole_room = |rig: &Rig| {
+            let v = rig.app.world().get::<Viewshed>(rig.player).unwrap();
+            v.visible.count() == v.line.count()
+        };
+        assert_eq!((ambient(&rig), rig.seen_count()), (Light::DARK, 9), "map 1 is dark");
+
+        let player = rig.player;
+        rig.app.world_mut().write_message(WarpRequest::into_place(player, MapId(2)));
+        rig.app.update();
+        assert_eq!(rig.app.world().resource::<WorldMap>().current(), MapId(2));
+        assert_eq!(ambient(&rig), lit, "the frame of arrival is lit by the place's own ambient");
+        assert!(whole_room(&rig), "and the player sees the whole room by it in that frame");
+
+        rig.app.world_mut().resource_mut::<Lighting>().ambient = Light::white(100);
+        rig.act(Wait);
+        assert_eq!(ambient(&rig), Light::white(100), "what a game writes in the middle of a place stands");
+
+        rig.app.world_mut().write_message(WarpRequest::into_place(player, MapId(1)));
+        rig.app.update();
+        assert_eq!((ambient(&rig), rig.seen_count()), (Light::DARK, 9), "back on map 1, dark again in the frame of arrival");
+        rig.app.world_mut().write_message(WarpRequest::into_place(player, MapId(2)));
+        rig.app.update();
+        assert_eq!(ambient(&rig), lit, "and map 2 is lit by its builder's word, not by what was written there");
+    }
+
+    /// The room again, with a lamp set in its top wall at (10, 0): a tile
+    /// whose definition sheds light.
+    struct LampRoom(TileRegistry);
+
+    impl PlaceRules for LampRoom {
+        fn build(&self, map: MapId, seed: PlaceSeed) -> Result<PlaceBuild, BuildError> {
+            let mut build = Room(self.0.clone(), Vec::new()).build(map, seed)?;
+            build.terrain.set(Point::new(10, 0), self.0.expect("lamp"));
+            Ok(build)
+        }
+
+        fn tiles(&self) -> TileTables {
+            self.0.tables()
+        }
+    }
+
+    fn lamp() -> Glow {
+        Glow::new(200, 4, amber()).flickering(40)
+    }
+
+    /// The player in the lamp room on map 1, in the dark, with a lamp post
+    /// that sheds light and a stool that does not among the props.
+    fn lamp_rig() -> (App, Entity) {
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, crate::items::ItemsPlugin, LightingPlugin));
+        let mut tiles = TileRegistry::standard();
+        tiles.register(atglyph_grid::TileProps::wall("lamp").light(lamp())).unwrap();
+        app.insert_resource(WorldMap::new(tiles.tables()));
+        app.insert_resource(PlaceRulesRes(Box::new(LampRoom(tiles)))).insert_resource(crate::seed::Seed(crate::testing::TEST_SEED));
+        let props = atglyph_rules::prop::load(
+            r#"#![enable(implicit_some)]
+            [
+                (name: "lamp post", glyph: '|', color: (r: 240, g: 205, b: 130), light: (intensity: 200, radius: 4, color: (r: 255, g: 150, b: 40), flicker: 40)),
+                (name: "stool", glyph: 'n', color: (r: 200, g: 180, b: 150)),
+            ]"#,
+            &atglyph_rules::Names::new(),
+        )
+        .expect("the props load");
+        app.insert_resource(Registries { props, ..Default::default() });
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(Point::ZERO), Viewshed::new(12), RevealsMap, Inventory::default())).id();
+        app.world_mut().write_message(WarpRequest::into_place(player, MapId(1)));
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        app.update();
+        app.update();
+        (app, player)
+    }
+
+    /// Every fixture standing, where, on which map and what it sheds,
+    /// props aside.
+    fn fixtures(app: &mut App) -> Vec<(Point, MapId, LightSource)> {
+        let world = app.world_mut();
+        let mut q = world.query_filtered::<(&Position, &OnMap, &LightSource), (Without<PropKind>, Without<Actor>, Without<Item>)>();
+        let mut found: Vec<(Point, MapId, LightSource)> = q.iter(world).map(|(p, on, l)| (p.0, on.0, *l)).collect();
+        found.sort_by_key(|(p, on, _)| (*on, *p));
+        found
+    }
+
+    /// A tile whose definition sheds light is lit by the engine the pass
+    /// its place is built, with nothing written by the game, and only that
+    /// tile: every other is a tile with no light and stands unlit. A place
+    /// restored from what the map saves, onto a world its fixtures did not
+    /// survive, is lit again from its tiles, once.
+    #[test]
+    fn a_glowing_tile_is_lit_when_its_place_is_built_and_again_when_it_is_restored() {
+        let (mut app, _) = lamp_rig();
+        let at = Point::new(10, 0);
+        assert_eq!(fixtures(&mut app), vec![(at, MapId(1), LightSource(lamp()))], "the lamp, and nothing else");
+        let lighting = app.world().resource::<Lighting>();
+        assert_eq!(lighting.at(at).intensity, 200, "it is cast");
+        assert_eq!(lighting.band(Point::new(10, 1)), LightBand::Lit, "and lights the floor below it");
+        assert_eq!(lighting.at(Point::new(3, 7)).intensity, 0, "beyond its reach the room is dark");
+
+        app.update();
+        assert_eq!(fixtures(&mut app).len(), 1, "a place is lit once, not every pass");
+
+        let saved = app.world().resource::<WorldMap>().export();
+        let standing: Vec<Entity> = app.world_mut().query_filtered::<Entity, (With<LightSource>, Without<Actor>)>().iter(app.world()).collect();
+        for e in standing {
+            app.world_mut().despawn(e);
+        }
+        app.world_mut().resource_mut::<WorldMap>().import(saved);
+        app.update();
+        assert_eq!(fixtures(&mut app), vec![(at, MapId(1), LightSource(lamp()))], "restored, the lamp is lit again, once");
+        assert_eq!(app.world().resource::<Lighting>().band(Point::new(10, 1)), LightBand::Lit);
+    }
+
+    /// A prop whose definition sheds light carries it however it came to
+    /// be one: stood by `spawn_prop`, or given its kind on an entity that
+    /// was something else first. A prop whose definition sheds none
+    /// carries none.
+    #[test]
+    fn a_glowing_prop_is_lit_however_it_is_spawned_and_a_plain_one_is_not() {
+        let (mut app, _) = lamp_rig();
+        let registries = app.world().resource::<Registries>().clone();
+        let (post, stool) = (registries.props.expect("lamp post"), registries.props.expect("stool"));
+        let stood = app
+            .world_mut()
+            .run_system_once(move |mut commands: Commands, registries: Res<Registries>| {
+                (
+                    crate::props::spawn_prop(&mut commands, &registries, post, Point::new(3, 4), MapId(1)),
+                    crate::props::spawn_prop(&mut commands, &registries, stool, Point::new(5, 4), MapId(1)),
+                )
+            })
+            .unwrap();
+        let dressed = app.world_mut().spawn((Position(Point::new(16, 4)), OnMap(MapId(1)))).id();
+        app.world_mut().entity_mut(dressed).insert(PropKind(post));
+        app.update();
+        let light = |app: &App, e: Entity| app.world().get::<LightSource>(e).copied();
+        assert_eq!(light(&app, stood.0), Some(LightSource(lamp())), "stood from its definition");
+        assert_eq!(light(&app, dressed), Some(LightSource(lamp())), "given its kind afterwards");
+        assert_eq!(light(&app, stood.1), None, "a stool sheds nothing");
+        assert_eq!(app.world().resource::<Lighting>().band(Point::new(3, 5)), LightBand::Lit, "and the post's light is cast");
+    }
+
+    #[test]
+    fn a_fixture_lights_what_it_can_see_until_a_wall_goes_up() {
+        let mut rig = Rig::new(Some(Light::DARK), None);
+        let brazier = Point::new(14, 4);
+        rig.app.world_mut().spawn((Position(brazier), LightSource::new(200, 5, amber())));
+        rig.act(Wait);
+        assert!(rig.sees(brazier), "the brazier's own tile is lit");
+        assert!(rig.sees(Point::new(12, 4)));
+        assert!(!rig.sees(Point::new(8, 4)), "beyond its radius");
+        let light = rig.app.world().resource::<Lighting>();
+        assert_eq!(light.at(brazier).intensity, 200);
+        assert_eq!(light.at(brazier).color, amber().scaled(200));
+        assert_eq!(light.at(Point::new(5, 4)).intensity, 0);
+        // A wall goes up between them; nobody moves, and the view still updates.
+        let wall = rig.wall;
+        for y in 1..8 {
+            rig.app.world_mut().resource_mut::<WorldMap>().set_tile(Point::new(11, y), wall);
+        }
+        rig.app.update();
+        assert!(!rig.sees(brazier), "shadowed now");
+        let light = rig.app.world().resource::<Lighting>();
+        assert_eq!(light.at(Point::new(10, 4)).intensity, 0, "the light is cut too");
+        // The brazier still lights its own side, but a lit tile the
+        // player has no line to is not seen and not drawn.
+        assert!(light.at(Point::new(13, 4)).intensity > 0);
+        assert!(!rig.in_line(Point::new(13, 4)) && !rig.sees(Point::new(13, 4)));
+    }
+
+    #[test]
+    fn a_carried_light_moves_with_the_carrier_and_lies_where_dropped() {
+        let mut rig = Rig::new(Some(Light::DARK), None);
+        let torch = rig.app.world_mut().spawn((Item, Position(Point::new(7, 4)), LightSource::new(180, 4, amber()))).id();
+        rig.act(Wait);
+        assert!(rig.sees(Point::new(9, 4)), "lit by the torch on the floor");
+        rig.act(Step(atglyph_core::Direction::East));
+        rig.act(Step(atglyph_core::Direction::East));
+        rig.act(PickUp);
+        assert!(rig.app.world().get::<Inventory>(rig.player).unwrap().contains(torch));
+        assert_eq!(rig.app.world().resource::<Lighting>().at(Point::new(7, 4)).intensity, 180, "shed from the carrier");
+        rig.act(Step(atglyph_core::Direction::West));
+        rig.act(Step(atglyph_core::Direction::West));
+        assert_eq!(rig.app.world().resource::<Lighting>().at(Point::new(5, 4)).intensity, 180);
+        assert!(rig.sees(Point::new(8, 4)) && !rig.sees(Point::new(10, 4)));
+        rig.act(DropItem(torch));
+        rig.act(Step(atglyph_core::Direction::West));
+        rig.act(Step(atglyph_core::Direction::West));
+        rig.act(Step(atglyph_core::Direction::West));
+        let light = rig.app.world().resource::<Lighting>();
+        assert_eq!(light.at(Point::new(5, 4)).intensity, 180, "still burning where it lies");
+        assert_eq!(light.at(Point::new(1, 4)).intensity, 0, "four tiles off, the rim");
+    }
+
+    /// How many `LightEvent`s have been read, by a reader that sees each
+    /// exactly once.
+    #[derive(Resource, Default)]
+    struct BurntOut(usize);
+
+    fn count_burnt(mut events: MessageReader<LightEvent>, mut burnt: ResMut<BurntOut>) {
+        burnt.0 += events.read().count();
+    }
+
+    #[test]
+    fn fuel_burns_down_and_the_light_goes_out_once() {
+        let mut rig = Rig::new(Some(Light::DARK), None);
+        // Counted through a reader rather than by peeking at the buffer:
+        // when a headless app swaps its message buffers depends on wall
+        // time, so a peek sees a message on one frame, two, or none, and
+        // this test failed on the frames it saw none.
+        rig.app.init_resource::<BurntOut>().add_systems(PostUpdate, count_burnt);
+        let lamp = rig.app.world_mut().spawn((Item, LightSource::new(150, 4, amber()), Fuel(2))).id();
+        rig.app.world_mut().get_mut::<Inventory>(rig.player).unwrap().items.push(lamp);
+        rig.act(Wait);
+        assert!(rig.seen_count() > 9, "lit while it burns");
+        rig.act(Wait);
+        rig.act(Wait);
+        assert!(rig.app.world().get::<LightSource>(lamp).is_none(), "out");
+        assert_eq!(rig.app.world().get::<Fuel>(lamp), Some(&Fuel(0)));
+        assert_eq!(rig.seen_count(), 9);
+        assert_eq!(rig.app.world().resource::<BurntOut>().0, 1, "reported when it went out");
+        rig.act(Wait);
+        rig.act(Wait);
+        assert_eq!(rig.app.world().resource::<BurntOut>().0, 1, "and never again");
+    }
+
+    #[test]
+    fn perception_follows_the_light_and_dark_sight() {
+        let dark = Lighting::dark();
+        let here = Point::new(3, 3);
+        assert!(perceives(None, here, 0, Point::new(9, 9)), "no lighting, no gate");
+        assert!(perceives(Some(&dark), here, 0, Point::new(4, 4)), "adjacent");
+        assert!(!perceives(Some(&dark), here, 0, Point::new(5, 3)));
+        assert!(perceives(Some(&dark), here, 3, Point::new(6, 3)));
+        assert!(!perceives(Some(&dark), here, 3, Point::new(7, 3)));
+    }
+
+    /// The unit the bound is built on, tested without an `App`: the area a
+    /// change touched, and who it can reach.
+    #[test]
+    fn a_lamp_that_moved_touches_its_two_discs_and_reaches_only_viewers_whose_range_meets_them() {
+        let lamp = |x: i32| Glow::new(200, 4, Rgb::WHITE).at(Point::new(x, 0));
+
+        assert_eq!(changed_area(&[lamp(0)], &[lamp(0)]), None, "nothing moved, nothing touched");
+
+        // Moved from 0 to 20: both discs, since one cell went dark and the
+        // other lit, and nothing between them changed.
+        let touched = changed_area(&[lamp(0)], &[lamp(20)]).expect("it moved");
+        assert!(touched.contains(Point::new(0, 0)) && touched.contains(Point::new(20, 0)), "{touched:?} covers where it was and where it is");
+
+        // A viewer standing on the old cell sees the change; one far off to
+        // the side, whose whole range is outside both discs, does not.
+        assert!(reaches(Some(touched), Some(Point::new(0, 0)), 8), "the one it left");
+        assert!(reaches(Some(touched), Some(Point::new(20, 0)), 8), "the one it reached");
+        assert!(!reaches(Some(touched), Some(Point::new(10, 60)), 8), "sixty tiles away, and its range does not meet either disc");
+        assert!(reaches(Some(touched), None, 8), "a viewer nobody can place is recast rather than left wrong");
+        assert!(reaches(None, Some(Point::new(10, 60)), 8), "no area known means everyone, which is what a rebuilt field gets");
+
+        // A lamp that appeared, and one that went out, each touch their own disc.
+        let lit = changed_area(&[], &[lamp(5)]).expect("it appeared");
+        assert!(lit.contains(Point::new(5, 0)));
+        let out = changed_area(&[lamp(5)], &[]).expect("it went out");
+        assert_eq!(out, lit, "going out touches exactly what coming on did");
+    }
+
+    /// And the whole of it, through the app: a lamp moving at one end of
+    /// the window leaves a mind at the other end alone, and moving beside
+    /// it does not.
+    #[test]
+    fn a_light_that_moved_marks_only_the_viewsheds_it_could_have_changed() {
+        let mut app = headless_app();
+        app.add_plugins((crate::fov::FovPlugin, LightingPlugin));
+        let start = crate::testing::ground(&mut app);
+        app.insert_resource(crate::seed::Seed(crate::testing::TEST_SEED));
+        let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), RevealsMap)).id();
+        let near = app.world_mut().spawn((Actor, Position(start.offset(6, 0)), Viewshed::new(8))).id();
+        let far = app.world_mut().spawn((Actor, Position(start.offset(60, 0)), Viewshed::new(8))).id();
+        // The lamp the player carries.
+        app.world_mut().entity_mut(player).insert(LightSource::new(200, 6, atglyph_grid::Rgb::new(255, 255, 255)));
+        app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
+        for _ in 0..4 {
+            app.update();
+        }
+
+        let clean = |app: &mut App| {
+            for e in [player, near, far] {
+                app.world_mut().get_mut::<Viewshed>(e).expect("a viewshed").dirty = false;
+            }
+        };
+        clean(&mut app);
+        // The lamp moves one cell, by hand, so nothing else in the frame
+        // touches sight.
+        app.world_mut().get_mut::<Position>(player).expect("somewhere").0 = start.offset(1, 0);
+        app.world_mut().run_system_once(update_lighting).expect("the light ran");
+
+        assert!(app.world().get::<Viewshed>(player).unwrap().dirty, "the one carrying it");
+        assert!(app.world().get::<Viewshed>(near).unwrap().dirty, "and one whose range meets the light it moved");
+        assert!(!app.world().get::<Viewshed>(far).unwrap().dirty, "but not one sixty tiles away, which is what cost a shadowcast per actor a frame");
+    }
+
+    /// Every cell of the room, with its band and whether the player sees it.
+    fn survey(rig: &Rig) -> Vec<(Point, LightBand, bool)> {
+        let light = rig.app.world().resource::<Lighting>();
+        Rect::new(0, 0, 20, 9).cells().map(|p| (p, light.band(p), rig.sees(p))).collect()
+    }
+
+    #[test]
+    fn a_darkness_lowers_the_band_of_the_cells_it_reaches_and_nothing_else() {
+        let mut rig = Rig::new(Some(Light::white(100)), None);
+        let before = survey(&rig);
+        let heart = Point::new(12, 4);
+        rig.app.world_mut().spawn((Position(heart), LightSource::darkness(255, 4)));
+        rig.act(Wait);
+        let after = survey(&rig);
+        assert_eq!(rig.app.world().resource::<Lighting>().band(heart), LightBand::Dark, "pitch black at its heart");
+        assert!(!rig.sees(heart) && rig.in_line(heart), "in line, and unseen for the dark");
+        for ((p, was, saw), (_, is, sees)) in before.into_iter().zip(after) {
+            assert!(is <= was, "{p:?} is never lighter for a darkness");
+            assert!(saw || !sees, "{p:?} is never revealed by one");
+            if geometry::chebyshev(p, heart) >= 4 {
+                assert_eq!((is, sees), (was, saw), "{p:?} is beyond its reach");
+            }
+        }
+    }
+
+    #[test]
+    fn standing_in_a_darkness_hides_as_standing_in_the_dark_does() {
+        let mut rig = Rig::new(Some(Light::DARK), None);
+        let here = Point::new(5, 4);
+        rig.app.world_mut().entity_mut(rig.player).insert(LightSource::new(200, 6, amber()));
+        rig.act(Wait);
+        let watcher = Point::new(14, 4);
+        let lit = |rig: &Rig| {
+            let light = rig.app.world().resource::<Lighting>();
+            (light.band(here), perceives(Some(light), watcher, 0, here), conceals(Some(light), watcher, here))
+        };
+        assert_eq!(lit(&rig), (LightBand::Lit, true, false), "the lantern shows its bearer across the room");
+        rig.app.world_mut().spawn((Position(here), LightSource::darkness(255, 3)));
+        rig.act(Wait);
+        let pooled = lit(&rig);
+        rig.app.world_mut().entity_mut(rig.player).remove::<LightSource>();
+        rig.act(Wait);
+        let doused = lit(&rig);
+        assert_eq!(pooled, (LightBand::Dark, false, true), "in the pool the bearer is unseen, lantern and all");
+        assert_eq!(pooled, doused, "exactly as a bearer with no lantern is");
+    }
+
+    /// Over a span of places for the pool, in a room lit by a lamp and a
+    /// dim ambient: wherever it stands, no cell is lighter and none is
+    /// newly seen.
+    #[test]
+    fn a_darkness_never_lightens_or_reveals_a_cell_wherever_it_stands() {
+        let mut rig = Rig::new(Some(Light::white(30)), None);
+        rig.app.world_mut().spawn((Position(Point::new(14, 4)), LightSource::new(220, 6, amber())));
+        rig.act(Wait);
+        let before = survey(&rig);
+        let pool = rig.app.world_mut().spawn((Position(Point::new(2, 2)), LightSource::darkness(200, 4))).id();
+        for x in (2..18).step_by(3) {
+            for y in 2..7 {
+                rig.app.world_mut().get_mut::<Position>(pool).expect("the pool").0 = Point::new(x, y);
+                rig.act(Wait);
+                for ((p, was, saw), (_, is, sees)) in before.iter().zip(survey(&rig)) {
+                    assert!(is <= *was && (*saw || !sees), "{p:?} with the pool at ({x}, {y})");
+                }
+            }
+        }
+    }
+
+    /// Whether the player is shown `e`, by the one question every view asks.
+    fn shown(rig: &mut Rig, e: Entity) -> bool {
+        let ask = move |sight: PlayerSight, things: Query<(&Position, Option<&OnMap>, Has<Concealed>)>| {
+            let (pos, on, concealed) = things.get(e).expect("the thing");
+            sight.shows(pos.0, on, concealed)
+        };
+        rig.app.world_mut().run_system_once(ask).expect("the question ran")
+    }
+
+    /// The player sees four tiles into the dark by dark sight: a plain
+    /// actor there is shown and a [`Concealed`] one is not, until it is
+    /// beside the player or a light falls on it.
+    #[test]
+    fn a_concealed_actor_is_unseen_in_the_dark_but_seen_beside_the_player_or_in_a_light() {
+        let mut rig = Rig::new(Some(Light::DARK), Some(6));
+        let here = OnMap(MapId(1));
+        let plain = rig.app.world_mut().spawn((Actor, Position(Point::new(9, 4)), here)).id();
+        let hiding = rig.app.world_mut().spawn((Actor, Concealed, Position(Point::new(9, 5)), here)).id();
+        let close = rig.app.world_mut().spawn((Actor, Concealed, Position(Point::new(6, 5)), here)).id();
+        assert!(rig.sees(Point::new(9, 5)), "its cell is in sight");
+        assert!(shown(&mut rig, plain), "a plain actor in the dark is seen by dark sight");
+        assert!(!shown(&mut rig, hiding), "a concealed one at the same reach is not");
+        assert!(shown(&mut rig, close), "beside the player it is");
+        rig.app.world_mut().spawn((Position(Point::new(10, 5)), LightSource::new(200, 3, amber())));
+        rig.act(Wait);
+        assert_eq!(rig.app.world().resource::<Lighting>().band(Point::new(9, 5)), LightBand::Lit);
+        assert!(shown(&mut rig, hiding), "and in a light's pool it is seen");
+    }
+}

@@ -6,10 +6,10 @@
 //! that ships, the adventurer swinging at monsters made as a floor's own
 //! are, so a weapon's line in `items.ron` is held to what it does.
 
+use atglyph::prelude::*;
+use atglyph::rules::ai::hearing::HearingStats;
 use bevy::ecs::system::RunSystemOnce;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_rules::ai::hearing::HearingStats;
 
 use crate::armory::Armory;
 use crate::content::Library;
@@ -147,11 +147,11 @@ fn a_dagger_kills_the_unaware_in_one_blow_far_more_often_than_a_sword() {
     let (rat, goblin) = (health("rat"), health("goblin"));
     let dagger_rolls = outcomes(dagger.roll);
     for (victim, hp) in [("rat", rat), ("goblin", goblin)] {
-        let least = dagger_rolls.iter().map(|r| rl_engine::rl_rules::arms::scale_unaware(*r, dagger_pct)).min().expect("a roll");
+        let least = dagger_rolls.iter().map(|r| atglyph::rules::arms::scale_unaware(*r, dagger_pct)).min().expect("a roll");
         assert!(least >= hp, "every unaware dagger stab fells a {victim}: its least is {least} against {hp}");
     }
     let sword_rolls = outcomes(sword.roll);
-    let standing = sword_rolls.iter().filter(|r| rl_engine::rl_rules::arms::scale_unaware(**r, sword_pct) < goblin).count();
+    let standing = sword_rolls.iter().filter(|r| atglyph::rules::arms::scale_unaware(**r, sword_pct) < goblin).count();
     let total = sword_rolls.len();
     assert!((total / 8..=total / 2).contains(&standing), "a sword's blow on the unaware leaves about one goblin in four standing: {standing} of {total}");
 

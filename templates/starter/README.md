@@ -1,6 +1,6 @@
 # {{project-name}}
 
-A roguelike built on [rl-engine](https://github.com/rudehn/rl-engine), started from its template.
+A roguelike built on [atglyph](https://github.com/rudehn/rl-engine), started from its template.
 
 ```sh
 cargo run

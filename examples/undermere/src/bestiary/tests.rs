@@ -1,11 +1,11 @@
+use atglyph::primitives::Rect;
 use bevy::ecs::system::RunSystemOnce;
 use bevy::ecs::world::CommandQueue;
 use rand::SeedableRng;
-use rl_engine::rl_core::Rect;
 
 use super::*;
 use crate::content::Library;
-use rl_engine::rl_rules::parts::KeepAway;
+use atglyph::rules::parts::KeepAway;
 
 /// The deepest floor, the throne's.
 const DEEPEST: i32 = 10;
@@ -687,7 +687,7 @@ fn a_jelly_with_less_than_four_health_left_does_not_split() {
     let jelly = monster(&mut app, "pink jelly", here.offset(1, 0));
     app.world_mut().entity_mut(jelly).insert(Health { current: 7, max: 30 });
     let crush = app.world().resource::<Registries>().damage_kinds.expect("crush");
-    app.world_mut().write_message(DamageEvent::new(jelly, rl_engine::rl_rules::Hit::from_source(None, crush, 4)));
+    app.world_mut().write_message(DamageEvent::new(jelly, atglyph::rules::Hit::from_source(None, crush, 4)));
     settle(&mut app);
     let jelly_id = app.world().resource::<Bestiary>().defs.expect("pink jelly");
     let world = app.world_mut();
@@ -704,7 +704,7 @@ fn a_jelly_struck_becomes_two_each_with_its_share() {
     let jelly = monster(&mut app, "pink jelly", here.offset(1, 0));
     app.world_mut().entity_mut(jelly).insert(Health { current: 10, max: 30 });
     let crush = app.world().resource::<Registries>().damage_kinds.expect("crush");
-    app.world_mut().write_message(DamageEvent::new(jelly, rl_engine::rl_rules::Hit::from_source(None, crush, 4)));
+    app.world_mut().write_message(DamageEvent::new(jelly, atglyph::rules::Hit::from_source(None, crush, 4)));
     settle(&mut app);
     let jelly_id = app.world().resource::<Bestiary>().defs.expect("pink jelly");
     let world = app.world_mut();
@@ -799,7 +799,7 @@ fn a_necromancer_left_to_its_own_mind_raises_the_body_behind_it_over_a_span_of_s
 fn a_necromancer_with_no_body_in_reach_never_reaches_for_raise_dead() {
     use crate::effects::bodies::RaiseDead;
     use crate::testing::{arena, kill, monster, settle};
-    use rl_engine::rl_bevy::effects::{Effect, Landing, Source};
+    use atglyph::ecs::effects::{Effect, Landing, Source};
     let (mut app, me, here) = arena(40);
     let abilities = app.world().resource::<Abilities>();
     let raise = abilities.get(abilities.id("raise dead").expect("raise dead is loaded"));
@@ -913,7 +913,7 @@ fn a_fire_trail_kind_ignites_the_cell_it_steps_off() {
 /// Reflecting: a golem carries the engine's own `Reflects` the moment
 /// it is spawned, so an aimed use or an ability that lands on it
 /// turns back on whoever aimed it at the engine's default chance, one
-/// time in two, exactly as `rl-bevy`'s own test of `Reflects` says.
+/// time in two, exactly as `atglyph-bevy`'s own test of `Reflects` says.
 #[test]
 fn a_golem_carries_the_engines_own_reflects() {
     let library = library();
@@ -960,7 +960,7 @@ fn a_led_kind_closes_on_its_leader_when_nothing_else_is_in_sight() {
         ActorView { id: e, pos: Point::ZERO, health: Some(Vitals { current: priestess.hp, max: priestess.hp }), faction: world.get::<Faction>(e).map(|f| f.0) };
     let mut snapshot = Snapshot::alone(me);
     snapshot.wits = world.get::<Intelligence>(e).expect("wits").0;
-    snapshot.add_sense(rl_engine::rl_rules::ai::tactics::Led { at: Point::new(5, 0), in_sight: true });
+    snapshot.add_sense(atglyph::rules::ai::tactics::Led { at: Point::new(5, 0), in_sight: true });
     let mut rng = rand::rngs::StdRng::seed_from_u64(1);
     let ctx = &mut TacticCtx {
         snapshot: &snapshot,
@@ -1047,7 +1047,7 @@ fn small_life_is_worth_nothing_to_kill() {
     let library = library();
     for name in ["moth", "blind cave rat"] {
         let def = library.bestiary.defs.get(library.bestiary.defs.expect(name));
-        assert_eq!(rl_engine::rl_rules::balance::threat(def), 0.0, "{name}'s own threat");
+        assert_eq!(atglyph::rules::balance::threat(def), 0.0, "{name}'s own threat");
     }
 }
 
@@ -1079,7 +1079,7 @@ fn every_call_of_the_drowned_raises_a_kind_of_the_bestiary_and_a_misspelt_kind_i
         name: "call the drowned", description: "Calls them.", aim: SelfOnly, mode: Own, cooldown: 2000,
         effects: [(kind: "CallDrowned", args: (count: 1, range: 6, monster: "drowned pilgrm"))],
     )]"#;
-    let misspelt = rl_engine::rl_bevy::Abilities::load(text, &crate::content::effect_kinds(), &library.registries.names()).expect("it reads as an ability");
+    let misspelt = atglyph::ecs::Abilities::load(text, &crate::content::effect_kinds(), &library.registries.names()).expect("it reads as an ability");
     let refused = check_calls(misspelt.defs(), &library.bestiary.defs).expect_err("a kind the bestiary lacks");
     assert!(refused.contains("call the drowned") && refused.contains("drowned pilgrm"), "names the ability and the kind: {refused}");
 }
@@ -1097,7 +1097,7 @@ fn the_drowned_abbess_calls_drowned_pilgrims_up_out_of_the_water() {
         TileId(names.iter().position(|n| n == "flooded floor").expect("flooded floor is a tile") as u16)
     };
     let water: Vec<Point> = geometry::square(abbess_at, 2).filter(|p| *p != abbess_at && *p != here).collect();
-    rl_engine::testing::lay_tile(&mut app, &water, flooded);
+    atglyph::testing::lay_tile(&mut app, &water, flooded);
     monster(&mut app, "the Drowned Abbess", abbess_at);
     let pilgrim = app.world().resource::<Bestiary>().defs.expect("drowned pilgrim");
     let risen = |app: &mut App| {

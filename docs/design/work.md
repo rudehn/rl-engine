@@ -18,7 +18,7 @@ The engine owns the loop of it, and the game owns what starting it and finishing
 
 ## 1. The model
 
-`Work` lives in `rl-rules`, so it is tested without an `App`:
+`Work` lives in `atglyph-rules`, so it is tested without an `App`:
 
 ```rust
 pub struct Work<A> {
@@ -128,7 +128,7 @@ The nearby presenter writes the work's word where it would write the alert word,
 What it is busy doing is what the player needs, and "hunting" would say it is coming for them when it is not.
 
 Inspect gains a line from a template on the presenter, `"{doing} the {target}, {left} left"`, which a game may replace as it replaces `RemainsNaming`.
-The first letter is capitalised and `{left}` goes through `rl_core::noun`, giving "Repairing the line droid remains, 4 turns left" and "1 turn left".
+The first letter is capitalised and `{left}` goes through `atglyph_core::noun`, giving "Repairing the line droid remains, 4 turns left" and "1 turn left".
 The engine supplies no English a game cannot override.
 
 ## 6. Saving
@@ -139,10 +139,10 @@ If the target was not saved the work is dropped on load, as a remains' `credit` 
 
 ## 7. Where it lives
 
-- `rl-rules`: `Work`, `advance`, `WorkKindId`, `Decision::Work`, and the reach condition as a plain function over two points.
+- `atglyph-rules`: `Work`, `advance`, `WorkKindId`, `Decision::Work`, and the reach condition as a plain function over two points.
   All of it is tested without an `App`, over a range of `needed` and speeds.
-- `rl-bevy`: `WorkPlugin`, opt-in, with `add_work`, the `Working` component, `Toil` and its resolver, the break checks, `WorkBegan`, `WorkDone`, `WorkBroken`, the `Works` param and the save fields.
-- `rl-ui`: the row field, the nearby word and the inspect line.
+- `atglyph-bevy`: `WorkPlugin`, opt-in, with `add_work`, the `Working` component, `Toil` and its resolver, the break checks, `WorkBegan`, `WorkDone`, `WorkBroken`, the `Works` param and the save fields.
+- `atglyph-ui`: the row field, the nearby word and the inspect line.
 
 ## 8. Order of work
 

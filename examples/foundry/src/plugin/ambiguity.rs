@@ -3,19 +3,19 @@
 //! writing it, is either ordered or allowed here with its reason.
 //!
 //! The check itself is the engine's,
-//! [`rl_bevy::testing::ambiguity`](rl_engine::rl_bevy::testing::ambiguity);
+//! [`atglyph::ecs::testing::ambiguity`](atglyph::ecs::testing::ambiguity);
 //! what is Foundry's is the names a failure reads by and the pairs it
 //! leaves unordered on purpose, each with why.
 
 use std::any::TypeId;
 
+use atglyph::ecs::testing::ambiguity::{self, Allowed, system_type as id};
+use atglyph::ecs::turn::{Acting, ActionDone, ActionRefused, Turns};
+use atglyph::ecs::{Aware, DarkSight, Inventory, Noticed, Position, RangedAttack};
+use atglyph::primitives::RunSeed;
+use atglyph::ui::{GearView, MessageLog, Modals};
 use bevy::ecs::component::ComponentId;
 use bevy::prelude::*;
-use rl_engine::rl_bevy::testing::ambiguity::{self, Allowed, system_type as id};
-use rl_engine::rl_bevy::turn::{Acting, ActionDone, ActionRefused, Turns};
-use rl_engine::rl_bevy::{Aware, DarkSight, Inventory, Noticed, Position, RangedAttack};
-use rl_engine::rl_core::RunSeed;
-use rl_engine::rl_ui::{GearView, MessageLog, Modals};
 
 /// A name for each of Foundry's systems, for a failure to read by. An
 /// engine system a failure meets reads by Bevy's own name for it.
@@ -65,7 +65,7 @@ fn ids(world: &World) -> Vec<(&'static str, ComponentId)> {
     let c = world.components();
     let found = [
         ("MessageLog", c.component_id::<MessageLog>()),
-        ("Messages<Happened>", c.component_id::<Messages<rl_engine::rl_bevy::Happened>>()),
+        ("Messages<Happened>", c.component_id::<Messages<atglyph::ecs::Happened>>()),
         ("GearView", c.component_id::<GearView>()),
         ("Modals", c.component_id::<Modals>()),
         ("Aware", c.component_id::<Aware>()),
@@ -77,29 +77,29 @@ fn ids(world: &World) -> Vec<(&'static str, ComponentId)> {
         ("Inventory", c.component_id::<Inventory>()),
         ("Position", c.component_id::<Position>()),
         ("RangedAttack", c.component_id::<RangedAttack>()),
-        ("Stowed", c.component_id::<rl_engine::rl_bevy::Stowed>()),
+        ("Stowed", c.component_id::<atglyph::ecs::Stowed>()),
         ("DarkSight", c.component_id::<DarkSight>()),
         ("Jammed", c.component_id::<crate::droids::Jammed>()),
         // What props, traps and the lines a pass leaves brought in.
-        ("Messages<Tell>", c.component_id::<Messages<rl_engine::rl_ui::Tell>>()),
-        ("Thinking", c.component_id::<rl_engine::rl_bevy::Thinking>()),
-        ("Messages<Cued>", c.component_id::<Messages<rl_engine::rl_bevy::Cued>>()),
-        ("Messages<DamageEvent>", c.component_id::<Messages<rl_engine::rl_bevy::DamageEvent>>()),
-        ("Messages<Heal>", c.component_id::<Messages<rl_engine::rl_bevy::Heal>>()),
-        ("Messages<Afflict>", c.component_id::<Messages<rl_engine::rl_bevy::Afflict>>()),
-        ("Messages<Cure>", c.component_id::<Messages<rl_engine::rl_bevy::Cure>>()),
-        ("Messages<FillContainer>", c.component_id::<Messages<rl_engine::rl_bevy::FillContainer>>()),
-        ("Messages<Interacted>", c.component_id::<Messages<rl_engine::rl_bevy::Interacted>>()),
-        ("EffectRng", c.component_id::<rl_engine::rl_bevy::EffectRng>()),
-        ("Viewshed", c.component_id::<rl_engine::rl_bevy::Viewshed>()),
-        ("Equipped", c.component_id::<rl_engine::rl_bevy::Equipped>()),
-        ("PropKind", c.component_id::<rl_engine::rl_bevy::PropKind>()),
-        ("Occupancy", c.component_id::<rl_engine::rl_bevy::turn::Occupancy>()),
-        ("Stack", c.component_id::<rl_engine::rl_bevy::Stack>()),
-        ("Consumable", c.component_id::<rl_engine::rl_bevy::Consumable>()),
-        ("Triggers", c.component_id::<rl_engine::rl_bevy::Triggers>()),
-        ("Messages<ItemEvent>", c.component_id::<Messages<rl_engine::rl_bevy::ItemEvent>>()),
-        ("Messages<Fired>", c.component_id::<Messages<rl_engine::rl_bevy::Fired>>()),
+        ("Messages<Tell>", c.component_id::<Messages<atglyph::ui::Tell>>()),
+        ("Thinking", c.component_id::<atglyph::ecs::Thinking>()),
+        ("Messages<Cued>", c.component_id::<Messages<atglyph::ecs::Cued>>()),
+        ("Messages<DamageEvent>", c.component_id::<Messages<atglyph::ecs::DamageEvent>>()),
+        ("Messages<Heal>", c.component_id::<Messages<atglyph::ecs::Heal>>()),
+        ("Messages<Afflict>", c.component_id::<Messages<atglyph::ecs::Afflict>>()),
+        ("Messages<Cure>", c.component_id::<Messages<atglyph::ecs::Cure>>()),
+        ("Messages<FillContainer>", c.component_id::<Messages<atglyph::ecs::FillContainer>>()),
+        ("Messages<Interacted>", c.component_id::<Messages<atglyph::ecs::Interacted>>()),
+        ("EffectRng", c.component_id::<atglyph::ecs::EffectRng>()),
+        ("Viewshed", c.component_id::<atglyph::ecs::Viewshed>()),
+        ("Equipped", c.component_id::<atglyph::ecs::Equipped>()),
+        ("PropKind", c.component_id::<atglyph::ecs::PropKind>()),
+        ("Occupancy", c.component_id::<atglyph::ecs::turn::Occupancy>()),
+        ("Stack", c.component_id::<atglyph::ecs::Stack>()),
+        ("Consumable", c.component_id::<atglyph::ecs::Consumable>()),
+        ("Triggers", c.component_id::<atglyph::ecs::Triggers>()),
+        ("Messages<ItemEvent>", c.component_id::<Messages<atglyph::ecs::ItemEvent>>()),
+        ("Messages<Fired>", c.component_id::<Messages<atglyph::ecs::Fired>>()),
     ];
     ambiguity::data(found)
 }

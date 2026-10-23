@@ -6,12 +6,12 @@
 //! rebuilding, how long each takes, and that a finished one stands up as
 //! the droid it was.
 
+use atglyph::ecs::{ReviveCommands, Sight, Thinking, WorkDone, WorkKinds};
+use atglyph::prelude::*;
+use atglyph::primitives::Point;
+use atglyph::rules::ai::{Decision, Tactic, TacticCtx};
+use atglyph::rules::work::{Work, WorkKindId, in_reach};
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_bevy::{ReviveCommands, Sight, Thinking, WorkDone, WorkKinds};
-use rl_engine::rl_core::Point;
-use rl_engine::rl_rules::ai::{Decision, Tactic, TacticCtx};
-use rl_engine::rl_rules::work::{Work, WorkKindId, in_reach};
 
 use super::{Kind, Roster};
 
@@ -109,9 +109,9 @@ pub fn rebuild_wrecks(
 mod tests {
     use crate::droids::Roster;
     use crate::testing::{clear_droids, droid_down_a_lane, headless, settle};
+    use atglyph::prelude::*;
     use bevy::ecs::world::CommandQueue;
     use bevy::prelude::*;
-    use rl_engine::prelude::*;
 
     /// A line droid wrecked five cells east of the commando, and a repair
     /// drone two cells past it, on the cleared lane.
@@ -139,7 +139,7 @@ mod tests {
     /// death; `testing::hit` writes only what a reaction reads.
     fn strike(app: &mut App, target: Entity, amount: i32) {
         let kinetic = app.world().resource::<Registries>().damage_kinds.expect("kinetic");
-        app.world_mut().write_message(DamageEvent::new(target, rl_engine::rl_rules::Hit::from_source(None, kinetic, amount)));
+        app.world_mut().write_message(DamageEvent::new(target, atglyph::rules::Hit::from_source(None, kinetic, amount)));
     }
 
     fn wait(app: &mut App, player: Entity) {

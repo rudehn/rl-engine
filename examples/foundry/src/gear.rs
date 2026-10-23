@@ -27,22 +27,22 @@
 //! machinery; nothing is copied onto whoever carries it.
 //!
 //! [`Heat`] is Foundry's own; `Ammo` is the engine's, lifted out of this
-//! game into `rl_bevy::ammo` once a second game needed the same loop. This
+//! game into `atglyph::ecs::ammo` once a second game needed the same loop. This
 //! module only attaches whichever one a weapon's entry names to it, so
 //! neither module's own behaviour touches the loader.
 
 use std::sync::Arc;
 
+use atglyph::ecs::prelude::*;
+use atglyph::ecs::{ItemMaker, LootArea, Provenance};
+use atglyph::primitives::Id;
+use atglyph::render::Glyph;
+use atglyph::rules::parts::{self, Level};
+use atglyph::rules::{DamageKind, LevelTable, LootTable, NameRef, Named, Registry, ScatterRules, TagDef};
+use atglyph::rules::{EffectSpec, TriggerSpec};
+use atglyph::ui::view::Strike;
+use atglyph::ui::{Facet, InventoryView, MassNoun, Tones};
 use bevy::prelude::*;
-use rl_engine::rl_bevy::prelude::*;
-use rl_engine::rl_bevy::{ItemMaker, LootArea, Provenance};
-use rl_engine::rl_core::Id;
-use rl_engine::rl_render::Glyph;
-use rl_engine::rl_rules::parts::{self, Level};
-use rl_engine::rl_rules::{DamageKind, LevelTable, LootTable, NameRef, Named, Registry, ScatterRules, TagDef};
-use rl_engine::rl_rules::{EffectSpec, TriggerSpec};
-use rl_engine::rl_ui::view::Strike;
-use rl_engine::rl_ui::{Facet, InventoryView, MassNoun, Tones};
 use serde::Deserialize;
 
 use crate::heat::Heat;
@@ -111,7 +111,7 @@ pub struct ItemDef {
     #[serde(default)]
     pub throw: Option<parts::Throw>,
     /// What one blow or shot costs, in hundredths of a step. Absent is
-    /// [`BASE_ACTION_COST`](rl_engine::rl_core::turn::BASE_ACTION_COST).
+    /// [`BASE_ACTION_COST`](atglyph::primitives::turn::BASE_ACTION_COST).
     #[serde(default)]
     pub cost: Option<u32>,
     /// Heat one shot adds, and heat a quiet turn sheds, for a weapon that
@@ -293,7 +293,7 @@ fn validate_level(d: &ItemDef, level: &Level) -> Result<(), String> {
     let every = d.triggers.iter().find(|t| t.on == "pulse").and_then(|t| t.every);
     if let (Some(every), Some(pulse), Some(max)) = (every, level.pulse, level.max) {
         let fastest = i64::from(every) + i64::from(pulse) * i64::from(max);
-        if fastest < i64::from(every.min(rl_engine::rl_core::turn::BASE_ACTION_COST)) {
+        if fastest < i64::from(every.min(atglyph::primitives::turn::BASE_ACTION_COST)) {
             return Err(format!("pulse in the level, quickening its clock to {fastest} at +{max}, past a turn"));
         }
     }
@@ -358,7 +358,7 @@ impl Armory {
         let names = registries.names().sounds(sounds);
         let defs = load_defs(registries);
         let table = load_table(registries, &defs);
-        let levels = rl_engine::rl_rules::loot::load_levels(LEVELS_RON).unwrap_or_else(|e| panic!("assets/levels.ron: {e}"));
+        let levels = atglyph::rules::loot::load_levels(LEVELS_RON).unwrap_or_else(|e| panic!("assets/levels.ron: {e}"));
         // ANCHOR: triggers
         // Each definition's parts, its triggers built once against the
         // moments and effect kinds the run registered, and every problem in
@@ -401,7 +401,7 @@ pub fn load_defs(registries: &Registries) -> Registry<ItemDef> {
 /// hold is content that moved without its table.
 pub fn load_table(registries: &Registries, defs: &Registry<ItemDef>) -> LootTable<Id<ItemDef>> {
     let table =
-        rl_engine::rl_rules::loot::load(ITEM_SPAWNS_RON, &registries.names().with("item", defs), defs, |d: &ItemDef| d.tags.iter().map(|t| t.id()).collect())
+        atglyph::rules::loot::load(ITEM_SPAWNS_RON, &registries.names().with("item", defs), defs, |d: &ItemDef| d.tags.iter().map(|t| t.id()).collect())
             .unwrap_or_else(|e| panic!("assets/item_spawns.ron: {e}"));
     let wrong = container_problems(&table, registries);
     assert!(wrong.is_empty(), "assets/item_spawns.ron: {wrong:#?}");
@@ -414,7 +414,7 @@ pub(crate) fn container_problems(table: &LootTable<Id<ItemDef>>, registries: &Re
     let mut wrong = Vec::new();
     for (_, prop) in registries.props.iter() {
         for row in prop.container.iter().flat_map(|c| &c.contents) {
-            let rl_engine::rl_rules::Stock::Tag(tag) = row.what else { continue };
+            let atglyph::rules::Stock::Tag(tag) = row.what else { continue };
             let short: Vec<i32> = (1..=crate::decks::DECKS as i32).filter(|deck| table.band_for(tag, deck + row.band) != Some(deck + row.band)).collect();
             if !short.is_empty() {
                 wrong.push(format!("{} asks for {} at band {:+}, which nothing is on decks {short:?}", prop.name, registries.tags.name(tag), row.band));
@@ -433,7 +433,7 @@ pub(crate) fn container_problems(table: &LootTable<Id<ItemDef>>, registries: &Re
 /// that and nothing else.
 pub fn effect_kinds() -> EffectKinds {
     let mut app = App::new();
-    app.add_engine_effects().add_effect::<rl_engine::rl_bevy::Ignite>().add_effect::<rl_engine::rl_bevy::Emit>().add_effect::<rl_engine::rl_bevy::Noise>();
+    app.add_engine_effects().add_effect::<atglyph::ecs::Ignite>().add_effect::<atglyph::ecs::Emit>().add_effect::<atglyph::ecs::Noise>();
     std::mem::take(&mut app.world_mut().resource_mut::<EffectKinds>())
 }
 
@@ -600,8 +600,8 @@ impl ItemMaker for Armory {
 
 #[cfg(test)]
 mod tests {
+    use atglyph::primitives::{Point, RunSeed};
     use bevy::ecs::world::CommandQueue;
-    use rl_engine::rl_core::{Point, RunSeed};
 
     use super::*;
 
@@ -714,7 +714,7 @@ mod tests {
         let energy = app.world().resource::<Registries>().damage_kinds.expect("energy");
         let bolt = |app: &mut App| {
             app.world_mut().entity_mut(player).insert(Health::full(100));
-            app.world_mut().write_message(DamageEvent::new(player, rl_engine::rl_rules::Hit::from_source(None, energy, 20)));
+            app.world_mut().write_message(DamageEvent::new(player, atglyph::rules::Hit::from_source(None, energy, 20)));
             app.update();
             100 - health(app, player)
         };
@@ -764,7 +764,7 @@ mod tests {
         let head = app.world().resource::<Registries>().slots.expect("head");
         let mut queue = CommandQueue::default();
         let mut commands = Commands::new(&mut queue, app.world_mut());
-        let new_helmet = commands.spawn((Item, Wearable(rl_engine::rl_rules::EquipShape::in_slot(head)), WornDarkSight(9))).id();
+        let new_helmet = commands.spawn((Item, Wearable(atglyph::rules::EquipShape::in_slot(head)), WornDarkSight(9))).id();
         queue.apply(app.world_mut());
         app.world_mut().get_mut::<Inventory>(player).unwrap().items.push(new_helmet);
         app.world_mut().write_message(Intent::new(player, Equip(new_helmet)));
@@ -1353,7 +1353,7 @@ mod tests {
         assert!(app.world().get::<Unseen>(player).is_none(), "the plate is off, and so is the cloak");
         assert_eq!(fg(&app), Some(crate::run::COMMANDO), "drawn white again");
         crate::testing::pass_turns(&mut app, 12);
-        let said = app.world().resource::<rl_engine::rl_ui::MessageLog>().iter().filter(|e| e.text == "You are no longer cloaked.").count();
+        let said = app.world().resource::<atglyph::ui::MessageLog>().iter().filter(|e| e.text == "You are no longer cloaked.").count();
         assert_eq!(said, 1, "said once, when it came off");
     }
 
@@ -1375,7 +1375,7 @@ mod tests {
         crate::testing::equip_new(&mut app, player, "nanite plate");
         assert!(app.world().get::<Unseen>(player).is_none(), "the nanite plate displaced it, and the commando is seen again in that update");
         crate::testing::pass_turns(&mut app, 12);
-        let said = app.world().resource::<rl_engine::rl_ui::MessageLog>().iter().filter(|e| e.text == "You are no longer cloaked.").count();
+        let said = app.world().resource::<atglyph::ui::MessageLog>().iter().filter(|e| e.text == "You are no longer cloaked.").count();
         assert_eq!(said, 1, "said once, when the nanite plate came on over it");
     }
 
@@ -1411,7 +1411,7 @@ mod tests {
     fn made(armory: &Armory, registries: &Registries, name: &str, count: u32, band: i32, rng: &mut rand::rngs::StdRng) -> Vec<(Option<i32>, String)> {
         let mut world = World::new();
         let mut queue = CommandQueue::default();
-        let from = Provenance { found: rl_engine::rl_bevy::Found::Container, band };
+        let from = Provenance { found: atglyph::ecs::Found::Container, band };
         let things = {
             let mut commands = Commands::new(&mut queue, &world);
             armory.make(&mut commands, registries, armory.defs.expect(name), count, from, rng)
@@ -1721,7 +1721,7 @@ mod tests {
         let armory = crate::testing::armory(&r);
         let mut d = blank_def("double economy");
         d.heat = Some((10, 10));
-        d.ammo = Some(rl_engine::rl_core::Id::from_raw(0).into());
+        d.ammo = Some(atglyph::primitives::Id::from_raw(0).into());
         assert!(validate_def(&d, &armory.defs).is_err(), "heat and ammo on the same weapon");
     }
 }

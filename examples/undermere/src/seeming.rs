@@ -32,13 +32,13 @@
 //! long it must still be worn to tell it. Nothing of the true level is
 //! read, so nothing of it shows.
 
+use atglyph::prelude::*;
+use atglyph::primitives::DiceRoll;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_core::DiceRoll;
 
-use rl_engine::rl_rules::stats::Op;
-use rl_engine::rl_ui::panel::sheet::plain_op;
-use rl_engine::rl_ui::view::sheet::{ResistLine, Strike};
+use atglyph::rules::stats::Op;
+use atglyph::ui::panel::sheet::plain_op;
+use atglyph::ui::view::sheet::{ResistLine, Strike};
 
 use crate::armory::{Armory, ItemKind};
 use crate::content::{ACCURACY, ARMOR, STRENGTH};
@@ -264,7 +264,7 @@ impl Unsettled<'_, '_> {
             return None;
         }
         let r = &self.registries;
-        let strike = |kind: Id<rl_engine::rl_rules::damage::DamageKind>, dice: DiceRoll, range: Option<i32>| Strike {
+        let strike = |kind: Id<atglyph::rules::damage::DamageKind>, dice: DiceRoll, range: Option<i32>| Strike {
             kind: r.damage_kinds.name(kind).to_string(),
             dice,
             range,
@@ -375,8 +375,8 @@ mod tests {
     use super::*;
     use crate::lore::identify;
     use crate::testing::{arena_with, equip, familiar, find, settle, still};
-    use rl_engine::rl_rules::accuracy::Odds;
-    use rl_engine::rl_rules::forecast::Duel;
+    use atglyph::rules::accuracy::Odds;
+    use atglyph::rules::forecast::Duel;
 
     /// The vitals' armor, and whether it is marked unsettled.
     fn vitals(app: &App) -> (Option<i32>, bool) {
@@ -545,7 +545,7 @@ mod tests {
         still(&mut app, "goblin", here.offset(1, 0));
         let weapon = thing(&mut app, name, level, known);
         equip(&mut app, me, weapon);
-        let modal = rl_engine::rl_ui::view::inspect::inspect_modal(app.world().resource::<Modals>());
+        let modal = atglyph::ui::view::inspect::inspect_modal(app.world().resource::<Modals>());
         app.world_mut().resource_mut::<Modals>().open(modal);
         app.world_mut().resource_mut::<InspectView>().cursor = here.offset(1, 0);
         app.update();

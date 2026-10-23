@@ -8,8 +8,8 @@
 //!
 //! Keys: arrows, `hjklyubn` or the numpad to walk, `.` to wait, `q` to quit.
 
+use atglyph::prelude::*;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
 
 /// The terminal, in cells.
 const COLS: i32 = 80;
@@ -83,7 +83,7 @@ fn start(mut commands: Commands) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rl_engine::testing::{at, headless, player};
+    use atglyph::testing::{at, headless, player};
 
     /// The same plugin `main` adds, without a window: the player arrives on
     /// the floor, not in its rock.

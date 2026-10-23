@@ -1,5 +1,7 @@
 # rl-engine extraction plan
 
+The engine was renamed `atglyph` at 0.4.0; this plan, written before, uses its old name.
+
 Status: adopted, revised 2026-09-09 after Nate's review; being built.
 
 ## Progress

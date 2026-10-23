@@ -1,5 +1,5 @@
 // What a floor of the Undermere hides, and how hard each thing is to see:
-// its secret doors and hidden rooms, walled over by `rl_mapgen::HideOpenings`
+// its secret doors and hidden rooms, walled over by `atglyph::mapgen::HideOpenings`
 // in `dungeon.rs`'s chain, its traps and its loose flagstones, laid by
 // `src/traps.rs`, which loads this file. Floors one to nine hide things;
 // the throne's floor hides nothing, so its fight is the one in plain

@@ -32,7 +32,7 @@ The Systems pages are the reference for the rest, one per system, and each tease
   The engine ships ten effects, seven registered together by `add_engine_effects` and three by the fire, gas and noise plugins, and a game registers its own with `add_effect`.
 - **You get** a key that writes `AimAt`, a cursor the engine opens, a preview of what the shot would cover, and the turn spent.
   An item never lends an ability: what a potion does is its own triggers, which the engine lands when it is drunk or thrown, so a potion is a line of RON.
-- **Worked examples** `undermere` has fourteen, `foundry` one, and `crates/rl-bevy/tests/genres.rs` loads five genres of them into one registry.
+- **Worked examples** `undermere` has fourteen, `foundry` one, and `crates/atglyph-bevy/tests/genres.rs` loads five genres of them into one registry.
 - **Reference** [Abilities](systems/abilities.md).
 - **Design** [`docs/design/abilities.md`](https://github.com/rudehn/rl-engine/blob/main/docs/design/abilities.md).
 
@@ -102,7 +102,7 @@ The Systems pages are the reference for the rest, one per system, and each tease
 
 ## Balance
 
-`rl-rules::balance` scores threat and prints a band report over the `BandedTable` from [chapter 7](07-content-in-files.md).
+`atglyph-rules::balance` scores threat and prints a band report over the `BandedTable` from [chapter 7](07-content-in-files.md).
 No example game has a flag that prints it yet.
 
 ## Panels, past the two you have
@@ -124,7 +124,7 @@ That gives five places to stop, and you can stop at any of them: add the panel a
 - **Keys** can be declared once in a `Controls` registry and read back by name, which is what lets `ControlsPanel` show exactly the keys the game reads.
   The keys every roguelike reads alike, walking, the stairs, waiting, picking up, firing and throwing, are `PlayerKeysPlugin`, named in your own words; step 10 takes four of them and keeps the shove and the crusts in its own system.
 - **Two presenters over one view**: `LogPanel` draws the last few lines along the bottom and `ScrollbackPanel` draws all of them on a screen, over the same log, and neither knows the other exists.
-- **The forecast** in the look cursor is not the panel's arithmetic. `rl_rules::forecast` runs the average roll through the same mitigation pipeline a real blow goes through, so it cannot drift from the fight.
+- **The forecast** in the look cursor is not the panel's arithmetic. `atglyph::rules::forecast` runs the average roll through the same mitigation pipeline a real blow goes through, so it cannot drift from the fight.
 - **The screen** is cut once, and `RailLayout` cuts the usual one, a map with the log under it and a rail down the right, from a few numbers; its `RailScreen` hands back every rectangle, and `panels()` the rail's panels as a group you edit.
 
 `examples/tutorial/src/bin/step09_panels.rs` is the worked example, with the rail, the look cursor, tones and a controls screen, and [`docs/design/ui.md`](https://github.com/rudehn/rl-engine/blob/main/docs/design/ui.md) is why it is shaped that way.
@@ -132,7 +132,7 @@ That gives five places to stop, and you can stop at any of them: add the panel a
 
 ## Testing without a window
 
-The engine ships the test kit it uses itself, in `rl_engine::rl_bevy::testing`, and a game's tests use the same copy.
+The engine ships the test kit it uses itself, in `atglyph::ecs::testing`, and a game's tests use the same copy.
 
 A headless app is `MinimalPlugins`, states and `CorePlugin`, plus the engine plugins your game uses and your own systems, exactly as `main` does minus the three that draw.
 Two `update` calls start a run and deal the player its first turn; after that it is one per action.
@@ -141,7 +141,7 @@ Writing an intent is how the game plays itself, and a suite like Warren's runs i
 - `KeyScriptPlugin` and `press(&mut app, key)` play a key the way a keyboard does, so a test drives your real input system instead of writing intents by hand.
 - `ground(&mut app)` stands walled open ground up for a test that needs a map and not the game's own.
 - `two_sides(&mut app)` inserts combat rules for two sides at war.
-- `rl_engine::testing` is the same kit with the headless game beside it: `headless(seed, narrator, game)` builds the app above with your narrator and your plugin and saves kept in memory, `settle`, `pass_turns`, `stand_on`, `equip` and their kin drive it as the engine's own intents would, and `row`, `written` and `said` read the screen and the log back.
+- `atglyph::testing` is the same kit with the headless game beside it: `headless(seed, narrator, game)` builds the app above with your narrator and your plugin and saves kept in memory, `settle`, `pass_turns`, `stand_on`, `equip` and their kin drive it as the engine's own intents would, and `row`, `written` and `said` read the screen and the log back.
 
 Where a property exists, assert it over a range of seeds: that every generated floor has somewhere to stand and somewhere to go is forty-eight floors of evidence that costs milliseconds, because generation is tier 1 and never builds an `App`.
 Where no property exists, use a fingerprint test and say so in its name, so a change reads as a change rather than a failure.
@@ -154,10 +154,10 @@ The test module of `step09_panels.rs` is the worked example.
 
 | Tier | Crates | Bevy |
 |---|---|---|
-| 0 | `rl-core` | no |
-| 1 | `rl-grid`, `rl-mapgen`, `rl-rules` | no |
-| 2 | `rl-bevy`, `rl-render`, `rl-ui`, `rl-save` | yes |
-| 3 | `rl-engine` | facade |
+| 0 | `atglyph-core` | no |
+| 1 | `atglyph-grid`, `atglyph-mapgen`, `atglyph-rules` | no |
+| 2 | `atglyph-bevy`, `atglyph-render`, `atglyph-ui`, `atglyph-save` | yes |
+| 3 | `atglyph` | facade |
 
 Map generation, field of view, pathfinding, the damage pipeline and the AI brains are tier 1.
 They run headless, test in milliseconds and build for WebAssembly, so the tests in [chapter 9](09-where-to-go-next.md) cost milliseconds, and CI enforces the boundary.

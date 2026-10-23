@@ -1,10 +1,10 @@
 <!-- documents:
      plugins: none
-     files: crates/rl-bevy/src/registries.rs
-            crates/rl-rules/src/content/registry.rs
-            crates/rl-rules/src/names.rs
-            crates/rl-core/src/id.rs
-            crates/rl-bevy/src/noise.rs
+     files: crates/atglyph-bevy/src/registries.rs
+            crates/atglyph-rules/src/content/registry.rs
+            crates/atglyph-rules/src/names.rs
+            crates/atglyph-core/src/id.rs
+            crates/atglyph-bevy/src/noise.rs
      fingerprint: 2d4c8d4e -->
 
 # Registries and content
@@ -18,7 +18,7 @@ The engine never learns what any of those ids mean.
 
 There is no plugin here, and no system.
 `Registries` is a resource the game inserts, and a plugin that reads one says so with `needs::<Registries>` and a hint naming which registry it wants filled.
-`GasPlugin`, `FirePlugin`, `AbilitiesPlugin`, `PropsPlugin` and three of `rl-ui`'s view plugins all declare it, and every one that is missing is reported together when play begins.
+`GasPlugin`, `FirePlugin`, `AbilitiesPlugin`, `PropsPlugin` and three of `atglyph-ui`'s view plugins all declare it, and every one that is missing is reported together when play begins.
 A registry a game has no use for stays empty, and empty means none: no statuses means no badges on a health bar, no slots means nothing is worn.
 Registries name each other, so a game fills them in the order they refer to one another, the ones that name nothing first and the ones loaded through `Registries::names` after.
 
@@ -98,7 +98,7 @@ A registry is filled once, before play, and read from then on: nothing in the en
 
 ## Where it lives
 
-`rl-rules` is tier 1 and has no Bevy in it: `Registry`, `Named`, `ContentError`, `Names` and `BandedTable` are there, so loading a content file, refusing a duplicate and resolving a `NameRef` are all tested with plain values and no `App`.
-`rl-core` is tier 0 and owns `Id<T>` and the `Interner` the dense ids come from, which is why an id is typed and cannot be handed to the wrong registry without the compiler saying so.
-`rl-bevy` adds exactly one thing on top: `registries.rs`, which is the `Registries` resource and the `names` view over it, and nothing else.
+`atglyph-rules` is tier 1 and has no Bevy in it: `Registry`, `Named`, `ContentError`, `Names` and `BandedTable` are there, so loading a content file, refusing a duplicate and resolving a `NameRef` are all tested with plain values and no `App`.
+`atglyph-core` is tier 0 and owns `Id<T>` and the `Interner` the dense ids come from, which is why an id is typed and cannot be handed to the wrong registry without the compiler saying so.
+`atglyph-bevy` adds exactly one thing on top: `registries.rs`, which is the `Registries` resource and the `names` view over it, and nothing else.
 That the Bevy layer's whole contribution is a struct of eight public fields is the point: what a game loads and how it validates belong to a tier that can be tested without a frame.

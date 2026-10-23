@@ -35,12 +35,12 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+use atglyph::prelude::*;
+use atglyph::rules::ai::brain::Tactic;
+use atglyph::rules::namegen::{self, NameBook, NameSet};
+use atglyph::ui::TradeView;
 use bevy::prelude::*;
 use rand::Rng;
-use rl_engine::prelude::*;
-use rl_engine::rl_rules::ai::brain::Tactic;
-use rl_engine::rl_rules::namegen::{self, NameBook, NameSet};
-use rl_engine::rl_ui::TradeView;
 use ron::extensions::Extensions;
 use ron::options::Options;
 use serde::{Deserialize, Serialize};
@@ -588,7 +588,7 @@ pub fn walk_rounds(
         let stops: Vec<Point> = props.iter().filter(|(_, o, k, _)| o.0 == on.0 && registries.props.get(k.0).name == *prop).map(|(p, ..)| p.0).collect();
         let walls: Vec<Point> = props.iter().filter(|(_, o, _, blocks)| o.0 == on.0 && *blocks).map(|(p, ..)| p.0).collect();
         let waypoints = rounds(&stops, |p| map.is_walkable_on(on.0, p) && !walls.contains(&p));
-        let Some(nearest) = (0..waypoints.len()).min_by_key(|i| rl_engine::rl_core::geometry::chebyshev(waypoints[*i], at.0)) else { continue };
+        let Some(nearest) = (0..waypoints.len()).min_by_key(|i| atglyph::primitives::geometry::chebyshev(waypoints[*i], at.0)) else { continue };
         if waypoints.len() >= 2 {
             commands.entity(person).insert(PatrolRoute { waypoints, at: nearest });
         }
@@ -690,8 +690,8 @@ pub fn greet(mut view: ResMut<TradeView>, people: Query<&Townsperson>, townsfolk
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_core::RunSeed;
-    use rl_engine::rl_ui::TradeViewPlugin;
+    use atglyph::primitives::RunSeed;
+    use atglyph::ui::TradeViewPlugin;
 
     use super::*;
     use crate::content::Library;
@@ -993,7 +993,7 @@ mod tests {
             assert_eq!(tile, Some(cobbles), "turn {turn}: the child on the cobbles at {here:?}");
             squares.insert((here.x, here.y));
             let walker = at(&app, lighter);
-            lit.extend(lamps.iter().filter(|l| rl_engine::rl_core::geometry::chebyshev(**l, walker) <= 1).map(|l| (l.x, l.y)));
+            lit.extend(lamps.iter().filter(|l| atglyph::primitives::geometry::chebyshev(**l, walker) <= 1).map(|l| (l.x, l.y)));
             if squares.len() > 5 && lit.len() == lamps.len() {
                 return;
             }
@@ -1063,7 +1063,7 @@ mod tests {
     #[test]
     fn the_look_panel_and_the_rail_say_a_persons_role_beside_their_name() {
         let (mut app, me) = in_mereholt(2);
-        app.add_plugins((rl_engine::rl_ui::InspectViewPlugin, rl_engine::rl_ui::NearbyViewPlugin)).add_systems(Update, name_roles.in_set(ViewSet::Annotate));
+        app.add_plugins((atglyph::ui::InspectViewPlugin, atglyph::ui::NearbyViewPlugin)).add_systems(Update, name_roles.in_set(ViewSet::Annotate));
         let smith = person(&mut app, "smith");
         let there = at(&app, smith);
         let beside = {
@@ -1071,7 +1071,7 @@ mod tests {
             (0..8).map(|i| there + Direction::from_index(i).offset()).find(|p| map.is_walkable_on(TOWN, *p)).expect("ground beside the smith")
         };
         stand_on(&mut app, me, beside);
-        let modal = rl_engine::rl_ui::view::inspect::inspect_modal(app.world().resource::<Modals>());
+        let modal = atglyph::ui::view::inspect::inspect_modal(app.world().resource::<Modals>());
         app.world_mut().resource_mut::<Modals>().open(modal);
         app.world_mut().resource_mut::<InspectView>().cursor = there;
         app.update();

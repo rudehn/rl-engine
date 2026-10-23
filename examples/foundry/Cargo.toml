@@ -6,14 +6,14 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 publish = false
-description = "A worked example: ten decks of a droid foundry on rl-engine."
+description = "A worked example: ten decks of a droid foundry on atglyph."
 
-[package.metadata.rl-engine]
+[package.metadata.atglyph]
 # Read by scripts/check-tiers.sh: 0 core, 1 no Bevy, 2 the Bevy layer, 3 the facade and games.
 tier = 3
 
 [dependencies]
-rl-engine.workspace = true
+atglyph.workspace = true
 bevy.workspace = true
 rand = { workspace = true, features = ["std", "std_rng"] }
 serde.workspace = true

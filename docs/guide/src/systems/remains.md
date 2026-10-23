@@ -1,12 +1,12 @@
 <!-- documents:
      plugins: RemainsPlugin
-     files: crates/rl-bevy/src/remains.rs
-            crates/rl-bevy/src/combat.rs
-            crates/rl-bevy/src/props.rs
-            crates/rl-bevy/src/stealth.rs
-            crates/rl-bevy/src/noise.rs
-            crates/rl-rules/src/ai/snapshot.rs
-            crates/rl-save/src/run.rs
+     files: crates/atglyph-bevy/src/remains.rs
+            crates/atglyph-bevy/src/combat.rs
+            crates/atglyph-bevy/src/props.rs
+            crates/atglyph-bevy/src/stealth.rs
+            crates/atglyph-bevy/src/noise.rs
+            crates/atglyph-rules/src/ai/snapshot.rs
+            crates/atglyph-save/src/run.rs
      fingerprint: bfa0aad8 -->
 
 # Remains
@@ -92,6 +92,6 @@ Queries on `Actor` or `Mind`, which is most of them, are unaffected.
 
 ## Where it lives
 
-All of it is in `rl-bevy`, in one file, because there is no rule here to test without an `App`: the whole subsystem is which components come off an entity and which go on, and the only way to ask that is to kill something and look.
+All of it is in `atglyph-bevy`, in one file, because there is no rule here to test without an `App`: the whole subsystem is which components come off an entity and which go on, and the only way to ask that is to kill something and look.
 `combat.rs` owns the death it reacts to and the burial it prevents; `props.rs` owns what a body is once it is one, which is why nothing about bodies appears in a mind's snapshot beyond what any prop puts there.
-`rl-save` keeps the fact of the death rather than the game doing so, because a game writes down what a thing is and never that it is dead, and on restore lays the body back down from the two numbers it kept.
+`atglyph-save` keeps the fact of the death rather than the game doing so, because a game writes down what a thing is and never that it is dead, and on restore lays the body back down from the two numbers it kept.

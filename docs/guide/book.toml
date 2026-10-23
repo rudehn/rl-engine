@@ -1,7 +1,7 @@
 [book]
-title = "The rl-engine guide"
-description = "Build a roguelike on rl-engine, one runnable step at a time."
-authors = ["The rl-engine contributors"]
+title = "The atglyph guide"
+description = "Build a roguelike on atglyph, one runnable step at a time."
+authors = ["The atglyph contributors"]
 language = "en"
 src = "src"
 

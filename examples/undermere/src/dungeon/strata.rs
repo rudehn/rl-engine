@@ -15,8 +15,8 @@
 //! innkeeper's rumours hint at what lies deeper and older
 //! (`assets/rumours.ron`).
 
+use atglyph::prelude::*;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
 
 use super::{FLOORS, TOWN, floor_of, map_of};
 
@@ -118,7 +118,7 @@ pub fn name_the_stratum(vitals: Option<ResMut<VitalsView>>, map: Option<Res<Worl
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_core::RunSeed;
+    use atglyph::primitives::RunSeed;
 
     use super::*;
     use crate::stairs::place_line;

@@ -1,8 +1,8 @@
 <!-- documents:
      plugins: none
-     files: crates/rl-bevy/src/seed.rs
-            crates/rl-bevy/src/replay.rs
-            crates/rl-core/src/seed.rs
+     files: crates/atglyph-bevy/src/seed.rs
+            crates/atglyph-bevy/src/replay.rs
+            crates/atglyph-core/src/seed.rs
      fingerprint: 8cb0ed09 -->
 
 # Seeds and determinism
@@ -16,7 +16,7 @@ Determinism is promised within one build of a game, not across engine versions.
 
 There is no plugin here either.
 `Seed(RunSeed(n))` is a resource the game inserts before play begins, and `Seed::from_args` is the reading of it off wasm, in three steps.
-The seed of the recording `RL_REPLAY` names comes first, whatever the command line says, because a replay is the run it was recorded from and a replay on a fresh seed drifts on its first key; then `--seed N` from the command line, refusing a value that is not a whole number by name; then a fresh seed.
+The seed of the recording `ATGLYPH_REPLAY` names comes first, whatever the command line says, because a replay is the run it was recorded from and a replay on a fresh seed drifts on its first key; then `--seed N` from the command line, refusing a value that is not a whole number by name; then a fresh seed.
 A plugin that rolls calls `app.add_stream::<S>("PluginName")` in its own `build`, which declares `needs::<Seed>` with that plugin named, so a game that forgot the seed is told which subsystem wanted it.
 `CombatPlugin`, `AbilitiesPlugin`, `MindsPlugin`, `PropsPlugin` and `StealthPlugin` each do this, and two plugins asking for the same stream get one deriving system between them.
 A game that adds none of those still inserts a `Seed` if anything of its own draws, because `Seed::stream` is a method on the resource.
@@ -82,7 +82,7 @@ A replay is a seed plus a build, so a change to a draw order in engine code is a
 
 ## Where it lives
 
-`rl-core` is tier 0: `RunSeed`, `SeedDomain`, `mix64`, `position_hash` and `pair_hash` are all `const fn` over plain integers, so what a derivation gives for a seed and a domain is proved by arithmetic with no `App` and no `World` anywhere near it.
-That is also why the same derivation runs on `wasm32-unknown-unknown`, where `rl-core` has to build and where there is no clock to fall back on.
-`rl-bevy` adds only the wiring: `seed.rs` is the `Seed` resource, the `Stream` trait, `add_stream` and the one system that derives, which is under two hundred lines including its tests.
+`atglyph-core` is tier 0: `RunSeed`, `SeedDomain`, `mix64`, `position_hash` and `pair_hash` are all `const fn` over plain integers, so what a derivation gives for a seed and a domain is proved by arithmetic with no `App` and no `World` anywhere near it.
+That is also why the same derivation runs on `wasm32-unknown-unknown`, where `atglyph-core` has to build and where there is no clock to fall back on.
+`atglyph-bevy` adds only the wiring: `seed.rs` is the `Seed` resource, the `Stream` trait, `add_stream` and the one system that derives, which is under two hundred lines including its tests.
 Keeping the arithmetic a tier below the wiring is what lets a seeding property be tested over a range of seeds rather than over a range of frames.

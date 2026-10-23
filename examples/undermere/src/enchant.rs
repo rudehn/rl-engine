@@ -16,10 +16,10 @@
 //! was, so a cursed ring worth wearing anyway can be kept and still taken
 //! off.
 
+use atglyph::prelude::*;
+use atglyph::primitives::noun::plural;
+use atglyph::rules::ability::RawValue;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_core::noun::plural;
-use rl_engine::rl_rules::ability::RawValue;
 
 use crate::armory::{Armory, ItemKind};
 use crate::lore::{CurseShown, Lore, Unfamiliar, called, kind_called};
@@ -181,8 +181,8 @@ pub fn bind_on_wear(
 
 #[cfg(test)]
 mod tests {
+    use atglyph::primitives::RunSeed;
     use bevy::ecs::system::RunSystemOnce;
-    use rl_engine::rl_core::RunSeed;
 
     use super::*;
     use crate::dungeon::map_of;

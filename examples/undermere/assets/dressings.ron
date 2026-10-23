@@ -1,6 +1,6 @@
 // Dressings: what fills an area of any size that the pool's picks did not
 // take, a legend and the rules for where its things go rather than rows.
-// `rl_rules::dressing::load` reads this file; `rl_rules::dressing::check_pool`
+// `atglyph::rules::dressing::load` reads this file; `atglyph::rules::dressing::check_pool`
 // and `check_districts` hold it to `assets/pool.ron` and `assets/layout.ron`
 // at load, in `dungeon.rs`.
 //

@@ -1,12 +1,12 @@
 <!-- documents:
      plugins: none
-     files: crates/rl-mapgen/src/chain.rs
-            crates/rl-mapgen/src/context.rs
-            crates/rl-mapgen/src/passes.rs
-            crates/rl-mapgen/src/dungeon.rs
-            crates/rl-mapgen/src/prefab.rs
-            crates/rl-core/src/seed.rs
-            crates/rl-bevy/src/places.rs
+     files: crates/atglyph-mapgen/src/chain.rs
+            crates/atglyph-mapgen/src/context.rs
+            crates/atglyph-mapgen/src/passes.rs
+            crates/atglyph-mapgen/src/dungeon.rs
+            crates/atglyph-mapgen/src/prefab.rs
+            crates/atglyph-core/src/seed.rs
+            crates/atglyph-bevy/src/places.rs
      fingerprint: ba3994c8 -->
 
 # Map generation
@@ -18,7 +18,7 @@ What a pass has to tell the rest of generation, a room it carved, a start it cho
 
 ## Turning it on
 
-There is no plugin and no system: `rl-mapgen` is tier 1, has no Bevy in it, and nothing in it runs unless a game calls `Chain::run`.
+There is no plugin and no system: `atglyph-mapgen` is tier 1, has no Bevy in it, and nothing in it runs unless a game calls `Chain::run`.
 A game builds a `BaseContext` over a blank terrain, assembles a `Chain` with `then`, and runs it with a `RunSeed`.
 Where that happens is the game's business, and in practice it is inside the `PlaceRules::build` the engine calls the first time a place is entered.
 `Chain::run` stops at the first failure and hands back the `BuildError` naming the pass, so a caller that asked for six rooms on a map with space for four retries rather than shipping a map its game does not expect.
@@ -108,7 +108,7 @@ The passes that place a piece by room, `Placement::InRoom`, `Placement::AnyRoom`
 
 ## Where it lives
 
-`rl-mapgen` is tier 1 with no Bevy in it and nothing Bevy-shaped either: a chain is a value, a context is a struct, and running one is a function call.
+`atglyph-mapgen` is tier 1 with no Bevy in it and nothing Bevy-shaped either: a chain is a value, a context is a struct, and running one is a function call.
 That is why a whole floor can be generated in a test in microseconds, with no `App` and no frame, and why the properties that matter are checked as properties: that a chain with a pass added draws the same values for the passes around it, that a different seed or a different name rolls differently, and that a failing pass stops the chain, names itself, and leaves every pass behind it unrun.
 The crate builds for `wasm32-unknown-unknown` like the rest of its tier, so nothing in generation may time itself.
-The split from `rl-grid` is the one to keep in mind: `rl-grid` owns the terrain, the tiles and the flood fill, and `rl-mapgen` owns only the order things happen in and the streams they happen from.
+The split from `atglyph-grid` is the one to keep in mind: `atglyph-grid` owns the terrain, the tiles and the flood fill, and `atglyph-mapgen` owns only the order things happen in and the streams they happen from.

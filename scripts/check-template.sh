@@ -55,7 +55,7 @@ if grep -n "cargo generate --git" README.md docs/guide/src/*.md | grep -v -- "--
   exit 1
 fi
 
-out="${TMPDIR:-/tmp}/rl-engine-starter-check/my-game"
+out="${TMPDIR:-/tmp}/atglyph-starter-check/my-game"
 rm -rf "$out"
 mkdir -p "$(dirname "$out")"
 cp -R templates/starter "$out"
@@ -70,7 +70,7 @@ find . -type f \( -name '*.rs' -o -name '*.toml' -o -name '*.md' \) | while read
   sed -e 's/{{project-name}}/my-game/g' -e 's/{{crate_name}}/my_game/g' "$f" >"$f.filled"
   mv "$f.filled" "$f"
 done
-sed -e "s|^rl-engine = .*|rl-engine = { path = \"$root/crates/rl-engine\" }|" Cargo.toml >Cargo.toml.filled
+sed -e "s|^atglyph = .*|atglyph = { path = \"$root/crates/atglyph\" }|" Cargo.toml >Cargo.toml.filled
 mv Cargo.toml.filled Cargo.toml
 if grep -rn '{{' --include='*.rs' --include='*.toml' --include='*.md' .; then
   echo "error: a placeholder was left unfilled" >&2

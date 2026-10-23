@@ -1,12 +1,12 @@
 <!-- documents:
      plugins: none
-     files: crates/rl-mapgen/src/accrete.rs
-            crates/rl-mapgen/src/loops.rs
-            crates/rl-mapgen/src/survey.rs
-            crates/rl-mapgen/src/walk.rs
-            crates/rl-mapgen/src/chain.rs
-            crates/rl-rules/src/layout.rs
-            crates/rl-bevy/src/layout.rs
+     files: crates/atglyph-mapgen/src/accrete.rs
+            crates/atglyph-mapgen/src/loops.rs
+            crates/atglyph-mapgen/src/survey.rs
+            crates/atglyph-mapgen/src/walk.rs
+            crates/atglyph-mapgen/src/chain.rs
+            crates/atglyph-rules/src/layout.rs
+            crates/atglyph-bevy/src/layout.rs
      fingerprint: 8b64d613 -->
 
 # Layout
@@ -17,8 +17,8 @@ Once grown it is surveyed, and a place that falls short of what its recipe asked
 
 ## Turning it on
 
-There is no plugin: the passes are `rl-mapgen`'s, tier 1 with no Bevy in it, and they run where a game runs any chain.
-A game writes a layout file, loads it once with `rl_rules::layout::load`, and asks `rl_bevy::layout::passes` for one recipe as `LayoutPasses`: the map's size, an `Accrete`, an `OpenLoops` and a `Require`.
+There is no plugin: the passes are `atglyph-mapgen`'s, tier 1 with no Bevy in it, and they run where a game runs any chain.
+A game writes a layout file, loads it once with `atglyph::rules::layout::load`, and asks `atglyph::ecs::layout::passes` for one recipe as `LayoutPasses`: the map's size, an `Accrete`, an `OpenLoops` and a `Require`.
 It puts `accrete` and `loops` first in its chain over a map filled with solid tile, then its own stamps, its start and its exit, then `Survey`, and `require` last.
 It runs that chain with `Chain::run_retrying`, which is what turns a failed requirement into another attempt.
 A game with a shape of its own builds its `Accrete` in code; a file names only the shapes the engine ships.
@@ -29,7 +29,7 @@ A `Shape` draws a `Piece` from the pass's stream: the cells of its floor, relati
 A site is a wall cell against the outside of the body that touches exactly one body cell, with the direction that leads out through it; a cell in a concave corner touches two and is not one.
 A shape also has a name, a `Join`, and `is_room`, which says whether a prefab may be stamped in what it draws.
 The engine ships `Rectangle`, `Cross`, two bars overlapped on their centers, and `Passage`, a run of floor with a chance of one bend, which is the one that is not a room.
-None of the three is in a prelude, since Bevy has a `Rectangle` of its own; a game names them from `rl_mapgen::accrete` where it builds a pass.
+None of the three is in a prelude, since Bevy has a `Rectangle` of its own; a game names them from `atglyph::mapgen::accrete` where it builds a pass.
 `Join` is `Door`, one cell of the door tile, `Arch`, one cell of floor, or `Mouth(n)`, floor up to `n` cells wide along the wall the two pieces share, widened to either side of where they met in turn.
 A `District` is a name and a weighted list of shapes.
 `Accrete` scatters district seeds, as many as `districts_per_10k` gives for the map's area and never fewer than one, each drawn a district from `mix`, and a cell belongs to its nearest seed.
@@ -56,7 +56,7 @@ A game's place builder is a chain with the recipe's passes at either end of it, 
 <!-- include: ../../../../examples/foundry/src/decks.rs:grow -->
 ```rust,no_run
     /// Runs the deck's chain and hands back the context still open, so a
-    /// test can read a [`Stamped`](rl_engine::rl_mapgen::prefab::Stamped)
+    /// test can read a [`Stamped`](atglyph::mapgen::prefab::Stamped)
     /// pass emitted before [`PlaceBuild::from_context`] flattens every
     /// mark into a [`Spot`] and drops the stamp's own bounds.
     fn generate(&self, map: MapId) -> Result<BaseContext, BuildError> {
@@ -65,7 +65,7 @@ A game's place builder is a chain with the recipe's passes at either end of it, 
         let seed = RunSeed(self.seed.0 ^ (deck as u64) << 32);
         // Foundry grows no locked or sealed piece, so its hatch stands for both.
         let tiles = LayoutTiles { floor: self.deck, door: self.hatch, locked: self.hatch, sealed: self.hatch };
-        let grown = rl_engine::rl_bevy::layout::passes(&self.layout, recipe_of(deck), &tiles)?;
+        let grown = atglyph::ecs::layout::passes(&self.layout, recipe_of(deck), &tiles)?;
         let (width, height) = grown.size;
         let mut chain = Chain::new()
             .then(grown.accrete)
@@ -128,6 +128,6 @@ A requirement a recipe can never meet is not found at load, since only growing a
 
 ## Where it lives
 
-The passes are in `rl-mapgen`, so a place is grown, surveyed and held to its bounds in a test with no `App`, over a span of seeds and at more than one size, in seconds.
-The file is in `rl-rules`, which names no mapgen type, so a layout loads and every mistake in it is reported with no map at all.
-`rl-bevy` holds the one function that sees both, as it does for a prefab, and it adds no system.
+The passes are in `atglyph-mapgen`, so a place is grown, surveyed and held to its bounds in a test with no `App`, over a span of seeds and at more than one size, in seconds.
+The file is in `atglyph-rules`, which names no mapgen type, so a layout loads and every mistake in it is reported with no map at all.
+`atglyph-bevy` holds the one function that sees both, as it does for a prefab, and it adds no system.

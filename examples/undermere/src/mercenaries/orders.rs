@@ -3,10 +3,10 @@
 
 use std::sync::Arc;
 
+use atglyph::prelude::*;
+use atglyph::rules::ai::Standard;
+use atglyph::rules::ai::tactics::{Hunt, Keep, Leashed, OutOfSight, Scavenge, UseCarried};
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_rules::ai::Standard;
-use rl_engine::rl_rules::ai::tactics::{Hunt, Keep, Leashed, OutOfSight, Scavenge, UseCarried};
 use serde::{Deserialize, Serialize};
 
 use super::{KIT_FACET, KitSeen, MERCENARY, Mercenary, PutOnBetter};
@@ -270,9 +270,9 @@ mod tests {
     use std::collections::{BTreeMap, VecDeque};
     use std::sync::Arc;
 
+    use atglyph::ecs::props::{Hidden, spawn_prop};
+    use atglyph::ecs::testing::{KeyScriptPlugin, press};
     use bevy::ecs::system::RunSystemOnce;
-    use rl_engine::rl_bevy::props::{Hidden, spawn_prop};
-    use rl_engine::rl_bevy::testing::{KeyScriptPlugin, press};
 
     use super::*;
     use crate::mercenaries::fixtures::hired;
@@ -359,7 +359,7 @@ mod tests {
     /// walk to them is longer than three, as the engine's `Keep::leader`
     /// does by measuring on foot, and never by catching up after.
     ///
-    /// One floor is enough: the gap rule is unit-tested in `rl-rules` on
+    /// One floor is enough: the gap rule is unit-tested in `atglyph-rules` on
     /// made-up walls, and what is asked here is that the game wires that
     /// rule to a hired follower on a real floor's corners and doors.
     #[test]
@@ -497,11 +497,11 @@ mod tests {
     /// on the mercenary's row of the party panel, and changes with it.
     #[test]
     fn the_look_panel_and_the_party_panel_say_each_mercenarys_order() {
-        let views = (rl_engine::rl_ui::InspectViewPlugin, rl_engine::rl_ui::PartyViewPlugin);
+        let views = (atglyph::ui::InspectViewPlugin, atglyph::ui::PartyViewPlugin);
         let (mut app, me, here) = arena_with(2, views);
         app.add_systems(Update, (crate::bestiary_lore::annotate_inspect, show_orders).chain().in_set(ViewSet::Annotate));
         let brenna = hired(&mut app, me, here.offset(-1, 0), "Brenna");
-        let modal = rl_engine::rl_ui::view::inspect::inspect_modal(app.world().resource::<Modals>());
+        let modal = atglyph::ui::view::inspect::inspect_modal(app.world().resource::<Modals>());
         app.world_mut().resource_mut::<Modals>().open(modal);
         app.world_mut().resource_mut::<InspectView>().cursor = at(&app, brenna);
         for (want, word) in [(Order::Follow, "following"), (Order::Hold, "holding")] {

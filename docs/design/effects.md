@@ -46,7 +46,7 @@ Its period is written on the trigger it sets off, `(on: "pulse", every: 1000, ..
 
 ## 3. `Triggers`, and the potion model
 
-`TriggerSpec` is the authored form, in `rl-rules` beside `EffectSpec` so any game's file can read it: a moment by name, an `Area`, an optional count of `fires`, an optional effect list, and a pulse trigger's `every`.
+`TriggerSpec` is the authored form, in `atglyph-rules` beside `EffectSpec` so any game's file can read it: a moment by name, an `Area`, an optional count of `fires`, an optional effect list, and a pulse trigger's `every`.
 `Triggers::build(specs, shared, moments, kinds, names)` turns a definition's specs into the `Triggers` component once, and every copy of that item or prop shares each list through an `Arc`.
 `fires` is per entity: the list is shared, the count is not, so springing one cable does not spend another.
 
@@ -66,7 +66,7 @@ A trigger with neither a list nor a shared one fails the build, because a trigge
 
 `Area` is `Here`, the one cell the moment happened at, or `Burst { radius }`, the cells within the radius that a straight line from the centre reaches without crossing a wall.
 Walls stop a burst and nobody standing does: a burst catches whoever is in the way rather than stopping on them, which is the difference between it and a projectile.
-It is the same call, `rl_grid::burst`, that an ability's `Ball` bursts with once it lands, so a grenade and a fireball of one radius reach the same cells, and a ball that flies into a wall bursts on the near side of it.
+It is the same call, `atglyph_grid::burst`, that an ability's `Ball` bursts with once it lands, so a grenade and a fireball of one radius reach the same cells, and a ball that flies into a wall bursts on the near side of it.
 The first build left bursts as plain discs, reaching through walls because a ball did; walls were chosen for both on 2026-09-23, since a grenade that hurt a droid behind a wall read as a bug to anyone playing.
 
 ## 4. Reporting a moment, and landing it
@@ -110,7 +110,7 @@ Whatever an actor answers lands as its own doing without a marker, since an acto
 `died` takes the prop's road through a remnant, which carries the actor's name and lands as itself, so it stands in for the actor: a foe its burst kills is its kill rather than its killer's, and the log and a record of the death name the actor.
 The first build credited the dead actor's own entity instead, and was replaced the same day because nothing could say its name: the body is despawned by the time the burst lands, and a record of a player's death is written a frame after that.
 An actor's own triggers spare the actor they belong to, unlike a prop's or a thing's, since a bite, an aura or a cloud it gives off is aimed at whoever is round it.
-What a remnant carries beyond `Name` widened the same week into `RemnantKeeps`, a resource of component ids rather than a fixed pair of fields: a prop's broken look and an actor's dead one both want to be told apart in the log by more than a plain noun, and a glyph is a `rl-ui` type a tier 2 crate cannot name.
+What a remnant carries beyond `Name` widened the same week into `RemnantKeeps`, a resource of component ids rather than a fixed pair of fields: a prop's broken look and an actor's dead one both want to be told apart in the log by more than a plain noun, and a glyph is a `atglyph-ui` type a tier 2 crate cannot name.
 `app.keep_on_remnant::<C>()` is how a plugin above this one adds to the list, and `NarratorPlugin` adds `Glyph` the moment it builds, so the log colours a dead actor's or a broken prop's name as it colours a living one's without this crate learning what a colour is.
 `RemnantKeeps::copy` queues the copy through `clone_with_opt_in`, at the next sync point while the original is still there to read, which is why `report_died` and `report_destroyed` both take the resource and call it rather than building the carrier's extra components by hand: one list, read by both callers, is one place to add a third.
 

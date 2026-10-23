@@ -21,10 +21,10 @@
 //! the save up through the engine's `AbandonRun`, which `SavePlugin`
 //! answers by deleting the slot.
 
+use atglyph::prelude::*;
+use atglyph::save::{AddSaveable, SavePlugin, Saveable, SaveableActor, SaveableItem, SaveableState};
 use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_save::{AddSaveable, SavePlugin, Saveable, SaveableActor, SaveableItem, SaveableState};
 use serde::{Deserialize, Serialize};
 
 use crate::climb::Deepest;
@@ -229,9 +229,9 @@ impl SaveableState for Deepest {
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_bevy::testing::{KeyScriptPlugin, press};
-    use rl_engine::rl_core::RunSeed;
-    use rl_engine::rl_save::{Saves, save_run};
+    use atglyph::ecs::testing::{KeyScriptPlugin, press};
+    use atglyph::primitives::RunSeed;
+    use atglyph::save::{Saves, save_run};
 
     use super::*;
     use crate::heat::Heat;
@@ -289,7 +289,7 @@ mod tests {
             if e.contains::<bevy::ecs::entity_disabling::Disabled>() {
                 continue;
             }
-            if let (Some(kind), Some(health), None) = (e.get::<crate::droids::Kind>(), e.get::<Health>(), e.get::<rl_engine::rl_bevy::Remains>()) {
+            if let (Some(kind), Some(health), None) = (e.get::<crate::droids::Kind>(), e.get::<Health>(), e.get::<atglyph::ecs::Remains>()) {
                 droids.push((roster.defs.name(kind.0).to_string(), health.current));
             }
             if e.get::<PropKind>().is_some_and(|k| k.0 == spent) {
@@ -300,7 +300,7 @@ mod tests {
             }
             // A wreck: where it lies, whether it still wears the droid's
             // own glyph, and whether it is dressed as the wreckage prop.
-            if e.contains::<rl_engine::rl_bevy::Remains>() {
+            if e.contains::<atglyph::ecs::Remains>() {
                 wrecks.push((e.get::<Position>().map_or(Point::ZERO, |p| p.0), e.contains::<Glyph>(), e.contains::<PropKind>()));
             }
             // A wall lamp: a light nobody carries.
@@ -356,7 +356,7 @@ mod tests {
         app.world_mut().get_mut::<Health>(droids[0]).unwrap().current -= 1;
         // And one killed, which leaves a wreck.
         let kinetic = app.world().resource::<Registries>().damage_kinds.expect("kinetic");
-        app.world_mut().write_message(DamageEvent::new(droids[1], rl_engine::rl_rules::Hit::by(me, kinetic, 1_000)));
+        app.world_mut().write_message(DamageEvent::new(droids[1], atglyph::rules::Hit::by(me, kinetic, 1_000)));
         crate::testing::settle(&mut app);
         app
     }
@@ -611,7 +611,7 @@ mod tests {
         let world = app.world_mut();
         let roster = world.resource::<crate::droids::Roster>().defs.clone();
         let mut posts: Vec<(i32, i32, String)> = world
-            .query_filtered::<(&Post, &crate::droids::Kind), Without<rl_engine::rl_bevy::Remains>>()
+            .query_filtered::<(&Post, &crate::droids::Kind), Without<atglyph::ecs::Remains>>()
             .iter(world)
             .map(|(post, kind)| (post.0.x, post.0.y, roster.name(kind.0).to_string()))
             .collect();
@@ -659,7 +659,7 @@ mod tests {
         assert!(app.world().resource::<Saves>().exists(SLOT), "the first arrival wrote it");
         let me = player(&mut app);
         let kinetic = app.world().resource::<Registries>().damage_kinds.expect("kinetic");
-        app.world_mut().write_message(DamageEvent::new(me, rl_engine::rl_rules::Hit::from_source(None, kinetic, 1_000)));
+        app.world_mut().write_message(DamageEvent::new(me, atglyph::rules::Hit::from_source(None, kinetic, 1_000)));
         crate::testing::settle(&mut app);
         assert_eq!(*app.world().resource::<State<EngineState>>().get(), EngineState::Over);
         assert!(!app.world().resource::<Saves>().exists(SLOT), "deleted");

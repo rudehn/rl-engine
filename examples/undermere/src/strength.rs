@@ -19,10 +19,10 @@
 //! adventurer pays: a goblin's strength is never read, and what it wears
 //! it wears as well as anyone.
 
+use atglyph::prelude::*;
+use atglyph::rules::ability::RawValue;
+use atglyph::rules::stats::Source;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_rules::ability::RawValue;
-use rl_engine::rl_rules::stats::Source;
 
 use crate::armory::{Armory, ItemDef, ItemKind};
 use crate::content::{ACCURACY, ARMOR, STRENGTH};
@@ -238,8 +238,8 @@ impl FromArgs for Strengthen {
 
 #[cfg(test)]
 mod tests {
+    use atglyph::primitives::RunSeed;
     use bevy::ecs::system::RunSystemOnce;
-    use rl_engine::rl_core::RunSeed;
 
     use super::*;
     use crate::testing::{adventurer, at, clear_monsters, equip, find, give, headless, lay_floor, make, monster, said, use_thing};

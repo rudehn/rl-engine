@@ -1,11 +1,11 @@
 //! The candidates at the Sunken Lantern's tables: who waits each visit,
 //! what each says of itself, and `hire` kept off while the party is full.
 
+use atglyph::prelude::*;
+use atglyph::primitives::noun::{Countability, counted_as, with_the};
+use atglyph::ui::view::offers::OffersView;
+use atglyph::ui::view::sum_of;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_core::noun::{Countability, counted_as, with_the};
-use rl_engine::rl_ui::view::offers::OffersView;
-use rl_engine::rl_ui::view::sum_of;
 use serde::{Deserialize, Serialize};
 
 use super::*;
@@ -408,7 +408,7 @@ pub fn talk_rows(mut view: ResMut<OffersView>, verbs: Res<Verbs>, named: Query<&
 mod tests {
     use std::collections::BTreeSet;
 
-    use rl_engine::rl_core::noun::with_article;
+    use atglyph::primitives::noun::with_article;
 
     use super::*;
     use crate::dungeon::map_of;
@@ -572,7 +572,7 @@ mod tests {
     #[test]
     fn the_look_panel_and_talk_name_a_candidates_unknown_potion_by_its_face_beside_its_kit_and_fee() {
         let (mut app, me) = in_mereholt(5);
-        app.add_plugins(rl_engine::rl_ui::InspectViewPlugin)
+        app.add_plugins(atglyph::ui::InspectViewPlugin)
             .add_systems(Update, (crate::bestiary_lore::annotate_inspect, show_candidates).chain().in_set(ViewSet::Annotate));
         let candidate = waiting(&mut app)[0];
         let kind = "potion of extra healing";
@@ -583,7 +583,7 @@ mod tests {
         app.world_mut().get_mut::<Inventory>(candidate).expect("a pack").items.push(potion);
         let cell = beside(&mut app, candidate);
         stand_on(&mut app, me, cell);
-        let modal = rl_engine::rl_ui::view::inspect::inspect_modal(app.world().resource::<Modals>());
+        let modal = atglyph::ui::view::inspect::inspect_modal(app.world().resource::<Modals>());
         app.world_mut().resource_mut::<Modals>().open(modal);
         app.world_mut().resource_mut::<InspectView>().cursor = at(&app, candidate);
         app.update();
@@ -629,7 +629,7 @@ mod tests {
     #[test]
     fn the_rail_and_the_company_say_what_each_one_holds_naming_an_unknown_potion_by_its_face() {
         let (mut app, me) = in_mereholt(5);
-        app.add_plugins((rl_engine::rl_ui::NearbyViewPlugin, rl_engine::rl_ui::view::PartyViewPlugin))
+        app.add_plugins((atglyph::ui::NearbyViewPlugin, atglyph::ui::view::PartyViewPlugin))
             .insert_resource(NearbyFollowers::LeftOut)
             .add_systems(Update, (show_orders, show_kit).in_set(ViewSet::Annotate));
         let [candidate, hireling] = [waiting(&mut app)[0], waiting(&mut app)[1]];

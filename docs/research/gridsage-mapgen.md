@@ -790,10 +790,10 @@ A finished frame shows a dense room cluster with the most secluded rooms shaded 
 
 ## 10. What this suggests for foundry (inference, not sourced fact)
 
-Everything in this section is my inference from the sources above, measured against the current state of `examples/foundry` and `crates/rl-mapgen`.
+Everything in this section is my inference from the sources above, measured against the current state of `examples/foundry` and `crates/atglyph-mapgen`.
 None of it is something Josh Ge said about this project.
 
-Where foundry is now, from a brief read of the repo: a deck is 70x40 (2,800 cells), built by a rooms pass with L-corridors, with required pieces stamped first (armory, store, guard post, reactor or core) and then one centered prefab per remaining room from six room kinds in two sizes (`examples/foundry/src/decks.rs`, `crates/rl-mapgen/src/dungeon.rs`, `crates/rl-mapgen/src/prefab.rs`).
+Where foundry is now, from a brief read of the repo: a deck is 70x40 (2,800 cells), built by a rooms pass with L-corridors, with required pieces stamped first (armory, store, guard post, reactor or core) and then one centered prefab per remaining room from six room kinds in two sizes (`examples/foundry/src/decks.rs`, `crates/atglyph-mapgen/src/dungeon.rs`, `crates/atglyph-mapgen/src/prefab.rs`).
 Prefabs are RON with rows, a legend, tagged item and monster draws by band, and `Mark` cells (`examples/foundry/assets/prefabs/*.ron`).
 The engine already has rotation, flipping, `StampOneOf` weighted choice and `Placement::AnyRoom`.
 

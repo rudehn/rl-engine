@@ -27,9 +27,9 @@
 
 use std::ops::RangeInclusive;
 
+use atglyph::prelude::*;
 use bevy::prelude::*;
 use rand::Rng;
-use rl_engine::prelude::*;
 
 use crate::armory::{Armory, ItemDef};
 use crate::dungeon::floor_of;
@@ -304,7 +304,7 @@ mod tests {
             .container
             .iter()
             .flat_map(|c| &c.contents)
-            .filter(|row| row.what == rl_engine::rl_rules::Stock::Tag(tag("potion")))
+            .filter(|row| row.what == atglyph::rules::Stock::Tag(tag("potion")))
             .map(|row| f64::from(row.min + row.max) / 2.0)
             .sum();
         let chests = f64::from(crate::dungeon::CHESTS.0 + crate::dungeon::CHESTS.1) / 2.0;

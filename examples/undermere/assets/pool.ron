@@ -1,9 +1,9 @@
 // The run's pool: every piece a run may hold, how often, where, how many,
-// and the budget each floor draws against. `rl_rules::pool::load` reads
+// and the budget each floor draws against. `atglyph::rules::pool::load` reads
 // this file; `Pool::plan_run` draws a whole run's picks once, at run
 // start, from a stream of the seed (`dungeon.rs` keeps it beside the
 // lair draw); a floor's attempts then vary its layout and never its
-// picks. `rl_mapgen::StampPicks` places the inside picks once a floor is
+// picks. `atglyph::mapgen::StampPicks` places the inside picks once a floor is
 // surveyed; `Dress` lays the dressed ones and then every area nothing
 // else took, from the biome's own list (`dungeon/biomes.rs::district_dressings`).
 //
@@ -11,7 +11,7 @@
 //   weights: [(name, weight)], how often an entry is drawn, by a name
 //            the entries use; "withheld" is nought and never drawn, the
 //            documented way to keep an entry out of a run until its
-//            mechanism exists (`rl_rules::pool::load`'s own error for a
+//            mechanism exists (`atglyph::rules::pool::load`'s own error for a
 //            limit of nought says so); nothing is withheld now
 //   tags:    every place tag an entry may name in `where` or `not`: the
 //            biomes of floors one to nine, by the bare name `dungeon/biomes.rs` draws

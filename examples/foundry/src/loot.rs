@@ -4,12 +4,12 @@
 //! the arrival that built it, leaves what a kill's kind carries where it
 //! died, and fills crates and lockers, each through the
 //! [`Armory`](crate::gear::Armory), Foundry's
-//! [`ItemMaker`](rl_engine::rl_bevy::ItemMaker).
+//! [`ItemMaker`](atglyph::ecs::ItemMaker).
 //! What is Foundry's is the numbers: [`scatter_rules`] puts one item beside
 //! every armory mark, two beside every store mark, and `3 + deck` more
 //! loose, and `item_spawns.ron` says what each deck may hold.
 
-use rl_engine::rl_rules::ScatterRules;
+use atglyph::rules::ScatterRules;
 
 /// How a deck's floor is laid out when it is first entered: one item
 /// beside every `A` mark, where an armory locker stands, two beside every
@@ -21,9 +21,9 @@ pub fn scatter_rules() -> ScatterRules {
 
 #[cfg(test)]
 mod tests {
+    use atglyph::prelude::*;
+    use atglyph::primitives::RunSeed;
     use bevy::prelude::*;
-    use rl_engine::prelude::*;
-    use rl_engine::rl_core::RunSeed;
 
     /// What the decks hand out gets better the deeper it is, read from the
     /// level rows with no draw: deck one is plain but for a `+1` about one
@@ -57,7 +57,7 @@ mod tests {
         let registries = crate::content::registries();
         let armory = crate::testing::armory(&registries);
         assert_eq!(crate::gear::container_problems(&armory.table, &registries), Vec::<String>::new(), "the shipped table");
-        let empty = rl_engine::rl_rules::LootTable::default();
+        let empty = atglyph::rules::LootTable::default();
         let wrong = crate::gear::container_problems(&empty, &registries);
         assert!(wrong.iter().any(|w| w.starts_with("armory locker asks for weapon") && w.ends_with("decks [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]")), "{wrong:#?}");
     }

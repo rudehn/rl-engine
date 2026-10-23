@@ -25,13 +25,13 @@
 //! offers `Rites`: when Mereholt is first entered and when a continued run
 //! puts the people back.
 
+use atglyph::ecs::Source;
+use atglyph::prelude::*;
+use atglyph::ui::view::offers::OffersView;
+use atglyph::ui::view::{NamedPieces, currency_name, sum_of};
 use bevy::ecs::message::MessageCursor;
 use bevy::ecs::system::SystemState;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_bevy::Source;
-use rl_engine::rl_ui::view::offers::OffersView;
-use rl_engine::rl_ui::view::{NamedPieces, currency_name, sum_of};
 use ron::options::Options;
 use serde::Deserialize;
 
@@ -202,7 +202,7 @@ pub fn rite_rows(mut view: ResMut<OffersView>, rites: Res<Rites>, verbs: Res<Ver
 ///
 /// A rite with nothing to do for its taker, by [`Rite::finds_work`], lands
 /// nothing and the priest gives the price back, by the engine's own
-/// [`pay`](rl_engine::rl_bevy::pay), saying so in the rite's `idle` words
+/// [`pay`](atglyph::ecs::pay), saying so in the rite's `idle` words
 /// and naming only what was handed back,
 /// `Hesk finds nothing to mend, and gives back your 30 gold coins.`:
 /// the engine takes the price before the answer runs, and a rite that
@@ -227,7 +227,7 @@ pub fn answer_rites(world: &mut World, mut cursor: Local<MessageCursor<Interacte
             let works = rite.finds_work(world, ev.actor);
             let currency = world.get_resource::<Currency>().copied();
             let back = match currency {
-                Some(currency) if !works => rl_engine::rl_bevy::pay(world, ev.target, ev.actor, rite.price, currency),
+                Some(currency) if !works => atglyph::ecs::pay(world, ev.target, ev.actor, rite.price, currency),
                 _ => 0,
             };
             // The price handed back is the adventurer's own, not a find.
@@ -280,8 +280,8 @@ impl Purse<'_, '_> {
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_core::RunSeed;
-    use rl_engine::rl_rules::UNTIL_CURED;
+    use atglyph::primitives::RunSeed;
+    use atglyph::rules::UNTIL_CURED;
 
     use super::*;
     use crate::dungeon::{TOWN, map_of};

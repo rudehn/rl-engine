@@ -33,14 +33,14 @@
 //! refused before the use is spent, by [`refuse_at_home`]: the gate is a
 //! walk away, and a call from beside it would only spend a stone.
 
+use atglyph::ecs::{BreakReason, Spent, WorkBroken, Works};
+use atglyph::prelude::*;
+use atglyph::primitives::turn::BASE_ACTION_COST;
+use atglyph::rules::ability::RawValue;
+use atglyph::rules::work::Work;
 use bevy::ecs::system::SystemState;
 use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_bevy::{BreakReason, Spent, WorkBroken, Works};
-use rl_engine::rl_core::turn::BASE_ACTION_COST;
-use rl_engine::rl_rules::ability::RawValue;
-use rl_engine::rl_rules::work::Work;
 
 use crate::armory::{Armory, ItemKind};
 use crate::dungeon::{TOWN, map_of};
@@ -252,7 +252,7 @@ impl GateMarks<'_, '_> {
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_core::RunSeed;
+    use atglyph::primitives::RunSeed;
 
     use super::*;
     use crate::testing::{adventurer, arena_on, continued, give, go_through, headless, here, make, monster, pack, said, settle, stand_on};

@@ -13,13 +13,13 @@ Phase D changed four more.
 A key needs no aiming code at all: a game writes `AimAt` and the engine opens the cursor, or uses a self ability at once, so every ability is bound the same way.
 `Offered` covers whoever holds the turn rather than only a deciding mind, and gained the refused list with its reasons, so the minds, the menu and the preview all read one answer from one gate.
 The targeting view counts a target that has no `Name` or `Glyph`, where the other views leave such a row out, because a nameless row is one a list may skip but a nameless target is one the ability will hit anyway; the first run of Knacks said "fireball at nothing" over a brute for exactly this reason.
-And `rl-grid` became a real dependency of `rl-ui` rather than a dev-only one, since previewing a footprint is grid work.
+And `atglyph-grid` became a real dependency of `atglyph-ui` rather than a dev-only one, since previewing a footprint is grid work.
 
 Revised 2026-09-13: one answer to where a use lands.
 The resolver, the preview and the ability tactic each worked out the footprint and who stood in it, and they had drifted four ways apart: the user was skipped though `Aim::Ally` includes it, the preview refused a footprint with no cells that the resolver paid for, the preview listed blockers with no health that the resolver passed by, and the tactic counted allies as harmed by a foe-aimed burst that never touches them.
 Knacks showed the first as "medspray at nothing" over a hurt player, and the second as twelve mana spent on a fireball the banner had called refused.
-Now `Aim::hits` and `Aim::worth_aiming_at` in `rl-rules` are the rules, `aim_blocked` the aim's own refusals, and `Bystanders::land` in `rl-bevy` the one call the resolver lands a use with and the cursor previews one with, held to it by a property test over seeded layouts.
-`rl-grid` went back to a dev-only dependency of `rl-ui`, since the cursor no longer resolves anything itself.
+Now `Aim::hits` and `Aim::worth_aiming_at` in `atglyph-rules` are the rules, `aim_blocked` the aim's own refusals, and `Bystanders::land` in `atglyph-bevy` the one call the resolver lands a use with and the cursor previews one with, held to it by a property test over seeded layouts.
+`atglyph-grid` went back to a dev-only dependency of `atglyph-ui`, since the cursor no longer resolves anything itself.
 The same run found that no heal had ever landed: `resolve` clamped every hit at zero, and a mend is a negative one. The clamp moved to where blows are rolled.
 
 ## 0. Summary
@@ -28,7 +28,7 @@ An ability is the second thing an actor can spend a turn on.
 The first is an attack, which the engine already owns end to end: a target, a shape, a cost, a roll, a mitigation pipeline, an event.
 An ability is that same sentence with the parts named by data instead of hard-coded, so a game can write a hundred of them in RON and never touch Rust.
 
-`rl-grid::targeting` has shipped the shapes since M3 and nothing uses them but `RangedAttack`.
+`atglyph-grid::targeting` has shipped the shapes since M3 and nothing uses them but `RangedAttack`.
 That is the failure mode section 1 of `PLAN.md` names: data structures shipped, behaviour left in the game.
 This slice owns the loop.
 
@@ -93,14 +93,14 @@ The measure of the design is that those forty lines are an `impl Effect` and a r
 
 ### 3.1 The definition
 
-In `rl-rules/src/ability.rs`, tier 1, no Bevy.
+In `atglyph-rules/src/ability.rs`, tier 1, no Bevy.
 
 ```rust
 pub struct AbilityDef {
     pub name: String,
     /// What it wants under its footprint, so a mind can choose a target.
     pub aim: Aim,
-    /// The shape, from rl-grid. Range lives inside the shape.
+    /// The shape, from atglyph-grid. Range lives inside the shape.
     pub mode: TargetMode,
     /// Whether the aim must be a cell the user can actually see. False for
     /// a grenade over a wall.
@@ -193,7 +193,7 @@ This is where a shield bash learns it needs a shield and a shiv learns it needs 
 
 ### 3.5 Effects are types, not a list
 
-The trait lives in `rl-bevy`, because applying an effect means writing to the world.
+The trait lives in `atglyph-bevy`, because applying an effect means writing to the world.
 
 ```rust
 pub trait Effect: Send + Sync + 'static {
@@ -311,7 +311,7 @@ Once a game has written its five, its designers are back in RON.
 
 ## 4. Where each piece lives
 
-### rl-rules: `ability.rs` (tier 1, no Bevy)
+### atglyph-rules: `ability.rs` (tier 1, no Bevy)
 
 Names in an ability file are resolved through [`Names`], a value borrowing whichever of the stat, status, tag, slot and damage kind registries a game has.
 This was not in the plan, and it is the difference between abilities being data and being nearly data.
@@ -328,7 +328,7 @@ Statuses and affixes load through it too: they used to make a game mirror the en
 `Gates` and `Purse` are small borrowed structs the caller fills from its components, the way `forecast::Combatant` already is.
 All of it is testable without a window.
 
-### rl-bevy: `ability.rs` (tier 2)
+### atglyph-bevy: `ability.rs` (tier 2)
 
 - `Abilities`: the registry plus the boxed effects, built at load.
 - `Known(Vec<AbilityId>)`, `Pools(Stats)` - reusing `StatBlock` rather than a second store - `Cooldowns(BTreeMap<AbilityId, u32>)` keyed on the same clock the turn queue runs on, and `Charges(u16)` on the granting item.
@@ -340,7 +340,7 @@ All of it is testable without a window.
 
 Effects run inside `Resolve`, not `React`, so the damage they cause goes through the existing pipeline in the same pass and a game's reaction sees it on schedule.
 
-### rl-ui: the target cursor
+### atglyph-ui: the target cursor
 
 The look cursor already opened onto the nearest thing worth looking at, stepped with `DirectionKeys`, cycled with Tab, and held a modal.
 What the two cursors share is their keys and how a key moves them, so `cursor.rs` holds `CursorKeys`, the one set of bindings, and `steer`, the one reading of a frame's keys: close, confirm, cycle to the next candidate nearest first, or step without leaving the loaded window.
@@ -351,7 +351,7 @@ The cursor opens on what `Aim::worth_aiming_at` picks, the rule the tactic aims 
 `TargetPanel` repaints the backgrounds the map already drew rather than drawing a box: the cells hit, the flight to them, and, when the resolver would refuse, the whole footprint in the bad tone with the reason in its banner.
 `AbilityView` lists what the turn-holder knows in registration order, so a key bound to the third row stays bound to it, with the gate's reasons; `AbilityPanel` draws it with the existing list menu under a modal of its own.
 
-### rl-render
+### atglyph-render
 
 The footprint drawn as a tint over the map view, in `PresentSet::Overlay`: one colour for the cells that will be affected, another for the flight path, a third when the aim is illegal.
 No new machinery; `shade` already composes a tint per cell.
@@ -371,7 +371,7 @@ Rebuilding rather than editing means an unequipped wand takes its ability with i
 
 ## 6. Minds
 
-A new tactic in `rl-rules::ai::tactics`, sitting wherever the game's brain puts it.
+A new tactic in `atglyph-rules::ai::tactics`, sitting wherever the game's brain puts it.
 
 The engine filters first, in tier 2: before the brain runs, the actor's usable abilities are narrowed to those that pass the gate, are affordable and are off cooldown, and the survivors are handed to the snapshot as `(AbilityId, Aim, TargetMode)`.
 The tactic then scores each against what the actor can see - foes covered for `Aim::Foe`, hurt allies for `Aim::Ally`, self for `SelfOnly` - and returns the best, or nothing.
@@ -397,12 +397,12 @@ A wand the player can fire and a monster cannot is the half-shipped shape `PLAN.
 
 Each phase compiles, passes, and is worth committing alone.
 
-**A. The definition and the gate** (`rl-rules`). Built.
+**A. The definition and the gate** (`atglyph-rules`). Built.
 `AbilityDef` and friends, `gate`, `affordable`, `pay`, `Blocked`, RON loading with validate-on-load.
 No effects, no Bevy, no example.
 Tests are pure.
 
-**B. The action and the engine's effects** (`rl-bevy`). Built.
+**B. The action and the engine's effects** (`atglyph-bevy`). Built.
 `Abilities`, `Known`, `Cooldowns`, `Use`, the resolver, `Effect`, `EffectWorld`, `add_effect`, and `Harm`, `Mend`, `Afflict`, `Cleanse`, `Teleport`.
 Fired from a test with a literal aim point; no UI yet.
 This is the phase that proves the loop is owned.
@@ -412,7 +412,7 @@ This is the phase that proves the loop is owned.
 Corsair's pistol moves from a bespoke key to an ability, and `f` becomes the ability key.
 The first proof that a game loses code.
 
-**D. The cursor and the menu** (`rl-ui`). Built.
+**D. The cursor and the menu** (`atglyph-ui`). Built.
 `cursor.rs` shared with the look cursor, `TargetView` and `TargetPanel`, `AbilityView` and `AbilityPanel`.
 Knacks lost its stand-in aiming code: an ability key writes `AimAt` and stops.
 
@@ -424,13 +424,13 @@ The delve's warden gets a breath weapon and stops being a sack of health.
 A fourth example, `examples/knacks`: one small map, five ability sets in five RON files, a key to switch between them, and one game effect per genre that the engine does not ship.
 All five load into one registry, which is sharper than the plan: a fireball and a smoke bomb are two rows of one table, and switching sets is a change of grants and nothing else.
 It is the test that the seams are right, in the same way Corsair is, and it is what makes the answer to "will this work for my game" a command rather than an argument.
-Folded on 2026-09-13: the pirates set went to Corsair with `Plunder` spilling a purse rather than moving a coin, the fantasy and medieval sets to the delve with `Drain`, and the claim that five genres share one registry became `crates/rl-bevy/tests/genres.rs`.
+Folded on 2026-09-13: the pirates set went to Corsair with `Plunder` spilling a purse rather than moving a coin, the fantasy and medieval sets to the delve with `Drain`, and the claim that five genres share one registry became `crates/atglyph-bevy/tests/genres.rs`.
 
 The remaining engine effects - `Shove`, `Pull`, `Kindle`, `Summon`, `Grant` - land wherever the phase that needs them does.
 
 ## 9. Tests
 
-- Pure, in `rl-rules`: an ability with an unmet requirement is blocked and every unmet requirement is listed; costs are paid exactly once or not at all; a cost that cannot be met leaves the purse untouched.
+- Pure, in `atglyph-rules`: an ability with an unmet requirement is blocked and every unmet requirement is listed; costs are paid exactly once or not at all; a cost that cannot be met leaves the purse untouched.
 - Over a seed range: an ability with `needs_sight` never lands on a cell outside the user's viewshed, across generated maps.
 - Over a seed range: no ability is used twice inside its cooldown, at any speed, including speeds that give two actions per turn.
 - A refused ability costs the player no time and keeps the turn; a mind is never handed an ability it cannot afford, so it cannot loop.

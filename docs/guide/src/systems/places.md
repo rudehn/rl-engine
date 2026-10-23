@@ -1,11 +1,11 @@
 <!-- documents:
      plugins: none
-     files: crates/rl-bevy/src/places.rs
-            crates/rl-bevy/src/world.rs
-            crates/rl-bevy/src/turn.rs
-            crates/rl-bevy/src/plugin.rs
-            crates/rl-bevy/src/knowledge.rs
-            crates/rl-bevy/src/minds.rs
+     files: crates/atglyph-bevy/src/places.rs
+            crates/atglyph-bevy/src/world.rs
+            crates/atglyph-bevy/src/turn.rs
+            crates/atglyph-bevy/src/plugin.rs
+            crates/atglyph-bevy/src/knowledge.rs
+            crates/atglyph-bevy/src/minds.rs
      fingerprint: b71ec517 -->
 
 # Places
@@ -69,5 +69,5 @@ The game decides what a map id means, what is built there, where the transitions
 
 ## Where it lives
 
-`rl-bevy` is tier 2 and owns places, because they are about what the running game is reading right now, which is not a question a lower tier can answer.
-What a place is built from is below the line: a `PlaceBuild` is a `Terrain` and points, made by an `rl-mapgen` chain a test runs with no `App`, so the generator is tested without a frame and only which map is current, and which indexes have to be swapped when that changes, is left above it.
+`atglyph-bevy` is tier 2 and owns places, because they are about what the running game is reading right now, which is not a question a lower tier can answer.
+What a place is built from is below the line: a `PlaceBuild` is a `Terrain` and points, made by an `atglyph-mapgen` chain a test runs with no `App`, so the generator is tested without a frame and only which map is current, and which indexes have to be swapped when that changes, is left above it.

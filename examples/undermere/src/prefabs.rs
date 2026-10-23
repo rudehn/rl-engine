@@ -10,7 +10,7 @@
 //! pool's dressings and the pool itself are loaded beside them.
 //!
 //! The engine fills them. `dungeon` stamps each piece by name through
-//! [`PrefabLibrary::piece`](rl_engine::rl_rules::PrefabLibrary::piece), and on the arrival that built a place the engine's
+//! [`PrefabLibrary::piece`](atglyph::rules::PrefabLibrary::piece), and on the arrival that built a place the engine's
 //! `PrefabPlugin` puts down what every slot names: a prop from
 //! `props.ron`, or a monster from the bestiary, made by
 //! [`Bestiary`] exactly as a floor's own
@@ -23,12 +23,12 @@
 //! `assets/roles.ron`. Two more thrones, the Mother Below's cave and the
 //! Ember Wyrm's hall, stand beside the Drowned King's own.
 
-use rl_engine::prelude::*;
-use rl_engine::rl_rules::dressing;
-use rl_engine::rl_rules::layout::LayoutDef;
-use rl_engine::rl_rules::pool::{self, Pool};
-use rl_engine::rl_rules::prefab;
-use rl_engine::rl_rules::role;
+use atglyph::prelude::*;
+use atglyph::rules::dressing;
+use atglyph::rules::layout::LayoutDef;
+use atglyph::rules::pool::{self, Pool};
+use atglyph::rules::prefab;
+use atglyph::rules::role;
 
 use crate::bestiary::{Bestiary, MonsterDef};
 use crate::content::Library;
@@ -166,7 +166,7 @@ pub fn load(tiles: &TileRegistry, layout: &LayoutDef) -> (Prefabs<MonsterDef>, P
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_core::RunSeed;
+    use atglyph::primitives::RunSeed;
 
     use super::*;
     use crate::dungeon::Undermere;
@@ -209,15 +209,15 @@ mod tests {
         let undermere = Undermere::new(RunSeed(0));
         let (prefabs, pool, _) = load(undermere.tiles(), &crate::dungeon::layout());
         let library = Library::load(&crate::content::effect_kinds(), &Moments::default());
-        let sources = rl_engine::rl_rules::prefab::Sources {
+        let sources = atglyph::rules::prefab::Sources {
             roles: prefabs.roles(),
             monsters: &library.bestiary.spawns,
             items: &library.armory.table,
             tags: &library.registries.tags,
         };
-        let pieces = rl_engine::rl_rules::pool::coverage(&pool, prefabs.defs(), &sources);
+        let pieces = atglyph::rules::pool::coverage(&pool, prefabs.defs(), &sources);
         assert_eq!(pieces.empties(), Vec::new(), "a pool piece's slot finds nothing at some band it stands on");
-        let dressed = rl_engine::rl_rules::pool::dressing_coverage(&pool, prefabs.dressings(), &sources);
+        let dressed = atglyph::rules::pool::dressing_coverage(&pool, prefabs.dressings(), &sources);
         assert_eq!(dressed.empties(), Vec::new(), "a dressing's slot finds nothing at some band it stands on");
     }
 }

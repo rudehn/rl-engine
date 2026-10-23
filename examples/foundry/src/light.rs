@@ -15,9 +15,9 @@
 //! tile and droids without radar never saw the player. That is why the
 //! lamp starts lit.
 
+use atglyph::grid::Rgb;
+use atglyph::prelude::*;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_grid::Rgb;
 
 use crate::input::Binds;
 
@@ -62,9 +62,9 @@ pub fn toggle_lamp(
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_bevy::testing::{KeyScript, KeyScriptPlugin};
-    use rl_engine::rl_core::{Point, RunSeed};
-    use rl_engine::rl_grid::Light;
+    use atglyph::ecs::testing::{KeyScript, KeyScriptPlugin};
+    use atglyph::grid::Light;
+    use atglyph::primitives::{Point, RunSeed};
 
     use super::*;
 
@@ -75,7 +75,7 @@ mod tests {
     #[test]
     fn deck_one_is_lit_enough_to_see_and_the_decks_below_are_dark() {
         use crate::decks::ambient_of;
-        assert!(ambient_of(1).intensity >= rl_engine::rl_bevy::lighting::DEFAULT_THRESHOLD, "deck one's working light is enough to see by");
+        assert!(ambient_of(1).intensity >= atglyph::ecs::lighting::DEFAULT_THRESHOLD, "deck one's working light is enough to see by");
         assert_eq!(ambient_of(2), Light::DARK);
         assert_eq!(ambient_of(3), Light::DARK);
     }
@@ -129,7 +129,7 @@ mod tests {
             assert!(!lamps.is_empty(), "seed {s}: deck two's store hangs a lamp");
             let (map, lighting) = (app.world().resource::<WorldMap>(), app.world().resource::<Lighting>());
             for lamp in lamps {
-                let beside: Vec<Point> = rl_engine::rl_core::geometry::square(lamp, 1).filter(|p| map.is_walkable(*p)).collect();
+                let beside: Vec<Point> = atglyph::primitives::geometry::square(lamp, 1).filter(|p| map.is_walkable(*p)).collect();
                 assert!(!beside.is_empty(), "seed {s}: the lamp at {lamp:?} hangs on a wall with floor beside it");
                 assert!(beside.iter().all(|p| lighting.is_lit(*p)), "seed {s}: the floor beside the lamp at {lamp:?} is dark");
             }

@@ -15,8 +15,8 @@
 //! in life, which a test checks. The engine's twin of the living actor is
 //! taken before this runs, so a revived body is drawn as it was.
 
+use atglyph::prelude::*;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
 
 /// The glyph of every body, the feeding ground's prey with them.
 pub const REMAINS_GLYPH: char = '%';
@@ -47,7 +47,7 @@ pub fn dress_the_dead(mut bodies: Query<&mut Glyph, With<Remains>>) {
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_core::RunSeed;
+    use atglyph::primitives::RunSeed;
 
     use super::*;
     use crate::testing::{arena_on, continued, kill, monster, settle};
@@ -87,7 +87,7 @@ mod tests {
         let goblin = monster(&mut app, "goblin", here.offset(2, 0));
         kill(&mut app, goblin, None);
         settle(&mut app);
-        rl_engine::rl_save::save_run(app.world_mut()).expect("the run is written down");
+        atglyph::save::save_run(app.world_mut()).expect("the run is written down");
         let text = app.world().resource::<Saves>().load(crate::save::SLOT).expect("the slot reads").expect("a save");
         let mut again = continued(&text);
         let world = again.world_mut();

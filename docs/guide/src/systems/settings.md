@@ -1,12 +1,12 @@
 <!-- documents:
      plugins: FullscreenPlugin, SettingsPanel, SavePlugin
-     files: crates/rl-bevy/src/settings.rs
-            crates/rl-render/src/fullscreen.rs
-            crates/rl-ui/src/panel/settings.rs
-            crates/rl-ui/src/game_menu.rs
-            crates/rl-ui/src/panel/title.rs
-            crates/rl-save/src/settings.rs
-            crates/rl-engine/src/lib.rs
+     files: crates/atglyph-bevy/src/settings.rs
+            crates/atglyph-render/src/fullscreen.rs
+            crates/atglyph-ui/src/panel/settings.rs
+            crates/atglyph-ui/src/game_menu.rs
+            crates/atglyph-ui/src/panel/title.rs
+            crates/atglyph-save/src/settings.rs
+            crates/atglyph/src/lib.rs
      fingerprint: 3f1c82bb -->
 
 # Settings
@@ -20,7 +20,7 @@ None of the three knows the others.
 `RoguelikePlugins` adds `FullscreenPlugin`, so every game on the terminal has one setting declared before it adds anything: `fullscreen`, under `Display`, `Off` or `On`, with F11 as its key.
 Nothing is fullscreen until something sets it, and the key is the settings screen's to read, so a game without `SettingsPanel` has the setting and not the key.
 `SettingsPanel` takes the `Rect` it may draw in, declares the `settings` modal, and in its `finish` turns every setting that has a key into a control, so the controls screen lists it.
-`SavePlugin`, in `rl-save`, is the third: it recalls what was remembered in its `finish` and writes in `EndOfFrame::Save` when a setting has changed.
+`SavePlugin`, in `atglyph-save`, is the third: it recalls what was remembered in its `finish` and writes in `EndOfFrame::Save` when a setting has changed.
 In a game that saves nothing every setting works and starts on its default each launch.
 On the web `FullscreenPlugin` declares nothing, because a browser grants fullscreen only from inside the handler of a key or a click and Bevy reads keys a frame later; the canvas follows the page, and the browser's own fullscreen fills the screen.
 
@@ -76,6 +76,6 @@ The engine does not read the window back into the setting: a window sent fullscr
 
 ## Where it lives
 
-The registry is plain data in `rl-bevy`, the one crate the renderer, the UI and saving all depend on, which is what lets each do its part with no edge between them: `rl-ui` still does not depend on `rl-save`.
+The registry is plain data in `atglyph-bevy`, the one crate the renderer, the UI and saving all depend on, which is what lets each do its part with no edge between them: `atglyph-ui` still does not depend on `atglyph-save`.
 Being plain data it is tested with no window and no `App`, and so is what saving writes, which is a map built by `remembered` and compared before anything touches a backend.
-The window's half is in `rl-render` because the window is the renderer's, beside the layout that draws the grid for whatever size the window turns out to be.
+The window's half is in `atglyph-render` because the window is the renderer's, beside the layout that draws the grid for whatever size the window turns out to be.

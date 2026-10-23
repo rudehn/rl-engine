@@ -11,8 +11,8 @@
 //! in `items.ron`'s own `consumable` refills on its own clock,
 //! [`refill_chalice`].
 
+use atglyph::prelude::*;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
 
 use crate::armory::{Armory, ItemKind};
 use crate::dungeon::floor_of;
@@ -96,7 +96,7 @@ pub fn refill_chalice(mut entered: MessageReader<PlaceEntered>, armory: Res<Armo
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_core::RunSeed;
+    use atglyph::primitives::RunSeed;
 
     use super::*;
     use crate::allies::befriend;

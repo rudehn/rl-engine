@@ -15,10 +15,10 @@
 //! The title is one of them, the engine's `TitlePanel` with Foundry's
 //! picture painted under it, so a headless run has none and begins at
 //! startup.
+use atglyph::ecs::plugin::{EngineSet, NewRun, PerceiveSet, ReactSet, ResetsOnNewRun, Turn, TurnSet};
+use atglyph::ecs::{AddSound, AddVerb, AddWork, AmmoPlugin, LootPlugin, LootSet, PrefabPlugin, PrefabSet, PropsPlugin, RemainsPlugin};
+use atglyph::ui::{AddModal, AimFire, AimThrow, NarrationViewPlugin, NarratorPlugin, Phrase, PlayerKeysSet, Tones, ViewSet};
 use bevy::prelude::*;
-use rl_engine::rl_bevy::plugin::{EngineSet, NewRun, PerceiveSet, ReactSet, ResetsOnNewRun, Turn, TurnSet};
-use rl_engine::rl_bevy::{AddSound, AddVerb, AddWork, AmmoPlugin, LootPlugin, LootSet, PrefabPlugin, PrefabSet, PropsPlugin, RemainsPlugin};
-use rl_engine::rl_ui::{AddModal, AimFire, AimThrow, NarrationViewPlugin, NarratorPlugin, Phrase, PlayerKeysSet, Tones, ViewSet};
 
 /// The narrator as Foundry words it, for `main.rs` and
 /// `testing::headless` both, so a test reads the log the player reads.
@@ -100,7 +100,7 @@ impl Plugin for FoundryPlugin {
             app.add_sound(sound);
         }
         // Chained, and in this order: the engine's own `schedule`
-        // (crates/rl-bevy/src/turn.rs) can write a `TurnEnd` and deal the
+        // (crates/atglyph-bevy/src/turn.rs) can write a `TurnEnd` and deal the
         // next actor's turn in the same pass, so `TurnSet::React` can see
         // the ending turn's `TurnEnd` together with the new turn's
         // `Struck`. Venting first reads each `Heat`'s `fired` as that
@@ -122,7 +122,7 @@ impl Plugin for FoundryPlugin {
         // `GearView` as `Option<ResMut<_>>` and does nothing until a game
         // adds `GearViewPlugin`, as the binary's `GearPanel` does and a
         // headless test need not. An ammunition-fed weapon's own row is
-        // `rl-ui`'s own to note now, in `ViewSet::Collect` rather than
+        // `atglyph-ui`'s own to note now, in `ViewSet::Collect` rather than
         // here: the engine knows ammunition, and `Annotate` is only for
         // what it cannot know.
         app.add_systems(Update, crate::heat::note_heat.in_set(ViewSet::Annotate));
@@ -144,7 +144,7 @@ impl Plugin for FoundryPlugin {
         // reads in one fixed order, the deck arrived on, then the alarm,
         // then the weapon's heat, then its ammunition, rather than
         // whichever order the executor ran the tellers in.
-        app.add_systems(Turn, crate::ammo::narrate_ammo.after(crate::heat::heat_on_struck).after(rl_engine::rl_bevy::AmmoSet::Resolve).in_set(TurnSet::React));
+        app.add_systems(Turn, crate::ammo::narrate_ammo.after(crate::heat::heat_on_struck).after(atglyph::ecs::AmmoSet::Resolve).in_set(TurnSet::React));
         // The run's depth memory, one at the start, only ever raised, and
         // put back to one when the run ends: the next run in the same
         // launch, a restart's or one begun from the title, has been nowhere.
@@ -221,10 +221,7 @@ impl Plugin for FoundryPlugin {
         // Uplink's own reach bonus: after `heat`'s chain and ammunition's
         // own `AmmoSet::Resolve`, for the reason `upgrades::react_uplink`
         // gives.
-        app.add_systems(
-            Turn,
-            crate::upgrades::react_uplink.after(crate::heat::heat_on_struck).after(rl_engine::rl_bevy::AmmoSet::Resolve).in_set(TurnSet::React),
-        );
+        app.add_systems(Turn, crate::upgrades::react_uplink.after(crate::heat::heat_on_struck).after(atglyph::ecs::AmmoSet::Resolve).in_set(TurnSet::React));
         // The pick screen: declared while building, so `upgrades::modal`
         // finds it the moment
         // anything looks. `choice_keys` is exclusive (it calls
@@ -275,7 +272,7 @@ impl Plugin for FoundryPlugin {
     /// Every line Foundry says from inside a turn is a `Tell`, which only
     /// the engine's narrator collects and speaks.
     fn finish(&self, app: &mut App) {
-        rl_engine::rl_bevy::plugin::depends_on::<NarrationViewPlugin>(app, "FoundryPlugin");
+        atglyph::ecs::plugin::depends_on::<NarrationViewPlugin>(app, "FoundryPlugin");
     }
 }
 

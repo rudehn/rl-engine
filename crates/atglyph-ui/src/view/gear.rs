@@ -1,0 +1,313 @@
+//! What the player is wearing, slot by slot, filled or not.
+//!
+//! An empty slot is as much of the panel as a full one: what you are not
+//! wearing is the thing you go looking for. So the view lists every slot
+//! the game registered, in registration order, and leaves the item `None`
+//! where nothing is worn.
+//!
+//! The slot names come from the slots in [`Registries`], which the game
+//! inserts. The engine
+//! stores what is worn by slot id, and an id is an index; printing it needs
+//! the registry the index came from.
+
+use atglyph_bevy::prelude::*;
+use atglyph_render::Glyph;
+use atglyph_rules::SlotId;
+use bevy::prelude::*;
+
+use crate::facet::Facet;
+use crate::tone::Tones;
+use crate::view::Row;
+
+/// One equipment slot and what fills it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GearSlot {
+    /// Which slot.
+    pub slot: SlotId,
+    /// Its registered name.
+    pub name: String,
+    /// What is worn in it, if anything.
+    pub item: Option<Row>,
+    /// Charges left and the most it holds, for a worn thing that holds more
+    /// than one: a wand. On the slot rather than the row because the row is
+    /// every panel's and a count of charges is gear's. `None` for a thing
+    /// not yet known, [`Unknown`], whose bag row withholds them too.
+    pub charges: Option<(u16, u16)>,
+    /// Whether the thing worn here will not come off, [`Stuck`]. On the
+    /// slot beside the charges, for the same reason: it is a fact about a
+    /// worn thing, and the bag says it of the same thing in its own words.
+    pub stuck: bool,
+    /// Whether this is the slot the item was equipped into, rather than one
+    /// it also claims: false only on a two-hander's off hand. A claimed
+    /// slot's [`Row`] is a second copy of the same item, so a game's
+    /// annotate system that notes something on every row (a gun's ammo, a
+    /// blaster's heat) notes it twice; a presenter reads this to say it once.
+    pub primary: bool,
+}
+
+/// Every slot, in the order the game registered them.
+#[derive(Resource, Debug, Default)]
+pub struct GearView {
+    /// The slots.
+    pub slots: Vec<GearSlot>,
+}
+
+impl GearView {
+    /// The slot called `name`, if the game registered one.
+    pub fn by_name(&self, name: &str) -> Option<&GearSlot> {
+        self.slots.iter().find(|s| s.name == name)
+    }
+
+    /// Every filled slot.
+    pub fn worn(&self) -> impl Iterator<Item = (&GearSlot, &Row)> {
+        self.slots.iter().filter_map(|s| s.item.as_ref().map(|i| (s, i)))
+    }
+
+    /// Every row, for an annotate system that wants to note what a piece
+    /// of gear does.
+    pub fn rows_mut(&mut self) -> impl Iterator<Item = &mut Row> {
+        self.slots.iter_mut().filter_map(|s| s.item.as_mut())
+    }
+}
+
+/// Keeps [`GearView`] current.
+///
+/// Needs [`Registries`], whose slots the worn ids index into.
+pub struct GearViewPlugin;
+
+impl Plugin for GearViewPlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<GearView>()
+            .needs::<Registries>("GearViewPlugin", "`Registries`, with the equipment slots the worn ids index into")
+            .add_systems(Update, collect_gear.in_set(crate::ViewSet::Collect))
+            // After `collect_gear`, in the same `ViewSet::Collect`, so it
+            // annotates the slots this pass just rebuilt rather than the
+            // slots left over from the last one.
+            .add_systems(Update, note_ammo.after(collect_gear).in_set(crate::ViewSet::Collect));
+    }
+
+    fn finish(&self, app: &mut App) {
+        atglyph_bevy::depends_on::<crate::UiPlugin>(app, "GearViewPlugin");
+    }
+}
+
+/// What a worn thing shows on its slot: its name, its look, how many,
+/// and its charges, whether it is known, which decides the charges, and
+/// whether it will come off.
+type Worn = (Option<&'static Name>, Option<&'static Glyph>, Option<&'static Stack>, Option<&'static Consumable>, Has<Unknown>, Has<Stuck>);
+
+/// Fills [`GearView`] from what the player wears.
+///
+/// A thing not yet known shows its name, its look, how many and where it
+/// is worn, as its bag row does, and nothing of what it is worth, so the
+/// rail never says what the bag keeps back.
+pub(crate) fn collect_gear(mut view: ResMut<GearView>, registries: Res<Registries>, player: Query<&Equipped, With<Player>>, items: Query<Worn>) {
+    view.slots.clear();
+    let worn = player.single().ok();
+    for (slot, def) in registries.slots.iter() {
+        let entity = worn.and_then(|w| w.in_slot(slot));
+        let primary = match entity {
+            Some(e) => worn.is_some_and(|w| w.slot_of(e) == Some(slot)),
+            None => true,
+        };
+        let (name, glyph, stack, consumable, unknown, stuck) = entity.and_then(|e| items.get(e).ok()).unwrap_or((None, None, None, None, false, false));
+        let item = entity.map(|entity| {
+            let shown = name.map(|n| atglyph_core::noun::listed(n.as_str(), stack.map_or(1, |s| s.count))).unwrap_or_default();
+            Row::new(entity, shown, glyph.copied().unwrap_or(Glyph::new('?', Color::WHITE)))
+        });
+        let charges = consumable.filter(|c| c.max > 1 && !unknown).map(|c| (c.left, c.max));
+        view.slots.push(GearSlot { slot, name: def.name.clone(), item, charges, stuck, primary });
+    }
+}
+
+/// Notes each worn ammunition-fed weapon's rounds on its gear row: `N left`,
+/// counted fresh from the wearer's own bag, or `dry` in [`Tones::BAD`],
+/// since the panel is built from what the engine knows and a player should
+/// not have to open the pack to learn whether the next shot is there.
+///
+/// A facet, not a field on [`Row`]: `Row` is the one shape vitals and
+/// nearby share too, and a magazine's count is a fact about an
+/// ammunition-fed weapon rather than about every row a panel might show,
+/// the same reasoning that keeps a wielded weapon's own detail a facet
+/// instead of a field (`atglyph-ui/src/lib.rs`'s rules say why). Unconditional
+/// rather than reading `GearView` as `Option<ResMut<_>>`: this system is
+/// only ever added by [`GearViewPlugin`] itself, which has already put the
+/// resource there.
+pub(crate) fn note_ammo(mut view: ResMut<GearView>, bag: Query<&Inventory, With<Player>>, ammos: Query<&Ammo>, tagged: Query<&Tagged>, stacks: Query<&Stack>) {
+    let Ok(bag) = bag.single() else { return };
+    for row in view.rows_mut() {
+        let Ok(ammo) = ammos.get(row.entity) else { continue };
+        let left: u32 =
+            bag.items.iter().filter(|i| tagged.get(**i).is_ok_and(|t| t.0.contains(&ammo.tag))).filter_map(|i| stacks.get(*i).ok()).map(|s| s.count).sum();
+        let facet = if left == 0 { Facet::new("ammo", "dry").toned(Tones::BAD) } else { Facet::new("ammo", format!("{left} left")) };
+        row.facets.push(facet);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::harness::Stage;
+    use atglyph_rules::{EquipShape, SlotDef};
+
+    fn slots() -> atglyph_rules::Registry<SlotDef> {
+        atglyph_rules::Registry::from_defs(vec![SlotDef::new("main hand"), SlotDef::new("body")]).unwrap()
+    }
+
+    #[test]
+    fn every_slot_is_a_row_and_an_empty_one_is_as_visible_as_a_full_one() {
+        let hand = slots().expect("main hand");
+        let mut stage = Stage::new_with(GearViewPlugin, |app| {
+            app.world_mut().resource_mut::<Registries>().slots = slots();
+        });
+        let player = stage.player;
+
+        let blade = stage.app.world_mut().spawn((Item, Name::new("a rusty blade"), Glyph::new('/', Color::WHITE))).id();
+        let mut worn = Equipped(atglyph_rules::Equipment::with_slot_count(2));
+        worn.equip(blade, &EquipShape::in_slot(hand)).expect("the slot exists");
+        stage.app.world_mut().entity_mut(player).insert(worn);
+        stage.tick();
+
+        let view = stage.app.world().resource::<GearView>();
+        assert_eq!(view.slots.len(), 2, "both slots are rows");
+        let hand_row = view.by_name("main hand").expect("the slot is listed by name");
+        assert_eq!(hand_row.item.as_ref().map(|i| i.label.as_str()), Some("a rusty blade"));
+        assert_eq!(hand_row.item.as_ref().map(|i| i.glyph.ch), Some('/'));
+        let body = view.by_name("body").expect("listed");
+        assert!(body.item.is_none(), "an empty slot is still a row");
+        assert_eq!(view.worn().count(), 1);
+    }
+
+    /// A worn wand counts its charges on its slot; a blade, which counts
+    /// none, and a stim that holds one each, say nothing.
+    #[test]
+    fn a_worn_wand_counts_its_charges_and_a_blade_says_nothing() {
+        let hand = slots().expect("main hand");
+        let body = slots().expect("body");
+        let mut stage = Stage::new_with(GearViewPlugin, |app| {
+            app.world_mut().resource_mut::<Registries>().slots = slots();
+        });
+        let player = stage.player;
+        let wand = stage.app.world_mut().spawn((Item, Name::new("wand"), Consumable { left: 3, ..Consumable::new(5, WhenEmpty::Kept) })).id();
+        let coat = stage.app.world_mut().spawn((Item, Name::new("coat"))).id();
+        let mut worn = Equipped(atglyph_rules::Equipment::with_slot_count(2));
+        worn.equip(wand, &EquipShape::in_slot(hand)).expect("the slot exists");
+        worn.equip(coat, &EquipShape::in_slot(body)).expect("the slot exists");
+        stage.app.world_mut().entity_mut(player).insert(worn);
+        stage.tick();
+
+        let view = stage.app.world().resource::<GearView>();
+        assert_eq!(view.by_name("main hand").and_then(|s| s.charges), Some((3, 5)));
+        assert_eq!(view.by_name("body").and_then(|s| s.charges), None);
+    }
+
+    /// A worn thing not yet known shows on its slot by its name and nothing
+    /// of what it holds: a wand's charges wait, as on its bag row, for the
+    /// game to say it is known.
+    #[test]
+    fn an_unknown_worn_things_slot_shows_its_name_and_no_charges() {
+        let hand = slots().expect("main hand");
+        let mut stage = Stage::new_with(GearViewPlugin, |app| {
+            app.world_mut().resource_mut::<Registries>().slots = slots();
+        });
+        let player = stage.player;
+        let held = Consumable { left: 3, ..Consumable::new(5, WhenEmpty::Kept) };
+        let wand = stage.app.world_mut().spawn((Item, Name::new("teak wand"), held, Unknown)).id();
+        let mut worn = Equipped(atglyph_rules::Equipment::with_slot_count(2));
+        worn.equip(wand, &EquipShape::in_slot(hand)).expect("the slot exists");
+        stage.app.world_mut().entity_mut(player).insert(worn);
+        stage.tick();
+
+        let view = stage.app.world().resource::<GearView>();
+        let slot = view.by_name("main hand").expect("listed");
+        assert_eq!(slot.item.as_ref().map(|i| i.label.as_str()), Some("teak wand"), "by its name, on its slot");
+        assert_eq!(slot.charges, None, "and nothing of what it holds");
+    }
+
+    #[test]
+    fn a_stack_of_more_than_one_says_how_many() {
+        let hand = slots().expect("main hand");
+        let mut stage = Stage::new_with(GearViewPlugin, |app| {
+            app.world_mut().resource_mut::<Registries>().slots = slots();
+        });
+        let player = stage.player;
+
+        let darts = stage.app.world_mut().spawn((Item, Name::new("dart"), Glyph::new('|', Color::WHITE), Stack { key: 1, count: 7 })).id();
+        let mut worn = Equipped(atglyph_rules::Equipment::with_slot_count(2));
+        worn.equip(darts, &EquipShape::in_slot(hand)).expect("the slot exists");
+        stage.app.world_mut().entity_mut(player).insert(worn);
+        stage.tick();
+
+        let view = stage.app.world().resource::<GearView>();
+        assert_eq!(view.by_name("main hand").unwrap().item.as_ref().unwrap().label, "7 darts", "the count first, and the name for many");
+    }
+
+    /// A two-hander's own slot reads as its primary one and the hand it
+    /// only claims does not, so a presenter can tell the same item worn
+    /// twice from the one slot it was actually put in.
+    #[test]
+    fn a_two_handers_claimed_slot_is_not_primary_and_its_own_slot_is() {
+        let hand = slots().expect("main hand");
+        let body = slots().expect("body");
+        let mut stage = Stage::new_with(GearViewPlugin, |app| {
+            app.world_mut().resource_mut::<Registries>().slots = slots();
+        });
+        let player = stage.player;
+        let axe = stage.app.world_mut().spawn((Item, Name::new("mono-axe"), Glyph::new('/', Color::WHITE))).id();
+        let mut worn = Equipped(atglyph_rules::Equipment::with_slot_count(2));
+        worn.equip(axe, &EquipShape::in_slot(hand).and_claims(body)).expect("the slot exists");
+        stage.app.world_mut().entity_mut(player).insert(worn);
+        stage.tick();
+
+        let view = stage.app.world().resource::<GearView>();
+        assert!(view.by_name("main hand").unwrap().primary, "the slot it was equipped into");
+        assert!(!view.by_name("body").unwrap().primary, "the slot it only claims");
+    }
+
+    /// The facet under `key`'s text and tone, for a row on `view`.
+    fn ammo_facet(row: &Row) -> Option<(String, crate::tone::ToneId)> {
+        row.facet("ammo").map(|f| (f.text.clone(), f.tone))
+    }
+
+    #[test]
+    fn a_worn_ammunition_fed_weapons_row_counts_the_tag_left_in_the_bag() {
+        let hand = slots().expect("main hand");
+        let mut stage = Stage::new_with(GearViewPlugin, |app| {
+            app.world_mut().resource_mut::<Registries>().slots = slots();
+        });
+        let player = stage.player;
+        let tag = atglyph_rules::TagId::from_raw(0);
+        let rifle = stage.app.world_mut().spawn((Item, Name::new("rifle"), Ammo { tag })).id();
+        let rounds = stage.app.world_mut().spawn((Tagged(vec![tag]), Stack { key: 0, count: 5 })).id();
+        let mut worn = Equipped(atglyph_rules::Equipment::with_slot_count(1));
+        worn.equip(rifle, &EquipShape::in_slot(hand)).expect("the slot exists");
+        stage.app.world_mut().entity_mut(player).insert((worn, Inventory { items: vec![rifle, rounds] }));
+        stage.tick();
+
+        let view = stage.app.world().resource::<GearView>();
+        let row = view.by_name("main hand").unwrap().item.as_ref().unwrap();
+        assert_eq!(ammo_facet(row).map(|(text, _)| text).as_deref(), Some("5 left"));
+    }
+
+    /// Nothing of the tag anywhere in the bag, not even a unit with nothing
+    /// left in it, reads as dry.
+    #[test]
+    fn a_worn_ammunition_fed_weapon_with_none_of_its_tag_in_the_bag_reads_dry() {
+        let hand = slots().expect("main hand");
+        let mut stage = Stage::new_with(GearViewPlugin, |app| {
+            app.world_mut().resource_mut::<Registries>().slots = slots();
+        });
+        let player = stage.player;
+        let tag = atglyph_rules::TagId::from_raw(0);
+        let rifle = stage.app.world_mut().spawn((Item, Name::new("rifle"), Ammo { tag })).id();
+        let spent = stage.app.world_mut().spawn((Tagged(vec![tag]), Stack { key: 0, count: 0 })).id();
+        let mut worn = Equipped(atglyph_rules::Equipment::with_slot_count(1));
+        worn.equip(rifle, &EquipShape::in_slot(hand)).expect("the slot exists");
+        stage.app.world_mut().entity_mut(player).insert((worn, Inventory { items: vec![rifle, spent] }));
+        stage.tick();
+
+        let view = stage.app.world().resource::<GearView>();
+        let row = view.by_name("main hand").unwrap().item.as_ref().unwrap();
+        assert_eq!(ammo_facet(row), Some(("dry".to_string(), Tones::BAD)));
+    }
+}

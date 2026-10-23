@@ -1,21 +1,21 @@
 <!-- documents:
      plugins: PropsPlugin
-     files: crates/rl-rules/src/prop.rs
-            crates/rl-rules/src/ai/snapshot.rs
-            crates/rl-bevy/src/props.rs
-            crates/rl-bevy/src/plugin.rs
-            crates/rl-bevy/src/bump.rs
-            crates/rl-bevy/src/turn.rs
-            crates/rl-bevy/src/items.rs
-            crates/rl-bevy/src/combat.rs
-            crates/rl-bevy/src/ability.rs
-            crates/rl-bevy/src/effects/mod.rs
-            crates/rl-bevy/src/effects/triggers.rs
-            crates/rl-bevy/src/work.rs
-            crates/rl-render/src/map_view.rs
-            crates/rl-ui/src/interact.rs
-            crates/rl-ui/src/focus.rs
-            crates/rl-save/src/run.rs
+     files: crates/atglyph-rules/src/prop.rs
+            crates/atglyph-rules/src/ai/snapshot.rs
+            crates/atglyph-bevy/src/props.rs
+            crates/atglyph-bevy/src/plugin.rs
+            crates/atglyph-bevy/src/bump.rs
+            crates/atglyph-bevy/src/turn.rs
+            crates/atglyph-bevy/src/items.rs
+            crates/atglyph-bevy/src/combat.rs
+            crates/atglyph-bevy/src/ability.rs
+            crates/atglyph-bevy/src/effects/mod.rs
+            crates/atglyph-bevy/src/effects/triggers.rs
+            crates/atglyph-bevy/src/work.rs
+            crates/atglyph-render/src/map_view.rs
+            crates/atglyph-ui/src/interact.rs
+            crates/atglyph-ui/src/focus.rs
+            crates/atglyph-save/src/run.rs
      fingerprint: 30735ec8 -->
 
 # Props
@@ -114,7 +114,7 @@ There is no registry of behaviours and no trait to implement, because a game alr
 A prop or an actor that blocks and offers one thing that can be taken up is walked into, because the bump redirect writes the interaction; one offering two, or offering one it refuses, spends no turn and says so as `Bumped`, whose `offers` field is what it was offered, since a walk key can neither ask a question nor give a reason.
 `OffersPanel` opens on that field rather than asking whether the thing bumped was a prop, which is what lets a captive bumped into with nothing free to say read the same way a workbench with two tools does.
 What a bump cannot reach, a body underfoot or a plate already found, is `UiPlugin`'s interact key, which takes the one offer in reach and takes none where two are offered.
-`OffersPanel` and `ContainerPanel`, in `rl-ui`, are where that question and that rummaging are drawn, and a game with neither gets nothing rather than a guess.
+`OffersPanel` and `ContainerPanel`, in `atglyph-ui`, are where that question and that rummaging are drawn, and a game with neither gets nothing rather than a guess.
 A verb whose answer takes several turns is the game's to begin: an offer taken up is `Interacted` at once, and a game that wants the taking to cost more than its offer's `time` begins a `Works` on the target itself, which the engine's multi-turn work already carries to done or broken without asking the player again.
 A prop that blocks sight is not here: field of view reads the map's tiles and the veil gas writes into, so a sight-blocking prop is a second mechanism and the veil is where it goes on the day something needs it.
 Doors stay tiles, because a door has no state of its own to remember and props are for things that remember something.
@@ -126,8 +126,8 @@ Where a prop stands and what a container holds are saved as any entity's are; wh
 
 ## Where it lives
 
-`rl-rules` is tier 1 and has no Bevy in it: `prop.rs` is the content half and nothing in it runs, so a `props.ron` with three mistakes names three without an `App` anywhere.
+`atglyph-rules` is tier 1 and has no Bevy in it: `prop.rs` is the content half and nothing in it runs, so a `props.ron` with three mistakes names three without an `App` anywhere.
 Two things are left as names there rather than resolved to ids, and both for the same reason: a verb is a string until there is a run to intern it in, and a container's fixed contents are item names because items are a game's own registry, which the loot plugin resolves through the game's `ItemMaker`.
-`rl-bevy` is tier 2 and owns everything that happens: `props.rs` is the plugin, the components, the gate, the two actions, the reports of its two moments and the spotting roll, and it is one file because a prop's parts are one idea seen from several sides.
+`atglyph-bevy` is tier 2 and owns everything that happens: `props.rs` is the plugin, the components, the gate, the two actions, the reports of its two moments and the spotting roll, and it is one file because a prop's parts are one idea seen from several sides.
 What a trigger does is not in it: landing one is `effects`', shared with every item, so a prop's trap and a thrown grenade cannot drift apart.
-What stays out of it says as much: the look is dressed in `rl-render` from the same definition, the offers screen and the take-only modal are in `rl-ui`, and the save kind is in `rl-save`, because `Saveable` is that crate's and `rl-bevy` sits below it.
+What stays out of it says as much: the look is dressed in `atglyph-render` from the same definition, the offers screen and the take-only modal are in `atglyph-ui`, and the save kind is in `atglyph-save`, because `Saveable` is that crate's and `atglyph-bevy` sits below it.

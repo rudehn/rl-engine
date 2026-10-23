@@ -1,11 +1,11 @@
 //! Monsters, spawned for a test to face or inspect.
 
+use atglyph::ecs::prelude::*;
+use atglyph::grid::Rgb;
+use atglyph::primitives::Point;
+use atglyph::rules::Awareness;
 use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
-use rl_engine::rl_bevy::prelude::*;
-use rl_engine::rl_core::Point;
-use rl_engine::rl_grid::Rgb;
-use rl_engine::rl_rules::Awareness;
 
 use crate::droids::Roster;
 
@@ -178,8 +178,8 @@ pub fn lone_monster(app: &mut App, name: &str) -> Entity {
 pub fn walk(app: &App, from: Point, to: Point) -> i32 {
     let map = app.world().resource::<WorldMap>();
     let view = map.view();
-    let mut flood = rl_engine::rl_grid::DijkstraMap::covering(&view);
-    flood.build(&view, map.to_local(to), rl_engine::rl_grid::PathRules::EIGHT_WAY);
+    let mut flood = atglyph::grid::DijkstraMap::covering(&view);
+    flood.build(&view, map.to_local(to), atglyph::grid::PathRules::EIGHT_WAY);
     map.to_local(from).and_then(|l| flood.value(l)).unwrap_or(i32::MAX)
 }
 
@@ -199,8 +199,8 @@ pub fn out_of_sight(app: &mut App, name: &str, min: i32, max: i32) -> (Entity, P
         let (deck, occupancy, sight) = (world.resource::<WorldMap>(), world.resource::<Occupancy>(), world.get::<Viewshed>(player));
         // One flood from the player, read at every cell.
         let view = deck.view();
-        let mut flood = rl_engine::rl_grid::DijkstraMap::covering(&view);
-        flood.build(&view, deck.to_local(from), rl_engine::rl_grid::PathRules::EIGHT_WAY);
+        let mut flood = atglyph::grid::DijkstraMap::covering(&view);
+        flood.build(&view, deck.to_local(from), atglyph::grid::PathRules::EIGHT_WAY);
         let bounds = deck.window_tiles();
         (bounds.y..bounds.bottom())
             .flat_map(|y| (bounds.x..bounds.right()).map(move |x| Point::new(x, y)))

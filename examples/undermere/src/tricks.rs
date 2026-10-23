@@ -27,13 +27,13 @@
 //! again, read as a forced turn rather than a chosen ability, over the
 //! one water his hall holds, a black pool.
 
+use atglyph::ecs::EffectRng;
+use atglyph::prelude::*;
+use atglyph::rules::ability::RawValue;
+use atglyph::rules::ai::brain::Tactic;
+use atglyph::rules::ai::tactics::{Station, Ways};
 use bevy::prelude::*;
 use rand::Rng;
-use rl_engine::prelude::*;
-use rl_engine::rl_bevy::EffectRng;
-use rl_engine::rl_rules::ability::RawValue;
-use rl_engine::rl_rules::ai::brain::Tactic;
-use rl_engine::rl_rules::ai::tactics::{Station, Ways};
 
 use crate::bestiary::{Bestiary, Kind, spawn_monster_now};
 use crate::bestiary_lore::MonsterLore;

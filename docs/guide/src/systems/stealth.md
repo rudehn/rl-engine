@@ -1,19 +1,19 @@
 <!-- documents:
      plugins: StealthPlugin
-     files: crates/rl-rules/src/ai/awareness.rs
-            crates/rl-rules/src/ai/tactics.rs
-            crates/rl-bevy/src/stealth.rs
-            crates/rl-bevy/src/minds.rs
-            crates/rl-bevy/src/noise.rs
-            crates/rl-bevy/src/combat.rs
-            crates/rl-bevy/src/components.rs
-            crates/rl-bevy/src/status.rs
-            crates/rl-bevy/src/items.rs
-            crates/rl-bevy/src/ability.rs
-            crates/rl-rules/src/status.rs
-            crates/rl-bevy/src/lighting.rs
-            crates/rl-grid/src/light.rs
-            crates/rl-ui/src/view/nearby.rs
+     files: crates/atglyph-rules/src/ai/awareness.rs
+            crates/atglyph-rules/src/ai/tactics.rs
+            crates/atglyph-bevy/src/stealth.rs
+            crates/atglyph-bevy/src/minds.rs
+            crates/atglyph-bevy/src/noise.rs
+            crates/atglyph-bevy/src/combat.rs
+            crates/atglyph-bevy/src/components.rs
+            crates/atglyph-bevy/src/status.rs
+            crates/atglyph-bevy/src/items.rs
+            crates/atglyph-bevy/src/ability.rs
+            crates/atglyph-rules/src/status.rs
+            crates/atglyph-bevy/src/lighting.rs
+            crates/atglyph-grid/src/light.rs
+            crates/atglyph-ui/src/view/nearby.rs
      fingerprint: c69a2f3f -->
 
 # Stealth
@@ -124,9 +124,9 @@ Something that had you and lost you to the unseen reads `Alert::Searching`, sinc
 
 ## Where it lives
 
-`rl-rules` is tier 1 and has no Bevy in it: `ai/awareness.rs` is the two stat blocks, the three functions over them and the state machine, with the caller doing the rolling and the caller deciding what lit means.
+`atglyph-rules` is tier 1 and has no Bevy in it: `ai/awareness.rs` is the two stat blocks, the three functions over them and the state machine, with the caller doing the rolling and the caller deciding what lit means.
 That is what lets the properties be proved rather than watched: that light widens the certain radius by exactly its bonus and by nothing else, that `quiet` narrows it and the floor of one holds against any stack of gear, and that `lost` returns to `Unaware` on exactly the turn the memory passes while a sighting in between resets the count.
 Both stat blocks are serde-ready, so an observer's attention and a subject's quiet are written in a bestiary file rather than in Rust.
-`rl-bevy` is tier 2 and owns the rolling: `stealth.rs` is the components, `Aware`, `Unseen`, the stream, the six systems and the system parameters that answer whether stealth is running and who is watching.
+`atglyph-bevy` is tier 2 and owns the rolling: `stealth.rs` is the components, `Aware`, `Unseen`, the stream, the six systems and the system parameters that answer whether stealth is running and who is watching.
 `StatusDef::unseen` is a flag on a tier 1 definition, so which status hides its holder is a line in a status file that loads and is checked without an `App`, and what hiding does is left to `stealth.rs`.
 `Watchers` lives there rather than in a panel because the vitals strip and the nearby rail must read the same answer the minds act on, and the bug that put it there was a strip reading hidden while a cutthroat cut the player down.

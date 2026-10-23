@@ -24,8 +24,8 @@
 
 use std::fmt;
 
-use rl_engine::prelude::*;
-use rl_engine::rl_rules::parts::KeepAway;
+use atglyph::prelude::*;
+use atglyph::rules::parts::KeepAway;
 use serde::Deserialize;
 
 /// The traits file, compiled in so the binary runs from anywhere.

@@ -3,11 +3,11 @@
 
 use std::io::{Write, stdout};
 
+use atglyph_core::Direction;
 use crossterm::cursor::{Hide, MoveTo, Show};
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers, read};
 use crossterm::terminal::{Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode};
 use crossterm::{execute, queue};
-use rl_core::Direction;
 use terminal::{direction_of, generate, render, step};
 
 /// Leaves raw mode and the alternate screen when dropped, so a panic or an early return

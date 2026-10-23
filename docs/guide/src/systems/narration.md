@@ -1,17 +1,17 @@
 <!-- documents:
      plugins: NarratorPlugin, NarrationViewPlugin
-     files: crates/rl-ui/src/narrate.rs
-            crates/rl-core/src/noun.rs
-            crates/rl-bevy/src/items.rs
-            crates/rl-bevy/src/status.rs
-            crates/rl-ui/src/log.rs
-            crates/rl-ui/src/tone.rs
-            crates/rl-ui/src/lib.rs
-            crates/rl-bevy/src/combat.rs
-            crates/rl-bevy/src/accuracy.rs
-            crates/rl-bevy/src/plugin.rs
-            crates/rl-rules/src/status.rs
-            crates/rl-bevy/src/ability.rs
+     files: crates/atglyph-ui/src/narrate.rs
+            crates/atglyph-core/src/noun.rs
+            crates/atglyph-bevy/src/items.rs
+            crates/atglyph-bevy/src/status.rs
+            crates/atglyph-ui/src/log.rs
+            crates/atglyph-ui/src/tone.rs
+            crates/atglyph-ui/src/lib.rs
+            crates/atglyph-bevy/src/combat.rs
+            crates/atglyph-bevy/src/accuracy.rs
+            crates/atglyph-bevy/src/plugin.rs
+            crates/atglyph-rules/src/status.rs
+            crates/atglyph-bevy/src/ability.rs
      fingerprint: 608f72b1 -->
 
 # Narration
@@ -113,13 +113,13 @@ The one exception is a notice by whoever holds the turn, which is read first, be
 What the engine decides about a row is what it can know: who, to whom, with what, how much, where, whether the player was in a position to see it, and whether whoever did it was in sight to be named.
 What it cannot know is a game's line, so `Tell` carries no tone the engine picked and is always spoken: the game chose to say it, so whether the player saw who it names is the game's to have weighed.
 Between the two sits `ViewSet::Annotate`, where a game may edit or remove rows before they are spoken, and behind both sits the view itself, which a game may read and speak in its own words with no presenter at all.
-What the engine does not get is grammar beyond a noun's: `rl_core::noun` counts a name, pluralises its head and decides whether it takes `the` or `a`, and there is no agreement of a verb and no second language.
+What the engine does not get is grammar beyond a noun's: `atglyph::primitives::noun` counts a name, pluralises its head and decides whether it takes `the` or `a`, and there is no agreement of a verb and no second language.
 Whether a name is a stuff that takes no `a` is the one fact about a noun its spelling does not give away, `mail` being one and `nail` not, so the game that named the thing says so with `MassNoun`, and the engine keeps no list of words.
 A template with a placeholder in it is the whole mechanism, because the alternative is a grammar engine that every game would fight.
 
 ## Where it lives
 
-Both halves are in `rl-ui` and tier 2, because a row names an `Entity` and the words are read off components.
+Both halves are in `atglyph-ui` and tier 2, because a row names an `Entity` and the words are read off components.
 The collector and the presenter are one module rather than two, since the twist that makes narration different from a panel is exactly the relation between them, and splitting the file would hide it.
 The log is a module of its own, and it is on `UiPlugin` rather than on either plugin here, because a game writes to it from its own systems whether or not anything narrates or draws: a headless test adds the base plugin and has a log.
 `MessageLog` holds no `Color` except inside a `Span`, and a `Span`'s colour comes off a `Glyph`, which is content; everything else is a `ToneId`, which is why the same rows read correctly in a palette the narrator never heard of.

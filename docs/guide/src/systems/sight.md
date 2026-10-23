@@ -1,12 +1,12 @@
 <!-- documents:
      plugins: FovPlugin, LightingPlugin
-     files: crates/rl-bevy/src/fov.rs
-            crates/rl-bevy/src/lighting.rs
-            crates/rl-bevy/src/components.rs
-            crates/rl-bevy/src/minds.rs
-            crates/rl-bevy/src/knowledge.rs
-            crates/rl-grid/src/fov.rs
-            crates/rl-grid/src/light.rs
+     files: crates/atglyph-bevy/src/fov.rs
+            crates/atglyph-bevy/src/lighting.rs
+            crates/atglyph-bevy/src/components.rs
+            crates/atglyph-bevy/src/minds.rs
+            crates/atglyph-bevy/src/knowledge.rs
+            crates/atglyph-grid/src/fov.rs
+            crates/atglyph-grid/src/light.rs
      fingerprint: 1c7b9fa7 -->
 
 # Sight and lighting
@@ -97,7 +97,7 @@ What the bands are worth is the game's: the engine names them, stealth reads the
 
 ## Where it lives
 
-`rl-grid` is tier 1 and has no Bevy in it: `fov.rs` is the symmetric shadowcast, and `light.rs` is `Rgb`, `Light`, `Emitter` and the `LightField` that casts and composes them.
+`atglyph-grid` is tier 1 and has no Bevy in it: `fov.rs` is the symmetric shadowcast, and `light.rs` is `Rgb`, `Light`, `Emitter` and the `LightField` that casts and composes them.
 Both read a borrowed `OpacitySource` and write into buffers the caller owns, so a recast allocates nothing and either can be tested without an `App`.
-`rl-bevy` is tier 2 and has the plugins: `fov.rs` holds `is_stale`, `cast` and `update_viewsheds` over the `Viewshed` that `components.rs` defines, and `lighting.rs` holds the light components, the `Lighting` resource, `update_lighting`, `relight`, `tick_fuel` and `gate`.
-`rl-render` reads the composed field once more, for the color and the waver that gameplay ignores.
+`atglyph-bevy` is tier 2 and has the plugins: `fov.rs` holds `is_stale`, `cast` and `update_viewsheds` over the `Viewshed` that `components.rs` defines, and `lighting.rs` holds the light components, the `Lighting` resource, `update_lighting`, `relight`, `tick_fuel` and `gate`.
+`atglyph-render` reads the composed field once more, for the color and the waver that gameplay ignores.

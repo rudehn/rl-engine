@@ -33,19 +33,19 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use atglyph::mapgen::Prefer;
+use atglyph::mapgen::dungeon::{ExitPoint, FarthestExit, MarkedStart, RandomStart, Stairs};
+use atglyph::mapgen::passes::StartPoint;
+use atglyph::mapgen::{Area, DistrictDressings, Opening};
+use atglyph::prelude::*;
+use atglyph::primitives::Rect;
+use atglyph::render::TileAppearance;
+use atglyph::rules::dressing;
+use atglyph::rules::grow::LayoutTiles;
+use atglyph::rules::layout::{self, LayoutDef};
+use atglyph::rules::pool::{Pick, Place, Pool};
 use rand::Rng;
 use rand::seq::SliceRandom;
-use rl_engine::prelude::*;
-use rl_engine::rl_core::Rect;
-use rl_engine::rl_mapgen::Prefer;
-use rl_engine::rl_mapgen::dungeon::{ExitPoint, FarthestExit, MarkedStart, RandomStart, Stairs};
-use rl_engine::rl_mapgen::passes::StartPoint;
-use rl_engine::rl_mapgen::{Area, DistrictDressings, Opening};
-use rl_engine::rl_render::TileAppearance;
-use rl_engine::rl_rules::dressing;
-use rl_engine::rl_rules::grow::LayoutTiles;
-use rl_engine::rl_rules::layout::{self, LayoutDef};
-use rl_engine::rl_rules::pool::{Pick, Place, Pool};
 
 use crate::bestiary::MonsterDef;
 
@@ -281,7 +281,7 @@ impl Undermere {
         }
         for entry in self.pool.entries.iter().filter(|e| e.weight > 0) {
             match &entry.placed {
-                rl_engine::rl_rules::pool::Placed::Dressed { dressing } => dressings.insert(dressing.clone()),
+                atglyph::rules::pool::Placed::Dressed { dressing } => dressings.insert(dressing.clone()),
                 _ => pieces.insert(entry.piece().expect("a piece for any but a dressing").to_string()),
             };
         }
@@ -540,7 +540,7 @@ pub(crate) fn registry() -> TileRegistry {
     // glowcaps, the shafts of light on the cathedral's marble, the
     // Underlake's shallows and lava, says so beside its look, and the
     // engine hangs that light on every cell of it.
-    rl_engine::rl_rules::tiles::light_tiles(TILES_RON, &mut tiles).unwrap_or_else(|e| panic!("assets/tiles.ron: {e}"));
+    atglyph::rules::tiles::light_tiles(TILES_RON, &mut tiles).unwrap_or_else(|e| panic!("assets/tiles.ron: {e}"));
     tiles
 }
 
@@ -679,11 +679,11 @@ impl Undermere {
     /// Brogue keeps it; and no brighter than dim, so a body out there with no
     /// light of its own is harder to pick out than one in a lamp's light, and
     /// the lantern's pool stands out warm and bright. Any other map is dark.
-    pub fn ambient_of(&self, map: MapId) -> rl_engine::rl_grid::Light {
+    pub fn ambient_of(&self, map: MapId) -> atglyph::grid::Light {
         if map == TOWN {
-            return rl_engine::rl_grid::Light::new(30, rl_engine::rl_grid::Rgb::new(120, 140, 215));
+            return atglyph::grid::Light::new(30, atglyph::grid::Rgb::new(120, 140, 215));
         }
-        floor_of(map).map_or(rl_engine::rl_grid::Light::DARK, |floor| self.biome_of(floor).ambient)
+        floor_of(map).map_or(atglyph::grid::Light::DARK, |floor| self.biome_of(floor).ambient)
     }
 
     /// The registered tiles, for `WorldMap::new`.
@@ -700,7 +700,7 @@ impl Undermere {
     /// Every entry of the run's pool, for a test that reads where a piece
     /// may stand off the file, with no floor grown.
     #[cfg(test)]
-    pub(crate) fn pool_entries(&self) -> &[rl_engine::rl_rules::pool::Entry] {
+    pub(crate) fn pool_entries(&self) -> &[atglyph::rules::pool::Entry] {
         &self.pool.entries
     }
 
@@ -784,14 +784,14 @@ impl Undermere {
         // A vault's own door and gate, which the pool's locked and sealed
         // pieces are joined by.
         let tiles = LayoutTiles { floor: floor_tile, door, locked: self.tile("vault door"), sealed: self.tile("stone gate") };
-        let mut grown = rl_engine::rl_rules::grow::passes(&self.layout, &drawn.recipe, &tiles)?;
+        let mut grown = atglyph::rules::grow::passes(&self.layout, &drawn.recipe, &tiles)?;
         let (width, height) = grown.size;
         // This floor's picks, drawn once for the whole run in
         // `Undermere::new`: the grown ones join the boss's hall and a
         // mini-boss's lair as pieces of the recipe's own accretion, and
         // the rest, stamped inside an area or dressed, are placed by
         // `picked.stamp` once the floor is surveyed, below.
-        let picked = rl_engine::rl_rules::grow::picked(&self.pool, picks, &self.prefabs, Orient::TurnedOrMirrored)?;
+        let picked = atglyph::rules::grow::picked(&self.pool, picks, &self.prefabs, Orient::TurnedOrMirrored)?;
         // The boss's hall and a mini-boss's lair are grown as pieces of
         // the recipe's own accretion, late, through the one entry each
         // prefab marks, rather than carved over what grew.
@@ -846,7 +846,7 @@ impl Undermere {
         // `Dress` lays a dressed pick where `picked.stamp` chose for it,
         // then dresses every area nothing else took, from the biome's
         // own weighted list, `nothing` among the choices.
-        chain = chain.then(rl_engine::rl_rules::grow::dress(&self.prefabs, floor_tile, &self.districts)?);
+        chain = chain.then(atglyph::rules::grow::dress(&self.prefabs, floor_tile, &self.districts)?);
         chain = self.decor(chain, floor, drawn)?;
         // The floor's traps and loose flagstones, once everything that
         // stands somewhere has taken its cell.
@@ -1003,9 +1003,9 @@ pub(crate) fn pieces(ctx: &BaseContext) -> Vec<Rect> {
 /// [`pieces`] read once, where asking each of its rectangles about every
 /// cell of the floor was most of what [`Furnish`] and [`Patches`] cost, and
 /// the floor's most expensive passes after the accretion itself.
-pub(crate) fn under_pieces(ctx: &BaseContext) -> rl_engine::rl_grid::BitGrid {
+pub(crate) fn under_pieces(ctx: &BaseContext) -> atglyph::grid::BitGrid {
     let terrain = ctx.terrain();
-    let mut under = rl_engine::rl_grid::BitGrid::new(terrain.width(), terrain.height());
+    let mut under = atglyph::grid::BitGrid::new(terrain.width(), terrain.height());
     for p in pieces(ctx).into_iter().flat_map(Rect::cells) {
         under.insert(p);
     }
@@ -1013,7 +1013,7 @@ pub(crate) fn under_pieces(ctx: &BaseContext) -> rl_engine::rl_grid::BitGrid {
 }
 
 /// Every cell a stamp has marked for a monster or a prop, which may yet
-/// block: the same cells `rl_mapgen::Dress` itself treats as blocking,
+/// block: the same cells `atglyph::mapgen::Dress` itself treats as blocking,
 /// whatever is put there, since neither pass knows that until the place's
 /// own arrival fills it.
 pub(crate) fn slots(ctx: &BaseContext) -> BTreeSet<Point> {
@@ -1044,7 +1044,7 @@ fn flood(ctx: &BaseContext, tables: &TileTables, blocked: &BTreeSet<Point>, from
 /// Whether making `at` impassable, on top of every cell already in
 /// `blocked`, would leave two of its own open neighbours with no other
 /// way to reach each other: the floor-wide reading of the guard
-/// `rl_mapgen::Dress` already gives one area, since [`Furnish`] scatters
+/// `atglyph::mapgen::Dress` already gives one area, since [`Furnish`] scatters
 /// a piece over the whole of it rather than one area at a time. If
 /// blocking `at` disconnects anything at all, it disconnects two of its
 /// own neighbours from one another, since every path between the two
@@ -1208,7 +1208,7 @@ fn open_all_round(ctx: &BaseContext, tables: &TileTables, p: Point) -> bool {
 /// size drawn from `size`. It never covers the way in or out, nor a piece
 /// already stamped. Only a tile a body can stand on is laid, which the
 /// biome file's load checks, so a patch never cuts the floor in two: the water and the lava that stop a body
-/// are `rl_mapgen::Lakes`'s, laid with the structures so the ways are
+/// are `atglyph::mapgen::Lakes`'s, laid with the structures so the ways are
 /// chosen round them.
 struct Patches {
     /// A stable name, so two patchings in one chain draw different streams.
@@ -1327,7 +1327,7 @@ impl Pass for Furnish {
             spots.shuffle(ctx.rng());
             // The first spot, by this shuffle, that does not cut the
             // floor in two once something fills it: a scatter, like
-            // `rl_mapgen::Dress`, never cuts off a cell it leaves clear.
+            // `atglyph::mapgen::Dress`, never cuts off a cell it leaves clear.
             let Some(at) = spots.into_iter().find(|p| !disconnects(ctx, &tables, &blocked, *p)) else {
                 break;
             };
@@ -1421,12 +1421,12 @@ mod tests {
     use std::collections::BTreeSet;
     use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
-    use rl_engine::rl_core::Rect;
-    use rl_engine::rl_mapgen::Join;
-    use rl_engine::rl_mapgen::accrete::Landmark;
-    use rl_engine::rl_mapgen::prefab::Stamped;
-    use rl_engine::rl_rules::pool::Placed;
-    use rl_engine::rl_rules::prefab::{Pick, Slot};
+    use atglyph::mapgen::Join;
+    use atglyph::mapgen::accrete::Landmark;
+    use atglyph::mapgen::prefab::Stamped;
+    use atglyph::primitives::Rect;
+    use atglyph::rules::pool::Placed;
+    use atglyph::rules::prefab::{Pick, Slot};
 
     use super::*;
     use crate::testing::{par_seeds, seeds, slot_of as slot};
@@ -1558,7 +1558,7 @@ mod tests {
         at: &str,
     ) {
         let tags = [place_tag(drawn)];
-        let seeded: Vec<&rl_engine::rl_rules::pool::Entry> =
+        let seeded: Vec<&atglyph::rules::pool::Entry> =
             undermere.pool.entries.iter().filter(|e| e.weight > 0 && matches!(e.placed, Placed::Seeded { .. }) && e.fits(floor as i32, &tags)).collect();
         let Some(landmark) = landmark else {
             assert!(seeded.is_empty(), "{at}: a floor of {} lays none of its landmarks", drawn.name);
@@ -1864,7 +1864,7 @@ mod tests {
     /// it and more only repeat it.
     #[test]
     fn every_floor_is_the_same_whichever_floor_is_built_first() {
-        type Built = (Terrain, Point, Option<Point>, Vec<rl_engine::rl_bevy::Spot>, Vec<rl_engine::rl_mapgen::Secret>);
+        type Built = (Terrain, Point, Option<Point>, Vec<atglyph::ecs::Spot>, Vec<atglyph::mapgen::Secret>);
         let build_all = |undermere: &Undermere, floors: &[u32]| -> BTreeMap<u32, Built> {
             floors
                 .iter()
@@ -2036,7 +2036,7 @@ mod tests {
     /// is refused by name, for `run_retrying` to try again rather than
     /// lay it shut away from the rest of the floor for the walk test to
     /// find later, or never: `PrefabShape` and `Accrete` are the engine's
-    /// own, covered end to end in `rl_mapgen::accrete`'s own suite, so
+    /// own, covered end to end in `atglyph::mapgen::accrete`'s own suite, so
     /// this only pins that Undermere's own pieces are among them.
     /// The throne's floor has no way down and its own way in, so a
     /// landmark seeded there whose stairs are not free is refused by name
@@ -2046,13 +2046,13 @@ mod tests {
         let mut undermere = Undermere::new(RunSeed(0));
         let grown = undermere.pool.entries.iter().find(|e| matches!(e.placed, Placed::Grown { .. })).expect("a grown piece").clone();
         let piece = grown.piece().expect("it lays a piece").to_string();
-        let seeded = rl_engine::rl_rules::pool::Entry {
+        let seeded = atglyph::rules::pool::Entry {
             name: "a seeded hall".into(),
             placed: Placed::Seeded { piece: piece.clone(), placements: vec![Placement::Center], stairs: Stairs::Beyond },
             ..grown
         };
         undermere.pool.entries.push(seeded);
-        let pick = [rl_engine::rl_rules::pool::Pick { entry: undermere.pool.entries.len() - 1, required: true }];
+        let pick = [atglyph::rules::pool::Pick { entry: undermere.pool.entries.len() - 1, required: true }];
         let drawn = undermere.biome_of(FLOORS).clone();
         let refused = undermere.grow(FLOORS, &drawn, &pick, RunSeed(0), 1).expect_err("the throne's floor holds no way down");
         assert!(refused.pass == "layout" && refused.reason.contains(&piece) && refused.reason.contains("Beyond"), "{refused}");
@@ -2063,11 +2063,11 @@ mod tests {
         let undermere = Undermere::new(RunSeed(0));
         let piece = undermere.throne_piece().unwrap();
         let name = piece.name().to_string();
-        let mut pass = rl_engine::rl_mapgen::accrete::Accrete {
+        let mut pass = atglyph::mapgen::accrete::Accrete {
             floor: undermere.tile("throne floor"),
             door: undermere.tile("throne floor"),
             shapes: Vec::new(),
-            districts: vec![rl_engine::rl_mapgen::accrete::District { name: "only".into(), shapes: Vec::new() }],
+            districts: vec![atglyph::mapgen::accrete::District { name: "only".into(), shapes: Vec::new() }],
             mix: Vec::new(),
             districts_per_10k: 1,
             open_pct: 10,
@@ -2079,7 +2079,7 @@ mod tests {
             late_pct: 0,
             first: None,
         };
-        pass.shapes.push(Box::new(rl_engine::rl_mapgen::accrete::Rectangle { name: "seed".into(), w: (4, 4), h: (4, 4), join: Join::Door }));
+        pass.shapes.push(Box::new(atglyph::mapgen::accrete::Rectangle { name: "seed".into(), w: (4, 4), h: (4, 4), join: Join::Door }));
         pass.districts[0].shapes.push((0, 1));
         pass.mix.push((0, 1));
         let mut ctx = BaseContext::blank(10, 10, undermere.tiles().clone(), undermere.tile("throne wall"));
@@ -2202,8 +2202,8 @@ mod tests {
             let (landmark, stamped) = (ctx.outputs().first::<Landmark>().cloned(), ctx.outputs().iter::<Stamped>().cloned().collect::<Vec<_>>());
             let bounds = ctx.terrain().bounds();
             assert_eq!((bounds.width, bounds.height), recipe.size, "{at}");
-            let route = ctx.outputs().first::<rl_engine::rl_mapgen::Surveyed>().unwrap_or_else(|| panic!("{at}: not surveyed")).route;
-            // Not "outside every piece's own rect": `rl_mapgen::prefab::laid_in`
+            let route = ctx.outputs().first::<atglyph::mapgen::Surveyed>().unwrap_or_else(|| panic!("{at}: not surveyed")).route;
+            // Not "outside every piece's own rect": `atglyph::mapgen::prefab::laid_in`
             // lets a pick's blank cells (the room's own floor, left as it
             // was) coexist with the way in or down inside the rect, so a
             // small piece like `Cold Campsite` can legally have the way
@@ -2235,14 +2235,14 @@ mod tests {
     /// landmark the pool seeds in `drawn` when the run drew another biome
     /// there and so planned none: every floor of a biome with a landmark
     /// is grown round it, so a recipe of that biome is grown round it too.
-    fn with_its_landmark(undermere: &Undermere, floor: u32, drawn: &BiomeDraw) -> Vec<rl_engine::rl_rules::pool::Pick> {
+    fn with_its_landmark(undermere: &Undermere, floor: u32, drawn: &BiomeDraw) -> Vec<atglyph::rules::pool::Pick> {
         let mut picks = undermere.picks_for(floor, drawn);
         let seeded = |e: usize| matches!(undermere.pool.entries[e].placed, Placed::Seeded { .. });
         if !picks.iter().any(|p| seeded(p.entry)) {
             let tags = [place_tag(drawn)];
             let own = (0..undermere.pool.entries.len())
                 .find(|e| seeded(*e) && undermere.pool.entries[*e].weight > 0 && undermere.pool.entries[*e].fits(floor as i32, &tags));
-            picks.extend(own.map(|entry| rl_engine::rl_rules::pool::Pick { entry, required: true }));
+            picks.extend(own.map(|entry| atglyph::rules::pool::Pick { entry, required: true }));
         }
         picks
     }
@@ -2291,7 +2291,7 @@ mod tests {
 
     /// The widest strip of rock along any one side of `terrain` with no
     /// cell `walkable` in it: a floor grown short of its size.
-    fn unused_band(terrain: &Terrain, walkable: impl Fn(rl_engine::rl_grid::TileId) -> bool) -> i32 {
+    fn unused_band(terrain: &Terrain, walkable: impl Fn(atglyph::grid::TileId) -> bool) -> i32 {
         let bounds = terrain.bounds();
         let open: Vec<Point> = bounds.cells().filter(|p| terrain.get(*p).is_some_and(&walkable)).collect();
         let (Some(left), Some(right)) = (open.iter().map(|p| p.x).min(), open.iter().map(|p| p.x).max()) else { return bounds.width.max(bounds.height) };
@@ -2350,11 +2350,11 @@ mod tests {
         let (wall, window, floor) = (tiles.id("stone wall").unwrap(), tiles.id("lit window").unwrap(), tiles.id("cobbles").unwrap());
         // A street cell and a room cell with a wall between them, and a
         // window set in that wall in the street's line of sight.
-        let terrain = rl_engine::rl_grid::Terrain::from_fn(7, 5, |p| if p.x == 3 { if p.y == 2 { window } else { wall } } else { floor });
+        let terrain = atglyph::grid::Terrain::from_fn(7, 5, |p| if p.x == 3 { if p.y == 2 { window } else { wall } } else { floor });
         let view = terrain.view(&tiles);
         let (street, room) = (Point::new(1, 2), Point::new(5, 2));
-        assert!(rl_engine::rl_grid::fov::can_see(&view, street, room, 8), "the room is seen through the window");
-        assert!(!rl_engine::rl_grid::fov::can_see(&view, Point::new(1, 0), Point::new(5, 0), 8), "a wall beside it is not");
+        assert!(atglyph::grid::fov::can_see(&view, street, room, 8), "the room is seen through the window");
+        assert!(!atglyph::grid::fov::can_see(&view, Point::new(1, 0), Point::new(5, 0), 8), "a wall beside it is not");
         assert!(!view.is_walkable(Point::new(3, 2)), "a body does not pass the glass");
         assert!(view.blocks_projectiles_idx(2 * 7 + 3), "a shot stops at it");
     }

@@ -21,9 +21,9 @@
 //! the world's keys stand down while it is up, and `esc` puts away the top
 //! screen, which is how the search steps back to the menu.
 
+use atglyph::prelude::*;
+use atglyph::primitives::{Id, Rect};
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_core::{Id, Rect};
 
 use crate::decks::{DECKS, deck_of, map_of};
 use crate::gear::{Content, ItemDef, spawn_item_at};
@@ -440,9 +440,9 @@ fn draw_cheats(screen: Res<CheatScreen>, modals: Res<Modals>, palette: Res<Palet
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_bevy::testing::{KeyScriptPlugin, press};
-    use rl_engine::rl_core::RunSeed;
-    use rl_engine::rl_rules::Hit;
+    use atglyph::ecs::testing::{KeyScriptPlugin, press};
+    use atglyph::primitives::RunSeed;
+    use atglyph::rules::Hit;
 
     use super::*;
 

@@ -443,7 +443,7 @@ ASCII only, on a 100 by 40 grid, with colour doing the work (**exists**).
 
 ## Technical
 
-Rust, on Bevy, on `rl-engine`: this crate is a worked example of the engine and depends on nothing a game could not.
+Rust, on Bevy, on `atglyph`: this crate is a worked example of the engine and depends on nothing a game could not.
 It uses the engine's turn clock, minds, combat, lighting, noise, stealth, abilities, quests, loot tables, panels, remains, fire and gas.
 Content is RON in `assets/`, each file headed by the full option space.
 What a thing is and where it turns up are separate files: `monsters.ron` and `items.ron` say what each kind is, and `monster_spawns.ron` and `item_spawns.ron` say on which decks, how often, and in what numbers, a row per band.

@@ -5,7 +5,7 @@
 //! [`ALL`] checked for repeats and against the engine's own domains, means
 //! two draws can only share a stream by naming the same constant.
 
-use rl_engine::rl_core::SeedDomain;
+use atglyph::primitives::SeedDomain;
 
 /// The loose props a deck is dressed with.
 pub const PROPS: SeedDomain = SeedDomain::new(b"foundry.props");
@@ -20,7 +20,7 @@ pub const ALL: &[(&str, SeedDomain)] = &[("PROPS", PROPS), ("SPAWNS", SPAWNS), (
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rl_engine::rl_bevy::ENGINE_DOMAINS;
+    use atglyph::ecs::ENGINE_DOMAINS;
 
     #[test]
     fn every_seed_domain_the_game_draws_from_is_distinct() {

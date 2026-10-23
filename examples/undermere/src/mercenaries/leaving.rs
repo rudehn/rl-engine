@@ -1,9 +1,9 @@
 //! A mercenary out of the party: let go, back to waiting to be hired, or
 //! fallen, for good.
 
+use atglyph::prelude::*;
+use atglyph::primitives::noun::{Countability, counted_as};
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_core::noun::{Countability, counted_as};
 
 use super::*;
 use crate::allies::Ally;
@@ -313,7 +313,7 @@ mod tests {
         assert_eq!(record.sections[2].body, "Brenna, slain by a goblin on floor 3");
         let lost = record.sections[1].body.lines().find(|l| l.starts_with("Mercenaries lost ")).unwrap_or_default();
         assert!(lost.ends_with(" 1"), "counted among the numbers: {:?}", record.sections[1].body);
-        let kept = app.world().resource::<Saves>().load(rl_engine::rl_save::RECORDS_SLOT).expect("the slot reads").expect("the records were written down");
+        let kept = app.world().resource::<Saves>().load(atglyph::save::RECORDS_SLOT).expect("the slot reads").expect("the records were written down");
         assert!(kept.contains("Brenna, slain by a goblin on floor 3"), "kept beyond the run: {kept}");
     }
 
@@ -374,7 +374,7 @@ mod tests {
         let rat = monster(&mut app, "rat", here.offset(3, 0));
         let crush = app.world().resource::<Registries>().damage_kinds.expect("crush");
         let strike = |app: &mut App, target| {
-            app.world_mut().write_message(DamageEvent::new(target, rl_engine::rl_rules::Hit::from_source(Some(brenna), crush, 3)));
+            app.world_mut().write_message(DamageEvent::new(target, atglyph::rules::Hit::from_source(Some(brenna), crush, 3)));
             settle(app);
         };
         let before = app.world().resource::<Tally>().clone();

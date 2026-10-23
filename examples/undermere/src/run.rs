@@ -6,12 +6,12 @@
 //! begins and continues a run the way the window does, through
 //! [`UndermerePlugin`](crate::plugin::UndermerePlugin).
 
+use atglyph::prelude::*;
+use atglyph::rules::ai::hearing::HearingStats;
+use atglyph::rules::damage::{ApplyResistance, SubtractArmor};
 use bevy::ecs::system::RunSystemOnce;
 use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_rules::ai::hearing::HearingStats;
-use rl_engine::rl_rules::damage::{ApplyResistance, SubtractArmor};
 
 use crate::armory::Armory;
 use crate::dungeon::{FLOORS, TOWN, Undermere, floor_of, map_of};
@@ -435,7 +435,7 @@ pub fn resume(world: &mut World) {
     if world.remove_resource::<ContinueRun>().is_none() {
         return;
     }
-    let saved = match rl_engine::rl_save::load_run(world) {
+    let saved = match atglyph::save::load_run(world) {
         Ok(Some(saved)) => saved,
         Ok(None) | Err(_) => {
             error!("there is no save that can be continued; beginning a new run");
@@ -457,7 +457,7 @@ pub fn resume(world: &mut World) {
     let adventurer = world.query_filtered::<Entity, With<Adventurer>>().single(world).ok();
     let (Ok(()), Some(adventurer)) = (restored, adventurer) else {
         error!("the save could not be restored; beginning a new run");
-        rl_engine::rl_bevy::plugin::clear_run(world);
+        atglyph::ecs::plugin::clear_run(world);
         begin_afresh(world);
         return;
     };
@@ -498,7 +498,7 @@ pub struct Begin<'w> {
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_core::RunSeed;
+    use atglyph::primitives::RunSeed;
 
     use super::*;
     use crate::testing::{adventurer, arrive, at, headless, here, pack, settle, worn};
@@ -549,10 +549,10 @@ mod tests {
         let registries = app.world().resource::<Registries>().clone();
         let health = |app: &App| app.world().get::<Health>(salamander).map(|h| h.current);
         let full = health(&app);
-        app.world_mut().write_message(DamageEvent::new(salamander, rl_engine::rl_rules::Hit::by(me, registries.damage_kinds.expect("fire"), 10)));
+        app.world_mut().write_message(DamageEvent::new(salamander, atglyph::rules::Hit::by(me, registries.damage_kinds.expect("fire"), 10)));
         settle(&mut app);
         assert_eq!(health(&app), full, "fire-blooded: fire does nothing");
-        app.world_mut().write_message(DamageEvent::new(salamander, rl_engine::rl_rules::Hit::by(me, registries.damage_kinds.expect("cold"), 10)));
+        app.world_mut().write_message(DamageEvent::new(salamander, atglyph::rules::Hit::by(me, registries.damage_kinds.expect("cold"), 10)));
         settle(&mut app);
         assert_eq!(health(&app), full.map(|h| h - 15), "and cold bites half as hard again");
     }

@@ -6,7 +6,7 @@
 //! hold far enough off.
 
 use super::*;
-use rl_engine::rl_mapgen::Join;
+use atglyph::mapgen::Join;
 
 /// Fails the floor when the way in is nearer the throne than half the
 /// floor's longer side, walking: the throne is grown now, so its mouth is

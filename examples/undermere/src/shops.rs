@@ -38,14 +38,14 @@
 
 use std::ops::RangeInclusive;
 
+use atglyph::prelude::*;
+use atglyph::primitives::noun::listed;
+use atglyph::rules::loot::{DropRow, DropTable, LevelRow, LevelTable, LootRow, LootTable};
+use atglyph::ui::TradeView;
+use atglyph::ui::view::offers::OffersView;
 use bevy::prelude::*;
 use rand::Rng;
 use rand::rngs::StdRng;
-use rl_engine::prelude::*;
-use rl_engine::rl_core::noun::listed;
-use rl_engine::rl_rules::loot::{DropRow, DropTable, LevelRow, LevelTable, LootRow, LootTable};
-use rl_engine::rl_ui::TradeView;
-use rl_engine::rl_ui::view::offers::OffersView;
 use ron::extensions::Extensions;
 use ron::options::Options;
 use ron::value::RawValue;
@@ -757,14 +757,14 @@ impl AuthoredKeeper {
 
 #[cfg(test)]
 mod tests {
+    use atglyph::primitives::RunSeed;
     use rand::SeedableRng;
-    use rl_engine::rl_core::RunSeed;
 
     use super::*;
     use crate::armory::{RING_LEVELS, STAFF_LEVEL, WORTH_PER_LEVEL};
     use crate::content::Library;
     use crate::testing::{adventurer, at, give, headless, lay, make, name_of, pack, settle, stand_on, take_up};
-    use rl_engine::rl_ui::{OffersViewPlugin, TradeViewPlugin};
+    use atglyph::ui::{OffersViewPlugin, TradeViewPlugin};
 
     use crate::content::TOWNSFOLK;
     use crate::temple::{Rites, TEMPLE};

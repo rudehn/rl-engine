@@ -31,14 +31,14 @@
 //! there and nowhere a message says.
 //!
 //! `reflecting` is learned off the engine's own `Reflected`, written by
-//! [`rl_engine::rl_bevy::Bystanders::reflect`] each time it turns a
+//! [`atglyph::ecs::Bystanders::reflect`] each time it turns a
 //! landing back: [`learn_reflecting`] reads it at the reflecting body's
 //! own cell exactly as [`learn_draining`] reads the drainer's.
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use atglyph::prelude::*;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::bestiary::{Bestiary, Kind, KindTag};
@@ -245,8 +245,8 @@ pub fn learn_reflecting(
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_core::RunSeed;
-    use rl_engine::rl_rules::Hit;
+    use atglyph::primitives::RunSeed;
+    use atglyph::rules::Hit;
 
     use super::*;
     use crate::dungeon::map_of;
@@ -255,7 +255,7 @@ mod tests {
     /// Opens the look cursor on `at` and returns the words of every facet
     /// it shows, in order, closing the cursor again after.
     fn facets_at(app: &mut App, at: Point) -> Vec<String> {
-        let modal = rl_engine::rl_ui::view::inspect::inspect_modal(app.world().resource::<Modals>());
+        let modal = atglyph::ui::view::inspect::inspect_modal(app.world().resource::<Modals>());
         app.world_mut().resource_mut::<Modals>().open(modal);
         app.world_mut().resource_mut::<InspectView>().cursor = at;
         app.update();
@@ -312,7 +312,7 @@ mod tests {
         let before = facets_at(&mut app, here.offset(1, 0));
         assert!(before.contains(&"?".to_string()) && !before.iter().any(|s| s == "turns magic back"), "unshown yet: {before:?}");
 
-        app.world_mut().write_message(Reflected { by: golem, onto: golem, source: rl_engine::rl_bevy::Source::Offer(golem) });
+        app.world_mut().write_message(Reflected { by: golem, onto: golem, source: atglyph::ecs::Source::Offer(golem) });
         settle(&mut app);
 
         let after = facets_at(&mut app, here.offset(1, 0));

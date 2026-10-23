@@ -9,8 +9,8 @@
 //! leads nowhere the engine could take anyone and is answered by
 //! [`ride_out`].
 
+use atglyph::prelude::*;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
 
 use crate::decks::{DECKS, deck_of};
 
@@ -124,7 +124,7 @@ pub fn ride_out(
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_core::RunSeed;
+    use atglyph::primitives::RunSeed;
 
     use super::*;
     use crate::decks::map_of;
@@ -220,7 +220,7 @@ mod tests {
                 assert!(lift_to(&mut app, deck).is_some(), "{at}: deck {} has a lift back up", deck + 1);
             }
             assert_eq!(lift_to(&mut app, DECKS + 1), None, "seed {s}: the last deck has no lift down");
-            let text = app.world().resource::<rl_engine::rl_save::Saves>().load(crate::save::SLOT).unwrap().expect("the arrival wrote the run down");
+            let text = app.world().resource::<atglyph::save::Saves>().load(crate::save::SLOT).unwrap().expect("the arrival wrote the run down");
             let mut again = crate::testing::continued(&text);
             for deck in 1..=DECKS {
                 assert_eq!(ways_on(&mut again, deck), seen[deck as usize - 1], "seed {s}: deck {deck}, continued");
@@ -257,7 +257,7 @@ mod tests {
     /// only on the arrival cell, a cell walled over or one already filled,
     /// and none of those is ever meant to happen on a deck.
     fn every_prop_slot_holds_its_prop(app: &mut App, deck: u32, at: &str) {
-        use rl_engine::rl_rules::prefab::Slot;
+        use atglyph::rules::prefab::Slot;
         let here = map_of(deck);
         let standing: Vec<(Point, PropId)> = {
             let world = app.world_mut();
@@ -307,7 +307,7 @@ mod tests {
     /// holds rather than where it stands: the ride down spent a turn, and a
     /// sentry that saw the commando arrive has already left its cell.
     fn every_guard_holds_its_post(app: &mut App, deck: u32, at: &str) {
-        use rl_engine::rl_rules::prefab::{Pick, Slot};
+        use atglyph::rules::prefab::{Pick, Slot};
         let here = map_of(deck);
         let entry = app.world().resource::<WorldMap>().place(here).expect("the deck is built").entry;
         let guards: Vec<(Id<crate::droids::MonsterDef>, Post)> = {
@@ -340,8 +340,8 @@ mod tests {
 
 #[cfg(test)]
 mod lift_out {
-    use rl_engine::rl_bevy::{Ending, Outcome};
-    use rl_engine::rl_core::{Direction, RunSeed};
+    use atglyph::ecs::{Ending, Outcome};
+    use atglyph::primitives::{Direction, RunSeed};
 
     use super::*;
     use crate::mission::Facts;

@@ -14,13 +14,13 @@
 //! seed as rows of glyphs: `#` solid, `.` open, `+` a hatch, `<` the way in
 //! and `>` the way down.
 
+use atglyph::prelude::*;
+use atglyph::primitives::{Rect, RunSeed};
 use bevy::prelude::*;
 use foundry::cheats::CheatPanel;
 use foundry::plugin::FoundryPlugin;
 use foundry::run::StartDeck;
 use foundry::upgrades::ChoicePanel;
-use rl_engine::prelude::*;
-use rl_engine::rl_core::{Rect, RunSeed};
 
 /// Terminal size in cells.
 const COLS: i32 = 100;
@@ -202,8 +202,8 @@ fn add_panels(app: &mut App, screen: &Screen) {
 
 fn main() -> AppExit {
     // Through the replay module, so a recorded run replays on its own seed.
-    let mut seed = rl_engine::rl_bevy::replay::seed().unwrap_or_else(RunSeed::fresh);
-    let args = rl_engine::rl_bevy::replay::args();
+    let mut seed = atglyph::ecs::replay::seed().unwrap_or_else(RunSeed::fresh);
+    let args = atglyph::ecs::replay::args();
     match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
         [] => {}
         ["--seed", n] => seed = RunSeed(n.parse().expect("--seed takes a number")),
@@ -256,9 +256,9 @@ fn main() -> AppExit {
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_render::{MapViewPlugin, Terminal};
-    use rl_engine::rl_ui::{InventoryMenu, InventoryView, inventory_modal};
-    use rl_engine::testing::{KeyScriptPlugin, press, row, written};
+    use atglyph::render::{MapViewPlugin, Terminal};
+    use atglyph::testing::{KeyScriptPlugin, press, row, written};
+    use atglyph::ui::{InventoryMenu, InventoryView, inventory_modal};
 
     use super::*;
 
@@ -297,14 +297,14 @@ mod tests {
     /// the rows theirs do. `saved` is in the save slot from before the
     /// launch, as a run left last time is.
     fn at_the_title(seed: RunSeed, saved: Option<&str>) -> App {
-        use rl_engine::rl_save::SaveBackend as _;
+        use atglyph::save::SaveBackend as _;
         let mut app = foundry::testing::headless(seed);
         let screen = Screen::new();
-        app.add_plugins((KeyScriptPlugin, MapViewPlugin::new(screen.rail.map), rl_engine::rl_render::FullscreenPlugin));
+        app.add_plugins((KeyScriptPlugin, MapViewPlugin::new(screen.rail.map), atglyph::render::FullscreenPlugin));
         app.insert_resource(Terminal::new(COLS, ROWS, Vec2::ONE));
         add_panels(&mut app, &screen);
         if let Some(text) = saved {
-            app.world().resource::<rl_engine::rl_save::Saves>().persist(foundry::save::SLOT, text).expect("the memory backend takes it");
+            app.world().resource::<atglyph::save::Saves>().persist(foundry::save::SLOT, text).expect("the memory backend takes it");
         }
         app.finish();
         app.cleanup();
@@ -381,7 +381,7 @@ mod tests {
         // The last letter of "locked", wherever the row ends.
         let x = (0..COLS).rev().find(|x| app.world().resource::<Terminal>().get(*x, y + 1).is_some_and(|c| c.glyph == 'd')).unwrap();
         let palette = app.world().resource::<Palette>();
-        let bad = rl_engine::rl_ui::readable(palette.get(Tones::BAD), palette);
+        let bad = atglyph::ui::readable(palette.get(Tones::BAD), palette);
         assert_eq!(app.world().resource::<Terminal>().get(x, y + 1).unwrap().fg, bad);
     }
 
@@ -462,7 +462,7 @@ mod tests {
         // Painted blank every frame, since nothing else owns it: whatever
         // was on the terminal before does not show through.
         let mut app = on_screen(RunSeed(7));
-        let dirt = rl_engine::rl_render::Cell::new('x', Color::WHITE);
+        let dirt = atglyph::render::Cell::new('x', Color::WHITE);
         app.world_mut().resource_mut::<Terminal>().fill(Rect::new(rail - 1, 0, 1, ROWS), dirt);
         app.update();
         let column: String = (0..ROWS).map(|y| app.world().resource::<Terminal>().get(rail - 1, y).map_or('?', |c| c.glyph)).collect();
@@ -487,7 +487,7 @@ mod tests {
     }
 
     /// The pack row of `item`, as the pack draws it.
-    fn pack_row(app: &App, item: Entity) -> rl_engine::rl_ui::ItemRow {
+    fn pack_row(app: &App, item: Entity) -> atglyph::ui::ItemRow {
         app.world().resource::<InventoryView>().rows.iter().find(|r| r.entity == item).expect("in the pack").clone()
     }
 
@@ -498,7 +498,7 @@ mod tests {
     fn the_pack_says_what_a_dry_gun_shoots_at_its_level_and_that_it_is_dry() {
         let mut app = on_screen(RunSeed(7));
         let rifle = in_the_pack(&mut app, "slug rifle", 2);
-        assert!(app.world().get::<rl_engine::rl_bevy::Dry>(rifle).is_some(), "no slugs in the pack, so it is dry");
+        assert!(app.world().get::<atglyph::ecs::Dry>(rifle).is_some(), "no slugs in the pack, so it is dry");
         let row = pack_row(&app, rifle);
         assert_eq!(row.shot.map(|s| s.dice.to_string()).as_deref(), Some("1d10+5"), "damage: 2, so four more at +2");
         assert!(row.facets.iter().any(|f| f.text == "dry"), "{:?}", row.facets);
@@ -511,7 +511,7 @@ mod tests {
         let mut app = on_screen(RunSeed(7));
         let plain = in_the_pack(&mut app, "rangefinder helmet", 0);
         let fine = in_the_pack(&mut app, "rangefinder helmet", 2);
-        let sees = |row: rl_engine::rl_ui::ItemRow| row.facets.iter().map(|f| f.text.clone()).find(|t| t.contains("dark"));
+        let sees = |row: atglyph::ui::ItemRow| row.facets.iter().map(|f| f.text.clone()).find(|t| t.contains("dark"));
         assert_eq!(sees(pack_row(&app, plain)).as_deref(), Some("sees 6 in the dark"));
         assert_eq!(sees(pack_row(&app, fine)).as_deref(), Some("sees 8 in the dark"));
     }
@@ -658,11 +658,11 @@ mod tests {
     /// The text of a run saved on arriving on `deck`, played in an app of
     /// its own, as a run left there at the last launch wrote it.
     fn a_save_on(deck: u32) -> String {
-        use rl_engine::rl_save::SaveBackend as _;
+        use atglyph::save::SaveBackend as _;
         let mut app = foundry::testing::headless(RunSeed(5));
         foundry::testing::arrive_on(&mut app, deck);
         foundry::testing::settle(&mut app);
-        app.world().resource::<rl_engine::rl_save::Saves>().load(foundry::save::SLOT).unwrap().expect("arriving wrote it")
+        app.world().resource::<atglyph::save::Saves>().load(foundry::save::SLOT).unwrap().expect("arriving wrote it")
     }
 
     /// A run left on deck two at the last launch waits at this one's title,

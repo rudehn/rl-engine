@@ -29,6 +29,6 @@ cargo generate --git https://github.com/rudehn/rl-engine --tag v$version templat
 Or depend on it directly:
 
 \`\`\`toml
-rl-engine = { git = "https://github.com/rudehn/rl-engine", tag = "v$version" }
+atglyph = { git = "https://github.com/rudehn/rl-engine", tag = "v$version" }
 \`\`\`
 EOF

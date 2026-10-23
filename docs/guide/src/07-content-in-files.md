@@ -172,7 +172,7 @@ Weight zero keeps an entry out of the table, which is how the king lives in the 
                 bestiary.spawn(&mut commands, bestiary.defs.expect("rat king"), throne);
 ```
 
-`rl-rules` ships a threat score and a band report over this same table, for a balance tool or a test to print.
+`atglyph-rules` ships a threat score and a band report over this same table, for a balance tool or a test to print.
 
 ## The tiles too
 

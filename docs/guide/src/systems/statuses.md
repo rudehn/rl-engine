@@ -1,24 +1,24 @@
 <!-- documents:
      plugins: CorePlugin, FactsPlugin
-     files: crates/rl-bevy/src/status.rs
-            crates/rl-bevy/src/plugin.rs
-            crates/rl-bevy/src/combat.rs
-            crates/rl-bevy/src/events.rs
-            crates/rl-bevy/src/items.rs
-            crates/rl-bevy/src/effects/engine.rs
-            crates/rl-bevy/src/plugin.rs
-            crates/rl-bevy/src/stealth.rs
-            crates/rl-bevy/src/minds.rs
-            crates/rl-bevy/src/turn.rs
-            crates/rl-bevy/src/noise.rs
-            crates/rl-rules/src/damage.rs
-            crates/rl-rules/src/status.rs
-            crates/rl-rules/src/stats.rs
-            crates/rl-rules/src/events/fact.rs
-            crates/rl-rules/src/events/ledger.rs
-            crates/rl-rules/src/events/quest.rs
-            crates/rl-ui/src/facet.rs
-            crates/rl-ui/src/narrate.rs
+     files: crates/atglyph-bevy/src/status.rs
+            crates/atglyph-bevy/src/plugin.rs
+            crates/atglyph-bevy/src/combat.rs
+            crates/atglyph-bevy/src/events.rs
+            crates/atglyph-bevy/src/items.rs
+            crates/atglyph-bevy/src/effects/engine.rs
+            crates/atglyph-bevy/src/plugin.rs
+            crates/atglyph-bevy/src/stealth.rs
+            crates/atglyph-bevy/src/minds.rs
+            crates/atglyph-bevy/src/turn.rs
+            crates/atglyph-bevy/src/noise.rs
+            crates/atglyph-rules/src/damage.rs
+            crates/atglyph-rules/src/status.rs
+            crates/atglyph-rules/src/stats.rs
+            crates/atglyph-rules/src/events/fact.rs
+            crates/atglyph-rules/src/events/ledger.rs
+            crates/atglyph-rules/src/events/quest.rs
+            crates/atglyph-ui/src/facet.rs
+            crates/atglyph-ui/src/narrate.rs
      fingerprint: d79f0261 -->
 
 # Statuses
@@ -128,9 +128,9 @@ The one thing the engine insists on is when: `track_facts` runs after the frame'
 
 ## Where it lives
 
-`rl-rules` is tier 1 and has no Bevy in it, which is what lets the awkward parts be proved without an `App`.
+`atglyph-rules` is tier 1 and has no Bevy in it, which is what lets the awkward parts be proved without an `App`.
 `status.rs` holds the stacking rules and the tick, so a status applied three times, extended, and expiring one instance at a time is a test over a `Statuses` and a `Stats` built by hand.
 `stats.rs` holds the order of operations and the source tagging, and the test that matters is the one where an item's modifier, a status's and a game's share a number and only the item's is stripped.
 `events/` is `fact.rs`, `ledger.rs` and `quest.rs`, and none of the three knows what a fact is about, so a quest chain is tested by feeding facts made of integers.
-`rl-bevy` is tier 2 and thin over both: `status.rs` is the two components, the two requests and the system that ticks the current map, and `events.rs` is a message, two optional resources, one system that feeds them and one that forgets them when a run ends.
+`atglyph-bevy` is tier 2 and thin over both: `status.rs` is the two components, the two requests and the system that ticks the current map, and `events.rs` is a message, two optional resources, one system that feeds them and one that forgets them when a run ends.
 Thin on purpose, because the parts worth testing are the parts that never needed a world.

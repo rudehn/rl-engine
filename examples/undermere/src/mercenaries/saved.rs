@@ -3,8 +3,8 @@
 
 use std::sync::Arc;
 
+use atglyph::prelude::*;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
 
 use super::fixtures::{beside, in_mereholt, offered, take, waiting};
 use super::*;
@@ -15,7 +15,7 @@ use crate::townsfolk::GivenNames;
 
 /// The run written down where it stands, read back as text.
 fn saved(app: &mut App) -> String {
-    rl_engine::rl_save::save_run(app.world_mut()).expect("the run is written down");
+    atglyph::save::save_run(app.world_mut()).expect("the run is written down");
     written(app)
 }
 
@@ -282,12 +282,8 @@ fn a_fallen_mercenarys_body_is_the_corpse_of_its_name_and_still_is_after_a_conti
 
     let mut again = continued(&saved(&mut app));
     let world = again.world_mut();
-    let bodies: Vec<String> = world
-        .query_filtered::<&Name, With<rl_engine::rl_bevy::Remains>>()
-        .iter(world)
-        .map(|n| n.as_str().to_string())
-        .filter(|n| n.contains("corpse"))
-        .collect();
+    let bodies: Vec<String> =
+        world.query_filtered::<&Name, With<atglyph::ecs::Remains>>().iter(world).map(|n| n.as_str().to_string()).filter(|n| n.contains("corpse")).collect();
     assert!(bodies.contains(&body), "laid back down by its name: {bodies:?}");
     assert!(!bodies.iter().any(|n| n.contains("mercenary")), "and never by its kind: {bodies:?}");
 }

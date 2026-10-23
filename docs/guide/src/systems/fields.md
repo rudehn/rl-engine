@@ -1,16 +1,16 @@
 <!-- documents:
      plugins: FirePlugin, GasPlugin
-     files: crates/rl-core/src/seed.rs
-            crates/rl-grid/src/field.rs
-            crates/rl-grid/src/tile.rs
-            crates/rl-rules/src/fire.rs
-            crates/rl-rules/src/gas.rs
-            crates/rl-bevy/src/fields.rs
-            crates/rl-bevy/src/fire.rs
-            crates/rl-bevy/src/gas.rs
-            crates/rl-bevy/src/effects/engine.rs
-            crates/rl-bevy/src/world.rs
-            crates/rl-bevy/src/plugin.rs
+     files: crates/atglyph-core/src/seed.rs
+            crates/atglyph-grid/src/field.rs
+            crates/atglyph-grid/src/tile.rs
+            crates/atglyph-rules/src/fire.rs
+            crates/atglyph-rules/src/gas.rs
+            crates/atglyph-bevy/src/fields.rs
+            crates/atglyph-bevy/src/fire.rs
+            crates/atglyph-bevy/src/gas.rs
+            crates/atglyph-bevy/src/effects/engine.rs
+            crates/atglyph-bevy/src/world.rs
+            crates/atglyph-bevy/src/plugin.rs
      fingerprint: 06407729 -->
 
 # Fire and gas
@@ -94,7 +94,7 @@ Both fields are the engine's to save: each exports the cells that hold something
 
 ## Where it lives
 
-`rl-grid` is tier 1 and has no Bevy in it: `field.rs` is `TileField` and the double-buffered step, over which the rule that nothing moves twice in a step is tested on a five-cell grid, and `tile.rs` is where a tile declares how it burns and refuses by name a tile it would leave that nobody registered.
-`rl-rules` is tier 1 too, and holds both rules as functions over a borrowed field: `fire::spread` takes its tinder and its rolls as closures, and `gas::release` and `gas::diffuse` take a test for what holds gas and a roll per cell.
+`atglyph-grid` is tier 1 and has no Bevy in it: `field.rs` is `TileField` and the double-buffered step, over which the rule that nothing moves twice in a step is tested on a five-cell grid, and `tile.rs` is where a tile declares how it burns and refuses by name a tile it would leave that nobody registered.
+`atglyph-rules` is tier 1 too, and holds both rules as functions over a borrowed field: `fire::spread` takes its tinder and its rolls as closures, and `gas::release` and `gas::diffuse` take a test for what holds gas and a roll per cell.
 Neither needs an `App`, which is why the properties they exist for are proved over seed ranges rather than watched: that a cloud of any shape and spread clears, that moving gas about never makes more of it, and that a firebreak holds whatever the rolls.
-`rl-bevy` is tier 2 and owns where it burns: `fields.rs` keeps a field per map and per window, `fire.rs` and `gas.rs` are the two plugins with their components, messages and content checks, the effects module has the two effects that start them, and `plugin.rs` fixes the order of `ResolveSet::Fields`.
+`atglyph-bevy` is tier 2 and owns where it burns: `fields.rs` keeps a field per map and per window, `fire.rs` and `gas.rs` are the two plugins with their components, messages and content checks, the effects module has the two effects that start them, and `plugin.rs` fixes the order of `ResolveSet::Fields`.

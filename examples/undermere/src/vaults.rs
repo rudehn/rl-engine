@@ -35,16 +35,16 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+use atglyph::ecs::doors::DoorEvent;
+use atglyph::ecs::places::{PlaceBuild, PlaceEntered, Spot};
+use atglyph::ecs::prefabs::Prefabs;
+use atglyph::ecs::props::spawn_prop;
+use atglyph::ecs::world::PlaceMap;
+use atglyph::grid::{TileRegistry, TileTables};
+use atglyph::prelude::*;
+use atglyph::rules::prefab::Slot;
 use bevy::prelude::*;
 use rand::Rng;
-use rl_engine::prelude::*;
-use rl_engine::rl_bevy::doors::DoorEvent;
-use rl_engine::rl_bevy::places::{PlaceBuild, PlaceEntered, Spot};
-use rl_engine::rl_bevy::prefabs::Prefabs;
-use rl_engine::rl_bevy::props::spawn_prop;
-use rl_engine::rl_bevy::world::PlaceMap;
-use rl_engine::rl_grid::{TileRegistry, TileTables};
-use rl_engine::rl_rules::prefab::Slot;
 
 use crate::armory::{Armory, spawn_item};
 use crate::bestiary::{Bestiary, MonsterDef, spawn_monster};
@@ -318,7 +318,7 @@ fn hide_causeways(built: &mut PlaceBuild, tiles: &TileRegistry, prefabs: &Prefab
     let group = built.secrets.iter().map(|s| s.group + 1).max().unwrap_or(0);
     for at in cells {
         built.terrain.set(at, deep);
-        built.secrets.push(rl_engine::rl_mapgen::Secret { at, is: causeway, spot: CAUSEWAY_SPOT, group, joins: JOINS_NO_AREA });
+        built.secrets.push(atglyph::mapgen::Secret { at, is: causeway, spot: CAUSEWAY_SPOT, group, joins: JOINS_NO_AREA });
     }
 }
 

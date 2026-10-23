@@ -9,9 +9,9 @@
 //! Keys: arrows, `hjklyubn` or the numpad to walk, `t` to open or shade
 //! the lantern, `.` to wait, `q` to quit.
 
+use atglyph::prelude::*;
+use atglyph::primitives::Rect;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_core::Rect;
 
 /// The terminal, in cells.
 const COLS: i32 = 80;

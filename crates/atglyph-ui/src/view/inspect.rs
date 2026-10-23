@@ -1,0 +1,809 @@
+//! The look cursor, and the truthful picture of whatever it is over.
+//!
+//! Two pieces that only look like one. The cursor is behaviour the engine
+//! owns: it opens onto the nearest thing worth looking at, steps with the
+//! direction keys, cycles through what is in sight, and stays inside the
+//! loaded window. The picture is a view: the subject's name, glyph and
+//! health, and a forecast of the fight, run through
+//! [`atglyph_rules::forecast`] so the numbers on the panel are the numbers the
+//! damage pipeline will produce, for anyone the player could fight: not an
+//! ally, and nobody in a peaceful place.
+//!
+//! The cursor is a modal, declared under the name `inspect`, so a game
+//! gates its own movement keys on [`no_modal`](crate::no_modal) and gets
+//! the exclusion for free.
+
+use crate::controls::AddControls;
+use crate::modal::AddModal;
+use atglyph_bevy::prelude::*;
+use atglyph_core::{Point, geometry};
+use atglyph_render::Glyph;
+use atglyph_rules::Odds;
+use atglyph_rules::Relation;
+use atglyph_rules::forecast::{Combatant, Duel, duel};
+use bevy::prelude::*;
+
+use crate::cursor::{CursorInput, CursorKeys, Steer};
+use crate::facet::Facet;
+use crate::focus::{Focus, InSight};
+use crate::modal::{ModalId, Modals};
+use crate::view::{Row, Seems};
+
+/// The name the inspect cursor's modal is declared under.
+pub(crate) const INSPECT_MODAL: &str = "inspect";
+
+/// Where the cursor is and what is under it.
+#[derive(Resource, Debug, Default)]
+pub struct InspectView {
+    /// The world tile the cursor is on.
+    pub cursor: Point,
+    /// What the ground there is called, by the name the game registered
+    /// the tile under, or empty for a cell the map does not hold.
+    pub ground: String,
+    /// Whether the cell is on fire.
+    pub burning: bool,
+    /// The gas hanging there, by its registered name, when there is one.
+    pub gas: Option<String>,
+    /// The topmost entity under the cursor, if any.
+    pub subject: Option<Row>,
+    /// How a fight with the subject is likely to go, when both sides can
+    /// be read as combatants and a fight could happen: never with an ally,
+    /// and never with anyone standing in a peaceful place.
+    ///
+    /// Reckoned from what each side truly wears, as the fight would be,
+    /// less what either side's [`Seems`] says does not seem to be there, as
+    /// the vitals' armor is: a game whose things are written from a level,
+    /// so that the forecast would tell it, keeps a `Seems` on each wearer
+    /// of a thing not yet known, and both sides are counted as they seem.
+    pub duel: Option<Duel>,
+    /// The chance the player's own attack on the subject lands, from where
+    /// it stands: a blow when adjacent, a shot while it reaches, with the
+    /// accuracy the player's [`Seems`] takes off. `None` when nothing
+    /// reaches or the game's hit model does not roll.
+    pub odds: Option<Odds>,
+    /// Whether the forecast and the chance count either side as its
+    /// [`Seems`] says it seems rather than as it is, for a game that says
+    /// why in its own words.
+    pub seeming: bool,
+    /// What the game added about the subject.
+    pub facets: Vec<Facet>,
+    /// Whether the subject is a thing not yet known, [`Unknown`]: a panel
+    /// says so where it would say what the thing is, so a look at a thing
+    /// tells no more than the bag does.
+    pub unknown: bool,
+    /// What the game says the subject seems, while it is not yet known,
+    /// printed in place of the bare `unknown`, as
+    /// [`ItemRow::seems`](crate::view::inventory::ItemRow::seems) is in the
+    /// bag. Empty for anything else, and read only while `unknown`.
+    pub seems: Vec<Facet>,
+}
+
+impl InspectView {
+    /// Whether the cursor is over something that can be described.
+    pub fn has_subject(&self) -> bool {
+        self.subject.is_some()
+    }
+}
+
+/// Adds the look cursor and keeps [`InspectView`] current.
+///
+/// Needs [`WorldMap`] for the window the cursor moves in, and
+/// [`Registries`] for the damage kinds the forecast resolves through. Its
+/// keys are [`CursorKeys`], the ones the targeting cursor answers to.
+pub struct InspectViewPlugin;
+
+impl Plugin for InspectViewPlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<InspectView>().init_resource::<CursorKeys>().init_resource::<Focus>();
+        // `Modals` is plain data, so this plugin makes sure it exists rather
+        // than panicking when added before `UiPlugin`.
+        app.add_modal(INSPECT_MODAL);
+        app.needs::<Registries>("InspectViewPlugin", "`Registries`, with the damage kinds the forecast resolves through")
+            .needs::<CombatRules>("InspectViewPlugin", "`CombatRules::new()`, for how the subject stands to the player")
+            .add_systems(Update, move_cursor.in_set(EngineSet::Input))
+            .add_systems(Update, collect_inspect.in_set(crate::ViewSet::Collect));
+    }
+
+    fn finish(&self, app: &mut App) {
+        atglyph_bevy::depends_on::<crate::UiPlugin>(app, "InspectViewPlugin");
+        // Declared once the game has declared its own, so the controls
+        // screen lists the game's groups first whatever order the plugins
+        // were added in.
+        app.add_control(crate::focus::CURSOR_GROUP, "look around", crate::controls::EngineKey::Look);
+        crate::focus::declare_cursor_controls(app);
+    }
+}
+
+/// The id of the inspect modal, for a game gating its own systems.
+///
+/// # Panics
+/// Panics if [`InspectViewPlugin`] was not added.
+pub fn inspect_modal(modals: &Modals) -> ModalId {
+    modals.get(INSPECT_MODAL).expect("InspectViewPlugin declares the inspect modal")
+}
+
+/// Everything the panel names the thing under the cursor by.
+type Subject = (Entity, &'static Position, &'static Name, &'static Glyph, Option<&'static OnMap>, Has<Concealed>);
+/// Anything but the player: the cursor describes what you are looking
+/// at, and looking at yourself would forecast a duel with yourself.
+/// What the player is is the vitals panel's question. Never a prop nobody
+/// has spotted, which the map does not draw either.
+type NotYou = (Without<Dead>, Without<Player>, Without<Hidden>);
+
+/// Everything the cursor steers by.
+#[derive(bevy::ecs::system::SystemParam)]
+pub(crate) struct Look<'w, 's> {
+    input: CursorInput<'w>,
+    map: Res<'w, WorldMap>,
+    sight: InSight<'w, 's>,
+    sighted: Res<'w, crate::focus::Sighted>,
+    focus: ResMut<'w, Focus>,
+}
+
+/// Opens, closes, steps and cycles the cursor.
+///
+/// It opens on what is picked out, while that is still in sight, and on the
+/// top of the nearby list otherwise: the nearest actor, or the nearest thing
+/// when nobody is about. Cycling walks that same list in the same order,
+/// things as well as actors, and the [`Focus`] moves with the cursor.
+pub(crate) fn move_cursor(mut view: ResMut<InspectView>, mut modals: ResMut<Modals>, mut look: Look) {
+    let modal = inspect_modal(&modals);
+    let Some((_, origin)) = look.sight.viewer() else { return };
+
+    let toggled = look.input.just_pressed(look.input.keys().look);
+    if toggled && !modals.any_open() {
+        modals.open(modal);
+        let list = look.sighted.list();
+        let opens_on = look.focus.within(list).or(list.first()).copied();
+        view.cursor = opens_on.map_or(origin, |s| s.at);
+        look.focus.set(opens_on.map(|s| s.entity));
+        return;
+    }
+    if !modals.is_top(modal) {
+        return;
+    }
+    if toggled {
+        close(&mut modals, modal, &mut look.focus);
+        return;
+    }
+    // Steered on a copy, so the list can be borrowed while the focus moves,
+    // and written back only when it did.
+    let mut focus = *look.focus;
+    let steer = look.input.steer(&mut view.cursor, &mut focus, look.map.window_tiles(), || look.sighted.list().to_vec());
+    if focus != *look.focus {
+        *look.focus = focus;
+    }
+    match steer {
+        Steer::Close => close(&mut modals, modal, &mut look.focus),
+        // Looking spends nothing, so there is nothing to confirm.
+        Steer::Confirm | Steer::Moved | Steer::Stay => {}
+    }
+}
+
+/// Puts the cursor away and lets go of what it was on, by either key.
+///
+/// Letting go rather than leaving it picked out, as putting an aim away
+/// does: a row still lit in the rail and ticks still round a cell read as a
+/// cursor that did not close, and cost a second Escape to clear.
+fn close(modals: &mut Modals, modal: ModalId, focus: &mut Focus) {
+    modals.close_one(modal);
+    focus.clear();
+}
+
+/// Everything the forecast reads.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct Duelists<'w, 's> {
+    rules: Res<'w, CombatRules>,
+    registries: Res<'w, Registries>,
+    stages: Res<'w, DamageStages>,
+    modals: Res<'w, Modals>,
+    map: Res<'w, WorldMap>,
+    focus: Res<'w, Focus>,
+    /// What the player sees, the question the map draws by, so the cursor
+    /// names nothing the map left out: a thing out of sight, or one
+    /// [`Concealed`] in the dark.
+    sight: PlayerSight<'w, 's>,
+    fire: Option<Res<'w, Fire>>,
+    gases: Option<Res<'w, Gases>>,
+    player: Query<'w, 's, (Entity, &'static Position, Fighter, Option<&'static Faction>), With<Player>>,
+    subjects: Query<'w, 's, Subject, NotYou>,
+    fighters: Query<'w, 's, (Fighter, Option<&'static Faction>)>,
+    /// How many a stack under the cursor holds, for its name.
+    stacks: Query<'w, 's, &'static Stack>,
+    /// What each side strikes with and meets a blow in, gear included:
+    /// the same answer the resolver acts on.
+    loadout: Loadout<'w, 's>,
+    /// What is a prop rather than a fighter, so a crate gets no forecast.
+    props: Query<'w, 's, (), With<atglyph_bevy::Prop>>,
+    /// The odds either side lands, by the call the resolver rolls with.
+    marks: Marksmanship<'w, 's>,
+    /// How fast either side is, by the speed the turns are dealt by.
+    speeds: Speeds<'w, 's>,
+    /// What the subject is working at.
+    work: crate::view::Workings<'w, 's>,
+    /// What is not yet known.
+    unknown: Query<'w, 's, (), With<Unknown>>,
+    /// What either side's numbers seem to be, where a game says.
+    seems: Query<'w, 's, &'static Seems>,
+}
+
+impl Duelists<'_, '_> {
+    /// The fight between `me` and `them`, `apart` cells from each other
+    /// with `mine` and `theirs` health left, each side counted as its
+    /// [`Seems`] says it seems, and `me`'s chance of landing what it would
+    /// strike with from here; and whether anything was taken off either
+    /// side.
+    ///
+    /// Both of what each side can do, and the gap between them; the
+    /// forecast picks the melee rolls or the shot from that, by the rule
+    /// `resolve_attacks` uses, so a droid that only shoots is forecast as
+    /// dangerous across the room and harmless once you are on top of it.
+    /// The cost goes with whichever it picked, the same charge the resolver
+    /// would spend the turn on.
+    fn forecast(&self, me: Entity, them: Entity, apart: i32, mine: i32, theirs: i32) -> (Duel, Option<Odds>, bool) {
+        let (my_seems, their_seems) = (self.seems.get(me).copied().unwrap_or_default(), self.seems.get(them).copied().unwrap_or_default());
+        let (my_resists, their_resists) = (self.loadout.resistances(me), self.loadout.resistances(them));
+        let (my_blows, my_shots) = (seeming(self.loadout.blows(me), my_seems.blow), seeming(self.loadout.shots(me), my_seems.shot));
+        let (their_blows, their_shots) = (seeming(self.loadout.blows(them), their_seems.blow), seeming(self.loadout.shots(them), their_seems.shot));
+        let my_arms = self.loadout.arms(me, &my_blows, &my_shots);
+        let their_arms = self.loadout.arms(them, &their_blows, &their_shots);
+        // Each side's chance of landing what it would attack with from here,
+        // so the forecast counts the misses the roll will make.
+        let my_odds = self.marks.at_distance(&self.loadout, me, them, -my_seems.accuracy);
+        let their_odds = self.marks.at_distance(&self.loadout, them, me, -their_seems.accuracy);
+        // Each side as it would fight once in reach, so a monster across the
+        // room still says what it would take rather than "never"; only a side
+        // with no attack at all reads never. The chance to hit stays what it
+        // is from here, which is why it is shown only while something
+        // reaches.
+        let asker = Combatant::closing(mine, self.loadout.armor(me) - my_seems.armor, self.speeds.of(me), &my_resists, &my_arms, apart)
+            .hitting(my_odds.as_ref().map_or(100, Odds::percent));
+        let other = Combatant::closing(theirs, self.loadout.armor(them) - their_seems.armor, self.speeds.of(them), &their_resists, &their_arms, apart)
+            .hitting(their_odds.as_ref().map_or(100, Odds::percent));
+        let stages: Vec<&dyn atglyph_rules::DamageStage<Entity>> =
+            self.stages.0.iter().map(|s| s.as_ref() as &dyn atglyph_rules::DamageStage<Entity>).collect();
+        let forecast = duel(&asker, &other, &self.registries.damage_kinds, &stages);
+        (forecast, my_odds, !(my_seems.is_true() && their_seems.is_true()))
+    }
+}
+
+/// The rolls one blow or shot lands as they seem: `unseen` off the first,
+/// the blow or the shot itself, and any extra strikes as they are.
+fn seeming(
+    mut rolls: Vec<(atglyph_rules::damage::DamageKindId, atglyph_core::DiceRoll)>,
+    unseen: i32,
+) -> Vec<(atglyph_rules::damage::DamageKindId, atglyph_core::DiceRoll)> {
+    if let Some((_, dice)) = rolls.first_mut() {
+        dice.bonus -= unseen;
+    }
+    rolls
+}
+
+/// What a side of a duel is made of, apart from what its [`Loadout`] says
+/// and how fast [`Speeds`] says it is.
+type Fighter = Option<&'static Health>;
+
+/// Fills [`InspectView`] from whatever the cursor is over.
+///
+/// The forecast's armor, resistances and blows come from each side's
+/// [`Loadout`], so a jerkin the subject wears and a blade the player wields
+/// count in the panel exactly as they will in the fight, and its speed from
+/// [`Speeds`], so haste counts as the turns count it.
+///
+/// No fight is forecast with an ally, nor with anyone standing in a
+/// [`peaceful`](atglyph_bevy::PlaceBuild::peaceful) place, where no blow lands:
+/// the odds of a fight that cannot happen are nothing a player is asking.
+/// A neutral subject is forecast as a hostile one is, since a rat that
+/// ignores the player can still be fought.
+pub(crate) fn collect_inspect(mut view: ResMut<InspectView>, duelists: Duelists) {
+    view.subject = None;
+    view.duel = None;
+    view.odds = None;
+    view.seeming = false;
+    view.facets.clear();
+    view.seems.clear();
+    view.ground.clear();
+    view.burning = false;
+    view.gas = None;
+    view.unknown = false;
+    if !duelists.modals.is_open(inspect_modal(&duelists.modals)) {
+        return;
+    }
+    let Ok((me, origin, mine, my_faction)) = duelists.player.single() else { return };
+    // The ground first, since it is there whether or not anything stands
+    // on it: what a burnt cell is now, and what hangs in the air over it.
+    let cursor = view.cursor;
+    if let Some(tile) = duelists.map.tile(cursor) {
+        view.ground = duelists.map.tables().names.get(tile.index()).cloned().unwrap_or_default();
+    }
+    view.burning = duelists.fire.as_deref().is_some_and(|f| f.is_burning(cursor));
+    view.gas = duelists.gases.as_deref().and_then(|g| g.densest(cursor)).map(|(gas, _)| duelists.registries.gases.name(gas).to_string());
+    // What the cursor picked out, when that is here, so Tab onto the second
+    // of two things on one tile describes the second. Otherwise the topmost
+    // glyph, the one the map drew, so the panel and the map never disagree
+    // about what is being pointed at.
+    let focused = duelists.focus.get();
+    let under = duelists
+        .subjects
+        .iter()
+        .filter(|(_, pos, _, _, on, concealed)| pos.0 == view.cursor && duelists.sight.shows(pos.0, *on, *concealed))
+        .max_by_key(|(entity, _, _, glyph, _, _)| (Some(*entity) == focused, glyph.layer));
+    let Some((entity, pos, name, glyph, on, _)) = under else { return };
+    let count = duelists.stacks.get(entity).map_or(1, |s| s.count);
+    let mut row = Row::new(entity, atglyph_core::noun::listed(name.as_str(), count), *glyph).at(geometry::chebyshev(origin.0, pos.0));
+    let theirs = duelists.fighters.get(entity).ok();
+    if let Some((health, _)) = theirs {
+        row.health = health.map(|h| (h.current, h.max));
+    }
+    if let (Some(mine_f), Some((_, Some(theirs_f)))) = (my_faction, theirs) {
+        row.relation = Some(duelists.rules.factions.relation(mine_f.0, theirs_f.0));
+    }
+    row.work = duelists.work.row(entity);
+    let relation = row.relation;
+    view.subject = Some(row);
+    view.unknown = duelists.unknown.contains(entity);
+
+    // A prop is never duelled, whatever health it carries. A crate has
+    // health so it can be broken, not so a panel can work out how many
+    // blows it needs and how long it will take to kill you back; the
+    // forecast is about a fight, and a crate does not fight.
+    if duelists.props.contains(entity) {
+        return;
+    }
+    if relation == Some(Relation::Allied) || duelists.map.is_peaceful(on.map_or(MapId::ZERO, |m| m.0)) {
+        return;
+    }
+    let Some((subject, _)) = theirs else { return };
+    let (Some(my_health), Some(their_health)) = (mine, subject) else { return };
+    let apart = geometry::chebyshev(origin.0, pos.0);
+    let (forecast, odds, seeming) = duelists.forecast(me, entity, apart, my_health.current, their_health.current);
+    view.odds = odds;
+    view.duel = Some(forecast);
+    view.seeming = seeming;
+}
+
+/// Whether the subject is something the player is at odds with, for a
+/// panel deciding whether the forecast is worth printing.
+pub fn is_a_threat(view: &InspectView) -> bool {
+    view.subject.as_ref().is_some_and(|s| s.relation == Some(Relation::Hostile))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::harness::Stage;
+    use atglyph_rules::forecast::Outlook;
+
+    fn stage() -> Stage {
+        let mut stage = Stage::new(InspectViewPlugin);
+        stage.tick();
+        stage
+    }
+
+    #[test]
+    fn inspect_gives_the_chance_of_the_players_own_attack_from_where_it_stands() {
+        let mut stage = Stage::new_with(InspectViewPlugin, |app| {
+            app.insert_resource(atglyph_bevy::HitRules(Box::new(atglyph_rules::Percent::new(5, 16, 30))));
+        });
+        let (player, kind) = (stage.player, stage.kind);
+        stage.app.world_mut().entity_mut(player).insert(RangedAttack::new(kind, atglyph_core::DiceRoll::flat(2), 12).effective_to(3));
+        stage.actor("droid", 'd', 5, 0);
+        stage.actor("rat", 'r', 1, 0);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let odds = stage.app.world().resource::<InspectView>().odds.clone().expect("a blow");
+        assert_eq!((odds.percent(), odds.lines.len()), (100, 0), "a blow reads no range and no light");
+        stage.press(CursorKeys::default().next);
+        let odds = stage.app.world().resource::<InspectView>().odds.clone().expect("a shot reaches");
+        assert_eq!(odds.percent(), 90, "two tiles past effective, in a world with no lighting");
+    }
+
+    #[test]
+    fn with_no_model_inspect_gives_no_chance() {
+        let mut stage = stage();
+        stage.actor("rat", 'r', 1, 0);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        assert!(stage.app.world().resource::<InspectView>().subject.is_some());
+        assert_eq!(stage.app.world().resource::<InspectView>().odds, None);
+    }
+
+    #[test]
+    fn the_cursor_opens_on_the_nearest_actor_and_closes_back_to_the_world() {
+        let mut stage = stage();
+        stage.actor("far one", 'f', 6, 0);
+        stage.actor("near one", 'n', 2, 0);
+        stage.tick();
+        assert!(!stage.app.world().resource::<Modals>().any_open(), "nothing is open until the key");
+
+        stage.press(CursorKeys::default().look);
+        let view = stage.app.world().resource::<InspectView>();
+        assert_eq!(view.cursor, stage.at.offset(2, 0), "it opens on the nearest thing worth looking at");
+        assert_eq!(view.subject.as_ref().map(|s| s.label.as_str()), Some("near one"));
+        assert!(stage.app.world().resource::<Modals>().any_open(), "and the world does not have the keys");
+
+        stage.press(CursorKeys::default().close);
+        assert!(!stage.app.world().resource::<Modals>().any_open());
+        assert!(stage.app.world().resource::<InspectView>().subject.is_none(), "a closed cursor describes nothing");
+    }
+
+    /// Closing the cursor lets go of what it was on, the way putting an aim
+    /// away does: one Escape, and nothing is left picked out in the rail or
+    /// marked on the map.
+    #[test]
+    fn closing_the_cursor_leaves_nothing_picked_out() {
+        let mut stage = stage();
+        stage.actor("near one", 'n', 2, 0);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        assert!(stage.app.world().resource::<Focus>().get().is_some(), "the cursor picks out what it is on");
+        stage.press(CursorKeys::default().close);
+        assert!(!stage.app.world().resource::<Modals>().any_open());
+        assert_eq!(stage.app.world().resource::<Focus>().get(), None, "and one Escape lets go of it");
+    }
+
+    #[test]
+    fn cycling_walks_the_actors_in_sight_by_distance_and_comes_back_round() {
+        let mut stage = stage();
+        stage.actor("far one", 'f', 6, 0);
+        stage.actor("near one", 'n', 2, 0);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let seen = |stage: &Stage| stage.app.world().resource::<InspectView>().subject.as_ref().map(|s| s.label.clone());
+        assert_eq!(seen(&stage).as_deref(), Some("near one"));
+        stage.press(CursorKeys::default().next);
+        assert_eq!(seen(&stage).as_deref(), Some("far one"));
+        stage.press(CursorKeys::default().next);
+        assert_eq!(seen(&stage).as_deref(), Some("near one"), "and round again");
+    }
+
+    #[test]
+    fn tab_stops_on_things_as_well_as_actors_in_the_order_the_nearby_list_prints() {
+        let mut stage = stage();
+        stage.actor("near one", 'n', 2, 0);
+        stage.thing("a coin", '$', 1, 0);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let seen = |stage: &Stage| stage.app.world().resource::<InspectView>().subject.as_ref().map(|s| s.label.clone());
+        assert_eq!(seen(&stage).as_deref(), Some("near one"), "actors first, though the coin is nearer");
+        stage.press(CursorKeys::default().next);
+        assert_eq!(seen(&stage).as_deref(), Some("a coin"));
+        stage.press(CursorKeys::default().next);
+        assert_eq!(seen(&stage).as_deref(), Some("near one"), "and round again");
+    }
+
+    #[test]
+    fn tab_onto_the_second_of_two_things_on_one_tile_describes_that_one() {
+        let mut stage = stage();
+        stage.actor("crab", 'c', 1, 0);
+        stage.thing("a coin", '$', 1, 0);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let seen = |stage: &Stage| stage.app.world().resource::<InspectView>().subject.as_ref().map(|s| s.label.clone());
+        assert_eq!(seen(&stage).as_deref(), Some("crab"), "the one drawn on top");
+        stage.press(CursorKeys::default().next);
+        assert_eq!(stage.app.world().resource::<InspectView>().cursor, stage.at.offset(1, 0), "the same tile");
+        assert_eq!(seen(&stage).as_deref(), Some("a coin"), "but the coin beneath it");
+    }
+
+    #[test]
+    fn the_cursor_opens_on_the_row_picked_out_and_lets_go_of_it_when_closed() {
+        let mut stage = Stage::new((InspectViewPlugin, crate::NearbyViewPlugin));
+        stage.actor("near one", 'n', 2, 0);
+        let far = stage.actor("far one", 'f', 6, 0);
+        stage.tick();
+        let keys = CursorKeys::default();
+        stage.press(keys.next);
+        stage.press(keys.next);
+        assert_eq!(stage.app.world().resource::<Focus>().get(), Some(far), "Tab with nothing open walks the list");
+
+        stage.press(keys.look);
+        assert_eq!(stage.app.world().resource::<InspectView>().subject.as_ref().map(|s| s.label.as_str()), Some("far one"), "opened on the row picked out");
+        stage.press(keys.close);
+        assert_eq!(stage.app.world().resource::<Focus>().get(), None, "closing lets go of it");
+
+        stage.press(keys.look);
+        stage.press(KeyCode::ArrowRight);
+        stage.press(keys.close);
+        assert_eq!(stage.app.world().resource::<Focus>().get(), None, "the cursor was left on bare ground");
+    }
+
+    #[test]
+    fn a_step_moves_one_tile_and_the_subject_changes_with_it() {
+        let mut stage = stage();
+        stage.actor("east of you", 'e', 1, 0);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        assert_eq!(stage.app.world().resource::<InspectView>().subject.as_ref().map(|s| s.label.clone()).as_deref(), Some("east of you"));
+        stage.press(KeyCode::ArrowRight);
+        let view = stage.app.world().resource::<InspectView>();
+        assert_eq!(view.cursor, stage.at.offset(2, 0));
+        assert!(view.subject.is_none(), "one tile further there is nothing");
+    }
+
+    /// A thing not yet known under the cursor is described as unknown,
+    /// and a known one beside it is not.
+    #[test]
+    fn a_thing_not_yet_known_under_the_cursor_is_described_as_unknown() {
+        let mut stage = stage();
+        let vial = stage.thing("murky vial", '!', 1, 0);
+        stage.thing("coin", '$', 2, 0);
+        stage.app.world_mut().entity_mut(vial).insert(atglyph_bevy::Unknown);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let view = stage.app.world().resource::<InspectView>();
+        assert_eq!((view.subject.as_ref().map(|s| s.label.as_str()), view.unknown), (Some("murky vial"), true));
+        stage.press(CursorKeys::default().next);
+        let view = stage.app.world().resource::<InspectView>();
+        assert_eq!((view.subject.as_ref().map(|s| s.label.as_str()), view.unknown), (Some("coin"), false));
+    }
+
+    #[test]
+    fn the_cursor_over_nothing_describes_nothing_and_never_yourself() {
+        let mut stage = stage();
+        stage.press(CursorKeys::default().look);
+        // Nothing in sight, so the cursor opens on the player's own tile.
+        let view = stage.app.world().resource::<InspectView>();
+        assert_eq!(view.cursor, stage.at);
+        assert!(view.subject.is_none(), "you are not something you look at");
+        assert!(view.duel.is_none(), "and never a duel with yourself");
+    }
+
+    /// A crate has health so it can be broken, not so the panel can work
+    /// out a fight with it: a prop is named and its health shown, and no
+    /// forecast is run.
+    #[test]
+    fn a_prop_under_the_cursor_is_named_but_never_duelled() {
+        let mut stage = stage();
+        let at = stage.at.offset(2, 0);
+        stage.app.world_mut().spawn((
+            atglyph_bevy::Prop,
+            Name::new("supply crate"),
+            Position(at),
+            Health::full(6),
+            atglyph_render::Glyph::new('&', Color::WHITE).on_layer(2),
+        ));
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        stage.tick();
+        let view = stage.app.world().resource::<InspectView>();
+        assert_eq!(view.subject.as_ref().map(|r| r.label.as_str()), Some("supply crate"), "named, and pointed at");
+        assert_eq!(view.subject.as_ref().and_then(|r| r.health), Some((6, 6)), "with what it takes to break it");
+        assert!(view.duel.is_none(), "and no forecast of a fight a crate cannot have");
+    }
+
+    /// The ground is always something: the cursor names the tile it is
+    /// over, and says when it burns.
+    #[test]
+    fn the_cursor_names_the_ground_and_whether_it_burns() {
+        let mut stage = Stage::new_with((InspectViewPlugin, atglyph_bevy::FirePlugin), |app| {
+            app.insert_resource(atglyph_bevy::FireRules::new());
+        });
+        stage.press(CursorKeys::default().look);
+        let view = stage.app.world().resource::<InspectView>();
+        assert_eq!(view.ground, "floor", "the floor, by the name it was registered under");
+        assert!(!view.burning);
+        let at = stage.at;
+        stage.app.world_mut().write_message(atglyph_bevy::Kindle { at, turns: 3 });
+        stage.app.world_mut().write_message(atglyph_bevy::Intent::new(stage.player, atglyph_bevy::Wait));
+        stage.tick();
+        stage.tick();
+        assert!(stage.app.world().resource::<InspectView>().burning, "and it burns now");
+    }
+
+    /// Nobody forecasts a fight with a friend: an ally under the cursor is
+    /// named, its health shown and its side said, and no duel is run.
+    #[test]
+    fn an_ally_under_the_cursor_is_never_forecast_as_a_fight() {
+        let mut stage = stage();
+        let friend = stage.actor("a friend", 'f', 1, 0);
+        let ours = stage.app.world().get::<Faction>(stage.player).expect("the player's side").0;
+        stage.app.world_mut().entity_mut(friend).insert(Faction(ours));
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let view = stage.app.world().resource::<InspectView>();
+        let row = view.subject.as_ref().expect("the friend, pointed at");
+        assert_eq!((row.label.as_str(), row.relation), ("a friend", Some(Relation::Allied)));
+        assert_eq!((view.duel, view.odds.is_some()), (None, false), "and no fight forecast with them");
+    }
+
+    /// A subject neither side is hostile to is still forecast: a rat that
+    /// ignores the player is still a fight the player can pick.
+    #[test]
+    fn a_neutral_subject_is_forecast_as_a_fight_where_the_place_is_not_peaceful() {
+        let mut stage = Stage::new_with(InspectViewPlugin, |app| {
+            app.insert_resource(CombatRules::new());
+        });
+        stage.actor("a rat", 'r', 1, 0);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let view = stage.app.world().resource::<InspectView>();
+        assert_eq!(view.subject.as_ref().and_then(|r| r.relation), Some(Relation::Neutral));
+        assert!(view.duel.is_some(), "a neutral rat can still be fought");
+    }
+
+    /// In a peaceful place nothing is harmed, so nothing is forecast: a
+    /// hostile subject standing there is named and no duel is run.
+    #[test]
+    fn nobody_in_a_peaceful_place_is_forecast_as_a_fight() {
+        let mut stage = stage();
+        let floor = stage.app.world().resource::<WorldMap>().tile(stage.at).expect("the player stands on floor");
+        let town = MapId(1);
+        stage.app.world_mut().resource_mut::<WorldMap>().install_place(
+            town,
+            atglyph_bevy::PlaceBuild {
+                terrain: atglyph_grid::Terrain::filled(12, 9, floor),
+                entry: Point::new(4, 4),
+                exit: None,
+                spots: Vec::new(),
+                locks: Vec::new(),
+                secrets: Vec::new(),
+                ambient: atglyph_grid::Light::DARK,
+                peaceful: true,
+            },
+        );
+        let player = stage.player;
+        stage.app.world_mut().write_message(atglyph_bevy::WarpRequest::into_place(player, town));
+        stage.tick();
+        let (kind, theirs) = (stage.kind, stage.theirs);
+        stage.app.world_mut().spawn((
+            Actor,
+            Blocks,
+            Position(Point::new(5, 4)),
+            OnMap(town),
+            Health::full(10),
+            Faction(theirs),
+            MeleeAttack::new(kind, atglyph_core::DiceRoll::new(1, 4)),
+            Name::new("a brawler"),
+            atglyph_render::Glyph::new('b', Color::WHITE).on_layer(5),
+        ));
+        stage.tick();
+        stage.tick();
+        assert_eq!(stage.app.world().resource::<WorldMap>().current(), town, "the player is in the peaceful place");
+        stage.press(CursorKeys::default().look);
+        let view = stage.app.world().resource::<InspectView>();
+        let row = view.subject.as_ref().expect("the brawler, pointed at");
+        assert_eq!((row.label.as_str(), row.relation), ("a brawler", Some(Relation::Hostile)));
+        assert_eq!((view.duel, view.odds.is_some()), (None, false), "and no fight forecast where no blow lands");
+    }
+
+    #[test]
+    fn the_forecast_runs_both_ways_through_the_games_own_mitigation() {
+        let mut stage = stage();
+        stage.actor("a weakling", 'w', 1, 0);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let view = stage.app.world().resource::<InspectView>();
+        let duel = view.duel.expect("two combatants make a duel");
+        // The player rolls 1d6 into no armor and has 30 health; the
+        // weakling rolls 1d4 into no armor and has 10.
+        assert_eq!(duel.turns_to_fell, Some(3), "10 health at 3.5 a blow is three blows");
+        assert_eq!(duel.turns_to_fall, Some(12), "30 health at 2.5 a blow is twelve");
+        assert_eq!(duel.outlook, Outlook::Easy);
+    }
+
+    /// The fight forecast with each side as its `Seems` says it seems: a
+    /// player whose blow seems two less, against a weakling whose three
+    /// armor does not seem to be there, is forecast exactly as a player
+    /// whose blow is two less against a weakling with none, and the view
+    /// says it is seeming; with no seems it is the true fight.
+    #[test]
+    fn the_forecast_counts_each_side_as_its_seems_says_and_says_so() {
+        let forecast = |blow: i32, armor: i32, seems: bool| {
+            let mut stage = stage();
+            let weakling = stage.actor("a weakling", 'w', 1, 0);
+            stage.app.world_mut().get_mut::<MeleeAttack>(stage.player).unwrap().dice.bonus = blow;
+            stage.app.world_mut().entity_mut(weakling).insert(Armor(armor));
+            if seems {
+                stage.app.world_mut().entity_mut(stage.player).insert(Seems { blow, ..Default::default() });
+                stage.app.world_mut().entity_mut(weakling).insert(Seems { armor, ..Default::default() });
+            }
+            stage.tick();
+            stage.press(CursorKeys::default().look);
+            let view = stage.app.world().resource::<InspectView>();
+            (view.duel.expect("a duel"), view.seeming)
+        };
+        let (seemed, said) = forecast(2, 3, true);
+        assert_eq!((seemed, said), (forecast(0, 0, false).0, true), "as it seems, and saying so");
+        let (truly, said) = forecast(2, 3, false);
+        assert!(!said, "nothing taken off, nothing said");
+        assert_ne!(truly, seemed, "the true fight is another one");
+    }
+
+    /// The forecast's blow count comes from armor and dice alone, but a
+    /// weapon's own cost changes how many turns those blows take: the same
+    /// `MeleeAttack::cost` the resolver charges, read off the same
+    /// `Loadout` the resolver strikes with.
+    #[test]
+    fn a_faster_weapon_forecasts_fewer_turns_without_changing_the_blow_count() {
+        let mut stage = stage();
+        stage.actor("a weakling", 'w', 1, 0);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let ordinary = stage.app.world().resource::<InspectView>().duel.expect("a duel");
+
+        stage.app.world_mut().get_mut::<MeleeAttack>(stage.player).unwrap().cost = Some(30);
+        stage.tick();
+        let quicker = stage.app.world().resource::<InspectView>().duel.expect("a duel");
+
+        // Same setup as `the_forecast_runs_both_ways_through_the_games_own_mitigation`:
+        // 10 health at 3.5 a blow is three blows, which at the ordinary cost
+        // is three turns; at a 30 cost each, the same three blows fit in one.
+        assert_eq!(ordinary.turns_to_fell, Some(3), "three blows at the ordinary cost is three turns");
+        assert_eq!(quicker.turns_to_fell, Some(1), "the same three blows at a 30 cost each fit in one turn");
+        // The weakling's own blow is untouched by the player's weapon, so
+        // its side of the duel does not move.
+        assert_eq!(quicker.turns_to_fall, ordinary.turns_to_fall, "the weakling's own cost never changed");
+    }
+
+    /// Haste counts in the forecast as it counts in the turns: the player
+    /// made twice as fast by the stat the turn rules name swings the same
+    /// three blows in a turn and a half, and the weakling's side is as it
+    /// was.
+    #[test]
+    fn a_hasted_player_is_forecast_to_fell_in_the_turns_its_speed_gives_it() {
+        let mut stage = Stage::new_with(InspectViewPlugin, |app| {
+            let stats = atglyph_rules::Registry::from_defs(vec![atglyph_rules::StatDef::new("quickness", 0)]).unwrap();
+            app.insert_resource(TurnRules::new().speed_stat(stats.expect("quickness")));
+            app.world_mut().resource_mut::<Registries>().stats = stats;
+        });
+        stage.actor("a weakling", 'w', 1, 0);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let ordinary = stage.app.world().resource::<InspectView>().duel.expect("a duel");
+
+        let quickness = stage.app.world().resource::<Registries>().stats.expect("quickness");
+        let haste = atglyph_rules::Modifier::new(quickness, atglyph_rules::Op::Add(100), atglyph_rules::Source::Game(1));
+        stage.app.world_mut().get_mut::<StatBlock>(stage.player).expect("every actor has stats").add(haste);
+        stage.tick();
+        let hasted = stage.app.world().resource::<InspectView>().duel.expect("a duel");
+
+        assert_eq!(ordinary.turns_to_fell, Some(3), "three blows at the ordinary speed");
+        assert_eq!(hasted.turns_to_fell, Some(2), "the same three at twice the speed, a turn and a half rounded up");
+        assert_eq!(hasted.turns_to_fall, ordinary.turns_to_fall, "the weakling is as fast as it was");
+    }
+
+    /// A droid that only shoots, inspected from across the room and then
+    /// from beside it.
+    ///
+    /// Before this, the forecast read only melee rolls, so a gunner with no
+    /// blade was forecast as unable to hurt anything at any distance, and
+    /// the panel said "easy" about the thing that was about to kill you.
+    #[test]
+    fn a_subject_that_only_shoots_is_forecast_as_dangerous_at_range_and_harmless_beside_you() {
+        let read = |away: i32| {
+            let mut stage = Stage::new(InspectViewPlugin);
+            stage.tick();
+            let gunner = stage.actor("gunner", 'g', away, 0);
+            // Nothing but a gun: no melee at all, the case the bug hid.
+            let (kind, world) = (stage.kind, stage.app.world_mut());
+            world.entity_mut(gunner).remove::<MeleeAttack>().insert(RangedAttack::new(kind, atglyph_core::DiceRoll::flat(5), 8));
+            stage.tick();
+            stage.press(CursorKeys::default().look);
+            stage.app.world().resource::<InspectView>().duel.expect("a duel against something that fights")
+        };
+
+        let far = read(5);
+        assert!(far.turns_to_fall.is_some(), "across the room its shot reaches, and the forecast must say so");
+        assert!(far.turns_to_fell.is_some(), "and the player's blade is forecast as it would fight once beside it, not as never");
+
+        let near = read(1);
+        assert_eq!(near.turns_to_fall, None, "beside it the gun is no use, which is the rule `resolve_attacks` plays by");
+        assert!(near.turns_to_fell.is_some(), "and the player's own blade reaches");
+        assert_eq!(near.outlook, Outlook::Easy);
+    }
+
+    /// Across the room neither blade reaches, and the panel still says what
+    /// each would take once they closed, rather than "never" both ways.
+    #[test]
+    fn a_subject_out_of_reach_is_still_forecast_both_ways() {
+        let mut stage = Stage::new(InspectViewPlugin);
+        stage.tick();
+        stage.actor("brawler", 'b', 5, 0);
+        stage.tick();
+        stage.press(CursorKeys::default().look);
+        let duel = stage.app.world().resource::<InspectView>().duel.expect("a duel against something that fights");
+        assert!(duel.turns_to_fell.is_some(), "the player's blow, once beside it: {duel:?}");
+        assert!(duel.turns_to_fall.is_some(), "and its blow, once beside the player: {duel:?}");
+    }
+}

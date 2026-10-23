@@ -2,11 +2,11 @@
 //! freely, and anything else, which it uses only once the adventurer
 //! knows it, so nothing it does tells the adventurer what they do not.
 
+use atglyph::prelude::*;
+use atglyph::primitives::noun::{Countability, counted_as};
+use atglyph::rules::ai::brain::Tactic;
+use atglyph::rules::equip;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_core::noun::{Countability, counted_as};
-use rl_engine::rl_rules::ai::brain::Tactic;
-use rl_engine::rl_rules::equip;
 
 use super::{GIVE, Mercenary, TONE};
 use crate::armory::{Armory, ItemDef, ItemKind};
@@ -348,8 +348,8 @@ pub fn answer_give(
 
 #[cfg(test)]
 mod tests {
+    use atglyph::ui::InspectViewPlugin;
     use bevy::ecs::world::CommandQueue;
-    use rl_engine::rl_ui::InspectViewPlugin;
 
     use super::*;
     use crate::mercenaries::fixtures::{hired, take_with};
@@ -572,7 +572,7 @@ mod tests {
         give(&mut app, brenna, sword);
         pass_turns(&mut app, 1);
         assert!(!wears(&app, brenna, sword), "not armed while a foe is beside it");
-        assert_eq!(app.world().get::<rl_engine::rl_bevy::Doing>(brenna).and_then(|d| d.0), Some("melee_adjacent"), "it struck instead");
+        assert_eq!(app.world().get::<atglyph::ecs::Doing>(brenna).and_then(|d| d.0), Some("melee_adjacent"), "it struck instead");
         app.world_mut().despawn(foe);
         pass_turns(&mut app, 1);
         assert!(wears(&app, brenna, sword), "armed once the fight is over");
@@ -708,7 +708,7 @@ mod tests {
         settle(&mut app);
         let face = name_of(&app, potion);
         assert!(!face.contains("healing"), "a face, not the kind: {face}");
-        let modal = rl_engine::rl_ui::view::inspect::inspect_modal(app.world().resource::<Modals>());
+        let modal = atglyph::ui::view::inspect::inspect_modal(app.world().resource::<Modals>());
         app.world_mut().resource_mut::<Modals>().open(modal);
         app.world_mut().resource_mut::<InspectView>().cursor = at(&app, brenna);
         app.update();

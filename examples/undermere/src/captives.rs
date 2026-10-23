@@ -17,11 +17,11 @@
 //! through `Leader` and `Keep::leader`, and give it the wits to go down
 //! the stairs beside them.
 
+use atglyph::ecs::{BreakReason, WorkBroken, Works};
+use atglyph::prelude::*;
+use atglyph::primitives::turn::BASE_ACTION_COST;
+use atglyph::rules::work::Work;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_bevy::{BreakReason, WorkBroken, Works};
-use rl_engine::rl_core::turn::BASE_ACTION_COST;
-use rl_engine::rl_rules::work::Work;
 
 use crate::allies::fight_for;
 use crate::bestiary::{Bestiary, Kind};
@@ -171,7 +171,7 @@ pub fn note_captives(mut nearby: ResMut<NearbyView>, verbs: Res<Verbs>, offers: 
 mod tests {
     use std::collections::BTreeMap;
 
-    use rl_engine::rl_core::RunSeed;
+    use atglyph::primitives::RunSeed;
 
     use super::*;
     use crate::dungeon::{captive_floor, floor_of, map_of};
@@ -206,7 +206,7 @@ mod tests {
             let (mut app, me, captive) = beside_a_captive(s);
             begin_freeing(&mut app, me, captive);
             let crush = app.world().resource::<Registries>().damage_kinds.expect("crush");
-            app.world_mut().write_message(DamageEvent::new(me, rl_engine::rl_rules::Hit::from_source(None, crush, 50)));
+            app.world_mut().write_message(DamageEvent::new(me, atglyph::rules::Hit::from_source(None, crush, 50)));
             for _ in 0..20 {
                 app.update();
             }
@@ -342,7 +342,7 @@ mod tests {
         kill(&mut app, captive, Some(me));
         assert!(app.world().get::<Remains>(captive).is_some(), "its body lies where it was held");
         assert_eq!(held_at(app.world(), captive), None, "and offers to be freed no longer");
-        rl_engine::rl_save::save_run(app.world_mut()).expect("the run is written down");
+        atglyph::save::save_run(app.world_mut()).expect("the run is written down");
         let text = app.world().resource::<Saves>().load(crate::save::SLOT).expect("the slot reads").expect("a save");
         let mut again = crate::testing::continued(&text);
         let shackled: Vec<Point> = everyone(&mut again).into_iter().filter_map(|e| held_at(again.world(), e)).collect();

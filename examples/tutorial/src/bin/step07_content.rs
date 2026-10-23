@@ -11,12 +11,12 @@
 
 use std::sync::Arc;
 
+use atglyph::prelude::*;
+use atglyph::primitives::Rect;
+use atglyph::rules::ai::{Repertoire, Standard};
+use atglyph::rules::faction::FactionDef;
 use bevy::prelude::*;
 use rand::Rng;
-use rl_engine::prelude::*;
-use rl_engine::rl_core::Rect;
-use rl_engine::rl_rules::ai::{Repertoire, Standard};
-use rl_engine::rl_rules::faction::FactionDef;
 use serde::Deserialize;
 
 /// The terminal, in cells.

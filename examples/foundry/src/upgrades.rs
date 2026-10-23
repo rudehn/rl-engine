@@ -30,9 +30,9 @@
 //! reads or rewrites the number inside, so the bonus rides along through a
 //! lock or a dry spell for free.
 
+use atglyph::prelude::*;
+use atglyph::primitives::Rect;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_core::Rect;
 
 /// What finishing the first objective may give, one of three, kept for the
 /// run.
@@ -332,7 +332,7 @@ pub fn load_abilities(kinds: &EffectKinds, registries: &Registries) -> Abilities
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rl_engine::rl_core::RunSeed;
+    use atglyph::primitives::RunSeed;
 
     /// A pick never offers what the run already has, so four charges
     /// across a run give four different upgrades rather than the same

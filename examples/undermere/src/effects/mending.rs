@@ -5,10 +5,10 @@
 //! Each lands on its user, as [`Life`](super::bodies::Life) does, so a
 //! rite taken up from the priest lands on whoever took it up.
 
+use atglyph::prelude::*;
+use atglyph::rules::UNTIL_CURED;
+use atglyph::rules::ability::RawValue;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_rules::UNTIL_CURED;
-use rl_engine::rl_rules::ability::RawValue;
 
 use super::moving::no_args;
 

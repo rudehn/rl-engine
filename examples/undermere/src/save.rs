@@ -30,10 +30,10 @@
 //! their own that no run's end deletes, by the engine's `SavePlugin`,
 //! since the game keeps records with `RecordsPlugin`.
 
+use atglyph::prelude::*;
+use atglyph::save::{AddSaveable, SavePlugin, Saveable, SaveableActor, SaveableItem, SaveableState};
 use bevy::ecs::world::CommandQueue;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_save::{AddSaveable, SavePlugin, Saveable, SaveableActor, SaveableItem, SaveableState};
 use serde::{Deserialize, Serialize};
 
 use crate::armory::{Armory, ItemDef, ItemKind};
@@ -575,7 +575,7 @@ impl SaveableState for Tally {
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_core::RunSeed;
+    use atglyph::primitives::RunSeed;
 
     use super::*;
     use crate::dungeon::map_of;
@@ -733,14 +733,13 @@ mod tests {
         crate::effects::bodies::forget_its_life(app.world_mut(), raised);
         let thief = monster(&mut app, "monkey", here_at.offset(32, 30));
         app.world_mut().entity_mut(thief).insert(crate::tricks::Stole);
-        rl_engine::rl_save::save_run(app.world_mut()).expect("the run is written down");
+        atglyph::save::save_run(app.world_mut()).expect("the run is written down");
         let text = app.world().resource::<Saves>().load(SLOT).expect("the slot reads").expect("a save");
 
         let mut again = continued(&text);
         let world = again.world_mut();
         let found: Vec<(String, FactionId, bool, bool, bool)> = world
-            .query::<(&Name, &Faction, Has<crate::effects::bodies::Raised>, Has<crate::tricks::Stole>, Has<rl_engine::rl_bevy::Drops<crate::armory::ItemDef>>)>(
-            )
+            .query::<(&Name, &Faction, Has<crate::effects::bodies::Raised>, Has<crate::tricks::Stole>, Has<atglyph::ecs::Drops<crate::armory::ItemDef>>)>()
             .iter(world)
             .map(|(n, f, r, s, d)| (n.as_str().to_string(), f.0, r, s, d))
             .collect();

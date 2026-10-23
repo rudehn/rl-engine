@@ -1,7 +1,7 @@
 //! A headless Foundry, for the tests this crate and its integration
 //! tests add.
 //!
-//! The engine's windowless app, [`rl_engine::testing`], with the engine
+//! The engine's windowless app, [`atglyph::testing`], with the engine
 //! plugins the design needs, plus
 //! [`FoundryPlugin`](crate::plugin::FoundryPlugin): the same one `main.rs`
 //! adds, so a test exercises exactly what the player runs rather than a
@@ -21,18 +21,18 @@ mod gear;
 mod loot;
 mod mission;
 
+pub use atglyph::testing::{QUICK, first_seeds, par_seeds, pass_turns, seeds, settle};
 pub use droids::*;
 pub use gear::*;
 pub use loot::*;
 pub use mission::*;
-pub use rl_engine::testing::{QUICK, first_seeds, par_seeds, pass_turns, seeds, settle};
 
+use atglyph::ecs::prelude::*;
+use atglyph::primitives::RunSeed;
+use atglyph::rules::Hit;
+use atglyph::rules::prelude::Ledger;
+use atglyph::ui::UiPlugin;
 use bevy::prelude::*;
-use rl_engine::rl_bevy::prelude::*;
-use rl_engine::rl_core::RunSeed;
-use rl_engine::rl_rules::Hit;
-use rl_engine::rl_rules::prelude::Ledger;
-use rl_engine::rl_ui::UiPlugin;
 
 /// A run with no window, seeded, with every plugin Foundry's stealth,
 /// radar and combat need already added.
@@ -56,7 +56,7 @@ pub fn headless(seed: RunSeed) -> App {
 /// in the memory backend, `ContinueRun` asked for as the title's Continue
 /// asks for it, and the first frames run so the continued run stands.
 pub fn continued(text: &str) -> App {
-    rl_engine::testing::continued(headless(RunSeed(0)), crate::save::SLOT, text)
+    atglyph::testing::continued(headless(RunSeed(0)), crate::save::SLOT, text)
 }
 
 /// [`headless`] without [`FoundryPlugin`](crate::plugin::FoundryPlugin):
@@ -75,7 +75,7 @@ pub fn headless_without_foundry(seed: RunSeed) -> App {
 /// [`FoundryPlugin`](crate::plugin::FoundryPlugin), configured as Foundry
 /// configures them.
 fn beside_foundry(seed: RunSeed) -> App {
-    let mut app = rl_engine::testing::windowless(seed);
+    let mut app = atglyph::testing::windowless(seed);
     app.add_plugins((
         CombatPlugin,
         MindsPlugin,

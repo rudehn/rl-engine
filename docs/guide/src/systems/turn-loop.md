@@ -1,11 +1,11 @@
 <!-- documents:
      plugins: CorePlugin
-     files: crates/rl-core/src/turn.rs
-            crates/rl-bevy/src/turn.rs
-            crates/rl-bevy/src/cue.rs
-            crates/rl-bevy/src/plugin.rs
-            crates/rl-bevy/src/components.rs
-            crates/rl-bevy/src/world.rs
+     files: crates/atglyph-core/src/turn.rs
+            crates/atglyph-bevy/src/turn.rs
+            crates/atglyph-bevy/src/cue.rs
+            crates/atglyph-bevy/src/plugin.rs
+            crates/atglyph-bevy/src/components.rs
+            crates/atglyph-bevy/src/world.rs
      fingerprint: d9a3db33 -->
 
 # The turn loop
@@ -100,7 +100,7 @@ A game orders its systems into `TurnSet` and `ResolveSet`, never after another c
 
 ## Where it lives
 
-`rl-core` is tier 0 and has no Bevy in it: `TurnQueue` is generic over the actor id, so its whole ordering contract is tested with ids made out of thin air, and `scaled_cost` and `reschedule_at` are `const fn` tested by arithmetic alone.
+`atglyph-core` is tier 0 and has no Bevy in it: `TurnQueue` is generic over the actor id, so its whole ordering contract is tested with ids made out of thin air, and `scaled_cost` and `reschedule_at` are `const fn` tested by arithmetic alone.
 That split is why the ordering rules can be proved without an `App`, and why nothing in them can quietly come to depend on an entity's index.
-`rl-bevy` is tier 2 and owns the loop over it: `turn.rs` has `Turns`, `Occupancy`, `Action`, `Intent`, `Resolution` and the systems of a pass, and `cue.rs` has `Cued`, `TurnHold` and `Airborne`.
+`atglyph-bevy` is tier 2 and owns the loop over it: `turn.rs` has `Turns`, `Occupancy`, `Action`, `Intent`, `Resolution` and the systems of a pass, and `cue.rs` has `Cued`, `TurnHold` and `Airborne`.
 `plugin.rs` has the sets, the schedules, `run_turns` and `CorePlugin` itself, in one file because the order of a frame is one decision and not six.

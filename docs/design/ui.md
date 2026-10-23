@@ -1,7 +1,7 @@
 # UI
 
 Status: phases A to G built 2026-09-12; H proposed.
-Written 2026-09-11 against `main` at `1264a69`, when `rl-ui` held a message log, a status line and a list menu.
+Written 2026-09-11 against `main` at `1264a69`, when `atglyph-ui` held a message log, a status line and a list menu.
 It reads the 17.6k lines across 31 modules of `fantasy-rogue/src/ui/` as the evidence of what a roguelike UI is made of, and decides which third of that belongs to an engine.
 
 ## 0. Summary
@@ -30,18 +30,18 @@ It knows actors, items, slots and tones, and a game maps its vocabulary onto the
 
 - **The nearby list, for every game at once.**
   Every input already exists: `Viewshed`, `Position`, `Health`, `Faction` with `Factions::relation`, `Afflicted`, and the glyph.
-  `rl-rules::balance::threat` already scores danger.
+  `atglyph-rules::balance::threat` already scores danger.
   The view is a query; the reason no game has one yet is that nobody wanted to write it twice.
 - **The status line stops being a string each game builds by hand.**
   `StatusLine` is a `String` today, so Corsair rebuilds it every frame in a system over a nine-field `SystemParam`, and the delve and Lamplight each wrote their own `update_status` beside it.
   That is the failure the plan was written against: the engine shipped the data structure and left the behaviour in the game.
 - **Equipment rows are nearly free.**
-  `rl-rules/src/equip.rs` owns the slot graph, so a view is "walk the slots in declared order, emit filled or empty".
+  `atglyph-rules/src/equip.rs` owns the slot graph, so a view is "walk the slots in declared order, emit filled or empty".
   What is worn and what is not are equally readable, which is the whole content of that panel.
 - **Inspect gets its arithmetic tested once.**
   The top third of `fantasy-rogue/src/ui/examine_panel.rs` is pure derivation: hit chance, expected damage, turns to kill, a speed tier, a threat tier.
   That is combat maths sitting in a UI file because there was nowhere else to put it.
-  In this engine it belongs in `rl-rules` beside `threat`, under property tests, and the panel becomes a rendering of numbers somebody else proved.
+  In this engine it belongs in `atglyph-rules` beside `threat`, under property tests, and the panel becomes a rendering of numbers somebody else proved.
 - **Modal input ownership, which every game gets wrong alone.**
   One modal at a time, input gated while one is open, a stack that returns to the parent.
   `fantasy-rogue` solves it with a closed enum and a single-slot return pointer guarded by a `debug_assert` against double-push.
@@ -92,7 +92,7 @@ pub struct NearbyView {
 ```
 
 A view holds no `Color`, no rectangle, no layout and no string the game did not supply.
-It names `Entity`, so it lives in tier 2 with the rest of the Bevy layer; its derivations do not, and they live in `rl-rules` where they can be tested without an `App`.
+It names `Entity`, so it lives in tier 2 with the rest of the Bevy layer; its derivations do not, and they live in `atglyph-rules` where they can be tested without an `App`.
 
 The collector runs in `PresentSet::Narrate`, which the reaction-phase commit named for exactly this: what a frame works out once, before the chrome draws it.
 The presenter runs in `PresentSet::Chrome`, or `PresentSet::Overlay` for a modal.
@@ -130,7 +130,7 @@ pub struct Palette(Vec<Color>);
 ```
 
 The engine interns a small set on startup (`text`, `muted`, `good`, `bad`, `notice`, `frame`, `title`, `select`) so nothing has to be authored to get a working screen.
-A game interns `deadly`, sets its colour, and every widget that takes a tone honours it without a line changing in `rl-ui`.
+A game interns `deadly`, sets its colour, and every widget that takes a tone honours it without a line changing in `atglyph-ui`.
 `LogCategory` becomes `ToneId` and `Theme::log_color` becomes an index.
 
 Ids are dense and handed out first come first served, so the palette is a `Vec` and not a map, and iteration order is registration order.
@@ -147,7 +147,7 @@ This gives four escapes, each cheaper than the one below it:
 
 ## 5. The backend question
 
-Section 3.12 of the plan says `rl-ui` is Bevy UI ported from `fantasy-rogue/src/ui/`.
+Section 3.12 of the plan says `atglyph-ui` is Bevy UI ported from `fantasy-rogue/src/ui/`.
 What was built draws on the glyph `Terminal`.
 Those diverged, and the view split is what makes the divergence stop mattering.
 
@@ -156,8 +156,8 @@ Those diverged, and the view split is what makes the divergence stop mattering.
 - Bevy UI only: layout, wrapping, mouse and tooltips for free, and the existing code ports.
   It forces `bevy_ui` on the delve and on Lamplight, which want a terminal and nothing else.
 - Both, over one view layer.
-  `rl-ui` ships the views, the collectors and terminal presenters.
-  A `node` feature, or `rl-ui-node` if the dependency weight justifies a crate by the rule in section 4 of the plan, ships Bevy UI presenters over the same views.
+  `atglyph-ui` ships the views, the collectors and terminal presenters.
+  A `node` feature, or `atglyph-ui-node` if the dependency weight justifies a crate by the rule in section 4 of the plan, ships Bevy UI presenters over the same views.
 
 The third is the decision, because the expensive half is the half that does not care.
 A presenter is a few hundred lines against a settled model; the model is the part that took a game to discover.
@@ -168,13 +168,13 @@ An ASCII game's map is a glyph grid.
 
 ## 6. Where each piece lives
 
-### rl-rules (tier 1, no Bevy)
+### atglyph-rules (tier 1, no Bevy)
 
 The derivations, beside `balance::threat`:
 hit chance and expected damage from the damage pipeline's own numbers, turns to kill, a speed tier from an integer delay, a bar bucketed to `n` cells, a stat formatted with its sign.
 Pure functions over plain numbers, unit-tested without an `App`, and usable by a balance report as readily as by a panel.
 
-### rl-ui (tier 2)
+### atglyph-ui (tier 2)
 
 `tone.rs`: `Tones`, `Palette`, the engine's starting set.
 `view/`: `NearbyView`, `VitalsView`, `EquipView`, `InspectView`, the `Row` and `Facet` types, and one collector plugin each.
@@ -186,7 +186,7 @@ Pure functions over plain numbers, unit-tested without an `App`, and usable by a
 `ChromeLayout` goes.
 A single resource holding every panel's rectangle is a god object that grows a field per panel; a panel takes its own rectangle, and a `Dock` helper splits a `Rect` for the games that want the split written once.
 
-### rl-bevy (tier 2)
+### atglyph-bevy (tier 2)
 
 `Label`, next to `Position` and `Blocks`.
 Nothing else: the engine layer gains a component, not a dependency on the UI.
@@ -205,7 +205,7 @@ A stack rather than a single-slot pointer because a stack cannot be double-pushe
 
 The look cursor is the same shape: moving the cursor, cycling to the next visible target and clearing the selection are engine behaviour over the viewshed, what the cursor reports is `InspectView`, and how that is drawn is a presenter.
 
-What is cycled is written once, in `rl-ui`'s `focus` module.
+What is cycled is written once, in `atglyph-ui`'s `focus` module.
 `InSight` is what the player can see, actors nearest first and then things, the order the nearby rail prints; `Focus` is the one entity picked out of it.
 With nothing open, Tab steps the focus down that list, and the nearby panel draws the row and its map tile on the selection tone.
 The look cursor and the targeting cursor cycle the same list, entity by entity, open on the focus when they can take it, and move it as they go, so the row highlighted, the thing looked at and the thing aimed at are one choice.
@@ -227,7 +227,7 @@ A game's own verbs stay in its own system, ordered against `PlayerKeysSet` rathe
 - Text entry, scrollbars, drag, focus traversal.
   The moment the engine owns a widget toolkit it owns a widget toolkit forever.
 - Hover and tooltips.
-  `rl-render` maps a cursor to a cell and a tile since 2026-10-02, as `Pointer`, so nothing is in the way; no panel reads it yet, and a game hit-tests its own rectangles with `Pointer::within`.
+  `atglyph-render` maps a cursor to a cell and a tile since 2026-10-02, as `Pointer`, so nothing is in the way; no panel reads it yet, and a game hit-tests its own rectangles with `Pointer::within`.
 - Key hints from hand-typed strings in a panel's border.
   A hint was worth engine space only once it could be generated from a keybind registry; `Controls` is that registry now, and the controls screen and its `? controls` hint are generated from it.
   A border hint such as the scrollback's is still a phrase the game may replace, not a list.
@@ -235,7 +235,7 @@ A game's own verbs stay in its own system, ordered against `PlayerKeysSet` rathe
 ## 9. Phases
 
 - **A. Tones and labels.**
-  `Tones`, `Palette`, the engine's starting set, `Label` in `rl-bevy`, `LogCategory` becomes `ToneId`.
+  `Tones`, `Palette`, the engine's starting set, `Label` in `atglyph-bevy`, `LogCategory` becomes `ToneId`.
   All three examples look identical afterwards; this phase is the one that changes nothing on screen.
 - **B. Nearby, with facets.**
   `NearbyView`, the collector, `NearbyPanel`, and Corsair pushing a facet for what an enemy wields.
@@ -248,7 +248,7 @@ A game's own verbs stay in its own system, ordered against `PlayerKeysSet` rathe
 - **E. Equipment.**
   `EquipView` over the slot graph, and the sea chest's folded numbers come from it.
 - **F. Inspect.**
-  The derivations into `rl-rules` with their property tests, `InspectView`, the look cursor, the panel.
+  The derivations into `atglyph-rules` with their property tests, `InspectView`, the look cursor, the panel.
 - **G. The log grows up.** Built.
   Run-length folding, turn separators, a scrollback modal on the stack from D, filtering by tone.
   The scrollback is a second presenter over `MessageLog` and keeps its own cursor and filter, which is the split proving itself: two screens, one view, neither aware of the other.
@@ -261,10 +261,10 @@ A game's own verbs stay in its own system, ordered against `PlayerKeysSet` rathe
 - A headless `App` with a hand-built world asserts the rows: three actors placed, one out of the viewshed, and the view holds two in distance order.
 - A facet pushed by a test system appears on the row it names and on no other.
 - A property over a seed range: for any scattered world, every row's distance is non-decreasing and every row is in the subject's viewshed.
-- A presenter test asserts exact terminal text, the idiom `rl-ui`'s log test already uses, including the case that a shorter line does not keep the tail of a longer one.
+- A presenter test asserts exact terminal text, the idiom `atglyph-ui`'s log test already uses, including the case that a shorter line does not keep the tail of a longer one.
 - A palette with a tone the engine never interned renders in the game's colour; the engine's own tones are untouched.
 - Input is refused while a modal is on the stack and accepted when it empties.
-- The derivations in `rl-rules` are tested there, without Bevy, and the panel tests do not re-assert arithmetic.
+- The derivations in `atglyph-rules` are tested there, without Bevy, and the panel tests do not re-assert arithmetic.
 
 ## 11. Cost
 
@@ -277,7 +277,7 @@ Terminal presenters stay immediate mode and redraw every frame, which costs a me
 Five decisions came out differently, and the reasons are worth keeping.
 
 - **`Name`, not `Label`.** Section 3 argued for an engine component and got the argument right and the name wrong: `Label` collides with `bevy_ui`'s, which every game globbing both preludes would have hit. Bevy's own `Name` is exactly "what to call this entity", so the engine defines nothing and a game that already names entities gets panels for free. The reasoning in section 3 against a `Describe` trait stands unchanged.
-- **Views are tier 2, not tier 1.** A row carries an `Entity` for hover and selection, and `Entity` is Bevy. Only the derivations are Bevy-free, and those went to `rl-rules::forecast` where they are tested without an `App`. Section 2 said as much; section 0 overstated it.
+- **Views are tier 2, not tier 1.** A row carries an `Entity` for hover and selection, and `Entity` is Bevy. Only the derivations are Bevy-free, and those went to `atglyph-rules::forecast` where they are tested without an `App`. Section 2 said as much; section 0 overstated it.
 - **Every frame, not on a turn boundary.** Section 11 planned a turn-advanced run condition. A frame already rewrites every cell of the map, so a few dozen rows beside it is not the cost worth being wrong about, and a panel that is a turn stale is the kind of bug that survives to a release. The collectors clear and refill their `Vec`s instead.
 - **An unset tone is reported at startup, not on use.** Section 4's "warns once" needed interior mutability to mean anything; a check at `OnEnter(Playing)` names every uncoloured tone at once and cannot spam a frame.
 - **`ChromeLayout` went and nothing replaced it.** Section 6 said a panel takes its own rectangle, and that was enough: `panel::split_*` hand back both halves of a cut, and a game keeps the pieces in a struct of its own. No layout resource exists.

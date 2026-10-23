@@ -22,9 +22,9 @@
 //! room is a fight the party can fall in, and the end screen that names the
 //! fallen is that fight lost.
 
+use atglyph::prelude::*;
+use atglyph::primitives::{Rect, RunSeed};
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_core::{Rect, RunSeed};
 use undermere::plugin::UndermerePlugin;
 use undermere::run::{ExtraPack, StartFloor, StartNear, StartParty};
 use undermere::typeface::DEJAVU_SANS_MONO;
@@ -320,7 +320,7 @@ fn add_panels(app: &mut App, screen: &Screen) {
 /// [`CLOUD_TINTS`](undermere::content::CLOUD_TINTS) says, where the
 /// engine's map draws every gas nobody coloured in grey.
 fn tint_clouds(app: &mut App) {
-    use rl_engine::rl_render::map_view::FieldAppearance;
+    use atglyph::render::map_view::FieldAppearance;
     let tints: Vec<_> = {
         let gases = &app.world().resource::<Registries>().gases;
         undermere::content::CLOUD_TINTS.iter().filter_map(|(name, (r, g, b))| gases.id(name).map(|gas| (gas, Color::srgb(*r, *g, *b)))).collect()
@@ -350,8 +350,8 @@ fn print_floor(floor: &str, seed: &str, recipe: Option<&str>) -> AppExit {
 }
 
 fn main() -> AppExit {
-    let mut seed = rl_engine::rl_bevy::replay::seed().unwrap_or_else(RunSeed::fresh);
-    let args = rl_engine::rl_bevy::replay::args();
+    let mut seed = atglyph::ecs::replay::seed().unwrap_or_else(RunSeed::fresh);
+    let args = atglyph::ecs::replay::args();
     match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
         [] => {}
         ["--seed", n] => seed = RunSeed(n.parse().expect("--seed takes a number")),
@@ -394,8 +394,8 @@ fn main() -> AppExit {
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_render::{MapView, MapViewPlugin, Terminal};
-    use rl_engine::testing::{KeyScriptPlugin, press, row, written};
+    use atglyph::render::{MapView, MapViewPlugin, Terminal};
+    use atglyph::testing::{KeyScriptPlugin, press, row, written};
     use undermere::run::Adventurer;
 
     use super::*;
@@ -437,7 +437,7 @@ mod tests {
     fn at_the_title(seed: RunSeed) -> App {
         let mut app = undermere::testing::headless(seed);
         let screen = Screen::new();
-        app.add_plugins((KeyScriptPlugin, MapViewPlugin::new(screen.rail.map).across(ACROSS), rl_engine::rl_render::FullscreenPlugin));
+        app.add_plugins((KeyScriptPlugin, MapViewPlugin::new(screen.rail.map).across(ACROSS), atglyph::render::FullscreenPlugin));
         app.insert_resource(Terminal::new(COLS, ROWS, Vec2::ONE));
         add_panels(&mut app, &screen);
         app.finish();
@@ -765,7 +765,7 @@ mod tests {
     /// each state in turn while the adventurer holds the turn.
     #[test]
     fn the_rail_says_what_a_monster_is_doing_in_undermeres_words() {
-        use rl_engine::rl_rules::Awareness;
+        use atglyph::rules::Awareness;
         use undermere::testing::{arrive, at, clear_monsters, lay_floor, monster, settle};
         let mut app = on_screen(RunSeed(7));
         let me = arrive(&mut app, undermere::dungeon::map_of(1));
@@ -838,7 +838,7 @@ mod tests {
     /// on floor one, then walled in.
     #[test]
     fn a_gate_mark_once_seen_is_drawn_from_memory_out_of_sight() {
-        use rl_engine::rl_core::geometry;
+        use atglyph::primitives::geometry;
         use undermere::testing::{arrive, at, clear_monsters, lay_floor, settle, wall_off};
         let mut app = on_screen(RunSeed(7));
         let floor = undermere::dungeon::map_of(1);
@@ -923,7 +923,7 @@ mod tests {
     }
 
     /// The cell the screen's map view draws the world tile `p` in.
-    fn tile_drawn(app: &App, p: Point) -> Option<rl_engine::rl_render::Cell> {
+    fn tile_drawn(app: &App, p: Point) -> Option<atglyph::render::Cell> {
         let view = *app.world().resource::<MapView>();
         view.get(app.world().resource::<Terminal>(), p)
     }
@@ -940,8 +940,8 @@ mod tests {
     fn walk_out_of_sight_of(app: &mut App, p: Point) -> Point {
         let me = undermere::testing::adventurer(app);
         let place = app.world().resource::<WorldMap>().place(undermere::testing::here(app)).expect("a place").terrain.bounds();
-        let mut cells: Vec<Point> = place.cells().filter(|c| rl_engine::rl_core::geometry::chebyshev(*c, p) > 4).collect();
-        cells.sort_by_key(|c| (rl_engine::rl_core::geometry::chebyshev(*c, p), *c));
+        let mut cells: Vec<Point> = place.cells().filter(|c| atglyph::primitives::geometry::chebyshev(*c, p) > 4).collect();
+        cells.sort_by_key(|c| (atglyph::primitives::geometry::chebyshev(*c, p), *c));
         for cell in cells {
             if !app.world().resource::<WorldMap>().is_walkable(cell) || app.world().resource::<Occupancy>().is_occupied(cell) {
                 continue;
@@ -998,7 +998,7 @@ mod tests {
         let mut app = undermere::testing::headless(RunSeed(0));
         app.world().resource::<Saves>().persist(undermere::save::SLOT, text).expect("the memory backend takes it");
         let screen = Screen::new();
-        app.add_plugins((KeyScriptPlugin, MapViewPlugin::new(screen.rail.map).across(ACROSS), rl_engine::rl_render::FullscreenPlugin));
+        app.add_plugins((KeyScriptPlugin, MapViewPlugin::new(screen.rail.map).across(ACROSS), atglyph::render::FullscreenPlugin));
         app.insert_resource(Terminal::new(COLS, ROWS, Vec2::ONE));
         add_panels(&mut app, &screen);
         app.finish();
@@ -1019,7 +1019,7 @@ mod tests {
         let me = undermere::testing::arrive(&mut app, undermere::dungeon::map_of(2));
         let stairs = undermere::testing::at(&app, me);
         walk_out_of_sight_of(&mut app, stairs);
-        rl_engine::rl_save::save_run(app.world_mut()).expect("the run is saved");
+        atglyph::save::save_run(app.world_mut()).expect("the run is saved");
         let text = app.world().resource::<Saves>().load(undermere::save::SLOT).expect("the slot reads").expect("a save");
 
         let mut continued = continued_on_screen(&text);
@@ -1078,7 +1078,7 @@ mod tests {
         app.world_mut().resource_mut::<InspectView>().cursor = cell;
         app.update();
         app.update();
-        let rect = app.world().resource::<rl_engine::rl_ui::panel::inspect::InspectPlacement>().0.expect("the panel is up");
+        let rect = app.world().resource::<atglyph::ui::panel::inspect::InspectPlacement>().0.expect("the panel is up");
         let lines = (rect.y + 1..rect.bottom() - 1).map(|y| framed(app, rect, y)).take_while(|l| !l.is_empty()).collect();
         press(app, KeyCode::Escape);
         lines
@@ -1236,7 +1236,7 @@ mod tests {
         );
         assert!(rail.iter().any(|r| r.starts_with("light")), "the last slot is still on the rail: {rail:#?}");
         let x = gear.x + 15;
-        let bad = rl_engine::rl_ui::readable(app.world().resource::<Palette>().get(Tones::BAD), app.world().resource::<Palette>());
+        let bad = atglyph::ui::readable(app.world().resource::<Palette>().get(Tones::BAD), app.world().resource::<Palette>());
         assert_eq!(app.world().resource::<Terminal>().get(x, gear.y + at as i32 + 2).map(|c| c.fg), Some(bad), "in the bad tone");
         let vitals = Screen::new().rail.vitals;
         let armor = (vitals.y..vitals.bottom()).map(|y| from(&app, vitals.x, y)).find(|r| r.contains("armor")).expect("the armor");
@@ -1278,15 +1278,15 @@ mod tests {
         assert!(written(&app).iter().any(|r| r.contains(&name)), "the screen names the smith, {name}: {:#?}", written(&app));
         let greeting = "\"Steel, leather, and arrows by the bundle. I buy what's straight and sell what's sharp.\"";
         assert!(written(&app).iter().any(|r| r.contains(greeting)), "and their greeting reads whole under it: {:#?}", written(&app));
-        let menu = app.world().resource::<rl_engine::rl_ui::panel::trade::TradeMenu>();
-        assert_eq!((menu.side, menu.wares, menu.pack), (rl_engine::rl_ui::TradeSide::Wares, 0, 0), "the cursor where the screen opens");
+        let menu = app.world().resource::<atglyph::ui::panel::trade::TradeMenu>();
+        assert_eq!((menu.side, menu.wares, menu.pack), (atglyph::ui::TradeSide::Wares, 0, 0), "the cursor where the screen opens");
         assert_eq!(undermere::testing::pack(&app, me), mine, "nothing bought or sold");
         assert_eq!(undermere::testing::pack(&app, smith), theirs, "and the shelf as it was");
         assert_eq!(undermere::testing::at(&app, me), at.offset(0, -1), "and nobody stepped");
         // The same key pressed again, on the screen, moves the cursor: so
         // the first press would have shown, had it reached the screen.
         press(&mut app, KeyCode::ArrowDown);
-        assert_eq!(app.world().resource::<rl_engine::rl_ui::panel::trade::TradeMenu>().wares, 1, "the next press moves down a row");
+        assert_eq!(app.world().resource::<atglyph::ui::panel::trade::TradeMenu>().wares, 1, "the next press moves down a row");
     }
 
     /// Walking into the priest asks rather than pays: the offers screen
@@ -1319,7 +1319,7 @@ mod tests {
         let modals = app.world().resource::<Modals>();
         assert!(modals.is_open(offers_modal(modals)), "the offers screen is up: {:#?}", written(&app));
         assert!(!modals.is_open(trade_modal(modals)), "and not the shop");
-        let view = app.world().resource::<rl_engine::rl_ui::view::offers::OffersView>();
+        let view = app.world().resource::<atglyph::ui::view::offers::OffersView>();
         let rows: Vec<(String, Option<u32>)> = view.rows.iter().map(|r| (r.label.clone(), r.price)).collect();
         let trade = format!("trade with {}", undermere::testing::name_of(&app, priest));
         let offered = [(trade.as_str(), None), ("mend your wounds", Some(30)), ("unbind what you wear", Some(60)), ("name what you wear", Some(60))]
@@ -1367,7 +1367,7 @@ mod tests {
         assert!(modals.is_open(offers_modal(modals)), "the offers screen is up: {:#?}", written(&app));
         let name = undermere::testing::name_of(&app, candidate);
         let fee = app.world().get::<undermere::mercenaries::Candidate>(candidate).expect("a candidate").fee;
-        let view = app.world().resource::<rl_engine::rl_ui::view::offers::OffersView>();
+        let view = app.world().resource::<atglyph::ui::view::offers::OffersView>();
         let rows: Vec<(String, Option<u32>)> = view.rows.iter().map(|r| (r.label.clone(), r.price)).collect();
         assert_eq!(rows, [(format!("hire {name}"), Some(fee)), (format!("talk to {name}"), None)], "hire at the fee, and talk");
         assert_eq!(undermere::testing::pack(&app, me), mine, "nothing paid");
@@ -1464,8 +1464,8 @@ mod tests {
         assert!(written(&app).iter().any(|r| r.contains("You order the party to hold.")), "{:#?}", written(&app));
 
         press(&mut app, KeyCode::KeyX);
-        let modal = rl_engine::rl_ui::view::inspect::inspect_modal(app.world().resource::<Modals>());
-        app.world_mut().resource_mut::<rl_engine::rl_ui::InspectView>().cursor = at;
+        let modal = atglyph::ui::view::inspect::inspect_modal(app.world().resource::<Modals>());
+        app.world_mut().resource_mut::<atglyph::ui::InspectView>().cursor = at;
         app.update();
         app.update();
         let screen = written(&app);
@@ -1542,7 +1542,7 @@ mod tests {
             assert_eq!(at.len(), 1, "{name} listed once: {lines:#?}");
             assert!(at[0] as i32 >= screen.rail.party.y, "under Company: {lines:#?}");
         }
-        let focus = |app: &App| app.world().resource::<rl_engine::rl_ui::Focus>().get();
+        let focus = |app: &App| app.world().resource::<atglyph::ui::Focus>().get();
         for _ in 0..6 {
             press(&mut app, KeyCode::Tab);
             let picked = focus(&app);
@@ -1707,11 +1707,11 @@ mod tests {
         let screen = written(&app);
         assert!(screen.iter().any(|r| r.contains(&format!("Give {name} which?"))), "the pack, choosing: {screen:#?}");
         let choices = match &app.world().resource::<InventoryMenu>().choosing {
-            Some(rl_engine::rl_ui::Choosing::Offer(offer)) => offer.choices.clone(),
+            Some(atglyph::ui::Choosing::Offer(offer)) => offer.choices.clone(),
             other => panic!("asked: {other:?}"),
         };
         let rows: Vec<Entity> = {
-            let view = app.world().resource::<rl_engine::rl_ui::view::inventory::InventoryView>();
+            let view = app.world().resource::<atglyph::ui::view::inventory::InventoryView>();
             choices.into_iter().filter(|t| view.rows.iter().any(|r| r.entity == *t)).collect()
         };
         for _ in 0..rows.iter().position(|t| *t == healing).expect("the healing is offered") {
@@ -1727,7 +1727,7 @@ mod tests {
         assert!(written(&app).iter().any(|r| r.contains(&format!("You give {name} a potion of healing."))), "{:#?}", written(&app));
 
         press(&mut app, KeyCode::KeyX);
-        app.world_mut().resource_mut::<rl_engine::rl_ui::InspectView>().cursor = undermere::testing::at(&app, merc);
+        app.world_mut().resource_mut::<atglyph::ui::InspectView>().cursor = undermere::testing::at(&app, merc);
         app.update();
         app.update();
         let screen = written(&app);
@@ -1767,7 +1767,7 @@ mod tests {
     fn dismiss_on_screen(app: &mut App, name: &str) {
         press(app, KeyCode::Enter);
         let row = {
-            let view = app.world().resource::<rl_engine::rl_ui::view::offers::OffersView>();
+            let view = app.world().resource::<atglyph::ui::view::offers::OffersView>();
             view.rows.iter().position(|r| r.label == format!("dismiss {name}")).unwrap_or_else(|| panic!("dismiss {name} is offered: {:#?}", written(app)))
         };
         for _ in 0..row {

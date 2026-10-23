@@ -13,9 +13,9 @@
 
 use std::collections::BTreeSet;
 
+use atglyph::prelude::*;
+use atglyph::primitives::RunSeed;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_core::RunSeed;
 use undermere::bestiary::Kind;
 use undermere::stairs::Gate;
 use undermere::tally::{Tally, score};

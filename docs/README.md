@@ -1,4 +1,4 @@
-# rl-engine documentation
+# atglyph documentation
 
 GitHub renders this page when you open the `docs` folder, so it is the index.
 The guide is the only part of this folder that is published as a website; everything else is read here, on GitHub, or in an editor.
@@ -15,7 +15,7 @@ The guide is the only part of this folder that is published as a website; everyt
 ## What the engine has
 
 - **[OVERVIEW.md](OVERVIEW.md)** is the inventory: every crate, every plugin, every panel, and a "Not built yet" list.
-  Two tables near the top of its `rl-bevy` and `rl-ui` sections are the fastest way back in.
+  Two tables near the top of its `atglyph-bevy` and `atglyph-ui` sections are the fastest way back in.
   `scripts/check-overview.sh` keeps it honest, and CI runs it.
 
 ## How one subsystem works, and why
@@ -58,4 +58,4 @@ The subsystems with no page yet are listed at the end of the layout section in [
 ## For contributors
 
 - **[AGENTS.md](../AGENTS.md)** (which `CLAUDE.md` symlinks to) is the rules: what the build enforces, what review enforces, the layout, and which documents a slice owes when it adds or removes a system.
-- `cargo doc --open -p rl-engine` builds the API reference. Every public item is documented and every example in a doc comment runs as a test.
+- `cargo doc --open -p atglyph` builds the API reference. Every public item is documented and every example in a doc comment runs as a test.

@@ -6,12 +6,12 @@
 //! the same way `testing::headless` does, through the crate the `tests/`
 //! directory links against.
 
+use atglyph::prelude::*;
+use atglyph::rules::Percent;
+use atglyph::rules::ai::hearing::HearingStats;
+use atglyph::rules::damage::{ApplyResistance, SubtractArmor};
 use bevy::ecs::system::RunSystemOnce;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_rules::Percent;
-use rl_engine::rl_rules::ai::hearing::HearingStats;
-use rl_engine::rl_rules::damage::{ApplyResistance, SubtractArmor};
 
 use crate::content::{Profile, resistances};
 use crate::decks::{Foundry, map_of};
@@ -163,7 +163,7 @@ pub fn resume(world: &mut World) {
     if world.remove_resource::<ContinueRun>().is_none() {
         return;
     }
-    let saved = match rl_engine::rl_save::load_run(world) {
+    let saved = match atglyph::save::load_run(world) {
         Ok(Some(saved)) => saved,
         Ok(None) | Err(_) => {
             error!("there is no save that can be continued; beginning a new run");
@@ -187,7 +187,7 @@ pub fn resume(world: &mut World) {
     let player = world.query_filtered::<Entity, With<Player>>().single(world).ok();
     let (Ok(()), Some(player)) = (restored, player) else {
         error!("the save could not be restored; beginning a new run");
-        rl_engine::rl_bevy::plugin::clear_run(world);
+        atglyph::ecs::plugin::clear_run(world);
         if let Err(e) = world.run_system_once(start) {
             error!("the new run could not begin: {e}");
         }
@@ -234,8 +234,8 @@ pub struct Begin<'w> {
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_bevy::plugin::{Turn, TurnSet};
-    use rl_engine::rl_core::RunSeed;
+    use atglyph::ecs::plugin::{Turn, TurnSet};
+    use atglyph::primitives::RunSeed;
 
     use super::*;
 
@@ -243,8 +243,8 @@ mod tests {
     /// sixteen for a droid in dim light, thirty for one in the dark.
     #[test]
     fn a_shot_goes_wide_past_its_effective_range_and_in_poor_light() {
-        use rl_engine::rl_grid::LightBand;
-        use rl_engine::rl_rules::accuracy::{Delivery, Shot};
+        use atglyph::grid::LightBand;
+        use atglyph::rules::accuracy::{Delivery, Shot};
         let mut app = crate::testing::headless(RunSeed(1));
         // The run's rules are laid down as it starts, on the first frames.
         app.update();
@@ -264,7 +264,7 @@ mod tests {
     /// `TurnSet::Cleanup` could take `MyTurn` away again. A reader placed
     /// in the outer `Update` schedule instead would miss every actor dealt
     /// and resolved within the same `app.update()` the runner in
-    /// `crates/rl-bevy/src/plugin.rs` can spend several `Turn` passes on.
+    /// `crates/atglyph-bevy/src/plugin.rs` can spend several `Turn` passes on.
     #[derive(Resource, Default)]
     struct Dealt(Vec<bool>);
 
@@ -292,7 +292,7 @@ mod tests {
     /// it: no upgrade taken, and no deck reached but the first.
     #[test]
     fn a_run_begun_after_another_keeps_neither_its_upgrades_nor_its_depth() {
-        use rl_engine::rl_bevy::testing::{KeyScriptPlugin, press};
+        use atglyph::ecs::testing::{KeyScriptPlugin, press};
         let mut app = crate::testing::headless(RunSeed(2));
         app.add_plugins(KeyScriptPlugin);
         let me = crate::testing::beside_the_console(&mut app);

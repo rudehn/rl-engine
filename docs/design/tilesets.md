@@ -12,7 +12,7 @@ The same game in letters for a player who prefers them, at the flick of a settin
 The map is drawn by `draw_map` writing cells into the terminal, and everything else that shows on the map writes cells too: the light that tints a tile, the fade of what is remembered, fire and gas, particles, the look cursor, the targeting overlay, and whatever a game draws over the map itself.
 
 The first plan was a second presenter over a shared scene: a collector that says what is in each cell, and a sprite presenter beside the glyph one.
-It meant porting every one of those writers to the scene, about twelve hundred lines of particles and fields and both cursors in `rl-ui`, and keeping two drawings of each in step from then on.
+It meant porting every one of those writers to the scene, about twelve hundred lines of particles and fields and both cursors in `atglyph-ui`, and keeping two drawings of each in step from then on.
 Every game's own overlay would have needed porting as well, and a game that forgot would have drawn letters over its pictures.
 
 ## 3. The design

@@ -21,8 +21,8 @@
 //! whole town into what they remember, [`know_the_town`], where a floor
 //! below is learned only as it is seen.
 
+use atglyph::prelude::*;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
 
 use crate::dungeon::{FLOORS, TOWN, floor_of, map_of};
 use crate::light::BiomeDraws;
@@ -162,7 +162,7 @@ pub struct ArrivalLines<'w> {
 
 #[cfg(test)]
 mod tests {
-    use rl_engine::rl_core::RunSeed;
+    use atglyph::primitives::RunSeed;
 
     use super::*;
     use crate::dungeon::{FLOORS, TOWN, map_of};
@@ -240,7 +240,7 @@ mod tests {
         let mut app = headless(RunSeed(2));
         arrive(&mut app, map_of(2));
         assert_eq!(looks(&mut app), expected);
-        let text = app.world().resource::<rl_engine::rl_save::Saves>().load(crate::save::SLOT).expect("reads").expect("saved on arrival");
+        let text = app.world().resource::<atglyph::save::Saves>().load(crate::save::SLOT).expect("reads").expect("saved on arrival");
         let mut carried_on = crate::testing::continued(&text);
         assert_eq!(looks(&mut carried_on), expected, "continued");
     }
@@ -311,7 +311,7 @@ mod tests {
                 assert_eq!(at(&app, me), down, "seed {s}, floor {floor}: the way down stood free to land on");
                 go_through(&mut app, me);
             }
-            let text = app.world().resource::<rl_engine::rl_save::Saves>().load(crate::save::SLOT).expect("reads").expect("saved on arrival");
+            let text = app.world().resource::<atglyph::save::Saves>().load(crate::save::SLOT).expect("reads").expect("saved on arrival");
             let mut again = crate::testing::continued(&text);
             for floor in 1..=FLOORS {
                 assert_eq!(ways_on(&mut again, map_of(floor)), seen[floor as usize - 1], "seed {s}, floor {floor}, continued");
@@ -384,7 +384,7 @@ mod tests {
     /// one, at its way in.
     #[test]
     fn walking_through_the_gate_arrives_on_floor_one() {
-        use rl_engine::rl_bevy::testing::{KeyScriptPlugin, press};
+        use atglyph::ecs::testing::{KeyScriptPlugin, press};
         for s in 0..3 {
             let mut app = headless(RunSeed(s));
             app.add_plugins(KeyScriptPlugin);

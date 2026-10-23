@@ -31,11 +31,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use atglyph::prelude::*;
+use atglyph::primitives::RunSeed;
 use bevy::ecs::message::{MessageCursor, Messages};
 use bevy::ecs::system::RunSystemOnce;
 use bevy::prelude::*;
-use rl_engine::prelude::*;
-use rl_engine::rl_core::RunSeed;
 use undermere::armory::{Armory, ItemDef, ItemKind};
 use undermere::bestiary::{Bestiary, Kind};
 use undermere::dungeon::{FLOORS, floor_of, map_of};
@@ -364,7 +364,7 @@ struct Ground<'a, V> {
 
 /// What stepping onto a known trap costs on top of the step: twenty
 /// steps' worth, so a way round of fewer is taken.
-const TRAP_COST: u32 = 20 * rl_engine::rl_core::turn::BASE_ACTION_COST;
+const TRAP_COST: u32 = 20 * atglyph::primitives::turn::BASE_ACTION_COST;
 
 /// The cells of `here`'s traps the adventurer can see are there.
 fn known_traps(world: &mut World, here: MapId) -> BTreeSet<Point> {
