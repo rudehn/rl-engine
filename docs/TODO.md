@@ -404,6 +404,14 @@ Left over from the engine usability review on 2026-10-21, its item 2.4, deferred
   `terminal.rs` draws with sprites and text, so `rl-ui`, `rl-engine` and any terminal front end compile the GPU stack.
   Split the cell buffer from the window drawing into its own crate, then let `rl-bevy`, `rl-save` and the cell-buffer crate declare only the Bevy features they use; until then lean features free no build and make a `-p rl-bevy` build compile a second Bevy.
 
+Left over from the terminal front end, usability branch 08, on 2026-10-22.
+
+- **A dropped SSH connection loses the run.**
+  `rl-tty` catches Control-C but not the hang-up signal, so a session cut off mid-run exits without saving.
+  Catch it and save as quitting does.
+- **Warnings in a terminal game go nowhere.**
+  `TtyRoguelikePlugins` has no `LogPlugin`, since logging to the terminal would draw over the game; send it to a file or to stderr when that is not the terminal.
+
 ## 10. The API review's debt
 
 `docs/reviews/engine_api.md` holds the findings, with paths, and a note of which were stale on 2026-10-20; these are its sections B to F grouped into slices, each one branch.
