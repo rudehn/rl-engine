@@ -35,7 +35,6 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 8 | `TargetView` holds the enum it keeps reconstructing | 4 | low | low |
 | 9 | `WorldMap::tile` walks a `BTreeMap` per call | 8 | low | low |
 | 10 | Admission scans its waiting actors linearly | 4 | low | low |
-| 11 | One allowlist entry in Foundry's ambiguity test | 4 | low | low |
 | 12 | `Rooms` can run out of attempts on a small map | 3 | low | low |
 | 13 | The `Doors` pass hangs two doors back to back | 3 | low | low |
 | 14 | `HalveIfBlocked` can never fire | 3 | low | low |
@@ -52,7 +51,6 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 25 | The pages still name the eight folded plugins | 5 | low | low |
 | 26 | `UseCarried` decides by default when a mind mends | 4 | low | low |
 | 27 | One type per concept across the tier 1 crates | 10 | medium | medium |
-| 28 | Ambiguity tests through the schedule's interface, and engine systems private | 10 | medium | medium |
 | 29 | The patterns written four times | 10 | medium | high |
 | 30 | Continuing a run is the engine's | 10 | medium | medium |
 | 31 | Saved kinds keyed by a name the type states | 10 | medium | low |
@@ -85,7 +83,8 @@ Why the order that is left, in five moves:
    Item 23 is what furnishing left on 2026-10-10, and waits on a game that stamps into a map `Accrete` did not grow.
 
 5. **Items 27 to 35 are the API review of 2026-10-16**, in `docs/reviews/engine_api.md`, filed on 2026-10-20 with only what still held on `main` after its own surface review and the rules lifted into `rl-rules`.
-   27 and 28 come first: the mirrored enums are where an added variant is edited in three places, and the ambiguity tests are why the engine systems Foundry names are still public.
+   27 comes first: the mirrored enums are where an added variant is edited in three places.
+   28, the ambiguity tests through the schedule's interface, was built on 2026-10-22, and so was 11.
    35 goes last and batched by crate, so each game migrates once.
 
 Section 5 is documentation and section 6 is the release, and both are gated on the API settling rather than on this list.
@@ -195,9 +194,6 @@ The five items that opened this section were built in the six stages of `docs/de
   `admit_new_actors` (`crates/rl-bevy/src/turn.rs`) checks each waiting actor against the fresh list and the `arriving` list with a linear scan, so admission is quadratic in the number waiting, and it runs every pass.
   Harmless while only the player ever waits, and briefly; a game that parks a crowd on maps nobody has visited would pay for it.
   A `BTreeSet` of what has been seen makes it linear.
-- **One allowlist entry in Foundry's ambiguity test is wider than its reason.**
-  The entry on `Acting` and the action messages (`examples/foundry/src/plugin/ambiguity.rs`) admits any pair of systems, though its reason only holds for resolvers and sweepers.
-  Narrow it to systems in `TurnSet::Resolve` and `TurnSet::Sweep`, so a future system that writes those outside them fails the test.
 - **`offer_abilities` declares `&mut Stack` it only reads.**
   The ability gate takes the resolver's `UserState` (`crates/rl-bevy/src/ability.rs`), whose `tagged` query is `Option<&mut Stack>` because paying an ability's cost spends from a stack, so the gate in `DecideSet::Offer` claims write access it never uses.
   Since a price on an offer is counted from the taker's stacks, `offer_here` reads `Stack` beside it, and the pair is declared `ambiguous_with` in `PropsPlugin` to state that neither writes; without it every game's ambiguity test would report them.
@@ -206,12 +202,12 @@ The five items that opened this section were built in the six stages of `docs/de
 - **The resolvers in `ResolveSet::Act` are unordered, and every game's ambiguity test pays for it.**
   Nine systems resolve in that set and nearly all of them write `DamageEvent`, `Position`, `Stack`, `Occupancy` and the cue queue, with nothing declaring an order between them.
   It is safe: `Resolution::claim` spends one actor's one turn once a pass, so in the pass one resolver did something every other resolver found nobody to resolve for, and their relative order is unobservable.
-  What it costs is that the safety has to be restated per pair and per game: twenty of the forty entries in `examples/foundry/src/plugin/ambiguity.rs` say only that, the count is quadratic in resolvers, and the second game to grow the same test pays it again from scratch.
+  What it costs is that the safety has to be restated per pair: most of the entries in rl-bevy's own ambiguity test, `crates/rl-bevy/src/ambiguity.rs`, say only that, and the count is quadratic in resolvers; a game no longer pays it, since its test answers only for its own systems.
   Note that the engine already ordered the part of that set where order *is* observable: `LandSet` chains abilities, throws and shots, because several landings can land in one pass and the first hit to take a target to nothing is credited with the kill.
   The fix is the same shape: an `ActSet` in `CorePlugin`, chained, one slot per resolver family and a `Game` slot at the end, as `DecideSet` already does, with each plugin putting its resolver in its own slot.
   It costs no parallelism now that the `Turn` schedule is single-threaded, and the order between mutually exclusive resolvers is arbitrary, which `LandSet`'s own doc already concedes for landings.
-  What it loses is a forcing function: today a new resolver fails Foundry's test and somebody has to write down why it is safe, which is how `consumable::land_uses` was audited the day it was added; under a chain it slots in silently, and a resolver that quietly does not claim gets no prompt.
-  Worth doing when either a resolver appears that genuinely can co-occur with another in one pass, or a second game grows an ambiguity test; not worth doing for tidiness alone.
+  What it loses is a forcing function: today a new resolver fails the engine's test and somebody has to write down why it is safe, which is how `consumable::land_uses` was audited the day it was added; under a chain it slots in silently, and a resolver that quietly does not claim gets no prompt.
+  Worth doing when a resolver appears that genuinely can co-occur with another in one pass; not worth doing for tidiness alone.
   Rejected while writing this down: declaring the resolvers `ambiguous_with` each other once in the engine. It would silence every game's entries without inventing an order, but it suppresses rather than states, and it would hide the pair that one day really does conflict.
 
 ## 5. Documentation
@@ -420,9 +416,6 @@ Left over from the terminal front end, usability branch 08, on 2026-10-22.
   The content files' twins are gone (usability branch 10): `rl-rules` depends on `rl-mapgen` and reads its files straight into the mapgen types, and growing a place from them is `rl_rules::grow` with a `PrefabLibrary`.
   Left: loot as a `BandedTable<K>` with tags, and one actor handle where statuses use a bare `u64`.
   The same-named pairs, `Reach` (`rl_rules::arms::Reach` beside rl-bevy's `combat::Reach`) and `Secret`, are usability branch 15's renames.
-- **Ambiguity tests through the schedule's interface, and engine systems private.**
-  Foundry's ambiguity test names about forty engine system functions, which is why those stayed public when the rest went crate-private, and why it breaks when one is renamed.
-  The engine checks its own systems in its own tests; a game allows a pair by its own system and the data shared; the engine's systems become `pub(crate)`.
 - **The patterns written four times.**
   The faction relation where `rl_rules::faction::stance` is not yet called (rl-ui's narrator, inspect and nearby views, three Undermere files, `Bystanders::relation`), the interners, the list cursor, key binding, moving an entity, the place struct, the per-map stash, stack split and merge, breadth-first steps, the lingering markers.
 - **Continuing a run is the engine's.**
