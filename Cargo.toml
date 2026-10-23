@@ -33,8 +33,10 @@ rand = { version = "0.9", default-features = false }
 serde = { version = "1", features = ["derive"] }
 ron = "0.10"
 # `system_font_discovery` lets the terminal ask for a generic monospace family
-# when a game ships no typeface of its own; Bevy's built-in font lacks
-# box-drawing glyphs.
+# when a game ships no typeface of its own; without it a cell draws its
+# background and no glyph. The terminal draws the box-drawing and block
+# characters itself, so the family needs only the letters and symbols a game
+# prints.
 # Named rather than defaulted: the defaults carry 3D, glTF, audio, animation,
 # gizmos, scenes, picking and Bevy's own UI, none of which a glyph terminal
 # draws with, and all of which a browser would download. `default_font` is

@@ -15,8 +15,8 @@
 //!
 //! Keys: arrows, `hjklyubn` or the numpad to walk, and walk into a goblin
 //! to attack it; `.` to wait; `g` to pick up what is here, `d` to drink a
-//! potion and `w` to put on or wield what you carry; `t` to put your torch out or
-//! light it again; `x` to look around; Escape for the menu; `q` to quit;
+//! potion and `w` to put on or wield what you carry; `t` to put your torch out
+//! or light it again; `x` to look around; Escape for the menu; `q` to quit;
 //! `?` lists them all. Each is declared once, in `declare_controls`, and
 //! read by name: that one list is what the `?` screen shows and what the
 //! input system checks, so the two cannot disagree.

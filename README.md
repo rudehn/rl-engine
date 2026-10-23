@@ -188,7 +188,7 @@ On Linux, Bevy needs a few system packages that a Rust toolchain does not bring.
 On Debian and Ubuntu:
 
 ```sh
-sudo apt install pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+sudo apt install pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev libx11-dev libfontconfig1-dev
 ```
 
 ## Crates
