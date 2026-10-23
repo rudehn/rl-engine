@@ -37,7 +37,8 @@ use crate::plugin::{EngineSet, Needs};
 pub struct Seed(pub RunSeed);
 
 impl Seed {
-    /// `--seed N` from the command line, or a fresh seed when there is none.
+    /// `--seed N` from the command line, or a fresh seed when there is none:
+    /// [`LaunchArgs::from_env`]'s seed, for a game with no flags of its own.
     ///
     /// # Panics
     /// Panics naming the argument when `N` is not a whole number, because a
@@ -49,14 +50,7 @@ impl Seed {
     /// the run it was recorded from.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn from_args() -> Self {
-        if let Some(seed) = crate::replay::seed() {
-            return Seed(seed);
-        }
-        match seed_argument(crate::replay::args().into_iter()) {
-            Some(Ok(seed)) => Seed(seed),
-            Some(Err(e)) => panic!("{e}"),
-            None => Seed(RunSeed::fresh()),
-        }
+        LaunchArgs::from_env().seed_or_fresh()
     }
 
     /// The seed of place `map` in this run: where every draw about that
@@ -67,14 +61,67 @@ impl Seed {
     }
 }
 
-/// The seed in `args`, if one was asked for.
-#[cfg(not(target_arch = "wasm32"))]
-fn seed_argument(mut args: impl Iterator<Item = String>) -> Option<Result<RunSeed, String>> {
-    args.by_ref().find(|a| a == "--seed")?;
-    Some(match args.next() {
-        Some(n) => n.parse().map(RunSeed).map_err(|_| format!("--seed takes a whole number, not {n:?}")),
-        None => Err("--seed takes a whole number, and none followed it".to_string()),
-    })
+/// What a game was launched with: the run's seed, if one was named, and
+/// the rest of its arguments, its own flags.
+///
+/// The recording's when [`REPLAY_VAR`](crate::replay::REPLAY_VAR) names
+/// one, the command line's otherwise, so a game's own flags replay with
+/// the run they were recorded under, and a game reads them from here
+/// rather than from the recording or the command line itself. The seed is
+/// the engine's to read, since a replay must run on its recorded one, so
+/// `--seed N` is taken out of [`rest`](Self::rest) and the game matches on
+/// its own flags alone.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaunchArgs {
+    /// The seed the run was launched on: the recording's when replaying,
+    /// `--seed N` otherwise, and none when neither named one.
+    pub seed: Option<RunSeed>,
+    /// Every other argument, in the order given, the program's name left
+    /// off.
+    pub rest: Vec<String>,
+}
+
+impl LaunchArgs {
+    /// What this process was launched with.
+    ///
+    /// # Panics
+    /// Panics naming the argument when `--seed` is not followed by a whole
+    /// number, as [`Seed::from_args`] does; and when the recording
+    /// [`REPLAY_VAR`](crate::replay::REPLAY_VAR) names cannot be read,
+    /// since a replay that quietly started a fresh run never happened.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn from_env() -> Self {
+        let (args, recorded) = match crate::replay::replaying() {
+            Some(recording) => (recording.args, Some(RunSeed(recording.seed))),
+            None => (crate::replay::own_args(), None),
+        };
+        Self::parse(args, recorded).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// Reads `args`, the program's name left off, with `recorded` the
+    /// seed of the recording being replayed, if one is: `--seed N` taken
+    /// out, and the recording's seed winning over it. The pure half of
+    /// [`from_env`](Self::from_env), so it is tested without a process.
+    pub fn parse(args: Vec<String>, recorded: Option<RunSeed>) -> Result<Self, String> {
+        let (mut seed, mut rest) = (None, Vec::with_capacity(args.len()));
+        let mut args = args.into_iter();
+        while let Some(arg) = args.next() {
+            if arg != "--seed" {
+                rest.push(arg);
+                continue;
+            }
+            let n = args.next().ok_or("--seed takes a whole number, and none followed it")?;
+            seed = Some(n.parse().map(RunSeed).map_err(|_| format!("--seed takes a whole number, not {n:?}"))?);
+        }
+        Ok(Self { seed: recorded.or(seed), rest })
+    }
+
+    /// The seed to insert: the one launched on, or a fresh one when none
+    /// was named.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn seed_or_fresh(&self) -> Seed {
+        Seed(self.seed.unwrap_or_else(RunSeed::fresh))
+    }
 }
 
 // The engine's domains, every one under `atglyph.`, which a game's
@@ -287,12 +334,35 @@ mod tests {
         assert_eq!(rng.random::<u64>(), RunSeed(7).rng(Beasts::DOMAIN, 0).random::<u64>());
     }
 
+    fn launched(line: &str, recorded: Option<u64>) -> Result<LaunchArgs, String> {
+        LaunchArgs::parse(line.split_whitespace().map(String::from).collect(), recorded.map(RunSeed))
+    }
+
+    fn words(line: &str) -> Vec<String> {
+        line.split_whitespace().map(String::from).collect()
+    }
+
     #[test]
-    fn the_seed_argument_is_read_or_refused_by_name() {
-        let args = |s: &str| s.split_whitespace().map(String::from).collect::<Vec<_>>().into_iter();
-        assert_eq!(seed_argument(args("--floor 3 --seed 42")), Some(Ok(RunSeed(42))));
-        assert_eq!(seed_argument(args("--floor 3")), None, "no seed asked for");
-        assert!(seed_argument(args("--seed forty")).is_some_and(|r| r.is_err_and(|e| e.contains("\"forty\""))));
-        assert!(seed_argument(args("--seed")).is_some_and(|r| r.is_err()));
+    fn a_seed_on_the_command_line_is_taken_out_of_the_game_s_arguments() {
+        assert_eq!(launched("--floor 3 --seed 42", None), Ok(LaunchArgs { seed: Some(RunSeed(42)), rest: words("--floor 3") }));
+        assert_eq!(launched("--seed 42 --floor 3 --recipe caves", None), Ok(LaunchArgs { seed: Some(RunSeed(42)), rest: words("--floor 3 --recipe caves") }));
+    }
+
+    #[test]
+    fn a_recording_s_seed_wins_over_the_command_line() {
+        assert_eq!(launched("--seed 42 --deck 2", Some(7)), Ok(LaunchArgs { seed: Some(RunSeed(7)), rest: words("--deck 2") }));
+        assert_eq!(launched("", Some(7)).map(|l| l.seed), Ok(Some(RunSeed(7))), "and stands with no seed named at all");
+    }
+
+    #[test]
+    fn a_seed_that_is_not_a_number_is_refused_naming_it() {
+        assert!(launched("--seed forty", None).is_err_and(|e| e.contains("\"forty\"")));
+        assert!(launched("--floor 3 --seed", None).is_err_and(|e| e.contains("none followed")));
+    }
+
+    #[test]
+    fn with_no_seed_the_arguments_are_left_as_they_were() {
+        assert_eq!(launched("--prefabs", None), Ok(LaunchArgs { seed: None, rest: words("--prefabs") }));
+        assert_eq!(launched("", None), Ok(LaunchArgs { seed: None, rest: Vec::new() }));
     }
 }

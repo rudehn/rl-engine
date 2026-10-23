@@ -334,9 +334,9 @@ fn tint_clouds(app: &mut App) {
 /// Prints floor `floor` of the run of `seed` as glyphs, grown by `recipe`
 /// in place of the one the seed draws when it names one, for reading a
 /// recipe by eye before calling it done.
-fn print_floor(floor: &str, seed: &str, recipe: Option<&str>) -> AppExit {
+fn print_floor(floor: &str, seed: RunSeed, recipe: Option<&str>) -> AppExit {
     let floor = floor.parse().expect("--floor takes a number");
-    let undermere = undermere::dungeon::Undermere::new(RunSeed(seed.parse().expect("--seed takes a number")));
+    let undermere = undermere::dungeon::Undermere::new(seed);
     match undermere.render(floor, recipe) {
         Ok(rows) => {
             print!("{rows}");
@@ -350,13 +350,13 @@ fn print_floor(floor: &str, seed: &str, recipe: Option<&str>) -> AppExit {
 }
 
 fn main() -> AppExit {
-    let mut seed = atglyph::ecs::replay::seed().unwrap_or_else(RunSeed::fresh);
-    let args = atglyph::ecs::replay::args();
-    match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
-        [] => {}
-        ["--seed", n] => seed = RunSeed(n.parse().expect("--seed takes a number")),
-        ["--floor", n, "--seed", s] | ["--seed", s, "--floor", n] => return print_floor(n, s, None),
-        ["--floor", n, "--seed", s, "--recipe", r] => return print_floor(n, s, Some(r)),
+    // The seed and the flags a recorded run was launched with, when one is
+    // replayed, so it replays on its own seed.
+    let launch = LaunchArgs::from_env();
+    match (launch.rest.iter().map(String::as_str).collect::<Vec<_>>().as_slice(), launch.seed) {
+        ([], _) => {}
+        (["--floor", n], Some(seed)) => return print_floor(n, seed, None),
+        (["--floor", n, "--recipe", r], Some(seed)) => return print_floor(n, seed, Some(r)),
         _ => {
             eprintln!("usage: undermere [--seed N | --floor N --seed N [--recipe NAME]]");
             return AppExit::error();
@@ -373,7 +373,7 @@ fn main() -> AppExit {
     app.add_plugins(engine)
         // ANCHOR_END: typeface
         .add_plugins(undermere::plugin::narrator())
-        .insert_resource(Seed(seed))
+        .insert_resource(launch.seed_or_fresh())
         .add_plugins(UndermerePlugin);
     add_panels(&mut app, &screen);
     tint_clouds(&mut app);

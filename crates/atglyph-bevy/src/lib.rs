@@ -120,7 +120,7 @@ pub use registries::Registries;
 pub use remains::{LeavesRemains, Remains, RemainsLeft, RemainsNaming, RemainsPlugin, RevivalRules, RevivalTwin, ReviveCommands, Revived, revive};
 pub use replay::{Pressed, Recording};
 pub use secrets::Secret;
-pub use seed::{AddStream, ENGINE_DOMAINS, RunRng, Seed, Stream, StreamDomain};
+pub use seed::{AddStream, ENGINE_DOMAINS, LaunchArgs, RunRng, Seed, Stream, StreamDomain};
 pub use settings::{AddSettings, Setting, SettingId, Settings};
 pub use state::{Ending, EngineState, Outcome, Restart, RunOver, world_is_shown};
 pub use status::{ActiveStatuses, ApplyStatus, RemoveStatus, SideWas, StatBlock, StatusEvent};
@@ -198,7 +198,7 @@ pub mod prelude {
     pub use crate::registries::Registries;
     pub use crate::remains::{LeavesRemains, Remains, RemainsLeft, RemainsNaming, RemainsPlugin, RevivalRules, ReviveCommands, Revived};
 
-    pub use crate::seed::{AddStream, Seed};
+    pub use crate::seed::{AddStream, LaunchArgs, Seed};
     pub use crate::settings::{AddSettings, Setting, SettingId, Settings};
     pub use crate::state::{Ending, EngineState, Outcome, Restart, RunOver};
     pub use crate::status::{ActiveStatuses, ApplyStatus, RemoveStatus, SideWas, StatBlock, StatusEvent};

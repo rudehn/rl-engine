@@ -15,7 +15,7 @@
 //! and `>` the way down.
 
 use atglyph::prelude::*;
-use atglyph::primitives::{Rect, RunSeed};
+use atglyph::primitives::Rect;
 use bevy::prelude::*;
 use foundry::cheats::CheatPanel;
 use foundry::plugin::FoundryPlugin;
@@ -201,22 +201,21 @@ fn add_panels(app: &mut App, screen: &Screen) {
 }
 
 fn main() -> AppExit {
-    // Through the replay module, so a recorded run replays on its own seed.
-    let mut seed = atglyph::ecs::replay::seed().unwrap_or_else(RunSeed::fresh);
-    let args = atglyph::ecs::replay::args();
-    match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
-        [] => {}
-        ["--seed", n] => seed = RunSeed(n.parse().expect("--seed takes a number")),
-        ["--deck", n, "--seed", s] | ["--seed", s, "--deck", n] => {
+    // The seed and the flags a recorded run was launched with, when one is
+    // replayed, so it replays on its own seed.
+    let launch = LaunchArgs::from_env();
+    match (launch.rest.iter().map(String::as_str).collect::<Vec<_>>().as_slice(), launch.seed) {
+        ([], _) => {}
+        (["--deck", n], Some(seed)) => {
             let deck = n.parse().expect("--deck takes a number");
-            let foundry = foundry::decks::Foundry::new(RunSeed(s.parse().expect("--seed takes a number")));
+            let foundry = foundry::decks::Foundry::new(seed);
             match foundry.render(foundry::decks::map_of(deck)) {
                 Ok(rows) => print!("{rows}"),
                 Err(e) => eprintln!("deck {deck}: {e}"),
             }
             return AppExit::Success;
         }
-        ["--prefabs"] => {
+        (["--prefabs"], _) => {
             print!("{}", foundry::prefabs::coverage_report().render());
             return AppExit::Success;
         }
@@ -239,7 +238,7 @@ fn main() -> AppExit {
         // the grenades.
         .add_engine_effects()
         .insert_resource(foundry::content::registries())
-        .insert_resource(Seed(seed))
+        .insert_resource(launch.seed_or_fresh())
         .add_plugins(FoundryPlugin);
     add_panels(&mut app, &screen);
     if let Some(deck) = std::env::var("FOUNDRY_START").ok().and_then(|d| d.parse().ok()) {

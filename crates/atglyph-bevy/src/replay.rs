@@ -18,13 +18,12 @@
 //!
 //! The recorder and the player are `ReplayPlugin` in `atglyph-ui`, which knows
 //! the direction keys and the repeat. What lives here is the file, and
-//! what a game reads before it has an app: [`args`] and [`seed`], which
-//! answer from the recording named by [`REPLAY_VAR`] when there is one
-//! and from the command line otherwise, so a game that reads its
-//! arguments through them replays with the arguments it was recorded
-//! with.
+//! [`args`], which answers from the recording named by [`REPLAY_VAR`] when
+//! there is one and from the command line otherwise. A game reads its
+//! launch through [`LaunchArgs`](crate::seed::LaunchArgs), which answers
+//! the same way and takes the seed out, so it replays with the seed and
+//! the arguments it was recorded with.
 
-use atglyph_core::RunSeed;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -111,19 +110,15 @@ pub fn replaying() -> Option<Recording> {
 }
 
 /// The arguments this run was started with: the recording's when
-/// replaying, the command line's otherwise, the program's name left off.
-/// What a game reads its own flags from, so a replay runs with the flags
-/// it was recorded under.
+/// replaying, the command line's otherwise, the program's name left off,
+/// and `--seed` left in. What the recorder writes down; a game reads its
+/// own flags through [`LaunchArgs`](crate::seed::LaunchArgs), which takes
+/// the seed out and hands it over beside them.
 pub fn args() -> Vec<String> {
     match replaying() {
         Some(recording) => recording.args,
         None => own_args(),
     }
-}
-
-/// The seed the recording was made with, when replaying.
-pub fn seed() -> Option<RunSeed> {
-    replaying().map(|r| RunSeed(r.seed))
 }
 
 /// The command line, the program's name left off.
