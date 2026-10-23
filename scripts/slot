@@ -52,8 +52,10 @@ until ($held) {
 # the standard library and Bevy now that both are shared libraries, never
 # reach this script. nextest sets each again under a NEXTEST_ prefix for
 # exactly such a wrapper; the test, which is not protected, gets them back.
-for my $name (grep { /^NEXTEST_(DYLD_|LD_)/ } keys %ENV) {
-    (my $original = $name) =~ s/^NEXTEST_//;
+# scripts/rustc-wrapper passes the toolchain's own under an RL_ prefix the
+# same way.
+for my $name (grep { /^(NEXTEST|RL)_(DYLD_|LD_)/ } keys %ENV) {
+    (my $original = $name) =~ s/^(NEXTEST|RL)_//;
     $ENV{$original} //= $ENV{$name};
 }
 

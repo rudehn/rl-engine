@@ -43,4 +43,15 @@ if (!$ENV{RL_NO_SCCACHE} && basename($tool) =~ /^rustc/) {
         @command = ($sccache, @command);
     }
 }
+# rustc strips a library built without debug info, which every dependency is
+# here, with the toolchain's rust-objcopy, and that finds its libLLVM only
+# through the DYLD_FALLBACK_LIBRARY_PATH rustup sets. This script is
+# /usr/bin/perl, which macOS strips of every DYLD_ variable, so without this
+# rust-objcopy failed to load, the crash reporter held it, and the compile of
+# Bevy's shared library hung on every cache miss. The toolchain's lib travels
+# under a name the loader ignores, and scripts/slot sets it back.
+if ($tool =~ m{/}) {
+    my $lib = dirname(dirname(abs_path($tool))) . '/lib';
+    $ENV{RL_DYLD_FALLBACK_LIBRARY_PATH} = $lib if -d "$lib/rustlib";
+}
 exec "$scripts/slot", @command or die "rustc-wrapper: cannot run $scripts/slot: $!\n";
