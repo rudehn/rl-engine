@@ -28,6 +28,12 @@ rl-ui.workspace = true
 # defaults. Every crate it gathers already depends on Bevy.
 bevy.workspace = true
 
+# The text terminal front end, `TtyRoguelikePlugins`. A terminal is a
+# desktop thing, and its crate does not build for the web, so the wasm demos
+# never compile it.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rl-tty.workspace = true
+
 # Tests and benches link Bevy as one shared library, so each test binary links
 # in seconds rather than copying all of Bevy in. A dev-dependency never reaches
 # a game built on this crate, which links Bevy however it chooses; wasm has no

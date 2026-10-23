@@ -10,6 +10,8 @@
 //! the log. Change any of it; the tests at the bottom say what has to stay
 //! true.
 //!
+//! `cargo run` opens a window; `cargo run -- --tty` plays in the terminal.
+//!
 //! Keys: arrows, `hjklyubn` or the numpad to walk, and walk into a goblin
 //! to attack it; `.` to wait; `t` to put your torch out or light it again;
 //! `x` to look around; Escape for the menu; `q` to quit; `?` lists them all. Each is declared
@@ -47,11 +49,17 @@ const TORCH: LightSource = LightSource::new(210, 7, Rgb::new(255, 180, 110)).fli
 fn main() -> AppExit {
     let mut app = App::new();
     // The window and glyph terminal, the turn loop, field of view, the map
-    // between the status row and the log, and the base every panel needs.
+    // between the status row and the log, and the base every panel needs;
+    // or, with `--tty`, all of it in the text terminal you started the game
+    // in, which plays over SSH too.
     let map = Rect::new(0, 1, COLS, ROWS - 1 - LOG_ROWS);
-    app.add_plugins(RoguelikePlugins::new(TITLE, COLS, ROWS).map(map))
-        // The game itself, the same plugin the tests add.
-        .add_plugins(Starter)
+    if std::env::args().any(|arg| arg == "--tty") {
+        app.add_plugins(TtyRoguelikePlugins::new(COLS, ROWS).map(map));
+    } else {
+        app.add_plugins(RoguelikePlugins::new(TITLE, COLS, ROWS).map(map));
+    }
+    // The game itself, the same plugin the tests add.
+    app.add_plugins(Starter)
         // The panels draw themselves from views the engine keeps current.
         // The controls screen lists every key declared below, and prints the
         // one hint that opens it at the right of the status row.

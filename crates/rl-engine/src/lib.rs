@@ -17,7 +17,9 @@
 //! `foundry` and `undermere` example games show the Bevy side end to end.
 //!
 //! A game starts from [`RoguelikePlugins`], the window, the terminal and
-//! the plugins every game adds, and then names the subsystems it wants. A
+//! the plugins every game adds, and then names the subsystems it wants; or
+//! from [`TtyRoguelikePlugins`], the same with a text terminal in place of
+//! the window, played locally or over SSH. A
 //! game that saves names itself with
 //! [`SavePlugin::new`](rl_save::SavePlugin::new), which also keeps a
 //! [scripted](rl_bevy::replay::scripted) run off the player's save.
@@ -41,6 +43,8 @@ pub use rl_mapgen;
 pub use rl_render;
 pub use rl_rules;
 pub use rl_save;
+#[cfg(not(target_arch = "wasm32"))]
+pub use rl_tty;
 pub use rl_ui;
 
 /// What every game on the glyph terminal adds before its own plugins, in
@@ -175,6 +179,87 @@ impl PluginGroup for RoguelikePlugins {
     }
 }
 
+/// What every game on the glyph terminal adds before its own plugins, for
+/// a text terminal rather than a window: the one the game was started in,
+/// at a desk or at the end of an SSH login.
+///
+/// The engine's half of [`RoguelikePlugins`], [`CorePlugin`](rl_bevy::CorePlugin),
+/// [`FovPlugin`](rl_bevy::FovPlugin), the map in [`map`](Self::map)'s
+/// rectangle with its [`ParticlesPlugin`](rl_render::ParticlesPlugin),
+/// [`UiPlugin`](rl_ui::UiPlugin) and the [`ReplayPlugin`](rl_ui::ReplayPlugin),
+/// over Bevy's `MinimalPlugins` running thirty frames a second, its states
+/// and its input, with the [`TtyPlugin`](rl_tty::TtyPlugin) drawing the
+/// same grid every panel draws into. So a game adds its own plugins after
+/// either group and plays the same.
+///
+/// Nothing that needs a window: no capture, no fullscreen setting, and no
+/// typeface, since the terminal draws in its own. No `LogPlugin` either,
+/// whose lines would land on the game's screen. The GPU crates are still
+/// compiled, since the workspace names them, but never started.
+///
+/// A game served to many people over SSH swaps the plugin for
+/// [`TtyPlugin::to_writer`](rl_tty::TtyPlugin::to_writer) the way Bevy's
+/// groups allow, and saves each player's run apart with
+/// [`Saves::per_user`](rl_save::Saves::per_user).
+///
+/// ```no_run
+/// use bevy::prelude::*;
+/// use rl_engine::prelude::*;
+/// use rl_engine::rl_core::Rect;
+///
+/// App::new().add_plugins(TtyRoguelikePlugins::new(80, 40).map(Rect::new(0, 1, 80, 34))).add_plugins((CombatPlugin, MindsPlugin)).run();
+/// ```
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Clone)]
+pub struct TtyRoguelikePlugins {
+    cols: i32,
+    rows: i32,
+    map: Option<rl_core::Rect>,
+    across: i32,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl TtyRoguelikePlugins {
+    /// A grid `cols` by `rows` cells, with the map filling it.
+    pub fn new(cols: i32, rows: i32) -> Self {
+        Self { cols, rows, map: None, across: 1 }
+    }
+
+    /// The terminal cells the map is drawn in; the rest is left to panels.
+    pub fn map(mut self, viewport: rl_core::Rect) -> Self {
+        self.map = Some(viewport);
+        self
+    }
+
+    /// Draws each map tile `cells` cells across, as
+    /// [`RoguelikePlugins::across`] does.
+    pub fn across(mut self, cells: i32) -> Self {
+        self.across = cells.max(1);
+        self
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl PluginGroup for TtyRoguelikePlugins {
+    fn build(self) -> PluginGroupBuilder {
+        let map = self.map.unwrap_or(rl_core::Rect::new(0, 0, self.cols, self.rows));
+        // Thirty frames a second: a terminal repeats a held key about as
+        // often, and a frame with nothing to write writes nothing.
+        let frames = bevy::app::ScheduleRunnerPlugin::run_loop(std::time::Duration::from_secs_f64(1.0 / 30.0));
+        PluginGroupBuilder::start::<Self>()
+            .add_group(MinimalPlugins.set(frames))
+            .add(bevy::state::app::StatesPlugin)
+            .add(bevy::input::InputPlugin)
+            .add(rl_tty::TtyPlugin::new(self.cols, self.rows))
+            .add(rl_bevy::CorePlugin)
+            .add(rl_bevy::FovPlugin)
+            .add(rl_render::MapViewPlugin::new(map).across(self.across))
+            .add(rl_render::ParticlesPlugin)
+            .add(rl_ui::UiPlugin)
+            .add(rl_ui::ReplayPlugin::from_env())
+    }
+}
+
 /// The curated set of names a game needs most of the time.
 /// Everything a game reaches for, in one glob.
 ///
@@ -211,6 +296,8 @@ impl PluginGroup for RoguelikePlugins {
 /// ```
 pub mod prelude {
     pub use crate::RoguelikePlugins;
+    #[cfg(not(target_arch = "wasm32"))]
+    pub use crate::TtyRoguelikePlugins;
     // Core, minus `Rect`: see the note above.
     pub use rl_bevy::prelude::*;
     pub use rl_core::prelude::{
@@ -222,6 +309,69 @@ pub mod prelude {
     pub use rl_rules::prelude::*;
     pub use rl_save::prelude::*;
     pub use rl_ui::prelude::*;
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use super::prelude::*;
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    /// A writer whose bytes the test reads back.
+    #[derive(Clone, Default)]
+    struct Shared(Arc<Mutex<Vec<u8>>>);
+
+    impl std::io::Write for Shared {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// One room, the player in it.
+    struct Room(TileRegistry);
+
+    impl PlaceRules for Room {
+        fn build(&self, _: MapId, seed: PlaceSeed) -> Result<PlaceBuild, BuildError> {
+            let (wall, floor) = (self.0.expect("wall"), self.0.expect("floor"));
+            let mut ctx = BaseContext::blank(20, 10, self.0.clone(), wall);
+            Chain::new().then(dungeon::Rooms { floor, attempts: 20, min_size: 4, max_size: 6, min_rooms: 1 }).then(dungeon::RandomStart).run(&mut ctx, seed)?;
+            PlaceBuild::from_context(ctx)
+        }
+
+        fn tiles(&self) -> TileTables {
+            self.0.tables()
+        }
+    }
+
+    fn start(mut commands: Commands) {
+        commands.spawn_player(MapId::FIRST, (Viewshed::new(6), RevealsMap, Glyph::new('@', Color::WHITE)));
+    }
+
+    /// The group with its terminal written to a buffer, a game added after
+    /// it as after the window's, and a key typed into the terminal: the
+    /// wait it is bound to passes a turn, and the player is on the screen.
+    #[test]
+    fn the_terminal_group_builds_an_app_that_plays_a_turn() {
+        let out = Shared::default();
+        let mut app = App::new();
+        app.add_plugins(TtyRoguelikePlugins::new(30, 12).build().set(rl_tty::TtyPlugin::to_writer(30, 12, out.clone())))
+            .add_plugins(PlayerKeysPlugin::new().walk("Move", "walk").wait("Act", "wait a turn"))
+            .places(Room(TileRegistry::standard()))
+            .add_systems(NewRun, start)
+            .insert_resource(Seed(RunSeed(3)));
+        testing::player(&mut app);
+        let now = app.world().resource::<Turns>().now();
+        let wait = rl_tty::crossterm::event::KeyEvent::new(rl_tty::crossterm::event::KeyCode::Char('.'), rl_tty::crossterm::event::KeyModifiers::NONE);
+        app.world_mut().write_message(rl_tty::TtyInput(rl_tty::crossterm::event::Event::Key(wait)));
+        testing::settle(&mut app);
+        assert!(app.world().resource::<Turns>().now() > now, "the wait typed into the terminal passed a turn");
+        let screen = String::from_utf8(out.0.lock().unwrap().clone()).unwrap();
+        assert!(screen.contains('@'), "and the player was drawn to it");
+    }
 }
 
 /// The README's code samples, compiled and run as doc-tests so the

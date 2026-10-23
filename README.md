@@ -80,7 +80,7 @@ To change the framework without forking it, leave out a plugin, join a system se
 ### What it does not do
 
 It does not abstract over the ECS: the framework is Bevy's.
-A terminal or SSH front end for the framework is planned, and until then the toolkit example is the terminal path.
+It does not need a window, though: a framework game plays in a text terminal, locally or over SSH, with `TtyRoguelikePlugins` in place of `RoguelikePlugins`, and the template runs that way with `cargo run -- --tty`.
 
 ## Getting started
 

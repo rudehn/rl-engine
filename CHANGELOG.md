@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `TtyRoguelikePlugins` plays a game in a text terminal, locally or over SSH, with the same panels: `new(cols, rows)`, `map` and `across` as `RoguelikePlugins` has, over Bevy's `MinimalPlugins` at thirty frames a second with `TtyPlugin` in place of the window, desktop only. The template runs that way with `cargo run -- --tty`, and Control-C ends a game in the terminal as closing the window does.
+  To change: nothing; a game made from the template may pick its front end in `main` the same way.
+
 - `rl-tty`, a new tier-2 crate: `TtyPlugin` shows the `Terminal` grid in a text terminal in place of the window's `TerminalPlugin`, writing only the cells that changed each frame and turning the keys typed into `ButtonInput<KeyCode>`, each pressed for the frame it was typed in, with Shift for a capital or a shifted symbol. `TtyPlugin::new(cols, rows)` is the process's own terminal, in raw mode and handed back when the app ends or panics; `TtyPlugin::to_writer(cols, rows, out)` is any other, an SSH channel, whose keys and size arrive as `TtyInput` messages. A glyph a terminal draws two columns wide is drawn as `?`. `Terminal::cells` reads every cell of the grid.
   To change: nothing.
 
