@@ -18,6 +18,10 @@ The guide is the only part of this folder that is published as a website; everyt
   Two tables near the top of its `atglyph-bevy` and `atglyph-ui` sections are the fastest way back in.
   `scripts/check-overview.sh` keeps it honest, and CI runs it.
 
+## Releasing
+
+- **[RELEASING.md](RELEASING.md)** is a release in order, with the steps that are Nate's marked.
+
 ## How one subsystem works, and why
 
 One page per subsystem, with the alternatives that were rejected and why.

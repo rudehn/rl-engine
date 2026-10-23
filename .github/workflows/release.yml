@@ -12,8 +12,45 @@ jobs:
     uses: ./.github/workflows/ci.yml
     with:
       docs: true
-  page:
+  # Breaking changes against the last published version of each crate. A
+  # crate never published has nothing to be checked against and is noticed,
+  # not failed.
+  semver:
     needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: install cargo-semver-checks
+        run: cargo install --locked cargo-semver-checks
+      - run: python3 scripts/publish.py --semver
+  # Every crate, in dependency order. crates.io trusts a publisher only for a
+  # crate that already exists, so the first release uses the repository secret
+  # CARGO_REGISTRY_TOKEN; once it is deleted, the job trades its OIDC token for
+  # one. A run cut short, by the new-crate rate limit or otherwise, is re-run
+  # from the Actions page and publishes what is left. A secret cannot be read
+  # in a job-level `if`, so it is passed through `env` and tested per step.
+  publish:
+    needs: [check, semver]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      SECRET_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: trade the OIDC token for a publish token
+        id: auth
+        if: env.SECRET_TOKEN == ''
+        uses: rust-lang/crates-io-auth-action@v1
+      - name: publish the crates not yet up
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token || env.SECRET_TOKEN }}
+        run: python3 scripts/publish.py --publish
+  page:
+    needs: [check, publish]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
