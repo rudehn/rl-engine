@@ -335,7 +335,7 @@ pub fn combat_rules(registries: &Registries) -> CombatRules {
     let discord = registries.factions.expect(DISCORDANT);
     let townsfolk = registries.factions.expect(TOWNSFOLK);
     let stat = |name: &str| registries.stats.expect(name);
-    let mut rules = CombatRules::new(&registries.factions)
+    let mut rules = CombatRules::new()
         .hostile(adventurer, beasts)
         .hostile(adventurer, goblins)
         .hostile(adventurer, undead)

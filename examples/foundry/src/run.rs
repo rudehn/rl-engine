@@ -42,7 +42,7 @@ pub fn prepare(commands: &mut Commands, seed: &Seed, registries: &Registries) {
     commands.insert_resource(WorldMap::new(foundry.tiles().tables()));
 
     let (commando, droids, vermin) = (registries.factions.expect("commando"), registries.factions.expect("droids"), registries.factions.expect("vermin"));
-    let combat = CombatRules::new(&registries.factions).hostile(commando, droids).hostile(commando, vermin).hostile(droids, vermin);
+    let combat = CombatRules::new().hostile(commando, droids).hostile(commando, vermin).hostile(droids, vermin);
     commands.insert_resource(combat);
     // Resistance first, then plate: the damage table in `content.rs` is
     // what makes ion undo a chassis and barely touch flesh, and the

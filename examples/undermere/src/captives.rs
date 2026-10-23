@@ -452,7 +452,7 @@ mod tests {
         // the wit to travel kept is the wit used. At peace with the floor,
         // so the follower's one turn beside them is spent keeping with
         // them rather than going after whatever of the floor it can see.
-        let peace = CombatRules::new(&again.world().resource::<Registries>().factions);
+        let peace = CombatRules::new();
         again.insert_resource(peace);
         let world = again.world_mut();
         let down = world

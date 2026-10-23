@@ -1279,7 +1279,7 @@ mod tests {
         let content = Content::new();
         let abilities = Abilities::load(ABILITIES, app.world().resource::<EffectKinds>(), &content.names()).expect("the abilities load and build");
 
-        let combat = CombatRules::new(&content.factions).hostile(content.factions.expect("us"), content.factions.expect("them"));
+        let combat = CombatRules::new().hostile(content.factions.expect("us"), content.factions.expect("them"));
 
         let start = crate::testing::ground(&mut app);
         app.insert_resource(combat);

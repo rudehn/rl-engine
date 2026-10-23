@@ -117,7 +117,7 @@ pub fn two_sides(app: &mut App) -> Sides {
     let kind = kinds.expect("kinetic");
     let names = Registry::from_defs(vec![FactionDef::new("ours"), FactionDef::new("theirs")]).expect("two sides");
     let (ours, theirs) = (names.expect("ours"), names.expect("theirs"));
-    app.insert_resource(CombatRules::new(&names).hostile(ours, theirs))
+    app.insert_resource(CombatRules::new().hostile(ours, theirs))
         .insert_resource(Registries { damage_kinds: kinds, factions: names, ..Default::default() })
         .insert_resource(DamageStages(vec![Box::new(SubtractArmor)]))
         .insert_resource(crate::seed::Seed(TEST_SEED));

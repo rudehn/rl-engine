@@ -1,6 +1,8 @@
 //! Who is hostile to whom.
 
-use crate::content::{Named, Registry};
+use std::collections::BTreeMap;
+
+use crate::content::Named;
 use rl_core::Id;
 use serde::{Deserialize, Serialize};
 
@@ -38,29 +40,34 @@ pub enum Relation {
     Allied,
 }
 
-/// A dense relation matrix. Factions are allied with themselves and
-/// neutral to everyone else until told otherwise. Relations need not be
-/// symmetric: bandits may hunt merchants who merely fear them.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Who regards whom how: the relations a game named, and a rule for the
+/// rest.
+///
+/// A side is allied with itself and neutral to every other until told
+/// otherwise, so a side never named needs no entry, and the table needs no
+/// registry to be built: a side made from a raw id, as a game with no
+/// faction file makes them, is answered by the same rule. Relations need
+/// not be symmetric: bandits may hunt merchants who merely fear them.
+///
+/// Only what was named is kept, in a `BTreeMap` rather than a matrix sized
+/// to a registry, because the named pairs are few and a matrix both
+/// demanded the registry up front and panicked on a side it was not sized
+/// for; ordered so that a saved table reads the same every time.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Factions {
-    count: usize,
-    relations: Vec<Relation>,
+    named: BTreeMap<(FactionId, FactionId), Relation>,
 }
 
 impl Factions {
-    /// Relations for `registry`'s factions.
-    pub fn new(registry: &Registry<FactionDef>) -> Self {
-        let n = registry.len();
-        let mut relations = vec![Relation::Neutral; n * n];
-        for i in 0..n {
-            relations[i * n + i] = Relation::Allied;
-        }
-        Self { count: n, relations }
+    /// No relation named: every side allied with itself and neutral to
+    /// the rest.
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Sets how `a` regards `b`.
     pub fn set(&mut self, a: FactionId, b: FactionId, r: Relation) {
-        self.relations[a.index() * self.count + b.index()] = r;
+        self.named.insert((a, b), r);
     }
 
     /// Sets the relation both ways.
@@ -69,9 +76,14 @@ impl Factions {
         self.set(b, a, r);
     }
 
-    /// How `a` regards `b`.
+    /// How `a` regards `b`: as named, or else allied when they are the
+    /// same side and neutral when they are not.
     pub fn relation(&self, a: FactionId, b: FactionId) -> Relation {
-        self.relations[a.index() * self.count + b.index()]
+        match self.named.get(&(a, b)) {
+            Some(&named) => named,
+            None if a == b => Relation::Allied,
+            None => Relation::Neutral,
+        }
     }
 
     /// Whether `a` attacks `b` on sight.
@@ -103,12 +115,25 @@ pub fn stance(factions: Option<&Factions>, a: Option<FactionId>, b: Option<Facti
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content::Registry;
+
+    #[test]
+    fn a_side_never_named_is_allied_with_itself_and_neutral_to_others() {
+        let (a, b, far) = (FactionId::from_raw(0), FactionId::from_raw(1), FactionId::from_raw(4096));
+        let mut f = Factions::new();
+        assert_eq!(f.relation(far, far), Relation::Allied);
+        assert_eq!(f.relation(a, far), Relation::Neutral);
+        f.set(a, b, Relation::Hostile);
+        assert_eq!((f.relation(a, b), f.relation(b, a)), (Relation::Hostile, Relation::Neutral));
+        f.set(far, far, Relation::Hostile);
+        assert!(f.is_hostile(far, far), "a side named hostile to itself is, as one at war within");
+    }
 
     #[test]
     fn relations_default_and_can_be_asymmetric() {
         let r = Registry::from_defs(vec![FactionDef::new("navy"), FactionDef::new("pirates"), FactionDef::new("merchants")]).unwrap();
         let (navy, pirates, merchants) = (r.expect("navy"), r.expect("pirates"), r.expect("merchants"));
-        let mut f = Factions::new(&r);
+        let mut f = Factions::new();
         assert!(f.is_allied(navy, navy));
         assert_eq!(f.relation(navy, pirates), Relation::Neutral);
         f.set_mutual(navy, pirates, Relation::Hostile);
@@ -125,7 +150,7 @@ mod tests {
     fn stance_is_none_when_the_rules_or_either_side_is_missing() {
         let defs = Registry::from_defs(vec![FactionDef::new("a"), FactionDef::new("b")]).unwrap();
         let (a, b) = (defs.expect("a"), defs.expect("b"));
-        let f = Factions::new(&defs);
+        let f = Factions::new();
         assert_eq!(stance(None, Some(a), Some(b)), None);
         assert_eq!(stance(Some(&f), None, Some(b)), None);
         assert_eq!(stance(Some(&f), Some(a), None), None);
@@ -135,7 +160,7 @@ mod tests {
     fn stance_reads_the_table_from_the_first_side_to_the_second() {
         let defs = Registry::from_defs(vec![FactionDef::new("a"), FactionDef::new("b")]).unwrap();
         let (a, b) = (defs.expect("a"), defs.expect("b"));
-        let mut f = Factions::new(&defs);
+        let mut f = Factions::new();
         f.set(a, b, Relation::Hostile);
         f.set(b, a, Relation::Neutral);
         assert_eq!(stance(Some(&f), Some(a), Some(b)), Some(Relation::Hostile));

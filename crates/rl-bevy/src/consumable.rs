@@ -301,7 +301,7 @@ mod tests {
         app.add_engine_effects();
         let kinds = Registry::from_defs(vec![DamageKind::new("kinetic")]).expect("one kind");
         let sides = Registry::from_defs(vec![rl_rules::faction::FactionDef::new("ours")]).expect("one side");
-        app.insert_resource(crate::combat::CombatRules::new(&sides));
+        app.insert_resource(crate::combat::CombatRules::new());
         app.insert_resource(Registries { damage_kinds: kinds, factions: sides, ..Registries::default() });
         app.insert_resource(Seed(TEST_SEED));
         extra(&mut app);

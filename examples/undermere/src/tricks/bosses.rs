@@ -392,7 +392,7 @@ mod tests {
             let mut app = headless(seed);
             let me = adventurer(&mut app);
             sturdy(&mut app, me);
-            let peace = CombatRules::new(&app.world().resource::<Registries>().factions);
+            let peace = CombatRules::new();
             app.insert_resource(peace);
             let floor = map_of(FLOORS);
             arrive(&mut app, floor);

@@ -597,7 +597,7 @@ mod tests {
     fn small_side_hunted(rig: &mut Rig, hunted: bool) -> rl_rules::FactionId {
         let names = rl_rules::Registry::from_defs(["ours", "theirs", "small"].map(rl_rules::faction::FactionDef::new).to_vec()).expect("three sides");
         let small = names.expect("small");
-        let rules = CombatRules::new(&names).hostile(rig.ours, rig.theirs);
+        let rules = CombatRules::new().hostile(rig.ours, rig.theirs);
         rig.app.insert_resource(if hunted { rules.hostile(rig.theirs, small) } else { rules });
         small
     }

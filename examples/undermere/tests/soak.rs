@@ -195,7 +195,7 @@ fn census(seed: u64) -> Vec<Holding> {
     let mut app = undermere::testing::headless(RunSeed(seed));
     let me = undermere::testing::adventurer(&mut app);
     undermere::testing::sturdy(&mut app, me);
-    let peace = CombatRules::new(&app.world().resource::<Registries>().factions);
+    let peace = CombatRules::new();
     app.insert_resource(peace);
     (1..=FLOORS)
         .map(|floor| {

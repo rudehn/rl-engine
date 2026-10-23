@@ -664,7 +664,7 @@ mod tests {
         ])
         .unwrap();
         let (venom, hearty) = (defs.expect("venom"), defs.expect("hearty"));
-        app.insert_resource(CombatRules::new(&facs));
+        app.insert_resource(CombatRules::new());
         app.insert_resource(DamageStages(vec![Box::new(SubtractArmor)]));
         app.insert_resource(crate::seed::Seed(RunSeed(5)));
         app.insert_resource(Registries { damage_kinds: kinds, factions: facs, stats: stats.clone(), statuses: defs, ..Default::default() });
@@ -763,7 +763,7 @@ mod tests {
         let facs = Registry::from_defs(vec![FactionDef::new("us")]).unwrap();
         let defs = Registry::from_defs(vec![StatusDef::new("mending").mends(4).boon()]).unwrap();
         let mending = defs.expect("mending");
-        app.insert_resource(CombatRules::new(&facs));
+        app.insert_resource(CombatRules::new());
         app.insert_resource(crate::seed::Seed(RunSeed(5)));
         app.insert_resource(Registries { factions: facs, statuses: defs, ..Default::default() });
         let player =

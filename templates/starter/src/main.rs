@@ -234,7 +234,7 @@ fn start(mut commands: Commands, seed: Res<Seed>, mut log: Log) {
     let sides =
         Registry::from_defs(vec![FactionDef::new("you"), FactionDef::new("goblins")]).unwrap();
     let (you, goblins) = (sides.expect("you"), sides.expect("goblins"));
-    commands.insert_resource(CombatRules::new(&sides).hostile(you, goblins));
+    commands.insert_resource(CombatRules::new().hostile(you, goblins));
     commands.insert_resource(Registries {
         damage_kinds: kinds.clone(),
         factions: sides,

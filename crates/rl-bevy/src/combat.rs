@@ -35,9 +35,8 @@ use bevy::prelude::*;
 use rl_core::{DiceRoll, Point, geometry};
 use rl_rules::ability::Look;
 use rl_rules::damage::{DamageKindId, Defender, SubtractArmor};
-use rl_rules::faction::FactionDef;
 use rl_rules::parts::{Melee, Ranged};
-use rl_rules::{DamageStage, FactionId, Factions, Hit, Registry, Relation, Resistances, StatId, StatusId};
+use rl_rules::{DamageStage, FactionId, Factions, Hit, Relation, Resistances, StatId, StatusId};
 
 use crate::components::{Actor, Blocks, MyTurn, Player, Position};
 use crate::cue::{AddAirborne, Airborne, Anchor, Cue, Cued, LookOf, TurnHold};
@@ -266,8 +265,9 @@ pub struct Strikes(pub Vec<(DamageKindId, DiceRoll)>);
 /// Who is hostile to whom, and which stats a blow reads.
 ///
 /// A rule rather than content: the sides themselves are a registry in
-/// [`Registries`], and this is the matrix
-/// over them. Built by naming the pairs:
+/// [`Registries`], and this is how they regard each other. Built by naming
+/// the pairs; a pair never named is worked out, a side allied with itself
+/// and neutral to the rest, so the rules need no registry to be made:
 ///
 /// ```
 /// use rl_bevy::CombatRules;
@@ -275,7 +275,7 @@ pub struct Strikes(pub Vec<(DamageKindId, DiceRoll)>);
 ///
 /// let sides = Registry::from_defs(["player", "beasts", "navy", "pirates"].map(FactionDef::new).to_vec()).unwrap();
 /// let side = |name| sides.expect(name);
-/// let rules = CombatRules::new(&sides)
+/// let rules = CombatRules::new()
 ///     .hostile(side("player"), side("beasts"))
 ///     .hunts(side("navy"), side("pirates"));
 /// assert!(rules.factions.is_hostile(side("beasts"), side("player")));
@@ -317,12 +317,18 @@ pub struct CombatRules {
     pub death_ends_run: bool,
 }
 
+impl Default for CombatRules {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CombatRules {
-    /// Every side in `sides` allied with itself and neutral to every other,
-    /// until a pair is named, no stat read by a blow, no blow harder for
-    /// surprise, and the player's death the end of the run.
-    pub fn new(sides: &Registry<FactionDef>) -> Self {
-        Self { factions: Factions::new(sides), armor: None, attack: None, accuracy: None, evasion: None, mending: None, unaware: None, death_ends_run: true }
+    /// Every side allied with itself and neutral to every other, until a
+    /// pair is named, no stat read by a blow, no blow harder for surprise,
+    /// and the player's death the end of the run.
+    pub fn new() -> Self {
+        Self { factions: Factions::new(), armor: None, attack: None, accuracy: None, evasion: None, mending: None, unaware: None, death_ends_run: true }
     }
 
     /// The player's death does not end the run; the game says when it ends.
@@ -1474,7 +1480,7 @@ impl Plugin for CombatPlugin {
             .init_resource::<crate::accuracy::HitRules>()
             .add_airborne::<ShotLanding>()
             .add_action::<Attack>()
-            .needs::<CombatRules>("CombatPlugin", "`CombatRules::new(&sides)`, who is hostile to whom")
+            .needs::<CombatRules>("CombatPlugin", "`CombatRules::new()`, who is hostile to whom")
             .needs::<crate::registries::Registries>("CombatPlugin", "`Registries`, with the damage kinds a blow can deal")
             .add_stream::<CombatRng>("CombatPlugin")
             .add_systems(Turn, perceive_reach.in_set(crate::plugin::PerceiveSet::Annotate))
@@ -1503,6 +1509,8 @@ mod tests {
     use crate::plugin::headless_app;
     use crate::state::EngineState;
     use rl_grid::TileId;
+    use rl_rules::Registry;
+    use rl_rules::faction::FactionDef;
 
     fn arena() -> (App, Point, DamageKindId) {
         let mut app = headless_app();
@@ -2491,7 +2499,7 @@ mod tests {
         crate::effects::AddEngineEffects::add_engine_effects(&mut app);
         plugins(&mut app);
         let sides = Registry::from_defs(["ours", "theirs", "bystanders"].map(FactionDef::new).to_vec()).unwrap();
-        app.insert_resource(CombatRules::new(&sides).hostile(OURS, THEIRS)).insert_resource(crate::seed::Seed(rl_core::RunSeed(seed)));
+        app.insert_resource(CombatRules::new().hostile(OURS, THEIRS)).insert_resource(crate::seed::Seed(rl_core::RunSeed(seed)));
         app.world_mut().resource_mut::<Registries>().factions = sides;
         app.init_resource::<Seen>().add_systems(PostUpdate, see);
         let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(OURS), arm(kind))).id();

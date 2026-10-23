@@ -133,7 +133,7 @@ fn start(mut commands: Commands, seed: Res<Seed>, effect_kinds: Res<EffectKinds>
     let kinds = Registry::from_defs(vec![DamageKind::new("bite"), DamageKind::new("kick"), DamageKind::new("din")]).unwrap();
     let sides = Registry::from_defs(vec![FactionDef::new("you"), FactionDef::new("vermin")]).unwrap();
     let (you, vermin) = (sides.expect("you"), sides.expect("vermin"));
-    commands.insert_resource(CombatRules::new(&sides).hostile(you, vermin));
+    commands.insert_resource(CombatRules::new().hostile(you, vermin));
     let tags = Registry::from_defs(vec![TagDef::new("bread")]).unwrap();
     let bread = tags.expect("bread");
     let registries = Registries { damage_kinds: kinds.clone(), factions: sides, tags, ..default() };

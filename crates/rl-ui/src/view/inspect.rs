@@ -99,7 +99,7 @@ impl Plugin for InspectViewPlugin {
         // than panicking when added before `UiPlugin`.
         app.add_modal(INSPECT_MODAL);
         app.needs::<Registries>("InspectViewPlugin", "`Registries`, with the damage kinds the forecast resolves through")
-            .needs::<CombatRules>("InspectViewPlugin", "`CombatRules::new(&sides)`, for how the subject stands to the player")
+            .needs::<CombatRules>("InspectViewPlugin", "`CombatRules::new()`, for how the subject stands to the player")
             .add_systems(Update, move_cursor.in_set(EngineSet::Input))
             .add_systems(Update, collect_inspect.in_set(crate::ViewSet::Collect));
     }
@@ -608,8 +608,7 @@ mod tests {
     #[test]
     fn a_neutral_subject_is_forecast_as_a_fight_where_the_place_is_not_peaceful() {
         let mut stage = Stage::new_with(InspectViewPlugin, |app| {
-            let sides = app.world().resource::<Registries>().factions.clone();
-            app.insert_resource(CombatRules::new(&sides));
+            app.insert_resource(CombatRules::new());
         });
         stage.actor("a rat", 'r', 1, 0);
         stage.tick();

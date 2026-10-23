@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `CombatRules::new()` and `Factions::new()` take no registry: a relation a game never names is worked out, a side allied with itself and neutral to the rest, so a side made from a raw id, with no faction file at all, is answered rather than a panic. `Factions` keeps only the named pairs, and both have a `Default`. It serializes as its named pairs where it was a matrix.
+  To change: drop the argument, `CombatRules::new(&sides)` becomes `CombatRules::new()`; a registry built only to pass it may go.
+
 - A system writes to the log through the `Log` param, which stamps each line with the current turn: `log.notice(text)`, `log.info`, `log.muted` and `log.push(text, tone)`. A line written as a run begins reads turn 0, since the turns are reset before `NewRun`.
   To change: `ResMut<MessageLog>` becomes `Log`, and the turn argument goes, with the `Res<Turns>` read only to pass it; an exclusive system or a test calls `MessageLog::push_at(text, tone, turn)`, which replaces `MessageLog::push`, `info`, `muted` and `notice`.
 
