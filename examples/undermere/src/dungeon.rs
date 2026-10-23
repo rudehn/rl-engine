@@ -281,7 +281,7 @@ impl Undermere {
         }
         for entry in self.pool.entries.iter().filter(|e| e.weight > 0) {
             match &entry.placed {
-                atglyph::rules::pool::Placed::Dressed { dressing } => dressings.insert(dressing.clone()),
+                atglyph::rules::pool::Laid::Dressed { dressing } => dressings.insert(dressing.clone()),
                 _ => pieces.insert(entry.piece().expect("a piece for any but a dressing").to_string()),
             };
         }
@@ -1425,8 +1425,8 @@ mod tests {
     use atglyph::mapgen::accrete::Landmark;
     use atglyph::mapgen::prefab::Stamped;
     use atglyph::primitives::Rect;
-    use atglyph::rules::pool::Placed;
-    use atglyph::rules::prefab::{Pick, Slot};
+    use atglyph::rules::pool::Laid;
+    use atglyph::rules::prefab::{Slot, SlotPick};
 
     use super::*;
     use crate::testing::{par_seeds, seeds, slot_of as slot};
@@ -1559,13 +1559,13 @@ mod tests {
     ) {
         let tags = [place_tag(drawn)];
         let seeded: Vec<&atglyph::rules::pool::Entry> =
-            undermere.pool.entries.iter().filter(|e| e.weight > 0 && matches!(e.placed, Placed::Seeded { .. }) && e.fits(floor as i32, &tags)).collect();
+            undermere.pool.entries.iter().filter(|e| e.weight > 0 && matches!(e.placed, Laid::Seeded { .. }) && e.fits(floor as i32, &tags)).collect();
         let Some(landmark) = landmark else {
             assert!(seeded.is_empty(), "{at}: a floor of {} lays none of its landmarks", drawn.name);
             return;
         };
         let entry = seeded.iter().find(|e| e.piece() == Some(landmark.name.as_str()));
-        let Some(Placed::Seeded { stairs, .. }) = entry.map(|e| &e.placed) else { panic!("{at}: {} is no landmark of {}", landmark.name, drawn.name) };
+        let Some(Laid::Seeded { stairs, .. }) = entry.map(|e| &e.placed) else { panic!("{at}: {} is no landmark of {}", landmark.name, drawn.name) };
         let exit = built.exit.unwrap_or_else(|| panic!("{at}: no way down"));
         match stairs {
             Stairs::Free => {}
@@ -1696,7 +1696,7 @@ mod tests {
         let (mut monsters, mut props): (Vec<&str>, Vec<&str>) = (Vec::new(), Vec::new());
         for spot in built.spots.iter().filter(|s| s.prefab == Some(key)) {
             match slot(undermere, spot) {
-                Some(Slot::Monster { pick: Pick::Kind(id), .. }) => monsters.push(&library.bestiary.defs.get(*id).name),
+                Some(Slot::Monster { pick: SlotPick::Kind(id), .. }) => monsters.push(&library.bestiary.defs.get(*id).name),
                 Some(Slot::Prop(id)) => props.push(&library.registries.props.get(*id).name),
                 _ => {}
             }
@@ -2044,11 +2044,11 @@ mod tests {
     #[test]
     fn a_landmark_on_the_throne_floor_asking_its_stairs_placed_is_refused_by_name() {
         let mut undermere = Undermere::new(RunSeed(0));
-        let grown = undermere.pool.entries.iter().find(|e| matches!(e.placed, Placed::Grown { .. })).expect("a grown piece").clone();
+        let grown = undermere.pool.entries.iter().find(|e| matches!(e.placed, Laid::Grown { .. })).expect("a grown piece").clone();
         let piece = grown.piece().expect("it lays a piece").to_string();
         let seeded = atglyph::rules::pool::Entry {
             name: "a seeded hall".into(),
-            placed: Placed::Seeded { piece: piece.clone(), placements: vec![Placement::Center], stairs: Stairs::Beyond },
+            placed: Laid::Seeded { piece: piece.clone(), placements: vec![Placement::Center], stairs: Stairs::Beyond },
             ..grown
         };
         undermere.pool.entries.push(seeded);
@@ -2194,7 +2194,7 @@ mod tests {
             // stairs on its own mark, which the pool's load holds to a bare
             // slot nothing fills; every other slot keeps clear of them.
             let within = picks.iter().find_map(|p| match undermere.pool.entries[p.entry].placed {
-                Placed::Seeded { stairs: Stairs::Within(c), .. } => Some(c),
+                Laid::Seeded { stairs: Stairs::Within(c), .. } => Some(c),
                 _ => None,
             });
             let grown = undermere.grow(floor, &drawn, &picks, RunSeed(s), ATTEMPTS);
@@ -2237,7 +2237,7 @@ mod tests {
     /// is grown round it, so a recipe of that biome is grown round it too.
     fn with_its_landmark(undermere: &Undermere, floor: u32, drawn: &BiomeDraw) -> Vec<atglyph::rules::pool::Pick> {
         let mut picks = undermere.picks_for(floor, drawn);
-        let seeded = |e: usize| matches!(undermere.pool.entries[e].placed, Placed::Seeded { .. });
+        let seeded = |e: usize| matches!(undermere.pool.entries[e].placed, Laid::Seeded { .. });
         if !picks.iter().any(|p| seeded(p.entry)) {
             let tags = [place_tag(drawn)];
             let own = (0..undermere.pool.entries.len())

@@ -28,7 +28,7 @@
 
 use atglyph::ecs::{Thinking, WorkBegan, WorkDone, WorkKinds};
 use atglyph::prelude::*;
-use atglyph::rules::ability::Look;
+use atglyph::rules::ability::ParticleLook;
 use atglyph::rules::ai::{Decision, Tactic, TacticCtx};
 use atglyph::rules::work::{Work, WorkKindId};
 use bevy::prelude::*;
@@ -50,7 +50,7 @@ pub const ALARM_LOUDNESS: i32 = 80;
 /// What a shout looks like: a burst of red on the probe's own cell. A
 /// burst is drawn in its look's colour alone, so the glyph is never shown
 /// and says only what the pulse is.
-pub const PULSE: Look = Look { glyph: '!', color: atglyph::grid::Rgb::new(255, 51, 38) };
+pub const PULSE: ParticleLook = ParticleLook { glyph: '!', color: atglyph::grid::Rgb::new(255, 51, 38) };
 
 // ANCHOR: noise_rules
 /// How loud the engine's own actions are on a deck. A blow or a shot

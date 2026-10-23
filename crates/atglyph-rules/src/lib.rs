@@ -43,7 +43,7 @@
 //! - [`ability`]: what an actor can spend a turn on besides a step and a
 //!   swing, as data: a shape, costs, requirements and a list of effects
 //!   the layer above resolves. [`EffectSpec`] is one effect as any content
-//!   file writes it, and [`TriggerSpec`] with its [`Area`] one trigger, the
+//!   file writes it, and [`TriggerSpec`] with its [`EffectArea`] one trigger, the
 //!   moment a prop or a thing answers and where its effects land.
 //!   [`Targeting`] is how a use is pointed, an ability's or a thing's own
 //!   aimed use, so both are refused by the one rule, and [`Asks`] what a
@@ -162,8 +162,10 @@ pub mod trade;
 pub mod travel;
 pub mod work;
 
-pub use ability::{AbilityDef, AbilityId, Aim, Area, Asks, Blocked, Cost, EffectSpec, Gates, Purse, Requirement, Targeting, TriggerSpec, blocked, read_args};
-pub use accuracy::{Certain, Delivery, HitModel, Line, Odds, Percent, PercentLabels, Shot};
+pub use ability::{
+    AbilityDef, AbilityId, Aim, Asks, Blocked, Cost, EffectArea, EffectSpec, Gates, Purse, Requirement, Targeting, TriggerSpec, blocked, read_args,
+};
+pub use accuracy::{Certain, Delivery, HitModel, Odds, OddsLine, Percent, PercentLabels, Shot};
 pub use ai::{
     ActorView, Awareness, Brain, Carried, Choice, Decision, Fields, HearingStats, ItemView, Missile, MovementProfile, NoFields, NoticeStats, Repertoire, Sense,
     Snapshot, Standard, StandardBrain, StealthStats, Tactic, TacticCtx, Vitals, Wits, notices,
@@ -183,10 +185,10 @@ pub use loot::{DropRow, DropTable, Layout, LevelRow, LevelTable, LootRow, LootTa
 pub use namegen::{NameBook, NameSet};
 pub use names::{NameRef, Names};
 pub use parts::{AttackShape, KeepAway, WhenEmpty};
-pub use prefab::{Coverage, CoverageRow, Legend, Legended, Pick, PrefabDef, PrefabLibrary, Reach, Slot};
+pub use prefab::{BandFallback, Coverage, CoverageRow, Legend, Legended, PrefabDef, PrefabLibrary, Slot, SlotPick};
 pub use prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, Stock};
 pub use role::RoleDef;
-pub use stats::{Modifier, Op, Source, StatDef, StatId, Stats};
+pub use stats::{Modifier, ModifierSource, Op, StatDef, StatId, Stats};
 pub use status::{ActiveStatus, Mended, SLEEPER_REACH, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport, UNTIL_CURED};
 pub use tag::{TagDef, TagId};
 pub use work::{BreakReason, Work, WorkKind, WorkKindId};
@@ -194,7 +196,7 @@ pub use work::{BreakReason, Work, WorkKind, WorkKindId};
 /// The names most callers want in scope.
 pub mod prelude {
     pub use crate::ability::{
-        AbilityDef, AbilityId, Aim, Area, Asks, Blocked, Cost, EffectSpec, Gates, Purse, Requirement, Targeting, TriggerSpec, blocked, read_args,
+        AbilityDef, AbilityId, Aim, Asks, Blocked, Cost, EffectArea, EffectSpec, Gates, Purse, Requirement, Targeting, TriggerSpec, blocked, read_args,
     };
     pub use crate::ai::tactics;
     pub use crate::ai::{
@@ -218,7 +220,7 @@ pub mod prelude {
 
     pub use crate::names::{NameRef, Names};
     pub use crate::prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, Stock};
-    pub use crate::stats::{Modifier, Op, Source, StatDef, StatId, Stats};
+    pub use crate::stats::{Modifier, ModifierSource, Op, StatDef, StatId, Stats};
     pub use crate::status::{ActiveStatus, Mended, SLEEPER_REACH, Stacking, StatusDef, StatusId, Statuses, Tick, TickReport, UNTIL_CURED};
     pub use crate::tag::{TagDef, TagId};
 }

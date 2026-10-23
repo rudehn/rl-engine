@@ -6,9 +6,6 @@
 //! hit odds and the forecast) cannot drift apart.
 
 /// How an attack is delivered: with the blow or with the shot.
-///
-/// Not the root-level `Reach`, which is a prefab's coverage; this one is
-/// reached as `arms::Reach`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Reach {
     /// Struck with the melee weapon, at a target beside the attacker.

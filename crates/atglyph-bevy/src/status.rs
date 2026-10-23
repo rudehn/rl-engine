@@ -32,7 +32,7 @@
 use atglyph_core::Direction;
 use atglyph_core::turn::BASE_ACTION_COST;
 use atglyph_rules::faction::stance;
-use atglyph_rules::stats::{Modifier, Op, Source};
+use atglyph_rules::stats::{Modifier, ModifierSource, Op};
 use atglyph_rules::{Hit, Relation, Resistances, StatId, Stats, StatusId, Statuses};
 use bevy::prelude::*;
 
@@ -483,7 +483,7 @@ pub(crate) fn keep_status_resists(mut commands: Commands, registries: Option<Res
 pub(crate) struct WhileHolding(pub Vec<(StatusId, Vec<(StatId, Op)>)>);
 
 /// Puts each [`WhileHolding`] change on its actor's stats while it holds
-/// the status, under [`Source::Holding`], and takes them off the pass it
+/// the status, under [`ModifierSource::Holding`], and takes them off the pass it
 /// no longer does.
 ///
 /// Read off the stats as they stand rather than a marker beside them, so
@@ -492,7 +492,7 @@ pub(crate) struct WhileHolding(pub Vec<(StatusId, Vec<(StatId, Op)>)>);
 pub(crate) fn keep_while_holding(mut bodies: Query<(&WhileHolding, &Afflicted, &mut StatBlock), With<Actor>>) {
     for (rule, held, mut stats) in &mut bodies {
         for (status, changes) in &rule.0 {
-            let source = Source::Holding(*status);
+            let source = ModifierSource::Holding(*status);
             let on = stats.0.modifiers().iter().any(|m| m.source == source);
             match (held.has(*status), on) {
                 (true, false) => {

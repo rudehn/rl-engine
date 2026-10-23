@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use crate::damage::{DamageKindId, Resistances};
 use crate::faction::{FactionDef, FactionId};
 use crate::names::Names;
-use crate::stats::{Op, Source, StatId, Stats};
+use crate::stats::{ModifierSource, Op, StatId, Stats};
 
 /// What happens when a status is applied to an actor that has it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -462,8 +462,8 @@ pub struct Statuses {
 
 /// The source under which a status's modifiers sit in [`Stats`]: unique
 /// per status id and instance, so removal is exact.
-fn source_tag(id: StatusId, instance: usize) -> Source {
-    Source::Status { status: id, instance: instance.min(u16::MAX as usize) as u16 }
+fn source_tag(id: StatusId, instance: usize) -> ModifierSource {
+    ModifierSource::Status { status: id, instance: instance.min(u16::MAX as usize) as u16 }
 }
 
 impl Statuses {

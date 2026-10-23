@@ -31,7 +31,7 @@
 //! aside and a use lands the moment it is cast, as it always did.
 
 use atglyph_core::Point;
-use atglyph_rules::ability::{AbilityId, Look};
+use atglyph_rules::ability::{AbilityId, ParticleLook};
 use bevy::prelude::*;
 
 /// Where a cue plays: a cell, or an entity's cell as it stands each frame.
@@ -64,7 +64,7 @@ pub enum LookOf {
     /// The item's glyph.
     Item(Entity),
     /// This.
-    Given(Look),
+    Given(ParticleLook),
     /// Whatever the drawer uses when nothing says.
     Plain,
 }

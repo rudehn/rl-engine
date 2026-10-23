@@ -13,7 +13,7 @@ use crate::parts::WhenEmpty;
 /// The caller applies it: the rule never touches the stack or the entity, so
 /// a game's own container can use the same answer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Spent {
+pub enum ChargeOutcome {
     /// It holds this many charges still.
     Left(u16),
     /// That was the unit's last charge and the stack has another: one comes
@@ -31,15 +31,15 @@ pub enum Spent {
 /// `stack` is the units held, if the thing stacks. A spend at nought is the
 /// last charge again rather than an underflow: a thing that spends without
 /// being asked whether it can is still resolved the same way.
-pub fn spend(left: u16, stack: Option<u32>, when: WhenEmpty) -> Spent {
+pub fn spend(left: u16, stack: Option<u32>, when: WhenEmpty) -> ChargeOutcome {
     let left = left.saturating_sub(1);
     if left > 0 {
-        return Spent::Left(left);
+        return ChargeOutcome::Left(left);
     }
     match stack {
-        Some(count) if count > 1 => Spent::NextUnit,
-        _ if when == WhenEmpty::Destroyed => Spent::Destroyed,
-        _ => Spent::Empty,
+        Some(count) if count > 1 => ChargeOutcome::NextUnit,
+        _ if when == WhenEmpty::Destroyed => ChargeOutcome::Destroyed,
+        _ => ChargeOutcome::Empty,
     }
 }
 
@@ -75,26 +75,26 @@ mod tests {
 
     #[test]
     fn a_use_takes_one_charge_from_a_thing_that_holds_several() {
-        assert_eq!(spend(3, None, WhenEmpty::Kept), Spent::Left(2));
+        assert_eq!(spend(3, None, WhenEmpty::Kept), ChargeOutcome::Left(2));
     }
 
     #[test]
     fn the_last_charge_of_a_stack_takes_one_off_the_stack_and_the_next_unit_starts_full() {
-        assert_eq!(spend(1, Some(3), WhenEmpty::Destroyed), Spent::NextUnit);
-        assert_eq!(spend(1, Some(2), WhenEmpty::Kept), Spent::NextUnit);
+        assert_eq!(spend(1, Some(3), WhenEmpty::Destroyed), ChargeOutcome::NextUnit);
+        assert_eq!(spend(1, Some(2), WhenEmpty::Kept), ChargeOutcome::NextUnit);
     }
 
     #[test]
     fn the_last_of_a_unit_alone_is_gone_when_destroyed_and_stays_at_nothing_when_kept() {
-        assert_eq!(spend(1, None, WhenEmpty::Destroyed), Spent::Destroyed);
-        assert_eq!(spend(1, Some(1), WhenEmpty::Destroyed), Spent::Destroyed);
-        assert_eq!(spend(1, None, WhenEmpty::Kept), Spent::Empty);
+        assert_eq!(spend(1, None, WhenEmpty::Destroyed), ChargeOutcome::Destroyed);
+        assert_eq!(spend(1, Some(1), WhenEmpty::Destroyed), ChargeOutcome::Destroyed);
+        assert_eq!(spend(1, None, WhenEmpty::Kept), ChargeOutcome::Empty);
     }
 
     #[test]
     fn a_spend_at_nothing_is_the_last_charge_again_and_does_not_underflow() {
-        assert_eq!(spend(0, None, WhenEmpty::Kept), Spent::Empty);
-        assert_eq!(spend(0, None, WhenEmpty::Destroyed), Spent::Destroyed);
+        assert_eq!(spend(0, None, WhenEmpty::Kept), ChargeOutcome::Empty);
+        assert_eq!(spend(0, None, WhenEmpty::Destroyed), ChargeOutcome::Destroyed);
     }
 
     #[test]

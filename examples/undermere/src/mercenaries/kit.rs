@@ -232,7 +232,7 @@ mod tests {
     use atglyph::primitives::RunSeed;
     use atglyph::rand::SeedableRng;
     use atglyph::rand::rngs::StdRng;
-    use atglyph::rules::prefab::{Pick, Slot};
+    use atglyph::rules::prefab::{Slot, SlotPick};
     use bevy::ecs::world::CommandQueue;
 
     use super::*;
@@ -440,7 +440,7 @@ mod tests {
         assert!(prefabs.roles().iter().all(|(_, role)| !role.members.contains(&merc)), "a member of a role");
         for (_, piece) in prefabs.defs().iter() {
             for (glyph, slot) in piece.slots() {
-                assert!(!matches!(slot, Slot::Monster { pick: Pick::Kind(kind), .. } if *kind == merc), "{} stands one at {glyph:?}", piece.name);
+                assert!(!matches!(slot, Slot::Monster { pick: SlotPick::Kind(kind), .. } if *kind == merc), "{} stands one at {glyph:?}", piece.name);
             }
         }
     }

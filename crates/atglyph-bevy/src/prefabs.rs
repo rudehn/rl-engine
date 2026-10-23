@@ -37,7 +37,7 @@ use atglyph_core::seed::position_hash;
 use atglyph_core::{Id, Point};
 use atglyph_rules::content::{BandedTable, Registry};
 use atglyph_rules::dressing::DressingDef;
-use atglyph_rules::prefab::{Legended, Pick, PrefabDef, PrefabLibrary, Slot};
+use atglyph_rules::prefab::{Legended, PrefabDef, PrefabLibrary, Slot, SlotPick};
 use atglyph_rules::prop::Stock;
 use atglyph_rules::role::{self, RoleDef};
 use bevy::prelude::*;
@@ -205,8 +205,8 @@ where
                     Drawn::Items(draw_stock(&**items, &roll.what, count, band, &mut rng), band)
                 }
                 Slot::Monster { pick, band } => match pick {
-                    Pick::Kind(id) => Drawn::Monster(*id),
-                    Pick::Role(role) => {
+                    SlotPick::Kind(id) => Drawn::Monster(*id),
+                    SlotPick::Role(role) => {
                         let band = actors.band(ev.map) + band;
                         role::draw(actors.table(), prefabs.roles().get(*role), band, &mut rng).map_or(Drawn::Nothing, Drawn::Monster)
                     }
@@ -257,7 +257,7 @@ fn check_prefabs<A: ActorMaker, I: ItemMaker>(prefabs: Res<Prefabs<A::Def>>, act
                     }
                     _ => {}
                 },
-                Slot::Monster { pick: Pick::Role(id), .. } => {
+                Slot::Monster { pick: SlotPick::Role(id), .. } => {
                     let role = prefabs.roles().get(*id);
                     if role::band_for(actors.table(), role, 0).is_none() {
                         let role = &role.name;

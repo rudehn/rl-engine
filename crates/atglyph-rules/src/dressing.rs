@@ -282,7 +282,7 @@ pub fn check_districts<M>(lists: &[DistrictDressings], dressings: &Registry<Dres
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::prefab::{Pick, Reach, Slot, Sources};
+    use crate::prefab::{BandFallback, Slot, SlotPick, Sources};
     use crate::prop::{PropDef, Stock};
     use crate::role::RoleDef;
     use crate::tag::TagDef;
@@ -349,7 +349,7 @@ mod tests {
         let barracks = all.get(all.expect("barracks"));
         assert!(matches!(barracks.legend().slot('c'), Some(Slot::Prop(_))));
         assert!(matches!(barracks.legend().slot('w'), Some(Slot::Item(r)) if matches!(r.what, Stock::Tag(_)) && r.band == 1));
-        assert!(matches!(barracks.legend().slot('b'), Some(Slot::Monster { pick: Pick::Role(_), band: 0 })));
+        assert!(matches!(barracks.legend().slot('b'), Some(Slot::Monster { pick: SlotPick::Role(_), band: 0 })));
         assert!(matches!(barracks.legend().slot('m'), Some(Slot::Mark)));
         assert_eq!(barracks.legend().tile('p'), w.tiles.id("wall"));
         let order: Vec<(char, Spread)> = barracks.things.iter().map(|t| (t.glyph, t.at)).collect();
@@ -467,7 +467,7 @@ mod tests {
         let glyphs: Vec<(&str, char)> = report.rows.iter().map(|r| (r.prefab.as_str(), r.glyph)).collect();
         assert_eq!(glyphs, vec![("barracks", 'b'), ("barracks", 'w')], "the role and the tag; the prop, the mark and the tile draw nothing");
         assert_eq!(report.empties(), Vec::new());
-        assert!(matches!(report.rows[0].reach[0], (1, Reach::Fallback(3))));
+        assert!(matches!(report.rows[0].reach[0], (1, BandFallback::Fallback(3))));
 
         let pool = pool("barracks");
         let report = crate::pool::dressing_coverage(&pool, &all, &sources);

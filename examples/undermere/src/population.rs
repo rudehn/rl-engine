@@ -1107,7 +1107,7 @@ mod tests {
                 let Slot::Monster { pick, .. } = slot else { continue };
                 let cells = rows.iter().map(|row| row.chars().filter(|c| *c == glyph).count()).sum::<usize>();
                 match pick {
-                    atglyph::rules::prefab::Pick::Kind(id) if bestiary.defs.get(*id).name == boss.name => bosses += cells,
+                    atglyph::rules::prefab::SlotPick::Kind(id) if bestiary.defs.get(*id).name == boss.name => bosses += cells,
                     _ => followers += cells,
                 }
             }

@@ -149,18 +149,18 @@ pub(crate) fn spend_charges(
         }
         let Ok((mut c, stack)) = things.get_mut(f.on) else { continue };
         match atglyph_rules::charges::spend(c.left, stack.as_ref().map(|s| s.count), c.when_empty) {
-            atglyph_rules::charges::Spent::Left(left) => c.left = left,
-            atglyph_rules::charges::Spent::NextUnit => {
+            atglyph_rules::charges::ChargeOutcome::Left(left) => c.left = left,
+            atglyph_rules::charges::ChargeOutcome::NextUnit => {
                 c.left = c.max;
                 if let Some(mut s) = stack {
                     s.count -= 1;
                 }
             }
-            atglyph_rules::charges::Spent::Destroyed => {
+            atglyph_rules::charges::ChargeOutcome::Destroyed => {
                 c.left = 0;
                 commands.entity(f.on).insert(Spent);
             }
-            atglyph_rules::charges::Spent::Empty => c.left = 0,
+            atglyph_rules::charges::ChargeOutcome::Empty => c.left = 0,
         }
     }
 }

@@ -12,7 +12,7 @@
 //!
 //! The Bevy layer turns each into the component it describes: a
 //! [`Melee`] into a `MeleeAttack`, a [`Ranged`] into a `RangedAttack`, a
-//! [`Throw`] into a `Throwable`, a [`Wear`] into a `Wearable`, a
+//! [`ThrowDef`] into a `Throwable`, a [`Wear`] into a `Wearable`, a
 //! [`Charges`] into a `Consumable`, and a [`Level`] into what each level of
 //! a thing adds to all of those. The rest of what an item's line writes
 //! for the engine is a plain list, its armor, its tags, its effects and
@@ -36,7 +36,7 @@
 use atglyph_core::{DiceRoll, Id};
 use serde::{Deserialize, Serialize};
 
-use crate::ability::Look;
+use crate::ability::ParticleLook;
 use crate::content::Registry;
 use crate::damage::{DamageKind, Resistances};
 use crate::equip::{EquipShape, SlotDef, pair_of};
@@ -85,7 +85,7 @@ pub struct Melee {
     /// The colour it bursts in on whoever it strikes; absent, it shows
     /// nothing, and the log and the health bar say it.
     #[serde(default)]
-    pub look: Option<Look>,
+    pub look: Option<ParticleLook>,
     /// Who else it strikes; absent, the target alone.
     #[serde(default)]
     pub shape: Option<AttackShape>,
@@ -114,7 +114,7 @@ pub struct Ranged {
     /// What flies from the shooter to the target; absent, a shot lands at
     /// once and unseen.
     #[serde(default)]
-    pub look: Option<Look>,
+    pub look: Option<ParticleLook>,
 }
 
 /// A throw, as content writes it: `(range: 6)`, with an optional
@@ -124,7 +124,7 @@ pub struct Ranged {
 /// `land` trigger, not for the bruise.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Throw {
+pub struct ThrowDef {
     /// The furthest cell it reaches.
     pub range: i32,
     /// The furthest cell with no range penalty; absent, a third of `range`.
@@ -375,7 +375,7 @@ mod tests {
         let names = Names::new().damage_kinds(&kinds);
         let shot: Ranged = one(&names, r#"(range: 10, effective: 7, roll: "2d4", kind: "pierce")"#).unwrap();
         assert_eq!((shot.range, shot.effective), (10, Some(7)));
-        let throw: Throw = one(&names, r#"(range: 6, strike: ("1d3", "pierce"))"#).unwrap();
+        let throw: ThrowDef = one(&names, r#"(range: 6, strike: ("1d3", "pierce"))"#).unwrap();
         assert_eq!(throw.strike.map(|(roll, kind)| (roll, kind.id())), Some((DiceRoll::new(1, 3), kinds.expect("pierce"))));
         assert!(one::<Ranged>(&names, r#"(range: 10, roll: "2d4", kind: "pierce", heat: 3)"#).is_err(), "an unknown field");
     }

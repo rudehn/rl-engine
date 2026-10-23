@@ -118,7 +118,7 @@ pub use survey::{AreaFacts, Require, Survey, Surveyed};
 pub mod prelude {
     // The pass and the trait only. What a game builds one from, `Rectangle`
     // above all, is named where it is built: Bevy's prelude has a
-    // `Rectangle` of its own, and `atglyph-rules` an `Area`.
+    // `Rectangle` of its own.
     pub use crate::accrete::{Accrete, Shape};
     pub use crate::chain::{BuildError, Chain, Pass, Phase};
     pub use crate::context::{BaseContext, Outputs};

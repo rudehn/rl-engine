@@ -170,7 +170,7 @@ pub enum Joined {
 
 /// How an entry is laid.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Placed {
+pub enum Laid {
     /// A prefab grown as an area of its own, through the entries it draws.
     Grown {
         /// The prefab's name.
@@ -226,7 +226,7 @@ pub struct Entry {
     /// Entries sharing a group never share a floor.
     pub group: Option<String>,
     /// How it is laid.
-    pub placed: Placed,
+    pub placed: Laid,
     /// The area it prefers.
     pub prefer: Prefer,
 }
@@ -243,8 +243,8 @@ impl Entry {
     /// inside.
     pub fn piece(&self) -> Option<&str> {
         match &self.placed {
-            Placed::Grown { piece, .. } | Placed::Inside { piece, .. } | Placed::Seeded { piece, .. } => Some(piece),
-            Placed::Dressed { .. } => None,
+            Laid::Grown { piece, .. } | Laid::Inside { piece, .. } | Laid::Seeded { piece, .. } => Some(piece),
+            Laid::Dressed { .. } => None,
         }
     }
 }
@@ -284,7 +284,7 @@ impl Pool {
     /// Every dressing an entry names, for the dressings' load to check.
     pub(crate) fn dressings(&self) -> impl Iterator<Item = &str> {
         self.entries.iter().filter_map(|e| match &e.placed {
-            Placed::Dressed { dressing } => Some(dressing.as_str()),
+            Laid::Dressed { dressing } => Some(dressing.as_str()),
             _ => None,
         })
     }
@@ -491,7 +491,7 @@ pub fn load<M>(text: &str, layout: &LayoutDef, pieces: &Registry<PrefabDef<M>>, 
                     },
                     JoinRon::Sealed => Joined::Sealed,
                 };
-                Placed::Grown { piece, join }
+                Laid::Grown { piece, join }
             }
             PlacedRon::Seeded(placements, stairs) => {
                 let piece = piece(&mut errors);
@@ -531,7 +531,7 @@ pub fn load<M>(text: &str, layout: &LayoutDef, pieces: &Registry<PrefabDef<M>>, 
                         e.kind, b.floors.0, b.floors.1, b.count.1
                     ));
                 }
-                Placed::Seeded { piece, placements: placements.clone(), stairs: *stairs }
+                Laid::Seeded { piece, placements: placements.clone(), stairs: *stairs }
             }
             PlacedRon::Inside(shapes) => {
                 let piece = piece(&mut errors);
@@ -543,7 +543,7 @@ pub fn load<M>(text: &str, layout: &LayoutDef, pieces: &Registry<PrefabDef<M>>, 
                 if !shapes.is_empty() && shapes.iter().all(|n| shape_names.contains(&n.as_str())) && !shapes.iter().any(roomy) {
                     errors.push(format!("{name}: names only shapes that draw no room, so it can never be stamped"));
                 }
-                Placed::Inside { piece, shapes: shapes.clone() }
+                Laid::Inside { piece, shapes: shapes.clone() }
             }
             PlacedRon::Dressed => {
                 if e.piece.is_some() {
@@ -553,7 +553,7 @@ pub fn load<M>(text: &str, layout: &LayoutDef, pieces: &Registry<PrefabDef<M>>, 
                     errors.push(format!("{name}: is dressed and names no dressing"));
                     String::new()
                 });
-                Placed::Dressed { dressing }
+                Laid::Dressed { dressing }
             }
         };
         entries.push(Entry {
@@ -624,7 +624,7 @@ pub fn misfit<M>(entry: &Entry, recipe: &RecipeDef, layout: &LayoutDef, pieces: 
         Some(if def.turn == Rotation::Quarter { vec![(w, h), (h, w)] } else { vec![(w, h)] })
     };
     match &entry.placed {
-        Placed::Inside { piece, shapes: allowed } => {
+        Laid::Inside { piece, shapes: allowed } => {
             let facings = size(piece)?;
             let open: Vec<_> = rooms().filter(|s| allowed.is_empty() || allowed.contains(&s.name)).collect();
             if open.is_empty() {
@@ -637,8 +637,8 @@ pub fn misfit<M>(entry: &Entry, recipe: &RecipeDef, layout: &LayoutDef, pieces: 
                 format!("{name}: {piece:?} is {w} by {h}, and no room {} grows holds it with a cell all round: {}", recipe.name, largest.join(", "))
             })
         }
-        Placed::Dressed { .. } => rooms().next().is_none().then(|| format!("{name}: {} grows no room to dress", recipe.name)),
-        Placed::Grown { piece, .. } | Placed::Seeded { piece, .. } => {
+        Laid::Dressed { .. } => rooms().next().is_none().then(|| format!("{name}: {} grows no room to dress", recipe.name)),
+        Laid::Grown { piece, .. } | Laid::Seeded { piece, .. } => {
             let facings = size(piece)?;
             let (mw, mh) = recipe.size;
             let fits = facings.iter().any(|(w, h)| w + 2 <= mw && h + 2 <= mh);
@@ -666,7 +666,7 @@ pub fn coverage<M, I: Copy>(pool: &Pool, pieces: &Registry<PrefabDef<M>>, source
 /// laid at.
 pub fn dressing_coverage<M, I: Copy>(pool: &Pool, dressings: &Registry<DressingDef<M>>, sources: &Sources<'_, M, I>) -> Coverage {
     let dressed = pool.entries.iter().filter_map(|e| match &e.placed {
-        Placed::Dressed { dressing } => Some((dressing.as_str(), e.floors)),
+        Laid::Dressed { dressing } => Some((dressing.as_str(), e.floors)),
         _ => None,
     });
     laid_coverage(dressed, dressings, sources)
@@ -1060,11 +1060,11 @@ mod tests {
         assert!(!pool.budgets[0].required, "a budget is not required unless it says so");
         let store = &pool.entries[0];
         assert_eq!((store.kind, store.weight, store.per_place, store.per_run), (1, 50, 1, 1), "limits default to one");
-        assert_eq!(store.placed, Placed::Grown { piece: "store".into(), join: Joined::Locked(w.tags.expect("key")) });
+        assert_eq!(store.placed, Laid::Grown { piece: "store".into(), join: Joined::Locked(w.tags.expect("key")) });
         assert_eq!(store.prefer, Prefer::Anywhere);
         let stash = &pool.entries[1];
         assert_eq!((stash.weight, stash.prefer, &stash.not), (5, Prefer::Secluded, &vec!["wet".to_string()]));
-        assert_eq!(stash.placed, Placed::Inside { piece: "stash".into(), shapes: vec!["room".into()] });
+        assert_eq!(stash.placed, Laid::Inside { piece: "stash".into(), shapes: vec!["room".into()] });
         let puddles = &pool.entries[2];
         assert_eq!((puddles.per_place, puddles.per_run, &puddles.within), (2, 4, &vec!["wet".to_string()]));
         assert_eq!(pool.dressings().collect::<Vec<_>>(), vec!["puddles"]);
@@ -1104,7 +1104,7 @@ mod tests {
             )"#,
         )
         .unwrap();
-        let entry = |placed: Placed| Entry {
+        let entry = |placed: Laid| Entry {
             name: "it".into(),
             kind: 0,
             floors: (1, 1),
@@ -1118,7 +1118,7 @@ mod tests {
             prefer: Prefer::Anywhere,
         };
         let on = |e: &Entry, recipe: &str| misfit(e, layout.recipe(recipe).unwrap(), &layout, &w.pieces);
-        let inside = |piece: &str, shapes: &[&str]| entry(Placed::Inside { piece: piece.into(), shapes: shapes.iter().map(|s| s.to_string()).collect() });
+        let inside = |piece: &str, shapes: &[&str]| entry(Laid::Inside { piece: piece.into(), shapes: shapes.iter().map(|s| s.to_string()).collect() });
         assert_eq!(on(&inside("store", &[]), "roomy"), None, "a five by four store in a room of up to nine by eight");
         let squeezed = on(&inside("store", &[]), "cramped").expect("no closet holds the store");
         assert!(squeezed.contains("it: \"store\" is 5 by 4") && squeezed.contains("cramped") && squeezed.contains("closet"), "{squeezed}");
@@ -1127,10 +1127,10 @@ mod tests {
         assert!(passages.contains("tunnels grows no room"), "{passages}");
         let elsewhere = on(&inside("stash", &["room"]), "cramped").expect("the stash may stand only in rooms, which cramped never grows");
         assert!(elsewhere.contains("[\"room\"]"), "{elsewhere}");
-        let dressed = entry(Placed::Dressed { dressing: "puddles".into() });
+        let dressed = entry(Laid::Dressed { dressing: "puddles".into() });
         assert_eq!(on(&dressed, "roomy"), None);
         assert!(on(&dressed, "tunnels").is_some_and(|why| why.contains("no room to dress")));
-        let grown = entry(Placed::Grown { piece: "store".into(), join: Joined::Door });
+        let grown = entry(Laid::Grown { piece: "store".into(), join: Joined::Door });
         assert_eq!(on(&grown, "roomy"), None);
         assert!(on(&grown, "tunnels").is_some_and(|why| why.contains("tunnels is 6 by 5, too small")));
     }
@@ -1468,9 +1468,9 @@ mod tests {
         let pool = read(&w, LANDMARKS).unwrap();
         assert_eq!(
             pool.entries[0].placed,
-            Placed::Seeded { piece: "stairwell".into(), placements: vec![Placement::Center, Placement::Edge], stairs: Stairs::Within('>') }
+            Laid::Seeded { piece: "stairwell".into(), placements: vec![Placement::Center, Placement::Edge], stairs: Stairs::Within('>') }
         );
-        assert_eq!(pool.entries[1].placed, Placed::Seeded { piece: "store".into(), placements: vec![Placement::Span], stairs: Stairs::Beyond });
+        assert_eq!(pool.entries[1].placed, Laid::Seeded { piece: "store".into(), placements: vec![Placement::Span], stairs: Stairs::Beyond });
         assert_eq!(pool.entries[0].piece(), Some("stairwell"));
     }
 

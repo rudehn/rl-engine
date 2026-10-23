@@ -109,7 +109,7 @@ pub struct ItemDef {
     /// How far it flies when thrown, and the blow it strikes whoever it
     /// hits, if any; absent, it cannot be thrown at all.
     #[serde(default)]
-    pub throw: Option<parts::Throw>,
+    pub throw: Option<parts::ThrowDef>,
     /// What one blow or shot costs, in hundredths of a step. Absent is
     /// [`BASE_ACTION_COST`](atglyph::primitives::turn::BASE_ACTION_COST).
     #[serde(default)]

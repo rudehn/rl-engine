@@ -46,7 +46,7 @@
 use atglyph_core::Point;
 use atglyph_core::turn::BASE_ACTION_COST;
 use atglyph_rules::items::{ItemAsk, ItemFacts, ItemOutcome, ItemRefusal, resolve_item};
-use atglyph_rules::stats::{Modifier, Op, Source};
+use atglyph_rules::stats::{Modifier, ModifierSource, Op};
 use atglyph_rules::{EquipShape, Equipment, StatId, StatusId};
 use bevy::prelude::*;
 
@@ -754,7 +754,7 @@ fn resolve_one(commands: &mut Commands, world: &ItemWorld, carrier: Holding, act
 /// Folds what every worn item [`Bestows`] into its wearer's stats.
 ///
 /// Rebuilt rather than edited, the way [`Known`](crate::ability::Known)
-/// is: every modifier tagged [`Source::Item`] is dropped and each worn
+/// is: every modifier tagged [`ModifierSource::Item`] is dropped and each worn
 /// item's put back, in slot order, so an item taken off takes its changes
 /// with it and nothing has to remember that it did. A status's modifiers
 /// carry their own tag and are left where they are.
@@ -770,7 +770,7 @@ pub(crate) fn fold_gear(mut wearers: Query<(&Equipped, &mut StatBlock), Changed<
         for (_, item) in worn.0.worn() {
             let Ok(bestows) = items.get(item) else { continue };
             for (stat, op) in &bestows.0 {
-                stats.0.add(Modifier::new(*stat, *op, Source::Item(item.to_bits())));
+                stats.0.add(Modifier::new(*stat, *op, ModifierSource::Item(item.to_bits())));
             }
         }
     }
@@ -1450,8 +1450,8 @@ mod tests {
         app.world_mut().write_message(Intent::new(player, Unequip(ring)));
         app.update();
         assert_eq!(might_of(&app, player), Some(7), "the ring's went with the ring, the status's stayed");
-        let sources: Vec<Source> = app.world().get::<StatBlock>(player).unwrap().0.modifiers().iter().map(|m| m.source).collect();
-        assert_eq!(sources, vec![Source::Status { status: weak, instance: 0 }]);
+        let sources: Vec<ModifierSource> = app.world().get::<StatBlock>(player).unwrap().0.modifiers().iter().map(|m| m.source).collect();
+        assert_eq!(sources, vec![ModifierSource::Status { status: weak, instance: 0 }]);
 
         // Dressed as it is spawned: what a save restores.
         let band = app.world_mut().spawn((Item, Bestows(vec![(might, Op::Add(2))]))).id();
@@ -1775,7 +1775,7 @@ mod aimed {
         let rod = rig.carry(
             r#"[(on: "use", targeting: (mode: Bolt(range: 6)), look: (glyph: '*', color: (r: 255, g: 80, b: 0)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "4"))])]"#,
         );
-        let look = atglyph_rules::ability::Look { glyph: '*', color: atglyph_grid::Rgb::new(255, 80, 0) };
+        let look = atglyph_rules::ability::ParticleLook { glyph: '*', color: atglyph_grid::Rgb::new(255, 80, 0) };
         let foe = rig.foe(3, 0);
         let at = rig.start.offset(3, 0);
         rig.cues();
@@ -1818,7 +1818,7 @@ mod aimed {
             let rod = rig.carry(
                 r#"[(on: "use", targeting: (mode: Bolt(range: 6)), look: (glyph: '*', color: (r: 255, g: 80, b: 0)), effects: [(kind: "Harm", args: (kind: "kinetic", roll: "4"))])]"#,
             );
-            let look = LookOf::Given(atglyph_rules::ability::Look { glyph: '*', color: atglyph_grid::Rgb::new(255, 80, 0) });
+            let look = LookOf::Given(atglyph_rules::ability::ParticleLook { glyph: '*', color: atglyph_grid::Rgb::new(255, 80, 0) });
             let at = rig.start.offset(3, 0);
             let foe = rig.foe(3, 0);
             rig.app.world_mut().entity_mut(foe).insert(reflects);

@@ -19,7 +19,7 @@ use atglyph_bevy::prelude::*;
 use atglyph_core::DiceRoll;
 use atglyph_render::Glyph;
 use atglyph_rules::damage::DamageKindId;
-use atglyph_rules::stats::{Op, Source};
+use atglyph_rules::stats::{ModifierSource, Op};
 use atglyph_rules::{SlotId, StatId, StatusId};
 use bevy::prelude::*;
 
@@ -31,7 +31,7 @@ pub struct Change {
     /// What it does.
     pub op: Op,
     /// What applied it: a status, a worn item, or something of the game's.
-    pub source: Source,
+    pub source: ModifierSource,
     /// What applied it, in words, when known: the status's name, the worn
     /// item's, or what the game named the source. Empty when nobody did.
     pub from: String,
@@ -138,7 +138,7 @@ pub struct SheetView {
 impl SheetView {
     /// Names every change tagged `source` as coming `from` something:
     /// what a game's annotate system calls for each source of its own.
-    pub fn name_source(&mut self, source: Source, from: impl Into<String>) {
+    pub fn name_source(&mut self, source: ModifierSource, from: impl Into<String>) {
         let from = from.into();
         for change in self.stats.iter_mut().flat_map(|s| s.changes.iter_mut()).filter(|c| c.source == source) {
             change.from = from.clone();
@@ -263,11 +263,13 @@ pub(crate) fn collect_sheet(
 /// name while it is still on, whether the status's own or what the kind
 /// does while holding it, the worn item's [`Name`], and nothing for a
 /// source of the game's own, which the game names.
-fn source_named(source: Source, afflicted: Option<&Afflicted>, registries: &Registries, names: &Query<&Name>) -> String {
+fn source_named(source: ModifierSource, afflicted: Option<&Afflicted>, registries: &Registries, names: &Query<&Name>) -> String {
     match source {
-        Source::Status { status, .. } | Source::Holding(status) if afflicted.is_some_and(|a| a.has(status)) => registries.statuses.name(status).to_string(),
-        Source::Item(bits) => Entity::try_from_bits(bits).and_then(|item| names.get(item).ok()).map(|n| n.as_str().to_string()).unwrap_or_default(),
-        Source::Status { .. } | Source::Game(_) | Source::Holding(_) => String::new(),
+        ModifierSource::Status { status, .. } | ModifierSource::Holding(status) if afflicted.is_some_and(|a| a.has(status)) => {
+            registries.statuses.name(status).to_string()
+        }
+        ModifierSource::Item(bits) => Entity::try_from_bits(bits).and_then(|item| names.get(item).ok()).map(|n| n.as_str().to_string()).unwrap_or_default(),
+        ModifierSource::Status { .. } | ModifierSource::Game(_) | ModifierSource::Holding(_) => String::new(),
     }
 }
 
@@ -292,7 +294,7 @@ mod tests {
         let (player, kind) = (stage.player, stage.kind);
         let might = stage.app.world().resource::<Registries>().stats.expect("might");
         let mut stats = atglyph_rules::Stats::new();
-        stats.add(Modifier::new(might, Op::Add(2), Source::Game(77)));
+        stats.add(Modifier::new(might, Op::Add(2), ModifierSource::Game(77)));
         let mut resists = atglyph_rules::Resistances::new();
         resists.set(kind, 25);
         stage.app.world_mut().entity_mut(player).insert((
@@ -343,7 +345,7 @@ mod tests {
         let player = stage.player;
         let weak = stage.app.world().resource::<Registries>().statuses.expect("weak");
         stage.app.world_mut().write_message(Afflict { target: player, status: weak, turns: 4, by: None, held_by: None });
-        stage.app.add_systems(Update, (|mut view: ResMut<SheetView>| view.name_source(Source::Game(77), "a ring")).in_set(crate::ViewSet::Annotate));
+        stage.app.add_systems(Update, (|mut view: ResMut<SheetView>| view.name_source(ModifierSource::Game(77), "a ring")).in_set(crate::ViewSet::Annotate));
         stage.tick();
         stage.tick();
         let view = stage.app.world().resource::<SheetView>();

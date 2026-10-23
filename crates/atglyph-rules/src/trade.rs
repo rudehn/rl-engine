@@ -32,7 +32,7 @@ pub enum TradeRefusal {
 /// reading of its tags already folded into `bought`, so the rule needs
 /// neither tags nor a trader.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Piece {
+pub struct TradeItem {
     /// Its worth, if it has one.
     pub worth: Option<u32>,
     /// Whether the trader buys a thing of its kind.
@@ -57,7 +57,7 @@ fn pays(worth: u32, pays_pct: u32) -> u32 {
 ///
 /// Whether it is worn does not enter into it: a worn thing still has a
 /// price, it is only not dealt until it comes off.
-pub fn each(deal: Deal, pays_pct: u32, piece: Piece) -> Option<u32> {
+pub fn each(deal: Deal, pays_pct: u32, piece: TradeItem) -> Option<u32> {
     let worth = piece.worth?;
     match deal {
         Deal::Bought => Some(worth),
@@ -71,7 +71,7 @@ pub fn each(deal: Deal, pays_pct: u32, piece: Piece) -> Option<u32> {
 /// Refused for the first of: worn, sold and not bought, no worth, a short
 /// purse. The price saturates, so a count no purse could meet is short
 /// rather than wrapped into a bargain.
-pub fn quote(deal: Deal, pays_pct: u32, piece: Piece, count: u32, purse: u32) -> Result<u32, TradeRefusal> {
+pub fn quote(deal: Deal, pays_pct: u32, piece: TradeItem, count: u32, purse: u32) -> Result<u32, TradeRefusal> {
     if piece.worn {
         return Err(TradeRefusal::Worn);
     }
@@ -104,7 +104,7 @@ pub fn draw_down<I: Copy>(pieces: &[(I, u32)], amount: u32) -> Vec<(I, u32)> {
 mod tests {
     use super::*;
 
-    const KEPT: Piece = Piece { worth: Some(7), bought: true, worn: false };
+    const KEPT: TradeItem = TradeItem { worth: Some(7), bought: true, worn: false };
 
     #[test]
     fn a_sale_pays_the_share_of_each_ones_worth_rounded_down() {
@@ -117,31 +117,31 @@ mod tests {
     #[test]
     fn a_purchase_costs_the_whole_worth_whatever_the_traders_share() {
         assert_eq!(each(Deal::Bought, 50, KEPT), Some(7));
-        let unbought = Piece { bought: false, ..KEPT };
+        let unbought = TradeItem { bought: false, ..KEPT };
         assert_eq!(each(Deal::Bought, 50, unbought), Some(7), "what a trader buys has no bearing on what it sells");
     }
 
     #[test]
     fn a_thing_with_no_worth_or_sold_of_a_kind_not_bought_has_no_price() {
-        assert_eq!(each(Deal::Bought, 50, Piece { worth: None, ..KEPT }), None);
-        assert_eq!(each(Deal::Sold, 50, Piece { worth: None, ..KEPT }), None);
-        assert_eq!(each(Deal::Sold, 50, Piece { bought: false, ..KEPT }), None);
+        assert_eq!(each(Deal::Bought, 50, TradeItem { worth: None, ..KEPT }), None);
+        assert_eq!(each(Deal::Sold, 50, TradeItem { worth: None, ..KEPT }), None);
+        assert_eq!(each(Deal::Sold, 50, TradeItem { bought: false, ..KEPT }), None);
     }
 
     #[test]
     fn a_worn_thing_still_has_a_price_but_is_refused() {
-        let worn = Piece { worn: true, ..KEPT };
+        let worn = TradeItem { worn: true, ..KEPT };
         assert_eq!(each(Deal::Bought, 50, worn), Some(7));
         assert_eq!(quote(Deal::Bought, 50, worn, 1, 100), Err(TradeRefusal::Worn));
     }
 
     #[test]
     fn a_deal_is_refused_for_the_first_reason_in_order_worn_then_not_bought_then_no_worth_then_short() {
-        let all = Piece { worth: None, bought: false, worn: true };
+        let all = TradeItem { worth: None, bought: false, worn: true };
         assert_eq!(quote(Deal::Sold, 50, all, 1, 0), Err(TradeRefusal::Worn));
-        assert_eq!(quote(Deal::Sold, 50, Piece { worn: false, ..all }, 1, 0), Err(TradeRefusal::NotBought));
-        assert_eq!(quote(Deal::Bought, 50, Piece { worn: false, ..all }, 1, 0), Err(TradeRefusal::NoWorth));
-        assert_eq!(quote(Deal::Sold, 50, Piece { worth: None, bought: true, worn: false }, 1, 0), Err(TradeRefusal::NoWorth));
+        assert_eq!(quote(Deal::Sold, 50, TradeItem { worn: false, ..all }, 1, 0), Err(TradeRefusal::NotBought));
+        assert_eq!(quote(Deal::Bought, 50, TradeItem { worn: false, ..all }, 1, 0), Err(TradeRefusal::NoWorth));
+        assert_eq!(quote(Deal::Sold, 50, TradeItem { worth: None, bought: true, worn: false }, 1, 0), Err(TradeRefusal::NoWorth));
         assert_eq!(quote(Deal::Bought, 50, KEPT, 2, 13), Err(TradeRefusal::Short), "fourteen asked of thirteen");
     }
 
@@ -151,7 +151,7 @@ mod tests {
         assert_eq!(quote(Deal::Bought, 50, KEPT, u32::MAX, u32::MAX - 1), Err(TradeRefusal::Short));
         assert_eq!(quote(Deal::Bought, 50, KEPT, u32::MAX, u32::MAX), Ok(u32::MAX));
         assert_eq!(
-            each(Deal::Sold, u32::MAX, Piece { worth: Some(u32::MAX), ..KEPT }),
+            each(Deal::Sold, u32::MAX, TradeItem { worth: Some(u32::MAX), ..KEPT }),
             Some(u32::MAX),
             "a share past a hundred is held to what a number holds"
         );

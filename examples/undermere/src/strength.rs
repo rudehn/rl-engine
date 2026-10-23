@@ -21,7 +21,7 @@
 
 use atglyph::prelude::*;
 use atglyph::rules::ability::RawValue;
-use atglyph::rules::stats::Source;
+use atglyph::rules::stats::ModifierSource;
 use bevy::prelude::*;
 
 use crate::armory::{Armory, ItemDef, ItemKind};
@@ -38,7 +38,7 @@ pub const SHORT_ARMOR: i32 = 1;
 /// wearer's stats: the game's own, so the engine's fold of what is worn
 /// and its statuses leave them alone, and nothing but [`keep_strength`]
 /// takes them off.
-pub const TOO_HEAVY: Source = Source::Game(1);
+pub const TOO_HEAVY: ModifierSource = ModifierSource::Game(1);
 
 /// What wearing `worn` costs a wearer of `strength`, in accuracy and in
 /// armor: the shortfall of each thing that asks more strength than that,

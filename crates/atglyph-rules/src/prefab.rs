@@ -139,18 +139,18 @@ use crate::role::{self, RoleDef, RoleId};
 use crate::tag::{TagDef, TagId};
 
 /// Which monster a slot holds: that one, or one drawn for a role.
-pub enum Pick<M> {
+pub enum SlotPick<M> {
     /// Always this monster, on every floor.
     Kind(Id<M>),
     /// Drawn from the spawn table among the role's members.
     Role(RoleId<M>),
 }
 
-impl<M> std::fmt::Debug for Pick<M> {
+impl<M> std::fmt::Debug for SlotPick<M> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Pick::Kind(id) => f.debug_tuple("Kind").field(id).finish(),
-            Pick::Role(id) => f.debug_tuple("Role").field(id).finish(),
+            SlotPick::Kind(id) => f.debug_tuple("Kind").field(id).finish(),
+            SlotPick::Role(id) => f.debug_tuple("Role").field(id).finish(),
         }
     }
 }
@@ -165,7 +165,7 @@ pub enum Slot<M> {
     /// A monster, which holds the slot's cell as its post.
     Monster {
         /// Which.
-        pick: Pick<M>,
+        pick: SlotPick<M>,
         /// Bands deeper than the place a role is drawn at; nought for a
         /// named monster.
         band: i32,
@@ -475,7 +475,7 @@ pub(crate) fn read_legend<M: 'static>(
                             errors.push(format!("{file}: '{c}': {name:?} is a fixed monster, drawn from no band, so a band offset means nothing on it"));
                         }
                         match names.id::<M>(name) {
-                            Ok(id) => Some(Pick::Kind(id)),
+                            Ok(id) => Some(SlotPick::Kind(id)),
                             Err(e) => {
                                 errors.push(format!("{file}: '{c}': {e}"));
                                 None
@@ -483,7 +483,7 @@ pub(crate) fn read_legend<M: 'static>(
                         }
                     }
                     (None, Some(role)) => match names.id::<RoleDef<M>>(role) {
-                        Ok(id) => Some(Pick::Role(id)),
+                        Ok(id) => Some(SlotPick::Role(id)),
                         Err(e) => {
                             errors.push(format!("{file}: '{c}': {e}"));
                             None
@@ -571,7 +571,7 @@ pub struct Sources<'a, M, I> {
 /// Whether a slot's draw at a band lands on the band it asked for, falls
 /// back to the nearest band that has something, or finds nothing at all.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Reach {
+pub enum BandFallback {
     /// The band asked for has something.
     Exact,
     /// Nothing at the band asked for; the nearest band that has something.
@@ -592,7 +592,7 @@ pub struct CoverageRow {
     /// The band asked and what the draw there reaches, one pair for every
     /// band the report covers, or for those its piece is laid at in a
     /// pool's report.
-    pub reach: Vec<(i32, Reach)>,
+    pub reach: Vec<(i32, BandFallback)>,
 }
 
 /// A report of what every drawn slot in a set of prefabs finds at every
@@ -616,7 +616,7 @@ impl Coverage {
     pub fn empties(&self) -> Vec<(&str, char, i32)> {
         self.rows
             .iter()
-            .flat_map(|r| r.reach.iter().filter(|(_, reach)| matches!(reach, Reach::Empty)).map(move |(band, _)| (r.prefab.as_str(), r.glyph, *band)))
+            .flat_map(|r| r.reach.iter().filter(|(_, reach)| matches!(reach, BandFallback::Empty)).map(move |(band, _)| (r.prefab.as_str(), r.glyph, *band)))
             .collect()
     }
 
@@ -647,9 +647,9 @@ impl Coverage {
                 out.push_str(&format!("{label:<label_width$}"));
                 for band in self.bands.clone() {
                     let cell = match row.reach.iter().find(|(b, _)| *b == band).map(|(_, reach)| reach) {
-                        Some(Reach::Exact) => "✓".to_string(),
-                        Some(Reach::Fallback(band)) => format!("~{band}"),
-                        Some(Reach::Empty) => "✗".to_string(),
+                        Some(BandFallback::Exact) => "✓".to_string(),
+                        Some(BandFallback::Fallback(band)) => format!("~{band}"),
+                        Some(BandFallback::Empty) => "✗".to_string(),
                         None => String::new(),
                     };
                     out.push_str(&format!("{cell:>4}"));
@@ -664,11 +664,11 @@ impl Coverage {
 /// What `asked` reaches, from what `role::band_for` or `LootTable::band_for`
 /// answered: nothing when it is `None`, the band asked for when it answers
 /// with itself, else the band it fell back to.
-fn reach_of(asked: i32, reached: Option<i32>) -> Reach {
+fn reach_of(asked: i32, reached: Option<i32>) -> BandFallback {
     match reached {
-        None => Reach::Empty,
-        Some(band) if band == asked => Reach::Exact,
-        Some(band) => Reach::Fallback(band),
+        None => BandFallback::Empty,
+        Some(band) if band == asked => BandFallback::Exact,
+        Some(band) => BandFallback::Fallback(band),
     }
 }
 
@@ -697,7 +697,7 @@ pub fn coverage<'p, M: 'p, I: Copy, D: Legended<M> + 'p>(
     let mut rows = Vec::new();
     for def in prefabs {
         for (glyph, slot) in def.legend().slots() {
-            let (what, slot_reach): (String, Vec<(i32, Reach)>) = match slot {
+            let (what, slot_reach): (String, Vec<(i32, BandFallback)>) = match slot {
                 Slot::Item(ContentRoll { what: Stock::Tag(tag), band: offset, .. }) => {
                     let what = slot_name(sources.tags.name(*tag), *offset);
                     let slot_reach = bands
@@ -709,7 +709,7 @@ pub fn coverage<'p, M: 'p, I: Copy, D: Legended<M> + 'p>(
                         .collect();
                     (what, slot_reach)
                 }
-                Slot::Monster { pick: Pick::Role(role), band: offset } => {
+                Slot::Monster { pick: SlotPick::Role(role), band: offset } => {
                     let role_def = sources.roles.get(*role);
                     let what = slot_name(&role_def.name, *offset);
                     let slot_reach = bands
@@ -769,10 +769,10 @@ impl<M> Reached<M> {
                 match slot {
                     Slot::Prop(id) => reached.prop(*id, props),
                     Slot::Item(roll) => reached.stock(&roll.what),
-                    Slot::Monster { pick: Pick::Kind(id), .. } => {
+                    Slot::Monster { pick: SlotPick::Kind(id), .. } => {
                         reached.monsters.insert(*id);
                     }
-                    Slot::Monster { pick: Pick::Role(id), .. } => {
+                    Slot::Monster { pick: SlotPick::Role(id), .. } => {
                         reached.roles.insert(*id);
                     }
                     Slot::Mark => {}
@@ -970,8 +970,8 @@ mod tests {
         assert_eq!(def.tile('#'), w.tiles.id("wall"));
         assert!(matches!(def.slot('L'), Some(Slot::Prop(p)) if *p == w.props.expect("locker")));
         assert!(matches!(def.slot('w'), Some(Slot::Item(ContentRoll { what: Stock::Tag(_), min: 1, max: 1, band: 2 }))));
-        assert!(matches!(def.slot('b'), Some(Slot::Monster { pick: Pick::Role(r), band: 1 }) if *r == w.roles.expect("brute")));
-        assert!(matches!(def.slot('W'), Some(Slot::Monster { pick: Pick::Kind(k), band: 0 }) if *k == w.beasts.expect("warden")));
+        assert!(matches!(def.slot('b'), Some(Slot::Monster { pick: SlotPick::Role(r), band: 1 }) if *r == w.roles.expect("brute")));
+        assert!(matches!(def.slot('W'), Some(Slot::Monster { pick: SlotPick::Kind(k), band: 0 }) if *k == w.beasts.expect("warden")));
         assert!(matches!(def.slot('m'), Some(Slot::Mark)));
         assert_eq!(def.rows(), vec!["#####", "#bLw#", "##W##", "##m##"]);
     }
@@ -1163,11 +1163,11 @@ mod tests {
         let report = coverage([&def], &sources, 1..=10);
         let brute = report.rows.iter().find(|r| r.glyph == 'b').unwrap();
         assert_eq!(brute.what, "brute +1");
-        assert!(matches!(brute.reach[0], (1, Reach::Fallback(3))), "band 1 asks at 2, nothing until 3");
-        assert!(matches!(brute.reach[4], (5, Reach::Exact)));
-        assert!(matches!(brute.reach[9], (10, Reach::Fallback(8))), "band 10 asks at 11, the deepest is 8");
+        assert!(matches!(brute.reach[0], (1, BandFallback::Fallback(3))), "band 1 asks at 2, nothing until 3");
+        assert!(matches!(brute.reach[4], (5, BandFallback::Exact)));
+        assert!(matches!(brute.reach[9], (10, BandFallback::Fallback(8))), "band 10 asks at 11, the deepest is 8");
         let weapon = report.rows.iter().find(|r| r.glyph == 'w').unwrap();
-        assert!(matches!(weapon.reach[9], (10, Reach::Fallback(10))));
+        assert!(matches!(weapon.reach[9], (10, BandFallback::Fallback(10))));
         assert!(report.rows.iter().all(|r| r.glyph != 'W' && r.glyph != 'L' && r.glyph != 'm'), "named, prop and mark slots draw nothing");
         assert!(report.empties().is_empty());
     }

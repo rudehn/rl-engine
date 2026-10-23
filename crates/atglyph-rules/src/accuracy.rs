@@ -3,7 +3,7 @@
 //! The engine gathers the facts, who is attacking, how far, in what light,
 //! with what accuracy against what evasion, into a [`Shot`], and a
 //! [`HitModel`] the game chose turns them into [`Odds`]: some number of
-//! chances in some number of outcomes, and the labelled [`Line`]s that
+//! chances in some number of outcomes, and the labelled [`OddsLine`]s that
 //! produced them. Every model reduces to that, a percent roll, a d20
 //! against a target number, two dice against each other, so a panel can
 //! print a chance and a list of reasons whatever the model is, and the
@@ -37,7 +37,7 @@ pub enum Delivery {
 /// percentage points for [`Percent`], steps of one on a die for a d20
 /// model. What a panel prints under the chance.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Line {
+pub struct OddsLine {
     /// What the game called it.
     pub label: String,
     /// How much it moved the chance, negative for worse.
@@ -53,14 +53,14 @@ pub struct Odds {
     /// Outcomes there are. Never zero.
     pub out_of: u32,
     /// What moved the chance, in the order the model counted it.
-    pub lines: Vec<Line>,
+    pub lines: Vec<OddsLine>,
 }
 
 impl Odds {
     /// `hits` in `out_of`, with `out_of` at least one and `hits` at most
     /// `out_of`, so a model that miscounts gives a certain hit or miss
     /// rather than a panic in the middle of a turn.
-    pub fn new(hits: u32, out_of: u32, lines: Vec<Line>) -> Odds {
+    pub fn new(hits: u32, out_of: u32, lines: Vec<OddsLine>) -> Odds {
         let out_of = out_of.max(1);
         Odds { hits: hits.min(out_of), out_of, lines }
     }
@@ -178,7 +178,7 @@ impl HitModel for Percent {
         let mut lines = Vec::new();
         let mut push = |label: &str, value: i32| {
             if value != 0 {
-                lines.push(Line { label: label.to_string(), value });
+                lines.push(OddsLine { label: label.to_string(), value });
             }
         };
         push(&self.labels.accuracy, shot.accuracy.unwrap_or(100) - 100);
@@ -302,7 +302,7 @@ mod tests {
             let faces = (21 - needed).clamp(1, 19) as u32;
             let mut lines = Vec::new();
             if shot.light == LightBand::Dim {
-                lines.push(Line { label: "for dim light".into(), value: -2 });
+                lines.push(OddsLine { label: "for dim light".into(), value: -2 });
             }
             Some(Odds::new(faces, 20, lines))
         }

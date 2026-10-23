@@ -497,7 +497,7 @@ mod tests {
         let nothing = std::sync::Arc::new(atglyph_bevy::Effects::default());
         let one = |fires| atglyph_bevy::Trigger {
             on: Moments::USE,
-            area: atglyph_rules::Area::Here,
+            area: atglyph_rules::EffectArea::Here,
             fires,
             effects: nothing.clone(),
             look: None,

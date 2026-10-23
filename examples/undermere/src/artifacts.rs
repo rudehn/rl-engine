@@ -25,10 +25,10 @@ pub const CROWN_OF_GRUBNAK: &str = "the Crown of Grubnak";
 /// every blow and every shot alike: the content sheet's own two.
 pub const CROWN_BONUS: i32 = 2;
 
-/// The [`Source::Game`] key the crown's aura tags its modifier with, an
+/// The [`ModifierSource::Game`] key the crown's aura tags its modifier with, an
 /// eight-byte tag read off its own letters rather than a plain small
-/// number: [`crate::strength::TOO_HEAVY`] is `Source::Game(1)`, which a
-/// naive `Source::Game(1)` here collided with, stripping every pass what
+/// number: [`crate::strength::TOO_HEAVY`] is `ModifierSource::Game(1)`, which a
+/// naive `ModifierSource::Game(1)` here collided with, stripping every pass what
 /// a hammer too heavy or a mace too heavy had cost the wearer.
 const CROWN_AURA: u64 = u64::from_be_bytes(*b"crownaur");
 
@@ -62,9 +62,9 @@ pub fn crown_aura(
         let in_range = wearer.is_some_and(|(wearer_e, _, wearer_on, wearer_side, sight)| {
             body != wearer_e && on.0 == wearer_on.0 && sight.can_see(pos.0) && rules.factions.relation(side.0, wearer_side.0) == Relation::Allied
         });
-        stats.0.remove_source(Source::Game(CROWN_AURA));
+        stats.0.remove_source(ModifierSource::Game(CROWN_AURA));
         if in_range {
-            stats.0.add(Modifier::new(attack, Op::Add(CROWN_BONUS), Source::Game(CROWN_AURA)));
+            stats.0.add(Modifier::new(attack, Op::Add(CROWN_BONUS), ModifierSource::Game(CROWN_AURA)));
         }
     }
 }

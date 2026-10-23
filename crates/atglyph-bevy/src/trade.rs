@@ -24,7 +24,7 @@
 
 use atglyph_rules::TagId;
 pub use atglyph_rules::trade::{Deal, TradeRefusal};
-use atglyph_rules::trade::{Piece, draw_down};
+use atglyph_rules::trade::{TradeItem, draw_down};
 use bevy::ecs::message::MessageCursor;
 use bevy::prelude::*;
 
@@ -93,8 +93,8 @@ impl Trader {
 
     /// `ware` as the rule reads it: its worth, and whether this trader buys
     /// its kind.
-    fn piece(&self, ware: Ware) -> Piece {
-        Piece { worth: ware.worth.map(|Worth(w)| w), bought: self.buys(ware.tags), worn: ware.worn }
+    fn piece(&self, ware: Ware) -> TradeItem {
+        TradeItem { worth: ware.worth.map(|Worth(w)| w), bought: self.buys(ware.tags), worn: ware.worn }
     }
 }
 

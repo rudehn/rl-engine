@@ -509,7 +509,7 @@ pub(crate) fn check_pool(defs: &Registry<BiomeDef>, pool: &Pool, layout: &Layout
 /// [`check_pool`]'s problems, each naming the entry, for a test to read.
 fn pool_problems(defs: &Registry<BiomeDef>, pool: &Pool, layout: &LayoutDef, pieces: &Registry<atglyph::rules::prefab::PrefabDef<MonsterDef>>) -> Vec<String> {
     use atglyph::mapgen::dungeon::Stairs;
-    use atglyph::rules::pool::{Placed, misfit};
+    use atglyph::rules::pool::{Laid, misfit};
     let mut errors = Vec::new();
     for entry in pool.entries.iter().filter(|e| e.weight > 0) {
         // Every floor and biome it may be drawn for, and whether its kind
@@ -527,7 +527,7 @@ fn pool_problems(defs: &Registry<BiomeDef>, pool: &Pool, layout: &LayoutDef, pie
             errors.push(format!("{}: no floor where a budget of its kind gives picks stands a biome it may stand in, so it is never drawn", entry.name));
             continue;
         }
-        if let Placed::Seeded { stairs, .. } = &entry.placed
+        if let Laid::Seeded { stairs, .. } = &entry.placed
             && *stairs != Stairs::Free
             && ways.iter().any(|(floor, ..)| *floor == FLOORS)
         {
@@ -565,8 +565,8 @@ fn pool_problems(defs: &Registry<BiomeDef>, pool: &Pool, layout: &LayoutDef, pie
 /// the biome's window no landmark fits, would leave a floor of the theme
 /// grown without it with nothing saying so.
 fn landmark_problems(defs: &Registry<BiomeDef>, pool: &Pool) -> Vec<String> {
-    use atglyph::rules::pool::Placed;
-    let seeded: Vec<&atglyph::rules::pool::Entry> = pool.entries.iter().filter(|e| e.weight > 0 && matches!(e.placed, Placed::Seeded { .. })).collect();
+    use atglyph::rules::pool::Laid;
+    let seeded: Vec<&atglyph::rules::pool::Entry> = pool.entries.iter().filter(|e| e.weight > 0 && matches!(e.placed, Laid::Seeded { .. })).collect();
     // The floors each landmark may be drawn on, over every biome it fits.
     let drawn_on = |entry: &atglyph::rules::pool::Entry| -> u32 {
         let given = |floor: u32| pool.budget(entry.kind, floor as i32).is_some_and(|b| b.count.1 > 0);
@@ -921,7 +921,7 @@ mod tests {
     /// that fails every attempt.
     #[test]
     fn an_entry_drawn_nowhere_and_a_required_piece_too_large_for_any_room_are_each_refused_by_name() {
-        use atglyph::rules::pool::Placed;
+        use atglyph::rules::pool::Laid;
         let (prefabs, mut pool, _) = crate::prefabs::load(&registry(), &layout());
         let nowhere = pool.entries.iter().position(|e| e.weight > 0).expect("an entry in play");
         pool.entries[nowhere].within = vec!["Drowned Throne".to_string()];
@@ -931,13 +931,10 @@ mod tests {
             .iter()
             .enumerate()
             .position(|(i, e)| {
-                i != nowhere
-                    && matches!(e.placed, Placed::Inside { .. })
-                    && e.weight > 0
-                    && pool.budgets.iter().filter(|b| b.kind == e.kind).all(|b| b.required)
+                i != nowhere && matches!(e.placed, Laid::Inside { .. }) && e.weight > 0 && pool.budgets.iter().filter(|b| b.kind == e.kind).all(|b| b.required)
             })
             .expect("a required inside piece");
-        if let Placed::Inside { piece, .. } = &mut pool.entries[owed].placed {
+        if let Laid::Inside { piece, .. } = &mut pool.entries[owed].placed {
             *piece = "Mereholt".to_string();
         }
         let errors = pool_problems(&defs(), &pool, &layout(), prefabs.defs());

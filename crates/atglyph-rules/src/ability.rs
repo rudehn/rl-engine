@@ -236,7 +236,7 @@ impl<'de> Deserialize<'de> for EffectSpec {
 /// that need a direction, a cone or a line, have none to take here, since
 /// a moment happens at a cell rather than along an aim.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
-pub enum Area {
+pub enum EffectArea {
     /// The cell it happened on.
     #[default]
     Here,
@@ -313,7 +313,7 @@ pub struct TriggerSpec {
     pub on: String,
     /// Where its effects land, around where the moment happened.
     #[serde(default)]
-    pub area: Area,
+    pub area: EffectArea,
     /// How many times it may go off; absent, every time.
     #[serde(default)]
     pub fires: Option<u32>,
@@ -325,7 +325,7 @@ pub struct TriggerSpec {
     /// nobody should see go off and wrong for a grenade, where the burst is
     /// the point.
     #[serde(default)]
-    pub look: Option<Look>,
+    pub look: Option<ParticleLook>,
     /// Hundredths of a step between pulses, for a `pulse` trigger only: a
     /// worn thing's own clock, not the turn a use spends. Required there
     /// and refused on any other moment, since nothing else comes round on
@@ -360,7 +360,7 @@ pub struct AbilityDef {
     pub description: String,
     /// How a use looks in flight and where it lands, for whatever draws
     /// it. `None` leaves the look to the renderer's default.
-    pub look: Option<Look>,
+    pub look: Option<ParticleLook>,
     /// What it wants under its footprint.
     pub aim: Aim,
     /// The shape. Range lives inside the shape.
@@ -398,11 +398,11 @@ impl Named for AbilityDef {
     }
 }
 
-/// How an ability looks when drawn: the glyph that flies or bursts, and
-/// its colour. Content, like a monster's glyph, so it lives with the
-/// definition rather than in a renderer's table of names.
+/// How an ability, a shot or a trigger looks when drawn: the glyph that
+/// flies or bursts, and its colour. Content, like a monster's glyph, so it
+/// lives with the definition rather than in a renderer's table of names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-pub struct Look {
+pub struct ParticleLook {
     /// The glyph.
     pub glyph: char,
     /// Its colour.
@@ -579,7 +579,7 @@ struct Authored {
     #[serde(default)]
     description: String,
     #[serde(default)]
-    look: Option<Look>,
+    look: Option<ParticleLook>,
     #[serde(default)]
     aim: Aim,
     mode: TargetMode,
@@ -728,13 +728,13 @@ mod tests {
     #[test]
     fn a_trigger_reads_bare_or_with_an_area_a_fire_count_and_a_list_of_its_own() {
         let bare: TriggerSpec = ron::from_str(r#"(on: "use")"#).unwrap();
-        assert_eq!((bare.on.as_str(), bare.area, bare.fires, bare.every), ("use", Area::Here, None, None));
+        assert_eq!((bare.on.as_str(), bare.area, bare.fires, bare.every), ("use", EffectArea::Here, None, None));
         assert!(bare.effects.is_none(), "no list of its own: it takes the shared one");
         let full: TriggerSpec = Options::default()
             .with_default_extension(Extensions::IMPLICIT_SOME)
             .from_str(r#"(on: "pulse", area: Burst(radius: 2), fires: 3, every: 1000, effects: [(kind: "Harm", args: (kind: "fire", roll: "1d4"))])"#)
             .unwrap();
-        assert_eq!((full.area, full.fires, full.every), (Area::Burst { radius: 2 }, Some(3), Some(1000)));
+        assert_eq!((full.area, full.fires, full.every), (EffectArea::Burst { radius: 2 }, Some(3), Some(1000)));
         assert_eq!(full.effects.as_ref().map(|e| e[0].kind.as_str()), Some("Harm"));
         assert!(bare.targeting.is_none() && full.targeting.is_none(), "a trigger with no targeting lands where its moment happened");
     }

@@ -283,13 +283,14 @@ mod tests {
         let (player, kind) = (stage.player, stage.kind);
         let might = stage.app.world().resource::<Registries>().stats.expect("might");
         let mut stats = atglyph_rules::Stats::new();
-        stats.add(Modifier::new(might, Op::Add(2), atglyph_rules::Source::Game(77)));
+        stats.add(Modifier::new(might, Op::Add(2), atglyph_rules::ModifierSource::Game(77)));
         let mut resists = atglyph_rules::Resistances::new();
         resists.set(kind, 25);
         stage.app.world_mut().entity_mut(player).insert((StatBlock(stats), Resists(resists), Afflicted::default()));
-        stage
-            .app
-            .add_systems(Update, (|mut view: ResMut<SheetView>| view.name_source(atglyph_rules::Source::Game(77), "a ring")).in_set(crate::ViewSet::Annotate));
+        stage.app.add_systems(
+            Update,
+            (|mut view: ResMut<SheetView>| view.name_source(atglyph_rules::ModifierSource::Game(77), "a ring")).in_set(crate::ViewSet::Annotate),
+        );
         stage.tick();
         stage
     }

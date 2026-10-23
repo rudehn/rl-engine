@@ -6,7 +6,7 @@
 //! struck, props for a cell stepped on and a prop broken, and this module
 //! for an actor's death, writes [`Fired`] and nothing else.
 //! `land_triggers` is the one system that answers: it finds the carrier's
-//! [`Triggers`] for that moment, works out the cells its [`Area`] covers
+//! [`Triggers`] for that moment, works out the cells its [`EffectArea`] covers
 //! around where the moment happened, and lands the effects on everyone
 //! standing there. A use aimed somewhere is landed as an ability is, on
 //! its footprint from its user to the cell it was pointed at, and with a
@@ -20,7 +20,7 @@
 use std::sync::Arc;
 
 use atglyph_core::{Interner, Point};
-use atglyph_rules::{Area, Asks, EffectSpec, Names, Targeting, TriggerSpec};
+use atglyph_rules::{Asks, EffectArea, EffectSpec, Names, Targeting, TriggerSpec};
 use bevy::prelude::*;
 
 use super::{EffectKinds, EffectWorld, Effects, Landing, Source};
@@ -122,13 +122,13 @@ pub struct Trigger {
     /// What sets it off.
     pub on: MomentId,
     /// Where it lands, around where the moment happened.
-    pub area: Area,
+    pub area: EffectArea,
     /// Times it may still go off; `None` for every time.
     pub fires: Option<u32>,
     /// What it lands.
     pub effects: Arc<Effects>,
     /// What shows over the cells it lands on, if anything does.
-    pub look: Option<atglyph_rules::ability::Look>,
+    pub look: Option<atglyph_rules::ability::ParticleLook>,
     /// Hundredths of a step between pulses, `Some` on a `pulse` trigger and
     /// nowhere else. A game reads its carrier's base period back off it
     /// rather than keeping a second copy.
@@ -335,10 +335,10 @@ pub struct FiredOn {
 /// Not the targeting call itself: that flies a projectile first and bursts
 /// where it stops, and a moment has already happened where it happened, so
 /// there is nothing to fly.
-pub fn area_cells(area: Area, at: Point, map: &WorldMap) -> Vec<Point> {
+pub fn area_cells(area: EffectArea, at: Point, map: &WorldMap) -> Vec<Point> {
     match area {
-        Area::Here => vec![at],
-        Area::Burst { radius } => atglyph_grid::burst(at, radius, map.window_tiles(), |p| map.blocks_projectiles(p)),
+        EffectArea::Here => vec![at],
+        EffectArea::Burst { radius } => atglyph_grid::burst(at, radius, map.window_tiles(), |p| map.blocks_projectiles(p)),
     }
 }
 
@@ -513,7 +513,7 @@ type Carrier = (
 pub struct UseLanding {
     landing: Landing,
     effects: Arc<Effects>,
-    look: Option<atglyph_rules::ability::Look>,
+    look: Option<atglyph_rules::ability::ParticleLook>,
 }
 
 /// Written by hand, since the effects are boxed trait objects.
@@ -825,13 +825,13 @@ mod tests {
         let seen = build(&app, r#"[(on: "land", area: Burst(radius: 1), look: (glyph: '*', color: (r: 255, g: 128, b: 0)))]"#, &harm("3")).unwrap();
         let carrier = app.world_mut().spawn(seen).id();
         fire(&mut app, carrier, Moments::LAND, at);
-        let look = atglyph_rules::ability::Look { glyph: '*', color: atglyph_grid::Rgb::new(255, 128, 0) };
+        let look = atglyph_rules::ability::ParticleLook { glyph: '*', color: atglyph_grid::Rgb::new(255, 128, 0) };
         let cues = std::mem::take(&mut app.world_mut().resource_mut::<Cues>().0);
         let [crate::cue::Cue::Burst { on, look: shown, from }] = cues.as_slice() else { panic!("one burst: {cues:?}") };
         assert_eq!(*shown, crate::cue::LookOf::Given(look));
         assert_eq!(from.map(|a| a.at), Some(at), "going off where it landed");
         let mut cells: Vec<Point> = on.iter().map(|a| a.at).collect();
-        let mut expected = area_cells(atglyph_rules::Area::Burst { radius: 1 }, at, app.world().resource::<WorldMap>());
+        let mut expected = area_cells(atglyph_rules::EffectArea::Burst { radius: 1 }, at, app.world().resource::<WorldMap>());
         cells.sort();
         expected.sort();
         assert_eq!(cells, expected, "over every cell it covers");
@@ -874,12 +874,12 @@ mod tests {
         );
         assert_eq!(ball.landing, Some(at), "the ball landed where it was aimed");
         assert!(ball.cells.len() > 9, "and covers a disc, not a cell");
-        let mut burst = area_cells(atglyph_rules::Area::Burst { radius: 2 }, at, map);
+        let mut burst = area_cells(atglyph_rules::EffectArea::Burst { radius: 2 }, at, map);
         let mut cells = ball.cells.clone();
         burst.sort();
         cells.sort();
         assert_eq!(burst, cells);
-        assert_eq!(area_cells(atglyph_rules::Area::Here, at, map), vec![at]);
+        assert_eq!(area_cells(atglyph_rules::EffectArea::Here, at, map), vec![at]);
     }
 
     #[test]

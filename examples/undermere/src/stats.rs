@@ -162,7 +162,7 @@ pub fn keep_keen(mut commands: Commands, registries: Res<Registries>, adventurer
 #[cfg(test)]
 mod tests {
     use atglyph::primitives::RunSeed;
-    use atglyph::rules::stats::Source;
+    use atglyph::rules::stats::ModifierSource;
     use bevy::ecs::system::RunSystemOnce;
 
     use super::*;
@@ -172,7 +172,7 @@ mod tests {
     /// Puts `op` on `who`'s stat `name`, as a status or a ring would.
     fn change(app: &mut App, who: Entity, name: &str, op: Op) {
         let stat = app.world().resource::<Registries>().stats.expect(name);
-        app.world_mut().get_mut::<StatBlock>(who).expect("stats").0.add(Modifier::new(stat, op, Source::Game(99)));
+        app.world_mut().get_mut::<StatBlock>(who).expect("stats").0.add(Modifier::new(stat, op, ModifierSource::Game(99)));
     }
 
     /// The stealth stat is taken off every watcher's chance of noticing

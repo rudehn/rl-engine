@@ -54,7 +54,7 @@ impl Throwable {
     }
 
     /// The throw `part` describes: the authored throw made a component.
-    pub fn from_part(part: &atglyph_rules::parts::Throw) -> Self {
+    pub fn from_part(part: &atglyph_rules::parts::ThrowDef) -> Self {
         Self { effective: part.effective, ..Self::new(part.range, part.strike.map(|(roll, kind)| (kind.id(), roll))) }
     }
 

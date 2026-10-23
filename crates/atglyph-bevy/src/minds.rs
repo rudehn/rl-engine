@@ -1422,7 +1422,7 @@ mod tests {
         let traps: Vec<Point> = if walled { vec![start.offset(3, 0)] } else { (-1..=1).map(|dy| start.offset(3, dy)).collect() };
         let trigger = crate::effects::Trigger {
             on: crate::effects::Moments::ENTERED,
-            area: atglyph_rules::ability::Area::Here,
+            area: atglyph_rules::ability::EffectArea::Here,
             fires: None,
             effects: Arc::new(crate::effects::Effects::default()),
             look: None,
@@ -1499,7 +1499,7 @@ mod tests {
         }
         let trigger = crate::effects::Trigger {
             on: crate::effects::Moments::ENTERED,
-            area: atglyph_rules::ability::Area::Here,
+            area: atglyph_rules::ability::EffectArea::Here,
             fires: None,
             effects: Arc::new(crate::effects::Effects::default()),
             look: None,

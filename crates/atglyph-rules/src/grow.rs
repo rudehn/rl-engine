@@ -10,7 +10,7 @@
 //! or a terminal game does the same with no Bevy in its build.
 
 use crate::layout::{JoinDef, LayoutDef, ShapeKind};
-use crate::pool::{Joined, Pick, Placed, Pool};
+use crate::pool::{Joined, Laid, Pick, Pool};
 use crate::prefab::PrefabLibrary;
 use atglyph_grid::TileId;
 use atglyph_mapgen::accrete::{Accrete, Cross, District, FirstPiece, Join, Passage, Rectangle, Shape};
@@ -178,7 +178,7 @@ pub fn picked<M>(pool: &Pool, picks: &[Pick], prefabs: &PrefabLibrary<M>, orient
     for pick in picks {
         let entry = &pool.entries[pick.entry];
         let (lay, shapes) = match &entry.placed {
-            Placed::Grown { piece, join } => {
+            Laid::Grown { piece, join } => {
                 let join = match *join {
                     Joined::Door => Join::Door,
                     Joined::Arch => Join::Arch,
@@ -189,7 +189,7 @@ pub fn picked<M>(pool: &Pool, picks: &[Pick], prefabs: &PrefabLibrary<M>, orient
                 pieces.push(Box::new(prefabs.grown(piece, join)?));
                 continue;
             }
-            Placed::Seeded { piece, placements, stairs: wanted } => {
+            Laid::Seeded { piece, placements, stairs: wanted } => {
                 if first.is_some() {
                     return Err(BuildError::new("layout", format!("{}: a second landmark for one place, which grows round one", entry.name)));
                 }
@@ -200,8 +200,8 @@ pub fn picked<M>(pool: &Pool, picks: &[Pick], prefabs: &PrefabLibrary<M>, orient
                 stairs = *wanted;
                 continue;
             }
-            Placed::Inside { piece, shapes } => (Lay::Stamp(prefabs.piece(piece)?), shapes.clone()),
-            Placed::Dressed { dressing } => (Lay::Dress(dressing.clone()), Vec::new()),
+            Laid::Inside { piece, shapes } => (Lay::Stamp(prefabs.piece(piece)?), shapes.clone()),
+            Laid::Dressed { dressing } => (Lay::Dress(dressing.clone()), Vec::new()),
         };
         placed.push(PoolPick { name: entry.name.clone(), lay, shapes, prefer: entry.prefer, required: pick.required });
     }

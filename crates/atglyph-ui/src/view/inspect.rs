@@ -835,7 +835,7 @@ mod tests {
         let ordinary = stage.app.world().resource::<InspectView>().duel.expect("a duel");
 
         let quickness = stage.app.world().resource::<Registries>().stats.expect("quickness");
-        let haste = atglyph_rules::Modifier::new(quickness, atglyph_rules::Op::Add(100), atglyph_rules::Source::Game(1));
+        let haste = atglyph_rules::Modifier::new(quickness, atglyph_rules::Op::Add(100), atglyph_rules::ModifierSource::Game(1));
         stage.app.world_mut().get_mut::<StatBlock>(stage.player).expect("every actor has stats").add(haste);
         stage.tick();
         let hasted = stage.app.world().resource::<InspectView>().duel.expect("a duel");

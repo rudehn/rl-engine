@@ -122,7 +122,7 @@ pub struct ItemDef {
     /// How far it flies when thrown, and what it strikes; absent, it
     /// cannot be thrown.
     #[serde(default)]
-    pub throw: Option<parts::Throw>,
+    pub throw: Option<parts::ThrowDef>,
     /// What one blow or shot with it costs, in hundredths of a step;
     /// absent, an ordinary turn.
     #[serde(default)]

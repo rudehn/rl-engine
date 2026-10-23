@@ -69,10 +69,10 @@ pub enum Op {
 /// modifiers into one [`Stats`] without knowing about each other: statuses
 /// tag theirs and remove them one instance at a time, the gear fold
 /// strips every item's and puts the worn ones back, and neither may touch
-/// the other's. A game's own sources sit under [`Source::Game`] with a
+/// the other's. A game's own sources sit under [`ModifierSource::Game`] with a
 /// number of the game's choosing, and nothing in the engine removes them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Source {
+pub enum ModifierSource {
     /// A status, by id and which instance of it when it stacks.
     Status {
         /// Which status.
@@ -92,10 +92,10 @@ pub enum Source {
     Holding(crate::status::StatusId),
 }
 
-impl Source {
+impl ModifierSource {
     /// Whether a worn item put this on.
     pub const fn is_item(self) -> bool {
-        matches!(self, Source::Item(_))
+        matches!(self, ModifierSource::Item(_))
     }
 }
 
@@ -108,12 +108,12 @@ pub struct Modifier {
     /// What it does.
     pub op: Op,
     /// What applied it.
-    pub source: Source,
+    pub source: ModifierSource,
 }
 
 impl Modifier {
     /// A modifier from `source`.
-    pub const fn new(stat: StatId, op: Op, source: Source) -> Self {
+    pub const fn new(stat: StatId, op: Op, source: ModifierSource) -> Self {
         Self { stat, op, source }
     }
 }
@@ -151,14 +151,14 @@ impl Stats {
     }
 
     /// Removes every modifier from `source`. Returns how many went.
-    pub fn remove_source(&mut self, source: Source) -> usize {
+    pub fn remove_source(&mut self, source: ModifierSource) -> usize {
         let before = self.modifiers.len();
         self.modifiers.retain(|m| m.source != source);
         before - self.modifiers.len()
     }
 
     /// Removes every modifier whose source fails `keep`. Returns how many went.
-    pub fn retain_sources(&mut self, keep: impl Fn(Source) -> bool) -> usize {
+    pub fn retain_sources(&mut self, keep: impl Fn(ModifierSource) -> bool) -> usize {
         let before = self.modifiers.len();
         self.modifiers.retain(|m| keep(m.source));
         before - self.modifiers.len()
@@ -216,13 +216,13 @@ mod tests {
         let hp = d.expect("hp");
         let mut s = Stats::new();
         assert_eq!(s.value(hp, &d), 10);
-        s.add(Modifier::new(hp, Op::Add(5), Source::Game(1)));
-        s.add(Modifier::new(hp, Op::MulPct(200), Source::Game(2)));
-        s.add(Modifier::new(hp, Op::Add(-3), Source::Game(3)));
+        s.add(Modifier::new(hp, Op::Add(5), ModifierSource::Game(1)));
+        s.add(Modifier::new(hp, Op::MulPct(200), ModifierSource::Game(2)));
+        s.add(Modifier::new(hp, Op::Add(-3), ModifierSource::Game(3)));
         assert_eq!(s.value(hp, &d), 24, "(10 + 5 - 3) * 2");
-        s.add(Modifier::new(hp, Op::AtMost(20), Source::Game(4)));
+        s.add(Modifier::new(hp, Op::AtMost(20), ModifierSource::Game(4)));
         assert_eq!(s.value(hp, &d), 20);
-        assert_eq!(s.remove_source(Source::Game(2)), 1);
+        assert_eq!(s.remove_source(ModifierSource::Game(2)), 1);
         assert_eq!(s.value(hp, &d), 12);
     }
 
@@ -233,9 +233,9 @@ mod tests {
         let d = defs();
         let hp = d.expect("hp");
         let mut s = Stats::new();
-        s.add(Modifier::new(hp, Op::Add(1), Source::Item(7)));
-        s.add(Modifier::new(hp, Op::Add(2), Source::Status { status: crate::status::StatusId::from_raw(0), instance: 0 }));
-        s.add(Modifier::new(hp, Op::Add(4), Source::Game(7)));
+        s.add(Modifier::new(hp, Op::Add(1), ModifierSource::Item(7)));
+        s.add(Modifier::new(hp, Op::Add(2), ModifierSource::Status { status: crate::status::StatusId::from_raw(0), instance: 0 }));
+        s.add(Modifier::new(hp, Op::Add(4), ModifierSource::Game(7)));
         assert_eq!(s.retain_sources(|source| !source.is_item()), 1, "one item's modifier went");
         assert_eq!(s.value(hp, &d), 16, "the status's and the game's stayed, though one shares the item's number");
     }
@@ -246,9 +246,9 @@ mod tests {
         let armor = d.expect("armor");
         let mut s = Stats::new();
         s.set_base(armor, 50);
-        s.add(Modifier::new(armor, Op::Add(70), Source::Game(9)));
+        s.add(Modifier::new(armor, Op::Add(70), ModifierSource::Game(9)));
         assert_eq!(s.value(armor, &d), 90, "capped by the definition");
-        s.add(Modifier::new(armor, Op::Add(-500), Source::Game(10)));
+        s.add(Modifier::new(armor, Op::Add(-500), ModifierSource::Game(10)));
         assert_eq!(s.value(armor, &d), 0);
         assert_eq!(s.base(d.expect("speed"), &d), 100);
     }

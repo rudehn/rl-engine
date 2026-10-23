@@ -307,7 +307,7 @@ mod tests {
     /// holds rather than where it stands: the ride down spent a turn, and a
     /// sentry that saw the commando arrive has already left its cell.
     fn every_guard_holds_its_post(app: &mut App, deck: u32, at: &str) {
-        use atglyph::rules::prefab::{Pick, Slot};
+        use atglyph::rules::prefab::{Slot, SlotPick};
         let here = map_of(deck);
         let entry = app.world().resource::<WorldMap>().place(here).expect("the deck is built").entry;
         let guards: Vec<(Id<crate::droids::MonsterDef>, Post)> = {
@@ -322,7 +322,7 @@ mod tests {
             let Some(Slot::Monster { pick, .. }) = spot.prefab.and_then(|key| prefabs.slot(key, glyph)) else { continue };
             let held: Vec<Id<crate::droids::MonsterDef>> = guards.iter().filter(|(_, post)| *post == Post(spot.at)).map(|(kind, _)| *kind).collect();
             assert_eq!(held.len(), 1, "{at}: one monster posted at '{glyph}' {:?}", spot.at);
-            if let Pick::Role(role) = pick {
+            if let SlotPick::Role(role) = pick {
                 assert!(prefabs.roles().get(*role).fits(held[0]), "{at}: '{glyph}' holds a monster outside {:?}", prefabs.roles().get(*role).name);
             }
         }

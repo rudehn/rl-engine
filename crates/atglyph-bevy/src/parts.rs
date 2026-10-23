@@ -31,7 +31,7 @@ use std::sync::Arc;
 
 use atglyph_core::{DiceRoll, Id};
 use atglyph_grid::Glow;
-use atglyph_rules::parts::{Charges, KeepAway, Level, Melee, Ranged, Throw};
+use atglyph_rules::parts::{Charges, KeepAway, Level, Melee, Ranged, ThrowDef};
 use atglyph_rules::stats::Op;
 use atglyph_rules::{
     AbilityId, Brain, DropTable, EquipShape, FactionId, HearingStats, NoticeStats, Registry, Repertoire, Resistances, StatId, Stats, StatusDef, StatusId,
@@ -71,7 +71,7 @@ pub struct Attacks {
     /// The shot.
     pub ranged: Option<Ranged>,
     /// How it flies when thrown, for an item.
-    pub throw: Option<Throw>,
+    pub throw: Option<ThrowDef>,
     /// What one blow or shot costs, in hundredths of a step; `None` is an
     /// ordinary turn.
     pub cost: Option<u32>,
@@ -247,7 +247,7 @@ impl ItemParts {
         Attacks {
             melee: self.attacks.melee.map(|m| Melee { roll: plus(m.roll), ..m }),
             ranged: self.attacks.ranged.map(|r| Ranged { roll: plus(r.roll), ..r }),
-            throw: self.attacks.throw.map(|t| Throw { strike: t.strike.map(|(roll, kind)| (plus(roll), kind)), ..t }),
+            throw: self.attacks.throw.map(|t| ThrowDef { strike: t.strike.map(|(roll, kind)| (plus(roll), kind)), ..t }),
             cost: self.attacks.cost,
         }
     }
@@ -840,7 +840,7 @@ mod tests {
         let kind = atglyph_rules::damage::DamageKindId::from_raw(0);
         let stat = StatId::from_raw(0);
         let melee = Melee { roll: DiceRoll::new(1, 6), kind: kind.into(), look: None, shape: None, unaware: None };
-        let throw = Throw { range: 5, effective: None, strike: Some((DiceRoll::new(1, 4), kind.into())) };
+        let throw = ThrowDef { range: 5, effective: None, strike: Some((DiceRoll::new(1, 4), kind.into())) };
         let level = Level { min: Some(-2), max: Some(5), damage: Some(1), charges: Some(1), stats: vec![(stat.into(), 5)], ..Level::default() };
         Arc::new(ItemParts {
             attacks: Attacks { melee: Some(melee), throw: Some(throw), ..Attacks::default() },

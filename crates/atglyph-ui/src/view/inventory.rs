@@ -295,8 +295,8 @@ fn describe_uses(
 ) -> Vec<String> {
     let lines_of = |trigger: &atglyph_bevy::Trigger| -> Vec<String> {
         let area = match trigger.area {
-            atglyph_rules::Area::Here => String::new(),
-            atglyph_rules::Area::Burst { radius } => format!(" in a burst of {radius}"),
+            atglyph_rules::EffectArea::Here => String::new(),
+            atglyph_rules::EffectArea::Burst { radius } => format!(" in a burst of {radius}"),
         };
         trigger.effects.describe(registries, bonus).into_iter().map(|line| format!("{line}{area}")).collect()
     };
@@ -505,7 +505,7 @@ mod tests {
         let torso = stage.app.world().resource::<Registries>().slots.expect("torso");
         let on_use = atglyph_bevy::Trigger {
             on: atglyph_bevy::Moments::USE,
-            area: atglyph_rules::Area::Here,
+            area: atglyph_rules::EffectArea::Here,
             fires: None,
             effects: std::sync::Arc::new(atglyph_bevy::Effects::default()),
             look: None,
@@ -550,7 +550,7 @@ mod tests {
         let effects = Effects::build(&specs, &kinds, &registries.names()).unwrap();
         let trigger = atglyph_bevy::Trigger {
             on: Moments::USE,
-            area: atglyph_rules::Area::Here,
+            area: atglyph_rules::EffectArea::Here,
             fires: None,
             effects: std::sync::Arc::new(effects),
             look: None,
@@ -569,7 +569,7 @@ mod tests {
     fn plain_trigger(on: MomentId, effects: &std::sync::Arc<Effects>) -> atglyph_bevy::Trigger {
         atglyph_bevy::Trigger {
             on,
-            area: atglyph_rules::Area::Here,
+            area: atglyph_rules::EffectArea::Here,
             fires: None,
             effects: effects.clone(),
             look: None,
@@ -687,7 +687,7 @@ mod tests {
     /// A `use` trigger with nothing in it, aimed or asking as given.
     fn on_use(asks: Option<atglyph_rules::Asks>) -> atglyph_bevy::Trigger {
         let effects = std::sync::Arc::new(atglyph_bevy::Effects::default());
-        atglyph_bevy::Trigger { on: Moments::USE, area: atglyph_rules::Area::Here, fires: None, effects, look: None, every: None, targeting: None, asks }
+        atglyph_bevy::Trigger { on: Moments::USE, area: atglyph_rules::EffectArea::Here, fires: None, effects, look: None, every: None, targeting: None, asks }
     }
 
     /// A thing not yet known reaches the row by its name and where it goes,

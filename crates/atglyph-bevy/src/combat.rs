@@ -32,7 +32,7 @@
 //! [`stealth`](crate::stealth) runs to say who has noticed whom.
 
 use atglyph_core::{DiceRoll, Point, geometry};
-use atglyph_rules::ability::Look;
+use atglyph_rules::ability::ParticleLook;
 use atglyph_rules::damage::{DamageKindId, Defender, SubtractArmor};
 use atglyph_rules::parts::{Melee, Ranged};
 use atglyph_rules::{DamageStage, FactionId, Factions, Hit, Relation, Resistances, StatId, StatusId};
@@ -112,7 +112,7 @@ pub struct MeleeAttack {
     /// a burst's cells show the drawer's own burst glyphs, so the look's
     /// glyph is not drawn. `None` shows nothing, which is how a plain blow
     /// reads: the log says it, and the target's health bar moves.
-    pub look: Option<Look>,
+    pub look: Option<ParticleLook>,
     /// Who else a blow strikes besides its target. `None` strikes the
     /// target alone, which is every blow a game has not given a shape.
     pub shape: Option<AttackShape>,
@@ -147,7 +147,7 @@ impl MeleeAttack {
     }
 
     /// A blow bursts on its target in `look`'s colour.
-    pub const fn looking(mut self, look: Look) -> Self {
+    pub const fn looking(mut self, look: ParticleLook) -> Self {
         self.look = Some(look);
         self
     }
@@ -190,7 +190,7 @@ pub struct RangedAttack {
     /// What flies from the shooter to the target. With one, a shot is seen
     /// to fly and, while something watches, lands when it arrives rather
     /// than when it is fired. `None` flies nothing and lands at once.
-    pub look: Option<Look>,
+    pub look: Option<ParticleLook>,
     /// Who else a shot strikes besides its target. `None` strikes the
     /// target alone.
     ///
@@ -220,7 +220,7 @@ impl RangedAttack {
     }
 
     /// A shot flies in `look`.
-    pub const fn looking(mut self, look: Look) -> Self {
+    pub const fn looking(mut self, look: ParticleLook) -> Self {
         self.look = Some(look);
         self
     }
@@ -945,7 +945,7 @@ struct Weapon {
     kind: DamageKindId,
     dice: DiceRoll,
     cost: Option<u32>,
-    look: Option<Look>,
+    look: Option<ParticleLook>,
     shape: Option<AttackShape>,
     /// What a blow on the unaware is worth, in percent: the blow's own or
     /// the house's, and never anything for a shot.
@@ -961,7 +961,7 @@ struct Weapon {
 /// swung and a worn pistol fired without either being copied onto the
 /// wearer.
 ///
-/// An attack with a [`Look`] is seen: a shot flies from the shooter to
+/// An attack with a [`ParticleLook`] is seen: a shot flies from the shooter to
 /// the target, and a blow bursts on the target. With something watching,
 /// a shot's hits wait in [`Airborne`] until the flight has been
 /// seen, the way a thrown knife does; a blow has no flight to wait for
@@ -1649,7 +1649,7 @@ mod tests {
     #[test]
     fn a_new_attack_leaves_every_optional_field_unset_and_each_builder_sets_its_own() {
         let kind = DamageKindId::from_raw(0);
-        let look = atglyph_rules::ability::Look { glyph: '*', color: atglyph_grid::Rgb::new(255, 80, 40) };
+        let look = atglyph_rules::ability::ParticleLook { glyph: '*', color: atglyph_grid::Rgb::new(255, 80, 40) };
         let blow = MeleeAttack::new(kind, DiceRoll::flat(2));
         assert_eq!((blow.kind, blow.dice, blow.cost, blow.look, blow.shape, blow.unaware), (kind, DiceRoll::flat(2), None, None, None, None));
         let blow = blow.costing(70).looking(look).shaped(AttackShape::Sweep).unaware(500);
@@ -1676,7 +1676,7 @@ mod tests {
         seen.dealt.extend(dealt.read().copied());
     }
 
-    const LOOK: Look = Look { glyph: '*', color: atglyph_grid::Rgb::new(255, 80, 40) };
+    const LOOK: ParticleLook = ParticleLook { glyph: '*', color: atglyph_grid::Rgb::new(255, 80, 40) };
 
     /// A player armed with what `arm` makes of the one damage kind, facing
     /// a mindless target with twenty health `dx` cells east, with play
@@ -2420,7 +2420,7 @@ mod tests {
         app.world_mut().resource_mut::<Registries>().stats = stats;
         app.world_mut().resource_mut::<CombatRules>().mending = Some(mending);
         let mut block = StatBlock::default();
-        block.0.add(Modifier::new(mending, Op::Add(-50), atglyph_rules::stats::Source::Game(7)));
+        block.0.add(Modifier::new(mending, Op::Add(-50), atglyph_rules::stats::ModifierSource::Game(7)));
         app.world_mut().entity_mut(player).insert(block);
         app.world_mut().get_mut::<Health>(player).unwrap().current = 10;
         app.world_mut().write_message(Heal::new(player, 8));

@@ -431,7 +431,7 @@ pub struct Cues<'w, 's> {
 impl Cues<'_, '_> {
     /// The glyph and colour a look names.
     fn look(&self, look: LookOf) -> (char, Color) {
-        let given = |l: atglyph_rules::ability::Look| (l.glyph, Color::srgb_u8(l.color.r, l.color.g, l.color.b));
+        let given = |l: atglyph_rules::ability::ParticleLook| (l.glyph, Color::srgb_u8(l.color.r, l.color.g, l.color.b));
         match look {
             LookOf::Ability(id) => self.abilities.as_deref().and_then(|a| a.get(id).look).map(given).unwrap_or(self.style.plain),
             LookOf::Item(item) => self.glyphs.get(item).map(|g| (g.ch, g.fg)).unwrap_or(self.style.plain),
@@ -818,7 +818,7 @@ mod tests {
         let start = atglyph_bevy::testing::ground(&mut app);
         let sides = atglyph_bevy::testing::two_sides(&mut app);
         let me = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), RevealsMap, Health::full(30), Faction(sides.ours))).id();
-        let look = atglyph_rules::ability::Look { glyph: '*', color: atglyph_grid::Rgb::new(255, 80, 40) };
+        let look = atglyph_rules::ability::ParticleLook { glyph: '*', color: atglyph_grid::Rgb::new(255, 80, 40) };
         app.world_mut().spawn((
             Actor,
             Blocks,
