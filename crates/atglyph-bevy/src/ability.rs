@@ -874,7 +874,7 @@ fn spend_tagged(carried: &[Entity], tag: TagId, count: u16, state: &mut UserStat
 /// every pass, so a reader holding last pass's actor would otherwise act
 /// on someone else's abilities.
 #[derive(Resource, Debug, Default)]
-pub struct Offered {
+pub struct UsableAbilities {
     /// Who it was worked out for. The player as readily as a monster:
     /// what may be used is the same question for both.
     actor: Option<Entity>,
@@ -884,7 +884,7 @@ pub struct Offered {
     refused: Vec<(AbilityId, Vec<Blocked>)>,
 }
 
-impl Offered {
+impl UsableAbilities {
     /// What `actor` can use now, empty when it was worked out for someone
     /// else.
     pub(crate) fn usable_by(&self, actor: Entity) -> &[Usable] {
@@ -909,7 +909,7 @@ impl Offered {
 /// monster from spending its turn on something it cannot pay for, and a
 /// menu never greys a row the resolver would have accepted.
 pub(crate) fn offer_abilities(
-    mut offered: ResMut<Offered>,
+    mut offered: ResMut<UsableAbilities>,
     abilities: Res<Abilities>,
     turns: Res<Turns>,
     state: UserState,
@@ -936,7 +936,7 @@ pub(crate) fn offer_abilities(
 /// Tells the mind holding the turn what it may use: what the gate offered
 /// it, in [`PerceiveSet::Annotate`](crate::plugin::PerceiveSet::Annotate),
 /// so a tactic is never offered an ability the resolver would refuse.
-pub(crate) fn perceive_abilities(mut thinking: ResMut<crate::minds::Thinking>, offered: Res<Offered>) {
+pub(crate) fn perceive_abilities(mut thinking: ResMut<crate::minds::Thinking>, offered: Res<UsableAbilities>) {
     let Some(thinker) = thinking.actor() else { return };
     let usable = offered.usable_by(thinker).to_vec();
     if let Some(snapshot) = thinking.snapshot_mut() {
@@ -1047,8 +1047,8 @@ impl Plugin for AbilitiesPlugin {
         app.register_required_components::<Actor, Pools>();
         app.register_required_components::<Actor, Cooldowns>();
         app.add_stream::<ReflectRng>("AbilitiesPlugin");
-        app.init_resource::<Offered>()
-            .reset_on_new_run::<Offered>()
+        app.init_resource::<UsableAbilities>()
+            .reset_on_new_run::<UsableAbilities>()
             .add_airborne::<Landing>()
             .add_message::<AbilityEvent>()
             .add_action::<Use>()
@@ -1956,7 +1956,7 @@ mod tests {
         app.world_mut().write_message(Intent::new(me, crate::turn::Wait));
         app.update();
 
-        assert!(app.world().resource::<Offered>().usable.is_empty(), "an empty pool is not an offer");
+        assert!(app.world().resource::<UsableAbilities>().usable.is_empty(), "an empty pool is not an offer");
         let refusals = app.world_mut().resource_mut::<Messages<AbilityEvent>>().drain().filter(|e| matches!(e, AbilityEvent::Refused { .. })).count();
         assert_eq!(refusals, 0, "it was never offered, so it never asked");
     }

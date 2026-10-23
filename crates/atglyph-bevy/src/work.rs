@@ -711,7 +711,7 @@ mod tests {
     /// The sides `arena` made, for a test that needs a faction or a damage
     /// kind.
     #[derive(Resource, Clone, Copy)]
-    struct TheSides(crate::testing::Sides);
+    struct TheSides(crate::testing::TwoSides);
 
     /// Every `WorkBroken`, in order.
     #[derive(Resource, Default)]

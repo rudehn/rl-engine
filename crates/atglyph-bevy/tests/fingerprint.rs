@@ -12,7 +12,7 @@
 use std::sync::Arc;
 
 use atglyph_bevy::prelude::*;
-use atglyph_bevy::testing::{Sides, ground, two_sides};
+use atglyph_bevy::testing::{TwoSides, ground, two_sides};
 use atglyph_core::{DiceRoll, RunSeed, geometry};
 use atglyph_rules::Brain;
 use atglyph_rules::ai::awareness::{NoticeStats, StealthStats};
@@ -58,7 +58,7 @@ fn run(seed: u64, turns: usize) -> u64 {
     let mut app = atglyph_bevy::testing::headless_app();
     app.add_plugins((FovPlugin, CombatPlugin, MindsPlugin, StealthPlugin, ItemsPlugin));
     let start = ground(&mut app);
-    let Sides { ours, theirs, kind } = two_sides(&mut app);
+    let TwoSides { ours, theirs, kind } = two_sides(&mut app);
     app.insert_resource(Seed(RunSeed(seed)));
     let player = app
         .world_mut()

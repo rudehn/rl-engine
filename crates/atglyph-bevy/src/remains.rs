@@ -542,7 +542,7 @@ mod tests {
     use crate::components::{Player, Viewshed};
     use crate::state::EngineState;
     use crate::testing::headless_app;
-    use crate::testing::{self, Sides};
+    use crate::testing::{self, TwoSides};
     use atglyph_core::DiceRoll;
     use atglyph_rules::Hit;
     use bevy::ecs::entity_disabling::Disabled;
@@ -569,7 +569,7 @@ mod tests {
     }
 
     /// An arena with combat and remains, and a world to stand in.
-    fn arena() -> (App, Point, Sides) {
+    fn arena() -> (App, Point, TwoSides) {
         let mut app = headless_app();
         app.add_plugins((crate::fov::FovPlugin, CombatPlugin, RemainsPlugin));
         let start = testing::ground(&mut app);
@@ -578,7 +578,7 @@ mod tests {
     }
 
     /// Spawns something that can be killed, `at`, leaving remains or not.
-    fn victim(app: &mut App, at: Point, sides: Sides, leaves: bool) -> Entity {
+    fn victim(app: &mut App, at: Point, sides: TwoSides, leaves: bool) -> Entity {
         let mut spawn = app.world_mut().spawn((Actor, Blocks, Position(at), Health::full(4), Faction(sides.theirs)));
         if leaves {
             spawn.insert(LeavesRemains);
@@ -587,7 +587,7 @@ mod tests {
     }
 
     /// Kills `who` outright and runs the frame its death is cleaned up in.
-    fn kill(app: &mut App, who: Entity, sides: Sides) {
+    fn kill(app: &mut App, who: Entity, sides: TwoSides) {
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
         let hit = Hit::from_source(None, sides.kind, 99);
@@ -863,7 +863,7 @@ mod tests {
     /// A player at `start`: what streams the map in around it, and what the
     /// turns wait on, so a test that needs walkable ground or a turn dealt
     /// has both.
-    fn watcher(app: &mut App, start: Point, sides: Sides) -> Entity {
+    fn watcher(app: &mut App, start: Point, sides: TwoSides) -> Entity {
         let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(sides.ours))).id();
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();

@@ -61,14 +61,16 @@ pub mod turn;
 pub mod work;
 pub mod world;
 
-pub use ability::{Abilities, AbilitiesPlugin, AbilityEvent, Aimed, Bystanders, Cooldowns, Grants, Known, Landed, Offered, Pools, Reflected, Reflects, Use};
+pub use ability::{
+    Abilities, AbilitiesPlugin, AbilityEvent, Aimed, Bystanders, Cooldowns, Grants, Known, Landed, Pools, Reflected, Reflects, UsableAbilities, Use,
+};
 pub use accuracy::{Attempt, HitRules, Marksmanship, Missed};
 pub use ammo::{Ammo, AmmoChanged, AmmoPlugin, AmmoSet, Dry};
 pub use atglyph_grid::LightBand;
 pub use bump::{Bump, BumpRules, Bumped, OnAlly, Swapped};
 pub use combat::{
-    Armor, Attack, AttackShape, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Heal, Healed, Health,
-    Invulnerable, Loadout, MeleeAttack, RangedAttack, Reach, Resists, Stowed, Strikes, Struck, line_of_fire, shot,
+    Armor, Attack, AttackShape, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageRoute, DamageStages, Dead, DeathEvent, Faction, Heal,
+    Healed, Health, Invulnerable, Loadout, MeleeAttack, RangedAttack, Resists, Stowed, Strikes, Struck, line_of_fire, shot,
 };
 pub use components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
 pub use consumable::{AddSpending, Attuned, Consumable, Recharge, SpendingMoments, Spent, WhenEmpty};
@@ -94,8 +96,8 @@ pub use lighting::{
 };
 pub use loot::{Drops, Found, ItemMaker, LootArea, LootPlugin, LootRng, LootSet, Provenance};
 pub use minds::{
-    AddChoice, CameFrom, DEFAULT_PERCEPTION, Doing, FlowFields, Intelligence, Joined, Leader, Mind, MindChose, MindsPlugin, Perception, Post, Profile, Sight,
-    Thinking,
+    AddChoice, CameFrom, DEFAULT_PERCEPTION, Doing, FlowFields, Intelligence, JoinStamp, Leader, Mind, MindChose, MindsPlugin, Perception, Post, Profile,
+    Sight, Thinking,
 };
 pub use noise::{AddSound, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, NoiseRunning, Sound, SoundId, SoundNames, Sounds};
 pub use parts::{ActorParts, Attacks, ItemLevel, ItemParts, LightWhen, held_for_life, insert_parts};
@@ -134,7 +136,7 @@ pub use world::{PlaceMap, PlaceSave, WindowView, WorldMap, WorldMapSave};
 ///
 /// What a game spawns, sends, reads and registers, and the traits whose
 /// methods it calls. Not what other engine crates build on, such as
-/// `Bystanders` and `Offered`, nor the effects a game names only in RON:
+/// `Bystanders` and `UsableAbilities`, nor the effects a game names only in RON:
 /// those stay at the crate root, and an effect in the prelude was a name
 /// that collided with a game's own `Shove` action.
 pub mod prelude {
@@ -144,8 +146,8 @@ pub mod prelude {
     pub use crate::bump::{Bump, BumpRules, Bumped, OnAlly, Swapped};
 
     pub use crate::combat::{
-        Armor, Attack, AttackShape, CombatPlugin, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Heal, Healed, Health,
-        Invulnerable, Loadout, MeleeAttack, RangedAttack, Reach, Resists, Stowed, Strikes, Struck, line_of_fire, shot,
+        Armor, Attack, AttackShape, CombatPlugin, CombatRules, DamageDealt, DamageEvent, DamageRoute, DamageStages, Dead, DeathEvent, Faction, Heal, Healed,
+        Health, Invulnerable, Loadout, MeleeAttack, RangedAttack, Resists, Stowed, Strikes, Struck, line_of_fire, shot,
     };
     pub use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Speed, Viewshed};
     pub use crate::consumable::{AddSpending, Attuned, Consumable, WhenEmpty};
@@ -173,7 +175,7 @@ pub mod prelude {
     };
 
     pub use crate::loot::{Drops, Found, ItemMaker, LootArea, LootPlugin, LootSet, Provenance};
-    pub use crate::minds::{AddChoice, Doing, Intelligence, Joined, Leader, Mind, MindChose, MindsPlugin, Perception, Post, Profile, Thinking};
+    pub use crate::minds::{AddChoice, Doing, Intelligence, JoinStamp, Leader, Mind, MindChose, MindsPlugin, Perception, Post, Profile, Thinking};
 
     pub use crate::noise::{AddSound, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, SoundId, SoundNames, Sounds};
     pub use crate::parts::{ActorParts, Attacks, ItemLevel, ItemParts, LightWhen, held_for_life, insert_parts};

@@ -20,7 +20,7 @@ use crate::view::Row;
 
 /// Every follower of the player, in the order they joined.
 ///
-/// In the order of [`Joined`], the stamp a follower takes with its
+/// In the order of [`JoinStamp`], the stamp a follower takes with its
 /// `Leader`, rather than by distance or by entity: a list that reshuffled
 /// as followers moved would make a player read every name again to find
 /// the one they were watching, and `atglyph-save` keeps the stamp, so the order
@@ -82,7 +82,7 @@ type Follower = (
     Option<&'static Health>,
     Option<&'static Position>,
     Option<&'static OnMap>,
-    Option<&'static Joined>,
+    Option<&'static JoinStamp>,
 );
 
 /// Where the player stands, for which map is here and how far a follower is.
@@ -92,7 +92,7 @@ type Here = (Entity, Option<&'static Position>, Option<&'static OnMap>);
 /// player.
 ///
 /// A living actor, because remains keep the `Leader` the actor had and a
-/// body is not following anyone. One without a [`Joined`] yet, taken on
+/// body is not following anyone. One without a [`JoinStamp`] yet, taken on
 /// this very frame, goes last, which is where its stamp will put it.
 pub(crate) fn collect_party(mut view: ResMut<PartyView>, player: Query<Here, With<Player>>, followers: Query<Follower, (With<Actor>, Without<Dead>)>) {
     view.rows.clear();

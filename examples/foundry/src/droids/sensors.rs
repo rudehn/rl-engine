@@ -97,7 +97,7 @@ mod tests {
         let ion = registries.damage_kinds.expect("ion");
         let item = app.world_mut().spawn(Jammed { turns: 3 }).id();
         app.world_mut().write_message(TurnEnd { turn: 1 });
-        app.world_mut().write_message(DamageDealt { target: item, hit: Hit::from_source(None, ion, 1), dealt: 1, lost: 1, reach: Reach::default() });
+        app.world_mut().write_message(DamageDealt { target: item, hit: Hit::from_source(None, ion, 1), dealt: 1, lost: 1, reach: DamageRoute::default() });
         if unjam_first {
             app.world_mut().run_system_once(unjam_sensors).unwrap();
             app.world_mut().run_system_once(jam_sensors).unwrap();
@@ -128,7 +128,7 @@ mod tests {
         let ion = registries.damage_kinds.expect("ion");
         let item = app.world_mut().spawn(Jammed { turns: 3 }).id();
         app.world_mut().write_message(TurnEnd { turn: 1 });
-        app.world_mut().write_message(DamageDealt { target: item, hit: Hit::from_source(None, ion, 1), dealt: 1, lost: 1, reach: Reach::default() });
+        app.world_mut().write_message(DamageDealt { target: item, hit: Hit::from_source(None, ion, 1), dealt: 1, lost: 1, reach: DamageRoute::default() });
         app.world_mut().run_schedule(atglyph::ecs::plugin::Turn);
         assert_eq!(
             app.world().get::<Jammed>(item).unwrap().turns,
@@ -151,7 +151,7 @@ mod tests {
         let registries = app.world().resource::<Registries>().clone();
         let ion = registries.damage_kinds.expect("ion");
         let target = app.world_mut().spawn((OwnDarkSight(4), DarkSight(4))).id();
-        app.world_mut().write_message(DamageDealt { target, hit: Hit::from_source(None, ion, 1), dealt: 1, lost: 1, reach: Reach::default() });
+        app.world_mut().write_message(DamageDealt { target, hit: Hit::from_source(None, ion, 1), dealt: 1, lost: 1, reach: DamageRoute::default() });
         app.world_mut().run_schedule(atglyph::ecs::plugin::Turn);
         assert_eq!(
             app.world().get::<DarkSight>(target),

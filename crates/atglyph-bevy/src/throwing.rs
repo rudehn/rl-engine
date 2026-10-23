@@ -255,14 +255,14 @@ fn land(
     // missed and then lands as a throw that struck nobody.
     let missed = target.is_some() && odds.is_some_and(|o| !o.roll(&mut **rng));
     if let (true, Some(target)) = (missed, target) {
-        reports.missed.write(crate::accuracy::Missed { attacker: actor, target, with: Some(item), reach: crate::combat::Reach::Thrown });
+        reports.missed.write(crate::accuracy::Missed { attacker: actor, target, with: Some(item), reach: crate::combat::DamageRoute::Thrown });
     }
     let struck = if missed { None } else { target };
     if let (Some(target), Some((kind, dice))) = (struck, strike) {
         // Floored where it is rolled, as a blow is: a throw that rolls
         // below nothing has missed, not healed.
         let amount = dice.roll_at_least(&mut **rng, 0);
-        reports.damage.write(DamageEvent::arriving(target, Hit::by(actor, kind, amount), crate::combat::Reach::Thrown));
+        reports.damage.write(DamageEvent::arriving(target, Hit::by(actor, kind, amount), crate::combat::DamageRoute::Thrown));
     }
     reports.events.write(ItemEvent::Thrown { actor, item, at: Position(rests), struck });
     reports.fired.write(Fired { on: item, moment: Moments::LAND, by: Some(actor), at: rests });
@@ -310,7 +310,7 @@ mod tests {
         app: App,
         player: Entity,
         start: Point,
-        sides: crate::testing::Sides,
+        sides: crate::testing::TwoSides,
     }
 
     impl Rig {

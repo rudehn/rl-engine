@@ -42,7 +42,7 @@ impl Stage {
         app.insert_resource(atglyph_render::Terminal::new(100, 40, Vec2::ONE));
 
         let at = atglyph_bevy::testing::ground(&mut app);
-        let atglyph_bevy::testing::Sides { ours, theirs, kind } = atglyph_bevy::testing::two_sides(&mut app);
+        let atglyph_bevy::testing::TwoSides { ours, theirs, kind } = atglyph_bevy::testing::two_sides(&mut app);
 
         let player = app
             .world_mut()

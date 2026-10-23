@@ -70,7 +70,7 @@ struct Member {
 fn party(app: &mut App) -> Vec<Member> {
     let me = adventurer(app);
     let world = app.world_mut();
-    let mut hired: Vec<(Joined, Entity)> = world.query_filtered::<(&Joined, Entity), With<Mercenary>>().iter(world).map(|(j, e)| (*j, e)).collect();
+    let mut hired: Vec<(JoinStamp, Entity)> = world.query_filtered::<(&JoinStamp, Entity), With<Mercenary>>().iter(world).map(|(j, e)| (*j, e)).collect();
     hired.sort();
     let world = app.world();
     hired

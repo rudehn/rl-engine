@@ -109,7 +109,7 @@ pub fn ground_with(app: &mut App, tiles: TileRegistry) -> Point {
 /// Two sides at war and the one kind of damage between them, as
 /// [`two_sides`] registered them.
 #[derive(Debug, Clone, Copy)]
-pub struct Sides {
+pub struct TwoSides {
     /// The player's side.
     pub ours: FactionId,
     /// Everyone the player's side is hostile to, and who is hostile back.
@@ -118,10 +118,10 @@ pub struct Sides {
     pub kind: DamageKindId,
 }
 
-/// Inserts combat rules and [`Registries`] for a test that fights: the two sides of [`Sides`],
+/// Inserts combat rules and [`Registries`] for a test that fights: the two sides of [`TwoSides`],
 /// mutually hostile, one armored damage kind, armor subtracted, and
 /// [`TEST_SEED`] as the run's seed.
-pub fn two_sides(app: &mut App) -> Sides {
+pub fn two_sides(app: &mut App) -> TwoSides {
     let kinds = Registry::from_defs(vec![DamageKind::new("kinetic")]).expect("one kind");
     let kind = kinds.expect("kinetic");
     let names = Registry::from_defs(vec![FactionDef::new("ours"), FactionDef::new("theirs")]).expect("two sides");
@@ -130,7 +130,7 @@ pub fn two_sides(app: &mut App) -> Sides {
         .insert_resource(Registries { damage_kinds: kinds, factions: names, ..Default::default() })
         .insert_resource(DamageStages(vec![Box::new(SubtractArmor)]))
         .insert_resource(crate::seed::Seed(TEST_SEED));
-    Sides { ours, theirs, kind }
+    TwoSides { ours, theirs, kind }
 }
 
 /// Plays keys into [`ButtonInput<KeyCode>`] the way a keyboard does.

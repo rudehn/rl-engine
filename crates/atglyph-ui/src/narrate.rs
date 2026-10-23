@@ -714,10 +714,10 @@ impl Witness<'_, '_> {
     /// ability, or the thing by its own name, `ash rod`, since the line
     /// says whose it was. `None` for a blow, a shot, a throw or a plain
     /// effect, and for a thing with no name to say.
-    fn landed_by(&self, reach: Reach) -> Option<String> {
+    fn landed_by(&self, reach: DamageRoute) -> Option<String> {
         match reach {
-            Reach::Ability(id) => Some(self.ability_name(id)).filter(|n| !n.is_empty()),
-            Reach::Thing(thing) => self.names.get(thing).ok()?.0.map(|n| n.as_str().to_string()),
+            DamageRoute::Ability(id) => Some(self.ability_name(id)).filter(|n| !n.is_empty()),
+            DamageRoute::Thing(thing) => self.names.get(thing).ok()?.0.map(|n| n.as_str().to_string()),
             _ => None,
         }
     }
@@ -941,7 +941,7 @@ pub(crate) fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Hear
             said.named = named;
             said.amount = d.dealt;
             rows.push(said);
-            if let (Reach::Ability(id), Some(by)) = (d.reach, d.hit.attacker) {
+            if let (DamageRoute::Ability(id), Some(by)) = (d.reach, d.hit.attacker) {
                 harmed_by.push((by, id));
             }
             continue;
@@ -951,7 +951,7 @@ pub(crate) fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Hear
         // over you. Anything else that did not travel as a weapon keeps
         // the blow wording, since a poison is already narrated by whatever
         // inflicted it.
-        let shot = d.reach == Reach::Shot;
+        let shot = d.reach == DamageRoute::Shot;
         let phrase = match (shot, you_attacker, you_target, landed) {
             (false, true, _, true) => Phrase::YouHit,
             (false, true, _, false) => Phrase::YouHitNothing,
@@ -1672,7 +1672,7 @@ mod tests {
         let hidden = stage.actor("line droid", 'd', 40, 40);
         stage.tick();
         stage.app.world_mut().resource_mut::<Phrasebook>().speak_unseen = true;
-        stage.app.world_mut().write_message(DamageEvent::arriving(player, atglyph_rules::Hit::by(hidden, kind, 3), Reach::Shot));
+        stage.app.world_mut().write_message(DamageEvent::arriving(player, atglyph_rules::Hit::by(hidden, kind, 3), DamageRoute::Shot));
         stage.tick();
         assert_eq!(spoken(&stage, &["The line droid", "Something"]), vec!["The line droid shoots you for 3.".to_string()]);
     }
@@ -2042,8 +2042,8 @@ mod tests {
         stage.tick();
         // The two halves of the same pass, as the resolver writes them.
         let world = stage.app.world_mut();
-        world.write_message(DamageEvent::arriving(player, atglyph_rules::Hit::by(droid, kind, 3), Reach::Shot));
-        world.write_message(DamageEvent::arriving(player, atglyph_rules::Hit::by(droid, kind, 2), Reach::Melee));
+        world.write_message(DamageEvent::arriving(player, atglyph_rules::Hit::by(droid, kind, 3), DamageRoute::Shot));
+        world.write_message(DamageEvent::arriving(player, atglyph_rules::Hit::by(droid, kind, 2), DamageRoute::Melee));
         stage.tick();
 
         let said = spoken(&stage, &["The line droid"]);
@@ -2060,8 +2060,8 @@ mod tests {
         let droid = stage.actor("line droid", 'd', 4, 0);
         stage.tick();
         let world = stage.app.world_mut();
-        world.write_message(Missed { attacker: player, target: droid, with: None, reach: Reach::Shot });
-        world.write_message(Missed { attacker: droid, target: player, with: None, reach: Reach::Shot });
+        world.write_message(Missed { attacker: player, target: droid, with: None, reach: DamageRoute::Shot });
+        world.write_message(Missed { attacker: droid, target: player, with: None, reach: DamageRoute::Shot });
         stage.tick();
         assert_eq!(spoken(&stage, &["You miss"]), vec!["You miss the line droid."]);
         assert_eq!(spoken(&stage, &["The line droid"]), vec!["The line droid misses you."]);
@@ -2180,8 +2180,8 @@ mod tests {
 
         // The other perspectives, as the pipeline reports them.
         let world = stage.app.world_mut();
-        world.write_message(DamageEvent::arriving(player, atglyph_rules::Hit::by(rat, kind, 2), Reach::Ability(bolt)));
-        world.write_message(DamageEvent::arriving(player, atglyph_rules::Hit::by(rat, kind, 0), Reach::Thing(rod)));
+        world.write_message(DamageEvent::arriving(player, atglyph_rules::Hit::by(rat, kind, 2), DamageRoute::Ability(bolt)));
+        world.write_message(DamageEvent::arriving(player, atglyph_rules::Hit::by(rat, kind, 0), DamageRoute::Thing(rod)));
         stage.tick();
         let theirs = spoken(&stage, &["The rat"]);
         assert_eq!(theirs, ["The rat's bolt hits you for 2.", "The rat's ash rod hits you, to no effect."], "{theirs:#?}");
@@ -2213,7 +2213,7 @@ mod tests {
         // landed in one pass.
         let world = stage.app.world_mut();
         world.write_message(AbilityEvent::Used { user: rat, ability: bolt, aim: stage.at, targets: vec![player] });
-        world.write_message(DamageEvent::arriving(player, atglyph_rules::Hit::by(rat, kind, 2), Reach::Ability(bolt)));
+        world.write_message(DamageEvent::arriving(player, atglyph_rules::Hit::by(rat, kind, 2), DamageRoute::Ability(bolt)));
         stage.tick();
         assert_eq!(spoken(&stage, &["The rat"]), ["The rat's bolt hits you for 2."], "{:#?}", lines(&stage));
     }
@@ -2319,7 +2319,7 @@ mod tests {
             !stage.app.world().get::<Viewshed>(player).expect("a viewshed").can_see(stage.at.offset(40, 40)),
             "the shooter has to be out of sight for this to test anything"
         );
-        stage.app.world_mut().write_message(DamageEvent::arriving(player, atglyph_rules::Hit::by(hidden, kind, 3), Reach::Shot));
+        stage.app.world_mut().write_message(DamageEvent::arriving(player, atglyph_rules::Hit::by(hidden, kind, 3), DamageRoute::Shot));
         stage.tick();
 
         let said = spoken(&stage, &["Something", "The line droid"]);
@@ -2347,8 +2347,8 @@ mod tests {
 
         let world = stage.app.world_mut();
         world.write_message(DamageEvent::new(player, atglyph_rules::Hit::by(goblin, kind, 3)));
-        world.write_message(Missed { attacker: goblin, target: player, with: None, reach: Reach::Melee });
-        world.write_message(DamageEvent::arriving(goblin, atglyph_rules::Hit::by(player, kind, 3), Reach::Shot));
+        world.write_message(Missed { attacker: goblin, target: player, with: None, reach: DamageRoute::Melee });
+        world.write_message(DamageEvent::arriving(goblin, atglyph_rules::Hit::by(player, kind, 3), DamageRoute::Shot));
         world.write_message(DamageEvent::new(rat, atglyph_rules::Hit::by(goblin, kind, 3)));
         stage.tick();
         let left = stage.at.offset(4, 0);
@@ -2372,7 +2372,7 @@ mod tests {
         stage.app.world_mut().entity_mut(goblin).insert(Position(left));
         stage.app.world_mut().resource_mut::<Phrasebook>().speak_unseen = true;
         stage.tick();
-        stage.app.world_mut().write_message(DamageEvent::arriving(goblin, atglyph_rules::Hit::by(player, kind, 3), Reach::Shot));
+        stage.app.world_mut().write_message(DamageEvent::arriving(goblin, atglyph_rules::Hit::by(player, kind, 3), DamageRoute::Shot));
         stage.tick();
         assert!(spoken(&stage, &["You shoot"]).contains(&"You shoot the goblin for 3.".to_string()), "spoken unseen, named: {:#?}", lines(&stage));
     }

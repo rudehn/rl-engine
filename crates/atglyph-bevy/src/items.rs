@@ -1597,7 +1597,7 @@ mod aimed {
     use crate::effects::{AddEngineEffects, EffectBonus, EffectKinds, Moments, Triggers};
     use crate::registries::Registries;
     use crate::state::EngineState;
-    use crate::testing::Sides;
+    use crate::testing::TwoSides;
     use crate::testing::headless_app;
 
     /// A rod that throws a bolt of four reaching six, at a foe.
@@ -1609,7 +1609,7 @@ mod aimed {
         app: App,
         player: Entity,
         start: Point,
-        sides: Sides,
+        sides: TwoSides,
     }
 
     impl Rig {

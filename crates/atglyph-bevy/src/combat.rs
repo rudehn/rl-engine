@@ -455,18 +455,18 @@ pub struct DamageEvent {
     pub hit: Hit<Entity>,
     /// How it got there, for whoever narrates it. Nothing in the pipeline
     /// reads it.
-    pub reach: Reach,
+    pub reach: DamageRoute,
 }
 
 impl DamageEvent {
     /// Damage that did not travel as a weapon: an ability, a status, a
-    /// fire. [`Reach::Effect`], which is what most damage is.
+    /// fire. [`DamageRoute::Effect`], which is what most damage is.
     pub fn new(target: Entity, hit: Hit<Entity>) -> Self {
-        Self { target, hit, reach: Reach::Effect }
+        Self { target, hit, reach: DamageRoute::Effect }
     }
 
     /// The same, arriving by `reach`.
-    pub fn arriving(target: Entity, hit: Hit<Entity>, reach: Reach) -> Self {
+    pub fn arriving(target: Entity, hit: Hit<Entity>, reach: DamageRoute) -> Self {
         Self { target, hit, reach }
     }
 }
@@ -503,7 +503,7 @@ pub struct Struck {
 /// invents another is writing its own words for it anyway. What reads it is
 /// narration; nothing in the damage pipeline branches on it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Reach {
+pub enum DamageRoute {
     /// A blow struck in reach.
     Melee,
     /// A shot down a line of fire.
@@ -552,7 +552,7 @@ pub struct DamageDealt {
     pub lost: i32,
     /// How it got there, carried through from the [`DamageEvent`] so a
     /// narrator can tell a shot from a blow.
-    pub reach: Reach,
+    pub reach: DamageRoute,
 }
 
 /// Asks for health to be restored: a medkit, a status that mends, a shrine.
@@ -930,7 +930,7 @@ pub struct ShotLanding {
     stand_in: Option<Entity>,
     /// Whether it flew or was struck in reach, kept so the landing a pass
     /// later narrates as what it was.
-    reach: Reach,
+    reach: DamageRoute,
     hits: Vec<Hit<Entity>>,
     /// Whether it was rolled and missed: it still flies, and lands nothing.
     missed: bool,
@@ -1051,7 +1051,7 @@ pub(crate) fn resolve_attacks(
         let answers = |t: &&crate::effects::Triggers| t.on(crate::effects::Moments::HIT).next().is_some();
         let own = carried.get(actor).ok().filter(answers).cloned();
         let carried = from.and_then(|item| carried.get(item).ok()).filter(answers).cloned();
-        let reach = if ranged { Reach::Shot } else { Reach::Melee };
+        let reach = if ranged { DamageRoute::Shot } else { DamageRoute::Melee };
         let mut landings = Vec::with_capacity(struck_at.len());
         for &(foe, at) in &struck_at {
             let wide = marks.odds(actor, foe, attempt, 0).is_some_and(|odds| !odds.roll(&mut **rng));
@@ -1611,7 +1611,7 @@ mod tests {
             assert_eq!(app.world().get::<Health>(target).unwrap().current, 20, "nothing landed");
             let wrote = app.world().resource::<Wrote>();
             assert_eq!((wrote.struck, wrote.damage), (1, 0), "the weapon fired and hurt nobody");
-            let reach = if adjacent { Reach::Melee } else { Reach::Shot };
+            let reach = if adjacent { DamageRoute::Melee } else { DamageRoute::Shot };
             assert_eq!(wrote.missed, vec![crate::accuracy::Missed { attacker: player, target, with: None, reach }]);
             assert!(app.world().resource::<Turns>().now() > before, "a miss is a spent turn");
         }
@@ -2782,7 +2782,7 @@ mod tests {
         attack(&mut app, player, others[0]);
         assert_eq!(taken(&app, &others), [4, 0], "the blow and the bite on the one struck, nothing on the one beside");
         assert_eq!(hp(&app, player), 30, "and nothing on the biter");
-        let bite: Vec<_> = app.world().resource::<Seen>().dealt.iter().filter(|d| d.reach == Reach::Effect).map(|d| (d.target, d.hit.credit)).collect();
+        let bite: Vec<_> = app.world().resource::<Seen>().dealt.iter().filter(|d| d.reach == DamageRoute::Effect).map(|d| (d.target, d.hit.credit)).collect();
         assert_eq!(bite, vec![(others[0], Some(player))], "credited to the biter");
     }
 

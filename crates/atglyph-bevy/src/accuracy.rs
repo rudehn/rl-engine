@@ -16,7 +16,7 @@ use atglyph_rules::StatId;
 use atglyph_rules::accuracy::{Certain, Delivery, HitModel, Odds, Shot};
 use bevy::prelude::*;
 
-use crate::combat::{CombatRules, Loadout, RangedAttack, Reach};
+use crate::combat::{CombatRules, DamageRoute, Loadout, RangedAttack};
 use crate::components::Position;
 use crate::lighting::{Lighting, band_at};
 use crate::registries::Registries;
@@ -51,7 +51,7 @@ pub struct Missed {
     /// The worn or thrown item it was made with, if any.
     pub with: Option<Entity>,
     /// How it travelled.
-    pub reach: Reach,
+    pub reach: DamageRoute,
 }
 
 /// What an attack is made with, which decides how it travels and how far.

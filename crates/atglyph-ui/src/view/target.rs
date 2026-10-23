@@ -51,7 +51,7 @@
 use crate::controls::AddControls;
 use crate::modal::AddModal;
 use atglyph_bevy::prelude::*;
-use atglyph_bevy::{Aimed, Bystanders, Landed, Offered, Source, flight, shot};
+use atglyph_bevy::{Aimed, Bystanders, Landed, Source, UsableAbilities, flight, shot};
 use atglyph_core::Point;
 use atglyph_grid::TargetMode;
 use atglyph_render::Glyph;
@@ -610,7 +610,7 @@ pub struct Reach<'w, 's> {
     map: Res<'w, WorldMap>,
     occupancy: Res<'w, Occupancy>,
     abilities: Option<Res<'w, Abilities>>,
-    offered: Option<Res<'w, Offered>>,
+    offered: Option<Res<'w, UsableAbilities>>,
     bystanders: Bystanders<'w, 's>,
     users: Query<'w, 's, (&'static Position, Option<&'static Viewshed>, Option<&'static Inventory>)>,
     subjects: Query<'w, 's, Standing>,

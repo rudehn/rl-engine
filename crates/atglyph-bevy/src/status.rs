@@ -1185,7 +1185,7 @@ mod tests {
 
     /// A field with a player in it and two warring sides, where `defs` are
     /// the statuses, play begun.
-    fn field(defs: Vec<StatusDef>) -> (App, crate::testing::Sides, Entity, Point) {
+    fn field(defs: Vec<StatusDef>) -> (App, crate::testing::TwoSides, Entity, Point) {
         let mut app = headless_app();
         app.add_plugins((crate::fov::FovPlugin, crate::combat::CombatPlugin));
         let start = crate::testing::ground(&mut app);

@@ -93,7 +93,7 @@ pub fn reap(
     };
     // Every hit read, so none is left over for the next pass, and one
     // swing counted however many of them it dealt.
-    let landed = dealt.read().filter(|d| d.hit.attacker == Some(me) && d.reach == Reach::Melee).count() > 0;
+    let landed = dealt.read().filter(|d| d.hit.attacker == Some(me) && d.reach == DamageRoute::Melee).count() > 0;
     let blows = i64::from(landed);
     let worth = blows * i64::from(stats.0.value(stat, &registries.stats)) * i64::from(BASE_ACTION_COST);
     if worth == 0 {

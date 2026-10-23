@@ -197,12 +197,12 @@ pub struct OrderKey<'w, 's> {
 /// In `EngineSet::Input` beside the adventurer's other keys, while they
 /// hold the turn and no screen is up, so nobody is deciding while an
 /// order changes.
-pub fn order_party(mut key: OrderKey, mut commands: Commands, party: Query<(Entity, &Mercenary, &Leader, Option<&Joined>)>) {
+pub fn order_party(mut key: OrderKey, mut commands: Commands, party: Query<(Entity, &Mercenary, &Leader, Option<&JoinStamp>)>) {
     if key.modals.any_open() || !key.keys.just_pressed(key.binds.order) {
         return;
     }
     let Ok(me) = key.player.single() else { return };
-    let mut ours: Vec<(Option<Joined>, Entity, Order)> = party.iter().filter(|(.., l, _)| l.0 == me).map(|(e, m, _, j)| (j.copied(), e, m.order)).collect();
+    let mut ours: Vec<(Option<JoinStamp>, Entity, Order)> = party.iter().filter(|(.., l, _)| l.0 == me).map(|(e, m, _, j)| (j.copied(), e, m.order)).collect();
     ours.sort_by_key(|(joined, e, _)| (joined.is_none(), *joined, *e));
     let Some(&(_, _, first)) = ours.first() else {
         key.log.muted("You have nobody to order.");

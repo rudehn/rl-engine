@@ -4,7 +4,7 @@
 //! The list every game with abilities writes: the names, in a stable
 //! order, with the ones that cannot be used greyed and a reason beside
 //! them. The reasons come from the same gate the resolver runs, through
-//! [`Offered`], so a row is never greyed for something the resolver would
+//! [`UsableAbilities`], so a row is never greyed for something the resolver would
 //! have allowed and never offered for something it would refuse.
 //!
 //! Everything else on a row comes from the ability's own definition, which
@@ -20,7 +20,7 @@
 //! a stat called mana. A game that wants other phrasing pushes a [`Facet`]
 //! in [`ViewSet::Annotate`](crate::ViewSet).
 
-use atglyph_bevy::Offered;
+use atglyph_bevy::UsableAbilities;
 use atglyph_bevy::prelude::*;
 use atglyph_grid::TargetMode;
 use atglyph_rules::ability::{AbilityId, Aim, Blocked, Cost, Requirement};
@@ -113,7 +113,7 @@ impl Plugin for AbilityViewPlugin {
 pub(crate) fn collect_abilities(
     mut view: ResMut<AbilityView>,
     abilities: Option<Res<Abilities>>,
-    offered: Option<Res<Offered>>,
+    offered: Option<Res<UsableAbilities>>,
     registries: Option<Res<Registries>>,
     turns: Res<Turns>,
     holders: Query<(Entity, &Known, Option<&Cooldowns>), With<MyTurn>>,

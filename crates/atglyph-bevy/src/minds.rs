@@ -139,7 +139,7 @@ pub struct Post(pub Point);
 /// back when the leader was not saved with it. Kept when either of them
 /// leaves the map: a leader elsewhere counts as gone until it is back.
 ///
-/// Taking one stamps the follower with [`Joined`], and losing it takes the
+/// Taking one stamps the follower with [`JoinStamp`], and losing it takes the
 /// stamp off; inserting a new `Leader` over an old one keeps the stamp.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 #[component(on_add = stamp_joined, on_remove = forget_joined)]
@@ -159,9 +159,9 @@ pub struct Leader(pub Entity);
 /// hook leaves it as it was; a follower that leaves and comes back joins
 /// at the end.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Joined(pub u64);
+pub struct JoinStamp(pub u64);
 
-/// Stamps a new follower with the next [`Joined`], unless it already has
+/// Stamps a new follower with the next [`JoinStamp`], unless it already has
 /// one: a load puts the saved stamp back with the `Leader`.
 ///
 /// Through a command, since the next stamp is read off every follower and
@@ -171,15 +171,15 @@ fn stamp_joined(mut world: DeferredWorld, ctx: HookContext) {
     let follower = ctx.entity;
     world.commands().queue(move |world: &mut World| {
         let Ok(e) = world.get_entity(follower) else { return };
-        if !e.contains::<Leader>() || e.contains::<Joined>() {
+        if !e.contains::<Leader>() || e.contains::<JoinStamp>() {
             return;
         }
-        let next = world.query::<&Joined>().iter(world).map(|j| j.0).max().map_or(1, |n| n + 1);
-        world.entity_mut(follower).insert(Joined(next));
+        let next = world.query::<&JoinStamp>().iter(world).map(|j| j.0).max().map_or(1, |n| n + 1);
+        world.entity_mut(follower).insert(JoinStamp(next));
     });
 }
 
-/// Takes the [`Joined`] stamp off a follower that stopped following, so
+/// Takes the [`JoinStamp`] stamp off a follower that stopped following, so
 /// one that follows again joins at the end. Checked when the command runs,
 /// so a `Leader` taken off and put back in one frame keeps its place.
 fn forget_joined(mut world: DeferredWorld, ctx: HookContext) {
@@ -188,7 +188,7 @@ fn forget_joined(mut world: DeferredWorld, ctx: HookContext) {
         if let Ok(mut e) = world.get_entity_mut(follower)
             && !e.contains::<Leader>()
         {
-            e.remove::<Joined>();
+            e.remove::<JoinStamp>();
         }
     });
 }
@@ -1951,7 +1951,7 @@ mod tests {
 
     /// An arena with items, their charges and the engine's effects, the two
     /// sides, and a player of thirty at `start`.
-    fn stocked() -> (App, Entity, Point, crate::testing::Sides) {
+    fn stocked() -> (App, Entity, Point, crate::testing::TwoSides) {
         use crate::effects::AddEngineEffects;
         let (mut app, start, _) = arena();
         app.add_plugins((crate::items::ItemsPlugin, crate::effects::EffectsPlugin));
@@ -2609,7 +2609,7 @@ mod tests {
         assert!(hurt(ours) || hurt(theirs), "and they closed and fought anyway");
     }
 
-    /// The order followers joined in is read off [`Joined`], whoever
+    /// The order followers joined in is read off [`JoinStamp`], whoever
     /// inserted the `Leader`: in the order they took it, a band spawned in
     /// one batch included, a new leader over an old one keeping the place,
     /// and one that left and came back going to the end.
@@ -2619,7 +2619,7 @@ mod tests {
         let chief = world.spawn_empty().id();
         let first = world.spawn(Leader(chief)).id();
         let band: Vec<Entity> = world.spawn_batch([Leader(chief), Leader(chief)]).collect();
-        let joined = |world: &World, e: Entity| world.get::<Joined>(e).map(|j| j.0);
+        let joined = |world: &World, e: Entity| world.get::<JoinStamp>(e).map(|j| j.0);
         assert_eq!(joined(&world, first), Some(1));
         assert_eq!(band.iter().map(|e| joined(&world, *e)).collect::<Vec<_>>(), vec![Some(2), Some(3)], "a band spawned whole still has an order");
 
@@ -2632,7 +2632,7 @@ mod tests {
         world.entity_mut(first).insert(Leader(chief));
         assert_eq!(joined(&world, first), Some(4), "and coming back joins at the end");
 
-        let restored = world.spawn((Joined(9), Leader(chief))).id();
+        let restored = world.spawn((JoinStamp(9), Leader(chief))).id();
         assert_eq!(joined(&world, restored), Some(9), "a stamp put back with the leader, as a load does, is kept");
     }
 }

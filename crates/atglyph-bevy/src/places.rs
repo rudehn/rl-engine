@@ -945,7 +945,7 @@ mod tests {
     }
 
     /// A rig with two sides and minds, for whoever else travels.
-    fn crowd() -> (Rig, crate::testing::Sides) {
+    fn crowd() -> (Rig, crate::testing::TwoSides) {
         let mut app = headless_app();
         app.add_plugins((crate::fov::FovPlugin, crate::items::ItemsPlugin, crate::combat::CombatPlugin, crate::minds::MindsPlugin));
         let start = crate::testing::ground(&mut app);

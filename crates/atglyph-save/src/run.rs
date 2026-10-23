@@ -44,7 +44,7 @@
 
 use atglyph_bevy::{
     AbandonRun, ActorMaker, Afflict, Afflicted, Burning, Counters, Dead, Emptied, EndOfFrame, EndRun, Ending, EngineState, Equipped, Faction, Health, Hidden,
-    Inventory, ItemLevel, ItemMaker, Joined, Leader, LeaveRun, MapId, OnMap, PlaceEntered, Position, Post, PropKind, Quests, Reads, Registries, Remains,
+    Inventory, ItemLevel, ItemMaker, JoinStamp, Leader, LeaveRun, MapId, OnMap, PlaceEntered, Position, Post, PropKind, Quests, Reads, Registries, Remains,
     SavedRun, SideWas, Stack, Stair, Stocked, Transition, Turns, Wearable, WorkKinds, Working,
 };
 use atglyph_core::{Id, Point};
@@ -610,7 +610,7 @@ pub struct EntityState {
     /// definition, so the leader is kept here, by save id, and not in it.
     #[serde(default)]
     pub leader: Option<SaveId>,
-    /// Where it came in the order followers joined, its [`Joined`], kept
+    /// Where it came in the order followers joined, its [`JoinStamp`], kept
     /// beside the leader so a party listed in that order reads the same
     /// after a load. `None` from a save written before it was kept, and the
     /// follower is then stamped afresh, after everyone saved with one.
@@ -703,7 +703,7 @@ impl EntityState {
             // saved, a body gone at the end of its frame, is not given an id
             // that would come back bound to nothing.
             leader: e.get::<Leader>().and_then(|l| remap.saved(l.0)),
-            joined: e.get::<Joined>().map(|j| j.0),
+            joined: e.get::<JoinStamp>().map(|j| j.0),
             working,
             // One with no turns left has burnt out and is only waiting for
             // the removal that was queued with it.
@@ -785,7 +785,7 @@ impl EntityState {
         // The stamp with the leader, in one insert, so the leader's hook
         // finds it there and does not stamp the follower afresh.
         match (self.leader.and_then(|id| remap.entity(id)), self.joined) {
-            (Some(leader), Some(joined)) => drop(target.insert((Joined(joined), Leader(leader)))),
+            (Some(leader), Some(joined)) => drop(target.insert((JoinStamp(joined), Leader(leader)))),
             (Some(leader), None) => drop(target.insert(Leader(leader))),
             (None, _) => {}
         }
@@ -1920,7 +1920,7 @@ mod tests {
         load_run(back.world()).unwrap().expect("a save").restore(back.world_mut()).unwrap();
         play(&mut back);
         let w = back.world_mut();
-        let mut order: Vec<(Joined, String)> = w.query::<(&Joined, &Person)>().iter(w).map(|(j, p)| (*j, p.0.clone())).collect();
+        let mut order: Vec<(JoinStamp, String)> = w.query::<(&JoinStamp, &Person)>().iter(w).map(|(j, p)| (*j, p.0.clone())).collect();
         order.sort();
         let names: Vec<&str> = order.iter().map(|(_, n)| n.as_str()).collect();
         assert_eq!(names, vec!["Late", "Early"], "the one made later joined first, and still comes first");

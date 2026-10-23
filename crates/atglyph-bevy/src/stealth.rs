@@ -606,7 +606,7 @@ mod tests {
             }
             extra(&mut app);
             let start = crate::testing::ground(&mut app);
-            let crate::testing::Sides { ours: you, theirs: them, kind } = crate::testing::two_sides(&mut app);
+            let crate::testing::TwoSides { ours: you, theirs: them, kind } = crate::testing::two_sides(&mut app);
             let player = app
                 .world_mut()
                 .spawn((
@@ -718,7 +718,7 @@ mod tests {
             hit: Hit::by(player, kind, 1),
             dealt: 1,
             lost: 1,
-            reach: crate::combat::Reach::Melee,
+            reach: crate::combat::DamageRoute::Melee,
         });
         field.wait();
         assert!(field.aware().knows(player), "struck, so it knows where from");
@@ -772,7 +772,7 @@ mod tests {
         field.wait();
         assert!(!field.aware().knows(field.player));
         let (watcher, player) = (field.watcher, field.player);
-        field.app.world_mut().write_message(crate::accuracy::Missed { attacker: player, target: watcher, with: None, reach: crate::combat::Reach::Shot });
+        field.app.world_mut().write_message(crate::accuracy::Missed { attacker: player, target: watcher, with: None, reach: crate::combat::DamageRoute::Shot });
         field.wait();
         assert!(field.aware().knows(player), "shot at and missed, so it knows where from");
     }
@@ -1032,7 +1032,7 @@ mod tests {
             hit: Hit::by(player, kind, 1),
             dealt: 1,
             lost: 1,
-            reach: crate::combat::Reach::Melee,
+            reach: crate::combat::DamageRoute::Melee,
         });
         field.wait();
         assert!(!field.aware().knows(player), "hurt by something it never saw, and none the wiser");
