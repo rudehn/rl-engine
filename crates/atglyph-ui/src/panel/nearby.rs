@@ -100,7 +100,7 @@ impl AlertWords {
 /// you. The engine names no activity itself, since what a retreat is called
 /// is a game's, so a game names the tactics worth naming, its own among
 /// them, and a tactic it leaves unnamed reads as the alert. Keyed by the
-/// tactic's own trace name, the one [`Doing`](atglyph_bevy::Doing) records.
+/// tactic's own trace name, the one [`LastTactic`](atglyph_bevy::LastTactic) records.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ActivityWords(BTreeMap<String, String>);
 

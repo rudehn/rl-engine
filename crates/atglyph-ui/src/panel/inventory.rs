@@ -380,10 +380,10 @@ pub(crate) fn choose_when_asked(mut asked: MessageReader<AimUse>, view: Res<Inve
 /// # Panics
 /// When the game added no [`InventoryPanel`], which a choosing offer
 /// cannot be taken up without, or its system is gone.
-pub(crate) fn choose_for_offer(commands: &mut Commands, taker: Entity, target: Entity, verb: VerbId, prompt: String, among: Among) {
+pub(crate) fn choose_for_offer(commands: &mut Commands, taker: Entity, target: Entity, verb: VerbId, prompt: String, among: OfferFilter) {
     commands.queue(move |world: &mut World| {
         assert!(world.contains_resource::<InventoryMenu>(), "play cannot go on: an offer chooses first, and the bag chooses for it; add InventoryPanel");
-        let chooser = Chooser { taker, offerer: target, verb };
+        let chooser = OfferChooser { taker, offerer: target, verb };
         let choices = world.run_system_with(among, chooser).unwrap_or_else(|e| panic!("an offer that chooses first named a system that could not run: {e}"));
         if choices.is_empty() {
             return;
@@ -1660,7 +1660,7 @@ mod tests {
                 .add_systems(Last, |mut taken: ResMut<Taken>, mut asked: MessageReader<Intent<Interact>>| taken.asked += asked.read().count());
         })
         .screen(52, 14);
-        let among = stage.app.register_system(|In(chooser): In<Chooser>, bags: Query<&Inventory>, names: Query<&Name>| -> Vec<Entity> {
+        let among = stage.app.register_system(|In(chooser): In<OfferChooser>, bags: Query<&Inventory>, names: Query<&Name>| -> Vec<Entity> {
             let bag = bags.get(chooser.taker).map(|b| b.items.clone()).unwrap_or_default();
             bag.into_iter().filter(|t| names.get(*t).is_ok_and(|n| n.as_str() != "keepsake")).collect()
         });

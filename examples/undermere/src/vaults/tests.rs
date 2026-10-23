@@ -759,7 +759,7 @@ fn the_cold_forges_anvil_tempers_a_worn_weapon_once() {
     let carried = make(&mut app, "potion of descent");
     give(&mut app, me, carried);
     let among = app.world().resource::<WellChoices>().temper;
-    let choices = app.world_mut().run_system_with(among, Chooser { taker: me, offerer: anvil, verb: Verbs::OPEN }).expect("it runs");
+    let choices = app.world_mut().run_system_with(among, OfferChooser { taker: me, offerer: anvil, verb: Verbs::OPEN }).expect("it runs");
     assert!(choices.contains(&sword) && !choices.contains(&carried), "the sword worn and not the potion carried: {choices:?}");
     let before = app.world().get::<ItemLevel>(sword).map_or(0, |l| l.0);
     take_up_on(&mut app, me, anvil, at, TEMPER_VERB, Some(sword));

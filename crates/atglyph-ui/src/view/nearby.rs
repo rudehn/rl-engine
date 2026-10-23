@@ -204,7 +204,7 @@ pub(crate) struct Around<'w, 's> {
     heard: Query<'w, 's, &'static atglyph_bevy::Heard>,
     stacks: Query<'w, 's, &'static Stack>,
     work: crate::view::Workings<'w, 's>,
-    doing: Query<'w, 's, &'static atglyph_bevy::Doing>,
+    doing: Query<'w, 's, &'static atglyph_bevy::LastTactic>,
     bodies: Query<'w, 's, (), With<atglyph_bevy::Remains>>,
     props: Business<'w, 's>,
     following: Following<'w, 's>,
@@ -623,7 +623,7 @@ mod tests {
         let mut stage = Stage::new(NearbyViewPlugin);
         let runner = stage.actor("runner", 'r', 2, 0);
         let still = stage.actor("still", 's', 3, 0);
-        stage.app.world_mut().entity_mut(runner).insert(atglyph_bevy::Doing(Some("flee_when_hurt")));
+        stage.app.world_mut().entity_mut(runner).insert(atglyph_bevy::LastTactic(Some("flee_when_hurt")));
         stage.tick();
         let view = stage.app.world().resource::<NearbyView>();
         let doing = |e: Entity| view.actors.iter().find(|r| r.entity == e).unwrap().doing;

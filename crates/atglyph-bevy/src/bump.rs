@@ -573,7 +573,7 @@ mod tests {
         for chooses in [false, true] {
             let mut rig = Rig::new();
             let free = rig.verb("free");
-            let among = rig.app.register_system(|_: In<crate::props::Chooser>| Vec::new());
+            let among = rig.app.register_system(|_: In<crate::props::OfferChooser>| Vec::new());
             let offer = crate::props::Offering::new(free, 200);
             let offer = if chooses { offer.choosing("Free them with which?", among) } else { offer.asking("Free them?") };
             let captive = rig.beside(None, vec![offer]);

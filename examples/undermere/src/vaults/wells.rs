@@ -15,7 +15,7 @@
 //! Told apart by what a prop is, which the save keeps, so a continued run
 //! offers again what was not used and nothing that was.
 
-use atglyph::ecs::props::{Among, Chooser, Scenery, spawn_prop};
+use atglyph::ecs::props::{OfferChooser, OfferFilter, Scenery, spawn_prop};
 use atglyph::prelude::*;
 use bevy::prelude::*;
 
@@ -49,9 +49,9 @@ pub const WELL_TIME: u32 = 100;
 #[derive(Resource, Debug, Clone, Copy)]
 pub struct WellChoices {
     /// What an anvil may temper: [`temper_choices`].
-    pub temper: Among,
+    pub temper: OfferFilter,
     /// What a moonwell may tell of: [`tell_choices`].
-    pub tell: Among,
+    pub tell: OfferFilter,
 }
 
 /// Puts its choosing offer on an anvil or a moonwell as it is stood up,
@@ -79,7 +79,7 @@ pub fn offer_at_wells(mut commands: Commands, stood: Query<(Entity, &Name), Adde
 /// wears, once each, however many slots it fills. With none, says so, as
 /// a choice with nothing to choose shuts without a word.
 pub fn temper_choices(
-    In(chooser): In<Chooser>,
+    In(chooser): In<OfferChooser>,
     worn: Query<&Equipped>,
     kinds: Query<&ItemKind>,
     armory: Res<Armory>,
@@ -100,7 +100,7 @@ pub fn temper_choices(
 /// adventurer does not yet know whole, its kind or, for a thing learned
 /// by wearing, its level. With none, says so.
 pub fn tell_choices(
-    In(chooser): In<Chooser>,
+    In(chooser): In<OfferChooser>,
     bags: Query<&Inventory>,
     things: Query<(&ItemKind, Has<Unfamiliar>)>,
     armory: Res<Armory>,

@@ -1058,7 +1058,7 @@ mod tests {
         let beside = r.start.offset(1, 0);
         let friend = mind(&mut r, beside, sides.ours, sides.kind, Wits::SAPIENT.with(Wits::TRAVELS), atglyph_rules::Brain::new().then(Keep::allies(3, 1)));
         intend(&mut r, Wait);
-        assert_eq!(r.app.world().get::<crate::minds::Doing>(friend).unwrap().0, None, "close enough that nothing decided its turn");
+        assert_eq!(r.app.world().get::<crate::minds::LastTactic>(friend).unwrap().0, None, "close enough that nothing decided its turn");
         intend(&mut r, GoThrough);
         assert_eq!(on(&r, friend), cave);
         assert_eq!(atglyph_core::geometry::chebyshev(at(&r, friend), at(&r, r.player)), 1);

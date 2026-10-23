@@ -1745,7 +1745,7 @@ mod tests {
         assert_eq!(at, start.offset(0, 3), "lying where she fell");
         assert!(w.get::<Health>(ada2).is_none(), "and not brought back to life by her own record of herself");
         assert!(w.get::<Actor>(ada2).is_none(), "nor dealt turns again");
-        assert!(w.get::<atglyph_bevy::remains::Life>(ada2).is_some(), "and she keeps a life to return to, taken as she was laid down again");
+        assert!(w.get::<atglyph_bevy::remains::RevivalTwin>(ada2).is_some(), "and she keeps a life to return to, taken as she was laid down again");
     }
 
     /// A body continued from a save stands up as surely as one that just

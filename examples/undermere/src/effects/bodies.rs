@@ -17,7 +17,7 @@ use bevy::prelude::*;
 
 use super::moving::no_args;
 use super::{free_cells_near, the};
-use atglyph::ecs::Life as EngineLife;
+use atglyph::ecs::RevivalTwin;
 use atglyph::ecs::revive;
 
 use crate::allies::{Ally, Fades, befriend, fight_for, vanish};
@@ -493,7 +493,7 @@ fn nearest_body(world: &World, raiser: Entity) -> Option<(Entity, Point)> {
 /// raises.
 pub fn raise_dead(world: &mut World, raiser: Entity) -> bool {
     let Some((body, body_at)) = nearest_body(world, raiser) else { return false };
-    let twin = world.get::<EngineLife>(body).map(|life| life.0);
+    let twin = world.get::<RevivalTwin>(body).map(|life| life.0);
     let max = twin.and_then(|twin| world.get::<Health>(twin)).map_or(1, |h| h.max);
     if !revive(world, body, max) {
         return false;
@@ -568,7 +568,7 @@ pub fn raise_ally(world: &mut World, raiser: Entity, at: Point, turns: u32) -> b
         .find(|(_, pos, on)| pos.0 == at && on.map_or(MapId::ZERO, |m| m.0) == map)
         .map(|(e, ..)| e);
     let Some(body) = body else { return false };
-    let twin = world.get::<EngineLife>(body).map(|life| life.0);
+    let twin = world.get::<RevivalTwin>(body).map(|life| life.0);
     let max = twin.and_then(|twin| world.get::<Health>(twin)).map_or(1, |h| h.max);
     if !revive(world, body, max) {
         return false;

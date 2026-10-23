@@ -139,7 +139,7 @@ pub fn regenerate(
     }
 }
 
-/// Keeps the adventurer's eye for what is hidden, the engine's [`Keen`],
+/// Keeps the adventurer's eye for what is hidden, the engine's [`SpotBonus`],
 /// what their awareness stat makes it: a ring of awareness's fifteen a
 /// level, added to every roll to spot a hidden thing or a secret, and
 /// never below nothing.
@@ -149,12 +149,12 @@ pub fn regenerate(
 /// a trap is. Derived every pass from the stat rather than added to, so a
 /// ring taken off takes its points with it. In `TurnSet::React`, so the
 /// roll the next turn makes is made with the eye the ring gives.
-pub fn keep_keen(mut commands: Commands, registries: Res<Registries>, adventurer: Query<(Entity, &StatBlock, Option<&Keen>), With<Adventurer>>) {
+pub fn keep_keen(mut commands: Commands, registries: Res<Registries>, adventurer: Query<(Entity, &StatBlock, Option<&SpotBonus>), With<Adventurer>>) {
     let Some(stat) = registries.stats.id(crate::content::AWARENESS) else { return };
     for (who, stats, keen) in &adventurer {
         let points = stats.0.value(stat, &registries.stats).clamp(0, i32::from(u8::MAX)) as u8;
         if keen.map(|k| k.0) != Some(points) {
-            commands.entity(who).insert(Keen(points));
+            commands.entity(who).insert(SpotBonus(points));
         }
     }
 }

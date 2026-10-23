@@ -18,7 +18,7 @@
 //! game that stands bodies back up. `keep_life` takes it the moment the
 //! actor dies, through `take_twin`, which copies every component onto an
 //! entity no ordinary query sees and names, through `uncopied`, any it
-//! could not. [`Life`] links the two, and the twin lasts exactly as long
+//! could not. [`RevivalTwin`] links the two, and the twin lasts exactly as long
 //! as the body is remains. [`lay_down`] is the one lay-down a death and a
 //! continued save both go through. [`revive`], or
 //! [`ReviveCommands::revive`] from a system, stands a body back up from
@@ -90,10 +90,10 @@ pub struct Remains {
 /// twin, so no path through the engine or a game leaves one behind.
 #[derive(Component, Debug, Clone, Copy)]
 #[component(on_remove = despawn_twin)]
-pub struct Life(pub Entity);
+pub struct RevivalTwin(pub Entity);
 
 fn despawn_twin(mut world: DeferredWorld, ctx: HookContext) {
-    if let Some(twin) = world.get::<Life>(ctx.entity).map(|l| l.0) {
+    if let Some(twin) = world.get::<RevivalTwin>(ctx.entity).map(|l| l.0) {
         world.commands().entity(twin).try_despawn();
     }
 }
@@ -101,7 +101,7 @@ fn despawn_twin(mut world: DeferredWorld, ctx: HookContext) {
 /// A body that stops being remains, however, stops keeping a life to
 /// return to.
 fn end_life(mut world: DeferredWorld, ctx: HookContext) {
-    world.commands().entity(ctx.entity).try_remove::<Life>();
+    world.commands().entity(ctx.entity).try_remove::<RevivalTwin>();
 }
 
 /// What `from` has that `to` does not, by name: the components a copy
@@ -124,7 +124,7 @@ pub(crate) fn uncopied(world: &World, from: Entity, to: Entity) -> Vec<String> {
 }
 
 /// Copies `entity`, as it is this moment, onto a twin that is `Disabled`,
-/// and links it with [`Life`].
+/// and links it with [`RevivalTwin`].
 ///
 /// Every component is copied and none is named, so one added to the
 /// engine or to a game next year comes back from a revival without anyone
@@ -132,7 +132,7 @@ pub(crate) fn uncopied(world: &World, from: Entity, to: Entity) -> Vec<String> {
 /// does nothing: a death takes one, and laying the body down afterwards
 /// must not take a second of what is by then a body.
 pub(crate) fn take_twin(world: &mut World, entity: Entity) {
-    if world.get_entity(entity).is_err() || world.get::<Life>(entity).is_some() {
+    if world.get_entity(entity).is_err() || world.get::<RevivalTwin>(entity).is_some() {
         return;
     }
     let twin = world.spawn(Disabled).id();
@@ -141,7 +141,7 @@ pub(crate) fn take_twin(world: &mut World, entity: Entity) {
     if !lost.is_empty() {
         error!("{} cannot come back to life: derive `Clone` on it", lost.join(", "));
     }
-    world.entity_mut(entity).insert(Life(twin));
+    world.entity_mut(entity).insert(RevivalTwin(twin));
 }
 
 /// Keeps a twin of every actor that will leave remains, the moment it dies.
@@ -192,7 +192,7 @@ impl Default for RevivalRules {
 
 /// Stands `body` back up with `health`, and says whether it could.
 ///
-/// The body is made its twin again (see [`Life`]): every component the
+/// The body is made its twin again (see [`RevivalTwin`]): every component the
 /// twin has is put back with the twin's value, which is everything death
 /// took off and everything a body is dressed in over the actor's own,
 /// its name, its look, a game's value set on a body, named nowhere; and
@@ -214,10 +214,10 @@ impl Default for RevivalRules {
 /// and for a body with someone on it and no free cell within the
 /// [`RevivalRules`]' standing room.
 pub fn revive(world: &mut World, body: Entity, health: i32) -> bool {
-    // `Life` goes on in the pass an actor dies and `Remains` only once it is
+    // `RevivalTwin` goes on in the pass an actor dies and `Remains` only once it is
     // laid down, so an actor still dying has a twin and is not yet a body:
     // standing it up then would be undone by its own death a moment later.
-    let Some(twin) = world.get::<Life>(body).filter(|_| world.get::<Remains>(body).is_some()).map(|l| l.0) else {
+    let Some(twin) = world.get::<RevivalTwin>(body).filter(|_| world.get::<Remains>(body).is_some()).map(|l| l.0) else {
         warn!("{body:?} cannot be revived: it is not remains, or `RemainsPlugin` kept no twin of it");
         return false;
     };
@@ -815,7 +815,7 @@ mod tests {
         app.world_mut().entity_mut(dead).insert(Patrol(3));
         kill(&mut app, dead, sides);
 
-        let twin = app.world().get::<Life>(dead).expect("the body keeps a life to return to").0;
+        let twin = app.world().get::<RevivalTwin>(dead).expect("the body keeps a life to return to").0;
         let world = app.world();
         assert_eq!(world.get::<Patrol>(twin), Some(&Patrol(3)), "what the game's death took off is on the twin");
         assert!(world.get::<Patrol>(dead).is_none(), "and off the body");
@@ -843,7 +843,7 @@ mod tests {
         app.world_mut().entity_mut(stripped).remove::<Remains>();
         app.update();
         assert_eq!(twins(&mut app), 0, "and one that stops being remains does too");
-        assert!(app.world().get::<Life>(stripped).is_none());
+        assert!(app.world().get::<RevivalTwin>(stripped).is_none());
     }
 
     /// Bevy copies only what is `Clone` and skips the rest without a word,
@@ -854,7 +854,7 @@ mod tests {
         let dead = victim(&mut app, start.offset(2, 0), sides, true);
         app.world_mut().entity_mut(dead).insert(Unclonable);
         kill(&mut app, dead, sides);
-        let twin = app.world().get::<Life>(dead).unwrap().0;
+        let twin = app.world().get::<RevivalTwin>(dead).unwrap().0;
         let lost = uncopied(app.world(), dead, twin);
         assert!(lost.iter().any(|n| n.contains("Unclonable")), "{lost:?}");
         assert!(!lost.iter().any(|n| n.contains("Health")), "and nothing that was copied: {lost:?}");
@@ -1056,7 +1056,7 @@ mod tests {
         assert!(app.world().get::<Remains>(dead).is_some(), "it is a body");
         assert!(app.world().get::<Offers>(dead).is_none(), "which offers nothing");
         assert!(app.world().get::<crate::effects::Triggers>(dead).is_none(), "and answers nothing");
-        let twin = app.world().get::<Life>(dead).expect("a twin").0;
+        let twin = app.world().get::<RevivalTwin>(dead).expect("a twin").0;
         assert!(app.world().get::<Offers>(twin).is_some(), "the twin keeps the offer, for a revival");
         assert!(app.world().get::<crate::effects::Triggers>(twin).is_some(), "and the triggers");
 

@@ -68,10 +68,10 @@ pub struct Profile(pub MovementProfile);
 /// Requires [`Intelligence`], sapient unless the spawn says otherwise,
 /// [`CameFrom`], so a wanderer knows not to step straight back, a
 /// [`Viewshed`] of its own, sized by its [`Perception`] when it is cast,
-/// and [`Doing`], what decided its last turn.
+/// and [`LastTactic`], what decided its last turn.
 #[derive(Component, Clone)]
 #[component(on_add = report_mind_without_plugin)]
-#[require(Intelligence, CameFrom, Doing, Trails, Viewshed = Viewshed::new(DEFAULT_PERCEPTION))]
+#[require(Intelligence, CameFrom, LastTactic, Trails, Viewshed = Viewshed::new(DEFAULT_PERCEPTION))]
 pub struct Mind(pub Arc<Brain<Entity>>);
 
 /// The name of the tactic that decided this mind's last turn, `None` when
@@ -82,7 +82,7 @@ pub struct Mind(pub Arc<Brain<Entity>>);
 /// not hunting you. The name is the tactic's own trace name, the same one
 /// a decision's trace prints; what a game calls it is the game's.
 #[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Doing(pub Option<&'static str>);
+pub struct LastTactic(pub Option<&'static str>);
 
 /// Whom a mind was after or keeping beside when it last decided: the
 /// enemies it saw, when the tactic that decided was one that closes on or
@@ -869,8 +869,15 @@ pub(crate) struct MindIntents<'w> {
 }
 
 /// The mind holding the turn, as the decision reads it.
-type Deciding =
-    (&'static Mind, &'static Position, Option<&'static Profile>, Option<&'static Intelligence>, &'static mut CameFrom, &'static mut Doing, &'static mut Trails);
+type Deciding = (
+    &'static Mind,
+    &'static Position,
+    Option<&'static Profile>,
+    Option<&'static Intelligence>,
+    &'static mut CameFrom,
+    &'static mut LastTactic,
+    &'static mut Trails,
+);
 
 /// Lets the mind holding the turn decide it, from the snapshot the
 /// perceive stage filled.
@@ -1172,8 +1179,8 @@ mod tests {
             }
             app.update();
         }
-        assert_eq!(app.world().get::<Doing>(shover), Some(&Doing(Some("shove"))), "the tactic that decided");
-        assert_eq!(app.world().get::<Doing>(idle), Some(&Doing(None)), "and nothing for a turn no tactic decided");
+        assert_eq!(app.world().get::<LastTactic>(shover), Some(&LastTactic(Some("shove"))), "the tactic that decided");
+        assert_eq!(app.world().get::<LastTactic>(idle), Some(&LastTactic(None)), "and nothing for a turn no tactic decided");
     }
 
     /// Two sides of minds and an onlooker: what a watched fight is. Returns

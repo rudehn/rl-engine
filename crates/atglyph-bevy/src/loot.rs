@@ -675,7 +675,7 @@ pub(crate) mod tests {
         let mut world = World::new();
         let actor = world.spawn(Drops::<NotClone>(DropTable(Vec::new()))).id();
         crate::remains::take_twin(&mut world, actor);
-        let twin = world.get::<crate::remains::Life>(actor).expect("a twin").0;
+        let twin = world.get::<crate::remains::RevivalTwin>(actor).expect("a twin").0;
         assert!(world.get::<Drops<NotClone>>(twin).is_some(), "the twin carries the drop table: {:?}", crate::remains::uncopied(&world, actor, twin));
     }
 }

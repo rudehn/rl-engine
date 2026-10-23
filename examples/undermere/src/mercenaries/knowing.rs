@@ -247,7 +247,7 @@ const NO_USE: &str = "That is of no use to a hireling.";
 /// [`Givable`], registered once by the plugin: what [`GIVE`] chooses
 /// among, as the engine's choosing offer asks it.
 #[derive(Resource, Debug, Clone, Copy)]
-pub struct GiveAmong(pub Among);
+pub struct GiveAmong(pub OfferFilter);
 
 /// What a hired mercenary's [`GIVE`] chooses among: what [`Givable`]
 /// offers of the taker's pack. With nothing to give, says so, since the
@@ -255,7 +255,7 @@ pub struct GiveAmong(pub Among);
 ///
 /// Run by the engine as the offer is taken up, before any time is spent,
 /// so a pack with nothing in it to give costs nothing to find so.
-pub fn give_choices(In(chooser): In<Chooser>, givable: Givable, hired: Query<&Mercenary>, mut tell: MessageWriter<Tell>) -> Vec<Entity> {
+pub fn give_choices(In(chooser): In<OfferChooser>, givable: Givable, hired: Query<&Mercenary>, mut tell: MessageWriter<Tell>) -> Vec<Entity> {
     let choices = givable.of(chooser.taker);
     if choices.is_empty()
         && let Ok(hired) = hired.get(chooser.offerer)
@@ -402,7 +402,7 @@ mod tests {
     fn choices(app: &mut App, me: Entity, hired: Entity) -> Vec<Entity> {
         let among = app.world().resource::<GiveAmong>().0;
         let verb = app.world().resource::<Verbs>().get(GIVE).expect("give");
-        app.world_mut().run_system_with(among, Chooser { taker: me, offerer: hired, verb }).expect("the choices run")
+        app.world_mut().run_system_with(among, OfferChooser { taker: me, offerer: hired, verb }).expect("the choices run")
     }
 
     /// A mercenary drinks its own potion when hurt whether or not the
@@ -572,7 +572,7 @@ mod tests {
         give(&mut app, brenna, sword);
         pass_turns(&mut app, 1);
         assert!(!wears(&app, brenna, sword), "not armed while a foe is beside it");
-        assert_eq!(app.world().get::<atglyph::ecs::Doing>(brenna).and_then(|d| d.0), Some("melee_adjacent"), "it struck instead");
+        assert_eq!(app.world().get::<atglyph::ecs::LastTactic>(brenna).and_then(|d| d.0), Some("melee_adjacent"), "it struck instead");
         app.world_mut().despawn(foe);
         pass_turns(&mut app, 1);
         assert!(wears(&app, brenna, sword), "armed once the fight is over");

@@ -591,17 +591,17 @@ fn a_ring_of_regeneration_gives_ten_health_back_a_hundred_turns_a_level_and_a_cu
 }
 
 /// A ring of awareness two better makes its wearer thirty points keener,
-/// the engine's `Keen` added to every roll to spot a hidden thing or a
+/// the engine's `SpotBonus` added to every roll to spot a hidden thing or a
 /// secret, and takes it away again when it comes off.
 #[test]
 fn a_ring_of_awareness_puts_fifteen_a_level_on_the_chance_of_spotting_what_is_hidden() {
     let (mut app, me, _) = arena(15);
     let ring = worn(&mut app, me, "ring of awareness", 2);
     pass_turns(&mut app, 1);
-    assert_eq!(app.world().get::<Keen>(me).map(|k| k.0), Some(30), "thirty a roll");
+    assert_eq!(app.world().get::<SpotBonus>(me).map(|k| k.0), Some(30), "thirty a roll");
     crate::testing::unequip(&mut app, me, ring);
     pass_turns(&mut app, 1);
-    assert_eq!(app.world().get::<Keen>(me).map(|k| k.0), Some(0), "and nothing without it");
+    assert_eq!(app.world().get::<SpotBonus>(me).map(|k| k.0), Some(0), "and nothing without it");
 }
 
 /// The Choirmaster's Staff raises the body aimed at on its user's own

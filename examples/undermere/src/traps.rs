@@ -8,7 +8,7 @@
 //! which [`stand_hidden`] stands up hidden on the floor's first arrival.
 //!
 //! Finding any of it is the engine's one roll, weighed by [`SPOTTING`] on
-//! `PropsPlugin`, with the adventurer's own eye, `Keen`, kept by
+//! `PropsPlugin`, with the adventurer's own eye, `SpotBonus`, kept by
 //! [`crate::stats::keep_keen`]; [`tell_spotted`] says what was found. A
 //! trap is also found by going off: [`show_sprung`] shows one the
 //! adventurer set off or saw set off, since the engine's own trap stays

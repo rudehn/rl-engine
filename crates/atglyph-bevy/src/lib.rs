@@ -96,7 +96,7 @@ pub use lighting::{
 };
 pub use loot::{Drops, Found, ItemMaker, LootArea, LootPlugin, LootRng, LootSet, Provenance};
 pub use minds::{
-    AddChoice, CameFrom, DEFAULT_PERCEPTION, Doing, FlowFields, Intelligence, JoinStamp, Leader, Mind, MindChose, MindsPlugin, Perception, Post, Profile,
+    AddChoice, CameFrom, DEFAULT_PERCEPTION, FlowFields, Intelligence, JoinStamp, LastTactic, Leader, Mind, MindChose, MindsPlugin, Perception, Post, Profile,
     Sight, Thinking,
 };
 pub use noise::{AddSound, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, NoiseRunning, Sound, SoundId, SoundNames, Sounds};
@@ -111,13 +111,13 @@ pub use plugin::{
 };
 pub use prefabs::{ActorMaker, PrefabPlugin, PrefabSet, Prefabs};
 pub use props::{
-    AddVerb, Among, AsksFirst, Chooser, Container, Emptied, FillContainer, Finding, Hidden, Interact, Interacted, Keen, Offer, OfferedHere, Offering, Offers,
-    PendingFires, Prop, PropEffects, PropKind, PropRng, PropSet, PropsPlugin, Refused, Scenery, SpotRules, Spotted, Stocked, Take, Verb, VerbId, Verbs,
-    spawn_prop,
+    AddVerb, AsksFirst, Container, Emptied, FillContainer, Finding, Hidden, Interact, Interacted, Offer, OfferChooser, OfferFilter, OfferedHere, Offering,
+    Offers, PendingFires, Prop, PropEffects, PropKind, PropRng, PropSet, PropsPlugin, Refused, Scenery, SpotBonus, SpotRules, Spotted, Stocked, Take, Verb,
+    VerbId, Verbs, spawn_prop,
 };
 pub use records::{RecordOutcome, RecordRun, RecordSection, RecordsPlugin, RunRecord, RunRecords};
 pub use registries::Registries;
-pub use remains::{LeavesRemains, Life, Remains, RemainsLeft, RemainsNaming, RemainsPlugin, RevivalRules, ReviveCommands, Revived, revive};
+pub use remains::{LeavesRemains, Remains, RemainsLeft, RemainsNaming, RemainsPlugin, RevivalRules, RevivalTwin, ReviveCommands, Revived, revive};
 pub use replay::{Pressed, Recording};
 pub use secrets::Secret;
 pub use seed::{AddStream, ENGINE_DOMAINS, RunRng, Seed, Stream, StreamDomain};
@@ -175,7 +175,7 @@ pub mod prelude {
     };
 
     pub use crate::loot::{Drops, Found, ItemMaker, LootArea, LootPlugin, LootSet, Provenance};
-    pub use crate::minds::{AddChoice, Doing, Intelligence, JoinStamp, Leader, Mind, MindChose, MindsPlugin, Perception, Post, Profile, Thinking};
+    pub use crate::minds::{AddChoice, Intelligence, JoinStamp, LastTactic, Leader, Mind, MindChose, MindsPlugin, Perception, Post, Profile, Thinking};
 
     pub use crate::noise::{AddSound, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, SoundId, SoundNames, Sounds};
     pub use crate::parts::{ActorParts, Attacks, ItemLevel, ItemParts, LightWhen, innate_statuses, insert_parts};
@@ -190,8 +190,8 @@ pub mod prelude {
     };
     pub use crate::prefabs::{ActorMaker, PrefabPlugin, PrefabSet, Prefabs};
     pub use crate::props::{
-        AddVerb, Among, AsksFirst, Chooser, Container, Emptied, FillContainer, Finding, Hidden, Interact, Interacted, Keen, Offer, OfferedHere, Offering,
-        Offers, Prop, PropKind, PropSet, PropsPlugin, Refused, Scenery, SpotRules, Spotted, Take, VerbId, Verbs, spawn_prop,
+        AddVerb, AsksFirst, Container, Emptied, FillContainer, Finding, Hidden, Interact, Interacted, Offer, OfferChooser, OfferFilter, OfferedHere, Offering,
+        Offers, Prop, PropKind, PropSet, PropsPlugin, Refused, Scenery, SpotBonus, SpotRules, Spotted, Take, VerbId, Verbs, spawn_prop,
     };
     pub use crate::records::{RecordOutcome, RecordRun, RecordSection, RecordsPlugin, RunRecord, RunRecords};
 

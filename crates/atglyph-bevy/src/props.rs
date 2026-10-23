@@ -265,7 +265,7 @@ pub enum AsksFirst {
         /// What the choice is asked under.
         prompt: String,
         /// The game's system naming what may be chosen.
-        among: Among,
+        among: OfferFilter,
     },
 }
 
@@ -281,19 +281,19 @@ impl AsksFirst {
 
 /// A game's system naming what a taker may choose for an offer that
 /// chooses first: registered with `App::register_system`, given the
-/// [`Chooser`], returning the things to choose among in the order listed.
+/// [`OfferChooser`], returning the things to choose among in the order listed.
 ///
 /// A system rather than a list on the offer, since what may be handed
 /// over is the taker's pack as it stands when the offer is taken up,
 /// which no offer put on earlier can know; and rather than a tag, since
 /// what a game will take is a rule over the whole thing, what it is worn
 /// on, what its use does, which no one tag says.
-pub type Among = bevy::ecs::system::SystemId<In<Chooser>, Vec<Entity>>;
+pub type OfferFilter = bevy::ecs::system::SystemId<In<OfferChooser>, Vec<Entity>>;
 
-/// Who is choosing a thing for which offer: what an offer's [`Among`] is
+/// Who is choosing a thing for which offer: what an offer's [`OfferFilter`] is
 /// asked of.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Chooser {
+pub struct OfferChooser {
     /// Who took the offer up, whose things are chosen among.
     pub taker: Entity,
     /// Who or what offers it.
@@ -337,7 +337,7 @@ impl Offering {
     /// before the choice has spent its time on a choice the player may
     /// back out of. Asking and choosing are one or the other, the last
     /// said.
-    pub fn choosing(mut self, prompt: impl Into<String>, among: Among) -> Self {
+    pub fn choosing(mut self, prompt: impl Into<String>, among: OfferFilter) -> Self {
         self.asks = Some(AsksFirst::Thing { prompt: prompt.into(), among });
         self
     }
@@ -1086,7 +1086,7 @@ pub struct Hidden {
 /// keen. Not saved by the engine; a game keeps it as it keeps whatever it
 /// is derived from.
 #[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Keen(pub u8);
+pub struct SpotBonus(pub u8);
 
 /// The [`SpotRules`] in force, as a resource.
 ///
@@ -1140,7 +1140,7 @@ type Unspotted<'w, 's> = Query<'w, 's, (Entity, &'static Position, Option<&'stat
 type Finder<'w, 's> = Query<
     'w,
     's,
-    (Entity, &'static Position, Option<&'static OnMap>, &'static crate::components::Viewshed, Option<&'static Keen>, Ref<'static, MyTurn>),
+    (Entity, &'static Position, Option<&'static OnMap>, &'static crate::components::Viewshed, Option<&'static SpotBonus>, Ref<'static, MyTurn>),
     With<crate::components::Player>,
 >;
 
@@ -1161,7 +1161,7 @@ type Finder<'w, 's> = Query<
 /// were awake.
 ///
 /// Each roll is a chance from `SpotRules::chance`: the thing's own
-/// percent with the player's [`Keen`] added, weighed by the distance to it
+/// percent with the player's [`SpotBonus`] added, weighed by the distance to it
 /// and multiplied when the player's last turn was a [`Wait`]. A secret is
 /// rolled for once for its whole group, while any cell of it is in sight,
 /// at the distance to its nearest cell, so a wide mouth is found no faster
@@ -1920,7 +1920,7 @@ mod actor_offers {
     #[test]
     fn a_choosing_offer_is_taken_up_only_with_a_thing_still_carried_and_heard_with_it() {
         let (mut app, start, free, _) = arena();
-        let among = app.register_system(|_: In<Chooser>| Vec::new());
+        let among = app.register_system(|_: In<OfferChooser>| Vec::new());
         let captive = someone(&mut app, start.offset(1, 0), Offers(vec![Offering::new(free, 200).choosing("Free them with which?", among)]));
         let plain = someone(&mut app, start.offset(-1, 0), Offers(vec![Offering::new(free, 100)]));
         let player = player_at(&mut app, start, Offers::default());
@@ -2547,7 +2547,7 @@ mod traps {
         };
         deck.app.world_mut().entity_mut(plate).insert(Hidden { spot: 0 });
         let player = deck.player;
-        deck.app.world_mut().entity_mut(player).insert(Keen(100));
+        deck.app.world_mut().entity_mut(player).insert(SpotBonus(100));
         deck.app.world_mut().write_message(Intent::new(player, crate::turn::Wait));
         deck.app.update();
         assert!(deck.app.world().get::<Hidden>(plate).is_none(), "spotted at what the finder adds");
@@ -2900,7 +2900,7 @@ mod spotting {
         assert_eq!(dull.turns_to_find(pillar, 10), None, "a nought is never found");
         let mut keen = rig(0, SpotRules::default(), &[(pillar, 0, 0)]);
         let player = keen.player;
-        keen.app.world_mut().entity_mut(player).insert(Keen(100));
+        keen.app.world_mut().entity_mut(player).insert(SpotBonus(100));
         assert_eq!(keen.turns_to_find(pillar, 1), Some(1), "but by the keen, at what they add");
     }
 

@@ -786,7 +786,7 @@ mod tests {
         ] {
             let mut aware = Aware::default();
             aware.0.extend(sees.map(|s| (me, s)));
-            app.world_mut().entity_mut(rat).insert((Doing(doing), aware, Heard(heard.unwrap_or(Awareness::Unaware))));
+            app.world_mut().entity_mut(rat).insert((LastTactic(doing), aware, Heard(heard.unwrap_or(Awareness::Unaware))));
             app.update();
             assert!(rail(&app).ends_with(&format!("rat ({word})")), "{doing:?}, seen {sees:?}, heard {heard:?}: {:?}", rail(&app));
         }

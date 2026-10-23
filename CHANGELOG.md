@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- Five more engine names say what they are: a game's system that names what a taker may choose for an offer is an `OfferFilter`, given an `OfferChooser`, where they were `Among` and `Chooser`; the points a finder adds to every roll to spot a hidden thing are a `SpotBonus`, beside `SpotRules`, where they were `Keen` (the plan's `SearchBonus`); the link from a body to the twin it can be stood back up from is a `RevivalTwin`, where it was `Life`; and the name of the tactic that decided a mind's last turn is a `LastTactic`, where it was `Doing` (the plan's `CurrentTactic`, though it names the last turn's, not one under way). Fields keep their names.
+  To change: breaking: `atglyph::ecs::Among` becomes `atglyph::ecs::OfferFilter`, `atglyph::ecs::Chooser` becomes `atglyph::ecs::OfferChooser`, `atglyph::ecs::Keen` becomes `atglyph::ecs::SpotBonus`, `atglyph::ecs::Life` becomes `atglyph::ecs::RevivalTwin`, and `atglyph::ecs::Doing` becomes `atglyph::ecs::LastTactic`.
+
 - Three combat and item components say what they hold: the extra rolls every hit carries are `BonusDamage`, where they were `Strikes`; an attack a worn thing cannot make right now, put by, is a `BenchedAttack`, not the plan's `Unusable`, which `atglyph::rules::items::No::Unusable` already means for an item; and a worn thing's own clock is a `WornTimer`, where it was a `Pulse`, whose `pulse` trigger kind keeps its name. Two private engine names lose a theme word: the attack a blow is made with is `ChosenAttack` and the narrator's query for things wielded is `Wielded`.
   To change: breaking: `atglyph::ecs::Strikes` becomes `atglyph::ecs::BonusDamage`, `atglyph::ecs::Stowed` becomes `atglyph::ecs::BenchedAttack` (with `BenchedAttack::Melee` and `BenchedAttack::Ranged`), and `atglyph::ecs::Pulse` becomes `atglyph::ecs::WornTimer` (with `WornTimer::every`).
 
