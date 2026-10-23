@@ -83,8 +83,8 @@ pub use fire::{Burning, Fire, FireEvent, FirePlugin, FireRules, Flammable, Kindl
 pub use fov::FovPlugin;
 pub use gas::{Breathed, GasPlugin, Gases, Release, Vents};
 pub use items::{
-    Bestows, DropItem, Equip, EquipFromGround, Equipped, GearScore, HeldWhileWorn, Inventory, Item, ItemEvent, ItemsPlugin, LitWhenWorn, OwnBlowScore, PickUp,
-    Pulse, Stack, Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable, may_use, may_use_on,
+    Bestows, DropItem, Equip, EquipFromGround, Equipped, GearScore, HeldWhileWorn, Inventory, Item, ItemEvent, ItemRules, ItemsPlugin, LitWhenWorn,
+    OwnBlowScore, PickUp, Pulse, Stack, Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable, may_use, may_use_on,
 };
 pub use knowledge::{Knowledge, KnowledgeSave, Recalled};
 pub use lighting::{
@@ -113,7 +113,7 @@ pub use props::{
 };
 pub use records::{RecordOutcome, RecordRun, RecordSection, RecordsPlugin, RunRecord, RunRecords};
 pub use registries::Registries;
-pub use remains::{LeavesRemains, Life, Remains, RemainsLeft, RemainsNaming, RemainsPlugin, ReviveCommands, Revived, revive};
+pub use remains::{LeavesRemains, Life, Remains, RemainsLeft, RemainsNaming, RemainsPlugin, RevivalRules, ReviveCommands, Revived, revive};
 pub use replay::{Pressed, Recording};
 pub use rl_grid::LightBand;
 pub use secrets::Secret;
@@ -164,8 +164,8 @@ pub mod prelude {
     pub use crate::gas::{Breathed, GasPlugin, Gases, Release, Vents};
 
     pub use crate::items::{
-        Bestows, DropItem, Equip, EquipFromGround, Equipped, GearScore, HeldWhileWorn, Inventory, Item, ItemEvent, ItemsPlugin, LitWhenWorn, OwnBlowScore,
-        PickUp, Pulse, Stack, Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable,
+        Bestows, DropItem, Equip, EquipFromGround, Equipped, GearScore, HeldWhileWorn, Inventory, Item, ItemEvent, ItemRules, ItemsPlugin, LitWhenWorn,
+        OwnBlowScore, PickUp, Pulse, Stack, Stuck, Tagged, Unequip, Unknown, UseItem, UseItemAt, UseOn, Wearable,
     };
 
     pub use crate::knowledge::Knowledge;
@@ -195,7 +195,7 @@ pub mod prelude {
     pub use crate::records::{RecordOutcome, RecordRun, RecordSection, RecordsPlugin, RunRecord, RunRecords};
 
     pub use crate::registries::Registries;
-    pub use crate::remains::{LeavesRemains, Remains, RemainsLeft, RemainsNaming, RemainsPlugin, ReviveCommands, Revived};
+    pub use crate::remains::{LeavesRemains, Remains, RemainsLeft, RemainsNaming, RemainsPlugin, RevivalRules, ReviveCommands, Revived};
 
     pub use crate::seed::{AddStream, Seed};
     pub use crate::settings::{AddSettings, Setting, SettingId, Settings};

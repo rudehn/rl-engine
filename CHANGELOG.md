@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `ItemRules` and `RevivalRules` hold what equipping from the ground costs and how far off a revived body may stand, the numbers the engine fixed: `ItemRules { equip_from_ground }`, by default half again a step, inserted by `ItemsPlugin`, and `RevivalRules { standing_room }`, by default 2, inserted by `RemainsPlugin` and read by `revive`, which uses the default in a world without it.
+  To change: nothing; insert either to change it.
+
 - `rl_rules::faction::at_odds`, whether one side has anything against another, the rule stealth asks: hostile by the table, and yes when there is no table or either takes no side.
   To change: nothing.
 

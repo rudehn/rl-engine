@@ -354,15 +354,34 @@ impl Action for Equip {}
 
 /// Take an item lying on the actor's cell and put it on, in one action.
 ///
-/// It costs `EQUIP_FROM_GROUND_COST`, half as much again as picking up or
-/// putting on alone: quicker than doing both, dearer than either, so taking
-/// up a sword in the middle of a fight is a real choice.
+/// It costs what [`ItemRules::equip_from_ground`] says, by default half as
+/// much again as picking up or putting on alone: quicker than doing both,
+/// dearer than either, so taking up a sword in the middle of a fight is a
+/// real choice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EquipFromGround(pub Entity);
 impl Action for EquipFromGround {}
 
-/// What [`EquipFromGround`] costs, in hundredths of a step.
-pub(crate) const EQUIP_FROM_GROUND_COST: u32 = BASE_ACTION_COST * 3 / 2;
+/// The numbers the items resolver charges by that a game may set:
+/// inserted before or after [`ItemsPlugin`], which inserts the default
+/// when there is none.
+///
+/// Only what the engine itself would otherwise have to fix. Every other
+/// item action costs one step, [`BASE_ACTION_COST`], the cost of every
+/// action the engine resolves; a game that wants a dearer use charges it
+/// from the use's own effects.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ItemRules {
+    /// What [`EquipFromGround`] costs, in hundredths of a step. By default
+    /// `BASE_ACTION_COST * 3 / 2`.
+    pub equip_from_ground: u32,
+}
+
+impl Default for ItemRules {
+    fn default() -> Self {
+        Self { equip_from_ground: BASE_ACTION_COST * 3 / 2 }
+    }
+}
 
 /// Take a worn item off.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -446,10 +465,10 @@ enum Which {
 }
 
 impl Which {
-    /// What the action costs, done or failed.
-    fn cost(self) -> u32 {
+    /// What the action costs under `rules`, done or failed.
+    fn cost(self, rules: &ItemRules) -> u32 {
         match self {
-            Which::EquipFromGround(_) => EQUIP_FROM_GROUND_COST,
+            Which::EquipFromGround(_) => rules.equip_from_ground,
             _ => BASE_ACTION_COST,
         }
     }
@@ -527,7 +546,7 @@ pub fn may_use_on(asks: &rl_rules::Asks, item: Entity, on: Entity, bag: &Invento
 
 /// Resolves pickups, drops, equips, unequips and uses, aimed somewhere,
 /// made on a thing or neither, for the actor holding the turn. Each costs
-/// one action, and equipping from the ground half as much again. An
+/// one action, and equipping from the ground what the [`ItemRules`] say. An
 /// impossible one, such as picking up from bare ground or a use aimed where
 /// it cannot reach, is refused for the player and treated as a wait for
 /// anyone else, like an impossible move.
@@ -542,6 +561,7 @@ pub fn resolve_items(
     mut intents: ItemIntents,
     mut resolution: Resolution,
     world: ItemWorld,
+    rules: Res<ItemRules>,
     mut events: MessageWriter<ItemEvent>,
     mut fired: MessageWriter<crate::effects::Fired>,
 ) {
@@ -734,9 +754,9 @@ pub fn resolve_items(
             }
         };
         if ok {
-            resolution.done(actor, which.cost());
+            resolution.done(actor, which.cost(&rules));
         } else {
-            resolution.failed(actor, which.cost());
+            resolution.failed(actor, which.cost(&rules));
         }
     }
 }
@@ -1158,7 +1178,8 @@ impl Plugin for ItemsPlugin {
     fn build(&self, app: &mut App) {
         use crate::plugin::{CleanupSet, ResolveSet, Turn, TurnSet};
         use crate::turn::AddAction;
-        app.add_message::<ItemEvent>()
+        app.init_resource::<ItemRules>()
+            .add_message::<ItemEvent>()
             // Read to let the dead drop what they carried. A game without
             // combat has no deaths, and the reader reads nothing.
             .add_message::<DeathEvent>()
@@ -1288,7 +1309,26 @@ mod tests {
         assert_eq!(r.app.world().get::<Equipped>(r.player).unwrap().in_slot(r.main), Some(sword), "worn");
         assert!(r.app.world().get::<Inventory>(r.player).unwrap().contains(sword), "and carried");
         assert!(r.app.world().get::<Position>(sword).is_none(), "and off the ground");
-        assert_eq!(r.app.world().resource::<Turns>().now(), EQUIP_FROM_GROUND_COST, "for a turn and a half: less than picking up and equipping on two");
+        assert_eq!(
+            r.app.world().resource::<Turns>().now(),
+            ItemRules::default().equip_from_ground,
+            "for a turn and a half: less than picking up and equipping on two"
+        );
+    }
+
+    #[test]
+    fn equipping_from_the_ground_costs_half_again_a_step_unless_a_game_says_otherwise() {
+        assert_eq!(ItemRules::default().equip_from_ground, BASE_ACTION_COST * 3 / 2);
+    }
+
+    #[test]
+    fn equipping_from_the_ground_costs_what_the_item_rules_say() {
+        let mut r = rig();
+        r.app.insert_resource(ItemRules { equip_from_ground: 250 });
+        let sword = r.app.world_mut().spawn((Item, Position(r.start), Wearable(EquipShape::in_slot(r.main)))).id();
+        r.app.update();
+        act(&mut r, EquipFromGround(sword));
+        assert_eq!(r.app.world().resource::<Turns>().now(), 250);
     }
 
     #[test]

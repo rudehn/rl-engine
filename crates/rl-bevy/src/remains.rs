@@ -23,7 +23,7 @@
 //! continued save both go through. [`revive`], or
 //! [`ReviveCommands::revive`] from a system, stands a body back up from
 //! its twin, on its own cell or the nearest free one within
-//! `STANDING_ROOM`, and writes [`Revived`].
+//! [`RevivalRules::standing_room`], and writes [`Revived`].
 //!
 //! What the engine will not say is what remains *are*. There is no name,
 //! no glyph, no rot timer, no loot, and no answer to whether they can be
@@ -172,10 +172,23 @@ pub struct Revived {
     pub entity: Entity,
 }
 
-/// How far from its body a revived actor may stand when something stands
-/// on the body: far enough to find room in a crowd, near enough that it
-/// is plainly the same one getting up.
-pub(crate) const STANDING_ROOM: i32 = 2;
+/// The numbers [`revive`] stands a body up by that a game may set:
+/// inserted before or after [`RemainsPlugin`], which inserts the default
+/// when there is none. A world with neither is revived by the default.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RevivalRules {
+    /// How far from its body, in cells, a revived actor may stand when
+    /// something stands on the body: far enough to find room in a crowd,
+    /// near enough that it is plainly the same one getting up. By
+    /// default 2.
+    pub standing_room: i32,
+}
+
+impl Default for RevivalRules {
+    fn default() -> Self {
+        Self { standing_room: 2 }
+    }
+}
 
 /// Stands `body` back up with `health`, and says whether it could.
 ///
@@ -198,8 +211,8 @@ pub(crate) const STANDING_ROOM: i32 = 2;
 /// from the pass it died in, but it is not remains until it is laid down.
 ///
 /// Refused, with a warning, for anything that is not remains with a twin,
-/// and for a body with someone on it and no free cell within
-/// `STANDING_ROOM`.
+/// and for a body with someone on it and no free cell within the
+/// [`RevivalRules`]' standing room.
 pub fn revive(world: &mut World, body: Entity, health: i32) -> bool {
     // `Life` goes on in the pass an actor dies and `Remains` only once it is
     // laid down, so an actor still dying has a twin and is not yet a body:
@@ -208,8 +221,9 @@ pub fn revive(world: &mut World, body: Entity, health: i32) -> bool {
         warn!("{body:?} cannot be revived: it is not remains, or `RemainsPlugin` kept no twin of it");
         return false;
     };
-    let Some(at) = standing_room(world, body) else {
-        warn!("{body:?} cannot be revived: something stands on it and nothing within {STANDING_ROOM} cells is free");
+    let room = world.get_resource::<RevivalRules>().copied().unwrap_or_default().standing_room;
+    let Some(at) = standing_room(world, body, room) else {
+        warn!("{body:?} cannot be revived: something stands on it and nothing within {room} cells is free");
         return false;
     };
     // What the world did to the body, which stays the body's.
@@ -246,9 +260,9 @@ pub fn revive(world: &mut World, body: Entity, health: i32) -> bool {
 }
 
 /// Where a revived body stands: where it lies, or, when something now
-/// stands there, the nearest free cell, ring by ring in reading order so
-/// the same world always gives the same cell.
-fn standing_room(world: &World, body: Entity) -> Option<Point> {
+/// stands there, the nearest free cell no more than `room` off, ring by
+/// ring in reading order so the same world always gives the same cell.
+fn standing_room(world: &World, body: Entity, room: i32) -> Option<Point> {
     let at = world.get::<Position>(body)?.0;
     let occupancy = world.resource::<Occupancy>();
     let on = world.get::<OnMap>(body).map(|m| m.0).unwrap_or(MapId::ZERO);
@@ -256,7 +270,7 @@ fn standing_room(world: &World, body: Entity) -> Option<Point> {
         return Some(at);
     }
     let map = world.resource::<WorldMap>();
-    (1..=STANDING_ROOM).find_map(|r| {
+    (1..=room).find_map(|r| {
         (-r..=r)
             .flat_map(|dy| (-r..=r).map(move |dx| (dx, dy)))
             .filter(|(dx, dy)| dx.abs().max(dy.abs()) == r)
@@ -511,6 +525,7 @@ impl Plugin for RemainsPlugin {
         app.add_message::<RemainsLeft>()
             .add_message::<Revived>()
             .init_resource::<RemainsNaming>()
+            .init_resource::<RevivalRules>()
             .add_systems(Turn, keep_life.in_set(crate::plugin::ResolveSet::Damage).after(crate::combat::apply_damage))
             .add_systems(Turn, leave_remains.in_set(CleanupSet::Remove).after(crate::combat::process_deaths));
     }
@@ -977,6 +992,28 @@ mod tests {
         assert_ne!(stood, at, "not on top of whoever was there");
         assert!(rl_core::geometry::is_adjacent(stood, at), "but beside them");
         assert_eq!(app.world().get::<Position>(blocker).unwrap().0, at, "who did not move");
+    }
+
+    /// A body with every cell beside it taken and the ring past that free
+    /// stands up two cells off by default, and not at all when the game's
+    /// revival rules allow it one.
+    #[test]
+    fn a_body_is_revived_no_further_off_than_the_revival_rules_allow() {
+        let (mut app, start, sides) = arena();
+        let player = watcher(&mut app, start, sides);
+        let at = start.offset(4, 0);
+        let dead = victim(&mut app, at, sides, true);
+        kill(&mut app, dead, sides);
+        let ring = (-1..=1).flat_map(|dy| (-1..=1).map(move |dx| at.offset(dx, dy)));
+        for cell in ring {
+            app.world_mut().spawn((Actor, Blocks, Position(cell), Health::full(4), Faction(sides.ours)));
+        }
+        take_a_turn(&mut app, player);
+        app.insert_resource(RevivalRules { standing_room: 1 });
+        assert!(!stand_up(&mut app, dead, 2), "nothing within one cell is free");
+        app.insert_resource(RevivalRules::default());
+        assert!(stand_up(&mut app, dead, 2), "two cells off is");
+        assert_eq!(rl_core::geometry::chebyshev(app.world().get::<Position>(dead).unwrap().0, at), 2);
     }
 
     /// A body dressed as something else while it lay there, a look or a
