@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The Bevy-free crates `atglyph-grid` and `atglyph-mapgen` say in their readmes and front pages that used alone they need `atglyph-core` (and `atglyph-grid`) at the same version, with the dependency lines; every published crate carries `LICENSE-MIT` and `LICENSE-APACHE`; the template's `system_font_discovery` comment and the workspace's say what the feature is for now (the letters the terminal draws; it draws box-drawing and block characters itself); the readme's Linux packages add `libx11-dev` and `libfontconfig1-dev`; the facade's front page lists the generated game's potions, dagger and coat; `atglyph-rules`'s example uses neutral ids.
+  To change: nothing.
+
 - The template's first run: a potion drunk at full health is refused with "You are not hurt." and spends no turn; `w` is "put on or wield what you carry" on the `?` screen, in the readme and in the module docs, as the narrator says it; the status row and the log keep a cell of margin at either end; the brazier is named `brazier`, and a test shows the wielded dagger's blow is the one the player strikes with. The tutorial names its things bare, `crust of bread`, `rock` and `crack of daylight`, as the engine expects: the narrator and the views add the article a sentence needs, and a name written with one is said as written, so the bag listed `a rock`. `scripts/release-notes.sh` prints the `bevy` line a game lists beside `atglyph`, and `scripts/check-template.sh` reads a plain `bevy = "0.19"` line as well as a table. The guide's quotes of the tutorial change at the release.
   To change: nothing; a game that names a thing with its article may drop it, so its bag and its look cursor list it bare.
 
