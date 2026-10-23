@@ -928,7 +928,7 @@ mod tests {
         ctx.emit(Opening { cells: vec![Point::new(6, 2)], facing: rl_core::Direction::North, areas: (0, 0), join: rl_mapgen::Join::Door });
         ctx.emit(rl_mapgen::passes::StartPoint(Point::new(6, 1)));
         let bunks = app.world().resource::<Prefabs<Beast>>().dressing("bunks").unwrap();
-        let pass = Dress { name: "dress", floor, dressings: vec![bunks], districts: vec![rl_mapgen::DistrictDressings::new("d", vec![(0, 1)])] };
+        let pass = Dress { name: "dress", floor, dressings: vec![bunks], districts: vec![rl_mapgen::DistrictDressings::new("d", vec![("bunks".into(), 1)])] };
         Chain::new().then(pass).run(&mut ctx, seed).unwrap();
         PlaceBuild::from_context(ctx).unwrap()
     }

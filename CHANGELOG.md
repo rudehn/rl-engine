@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `rl-mapgen`'s `Turn`, `Mirror`, `Placement`, `Prefer`, `Stairs`, `Spread` and `DistrictDressings` deserialize from the spellings the content files already write, and a `DistrictDressings` names each dressing by its name, as a `DressAt` does, rather than by its place in `Dress::dressings`; `Dress` fails naming a dressing a list names and it does not hold.
+  To change: `rl_mapgen::DistrictDressings::new(district, vec![(0, 3)])` becomes `vec![("barracks".into(), 3)]`.
+
 - `rl_rules::items::resolve_item` decides what picking up, dropping, wearing and using a thing comes to, the rule `ItemsPlugin` applies, so a front end with no `App` uses the same rule: an `ItemAsk` and the `ItemFacts` gathered for it in, and the `ItemOutcome`s in the order they are reported, or the `ItemRefusal` saying why, out. `Equipped` is now marked changed only when something went on or came off, so a refused equip or a drop of a thing not worn no longer folds the wearer's gear again.
   To change: nothing.
 

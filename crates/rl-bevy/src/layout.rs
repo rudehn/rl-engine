@@ -200,15 +200,10 @@ pub fn picked<M: Send + Sync + 'static>(pool: &Pool, picks: &[Pick], prefabs: &P
 /// load.
 pub fn dress<M: Send + Sync + 'static>(prefabs: &Prefabs<M>, floor: TileId, lists: &[DistrictDressings]) -> Result<Dress, BuildError> {
     let dressings = prefabs.dressings().iter().map(|(_, d)| prefabs.dressing(&d.name)).collect::<Result<Vec<_>, _>>()?;
-    // Ids are dense and in file order, so a dressing's id is its place in
-    // the list just cut.
-    let index =
-        |name: &str| prefabs.dressings().id(name).map(|id| id.index()).ok_or_else(|| BuildError::new("dressing", format!("no dressing is called {name:?}")));
-    let mut districts = Vec::new();
-    for list in lists {
-        let dressings = list.dressings.iter().map(|(name, weight)| Ok((index(name)?, *weight))).collect::<Result<Vec<_>, BuildError>>()?;
-        districts.push(rl_mapgen::DistrictDressings { district: list.district.clone(), nothing: list.nothing, dressings });
-    }
+    // The pass fails on a name no dressing has, which `check_districts`
+    // refuses at load.
+    let districts =
+        lists.iter().map(|l| rl_mapgen::DistrictDressings { district: l.district.clone(), nothing: l.nothing, dressings: l.dressings.clone() }).collect();
     Ok(Dress { name: "dress", floor, dressings, districts })
 }
 

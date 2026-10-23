@@ -760,7 +760,7 @@ impl<C: BuildContext> Pass<C> for MarkedExit {
 /// stamps or among the farthest, and this only adds what the landmark
 /// asks: [`start`](Self::start) and [`exit`](Self::exit) take the game's
 /// own and hand back what goes in its chain.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize)]
 pub enum Stairs {
     /// Wherever the game's own passes put them. The landmark is the first
     /// piece, so the first room grown, where [`RandomStart`] stands the

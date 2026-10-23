@@ -28,7 +28,7 @@ use crate::survey::Surveyed;
 /// secret hidden, so nothing meant to be come upon is put behind a lock
 /// or a secret it was not drawn for: a locked room's one way in makes it
 /// a dead end by count, and it is still never one.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize)]
 pub enum Prefer {
     /// The area farthest from the route it fits, by
     /// [`AreaFacts::seclusion`](crate::AreaFacts::seclusion): what a

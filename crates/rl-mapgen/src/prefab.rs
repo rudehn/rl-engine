@@ -67,7 +67,7 @@ pub enum Cell {
 }
 
 /// How far a drawing tolerates being turned, wherever it is laid.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize)]
 pub enum Turn {
     /// Never: a ship stands on its keel and not on its mast.
     None,
@@ -86,7 +86,7 @@ pub enum Turn {
 /// with every quarter-turn allowed either mirror reaches all eight
 /// facings; a piece that may not turn at all is the one that needs to
 /// name which.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize)]
 pub enum Mirror {
     /// Never: an inscription reads backwards mirrored.
     None,
@@ -420,7 +420,7 @@ impl Prefab {
 }
 
 /// Where a prefab goes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 pub enum Placement {
     /// Centred on the map.
     Center,

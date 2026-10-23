@@ -39,6 +39,13 @@
 //! a `DressAt` names and in every room nothing took, by its district,
 //! never beside an opening and never cutting an area in two.
 //!
+//! The values a content file writes, a [`Turn`](prefab::Turn), a
+//! [`Mirror`](prefab::Mirror), a [`Placement`](prefab::Placement), a
+//! [`Prefer`], a [`Stairs`](dungeon::Stairs), a [`Spread`](dress::Spread)
+//! and a [`DistrictDressings`], deserialize, so `rl-rules` reads its files
+//! straight into them rather than into copies it would translate; this
+//! crate reads no file itself.
+//!
 //! Engine passes are generic over the context, so a game extends the
 //! context with its own state and engine passes still run on it.
 //!
@@ -92,4 +99,51 @@ pub mod prelude {
     pub use crate::prefab::{Orient, Placement, Prefab, PrefabShape, StampEachRoom, StampOneOf, StampPrefab, Stamped};
     pub use crate::secrets::{HideOpenings, Secret};
     pub use crate::survey::{AreaFacts, Require, Survey, Surveyed};
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dress::Spread;
+    use dungeon::Stairs;
+    use prefab::{Mirror, Placement, Turn};
+    use rl_core::Point;
+
+    fn read<T: serde::de::DeserializeOwned>(text: &str) -> T {
+        ron::from_str(text).unwrap_or_else(|e| panic!("{text}: {e}"))
+    }
+
+    /// Every spelling a prefab, pool or dressing file writes, read into
+    /// the type the passes take, as `rl-rules` reads it: a variant renamed
+    /// here would break every file that writes it.
+    #[test]
+    fn each_file_spelling_of_a_turn_mirror_prefer_and_stairs_reads_as_before() {
+        assert_eq!([read::<Turn>("None"), read("Half"), read("Quarter")], [Turn::None, Turn::Half, Turn::Quarter]);
+        assert_eq!([read::<Mirror>("None"), read("LeftRight"), read("UpDown"), read("Both")], [Mirror::None, Mirror::LeftRight, Mirror::UpDown, Mirror::Both]);
+        assert_eq!(
+            [read::<Prefer>("Secluded"), read("DeadEnd"), read("Hidden"), read("Junction"), read("Anywhere")],
+            [Prefer::Secluded, Prefer::DeadEnd, Prefer::Hidden, Prefer::Junction, Prefer::Anywhere]
+        );
+        assert_eq!([read::<Stairs>("Free"), read("Beyond"), read("Within('>')")], [Stairs::Free, Stairs::Beyond, Stairs::Within('>')]);
+        assert_eq!(
+            read::<Vec<Placement>>("[Center, Edge, Anywhere, Span, At((x: 2, y: 3)), InRoom(1), AnyRoom]"),
+            [
+                Placement::Center,
+                Placement::Edge,
+                Placement::Anywhere,
+                Placement::Span,
+                Placement::At(Point::new(2, 3)),
+                Placement::InRoom(1),
+                Placement::AnyRoom
+            ]
+        );
+        assert_eq!(
+            read::<Vec<Spread>>("[Walls, Corners, Center, Rows(aisle: 2), Scatter]"),
+            [Spread::Walls, Spread::Corners, Spread::Center, Spread::Rows { aisle: 2 }, Spread::Scatter]
+        );
+        let list: DistrictDressings = read(r#"(district: "halls", dressings: [("dust", 1)])"#);
+        assert_eq!(list, DistrictDressings::new("halls", vec![("dust".into(), 1)]), "nothing is 0 when left out");
+        assert!(ron::from_str::<DistrictDressings>(r#"(district: "halls", dressings: [], extra: 1)"#).is_err(), "an unknown field");
+        assert!(ron::from_str::<Turn>("Sideways").is_err(), "a turn no file may write");
+    }
 }

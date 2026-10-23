@@ -40,7 +40,7 @@ use crate::secrets::Secret;
 /// A wall here is anything beside a cell that is not the area's own floor
 /// a body can stand on: rock, a lake, the wall of the next piece. So a
 /// cave's ragged edge is all wall and corner, and a lake's shore is wall.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 pub enum Spread {
     /// A cell with a wall straight beside it, not a corner.
     Walls,
@@ -150,20 +150,28 @@ pub struct Dress {
 }
 
 /// What the free rooms grown in one district are dressed with: each
-/// dressing at a weight, and nothing at all at a weight of its own.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// dressing by name at a weight, and nothing at all at a weight of its own.
+///
+/// By name and not by place in [`Dress::dressings`], as a [`DressAt`] is,
+/// so a game reads its lists straight from its own file, as
+/// `(district: "halls", nothing: 2, dressings: [("barracks", 3)])` with
+/// `nothing` 0 when left out, and `rl-rules`' `check_districts` holds the
+/// names to the dressing file at load.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DistrictDressings {
     /// The district, by [`Area::district`].
     pub district: String,
     /// The weight of leaving a room bare.
+    #[serde(default)]
     pub nothing: u32,
-    /// Each an index into [`Dress::dressings`] and its weight.
-    pub dressings: Vec<(usize, u32)>,
+    /// Each dressing, by its [`Dressing::name`], and its weight.
+    pub dressings: Vec<(String, u32)>,
 }
 
 impl DistrictDressings {
     /// `district` dressed with `dressings`, never left bare.
-    pub fn new(district: impl Into<String>, dressings: Vec<(usize, u32)>) -> Self {
+    pub fn new(district: impl Into<String>, dressings: Vec<(String, u32)>) -> Self {
         Self { district: district.into(), nothing: 0, dressings }
     }
 
@@ -202,15 +210,18 @@ impl<C: BuildContext> Pass<C> for Dress {
         if let Some(d) = self.dressings.iter().find(|d| d.repaint.is_some_and(|(t, _)| !walkable[t.index()])) {
             return Err(err(format!("dressing {:?} repaints the floor with a tile no body stands on, and a repaint is never checked for cutting", d.name)));
         }
-        for list in &self.districts {
-            if let Some((i, _)) = list.dressings.iter().find(|(i, _)| *i >= self.dressings.len()) {
-                return Err(err(format!("district {:?} names dressing {i}, and there are {}", list.district, self.dressings.len())));
-            }
-        }
+        let index = |name: &str| self.dressings.iter().position(|d| d.name == name).ok_or_else(|| err(format!("no dressing is called {name:?}")));
+        // Each list as indices, so a name no dressing has fails the pass
+        // before anything is laid, not on the roll that first draws it.
+        let lists = self
+            .districts
+            .iter()
+            .map(|l| Ok((l, l.dressings.iter().map(|(name, w)| Ok((index(name)?, *w))).collect::<Result<Vec<_>, BuildError>>()?)))
+            .collect::<Result<Vec<_>, BuildError>>()?;
         // Each area to dress and the dressing, by index: the given first.
         let mut laid: Vec<(usize, usize)> = Vec::new();
         for at in &given {
-            let dressing = self.dressings.iter().position(|d| d.name == at.dressing).ok_or_else(|| err(format!("no dressing is called {:?}", at.dressing)))?;
+            let dressing = index(&at.dressing)?;
             if !areas.iter().any(|a| a.index == at.area) {
                 return Err(err(format!("{:?} is given area {}, and there is none", at.dressing, at.area)));
             }
@@ -222,16 +233,16 @@ impl<C: BuildContext> Pass<C> for Dress {
         let stamped = |a: &Area| a.cells.iter().any(|c| stamps.iter().any(|s| s.contains(*c)));
         for area in &areas {
             let free = area.entries.is_none() && is_room(area) && !stamped(area) && !given.iter().any(|g| g.area == area.index);
-            let Some(list) = self.districts.iter().find(|l| l.district == area.district).filter(|_| free) else { continue };
+            let Some((list, dressings)) = lists.iter().find(|(l, _)| l.district == area.district).filter(|_| free) else { continue };
             // Nothing is the first choice, so a roll on it lays nothing.
-            let weights: Vec<u32> = std::iter::once(list.nothing).chain(list.dressings.iter().map(|(_, w)| *w)).collect();
+            let weights: Vec<u32> = std::iter::once(list.nothing).chain(dressings.iter().map(|(_, w)| *w)).collect();
             let total: u32 = weights.iter().sum();
             if total == 0 {
                 continue;
             }
             let roll = ctx.rng().random_range(0..total);
             if let Some(k) = pick_weighted(&weights, roll).checked_sub(1) {
-                laid.push((area.index, list.dressings[k].0));
+                laid.push((area.index, dressings[k].0));
             }
         }
         for (index, dressing) in laid {
@@ -519,7 +530,8 @@ mod tests {
 
     /// A dress pass laying `d` in every room of district `d`.
     fn dress(floor: TileId, d: Dressing) -> Dress {
-        Dress { name: "dress", floor, dressings: vec![d], districts: vec![DistrictDressings::new("d", vec![(0, 1)])] }
+        let list = DistrictDressings::new("d", vec![(d.name.clone(), 1)]);
+        Dress { name: "dress", floor, dressings: vec![d], districts: vec![list] }
     }
 
     /// The dressing's slots: every mark a stamp keyed by it emitted.
@@ -862,7 +874,10 @@ mod tests {
             name: "dress",
             floor: r.floor,
             dressings: vec![d],
-            districts: vec![DistrictDressings::new("rooms", vec![(0, 3)]).or_nothing(1), DistrictDressings::new("caves", vec![(0, 1)])],
+            districts: vec![
+                DistrictDressings::new("rooms", vec![("everything".into(), 3)]).or_nothing(1),
+                DistrictDressings::new("caves", vec![("everything".into(), 1)]),
+            ],
         };
         let hide = HideOpenings { loops: (1, 3), rooms: (1, 2), loop_spot: 5, room_spot: 5, at_least_rooms: 0 };
         let mut wet_tiles = r.tiles.clone();
@@ -964,8 +979,8 @@ mod tests {
             ctx.outputs().iter::<Dressed>().map(|d| (d.area, d.dressing.clone())).collect::<Vec<_>>()
         };
         assert_eq!(dressed(DistrictDressings::new("d", Vec::new()).or_nothing(1)), vec![(0, "given".to_string())]);
-        assert_eq!(dressed(DistrictDressings::new("d", vec![(0, 1)])), vec![(0, "given".to_string()), (3, "plain".to_string())]);
-        assert_eq!(dressed(DistrictDressings::new("d", vec![(0, 0)])), vec![(0, "given".to_string())], "a list weighing nothing dresses nothing");
+        assert_eq!(dressed(DistrictDressings::new("d", vec![("plain".into(), 1)])), vec![(0, "given".to_string()), (3, "plain".to_string())]);
+        assert_eq!(dressed(DistrictDressings::new("d", vec![("plain".into(), 0)])), vec![(0, "given".to_string())], "a list weighing nothing dresses nothing");
     }
 
     #[test]
@@ -974,6 +989,16 @@ mod tests {
         let mut ctx = room(&r, 5, 5);
         ctx.emit(DressAt { dressing: "missing".into(), area: 0 });
         let e = Chain::new().then(dress(r.floor, dressing("store", vec![slot('w', Spread::Walls, 50)], None))).run(&mut ctx, RunSeed(0)).unwrap_err();
+        assert!(e.pass == "dress" && e.reason.contains("missing"), "{e}");
+    }
+
+    #[test]
+    fn a_district_list_naming_a_dressing_there_is_none_of_fails_naming_it() {
+        let (r, ..) = tiles();
+        let mut ctx = room(&r, 5, 5);
+        let mut pass = dress(r.floor, dressing("store", vec![slot('w', Spread::Walls, 50)], None));
+        pass.districts = vec![DistrictDressings::new("d", vec![("missing".into(), 1)])];
+        let e = Chain::new().then(pass).run(&mut ctx, RunSeed(0)).unwrap_err();
         assert!(e.pass == "dress" && e.reason.contains("missing"), "{e}");
     }
 
