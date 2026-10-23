@@ -664,7 +664,9 @@ pub(crate) fn ensure(app: &mut App) {
 mod tests {
     use super::*;
 
-    /// What `EffectRng` drew first for seed 7 on     /// domains moved under `atglyph.` and it came to draw under `atglyph.effects`.
+    /// What `EffectRng` drew first for seed 7 on the day the engine's
+    /// domains moved under `atglyph.` and it came to draw under
+    /// `atglyph.effects`.
     const FIRST_DRAW_FOR_SEED_SEVEN: u64 = 3_276_438_376_411_043_230;
 
     /// Fingerprint tripwire: the effect stream draws under its own domain,

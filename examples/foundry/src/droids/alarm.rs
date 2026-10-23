@@ -399,7 +399,7 @@ mod tests {
 
     /// The player's gap to the probe after each of `turns` waits, with
     /// every other mind on the deck gone, so nothing but the probe moves.
-    fn gaps_while_the_player_waits(seed: u64, start: i32, turns: usize) -> Vec<i32> {
+    fn gaps_while_the_player_waits(seed: u64, start: i32, turns: usize) -> Vec<(i32, bool)> {
         let mut app = crate::testing::headless(RunSeed(seed));
         let (probe, me) = crate::testing::droid_facing_player(&mut app, "probe droid", start);
         let others: Vec<Entity> = app.world_mut().query_filtered::<Entity, With<Mind>>().iter(app.world()).filter(|e| *e != probe).collect();
@@ -410,22 +410,43 @@ mod tests {
         (0..turns)
             .map(|_| {
                 crate::testing::pass_turns(&mut app, 1);
-                atglyph::primitives::geometry::chebyshev(at(&app, probe), at(&app, me))
+                let gap = atglyph::primitives::geometry::chebyshev(at(&app, probe), at(&app, me));
+                let seen = app.world().get::<Viewshed>(me).is_some_and(|v| v.can_see(at(&app, probe)));
+                (gap, seen)
             })
             .collect()
     }
 
     /// A probe that spots a player who then stands still signals where it
-    /// is, then backs off and stays off: within six turns it is three away, and it is never
-    /// nearer again, even where backing off takes it round a corner out of sight,
-    /// since it keeps its distance from where it last saw the player too.
+    /// is, then backs off: within six turns it is three away, and it is
+    /// never nearer again while it knows where the player is, even where
+    /// backing off takes it round a corner out of sight, since it keeps its
+    /// distance from where it last saw the player too. Its memory of that
+    /// place lasts `monsters.ron`'s eight turns (`hearing.memory`); a probe
+    /// out of sight for longer has forgotten the player and drifts like any
+    /// droid with nothing to watch, which can bring it back to two. It backs
+    /// off again within the same six turns of sighting the player, so what
+    /// is held is: a gap under three only after eight turns unseen, and for
+    /// no more than six turns.
     #[test]
-    fn a_probe_beside_an_idle_player_backs_off_and_never_comes_nearer_than_three_again_over_a_range_of_seeds() {
-        for seed in [2, 1, 7, 3, 5, 6] {
-            let gaps = gaps_while_the_player_waits(seed, 1, 20);
+    fn a_probe_beside_an_idle_player_backs_off_and_never_comes_nearer_than_three_while_it_remembers_over_a_range_of_seeds() {
+        const MEMORY: usize = 8;
+        for seed in [2, 1, 7, 4, 5, 6] {
+            let turns = gaps_while_the_player_waits(seed, 1, 20);
+            let gaps: Vec<i32> = turns.iter().map(|(gap, _)| *gap).collect();
             let off = gaps.iter().position(|g| *g >= 3).unwrap_or_else(|| panic!("seed {seed}: never backed off, gaps per turn {gaps:?}"));
             assert!(off <= 6, "seed {seed}: backed off only by turn {off}, gaps per turn {gaps:?}");
-            assert!(gaps[off..].iter().all(|g| *g >= 3), "seed {seed}: came back in, gaps per turn {gaps:?}");
+            let mut run_start = None;
+            for turn in off..turns.len() {
+                if gaps[turn] >= 3 {
+                    run_start = None;
+                    continue;
+                }
+                let start = *run_start.get_or_insert(turn);
+                let forgot = start >= MEMORY && turns[start - MEMORY..start].iter().all(|(_, seen)| !seen);
+                assert!(forgot, "seed {seed}: came back in at turn {start} while it remembered, gaps per turn {gaps:?}");
+                assert!(turn - start < 6, "seed {seed}: and stayed in past turn {turn}, gaps per turn {gaps:?}");
+            }
         }
     }
 
