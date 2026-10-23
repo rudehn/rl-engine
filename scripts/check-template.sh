@@ -64,7 +64,7 @@ fi
 # Every instruction to generate a game names that release too. Without
 # --tag, cargo-generate takes the template from main, which may already use
 # what the release the template pins does not have.
-if grep -n "cargo generate --git" README.md docs/guide/src/*.md | grep -v -- "--tag v$version"; then
+if grep -n "cargo generate --git" README.md docs/guide/src/*.md crates/atglyph/src/lib.rs | grep -v -- "--tag v$version"; then
   echo "error: the lines above generate a game without --tag v$version" >&2
   exit 1
 fi
