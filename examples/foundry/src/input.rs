@@ -71,10 +71,10 @@ pub struct Reach<'w, 's> {
 ///
 /// A shot is a weapon's, never the commando's own: what is wielded and
 /// loaded, cool enough to fire.
-pub fn say_why_not(mut declined: MessageReader<Declined>, reach: Reach, turns: Res<Turns>, mut log: ResMut<MessageLog>) {
+pub fn say_why_not(mut declined: MessageReader<Declined>, reach: Reach, mut log: Log) {
     for asked in declined.read().filter(|d| d.verb == PlayerVerb::Fire) {
         let worn: Vec<Entity> = reach.worn.get(asked.actor).map(|e| e.0.worn().map(|(_, item)| item).collect()).unwrap_or_default();
-        log.muted(why_not(&worn, &reach), turns.turn_number());
+        log.muted(why_not(&worn, &reach));
     }
 }
 

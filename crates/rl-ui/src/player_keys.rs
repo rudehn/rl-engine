@@ -44,7 +44,7 @@ use rl_bevy::EngineSet;
 use rl_bevy::prelude::*;
 
 use crate::controls::{AddControls, Chord, ControlId, ControlInput, Keys};
-use crate::log::MessageLog;
+use crate::log::Log;
 use crate::modal::Modals;
 use crate::panel::{InventoryMenu, inventory_modal};
 use crate::tone::{ToneId, Tones};
@@ -275,8 +275,7 @@ pub struct Keyboard<'w, 's> {
     keys: ControlInput<'w>,
     wanted: Res<'w, PlayerKeys>,
     modals: ResMut<'w, Modals>,
-    turns: Res<'w, Turns>,
-    log: ResMut<'w, MessageLog>,
+    log: Log<'w>,
     player: PlayerTurn<'w, 's>,
 }
 
@@ -312,7 +311,6 @@ pub fn player_keys(mut kb: Keyboard, loadout: Loadout, mut pack: Pack, mut asks:
         return;
     }
     let Ok(me) = kb.player.single() else { return };
-    let now = kb.turns.turn_number();
     let Keyboard { keys, wanted, modals, log, .. } = &mut kb;
     let pressed = wanted.verbs.iter().find_map(|(verb, id, otherwise)| match verb {
         PlayerVerb::Walk => keys.direction(*id).map(|dir| (*verb, Some(dir), otherwise)),
@@ -367,7 +365,7 @@ pub fn player_keys(mut kb: Keyboard, loadout: Loadout, mut pack: Pack, mut asks:
     if declined {
         asks.declined.write(Declined { actor: me, verb });
         if let Otherwise::Say { text, tone } = otherwise {
-            log.push(text.clone(), *tone, now);
+            log.push(text.clone(), *tone);
         }
     }
 }
@@ -376,6 +374,7 @@ pub fn player_keys(mut kb: Keyboard, loadout: Loadout, mut pack: Pack, mut asks:
 mod tests {
     use super::*;
     use crate::harness::Stage;
+    use crate::log::MessageLog;
 
     fn said(stage: &Stage) -> Vec<String> {
         stage.app.world().resource::<MessageLog>().iter().map(|line| line.text.clone()).collect()

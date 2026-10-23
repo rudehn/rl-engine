@@ -251,7 +251,7 @@ impl Bestiary {
 // ANCHOR: start
 /// Hands the engine what combat reads, then spawns the player into the
 /// warren, at the first floor's entry.
-fn start(mut commands: Commands, seed: Res<Seed>, mut log: ResMut<MessageLog>) {
+fn start(mut commands: Commands, seed: Res<Seed>, mut log: Log) {
     // The two registries combat reads: what damage can be, and who hates
     // whom. Both are the game's content, named nowhere in the engine.
     let kinds = Registry::from_defs(vec![DamageKind::new("bite"), DamageKind::new("venom"), DamageKind::new("kick")]).unwrap();
@@ -272,7 +272,7 @@ fn start(mut commands: Commands, seed: Res<Seed>, mut log: ResMut<MessageLog>) {
             (Inventory::default(),),
         ),
     );
-    log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE, 0);
+    log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE);
 }
 // ANCHOR_END: start
 
@@ -418,15 +418,14 @@ fn populate(
 fn narrate(
     mut items: MessageReader<ItemEvent>,
     mut deaths: MessageReader<DeathEvent>,
-    turns: Res<Turns>,
-    mut log: ResMut<MessageLog>,
+    mut log: Log,
     bestiary: Res<Bestiary>,
     kinds: Query<&Kind>,
     mut over: MessageWriter<RunOver>,
 ) {
     for ev in items.read() {
         if let ItemEvent::Used { .. } = *ev {
-            log.push("You eat the crust. It helps.", Tones::GOOD, turns.turn_number());
+            log.push("You eat the crust. It helps.", Tones::GOOD);
         }
     }
     for d in deaths.read() {

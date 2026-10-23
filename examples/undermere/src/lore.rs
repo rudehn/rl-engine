@@ -505,14 +505,7 @@ pub fn learn_by_use(mut events: MessageReader<ItemEvent>, mut knowing: Knowing, 
 /// choosing and before the names are given, so the scroll is called what
 /// it is in the frame it asks. A kind already known is learned no twice,
 /// and absent a pack, as in a test that draws none, nothing chooses.
-pub fn learn_by_asking(
-    menu: Option<Res<InventoryMenu>>,
-    things: Query<&ItemKind>,
-    armory: Res<Armory>,
-    mut lore: ResMut<Lore>,
-    mut log: ResMut<MessageLog>,
-    turns: Res<Turns>,
-) {
+pub fn learn_by_asking(menu: Option<Res<InventoryMenu>>, things: Query<&ItemKind>, armory: Res<Armory>, mut lore: ResMut<Lore>, mut log: Log) {
     let Some(item) = menu.and_then(|m| m.using()) else { return };
     let Ok(kind) = things.get(item) else { return };
     let name = &armory.defs.get(kind.0).name;
@@ -521,7 +514,7 @@ pub fn learn_by_asking(
     }
     // Said straight into the log: the pack is up, so no turn runs to tell
     // it, and the line belongs to the frame the choice is asked in.
-    log.notice(format!("It is {}.", with_article(name)), turns.turn_number());
+    log.notice(format!("It is {}.", with_article(name)));
 }
 
 /// What [`learn_by_use`] reads: the adventurer, what each thing is and

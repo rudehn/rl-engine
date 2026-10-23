@@ -286,7 +286,7 @@ impl PluginGroup for TtyRoguelikePlugins {
 /// fn title(_: HoldStart, _: SavedRun, _: ContinueRun, _: AbandonRun, _: LeaveRun) {}
 /// let _begin: fn(&mut World) = begin_run;
 /// fn records(_: RunRecord, _: RunRecords, _: RecordOutcome, _: RecordSection, _: RecordRun, _: RecordsPlugin, _: RecordsPanel) {}
-/// fn drawn(_: Glyph, _: Cell, _: Terminal, _: MapView, _: Palette, _: MessageLog, _: Saves) {}
+/// fn drawn(_: Glyph, _: Cell, _: Terminal, _: MapView, _: Palette, _: MessageLog, _: Log, _: Saves) {}
 /// // Bevy's own names a game uses beside the engine's: the shape a mesh
 /// // is made from, which a grown place's shapes must not shadow.
 /// fn bevy_own(_: Rectangle, _: Circle) {}

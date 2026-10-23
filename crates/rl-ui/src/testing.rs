@@ -42,7 +42,7 @@ mod tests {
         let mut terminal = Terminal::new(6, 3, Vec2::ONE);
         terminal.print(1, 1, "hi", Color::WHITE);
         app.insert_resource(terminal).init_resource::<MessageLog>();
-        app.world_mut().resource_mut::<MessageLog>().info("A line.", 1);
+        app.world_mut().resource_mut::<MessageLog>().push_at("A line.", crate::tone::Tones::TEXT, 1);
         assert_eq!(row(&app, 1), " hi   ");
         assert_eq!(written(&app), vec!["hi".to_string()]);
         assert_eq!(said(&app), vec!["A line.".to_string()]);

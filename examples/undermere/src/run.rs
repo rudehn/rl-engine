@@ -413,7 +413,7 @@ pub fn start(
     let adventurer = spawn_adventurer(&mut commands, &content.registries);
     let extra = content.extra.as_deref().cloned().unwrap_or_default();
     equip_kit(&mut commands, adventurer, &content.armory, &content.registries, &extra);
-    begin.log.notice(format!("Seed {}. Ten floors under the lake, something waits on a drowned throne.", seed.0.0), 0);
+    begin.log.notice(format!("Seed {}. Ten floors under the lake, something waits on a drowned throne.", seed.0.0));
     let place = match first.map_or(0, |f| f.0.min(FLOORS)) {
         0 => TOWN,
         floor => map_of(floor),
@@ -465,7 +465,7 @@ pub fn resume(world: &mut World) {
         Some(floor) => format!("Continuing on floor {floor}."),
         None => "Continuing in Mereholt.".to_string(),
     };
-    world.resource_mut::<MessageLog>().notice(line, saved.turn());
+    world.resource_mut::<MessageLog>().push_at(line, Tones::NOTICE, saved.turn());
 }
 
 /// Begins a fresh run where a continued one could not be.
@@ -493,7 +493,7 @@ pub struct Content<'w> {
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Begin<'w> {
     warps: MessageWriter<'w, WarpRequest>,
-    log: ResMut<'w, MessageLog>,
+    log: Log<'w>,
 }
 
 #[cfg(test)]

@@ -104,10 +104,10 @@ impl PlaceRules for Warren {
 
 // ANCHOR: start
 /// Spawns the player into the warren, at the first floor's entry.
-fn start(mut commands: Commands, seed: Res<Seed>, mut log: ResMut<MessageLog>) {
+fn start(mut commands: Commands, seed: Res<Seed>, mut log: Log) {
     commands.spawn_player(WARREN, (Viewshed::new(9), RevealsMap, LANTERN, Glyph::new('@', Color::WHITE).on_layer(10)));
-    log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE, 0);
-    log.push("Walk with the arrows, hjklyubn or the numpad. t tends the lantern, . waits, q quits.", Tones::MUTED, 0);
+    log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE);
+    log.push("Walk with the arrows, hjklyubn or the numpad. t tends the lantern, . waits, q quits.", Tones::MUTED);
 }
 // ANCHOR_END: start
 
@@ -147,24 +147,17 @@ type Lantern<'w, 's> = Query<'w, 's, (Entity, Has<LightSource>), (With<Player>, 
 /// The light is a component on the player, so shading it is removing one.
 /// Nothing else changes: sight is still sight, and the explored map still
 /// remembers what the light once reached.
-fn tend_lantern(
-    keys: Res<ButtonInput<KeyCode>>,
-    mut commands: Commands,
-    player: Lantern,
-    mut waits: MessageWriter<Intent<Wait>>,
-    mut log: ResMut<MessageLog>,
-    turns: Res<Turns>,
-) {
+fn tend_lantern(keys: Res<ButtonInput<KeyCode>>, mut commands: Commands, player: Lantern, mut waits: MessageWriter<Intent<Wait>>, mut log: Log) {
     if !keys.just_pressed(KeyCode::KeyT) {
         return;
     }
     let Ok((entity, lit)) = player.single() else { return };
     if lit {
         commands.entity(entity).remove::<LightSource>();
-        log.muted("You shade the lantern. The warren closes to arm's length.", turns.turn_number());
+        log.muted("You shade the lantern. The warren closes to arm's length.");
     } else {
         commands.entity(entity).insert(LANTERN);
-        log.notice("You open the lantern. The dirt comes up warm around you.", turns.turn_number());
+        log.notice("You open the lantern. The dirt comes up warm around you.");
     }
     waits.write(Intent::new(entity, Wait));
 }

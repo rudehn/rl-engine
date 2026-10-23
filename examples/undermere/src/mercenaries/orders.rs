@@ -181,8 +181,7 @@ pub struct OrderKey<'w, 's> {
     keys: ControlInput<'w>,
     binds: Res<'w, Binds>,
     modals: Res<'w, Modals>,
-    turns: Res<'w, Turns>,
-    log: ResMut<'w, MessageLog>,
+    log: Log<'w>,
     player: Query<'w, 's, Entity, (With<Player>, With<MyTurn>)>,
 }
 
@@ -203,11 +202,10 @@ pub fn order_party(mut key: OrderKey, mut commands: Commands, party: Query<(Enti
         return;
     }
     let Ok(me) = key.player.single() else { return };
-    let now = key.turns.turn_number();
     let mut ours: Vec<(Option<Joined>, Entity, Order)> = party.iter().filter(|(.., l, _)| l.0 == me).map(|(e, m, _, j)| (j.copied(), e, m.order)).collect();
     ours.sort_by_key(|(joined, e, _)| (joined.is_none(), *joined, *e));
     let Some(&(_, _, first)) = ours.first() else {
-        key.log.muted("You have nobody to order.", now);
+        key.log.muted("You have nobody to order.");
         return;
     };
     let order = first.next();
@@ -219,7 +217,7 @@ pub fn order_party(mut key: OrderKey, mut commands: Commands, party: Query<(Enti
             }
         });
     }
-    key.log.info(format!("You order the party to {}.", order.word()), now);
+    key.log.info(format!("You order the party to {}.", order.word()));
 }
 
 /// Says each mercenary's order, `holding`, on the look panel and on its

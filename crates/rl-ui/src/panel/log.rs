@@ -67,10 +67,10 @@ mod tests {
     #[test]
     fn the_newest_line_is_at_the_bottom_and_a_shorter_one_leaves_no_tail() {
         let mut stage = Stage::new(LogPanel::new(Rect::new(0, 0, 40, 3))).screen(40, 3);
-        stage.app.world_mut().resource_mut::<MessageLog>().info("a long line that fills the row", 0);
+        stage.app.world_mut().resource_mut::<MessageLog>().push_at("a long line that fills the row", Tones::TEXT, 0);
         stage.tick();
         assert_eq!(stage.row(2), "a long line that fills the row");
-        stage.app.world_mut().resource_mut::<MessageLog>().info("short", 0);
+        stage.app.world_mut().resource_mut::<MessageLog>().push_at("short", Tones::TEXT, 0);
         stage.tick();
         assert_eq!(stage.row(2), "short");
         assert_eq!(stage.row(1), "a long line that fills the row", "the older line moved up intact");
@@ -81,7 +81,7 @@ mod tests {
     fn a_repeated_line_shows_its_count_rather_than_filling_the_panel() {
         let mut stage = Stage::new(LogPanel::new(Rect::new(0, 0, 40, 3))).screen(40, 3);
         for _ in 0..3 {
-            stage.app.world_mut().resource_mut::<MessageLog>().bad("the crab nips you", 1);
+            stage.app.world_mut().resource_mut::<MessageLog>().push_at("the crab nips you", Tones::BAD, 1);
         }
         stage.tick();
         assert_eq!(stage.row(2), "the crab nips you (x3)");
@@ -111,7 +111,7 @@ mod tests {
     #[test]
     fn a_line_is_drawn_in_the_tone_it_was_logged_in() {
         let mut stage = Stage::new(LogPanel::new(Rect::new(0, 0, 40, 3))).screen(40, 3);
-        stage.app.world_mut().resource_mut::<MessageLog>().bad("bad news", 1);
+        stage.app.world_mut().resource_mut::<MessageLog>().push_at("bad news", Tones::BAD, 1);
         stage.tick();
         let cell = stage.app.world().resource::<rl_render::Terminal>().get(0, 2).unwrap();
         let palette = stage.app.world().resource::<Palette>();

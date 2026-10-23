@@ -332,18 +332,17 @@ pub fn answer_give(
     hired: Query<&Mercenary>,
     mut packs: ParamSet<(Givable, Handing)>,
     tones: Res<Tones>,
-    turns: Res<Turns>,
-    mut log: ResMut<MessageLog>,
+    mut log: Log,
 ) {
     let Some(give) = verbs.get(GIVE) else { return };
     for ev in done.read().filter(|ev| ev.verb == give) {
         let (Ok(hired), Some(thing)) = (hired.get(ev.target), ev.thing) else { continue };
         if let Some(why) = packs.p0().why_not(ev.actor, thing) {
-            log.push(why.to_string(), Tones::MUTED, turns.turn_number());
+            log.push(why.to_string(), Tones::MUTED);
             continue;
         }
         let Some(said) = packs.p1().hand(ev.actor, ev.target, thing) else { continue };
-        log.push(format!("You give {} {said}.", hired.name), tones.get(TONE).unwrap_or(Tones::TEXT), turns.turn_number());
+        log.push(format!("You give {} {said}.", hired.name), tones.get(TONE).unwrap_or(Tones::TEXT));
     }
 }
 

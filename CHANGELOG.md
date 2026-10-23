@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- A system writes to the log through the `Log` param, which stamps each line with the current turn: `log.notice(text)`, `log.info`, `log.muted` and `log.push(text, tone)`. A line written as a run begins reads turn 0, since the turns are reset before `NewRun`.
+  To change: `ResMut<MessageLog>` becomes `Log`, and the turn argument goes, with the `Res<Turns>` read only to pass it; an exclusive system or a test calls `MessageLog::push_at(text, tone, turn)`, which replaces `MessageLog::push`, `info`, `muted` and `notice`.
+
 - The engine's streams are named under `rl.`, the effects' stream is `rl.effects` where it was still `ability`, and every place draws from its own `PlaceSeed`: the engine's loot scattered on a place, a container's contents and a piece's slots, and in Undermere, Foundry, the tutorial and the template every floor's chain and everything a floor holds. `seed.place(map)` is a place's seed. So every seed plays differently from the last release.
   To change: nothing in code, though a game's own per-place draws may follow, `seed.place(map).rng(DOMAIN, i)`; a recorded seed or replay from before plays another run, and a continued save builds the floors it had not reached differently.
 

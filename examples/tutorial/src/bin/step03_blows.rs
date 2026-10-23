@@ -117,7 +117,7 @@ impl PlaceRules for Warren {
 // ANCHOR: start
 /// Hands the engine what combat reads, then spawns the player into the
 /// warren, at the first floor's entry.
-fn start(mut commands: Commands, seed: Res<Seed>, mut log: ResMut<MessageLog>) {
+fn start(mut commands: Commands, seed: Res<Seed>, mut log: Log) {
     // ANCHOR: combat
     // The two registries combat reads: what damage can be, and who hates
     // whom. Both are the game's content, named nowhere in the engine.
@@ -142,8 +142,8 @@ fn start(mut commands: Commands, seed: Res<Seed>, mut log: ResMut<MessageLog>) {
             (Health::full(24), Armor(1), MeleeAttack::new(kinds.expect("kick"), DiceRoll::new(1, 6))),
         ),
     );
-    log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE, 0);
-    log.push("Something is scratching in the dark.", Tones::MUTED, 0);
+    log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE);
+    log.push("Something is scratching in the dark.", Tones::MUTED);
 }
 // ANCHOR_END: start
 
@@ -186,24 +186,17 @@ type Lantern<'w, 's> = Query<'w, 's, (Entity, Has<LightSource>), (With<Player>, 
 /// The light is a component on the player, so shading it is removing one.
 /// Nothing else changes: sight is still sight, and the explored map still
 /// remembers what the light once reached.
-fn tend_lantern(
-    keys: Res<ButtonInput<KeyCode>>,
-    mut commands: Commands,
-    player: Lantern,
-    mut waits: MessageWriter<Intent<Wait>>,
-    mut log: ResMut<MessageLog>,
-    turns: Res<Turns>,
-) {
+fn tend_lantern(keys: Res<ButtonInput<KeyCode>>, mut commands: Commands, player: Lantern, mut waits: MessageWriter<Intent<Wait>>, mut log: Log) {
     if !keys.just_pressed(KeyCode::KeyT) {
         return;
     }
     let Ok((entity, lit)) = player.single() else { return };
     if lit {
         commands.entity(entity).remove::<LightSource>();
-        log.muted("You shade the lantern. The warren closes to arm's length.", turns.turn_number());
+        log.muted("You shade the lantern. The warren closes to arm's length.");
     } else {
         commands.entity(entity).insert(LANTERN);
-        log.notice("You open the lantern. The dirt comes up warm around you.", turns.turn_number());
+        log.notice("You open the lantern. The dirt comes up warm around you.");
     }
     waits.write(Intent::new(entity, Wait));
 }

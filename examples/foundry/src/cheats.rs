@@ -167,8 +167,7 @@ impl Plugin for CheatsPlugin {
 pub struct Acts<'w, 's> {
     commands: Commands<'w, 's>,
     cheats: ResMut<'w, Cheats>,
-    log: ResMut<'w, MessageLog>,
-    turns: Res<'w, Turns>,
+    log: Log<'w>,
     map: Res<'w, WorldMap>,
     warps: MessageWriter<'w, WarpRequest>,
     picked_up: MessageWriter<'w, ItemEvent>,
@@ -180,8 +179,7 @@ pub struct Acts<'w, 's> {
 impl Acts<'_, '_> {
     /// Says `text` in the log, muted, since a cheat is not the run's news.
     fn say(&mut self, text: impl Into<String>) {
-        let now = self.turns.turn_number();
-        self.log.muted(text, now);
+        self.log.muted(text);
     }
 
     /// Does `cheat`, and says whether it took the commando off the deck,

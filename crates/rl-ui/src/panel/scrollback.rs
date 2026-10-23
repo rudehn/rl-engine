@@ -338,7 +338,7 @@ mod tests {
     fn stage(n: u32) -> Stage {
         let mut stage = Stage::new(ScrollbackPanel::new(Rect::new(0, 0, 40, 8)).without_turn_rules()).screen(40, 8);
         for i in 0..n {
-            stage.app.world_mut().resource_mut::<MessageLog>().info(format!("line {i}"), 0);
+            stage.app.world_mut().resource_mut::<MessageLog>().push_at(format!("line {i}"), Tones::TEXT, 0);
         }
         stage.tick();
         stage
@@ -423,9 +423,9 @@ mod tests {
         let mut stage = Stage::new(ScrollbackPanel::new(Rect::new(0, 0, 40, 8)).without_turn_rules()).screen(40, 8);
         {
             let mut log = stage.app.world_mut().resource_mut::<MessageLog>();
-            log.info("a plain line", 0);
-            log.bad("a bad line", 0);
-            log.info("another plain line", 0);
+            log.push_at("a plain line", Tones::TEXT, 0);
+            log.push_at("a bad line", Tones::BAD, 0);
+            log.push_at("another plain line", Tones::TEXT, 0);
         }
         stage.tick();
         open(&mut stage);
@@ -447,7 +447,7 @@ mod tests {
     #[test]
     fn a_line_too_wide_for_the_screen_is_wrapped_and_not_cut() {
         let mut stage = Stage::new(ScrollbackPanel::new(Rect::new(0, 0, 24, 8)).without_turn_rules()).screen(24, 8);
-        stage.app.world_mut().resource_mut::<MessageLog>().info("the cutthroat runs you through with a rusty blade", 0);
+        stage.app.world_mut().resource_mut::<MessageLog>().push_at("the cutthroat runs you through with a rusty blade", Tones::TEXT, 0);
         stage.tick();
         open(&mut stage);
         let rows = body(&stage);
@@ -461,8 +461,8 @@ mod tests {
         let mut stage = Stage::new(ScrollbackPanel::new(Rect::new(0, 0, 40, 8))).screen(40, 8);
         {
             let mut log = stage.app.world_mut().resource_mut::<MessageLog>();
-            log.info("you step east", 4);
-            log.bad("the crab nips you", 5);
+            log.push_at("you step east", Tones::TEXT, 4);
+            log.push_at("the crab nips you", Tones::BAD, 5);
         }
         stage.tick();
         open(&mut stage);

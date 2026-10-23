@@ -226,7 +226,7 @@ impl Goblins {
 
 /// Hands the engine the rules, then sends the player down to the floor's
 /// entry.
-fn start(mut commands: Commands, seed: Res<Seed>, mut log: ResMut<MessageLog>) {
+fn start(mut commands: Commands, seed: Res<Seed>, mut log: Log) {
     // What damage can be, and who is at war with whom. Both are registries
     // the game fills, so the engine never names a goblin.
     let kinds =
@@ -286,7 +286,6 @@ fn start(mut commands: Commands, seed: Res<Seed>, mut log: ResMut<MessageLog>) {
             seed.0.0
         ),
         Tones::NOTICE,
-        0,
     );
 }
 

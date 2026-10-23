@@ -508,7 +508,7 @@ mod tests {
     fn the_rows_ask_for_a_fresh_run_the_same_seed_or_the_exit() {
         let mut stage = staged();
         let seed = stage.app.world().resource::<Seed>().0;
-        stage.app.world_mut().resource_mut::<MessageLog>().info("an old run's line", 0);
+        stage.app.world_mut().resource_mut::<MessageLog>().push_at("an old run's line", Tones::TEXT, 0);
         stage.press(KeyCode::Escape);
         stage.press(KeyCode::ArrowDown);
         stage.press(KeyCode::Enter);
@@ -572,7 +572,7 @@ mod tests {
             ))
             .id();
         stage.tick();
-        stage.app.world_mut().resource_mut::<MessageLog>().bad("You feel a chill.", 0);
+        stage.app.world_mut().resource_mut::<MessageLog>().push_at("You feel a chill.", Tones::BAD, 0);
         // The harness has no minds, so the ogre's blow is written for it.
         stage.app.world_mut().write_message(DamageEvent::new(player, rl_rules::Hit::by(ogre, kind, 30)));
         stage.app.world_mut().write_message(Intent::new(player, Wait));

@@ -145,7 +145,7 @@ pub fn start(
     prepare(&mut commands, &seed, &registries);
     let player = spawn_commando(&mut commands, &registries);
     let deck = first.map_or(1, |f| f.0.clamp(1, crate::decks::DECKS));
-    begin.log.notice(format!("Seed {}. The drop ship is gone. The first reactor is on deck three.", seed.0.0), 0);
+    begin.log.notice(format!("Seed {}. The drop ship is gone. The first reactor is on deck three.", seed.0.0));
     begin.warps.write(WarpRequest::into_place(player, map_of(deck)));
 }
 
@@ -220,7 +220,7 @@ pub fn resume(world: &mut World) {
         }
     }
     let deck = crate::decks::deck_of(world.get::<OnMap>(player).map_or(MapId::ZERO, |m| m.0));
-    world.resource_mut::<MessageLog>().notice(format!("Continuing on deck {deck}."), saved.turn());
+    world.resource_mut::<MessageLog>().push_at(format!("Continuing on deck {deck}."), Tones::NOTICE, saved.turn());
 }
 
 /// What starting a run writes beyond the world itself: the log's first
@@ -229,7 +229,7 @@ pub fn resume(world: &mut World) {
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct Begin<'w> {
     warps: MessageWriter<'w, WarpRequest>,
-    log: ResMut<'w, MessageLog>,
+    log: Log<'w>,
 }
 
 #[cfg(test)]

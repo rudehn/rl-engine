@@ -11,10 +11,17 @@
 //! That colour is content, the way a glyph's is, and not a tone: a green
 //! slime is green in every palette. A presenter keeps it readable against
 //! its surface with [`readable`](crate::tone::readable).
+//!
+//! A system writes through [`Log`], which stamps each line with the turn
+//! it was written on, so no caller passes a turn it could get wrong. An
+//! exclusive system or a test, which has the world and no params, calls
+//! [`MessageLog::push_at`] with the turn itself.
 
 use std::collections::VecDeque;
 
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
+use rl_bevy::turn::Turns;
 
 use crate::tone::{ToneId, Tones};
 
@@ -81,18 +88,21 @@ impl MessageLog {
         Self { entries: VecDeque::with_capacity(capacity), capacity }
     }
 
-    /// Appends a message, folding it into the line above if that line says
-    /// the same thing in the same tone.
+    /// Appends a message on `turn`, folding it into the line above if that
+    /// line says the same thing in the same tone.
     ///
     /// Folded rather than repeated because a four-line log filled by one
     /// event is a log that has stopped reporting; the count keeps the
-    /// information and the room.
-    pub fn push(&mut self, text: impl Into<String>, tone: ToneId, turn: u32) {
+    /// information and the room. A system writes through [`Log`], which
+    /// passes the current turn; this is for an exclusive system or a test,
+    /// and for a line that belongs to a turn other than the current one,
+    /// such as a continued run's first.
+    pub fn push_at(&mut self, text: impl Into<String>, tone: ToneId, turn: u32) {
         self.push_spans(text, Vec::new(), tone, turn);
     }
 
     /// Appends a message with runs of its text in colours of their own,
-    /// folding as [`push`](Self::push) does.
+    /// folding as [`push_at`](Self::push_at) does.
     pub(crate) fn push_spans(&mut self, text: impl Into<String>, spans: Vec<Span>, tone: ToneId, turn: u32) {
         let text = text.into();
         if let Some(last) = self.entries.back_mut()
@@ -107,27 +117,6 @@ impl MessageLog {
             self.entries.pop_front();
         }
         self.entries.push_back(LogEntry { text, tone, turn, count: 1, spans });
-    }
-
-    /// Appends plain narration.
-    pub fn info(&mut self, text: impl Into<String>, turn: u32) {
-        self.push(text, Tones::TEXT, turn);
-    }
-
-    /// Appends something that matters less than the rest.
-    pub fn muted(&mut self, text: impl Into<String>, turn: u32) {
-        self.push(text, Tones::MUTED, turn);
-    }
-
-    /// Appends bad news.
-    #[cfg(test)]
-    pub(crate) fn bad(&mut self, text: impl Into<String>, turn: u32) {
-        self.push(text, Tones::BAD, turn);
-    }
-
-    /// Appends something worth noticing.
-    pub fn notice(&mut self, text: impl Into<String>, turn: u32) {
-        self.push(text, Tones::NOTICE, turn);
     }
 
     /// The last `n` entries, newest first.
@@ -165,15 +154,68 @@ impl MessageLog {
     }
 }
 
+/// The log as a system writes to it: each line stamped with the current
+/// turn.
+///
+/// A param rather than a turn argument on every call, because every
+/// caller read [`Turns`] only to pass its number on, and one that passed
+/// `0` or a stale copy wrote a line the scrollback filed under the wrong
+/// turn. A line written as a run begins reads turn 0, since the turns are
+/// reset before `NewRun` runs.
+#[derive(SystemParam)]
+pub struct Log<'w> {
+    log: ResMut<'w, MessageLog>,
+    turns: Res<'w, Turns>,
+}
+
+impl Log<'_> {
+    /// Appends a message in `tone`, folding as
+    /// [`MessageLog::push_at`] does.
+    pub fn push(&mut self, text: impl Into<String>, tone: ToneId) {
+        let turn = self.turns.turn_number();
+        self.log.push_at(text, tone, turn);
+    }
+
+    /// Appends plain narration.
+    pub fn info(&mut self, text: impl Into<String>) {
+        self.push(text, Tones::TEXT);
+    }
+
+    /// Appends something that matters less than the rest.
+    pub fn muted(&mut self, text: impl Into<String>) {
+        self.push(text, Tones::MUTED);
+    }
+
+    /// Appends something worth noticing.
+    pub fn notice(&mut self, text: impl Into<String>) {
+        self.push(text, Tones::NOTICE);
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use bevy::ecs::system::RunSystemOnce;
+    use rl_core::turn::BASE_ACTION_COST;
+
     use super::*;
+
+    #[test]
+    fn a_line_pushed_through_the_log_carries_the_turn_it_was_pushed_on() {
+        let mut world = World::new();
+        world.init_resource::<MessageLog>();
+        world.init_resource::<Turns>();
+        world.run_system_once(|mut log: Log| log.notice("the run begins")).unwrap();
+        world.resource_mut::<Turns>().import(3 * BASE_ACTION_COST, []);
+        world.run_system_once(|mut log: Log| log.muted("three turns on")).unwrap();
+        let turns: Vec<(&str, u32, ToneId)> = world.resource::<MessageLog>().iter().map(|e| (e.text.as_str(), e.turn, e.tone)).collect();
+        assert_eq!(turns, vec![("the run begins", 0, Tones::NOTICE), ("three turns on", 3, Tones::MUTED)]);
+    }
 
     #[test]
     fn the_log_is_bounded_and_recent_is_newest_first() {
         let mut log = MessageLog::with_capacity(3);
         for i in 0..5 {
-            log.info(format!("m{i}"), i);
+            log.push_at(format!("m{i}"), Tones::TEXT, i);
         }
         assert_eq!(log.len(), 3);
         let recent: Vec<&str> = log.recent(2).map(|e| e.text.as_str()).collect();
@@ -184,9 +226,9 @@ mod tests {
     #[test]
     fn the_same_line_twice_folds_into_a_count_and_keeps_the_later_turn() {
         let mut log = MessageLog::default();
-        log.bad("the crab nips you", 4);
-        log.bad("the crab nips you", 5);
-        log.bad("the crab nips you", 6);
+        log.push_at("the crab nips you", Tones::BAD, 4);
+        log.push_at("the crab nips you", Tones::BAD, 5);
+        log.push_at("the crab nips you", Tones::BAD, 6);
         assert_eq!(log.len(), 1);
         let entry = log.recent(1).next().unwrap();
         assert_eq!(entry.count, 3);
@@ -197,8 +239,8 @@ mod tests {
     #[test]
     fn the_same_words_in_a_different_tone_are_a_different_line() {
         let mut log = MessageLog::default();
-        log.info("it moves", 1);
-        log.bad("it moves", 1);
+        log.push_at("it moves", Tones::TEXT, 1);
+        log.push_at("it moves", Tones::BAD, 1);
         assert_eq!(log.len(), 2);
         assert_eq!(log.in_tone(Tones::BAD).count(), 1);
     }

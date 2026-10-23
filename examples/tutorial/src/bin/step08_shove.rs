@@ -264,7 +264,7 @@ impl Bestiary {
 // ANCHOR: start
 /// Hands the engine what combat reads, then spawns the player into the
 /// warren, at the first floor's entry.
-fn start(mut commands: Commands, seed: Res<Seed>, mut log: ResMut<MessageLog>) {
+fn start(mut commands: Commands, seed: Res<Seed>, mut log: Log) {
     // The two registries combat reads: what damage can be, and who hates
     // whom. Both are the game's content, named nowhere in the engine.
     let kinds = Registry::from_defs(vec![DamageKind::new("bite"), DamageKind::new("venom"), DamageKind::new("kick")]).unwrap();
@@ -285,7 +285,7 @@ fn start(mut commands: Commands, seed: Res<Seed>, mut log: ResMut<MessageLog>) {
             (Inventory::default(),),
         ),
     );
-    log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE, 0);
+    log.push(format!("Seed {}. You squeeze into the warren.", seed.0.0), Tones::NOTICE);
 }
 // ANCHOR_END: start
 
@@ -434,8 +434,7 @@ fn populate(
 /// What narration reads and writes.
 #[derive(bevy::ecs::system::SystemParam)]
 struct Voice<'w, 's> {
-    turns: Res<'w, Turns>,
-    log: ResMut<'w, MessageLog>,
+    log: Log<'w>,
     over: MessageWriter<'w, RunOver>,
     bestiary: Res<'w, Bestiary>,
     kinds: Query<'w, 's, &'static Kind>,
@@ -446,16 +445,15 @@ struct Voice<'w, 's> {
 /// shove, and the win. Blows, deaths and pickups are the engine's
 /// narrator's.
 fn narrate(mut items: MessageReader<ItemEvent>, mut shoved: MessageReader<Shoved>, mut deaths: MessageReader<DeathEvent>, mut voice: Voice) {
-    let Voice { turns, log, over, bestiary, kinds, names } = &mut voice;
-    let turn = turns.turn_number();
+    let Voice { log, over, bestiary, kinds, names } = &mut voice;
     for ev in items.read() {
         if let ItemEvent::Used { .. } = *ev {
-            log.push("You eat the crust. It helps.", Tones::GOOD, turn);
+            log.push("You eat the crust. It helps.", Tones::GOOD);
         }
     }
     for ev in shoved.read() {
         let target = names.get(ev.target).map(|n| format!("the {}", n.as_str())).unwrap_or_else(|_| "something".into());
-        log.push(format!("You shove {target} back."), Tones::TEXT, turn);
+        log.push(format!("You shove {target} back."), Tones::TEXT);
     }
     for d in deaths.read() {
         if kinds.get(d.entity).is_ok_and(|k| bestiary.defs.get(k.0).name == "rat king") {

@@ -151,7 +151,7 @@ pub use game_menu::{GameMenuPanel, MenuKeys, game_menu_modal};
 pub use interact::InteractKeys;
 pub use keys::DirectionKeys;
 pub use layout::{RailLayout, RailPanels, RailScreen};
-pub use log::{LogEntry, MessageLog, Span};
+pub use log::{Log, LogEntry, MessageLog, Span};
 pub use menu::{ListMenu, MenuRow, draw_menu};
 pub use modal::{AddModal, Modal, ModalId, Modals, modal_is, modal_open, no_modal};
 pub use narrate::{Called, MassNoun, NarrationView, NarrationViewPlugin, NarratorPlugin, Phrase, Phrasebook, Said, Tell, Words};
@@ -311,7 +311,7 @@ pub mod prelude {
     pub use crate::interact::InteractKeys;
     pub use crate::keys::DirectionKeys;
     pub use crate::layout::{RailLayout, RailPanels, RailScreen};
-    pub use crate::log::{LogEntry, MessageLog, Span};
+    pub use crate::log::{Log, LogEntry, MessageLog, Span};
     pub use crate::menu::{ListMenu, MenuRow, draw_menu};
     pub use crate::modal::{AddModal, ModalId, Modals, modal_is, modal_open, no_modal};
 
