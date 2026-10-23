@@ -308,7 +308,7 @@ impl<A: ActorMaker, I: ItemMaker> Plugin for PrefabPlugin<A, I> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::components::{Actor, Position};
     use crate::items::Item;
@@ -328,7 +328,7 @@ mod tests {
     use rl_rules::{Named, Names, Registry, TagDef};
 
     /// A test game's monster: only a name.
-    struct Beast(&'static str);
+    pub(crate) struct Beast(&'static str);
 
     impl Named for Beast {
         fn name(&self) -> &str {
@@ -346,7 +346,7 @@ mod tests {
     /// than the toy items reckon it, so a monster slot drawn at the item
     /// maker's band is a test that fails.
     #[derive(Resource)]
-    struct Beasts {
+    pub(crate) struct Beasts {
         defs: Registry<Beast>,
         table: BandedTable<Id<Beast>>,
     }

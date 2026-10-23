@@ -1185,17 +1185,23 @@ impl Plugin for ItemsPlugin {
             .add_systems(Turn, resolve_items.in_set(ResolveSet::Act))
             // Before the triggers land, so a pulse lands in the pass that
             // brought it; a game with no effects has nothing to land it.
-            .add_systems(Turn, pulse_worn.in_set(ResolveSet::Triggers).before(crate::effects::land_triggers))
+            // After a use aimed somewhere lands, which may move the clock a
+            // pulse counts by, and so after the remnants report too: the
+            // moments of one pass reach `land_triggers` in one order.
+            .add_systems(Turn, pulse_worn.in_set(ResolveSet::Triggers).after(crate::effects::land_aimed_uses).before(crate::effects::land_triggers))
             // What ending a held status writes, registered here as well as
             // by the status plugin, since a game may have items and no
             // statuses, and then nobody is afflicted and nothing is written.
             .add_message::<Cure>()
             // Before the statuses resolve, so a held status ends in the pass
             // its thing came off; see `end_unworn_holds`.
-            .add_systems(Turn, end_unworn_holds.in_set(ResolveSet::Effects).before(crate::status::resolve_afflictions))
+            // Before the stealth plugin's own cures, so the cures of one
+            // pass are written, and their `Cured` lines told, in one order.
+            .add_systems(Turn, end_unworn_holds.in_set(ResolveSet::Effects).before(crate::status::resolve_afflictions).before(crate::stealth::reveal_attackers))
             // In the pass the slots changed in, so gear counts from the
-            // moment it is worn.
-            .add_systems(Turn, fold_gear.in_set(crate::plugin::ReactSet::Settle))
+            // moment it is worn. Before a sleeper wakes, which edits the
+            // same stats, so their modifiers stand in one order every run.
+            .add_systems(Turn, fold_gear.in_set(crate::plugin::ReactSet::Settle).before(crate::status::wake_on_harm))
             // What else a worn thing lends, as what is worn stands once the
             // pass's slots have settled.
             .add_systems(Turn, (hold_worn_statuses, lend_dark_sight, light_worn_things).chain().in_set(crate::plugin::ReactSet::Lend))

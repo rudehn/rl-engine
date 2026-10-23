@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The engine checks its own systems' conflicts: every pair of two engine systems that touch the same data unordered is ordered or allowed in rl-bevy's own test, so a game's ordering test answers only for its own systems. Three pairs it found are ordered: a worn thing's pulse after a use aimed somewhere lands, the cures of things no longer worn before stealth's, and gear folded into the stats before a sleeper wakes.
+  To change: nothing.
+
 - `Allowed::among` admits a conflicting pair only inside the named system sets.
   To change: nothing.
 

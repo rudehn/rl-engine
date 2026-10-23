@@ -15,6 +15,8 @@
 
 pub mod ability;
 pub mod accuracy;
+#[cfg(test)]
+mod ambiguity;
 pub mod ammo;
 pub mod bump;
 pub mod charts;
