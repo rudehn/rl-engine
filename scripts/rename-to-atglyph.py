@@ -3,7 +3,7 @@
 
     scripts/rename-to-atglyph.py          rewrite every living file and move the crates
     scripts/rename-to-atglyph.py --check  list each leftover old name as path:line, exit 1 if any
-    scripts/rename-to-atglyph.py --urls   rename only the repository's and the guide's addresses
+    scripts/rename-to-atglyph.py --urls   rename only the repository's and the guide's addresses, and a clone's directory
 
 The rename is a script rather than one commit's hand edits because other
 branches keep landing on `main` while it is in flight: the branch is
@@ -13,8 +13,9 @@ So every rule here is idempotent, and the script is run again after every
 rebase until `0.4.0` is released; after that it and its test go.
 
 `--urls` is the release's step, run once the GitHub repository itself is
-renamed. Until then the old addresses are the ones that resolve, so the
-main run masks them and leaves them as they are.
+renamed. Until then the old addresses are the ones that resolve, and a
+clone of them is a directory called `rl-engine`, so the main run masks
+them and leaves them as they are.
 
 History is not rewritten: the dated plans, the reviews, `.planning`, the
 plan's progress log, the soak log and the changelog's released entries say
@@ -47,10 +48,13 @@ SHORT: dict[str, str] = {
 
 _C = "|".join(CRATES)
 
-# The addresses that change only when the repository is renamed, at the release.
+# What changes only when the repository is renamed, at the release: its
+# address, the guide's, and the directory a clone of it makes, which a step
+# saying `cd` names right after the address.
 URLS = (
-    ("github.com/rudehn/rl-engine", "github.com/rudehn/atglyph"),
-    ("rudehn.github.io/rl-engine", "rudehn.github.io/atglyph"),
+    (re.compile(r"github\.com/rudehn/rl-engine"), "github.com/rudehn/atglyph"),
+    (re.compile(r"rudehn\.github\.io/rl-engine"), "rudehn.github.io/atglyph"),
+    (re.compile(r"\bcd rl-engine\b"), "cd atglyph"),
 )
 
 # Paths that record what the engine was, and keep its name.
@@ -88,11 +92,14 @@ def rewrite(text: str, facade_user: bool) -> str:
     bare sub-crate path is the facade's short module; in the engine it is the
     sub-crate itself.
     """
-    masks = []
-    for i, (old, _) in enumerate(URLS):
-        mask = f"\x00URL{i}\x00"
-        masks.append((mask, old))
-        text = text.replace(old, mask)
+    masks: list[str] = []
+
+    def mask(match: re.Match) -> str:
+        masks.append(match.group(0))
+        return f"\x00URL{len(masks) - 1}\x00"
+
+    for pattern, _ in URLS:
+        text = pattern.sub(mask, text)
     text = _FACADE_PATH.sub(_short, text)
     if facade_user:
         text = _BARE_CRATE.sub(_short, text)
@@ -101,15 +108,13 @@ def rewrite(text: str, facade_user: bool) -> str:
     text = _PACKAGE.sub("atglyph", text)
     text = _SUB_PACKAGE.sub(r"atglyph-\1", text)
     text = _ENV.sub(r"ATGLYPH_\1", text)
-    for mask, old in masks:
-        text = text.replace(mask, old)
-    return text
+    return re.sub(r"\x00URL(\d+)\x00", lambda m: masks[int(m.group(1))], text)
 
 
 def rename_urls(text: str) -> str:
-    """`text` with the repository's and the guide's addresses renamed."""
-    for old, new in URLS:
-        text = text.replace(old, new)
+    """`text` with the repository's and the guide's addresses, and a clone's directory, renamed."""
+    for pattern, new in URLS:
+        text = pattern.sub(new, text)
     return text
 
 
@@ -159,6 +164,48 @@ def destination(path: str) -> str:
     return re.sub(rf"^crates/rl-({_C})/", r"crates/atglyph-\1/", path)
 
 
+# Any path still naming an old crate directory, at the top of `crates/` or
+# nested anywhere, where a directory moved into its new self would leave it.
+_OLD_DIRECTORY = re.compile(rf"(^|/)rl-(engine|{_C})(/|$)")
+
+
+def in_old_directory(path: str) -> bool:
+    """Whether `path` still names an old crate directory anywhere in it."""
+    return bool(_OLD_DIRECTORY.search(path))
+
+
+class Refused(Exception):
+    """A file cannot move, since its destination is already there."""
+
+
+def planned_moves(names: list[str]) -> list[tuple[str, str]]:
+    """Each tracked file under an old crate directory, with where it goes.
+
+    A whole directory is never moved: `git mv old new` with `new` already
+    there moves `old` inside it, which is what a rebase's conflict leaves
+    when a file comes back at its old path. So each file moves by itself,
+    and a file whose destination is already there is refused by name before
+    anything moves, since which of the two is right is a merge to do by hand.
+    """
+    moves = [(name, destination(name)) for name in names if destination(name) != name]
+    taken = [f"{new} is already there, so {old} cannot move onto it" for old, new in moves if os.path.lexists(new)]
+    if taken:
+        raise Refused("\n".join(taken))
+    return moves
+
+
+def move_crates() -> None:
+    """Move every tracked file of an old crate directory to the new one."""
+    for old, new in planned_moves(tracked()):
+        pathlib.Path(new).parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["git", "mv", old, new], check=True)
+        # The old directory goes once git has moved the last file out of it.
+        parent = pathlib.Path(old).parent
+        while parent != pathlib.Path("crates") and parent.is_dir() and not any(parent.iterdir()):
+            parent.rmdir()
+            parent = parent.parent
+
+
 def rewrite_file(path: str, text: str, facade_user: bool) -> str:
     """One file's text, renamed by the rules its path calls for."""
     if path == CHANGELOG:
@@ -192,10 +239,10 @@ def living() -> list[tuple[str, str, bool]]:
 
 def check() -> int:
     """Print each leftover old name as path:line; 1 if there was one."""
-    leftovers = []
+    leftovers = [
+        f"{name}: in an old crate directory" for name in tracked() if not name.startswith(HISTORY_DIRS) and in_old_directory(name)
+    ]
     for name, text, facade_user in living():
-        if destination(name) != name:
-            leftovers.append(f"{name}: in a crate directory not yet moved")
         fresh = rewrite_file(name, text, facade_user).split("\n")
         for number, (old, new) in enumerate(zip(text.split("\n"), fresh), start=1):
             if old != new:
@@ -216,14 +263,16 @@ def urls() -> int:
 
 def run() -> int:
     """Rewrite every living file, move the crate directories, rename the lockfile's entries."""
+    try:
+        planned_moves(tracked())
+    except Refused as refused:
+        print(f"refused, and nothing was changed:\n{refused}", file=sys.stderr)
+        return 1
     for name, text, facade_user in living():
         fresh = rewrite_file(name, text, facade_user)
         if fresh != text:
             pathlib.Path(name).write_bytes(fresh.encode("utf-8"))
-    moves = [("crates/rl-engine", "crates/atglyph")] + [(f"crates/rl-{c}", f"crates/atglyph-{c}") for c in CRATES]
-    for old, new in moves:
-        if pathlib.Path(old).is_dir():
-            subprocess.run(["git", "mv", old, new], check=True)
+    move_crates()
     # Renames the workspace's own entries in the lockfile without upgrading
     # any dependency.
     subprocess.run(["cargo", "update", "--workspace"], check=True)

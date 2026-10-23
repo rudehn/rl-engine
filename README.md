@@ -106,7 +106,7 @@ The guide builds a small roguelike called Warren, nine steps that each add one t
 
 ```sh
 git clone https://github.com/rudehn/rl-engine
-cd atglyph
+cd rl-engine
 cargo run -p tutorial --bin step01_walking
 ```
 
