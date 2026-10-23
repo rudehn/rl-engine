@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `rl_rules::faction::at_odds`, whether one side has anything against another, the rule stealth asks: hostile by the table, and yes when there is no table or either takes no side.
+  To change: nothing.
+
 - `CombatRules::new()` and `Factions::new()` take no registry: a relation a game never names is worked out, a side allied with itself and neutral to the rest, so a side made from a raw id, with no faction file at all, is answered rather than a panic. `Factions` keeps only the named pairs, and both have a `Default`. It serializes as its named pairs where it was a matrix.
   To change: drop the argument, `CombatRules::new(&sides)` becomes `CombatRules::new()`; a registry built only to pass it may go.
 

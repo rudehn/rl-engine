@@ -112,6 +112,17 @@ pub fn stance(factions: Option<&Factions>, a: Option<FactionId>, b: Option<Facti
     }
 }
 
+/// Whether side `a` has anything against side `b`: hostile by the table
+/// when there is one and both take a side, and otherwise yes.
+///
+/// The question stealth asks of a watcher and the one it watches. A game
+/// with no sides has nobody to be friends with, so the missing stance
+/// reads as at odds; a question where it should read the other way, as a
+/// swap does, asks [`stance`] and keeps its own fallback.
+pub fn at_odds(factions: Option<&Factions>, a: Option<FactionId>, b: Option<FactionId>) -> bool {
+    stance(factions, a, b).is_none_or(|r| r == Relation::Hostile)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -154,6 +165,29 @@ mod tests {
         assert_eq!(stance(None, Some(a), Some(b)), None);
         assert_eq!(stance(Some(&f), None, Some(b)), None);
         assert_eq!(stance(Some(&f), Some(a), None), None);
+    }
+
+    #[test]
+    fn with_no_sides_everyone_is_at_odds() {
+        let (a, b) = (FactionId::from_raw(0), FactionId::from_raw(1));
+        let f = Factions::new();
+        assert!(at_odds(None, Some(a), Some(b)), "no table");
+        assert!(at_odds(None, Some(a), Some(a)), "no table, even one side with itself");
+        assert!(at_odds(Some(&f), None, Some(b)), "the first takes no side");
+        assert!(at_odds(Some(&f), Some(a), None), "the second takes no side");
+        assert!(at_odds(None, None, None));
+    }
+
+    #[test]
+    fn hostile_sides_are_at_odds_and_neutral_or_allied_ones_are_not() {
+        let (a, b, c) = (FactionId::from_raw(0), FactionId::from_raw(1), FactionId::from_raw(2));
+        let mut f = Factions::new();
+        f.set(a, b, Relation::Hostile);
+        f.set(a, c, Relation::Allied);
+        assert!(at_odds(Some(&f), Some(a), Some(b)));
+        assert!(!at_odds(Some(&f), Some(b), Some(a)), "neutral by the rule for the unnamed");
+        assert!(!at_odds(Some(&f), Some(a), Some(c)));
+        assert!(!at_odds(Some(&f), Some(a), Some(a)), "a side is allied with itself");
     }
 
     #[test]

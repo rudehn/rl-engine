@@ -26,9 +26,8 @@ use std::collections::BTreeMap;
 use bevy::prelude::*;
 use rand::Rng;
 use rl_core::Point;
-use rl_rules::Relation;
 use rl_rules::ai::awareness::{self, Awareness, NoticeStats, StealthStats};
-use rl_rules::faction::stance;
+use rl_rules::faction;
 
 use crate::combat::{CombatRules, DamageDealt, Dead, Faction};
 use crate::components::{MyTurn, Player, Position, Viewshed};
@@ -264,11 +263,11 @@ impl Watchers<'_, '_> {
     }
 }
 
-/// Whether `mine` has anything against `theirs`: hostile by the rules
-/// when there are rules and both take a side, and otherwise yes, since a
-/// game with no sides has nobody to be friends with.
+/// Whether `mine` has anything against `theirs`, by
+/// [`faction::at_odds`]: a game with no sides has nobody to be friends
+/// with.
 fn at_odds(rules: Option<&CombatRules>, mine: Option<&Faction>, theirs: Option<&Faction>) -> bool {
-    stance(rules.map(|r| &r.factions), mine.map(|f| f.0), theirs.map(|f| f.0)).is_none_or(|r| r == Relation::Hostile)
+    faction::at_odds(rules.map(|r| &r.factions), mine.map(|f| f.0), theirs.map(|f| f.0))
 }
 
 /// Stealth's own stream for the notice roll, so a tactic added to the
