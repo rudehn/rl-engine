@@ -1,6 +1,8 @@
 //! A game on the glyph terminal, played in a text terminal instead of a
 //! window: locally, or over SSH.
 //!
+//! Part of `atglyph`: a game depends on `atglyph` and reaches this crate as `atglyph::tty`.
+//!
 //! Every panel already draws into one buffer of cells, the
 //! [`Terminal`](atglyph_render::Terminal), and the window is only one way of
 //! showing it. This crate is another: it writes the cells that changed

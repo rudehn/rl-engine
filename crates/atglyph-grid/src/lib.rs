@@ -1,5 +1,25 @@
 //! Tier 1 of atglyph: everything that runs over a grid of tiles.
 //!
+//! Use this crate alone, or through `atglyph` as `atglyph::grid`.
+//! It runs field of view, light, pathfinding and flood fills over a grid of tiles, builds with no Bevy, and builds for `wasm32-unknown-unknown`,
+//! so a tool, a server or a test can depend on `atglyph-grid` and skip compiling Bevy.
+//!
+//! ```
+//! use atglyph_core::Point;
+//! use atglyph_grid::{BitGrid, TileRegistry, Terrain, fov};
+//!
+//! // Seven by three, with a wall down the middle column.
+//! let tiles = TileRegistry::standard();
+//! let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
+//! let terrain = Terrain::from_fn(7, 3, |p| if p.x == 3 { wall } else { floor });
+//! let view = terrain.view(&tiles);
+//!
+//! let mut seen = BitGrid::new(7, 3);
+//! fov::compute(&view, Point::new(1, 1), 8, &mut seen);
+//! assert!(seen.contains(Point::new(2, 1)), "the floor before the wall is seen");
+//! assert!(!seen.contains(Point::new(5, 1)), "a cell behind the wall is not");
+//! ```
+//!
 //! - [`TileId`], [`TileProps`], [`TileRegistry`]: what a tile *is* lives in a
 //!   registry the game populates. Engine code asks the registry and never
 //!   matches on a tile enum, which is what lets a game add force fields or

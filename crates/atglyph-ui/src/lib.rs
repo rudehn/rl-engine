@@ -1,5 +1,7 @@
 //! Panels for a roguelike, that a game may take, restyle, or leave.
 //!
+//! Part of `atglyph`: a game depends on `atglyph` and reaches this crate as `atglyph::ui`.
+//!
 //! # How a panel is built here
 //!
 //! Every panel splits three ways, and the split is the whole point:

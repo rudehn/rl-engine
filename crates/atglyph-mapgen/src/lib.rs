@@ -1,5 +1,29 @@
 //! The generation pipeline: a chain of named, phased passes over a context.
 //!
+//! Use this crate alone, or through `atglyph` as `atglyph::mapgen`.
+//! It builds places from a chain of seeded passes, builds with no Bevy, and builds for `wasm32-unknown-unknown`,
+//! so a tool, a server or a test can depend on `atglyph-mapgen` and skip compiling Bevy.
+//!
+//! ```
+//! use atglyph_core::{PlaceSeed, RunSeed};
+//! use atglyph_grid::TileRegistry;
+//! use atglyph_mapgen::dungeon::{RandomStart, Rooms};
+//! use atglyph_mapgen::passes::StartPoint;
+//! use atglyph_mapgen::{BaseContext, Chain};
+//!
+//! // Solid wall, rooms carved from it, and a start placed in one.
+//! let tiles = TileRegistry::standard();
+//! let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
+//! let mut map = BaseContext::blank(40, 24, tiles, wall);
+//! let seed = PlaceSeed::of(RunSeed(7), 0);
+//! Chain::new().then(Rooms { floor, ..Default::default() }).then(RandomStart).run(&mut map, seed).unwrap();
+//!
+//! let view = map.terrain().view(map.tiles());
+//! let start = map.outputs().first::<StartPoint>().unwrap().0;
+//! assert!(view.is_walkable(start), "the start is a walkable cell");
+//! assert!(map.terrain().count(floor) > 0);
+//! ```
+//!
 //! Every generated thing in the engine, a dungeon floor or a cave, is built by running a [`Chain`] of [`Pass`]es over a
 //! [`BaseContext`]. Three rules make the chain composable:
 //!

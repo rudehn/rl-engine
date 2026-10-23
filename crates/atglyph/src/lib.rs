@@ -1,17 +1,34 @@
 //! A roguelike engine for Rust and Bevy, re-exported from one crate.
 //!
+//! Start a game from the template, which plays from the first build:
+//!
+//! ```sh
+//! cargo install cargo-generate
+//! cargo generate --git https://github.com/rudehn/rl-engine --tag v0.3.0 templates/starter --name my-game
+//! ```
+//!
+//! The generated game is one file: a floor of rooms lit by a torch, goblins
+//! that notice the player by sight and hunt where they last saw them, a
+//! status row and a log, in a window or, with `cargo run -- --tty`, in a
+//! text terminal. [The guide](https://rudehn.github.io/rl-engine/) builds
+//! the same game a step at a time, the first six steps playable in the
+//! browser.
+//!
 //! atglyph is a workspace of small crates for turn-based grid
 //! roguelikes: procedural dungeon generation, field of view, A*
 //! and Dijkstra-map pathfinding, monster AI, combat, items, quests, saves
 //! and an ASCII glyph renderer. This facade re-exports every one of them,
 //! so a game depends on this crate and imports `atglyph::prelude::*`.
 //!
-//! The tier 0 and 1 crates ([`atglyph_core`], [`atglyph_grid`], [`atglyph_mapgen`],
-//! [`atglyph_rules`]) never
-//! depend on Bevy. A tool, a server or a test that needs no window can
-//! depend on one of them directly and skip compiling Bevy altogether.
-//! The tier-2 crates ([`atglyph_bevy`], [`atglyph_render`], [`atglyph_ui`],
-//! [`atglyph_save`]) are the Bevy plugins that run the loops.
+//! Four of the crates never depend on Bevy: `atglyph-core`
+//! (`atglyph::primitives`), `atglyph-grid` (`atglyph::grid`),
+//! `atglyph-mapgen` (`atglyph::mapgen`) and `atglyph-rules`
+//! (`atglyph::rules`). A tool, a server or a test that needs no window can
+//! depend on one of them directly and skip compiling Bevy altogether; each
+//! opens its own docs with an example that needs none. The tier-2 crates,
+//! `atglyph::ecs`, `atglyph::render`, `atglyph::ui` and `atglyph::save`,
+//! are the Bevy plugins that run the loops, and a game reaches them only
+//! through this crate.
 //!
 //! The repository README walks through a headless example, and the
 //! `foundry` and `undermere` example games show the Bevy side end to end.
@@ -289,7 +306,7 @@ impl PluginGroup for TtyRoguelikePlugins {
 ///
 /// `Rect` is deliberately left out. Bevy's prelude has a `Rect` of its
 /// own, so a game that globs both would have to disambiguate every use of
-/// the name; import [`atglyph_core::Rect`] where you want the grid one. That is
+/// the name; import [`atglyph::primitives::Rect`](atglyph_core::Rect) where you want the grid one. That is
 /// the only name the two preludes would have fought over, and the doc test
 /// below is what keeps it that way.
 ///

@@ -1,5 +1,7 @@
 //! Drawing: a glyph terminal, and the map view drawn onto it.
 //!
+//! Part of `atglyph`: a game depends on `atglyph` and reaches this crate as `atglyph::render`.
+//!
 //! Game code writes cells into a [`Terminal`] back buffer as if it were a
 //! console. The plugin diffs it against what is on screen and touches only
 //! the entities whose cell changed, so a turn-based frame where nothing

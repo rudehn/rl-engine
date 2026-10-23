@@ -1,6 +1,8 @@
 //! Saving: the seam to storage, the versioning policy, entity remapping,
 //! and the engine's own state as a save.
 //!
+//! Part of `atglyph`: a game depends on `atglyph` and reaches this crate as `atglyph::save`.
+//!
 //! The engine cannot know what a player is made of, so a game says what
 //! each kind of thing it spawns is, through [`Saveable`], or for an item
 //! it makes through its `ItemMaker`, through [`SaveableItem`], which the

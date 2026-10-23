@@ -1,5 +1,31 @@
 //! The rules layer: shapes in the engine, vocabulary in the game.
 //!
+//! Use this crate alone, or through `atglyph` as `atglyph::rules`.
+//! It holds the rules a roguelike runs on, with the vocabulary left to the game, builds with no Bevy, and builds for `wasm32-unknown-unknown`,
+//! so a tool, a server or a test can depend on `atglyph-rules` and skip compiling Bevy.
+//!
+//! ```
+//! use atglyph_rules::{Named, Registry};
+//!
+//! struct Monster {
+//!     name: &'static str,
+//!     hp: u32,
+//! }
+//!
+//! impl Named for Monster {
+//!     fn name(&self) -> &str {
+//!         self.name
+//!     }
+//! }
+//!
+//! // Definitions in order; each gets a dense id, and a name finds it.
+//! let monsters = Registry::from_defs(vec![Monster { name: "rat", hp: 3 }, Monster { name: "wolf", hp: 12 }]).unwrap();
+//! let wolf = monsters.expect("wolf");
+//! assert_eq!(monsters.get(wolf).hp, 12);
+//! assert_eq!(monsters.name(wolf), "wolf");
+//! assert!(monsters.id("dragon").is_none());
+//! ```
+//!
 //! Nothing here names a stat, a damage type, a status, a faction, an
 //! equipment slot, an item tag, a fact or a quest. The engine ships the
 //! machinery; a game registers what exists and the numbers that go with

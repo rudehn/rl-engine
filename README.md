@@ -11,6 +11,19 @@ The core algorithms have no Bevy dependency, so map generation, pathfinding and 
 
 ![Warren, the guide's game: a dug room lit by sight, remembered corridors in cold blue, two rats closing in, and the log counting their bites](docs/guide/src/images/warren.png)
 
+## Start here
+
+The quickest start is the template, one file that plays from the first build:
+
+```sh
+cargo install cargo-generate
+cargo generate --git https://github.com/rudehn/rl-engine --tag v0.3.0 templates/starter --name my-game
+cd my-game
+cargo run
+```
+
+To try the engine first, the guide's first six steps run in the browser with nothing to install: [a map and walking](https://rudehn.github.io/rl-engine/01-a-map-and-walking.html), [sight and light](https://rudehn.github.io/rl-engine/02-sight-and-light.html), [blows and the log](https://rudehn.github.io/rl-engine/03-blows-and-the-log.html), [things and minds](https://rudehn.github.io/rl-engine/04-things-and-minds.html), [a knack](https://rudehn.github.io/rl-engine/05-a-knack.html) and [two floors](https://rudehn.github.io/rl-engine/06-two-floors.html).
+
 ## Features
 
 - **Procedural map generation**: a chain of seeded passes with rooms and corridors, BSP, cellular automata caves, doors, largest-region cleanup and ASCII prefabs.

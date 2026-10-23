@@ -1,5 +1,7 @@
 //! The Bevy layer: the loops the engine owns.
 //!
+//! Part of `atglyph`: a game depends on `atglyph` and reaches this crate as `atglyph::ecs`.
+//!
 //! Everything below tier 2 is data and algorithms. This crate is where they
 //! run: the turn loop, field of view, occupancy. A game
 //! adds these plugins, spawns actors with the components here, and writes
