@@ -3,7 +3,7 @@
 #
 #   scripts/check-publish.sh   checks the manifest fields crates.io shows, that
 #                              each internal dependency carries the workspace
-#                              version, then runs `cargo package --workspace`,
+#                              version, then runs `cargo package` over them,
 #                              which builds every crate from its packaged
 #                              files alone (needs cargo 1.90 or later)
 #
@@ -39,4 +39,14 @@ for line in problems:
 sys.exit(1 if problems else 0)
 '
 
-cargo package --workspace --locked
+# The games are `publish = false`, so `cargo publish` skips them and so does this:
+# only the members the checks above cover are packaged (undermere alone takes minutes).
+args=()
+while read -r name; do args+=(-p "$name"); done < <(
+  cargo metadata --format-version 1 --no-deps | python3 -I -c '
+import json, sys
+for p in json.load(sys.stdin)["packages"]:
+    if p["publish"] != []:
+        print(p["name"])
+')
+cargo package "${args[@]}" --locked
