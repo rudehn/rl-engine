@@ -2,8 +2,9 @@
 //! pieces and the stamps a place is given, and a dressing file as the pass
 //! that dresses what they left.
 //!
-//! `rl-rules` owns the files and names no mapgen type; `rl-mapgen` owns
-//! the passes and reads no file. This is the one place that sees both, as
+//! `rl-rules` owns the files, reading the values they share with the
+//! passes straight into `rl-mapgen`'s types; `rl-mapgen` owns the passes
+//! and reads no file. This is where a file becomes passes, as
 //! [`Prefabs::piece`](crate::prefabs::Prefabs::piece) is for a prefab, and
 //! like it there is no plugin and no system here: a game calls [`passes`],
 //! [`picked`] and [`dress`] where it builds a place.
@@ -11,11 +12,10 @@
 use rl_grid::TileId;
 use rl_mapgen::accrete::{Accrete, Barrier, Cross, District, FirstPiece, Join, Passage, Rectangle, Shape};
 use rl_mapgen::dungeon::Stairs;
-use rl_mapgen::prefab::{Orient, Placement};
-use rl_mapgen::{BuildError, Cave, Dress, Lay, OpenLoops, PoolPick, Prefer, Require, StampPicks};
-use rl_rules::dressing::DistrictDressings;
+use rl_mapgen::prefab::Orient;
+use rl_mapgen::{BuildError, Cave, DistrictDressings, Dress, Lay, OpenLoops, PoolPick, Require, StampPicks};
 use rl_rules::layout::{JoinDef, LayoutDef, ShapeKind};
-use rl_rules::pool::{self, Joined, Pick, Placed, Pool};
+use rl_rules::pool::{Joined, Pick, Placed, Pool};
 
 use crate::prefabs::Prefabs;
 
@@ -161,30 +161,17 @@ pub fn picked<M: Send + Sync + 'static>(pool: &Pool, picks: &[Pick], prefabs: &P
                 if first.is_some() {
                     return Err(BuildError::new("layout", format!("{}: a second landmark for one place, which grows round one", entry.name)));
                 }
-                let at = placements
-                    .iter()
-                    .map(|p| match p {
-                        pool::Placement::Center => Placement::Center,
-                        pool::Placement::Edge => Placement::Edge,
-                        pool::Placement::Anywhere => Placement::Anywhere,
-                        pool::Placement::Span => Placement::Span,
-                    })
-                    .collect();
                 // Grown, so no stamp stands over it to narrow its facings:
                 // its drawing's declaration alone decides, as for a grown
                 // piece, and `orient` is the ceiling of what is stamped.
-                first = Some(FirstPiece::new(piece.clone(), &prefabs.piece(piece)?, at, Orient::TurnedOrMirrored)?);
-                stairs = match *wanted {
-                    pool::Stairs::Free => Stairs::Free,
-                    pool::Stairs::Beyond => Stairs::Beyond,
-                    pool::Stairs::Within(mark) => Stairs::Within(mark),
-                };
+                first = Some(FirstPiece::new(piece.clone(), &prefabs.piece(piece)?, placements.clone(), Orient::TurnedOrMirrored)?);
+                stairs = *wanted;
                 continue;
             }
             Placed::Inside { piece, shapes } => (Lay::Stamp(prefabs.piece(piece)?), shapes.clone()),
             Placed::Dressed { dressing } => (Lay::Dress(dressing.clone()), Vec::new()),
         };
-        placed.push(PoolPick { name: entry.name.clone(), lay, shapes, prefer: prefer(entry.prefer), required: pick.required });
+        placed.push(PoolPick { name: entry.name.clone(), lay, shapes, prefer: entry.prefer, required: pick.required });
     }
     Ok(Picked { pieces, first, stairs, stamp: StampPicks { name: "pool picks", picks: placed, orient } })
 }
@@ -202,21 +189,7 @@ pub fn dress<M: Send + Sync + 'static>(prefabs: &Prefabs<M>, floor: TileId, list
     let dressings = prefabs.dressings().iter().map(|(_, d)| prefabs.dressing(&d.name)).collect::<Result<Vec<_>, _>>()?;
     // The pass fails on a name no dressing has, which `check_districts`
     // refuses at load.
-    let districts =
-        lists.iter().map(|l| rl_mapgen::DistrictDressings { district: l.district.clone(), nothing: l.nothing, dressings: l.dressings.clone() }).collect();
-    Ok(Dress { name: "dress", floor, dressings, districts })
-}
-
-/// The pool file's preference as the pass's: the same five, named twice
-/// since neither crate names the other.
-fn prefer(p: pool::Prefer) -> Prefer {
-    match p {
-        pool::Prefer::Secluded => Prefer::Secluded,
-        pool::Prefer::DeadEnd => Prefer::DeadEnd,
-        pool::Prefer::Hidden => Prefer::Hidden,
-        pool::Prefer::Junction => Prefer::Junction,
-        pool::Prefer::Anywhere => Prefer::Anywhere,
-    }
+    Ok(Dress { name: "dress", floor, dressings, districts: lists.to_vec() })
 }
 
 #[cfg(test)]

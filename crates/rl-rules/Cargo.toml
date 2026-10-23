@@ -17,6 +17,7 @@ tier = 1
 [dependencies]
 rl-core.workspace = true
 rl-grid.workspace = true
+rl-mapgen.workspace = true
 rand = { workspace = true, features = ["std", "std_rng"] }
 serde.workspace = true
 ron.workspace = true

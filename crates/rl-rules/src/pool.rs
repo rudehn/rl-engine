@@ -34,9 +34,11 @@
 //!
 //! What this module does not hold is the laying. Growing a piece is
 //! `rl-mapgen`'s `Accrete` and stamping one inside an area its
-//! `StampPicks`; `rl-bevy` turns a place's picks into both. This crate
-//! names no mapgen type, so a pool loads and every mistake in it is
-//! reported with no map and no `App`.
+//! `StampPicks`; `rl-bevy`'s `layout::picked` turns a place's picks into
+//! both. An entry's [`Prefer`], its seeded [`Placement`]s and
+//! its [`Stairs`] are the mapgen values the passes take, read straight
+//! from the file, and a pool loads and every mistake in it is reported
+//! with no map grown.
 //!
 //! ```text
 //! // A pool: the pieces a run may hold, how often, where and how many.
@@ -144,8 +146,11 @@ use crate::content::{ContentError, Registry};
 use crate::dressing::DressingDef;
 use crate::layout::{LayoutDef, RecipeDef};
 use crate::names::Names;
-use crate::prefab::{Coverage, Legended, PrefabDef, Slot, Sources, Turn};
+use crate::prefab::{Coverage, Legended, PrefabDef, Slot, Sources};
 use crate::tag::TagId;
+use rl_mapgen::Prefer;
+use rl_mapgen::dungeon::Stairs;
+use rl_mapgen::prefab::{Placement, Turn};
 
 /// How a grown piece is joined to what it is attached to: a layout
 /// shape's joins, and the two only a piece the pool places may carry.
@@ -190,55 +195,13 @@ pub enum Placed {
     Seeded {
         /// The prefab's name.
         piece: String,
-        /// Where it may be laid, one drawn for each attempt.
+        /// Where it may be laid, one drawn for each attempt: `Center`,
+        /// `Edge`, `Anywhere` or `Span`, since no room stands before
+        /// growth, and the load refuses the rest.
         placements: Vec<Placement>,
         /// Where the way in and the way down stand round it.
         stairs: Stairs,
     },
-}
-
-/// Where a seeded piece is laid on the map. The places a stamp may go
-/// that need a room are not here, since no room stands before growth.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-pub enum Placement {
-    /// The middle of the map.
-    Center,
-    /// Against a side of the map its facings allow, its back drawn to the
-    /// south.
-    Edge,
-    /// Anywhere a margin from every edge.
-    Anywhere,
-    /// A long piece across the middle of the map, along its length.
-    Span,
-}
-
-/// Where the way in and the way down stand round a seeded piece.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-pub enum Stairs {
-    /// Wherever the game's own chain puts them.
-    Free,
-    /// On opposite sides of it, so the route between them crosses it.
-    Beyond,
-    /// The way down on the cell the piece's slot of this glyph marks.
-    Within(char),
-}
-
-/// The area an entry stamped inside or dressed prefers. A grown piece has
-/// none, since growth decides where it attaches.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
-pub enum Prefer {
-    /// The area farthest from the route that it fits: what a player went
-    /// out of their way to find.
-    Secluded,
-    /// An area with one way in.
-    DeadEnd,
-    /// An area reached only through a secret.
-    Hidden,
-    /// An area three ways or more lead out of.
-    Junction,
-    /// Any area it fits.
-    #[default]
-    Anywhere,
 }
 
 /// One thing a place may be given.
@@ -538,6 +501,12 @@ pub fn load<M>(text: &str, layout: &LayoutDef, pieces: &Registry<PrefabDef<M>>, 
                 }
                 if placements.is_empty() {
                     errors.push(format!("{name}: is seeded at no placement"));
+                }
+                // No room stands before growth, and where a chain fixes a
+                // corner is the chain's: a pool places a landmark on the
+                // map as a whole.
+                for p in placements.iter().filter(|p| !matches!(p, Placement::Center | Placement::Edge | Placement::Anywhere | Placement::Span)) {
+                    errors.push(format!("{name}: is seeded {p:?}, and a seeded piece is laid before anything grows, at Center, Edge, Anywhere or Span"));
                 }
                 // A mark, and no other slot: the cell is the stairs', and a
                 // prop, an item or a monster filled there would stand on it.
@@ -1503,6 +1472,25 @@ mod tests {
         );
         assert_eq!(pool.entries[1].placed, Placed::Seeded { piece: "store".into(), placements: vec![Placement::Span], stairs: Stairs::Beyond });
         assert_eq!(pool.entries[0].piece(), Some("stairwell"));
+    }
+
+    /// A seeded piece is laid before anything grows, so the placements
+    /// that need a room, or a corner a chain fixes, are refused by entry
+    /// name, each with every other mistake in the file.
+    #[test]
+    fn a_pool_entry_placed_where_a_pool_cannot_place_is_refused_by_name() {
+        let w = world();
+        let text = LANDMARKS
+            .replacen("Seeded([Center, Edge], Within('>'))", "Seeded([Center, At((x: 3, y: 4))], Within('>'))", 1)
+            .replacen("Seeded([Span], Beyond)", "Seeded([InRoom(0), AnyRoom], Beyond)", 1)
+            .replacen("where: [\"wet\"]", "where: [\"damp\"]", 1);
+        let Err(ContentError::Invalid(errors)) = read(&w, &text) else { panic!("the pool is refused") };
+        let says = |what: &str| assert!(errors.iter().any(|e| e.contains(what)), "no error says {what:?} among {errors:#?}");
+        says("great stair: is seeded At(Point { x: 3, y: 4 })");
+        says("crossing: is seeded InRoom(0)");
+        says("crossing: is seeded AnyRoom");
+        says("cistern: names unknown tag \"damp\"");
+        assert_eq!(errors.len(), 4, "{errors:#?}");
     }
 
     #[test]

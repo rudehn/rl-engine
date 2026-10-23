@@ -24,8 +24,11 @@
 //! What this module does not hold is the dressing itself: which cells a
 //! rule offers in an area, keeping off its openings and never cutting it
 //! in two, is `rl-mapgen`'s `Dress`, and `rl-bevy` hands the file to it.
-//! This crate names no mapgen type, so a dressing loads and every mistake
-//! in it is reported with no map and no `App`.
+//! A rule loads as the mapgen [`Thing`] that pass lays, its [`Spread`]
+//! read straight from the file and what it stands as, a tile or a slot,
+//! from the legend, and a district's list is the mapgen
+//! [`DistrictDressings`]; a dressing loads and every mistake in it is
+//! reported with no map grown and no `App`.
 //!
 //! ```text
 //! // Dressings: what fills an area of any size, a legend and where its
@@ -100,45 +103,8 @@ use crate::layout::LayoutDef;
 use crate::names::Names;
 use crate::pool::Pool;
 use crate::prefab::{Legend, LegendRon, Legended, read_legend};
-
-/// Where a rule puts its glyph in an area.
-///
-/// The same five as `rl-mapgen`'s, named twice since neither crate names
-/// the other. A wall here is anything beside the area that is not its
-/// own floor a body can stand on: rock, a lake, another piece's wall.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-pub enum Spread {
-    /// A cell with a wall straight beside it, not a corner.
-    Walls,
-    /// A cell with walls on two sides at a right angle.
-    Corners,
-    /// The cells farthest from every wall: one in a small square room, a
-    /// strip down a long hall, the heart of a cave.
-    Center,
-    /// Lines along the area's longer side, a cell in from its walls, with
-    /// `aisle` cells left clear between two lines, so a hall of them can
-    /// be walked down every aisle and round every end.
-    Rows {
-        /// The clear cells between two lines; at least one.
-        aisle: u32,
-    },
-    /// Any cell of the area.
-    Scatter,
-}
-
-/// One rule of a dressing: a glyph, where it goes, and how much of it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Thing {
-    /// The glyph, which the legend gives a meaning.
-    pub glyph: char,
-    /// Where it goes.
-    pub at: Spread,
-    /// The share in a hundred of the cells `at` offers that it fills,
-    /// 1 to 100: a share and not a count, so a hall gets more than a
-    /// closet from one rule.
-    pub density_pct: u32,
-}
+use rl_mapgen::DistrictDressings;
+use rl_mapgen::dress::{Spread, Stand, Thing};
 
 /// A dressing, as its file says it.
 pub struct DressingDef<M> {
@@ -146,7 +112,8 @@ pub struct DressingDef<M> {
     pub name: String,
     legend: Legend<M>,
     /// The rules, in the order they are laid: an earlier rule's things
-    /// are already standing when a later one looks for room.
+    /// are already standing when a later one looks for room. Each stands
+    /// as a tile where its legend paints one and as a slot otherwise.
     pub things: Vec<Thing>,
     /// The tile and the share in a hundred of the floor left clear that is
     /// repainted with it, after every thing stands.
@@ -183,9 +150,20 @@ struct DressingRon {
     name: String,
     legend: BTreeMap<char, LegendRon>,
     #[serde(default)]
-    place: Vec<Thing>,
+    place: Vec<ThingRon>,
     #[serde(default)]
     repaint: Option<(String, u32)>,
+}
+
+/// One rule as authored: a glyph, where it goes, and how much of it, the
+/// share in a hundred of the cells `at` offers, so a hall gets more than a
+/// closet from one rule. What the glyph stands as is its legend's.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ThingRon {
+    glyph: char,
+    at: Spread,
+    density_pct: u32,
 }
 
 /// Loads a dressing file, resolving every name in every legend through
@@ -250,7 +228,12 @@ pub fn load<M: 'static>(text: &str, tiles: &TileRegistry, names: &Names<'_>) -> 
         if d.place.is_empty() && d.repaint.is_none() {
             errors.push(format!("{name}: lays nothing; an area is left bare by a district's `nothing`, not by an empty dressing"));
         }
-        defs.push(DressingDef { name: d.name, legend, things: d.place, repaint });
+        let things = d
+            .place
+            .iter()
+            .map(|t| Thing { glyph: t.glyph, stands: legend.tile(t.glyph).map_or(Stand::Slot, Stand::Tile), at: t.at, density_pct: t.density_pct })
+            .collect();
+        defs.push(DressingDef { name: d.name, legend, things, repaint });
     }
     if !errors.is_empty() {
         return Err(ContentError::Invalid(errors));
@@ -268,25 +251,6 @@ pub fn check_pool<M>(pool: &Pool, dressings: &Registry<DressingDef<M>>) -> Resul
         .map(|d| format!("the pool lays dressing {d:?}, which the dressing file does not hold"))
         .collect();
     if errors.is_empty() { Ok(()) } else { Err(ContentError::Invalid(errors)) }
-}
-
-/// What the areas grown in one district are dressed with, when no stamp
-/// or pick took them: each dressing by name at a weight, and nothing at
-/// all at a weight of its own.
-///
-/// Read from a game's own file, where it keeps its lists (beside a biome,
-/// a level or a theme), so that file is checked against the dressings and
-/// the layout by [`check_districts`].
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct DistrictDressings {
-    /// The district, by its name in the layout.
-    pub district: String,
-    /// The weight of leaving an area bare.
-    #[serde(default)]
-    pub nothing: u32,
-    /// Each dressing, by name, and its weight.
-    pub dressings: Vec<(String, u32)>,
 }
 
 /// Refuses lists that name a dressing the file lacks or a district the
@@ -389,6 +353,9 @@ mod tests {
         assert_eq!(barracks.legend().tile('p'), w.tiles.id("wall"));
         let order: Vec<(char, Spread)> = barracks.things.iter().map(|t| (t.glyph, t.at)).collect();
         assert_eq!(order, vec![('c', Spread::Walls), ('w', Spread::Corners), ('p', Spread::Rows { aisle: 2 }), ('b', Spread::Center), ('m', Spread::Scatter)]);
+        let stands: Vec<Stand> = barracks.things.iter().map(|t| t.stands).collect();
+        let wall = Stand::Tile(w.tiles.id("wall").unwrap());
+        assert_eq!(stands, vec![Stand::Slot, Stand::Slot, wall, Stand::Slot, Stand::Slot], "a glyph its legend paints stands as the tile, any other as a slot");
         assert_eq!(barracks.repaint, Some((w.tiles.id("rubble").unwrap(), 10)));
         let dust = all.get(all.expect("dust"));
         assert!(dust.things.is_empty() && dust.repaint.is_some(), "a dressing may only repaint");

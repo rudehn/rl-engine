@@ -4252,6 +4252,7 @@ dependencies = [
  "rand 0.9.5",
  "rl-core",
  "rl-grid",
+ "rl-mapgen",
  "ron 0.10.1",
  "serde",
 ]

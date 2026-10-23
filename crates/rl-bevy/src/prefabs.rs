@@ -40,11 +40,11 @@ use rl_core::seed::position_hash;
 use rl_core::{Id, Point};
 use rl_mapgen::BuildError;
 use rl_mapgen::accrete::Join;
-use rl_mapgen::dress::{Dressing, Spread, Stand, Thing};
-use rl_mapgen::prefab::{Cell, Mirror, Prefab, PrefabShape, Turn};
+use rl_mapgen::dress::Dressing;
+use rl_mapgen::prefab::{Cell, Prefab, PrefabShape};
 use rl_rules::content::{BandedTable, Registry};
 use rl_rules::dressing::DressingDef;
-use rl_rules::prefab::{self, Legended, Pick, PrefabDef, Slot};
+use rl_rules::prefab::{Legended, Pick, PrefabDef, Slot};
 use rl_rules::prop::Stock;
 use rl_rules::role::{self, RoleDef};
 
@@ -169,18 +169,9 @@ impl<M: Send + Sync + 'static> Prefabs<M> {
             (None, None) if def.entry(c) => Cell::Entry,
             (None, None) => Cell::Clear,
         };
-        let turn = match def.turn {
-            prefab::Turn::None => Turn::None,
-            prefab::Turn::Half => Turn::Half,
-            prefab::Turn::Quarter => Turn::Quarter,
-        };
-        let mirror = match def.mirror {
-            prefab::Mirror::None => Mirror::None,
-            prefab::Mirror::LeftRight => Mirror::LeftRight,
-            prefab::Mirror::UpDown => Mirror::UpDown,
-            prefab::Mirror::Both => Mirror::Both,
-        };
-        Prefab::parse_cells(&def.rows(), cell).map(|p| p.keyed(id.raw()).declaring(turn, mirror)).map_err(|e| BuildError::new("prefab", format!("{name}: {e}")))
+        Prefab::parse_cells(&def.rows(), cell)
+            .map(|p| p.keyed(id.raw()).declaring(def.turn, def.mirror))
+            .map_err(|e| BuildError::new("prefab", format!("{name}: {e}")))
     }
 
     /// The piece called `name` as a shape [`Accrete`](rl_mapgen::accrete::Accrete)
@@ -199,23 +190,7 @@ impl<M: Send + Sync + 'static> Prefabs<M> {
     pub(crate) fn dressing(&self, name: &str) -> Result<Dressing, BuildError> {
         let id = self.dressings().id(name).ok_or_else(|| BuildError::new("dressing", format!("no dressing is called {name:?}")))?;
         let def = self.dressings().get(id);
-        let things = def
-            .things
-            .iter()
-            .map(|t| Thing {
-                glyph: t.glyph,
-                stands: def.legend().tile(t.glyph).map_or(Stand::Slot, Stand::Tile),
-                at: match t.at {
-                    rl_rules::dressing::Spread::Walls => Spread::Walls,
-                    rl_rules::dressing::Spread::Corners => Spread::Corners,
-                    rl_rules::dressing::Spread::Center => Spread::Center,
-                    rl_rules::dressing::Spread::Rows { aisle } => Spread::Rows { aisle },
-                    rl_rules::dressing::Spread::Scatter => Spread::Scatter,
-                },
-                density_pct: t.density_pct,
-            })
-            .collect();
-        Ok(Dressing { name: def.name.clone(), things, repaint: def.repaint, key: Some(DRESSING | id.raw()) })
+        Ok(Dressing { name: def.name.clone(), things: def.things.clone(), repaint: def.repaint, key: Some(DRESSING | id.raw()) })
     }
 
     /// What `glyph` stands for in the prefab or the dressing keyed `key`,

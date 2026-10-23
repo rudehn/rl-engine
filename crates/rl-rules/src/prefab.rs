@@ -40,10 +40,10 @@
 //! What this module does not hold is the terrain half. Turning [`rows`
 //! ](PrefabDef::rows), [`tile`](PrefabDef::tile) and [`slot`
 //! ](PrefabDef::slot) into a grid of tiles and entities, with rotation and
-//! mirroring, is `rl-mapgen`'s, a tier 1 crate beside this one; this
-//! crate names no mapgen type and keeps no dependency on it, so a prefab
-//! file loads and every one of its mistakes is reported with no map, no
-//! `App` and no grid anywhere in the test.
+//! mirroring, is `rl-mapgen`'s, a tier 1 crate this one depends on, and
+//! the [`Turn`] and [`Mirror`] a file writes are its values, read straight
+//! from the file; a prefab file loads and every one of its mistakes is
+//! reported with no map grown and no `App`.
 //!
 //! ```text
 //! // A prefab: a piece of a place, drawn as rows of glyphs, and what each
@@ -121,6 +121,7 @@ use std::ops::RangeInclusive;
 
 use rl_core::Id;
 use rl_grid::{TileId, TileRegistry};
+use rl_mapgen::prefab::{Mirror, Turn};
 use serde::Deserialize;
 
 use crate::content::{BandedTable, ContentError, Named, Registry};
@@ -222,32 +223,6 @@ impl<M> Legend<M> {
 pub trait Legended<M>: Named {
     /// What each glyph stands for.
     fn legend(&self) -> &Legend<M>;
-}
-
-/// How far a prefab's drawing may be turned, wherever it is laid.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
-pub enum Turn {
-    /// Never.
-    None,
-    /// As drawn or a half-turn.
-    Half,
-    /// Any of the four quarter-turns; what a file that says nothing gets.
-    #[default]
-    Quarter,
-}
-
-/// How a prefab's drawing may be mirrored, wherever it is laid.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
-pub enum Mirror {
-    /// Never.
-    None,
-    /// Left to right.
-    LeftRight,
-    /// Top to bottom.
-    UpDown,
-    /// Either, and so both together; what a file that says nothing gets.
-    #[default]
-    Both,
 }
 
 /// A prefab, as its file says it.

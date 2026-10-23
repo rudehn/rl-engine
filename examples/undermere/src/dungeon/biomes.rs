@@ -22,7 +22,7 @@
 //! design's. [`district_dressings`] turns `dressings` into the weighted
 //! list `rl_mapgen::Dress` gives every area the pool's picks left bare.
 
-use rl_engine::rl_rules::dressing::DistrictDressings;
+use rl_engine::rl_mapgen::DistrictDressings;
 
 use super::*;
 use crate::bestiary::Bestiary;
@@ -513,7 +513,8 @@ fn pool_problems(
     layout: &LayoutDef,
     pieces: &Registry<rl_engine::rl_rules::prefab::PrefabDef<MonsterDef>>,
 ) -> Vec<String> {
-    use rl_engine::rl_rules::pool::{Placed, Stairs, misfit};
+    use rl_engine::rl_mapgen::dungeon::Stairs;
+    use rl_engine::rl_rules::pool::{Placed, misfit};
     let mut errors = Vec::new();
     for entry in pool.entries.iter().filter(|e| e.weight > 0) {
         // Every floor and biome it may be drawn for, and whether its kind

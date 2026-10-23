@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `rl-rules` reads prefab, pool and dressing files straight into `rl-mapgen`'s `Turn`, `Mirror`, `Prefer`, `Placement`, `Stairs`, `Spread`, `Thing` and `DistrictDressings`; the copies `rl-rules` declared are gone, and `rl-rules` depends on `rl-mapgen`. A seeded pool entry placed `At`, `InRoom` or `AnyRoom`, which a landmark laid before anything grows cannot be, is refused by name with every other mistake in the file. A `DressingDef`'s `things` are the mapgen `Thing`s its pass lays, each standing as a tile where its legend paints one and as a slot otherwise.
+  To change: an import of one of the eight from `rl_rules` names `rl_mapgen` instead (`rl_mapgen::prefab::{Turn, Mirror, Placement}`, `rl_mapgen::{Prefer, DistrictDressings}`, `rl_mapgen::dungeon::Stairs`, `rl_mapgen::dress::{Spread, Thing}`), and `rl_rules::DistrictDressings` is `rl_mapgen::DistrictDressings`; files are unchanged.
+
 - `rl-mapgen`'s `Turn`, `Mirror`, `Placement`, `Prefer`, `Stairs`, `Spread` and `DistrictDressings` deserialize from the spellings the content files already write, and a `DistrictDressings` names each dressing by its name, as a `DressAt` does, rather than by its place in `Dress::dressings`; `Dress` fails naming a dressing a list names and it does not hold.
   To change: `rl_mapgen::DistrictDressings::new(district, vec![(0, 3)])` becomes `vec![("barracks".into(), 3)]`.
 

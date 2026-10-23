@@ -38,13 +38,14 @@ use rand::seq::SliceRandom;
 use rl_engine::prelude::*;
 use rl_engine::rl_bevy::layout::LayoutTiles;
 use rl_engine::rl_core::Rect;
+use rl_engine::rl_mapgen::Prefer;
 use rl_engine::rl_mapgen::dungeon::{ExitPoint, FarthestExit, MarkedStart, RandomStart, Stairs};
 use rl_engine::rl_mapgen::passes::StartPoint;
-use rl_engine::rl_mapgen::{Area, Opening};
+use rl_engine::rl_mapgen::{Area, DistrictDressings, Opening};
 use rl_engine::rl_render::TileAppearance;
 use rl_engine::rl_rules::dressing;
 use rl_engine::rl_rules::layout::{self, LayoutDef};
-use rl_engine::rl_rules::pool::{Pick, Place, Pool, Prefer};
+use rl_engine::rl_rules::pool::{Pick, Place, Pool};
 
 use crate::bestiary::MonsterDef;
 
@@ -557,7 +558,7 @@ pub struct Undermere {
     /// Every district's weighted list of dressings, built once from each
     /// biome's own `dressings` and checked against `prefabs.dressings()`
     /// and `layout` here rather than on the floor that first grows it.
-    districts: Vec<dressing::DistrictDressings>,
+    districts: Vec<DistrictDressings>,
     /// The run's pool, `assets/pool.ron`, checked against `prefabs` and
     /// `layout` at load.
     pool: Pool,
@@ -1424,7 +1425,7 @@ mod tests {
     use rl_engine::rl_mapgen::Join;
     use rl_engine::rl_mapgen::accrete::Landmark;
     use rl_engine::rl_mapgen::prefab::Stamped;
-    use rl_engine::rl_rules::pool::{Placed, Stairs as Wanted};
+    use rl_engine::rl_rules::pool::Placed;
     use rl_engine::rl_rules::prefab::{Pick, Slot};
 
     use super::*;
@@ -1567,8 +1568,8 @@ mod tests {
         let Some(Placed::Seeded { stairs, .. }) = entry.map(|e| &e.placed) else { panic!("{at}: {} is no landmark of {}", landmark.name, drawn.name) };
         let exit = built.exit.unwrap_or_else(|| panic!("{at}: no way down"));
         match stairs {
-            Wanted::Free => {}
-            Wanted::Beyond => {
+            Stairs::Free => {}
+            Stairs::Beyond => {
                 let (into, down) = (landmark.side(built.entry), landmark.side(exit));
                 assert!(
                     into.is_some() && down == into.map(|side| side.other()),
@@ -1578,7 +1579,7 @@ mod tests {
                     landmark.bounds
                 );
             }
-            Wanted::Within(mark) => {
+            Stairs::Within(mark) => {
                 let marks = stamped.iter().find(|st| st.bounds == landmark.bounds).map(|st| st.marks.as_slice()).unwrap_or_default();
                 assert!(marks.contains(&(*mark, exit)), "{at}: the way down at {exit:?} is not {}'s {mark:?}", landmark.name);
             }
@@ -2042,13 +2043,12 @@ mod tests {
     /// rather than grown with its stairs ignored.
     #[test]
     fn a_landmark_on_the_throne_floor_asking_its_stairs_placed_is_refused_by_name() {
-        use rl_engine::rl_rules::pool::Placement;
         let mut undermere = Undermere::new(RunSeed(0));
         let grown = undermere.pool.entries.iter().find(|e| matches!(e.placed, Placed::Grown { .. })).expect("a grown piece").clone();
         let piece = grown.piece().expect("it lays a piece").to_string();
         let seeded = rl_engine::rl_rules::pool::Entry {
             name: "a seeded hall".into(),
-            placed: Placed::Seeded { piece: piece.clone(), placements: vec![Placement::Center], stairs: Wanted::Beyond },
+            placed: Placed::Seeded { piece: piece.clone(), placements: vec![Placement::Center], stairs: Stairs::Beyond },
             ..grown
         };
         undermere.pool.entries.push(seeded);
@@ -2194,7 +2194,7 @@ mod tests {
             // stairs on its own mark, which the pool's load holds to a bare
             // slot nothing fills; every other slot keeps clear of them.
             let within = picks.iter().find_map(|p| match undermere.pool.entries[p.entry].placed {
-                Placed::Seeded { stairs: Wanted::Within(c), .. } => Some(c),
+                Placed::Seeded { stairs: Stairs::Within(c), .. } => Some(c),
                 _ => None,
             });
             let grown = undermere.grow(floor, &drawn, &picks, RunSeed(s), ATTEMPTS);
