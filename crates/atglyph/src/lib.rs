@@ -8,8 +8,8 @@
 //! ```
 //!
 //! The generated game is one file: a floor of rooms lit by a torch, goblins
-//! that notice the player by sight and hunt where they last saw them, a
-//! status row and a log, in a window or, with `cargo run -- --tty`, in a
+//! that notice the player by sight and hunt where they last saw them,
+//! potions, a dagger and a coat to find, a status row and a log, in a window or, with `cargo run -- --tty`, in a
 //! text terminal. [The guide](https://rudehn.github.io/rl-engine/) builds
 //! the same game a step at a time, the first six steps playable in the
 //! browser.

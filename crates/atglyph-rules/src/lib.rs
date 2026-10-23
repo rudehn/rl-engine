@@ -7,23 +7,23 @@
 //! ```
 //! use atglyph_rules::{Named, Registry};
 //!
-//! struct Monster {
+//! struct Def {
 //!     name: &'static str,
 //!     hp: u32,
 //! }
 //!
-//! impl Named for Monster {
+//! impl Named for Def {
 //!     fn name(&self) -> &str {
 //!         self.name
 //!     }
 //! }
 //!
 //! // Definitions in order; each gets a dense id, and a name finds it.
-//! let monsters = Registry::from_defs(vec![Monster { name: "rat", hp: 3 }, Monster { name: "wolf", hp: 12 }]).unwrap();
-//! let wolf = monsters.expect("wolf");
-//! assert_eq!(monsters.get(wolf).hp, 12);
-//! assert_eq!(monsters.name(wolf), "wolf");
-//! assert!(monsters.id("dragon").is_none());
+//! let defs = Registry::from_defs(vec![Def { name: "small", hp: 3 }, Def { name: "large", hp: 12 }]).unwrap();
+//! let large = defs.expect("large");
+//! assert_eq!(defs.get(large).hp, 12);
+//! assert_eq!(defs.name(large), "large");
+//! assert!(defs.id("missing").is_none());
 //! ```
 //!
 //! Nothing here names a stat, a damage type, a status, a faction, an
