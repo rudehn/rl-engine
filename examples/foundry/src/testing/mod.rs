@@ -47,7 +47,7 @@ use rl_engine::rl_ui::UiPlugin;
 /// No title: it is added with the panels, so the run begins at startup,
 /// as it does for a player who picked New Game.
 pub fn headless(seed: RunSeed) -> App {
-    let mut app = headless_without_foundry(seed);
+    let mut app = beside_foundry(seed);
     app.add_plugins(crate::plugin::FoundryPlugin);
     app
 }
@@ -60,10 +60,21 @@ pub fn continued(text: &str) -> App {
 }
 
 /// [`headless`] without [`FoundryPlugin`](crate::plugin::FoundryPlugin):
-/// the engine as Foundry configures it and none of Foundry's own systems,
+/// the engine as Foundry configures it, the plugins
+/// [`add_engine`](crate::plugin::add_engine) adds included, and none of
+/// Foundry's own systems,
 /// so a test can tell which systems are Foundry's by what adding the
 /// plugin adds. Never plays: nothing starts a run.
 pub fn headless_without_foundry(seed: RunSeed) -> App {
+    let mut app = beside_foundry(seed);
+    crate::plugin::add_engine(&mut app);
+    app
+}
+
+/// The engine plugins `main.rs` adds beside
+/// [`FoundryPlugin`](crate::plugin::FoundryPlugin), configured as Foundry
+/// configures them.
+fn beside_foundry(seed: RunSeed) -> App {
     let mut app = rl_engine::testing::windowless(seed);
     app.add_plugins((
         CombatPlugin,

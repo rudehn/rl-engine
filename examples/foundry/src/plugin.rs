@@ -17,7 +17,7 @@
 //! startup.
 use bevy::prelude::*;
 use rl_engine::rl_bevy::plugin::{EngineSet, NewRun, PerceiveSet, ReactSet, ResetsOnNewRun, Turn, TurnSet};
-use rl_engine::rl_bevy::{AddSound, AddVerb, AddWork, LootPlugin, LootSet, PrefabPlugin, PrefabSet, PropsPlugin, RemainsPlugin};
+use rl_engine::rl_bevy::{AddSound, AddVerb, AddWork, AmmoPlugin, LootPlugin, LootSet, PrefabPlugin, PrefabSet, PropsPlugin, RemainsPlugin};
 use rl_engine::rl_ui::{AddModal, AimFire, AimThrow, NarrationViewPlugin, NarratorPlugin, Phrase, PlayerKeysSet, Tones, ViewSet};
 
 /// The narrator as Foundry words it, for `main.rs` and
@@ -35,12 +35,43 @@ pub fn narrator() -> NarratorPlugin {
         .phrase(Phrase::YouCannotUse, "You cannot use the {named}: {detail}.", Tones::BAD)
 }
 
+/// The engine's subsystems `FoundryPlugin` plays with beyond the ones
+/// `main.rs` and `testing::headless` add beside it, and nothing of
+/// Foundry's own: props and the wrecks a droid leaves, loot, the prefab
+/// slots and ammunition.
+///
+/// [`FoundryPlugin`] adds these before any system of its own, and the
+/// ordering test builds the game with these and without the plugin, so
+/// whatever the plugin adds beyond them is the game's to order.
+pub fn add_engine(app: &mut App) {
+    // Props and remains: the crates, the cable, the console and the wreck
+    // a droid leaves. `PropsPlugin` owns what a prop is and does; Foundry
+    // says where one stands, what goes in a container, and that a wreck is
+    // worth opening.
+    app.add_plugins((PropsPlugin, RemainsPlugin::naming("{what} remains")))
+        // Loot is the engine's: what lies on a deck when it is first
+        // entered, what a kill leaves and what a crate holds, each made by
+        // the armory.
+        .add_plugins(LootPlugin::<crate::gear::Armory>::default())
+        // Prefab slots are the engine's too: the lockers and crates the
+        // pieces name, the guard post's weapon and its guards, each put
+        // down on a deck's first arrival, the guards made by the roster
+        // and the items by the armory.
+        .add_plugins(PrefabPlugin::<crate::droids::Roster, crate::gear::Armory>::default())
+        // Ammunition: `spend_ammo` takes a slug off the bag a `Struck`
+        // just fired from, and `sync_ammo`, chained right after it in
+        // `AmmoSet::Resolve`, dries or reloads every `Ammo` item from
+        // whatever bag its wielder now has.
+        .add_plugins(AmmoPlugin);
+}
+
 /// Foundry's own systems: the run's start, and every reaction a task
-/// after this one adds.
+/// after this one adds, after the engine's plugins [`add_engine`] adds.
 pub struct FoundryPlugin;
 
 impl Plugin for FoundryPlugin {
     fn build(&self, app: &mut App) {
+        add_engine(app);
         app.add_systems(NewRun, crate::run::start);
         // A continued run: after the fresh start stood aside and the
         // mission was loaded, so what a restore writes into is there.
@@ -48,25 +79,14 @@ impl Plugin for FoundryPlugin {
         // What a run is saved as, and when: on the way out and on every
         // deck arrival.
         crate::save::register(app);
-        // Props and remains: the crates, the cable, the console and the
-        // wreck a droid leaves. `PropsPlugin` owns what a prop is and does;
-        // Foundry says where one stands, what goes in a container, and that
-        // a wreck is worth opening.
-        app.add_plugins((PropsPlugin, RemainsPlugin::naming("{what} remains")));
         // Work, for the repair drone: the engine keeps its turns and its
         // row; `droids::repair` says which wrecks and what finishing means.
         app.add_work(crate::droids::REPAIRING).add_work(crate::droids::SIGNALLING);
         app.add_systems(Turn, crate::droids::sense_wrecks.in_set(PerceiveSet::Annotate))
             .add_systems(Turn, crate::droids::rebuild_wrecks.in_set(TurnSet::React));
-        // Loot is the engine's: what lies on a deck when it is first
-        // entered, what a kill leaves and what a crate holds, each made by
-        // the armory, which is loaded once before any run begins.
-        app.add_plugins(LootPlugin::<crate::gear::Armory>::default()).add_systems(PreStartup, crate::gear::load_armory);
-        // Prefab slots are the engine's too: the lockers and crates the
-        // pieces name, the guard post's weapon and its guards, each put
-        // down on a deck's first arrival, the guards made by the roster
-        // and the items by the armory.
-        app.add_plugins(PrefabPlugin::<crate::droids::Roster, crate::gear::Armory>::default());
+        // The armory the engine's loot and prefab slots make things by,
+        // loaded once before any run begins.
+        app.add_systems(PreStartup, crate::gear::load_armory);
         app.add_systems(Turn, crate::props::wreck_the_dead.in_set(TurnSet::React));
         app.add_systems(Turn, crate::props::spend_the_keycard.in_set(TurnSet::React));
         // The commando fades while a cloak hides them, in the pass it went
@@ -88,23 +108,16 @@ impl Plugin for FoundryPlugin {
         // `fired` for the turn that is only just starting, and the turn
         // that actually just ended quietly would wrongly skip its vent.
         app.add_systems(Turn, (crate::heat::vent_heat, crate::heat::heat_on_struck).chain().in_set(TurnSet::React));
-        // Ammunition is the engine's own plugin now: `spend_ammo` takes a
-        // slug off the bag a `Struck` just fired from, and `sync_ammo`,
-        // chained right after it in `AmmoSet::Resolve`, reads whatever bag
-        // every `Ammo` item's wielder now has and dries or reloads from it.
-        // Unordered against the heat chain above, on purpose: `Heat` and
-        // `Ammo` never share an item (`gear::Armory::load` refuses a file
-        // that tries), so neither economy ever touches an entity the
+        // Ammunition is the engine's own plugin, added by `add_engine`,
+        // and unordered against the heat chain above on purpose: `Heat`
+        // and `Ammo` never share an item (`gear::Armory::load` refuses a
+        // file that tries), so neither economy ever touches an entity the
         // other's systems do. Nor do the two ever need ordering against a
         // *different* actor's turn the way heat's pair does against a
         // `TurnEnd` the scheduler can deal in the same pass as the next
-        // turn: `Resolution::claim` (crates/rl-bevy/src/turn.rs, around
-        // line 212) is `Acting::claim_action` underneath, and it lets one
-        // actor resolve at most one action per pass, so one actor's own
-        // shot and its own bag changing (dropping, picking up, equipping)
-        // can never land in the same pass to race each other in the first
-        // place.
-        app.add_plugins(rl_engine::rl_bevy::AmmoPlugin);
+        // turn: `Resolution::claim` lets one actor resolve at most one
+        // action per pass, so one actor's own shot and its own bag
+        // changing can never land in the same pass to race each other.
         // Correct with or without a gear panel: `note_heat` reads
         // `GearView` as `Option<ResMut<_>>` and does nothing until a game
         // adds `GearViewPlugin`, as the binary's `GearPanel` does and a
