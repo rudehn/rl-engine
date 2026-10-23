@@ -404,6 +404,11 @@ Status: adopted, revised 2026-09-09 after Nate's review; being built.
   The `Acting` allowance that admitted any pair is narrowed to systems in `TurnSet::Resolve` and `TurnSet::Sweep`.
   The engine's test found three unordered pairs no game's test could see, and they are ordered: a worn thing's pulse after a use aimed somewhere lands, the cures of things no longer worn before stealth's, and gear folded into the stats before a sleeper wakes.
   57 system functions went crate-private, and `headless_app` moved to `rl_bevy::testing`.
+- 2026-10-23: one meaning per name (usability branch 15): no public type name is declared twice under `crates/`, and `scripts/check-names.sh`, in the gate and in CI, keeps it so; nineteen names that two crates shared are each one type's, and the API review's renames that misled went with them.
+  `docs/TODO.md` item 15 is closed: the two private types named for a theme word are `ChosenAttack` and `Wielded`.
+  Item 27 loses `Reach` and `Secret`: the one `Reach` left is `atglyph_rules::arms::Reach`, and the hidden cell a pass publishes is mapgen's `SecretCell` beside atglyph-bevy's `Secret`.
+  Item 35 loses three bullets of `docs/reviews/engine_api.md` section D: "hold" means only the title's `HoldStart` (`CueWait`, `skips_turns`, `WornStatuses`, `innate_statuses`), ability's `Offered` is `UsableAbilities`, and the `atglyph-rules` clashes are gone.
+  Where the plan's new name said less than the type's doc, the doc won: `ParticleLook`, `JoinStamp`, `BenchedAttack`, `SpotBonus` and `LastTactic`, each with its reason in its commit and its `CHANGELOG.md` line.
 - Next: the rest of the deferred pieces (nights on Corsair's surface, scripted encounters, and phase H of `docs/design/ui.md`: Bevy UI presenters over the panel views, deferred until a game wants wrapping, hover or sub-cell bars), then the living-world-rogue conversion once the engine is done (Nate, 2026-09-10).
   That conversion keeps its overworld token movement, so `rl-overworld` regains travel on the map alongside the portal picker, and its maps stream as chunks.
   The work found by the 2026-09-15 architecture review and not yet started is listed in `docs/TODO.md`.

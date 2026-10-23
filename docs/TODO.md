@@ -38,7 +38,6 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 12 | `Rooms` can run out of attempts on a small map | 3 | low | low |
 | 13 | The `Doors` pass hangs two doors back to back | 3 | low | low |
 | 14 | `HalveIfBlocked` can never fire | 3 | low | low |
-| 15 | Two engine types are named for a theme word | 4 | low | low |
 | 16 | A light that moved costs a second cast, unmeasured | 8 | low | low |
 | 17 | Split `crates/atglyph-bevy/src/ability.rs` | 4 | low | medium |
 | 18 | Tactics that are missing, and weights that are fixed | 2 | medium | medium |
@@ -160,13 +159,6 @@ The five items that opened this section were built in the six stages of `docs/de
   `docs/guide/src/systems/combat.md` says that out loud and gives the workaround, rolling the block inside a stage of the game's own, which is correct and is why this is an engine gap rather than a documentation one.
   Either the stage goes, or `Defender` gains a way to be filled: a component `apply_damage` reads, or a seam that lets one stage set the flag for a later one.
   Found on 2026-09-22 while writing that page.
-- **Two engine types are named for a theme word.**
-  `crates/atglyph-ui/src/narrate.rs:376` declares `type Weapons<'w, 's>`, the query for items that strike or shoot when wielded, which the collector reads to tell a wield from a wearing; `crates/atglyph-bevy/src/combat.rs:510` declares `struct Weapon`, the attack one blow is made with as `Loadout` chose it.
-  `crates/atglyph-ui/src/lib.rs` states the rule the first one breaks two files away in the same crate, under "Rules": "No engine type, doc or constant says weapon, spell or monster", and `AGENTS.md` forbids the vocabulary outright.
-  Both are private and both behave correctly, so nothing is wrong at runtime; what is wrong is that the crate that states the rule is a crate that breaks it, and a reader who meets the type before the rule learns the wrong lesson.
-  A sweep of `crates/` for declarations found these two and nothing else outside test modules, so it is two renames: the engine's own words are to hand, since the phrases either side of the narrator's call site are `YouWield` and `YouWear` and the local it fills is already `wielded`, and combat's struct is what `Loadout` returns.
-  The same words do appear in doc comments across several crates, as illustration of what the engine refuses to model. That is settled practice rather than part of this item, and treating it as part of it would make the item the whole codebase.
-  Found on 2026-09-22 while writing `docs/guide/src/systems/narration.md`.
 
 ## 4. Simplify
 
@@ -181,7 +173,7 @@ The five items that opened this section were built in the six stages of `docs/de
   `crates/atglyph-bevy/src/minds.rs` keeps the read-only context, `at`, `reach` and `origin`, in the same resource as the snapshot being filled, so every contributor builds an intermediate `Vec` and `extend`s it at the end purely to satisfy the borrow checker.
   Splitting the two deletes that pattern from six call sites in five crates' worth of subsystems.
 - **Split `crates/atglyph-bevy/src/ability.rs`.**
-  At 1,562 lines it holds the state components, the effect registry, the gate, payment, `Offered`, the `Known` refresh, airborne landings and cue emission.
+  At 1,562 lines it holds the state components, the effect registry, the gate, payment, `UsableAbilities`, the `Known` refresh, airborne landings and cue emission.
   State, registry and resolver submodules, and named `SystemParam`s in place of the four-tuple aliases `Spender` and `Bearing` that `gate` and `pay` destructure by position.
 - **`TargetView` holds the enum it keeps reconstructing.**
   `ability`, `throwing` and `firing` are three fields for one sum type, and `Pointing::of` rebuilds it every frame (`crates/atglyph-ui/src/view/target.rs`).
@@ -226,6 +218,9 @@ The design docs still owed, and which files a slice owes, are in `AGENTS.md`.
 - **Doc comments at `turn.rs` density.**
   Many carry the history of how they came to be.
   That belongs in the plan's progress log; the comment says what and why-not.
+- **A glossary page in the guide.**
+  The engine's own words in one place for a reader who meets them out of order: `MapId` and what hangs off it (`OnMap`, `PlaceMap`, `WorldMap`, a place's seed), the turn sets and the frame's sets, cues and `CueWait`, facets, loadouts, `Bestows`, `Provenance`, and every name usability branch 15 changed, from `CHANGELOG.md`'s lines for it.
+  For the release's documentation pass.
 - **A start helper.**
   A game begins with seven incantations: the plugin group, the seed, the tiles, their appearance, `WorldMap::new(tables)`, `PlaceRulesRes`, a warp, and then the state flip to `Playing`.
   One `start_in_place(player, map)` command could take the last two, and the tutorial's chapter 1 shrinks with it.
@@ -267,7 +262,7 @@ The run's teardown was a third, and stopped being one on 2026-09-22, when `Reset
   A registry that let each plugin declare its own capture, the shape the minds' perceive stage uses, is the larger version of this and is not obviously worth its cost: it would buy `atglyph-save` out of depending on six subsystems, and it would buy nothing else, since nothing is actually falling through today.
   Write the paragraph first and see whether the registry still looks necessary afterwards.
 - **The narrator hears what registers itself.**
-  `Heard` in `crates/atglyph-ui/src/narrate.rs` is a `SystemParam` holding twelve `MessageReader`s, one per engine subsystem, feeding a closed `Phrase` enum and a `Phrasebook` of defaults.
+  `NarratedEvents` in `crates/atglyph-ui/src/narrate.rs` is a `SystemParam` holding twelve `MessageReader`s, one per engine subsystem, feeding a closed `Phrase` enum and a `Phrasebook` of defaults.
   Adding a subsystem to `atglyph-bevy` therefore means editing `atglyph-ui`: a reader, a variant, a template.
   The enum being closed is defensible, since it enumerates the events the engine itself raises, but the *reading* need not be: a `app.narrates::<LightEvent>(..)` that turns one message kind into rows would let each subsystem carry its own phrases and its own defaults.
 - **A game cannot refuse an offer at the gate.**
@@ -409,7 +404,6 @@ Left over from the terminal front end, usability branch 08, on 2026-10-22.
 - **One type per concept across the tier 1 crates.**
   The content files' twins are gone (usability branch 10): `atglyph-rules` depends on `atglyph-mapgen` and reads its files straight into the mapgen types, and growing a place from them is `atglyph_rules::grow` with a `PrefabLibrary`.
   Left: loot as a `BandedTable<K>` with tags, and one actor handle where statuses use a bare `u64`.
-  The same-named pairs, `Reach` (`atglyph_rules::arms::Reach` beside atglyph-bevy's `combat::Reach`) and `Secret`, are usability branch 15's renames.
 - **The patterns written four times.**
   The faction relation where `atglyph_rules::faction::stance` is not yet called (atglyph-ui's narrator, inspect and nearby views, three Undermere files, `Bystanders::relation`), the interners, the list cursor, key binding, moving an entity, the place struct, the per-map stash, stack split and merge, breadth-first steps, the lingering markers.
 - **Continuing a run is the engine's.**
@@ -417,13 +411,14 @@ Left over from the terminal front end, usability branch 08, on 2026-10-22.
 - **Saved kinds keyed by a name the type states.**
   `atglyph-save/src/run.rs` keys a saved component by its short `type_name`, so a rename orphans old saves silently; a `const KEY` on the `Saveable` traits, defaulting to today's names so no save moves.
 - **The helpers a game copies because they are private.**
-  `walk_through_doors`, the cut check, `Opening::joins`, `Spot::glyph`, `Afflict::new`, `Stack::of`, `Places::new`.
+  `walk_through_doors`, the cut check, `Opening::joins`, `Spot::glyph`, `ApplyStatus::new`, `Stack::of`, `Places::new`.
 - **One root-and-prelude rule per crate.**
   The root re-exports every type a game names and the prelude is a subset; Undermere still writes `atglyph_ui::view::inspect::inspect_modal`, and atglyph-save's prelude still carries `EngineSave`, `SaveId` and `Stash`.
 - **The rule numbers, closed lists and English the engine still holds.**
   A third of range, `SLEEPER_REACH`, the notice and hearing defaults; `WasLiving`; `MenuItem`'s labels and the inspect and sheet lines; `CorePlugin`'s minds and intents, and the effects Fire, Gas and Noise register by themselves.
 - **The API review's renames.**
   Section D of the review, batched by crate.
+  Usability branch 15 did three of its bullets: "hold" means only the title's `HoldStart`, ability's `Offered` is `UsableAbilities`, and the clashes in `atglyph-rules` (two `Placed`, two `Pick`, `accuracy::Line`) are gone; the rest stands.
 
 ## Tracked elsewhere
 

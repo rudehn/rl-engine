@@ -874,7 +874,7 @@ pub(crate) fn end_unworn_statuses(
 /// for as long as it is worn, which `put_on_worn_statuses` puts on and
 /// `end_unworn_statuses` takes off. Put on by
 /// [`insert_parts`](crate::parts::insert_parts) from
-/// [`ItemParts::holds`](crate::parts::ItemParts::holds).
+/// [`ItemParts::worn_statuses`](crate::parts::ItemParts::worn_statuses).
 #[derive(Component, Debug, Clone, Default, PartialEq, Eq)]
 pub struct WornStatuses(pub Vec<StatusId>);
 
