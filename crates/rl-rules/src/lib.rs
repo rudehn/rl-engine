@@ -74,6 +74,8 @@
 //! - [`charges`]: what spending a charge and counting a refill period come
 //!   to, as arithmetic on counts and hundredths.
 //! - [`effects`]: who an effect is done by when a thing lands.
+//! - [`items`]: what picking up, dropping, wearing and using a thing comes
+//!   to, decided on facts the resolver gathers.
 //! - [`trade`]: what a deal comes to, why it is refused and which pieces a
 //!   purse is drawn down by.
 //! - [`travel`]: who goes through a way behind whoever took it.
@@ -84,7 +86,7 @@
 //! dependency weight and these all weigh the same: core, grid, serde and
 //! ron. The modules keep the seams the crates had. The older items are also
 //! re-exported at the root; the rule functions of [`arms`], [`bump`],
-//! [`charges`], [`effects`], [`tiles`], [`trade`] and [`travel`], and the
+//! [`charges`], [`effects`], [`items`], [`tiles`], [`trade`] and [`travel`], and the
 //! free functions the other modules gained with them, are reached through
 //! their module path.
 //!
@@ -111,6 +113,7 @@ pub mod faction;
 pub mod fire;
 pub mod forecast;
 pub mod gas;
+pub mod items;
 pub mod layout;
 pub mod loot;
 pub mod namegen;

@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `rl_rules::items::resolve_item` decides what picking up, dropping, wearing and using a thing comes to, the rule `ItemsPlugin` applies, so a front end with no `App` uses the same rule: an `ItemAsk` and the `ItemFacts` gathered for it in, and the `ItemOutcome`s in the order they are reported, or the `ItemRefusal` saying why, out. `Equipped` is now marked changed only when something went on or came off, so a refused equip or a drop of a thing not worn no longer folds the wearer's gear again.
+  To change: nothing.
+
 - `ItemRules` and `RevivalRules` hold what equipping from the ground costs and how far off a revived body may stand, the numbers the engine fixed: `ItemRules { equip_from_ground }`, by default half again a step, inserted by `ItemsPlugin`, and `RevivalRules { standing_room }`, by default 2, inserted by `RemainsPlugin` and read by `revive`, which uses the default in a world without it.
   To change: nothing; insert either to change it.
 

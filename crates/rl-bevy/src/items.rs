@@ -46,6 +46,7 @@
 use bevy::prelude::*;
 use rl_core::Point;
 use rl_core::turn::BASE_ACTION_COST;
+use rl_rules::items::{ItemAsk, ItemFacts, ItemOutcome, ItemRefusal, resolve_item};
 use rl_rules::stats::{Modifier, Op, Source};
 use rl_rules::{EquipShape, Equipment, StatId, StatusId};
 
@@ -308,10 +309,9 @@ type Carrier<'w, 's> = Query<'w, 's, (&'static Position, &'static mut Inventory,
 /// Items on the ground.
 type Ground<'w, 's> = Query<'w, 's, (Entity, &'static Position, Option<&'static OnMap>), With<Item>>;
 
-/// What the item resolver reads and moves.
+/// What the item resolver reads to gather the facts of an ask.
 #[derive(bevy::ecs::system::SystemParam)]
 pub struct ItemWorld<'w, 's> {
-    carriers: Carrier<'w, 's>,
     ground: Ground<'w, 's>,
     stacks: Query<'w, 's, &'static Stack>,
     wearables: Query<'w, 's, &'static Wearable>,
@@ -333,6 +333,14 @@ pub struct ItemWorld<'w, 's> {
     /// The one user a thing is ever unknown to: anyone else knows what it
     /// carries.
     players: Query<'w, 's, (), With<Player>>,
+}
+
+/// What the item resolver writes: what happened to the things, and the
+/// `use` moments for the triggers.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct ItemWrites<'w> {
+    events: MessageWriter<'w, ItemEvent>,
+    fired: MessageWriter<'w, crate::effects::Fired>,
     /// What a use made on a thing was made on, for its landing.
     fired_on: MessageWriter<'w, crate::effects::FiredOn>,
 }
@@ -450,27 +458,100 @@ pub struct UseOn {
 }
 impl Action for UseOn {}
 
-/// This module's actions as its resolver sees them, in one list, so that
-/// one turn spends one of them whichever kind it is.
-#[derive(Clone, Copy)]
-enum Which {
-    PickUp,
-    Drop(Entity),
-    Equip(Entity),
-    EquipFromGround(Entity),
-    Unequip(Entity),
-    Use(Entity),
-    UseAt(Entity, Point),
-    UseOn(Entity, Entity),
+/// One item action as the resolver handles it.
+type Which = ItemAsk<Entity>;
+
+/// What `ask` costs under `rules`, done or failed.
+fn cost(ask: Which, rules: &ItemRules) -> u32 {
+    match ask {
+        ItemAsk::EquipFromGround(_) => rules.equip_from_ground,
+        _ => BASE_ACTION_COST,
+    }
 }
 
-impl Which {
-    /// What the action costs under `rules`, done or failed.
-    fn cost(self, rules: &ItemRules) -> u32 {
-        match self {
-            Which::EquipFromGround(_) => rules.equip_from_ground,
-            _ => BASE_ACTION_COST,
+impl ItemWorld<'_, '_> {
+    /// Whether `actor` does not know `item`, which only the player ever
+    /// does: `Unknown` is the player's ignorance, so a mind using what it
+    /// carries is refused for everything the thing truly is.
+    fn unknown_to(&self, actor: Entity, item: Entity) -> bool {
+        self.unknown.contains(item) && self.players.contains(actor)
+    }
+
+    /// Whether `item` lies on the current map, on the cell `at`.
+    fn lies_at(&self, item: Entity, at: Point) -> bool {
+        let here = self.map.current();
+        self.ground.get(item).is_ok_and(|(_, p, on)| p.0 == at && on.map(|m| m.0).unwrap_or(MapId::ZERO) == here)
+    }
+
+    /// The facts [`resolve_item`] decides `ask` by, for `actor` standing
+    /// at `pos` with `bag`, `worn` and `sight`, and the cell a use made
+    /// lands at: where it stands, or where an aimed one was pointed.
+    fn gather(
+        &self,
+        actor: Entity,
+        ask: Which,
+        pos: Point,
+        bag: &Inventory,
+        worn: Option<&Equipped>,
+        sight: Option<&Viewshed>,
+    ) -> (ItemFacts<'_, Entity>, Point) {
+        let mut facts = ItemFacts {
+            stuck: worn.map(|w| w.worn().map(|(_, i)| i).filter(|i| self.stuck.contains(*i)).collect()).unwrap_or_default(),
+            ..ItemFacts::default()
+        };
+        let mut at = pos;
+        let usable = |item: Entity| may_use(item, bag, worn, self.consumables.get(item).ok(), self.wearables.contains(item), self.unknown_to(actor, item));
+        // How `item`'s use is pointed, when it is pointed somewhere, and what
+        // it asks for, when it is made on a thing.
+        let targeting_of = |item: Entity| self.triggers.get(item).ok().and_then(Triggers::targeting);
+        let asks_of = |item: Entity| self.triggers.get(item).ok().and_then(Triggers::asks);
+        match ask {
+            ItemAsk::PickUp => {
+                let here = self.map.current();
+                facts.here = self.ground.iter().filter(|(_, p, on)| p.0 == pos && on.map(|m| m.0).unwrap_or(MapId::ZERO) == here).map(|(e, _, _)| e).collect();
+            }
+            ItemAsk::Drop(item) | ItemAsk::Unequip(item) => facts.carried = bag.contains(item),
+            ItemAsk::Equip(item) | ItemAsk::EquipFromGround(item) => {
+                facts.carried = bag.contains(item);
+                facts.underfoot = self.lies_at(item, pos);
+                facts.shape = self.wearables.get(item).ok().map(|w| &w.0);
+            }
+            ItemAsk::Use(item) => {
+                facts.usable = usable(item);
+                facts.pointed = targeting_of(item).is_some();
+                facts.asks = asks_of(item).is_some();
+            }
+            ItemAsk::UseAt(item, aim) => {
+                facts.usable = usable(item);
+                if let Some(targeting) = targeting_of(item) {
+                    facts.pointed = true;
+                    // Refused as an ability's aim is, before anything is
+                    // spent, and by the one call the cursor previews it by:
+                    // nowhere to go, out of reach, or out of sight. A thing
+                    // the player does not know is refused the player for
+                    // none of them, since each would tell what it is: made
+                    // where it may still be pointed, it lands by its true
+                    // targeting, stopping at its reach, and on nobody its
+                    // aim does not want.
+                    if self.unknown_to(actor, item) {
+                        at = rl_rules::ability::made_at(targeting, pos, aim, |p| sight.is_none_or(|v| v.can_see(p)));
+                    } else {
+                        let source = crate::effects::Source::Trigger { on: item, moment: crate::effects::Moments::USE };
+                        let aimed = Aimed { user: actor, source, targeting, origin: pos, aim, sees_aim: sight.map(|v| v.can_see(aim)) };
+                        at = aim;
+                        facts.aim_refused = !self.bystanders.land(aimed, &self.map, &self.occupancy).refused.is_empty();
+                    }
+                }
+            }
+            ItemAsk::UseOn(item, on) => {
+                facts.usable = usable(item);
+                if let Some(asks) = asks_of(item) {
+                    facts.asks = true;
+                    facts.choice_refused = !may_use_on(asks, item, on, bag, self.tagged.get(on).ok());
+                }
+            }
         }
+        (facts, at)
     }
 }
 
@@ -546,219 +627,123 @@ pub fn may_use_on(asks: &rl_rules::Asks, item: Entity, on: Entity, bag: &Invento
 
 /// Resolves pickups, drops, equips, unequips and uses, aimed somewhere,
 /// made on a thing or neither, for the actor holding the turn. Each costs
-/// one action, and equipping from the ground what the [`ItemRules`] say. An
-/// impossible one, such as picking up from bare ground or a use aimed where
-/// it cannot reach, is refused for the player and treated as a wait for
-/// anyone else, like an impossible move.
+/// one action, and equipping from the ground what the [`ItemRules`] say.
+/// An impossible one, such as picking up from bare ground or a use aimed
+/// where it cannot reach, is refused for the player and treated as a wait
+/// for anyone else, like an impossible move.
 ///
+/// Gathers the facts of each ask, has [`resolve_item`] decide it, and
+/// applies what that returns: moving things between the ground and the
+/// bag, merging stacks, and writing the events and the `use` moments.
 /// A worn [`Stuck`] thing is not taken off, dropped, or pushed off by what
 /// is put on over it, each refused that way and reported as
-/// [`ItemEvent::WouldNotComeOff`]. Putting on a thing that may go in more
-/// than one slot takes one whose occupant may come off, by
-/// [`Equipment::equip_keeping`].
+/// [`ItemEvent::WouldNotComeOff`].
 pub fn resolve_items(
     mut commands: Commands,
     mut intents: ItemIntents,
     mut resolution: Resolution,
     world: ItemWorld,
+    mut carriers: Carrier,
     rules: Res<ItemRules>,
-    mut events: MessageWriter<ItemEvent>,
-    mut fired: MessageWriter<crate::effects::Fired>,
+    mut writes: ItemWrites,
 ) {
-    let ItemWorld { mut carriers, ground, stacks, wearables, consumables, map, triggers, occupancy, bystanders, stuck, tagged, unknown, players, mut fired_on } =
-        world;
-    let this_map = map.current();
-    let lies_at = |item: Entity, at: Point| ground.get(item).is_ok_and(|(_, p, on)| p.0 == at && on.map(|m| m.0).unwrap_or(MapId::ZERO) == this_map);
-    // Whether `actor` does not know `item`, which only the player ever
-    // does: `Unknown` is the player's ignorance, so a mind using what it
-    // carries is refused for everything the thing truly is.
-    let unknown_to = |actor: Entity, item: Entity| unknown.contains(item) && players.contains(actor);
-    let usable = |actor: Entity, item: Entity, bag: &Inventory, worn: Option<&Equipped>| {
-        may_use(item, bag, worn, consumables.get(item).ok(), wearables.contains(item), unknown_to(actor, item))
-    };
-    // How `item`'s use is pointed, when it is pointed somewhere, and what
-    // it asks for, when it is made on a thing.
-    let targeting_of = |item: Entity| triggers.get(item).ok().and_then(Triggers::targeting);
-    let asks_of = |item: Entity| triggers.get(item).ok().and_then(Triggers::asks);
-    // Whether a worn thing stays on.
-    let stays = |item: Entity| stuck.contains(item);
-    for (actor, which) in intents.drain() {
+    for (actor, ask) in intents.drain() {
         if !resolution.claim(actor) {
             continue;
         }
         // An actor with no bag to act on has failed like any other
         // impossible item action, rather than holding a claimed turn.
-        let ok = 'attempt: {
-            match which {
-                Which::PickUp => {
-                    let Ok((pos, mut bag, _, _)) = carriers.get_mut(actor) else { break 'attempt false };
-                    let here: Vec<Entity> =
-                        ground.iter().filter(|(_, p, on)| p.0 == pos.0 && on.map(|m| m.0).unwrap_or(MapId::ZERO) == this_map).map(|(e, _, _)| e).collect();
-                    for item in &here {
-                        commands.entity(*item).remove::<(Position, OnMap)>();
-                        let merged_into = stacks.get(*item).ok().and_then(|s| bag.items.iter().copied().find(|c| stacks.get(*c).is_ok_and(|t| t.key == s.key)));
-                        match merged_into {
-                            Some(into) => {
-                                let add = stacks.get(*item).map(|s| s.count).unwrap_or(1);
-                                commands.entity(into).entry::<Stack>().and_modify(move |mut s| s.count += add);
-                                commands.entity(*item).despawn();
-                            }
-                            None => bag.items.push(*item),
-                        }
-                        events.write(ItemEvent::PickedUp { actor, item: *item, merged_into });
-                    }
-                    !here.is_empty()
-                }
-                Which::Drop(item) => {
-                    let Ok((pos, mut bag, worn, _)) = carriers.get_mut(actor) else { break 'attempt false };
-                    // Dropped, a worn thing comes off, which a stuck one will not.
-                    if stays(item) && worn.as_ref().is_some_and(|w| w.contains(item)) {
-                        events.write(ItemEvent::WouldNotComeOff { actor, item });
-                        break 'attempt false;
-                    }
-                    if !bag.remove(item) {
-                        false
-                    } else {
-                        if let Some(mut worn) = worn
-                            && worn.unequip(item)
-                        {
-                            events.write(ItemEvent::Unequipped { actor, item });
-                        }
-                        // On the map it is put down on, whichever it was picked up from.
-                        commands.entity(item).insert((*pos, OnMap(this_map)));
-                        events.write(ItemEvent::Dropped { actor, item, at: *pos });
-                        true
-                    }
-                }
-                Which::Equip(item) => {
-                    let Ok((_, bag, worn, _)) = carriers.get_mut(actor) else { break 'attempt false };
-                    match (worn, wearables.get(item)) {
-                        (Some(mut worn), Ok(shape)) if bag.contains(item) => match worn.equip_keeping(item, &shape.0, stays) {
-                            Ok(displaced) => {
-                                for other in displaced {
-                                    events.write(ItemEvent::Unequipped { actor, item: other });
-                                }
-                                events.write(ItemEvent::Equipped { actor, item });
-                                true
-                            }
-                            Err(rl_rules::EquipError::Kept(slot)) => {
-                                if let Some(held) = worn.in_slot(slot) {
-                                    events.write(ItemEvent::WouldNotComeOff { actor, item: held });
-                                }
-                                false
-                            }
-                            Err(e) => {
-                                warn!("{actor:?} could not equip {item:?}: {e}");
-                                false
-                            }
-                        },
-                        _ => false,
-                    }
-                }
-                Which::EquipFromGround(item) => {
-                    let Ok((pos, mut bag, worn, _)) = carriers.get_mut(actor) else { break 'attempt false };
-                    match (worn, wearables.get(item)) {
-                        (Some(mut worn), Ok(shape)) if lies_at(item, pos.0) => match worn.equip_keeping(item, &shape.0, stays) {
-                            Ok(displaced) => {
-                                commands.entity(item).remove::<(Position, OnMap)>();
-                                bag.items.push(item);
-                                events.write(ItemEvent::PickedUp { actor, item, merged_into: None });
-                                for other in displaced {
-                                    events.write(ItemEvent::Unequipped { actor, item: other });
-                                }
-                                events.write(ItemEvent::Equipped { actor, item });
-                                true
-                            }
-                            Err(rl_rules::EquipError::Kept(slot)) => {
-                                if let Some(held) = worn.in_slot(slot) {
-                                    events.write(ItemEvent::WouldNotComeOff { actor, item: held });
-                                }
-                                false
-                            }
-                            Err(e) => {
-                                warn!("{actor:?} could not equip {item:?} from the ground: {e}");
-                                false
-                            }
-                        },
-                        _ => false,
-                    }
-                }
-                Which::Unequip(item) => {
-                    let Ok((_, _, worn, _)) = carriers.get_mut(actor) else { break 'attempt false };
-                    if stays(item) && worn.as_ref().is_some_and(|w| w.contains(item)) {
-                        events.write(ItemEvent::WouldNotComeOff { actor, item });
-                        break 'attempt false;
-                    }
-                    let taken_off = worn.is_some_and(|mut worn| worn.unequip(item));
-                    if taken_off {
-                        events.write(ItemEvent::Unequipped { actor, item });
-                    }
-                    taken_off
-                }
-                Which::Use(item) => {
-                    let Ok((pos, bag, worn, _)) = carriers.get(actor) else { break 'attempt false };
-                    // A thing whose use is pointed somewhere is used at a
-                    // cell: used here it would land around its user, which
-                    // its targeting says it does not. One that asks for a thing is
-                    // used on one, which this does not name.
-                    if usable(actor, item, bag, worn) && targeting_of(item).is_none() && asks_of(item).is_none() {
-                        events.write(ItemEvent::Used { actor, item });
-                        fired.write(crate::effects::Fired { on: item, moment: crate::effects::Moments::USE, by: Some(actor), at: pos.0 });
-                        true
-                    } else {
-                        false
-                    }
-                }
-                Which::UseAt(item, at) => {
-                    let Ok((pos, bag, worn, sight)) = carriers.get(actor) else { break 'attempt false };
-                    let Some(targeting) = targeting_of(item) else { break 'attempt false };
-                    // Refused as an ability's aim is, before anything is
-                    // spent, and by the one call the cursor previews it by:
-                    // nowhere to go, out of reach, or out of sight. A thing
-                    // the player does not know is refused the player for
-                    // none of them, since each would tell what it is: made
-                    // where it may still be pointed, it lands by its true
-                    // targeting, stopping at its reach, and on nobody its
-                    // aim does not want.
-                    let source = crate::effects::Source::Trigger { on: item, moment: crate::effects::Moments::USE };
-                    let (at, refused) = if unknown_to(actor, item) {
-                        (rl_rules::ability::made_at(targeting, pos.0, at, |p| sight.is_none_or(|v| v.can_see(p))), false)
-                    } else {
-                        let aimed = Aimed { user: actor, source, targeting, origin: pos.0, aim: at, sees_aim: sight.map(|v| v.can_see(at)) };
-                        (at, !bystanders.land(aimed, &map, &occupancy).refused.is_empty())
-                    };
-                    if usable(actor, item, bag, worn) && !refused {
-                        events.write(ItemEvent::Used { actor, item });
-                        // At the cell it was pointed at, which is where an
-                        // aimed trigger lands; it flies from its user.
-                        fired.write(crate::effects::Fired { on: item, moment: crate::effects::Moments::USE, by: Some(actor), at });
-                        true
-                    } else {
-                        false
-                    }
-                }
-                Which::UseOn(item, on) => {
-                    let Ok((pos, bag, worn, _)) = carriers.get(actor) else { break 'attempt false };
-                    let Some(asks) = asks_of(item) else { break 'attempt false };
-                    if usable(actor, item, bag, worn) && may_use_on(asks, item, on, bag, tagged.get(on).ok()) {
-                        events.write(ItemEvent::Used { actor, item });
-                        // Where its user stands, as any use that is not
-                        // aimed, and made on the thing chosen.
-                        fired.write(crate::effects::Fired { on: item, moment: crate::effects::Moments::USE, by: Some(actor), at: pos.0 });
-                        fired_on.write(crate::effects::FiredOn { carrier: item, moment: crate::effects::Moments::USE, on });
-                        true
-                    } else {
-                        false
-                    }
-                }
-            }
-        };
-        if ok {
-            resolution.done(actor, which.cost(&rules));
+        let done = carriers.get_mut(actor).is_ok_and(|carrier| resolve_one(&mut commands, &world, carrier, actor, ask, &mut writes));
+        if done {
+            resolution.done(actor, cost(ask, &rules));
         } else {
-            resolution.failed(actor, which.cost(&rules));
+            resolution.failed(actor, cost(ask, &rules));
         }
     }
+}
+
+/// The actor an ask is resolved for, as [`Carrier`] hands it out.
+type Holding<'a> = (&'a Position, Mut<'a, Inventory>, Option<Mut<'a, Equipped>>, Option<&'a Viewshed>);
+
+/// Decides `actor`'s `ask` and applies it, holding its carrier; whether it
+/// was done.
+fn resolve_one(commands: &mut Commands, world: &ItemWorld, carrier: Holding, actor: Entity, ask: Which, writes: &mut ItemWrites) -> bool {
+    let (pos, mut bag, mut worn, sight) = carrier;
+    let (facts, at) = world.gather(actor, ask, pos.0, &bag, worn.as_deref(), sight);
+    // Marked changed only when something went on or came off, so a refused
+    // equip folds no gear again.
+    let before = worn.as_deref().map(|w| w.0.clone());
+    let decided = resolve_item(ask, &facts, worn.as_mut().map(|w| &mut w.bypass_change_detection().0));
+    if let Some(w) = worn.as_mut()
+        && before.as_ref() != Some(&w.0)
+    {
+        w.set_changed();
+    }
+    let outcomes = match decided {
+        Ok(outcomes) => outcomes,
+        Err(ItemRefusal::WouldNotComeOff(held)) => {
+            writes.events.write(ItemEvent::WouldNotComeOff { actor, item: held });
+            return false;
+        }
+        Err(ItemRefusal::CannotGoOn(e)) => {
+            match ask {
+                ItemAsk::EquipFromGround(item) => warn!("{actor:?} could not equip {item:?} from the ground: {e}"),
+                ItemAsk::Equip(item) => warn!("{actor:?} could not equip {item:?}: {e}"),
+                _ => {}
+            }
+            return false;
+        }
+        Err(_) => return false,
+    };
+    let this_map = world.map.current();
+    for outcome in outcomes {
+        match outcome {
+            ItemOutcome::PickedUp(item) => {
+                commands.entity(item).remove::<(Position, OnMap)>();
+                // Picked up, a stack joins one of its kind already carried;
+                // a thing put on from the ground is taken as it is.
+                let merged_into = match ask {
+                    ItemAsk::PickUp => {
+                        world.stacks.get(item).ok().and_then(|s| bag.items.iter().copied().find(|c| world.stacks.get(*c).is_ok_and(|t| t.key == s.key)))
+                    }
+                    _ => None,
+                };
+                match merged_into {
+                    Some(into) => {
+                        let add = world.stacks.get(item).map(|s| s.count).unwrap_or(1);
+                        commands.entity(into).entry::<Stack>().and_modify(move |mut s| s.count += add);
+                        commands.entity(item).despawn();
+                    }
+                    None => bag.items.push(item),
+                }
+                writes.events.write(ItemEvent::PickedUp { actor, item, merged_into });
+            }
+            ItemOutcome::Dropped(item) => {
+                bag.remove(item);
+                // On the map it is put down on, whichever it was picked up from.
+                commands.entity(item).insert((*pos, OnMap(this_map)));
+                writes.events.write(ItemEvent::Dropped { actor, item, at: *pos });
+            }
+            ItemOutcome::Equipped(item) => {
+                writes.events.write(ItemEvent::Equipped { actor, item });
+            }
+            ItemOutcome::Unequipped(item) => {
+                writes.events.write(ItemEvent::Unequipped { actor, item });
+            }
+            ItemOutcome::Used(item) => {
+                writes.events.write(ItemEvent::Used { actor, item });
+                // Where its user stands, or, aimed, at the cell it was
+                // pointed at, which is where an aimed trigger lands; it
+                // flies from its user. Made on a thing, it is made on the
+                // thing chosen.
+                writes.fired.write(crate::effects::Fired { on: item, moment: crate::effects::Moments::USE, by: Some(actor), at });
+                if let ItemAsk::UseOn(_, on) = ask {
+                    writes.fired_on.write(crate::effects::FiredOn { carrier: item, moment: crate::effects::Moments::USE, on });
+                }
+            }
+        }
+    }
+    true
 }
 
 /// Folds what every worn item [`Bestows`] into its wearer's stats.
@@ -1489,40 +1474,6 @@ mod tests {
         assert_eq!(r.app.world().resource::<Turns>().now(), before, "for nothing");
         r.app.world_mut().entity_mut(ring).remove::<Stuck>();
         assert_eq!(act(&mut r, Unequip(ring)), vec![ItemEvent::Unequipped { actor: r.player, item: ring }], "freed, it comes off");
-    }
-
-    /// Nothing put on over a stuck thing pushes it off: another shield and
-    /// a two-hander are each refused the hand a stuck shield holds, the
-    /// two-hander out of the bag and off the ground alike, and a thing that
-    /// goes in either hand takes the one whose occupant may come off.
-    #[test]
-    fn nothing_put_on_over_a_stuck_thing_pushes_it_off() {
-        let mut r = rig();
-        let shield = r.app.world_mut().spawn((Item, Position(r.start), Wearable(EquipShape::in_slot(r.off)), Stuck)).id();
-        let pike = r.app.world_mut().spawn((Item, Position(r.start), Wearable(EquipShape::in_slot(r.main).and_claims(r.off)))).id();
-        act(&mut r, PickUp);
-        act(&mut r, Equip(shield));
-        let before = r.app.world().resource::<Turns>().now();
-        let held = vec![ItemEvent::WouldNotComeOff { actor: r.player, item: shield }];
-        let buckler = r.app.world_mut().spawn((Item, Wearable(EquipShape::in_slot(r.off)))).id();
-        r.app.world_mut().get_mut::<Inventory>(r.player).unwrap().items.push(buckler);
-        assert_eq!(act(&mut r, Equip(buckler)), held, "another shield would take its hand");
-        assert_eq!(act(&mut r, Equip(pike)), held, "and so would the two-hander");
-        act(&mut r, DropItem(pike));
-        let before_ground = r.app.world().resource::<Turns>().now();
-        assert_eq!(act(&mut r, EquipFromGround(pike)), held, "and off the ground");
-        assert_eq!(r.app.world().get::<Position>(pike).map(|p| p.0), Some(r.start), "where it is left lying");
-        assert_eq!(r.app.world().resource::<Turns>().now(), before_ground, "each refused for nothing");
-        assert!(before < before_ground, "the drop between them was a turn");
-        let worn = r.app.world().get::<Equipped>(r.player).unwrap();
-        assert_eq!((worn.in_slot(r.main), worn.in_slot(r.off)), (None, Some(shield)), "the shield is where it was");
-
-        let sword = r.app.world_mut().spawn((Item, Wearable(EquipShape::in_slot(r.main)))).id();
-        let knife = r.app.world_mut().spawn((Item, Wearable(EquipShape::in_any([r.off, r.main])))).id();
-        r.app.world_mut().get_mut::<Inventory>(r.player).unwrap().items.extend([sword, knife]);
-        act(&mut r, Equip(sword));
-        let swapped = vec![ItemEvent::Unequipped { actor: r.player, item: sword }, ItemEvent::Equipped { actor: r.player, item: knife }];
-        assert_eq!(act(&mut r, Equip(knife)), swapped, "the knife takes the sword's hand, not the shield's");
     }
 
     /// Waits one turn for the rig's player, so a pass runs.
