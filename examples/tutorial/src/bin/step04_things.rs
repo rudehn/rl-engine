@@ -379,12 +379,12 @@ fn note_bag(mut vitals: ResMut<VitalsView>, player: Query<&Inventory, With<Playe
 /// What the floor is littered with: bread that mends, rocks that fly.
 fn litter(commands: &mut Commands, rats: &Rats, p: Point, bread: bool) {
     if bread {
-        commands.spawn((Item, Crust(8), Name::new("a crust of bread"), Position(p), Glyph::new('%', Color::srgb(0.85, 0.72, 0.40)).on_layer(2)));
+        commands.spawn((Item, Crust(8), Name::new("crust of bread"), Position(p), Glyph::new('%', Color::srgb(0.85, 0.72, 0.40)).on_layer(2)));
     } else {
         commands.spawn((
             Item,
             Throwable::new(7, Some((rats.bite, DiceRoll::new(1, 4)))),
-            Name::new("a rock"),
+            Name::new("rock"),
             Position(p),
             Glyph::new('*', Color::srgb(0.66, 0.66, 0.70)).on_layer(2),
         ));

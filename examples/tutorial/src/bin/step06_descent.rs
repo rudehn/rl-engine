@@ -350,13 +350,7 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ra
             // the floor: `Scavenge` fetches gear and missiles, not meals.
             let supper = clever.then(|| {
                 commands
-                    .spawn((
-                        Item,
-                        Crust(6),
-                        Tagged(vec![rats.bread]),
-                        Name::new("a crust of bread"),
-                        Glyph::new('%', Color::srgb(0.85, 0.72, 0.40)).on_layer(2),
-                    ))
+                    .spawn((Item, Crust(6), Tagged(vec![rats.bread]), Name::new("crust of bread"), Glyph::new('%', Color::srgb(0.85, 0.72, 0.40)).on_layer(2)))
                     .id()
             });
             let mut e = commands.spawn((
@@ -390,7 +384,7 @@ fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ra
         // the ladder is ours: the way out, at the last floor's far point,
         // an entity standing on a cell and nothing more.
         if let Some(far) = ev.exit.filter(|_| floor_of(ev.map) == FLOORS) {
-            commands.spawn((Position(far), WayOut, Name::new("a crack of daylight"), Glyph::new('<', Color::srgb(1.0, 0.95, 0.70)).on_layer(1)));
+            commands.spawn((Position(far), WayOut, Name::new("crack of daylight"), Glyph::new('<', Color::srgb(1.0, 0.95, 0.70)).on_layer(1)));
         }
         // Bread to mend with and rocks to throw, scattered the same way.
         let mut dropped = 0;
@@ -478,12 +472,12 @@ fn note_bag(mut vitals: ResMut<VitalsView>, player: Query<(&Inventory, Option<&O
 /// What the floor is littered with: bread that mends, rocks that fly.
 fn litter(commands: &mut Commands, rats: &Rats, p: Point, bread: bool) {
     if bread {
-        commands.spawn((Item, Crust(8), Name::new("a crust of bread"), Position(p), Glyph::new('%', Color::srgb(0.85, 0.72, 0.40)).on_layer(2)));
+        commands.spawn((Item, Crust(8), Name::new("crust of bread"), Position(p), Glyph::new('%', Color::srgb(0.85, 0.72, 0.40)).on_layer(2)));
     } else {
         commands.spawn((
             Item,
             Throwable::new(7, Some((rats.bite, DiceRoll::new(1, 4)))),
-            Name::new("a rock"),
+            Name::new("rock"),
             Position(p),
             Glyph::new('*', Color::srgb(0.66, 0.66, 0.70)).on_layer(2),
         ));

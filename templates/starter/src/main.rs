@@ -15,7 +15,7 @@
 //!
 //! Keys: arrows, `hjklyubn` or the numpad to walk, and walk into a goblin
 //! to attack it; `.` to wait; `g` to pick up what is here, `d` to drink a
-//! potion and `w` to put on what you carry; `t` to put your torch out or
+//! potion and `w` to put on or wield what you carry; `t` to put your torch out or
 //! light it again; `x` to look around; Escape for the menu; `q` to quit;
 //! `?` lists them all. Each is declared once, in `declare_controls`, and
 //! read by name: that one list is what the `?` screen shows and what the
@@ -82,11 +82,12 @@ fn main() -> AppExit {
                 .died("The dark closes over you."),
         ))
         .add_plugins((
-            VitalsPanel::new(Rect::new(0, 0, COLS - 12, 1)),
-            LogPanel::new(Rect::new(0, ROWS - LOG_ROWS, COLS, LOG_ROWS)),
+            // The status row and the log keep a cell of margin at either end.
+            VitalsPanel::new(Rect::new(1, 0, COLS - 14, 1)),
+            LogPanel::new(Rect::new(1, ROWS - LOG_ROWS, COLS - 2, LOG_ROWS)),
             InspectPanel::new(Rect::new(2, ROWS - LOG_ROWS - 11, 50, 10)),
             ControlsPanel::new(Rect::new(4, 3, COLS - 8, ROWS - LOG_ROWS - 6)).hint(Rect::new(
-                COLS - 12,
+                COLS - 13,
                 0,
                 12,
                 1,
@@ -362,7 +363,7 @@ fn start(mut commands: Commands, seed: Res<Seed>, mut log: Log) {
 }
 
 /// The player, only while it holds the turn: whether its torch is lit,
-/// what it carries, and what it wears.
+/// what it carries, what it wears, and how hurt it is.
 type PlayerTurn<'w, 's> = Query<
     'w,
     's,
@@ -371,6 +372,7 @@ type PlayerTurn<'w, 's> = Query<
         Has<LightSource>,
         &'static Inventory,
         &'static Equipped,
+        &'static Health,
     ),
     (With<Player>, With<MyTurn>),
 >;
@@ -404,7 +406,7 @@ fn declare_controls(app: &mut App) {
     );
     let binds = Binds {
         drink: app.add_control("Act", "drink a potion", KeyCode::KeyD),
-        wear: app.add_control("Act", "wear what you carry", KeyCode::KeyW),
+        wear: app.add_control("Act", "put on or wield what you carry", KeyCode::KeyW),
         torch: app.add_control("Act", "put the torch out, or light it", KeyCode::KeyT),
         quit: app.add_control("Game", "quit", KeyCode::KeyQ),
     };
@@ -437,7 +439,7 @@ fn player_input(
         return;
     }
     // No turn in hand means it is somebody else's move.
-    let Ok((me, lit, bag, worn)) = player.single() else {
+    let Ok((me, lit, bag, worn, health)) = player.single() else {
         return;
     };
     if keys.just_pressed(binds.torch) {
@@ -456,11 +458,14 @@ fn player_input(
             .items
             .iter()
             .find(|i| things.get(**i).is_ok_and(|(p, _)| p));
+        // Refused here rather than drunk for nothing: a potion is too dear
+        // to spend on no wound, and a refusal spends no turn.
         match potion {
+            None => log.muted("You have no potion to drink."),
+            Some(_) if health.current >= health.max => log.muted("You are not hurt."),
             Some(&potion) => {
                 intents.uses.write(Intent::new(me, UseItem(potion)));
             }
-            None => log.muted("You have no potion to drink."),
         }
     } else if keys.just_pressed(binds.wear) {
         // The first thing carried that can be worn and is not yet. The
@@ -501,7 +506,7 @@ fn populate(
             // A fixture: it never moves, so its light is cast once.
             commands.spawn((
                 Position(at),
-                Name::new("a brazier"),
+                Name::new("brazier"),
                 LightSource::new(230, 6, Rgb::new(255, 150, 80)).flickering(110),
                 Glyph::new('*', Color::srgb(1.0, 0.6, 0.25)).on_layer(1),
             ));
@@ -698,6 +703,51 @@ mod tests {
         );
         drink(&mut app);
         assert_eq!(health(&app), max, "a second mends only up to full");
+
+        // At full health a potion is refused, kept, and costs no turn.
+        let kept = drink(&mut app);
+        assert!(
+            app.world().get::<Inventory>(me).unwrap().contains(kept),
+            "a potion is not drunk for nothing"
+        );
+        assert!(
+            app.world().get::<MyTurn>(me).is_some(),
+            "and the turn is still yours"
+        );
+        let said = app.world().resource::<MessageLog>().iter().last().cloned();
+        assert_eq!(
+            said.map(|e| (e.text, e.tone)),
+            Some(("You are not hurt.".to_string(), Tones::MUTED)),
+            "and the log says why"
+        );
+    }
+
+    /// The dagger, wielded, is what you strike with in place of your fists.
+    #[test]
+    fn a_wielded_dagger_is_the_blow_you_strike_with() {
+        let (mut app, me) = started(7);
+        let blow = |app: &mut App| {
+            let mut loadout = bevy::ecs::system::SystemState::<Loadout>::new(app.world_mut());
+            loadout
+                .get(app.world())
+                .expect("the loadout reads")
+                .melee(me)
+                .map(|m| m.dice)
+        };
+        let fists = blow(&mut app);
+        let dagger = app.world().resource::<Finds>().dagger();
+        let dagger = app.world_mut().spawn(dagger).id();
+        atglyph::testing::equip(&mut app, me, dagger);
+        assert!(
+            app.world().get::<Equipped>(me).unwrap().contains(dagger),
+            "the dagger is wielded"
+        );
+        assert_eq!(
+            blow(&mut app),
+            Some(DiceRoll::new(2, 4)),
+            "its blow is yours"
+        );
+        assert_ne!(fists, blow(&mut app), "and not your fists'");
     }
 
     /// `g` picks the coat up and `w` puts it on, and from then on its armor

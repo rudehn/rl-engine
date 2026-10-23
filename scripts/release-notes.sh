@@ -16,6 +16,14 @@ if [ -z "$section" ]; then
   exit 1
 fi
 
+# The Bevy the engine is built on, which a game lists beside it at the
+# same version, read from the workspace as the version is.
+bevy=$(sed -n '/^\[workspace.dependencies\]/,/^\[/{s/^bevy = "\([^"]*\)".*/\1/p;s/^bevy = {.*version = "\([^"]*\)".*/\1/p;}' Cargo.toml)
+if [ -z "$bevy" ]; then
+  echo "error: Cargo.toml's [workspace.dependencies] names no bevy version" >&2
+  exit 1
+fi
+
 printf '%s\n' "$section"
 cat <<EOF
 
@@ -30,5 +38,6 @@ Or depend on it directly:
 
 \`\`\`toml
 atglyph = "$version"
+bevy = "$bevy"
 \`\`\`
 EOF

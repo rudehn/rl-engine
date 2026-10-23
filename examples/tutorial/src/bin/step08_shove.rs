@@ -399,7 +399,7 @@ fn populate(
             if !map.is_walkable(p) {
                 continue;
             }
-            commands.spawn((Item, Crust(8), Name::new("a crust of bread"), Position(p), Glyph::new('%', Color::srgb(0.85, 0.72, 0.40)).on_layer(2)));
+            commands.spawn((Item, Crust(8), Name::new("crust of bread"), Position(p), Glyph::new('%', Color::srgb(0.85, 0.72, 0.40)).on_layer(2)));
             crusts += 1;
         }
         // Groups, not individuals: the table says what may appear at this

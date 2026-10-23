@@ -35,9 +35,10 @@ fi
 
 # And the Bevy the engine is built on. A game on another Bevy builds two,
 # whose types do not match, and every engine call fails to compile with a
-# type mismatch far from its cause.
+# type mismatch far from its cause. The line is read in either form a
+# manifest writes it, `bevy = "0.19"` or `bevy = { version = "0.19", ... }`.
 bevy_in() {
-  sed -n "/^\[$1\]/,/^\[/s/^bevy = .*version = \"\([^\"]*\)\".*/\1/p" "$2"
+  sed -n "/^\[$1\]/,/^\[/{s/^bevy = \"\([^\"]*\)\".*/\1/p;s/^bevy = {.*version = \"\([^\"]*\)\".*/\1/p;}" "$2"
 }
 engine_bevy=$(bevy_in workspace.dependencies Cargo.toml)
 template_bevy=$(bevy_in dependencies templates/starter/Cargo.toml.liquid)

@@ -510,7 +510,7 @@ fn populate(
             // A `Name` is what puts it on the rail. Without one the
             // collector skips it: a nameless row is a spawn that forgot,
             // and a blank line is the hardest kind of that to notice.
-            commands.spawn((Item, Crust(8), Name::new("a crust of bread"), Position(p), Glyph::new('%', Color::srgb(0.85, 0.72, 0.40)).on_layer(2)));
+            commands.spawn((Item, Crust(8), Name::new("crust of bread"), Position(p), Glyph::new('%', Color::srgb(0.85, 0.72, 0.40)).on_layer(2)));
             crusts += 1;
         }
         // Groups, not individuals: the table says what may appear at this

@@ -19,7 +19,7 @@ All of it is in `src/main.rs`, in the order it happens.
 - **Goblins** that wander, notice you by sight, sooner when you stand in light, and hunt where they last saw you.
 - **Combat.** Walk into a goblin to strike it; armor takes its share of every blow. The engine narrates the fight, names things in their own colours, and ends each run on a screen that says how it went.
 - **Stealth.** Put your torch out with `t` and a goblin has to be close to notice you, but you are nearly blind too.
-- **Items.** Three potions, a dagger and a leather coat lie about the floor. Pick one up with `g`, drink a potion with `d` to mend, and put on what you carry with `w`: the dagger strikes harder than your fists, and the coat's armor is added to yours on every blow.
+- **Items.** Three potions, a dagger and a leather coat lie about the floor. Pick one up with `g`, drink a potion with `d` to mend, and put on or wield what you carry with `w`: the dagger strikes harder than your fists, and the coat's armor is added to yours on every blow.
 - **Panels**: your health and the keys along the top, the log along the bottom, and a look cursor on `x` that forecasts a fight.
 - **Tests** that run the game with no window: a property over forty-eight seeds, and tests that play keys through the real input, a blow, the torch, a potion and the coat.
 
@@ -31,7 +31,7 @@ All of it is in `src/main.rs`, in the order it happens.
 | `.` | wait a turn |
 | `g`, `,` | pick up what is here |
 | `d` | drink a potion |
-| `w` | put on what you carry |
+| `w` | put on or wield what you carry |
 | `t` | put the torch out, or light it again |
 | `x` | look around; `tab` cycles, `esc` closes |
 | `?` | every key this game answers to, listed from the same declarations |

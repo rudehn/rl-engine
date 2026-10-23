@@ -1,10 +1,13 @@
 # Changelog
 
 A release is a tag, `v` and the workspace version.
-The starter template pins the release it was written against, and a game made from it moves to a newer one by changing that tag and reading here what moved.
+The starter template pins the release it was written against by version, in its `atglyph = "..."` line, and a game made from it moves to a newer one by changing that version and reading here what moved.
 Pushing a tag publishes its release page from its section here, through `scripts/release-notes.sh`.
 
 ## Unreleased
+
+- The template's first run: a potion drunk at full health is refused with "You are not hurt." and spends no turn; `w` is "put on or wield what you carry" on the `?` screen, in the readme and in the module docs, as the narrator says it; the status row and the log keep a cell of margin at either end; the brazier is named `brazier`, and a test shows the wielded dagger's blow is the one the player strikes with. The tutorial names its things bare, `crust of bread`, `rock` and `crack of daylight`, as the engine expects: the narrator and the views add the article a sentence needs, and a name written with one is said as written, so the bag listed `a rock`. `scripts/release-notes.sh` prints the `bevy` line a game lists beside `atglyph`, and `scripts/check-template.sh` reads a plain `bevy = "0.19"` line as well as a table. The guide's quotes of the tutorial change at the release.
+  To change: nothing; a game that names a thing with its article may drop it, so its bag and its look cursor list it bare.
 
 - The look cursor says what an item is worth, in the bag's own words: `InspectView` carries the `blow` an item under the cursor is swung with and the `shot` it fires, each a `Strike`, and the `armor` it lends, read from its `MeleeAttack`, `RangedAttack` and `Armor`, and `InspectPanel` prints them under where it lies, `blow 2d4 stab` or `armor +2`. A thing not yet known keeps them to itself.
   To change: nothing; a game that pushed an item's blow or armor as a facet of its own may drop it.
