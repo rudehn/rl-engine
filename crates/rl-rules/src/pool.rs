@@ -34,8 +34,8 @@
 //!
 //! What this module does not hold is the laying. Growing a piece is
 //! `rl-mapgen`'s `Accrete` and stamping one inside an area its
-//! `StampPicks`; `rl-bevy`'s `layout::picked` turns a place's picks into
-//! both. An entry's [`Prefer`], its seeded [`Placement`]s and
+//! `StampPicks`; [`grow::picked`](crate::grow::picked) turns a place's
+//! picks into both. An entry's [`Prefer`], its seeded [`Placement`]s and
 //! its [`Stairs`] are the mapgen values the passes take, read straight
 //! from the file, and a pool loads and every mistake in it is reported
 //! with no map grown.

@@ -26,7 +26,7 @@ use crate::world::WorldMap;
 /// Holds the run back while a title screen stands.
 ///
 /// Present at startup, the engine begins no run: no map is built, the
-/// state stays [`EngineState::Idle`](crate::state::EngineState::Idle) and
+/// state stays [`EngineState::Idle`] and
 /// the screen has the window to itself. [`begin_run`] takes it away and
 /// [`LeaveRun`] puts it back. A resource rather than a flag a game's start
 /// checks, so the start is written once and runs the same way whoever

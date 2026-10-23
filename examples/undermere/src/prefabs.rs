@@ -10,7 +10,7 @@
 //! pool's dressings and the pool itself are loaded beside them.
 //!
 //! The engine fills them. `dungeon` stamps each piece by name through
-//! [`Prefabs::piece`], and on the arrival that built a place the engine's
+//! [`PrefabLibrary::piece`](rl_engine::rl_rules::PrefabLibrary::piece), and on the arrival that built a place the engine's
 //! `PrefabPlugin` puts down what every slot names: a prop from
 //! `props.ron`, or a monster from the bestiary, made by
 //! [`Bestiary`] exactly as a floor's own

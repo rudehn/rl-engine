@@ -14,7 +14,6 @@
 //! to read the entry, the exit and the pieces' marks back out. What stands at a mark is
 //! the engine's to put down, from what the piece's file says.
 
-use rl_engine::rl_bevy::layout::LayoutTiles;
 use rl_engine::rl_bevy::prelude::*;
 use rl_engine::rl_core::{PlaceSeed, RunSeed};
 use rl_engine::rl_grid::{Light, Rgb, TileId, TileProps, TileRegistry, TileTables};
@@ -22,6 +21,7 @@ use rl_engine::rl_mapgen::dungeon::{FarthestExit, RandomStart};
 use rl_engine::rl_mapgen::prefab::{Orient, Placement, Prefab, StampEachRoom, StampOneOf, StampPrefab};
 use rl_engine::rl_mapgen::{BaseContext, BuildError, Chain, Survey};
 use rl_engine::rl_render::TileAppearance;
+use rl_engine::rl_rules::grow::LayoutTiles;
 use rl_engine::rl_rules::layout::{self, LayoutDef};
 
 use crate::droids::MonsterDef;
@@ -263,7 +263,7 @@ impl Foundry {
         let deck = deck_of(map);
         // Foundry grows no locked or sealed piece, so its hatch stands for both.
         let tiles = LayoutTiles { floor: self.deck, door: self.hatch, locked: self.hatch, sealed: self.hatch };
-        let grown = rl_engine::rl_bevy::layout::passes(&self.layout, recipe_of(deck), &tiles)?;
+        let grown = rl_engine::rl_rules::grow::passes(&self.layout, recipe_of(deck), &tiles)?;
         let (width, height) = grown.size;
         let mut chain = Chain::new()
             .then(grown.accrete)

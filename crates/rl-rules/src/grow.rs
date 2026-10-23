@@ -1,23 +1,22 @@
-//! A layout file as the passes that grow it, a pool's picks as the
-//! pieces and the stamps a place is given, and a dressing file as the pass
-//! that dresses what they left.
+//! Growing a place from its files: a layout file as the passes that grow
+//! it, a pool's picks as the pieces and the stamps a place is given, and a
+//! dressing file as the pass that dresses what they left.
 //!
-//! `rl-rules` owns the files, reading the values they share with the
-//! passes straight into `rl-mapgen`'s types; `rl-mapgen` owns the passes
-//! and reads no file. This is where a file becomes passes, as
-//! [`Prefabs::piece`](crate::prefabs::Prefabs::piece) is for a prefab, and
-//! like it there is no plugin and no system here: a game calls [`passes`],
-//! [`picked`] and [`dress`] where it builds a place.
+//! This crate owns the files, read straight into the values `rl-mapgen`'s
+//! passes take, and `rl-mapgen` owns the passes and reads no file. This is
+//! where a file becomes passes, as [`PrefabLibrary::piece`] is for a
+//! prefab, and like it there is no plugin and no system here: a game calls
+//! [`passes`], [`picked`] and [`dress`] where it builds a place, and a tool
+//! or a terminal game does the same with no Bevy in its build.
 
+use crate::layout::{JoinDef, LayoutDef, ShapeKind};
+use crate::pool::{Joined, Pick, Placed, Pool};
+use crate::prefab::PrefabLibrary;
 use rl_grid::TileId;
 use rl_mapgen::accrete::{Accrete, Barrier, Cross, District, FirstPiece, Join, Passage, Rectangle, Shape};
 use rl_mapgen::dungeon::Stairs;
 use rl_mapgen::prefab::Orient;
 use rl_mapgen::{BuildError, Cave, DistrictDressings, Dress, Lay, OpenLoops, PoolPick, Require, StampPicks};
-use rl_rules::layout::{JoinDef, LayoutDef, ShapeKind};
-use rl_rules::pool::{Joined, Pick, Placed, Pool};
-
-use crate::prefabs::Prefabs;
 
 /// The passes one recipe asks for, and the size of the map to run them on.
 ///
@@ -53,10 +52,43 @@ pub struct LayoutTiles {
 
 /// The passes for the recipe called `recipe`, laying `tiles`. They grow no
 /// piece a place must hold until the game puts one in `accrete.pieces`,
-/// as [`Prefabs::grown`](crate::prefabs::Prefabs::grown) makes them, laid
+/// as [`PrefabLibrary::grown`] makes them, laid
 /// once the recipe's `late_pct` is open, and no landmark until it puts
 /// one in `accrete.first`, as [`picked`] makes it. An error naming the
 /// recipe when there is none, so a chain can `?` it.
+///
+/// A place grown from a layout file with nothing but the tier 1 crates in
+/// the build, as a tool or a terminal game grows one:
+///
+/// ```
+/// use rl_core::RunSeed;
+/// use rl_grid::{TileProps, TileRegistry};
+/// use rl_mapgen::dungeon::{FarthestExit, RandomStart};
+/// use rl_mapgen::{Area, BaseContext, BuildContext, Chain, Survey};
+/// use rl_rules::grow::{LayoutTiles, passes};
+///
+/// let layout = rl_rules::layout::load(
+///     r#"(
+///         shapes: [(name: "room", kind: Rectangle(w: (5, 9), h: (5, 8)), join: Door)],
+///         districts: [(name: "rooms", shapes: [("room", 1)])],
+///         recipes: [(
+///             name: "cellar", size: (48, 32), open_pct: 30, patience: 300, districts_per_10k: 7,
+///             districts: [("rooms", 1)],
+///             loops: (min_detour: 20, max: 4),
+///             require: (open_pct: (20, 70), areas: [("room", 3)], loops: 0, dead_end_pct: 100, route: 10),
+///         )],
+///     )"#,
+/// )
+/// .unwrap();
+/// let mut tiles = TileRegistry::standard();
+/// let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
+/// let door = tiles.register(TileProps::floor("doorway")).unwrap();
+/// let grow = passes(&layout, "cellar", &LayoutTiles { floor, door, locked: door, sealed: door }).unwrap();
+/// let (w, h) = grow.size;
+/// let chain = Chain::new().then(grow.accrete).then(grow.loops).then(RandomStart).then(FarthestExit).then(Survey).then(grow.require);
+/// let place = chain.run_retrying(|| BaseContext::blank(w, h, tiles.clone(), wall), RunSeed(7), 40).unwrap();
+/// assert!(place.outputs().iter::<Area>().filter(|a| a.shape == "room").count() >= 3);
+/// ```
 pub fn passes(def: &LayoutDef, recipe: &str, tiles: &LayoutTiles) -> Result<LayoutPasses, BuildError> {
     let LayoutTiles { floor, door, locked, sealed } = *tiles;
     let r = def.recipe(recipe).ok_or_else(|| BuildError::new("layout", format!("no recipe is called {recipe:?}")))?;
@@ -138,7 +170,7 @@ pub struct Picked {
 /// naming the piece when there is none, a grown or seeded one has no
 /// entry, or two seeded picks were drawn for one place, which the pool
 /// file refuses, so a chain can `?` it.
-pub fn picked<M: Send + Sync + 'static>(pool: &Pool, picks: &[Pick], prefabs: &Prefabs<M>, orient: Orient) -> Result<Picked, BuildError> {
+pub fn picked<M>(pool: &Pool, picks: &[Pick], prefabs: &PrefabLibrary<M>, orient: Orient) -> Result<Picked, BuildError> {
     let mut pieces: Vec<Box<dyn Shape>> = Vec::new();
     let mut first: Option<FirstPiece> = None;
     let mut stairs = Stairs::Free;
@@ -177,15 +209,15 @@ pub fn picked<M: Send + Sync + 'static>(pool: &Pool, picks: &[Pick], prefabs: &P
 }
 
 /// The pass that dresses a place: every dressing in `prefabs`, cut from
-/// it by `Prefabs::dressing` so its
+/// it by [`PrefabLibrary::dressing`] so its
 /// slots fill as a stamp's, laid where a pick's
 /// [`DressAt`](rl_mapgen::DressAt) says and in every room nothing took by
 /// its district's list in `lists`, repainting only `floor`. For the chain
 /// after the pool's [`StampPicks`] and anything else that stamps. An error
 /// naming a dressing a list names and `prefabs` does not hold, which
-/// [`check_districts`](rl_rules::dressing::check_districts) refuses at
+/// [`check_districts`](crate::dressing::check_districts) refuses at
 /// load.
-pub fn dress<M: Send + Sync + 'static>(prefabs: &Prefabs<M>, floor: TileId, lists: &[DistrictDressings]) -> Result<Dress, BuildError> {
+pub fn dress<M>(prefabs: &PrefabLibrary<M>, floor: TileId, lists: &[DistrictDressings]) -> Result<Dress, BuildError> {
     let dressings = prefabs.dressings().iter().map(|(_, d)| prefabs.dressing(&d.name)).collect::<Result<Vec<_>, _>>()?;
     // The pass fails on a name no dressing has, which `check_districts`
     // refuses at load.
@@ -195,11 +227,11 @@ pub fn dress<M: Send + Sync + 'static>(prefabs: &Prefabs<M>, floor: TileId, list
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::layout::BarrierDef;
     use rl_core::RunSeed;
     use rl_grid::{TileProps, TileRegistry};
     use rl_mapgen::dungeon::{FarthestExit, RandomStart};
     use rl_mapgen::{BaseContext, BuildContext, Chain, LaidBarrier, Survey, Surveyed};
-    use rl_rules::layout::BarrierDef;
 
     const FILE: &str = r#"(
         shapes: [
@@ -223,7 +255,7 @@ mod tests {
 
     #[test]
     fn a_recipe_from_a_file_builds_a_place_that_meets_what_the_file_requires() {
-        let def = rl_rules::layout::load(FILE).unwrap();
+        let def = crate::layout::load(FILE).unwrap();
         let mut tiles = TileRegistry::standard();
         let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
         let door = tiles.register(TileProps::floor("way through")).unwrap();
@@ -249,7 +281,7 @@ mod tests {
             )
             .replacen(r#"("cell", 5), ("run", 2)"#, r#"("hollow", 5), ("cell", 2), ("run", 2)"#, 1)
             .replacen(r#"areas: [("big", 1)]"#, r#"areas: [("big", 1), ("hollow", 1)]"#, 1);
-        let def = rl_rules::layout::load(&file).unwrap();
+        let def = crate::layout::load(&file).unwrap();
         let mut tiles = TileRegistry::standard();
         let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
         let door = tiles.register(TileProps::floor("way through")).unwrap();
@@ -278,7 +310,7 @@ mod tests {
                 loops: (min_detour",
             1,
         );
-        let def = rl_rules::layout::load(&file).unwrap();
+        let def = crate::layout::load(&file).unwrap();
         let mut tiles = TileRegistry::standard();
         let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
         let door = tiles.register(TileProps::floor("way through")).unwrap();
@@ -320,7 +352,7 @@ mod tests {
 
     #[test]
     fn a_recipe_no_file_names_is_an_error_naming_it() {
-        let def = rl_rules::layout::load(FILE).unwrap();
+        let def = crate::layout::load(FILE).unwrap();
         let one = rl_grid::TileId(1);
         let e = passes(&def, "missing", &LayoutTiles { floor: one, door: one, locked: one, sealed: one }).err().expect("no such recipe");
         assert!(e.pass == "layout" && e.reason.contains("missing"));
@@ -346,25 +378,25 @@ mod tests {
     /// given a dead end, as it prefers, or dropped, since it is flavor.
     #[test]
     fn a_places_picks_are_grown_stamped_and_dressed_as_the_pool_drew_them() {
+        use crate::content::Registry;
+        use crate::names::Names;
+        use crate::pool::Place;
         use rand::SeedableRng;
         use rl_mapgen::prefab::Stamped;
-        use rl_rules::content::Registry;
-        use rl_rules::names::Names;
-        use rl_rules::pool::Place;
 
-        let def = rl_rules::layout::load(FILE).unwrap();
+        let def = crate::layout::load(FILE).unwrap();
         let mut tiles = TileRegistry::standard();
         let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
         let door = tiles.register(TileProps::floor("way through")).unwrap();
-        let piece = |text: &str| rl_rules::prefab::load::<()>(text, &tiles, &Names::new()).unwrap();
+        let piece = |text: &str| crate::prefab::load::<()>(text, &tiles, &Names::new()).unwrap();
         let defs = Registry::from_defs(vec![
             piece(r######"(name: "closet", rows: ["#####", "#...#", "#...#", "##E##"], legend: { '#': Tile("wall"), '.': Tile("floor"), 'E': Entry })"######),
             piece(r#"(name: "pile", rows: ["...", "...", "..."], legend: { '.': Tile("floor") })"#),
         ])
         .unwrap();
-        let prefabs = Prefabs::<()>::new(defs, Registry::from_defs(Vec::new()).unwrap());
+        let prefabs = PrefabLibrary::<()>::new(defs, Registry::from_defs(Vec::new()).unwrap());
         let pile = prefabs.defs().id("pile").unwrap().raw();
-        let pool = rl_rules::pool::load(POOL, &def, prefabs.defs(), &Names::new()).unwrap();
+        let pool = crate::pool::load(POOL, &def, prefabs.defs(), &Names::new()).unwrap();
         let places: Vec<Place> = (1..=3).map(|band| Place { band, tags: Vec::new() }).collect();
         let mut dressings = 0;
         for seed in 0..10 {
@@ -420,19 +452,19 @@ mod tests {
     /// reach the piece; a place no landmark fits is given none.
     #[test]
     fn a_landmark_a_pool_seeds_is_the_piece_a_place_grows_round_with_its_stairs_where_the_entry_says() {
+        use crate::content::Registry;
+        use crate::names::Names;
+        use crate::pool::Place;
         use rand::SeedableRng;
         use rl_mapgen::dungeon::{ExitPoint, FarExit, StartPoint};
         use rl_mapgen::prefab::{Stamped, Turn};
         use rl_mapgen::{Area, Landmark};
-        use rl_rules::content::Registry;
-        use rl_rules::names::Names;
-        use rl_rules::pool::Place;
 
-        let def = rl_rules::layout::load(FILE).unwrap();
+        let def = crate::layout::load(FILE).unwrap();
         let mut tiles = TileRegistry::standard();
         let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
         let door = tiles.register(TileProps::floor("way through")).unwrap();
-        let piece = |text: &str| rl_rules::prefab::load::<()>(text, &tiles, &Names::new()).unwrap();
+        let piece = |text: &str| crate::prefab::load::<()>(text, &tiles, &Names::new()).unwrap();
         let defs = Registry::from_defs(vec![
             piece(
                 r##########"(name: "hall", turn: None, mirror: LeftRight, rows: ["####E####", "#.......#", "E.......E", "#########"], legend: { '#': Tile("wall"), '.': Tile("floor"), 'E': Entry })"##########,
@@ -442,9 +474,9 @@ mod tests {
             ),
         ])
         .unwrap();
-        let prefabs = Prefabs::<()>::new(defs, Registry::from_defs(Vec::new()).unwrap());
+        let prefabs = PrefabLibrary::<()>::new(defs, Registry::from_defs(Vec::new()).unwrap());
         assert_eq!(prefabs.piece("hall").unwrap().turn(), Turn::None, "the file's facings reach the piece");
-        let pool = rl_rules::pool::load(LANDMARKS, &def, prefabs.defs(), &Names::new()).unwrap();
+        let pool = crate::pool::load(LANDMARKS, &def, prefabs.defs(), &Names::new()).unwrap();
         let places: Vec<Place> = (1..=4).map(|band| Place { band, tags: Vec::new() }).collect();
         for seed in 0..10 {
             let plan = pool.plan_run(&mut rand::rngs::StdRng::seed_from_u64(seed), &places);
@@ -490,26 +522,26 @@ mod tests {
     /// more than the south edge over a span of seeds.
     #[test]
     fn a_landmarks_facings_are_its_files_alone_whatever_ceiling_the_stamps_are_given() {
+        use crate::content::Registry;
+        use crate::names::Names;
+        use crate::pool::Place;
         use rand::SeedableRng;
         use rl_mapgen::Landmark;
-        use rl_rules::content::Registry;
-        use rl_rules::names::Names;
-        use rl_rules::pool::Place;
 
-        let def = rl_rules::layout::load(FILE).unwrap();
+        let def = crate::layout::load(FILE).unwrap();
         let mut tiles = TileRegistry::standard();
         let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
         let door = tiles.register(TileProps::floor("way through")).unwrap();
         let hall = r##########"(name: "hall", rows: ["####E####", "#.......#", "E.......E", "#########"], legend: { '#': Tile("wall"), '.': Tile("floor"), 'E': Entry })"##########;
-        let defs = Registry::from_defs(vec![rl_rules::prefab::load::<()>(hall, &tiles, &Names::new()).unwrap()]).unwrap();
-        let prefabs = Prefabs::<()>::new(defs, Registry::from_defs(Vec::new()).unwrap());
+        let defs = Registry::from_defs(vec![crate::prefab::load::<()>(hall, &tiles, &Names::new()).unwrap()]).unwrap();
+        let prefabs = PrefabLibrary::<()>::new(defs, Registry::from_defs(Vec::new()).unwrap());
         let text = LANDMARKS.replacen(
             "(2, 3), weight: \"common\", placed: Seeded([Center, Edge], Beyond)",
             "(1, 4), weight: \"common\", placed: Seeded([Edge], Free)",
             1,
         );
         let text = text.replacen("\n            (name: \"stair\", kind: \"landmark\", piece: \"stair\", floors: (2, 3), weight: \"common\", placed: Seeded([Anywhere], Within('>'))),", "", 1);
-        let pool = rl_rules::pool::load(&text, &def, prefabs.defs(), &Names::new()).unwrap();
+        let pool = crate::pool::load(&text, &def, prefabs.defs(), &Names::new()).unwrap();
         let place = [Place { band: 1, tags: Vec::new() }];
         let mut backs = std::collections::BTreeSet::new();
         for seed in 0..20 {
@@ -546,29 +578,29 @@ mod tests {
     /// finds its meaning again.
     #[test]
     fn a_place_is_dressed_where_its_picks_say_and_by_its_districts_elsewhere() {
+        use crate::content::Registry;
+        use crate::names::Names;
+        use crate::pool::Place;
         use rand::SeedableRng;
         use rl_mapgen::{Area, DressAt, Dressed};
-        use rl_rules::content::Registry;
-        use rl_rules::names::Names;
-        use rl_rules::pool::Place;
 
-        let def = rl_rules::layout::load(FILE).unwrap();
+        let def = crate::layout::load(FILE).unwrap();
         let mut tiles = TileRegistry::standard();
         let (wall, floor) = (tiles.expect("wall"), tiles.expect("floor"));
         let door = tiles.register(TileProps::floor("way through")).unwrap();
-        let piece = |text: &str| rl_rules::prefab::load::<()>(text, &tiles, &Names::new()).unwrap();
+        let piece = |text: &str| crate::prefab::load::<()>(text, &tiles, &Names::new()).unwrap();
         let defs = Registry::from_defs(vec![
             piece(r######"(name: "closet", rows: ["#####", "#...#", "#...#", "##E##"], legend: { '#': Tile("wall"), '.': Tile("floor"), 'E': Entry })"######),
             piece(r#"(name: "pile", rows: ["...", "...", "..."], legend: { '.': Tile("floor") })"#),
         ])
         .unwrap();
-        let dressings = rl_rules::dressing::load::<()>(DRESSINGS, &tiles, &Names::new()).unwrap();
-        let prefabs = Prefabs::<()>::with_dressings(defs, Registry::from_defs(Vec::new()).unwrap(), dressings);
-        let pool = rl_rules::pool::load(POOL, &def, prefabs.defs(), &Names::new()).unwrap();
-        rl_rules::dressing::check_pool(&pool, prefabs.dressings()).unwrap();
+        let dressings = crate::dressing::load::<()>(DRESSINGS, &tiles, &Names::new()).unwrap();
+        let prefabs = PrefabLibrary::<()>::with_dressings(defs, Registry::from_defs(Vec::new()).unwrap(), dressings);
+        let pool = crate::pool::load(POOL, &def, prefabs.defs(), &Names::new()).unwrap();
+        crate::dressing::check_pool(&pool, prefabs.dressings()).unwrap();
         let lists: Vec<DistrictDressings> =
             ron::from_str(r#"[(district: "tight", dressings: [("crates", 1)]), (district: "wide", nothing: 1, dressings: [])]"#).unwrap();
-        rl_rules::dressing::check_districts(&lists, prefabs.dressings(), &def).unwrap();
+        crate::dressing::check_districts(&lists, prefabs.dressings(), &def).unwrap();
         let places: Vec<Place> = (1..=3).map(|band| Place { band, tags: Vec::new() }).collect();
         let (mut given, mut listed) = (0, 0);
         for seed in 0..10 {

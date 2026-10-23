@@ -3,12 +3,12 @@
 //!
 //! A prefab file names, glyph by glyph, a tile or a slot: a prop, items or
 //! a monster ([`rl_rules::prefab`]). The terrain half is stamped by the
-//! game's mapgen chain from [`Prefabs::piece`], keyed so each mark of the
+//! game's mapgen chain from [`PrefabLibrary::piece`], keyed so each mark of the
 //! stamp remembers which prefab it came from, and arrives here as a
 //! place's [`Spot`](crate::places::Spot)s, or grown as an area of its own
-//! from [`Prefabs::grown`], whose stamp arrives the same way. A dressing
+//! from [`PrefabLibrary::grown`], whose stamp arrives the same way. A dressing
 //! ([`rl_rules::dressing`]) is a prefab's legend laid by rules rather
-//! than rows, by [`Dress`](rl_mapgen::Dress) from `Prefabs::dressing`,
+//! than rows, by [`Dress`](rl_mapgen::Dress) from [`PrefabLibrary::dressing`],
 //! and its slots arrive and fill the same way again. What is here is the
 //! other half, the loop every game wrote by hand at its marks:
 //!
@@ -38,13 +38,9 @@ use rand::Rng;
 use rand::rngs::StdRng;
 use rl_core::seed::position_hash;
 use rl_core::{Id, Point};
-use rl_mapgen::BuildError;
-use rl_mapgen::accrete::Join;
-use rl_mapgen::dress::Dressing;
-use rl_mapgen::prefab::{Cell, Prefab, PrefabShape};
 use rl_rules::content::{BandedTable, Registry};
 use rl_rules::dressing::DressingDef;
-use rl_rules::prefab::{Legended, Pick, PrefabDef, Slot};
+use rl_rules::prefab::{Legended, Pick, PrefabDef, PrefabLibrary, Slot};
 use rl_rules::prop::Stock;
 use rl_rules::role::{self, RoleDef};
 
@@ -99,27 +95,15 @@ pub trait ActorMaker: Resource {
     fn band(&self, map: MapId) -> i32;
 }
 
-/// Every prefab and dressing a game loaded and the roles their monster
-/// slots name.
-struct Loaded<M> {
-    defs: Registry<PrefabDef<M>>,
-    roles: Registry<RoleDef<M>>,
-    dressings: Registry<DressingDef<M>>,
-}
-
-/// The bit a dressing's key carries and a prefab's never does, so one
-/// number on a spot names either and the two registries never collide:
-/// a game has far fewer than two billion prefabs.
-const DRESSING: u32 = 1 << 31;
-
-/// A game's prefabs and roles, keyed by the registry id a stamped piece
-/// carries.
+/// A game's prefabs, dressings and roles, keyed by the registry id a
+/// stamped piece carries: the [`PrefabLibrary`] as a resource, which it
+/// derefs to.
 ///
 /// Shared, not copied: a game's place builder holds a clone to stamp
 /// pieces from and the engine reads the same files to fill them, so the
 /// key a stamp carries always names the prefab it was cut from.
 #[derive(Resource)]
-pub struct Prefabs<M: Send + Sync + 'static>(Arc<Loaded<M>>);
+pub struct Prefabs<M: Send + Sync + 'static>(Arc<PrefabLibrary<M>>);
 
 impl<M: Send + Sync + 'static> Clone for Prefabs<M> {
     fn clone(&self) -> Self {
@@ -131,75 +115,27 @@ impl<M: Send + Sync + 'static> Prefabs<M> {
     /// Every prefab, loaded with [`rl_rules::prefab::load`], and every
     /// role, loaded with [`rl_rules::role::load`].
     pub fn new(defs: Registry<PrefabDef<M>>, roles: Registry<RoleDef<M>>) -> Self {
-        Self::with_dressings(defs, roles, Registry::default())
+        Self::from(PrefabLibrary::new(defs, roles))
     }
 
     /// As [`new`](Self::new), with the dressings loaded with
     /// [`rl_rules::dressing::load`], whose slots then fill as a prefab's.
     pub fn with_dressings(defs: Registry<PrefabDef<M>>, roles: Registry<RoleDef<M>>, dressings: Registry<DressingDef<M>>) -> Self {
-        Self(Arc::new(Loaded { defs, roles, dressings }))
+        Self::from(PrefabLibrary::with_dressings(defs, roles, dressings))
     }
+}
 
-    /// Every dressing.
-    pub fn dressings(&self) -> &Registry<DressingDef<M>> {
-        &self.0.dressings
+impl<M: Send + Sync + 'static> From<PrefabLibrary<M>> for Prefabs<M> {
+    fn from(library: PrefabLibrary<M>) -> Self {
+        Self(Arc::new(library))
     }
+}
 
-    /// Every prefab.
-    pub fn defs(&self) -> &Registry<PrefabDef<M>> {
-        &self.0.defs
-    }
+impl<M: Send + Sync + 'static> std::ops::Deref for Prefabs<M> {
+    type Target = PrefabLibrary<M>;
 
-    /// Every role.
-    pub fn roles(&self) -> &Registry<RoleDef<M>> {
-        &self.0.roles
-    }
-
-    /// The piece called `name`, keyed so its stamp's marks find their slots
-    /// again: each tile as the file paints it, each slot a mark painted with
-    /// the prefab's ground, and declaring the turns and mirrors its file
-    /// allows, so no stamp lays it a way its drawing refuses. An error
-    /// naming the piece when there is none, so a chain can `?` it.
-    pub fn piece(&self, name: &str) -> Result<Prefab, BuildError> {
-        let id = self.defs().id(name).ok_or_else(|| BuildError::new("prefab", format!("no prefab is called {name:?}")))?;
-        let def = self.defs().get(id);
-        let cell = |c: char| match (def.tile(c), def.slot(c)) {
-            (Some(t), _) => Cell::Tile(t),
-            (None, Some(_)) => Cell::Mark(def.ground),
-            (None, None) if def.entry(c) => Cell::Entry,
-            (None, None) => Cell::Clear,
-        };
-        Prefab::parse_cells(&def.rows(), cell)
-            .map(|p| p.keyed(id.raw()).declaring(def.turn, def.mirror))
-            .map_err(|e| BuildError::new("prefab", format!("{name}: {e}")))
-    }
-
-    /// The piece called `name` as a shape [`Accrete`](rl_mapgen::accrete::Accrete)
-    /// grows as an area of its own, joined by `join` through the entries its
-    /// file draws, and keyed as [`piece`](Self::piece) keys it, so its
-    /// slots fill as a stamped piece's do. An error naming the piece when
-    /// there is none or it has no entry.
-    pub fn grown(&self, name: &str, join: Join) -> Result<PrefabShape, BuildError> {
-        PrefabShape::new(name, &self.piece(name)?, join)
-    }
-
-    /// The dressing called `name`, as [`Dress`](rl_mapgen::Dress) lays it:
-    /// each glyph of a rule a tile when its legend paints one and a slot
-    /// otherwise, keyed so the slots it emits find their meaning again. An
-    /// error naming it when there is none, so a chain can `?` it.
-    pub(crate) fn dressing(&self, name: &str) -> Result<Dressing, BuildError> {
-        let id = self.dressings().id(name).ok_or_else(|| BuildError::new("dressing", format!("no dressing is called {name:?}")))?;
-        let def = self.dressings().get(id);
-        Ok(Dressing { name: def.name.clone(), things: def.things.clone(), repaint: def.repaint, key: Some(DRESSING | id.raw()) })
-    }
-
-    /// What `glyph` stands for in the prefab or the dressing keyed `key`,
-    /// if the key names one and the glyph a slot in it.
-    pub fn slot(&self, key: u32, glyph: char) -> Option<&Slot<M>> {
-        if key & DRESSING != 0 {
-            return self.dressings().try_get(Id::from_raw(key & !DRESSING))?.legend().slot(glyph);
-        }
-        self.defs().try_get(Id::from_raw(key))?.slot(glyph)
+    fn deref(&self) -> &PrefabLibrary<M> {
+        &self.0
     }
 }
 

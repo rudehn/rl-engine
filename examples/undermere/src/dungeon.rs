@@ -36,7 +36,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use rand::Rng;
 use rand::seq::SliceRandom;
 use rl_engine::prelude::*;
-use rl_engine::rl_bevy::layout::LayoutTiles;
 use rl_engine::rl_core::Rect;
 use rl_engine::rl_mapgen::Prefer;
 use rl_engine::rl_mapgen::dungeon::{ExitPoint, FarthestExit, MarkedStart, RandomStart, Stairs};
@@ -44,6 +43,7 @@ use rl_engine::rl_mapgen::passes::StartPoint;
 use rl_engine::rl_mapgen::{Area, DistrictDressings, Opening};
 use rl_engine::rl_render::TileAppearance;
 use rl_engine::rl_rules::dressing;
+use rl_engine::rl_rules::grow::LayoutTiles;
 use rl_engine::rl_rules::layout::{self, LayoutDef};
 use rl_engine::rl_rules::pool::{Pick, Place, Pool};
 
@@ -784,14 +784,14 @@ impl Undermere {
         // A vault's own door and gate, which the pool's locked and sealed
         // pieces are joined by.
         let tiles = LayoutTiles { floor: floor_tile, door, locked: self.tile("vault door"), sealed: self.tile("stone gate") };
-        let mut grown = rl_engine::rl_bevy::layout::passes(&self.layout, &drawn.recipe, &tiles)?;
+        let mut grown = rl_engine::rl_rules::grow::passes(&self.layout, &drawn.recipe, &tiles)?;
         let (width, height) = grown.size;
         // This floor's picks, drawn once for the whole run in
         // `Undermere::new`: the grown ones join the boss's hall and a
         // mini-boss's lair as pieces of the recipe's own accretion, and
         // the rest, stamped inside an area or dressed, are placed by
         // `picked.stamp` once the floor is surveyed, below.
-        let picked = rl_engine::rl_bevy::layout::picked(&self.pool, picks, &self.prefabs, Orient::TurnedOrMirrored)?;
+        let picked = rl_engine::rl_rules::grow::picked(&self.pool, picks, &self.prefabs, Orient::TurnedOrMirrored)?;
         // The boss's hall and a mini-boss's lair are grown as pieces of
         // the recipe's own accretion, late, through the one entry each
         // prefab marks, rather than carved over what grew.
@@ -846,7 +846,7 @@ impl Undermere {
         // `Dress` lays a dressed pick where `picked.stamp` chose for it,
         // then dresses every area nothing else took, from the biome's
         // own weighted list, `nothing` among the choices.
-        chain = chain.then(rl_engine::rl_bevy::layout::dress(&self.prefabs, floor_tile, &self.districts)?);
+        chain = chain.then(rl_engine::rl_rules::grow::dress(&self.prefabs, floor_tile, &self.districts)?);
         chain = self.decor(chain, floor, drawn)?;
         // The floor's traps and loose flagstones, once everything that
         // stands somewhere has taken its cell.

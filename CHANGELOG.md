@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- Growing a place from layout, pool and dressing files is tier 1: `rl_bevy::layout` is now `rl_rules::grow`, with the same `passes`, `picked`, `dress`, `LayoutPasses`, `LayoutTiles` and `Picked`, and what `Prefabs` held is `rl_rules::prefab::PrefabLibrary` (`rl_rules::PrefabLibrary`), with `new`, `with_dressings`, `defs`, `roles`, `dressings`, `piece`, `grown`, `dressing` and `slot`. `Prefabs` is the library as a resource, shared, and derefs to it; `Prefabs::from(library)` makes one.
+  To change: `rl_bevy::layout::` becomes `rl_rules::grow::`; a `&Prefabs` still passes where `picked` and `dress` now take a `&PrefabLibrary`. A tool or a terminal game grows the same places without Bevy.
+
 - `rl-rules` reads prefab, pool and dressing files straight into `rl-mapgen`'s `Turn`, `Mirror`, `Prefer`, `Placement`, `Stairs`, `Spread`, `Thing` and `DistrictDressings`; the copies `rl-rules` declared are gone, and `rl-rules` depends on `rl-mapgen`. A seeded pool entry placed `At`, `InRoom` or `AnyRoom`, which a landmark laid before anything grows cannot be, is refused by name with every other mistake in the file. A `DressingDef`'s `things` are the mapgen `Thing`s its pass lays, each standing as a tile where its legend paints one and as a slot otherwise.
   To change: an import of one of the eight from `rl_rules` names `rl_mapgen` instead (`rl_mapgen::prefab::{Turn, Mirror, Placement}`, `rl_mapgen::{Prefer, DistrictDressings}`, `rl_mapgen::dungeon::Stairs`, `rl_mapgen::dress::{Spread, Thing}`), and `rl_rules::DistrictDressings` is `rl_mapgen::DistrictDressings`; files are unchanged.
 

@@ -31,7 +31,6 @@ pub mod fov;
 pub mod gas;
 pub mod items;
 pub mod knowledge;
-pub mod layout;
 pub mod lighting;
 pub mod loot;
 pub mod minds;

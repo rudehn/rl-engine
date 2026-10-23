@@ -5,7 +5,7 @@
 //! guard's slot.
 //!
 //! The engine fills them. `decks` stamps each piece by name through
-//! [`Prefabs::piece`], and on the arrival that built a deck the engine's
+//! [`PrefabLibrary::piece`](rl_engine::rl_rules::PrefabLibrary::piece), and on the arrival that built a deck the engine's
 //! `PrefabPlugin` puts down what every slot names: a locker or a crate, a
 //! weapon drawn by tag, a guard drawn by role, each at the deck's own band
 //! plus what the slot adds. What is left to Foundry is the one mark it

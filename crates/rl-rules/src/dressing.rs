@@ -23,7 +23,8 @@
 //!
 //! What this module does not hold is the dressing itself: which cells a
 //! rule offers in an area, keeping off its openings and never cutting it
-//! in two, is `rl-mapgen`'s `Dress`, and `rl-bevy` hands the file to it.
+//! in two, is `rl-mapgen`'s `Dress`, and [`grow::dress`](crate::grow::dress)
+//! hands the file to it.
 //! A rule loads as the mapgen [`Thing`] that pass lays, its [`Spread`]
 //! read straight from the file and what it stands as, a tile or a slot,
 //! from the legend, and a district's list is the mapgen

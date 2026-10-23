@@ -57,6 +57,10 @@
 //!   group and budget, as one file with every name resolved at load, and
 //!   a whole run's picks drawn from it at once; the laying is
 //!   `rl-mapgen`'s.
+//! - [`grow`]: a layout file as the passes that grow a place, a pool's
+//!   picks as the pieces and stamps it is given, and the dressing files as
+//!   the pass that dresses it, through a [`PrefabLibrary`], so a place is
+//!   grown from its files with no Bevy in the build.
 //! - [`ai`]: tactic-priority brains over Dijkstra maps, and the standard
 //!   chain a game builds one from a kind's parts with.
 //! - [`work`]: one thing an actor does across many turns, counted in its
@@ -113,6 +117,8 @@ pub mod faction;
 pub mod fire;
 pub mod forecast;
 pub mod gas;
+pub mod grow;
+
 pub mod items;
 pub mod layout;
 pub mod loot;
@@ -152,7 +158,7 @@ pub use loot::{DropRow, DropTable, Layout, LevelRow, LevelTable, LootRow, LootTa
 pub use namegen::{NameBook, NameSet};
 pub use names::{NameRef, Names};
 pub use parts::{AttackShape, KeepAway, WhenEmpty};
-pub use prefab::{Coverage, CoverageRow, Legend, Legended, Pick, PrefabDef, Reach, Slot};
+pub use prefab::{Coverage, CoverageRow, Legend, Legended, Pick, PrefabDef, PrefabLibrary, Reach, Slot};
 pub use prop::{ContainerDef, ContentRoll, HiddenDef, OfferDef, PropDef, PropId, Stock};
 pub use role::RoleDef;
 pub use stats::{Modifier, Op, Source, StatDef, StatId, Stats};
