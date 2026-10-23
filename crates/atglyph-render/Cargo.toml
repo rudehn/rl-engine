@@ -7,6 +7,8 @@ repository.workspace = true
 rust-version.workspace = true
 description = "atglyph tier 2: an ASCII glyph grid renderer for Bevy, with a map view of lit, remembered and unknown tiles."
 homepage.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/atglyph-render"
 keywords = ["roguelike", "bevy", "ascii", "terminal", "glyph"]
 categories = ["game-development", "rendering"]
 

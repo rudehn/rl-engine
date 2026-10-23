@@ -7,6 +7,8 @@ repository.workspace = true
 rust-version.workspace = true
 description = "atglyph tier 1: content registries, stats, damage, statuses, factions, equipment, monster AI, quests and balance scoring, as shapes the game fills. No Bevy."
 homepage.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/atglyph-rules"
 keywords = ["roguelike", "rpg", "monster-ai", "quests", "gamedev"]
 categories = ["game-development"]
 

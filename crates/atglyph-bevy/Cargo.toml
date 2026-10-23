@@ -7,6 +7,8 @@ repository.workspace = true
 rust-version.workspace = true
 description = "atglyph tier 2: Bevy plugins for a turn-based roguelike, with the turn loop, actions, combat, items, places and chunk streaming."
 homepage.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/atglyph-bevy"
 keywords = ["roguelike", "bevy", "turn-based", "ecs", "gamedev"]
 categories = ["game-development", "game-engines"]
 

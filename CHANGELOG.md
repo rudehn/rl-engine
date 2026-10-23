@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- Every crate packages for crates.io: each internal dependency carries the workspace version, each crate has its readme, and `scripts/check-publish.sh` packages and verifies the workspace in CI.
+  To change: nothing.
+
 - `atglyph::bevy` and `atglyph::rand` re-export the Bevy and the `rand` the engine is built on, so a game lists no `rand` of its own and the starter template lists none.
   To change: drop the game's `rand` line and write `atglyph::rand::...` where `rand::...` was; keep `bevy` at `0.19`, since Bevy's derives read the game's own `bevy` line.
 

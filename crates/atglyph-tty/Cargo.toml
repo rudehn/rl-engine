@@ -7,6 +7,8 @@ repository.workspace = true
 rust-version.workspace = true
 description = "atglyph tier 2: a text terminal front end for Bevy - the glyph grid written to a terminal, locally or over SSH, and its keys read back."
 homepage.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/atglyph-tty"
 keywords = ["roguelike", "bevy", "terminal", "tui", "gamedev"]
 categories = ["game-development", "command-line-interface"]
 

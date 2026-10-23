@@ -7,6 +7,8 @@ repository.workspace = true
 rust-version.workspace = true
 description = "atglyph tier 1: tile registry, terrain, FOV, pathfinding, Dijkstra maps, spatial index. No Bevy."
 homepage.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/atglyph-grid"
 keywords = ["roguelike", "fov", "pathfinding", "astar", "dijkstra"]
 categories = ["game-development", "algorithms"]
 

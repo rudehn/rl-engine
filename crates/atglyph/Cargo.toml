@@ -7,6 +7,7 @@ repository.workspace = true
 rust-version.workspace = true
 description = "A modular roguelike engine for Rust and Bevy: turn-based grid gameplay, procedural dungeon and world generation, FOV, pathfinding, AI, saves."
 homepage.workspace = true
+documentation = "https://docs.rs/atglyph"
 readme = "../../README.md"
 keywords = ["roguelike", "bevy", "game-engine", "procgen", "turn-based"]
 categories = ["game-engines", "game-development"]
