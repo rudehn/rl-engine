@@ -139,21 +139,24 @@ App::new()
 That compiles and opens a window, and then play refuses to begin until the game supplies a map, tile looks and a player, which the engine says at startup by listing everything missing at once.
 The template is the smallest version that actually plays, and [the guide's first chapter](docs/guide/src/01-a-map-and-walking.md) writes it out line by line.
 
-A tool or a server that needs no window can depend on a single tier-1 crate, such as `atglyph-grid` for field of view and pathfinding, and never compile Bevy.
+A tool or a server that needs no window depends on the tier-0 and tier-1 crates it uses, such as `atglyph-grid` alone for field of view and pathfinding, and never compiles Bevy.
+The sample below uses three.
 
 ```toml
 [dependencies]
+atglyph-core = "0.3.0"
 atglyph-grid = "0.3.0"
+atglyph-mapgen = "0.3.0"
 ```
 
 This builds a dungeon floor from a seed, computes what is visible from the start, and finds the path to the exit, all without Bevy.
 
 ```rust
-use atglyph::primitives::RunSeed;
-use atglyph::grid::{AStar, BitGrid, PathRules, TileRegistry, fov};
-use atglyph::mapgen::dungeon::{ExitPoint, FarthestExit, RandomStart, Rooms};
-use atglyph::mapgen::passes::StartPoint;
-use atglyph::mapgen::{BaseContext, Chain};
+use atglyph_core::RunSeed;
+use atglyph_grid::{AStar, BitGrid, PathRules, TileRegistry, fov};
+use atglyph_mapgen::dungeon::{ExitPoint, FarthestExit, RandomStart, Rooms};
+use atglyph_mapgen::passes::StartPoint;
+use atglyph_mapgen::{BaseContext, Chain};
 
 // A 60 by 40 map of solid wall, with the standard wall and floor tiles.
 let tiles = TileRegistry::standard();
