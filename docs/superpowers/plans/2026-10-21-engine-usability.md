@@ -10,6 +10,8 @@ The engine is `atglyph` since `edd80eb4`; these plans name its crates, and 15 to
 
 ## Status
 
+Branches 14 to 18 land before the 0.4.0 tag, so a game on 0.3 migrates once (author, 2026-10-23).
+
 - 01 `quick-wins`: done.
 - 02 `reflection-chance`: done.
 - 03 `content-load`: done.
