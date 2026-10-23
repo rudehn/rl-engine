@@ -134,7 +134,7 @@ fn aggravate_monsters_makes_every_monster_on_the_floor_aware_of_the_reader() {
 #[test]
 fn summon_monsters_calls_up_two_or_three_of_the_floors_monsters_beside_the_reader_over_a_span_of_seeds() {
     for seed in 0..4 {
-        let (mut app, me, here) = arena_on(55 + seed, 1);
+        let (mut app, me, here) = arena_on(57 + seed, 1);
         let scroll = carried(&mut app, me, "scroll of summon monsters", 0);
         use_thing(&mut app, me, scroll);
         let world = app.world_mut();

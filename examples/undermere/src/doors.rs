@@ -212,7 +212,7 @@ mod tests {
     /// the floor round it is: on open ground a door twelve steps off is in
     /// sight, as it came to be when the floor's layout moved.
     fn doors_about() -> (App, Point, [Point; 3]) {
-        let (mut app, _me, here) = arena_on(5, 1);
+        let (mut app, _me, here) = arena_on(6, 1);
         app.add_plugins(KeyScriptPlugin);
         let cells = [here.offset(1, 0), here.offset(0, 1), here.offset(0, -12)];
         crate::testing::lay_floor(&mut app, &cells);

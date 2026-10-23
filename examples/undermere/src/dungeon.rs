@@ -657,13 +657,6 @@ impl Undermere {
         self.plan_of(floor).iter().filter(|p| self.pool.entries[p.entry].fits(floor as i32, &tags)).copied().collect()
     }
 
-    /// The stream place `map` is grown from: one per place, so building
-    /// floor two first does not change floor one, and the printed floor is
-    /// grown from the very stream the run's is.
-    fn place_seed(&self, map: MapId) -> RunSeed {
-        RunSeed(self.seed.derive(crate::seeds::PLACE, u64::from(map.0)))
-    }
-
     /// The biome `floor` draws: pure over `self.seed`, so every call
     /// agrees without the draw being kept anywhere but here, and the same
     /// whichever floor is asked for first, since every floor's draw is
@@ -727,8 +720,12 @@ impl Undermere {
     /// can read a [`Stamped`] or a [`Surveyed`] pass emitted before
     /// [`PlaceBuild::from_context`] flattens every mark into a `Spot` and
     /// drops the rest.
-    fn generate(&self, map: MapId) -> Result<BaseContext, BuildError> {
-        let seed = self.place_seed(map);
+    ///
+    /// Grown from `seed`, the place's own, so building floor two first does
+    /// not change floor one, and the printed floor is grown from the very
+    /// seed the run's is.
+    fn generate(&self, map: MapId, seed: PlaceSeed) -> Result<BaseContext, BuildError> {
+        let seed = RunSeed::from(seed);
         match (map, floor_of(map)) {
             (TOWN, _) => {
                 let (mut ctx, chain) = self.town()?;
@@ -926,11 +923,12 @@ impl Undermere {
             Some(r) => biomes::with_recipe(&self.defs, floor, r, &self.tiles)
                 .ok_or_else(|| BuildError::new("undermere", format!("no biome of floor {floor} grows {r:?}")))?,
         };
+        let seed = PlaceSeed::of(self.seed, map_of(floor).0);
         let grown = self
-            .grow(floor, &drawn, &self.picks_for(floor, &drawn), self.place_seed(map_of(floor)), ATTEMPTS)
+            .grow(floor, &drawn, &self.picks_for(floor, &drawn), seed.into(), ATTEMPTS)
             .map_err(|e| BuildError::new(e.pass, format!("{}, {}: {}", drawn.name, drawn.recipe, e.reason)))?;
         let mut built = PlaceBuild::from_context(grown)?;
-        crate::vaults::place_vault_fixtures(&mut built, &self.tiles, &self.prefabs, self.seed, map_of(floor));
+        crate::vaults::place_vault_fixtures(&mut built, &self.tiles, &self.prefabs, seed, map_of(floor));
         let tables = self.tiles.tables();
         let bridges = [self.tile("bridge"), self.tile("iron bridge")];
         let bounds = built.terrain.bounds();
@@ -968,11 +966,9 @@ impl Undermere {
 }
 
 impl PlaceRules for Undermere {
-    /// Built from the game's own per-floor seed, not the one handed in,
-    /// until the game moves to it.
-    fn build(&self, map: MapId, _seed: PlaceSeed) -> Result<PlaceBuild, BuildError> {
-        let mut built = PlaceBuild::from_context(self.generate(map)?)?;
-        crate::vaults::place_vault_fixtures(&mut built, &self.tiles, &self.prefabs, self.seed, map);
+    fn build(&self, map: MapId, seed: PlaceSeed) -> Result<PlaceBuild, BuildError> {
+        let mut built = PlaceBuild::from_context(self.generate(map, seed)?)?;
+        crate::vaults::place_vault_fixtures(&mut built, &self.tiles, &self.prefabs, seed, map);
         built.ambient = self.ambient_of(map);
         // Mereholt's peace: nothing in the town is harmed, a blow, a shot
         // or a tick of fire or poison alike, and nobody in it is forecast
@@ -1495,7 +1491,8 @@ mod tests {
             for floor in 1..=FLOORS {
                 let at = format!("floor {floor}, seed {s}");
                 let map = map_of(floor);
-                let ctx = undermere.generate(map).unwrap_or_else(|e| panic!("{at}: {e}"));
+                let place = PlaceSeed::of(RunSeed(s), map.0);
+                let ctx = undermere.generate(map, place).unwrap_or_else(|e| panic!("{at}: {e}"));
                 every_lair_is_entered_only_through_its_entries(&ctx, &tables, &at);
                 let stamped: Vec<Stamped> = ctx.outputs().iter::<Stamped>().cloned().collect();
                 let landmark = ctx.outputs().first::<Landmark>().cloned();
@@ -1511,7 +1508,7 @@ mod tests {
                         &at,
                     );
                 }
-                crate::vaults::place_vault_fixtures(&mut built, undermere.tiles(), undermere.prefabs(), RunSeed(s), map);
+                crate::vaults::place_vault_fixtures(&mut built, undermere.tiles(), undermere.prefabs(), place, map);
                 builds_with_a_way_in_and_a_way_on(&built, &tables, floor == FLOORS, &at);
                 if floor == 1 {
                     first_floors.lock().expect("one writer at a time").insert(s, built.terrain.clone());

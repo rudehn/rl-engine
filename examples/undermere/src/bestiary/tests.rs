@@ -526,7 +526,7 @@ fn a_myconid_bursts_into_a_confusing_cloud_exactly_where_it_dies() {
 #[test]
 fn a_sleeping_goblin_takes_the_unaware_blow_and_then_wakes() {
     use crate::testing::{arena, equip, make, monster, settle};
-    let (mut app, me, here) = arena(5);
+    let (mut app, me, here) = arena(7);
     let goblin = monster(&mut app, "goblin", here.offset(1, 0));
     app.world_mut().entity_mut(goblin).insert(Health::full(100));
     let asleep = app.world().resource::<Registries>().statuses.expect(crate::content::ASLEEP);
@@ -719,7 +719,7 @@ fn a_jelly_struck_becomes_two_each_with_its_share() {
 #[test]
 fn a_monkey_takes_a_thing_and_runs_and_drops_it_when_killed() {
     use crate::testing::{arena, give, kill, make, monster, pass_turns};
-    let (mut app, me, here) = arena(21);
+    let (mut app, me, here) = arena(23);
     let dagger = make(&mut app, "dagger");
     give(&mut app, me, dagger);
     let monkey = monster(&mut app, "monkey", here.offset(1, 0));

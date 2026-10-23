@@ -176,15 +176,14 @@ pub fn laid_out(kinds: &Kinds, laid: Id<ItemDef>, gold: Id<ItemDef>, floor: u32,
 /// A cell one could walk to with nothing standing on it: no prop, since a
 /// thing under a chest is one nothing can pick up, and no way through,
 /// since a thing lying on the stairs would be drawn over them. Draws from
-/// `seed.rng(FINDS, floor)`, a stream for each floor
-/// alone, so what lies on floor two never depends on what floor one drew
+/// `seed.place(map).rng(FINDS, 0)`, the floor's own stream, so what lies on floor two never depends on what floor one drew
 /// or which was entered first; where everything goes, then what is made
 /// there, in that order.
 pub fn lay(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, ground: Ground) {
     let Ground { armory, registries, map, seed, standing } = &ground;
     for ev in entered.read().filter(|ev| ev.first) {
         let (Some(floor), Some(place)) = (floor_of(ev.map), map.place(ev.map)) else { continue };
-        let mut rng = seed.rng(crate::seeds::FINDS, u64::from(floor));
+        let mut rng = seed.place(ev.map).rng(crate::seeds::FINDS, 0);
         let taken: Vec<Point> = standing.iter().filter(|(_, on)| on.0 == ev.map).map(|(at, _)| at.0).collect();
         let open: Vec<Point> = place.terrain.bounds().cells().filter(|p| map.is_walkable_on(ev.map, *p) && !taken.contains(p)).collect();
         let (laid, gold) = (armory.defs.expect(LAID), armory.defs.expect(GOLD));

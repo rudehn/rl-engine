@@ -187,13 +187,6 @@ pub enum LootSet {
     Drop,
 }
 
-/// A stream for one area's scatter or one container's contents, derived
-/// from the run's seed under `domain` for `index` alone, so nothing that
-/// happened elsewhere first changes what is drawn there.
-pub(crate) fn stream_for(seed: &Seed, domain: SeedDomain, index: u64) -> StdRng {
-    seed.0.rng(domain, index)
-}
-
 /// The cells props stand on in `map`, where nothing is put down: an item
 /// under a crate is one nothing can pick up.
 fn standing(props: &Query<(&Position, Option<&OnMap>), With<Prop>>, map: MapId) -> Vec<Point> {
@@ -241,7 +234,9 @@ pub fn scatter_places<M: ItemMaker>(mut commands: Commands, mut entered: Message
         let Some(place) = map.place(ev.map) else { continue };
         let area = LootArea::Place(ev.map);
         let (band, rules) = (maker.band(area), maker.scatter());
-        let mut rng = stream_for(seed, crate::seed::LOOT_PLACE, u64::from(ev.map.0));
+        // The place's own stream, so nothing that happened elsewhere first
+        // changes what is drawn there.
+        let mut rng = seed.place(ev.map).rng(crate::seed::LOOT_PLACE, 0);
         let marks: Vec<(u32, Point)> = place.spots.iter().map(|s| (s.tag, s.at)).collect();
         let standing = standing(props, ev.map);
         let mut free = |p: Point| map.is_walkable(p) && !standing.contains(&p);
@@ -334,7 +329,9 @@ pub fn fill_containers<M: ItemMaker>(mut commands: Commands, mut asks: MessageRe
     for ask in asks.read() {
         let Ok((at, on)) = places.get(ask.prop) else { continue };
         let map = on.map_or(MapId::ZERO, |m| m.0);
-        let mut rng = stream_for(&seed, crate::seed::LOOT_CONTAINER, position_hash(u64::from(map.0), at.0.x, at.0.y));
+        // The place's own stream, indexed by the container's cell, so
+        // opening one first never changes what another holds.
+        let mut rng = seed.place(map).rng(crate::seed::LOOT_CONTAINER, position_hash(0, at.0.x, at.0.y));
         let band = maker.band(LootArea::Place(map)) + ask.band;
         let mut made = Vec::new();
         for (def, count) in draw_stock(&*maker, &ask.what, ask.count, band, &mut rng) {

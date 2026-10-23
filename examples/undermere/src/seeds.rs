@@ -20,7 +20,7 @@ pub const RECIPE: SeedDomain = SeedDomain::new(b"undermere.recipe");
 /// The biome a floor draws, indexed by floor.
 pub const BIOME: SeedDomain = SeedDomain::new(b"undermere.biome");
 /// The item faces of the run, one index per family.
-pub const LORE: SeedDomain = SeedDomain::new(b"lore");
+pub const LORE: SeedDomain = SeedDomain::new(b"undermere.lore");
 /// The run's names for Mereholt's people and the swords for hire.
 pub const NAMES: SeedDomain = SeedDomain::new(b"undermere.names");
 /// A visit's candidates in the tavern, the visit's number its index.
@@ -29,6 +29,11 @@ pub const TAVERN: SeedDomain = SeedDomain::new(b"undermere.tavern");
 pub const WARES: SeedDomain = SeedDomain::new(b"undermere.wares");
 /// The party a photograph starts with.
 pub const PARTY: SeedDomain = SeedDomain::new(b"undermere.start-party");
+// Drawn from the run's seed, by floor or once: what the run decides
+// before any floor is built, or what belongs to the run and no one place.
+// Below, drawn from a place's own seed: what one floor holds, so building
+// or entering floors in any order changes none of them.
+
 /// Where a floor's vault key and lever lie.
 pub const VAULT_FIXTURES: SeedDomain = SeedDomain::new(b"undermere.vaults.fixtures");
 /// Who sleeps at a vault's marks.
@@ -37,14 +42,9 @@ pub const VAULT_MARKS: SeedDomain = SeedDomain::new(b"undermere.vaults.marks");
 pub const WRITINGS: SeedDomain = SeedDomain::new(b"undermere.writings");
 /// What lies loose on a floor.
 pub const FINDS: SeedDomain = SeedDomain::new(b"undermere.finds");
-/// Who stands on a floor.
+/// Who stands on a floor: three streams of it, by index, the ordinary
+/// groups, the bands and the rest.
 pub const POPULATION: SeedDomain = SeedDomain::new(b"undermere.population");
-/// Where a floor's bands stand.
-pub const POPULATION_BANDS: SeedDomain = SeedDomain::new(b"undermere.population.bands");
-/// A floor's ordinary groups.
-pub const POPULATION_PLAN: SeedDomain = SeedDomain::new(b"undermere.population.plan");
-/// The stream a floor is grown from.
-pub const PLACE: SeedDomain = SeedDomain::new(b"undermere.place");
 
 /// Every domain above, by name.
 pub const ALL: &[(&str, SeedDomain)] = &[
@@ -64,9 +64,6 @@ pub const ALL: &[(&str, SeedDomain)] = &[
     ("WRITINGS", WRITINGS),
     ("FINDS", FINDS),
     ("POPULATION", POPULATION),
-    ("POPULATION_BANDS", POPULATION_BANDS),
-    ("POPULATION_PLAN", POPULATION_PLAN),
-    ("PLACE", PLACE),
 ];
 
 #[cfg(test)]

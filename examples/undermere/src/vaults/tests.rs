@@ -595,7 +595,13 @@ fn the_paralysis_vestibules_vent_rouses_the_sleepers_beyond_it() {
         .collect();
     assert_eq!(waiting.len(), marks.len(), "a sleeper on each mark");
     assert!(waiting.iter().all(|s| sleeps(&app, *s)), "asleep before");
-    let (_, vent) = props_called(&mut app, map, "paralysis vent")[0];
+    // The vestibule's own vent, the one nearest its sleepers: from floor
+    // six a paralysis vent is also one of the floor's traps, laid on its
+    // corridors and doorways, and one of those may be found first.
+    let (_, vent) = props_called(&mut app, map, "paralysis vent")
+        .into_iter()
+        .min_by_key(|(_, at)| marks.iter().map(|m| geometry::chebyshev(*at, *m)).min())
+        .expect("the vestibule's vent");
     step_onto(&mut app, me, vent);
     for s in &waiting {
         assert!(!sleeps(&app, *s), "{s:?}, in the room beyond, is roused");

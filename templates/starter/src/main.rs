@@ -43,9 +43,9 @@ const FLOOR: MapId = MapId(1);
 const BRAZIERS: usize = 5;
 const GOBLINS: usize = 10;
 
-/// The random stream the floor is stocked from, by name: a spawner added
-/// later draws from a stream of its own and cannot change what this one
-/// places.
+/// The random stream a floor is stocked from, by name, drawn from the
+/// floor's own seed: a spawner added later draws from a stream of its own
+/// and cannot change what this one places.
 const POPULATE: SeedDomain = SeedDomain::new(b"starter.populate");
 
 /// The torch you carry: a flame to see by, and to be seen by.
@@ -372,7 +372,7 @@ fn populate(
             continue;
         };
         let bounds = place.terrain.bounds();
-        let mut rng = seed.rng(POPULATE, ev.map.0 as u64);
+        let mut rng = seed.place(ev.map).rng(POPULATE, 0);
         let mut taken = vec![ev.entry];
 
         for _ in 0..BRAZIERS {

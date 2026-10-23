@@ -354,8 +354,10 @@ fn note_bag_and_floor(mut vitals: ResMut<VitalsView>, mut facets: ResMut<Facets>
 // ANCHOR_END: status
 
 // ANCHOR: populate
-/// The stream the rats are placed from, named once: a spawner added later
-/// draws from a stream of its own and cannot shift what this one places.
+/// The stream the rats are placed from, named once and drawn from each
+/// floor's own seed: a spawner added later draws from a stream of its own
+/// and cannot shift what this one places, and the floors may be entered in
+/// any order.
 const RATS: SeedDomain = SeedDomain::new(b"warren.rats");
 
 /// Fills the floor the one time it is built. `PlaceEntered::first` is
@@ -382,7 +384,7 @@ fn populate(
         }
         let Some(place) = map.place(ev.map) else { continue };
         let bounds = place.terrain.bounds();
-        let mut rng = seed.rng(RATS, ev.map.0 as u64);
+        let mut rng = seed.place(ev.map).rng(RATS, 0);
 
         // The stairs are the engine's, laid from the ladder. On the bottom
         // floor the king stands where the stairs down would be. Weight zero

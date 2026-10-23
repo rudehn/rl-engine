@@ -516,6 +516,14 @@ fn favored_on(draws: &BiomeDraws, bestiary: &Bestiary, floor: u32) -> Vec<Id<Mon
     draws.of(floor).favored.iter().filter_map(|name| bestiary.defs.id(name)).collect()
 }
 
+/// The index under `POPULATION` a floor's ordinary groups draw from.
+const PLAN_STREAM: u64 = 0;
+/// The index under `POPULATION` a floor's bands draw from.
+const BANDS_STREAM: u64 = 1;
+/// The index under `POPULATION` the rest of a floor's people draw from:
+/// a camp's coin flip, the feeding ground, the patrol and the captive.
+const REST_STREAM: u64 = 2;
+
 /// Populates every floor on the arrival that built it: a band of its own,
 /// the dar trio or a goblin war band wherever `BANDS` names its floor,
 /// then [`groups_on`]'s number of ordinary groups less one for each band,
@@ -526,17 +534,17 @@ fn favored_on(draws: &BiomeDraws, bestiary: &Bestiary, floor: u32) -> Vec<Id<Mon
 /// a group never stands on the stairs themselves, and off a band's own
 /// cells, so neither ever lands on the other's.
 ///
-/// Draws from `seed.rng(POPULATION, floor)`, a stream for each floor
-/// alone, so what stands on floor two never depends on how many
-/// draws floor one happened to make, or on whether it was entered first;
-/// the bands from `POPULATION_BANDS` and the ordinary groups from
-/// `POPULATION_PLAN`, each of the floor alone too, so a
-/// roll added to one of the three never moves what the other two stand.
+/// Draws from three streams of the floor's own seed under `POPULATION`,
+/// so what stands on floor two never depends on how many draws floor one
+/// happened to make, or on whether it was entered first: the ordinary
+/// groups from `PLAN_STREAM`, the bands from `BANDS_STREAM` and the
+/// rest from `REST_STREAM`, so a roll added to one of the three never
+/// moves what the other two stand.
 pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, stock: Stock) {
     let Stock { bestiary, map, seed, registries, draws, ways, turns, verbs, posted } = &stock;
     for ev in entered.read().filter(|ev| ev.first) {
         let (Some(floor), Some(place)) = (floor_of(ev.map), map.place(ev.map)) else { continue };
-        let mut rng = seed.rng(crate::seeds::POPULATION, u64::from(floor));
+        let mut rng = seed.place(ev.map).rng(crate::seeds::POPULATION, REST_STREAM);
         let mut marked: Vec<Point> = place.spots.iter().map(|spot| spot.at).collect();
         let halls: Vec<(Point, i32)> = posted
             .iter()
@@ -562,7 +570,7 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
         // feeding ground, the patrol and the captive all roll on `rng`,
         // and a band drawing from it would stand somewhere else whenever
         // one of them was added or tuned.
-        let mut band_rng = seed.rng(crate::seeds::POPULATION_BANDS, u64::from(floor));
+        let mut band_rng = seed.place(ev.map).rng(crate::seeds::POPULATION, BANDS_STREAM);
         let mut scenes = 0;
         for band in BANDS.iter().filter(|b| (b.floors.0..=b.floors.1).contains(&floor)) {
             // Half the time a goblin war band is placed at all, it comes
@@ -613,7 +621,7 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
         // ordinary people exactly who they were before any of that
         // existed, for whichever seed happens to land one.
         let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p) && outside(p);
-        let mut plan_rng = seed.rng(crate::seeds::POPULATION_PLAN, u64::from(floor));
+        let mut plan_rng = seed.place(ev.map).rng(crate::seeds::POPULATION, PLAN_STREAM);
         // A band, a feeding ground and a patrol each stand in for one of
         // the floor's ordinary groups rather than beside all of them:
         // three goblins round a fire are one of the floor's fights, and a

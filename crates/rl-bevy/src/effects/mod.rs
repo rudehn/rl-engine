@@ -48,9 +48,7 @@ use crate::world::WorldMap;
 /// Its own domain, so adding an effect does not shift the combat stream
 /// and change every monster's rolls in a run that was going fine, and one
 /// stream for every carrier, so a trap cannot shift a spell's dice by
-/// landing in a different pass. The domain is still `ability`, which is
-/// what it was called before effects were a subsystem of their own: a new
-/// name would have re-dealt every seed. Derived from the run's
+/// landing in a different pass. Derived from the run's
 /// [`Seed`](crate::seed::Seed) by [`EffectsPlugin`].
 pub type EffectRng = crate::seed::RunRng<EffectDomain>;
 
@@ -666,15 +664,15 @@ pub(crate) fn ensure(app: &mut App) {
 mod tests {
     use super::*;
 
-    /// What `AbilityRng` drew first for seed 7 on the day the stream moved
-    /// here and was renamed.
-    const FIRST_DRAW_FOR_SEED_SEVEN: u64 = 6_240_403_554_423_139_800;
+    /// What `EffectRng` drew first for seed 7 on the day the engine's
+    /// domains moved under `rl.` and it came to draw under `rl.effects`.
+    const FIRST_DRAW_FOR_SEED_SEVEN: u64 = 2_387_259_175_841_447_855;
 
-    /// Fingerprint tripwire: the effect stream is the ability stream renamed,
-    /// derived from the same domain, so every seed rolls the dice it rolled
-    /// before the move.
+    /// Fingerprint tripwire: the effect stream draws under its own domain,
+    /// so renaming or folding it into another, which would re-deal every
+    /// seed's dice, is a red test rather than a quiet change.
     #[test]
-    fn fingerprint_tripwire_the_effect_stream_draws_what_the_ability_stream_drew() {
+    fn fingerprint_tripwire_the_effect_stream_draws_under_its_own_domain() {
         use crate::seed::Stream;
         use rand::RngCore;
         let mut rng = EffectRng::for_run(rl_core::RunSeed(7));

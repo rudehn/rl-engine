@@ -256,10 +256,11 @@ impl Foundry {
     /// test can read a [`Stamped`](rl_engine::rl_mapgen::prefab::Stamped)
     /// pass emitted before [`PlaceBuild::from_context`] flattens every
     /// mark into a [`Spot`] and drops the stamp's own bounds.
-    fn generate(&self, map: MapId) -> Result<BaseContext, BuildError> {
+    ///
+    /// Grown from `seed`, the deck's own, so building deck 2 first does not
+    /// change deck 1.
+    fn generate(&self, map: MapId, seed: PlaceSeed) -> Result<BaseContext, BuildError> {
         let deck = deck_of(map);
-        // One stream per deck, so building deck 2 first does not change deck 1.
-        let seed = RunSeed(self.seed.0 ^ (deck as u64) << 32);
         // Foundry grows no locked or sealed piece, so its hatch stands for both.
         let tiles = LayoutTiles { floor: self.deck, door: self.hatch, locked: self.hatch, sealed: self.hatch };
         let grown = rl_engine::rl_bevy::layout::passes(&self.layout, recipe_of(deck), &tiles)?;
@@ -340,10 +341,8 @@ impl Foundry {
 }
 
 impl PlaceRules for Foundry {
-    /// Built from the game's own per-floor seed, not the one handed in,
-    /// until the game moves to it.
-    fn build(&self, map: MapId, _seed: PlaceSeed) -> Result<PlaceBuild, BuildError> {
-        let mut built = PlaceBuild::from_context(self.generate(map)?)?;
+    fn build(&self, map: MapId, seed: PlaceSeed) -> Result<PlaceBuild, BuildError> {
+        let mut built = PlaceBuild::from_context(self.generate(map, seed)?)?;
         built.ambient = ambient_of(deck_of(map));
         Ok(built)
     }
@@ -395,7 +394,7 @@ mod tests {
             let mut maps = Vec::new();
             for deck in 1..=DECKS {
                 let at = format!("deck {deck}, seed {s}");
-                let ctx = foundry.generate(map_of(deck)).unwrap_or_else(|e| panic!("{at}: {e}"));
+                let ctx = foundry.generate(map_of(deck), PlaceSeed::of(RunSeed(s), map_of(deck).0)).unwrap_or_else(|e| panic!("{at}: {e}"));
                 meets_what_its_recipe_requires(&ctx, &at);
                 no_two_pieces_overlap_and_every_mark_sits_on_a_floor_tile(&ctx, &tables, &at);
                 no_room_is_left_empty(&ctx, &at);
@@ -598,7 +597,7 @@ mod tests {
     #[test]
     fn a_vault_is_not_laid_the_same_way_on_every_seed() {
         let facings: BTreeSet<_> = (0..40)
-            .map(|s| Foundry::new(RunSeed(s)).generate(map_of(1)).unwrap())
+            .map(|s| Foundry::new(RunSeed(s)).generate(map_of(1), PlaceSeed::of(RunSeed(s), 1)).unwrap())
             .filter_map(|ctx| {
                 let st = ctx.outputs().iter::<Stamped>().find(|st| st.marks.iter().any(|(c, _)| *c == 'A'))?;
                 let (_, at) = st.marks.iter().find(|(c, _)| *c == 'A').unwrap();

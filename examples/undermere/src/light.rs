@@ -189,12 +189,14 @@ mod tests {
     /// biome's ambient is held to its band by the static check above, so
     /// this arrives at the two kinds of floor there are, the first floor
     /// found that is dim and the first that is a warren, each found through
-    /// the pure biome draw with no run built to look.
+    /// the pure biome draw with no run built to look. From seed two: on
+    /// the first floors of seeds nought and one the adventurer arrives
+    /// where everything in line is lit, which proves nothing.
     #[test]
     fn beyond_every_light_a_floor_is_seen_dimly_but_the_spider_warrens_truly_dark() {
         let loaded = Undermere::new(RunSeed(0));
         let find = |warren: bool| -> (u64, u32) {
-            (0..200u64)
+            (2..200u64)
                 .find_map(|s| {
                     let drawn = loaded.reseeded(RunSeed(s));
                     (1..FLOORS).find(|f| (drawn.biome_of(*f).name == "the Spider Warrens") == warren).map(|f| (s, f))

@@ -22,7 +22,9 @@ use std::marker::PhantomData;
 use bevy::ecs::schedule::common_conditions::resource_exists_and_changed;
 use bevy::prelude::*;
 use rand::rngs::StdRng;
-use rl_core::{RunSeed, SeedDomain};
+use rl_core::{PlaceSeed, RunSeed, SeedDomain};
+
+use crate::places::MapId;
 
 use crate::plugin::{EngineSet, Needs};
 
@@ -56,6 +58,13 @@ impl Seed {
             None => Seed(RunSeed::fresh()),
         }
     }
+
+    /// The seed of place `map` in this run: where every draw about that
+    /// one place comes from, `seed.place(map).rng(DOMAIN, 0)`, so what a
+    /// floor holds never depends on which floor was entered first.
+    pub fn place(&self, map: MapId) -> PlaceSeed {
+        PlaceSeed::of(self.0, map.0)
+    }
 }
 
 /// The seed in `args`, if one was asked for.
@@ -68,47 +77,50 @@ fn seed_argument(mut args: impl Iterator<Item = String>) -> Option<Result<RunSee
     })
 }
 
-// The engine's domains. Each is named here once, so two subsystems can
+// The engine's domains, every one under `rl.`, which a game's
+// `SeedDomain::new` refuses. Each is named here once, so two subsystems can
 // never draw under one name by accident, which
 // `every_engine_stream_derives_under_a_name_of_its_own` checks.
-pub(crate) const COMBAT: SeedDomain = SeedDomain::new(b"combat");
-pub(crate) const MINDS: SeedDomain = SeedDomain::new(b"minds");
-pub(crate) const LOOT: SeedDomain = SeedDomain::new(b"loot");
-pub(crate) const LOOT_PLACE: SeedDomain = SeedDomain::new(b"loot.place");
-pub(crate) const LOOT_CONTAINER: SeedDomain = SeedDomain::new(b"loot.container");
-pub(crate) const PREFAB_CONTENT: SeedDomain = SeedDomain::new(b"prefab.content");
-pub(crate) const PROPS: SeedDomain = SeedDomain::new(b"props");
-pub(crate) const STEALTH: SeedDomain = SeedDomain::new(b"stealth");
-pub(crate) const STUMBLE: SeedDomain = SeedDomain::new(b"status.stumble");
-pub(crate) const EFFECTS: SeedDomain = SeedDomain::new(b"ability");
-pub(crate) const REFLECT: SeedDomain = SeedDomain::new(b"ability.reflect");
-pub(crate) const FIRE: SeedDomain = SeedDomain::new(b"fire");
-pub(crate) const GAS_SPILL: SeedDomain = SeedDomain::new(b"gas spill");
-pub(crate) const GAS_SWIRL: SeedDomain = SeedDomain::new(b"gas swirl");
-pub(crate) const RESTART: SeedDomain = SeedDomain::new(b"restart");
+pub(crate) const COMBAT: SeedDomain = SeedDomain::engine(b"combat");
+pub(crate) const MINDS: SeedDomain = SeedDomain::engine(b"minds");
+pub(crate) const LOOT: SeedDomain = SeedDomain::engine(b"loot");
+pub(crate) const LOOT_PLACE: SeedDomain = SeedDomain::engine(b"loot.place");
+pub(crate) const LOOT_CONTAINER: SeedDomain = SeedDomain::engine(b"loot.container");
+pub(crate) const PREFAB_CONTENT: SeedDomain = SeedDomain::engine(b"prefabs.content");
+pub(crate) const PROPS: SeedDomain = SeedDomain::engine(b"props");
+pub(crate) const STEALTH: SeedDomain = SeedDomain::engine(b"stealth");
+pub(crate) const STUMBLE: SeedDomain = SeedDomain::engine(b"status.stumble");
+pub(crate) const EFFECTS: SeedDomain = SeedDomain::engine(b"effects");
+pub(crate) const REFLECT: SeedDomain = SeedDomain::engine(b"ability.reflect");
+pub(crate) const FIRE: SeedDomain = SeedDomain::engine(b"fire");
+pub(crate) const GAS_SPILL: SeedDomain = SeedDomain::engine(b"gas.spill");
+pub(crate) const GAS_SWIRL: SeedDomain = SeedDomain::engine(b"gas.swirl");
+pub(crate) const RESTART: SeedDomain = SeedDomain::engine(b"restart");
 
-/// Every domain the engine draws under, by name: its streams, the salts
-/// fire and gas hash a turn from, the next run's seed on the web, and a
-/// place's own seed.
+/// Every domain the engine draws under, by name: its streams, a place's
+/// loot and a piece's contents, the salts fire and gas hash a turn from,
+/// the next run's seed on the web, and a place's own seed.
 ///
 /// So a game can check none of its own domains is one of these, as
-/// Undermere's and Foundry's `seeds` modules do.
+/// Undermere's and Foundry's `seeds` modules do; [`SeedDomain::new`] already
+/// refuses every name under `rl.`, and this list is what that leaves to
+/// check.
 pub const ENGINE_DOMAINS: &[(&str, SeedDomain)] = &[
-    ("combat", COMBAT),
-    ("minds", MINDS),
-    ("loot", LOOT),
-    ("loot.place", LOOT_PLACE),
-    ("loot.container", LOOT_CONTAINER),
-    ("prefab.content", PREFAB_CONTENT),
-    ("props", PROPS),
-    ("stealth", STEALTH),
-    ("status.stumble", STUMBLE),
-    ("ability", EFFECTS),
-    ("ability.reflect", REFLECT),
-    ("fire", FIRE),
-    ("gas spill", GAS_SPILL),
-    ("gas swirl", GAS_SWIRL),
-    ("restart", RESTART),
+    ("rl.combat", COMBAT),
+    ("rl.minds", MINDS),
+    ("rl.loot", LOOT),
+    ("rl.loot.place", LOOT_PLACE),
+    ("rl.loot.container", LOOT_CONTAINER),
+    ("rl.prefabs.content", PREFAB_CONTENT),
+    ("rl.props", PROPS),
+    ("rl.stealth", STEALTH),
+    ("rl.status.stumble", STUMBLE),
+    ("rl.effects", EFFECTS),
+    ("rl.ability.reflect", REFLECT),
+    ("rl.fire", FIRE),
+    ("rl.gas.spill", GAS_SPILL),
+    ("rl.gas.swirl", GAS_SWIRL),
+    ("rl.restart", RESTART),
     ("rl.place", SeedDomain::engine(b"place")),
 ];
 
@@ -251,11 +263,18 @@ mod tests {
     #[test]
     fn every_engine_stream_derives_under_a_name_of_its_own() {
         for (i, (name, domain)) in ENGINE_DOMAINS.iter().enumerate() {
+            let bare = name.strip_prefix("rl.").unwrap_or_else(|| panic!("{name} is not under rl."));
+            assert_eq!(SeedDomain::engine(bare.as_bytes()), *domain, "{name} is listed under another name than it draws under");
             for (other, theirs) in &ENGINE_DOMAINS[i + 1..] {
                 assert_ne!(name, other, "{name} is listed twice");
                 assert_ne!(domain, theirs, "{name} and {other} share a stream");
             }
         }
+    }
+
+    #[test]
+    fn a_seed_s_place_is_the_place_seed_of_its_run_and_map() {
+        assert_eq!(Seed(RunSeed(42)).place(MapId(3)), PlaceSeed::of(RunSeed(42), 3));
     }
 
     #[test]

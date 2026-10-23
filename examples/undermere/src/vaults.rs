@@ -156,7 +156,7 @@ impl VaultTiles {
 /// are dropped where `fixture_cell` says; and every [`CAUSEWAY`] mark is
 /// hidden as the deep water round it, found as any secret is. Nothing on a
 /// place that is no floor or drew none of them.
-pub fn place_vault_fixtures(built: &mut PlaceBuild, tiles: &TileRegistry, prefabs: &Prefabs<MonsterDef>, seed: RunSeed, map: MapId) {
+pub fn place_vault_fixtures(built: &mut PlaceBuild, tiles: &TileRegistry, prefabs: &Prefabs<MonsterDef>, seed: PlaceSeed, map: MapId) {
     let Some(floor) = floor_of(map) else { return };
     hide_causeways(built, tiles, prefabs);
     if built.locks.is_empty() {
@@ -166,7 +166,7 @@ pub fn place_vault_fixtures(built: &mut PlaceBuild, tiles: &TileRegistry, prefab
     for lock in built.locks.iter_mut().filter(|l| l.key.is_some()) {
         lock.key = key;
     }
-    let mut rng = seed.rng(crate::seeds::VAULT_FIXTURES, u64::from(map.0));
+    let mut rng = seed.rng(crate::seeds::VAULT_FIXTURES, 0);
     let locked: Vec<Point> = built.locks.iter().filter(|l| l.key.is_some()).map(|l| l.at).collect();
     let sealed: Vec<Point> = built.locks.iter().filter(|l| l.key.is_none()).map(|l| l.at).collect();
     for (shut, tag, by_wall) in [(locked, KEY_TAG, false), (sealed, LEVER_TAG, true)] {
@@ -359,7 +359,7 @@ pub struct Filling<'w> {
 pub fn spawn_vault_marks(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, fill: Filling) {
     for ev in entered.read().filter(|ev| ev.first) {
         let (Some(place), Some(floor)) = (fill.map.place(ev.map), floor_of(ev.map)) else { continue };
-        let mut rng = fill.seed.rng(crate::seeds::VAULT_MARKS, u64::from(ev.map.0));
+        let mut rng = fill.seed.place(ev.map).rng(crate::seeds::VAULT_MARKS, 0);
         for spot in &place.spots {
             let mark = spot.prefab.zip(char::from_u32(spot.tag)).filter(|(key, glyph)| matches!(fill.prefabs.slot(*key, *glyph), Some(Slot::Mark)));
             match (spot.tag, mark.map(|(_, glyph)| glyph)) {

@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The engine's streams are named under `rl.`, the effects' stream is `rl.effects` where it was still `ability`, and every place draws from its own `PlaceSeed`: the engine's loot scattered on a place, a container's contents and a piece's slots, and in Undermere, Foundry, the tutorial and the template every floor's chain and everything a floor holds. `seed.place(map)` is a place's seed. So every seed plays differently from the last release.
+  To change: nothing in code, though a game's own per-place draws may follow, `seed.place(map).rng(DOMAIN, i)`; a recorded seed or replay from before plays another run, and a continued save builds the floors it had not reached differently.
+
 - One spelling for a draw: `seed.rng(DOMAIN, index)`. `Seed::stream` and `RunSeed::stream` are gone, and a game's `SeedDomain::new` refuses a name starting `rl.`, which is the engine's and is made with `SeedDomain::engine`. The engine's streams are one generic `RunRng<D>` over a `StreamDomain`, with `CombatRng`, `EffectRng`, `LootRng` and `PropRng` aliases of it, and `ENGINE_DOMAINS` lists every domain the engine draws under.
   To change: `seed.stream(b"name", i)` becomes `seed.rng(NAME, i)` with `const NAME: SeedDomain = SeedDomain::new(b"name")`.
 
