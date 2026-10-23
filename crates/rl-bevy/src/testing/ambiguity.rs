@@ -17,14 +17,21 @@
 //! list does not outlive what it explains.
 //!
 //! Systems are recognised by the type of their function, from
-//! [`system_type`], not by name: without Bevy's `debug` feature, which the
-//! workspace does not build with, every system is named alike. A failure
-//! reads by the names a test gives the systems and the data it meets.
+//! [`system_type`], or by the sets they sit in, never by name: a system's
+//! name is its path only in a build with Bevy's `debug` feature, which the
+//! workspace builds with but a game need not. A failure reads by the names
+//! a test gives the systems and the data it meets, and by Bevy's own names
+//! for the rest.
+//!
+//! A game names only its own systems in an [`Allowed`], beside the data
+//! ([`Allowed::with_any`]) or the engine's sets ([`Allowed::among`]): an
+//! engine system function is the engine's to rename, and its pairs with
+//! another engine system are the engine's own test's to answer for.
 
 use std::any::TypeId;
 
 use bevy::ecs::component::ComponentId;
-use bevy::ecs::schedule::{InternedScheduleLabel, Schedules};
+use bevy::ecs::schedule::{InternedScheduleLabel, InternedSystemSet, Schedules};
 use bevy::prelude::*;
 
 /// A system as the check knows it: the schedule it runs in and the type
@@ -98,6 +105,9 @@ pub struct Allowed {
     pub a: Option<TypeId>,
     /// The other.
     pub b: Option<TypeId>,
+    /// The sets both must sit in, each in one of them, directly or through
+    /// a set inside it; empty for anywhere.
+    pub among: Vec<InternedSystemSet>,
     /// What they may conflict over.
     pub on: Vec<ComponentId>,
     /// Why their order cannot matter.
@@ -107,17 +117,25 @@ pub struct Allowed {
 impl Allowed {
     /// `a` and `b`, over `on`.
     pub fn pair(a: TypeId, b: TypeId, on: Vec<ComponentId>, why: &'static str) -> Self {
-        Self { a: Some(a), b: Some(b), on, why }
+        Self { a: Some(a), b: Some(b), among: Vec::new(), on, why }
     }
 
     /// `a` and any other system, over `on`.
     pub fn with_any(a: TypeId, on: Vec<ComponentId>, why: &'static str) -> Self {
-        Self { a: Some(a), b: None, on, why }
+        Self { a: Some(a), b: None, among: Vec::new(), on, why }
+    }
+
+    /// Any two systems that both sit in `sets`, over `on`: what a set
+    /// promises of every system in it, such as one actor's one action a
+    /// pass among the resolvers, admitted without naming a system, and
+    /// nothing outside the sets admitted by it.
+    pub fn among(sets: Vec<InternedSystemSet>, on: Vec<ComponentId>, why: &'static str) -> Self {
+        Self { a: None, b: None, among: sets, on, why }
     }
 
     /// Any two systems, over `on`.
     pub fn any(on: Vec<ComponentId>, why: &'static str) -> Self {
-        Self { a: None, b: None, on, why }
+        Self { a: None, b: None, among: Vec::new(), on, why }
     }
 }
 
@@ -160,14 +178,21 @@ pub fn assert_ordered(world: &World, game: &str, ours: &[SystemKey], allowed: &[
         let label = schedule.label();
         let types: Vec<_> = schedule.systems().expect("initialized").map(|(key, system)| (key, system.system_type())).collect();
         let type_of = |k| types.iter().find(|(key, _)| *key == k).map(|(_, t)| *t).expect("a system of this schedule");
-        for (a, b, on) in schedule.graph().conflicting_systems().iter() {
-            let (a, b) = (type_of(*a), type_of(*b));
+        let graph = schedule.graph();
+        // A set this schedule has no system in holds nothing here.
+        let inside = |rule: &Allowed, k| rule.among.is_empty() || rule.among.iter().any(|set| graph.systems_in_set(*set).is_ok_and(|keys| keys.contains(&k)));
+        for (ka, kb, on) in graph.conflicting_systems().iter() {
+            let (a, b) = (type_of(*ka), type_of(*kb));
             if !ours.contains(&(label, a)) && !ours.contains(&(label, b)) {
                 continue;
             }
-            let rule = allowed
-                .iter()
-                .position(|r| ((fits(r.a, a) && fits(r.b, b)) || (fits(r.a, b) && fits(r.b, a))) && !on.is_empty() && on.iter().all(|c| r.on.contains(c)));
+            let rule = allowed.iter().position(|r| {
+                ((fits(r.a, a) && fits(r.b, b)) || (fits(r.a, b) && fits(r.b, a)))
+                    && inside(r, *ka)
+                    && inside(r, *kb)
+                    && !on.is_empty()
+                    && on.iter().all(|c| r.on.contains(c))
+            });
             match rule {
                 Some(i) => used[i] = true,
                 None => {
@@ -184,7 +209,65 @@ pub fn assert_ordered(world: &World, game: &str, ours: &[SystemKey], allowed: &[
         unexplained.join("\n")
     );
     let either = |t: Option<TypeId>| t.map_or_else(|| "any system".to_string(), system);
-    let stale: Vec<String> =
-        allowed.iter().zip(&used).filter(|(_, used)| !**used).map(|(r, _)| format!("{} and {}: {}", either(r.a), either(r.b), r.why)).collect();
+    let stale: Vec<String> = allowed
+        .iter()
+        .zip(&used)
+        .filter(|(_, used)| !**used)
+        .map(|(r, _)| match r.among.as_slice() {
+            [] => format!("{} and {}: {}", either(r.a), either(r.b), r.why),
+            sets => format!("any two among {sets:?}: {}", r.why),
+        })
+        .collect();
     assert!(stale.is_empty(), "allowed pairs of {game}'s that no longer conflict, to take off the list: {stale:#?}");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Resource, Default)]
+    struct Tally(u32);
+
+    #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+    struct Outer;
+
+    #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+    struct Inner;
+
+    fn count_one(mut tally: ResMut<Tally>) {
+        tally.0 += 1;
+    }
+
+    fn count_two(mut tally: ResMut<Tally>) {
+        tally.0 += 2;
+    }
+
+    /// An app whose two systems both write a `Tally` unordered, `count_one`
+    /// in `Inner`, a set inside `Outer`, and `count_two` in `Outer` when
+    /// `both_inside`, otherwise in no set.
+    fn checked(both_inside: bool) {
+        let mut app = App::new();
+        app.init_resource::<Tally>().configure_sets(Update, Inner.in_set(Outer)).add_systems(Update, count_one.in_set(Inner));
+        if both_inside {
+            app.add_systems(Update, count_two.in_set(Outer));
+        } else {
+            app.add_systems(Update, count_two);
+        }
+        let ours = added(&mut app, &mut App::new());
+        let world = app.world();
+        let tally = data([("Tally", world.components().component_id::<Tally>())]);
+        let allowed = [Allowed::among(vec![Outer.intern()], on(&tally, &["Tally"]), "a test's two counters")];
+        assert_ordered(world, "a test", &ours, &allowed, &[("count_one", system_type(count_one)), ("count_two", system_type(count_two))], &tally);
+    }
+
+    #[test]
+    fn an_allowance_among_sets_admits_a_pair_inside_them() {
+        checked(true);
+    }
+
+    #[test]
+    #[should_panic(expected = "1 unordered conflicting pairs of a test's")]
+    fn an_allowance_among_sets_admits_no_pair_outside_them() {
+        checked(false);
+    }
 }

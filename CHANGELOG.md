@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `Allowed::among` admits a conflicting pair only inside the named system sets.
+  To change: nothing.
+
 - A layout recipe's `barriers` are `rl_mapgen::Barrier`s, read straight from the file and refused at load by the pass's own `Barrier::may_cut`; `rl_rules::layout::BarrierDef` and its copy of the arithmetic are gone.
   To change: `BarrierDef` becomes `rl_mapgen::Barrier`, with the same four fields; files are unchanged.
 

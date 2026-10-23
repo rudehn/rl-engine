@@ -18,6 +18,7 @@ use std::any::TypeId;
 use bevy::ecs::component::ComponentId;
 use bevy::prelude::*;
 use rl_engine::rl_bevy::minds::Thinking;
+use rl_engine::rl_bevy::plugin::TurnSet;
 use rl_engine::rl_bevy::testing::ambiguity::{self, Allowed, system_type as id};
 use rl_engine::rl_bevy::turn::{Acting, ActionDone, ActionRefused};
 use rl_engine::rl_core::RunSeed;
@@ -47,7 +48,8 @@ fn allowed(world: &World) -> Vec<Allowed> {
     let on = |names: &[&str]| -> Vec<ComponentId> { ambiguity::on(&ids, names) };
     let senses = "one contributor per field of the snapshot: a game's sense pushes a sense of its own type and nothing else, and the snapshot is sorted once after every contributor";
     vec![
-        Allowed::any(
+        Allowed::among(
+            vec![TurnSet::Resolve.intern(), TurnSet::Sweep.intern()],
             on(&["Acting", "Messages<ActionDone>", "Messages<ActionRefused>"]),
             "any two resolvers or sweepers: Resolution::claim spends one actor's one turn once a pass, so the first to claim it is the only one that acts on it",
         ),

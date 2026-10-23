@@ -11,6 +11,7 @@ use std::any::TypeId;
 
 use bevy::ecs::component::ComponentId;
 use bevy::prelude::*;
+use rl_engine::rl_bevy::plugin::TurnSet;
 use rl_engine::rl_bevy::testing::ambiguity::{self, Allowed, system_type as id};
 use rl_engine::rl_bevy::turn::{Acting, ActionDone, ActionRefused, Turns};
 use rl_engine::rl_bevy::{Aware, DarkSight, Inventory, Noticed, Position, RangedAttack};
@@ -163,7 +164,11 @@ fn allowed(world: &World) -> Vec<Allowed> {
     let pair = |a, b, what: &[&str], why| Allowed::pair(a, b, on(what), why);
     let claims = ["Acting", "Messages<ActionDone>", "Messages<ActionRefused>"];
     let allowed = vec![
-        Allowed::any(on(&claims), "any two resolvers or sweepers: Resolution::claim spends one actor's one turn once a pass"),
+        Allowed::among(
+            vec![TurnSet::Resolve.intern(), TurnSet::Sweep.intern()],
+            on(&claims),
+            "any two resolvers or sweepers: Resolution::claim spends one actor's one turn once a pass",
+        ),
         pair(
             id(droids::lower_alarm),
             id(stealth::wake_on_damage),
