@@ -220,7 +220,7 @@ fn sleepers(app: &mut App, map: MapId, near: Point, name: &str, count: usize) ->
     let asleep = app.world().resource::<Registries>().statuses.expect(crate::content::ASLEEP);
     let made: Vec<Entity> = cells.into_iter().map(|p| crate::testing::monster(app, name, p)).collect();
     for who in &made {
-        app.world_mut().write_message(Afflict { target: *who, status: asleep, turns: 1000, by: None, held_by: None });
+        app.world_mut().write_message(ApplyStatus { target: *who, status: asleep, turns: 1000, by: None, held_by: None });
     }
     settle(app);
     made
@@ -229,7 +229,7 @@ fn sleepers(app: &mut App, map: MapId, near: Point, name: &str, count: usize) ->
 /// Whether `who` sleeps.
 fn sleeps(app: &App, who: Entity) -> bool {
     let asleep = app.world().resource::<Registries>().statuses.expect(crate::content::ASLEEP);
-    app.world().get::<Afflicted>(who).is_some_and(|a| a.has(asleep))
+    app.world().get::<ActiveStatuses>(who).is_some_and(|a| a.has(asleep))
 }
 
 /// Crossing a warded hall's glyph wakes every sleeper on the floor, the

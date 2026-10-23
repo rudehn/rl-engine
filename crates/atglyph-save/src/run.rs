@@ -43,9 +43,9 @@
 //! teardown, and [`AbandonRun`] forgets the slot the moment it is triggered.
 
 use atglyph_bevy::{
-    AbandonRun, ActorMaker, Afflict, Afflicted, Burning, Counters, Dead, Emptied, EndOfFrame, EndRun, Ending, EngineState, Equipped, Faction, Health, Hidden,
-    Inventory, ItemLevel, ItemMaker, JoinStamp, Leader, LeaveRun, MapId, OnMap, PlaceEntered, Position, Post, PropKind, Quests, Reads, Registries, Remains,
-    SavedRun, SideWas, Stack, Stair, Stocked, Transition, Turns, Wearable, WorkKinds, Working,
+    AbandonRun, ActiveStatuses, ActorMaker, ApplyStatus, Burning, Counters, Dead, Emptied, EndOfFrame, EndRun, Ending, EngineState, Equipped, Faction, Health,
+    Hidden, Inventory, ItemLevel, ItemMaker, JoinStamp, Leader, LeaveRun, MapId, OnMap, PlaceEntered, Position, Post, PropKind, Quests, Reads, Registries,
+    Remains, SavedRun, SideWas, Stack, Stair, Stocked, Transition, Turns, Wearable, WorkKinds, Working,
 };
 use atglyph_core::{Id, Point};
 use atglyph_rules::{Equipment, Work};
@@ -662,7 +662,7 @@ impl EntityState {
             (w.0.slot_count(), items.into_iter().map(|i| remap.save_id(i)).collect())
         });
         let (mut statuses, mut held) = (Vec::new(), Vec::new());
-        if let (Some(afflicted), Some(registries)) = (e.get::<Afflicted>(), registries) {
+        if let (Some(afflicted), Some(registries)) = (e.get::<ActiveStatuses>(), registries) {
             for s in afflicted.iter() {
                 let name = registries.statuses.name(s.id).to_string();
                 match s.held_by.and_then(Entity::try_from_bits) {
@@ -818,9 +818,9 @@ impl EntityState {
         }
         // By request, so each status installs its modifiers the way it did
         // the first time. Only where statuses are resolved at all.
-        if world.get_resource::<Messages<Afflict>>().is_some() {
+        if world.get_resource::<Messages<ApplyStatus>>().is_some() {
             for (status, turns, held_by) in statuses {
-                world.write_message(Afflict { target: entity, status, turns, by: None, held_by });
+                world.write_message(ApplyStatus { target: entity, status, turns, by: None, held_by });
             }
         }
     }
@@ -1985,7 +1985,7 @@ mod tests {
         app.world_mut().resource_mut::<Stocked>().0 = vec![3, 8];
         play(&mut app);
         let dazed = app.world().resource::<Registries>().statuses.expect("dazed");
-        app.world_mut().write_message(Afflict { target: me, status: dazed, turns: 6, by: None, held_by: None });
+        app.world_mut().write_message(ApplyStatus { target: me, status: dazed, turns: 6, by: None, held_by: None });
         app.world_mut().write_message(Intent::new(me, Wait));
         app.update();
         let clock = app.world().resource::<Turns>().now();
@@ -2012,7 +2012,7 @@ mod tests {
         assert_eq!(w.get::<Equipped>(me2).and_then(|e| e.slot_of(ring2)), Some(atglyph_rules::SlotId::from_raw(0)), "and it is worn again");
         assert_eq!(w.get::<Stack>(coins2).map(|s| s.count), Some(14), "the stack kept its count");
         assert!(w.get::<Position>(coins2).is_none(), "carried, so nowhere");
-        assert!(w.get::<Afflicted>(me2).is_some_and(|a| a.has(dazed)), "the status was put back by request");
+        assert!(w.get::<ActiveStatuses>(me2).is_some_and(|a| a.has(dazed)), "the status was put back by request");
         assert_eq!(w.resource::<Stocked>().0, vec![3, 8]);
         assert_eq!(w.resource::<Turns>().now(), clock, "the clock came back with the engine's state");
         assert!(w.get::<MyTurn>(me2).is_some(), "and the player holds the turn again");
@@ -2115,10 +2115,10 @@ mod tests {
             .id();
         play(&mut app);
         let dazed = app.world().resource::<Registries>().statuses.expect("dazed");
-        app.world_mut().write_message(Afflict { target: me, status: dazed, turns: 20, by: None, held_by: Some(ring) });
+        app.world_mut().write_message(ApplyStatus { target: me, status: dazed, turns: 20, by: None, held_by: Some(ring) });
         app.world_mut().write_message(Intent::new(me, Wait));
         app.update();
-        assert!(app.world().get::<Afflicted>(me).is_some_and(|a| a.has(dazed)), "held, and on");
+        assert!(app.world().get::<ActiveStatuses>(me).is_some_and(|a| a.has(dazed)), "held, and on");
         save_run(app.world_mut()).unwrap();
 
         let (mut back, _) = game(Saves(backend));
@@ -2138,11 +2138,11 @@ mod tests {
         let w = back.world();
         let ring = w.get::<Inventory>(me).expect("a bag").items[0];
         assert!(w.get::<Equipped>(me).is_some_and(|e| e.slot_of(ring).is_some()), "the ring is worn again");
-        let held: Vec<Option<u64>> = w.get::<Afflicted>(me).expect("afflicted").iter().filter(|s| s.id == dazed).map(|s| s.held_by).collect();
+        let held: Vec<Option<u64>> = w.get::<ActiveStatuses>(me).expect("afflicted").iter().filter(|s| s.id == dazed).map(|s| s.held_by).collect();
         assert_eq!(held, vec![Some(ring.to_bits())], "and holds the status it held");
         back.world_mut().write_message(Intent::new(me, Unequip(ring)));
         back.update();
-        assert!(back.world().get::<Afflicted>(me).is_some_and(|a| !a.has(dazed)), "taken off, and it ended");
+        assert!(back.world().get::<ActiveStatuses>(me).is_some_and(|a| !a.has(dazed)), "taken off, and it ended");
     }
 
     /// A held status whose thing did not come back does not come back
@@ -2150,7 +2150,7 @@ mod tests {
     #[test]
     fn a_held_status_whose_thing_was_not_saved_does_not_come_back() {
         let (back, me, dazed) = continued_wearing_a_ring_that_holds_a_status(false);
-        assert!(back.world().get::<Afflicted>(me).is_some_and(|a| !a.has(dazed)));
+        assert!(back.world().get::<ActiveStatuses>(me).is_some_and(|a| !a.has(dazed)));
     }
 
     /// The slot is refused whole when the game's version or the engine's
@@ -2410,7 +2410,7 @@ mod tests {
         let them = app.world_mut().spawn((Actor, Blocks, Person("a".into()), Position(start.offset(3, 0)), Health::full(20), Faction(ours))).id();
         play(&mut app);
         let turned = app.world().resource::<Registries>().statuses.expect("turned");
-        app.world_mut().write_message(Afflict { target: them, status: turned, turns: 20, by: None, held_by: None });
+        app.world_mut().write_message(ApplyStatus { target: them, status: turned, turns: 20, by: None, held_by: None });
         app.world_mut().write_message(Intent::new(me, Wait));
         app.update();
         assert_eq!(app.world().get::<Faction>(them), Some(&Faction(theirs)), "turned before the save");
@@ -2426,7 +2426,7 @@ mod tests {
         back.update();
         assert_eq!(back.world().get::<Faction>(them), Some(&Faction(theirs)), "turned again");
         assert_eq!(back.world().get::<SideWas>(them), Some(&SideWas(Faction(ours))), "with its own side to go back to");
-        back.world_mut().write_message(Cure { target: them, status: turned });
+        back.world_mut().write_message(RemoveStatus { target: them, status: turned });
         back.world_mut().write_message(Intent::new(me, Wait));
         back.update();
         assert_eq!(back.world().get::<Faction>(them), Some(&Faction(ours)), "and back on it when the status ends");

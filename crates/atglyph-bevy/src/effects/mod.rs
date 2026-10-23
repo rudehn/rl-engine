@@ -39,7 +39,7 @@ use crate::components::{Blocks, Position, Viewshed};
 use crate::cue::{Anchor, Cue, Cued, LookOf};
 use crate::places::{MapId, OnMap, Transition};
 use crate::registries::Registries;
-use crate::status::{Afflict, Cure};
+use crate::status::{ApplyStatus, RemoveStatus};
 use crate::turn::Occupancy;
 use crate::world::WorldMap;
 
@@ -246,9 +246,9 @@ pub struct EffectWorld<'w, 's> {
     /// Health restored, which nothing mitigates.
     pub heal: MessageWriter<'w, crate::combat::Heal>,
     /// A status on.
-    pub afflict: MessageWriter<'w, Afflict>,
+    pub afflict: MessageWriter<'w, ApplyStatus>,
     /// A status off.
-    pub cure: MessageWriter<'w, Cure>,
+    pub cure: MessageWriter<'w, RemoveStatus>,
     /// The effect stream, for an effect that rolls.
     pub rng: ResMut<'w, EffectRng>,
     /// What is worth seeing, for whatever draws. The flight and the burst
@@ -628,8 +628,8 @@ impl Plugin for EffectsPlugin {
             // system at startup, and a game with effects should not have to
             // add the status or combat plugins to find that out. Registering
             // one twice is harmless.
-            .add_message::<Afflict>()
-            .add_message::<Cure>()
+            .add_message::<ApplyStatus>()
+            .add_message::<RemoveStatus>()
             .add_message::<DamageEvent>()
             .add_message::<crate::combat::Heal>()
             // Read for an actor's `died`; a game with effects and no combat

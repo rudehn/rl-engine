@@ -99,9 +99,9 @@ impl Default for TriggerKinds {
     }
 }
 
-/// Declares a moment while the app is being built.
+/// Declares a kind of trigger while the app is being built.
 pub trait AddTriggerKind {
-    /// Declares the moment `name`. Look its id up again with [`TriggerKinds::get`].
+    /// Declares the trigger kind `name`. Look its id up again with [`TriggerKinds::get`].
     fn add_trigger_kind(&mut self, name: &str) -> &mut Self;
 }
 

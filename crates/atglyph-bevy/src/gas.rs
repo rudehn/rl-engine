@@ -23,7 +23,7 @@ use crate::fields::{MapFields, SavedField};
 use crate::places::{MapId, OnMap};
 use crate::registries::Registries;
 use crate::seed::Seed;
-use crate::status::Afflict;
+use crate::status::ApplyStatus;
 use crate::turn::{TurnEnd, Turns};
 use crate::world::WorldMap;
 
@@ -174,7 +174,7 @@ pub(crate) struct Air<'w, 's> {
     clock: Res<'w, Turns>,
     vents: Query<'w, 's, (&'static Position, &'static Vents, Option<&'static OnMap>)>,
     breathers: Query<'w, 's, (Entity, &'static Position, Option<&'static OnMap>), With<Actor>>,
-    afflict: MessageWriter<'w, Afflict>,
+    afflict: MessageWriter<'w, ApplyStatus>,
     breathed: MessageWriter<'w, Breathed>,
 }
 
@@ -229,7 +229,7 @@ pub(crate) fn step_gases(mut ends: MessageReader<TurnEnd>, mut gases: ResMut<Gas
             }
             breathed.write(Breathed { actor, gas: id, amount });
             if let Some(breath) = def.breathed(amount) {
-                afflict.write(Afflict { target: actor, status: breath.status, turns: breath.turns, by: None, held_by: None });
+                afflict.write(ApplyStatus { target: actor, status: breath.status, turns: breath.turns, by: None, held_by: None });
             }
         }
     }
@@ -253,7 +253,7 @@ impl Plugin for GasPlugin {
             .reset_on_new_run::<Gases>()
             .add_message::<Release>()
             .add_message::<Breathed>()
-            .add_message::<Afflict>()
+            .add_message::<ApplyStatus>()
             .needs::<Registries>("GasPlugin", "`Registries`, with the gases in it, loaded with `gas::load`")
             .needs::<Seed>("GasPlugin", "`Seed(RunSeed(n))`, which a cloud's spill and swirls are hashed from")
             .add_effect::<crate::effects::Emit>()
@@ -271,7 +271,7 @@ mod tests {
     use crate::combat::{CombatPlugin, Health};
     use crate::components::{Blocks, Player, RevealsMap, Viewshed};
     use crate::state::EngineState;
-    use crate::status::Afflicted;
+    use crate::status::ActiveStatuses;
     use crate::testing::headless_app;
     use crate::turn::{Intent, Wait};
     use atglyph_grid::TileId;
@@ -369,9 +369,9 @@ mod tests {
         let (fumes, choking, player, at) = (rig.fumes, rig.choking, rig.player, rig.start);
         rig.app.world_mut().write_message(Release { gas: fumes, at, amount: 30 });
         rig.wait(1);
-        assert!(!rig.app.world().get::<Afflicted>(player).unwrap().has(choking), "too thin to choke on");
+        assert!(!rig.app.world().get::<ActiveStatuses>(player).unwrap().has(choking), "too thin to choke on");
         rig.app.world_mut().write_message(Release { gas: fumes, at, amount: 200 });
         rig.wait(1);
-        assert!(rig.app.world().get::<Afflicted>(player).unwrap().has(choking), "thick enough to");
+        assert!(rig.app.world().get::<ActiveStatuses>(player).unwrap().has(choking), "thick enough to");
     }
 }

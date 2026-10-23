@@ -357,7 +357,7 @@ fn the_drowned_king_spawns_with_everything_his_traits_give_him() {
     let grasp = library.abilities.expect("drowning grasp");
     assert_eq!(world.get::<Grants>(e).map(|g| g.0.clone()), Some(vec![grasp]), "drowning grasp");
     let regenerating = registries.statuses.expect("regenerating");
-    let held = world.get::<Afflicted>(e).and_then(|a| a.0.iter().find(|s| s.id == regenerating).copied()).expect("he regenerates");
+    let held = world.get::<ActiveStatuses>(e).and_then(|a| a.0.iter().find(|s| s.id == regenerating).copied()).expect("he regenerates");
     assert_eq!(held.turns, FOR_LIFE, "for life");
     assert!(world.get::<Intelligence>(e).is_some_and(|w| w.0 == Wits::SAPIENT), "sapient");
     assert_ne!(decides(&world, e, 1, king.hp, &library), Some("flee_when_hurt"), "deathless: he never runs");
@@ -494,7 +494,7 @@ fn a_cave_spiders_bite_poisons_the_adventurer() {
     let mut bitten = false;
     for _ in 0..40 {
         pass_turns(&mut app, 1);
-        if app.world().get::<Afflicted>(me).is_some_and(|a| a.0.has(poisoned)) {
+        if app.world().get::<ActiveStatuses>(me).is_some_and(|a| a.0.has(poisoned)) {
             bitten = true;
             break;
         }
@@ -530,9 +530,9 @@ fn a_sleeping_goblin_takes_the_unaware_blow_and_then_wakes() {
     let goblin = monster(&mut app, "goblin", here.offset(1, 0));
     app.world_mut().entity_mut(goblin).insert(Health::full(100));
     let asleep = app.world().resource::<Registries>().statuses.expect(crate::content::ASLEEP);
-    app.world_mut().write_message(Afflict { target: goblin, status: asleep, turns: 20, by: None, held_by: None });
+    app.world_mut().write_message(ApplyStatus { target: goblin, status: asleep, turns: 20, by: None, held_by: None });
     settle(&mut app);
-    assert!(app.world().get::<Afflicted>(goblin).is_some_and(|a| a.0.has(asleep)), "asleep before the blow lands");
+    assert!(app.world().get::<ActiveStatuses>(goblin).is_some_and(|a| a.0.has(asleep)), "asleep before the blow lands");
     let unaware = app.world_mut().run_system_once(move |watchers: Watchers| watchers.unaware(goblin, me)).expect("the watchers");
     assert!(unaware, "a sleeper has not noticed the adventurer standing over it");
     let dagger = make(&mut app, "dagger");
@@ -544,7 +544,7 @@ fn a_sleeping_goblin_takes_the_unaware_blow_and_then_wakes() {
     // unaware bonus's five times makes its least 10.
     let lost = 100 - app.world().get::<Health>(goblin).expect("it lived through the blow").current;
     assert!(lost >= 3 * 2, "the blow landed at the unaware rate, at least three times the dagger's least: {lost}");
-    assert!(app.world().get::<Afflicted>(goblin).is_none_or(|a| !a.0.has(asleep)), "the blow woke it");
+    assert!(app.world().get::<ActiveStatuses>(goblin).is_none_or(|a| !a.0.has(asleep)), "the blow woke it");
 }
 
 /// Withering: a wraith's touch saps strength, a stack a hit, and
@@ -557,7 +557,7 @@ fn a_wraiths_touch_weakens_the_adventurer_more_the_more_it_lands() {
     let (mut app, me, here) = arena(6);
     monster(&mut app, "wraith", here.offset(1, 0));
     let weakened = app.world().resource::<Registries>().statuses.expect(crate::content::WEAKENED);
-    let stacks_of = |app: &App| app.world().get::<Afflicted>(me).map_or(0, |a| a.0.iter().filter(|s| s.id == weakened).count());
+    let stacks_of = |app: &App| app.world().get::<ActiveStatuses>(me).map_or(0, |a| a.0.iter().filter(|s| s.id == weakened).count());
     let mut saw_two = false;
     for _ in 0..60 {
         pass_turns(&mut app, 1);
@@ -668,7 +668,7 @@ fn a_burning_jelly_does_not_multiply() {
     let jelly = monster(&mut app, "pink jelly", here.offset(3, 0));
     app.world_mut().entity_mut(jelly).remove::<Mind>();
     let scorched = app.world().resource::<Registries>().statuses.expect("scorched");
-    app.world_mut().write_message(Afflict { target: jelly, status: scorched, turns: 5, by: None, held_by: None });
+    app.world_mut().write_message(ApplyStatus { target: jelly, status: scorched, turns: 5, by: None, held_by: None });
     settle(&mut app);
     pass_turns(&mut app, 6);
     let jelly_id = app.world().resource::<Bestiary>().defs.expect("pink jelly");
@@ -874,7 +874,7 @@ fn grubnaks_war_cry_hastens_every_ally_in_sight_itself_included() {
     crate::effects::bodies::rally(app.world_mut(), grubnak, 4);
     settle(&mut app);
     let hasted = app.world().resource::<Registries>().statuses.expect("hasted");
-    let has = |e: Entity| app.world().get::<Afflicted>(e).is_some_and(|a| a.iter().any(|s| s.id == hasted));
+    let has = |e: Entity| app.world().get::<ActiveStatuses>(e).is_some_and(|a| a.iter().any(|s| s.id == hasted));
     assert!(has(grubnak), "Grubnak rallies himself too");
     assert!(has(guard), "and his own guard beside him");
     assert!(!has(me), "never the adventurer, who is no ally of his");
@@ -1059,10 +1059,10 @@ fn weakened_stops_stacking_at_three_however_many_touches_land() {
     let (mut app, me, _) = arena(6);
     let weakened = app.world().resource::<Registries>().statuses.expect(crate::content::WEAKENED);
     for _ in 0..5 {
-        app.world_mut().write_message(Afflict { target: me, status: weakened, turns: 20, by: None, held_by: None });
+        app.world_mut().write_message(ApplyStatus { target: me, status: weakened, turns: 20, by: None, held_by: None });
         settle(&mut app);
     }
-    let stacks = app.world().get::<Afflicted>(me).map_or(0, |a| a.0.iter().filter(|s| s.id == weakened).count());
+    let stacks = app.world().get::<ActiveStatuses>(me).map_or(0, |a| a.0.iter().filter(|s| s.id == weakened).count());
     assert_eq!(stacks, crate::content::WEAKENED_MAX_STACKS as usize);
 }
 

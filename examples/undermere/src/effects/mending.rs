@@ -63,7 +63,7 @@ pub fn make_whole(world: &mut World, who: Entity) {
 /// regeneration stays. Written `(kind: "CureLasting")`.
 ///
 /// A status with turns to run is left to run them; the ones taken off are
-/// those nothing else would ever end. Through the engine's `Cure`, so each
+/// those nothing else would ever end. Through the engine's `RemoveStatus`, so each
 /// is told of as any cure is.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CureLasting;
@@ -96,14 +96,14 @@ pub fn wounded(world: &World, who: Entity) -> bool {
 /// Every status on `who` that lasts until cured and nothing worn holds:
 /// what [`CureLasting`] takes off.
 pub fn lasting(world: &World, who: Entity) -> Vec<StatusId> {
-    let Some(held) = world.get::<Afflicted>(who) else { return Vec::new() };
+    let Some(held) = world.get::<ActiveStatuses>(who) else { return Vec::new() };
     held.0.iter().filter(|s| s.turns == UNTIL_CURED && s.held_by.is_none()).map(|s| s.id).collect()
 }
 
-/// Asks a [`Cure`] for every status on `who` that lasts until cured and
+/// Asks a [`RemoveStatus`] for every status on `who` that lasts until cured and
 /// nothing worn holds.
 pub fn cure_lasting(world: &mut World, who: Entity) {
     for status in lasting(world, who) {
-        world.write_message(Cure { target: who, status });
+        world.write_message(RemoveStatus { target: who, status });
     }
 }

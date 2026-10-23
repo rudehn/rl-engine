@@ -233,7 +233,7 @@ mod tests {
         let mending = |app: &mut App| app.world_mut().run_system_once(move |loadout: Loadout| loadout.mending(me)).expect("a loadout");
         assert_eq!((speed(&mut app), mending(&mut app)), (100, 100), "as fast and as mended as anyone, with nothing on");
         let chilled = app.world().resource::<Registries>().statuses.expect("chilled");
-        app.world_mut().write_message(Afflict { target: me, status: chilled, turns: 4, by: None, held_by: None });
+        app.world_mut().write_message(ApplyStatus { target: me, status: chilled, turns: 4, by: None, held_by: None });
         settle(&mut app);
         assert_eq!(speed(&mut app), 75, "chilled");
         change(&mut app, me, MENDING, Op::Add(-100));

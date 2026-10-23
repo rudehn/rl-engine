@@ -21,7 +21,7 @@ type Singing = (With<Choir>, With<Actor>);
 /// A body a choir might sing to: where it stands and on which map, its
 /// side, what it suffers and its stats, which the song's regeneration is
 /// kept in, and whether the song already gave it its regeneration.
-type SingingTo = (Entity, &'static Position, Option<&'static OnMap>, &'static Faction, &'static mut Afflicted, &'static mut StatBlock, Has<Sung>);
+type SingingTo = (Entity, &'static Position, Option<&'static OnMap>, &'static Faction, &'static mut ActiveStatuses, &'static mut StatBlock, Has<Sung>);
 
 /// Keeps `regenerating` on every actor of a [`Choir`]'s own side within
 /// `SING_RANGE` of it, and takes it off the turn it falls out of range:
@@ -40,7 +40,7 @@ type SingingTo = (Entity, &'static Position, Option<&'static OnMap>, &'static Fa
 /// heard by its side standing at the same coordinates on another.
 ///
 /// Put on and taken off the body's own statuses rather than through
-/// `Afflict` and `Cure`, which the narrator says aloud: the song is a
+/// `ApplyStatus` and `RemoveStatus`, which the narrator says aloud: the song is a
 /// trait of the Choirmaster's, known on sight, as a troll's own
 /// regeneration is there from its first turn unannounced, and the log of
 /// a crypt walked into read "The skeleton is regenerating. (x4)", and
@@ -113,25 +113,25 @@ mod tests {
     #[test]
     fn a_choirs_own_side_within_its_range_regenerates_quietly_and_loses_it_once_out_of_range() {
         let mut app = App::new();
-        app.add_message::<Afflict>().add_message::<Cure>();
+        app.add_message::<ApplyStatus>().add_message::<RemoveStatus>();
         let registries = crate::content::registries();
         let undead = registries.factions.expect("undead");
         app.insert_resource(registries);
         app.add_systems(Update, sing_choir);
         app.world_mut().spawn((Actor, Position(Point::ZERO), Faction(undead), Choir));
-        let near = app.world_mut().spawn((Actor, Position(Point::new(3, 0)), Faction(undead), Afflicted(Statuses::new()), StatBlock(Stats::new()))).id();
-        let far = app.world_mut().spawn((Actor, Position(Point::new(10, 0)), Faction(undead), Afflicted(Statuses::new()), StatBlock(Stats::new()))).id();
+        let near = app.world_mut().spawn((Actor, Position(Point::new(3, 0)), Faction(undead), ActiveStatuses(Statuses::new()), StatBlock(Stats::new()))).id();
+        let far = app.world_mut().spawn((Actor, Position(Point::new(10, 0)), Faction(undead), ActiveStatuses(Statuses::new()), StatBlock(Stats::new()))).id();
         app.update();
         let regenerating = app.world().resource::<Registries>().statuses.expect("regenerating");
-        assert!(app.world().get::<Afflicted>(near).unwrap().0.has(regenerating), "within the choir's range, it regenerates");
-        assert!(!app.world().get::<Afflicted>(far).unwrap().0.has(regenerating), "past it, nothing");
-        let said = app.world().resource::<Messages<Afflict>>().iter_current_update_messages().count();
-        assert_eq!(said, 0, "given quietly, as a trait of the choir's known on sight, and never as an `Afflict` the narrator would say aloud");
+        assert!(app.world().get::<ActiveStatuses>(near).unwrap().0.has(regenerating), "within the choir's range, it regenerates");
+        assert!(!app.world().get::<ActiveStatuses>(far).unwrap().0.has(regenerating), "past it, nothing");
+        let said = app.world().resource::<Messages<ApplyStatus>>().iter_current_update_messages().count();
+        assert_eq!(said, 0, "given quietly, as a trait of the choir's known on sight, and never as an `ApplyStatus` the narrator would say aloud");
         app.world_mut().entity_mut(near).insert(Position(Point::new(10, 0)));
         app.update();
-        assert!(!app.world().get::<Afflicted>(near).unwrap().0.has(regenerating), "stepped past the range, the choir's own gift is lifted");
-        let cured = app.world().resource::<Messages<Cure>>().iter_current_update_messages().count();
-        assert_eq!(cured, 0, "and lifted quietly, never as a `Cure`");
+        assert!(!app.world().get::<ActiveStatuses>(near).unwrap().0.has(regenerating), "stepped past the range, the choir's own gift is lifted");
+        let cured = app.world().resource::<Messages<RemoveStatus>>().iter_current_update_messages().count();
+        assert_eq!(cured, 0, "and lifted quietly, never as a `RemoveStatus`");
     }
 
     /// A choir sings only to its own floor: a body of its side standing
@@ -146,13 +146,13 @@ mod tests {
         app.add_systems(Update, sing_choir);
         let (here, below) = (MapId(1), MapId(2));
         app.world_mut().spawn((Actor, Position(Point::ZERO), OnMap(here), Faction(undead), Choir));
-        let body = |at: MapId| (Actor, Position(Point::new(2, 0)), OnMap(at), Faction(undead), Afflicted(Statuses::new()), StatBlock(Stats::new()));
+        let body = |at: MapId| (Actor, Position(Point::new(2, 0)), OnMap(at), Faction(undead), ActiveStatuses(Statuses::new()), StatBlock(Stats::new()));
         let beside = app.world_mut().spawn(body(here)).id();
         let downstairs = app.world_mut().spawn(body(below)).id();
         app.update();
         let regenerating = app.world().resource::<Registries>().statuses.expect("regenerating");
-        assert!(app.world().get::<Afflicted>(beside).unwrap().0.has(regenerating), "on the choir's floor, it regenerates");
-        assert!(!app.world().get::<Afflicted>(downstairs).unwrap().0.has(regenerating), "a floor away, the song is not heard");
+        assert!(app.world().get::<ActiveStatuses>(beside).unwrap().0.has(regenerating), "on the choir's floor, it regenerates");
+        assert!(!app.world().get::<ActiveStatuses>(downstairs).unwrap().0.has(regenerating), "a floor away, the song is not heard");
     }
 
     /// The song ends with the singer: a skeleton beside the Choirmaster
@@ -167,7 +167,7 @@ mod tests {
         app.world_mut().entity_mut(skeleton).remove::<Mind>();
         settle(&mut app);
         let regenerating = app.world().resource::<Registries>().statuses.expect("regenerating");
-        let sung = |app: &App| app.world().get::<Afflicted>(skeleton).is_some_and(|a| a.0.has(regenerating));
+        let sung = |app: &App| app.world().get::<ActiveStatuses>(skeleton).is_some_and(|a| a.0.has(regenerating));
         assert!(sung(&app), "sung to while the Choirmaster lives");
         kill(&mut app, singer, None);
         pass_turns(&mut app, 1);
@@ -194,11 +194,11 @@ mod tests {
             |app: &App, who: Entity| (100 + app.world().get::<StatBlock>(who).unwrap().0.value(mending, &app.world().resource::<Registries>().stats)).max(0);
         assert_eq!(mending_of(&app, troll), 100, "not burning yet");
         for who in [troll, goblin] {
-            app.world_mut().write_message(Afflict { target: who, status: scorched, turns: 3, by: None, held_by: None });
+            app.world_mut().write_message(ApplyStatus { target: who, status: scorched, turns: 3, by: None, held_by: None });
         }
         pass_turns(&mut app, 1);
         assert_eq!((mending_of(&app, troll), mending_of(&app, goblin)), (0, 100), "the troll burning mends nothing, the goblin as ever");
-        app.world_mut().write_message(Cure { target: troll, status: scorched });
+        app.world_mut().write_message(RemoveStatus { target: troll, status: scorched });
         pass_turns(&mut app, 1);
         assert_eq!(mending_of(&app, troll), 100, "the burning is over, and so is the halt");
     }

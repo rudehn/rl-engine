@@ -153,13 +153,13 @@ pub fn learn_from_triggers(
 /// sapping of strength is refused.
 ///
 /// The engine's own [`StatusEvent`] says what took hold and on whom, and
-/// the [`Afflict`] that asked for it says by whom; a status taking hold
+/// the [`ApplyStatus`] that asked for it says by whom; a status taking hold
 /// is paired with an ask of this pass for the same status on the same
 /// body, by one of the kind.
 ///
 /// In `TurnSet::React`, after the pass's afflictions are resolved.
 pub fn learn_from_statuses(
-    mut asked: MessageReader<Afflict>,
+    mut asked: MessageReader<ApplyStatus>,
     mut took: MessageReader<StatusEvent>,
     kinds: Query<&Kind>,
     bodies: Query<&Position>,
@@ -353,7 +353,7 @@ mod tests {
         settle(&mut app);
         assert!(!app.world().resource::<MonsterLore>().has_shown("ghoul", "paralysing"), "a touch that froze nothing shows nothing");
         let paralysed = app.world().resource::<Registries>().statuses.expect("paralysed");
-        app.world_mut().write_message(Afflict { target: me, status: paralysed, turns: 2, by: Some(ghoul), held_by: None });
+        app.world_mut().write_message(ApplyStatus { target: me, status: paralysed, turns: 2, by: Some(ghoul), held_by: None });
         settle(&mut app);
         assert!(app.world().resource::<MonsterLore>().has_shown("ghoul", "paralysing"), "frozen in plain sight, so known");
     }

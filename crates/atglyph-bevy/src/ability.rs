@@ -35,7 +35,7 @@ use crate::effects::{EffectBonus, EffectKinds, EffectWorld, Landing, Source};
 use crate::items::{Equipped, Inventory, Stack, Tagged};
 use crate::plugin::{ResolveSet, Turn, TurnSet};
 use crate::registries::Registries;
-use crate::status::{Afflicted, StatBlock};
+use crate::status::{ActiveStatuses, StatBlock};
 use crate::turn::{Action, AddAction, Intent, Occupancy, Resolution, Turns};
 use crate::world::WorldMap;
 
@@ -267,7 +267,7 @@ impl Abilities {
 /// What a user spends, as the resolver reads it.
 type Spender = (&'static Known, Option<&'static mut Pools>, Option<&'static mut Cooldowns>, Option<&'static mut Health>);
 /// What a user carries and how it feels, as the gate reads it.
-type Bearing = (Option<&'static Inventory>, Option<&'static Equipped>, Option<&'static Afflicted>, Option<&'static StatBlock>);
+type Bearing = (Option<&'static Inventory>, Option<&'static Equipped>, Option<&'static ActiveStatuses>, Option<&'static StatBlock>);
 
 /// What the resolver reads about the user, apart from where it stands.
 #[derive(bevy::ecs::system::SystemParam)]
@@ -1700,7 +1700,7 @@ mod tests {
         app.world_mut().write_message(Intent::new(me, Use { ability: brace, aim: start }));
         app.update();
         assert_eq!(app.world().get::<Cooldowns>(me).unwrap().ready_at(brace), 500, "five hundred from the moment of use, not from the end of it");
-        assert!(app.world().get::<Afflicted>(me).unwrap().0.has(atglyph_rules::StatusId::from_raw(1)), "braced");
+        assert!(app.world().get::<ActiveStatuses>(me).unwrap().0.has(atglyph_rules::StatusId::from_raw(1)), "braced");
 
         app.world_mut().write_message(Intent::new(me, Use { ability: brace, aim: start }));
         app.update();

@@ -2301,7 +2301,7 @@ mod tests {
         }
         assert!(stage.app.world().resource::<atglyph_bevy::Gases>().at(spores, at) > 0, "the cloud stayed");
         let paralysed = stage.app.world().resource::<Registries>().statuses.expect("paralysed");
-        assert!(stage.app.world().get::<Afflicted>(rat).is_some_and(|a| a.has(paralysed)), "and kept the rat paralysed");
+        assert!(stage.app.world().get::<ActiveStatuses>(rat).is_some_and(|a| a.has(paralysed)), "and kept the rat paralysed");
         let told: Vec<String> = stage.app.world().resource::<MessageLog>().iter().map(|e| e.display()).filter(|t| t.contains("paralysed")).collect();
         assert_eq!(told, ["The rat is paralysed."], "said once, when it began");
     }

@@ -1263,7 +1263,7 @@ mod tests {
             assert!(led.iter().all(|(_, l)| *l == leader), "seed {s}: both led by the same goblin");
             let world = app.world();
             let asleep_id = world.resource::<Registries>().statuses.expect(crate::content::ASLEEP);
-            let sleeps = |e: Entity| world.get::<Afflicted>(e).is_some_and(|a| a.has(asleep_id));
+            let sleeps = |e: Entity| world.get::<ActiveStatuses>(e).is_some_and(|a| a.has(asleep_id));
             for (follower, _) in &led {
                 assert!(sleeps(*follower), "seed {s}: a camp's own follower sleeps");
             }

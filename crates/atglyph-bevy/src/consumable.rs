@@ -608,7 +608,7 @@ mod tests {
     }
 
     fn hides(app: &App, player: Entity, hidden: atglyph_rules::StatusId) -> bool {
-        app.world().get::<crate::status::Afflicted>(player).is_some_and(|a| a.has(hidden))
+        app.world().get::<crate::status::ActiveStatuses>(player).is_some_and(|a| a.has(hidden))
     }
 
     fn cured(app: &App, player: Entity, hidden: atglyph_rules::StatusId) -> usize {

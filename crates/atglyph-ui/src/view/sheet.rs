@@ -181,7 +181,7 @@ type Made = (
     Option<&'static StatBlock>,
 );
 /// What the player carries and suffers.
-type Armed = (Option<&'static Afflicted>, Option<&'static Equipped>);
+type Armed = (Option<&'static ActiveStatuses>, Option<&'static Equipped>);
 
 /// Fills [`SheetView`] from the player.
 ///
@@ -263,7 +263,7 @@ pub(crate) fn collect_sheet(
 /// name while it is still on, whether the status's own or what the kind
 /// does while holding it, the worn item's [`Name`], and nothing for a
 /// source of the game's own, which the game names.
-fn source_named(source: ModifierSource, afflicted: Option<&Afflicted>, registries: &Registries, names: &Query<&Name>) -> String {
+fn source_named(source: ModifierSource, afflicted: Option<&ActiveStatuses>, registries: &Registries, names: &Query<&Name>) -> String {
     match source {
         ModifierSource::Status { status, .. } | ModifierSource::Holding(status) if afflicted.is_some_and(|a| a.has(status)) => {
             registries.statuses.name(status).to_string()
@@ -300,7 +300,7 @@ mod tests {
         stage.app.world_mut().entity_mut(player).insert((
             StatBlock(stats),
             Resists(resists),
-            Afflicted::default(),
+            ActiveStatuses::default(),
             Speed(120),
             RangedAttack::new(kind, DiceRoll::flat(3), 6),
             Strikes(vec![(kind, DiceRoll::new(1, 4))]),
@@ -344,7 +344,7 @@ mod tests {
         let (mut stage, might) = stage();
         let player = stage.player;
         let weak = stage.app.world().resource::<Registries>().statuses.expect("weak");
-        stage.app.world_mut().write_message(Afflict { target: player, status: weak, turns: 4, by: None, held_by: None });
+        stage.app.world_mut().write_message(ApplyStatus { target: player, status: weak, turns: 4, by: None, held_by: None });
         stage.app.add_systems(Update, (|mut view: ResMut<SheetView>| view.name_source(ModifierSource::Game(77), "a ring")).in_set(crate::ViewSet::Annotate));
         stage.tick();
         stage.tick();

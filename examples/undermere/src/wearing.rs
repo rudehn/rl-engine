@@ -99,7 +99,7 @@ mod tests {
         Lent {
             resists: (resists.get(fire), resists.get(cold)),
             regenerating: world
-                .get::<Afflicted>(me)
+                .get::<ActiveStatuses>(me)
                 .and_then(|a| a.iter().find(|s| s.id == regenerating).map(|s| (s.turns, s.held_by == Some(ring.to_bits())))),
             dark_sight: world.get::<DarkSight>(me).map(|d| d.0),
             light: world.get::<LightSource>(ring).copied(),

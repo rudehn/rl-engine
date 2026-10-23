@@ -143,7 +143,7 @@ pub struct NearbyStatuses {
 /// In [`ViewSet::Annotate`](crate::ViewSet::Annotate), while a game has
 /// inserted [`NearbyStatuses`]; nothing is said in a game with no
 /// [`Registries`].
-pub(crate) fn note_statuses(mut nearby: ResMut<NearbyView>, says: Res<NearbyStatuses>, registries: Option<Res<Registries>>, held: Query<&Afflicted>) {
+pub(crate) fn note_statuses(mut nearby: ResMut<NearbyView>, says: Res<NearbyStatuses>, registries: Option<Res<Registries>>, held: Query<&ActiveStatuses>) {
     let Some(registries) = registries.as_deref() else { return };
     for row in &mut nearby.actors {
         let Ok(held) = held.get(row.entity) else { continue };
@@ -670,7 +670,7 @@ mod tests {
             if let Some(status) = status {
                 held.apply(defs.expect(status), 5, None, &defs, &mut stats);
             }
-            stage.app.world_mut().entity_mut(e).insert(Afflicted(held));
+            stage.app.world_mut().entity_mut(e).insert(ActiveStatuses(held));
             e
         };
         let held = holding(&mut stage, "held", 1, Some("held fast"));

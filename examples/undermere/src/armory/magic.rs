@@ -696,7 +696,7 @@ fn a_body_raised_rises_awake_and_without_its_old_lifes_errands() {
     let at = here.offset(2, 0);
     let goblin = still(&mut app, "goblin", at);
     let asleep = app.world().resource::<Registries>().statuses.expect(crate::content::ASLEEP);
-    app.world_mut().write_message(Afflict { target: goblin, status: asleep, turns: crate::bestiary::FOR_LIFE, by: None, held_by: None });
+    app.world_mut().write_message(ApplyStatus { target: goblin, status: asleep, turns: crate::bestiary::FOR_LIFE, by: None, held_by: None });
     app.world_mut().entity_mut(goblin).insert((Leader(me), crate::tricks::PatrolRoute { waypoints: vec![at, here], at: 0 }));
     settle(&mut app);
     kill(&mut app, goblin, Some(me));
@@ -705,7 +705,7 @@ fn a_body_raised_rises_awake_and_without_its_old_lifes_errands() {
     zap(&mut app, me, staff, at);
     let world = app.world();
     assert!(world.get::<Actor>(goblin).is_some(), "it rises");
-    assert!(world.get::<Afflicted>(goblin).is_none_or(|a| !a.0.has(asleep)), "awake");
+    assert!(world.get::<ActiveStatuses>(goblin).is_none_or(|a| !a.0.has(asleep)), "awake");
     assert!(world.get::<Leader>(goblin).is_none() && world.get::<crate::tricks::PatrolRoute>(goblin).is_none(), "its old errands forgotten");
     assert!(world.get::<atglyph::ecs::Drops<crate::armory::ItemDef>>(goblin).is_none(), "and nothing left to drop");
 }

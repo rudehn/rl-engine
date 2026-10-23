@@ -26,7 +26,7 @@ fn carried(app: &mut App, me: Entity, name: &str) -> Entity {
 /// Whether `who` holds the status called `name`.
 fn holds(app: &App, who: Entity, name: &str) -> bool {
     let status = app.world().resource::<Registries>().statuses.expect(name);
-    app.world().get::<Afflicted>(who).is_some_and(|a| a.0.has(status))
+    app.world().get::<ActiveStatuses>(who).is_some_and(|a| a.0.has(status))
 }
 
 /// `who`'s stat called `name`, as everything that reads it reads it.
@@ -63,7 +63,7 @@ fn a_potion_of_paralysis_thrown_holds_whoever_breathes_its_cloud() {
 /// Puts `status` on `who` for `turns` turns, as a cloud or a bolt would.
 fn afflict(app: &mut App, who: Entity, status: &str, turns: u32) {
     let status = app.world().resource::<Registries>().statuses.expect(status);
-    app.world_mut().write_message(Afflict { target: who, status, turns, by: None, held_by: None });
+    app.world_mut().write_message(ApplyStatus { target: who, status, turns, by: None, held_by: None });
     settle(app);
 }
 

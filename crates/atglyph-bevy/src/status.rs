@@ -4,7 +4,7 @@
 //! The rules crate holds the model: a registered status with stat
 //! modifiers and damage per turn, and the instances an actor carries.
 //! This module gives every actor a [`StatBlock`] the modifiers land in
-//! and an [`Afflicted`] list, resolves [`Afflict`] requests, and on every
+//! and an [`ActiveStatuses`] list, resolves [`ApplyStatus`] requests, and on every
 //! whole turn ticks the statuses of the actors on the current map,
 //! sending their damage through the same pipeline a blow goes through.
 //! A status that holds takes its holder's turns: `pass_held_turns`
@@ -50,12 +50,12 @@ pub struct StatBlock(pub Stats);
 
 /// The statuses an actor carries.
 #[derive(Component, Debug, Clone, Default, Deref, DerefMut)]
-pub struct Afflicted(pub Statuses);
+pub struct ActiveStatuses(pub Statuses);
 
 /// A request to put a status on an actor. Resolved in
 /// [`TurnSet::Resolve`](crate::plugin::TurnSet::Resolve), before damage.
 #[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Afflict {
+pub struct ApplyStatus {
     /// Who.
     pub target: Entity,
     /// Which.
@@ -67,7 +67,7 @@ pub struct Afflict {
     /// The worn thing it lasts only while, or `None` for a status that runs
     /// its time whatever is worn.
     ///
-    /// Held, it ends through the ordinary [`Cure`] in the pass its holder
+    /// Held, it ends through the ordinary [`RemoveStatus`] in the pass its holder
     /// is not wearing that thing, however that came about; see
     /// `end_unworn_statuses`. One landed on
     /// somebody who is not wearing the thing, as an area use reaching a
@@ -83,7 +83,7 @@ pub struct Afflict {
 
 /// A request to take a status off an actor.
 #[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Cure {
+pub struct RemoveStatus {
     /// Who.
     pub target: Entity,
     /// Which.
@@ -133,7 +133,7 @@ pub enum StatusEvent {
 /// Who was put to sleep this pass, kept from where the sleep is put on to
 /// where harm would wake it, which takes the list.
 ///
-/// A resource the two status systems share rather than the [`Afflict`]s
+/// A resource the two status systems share rather than the [`ApplyStatus`]s
 /// read a second time: a second reader of those would be one more system
 /// touching them unordered beside every game system that writes one.
 #[derive(Resource, Debug, Default)]
@@ -144,12 +144,12 @@ pub struct FellAsleep(Vec<Entity>);
 /// `FellAsleep` is read as optional so the system can run on its own, in a
 /// game's test of what it afflicts, with nothing to wake anyone on harm.
 pub(crate) fn resolve_afflictions(
-    mut afflicts: MessageReader<Afflict>,
-    mut cures: MessageReader<Cure>,
+    mut afflicts: MessageReader<ApplyStatus>,
+    mut cures: MessageReader<RemoveStatus>,
     mut events: MessageWriter<StatusEvent>,
     mut fell: Option<ResMut<FellAsleep>>,
     registries: Option<Res<Registries>>,
-    mut actors: Query<(&mut Afflicted, &mut StatBlock)>,
+    mut actors: Query<(&mut ActiveStatuses, &mut StatBlock)>,
 ) {
     let Some(registries) = registries.as_deref() else { return };
     for a in afflicts.read() {
@@ -189,7 +189,7 @@ pub(crate) fn tick_statuses(
     mut events: MessageWriter<StatusEvent>,
     registries: Option<Res<Registries>>,
     map: Res<WorldMap>,
-    mut actors: Query<(Entity, &mut Afflicted, &mut StatBlock, Option<&OnMap>), With<Actor>>,
+    mut actors: Query<(Entity, &mut ActiveStatuses, &mut StatBlock, Option<&OnMap>), With<Actor>>,
 ) {
     let turns = ends.read().count();
     let Some(registries) = registries.as_deref() else { return };
@@ -243,7 +243,7 @@ pub(crate) fn pass_held_turns(
     mut acting: ResMut<Acting>,
     mut spent: MessageWriter<ActionDone>,
     registries: Option<Res<Registries>>,
-    holders: Query<(Entity, &Afflicted), With<MyTurn>>,
+    holders: Query<(Entity, &ActiveStatuses), With<MyTurn>>,
 ) {
     let Some(registries) = registries.as_deref() else { return };
     for (actor, statuses) in &holders {
@@ -266,7 +266,7 @@ pub(crate) fn pass_held_turns(
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct Sleepers<'w, 's> {
     registries: Option<Res<'w, Registries>>,
-    statuses: Query<'w, 's, &'static Afflicted>,
+    statuses: Query<'w, 's, &'static ActiveStatuses>,
 }
 
 impl Sleepers<'_, '_> {
@@ -292,7 +292,7 @@ fn wake(target: Entity, statuses: &mut Statuses, stats: &mut Stats, registries: 
 /// In [`TurnSet::React`](crate::plugin::TurnSet::React), where a turn's
 /// consequences land, so the blow that wakes a sleeper was rolled on a
 /// sleeper and lands as on the unaware, and the sleeper's next turn is its
-/// own. Its statuses are cured here rather than by a [`Cure`], which would
+/// own. Its statuses are cured here rather than by a [`RemoveStatus`], which would
 /// not be read until the next pass's statuses resolve.
 ///
 /// Two harms wake nobody. A sleeping status's own tick: a sleep that also
@@ -306,7 +306,7 @@ pub(crate) fn wake_on_harm(
     mut fell: ResMut<FellAsleep>,
     mut events: MessageWriter<StatusEvent>,
     registries: Option<Res<Registries>>,
-    mut actors: Query<(&mut Afflicted, &mut StatBlock)>,
+    mut actors: Query<(&mut ActiveStatuses, &mut StatBlock)>,
 ) {
     let fresh = std::mem::take(&mut fell.0);
     let Some(registries) = registries.as_deref() else { return };
@@ -334,7 +334,7 @@ pub(crate) fn wake_on_noise(
     mut heard: MessageReader<crate::noise::NoiseHeard>,
     mut events: MessageWriter<StatusEvent>,
     registries: Option<Res<Registries>>,
-    mut actors: Query<(&mut Afflicted, &mut StatBlock)>,
+    mut actors: Query<(&mut ActiveStatuses, &mut StatBlock)>,
 ) {
     let Some(registries) = registries else { return };
     for h in heard.read() {
@@ -351,7 +351,7 @@ type Sleeper = (
     Option<&'static Viewshed>,
     Option<&'static crate::stealth::Aware>,
     Option<&'static OnMap>,
-    &'static mut Afflicted,
+    &'static mut ActiveStatuses,
     &'static mut StatBlock,
 );
 /// Anyone it might wake to.
@@ -428,7 +428,11 @@ pub struct SideWas(pub Faction);
 /// side is the whole of it; who is hostile to whom stays the game's. A
 /// holder put back by a save, its status asked for again, is turned again
 /// here from whatever side it was given back.
-pub(crate) fn keep_sides(mut commands: Commands, registries: Option<Res<Registries>>, mut bodies: Query<(Entity, &Afflicted, &mut Faction, Option<&SideWas>)>) {
+pub(crate) fn keep_sides(
+    mut commands: Commands,
+    registries: Option<Res<Registries>>,
+    mut bodies: Query<(Entity, &ActiveStatuses, &mut Faction, Option<&SideWas>)>,
+) {
     let Some(registries) = registries.as_deref() else { return };
     for (body, held, mut faction, was) in &mut bodies {
         let Some((side, kept)) = atglyph_rules::status::side_change(held.side(&registries.statuses), faction.0, was.map(|w| w.0.0)) else { continue };
@@ -457,7 +461,11 @@ pub(crate) struct StatusResists(pub Resistances);
 /// Keeps every holder's [`StatusResists`] at what its statuses
 /// [`resist`](atglyph_rules::StatusDef::resists), and takes it off once they
 /// resist nothing. Leaves alone what already reads right.
-pub(crate) fn keep_status_resists(mut commands: Commands, registries: Option<Res<Registries>>, bodies: Query<(Entity, &Afflicted, Option<&StatusResists>)>) {
+pub(crate) fn keep_status_resists(
+    mut commands: Commands,
+    registries: Option<Res<Registries>>,
+    bodies: Query<(Entity, &ActiveStatuses, Option<&StatusResists>)>,
+) {
     let Some(registries) = registries.as_deref() else { return };
     for (body, held, kept) in &bodies {
         let lent = held.resistances(&registries.statuses);
@@ -489,7 +497,7 @@ pub(crate) struct WhileHolding(pub Vec<(StatusId, Vec<(StatId, Op)>)>);
 /// Read off the stats as they stand rather than a marker beside them, so
 /// a status put back by a save puts its changes back with nothing else
 /// saved. Only the living: a body that keeps its kind's rule is not kept.
-pub(crate) fn keep_while_holding(mut bodies: Query<(&WhileHolding, &Afflicted, &mut StatBlock), With<Actor>>) {
+pub(crate) fn keep_while_holding(mut bodies: Query<(&WhileHolding, &ActiveStatuses, &mut StatBlock), With<Actor>>) {
     for (rule, held, mut stats) in &mut bodies {
         for (status, changes) in &rule.0 {
             let source = ModifierSource::Holding(*status);
@@ -538,7 +546,7 @@ impl crate::seed::StreamDomain for StumbleDomain {
 pub(crate) fn stumble(
     mut steps: MessageMutator<Intent<Step>>,
     mut walks: MessageMutator<Intent<crate::bump::Bump>>,
-    bodies: Query<(&Afflicted, &Position)>,
+    bodies: Query<(&ActiveStatuses, &Position)>,
     registries: Option<Res<Registries>>,
     map: Res<WorldMap>,
     mut rng: Option<ResMut<StumbleRng>>,
@@ -582,17 +590,17 @@ fn any_stumbles(world: &World) -> bool {
 /// alone, and to a noise where the game added the
 /// [`NoisePlugin`](crate::noise::NoisePlugin) as well, which wakes it.
 ///
-/// Every [`Actor`] is given an empty [`Afflicted`] and [`StatBlock`] the
+/// Every [`Actor`] is given an empty [`ActiveStatuses`] and [`StatBlock`] the
 /// moment it is spawned, so a monster spawned without them still takes a
 /// status rather than silently shrugging it off.
 pub(crate) fn build(app: &mut App) {
     use crate::plugin::{DecideSet, ResolveSet, Turn};
     // Before anything spawns, which is when Bevy allows it: `CorePlugin`
     // is the first plugin a game adds.
-    app.register_required_components::<Actor, Afflicted>();
+    app.register_required_components::<Actor, ActiveStatuses>();
     app.register_required_components::<Actor, StatBlock>();
-    app.add_message::<Afflict>()
-        .add_message::<Cure>()
+    app.add_message::<ApplyStatus>()
+        .add_message::<RemoveStatus>()
         .add_message::<StatusEvent>()
         // What a tick deals and mends, and the harm that wakes a sleeper:
         // combat's, which a game without it never resolves.
@@ -679,7 +687,7 @@ mod tests {
                 RevealsMap,
                 Health::full(30),
                 Armor(0),
-                // No `Afflicted` and no `StatBlock`: the plugin gives every
+                // No `ActiveStatuses` and no `StatBlock`: the plugin gives every
                 // actor both, and the statuses below must still land.
             ))
             .id();
@@ -690,12 +698,12 @@ mod tests {
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
         app.update();
-        app.world_mut().write_message(Afflict { target: player, status: venom, turns: 3, by: None, held_by: None });
-        app.world_mut().write_message(Afflict { target: player, status: hearty, turns: 2, by: None, held_by: None });
+        app.world_mut().write_message(ApplyStatus { target: player, status: venom, turns: 3, by: None, held_by: None });
+        app.world_mut().write_message(ApplyStatus { target: player, status: hearty, turns: 2, by: None, held_by: None });
         app.update();
         {
             let w = app.world();
-            assert!(w.get::<Afflicted>(player).unwrap().has(venom));
+            assert!(w.get::<ActiveStatuses>(player).unwrap().has(venom));
             assert_eq!(w.get::<StatBlock>(player).unwrap().value(armor_stat, &stats), 3, "hearty's modifier landed");
             assert_eq!(w.get::<Health>(player).unwrap().current, 30, "nothing ticks until a turn passes");
         }
@@ -709,8 +717,8 @@ mod tests {
             assert_eq!(app.world().get::<Health>(player).unwrap().current, 30 - 2 * turn as i32, "turn {turn}");
         }
         let w = app.world();
-        assert!(!w.get::<Afflicted>(player).unwrap().has(venom), "venom ran out");
-        assert!(!w.get::<Afflicted>(player).unwrap().has(hearty));
+        assert!(!w.get::<ActiveStatuses>(player).unwrap().has(venom), "venom ran out");
+        assert!(!w.get::<ActiveStatuses>(player).unwrap().has(hearty));
         assert_eq!(w.get::<StatBlock>(player).unwrap().value(armor_stat, &stats), 0, "hearty's modifier left with it");
         let expired = &w.resource::<Heard>().0;
         assert!(expired.contains(&StatusEvent::Expired { target: player, status: venom }), "{expired:?}");
@@ -735,7 +743,7 @@ mod tests {
         app.update();
         app.update();
         for (status, turns) in [(dazed, 3), (dazed, 5), (dazed, 2), (bleeding, 2), (bleeding, 2)] {
-            app.world_mut().write_message(Afflict { target: player, status, turns, by: None, held_by: None });
+            app.world_mut().write_message(ApplyStatus { target: player, status, turns, by: None, held_by: None });
             app.update();
         }
         let target = player;
@@ -771,7 +779,7 @@ mod tests {
         app.world_mut().resource_mut::<NextState<EngineState>>().set(EngineState::Playing);
         app.update();
         app.update();
-        app.world_mut().write_message(Afflict { target: player, status: mending, turns: 3, by: Some(player), held_by: None });
+        app.world_mut().write_message(ApplyStatus { target: player, status: mending, turns: 3, by: Some(player), held_by: None });
         app.update();
         let mut healed = Vec::new();
         for want in [25, 29, 30] {
@@ -855,11 +863,11 @@ mod tests {
     fn a_held_actors_turns_pass_as_waits_and_its_mind_is_not_asked_until_the_status_runs_out() {
         let (mut app, start, player, snared) = held_arena(|_| {});
         let (walker, asked) = walker(&mut app, start);
-        app.world_mut().write_message(Afflict { target: walker, status: snared, turns: 3, by: None, held_by: None });
+        app.world_mut().write_message(ApplyStatus { target: walker, status: snared, turns: 3, by: None, held_by: None });
         for _ in 0..3 {
             pass(&mut app, player);
         }
-        assert!(!app.world().get::<Afflicted>(walker).unwrap().has(snared), "the snare has run out");
+        assert!(!app.world().get::<ActiveStatuses>(walker).unwrap().has(snared), "the snare has run out");
         assert_eq!(spent_by(&app, walker), vec![BASE_ACTION_COST; 3], "three turns lost, each spent as a wait");
         assert_eq!(asked.load(Ordering::Relaxed), 0, "and its mind asked on none of them");
         assert_eq!(app.world().get::<Position>(walker).unwrap().0, start.offset(3, 0), "nor did it move");
@@ -876,14 +884,14 @@ mod tests {
     #[test]
     fn a_held_players_keys_do_nothing_and_its_turns_pass_until_the_status_runs_out() {
         let (mut app, start, player, snared) = held_arena(|_| {});
-        app.world_mut().write_message(Afflict { target: player, status: snared, turns: 2, by: None, held_by: None });
+        app.world_mut().write_message(ApplyStatus { target: player, status: snared, turns: 2, by: None, held_by: None });
         app.update();
-        assert!(app.world().get::<Afflicted>(player).unwrap().has(snared), "caught");
+        assert!(app.world().get::<ActiveStatuses>(player).unwrap().has(snared), "caught");
         assert!(app.world().get::<MyTurn>(player).is_some(), "holding its turn");
         app.world_mut().write_message(Intent::new(player, Bump(Direction::East)));
         app.update();
         assert_eq!(app.world().get::<Position>(player).unwrap().0, start, "the key did nothing");
-        assert!(!app.world().get::<Afflicted>(player).unwrap().has(snared), "the turns passed until the snare ran out");
+        assert!(!app.world().get::<ActiveStatuses>(player).unwrap().has(snared), "the turns passed until the snare ran out");
         assert_eq!(spent_by(&app, player), vec![BASE_ACTION_COST; 3], "the turn it was caught in and the two the snare lasted, each a wait");
         assert!(app.world().get::<MyTurn>(player).is_some(), "free, it holds a turn again");
         app.world_mut().write_message(Intent::new(player, Bump(Direction::East)));
@@ -895,12 +903,12 @@ mod tests {
     fn a_status_that_holds_until_cured_frees_its_holder_on_the_turn_after_the_cure() {
         let (mut app, start, player, snared) = held_arena(|_| {});
         let (walker, asked) = walker(&mut app, start);
-        app.world_mut().write_message(Afflict { target: walker, status: snared, turns: UNTIL_CURED, by: None, held_by: None });
+        app.world_mut().write_message(ApplyStatus { target: walker, status: snared, turns: UNTIL_CURED, by: None, held_by: None });
         for _ in 0..3 {
             pass(&mut app, player);
         }
         assert_eq!(asked.load(Ordering::Relaxed), 0, "held for as long as it is on");
-        app.world_mut().write_message(Cure { target: walker, status: snared });
+        app.world_mut().write_message(RemoveStatus { target: walker, status: snared });
         pass(&mut app, player);
         assert_eq!(asked.load(Ordering::Relaxed), 1, "cured, its next turn is its own");
         assert_eq!(app.world().get::<Position>(walker).unwrap().0, start.offset(3, 1));
@@ -915,7 +923,7 @@ mod tests {
         });
         let kind = app.world().resource::<WorkKinds>().get("mending").expect("declared");
         let worker = app.world_mut().spawn((Actor, Blocks, Position(start.offset(3, 0)), Health::full(5), Working(Work::new(kind, 4)))).id();
-        app.world_mut().write_message(Afflict { target: worker, status: snared, turns: 3, by: None, held_by: None });
+        app.world_mut().write_message(ApplyStatus { target: worker, status: snared, turns: 3, by: None, held_by: None });
         for _ in 0..3 {
             pass(&mut app, player);
         }
@@ -971,12 +979,12 @@ mod tests {
             let brain = Arc::new(Brain::new().then(Stand(asked.clone())));
             let at = Position(self.start.offset(dx, 0));
             let sleeper = self.app.world_mut().spawn((Actor, Blocks, at, Health::full(20), Perception(6), Faction(self.theirs), Mind(brain))).id();
-            self.app.world_mut().write_message(Afflict { target: sleeper, status: self.asleep, turns: UNTIL_CURED, by: None, held_by: None });
+            self.app.world_mut().write_message(ApplyStatus { target: sleeper, status: self.asleep, turns: UNTIL_CURED, by: None, held_by: None });
             (sleeper, asked)
         }
 
         fn asleep(&self, who: Entity) -> bool {
-            self.app.world().get::<Afflicted>(who).unwrap().has(self.asleep)
+            self.app.world().get::<ActiveStatuses>(who).unwrap().has(self.asleep)
         }
 
         fn health(&self, who: Entity) -> i32 {
@@ -1081,14 +1089,14 @@ mod tests {
         let mut room = bedroom(|_| {});
         let (sleeper, _) = room.sleeper(4);
         let drowsing = room.drowsing;
-        room.app.world_mut().write_message(Afflict { target: sleeper, status: drowsing, turns: 10, by: None, held_by: None });
+        room.app.world_mut().write_message(ApplyStatus { target: sleeper, status: drowsing, turns: 10, by: None, held_by: None });
         pass(&mut room.app, room.player);
-        room.app.world_mut().write_message(Cure { target: sleeper, status: room.asleep });
+        room.app.world_mut().write_message(RemoveStatus { target: sleeper, status: room.asleep });
         for _ in 0..4 {
             pass(&mut room.app, room.player);
         }
         assert!(room.health(sleeper) < 20, "the sleep bit");
-        assert!(room.app.world().get::<Afflicted>(sleeper).unwrap().has(drowsing), "and its holder sleeps on through it");
+        assert!(room.app.world().get::<ActiveStatuses>(sleeper).unwrap().has(drowsing), "and its holder sleeps on through it");
     }
 
     /// A wound and a sleep landed in one pass, as a dart that does both
@@ -1101,10 +1109,10 @@ mod tests {
         let (target, _) = room.sleeper(4);
         let (asleep, kind) = (room.asleep, room.kind);
         pass(&mut room.app, room.player);
-        room.app.world_mut().write_message(Cure { target, status: asleep });
+        room.app.world_mut().write_message(RemoveStatus { target, status: asleep });
         pass(&mut room.app, room.player);
         assert!(!room.asleep(target), "awake to begin with");
-        room.app.world_mut().write_message(Afflict { target, status: asleep, turns: UNTIL_CURED, by: None, held_by: None });
+        room.app.world_mut().write_message(ApplyStatus { target, status: asleep, turns: UNTIL_CURED, by: None, held_by: None });
         room.app.world_mut().write_message(DamageEvent::new(target, Hit::from_source(None, kind, 3)));
         pass(&mut room.app, room.player);
         assert_eq!(room.health(target), 17, "wounded");
@@ -1176,11 +1184,11 @@ mod tests {
         let at = Position(room.start.offset(1, 0));
         let snared =
             room.app.world_mut().spawn((Actor, Blocks, at, Health::full(20), Faction(room.theirs), Hearing(HearingStats { threshold: 0, memory: 3 }))).id();
-        room.app.world_mut().write_message(Afflict { target: snared, status: room.snared, turns: UNTIL_CURED, by: None, held_by: None });
+        room.app.world_mut().write_message(ApplyStatus { target: snared, status: room.snared, turns: UNTIL_CURED, by: None, held_by: None });
         pass(&mut room.app, room.player);
         room.noise(8);
         assert_eq!(room.strike(snared), 2, "struck as anyone");
-        assert!(room.app.world().get::<Afflicted>(snared).unwrap().has(room.snared), "and still snared");
+        assert!(room.app.world().get::<ActiveStatuses>(snared).unwrap().has(room.snared), "and still snared");
     }
 
     /// A field with a player in it and two warring sides, where `defs` are
@@ -1211,7 +1219,7 @@ mod tests {
         let (mut app, sides, player, start) = field(vec![StatusDef::new("turned").sides_with(theirs)]);
         let other = app.world_mut().spawn((Actor, Blocks, Position(start.offset(3, 0)), Faction(sides.ours))).id();
         let turned = status(&app, "turned");
-        app.world_mut().write_message(Afflict { target: other, status: turned, turns: 2, by: None, held_by: None });
+        app.world_mut().write_message(ApplyStatus { target: other, status: turned, turns: 2, by: None, held_by: None });
         app.update();
         assert_eq!(app.world().get::<Faction>(other), Some(&Faction(sides.theirs)), "turned the pass it landed");
         assert_eq!(app.world().get::<SideWas>(other), Some(&SideWas(Faction(sides.ours))));
@@ -1219,7 +1227,7 @@ mod tests {
             app.world_mut().write_message(Intent::new(player, Wait));
             app.update();
         }
-        assert!(!app.world().get::<Afflicted>(other).unwrap().has(turned), "run out");
+        assert!(!app.world().get::<ActiveStatuses>(other).unwrap().has(turned), "run out");
         assert_eq!(app.world().get::<Faction>(other), Some(&Faction(sides.ours)), "and back on its own side");
         assert!(app.world().get::<SideWas>(other).is_none());
     }
@@ -1239,10 +1247,10 @@ mod tests {
             app.world_mut().run_system_once(move |loadout: crate::combat::Loadout| loadout.resistances(player).get(kind)).unwrap()
         };
         assert_eq!(resisted(&mut app), 10, "its own");
-        app.world_mut().write_message(Afflict { target: player, status: warded, turns: UNTIL_CURED, by: None, held_by: None });
+        app.world_mut().write_message(ApplyStatus { target: player, status: warded, turns: UNTIL_CURED, by: None, held_by: None });
         app.update();
         assert_eq!(resisted(&mut app), 50, "its own and the ward's");
-        app.world_mut().write_message(Cure { target: player, status: warded });
+        app.world_mut().write_message(RemoveStatus { target: player, status: warded });
         app.update();
         assert_eq!(resisted(&mut app), 10, "its own again");
         assert!(app.world().get::<StatusResists>(player).is_none(), "nothing kept for a status that is gone");
@@ -1261,13 +1269,13 @@ mod tests {
         let kind = app.world_mut().spawn((Actor, Blocks, Position(start.offset(2, 0)), WhileHolding(vec![(burning, vec![(mending, Op::Add(-100))])]))).id();
         let value = |app: &App, who: Entity| app.world().get::<StatBlock>(who).unwrap().value(mending, &stat_defs);
         for who in [kind, player] {
-            app.world_mut().write_message(Afflict { target: who, status: burning, turns: UNTIL_CURED, by: None, held_by: None });
+            app.world_mut().write_message(ApplyStatus { target: who, status: burning, turns: UNTIL_CURED, by: None, held_by: None });
         }
         app.update();
         assert_eq!((value(&app, kind), value(&app, player)), (-100, 0), "only the kind with the rule");
         app.update();
         assert_eq!(value(&app, kind), -100, "put on once, not every pass");
-        app.world_mut().write_message(Cure { target: kind, status: burning });
+        app.world_mut().write_message(RemoveStatus { target: kind, status: burning });
         app.update();
         assert_eq!(value(&app, kind), 0, "and given back");
     }
@@ -1279,7 +1287,7 @@ mod tests {
     fn a_holder_that_always_stumbles_steps_the_one_open_way_and_a_walled_in_one_goes_nowhere() {
         let (mut app, _, player, start) = field(vec![StatusDef::new("reeling").stumbles(100)]);
         let reeling = status(&app, "reeling");
-        app.world_mut().write_message(Afflict { target: player, status: reeling, turns: UNTIL_CURED, by: None, held_by: None });
+        app.world_mut().write_message(ApplyStatus { target: player, status: reeling, turns: UNTIL_CURED, by: None, held_by: None });
         app.update();
         let around: Vec<Point> = Direction::ALL.into_iter().map(|d| start + d.offset()).filter(|p| *p != start.offset(1, 0)).collect();
         crate::testing::wall_off(&mut app, &around);

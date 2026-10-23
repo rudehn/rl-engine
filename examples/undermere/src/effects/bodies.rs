@@ -459,7 +459,7 @@ pub fn forget_its_life(world: &mut World, body: Entity) {
     // Quietly, as the twin put it back: a body that rises is not news of
     // a sleeper waking.
     let Some(asleep) = world.resource::<Registries>().statuses.id(crate::content::ASLEEP) else { return };
-    if let Ok((mut held, mut stats)) = world.query::<(&mut Afflicted, &mut StatBlock)>().get_mut(world, body) {
+    if let Ok((mut held, mut stats)) = world.query::<(&mut ActiveStatuses, &mut StatBlock)>().get_mut(world, body) {
         held.0.cure(asleep, &mut stats.0);
     }
 }
@@ -680,7 +680,7 @@ pub fn rally(world: &mut World, user: Entity, turns: u32) {
         .map(|(e, _)| e)
         .collect();
     for ally in allies {
-        world.write_message(Afflict { target: ally, status: hasted, turns, by: Some(user), held_by: None });
+        world.write_message(ApplyStatus { target: ally, status: hasted, turns, by: Some(user), held_by: None });
     }
 }
 

@@ -34,7 +34,7 @@ use crate::components::{MyTurn, Player, Position, Viewshed};
 use crate::minds::{DEFAULT_PERCEPTION, Mind, Perception, Thinking};
 use crate::places::{MapId, OnMap};
 use crate::registries::Registries;
-use crate::status::{Afflicted, Cure};
+use crate::status::{ActiveStatuses, RemoveStatus};
 use crate::world::WorldMap;
 
 /// How this actor notices what is trying not to be seen.
@@ -297,7 +297,7 @@ impl Plugin for StealthPlugin {
             // What ending the unseen reads and writes, registered here so a
             // game with stealth and no items, abilities or statuses has
             // nothing to reveal on rather than a panic.
-            .add_message::<Cure>()
+            .add_message::<RemoveStatus>()
             .reads::<crate::combat::Struck>()
             .reads::<crate::items::ItemEvent>()
             .reads::<crate::ability::LandedOn>()
@@ -321,7 +321,11 @@ impl Plugin for StealthPlugin {
 /// statuses are applied, ticked and cured, so the pass the status goes on
 /// is the pass its holder vanishes, and the pass a blow ends it is the pass
 /// it is seen again.
-pub(crate) fn mark_unseen(mut commands: Commands, registries: Option<Res<Registries>>, actors: Query<(Entity, &Afflicted, Has<Unseen>), Changed<Afflicted>>) {
+pub(crate) fn mark_unseen(
+    mut commands: Commands,
+    registries: Option<Res<Registries>>,
+    actors: Query<(Entity, &ActiveStatuses, Has<Unseen>), Changed<ActiveStatuses>>,
+) {
     let Some(registries) = registries else { return };
     for (actor, afflicted, marked) in &actors {
         let unseen = afflicted.0.iter().any(|s| registries.statuses.get(s.id).unseen);
@@ -360,8 +364,8 @@ pub(crate) fn reveal_attackers(
     mut items: MessageReader<crate::items::ItemEvent>,
     mut aimed: MessageReader<crate::ability::LandedOn>,
     registries: Option<Res<Registries>>,
-    unseen: Query<&Afflicted, With<Unseen>>,
-    mut cure: MessageWriter<Cure>,
+    unseen: Query<&ActiveStatuses, With<Unseen>>,
+    mut cure: MessageWriter<RemoveStatus>,
 ) {
     let mut attackers: Vec<Entity> = struck.read().map(|s| s.attacker).collect();
     attackers.extend(items.read().filter_map(|e| match e {
@@ -375,7 +379,7 @@ pub(crate) fn reveal_attackers(
     for who in attackers {
         let Ok(afflicted) = unseen.get(who) else { continue };
         for status in afflicted.0.iter().filter(|s| registries.statuses.get(s.id).unseen) {
-            cure.write(Cure { target: who, status: status.id });
+            cure.write(RemoveStatus { target: who, status: status.id });
         }
     }
 }
@@ -937,7 +941,7 @@ mod tests {
     /// Makes `who` unseen at once, the way a game does: by a status
     /// registered as unseen, held for longer than any test here runs, and
     /// the marker [`mark_unseen`] keeps on for it. By hand rather than by
-    /// an `Afflict`, so it is on before the next pass rather than during it.
+    /// an `ApplyStatus`, so it is on before the next pass rather than during it.
     fn make_unseen(app: &mut App, who: Entity) {
         let statuses = atglyph_rules::Registry::from_defs(vec![atglyph_rules::StatusDef::new("hidden").unseen()]).unwrap();
         let hidden = statuses.expect("hidden");
@@ -945,7 +949,7 @@ mod tests {
         world.resource_mut::<crate::registries::Registries>().statuses = statuses;
         world.resource_scope(|world, registries: Mut<crate::registries::Registries>| {
             let (mut afflicted, mut stats) =
-                world.query::<(&mut crate::status::Afflicted, &mut crate::status::StatBlock)>().get_mut(world, who).expect("an actor");
+                world.query::<(&mut crate::status::ActiveStatuses, &mut crate::status::StatBlock)>().get_mut(world, who).expect("an actor");
             afflicted.0.apply(hidden, 1000, None, &registries.statuses, &mut stats.0);
         });
         world.entity_mut(who).insert(Unseen);
@@ -963,7 +967,7 @@ mod tests {
 
     fn hide(field: &mut Field, status: atglyph_rules::StatusId) {
         let player = field.player;
-        field.app.world_mut().write_message(crate::status::Afflict { target: player, status, turns: 5, by: None, held_by: None });
+        field.app.world_mut().write_message(crate::status::ApplyStatus { target: player, status, turns: 5, by: None, held_by: None });
         field.wait();
     }
 

@@ -52,7 +52,7 @@ use crate::minds::{Intelligence, Mind, Perception};
 use crate::noise::Hearing;
 use crate::registries::Registries;
 use crate::remains::LeavesRemains;
-use crate::status::{Afflicted, StatBlock, WhileHolding};
+use crate::status::{ActiveStatuses, StatBlock, WhileHolding};
 use crate::stealth::Notice;
 use crate::throwing::Throwable;
 
@@ -721,7 +721,7 @@ impl<I: Send + Sync + 'static> ActorParts<I> {
     /// where its part is written: [`Health`], full, [`Armor`],
     /// [`Faction`], [`Speed`], [`Perception`], [`Intelligence`],
     /// [`Notice`], [`Hearing`], [`DarkSight`] with its [`OwnDarkSight`], the attacks,
-    /// [`LightSource`], [`Grants`], what it holds for life in [`Afflicted`]
+    /// [`LightSource`], [`Grants`], what it holds for life in [`ActiveStatuses`]
     /// and [`StatBlock`], `WhileHolding`, [`Triggers`], [`Resists`], [`Drops`],
     /// [`LeavesRemains`] and [`Mind`]. `registries` holds the statuses it
     /// holds.
@@ -798,12 +798,12 @@ impl<I: Send + Sync + 'static> ActorParts<I> {
 /// Public for a game that holds one more at a spawn of its own choosing,
 /// a sleeper among a floor's people, and so builds the pair itself from
 /// the parts' statuses and its own.
-pub fn innate_statuses(statuses: &[StatusId], registry: &Registry<StatusDef>) -> (Afflicted, StatBlock) {
+pub fn innate_statuses(statuses: &[StatusId], registry: &Registry<StatusDef>) -> (ActiveStatuses, StatBlock) {
     let (mut held, mut stats) = (Statuses::new(), Stats::new());
     for status in statuses {
         held.apply(*status, UNTIL_CURED, None, registry, &mut stats);
     }
-    (Afflicted(held), StatBlock(stats))
+    (ActiveStatuses(held), StatBlock(stats))
 }
 
 #[cfg(test)]
@@ -973,7 +973,7 @@ mod tests {
         assert!(names.iter().any(|n| n == "LeavesRemains") && names.iter().any(|n| n == "Notice"), "{names:?}");
         assert_eq!(world.get::<Armor>(e).map(|a| a.0), Some(0), "a nought written is a nought inserted");
         assert_eq!(world.get::<Health>(e).map(|h| (h.current, h.max)), Some((9, 9)));
-        let held = &world.get::<Afflicted>(e).expect("what it holds").0;
+        let held = &world.get::<ActiveStatuses>(e).expect("what it holds").0;
         assert!(held.has(registries.statuses.expect("regenerating")), "held from its first turn");
         assert!(world.get::<Resists>(e).is_none() && world.get::<Hearing>(e).is_none(), "nothing not written");
     }

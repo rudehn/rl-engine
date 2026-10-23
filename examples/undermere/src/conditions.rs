@@ -33,7 +33,7 @@ mod tests {
     /// Puts `status` on `who` for a while, as a cloud or a bolt would.
     fn afflict(app: &mut App, who: Entity, status: &str) {
         let status = app.world().resource::<Registries>().statuses.expect(status);
-        app.world_mut().write_message(Afflict { target: who, status, turns: 10, by: None, held_by: None });
+        app.world_mut().write_message(ApplyStatus { target: who, status, turns: 10, by: None, held_by: None });
         settle(app);
     }
 

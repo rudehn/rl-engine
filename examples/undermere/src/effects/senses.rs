@@ -38,7 +38,7 @@ impl Effect for Darkness {
     fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
         let turns = self.turns + landing.bonus.turns;
         for target in &landing.targets {
-            world.afflict.write(Afflict { target: *target, status: self.status, turns, by: Some(landing.user), held_by: None });
+            world.afflict.write(ApplyStatus { target: *target, status: self.status, turns, by: Some(landing.user), held_by: None });
         }
         for cell in &landing.cells {
             world.commands.write_message(Release { gas: self.gas, at: *cell, amount: self.amount });

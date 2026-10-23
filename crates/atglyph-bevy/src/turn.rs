@@ -824,7 +824,7 @@ mod tests {
     use crate::plugin::{Turn, TurnSet};
     use crate::registries::Registries;
     use crate::state::EngineState;
-    use crate::status::Afflict;
+    use crate::status::ApplyStatus;
     use crate::testing::headless_app;
     use atglyph_rules::{Op, Registry, StatDef, StatusDef, StatusId, UNTIL_CURED};
 
@@ -872,7 +872,7 @@ mod tests {
     }
 
     fn afflict(app: &mut App, target: Entity, status: StatusId) {
-        app.world_mut().write_message(Afflict { target, status, turns: UNTIL_CURED, by: None, held_by: None });
+        app.world_mut().write_message(ApplyStatus { target, status, turns: UNTIL_CURED, by: None, held_by: None });
     }
 
     /// Nobody decides for the three, so each is charged a wait for every

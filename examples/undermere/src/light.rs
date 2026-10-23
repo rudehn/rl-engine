@@ -62,7 +62,7 @@ impl BiomeDraws {
 
 /// The adventurer as the lantern reads them: what they carry, where, the
 /// stats a light reaches by, and whether darkness has put it out.
-type Carrying = (&'static Inventory, Option<&'static OnMap>, Option<&'static StatBlock>, Option<&'static Afflicted>);
+type Carrying = (&'static Inventory, Option<&'static OnMap>, Option<&'static StatBlock>, Option<&'static ActiveStatuses>);
 
 /// Keeps every lantern the adventurer carries reaching as far as
 /// [`lantern_radius`] says for where they stand: seven tiles in Mereholt

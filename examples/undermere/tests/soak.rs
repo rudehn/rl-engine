@@ -1099,7 +1099,7 @@ fn delve(seed: u64, plan: Plan) -> Delve {
                 eprintln!("    the way down goes {dir:?} onto {tile:?} {:?}, lock {:?}, with {there:?} there", cell, world.resource::<WorldMap>().lock(cell));
                 let registries = world.resource::<Registries>();
                 let held: Vec<String> = world
-                    .get::<Afflicted>(me)
+                    .get::<ActiveStatuses>(me)
                     .map(|a| a.0.iter().map(|s| format!("{} {}", registries.statuses.get(s.id).name, s.turns)).collect())
                     .unwrap_or_default();
                 eprintln!("    holding them: {held:?}");

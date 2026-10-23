@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The status types say what they do: the message that puts a status on an actor is `ApplyStatus`, where it was `Afflict`; the one that takes it off is `RemoveStatus`, where it was `Cure`; and the component holding an actor's statuses is `ActiveStatuses`, where it was `Afflicted`. Their fields are unchanged, and the effects content files name, `Inflict` and `Cleanse`, keep their names.
+  To change: breaking: `atglyph::ecs::Afflict` becomes `atglyph::ecs::ApplyStatus`, `atglyph::ecs::Cure` becomes `atglyph::ecs::RemoveStatus`, and `atglyph::ecs::Afflicted` becomes `atglyph::ecs::ActiveStatuses`; a `MessageWriter<Afflict>` is a `MessageWriter<ApplyStatus>` and a `Query<&Afflicted>` a `Query<&ActiveStatuses>`.
+
 - What sets a trigger off is a `TriggerKind`, where it was a `Moment`: `Moments` is `TriggerKinds`, with the same constants (`TriggerKinds::USE`, `HIT`, `PULSE` and the rest), `MomentId` is `TriggerKindId`, and `AddMoment` is `AddTriggerKind`, whose `add_moment` is `add_trigger_kind`. The fields that carry one, `Trigger::on`, `Fired::moment` and the rest, and the moment names content files write, are unchanged.
   To change: breaking: `atglyph::ecs::Moments` becomes `atglyph::ecs::TriggerKinds`, `atglyph::ecs::Moment` becomes `atglyph::ecs::TriggerKind`, `atglyph::ecs::MomentId` becomes `atglyph::ecs::TriggerKindId`, and `atglyph::ecs::AddMoment` becomes `atglyph::ecs::AddTriggerKind`, with `app.add_moment(name)` written `app.add_trigger_kind(name)`.
 

@@ -38,7 +38,7 @@ const CROWN_AURA: u64 = u64::from_be_bytes(*b"crownaur");
 /// within sight deal 2 more a blow."
 ///
 /// Recomputed whole every pass rather than kept from one to the next:
-/// nothing here logs or narrates, unlike an `Afflict`, so there is no
+/// nothing here logs or narrates, unlike an `ApplyStatus`, so there is no
 /// spurious line a edge-triggered version would exist to avoid, and a
 /// flat strip-then-reapply is right through an equip, an unequip, or the
 /// wearer's own death alike, with nothing left keyed to an entity that

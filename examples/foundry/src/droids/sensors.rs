@@ -44,7 +44,7 @@ pub fn jam_sensors(
     registries: Res<Registries>,
     sighted: Query<(), With<DarkSight>>,
     mut jammed: Query<&mut Jammed>,
-    mut afflict: MessageWriter<Afflict>,
+    mut afflict: MessageWriter<ApplyStatus>,
 ) {
     let ion = registries.damage_kinds.expect("ion");
     let sensors_down = registries.statuses.expect("sensors down");
@@ -59,7 +59,7 @@ pub fn jam_sensors(
         } else {
             continue;
         }
-        afflict.write(Afflict { target: ev.target, status: sensors_down, turns: JAM_TURNS, by: ev.hit.attacker, held_by: None });
+        afflict.write(ApplyStatus { target: ev.target, status: sensors_down, turns: JAM_TURNS, by: ev.hit.attacker, held_by: None });
     }
 }
 

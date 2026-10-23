@@ -57,7 +57,7 @@ use crate::effects::Triggers;
 use crate::lighting::{DarkSight, DarkSightSuppressed, LightSource, OwnDarkSight, WornDarkSight};
 use crate::minds::{Sight, Thinking};
 use crate::places::{MapId, OnMap};
-use crate::status::{Afflicted, Cure, StatBlock};
+use crate::status::{ActiveStatuses, RemoveStatus, StatBlock};
 use crate::throwing::Throwable;
 use crate::turn::{Action, Intent, Occupancy, Resolution, Turns};
 use crate::world::WorldMap;
@@ -831,9 +831,9 @@ pub(crate) fn restart_pulses(mut events: MessageReader<ItemEvent>, mut pulses: Q
 }
 
 /// Ends every status a worn thing holds on anyone not wearing that very
-/// thing, through the ordinary [`Cure`].
+/// thing, through the ordinary [`RemoveStatus`].
 ///
-/// A status is held when the [`Afflict`](crate::status::Afflict) that put
+/// A status is held when the [`ApplyStatus`](crate::status::ApplyStatus) that put
 /// it on named a holder, which an `Inflict` written `while_worn` does for
 /// the thing whose trigger landed it. Nothing here asks how the thing came
 /// off: taken off, dropped, displaced by another in its slot, used up or
@@ -851,16 +851,20 @@ pub(crate) fn restart_pulses(mut events: MessageReader<ItemEvent>, mut pulses: Q
 /// written, and a status that hid its holder stops hiding it before the
 /// next actor decides. Here rather than in the status plugin because
 /// wearing is this plugin's to know; statuses never learn what an item
-/// is. A game with items and no statuses has no [`Afflicted`] to look at
+/// is. A game with items and no statuses has no [`ActiveStatuses`] to look at
 /// and the queue it writes stays empty.
-pub(crate) fn end_unworn_statuses(holders: Query<(Entity, &Afflicted, Option<&Equipped>)>, items: Query<(), With<Item>>, mut cure: MessageWriter<Cure>) {
+pub(crate) fn end_unworn_statuses(
+    holders: Query<(Entity, &ActiveStatuses, Option<&Equipped>)>,
+    items: Query<(), With<Item>>,
+    mut cure: MessageWriter<RemoveStatus>,
+) {
     for (who, afflicted, worn) in &holders {
         for status in afflicted.iter() {
             let Some(bits) = status.held_by else { continue };
             let item = Entity::try_from_bits(bits);
             let worn = item.is_some_and(|item| items.contains(item) && worn.is_some_and(|w| w.slot_of(item).is_some()));
             if !worn {
-                cure.write(Cure { target: who, status: status.id });
+                cure.write(RemoveStatus { target: who, status: status.id });
             }
         }
     }
@@ -904,15 +908,15 @@ fn worn_once(equipped: &Equipped) -> Vec<Entity> {
 /// the thing, [`UNTIL_CURED`](atglyph_rules::UNTIL_CURED), unless a thing it
 /// wears that holds them already does.
 ///
-/// Asked for through [`Afflict`](crate::status::Afflict) every pass rather
+/// Asked for through [`ApplyStatus`](crate::status::ApplyStatus) every pass rather
 /// than when the thing goes on, so a thing worn however it came to be, put
 /// on, handed over or put back by a save, is read as it stands; what takes
 /// the status off again is [`end_unworn_statuses`], the pass the thing is no
 /// longer worn. A wearer that holds no statuses at all is lent none.
 pub(crate) fn put_on_worn_statuses(
-    wearers: Query<(Entity, &Equipped, &Afflicted)>,
+    wearers: Query<(Entity, &Equipped, &ActiveStatuses)>,
     holders: Query<&WornStatuses>,
-    mut afflict: MessageWriter<crate::status::Afflict>,
+    mut afflict: MessageWriter<crate::status::ApplyStatus>,
 ) {
     for (wearer, equipped, afflicted) in &wearers {
         let worn: Vec<(Entity, &WornStatuses)> = worn_once(equipped).into_iter().filter_map(|item| Some((item, holders.get(item).ok()?))).collect();
@@ -920,7 +924,7 @@ pub(crate) fn put_on_worn_statuses(
         for (item, held) in &worn {
             for status in &held.0 {
                 if !afflicted.iter().any(|s| s.id == *status && s.held_by.is_some_and(held_by_what_it_wears)) {
-                    afflict.write(crate::status::Afflict {
+                    afflict.write(crate::status::ApplyStatus {
                         target: wearer,
                         status: *status,
                         turns: atglyph_rules::UNTIL_CURED,
@@ -1203,7 +1207,7 @@ impl Plugin for ItemsPlugin {
             // What ending a held status writes, registered here as well as
             // by the status plugin, since a game may have items and no
             // statuses, and then nobody is afflicted and nothing is written.
-            .add_message::<Cure>()
+            .add_message::<RemoveStatus>()
             // Before the statuses resolve, so a held status ends in the pass
             // its thing came off; see `end_unworn_statuses`.
             // Before the stealth plugin's own cures, so the cures of one
@@ -1446,7 +1450,7 @@ mod tests {
         app.world_mut().write_message(Intent::new(player, Equip(ring)));
         app.update();
         assert_eq!(might_of(&app, player), Some(15), "the ring's five, folded the pass it went on");
-        app.world_mut().write_message(crate::status::Afflict { target: player, status: weak, turns: 9, by: None, held_by: None });
+        app.world_mut().write_message(crate::status::ApplyStatus { target: player, status: weak, turns: 9, by: None, held_by: None });
         app.update();
         assert_eq!(might_of(&app, player), Some(12), "and the status's three off");
 
@@ -1559,14 +1563,14 @@ mod tests {
         let warded = statuses.expect("warded");
         r.app.insert_resource(crate::registries::Registries { statuses, ..Default::default() });
         let charm = carried(&mut r, WornStatuses(vec![warded]));
-        let held = |r: &Rig| r.app.world().get::<Afflicted>(r.player).unwrap().iter().find(|s| s.id == warded).map(|s| (s.turns, s.held_by));
+        let held = |r: &Rig| r.app.world().get::<ActiveStatuses>(r.player).unwrap().iter().find(|s| s.id == warded).map(|s| (s.turns, s.held_by));
         wait(&mut r);
         assert_eq!(held(&r), None, "carried, it holds nothing");
         act(&mut r, Equip(charm));
         wait(&mut r);
         assert_eq!(held(&r), Some((atglyph_rules::UNTIL_CURED, Some(charm.to_bits()))), "worn, held by the charm until cured");
         wait(&mut r);
-        assert_eq!(r.app.world().get::<Afflicted>(r.player).unwrap().iter().filter(|s| s.id == warded).count(), 1, "and asked for once");
+        assert_eq!(r.app.world().get::<ActiveStatuses>(r.player).unwrap().iter().filter(|s| s.id == warded).count(), 1, "and asked for once");
         act(&mut r, Unequip(charm));
         wait(&mut r);
         assert_eq!(held(&r), None, "taken off, it ended");

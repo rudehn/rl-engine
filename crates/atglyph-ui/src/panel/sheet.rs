@@ -268,7 +268,7 @@ pub(crate) fn draw_sheet(
 mod tests {
     use super::*;
     use crate::harness::Stage;
-    use atglyph_bevy::{Afflict, Afflicted, Registries, Resists, StatBlock};
+    use atglyph_bevy::{ActiveStatuses, ApplyStatus, Registries, Resists, StatBlock};
     use atglyph_rules::content::Registry;
     use atglyph_rules::{StatDef, StatusDef, stats::Modifier};
 
@@ -286,7 +286,7 @@ mod tests {
         stats.add(Modifier::new(might, Op::Add(2), atglyph_rules::ModifierSource::Game(77)));
         let mut resists = atglyph_rules::Resistances::new();
         resists.set(kind, 25);
-        stage.app.world_mut().entity_mut(player).insert((StatBlock(stats), Resists(resists), Afflicted::default()));
+        stage.app.world_mut().entity_mut(player).insert((StatBlock(stats), Resists(resists), ActiveStatuses::default()));
         stage.app.add_systems(
             Update,
             (|mut view: ResMut<SheetView>| view.name_source(atglyph_rules::ModifierSource::Game(77), "a ring")).in_set(crate::ViewSet::Annotate),
@@ -300,7 +300,7 @@ mod tests {
         let mut stage = stage();
         let player = stage.player;
         let weak = stage.app.world().resource::<Registries>().statuses.expect("weak");
-        stage.app.world_mut().write_message(Afflict { target: player, status: weak, turns: 4, by: None, held_by: None });
+        stage.app.world_mut().write_message(ApplyStatus { target: player, status: weak, turns: 4, by: None, held_by: None });
         stage.tick();
         assert!(stage.rows().iter().all(|r| r.is_empty()), "nothing drawn until the key");
 
@@ -347,7 +347,7 @@ mod tests {
         let mut stage = stage();
         let player = stage.player;
         let weak = stage.app.world().resource::<Registries>().statuses.expect("weak");
-        stage.app.world_mut().write_message(Afflict { target: player, status: weak, turns: atglyph_rules::UNTIL_CURED, by: None, held_by: None });
+        stage.app.world_mut().write_message(ApplyStatus { target: player, status: weak, turns: atglyph_rules::UNTIL_CURED, by: None, held_by: None });
         stage.tick();
         stage.press(KeyCode::KeyC);
         let rows = stage.rows();

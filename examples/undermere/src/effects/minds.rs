@@ -106,7 +106,7 @@ impl Effect for Discord {
                 return;
             }
             for foe in foes {
-                world.write_message(Afflict { target: foe, status, turns, by: Some(landing.user), held_by: None });
+                world.write_message(ApplyStatus { target: foe, status, turns, by: Some(landing.user), held_by: None });
             }
             world.write_message(Tell::new("A wail of discord rises, and your foes turn on each other!", Tones::GOOD));
         });
@@ -312,7 +312,7 @@ pub fn wake(world: &mut World, who: Entity, radius: Option<i32>) {
                 knows.alerted_to(at);
                 aware.0.insert(who, knows);
             }
-            let mut q = world.query::<(&mut Afflicted, &mut StatBlock)>();
+            let mut q = world.query::<(&mut ActiveStatuses, &mut StatBlock)>();
             let Ok((mut afflicted, mut stats)) = q.get_mut(world, *e) else { continue };
             for status in afflicted.0.wake(&registries.statuses, &mut stats.0) {
                 cured.push((*e, status));

@@ -474,11 +474,11 @@ mod tests {
         let worn = app.world().get::<Equipped>(me).and_then(|e| e.0.worn().next()).map(|(_, item)| item).expect("the adventurer wears something");
         let statuses = app.world().resource::<Registries>().statuses.clone();
         let (poisoned, hasted, regenerating) = (statuses.expect("poisoned"), statuses.expect("hasted"), statuses.expect("regenerating"));
-        app.world_mut().write_message(Afflict { target: me, status: poisoned, turns: UNTIL_CURED, by: None, held_by: None });
-        app.world_mut().write_message(Afflict { target: me, status: hasted, turns: 50, by: None, held_by: None });
-        app.world_mut().write_message(Afflict { target: me, status: regenerating, turns: UNTIL_CURED, by: None, held_by: Some(worn) });
+        app.world_mut().write_message(ApplyStatus { target: me, status: poisoned, turns: UNTIL_CURED, by: None, held_by: None });
+        app.world_mut().write_message(ApplyStatus { target: me, status: hasted, turns: 50, by: None, held_by: None });
+        app.world_mut().write_message(ApplyStatus { target: me, status: regenerating, turns: UNTIL_CURED, by: None, held_by: Some(worn) });
         pass_turns(&mut app, 1);
-        let held = |app: &App| app.world().get::<Afflicted>(me).map(|a| a.0.iter().map(|s| s.id).collect::<Vec<_>>()).unwrap_or_default();
+        let held = |app: &App| app.world().get::<ActiveStatuses>(me).map(|a| a.0.iter().map(|s| s.id).collect::<Vec<_>>()).unwrap_or_default();
         assert!([poisoned, hasted, regenerating].iter().all(|s| held(&app).contains(s)), "all three on before the rite");
         app.world_mut().get_mut::<Health>(me).expect("health").current = 3;
         take_rite(&mut app, me, priest, "mend");

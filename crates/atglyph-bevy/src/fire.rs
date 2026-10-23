@@ -33,7 +33,7 @@ use crate::lighting::{LightSource, Lighting};
 use crate::places::{MapId, OnMap};
 use crate::registries::Registries;
 use crate::seed::Seed;
-use crate::status::Afflict;
+use crate::status::ApplyStatus;
 use crate::turn::{TurnEnd, Turns};
 use crate::world::WorldMap;
 
@@ -233,7 +233,7 @@ pub(crate) struct InTheFire<'w, 's> {
     lit: Query<'w, 's, Lit>,
     actors: Query<'w, 's, (Entity, &'static Position, Option<&'static OnMap>), With<Actor>>,
     events: MessageWriter<'w, FireEvent>,
-    afflict: MessageWriter<'w, Afflict>,
+    afflict: MessageWriter<'w, ApplyStatus>,
 }
 
 /// Every whole turn: what is alight keeps its cell burning, the fire spreads
@@ -281,7 +281,7 @@ pub(crate) fn step_fire(mut ends: MessageReader<TurnEnd>, mut fire: ResMut<Fire>
             if on_here(on) && fire.is_burning(pos.0) {
                 events.write(FireEvent::Scorched { entity, at: pos.0 });
                 if let Some((status, turns)) = rules.inflicts {
-                    afflict.write(Afflict { target: entity, status, turns, by: None, held_by: None });
+                    afflict.write(ApplyStatus { target: entity, status, turns, by: None, held_by: None });
                 }
             }
         }
@@ -389,7 +389,7 @@ impl Plugin for FirePlugin {
             .reset_on_new_run::<Fire>()
             .add_message::<Kindle>()
             .add_message::<FireEvent>()
-            .add_message::<Afflict>()
+            .add_message::<ApplyStatus>()
             .needs::<FireRules>("FirePlugin", "`FireRules::new()`, with `.inflicts(status, turns)` for what standing in fire does")
             .needs::<Registries>("FirePlugin", "`Registries`, which says which gases burn")
             .needs::<Seed>("FirePlugin", "`Seed(RunSeed(n))`, which the flames roll from")
@@ -413,7 +413,7 @@ mod tests {
     use crate::gas::{GasPlugin, Release};
     use crate::lighting::LightingPlugin;
     use crate::state::EngineState;
-    use crate::status::Afflicted;
+    use crate::status::ActiveStatuses;
     use crate::testing::headless_app;
     use crate::turn::{Intent, Wait};
     use atglyph_grid::{TileProps, TileRegistry};
@@ -529,7 +529,7 @@ mod tests {
         rig.wait(1);
         let (player, burning) = (rig.player, rig.burning);
         assert!(rig.seen().contains(&FireEvent::Scorched { entity: player, at }));
-        assert!(rig.app.world().get::<Afflicted>(player).is_some_and(|a| a.has(burning)), "and burns");
+        assert!(rig.app.world().get::<ActiveStatuses>(player).is_some_and(|a| a.has(burning)), "and burns");
     }
 
     #[test]

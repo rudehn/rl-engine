@@ -430,7 +430,7 @@ mod tests {
         assert_eq!(rail(&app, VITALS_ROWS - 1), "", "blank with no badge to show");
         let me = app.world_mut().query_filtered::<Entity, With<Player>>().single(app.world()).unwrap();
         let cloaked = app.world().resource::<Registries>().statuses.expect("cloaked");
-        app.world_mut().write_message(Afflict { target: me, status: cloaked, turns: 10, by: None, held_by: None });
+        app.world_mut().write_message(ApplyStatus { target: me, status: cloaked, turns: 10, by: None, held_by: None });
         app.update();
         app.update();
         assert_eq!(rail(&app, VITALS_ROWS - 1), "%", "the badge, on the last row of the strip");

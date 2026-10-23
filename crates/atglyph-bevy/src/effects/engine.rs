@@ -24,7 +24,7 @@ use bevy::prelude::*;
 use super::{AddEffect, Effect, EffectBonus, EffectWorld, FromArgs, Landing};
 use crate::combat::{DamageEvent, Heal};
 use crate::registries::Registries;
-use crate::status::{Afflict, Cure};
+use crate::status::{ApplyStatus, RemoveStatus};
 
 /// Damage everyone the ability's aim wanted under its footprint.
 ///
@@ -141,7 +141,7 @@ impl FromArgs for Mend {
 /// Put a status on everyone under the footprint.
 ///
 /// Named for what it does rather than for the message it writes, because
-/// [`Afflict`] is already the request and an effect is not a request.
+/// [`ApplyStatus`] is already the request and an effect is not a request.
 #[derive(Debug, Clone, Copy)]
 pub struct Inflict {
     /// Which status.
@@ -150,7 +150,7 @@ pub struct Inflict {
     pub turns: u32,
     /// Whether the status lasts only while the thing that landed it is
     /// worn. Read only when a trigger landed it, since only a thing can be
-    /// worn: the [`Afflict`] is then held by the thing, held for every
+    /// worn: the [`ApplyStatus`] is then held by the thing, held for every
     /// target under the footprint alike, and an ability or an offer lands
     /// the status as if this were false.
     ///
@@ -177,7 +177,7 @@ impl Effect for Inflict {
             _ => None,
         };
         for target in &landing.targets {
-            world.afflict.write(Afflict { target: *target, status: self.status, turns: self.turns_with(landing.bonus), by: Some(landing.user), held_by });
+            world.afflict.write(ApplyStatus { target: *target, status: self.status, turns: self.turns_with(landing.bonus), by: Some(landing.user), held_by });
         }
     }
 
@@ -218,7 +218,7 @@ impl Effect for Cleanse {
 
     fn apply(&self, landing: &Landing, world: &mut EffectWorld<'_, '_>) {
         for target in &landing.targets {
-            world.cure.write(Cure { target: *target, status: self.status });
+            world.cure.write(RemoveStatus { target: *target, status: self.status });
         }
     }
 }

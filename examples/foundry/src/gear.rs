@@ -918,13 +918,13 @@ mod tests {
 
         app.world_mut().write_message(Intent::new(player, UseItem(medkit)));
         crate::testing::settle(&mut app);
-        assert!(app.world().get::<Afflicted>(player).is_some_and(|a| a.0.has(mending)), "the gel is working");
+        assert!(app.world().get::<ActiveStatuses>(player).is_some_and(|a| a.0.has(mending)), "the gel is working");
         assert_eq!(health(&app, player) - before, crate::content::MEND_PER_TURN, "the first of the ten turns is the turn it is used");
 
         crate::testing::pass_turns(&mut app, 9);
         let gained = health(&app, player) - before;
         assert_eq!(gained, crate::content::MEND_PER_TURN * 10, "two a turn for ten turns, twice a stim's ten");
-        assert!(!app.world().get::<Afflicted>(player).is_some_and(|a| a.0.has(mending)), "and it is done");
+        assert!(!app.world().get::<ActiveStatuses>(player).is_some_and(|a| a.0.has(mending)), "and it is done");
 
         crate::testing::pass_turns(&mut app, 3);
         assert_eq!(health(&app, player) - before, gained, "nothing after the ten");
@@ -1335,7 +1335,7 @@ mod tests {
         let fg = |app: &App| app.world().get::<Glyph>(player).map(|g| g.fg);
         assert_eq!(fg(&app), Some(crate::run::COMMANDO));
         let cloaked = app.world().resource::<Registries>().statuses.expect("cloaked");
-        app.world_mut().write_message(Afflict { target: player, status: cloaked, turns: 2, by: None, held_by: None });
+        app.world_mut().write_message(ApplyStatus { target: player, status: cloaked, turns: 2, by: None, held_by: None });
         crate::testing::pass_turns(&mut app, 1);
         assert_eq!(fg(&app), Some(crate::run::COMMANDO_UNSEEN), "faded while unseen");
         crate::testing::pass_turns(&mut app, 3);
@@ -1398,7 +1398,7 @@ mod tests {
         crate::testing::pick(&mut app, player, crate::upgrades::Upgrade::Stims);
         let stims = app.world().resource::<Abilities>().expect("stims");
         let cloaked = app.world().resource::<Registries>().statuses.expect("cloaked");
-        app.world_mut().write_message(Afflict { target: player, status: cloaked, turns: 10, by: None, held_by: None });
+        app.world_mut().write_message(ApplyStatus { target: player, status: cloaked, turns: 10, by: None, held_by: None });
         crate::testing::pass_turns(&mut app, 1);
         assert!(app.world().get::<Unseen>(player).is_some(), "cloaked");
 

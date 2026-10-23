@@ -92,8 +92,8 @@ fn ids(world: &World) -> Vec<(&'static str, ComponentId)> {
         ("Messages<Cued>", c.component_id::<Messages<crate::cue::Cued>>()),
         ("Messages<DamageEvent>", c.component_id::<Messages<crate::combat::DamageEvent>>()),
         ("Messages<Heal>", c.component_id::<Messages<crate::combat::Heal>>()),
-        ("Messages<Afflict>", c.component_id::<Messages<crate::status::Afflict>>()),
-        ("Messages<Cure>", c.component_id::<Messages<crate::status::Cure>>()),
+        ("Messages<ApplyStatus>", c.component_id::<Messages<crate::status::ApplyStatus>>()),
+        ("Messages<RemoveStatus>", c.component_id::<Messages<crate::status::RemoveStatus>>()),
         ("Messages<Missed>", c.component_id::<Messages<crate::accuracy::Missed>>()),
         ("Messages<Reflected>", c.component_id::<Messages<crate::ability::Reflected>>()),
         ("EffectRng", c.component_id::<crate::effects::EffectRng>()),
@@ -124,7 +124,7 @@ fn allowed(world: &World) -> Vec<Allowed> {
     let (attack, shot) = (id(combat::resolve_attacks), id(combat::land_shots));
     let (throw, thrown) = (id(throwing::resolve_throws), id(throwing::land_throws));
     let (ability, cast) = (id(ability::resolve_abilities), id(ability::land_abilities));
-    let effects = ["Messages<Cued>", "Messages<DamageEvent>", "Messages<Heal>", "Messages<Afflict>", "Messages<Cure>", "EffectRng"];
+    let effects = ["Messages<Cued>", "Messages<DamageEvent>", "Messages<Heal>", "Messages<ApplyStatus>", "Messages<RemoveStatus>", "EffectRng"];
     let pack = ["Messages<ItemEvent>", "Inventory", "Equipped", "Stack"];
     vec![
         Allowed::among(
