@@ -77,7 +77,7 @@ fn seed_argument(mut args: impl Iterator<Item = String>) -> Option<Result<RunSee
     })
 }
 
-// The engine's domains, every one under `rl.`, which a game's
+// The engine's domains, every one under `atglyph.`, which a game's
 // `SeedDomain::new` refuses. Each is named here once, so two subsystems can
 // never draw under one name by accident, which
 // `every_engine_stream_derives_under_a_name_of_its_own` checks.
@@ -103,25 +103,25 @@ pub(crate) const RESTART: SeedDomain = SeedDomain::engine(b"restart");
 ///
 /// So a game can check none of its own domains is one of these, as
 /// Undermere's and Foundry's `seeds` modules do; [`SeedDomain::new`] already
-/// refuses every name under `rl.`, and this list is what that leaves to
+/// refuses every name under `atglyph.`, and this list is what that leaves to
 /// check.
 pub const ENGINE_DOMAINS: &[(&str, SeedDomain)] = &[
-    ("rl.combat", COMBAT),
-    ("rl.minds", MINDS),
-    ("rl.loot", LOOT),
-    ("rl.loot.place", LOOT_PLACE),
-    ("rl.loot.container", LOOT_CONTAINER),
-    ("rl.prefabs.content", PREFAB_CONTENT),
-    ("rl.props", PROPS),
-    ("rl.stealth", STEALTH),
-    ("rl.status.stumble", STUMBLE),
-    ("rl.effects", EFFECTS),
-    ("rl.ability.reflect", REFLECT),
-    ("rl.fire", FIRE),
-    ("rl.gas.spill", GAS_SPILL),
-    ("rl.gas.swirl", GAS_SWIRL),
-    ("rl.restart", RESTART),
-    ("rl.place", SeedDomain::engine(b"place")),
+    ("atglyph.combat", COMBAT),
+    ("atglyph.minds", MINDS),
+    ("atglyph.loot", LOOT),
+    ("atglyph.loot.place", LOOT_PLACE),
+    ("atglyph.loot.container", LOOT_CONTAINER),
+    ("atglyph.prefabs.content", PREFAB_CONTENT),
+    ("atglyph.props", PROPS),
+    ("atglyph.stealth", STEALTH),
+    ("atglyph.status.stumble", STUMBLE),
+    ("atglyph.effects", EFFECTS),
+    ("atglyph.ability.reflect", REFLECT),
+    ("atglyph.fire", FIRE),
+    ("atglyph.gas.spill", GAS_SPILL),
+    ("atglyph.gas.swirl", GAS_SWIRL),
+    ("atglyph.restart", RESTART),
+    ("atglyph.place", SeedDomain::engine(b"place")),
 ];
 
 /// A random stream a subsystem owns, derived from the run's [`Seed`].
@@ -263,7 +263,7 @@ mod tests {
     #[test]
     fn every_engine_stream_derives_under_a_name_of_its_own() {
         for (i, (name, domain)) in ENGINE_DOMAINS.iter().enumerate() {
-            let bare = name.strip_prefix("rl.").unwrap_or_else(|| panic!("{name} is not under rl."));
+            let bare = name.strip_prefix("atglyph.").unwrap_or_else(|| panic!("{name} is not under atglyph."));
             assert_eq!(SeedDomain::engine(bare.as_bytes()), *domain, "{name} is listed under another name than it draws under");
             for (other, theirs) in &ENGINE_DOMAINS[i + 1..] {
                 assert_ne!(name, other, "{name} is listed twice");

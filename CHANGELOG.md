@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The engine's streams are named under `atglyph.` where they were under `rl.`, so every seed grows and plays differently and a recording made on 0.3 replays differently. A game domain starting `atglyph.` is refused, as one starting `rl.` was.
+  To change: re-baseline a game's fingerprints and the tests pinned to a seed, taking the first seed that shows each case again; a game domain starting `atglyph.` is renamed.
+
 - The engine is `atglyph`: the `rl-engine` crate is `atglyph`, each `rl-<name>` crate is `atglyph-<name>`, and the facade reaches each sub-crate by a short name, `atglyph::primitives` for `rl-core`, `atglyph::ecs` for `rl-bevy`, and `atglyph::grid`, `atglyph::mapgen`, `atglyph::rules`, `atglyph::save`, `atglyph::render`, `atglyph::ui` and `atglyph::tty` for the rest. The environment variables `RL_RECORD`, `RL_REPLAY`, `RL_CAPTURE` and its `RL_CAPTURE_*` settings, and `RL_FULL_SEEDS`, are `ATGLYPH_RECORD`, `ATGLYPH_REPLAY`, `ATGLYPH_CAPTURE`, `ATGLYPH_CAPTURE_*` and `ATGLYPH_FULL_SEEDS`.
   To change: the dependency `rl-engine = ...` becomes `atglyph = ...`, `rl_engine::` becomes `atglyph::`, and `rl_engine::rl_<name>::` becomes `atglyph::<short>::`, where `rl_core` is `primitives`, `rl_bevy` is `ecs`, and `rl_grid`, `rl_mapgen`, `rl_rules`, `rl_save`, `rl_render`, `rl_ui` and `rl_tty` keep their suffix; a script or a shell that sets `RL_RECORD`, `RL_REPLAY` or `RL_CAPTURE*` sets `ATGLYPH_*`.
 

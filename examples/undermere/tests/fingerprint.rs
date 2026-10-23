@@ -255,7 +255,7 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
     assert!(prints[0] != prints[1] && prints[1] != prints[2] && prints[0] != prints[2], "another seed is another run: {prints:?}");
     assert_eq!(
         prints[..3],
-        [6_367_517_974_049_996_457, 4_080_594_267_263_169_209, 6_239_697_578_253_822_930],
+        [12_358_914_591_356_714_561, 5_905_805_868_923_652_255, 12_680_218_757_316_006_782],
         "fingerprint tripwire: re-baselined once for the strata, the biomes on other floors and the bestiary moved with them \
          and the palace floors retuned, and for the script striking only a foe, so seed one's captive, shackled beside its \
          path on floor one, is walked past rather than struck at for good; and once more for the strata's review, the war \
@@ -267,6 +267,6 @@ fn fingerprint_tripwire_a_scripted_delve_from_mereholt_comes_to_the_same_run_eve
          and the population drawing from a larger file; and once more for the drowned town's first wave, the old town and \
          the harbour drawn beside the halls, the cellars and the barracks on floors one and two, the barracks grown round the \
          gatehouse and the harbour round the sunken ship, and the harbour crab in the spawn table; and once more for the \
-         seed branch, the engine's streams named under rl. and every floor grown and filled from its own place seed"
+         seed branch, the engine's streams named under rl. and every floor grown and filled from its own place seed; and once more for the rename, the engine's streams named under atglyph. instead of rl."
     );
 }

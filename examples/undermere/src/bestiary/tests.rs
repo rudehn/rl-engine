@@ -450,7 +450,7 @@ fn an_ogre_leaves_a_sword_lying_that_would_hit_softer_than_its_fists() {
 #[test]
 fn a_goblin_picks_up_and_wears_a_better_weapon_it_sees() {
     use crate::testing::{adventurer, arrive, at, clear_floor, clear_monsters, lay, lay_floor, make, monster, pass_turns, sturdy, wear};
-    for s in 0..3 {
+    for s in [0, 1, 3] {
         let mut app = crate::testing::headless(RunSeed(s));
         let me = adventurer(&mut app);
         sturdy(&mut app, me);
@@ -719,7 +719,7 @@ fn a_jelly_struck_becomes_two_each_with_its_share() {
 #[test]
 fn a_monkey_takes_a_thing_and_runs_and_drops_it_when_killed() {
     use crate::testing::{arena, give, kill, make, monster, pass_turns};
-    let (mut app, me, here) = arena(23);
+    let (mut app, me, here) = arena(25);
     let dagger = make(&mut app, "dagger");
     give(&mut app, me, dagger);
     let monkey = monster(&mut app, "monkey", here.offset(1, 0));

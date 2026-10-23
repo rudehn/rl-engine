@@ -364,7 +364,7 @@ mod tests {
     /// rule to a hired follower on a real floor's corners and doors.
     #[test]
     fn a_follower_keeps_within_three_of_the_adventurer_across_a_floor_with_nothing_to_fight() {
-        let (mut app, me, here) = arena(0);
+        let (mut app, me, here) = arena(1);
         clear_floor(&mut app);
         let brenna = hired(&mut app, me, here.offset(-1, 0), "Brenna");
         let way = the_long_way(&mut app, here, 60);

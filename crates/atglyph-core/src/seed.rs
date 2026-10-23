@@ -128,7 +128,7 @@ impl From<PlaceSeed> for RunSeed {
 }
 
 /// The prefix every engine domain's name starts with, and no game's may.
-const ENGINE_PREFIX: &[u8] = b"rl.";
+const ENGINE_PREFIX: &[u8] = b"atglyph.";
 
 /// Which subsystem a derived seed belongs to.
 ///
@@ -137,7 +137,7 @@ const ENGINE_PREFIX: &[u8] = b"rl.";
 /// editing the engine. The name is what keys the stream, so renaming a
 /// domain rerolls it and reordering declarations does not.
 ///
-/// Names starting `rl.` are the engine's, made with
+/// Names starting `atglyph.` are the engine's, made with
 /// [`SeedDomain::engine`], so a game's domain can never share a stream
 /// with one of the engine's by choosing the same word.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -147,21 +147,21 @@ impl SeedDomain {
     /// A game's domain keyed by a name.
     ///
     /// # Panics
-    /// When `name` starts with `rl.`, which is the engine's. Declared as a
+    /// When `name` starts with `atglyph.`, which is the engine's. Declared as a
     /// `const`, as a domain should be, that is a compile error rather than
     /// a panic:
     ///
     /// ```compile_fail
     /// # use atglyph_core::SeedDomain;
-    /// const LOOT: SeedDomain = SeedDomain::new(b"rl.loot");
+    /// const LOOT: SeedDomain = SeedDomain::new(b"atglyph.loot");
     /// # let _ = LOOT;
     /// ```
     pub const fn new(name: &[u8]) -> Self {
-        assert!(!starts_with(name, ENGINE_PREFIX), "a seed domain starting `rl.` is the engine's; name the game's own another way");
+        assert!(!starts_with(name, ENGINE_PREFIX), "a seed domain starting `atglyph.` is the engine's; name the game's own another way");
         SeedDomain::salted(fnv1a(name))
     }
 
-    /// The engine's domain called `rl.` and then `name`: what a subsystem
+    /// The engine's domain called `atglyph.` and then `name`: what a subsystem
     /// of the engine draws under, and what no game's [`SeedDomain::new`]
     /// can reach.
     pub const fn engine(name: &[u8]) -> Self {
@@ -291,23 +291,23 @@ mod tests {
     }
 
     #[test]
-    fn an_engine_domain_hashes_as_its_name_under_rl() {
-        assert_eq!(SeedDomain::engine(b"place"), SeedDomain(fnv1a(b"rl.place") | 1));
+    fn an_engine_domain_hashes_as_its_name_under_atglyph() {
+        assert_eq!(SeedDomain::engine(b"place"), SeedDomain(fnv1a(b"atglyph.place") | 1));
         assert_ne!(SeedDomain::engine(b"place"), SeedDomain::new(b"place"));
     }
 
     #[test]
     #[should_panic(expected = "the engine's")]
-    fn a_game_domain_under_rl_is_refused() {
-        let name: &[u8] = b"rl.loot";
+    fn a_game_domain_under_atglyph_is_refused() {
+        let name: &[u8] = b"atglyph.loot";
         let _ = SeedDomain::new(std::hint::black_box(name));
     }
 
     #[test]
-    fn a_game_domain_merely_like_rl_is_its_own() {
-        let _ = SeedDomain::new(b"rl");
-        let _ = SeedDomain::new(b"rlx.loot");
-        let _ = SeedDomain::new(b"girl.loot");
+    fn a_game_domain_merely_like_atglyph_is_its_own() {
+        let _ = SeedDomain::new(b"atglyph");
+        let _ = SeedDomain::new(b"atglyphx.loot");
+        let _ = SeedDomain::new(b"myatglyph.loot");
     }
 
     #[test]
