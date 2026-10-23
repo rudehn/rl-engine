@@ -147,7 +147,12 @@ enum Line {
 /// the heading where each was first declared.
 ///
 /// A control nothing binds, such as a log key in a game with no
-/// scrollback, is left out.
+/// scrollback, is left out. Two controls of one group on the same keys are
+/// one row, what they do joined in the order they were declared: `esc`
+/// opens the menu and closes a cursor or a screen, and a player reading
+/// the key twice under one heading would wonder which it does. The same
+/// keys under another heading stay a row there, since a heading is a
+/// different moment to press them in.
 fn lines(controls: &Controls, bindings: &Bindings) -> Vec<Line> {
     let mut groups: Vec<(&str, Vec<(String, String)>)> = Vec::new();
     for (_, control) in controls.iter() {
@@ -157,7 +162,10 @@ fn lines(controls: &Controls, bindings: &Bindings) -> Vec<Line> {
         }
         let row = (label, control.action.clone());
         match groups.iter_mut().find(|(name, _)| *name == control.group) {
-            Some((_, rows)) => rows.push(row),
+            Some((_, rows)) => match rows.iter_mut().find(|(keys, _)| *keys == row.0) {
+                Some((_, action)) => *action = format!("{action}, or {}", row.1),
+                None => rows.push(row),
+            },
             None => groups.push((&control.group, vec![row])),
         }
     }
@@ -363,6 +371,30 @@ mod tests {
         assert!(row_for(&rows, "show the controls").starts_with("? "), "{:?}", row_for(&rows, "show the controls"));
         assert_eq!(rows.iter().filter(|r| r.contains("next thing in sight")).count(), 1, "declared by two plugins, listed once");
         assert!(rows.iter().all(|r| r.chars().count() <= 50), "nothing runs past the frame: {rows:#?}");
+    }
+
+    /// A key with two meanings in one group is one row saying both, in
+    /// the order they were declared; the same key in another group is a
+    /// row of its own there.
+    #[test]
+    fn two_controls_of_one_group_on_the_same_keys_are_one_row_and_another_groups_stays_its_own() {
+        let mut stage = Stage::new_with(ControlsPanel::new(Rect::new(0, 0, 60, 30)), |app| {
+            app.add_control("Act", "drink a potion", KeyCode::KeyD);
+            app.add_control("Act", "wait a turn", KeyCode::Period);
+            app.add_control("Act", "dig", KeyCode::KeyD);
+            app.add_control("Other", "dance", KeyCode::KeyD);
+        })
+        .screen(60, 30);
+        open(&mut stage);
+        let rows = stage.rows();
+        assert_eq!(
+            row_for(&rows, "drink a potion").trim_end_matches('\u{2502}').split_whitespace().collect::<Vec<_>>().join(" "),
+            "d drink a potion, or dig",
+            "{rows:#?}"
+        );
+        assert_eq!(rows.iter().filter(|r| r.contains("dig")).count(), 1, "folded, not listed twice: {rows:#?}");
+        assert!(row_for(&rows, "dance").starts_with("d "), "another group's row stays its own: {rows:#?}");
+        assert!(rows.iter().position(|r| r.contains("wait a turn")) > rows.iter().position(|r| r.contains("drink")), "where the first was declared");
     }
 
     #[test]

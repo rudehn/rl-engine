@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The controls screen lists two controls of one group on the same keys as one row, saying both in the order they were declared, so `esc` under Screens reads "open the menu, or close a cursor or screen" where it was listed twice. The same keys in another group stay a row of their own there.
+  To change: nothing; a game that declared two meanings for one key in one group sees them on one row.
+
 - The glyph terminal draws the box-drawing and block characters, U+2500 to U+259F, itself rather than through the font, as a terminal emulator does: a line runs to its cell's edges and meets the next, so a frame is one unbroken line with its corners closed, and a block fills its cell, so a bar is solid. A shade fills its cell at a quarter, a half or three quarters of its colour. They draw the same in the browser, whose embedded font has none of them; a tileset's picture for one of them still wins. The text-terminal front end is unchanged.
   To change: nothing; a game's frames, bars, box art and shaded tiles draw this way at once, and a typeface shipped only for these characters may go.
 
