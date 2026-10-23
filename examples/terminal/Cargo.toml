@@ -16,4 +16,4 @@ tier = 3
 rl-core.workspace = true
 rl-grid.workspace = true
 rl-mapgen.workspace = true
-crossterm = "0.29"
+crossterm.workspace = true

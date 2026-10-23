@@ -4271,6 +4271,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rl-tty"
+version = "0.3.0"
+dependencies = [
+ "bevy",
+ "crossterm",
+ "rl-render",
+ "unicode-width",
+]
+
+[[package]]
 name = "rl-ui"
 version = "0.3.0"
 dependencies = [

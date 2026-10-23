@@ -289,6 +289,12 @@ impl Terminal {
         self.index(x, y).map(|i| self.cells[i])
     }
 
+    /// Every cell, row by row from the top left: what a front end that
+    /// draws the grid somewhere else, a text terminal say, reads it by.
+    pub fn cells(&self) -> &[Cell] {
+        &self.cells
+    }
+
     /// How many cells across the glyph at `(x, y)` is drawn: one for a cell
     /// of its own, the run's length for the first cell of a wide one, and
     /// nought for the rest of a wide one. `None` out of bounds.

@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `rl-tty`, a new tier-2 crate: `TtyPlugin` shows the `Terminal` grid in a text terminal in place of the window's `TerminalPlugin`, writing only the cells that changed each frame and turning the keys typed into `ButtonInput<KeyCode>`, each pressed for the frame it was typed in, with Shift for a capital or a shifted symbol. `TtyPlugin::new(cols, rows)` is the process's own terminal, in raw mode and handed back when the app ends or panics; `TtyPlugin::to_writer(cols, rows, out)` is any other, an SSH channel, whose keys and size arrive as `TtyInput` messages. A glyph a terminal draws two columns wide is drawn as `?`. `Terminal::cells` reads every cell of the grid.
+  To change: nothing.
+
 - `Saves::per_user(name, user)` keeps each user's saves apart, in `saves/<name>/users/<user>` beside the executable, for a game many people play over SSH: insert it before `SavePlugin`. A user name that is not a plain name is refused with `SaveError::Slot` rather than a panic.
   To change: nothing.
 
