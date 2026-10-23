@@ -43,10 +43,10 @@ use atglyph::ecs::effects::UseLanding;
 use atglyph::ecs::{Aimed, Bystanders, area_cells};
 use atglyph::prelude::*;
 use atglyph::primitives::noun::{plural, with_article};
+use atglyph::rand::Rng;
+use atglyph::rand::seq::SliceRandom;
 use atglyph::rules::ability::RawValue;
 use bevy::prelude::*;
-use rand::Rng;
-use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 
 use crate::armory::{Armory, ItemDef, ItemKind};

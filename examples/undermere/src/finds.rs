@@ -28,8 +28,8 @@
 use std::ops::RangeInclusive;
 
 use atglyph::prelude::*;
+use atglyph::rand::Rng;
 use bevy::prelude::*;
-use rand::Rng;
 
 use crate::armory::{Armory, ItemDef};
 use crate::dungeon::floor_of;
@@ -158,7 +158,7 @@ pub struct Ground<'w, 's> {
 /// The pure half of [`lay`], tested without an `App`: the scroll's cell,
 /// the plan, the gold, then each cell in turn, from `rng`.
 pub fn laid_out(kinds: &Kinds, laid: Id<ItemDef>, gold: Id<ItemDef>, floor: u32, mut open: Vec<Point>, rng: &mut impl Rng) -> Vec<(Id<ItemDef>, u32, Point)> {
-    let draw = |open: &mut Vec<Point>, rng: &mut dyn rand::RngCore| (!open.is_empty()).then(|| open.swap_remove(rng.random_range(0..open.len())));
+    let draw = |open: &mut Vec<Point>, rng: &mut dyn atglyph::rand::RngCore| (!open.is_empty()).then(|| open.swap_remove(rng.random_range(0..open.len())));
     let mut out: Vec<(Id<ItemDef>, u32, Point)> = draw(&mut open, rng).map(|at| (laid, 1, at)).into_iter().collect();
     let mut things = plan(kinds, floor as i32, things_on(floor), rng);
     things.extend((0..rng.random_range(GOLD_PILES)).map(|_| (gold, 1)));
@@ -198,7 +198,7 @@ pub fn lay(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, gro
 
 #[cfg(test)]
 mod tests {
-    use rand::SeedableRng;
+    use atglyph::rand::SeedableRng;
 
     use super::*;
     use crate::content::Library;
@@ -235,7 +235,7 @@ mod tests {
         ]);
         let mut drawn = [0u32; 5];
         for seed in 0..400 {
-            let things = plan(&kinds, 5, 10, &mut rand::rngs::StdRng::seed_from_u64(seed));
+            let things = plan(&kinds, 5, 10, &mut atglyph::rand::rngs::StdRng::seed_from_u64(seed));
             assert_eq!(things.len(), 10, "seed {seed}: as many as asked for");
             for (def, count) in things {
                 let together = if def == item(0) { 2..=3 } else { 1..=1 };
@@ -246,7 +246,7 @@ mod tests {
         assert_eq!((drawn[3], drawn[4]), (0, 0), "nothing of a kind empty at the band or weighed nought");
         let (first, second) = (drawn[0] + drawn[1], drawn[2]);
         assert!((first * 10).abs_diff(second * 30) * 5 <= second * 30, "a kind three times the weight is drawn about three times as often: {drawn:?}");
-        assert!(plan(&Kinds(vec![(10, table(vec![LootRow::new(item(0)).bands(1, 1)]))]), 5, 10, &mut rand::rngs::StdRng::seed_from_u64(0)).is_empty());
+        assert!(plan(&Kinds(vec![(10, table(vec![LootRow::new(item(0)).bands(1, 1)]))]), 5, 10, &mut atglyph::rand::rngs::StdRng::seed_from_u64(0)).is_empty());
     }
     /// A floor with room for one thing holds its scroll of enchanting and
     /// nothing of its budget; one with room for all of it holds the scroll,
@@ -260,7 +260,7 @@ mod tests {
         let (laid, gold) = (armory.defs.expect(LAID), armory.defs.expect(GOLD));
         let cells = |n: i32| (0..n).map(|x| Point::new(x, 0)).collect::<Vec<_>>();
         for seed in 0..40 {
-            let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+            let mut rng = atglyph::rand::rngs::StdRng::seed_from_u64(seed);
             let crowded = laid_out(&kinds, laid, gold, 5, cells(1), &mut rng);
             assert_eq!(crowded, [(laid, 1, Point::new(0, 0))], "seed {seed}: the one cell holds the scroll");
             let roomy = laid_out(&kinds, laid, gold, 5, cells(100), &mut rng);

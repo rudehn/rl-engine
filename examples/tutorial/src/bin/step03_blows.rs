@@ -11,10 +11,10 @@
 
 use atglyph::prelude::*;
 use atglyph::primitives::Rect;
+use atglyph::rand::Rng;
 use atglyph::rules::ai::tactics::{FleeWhenHurt, Hunt, MeleeAdjacent, Wander};
 use atglyph::rules::faction::FactionDef;
 use bevy::prelude::*;
-use rand::Rng;
 use std::sync::Arc;
 
 /// The terminal, in cells.

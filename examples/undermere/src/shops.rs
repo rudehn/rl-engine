@@ -40,12 +40,12 @@ use std::ops::RangeInclusive;
 
 use atglyph::prelude::*;
 use atglyph::primitives::noun::listed;
+use atglyph::rand::Rng;
+use atglyph::rand::rngs::StdRng;
 use atglyph::rules::loot::{DropRow, DropTable, LevelRow, LevelTable, LootRow, LootTable};
 use atglyph::ui::TradeView;
 use atglyph::ui::view::offers::OffersView;
 use bevy::prelude::*;
-use rand::Rng;
-use rand::rngs::StdRng;
 use ron::extensions::Extensions;
 use ron::options::Options;
 use ron::value::RawValue;
@@ -758,7 +758,7 @@ impl AuthoredKeeper {
 #[cfg(test)]
 mod tests {
     use atglyph::primitives::RunSeed;
-    use rand::SeedableRng;
+    use atglyph::rand::SeedableRng;
 
     use super::*;
     use crate::armory::{RING_LEVELS, STAFF_LEVEL, WORTH_PER_LEVEL};
@@ -841,7 +841,7 @@ mod tests {
         let potion = library.registries.tags.expect("potion");
         let mut seen = std::collections::BTreeSet::new();
         for s in 0..300 {
-            let stocking = wares.stock("tagged", 3, &mut rand::rngs::StdRng::seed_from_u64(s));
+            let stocking = wares.stock("tagged", 3, &mut atglyph::rand::rngs::StdRng::seed_from_u64(s));
             assert_eq!(stocking.wares.len(), 5, "seed {s}: five draws");
             let defs: Vec<_> = stocking.wares.iter().map(|w| w.def).collect();
             for def in &defs {

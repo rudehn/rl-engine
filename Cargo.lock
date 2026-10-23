@@ -324,6 +324,7 @@ dependencies = [
  "atglyph-tty",
  "atglyph-ui",
  "bevy",
+ "rand 0.9.5",
 ]
 
 [[package]]
@@ -2640,7 +2641,6 @@ version = "0.3.0"
 dependencies = [
  "atglyph",
  "bevy",
- "rand 0.9.5",
  "serde",
 ]
 
@@ -4987,7 +4987,6 @@ version = "0.3.0"
 dependencies = [
  "atglyph",
  "bevy",
- "rand 0.9.5",
  "serde",
 ]
 
@@ -5009,7 +5008,6 @@ version = "0.3.0"
 dependencies = [
  "atglyph",
  "bevy",
- "rand 0.9.5",
  "ron 0.10.1",
  "serde",
  "ttf-parser",

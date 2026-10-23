@@ -289,7 +289,7 @@ impl Tactic<Entity> for Patrol {
 #[cfg(test)]
 mod tests {
     use atglyph::primitives::Rect;
-    use rand::SeedableRng;
+    use atglyph::rand::SeedableRng;
 
     use super::*;
 
@@ -302,7 +302,7 @@ mod tests {
         let snapshot = Snapshot::alone(me);
         let mut rolled = 0;
         for seed in 0..200u64 {
-            let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+            let mut rng = atglyph::rand::rngs::StdRng::seed_from_u64(seed);
             let ctx = &mut TacticCtx {
                 snapshot: &snapshot,
                 fields: &mut NoFields,

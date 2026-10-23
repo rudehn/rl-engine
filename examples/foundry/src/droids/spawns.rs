@@ -12,8 +12,8 @@
 
 use atglyph::prelude::*;
 use atglyph::primitives::Rect;
+use atglyph::rand::Rng;
 use bevy::prelude::*;
-use rand::Rng;
 
 use super::{MonsterDef, Roster, spawn_monster};
 
@@ -127,7 +127,7 @@ pub fn populate_deck(mut commands: Commands, mut entered: MessageReader<PlaceEnt
 #[cfg(test)]
 mod tests {
     use atglyph::primitives::RunSeed;
-    use rand::SeedableRng;
+    use atglyph::rand::SeedableRng;
 
     use super::*;
     use crate::droids::Kind;
@@ -153,7 +153,7 @@ mod tests {
         for deck in 1..=8u32 {
             let target = BASE_GROUPS + deck * GROUPS_PER_DECK;
             for s in 0..20 {
-                let mut rng = rand::rngs::StdRng::seed_from_u64(s);
+                let mut rng = atglyph::rand::rngs::StdRng::seed_from_u64(s);
                 let groups = plan_population(&roster.table, deck as i32, bounds, entry, target, &mut |_| true, &mut rng);
                 assert_eq!(groups.len() as u32, target, "deck {deck}, seed {s}");
             }
@@ -165,7 +165,7 @@ mod tests {
         let roster = Roster::load(&crate::content::registries());
         let (bounds, entry) = open_ground();
         for s in 0..20 {
-            let mut rng = rand::rngs::StdRng::seed_from_u64(s);
+            let mut rng = atglyph::rand::rngs::StdRng::seed_from_u64(s);
             let groups = plan_population(&roster.table, 8, bounds, entry, BASE_GROUPS + 8 * GROUPS_PER_DECK, &mut |_| true, &mut rng);
             let mut seen: Vec<Point> = Vec::new();
             for (_, p) in groups.iter().flatten() {
@@ -180,7 +180,7 @@ mod tests {
         let roster = Roster::load(&crate::content::registries());
         let (bounds, entry) = open_ground();
         for s in 0..20 {
-            let mut rng = rand::rngs::StdRng::seed_from_u64(s);
+            let mut rng = atglyph::rand::rngs::StdRng::seed_from_u64(s);
             // A checkerboard, so a point the predicate refused is easy to
             // tell from one it allowed.
             let groups = plan_population(&roster.table, 3, bounds, entry, BASE_GROUPS + 3 * GROUPS_PER_DECK, &mut |p| p.x % 2 == 0, &mut rng);
@@ -197,7 +197,7 @@ mod tests {
         let (bounds, entry) = open_ground();
         for s in 0..20 {
             let plan = || {
-                let mut rng = rand::rngs::StdRng::seed_from_u64(s);
+                let mut rng = atglyph::rand::rngs::StdRng::seed_from_u64(s);
                 plan_population(&roster.table, 3, bounds, entry, BASE_GROUPS + 3 * GROUPS_PER_DECK, &mut |_| true, &mut rng)
             };
             assert_eq!(plan(), plan(), "seed {s}: two runs of the same seed disagreed");

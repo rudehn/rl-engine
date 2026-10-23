@@ -14,10 +14,10 @@ use std::sync::Arc;
 
 use atglyph::prelude::*;
 use atglyph::primitives::Rect;
+use atglyph::rand::Rng;
 use atglyph::rules::ai::{Repertoire, Standard};
 use atglyph::rules::faction::FactionDef;
 use bevy::prelude::*;
-use rand::Rng;
 use serde::Deserialize;
 
 /// The terminal, in cells.

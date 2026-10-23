@@ -562,13 +562,13 @@ mod tests {
     /// every mark, no two on one cell, and what each armory and store mark
     /// is owed laid beside it.
     fn scatters_walkable_items_beside_their_own_marks(armory: &crate::gear::Armory, deck: u32, s: u64, built: &PlaceBuild, tables: &TileTables, at: &str) {
+        use atglyph::rand::SeedableRng;
         use atglyph::rules::{Layout, plan_scatter};
-        use rand::SeedableRng;
         let rules = crate::loot::scatter_rules();
         let marks: Vec<(u32, atglyph::primitives::Point)> = built.spots.iter().map(|sp| (sp.tag, sp.at)).collect();
         let on_marks: Vec<atglyph::primitives::Point> = marks.iter().map(|(_, p)| *p).collect();
         let mut free = |p: atglyph::primitives::Point| built.terrain.get(p).is_some_and(|t| tables.walkable[t.index()]) && !on_marks.contains(&p);
-        let mut rng = rand::rngs::StdRng::seed_from_u64(s);
+        let mut rng = atglyph::rand::rngs::StdRng::seed_from_u64(s);
         let loose = rules.loose_count(deck as i32, &mut rng);
         let plan = plan_scatter(&armory.table, deck as i32, &rules, Layout { marks: &marks, bounds: built.terrain.bounds() }, loose, &mut free, &mut rng);
         let mut seen = Vec::new();

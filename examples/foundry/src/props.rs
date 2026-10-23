@@ -185,7 +185,7 @@ pub fn place_on_arrival(
             None
         };
         let mut roll = || {
-            use rand::Rng;
+            use atglyph::rand::Rng;
             Point::new(rng.random_range(bounds.x..bounds.right()), rng.random_range(bounds.y..bounds.bottom()))
         };
         for _ in stores..crates_for(deck, stores) {
@@ -289,7 +289,7 @@ mod tests {
     /// run's backstop asks the same of every real deck.
     #[test]
     fn crates_put_down_where_the_way_stays_open_never_shut_anything_away() {
-        use rand::{Rng, SeedableRng};
+        use atglyph::rand::{Rng, SeedableRng};
         let foundry = crate::decks::Foundry::new(RunSeed(0));
         let tiles = foundry.tiles();
         let (hull, deck) = (tiles.expect("hull"), tiles.expect("deck"));
@@ -315,7 +315,7 @@ mod tests {
         assert!(!keeps_the_way_open(&map, entry, &[], Point::new(10, 5)), "and the store's mouth, the one way in");
         let open = reachable(&map, entry, &[]);
         for s in crate::testing::seeds(0..40) {
-            let mut rng = rand::rngs::StdRng::seed_from_u64(s);
+            let mut rng = atglyph::rand::rngs::StdRng::seed_from_u64(s);
             let mut blocked: Vec<Point> = Vec::new();
             for _ in 0..200 {
                 let p = Point::new(rng.random_range(1..13), rng.random_range(1..7));

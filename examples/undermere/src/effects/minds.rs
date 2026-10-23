@@ -12,10 +12,10 @@
 
 use atglyph::ecs::EffectRng;
 use atglyph::prelude::*;
+use atglyph::rand::Rng;
 use atglyph::rules::StatusId;
 use atglyph::rules::ability::RawValue;
 use bevy::prelude::*;
-use rand::Rng;
 
 use super::moving::no_args;
 use super::the;

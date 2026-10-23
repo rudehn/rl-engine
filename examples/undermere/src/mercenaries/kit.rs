@@ -2,9 +2,9 @@
 //! against the armory, a kit rolled from it at a band, and its fee.
 
 use atglyph::prelude::*;
+use atglyph::rand::Rng;
 use atglyph::rules::loot::{LootRow, LootTable};
 use bevy::prelude::*;
-use rand::Rng;
 use ron::extensions::Extensions;
 use ron::options::Options;
 use ron::value::RawValue;
@@ -230,10 +230,10 @@ mod tests {
     use std::collections::BTreeSet;
 
     use atglyph::primitives::RunSeed;
+    use atglyph::rand::SeedableRng;
+    use atglyph::rand::rngs::StdRng;
     use atglyph::rules::prefab::{Pick, Slot};
     use bevy::ecs::world::CommandQueue;
-    use rand::SeedableRng;
-    use rand::rngs::StdRng;
 
     use super::*;
     use crate::content::Library;

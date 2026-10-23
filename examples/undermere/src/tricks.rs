@@ -29,11 +29,11 @@
 
 use atglyph::ecs::EffectRng;
 use atglyph::prelude::*;
+use atglyph::rand::Rng;
 use atglyph::rules::ability::RawValue;
 use atglyph::rules::ai::brain::Tactic;
 use atglyph::rules::ai::tactics::{Station, Ways};
 use bevy::prelude::*;
-use rand::Rng;
 
 use crate::bestiary::{Bestiary, Kind, spawn_monster_now};
 use crate::bestiary_lore::MonsterLore;

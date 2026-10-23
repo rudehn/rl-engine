@@ -1,7 +1,7 @@
 use atglyph::primitives::Rect;
+use atglyph::rand::SeedableRng;
 use bevy::ecs::system::RunSystemOnce;
 use bevy::ecs::world::CommandQueue;
-use rand::SeedableRng;
 
 use super::*;
 use crate::content::Library;
@@ -53,7 +53,7 @@ fn decides(world: &World, e: Entity, hp: i32, max: i32, library: &Library) -> Op
     let mut snapshot = Snapshot::alone(me);
     snapshot.enemies.push(foe);
     snapshot.wits = world.get::<Intelligence>(e).expect("wits").0;
-    let mut rng = rand::rngs::StdRng::seed_from_u64(1);
+    let mut rng = atglyph::rand::rngs::StdRng::seed_from_u64(1);
     let ctx = &mut TacticCtx {
         snapshot: &snapshot,
         fields: &mut NoFields,
@@ -589,7 +589,7 @@ fn a_will_o_wisp_keeps_its_distance_rather_than_closing_to_melee() {
     let mut snapshot = Snapshot::alone(me);
     snapshot.enemies.push(foe);
     snapshot.wits = world.get::<Intelligence>(e).expect("wits").0;
-    let mut rng = rand::rngs::StdRng::seed_from_u64(1);
+    let mut rng = atglyph::rand::rngs::StdRng::seed_from_u64(1);
     let ctx = &mut TacticCtx {
         snapshot: &snapshot,
         fields: &mut NoFields,
@@ -935,7 +935,7 @@ fn a_packing_kind_closes_on_its_own_kind_when_nothing_else_is_in_sight() {
     let mut snapshot = Snapshot::alone(me);
     snapshot.allies.push(ally);
     snapshot.wits = world.get::<Intelligence>(e).expect("wits").0;
-    let mut rng = rand::rngs::StdRng::seed_from_u64(1);
+    let mut rng = atglyph::rand::rngs::StdRng::seed_from_u64(1);
     let ctx = &mut TacticCtx {
         snapshot: &snapshot,
         fields: &mut NoFields,
@@ -961,7 +961,7 @@ fn a_led_kind_closes_on_its_leader_when_nothing_else_is_in_sight() {
     let mut snapshot = Snapshot::alone(me);
     snapshot.wits = world.get::<Intelligence>(e).expect("wits").0;
     snapshot.add_sense(atglyph::rules::ai::tactics::Led { at: Point::new(5, 0), in_sight: true });
-    let mut rng = rand::rngs::StdRng::seed_from_u64(1);
+    let mut rng = atglyph::rand::rngs::StdRng::seed_from_u64(1);
     let ctx = &mut TacticCtx {
         snapshot: &snapshot,
         fields: &mut NoFields,
@@ -994,7 +994,7 @@ fn a_dar_priestess_whose_leader_is_gone_keeps_station_on_its_allies_rather_than_
     let mut snapshot = Snapshot::alone(me);
     snapshot.allies.push(ally);
     snapshot.wits = world.get::<Intelligence>(e).expect("wits").0;
-    let mut rng = rand::rngs::StdRng::seed_from_u64(1);
+    let mut rng = atglyph::rand::rngs::StdRng::seed_from_u64(1);
     let ctx = &mut TacticCtx {
         snapshot: &snapshot,
         fields: &mut NoFields,
@@ -1025,7 +1025,7 @@ fn a_goblin_of_grubnaks_band_whose_leader_is_gone_keeps_station_on_its_allies_ra
     let mut snapshot = Snapshot::alone(me);
     snapshot.allies.push(ally);
     snapshot.wits = world.get::<Intelligence>(e).expect("wits").0;
-    let mut rng = rand::rngs::StdRng::seed_from_u64(1);
+    let mut rng = atglyph::rand::rngs::StdRng::seed_from_u64(1);
     let ctx = &mut TacticCtx {
         snapshot: &snapshot,
         fields: &mut NoFields,

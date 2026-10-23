@@ -17,8 +17,8 @@
 
 use atglyph::prelude::*;
 use atglyph::primitives::Rect;
+use atglyph::rand::Rng;
 use bevy::prelude::*;
-use rand::Rng;
 
 use crate::bestiary::{Bestiary, Kind, MonsterDef, spawn_monster};
 use crate::dungeon::{FLOORS, MIN_DISTANCE_FROM_ENTRY, floor_of};
@@ -697,8 +697,8 @@ pub fn lead_lair_bands(
 #[cfg(test)]
 mod tests {
     use atglyph::primitives::RunSeed;
+    use atglyph::rand::SeedableRng;
     use atglyph::rules::prefab::Slot;
-    use rand::SeedableRng;
 
     use super::*;
     use crate::dungeon::{TOWN, map_of};
@@ -724,7 +724,7 @@ mod tests {
         assert_eq!((1..=FLOORS).map(groups_on).collect::<Vec<_>>(), [4, 5, 6, 7, 8, 9, 10, 11, 12, 3]);
         for floor in 1..=FLOORS {
             for s in 0..20 {
-                let mut rng = rand::rngs::StdRng::seed_from_u64(s);
+                let mut rng = atglyph::rand::rngs::StdRng::seed_from_u64(s);
                 let groups = plan(Spawns { table: &bestiary.spawns, band: floor as i32, favor: &[] }, bounds, entry, groups_on(floor), &mut |_| true, &mut rng);
                 assert_eq!(groups.len() as u32, groups_on(floor), "floor {floor}, seed {s}");
                 assert!(groups.iter().all(|g| !g.is_empty()), "floor {floor}, seed {s}: an empty group");
@@ -744,7 +744,7 @@ mod tests {
         let court = bestiary.defs.expect("skeleton knight");
         let mut kinds: Vec<Id<MonsterDef>> = Vec::new();
         for s in 0..40 {
-            let mut rng = rand::rngs::StdRng::seed_from_u64(s);
+            let mut rng = atglyph::rand::rngs::StdRng::seed_from_u64(s);
             let groups = plan(Spawns { table: &bestiary.spawns, band: FLOORS as i32, favor: &[] }, bounds, entry, groups_on(FLOORS), &mut |_| true, &mut rng);
             assert!(!groups.is_empty() && groups.len() <= 3, "seed {s}: {} groups", groups.len());
             for (id, _) in groups.iter().flatten() {
@@ -763,7 +763,7 @@ mod tests {
         let bestiary = bestiary();
         let (bounds, entry) = open_ground();
         for s in 0..20 {
-            let mut rng = rand::rngs::StdRng::seed_from_u64(s);
+            let mut rng = atglyph::rand::rngs::StdRng::seed_from_u64(s);
             // A checkerboard, so a cell the caller refused is easy to tell
             // from one it allowed.
             let groups = plan(Spawns { table: &bestiary.spawns, band: 9, favor: &[] }, bounds, entry, 13, &mut |p| (p.x + p.y) % 2 == 0, &mut rng);
@@ -783,8 +783,16 @@ mod tests {
         let bestiary = bestiary();
         let (bounds, entry) = open_ground();
         for s in 0..20 {
-            let plan_it =
-                || plan(Spawns { table: &bestiary.spawns, band: 5, favor: &[] }, bounds, entry, 9, &mut |_| true, &mut rand::rngs::StdRng::seed_from_u64(s));
+            let plan_it = || {
+                plan(
+                    Spawns { table: &bestiary.spawns, band: 5, favor: &[] },
+                    bounds,
+                    entry,
+                    9,
+                    &mut |_| true,
+                    &mut atglyph::rand::rngs::StdRng::seed_from_u64(s),
+                )
+            };
             assert_eq!(plan_it(), plan_it(), "seed {s}");
         }
     }
@@ -808,7 +816,7 @@ mod tests {
         let favor = [kind(0), kind(3)];
         let mut drawn = [0u32; 4];
         for s in 0..4000u64 {
-            let mut rng = rand::rngs::StdRng::seed_from_u64(s);
+            let mut rng = atglyph::rand::rngs::StdRng::seed_from_u64(s);
             let (id, n) = pick_group_favoring(&Spawns { table: &table, band: 5, favor: &favor }, &mut rng).expect("the band has rows");
             assert!(id != kind(2) || (2..=3).contains(&n), "seed {s}: a drawn row keeps its own group");
             drawn[id.index()] += 1;
@@ -1175,7 +1183,7 @@ mod tests {
         let band = [Point::new(4, 5), Point::new(5, 5), Point::new(6, 5)];
         assert_eq!(camp_fire_cell(&band, &mut |_| true, corridor), None, "no fire in a corridor one cell wide");
         for s in 0..200u64 {
-            let mut rng = rand::rngs::StdRng::seed_from_u64(s);
+            let mut rng = atglyph::rand::rngs::StdRng::seed_from_u64(s);
             let rock: Vec<Point> = (0..30).map(|_| Point::new(rng.random_range(0..12), rng.random_range(0..12))).collect();
             let refused: Vec<Point> = (0..10).map(|_| Point::new(rng.random_range(0..12), rng.random_range(0..12))).collect();
             let open = |p: Point| (0..12).contains(&p.x) && (0..12).contains(&p.y) && !rock.contains(&p);
@@ -1338,7 +1346,7 @@ mod tests {
         let palace = favored(&["drowned acolyte", "drowned pilgrim", "vampire bat"]);
         let (mut drawn, mut either) = (0, std::collections::BTreeSet::new());
         for s in 0..400u64 {
-            let mut rng = rand::rngs::StdRng::seed_from_u64(s);
+            let mut rng = atglyph::rand::rngs::StdRng::seed_from_u64(s);
             let floor = 5 + (s % 2) as u32;
             if let Some(f) = feeder_for(floor, &mines, &mut rng) {
                 assert_eq!(f.beast, "ogre", "seed {s}: the mines' feeder");

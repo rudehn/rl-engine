@@ -28,8 +28,8 @@ use std::collections::BTreeMap;
 
 use atglyph::mapgen::{Area, Opening};
 use atglyph::prelude::*;
-use rand::Rng;
-use rand::seq::SliceRandom;
+use atglyph::rand::Rng;
+use atglyph::rand::seq::SliceRandom;
 
 use crate::dungeon::{pieces, slots, under_pieces, walkable, ways};
 

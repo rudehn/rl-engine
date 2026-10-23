@@ -318,7 +318,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use atglyph::primitives::RunSeed;
-    use rand::SeedableRng;
+    use atglyph::rand::SeedableRng;
 
     use super::*;
 
@@ -327,7 +327,7 @@ mod tests {
         // Spec section 8.5: lone sentries first, bigger groups deeper.
         let roster = Roster::load(&crate::content::registries());
         let line = roster.defs.expect("line droid");
-        let mut rng = rand::rngs::StdRng::seed_from_u64(9);
+        let mut rng = atglyph::rand::rngs::StdRng::seed_from_u64(9);
         let sizes: BTreeSet<u32> = (0..2000).filter_map(|_| roster.table.pick_group(1, &mut rng)).filter(|(id, _)| **id == line).map(|(_, n)| n).collect();
         assert_eq!(sizes, [1, 2].into_iter().collect());
     }

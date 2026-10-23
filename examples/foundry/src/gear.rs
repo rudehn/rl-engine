@@ -557,7 +557,15 @@ pub fn spawn_items(commands: &mut Commands, armory: &Armory, id: Id<ItemDef>, co
 impl ItemMaker for Armory {
     type Def = ItemDef;
 
-    fn make(&self, commands: &mut Commands, _: &Registries, def: Id<ItemDef>, count: u32, from: Provenance, rng: &mut rand::rngs::StdRng) -> Vec<Entity> {
+    fn make(
+        &self,
+        commands: &mut Commands,
+        _: &Registries,
+        def: Id<ItemDef>,
+        count: u32,
+        from: Provenance,
+        rng: &mut atglyph::rand::rngs::StdRng,
+    ) -> Vec<Entity> {
         let d = self.defs.get(def);
         if d.stack {
             return spawn_items(commands, self, def, count);
@@ -1408,7 +1416,7 @@ mod tests {
 
     /// What `make` hands back, each thing with the level it was made at,
     /// read off its `ItemLevel`, and its name.
-    fn made(armory: &Armory, registries: &Registries, name: &str, count: u32, band: i32, rng: &mut rand::rngs::StdRng) -> Vec<(Option<i32>, String)> {
+    fn made(armory: &Armory, registries: &Registries, name: &str, count: u32, band: i32, rng: &mut atglyph::rand::rngs::StdRng) -> Vec<(Option<i32>, String)> {
         let mut world = World::new();
         let mut queue = CommandQueue::default();
         let from = Provenance { found: atglyph::ecs::Found::Container, band };
@@ -1429,7 +1437,7 @@ mod tests {
         let armory = crate::testing::armory(&r);
         let mut seen = std::collections::BTreeSet::new();
         for seed in 0..200 {
-            let mut rng = rand::SeedableRng::seed_from_u64(seed);
+            let mut rng = atglyph::rand::SeedableRng::seed_from_u64(seed);
             let [(level, name)] = made(&armory, &r, "cloak plate", 1, 10, &mut rng).try_into().expect("one plate");
             let level = level.expect("a thing that takes levels carries its level");
             assert!((2..=5).contains(&level), "seed {seed}: +{level} at band 10");
@@ -1445,7 +1453,7 @@ mod tests {
         let r = crate::content::registries();
         let armory = crate::testing::armory(&r);
         let differ = (0..50).any(|seed| {
-            let mut rng = rand::SeedableRng::seed_from_u64(seed);
+            let mut rng = atglyph::rand::SeedableRng::seed_from_u64(seed);
             let pair = made(&armory, &r, "cloak plate", 2, 10, &mut rng);
             pair[0].0 != pair[1].0
         });
@@ -1464,7 +1472,7 @@ mod tests {
         armory.parts[cloak.index()] = Arc::new(parts);
         let levels: Vec<i32> = (0..100)
             .map(|seed| {
-                let mut rng = rand::SeedableRng::seed_from_u64(seed);
+                let mut rng = atglyph::rand::SeedableRng::seed_from_u64(seed);
                 made(&armory, &r, "cloak plate", 1, 10, &mut rng)[0].0.expect("a level")
             })
             .collect();
@@ -1480,7 +1488,7 @@ mod tests {
         let armory = crate::testing::armory(&r);
         let levels: std::collections::BTreeSet<i32> = (0..100)
             .map(|seed| {
-                let mut rng = rand::SeedableRng::seed_from_u64(seed);
+                let mut rng = atglyph::rand::SeedableRng::seed_from_u64(seed);
                 made(&armory, &r, "commando helmet", 1, 10, &mut rng)[0].0.expect("a helmet takes levels")
             })
             .collect();
@@ -1494,11 +1502,12 @@ mod tests {
     fn a_stacking_thing_is_made_without_drawing_from_the_stream() {
         let r = crate::content::registries();
         let armory = crate::testing::armory(&r);
-        let (mut a, mut b): (rand::rngs::StdRng, rand::rngs::StdRng) = (rand::SeedableRng::seed_from_u64(4), rand::SeedableRng::seed_from_u64(4));
+        let (mut a, mut b): (atglyph::rand::rngs::StdRng, atglyph::rand::rngs::StdRng) =
+            (atglyph::rand::SeedableRng::seed_from_u64(4), atglyph::rand::SeedableRng::seed_from_u64(4));
         let slugs = made(&armory, &r, "slug", 2, 10, &mut a);
         let stims = made(&armory, &r, "stim", 3, 10, &mut a);
         assert!(slugs.iter().chain(&stims).all(|(level, _)| level.is_none()), "plain: {slugs:?} {stims:?}");
-        assert_eq!(rand::Rng::random::<u64>(&mut a), rand::Rng::random::<u64>(&mut b), "the stream is where it was");
+        assert_eq!(atglyph::rand::Rng::random::<u64>(&mut a), atglyph::rand::Rng::random::<u64>(&mut b), "the stream is where it was");
     }
 
     /// A level past a thing's `max`, such as one a save wrote before the

@@ -27,6 +27,9 @@ atglyph-ui.workspace = true
 # `RoguelikePlugins` opens the window, so the facade names Bevy's own
 # defaults. Every crate it gathers already depends on Bevy.
 bevy.workspace = true
+# Re-exported as `atglyph::rand`, so a game draws from the same `rand` the
+# engine does; `StdRng` is the generator every stream is made of.
+rand = { workspace = true, features = ["std", "std_rng"] }
 
 # The text terminal front end, `TtyRoguelikePlugins`. A terminal is a
 # desktop thing, and its crate does not build for the web, so the wasm demos

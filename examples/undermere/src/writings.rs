@@ -25,9 +25,9 @@ use atglyph::ecs::PlaceMap;
 use atglyph::ecs::places::{PlaceEntered, Spot};
 use atglyph::ecs::prefabs::Prefabs;
 use atglyph::prelude::*;
+use atglyph::rand::Rng;
 use atglyph::rules::prefab::Slot;
 use bevy::prelude::*;
-use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 use crate::bestiary::MonsterDef;

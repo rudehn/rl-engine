@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `atglyph::bevy` and `atglyph::rand` re-export the Bevy and the `rand` the engine is built on, so a game lists no `rand` of its own and the starter template lists none.
+  To change: drop the game's `rand` line and write `atglyph::rand::...` where `rand::...` was; keep `bevy` at `0.19`, since Bevy's derives read the game's own `bevy` line.
+
 - The engine's streams are named under `atglyph.` where they were under `rl.`, so every seed grows and plays differently and a recording made on 0.3 replays differently. A game domain starting `atglyph.` is refused, as one starting `rl.` was.
   To change: re-baseline a game's fingerprints and the tests pinned to a seed, taking the first seed that shows each case again; a game domain starting `atglyph.` is renamed.
 

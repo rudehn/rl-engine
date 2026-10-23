@@ -10,8 +10,8 @@ publish = false
 atglyph = { git = "https://github.com/rudehn/rl-engine", tag = "v0.3.0" }
 # `system_font_discovery` lets the terminal ask the system for a monospace
 # font; Bevy's built-in one has no box-drawing glyphs.
+# Must be the Bevy `atglyph` re-exports, or the game builds two Bevys whose types do not match.
 bevy = { version = "0.19", features = ["system_font_discovery"] }
-rand = { version = "0.9", features = ["std", "std_rng"] }
 
 # Map generation and pathfinding are arithmetic-heavy, and an unoptimised
 # debug build takes seconds per floor. Dependencies get full optimisation,

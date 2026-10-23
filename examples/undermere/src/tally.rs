@@ -545,7 +545,7 @@ pub fn record(ending: Option<Res<Ending>>, tally: Res<Tally>, map: Option<Res<Wo
 #[cfg(test)]
 mod tests {
     use atglyph::primitives::RunSeed;
-    use rand::{Rng, SeedableRng};
+    use atglyph::rand::{Rng, SeedableRng};
 
     use super::*;
     use crate::dungeon::map_of;
@@ -567,7 +567,7 @@ mod tests {
     #[test]
     fn the_score_is_the_sum_of_its_lines() {
         for s in 0..64 {
-            let mut rng = rand::rngs::StdRng::seed_from_u64(s);
+            let mut rng = atglyph::rand::rngs::StdRng::seed_from_u64(s);
             let t = Tally {
                 kills: rng.random_range(0..300),
                 threat_slain: rng.random_range(0.0..20_000.0),

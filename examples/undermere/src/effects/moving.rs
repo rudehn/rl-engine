@@ -14,9 +14,9 @@
 use std::collections::BTreeSet;
 
 use atglyph::prelude::*;
+use atglyph::rand::Rng;
 use atglyph::rules::ability::{RawValue, read_args};
 use bevy::prelude::*;
-use rand::Rng;
 
 use super::FAR;
 use crate::vaults::open_to_the_way_in;

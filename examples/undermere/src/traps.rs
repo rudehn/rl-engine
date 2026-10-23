@@ -24,9 +24,9 @@ use atglyph::mapgen::passes::StartPoint;
 use atglyph::mapgen::{Area, HideOpenings, Join, Opening, Secret, Surveyed};
 use atglyph::prelude::*;
 use atglyph::primitives::Rect;
+use atglyph::rand::Rng;
+use atglyph::rand::seq::{IndexedRandom, SliceRandom};
 use bevy::prelude::*;
-use rand::Rng;
-use rand::seq::{IndexedRandom, SliceRandom};
 
 use crate::dungeon::{FLOORS, MIN_DISTANCE_FROM_ENTRY};
 

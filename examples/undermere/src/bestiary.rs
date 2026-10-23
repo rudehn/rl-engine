@@ -269,7 +269,7 @@ impl Bestiary {
     /// ordinary people alone. Told by side rather than by name, so a kind
     /// of small life added later is left out with them. `None` for a floor
     /// whose table draws nothing else.
-    pub fn pick_cast(&self, floor: u32, registries: &Registries, rng: &mut impl rand::Rng) -> Option<Id<MonsterDef>> {
+    pub fn pick_cast(&self, floor: u32, registries: &Registries, rng: &mut impl atglyph::rand::Rng) -> Option<Id<MonsterDef>> {
         let wildlife = registries.factions.id(crate::content::WILDLIFE);
         self.spawns.pick_where(floor as i32, |id| Some(self.defs.get(*id).faction) != wildlife, rng).map(|e| e.item)
     }

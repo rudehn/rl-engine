@@ -15,7 +15,6 @@ tier = 3
 [dependencies]
 atglyph.workspace = true
 bevy.workspace = true
-rand = { workspace = true, features = ["std", "std_rng"] }
 serde.workspace = true
 
 # Links Bevy as one shared library on the desktop, so a change rebuilds and

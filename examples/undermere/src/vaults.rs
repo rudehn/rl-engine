@@ -42,9 +42,9 @@ use atglyph::ecs::props::spawn_prop;
 use atglyph::ecs::world::PlaceMap;
 use atglyph::grid::{TileRegistry, TileTables};
 use atglyph::prelude::*;
+use atglyph::rand::Rng;
 use atglyph::rules::prefab::Slot;
 use bevy::prelude::*;
-use rand::Rng;
 
 use crate::armory::{Armory, spawn_item};
 use crate::bestiary::{Bestiary, MonsterDef, spawn_monster};

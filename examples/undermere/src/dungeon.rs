@@ -39,13 +39,13 @@ use atglyph::mapgen::passes::StartPoint;
 use atglyph::mapgen::{Area, DistrictDressings, Opening};
 use atglyph::prelude::*;
 use atglyph::primitives::Rect;
+use atglyph::rand::Rng;
+use atglyph::rand::seq::SliceRandom;
 use atglyph::render::TileAppearance;
 use atglyph::rules::dressing;
 use atglyph::rules::grow::LayoutTiles;
 use atglyph::rules::layout::{self, LayoutDef};
 use atglyph::rules::pool::{Pick, Place, Pool};
-use rand::Rng;
-use rand::seq::SliceRandom;
 
 use crate::bestiary::MonsterDef;
 

@@ -421,7 +421,7 @@ impl Armory {
     ///
     /// Drawn from `rng`, the loot's own stream, and only for a thing whose
     /// level is rolled, so finding a potion draws nothing.
-    pub fn found_level(&self, def: Id<ItemDef>, band: i32, registries: &Registries, rng: &mut impl rand::Rng) -> i32 {
+    pub fn found_level(&self, def: Id<ItemDef>, band: i32, registries: &Registries, rng: &mut impl atglyph::rand::Rng) -> i32 {
         let tagged = |name: &str| self.defs.get(def).tags.iter().any(|t| Some(t.id()) == registries.tags.id(name));
         if !self.takes_levels(def) {
             return 0;
@@ -980,7 +980,7 @@ impl ItemMaker for Armory {
         def: Id<ItemDef>,
         count: u32,
         from: Provenance,
-        rng: &mut rand::rngs::StdRng,
+        rng: &mut atglyph::rand::rngs::StdRng,
     ) -> Vec<Entity> {
         let count = match self.defs.get(def).pile {
             Some(pile) => (0..count).map(|_| pile.roll(rng).max(1) as u32 * from.band.max(1) as u32).sum(),
@@ -1043,8 +1043,8 @@ mod scrolls;
 #[cfg(test)]
 mod tests {
     use atglyph::primitives::RunSeed;
+    use atglyph::rand::SeedableRng;
     use bevy::ecs::world::CommandQueue;
-    use rand::SeedableRng;
 
     use super::*;
     use crate::content::Library;
@@ -1301,16 +1301,16 @@ mod tests {
     /// counted off a thousand draws.
     #[test]
     fn a_ring_is_found_at_one_to_three_cursed_or_not_and_a_potion_draws_nothing() {
-        use rand::RngCore;
+        use atglyph::rand::RngCore;
         let library = library();
         let (ring, potion) = (library.armory.defs.expect("ring of light"), library.armory.defs.expect("potion of healing"));
         let mut cursed = std::collections::BTreeSet::new();
         for seed in 0..100 {
-            let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+            let mut rng = atglyph::rand::rngs::StdRng::seed_from_u64(seed);
             let level = library.armory.found_level(ring, 1 + (seed % 10) as i32, &library.registries, &mut rng);
             assert!(RING_LEVELS.contains(&level.abs()), "seed {seed}: {level}");
             cursed.insert(level < 0);
-            let (mut drew, mut fresh) = (rand::rngs::StdRng::seed_from_u64(seed), rand::rngs::StdRng::seed_from_u64(seed));
+            let (mut drew, mut fresh) = (atglyph::rand::rngs::StdRng::seed_from_u64(seed), atglyph::rand::rngs::StdRng::seed_from_u64(seed));
             assert_eq!(library.armory.found_level(potion, 10, &library.registries, &mut drew), 0);
             assert_eq!(drew.next_u64(), fresh.next_u64(), "seed {seed}: a potion draws nothing");
         }
@@ -1335,7 +1335,7 @@ mod tests {
             let def = library.armory.defs.expect(name);
             let mut cursed = std::collections::BTreeSet::new();
             for seed in 0..200 {
-                let level = library.armory.found_level(def, 1 + (seed % 10) as i32, &library.registries, &mut rand::rngs::StdRng::seed_from_u64(seed));
+                let level = library.armory.found_level(def, 1 + (seed % 10) as i32, &library.registries, &mut atglyph::rand::rngs::StdRng::seed_from_u64(seed));
                 assert!((-3..=2).contains(&level), "{name}, seed {seed}: {level}");
                 if level < 0 {
                     cursed.insert(level);
@@ -1352,7 +1352,7 @@ mod tests {
         let mut world = World::new();
         let mut queue = CommandQueue::default();
         let mut commands = Commands::new(&mut queue, &world);
-        let mut rng = rand::rngs::StdRng::seed_from_u64(1);
+        let mut rng = atglyph::rand::rngs::StdRng::seed_from_u64(1);
         let from = Provenance { found: Found::Scatter, band: 1 };
         let made: Vec<Entity> = ["sword", "ring of light", "potion of healing"]
             .iter()
@@ -1431,7 +1431,7 @@ mod tests {
         assert_eq!(read(&world), (2, Some(25_000), Some(4)), "two charges, two hundred and fifty turns a charge, four on the roll");
         level_up(&mut world, made, 2);
         assert_eq!(read(&world), (4, Some(12_500), Some(8)), "two better: four, half the time, eight");
-        let mut rng = rand::rngs::StdRng::seed_from_u64(1);
+        let mut rng = atglyph::rand::rngs::StdRng::seed_from_u64(1);
         let levels: Vec<i32> = (0..200).map(|_| library.armory.found_level(staff, 1, &library.registries, &mut rng)).collect();
         assert!(levels.iter().all(|l| *l >= STAFF_LEVEL), "never below two: {levels:?}");
         let deep: Vec<i32> = (0..200).map(|_| library.armory.found_level(staff, 10, &library.registries, &mut rng)).collect();
@@ -1450,7 +1450,7 @@ mod tests {
                 let mut world = World::new();
                 let mut queue = CommandQueue::default();
                 let mut commands = Commands::new(&mut queue, &world);
-                let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+                let mut rng = atglyph::rand::rngs::StdRng::seed_from_u64(seed);
                 let from = Provenance { found: Found::Scatter, band: floor };
                 let made = library.armory.make(&mut commands, &library.registries, gold, 1, from, &mut rng);
                 queue.apply(&mut world);

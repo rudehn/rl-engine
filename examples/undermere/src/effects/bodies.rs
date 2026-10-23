@@ -11,9 +11,9 @@
 
 use atglyph::ecs::EffectRng;
 use atglyph::prelude::*;
+use atglyph::rand::Rng;
 use atglyph::rules::ability::{AbilityDef, RawValue, read_args};
 use bevy::prelude::*;
-use rand::Rng;
 
 use super::moving::no_args;
 use super::{free_cells_near, the};

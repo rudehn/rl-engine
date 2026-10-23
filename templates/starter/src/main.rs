@@ -23,11 +23,11 @@ use std::sync::Arc;
 
 use atglyph::prelude::*;
 use atglyph::primitives::Rect;
+use atglyph::rand::Rng;
 use atglyph::rules::ai::tactics::{Hunt, MeleeAdjacent, SearchLastKnown, Wander};
 use atglyph::rules::damage::DamageKindId;
 use atglyph::rules::faction::FactionDef;
 use bevy::prelude::*;
-use rand::Rng;
 
 /// The window's title.
 const TITLE: &str = "{{project-name}}";
