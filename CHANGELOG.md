@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `Charts`, `Charting`, `ChartId` and their save are gone, with the two `MindsPlugin` systems that filled a chart and pushed `Uncharted`: nothing used them, and `Knowledge` is what a place remembers. A save that still carries `charts` loads, the field passed over. `Explore` and `Uncharted` stay in `rl_rules::ai::tactics`.
+  To change: nothing; a game that marked an actor `Charting` keeps its own record of what it has seen and pushes `Uncharted` from it in `PerceiveSet::Annotate` for `Explore`.
+
 - Facet keys are plain `&'static str`, and the `Facets` resource and `FacetKey` are gone: `Facet::new("key", text)` makes a facet, `Row::facet("key")` finds one, and a panel's `beneath` keys match by name. A key is a word the game's code names; one built from data at run time would have to be leaked to `&'static str`.
   To change: drop `ResMut<Facets>` and write `facets.facet("key", text)` as `Facet::new("key", text)`; a test that looked a key up with `Facets::get` compares `f.key == "key"`.
 

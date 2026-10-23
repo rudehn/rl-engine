@@ -44,10 +44,6 @@ pub struct EngineSave {
     /// Empty in a game with neither, and in a save written before either.
     #[serde(default)]
     pub fields: FieldsSave,
-    /// What everyone but the player has seen: every chart of every map.
-    /// Empty in a game with no minds, and in a save written before charts.
-    #[serde(default)]
-    pub charts: rl_bevy::ChartsSave,
 }
 
 /// Fire and gas, as a save holds them.
@@ -176,18 +172,7 @@ impl EngineSave {
             fire: world.get_resource::<Fire>().map(Fire::export).unwrap_or_default(),
             gases: world.get_resource::<Gases>().map(Gases::export).unwrap_or_default(),
         };
-        let charts = world.get_resource::<rl_bevy::Charts>().map(rl_bevy::Charts::export).unwrap_or_default();
-        Self {
-            seed,
-            now,
-            queue,
-            map: world.resource::<WorldMap>().export(),
-            knowledge: world.resource::<Knowledge>().export(),
-            abilities,
-            effects,
-            fields,
-            charts,
-        }
+        Self { seed, now, queue, map: world.resource::<WorldMap>().export(), knowledge: world.resource::<Knowledge>().export(), abilities, effects, fields }
     }
 
     /// Restores the engine's state into `world`. The game's entities must
@@ -197,9 +182,6 @@ impl EngineSave {
     pub(crate) fn restore(&self, world: &mut World, remap: &EntityRemap) {
         world.resource_mut::<WorldMap>().import(self.map.clone());
         world.resource_mut::<Knowledge>().import(self.knowledge.clone());
-        if let Some(mut charts) = world.get_resource_mut::<rl_bevy::Charts>() {
-            charts.import(self.charts.clone());
-        }
         if let Some(mut fire) = world.get_resource_mut::<Fire>() {
             fire.import(self.fields.fire.clone());
         }
@@ -410,6 +392,22 @@ mod tests {
         let older = text.replace("recalled:", "ignored:");
         let back: EngineSave = crate::versioned::decode(1, &older).expect("a save with no memory of things still reads");
         assert!(back.knowledge.recalled.is_empty());
+    }
+
+    /// The engine once kept a chart of what each side had seen and saved
+    /// it beside the knowledge; a run saved then still continues, the
+    /// chart it carries passed over.
+    #[test]
+    fn a_save_that_still_carries_charts_loads() {
+        let (mut app, _) = fresh();
+        app.insert_resource(Seed(RunSeed(5)));
+        let save = EngineSave::capture(app.world_mut(), &mut EntityRemap::new());
+        let text = crate::versioned::encode(1, &save).unwrap();
+        let without: Vec<&str> = text.lines().filter(|line| !line.trim_start().starts_with("charts:")).collect();
+        let older = without.join("\n").replacen("knowledge:", "charts: ([(chart: (1), map: (0), tiles: [])]), knowledge:", 1);
+        assert!(older.contains("charts: ([(chart"), "the older save carries a chart");
+        let back: EngineSave = crate::versioned::decode(1, &older).expect("a save with a chart in it still reads");
+        assert_eq!((back.seed, back.now, back.queue), (save.seed, save.now, save.queue));
     }
 
     /// A fire and a cloud of gas are the engine's, so a run saved while

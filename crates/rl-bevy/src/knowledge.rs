@@ -18,8 +18,7 @@ const BUCKET: i32 = 64;
 
 /// A set of tiles of one map, of any extent: what has been seen of it.
 ///
-/// What [`Knowledge`] keeps for the player and a
-/// [`Charts`](crate::charts::Charts) chart keeps for whoever fills it.
+/// What [`Knowledge`] keeps for the player.
 /// Ordered, so two runs of a seed walk it in one order.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub(crate) struct TileSet(BTreeMap<Point, BitGrid>);
@@ -58,18 +57,6 @@ impl TileSet {
     #[cfg(test)]
     pub fn iter(&self) -> impl Iterator<Item = Point> + '_ {
         self.0.iter().flat_map(|(bucket, grid)| grid.iter().map(move |local| Point::new(bucket.x * BUCKET + local.x, bucket.y * BUCKET + local.y)))
-    }
-
-    /// Adds every tile of `other`.
-    pub(crate) fn union_with(&mut self, other: &TileSet) {
-        for (bucket, grid) in &other.0 {
-            match self.0.get_mut(bucket) {
-                Some(mine) => mine.union_with(grid),
-                None => {
-                    self.0.insert(*bucket, grid.clone());
-                }
-            }
-        }
     }
 
     /// The set as a save holds it: its buckets and the bits of each.
@@ -245,17 +232,13 @@ mod tests {
     }
 
     #[test]
-    fn a_tile_set_unions_iterates_and_round_trips_across_buckets() {
+    fn a_tile_set_counts_iterates_and_round_trips_across_buckets() {
         let mut a = TileSet::default();
         assert!(a.is_empty());
-        a.insert(Point::new(3, 3));
-        a.insert(Point::new(-1, BUCKET + 2));
-        let mut b = TileSet::default();
-        b.insert(Point::new(3, 4));
-        b.insert(Point::new(-1, BUCKET + 2));
-        b.insert(Point::new(BUCKET * 2, 0));
-        a.union_with(&b);
-        assert_eq!(a.count(), 4, "the one both held is counted once");
+        for p in [Point::new(3, 3), Point::new(-1, BUCKET + 2), Point::new(3, 4), Point::new(-1, BUCKET + 2), Point::new(BUCKET * 2, 0)] {
+            a.insert(p);
+        }
+        assert_eq!(a.count(), 4, "the one inserted twice is counted once");
         let mut all: Vec<Point> = a.iter().collect();
         all.sort();
         let mut expected = vec![Point::new(-1, BUCKET + 2), Point::new(3, 3), Point::new(3, 4), Point::new(BUCKET * 2, 0)];

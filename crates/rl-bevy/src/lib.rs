@@ -19,7 +19,6 @@ pub mod accuracy;
 mod ambiguity;
 pub mod ammo;
 pub mod bump;
-pub mod charts;
 pub mod combat;
 pub mod components;
 pub mod consumable;
@@ -64,7 +63,6 @@ pub use ability::{Abilities, AbilitiesPlugin, AbilityEvent, Aimed, Bystanders, C
 pub use accuracy::{Attempt, HitRules, Marksmanship, Missed};
 pub use ammo::{Ammo, AmmoChanged, AmmoPlugin, AmmoSet, Dry};
 pub use bump::{Bump, BumpRules, Bumped, OnAlly, Swapped};
-pub use charts::{ChartId, ChartSave, Charting, Charts, ChartsSave};
 pub use combat::{
     Armor, Attack, AttackShape, CombatPlugin, CombatRng, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Heal, Healed, Health,
     Invulnerable, Loadout, MeleeAttack, RangedAttack, Reach, Resists, Stowed, Strikes, Struck, line_of_fire, shot,
@@ -142,8 +140,6 @@ pub mod prelude {
     pub use crate::accuracy::{Attempt, HitRules, Marksmanship, Missed};
     pub use crate::ammo::{Ammo, AmmoChanged, AmmoPlugin, AmmoSet, Dry};
     pub use crate::bump::{Bump, BumpRules, Bumped, OnAlly, Swapped};
-
-    pub use crate::charts::{ChartId, Charting, Charts};
 
     pub use crate::combat::{
         Armor, Attack, AttackShape, CombatPlugin, CombatRules, DamageDealt, DamageEvent, DamageStages, Dead, DeathEvent, Faction, Heal, Healed, Health,

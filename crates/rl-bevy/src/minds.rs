@@ -1039,7 +1039,7 @@ pub struct MindsPlugin;
 
 impl Plugin for MindsPlugin {
     fn build(&self, app: &mut App) {
-        use crate::plugin::{DecideSet, PerceiveSet, ResetsOnNewRun, Turn};
+        use crate::plugin::{DecideSet, PerceiveSet, Turn};
         // The minds may choose an ability, a pickup, a throw, putting on or
         // a use of something carried, so the messages they would write them into
         // exist whether or not the game added abilities, items or throwing.
@@ -1058,12 +1058,10 @@ impl Plugin for MindsPlugin {
             // not left to hang; combat's own registration is the same one.
             .add_action::<Attack>()
             .add_stream::<MindRng>("MindsPlugin")
-            .init_resource::<crate::charts::Charts>()
-            .reset_on_new_run::<crate::charts::Charts>()
-            .add_systems(Turn, (sense, crate::charts::chart_sight).chain().in_set(DecideSet::Sense))
+            .add_systems(Turn, sense.in_set(DecideSet::Sense))
             .add_systems(Turn, begin_thinking.in_set(PerceiveSet::Begin))
             .add_systems(Turn, perceive_roster.in_set(PerceiveSet::Roster))
-            .add_systems(Turn, (sense_posts, sense_leaders, sense_ways, crate::charts::sense_uncharted).chain().in_set(PerceiveSet::Annotate))
+            .add_systems(Turn, (sense_posts, sense_leaders, sense_ways).chain().in_set(PerceiveSet::Annotate))
             .add_systems(Turn, decide_minds.in_set(DecideSet::Minds));
     }
 

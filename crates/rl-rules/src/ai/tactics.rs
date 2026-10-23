@@ -613,9 +613,10 @@ impl<A: Copy> Tactic<A> for KeepPost {
 /// unseen cell that can be stood on beside a seen one that can, as a
 /// [`Sense`](crate::ai::Sense).
 ///
-/// The engine's `sense_uncharted` pushes it for an actor that keeps a
-/// chart; a game running minds without `rl-bevy` pushes it itself. Empty,
-/// or never pushed, when there is nothing left to find.
+/// The engine never pushes it: a game that keeps a record of what a mind
+/// has seen pushes it from that record, in the perceive phase, for the
+/// minds it wants to explore. Empty, or never pushed, when there is
+/// nothing left to find.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Uncharted(pub Vec<Point>);
 
