@@ -48,6 +48,8 @@ jobs:
         run: scripts/check-tiers.sh
       - name: no old engine names are left
         run: python3 scripts/rename-to-atglyph.py --check
+      - name: every public type name is declared once
+        run: scripts/check-names.sh
       - name: the guide's links into the code
         if: inputs.docs
         run: scripts/check-guide.sh

@@ -281,7 +281,7 @@ pub struct Keyboard<'w, 's> {
 
 /// What the keys can ask for, and the word that they could not.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Asks<'w> {
+pub struct KeyAsks<'w> {
     bumps: MessageWriter<'w, Intent<Bump>>,
     waits: MessageWriter<'w, Intent<Wait>>,
     transits: MessageWriter<'w, Intent<GoThrough>>,
@@ -306,7 +306,7 @@ pub struct Pack<'w, 's> {
 /// the turn, and nothing at all while a screen is up.
 ///
 /// At most one verb a press, checked walk first and throw last.
-pub(crate) fn player_keys(mut kb: Keyboard, loadout: Loadout, mut pack: Pack, mut asks: Asks) {
+pub(crate) fn player_keys(mut kb: Keyboard, loadout: Loadout, mut pack: Pack, mut asks: KeyAsks) {
     if kb.modals.any_open() {
         return;
     }

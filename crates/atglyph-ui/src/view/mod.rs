@@ -37,7 +37,7 @@ pub use inventory::{Asking, InventoryView, InventoryViewPlugin, ItemRow};
 pub use nearby::{NearbyFollowers, NearbyStatuses, NearbyView, NearbyViewPlugin};
 pub use offers::{OfferRow, OffersView, OffersViewPlugin};
 pub use party::{PartyView, PartyViewPlugin};
-pub use sheet::{Change, ResistLine, SheetView, SheetViewPlugin, StatLine, StatusLine, Strike, WornLine};
+pub use sheet::{ModifierRow, ResistLine, SheetView, SheetViewPlugin, StatLine, StatusLine, Strike, WornLine};
 pub use target::{AimAt, AimFire, AimRange, AimThrow, AimUse, TargetView, TargetViewPlugin, target_modal};
 pub use trade::{TradeRow, TradeView, TradeViewPlugin};
 pub(crate) use vitals::health_tone;

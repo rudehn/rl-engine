@@ -606,7 +606,7 @@ type Standing = (Entity, &'static Position, Option<&'static Name>, Option<&'stat
 
 /// What the footprint is resolved against.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Reach<'w, 's> {
+pub struct TargetReach<'w, 's> {
     map: Res<'w, WorldMap>,
     occupancy: Res<'w, Occupancy>,
     abilities: Option<Res<'w, Abilities>>,
@@ -633,7 +633,7 @@ pub struct Reach<'w, 's> {
     seems: Query<'w, 's, &'static crate::view::Seems>,
 }
 
-impl Reach<'_, '_> {
+impl TargetReach<'_, '_> {
     /// A row for `who` as `user` would see it under the cursor, if it is
     /// anything a row can be made of.
     fn row(&self, user: Entity, from: Point, who: Entity) -> Option<Row> {
@@ -656,7 +656,7 @@ impl Reach<'_, '_> {
 /// act on, so the cells lit on the map, the names in the box and whether it
 /// reads as refused are what will happen when the player confirms. A
 /// preview computed any other way is a preview that drifts.
-pub(crate) fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, reach: Reach) {
+pub(crate) fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, reach: TargetReach) {
     // The screen is the one truth about whether the cursor is up. Closed
     // by anything but its own key, a game's action that closes every
     // screen or the close key answered by the stack, the aim is forgotten
@@ -801,7 +801,7 @@ pub(crate) fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, 
 /// it reaches, the footprint, who stands in it, and every reason it would
 /// be refused, the gate's first and then what this particular aim adds,
 /// before the turn is spent rather than after.
-fn preview(view: &mut TargetView, reach: &Reach, aimed: Aimed, gate: &[Blocked]) {
+fn preview(view: &mut TargetView, reach: &TargetReach, aimed: Aimed, gate: &[Blocked]) {
     let Aimed { user, targeting, origin: from, .. } = aimed;
     let max = match targeting.mode {
         TargetMode::Own => 0,

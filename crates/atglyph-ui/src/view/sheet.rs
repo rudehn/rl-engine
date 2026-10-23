@@ -27,7 +27,7 @@ use crate::facet::Facet;
 
 /// One modifier on a stat, as the sheet reads it.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Change {
+pub struct ModifierRow {
     /// What it does.
     pub op: Op,
     /// What applied it: a status, a worn item, or something of the game's.
@@ -49,7 +49,7 @@ pub struct StatLine {
     /// The value with everything on it, the number the rules use.
     pub value: i32,
     /// Everything between the two, in the order it was applied.
-    pub changes: Vec<Change>,
+    pub changes: Vec<ModifierRow>,
 }
 
 /// Resistance to one damage kind, as a percentage removed.
@@ -213,7 +213,7 @@ pub(crate) fn collect_sheet(
                 .modifiers()
                 .iter()
                 .filter(|m| m.stat == stat)
-                .map(|m| Change { op: m.op, source: m.source, from: source_named(m.source, afflicted, &registries, &names) })
+                .map(|m| ModifierRow { op: m.op, source: m.source, from: source_named(m.source, afflicted, &registries, &names) })
                 .collect();
             view.stats.push(StatLine {
                 stat,

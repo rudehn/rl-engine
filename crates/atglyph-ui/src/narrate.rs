@@ -527,7 +527,7 @@ impl Plugin for NarrationViewPlugin {
 /// caused, and a game's own lines last, since they answer what the pass
 /// did.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Heard<'w, 's> {
+pub struct NarratedEvents<'w, 's> {
     abilities: MessageReader<'w, 's, AbilityEvent>,
     bumps: MessageReader<'w, 's, Bumped>,
     swaps: MessageReader<'w, 's, Swapped>,
@@ -727,11 +727,11 @@ impl Witness<'_, '_> {
 ///
 /// Runs in [`TurnSet::Record`], after every reaction, so a game's lines
 /// told in [`TurnSet::React`] are read in the pass they answer. Reads by
-/// kind, in [`Heard`]'s order, with one exception: a notice by whoever
+/// kind, in [`NarratedEvents`]'s order, with one exception: a notice by whoever
 /// held the turn is read first, since it was rolled as that actor looked
 /// round, before it did anything; a notice by anyone else came of what the
 /// turn did, a blow that woke it, and keeps its place after the blows.
-pub(crate) fn collect_narration(mut view: ResMut<NarrationView>, mut heard: Heard, witness: Witness) {
+pub(crate) fn collect_narration(mut view: ResMut<NarrationView>, mut heard: NarratedEvents, witness: Witness) {
     let turn = witness.turns.turn_number();
     let say = |phrase: Phrase, who: Option<Entity>, whom: Option<Entity>| {
         let at = who.and_then(|e| witness.at(e)).or_else(|| whom.and_then(|e| witness.at(e)));
