@@ -51,7 +51,6 @@ Everything in the first band is either a bug, or cheap enough that the reasoning
 | 26 | `UseCarried` decides by default when a mind mends | 4 | low | low |
 | 27 | One type per concept across the tier 1 crates | 10 | medium | medium |
 | 29 | The patterns written four times | 10 | medium | high |
-| 30 | Continuing a run is the engine's | 10 | medium | medium |
 | 31 | Saved kinds keyed by a name the type states | 10 | medium | low |
 | 32 | The helpers a game copies because they are private | 10 | low | low |
 | 33 | One root-and-prelude rule per crate | 10 | low | low |
@@ -406,8 +405,6 @@ Left over from the terminal front end, usability branch 08, on 2026-10-22.
   Left: loot as a `BandedTable<K>` with tags, and one actor handle where statuses use a bare `u64`.
 - **The patterns written four times.**
   The faction relation where `atglyph_rules::faction::stance` is not yet called (atglyph-ui's narrator, inspect and nearby views, three Undermere files, `Bystanders::relation`), the interners, the list cursor, key binding, moving an entity, the place struct, the per-map stash, stack split and merge, breadth-first steps, the lingering markers.
-- **Continuing a run is the engine's.**
-  Foundry's and Undermere's `run.rs` hold the same load, fall back, reseed, prepare and restore behind the `ContinueRun` flag; the game supplies the steps and the engine owns the order.
 - **Saved kinds keyed by a name the type states.**
   `atglyph-save/src/run.rs` keys a saved component by its short `type_name`, so a rename orphans old saves silently; a `const KEY` on the `Saveable` traits, defaulting to today's names so no save moves.
 - **The helpers a game copies because they are private.**
