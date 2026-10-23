@@ -19,6 +19,7 @@
 #![forbid(unsafe_code)]
 
 pub mod capture;
+mod cell_art;
 pub mod fields;
 pub mod fullscreen;
 pub mod layout;

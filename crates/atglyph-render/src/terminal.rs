@@ -7,6 +7,7 @@ use bevy::prelude::*;
 use bevy::sprite::Anchor;
 use bevy::text::{FontSize, FontSmoothing, FontSource};
 
+use crate::cell_art;
 use crate::layout::fit;
 use crate::tileset::Tileset;
 
@@ -80,7 +81,12 @@ fn placing(span: u8, cell: Vec2) -> (Vec2, Vec2) {
 /// font database to search at all, so on wasm the glyphs come from the
 /// font Bevy embeds under `default_font`, which covers printable ASCII and
 /// nothing else. A game whose picture should be its own everywhere, or
-/// that draws box art, shades or symbols, ships a typeface.
+/// that draws symbols, ships a typeface.
+///
+/// The box-drawing and block characters, U+2500 to U+259F, are drawn by
+/// the terminal itself rather than by any font, as a terminal emulator
+/// draws them: a line runs to the cell's edges and meets the next, and a
+/// block fills its cell, which no font's glyph at a text size does.
 pub struct TerminalPlugin {
     width: i32,
     height: i32,
@@ -124,7 +130,8 @@ impl Plugin for TerminalPlugin {
             // new size: Bevy works out where a thing is drawn and lays its
             // text out late in `PostUpdate`, and a layout written there in
             // no order against them could be drawn a frame late.
-            .add_systems(PreUpdate, (relayout, crate::pointer::track_pointer).chain())
+            .add_systems(Startup, draw_art)
+            .add_systems(PreUpdate, (relayout, redraw_art, crate::pointer::track_pointer).chain())
             .add_systems(PostUpdate, (spawn_pictures, flush_terminal).chain());
     }
 }
@@ -361,18 +368,79 @@ fn face(typeface: Option<&[u8]>, fonts: Option<ResMut<Assets<Font>>>) -> FontSou
 struct CellEntities {
     background: Vec<Entity>,
     glyph: Vec<Entity>,
-    /// One sprite per cell for a tileset's pictures, spawned the first
-    /// time there is a tileset, and never in a game without one.
+    /// One sprite per cell for a picture drawn in place of its glyph, a
+    /// tileset's or the [`Art`]'s, spawned the first time there is either,
+    /// and never in an app with neither, which has nowhere to keep images.
     picture: Vec<Entity>,
     displayed: Vec<Cell>,
     /// How many cells across each cell is drawn now, as
     /// [`Terminal::span`] reads: where its glyph and its picture stand.
     spans: Vec<u8>,
     /// Which picture each cell is showing, `None` for a glyph.
-    pictured: Vec<Option<usize>>,
+    pictured: Vec<Option<Shown>>,
     /// The size and place the grid was last laid out to, so sprites
     /// spawned after a layout are put where the cells already are.
     laid: Option<(Vec2, Vec<Vec2>)>,
+    /// A cell's size in physical pixels as last laid out, which the
+    /// [`Art`] is drawn at.
+    pixels: Option<UVec2>,
+}
+
+/// A picture a cell shows in place of its glyph, by its index in the
+/// sheet it is from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Shown {
+    /// From the game's [`Tileset`].
+    Tile(usize),
+    /// From the terminal's own [`Art`].
+    Art(usize),
+}
+
+/// The box-drawing and block characters, drawn by [`cell_art`] at the
+/// size a cell is shown in physical pixels, and drawn again whenever that
+/// changes, so a line is always exactly as wide as its cell.
+///
+/// Absent from an app with no `Assets<Image>`, a headless one, whose cells
+/// show those characters as glyphs.
+#[derive(Resource)]
+struct Art {
+    image: Handle<Image>,
+    layout: Handle<TextureAtlasLayout>,
+    /// The cell size the sheet was drawn for, in physical pixels.
+    cell: UVec2,
+}
+
+/// Where the images the terminal draws are kept, when the app keeps any.
+#[derive(bevy::ecs::system::SystemParam)]
+struct Sheets<'w> {
+    images: Option<ResMut<'w, Assets<Image>>>,
+    layouts: Option<ResMut<'w, Assets<TextureAtlasLayout>>>,
+}
+
+/// Draws the [`Art`] for the declared cell, which the first layout for a
+/// window draws again at the size it is shown.
+fn draw_art(mut commands: Commands, terminal: Res<Terminal>, sheets: Sheets) {
+    let (Some(mut images), Some(mut layouts)) = (sheets.images, sheets.layouts) else { return };
+    let cell = terminal.cell_size.round().max(Vec2::ONE).as_uvec2();
+    let (image, layout) = cell_art::sheet(cell);
+    commands.insert_resource(Art { image: images.add(image), layout: layouts.add(layout), cell });
+}
+
+/// Draws the [`Art`] again, in place, when the grid was laid out at
+/// another cell size, so every sprite showing it keeps its handles.
+fn redraw_art(entities: Res<CellEntities>, art: Option<ResMut<Art>>, sheets: Sheets) {
+    let (Some(mut art), Some(pixels), Some(mut images), Some(mut layouts)) = (art, entities.pixels, sheets.images, sheets.layouts) else { return };
+    if art.cell == pixels {
+        return;
+    }
+    let (image, layout) = cell_art::sheet(pixels);
+    if let Some(mut kept) = images.get_mut(&art.image) {
+        *kept = image;
+    }
+    if let Some(mut kept) = layouts.get_mut(&art.layout) {
+        *kept = layout;
+    }
+    art.cell = pixels;
 }
 
 impl CellEntities {
@@ -463,6 +531,7 @@ fn relayout(
     }
     laid.0 = Some(now);
     let fit = fit(terminal.width, terminal.height, terminal.cell_size, size, scale);
+    entities.pixels = Some(fit.cell);
     let (cell, font_size) = (fit.cell_logical(scale), fit.font(font.size, terminal.cell_size, scale));
     let mut centres = Vec::with_capacity(entities.background.len());
     for y in 0..terminal.height {
@@ -493,12 +562,16 @@ fn relayout(
 }
 
 /// Spawns a picture sprite for every cell, the first time there is a
-/// [`Tileset`], hidden until a cell shows one.
+/// [`Tileset`] or the [`Art`], hidden until a cell shows one.
 ///
 /// Laid out where the cells are now: as the grid was last laid out for
 /// its window, or as declared when it never has been.
-fn spawn_pictures(mut commands: Commands, terminal: Res<Terminal>, tileset: Option<Res<Tileset>>, mut entities: ResMut<CellEntities>) {
-    let Some(tileset) = tileset else { return };
+fn spawn_pictures(mut commands: Commands, terminal: Res<Terminal>, tileset: Option<Res<Tileset>>, art: Option<Res<Art>>, mut entities: ResMut<CellEntities>) {
+    let sheet = match (&tileset, &art) {
+        (Some(tileset), _) => (tileset.image().clone(), tileset.layout().clone()),
+        (None, Some(art)) => (art.image.clone(), art.layout.clone()),
+        (None, None) => return,
+    };
     if !entities.picture.is_empty() || entities.background.is_empty() {
         return;
     }
@@ -506,12 +579,8 @@ fn spawn_pictures(mut commands: Commands, terminal: Res<Terminal>, tileset: Opti
         let (centre, cell) = entities.place(&terminal, i);
         let (shift, size) = placing(entities.spans[i], cell);
         let at = centre + shift;
-        let sprite = Sprite {
-            image: tileset.image().clone(),
-            texture_atlas: Some(TextureAtlas { layout: tileset.layout().clone(), index: 0 }),
-            custom_size: Some(size),
-            ..default()
-        };
+        let sprite =
+            Sprite { image: sheet.0.clone(), texture_atlas: Some(TextureAtlas { layout: sheet.1.clone(), index: 0 }), custom_size: Some(size), ..default() };
         entities.picture.push(commands.spawn((Picture, sprite, Visibility::Hidden, Transform::from_xyz(at.x, at.y, PICTURE_Z))).id());
     }
     entities.pictured = vec![None; entities.picture.len()];
@@ -520,17 +589,17 @@ fn spawn_pictures(mut commands: Commands, terminal: Res<Terminal>, tileset: Opti
 /// Pushes changed cells to their entities.
 ///
 /// With a [`Tileset`], a cell whose glyph it has a picture for shows the
-/// picture, tinted by the cell's colour, and no glyph; any other cell
-/// shows its glyph and no picture. A change to the tileset itself, its
-/// pictures or whether it is on, redraws every cell, since any of them
-/// may now be drawn the other way.
+/// picture, tinted by the cell's colour, and no glyph; failing that, a
+/// box-drawing or block character shows its picture from the [`Art`] the
+/// same way; any other cell shows its glyph and no picture. A change to
+/// the tileset itself, its pictures or whether it is on, redraws every
+/// cell, since any of them may now be drawn the other way.
 ///
 /// A cell that became the first of a wide one, or stopped being, has its
 /// glyph and its picture moved to stand across the run or in the cell
 /// again, where the window's layout puts that cell now.
 fn flush_terminal(
-    terminal: Res<Terminal>,
-    tileset: Option<Res<Tileset>>,
+    (terminal, tileset, art): (Res<Terminal>, Option<Res<Tileset>>, Option<Res<Art>>),
     mut entities: ResMut<CellEntities>,
     mut backgrounds: Query<&mut Sprite, Without<Picture>>,
     mut pictures: Query<(&mut Sprite, &mut Visibility, &mut Transform), With<Picture>>,
@@ -543,7 +612,9 @@ fn flush_terminal(
     // Every cell again when the tileset changed, came or went.
     let redraw = tileset.as_ref().is_some_and(|t| t.is_changed()) || *had_tileset != tileset.is_some();
     *had_tileset = tileset.is_some();
-    let tileset = tileset.as_deref().filter(|_| entities.pictured.len() == terminal.cells.len());
+    let spawned = entities.pictured.len() == terminal.cells.len();
+    let tileset = tileset.as_deref().filter(|_| spawned);
+    let art = art.as_deref().filter(|_| spawned);
     for i in 0..terminal.cells.len() {
         let span = terminal.spans[i];
         if span != entities.spans[i] {
@@ -564,7 +635,7 @@ fn flush_terminal(
             continue;
         }
         let cell = Point::new(i as i32 % terminal.width, i as i32 / terminal.width);
-        let picture = tileset.and_then(|t| t.picture(next.glyph, cell));
+        let picture = tileset.and_then(|t| t.picture(next.glyph, cell)).map(Shown::Tile).or_else(|| art.and(cell_art::index(next.glyph)).map(Shown::Art));
         let was_pictured = entities.pictured.get(i).copied().flatten();
         if next.bg != current.bg
             && let Ok(mut sprite) = backgrounds.get_mut(entities.background[i])
@@ -583,14 +654,19 @@ fn flush_terminal(
             }
         }
         if let Some(Ok((mut sprite, mut visibility, _))) = entities.picture.get(i).map(|e| pictures.get_mut(*e)) {
-            match (picture, tileset) {
-                (Some(index), Some(tileset)) => {
-                    sprite.image = tileset.image().clone();
-                    sprite.texture_atlas = Some(TextureAtlas { layout: tileset.layout().clone(), index });
+            let sheet = match (picture, tileset, art) {
+                (Some(Shown::Tile(index)), Some(tileset), _) => Some((tileset.image(), tileset.layout(), index)),
+                (Some(Shown::Art(index)), _, Some(art)) => Some((&art.image, &art.layout, index)),
+                _ => None,
+            };
+            match sheet {
+                Some((image, layout, index)) => {
+                    sprite.image = image.clone();
+                    sprite.texture_atlas = Some(TextureAtlas { layout: layout.clone(), index });
                     sprite.color = next.fg;
                     *visibility = Visibility::Inherited;
                 }
-                _ => *visibility = Visibility::Hidden,
+                None => *visibility = Visibility::Hidden,
             }
             entities.pictured[i] = picture;
         }
@@ -873,6 +949,46 @@ mod tests {
         app.world_mut().remove_resource::<Tileset>();
         app.update();
         assert_eq!(shows(&app, 1, 1), ("#".to_string(), None), "and taken away altogether, glyphs");
+    }
+
+    /// In an app that keeps images, a box-drawing or block character is
+    /// drawn from the terminal's own sheet in the cell's colour, with no
+    /// glyph under it, every other character stays a glyph, and a
+    /// tileset's picture for one of them wins, since it is the game's.
+    #[test]
+    fn a_box_drawing_or_block_character_is_drawn_as_the_terminals_own_picture() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins).init_resource::<Assets<Image>>().init_resource::<Assets<TextureAtlasLayout>>();
+        app.add_plugins(TerminalPlugin::new(8, 4, Vec2::new(10.0, 20.0), 16.0));
+        let green = Color::srgb(0.0, 1.0, 0.0);
+        {
+            let mut terminal = app.world_mut().resource_mut::<Terminal>();
+            terminal.put(0, 0, '\u{2500}', green);
+            terminal.put(1, 0, '\u{2588}', green);
+            terminal.put(2, 0, '#', green);
+        }
+        app.update();
+        assert_eq!(shows(&app, 0, 0), (" ".to_string(), Some((0, green))), "a line, from the sheet");
+        assert_eq!(shows(&app, 1, 0), (" ".to_string(), Some((0x88, green))), "a full block, from the sheet");
+        assert_eq!(shows(&app, 2, 0), ("#".to_string(), None), "anything else, a glyph");
+        let art = app.world().resource::<Art>();
+        let sheet = app.world().resource::<Assets<Image>>().get(&art.image).expect("the sheet is kept");
+        assert_eq!(sheet.width(), 16 * 10, "drawn for the declared cell before any window");
+        let mut resolution = WindowResolution::new(160, 160);
+        resolution.set_scale_factor_override(Some(1.0));
+        resolution.set_physical_resolution(160, 160);
+        app.world_mut().spawn((Window { resolution, ..default() }, PrimaryWindow));
+        app.update();
+        let art = app.world().resource::<Art>();
+        let sheet = app.world().resource::<Assets<Image>>().get(&art.image).expect("the same sheet");
+        assert_eq!((sheet.width(), sheet.height()), (16 * 20, 10 * 40), "and again, in place, at the size a window shows the cell");
+
+        app.insert_resource(Tileset::new(Handle::default(), Handle::default()).with('\u{2500}', 3));
+        app.update();
+        assert_eq!(shows(&app, 0, 0), (" ".to_string(), Some((3, green))), "the game's tileset first");
+        app.world_mut().remove_resource::<Tileset>();
+        app.update();
+        assert_eq!(shows(&app, 0, 0), (" ".to_string(), Some((0, green))), "and the terminal's own again without it");
     }
 
     /// The first cell of a wide one draws its glyph and its picture centred

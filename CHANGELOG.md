@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- The glyph terminal draws the box-drawing and block characters, U+2500 to U+259F, itself rather than through the font, as a terminal emulator does: a line runs to its cell's edges and meets the next, so a frame is one unbroken line with its corners closed, and a block fills its cell, so a bar is solid. A shade fills its cell at a quarter, a half or three quarters of its colour. They draw the same in the browser, whose embedded font has none of them; a tileset's picture for one of them still wins. The text-terminal front end is unchanged.
+  To change: nothing; a game's frames, bars, box art and shaded tiles draw this way at once, and a typeface shipped only for these characters may go.
+
 - The template's first run has three potions to drink on `d`, a dagger and a leather coat to pick up on `g` and put on with `w`, and depends on `atglyph = "0.3.0"` from crates.io where it named a git tag; `scripts/check-template.sh` refuses a template whose `bevy` line is on another version than the engine's, and the release notes print the dependency by version.
   To change: nothing for a game; a game made from the template may do the same.
 
