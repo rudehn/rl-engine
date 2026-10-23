@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `Saves::per_user(name, user)` keeps each user's saves apart, in `saves/<name>/users/<user>` beside the executable, for a game many people play over SSH: insert it before `SavePlugin`. A user name that is not a plain name is refused with `SaveError::Slot` rather than a panic.
+  To change: nothing.
+
 - The template is one `Starter` plugin that `main` and its tests both add, its walk and wait are `PlayerKeysPlugin`'s, and tutorial step 1 is one `Warren` plugin built on the standard tiles and looks, `places`, `spawn_player` and `PlayerKeysPlugin`, with a test that adds the same plugin; steps 2 to 9 hand their floors over with `places`, spawn the player with `spawn_player`, and steps 2 to 6 read the standard keys through `PlayerKeysPlugin`, keeping only their own by hand. The guide's chapters and chapter 1's screenshots change at the release.
   To change: nothing for a game; a game made from the template may do the same.
 

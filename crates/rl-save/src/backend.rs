@@ -269,6 +269,29 @@ impl Saves {
         }
     }
 
+    /// Saves for one of many people playing the game called `name` on one
+    /// machine, as over SSH: files in `saves/<name>/users/<user>` beside
+    /// the executable, created on the first save, so each keeps their own
+    /// run, settings and records.
+    ///
+    /// A game inserts it before adding `SavePlugin`, which keeps a `Saves`
+    /// it finds. Nothing an earlier build left beside the executable is
+    /// moved in, as [`Saves::platform_default`] does: those belong to no
+    /// one user.
+    ///
+    /// # Errors
+    ///
+    /// [`SaveError::Slot`] when `name` or `user` is not a plain name, ASCII
+    /// letters, digits, `-` and `_`. An error rather than the panic
+    /// `platform_default` gives, because a user name is input, from a login
+    /// or an environment variable, and a separator or `..` in it must
+    /// neither reach outside the save directory nor take the game down.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn per_user(name: &str, user: &str) -> Result<Self, SaveError> {
+        let dir = user_dir(&FileBackend::dir_beside_executable(), name, user)?;
+        Ok(Self(Arc::new(FileBackend::new(dir))))
+    }
+
     /// Saves through `backend`.
     pub fn new(backend: impl SaveBackend + Send + Sync + 'static) -> Self {
         Self(Arc::new(backend))
@@ -280,6 +303,16 @@ impl Saves {
 #[cfg(not(target_arch = "wasm32"))]
 fn game_dir(beside: &std::path::Path, name: &str) -> std::path::PathBuf {
     beside.join("saves").join(name)
+}
+
+/// The directory `user` of the game called `name` saves in when its
+/// executable is in `beside`, or [`SaveError::Slot`] when either is not a
+/// plain name.
+#[cfg(not(target_arch = "wasm32"))]
+fn user_dir(beside: &std::path::Path, name: &str, user: &str) -> Result<std::path::PathBuf, SaveError> {
+    check_slot(name)?;
+    check_slot(user)?;
+    Ok(game_dir(beside, name).join("users").join(user))
 }
 
 /// Moves each of `slots` that an earlier build saved directly in `beside`
@@ -440,6 +473,37 @@ mod tests {
         assert!(matches!(MemoryBackend::default().persist("../escape", "x"), Err(SaveError::Slot(_))), "memory refuses what a file would");
         b.persist("run-2_b", "x").expect("letters, digits, a dash and an underscore are a slot");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Many people playing one game over SSH each keep their own run:
+    /// one user's save is not another's, and each lives under
+    /// `saves/<name>/users/<user>` beside the executable.
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn each_user_saves_in_a_directory_of_their_own() {
+        let name = format!("rl-save-users-{}", std::process::id());
+        let (ann, bo) = (Saves::per_user(&name, "ann").unwrap(), Saves::per_user(&name, "bo").unwrap());
+        ann.persist("game", "ann's run").unwrap();
+        let seen = bo.load("game").unwrap();
+        let path = user_dir(&FileBackend::dir_beside_executable(), &name, "ann").unwrap().join("game.save.ron");
+        let written = path.exists();
+        let _ = std::fs::remove_dir_all(game_dir(&FileBackend::dir_beside_executable(), &name));
+        assert_eq!(seen, None, "one user never sees another's run");
+        assert!(written, "ann's run is in her own directory, {}", path.display());
+        assert!(path.ends_with(format!("saves/{name}/users/ann/game.save.ron")), "{}", path.display());
+    }
+
+    /// A user name over SSH is input, not the game's constant: one that
+    /// would climb out of the save directory is an error, never a panic and
+    /// never a path, and so is a game name that is not a plain name.
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn a_user_name_that_is_not_a_plain_name_is_refused() {
+        for user in ["..", "../ann", "a/b", "", "ann.b", "/tmp", "\\ann"] {
+            assert!(matches!(Saves::per_user("game", user), Err(SaveError::Slot(_))), "{user:?} is refused");
+        }
+        assert!(matches!(Saves::per_user("../game", "ann"), Err(SaveError::Slot(_))), "the game's name is checked too");
+        assert!(Saves::per_user("game", "ann-2_b").is_ok(), "letters, digits, a dash and an underscore are a user");
     }
 
     #[test]
