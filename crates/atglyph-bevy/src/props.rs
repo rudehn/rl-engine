@@ -44,7 +44,7 @@ use bevy::prelude::*;
 
 use crate::combat::{CombatRules, Faction, Health};
 use crate::components::{Blocks, MyTurn, Position};
-use crate::effects::{Effects, Fired, LandsAsItself, Moments, Remnant, Triggers};
+use crate::effects::{Effects, Fired, LandsAsItself, Remnant, TriggerKinds, Triggers};
 use crate::items::{Inventory, Stack, Tagged, carries_tag};
 use crate::places::{MapId, OnMap};
 use crate::registries::Registries;
@@ -892,7 +892,7 @@ pub(crate) fn build_prop_effects(
     built: Option<Res<PropEffects>>,
     registries: Res<Registries>,
     kinds: Option<Res<crate::effects::EffectKinds>>,
-    moments: Option<Res<crate::effects::Moments>>,
+    moments: Option<Res<crate::effects::TriggerKinds>>,
     sounds: Option<Res<crate::noise::Sounds>>,
 ) {
     if built.is_some() {
@@ -905,7 +905,7 @@ pub(crate) fn build_prop_effects(
         Some(sounds) => registries.names().sounds(sounds),
         None => registries.names(),
     };
-    let (no_kinds, no_moments) = (crate::effects::EffectKinds::default(), crate::effects::Moments::default());
+    let (no_kinds, no_moments) = (crate::effects::EffectKinds::default(), crate::effects::TriggerKinds::default());
     let kinds = kinds.as_deref().unwrap_or(&no_kinds);
     let moments = moments.as_deref().unwrap_or(&no_moments);
     let mut effects = PropEffects::default();
@@ -996,7 +996,7 @@ pub(crate) fn report_entered(
     for (who, to) in entered {
         for (prop, at, on) in &props {
             if at.0 == to && on.map(|m| m.0).unwrap_or(MapId::ZERO) == here {
-                fired.write(Fired { on: prop, moment: Moments::ENTERED, by: Some(who), at: to });
+                fired.write(Fired { on: prop, moment: TriggerKinds::ENTERED, by: Some(who), at: to });
             }
         }
     }
@@ -1020,10 +1020,10 @@ pub(crate) fn report_destroyed(
 ) {
     for death in deaths.read() {
         let Ok(triggers) = props.get(death.entity) else { continue };
-        if triggers.on(Moments::DESTROYED).next().is_none() {
+        if triggers.on(TriggerKinds::DESTROYED).next().is_none() {
             continue;
         }
-        let remnant = Remnant { moment: Moments::DESTROYED, by: death.credit, at: death.at };
+        let remnant = Remnant { moment: TriggerKinds::DESTROYED, by: death.credit, at: death.at };
         let carrier = commands.spawn((triggers.clone(), remnant, LandsAsItself)).id();
         keeps.copy(&mut commands, death.entity, carrier);
     }
@@ -2605,7 +2605,7 @@ mod traps {
             deck.app.world_mut().write_message(Intent::new(player, crate::turn::Wait));
             deck.app.update();
         }
-        let bursts = deck.app.world().resource::<Reports>().0.iter().filter(|f| f.moment == crate::effects::Moments::DESTROYED).count();
+        let bursts = deck.app.world().resource::<Reports>().0.iter().filter(|f| f.moment == crate::effects::TriggerKinds::DESTROYED).count();
         assert_eq!(bursts, 2, "each barrel went off once");
         assert!(deck.app.world().get_entity(second).is_err(), "the second was broken by the first");
         assert_eq!(health(&deck), 20, "and the player, three cells off, was never in either burst");
@@ -2636,7 +2636,7 @@ mod traps {
         let hits = &deck.app.world().resource::<Hits>().0;
         assert_eq!(hits.len(), 1, "{hits:?}");
         assert_eq!((hits[0].hit.attacker, hits[0].hit.credit), (Some(plate), Some(plate)), "the plate struck, and is credited");
-        let stepped = deck.app.world().resource::<Reports>().0.iter().find(|f| f.moment == crate::effects::Moments::ENTERED).map(|f| f.by);
+        let stepped = deck.app.world().resource::<Reports>().0.iter().find(|f| f.moment == crate::effects::TriggerKinds::ENTERED).map(|f| f.by);
         assert_eq!(stepped, Some(Some(deck.player)), "and the report still says who stepped on it");
     }
 
@@ -2665,7 +2665,7 @@ mod traps {
         }
         assert_eq!(deck.app.world().get::<Position>(other).map(|p| p.0), Some(mine), "the two changed places");
         let entered: Vec<(Entity, Option<Entity>)> =
-            deck.app.world().resource::<Reports>().0.iter().filter(|f| f.moment == crate::effects::Moments::ENTERED).map(|f| (f.on, f.by)).collect();
+            deck.app.world().resource::<Reports>().0.iter().filter(|f| f.moment == crate::effects::TriggerKinds::ENTERED).map(|f| (f.on, f.by)).collect();
         assert!(entered.contains(&(under_them, Some(deck.player))), "the one who swapped entered the plate it was put onto: {entered:?}");
         assert!(entered.contains(&(under_me, Some(other))), "and the one swapped with entered the other: {entered:?}");
     }

@@ -1311,7 +1311,7 @@ mod tests {
         let built = {
             let world = stage.app.world();
             let registries = world.resource::<Registries>().clone();
-            atglyph_bevy::Triggers::build(&specs, &[], world.resource::<atglyph_bevy::Moments>(), world.resource::<EffectKinds>(), &registries.names())
+            atglyph_bevy::Triggers::build(&specs, &[], world.resource::<atglyph_bevy::TriggerKinds>(), world.resource::<EffectKinds>(), &registries.names())
                 .expect("the triggers build")
         };
         (stage, built)
@@ -1456,7 +1456,8 @@ mod tests {
         let triggers = {
             let world = stage.app.world();
             let names = world.resource::<Registries>().names();
-            atglyph_bevy::Triggers::build(&specs, &[], world.resource::<atglyph_bevy::Moments>(), world.resource::<EffectKinds>(), &names).expect("it builds")
+            atglyph_bevy::Triggers::build(&specs, &[], world.resource::<atglyph_bevy::TriggerKinds>(), world.resource::<EffectKinds>(), &names)
+                .expect("it builds")
         };
         let player = stage.player;
         let rod = stage.app.world_mut().spawn((Item, Name::new("rod"), triggers, Consumable::new(3, WhenEmpty::Kept))).id();
@@ -1533,7 +1534,8 @@ mod tests {
             let names = world.resource::<Registries>().names();
             let specs: Vec<atglyph_rules::TriggerSpec> =
                 names.load_list(r#"[(on: "use", asks: (prompt: "Polish which?", tag: "kit"), effects: [(kind: "Mark")])]"#).expect("the trigger parses");
-            atglyph_bevy::Triggers::build(&specs, &[], world.resource::<atglyph_bevy::Moments>(), world.resource::<EffectKinds>(), &names).expect("it builds")
+            atglyph_bevy::Triggers::build(&specs, &[], world.resource::<atglyph_bevy::TriggerKinds>(), world.resource::<EffectKinds>(), &names)
+                .expect("it builds")
         };
         let polish = stage.app.world_mut().spawn((Item, Name::new("polish"), triggers, Consumable::new(3, WhenEmpty::Kept))).id();
         let coat = stage.app.world_mut().spawn((Item, Name::new("coat"), Tagged(vec![kit]), Wearable(body.clone()))).id();

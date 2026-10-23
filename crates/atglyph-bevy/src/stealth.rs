@@ -1105,12 +1105,12 @@ mod tests {
 
     /// A thing in the player's bag whose `use` is `triggers`, an aimed one.
     fn carry(field: &mut Field, triggers: &str) -> Entity {
-        use crate::effects::{EffectKinds, Moments, Triggers};
+        use crate::effects::{EffectKinds, TriggerKinds, Triggers};
         let specs: Vec<atglyph_rules::TriggerSpec> = atglyph_rules::Names::new().load_list(triggers).expect("the triggers parse");
         let built = {
             let world = field.app.world();
             let names = world.resource::<crate::registries::Registries>().names();
-            Triggers::build(&specs, &[], world.resource::<Moments>(), world.resource::<EffectKinds>(), &names).expect("the triggers build")
+            Triggers::build(&specs, &[], world.resource::<TriggerKinds>(), world.resource::<EffectKinds>(), &names).expect("the triggers build")
         };
         let thing = field.app.world_mut().spawn((crate::items::Item, built)).id();
         let player = field.player;
@@ -1189,8 +1189,14 @@ mod tests {
                 ron::Options::default().with_default_extension(ron::extensions::Extensions::IMPLICIT_SOME).from_str(uses).expect("the triggers parse");
             let world = field.app.world();
             let names = world.resource::<crate::registries::Registries>().names();
-            crate::effects::Triggers::build(&specs, &[], world.resource::<crate::effects::Moments>(), world.resource::<crate::effects::EffectKinds>(), &names)
-                .expect("the triggers build")
+            crate::effects::Triggers::build(
+                &specs,
+                &[],
+                world.resource::<crate::effects::TriggerKinds>(),
+                world.resource::<crate::effects::EffectKinds>(),
+                &names,
+            )
+            .expect("the triggers build")
         };
         let slot = atglyph_rules::SlotId::from_raw(0);
         let plate = field.app.world_mut().spawn((crate::items::Item, triggers, crate::items::Wearable(atglyph_rules::EquipShape::in_slot(slot)))).id();

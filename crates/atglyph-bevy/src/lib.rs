@@ -77,9 +77,9 @@ pub use consumable::{AddSpending, Attuned, Consumable, Recharge, SpendingMoments
 pub use cue::{AddAirborne, Airborne, Anchor, Cue, CueWait, Cued, Lands, LookOf};
 pub use doors::{Close, DoorEvent, Open};
 pub use effects::{
-    AddEffect, AddEngineEffects, AddMoment, Cleanse, Effect, EffectBonus, EffectKinds, EffectRng, EffectWorld, Effects, EffectsPlugin, Emit, Fired, FiredOn,
-    FromArgs, Harm, Ignite, Inflict, KeepOnRemnant, Landing, LandsAsItself, Mend, Moment, MomentId, Moments, Noise, Pull, Remnant, RemnantKeeps, Shove, Source,
-    Trigger, Triggers, area_cells,
+    AddEffect, AddEngineEffects, AddTriggerKind, Cleanse, Effect, EffectBonus, EffectKinds, EffectRng, EffectWorld, Effects, EffectsPlugin, Emit, Fired,
+    FiredOn, FromArgs, Harm, Ignite, Inflict, KeepOnRemnant, Landing, LandsAsItself, Mend, Noise, Pull, Remnant, RemnantKeeps, Shove, Source, Trigger,
+    TriggerKind, TriggerKindId, TriggerKinds, Triggers, area_cells,
 };
 pub use events::{Counters, FactSet, FactsPlugin, Happened, QuestChange, Quests};
 pub use fields::SavedField;
@@ -155,8 +155,8 @@ pub mod prelude {
     pub use crate::doors::{Close, DoorEvent, Open};
 
     pub use crate::effects::{
-        AddEffect, AddEngineEffects, AddMoment, Effect, EffectBonus, EffectKinds, EffectWorld, Effects, EffectsPlugin, Fired, FromArgs, Landing, Moments,
-        Triggers,
+        AddEffect, AddEngineEffects, AddTriggerKind, Effect, EffectBonus, EffectKinds, EffectWorld, Effects, EffectsPlugin, Fired, FromArgs, Landing,
+        TriggerKinds, Triggers,
     };
     pub use crate::events::{Counters, FactSet, FactsPlugin, Happened, QuestChange, Quests};
     pub use crate::fire::{Burning, Fire, FireEvent, FirePlugin, FireRules, Flammable, Kindle};

@@ -26,7 +26,7 @@
 
 use bevy::prelude::*;
 
-use crate::effects::{Fired, MomentId, Moments};
+use crate::effects::{Fired, TriggerKindId, TriggerKinds};
 use crate::items::Stack;
 use crate::turn::Turns;
 
@@ -97,17 +97,17 @@ pub struct Attuned;
 /// A resource rather than a rule written into `spend_charges`, so a game
 /// that reports a moment of its own can say whether it costs anything.
 #[derive(Resource, Debug, Clone)]
-pub struct SpendingMoments(Vec<MomentId>);
+pub struct SpendingMoments(Vec<TriggerKindId>);
 
 impl Default for SpendingMoments {
     fn default() -> Self {
-        Self(vec![Moments::USE, Moments::LAND, Moments::FIRE])
+        Self(vec![TriggerKinds::USE, TriggerKinds::LAND, TriggerKinds::FIRE])
     }
 }
 
 impl SpendingMoments {
     /// Whether `moment` spends.
-    pub(crate) fn spends(&self, moment: MomentId) -> bool {
+    pub(crate) fn spends(&self, moment: TriggerKindId) -> bool {
         self.0.contains(&moment)
     }
 }
@@ -115,11 +115,11 @@ impl SpendingMoments {
 /// Marks a moment as one that spends a charge.
 pub trait AddSpending {
     /// Makes `moment` spend a charge from what it happens to.
-    fn spends_on(&mut self, moment: MomentId) -> &mut Self;
+    fn spends_on(&mut self, moment: TriggerKindId) -> &mut Self;
 }
 
 impl AddSpending for App {
-    fn spends_on(&mut self, moment: MomentId) -> &mut Self {
+    fn spends_on(&mut self, moment: TriggerKindId) -> &mut Self {
         self.init_resource::<SpendingMoments>();
         let mut spending = self.world_mut().resource_mut::<SpendingMoments>();
         if !spending.0.contains(&moment) {
@@ -270,7 +270,7 @@ mod tests {
     use crate::ability::Known;
     use crate::combat::Health;
     use crate::components::{Actor, Blocks, MyTurn, Player, Position, RevealsMap, Viewshed};
-    use crate::effects::{AddEngineEffects, EffectKinds, Moments, Triggers};
+    use crate::effects::{AddEngineEffects, EffectKinds, TriggerKinds, Triggers};
     use crate::items::{Inventory, Item, ItemsPlugin, UseItem};
     use crate::registries::Registries;
     use crate::seed::Seed;
@@ -311,7 +311,7 @@ mod tests {
                 ron::Options::default().with_default_extension(ron::extensions::Extensions::IMPLICIT_SOME).from_str(triggers).expect("the triggers parse");
             let world = app.world();
             let registries = world.resource::<Registries>();
-            Triggers::build(&specs, &[], world.resource::<Moments>(), world.resource::<EffectKinds>(), &registries.names()).expect("the triggers build")
+            Triggers::build(&specs, &[], world.resource::<TriggerKinds>(), world.resource::<EffectKinds>(), &registries.names()).expect("the triggers build")
         };
         let item = app.world_mut().spawn((Item, triggers)).id();
         if let Some(c) = consumable {
@@ -379,7 +379,7 @@ mod tests {
         let specs: Vec<atglyph_rules::TriggerSpec> =
             ron::Options::default().with_default_extension(ron::extensions::Extensions::IMPLICIT_SOME).from_str(text).expect("the triggers parse");
         let world = app.world();
-        Triggers::build(&specs, &[], world.resource::<Moments>(), world.resource::<EffectKinds>(), &world.resource::<Registries>().names())
+        Triggers::build(&specs, &[], world.resource::<TriggerKinds>(), world.resource::<EffectKinds>(), &world.resource::<Registries>().names())
             .expect("the triggers build")
     }
 

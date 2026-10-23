@@ -28,7 +28,7 @@
 //! it seems to have into the row in `Annotate`, which a panel prints as it
 //! prints a known thing's.
 
-use atglyph_bevy::MomentId;
+use atglyph_bevy::TriggerKindId;
 use atglyph_bevy::prelude::*;
 use atglyph_render::Glyph;
 use atglyph_rules::SlotId;
@@ -255,15 +255,15 @@ type Marks = (Has<atglyph_bevy::Unknown>, Has<atglyph_bevy::Stuck>);
 /// How a trigger's lines are introduced on a bag's row: by what the player
 /// does to set it off, in the engine's own moments, and by the moment's
 /// name for one a game registered. A pulse says how often it comes round.
-fn lead_in(moment: MomentId, moments: Option<&Moments>, pulse: Option<&atglyph_bevy::Pulse>) -> String {
+fn lead_in(moment: TriggerKindId, moments: Option<&TriggerKinds>, pulse: Option<&atglyph_bevy::Pulse>) -> String {
     match moment {
-        m if m == Moments::USE => "use".to_string(),
+        m if m == TriggerKinds::USE => "use".to_string(),
         // Not "thrown": the row already says how far it flies, and the
         // word twice over reads as two things.
-        m if m == Moments::LAND => "on landing".to_string(),
-        m if m == Moments::HIT => "on a hit".to_string(),
-        m if m == Moments::FIRE => "when fired".to_string(),
-        m if m == Moments::PULSE => match pulse {
+        m if m == TriggerKinds::LAND => "on landing".to_string(),
+        m if m == TriggerKinds::HIT => "on a hit".to_string(),
+        m if m == TriggerKinds::FIRE => "when fired".to_string(),
+        m if m == TriggerKinds::PULSE => match pulse {
             // "Every 1 turn" is a count nobody says aloud.
             Some(p) if p.every <= atglyph_core::turn::BASE_ACTION_COST => "every turn worn".to_string(),
             Some(p) => format!("every {} worn", crate::view::ability::turns(p.every)),
@@ -289,7 +289,7 @@ fn lead_in(moment: MomentId, moments: Option<&Moments>, pulse: Option<&atglyph_b
 fn describe_uses(
     triggers: &Triggers,
     registries: &Registries,
-    moments: Option<&Moments>,
+    moments: Option<&TriggerKinds>,
     pulse: Option<&atglyph_bevy::Pulse>,
     bonus: EffectBonus,
 ) -> Vec<String> {
@@ -303,7 +303,7 @@ fn describe_uses(
     // The one trigger on `moment`, and `None` for none or for more than
     // one: a second of either takes every one of its moment out of the
     // merge below, since there is no longer a single pair to fold.
-    let only_on = |moment: MomentId| {
+    let only_on = |moment: TriggerKindId| {
         let mut on = triggers.on(moment);
         on.next().filter(|_| on.next().is_none())
     };
@@ -311,7 +311,7 @@ fn describe_uses(
     // `land` trigger both carry something and say the same thing; `None`
     // leaves every trigger under its own name, including a `use` or a
     // `land` alone.
-    let shared = match (only_on(Moments::USE), only_on(Moments::LAND)) {
+    let shared = match (only_on(TriggerKinds::USE), only_on(TriggerKinds::LAND)) {
         (Some(use_trigger), Some(land_trigger)) => {
             let (use_lines, land_lines) = (lines_of(use_trigger), lines_of(land_trigger));
             (!use_lines.is_empty() && use_lines == land_lines).then_some(use_lines)
@@ -320,10 +320,10 @@ fn describe_uses(
     };
     let mut used = Vec::new();
     for trigger in &triggers.0 {
-        if shared.is_some() && trigger.on == Moments::LAND {
+        if shared.is_some() && trigger.on == TriggerKinds::LAND {
             continue; // said once already, under the `use` trigger below.
         }
-        match (&shared, trigger.on == Moments::USE) {
+        match (&shared, trigger.on == TriggerKinds::USE) {
             (Some(lines), true) => used.extend(lines.iter().map(|line| format!("use or thrown: {line}"))),
             _ => {
                 let lead = lead_in(trigger.on, moments, pulse);
@@ -338,7 +338,7 @@ fn describe_uses(
 pub(crate) fn collect_inventory(
     mut view: ResMut<InventoryView>,
     registries: Option<Res<Registries>>,
-    moments: Option<Res<Moments>>,
+    moments: Option<Res<TriggerKinds>>,
     player: Query<(Entity, &Inventory, Option<&Equipped>), With<Player>>,
     items: Query<(Looks, Arms, Does, Marks), With<Item>>,
     tags: Query<&Tagged>,
@@ -385,7 +385,7 @@ pub(crate) fn collect_inventory(
         let row = ItemRow {
             entity: item,
             used,
-            uses_something: triggers.is_some_and(|t| t.on(Moments::USE).next().is_some()),
+            uses_something: triggers.is_some_and(|t| t.on(TriggerKinds::USE).next().is_some()),
             targeting: triggers.and_then(Triggers::targeting),
             asks,
             charges: consumable.filter(|c| c.max > 1).map(|c| (c.left, c.max)),
@@ -504,7 +504,7 @@ mod tests {
         let player = stage.player;
         let torso = stage.app.world().resource::<Registries>().slots.expect("torso");
         let on_use = atglyph_bevy::Trigger {
-            on: atglyph_bevy::Moments::USE,
+            on: atglyph_bevy::TriggerKinds::USE,
             area: atglyph_rules::EffectArea::Here,
             fires: None,
             effects: std::sync::Arc::new(atglyph_bevy::Effects::default()),
@@ -527,10 +527,14 @@ mod tests {
     /// round.
     #[test]
     fn a_pulse_is_introduced_by_how_often_it_comes_round() {
-        assert_eq!(lead_in(Moments::PULSE, None, Some(&atglyph_bevy::Pulse::every(800))), "every 8 turns worn");
-        assert_eq!(lead_in(Moments::PULSE, None, Some(&atglyph_bevy::Pulse::every(750))), "every 8 turns worn", "a part turn rounds up, never promising early");
-        assert_eq!(lead_in(Moments::PULSE, None, Some(&atglyph_bevy::Pulse::every(100))), "every turn worn", "one turn is no count at all");
-        assert_eq!(lead_in(Moments::PULSE, None, Some(&atglyph_bevy::Pulse::every(50))), "every turn worn", "nor is less than one");
+        assert_eq!(lead_in(TriggerKinds::PULSE, None, Some(&atglyph_bevy::Pulse::every(800))), "every 8 turns worn");
+        assert_eq!(
+            lead_in(TriggerKinds::PULSE, None, Some(&atglyph_bevy::Pulse::every(750))),
+            "every 8 turns worn",
+            "a part turn rounds up, never promising early"
+        );
+        assert_eq!(lead_in(TriggerKinds::PULSE, None, Some(&atglyph_bevy::Pulse::every(100))), "every turn worn", "one turn is no count at all");
+        assert_eq!(lead_in(TriggerKinds::PULSE, None, Some(&atglyph_bevy::Pulse::every(50))), "every turn worn", "nor is less than one");
     }
 
     /// A row's effects are described with its item's own `EffectBonus`
@@ -549,7 +553,7 @@ mod tests {
         let specs = vec![atglyph_rules::EffectSpec { kind: "Inflict".to_string(), chance: 100, args }];
         let effects = Effects::build(&specs, &kinds, &registries.names()).unwrap();
         let trigger = atglyph_bevy::Trigger {
-            on: Moments::USE,
+            on: TriggerKinds::USE,
             area: atglyph_rules::EffectArea::Here,
             fires: None,
             effects: std::sync::Arc::new(effects),
@@ -566,7 +570,7 @@ mod tests {
     }
 
     /// A trigger on `on` that lands `effects` with nothing else about it.
-    fn plain_trigger(on: MomentId, effects: &std::sync::Arc<Effects>) -> atglyph_bevy::Trigger {
+    fn plain_trigger(on: TriggerKindId, effects: &std::sync::Arc<Effects>) -> atglyph_bevy::Trigger {
         atglyph_bevy::Trigger {
             on,
             area: atglyph_rules::EffectArea::Here,
@@ -601,12 +605,12 @@ mod tests {
         let ember = stage
             .app
             .world_mut()
-            .spawn((Item, Name::new("ember"), Triggers(vec![plain_trigger(Moments::USE, &shared), plain_trigger(Moments::LAND, &shared)])))
+            .spawn((Item, Name::new("ember"), Triggers(vec![plain_trigger(TriggerKinds::USE, &shared), plain_trigger(TriggerKinds::LAND, &shared)])))
             .id();
         let odd = stage
             .app
             .world_mut()
-            .spawn((Item, Name::new("pebble"), Triggers(vec![plain_trigger(Moments::USE, &different), plain_trigger(Moments::LAND, &shared)])))
+            .spawn((Item, Name::new("pebble"), Triggers(vec![plain_trigger(TriggerKinds::USE, &different), plain_trigger(TriggerKinds::LAND, &shared)])))
             .id();
         stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![ember, odd] });
         stage.tick();
@@ -639,7 +643,11 @@ mod tests {
             .spawn((
                 Item,
                 Name::new("ember"),
-                Triggers(vec![plain_trigger(Moments::USE, &shared), plain_trigger(Moments::USE, &different), plain_trigger(Moments::LAND, &shared)]),
+                Triggers(vec![
+                    plain_trigger(TriggerKinds::USE, &shared),
+                    plain_trigger(TriggerKinds::USE, &different),
+                    plain_trigger(TriggerKinds::LAND, &shared),
+                ]),
             ))
             .id();
         stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![ember] });
@@ -670,7 +678,11 @@ mod tests {
             .spawn((
                 Item,
                 Name::new("ember"),
-                Triggers(vec![plain_trigger(Moments::USE, &shared), plain_trigger(Moments::LAND, &shared), plain_trigger(Moments::LAND, &different)]),
+                Triggers(vec![
+                    plain_trigger(TriggerKinds::USE, &shared),
+                    plain_trigger(TriggerKinds::LAND, &shared),
+                    plain_trigger(TriggerKinds::LAND, &different),
+                ]),
             ))
             .id();
         stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![ember] });
@@ -687,7 +699,16 @@ mod tests {
     /// A `use` trigger with nothing in it, aimed or asking as given.
     fn on_use(asks: Option<atglyph_rules::Asks>) -> atglyph_bevy::Trigger {
         let effects = std::sync::Arc::new(atglyph_bevy::Effects::default());
-        atglyph_bevy::Trigger { on: Moments::USE, area: atglyph_rules::EffectArea::Here, fires: None, effects, look: None, every: None, targeting: None, asks }
+        atglyph_bevy::Trigger {
+            on: TriggerKinds::USE,
+            area: atglyph_rules::EffectArea::Here,
+            fires: None,
+            effects,
+            look: None,
+            every: None,
+            targeting: None,
+            asks,
+        }
     }
 
     /// A thing not yet known reaches the row by its name and where it goes,

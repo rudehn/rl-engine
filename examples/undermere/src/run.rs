@@ -696,7 +696,7 @@ mod tests {
     fn a_run_started_by_a_person_who_keeps_a_post_stands_beside_them_in_mereholt() {
         use crate::testing::settle;
         use crate::townsfolk::Moves;
-        let townsfolk = crate::content::Library::load(&crate::content::effect_kinds(), &Moments::default()).townsfolk;
+        let townsfolk = crate::content::Library::load(&crate::content::effect_kinds(), &TriggerKinds::default()).townsfolk;
         let mut app = headless(RunSeed(0));
         let me = adventurer(&mut app);
         settle(&mut app);

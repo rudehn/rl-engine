@@ -349,7 +349,7 @@ mod tests {
         let ghoul = monster(&mut app, "ghoul", here.offset(1, 0));
         app.world_mut().entity_mut(ghoul).remove::<Mind>();
         settle(&mut app);
-        app.world_mut().write_message(Fired { on: ghoul, moment: Moments::HIT, by: Some(ghoul), at: here });
+        app.world_mut().write_message(Fired { on: ghoul, moment: TriggerKinds::HIT, by: Some(ghoul), at: here });
         settle(&mut app);
         assert!(!app.world().resource::<MonsterLore>().has_shown("ghoul", "paralysing"), "a touch that froze nothing shows nothing");
         let paralysed = app.world().resource::<Registries>().statuses.expect("paralysed");

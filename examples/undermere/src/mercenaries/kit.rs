@@ -240,7 +240,7 @@ mod tests {
     use crate::mercenaries::MERCENARY;
 
     fn library() -> Library {
-        Library::load(&crate::content::effect_kinds(), &Moments::default())
+        Library::load(&crate::content::effect_kinds(), &TriggerKinds::default())
     }
 
     /// The kits of a span of seeds at `band`, each from a generator of its

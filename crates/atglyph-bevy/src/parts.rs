@@ -44,7 +44,7 @@ use crate::ammo::Ammo;
 use crate::combat::{Armor, Faction, Health, MeleeAttack, RangedAttack, Resists, Stowed};
 use crate::components::Speed;
 use crate::consumable::{Attuned, Consumable};
-use crate::effects::{EffectBonus, MomentId, Moments, Triggers};
+use crate::effects::{EffectBonus, TriggerKindId, TriggerKinds, Triggers};
 use crate::items::{Bestows, Equipped, Item, LitWhenWorn, Pulse, Stack, Tagged, Wearable, WornStatuses};
 use crate::lighting::{DarkSight, LightSource, OwnDarkSight, WornDarkSight};
 use crate::loot::Drops;
@@ -171,7 +171,7 @@ impl ItemParts {
     /// writing, whether a level should grow armor, is the game's to check.
     pub fn check(&self) -> Vec<String> {
         let mut wrong = Vec::new();
-        let moment = |on: MomentId| self.triggers.0.iter().any(|t| t.on == on);
+        let moment = |on: TriggerKindId| self.triggers.0.iter().any(|t| t.on == on);
         if self.stack.is_some() && self.wear.is_some() {
             wrong.push("a worn item cannot stack".to_string());
         }
@@ -189,10 +189,10 @@ impl ItemParts {
                 wrong.push("a charge that refills only while worn, on a thing that is never worn".to_string());
             }
         }
-        if moment(Moments::LAND) && self.attacks.throw.is_none() {
+        if moment(TriggerKinds::LAND) && self.attacks.throw.is_none() {
             wrong.push("a land trigger on a thing that cannot be thrown never lands".to_string());
         }
-        if moment(Moments::PULSE) && self.wear.is_none() {
+        if moment(TriggerKinds::PULSE) && self.wear.is_none() {
             wrong.push("a pulse trigger on a thing that is never worn never comes round".to_string());
         }
         if self.wear.is_none() && (!self.worn_statuses.is_empty() || self.dark_sight.is_some() || self.light_when == LightWhen::Worn) {
@@ -208,7 +208,7 @@ impl ItemParts {
             if level.min.unwrap_or(0) > level.max.unwrap_or(i32::MAX) {
                 wrong.push("a level whose lowest is above its highest".to_string());
             }
-            if level.pulse.is_some() && !moment(Moments::PULSE) {
+            if level.pulse.is_some() && !moment(TriggerKinds::PULSE) {
                 wrong.push("a pulse in the level, on a thing with no pulse trigger".to_string());
             }
             if level.charges.is_some() && self.charges.is_none() {

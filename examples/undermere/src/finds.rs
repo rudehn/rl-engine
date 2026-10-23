@@ -205,7 +205,7 @@ mod tests {
     use crate::dungeon::FLOORS;
 
     fn library() -> Library {
-        Library::load(&crate::content::effect_kinds(), &Moments::default())
+        Library::load(&crate::content::effect_kinds(), &TriggerKinds::default())
     }
 
     /// Six things on floor one, and one more for every two floors down, to

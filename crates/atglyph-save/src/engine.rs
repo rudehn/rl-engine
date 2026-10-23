@@ -496,7 +496,7 @@ mod tests {
     fn two_triggers() -> Triggers {
         let nothing = std::sync::Arc::new(atglyph_bevy::Effects::default());
         let one = |fires| atglyph_bevy::Trigger {
-            on: Moments::USE,
+            on: TriggerKinds::USE,
             area: atglyph_rules::EffectArea::Here,
             fires,
             effects: nothing.clone(),

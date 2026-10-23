@@ -534,7 +534,7 @@ fn nothing_lands_behind_a_lock_on_a_floor_made_for_it() {
 #[test]
 fn nobody_cast_in_a_part_is_small_life_on_any_floor() {
     use atglyph::rand::SeedableRng;
-    let library = crate::content::Library::load(&crate::content::effect_kinds(), &Moments::default());
+    let library = crate::content::Library::load(&crate::content::effect_kinds(), &TriggerKinds::default());
     let (bestiary, registries) = (&library.bestiary, &library.registries);
     let wildlife = registries.factions.expect(crate::content::WILDLIFE);
     let small = |id: &Id<MonsterDef>| bestiary.defs.get(*id).faction == wildlife;

@@ -311,7 +311,7 @@ mod tests {
         let triggers = {
             let world = stage.app.world();
             let names = world.resource::<atglyph_bevy::Registries>().names();
-            atglyph_bevy::Triggers::build(&specs, &[], world.resource::<atglyph_bevy::Moments>(), world.resource::<atglyph_bevy::EffectKinds>(), &names)
+            atglyph_bevy::Triggers::build(&specs, &[], world.resource::<atglyph_bevy::TriggerKinds>(), world.resource::<atglyph_bevy::EffectKinds>(), &names)
                 .expect("it builds")
         };
         let user = stage.player;

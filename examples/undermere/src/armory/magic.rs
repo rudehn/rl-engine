@@ -130,7 +130,7 @@ fn domination_is_certain_at_a_quarter_of_a_foes_health_and_otherwise_as_likely_a
 /// the king nor a blade, which are found nowhere.
 #[test]
 fn polymorph_keeps_the_share_of_health_and_never_gives_back_the_same_kind_over_a_span_of_seeds() {
-    let library = crate::content::Library::load(&crate::content::effect_kinds(), &Moments::default());
+    let library = crate::content::Library::load(&crate::content::effect_kinds(), &TriggerKinds::default());
     let defs = &library.bestiary.defs;
     let shapes = crate::effects::bodies::shapes(&library.bestiary, defs.expect("goblin"));
     let named: Vec<&str> = shapes.iter().map(|k| defs.get(*k).name.as_str()).collect();

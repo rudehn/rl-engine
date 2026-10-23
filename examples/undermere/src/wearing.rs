@@ -56,7 +56,7 @@ mod tests {
 
     /// The traits, as the game reads them.
     fn traits() -> Registry<crate::traits::TraitDef> {
-        Library::load(&crate::content::effect_kinds(), &Moments::default()).traits
+        Library::load(&crate::content::effect_kinds(), &TriggerKinds::default()).traits
     }
 
     /// The ring, made exactly as the game makes a thing, by an armory of
@@ -67,8 +67,8 @@ mod tests {
         let registries = app.world().resource::<Registries>().clone();
         let defs = crate::armory::read(RING, &registries, &traits).expect("the ring reads");
         let world = app.world();
-        let armory =
-            Armory::new(defs, LootTable::default(), &registries, &traits, world.resource::<EffectKinds>(), world.resource::<Moments>()).expect("and is made");
+        let armory = Armory::new(defs, LootTable::default(), &registries, &traits, world.resource::<EffectKinds>(), world.resource::<TriggerKinds>())
+            .expect("and is made");
         let mut queue = CommandQueue::default();
         let ring = crate::armory::spawn_item(&mut Commands::new(&mut queue, app.world()), &armory, armory.defs.expect("ring of the salamander"));
         queue.apply(app.world_mut());

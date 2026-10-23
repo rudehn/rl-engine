@@ -21,7 +21,7 @@
 
 use std::sync::Arc;
 
-use atglyph::ecs::{DEFAULT_PERCEPTION, Inflict, MomentId};
+use atglyph::ecs::{DEFAULT_PERCEPTION, Inflict, TriggerKindId};
 use atglyph::prelude::*;
 use atglyph::rules::ability::EffectSpec;
 use atglyph::rules::ai::tactics::Keep;
@@ -127,7 +127,7 @@ pub struct MonsterDef {
     /// come to nothing is read off what it does instead, into
     /// [`trick_statuses`](Self::trick_statuses) for a status put on, or
     /// learned by the effect itself where it lands, as a theft is.
-    pub trick_moments: Vec<(MomentId, String)>,
+    pub trick_moments: Vec<(TriggerKindId, String)>,
     /// Every trick trait whose triggers put a status on what they touch,
     /// by the status and the trait's name: a bite's poison, a touch that
     /// freezes, a touch that saps strength. What
@@ -251,7 +251,7 @@ impl Bestiary {
     /// a bite that quietly poisons nothing. Panics naming the file and
     /// every problem in it, since a broken bestiary is a game that cannot
     /// start.
-    pub fn load(registries: &Registries, traits: &Registry<TraitDef>, items: &Registry<ItemDef>, kinds: &EffectKinds, moments: &Moments) -> Self {
+    pub fn load(registries: &Registries, traits: &Registry<TraitDef>, items: &Registry<ItemDef>, kinds: &EffectKinds, moments: &TriggerKinds) -> Self {
         let defs = read(MONSTERS_RON, registries, traits, items, kinds, moments).unwrap_or_else(|e| panic!("assets/monsters.ron: {e}"));
         let spawns =
             load_spawns(MONSTER_SPAWNS_RON, &registries.names().with("monster", &defs), &defs).unwrap_or_else(|e| panic!("assets/monster_spawns.ron: {e}"));
@@ -348,7 +348,7 @@ pub fn read(
     traits: &Registry<TraitDef>,
     items: &Registry<ItemDef>,
     kinds: &EffectKinds,
-    moments: &Moments,
+    moments: &TriggerKinds,
 ) -> Result<Registry<MonsterDef>, ContentError> {
     let authored: Registry<Authored> = registries.names().with("trait", traits).with("item", items).load(text)?;
     let names = registries.names();
@@ -375,7 +375,7 @@ fn resolve(
     names: &Names<'_>,
     traits: &Registry<TraitDef>,
     kinds: &EffectKinds,
-    moments: &Moments,
+    moments: &TriggerKinds,
 ) -> Result<MonsterDef, Vec<String>> {
     let mut errors = Vec::new();
     let (attack, ranged) = (a.attack, a.ranged);
@@ -407,13 +407,13 @@ fn resolve(
     // of its own left to name.
     let trick_abilities: Vec<(AbilityId, String)> =
         listed.iter().map(|&t| traits.get(t)).filter(|t| t.trick).flat_map(|t| t.abilities.iter().map(move |a| (a.id(), t.name.clone()))).collect();
-    let mut trick_moments: Vec<(MomentId, String)> = Vec::new();
+    let mut trick_moments: Vec<(TriggerKindId, String)> = Vec::new();
     let mut trick_statuses: Vec<(StatusId, String)> = Vec::new();
     for t in listed.iter().map(|&t| traits.get(t)).filter(|t| t.trick) {
         for spec in &t.triggers {
             for effect in spec.effects.iter().flatten() {
                 match learned_by(effect, names) {
-                    Learned::Moment => trick_moments.extend(moments.get(&spec.on).map(|on| (on, t.name.clone()))),
+                    Learned::TriggerKind => trick_moments.extend(moments.get(&spec.on).map(|on| (on, t.name.clone()))),
                     Learned::Status(status) => trick_statuses.push((status, t.name.clone())),
                     Learned::Itself => {}
                 }
@@ -491,7 +491,7 @@ fn resolve(
 enum Learned {
     /// Off the moment firing: an effect that lands whenever it fires,
     /// whatever it lands on, a burst of spores.
-    Moment,
+    TriggerKind,
     /// Off this status taking hold, put on by one of the kind: an effect
     /// that may roll and miss, or be refused once enough is on.
     Status(StatusId),
@@ -504,9 +504,9 @@ enum Learned {
 /// for a status it inflicts, its own arguments.
 fn learned_by(effect: &EffectSpec, names: &Names<'_>) -> Learned {
     match effect.kind.as_str() {
-        Inflict::KIND => Inflict::from_args(&effect.args, names).map_or(Learned::Moment, |i| Learned::Status(i.status)),
+        Inflict::KIND => Inflict::from_args(&effect.args, names).map_or(Learned::TriggerKind, |i| Learned::Status(i.status)),
         crate::tricks::Steal::KIND => Learned::Itself,
-        _ => Learned::Moment,
+        _ => Learned::TriggerKind,
     }
 }
 

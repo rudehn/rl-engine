@@ -541,7 +541,7 @@ impl ItemWorld<'_, '_> {
                     if self.unknown_to(actor, item) {
                         at = atglyph_rules::ability::made_at(targeting, pos, aim, |p| sight.is_none_or(|v| v.can_see(p)));
                     } else {
-                        let source = crate::effects::Source::Trigger { on: item, moment: crate::effects::Moments::USE };
+                        let source = crate::effects::Source::Trigger { on: item, moment: crate::effects::TriggerKinds::USE };
                         let aimed = Aimed { user: actor, source, targeting, origin: pos, aim, sees_aim: sight.map(|v| v.can_see(aim)) };
                         at = aim;
                         facts.aim_refused = !self.bystanders.land(aimed, &self.map, &self.occupancy).refused.is_empty();
@@ -741,9 +741,9 @@ fn resolve_one(commands: &mut Commands, world: &ItemWorld, carrier: Holding, act
                 // pointed at, which is where an aimed trigger lands; it
                 // flies from its user. Made on a thing, it is made on the
                 // thing chosen.
-                writes.fired.write(crate::effects::Fired { on: item, moment: crate::effects::Moments::USE, by: Some(actor), at });
+                writes.fired.write(crate::effects::Fired { on: item, moment: crate::effects::TriggerKinds::USE, by: Some(actor), at });
                 if let ItemAsk::UseOn(_, on) = ask {
-                    writes.fired_on.write(crate::effects::FiredOn { carrier: item, moment: crate::effects::Moments::USE, on });
+                    writes.fired_on.write(crate::effects::FiredOn { carrier: item, moment: crate::effects::TriggerKinds::USE, on });
                 }
             }
         }
@@ -810,7 +810,7 @@ pub(crate) fn pulse_worn(
             let (times, rest) = atglyph_rules::charges::periods(pulse.progress, pulse.every, passed);
             pulse.progress = rest;
             for _ in 0..times {
-                fired.write(crate::effects::Fired { on: item, moment: crate::effects::Moments::PULSE, by: Some(wearer), at: pos.0 });
+                fired.write(crate::effects::Fired { on: item, moment: crate::effects::TriggerKinds::PULSE, by: Some(wearer), at: pos.0 });
             }
         }
     }
@@ -1091,7 +1091,7 @@ impl Belongings<'_, '_> {
         let usable = |item: Entity| may_use(item, bag, worn, self.charges.get(item).ok(), self.wearables.contains(item), false);
         let told = |item: Entity| {
             let does = self.uses.get(item).ok()?;
-            let uses = || does.on(crate::effects::Moments::USE);
+            let uses = || does.on(crate::effects::TriggerKinds::USE);
             (uses().next().is_some() && does.asks().is_none() && usable(item)).then(|| atglyph_rules::Carried {
                 item,
                 targeting: does.targeting(),
@@ -1597,7 +1597,7 @@ mod aimed {
     use crate::components::{Actor, Blocks, Player, RevealsMap, Viewshed};
     use crate::consumable::{Consumable, WhenEmpty};
     use crate::cue::{Anchor, Cue, CueWait, Cued, LookOf};
-    use crate::effects::{AddEngineEffects, EffectBonus, EffectKinds, Moments, Triggers};
+    use crate::effects::{AddEngineEffects, EffectBonus, EffectKinds, TriggerKinds, Triggers};
     use crate::registries::Registries;
     use crate::state::EngineState;
     use crate::testing::TwoSides;
@@ -1640,7 +1640,7 @@ mod aimed {
             let built = {
                 let world = self.app.world();
                 let names = world.resource::<Registries>().names();
-                Triggers::build(&specs, &[], world.resource::<Moments>(), world.resource::<EffectKinds>(), &names).expect("the triggers build")
+                Triggers::build(&specs, &[], world.resource::<TriggerKinds>(), world.resource::<EffectKinds>(), &names).expect("the triggers build")
             };
             let thing = self.app.world_mut().spawn((Item, Name::new("rod"), built, Consumable::new(3, WhenEmpty::Kept))).id();
             self.app.world_mut().get_mut::<Inventory>(self.player).expect("a bag").items.push(thing);
@@ -1956,7 +1956,7 @@ mod chosen {
     use super::*;
     use crate::components::{Actor, Blocks, Player, RevealsMap};
     use crate::consumable::{Consumable, WhenEmpty};
-    use crate::effects::{AddEffect, AddEngineEffects, Effect, EffectKinds, EffectWorld, FromArgs, Landing, Moments};
+    use crate::effects::{AddEffect, AddEngineEffects, Effect, EffectKinds, EffectWorld, FromArgs, Landing, TriggerKinds};
     use crate::registries::Registries;
     use crate::state::EngineState;
     use crate::testing::headless_app;
@@ -2018,7 +2018,7 @@ mod chosen {
                 let world = self.app.world();
                 let names = world.resource::<Registries>().names();
                 let specs: Vec<atglyph_rules::TriggerSpec> = names.load_list(triggers).expect("the triggers parse");
-                Triggers::build(&specs, &[], world.resource::<Moments>(), world.resource::<EffectKinds>(), &names).expect("the triggers build")
+                Triggers::build(&specs, &[], world.resource::<TriggerKinds>(), world.resource::<EffectKinds>(), &names).expect("the triggers build")
             };
             let thing = self.app.world_mut().spawn((Item, built, Consumable::new(3, WhenEmpty::Kept))).id();
             self.app.world_mut().get_mut::<Inventory>(self.player).expect("a bag").items.push(thing);

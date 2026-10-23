@@ -1033,7 +1033,7 @@ pub(crate) fn resolve_attacks(
         // What the weapon does when it is used, whatever it strikes: a
         // wand's charge, a trigger on firing.
         if let Some(item) = from {
-            fired.write(crate::effects::Fired { on: item, moment: crate::effects::Moments::FIRE, by: Some(actor), at: pos.0 });
+            fired.write(crate::effects::Fired { on: item, moment: crate::effects::TriggerKinds::FIRE, by: Some(actor), at: pos.0 });
         }
         // Rolled after the weapon has fired and before the damage, so a
         // miss still spends what firing spends and draws no damage dice.
@@ -1048,7 +1048,7 @@ pub(crate) fn resolve_attacks(
             struck_at.extend(reached(shape, pos.0, (target, target_pos.0), gun.map(|(_, r)| r.range), map, occupancy, foe));
         }
         let strikes = loadout.strikes(actor);
-        let answers = |t: &&crate::effects::Triggers| t.on(crate::effects::Moments::HIT).next().is_some();
+        let answers = |t: &&crate::effects::Triggers| t.on(crate::effects::TriggerKinds::HIT).next().is_some();
         let own = carried.get(actor).ok().filter(answers).cloned();
         let carried = from.and_then(|item| carried.get(item).ok()).filter(answers).cloned();
         let reach = if ranged { DamageRoute::Shot } else { DamageRoute::Melee };
@@ -1178,7 +1178,7 @@ pub(crate) fn keep_shooters(
         if shot.stand_in.is_some() || shot.own.is_none() || shot.missed || !there.contains(shot.attacker) {
             continue;
         }
-        let remnant = crate::effects::Remnant { moment: crate::effects::Moments::HIT, by: Some(shot.attacker), at: Point::ZERO };
+        let remnant = crate::effects::Remnant { moment: crate::effects::TriggerKinds::HIT, by: Some(shot.attacker), at: Point::ZERO };
         let stand_in = commands.spawn((bevy::ecs::entity_disabling::Disabled, remnant)).id();
         keeps.copy(&mut commands, shot.attacker, stand_in);
         shot.stand_in = Some(stand_in);
@@ -1211,7 +1211,7 @@ pub(crate) fn land_shots(
             && !shot.missed
         {
             if let Some(triggers) = shot.carried.take() {
-                let remnant = crate::effects::Remnant { moment: crate::effects::Moments::HIT, by: Some(shot.attacker), at: at.0 };
+                let remnant = crate::effects::Remnant { moment: crate::effects::TriggerKinds::HIT, by: Some(shot.attacker), at: at.0 };
                 arriving.commands.spawn((triggers, remnant));
             }
             shot.with = None;
@@ -1224,11 +1224,11 @@ pub(crate) fn land_shots(
         let gone = !arriving.present.contains(shot.attacker) && !shot.missed;
         match (gone.then(|| shot.own.take()).flatten(), stand_in) {
             (Some(triggers), Some(stand_in)) => {
-                let remnant = crate::effects::Remnant { moment: crate::effects::Moments::HIT, by: Some(shot.attacker), at: at.0 };
+                let remnant = crate::effects::Remnant { moment: crate::effects::TriggerKinds::HIT, by: Some(shot.attacker), at: at.0 };
                 arriving.commands.entity(stand_in).insert((triggers, remnant, crate::effects::LandsAsItself)).remove::<bevy::ecs::entity_disabling::Disabled>();
             }
             (Some(triggers), None) => {
-                let remnant = crate::effects::Remnant { moment: crate::effects::Moments::HIT, by: Some(shot.attacker), at: at.0 };
+                let remnant = crate::effects::Remnant { moment: crate::effects::TriggerKinds::HIT, by: Some(shot.attacker), at: at.0 };
                 arriving.commands.spawn((triggers, remnant));
             }
             (None, Some(unused)) => {
@@ -1270,12 +1270,12 @@ fn land(
     damage.write_batch(shot.hits.into_iter().map(|hit| DamageEvent::arriving(target, hit, reach)));
     let by = Some(shot.attacker);
     if let Some(item) = shot.with {
-        fired.write(crate::effects::Fired { on: item, moment: crate::effects::Moments::HIT, by, at });
+        fired.write(crate::effects::Fired { on: item, moment: crate::effects::TriggerKinds::HIT, by, at });
     }
     if shot.own.is_some() {
-        fired.write(crate::effects::Fired { on: shot.attacker, moment: crate::effects::Moments::HIT, by, at });
+        fired.write(crate::effects::Fired { on: shot.attacker, moment: crate::effects::TriggerKinds::HIT, by, at });
     }
-    fired.write(crate::effects::Fired { on: target, moment: crate::effects::Moments::STRUCK, by, at });
+    fired.write(crate::effects::Fired { on: target, moment: crate::effects::TriggerKinds::STRUCK, by, at });
 }
 
 /// Where `mode`, sent from `from` at `aim`, goes on this map: a shot, a
@@ -1626,8 +1626,8 @@ mod tests {
 
     fn moments(mut seen: ResMut<Moments>, mut fired: MessageReader<crate::effects::Fired>) {
         for f in fired.read() {
-            seen.fire |= f.moment == crate::effects::Moments::FIRE;
-            seen.hit |= f.moment == crate::effects::Moments::HIT;
+            seen.fire |= f.moment == crate::effects::TriggerKinds::FIRE;
+            seen.hit |= f.moment == crate::effects::TriggerKinds::HIT;
         }
     }
 
@@ -2191,7 +2191,7 @@ mod tests {
             let built = crate::effects::Triggers::build(
                 &specs,
                 &[],
-                world.resource::<crate::effects::Moments>(),
+                world.resource::<crate::effects::TriggerKinds>(),
                 world.resource::<crate::effects::EffectKinds>(),
                 &registries.names(),
             )
@@ -2607,9 +2607,9 @@ mod tests {
 
     fn tally(mut tally: ResMut<Tally>, mut fired: MessageReader<crate::effects::Fired>) {
         for f in fired.read() {
-            if f.moment == crate::effects::Moments::FIRE {
+            if f.moment == crate::effects::TriggerKinds::FIRE {
                 tally.fire += 1;
-            } else if f.moment == crate::effects::Moments::HIT {
+            } else if f.moment == crate::effects::TriggerKinds::HIT {
                 tally.hit.push(f.at);
             }
         }
@@ -2622,9 +2622,14 @@ mod tests {
         let specs: Vec<atglyph_rules::TriggerSpec> = atglyph_rules::Names::new().load_list(triggers).expect("the triggers parse");
         let world = app.world();
         let names = world.resource::<Registries>().names();
-        let built =
-            crate::effects::Triggers::build(&specs, &[], world.resource::<crate::effects::Moments>(), world.resource::<crate::effects::EffectKinds>(), &names)
-                .expect("the triggers build");
+        let built = crate::effects::Triggers::build(
+            &specs,
+            &[],
+            world.resource::<crate::effects::TriggerKinds>(),
+            world.resource::<crate::effects::EffectKinds>(),
+            &names,
+        )
+        .expect("the triggers build");
         let hand = SlotId::from_raw(0);
         let item = app.world_mut().spawn((crate::items::Item, attack, built, crate::items::Wearable(EquipShape::in_slot(hand)))).id();
         let mut equipment = Equipment::with_slot_count(1);
@@ -2733,9 +2738,14 @@ mod tests {
         let specs: Vec<atglyph_rules::TriggerSpec> = atglyph_rules::Names::new().load_list(triggers).expect("the triggers parse");
         let world = app.world();
         let names = world.resource::<Registries>().names();
-        let built =
-            crate::effects::Triggers::build(&specs, &[], world.resource::<crate::effects::Moments>(), world.resource::<crate::effects::EffectKinds>(), &names)
-                .expect("the triggers build");
+        let built = crate::effects::Triggers::build(
+            &specs,
+            &[],
+            world.resource::<crate::effects::TriggerKinds>(),
+            world.resource::<crate::effects::EffectKinds>(),
+            &names,
+        )
+        .expect("the triggers build");
         app.world_mut().entity_mut(who).insert(built);
     }
 
@@ -2761,7 +2771,7 @@ mod tests {
     struct Answered(Vec<crate::effects::Fired>);
 
     fn answered(mut fired: MessageReader<crate::effects::Fired>, mut seen: ResMut<Answered>) {
-        let theirs = [crate::effects::Moments::STRUCK, crate::effects::Moments::DIED];
+        let theirs = [crate::effects::TriggerKinds::STRUCK, crate::effects::TriggerKinds::DIED];
         seen.0.extend(fired.read().filter(|f| theirs.contains(&f.moment)).copied());
     }
 
@@ -2866,7 +2876,7 @@ mod tests {
         attack(&mut app, player, doomed);
         wait(&mut app, player, 2);
         let answered: Vec<_> = app.world().resource::<Answered>().0.iter().map(|f| (f.moment, f.by)).collect();
-        let (struck, died) = (crate::effects::Moments::STRUCK, crate::effects::Moments::DIED);
+        let (struck, died) = (crate::effects::TriggerKinds::STRUCK, crate::effects::TriggerKinds::DIED);
         assert_eq!(answered, vec![(struck, Some(player)), (died, Some(player))], "each set off by the blow that killed it");
     }
 
@@ -2880,7 +2890,7 @@ mod tests {
     struct Landed(Vec<(Point, Option<Entity>, bool)>);
 
     fn landed(mut fired: MessageReader<crate::effects::Fired>, standing: Query<(), With<Position>>, doomed: Res<Doomed>, mut seen: ResMut<Landed>) {
-        for f in fired.read().filter(|f| f.moment == crate::effects::Moments::DIED) {
+        for f in fired.read().filter(|f| f.moment == crate::effects::TriggerKinds::DIED) {
             seen.0.push((f.at, f.by, standing.contains(doomed.0)));
         }
     }

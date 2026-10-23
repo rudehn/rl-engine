@@ -760,7 +760,7 @@ mod tests {
     }
 
     fn bestiary() -> Bestiary {
-        crate::content::Library::load(&crate::content::effect_kinds(), &Moments::default()).bestiary
+        crate::content::Library::load(&crate::content::effect_kinds(), &TriggerKinds::default()).bestiary
     }
 
     /// The shipped biomes each have three favored kinds able to spawn on

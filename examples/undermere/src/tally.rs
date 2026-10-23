@@ -862,7 +862,7 @@ mod tests {
     /// before the burst landed and the record is written a frame later.
     #[test]
     fn a_death_by_a_dying_monsters_burst_is_recorded_in_its_name() {
-        use atglyph::ecs::{EffectKinds, Moments, Triggers};
+        use atglyph::ecs::{EffectKinds, TriggerKinds, Triggers};
         let mut app = headless(RunSeed(8));
         let me = arrive(&mut app, map_of(3));
         clear_monsters(&mut app);
@@ -873,7 +873,7 @@ mod tests {
         let specs: Vec<atglyph::rules::TriggerSpec> = atglyph::rules::Names::new().load_list(burst).expect("the burst parses");
         let built = {
             let world = app.world();
-            Triggers::build(&specs, &[], world.resource::<Moments>(), world.resource::<EffectKinds>(), &world.resource::<Registries>().names())
+            Triggers::build(&specs, &[], world.resource::<TriggerKinds>(), world.resource::<EffectKinds>(), &world.resource::<Registries>().names())
                 .expect("the burst builds")
         };
         app.world_mut().entity_mut(goblin).insert(built);

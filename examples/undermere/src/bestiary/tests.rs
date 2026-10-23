@@ -11,13 +11,13 @@ use atglyph::rules::parts::KeepAway;
 const DEEPEST: i32 = 10;
 
 fn library() -> Library {
-    Library::load(&crate::content::effect_kinds(), &Moments::default())
+    Library::load(&crate::content::effect_kinds(), &TriggerKinds::default())
 }
 
 /// `text`, a monsters file of a test's own, read against the shipped
 /// registries, traits and items.
 fn fixture(library: &Library, text: &str) -> Result<Registry<MonsterDef>, ContentError> {
-    read(text, &library.registries, &library.traits, &library.armory.defs, &crate::content::effect_kinds(), &Moments::default())
+    read(text, &library.registries, &library.traits, &library.armory.defs, &crate::content::effect_kinds(), &TriggerKinds::default())
 }
 
 /// Every reason a fixture that should not read was refused.

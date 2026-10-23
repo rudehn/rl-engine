@@ -147,7 +147,7 @@ const POOL_RON: &str = include_str!("../assets/pool.ron");
 pub fn load(tiles: &TileRegistry, layout: &LayoutDef) -> (Prefabs<MonsterDef>, Pool, Bestiary) {
     // The whole library, in its one order, since the monsters a piece
     // stands are read against the traits and the items they name.
-    let library = Library::load(&crate::content::effect_kinds(), &Moments::default());
+    let library = Library::load(&crate::content::effect_kinds(), &TriggerKinds::default());
     let names = library.registries.names().with("monster", &library.bestiary.defs).with("prop", &library.registries.props);
     // Roles read before the pieces, which name one by a `Monster(role:)`
     // slot and need it in `names` to resolve against.
@@ -208,7 +208,7 @@ mod tests {
     fn the_coverage_report_finds_every_slot_at_every_band_it_may_stand_at() {
         let undermere = Undermere::new(RunSeed(0));
         let (prefabs, pool, _) = load(undermere.tiles(), &crate::dungeon::layout());
-        let library = Library::load(&crate::content::effect_kinds(), &Moments::default());
+        let library = Library::load(&crate::content::effect_kinds(), &TriggerKinds::default());
         let sources = atglyph::rules::prefab::Sources {
             roles: prefabs.roles(),
             monsters: &library.bestiary.spawns,

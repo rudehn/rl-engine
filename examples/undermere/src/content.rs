@@ -510,7 +510,7 @@ impl Library {
     /// Reads every file, with `kinds` and `moments` the ones the app
     /// registered, so an effect or a moment nobody registered fails here.
     /// Panics naming the file at the first one that is broken.
-    pub fn load(kinds: &EffectKinds, moments: &Moments) -> Self {
+    pub fn load(kinds: &EffectKinds, moments: &TriggerKinds) -> Self {
         let registries = registries();
         let abilities = abilities(&registries, kinds);
         let traits = crate::traits::load_defs(&registries, abilities.defs());
@@ -543,7 +543,7 @@ mod tests {
     /// would panic naming the file and the entry.
     #[test]
     fn every_content_file_loads_and_every_name_in_it_resolves() {
-        let library = Library::load(&effect_kinds(), &Moments::default());
+        let library = Library::load(&effect_kinds(), &TriggerKinds::default());
         assert!(library.abilities.defs().len() >= 2, "fire breath and drowning grasp, and part 3's own");
         assert!(library.traits.len() >= 19, "the skeleton's nineteen traits, and part 3's own");
         assert!(library.armory.defs.len() >= 18, "about twenty items: {}", library.armory.defs.len());
@@ -611,7 +611,7 @@ mod tests {
     #[test]
     fn nothing_in_the_content_is_orphaned() {
         use atglyph::rules::prefab::Reached;
-        let library = Library::load(&effect_kinds(), &Moments::default());
+        let library = Library::load(&effect_kinds(), &TriggerKinds::default());
         let (registries, armory, bestiary) = (&library.registries, &library.armory, &library.bestiary);
         let undermere = crate::dungeon::Undermere::new(atglyph::primitives::RunSeed(0));
         let prefabs = undermere.prefabs();
@@ -755,7 +755,7 @@ mod tests {
         let r = registries();
         let chilled = r.statuses.get(r.statuses.expect("chilled"));
         assert_eq!(chilled.modifiers.iter().map(|m| (m.stat, m.op)).collect::<Vec<_>>(), [(r.stats.expect(SPEED), Op::Add(-25))]);
-        let library = Library::load(&effect_kinds(), &Moments::default());
+        let library = Library::load(&effect_kinds(), &TriggerKinds::default());
         let grasp = library.abilities.expect("drowning grasp");
         let said = library.abilities.describe(grasp, &library.registries);
         assert!(said.iter().any(|s| s == "chilled for 4 turns"), "{said:?}");
@@ -769,7 +769,7 @@ mod tests {
     /// a blink moves whoever blinks four cells.
     #[test]
     fn part_3s_new_abilities_land_what_their_trait_says() {
-        let library = Library::load(&effect_kinds(), &Moments::default());
+        let library = Library::load(&effect_kinds(), &TriggerKinds::default());
         let said = |name: &str| library.abilities.describe(library.abilities.expect(name), &library.registries);
         assert_eq!(said("spit web"), vec!["webbed for 2 turns"]);
         assert_eq!(said("blink"), vec!["blinks you up to 4 cells"]);
@@ -1088,7 +1088,7 @@ mod tests {
     /// reaches and its colour.
     #[test]
     fn every_light_the_files_write_is_at_the_one_brightness() {
-        let library = Library::load(&effect_kinds(), &Moments::default());
+        let library = Library::load(&effect_kinds(), &TriggerKinds::default());
         let undermere = crate::dungeon::Undermere::new(RunSeed(0));
         let mut lights: Vec<(String, Glow)> = Vec::new();
         lights.extend(undermere.tiles().iter().filter_map(|(_, t)| t.light.map(|l| (t.name.clone(), l))));

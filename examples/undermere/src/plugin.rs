@@ -137,7 +137,7 @@ impl Plugin for UndermerePlugin {
         // game here, by name.
         let library = {
             let world = app.world();
-            Library::load(world.resource::<EffectKinds>(), world.resource::<Moments>())
+            Library::load(world.resource::<EffectKinds>(), world.resource::<TriggerKinds>())
         };
         // What the run is for, read once with the rest: the engine forgets
         // a run's progress when it ends, so the next run's quest is open

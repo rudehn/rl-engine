@@ -13,9 +13,9 @@
 //! look is seen to fly there before it lands. What a use costs the thing
 //! is the consumables' business, read off the same messages.
 //!
-//! Moments are interned in [`Moments`] rather than enumerated, so a game
+//! TriggerKinds are interned in [`TriggerKinds`] rather than enumerated, so a game
 //! adds its own, an overheating gun or a charged console, with
-//! [`AddMoment::add_moment`] and reports it from a system of its own.
+//! [`AddTriggerKind::add_trigger_kind`] and reports it from a system of its own.
 
 use std::sync::Arc;
 
@@ -33,10 +33,10 @@ use crate::world::WorldMap;
 /// made or landed, a cell stepped on, a prop broken, a worn thing's clock,
 /// an actor struck or dead, or one a game names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Moment;
+pub struct TriggerKind;
 
 /// A registered moment.
-pub type MomentId = atglyph_core::Id<Moment>;
+pub type TriggerKindId = atglyph_core::Id<TriggerKind>;
 
 /// Every moment in play, in the order they were first named.
 ///
@@ -44,52 +44,52 @@ pub type MomentId = atglyph_core::Id<Moment>;
 /// and reports it from a system of its own. The engine's are interned
 /// first, so their ids are the constants on this type.
 #[derive(Resource, Debug, Clone)]
-pub struct Moments(Interner<Moment>);
+pub struct TriggerKinds(Interner<TriggerKind>);
 
-impl Moments {
+impl TriggerKinds {
     /// A thing in the bag was used.
-    pub const USE: MomentId = MomentId::from_raw(0);
+    pub const USE: TriggerKindId = TriggerKindId::from_raw(0);
     /// A thrown thing came to rest.
-    pub const LAND: MomentId = MomentId::from_raw(1);
+    pub const LAND: TriggerKindId = TriggerKindId::from_raw(1);
     /// An attack was made with a worn thing.
-    pub const FIRE: MomentId = MomentId::from_raw(2);
+    pub const FIRE: TriggerKindId = TriggerKindId::from_raw(2);
     /// An attack struck someone: reported on the worn thing it was made
     /// with, and on the actor who made it.
-    pub const HIT: MomentId = MomentId::from_raw(3);
+    pub const HIT: TriggerKindId = TriggerKindId::from_raw(3);
     /// Somebody stepped onto a prop's cell.
-    pub const ENTERED: MomentId = MomentId::from_raw(4);
+    pub const ENTERED: TriggerKindId = TriggerKindId::from_raw(4);
     /// A prop was broken.
-    pub(crate) const DESTROYED: MomentId = MomentId::from_raw(5);
+    pub(crate) const DESTROYED: TriggerKindId = TriggerKindId::from_raw(5);
     /// A worn thing's own clock came round: see
     /// [`Pulse`](crate::items::Pulse).
-    pub const PULSE: MomentId = MomentId::from_raw(6);
+    pub const PULSE: TriggerKindId = TriggerKindId::from_raw(6);
     /// An attack landed on an actor: reported on the one it landed on, as
     /// [`HIT`](Self::HIT) is on what struck it.
-    pub(crate) const STRUCK: MomentId = MomentId::from_raw(7);
+    pub(crate) const STRUCK: TriggerKindId = TriggerKindId::from_raw(7);
     /// An actor died: reported a pass later, from a [`Remnant`], since the
     /// actor itself is out of the world by then.
-    pub(crate) const DIED: MomentId = MomentId::from_raw(8);
+    pub(crate) const DIED: TriggerKindId = TriggerKindId::from_raw(8);
 
     /// The engine's moments, in the order their ids are handed out.
     pub(crate) const BUILT_IN: [&'static str; 9] = ["use", "land", "fire", "hit", "entered", "destroyed", "pulse", "struck", "died"];
 
     /// The id for `name`, assigning a new one if it is unseen.
-    pub(crate) fn declare(&mut self, name: &str) -> MomentId {
+    pub(crate) fn declare(&mut self, name: &str) -> TriggerKindId {
         self.0.intern(name)
     }
 
     /// The id for `name`, if it has been declared.
-    pub fn get(&self, name: &str) -> Option<MomentId> {
+    pub fn get(&self, name: &str) -> Option<TriggerKindId> {
         self.0.get(name)
     }
 
     /// The name behind `id`.
-    pub fn name(&self, id: MomentId) -> &str {
+    pub fn name(&self, id: TriggerKindId) -> &str {
         self.0.name(id)
     }
 }
 
-impl Default for Moments {
+impl Default for TriggerKinds {
     fn default() -> Self {
         let mut names = Interner::new();
         for name in Self::BUILT_IN {
@@ -100,15 +100,15 @@ impl Default for Moments {
 }
 
 /// Declares a moment while the app is being built.
-pub trait AddMoment {
-    /// Declares the moment `name`. Look its id up again with [`Moments::get`].
-    fn add_moment(&mut self, name: &str) -> &mut Self;
+pub trait AddTriggerKind {
+    /// Declares the moment `name`. Look its id up again with [`TriggerKinds::get`].
+    fn add_trigger_kind(&mut self, name: &str) -> &mut Self;
 }
 
-impl AddMoment for App {
-    fn add_moment(&mut self, name: &str) -> &mut Self {
-        self.init_resource::<Moments>();
-        self.world_mut().resource_mut::<Moments>().declare(name);
+impl AddTriggerKind for App {
+    fn add_trigger_kind(&mut self, name: &str) -> &mut Self {
+        self.init_resource::<TriggerKinds>();
+        self.world_mut().resource_mut::<TriggerKinds>().declare(name);
         self
     }
 }
@@ -120,7 +120,7 @@ impl AddMoment for App {
 #[derive(Clone)]
 pub struct Trigger {
     /// What sets it off.
-    pub on: MomentId,
+    pub on: TriggerKindId,
     /// Where it lands, around where the moment happened.
     pub area: EffectArea,
     /// Times it may still go off; `None` for every time.
@@ -180,12 +180,12 @@ impl Triggers {
     /// targeting anywhere but on a thing's one `use` trigger, or aimed at
     /// nobody but its user, and an `asks` anywhere but there or beside a
     /// targeting.
-    pub fn build(specs: &[TriggerSpec], shared: &[EffectSpec], moments: &Moments, kinds: &EffectKinds, names: &Names<'_>) -> Result<Self, Vec<String>> {
+    pub fn build(specs: &[TriggerSpec], shared: &[EffectSpec], moments: &TriggerKinds, kinds: &EffectKinds, names: &Names<'_>) -> Result<Self, Vec<String>> {
         let mut errors = Vec::new();
         // A use is pointed or made on a thing once, so an aimed or asking
         // one is the thing's only use: a second would land around where the
         // first was pointed, or with a thing nobody chose for it.
-        let uses: Vec<&TriggerSpec> = specs.iter().filter(|s| moments.get(&s.on) == Some(Moments::USE)).collect();
+        let uses: Vec<&TriggerSpec> = specs.iter().filter(|s| moments.get(&s.on) == Some(TriggerKinds::USE)).collect();
         if uses.len() > 1 && uses.iter().any(|s| s.targeting.is_some() || s.asks.is_some()) {
             errors.push("a thing whose use is aimed or asks for a thing has one `use` trigger, that one; write what it lands in its one list".to_string());
         }
@@ -203,10 +203,10 @@ impl Triggers {
         let mut built = Vec::new();
         for spec in specs {
             let Some(on) = moments.get(&spec.on) else {
-                errors.push(format!("no moment is registered as {:?}; the engine's are {}", spec.on, Moments::BUILT_IN.join(", ")));
+                errors.push(format!("no moment is registered as {:?}; the engine's are {}", spec.on, TriggerKinds::BUILT_IN.join(", ")));
                 continue;
             };
-            if on == Moments::PULSE {
+            if on == TriggerKinds::PULSE {
                 match spec.every {
                     None => errors.push("a pulse trigger needs `every`, the hundredths between pulses".to_string()),
                     Some(0) => errors.push("a pulse trigger's `every` of 0 would never come round again".to_string()),
@@ -216,7 +216,7 @@ impl Triggers {
                 errors.push(format!("the trigger on {:?} carries an `every`; `every` is only for a pulse trigger", spec.on));
             }
             match spec.targeting {
-                Some(_) if on != Moments::USE => {
+                Some(_) if on != TriggerKinds::USE => {
                     errors.push(format!("the trigger on {:?} carries a `targeting`; only a \"use\" is pointed by whoever makes it", spec.on));
                 }
                 Some(targeting) if !targeting.aim.needs_cursor() => {
@@ -224,7 +224,7 @@ impl Triggers {
                 }
                 _ => {}
             }
-            if spec.asks.is_some() && on != Moments::USE {
+            if spec.asks.is_some() && on != TriggerKinds::USE {
                 errors.push(format!("the trigger on {:?} carries an `asks`; only a \"use\" is made by someone choosing what it is made on", spec.on));
             }
             if spec.asks.is_some() && spec.targeting.is_some() {
@@ -263,7 +263,7 @@ impl Triggers {
     /// once, and what the items resolver refuses an aim by. `None` for a
     /// thing whose use lands on its user, or that has none.
     pub fn targeting(&self) -> Option<Targeting> {
-        self.on(Moments::USE).find_map(|t| t.targeting)
+        self.on(TriggerKinds::USE).find_map(|t| t.targeting)
     }
 
     /// What this carrier's use asks its user for, when it is used on
@@ -271,11 +271,11 @@ impl Triggers {
     /// using it at once, and what the items resolver refuses a choice by.
     /// `None` for a thing whose use asks for nothing, or that has none.
     pub fn asks(&self) -> Option<&Asks> {
-        self.on(Moments::USE).find_map(|t| t.asks.as_ref())
+        self.on(TriggerKinds::USE).find_map(|t| t.asks.as_ref())
     }
 
     /// The triggers on `moment`, in the order they were written.
-    pub fn on(&self, moment: MomentId) -> impl Iterator<Item = &Trigger> {
+    pub fn on(&self, moment: TriggerKindId) -> impl Iterator<Item = &Trigger> {
         self.0.iter().filter(move |t| t.on == moment)
     }
 
@@ -284,7 +284,7 @@ impl Triggers {
     /// than keeping a second copy of the number. `None` when the carrier has
     /// no pulse trigger at all.
     pub(crate) fn pulse_every(&self) -> Option<u32> {
-        self.0.iter().find(|t| t.on == Moments::PULSE).and_then(|t| t.every)
+        self.0.iter().find(|t| t.on == TriggerKinds::PULSE).and_then(|t| t.every)
     }
 }
 
@@ -297,7 +297,7 @@ pub struct Fired {
     /// The carrier: a prop, a thing used or thrown, a weapon.
     pub on: Entity,
     /// Which moment.
-    pub moment: MomentId,
+    pub moment: TriggerKindId,
     /// Who set it off, when anyone did.
     pub by: Option<Entity>,
     /// Where it happened: for a use pointed somewhere, the cell it was
@@ -322,7 +322,7 @@ pub struct FiredOn {
     pub carrier: Entity,
     /// The moment, as its `Fired` names it, so another moment of the same
     /// carrier in the pass, a worn thing's pulse, is not made on it.
-    pub moment: MomentId,
+    pub moment: TriggerKindId,
     /// What it was used on.
     pub on: Entity,
 }
@@ -378,7 +378,7 @@ pub struct LandsAsItself;
 #[derive(Component, Debug, Clone, Copy)]
 pub struct Remnant {
     /// The moment it answers.
-    pub moment: MomentId,
+    pub moment: TriggerKindId,
     /// Who set it off, when anyone did.
     pub by: Option<Entity>,
     /// Where it happened.
@@ -428,11 +428,11 @@ pub(crate) fn report_died(
     let mut reported: Vec<Entity> = Vec::new();
     for death in deaths.read() {
         let Ok(triggers) = actors.get(death.entity) else { continue };
-        if triggers.on(Moments::DIED).next().is_none() || reported.contains(&death.entity) {
+        if triggers.on(TriggerKinds::DIED).next().is_none() || reported.contains(&death.entity) {
             continue;
         }
         reported.push(death.entity);
-        let remnant = Remnant { moment: Moments::DIED, by: death.credit, at: death.at };
+        let remnant = Remnant { moment: TriggerKinds::DIED, by: death.credit, at: death.at };
         let carrier = commands.spawn((triggers.clone(), remnant, LandsAsItself)).id();
         keeps.copy(&mut commands, death.entity, carrier);
     }
@@ -647,7 +647,7 @@ pub(crate) fn land_triggers(
         let bonus = bonus.copied().unwrap_or_default();
         // Read before the charge this use spends is taken off, which comes
         // after the landing: empty now is empty when it was used.
-        let used_empty = f.moment == Moments::USE && held.is_some_and(|c| c.is_empty());
+        let used_empty = f.moment == TriggerKinds::USE && held.is_some_and(|c| c.is_empty());
         for trigger in triggers.0.iter_mut().filter(|t| t.on == f.moment && !used_empty) {
             if trigger.fires == Some(0) {
                 continue;
@@ -740,12 +740,12 @@ mod tests {
             ron::Options::default().with_default_extension(ron::extensions::Extensions::IMPLICIT_SOME).from_str(specs).unwrap();
         let world = app.world();
         let registries = world.resource::<Registries>();
-        Triggers::build(&specs, shared, world.resource::<Moments>(), world.resource::<EffectKinds>(), &registries.names())
+        Triggers::build(&specs, shared, world.resource::<TriggerKinds>(), world.resource::<EffectKinds>(), &registries.names())
     }
 
     /// Reports `moment` on `on` at `at` and runs one pass of the turn loop,
     /// which is where a moment is landed.
-    fn fire(app: &mut App, on: Entity, moment: MomentId, at: Point) {
+    fn fire(app: &mut App, on: Entity, moment: TriggerKindId, at: Point) {
         app.world_mut().write_message(Fired { on, moment, by: None, at });
         app.world_mut().run_schedule(crate::plugin::Turn);
         app.update();
@@ -780,7 +780,7 @@ mod tests {
         let triggers = build(&app, r#"[(on: "use")]"#, &harm("3")).unwrap();
         let under = stand(&mut app, at);
         let carrier = app.world_mut().spawn(triggers).id();
-        fire(&mut app, carrier, Moments::USE, at);
+        fire(&mut app, carrier, TriggerKinds::USE, at);
         assert_eq!(health(&app, under), 7);
     }
 
@@ -791,7 +791,7 @@ mod tests {
         let under = stand(&mut app, at);
         let beside = stand(&mut app, at.offset(1, 0));
         let carrier = app.world_mut().spawn(triggers).id();
-        fire(&mut app, carrier, Moments::USE, at);
+        fire(&mut app, carrier, TriggerKinds::USE, at);
         assert_eq!((health(&app, under), health(&app, beside)), (7, 10));
     }
 
@@ -802,7 +802,7 @@ mod tests {
         let near = stand(&mut app, at.offset(1, 0));
         let far = stand(&mut app, at.offset(3, 0));
         let carrier = app.world_mut().spawn(triggers).id();
-        fire(&mut app, carrier, Moments::LAND, at);
+        fire(&mut app, carrier, TriggerKinds::LAND, at);
         assert_eq!((health(&app, near), health(&app, far)), (7, 10));
     }
 
@@ -824,7 +824,7 @@ mod tests {
         app.init_resource::<Cues>().add_systems(bevy::app::PostUpdate, keep_cues);
         let seen = build(&app, r#"[(on: "land", area: Burst(radius: 1), look: (glyph: '*', color: (r: 255, g: 128, b: 0)))]"#, &harm("3")).unwrap();
         let carrier = app.world_mut().spawn(seen).id();
-        fire(&mut app, carrier, Moments::LAND, at);
+        fire(&mut app, carrier, TriggerKinds::LAND, at);
         let look = atglyph_rules::ability::ParticleLook { glyph: '*', color: atglyph_grid::Rgb::new(255, 128, 0) };
         let cues = std::mem::take(&mut app.world_mut().resource_mut::<Cues>().0);
         let [crate::cue::Cue::Burst { on, look: shown, from }] = cues.as_slice() else { panic!("one burst: {cues:?}") };
@@ -838,7 +838,7 @@ mod tests {
 
         let unseen = build(&app, r#"[(on: "land", area: Burst(radius: 1))]"#, &harm("3")).unwrap();
         let carrier = app.world_mut().spawn(unseen).id();
-        fire(&mut app, carrier, Moments::LAND, at);
+        fire(&mut app, carrier, TriggerKinds::LAND, at);
         assert!(app.world().resource::<Cues>().0.is_empty(), "no look, nothing shown");
     }
 
@@ -852,7 +852,7 @@ mod tests {
         let sheltered = stand(&mut app, at.offset(2, 0));
         let open = stand(&mut app, at.offset(-2, 0));
         let carrier = app.world_mut().spawn(triggers).id();
-        fire(&mut app, carrier, Moments::LAND, at);
+        fire(&mut app, carrier, TriggerKinds::LAND, at);
         assert_eq!((health(&app, sheltered), health(&app, open)), (10, 7));
     }
 
@@ -889,18 +889,18 @@ mod tests {
         let victim = stand(&mut app, at);
         let one = app.world_mut().spawn(triggers.clone()).id();
         let two = app.world_mut().spawn(triggers).id();
-        fire(&mut app, one, Moments::ENTERED, at);
-        fire(&mut app, one, Moments::ENTERED, at);
+        fire(&mut app, one, TriggerKinds::ENTERED, at);
+        fire(&mut app, one, TriggerKinds::ENTERED, at);
         assert_eq!(health(&app, victim), 9, "the first carrier went off once");
-        fire(&mut app, two, Moments::ENTERED, at);
+        fire(&mut app, two, TriggerKinds::ENTERED, at);
         assert_eq!(health(&app, victim), 8, "and springing it spent nothing of the second");
     }
 
     #[test]
     fn a_moment_a_game_registered_lands_like_one_of_the_engines() {
         let (mut app, at) = floor();
-        app.add_moment("overheat");
-        let overheat = app.world().resource::<Moments>().get("overheat").unwrap();
+        app.add_trigger_kind("overheat");
+        let overheat = app.world().resource::<TriggerKinds>().get("overheat").unwrap();
         let triggers = build(&app, r#"[(on: "overheat")]"#, &harm("2")).unwrap();
         let wielder = stand(&mut app, at);
         let gun = app.world_mut().spawn(triggers).id();
@@ -914,7 +914,7 @@ mod tests {
         let triggers = build(&app, r#"[(on: "use")]"#, &harm("3")).unwrap();
         let under = stand(&mut app, at);
         let carrier = app.world_mut().spawn(triggers).id();
-        fire(&mut app, carrier, Moments::LAND, at);
+        fire(&mut app, carrier, TriggerKinds::LAND, at);
         assert_eq!(health(&app, under), 10);
     }
 
@@ -930,7 +930,7 @@ mod tests {
         stand(&mut app, at);
         app.init_resource::<DealtLog>().add_systems(bevy::app::PostUpdate, keep_dealt);
         let carrier = app.world_mut().spawn(triggers).id();
-        fire(&mut app, carrier, Moments::USE, at);
+        fire(&mut app, carrier, TriggerKinds::USE, at);
         app.update();
         assert_eq!(app.world().resource::<DealtLog>().0, vec![2, 5]);
     }
@@ -946,21 +946,21 @@ mod tests {
     /// moment before it keeps the id a save or a content file already has.
     #[test]
     fn the_pulse_is_a_built_in_moment_after_the_six_that_came_first() {
-        let moments = Moments::default();
-        assert_eq!(moments.get("pulse"), Some(Moments::PULSE));
-        assert_eq!(Moments::PULSE, MomentId::from_raw(6));
-        assert_eq!(moments.get("destroyed"), Some(Moments::DESTROYED), "the old ids did not move");
+        let moments = TriggerKinds::default();
+        assert_eq!(moments.get("pulse"), Some(TriggerKinds::PULSE));
+        assert_eq!(TriggerKinds::PULSE, TriggerKindId::from_raw(6));
+        assert_eq!(moments.get("destroyed"), Some(TriggerKinds::DESTROYED), "the old ids did not move");
     }
 
     /// An actor's two moments come after the pulse, for the same reason the
     /// pulse came after the six, and a game's own come after them.
     #[test]
     fn struck_and_died_are_built_in_moments_after_the_seven_that_came_first() {
-        let mut moments = Moments::default();
-        assert_eq!((moments.get("struck"), moments.get("died")), (Some(Moments::STRUCK), Some(Moments::DIED)));
-        assert_eq!((Moments::STRUCK, Moments::DIED), (MomentId::from_raw(7), MomentId::from_raw(8)));
-        assert_eq!(moments.get("pulse"), Some(Moments::PULSE), "the old ids did not move");
-        assert_eq!(moments.declare("overheat"), MomentId::from_raw(9));
+        let mut moments = TriggerKinds::default();
+        assert_eq!((moments.get("struck"), moments.get("died")), (Some(TriggerKinds::STRUCK), Some(TriggerKinds::DIED)));
+        assert_eq!((TriggerKinds::STRUCK, TriggerKinds::DIED), (TriggerKindId::from_raw(7), TriggerKindId::from_raw(8)));
+        assert_eq!(moments.get("pulse"), Some(TriggerKinds::PULSE), "the old ids did not move");
+        assert_eq!(moments.declare("overheat"), TriggerKindId::from_raw(9));
     }
 
     #[test]
@@ -1099,10 +1099,10 @@ mod tests {
             build(&app, r#"[(on: "use", asks: (prompt: "Which?"), effects: [(kind: "NoteOn")]), (on: "land", effects: [(kind: "NoteOn")])]"#, &[]).unwrap();
         let (carrier, other) = (app.world_mut().spawn(triggers.clone()).id(), app.world_mut().spawn(triggers).id());
         let thing = app.world_mut().spawn_empty().id();
-        app.world_mut().write_message(FiredOn { carrier, moment: Moments::USE, on: thing });
-        app.world_mut().write_message(Fired { on: other, moment: Moments::USE, by: None, at });
-        app.world_mut().write_message(Fired { on: carrier, moment: Moments::LAND, by: None, at });
-        fire(&mut app, carrier, Moments::USE, at);
+        app.world_mut().write_message(FiredOn { carrier, moment: TriggerKinds::USE, on: thing });
+        app.world_mut().write_message(Fired { on: other, moment: TriggerKinds::USE, by: None, at });
+        app.world_mut().write_message(Fired { on: carrier, moment: TriggerKinds::LAND, by: None, at });
+        fire(&mut app, carrier, TriggerKinds::USE, at);
         assert_eq!(app.world().resource::<LandedOn>().0, vec![None, None, Some(thing)], "only the use it was made on carries the thing");
     }
 

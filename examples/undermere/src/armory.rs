@@ -213,7 +213,7 @@ impl Armory {
     /// a potion naming an effect nobody registered is caught while the file
     /// is read rather than by a potion that quietly does nothing. Panics
     /// naming the file and every problem in it.
-    pub fn load(registries: &Registries, traits: &Registry<TraitDef>, kinds: &EffectKinds, moments: &Moments) -> Self {
+    pub fn load(registries: &Registries, traits: &Registry<TraitDef>, kinds: &EffectKinds, moments: &TriggerKinds) -> Self {
         let defs = load_defs(registries, traits);
         let names = registries.names();
         let tags = |d: &ItemDef| d.tags.iter().map(|t| t.id()).collect();
@@ -239,7 +239,7 @@ impl Armory {
         registries: &Registries,
         traits: &Registry<TraitDef>,
         kinds: &EffectKinds,
-        moments: &Moments,
+        moments: &TriggerKinds,
     ) -> Result<Self, ContentError> {
         let names = registries.names();
         let defaults = level_defaults(registries);
@@ -1051,7 +1051,7 @@ mod tests {
     use crate::testing::{adventurer, equip, familiar, find, headless, make, name_of, said, settle};
 
     fn library() -> Library {
-        Library::load(&crate::content::effect_kinds(), &Moments::default())
+        Library::load(&crate::content::effect_kinds(), &TriggerKinds::default())
     }
 
     /// Spawns `names` through the library's armory into a bare world, the
@@ -1279,7 +1279,7 @@ mod tests {
         let rod = r#"[(name: "rod", glyph: '/', color: (0.5, 0.5, 0.5), tags: ["staff"], consumable: (charges: 1, when_empty: Kept),
                       triggers: [(on: "use", effects: [(kind: "Mend", args: (roll: "1d4"))])])]"#;
         let defs = read(rod, &library.registries, &library.traits).expect("the rod reads");
-        let armory = Armory::new(defs, LootTable::default(), &library.registries, &library.traits, &crate::content::effect_kinds(), &Moments::default())
+        let armory = Armory::new(defs, LootTable::default(), &library.registries, &library.traits, &crate::content::effect_kinds(), &TriggerKinds::default())
             .expect("and is made");
         let mut world = World::new();
         world.insert_resource(library.registries.clone());
@@ -1410,7 +1410,7 @@ mod tests {
         // armory builds each thing's parts.
         let quick = r#"[(name: "quick staff", glyph: '/', color: (0.5, 0.5, 0.5), tags: ["staff"], consumable: (charges: 1, when_empty: Kept, recharge: 0))]"#;
         let defs = read(quick, &library.registries, &library.traits).expect("the staff reads");
-        let made = Armory::new(defs, LootTable::default(), &library.registries, &library.traits, &crate::content::effect_kinds(), &Moments::default());
+        let made = Armory::new(defs, LootTable::default(), &library.registries, &library.traits, &crate::content::effect_kinds(), &TriggerKinds::default());
         let Err(ContentError::Invalid(errors)) = made else { panic!("it was made") };
         assert_eq!(errors, ["quick staff: a charge that comes back in no time at all is never spent"]);
     }
@@ -1535,8 +1535,8 @@ mod tests {
         let (world, made) = spawned(&library, &potions.map(|(name, _)| name));
         for ((name, lands), e) in potions.iter().zip(&made) {
             let triggers = world.get::<Triggers>(*e).unwrap_or_else(|| panic!("{name} does something"));
-            assert!(triggers.on(Moments::USE).next().is_some(), "{name} is drunk");
-            assert_eq!(triggers.on(Moments::LAND).next().is_some(), *lands, "{name}: whether it does something where it breaks");
+            assert!(triggers.on(TriggerKinds::USE).next().is_some(), "{name} is drunk");
+            assert_eq!(triggers.on(TriggerKinds::LAND).next().is_some(), *lands, "{name}: whether it does something where it breaks");
             assert!(world.get::<Consumable>(*e).is_some() && world.get::<Throwable>(*e).is_some(), "{name} is spent, and can be thrown");
         }
     }
@@ -1591,7 +1591,8 @@ mod tests {
         [(name: "stone ring", glyph: '=', color: (0.5, 0.5, 0.5), wear: (slot: "off hand"), armor: 1, resists: [("cold", 10)],
           lends: ["armored", "fire-blooded", "regenerates", "sees in the dark"])]"#;
         let defs = read(ring, registries, traits).expect("the ring reads");
-        let armory = Armory::new(defs, LootTable::default(), registries, traits, &crate::content::effect_kinds(), &Moments::default()).expect("and is made");
+        let armory =
+            Armory::new(defs, LootTable::default(), registries, traits, &crate::content::effect_kinds(), &TriggerKinds::default()).expect("and is made");
         let mut world = World::new();
         let mut queue = CommandQueue::default();
         let made = spawn_item(&mut Commands::new(&mut queue, &world), &armory, armory.defs.expect("stone ring"));

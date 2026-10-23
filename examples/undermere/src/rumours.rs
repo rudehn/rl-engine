@@ -152,7 +152,7 @@ mod tests {
     use crate::townsfolk::Folk;
 
     fn library() -> Library {
-        Library::load(&crate::content::effect_kinds(), &Moments::default())
+        Library::load(&crate::content::effect_kinds(), &TriggerKinds::default())
     }
 
     /// The words of a log line `Name: "words"`, as the innkeeper says them.

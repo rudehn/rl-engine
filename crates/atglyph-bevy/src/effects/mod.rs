@@ -74,7 +74,7 @@ pub enum Source {
         /// thing where it came down, a weapon.
         on: Entity,
         /// What set it off.
-        moment: MomentId,
+        moment: TriggerKindId,
     },
     /// A prop's offer was taken up.
     Offer(Entity),
@@ -605,7 +605,7 @@ impl Plugin for EffectsPlugin {
         }
         app.insert_resource(EffectsBuilt);
         app.init_resource::<EffectKinds>()
-            .init_resource::<Moments>()
+            .init_resource::<TriggerKinds>()
             .add_message::<Fired>()
             .add_message::<FiredOn>()
             .add_stream::<EffectRng>("EffectsPlugin")
@@ -703,8 +703,8 @@ mod tests {
         };
         let bolt = AbilityId::from_raw(0);
         assert_eq!(landing(user, Source::Ability(bolt)).reach(), DamageRoute::Ability(bolt));
-        assert_eq!(landing(user, Source::Trigger { on: rod, moment: Moments::USE }).reach(), DamageRoute::Thing(rod));
-        assert_eq!(landing(rod, Source::Trigger { on: rod, moment: Moments::USE }).reach(), DamageRoute::Effect, "a trap is its own user");
+        assert_eq!(landing(user, Source::Trigger { on: rod, moment: TriggerKinds::USE }).reach(), DamageRoute::Thing(rod));
+        assert_eq!(landing(rod, Source::Trigger { on: rod, moment: TriggerKinds::USE }).reach(), DamageRoute::Effect, "a trap is its own user");
         assert_eq!(landing(user, Source::Offer(rod)).reach(), DamageRoute::Effect);
     }
 }

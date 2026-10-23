@@ -479,7 +479,7 @@ pub fn learn_by_use(mut events: MessageReader<ItemEvent>, mut knowing: Knowing, 
             _ => {}
         }
         let Ok((kind, triggers)) = knowing.things.get(item) else { continue };
-        if matches!(how, Shown::Thrown) && triggers.is_none_or(|t| t.on(Moments::LAND).next().is_none()) {
+        if matches!(how, Shown::Thrown) && triggers.is_none_or(|t| t.on(TriggerKinds::LAND).next().is_none()) {
             continue;
         }
         let name = &knowing.armory.defs.get(kind.0).name;
@@ -560,23 +560,23 @@ pub fn weigh_landings(
     armory: Res<Armory>,
     mut nothing: ResMut<ShowedNothing>,
 ) {
-    for f in fired.read().filter(|f| f.moment == Moments::USE || f.moment == Moments::LAND) {
+    for f in fired.read().filter(|f| f.moment == TriggerKinds::USE || f.moment == TriggerKinds::LAND) {
         let (Ok((kind, triggers, held)), Some(user)) = (things.get(f.on), f.by) else { continue };
         if nothing.0.contains(&f.on) {
             continue;
         }
-        let touches = if f.moment == Moments::USE && held.is_some_and(Consumable::is_empty) {
+        let touches = if f.moment == TriggerKinds::USE && held.is_some_and(Consumable::is_empty) {
             false
-        } else if f.moment == Moments::USE {
+        } else if f.moment == TriggerKinds::USE {
             let (Some(targeting), Ok(origin)) = (triggers.targeting(), origins.get(user)) else { continue };
             if armory.shows_unstruck(kind.0) {
                 continue;
             }
-            let source = atglyph::ecs::Source::Trigger { on: f.on, moment: Moments::USE };
+            let source = atglyph::ecs::Source::Trigger { on: f.on, moment: TriggerKinds::USE };
             let aimed = Aimed { user, source, targeting, origin: origin.0, aim: f.at, sees_aim: None };
             !ground.bystanders.land(aimed, &ground.map, &ground.occupancy).landing.targets.is_empty()
         } else {
-            let mut lands = triggers.on(Moments::LAND).peekable();
+            let mut lands = triggers.on(TriggerKinds::LAND).peekable();
             if lands.peek().is_none() || armory.lands_seen(kind.0) {
                 continue;
             }
@@ -807,7 +807,7 @@ mod tests {
     };
 
     fn library() -> Library {
-        Library::load(&crate::content::effect_kinds(), &Moments::default())
+        Library::load(&crate::content::effect_kinds(), &TriggerKinds::default())
     }
 
     /// The kinds of `family`, by name.

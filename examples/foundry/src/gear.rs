@@ -354,7 +354,7 @@ impl Armory {
     /// grenade naming an effect or a moment nobody registered is caught
     /// while the file is read rather than by a grenade that quietly does
     /// nothing in the middle of a run.
-    pub fn load(registries: &Registries, kinds: &EffectKinds, moments: &Moments, sounds: &Sounds) -> Self {
+    pub fn load(registries: &Registries, kinds: &EffectKinds, moments: &TriggerKinds, sounds: &Sounds) -> Self {
         let names = registries.names().sounds(sounds);
         let defs = load_defs(registries);
         let table = load_table(registries, &defs);
@@ -461,7 +461,7 @@ pub fn sounds() -> Sounds {
 /// Once rather than per use: every deck's scatter, every kill and every
 /// crate used to read `items.ron` and build its triggers afresh, and the
 /// save refreshed every turn needs it too.
-pub fn load_armory(mut commands: Commands, registries: Res<Registries>, kinds: Res<EffectKinds>, moments: Res<Moments>, sounds: Res<Sounds>) {
+pub fn load_armory(mut commands: Commands, registries: Res<Registries>, kinds: Res<EffectKinds>, moments: Res<TriggerKinds>, sounds: Res<Sounds>) {
     commands.insert_resource(Armory::load(&registries, &kinds, &moments, &sounds));
 }
 
@@ -1095,7 +1095,7 @@ mod tests {
     /// The parts of `d` as the armory builds them, or every reason the
     /// engine or Foundry gives that they cannot be.
     fn built(d: &ItemDef, r: &Registries) -> Result<ItemParts, Vec<String>> {
-        let triggers = Triggers::build(&d.triggers, &d.effects, &Moments::default(), &effect_kinds(), &r.names().sounds(&sounds()))?;
+        let triggers = Triggers::build(&d.triggers, &d.effects, &TriggerKinds::default(), &effect_kinds(), &r.names().sounds(&sounds()))?;
         parts_of(d, Id::from_raw(0), triggers, r)
     }
 

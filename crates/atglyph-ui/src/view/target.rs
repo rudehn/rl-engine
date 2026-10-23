@@ -781,7 +781,7 @@ pub(crate) fn collect_target(mut view: ResMut<TargetView>, modals: Res<Modals>, 
             view.legal = carried;
             return;
         }
-        let source = Source::Trigger { on: item, moment: Moments::USE };
+        let source = Source::Trigger { on: item, moment: TriggerKinds::USE };
         preview(&mut view, &reach, Aimed { user, source, targeting, origin: from, aim: cursor, sees_aim }, &[]);
         view.legal = view.legal && carried;
         return;
@@ -1643,7 +1643,7 @@ mod tests {
 mod uses {
     use super::*;
     use crate::harness::Stage;
-    use atglyph_bevy::{AddEffect, AddEngineEffects, EffectWorld, EffectsPlugin, FromArgs, Landing, Moments, Triggers};
+    use atglyph_bevy::{AddEffect, AddEngineEffects, EffectWorld, EffectsPlugin, FromArgs, Landing, TriggerKinds, Triggers};
     use atglyph_rules::Names;
     use atglyph_rules::ability::RawValue;
 
@@ -1688,7 +1688,7 @@ mod uses {
         let built = {
             let world = stage.app.world();
             let names = world.resource::<Registries>().names();
-            Triggers::build(&specs, &[], world.resource::<Moments>(), world.resource::<EffectKinds>(), &names).expect("the triggers build")
+            Triggers::build(&specs, &[], world.resource::<TriggerKinds>(), world.resource::<EffectKinds>(), &names).expect("the triggers build")
         };
         let thing = stage.app.world_mut().spawn((Item, Name::new(name.to_string()), built)).id();
         let player = stage.player;

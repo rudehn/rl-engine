@@ -303,7 +303,7 @@ mod tests {
 
     /// The definition of `name` in the armory.
     fn def(name: &str) -> ItemDef {
-        let library = crate::content::Library::load(&crate::content::effect_kinds(), &Moments::default());
+        let library = crate::content::Library::load(&crate::content::effect_kinds(), &TriggerKinds::default());
         let armory = &library.armory;
         armory.defs.get(armory.defs.expect(name)).clone()
     }

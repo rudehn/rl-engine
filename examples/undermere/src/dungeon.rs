@@ -1477,7 +1477,7 @@ mod tests {
     #[test]
     fn every_place_of_a_run_keeps_every_promise_the_generator_makes_over_a_span_of_seeds() {
         let registries = crate::content::registries();
-        let library = crate::content::Library::load(&crate::content::effect_kinds(), &Moments::default());
+        let library = crate::content::Library::load(&crate::content::effect_kinds(), &TriggerKinds::default());
         let hiding = crate::traps::Hiding::load();
         let (told, locked) = (std::sync::Mutex::new(BTreeSet::new()), AtomicUsize::new(0));
         let first_floors = std::sync::Mutex::new(BTreeMap::new());

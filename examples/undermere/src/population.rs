@@ -711,7 +711,7 @@ mod tests {
     }
 
     fn bestiary() -> Bestiary {
-        crate::content::Library::load(&crate::content::effect_kinds(), &Moments::default()).bestiary
+        crate::content::Library::load(&crate::content::effect_kinds(), &TriggerKinds::default()).bestiary
     }
 
     /// Three groups and one more for each floor down, to floor nine's

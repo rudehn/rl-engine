@@ -22,7 +22,7 @@ use bevy::prelude::*;
 use crate::combat::{CombatRng, DamageEvent, Dead, Health};
 use crate::components::{MyTurn, Position};
 use crate::cue::{AddAirborne, Airborne, Anchor, Cue, CueWait, Cued, LookOf};
-use crate::effects::{Fired, Moments};
+use crate::effects::{Fired, TriggerKinds};
 use crate::items::{Equipped, Inventory, Item, ItemEvent, Stack};
 use crate::places::{MapId, OnMap};
 use crate::turn::{Action, Intent, Occupancy, Resolution};
@@ -265,7 +265,7 @@ fn land(
         reports.damage.write(DamageEvent::arriving(target, Hit::by(actor, kind, amount), crate::combat::DamageRoute::Thrown));
     }
     reports.events.write(ItemEvent::Thrown { actor, item, at: Position(rests), struck });
-    reports.fired.write(Fired { on: item, moment: Moments::LAND, by: Some(actor), at: rests });
+    reports.fired.write(Fired { on: item, moment: TriggerKinds::LAND, by: Some(actor), at: rests });
 }
 
 /// Throwing: [`Throw`], resolved beside every other action, down combat's
@@ -351,7 +351,7 @@ mod tests {
                 crate::effects::Triggers::build(
                     &specs,
                     &[],
-                    world.resource::<crate::effects::Moments>(),
+                    world.resource::<crate::effects::TriggerKinds>(),
                     world.resource::<crate::effects::EffectKinds>(),
                     &registries.names(),
                 )

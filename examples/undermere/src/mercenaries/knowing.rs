@@ -233,7 +233,7 @@ impl Givable<'_, '_> {
         let waystone = self.armory.defs.id(crate::waystone::WAYSTONE);
         let Ok((tagged, wearable, throwable, does, kind)) = self.things.get(thing) else { return Some(NO_USE) };
         let purse = self.currency.as_deref().is_some_and(|c| c.is(tagged));
-        let usable = does.is_some_and(|d| d.on(Moments::USE).next().is_some() && d.asks().is_none());
+        let usable = does.is_some_and(|d| d.on(TriggerKinds::USE).next().is_some() && d.asks().is_none());
         let fit = !purse && kind.is_none_or(|k| Some(k.0) != waystone) && (wearable || throwable || usable);
         (!fit).then_some(NO_USE)
     }
@@ -298,7 +298,7 @@ impl Handing<'_, '_> {
         };
         let countable = if mass { Countability::Mass } else { Countability::Count };
         let (handed, count) = match stack {
-            Some(mut stack) if stack.count > 1 && does.is_some_and(|d| d.on(Moments::USE).next().is_some()) => {
+            Some(mut stack) if stack.count > 1 && does.is_some_and(|d| d.on(TriggerKinds::USE).next().is_some()) => {
                 stack.count -= 1;
                 let key = stack.key;
                 (self.commands.entity(thing).clone_and_spawn().insert(Stack { key, count: 1 }).id(), 1)
@@ -498,7 +498,7 @@ mod tests {
     /// nothing when the kind is unknown too or wears for nothing.
     #[test]
     fn a_thing_of_unknown_level_seems_worth_its_kinds_plain_score_and_a_thing_of_unknown_kind_nothing() {
-        let library = crate::content::Library::load(&crate::content::effect_kinds(), &Moments::default());
+        let library = crate::content::Library::load(&crate::content::effect_kinds(), &TriggerKinds::default());
         let armory = &library.armory;
         let (mace, potion) = (armory.defs.expect("mace"), armory.defs.expect("potion of healing"));
         let (plain, deep) = (armory.score_at(mace, 0).expect("a mace is worth wearing"), armory.score_at(mace, 3).expect("and at depth"));

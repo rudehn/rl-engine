@@ -505,7 +505,7 @@ pub fn show_sprung(
     names: Query<&Name>,
 ) {
     let Ok((me, sight)) = player.single() else { return };
-    for ev in fired.read().filter(|ev| ev.moment == Moments::ENTERED) {
+    for ev in fired.read().filter(|ev| ev.moment == TriggerKinds::ENTERED) {
         let (Ok(kind), Some(by)) = (hidden.get(ev.on), ev.by) else { continue };
         let what = &registries.props.get(kind.0).name;
         let line = if by == me {
@@ -846,7 +846,7 @@ mod tests {
     /// its gold is at least a coin, whatever else it rolls.
     #[test]
     fn a_loose_flagstone_always_holds_a_coin_at_least() {
-        let library = crate::content::Library::load(&crate::content::effect_kinds(), &Moments::default());
+        let library = crate::content::Library::load(&crate::content::effect_kinds(), &TriggerKinds::default());
         let registries = &library.registries;
         let def = registries.props.get(registries.props.expect("loose flagstone"));
         let rows = &def.container.as_ref().expect("a container").contents;

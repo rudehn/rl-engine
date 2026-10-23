@@ -900,7 +900,7 @@ pub(crate) fn decide_minds(
     // read of each, far cheaper than one flood, and the fields are thrown
     // away only when the cells it finds differ.
     let here = world.map.current();
-    let live = |t: &crate::effects::Trigger| t.on == crate::effects::Moments::ENTERED && t.fires != Some(0);
+    let live = |t: &crate::effects::Trigger| t.on == crate::effects::TriggerKinds::ENTERED && t.fires != Some(0);
     let traps =
         world.traps.iter().filter(|(_, on, triggers)| on.map_or(MapId::ZERO, |m| m.0) == here && triggers.0.iter().any(live)).map(|(at, ..)| at.0).collect();
     world.fields.see_traps(traps);
@@ -1421,7 +1421,7 @@ mod tests {
         }
         let traps: Vec<Point> = if walled { vec![start.offset(3, 0)] } else { (-1..=1).map(|dy| start.offset(3, dy)).collect() };
         let trigger = crate::effects::Trigger {
-            on: crate::effects::Moments::ENTERED,
+            on: crate::effects::TriggerKinds::ENTERED,
             area: atglyph_rules::ability::EffectArea::Here,
             fires: None,
             effects: Arc::new(crate::effects::Effects::default()),
@@ -1498,7 +1498,7 @@ mod tests {
             }
         }
         let trigger = crate::effects::Trigger {
-            on: crate::effects::Moments::ENTERED,
+            on: crate::effects::TriggerKinds::ENTERED,
             area: atglyph_rules::ability::EffectArea::Here,
             fires: None,
             effects: Arc::new(crate::effects::Effects::default()),
@@ -1963,12 +1963,12 @@ mod tests {
 
     /// A thing doing `triggers`, with three charges kept when spent.
     fn thing(app: &mut App, triggers: &str) -> Entity {
-        use crate::effects::{EffectKinds, Moments, Triggers};
+        use crate::effects::{EffectKinds, TriggerKinds, Triggers};
         let specs: Vec<atglyph_rules::TriggerSpec> = atglyph_rules::Names::new().load_list(triggers).expect("the triggers parse");
         let built = {
             let world = app.world();
             let names = world.resource::<crate::registries::Registries>().names();
-            Triggers::build(&specs, &[], world.resource::<Moments>(), world.resource::<EffectKinds>(), &names).expect("the triggers build")
+            Triggers::build(&specs, &[], world.resource::<TriggerKinds>(), world.resource::<EffectKinds>(), &names).expect("the triggers build")
         };
         app.world_mut().spawn((Item, built, Consumable::new(3, WhenEmpty::Kept))).id()
     }

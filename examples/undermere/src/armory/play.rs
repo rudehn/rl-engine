@@ -132,7 +132,7 @@ fn outcomes(dice: DiceRoll) -> Vec<i32> {
 /// one real stab on each victim below proves the content plays so.
 #[test]
 fn a_dagger_kills_the_unaware_in_one_blow_far_more_often_than_a_sword() {
-    let library = Library::load(&crate::content::effect_kinds(), &Moments::default());
+    let library = Library::load(&crate::content::effect_kinds(), &TriggerKinds::default());
     let (armory, bestiary) = (&library.armory, &library.bestiary);
     let house = crate::content::combat_rules(&library.registries).unaware.expect("the house has a percent for the unaware");
     let blow = |name: &str| armory.defs.get(armory.defs.expect(name)).melee.expect("a weapon with a blow");

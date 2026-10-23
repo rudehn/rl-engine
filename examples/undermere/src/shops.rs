@@ -771,7 +771,7 @@ mod tests {
     use crate::townsfolk::{Townsfolk, Townsperson};
 
     fn library() -> Library {
-        Library::load(&crate::content::effect_kinds(), &Moments::default())
+        Library::load(&crate::content::effect_kinds(), &TriggerKinds::default())
     }
 
     /// Every keeper's stocking at `tier` for each of a span of seeds, drawn

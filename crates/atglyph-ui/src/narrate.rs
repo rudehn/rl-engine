@@ -592,7 +592,7 @@ impl Witness<'_, '_> {
     /// `use` trigger. A thing without one is the game's to answer, in its
     /// own words, since the engine cannot know what eating a crust means.
     fn used_to_effect(&self, e: Entity) -> bool {
-        self.does.get(e).is_ok_and(|t| t.on(atglyph_bevy::Moments::USE).next().is_some())
+        self.does.get(e).is_ok_and(|t| t.on(atglyph_bevy::TriggerKinds::USE).next().is_some())
     }
 
     /// Whether `e` is on the player's side, as the game's [`CombatRules`]
@@ -1756,7 +1756,7 @@ mod tests {
             atglyph_bevy::Triggers::build(
                 &specs,
                 &[],
-                world.resource::<atglyph_bevy::Moments>(),
+                world.resource::<atglyph_bevy::TriggerKinds>(),
                 world.resource::<atglyph_bevy::EffectKinds>(),
                 &registries.names(),
             )
@@ -2012,7 +2012,7 @@ mod tests {
             atglyph_bevy::Triggers::build(
                 &specs,
                 &[],
-                world.resource::<atglyph_bevy::Moments>(),
+                world.resource::<atglyph_bevy::TriggerKinds>(),
                 world.resource::<atglyph_bevy::EffectKinds>(),
                 &registries.names(),
             )
@@ -2159,7 +2159,8 @@ mod tests {
         let triggers = {
             let world = stage.app.world();
             let names = world.resource::<Registries>().names();
-            atglyph_bevy::Triggers::build(&specs, &[], world.resource::<atglyph_bevy::Moments>(), world.resource::<EffectKinds>(), &names).expect("it builds")
+            atglyph_bevy::Triggers::build(&specs, &[], world.resource::<atglyph_bevy::TriggerKinds>(), world.resource::<EffectKinds>(), &names)
+                .expect("it builds")
         };
         let (player, kind) = (stage.player, stage.kind);
         let rod = stage.app.world_mut().spawn((Item, Name::new("ash rod"), triggers)).id();

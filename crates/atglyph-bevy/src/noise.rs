@@ -479,7 +479,7 @@ mod tests {
 
     use super::*;
     use crate::components::{Actor, Blocks, RevealsMap, Viewshed};
-    use crate::effects::{AddEngineEffects, EffectKinds, Fired, Moments, Triggers};
+    use crate::effects::{AddEngineEffects, EffectKinds, Fired, TriggerKinds, Triggers};
     use crate::fov::FovPlugin;
     use crate::minds::{Mind, MindsPlugin, Perception};
     use crate::state::EngineState;
@@ -749,7 +749,7 @@ mod tests {
             Some(sounds) => Names::new().sounds(sounds),
             None => Names::new(),
         };
-        Triggers::build(&specs, &[], world.resource::<Moments>(), world.resource::<EffectKinds>(), &names)
+        Triggers::build(&specs, &[], world.resource::<TriggerKinds>(), world.resource::<EffectKinds>(), &names)
     }
 
     /// A thing that makes a noise when it comes down, in a sound the game
@@ -775,7 +775,7 @@ mod tests {
         let built = triggers(&field.app, THUD).expect("a declared sound builds");
         let carrier = field.app.world_mut().spawn(built).id();
         let (player, at) = (field.player, field.start.offset(1, 0));
-        field.app.world_mut().write_message(Fired { on: carrier, moment: Moments::LAND, by: Some(player), at });
+        field.app.world_mut().write_message(Fired { on: carrier, moment: TriggerKinds::LAND, by: Some(player), at });
         field.wait();
 
         let made: Vec<MakeNoise> = field.app.world().resource::<Made>().0.iter().filter(|n| n.sound == thud).copied().collect();
@@ -794,7 +794,7 @@ mod tests {
     #[test]
     fn a_noise_naming_a_sound_nobody_declared_fails_the_build_naming_it() {
         let mut app = App::new();
-        app.add_plugins(NoisePlugin::new(RULES)).init_resource::<Moments>();
+        app.add_plugins(NoisePlugin::new(RULES)).init_resource::<TriggerKinds>();
         let errs = triggers(&app, THUD).expect_err("no game declared a thud");
         assert_eq!(errs, vec!["unknown sound \"thud\"".to_string()]);
         let engines = r#"[(on: "land", effects: [(kind: "Noise", args: (sound: "landing", loudness: 3))])]"#;
@@ -806,17 +806,17 @@ mod tests {
     #[test]
     fn a_noise_built_against_names_without_the_sounds_says_how_to_give_them() {
         let mut app = App::new();
-        app.add_plugins(NoisePlugin::new(RULES)).init_resource::<Moments>();
+        app.add_plugins(NoisePlugin::new(RULES)).init_resource::<TriggerKinds>();
         let specs: Vec<atglyph_rules::TriggerSpec> = Names::new().load_list(THUD).expect("the triggers parse");
         let world = app.world();
-        let errs = Triggers::build(&specs, &[], world.resource::<Moments>(), world.resource::<EffectKinds>(), &Names::new()).expect_err("no sounds");
+        let errs = Triggers::build(&specs, &[], world.resource::<TriggerKinds>(), world.resource::<EffectKinds>(), &Names::new()).expect_err("no sounds");
         assert!(errs.iter().any(|e| e.contains("\"thud\"") && e.contains("SoundNames::sounds")), "{errs:?}");
     }
 
     #[test]
     fn a_noise_with_an_argument_it_does_not_take_is_refused_naming_it() {
         let mut app = App::new();
-        app.add_plugins(NoisePlugin::new(RULES)).init_resource::<Moments>();
+        app.add_plugins(NoisePlugin::new(RULES)).init_resource::<TriggerKinds>();
         let typo = r#"[(on: "land", effects: [(kind: "Noise", args: (sound: "step", loudness: 3, volume: 3))])]"#;
         let errs = triggers(&app, typo).expect_err("an argument nobody reads is a typo");
         assert!(errs.iter().any(|e| e.contains("volume")), "{errs:?}");
@@ -827,7 +827,7 @@ mod tests {
     #[test]
     fn a_noise_too_quiet_to_carry_a_step_is_refused_naming_its_loudness() {
         let mut app = App::new();
-        app.add_plugins(NoisePlugin::new(RULES)).init_resource::<Moments>();
+        app.add_plugins(NoisePlugin::new(RULES)).init_resource::<TriggerKinds>();
         for loudness in [0, -2] {
             let silent = format!(r#"[(on: "land", effects: [(kind: "Noise", args: (sound: "step", loudness: {loudness}))])]"#);
             let errs = triggers(&app, &silent).expect_err("a noise nobody can hear refuses");
@@ -840,7 +840,7 @@ mod tests {
     #[test]
     fn a_game_without_noise_that_names_a_noise_fails_the_build_because_nothing_registered_it() {
         let mut app = App::new();
-        app.add_sound("thud").init_resource::<Moments>().add_engine_effects();
+        app.add_sound("thud").init_resource::<TriggerKinds>().add_engine_effects();
         let errs = triggers(&app, THUD).expect_err("no NoisePlugin, no Noise");
         assert!(errs.iter().any(|e| e.contains("no effect is registered as \"Noise\"")), "{errs:?}");
     }

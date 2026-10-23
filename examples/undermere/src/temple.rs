@@ -551,7 +551,7 @@ mod tests {
     /// fault under its verb.
     #[test]
     fn a_rites_file_with_a_second_verb_trade_a_free_rite_or_an_unknown_effect_is_refused_naming_each() {
-        let library = crate::content::Library::load(&crate::content::effect_kinds(), &Moments::default());
+        let library = crate::content::Library::load(&crate::content::effect_kinds(), &TriggerKinds::default());
         assert_eq!(library.rites.iter().map(|r| (r.verb.as_str(), r.price)).collect::<Vec<_>>(), PRICED.to_vec());
         let says: Vec<&str> = library.rites.iter().map(|r| r.says.as_str()).collect();
         assert_eq!(says, ["mend your wounds", "unbind what you wear", "name what you wear"]);

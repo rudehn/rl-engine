@@ -967,7 +967,7 @@ impl Watch {
             leg.near += u32::from(stands.is_some_and(|at| geometry::chebyshev(at, found.at) <= undermere::traps::SPOTTING.near as i32));
             leg.waited += u32::from(self.waited);
         }
-        for fired in self.fired.read(world.resource::<Messages<Fired>>()).filter(|f| f.by == Some(me) && f.moment == Moments::ENTERED) {
+        for fired in self.fired.read(world.resource::<Messages<Fired>>()).filter(|f| f.by == Some(me) && f.moment == TriggerKinds::ENTERED) {
             if self.hidden.1.get(&fired.on) == Some(&"trap") {
                 if self.seen.contains(&fired.on) {
                     leg.sprung.1 += 1;
