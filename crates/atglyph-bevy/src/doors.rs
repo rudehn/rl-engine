@@ -23,7 +23,7 @@
 
 use atglyph_core::turn::BASE_ACTION_COST;
 use atglyph_core::{Direction, Point};
-use atglyph_rules::Wits;
+use atglyph_rules::{TagId, Wits};
 use bevy::prelude::*;
 
 use crate::components::{MyTurn, Position};
@@ -107,7 +107,7 @@ pub(crate) fn resolve_opens(
         };
         let at = pos.0 + intent.action.0.offset();
         let lock = map.lock(at);
-        let unlocked = lock.is_none_or(|l| l.key.is_some_and(|key| carries_tag(key, own, bag, |item| tagged.get(item).ok())));
+        let unlocked = lock.is_none_or(|l| l.key.is_some_and(|key| carries_tag(TagId::from_raw(key), own, bag, |item| tagged.get(item).ok())));
         match map.opens(at) {
             Some(open) if works_doors(intelligence) && unlocked => {
                 if lock.is_some() {
@@ -164,7 +164,6 @@ mod tests {
     use crate::testing::headless_app;
     use crate::turn::{Step, Turns};
     use atglyph_grid::TileRegistry;
-    use atglyph_rules::TagId;
 
     /// Every door event, recorded by a reader: when a headless app swaps its
     /// message buffers depends on wall time, so a peek can miss one.

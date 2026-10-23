@@ -31,6 +31,12 @@
 //! What stands at either end of the ladder, a way out of the run or
 //! nothing, is the game's; so is what a game says on arriving.
 //!
+//! What a place is and how a game builds one, [`MapId`], [`PlaceRules`],
+//! [`PlaceBuild`], [`Ladder`] and the rest, is plain data in
+//! [`atglyph_mapgen::place`], so a terminal game or a tool builds the same
+//! places with no `App`; this module re-exports it, and keeps the
+//! components, the warp and the travel.
+//!
 //! A place keeps its [`Lock`]s, the doors its builder locked to a tag and
 //! the gates it sealed, and its save keeps them with it. It keeps its
 //! [`Secret`](crate::secrets::Secret)s the same way: the cells its builder
@@ -38,8 +44,8 @@
 
 use atglyph_core::turn::BASE_ACTION_COST;
 use atglyph_core::{PlaceSeed, Point};
-use atglyph_grid::{Terrain, TileTables};
 use atglyph_mapgen::BuildError;
+pub use atglyph_mapgen::place::{Climb, Ladder, LadderEnd, LadderStair, Lock, MapId, PlaceBuild, PlaceRules, Spot, StairLook};
 use atglyph_rules::Wits;
 use bevy::prelude::*;
 
@@ -49,20 +55,6 @@ use crate::knowledge::Knowledge;
 use crate::minds::{FlowFields, Intelligence, Post, Trails};
 use crate::turn::{Action, Intent, Occupancy, Resolution};
 use crate::world::WorldMap;
-
-/// Which map an entity is on. A game numbers its places however it
-/// likes; zero is where an entity with no [`OnMap`] stands.
-#[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
-pub struct MapId(pub u32);
-
-impl MapId {
-    /// Map zero, where an entity with no [`OnMap`] stands.
-    pub const ZERO: MapId = MapId(0);
-
-    /// Map one, the first place a game that numbers its places from one
-    /// builds, so a game with one place need not number it at all.
-    pub const FIRST: MapId = MapId(1);
-}
 
 /// The map an entity with a position is on. Missing means map zero;
 /// the engine fills it in for anything that gains a position.
@@ -100,177 +92,6 @@ pub struct Transition {
     pub to: Destination,
 }
 
-/// A point of interest the builder reports, for the game to populate.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct Spot {
-    /// What kind, in the game's own numbering.
-    pub tag: u32,
-    /// Where.
-    pub at: Point,
-    /// The key of the prefab whose mark this is, when it was keyed, so the
-    /// engine can find what the mark stands for. `None` for a spot a game
-    /// made itself or a mark of an unkeyed piece. A mark a later stamp
-    /// covered is never a spot, since the piece drawn on top owns its
-    /// cells and what the earlier one meant there is no longer on the map.
-    #[serde(default)]
-    pub prefab: Option<u32>,
-}
-
-/// A cell of a place only some may open: a door locked to a tag, or a
-/// gate nothing opens until the game lifts it.
-///
-/// Kept by the place rather than the tile, so one locked-door tile serves
-/// every lock and each opens to its own key. An opener carries the tag
-/// when it is itself [`Tagged`](crate::items::Tagged) with it or holds an
-/// item tagged with it in its [`Inventory`](crate::items::Inventory), so
-/// a game says who carries a key by giving it to someone, a guard or the
-/// player, or by tagging whoever should open it. Opening a lock spends
-/// it: the door opens into its open tile, which closes as an ordinary door.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct Lock {
-    /// Where.
-    pub at: Point,
-    /// The tag an opener must carry; `None` for a seal, which nothing
-    /// opens until the game takes it off with [`WorldMap::unlock`].
-    pub key: Option<atglyph_rules::TagId>,
-}
-
-/// What building a place produced.
-#[derive(Debug)]
-pub struct PlaceBuild {
-    /// The tiles.
-    pub terrain: Terrain,
-    /// Where an arrival from above stands.
-    pub entry: Point,
-    /// Where an arrival from below stands, if the place goes deeper.
-    pub exit: Option<Point>,
-    /// Points of interest for the game's spawns.
-    pub spots: Vec<Spot>,
-    /// Every door locked to a tag and every seal.
-    pub locks: Vec<Lock>,
-    /// Every cell the builder hid, walled over in `terrain`, in the order
-    /// [`HideOpenings`](atglyph_mapgen::HideOpenings) published them.
-    pub secrets: Vec<atglyph_mapgen::SecretCell>,
-    /// The light everywhere in the place before anything in it is lit,
-    /// which [`LightingPlugin`](crate::lighting::LightingPlugin) makes the
-    /// ambient whenever the place is current. Kept with the place and its
-    /// save, so the builder that knew why a floor is lit is the only thing
-    /// that says so. [`Light::DARK`](atglyph_grid::Light::DARK) is no ambient,
-    /// and is what [`from_context`](Self::from_context) gives.
-    pub ambient: atglyph_grid::Light,
-    /// Whether nothing in the place is harmed: every hit on anyone standing
-    /// in it lands as nothing, and no fight with anyone in it is forecast.
-    /// A town, where the people are not there to be fought. Kept with the
-    /// place and its save, so the rule is the place's and not a flag a
-    /// game keeps in step with whichever map is current. False from
-    /// [`from_context`](Self::from_context).
-    pub peaceful: bool,
-}
-
-impl PlaceBuild {
-    /// A build from a finished chain: the entry is the chain's
-    /// [`StartPoint`](atglyph_mapgen::passes::StartPoint), the exit its
-    /// [`ExitPoint`](atglyph_mapgen::dungeon::ExitPoint) if one was emitted,
-    /// and every prefab mark becomes a spot tagged with its character.
-    /// Fails if no start was emitted.
-    ///
-    /// A mark inside the bounds of a stamp emitted after its own is
-    /// dropped, keyed or not: the piece drawn on top owns its cells, so a
-    /// slot or a mark it painted over never fills a cell that now belongs
-    /// to another piece. Every cell of an [`Opening`](atglyph_mapgen::Opening)
-    /// joined [`Locked`](atglyph_mapgen::Join::Locked) becomes a [`Lock`] to
-    /// that tag, and every one joined [`Sealed`](atglyph_mapgen::Join::Sealed)
-    /// a seal. Every [`Secret`](atglyph_mapgen::SecretCell) a pass published is
-    /// carried as it was. The ambient is dark and the place is not
-    /// peaceful; a builder lighting the place or keeping its peace sets
-    /// [`ambient`](Self::ambient) or [`peaceful`](Self::peaceful) on what
-    /// this returns.
-    pub fn from_context(ctx: atglyph_mapgen::BaseContext) -> Result<Self, BuildError> {
-        let entry = ctx.outputs().first::<atglyph_mapgen::passes::StartPoint>().ok_or_else(|| BuildError::new("place", "the chain emitted no start point"))?.0;
-        let exit = ctx.outputs().first::<atglyph_mapgen::dungeon::ExitPoint>().map(|e| e.0);
-        let stamps: Vec<&atglyph_mapgen::prefab::Stamped> = ctx.outputs().iter::<atglyph_mapgen::prefab::Stamped>().collect();
-        let covered = |i: usize, p: Point| stamps[i + 1..].iter().any(|later| later.bounds.contains(p));
-        let spots = stamps
-            .iter()
-            .enumerate()
-            .flat_map(|(i, s)| s.marks.iter().filter(move |(_, p)| !covered(i, *p)).map(|(c, p)| Spot { tag: *c as u32, at: *p, prefab: s.prefab }))
-            .collect();
-        let locks = ctx
-            .outputs()
-            .iter::<atglyph_mapgen::Opening>()
-            .filter_map(|o| match o.join {
-                atglyph_mapgen::Join::Locked(tag) => Some((o, Some(atglyph_rules::TagId::from_raw(tag)))),
-                atglyph_mapgen::Join::Sealed => Some((o, None)),
-                _ => None,
-            })
-            .flat_map(|(o, key)| o.cells.iter().map(move |at| Lock { at: *at, key }))
-            .collect();
-        let secrets = ctx.outputs().iter::<atglyph_mapgen::SecretCell>().copied().collect();
-        let (terrain, _) = ctx.finish();
-        Ok(Self { terrain, entry, exit, spots, locks, secrets, ambient: atglyph_grid::Light::DARK, peaceful: false })
-    }
-}
-
-/// How the game builds a place the first time it is entered.
-pub trait PlaceRules: Send + Sync {
-    /// Builds `map` from `seed`, the place's own share of the run's seed.
-    ///
-    /// Handed in rather than kept in the rules, so the rules are made once
-    /// with the game and not again for every run, and derived from the run
-    /// and the map alone, so the order places are built in changes none of
-    /// them. A warp in a game with no [`Seed`](crate::seed::Seed) builds
-    /// nothing and fails with a [`BuildError`] naming it.
-    fn build(&self, map: MapId, seed: PlaceSeed) -> Result<PlaceBuild, BuildError>;
-
-    /// The tile tables every place of the game is built of. The engine
-    /// makes the run's [`WorldMap`] over them when a start makes none.
-    fn tiles(&self) -> TileTables;
-
-    /// The floors this game's places stand in one under another, if they
-    /// do, for the engine to lay the stairs between them. `None`, the
-    /// default, is a game with no ladder, whose ways through are all its
-    /// own: it gets no stairs.
-    ///
-    /// Asked each time a place is built rather than once, so it may be
-    /// made on the spot from the game's own constants.
-    fn ladder(&self) -> Option<Ladder> {
-        None
-    }
-}
-
-/// Which way a stair goes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
-pub enum Climb {
-    /// To the floor above, from a floor's entry to that floor's exit.
-    Up,
-    /// To the floor below, from a floor's exit to that floor's entry.
-    Down,
-}
-
-/// How a ladder's stairs one way look and are called: the glyph and the
-/// colour whoever draws gives them, and the name a panel and the look
-/// cursor show.
-///
-/// Plain data, so the engine keeps it on every stair it lays and in the
-/// save, and a stair comes back looking as it was laid. A colour in bytes,
-/// as a prop's look is, since nothing below the drawing names a `Color`.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct StairLook {
-    /// The character drawn.
-    pub glyph: char,
-    /// Its colour.
-    pub color: atglyph_grid::Rgb,
-    /// What it is called.
-    pub name: String,
-}
-
-impl StairLook {
-    /// A stair drawn `glyph` in `color` and called `name`.
-    pub fn new(glyph: char, color: atglyph_grid::Rgb, name: impl Into<String>) -> Self {
-        Self { glyph, color, name: name.into() }
-    }
-}
-
 /// A stair the engine laid between two floors of a [`Ladder`]: which way
 /// it goes, and how it looks. Beside the [`Transition`] that says where it
 /// leads, which a save keeps with the entity as it keeps any transition,
@@ -281,101 +102,6 @@ pub struct Stair {
     pub climb: Climb,
     /// How it is drawn and called.
     pub look: StairLook,
-}
-
-/// What one end of a [`Ladder`] has beyond its last stair.
-///
-/// The engine lays no stair past either end whichever it is: the top floor
-/// has no stair up and the bottom none down. The word is the game's
-/// account of that end, kept on the ladder so whatever reads the ladder,
-/// a test of every floor's ways or a tool listing them, knows a way there
-/// is meant and is the game's to lay, rather than missing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LadderEnd {
-    /// Nothing: the run goes no further that way.
-    Nothing,
-    /// A way of the game's own, which it lays itself at that floor's
-    /// entry for the top or exit for the bottom: a gate to a town, a lift
-    /// out that ends a mission, a crack of daylight.
-    Game,
-}
-
-/// A run's floors, one under another, and how the stairs between them
-/// look.
-///
-/// Every floor but the top gets a stair up at its entry, to the floor
-/// above's exit, and every floor but the bottom a stair down at its exit,
-/// to the floor below's entry, so going up and coming back down lands
-/// where the way was taken. Laid when the floor is built, by whoever gets
-/// there first, so a monster that ran down ahead of the player has a way
-/// back up. A floor whose build has no exit gets no stair down.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Ladder {
-    /// The floors, top first: floor `n` is `floors[n - 1]`, and its
-    /// neighbours are the entries either side.
-    pub floors: Vec<MapId>,
-    /// How a stair up looks.
-    pub up: StairLook,
-    /// How a stair down looks.
-    pub down: StairLook,
-    /// What the top floor has instead of a stair up.
-    pub top: LadderEnd,
-    /// What the bottom floor has instead of a stair down.
-    pub bottom: LadderEnd,
-}
-
-impl Ladder {
-    /// `floors`, top first, with stairs looking `up` and `down`, and
-    /// nothing past either end.
-    pub fn new(floors: impl IntoIterator<Item = MapId>, up: StairLook, down: StairLook) -> Self {
-        Self { floors: floors.into_iter().collect(), up, down, top: LadderEnd::Nothing, bottom: LadderEnd::Nothing }
-    }
-
-    /// The same ladder with `end` at its top.
-    pub fn top(mut self, end: LadderEnd) -> Self {
-        self.top = end;
-        self
-    }
-
-    /// The same ladder with `end` at its bottom.
-    pub fn bottom(mut self, end: LadderEnd) -> Self {
-        self.bottom = end;
-        self
-    }
-
-    /// Which floor `map` is, counting from one at the top, if it is one.
-    #[cfg(test)]
-    pub(crate) fn floor_of(&self, map: MapId) -> Option<usize> {
-        self.floors.iter().position(|m| *m == map).map(|i| i + 1)
-    }
-
-    /// The floor above `map`, if `map` is a floor and not the top.
-    pub(crate) fn above(&self, map: MapId) -> Option<MapId> {
-        let i = self.floors.iter().position(|m| *m == map)?;
-        i.checked_sub(1).map(|i| self.floors[i])
-    }
-
-    /// The floor below `map`, if `map` is a floor and not the bottom.
-    pub(crate) fn below(&self, map: MapId) -> Option<MapId> {
-        let i = self.floors.iter().position(|m| *m == map)?;
-        self.floors.get(i + 1).copied()
-    }
-
-    /// The stairs floor `map` gets, built with `entry` and `exit`: where
-    /// each stands, and what it is and leads to. Empty for a map that is
-    /// no floor of the ladder.
-    pub(crate) fn stairs(&self, map: MapId, entry: Point, exit: Option<Point>) -> Vec<(Point, Stair, Transition)> {
-        let mut stairs = Vec::new();
-        if let Some(above) = self.above(map) {
-            let to = Destination::Place { map: above, arrive: Arrive::Exit };
-            stairs.push((entry, Stair { climb: Climb::Up, look: self.up.clone() }, Transition { to }));
-        }
-        if let (Some(below), Some(exit)) = (self.below(map), exit) {
-            let to = Destination::Place { map: below, arrive: Arrive::Entry };
-            stairs.push((exit, Stair { climb: Climb::Down, look: self.down.clone() }, Transition { to }));
-        }
-        stairs
-    }
 }
 
 /// The game's place builder.
@@ -695,9 +421,15 @@ fn warp(
         maps.map.install_place(target_map, build);
         // Laid with the build, by whoever's arrival built it, so a floor
         // has its way back up before anyone stands on it.
-        for (at, stair, transition) in stairs {
-            let name = Name::new(stair.look.name.clone());
-            commands.spawn((Position(at), OnMap(target_map), transition, stair, name));
+        for LadderStair { at, climb, look, to } in stairs {
+            // A stair up lands where the floor above goes down, and a stair
+            // down where the floor below comes up.
+            let arrive = match climb {
+                Climb::Up => Arrive::Exit,
+                Climb::Down => Arrive::Entry,
+            };
+            let name = Name::new(look.name.clone());
+            commands.spawn((Position(at), OnMap(target_map), Transition { to: Destination::Place { map: to, arrive } }, Stair { climb, look }, name));
         }
     }
     let Ok((_, (mut pos, viewshed, on, blocks, player, ..))) = travellers.get_mut(actor) else {
@@ -777,7 +509,7 @@ mod tests {
     use crate::turn::Wait;
     use crate::turn::{ActionRefused, Turns};
     use atglyph_core::Rect;
-    use atglyph_grid::TileRegistry;
+    use atglyph_grid::{TileRegistry, TileTables};
     use atglyph_mapgen::dungeon::{FarthestExit, RandomStart, Rooms};
     use atglyph_mapgen::passes::StartPoint;
     use atglyph_mapgen::{BaseContext, Chain};
@@ -1185,62 +917,6 @@ mod tests {
     }
 
     #[test]
-    fn a_keyed_stamps_marks_become_spots_carrying_its_key() {
-        use atglyph_mapgen::prefab::{Orient, Placement, Prefab, StampPrefab};
-        use atglyph_mapgen::{BaseContext, Chain};
-        let tiles = atglyph_grid::TileRegistry::standard();
-        let wall = tiles.expect("wall");
-        let piece = Prefab::parse(&["#A#"], |c| (c == '#').then_some(wall)).unwrap().keyed(3);
-        let mut ctx = BaseContext::blank(10, 10, tiles.clone(), tiles.expect("floor"));
-        Chain::new()
-            .then(StampPrefab { name: "keyed", prefab: piece, at: Placement::At(Point::new(1, 1)), orient: Orient::Fixed })
-            .run(&mut ctx, atglyph_core::RunSeed(0))
-            .unwrap();
-        ctx.emit(atglyph_mapgen::passes::StartPoint(Point::new(5, 5)));
-        let build = PlaceBuild::from_context(ctx).unwrap();
-        assert_eq!(build.spots, vec![Spot { tag: 'A' as u32, at: Point::new(2, 1), prefab: Some(3) }]);
-    }
-
-    #[test]
-    fn a_build_carries_out_every_secret_its_chain_hid_as_it_was_published() {
-        use atglyph_mapgen::{BaseContext, SecretCell};
-        let tiles = atglyph_grid::TileRegistry::standard();
-        let mut ctx = BaseContext::blank(10, 10, tiles.clone(), tiles.expect("floor"));
-        let hid = [
-            SecretCell { at: Point::new(3, 1), is: tiles.expect("floor"), spot: 6, group: 0, joins: (0, 1) },
-            SecretCell { at: Point::new(3, 2), is: tiles.expect("floor"), spot: 6, group: 0, joins: (0, 1) },
-        ];
-        for s in hid {
-            ctx.emit(s);
-        }
-        ctx.emit(atglyph_mapgen::passes::StartPoint(Point::new(5, 5)));
-        assert_eq!(PlaceBuild::from_context(ctx).unwrap().secrets, hid.to_vec());
-    }
-
-    #[test]
-    fn a_mark_under_a_later_stamp_is_dropped_and_the_piece_on_top_keeps_its_own() {
-        use atglyph_mapgen::prefab::{Orient, Placement, Prefab, StampPrefab};
-        use atglyph_mapgen::{BaseContext, Chain};
-        let tiles = atglyph_grid::TileRegistry::standard();
-        let wall = tiles.expect("wall");
-        let under = Prefab::parse(&["A.B"], |c| (c == '.').then_some(wall)).unwrap().keyed(1);
-        let over = Prefab::parse(&["C"], |_| None).unwrap().keyed(2);
-        let mut ctx = BaseContext::blank(10, 10, tiles.clone(), tiles.expect("floor"));
-        Chain::new()
-            .then(StampPrefab { name: "under", prefab: under, at: Placement::At(Point::new(1, 1)), orient: Orient::Fixed })
-            .then(StampPrefab { name: "over", prefab: over, at: Placement::At(Point::new(3, 1)), orient: Orient::Fixed })
-            .run(&mut ctx, atglyph_core::RunSeed(0))
-            .unwrap();
-        ctx.emit(atglyph_mapgen::passes::StartPoint(Point::new(5, 5)));
-        let build = PlaceBuild::from_context(ctx).unwrap();
-        assert_eq!(
-            build.spots,
-            vec![Spot { tag: 'A' as u32, at: Point::new(1, 1), prefab: Some(1) }, Spot { tag: 'C' as u32, at: Point::new(3, 1), prefab: Some(2) }],
-            "the first piece's `B` at (3, 1) is under the second, whose `C` owns the cell"
-        );
-    }
-
-    #[test]
     fn entering_off_a_transition_is_refused_for_free_and_goes_nowhere() {
         let mut r = rig();
         /// Trips taken, and refusals given, from now on.
@@ -1373,21 +1049,6 @@ mod tests {
             q.iter(world).filter(|(_, on, _, _)| on.0 == map).map(|(p, _, t, s)| (p.0, t.to, s.map(|s| s.climb))).collect();
         found.sort_by_key(|(p, _, c)| (*p, *c));
         found
-    }
-
-    /// The ladder's neighbours are read off its list, top first, and a map
-    /// that is no floor of it has none and no stairs.
-    #[test]
-    fn a_ladder_names_each_floors_neighbours_and_nothing_for_a_map_off_it() {
-        let look = StairLook::new('<', atglyph_grid::Rgb::WHITE, "stairs");
-        let ladder = Ladder::new([MapId(3), MapId(4), MapId(5)], look.clone(), look);
-        assert_eq!((ladder.floor_of(MapId(3)), ladder.floor_of(MapId(5)), ladder.floor_of(MapId(9))), (Some(1), Some(3), None));
-        assert_eq!(
-            (ladder.above(MapId(3)), ladder.above(MapId(4)), ladder.below(MapId(4)), ladder.below(MapId(5))),
-            (None, Some(MapId(3)), Some(MapId(5)), None)
-        );
-        assert!(ladder.stairs(MapId(9), Point::ZERO, Some(Point::new(1, 1))).is_empty(), "a map off the ladder gets no stairs");
-        assert_eq!((ladder.top, ladder.bottom), (LadderEnd::Nothing, LadderEnd::Nothing), "nothing past either end unless the game says");
     }
 
     /// Down a ladder of three floors from map zero: every floor has one

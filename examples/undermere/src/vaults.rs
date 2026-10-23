@@ -162,7 +162,7 @@ pub fn place_vault_fixtures(built: &mut PlaceBuild, tiles: &TileRegistry, prefab
     if built.locks.is_empty() {
         return;
     }
-    let key = crate::content::tags().id(&crate::content::vault_key(floor));
+    let key = crate::content::tags().id(&crate::content::vault_key(floor)).map(|tag| tag.raw());
     for lock in built.locks.iter_mut().filter(|l| l.key.is_some()) {
         lock.key = key;
     }

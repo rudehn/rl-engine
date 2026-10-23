@@ -81,6 +81,12 @@
 //! Every pass, the engine's and a game's, works on one [`BaseContext`];
 //! what a game's pass needs beyond it, it carries in its own fields.
 //!
+//! [`place`] is what a finished chain becomes: a game's [`PlaceRules`]
+//! build each [`MapId`] from its own seed into a [`PlaceBuild`], and a
+//! [`Ladder`] says which floors stand one under another and where their
+//! stairs go, so a terminal game or a tool builds the same places as the
+//! Bevy framework, which re-exports them.
+//!
 //! [`testing`] plays a generation test over a range of seeds on every
 //! core, for this crate's tests and a game's alike.
 
@@ -96,6 +102,7 @@ pub mod dungeon;
 pub mod lakes;
 pub mod loops;
 pub mod passes;
+pub mod place;
 pub mod pool;
 pub mod prefab;
 pub mod secrets;
@@ -110,6 +117,7 @@ pub use context::{BaseContext, Outputs};
 pub use dress::{DistrictDressings, Dress, Dressed, Dressing};
 pub use lakes::{Bridge, Bridges, Lake, Lakes};
 pub use loops::OpenLoops;
+pub use place::{Climb, Ladder, LadderEnd, LadderStair, Lock, MapId, PlaceBuild, PlaceRules, Spot, StairLook};
 pub use pool::{DressAt, Lay, PoolPick, Prefer, StampPicks};
 pub use secrets::{HideOpenings, SecretCell};
 pub use survey::{AreaFacts, Require, Survey, Surveyed};
@@ -127,6 +135,7 @@ pub mod prelude {
     pub use crate::lakes::{Bridges, Lakes};
     pub use crate::loops::OpenLoops;
     pub use crate::passes;
+    pub use crate::place::{Ladder, MapId, PlaceBuild, PlaceRules, StairLook};
     pub use crate::pool::{DressAt, Lay, PoolPick, Prefer, StampPicks};
     pub use crate::prefab::{Orient, Placement, Prefab, PrefabShape, StampEachRoom, StampOneOf, StampPrefab, Stamped};
     pub use crate::secrets::{HideOpenings, SecretCell};

@@ -547,7 +547,7 @@ mod tests {
     /// A place holding a door locked to tag 5 and a seal, as built.
     fn locked_place() -> (WorldMap, MapId, [Lock; 2]) {
         let tiles = TileRegistry::standard();
-        let locks = [Lock { at: Point::new(3, 1), key: Some(atglyph_rules::TagId::from_raw(5)) }, Lock { at: Point::new(6, 1), key: None }];
+        let locks = [Lock { at: Point::new(3, 1), key: Some(5) }, Lock { at: Point::new(6, 1), key: None }];
         let build = PlaceBuild {
             terrain: Terrain::filled(9, 3, tiles.expect("floor")),
             entry: Point::new(1, 1),

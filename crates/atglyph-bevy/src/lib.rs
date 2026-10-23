@@ -102,8 +102,8 @@ pub use minds::{
 pub use noise::{AddSound, Footfall, Heard, Hearing, MakeNoise, NoiseHeard, NoisePlugin, NoiseRules, NoiseRunning, Sound, SoundId, SoundNames, Sounds};
 pub use parts::{ActorParts, Attacks, ItemLevel, ItemParts, LightWhen, innate_statuses, insert_parts};
 pub use places::{
-    AddPlaces, Arrive, Climb, Destination, GoThrough, Ladder, LadderEnd, Lock, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules, PlaceRulesRes,
-    SpawnPlayer, Spot, Stair, StairLook, Transition, Travelled, WarpRequest,
+    AddPlaces, Arrive, Climb, Destination, GoThrough, Ladder, LadderEnd, LadderStair, Lock, MapChanged, MapId, OnMap, PlaceBuild, PlaceEntered, PlaceRules,
+    PlaceRulesRes, SpawnPlayer, Spot, Stair, StairLook, Transition, Travelled, WarpRequest,
 };
 pub use plugin::{
     CleanupSet, CorePlugin, DecideSet, EndOfFrame, EndRun, EngineSet, FieldSet, LandSet, Needs, NewRun, PerceiveSet, PresentSet, ReactSet, Reads,
