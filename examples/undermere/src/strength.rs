@@ -122,16 +122,15 @@ pub fn note_strength(
     things: Query<Asking>,
     armory: Res<Armory>,
     registries: Res<Registries>,
-    mut facets: ResMut<Facets>,
 ) {
     let Some(strength) = registries.stats.id(STRENGTH) else { return };
     let Ok(stats) = adventurer.single() else { return };
     let strength = stats.0.value(strength, &registries.stats);
-    let mut asks = |thing: Entity| {
+    let asks = |thing: Entity| {
         let (kind, armor, unknown) = things.get(thing).ok()?;
         let gives = if unknown { armory.armor_at(kind.0, 0) } else { armor.map_or(0, |a| a.0) };
         let (text, tone) = requirement(armory.defs.get(kind.0), strength, gives)?;
-        Some(facets.facet("strength", text).toned(tone))
+        Some(Facet::new("strength", text).toned(tone))
     };
     if let Some(mut pack) = pack {
         for row in &mut pack.rows {

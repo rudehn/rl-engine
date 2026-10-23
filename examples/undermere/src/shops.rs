@@ -626,13 +626,12 @@ pub fn count_gold(
     bags: Query<&Inventory>,
     pieces: Query<(Option<&Tagged>, Option<&Stack>)>,
     tones: Res<Tones>,
-    mut facets: ResMut<Facets>,
 ) {
     let Some(mut vitals) = vitals else { return };
     let Some(bag) = vitals.entity.and_then(|me| bags.get(me).ok()) else { return };
     let gold = currency.count(bag, |item| pieces.get(item).unwrap_or((None, None)));
     let tone = tones.get(GOLD_TONE).unwrap_or(Tones::NOTICE);
-    vitals.facets.push(facets.facet(GOLD_TONE, format!("gold {gold}")).toned(tone));
+    vitals.facets.push(Facet::new(GOLD_TONE, format!("gold {gold}")).toned(tone));
 }
 
 /// The file as written: the level rows, and the keepers left raw so their
@@ -1598,9 +1597,8 @@ mod tests {
 
     /// What the vitals say of the gold carried, and the tone it is said in.
     fn gold_said(app: &App) -> Vec<(String, ToneId)> {
-        let key = app.world().resource::<Facets>().get(GOLD_TONE);
         let view = app.world().resource::<VitalsView>();
-        view.facets.iter().filter(|f| Some(f.key) == key).map(|f| (f.text.clone(), f.tone)).collect()
+        view.facets.iter().filter(|f| f.key == GOLD_TONE).map(|f| (f.text.clone(), f.tone)).collect()
     }
 
     /// The vitals say the fifty gold the adventurer sets out with, in the

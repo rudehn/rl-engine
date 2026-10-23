@@ -81,7 +81,7 @@ fn seen(players: &Query<&Viewshed, With<Player>>, at: Point) -> bool {
 ///
 /// In `ViewSet::Annotate`, reading what `collect_inspect` put under the
 /// cursor this frame.
-pub fn annotate_inspect(view: Option<ResMut<InspectView>>, kinds: Query<&Kind>, bestiary: Res<Bestiary>, lore: Res<MonsterLore>, mut facets: ResMut<Facets>) {
+pub fn annotate_inspect(view: Option<ResMut<InspectView>>, kinds: Query<&Kind>, bestiary: Res<Bestiary>, lore: Res<MonsterLore>) {
     let Some(mut view) = view else { return };
     let Some(entity) = view.subject.as_ref().map(|s| s.entity) else { return };
     let Ok(kind) = kinds.get(entity) else { return };
@@ -89,7 +89,7 @@ pub fn annotate_inspect(view: Option<ResMut<InspectView>>, kinds: Query<&Kind>, 
     for (name, says, trick) in &def.folded.says {
         let text = if *trick && !lore.has_shown(&def.name, name) { "?".to_string() } else { says.clone() };
         let tone = if *trick && !lore.has_shown(&def.name, name) { Tones::MUTED } else { Tones::TEXT };
-        view.facets.push(facets.facet("trait", text).toned(tone));
+        view.facets.push(Facet::new("trait", text).toned(tone));
     }
 }
 

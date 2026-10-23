@@ -110,10 +110,10 @@ pub fn depth_line(map: MapId) -> Option<String> {
 /// says what age it is. In `ViewSet::Annotate`, after the engine's
 /// collector and ahead of the gold carried; absent vitals, as in a test
 /// that draws none, says nothing.
-pub fn name_the_stratum(vitals: Option<ResMut<VitalsView>>, map: Option<Res<WorldMap>>, mut facets: ResMut<Facets>) {
+pub fn name_the_stratum(vitals: Option<ResMut<VitalsView>>, map: Option<Res<WorldMap>>) {
     let (Some(mut vitals), Some(world_map)) = (vitals, map) else { return };
     let Some(line) = depth_line(world_map.current()) else { return };
-    vitals.facets.push(facets.facet(READOUT, line).toned(Tones::TEXT));
+    vitals.facets.push(Facet::new(READOUT, line).toned(Tones::TEXT));
 }
 
 #[cfg(test)]
@@ -179,10 +179,8 @@ mod tests {
         app.add_plugins(VitalsViewPlugin);
         adventurer(&mut app);
         settle(&mut app);
-        let readout = |app: &App| -> Vec<String> {
-            let key = app.world().resource::<Facets>().get(READOUT);
-            app.world().resource::<VitalsView>().facets.iter().filter(|f| Some(f.key) == key).map(|f| f.text.clone()).collect()
-        };
+        let readout =
+            |app: &App| -> Vec<String> { app.world().resource::<VitalsView>().facets.iter().filter(|f| f.key == READOUT).map(|f| f.text.clone()).collect() };
         assert_eq!(readout(&app), ["Mereholt"], "the town by its name");
         for (floor, line) in [(1, "1 · The Drowned Town"), (3, "3 · The Palace and its Grounds"), (10, "10 · The Thrones")] {
             arrive(&mut app, map_of(floor));

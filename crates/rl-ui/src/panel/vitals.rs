@@ -476,8 +476,8 @@ mod tests {
         let mut stage = Stage::new(VitalsPanel::new(Rect::new(0, 0, 24, 6))).screen(24, 6);
         stage.app.add_systems(
             Update,
-            (|mut view: ResMut<VitalsView>, mut facets: ResMut<crate::Facets>| {
-                view.facets.push(facets.facet("here", "here: rum [g]").toned(crate::Tones::NOTICE));
+            (|mut view: ResMut<VitalsView>| {
+                view.facets.push(crate::Facet::new("here", "here: rum [g]").toned(crate::Tones::NOTICE));
             })
             .in_set(crate::ViewSet::Annotate),
         );
@@ -498,11 +498,11 @@ mod tests {
             let mut stage = Stage::new(panel).screen(24, 6);
             stage.app.add_systems(
                 Update,
-                (move |mut view: ResMut<VitalsView>, mut facets: ResMut<crate::Facets>| {
+                (move |mut view: ResMut<VitalsView>| {
                     if badged {
-                        view.badges.push(facets.facet("badge", "v").toned(crate::Tones::NOTICE));
+                        view.badges.push(crate::Facet::new("badge", "v").toned(crate::Tones::NOTICE));
                     }
-                    view.facets.push(facets.facet("here", "gold 50"));
+                    view.facets.push(crate::Facet::new("here", "gold 50"));
                 })
                 .in_set(crate::ViewSet::Annotate),
             );

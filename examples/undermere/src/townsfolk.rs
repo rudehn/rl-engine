@@ -660,40 +660,32 @@ pub struct Said<'w> {
 /// In `ViewSet::Annotate`, reading what the look panel's and the rail's
 /// collectors put there this frame; each view is read only where the game
 /// draws it.
-pub fn name_roles(look: Option<ResMut<InspectView>>, rail: Option<ResMut<NearbyView>>, people: Query<&Townsperson>, roles: Roles) {
-    let Roles { townsfolk, mut facets } = roles;
+pub fn name_roles(look: Option<ResMut<InspectView>>, rail: Option<ResMut<NearbyView>>, people: Query<&Townsperson>, townsfolk: Res<Townsfolk>) {
     let role_of = |entity: Entity| people.get(entity).ok().and_then(|p| townsfolk.role(&p.0));
     if let Some(mut view) = look
         && let Some(role) = view.subject.as_ref().and_then(|s| role_of(s.entity))
     {
-        view.facets.insert(0, facets.facet("role", role.called.clone()));
+        view.facets.insert(0, Facet::new("role", role.called.clone()));
     }
     if let Some(mut view) = rail {
         for row in &mut view.actors {
             let Some(role) = role_of(row.entity) else { continue };
             (row.doing, row.alert) = (None, None);
-            row.facets.push(facets.facet("role", role.called.clone()));
+            row.facets.push(Facet::new("role", role.called.clone()));
         }
     }
-}
-
-/// What [`name_roles`] reads besides the views.
-#[derive(bevy::ecs::system::SystemParam)]
-pub struct Roles<'w> {
-    townsfolk: Res<'w, Townsfolk>,
-    facets: ResMut<'w, Facets>,
 }
 
 /// Puts a keeper's greeting on the trade screen, the line under their
 /// name, in their own colour as their talk is said.
 ///
 /// In `ViewSet::Annotate`, over the engine's trader row.
-pub fn greet(mut view: ResMut<TradeView>, people: Query<&Townsperson>, townsfolk: Res<Townsfolk>, tones: Res<Tones>, mut facets: ResMut<Facets>) {
+pub fn greet(mut view: ResMut<TradeView>, people: Query<&Townsperson>, townsfolk: Res<Townsfolk>, tones: Res<Tones>) {
     let Some(trader) = view.trader.as_mut() else { return };
     let Some(role) = people.get(trader.entity).ok().and_then(|p| townsfolk.role(&p.0)) else { return };
     let Some(greeting) = &role.greeting else { return };
     let tone = tones.get(&role.tone()).unwrap_or(Tones::TEXT);
-    trader.facets.push(facets.facet("greeting", format!("\"{greeting}\"")).toned(tone));
+    trader.facets.push(Facet::new("greeting", format!("\"{greeting}\"")).toned(tone));
 }
 
 #[cfg(test)]

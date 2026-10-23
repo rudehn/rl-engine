@@ -15,7 +15,7 @@ use rl_bevy::prelude::*;
 use rl_render::Glyph;
 use rl_rules::SlotId;
 
-use crate::facet::Facets;
+use crate::facet::Facet;
 use crate::tone::Tones;
 use crate::view::Row;
 
@@ -133,20 +133,13 @@ pub(crate) fn collect_gear(mut view: ResMut<GearView>, registries: Res<Registrie
 /// rather than reading `GearView` as `Option<ResMut<_>>`: this system is
 /// only ever added by [`GearViewPlugin`] itself, which has already put the
 /// resource there.
-pub(crate) fn note_ammo(
-    mut view: ResMut<GearView>,
-    mut facets: ResMut<Facets>,
-    bag: Query<&Inventory, With<Player>>,
-    ammos: Query<&Ammo>,
-    tagged: Query<&Tagged>,
-    stacks: Query<&Stack>,
-) {
+pub(crate) fn note_ammo(mut view: ResMut<GearView>, bag: Query<&Inventory, With<Player>>, ammos: Query<&Ammo>, tagged: Query<&Tagged>, stacks: Query<&Stack>) {
     let Ok(bag) = bag.single() else { return };
     for row in view.rows_mut() {
         let Ok(ammo) = ammos.get(row.entity) else { continue };
         let left: u32 =
             bag.items.iter().filter(|i| tagged.get(**i).is_ok_and(|t| t.0.contains(&ammo.tag))).filter_map(|i| stacks.get(*i).ok()).map(|s| s.count).sum();
-        let facet = if left == 0 { facets.facet("ammo", "dry").toned(Tones::BAD) } else { facets.facet("ammo", format!("{left} left")) };
+        let facet = if left == 0 { Facet::new("ammo", "dry").toned(Tones::BAD) } else { Facet::new("ammo", format!("{left} left")) };
         row.facets.push(facet);
     }
 }
@@ -272,8 +265,8 @@ mod tests {
     }
 
     /// The facet under `key`'s text and tone, for a row on `view`.
-    fn ammo_facet(app: &App, row: &Row) -> Option<(String, crate::tone::ToneId)> {
-        row.facet(app.world().resource::<Facets>().get("ammo")?).map(|f| (f.text.clone(), f.tone))
+    fn ammo_facet(row: &Row) -> Option<(String, crate::tone::ToneId)> {
+        row.facet("ammo").map(|f| (f.text.clone(), f.tone))
     }
 
     #[test]
@@ -293,7 +286,7 @@ mod tests {
 
         let view = stage.app.world().resource::<GearView>();
         let row = view.by_name("main hand").unwrap().item.as_ref().unwrap();
-        assert_eq!(ammo_facet(&stage.app, row).map(|(text, _)| text).as_deref(), Some("5 left"));
+        assert_eq!(ammo_facet(row).map(|(text, _)| text).as_deref(), Some("5 left"));
     }
 
     /// Nothing of the tag anywhere in the bag, not even a unit with nothing
@@ -315,6 +308,6 @@ mod tests {
 
         let view = stage.app.world().resource::<GearView>();
         let row = view.by_name("main hand").unwrap().item.as_ref().unwrap();
-        assert_eq!(ammo_facet(&stage.app, row), Some(("dry".to_string(), Tones::BAD)));
+        assert_eq!(ammo_facet(row), Some(("dry".to_string(), Tones::BAD)));
     }
 }

@@ -566,9 +566,9 @@ mod tests {
             app.add_plugins(rl_render::MapViewPlugin::new(Rect::new(0, 0, 40, 20)));
         })
         .screen(40, 21 + height);
-        let annotate = move |mut view: ResMut<InspectView>, mut keys: ResMut<crate::Facets>| {
+        let annotate = move |mut view: ResMut<InspectView>| {
             if view.subject.is_some() {
-                view.facets.extend(facets.iter().map(|text| keys.facet("trait", *text)));
+                view.facets.extend(facets.iter().map(|text| crate::Facet::new("trait", *text)));
             }
         };
         stage.app.add_systems(Update, annotate.in_set(crate::ViewSet::Annotate));
@@ -629,9 +629,9 @@ mod tests {
         stage.app.world_mut().entity_mut(vial).insert(rl_bevy::Unknown);
         stage.app.add_systems(
             Update,
-            (|mut view: ResMut<InspectView>, mut facets: ResMut<crate::Facets>| {
-                view.seems.push(facets.facet("seems", "strength not yet known").toned(Tones::BAD));
-                view.facets.push(facets.facet("holds", "holds a draught"));
+            (|mut view: ResMut<InspectView>| {
+                view.seems.push(crate::Facet::new("seems", "strength not yet known").toned(Tones::BAD));
+                view.facets.push(crate::Facet::new("holds", "holds a draught"));
             })
             .in_set(crate::ViewSet::Annotate),
         );

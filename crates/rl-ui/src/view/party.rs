@@ -210,9 +210,9 @@ mod tests {
 
     #[test]
     fn a_game_facet_lands_on_the_follower_it_names() {
-        fn order(mut view: ResMut<PartyView>, mut facets: ResMut<crate::Facets>) {
+        fn order(mut view: ResMut<PartyView>) {
             for row in view.rows_mut() {
-                row.facets.push(facets.facet("order", "holding"));
+                row.facets.push(crate::Facet::new("order", "holding"));
             }
         }
         let mut stage = Stage::new(PartyViewPlugin);

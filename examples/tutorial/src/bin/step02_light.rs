@@ -130,8 +130,8 @@ fn declare_controls(app: &mut App) {
 // ANCHOR: status
 /// The one thing the vitals panel cannot know: how much of the map is
 /// ours. A note on the view, in the game's own words.
-fn note_explored(mut vitals: ResMut<VitalsView>, mut facets: ResMut<Facets>, knowledge: Res<Knowledge>) {
-    vitals.facets.push(facets.facet("explored", format!("{} tiles explored", knowledge.explored_count())));
+fn note_explored(mut vitals: ResMut<VitalsView>, knowledge: Res<Knowledge>) {
+    vitals.facets.push(Facet::new("explored", format!("{} tiles explored", knowledge.explored_count())));
 }
 // ANCHOR_END: status
 

@@ -263,9 +263,9 @@ mod tests {
             app.world_mut().resource_mut::<rl_bevy::Registries>().slots = slots();
             app.add_systems(
                 Update,
-                (|mut view: ResMut<GearView>, mut facets: ResMut<crate::Facets>| {
+                (|mut view: ResMut<GearView>| {
                     for row in view.rows_mut() {
-                        row.facets.push(facets.facet("state", "locked").toned(Tones::BAD));
+                        row.facets.push(Facet::new("state", "locked").toned(Tones::BAD));
                     }
                 })
                 .in_set(crate::ViewSet::Annotate),
@@ -370,9 +370,9 @@ mod tests {
             app.world_mut().resource_mut::<rl_bevy::Registries>().slots = slots();
             app.add_systems(
                 Update,
-                (|mut view: ResMut<GearView>, mut facets: ResMut<crate::Facets>| {
+                (|mut view: ResMut<GearView>| {
                     for row in view.rows_mut() {
-                        row.facets.push(facets.facet("state", "locked").toned(Tones::BAD));
+                        row.facets.push(Facet::new("state", "locked").toned(Tones::BAD));
                     }
                 })
                 .in_set(crate::ViewSet::Annotate),
@@ -410,9 +410,9 @@ mod tests {
             app.world_mut().resource_mut::<rl_bevy::Registries>().slots = slots();
             app.add_systems(
                 Update,
-                (|mut view: ResMut<GearView>, mut facets: ResMut<crate::Facets>| {
+                (|mut view: ResMut<GearView>| {
                     for row in view.rows_mut() {
-                        row.facets.push(facets.facet("ammo", "dry").toned(Tones::BAD));
+                        row.facets.push(Facet::new("ammo", "dry").toned(Tones::BAD));
                     }
                 })
                 .in_set(crate::ViewSet::Annotate),

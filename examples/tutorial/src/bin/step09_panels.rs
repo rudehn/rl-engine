@@ -436,11 +436,11 @@ fn player_input(keys: ControlInput, binds: Res<Binds>, player: PlayerTurn, mut i
 ///
 /// A facet is a note on a view: a key, some words, and a tone. The engine
 /// has no idea what a crust is, and this is how it never needs one.
-fn note_bag_and_floor(mut vitals: ResMut<VitalsView>, mut facets: ResMut<Facets>, map: Res<WorldMap>, player: Query<&Inventory, With<Player>>) {
+fn note_bag_and_floor(mut vitals: ResMut<VitalsView>, map: Res<WorldMap>, player: Query<&Inventory, With<Player>>) {
     let Ok(bag) = player.single() else { return };
     let depth = floor_of(map.current());
-    vitals.facets.push(facets.facet("crusts", format!("crusts {}", bag.items.len())));
-    vitals.facets.push(facets.facet("floor", format!("floor {depth}/{FLOORS}: {}", name_of(depth))));
+    vitals.facets.push(Facet::new("crusts", format!("crusts {}", bag.items.len())));
+    vitals.facets.push(Facet::new("floor", format!("floor {depth}/{FLOORS}: {}", name_of(depth))));
 }
 // ANCHOR_END: status
 
@@ -450,18 +450,12 @@ fn note_bag_and_floor(mut vitals: ResMut<VitalsView>, mut facets: ResMut<Facets>
 /// `MonsterAIMode` is not a thing the engine has; `flee_at` is this
 /// game's rule. So the row gets a facet, in a tone this game declared,
 /// and the rail prints it without knowing what fleeing is.
-fn note_what_a_rat_is_doing(
-    mut nearby: ResMut<NearbyView>,
-    mut facets: ResMut<Facets>,
-    tones: Res<Tones>,
-    bestiary: Res<Bestiary>,
-    rats: Query<(&Kind, &Health)>,
-) {
+fn note_what_a_rat_is_doing(mut nearby: ResMut<NearbyView>, tones: Res<Tones>, bestiary: Res<Bestiary>, rats: Query<(&Kind, &Health)>) {
     let fleeing = tones.get("fleeing").expect("declared while building");
     for row in nearby.actors.iter_mut() {
         let Ok((kind, health)) = rats.get(row.entity) else { continue };
         if health.current <= bestiary.defs.get(kind.0).flee_at {
-            row.facets.push(facets.facet("mood", "fleeing").toned(fleeing));
+            row.facets.push(Facet::new("mood", "fleeing").toned(fleeing));
         }
     }
 }

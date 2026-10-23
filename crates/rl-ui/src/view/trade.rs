@@ -272,8 +272,8 @@ mod tests {
         let (mut stage, trader) = stage();
         stage.app.add_systems(
             Update,
-            (|mut view: ResMut<TradeView>, mut facets: ResMut<crate::Facets>| {
-                let line = facets.facet("greeting", "What will it be?");
+            (|mut view: ResMut<TradeView>| {
+                let line = crate::Facet::new("greeting", "What will it be?");
                 if let Some(row) = view.trader.as_mut() {
                     row.facets.push(line);
                 }

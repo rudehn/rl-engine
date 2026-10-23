@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- Facet keys are plain `&'static str`, and the `Facets` resource and `FacetKey` are gone: `Facet::new("key", text)` makes a facet, `Row::facet("key")` finds one, and a panel's `beneath` keys match by name. A key is a word the game's code names; one built from data at run time would have to be leaked to `&'static str`.
+  To change: drop `ResMut<Facets>` and write `facets.facet("key", text)` as `Facet::new("key", text)`; a test that looked a key up with `Facets::get` compares `f.key == "key"`.
+
 - `BuildContext` is gone: `Pass` and `Chain` work on `BaseContext`, its one implementation, whose `terrain`, `tiles`, `rng`, `emit` and `outputs` are now its own methods. `ScatterBy` and `ChanceFn` lose the parameter with it, a chance reading a `&BaseContext`.
   To change: `impl Pass<BaseContext> for X` becomes `impl Pass for X`, `Chain<BaseContext>` becomes `Chain`, `ScatterBy<BaseContext>` becomes `ScatterBy`, and an import of `BuildContext` goes.
 

@@ -174,7 +174,6 @@ pub struct Me<'w, 's> {
     fade: Res<'w, NoiseFade>,
     ears: Query<'w, 's, (), (With<Player>, With<rl_bevy::Hearing>)>,
     registries: Option<Res<'w, Registries>>,
-    facets: ResMut<'w, crate::facet::Facets>,
     watchers: Watchers<'w, 's>,
     loadout: Loadout<'w, 's>,
     /// Worn things not yet known, whose armor the total counts unseen.
@@ -236,7 +235,7 @@ pub(crate) fn collect_vitals(mut view: ResMut<VitalsView>, mut me: Me) {
     let Some(registries) = &me.registries else { return };
     for active in afflicted.into_iter().flat_map(|a| a.iter()) {
         if let Some(glyph) = registries.statuses.get(active.id).badge {
-            view.badges.push(me.facets.facet("badge", glyph.to_string()).toned(Tones::NOTICE));
+            view.badges.push(Facet::new("badge", glyph.to_string()).toned(Tones::NOTICE));
         }
     }
 }

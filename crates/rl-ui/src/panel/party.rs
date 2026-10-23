@@ -18,7 +18,6 @@ use rl_bevy::PresentSet;
 use rl_core::Rect;
 use rl_render::Terminal;
 
-use crate::facet::Facets;
 use crate::panel::nearby::{Beneath, clip_keeping, paint_beneath, paint_row};
 use crate::panel::{clear, section};
 use crate::tone::{Palette, Tones};
@@ -90,7 +89,7 @@ impl Plugin for PartyPanel {
 }
 
 /// Paints the party rail.
-pub(crate) fn draw_party(mut terminal: ResMut<Terminal>, layout: Res<PartyLayout>, view: Res<PartyView>, palette: Res<Palette>, facets: Res<Facets>) {
+pub(crate) fn draw_party(mut terminal: ResMut<Terminal>, layout: Res<PartyLayout>, view: Res<PartyView>, palette: Res<Palette>) {
     let rect = layout.rect;
     if rect.width < 6 || rect.height < 1 {
         return;
@@ -106,7 +105,7 @@ pub(crate) fn draw_party(mut terminal: ResMut<Terminal>, layout: Res<PartyLayout
         section(&mut terminal, rect, y, &layout.heading, None, &palette);
         y += 2;
     }
-    let beneath = Beneath::new(&layout.beneath, &facets, rect.width);
+    let beneath = Beneath::new(&layout.beneath, rect.width);
     let whole: i32 = view.rows.iter().map(|r| 1 + beneath.lines(r, false).len() as i32).sum();
     let compact = whole > rect.bottom() - y;
     for row in &view.rows {
@@ -221,9 +220,9 @@ mod tests {
 
     #[test]
     fn a_game_facet_is_written_after_the_followers_name() {
-        fn order(mut view: ResMut<PartyView>, mut facets: ResMut<crate::Facets>) {
+        fn order(mut view: ResMut<PartyView>) {
             for row in view.rows_mut() {
-                row.facets.push(facets.facet("order", "hold"));
+                row.facets.push(crate::Facet::new("order", "hold"));
             }
         }
         let mut stage = Stage::new(PartyPanel::new(Rect::new(0, 0, 24, 4))).screen(24, 4);
@@ -237,9 +236,9 @@ mod tests {
     /// the order, which is kept whole; the name keeps its start.
     #[test]
     fn a_long_name_is_clipped_and_the_games_facet_after_it_kept_whole() {
-        fn order(mut view: ResMut<PartyView>, mut facets: ResMut<crate::Facets>) {
+        fn order(mut view: ResMut<PartyView>) {
             for row in view.rows_mut() {
-                row.facets.push(facets.facet("order", "fighting freely"));
+                row.facets.push(crate::Facet::new("order", "fighting freely"));
             }
         }
         let mut stage = Stage::new(PartyPanel::new(Rect::new(0, 0, 36, 4))).screen(36, 4);
@@ -254,10 +253,10 @@ mod tests {
 
     /// Pushes what each follower holds under `kit`, beneath its row, and
     /// its order after its name.
-    fn kit_and_order(mut view: ResMut<PartyView>, mut facets: ResMut<crate::Facets>) {
+    fn kit_and_order(mut view: ResMut<PartyView>) {
         for row in view.rows_mut() {
-            row.facets.push(facets.facet("order", "hold"));
-            row.facets.push(facets.facet("kit", "wields a long spear with a hooked head").toned(Tones::MUTED));
+            row.facets.push(crate::Facet::new("order", "hold"));
+            row.facets.push(crate::Facet::new("kit", "wields a long spear with a hooked head").toned(Tones::MUTED));
         }
     }
 

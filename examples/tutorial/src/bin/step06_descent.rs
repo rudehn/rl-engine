@@ -272,8 +272,8 @@ fn player_input(keys: Res<ButtonInput<KeyCode>>, player: PlayerTurn, carried: Ca
 // ANCHOR: status
 /// The one thing the vitals panel cannot know: how much of the map is
 /// ours. A note on the view, in the game's own words.
-fn note_explored(mut vitals: ResMut<VitalsView>, mut facets: ResMut<Facets>, knowledge: Res<Knowledge>) {
-    vitals.facets.push(facets.facet("explored", format!("{} tiles explored", knowledge.explored_count())));
+fn note_explored(mut vitals: ResMut<VitalsView>, knowledge: Res<Knowledge>) {
+    vitals.facets.push(Facet::new("explored", format!("{} tiles explored", knowledge.explored_count())));
 }
 // ANCHOR_END: status
 
@@ -463,13 +463,13 @@ fn narrate(mut items: MessageReader<ItemEvent>, mut log: Log) {
 
 // ANCHOR: status
 /// What the engine cannot know: how many crusts are in the bag.
-fn note_bag(mut vitals: ResMut<VitalsView>, mut facets: ResMut<Facets>, player: Query<(&Inventory, Option<&OnMap>), With<Player>>) {
+fn note_bag(mut vitals: ResMut<VitalsView>, player: Query<(&Inventory, Option<&OnMap>), With<Player>>) {
     let Ok((bag, on)) = player.single() else { return };
-    vitals.facets.push(facets.facet("crusts", format!("crusts {}", bag.items.len())));
+    vitals.facets.push(Facet::new("crusts", format!("crusts {}", bag.items.len())));
     // Which floor you are on is the game's to know: the engine has map ids
     // and no names for them.
     if let Some(depth) = on.map(|m| floor_of(m.0)) {
-        vitals.facets.push(facets.facet("floor", format!("floor {depth}/{FLOORS}: {}", name_of(depth))));
+        vitals.facets.push(Facet::new("floor", format!("floor {depth}/{FLOORS}: {}", name_of(depth))));
     }
 }
 // ANCHOR_END: status

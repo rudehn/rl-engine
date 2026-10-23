@@ -17,7 +17,7 @@
 
 use bevy::prelude::*;
 use rl_engine::rl_bevy::{Equipped, MeleeAttack, Player, RangedAttack, Stowed, Struck, TurnEnd};
-use rl_engine::rl_ui::{Facets, GearView, Tell, Tones};
+use rl_engine::rl_ui::{Facet, GearView, Tell, Tones};
 
 /// How hot a weapon may run before it locks.
 pub const CAPACITY: u32 = 100;
@@ -171,14 +171,14 @@ impl HeatWords<'_, '_> {
 /// `GearView` is `None` until a game adds `GearViewPlugin`, which the
 /// binary's `GearPanel` does and a headless test need not: absence here
 /// means no gear panel exists to annotate, not that anything is wrong.
-pub fn note_heat(view: Option<ResMut<GearView>>, mut facets: ResMut<Facets>, heats: Query<&Heat>) {
+pub fn note_heat(view: Option<ResMut<GearView>>, heats: Query<&Heat>) {
     let Some(mut view) = view else { return };
     for row in view.rows_mut() {
         let Ok(heat) = heats.get(row.entity) else { continue };
         let pct = heat.now * 100 / CAPACITY;
         let hot = heat.locked || pct >= 70;
         let text = if heat.locked { "locked".to_string() } else { format!("{pct}%") };
-        let facet = facets.facet("heat", text);
+        let facet = Facet::new("heat", text);
         row.facets.push(if hot { facet.toned(Tones::BAD) } else { facet });
     }
 }
@@ -343,7 +343,7 @@ mod tests {
         let pct_at = |app: &App, item: Entity| -> Option<String> {
             let view = app.world().resource::<GearView>();
             let row = view.worn().map(|(_, row)| row).find(|row| row.entity == item)?;
-            row.facet(app.world().resource::<Facets>().get("heat")?).map(|f| f.text.clone())
+            row.facet("heat").map(|f| f.text.clone())
         };
         assert_eq!(pct_at(&app, first).as_deref(), Some("0%"), "cold and freshly worn");
         crate::testing::fire_at_a_target(&mut app, player, 7);

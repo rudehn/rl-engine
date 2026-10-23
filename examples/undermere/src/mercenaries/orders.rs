@@ -238,25 +238,17 @@ pub fn order_party(mut key: OrderKey, mut commands: Commands, party: Query<(Enti
 ///
 /// In `ViewSet::Annotate`, after the kind's own words, so they are there
 /// to take off.
-pub fn show_orders(
-    look: Option<ResMut<InspectView>>,
-    party: Option<ResMut<PartyView>>,
-    hired: Query<&Mercenary>,
-    kits: KitSeen,
-    bestiary: Res<Bestiary>,
-    mut facets: ResMut<Facets>,
-) {
+pub fn show_orders(look: Option<ResMut<InspectView>>, party: Option<ResMut<PartyView>>, hired: Query<&Mercenary>, kits: KitSeen, bestiary: Res<Bestiary>) {
     if let Some(mut view) = look
         && let Some((who, order)) = view.subject.as_ref().and_then(|s| hired.get(s.entity).ok().map(|m| (s.entity, m.order)))
     {
-        let kind = facets.declare("trait");
         let def = bestiary.defs.get(bestiary.defs.expect(MERCENARY));
         let for_hire: Vec<&str> = def.folded.says.iter().filter(|(name, ..)| name == MERCENARY).map(|(_, says, _)| says.as_str()).collect();
-        view.facets.retain(|f| !(f.key == kind && for_hire.contains(&f.text.as_str())));
-        view.facets.push(facets.facet("pay", IN_PAY));
-        view.facets.push(facets.facet("order", order.doing()));
+        view.facets.retain(|f| !(f.key == "trait" && for_hire.contains(&f.text.as_str())));
+        view.facets.push(Facet::new("pay", IN_PAY));
+        view.facets.push(Facet::new("order", order.doing()));
         for (how, said) in kits.of(who) {
-            view.facets.push(facets.facet(KIT_FACET, format!("{} {said}", how.verb())));
+            view.facets.push(Facet::new(KIT_FACET, format!("{} {said}", how.verb())));
         }
     }
     if let Some(mut view) = party {
@@ -267,7 +259,7 @@ pub fn show_orders(
         let away = view.elsewhere.clone();
         for row in view.rows_mut().filter(|r| !away.contains(&r.entity)) {
             if let Ok(hired) = hired.get(row.entity) {
-                row.facets.push(facets.facet("order", hired.order.doing()));
+                row.facets.push(Facet::new("order", hired.order.doing()));
             }
         }
     }

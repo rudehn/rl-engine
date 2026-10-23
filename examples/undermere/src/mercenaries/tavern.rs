@@ -310,17 +310,11 @@ pub fn kit_lines(held: &[(Held, String)]) -> Vec<String> {
 /// shelf, which the shop shows, and a rat holds nothing. In
 /// `ViewSet::Annotate`; order among the game's other notes does not
 /// matter, since the panels draw this one beneath the row.
-pub fn show_kit(
-    rail: Option<ResMut<NearbyView>>,
-    party: Option<ResMut<PartyView>>,
-    holders: Query<(), (With<Equipped>, Without<Trader>)>,
-    kits: KitSeen,
-    mut facets: ResMut<Facets>,
-) {
+pub fn show_kit(rail: Option<ResMut<NearbyView>>, party: Option<ResMut<PartyView>>, holders: Query<(), (With<Equipped>, Without<Trader>)>, kits: KitSeen) {
     let mut note = |row: &mut Row| {
         if holders.contains(row.entity) {
             for line in kit_lines(&kits.of(row.entity)) {
-                row.facets.push(facets.facet(KIT_FACET, line).toned(Tones::MUTED));
+                row.facets.push(Facet::new(KIT_FACET, line).toned(Tones::MUTED));
             }
         }
     };
@@ -380,25 +374,19 @@ pub fn answer_candidates(
 ///
 /// In `ViewSet::Annotate`, after the kind's own words, `a sword for hire`,
 /// so the kit is read under them.
-pub fn show_candidates(
-    look: Option<ResMut<InspectView>>,
-    rail: Option<ResMut<NearbyView>>,
-    candidates: Query<&Candidate>,
-    kits: KitSeen,
-    mut facets: ResMut<Facets>,
-) {
+pub fn show_candidates(look: Option<ResMut<InspectView>>, rail: Option<ResMut<NearbyView>>, candidates: Query<&Candidate>, kits: KitSeen) {
     if let Some(mut view) = look
         && let Some((who, candidate)) = view.subject.as_ref().and_then(|s| candidates.get(s.entity).ok().map(|c| (s.entity, c)))
     {
         for (how, said) in kits.of(who) {
-            view.facets.push(facets.facet(KIT_FACET, format!("{} {said}", how.verb())));
+            view.facets.push(Facet::new(KIT_FACET, format!("{} {said}", how.verb())));
         }
-        view.facets.push(facets.facet("fee", format!("asks {}", sum_of(GOLD, candidate.fee))));
+        view.facets.push(Facet::new("fee", format!("asks {}", sum_of(GOLD, candidate.fee))));
     }
     if let Some(mut view) = rail {
         for row in view.actors.iter_mut().filter(|r| candidates.contains(r.entity)) {
             (row.doing, row.alert) = (None, None);
-            row.facets.push(facets.facet("role", "for hire"));
+            row.facets.push(Facet::new("role", "for hire"));
         }
     }
 }
@@ -656,21 +644,19 @@ mod tests {
         stand_on(&mut app, me, cell);
         app.update();
 
-        let kit = KIT_FACET.to_string();
-        let lines = |row: &Row, facets: &Facets| -> Vec<String> { row.facets.iter().filter(|f| facets.name(f.key) == kit).map(|f| f.text.clone()).collect() };
-        let facets = app.world().resource::<Facets>();
+        let lines = |row: &Row| -> Vec<String> { row.facets.iter().filter(|f| f.key == KIT_FACET).map(|f| f.text.clone()).collect() };
         let rail = app.world().resource::<NearbyView>();
         let row = rail.actors.iter().find(|r| r.entity == candidate).expect("the candidate is in sight");
-        let said = lines(row, facets);
+        let said = lines(row);
         assert!(said.first().is_some_and(|l| l.starts_with("wields ")), "what it wields first: {said:?}");
         assert!(said.last().is_some_and(|l| l.starts_with("carries ") && l.contains(&with_article(&face))), "the potion by its face, {face:?}: {said:?}");
         assert!(!said.iter().any(|l| l.contains(kind)), "never its kind: {said:?}");
-        assert!(row.facets.iter().filter(|f| facets.name(f.key) == kit).all(|f| f.tone == Tones::MUTED), "said muted, under the name");
+        assert!(row.facets.iter().filter(|f| f.key == KIT_FACET).all(|f| f.tone == Tones::MUTED), "said muted, under the name");
         assert!(!rail.lists(hireling), "the hireling is the company's to list");
 
         let party = app.world().resource::<PartyView>();
         let row = party.rows.iter().find(|r| r.entity == hireling).expect("the hireling follows");
-        assert!(lines(row, facets).first().is_some_and(|l| l.starts_with("wields ")), "{:?}", row.facets);
+        assert!(lines(row).first().is_some_and(|l| l.starts_with("wields ")), "{:?}", row.facets);
     }
 
     /// A candidate's line lists its kit as a sentence does, and one with

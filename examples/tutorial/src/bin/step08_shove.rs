@@ -345,11 +345,11 @@ fn player_input(keys: Res<ButtonInput<KeyCode>>, dirs: Res<DirectionKeys>, playe
 
 // ANCHOR: status
 /// What the engine cannot know: the bag, and which floor this is.
-fn note_bag_and_floor(mut vitals: ResMut<VitalsView>, mut facets: ResMut<Facets>, map: Res<WorldMap>, player: Query<&Inventory, With<Player>>) {
+fn note_bag_and_floor(mut vitals: ResMut<VitalsView>, map: Res<WorldMap>, player: Query<&Inventory, With<Player>>) {
     let Ok(bag) = player.single() else { return };
     let depth = floor_of(map.current());
-    vitals.facets.push(facets.facet("crusts", format!("crusts {}", bag.items.len())));
-    vitals.facets.push(facets.facet("floor", format!("floor {depth}/{FLOORS}: {}", name_of(depth))));
+    vitals.facets.push(Facet::new("crusts", format!("crusts {}", bag.items.len())));
+    vitals.facets.push(Facet::new("floor", format!("floor {depth}/{FLOORS}: {}", name_of(depth))));
 }
 // ANCHOR_END: status
 

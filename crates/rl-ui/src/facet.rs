@@ -15,68 +15,24 @@
 //! Facets are an escape hatch and their use is a signal: if two games push
 //! the same key, the field belongs in the view.
 
-use bevy::prelude::*;
-use rl_core::{Id, Interner};
-
 use crate::tone::ToneId;
 
-/// The type `FacetId` indexes. Never constructed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FacetKey;
-
-/// A registered facet key.
-pub(crate) type FacetId = Id<FacetKey>;
-
-/// The facet keys a game has named.
-///
-/// Keys exist so a panel can pick facets out rather than printing all of
-/// them: a narrow rail may want only the one keyed `wielding`.
-#[derive(Resource, Debug, Clone, Default)]
-pub struct Facets(Interner<FacetKey>);
-
-impl Facets {
-    /// The id for `name`, assigning a new one if it is unseen.
-    pub fn declare(&mut self, name: &str) -> FacetId {
-        self.0.intern(name)
-    }
-
-    /// The id for `name`, if it has been declared.
-    pub fn get(&self, name: &str) -> Option<FacetId> {
-        self.0.get(name)
-    }
-
-    /// The name behind `key`.
-    ///
-    /// # Panics
-    /// Panics if `key` did not come from this registry.
-    pub fn name(&self, key: FacetId) -> &str {
-        self.0.name(key)
-    }
-
-    /// Every key, with its name.
-    pub fn iter(&self) -> impl Iterator<Item = (FacetId, &str)> {
-        self.0.iter()
-    }
-
-    /// The facet under `key` reading `text`, declaring the key if it is
-    /// new. The one-liner an annotate system wants:
-    ///
-    /// ```
-    /// # use rl_ui::{Facets, Tones};
-    /// # let mut facets = Facets::default();
-    /// # let mut row_facets = Vec::new();
-    /// row_facets.push(facets.facet("wielding", "cutlass").toned(Tones::MUTED));
-    /// ```
-    pub fn facet(&mut self, key: &str, text: impl Into<String>) -> Facet {
-        Facet::new(self.declare(key), text)
-    }
-}
-
 /// One note on a row: what it is about, what it says, and how it reads.
+///
+/// The key is a plain name, so a panel can pick facets out rather than
+/// printing all of them: a narrow rail may want only the one keyed
+/// `wielding`. It is `&'static str` because every key is a word the game's
+/// code names, and a name to compare is all a key is for:
+///
+/// ```
+/// # use rl_ui::{Facet, Tones};
+/// # let mut row_facets = Vec::new();
+/// row_facets.push(Facet::new("wielding", "cutlass").toned(Tones::MUTED));
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Facet {
     /// Which kind of note.
-    pub key: FacetId,
+    pub key: &'static str,
     /// The words, already in the game's language.
     pub text: String,
     /// Its semantic role, which the palette turns into a colour.
@@ -84,8 +40,8 @@ pub struct Facet {
 }
 
 impl Facet {
-    /// A facet in the ordinary text tone.
-    pub fn new(key: FacetId, text: impl Into<String>) -> Self {
+    /// A facet under `key` reading `text`, in the ordinary text tone.
+    pub fn new(key: &'static str, text: impl Into<String>) -> Self {
         Self { key, text: text.into(), tone: crate::tone::Tones::TEXT }
     }
 

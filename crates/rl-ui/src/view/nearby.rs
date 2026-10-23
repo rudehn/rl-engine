@@ -25,6 +25,7 @@ use rl_bevy::prelude::*;
 use rl_render::Glyph;
 use rl_rules::Relation;
 
+use crate::facet::Facet;
 use crate::focus::{Focus, InSight, Sighting, browse};
 use crate::view::{Alert, Row};
 
@@ -142,13 +143,7 @@ pub struct NearbyStatuses {
 /// In [`ViewSet::Annotate`](crate::ViewSet::Annotate), while a game has
 /// inserted [`NearbyStatuses`]; nothing is said in a game with no
 /// [`Registries`].
-pub(crate) fn note_statuses(
-    mut nearby: ResMut<NearbyView>,
-    mut facets: ResMut<crate::facet::Facets>,
-    says: Res<NearbyStatuses>,
-    registries: Option<Res<Registries>>,
-    held: Query<&Afflicted>,
-) {
+pub(crate) fn note_statuses(mut nearby: ResMut<NearbyView>, says: Res<NearbyStatuses>, registries: Option<Res<Registries>>, held: Query<&Afflicted>) {
     let Some(registries) = registries.as_deref() else { return };
     for row in &mut nearby.actors {
         let Ok(held) = held.get(row.entity) else { continue };
@@ -157,7 +152,7 @@ pub(crate) fn note_statuses(
             if def.sleeps {
                 (row.alert, row.doing) = (Some(Alert::Unaware), Some(says.asleep));
             } else if def.badge.is_some() {
-                row.facets.push(facets.facet(says.key, registries.statuses.name(active.id)));
+                row.facets.push(Facet::new(says.key, registries.statuses.name(active.id)));
             }
         }
     }
@@ -312,16 +307,15 @@ pub(crate) fn collect_nearby(mut view: ResMut<NearbyView>, around: Around) {
 mod tests {
     use super::*;
     use crate::cursor::CursorKeys;
-    use crate::facet::Facets;
     use crate::harness::Stage;
 
     /// A game's annotate system: notes the one entity it was told about.
     #[derive(Resource)]
     struct Noted(Entity);
 
-    fn note(mut view: ResMut<NearbyView>, mut facets: ResMut<Facets>, noted: Res<Noted>) {
+    fn note(mut view: ResMut<NearbyView>, noted: Res<Noted>) {
         if let Some(row) = view.row_mut(noted.0) {
-            row.facets.push(facets.facet("wielding", "a rusty blade"));
+            row.facets.push(Facet::new("wielding", "a rusty blade"));
         }
     }
 

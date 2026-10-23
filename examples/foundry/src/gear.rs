@@ -42,7 +42,7 @@ use rl_engine::rl_rules::parts::{self, Level};
 use rl_engine::rl_rules::{DamageKind, LevelTable, LootTable, NameRef, Named, Registry, ScatterRules, TagDef};
 use rl_engine::rl_rules::{EffectSpec, TriggerSpec};
 use rl_engine::rl_ui::view::Strike;
-use rl_engine::rl_ui::{Facets, InventoryView, MassNoun, Tones};
+use rl_engine::rl_ui::{Facet, InventoryView, MassNoun, Tones};
 use serde::Deserialize;
 
 use crate::heat::Heat;
@@ -192,7 +192,6 @@ impl Named for ItemDef {
 /// no pack to annotate, not that anything is wrong.
 pub fn note_the_pack(
     view: Option<ResMut<InventoryView>>,
-    mut facets: ResMut<Facets>,
     registries: Res<Registries>,
     loadout: Loadout,
     things: Query<(Option<&WornDarkSight>, Option<&Stowed>)>,
@@ -207,11 +206,11 @@ pub fn note_the_pack(
                 Stowed::Melee(a) => row.blow = Some(Strike { kind: kind(a.kind), dice: a.dice, range: None }),
                 Stowed::Ranged(a) => row.shot = Some(Strike { kind: kind(a.kind), dice: a.dice, range: Some(a.range) }),
             }
-            let why = if dry { facets.facet("ammo", "dry") } else { facets.facet("heat", "locked") };
+            let why = if dry { Facet::new("ammo", "dry") } else { Facet::new("heat", "locked") };
             row.facets.push(why.toned(Tones::BAD));
         }
         if let Some(sight) = sight {
-            row.facets.push(facets.facet("dark sight", format!("sees {} in the dark", sight.0)));
+            row.facets.push(Facet::new("dark sight", format!("sees {} in the dark", sight.0)));
         }
     }
 }

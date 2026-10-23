@@ -15,7 +15,7 @@ use rl_engine::rl_bevy::testing::ambiguity::{self, Allowed, system_type as id};
 use rl_engine::rl_bevy::turn::{Acting, ActionDone, ActionRefused, Turns};
 use rl_engine::rl_bevy::{Aware, DarkSight, Inventory, Noticed, Position, RangedAttack};
 use rl_engine::rl_core::RunSeed;
-use rl_engine::rl_ui::{Facets, GearView, MessageLog, Modals};
+use rl_engine::rl_ui::{GearView, MessageLog, Modals};
 
 /// A name for each of Foundry's systems, for a failure to read by. An
 /// engine system a failure meets reads by Bevy's own name for it.
@@ -67,7 +67,6 @@ fn ids(world: &World) -> Vec<(&'static str, ComponentId)> {
         ("MessageLog", c.component_id::<MessageLog>()),
         ("Messages<Happened>", c.component_id::<Messages<rl_engine::rl_bevy::Happened>>()),
         ("GearView", c.component_id::<GearView>()),
-        ("Facets", c.component_id::<Facets>()),
         ("Modals", c.component_id::<Modals>()),
         ("Aware", c.component_id::<Aware>()),
         ("Messages<Noticed>", c.component_id::<Messages<Noticed>>()),

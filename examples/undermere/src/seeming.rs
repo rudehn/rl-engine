@@ -164,10 +164,10 @@ pub fn seem_armor(vitals: Option<ResMut<VitalsView>>, seeming: Seeming) {
 /// In `ViewSet::Annotate`. The engine forecasts no fight with an ally or in
 /// Mereholt's peace, so the words never qualify a forecast that is not
 /// there.
-pub fn seem_forecast(view: Option<ResMut<InspectView>>, mut facets: ResMut<Facets>) {
+pub fn seem_forecast(view: Option<ResMut<InspectView>>) {
     let Some(mut view) = view else { return };
     if view.seeming {
-        view.facets.push(facets.facet("forecast", "unknown gear counted plain").toned(Tones::MUTED));
+        view.facets.push(Facet::new("forecast", "unknown gear counted plain").toned(Tones::MUTED));
     }
 }
 
@@ -177,10 +177,10 @@ pub fn seem_forecast(view: Option<ResMut<InspectView>>, mut facets: ResMut<Facet
 /// reads `+10 accuracy`, the level its wearer has not learned.
 ///
 /// In `ViewSet::Annotate`.
-pub fn seem_aim(view: Option<ResMut<TargetView>>, mut facets: ResMut<Facets>) {
+pub fn seem_aim(view: Option<ResMut<TargetView>>) {
     let Some(mut view) = view else { return };
     if view.seeming {
-        view.facets.push(facets.facet("odds", "unknown gear counted plain").toned(Tones::MUTED));
+        view.facets.push(Facet::new("odds", "unknown gear counted plain").toned(Tones::MUTED));
     }
 }
 
@@ -250,7 +250,6 @@ pub struct Unsettled<'w, 's> {
     /// Each thing not yet known, its kind, its level, how long it has been
     /// worn, whether its curse has shown, and what it resists.
     things: Query<'w, 's, Unlearned, With<Unknown>>,
-    facets: ResMut<'w, Facets>,
 }
 
 impl Unsettled<'_, '_> {
@@ -306,10 +305,10 @@ impl Unsettled<'_, '_> {
         let Ok((_, level, unfamiliar, shown, _)) = self.things.get(thing) else { return Vec::new() };
         let mut lines = Vec::new();
         if shown && level.is_some_and(|l| l.0 < 0) {
-            lines.push(self.facets.facet("level", "level below nought, how far not yet known").toned(Tones::BAD));
+            lines.push(Facet::new("level", "level below nought, how far not yet known").toned(Tones::BAD));
         }
         if !plain.lines().is_empty() {
-            lines.push(self.facets.facet("level", "numbers shown at +0").toned(Tones::MUTED));
+            lines.push(Facet::new("level", "numbers shown at +0").toned(Tones::MUTED));
         }
         let left = unfamiliar.left();
         let turns = if left == 1 { "1 more turn".to_string() } else { format!("{left} more turns") };
@@ -318,13 +317,13 @@ impl Unsettled<'_, '_> {
             (false, 0) => format!("wearing it {FAMILIAR_AFTER} turns will tell its level"),
             (false, _) => format!("wearing it {turns} will tell its level"),
         };
-        lines.push(self.facets.facet("level", wear).toned(Tones::MUTED));
+        lines.push(Facet::new("level", wear).toned(Tones::MUTED));
         lines
     }
 
     /// What each level of it gives, as facets under its numbers.
     fn per_level(&mut self, plain: &Plain) -> Vec<Facet> {
-        plain.per_level_lines().into_iter().map(|line| self.facets.facet("per level", line)).collect()
+        plain.per_level_lines().into_iter().map(|line| Facet::new("per level", line)).collect()
     }
 }
 
@@ -364,7 +363,7 @@ pub fn seem_looked_at(view: Option<ResMut<InspectView>>, mut unsettled: Unsettle
     let Some(plain) = unsettled.plain(thing) else { return };
     view.seems = unsettled.level_lines(thing, &plain, false);
     for line in plain.lines() {
-        let facet = unsettled.facets.facet("plain", line);
+        let facet = Facet::new("plain", line);
         view.facets.push(facet);
     }
     let per_level = unsettled.per_level(&plain);

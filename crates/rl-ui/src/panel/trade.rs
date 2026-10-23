@@ -534,8 +534,8 @@ mod tests {
         stage.app.world_mut().get_mut::<Inventory>(player).expect("a bag").items.push(saw);
         stage.app.add_systems(
             Update,
-            (|mut view: ResMut<TradeView>, mut facets: ResMut<crate::Facets>| {
-                let line = facets.facet("greeting", "Look around.");
+            (|mut view: ResMut<TradeView>| {
+                let line = crate::Facet::new("greeting", "Look around.");
                 if let Some(row) = view.trader.as_mut() {
                     row.facets.push(line);
                 }

@@ -14,7 +14,7 @@ use rl_render::{Cell, Terminal};
 use rl_rules::Relation;
 
 use crate::cursor::{CursorMap, CursorStyle};
-use crate::facet::{Facet, FacetId, Facets};
+use crate::facet::Facet;
 use crate::modal::Modals;
 use crate::panel::{clear, clip, frame, section, wrap};
 use crate::tone::{Palette, ToneId, Tones};
@@ -242,7 +242,6 @@ pub(crate) fn relation_tone(relation: Option<Relation>) -> ToneId {
 pub(crate) struct Rail<'w> {
     layout: Res<'w, NearbyLayout>,
     view: Res<'w, NearbyView>,
-    facets: Res<'w, Facets>,
 }
 
 /// Paints the rail, and the tile of the row picked out.
@@ -266,7 +265,7 @@ pub(crate) fn draw_nearby(mut terminal: ResMut<Terminal>, rail: Rail, palette: R
         frame(&mut terminal, rect, &layout.title, "", &palette);
         Rect::new(rect.x + 1, rect.y + 1, rect.width - 2, rect.height - 2)
     };
-    let beneath = Beneath::new(&layout.beneath, &rail.facets, inner.width);
+    let beneath = Beneath::new(&layout.beneath, inner.width);
     let threats = Some(view.threats()).filter(|n| *n > 0);
     let sections = [(&layout.actors, &view.actors, threats), (&layout.things, &view.things, None)];
     // Every row's notes wrapped whole when the whole rail fits so, and
@@ -404,15 +403,14 @@ pub(crate) fn paint_beneath(terminal: &mut Terminal, inner: Rect, mut y: i32, bo
 /// facets after a name are and clipped, so every row keeps one line of
 /// what it says rather than the first row keeping all of it.
 pub(crate) struct Beneath {
-    keys: Vec<FacetId>,
+    keys: Vec<String>,
     width: usize,
 }
 
 impl Beneath {
-    /// The facets keyed `names`, in a rail `width` cells wide. A key no
-    /// game has declared is a key no row carries.
-    pub(crate) fn new(names: &[String], facets: &Facets, width: i32) -> Self {
-        Self { keys: names.iter().filter_map(|n| facets.get(n)).collect(), width: (width - 2).max(0) as usize }
+    /// The facets keyed `names`, in a rail `width` cells wide.
+    pub(crate) fn new(names: &[String], width: i32) -> Self {
+        Self { keys: names.to_vec(), width: (width - 2).max(0) as usize }
     }
 
     /// No facet drawn beneath: every one after the name.
@@ -423,7 +421,7 @@ impl Beneath {
 
     /// Whether `facet` is drawn beneath its row.
     pub(crate) fn takes(&self, facet: &Facet) -> bool {
-        self.keys.contains(&facet.key)
+        self.keys.iter().any(|key| key == facet.key)
     }
 
     /// The lines beneath `row`, each in its facet's tone: every facet
@@ -581,9 +579,9 @@ mod tests {
         stage.tick();
         stage.app.add_systems(
             Update,
-            (|mut view: ResMut<NearbyView>, mut facets: ResMut<crate::Facets>| {
+            (|mut view: ResMut<NearbyView>| {
                 for row in view.rows_mut() {
-                    row.facets.push(facets.facet("wielding", "a very long cutlass indeed"));
+                    row.facets.push(Facet::new("wielding", "a very long cutlass indeed"));
                 }
             })
             .in_set(crate::ViewSet::Annotate),
@@ -621,10 +619,10 @@ mod tests {
     }
 
     /// Pushes what each actor holds under `kit`, and a mark after its name.
-    fn kit_and_mark(mut view: ResMut<NearbyView>, mut facets: ResMut<crate::Facets>) {
+    fn kit_and_mark(mut view: ResMut<NearbyView>) {
         for row in view.rows_mut() {
-            row.facets.push(facets.facet("mark", "marked"));
-            row.facets.push(facets.facet("kit", "wields a long spear with a hooked head").toned(Tones::MUTED));
+            row.facets.push(Facet::new("mark", "marked"));
+            row.facets.push(Facet::new("kit", "wields a long spear with a hooked head").toned(Tones::MUTED));
         }
     }
 

@@ -145,7 +145,7 @@ pub mod view;
 
 pub use controls::{AddControls, Bindings, Chord, Control, ControlId, ControlInput, Controls, ControlsKeys, EngineKey, Keys, RepeatPace, Repeats};
 pub use cursor::{CursorKeys, CursorMap, CursorStyle, mark};
-pub use facet::{Facet, FacetKey, Facets};
+pub use facet::Facet;
 pub use focus::{Focus, Sighted, Sighting};
 pub use game_menu::{GameMenuPanel, MenuKeys, game_menu_modal};
 pub use interact::InteractKeys;
@@ -197,7 +197,7 @@ pub enum ViewSet {
 }
 
 /// The base every other plugin in this crate needs: tones, the palette,
-/// facet keys, the modal stack, the direction bindings and the pace a held
+/// the modal stack, the direction bindings and the pace a held
 /// one repeats at, the keys the cursors answer to, the [`Focus`] the
 /// nearby list and both cursors share, the [`Controls`] registry every key
 /// is declared in, and the message log every game writes to.
@@ -218,7 +218,6 @@ impl Plugin for UiPlugin {
         app.init_resource::<ButtonInput<KeyCode>>()
             .init_resource::<Tones>()
             .init_resource::<Palette>()
-            .init_resource::<Facets>()
             .init_resource::<Modals>()
             .init_resource::<DirectionKeys>()
             .init_resource::<CursorKeys>()
@@ -269,8 +268,6 @@ impl Plugin for UiPlugin {
             .add_systems(OnEnter(rl_bevy::EngineState::Playing), tone::report_unset_tones)
             // A new run starts with an empty log and no screen up.
             .add_systems(rl_bevy::EndRun, forget_run);
-        // The one facet key the engine itself pushes: a status badge.
-        app.world_mut().resource_mut::<Facets>().declare("badge");
     }
 
     fn finish(&self, app: &mut App) {
@@ -303,7 +300,7 @@ pub mod prelude {
     pub use crate::controls::{AddControls, Chord, ControlId, ControlInput, Controls, ControlsKeys, EngineKey, Keys, RepeatPace, Repeats};
 
     pub use crate::cursor::{CursorKeys, CursorStyle};
-    pub use crate::facet::{Facet, Facets};
+    pub use crate::facet::Facet;
 
     pub use crate::focus::{Focus, Sighted, Sighting};
 

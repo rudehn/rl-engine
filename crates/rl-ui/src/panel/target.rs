@@ -378,9 +378,9 @@ mod tests {
     #[test]
     fn what_a_game_adds_about_an_aim_is_printed_under_the_chance() {
         let mut stage = shooter(10);
-        let annotate = |mut view: ResMut<TargetView>, mut facets: ResMut<crate::Facets>| {
+        let annotate = |mut view: ResMut<TargetView>| {
             if view.aiming() {
-                view.facets.push(facets.facet("aim", "a word of the game's").toned(Tones::NOTICE));
+                view.facets.push(crate::Facet::new("aim", "a word of the game's").toned(Tones::NOTICE));
             }
         };
         stage.app.add_systems(Update, annotate.in_set(crate::ViewSet::Annotate));

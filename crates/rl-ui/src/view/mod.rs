@@ -47,7 +47,7 @@ use bevy::prelude::*;
 use rl_render::Glyph;
 use rl_rules::Relation;
 
-use crate::facet::{Facet, FacetId};
+use crate::facet::Facet;
 
 /// How much more a body's numbers truly are than they seem to the player,
 /// which the vitals, the look cursor's forecast and the targeting box take
@@ -225,7 +225,7 @@ impl Row {
     }
 
     /// The facet under `key`, if the game pushed one.
-    pub fn facet(&self, key: FacetId) -> Option<&Facet> {
+    pub fn facet(&self, key: &str) -> Option<&Facet> {
         self.facets.iter().find(|f| f.key == key)
     }
 

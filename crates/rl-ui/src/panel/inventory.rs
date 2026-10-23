@@ -1188,9 +1188,9 @@ mod tests {
         let (mut stage, _, hat, _) = staged();
         stage.app.add_systems(
             Update,
-            (move |mut view: ResMut<InventoryView>, mut facets: ResMut<crate::Facets>| {
+            (move |mut view: ResMut<InventoryView>| {
                 for row in view.rows.iter_mut().filter(|r| r.entity == hat) {
-                    row.facets.push(facets.facet("dark sight", "sees 8 in the dark"));
+                    row.facets.push(crate::Facet::new("dark sight", "sees 8 in the dark"));
                 }
             })
             .in_set(crate::ViewSet::Annotate),
@@ -1836,10 +1836,10 @@ mod tests {
         stage.app.world_mut().entity_mut(player).insert(Inventory { items: vec![unknown, known, silent] });
         stage.app.add_systems(
             Update,
-            (move |mut view: ResMut<InventoryView>, mut facets: ResMut<crate::Facets>| {
+            (move |mut view: ResMut<InventoryView>| {
                 for row in view.rows.iter_mut().filter(|r| r.entity != silent) {
-                    row.seems.push(facets.facet("seems", "worth not yet known").toned(Tones::MUTED));
-                    row.seems.push(facets.facet("seems", "known in 3 turns").toned(Tones::BAD));
+                    row.seems.push(crate::Facet::new("seems", "worth not yet known").toned(Tones::MUTED));
+                    row.seems.push(crate::Facet::new("seems", "known in 3 turns").toned(Tones::BAD));
                     if row.unknown {
                         row.armor = 3;
                     }
