@@ -2799,7 +2799,7 @@ mod spotting {
             .iter()
             .map(|&(at, spot, group)| {
                 terrain.set(at, wall);
-                atglyph_mapgen::Secret { at, is: floor, spot, group, joins: (0, 1) }
+                atglyph_mapgen::SecretCell { at, is: floor, spot, group, joins: (0, 1) }
             })
             .collect();
         let mut map = WorldMap::new(tiles.tables());

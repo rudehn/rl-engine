@@ -18,7 +18,7 @@ use crate::context::BaseContext;
 use crate::dungeon::{ExitPoint, Room, walk_through_doors};
 use crate::passes::StartPoint;
 use crate::prefab::{Orient, Prefab, Stamped, laid_in};
-use crate::secrets::Secret;
+use crate::secrets::SecretCell;
 use crate::survey::Surveyed;
 
 /// The area a pick prefers.
@@ -37,7 +37,7 @@ pub enum Prefer {
     /// An area with one way in.
     DeadEnd,
     /// An area reached only through a secret: the dead-end side of a
-    /// [`Secret`]'s [`joins`](Secret::joins).
+    /// [`SecretCell`]'s [`joins`](SecretCell::joins).
     Hidden,
     /// An area three ways or more lead out of.
     Junction,
@@ -133,7 +133,7 @@ impl Pass for StampPicks {
         // lake measures that again and leaves the room as growth emitted
         // it; pieces' floors never share a cell, so the room is the area's.
         let is_room = |a: &Area| a.cells.iter().any(|c| rooms.iter().any(|r| r.contains(*c)));
-        let secrets: Vec<Secret> = ctx.outputs().iter::<Secret>().copied().collect();
+        let secrets: Vec<SecretCell> = ctx.outputs().iter::<SecretCell>().copied().collect();
         let walked = walk_through_doors(ctx, start, true);
         let facts = |i: usize| surveyed.areas.get(i).copied();
         let hidden = |a: &Area| secrets.iter().any(|s| (s.joins.0 == a.index || s.joins.1 == a.index) && facts(a.index).is_some_and(|f| f.dead_end));
@@ -251,7 +251,7 @@ mod tests {
         // survey, which describes the place with it found.
         let door = Point::new(15, 6);
         ctx.terrain_mut().set(door, wall);
-        ctx.emit(Secret { at: door, is: floor, spot: 5, group: 0, joins: (2, 5) });
+        ctx.emit(SecretCell { at: door, is: floor, spot: 5, group: 0, joins: (2, 5) });
         ctx
     }
 

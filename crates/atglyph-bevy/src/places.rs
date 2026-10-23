@@ -150,7 +150,7 @@ pub struct PlaceBuild {
     pub locks: Vec<Lock>,
     /// Every cell the builder hid, walled over in `terrain`, in the order
     /// [`HideOpenings`](atglyph_mapgen::HideOpenings) published them.
-    pub secrets: Vec<atglyph_mapgen::Secret>,
+    pub secrets: Vec<atglyph_mapgen::SecretCell>,
     /// The light everywhere in the place before anything in it is lit,
     /// which [`LightingPlugin`](crate::lighting::LightingPlugin) makes the
     /// ambient whenever the place is current. Kept with the place and its
@@ -180,7 +180,7 @@ impl PlaceBuild {
     /// to another piece. Every cell of an [`Opening`](atglyph_mapgen::Opening)
     /// joined [`Locked`](atglyph_mapgen::Join::Locked) becomes a [`Lock`] to
     /// that tag, and every one joined [`Sealed`](atglyph_mapgen::Join::Sealed)
-    /// a seal. Every [`Secret`](atglyph_mapgen::Secret) a pass published is
+    /// a seal. Every [`Secret`](atglyph_mapgen::SecretCell) a pass published is
     /// carried as it was. The ambient is dark and the place is not
     /// peaceful; a builder lighting the place or keeping its peace sets
     /// [`ambient`](Self::ambient) or [`peaceful`](Self::peaceful) on what
@@ -205,7 +205,7 @@ impl PlaceBuild {
             })
             .flat_map(|(o, key)| o.cells.iter().map(move |at| Lock { at: *at, key }))
             .collect();
-        let secrets = ctx.outputs().iter::<atglyph_mapgen::Secret>().copied().collect();
+        let secrets = ctx.outputs().iter::<atglyph_mapgen::SecretCell>().copied().collect();
         let (terrain, _) = ctx.finish();
         Ok(Self { terrain, entry, exit, spots, locks, secrets, ambient: atglyph_grid::Light::DARK, peaceful: false })
     }
@@ -1203,12 +1203,12 @@ mod tests {
 
     #[test]
     fn a_build_carries_out_every_secret_its_chain_hid_as_it_was_published() {
-        use atglyph_mapgen::{BaseContext, Secret};
+        use atglyph_mapgen::{BaseContext, SecretCell};
         let tiles = atglyph_grid::TileRegistry::standard();
         let mut ctx = BaseContext::blank(10, 10, tiles.clone(), tiles.expect("floor"));
         let hid = [
-            Secret { at: Point::new(3, 1), is: tiles.expect("floor"), spot: 6, group: 0, joins: (0, 1) },
-            Secret { at: Point::new(3, 2), is: tiles.expect("floor"), spot: 6, group: 0, joins: (0, 1) },
+            SecretCell { at: Point::new(3, 1), is: tiles.expect("floor"), spot: 6, group: 0, joins: (0, 1) },
+            SecretCell { at: Point::new(3, 2), is: tiles.expect("floor"), spot: 6, group: 0, joins: (0, 1) },
         ];
         for s in hid {
             ctx.emit(s);

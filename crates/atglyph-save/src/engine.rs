@@ -284,8 +284,8 @@ mod tests {
         terrain.set(shut, wall);
         terrain.set(open, wall);
         let secrets = vec![
-            atglyph_mapgen::Secret { at: shut, is: door, spot: 6, group: 0, joins: (0, 1) },
-            atglyph_mapgen::Secret { at: open, is: floor, spot: 6, group: 1, joins: (1, 2) },
+            atglyph_mapgen::SecretCell { at: shut, is: door, spot: 6, group: 0, joins: (0, 1) },
+            atglyph_mapgen::SecretCell { at: open, is: floor, spot: 6, group: 1, joins: (1, 2) },
         ];
         let (mut app, _) = fresh();
         {

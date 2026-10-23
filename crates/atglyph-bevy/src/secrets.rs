@@ -2,7 +2,7 @@
 //! mouths of its hidden rooms, kept until they are found.
 //!
 //! A builder hides an opening by walling it over and publishing an
-//! [`atglyph_mapgen::Secret`] for every cell it walled; a [`PlaceBuild`]
+//! [`atglyph_mapgen::SecretCell`] for every cell it walled; a [`PlaceBuild`]
 //! carries them out, and [`WorldMap::install_place`] keeps each as a
 //! [`Secret`] on the place it belongs to. Until it is found a secret is
 //! the wall its terrain says it is, to everyone: a mind paths round it, a
@@ -37,7 +37,7 @@ use crate::world::WorldMap;
 /// One cell of a place still hiding what it is: wall in the terrain, and
 /// [`is`](Self::is) once found.
 ///
-/// What [`atglyph_mapgen::Secret`] says, less the areas it joins: those are
+/// What [`atglyph_mapgen::SecretCell`] says, less the areas it joins: those are
 /// indices into the build's own areas, which a place does not keep.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Secret {
@@ -63,7 +63,7 @@ pub struct Secret {
 impl Secret {
     /// What `secret` says, kept by a place whose build shows `shows` on
     /// its cell.
-    pub fn hidden(secret: atglyph_mapgen::Secret, shows: TileId) -> Self {
+    pub fn hidden(secret: atglyph_mapgen::SecretCell, shows: TileId) -> Self {
         Self { at: secret.at, is: secret.is, shows, spot: secret.spot, group: secret.group }
     }
 
@@ -102,7 +102,7 @@ mod tests {
             terrain.set(Point::new(3, y), wall);
             terrain.set(Point::new(6, y), wall);
         }
-        let secret = |at: Point, is, group| atglyph_mapgen::Secret { at, is, spot: 6, group, joins: (0, 1) };
+        let secret = |at: Point, is, group| atglyph_mapgen::SecretCell { at, is, spot: 6, group, joins: (0, 1) };
         let secrets =
             vec![secret(Point::new(3, 2), door, 0), secret(Point::new(6, 1), floor, 1), secret(Point::new(6, 2), floor, 1), secret(Point::new(6, 3), floor, 1)];
         let build = PlaceBuild {

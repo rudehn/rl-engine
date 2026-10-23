@@ -11,7 +11,7 @@
 //! says how far it may be turned first: fixed, one of the four
 //! quarter-turns, or one of all eight facings with mirroring. Both sides
 //! have a say, since each knows something the other cannot. The drawing
-//! declares the [`Turn`] and the [`Mirror`] it tolerates, because only it
+//! declares the [`Rotation`] and the [`Mirror`] it tolerates, because only it
 //! knows that an inscription reads backwards mirrored; the stamp's
 //! `Orient` is a ceiling, because only the place knows that a corridor has
 //! to meet the door. A piece lands in a `Facing` both allow, and a piece
@@ -24,7 +24,7 @@
 //! [`StampEachRoom`] is the pass that keeps rooms from being left empty: a
 //! weighted piece in every room nothing was stamped in, each in a facing
 //! `Orient::facings` allows and that fits, off the way in and out.
-//! A piece's legend maps a character to a [`Cell`], so a mark can paint the
+//! A piece's legend maps a character to a [`PrefabCell`], so a mark can paint the
 //! tile under it instead of leaving whatever the map had there. A piece
 //! [`Prefab::keyed`] carries that key through every stamp as
 //! [`Stamped::prefab`], so a game can trace a stamp's marks back to it.
@@ -34,7 +34,7 @@
 //!
 //! A piece may also be grown rather than stamped: [`PrefabShape`] is a
 //! prefab as an accretion [`Shape`], an area of its own joined to the
-//! place through the cells its legend draws as [`Cell::Entry`], and it
+//! place through the cells its legend draws as [`PrefabCell::Entry`], and it
 //! emits its [`Stamped`] like any stamp, so its marks are filled the same.
 
 use atglyph_core::{Direction, Grid, Grid2D, Point, Rect};
@@ -52,7 +52,7 @@ use crate::dungeon::Room;
 /// things will stand paints a floor for them to stand on rather than
 /// leaving whatever the map had there, which could be a wall.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Cell {
+pub enum PrefabCell {
     /// Paints this tile.
     Tile(TileId),
     /// A mark: a position the piece's owner gives a meaning to, painted
@@ -68,7 +68,7 @@ pub enum Cell {
 
 /// How far a drawing tolerates being turned, wherever it is laid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize)]
-pub enum Turn {
+pub enum Rotation {
     /// Never: a ship stands on its keel and not on its mast.
     None,
     /// As drawn or a half-turn, for a piece that reads the same upside
@@ -200,12 +200,12 @@ impl Facings {
     }
 
     /// Every facing a drawing declaring `turn` and `mirror` may land in.
-    fn declared(turn: Turn, mirror: Mirror) -> Self {
+    fn declared(turn: Rotation, mirror: Mirror) -> Self {
         let mut steps = Vec::new();
         match turn {
-            Turn::None => {}
-            Turn::Half => steps.push(Facing { quarters: 2, mirrored: false }),
-            Turn::Quarter => steps.push(Facing { quarters: 1, mirrored: false }),
+            Rotation::None => {}
+            Rotation::Half => steps.push(Facing { quarters: 2, mirrored: false }),
+            Rotation::Quarter => steps.push(Facing { quarters: 1, mirrored: false }),
         }
         if matches!(mirror, Mirror::LeftRight | Mirror::Both) {
             steps.push(Facing { quarters: 0, mirrored: true });
@@ -236,7 +236,7 @@ pub struct Prefab {
     /// them meaning. `None` for a piece nobody keyed.
     key: Option<u32>,
     /// How far the drawing may be turned.
-    turn: Turn,
+    turn: Rotation,
     /// How it may be mirrored.
     mirror: Mirror,
 }
@@ -247,16 +247,16 @@ impl Prefab {
     /// not a space it is kept as a mark.
     pub fn parse(rows: &[&str], legend: impl Fn(char) -> Option<TileId>) -> Result<Self, String> {
         Self::parse_cells(rows, |ch| match legend(ch) {
-            Some(t) => Cell::Tile(t),
-            None if ch == ' ' => Cell::Clear,
-            None => Cell::Mark(None),
+            Some(t) => PrefabCell::Tile(t),
+            None if ch == ' ' => PrefabCell::Clear,
+            None => PrefabCell::Mark(None),
         })
     }
 
     /// Parses `rows`, all the same width, with `legend` naming the
-    /// [`Cell`] for a character: a tile, a mark that may carry a tile
+    /// [`PrefabCell`] for a character: a tile, a mark that may carry a tile
     /// under it, or transparency.
-    pub fn parse_cells(rows: &[&str], legend: impl Fn(char) -> Cell) -> Result<Self, String> {
+    pub fn parse_cells(rows: &[&str], legend: impl Fn(char) -> PrefabCell) -> Result<Self, String> {
         let height = rows.len() as i32;
         let width = rows.first().map(|r| r.chars().count()).unwrap_or(0) as i32;
         if width == 0 || height == 0 {
@@ -272,19 +272,19 @@ impl Prefab {
             for (x, ch) in row.chars().enumerate() {
                 let p = Point::new(x as i32, y as i32);
                 match legend(ch) {
-                    Cell::Tile(t) => {
+                    PrefabCell::Tile(t) => {
                         cells.set(p, Some(t));
                     }
-                    Cell::Mark(under) => {
+                    PrefabCell::Mark(under) => {
                         cells.set(p, under);
                         marks.push((ch, p));
                     }
-                    Cell::Entry => entries.push(p),
-                    Cell::Clear => {}
+                    PrefabCell::Entry => entries.push(p),
+                    PrefabCell::Clear => {}
                 }
             }
         }
-        Ok(Self { cells, marks, entries, key: None, turn: Turn::default(), mirror: Mirror::default() })
+        Ok(Self { cells, marks, entries, key: None, turn: Rotation::default(), mirror: Mirror::default() })
     }
 
     /// This piece, keyed: its stamp reports `key` as [`Stamped::prefab`].
@@ -301,14 +301,14 @@ impl Prefab {
     /// This piece, declaring how far its drawing may be turned and how it
     /// may be mirrored. A stamp narrows what it declares and never widens
     /// it; a piece that declares nothing allows every facing.
-    pub fn declaring(mut self, turn: Turn, mirror: Mirror) -> Self {
+    pub fn declaring(mut self, turn: Rotation, mirror: Mirror) -> Self {
         self.turn = turn;
         self.mirror = mirror;
         self
     }
 
     /// How far its drawing may be turned.
-    pub fn turn(&self) -> Turn {
+    pub fn turn(&self) -> Rotation {
         self.turn
     }
 
@@ -544,7 +544,7 @@ pub(crate) fn on_map(at: Placement, facings: &[(Facing, (i32, i32))], bounds: Re
 /// Said per stamp as well as per prefab, since the same vault may be free
 /// to turn in a cave and fixed against a corridor that has to meet its
 /// door. It only ever narrows: a piece lands in a facing both its
-/// [`Turn`] and [`Mirror`] and this allow, so a stamp can hold a piece
+/// [`Rotation`] and [`Mirror`] and this allow, so a stamp can hold a piece
 /// fixed and can never turn one whose drawing says it may not be.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Orient {
@@ -1062,9 +1062,9 @@ pub(crate) mod tests {
         let r = TileRegistry::standard();
         let (wall, floor) = (r.expect("wall"), r.expect("floor"));
         let p = Prefab::parse_cells(&["#s#"], |c| match c {
-            '#' => Cell::Tile(wall),
-            's' => Cell::Mark(Some(floor)),
-            _ => Cell::Clear,
+            '#' => PrefabCell::Tile(wall),
+            's' => PrefabCell::Mark(Some(floor)),
+            _ => PrefabCell::Clear,
         })
         .unwrap();
         assert_eq!(p.tile(Point::new(1, 0)), Some(floor), "the mark's cell is painted");
@@ -1210,16 +1210,16 @@ pub(crate) mod tests {
     fn each_declaration_yields_exactly_the_facings_it_names() {
         let p = four_marked_corners(TileId(1));
         let half_turned = [facing(0, false), facing(2, false)];
-        let cases: [(Turn, Mirror, Vec<Facing>); 9] = [
-            (Turn::None, Mirror::None, vec![Facing::AS_DRAWN]),
-            (Turn::Half, Mirror::None, half_turned.to_vec()),
-            (Turn::Quarter, Mirror::None, Facing::ALL[..4].to_vec()),
-            (Turn::None, Mirror::LeftRight, vec![facing(0, false), facing(0, true)]),
-            (Turn::None, Mirror::UpDown, vec![facing(0, false), facing(2, true)]),
-            (Turn::None, Mirror::Both, vec![facing(0, false), facing(2, false), facing(0, true), facing(2, true)]),
-            (Turn::Half, Mirror::LeftRight, vec![facing(0, false), facing(2, false), facing(0, true), facing(2, true)]),
-            (Turn::Quarter, Mirror::UpDown, Facing::ALL.to_vec()),
-            (Turn::Quarter, Mirror::Both, Facing::ALL.to_vec()),
+        let cases: [(Rotation, Mirror, Vec<Facing>); 9] = [
+            (Rotation::None, Mirror::None, vec![Facing::AS_DRAWN]),
+            (Rotation::Half, Mirror::None, half_turned.to_vec()),
+            (Rotation::Quarter, Mirror::None, Facing::ALL[..4].to_vec()),
+            (Rotation::None, Mirror::LeftRight, vec![facing(0, false), facing(0, true)]),
+            (Rotation::None, Mirror::UpDown, vec![facing(0, false), facing(2, true)]),
+            (Rotation::None, Mirror::Both, vec![facing(0, false), facing(2, false), facing(0, true), facing(2, true)]),
+            (Rotation::Half, Mirror::LeftRight, vec![facing(0, false), facing(2, false), facing(0, true), facing(2, true)]),
+            (Rotation::Quarter, Mirror::UpDown, Facing::ALL.to_vec()),
+            (Rotation::Quarter, Mirror::Both, Facing::ALL.to_vec()),
         ];
         for (turn, mirror, expected) in cases {
             let declared = p.clone().declaring(turn, mirror);
@@ -1227,7 +1227,7 @@ pub(crate) mod tests {
         }
         // What a facing lays is what its name says: the up-down mirror of a
         // piece that may not turn is the drawing turned over top to bottom.
-        let upside = p.clone().declaring(Turn::None, Mirror::UpDown);
+        let upside = p.clone().declaring(Rotation::None, Mirror::UpDown);
         assert_eq!(Orient::TurnedOrMirrored.facings(&upside), vec![upside.clone(), upside.flipped_up_down()]);
     }
 
@@ -1239,7 +1239,7 @@ pub(crate) mod tests {
     fn a_stamp_ceiling_never_widens_what_a_drawing_declares() {
         let p = four_marked_corners(TileId(1));
         let ceilings = [(Orient::Fixed, 1), (Orient::Turned, 4), (Orient::TurnedOrMirrored, 8)];
-        for turn in [Turn::None, Turn::Half, Turn::Quarter] {
+        for turn in [Rotation::None, Rotation::Half, Rotation::Quarter] {
             for mirror in [Mirror::None, Mirror::LeftRight, Mirror::UpDown, Mirror::Both] {
                 let declared = p.clone().declaring(turn, mirror);
                 let drawing = Orient::TurnedOrMirrored.allowed(&declared);
@@ -1272,7 +1272,7 @@ pub(crate) mod tests {
         assert_eq!(Orient::Turned.facings(&p), turns(&p));
         assert_eq!(Orient::TurnedOrMirrored.facings(&p), eight);
         // Declaring everything is the same as declaring nothing.
-        assert_eq!(Orient::TurnedOrMirrored.facings(&p.clone().declaring(Turn::Quarter, Mirror::Both)), eight);
+        assert_eq!(Orient::TurnedOrMirrored.facings(&p.clone().declaring(Rotation::Quarter, Mirror::Both)), eight);
         for s in 0..40 {
             let rng = || RunSeed(s).rng(atglyph_core::SeedDomain::new(b"test"), 0);
             let mut before = rng();
@@ -1724,11 +1724,11 @@ pub(crate) mod tests {
                 "##E####", //
             ],
             |c| match c {
-                '#' => Cell::Tile(wall),
-                '.' => Cell::Tile(floor),
-                '$' => Cell::Mark(Some(floor)),
-                'E' => Cell::Entry,
-                _ => Cell::Clear,
+                '#' => PrefabCell::Tile(wall),
+                '.' => PrefabCell::Tile(floor),
+                '$' => PrefabCell::Mark(Some(floor)),
+                'E' => PrefabCell::Entry,
+                _ => PrefabCell::Clear,
             },
         )
         .unwrap()
@@ -1778,10 +1778,10 @@ pub(crate) mod tests {
     fn a_piece_with_no_entry_or_an_entry_that_opens_onto_wall_is_refused_by_name() {
         let (_, wall, floor) = tiles();
         let legend = |c| match c {
-            '#' => Cell::Tile(wall),
-            '.' => Cell::Tile(floor),
-            'E' => Cell::Entry,
-            _ => Cell::Clear,
+            '#' => PrefabCell::Tile(wall),
+            '.' => PrefabCell::Tile(floor),
+            'E' => PrefabCell::Entry,
+            _ => PrefabCell::Clear,
         };
         let shut = Prefab::parse_cells(&["###", "#.#", "###"], legend).unwrap();
         let e = PrefabShape::new("shut", &shut, Join::Door).unwrap_err();

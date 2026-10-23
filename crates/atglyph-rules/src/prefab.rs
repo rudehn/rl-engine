@@ -28,7 +28,7 @@
 //! found by its glyph among a place's spots once stamped.
 //!
 //! A prefab also says how far its drawing may be turned and mirrored, as
-//! a [`Turn`] and a [`Mirror`]: the drawing is the one that knows an
+//! a [`Rotation`] and a [`Mirror`]: the drawing is the one that knows an
 //! inscription reads backwards mirrored, where the chain that stamps it
 //! only knows where its door must meet a corridor. Neither is required,
 //! and a prefab that says nothing may be laid any way its stamp allows.
@@ -41,7 +41,7 @@
 //! ](PrefabDef::rows), [`tile`](PrefabDef::tile) and [`slot`
 //! ](PrefabDef::slot) into a grid of tiles and entities, with rotation and
 //! mirroring, is `atglyph-mapgen`'s, a tier 1 crate this one depends on, and
-//! the [`Turn`] and [`Mirror`] a file writes are its values, read straight
+//! the [`Rotation`] and [`Mirror`] a file writes are its values, read straight
 //! from the file; a prefab file loads and every one of its mistakes is
 //! reported with no map grown and no `App`. [`PrefabLibrary`] is where the
 //! two meet: it holds a game's prefabs, dressings and roles and cuts each
@@ -127,7 +127,7 @@ use atglyph_grid::{TileId, TileRegistry};
 use atglyph_mapgen::BuildError;
 use atglyph_mapgen::accrete::Join;
 use atglyph_mapgen::dress::Dressing;
-use atglyph_mapgen::prefab::{Cell, Mirror, Prefab, PrefabShape, Turn};
+use atglyph_mapgen::prefab::{Mirror, Prefab, PrefabCell, PrefabShape, Rotation};
 use serde::Deserialize;
 
 use crate::content::{BandedTable, ContentError, Named, Registry};
@@ -240,7 +240,7 @@ pub struct PrefabDef<M> {
     /// has a slot, and always a tile a monster can stand on.
     pub ground: Option<TileId>,
     /// How far its drawing may be turned.
-    pub turn: Turn,
+    pub turn: Rotation,
     /// How its drawing may be mirrored.
     pub mirror: Mirror,
     rows: Vec<String>,
@@ -308,7 +308,7 @@ struct PrefabRon {
     #[serde(default)]
     ground: Option<String>,
     #[serde(default)]
-    turn: Turn,
+    turn: Rotation,
     #[serde(default)]
     mirror: Mirror,
     rows: Vec<String>,
@@ -869,10 +869,10 @@ impl<M> PrefabLibrary<M> {
         let id = self.defs.id(name).ok_or_else(|| BuildError::new("prefab", format!("no prefab is called {name:?}")))?;
         let def = self.defs.get(id);
         let cell = |c: char| match (def.tile(c), def.slot(c)) {
-            (Some(t), _) => Cell::Tile(t),
-            (None, Some(_)) => Cell::Mark(def.ground),
-            (None, None) if def.entry(c) => Cell::Entry,
-            (None, None) => Cell::Clear,
+            (Some(t), _) => PrefabCell::Tile(t),
+            (None, Some(_)) => PrefabCell::Mark(def.ground),
+            (None, None) if def.entry(c) => PrefabCell::Entry,
+            (None, None) => PrefabCell::Clear,
         };
         Prefab::parse_cells(&def.rows(), cell)
             .map(|p| p.keyed(id.raw()).declaring(def.turn, def.mirror))
@@ -1078,11 +1078,11 @@ mod tests {
         let w = world();
         let tiles = |extra: &str| format!(r###"(name: "bar", {extra} rows: ["##"], legend: {{ '#': Tile("wall") }})"###);
         let plain = read(&w, &tiles("")).unwrap();
-        assert_eq!((plain.turn, plain.mirror), (Turn::Quarter, Mirror::Both));
+        assert_eq!((plain.turn, plain.mirror), (Rotation::Quarter, Mirror::Both));
         for (text, turn, mirror) in [
-            ("turn: None, mirror: None,", Turn::None, Mirror::None),
-            ("turn: Half, mirror: UpDown,", Turn::Half, Mirror::UpDown),
-            ("mirror: LeftRight,", Turn::Quarter, Mirror::LeftRight),
+            ("turn: None, mirror: None,", Rotation::None, Mirror::None),
+            ("turn: Half, mirror: UpDown,", Rotation::Half, Mirror::UpDown),
+            ("mirror: LeftRight,", Rotation::Quarter, Mirror::LeftRight),
         ] {
             let def = read(&w, &tiles(text)).unwrap_or_else(|e| panic!("{text}: {e}"));
             assert_eq!((def.turn, def.mirror), (turn, mirror), "{text}");

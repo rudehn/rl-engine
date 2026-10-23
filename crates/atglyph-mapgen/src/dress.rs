@@ -33,7 +33,7 @@ use crate::dungeon::{ExitPoint, Room};
 use crate::passes::StartPoint;
 use crate::pool::DressAt;
 use crate::prefab::{Stamped, pick_weighted};
-use crate::secrets::Secret;
+use crate::secrets::SecretCell;
 
 /// Where a thing goes in an area.
 ///
@@ -201,7 +201,7 @@ impl Pass for Dress {
             .outputs()
             .iter::<Opening>()
             .flat_map(|o| o.cells.iter().copied())
-            .chain(ctx.outputs().iter::<Secret>().map(|s| s.at))
+            .chain(ctx.outputs().iter::<SecretCell>().map(|s| s.at))
             .chain(ctx.outputs().iter::<StartPoint>().map(|s| s.0))
             .chain(ctx.outputs().iter::<ExitPoint>().map(|e| e.0))
             .collect();
@@ -795,7 +795,7 @@ mod tests {
         let walkable = ctx.tiles().tables().walkable;
         let (w, h) = (ctx.terrain().width(), ctx.terrain().height());
         let ways: BTreeSet<Point> =
-            ctx.outputs().iter::<Opening>().flat_map(|o| o.cells.iter().copied()).chain(ctx.outputs().iter::<Secret>().map(|s| s.at)).collect();
+            ctx.outputs().iter::<Opening>().flat_map(|o| o.cells.iter().copied()).chain(ctx.outputs().iter::<SecretCell>().map(|s| s.at)).collect();
         let open = |p: Point| !stood.contains(&p) && (ways.contains(&p) || ctx.terrain().get(p).is_some_and(|t| walkable[t.index()]));
         let start = ctx.outputs().first::<StartPoint>().unwrap().0;
         let mut reached = vec![false; (w * h) as usize];
@@ -909,7 +909,7 @@ mod tests {
                     .outputs()
                     .iter::<Opening>()
                     .flat_map(|o| o.cells.clone())
-                    .chain(ctx.outputs().iter::<Secret>().map(|s| s.at))
+                    .chain(ctx.outputs().iter::<SecretCell>().map(|s| s.at))
                     .chain([ctx.outputs().first::<StartPoint>().unwrap().0, ctx.outputs().first::<ExitPoint>().unwrap().0])
                     .collect();
                 for p in &stood {
@@ -935,7 +935,7 @@ mod tests {
                 caves.fetch_add(dressed.iter().filter(|i| shape(**i) == "hollow" || shape(**i) == "cavern").count(), Relaxed);
                 crosses.fetch_add(dressed.iter().filter(|i| shape(**i) == "cross").count(), Relaxed);
                 assert!(dressed.iter().all(|i| shape(*i) != "run"), "{w}x{h} seed {s}: a passage holds nothing");
-                secrets.fetch_add(ctx.outputs().iter::<Secret>().count(), Relaxed);
+                secrets.fetch_add(ctx.outputs().iter::<SecretCell>().count(), Relaxed);
             });
         }
         let (caves, crosses, secrets, lakes, spans) = (caves.into_inner(), crosses.into_inner(), secrets.into_inner(), lakes.into_inner(), spans.into_inner());

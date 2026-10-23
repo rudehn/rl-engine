@@ -150,7 +150,7 @@ use crate::prefab::{Coverage, Legended, PrefabDef, Slot, Sources};
 use crate::tag::TagId;
 use atglyph_mapgen::Prefer;
 use atglyph_mapgen::dungeon::Stairs;
-use atglyph_mapgen::prefab::{Placement, Turn};
+use atglyph_mapgen::prefab::{Placement, Rotation};
 
 /// How a grown piece is joined to what it is attached to: a layout
 /// shape's joins, and the two only a piece the pool places may carry.
@@ -621,7 +621,7 @@ pub fn misfit<M>(entry: &Entry, recipe: &RecipeDef, layout: &LayoutDef, pieces: 
         let (w, h) = (rows.iter().map(|r| r.chars().count()).max().unwrap_or(0) as i32, rows.len() as i32);
         // A quarter-turn lays it on its side; any lesser turn keeps its
         // width a width.
-        Some(if def.turn == Turn::Quarter { vec![(w, h), (h, w)] } else { vec![(w, h)] })
+        Some(if def.turn == Rotation::Quarter { vec![(w, h), (h, w)] } else { vec![(w, h)] })
     };
     match &entry.placed {
         Placed::Inside { piece, shapes: allowed } => {

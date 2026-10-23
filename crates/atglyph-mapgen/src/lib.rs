@@ -61,7 +61,7 @@
 //! [`Surveyed`] with an [`AreaFacts`] per area, and [`Require`] fails a
 //! place that falls short, for [`Chain::run_retrying`] to build again.
 //! [`HideOpenings`] walls over a loop's shortcut or a dead end's one door
-//! and publishes each cell as a [`Secret`], never one the way down needs.
+//! and publishes each cell as a [`SecretCell`], never one the way down needs.
 //! [`StampPicks`] places the picks a run's pool drew for a place in the
 //! areas each [`Prefer`]s, the most secluded, a dead end, a junction or a
 //! room behind a secret, a piece stamped and a dressing published as a
@@ -71,7 +71,7 @@
 //! a `DressAt` names and in every room nothing took, by its district,
 //! never beside an opening and never cutting an area in two.
 //!
-//! The values a content file writes, a [`Turn`](prefab::Turn), a
+//! The values a content file writes, a [`Rotation`](prefab::Rotation), a
 //! [`Mirror`](prefab::Mirror), a [`Placement`](prefab::Placement), a
 //! [`Prefer`], a [`Stairs`](dungeon::Stairs), a [`Spread`](dress::Spread),
 //! a [`DistrictDressings`] and a [`Barrier`], deserialize, so `atglyph-rules` reads its files
@@ -111,7 +111,7 @@ pub use dress::{DistrictDressings, Dress, Dressed, Dressing};
 pub use lakes::{Bridge, Bridges, Lake, Lakes};
 pub use loops::OpenLoops;
 pub use pool::{DressAt, Lay, PoolPick, Prefer, StampPicks};
-pub use secrets::{HideOpenings, Secret};
+pub use secrets::{HideOpenings, SecretCell};
 pub use survey::{AreaFacts, Require, Survey, Surveyed};
 
 /// The names most callers want in scope.
@@ -129,7 +129,7 @@ pub mod prelude {
     pub use crate::passes;
     pub use crate::pool::{DressAt, Lay, PoolPick, Prefer, StampPicks};
     pub use crate::prefab::{Orient, Placement, Prefab, PrefabShape, StampEachRoom, StampOneOf, StampPrefab, Stamped};
-    pub use crate::secrets::{HideOpenings, Secret};
+    pub use crate::secrets::{HideOpenings, SecretCell};
     pub use crate::survey::{AreaFacts, Require, Survey, Surveyed};
 }
 
@@ -139,7 +139,7 @@ mod tests {
     use atglyph_core::Point;
     use dress::Spread;
     use dungeon::Stairs;
-    use prefab::{Mirror, Placement, Turn};
+    use prefab::{Mirror, Placement, Rotation};
 
     fn read<T: serde::de::DeserializeOwned>(text: &str) -> T {
         ron::from_str(text).unwrap_or_else(|e| panic!("{text}: {e}"))
@@ -150,7 +150,7 @@ mod tests {
     /// here would break every file that writes it.
     #[test]
     fn each_file_spelling_of_a_turn_mirror_prefer_and_stairs_reads_as_before() {
-        assert_eq!([read::<Turn>("None"), read("Half"), read("Quarter")], [Turn::None, Turn::Half, Turn::Quarter]);
+        assert_eq!([read::<Rotation>("None"), read("Half"), read("Quarter")], [Rotation::None, Rotation::Half, Rotation::Quarter]);
         assert_eq!([read::<Mirror>("None"), read("LeftRight"), read("UpDown"), read("Both")], [Mirror::None, Mirror::LeftRight, Mirror::UpDown, Mirror::Both]);
         assert_eq!(
             [read::<Prefer>("Secluded"), read("DeadEnd"), read("Hidden"), read("Junction"), read("Anywhere")],
@@ -179,6 +179,6 @@ mod tests {
         let barrier: Barrier = read("(from: (50, 0), to: (50, 70), chance_pct: 100, jitter_pct: 5)");
         assert_eq!(barrier, Barrier { from: (50, 0), to: (50, 70), chance_pct: 100, jitter_pct: 5 });
         assert!(ron::from_str::<Barrier>("(from: (50, 0), to: (50, 70), chance: 100, jitter_pct: 5)").is_err(), "an unknown field");
-        assert!(ron::from_str::<Turn>("Sideways").is_err(), "a turn no file may write");
+        assert!(ron::from_str::<Rotation>("Sideways").is_err(), "a turn no file may write");
     }
 }

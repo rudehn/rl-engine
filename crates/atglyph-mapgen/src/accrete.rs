@@ -1674,9 +1674,9 @@ pub(crate) mod tests {
         let rows: Vec<&str> = rows.iter().map(String::as_str).collect();
         let (wall, floor) = (rig.wall, rig.floor);
         let prefab = crate::prefab::Prefab::parse_cells(&rows, |c| match c {
-            '#' => crate::prefab::Cell::Tile(wall),
-            '.' => crate::prefab::Cell::Tile(floor),
-            _ => crate::prefab::Cell::Entry,
+            '#' => crate::prefab::PrefabCell::Tile(wall),
+            '.' => crate::prefab::PrefabCell::Tile(floor),
+            _ => crate::prefab::PrefabCell::Entry,
         })
         .unwrap();
         Box::new(PrefabShape::new(name, &prefab, join).unwrap())
@@ -1782,11 +1782,11 @@ pub(crate) mod tests {
                 "#########", //
             ],
             |c| match c {
-                '#' => crate::prefab::Cell::Tile(wall),
-                '.' => crate::prefab::Cell::Tile(floor),
-                'X' => crate::prefab::Cell::Mark(Some(floor)),
-                'E' => crate::prefab::Cell::Entry,
-                _ => crate::prefab::Cell::Clear,
+                '#' => crate::prefab::PrefabCell::Tile(wall),
+                '.' => crate::prefab::PrefabCell::Tile(floor),
+                'X' => crate::prefab::PrefabCell::Mark(Some(floor)),
+                'E' => crate::prefab::PrefabCell::Entry,
+                _ => crate::prefab::PrefabCell::Clear,
             },
         )
         .unwrap()
@@ -1804,10 +1804,10 @@ pub(crate) mod tests {
                 "#################", //
             ],
             |c| match c {
-                '#' => crate::prefab::Cell::Tile(wall),
-                '.' => crate::prefab::Cell::Tile(floor),
-                'E' => crate::prefab::Cell::Entry,
-                _ => crate::prefab::Cell::Clear,
+                '#' => crate::prefab::PrefabCell::Tile(wall),
+                '.' => crate::prefab::PrefabCell::Tile(floor),
+                'E' => crate::prefab::PrefabCell::Entry,
+                _ => crate::prefab::PrefabCell::Clear,
             },
         )
         .unwrap()
@@ -1888,7 +1888,7 @@ pub(crate) mod tests {
         }
         assert_eq!(edges.len(), 4, "a piece free to turn backs onto every edge: {edges:?}");
         // A piece that may not turn stands only as drawn, its back south.
-        let upright = landmark(&rig).declaring(crate::prefab::Turn::None, crate::prefab::Mirror::LeftRight);
+        let upright = landmark(&rig).declaring(crate::prefab::Rotation::None, crate::prefab::Mirror::LeftRight);
         for s in 0..20 {
             let (_, l) = grown_round(seeded(&rig, &upright, vec![Placement::Edge]), &rig, w, h, s);
             assert_eq!(edge_of(&l, w, h), Some(Direction::South), "seed {s}");

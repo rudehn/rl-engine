@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- `atglyph-mapgen`'s three names that another crate also declared are its own: `prefab::Turn`, how far a drawing tolerates being turned, is `prefab::Rotation`; `prefab::Cell`, what one character of a drawn piece stands for, is `prefab::PrefabCell`; and `Secret`, one cell a place hid, is `SecretCell`. The schedule `atglyph::ecs::Turn`, the terminal's `atglyph::render::Cell` and the hidden cell a place keeps, `atglyph::ecs::Secret`, keep theirs. Content files are unchanged.
+  To change: breaking: `atglyph::mapgen::prefab::Turn` becomes `atglyph::mapgen::prefab::Rotation`, `atglyph::mapgen::prefab::Cell` becomes `atglyph::mapgen::prefab::PrefabCell`, and `atglyph::mapgen::Secret` becomes `atglyph::mapgen::SecretCell`.
+
 - The Bevy-free crates `atglyph-grid` and `atglyph-mapgen` say in their readmes and front pages that used alone they need `atglyph-core` (and `atglyph-grid`) at the same version, with the dependency lines; every published crate carries `LICENSE-MIT` and `LICENSE-APACHE`; the template's `system_font_discovery` comment and the workspace's say what the feature is for now (the letters the terminal draws; it draws box-drawing and block characters itself); the readme's Linux packages add `libx11-dev` and `libfontconfig1-dev`; the facade's front page lists the generated game's potions, dagger and coat; `atglyph-rules`'s example uses neutral ids.
   To change: nothing.
 

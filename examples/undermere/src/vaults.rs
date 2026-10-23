@@ -86,7 +86,7 @@ pub const CAUSEWAY_TILE: &str = "sunken causeway";
 /// floor's hidden plates.
 pub const CAUSEWAY_SPOT: u8 = 10;
 
-/// The areas a causeway's [`Secret`]
+/// The areas a causeway's [`SecretCell`](atglyph::mapgen::SecretCell)
 /// joins: none a reader can look up. The causeway is hidden once the
 /// build's areas have been flattened into its spots, so there is no area
 /// index left to name, and an index past any a floor grows says so where
@@ -318,7 +318,7 @@ fn hide_causeways(built: &mut PlaceBuild, tiles: &TileRegistry, prefabs: &Prefab
     let group = built.secrets.iter().map(|s| s.group + 1).max().unwrap_or(0);
     for at in cells {
         built.terrain.set(at, deep);
-        built.secrets.push(atglyph::mapgen::Secret { at, is: causeway, spot: CAUSEWAY_SPOT, group, joins: JOINS_NO_AREA });
+        built.secrets.push(atglyph::mapgen::SecretCell { at, is: causeway, spot: CAUSEWAY_SPOT, group, joins: JOINS_NO_AREA });
     }
 }
 

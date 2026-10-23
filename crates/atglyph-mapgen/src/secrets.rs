@@ -2,7 +2,7 @@
 //! walled over and recorded, so a game can let them be found.
 //!
 //! [`HideOpenings`] chooses the openings that are safe to hide, walls
-//! them over and publishes a [`Secret`] for every cell it walled. Finding
+//! them over and publishes a [`SecretCell`] for every cell it walled. Finding
 //! one is the other half and is not this crate's: the generator only says
 //! what it hid, the way it says where the way in is.
 //!
@@ -37,7 +37,7 @@ use crate::survey::Surveyed;
 /// shortcut joins two areas neither of which is, since a dead end's one
 /// door is never part of a loop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Secret {
+pub struct SecretCell {
     /// Where.
     pub at: Point,
     /// The tile it really is, laid back when it is found.
@@ -53,7 +53,7 @@ pub struct Secret {
     pub joins: (usize, usize),
 }
 
-/// Walls over openings that are safe to hide and publishes a [`Secret`]
+/// Walls over openings that are safe to hide and publishes a [`SecretCell`]
 /// for each cell walled.
 ///
 /// The hidden rooms come first, since a place may need them: a count
@@ -103,9 +103,9 @@ pub struct HideOpenings {
     /// never fewer than [`at_least_rooms`](Self::at_least_rooms) without
     /// failing.
     pub rooms: (u32, u32),
-    /// The [`Secret::spot`] of every cell of a loop's opening.
+    /// The [`SecretCell::spot`] of every cell of a loop's opening.
     pub loop_spot: u8,
-    /// The [`Secret::spot`] of every cell of a hidden room's door.
+    /// The [`SecretCell::spot`] of every cell of a hidden room's door.
     pub room_spot: u8,
     /// The fewest hidden rooms the place may have; a place with fewer safe
     /// dead ends fails. Nought for a place that may have none.
@@ -318,7 +318,7 @@ impl Pass for HideOpenings {
             let o = &openings[i];
             let spot = if (group as u32) < rooms_hidden { self.room_spot } else { self.loop_spot };
             for (at, is) in o.cells.iter().zip(was) {
-                ctx.emit(Secret { at: *at, is, spot, group: group as u32, joins: o.areas });
+                ctx.emit(SecretCell { at: *at, is, spot, group: group as u32, joins: o.areas });
             }
         }
         Ok(())
@@ -367,8 +367,8 @@ mod tests {
         chain.run_retrying(|| BaseContext::blank(84, 48, r.tiles.clone(), r.wall), RunSeed(seed), 20)
     }
 
-    fn secrets(ctx: &BaseContext) -> Vec<Secret> {
-        ctx.outputs().iter::<Secret>().copied().collect()
+    fn secrets(ctx: &BaseContext) -> Vec<SecretCell> {
+        ctx.outputs().iter::<SecretCell>().copied().collect()
     }
 
     fn ways(ctx: &BaseContext) -> (Point, Point) {
@@ -376,12 +376,12 @@ mod tests {
     }
 
     /// The groups, each with its cells.
-    fn groups(found: &[Secret]) -> Vec<Vec<Secret>> {
+    fn groups(found: &[SecretCell]) -> Vec<Vec<SecretCell>> {
         let count = found.iter().map(|s| s.group as usize + 1).max().unwrap_or(0);
         (0..count).map(|g| found.iter().copied().filter(|s| s.group as usize == g).collect()).collect()
     }
 
-    fn hidden_room(ctx: &BaseContext, s: &Secret) -> Option<usize> {
+    fn hidden_room(ctx: &BaseContext, s: &SecretCell) -> Option<usize> {
         let surveyed = ctx.outputs().first::<Surveyed>().unwrap();
         [s.joins.0, s.joins.1].into_iter().find(|a| surveyed.areas[*a].dead_end)
     }

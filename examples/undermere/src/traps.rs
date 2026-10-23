@@ -21,7 +21,7 @@ use atglyph::ecs::places::PlaceEntered;
 use atglyph::grid::{Terrain, TileId, TileTables};
 use atglyph::mapgen::dungeon::{ExitPoint, Room};
 use atglyph::mapgen::passes::StartPoint;
-use atglyph::mapgen::{Area, HideOpenings, Join, Opening, Secret, Surveyed};
+use atglyph::mapgen::{Area, HideOpenings, Join, Opening, SecretCell, Surveyed};
 use atglyph::prelude::*;
 use atglyph::primitives::Rect;
 use atglyph::rand::Rng;
@@ -423,7 +423,7 @@ impl Ground {
         let facts = |a: &Area, read: fn(&atglyph::mapgen::AreaFacts) -> bool| survey.areas.get(a.index).is_some_and(read);
         let chokepoint = areas.iter().map(|a| facts(a, |f| f.chokepoint)).collect();
         let corridor = areas.iter().map(|a| passages.contains(&a.shape)).collect();
-        let behind: BTreeSet<usize> = ctx.outputs().iter::<Secret>().flat_map(|s| [s.joins.0, s.joins.1]).collect();
+        let behind: BTreeSet<usize> = ctx.outputs().iter::<SecretCell>().flat_map(|s| [s.joins.0, s.joins.1]).collect();
         let hidden = areas.iter().map(|a| facts(a, |f| f.dead_end) && behind.contains(&a.index)).collect();
         // A piece's own entries were drawn by hand, and a lock or a seal
         // is already what keeps its doorway: neither is a trap's.

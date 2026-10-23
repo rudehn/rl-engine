@@ -431,7 +431,7 @@ mod tests {
         use crate::names::Names;
         use crate::pool::Place;
         use atglyph_mapgen::dungeon::{ExitPoint, FarExit, StartPoint};
-        use atglyph_mapgen::prefab::{Stamped, Turn};
+        use atglyph_mapgen::prefab::{Rotation, Stamped};
         use atglyph_mapgen::{Area, Landmark};
         use rand::SeedableRng;
 
@@ -450,7 +450,7 @@ mod tests {
         ])
         .unwrap();
         let prefabs = PrefabLibrary::<()>::new(defs, Registry::from_defs(Vec::new()).unwrap());
-        assert_eq!(prefabs.piece("hall").unwrap().turn(), Turn::None, "the file's facings reach the piece");
+        assert_eq!(prefabs.piece("hall").unwrap().turn(), Rotation::None, "the file's facings reach the piece");
         let pool = crate::pool::load(LANDMARKS, &def, prefabs.defs(), &Names::new()).unwrap();
         let places: Vec<Place> = (1..=4).map(|band| Place { band, tags: Vec::new() }).collect();
         for seed in 0..10 {

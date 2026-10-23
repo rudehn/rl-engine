@@ -1864,7 +1864,7 @@ mod tests {
     /// it and more only repeat it.
     #[test]
     fn every_floor_is_the_same_whichever_floor_is_built_first() {
-        type Built = (Terrain, Point, Option<Point>, Vec<atglyph::ecs::Spot>, Vec<atglyph::mapgen::Secret>);
+        type Built = (Terrain, Point, Option<Point>, Vec<atglyph::ecs::Spot>, Vec<atglyph::mapgen::SecretCell>);
         let build_all = |undermere: &Undermere, floors: &[u32]| -> BTreeMap<u32, Built> {
             floors
                 .iter()
