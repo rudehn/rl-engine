@@ -49,4 +49,19 @@ for p in json.load(sys.stdin)["packages"]:
     if p["publish"] != []:
         print(p["name"])
 ')
-cargo package "${args[@]}" --locked
+
+# Cargo keeps its extracted copy of a packaged crate in the registry's source
+# folder, and its builds of it, for as long as the version stays the same, so
+# after a source change at the same version the verification would build the
+# old code and pass. Clear the extracted copies of this workspace's crates,
+# and verify in a target directory of this script's own so the workspace's
+# build output is not reused either.
+while read -r crate; do
+  rm -rf "${CARGO_HOME:-$HOME/.cargo}"/registry/src/*/"$crate"
+done < <(cargo metadata --format-version 1 --no-deps | python3 -I -c '
+import json, sys
+for p in json.load(sys.stdin)["packages"]:
+    if p["publish"] != []:
+        print(p["name"] + "-" + p["version"])
+')
+CARGO_TARGET_DIR="$PWD/target/check-publish" cargo package "${args[@]}" --locked
