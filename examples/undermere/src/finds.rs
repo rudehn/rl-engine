@@ -184,7 +184,7 @@ pub fn lay(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, gro
     let Ground { armory, registries, map, seed, standing } = &ground;
     for ev in entered.read().filter(|ev| ev.first) {
         let (Some(floor), Some(place)) = (floor_of(ev.map), map.place(ev.map)) else { continue };
-        let mut rng = seed.stream(b"undermere.finds", u64::from(floor));
+        let mut rng = seed.rng(rl_engine::rl_core::SeedDomain::new(b"undermere.finds"), u64::from(floor));
         let taken: Vec<Point> = standing.iter().filter(|(_, on)| on.0 == ev.map).map(|(at, _)| at.0).collect();
         let open: Vec<Point> = place.terrain.bounds().cells().filter(|p| map.is_walkable_on(ev.map, *p) && !taken.contains(p)).collect();
         let (laid, gold) = (armory.defs.expect(LAID), armory.defs.expect(GOLD));

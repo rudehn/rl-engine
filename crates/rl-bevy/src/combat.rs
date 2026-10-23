@@ -32,8 +32,7 @@
 //! [`stealth`](crate::stealth) runs to say who has noticed whom.
 
 use bevy::prelude::*;
-use rand::rngs::StdRng;
-use rl_core::{DiceRoll, Point, RunSeed, SeedDomain, geometry};
+use rl_core::{DiceRoll, Point, geometry};
 use rl_rules::ability::Look;
 use rl_rules::damage::{DamageKindId, Defender, SubtractArmor};
 use rl_rules::faction::FactionDef;
@@ -432,13 +431,13 @@ impl Default for DamageStages {
 ///
 /// Derived from the run's [`Seed`](crate::seed::Seed) by [`CombatPlugin`], so
 /// a game never inserts it.
-#[derive(Resource, Deref, DerefMut)]
-pub struct CombatRng(pub StdRng);
+pub type CombatRng = crate::seed::RunRng<CombatDomain>;
 
-impl crate::seed::Stream for CombatRng {
-    fn for_run(seed: RunSeed) -> Self {
-        Self(seed.rng(SeedDomain::new(b"combat"), 0))
-    }
+/// The domain [`CombatRng`] draws under.
+pub struct CombatDomain;
+
+impl crate::seed::StreamDomain for CombatDomain {
+    const DOMAIN: rl_core::SeedDomain = crate::seed::COMBAT;
 }
 
 /// Damage about to land on `target`.
@@ -2492,7 +2491,7 @@ mod tests {
         crate::effects::AddEngineEffects::add_engine_effects(&mut app);
         plugins(&mut app);
         let sides = Registry::from_defs(["ours", "theirs", "bystanders"].map(FactionDef::new).to_vec()).unwrap();
-        app.insert_resource(CombatRules::new(&sides).hostile(OURS, THEIRS)).insert_resource(crate::seed::Seed(RunSeed(seed)));
+        app.insert_resource(CombatRules::new(&sides).hostile(OURS, THEIRS)).insert_resource(crate::seed::Seed(rl_core::RunSeed(seed)));
         app.world_mut().resource_mut::<Registries>().factions = sides;
         app.init_resource::<Seen>().add_systems(PostUpdate, see);
         let player = app.world_mut().spawn((Actor, Player, Blocks, Position(start), Viewshed::new(8), Health::full(30), Faction(OURS), arm(kind))).id();

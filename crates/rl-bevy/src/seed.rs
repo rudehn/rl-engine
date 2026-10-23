@@ -10,8 +10,14 @@
 //! learns its seed late, from a save it is continuing, sets [`Seed`] and the
 //! streams follow.
 //!
-//! A game's own draws come from [`Seed::stream`], named and indexed, which
-//! is [`RunSeed::rng`] with the seed already in hand.
+//! A game's own draws are `seed.rng(DOMAIN, index)`, [`RunSeed::rng`]
+//! through [`Seed`]'s deref, over a domain the game names once as a
+//! constant. The engine's own domains are listed in [`ENGINE_DOMAINS`].
+//!
+//! Every engine stream is a [`RunRng`] over a [`StreamDomain`], so the
+//! deriving is written once and a stream is its domain and nothing else.
+
+use std::marker::PhantomData;
 
 use bevy::ecs::schedule::common_conditions::resource_exists_and_changed;
 use bevy::prelude::*;
@@ -50,15 +56,6 @@ impl Seed {
             None => Seed(RunSeed::fresh()),
         }
     }
-
-    /// A generator for one named domain at one index: a floor's monsters, a
-    /// region's loot.
-    ///
-    /// Named rather than shared, so a spawner added later draws from its own
-    /// stream and cannot change what an existing one places.
-    pub fn stream(&self, domain: &[u8], index: u64) -> StdRng {
-        self.0.rng(SeedDomain::new(domain), index)
-    }
 }
 
 /// The seed in `args`, if one was asked for.
@@ -71,10 +68,90 @@ fn seed_argument(mut args: impl Iterator<Item = String>) -> Option<Result<RunSee
     })
 }
 
+// The engine's domains. Each is named here once, so two subsystems can
+// never draw under one name by accident, which
+// `every_engine_stream_derives_under_a_name_of_its_own` checks.
+pub(crate) const COMBAT: SeedDomain = SeedDomain::new(b"combat");
+pub(crate) const MINDS: SeedDomain = SeedDomain::new(b"minds");
+pub(crate) const LOOT: SeedDomain = SeedDomain::new(b"loot");
+pub(crate) const LOOT_PLACE: SeedDomain = SeedDomain::new(b"loot.place");
+pub(crate) const LOOT_CONTAINER: SeedDomain = SeedDomain::new(b"loot.container");
+pub(crate) const PREFAB_CONTENT: SeedDomain = SeedDomain::new(b"prefab.content");
+pub(crate) const PROPS: SeedDomain = SeedDomain::new(b"props");
+pub(crate) const STEALTH: SeedDomain = SeedDomain::new(b"stealth");
+pub(crate) const STUMBLE: SeedDomain = SeedDomain::new(b"status.stumble");
+pub(crate) const EFFECTS: SeedDomain = SeedDomain::new(b"ability");
+pub(crate) const REFLECT: SeedDomain = SeedDomain::new(b"ability.reflect");
+pub(crate) const FIRE: SeedDomain = SeedDomain::new(b"fire");
+pub(crate) const GAS_SPILL: SeedDomain = SeedDomain::new(b"gas spill");
+pub(crate) const GAS_SWIRL: SeedDomain = SeedDomain::new(b"gas swirl");
+pub(crate) const RESTART: SeedDomain = SeedDomain::new(b"restart");
+
+/// Every domain the engine draws under, by name: its streams, the salts
+/// fire and gas hash a turn from, the next run's seed on the web, and a
+/// place's own seed.
+///
+/// So a game can check none of its own domains is one of these, as
+/// Undermere's and Foundry's `seeds` modules do.
+pub const ENGINE_DOMAINS: &[(&str, SeedDomain)] = &[
+    ("combat", COMBAT),
+    ("minds", MINDS),
+    ("loot", LOOT),
+    ("loot.place", LOOT_PLACE),
+    ("loot.container", LOOT_CONTAINER),
+    ("prefab.content", PREFAB_CONTENT),
+    ("props", PROPS),
+    ("stealth", STEALTH),
+    ("status.stumble", STUMBLE),
+    ("ability", EFFECTS),
+    ("ability.reflect", REFLECT),
+    ("fire", FIRE),
+    ("gas spill", GAS_SPILL),
+    ("gas swirl", GAS_SWIRL),
+    ("restart", RESTART),
+    ("rl.place", SeedDomain::engine(b"place")),
+];
+
 /// A random stream a subsystem owns, derived from the run's [`Seed`].
 pub trait Stream: Resource {
     /// The stream for `seed`, under the subsystem's own domain.
     fn for_run(seed: RunSeed) -> Self;
+}
+
+/// The domain a [`RunRng`] draws under: a marker type per stream, so each
+/// stream is a resource of its own.
+pub trait StreamDomain: Send + Sync + 'static {
+    /// The domain the stream is derived under, index 0.
+    const DOMAIN: SeedDomain;
+}
+
+/// A subsystem's stream: a generator derived from the run's seed under
+/// `D`'s domain, kept from one draw to the next for the whole run.
+///
+/// Generic rather than one hand-written type per subsystem, so a stream is
+/// its domain and nothing else, and `CombatRng` and the rest are aliases of
+/// it.
+#[derive(Resource)]
+pub struct RunRng<D: StreamDomain>(pub StdRng, PhantomData<D>);
+
+impl<D: StreamDomain> std::ops::Deref for RunRng<D> {
+    type Target = StdRng;
+
+    fn deref(&self) -> &StdRng {
+        &self.0
+    }
+}
+
+impl<D: StreamDomain> std::ops::DerefMut for RunRng<D> {
+    fn deref_mut(&mut self) -> &mut StdRng {
+        &mut self.0
+    }
+}
+
+impl<D: StreamDomain> Stream for RunRng<D> {
+    fn for_run(seed: RunSeed) -> Self {
+        Self(seed.rng(D::DOMAIN, 0), PhantomData)
+    }
 }
 
 /// Registers a stream to be derived from the run's seed.
@@ -162,11 +239,33 @@ mod tests {
 
     #[test]
     fn a_named_stream_repeats_for_its_seed_and_differs_by_name_and_index() {
+        const BEASTS: SeedDomain = SeedDomain::new(b"beasts");
+        const LOOT: SeedDomain = SeedDomain::new(b"loot");
         let seed = Seed(RunSeed(7));
-        let roll = |domain: &[u8], index| seed.stream(domain, index).random::<u64>();
-        assert_eq!(roll(b"beasts", 1), roll(b"beasts", 1));
-        assert_ne!(roll(b"beasts", 1), roll(b"loot", 1));
-        assert_ne!(roll(b"beasts", 1), roll(b"beasts", 2));
+        let roll = |domain, index| seed.rng(domain, index).random::<u64>();
+        assert_eq!(roll(BEASTS, 1), roll(BEASTS, 1));
+        assert_ne!(roll(BEASTS, 1), roll(LOOT, 1));
+        assert_ne!(roll(BEASTS, 1), roll(BEASTS, 2));
+    }
+
+    #[test]
+    fn every_engine_stream_derives_under_a_name_of_its_own() {
+        for (i, (name, domain)) in ENGINE_DOMAINS.iter().enumerate() {
+            for (other, theirs) in &ENGINE_DOMAINS[i + 1..] {
+                assert_ne!(name, other, "{name} is listed twice");
+                assert_ne!(domain, theirs, "{name} and {other} share a stream");
+            }
+        }
+    }
+
+    #[test]
+    fn a_run_rng_draws_under_its_domain() {
+        struct Beasts;
+        impl StreamDomain for Beasts {
+            const DOMAIN: SeedDomain = SeedDomain::new(b"beasts");
+        }
+        let mut rng = RunRng::<Beasts>::for_run(RunSeed(7));
+        assert_eq!(rng.random::<u64>(), RunSeed(7).rng(Beasts::DOMAIN, 0).random::<u64>());
     }
 
     #[test]

@@ -390,7 +390,7 @@ pub fn next_line(lines: &[Line], said: &BTreeSet<usize>, holds: impl Fn(&When) -
 /// and given in turn. Panics when the set cannot find one, which a test
 /// over a span of seeds keeps from happening.
 pub fn name_everyone(townsfolk: &Townsfolk, names: &NameSets, seed: &Seed, given: &mut GivenNames) -> Folk {
-    let mut rng = seed.stream(NAMES_STREAM, 0);
+    let mut rng = seed.rng(rl_engine::rl_core::SeedDomain::new(NAMES_STREAM), 0);
     let set = names.townsfolk();
     let mut folk = Folk::default();
     for role in townsfolk.roles() {
@@ -760,7 +760,7 @@ mod tests {
         let names = NameSets::load();
         let set = names.townsfolk();
         for s in 0..200 {
-            let mut rng = Seed(RunSeed(s)).stream(NAMES_STREAM, 0);
+            let mut rng = Seed(RunSeed(s)).rng(rl_engine::rl_core::SeedDomain::new(NAMES_STREAM), 0);
             let mut drawn: BTreeSet<String> = BTreeSet::new();
             for n in 0..100 {
                 let name = set.draw_distinct(&mut rng, |taken| drawn.contains(taken)).unwrap_or_else(|| panic!("seed {s}: dry at name {n}"));

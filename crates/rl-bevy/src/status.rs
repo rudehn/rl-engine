@@ -30,8 +30,8 @@
 //! `Registries` at all nobody is afflicted.
 
 use bevy::prelude::*;
+use rl_core::Direction;
 use rl_core::turn::BASE_ACTION_COST;
-use rl_core::{Direction, RunSeed, SeedDomain};
 use rl_rules::faction::stance;
 use rl_rules::stats::{Modifier, Op, Source};
 use rl_rules::{Hit, Relation, Resistances, StatId, Stats, StatusId, Statuses};
@@ -509,13 +509,13 @@ pub(crate) fn keep_while_holding(mut bodies: Query<(&WhileHolding, &Afflicted, &
 
 /// The draws a stumbling holder's steps are turned by: a stream of the
 /// run's own, so a stumble never shifts a blow's roll or a cloud's spread.
-#[derive(Resource)]
-pub(crate) struct StumbleRng(pub rand::rngs::StdRng);
+pub(crate) type StumbleRng = crate::seed::RunRng<StumbleDomain>;
 
-impl crate::seed::Stream for StumbleRng {
-    fn for_run(seed: RunSeed) -> Self {
-        Self(seed.rng(SeedDomain::new(b"status.stumble"), 0))
-    }
+/// The domain [`StumbleRng`] draws under.
+pub(crate) struct StumbleDomain;
+
+impl crate::seed::StreamDomain for StumbleDomain {
+    const DOMAIN: rl_core::SeedDomain = crate::seed::STUMBLE;
 }
 
 /// Turns a holder's chosen step or bump a random way among those open to

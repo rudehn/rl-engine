@@ -494,7 +494,7 @@ fn populate(
         let bounds = place.terrain.bounds();
         // A stream of its own, keyed by name: adding another spawner later
         // cannot shift the numbers this one draws.
-        let mut rng = seed.stream(b"warren.rats", ev.map.0 as u64);
+        let mut rng = seed.rng(rl_engine::rl_core::SeedDomain::new(b"warren.rats"), ev.map.0 as u64);
 
         // The stairs are the engine's, laid from the ladder. On the bottom
         // floor the king stands where the stairs down would be. Weight zero

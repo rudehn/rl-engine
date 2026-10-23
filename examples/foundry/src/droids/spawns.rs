@@ -110,7 +110,7 @@ pub fn populate_deck(mut commands: Commands, mut entered: MessageReader<PlaceEnt
         // the way up is the harder half rather than a walk through decks
         // the commando already emptied.
         let band = if ev.first { deck } else { deepest.0 };
-        let mut rng = seed.stream(if ev.first { b"foundry.spawns" } else { b"foundry.climb" }, u64::from(deck));
+        let mut rng = seed.rng(rl_engine::rl_core::SeedDomain::new(if ev.first { b"foundry.spawns" } else { b"foundry.climb" }), u64::from(deck));
         let bounds = place.terrain.bounds();
         let target = BASE_GROUPS + band * GROUPS_PER_DECK;
         // Never on a spot a piece marked: a guard, a locker or the reactor

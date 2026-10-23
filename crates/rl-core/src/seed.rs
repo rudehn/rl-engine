@@ -34,7 +34,12 @@ pub const fn mix64(mut z: u64) -> u64 {
 
 /// FNV-1a over a byte string, `const` so a domain can be a constant.
 const fn fnv1a(bytes: &[u8]) -> u64 {
-    let mut hash: u64 = 0xCBF2_9CE4_8422_2325;
+    fnv1a_from(0xCBF2_9CE4_8422_2325, bytes)
+}
+
+/// FNV-1a carried on from `hash` over `bytes`: hashing `a` and then `b`
+/// this way is hashing `a` and `b` joined.
+const fn fnv1a_from(mut hash: u64, bytes: &[u8]) -> u64 {
     let mut i = 0;
     while i < bytes.len() {
         hash ^= bytes[i] as u64;
@@ -57,12 +62,8 @@ impl RunSeed {
         mix64(mix64(self.0 ^ domain.salt()).wrapping_add(index))
     }
 
-    /// The seed for a run-scoped domain with no index.
-    pub const fn stream(self, domain: SeedDomain) -> u64 {
-        self.derive(domain, 0)
-    }
-
-    /// A generator for one domain at one index.
+    /// A generator for one domain at one index: the one spelling for a
+    /// draw, `seed.rng(DOMAIN, index)`.
     pub fn rng(self, domain: SeedDomain, index: u64) -> StdRng {
         StdRng::seed_from_u64(self.derive(domain, index))
     }
@@ -105,7 +106,7 @@ pub struct PlaceSeed(RunSeed);
 impl PlaceSeed {
     /// The seed of place `map` in the run seeded by `run`.
     pub const fn of(run: RunSeed, map: u32) -> PlaceSeed {
-        PlaceSeed(RunSeed(run.derive(SeedDomain::new(b"rl.place"), map as u64)))
+        PlaceSeed(RunSeed(run.derive(SeedDomain::engine(b"place"), map as u64)))
     }
 
     /// A generator for one domain at one index, inside this place.
@@ -126,27 +127,73 @@ impl From<PlaceSeed> for RunSeed {
     }
 }
 
+/// The prefix every engine domain's name starts with, and no game's may.
+const ENGINE_PREFIX: &[u8] = b"rl.";
+
 /// Which subsystem a derived seed belongs to.
 ///
 /// Open, not an enum: a game declares its own domains as constants
 /// (`const WEATHER: SeedDomain = SeedDomain::new(b"weather")`) without
 /// editing the engine. The name is what keys the stream, so renaming a
 /// domain rerolls it and reordering declarations does not.
+///
+/// Names starting `rl.` are the engine's, made with
+/// [`SeedDomain::engine`], so a game's domain can never share a stream
+/// with one of the engine's by choosing the same word.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SeedDomain(u64);
 
 impl SeedDomain {
-    /// A domain keyed by a name.
+    /// A game's domain keyed by a name.
+    ///
+    /// # Panics
+    /// When `name` starts with `rl.`, which is the engine's. Declared as a
+    /// `const`, as a domain should be, that is a compile error rather than
+    /// a panic:
+    ///
+    /// ```compile_fail
+    /// # use rl_core::SeedDomain;
+    /// const LOOT: SeedDomain = SeedDomain::new(b"rl.loot");
+    /// # let _ = LOOT;
+    /// ```
     pub const fn new(name: &[u8]) -> Self {
+        assert!(!starts_with(name, ENGINE_PREFIX), "a seed domain starting `rl.` is the engine's; name the game's own another way");
+        SeedDomain::salted(fnv1a(name))
+    }
+
+    /// The engine's domain called `rl.` and then `name`: what a subsystem
+    /// of the engine draws under, and what no game's [`SeedDomain::new`]
+    /// can reach.
+    pub const fn engine(name: &[u8]) -> Self {
+        SeedDomain::salted(fnv1a_from(fnv1a(ENGINE_PREFIX), name))
+    }
+
+    /// The domain for a name's hash.
+    const fn salted(hash: u64) -> Self {
         // Force the salt odd so no two domains can differ only in their
         // low bit and so a zero salt is impossible.
-        SeedDomain(fnv1a(name) | 1)
+        SeedDomain(hash | 1)
     }
 
     /// The salt mixed into every seed derived under this domain.
     pub(crate) const fn salt(self) -> u64 {
         self.0
     }
+}
+
+/// Whether `bytes` starts with `prefix`, `const` for [`SeedDomain::new`].
+const fn starts_with(bytes: &[u8], prefix: &[u8]) -> bool {
+    if bytes.len() < prefix.len() {
+        return false;
+    }
+    let mut i = 0;
+    while i < prefix.len() {
+        if bytes[i] != prefix[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
 }
 
 /// A value in `[0, 2^64)` that depends only on `seed` and a position.
@@ -241,6 +288,26 @@ mod tests {
         assert_eq!(SeedDomain::new(b"x"), SeedDomain::new(b"x"));
         assert_ne!(SeedDomain::new(b"x"), SeedDomain::new(b"y"));
         assert_eq!(SeedDomain::new(b"anything").salt() & 1, 1);
+    }
+
+    #[test]
+    fn an_engine_domain_hashes_as_its_name_under_rl() {
+        assert_eq!(SeedDomain::engine(b"place"), SeedDomain(fnv1a(b"rl.place") | 1));
+        assert_ne!(SeedDomain::engine(b"place"), SeedDomain::new(b"place"));
+    }
+
+    #[test]
+    #[should_panic(expected = "the engine's")]
+    fn a_game_domain_under_rl_is_refused() {
+        let name: &[u8] = b"rl.loot";
+        let _ = SeedDomain::new(std::hint::black_box(name));
+    }
+
+    #[test]
+    fn a_game_domain_merely_like_rl_is_its_own() {
+        let _ = SeedDomain::new(b"rl");
+        let _ = SeedDomain::new(b"rlx.loot");
+        let _ = SeedDomain::new(b"girl.loot");
     }
 
     #[test]

@@ -14,8 +14,8 @@
 //! answered from [`Breathed`], which is sent every turn an actor stands in some.
 
 use bevy::prelude::*;
+use rl_core::Point;
 use rl_core::seed::position_hash;
-use rl_core::{Point, SeedDomain};
 use rl_rules::gas::{self, GasId};
 
 use crate::components::{Actor, Position};
@@ -135,12 +135,12 @@ pub struct Breathed {
 /// What a spill on `turn` is hashed from: which of two nearly as near cells
 /// it fills first.
 pub(crate) fn spill_salt(seed: &Seed, turn: u32) -> u64 {
-    seed.0.derive(SeedDomain::new(b"gas spill"), u64::from(turn))
+    seed.0.derive(crate::seed::GAS_SPILL, u64::from(turn))
 }
 
 /// What the swirls of `turn` are hashed from.
 fn swirl_salt(seed: &Seed, turn: u32) -> u64 {
-    seed.0.derive(SeedDomain::new(b"gas swirl"), u64::from(turn))
+    seed.0.derive(crate::seed::GAS_SWIRL, u64::from(turn))
 }
 
 /// A cell's roll under `salt`, by its coordinates, so a cloud swirls alike

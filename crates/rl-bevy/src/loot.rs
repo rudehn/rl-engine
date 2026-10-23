@@ -164,13 +164,13 @@ impl<D: Send + Sync + 'static> Clone for Drops<D> {
 /// Its own, like props' and combat's, so a kill's loot never nudges a
 /// later blow, and kept from one death to the next, so a second kill rolls
 /// on from where the first left off.
-#[derive(Resource)]
-pub struct LootRng(pub StdRng);
+pub type LootRng = crate::seed::RunRng<LootDomain>;
 
-impl crate::seed::Stream for LootRng {
-    fn for_run(seed: rl_core::RunSeed) -> Self {
-        Self(seed.rng(SeedDomain::new(b"loot"), 0))
-    }
+/// The domain [`LootRng`] draws under.
+pub struct LootDomain;
+
+impl crate::seed::StreamDomain for LootDomain {
+    const DOMAIN: SeedDomain = crate::seed::LOOT;
 }
 
 /// Where loot is put down in a turn, inside
@@ -190,8 +190,8 @@ pub enum LootSet {
 /// A stream for one area's scatter or one container's contents, derived
 /// from the run's seed under `domain` for `index` alone, so nothing that
 /// happened elsewhere first changes what is drawn there.
-pub(crate) fn stream_for(seed: &Seed, domain: &[u8], index: u64) -> StdRng {
-    seed.0.rng(SeedDomain::new(domain), index)
+pub(crate) fn stream_for(seed: &Seed, domain: SeedDomain, index: u64) -> StdRng {
+    seed.0.rng(domain, index)
 }
 
 /// The cells props stand on in `map`, where nothing is put down: an item
@@ -241,7 +241,7 @@ pub fn scatter_places<M: ItemMaker>(mut commands: Commands, mut entered: Message
         let Some(place) = map.place(ev.map) else { continue };
         let area = LootArea::Place(ev.map);
         let (band, rules) = (maker.band(area), maker.scatter());
-        let mut rng = stream_for(seed, b"loot.place", u64::from(ev.map.0));
+        let mut rng = stream_for(seed, crate::seed::LOOT_PLACE, u64::from(ev.map.0));
         let marks: Vec<(u32, Point)> = place.spots.iter().map(|s| (s.tag, s.at)).collect();
         let standing = standing(props, ev.map);
         let mut free = |p: Point| map.is_walkable(p) && !standing.contains(&p);
@@ -334,7 +334,7 @@ pub fn fill_containers<M: ItemMaker>(mut commands: Commands, mut asks: MessageRe
     for ask in asks.read() {
         let Ok((at, on)) = places.get(ask.prop) else { continue };
         let map = on.map_or(MapId::ZERO, |m| m.0);
-        let mut rng = stream_for(&seed, b"loot.container", position_hash(u64::from(map.0), at.0.x, at.0.y));
+        let mut rng = stream_for(&seed, crate::seed::LOOT_CONTAINER, position_hash(u64::from(map.0), at.0.x, at.0.y));
         let band = maker.band(LootArea::Place(map)) + ask.band;
         let mut made = Vec::new();
         for (def, count) in draw_stock(&*maker, &ask.what, ask.count, band, &mut rng) {

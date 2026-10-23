@@ -179,7 +179,7 @@ pub fn seat_candidates(
     let tables: Vec<Point> = place.spots.iter().filter(|s| s.tag == TABLE as u32).map(|s| s.at).collect();
     assert!(!tables.is_empty(), "mereholt.ron marks no '{TABLE}' for the candidates to wait at");
     let makers = Makers { bestiary: &drawing.bestiary, armory: &drawing.armory, registries: &drawing.registries, verbs: &drawing.verbs };
-    let mut rng = drawing.seed.stream(TAVERN_STREAM, visit);
+    let mut rng = drawing.seed.rng(rl_engine::rl_core::SeedDomain::new(TAVERN_STREAM), visit);
     for at in tables {
         let kit = drawing.mercenaries.kit(drawing.tally.deepest, &drawing.armory, &mut rng);
         let name = drawing.names.mercenary().draw_distinct(&mut rng, |n| given.has(n)).expect("the mercenaries' names never run dry");

@@ -304,7 +304,7 @@ mod tests {
         let set = names.mercenary();
         let mut bynamed = 0;
         for s in 0..200 {
-            let mut rng = Seed(RunSeed(s)).stream(NAMES_STREAM, 1);
+            let mut rng = Seed(RunSeed(s)).rng(rl_engine::rl_core::SeedDomain::new(NAMES_STREAM), 1);
             let mut drawn: BTreeSet<String> = BTreeSet::new();
             for n in 0..100 {
                 let name = set.draw_distinct(&mut rng, |taken| drawn.contains(taken)).unwrap_or_else(|| panic!("seed {s}: dry at name {n}"));

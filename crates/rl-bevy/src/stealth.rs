@@ -273,13 +273,13 @@ fn at_odds(rules: Option<&CombatRules>, mine: Option<&Faction>, theirs: Option<&
 
 /// Stealth's own stream for the notice roll, so a tactic added to the
 /// minds or a blow struck elsewhere cannot change who gets noticed.
-#[derive(Resource, Debug)]
-pub(crate) struct StealthRng(pub rand::rngs::StdRng);
+pub(crate) type StealthRng = crate::seed::RunRng<StealthDomain>;
 
-impl crate::seed::Stream for StealthRng {
-    fn for_run(seed: rl_core::RunSeed) -> Self {
-        Self(seed.rng(rl_core::SeedDomain::new(b"stealth"), 0))
-    }
+/// The domain [`StealthRng`] draws under.
+pub(crate) struct StealthDomain;
+
+impl crate::seed::StreamDomain for StealthDomain {
+    const DOMAIN: rl_core::SeedDomain = crate::seed::STEALTH;
 }
 
 /// Adds noticing, forgetting, being woken by a blow, and the unseen.

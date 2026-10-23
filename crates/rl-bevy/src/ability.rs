@@ -23,7 +23,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use bevy::prelude::*;
 use rand::Rng;
-use rl_core::{Point, RunSeed, SeedDomain};
+use rl_core::Point;
 use rl_grid::{Footprint, TargetMode, burst};
 use rl_rules::ability::{AbilityDef, AbilityId, Aim, Blocked, Cost, Gates, Purse, Targeting, Usable, aim_blocked, blocked};
 use rl_rules::{Names, Registry, Relation, StatId, Statuses, TagId};
@@ -435,13 +435,13 @@ impl LandedOn {
 /// The roll [`Reflects`] spends, its own stream so adding or rolling for a
 /// reflecting body never shifts a single roll combat or an effect already
 /// drew: the same reasoning [`crate::minds::MindRng`] is kept apart for.
-#[derive(Resource, Debug)]
-pub(crate) struct ReflectRng(pub rand::rngs::StdRng);
+pub(crate) type ReflectRng = crate::seed::RunRng<ReflectDomain>;
 
-impl crate::seed::Stream for ReflectRng {
-    fn for_run(seed: RunSeed) -> Self {
-        Self(seed.rng(SeedDomain::new(b"ability.reflect"), 0))
-    }
+/// The domain [`ReflectRng`] draws under.
+pub(crate) struct ReflectDomain;
+
+impl crate::seed::StreamDomain for ReflectDomain {
+    const DOMAIN: rl_core::SeedDomain = crate::seed::REFLECT;
 }
 
 /// Who is standing in a footprint and how they stand to the user.

@@ -27,7 +27,6 @@ use std::sync::Arc;
 use bevy::ecs::lifecycle::HookContext;
 use bevy::ecs::world::DeferredWorld;
 use bevy::prelude::*;
-use rand::rngs::StdRng;
 use rl_core::{Grid2D, Point, geometry};
 use rl_grid::{BitGrid, DijkstraMap, PathRules};
 use rl_rules::ai::recent::Recent;
@@ -754,13 +753,13 @@ pub(crate) fn sense_ways(mut thinking: ResMut<Thinking>, sight: Sight, ways: Que
 
 /// The minds' own stream, so adding a tactic cannot shift combat's rolls
 /// and a game with no combat still has one to draw from.
-#[derive(Resource, Debug)]
-pub(crate) struct MindRng(pub StdRng);
+pub(crate) type MindRng = crate::seed::RunRng<MindDomain>;
 
-impl crate::seed::Stream for MindRng {
-    fn for_run(seed: rl_core::RunSeed) -> Self {
-        Self(seed.rng(rl_core::SeedDomain::new(b"minds"), 0))
-    }
+/// The domain [`MindRng`] draws under.
+pub(crate) struct MindDomain;
+
+impl crate::seed::StreamDomain for MindDomain {
+    const DOMAIN: rl_core::SeedDomain = crate::seed::MINDS;
 }
 
 /// A shown prop as a wary mind reads it: where, on which map, and what it

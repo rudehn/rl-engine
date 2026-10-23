@@ -6,6 +6,9 @@ Pushing a tag publishes its release page from its section here, through `scripts
 
 ## Unreleased
 
+- One spelling for a draw: `seed.rng(DOMAIN, index)`. `Seed::stream` and `RunSeed::stream` are gone, and a game's `SeedDomain::new` refuses a name starting `rl.`, which is the engine's and is made with `SeedDomain::engine`. The engine's streams are one generic `RunRng<D>` over a `StreamDomain`, with `CombatRng`, `EffectRng`, `LootRng` and `PropRng` aliases of it, and `ENGINE_DOMAINS` lists every domain the engine draws under.
+  To change: `seed.stream(b"name", i)` becomes `seed.rng(NAME, i)` with `const NAME: SeedDomain = SeedDomain::new(b"name")`.
+
 - `TtyRoguelikePlugins` plays a game in a text terminal, locally or over SSH, with the same panels: `new(cols, rows)`, `map` and `across` as `RoguelikePlugins` has, over Bevy's `MinimalPlugins` at thirty frames a second with `TtyPlugin` in place of the window, desktop only. The template runs that way with `cargo run -- --tty`, and Control-C ends a game in the terminal as closing the window does.
   To change: nothing; a game made from the template may pick its front end in `main` the same way.
 

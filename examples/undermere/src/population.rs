@@ -536,7 +536,7 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
     let Stock { bestiary, map, seed, registries, draws, ways, turns, verbs, posted } = &stock;
     for ev in entered.read().filter(|ev| ev.first) {
         let (Some(floor), Some(place)) = (floor_of(ev.map), map.place(ev.map)) else { continue };
-        let mut rng = seed.stream(b"undermere.population", u64::from(floor));
+        let mut rng = seed.rng(rl_engine::rl_core::SeedDomain::new(b"undermere.population"), u64::from(floor));
         let mut marked: Vec<Point> = place.spots.iter().map(|spot| spot.at).collect();
         let halls: Vec<(Point, i32)> = posted
             .iter()
@@ -562,7 +562,7 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
         // feeding ground, the patrol and the captive all roll on `rng`,
         // and a band drawing from it would stand somewhere else whenever
         // one of them was added or tuned.
-        let mut band_rng = seed.stream(b"undermere.population.bands", u64::from(floor));
+        let mut band_rng = seed.rng(rl_engine::rl_core::SeedDomain::new(b"undermere.population.bands"), u64::from(floor));
         let mut scenes = 0;
         for band in BANDS.iter().filter(|b| (b.floors.0..=b.floors.1).contains(&floor)) {
             // Half the time a goblin war band is placed at all, it comes
@@ -613,7 +613,7 @@ pub fn populate(mut commands: Commands, mut entered: MessageReader<PlaceEntered>
         // ordinary people exactly who they were before any of that
         // existed, for whichever seed happens to land one.
         let mut free = |p: Point| map.is_walkable_on(ev.map, p) && !marked.contains(&p) && outside(p);
-        let mut plan_rng = seed.stream(b"undermere.population.plan", u64::from(floor));
+        let mut plan_rng = seed.rng(rl_engine::rl_core::SeedDomain::new(b"undermere.population.plan"), u64::from(floor));
         // A band, a feeding ground and a patrol each stand in for one of
         // the floor's ordinary groups rather than beside all of them:
         // three goblins round a fire are one of the floor's fights, and a

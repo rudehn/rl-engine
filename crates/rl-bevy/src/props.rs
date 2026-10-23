@@ -658,13 +658,13 @@ pub struct Emptied;
 ///
 /// Its own, like stealth's and combat's, so stocking a crate never nudges
 /// a later blow.
-#[derive(Resource)]
-pub struct PropRng(pub rand::rngs::StdRng);
+pub type PropRng = crate::seed::RunRng<PropDomain>;
 
-impl crate::seed::Stream for PropRng {
-    fn for_run(seed: rl_core::RunSeed) -> Self {
-        Self(seed.rng(rl_core::SeedDomain::new(b"props"), 0))
-    }
+/// The domain [`PropRng`] draws under.
+pub struct PropDomain;
+
+impl crate::seed::StreamDomain for PropDomain {
+    const DOMAIN: rl_core::SeedDomain = crate::seed::PROPS;
 }
 
 /// Asks for one row of what `prop` holds: `count` of a fixed item, or

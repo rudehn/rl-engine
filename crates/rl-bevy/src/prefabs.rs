@@ -284,7 +284,7 @@ where
         for spot in &place.spots {
             let Some(key) = spot.prefab else { continue };
             let Some(slot) = char::from_u32(spot.tag).and_then(|c| prefabs.slot(key, c)) else { continue };
-            let mut rng = stream_for(seed, b"prefab.content", position_hash(u64::from(ev.map.0), spot.at.x, spot.at.y));
+            let mut rng = stream_for(seed, crate::seed::PREFAB_CONTENT, position_hash(u64::from(ev.map.0), spot.at.x, spot.at.y));
             let drawn: Drawn<A::Def, I::Def> = match slot {
                 Slot::Mark => continue,
                 Slot::Prop(id) => Drawn::Prop(*id),

@@ -455,7 +455,7 @@ fn next_run_seed(previous: RunSeed) -> RunSeed {
     }
     #[cfg(target_arch = "wasm32")]
     {
-        RunSeed::from_entropy(previous.derive(rl_core::SeedDomain::new(b"restart"), 0))
+        RunSeed::from_entropy(previous.derive(crate::seed::RESTART, 0))
     }
 }
 

@@ -29,8 +29,7 @@ pub use triggers::*;
 use std::collections::BTreeMap;
 
 use bevy::prelude::*;
-use rand::rngs::StdRng;
-use rl_core::{Point, RunSeed, SeedDomain};
+use rl_core::Point;
 use rl_rules::Names;
 use rl_rules::ability::AbilityId;
 use rl_rules::ability::RawValue;
@@ -53,13 +52,13 @@ use crate::world::WorldMap;
 /// what it was called before effects were a subsystem of their own: a new
 /// name would have re-dealt every seed. Derived from the run's
 /// [`Seed`](crate::seed::Seed) by [`EffectsPlugin`].
-#[derive(Resource, Deref, DerefMut)]
-pub struct EffectRng(pub StdRng);
+pub type EffectRng = crate::seed::RunRng<EffectDomain>;
 
-impl crate::seed::Stream for EffectRng {
-    fn for_run(seed: RunSeed) -> Self {
-        Self(seed.rng(SeedDomain::new(b"ability"), 0))
-    }
+/// The domain [`EffectRng`] draws under.
+pub struct EffectDomain;
+
+impl crate::seed::StreamDomain for EffectDomain {
+    const DOMAIN: rl_core::SeedDomain = crate::seed::EFFECTS;
 }
 
 /// What landed an effect list.

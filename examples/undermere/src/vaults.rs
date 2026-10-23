@@ -359,7 +359,7 @@ pub struct Filling<'w> {
 pub fn spawn_vault_marks(mut commands: Commands, mut entered: MessageReader<PlaceEntered>, fill: Filling) {
     for ev in entered.read().filter(|ev| ev.first) {
         let (Some(place), Some(floor)) = (fill.map.place(ev.map), floor_of(ev.map)) else { continue };
-        let mut rng = fill.seed.stream(b"undermere.vaults.marks", u64::from(ev.map.0));
+        let mut rng = fill.seed.rng(rl_engine::rl_core::SeedDomain::new(b"undermere.vaults.marks"), u64::from(ev.map.0));
         for spot in &place.spots {
             let mark = spot.prefab.zip(char::from_u32(spot.tag)).filter(|(key, glyph)| matches!(fill.prefabs.slot(*key, *glyph), Some(Slot::Mark)));
             match (spot.tag, mark.map(|(_, glyph)| glyph)) {

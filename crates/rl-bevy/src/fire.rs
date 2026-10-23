@@ -19,8 +19,8 @@
 use std::collections::BTreeMap;
 
 use bevy::prelude::*;
+use rl_core::Point;
 use rl_core::seed::position_hash;
-use rl_core::{Point, SeedDomain};
 use rl_grid::{Rgb, TileId};
 use rl_rules::fire::{self, Tinder};
 use rl_rules::gas::GasId;
@@ -292,7 +292,7 @@ pub(crate) fn step_fire(mut ends: MessageReader<TurnEnd>, mut fire: ResMut<Fire>
         });
         let origin = fire.flames.origin();
         let turn = u64::from(clock.turn_number() + 1 - passed + step);
-        let salt = seed.0.derive(SeedDomain::new(b"fire"), turn);
+        let salt = seed.0.derive(crate::seed::FIRE, turn);
         let burnt = {
             let (map, gases) = (&*map, gases.as_deref());
             let tinder = |local: Point| {

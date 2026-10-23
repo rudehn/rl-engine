@@ -117,7 +117,7 @@ pub use remains::{LeavesRemains, Life, Remains, RemainsLeft, RemainsNaming, Rema
 pub use replay::{Pressed, Recording};
 pub use rl_grid::LightBand;
 pub use secrets::Secret;
-pub use seed::{AddStream, Seed, Stream};
+pub use seed::{AddStream, ENGINE_DOMAINS, RunRng, Seed, Stream, StreamDomain};
 pub use settings::{AddSettings, Setting, SettingId, Settings};
 pub use state::{Ending, EngineState, Outcome, Restart, RunOver, world_is_shown};
 pub use status::{Afflict, Afflicted, Cure, SideWas, StatBlock, StatusEvent};

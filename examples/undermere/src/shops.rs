@@ -397,7 +397,7 @@ impl Wares {
     /// and number meet the same shelves, and no stocking's draws move
     /// another's.
     pub fn stocking(&self, seed: &Seed, number: u64, tier: u32) -> Vec<Stocking> {
-        let mut rng: StdRng = seed.stream(WARES_STREAM, number);
+        let mut rng: StdRng = seed.rng(rl_engine::rl_core::SeedDomain::new(WARES_STREAM), number);
         self.keepers.iter().map(|k| self.stock(&k.name, tier, &mut rng)).collect()
     }
 }
